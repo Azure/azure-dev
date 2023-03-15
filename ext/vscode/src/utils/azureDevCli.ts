@@ -14,10 +14,8 @@ import { setVsCodeContext } from './setVsCodeContext';
 
 // Twenty seconds: generous, but not infinite
 export const DefaultAzCliInvocationTimeout: number = 20 * 1000;
-const AzdInstallationUrl: string = 'https://aka.ms/azd-install';
 const AzdLoginCheckCacheLifetime = 15 * 60 * 1000; // 15 minutes
 
-let userWarnedAzdMissing: boolean = false;
 let azdInstallAttempted: boolean = false;
 const azdLoginChecker = new AsyncLazy<LoginStatus | undefined>(getAzdLoginStatus, AzdLoginCheckCacheLifetime);
 
@@ -38,7 +36,6 @@ export async function createAzureDevCli(context: IActionContext): Promise<AzureD
     if (!loginStatus) {
         context.errorHandling.suppressReportIssue = true;
         context.errorHandling.buttons = azdNotInstalledUserChoices();
-        userWarnedAzdMissing = true;
         throw new Error(azdNotInstalledMsg());
     }
 
@@ -51,10 +48,14 @@ export function scheduleAzdSignInCheck(): void {
     setTimeout(async () => {
         const result = await azdLoginChecker.getValue();
 
-        if (!result && !userWarnedAzdMissing && !azdInstallAttempted) {
-            userWarnedAzdMissing = true;
-            const response = await vscode.window.showWarningMessage(azdNotInstalledMsg(), {}, ...azdNotInstalledUserChoices());
-            await response?.callback();
+        if (result !== undefined) {
+            // If we've reached this point, AZD is installed. We can set the VSCode context that the walk-through uses
+            await setVsCodeContext('hideAzdInstallStep', true);
+
+            // If the user is logged in, we can also set the login context
+            if (result.status === 'success') {
+                await setVsCodeContext('hideAzdLoginStep', true);
+            }
         }
     }, oneSecond);
 }
@@ -76,7 +77,12 @@ export function scheduleAzdYamlCheck(): void {
 export function onAzdInstallAttempted(): void {
     azdInstallAttempted = true;
 
-    // Clear the install state so we'll check again at the next command
+    // Clear the install+login state so we'll check again at the next command
+    azdLoginChecker.clear();
+}
+
+export function onAzdLoginAttempted(): void {
+    // Clear the install+login state so we'll check again at the next command
     azdLoginChecker.clear();
 }
 
@@ -142,14 +148,6 @@ async function getAzdLoginStatus(): Promise<LoginStatus | undefined> {
         const stdout = (await execAsync(command, cli.spawnOptions())).stdout;
         const result = JSON.parse(stdout) as LoginStatus;
 
-        // If we've reached this point, AZD is installed. We can set the VSCode context that the walk-through uses
-        await setVsCodeContext('hideAzdInstallStep', true);
-
-        // If the user is logged in, we can also set the login context
-        if (result?.status === 'success') {
-            await setVsCodeContext('hideAzdLoginStep', true);
-        }
-
         return result;
     } catch {
         // If AZD is not installed, return `undefined`
@@ -170,26 +168,20 @@ function normalize(env: NodeJS.ProcessEnv): Environment {
 }
 
 function azdNotInstalledMsg(): string {
-    return vscode.l10n.t("Azure Developer CLI is not installed. Would you like to install it?.");
+    return vscode.l10n.t("Azure Developer CLI is not installed. Would you like to install it? [Learn More](https://aka.ms/azd-install)");
 }
 
 function azdNotInstalledUserChoices(): AzExtErrorButton[] {
     const choices: AzExtErrorButton[] = [
         {
-            "title": vscode.l10n.t("Install"),
-            "callback": async () => {
+            title: vscode.l10n.t("Install"),
+            callback: async () => {
                 await vscode.commands.executeCommand("azure-dev.commands.cli.install", /* shouldPrompt: */ false);
             }
         },
         {
-            "title": vscode.l10n.t("Learn More"),
-            "callback": async () => {
-                await vscode.env.openExternal(vscode.Uri.parse(AzdInstallationUrl));
-            }
-        },
-        {
-            "title": vscode.l10n.t("Later"),
-            "callback": () => { return Promise.resolve(); /* no-op */ }
+            title: vscode.l10n.t("Later"),
+            callback: () => { return Promise.resolve(); /* no-op */ }
         }
     ];
     return choices;

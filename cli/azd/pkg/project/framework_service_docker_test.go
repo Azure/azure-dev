@@ -13,6 +13,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
@@ -40,6 +42,8 @@ services:
 	env.SetSubscriptionId("sub")
 
 	mockContext := mocks.NewMockContext(context.Background())
+	configureContainerDependencies(mockContext)
+
 	mockarmresources.AddAzResourceListMock(
 		mockContext.HttpClient,
 		convert.RefOf("rg-test"),
@@ -128,6 +132,8 @@ services:
 	env := environment.EphemeralWithValues("test-env", nil)
 	env.SetSubscriptionId("sub")
 	mockContext := mocks.NewMockContext(context.Background())
+	configureContainerDependencies(mockContext)
+
 	mockarmresources.AddAzResourceListMock(
 		mockContext.HttpClient,
 		convert.RefOf("rg-test"),
@@ -196,4 +202,13 @@ services:
 	require.Nil(t, err)
 	require.Equal(t, "Building docker image", status)
 	require.Equal(t, true, ran)
+}
+
+func configureContainerDependencies(mockContext *mocks.MockContext) {
+	// This is a work around till we refactor the project hydration into
+	// a ProjectManager that can support dynamic dependency resolution
+	// based on project configuration
+	mockContext.Container.RegisterSingleton(azcli.NewContainerRegistryService)
+	mockContext.Container.RegisterSingleton(docker.NewDocker)
+	ioc.Global = mockContext.Container
 }

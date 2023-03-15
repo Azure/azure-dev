@@ -36,6 +36,9 @@ const TenantIdEnvVarName = "AZURE_TENANT_ID"
 // to.
 const ContainerRegistryEndpointEnvVarName = "AZURE_CONTAINER_REGISTRY_ENDPOINT"
 
+// AksClusterEnvVarName is the name of they key used to store the endpoint of the AKS cluster to push to.
+const AksClusterEnvVarName = "AZURE_AKS_CLUSTER_NAME"
+
 // ResourceGroupEnvVarName is the name of the azure resource group that should be used for deployments
 const ResourceGroupEnvVarName = "AZURE_RESOURCE_GROUP"
 
@@ -72,24 +75,8 @@ func FromRoot(root string) (*Environment, error) {
 		Root: root,
 	}
 
-	envPath := filepath.Join(root, azdcontext.DotEnvFileName)
-	if e, err := godotenv.Read(envPath); errors.Is(err, os.ErrNotExist) {
-		env.Values = make(map[string]string)
-	} else if err != nil {
-		return EmptyWithRoot(root), fmt.Errorf("loading .env: %w", err)
-	} else {
-		env.Values = e
-	}
-
-	cfgPath := filepath.Join(root, azdcontext.ConfigFileName)
-
-	cfgMgr := config.NewManager()
-	if cfg, err := cfgMgr.Load(cfgPath); errors.Is(err, os.ErrNotExist) {
-		env.Config = config.NewConfig(nil)
-	} else if err != nil {
-		return EmptyWithRoot(root), fmt.Errorf("loading config: %w", err)
-	} else {
-		env.Config = cfg
+	if err := env.Reload(); err != nil {
+		return EmptyWithRoot(root), err
 	}
 
 	return env, nil
@@ -141,11 +128,54 @@ func (e *Environment) Getenv(key string) string {
 	return os.Getenv(key)
 }
 
+// Reloads environment variables and configuration
+func (e *Environment) Reload() error {
+	// Reload env values
+	envPath := filepath.Join(e.Root, azdcontext.DotEnvFileName)
+	if envMap, err := godotenv.Read(envPath); errors.Is(err, os.ErrNotExist) {
+		e.Values = make(map[string]string)
+	} else if err != nil {
+		return fmt.Errorf("loading .env: %w", err)
+	} else {
+		e.Values = envMap
+	}
+
+	// Reload env config
+	cfgPath := filepath.Join(e.Root, azdcontext.ConfigFileName)
+	cfgMgr := config.NewManager()
+	if cfg, err := cfgMgr.Load(cfgPath); errors.Is(err, os.ErrNotExist) {
+		e.Config = config.NewConfig(nil)
+	} else if err != nil {
+		return fmt.Errorf("loading config: %w", err)
+	} else {
+		e.Config = cfg
+	}
+
+	return nil
+}
+
 // If `Root` is set, Save writes the current contents of the environment to
 // the given directory, creating it and any intermediate directories as needed.
 func (e *Environment) Save() error {
 	if e.Root == "" {
 		return nil
+	}
+
+	// Update configuration
+	cfgMgr := config.NewManager()
+	if err := cfgMgr.Save(e.Config, filepath.Join(e.Root, azdcontext.ConfigFileName)); err != nil {
+		return fmt.Errorf("saving config: %w", err)
+	}
+
+	// Cache current values & reload to get any new env vars
+	currentValues := e.Values
+	if err := e.Reload(); err != nil {
+		return fmt.Errorf("failed reloading env vars, %w", err)
+	}
+
+	// Overlay current values before saving
+	for key, value := range currentValues {
+		e.Values[key] = value
 	}
 
 	err := os.MkdirAll(e.Root, osutil.PermissionDirectory)
@@ -156,13 +186,6 @@ func (e *Environment) Save() error {
 	err = godotenv.Write(e.Values, filepath.Join(e.Root, azdcontext.DotEnvFileName))
 	if err != nil {
 		return fmt.Errorf("saving .env: %w", err)
-	}
-
-	cfgMgr := config.NewManager()
-
-	err = cfgMgr.Save(e.Config, filepath.Join(e.Root, azdcontext.ConfigFileName))
-	if err != nil {
-		return fmt.Errorf("saving config: %w", err)
 	}
 
 	return nil

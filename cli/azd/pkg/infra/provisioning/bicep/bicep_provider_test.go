@@ -415,6 +415,18 @@ func TestIsValueAssignableToParameterType(t *testing.T) {
 	assert.False(t, isValueAssignableToParameterType(ParameterTypeNumber, json.Number("1.5")))
 }
 
+type testBicep struct {
+	commandRunner exec.CommandRunner
+}
+
+func (b *testBicep) Build(ctx context.Context, file string) (string, error) {
+	result, err := b.commandRunner.Run(ctx, exec.NewRunArgs("bicep", ([]string{"build", file, "--stdout"})...))
+	if err != nil {
+		return "", err
+	}
+	return result.Stdout, nil
+}
+
 func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepProvider {
 	projectDir := "../../../../test/functional/testdata/samples/webapp"
 	options := Options{
@@ -434,16 +446,20 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 		return "", nil
 	}
 
-	provider, err := NewBicepProvider(
-		*mockContext.Context, azCli, env, projectDir, options,
-		mockContext.CommandRunner,
-		mockContext.Console,
-		Prompters{
+	provider := &BicepProvider{
+		env:         env,
+		projectPath: projectDir,
+		options:     options,
+		console:     mockContext.Console,
+		bicepCli: &testBicep{
+			commandRunner: mockContext.CommandRunner,
+		},
+		azCli: azCli,
+		prompters: Prompters{
 			Location: locationPrompter,
 		},
-	)
+	}
 
-	require.NoError(t, err)
 	return provider
 }
 

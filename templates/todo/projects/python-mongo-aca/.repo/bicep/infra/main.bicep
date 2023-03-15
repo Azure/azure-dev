@@ -44,7 +44,8 @@ param webApiBaseUrl string = ''
 var abbrs = loadJsonContent('../../../../../../common/infra/bicep/abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = { 'azd-env-name': environmentName }
-var corsAcaUrl = join(['https://${abbrs.appContainerApps}web-${resourceToken}.',containerApps.outputs.defaultDomain],'')
+var apiContainerAppNameOrDefault = '${abbrs.appContainerApps}web-${resourceToken}'
+var corsAcaUrl = 'https://${apiContainerAppNameOrDefault}.${containerApps.outputs.defaultDomain}'
 
 // Organize resources in a resource group
 resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {

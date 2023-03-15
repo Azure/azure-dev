@@ -123,6 +123,30 @@ get_architecture() {
     fi;
 }
 
+ensure_rosetta() {
+    if [[ $(uname -m) == 'x86_64' ]]; then
+        # The current system is identified as an Intel system (either because it
+        # is running in Rosetta 2 or the system is running on Intel silicon) so
+        # Rosetta 2 is not needed.
+        return
+    fi
+
+    # TODO: Is this the right way to check for Rosetta 2?
+    if /usr/bin/pgrep oahd >/dev/null 2>&1; then
+        say "Rosetta 2 is already installed and running. Nothing to do."
+    else
+        say "Rosetta 2 is not installed. You may be prompted to accept terms necessary to install Rosetta 2."
+        /usr/sbin/softwareupdate --install-rosetta
+       
+        if [[ $? -eq 0 ]]; then
+        	say "Rosetta has been successfully installed."
+        else
+        	say_error "Rosetta installation failed!"
+        	exit 1
+        fi
+    fi
+}
+
 extract() {
     local compressed_file=$1
     local target_file=$2
@@ -247,6 +271,11 @@ say_verbose "Version: $version"
 say_verbose "Platform: $platform"
 say_verbose "Architecture: $architecture"
 say_verbose "File extension: $extension"
+
+if [ "$platform" = "darwin" ]; then
+    say_verbose "Mac detected, ensuring compatailbity with amd64 binaries"
+    ensure_rosetta
+fi
 
 if [ -z "$version" ]; then
     url="$base_url/azd-$platform-$architecture.$extension"

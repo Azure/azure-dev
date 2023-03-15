@@ -1,14 +1,8 @@
 # Release History
 
-## 0.5.0-alpha.1 (Unreleased)
-
-### Features Added
-
-### Breaking Changes
-
+## 0.4.2 (2023-03-15)
 ### Bugs Fixed
-
-### Other Changes
+- [[#1735]](https://github.com/Azure/azure-dev/pull/1735) Fixed an issue with the login command.
 
 ## 0.4.1 (2023-03-14)
 ### Bugs Fixed

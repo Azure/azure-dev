@@ -25,6 +25,7 @@ type mavenProject struct {
 	javacCli javac.JavacCli
 }
 
+// NewMavenProject creates a new instance of a maven project
 func NewMavenProject(runner exec.CommandRunner, env *environment.Environment) FrameworkService {
 	return &mavenProject{
 		env:      env,
@@ -33,6 +34,7 @@ func NewMavenProject(runner exec.CommandRunner, env *environment.Environment) Fr
 	}
 }
 
+// Gets the required external tools for the project
 func (m *mavenProject) RequiredExternalTools(context.Context) []tools.ExternalTool {
 	return []tools.ExternalTool{
 		m.mavenCli,
@@ -40,11 +42,13 @@ func (m *mavenProject) RequiredExternalTools(context.Context) []tools.ExternalTo
 	}
 }
 
+// Initializes the maven project
 func (m *mavenProject) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
 	m.mavenCli.SetPath(serviceConfig.Path(), serviceConfig.Project.Path)
 	return nil
 }
 
+// Restores dependencies using the Maven CLI
 func (m *mavenProject) Restore(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
@@ -61,6 +65,7 @@ func (m *mavenProject) Restore(
 	)
 }
 
+// Builds the maven project
 func (m *mavenProject) Build(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,

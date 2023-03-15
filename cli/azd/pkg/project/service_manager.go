@@ -40,17 +40,24 @@ type ServiceDeploymentChannelResponse struct {
 	// The error that may have occurred during a deploy operation
 	Error error
 }
+
+// ServiceLifecycleEventArgs are the event arguments available when
+// any service lifecycle event has been triggered
 type ServiceLifecycleEventArgs struct {
 	Project *ProjectConfig
 	Service *ServiceConfig
 	Args    map[string]any
 }
 
+// ServiceProgress represents an incremental progress message
+// during a service operation such as restore, build, package, publish & deploy
 type ServiceProgress struct {
 	Message   string
 	Timestamp time.Time
 }
 
+// NewServiceProgress is a helper method to create a new
+// progress message with a current timestamp
 func NewServiceProgress(message string) ServiceProgress {
 	return ServiceProgress{
 		Message:   message,
@@ -58,22 +65,26 @@ func NewServiceProgress(message string) ServiceProgress {
 	}
 }
 
+// ServiceRestoreResult is the result of a successful Restore operation
 type ServiceRestoreResult struct {
 	Details interface{} `json:"details"`
 }
 
+// ServiceBuildResult is the result of a successful Build operation
 type ServiceBuildResult struct {
 	Restore         *ServiceRestoreResult `json:"restore"`
 	BuildOutputPath string                `json:"buildOutputPath"`
 	Details         interface{}           `json:"details"`
 }
 
+// ServicePackageResult is the result of a successful Package operation
 type ServicePackageResult struct {
 	Build       *ServiceBuildResult `json:"package"`
 	Details     interface{}         `json:"details"`
 	PackagePath string              `json:"packagePath"`
 }
 
+// ServicePublishResult is the result of a successful Publish operation
 type ServicePublishResult struct {
 	Package *ServicePackageResult
 	// Related Azure resource ID
@@ -83,39 +94,74 @@ type ServicePublishResult struct {
 	Endpoints        []string          `json:"endpoints"`
 }
 
+// ServiceDeployResult is the result of a successful Deploy operation
 type ServiceDeployResult struct {
 	*ServicePublishResult
 }
 
+// ServiceManager provides a management layer for performing operations against an azd service within a project
+// The component performs all of the heavy lifting for executing all lifecycle operations for a service.
+//
+// All service lifecycle command leverage our async Task library to expose a common interface for handling
+// long running operations including how we handle incremental progress updates and error handling.
 type ServiceManager interface {
+	// Gets all of the required framework/service target tools for the specified service config
 	GetRequiredTools(ctx context.Context, serviceConfig *ServiceConfig) ([]tools.ExternalTool, error)
 
+	// Initializes the service configuration and dependent framework & service target
+	// This allows frameworks & service targets to hook into a services lifecycle events
 	Initialize(ctx context.Context, serviceConfig *ServiceConfig) error
+
+	// Restores the code dependencies for the specified service config
 	Restore(
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
 	) *async.TaskWithProgress[*ServiceRestoreResult, ServiceProgress]
+
+	// Builds the code for the specified service config
+	// Will call the language compile for compiled languages or
+	// may copy build artifacts to a configured output folder
 	Build(
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
 		restoreOutput *ServiceRestoreResult,
 	) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress]
+
+	// Packages the code for the specified service config
+	// Depending on the service configuration this will generate an artifact
+	// that can be consumed by the hosting Azure service.
+	// Common examples could be a zip archive for app service or
+	// docker images for container apps and AKS
 	Package(
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
 		buildOutput *ServiceBuildResult,
 	) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress]
+
+	// Publishes the generated artifacts to the Azure resource that will
+	// host the service application
+	// Common examples would be uploading zip archive using ZipDeploy deployment or
+	// pushing container images to a container registry.
 	Publish(
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
 		packageOutput *ServicePackageResult,
 	) *async.TaskWithProgress[*ServicePublishResult, ServiceProgress]
+
+	// Deploy is a composite command that will perform the following operations in sequence.
+	// Restore, build, package & publish
 	Deploy(
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
 	) *async.TaskWithProgress[*ServiceDeployResult, ServiceProgress]
 
+	// Gets the framework service for the specified service config
+	// The framework service performs the restoration and building of the service app code
 	GetFrameworkService(ctx context.Context, serviceConfig *ServiceConfig) (FrameworkService, error)
+
+	// Gets the service target service for the specified service config
+	// The service target is responsible for packaging & publishing the service app code
+	// to the destination Azure resource
 	GetServiceTarget(ctx context.Context, serviceConfig *ServiceConfig) (ServiceTarget, error)
 }
 
@@ -125,6 +171,7 @@ type serviceManager struct {
 	serviceLocator  ioc.ServiceLocator
 }
 
+// NewServiceManager creates a new instance of the ServiceManager component
 func NewServiceManager(
 	env *environment.Environment,
 	resourceManager ResourceManager,
@@ -137,7 +184,7 @@ func NewServiceManager(
 	}
 }
 
-// Gets a list of required tools for the current service
+// Gets all of the required framework/service target tools for the specified service config
 func (sm *serviceManager) GetRequiredTools(ctx context.Context, serviceConfig *ServiceConfig) ([]tools.ExternalTool, error) {
 	frameworkService, err := sm.GetFrameworkService(ctx, serviceConfig)
 	if err != nil {
@@ -155,6 +202,9 @@ func (sm *serviceManager) GetRequiredTools(ctx context.Context, serviceConfig *S
 
 	return requiredTools, nil
 }
+
+// Initializes the service configuration and dependent framework & service target
+// This allows frameworks & service targets to hook into a services lifecycle events
 
 func (sm *serviceManager) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
 	if serviceConfig.initialized {
@@ -184,6 +234,7 @@ func (sm *serviceManager) Initialize(ctx context.Context, serviceConfig *Service
 	return nil
 }
 
+// Restores the code dependencies for the specified service config
 func (sm *serviceManager) Restore(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
@@ -214,6 +265,8 @@ func (sm *serviceManager) Restore(
 	})
 }
 
+// Builds the code for the specified service config
+// Will call the language compile for compiled languages or may copy build artifacts to a configured output folder
 func (sm *serviceManager) Build(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
@@ -245,6 +298,9 @@ func (sm *serviceManager) Build(
 	})
 }
 
+// Packages the code for the specified service config
+// Depending on the service configuration this will generate an artifact that can be consumed by the hosting Azure service.
+// Common examples could be a zip archive for app service or docker images for container apps and AKS
 func (sm *serviceManager) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
@@ -276,6 +332,9 @@ func (sm *serviceManager) Package(
 	})
 }
 
+// Publishes the generated artifacts to the Azure resource that will host the service application
+// Common examples would be uploading zip archive using ZipDeploy deployment or
+// pushing container images to a container registry.
 func (sm *serviceManager) Publish(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
@@ -320,6 +379,8 @@ func (sm *serviceManager) Publish(
 	})
 }
 
+// Deploy is a composite command that will perform the following operations in sequence.
+// Restore, build, package & publish
 func (sm *serviceManager) Deploy(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,

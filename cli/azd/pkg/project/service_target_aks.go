@@ -87,15 +87,20 @@ func NewAksTarget(
 	}
 }
 
-// Gets the required external tools when using AKS service target
+// Gets the required external tools to support the AKS service
 func (t *aksTarget) RequiredExternalTools(context.Context) []tools.ExternalTool {
 	return []tools.ExternalTool{t.docker, t.kubectl}
 }
 
+// Initializes the AKS service target
 func (t *aksTarget) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
+	// TODO: At some point in the future this an opportunity for the AKS target to
+	// subscript to a post-provision event to allow additional cluster configuration
+	// outside of the bicep provisioning.
 	return nil
 }
 
+// Prepares and tags the container image from the build output based on the specified service configuration
 func (t *aksTarget) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,

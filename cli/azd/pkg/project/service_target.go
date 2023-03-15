@@ -26,16 +26,21 @@ const (
 )
 
 type ServiceTarget interface {
+	// Initializes the service target for the specified service configuration.
+	// This allows service targets to opt-in to service lifecycle events
 	Initialize(ctx context.Context, serviceConfig *ServiceConfig) error
+
 	// RequiredExternalTools are the tools needed to run the deploy operation for this
 	// target.
 	RequiredExternalTools(ctx context.Context) []tools.ExternalTool
+
 	// Package prepares artifacts for publishing
 	Package(
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
 		buildOutput *ServiceBuildResult,
 	) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress]
+
 	// Publish deploys the given deployment artifact to the target resource
 	Publish(
 		ctx context.Context,
@@ -43,6 +48,7 @@ type ServiceTarget interface {
 		servicePackage *ServicePackageResult,
 		targetResource *environment.TargetResource,
 	) *async.TaskWithProgress[*ServicePublishResult, ServiceProgress]
+
 	// Endpoints gets the endpoints a service exposes.
 	Endpoints(
 		ctx context.Context,
@@ -51,6 +57,7 @@ type ServiceTarget interface {
 	) ([]string, error)
 }
 
+// NewServicePublishResult is a helper function to create a new ServicePublishResult
 func NewServicePublishResult(
 	relatedResourceId string,
 	kind ServiceTargetKind,

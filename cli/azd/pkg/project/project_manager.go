@@ -20,17 +20,27 @@ var (
 	}
 )
 
+// ProjectManager provides a layer for working with root level azd projects
+// and invoking project specific commands
 type ProjectManager interface {
+	// Initializes the project and all child services defined within the project configuration
+	//
+	// The initialization process will instantiate the framework & service target associated
+	// with the service config that enables the scenario for these components to add event
+	// handlers to participate in the lifecycle of an azd project
+	//
+	// The initialization process will also ensure that all required tools are installed
 	Initialize(ctx context.Context, projectConfig *ProjectConfig) error
 
 	// TODO: Add lifecycle functions to perform action on all services.
-	// Restore, build, package & publish
+	// Restore, build, package, publish & deploy
 }
 
 type projectManager struct {
 	serviceManager ServiceManager
 }
 
+// NewProjectManager creates a new instance of the ProjectManager
 func NewProjectManager(
 	serviceManager ServiceManager,
 ) ProjectManager {
@@ -38,6 +48,8 @@ func NewProjectManager(
 		serviceManager: serviceManager,
 	}
 }
+
+// Initializes the project and all child services defined within the project configuration
 
 func (pm *projectManager) Initialize(ctx context.Context, projectConfig *ProjectConfig) error {
 	var projectTools []tools.ExternalTool

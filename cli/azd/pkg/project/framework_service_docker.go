@@ -27,6 +27,8 @@ type dockerProject struct {
 	framework FrameworkService
 }
 
+// NewDockerProject creates a new instance of a Azd project that
+// leverages docker for building
 func NewDockerProject(
 	env *environment.Environment,
 	docker docker.Docker,
@@ -37,19 +39,23 @@ func NewDockerProject(
 	}
 }
 
+// Gets the required external tools for the project
 func (p *dockerProject) RequiredExternalTools(context.Context) []tools.ExternalTool {
 	return []tools.ExternalTool{p.docker}
 }
 
+// Initializes the docker project
 func (p *dockerProject) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
 	return nil
 }
 
+// Sets the inner framework service used for restore and build command
 func (p *dockerProject) SetSource(ctx context.Context, inner FrameworkService) error {
 	p.framework = inner
 	return nil
 }
 
+// Restores the dependencies for the docker project
 func (p *dockerProject) Restore(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
@@ -59,6 +65,7 @@ func (p *dockerProject) Restore(
 	return p.framework.Restore(ctx, serviceConfig)
 }
 
+// Builds the docker project based on the docker options specified within the Service configuration
 func (p *dockerProject) Build(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,

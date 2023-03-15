@@ -12,6 +12,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
+// ResourceManager provides a layer to query for Azure resource for azd project and services
+// This would typically be used during deployment when azd need to deploy applications
+// to the Azure resource hosting the application
 type ResourceManager interface {
 	GetResourceGroupName(ctx context.Context, projectConfig *ProjectConfig) (string, error)
 	GetServiceResources(
@@ -36,6 +39,7 @@ type resourceManager struct {
 	azCli azcli.AzCli
 }
 
+// NewResourceManager creates a new instance of the project resource manager
 func NewResourceManager(env *environment.Environment, azCli azcli.AzCli) ResourceManager {
 	return &resourceManager{
 		env:   env,

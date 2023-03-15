@@ -25,6 +25,7 @@ type functionAppTarget struct {
 	cli azcli.AzCli
 }
 
+// NewFunctionAppTarget creates a new instance of the Function App target
 func NewFunctionAppTarget(
 	env *environment.Environment,
 	azCli azcli.AzCli,
@@ -35,14 +36,17 @@ func NewFunctionAppTarget(
 	}
 }
 
+// Gets the required external tools for the Function app
 func (f *functionAppTarget) RequiredExternalTools(context.Context) []tools.ExternalTool {
 	return []tools.ExternalTool{}
 }
 
+// Initializes the function app target
 func (f *functionAppTarget) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
 	return nil
 }
 
+// Prepares a zip archive from the specified build output
 func (f *functionAppTarget) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
@@ -65,6 +69,7 @@ func (f *functionAppTarget) Package(
 	)
 }
 
+// Publishes the prepared zip archive using Zip deploy to the Azure App Service resource
 func (f *functionAppTarget) Publish(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
@@ -124,6 +129,7 @@ func (f *functionAppTarget) Publish(
 	)
 }
 
+// Gets the exposed endpoints for the Function App
 func (f *functionAppTarget) Endpoints(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,

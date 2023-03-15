@@ -23,6 +23,7 @@ type appServiceTarget struct {
 	cli azcli.AzCli
 }
 
+// NewAppServiceTarget creates a new instance of the AppServiceTarget
 func NewAppServiceTarget(
 	env *environment.Environment,
 	azCli azcli.AzCli,
@@ -34,14 +35,17 @@ func NewAppServiceTarget(
 	}
 }
 
+// Gets the required external tools
 func (st *appServiceTarget) RequiredExternalTools(context.Context) []tools.ExternalTool {
 	return []tools.ExternalTool{}
 }
 
+// Initializes the AppService target
 func (st *appServiceTarget) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
 	return nil
 }
 
+// Prepares a zip archive from the specified build output
 func (st *appServiceTarget) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
@@ -64,6 +68,7 @@ func (st *appServiceTarget) Package(
 	)
 }
 
+// Publishes the prepared zip archive using Zip deploy to the Azure App Service resource
 func (st *appServiceTarget) Publish(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
@@ -123,6 +128,7 @@ func (st *appServiceTarget) Publish(
 	)
 }
 
+// Gets the exposed endpoints for the App Service
 func (st *appServiceTarget) Endpoints(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,

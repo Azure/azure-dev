@@ -76,14 +76,17 @@ func NewContainerAppTarget(
 	}
 }
 
+// Gets the required external tools
 func (at *containerAppTarget) RequiredExternalTools(context.Context) []tools.ExternalTool {
 	return []tools.ExternalTool{at.docker}
 }
 
+// Initializes the Container App target
 func (at *containerAppTarget) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
 	return nil
 }
 
+// Prepares and tags the container image from the build output based on the specified service configuration
 func (at *containerAppTarget) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
@@ -147,6 +150,7 @@ func (at *containerAppTarget) Package(
 	)
 }
 
+// Deploys service container images to ACR and provisions the container app service.
 func (at *containerAppTarget) Publish(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
@@ -285,6 +289,7 @@ func (at *containerAppTarget) Publish(
 	)
 }
 
+// Gets endpoint for the container app service
 func (at *containerAppTarget) Endpoints(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,

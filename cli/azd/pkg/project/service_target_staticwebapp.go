@@ -29,6 +29,7 @@ type staticWebAppTarget struct {
 	swa swa.SwaCli
 }
 
+// NewStaticWebAppTarget creates a new instance of the Static Web App target
 func NewStaticWebAppTarget(
 	env *environment.Environment,
 	azCli azcli.AzCli,
@@ -41,14 +42,17 @@ func NewStaticWebAppTarget(
 	}
 }
 
+// Gets the required external tools for the Static Web App target
 func (at *staticWebAppTarget) RequiredExternalTools(context.Context) []tools.ExternalTool {
 	return []tools.ExternalTool{at.swa}
 }
 
+// Initializes the static web app target
 func (at *staticWebAppTarget) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
 	return nil
 }
 
+// Sets the build output that will be consumed for the publish operation
 func (at *staticWebAppTarget) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
@@ -68,6 +72,7 @@ func (at *staticWebAppTarget) Package(
 	)
 }
 
+// Publishes the packaged build output using the SWA CLI
 func (at *staticWebAppTarget) Publish(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
@@ -142,6 +147,7 @@ func (at *staticWebAppTarget) Publish(
 	)
 }
 
+// Gets the endpoints for the static web app
 func (at *staticWebAppTarget) Endpoints(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,

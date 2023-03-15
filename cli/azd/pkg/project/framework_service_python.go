@@ -24,6 +24,7 @@ type pythonProject struct {
 	cli *python.PythonCli
 }
 
+// NewPythonProject creates a new instance of the Python project
 func NewPythonProject(commandRunner exec.CommandRunner, env *environment.Environment) FrameworkService {
 	return &pythonProject{
 		env: env,
@@ -31,14 +32,17 @@ func NewPythonProject(commandRunner exec.CommandRunner, env *environment.Environ
 	}
 }
 
+// Gets the required external tools for the project
 func (pp *pythonProject) RequiredExternalTools(context.Context) []tools.ExternalTool {
 	return []tools.ExternalTool{pp.cli}
 }
 
+// Initializes the Python project
 func (pp *pythonProject) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
 	return nil
 }
 
+// Restores the project dependencies using PIP requirements.txt
 func (pp *pythonProject) Restore(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
@@ -81,6 +85,7 @@ func (pp *pythonProject) Restore(
 	)
 }
 
+// Builds the Python project by copying source files into the configured output path
 func (pp *pythonProject) Build(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,

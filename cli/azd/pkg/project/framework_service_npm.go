@@ -22,6 +22,7 @@ type npmProject struct {
 	cli npm.NpmCli
 }
 
+// NewNpmProject creates a new instance of a NPM project
 func NewNpmProject(commandRunner exec.CommandRunner, env *environment.Environment) FrameworkService {
 	return &npmProject{
 		env: env,
@@ -29,14 +30,17 @@ func NewNpmProject(commandRunner exec.CommandRunner, env *environment.Environmen
 	}
 }
 
+// Gets the required external tools for the project
 func (np *npmProject) RequiredExternalTools(context.Context) []tools.ExternalTool {
 	return []tools.ExternalTool{np.cli}
 }
 
+// Initializes the NPM project
 func (np *npmProject) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
 	return nil
 }
 
+// Restores dependencies for the NPM project using npm install command
 func (np *npmProject) Restore(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
@@ -55,6 +59,7 @@ func (np *npmProject) Restore(
 	)
 }
 
+// Builds the project executing the npm `build` script defined within the project package.json
 func (np *npmProject) Build(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,

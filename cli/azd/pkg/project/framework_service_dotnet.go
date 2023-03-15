@@ -24,6 +24,7 @@ type dotnetProject struct {
 	dotnetCli dotnet.DotNetCli
 }
 
+// NewDotNetProject creates a new instance of a dotnet project
 func NewDotNetProject(
 	commandRunner exec.CommandRunner, env *environment.Environment,
 ) FrameworkService {
@@ -33,10 +34,12 @@ func NewDotNetProject(
 	}
 }
 
+// Gets the required external tools for the project
 func (dp *dotnetProject) RequiredExternalTools(context.Context) []tools.ExternalTool {
 	return []tools.ExternalTool{dp.dotnetCli}
 }
 
+// Initializes the docker project
 func (dp *dotnetProject) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
 	if err := dp.dotnetCli.InitializeSecret(ctx, serviceConfig.Path()); err != nil {
 		return err
@@ -51,6 +54,7 @@ func (dp *dotnetProject) Initialize(ctx context.Context, serviceConfig *ServiceC
 	return nil
 }
 
+// Restores the dependencies for the project
 func (dp *dotnetProject) Restore(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
@@ -67,6 +71,7 @@ func (dp *dotnetProject) Restore(
 	)
 }
 
+// Builds the dotnet project using the dotnet CLI
 func (dp *dotnetProject) Build(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,

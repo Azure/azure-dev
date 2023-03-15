@@ -68,3 +68,26 @@ Discussion warranted:
 - Should we have `azd deploy --all` instead of `azd deploy` deploy all services, when under a project directory? Every time I've hit `azd deploy`, I have always realized that I meant to do `azd deploy --service <service>` for the service code changes I was working under.
 - Should `azd deploy` deploy only the current service, when the working directory is under a service directory? This does not touch the deploy behavior for outside the service directory. I personally think this is what users might expect, but I can see an argument against it since it may be implicit behavior.
 - Should `azd deploy --service <service>` be moved to `azd deploy <service>`? I personally feel better about the latter design. We can still allow parsing for `--service`, but remove it in deprecated stage.  If in the future, `azd` supports deploying other things besides services, it could look like: `azd deploy --notAService <notAService name>`.
+- Do we need to trim flags such as `--service`, `--environment`, `--location` from `azd up`? Currently we have:
+  ```
+  Usage
+    azd up [flags]
+
+  Flags
+      -b, --branch string       	: The template branch to initialize from.
+      -e, --environment string  	: The name of the environment to use.
+      -h, --help                	: Gets help for up.
+      -l, --location string     	: Azure location for the new environment
+          --no-progress         	: Suppresses progress information.
+      -o, --output string       	: The output format (the supported formats are json, none).
+          --service string      	: Deploys a specific service (when the string is unspecified, all services that are listed in the azure.yaml file are deployed).
+          --subscription string 	: Name or ID of an Azure subscription to use for the new environment
+      -t, --template string     	: The template to use when you initialize the project. You can use Full URI, <owner>/<repository>, or <repository> if it's part of the azure-samples organization.
+
+  Global Flags
+      -C, --cwd string 	: Sets the current working directory.
+          --debug      	: Enables debugging and diagnostics logging.
+          --no-prompt  	: Accepts the default value instead of prompting, or it fails if there is no default.
+  ```
+
+  Personally, it is hard for a user to imagine how the flags play out with the overall command. `azd up --template <x>` makes sense, but `azd up --template <x> --environment <envName> --subscription <sub> --location <loc>` seems too much. The environment should be predefined, and if not, the user should be prompted. If the user needs to customize initialization, running `azd init` with these flags makes more sense to me.

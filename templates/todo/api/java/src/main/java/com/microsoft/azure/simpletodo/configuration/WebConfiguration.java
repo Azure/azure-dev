@@ -25,7 +25,7 @@ public class WebConfiguration implements WebMvcConfigurer {
 
                 if (apiUrl != "") {
                     registry.addMapping("/**").allowedOrigins("https://portal.azure.com",
-                            "https://ms.portal.azure.com",
+                            "https://ms.portal.azure.com", "http://localhost:3000/",
                             apiUrl).allowedMethods("*").allowedHeaders("*");
                 } else {
                     registry.addMapping("/**").allowedOrigins("*").allowedMethods("*").allowedHeaders("*");

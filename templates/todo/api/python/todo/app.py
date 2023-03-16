@@ -14,6 +14,7 @@ apiUrl = os.environ.get('REACT_APP_WEB_BASE_URL')
 if apiUrl != "":
     origins = ["https://portal.azure.com",
                "https://ms.portal.azure.com",
+               "http://localhost:3000/",
                apiUrl]
 else:
     origins = ["*"]

@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"os"
 
@@ -214,6 +215,35 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			return env, nil
 		},
 	)
+	container.RegisterSingleton(func(
+		ctx context.Context,
+		console input.Console,
+		accountManager account.Manager,
+		userProfileService *azcli.UserProfileService,
+		subResolver account.SubscriptionTenantResolver,
+	) environment.EnvironmentResolver {
+		return func() (*environment.Environment, error) {
+			azdCtx, err := azdcontext.NewAzdContext()
+			if err != nil {
+				return nil, err
+			}
+			azdEnvs, err := azdCtx.ListEnvironments()
+			if err != nil {
+				return nil, err
+			}
+			var selectedEnv string
+			for _, env := range azdEnvs {
+				if env.IsDefault {
+					selectedEnv = env.Name
+				}
+			}
+			if selectedEnv == "" {
+				log.Panic("Found azd environments but none is selected.")
+			}
+			return loadOrInitEnvironment(
+				ctx, &selectedEnv, azdCtx, console, accountManager, userProfileService, subResolver)
+		}
+	})
 
 	// Lazy loads an existing environment, erroring out if not available
 	// One can repeatedly call GetValue to wait until the environment is available.

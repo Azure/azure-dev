@@ -21,7 +21,7 @@ public class WebConfiguration implements WebMvcConfigurer {
         return new WebMvcConfigurer() {
             @Override
             public void addCorsMappings(CorsRegistry registry) {
-                var apiUrl = System.getProperty("REACT_APP_WEB_BASE_URL");
+                String apiUrl = System.getenv("REACT_APP_WEB_BASE_URL");
 
                 if (apiUrl != "") {
                     registry.addMapping("/**").allowedOrigins("https://portal.azure.com",

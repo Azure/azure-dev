@@ -10,7 +10,7 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 import os
 
 # CORS origins
-apiUrl = os.environ(['REACT_APP_WEB_BASE_URL'])
+apiUrl = os.environ.get('REACT_APP_WEB_BASE_URL')
 if apiUrl != "":
     origins = ["https://portal.azure.com",
                "https://ms.portal.azure.com",

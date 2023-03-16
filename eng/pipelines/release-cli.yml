@@ -92,10 +92,6 @@ stages:
               Title: Build Test MSI
               Condition: and(succeeded(), eq(variables['BuildTestMsi'], 'true'))
 
-          - template: /eng/pipelines/templates/steps/install-bicep.yml
-            parameters:
-              Condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
-
           - template: /eng/pipelines/templates/steps/install-terraform.yml
           - template: /eng/pipelines/templates/steps/install-kubectl.yml
 

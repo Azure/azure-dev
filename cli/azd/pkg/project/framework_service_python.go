@@ -93,33 +93,15 @@ func (pp *pythonProject) Build(
 ) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServiceBuildResult, ServiceProgress]) {
-			publishRoot, err := os.MkdirTemp("", "azd")
-			if err != nil {
-				task.SetError(fmt.Errorf("creating package directory for %s: %w", serviceConfig.Name, err))
-				return
-			}
-
 			publishSource := serviceConfig.Path()
 
 			if serviceConfig.OutputPath != "" {
 				publishSource = filepath.Join(publishSource, serviceConfig.OutputPath)
 			}
 
-			task.SetProgress(NewServiceProgress("Copying deployment package"))
-
-			if err := copy.Copy(
-				publishSource,
-				publishRoot,
-				skipPatterns(
-					filepath.Join(publishSource, "__pycache__"), filepath.Join(publishSource, ".venv"),
-					filepath.Join(publishSource, ".azure"))); err != nil {
-				task.SetError(fmt.Errorf("publishing for %s: %w", serviceConfig.Name, err))
-				return
-			}
-
 			task.SetResult(&ServiceBuildResult{
 				Restore:         restoreOutput,
-				BuildOutputPath: publishRoot,
+				BuildOutputPath: publishSource,
 			})
 		},
 	)
@@ -132,9 +114,28 @@ func (pp *pythonProject) Package(
 ) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
+			publishRoot, err := os.MkdirTemp("", "azd")
+			if err != nil {
+				task.SetError(fmt.Errorf("creating package directory for %s: %w", serviceConfig.Name, err))
+				return
+			}
+
+			publishSource := buildOutput.BuildOutputPath
+
+			task.SetProgress(NewServiceProgress("Copying deployment package"))
+			if err := copy.Copy(
+				publishSource,
+				publishRoot,
+				skipPatterns(
+					filepath.Join(publishSource, "__pycache__"), filepath.Join(publishSource, ".venv"),
+					filepath.Join(publishSource, ".azure"))); err != nil {
+				task.SetError(fmt.Errorf("publishing for %s: %w", serviceConfig.Name, err))
+				return
+			}
+
 			task.SetResult(&ServicePackageResult{
 				Build:       buildOutput,
-				PackagePath: buildOutput.BuildOutputPath,
+				PackagePath: publishRoot,
 			})
 		},
 	)

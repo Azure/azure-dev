@@ -13,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
+	"github.com/azure/azure-dev/cli/azd/pkg/project/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
@@ -48,19 +49,19 @@ func (st *appServiceTarget) Initialize(ctx context.Context, serviceConfig *Servi
 func (st *appServiceTarget) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	buildOutput *ServiceBuildResult,
+	packageOutput *ServicePackageResult,
 ) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
 			task.SetProgress(NewServiceProgress("Compressing deployment artifacts"))
-			zipFilePath, err := createDeployableZip(serviceConfig.Name, buildOutput.BuildOutputPath)
+			zipFilePath, err := internal.CreateDeployableZip(serviceConfig.Name, packageOutput.PackagePath)
 			if err != nil {
 				task.SetError(err)
 				return
 			}
 
 			task.SetResult(&ServicePackageResult{
-				Build:       buildOutput,
+				Build:       packageOutput.Build,
 				PackagePath: zipFilePath,
 			})
 		},

@@ -137,3 +137,15 @@ func (m *mavenProject) Build(
 		},
 	)
 }
+
+func (m *mavenProject) Package(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	buildOutput *ServiceBuildResult,
+) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
+	return async.RunTaskWithProgress(
+		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
+
+		},
+	)
+}

@@ -17,7 +17,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/kubectl"
-	"github.com/benbjohnson/clock"
 )
 
 const (
@@ -60,7 +59,6 @@ type aksTarget struct {
 	containerRegistryService azcli.ContainerRegistryService
 	docker                   docker.Docker
 	kubectl                  kubectl.KubectlCli
-	clock                    clock.Clock
 }
 
 type aksPackageResult struct {
@@ -75,7 +73,6 @@ func NewAksTarget(
 	containerRegistryService azcli.ContainerRegistryService,
 	kubectlCli kubectl.KubectlCli,
 	docker docker.Docker,
-	clock clock.Clock,
 ) ServiceTarget {
 	return &aksTarget{
 		env:                      env,
@@ -83,7 +80,6 @@ func NewAksTarget(
 		containerRegistryService: containerRegistryService,
 		docker:                   docker,
 		kubectl:                  kubectlCli,
-		clock:                    clock,
 	}
 }
 
@@ -104,60 +100,11 @@ func (t *aksTarget) Initialize(ctx context.Context, serviceConfig *ServiceConfig
 func (t *aksTarget) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	buildOutput *ServiceBuildResult,
+	packageOutput *ServicePackageResult,
 ) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
-			loginServer, has := t.env.Values[environment.ContainerRegistryEndpointEnvVarName]
-			if !has {
-				task.SetError(fmt.Errorf(
-					"could not determine container registry endpoint, ensure %s is set as an output of your infrastructure",
-					environment.ContainerRegistryEndpointEnvVarName,
-				))
-				return
-			}
-
-			imageId := buildOutput.BuildOutputPath
-			if imageId == "" {
-				task.SetError(errors.New("missing container image id from build output"))
-				return
-			}
-
-			imageTag, err := t.generateImageTag(serviceConfig)
-			if err != nil {
-				task.SetError(fmt.Errorf("failed generating image tag: %w", err))
-				return
-			}
-
-			fullTag := fmt.Sprintf(
-				"%s/%s",
-				loginServer,
-				imageTag,
-			)
-
-			// Tag image.
-			log.Printf("tagging image %s as %s", imageId, fullTag)
-			task.SetProgress(NewServiceProgress("Tagging image"))
-			if err := t.docker.Tag(ctx, serviceConfig.Path(), imageId, fullTag); err != nil {
-				task.SetError(fmt.Errorf("failed tagging image: %w", err))
-				return
-			}
-
-			// Save the name of the image we pushed into the environment with a well known key.
-			t.env.SetServiceProperty(serviceConfig.Name, "IMAGE_NAME", fullTag)
-
-			if err := t.env.Save(); err != nil {
-				task.SetError(fmt.Errorf("saving image name to environment: %w", err))
-				return
-			}
-
-			task.SetResult(&ServicePackageResult{
-				Details: &aksPackageResult{
-					ImageTag:    fullTag,
-					LoginServer: loginServer,
-				},
-				PackagePath: fullTag,
-			})
+			task.SetResult(packageOutput)
 		},
 	)
 }
@@ -604,24 +551,6 @@ func (t *aksTarget) getIngressEndpoints(
 	}
 
 	return endpoints, nil
-}
-
-func (t *aksTarget) generateImageTag(serviceConfig *ServiceConfig) (string, error) {
-	configuredTag, err := serviceConfig.Docker.Tag.Envsubst(t.env.Getenv)
-	if err != nil {
-		return "", err
-	}
-
-	if configuredTag != "" {
-		return configuredTag, nil
-	}
-
-	return fmt.Sprintf("%s/%s-%s:azd-deploy-%d",
-		strings.ToLower(serviceConfig.Project.Name),
-		strings.ToLower(serviceConfig.Name),
-		strings.ToLower(t.env.GetEnvName()),
-		t.clock.Now().Unix(),
-	), nil
 }
 
 func (t *aksTarget) getK8sNamespace(serviceConfig *ServiceConfig) string {

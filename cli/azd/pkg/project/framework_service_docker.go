@@ -5,13 +5,16 @@ package project
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
+	"github.com/benbjohnson/clock"
 )
 
 type DockerProjectOptions struct {
@@ -21,10 +24,16 @@ type DockerProjectOptions struct {
 	Tag      ExpandableString `json:"tag"`
 }
 
+type dockerPackageResult struct {
+	ImageTag    string
+	LoginServer string
+}
+
 type dockerProject struct {
 	env       *environment.Environment
 	docker    docker.Docker
 	framework FrameworkService
+	clock     clock.Clock
 }
 
 // NewDockerProject creates a new instance of a Azd project that
@@ -32,10 +41,12 @@ type dockerProject struct {
 func NewDockerProject(
 	env *environment.Environment,
 	docker docker.Docker,
+	clock clock.Clock,
 ) CompositeFrameworkService {
 	return &dockerProject{
 		env:    env,
 		docker: docker,
+		clock:  clock,
 	}
 }
 
@@ -112,12 +123,78 @@ func (p *dockerProject) Package(
 ) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
+			// Login to container registry.
+			loginServer, has := p.env.Values[environment.ContainerRegistryEndpointEnvVarName]
+			if !has {
+				task.SetError(fmt.Errorf(
+					"could not determine container registry endpoint, ensure %s is set as an output of your infrastructure",
+					environment.ContainerRegistryEndpointEnvVarName,
+				))
+				return
+			}
+
+			imageId := buildOutput.BuildOutputPath
+			if imageId == "" {
+				task.SetError(errors.New("missing container image id from build output"))
+				return
+			}
+
+			imageTag, err := p.generateImageTag(serviceConfig)
+			if err != nil {
+				task.SetError(fmt.Errorf("generating image tag: %w", err))
+				return
+			}
+
+			fullTag := fmt.Sprintf(
+				"%s/%s",
+				loginServer,
+				imageTag,
+			)
+
+			// Tag image.
+			log.Printf("tagging image %s as %s", imageId, fullTag)
+			task.SetProgress(NewServiceProgress("Tagging image"))
+			if err := p.docker.Tag(ctx, serviceConfig.Path(), imageId, fullTag); err != nil {
+				task.SetError(fmt.Errorf("tagging image: %w", err))
+				return
+			}
+
+			// Save the name of the image we pushed into the environment with a well known key.
+			log.Printf("writing image name to environment")
+			p.env.SetServiceProperty(serviceConfig.Name, "IMAGE_NAME", fullTag)
+
+			if err := p.env.Save(); err != nil {
+				task.SetError(fmt.Errorf("saving image name to environment: %w", err))
+				return
+			}
+
 			task.SetResult(&ServicePackageResult{
-				Build:       buildOutput,
-				PackagePath: buildOutput.BuildOutputPath,
+				Build: buildOutput,
+				Details: &dockerPackageResult{
+					ImageTag:    fullTag,
+					LoginServer: loginServer,
+				},
 			})
 		},
 	)
+}
+
+func (p *dockerProject) generateImageTag(serviceConfig *ServiceConfig) (string, error) {
+	configuredTag, err := serviceConfig.Docker.Tag.Envsubst(p.env.Getenv)
+	if err != nil {
+		return "", err
+	}
+
+	if configuredTag != "" {
+		return configuredTag, nil
+	}
+
+	return fmt.Sprintf("%s/%s-%s:azd-deploy-%d",
+		strings.ToLower(serviceConfig.Project.Name),
+		strings.ToLower(serviceConfig.Name),
+		strings.ToLower(p.env.GetEnvName()),
+		p.clock.Now().Unix(),
+	), nil
 }
 
 func getDockerOptionsWithDefaults(options DockerProjectOptions) DockerProjectOptions {

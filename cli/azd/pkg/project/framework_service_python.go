@@ -125,6 +125,21 @@ func (pp *pythonProject) Build(
 	)
 }
 
+func (pp *pythonProject) Package(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	buildOutput *ServiceBuildResult,
+) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
+	return async.RunTaskWithProgress(
+		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
+			task.SetResult(&ServicePackageResult{
+				Build:       buildOutput,
+				PackagePath: buildOutput.BuildOutputPath,
+			})
+		},
+	)
+}
+
 func (pp *pythonProject) getVenvName(serviceConfig *ServiceConfig) string {
 	trimmedPath := strings.TrimSpace(serviceConfig.Path())
 	if len(trimmedPath) > 0 && trimmedPath[len(trimmedPath)-1] == os.PathSeparator {

@@ -105,6 +105,21 @@ func (p *dockerProject) Build(
 	)
 }
 
+func (p *dockerProject) Package(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	buildOutput *ServiceBuildResult,
+) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
+	return async.RunTaskWithProgress(
+		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
+			task.SetResult(&ServicePackageResult{
+				Build:       buildOutput,
+				PackagePath: buildOutput.BuildOutputPath,
+			})
+		},
+	)
+}
+
 func getDockerOptionsWithDefaults(options DockerProjectOptions) DockerProjectOptions {
 	if options.Path == "" {
 		options.Path = "./Dockerfile"

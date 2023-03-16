@@ -16,6 +16,7 @@ type NpmCli interface {
 	tools.ExternalTool
 	Install(ctx context.Context, project string, onlyProduction bool) error
 	Build(ctx context.Context, project string, env []string) error
+	RunScript(ctx context.Context, projectPath string, scriptName string, env []string) error
 }
 
 type npmCli struct {
@@ -84,7 +85,7 @@ func (cli *npmCli) Install(ctx context.Context, project string, onlyProduction b
 
 func (cli *npmCli) Build(ctx context.Context, project string, env []string) error {
 	runArgs := exec.
-		NewRunArgs("npm", "run", "build", "--if-present", "--production", "true").
+		NewRunArgs("npm", "run", "build", "--if-present").
 		WithCwd(project).
 		WithEnv(env)
 
@@ -93,5 +94,20 @@ func (cli *npmCli) Build(ctx context.Context, project string, env []string) erro
 	if err != nil {
 		return fmt.Errorf("failed to build project %s, %s: %w", project, res.String(), err)
 	}
+	return nil
+}
+
+func (cli *npmCli) RunScript(ctx context.Context, projectPath string, scriptName string, env []string) error {
+	runArgs := exec.
+		NewRunArgs("npm", "run", scriptName, "--if-present").
+		WithCwd(projectPath).
+		WithEnv(env)
+
+	_, err := cli.commandRunner.Run(ctx, runArgs)
+
+	if err != nil {
+		return fmt.Errorf("failed to run NPM script %s, %w", scriptName, err)
+	}
+
 	return nil
 }

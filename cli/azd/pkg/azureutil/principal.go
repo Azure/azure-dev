@@ -19,13 +19,13 @@ import (
 // (via ad sp signed-in-user), falling back to extracting the
 // `oid` claim from an access token a principal can not be
 // obtained in this way.
-func GetCurrentPrincipalId(ctx context.Context, userProfile *azcli.UserProfileService) (*string, error) {
-	principalId, err := userProfile.GetSignedInUserId(ctx)
+func GetCurrentPrincipalId(ctx context.Context, userProfile *azcli.UserProfileService, tenantId string) (*string, error) {
+	principalId, err := userProfile.GetSignedInUserId(ctx, tenantId)
 	if err == nil {
 		return principalId, nil
 	}
 
-	token, err := userProfile.GetAccessToken(ctx)
+	token, err := userProfile.GetAccessToken(ctx, tenantId)
 	if err != nil {
 		return nil, fmt.Errorf("getting access token: %w", err)
 	}

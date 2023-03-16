@@ -51,13 +51,15 @@ func newShowCmd() *cobra.Command {
 }
 
 type showAction struct {
-	console   input.Console
-	formatter output.Formatter
-	writer    io.Writer
-	azCli     azcli.AzCli
-	azdCtx    *azdcontext.AzdContext
-	env       *environment.Environment
-	flags     *showFlags
+	projectConfig   *project.ProjectConfig
+	resourceManager project.ResourceManager
+	console         input.Console
+	formatter       output.Formatter
+	writer          io.Writer
+	azCli           azcli.AzCli
+	azdCtx          *azdcontext.AzdContext
+	env             *environment.Environment
+	flags           *showFlags
 }
 
 func newShowAction(
@@ -65,33 +67,32 @@ func newShowAction(
 	formatter output.Formatter,
 	writer io.Writer,
 	azCli azcli.AzCli,
+	projectConfig *project.ProjectConfig,
+	resourceManager project.ResourceManager,
 	azdCtx *azdcontext.AzdContext,
 	env *environment.Environment,
 	flags *showFlags,
 ) actions.Action {
 	return &showAction{
-		console:   console,
-		formatter: formatter,
-		writer:    writer,
-		azCli:     azCli,
-		azdCtx:    azdCtx,
-		env:       env,
-		flags:     flags,
+		projectConfig:   projectConfig,
+		resourceManager: resourceManager,
+		console:         console,
+		formatter:       formatter,
+		writer:          writer,
+		azCli:           azCli,
+		azdCtx:          azdCtx,
+		env:             env,
+		flags:           flags,
 	}
 }
 
 func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	prj, err := project.LoadProjectConfig(s.azdCtx.ProjectPath())
-	if err != nil {
-		return nil, fmt.Errorf("loading project: %w", err)
-	}
-
 	res := contracts.ShowResult{
-		Name:     prj.Name,
-		Services: make(map[string]contracts.ShowService, len(prj.Services)),
+		Name:     s.projectConfig.Name,
+		Services: make(map[string]contracts.ShowService, len(s.projectConfig.Services)),
 	}
 
-	for name, svc := range prj.Services {
+	for name, svc := range s.projectConfig.Services {
 		path, err := getFullPathToProjectForService(svc)
 		if err != nil {
 			return nil, err
@@ -112,8 +113,8 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	resourceManager := infra.NewAzureResourceManager(s.azCli)
 
 	if resourceGroupName, err := resourceManager.FindResourceGroupForEnvironment(ctx, s.env); err == nil {
-		for name, serviceConfig := range prj.Services {
-			if resources, err := serviceConfig.GetServiceResources(ctx, resourceGroupName, s.env, s.azCli); err == nil {
+		for name, serviceConfig := range s.projectConfig.Services {
+			if resources, err := s.resourceManager.GetServiceResources(ctx, serviceConfig, resourceGroupName); err == nil {
 				resourceIds := make([]string, len(resources))
 				for idx, res := range resources {
 					resourceIds[idx] = res.Id

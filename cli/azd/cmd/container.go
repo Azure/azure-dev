@@ -25,8 +25,19 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/javac"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/kubectl"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/maven"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/npm"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/python"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/swa"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/terraform"
+	"github.com/benbjohnson/clock"
 	"github.com/mattn/go-colorable"
 	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
@@ -108,18 +119,6 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	})
 	container.RegisterSingleton(input.NewConsoleMessaging)
 
-	// Tools
-	container.RegisterSingleton(git.NewGitCli)
-	container.RegisterSingleton(func(rootOptions *internal.GlobalCommandOptions,
-		credential azcore.TokenCredential) azcli.AzCli {
-		return azcli.NewAzCli(credential, azcli.NewAzCliArgs{
-			EnableDebug:     rootOptions.EnableDebugLogging,
-			EnableTelemetry: rootOptions.EnableTelemetry,
-			HttpClient:      nil,
-		})
-	})
-
-	container.RegisterSingleton(azdcontext.NewAzdContext)
 	container.RegisterSingleton(func() httputil.HttpClient { return &http.Client{} })
 
 	// Auth
@@ -244,18 +243,20 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	)
 
 	// Project Config
-	container.RegisterSingleton(func(azdContext *azdcontext.AzdContext) (*project.ProjectConfig, error) {
-		if azdContext == nil {
-			return nil, azdcontext.ErrNoProject
-		}
+	container.RegisterSingleton(
+		func(ctx context.Context, azdContext *azdcontext.AzdContext) (*project.ProjectConfig, error) {
+			if azdContext == nil {
+				return nil, azdcontext.ErrNoProject
+			}
 
-		projectConfig, err := project.LoadProjectConfig(azdContext.ProjectPath())
-		if err != nil {
-			return nil, err
-		}
+			projectConfig, err := project.Load(ctx, azdContext.ProjectPath())
+			if err != nil {
+				return nil, err
+			}
 
-		return projectConfig, nil
-	})
+			return projectConfig, nil
+		},
+	)
 
 	// Lazy loads the project config from the Azd Context when it becomes available
 	container.RegisterSingleton(func(lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext]) *lazy.Lazy[*project.ProjectConfig] {
@@ -272,6 +273,9 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		})
 	})
 
+	container.RegisterSingleton(project.NewResourceManager)
+	container.RegisterSingleton(project.NewProjectManager)
+	container.RegisterSingleton(project.NewServiceManager)
 	container.RegisterSingleton(repository.NewInitializer)
 	container.RegisterSingleton(config.NewUserConfigManager)
 	container.RegisterSingleton(config.NewManager)
@@ -283,11 +287,74 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(account.NewSubscriptionsManager)
 	container.RegisterSingleton(azcli.NewManagedClustersService)
 	container.RegisterSingleton(azcli.NewContainerRegistryService)
-	container.RegisterSingleton(docker.NewDocker)
+	container.RegisterSingleton(func() ioc.ServiceLocator {
+		return ioc.NewServiceLocator(container)
+	})
 
 	container.RegisterSingleton(func(subManager *account.SubscriptionsManager) account.SubscriptionTenantResolver {
 		return subManager
 	})
+
+	// Tools
+	container.RegisterSingleton(func(rootOptions *internal.GlobalCommandOptions,
+		credential azcore.TokenCredential, httpClient httputil.HttpClient) azcli.AzCli {
+		return azcli.NewAzCli(credential, azcli.NewAzCliArgs{
+			EnableDebug:     rootOptions.EnableDebugLogging,
+			EnableTelemetry: rootOptions.EnableTelemetry,
+			HttpClient:      httpClient,
+		})
+	})
+	container.RegisterSingleton(bicep.NewBicepCli)
+	container.RegisterSingleton(docker.NewDocker)
+	container.RegisterSingleton(dotnet.NewDotNetCli)
+	container.RegisterSingleton(git.NewGitCli)
+	container.RegisterSingleton(github.NewGitHubCli)
+	container.RegisterSingleton(javac.NewCli)
+	container.RegisterSingleton(kubectl.NewKubectl)
+	container.RegisterSingleton(maven.NewMavenCli)
+	container.RegisterSingleton(npm.NewNpmCli)
+	container.RegisterSingleton(python.NewPythonCli)
+	container.RegisterSingleton(swa.NewSwaCli)
+	container.RegisterSingleton(terraform.NewTerraformCli)
+
+	// Other
+	container.RegisterSingleton(clock.New)
+
+	// Service Targets
+	serviceTargetMap := map[project.ServiceTargetKind]any{
+		"":                          project.NewAppServiceTarget,
+		project.AppServiceTarget:    project.NewAppServiceTarget,
+		project.AzureFunctionTarget: project.NewFunctionAppTarget,
+		project.ContainerAppTarget:  project.NewContainerAppTarget,
+		project.StaticWebAppTarget:  project.NewStaticWebAppTarget,
+		project.AksTarget:           project.NewAksTarget,
+	}
+
+	for target, constructor := range serviceTargetMap {
+		if err := container.RegisterNamedSingleton(string(target), constructor); err != nil {
+			panic(fmt.Errorf("registering service target %s: %w", target, err))
+		}
+	}
+
+	// Languages
+	frameworkServiceMap := map[project.ServiceLanguageKind]any{
+		"":                                project.NewDotNetProject,
+		project.ServiceLanguageDotNet:     project.NewDotNetProject,
+		project.ServiceLanguageCsharp:     project.NewDotNetProject,
+		project.ServiceLanguageFsharp:     project.NewDotNetProject,
+		project.ServiceLanguagePython:     project.NewPythonProject,
+		project.ServiceLanguagePy:         project.NewPythonProject,
+		project.ServiceLanguageJavaScript: project.NewNpmProject,
+		project.ServiceLanguageTypeScript: project.NewNpmProject,
+		project.ServiceLanguageJava:       project.NewMavenProject,
+		project.ServiceLanguageDocker:     project.NewDockerProject,
+	}
+
+	for language, constructor := range frameworkServiceMap {
+		if err := container.RegisterNamedSingleton(string(language), constructor); err != nil {
+			panic(fmt.Errorf("registering framework service %s: %w", language, err))
+		}
+	}
 
 	// Required for nested actions called from composite actions like 'up'
 	registerActionInitializer[*initAction](container, "azd-init-action")

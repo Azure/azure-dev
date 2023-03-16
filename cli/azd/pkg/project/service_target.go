@@ -38,7 +38,7 @@ type ServiceTarget interface {
 	Package(
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
-		buildOutput *ServiceBuildResult,
+		packageOutput *ServicePackageResult,
 	) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress]
 
 	// Publish deploys the given deployment artifact to the target resource

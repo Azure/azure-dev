@@ -24,7 +24,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/kubectl"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/ostest"
-	"github.com/benbjohnson/clock"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 )
@@ -77,7 +76,9 @@ func Test_Package_Publish_HappyPath(t *testing.T) {
 	packageTask := serviceTarget.Package(
 		*mockContext.Context,
 		serviceConfig,
-		&ServiceBuildResult{BuildOutputPath: "IMAGE_ID"},
+		&ServicePackageResult{
+			PackagePath: "IMAGE_ID",
+		},
 	)
 	logProgress(packageTask)
 	packageResult, err := packageTask.Await()
@@ -152,7 +153,9 @@ func Test_Package_No_Container_Registry(t *testing.T) {
 	packageTask := serviceTarget.Package(
 		*mockContext.Context,
 		serviceConfig,
-		&ServiceBuildResult{BuildOutputPath: "IMAGE_ID"},
+		&ServicePackageResult{
+			PackagePath: "IMAGE_ID",
+		},
 	)
 	logProgress(packageTask)
 	packageResult, err := packageTask.Await()
@@ -518,7 +521,6 @@ func createServiceTarget(
 		containerRegistryService,
 		kubeCtl,
 		dockerCli,
-		clock.New(),
 	)
 }
 

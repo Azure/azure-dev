@@ -307,28 +307,48 @@ func (sm *serviceManager) Package(
 	buildOutput *ServiceBuildResult,
 ) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
 	return async.RunTaskWithProgress(func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
+		frameworkService, err := sm.GetFrameworkService(ctx, serviceConfig)
+		if err != nil {
+			task.SetError(fmt.Errorf("getting framework service: %w", err))
+			return
+		}
+
 		serviceTarget, err := sm.GetServiceTarget(ctx, serviceConfig)
 		if err != nil {
 			task.SetError(fmt.Errorf("getting service target: %w", err))
 			return
 		}
 
-		packageResult, err := runCommand(
-			ctx,
-			task,
-			ServiceEventPackage,
-			serviceConfig,
-			func() *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
-				return serviceTarget.Package(ctx, serviceConfig, buildOutput)
-			},
-		)
+		eventArgs := ServiceLifecycleEventArgs{
+			Project: serviceConfig.Project,
+			Service: serviceConfig,
+		}
+
+		err = serviceConfig.Invoke(ctx, ServiceEventPackage, eventArgs, func() error {
+			frameworkPackageTask := frameworkService.Package(ctx, serviceConfig, buildOutput)
+			syncProgress(task, frameworkPackageTask.Progress())
+
+			frameworkPackageResult, err := frameworkPackageTask.Await()
+			if err != nil {
+				return err
+			}
+
+			serviceTargetPackageTask := serviceTarget.Package(ctx, serviceConfig, frameworkPackageResult)
+			syncProgress(task, serviceTargetPackageTask.Progress())
+
+			serviceTargetPackageResult, err := serviceTargetPackageTask.Await()
+			if err != nil {
+				return err
+			}
+
+			task.SetResult(serviceTargetPackageResult)
+			return nil
+		})
 
 		if err != nil {
 			task.SetError(fmt.Errorf("failed packaging service '%s': %w", serviceConfig.Name, err))
 			return
 		}
-
-		task.SetResult(packageResult)
 	})
 }
 

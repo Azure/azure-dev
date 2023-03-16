@@ -67,6 +67,33 @@ func (np *npmProject) Build(
 ) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServiceBuildResult, ServiceProgress]) {
+			task.SetProgress(NewServiceProgress("Building service"))
+			if err := np.cli.RunScript(ctx, serviceConfig.Path(), "build", np.env.Environ()); err != nil {
+				task.SetError(err)
+				return
+			}
+
+			publishSource := serviceConfig.Path()
+
+			if serviceConfig.OutputPath != "" {
+				publishSource = filepath.Join(publishSource, serviceConfig.OutputPath)
+			}
+
+			task.SetResult(&ServiceBuildResult{
+				Restore:         restoreOutput,
+				BuildOutputPath: publishSource,
+			})
+		},
+	)
+}
+
+func (np *npmProject) Package(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	buildOutput *ServiceBuildResult,
+) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
+	return async.RunTaskWithProgress(
+		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
 			publishRoot, err := os.MkdirTemp("", "azd")
 			if err != nil {
 				task.SetError(fmt.Errorf("creating package directory for %s: %w", serviceConfig.Name, err))
@@ -76,8 +103,8 @@ func (np *npmProject) Build(
 			// Run Build, injecting env.
 			envs := append(np.env.Environ(), "NODE_ENV=production")
 
-			task.SetProgress(NewServiceProgress("Building service"))
-			if err := np.cli.Build(ctx, serviceConfig.Path(), envs); err != nil {
+			task.SetProgress(NewServiceProgress("Creating deployment package"))
+			if err := np.cli.RunScript(ctx, serviceConfig.Path(), "package", envs); err != nil {
 				task.SetError(err)
 				return
 			}
@@ -99,9 +126,9 @@ func (np *npmProject) Build(
 				return
 			}
 
-			task.SetResult(&ServiceBuildResult{
-				Restore:         restoreOutput,
-				BuildOutputPath: publishRoot,
+			task.SetResult(&ServicePackageResult{
+				Build:       buildOutput,
+				PackagePath: publishRoot,
 			})
 		},
 	)

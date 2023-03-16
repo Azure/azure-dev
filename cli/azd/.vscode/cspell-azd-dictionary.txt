@@ -107,7 +107,6 @@ testdata
 tracesdk
 tracetest
 Truef
-Typeflag
 unmarshalling
 unsetenvs
 unsets

@@ -136,9 +136,9 @@ ensure_rosetta() {
         say "Rosetta 2 is already installed and running. Nothing to do."
     else
         say "Rosetta 2 is not installed. You may be prompted to accept terms necessary to install Rosetta 2."
-        /usr/sbin/softwareupdate --install-rosetta
+
        
-        if [[ $? -eq 0 ]]; then
+        if /usr/sbin/softwareupdate --install-rosetta; then
         	say "Rosetta has been successfully installed."
         else
         	say_error "Rosetta 2 installation failed!"

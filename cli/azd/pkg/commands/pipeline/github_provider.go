@@ -499,7 +499,7 @@ func (p *GitHubCiProvider) configureClientCredentialsAuth(
 		return err
 	}
 
-	// set azure credential for pipelines can log in to Azure
+	/* #nosec G101 - Potential hardcoded credentials - false positive */
 	secretName := "AZURE_CREDENTIALS"
 	if err := ghCli.SetSecret(ctx, repoSlug, secretName, string(credentials)); err != nil {
 		return fmt.Errorf("failed setting %s secret: %w", secretName, err)
@@ -520,6 +520,7 @@ func (p *GitHubCiProvider) configureClientCredentialsAuth(
 			return fmt.Errorf("setting terraform env var credentials: %w", e)
 		}
 
+		/* #nosec G101 - Potential hardcoded credentials - false positive */
 		secretName = "ARM_TENANT_ID"
 		if err := ghCli.SetSecret(ctx, repoSlug, secretName, values.Tenant); err != nil {
 			return fmt.Errorf("setting terraform env var credentials:: %w", err)
@@ -528,6 +529,7 @@ func (p *GitHubCiProvider) configureClientCredentialsAuth(
 			Name: secretName,
 		})
 
+		/* #nosec G101 - Potential hardcoded credentials - false positive */
 		secretName = "ARM_CLIENT_ID"
 		if err := ghCli.SetSecret(ctx, repoSlug, secretName, values.ClientId); err != nil {
 			return fmt.Errorf("setting terraform env var credentials:: %w", err)
@@ -536,6 +538,7 @@ func (p *GitHubCiProvider) configureClientCredentialsAuth(
 			Name: secretName,
 		})
 
+		/* #nosec G101 - Potential hardcoded credentials - false positive */
 		secretName = "ARM_CLIENT_SECRET"
 		if err := ghCli.SetSecret(ctx, repoSlug, secretName, values.ClientSecret); err != nil {
 			return fmt.Errorf("setting terraform env var credentials:: %w", err)
@@ -689,8 +692,9 @@ func applyFederatedCredentials(
 	}
 
 	// Ensure the credential exists otherwise create a new one.
-	for _, fic := range federatedCredentials {
-		err := ensureFederatedCredential(ctx, graphClient, &application, existingCredsResponse.Value, &fic, console)
+	for i := range federatedCredentials {
+		err := ensureFederatedCredential(
+			ctx, graphClient, &application, existingCredsResponse.Value, &federatedCredentials[i], console)
 		if err != nil {
 			return err
 		}

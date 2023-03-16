@@ -26,7 +26,7 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v3
         with:
-          version: v1.51.1
+          version: v1.51.2
           args: -v --timeout 10m0s
           working-directory: cli/azd
 

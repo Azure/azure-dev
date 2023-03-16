@@ -484,9 +484,7 @@ func (sm *serviceManager) GetFrameworkService(ctx context.Context, serviceConfig
 			))
 		}
 
-		if err := compositeFramework.SetSource(ctx, frameworkService); err != nil {
-			return nil, fmt.Errorf("failed setting source framework service")
-		}
+		compositeFramework.SetSource(frameworkService)
 
 		frameworkService = compositeFramework
 	}

@@ -86,7 +86,7 @@ func (dp *dotnetProject) Build(
 			}
 
 			task.SetProgress(NewServiceProgress("Creating deployment package"))
-			if err := dp.dotnetCli.Build(ctx, serviceConfig.Path(), publishRoot); err != nil {
+			if err := dp.dotnetCli.Publish(ctx, serviceConfig.Path(), publishRoot); err != nil {
 				task.SetError(err)
 				return
 			}

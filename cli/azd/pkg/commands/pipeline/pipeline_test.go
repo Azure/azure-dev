@@ -176,12 +176,10 @@ func Test_detectProviders(t *testing.T) {
 		err := os.Mkdir(ghFolder, osutil.PermissionDirectory)
 		assert.NoError(t, err)
 
-		env := &environment.Environment{Values: map[string]string{}}
-
 		scmProvider, ciProvider, err := DetectProviders(
 			ctx,
 			azdContext,
-			env,
+			environment.Ephemeral(),
 			"other",
 			mockContext.Console,
 			mockContext.Credentials,
@@ -319,12 +317,10 @@ func Test_detectProviders(t *testing.T) {
 		err := os.Mkdir(ghFolder, osutil.PermissionDirectory)
 		assert.NoError(t, err)
 
-		env := &environment.Environment{Values: map[string]string{}}
-
 		scmProvider, ciProvider, err := DetectProviders(
 			ctx,
 			azdContext,
-			env,
+			environment.Ephemeral(),
 			"",
 			mockContext.Console,
 			mockContext.Credentials,
@@ -341,12 +337,10 @@ func Test_detectProviders(t *testing.T) {
 		err := os.Mkdir(azdoFolder, osutil.PermissionDirectory)
 		assert.NoError(t, err)
 
-		env := &environment.Environment{Values: map[string]string{}}
-
 		scmProvider, ciProvider, err := DetectProviders(
 			ctx,
 			azdContext,
-			env,
+			environment.Ephemeral(),
 			"",
 			mockContext.Console,
 			mockContext.Credentials,
@@ -366,12 +360,10 @@ func Test_detectProviders(t *testing.T) {
 		err = os.Mkdir(azdoFolder, osutil.PermissionDirectory)
 		assert.NoError(t, err)
 
-		env := &environment.Environment{Values: map[string]string{}}
-
 		scmProvider, ciProvider, err := DetectProviders(
 			ctx,
 			azdContext,
-			env,
+			environment.Ephemeral(),
 			"",
 			mockContext.Console,
 			mockContext.Credentials,
@@ -389,12 +381,10 @@ func Test_detectProviders(t *testing.T) {
 		err = os.Mkdir(azdoFolder, osutil.PermissionDirectory)
 		assert.NoError(t, err)
 
-		env := &environment.Environment{Values: map[string]string{}}
-
 		scmProvider, ciProvider, err := DetectProviders(
 			ctx,
 			azdContext,
-			env,
+			environment.Ephemeral(),
 			azdoLabel,
 			mockContext.Console,
 			mockContext.Credentials,
@@ -431,7 +421,7 @@ func Test_detectProviders(t *testing.T) {
 		err = os.Mkdir(ghFolder, osutil.PermissionDirectory)
 		assert.NoError(t, err)
 
-		env := &environment.Environment{Values: map[string]string{}}
+		env := environment.Ephemeral()
 
 		scmProvider, ciProvider, err := DetectProviders(
 			ctx,

@@ -82,8 +82,7 @@ services:
 	progressMessages := []string{}
 
 	framework := NewDockerProject(env, docker)
-	err = framework.SetSource(*mockContext.Context, internalFramework)
-	require.NoError(t, err)
+	framework.SetSource(internalFramework)
 
 	buildTask := framework.Build(*mockContext.Context, service, nil)
 	go func() {
@@ -170,8 +169,7 @@ services:
 	status := ""
 
 	framework := NewDockerProject(env, docker)
-	err = framework.SetSource(*mockContext.Context, internalFramework)
-	require.NoError(t, err)
+	framework.SetSource(internalFramework)
 
 	buildTask := framework.Build(*mockContext.Context, service, nil)
 	go func() {

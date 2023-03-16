@@ -55,5 +55,5 @@ type FrameworkService interface {
 // local inner-loop as well as release restore & package support.
 type CompositeFrameworkService interface {
 	FrameworkService
-	SetSource(ctx context.Context, inner FrameworkService) error
+	SetSource(inner FrameworkService)
 }

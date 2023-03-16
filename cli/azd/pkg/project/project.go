@@ -66,7 +66,7 @@ func Parse(ctx context.Context, yamlContent string) (*ProjectConfig, error) {
 	return &projectConfig, nil
 }
 
-// LoadProjectConfig loads the azure.yaml configuring into an viewable structure
+// Load hydrates the azure.yaml configuring into an viewable structure
 // This does not evaluate any tooling
 func Load(ctx context.Context, projectFilePath string) (*ProjectConfig, error) {
 	log.Printf("Reading project from file '%s'\n", projectFilePath)

@@ -50,9 +50,8 @@ func (p *dockerProject) Initialize(ctx context.Context, serviceConfig *ServiceCo
 }
 
 // Sets the inner framework service used for restore and build command
-func (p *dockerProject) SetSource(ctx context.Context, inner FrameworkService) error {
+func (p *dockerProject) SetSource(inner FrameworkService) {
 	p.framework = inner
-	return nil
 }
 
 // Restores the dependencies for the docker project

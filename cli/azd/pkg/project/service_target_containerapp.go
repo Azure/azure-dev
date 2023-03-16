@@ -61,6 +61,7 @@ func NewContainerAppTarget(
 	accountManager account.Manager,
 	serviceManager ServiceManager,
 	resourceManager ResourceManager,
+	clock clock.Clock,
 ) ServiceTarget {
 	return &containerAppTarget{
 		env:                      env,
@@ -72,7 +73,7 @@ func NewContainerAppTarget(
 		docker:                   docker,
 		console:                  console,
 		commandRunner:            commandRunner,
-		clock:                    clock.New(),
+		clock:                    clock,
 	}
 }
 

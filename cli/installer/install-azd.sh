@@ -128,10 +128,10 @@ ensure_rosetta() {
         # The current system is identified as an Intel system (either because it
         # is running in Rosetta 2 or the system is running on Intel silicon) so
         # Rosetta 2 is not needed.
+        say_verbose "Detected x86_64 system. Rosetta 2 is not needed."
         return
     fi
 
-    # TODO: Is this the right way to check for Rosetta 2?
     if /usr/bin/pgrep oahd >/dev/null 2>&1; then
         say "Rosetta 2 is already installed and running. Nothing to do."
     else
@@ -141,7 +141,8 @@ ensure_rosetta() {
         if [[ $? -eq 0 ]]; then
         	say "Rosetta has been successfully installed."
         else
-        	say_error "Rosetta installation failed!"
+        	say_error "Rosetta 2 installation failed!"
+            save_error_report_if_enabled "InstallFailed" "Rosetta2InstallFailed"
         	exit 1
         fi
     fi

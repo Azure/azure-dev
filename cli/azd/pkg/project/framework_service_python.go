@@ -16,6 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/python"
+	"github.com/otiai10/copy"
 )
 
 type pythonProject struct {
@@ -106,15 +107,12 @@ func (pp *pythonProject) Build(
 
 			task.SetProgress(NewServiceProgress("Copying deployment package"))
 
-			if err := buildForZip(
+			if err := copy.Copy(
 				publishSource,
 				publishRoot,
-				buildForZipOptions{
-					excludeConditions: []excludeDirEntryCondition{
-						excludeVirtualEnv,
-						excludePyCache,
-					},
-				}); err != nil {
+				skipPatterns(
+					filepath.Join(publishSource, "__pycache__"), filepath.Join(publishSource, ".venv"),
+					filepath.Join(publishSource, ".azure"))); err != nil {
 				task.SetError(fmt.Errorf("publishing for %s: %w", serviceConfig.Name, err))
 				return
 			}
@@ -127,27 +125,19 @@ func (pp *pythonProject) Build(
 	)
 }
 
-const cVenvConfigFileName = "pyvenv.cfg"
-
-func excludeVirtualEnv(path string, file os.FileInfo) bool {
-	if !file.IsDir() {
-		return false
-	}
-
-	// check if `pyvenv.cfg` is within the folder
-	if _, err := os.Stat(filepath.Join(path, cVenvConfigFileName)); err == nil {
-		return true
-	}
-	return false
-}
-
-func excludePyCache(path string, file os.FileInfo) bool {
-	if !file.IsDir() {
-		return false
-	}
-
-	folderName := strings.ToLower(file.Name())
-	return folderName == "__pycache__"
+func (pp *pythonProject) Package(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	buildOutput *ServiceBuildResult,
+) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
+	return async.RunTaskWithProgress(
+		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
+			task.SetResult(&ServicePackageResult{
+				Build:       buildOutput,
+				PackagePath: buildOutput.BuildOutputPath,
+			})
+		},
+	)
 }
 
 func (pp *pythonProject) getVenvName(serviceConfig *ServiceConfig) string {
@@ -157,4 +147,24 @@ func (pp *pythonProject) getVenvName(serviceConfig *ServiceConfig) string {
 	}
 	_, projectDir := filepath.Split(trimmedPath)
 	return projectDir + "_env"
+}
+
+// skipPatterns returns a `copy.Options` which will skip any files
+// that match a given pattern. Matching is done with `filepath.Match`.
+func skipPatterns(patterns ...string) copy.Options {
+	return copy.Options{
+		Skip: func(src string) (bool, error) {
+			for _, pattern := range patterns {
+				skip, err := filepath.Match(pattern, src)
+				switch {
+				case err != nil:
+					return false, fmt.Errorf("error matching pattern %s: %w", pattern, err)
+				case skip:
+					return true, nil
+				}
+			}
+
+			return false, nil
+		},
+	}
 }

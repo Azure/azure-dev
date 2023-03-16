@@ -79,13 +79,34 @@ func (dp *dotnetProject) Build(
 ) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServiceBuildResult, ServiceProgress]) {
+			task.SetProgress(NewServiceProgress("Building sources"))
+			if err := dp.dotnetCli.Build(ctx, serviceConfig.Path(), ""); err != nil {
+				task.SetError(err)
+				return
+			}
+
+			task.SetResult(&ServiceBuildResult{
+				Restore:         restoreOutput,
+				BuildOutputPath: serviceConfig.Path(),
+			})
+		},
+	)
+}
+
+func (dp *dotnetProject) Package(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	buildOutput *ServiceBuildResult,
+) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
+	return async.RunTaskWithProgress(
+		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
 			publishRoot, err := os.MkdirTemp("", "azd")
 			if err != nil {
 				task.SetError(fmt.Errorf("creating package directory for %s: %w", serviceConfig.Name, err))
 				return
 			}
 
-			task.SetProgress(NewServiceProgress("Creating deployment package"))
+			task.SetProgress(NewServiceProgress("Packaging code sources"))
 			if err := dp.dotnetCli.Publish(ctx, serviceConfig.Path(), publishRoot); err != nil {
 				task.SetError(err)
 				return
@@ -95,9 +116,9 @@ func (dp *dotnetProject) Build(
 				publishRoot = filepath.Join(publishRoot, serviceConfig.OutputPath)
 			}
 
-			task.SetResult(&ServiceBuildResult{
-				Restore:         restoreOutput,
-				BuildOutputPath: publishRoot,
+			task.SetResult(&ServicePackageResult{
+				Build:       buildOutput,
+				PackagePath: publishRoot,
 			})
 		},
 	)

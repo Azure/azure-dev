@@ -12,7 +12,7 @@ func authActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 			Hidden: true,
 		},
 	})
-	//fake comment to invoke ci. to be removed.
+
 	group.Add("token", &actions.ActionDescriptorOptions{
 		Command:        newAuthTokenCmd(),
 		FlagsResolver:  newAuthTokenFlags,

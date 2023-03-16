@@ -179,7 +179,7 @@ func Test_detectProviders(t *testing.T) {
 		scmProvider, ciProvider, err := DetectProviders(
 			ctx,
 			azdContext,
-			environment.Ephemeral(),
+			&environment.Environment{Values: map[string]string{}},
 			"other",
 			mockContext.Console,
 			mockContext.Credentials,
@@ -381,10 +381,12 @@ func Test_detectProviders(t *testing.T) {
 		err = os.Mkdir(azdoFolder, osutil.PermissionDirectory)
 		assert.NoError(t, err)
 
+		env := environment.Ephemeral()
+
 		scmProvider, ciProvider, err := DetectProviders(
 			ctx,
 			azdContext,
-			environment.Ephemeral(),
+			env,
 			azdoLabel,
 			mockContext.Console,
 			mockContext.Credentials,

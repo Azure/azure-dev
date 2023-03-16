@@ -107,6 +107,18 @@ func createAndInitEnvironment(
 	return env, nil
 }
 
+func loadEnvironmentIfAvailable() (*environment.Environment, error) {
+	azdCtx, err := azdcontext.NewAzdContext()
+	if err != nil {
+		return nil, err
+	}
+	defaultEnv, err := azdCtx.GetDefaultEnvironmentName()
+	if err != nil {
+		return nil, err
+	}
+	return environment.GetEnvironment(azdCtx, defaultEnv)
+}
+
 func loadOrInitEnvironment(
 	ctx context.Context,
 	environmentName *string,

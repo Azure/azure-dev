@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
 	"os"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -79,6 +78,51 @@ func newAuthTokenAction(
 	}
 }
 
+func getTenantIdFromAzdEnv(
+	ctx context.Context,
+	envResolver environment.EnvironmentResolver,
+	subResolver account.SubscriptionTenantResolver) (tenantId string, err error) {
+	azdEnv, err := envResolver()
+	if err != nil {
+		// No azd env, return empty tenantId
+		return tenantId, nil
+	}
+
+	subIdAtAzdEnv := azdEnv.GetSubscriptionId()
+	if subIdAtAzdEnv == "" {
+		// azd env found, but missing or empty subscriptionID
+		return tenantId, nil
+	}
+
+	tenantId, err = subResolver.LookupTenant(ctx, subIdAtAzdEnv)
+	if err != nil {
+		return tenantId, fmt.Errorf("Found AZURE_SUBSCRIPTION_ID in azd environment (%s) but couldn't resolve "+
+			"the Azure Directory for it. Run 'azd login' and use an account with access to this subscription.",
+			subIdAtAzdEnv)
+	}
+
+	return tenantId, nil
+}
+
+func getTenantIdFromEnv(
+	ctx context.Context,
+	subResolver account.SubscriptionTenantResolver) (tenantId string, err error) {
+
+	subIdAtSysEnv, found := os.LookupEnv(environment.SubscriptionIdEnvVarName)
+	if !found {
+		// no env var from system
+		return tenantId, nil
+	}
+
+	tenantId, err = subResolver.LookupTenant(ctx, subIdAtSysEnv)
+	if err != nil {
+		return tenantId, fmt.Errorf("Found AZURE_SUBSCRIPTION_ID in system environment but couldn't resolve " +
+			"the Azure Directory for it. Run 'azd login' and use an account with access to this subscription.")
+	}
+
+	return tenantId, nil
+}
+
 func (a *authTokenAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if len(a.flags.scopes) == 0 {
 		a.flags.scopes = []string{azure.ManagementScope}
@@ -88,32 +132,24 @@ func (a *authTokenAction) Run(ctx context.Context) (*actions.ActionResult, error
 
 	// 1) flag --tenant-id is the highest priority. If it is not use, azd will check if subscriptionId is set as env var
 	tenantId := a.flags.tenantID
-	// 2) try to resolve tenant id when AZURE_SUBSCRIPTION_ID is set as system env
+	// 2) From azd env
 	if tenantId == "" {
-		if subIdAtSystemEnv, found := os.LookupEnv(environment.SubscriptionIdEnvVarName); found {
-			if resolvedTenantId, err := a.subResolver.LookupTenant(ctx, subIdAtSystemEnv); err == nil {
-				tenantId = resolvedTenantId
-			} else {
-				log.Println("Found AZURE_SUBSCRIPTION_ID in system env, but azd couldn't find the Azure directory where" +
-					" it belongs. The AZURE_SUBSCRIPTION_ID is ignored.")
-			}
+		tenantIdFromAzdEnv, err := getTenantIdFromAzdEnv(ctx, a.envResolver, a.subResolver)
+		if err != nil {
+			return nil, err
 		}
+		tenantId = tenantIdFromAzdEnv
 	}
-	// 3) last try to resolve tenantId. This time, check if AZURE_SUBSCRIPTION_ID is set within the current azd env
+	// 3) From system env
 	if tenantId == "" {
-		// Ignore the error from envResolver. It means there is not an azd env in the current path.
-		if azdEnv, err := a.envResolver(); err == nil {
-			if subIdAtAzdEnv := azdEnv.GetSubscriptionId(); subIdAtAzdEnv != "" {
-				if resolvedTenantId, err := a.subResolver.LookupTenant(ctx, subIdAtAzdEnv); err == nil {
-					tenantId = resolvedTenantId
-				} else {
-					log.Println("Found AZURE_SUBSCRIPTION_ID within an azd environment, but azd couldn't find the Azure" +
-						" directory where it belongs. The AZURE_SUBSCRIPTION_ID is ignored.")
-				}
-			}
+		tenantIdFromSysEnv, err := getTenantIdFromEnv(ctx, a.subResolver)
+		if err != nil {
+			return nil, err
 		}
+		tenantId = tenantIdFromSysEnv
 	}
 
+	// If tenantId is still empty, the fallback is to use current logged in user's home-tenant id.
 	cred, err := a.credentialProvider(ctx, &auth.CredentialForCurrentUserOptions{
 		TenantID: tenantId,
 	})

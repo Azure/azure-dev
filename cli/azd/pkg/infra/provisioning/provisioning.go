@@ -65,7 +65,7 @@ func CreateInputParametersFile(templateFilePath string, inputFilePath string, en
 	}
 
 	log.Printf("Writing parameters file to: %s", inputFilePath)
-	err = os.WriteFile(inputFilePath, []byte(replaced), 0644)
+	err = os.WriteFile(inputFilePath, []byte(replaced), 0600)
 	if err != nil {
 		return fmt.Errorf("writing parameter file: %w", err)
 	}

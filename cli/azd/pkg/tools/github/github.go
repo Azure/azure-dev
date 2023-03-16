@@ -401,6 +401,7 @@ func extractFromZip(src, dst string) (string, error) {
 				return extractedAt, err
 			}
 			defer ghCliFile.Close()
+			/* #nosec G110 - decompression bomb false positive */
 			_, err = io.Copy(ghCliFile, fileReader)
 			if err != nil {
 				return extractedAt, err
@@ -451,6 +452,7 @@ func extractFromTar(src, dst string) (string, error) {
 				return extractedAt, err
 			}
 			defer ghCliFile.Close()
+			/* #nosec G110 - decompression bomb false positive */
 			_, err = io.Copy(ghCliFile, tarReader)
 			if err != nil {
 				return extractedAt, err

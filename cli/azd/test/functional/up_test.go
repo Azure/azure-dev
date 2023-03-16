@@ -190,6 +190,7 @@ func Test_CLI_Up_Down_FuncApp(t *testing.T) {
 	// request a
 	// handful of times if it fails with a 404.
 	err = retry.Do(ctx, retry.WithMaxRetries(10, retry.NewConstant(5*time.Second)), func(ctx context.Context) error {
+		/* #nosec G107 - Potential HTTP request made with variable url false positive */
 		res, err := http.Get(url)
 		if err != nil {
 			return retry.RetryableError(err)
@@ -279,6 +280,7 @@ func probeServiceHealth(t *testing.T, ctx context.Context, url string, expectedB
 	return retry.Do(ctx, retry.WithMaxRetries(10, retry.NewConstant(5*time.Second)), func(ctx context.Context) error {
 		t.Logf("Attempting to Get URL: %s", url)
 
+		/* #nosec G107 - Potential HTTP request made with variable url false positive */
 		res, err := http.Get(url)
 		if err != nil {
 			return retry.RetryableError(err)

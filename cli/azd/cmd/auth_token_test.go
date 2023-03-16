@@ -133,17 +133,13 @@ func TestAuthTokenSysEnvError(t *testing.T) {
 	)
 
 	_, err := a.Run(context.Background())
-	require.NoError(t, err)
-
-	var res contracts.AuthTokenResult
-
-	err = json.Unmarshal(buf.Bytes(), &res)
-	require.NoError(t, err)
-	require.Equal(t, "ABC123", res.Token)
-	require.Equal(t, time.Unix(1669153000, 0).UTC(), time.Time(res.ExpiresOn))
+	require.ErrorContains(
+		t,
+		err,
+		"Found AZURE_SUBSCRIPTION_ID in system environment but couldn't resolve the Azure Directory for it.")
 }
 
-func TestAuthTokenAzdEnv(t *testing.T) {
+func TestAuthTokenAzdEnvError(t *testing.T) {
 	buf := &bytes.Buffer{}
 
 	token := authTokenFn(func(ctx context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {
@@ -173,17 +169,14 @@ func TestAuthTokenAzdEnv(t *testing.T) {
 	)
 
 	_, err := a.Run(context.Background())
-	require.NoError(t, err)
-
-	var res contracts.AuthTokenResult
-
-	err = json.Unmarshal(buf.Bytes(), &res)
-	require.NoError(t, err)
-	require.Equal(t, "ABC123", res.Token)
-	require.Equal(t, time.Unix(1669153000, 0).UTC(), time.Time(res.ExpiresOn))
+	require.ErrorContains(
+		t,
+		err,
+		"Found AZURE_SUBSCRIPTION_ID in azd environment (sub-id) but couldn't resolve the Azure Directory for it.",
+	)
 }
 
-func TestAuthTokenAzdEnvError(t *testing.T) {
+func TestAuthTokenAzdEnv(t *testing.T) {
 	buf := &bytes.Buffer{}
 
 	token := authTokenFn(func(ctx context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {
@@ -205,6 +198,46 @@ func TestAuthTokenAzdEnvError(t *testing.T) {
 		func() (*environment.Environment, error) {
 			return environment.EphemeralWithValues("env", map[string]string{
 				environment.SubscriptionIdEnvVarName: "sub-id",
+			}), nil
+		},
+		&mockSubscriptionTenantResolver{
+			TenantId: expectedTenant,
+		},
+	)
+
+	_, err := a.Run(context.Background())
+	require.NoError(t, err)
+
+	var res contracts.AuthTokenResult
+
+	err = json.Unmarshal(buf.Bytes(), &res)
+	require.NoError(t, err)
+	require.Equal(t, "ABC123", res.Token)
+	require.Equal(t, time.Unix(1669153000, 0).UTC(), time.Time(res.ExpiresOn))
+}
+
+func TestAuthTokenAzdEnvWithEmpty(t *testing.T) {
+	buf := &bytes.Buffer{}
+
+	token := authTokenFn(func(ctx context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {
+		require.ElementsMatch(t, []string{azure.ManagementScope}, options.Scopes)
+		return azcore.AccessToken{
+			Token:     "ABC123",
+			ExpiresOn: time.Unix(1669153000, 0).UTC(),
+		}, nil
+	})
+	expectedTenant := ""
+	a := newAuthTokenAction(
+		func(ctx context.Context, options *auth.CredentialForCurrentUserOptions) (azcore.TokenCredential, error) {
+			require.Equal(t, expectedTenant, options.TenantID)
+			return credentialProviderForTokenFn(token)(ctx, options)
+		},
+		&output.JsonFormatter{},
+		buf,
+		&authTokenFlags{},
+		func() (*environment.Environment, error) {
+			return environment.EphemeralWithValues("env", map[string]string{
+				environment.SubscriptionIdEnvVarName: "",
 			}), nil
 		},
 		&mockSubscriptionTenantResolver{

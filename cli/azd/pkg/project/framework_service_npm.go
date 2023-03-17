@@ -73,8 +73,7 @@ func (np *npmProject) Build(
 				return
 			}
 
-			// Run Build, injecting env.
-			// We should consider a different way to do this, that doesn't require azd being involved.
+			// Run build with NODE_ENV set
 			envs := []string{"NODE_ENV=production"}
 
 			task.SetProgress(NewServiceProgress("Building service"))

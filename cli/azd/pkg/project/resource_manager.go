@@ -16,21 +16,24 @@ import (
 // This would typically be used during deployment when azd need to deploy applications
 // to the Azure resource hosting the application
 type ResourceManager interface {
-	GetResourceGroupName(ctx context.Context, projectConfig *ProjectConfig) (string, error)
+	GetResourceGroupName(ctx context.Context, projectConfig *ProjectConfig, subscriptionId string) (string, error)
 	GetServiceResources(
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
+		subscriptionId string,
 		resourceGroupName string,
 	) ([]azcli.AzCliResource, error)
 	GetServiceResource(
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
+		subscriptionId string,
 		resourceGroupName string,
 		rerunCommand string,
 	) (azcli.AzCliResource, error)
 	GetTargetResource(
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
+		subscriptionId string,
 	) (*environment.TargetResource, error)
 }
 
@@ -56,7 +59,11 @@ func NewResourceManager(env *environment.Environment, azCli azcli.AzCli) Resourc
 // - Resource group discovery by querying Azure Resources
 // (see `resourceManager.FindResourceGroupForEnvironment` for more
 // details)
-func (rm *resourceManager) GetResourceGroupName(ctx context.Context, projectConfig *ProjectConfig) (string, error) {
+func (rm *resourceManager) GetResourceGroupName(
+	ctx context.Context,
+	projectConfig *ProjectConfig,
+	subscriptionId string,
+) (string, error) {
 	name, err := projectConfig.ResourceGroupName.Envsubst(rm.env.Getenv)
 	if err != nil {
 		return "", err
@@ -72,7 +79,7 @@ func (rm *resourceManager) GetResourceGroupName(ctx context.Context, projectConf
 	}
 
 	resourceManager := infra.NewAzureResourceManager(rm.azCli)
-	resourceGroupName, err := resourceManager.FindResourceGroupForEnvironment(ctx, rm.env)
+	resourceGroupName, err := resourceManager.FindResourceGroupForEnvironment(ctx, subscriptionId, rm.env.GetEnvName())
 	if err != nil {
 		return "", err
 	}
@@ -87,6 +94,7 @@ func (rm *resourceManager) GetResourceGroupName(ctx context.Context, projectConf
 func (rm *resourceManager) GetServiceResources(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
+	subscriptionId string,
 	resourceGroupName string,
 ) ([]azcli.AzCliResource, error) {
 	filter := fmt.Sprintf("tagName eq '%s' and tagValue eq '%s'", defaultServiceTag, serviceConfig.Name)
@@ -102,7 +110,7 @@ func (rm *resourceManager) GetServiceResources(
 
 	return rm.azCli.ListResourceGroupResources(
 		ctx,
-		rm.env.GetSubscriptionId(),
+		subscriptionId,
 		resourceGroupName,
 		&azcli.ListResourceGroupResourcesOptions{
 			Filter: &filter,
@@ -117,6 +125,7 @@ func (rm *resourceManager) GetServiceResources(
 func (rm *resourceManager) GetServiceResource(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
+	subscriptionId string,
 	resourceGroupName string,
 	rerunCommand string,
 ) (azcli.AzCliResource, error) {
@@ -125,7 +134,7 @@ func (rm *resourceManager) GetServiceResource(
 		return azcli.AzCliResource{}, fmt.Errorf("expanding name: %w", err)
 	}
 
-	resources, err := rm.GetServiceResources(ctx, serviceConfig, resourceGroupName)
+	resources, err := rm.GetServiceResources(ctx, serviceConfig, subscriptionId, resourceGroupName)
 	if err != nil {
 		return azcli.AzCliResource{}, fmt.Errorf("getting service resource: %w", err)
 	}
@@ -179,19 +188,20 @@ func (rm *resourceManager) GetServiceResource(
 func (rm *resourceManager) GetTargetResource(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
+	subscriptionId string,
 ) (*environment.TargetResource, error) {
-	resourceGroupName, err := rm.GetResourceGroupName(ctx, serviceConfig.Project)
+	resourceGroupName, err := rm.GetResourceGroupName(ctx, serviceConfig.Project, subscriptionId)
 	if err != nil {
 		return nil, err
 	}
 
-	azureResource, err := rm.resolveServiceResource(ctx, serviceConfig, resourceGroupName, "provision")
+	azureResource, err := rm.resolveServiceResource(ctx, serviceConfig, subscriptionId, resourceGroupName, "provision")
 	if err != nil {
 		return nil, err
 	}
 
 	return environment.NewTargetResource(
-		rm.env.GetSubscriptionId(),
+		subscriptionId,
 		resourceGroupName,
 		azureResource.Name,
 		azureResource.Type,
@@ -202,10 +212,11 @@ func (rm *resourceManager) GetTargetResource(
 func (rm *resourceManager) resolveServiceResource(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
+	subscriptionId string,
 	resourceGroupName string,
 	rerunCommand string,
 ) (azcli.AzCliResource, error) {
-	azureResource, err := rm.GetServiceResource(ctx, serviceConfig, resourceGroupName, rerunCommand)
+	azureResource, err := rm.GetServiceResource(ctx, serviceConfig, subscriptionId, resourceGroupName, rerunCommand)
 
 	// If the service target supports delayed provisioning, the resource isn't expected to be found yet.
 	// Return the empty resource

@@ -53,7 +53,8 @@ services:
 	require.NoError(t, err)
 
 	resourceManager := NewResourceManager(env, azCli)
-	targetResource, err := resourceManager.GetTargetResource(*mockContext.Context, projectConfig.Services["api"])
+	targetResource, err := resourceManager.GetTargetResource(
+		*mockContext.Context, projectConfig.Services["api"], env.GetSubscriptionId())
 	require.NoError(t, err)
 	require.NotNil(t, targetResource)
 
@@ -98,7 +99,8 @@ services:
 	require.NoError(t, err)
 
 	resourceManager := NewResourceManager(env, azCli)
-	targetResource, err := resourceManager.GetTargetResource(*mockContext.Context, projectConfig.Services["api"])
+	targetResource, err := resourceManager.GetTargetResource(
+		*mockContext.Context, projectConfig.Services["api"], env.GetSubscriptionId())
 	require.NoError(t, err)
 	require.NotNil(t, targetResource)
 	require.Equal(t, resourceName, targetResource.ResourceName())
@@ -155,7 +157,7 @@ services:
 	resourceManager := NewResourceManager(env, azCli)
 
 	for _, svc := range projectConfig.Services {
-		targetResource, err := resourceManager.GetTargetResource(*mockContext.Context, svc)
+		targetResource, err := resourceManager.GetTargetResource(*mockContext.Context, svc, env.GetSubscriptionId())
 		require.NoError(t, err)
 		require.NotNil(t, targetResource)
 		require.Equal(t, resourceGroupName, targetResource.ResourceGroupName())
@@ -213,12 +215,13 @@ services:
 	require.NoError(t, err)
 
 	resourceManager := NewResourceManager(env, azCli)
-	targetResource, err := resourceManager.GetTargetResource(*mockContext.Context, projectConfig.Services["api"])
+	targetResource, err := resourceManager.GetTargetResource(
+		*mockContext.Context, projectConfig.Services["api"], env.GetSubscriptionId())
 	require.NoError(t, err)
 	require.NotNil(t, targetResource)
 
 	for _, svc := range projectConfig.Services {
-		targetResource, err := resourceManager.GetTargetResource(*mockContext.Context, svc)
+		targetResource, err := resourceManager.GetTargetResource(*mockContext.Context, svc, env.GetSubscriptionId())
 		require.NoError(t, err)
 		require.NotNil(t, targetResource)
 		require.Equal(t, expectedResourceGroupName, targetResource.ResourceGroupName())

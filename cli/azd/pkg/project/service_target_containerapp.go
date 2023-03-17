@@ -247,6 +247,7 @@ func (at *containerAppTarget) Publish(
 				azureResource, err := at.resourceManager.GetServiceResource(
 					ctx,
 					serviceConfig,
+					targetResource.SubscriptionId(),
 					targetResource.ResourceGroupName(),
 					"deploy",
 				)

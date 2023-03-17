@@ -11,7 +11,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
-	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -108,7 +107,6 @@ func (f *envSetFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 }
 
 type envSetAction struct {
-	azCli   azcli.AzCli
 	console input.Console
 	azdCtx  *azdcontext.AzdContext
 	env     *environment.Environment
@@ -118,14 +116,12 @@ type envSetAction struct {
 
 func newEnvSetAction(
 	azdCtx *azdcontext.AzdContext,
-	azCli azcli.AzCli,
 	env *environment.Environment,
 	console input.Console,
 	flags *envSetFlags,
 	args []string,
 ) actions.Action {
 	return &envSetAction{
-		azCli:   azCli,
 		console: console,
 		azdCtx:  azdCtx,
 		env:     env,
@@ -262,33 +258,23 @@ func newEnvNewCmd() *cobra.Command {
 }
 
 type envNewAction struct {
-	azdCtx             *azdcontext.AzdContext
-	userProfileService *azcli.UserProfileService
-	subResolver        account.SubscriptionTenantResolver
-	accountManager     account.Manager
-	flags              *envNewFlags
-	args               []string
-	console            input.Console
+	azdCtx  *azdcontext.AzdContext
+	flags   *envNewFlags
+	args    []string
+	console input.Console
 }
 
 func newEnvNewAction(
 	azdCtx *azdcontext.AzdContext,
-	userProfileService *azcli.UserProfileService,
-	subResolver account.SubscriptionTenantResolver,
-	_ auth.LoggedInGuard,
-	accountManager account.Manager,
 	flags *envNewFlags,
 	args []string,
 	console input.Console,
 ) actions.Action {
 	return &envNewAction{
-		azdCtx:             azdCtx,
-		accountManager:     accountManager,
-		userProfileService: userProfileService,
-		flags:              flags,
-		args:               args,
-		console:            console,
-		subResolver:        subResolver,
+		azdCtx:  azdCtx,
+		flags:   flags,
+		args:    args,
+		console: console,
 	}
 }
 
@@ -303,12 +289,13 @@ func (en *envNewAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		subscription:    en.flags.subscription,
 		location:        en.flags.location,
 	}
-	if _, err := createAndInitEnvironment(
-		ctx, &envSpec, en.azdCtx, en.console, en.accountManager, en.userProfileService, en.subResolver); err != nil {
+
+	env, err := createAndInitEnvironment(ctx, envSpec, en.azdCtx, en.console)
+	if err != nil {
 		return nil, fmt.Errorf("creating new environment: %w", err)
 	}
 
-	if err := en.azdCtx.SetDefaultEnvironmentName(envSpec.environmentName); err != nil {
+	if err := en.azdCtx.SetDefaultEnvironmentName(env.GetEnvName()); err != nil {
 		return nil, fmt.Errorf("saving default environment: %w", err)
 	}
 
@@ -340,17 +327,19 @@ func newEnvRefreshCmd() *cobra.Command {
 }
 
 type envRefreshAction struct {
-	azdCtx         *azdcontext.AzdContext
-	projectConfig  *project.ProjectConfig
-	projectManager project.ProjectManager
-	accountManager account.Manager
-	azCli          azcli.AzCli
-	env            *environment.Environment
-	flags          *envRefreshFlags
-	console        input.Console
-	formatter      output.Formatter
-	writer         io.Writer
-	commandRunner  exec.CommandRunner
+	azdCtx                     *azdcontext.AzdContext
+	projectConfig              *project.ProjectConfig
+	projectManager             project.ProjectManager
+	accountManager             account.Manager
+	azCli                      azcli.AzCli
+	env                        *environment.Environment
+	flags                      *envRefreshFlags
+	console                    input.Console
+	formatter                  output.Formatter
+	writer                     io.Writer
+	commandRunner              exec.CommandRunner
+	userProfileService         *azcli.UserProfileService
+	subscriptionTenantResolver account.SubscriptionTenantResolver
 }
 
 func newEnvRefreshAction(
@@ -365,19 +354,23 @@ func newEnvRefreshAction(
 	console input.Console,
 	formatter output.Formatter,
 	writer io.Writer,
+	userProfileService *azcli.UserProfileService,
+	subscriptionTenantResolver account.SubscriptionTenantResolver,
 ) actions.Action {
 	return &envRefreshAction{
-		azdCtx:         azdCtx,
-		azCli:          azCli,
-		accountManager: accountManager,
-		projectManager: projectManager,
-		env:            env,
-		flags:          flags,
-		console:        console,
-		formatter:      formatter,
-		projectConfig:  projectConfig,
-		writer:         writer,
-		commandRunner:  commandRunner,
+		azdCtx:                     azdCtx,
+		azCli:                      azCli,
+		accountManager:             accountManager,
+		projectManager:             projectManager,
+		env:                        env,
+		flags:                      flags,
+		console:                    console,
+		formatter:                  formatter,
+		projectConfig:              projectConfig,
+		writer:                     writer,
+		commandRunner:              commandRunner,
+		userProfileService:         userProfileService,
+		subscriptionTenantResolver: subscriptionTenantResolver,
 	}
 }
 
@@ -396,9 +389,15 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 		ef.console,
 		ef.commandRunner,
 		ef.accountManager,
+		ef.userProfileService,
+		ef.subscriptionTenantResolver,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("creating provisioning manager: %w", err)
+	}
+
+	if err := infraManager.EnsureConfigured(ctx); err != nil {
+		return nil, err
 	}
 
 	scope := infra.NewSubscriptionScope(ef.azCli, ef.env.GetLocation(), ef.env.GetSubscriptionId(), ef.env.GetEnvName())

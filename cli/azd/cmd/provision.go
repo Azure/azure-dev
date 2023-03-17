@@ -74,18 +74,20 @@ Depending on what Azure resources are created, running this command might take a
 }
 
 type provisionAction struct {
-	flags           *provisionFlags
-	accountManager  account.Manager
-	projectManager  project.ProjectManager
-	resourceManager project.ResourceManager
-	azdCtx          *azdcontext.AzdContext
-	azCli           azcli.AzCli
-	env             *environment.Environment
-	formatter       output.Formatter
-	projectConfig   *project.ProjectConfig
-	writer          io.Writer
-	console         input.Console
-	commandRunner   exec.CommandRunner
+	flags              *provisionFlags
+	accountManager     account.Manager
+	projectManager     project.ProjectManager
+	resourceManager    project.ResourceManager
+	azdCtx             *azdcontext.AzdContext
+	azCli              azcli.AzCli
+	env                *environment.Environment
+	formatter          output.Formatter
+	projectConfig      *project.ProjectConfig
+	writer             io.Writer
+	console            input.Console
+	commandRunner      exec.CommandRunner
+	userProfileService *azcli.UserProfileService
+	subResolver        account.SubscriptionTenantResolver
 }
 
 func newProvisionAction(
@@ -101,20 +103,24 @@ func newProvisionAction(
 	formatter output.Formatter,
 	writer io.Writer,
 	commandRunner exec.CommandRunner,
+	userProfileService *azcli.UserProfileService,
+	subResolver account.SubscriptionTenantResolver,
 ) actions.Action {
 	return &provisionAction{
-		flags:           flags,
-		accountManager:  accountManager,
-		projectManager:  projectManager,
-		resourceManager: resourceManager,
-		azdCtx:          azdCtx,
-		azCli:           azCli,
-		env:             env,
-		formatter:       formatter,
-		projectConfig:   projectConfig,
-		writer:          writer,
-		console:         console,
-		commandRunner:   commandRunner,
+		flags:              flags,
+		accountManager:     accountManager,
+		projectManager:     projectManager,
+		resourceManager:    resourceManager,
+		azdCtx:             azdCtx,
+		azCli:              azCli,
+		env:                env,
+		formatter:          formatter,
+		projectConfig:      projectConfig,
+		writer:             writer,
+		console:            console,
+		commandRunner:      commandRunner,
+		userProfileService: userProfileService,
+		subResolver:        subResolver,
 	}
 }
 
@@ -146,9 +152,15 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		p.console,
 		p.commandRunner,
 		p.accountManager,
+		p.userProfileService,
+		p.subResolver,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("creating provisioning manager: %w", err)
+	}
+
+	if err := infraManager.EnsureConfigured(ctx); err != nil {
+		return nil, fmt.Errorf("configuring provisioning manager: %w", err)
 	}
 
 	deploymentPlan, err := infraManager.Plan(ctx)
@@ -218,7 +230,7 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
 			Header:   "Your project has been provisioned!",
-			FollowUp: getResourceGroupFollowUp(ctx, p.formatter, p.azCli, p.projectConfig, p.resourceManager, p.env),
+			FollowUp: getResourceGroupFollowUp(ctx, p.formatter, p.projectConfig, p.resourceManager, p.env),
 		},
 	}, nil
 }

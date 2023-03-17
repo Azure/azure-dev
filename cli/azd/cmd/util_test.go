@@ -15,15 +15,11 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
-	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
-	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
-	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/stretchr/testify/require"
 )
@@ -123,63 +119,6 @@ func Test_promptEnvironmentName(t *testing.T) {
 	})
 }
 
-func Test_getSubscriptionOptions(t *testing.T) {
-	t.Run("no default config set", func(t *testing.T) {
-		mockAccount := &mockaccount.MockAccountManager{
-			Subscriptions: []account.Subscription{
-				{
-					Id:                 "1",
-					Name:               "sub1",
-					TenantId:           "",
-					UserAccessTenantId: "",
-					IsDefault:          false,
-				},
-			},
-		}
-		subList, result, err := getSubscriptionOptions(context.Background(), mockAccount)
-
-		require.Nil(t, err)
-		require.EqualValues(t, 2, len(subList))
-		require.EqualValues(t, nil, result)
-	})
-
-	t.Run("default value set", func(t *testing.T) {
-		// mocked configk
-		defaultSubId := "SUBSCRIPTION_DEFAULT"
-		ctx := context.Background()
-		mockAccount := &mockaccount.MockAccountManager{
-			DefaultLocation:     "location",
-			DefaultSubscription: defaultSubId,
-			Subscriptions: []account.Subscription{
-				{
-					Id:                 defaultSubId,
-					Name:               "DISPLAY DEFAULT",
-					TenantId:           "TENANT",
-					UserAccessTenantId: "USER_TENANT",
-					IsDefault:          true,
-				},
-				{
-					Id:                 "SUBSCRIPTION_OTHER",
-					Name:               "DISPLAY OTHER",
-					TenantId:           "TENANT",
-					UserAccessTenantId: "USER_TENANT",
-					IsDefault:          false,
-				},
-			},
-			Locations: []account.Location{},
-		}
-
-		subList, result, err := getSubscriptionOptions(ctx, mockAccount)
-
-		require.Nil(t, err)
-		require.EqualValues(t, 3, len(subList))
-		require.NotNil(t, result)
-		defSub, ok := result.(string)
-		require.True(t, ok)
-		require.EqualValues(t, " 1. DISPLAY DEFAULT (SUBSCRIPTION_DEFAULT)", defSub)
-	})
-}
-
 func Test_createAndInitEnvironment(t *testing.T) {
 	t.Run("invalid name", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
@@ -188,14 +127,11 @@ func Test_createAndInitEnvironment(t *testing.T) {
 		invalidEnvName := "*!33"
 		_, err := createAndInitEnvironment(
 			*mockContext.Context,
-			&environmentSpec{
+			environmentSpec{
 				environmentName: invalidEnvName,
 			},
 			azdContext,
 			mockContext.Console,
-			&mockaccount.MockAccountManager{},
-			&azcli.UserProfileService{},
-			&account.SubscriptionsManager{},
 		)
 		require.ErrorContains(
 			t,
@@ -214,14 +150,11 @@ func Test_createAndInitEnvironment(t *testing.T) {
 
 		_, err = createAndInitEnvironment(
 			*mockContext.Context,
-			&environmentSpec{
+			environmentSpec{
 				environmentName: validName,
 			},
 			azdContext,
 			mockContext.Console,
-			&mockaccount.MockAccountManager{},
-			&azcli.UserProfileService{},
-			&account.SubscriptionsManager{},
 		)
 		require.ErrorContains(
 			t,
@@ -229,80 +162,4 @@ func Test_createAndInitEnvironment(t *testing.T) {
 			fmt.Sprintf("environment '%s' already exists",
 				validName))
 	})
-	t.Run("ensure Initialized", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
-		tempDir := t.TempDir()
-		validName := "azdEnv"
-		azdContext := azdcontext.NewAzdContextWithDirectory(tempDir)
-
-		mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool {
-			return strings.Contains(options.Message, "Please select an Azure Subscription to use")
-		}).RespondFn(func(options input.ConsoleOptions) (any, error) {
-			// Select the first from the list
-			return 0, nil
-		})
-		mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool {
-			return strings.Contains(options.Message, "Please select an Azure location")
-		}).RespondFn(func(options input.ConsoleOptions) (any, error) {
-			// Select the first from the list
-			return 0, nil
-		})
-
-		expectedPrincipalId := "oid"
-		mockContext.HttpClient.When(func(request *http.Request) bool {
-			return request.Method == http.MethodGet && strings.Contains(
-				request.URL.Path,
-				"/me",
-			)
-		}).RespondFn(func(request *http.Request) (*http.Response, error) {
-			return mocks.CreateHttpResponseWithBody(request, 200, graphsdk.UserProfile{
-				Id:                expectedPrincipalId,
-				GivenName:         "John",
-				Surname:           "Doe",
-				JobTitle:          "Software Engineer",
-				DisplayName:       "John Doe",
-				UserPrincipalName: "john.doe@contoso.com",
-			})
-		})
-
-		expectedSub := "00000000-0000-0000-0000-000000000000"
-		expectedLocation := "location"
-		createdEnv, err := createAndInitEnvironment(
-			*mockContext.Context,
-			&environmentSpec{
-				environmentName: validName,
-			},
-			azdContext,
-			mockContext.Console,
-			&mockaccount.MockAccountManager{
-				Subscriptions: []account.Subscription{{Id: expectedSub}},
-				Locations: []account.Location{
-					{
-						Name:                expectedLocation,
-						DisplayName:         "West",
-						RegionalDisplayName: "(US) West",
-					},
-				},
-			},
-			azcli.NewUserProfileService(
-				&mocks.MockMultiTenantCredentialProvider{},
-				mockContext.HttpClient,
-			),
-			&mockUtilSubscriptionTenantResolver{},
-		)
-		require.NoError(t, err)
-
-		require.Equal(t, createdEnv.GetEnvName(), validName)
-		require.Equal(t, createdEnv.GetPrincipalId(), expectedPrincipalId)
-		require.Equal(t, createdEnv.GetSubscriptionId(), expectedSub)
-		require.Equal(t, createdEnv.GetLocation(), expectedLocation)
-	})
-}
-
-type mockUtilSubscriptionTenantResolver struct {
-}
-
-func (m *mockUtilSubscriptionTenantResolver) LookupTenant(
-	ctx context.Context, subscriptionId string) (tenantId string, err error) {
-	return "00000000-0000-0000-0000-000000000000", nil
 }

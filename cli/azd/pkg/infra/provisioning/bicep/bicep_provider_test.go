@@ -457,6 +457,7 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 		prompters: Prompters{
 			Location: locationPrompter,
 		},
+		curPrincipal: &mockCurrentPrincipal{},
 	}
 
 	return provider

@@ -220,11 +220,18 @@ func createTerraformProvider(mockContext *mocks.MockContext) *TerraformProvider 
 	}
 
 	env := environment.EphemeralWithValues("test-env", map[string]string{
-		"AZURE_LOCATION": "westus2",
+		"AZURE_LOCATION":        "westus2",
+		"AZURE_SUBSCRIPTION_ID": "00000000-0000-0000-0000-000000000000",
 	})
 
 	return NewTerraformProvider(
-		*mockContext.Context, env, projectDir, options, mockContext.Console, mockContext.CommandRunner,
+		*mockContext.Context,
+		env,
+		projectDir,
+		options,
+		mockContext.Console,
+		mockContext.CommandRunner,
+		&mockCurrentPrincipal{},
 	)
 }
 
@@ -321,4 +328,10 @@ func prepareDestroyMocks(commandRunner *mockexec.MockCommandRunner) {
 		Stdout: "",
 		Stderr: "",
 	})
+}
+
+type mockCurrentPrincipal struct{}
+
+func (m *mockCurrentPrincipal) CurrentPrincipalId(_ context.Context) (string, error) {
+	return "11111111-1111-1111-1111-111111111111", nil
 }

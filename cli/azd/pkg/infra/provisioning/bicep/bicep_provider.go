@@ -55,13 +55,14 @@ type BicepDeploymentDetails struct {
 
 // BicepProvider exposes infrastructure provisioning using Azure Bicep templates
 type BicepProvider struct {
-	env         *environment.Environment
-	projectPath string
-	options     Options
-	console     input.Console
-	bicepCli    bicep.BicepCli
-	azCli       azcli.AzCli
-	prompters   Prompters
+	env          *environment.Environment
+	projectPath  string
+	options      Options
+	console      input.Console
+	bicepCli     bicep.BicepCli
+	azCli        azcli.AzCli
+	prompters    Prompters
+	curPrincipal CurrentPrincipalIdProvider
 }
 
 // Name gets the name of the infra provider
@@ -303,6 +304,7 @@ func (p *BicepProvider) Destroy(
 					return p.purgeKeyVaults(ctx, asyncContext, keyVaults, options)
 				},
 			}
+
 			appConfigsPurge := itemToPurge{
 				resourceType: "App Configurations",
 				count:        len(appConfigs),
@@ -796,11 +798,17 @@ func (p *BicepProvider) loadParameters(
 		return nil, fmt.Errorf("reading parameter file template: %w", err)
 	}
 
+	principalId, err := p.curPrincipal.CurrentPrincipalId(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("fetching current principal id: %w", err)
+	}
+
 	replaced, err := envsubst.Eval(string(parametersBytes), func(name string) string {
-		if val, has := p.env.Values[name]; has {
-			return val
+		if name == environment.PrincipalIdEnvVarName {
+			return principalId
 		}
-		return os.Getenv(name)
+
+		return p.env.Getenv(name)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("substituting environment variables inside parameter file: %w", err)
@@ -1081,6 +1089,7 @@ func NewBicepProvider(
 	commandRunner exec.CommandRunner,
 	console input.Console,
 	prompters Prompters,
+	curPrincipal CurrentPrincipalIdProvider,
 ) (*BicepProvider, error) {
 	bicepCli, err := bicep.NewBicepCli(ctx, console, commandRunner)
 	if err != nil {
@@ -1093,13 +1102,14 @@ func NewBicepProvider(
 	}
 
 	return &BicepProvider{
-		env:         env,
-		projectPath: projectPath,
-		options:     infraOptions,
-		console:     console,
-		bicepCli:    bicepCli,
-		azCli:       azCli,
-		prompters:   prompters,
+		env:          env,
+		projectPath:  projectPath,
+		options:      infraOptions,
+		console:      console,
+		bicepCli:     bicepCli,
+		azCli:        azCli,
+		prompters:    prompters,
+		curPrincipal: curPrincipal,
 	}, nil
 }
 
@@ -1115,8 +1125,9 @@ func init() {
 			azCli azcli.AzCli,
 			commandRunner exec.CommandRunner,
 			prompters Prompters,
+			curPrincipal CurrentPrincipalIdProvider,
 		) (Provider, error) {
-			return NewBicepProvider(ctx, azCli, env, projectPath, options, commandRunner, console, prompters)
+			return NewBicepProvider(ctx, azCli, env, projectPath, options, commandRunner, console, prompters, curPrincipal)
 		},
 	)
 

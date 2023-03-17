@@ -176,6 +176,12 @@ func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, fmt.Errorf("service name '%s' doesn't exist", targetServiceName)
 	}
 
+	if d.env.GetSubscriptionId() == "" {
+		return nil, errors.New(
+			"infrastructure has not been provisioned. Please run `azd provision`",
+		)
+	}
+
 	if err := d.projectManager.Initialize(ctx, d.projectConfig); err != nil {
 		return nil, err
 	}
@@ -262,7 +268,7 @@ func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
 			Header:   "Your Azure app has been deployed!",
-			FollowUp: getResourceGroupFollowUp(ctx, d.formatter, d.azCli, d.projectConfig, d.resourceManager, d.env),
+			FollowUp: getResourceGroupFollowUp(ctx, d.formatter, d.projectConfig, d.resourceManager, d.env),
 		},
 	}, nil
 }

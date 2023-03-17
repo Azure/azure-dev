@@ -332,3 +332,9 @@ func TestPromptForParametersLocation(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "westus", value)
 }
+
+type mockCurrentPrincipal struct{}
+
+func (m *mockCurrentPrincipal) CurrentPrincipalId(_ context.Context) (string, error) {
+	return "11111111-1111-1111-1111-111111111111", nil
+}

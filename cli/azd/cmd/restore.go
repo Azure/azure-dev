@@ -19,7 +19,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/spin"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -69,7 +68,6 @@ type restoreAction struct {
 	flags          *restoreFlags
 	args           []string
 	console        input.Console
-	azCli          azcli.AzCli
 	azdCtx         *azdcontext.AzdContext
 	env            *environment.Environment
 	projectConfig  *project.ProjectConfig
@@ -80,7 +78,6 @@ type restoreAction struct {
 func newRestoreAction(
 	flags *restoreFlags,
 	args []string,
-	azCli azcli.AzCli,
 	console input.Console,
 	azdCtx *azdcontext.AzdContext,
 	env *environment.Environment,
@@ -95,7 +92,6 @@ func newRestoreAction(
 		azdCtx:         azdCtx,
 		projectConfig:  projectConfig,
 		serviceManager: serviceManager,
-		azCli:          azCli,
 		env:            env,
 		commandRunner:  commandRunner,
 	}

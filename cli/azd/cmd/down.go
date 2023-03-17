@@ -54,14 +54,16 @@ func newDownCmd() *cobra.Command {
 }
 
 type downAction struct {
-	flags          *downFlags
-	accountManager account.Manager
-	azCli          azcli.AzCli
-	azdCtx         *azdcontext.AzdContext
-	env            *environment.Environment
-	console        input.Console
-	commandRunner  exec.CommandRunner
-	projectConfig  *project.ProjectConfig
+	flags              *downFlags
+	accountManager     account.Manager
+	azCli              azcli.AzCli
+	azdCtx             *azdcontext.AzdContext
+	env                *environment.Environment
+	console            input.Console
+	commandRunner      exec.CommandRunner
+	projectConfig      *project.ProjectConfig
+	userProfileService *azcli.UserProfileService
+	subResolver        account.SubscriptionTenantResolver
 }
 
 func newDownAction(
@@ -73,16 +75,20 @@ func newDownAction(
 	projectConfig *project.ProjectConfig,
 	console input.Console,
 	commandRunner exec.CommandRunner,
+	userProfileService *azcli.UserProfileService,
+	subResolver account.SubscriptionTenantResolver,
 ) actions.Action {
 	return &downAction{
-		flags:          flags,
-		accountManager: accountManager,
-		azCli:          azCli,
-		azdCtx:         azdCtx,
-		env:            env,
-		console:        console,
-		commandRunner:  commandRunner,
-		projectConfig:  projectConfig,
+		flags:              flags,
+		accountManager:     accountManager,
+		azCli:              azCli,
+		azdCtx:             azdCtx,
+		env:                env,
+		console:            console,
+		commandRunner:      commandRunner,
+		projectConfig:      projectConfig,
+		userProfileService: userProfileService,
+		subResolver:        subResolver,
 	}
 }
 
@@ -97,10 +103,16 @@ func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		a.console,
 		a.commandRunner,
 		a.accountManager,
+		a.userProfileService,
+		a.subResolver,
 	)
 
 	if err != nil {
 		return nil, fmt.Errorf("creating provisioning manager: %w", err)
+	}
+
+	if err := infraManager.EnsureConfigured(ctx); err != nil {
+		return nil, err
 	}
 
 	deploymentPlan, err := infraManager.Plan(ctx)

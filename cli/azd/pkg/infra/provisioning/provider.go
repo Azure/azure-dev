@@ -37,6 +37,7 @@ type NewProviderFn func(
 	cli azcli.AzCli,
 	commandRunner exec.CommandRunner,
 	prompters Prompters,
+	principalProvider CurrentPrincipalIdProvider,
 ) (Provider, error)
 
 var (
@@ -135,6 +136,7 @@ func NewProvider(
 	projectPath string,
 	infraOptions Options,
 	prompters Prompters,
+	principalProvider CurrentPrincipalIdProvider,
 ) (Provider, error) {
 	var provider Provider
 
@@ -148,7 +150,8 @@ func NewProvider(
 		return nil, fmt.Errorf("provider '%s' is not supported", infraOptions.Provider)
 	}
 
-	provider, err := newProviderFn(ctx, env, projectPath, infraOptions, console, azCli, commandRunner, prompters)
+	provider, err := newProviderFn(
+		ctx, env, projectPath, infraOptions, console, azCli, commandRunner, prompters, principalProvider)
 	if err != nil {
 		return nil, fmt.Errorf("error creating provider for type '%s' : %w", infraOptions.Provider, err)
 	}

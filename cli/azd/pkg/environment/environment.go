@@ -228,14 +228,6 @@ func (e *Environment) SetLocation(location string) {
 	e.Values[LocationEnvVarName] = location
 }
 
-func (e *Environment) SetPrincipalId(principalID string) {
-	e.Values[PrincipalIdEnvVarName] = principalID
-}
-
-func (e *Environment) GetPrincipalId() string {
-	return e.Values[PrincipalIdEnvVarName]
-}
-
 func normalize(key string) string {
 	return strings.ReplaceAll(strings.ToUpper(key), "-", "_")
 }

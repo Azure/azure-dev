@@ -27,15 +27,17 @@ import (
 )
 
 type containerAppTarget struct {
-	env                      *environment.Environment
-	cli                      azcli.AzCli
-	containerRegistryService azcli.ContainerRegistryService
-	docker                   docker.Docker
-	console                  input.Console
-	commandRunner            exec.CommandRunner
-	accountManager           account.Manager
-	serviceManager           ServiceManager
-	resourceManager          ResourceManager
+	env                        *environment.Environment
+	cli                        azcli.AzCli
+	containerRegistryService   azcli.ContainerRegistryService
+	docker                     docker.Docker
+	console                    input.Console
+	commandRunner              exec.CommandRunner
+	accountManager             account.Manager
+	serviceManager             ServiceManager
+	resourceManager            ResourceManager
+	userProfileService         *azcli.UserProfileService
+	subscriptionTenantResolver account.SubscriptionTenantResolver
 }
 
 // NewContainerAppTarget creates the container app service target.
@@ -52,17 +54,21 @@ func NewContainerAppTarget(
 	accountManager account.Manager,
 	serviceManager ServiceManager,
 	resourceManager ResourceManager,
+	userProfileService *azcli.UserProfileService,
+	subscriptionTenantResolver account.SubscriptionTenantResolver,
 ) ServiceTarget {
 	return &containerAppTarget{
-		env:                      env,
-		accountManager:           accountManager,
-		serviceManager:           serviceManager,
-		resourceManager:          resourceManager,
-		cli:                      azCli,
-		containerRegistryService: containerRegistryService,
-		docker:                   docker,
-		console:                  console,
-		commandRunner:            commandRunner,
+		env:                        env,
+		accountManager:             accountManager,
+		serviceManager:             serviceManager,
+		resourceManager:            resourceManager,
+		cli:                        azCli,
+		containerRegistryService:   containerRegistryService,
+		docker:                     docker,
+		console:                    console,
+		commandRunner:              commandRunner,
+		userProfileService:         userProfileService,
+		subscriptionTenantResolver: subscriptionTenantResolver,
 	}
 }
 
@@ -151,12 +157,19 @@ func (at *containerAppTarget) Publish(
 				at.cli,
 				&mutedConsole{
 					parentConsole: at.console,
-				}, // make provision output silence
+				}, // hide the bicep deployment output.
 				at.commandRunner,
 				at.accountManager,
+				at.userProfileService,
+				at.subscriptionTenantResolver,
 			)
 			if err != nil {
 				task.SetError(fmt.Errorf("creating provisioning manager: %w", err))
+				return
+			}
+
+			if err := infraManager.EnsureConfigured(ctx); err != nil {
+				task.SetError(err)
 				return
 			}
 

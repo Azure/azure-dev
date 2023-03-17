@@ -50,7 +50,7 @@ const (
 	defaultLocation    = "eastus2"
 )
 
-func Test_CLI_Init_AsksForSubscriptionIdAndCreatesEnvAndProjectFile(t *testing.T) {
+func Test_CLI_Init_CreatesEnvAndProjectFile(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
@@ -62,7 +62,7 @@ func Test_CLI_Init_AsksForSubscriptionIdAndCreatesEnvAndProjectFile(t *testing.T
 
 	_, err := cli.RunCommandWithStdIn(
 		ctx,
-		fmt.Sprintf("Empty Template\nTESTENV\nOther (enter manually)\n%s\n\n", testSubscriptionId),
+		"Empty Template\nTESTENV\n",
 		"init",
 	)
 	require.NoError(t, err)
@@ -71,7 +71,6 @@ func Test_CLI_Init_AsksForSubscriptionIdAndCreatesEnvAndProjectFile(t *testing.T
 
 	require.NoError(t, err)
 
-	require.Regexp(t, regexp.MustCompile(fmt.Sprintf(`AZURE_SUBSCRIPTION_ID="%s"`, testSubscriptionId)+"\n"), string(file))
 	require.Regexp(t, regexp.MustCompile(`AZURE_ENV_NAME="TESTENV"`+"\n"), string(file))
 
 	proj, err := project.Load(ctx, filepath.Join(dir, azdcontext.ProjectFileName))
@@ -94,7 +93,7 @@ func Test_CLI_Init_CanUseTemplate(t *testing.T) {
 
 	_, err := cli.RunCommandWithStdIn(
 		ctx,
-		"TESTENV\n\nOther (enter manually)\nMY_SUB_ID\n",
+		"TESTENV\n",
 		"init",
 		"--template",
 		"cosmos-dotnet-core-todo-app",
@@ -131,10 +130,10 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 	err := copySample(dir, "storage")
 	require.NoError(t, err, "failed expanding sample")
 
-	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "init")
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
 	require.NoError(t, err)
 
-	_, err = cli.RunCommand(ctx, "provision")
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
 	require.NoError(t, err)
 
 	envPath := filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName)
@@ -191,11 +190,11 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 	err := copySample(dir, "storage")
 	require.NoError(t, err, "failed expanding sample")
 
-	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "init")
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
 	require.NoError(t, err)
 
 	// test 'infra create' alias
-	_, err = cli.RunCommand(ctx, "infra", "create", "--output", "json")
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "infra", "create", "--output", "json")
 	require.NoError(t, err)
 
 	envPath := filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName)
@@ -345,11 +344,17 @@ func randomEnvName() string {
 	return ("azdtest-" + osInitial + hex.EncodeToString(bytes))[0:15]
 }
 
-// stdinForTests is just enough stdin to bypass all the prompts or choose defaults.
-func stdinForTests(envName string) string {
-	return fmt.Sprintf("%s\n", envName) + // "enter deployment name"
-		"\n" + // "choose location" (we're choosing the default)
-		"\n" // "choose subscription" (we're choosing the default)
+// stdinForInit builds the standard input string that will configure a given environment name
+// when `init` is run
+func stdinForInit(envName string) string {
+	return fmt.Sprintf("%s\n", envName)
+}
+
+// stdinForProvision is just enough stdin to accept the defaults for the two prompts
+// from `provision` (for a subscription and location)
+func stdinForProvision() string {
+	return "\n" + // "choose subscription" (we're choosing the default)
+		"\n" // "choose location" (we're choosing the default)
 }
 
 func getTestEnvPath(dir string, envName string) string {
@@ -388,11 +393,11 @@ func Test_CLI_InfraCreateAndDeleteResourceTerraform(t *testing.T) {
 	err := copySample(dir, "resourcegroupterraform")
 	require.NoError(t, err, "failed expanding sample")
 
-	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "init")
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
 	require.NoError(t, err)
 
 	t.Logf("Starting provision\n")
-	_, err = cli.RunCommand(ctx, "provision", "--cwd", dir)
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision", "--cwd", dir)
 	require.NoError(t, err)
 
 	envPath := filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName)
@@ -465,7 +470,7 @@ func Test_CLI_InfraCreateAndDeleteResourceTerraformRemote(t *testing.T) {
 	require.NoError(t, err)
 
 	//Run azd init
-	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "init")
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
 	require.NoError(t, err)
 
 	_, err = cli.RunCommand(ctx, "env", "set", "RS_STORAGE_ACCOUNT", backendStorageAccountName, "--cwd", dir)
@@ -478,7 +483,7 @@ func Test_CLI_InfraCreateAndDeleteResourceTerraformRemote(t *testing.T) {
 	require.NoError(t, err)
 
 	t.Logf("Starting infra create\n")
-	_, err = cli.RunCommand(ctx, "infra", "create", "--cwd", dir)
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "infra", "create", "--cwd", dir)
 	require.NoError(t, err)
 
 	t.Logf("Starting infra delete\n")

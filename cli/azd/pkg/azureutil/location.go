@@ -24,26 +24,27 @@ func (s Locs) Less(i, j int) bool {
 }
 func (s Locs) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
 
-// PromptLocation asks the user to select a location from a list of supported azure location
+// PromptLocation asks the user to select a location from a list of supported azure locations for a given subscription.
 func PromptLocation(
-	ctx context.Context, env *environment.Environment, message string, help string, console input.Console,
+	ctx context.Context, subscriptionId string, message string, help string, console input.Console,
 	accountManager account.Manager,
 ) (string, error) {
-	return PromptLocationWithFilter(ctx, env, message, help, console, accountManager, func(acl azcli.AzCliLocation) bool {
-		return true
-	})
+	return PromptLocationWithFilter(ctx, subscriptionId, message, help, console, accountManager,
+		func(acl azcli.AzCliLocation) bool {
+			return true
+		})
 }
 
 func PromptLocationWithFilter(
 	ctx context.Context,
-	env *environment.Environment,
+	subscriptionId string,
 	message string,
 	help string,
 	console input.Console,
 	accountManager account.Manager,
 	shouldDisplay func(azcli.AzCliLocation) bool,
 ) (string, error) {
-	allLocations, err := accountManager.GetLocations(ctx, env.GetSubscriptionId())
+	allLocations, err := accountManager.GetLocations(ctx, subscriptionId)
 	if err != nil {
 		return "", fmt.Errorf("listing locations: %w", err)
 	}

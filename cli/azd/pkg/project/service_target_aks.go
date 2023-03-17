@@ -195,7 +195,7 @@ func (t *aksTarget) Publish(
 			task.SetProgress(NewServiceProgress("Getting AKS credentials"))
 			clusterCreds, err := t.managedClustersService.GetAdminCredentials(
 				ctx,
-				t.env.GetSubscriptionId(),
+				targetResource.SubscriptionId(),
 				targetResource.ResourceGroupName(),
 				clusterName,
 			)
@@ -224,7 +224,8 @@ func (t *aksTarget) Publish(
 			log.Printf("logging into container registry '%s'\n", packageDetails.LoginServer)
 
 			task.SetProgress(NewServiceProgress("Logging into container registry"))
-			if err := t.containerRegistryService.LoginAcr(ctx, t.env.GetSubscriptionId(), packageDetails.LoginServer); err != nil {
+			err = t.containerRegistryService.LoginAcr(ctx, targetResource.SubscriptionId(), packageDetails.LoginServer)
+			if err != nil {
 				task.SetError(fmt.Errorf("failed logging into registry '%s': %w", packageDetails.LoginServer, err))
 				return
 			}
@@ -344,7 +345,7 @@ func (t *aksTarget) Publish(
 			task.SetResult(&ServicePublishResult{
 				Package: packageOutput,
 				TargetResourceId: azure.KubernetesServiceRID(
-					t.env.GetSubscriptionId(),
+					targetResource.SubscriptionId(),
 					targetResource.ResourceGroupName(),
 					targetResource.ResourceName(),
 				),

@@ -36,7 +36,7 @@
     },
     {
         "name": "Azure-Samples/todo-csharp-sql-swa-func",
-        "description": "ToDo Application with a C# API and Azure SQL Databse on Static Web Apps and Functions",
+        "description": "ToDo Application with a C# API and Azure SQL Database on Static Web Apps and Functions",
         "repositoryPath": "Azure-Samples/todo-csharp-sql-swa-func"
     },
     {

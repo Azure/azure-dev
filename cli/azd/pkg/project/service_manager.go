@@ -96,7 +96,11 @@ type ServicePublishResult struct {
 
 // ServiceDeployResult is the result of a successful Deploy operation
 type ServiceDeployResult struct {
-	*ServicePublishResult
+	Restore *ServiceRestoreResult `json:"restore"`
+	Build   *ServiceBuildResult   `json:"build"`
+	Package *ServicePackageResult `json:"package"`
+	Publish *ServicePublishResult `json:"publish"`
+	Details interface{}           `json:"details"`
 }
 
 // ServiceManager provides a management layer for performing operations against an azd service within a project
@@ -443,7 +447,10 @@ func (sm *serviceManager) Deploy(
 			}
 
 			result = &ServiceDeployResult{
-				ServicePublishResult: publishResult,
+				Restore: restoreResult,
+				Build:   buildResult,
+				Package: packageResult,
+				Publish: publishResult,
 			}
 
 			return nil

@@ -47,9 +47,8 @@ func (np *npmProject) Restore(
 ) *async.TaskWithProgress[*ServiceRestoreResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServiceRestoreResult, ServiceProgress]) {
-			// Run NPM install
-			task.SetProgress(NewServiceProgress("Installing dependencies"))
-			if err := np.cli.Install(ctx, serviceConfig.Path(), false); err != nil {
+			task.SetProgress(NewServiceProgress("Installing NPM dependencies"))
+			if err := np.cli.Install(ctx, serviceConfig.Path()); err != nil {
 				task.SetError(err)
 				return
 			}
@@ -67,7 +66,9 @@ func (np *npmProject) Build(
 ) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServiceBuildResult, ServiceProgress]) {
-			task.SetProgress(NewServiceProgress("Building service"))
+			// Exec custom `build` script if available
+			// If `build`` script is not defined in the package.json the NPM script will NOT fail
+			task.SetProgress(NewServiceProgress("Running NPM build script"))
 			if err := np.cli.RunScript(ctx, serviceConfig.Path(), "build", np.env.Environ()); err != nil {
 				task.SetError(err)
 				return
@@ -103,7 +104,9 @@ func (np *npmProject) Package(
 			// Run Build, injecting env.
 			envs := append(np.env.Environ(), "NODE_ENV=production")
 
-			task.SetProgress(NewServiceProgress("Creating deployment package"))
+			// Exec custom `package` script if available
+			// If `package` script is not defined in the package.json the NPM script will NOT fail
+			task.SetProgress(NewServiceProgress("Running NPM package script"))
 			if err := np.cli.RunScript(ctx, serviceConfig.Path(), "package", envs); err != nil {
 				task.SetError(err)
 				return

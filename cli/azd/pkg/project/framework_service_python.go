@@ -49,12 +49,14 @@ func (pp *pythonProject) Restore(
 ) *async.TaskWithProgress[*ServiceRestoreResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServiceRestoreResult, ServiceProgress]) {
+			task.SetProgress(NewServiceProgress("Checking for Python virtual environment"))
 			vEnvName := pp.getVenvName(serviceConfig)
 			vEnvPath := path.Join(serviceConfig.Path(), vEnvName)
 
 			_, err := os.Stat(vEnvPath)
 			if err != nil {
 				if os.IsNotExist(err) {
+					task.SetProgress(NewServiceProgress("Creating Python virtual environment"))
 					err = pp.cli.CreateVirtualEnv(ctx, serviceConfig.Path(), vEnvName)
 					if err != nil {
 						task.SetError(fmt.Errorf(
@@ -72,6 +74,7 @@ func (pp *pythonProject) Restore(
 				}
 			}
 
+			task.SetProgress(NewServiceProgress("Installing PIP dependencies"))
 			err = pp.cli.InstallRequirements(ctx, serviceConfig.Path(), vEnvName, "requirements.txt")
 			if err != nil {
 				task.SetError(

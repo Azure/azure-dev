@@ -18,8 +18,9 @@ import (
 type MavenCli interface {
 	tools.ExternalTool
 	SetPath(projectPath string, rootProjectPath string)
-	Package(ctx context.Context, projectPath string) error
 	ResolveDependencies(ctx context.Context, projectPath string) error
+	Compile(ctx context.Context, projectPath string) error
+	Package(ctx context.Context, projectPath string) error
 }
 
 type mavenCli struct {
@@ -137,6 +138,21 @@ func getMavenWrapperPath(projectPath string, rootProjectPath string) (string, er
 	}
 }
 
+func (cli *mavenCli) Compile(ctx context.Context, projectPath string) error {
+	mvnCmd, err := cli.mvnCmd()
+	if err != nil {
+		return err
+	}
+
+	runArgs := exec.NewRunArgs(mvnCmd, "compile").WithCwd(projectPath)
+	res, err := cli.commandRunner.Run(ctx, runArgs)
+	if err != nil {
+		return fmt.Errorf("mvn compile on project '%s' failed: %s: %w", projectPath, res.String(), err)
+	}
+
+	return nil
+}
+
 func (cli *mavenCli) Package(ctx context.Context, projectPath string) error {
 	mvnCmd, err := cli.mvnCmd()
 	if err != nil {
@@ -149,6 +165,7 @@ func (cli *mavenCli) Package(ctx context.Context, projectPath string) error {
 	if err != nil {
 		return fmt.Errorf("mvn package on project '%s' failed: %s: %w", projectPath, res.String(), err)
 	}
+
 	return nil
 }
 
@@ -162,6 +179,7 @@ func (cli *mavenCli) ResolveDependencies(ctx context.Context, projectPath string
 	if err != nil {
 		return fmt.Errorf("mvn dependency:resolve on project '%s' failed: %s: %w", projectPath, res.String(), err)
 	}
+
 	return nil
 }
 

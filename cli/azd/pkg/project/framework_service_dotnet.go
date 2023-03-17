@@ -61,6 +61,7 @@ func (dp *dotnetProject) Restore(
 ) *async.TaskWithProgress[*ServiceRestoreResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServiceRestoreResult, ServiceProgress]) {
+			task.SetProgress(NewServiceProgress("Restoring .NET dependencies"))
 			if err := dp.dotnetCli.Restore(ctx, serviceConfig.Path()); err != nil {
 				task.SetError(err)
 				return
@@ -79,7 +80,7 @@ func (dp *dotnetProject) Build(
 ) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServiceBuildResult, ServiceProgress]) {
-			task.SetProgress(NewServiceProgress("Building sources"))
+			task.SetProgress(NewServiceProgress("Building .NET sources"))
 			if err := dp.dotnetCli.Build(ctx, serviceConfig.Path(), ""); err != nil {
 				task.SetError(err)
 				return
@@ -106,7 +107,7 @@ func (dp *dotnetProject) Package(
 				return
 			}
 
-			task.SetProgress(NewServiceProgress("Packaging code sources"))
+			task.SetProgress(NewServiceProgress("Packaging .NET sources"))
 			if err := dp.dotnetCli.Publish(ctx, serviceConfig.Path(), publishRoot); err != nil {
 				task.SetError(err)
 				return

@@ -563,7 +563,7 @@ func (p *BicepProvider) purgeKeyVaults(
 
 		asyncContext.SetProgress(&progressReport)
 
-		err := p.azCli.PurgeKeyVault(ctx, azure.SubscriptionRID(keyVault.Id), keyVault.Name, keyVault.Location)
+		err := p.azCli.PurgeKeyVault(ctx, azure.SubscriptionFromRID(keyVault.Id), keyVault.Name, keyVault.Location)
 		if err != nil {
 			return fmt.Errorf("purging key vault %s: %w", keyVault.Name, err)
 		}

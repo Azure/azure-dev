@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -74,21 +73,27 @@ func newDeployCmd() *cobra.Command {
 }
 
 type deployAction struct {
-	flags          *deployFlags
-	projectConfig  *project.ProjectConfig
-	azdCtx         *azdcontext.AzdContext
-	env            *environment.Environment
-	accountManager account.Manager
-	azCli          azcli.AzCli
-	formatter      output.Formatter
-	writer         io.Writer
-	console        input.Console
-	commandRunner  exec.CommandRunner
+	flags           *deployFlags
+	projectConfig   *project.ProjectConfig
+	azdCtx          *azdcontext.AzdContext
+	env             *environment.Environment
+	projectManager  project.ProjectManager
+	serviceManager  project.ServiceManager
+	resourceManager project.ResourceManager
+	accountManager  account.Manager
+	azCli           azcli.AzCli
+	formatter       output.Formatter
+	writer          io.Writer
+	console         input.Console
+	commandRunner   exec.CommandRunner
 }
 
 func newDeployAction(
 	flags *deployFlags,
 	projectConfig *project.ProjectConfig,
+	projectManager project.ProjectManager,
+	serviceManager project.ServiceManager,
+	resourceManager project.ResourceManager,
 	azdCtx *azdcontext.AzdContext,
 	environment *environment.Environment,
 	accountManager account.Manager,
@@ -99,37 +104,39 @@ func newDeployAction(
 	writer io.Writer,
 ) actions.Action {
 	return &deployAction{
-		flags:          flags,
-		projectConfig:  projectConfig,
-		azdCtx:         azdCtx,
-		env:            environment,
-		accountManager: accountManager,
-		azCli:          azCli,
-		formatter:      formatter,
-		writer:         writer,
-		console:        console,
-		commandRunner:  commandRunner,
+		flags:           flags,
+		projectConfig:   projectConfig,
+		azdCtx:          azdCtx,
+		env:             environment,
+		projectManager:  projectManager,
+		serviceManager:  serviceManager,
+		resourceManager: resourceManager,
+		accountManager:  accountManager,
+		azCli:           azCli,
+		formatter:       formatter,
+		writer:          writer,
+		console:         console,
+		commandRunner:   commandRunner,
 	}
 }
 
 type DeploymentResult struct {
-	Timestamp time.Time                         `json:"timestamp"`
-	Services  []project.ServiceDeploymentResult `json:"services"`
+	Timestamp time.Time                      `json:"timestamp"`
+	Services  []*project.ServiceDeployResult `json:"services"`
 }
 
 func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	proj, err := d.projectConfig.GetProject(ctx, d.env, d.console, d.azCli, d.commandRunner, d.accountManager)
-	if err != nil {
-		return nil, fmt.Errorf("creating project: %w", err)
-	}
-
 	// Collect all the tools we will need to do the deployment and validate that
 	// the are installed. When a single project is being deployed, we need just
 	// the tools for that project, otherwise we need the tools from all project.
 	var allTools []tools.ExternalTool
-	for _, svc := range proj.Services {
-		if d.flags.serviceName == "" || d.flags.serviceName == svc.Config.Name {
-			allTools = append(allTools, svc.RequiredExternalTools()...)
+	for _, svc := range d.projectConfig.Services {
+		if d.flags.serviceName == "" || d.flags.serviceName == svc.Name {
+			serviceTools, err := d.serviceManager.GetRequiredTools(ctx, svc)
+			if err != nil {
+				return nil, fmt.Errorf("failed getting required tools for service %s: %w", svc.Name, err)
+			}
+			allTools = append(allTools, serviceTools...)
 		}
 	}
 
@@ -142,44 +149,51 @@ func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		Title: "Deploying services (azd deploy)",
 	})
 
-	var svcDeploymentResult project.ServiceDeploymentResult
-	var deploymentResults []project.ServiceDeploymentResult
+	var svcDeploymentResult *project.ServiceDeployResult
+	var deploymentResults []*project.ServiceDeployResult
 
-	for _, svc := range proj.Services {
+	if err := d.projectManager.Initialize(ctx, d.projectConfig); err != nil {
+		return nil, err
+	}
+
+	for _, svc := range d.projectConfig.Services {
 		// Skip this service if both cases are true:
 		// 1. The user specified a service name
 		// 2. This service is not the one the user specified
-		if d.flags.serviceName != "" && svc.Config.Name != d.flags.serviceName {
+		if d.flags.serviceName != "" && svc.Name != d.flags.serviceName {
 			continue
 		}
 
-		stepMessage := fmt.Sprintf("Deploying service %s", svc.Config.Name)
+		stepMessage := fmt.Sprintf("Deploying service %s", svc.Name)
 		d.console.ShowSpinner(ctx, stepMessage, input.Step)
-		result, progress := svc.Deploy(ctx, d.azdCtx)
 
-		// Report any progress to logs only. Changes for the console are managed by the console object.
-		// This routine is required to drain all the string messages sent by the `progress`.
+		deployTask := d.serviceManager.Deploy(ctx, svc)
+
 		go func() {
-			for message := range progress {
-				log.Printf("- %s...", message)
+			for progress := range deployTask.Progress() {
+				updatedMessage := fmt.Sprintf("Deploying service %s (%s)", svc.Name, progress.Message)
+				d.console.ShowSpinner(ctx, updatedMessage, input.Step)
 			}
 		}()
 
-		// block until deploy thread returns
-		response := <-result
+		result, err := deployTask.Await()
 
 		d.console.StopSpinner(ctx, stepMessage, input.GetStepResultFormat(err))
-		if response.Error != nil {
-			return nil, fmt.Errorf("deploying service: %w", response.Error)
+		if err != nil {
+			return nil, fmt.Errorf("deploying service: %w", err)
 		}
 
-		svcDeploymentResult = *response.Result
+		svcDeploymentResult = result
 		deploymentResults = append(deploymentResults, svcDeploymentResult)
 
 		// report endpoint
 		for _, endpoint := range svcDeploymentResult.Endpoints {
 			d.console.MessageUxItem(ctx, &ux.Endpoint{Endpoint: endpoint})
 		}
+	}
+
+	if d.flags.serviceName != "" && len(deploymentResults) == 0 {
+		return nil, fmt.Errorf("no services were deployed. Check the specified service name and try again.")
 	}
 
 	if d.formatter.Kind() == output.JsonFormat {
@@ -196,7 +210,7 @@ func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
 			Header:   "Your Azure app has been deployed!",
-			FollowUp: getResourceGroupFollowUp(ctx, d.formatter, d.azCli, d.projectConfig, d.env),
+			FollowUp: getResourceGroupFollowUp(ctx, d.formatter, d.azCli, d.projectConfig, d.resourceManager, d.env),
 		},
 	}, nil
 }

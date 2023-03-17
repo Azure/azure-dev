@@ -3,6 +3,7 @@ linters:
     - errorlint
     - gofmt
     - lll
+    - gosec
 linters-settings:
   errorlint:
     errorf: true

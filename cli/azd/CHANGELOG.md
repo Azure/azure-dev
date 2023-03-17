@@ -8,6 +8,8 @@
 
 ### Bugs Fixed
 
+- [[#1734]](https://github.com/Azure/azure-dev/pull/1734) Fix setting `AZURE_PRINCIPAL_ID` on multi-tenant directory.
+
 ### Other Changes
 
 ## 0.7.0-beta.1 (2023-03-09)

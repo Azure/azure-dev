@@ -96,11 +96,13 @@ type initAction struct {
 	gitCli             git.GitCli
 	flags              *initFlags
 	repoInitializer    *repository.Initializer
+	subResolver        account.SubscriptionTenantResolver
 }
 
 func newInitAction(
 	accountManager account.Manager,
 	userProfileService *azcli.UserProfileService,
+	subResolver account.SubscriptionTenantResolver,
 	_ auth.LoggedInGuard,
 	cmdRun exec.CommandRunner,
 	console input.Console,
@@ -115,6 +117,7 @@ func newInitAction(
 		flags:              flags,
 		userProfileService: userProfileService,
 		repoInitializer:    repoInitializer,
+		subResolver:        subResolver,
 	}
 }
 
@@ -204,7 +207,8 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		subscription:    i.flags.subscription,
 		location:        i.flags.location,
 	}
-	env, err := createAndInitEnvironment(ctx, &envSpec, azdCtx, i.console, i.accountManager, i.userProfileService)
+	env, err := createAndInitEnvironment(
+		ctx, &envSpec, azdCtx, i.console, i.accountManager, i.userProfileService, i.subResolver)
 	if err != nil {
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}

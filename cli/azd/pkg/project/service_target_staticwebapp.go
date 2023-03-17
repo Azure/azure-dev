@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
@@ -24,90 +24,142 @@ import (
 const DefaultStaticWebAppEnvironmentName = "default"
 
 type staticWebAppTarget struct {
-	config   *ServiceConfig
-	env      *environment.Environment
-	resource *environment.TargetResource
-	cli      azcli.AzCli
-	swa      swa.SwaCli
+	env *environment.Environment
+	cli azcli.AzCli
+	swa swa.SwaCli
 }
 
-func (at *staticWebAppTarget) RequiredExternalTools() []tools.ExternalTool {
+// NewStaticWebAppTarget creates a new instance of the Static Web App target
+func NewStaticWebAppTarget(
+	env *environment.Environment,
+	azCli azcli.AzCli,
+	swaCli swa.SwaCli,
+) ServiceTarget {
+	return &staticWebAppTarget{
+		env: env,
+		cli: azCli,
+		swa: swaCli,
+	}
+}
+
+// Gets the required external tools for the Static Web App target
+func (at *staticWebAppTarget) RequiredExternalTools(context.Context) []tools.ExternalTool {
 	return []tools.ExternalTool{at.swa}
 }
 
-func (at *staticWebAppTarget) Deploy(
-	ctx context.Context,
-	azdCtx *azdcontext.AzdContext,
-	path string,
-	progress chan<- string,
-) (ServiceDeploymentResult, error) {
-	if strings.TrimSpace(at.config.OutputPath) == "" {
-		at.config.OutputPath = "build"
-	}
-
-	// Get the static webapp deployment token
-	progress <- "Retrieving deployment token"
-	deploymentToken, err := at.cli.GetStaticWebAppApiKey(
-		ctx,
-		at.env.GetSubscriptionId(),
-		at.resource.ResourceGroupName(),
-		at.resource.ResourceName(),
-	)
-	if err != nil {
-		return ServiceDeploymentResult{}, fmt.Errorf("failed retrieving static web app deployment token: %w", err)
-	}
-
-	// SWA performs a zip & deploy of the specified output folder and publishes it to the configured environment
-	progress <- "Publishing deployment artifacts"
-	res, err := at.swa.Deploy(ctx,
-		at.config.Project.Path,
-		at.env.GetTenantId(),
-		at.env.GetSubscriptionId(),
-		at.resource.ResourceGroupName(),
-		at.resource.ResourceName(),
-		at.config.RelativePath,
-		at.config.OutputPath,
-		DefaultStaticWebAppEnvironmentName,
-		*deploymentToken)
-
-	log.Println(res)
-
-	if err != nil {
-		return ServiceDeploymentResult{}, fmt.Errorf("failed deploying static web app: %w", err)
-	}
-
-	if err := at.verifyDeployment(ctx, progress); err != nil {
-		return ServiceDeploymentResult{}, err
-	}
-
-	progress <- "Fetching endpoints for static web app"
-	endpoints, err := at.Endpoints(ctx)
-	if err != nil {
-		return ServiceDeploymentResult{}, err
-	}
-
-	sdr := NewServiceDeploymentResult(
-		azure.StaticWebAppRID(
-			at.env.GetSubscriptionId(),
-			at.resource.ResourceGroupName(),
-			at.resource.ResourceName(),
-		),
-		StaticWebAppTarget,
-		res,
-		endpoints,
-	)
-
-	return sdr, nil
+// Initializes the static web app target
+func (at *staticWebAppTarget) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
+	return nil
 }
 
-func (at *staticWebAppTarget) Endpoints(ctx context.Context) ([]string, error) {
+// Sets the build output that will be consumed for the publish operation
+func (at *staticWebAppTarget) Package(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	buildOutput *ServiceBuildResult,
+) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
+	return async.RunTaskWithProgress(
+		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
+			if strings.TrimSpace(serviceConfig.OutputPath) == "" {
+				serviceConfig.OutputPath = "build"
+			}
+
+			task.SetResult(&ServicePackageResult{
+				Build:       buildOutput,
+				PackagePath: serviceConfig.OutputPath,
+			})
+		},
+	)
+}
+
+// Publishes the packaged build output using the SWA CLI
+func (at *staticWebAppTarget) Publish(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	packageOutput *ServicePackageResult,
+	targetResource *environment.TargetResource,
+) *async.TaskWithProgress[*ServicePublishResult, ServiceProgress] {
+	return async.RunTaskWithProgress(
+		func(task *async.TaskContextWithProgress[*ServicePublishResult, ServiceProgress]) {
+			if err := at.validateTargetResource(ctx, serviceConfig, targetResource); err != nil {
+				task.SetError(fmt.Errorf("validating target resource: %w", err))
+				return
+			}
+
+			// Get the static webapp deployment token
+			task.SetProgress(NewServiceProgress("Retrieving deployment token"))
+			deploymentToken, err := at.cli.GetStaticWebAppApiKey(
+				ctx,
+				at.env.GetSubscriptionId(),
+				targetResource.ResourceGroupName(),
+				targetResource.ResourceName(),
+			)
+			if err != nil {
+				task.SetError(fmt.Errorf("failed retrieving static web app deployment token: %w", err))
+				return
+			}
+
+			// SWA performs a zip & deploy of the specified output folder and publishes it to the configured environment
+			task.SetProgress(NewServiceProgress("Publishing deployment artifacts"))
+			res, err := at.swa.Deploy(ctx,
+				serviceConfig.Project.Path,
+				at.env.GetTenantId(),
+				at.env.GetSubscriptionId(),
+				targetResource.ResourceGroupName(),
+				targetResource.ResourceName(),
+				serviceConfig.RelativePath,
+				packageOutput.PackagePath,
+				DefaultStaticWebAppEnvironmentName,
+				*deploymentToken)
+
+			log.Println(res)
+
+			if err != nil {
+				task.SetError(fmt.Errorf("failed deploying static web app: %w", err))
+				return
+			}
+
+			task.SetProgress(NewServiceProgress("Verifying deployment"))
+			if err := at.verifyDeployment(ctx, targetResource); err != nil {
+				task.SetError(err)
+			}
+
+			task.SetProgress(NewServiceProgress("Fetching endpoints for static web app"))
+			endpoints, err := at.Endpoints(ctx, serviceConfig, targetResource)
+			if err != nil {
+				task.SetError(err)
+			}
+
+			sdr := NewServicePublishResult(
+				azure.StaticWebAppRID(
+					at.env.GetSubscriptionId(),
+					targetResource.ResourceGroupName(),
+					targetResource.ResourceName(),
+				),
+				StaticWebAppTarget,
+				res,
+				endpoints,
+			)
+			sdr.Package = packageOutput
+
+			task.SetResult(sdr)
+		},
+	)
+}
+
+// Gets the endpoints for the static web app
+func (at *staticWebAppTarget) Endpoints(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	targetResource *environment.TargetResource,
+) ([]string, error) {
 	// TODO: Enhance for multi-environment support
 	// https://github.com/Azure/azure-dev/issues/1152
 	if envProps, err := at.cli.GetStaticWebAppEnvironmentProperties(
 		ctx,
 		at.env.GetSubscriptionId(),
-		at.resource.ResourceGroupName(),
-		at.resource.ResourceName(),
+		targetResource.ResourceGroupName(),
+		targetResource.ResourceName(),
 		DefaultStaticWebAppEnvironmentName,
 	); err != nil {
 		return nil, fmt.Errorf("fetching service properties: %w", err)
@@ -116,18 +168,32 @@ func (at *staticWebAppTarget) Endpoints(ctx context.Context) ([]string, error) {
 	}
 }
 
-func (at *staticWebAppTarget) verifyDeployment(ctx context.Context, progress chan<- string) error {
-	verifyMsg := "Verifying deployment"
+func (at *staticWebAppTarget) validateTargetResource(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	targetResource *environment.TargetResource,
+) error {
+	if !strings.EqualFold(targetResource.ResourceType(), string(infra.AzureResourceTypeStaticWebSite)) {
+		return resourceTypeMismatchError(
+			targetResource.ResourceName(),
+			targetResource.ResourceType(),
+			infra.AzureResourceTypeStaticWebSite,
+		)
+	}
+
+	return nil
+}
+
+func (at *staticWebAppTarget) verifyDeployment(ctx context.Context, targetResource *environment.TargetResource) error {
 	retries := 0
 	const maxRetries = 10
 
 	for {
-		progress <- verifyMsg
 		envProps, err := at.cli.GetStaticWebAppEnvironmentProperties(
 			ctx,
 			at.env.GetSubscriptionId(),
-			at.resource.ResourceGroupName(),
-			at.resource.ResourceName(),
+			targetResource.ResourceGroupName(),
+			targetResource.ResourceName(),
 			DefaultStaticWebAppEnvironmentName,
 		)
 		if err != nil {
@@ -144,33 +210,8 @@ func (at *staticWebAppTarget) verifyDeployment(ctx context.Context, progress cha
 			return fmt.Errorf("failed verifying static web app deployment. Still in %s state", envProps.Status)
 		}
 
-		verifyMsg += "."
 		time.Sleep(5 * time.Second)
 	}
 
 	return nil
-}
-
-func NewStaticWebAppTarget(
-	config *ServiceConfig,
-	env *environment.Environment,
-	resource *environment.TargetResource,
-	azCli azcli.AzCli,
-	swaCli swa.SwaCli,
-) (ServiceTarget, error) {
-	if !strings.EqualFold(resource.ResourceType(), string(infra.AzureResourceTypeStaticWebSite)) {
-		return nil, resourceTypeMismatchError(
-			resource.ResourceName(),
-			resource.ResourceType(),
-			infra.AzureResourceTypeStaticWebSite,
-		)
-	}
-
-	return &staticWebAppTarget{
-		config:   config,
-		env:      env,
-		resource: resource,
-		cli:      azCli,
-		swa:      swaCli,
-	}, nil
 }

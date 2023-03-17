@@ -33,7 +33,7 @@ func Test_GetUserAccessToken(t *testing.T) {
 		},
 	}, mockContext.HttpClient)
 
-	actual, err := userProfile.GetAccessToken(*mockContext.Context)
+	actual, err := userProfile.GetAccessToken(*mockContext.Context, "")
 	require.NoError(t, err)
 	require.Equal(t, expected.Token, actual.AccessToken)
 }
@@ -54,7 +54,7 @@ func Test_GetSignedInUserId(t *testing.T) {
 
 		userProfile := NewUserProfileService(&mocks.MockMultiTenantCredentialProvider{}, mockContext.HttpClient)
 
-		userId, err := userProfile.GetSignedInUserId(*mockContext.Context)
+		userId, err := userProfile.GetSignedInUserId(*mockContext.Context, "")
 		require.NoError(t, err)
 		require.Equal(t, mockUserProfile.Id, *userId)
 	})
@@ -65,7 +65,7 @@ func Test_GetSignedInUserId(t *testing.T) {
 
 		userProfile := NewUserProfileService(&mocks.MockMultiTenantCredentialProvider{}, mockContext.HttpClient)
 
-		userId, err := userProfile.GetSignedInUserId(*mockContext.Context)
+		userId, err := userProfile.GetSignedInUserId(*mockContext.Context, "")
 		require.Error(t, err)
 		require.Nil(t, userId)
 	})

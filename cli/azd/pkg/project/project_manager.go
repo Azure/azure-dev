@@ -4,11 +4,8 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
 const (
@@ -35,32 +32,20 @@ type ProjectManager interface {
 	// The initialization process will also ensure that all required tools are installed
 	Initialize(ctx context.Context, projectConfig *ProjectConfig) error
 
-	// Provisions the infrastructure for the specified project config
-	Provision(ctx context.Context, projectConfig *ProjectConfig) (*provisioning.DeployResult, error)
-
 	// TODO: Add lifecycle functions to perform action on all services.
 	// Restore, build, package, publish & deploy
 }
 
 type projectManager struct {
-	env            *environment.Environment
-	azCli          azcli.AzCli
 	serviceManager ServiceManager
-	//infraManager   *provisioning.Manager
 }
 
 // NewProjectManager creates a new instance of the ProjectManager
 func NewProjectManager(
-	env *environment.Environment,
-	azCli azcli.AzCli,
 	serviceManager ServiceManager,
-	//infraManager *provisioning.Manager,
 ) ProjectManager {
 	return &projectManager{
-		env:            env,
-		azCli:          azCli,
 		serviceManager: serviceManager,
-		//infraManager:   infraManager,
 	}
 }
 
@@ -87,18 +72,4 @@ func (pm *projectManager) Initialize(ctx context.Context, projectConfig *Project
 	}
 
 	return nil
-}
-
-func (pm *projectManager) Provision(ctx context.Context, projectConfig *ProjectConfig) (*provisioning.DeployResult, error) {
-	// deploymentPlan, err := pm.infraManager.Plan(ctx)
-	// if err != nil {
-	// 	return nil, fmt.Errorf("planning deployment: %w", err)
-	// }
-
-	// provisioningScope := infra.NewSubscriptionScope(
-	// 	pm.azCli, pm.env.GetLocation(), pm.env.GetSubscriptionId(), pm.env.GetEnvName(),
-	// )
-
-	// return pm.infraManager.Deploy(ctx, deploymentPlan, provisioningScope)
-	return nil, nil
 }

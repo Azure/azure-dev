@@ -124,6 +124,7 @@ module "api" {
     "SCM_DO_BUILD_DURING_DEPLOYMENT"        = "true"
     "AZURE_KEY_VAULT_ENDPOINT"              = module.keyvault.AZURE_KEY_VAULT_ENDPOINT
     "APPLICATIONINSIGHTS_CONNECTION_STRING" = module.applicationinsights.APPLICATIONINSIGHTS_CONNECTION_STRING
+    "REACT_APP_WEB_BASE_URL"                =  module.web.URI
   }
 
   app_command_line = ""

@@ -12,6 +12,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
@@ -100,7 +101,8 @@ func (m *monitorAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	var portalResources []azcli.AzCliResource
 
 	for _, resourceGroup := range resourceGroups {
-		resources, err := m.azCli.ListResourceGroupResources(ctx, m.env.GetSubscriptionId(), resourceGroup.Name, nil)
+		resources, err := m.azCli.ListResourceGroupResources(
+			ctx, azure.SubscriptionFromRID(resourceGroup.Id), resourceGroup.Name, nil)
 		if err != nil {
 			return nil, fmt.Errorf("listing resources: %w", err)
 		}

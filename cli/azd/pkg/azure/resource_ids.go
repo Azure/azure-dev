@@ -6,9 +6,23 @@ package azure
 import (
 	"fmt"
 	"regexp"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 )
+
+// SubscriptionFromRID returns the subscription id component of a resource, or empty if the ID does not
+// contain a subscriptions component.
+func SubscriptionFromRID(rid string) string {
+	parts := strings.Split(rid, "/")
+	for idx, part := range parts {
+		if part == "subscriptions" && idx+1 < len(parts) {
+			return parts[idx+1]
+		}
+	}
+
+	return ""
+}
 
 // Creates Azure subscription resource ID
 func SubscriptionRID(subscriptionId string) string {

@@ -14,8 +14,10 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/project/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/python"
+	"github.com/denormal/go-gitignore"
 	"github.com/otiai10/copy"
 )
 
@@ -107,12 +109,13 @@ func (pp *pythonProject) Build(
 
 			task.SetProgress(NewServiceProgress("Copying deployment package"))
 
-			if err := copy.Copy(
-				publishSource,
-				publishRoot,
-				skipPatterns(
-					filepath.Join(publishSource, "__pycache__"), filepath.Join(publishSource, ".venv"),
-					filepath.Join(publishSource, ".azure"))); err != nil {
+			gitSkipPatterns, err := internal.CreateSkipPatternsFromGitIgnore(publishSource)
+			if err != nil {
+				task.SetError(fmt.Errorf("creating skip patterns from .gitignore: %w", err))
+				return
+			}
+
+			if err := copy.Copy(publishSource, publishRoot, skipPatterns(gitSkipPatterns)); err != nil {
 				task.SetError(fmt.Errorf("publishing for %s: %w", serviceConfig.Name, err))
 				return
 			}
@@ -136,15 +139,11 @@ func (pp *pythonProject) getVenvName(serviceConfig *ServiceConfig) string {
 
 // skipPatterns returns a `copy.Options` which will skip any files
 // that match a given pattern. Matching is done with `filepath.Match`.
-func skipPatterns(patterns ...string) copy.Options {
+func skipPatterns(patterns []gitignore.GitIgnore) copy.Options {
 	return copy.Options{
 		Skip: func(src string) (bool, error) {
 			for _, pattern := range patterns {
-				skip, err := filepath.Match(pattern, src)
-				switch {
-				case err != nil:
-					return false, fmt.Errorf("error matching pattern %s: %w", pattern, err)
-				case skip:
+				if pattern.Ignore(src) {
 					return true, nil
 				}
 			}

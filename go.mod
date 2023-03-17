@@ -20,6 +20,7 @@ require (
 	github.com/benbjohnson/clock v1.3.0
 	github.com/blang/semver/v4 v4.0.0
 	github.com/bradleyjkemp/cupaloy/v2 v2.8.0
+	github.com/denormal/go-gitignore v0.0.0-20180930084346-ae8ad1d07817
 	github.com/drone/envsubst v1.0.3
 	github.com/fatih/color v1.13.0
 	github.com/gofrs/flock v0.8.1
@@ -51,7 +52,10 @@ require (
 
 )
 
-require golang.org/x/text v0.7.0 // indirect
+require (
+	github.com/danwakefield/fnmatch v0.0.0-20160403171240-cbb64ac3d964 // indirect
+	golang.org/x/text v0.7.0 // indirect
+)
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.0.1 // indirect

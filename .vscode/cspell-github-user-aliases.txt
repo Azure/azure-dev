@@ -5,6 +5,7 @@ blang
 bradleyjkemp
 briandowns
 cobey
+denormal
 ellismg
 envsubst
 fatih

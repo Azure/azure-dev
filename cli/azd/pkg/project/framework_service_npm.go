@@ -12,6 +12,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/project/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/npm"
 	"github.com/otiai10/copy"
@@ -90,11 +91,14 @@ func (np *npmProject) Build(
 			}
 
 			task.SetProgress(NewServiceProgress("Copying deployment package"))
-			if err := copy.Copy(
-				publishSource,
-				publishRoot,
-				skipPatterns(
-					filepath.Join(publishSource, "node_modules"), filepath.Join(publishSource, ".azure"))); err != nil {
+
+			gitSkipPatterns, err := internal.CreateSkipPatternsFromGitIgnore(publishSource)
+			if err != nil {
+				task.SetError(fmt.Errorf("creating skip patterns from .gitignore: %w", err))
+				return
+			}
+
+			if err := copy.Copy(publishSource, publishRoot, skipPatterns(gitSkipPatterns)); err != nil {
 				task.SetError(fmt.Errorf("publishing for %s: %w", serviceConfig.Name, err))
 				return
 			}

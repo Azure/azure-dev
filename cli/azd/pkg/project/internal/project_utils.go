@@ -6,8 +6,11 @@ package internal
 import (
 	"fmt"
 	"os"
+	"path/filepath"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/rzip"
+	"github.com/denormal/go-gitignore"
 )
 
 // CreateDeployableZip creates a zip file of a folder, recursively.
@@ -33,4 +36,26 @@ func CreateDeployableZip(appName string, path string) (string, error) {
 	}
 
 	return zipFile.Name(), nil
+}
+
+const c_gitIgnore string = ".gitignore"
+
+// CreateSkipPatternsFromGitIgnore inspect root project path and a `servicePath`
+// to see if there is a .gitignore file. It then combine both files in a single list
+// of exclusions.
+func CreateSkipPatternsFromGitIgnore(servicePath string) ([]gitignore.GitIgnore, error) {
+	// azdContext will provide the azd-project root path
+	azdContext, err := azdcontext.NewAzdContext()
+	if err != nil {
+		return nil, err
+	}
+
+	rootPath := azdContext.ProjectDirectory()
+	// If .gitignore can't be open is fine, it could be missing
+	var allPatterns []gitignore.GitIgnore
+	rootPatterns, _ := gitignore.NewFromFile(filepath.Join(rootPath, c_gitIgnore))
+	servicePatterns, _ := gitignore.NewFromFile(filepath.Join(servicePath, c_gitIgnore))
+
+	allPatterns = append(allPatterns, rootPatterns, servicePatterns)
+	return allPatterns, nil
 }

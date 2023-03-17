@@ -1,17 +1,18 @@
 param name string
+param currentAppSettings object = {}
 param appSettings object
 
-resource staticSite 'Microsoft.Web/staticSites@2022-03-01' existing = {
+resource appService 'Microsoft.Web/sites@2022-03-01' existing = {
   name: name
 }
 
-resource settings 'Microsoft.Web/staticSites/config@2022-03-01' = {
+resource settings 'Microsoft.Web/sites/config@2022-03-01' = {
   name: 'appsettings'
-  parent: staticSite
+  parent: appService
   // appSettings is set as 2nd argument to union(). This order is important,
   // and ensures new app settings are applied over existing ones.
-  properties: union( 
-    staticSite.listAppSettings().properties,
+  properties: union(
+    currentAppSettings,
     appSettings
   )
 }

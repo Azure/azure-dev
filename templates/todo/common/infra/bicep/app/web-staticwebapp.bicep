@@ -3,6 +3,7 @@ param location string = resourceGroup().location
 param tags object = {}
 
 param serviceName string = 'web'
+param appSettings object = {}
 
 module web '../../../../../common/infra/bicep/core/host/staticwebapp.bicep' = {
   name: '${serviceName}-staticwebapp-module'
@@ -10,6 +11,7 @@ module web '../../../../../common/infra/bicep/core/host/staticwebapp.bicep' = {
     name: name
     location: location
     tags: union(tags, { 'azd-service-name': serviceName })
+    appSettings: appSettings
   }
 }
 

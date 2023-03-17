@@ -1,6 +1,7 @@
 param name string
 param location string = resourceGroup().location
 param tags object = {}
+param appSettings object = {}
 
 param sku object = {
   name: 'Free'
@@ -14,6 +15,11 @@ resource web 'Microsoft.Web/staticSites@2022-03-01' = {
   sku: sku
   properties: {
     provider: 'Custom'
+  }
+
+  resource config 'config' = {
+    name: 'appsettings'
+    properties: appSettings
   }
 }
 

@@ -11,8 +11,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 )
 
-// SubscriptionFromRID returns the subscription id component of a resource, or empty if the ID does not
-// contain a subscriptions component.
+// SubscriptionFromRID returns the subscription id component of a resource or panics if the resource id does not
+// contain a subscription.
 func SubscriptionFromRID(rid string) string {
 	parts := strings.Split(rid, "/")
 	for idx, part := range parts {
@@ -21,7 +21,7 @@ func SubscriptionFromRID(rid string) string {
 		}
 	}
 
-	return ""
+	panic(fmt.Sprintf("no subscription id component in in %s", rid))
 }
 
 // Creates Azure subscription resource ID

@@ -137,8 +137,8 @@ ensure_rosetta() {
     else
         say "Rosetta 2 is not installed. You may be prompted to accept terms necessary to install Rosetta 2."
 
-       
-        if /usr/sbin/softwareupdate --install-rosetta; then
+        # Ensure that softwareupdate gets input from the terminal
+        if /usr/sbin/softwareupdate --install-rosetta </dev/tty; then
         	say "Rosetta has been successfully installed."
         else
         	say_error "Rosetta 2 installation failed!"

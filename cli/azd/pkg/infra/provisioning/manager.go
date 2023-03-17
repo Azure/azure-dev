@@ -227,7 +227,7 @@ func (m *Manager) ensureLocation(ctx context.Context, deployment *Deployment) (s
 		// project.
 		selected, err := m.prompters.Location(
 			"Please select an Azure location to use to store deployment metadata:",
-			func(_ azcli.AzCliLocation) bool {
+			func(_ account.Location) bool {
 				return true
 			})
 		if err != nil {
@@ -296,7 +296,7 @@ func NewManager(
 	commandRunner exec.CommandRunner,
 	accountManager account.Manager,
 ) (*Manager, error) {
-	locationPrompt := func(msg string, filter func(loc azcli.AzCliLocation) bool) (location string, err error) {
+	locationPrompt := func(msg string, filter func(loc account.Location) bool) (location string, err error) {
 		return azureutil.PromptLocationWithFilter(ctx, env.GetSubscriptionId(), msg, "", console, accountManager, filter)
 	}
 

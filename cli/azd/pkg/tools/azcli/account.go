@@ -17,23 +17,6 @@ var (
 	isRefreshTokenExpiredMessageRegex = regexp.MustCompile(`AADSTS(70043|700082)`)
 )
 
-type AzCliSubscriptionInfo struct {
-	Name      string `json:"name"`
-	Id        string `json:"id"`
-	TenantId  string `json:"tenantId"`
-	IsDefault bool   `json:"isDefault"`
-}
-
-type AzCliLocation struct {
-	// The human friendly name of the location (e.g. "West US 2")
-	DisplayName string `json:"displayName"`
-	// The name of the location (e.g. "westus2")
-	Name string `json:"name"`
-	// The human friendly name of the location, prefixed with a
-	// region name (e.g "(US) West US 2")
-	RegionalDisplayName string `json:"regionalDisplayName"`
-}
-
 // AzCliAccessToken represents the value returned by `az account get-access-token`
 type AzCliAccessToken struct {
 	AccessToken string

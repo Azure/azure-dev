@@ -111,22 +111,24 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	// Add information about the target of each service, if we can determine it (if the infrastructure has
 	// not been deployed, for example, we'll just not include target information)
 	resourceManager := infra.NewAzureResourceManager(s.azCli)
+	subId := s.env.GetSubscriptionId()
+	envName := s.env.GetEnvName()
 
-	if resourceGroupName, err := resourceManager.FindResourceGroupForEnvironment(ctx, s.env); err == nil {
-		for name, serviceConfig := range s.projectConfig.Services {
-			if resources, err := s.resourceManager.GetServiceResources(ctx, serviceConfig, resourceGroupName); err == nil {
+	if rgName, err := resourceManager.FindResourceGroupForEnvironment(ctx, subId, envName); err == nil {
+		for svcName, serviceConfig := range s.projectConfig.Services {
+			if resources, err := s.resourceManager.GetServiceResources(ctx, subId, rgName, serviceConfig); err == nil {
 				resourceIds := make([]string, len(resources))
 				for idx, res := range resources {
 					resourceIds[idx] = res.Id
 				}
 
-				resSvc := res.Services[name]
+				resSvc := res.Services[svcName]
 				resSvc.Target = &contracts.ShowTargetArm{
 					ResourceIds: resourceIds,
 				}
-				res.Services[name] = resSvc
+				res.Services[svcName] = resSvc
 			} else {
-				log.Printf("ignoring error determining resource id for service %s: %v", name, err)
+				log.Printf("ignoring error determining resource id for service %s: %v", svcName, err)
 			}
 		}
 	} else {

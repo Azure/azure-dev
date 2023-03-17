@@ -72,7 +72,7 @@ func Test_CLI_Init_AsksForSubscriptionIdAndCreatesEnvAndProjectFile(t *testing.T
 	require.Regexp(t, regexp.MustCompile(fmt.Sprintf(`AZURE_SUBSCRIPTION_ID="%s"`, testSubscriptionId)+"\n"), string(file))
 	require.Regexp(t, regexp.MustCompile(`AZURE_ENV_NAME="TESTENV"`+"\n"), string(file))
 
-	proj, err := project.LoadProjectConfig(filepath.Join(dir, azdcontext.ProjectFileName))
+	proj, err := project.Load(ctx, filepath.Join(dir, azdcontext.ProjectFileName))
 	require.NoError(t, err)
 
 	require.Equal(t, filepath.Base(dir), proj.Name)
@@ -370,6 +370,7 @@ func Test_CLI_ProjectIsNeeded(t *testing.T) {
 func Test_CLI_NoDebugSpewWhenHelpPassedWithoutDebug(t *testing.T) {
 	stdErrBuf := bytes.Buffer{}
 
+	/* #nosec G204 - Subprocess launched with a potential tainted input or cmd arguments false positive */
 	cmd := osexec.Command(azdcli.GetAzdLocation(), "--help")
 	cmd.Stderr = &stdErrBuf
 

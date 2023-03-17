@@ -401,6 +401,7 @@ func extractFromZip(src, dst string) (string, error) {
 				return extractedAt, err
 			}
 			defer ghCliFile.Close()
+			/* #nosec G110 - decompression bomb false positive */
 			_, err = io.Copy(ghCliFile, fileReader)
 			if err != nil {
 				return extractedAt, err
@@ -444,6 +445,7 @@ func extractFromTar(src, dst string) (string, error) {
 		// Tha name contains the path, remove it
 		fileNameParts := strings.Split(fileHeader.Name, "/")
 		fileName := fileNameParts[len(fileNameParts)-1]
+		// cspell: disable-next-line `Typeflag` is comming fron *tar.Header
 		if fileHeader.Typeflag == tar.TypeReg && fileName == "gh" {
 			filePath := filepath.Join(dst, fileName)
 			ghCliFile, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, os.FileMode(fileHeader.Mode))
@@ -451,6 +453,7 @@ func extractFromTar(src, dst string) (string, error) {
 				return extractedAt, err
 			}
 			defer ghCliFile.Close()
+			/* #nosec G110 - decompression bomb false positive */
 			_, err = io.Copy(ghCliFile, tarReader)
 			if err != nil {
 				return extractedAt, err

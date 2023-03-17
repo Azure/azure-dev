@@ -12,12 +12,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
-	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockarmresources"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
-	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/exp/slices"
 )
 
 // Specifying resource name in the project file should override the default
@@ -48,22 +45,19 @@ services:
 		})
 	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 
-	e := environment.EphemeralWithValues("envA", map[string]string{
+	env := environment.EphemeralWithValues("envA", map[string]string{
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
 	})
-	projectConfig, err := ParseProjectConfig(testProj)
+
+	projectConfig, err := Parse(*mockContext.Context, testProj)
 	require.NoError(t, err)
 
-	project, err := projectConfig.GetProject(
-		*mockContext.Context, e, mockContext.Console,
-		azCli, mockContext.CommandRunner, &mockaccount.MockAccountManager{})
+	resourceManager := NewResourceManager(env, azCli)
+	targetResource, err := resourceManager.GetTargetResource(*mockContext.Context, projectConfig.Services["api"])
 	require.NoError(t, err)
+	require.NotNil(t, targetResource)
 
-	assertHasService(t,
-		project.Services,
-		func(s *Service) bool { return s.TargetResource.ResourceName() == "deployedApiSvc" },
-		"api service does not have expected resource name",
-	)
+	require.Equal(t, "deployedApiSvc", targetResource.ResourceName())
 }
 
 func TestResourceNameOverrideFromResourceTag(t *testing.T) {
@@ -97,22 +91,17 @@ services:
 	)
 	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 
-	e := environment.EphemeralWithValues("envA", map[string]string{
+	env := environment.EphemeralWithValues("envA", map[string]string{
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
 	})
-	projectConfig, err := ParseProjectConfig(testProj)
+	projectConfig, err := Parse(*mockContext.Context, testProj)
 	require.NoError(t, err)
 
-	project, err := projectConfig.GetProject(*mockContext.Context, e, mockContext.Console,
-		azCli, mockContext.CommandRunner, &mockaccount.MockAccountManager{})
+	resourceManager := NewResourceManager(env, azCli)
+	targetResource, err := resourceManager.GetTargetResource(*mockContext.Context, projectConfig.Services["api"])
 	require.NoError(t, err)
-
-	// Deployment resource name comes from the found tag on the graph query request
-	assertHasService(t,
-		project.Services,
-		func(s *Service) bool { return s.TargetResource.ResourceName() == resourceName },
-		"api service does not have expected resource name",
-	)
+	require.NotNil(t, targetResource)
+	require.Equal(t, resourceName, targetResource.ResourceName())
 }
 
 func TestResourceGroupOverrideFromProjectFile(t *testing.T) {
@@ -156,27 +145,21 @@ services:
 		})
 	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 
-	e := environment.EphemeralWithValues("envA", map[string]string{
+	env := environment.EphemeralWithValues("envA", map[string]string{
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
 	})
-	projectConfig, err := ParseProjectConfig(testProj)
+
+	projectConfig, err := Parse(*mockContext.Context, testProj)
 	require.NoError(t, err)
 
-	project, err := projectConfig.GetProject(*mockContext.Context, e, mockContext.Console,
-		azCli, mockContext.CommandRunner, &mockaccount.MockAccountManager{})
-	require.NoError(t, err)
+	resourceManager := NewResourceManager(env, azCli)
 
-	assertHasService(t,
-		project.Services,
-		func(s *Service) bool { return s.TargetResource.ResourceGroupName() == resourceGroupName },
-		"api service does not have expected resource group name",
-	)
-
-	assertHasService(t,
-		project.Services,
-		func(s *Service) bool { return s.TargetResource.ResourceGroupName() == resourceGroupName },
-		"web service does not have expected resource group name",
-	)
+	for _, svc := range projectConfig.Services {
+		targetResource, err := resourceManager.GetTargetResource(*mockContext.Context, svc)
+		require.NoError(t, err)
+		require.NotNil(t, targetResource)
+		require.Equal(t, resourceGroupName, targetResource.ResourceGroupName())
+	}
 }
 
 func TestResourceGroupOverrideFromEnv(t *testing.T) {
@@ -221,32 +204,23 @@ services:
 		})
 	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 
-	e := environment.EphemeralWithValues("envA", map[string]string{
+	env := environment.EphemeralWithValues("envA", map[string]string{
 		environment.ResourceGroupEnvVarName:  expectedResourceGroupName,
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
 	})
 
-	projectConfig, err := ParseProjectConfig(testProj)
+	projectConfig, err := Parse(*mockContext.Context, testProj)
 	require.NoError(t, err)
 
-	project, err := projectConfig.GetProject(*mockContext.Context, e, mockContext.Console,
-		azCli, mockContext.CommandRunner, &mockaccount.MockAccountManager{})
+	resourceManager := NewResourceManager(env, azCli)
+	targetResource, err := resourceManager.GetTargetResource(*mockContext.Context, projectConfig.Services["api"])
 	require.NoError(t, err)
+	require.NotNil(t, targetResource)
 
-	assertHasService(t,
-		project.Services,
-		func(s *Service) bool { return s.TargetResource.ResourceGroupName() == expectedResourceGroupName },
-		"api service does not have expected resource group name",
-	)
-
-	assertHasService(t,
-		project.Services,
-		func(s *Service) bool { return s.TargetResource.ResourceGroupName() == expectedResourceGroupName },
-		"web service does not have expected resource group name",
-	)
-}
-
-func assertHasService(t *testing.T, ss []*Service, match func(*Service) bool, msgAndArgs ...interface{}) {
-	i := slices.IndexFunc(ss, match)
-	assert.GreaterOrEqual(t, i, 0, msgAndArgs)
+	for _, svc := range projectConfig.Services {
+		targetResource, err := resourceManager.GetTargetResource(*mockContext.Context, svc)
+		require.NoError(t, err)
+		require.NotNil(t, targetResource)
+		require.Equal(t, expectedResourceGroupName, targetResource.ResourceGroupName())
+	}
 }

@@ -41,16 +41,6 @@ func (dp *dotnetProject) RequiredExternalTools(context.Context) []tools.External
 
 // Initializes the docker project
 func (dp *dotnetProject) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
-	if err := dp.dotnetCli.InitializeSecret(ctx, serviceConfig.Path()); err != nil {
-		return err
-	}
-	handler := func(ctx context.Context, args ServiceLifecycleEventArgs) error {
-		return dp.setUserSecretsFromOutputs(ctx, serviceConfig, args)
-	}
-	if err := serviceConfig.AddHandler(ServiceEventEnvUpdated, handler); err != nil {
-		return err
-	}
-
 	return nil
 }
 

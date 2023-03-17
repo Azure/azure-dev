@@ -74,7 +74,8 @@ func (np *npmProject) Build(
 			}
 
 			// Run Build, injecting env.
-			envs := append(np.env.Environ(), "NODE_ENV=production")
+			// We should consider a different way to do this, that doesn't require azd being involved.
+			envs := []string{"NODE_ENV=production"}
 
 			task.SetProgress(NewServiceProgress("Building service"))
 			if err := np.cli.Build(ctx, serviceConfig.Path(), envs); err != nil {

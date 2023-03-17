@@ -139,7 +139,7 @@ func TestAuthTokenSysEnvError(t *testing.T) {
 		t,
 		err,
 		fmt.Sprintf(
-			"resolving the Azure Directory for subscription: %s from system environment: %s",
+			"resolving the Azure Directory for subscription: '%s' from system environment: %s",
 			expectedSubId,
 			expectedError),
 	)
@@ -182,7 +182,7 @@ func TestAuthTokenAzdEnvError(t *testing.T) {
 		t,
 		err,
 		fmt.Sprintf(
-			"resolving the Azure Directory for subscription: %s from azd environment (%s): %s",
+			"resolving the Azure Directory for subscription: '%s' from azd environment (%s): %s",
 			expectedSubId,
 			expectedEnvName,
 			expectedError),

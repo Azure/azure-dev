@@ -97,7 +97,7 @@ func getTenantIdFromAzdEnv(
 	tenantId, err = subResolver.LookupTenant(ctx, subIdAtAzdEnv)
 	if err != nil {
 		return tenantId, fmt.Errorf(
-			"resolving the Azure Directory for subscription: %s from azd environment (%s): %w",
+			"resolving the Azure Directory for subscription: '%s' from azd environment (%s): %w",
 			subIdAtAzdEnv,
 			azdEnv.GetEnvName(),
 			err)
@@ -119,7 +119,7 @@ func getTenantIdFromEnv(
 	tenantId, err = subResolver.LookupTenant(ctx, subIdAtSysEnv)
 	if err != nil {
 		return tenantId, fmt.Errorf(
-			"resolving the Azure Directory for subscription: %s from system environment: %w", subIdAtSysEnv, err)
+			"resolving the Azure Directory for subscription: '%s' from system environment: %w", subIdAtSysEnv, err)
 	}
 
 	return tenantId, nil

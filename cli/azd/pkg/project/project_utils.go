@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package internal
+package project
 
 import (
 	"fmt"
@@ -15,7 +15,7 @@ import (
 
 // CreateDeployableZip creates a zip file of a folder, recursively.
 // Returns the path to the created zip file or an error if it fails.
-func CreateDeployableZip(appName string, path string) (string, error) {
+func createDeployableZip(appName string, path string) (string, error) {
 	// TODO: should probably avoid picking up files that weren't meant to be published (ie, local .env files, etc..)
 	zipFile, err := os.CreateTemp("", "azddeploy*.zip")
 	if err != nil {
@@ -38,12 +38,12 @@ func CreateDeployableZip(appName string, path string) (string, error) {
 	return zipFile.Name(), nil
 }
 
-const c_gitIgnore string = ".gitignore"
+const cGitIgnoreFileName string = ".gitignore"
 
 // CreateSkipPatternsFromGitIgnore inspect root project path and a `servicePath`
 // to see if there is a .gitignore file. It then combine both files in a single list
 // of exclusions.
-func CreateSkipPatternsFromGitIgnore(servicePath string) ([]gitignore.GitIgnore, error) {
+func createSkipPatternsFromGitIgnore(servicePath string) ([]gitignore.GitIgnore, error) {
 	// azdContext will provide the azd-project root path
 	azdContext, err := azdcontext.NewAzdContext()
 	if err != nil {
@@ -53,9 +53,16 @@ func CreateSkipPatternsFromGitIgnore(servicePath string) ([]gitignore.GitIgnore,
 	rootPath := azdContext.ProjectDirectory()
 	// If .gitignore can't be open is fine, it could be missing
 	var allPatterns []gitignore.GitIgnore
-	rootPatterns, _ := gitignore.NewFromFile(filepath.Join(rootPath, c_gitIgnore))
-	servicePatterns, _ := gitignore.NewFromFile(filepath.Join(servicePath, c_gitIgnore))
 
-	allPatterns = append(allPatterns, rootPatterns, servicePatterns)
+	filesToLoadAsPatterns := []string{
+		filepath.Join(rootPath, cGitIgnoreFileName),
+		filepath.Join(servicePath, cGitIgnoreFileName),
+	}
+	for _, file := range filesToLoadAsPatterns {
+		if gitIgnorePattern, err := gitignore.NewFromFile(file); err == nil {
+			allPatterns = append(allPatterns, gitIgnorePattern)
+		}
+	}
+
 	return allPatterns, nil
 }

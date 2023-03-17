@@ -224,7 +224,8 @@ func (t *aksTarget) Publish(
 			log.Printf("logging into container registry '%s'\n", packageDetails.LoginServer)
 
 			task.SetProgress(NewServiceProgress("Logging into container registry"))
-			if err := t.containerRegistryService.LoginAcr(ctx, targetResource.SubscriptionId(), packageDetails.LoginServer); err != nil {
+			err = t.containerRegistryService.LoginAcr(ctx, targetResource.SubscriptionId(), packageDetails.LoginServer)
+			if err != nil {
 				task.SetError(fmt.Errorf("failed logging into registry '%s': %w", packageDetails.LoginServer, err))
 				return
 			}

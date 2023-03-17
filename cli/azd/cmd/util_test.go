@@ -283,7 +283,7 @@ func Test_createAndInitEnvironment(t *testing.T) {
 				&mocks.MockMultiTenantCredentialProvider{},
 				mockContext.HttpClient,
 			),
-			&mockSubscriptionTenantResolver{},
+			&mockUtilSubscriptionTenantResolver{},
 		)
 		require.NoError(t, err)
 
@@ -294,10 +294,10 @@ func Test_createAndInitEnvironment(t *testing.T) {
 	})
 }
 
-type mockSubscriptionTenantResolver struct {
+type mockUtilSubscriptionTenantResolver struct {
 }
 
-func (m *mockSubscriptionTenantResolver) LookupTenant(
+func (m *mockUtilSubscriptionTenantResolver) LookupTenant(
 	ctx context.Context, subscriptionId string) (tenantId string, err error) {
 	return "00000000-0000-0000-0000-000000000000", nil
 }

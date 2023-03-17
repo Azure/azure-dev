@@ -55,6 +55,7 @@ func (m *mavenProject) Restore(
 ) *async.TaskWithProgress[*ServiceRestoreResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServiceRestoreResult, ServiceProgress]) {
+			task.SetProgress(NewServiceProgress("Resolving maven dependencies"))
 			if err := m.mavenCli.ResolveDependencies(ctx, serviceConfig.Path()); err != nil {
 				task.SetError(fmt.Errorf("resolving maven dependencies: %w", err))
 				return
@@ -73,13 +74,34 @@ func (m *mavenProject) Build(
 ) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServiceBuildResult, ServiceProgress]) {
+			task.SetProgress(NewServiceProgress("Compiling maven project"))
+			if err := m.mavenCli.Compile(ctx, serviceConfig.Path()); err != nil {
+				task.SetError(err)
+				return
+			}
+
+			task.SetResult(&ServiceBuildResult{
+				Restore:         restoreOutput,
+				BuildOutputPath: serviceConfig.Path(),
+			})
+		},
+	)
+}
+
+func (m *mavenProject) Package(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	buildOutput *ServiceBuildResult,
+) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
+	return async.RunTaskWithProgress(
+		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
 			publishRoot, err := os.MkdirTemp("", "azd")
 			if err != nil {
 				task.SetError(fmt.Errorf("creating staging directory: %w", err))
 				return
 			}
 
-			task.SetProgress(NewServiceProgress("Creating deployment package"))
+			task.SetProgress(NewServiceProgress("Packaging maven project"))
 			if err := m.mavenCli.Package(ctx, serviceConfig.Path()); err != nil {
 				task.SetError(err)
 				return
@@ -124,28 +146,17 @@ func (m *mavenProject) Build(
 				return
 			}
 
+			task.SetProgress(NewServiceProgress("Copying deployment package"))
 			err = copy.Copy(filepath.Join(publishSource, matches[0]), filepath.Join(publishRoot, AppServiceJavaPackageName))
 			if err != nil {
 				task.SetError(fmt.Errorf("copying to staging directory failed: %w", err))
 				return
 			}
 
-			task.SetResult(&ServiceBuildResult{
-				Restore:         restoreOutput,
-				BuildOutputPath: publishRoot,
+			task.SetResult(&ServicePackageResult{
+				Build:       buildOutput,
+				PackagePath: publishRoot,
 			})
-		},
-	)
-}
-
-func (m *mavenProject) Package(
-	ctx context.Context,
-	serviceConfig *ServiceConfig,
-	buildOutput *ServiceBuildResult,
-) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
-
 		},
 	)
 }

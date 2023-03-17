@@ -63,15 +63,6 @@ func (cli *dotNetCli) CheckInstalled(ctx context.Context) (bool, error) {
 	return true, nil
 }
 
-func (cli *dotNetCli) Publish(ctx context.Context, project string, output string) error {
-	runArgs := exec.NewRunArgs("dotnet", "publish", project, "-c", "Release", "--output", output)
-	res, err := cli.commandRunner.Run(ctx, runArgs)
-	if err != nil {
-		return fmt.Errorf("dotnet publish on project '%s' failed: %s: %w", project, res.String(), err)
-	}
-	return nil
-}
-
 func (cli *dotNetCli) Restore(ctx context.Context, project string) error {
 	runArgs := exec.NewRunArgs("dotnet", "restore", project)
 	res, err := cli.commandRunner.Run(ctx, runArgs)
@@ -82,10 +73,27 @@ func (cli *dotNetCli) Restore(ctx context.Context, project string) error {
 }
 
 func (cli *dotNetCli) Build(ctx context.Context, project string, output string) error {
-	runArgs := exec.NewRunArgs("dotnet", "build", project, "-c", "Release", "--output", output)
+	runArgs := exec.NewRunArgs("dotnet", "build", project, "-c", "Release")
+	if output != "" {
+		runArgs = runArgs.AppendParams("--output", output)
+	}
+
 	res, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
 		return fmt.Errorf("dotnet build on project '%s' failed: %s: %w", project, res.String(), err)
+	}
+	return nil
+}
+
+func (cli *dotNetCli) Publish(ctx context.Context, project string, output string) error {
+	runArgs := exec.NewRunArgs("dotnet", "publish", project, "-c", "Release")
+	if output != "" {
+		runArgs = runArgs.AppendParams("--output", output)
+	}
+
+	res, err := cli.commandRunner.Run(ctx, runArgs)
+	if err != nil {
+		return fmt.Errorf("dotnet publish on project '%s' failed: %s: %w", project, res.String(), err)
 	}
 	return nil
 }

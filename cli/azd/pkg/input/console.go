@@ -65,8 +65,6 @@ type Console interface {
 	GetWriter() io.Writer
 	// Gets the standard input, output and error stream
 	Handles() ConsoleHandles
-	// Set formatter to none.
-	RemoveFormatter()
 	ConsoleShim
 }
 
@@ -103,10 +101,6 @@ func (c *AskerConsole) SetWriter(writer io.Writer) {
 	}
 
 	c.writer = writer
-}
-
-func (c *AskerConsole) RemoveFormatter() {
-	c.formatter = &output.NoneFormatter{}
 }
 
 func (c *AskerConsole) GetFormatter() output.Formatter {

@@ -191,7 +191,7 @@ services:
 	require.Equal(t, true, ran)
 }
 
-func Test_containerAppTarget_generateImageTag(t *testing.T) {
+func Test_generateImageTag(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	mockClock := clock.NewMock()
 	envName := "dev"

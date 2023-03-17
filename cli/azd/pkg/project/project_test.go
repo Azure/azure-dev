@@ -54,7 +54,7 @@ services:
 
 	resourceManager := NewResourceManager(env, azCli)
 	targetResource, err := resourceManager.GetTargetResource(
-		*mockContext.Context, projectConfig.Services["api"], env.GetSubscriptionId())
+		*mockContext.Context, env.GetSubscriptionId(), projectConfig.Services["api"])
 	require.NoError(t, err)
 	require.NotNil(t, targetResource)
 
@@ -100,7 +100,7 @@ services:
 
 	resourceManager := NewResourceManager(env, azCli)
 	targetResource, err := resourceManager.GetTargetResource(
-		*mockContext.Context, projectConfig.Services["api"], env.GetSubscriptionId())
+		*mockContext.Context, env.GetSubscriptionId(), projectConfig.Services["api"])
 	require.NoError(t, err)
 	require.NotNil(t, targetResource)
 	require.Equal(t, resourceName, targetResource.ResourceName())
@@ -157,7 +157,7 @@ services:
 	resourceManager := NewResourceManager(env, azCli)
 
 	for _, svc := range projectConfig.Services {
-		targetResource, err := resourceManager.GetTargetResource(*mockContext.Context, svc, env.GetSubscriptionId())
+		targetResource, err := resourceManager.GetTargetResource(*mockContext.Context, env.GetSubscriptionId(), svc)
 		require.NoError(t, err)
 		require.NotNil(t, targetResource)
 		require.Equal(t, resourceGroupName, targetResource.ResourceGroupName())
@@ -216,12 +216,12 @@ services:
 
 	resourceManager := NewResourceManager(env, azCli)
 	targetResource, err := resourceManager.GetTargetResource(
-		*mockContext.Context, projectConfig.Services["api"], env.GetSubscriptionId())
+		*mockContext.Context, env.GetSubscriptionId(), projectConfig.Services["api"])
 	require.NoError(t, err)
 	require.NotNil(t, targetResource)
 
 	for _, svc := range projectConfig.Services {
-		targetResource, err := resourceManager.GetTargetResource(*mockContext.Context, svc, env.GetSubscriptionId())
+		targetResource, err := resourceManager.GetTargetResource(*mockContext.Context, env.GetSubscriptionId(), svc)
 		require.NoError(t, err)
 		require.NotNil(t, targetResource)
 		require.Equal(t, expectedResourceGroupName, targetResource.ResourceGroupName())

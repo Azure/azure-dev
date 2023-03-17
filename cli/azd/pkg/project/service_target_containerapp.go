@@ -246,9 +246,9 @@ func (at *containerAppTarget) Publish(
 			if targetResource.ResourceName() == "" {
 				azureResource, err := at.resourceManager.GetServiceResource(
 					ctx,
-					serviceConfig,
 					targetResource.SubscriptionId(),
 					targetResource.ResourceGroupName(),
+					serviceConfig,
 					"deploy",
 				)
 				if err != nil {

@@ -45,6 +45,9 @@ func (c *MockConsole) IsUnformatted() bool {
 	return true
 }
 
+func (c *MockConsole) RemoveFormatter() {
+}
+
 func (c *MockConsole) GetFormatter() output.Formatter {
 	return nil
 }

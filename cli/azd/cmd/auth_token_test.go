@@ -111,9 +111,11 @@ func TestAuthTokenSysEnvError(t *testing.T) {
 		}, nil
 	})
 
-	t.Setenv(environment.SubscriptionIdEnvVarName, "sub-in-sys-env")
+	expectedSubId := "sub-in-sys-env"
+	t.Setenv(environment.SubscriptionIdEnvVarName, expectedSubId)
 	expectedTenant := ""
 
+	expectedError := "error from tenant resolver"
 	a := newAuthTokenAction(
 		func(ctx context.Context, options *auth.CredentialForCurrentUserOptions) (azcore.TokenCredential, error) {
 			require.Equal(t, expectedTenant, options.TenantID)
@@ -128,7 +130,7 @@ func TestAuthTokenSysEnvError(t *testing.T) {
 		},
 		func() (*environment.Environment, error) { return nil, fmt.Errorf("not an azd env directory") },
 		&mockSubscriptionTenantResolver{
-			Err: fmt.Errorf("this error is ignored"),
+			Err: fmt.Errorf(expectedError),
 		},
 	)
 
@@ -136,7 +138,11 @@ func TestAuthTokenSysEnvError(t *testing.T) {
 	require.ErrorContains(
 		t,
 		err,
-		"Found AZURE_SUBSCRIPTION_ID in system environment but couldn't resolve the Azure Directory for it.")
+		fmt.Sprintf(
+			"resolving the Azure Directory for subscription: %s from system environment: %s",
+			expectedSubId,
+			expectedError),
+	)
 }
 
 func TestAuthTokenAzdEnvError(t *testing.T) {
@@ -149,7 +155,10 @@ func TestAuthTokenAzdEnvError(t *testing.T) {
 			ExpiresOn: time.Unix(1669153000, 0).UTC(),
 		}, nil
 	})
+	expectedError := "error from tenant resolver"
+	expectedSubId := "sub-in-sys-env"
 	expectedTenant := ""
+	expectedEnvName := "env33"
 	a := newAuthTokenAction(
 		func(ctx context.Context, options *auth.CredentialForCurrentUserOptions) (azcore.TokenCredential, error) {
 			require.Equal(t, expectedTenant, options.TenantID)
@@ -159,12 +168,12 @@ func TestAuthTokenAzdEnvError(t *testing.T) {
 		buf,
 		&authTokenFlags{},
 		func() (*environment.Environment, error) {
-			return environment.EphemeralWithValues("env", map[string]string{
-				environment.SubscriptionIdEnvVarName: "sub-id",
+			return environment.EphemeralWithValues(expectedEnvName, map[string]string{
+				environment.SubscriptionIdEnvVarName: expectedSubId,
 			}), nil
 		},
 		&mockSubscriptionTenantResolver{
-			Err: fmt.Errorf("this error is ignored"),
+			Err: fmt.Errorf(expectedError),
 		},
 	)
 
@@ -172,7 +181,11 @@ func TestAuthTokenAzdEnvError(t *testing.T) {
 	require.ErrorContains(
 		t,
 		err,
-		"Found AZURE_SUBSCRIPTION_ID in azd environment (sub-id) but couldn't resolve the Azure Directory for it.",
+		fmt.Sprintf(
+			"resolving the Azure Directory for subscription: %s from azd environment (%s): %s",
+			expectedSubId,
+			expectedEnvName,
+			expectedError),
 	)
 }
 

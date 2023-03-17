@@ -278,6 +278,10 @@ func (sc *mutedConsole) SetWriter(writer io.Writer) {
 	log.Println("tried to set writer for silent console is a no-op action")
 }
 
+func (sc *mutedConsole) RemoveFormatter() {
+	sc.parentConsole.RemoveFormatter()
+}
+
 func (sc *mutedConsole) GetFormatter() output.Formatter {
 	return nil
 }

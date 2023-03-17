@@ -138,6 +138,9 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 		invokeErr := cb.container.Invoke(func(console input.Console) {
 			// It is valid for a command to return a nil action result and error.
 			// If we have a result or an error, display it, otherwise don't print anything.
+			if err != nil {
+				console.RemoveFormatter()
+			}
 			if actionResult != nil || err != nil {
 				console.MessageUxItem(ctx, actions.ToUxItem(actionResult, err))
 			}

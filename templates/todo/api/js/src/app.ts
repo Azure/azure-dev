@@ -18,13 +18,13 @@ export const createApp = async (): Promise<Express> => {
     // Middleware
     app.use(express.json());
 
-    var apiUrl:string = process.env.REACT_APP_WEB_BASE_URL!;
+    const apiUrl:string = process.env.REACT_APP_WEB_BASE_URL!;
     if (apiUrl != ""){
         app.use(cors({
             origin: ["https://portal.azure.com",
-            "https://ms.portal.azure.com",
-            "http://localhost:3000/",
-            apiUrl]
+                "https://ms.portal.azure.com",
+                "http://localhost:3000/",
+                apiUrl]
         }));
     }
     else{

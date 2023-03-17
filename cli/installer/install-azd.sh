@@ -139,11 +139,11 @@ ensure_rosetta() {
 
         # Ensure that softwareupdate gets input from the terminal
         if /usr/sbin/softwareupdate --install-rosetta </dev/tty; then
-        	say "Rosetta has been successfully installed."
+            say "Rosetta has been successfully installed."
         else
-        	say_error "Rosetta 2 installation failed!"
+            say_error "Rosetta 2 installation failed!"
             save_error_report_if_enabled "InstallFailed" "Rosetta2InstallFailed"
-        	exit 1
+            exit 1
         fi
     fi
 }

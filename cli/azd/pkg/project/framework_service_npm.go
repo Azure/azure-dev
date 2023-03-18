@@ -76,6 +76,12 @@ func (np *npmProject) Build(
 			// Run Build, injecting env.
 			envs := append(np.env.Environ(), "NODE_ENV=production")
 
+			// For swa apps, inject the environment automatically. This decision should be revisited
+			// when we expose proper mechanisms to specific `.env` usage
+			if serviceConfig.Host == string(StaticWebAppTarget) {
+				envs = append(np.env.Environ(), envs...)
+			}
+
 			task.SetProgress(NewServiceProgress("Building service"))
 			if err := np.cli.Build(ctx, serviceConfig.Path(), envs); err != nil {
 				task.SetError(err)

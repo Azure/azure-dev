@@ -13,7 +13,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
@@ -26,11 +25,12 @@ type dotnetProject struct {
 
 // NewDotNetProject creates a new instance of a dotnet project
 func NewDotNetProject(
-	commandRunner exec.CommandRunner, env *environment.Environment,
+	dotNetCli dotnet.DotNetCli,
+	env *environment.Environment,
 ) FrameworkService {
 	return &dotnetProject{
 		env:       env,
-		dotnetCli: dotnet.NewDotNetCli(commandRunner),
+		dotnetCli: dotNetCli,
 	}
 }
 

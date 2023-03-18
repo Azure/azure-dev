@@ -169,7 +169,8 @@ func (p *dockerProject) Package(
 			}
 
 			task.SetResult(&ServicePackageResult{
-				Build: buildOutput,
+				Build:       buildOutput,
+				PackagePath: fullTag,
 				Details: &dockerPackageResult{
 					ImageTag:    fullTag,
 					LoginServer: loginServer,

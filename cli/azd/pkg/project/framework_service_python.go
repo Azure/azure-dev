@@ -13,7 +13,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/python"
 	"github.com/otiai10/copy"
@@ -25,10 +24,10 @@ type pythonProject struct {
 }
 
 // NewPythonProject creates a new instance of the Python project
-func NewPythonProject(commandRunner exec.CommandRunner, env *environment.Environment) FrameworkService {
+func NewPythonProject(cli *python.PythonCli, env *environment.Environment) FrameworkService {
 	return &pythonProject{
 		env: env,
-		cli: python.NewPythonCli(commandRunner),
+		cli: cli,
 	}
 }
 

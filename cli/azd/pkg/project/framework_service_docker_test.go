@@ -6,6 +6,7 @@ package project
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -15,6 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/npm"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockarmresources"
 	"github.com/benbjohnson/clock"
@@ -77,11 +79,12 @@ services:
 	require.NoError(t, err)
 	service := projectConfig.Services["web"]
 
+	npmCli := npm.NewNpmCli(mockContext.CommandRunner)
 	docker := docker.NewDocker(mockContext.CommandRunner)
 
 	done := make(chan bool)
 
-	internalFramework := NewNpmProject(mockContext.CommandRunner, env)
+	internalFramework := NewNpmProject(npmCli, env)
 	progressMessages := []string{}
 
 	framework := NewDockerProject(env, docker, clock.NewMock())
@@ -159,6 +162,7 @@ services:
 		}, nil
 	})
 
+	npmCli := npm.NewNpmCli(mockContext.CommandRunner)
 	docker := docker.NewDocker(mockContext.CommandRunner)
 
 	projectConfig, err := Parse(*mockContext.Context, testProj)
@@ -168,7 +172,7 @@ services:
 
 	done := make(chan bool)
 
-	internalFramework := NewNpmProject(mockContext.CommandRunner, env)
+	internalFramework := NewNpmProject(npmCli, env)
 	status := ""
 
 	framework := NewDockerProject(env, docker, clock.NewMock())
@@ -236,5 +240,104 @@ func Test_generateImageTag(t *testing.T) {
 			assert.NoError(t, err)
 			assert.Equal(t, tt.want, tag)
 		})
+	}
+}
+
+func Test_DockerProject_Build(t *testing.T) {
+	var runArgs exec.RunArgs
+
+	mockContext := mocks.NewMockContext(context.Background())
+	mockContext.CommandRunner.
+		When(func(args exec.RunArgs, command string) bool {
+			return strings.Contains(command, "docker build")
+		}).
+		RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+			runArgs = args
+			return exec.NewRunResult(0, "IMAGE_ID", ""), nil
+		})
+
+	env := environment.Ephemeral()
+	dockerCli := docker.NewDocker(mockContext.CommandRunner)
+	serviceConfig := createTestServiceConfig()
+
+	dockerProject := NewDockerProject(env, dockerCli, clock.NewMock())
+	buildTask := dockerProject.Build(*mockContext.Context, serviceConfig, nil)
+	logProgress(buildTask)
+
+	result, err := buildTask.Await()
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.Equal(t, "IMAGE_ID", result.BuildOutputPath)
+	require.Equal(t, "docker", runArgs.Cmd)
+	require.Equal(t, serviceConfig.RelativePath, runArgs.Cwd)
+	require.Equal(t,
+		[]string{"build", "-q", "-f", "./Dockerfile", "--platform", "amd64", "."},
+		runArgs.Args,
+	)
+}
+
+func Test_DockerProject_Package(t *testing.T) {
+	var runArgs exec.RunArgs
+
+	mockContext := mocks.NewMockContext(context.Background())
+	mockContext.CommandRunner.
+		When(func(args exec.RunArgs, command string) bool {
+			return strings.Contains(command, "docker tag")
+		}).
+		RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+			runArgs = args
+			return exec.NewRunResult(0, "IMAGE_ID", ""), nil
+		})
+
+	env := environment.EphemeralWithValues("test", map[string]string{
+		environment.ContainerRegistryEndpointEnvVarName: "ACR_ENDPOINT",
+	})
+	dockerCli := docker.NewDocker(mockContext.CommandRunner)
+	serviceConfig := createTestServiceConfig()
+
+	dockerProject := NewDockerProject(env, dockerCli, clock.NewMock())
+	packageTask := dockerProject.Package(
+		*mockContext.Context,
+		serviceConfig,
+		&ServiceBuildResult{
+			BuildOutputPath: "IMAGE_ID",
+		},
+	)
+	logProgress(packageTask)
+
+	result, err := packageTask.Await()
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	require.IsType(t, new(dockerPackageResult), result.Details)
+
+	// New env variable is created
+	require.Equal(t, "ACR_ENDPOINT/test-app/api-test:azd-deploy-0", env.Values["SERVICE_API_IMAGE_NAME"])
+
+	// Result details contain ACR data
+	packageResult, ok := result.Details.(*dockerPackageResult)
+	require.Equal(t, "ACR_ENDPOINT/test-app/api-test:azd-deploy-0", result.PackagePath)
+
+	require.True(t, ok)
+	require.Equal(t, "ACR_ENDPOINT", packageResult.LoginServer)
+	require.Equal(t, "ACR_ENDPOINT/test-app/api-test:azd-deploy-0", packageResult.ImageTag)
+
+	require.Equal(t, "docker", runArgs.Cmd)
+	require.Equal(t, serviceConfig.RelativePath, runArgs.Cwd)
+	require.Equal(t,
+		[]string{"tag", "IMAGE_ID", "ACR_ENDPOINT/test-app/api-test:azd-deploy-0"},
+		runArgs.Args,
+	)
+}
+
+func createTestServiceConfig() *ServiceConfig {
+	return &ServiceConfig{
+		Name:         "api",
+		Host:         "containerapp",
+		Language:     "ts",
+		RelativePath: filepath.Join("./src/api"),
+		Project: &ProjectConfig{
+			Name: "test-app",
+			Path: ".",
+		},
 	}
 }

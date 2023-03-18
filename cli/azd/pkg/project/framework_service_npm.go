@@ -11,7 +11,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/npm"
 )
@@ -22,10 +21,10 @@ type npmProject struct {
 }
 
 // NewNpmProject creates a new instance of a NPM project
-func NewNpmProject(commandRunner exec.CommandRunner, env *environment.Environment) FrameworkService {
+func NewNpmProject(cli npm.NpmCli, env *environment.Environment) FrameworkService {
 	return &npmProject{
 		env: env,
-		cli: npm.NewNpmCli(commandRunner),
+		cli: cli,
 	}
 }
 

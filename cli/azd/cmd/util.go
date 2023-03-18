@@ -107,6 +107,18 @@ func createAndInitEnvironment(
 	return env, nil
 }
 
+func loadEnvironmentIfAvailable() (*environment.Environment, error) {
+	azdCtx, err := azdcontext.NewAzdContext()
+	if err != nil {
+		return nil, err
+	}
+	defaultEnv, err := azdCtx.GetDefaultEnvironmentName()
+	if err != nil {
+		return nil, err
+	}
+	return environment.GetEnvironment(azdCtx, defaultEnv)
+}
+
 func loadOrInitEnvironment(
 	ctx context.Context,
 	environmentName *string,
@@ -280,7 +292,7 @@ func ensureEnvironmentInitialized(
 			env.SetLocation(envSpec.location)
 		} else {
 			location, err := azureutil.PromptLocation(
-				ctx, env, "Please select an Azure location to use:", "", console, accountManager)
+				ctx, env.GetSubscriptionId(), "Please select an Azure location to use:", "", console, accountManager)
 			if err != nil {
 				return fmt.Errorf("prompting for location: %w", err)
 			}
@@ -366,11 +378,13 @@ func getResourceGroupFollowUp(
 	env *environment.Environment,
 ) (followUp string) {
 	if formatter.Kind() != output.JsonFormat {
-		if resourceGroupName, err := resourceManager.GetResourceGroupName(ctx, projectConfig); err == nil {
+		subscriptionId := env.GetSubscriptionId()
+
+		if resourceGroupName, err := resourceManager.GetResourceGroupName(ctx, subscriptionId, projectConfig); err == nil {
 			followUp = fmt.Sprintf("You can view the resources created under the resource group %s in Azure Portal:\n%s",
 				resourceGroupName, output.WithLinkFormat(fmt.Sprintf(
 					"https://portal.azure.com/#@/resource/subscriptions/%s/resourceGroups/%s/overview",
-					env.GetSubscriptionId(),
+					subscriptionId,
 					resourceGroupName)))
 		}
 	}

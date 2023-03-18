@@ -297,7 +297,7 @@ func NewManager(
 	accountManager account.Manager,
 ) (*Manager, error) {
 	locationPrompt := func(msg string, filter func(loc azcli.AzCliLocation) bool) (location string, err error) {
-		return azureutil.PromptLocationWithFilter(ctx, env, msg, "", console, accountManager, filter)
+		return azureutil.PromptLocationWithFilter(ctx, env.GetSubscriptionId(), msg, "", console, accountManager, filter)
 	}
 
 	prompters := Prompters{

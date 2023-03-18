@@ -94,7 +94,7 @@ func (f *functionAppTarget) Publish(
 			task.SetProgress(NewServiceProgress("Publishing deployment package"))
 			res, err := f.cli.DeployFunctionAppUsingZipFile(
 				ctx,
-				f.env.GetSubscriptionId(),
+				targetResource.SubscriptionId(),
 				targetResource.ResourceGroupName(),
 				targetResource.ResourceName(),
 				zipFile,
@@ -113,7 +113,7 @@ func (f *functionAppTarget) Publish(
 
 			sdr := NewServicePublishResult(
 				azure.WebsiteRID(
-					f.env.GetSubscriptionId(),
+					targetResource.SubscriptionId(),
 					targetResource.ResourceGroupName(),
 					targetResource.ResourceName(),
 				),
@@ -138,7 +138,8 @@ func (f *functionAppTarget) Endpoints(
 	// a nil error.  In `deploy` we just loop over the endpoint array and print any endpoints, so returning
 	// an empty array and nil error will mean "no endpoints".
 	if props, err := f.cli.GetFunctionAppProperties(
-		ctx, f.env.GetSubscriptionId(),
+		ctx,
+		targetResource.SubscriptionId(),
 		targetResource.ResourceGroupName(),
 		targetResource.ResourceName()); err != nil {
 		return nil, fmt.Errorf("fetching service properties: %w", err)

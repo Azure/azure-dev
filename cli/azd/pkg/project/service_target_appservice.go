@@ -93,7 +93,7 @@ func (st *appServiceTarget) Publish(
 			task.SetProgress(NewServiceProgress("Publishing deployment package"))
 			res, err := st.cli.DeployAppServiceZip(
 				ctx,
-				st.env.GetSubscriptionId(),
+				targetResource.SubscriptionId(),
 				targetResource.ResourceGroupName(),
 				targetResource.ResourceName(),
 				zipFile,
@@ -112,7 +112,7 @@ func (st *appServiceTarget) Publish(
 
 			sdr := NewServicePublishResult(
 				azure.WebsiteRID(
-					st.env.GetSubscriptionId(),
+					targetResource.SubscriptionId(),
 					targetResource.ResourceGroupName(),
 					targetResource.ResourceName(),
 				),
@@ -135,7 +135,7 @@ func (st *appServiceTarget) Endpoints(
 ) ([]string, error) {
 	appServiceProperties, err := st.cli.GetAppServiceProperties(
 		ctx,
-		st.env.GetSubscriptionId(),
+		targetResource.SubscriptionId(),
 		targetResource.ResourceGroupName(),
 		targetResource.ResourceName(),
 	)

@@ -43,7 +43,7 @@ const cGitIgnoreFileName string = ".gitignore"
 // CreateSkipPatternsFromGitIgnore inspect root project path and a `servicePath`
 // to see if there is a .gitignore file. It then combine both files in a single list
 // of exclusions.
-func createSkipPatternsFromGitIgnore(servicePath string) ([]gitignore.GitIgnore, error) {
+func createSkipPatterns(servicePath string) ([]gitignore.GitIgnore, error) {
 	// azdContext will provide the azd-project root path
 	azdContext, err := azdcontext.NewAzdContext()
 	if err != nil {

@@ -91,9 +91,9 @@ func (np *npmProject) Build(
 
 			task.SetProgress(NewServiceProgress("Copying deployment package"))
 
-			gitSkipPatterns, err := createSkipPatternsFromGitIgnore(publishSource)
+			gitSkipPatterns, err := createSkipPatterns(publishSource)
 			if err != nil {
-				task.SetError(fmt.Errorf("creating skip patterns from .gitignore: %w", err))
+				task.SetError(fmt.Errorf("creating skip patterns: %w", err))
 				return
 			}
 

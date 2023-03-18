@@ -16,7 +16,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/python"
-	"github.com/denormal/go-gitignore"
 	"github.com/otiai10/copy"
 )
 
@@ -134,20 +133,4 @@ func (pp *pythonProject) getVenvName(serviceConfig *ServiceConfig) string {
 	}
 	_, projectDir := filepath.Split(trimmedPath)
 	return projectDir + "_env"
-}
-
-// skipPatterns returns a `copy.Options` which will skip any files
-// that match a given pattern. Matching is done with `filepath.Match`.
-func skipPatterns(patterns []gitignore.GitIgnore) copy.Options {
-	return copy.Options{
-		Skip: func(src string) (bool, error) {
-			for _, pattern := range patterns {
-				if pattern.Ignore(src) {
-					return true, nil
-				}
-			}
-
-			return false, nil
-		},
-	}
 }

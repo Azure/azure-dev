@@ -11,6 +11,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/rzip"
 	"github.com/denormal/go-gitignore"
+	"github.com/otiai10/copy"
 )
 
 // CreateDeployableZip creates a zip file of a folder, recursively.
@@ -65,4 +66,20 @@ func createSkipPatterns(servicePath string) ([]gitignore.GitIgnore, error) {
 	}
 
 	return allPatterns, nil
+}
+
+// skipPatterns returns a `copy.Options` which will skip any files
+// that match a given pattern. Matching is done with `filepath.Match`.
+func skipPatterns(patterns []gitignore.GitIgnore) copy.Options {
+	return copy.Options{
+		Skip: func(src string) (bool, error) {
+			for _, pattern := range patterns {
+				if pattern.Ignore(src) {
+					return true, nil
+				}
+			}
+
+			return false, nil
+		},
+	}
 }

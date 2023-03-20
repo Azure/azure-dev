@@ -73,7 +73,7 @@ func (pp *pythonProject) Restore(
 				}
 			}
 
-			task.SetProgress(NewServiceProgress("Installing PIP dependencies"))
+			task.SetProgress(NewServiceProgress("Installing Python PIP dependencies"))
 			err = pp.cli.InstallRequirements(ctx, serviceConfig.Path(), vEnvName, "requirements.txt")
 			if err != nil {
 				task.SetError(

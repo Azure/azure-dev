@@ -12,6 +12,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"golang.org/x/exp/slices"
 	"gopkg.in/yaml.v3"
 )
 
@@ -83,7 +84,28 @@ func Load(ctx context.Context, projectFilePath string) (*ProjectConfig, error) {
 	}
 
 	if projectConfig.Metadata != nil {
-		telemetry.SetUsageAttributes(fields.StringHashed(fields.TemplateIdKey, projectConfig.Metadata.Template))
+		telemetry.SetUsageAttributes(fields.StringHashed(fields.ProjectTemplateIdKey, projectConfig.Metadata.Template))
+	}
+
+	if projectConfig.Name != "" {
+		telemetry.SetUsageAttributes(fields.StringHashed(fields.ProjectNameKey, projectConfig.Name))
+	}
+
+	if projectConfig.Services != nil {
+		hosts := make([]string, len(projectConfig.Services))
+		languages := make([]string, len(projectConfig.Services))
+		i := 0
+		for _, svcConfig := range projectConfig.Services {
+			hosts[i] = svcConfig.Host
+			languages[i] = svcConfig.Language
+			i++
+		}
+
+		slices.Sort(hosts)
+		slices.Sort(languages)
+
+		telemetry.SetUsageAttributes(fields.StringSliceHashed(fields.ProjectServiceLanguagesKey, languages))
+		telemetry.SetUsageAttributes(fields.StringSliceHashed(fields.ProjectServiceHostsKey, hosts))
 	}
 
 	projectConfig.Path = filepath.Dir(projectFilePath)

@@ -16,6 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -123,6 +124,11 @@ func Test_CLI_Telemetry_Usage_Data_EnvProjectLoad(t *testing.T) {
 	traceContent, err := os.ReadFile(traceFilePath)
 	require.NoError(t, err)
 
+	projectContent, err := samples.ReadFile(samplePath("restoreapp", "azure.yaml"))
+	require.NoError(t, err)
+	projConfig, err := project.Parse(ctx, string(projectContent))
+	require.NoError(t, err)
+
 	scanner := bufio.NewScanner(bytes.NewReader(traceContent))
 	usageCmdFound := false
 	for scanner.Scan() {
@@ -141,8 +147,23 @@ func Test_CLI_Telemetry_Usage_Data_EnvProjectLoad(t *testing.T) {
 			require.Contains(t, m, fields.SubscriptionIdKey)
 			require.Equal(t, m[fields.SubscriptionIdKey], getEnvSubscriptionId(t, dir, envName))
 
-			require.Contains(t, m, fields.TemplateIdKey)
-			require.Equal(t, m[fields.TemplateIdKey], fields.CaseInsensitiveHash("azd-test/restoreapp@v1"))
+			require.Contains(t, m, fields.ProjectTemplateIdKey)
+			require.Equal(t, m[fields.ProjectTemplateIdKey], fields.CaseInsensitiveHash(projConfig.Metadata.Template))
+
+			require.Contains(t, m, fields.ProjectNameKey)
+			require.Equal(t, m[fields.ProjectNameKey], fields.CaseInsensitiveHash(projConfig.Name))
+
+			hosts := []string{}
+			languages := []string{}
+			for _, svc := range projConfig.Services {
+				hosts = append(hosts, svc.Host)
+				languages = append(languages, svc.Language)
+			}
+			require.Contains(t, m, fields.ProjectServiceHostsKey)
+			require.ElementsMatch(t, m[fields.ProjectServiceHostsKey], fields.CaseInsensitiveSliceHash(hosts))
+
+			require.Contains(t, m, fields.ProjectServiceLanguagesKey)
+			require.ElementsMatch(t, m[fields.ProjectServiceLanguagesKey], fields.CaseInsensitiveSliceHash(languages))
 
 		}
 	}

@@ -123,7 +123,6 @@ func (p *dockerProject) Package(
 ) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
-			// Login to container registry.
 			loginServer, has := p.env.Values[environment.ContainerRegistryEndpointEnvVarName]
 			if !has {
 				task.SetError(fmt.Errorf(

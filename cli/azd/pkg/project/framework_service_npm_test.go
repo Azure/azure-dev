@@ -30,7 +30,7 @@ func Test_NpmProject_Restore(t *testing.T) {
 
 	env := environment.Ephemeral()
 	npmCli := npm.NewNpmCli(mockContext.CommandRunner)
-	serviceConfig := createTestServiceConfig()
+	serviceConfig := createTestServiceConfig(AppServiceTarget, ServiceLanguageTypeScript)
 
 	npmProject := NewNpmProject(npmCli, env)
 	restoreTask := npmProject.Restore(*mockContext.Context, serviceConfig)
@@ -62,7 +62,7 @@ func Test_NpmProject_Build(t *testing.T) {
 
 	env := environment.Ephemeral()
 	npmCli := npm.NewNpmCli(mockContext.CommandRunner)
-	serviceConfig := createTestServiceConfig()
+	serviceConfig := createTestServiceConfig(AppServiceTarget, ServiceLanguageTypeScript)
 
 	npmProject := NewNpmProject(npmCli, env)
 	buildTask := npmProject.Build(*mockContext.Context, serviceConfig, nil)
@@ -96,7 +96,7 @@ func Test_NpmProject_Package(t *testing.T) {
 
 	env := environment.Ephemeral()
 	npmCli := npm.NewNpmCli(mockContext.CommandRunner)
-	serviceConfig := createTestServiceConfig()
+	serviceConfig := createTestServiceConfig(AppServiceTarget, ServiceLanguageTypeScript)
 	err := os.MkdirAll(serviceConfig.Path(), osutil.PermissionDirectory)
 	require.NoError(t, err)
 

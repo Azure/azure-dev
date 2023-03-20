@@ -258,7 +258,7 @@ func Test_DockerProject_Build(t *testing.T) {
 
 	env := environment.Ephemeral()
 	dockerCli := docker.NewDocker(mockContext.CommandRunner)
-	serviceConfig := createTestServiceConfig()
+	serviceConfig := createTestServiceConfig(ContainerAppTarget, ServiceLanguageTypeScript)
 
 	dockerProject := NewDockerProject(env, dockerCli, clock.NewMock())
 	buildTask := dockerProject.Build(*mockContext.Context, serviceConfig, nil)
@@ -293,7 +293,7 @@ func Test_DockerProject_Package(t *testing.T) {
 		environment.ContainerRegistryEndpointEnvVarName: "ACR_ENDPOINT",
 	})
 	dockerCli := docker.NewDocker(mockContext.CommandRunner)
-	serviceConfig := createTestServiceConfig()
+	serviceConfig := createTestServiceConfig(ContainerAppTarget, ServiceLanguageTypeScript)
 
 	dockerProject := NewDockerProject(env, dockerCli, clock.NewMock())
 	packageTask := dockerProject.Package(
@@ -329,11 +329,39 @@ func Test_DockerProject_Package(t *testing.T) {
 	)
 }
 
-func createTestServiceConfig() *ServiceConfig {
+func Test_Docker_Package_No_Container_Registry(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	err := setupMocks(mockContext)
+	require.NoError(t, err)
+
+	env := createEnv()
+	delete(env.Values, environment.ContainerRegistryEndpointEnvVarName)
+
+	dockerCli := docker.NewDocker(mockContext.CommandRunner)
+	serviceConfig := createTestServiceConfig(ContainerAppTarget, ServiceLanguageTypeScript)
+
+	dockerProject := NewDockerProject(env, dockerCli, clock.NewMock())
+
+	packageTask := dockerProject.Package(
+		*mockContext.Context,
+		serviceConfig,
+		&ServiceBuildResult{
+			BuildOutputPath: "IMAGE_ID",
+		},
+	)
+	logProgress(packageTask)
+	packageResult, err := packageTask.Await()
+
+	require.Error(t, err)
+	require.ErrorContains(t, err, "could not determine container registry endpoint")
+	require.Nil(t, packageResult)
+}
+
+func createTestServiceConfig(host ServiceTargetKind, language ServiceLanguageKind) *ServiceConfig {
 	return &ServiceConfig{
 		Name:         "api",
-		Host:         "containerapp",
-		Language:     "ts",
+		Host:         string(host),
+		Language:     string(language),
 		RelativePath: filepath.Join("./src/api"),
 		Project: &ProjectConfig{
 			Name: "test-app",

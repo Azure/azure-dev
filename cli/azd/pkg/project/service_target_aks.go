@@ -61,11 +61,6 @@ type aksTarget struct {
 	kubectl                  kubectl.KubectlCli
 }
 
-type aksPackageResult struct {
-	ImageTag    string
-	LoginServer string
-}
-
 // Creates a new instance of the AKS service target
 func NewAksTarget(
 	env *environment.Environment,
@@ -162,7 +157,7 @@ func (t *aksTarget) Publish(
 				return
 			}
 
-			packageDetails, ok := packageOutput.Details.(*aksPackageResult)
+			packageDetails, ok := packageOutput.Details.(*dockerPackageResult)
 			if !ok {
 				task.SetError(errors.New("failed retrieving package result details"))
 				return

@@ -2,8 +2,10 @@ package project
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
@@ -23,7 +25,7 @@ func Test_MavenProject_Restore(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	mockContext.CommandRunner.
 		When(func(args exec.RunArgs, command string) bool {
-			return strings.Contains(command, "mvn.cmd dependency:resolve")
+			return strings.Contains(command, fmt.Sprintf("%s dependency:resolve", getMvnCmd()))
 		}).
 		RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 			runArgs = args
@@ -45,7 +47,7 @@ func Test_MavenProject_Restore(t *testing.T) {
 	result, err := restoreTask.Await()
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	require.Contains(t, runArgs.Cmd, "mvn.cmd")
+	require.Contains(t, runArgs.Cmd, getMvnCmd())
 	require.Equal(t, serviceConfig.Path(), runArgs.Cwd)
 	require.Equal(t,
 		[]string{"dependency:resolve"},
@@ -59,7 +61,7 @@ func Test_MavenProject_Build(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	mockContext.CommandRunner.
 		When(func(args exec.RunArgs, command string) bool {
-			return strings.Contains(command, "mvn.cmd compile")
+			return strings.Contains(command, fmt.Sprintf("%s compile", getMvnCmd()))
 		}).
 		RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 			runArgs = args
@@ -81,7 +83,7 @@ func Test_MavenProject_Build(t *testing.T) {
 	result, err := buildTask.Await()
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	require.Contains(t, runArgs.Cmd, "mvn.cmd")
+	require.Contains(t, runArgs.Cmd, getMvnCmd())
 	require.Equal(t,
 		[]string{"compile"},
 		runArgs.Args,
@@ -97,7 +99,7 @@ func Test_MavenProject_Package(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	mockContext.CommandRunner.
 		When(func(args exec.RunArgs, command string) bool {
-			return strings.Contains(command, "mvn.cmd package")
+			return strings.Contains(command, fmt.Sprintf("%s package", getMvnCmd()))
 		}).
 		RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 			runArgs = args
@@ -133,9 +135,17 @@ func Test_MavenProject_Package(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.NotEmpty(t, result.PackagePath)
-	require.Contains(t, runArgs.Cmd, "mvn.cmd")
+	require.Contains(t, runArgs.Cmd, getMvnCmd())
 	require.Equal(t,
 		[]string{"package", "-DskipTests"},
 		runArgs.Args,
 	)
+}
+
+func getMvnCmd() string {
+	if runtime.GOOS == "windows" {
+		return "mvn.cmd"
+	} else {
+		return "/usr/bin/mvn"
+	}
 }

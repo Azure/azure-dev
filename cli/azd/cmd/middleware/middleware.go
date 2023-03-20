@@ -7,6 +7,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/spf13/cobra"
 )
 
 // Registration function that returns a constructed middleware
@@ -32,6 +33,7 @@ type Options struct {
 	CommandPath   string
 	Name          string
 	Aliases       []string
+	Cmd           *cobra.Command
 	isChildAction bool
 }
 

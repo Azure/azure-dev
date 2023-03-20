@@ -43,8 +43,8 @@ type Attribute struct {
 
 var Sha256Regex = regexp.MustCompile("^[A-Fa-f0-9]{64}$")
 
-// Verifies telemetry usage data generated when environments are created.
-func Test_CLI_Telemetry_Usage_Data_EnvCreate(t *testing.T) {
+// Verifies telemetry usage data generated for simple commands, such as when environments are created.
+func Test_CLI_Telemetry_UsageData_Simple_Command(t *testing.T) {
 	// CLI process and working directory are isolated
 	t.Parallel()
 	ctx, cancel := newTestContext(t)
@@ -87,6 +87,13 @@ func Test_CLI_Telemetry_Usage_Data_EnvCreate(t *testing.T) {
 			m := attributesMap(span.Attributes)
 			require.Contains(t, m, fields.SubscriptionIdKey)
 			require.Equal(t, m[fields.SubscriptionIdKey], getEnvSubscriptionId(t, dir, envName))
+
+			require.Contains(t, m, fields.CmdFlags)
+			require.ElementsMatch(t, m[fields.CmdFlags], []string{"trace-log-file"})
+
+			// env new provides a arg. This should be set.
+			require.Contains(t, m, fields.CmdHasArg)
+			require.Equal(t, m[fields.CmdHasArg], true)
 		}
 	}
 
@@ -94,7 +101,7 @@ func Test_CLI_Telemetry_Usage_Data_EnvCreate(t *testing.T) {
 }
 
 // Verifies telemetry usage data generated when environments and projects are loaded.
-func Test_CLI_Telemetry_Usage_Data_EnvProjectLoad(t *testing.T) {
+func Test_CLI_Telemetry_UsageData_EnvProjectLoad(t *testing.T) {
 	// CLI process and working directory are isolated
 	ctx, cancel := newTestContext(t)
 	defer cancel()
@@ -165,6 +172,11 @@ func Test_CLI_Telemetry_Usage_Data_EnvProjectLoad(t *testing.T) {
 			require.Contains(t, m, fields.ProjectServiceLanguagesKey)
 			require.ElementsMatch(t, m[fields.ProjectServiceLanguagesKey], fields.CaseInsensitiveSliceHash(languages))
 
+			require.Contains(t, m, fields.CmdFlags)
+			require.ElementsMatch(t, m[fields.CmdFlags], []string{"service", "trace-log-file"})
+
+			require.Contains(t, m, fields.CmdHasArg)
+			require.Equal(t, m[fields.CmdHasArg], false)
 		}
 	}
 	require.True(t, usageCmdFound)

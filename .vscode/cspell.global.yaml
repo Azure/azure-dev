@@ -164,6 +164,7 @@ ignoreWords:
     - menuid
     - PLACEHOLDERIACTOOLS
     - LOGANALYTICS
+    - venv
     - webapprouting
     - zipdeploy
     - appinsights

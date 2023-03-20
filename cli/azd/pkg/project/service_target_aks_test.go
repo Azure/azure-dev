@@ -80,6 +80,10 @@ func Test_Package_Publish_HappyPath(t *testing.T) {
 		serviceConfig,
 		&ServicePackageResult{
 			PackagePath: "IMAGE_ID",
+			Details: &dockerPackageResult{
+				ImageTag:    "IMAGE_TAG",
+				LoginServer: "REGISTRY.azurecr.io",
+			},
 		},
 	)
 	logProgress(packageTask)
@@ -87,9 +91,7 @@ func Test_Package_Publish_HappyPath(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotNil(t, packageResult)
-	require.NotNil(t, env.Values["SERVICE_SVC_IMAGE_NAME"])
-	require.Equal(t, packageResult.PackagePath, env.Values["SERVICE_SVC_IMAGE_NAME"])
-	require.IsType(t, new(aksPackageResult), packageResult.Details)
+	require.IsType(t, new(dockerPackageResult), packageResult.Details)
 
 	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "CLUSTER_NAME", string(infra.AzureResourceTypeManagedCluster))
 	publishTask := serviceTarget.Publish(*mockContext.Context, serviceConfig, packageResult, scope)
@@ -121,7 +123,7 @@ func Test_Publish_No_Cluster_Name(t *testing.T) {
 	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "CLUSTER_NAME", string(infra.AzureResourceTypeManagedCluster))
 	packageOutput := &ServicePackageResult{
 		Build: &ServiceBuildResult{BuildOutputPath: "IMAGE_ID"},
-		Details: &aksPackageResult{
+		Details: &dockerPackageResult{
 			ImageTag:    "IMAGE_TAG",
 			LoginServer: env.Values[environment.ContainerRegistryEndpointEnvVarName],
 		},
@@ -134,37 +136,6 @@ func Test_Publish_No_Cluster_Name(t *testing.T) {
 	require.Error(t, err)
 	require.ErrorContains(t, err, "could not determine AKS cluster")
 	require.Nil(t, publishResult)
-}
-
-func Test_Package_No_Container_Registry(t *testing.T) {
-	tempDir := t.TempDir()
-	ostest.Chdir(t, tempDir)
-
-	mockContext := mocks.NewMockContext(context.Background())
-	err := setupMocks(mockContext)
-	require.NoError(t, err)
-
-	serviceConfig := createServiceConfig(tempDir)
-	env := createEnv()
-
-	// Simulate container registry endpoint not found in env file
-	delete(env.Values, environment.ContainerRegistryEndpointEnvVarName)
-
-	serviceTarget := createServiceTarget(mockContext, serviceConfig, env)
-
-	packageTask := serviceTarget.Package(
-		*mockContext.Context,
-		serviceConfig,
-		&ServicePackageResult{
-			PackagePath: "IMAGE_ID",
-		},
-	)
-	logProgress(packageTask)
-	packageResult, err := packageTask.Await()
-
-	require.Error(t, err)
-	require.ErrorContains(t, err, "could not determine container registry endpoint")
-	require.Nil(t, packageResult)
 }
 
 func Test_Publish_No_Admin_Credentials(t *testing.T) {
@@ -187,7 +158,7 @@ func Test_Publish_No_Admin_Credentials(t *testing.T) {
 	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "CLUSTER_NAME", string(infra.AzureResourceTypeManagedCluster))
 	packageOutput := &ServicePackageResult{
 		Build: &ServiceBuildResult{BuildOutputPath: "IMAGE_ID"},
-		Details: &aksPackageResult{
+		Details: &dockerPackageResult{
 			ImageTag:    "IMAGE_TAG",
 			LoginServer: env.Values[environment.ContainerRegistryEndpointEnvVarName],
 		},

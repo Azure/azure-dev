@@ -9,7 +9,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/javac"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/maven"
@@ -26,11 +25,11 @@ type mavenProject struct {
 }
 
 // NewMavenProject creates a new instance of a maven project
-func NewMavenProject(runner exec.CommandRunner, env *environment.Environment) FrameworkService {
+func NewMavenProject(env *environment.Environment, mavenCli maven.MavenCli, javaCli javac.JavacCli) FrameworkService {
 	return &mavenProject{
 		env:      env,
-		mavenCli: maven.NewMavenCli(runner),
-		javacCli: javac.NewCli(runner),
+		mavenCli: mavenCli,
+		javacCli: javaCli,
 	}
 }
 

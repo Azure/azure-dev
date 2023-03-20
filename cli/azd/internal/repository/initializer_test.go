@@ -102,9 +102,9 @@ func Test_Initializer_InitializeWithOverwritePrompt(t *testing.T) {
 		name      string
 		selection int
 	}{
-		//{"Overwrite", 0},
+		{"Overwrite", 0},
 		{"Keep", 1},
-		//{"Cancel", 2},
+		{"Cancel", 2},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

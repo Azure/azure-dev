@@ -91,7 +91,6 @@ func (i *Initializer) Initialize(
 				if skip, err := filepath.Match(fileToSkip, src); err != nil {
 					return false, err
 				} else if skip {
-					fmt.Printf("skipped file: %s\n", src)
 					return true, nil
 				}
 			}

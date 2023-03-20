@@ -69,7 +69,7 @@ func (i *Initializer) Initialize(
 		return err
 	}
 
-	keepFiles, err := i.promptForDuplicates(ctx, staging, target)
+	skipStagingFile, err := i.promptForDuplicates(ctx, staging, target)
 	if err != nil {
 		return err
 	}
@@ -80,21 +80,27 @@ func (i *Initializer) Initialize(
 	}
 
 	options := copy.Options{}
-	if keepFiles != nil {
+	if skipStagingFile != nil {
 		options.Skip = func(src string) (bool, error) {
-			for _, keepFile := range keepFiles {
+			for _, fileToSkip := range skipStagingFile {
 				// If the user has specified to keep a file, we should skip the copy for that file.
 				// Note the following:
 				// 1. filepath.Match accepts glob patterns.
 				//    An exact filepath is a valid glob pattern that matches the file itself (and nothing else).
 				// 2. returning error stops the copy.
-				return filepath.Match(keepFile, src)
+				if skip, err := filepath.Match(fileToSkip, src); err != nil {
+					return false, err
+				} else if skip {
+					fmt.Printf("skipped file: %s\n", src)
+					return true, nil
+				}
 			}
+
 			return false, nil
 		}
 	}
 
-	if err := copy.Copy(staging, target); err != nil {
+	if err := copy.Copy(staging, target, options); err != nil {
 		return fmt.Errorf("copying template contents: %w", err)
 	}
 
@@ -140,7 +146,8 @@ func (i *Initializer) fetchCode(
 	return executableFilePaths, nil
 }
 
-func (i *Initializer) promptForDuplicates(ctx context.Context, staging string, target string) (keepFiles []string, err error) {
+func (i *Initializer) promptForDuplicates(
+	ctx context.Context, staging string, target string) (skipSourceFiles []string, err error) {
 	log.Printf(
 		"template init, checking for duplicates. source: %s target: %s",
 		staging,
@@ -176,7 +183,11 @@ func (i *Initializer) promptForDuplicates(ctx context.Context, staging string, t
 			case 0:
 				return nil, nil
 			case 1:
-				return duplicateFiles, nil
+				skipSourceFiles = make([]string, len(duplicateFiles))
+				for i, file := range duplicateFiles {
+					skipSourceFiles[i] = filepath.Join(staging, file)
+				}
+				return skipSourceFiles, nil
 			case 2:
 				return nil, errors.New("user cancellation")
 			}

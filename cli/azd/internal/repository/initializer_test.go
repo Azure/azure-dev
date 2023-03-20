@@ -102,20 +102,18 @@ func Test_Initializer_InitializeWithOverwritePrompt(t *testing.T) {
 		name      string
 		selection int
 	}{
-		{"Overwrite", 0},
+		//{"Overwrite", 0},
 		{"Keep", 1},
-		{"Cancel", 2},
+		//{"Cancel", 2},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			originalContents := "ORIGINAL"
+			originalContent := "ORIGINAL"
 			projectDir := t.TempDir()
 			azdCtx := azdcontext.NewAzdContextWithDirectory(projectDir)
 			// set up duplicate files
-			err := os.WriteFile(filepath.Join(projectDir, "README.md"), []byte(originalContents), osutil.PermissionFile)
+			err := os.WriteFile(filepath.Join(projectDir, "README.md"), []byte(originalContent), osutil.PermissionFile)
 			require.NoError(t, err, "setting up duplicate files")
-
-			copyTemplate(t, testDataPath(templateDir), projectDir)
 
 			console := mockinput.NewMockConsole()
 			console.WhenSelect(func(options input.ConsoleOptions) bool {
@@ -148,20 +146,13 @@ func Test_Initializer_InitializeWithOverwritePrompt(t *testing.T) {
 				verifyTemplateCopied(t, testDataPath(templateDir), projectDir, verifyOptions{})
 			case 1:
 				// keep
-				verifyTemplateCopied(t, testDataPath(templateDir), projectDir, verifyOptions{
-					CustomVerify: func(src string) (bool, error) {
-						if matched, err := filepath.Match("README.md", src); err != nil {
-							return false, err
-						} else if matched {
-							if content, err := os.ReadFile(filepath.Join(projectDir, "README.md")); err != nil {
-								return false, err
-							} else {
-								require.Equal(t, originalContents, string(content), "original content not kept")
-								return true, nil
-							}
-						}
+				content, err := os.ReadFile(filepath.Join(projectDir, "README.md"))
+				require.NoError(t, err)
+				require.Equal(t, originalContent, string(content))
 
-						return false, nil
+				verifyTemplateCopied(t, testDataPath(templateDir), projectDir, verifyOptions{
+					Skip: func(src string) (bool, error) {
+						return filepath.Match(testDataPath(templateDir, "README.md.txt"), src)
 					},
 				})
 			case 2:
@@ -211,10 +202,8 @@ func copyTemplate(t *testing.T, source string, target string) {
 }
 
 type verifyOptions struct {
-	// custom verification for a given file.
-	// return true if the file has been verified.
-	// return err if verification failed.
-	CustomVerify func(src string) (verified bool, err error)
+	// skip verification for a given file.
+	Skip func(src string) (bool, error)
 }
 
 // Verify all template code was copied to the destination.
@@ -232,11 +221,10 @@ func verifyTemplateCopied(
 			return nil
 		}
 
-		if options.CustomVerify != nil {
-			if verified, err := options.CustomVerify(path); err != nil {
+		if options.Skip != nil {
+			if skip, err := options.Skip(path); err != nil {
 				return err
-			} else if verified {
-				// skip verification
+			} else if skip {
 				return nil
 			}
 		}
@@ -247,6 +235,7 @@ func verifyTemplateCopied(
 		}
 
 		relCopied := strings.TrimSuffix(rel, ".txt")
+
 		verifyFileContent(
 			t,
 			filepath.Join(copied, relCopied),

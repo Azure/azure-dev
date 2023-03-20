@@ -69,7 +69,7 @@ func (i *Initializer) Initialize(
 		return err
 	}
 
-	err = i.promptForDuplicates(ctx, staging, target)
+	keepFiles, err := i.promptForDuplicates(ctx, staging, target)
 	if err != nil {
 		return err
 	}
@@ -77,6 +77,21 @@ func (i *Initializer) Initialize(
 	isEmpty, err := isEmptyDir(target)
 	if err != nil {
 		return err
+	}
+
+	options := copy.Options{}
+	if keepFiles != nil {
+		options.Skip = func(src string) (bool, error) {
+			for _, keepFile := range keepFiles {
+				// If the user has specified to keep a file, we should skip the copy for that file.
+				// Note the following:
+				// 1. filepath.Match accepts glob patterns.
+				//    An exact filepath is a valid glob pattern that matches the file itself (and nothing else).
+				// 2. returning error stops the copy.
+				return filepath.Match(keepFile, src)
+			}
+			return false, nil
+		}
 	}
 
 	if err := copy.Copy(staging, target); err != nil {
@@ -125,7 +140,7 @@ func (i *Initializer) fetchCode(
 	return executableFilePaths, nil
 }
 
-func (i *Initializer) promptForDuplicates(ctx context.Context, staging string, target string) error {
+func (i *Initializer) promptForDuplicates(ctx context.Context, staging string, target string) (keepFiles []string, err error) {
 	log.Printf(
 		"template init, checking for duplicates. source: %s target: %s",
 		staging,
@@ -134,7 +149,7 @@ func (i *Initializer) promptForDuplicates(ctx context.Context, staging string, t
 
 	duplicateFiles, err := determineDuplicates(staging, target)
 	if err != nil {
-		return fmt.Errorf("checking for overwrites: %w", err)
+		return nil, fmt.Errorf("checking for overwrites: %w", err)
 	}
 
 	if len(duplicateFiles) > 0 {
@@ -147,21 +162,28 @@ func (i *Initializer) promptForDuplicates(ctx context.Context, staging string, t
 			i.console.Message(ctx, fmt.Sprintf(" * %s", file))
 		}
 
-		overwrite, err := i.console.Confirm(ctx, input.ConsoleOptions{
-			Message:      "Overwrite files with versions from template?",
-			DefaultValue: false,
-		})
-
-		if err != nil {
-			return fmt.Errorf("prompting to overwrite: %w", err)
-		}
-
-		if !overwrite {
-			return errors.New("confirmation declined")
+		if selection, err := i.console.Select(ctx, input.ConsoleOptions{
+			Message: "What would you like to do with these files?",
+			Options: []string{
+				"Overwrite with versions from template",
+				"Keep the current files as-is",
+				"Cancel init",
+			},
+		}); err != nil {
+			return nil, fmt.Errorf("prompting to overwrite: %w", err)
+		} else {
+			switch selection {
+			case 0:
+				return nil, nil
+			case 1:
+				return duplicateFiles, nil
+			case 2:
+				return nil, errors.New("user cancellation")
+			}
 		}
 	}
 
-	return nil
+	return nil, nil
 }
 
 func (i *Initializer) gitInitialize(ctx context.Context,
@@ -228,7 +250,7 @@ func parseExecutableFiles(stagedFilesOutput string) ([]string, error) {
 			// Advance to past '\t', taking the remainder which is <file>
 			_, filepath, found := strings.Cut(scanner.Text()[advance:], "\t")
 			if !found {
-				return nil, errors.New("invalid staged files output format. Missing file path.")
+				return nil, errors.New("invalid staged files output format, missing file path")
 			}
 
 			executableFiles = append(executableFiles, filepath)
@@ -361,7 +383,7 @@ func (i *Initializer) writeAzdAssets(ctx context.Context, azdCtx *azdcontext.Azd
 }
 
 // Returns files that are both present in source and target.
-// The returned files are full paths to the target files.
+// The files returned are expressed in their relative paths to source/target.
 func determineDuplicates(source string, target string) ([]string, error) {
 	var duplicateFiles []string
 	if err := filepath.WalkDir(source, func(path string, d fs.DirEntry, walkErr error) error {

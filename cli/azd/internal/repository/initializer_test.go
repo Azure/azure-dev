@@ -14,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockexec"
@@ -85,7 +86,7 @@ func Test_Initializer_Initialize(t *testing.T) {
 			err := i.Initialize(ctx, azdCtx, "local", "")
 			require.NoError(t, err)
 
-			verifyTemplateCopied(t, testDataPath(tt.templateDir), projectDir)
+			verifyTemplateCopied(t, testDataPath(tt.templateDir), projectDir, verifyOptions{})
 			verifyExecutableFilePermissions(t, ctx, i.gitCli, projectDir, tt.executableFiles)
 
 			require.FileExists(t, filepath.Join(projectDir, ".gitignore"))
@@ -98,23 +99,28 @@ func Test_Initializer_Initialize(t *testing.T) {
 func Test_Initializer_InitializeWithOverwritePrompt(t *testing.T) {
 	templateDir := "template"
 	tests := []struct {
-		name             string
-		confirmOverwrite bool
+		name      string
+		selection int
 	}{
-		{"Confirm", true},
-		{"Deny", false},
+		{"Overwrite", 0},
+		{"Keep", 1},
+		{"Cancel", 2},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			originalContents := "ORIGINAL"
 			projectDir := t.TempDir()
 			azdCtx := azdcontext.NewAzdContextWithDirectory(projectDir)
-			// Copy all files to project to set up duplicate files
+			// set up duplicate files
+			err := os.WriteFile(filepath.Join(projectDir, "README.md"), []byte(originalContents), osutil.PermissionFile)
+			require.NoError(t, err, "setting up duplicate files")
+
 			copyTemplate(t, testDataPath(templateDir), projectDir)
 
 			console := mockinput.NewMockConsole()
-			console.WhenConfirm(func(options input.ConsoleOptions) bool {
-				return strings.Contains(options.Message, "Overwrite files with versions from template?")
-			}).Respond(tt.confirmOverwrite)
+			console.WhenSelect(func(options input.ConsoleOptions) bool {
+				return strings.Contains(options.Message, "What would you like to do with these files?")
+			}).Respond(tt.selection)
 
 			realRunner := exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
 			mockRunner := mockexec.NewMockCommandRunner()
@@ -134,16 +140,37 @@ func Test_Initializer_InitializeWithOverwritePrompt(t *testing.T) {
 				})
 
 			i := NewInitializer(console, git.NewGitCli(mockRunner))
-			err := i.Initialize(context.Background(), azdCtx, "local", "")
+			err = i.Initialize(context.Background(), azdCtx, "local", "")
 
-			if !tt.confirmOverwrite {
+			switch tt.selection {
+			case 0:
+				// overwrite
+				verifyTemplateCopied(t, testDataPath(templateDir), projectDir, verifyOptions{})
+			case 1:
+				// keep
+				verifyTemplateCopied(t, testDataPath(templateDir), projectDir, verifyOptions{
+					CustomVerify: func(src string) (bool, error) {
+						if matched, err := filepath.Match("README.md", src); err != nil {
+							return false, err
+						} else if matched {
+							if content, err := os.ReadFile(filepath.Join(projectDir, "README.md")); err != nil {
+								return false, err
+							} else {
+								require.Equal(t, originalContents, string(content), "original content not kept")
+								return true, nil
+							}
+						}
+
+						return false, nil
+					},
+				})
+			case 2:
+				// user declined confirmation, error expected
 				require.Error(t, err)
 				return
+			default:
+				require.Fail(t, "unhandled user selection")
 			}
-
-			require.NoError(t, err)
-
-			verifyTemplateCopied(t, testDataPath(templateDir), projectDir)
 
 			require.FileExists(t, filepath.Join(projectDir, ".gitignore"))
 			require.FileExists(t, azdCtx.ProjectPath())
@@ -183,8 +210,19 @@ func copyTemplate(t *testing.T, source string, target string) {
 	require.NoError(t, os.MkdirAll(filepath.Join(target, ".git"), 0755))
 }
 
+type verifyOptions struct {
+	// custom verification for a given file.
+	// return true if the file has been verified.
+	// return err if verification failed.
+	CustomVerify func(src string) (verified bool, err error)
+}
+
 // Verify all template code was copied to the destination.
-func verifyTemplateCopied(t *testing.T, original string, copied string) {
+func verifyTemplateCopied(
+	t *testing.T,
+	original string,
+	copied string,
+	options verifyOptions) {
 	err := filepath.WalkDir(original, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			require.NoError(t, err)
@@ -194,13 +232,25 @@ func verifyTemplateCopied(t *testing.T, original string, copied string) {
 			return nil
 		}
 
+		if options.CustomVerify != nil {
+			if verified, err := options.CustomVerify(path); err != nil {
+				return err
+			} else if verified {
+				// skip verification
+				return nil
+			}
+		}
+
 		rel, err := filepath.Rel(original, path)
 		if err != nil {
 			return fmt.Errorf("computing relative path: %w", err)
 		}
 
 		relCopied := strings.TrimSuffix(rel, ".txt")
-		verifyFileContent(t, filepath.Join(copied, relCopied), readFile(t, filepath.Join(original, rel)))
+		verifyFileContent(
+			t,
+			filepath.Join(copied, relCopied),
+			readFile(t, filepath.Join(original, rel)))
 
 		return nil
 	})

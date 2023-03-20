@@ -104,7 +104,6 @@ func Test_Initializer_InitializeWithOverwritePrompt(t *testing.T) {
 	}{
 		{"Overwrite", 0},
 		{"Keep", 1},
-		{"Cancel", 2},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -155,10 +154,6 @@ func Test_Initializer_InitializeWithOverwritePrompt(t *testing.T) {
 						return filepath.Match(testDataPath(templateDir, "README.md.txt"), src)
 					},
 				})
-			case 2:
-				// user declined confirmation, error expected
-				require.Error(t, err)
-				return
 			default:
 				require.Fail(t, "unhandled user selection")
 			}

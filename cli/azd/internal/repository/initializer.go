@@ -173,7 +173,6 @@ func (i *Initializer) promptForDuplicates(
 			Options: []string{
 				"Overwrite with versions from template",
 				"Keep the current files as-is",
-				"Cancel init",
 			},
 		}); err != nil {
 			return nil, fmt.Errorf("prompting to overwrite: %w", err)
@@ -187,8 +186,6 @@ func (i *Initializer) promptForDuplicates(
 					skipSourceFiles[i] = filepath.Join(staging, file)
 				}
 				return skipSourceFiles, nil
-			case 2:
-				return nil, errors.New("user cancellation")
 			}
 		}
 	}

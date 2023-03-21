@@ -43,6 +43,16 @@ func Test_PythonProject_Restore(t *testing.T) {
 			return exec.NewRunResult(0, "", ""), nil
 		})
 
+		// Linux & mac run a command list
+	mockContext.CommandRunner.
+		When(func(args exec.RunArgs, command string) bool {
+			return strings.Contains(command, "activate && python3 -m pip install")
+		}).
+		RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+			pipArgs = args
+			return exec.NewRunResult(0, "", ""), nil
+		})
+
 	env := environment.Ephemeral()
 	pythonCli := python.NewPythonCli(mockContext.CommandRunner)
 	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguagePython)
@@ -61,11 +71,17 @@ func Test_PythonProject_Restore(t *testing.T) {
 		venvArgs.Args,
 	)
 
-	require.Equal(t, pythonExe(), pipArgs.Cmd)
-	require.Equal(t,
-		[]string{"-m", "pip", "install", "-r", "requirements.txt"},
-		pipArgs.Args,
-	)
+	if runtime.GOOS == "windows" {
+		require.Equal(t, pythonExe(), pipArgs.Cmd)
+		require.Equal(t,
+			[]string{"-m", "pip", "install", "-r", "requirements.txt"},
+			pipArgs.Args,
+		)
+	} else {
+		require.Len(t, pipArgs.Args, 2)
+		require.Equal(t, ". api_env/bin/activate", pipArgs.Args[0])
+		require.Equal(t, "python3 -m pip install -r requirements.txt", pipArgs.Args[1])
+	}
 }
 
 func Test_PythonProject_Build(t *testing.T) {

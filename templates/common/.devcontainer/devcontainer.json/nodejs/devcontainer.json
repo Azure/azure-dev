@@ -9,9 +9,6 @@
     "features": {
         "ghcr.io/devcontainers/features/docker-from-docker:1": {
             "version": "20.10"
-        },
-        "ghcr.io/devcontainers/features/github-cli:1": {
-            "version": "2"
         }
     },
     "customizations": {

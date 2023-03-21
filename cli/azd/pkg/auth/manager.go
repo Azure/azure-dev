@@ -118,6 +118,11 @@ func EnsureLoggedInCredential(ctx context.Context, credential azcore.TokenCreden
 		Scopes: cLoginScopes,
 	})
 	if err != nil {
+		// It is important that we dump the failure which contains error code, correlation IDs from AAD to log
+		// An improvement to make here is to classify 'unhandled' vs 'handled' errors
+		// where handled errors would be fixed with rerunning login (i.e. token expiry), vs.
+		// unhandled errors where it indicates a setup issue.
+		log.Printf("failed fetching access token: %s", err.Error())
 		return &azcore.AccessToken{}, ErrNoCurrentUser
 	}
 
@@ -147,7 +152,7 @@ func (m *Manager) CredentialForCurrentUser(
 			TenantID: options.TenantID,
 		})
 		if err != nil {
-			return nil, fmt.Errorf("failed to create credential: %v: %w", err, ErrNoCurrentUser)
+			return nil, fmt.Errorf("failed to create credential: %w: %w", err, ErrNoCurrentUser)
 		}
 		return cred, nil
 	}
@@ -158,10 +163,11 @@ func (m *Manager) CredentialForCurrentUser(
 	}
 
 	if currentUser.HomeAccountID != nil {
-		for _, account := range m.publicClient.Accounts() {
+		accounts := m.publicClient.Accounts()
+		for i, account := range accounts {
 			if account.HomeAccountID == *currentUser.HomeAccountID {
 				if options.TenantID == "" {
-					return newAzdCredential(m.publicClient, &account), nil
+					return newAzdCredential(m.publicClient, &accounts[i]), nil
 				} else {
 					newAuthority := "https://login.microsoftonline.com/" + options.TenantID
 
@@ -177,14 +183,14 @@ func (m *Manager) CredentialForCurrentUser(
 						return nil, err
 					}
 
-					return newAzdCredential(&msalPublicClientAdapter{client: &clientWithNewTenant}, &account), nil
+					return newAzdCredential(&msalPublicClientAdapter{client: &clientWithNewTenant}, &accounts[i]), nil
 				}
 			}
 		}
 	} else if currentUser.TenantID != nil && currentUser.ClientID != nil {
 		ps, err := m.loadSecret(*currentUser.TenantID, *currentUser.ClientID)
 		if err != nil {
-			return nil, fmt.Errorf("loading secret: %v: %w", err, ErrNoCurrentUser)
+			return nil, fmt.Errorf("loading secret: %w: %w", err, ErrNoCurrentUser)
 		}
 
 		// by default we used the stored tenant (i.e. the one provided with the tenant id parameter when a user ran
@@ -254,7 +260,7 @@ func (m *Manager) GetLoggedInServicePrincipalTenantID() (*string, error) {
 func newCredentialFromClientSecret(tenantID string, clientID string, clientSecret string) (azcore.TokenCredential, error) {
 	cred, err := azidentity.NewClientSecretCredential(tenantID, clientID, clientSecret, nil)
 	if err != nil {
-		return nil, fmt.Errorf("creating credential: %v: %w", err, ErrNoCurrentUser)
+		return nil, fmt.Errorf("creating credential: %w: %w", err, ErrNoCurrentUser)
 	}
 
 	return cred, nil
@@ -267,12 +273,12 @@ func newCredentialFromClientCertificate(
 ) (azcore.TokenCredential, error) {
 	certData, err := base64.StdEncoding.DecodeString(clientCertificate)
 	if err != nil {
-		return nil, fmt.Errorf("decoding certificate: %v: %w", err, ErrNoCurrentUser)
+		return nil, fmt.Errorf("decoding certificate: %w: %w", err, ErrNoCurrentUser)
 	}
 
 	certs, key, err := azidentity.ParseCertificates(certData, nil)
 	if err != nil {
-		return nil, fmt.Errorf("parsing certificate: %v: %w", err, ErrNoCurrentUser)
+		return nil, fmt.Errorf("parsing certificate: %w: %w", err, ErrNoCurrentUser)
 	}
 
 	cred, err := azidentity.NewClientCertificateCredential(
@@ -280,7 +286,7 @@ func newCredentialFromClientCertificate(
 	)
 
 	if err != nil {
-		return nil, fmt.Errorf("creating credential: %v: %w", err, ErrNoCurrentUser)
+		return nil, fmt.Errorf("creating credential: %w: %w", err, ErrNoCurrentUser)
 	}
 
 	return cred, nil
@@ -301,7 +307,7 @@ func newCredentialFromClientAssertion(
 	)
 
 	if err != nil {
-		return nil, fmt.Errorf("creating credential: %v: %w", err, ErrNoCurrentUser)
+		return nil, fmt.Errorf("creating credential: %w: %w", err, ErrNoCurrentUser)
 	}
 
 	return cred, nil

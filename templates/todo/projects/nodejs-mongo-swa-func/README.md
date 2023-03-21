@@ -1,3 +1,23 @@
+---
+page_type: sample
+languages:
+- azdeveloper
+- nodejs
+- bicep
+- typescript
+- html
+products:
+- azure
+- azure-cosmos-db
+- azure-functions
+- azure-monitor
+- azure-pipelines
+urlFragment: todo-nodejs-mongo-swa-func
+name: Web Application with a Node.js API and Azure Cosmos DB API for MongoDB on Static Web Apps and Functions
+description: A complete ToDo app with Node.js API and Azure Cosmos API for MongoDB for storage. Uses Azure Developer CLI (azd) to build, deploy, and monitor
+---
+<!-- YAML front-matter schema: https://review.learn.microsoft.com/en-us/help/contribute/samples/process/onboarding?branch=main#supported-metadata-fields-for-readmemd -->
+
 # ToDo Application with a Node.js API and Azure Cosmos DB API for MongoDB on Static Web Apps and Functions
 
 [![Open in GitHub Codespaces](https://img.shields.io/static/v1?style=for-the-badge&label=GitHub+Codespaces&message=Open&color=brightgreen&logo=github)](https://github.com/codespaces/new?hide_repo_select=true&ref=main&repo=497092464&machine=standardLinux32gb&devcontainer_path=.devcontainer%2Fdevcontainer.json&location=WestUs2)

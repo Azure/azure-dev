@@ -71,14 +71,19 @@ func configActions(root *actions.ActionDescriptor, rootOptions *internal.GlobalC
 		The configuration directory can be overridden by specifying a path in the AZD_CONFIG_DIR environment variable.`,
 		helpConfigPaths)
 
-	groupCmd := &cobra.Command{
-		Use:   "config",
-		Short: "Manage the Azure Developer CLI user configuration.",
-		Long:  longDescription,
-	}
-
 	group := root.Add("config", &actions.ActionDescriptorOptions{
-		Command: groupCmd,
+		Command: &cobra.Command{
+			Use:   "config",
+			Short: "Manage azd configurations (ex: default Azure subscription, location).",
+			Long:  longDescription,
+		},
+		HelpOptions: actions.ActionHelpOptions{
+			Description: getCmdConfigHelpDescription,
+			Footer:      getCmdConfigHelpFooter,
+		},
+		GroupingOptions: actions.CommandGroupOptions{
+			RootLevelHelp: actions.CmdGroupConfig,
+		},
 	})
 
 	group.Add("list", &actions.ActionDescriptorOptions{
@@ -302,4 +307,31 @@ func newConfigResetAction(configManager config.UserConfigManager, args []string)
 func (a *configResetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	emptyConfig := config.NewConfig(nil)
 	return nil, a.configManager.Save(emptyConfig)
+}
+
+func getCmdConfigHelpDescription(*cobra.Command) string {
+	return generateCmdHelpDescription(
+		"Manage the Azure Developer CLI user configuration, which includes your default Azure subscription and location.",
+		[]string{
+			formatHelpNote(fmt.Sprintf("Applications are initially configures when you run %s.",
+				output.WithHighLightFormat("azd init"),
+			)),
+			formatHelpNote(fmt.Sprintf("The subscription and location you select will be stored at: %s.",
+				output.WithLinkFormat("%HOME/.azd/config.json"),
+			)),
+			formatHelpNote(fmt.Sprintf("The default configuration path is: %s.",
+				output.WithLinkFormat("%HOME/.azd"),
+			)),
+		})
+}
+
+func getCmdConfigHelpFooter(c *cobra.Command) string {
+	return generateCmdHelpSamplesBlock(map[string]string{
+		"Set the default Azure subscription.": fmt.Sprintf("%s %s",
+			output.WithHighLightFormat("azd config set defaults.subscription"),
+			output.WithWarningFormat("<yourSubscriptionID>")),
+		"Set the default Azure deployment location.": fmt.Sprintf("%s %s",
+			output.WithHighLightFormat("azd config set defaults.location"),
+			output.WithWarningFormat("<location>")),
+	})
 }

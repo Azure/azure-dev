@@ -1,17 +1,35 @@
 # Release History
 
-## 0.6.0-beta.3 (Unreleased)
+## 0.7.0-beta.2 (Unreleased)
 
 ### Features Added
-
-- [[#1515]](https://github.com/Azure/azure-dev/pull/1515) Remove gh-cli as external dependency for `azd pipeline config`.
-- [[#1558]](https://github.com/Azure/azure-dev/pull/1558) Upgrade bicep version to 0.14.46 and fetch ARM specific version on ARM platforms.
 
 ### Breaking Changes
 
 ### Bugs Fixed
 
+- [[#1734]](https://github.com/Azure/azure-dev/pull/1734) Fix setting `AZURE_PRINCIPAL_ID` on multi-tenant directory.
+- [[#1738]](https://github.com/Azure/azure-dev/pull/1738) Fix generating auth token on multi-tenant directory.
+
 ### Other Changes
+
+## 0.7.0-beta.1 (2023-03-09)
+
+### Features Added
+
+- [[#1515]](https://github.com/Azure/azure-dev/pull/1515) Remove gh-cli as external dependency for `azd pipeline config`.
+- [[#1558]](https://github.com/Azure/azure-dev/pull/1558) Upgrade bicep version to 0.14.46 and fetch ARM specific version on ARM platforms.
+- [[#1611]](https://github.com/Azure/azure-dev/pull/1611) Updated formatting for displaying command's help.
+- [[#1629]](https://github.com/Azure/azure-dev/pull/1629) Add support for Azure Kubernetes Service (AKS) target.
+
+### Bugs Fixed
+
+- [[#1631]](https://github.com/Azure/azure-dev/pull/1631) Fail fast during `azd init` when `git` is not installed.
+- [[#1559]](https://github.com/Azure/azure-dev/pull/1559) No feedback output during provisioning some templates.
+- [[#1683]](https://github.com/Azure/azure-dev/pull/1683) Fix `azd pipeline config` to honor provider from `azure.yaml`.
+- [[#1578]](https://github.com/Azure/azure-dev/pull/1578) Fix crash while running `azd login`, due to a tenant `DisplayName` being nil.
+
+Thanks to community members: @pamelafox, @tonybaloney, @cobey for their contributions in this release.
 
 ## 0.6.0-beta.2 (2023-02-10)
 

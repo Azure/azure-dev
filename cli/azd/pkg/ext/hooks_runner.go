@@ -7,6 +7,7 @@ import (
 	"os"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -23,7 +24,7 @@ type HooksRunner struct {
 	console       input.Console
 	cwd           string
 	hooks         map[string]*HookConfig
-	envVars       []string
+	env           *environment.Environment
 }
 
 // NewHooks creates a new instance of CommandHooks
@@ -34,7 +35,7 @@ func NewHooksRunner(
 	console input.Console,
 	cwd string,
 	hooks map[string]*HookConfig,
-	envVars []string,
+	env *environment.Environment,
 ) *HooksRunner {
 	if cwd == "" {
 		osWd, err := os.Getwd()
@@ -51,7 +52,7 @@ func NewHooksRunner(
 		console:       console,
 		cwd:           cwd,
 		hooks:         hooks,
-		envVars:       envVars,
+		env:           env,
 	}
 }
 
@@ -82,6 +83,11 @@ func (h *HooksRunner) RunHooks(ctx context.Context, hookType HookType, commands 
 		return fmt.Errorf("failed running scripts for hooks '%s', %w", strings.Join(commands, ","), err)
 	}
 
+	// Reload env vars before execution to enable support for hooks to generate new env vars between commands
+	if err := h.env.Reload(); err != nil {
+		return fmt.Errorf("failed reloading env values, %w", err)
+	}
+
 	for _, hookConfig := range hooks {
 		err := h.execHook(ctx, hookConfig)
 		if err != nil {
@@ -101,9 +107,9 @@ func (h *HooksRunner) GetScript(hookConfig *HookConfig) (tools.Script, error) {
 
 	switch hookConfig.Shell {
 	case ShellTypeBash:
-		return bash.NewBashScript(h.commandRunner, h.cwd, h.envVars), nil
+		return bash.NewBashScript(h.commandRunner, h.cwd, h.env.Environ()), nil
 	case ShellTypePowershell:
-		return powershell.NewPowershellScript(h.commandRunner, h.cwd, h.envVars), nil
+		return powershell.NewPowershellScript(h.commandRunner, h.cwd, h.env.Environ()), nil
 	default:
 		return nil, fmt.Errorf(
 			"shell type '%s' is not a valid option. Only 'sh' and 'pwsh' are supported",

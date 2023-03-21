@@ -28,7 +28,7 @@ func Test_SwaBuild(t *testing.T) {
 
 			require.Equal(t, "./projectPath", args.Cwd)
 			require.Equal(t, []string{
-				"-y", "@azure/static-web-apps-cli@1.0.0",
+				"-y", "@azure/static-web-apps-cli@1.0.6",
 				"build",
 				"--app-location", "service/path",
 				"--output-location", "build",
@@ -60,7 +60,7 @@ func Test_SwaBuild(t *testing.T) {
 
 			require.Equal(t, "./projectPath", args.Cwd)
 			require.Equal(t, []string{
-				"-y", "@azure/static-web-apps-cli@1.0.0",
+				"-y", "@azure/static-web-apps-cli@1.0.6",
 				"build",
 				"--app-location", "service/path",
 				"--output-location", "build",
@@ -97,7 +97,7 @@ func Test_SwaDeploy(t *testing.T) {
 
 			require.Equal(t, "./projectPath", args.Cwd)
 			require.Equal(t, []string{
-				"-y", "@azure/static-web-apps-cli@1.0.0",
+				"-y", "@azure/static-web-apps-cli@1.0.6",
 				"deploy",
 				"--tenant-id", "tenantID",
 				"--subscription-id", "subscriptionID",
@@ -147,7 +147,7 @@ func Test_SwaDeploy(t *testing.T) {
 
 			require.Equal(t, "./projectPath", args.Cwd)
 			require.Equal(t, []string{
-				"-y", "@azure/static-web-apps-cli@1.0.0",
+				"-y", "@azure/static-web-apps-cli@1.0.6",
 				"deploy",
 				"--tenant-id", "tenantID",
 				"--subscription-id", "subscriptionID",

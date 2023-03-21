@@ -2,7 +2,7 @@
 
 ## Prerequisites
 
-`azd` is written in Golang and requires Go 1.19 or above:
+`azd` is written in Golang and requires Go 1.20 or above:
 
 - [Go](https://go.dev/dl/)
 

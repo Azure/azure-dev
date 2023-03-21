@@ -7,7 +7,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
-	graphsdk_mocks "github.com/azure/azure-dev/cli/azd/test/mocks/graphsdk"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockgraphsdk"
 	"github.com/stretchr/testify/require"
 )
 
@@ -23,9 +23,9 @@ func TestGetMe(t *testing.T) {
 		}
 
 		mockContext := mocks.NewMockContext(context.Background())
-		graphsdk_mocks.RegisterMeGetMock(mockContext, http.StatusOK, &expected)
+		mockgraphsdk.RegisterMeGetMock(mockContext, http.StatusOK, &expected)
 
-		client, err := graphsdk_mocks.CreateGraphClient(mockContext)
+		client, err := mockgraphsdk.CreateGraphClient(mockContext)
 		require.NoError(t, err)
 
 		actual, err := client.Me().Get(*mockContext.Context)
@@ -36,9 +36,9 @@ func TestGetMe(t *testing.T) {
 
 	t.Run("Error", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		graphsdk_mocks.RegisterMeGetMock(mockContext, http.StatusUnauthorized, nil)
+		mockgraphsdk.RegisterMeGetMock(mockContext, http.StatusUnauthorized, nil)
 
-		client, err := graphsdk_mocks.CreateGraphClient(mockContext)
+		client, err := mockgraphsdk.CreateGraphClient(mockContext)
 		require.NoError(t, err)
 
 		actual, err := client.Me().Get(*mockContext.Context)

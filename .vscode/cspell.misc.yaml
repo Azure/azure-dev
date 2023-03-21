@@ -1,0 +1,39 @@
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# Licensed under the MIT License.
+
+# cspell settings for miscellaneous files thats are not covered by other projects.
+# cspell root should be specified as the top-level repository directory.
+
+# Use global config
+import: cspell.global.yaml
+
+ignorePaths:
+    # Project changes here should be kept in-sync workflow cspell-misc.yml
+    - cli # uses its own cspell config
+    - ext # uses its own cspell config
+    - templates # uses its own cspell config
+
+    - eng # not required
+overrides:
+    - filename: ./SECURITY.md
+      words:
+          - MSRC
+          - msrc
+    - filename: ./README.md
+      words:
+          - VSIX
+    - filename: generators/repo/src/commands/generate.ts
+      words:
+          - nodir
+    - filename: generators/repo/tsconfig.json
+      words:
+          - tsbuildinfo
+    - filename: schemas/v1.0/azure.yaml.json
+      words:
+          - prodapi
+          - appservice
+          - containerapp
+          - staticwebapp
+          - myapp
+          - azdev
+          - myimage

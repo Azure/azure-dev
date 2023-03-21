@@ -3,7 +3,7 @@ resources:
     - repository: azure-sdk-build-tools
       type: git
       name: internal/azure-sdk-build-tools
-      ref: refs/tags/azure-sdk-build-tools_20220920.1
+      ref: refs/tags/azure-sdk-build-tools_20230307.1
 
 # Continuous deployment trigger
 trigger:
@@ -31,8 +31,8 @@ stages:
         strategy:
           matrix:
             Windows:
-              Pool: azsdk-pool-mms-win-2019-general
-              OSVmImage: MMS2019
+              Pool: azsdk-pool-mms-win-2022-general
+              OSVmImage: MMS2022
             Linux:
               Pool: azsdk-pool-mms-ubuntu-2004-general
               OSVmImage: MMSUbuntu20.04
@@ -46,7 +46,7 @@ stages:
           vmImage: $(OSVmImage)
 
         variables:
-          NodeVersion: 14.x
+          NodeVersion: 16.x
 
         steps:
           - checkout: self
@@ -124,8 +124,8 @@ stages:
 
       - job: Sign
         pool:
-          name: azsdk-pool-mms-win-2019-general
-          vmImage: MMS2019
+          name: azsdk-pool-mms-win-2022-general
+          vmImage: MMS2022
 
         steps:
           - checkout: self
@@ -200,6 +200,38 @@ stages:
                     PublishLocations: vscode/release/$(VSIX_VERSION);vscode/release/latest
                     TagRepository: true
                     UpdateShield: true
+
+      - deployment: Increment_Version
+        condition: >-
+          and(
+            succeeded(),
+            ne('true', variables['Skip.IncrementVersion'])
+          )
+        dependsOn: Publish_Release
+        environment: azure-dev
+
+        pool:
+          name: azsdk-pool-mms-ubuntu-2004-general
+          OSVmImage: MMSUbuntu20.04
+
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+
+                - task: PowerShell@2
+                  inputs:
+                    pwsh: true
+                    targetType: filePath
+                    filePath: eng/scripts/Update-VscodeExtensionVersion.ps1
+                  displayName: Increment VSCode Extension version
+
+                - template: /eng/common/pipelines/templates/steps/create-pull-request.yml
+                  parameters:
+                    PRBranchName: vscode-version-increment-$(Build.BuildId)
+                    CommitMsg: Increment VSCode Extension version after release
+                    PRTitle: Increment VSCode Extension version after release
 
   - stage: PublishIntegration
     dependsOn: Sign

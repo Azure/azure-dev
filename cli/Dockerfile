@@ -1,4 +1,4 @@
-FROM mcr.microsoft.com/dotnet/sdk:6.0
+FROM --platform=amd64 mcr.microsoft.com/dotnet/sdk:6.0
 
 WORKDIR /app
 
@@ -14,19 +14,8 @@ RUN export DEBIAN_FRONTEND=noninteractive \
      && curl -fsSL https://download.docker.com/linux/debian/gpg | apt-key add - \
      && add-apt-repository "deb [arch=amd64] https://download.docker.com/linux/debian $(lsb_release -cs) stable" \
      && apt-get update && apt-get install -y docker-ce-cli \
-     # gh cli
-     && curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | gpg --dearmor -o /usr/share/keyrings/githubcli-archive-keyring.gpg \
-     && echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli.list > /dev/null \
-     && apt-get update && apt-get install -y gh \ 
      # az cli
      && curl -sSL https://aka.ms/InstallAzureCLIDeb | bash \
-     # bicep
-     # Fetch the latest Bicep CLI binary
-     && curl -Lo bicep https://github.com/Azure/bicep/releases/latest/download/bicep-linux-x64 \
-     # Mark it as executable
-     && chmod +x ./bicep \
-     # Add bicep to your PATH (requires admin)
-     && mv ./bicep /usr/local/bin/bicep \
      # nodejs
      && curl -fsSL https://deb.nodesource.com/setup_16.x | bash - \
      && apt-get install -y nodejs \
@@ -36,7 +25,7 @@ RUN export DEBIAN_FRONTEND=noninteractive \
      && echo 'alias python=python3' >> ~/.bashrc \
      && echo 'alias pip=pip3' >> ~/.bashrc \
      # java
-     && apt-get update && apt-get install -y msopenjdk-17 \  
+     && apt-get update && apt-get install -y msopenjdk-17 \
      # terraform cli
      && apt-get update && apt-get install -y gnupg software-properties-common \
      && wget -O- https://apt.releases.hashicorp.com/gpg | \
@@ -46,6 +35,15 @@ RUN export DEBIAN_FRONTEND=noninteractive \
           https://apt.releases.hashicorp.com $(lsb_release -cs) main" | \
           tee /etc/apt/sources.list.d/hashicorp.list \
      && apt update && apt-get install terraform \
+     # kubectl CLI
+     && apt-get update \
+     && mkdir -p /etc/apt/keyrings \
+     && curl -fsSLo /etc/apt/keyrings/kubernetes-archive-keyring.gpg https://packages.cloud.google.com/apt/doc/apt-key.gpg \
+     && echo "deb [signed-by=/etc/apt/keyrings/kubernetes-archive-keyring.gpg] https://apt.kubernetes.io/ kubernetes-xenial main" | tee /etc/apt/sources.list.d/kubernetes.list \
+     && apt-get update \
+     && apt-get install -y kubectl \
+     # xdg-open
+     && apt update && apt-get install -y xdg-utils \
      # Cleanup
      && apt-get clean -y && rm -rf /var/lib/apt/lists/*
 

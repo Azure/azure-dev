@@ -23,7 +23,7 @@ func Test_DockerBuild(t *testing.T) {
 		ran := false
 
 		mockContext := mocks.NewMockContext(context.Background())
-		docker := NewDocker(*mockContext.Context)
+		docker := NewDocker(mockContext.CommandRunner)
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "docker build")
 		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
@@ -59,7 +59,7 @@ func Test_DockerBuild(t *testing.T) {
 		customErrorMessage := "example error message"
 
 		mockContext := mocks.NewMockContext(context.Background())
-		docker := NewDocker(*mockContext.Context)
+		docker := NewDocker(mockContext.CommandRunner)
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "docker build")
 		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
@@ -103,7 +103,7 @@ func Test_DockerBuildEmptyPlatform(t *testing.T) {
 	platform := "amd64"
 
 	mockContext := mocks.NewMockContext(context.Background())
-	docker := NewDocker(*mockContext.Context)
+	docker := NewDocker(mockContext.CommandRunner)
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "docker build")
@@ -143,7 +143,7 @@ func Test_DockerTag(t *testing.T) {
 		ran := false
 
 		mockContext := mocks.NewMockContext(context.Background())
-		docker := NewDocker(*mockContext.Context)
+		docker := NewDocker(mockContext.CommandRunner)
 
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "docker tag")
@@ -177,7 +177,7 @@ func Test_DockerTag(t *testing.T) {
 		customErrorMessage := "example error message"
 
 		mockContext := mocks.NewMockContext(context.Background())
-		docker := NewDocker(*mockContext.Context)
+		docker := NewDocker(mockContext.CommandRunner)
 
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "docker tag")
@@ -219,7 +219,7 @@ func Test_DockerPush(t *testing.T) {
 		ran := false
 
 		mockContext := mocks.NewMockContext(context.Background())
-		docker := NewDocker(*mockContext.Context)
+		docker := NewDocker(mockContext.CommandRunner)
 
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "docker push")
@@ -252,7 +252,7 @@ func Test_DockerPush(t *testing.T) {
 		customErrorMessage := "example error message"
 
 		mockContext := mocks.NewMockContext(context.Background())
-		docker := NewDocker(*mockContext.Context)
+		docker := NewDocker(mockContext.CommandRunner)
 
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "docker push")
@@ -292,7 +292,7 @@ func Test_DockerLogin(t *testing.T) {
 		ran := false
 
 		mockContext := mocks.NewMockContext(context.Background())
-		docker := NewDocker(*mockContext.Context)
+		docker := NewDocker(mockContext.CommandRunner)
 
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "docker login")
@@ -327,7 +327,7 @@ func Test_DockerLogin(t *testing.T) {
 		customErrorMessage := "example error message"
 
 		mockContext := mocks.NewMockContext(context.Background())
-		docker := NewDocker(*mockContext.Context)
+		docker := NewDocker(mockContext.CommandRunner)
 
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "docker login")

@@ -19,7 +19,7 @@ func Test_SwaBuild(t *testing.T) {
 
 	t.Run("NoErrors", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		swacli := NewSwaCli(*mockContext.Context)
+		swacli := NewSwaCli(mockContext.CommandRunner)
 
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "npx")
@@ -28,7 +28,7 @@ func Test_SwaBuild(t *testing.T) {
 
 			require.Equal(t, "./projectPath", args.Cwd)
 			require.Equal(t, []string{
-				"-y", "@azure/static-web-apps-cli@1.0.0",
+				"-y", "@azure/static-web-apps-cli@1.0.6",
 				"build",
 				"--app-location", "service/path",
 				"--output-location", "build",
@@ -51,7 +51,7 @@ func Test_SwaBuild(t *testing.T) {
 
 	t.Run("Error", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		swacli := NewSwaCli(*mockContext.Context)
+		swacli := NewSwaCli(mockContext.CommandRunner)
 
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "npx")
@@ -60,7 +60,7 @@ func Test_SwaBuild(t *testing.T) {
 
 			require.Equal(t, "./projectPath", args.Cwd)
 			require.Equal(t, []string{
-				"-y", "@azure/static-web-apps-cli@1.0.0",
+				"-y", "@azure/static-web-apps-cli@1.0.6",
 				"build",
 				"--app-location", "service/path",
 				"--output-location", "build",
@@ -88,7 +88,7 @@ func Test_SwaDeploy(t *testing.T) {
 
 	t.Run("NoErrors", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		swacli := NewSwaCli(*mockContext.Context)
+		swacli := NewSwaCli(mockContext.CommandRunner)
 
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "npx")
@@ -97,7 +97,7 @@ func Test_SwaDeploy(t *testing.T) {
 
 			require.Equal(t, "./projectPath", args.Cwd)
 			require.Equal(t, []string{
-				"-y", "@azure/static-web-apps-cli@1.0.0",
+				"-y", "@azure/static-web-apps-cli@1.0.6",
 				"deploy",
 				"--tenant-id", "tenantID",
 				"--subscription-id", "subscriptionID",
@@ -138,7 +138,7 @@ func Test_SwaDeploy(t *testing.T) {
 
 	t.Run("Error", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		swacli := NewSwaCli(*mockContext.Context)
+		swacli := NewSwaCli(mockContext.CommandRunner)
 
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "npx")
@@ -147,7 +147,7 @@ func Test_SwaDeploy(t *testing.T) {
 
 			require.Equal(t, "./projectPath", args.Cwd)
 			require.Equal(t, []string{
-				"-y", "@azure/static-web-apps-cli@1.0.0",
+				"-y", "@azure/static-web-apps-cli@1.0.6",
 				"deploy",
 				"--tenant-id", "tenantID",
 				"--subscription-id", "subscriptionID",

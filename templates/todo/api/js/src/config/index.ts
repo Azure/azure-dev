@@ -52,7 +52,7 @@ const populateEnvironmentFromKeyVault = async () => {
 
     try {
         logger.info("Populating environment from Azure KeyVault...");
-        const credential = new DefaultAzureCredential();
+        const credential = new DefaultAzureCredential({});
         const secretClient = new SecretClient(keyVaultEndpoint, credential);
 
         for await (const secretProperties of secretClient.listPropertiesOfSecrets()) {

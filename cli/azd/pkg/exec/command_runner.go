@@ -21,35 +21,14 @@ type CommandRunner interface {
 }
 
 // Creates a new default instance of the CommandRunner
+// stdin, stdout & stderr will be used by default during interactive commands
+// unless specifically overridden within the command run arguments.
 func NewCommandRunner(stdin io.Reader, stdout io.Writer, stderr io.Writer) CommandRunner {
 	return &commandRunner{
 		stdin:  stdin,
 		stdout: stdout,
 		stderr: stderr,
 	}
-}
-
-type contextKey string
-
-const (
-	execFnContextKey contextKey = "commandrunner"
-)
-
-// Gets the exec util implementation used for executing CLI commands on the host machine
-// This override should ONLY be called during unit testing, otherwise the default implementation is used.
-func WithCommandRunner(ctx context.Context, commandRunner CommandRunner) context.Context {
-	return context.WithValue(ctx, execFnContextKey, commandRunner)
-}
-
-// Gets the exec util implementation used for executing CLI commands on the host machine
-// If a value is not found in the context, panic.
-func GetCommandRunner(ctx context.Context) CommandRunner {
-	execFn, ok := ctx.Value(execFnContextKey).(CommandRunner)
-	if !ok {
-		panic("GetCommandRunner: no runner in context")
-	}
-
-	return execFn
 }
 
 // commandRunner is the default private implementation of the CommandRunner interface
@@ -81,16 +60,23 @@ func (r *commandRunner) Run(ctx context.Context, args RunArgs) (RunResult, error
 
 	cmd.Dir = args.Cwd
 
-	var stdin, stdout, stderr bytes.Buffer
+	var stdin io.Reader
+	if args.StdIn != nil {
+		stdin = args.StdIn
+	} else {
+		stdin = new(bytes.Buffer)
+	}
+
+	var stdout, stderr bytes.Buffer
 
 	cmd.Env = appendEnv(args.Env)
 
 	if args.Interactive {
-		cmd.Stdin = os.Stdin
-		cmd.Stdout = os.Stdout
-		cmd.Stderr = os.Stderr
+		cmd.Stdin = r.stdin
+		cmd.Stdout = r.stdout
+		cmd.Stderr = r.stderr
 	} else {
-		cmd.Stdin = &stdin
+		cmd.Stdin = stdin
 		cmd.Stdout = &stdout
 		cmd.Stderr = &stderr
 
@@ -99,7 +85,7 @@ func (r *commandRunner) Run(ctx context.Context, args RunArgs) (RunResult, error
 		}
 	}
 
-	log.Printf("Run exec: '%s %s'", args.Cmd, strings.Join(args.Args, " "))
+	log.Printf("Run exec: '%s %s'", args.Cmd, redactSensitiveData(strings.Join(args.Args, " ")))
 
 	if args.Debug && len(args.Env) > 0 {
 		log.Println("Additional env:")
@@ -236,11 +222,28 @@ func redactSensitiveData(msg string) string {
 		"access token": {
 			regexp.MustCompile("\"accessToken\": \".*\""),
 			"\"accessToken\": \"<redacted>\"",
-		}}
+		},
+		"deployment token": {
+			regexp.MustCompile(`--deployment-token \S+`),
+			"--deployment-token <redacted>",
+		},
+		"username": {
+			regexp.MustCompile(`--username \S+`),
+			"--username <redacted>",
+		},
+		"password": {
+			regexp.MustCompile(`--password \S+`),
+			"--password <redacted>",
+		},
+		"kubectl-from-literal": {
+			regexp.MustCompile(`--from-literal=([^=]+)=(\S+)`),
+			"--from-literal=$1=<redacted>",
+		},
+	}
 
 	for _, redactRule := range regexpRedactRules {
 		regMatchString := redactRule.matchString
-		return regMatchString.ReplaceAllString(msg, redactRule.replaceString)
+		msg = regMatchString.ReplaceAllString(msg, redactRule.replaceString)
 	}
 	return msg
 }

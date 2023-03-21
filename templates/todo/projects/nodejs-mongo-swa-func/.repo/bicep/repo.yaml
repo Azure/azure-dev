@@ -30,6 +30,11 @@ repo:
         to: ../core
         patterns:
           - "**/*.bicep"
+      
+      - from: ../../../../../common/infra/shared/gateway/apim
+        to: ./
+        patterns:
+          - apim-api.bicep
 
       # app service modules
       - from: ../../../../../../common/infra/bicep
@@ -70,6 +75,11 @@ repo:
         patterns:
           - "**/main.bicep"
 
+      - from: ../../../../api/common/openapi.yaml
+        to: ../../src/api/openapi.yaml
+        patterns:
+          - "apim-api.bicep"
+
   assets:
     # # Common assets
 
@@ -85,6 +95,12 @@ repo:
 
     - from: ../../../../common/infra/bicep/app/api-functions-node.bicep
       to: ./infra/app/api.bicep
+
+    - from: ../../../../common/infra/bicep/app/apim-api.bicep
+      to: ./infra/app/apim-api.bicep
+    
+    - from: ../../../../../common/infra/shared/gateway/apim/apim-api-policy.xml
+      to: ./infra/app/apim-api-policy.xml
 
     - from: ../../../../common/infra/bicep/app/cosmos-mongo-db.bicep
       to: ./infra/app/db.bicep
@@ -144,6 +160,10 @@ repo:
     # Tests common
     - from: ../../../../common/tests
       to: ./tests
+
+    # Auth JS common
+    - from: ../../../../common/auth/js
+      to: ./src/api/src
 
     # Node JS API
     - from: ../../../../api/js

@@ -1,29 +1,60 @@
-# Change Log
+# Release History
 
-All notable changes to the Azure Dev CLI extension will be documented in this file.
+## 0.5.0-alpha.1 (Unreleased)
 
-Check [Keep a Changelog](http://keepachangelog.com/) for recommendations on how to structure this file.
+### Features Added
 
-## [0.3.0] 2022-09-14
+### Breaking Changes
+
+### Bugs Fixed
+
+### Other Changes
+
+## 0.4.2 (2023-03-15)
+
+### Bugs Fixed
+
+- [[#1735]](https://github.com/Azure/azure-dev/pull/1735) Fixed an issue with the login command not working immediately after install.
+
+## 0.4.1 (2023-03-14)
+
+### Bugs Fixed
+
+- [[#1724]](https://github.com/Azure/azure-dev/pull/1724) Refine conditions for displaying the prompt to install the CLI.
+
+## 0.4.0 (2023-03-08)
+
 ### Added
-- [[#493]](https://github.com/Azure/azure-dev/pull/493)  Show README file after successful init/up.
+
+- [[#853]](https://github.com/Azure/azure-dev/pull/853) Integration with the Azure Resources extension's workspace view. Requires version 0.6.1 of the [Azure Resources](https://marketplace.visualstudio.com/items?itemName=ms-azuretools.vscode-azureresourcegroups) extension.
+- [[#1644]](https://github.com/Azure/azure-dev/pull/1644) Added a walkthrough experience for using the extension.
+
+## 0.3.0 (2022-09-14)
+
+### Added
+
+- [[#493]](https://github.com/Azure/azure-dev/pull/493) Show README file after successful init/up.
 
 ### Fixed
+
 - [[#498]](https://github.com/Azure/azure-dev/pull/498) Use `azd template list` to populate template list in VS Code (now always consistent with the CLI).
 - [[#556]](https://github.com/Azure/azure-dev/pull/556) Improve error message when no environments are found.
 
-## [0.2.0] 2022-08-02
+## 0.2.0 (2022-08-02)
 
 ### Changed
+
 - [[#189]](https://github.com/Azure/azure-dev/pull/189) Bump bicep minimum version to v0.8.9
 
 ### Added
+
 - [[#151]](https://github.com/Azure/azure-dev/pull/151) Detect and warn the user if `azd` CLI is not installed.
 
 ### Fixed
+
 - [[#159]](https://github.com/Azure/azure-dev/pull/159) Enable user feedback via surveys.
 - [[#170]](https://github.com/Azure/azure-dev/pull/170) Enable gradual rollout of new features.
 
-## [0.1.0] 2022-07-11
+## 0.1.0 (2022-07-11)
 
 - Initial release.

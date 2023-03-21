@@ -10,8 +10,12 @@ import { getAzDevTerminalTitle, pickAzureYamlFile, selectApplicationTemplate, sh
 import { createAzureDevCli } from '../utils/azureDevCli';
 import { executeAsTask } from '../utils/executeAsTask';
 import { TelemetryId } from '../telemetry/telemetryId';
+import { AzureDevCliApplication } from '../views/workspace/AzureDevCliApplication';
+import { isTreeViewModel, TreeViewModel } from '../utils/isTreeViewModel';
 
-export async function up(context: IActionContext, selectedFile?: vscode.Uri): Promise<void> {
+export async function up(context: IActionContext, selectedItem?: vscode.Uri | TreeViewModel): Promise<void> {
+    const selectedFile = isTreeViewModel(selectedItem) ? selectedItem.unwrap<AzureDevCliApplication>().context.configurationFile : selectedItem;
+
     let folder: vscode.WorkspaceFolder | undefined = (selectedFile ? vscode.workspace.getWorkspaceFolder(selectedFile) : undefined);
     if (!folder) {
         folder = await quickPickWorkspaceFolder(context, localize('azure-dev.commands.cli.init.needWorkspaceFolder', "To run '{0}' command you must first open a folder or workspace in VS Code", 'up'));
@@ -22,7 +26,7 @@ export async function up(context: IActionContext, selectedFile?: vscode.Uri): Pr
         .withArg('up');
     let workingDir = folder.uri;
 
-    const azureYamlFile = await pickAzureYamlFile(context);
+    const azureYamlFile = selectedFile ?? await pickAzureYamlFile(context);
     if (azureYamlFile) {
         // Workspace has already been initialized, no need to specify a template
         workingDir = vscode.Uri.file(path.dirname(azureYamlFile.fsPath));
@@ -33,6 +37,7 @@ export async function up(context: IActionContext, selectedFile?: vscode.Uri): Pr
 
     // Don't wait
     void executeAsTask(command.build(), getAzDevTerminalTitle(), {
+        focus: true,
         alwaysRunNew: true,
         cwd: workingDir.fsPath,
         env: azureCli.env

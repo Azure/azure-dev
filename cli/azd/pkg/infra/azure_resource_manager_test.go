@@ -12,11 +12,13 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/stretchr/testify/require"
 )
 
@@ -26,26 +28,41 @@ var mockSubDeploymentOperations string = `
 	"value": [
 		{
 			"id": "resource-group-id",
-			"operationId": "foo",
+			"operationId": "foo1",
 			"properties": {
 				"provisioningOperation":"Create",
 				"targetResource": {
 					"resourceType": "Microsoft.Resources/resourceGroups",
-					"id":"resource-group-id",
+					"id":"/subscriptions/SUBSCRIPTION_ID/resourceGroups/resource-group-name",
 					"resourceName": "resource-group-name"
-				}
+				},
+				"timestamp":"9999-10-31T14:00:00Z"
 			}
 		},
 		{
 			"id": "deployment-id",
-			"operationId": "foo",
+			"operationId": "foo2",
 			"properties": {
 				"provisioningOperation":"Create",
 				"targetResource": {
 					"resourceType": "Microsoft.Resources/deployments",
-					"id":"group-deployment-id",
+					"id":"/subscriptions/SUBSCRIPTION_ID/resourceGroups/resource-group-name",
 					"resourceName": "group-deployment-id"
-				}
+				},
+				"timestamp":"9999-10-31T14:00:00Z"
+			}
+		},
+		{
+			"id": "deployment-id",
+			"operationId": "foo2",
+			"properties": {
+				"provisioningOperation":"Create",
+				"targetResource": {
+					"resourceType": "Microsoft.Resources/deployments",
+					"id":"/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources",
+					"resourceName": "group-deployment-id"
+				},
+				"timestamp":"9999-10-31T14:00:00Z"
 			}
 		}
 	]
@@ -58,24 +75,28 @@ var mockGroupDeploymentOperations string = `
 	"value": [
 		{
 			"id": "website-resource-id",
+			"operationId": "foo3",
 			"properties": {
 				"provisioningOperation":"Create",
 				"targetResource": {
 					"resourceType": "Microsoft.Web/sites",
-					"id":"website-resource-id",
+					"id":"/subscriptions/SUBSCRIPTION_ID/resourceGroups/resource-group-name",
 					"resourceName": "website-resource-name"
-				}
+				},
+				"timestamp":"9999-10-31T14:00:00Z"
 			}
 		},
 		{
 			"id": "storage-resource-id",
+			"operationId": "foo4",
 			"properties": {
 				"provisioningOperation":"Create",
 				"targetResource": {
 					"resourceType": "Microsoft.Storage/storageAccounts",
-					"id":"storage-resource-id",
+					"id":"/subscriptions/SUBSCRIPTION_ID/resourceGroups/resource-group-name",
 					"resourceName": "storage-resource-name"
-				}
+				},
+				"timestamp":"9999-10-31T14:00:00Z"
 			}
 		}
 	]
@@ -88,35 +109,41 @@ var mockNestedGroupDeploymentOperations string = `
 	"value": [
 		{
 			"id": "website-resource-id",
+			"operationId": "foo5",
 			"properties": {
 				"provisioningOperation":"Create",
 				"targetResource": {
 					"resourceType": "Microsoft.Web/sites",
 					"id":"website-resource-id",
 					"resourceName": "website-resource-name"
-				}
+				},
+				"timestamp":"9999-10-31T14:00:00Z"
 			}
 		},
 		{
 			"id": "storage-resource-id",
+			"operationId": "foo6",
 			"properties": {
 				"provisioningOperation":"Create",
 				"targetResource": {
 					"resourceType": "Microsoft.Storage/storageAccounts",
 					"id":"storage-resource-id",
 					"resourceName": "storage-resource-name"
-				}
+				},
+				"timestamp":"9999-10-31T14:00:00Z"
 			}
 		},
 		{
 			"id": "nested-deployment-id",
+			"operationId": "foo7",
 			"properties": {
 				"provisioningOperation":"Create",
 				"targetResource": {
 					"resourceType": "Microsoft.Resources/deployments",
 					"id":"nested-group-deployment-id",
 					"resourceName": "nested-group-deployment-name"
-				}
+				},
+				"timestamp":"9999-10-31T14:00:00Z"
 			}
 		}
 	]
@@ -129,13 +156,15 @@ var mockSubDeploymentOperationsEmpty string = `
 	"value": []
 }
 `
+var qStart = time.Now()
 
 func TestGetDeploymentResourceOperationsSuccess(t *testing.T) {
 	subCalls := 0
 	groupCalls := 0
 
 	mockContext := mocks.NewMockContext(context.Background())
-	scope := NewSubscriptionScope(*mockContext.Context, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
+	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
+	scope := NewSubscriptionScope(azCli, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
 
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodGet && strings.Contains(
@@ -169,12 +198,12 @@ func TestGetDeploymentResourceOperationsSuccess(t *testing.T) {
 		}, nil
 	})
 
-	arm := NewAzureResourceManager(*mockContext.Context)
-	operations, err := arm.GetDeploymentResourceOperations(*mockContext.Context, scope)
+	arm := NewAzureResourceManager(azCli)
+	operations, err := arm.GetDeploymentResourceOperations(*mockContext.Context, scope, &qStart)
 	require.NotNil(t, operations)
 	require.Nil(t, err)
 
-	require.Len(t, operations, 4)
+	require.Len(t, operations, 3)
 	require.Equal(t, 1, subCalls)
 	require.Equal(t, 1, groupCalls)
 }
@@ -184,7 +213,8 @@ func TestGetDeploymentResourceOperationsFail(t *testing.T) {
 	groupCalls := 0
 
 	mockContext := mocks.NewMockContext(context.Background())
-	scope := NewSubscriptionScope(*mockContext.Context, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
+	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
+	scope := NewSubscriptionScope(azCli, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
 
 	/*NOTE: Mocking first response as an `StatusForbidden` error which is not retried by the sdk client.
 	  Adding an extra mock to test that it is not called*/
@@ -219,8 +249,8 @@ func TestGetDeploymentResourceOperationsFail(t *testing.T) {
 		}, nil
 	})
 
-	arm := NewAzureResourceManager(*mockContext.Context)
-	operations, err := arm.GetDeploymentResourceOperations(*mockContext.Context, scope)
+	arm := NewAzureResourceManager(azCli)
+	operations, err := arm.GetDeploymentResourceOperations(*mockContext.Context, scope, &qStart)
 
 	require.Nil(t, operations)
 	require.NotNil(t, err)
@@ -234,7 +264,8 @@ func TestGetDeploymentResourceOperationsNoResourceGroup(t *testing.T) {
 	groupCalls := 0
 
 	mockContext := mocks.NewMockContext(context.Background())
-	scope := NewSubscriptionScope(*mockContext.Context, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
+	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
+	scope := NewSubscriptionScope(azCli, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
 
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodGet && strings.Contains(
@@ -267,8 +298,8 @@ func TestGetDeploymentResourceOperationsNoResourceGroup(t *testing.T) {
 		}, nil
 	})
 
-	arm := NewAzureResourceManager(*mockContext.Context)
-	operations, err := arm.GetDeploymentResourceOperations(*mockContext.Context, scope)
+	arm := NewAzureResourceManager(azCli)
+	operations, err := arm.GetDeploymentResourceOperations(*mockContext.Context, scope, &qStart)
 
 	require.NotNil(t, operations)
 	require.Nil(t, err)
@@ -282,7 +313,8 @@ func TestGetDeploymentResourceOperationsWithNestedDeployments(t *testing.T) {
 	groupCalls := 0
 
 	mockContext := mocks.NewMockContext(context.Background())
-	scope := NewSubscriptionScope(*mockContext.Context, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
+	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
+	scope := NewSubscriptionScope(azCli, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
 
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodGet && strings.Contains(
@@ -331,12 +363,12 @@ func TestGetDeploymentResourceOperationsWithNestedDeployments(t *testing.T) {
 		}, nil
 	})
 
-	arm := NewAzureResourceManager(*mockContext.Context)
-	operations, err := arm.GetDeploymentResourceOperations(*mockContext.Context, scope)
+	arm := NewAzureResourceManager(azCli)
+	operations, err := arm.GetDeploymentResourceOperations(*mockContext.Context, scope, &qStart)
 
 	require.NotNil(t, operations)
 	require.Nil(t, err)
-	require.Len(t, operations, 6)
+	require.Len(t, operations, 5)
 	require.Equal(t, 1, subCalls)
 	require.Equal(t, 2, groupCalls)
 }
@@ -402,6 +434,8 @@ func TestFindResourceGroupForEnvironment(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			mockContext := mocks.NewMockContext(context.Background())
+			azCli := mockazcli.NewAzCliFromMockContext(mockContext)
+
 			mockContext.HttpClient.When(func(request *http.Request) bool {
 				return request.Method == "GET" && strings.Contains(request.URL.Path, "/resourcegroups") &&
 					request.URL.Query().Has("$filter")
@@ -422,8 +456,9 @@ func TestFindResourceGroupForEnvironment(t *testing.T) {
 				"AZURE_SUBSCRIPTION_ID": SUBSCRIPTION_ID,
 			})
 
-			arm := NewAzureResourceManager(*mockContext.Context)
-			rgName, err := arm.FindResourceGroupForEnvironment(*mockContext.Context, env)
+			arm := NewAzureResourceManager(azCli)
+			rgName, err := arm.FindResourceGroupForEnvironment(
+				*mockContext.Context, env.GetSubscriptionId(), env.GetEnvName())
 
 			if tt.expectedErrorText == "" {
 				require.NoError(t, err)

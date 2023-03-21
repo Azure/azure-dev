@@ -1,0 +1,62 @@
+parameters:
+  - name: AllowPrerelease
+    type: boolean
+    default: false
+  - name: CliVersion
+    type: string
+    default: $(CLI_VERSION)
+  - name: ChocoApiKey
+    type: string
+    default: $(azure-sdk-choco-api-key)
+
+steps:
+  - task: DownloadPipelineArtifact@2
+    inputs:
+      artifactName: signed-win
+      itemPattern: azd-windows-amd64.msi
+      targetPath: cli/installer/choco/tools
+
+  - task: PowerShell@2
+    displayName: Set Choco Package Version
+    inputs:
+      pwsh: true
+      targetType: filePath
+      filePath: eng/scripts/Get-MsiVersion.ps1
+      arguments: >-
+        -CliVersion '${{ parameters.CliVersion }}'
+        -DevOpsOutput
+
+  - pwsh: |
+      $submitPackage = eng/scripts/Test-ShouldReleasePackageVersion.ps1 `
+        -Version '$(MSI_VERSION)' `
+        -AllowPrerelease:$${{ parameters.AllowPrerelease }}
+
+      if ('$(Skip.ReleaseWinGet)' -eq 'true') {
+        $submitPackage = 'false'
+      }
+      Write-Host "Setting SubmitChocoPackage to $submitPackage"
+      Write-Host "##vso[task.setvariable variable=SubmitChocoPackage]$submitPackage"
+    displayName: Set SubmitChocoPackage
+
+  - task: PowerShell@2
+    displayName: Build Choco Package
+    inputs:
+      pwsh: true
+      targetType: filePath
+      filePath: eng/scripts/New-ChocoPackage.ps1
+      arguments: >-
+        -Version $(MSI_VERSION)
+        -Tag 'azure-dev-cli_${{ parameters.CliVersion }}'
+
+  - publish: cli/installer/choco/azd.$(MSI_VERSION).nupkg
+    artifact: choco-package
+    displayName: Publish Choco Package Artifact
+
+  - pwsh: |
+      Write-Host 'Pushing Choco Package...'
+      choco push azd.$(MSI_VERSION).nupkg `
+        --source https://push.chocolatey.org/ `
+        --api-key ${{ parameters.ChocoApiKey }}
+    condition: eq(variables['SubmitChocoPackage'], 'true')
+    displayName: Push Choco Package
+    workingDirectory: cli/installer/choco

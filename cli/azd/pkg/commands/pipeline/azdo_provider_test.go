@@ -6,14 +6,14 @@ package pipeline
 import (
 	"context"
 	"errors"
-	"path"
+	"path/filepath"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdo"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/test/mocks/console"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/azure/azure-dev/cli/azd/test/ostest"
 	"github.com/stretchr/testify/require"
 )
@@ -21,7 +21,7 @@ import (
 func Test_azdo_provider_getRepoDetails(t *testing.T) {
 	t.Run("error", func(t *testing.T) {
 		// arrange
-		provider := getAzdoScmProviderTestHarness()
+		provider := getAzdoScmProviderTestHarness(mockinput.NewMockConsole())
 		testOrgName := provider.Env.Values[azdo.AzDoEnvironmentOrgName]
 		testRepoName := provider.Env.Values[azdo.AzDoEnvironmentRepoName]
 		ctx := context.Background()
@@ -38,7 +38,7 @@ func Test_azdo_provider_getRepoDetails(t *testing.T) {
 
 	t.Run("ssh", func(t *testing.T) {
 		// arrange
-		provider := getAzdoScmProviderTestHarness()
+		provider := getAzdoScmProviderTestHarness(mockinput.NewMockConsole())
 		testOrgName := provider.Env.Values[azdo.AzDoEnvironmentOrgName]
 		testRepoName := provider.Env.Values[azdo.AzDoEnvironmentRepoName]
 		ctx := context.Background()
@@ -84,70 +84,73 @@ func Test_azdo_scm_provider_preConfigureCheck(t *testing.T) {
 	t.Run("accepts a PAT via system environment variables", func(t *testing.T) {
 		// arrange
 		testPat := "12345"
-		provider := getEmptyAzdoScmProviderTestHarness()
+		provider := getEmptyAzdoScmProviderTestHarness(mockinput.NewMockConsole())
 		t.Setenv(azdo.AzDoEnvironmentOrgName, "testOrg")
 		t.Setenv(azdo.AzDoPatName, testPat)
-		testConsole := console.NewMockConsole()
 		ctx := context.Background()
 
 		// act
-		e := provider.preConfigureCheck(ctx, testConsole, PipelineManagerArgs{}, provisioning.Options{})
+		updatedConfig, e := provider.preConfigureCheck(ctx, PipelineManagerArgs{}, provisioning.Options{})
 
 		// assert
 		require.NoError(t, e)
+		require.False(t, updatedConfig)
 	})
 
 	t.Run("returns an error if no pat is provided", func(t *testing.T) {
 		// arrange
 		ostest.Unsetenv(t, azdo.AzDoPatName)
 		ostest.Setenv(t, azdo.AzDoEnvironmentOrgName, "testOrg")
-		provider := getEmptyAzdoScmProviderTestHarness()
-		testConsole := console.NewMockConsole()
+		testConsole := mockinput.NewMockConsole()
 		testPat := "testPAT12345"
 		testConsole.WhenPrompt(func(options input.ConsoleOptions) bool {
 			return options.Message == "Personal Access Token (PAT):"
 		}).Respond(testPat)
 		ctx := context.Background()
+		provider := getEmptyAzdoScmProviderTestHarness(testConsole)
 
 		// act
-		e := provider.preConfigureCheck(ctx, testConsole, PipelineManagerArgs{}, provisioning.Options{})
+		updatedConfig, e := provider.preConfigureCheck(ctx, PipelineManagerArgs{}, provisioning.Options{})
 
 		// assert
 		require.Nil(t, e)
 		// PAT is not persisted to .env
 		require.EqualValues(t, "", provider.Env.Values[azdo.AzDoPatName])
+		require.True(t, updatedConfig)
 	})
 }
 
 func Test_azdo_ci_provider_preConfigureCheck(t *testing.T) {
 	t.Run("success with default options", func(t *testing.T) {
 		ctx := context.Background()
-		provider := getAzdoCiProviderTestHarness()
-		testConsole := console.NewMockConsole()
+
+		testConsole := mockinput.NewMockConsole()
 		testPat := "testPAT12345"
 		testConsole.WhenPrompt(func(options input.ConsoleOptions) bool {
 			return options.Message == "Personal Access Token (PAT):"
 		}).Respond(testPat)
-
+		provider := getAzdoCiProviderTestHarness(testConsole)
 		pipelineManagerArgs := PipelineManagerArgs{
 			PipelineAuthTypeName: "",
 		}
 
-		err := provider.preConfigureCheck(ctx, testConsole, pipelineManagerArgs, provisioning.Options{})
+		updatedConfig, err := provider.preConfigureCheck(ctx, pipelineManagerArgs, provisioning.Options{})
 		require.NoError(t, err)
+		require.True(t, updatedConfig)
 	})
 
 	t.Run("fails if auth type is set to federated", func(t *testing.T) {
 		ctx := context.Background()
-		provider := getAzdoCiProviderTestHarness()
-		testConsole := console.NewMockConsole()
 
+		testConsole := mockinput.NewMockConsole()
 		pipelineManagerArgs := PipelineManagerArgs{
 			PipelineAuthTypeName: string(AuthTypeFederated),
 		}
+		provider := getAzdoCiProviderTestHarness(testConsole)
 
-		err := provider.preConfigureCheck(ctx, testConsole, pipelineManagerArgs, provisioning.Options{})
+		updatedConfig, err := provider.preConfigureCheck(ctx, pipelineManagerArgs, provisioning.Options{})
 		require.Error(t, err)
+		require.False(t, updatedConfig)
 		require.True(t, errors.Is(err, ErrAuthNotSupported))
 	})
 }
@@ -159,13 +162,13 @@ func Test_saveEnvironmentConfig(t *testing.T) {
 		// arrange
 		key := "test"
 		value := "12345"
-		provider := getEmptyAzdoScmProviderTestHarness()
-		envPath := path.Join(tempDir, ".test.env")
-		provider.Env = environment.EmptyWithFile(envPath)
+		provider := getEmptyAzdoScmProviderTestHarness(mockinput.NewMockConsole())
+		envPath := filepath.Join(tempDir, "test")
+		provider.Env = environment.EmptyWithRoot(envPath)
 		// act
 		e := provider.saveEnvironmentConfig(key, value)
 		// assert
-		writtenEnv, err := environment.FromFile(envPath)
+		writtenEnv, err := environment.FromRoot(envPath)
 		require.NoError(t, err)
 
 		require.EqualValues(t, writtenEnv.Values[key], value)
@@ -174,15 +177,16 @@ func Test_saveEnvironmentConfig(t *testing.T) {
 
 }
 
-func getEmptyAzdoScmProviderTestHarness() *AzdoScmProvider {
+func getEmptyAzdoScmProviderTestHarness(console input.Console) *AzdoScmProvider {
 	return &AzdoScmProvider{
 		Env: &environment.Environment{
 			Values: map[string]string{},
 		},
+		console: console,
 	}
 }
 
-func getAzdoScmProviderTestHarness() *AzdoScmProvider {
+func getAzdoScmProviderTestHarness(console input.Console) *AzdoScmProvider {
 	return &AzdoScmProvider{
 		Env: &environment.Environment{
 			Values: map[string]string{
@@ -194,10 +198,11 @@ func getAzdoScmProviderTestHarness() *AzdoScmProvider {
 				azdo.AzDoEnvironmentRepoWebUrl:    "https://repo",
 			},
 		},
+		console: console,
 	}
 }
 
-func getAzdoCiProviderTestHarness() *AzdoCiProvider {
+func getAzdoCiProviderTestHarness(console input.Console) *AzdoCiProvider {
 	return &AzdoCiProvider{
 		Env: &environment.Environment{
 			Values: map[string]string{
@@ -209,5 +214,6 @@ func getAzdoCiProviderTestHarness() *AzdoCiProvider {
 				azdo.AzDoEnvironmentRepoWebUrl:    "https://repo",
 			},
 		},
+		console: console,
 	}
 }

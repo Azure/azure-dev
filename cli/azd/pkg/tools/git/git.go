@@ -7,8 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 
@@ -20,7 +18,7 @@ import (
 type GitCli interface {
 	tools.ExternalTool
 	GetRemoteUrl(ctx context.Context, string, remoteName string) (string, error)
-	FetchCode(ctx context.Context, repositoryPath string, branch string, target string) error
+	ShallowClone(ctx context.Context, repositoryPath string, branch string, target string) error
 	InitRepo(ctx context.Context, repositoryPath string) error
 	AddRemote(ctx context.Context, repositoryPath string, remoteName string, remoteUrl string) error
 	UpdateRemote(ctx context.Context, repositoryPath string, remoteName string, remoteUrl string) error
@@ -30,20 +28,18 @@ type GitCli interface {
 	PushUpstream(ctx context.Context, repositoryPath string, origin string, branch string) error
 	IsUntrackedFile(ctx context.Context, repositoryPath string, filePath string) (bool, error)
 	SetCredentialStore(ctx context.Context, repositoryPath string) error
+	ListStagedFiles(ctx context.Context, repositoryPath string) (string, error)
+	AddFileExecPermission(ctx context.Context, repositoryPath string, file string) error
 }
 
 type gitCli struct {
 	commandRunner exec.CommandRunner
 }
 
-func NewGitCliFromRunner(commandRunner exec.CommandRunner) GitCli {
+func NewGitCli(commandRunner exec.CommandRunner) GitCli {
 	return &gitCli{
 		commandRunner: commandRunner,
 	}
-}
-
-func NewGitCli(ctx context.Context) GitCli {
-	return NewGitCliFromRunner(exec.GetCommandRunner(ctx))
 }
 
 func (cli *gitCli) versionInfo() tools.VersionInfo {
@@ -64,7 +60,7 @@ func (cli *gitCli) CheckInstalled(ctx context.Context) (bool, error) {
 	if !found {
 		return false, err
 	}
-	gitRes, err := tools.ExecuteCommand(ctx, "git", "--version")
+	gitRes, err := tools.ExecuteCommand(ctx, cli.commandRunner, "git", "--version")
 	if err != nil {
 		return false, fmt.Errorf("checking %s version: %w", cli.Name(), err)
 	}
@@ -87,7 +83,7 @@ func (cli *gitCli) Name() string {
 	return "git CLI"
 }
 
-func (cli *gitCli) FetchCode(ctx context.Context, repositoryPath string, branch string, target string) error {
+func (cli *gitCli) ShallowClone(ctx context.Context, repositoryPath string, branch string, target string) error {
 	args := []string{"clone", "--depth", "1", repositoryPath}
 	if branch != "" {
 		args = append(args, "--branch", branch)
@@ -98,10 +94,6 @@ func (cli *gitCli) FetchCode(ctx context.Context, repositoryPath string, branch 
 	res, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
 		return fmt.Errorf("failed to clone repository %s, %s: %w", repositoryPath, res.String(), err)
-	}
-
-	if err := os.RemoveAll(filepath.Join(target, ".git")); err != nil {
-		return fmt.Errorf("removing .git folder after clone: %w", err)
 	}
 
 	return nil
@@ -208,13 +200,33 @@ func (cli *gitCli) Commit(ctx context.Context, repositoryPath string, message st
 
 func (cli *gitCli) PushUpstream(ctx context.Context, repositoryPath string, origin string, branch string) error {
 	runArgs := exec.
-		NewRunArgs("git", "-C", repositoryPath, "push", "--set-upstream", origin, branch).
+		NewRunArgs("git", "-C", repositoryPath, "push", "--set-upstream", "--quiet", origin, branch).
 		WithInteractive(true)
 
 	res, err := cli.commandRunner.Run(ctx, runArgs)
 
 	if err != nil {
 		return fmt.Errorf("failed to push: %s: %w", res.String(), err)
+	}
+
+	return nil
+}
+
+func (cli *gitCli) ListStagedFiles(ctx context.Context, repositoryPath string) (string, error) {
+	runArgs := exec.NewRunArgs("git", "-C", repositoryPath, "ls-files", "--stage")
+	res, err := cli.commandRunner.Run(ctx, runArgs)
+	if err != nil {
+		return "", fmt.Errorf("failed to list files: %s: %w", res.String(), err)
+	}
+
+	return res.Stdout, nil
+}
+
+func (cli *gitCli) AddFileExecPermission(ctx context.Context, repositoryPath string, file string) error {
+	runArgs := exec.NewRunArgs("git", "-C", repositoryPath, "update-index", "--add", "--chmod=+x", file)
+	res, err := cli.commandRunner.Run(ctx, runArgs)
+	if err != nil {
+		return fmt.Errorf("failed to add file exec permission: %s: %w", res.String(), err)
 	}
 
 	return nil

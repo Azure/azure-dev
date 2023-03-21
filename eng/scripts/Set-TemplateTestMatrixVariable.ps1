@@ -40,6 +40,10 @@ function Get-JobVariables() {
 
     foreach ($definition in $definitions) {
         $keyValue = ($definition -split '=').Trim()
+        if ($keyValue.Length -eq 0) {
+            continue
+        }
+
         if ($keyValue.Length -ne 2) {
             throw "Invalid job variable definition: $definition"
         }
@@ -50,12 +54,31 @@ function Get-JobVariables() {
     return $result
 }
 
+function Copy-RandomJob([System.Collections.Hashtable]$JobMatrix) {
+    $randIndex = Get-Random -Maximum $JobMatrix.Keys.Count #[0, Keys.Count]
+    $i = 0
+    $copyJob = @{}
+
+    foreach ($jobName in $JobMatrix.Keys) {
+        if ($i -eq $randIndex) {
+            foreach ($jobProperty in $JobMatrix[$jobName].Keys) {
+                $copyJob[$jobProperty] = $JobMatrix[$jobName][$jobProperty]
+            }
+        }
+        $i++
+    }
+
+    return $copyJob
+}
+
 $jobVariables = Get-JobVariables -JobVariablesDefinition $JobVariablesDefinition
+
+$templateNames = @()
 
 if ($TemplateList -eq '(azd template list)') {
     Write-Host "Using results of (azd template list --output json)"
     
-    $templateNames = (azd template list --output json | ConvertFrom-Json).name
+    $templateNames += (azd template list --output json | ConvertFrom-Json).name
     if ($LASTEXITCODE -ne 0) {
         Write-Error "azd template list failed"
         exit 1
@@ -63,14 +86,18 @@ if ($TemplateList -eq '(azd template list)') {
 } else {
     Write-Host "Using provided TemplateList value: $TemplateList"
 
-    $templateNames = ($TemplateList -split ",").Trim()
+    $templateNames += ($TemplateList -split ",").Trim()
 }
 
 if ($TemplateListFilter -ne '.*') {
-} else {
     Write-Host "Filtering with TemplateListFilter regex: $TemplateListFilter"
 
     $templateNames = $templateNames -match $TemplateListFilter
+}
+
+if ($templateNames.Length -eq 0) {
+    Write-Error "No matched templates found."
+    exit 1
 }
 
 $matrix = @{}
@@ -79,15 +106,38 @@ foreach ($template in $templateNames) {
     $matrix[$jobName] = @{ TemplateName = $template }
 }
 
-# Adding extra test for capitals letters support. Using first template
-$firstTemplate = $templateNames[0]
-$capitalsTest = $firstTemplate.Replace('/', '_') + "-Upper-case-test"
-$matrix[$capitalsTest] = @{ TemplateName = $firstTemplate; UseUpperCase = "true" }
-
 foreach ($jobName in $matrix.Keys) {
     foreach ($key in $jobVariables.Keys) {
         $matrix[$jobName].Add($key, $jobVariables[$key]) | Out-Null
     }
+}
+
+# Generated test cases from existing templates
+$upperTestCase = Copy-RandomJob -JobMatrix $matrix
+$upperTestCase.TEST_SCENARIO = 'UPPER' # Use UPPER case for env name
+$matrix[$upperTestCase.TemplateName.Replace('/', '_') + '-Upper-case-test'] = $upperTestCase
+
+if ($jobVariables.USE_APIM -ne 'true') { # If USE_APIM is specified, avoid creating a new job
+    $apimEnabledTestCase = Copy-RandomJob -JobMatrix $matrix
+    $apimEnabledTestCase.TEST_SCENARIO = 'apim'
+    $apimEnabledTestCase.USE_APIM = 'true'
+    $matrix[$apimEnabledTestCase.TemplateName.Replace('/', '_') + '-apim-enabled'] = $apimEnabledTestCase
+}
+
+
+foreach ($jobName in $matrix.Keys) {
+    $keyNames = @()
+    $job = $matrix[$jobName]
+    foreach ($key in $job.Keys) {
+        $environmentVariableName = $key.ToUpper().Replace(".", "_")
+        $keyNames += $environmentVariableName
+    }
+
+    # "%0A" is the URL-encoded value of \n
+    # This escapes the newline and can be safely encoded in the JSON-string,
+    # while Azure DevOps task runner will be able to decode the value into \n
+    # which then can be used to import the list of variables we want.
+    $job.VARIABLE_LIST = $keyNames -join "%0A"
 }
 
 Write-Host "Matrix:"

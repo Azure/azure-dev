@@ -31,6 +31,11 @@ repo:
         patterns:
           - "**/*.bicep"
 
+      - from: ../../../../../common/infra/shared/gateway/apim
+        to: ./
+        patterns:
+          - apim-api.bicep
+
       # app service modules
       - from: ../../../../../../common/infra/bicep
         to: ../
@@ -69,6 +74,11 @@ repo:
         to: db.bicep
         patterns:
           - "**/main.bicep"
+      
+      - from: ../../../../api/common/openapi.yaml
+        to: ../../src/api/openapi.yaml
+        patterns:
+          - "apim-api.bicep"
 
   assets:
     # # Common assets
@@ -86,6 +96,12 @@ repo:
     - from: ../../../../common/infra/bicep/app/api-functions-python.bicep
       to: ./infra/app/api.bicep
 
+    - from: ../../../../common/infra/bicep/app/apim-api.bicep
+      to: ./infra/app/apim-api.bicep
+
+    - from: ../../../../../common/infra/shared/gateway/apim/apim-api-policy.xml
+      to: ./infra/app/apim-api-policy.xml
+      
     - from: ../../../../common/infra/bicep/app/cosmos-mongo-db.bicep
       to: ./infra/app/db.bicep
 
@@ -145,6 +161,10 @@ repo:
     - from: ../../../../common/tests
       to: ./tests
 
+    # Auth Python common
+    - from: ../../../../common/auth/py
+      to: ./src/api/todo
+      
     # Python API
     - from: ../../../../api/python
       to: ./src/api

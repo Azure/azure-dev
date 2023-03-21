@@ -11,89 +11,127 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/python"
 	"github.com/otiai10/copy"
 )
 
 type pythonProject struct {
-	config *ServiceConfig
-	env    *environment.Environment
-	cli    *python.PythonCli
+	env *environment.Environment
+	cli *python.PythonCli
 }
 
-func (pp *pythonProject) RequiredExternalTools() []tools.ExternalTool {
+// NewPythonProject creates a new instance of the Python project
+func NewPythonProject(commandRunner exec.CommandRunner, env *environment.Environment) FrameworkService {
+	return &pythonProject{
+		env: env,
+		cli: python.NewPythonCli(commandRunner),
+	}
+}
+
+// Gets the required external tools for the project
+func (pp *pythonProject) RequiredExternalTools(context.Context) []tools.ExternalTool {
 	return []tools.ExternalTool{pp.cli}
 }
 
-func (pp *pythonProject) Package(_ context.Context, progress chan<- string) (string, error) {
-	publishRoot, err := os.MkdirTemp("", "azd")
-	if err != nil {
-		return "", fmt.Errorf("creating package directory for %s: %w", pp.config.Name, err)
-	}
-
-	publishSource := pp.config.Path()
-
-	if pp.config.OutputPath != "" {
-		publishSource = filepath.Join(publishSource, pp.config.OutputPath)
-	}
-
-	progress <- "Copying deployment package"
-	if err := copy.Copy(
-		publishSource,
-		publishRoot,
-		skipPatterns(
-			filepath.Join(publishSource, "__pycache__"), filepath.Join(publishSource, ".azure"))); err != nil {
-		return "", fmt.Errorf("publishing for %s: %w", pp.config.Name, err)
-	}
-
-	return publishRoot, nil
-}
-
-func (pp *pythonProject) InstallDependencies(ctx context.Context) error {
-	vEnvName := pp.getVenvName()
-	vEnvPath := path.Join(pp.config.Path(), vEnvName)
-
-	_, err := os.Stat(vEnvPath)
-	if err != nil {
-		if os.IsNotExist(err) {
-			err = pp.cli.CreateVirtualEnv(ctx, pp.config.Path(), vEnvName)
-			if err != nil {
-				return fmt.Errorf(
-					"python virtual environment for project '%s' could not be created: %w",
-					pp.config.Path(),
-					err,
-				)
-			}
-		} else {
-			return fmt.Errorf("python virtual environment for project '%s' is not accessible: %w", pp.config.Path(), err)
-		}
-	}
-
-	err = pp.cli.InstallRequirements(ctx, pp.config.Path(), vEnvName, "requirements.txt")
-	if err != nil {
-		return fmt.Errorf("requirements for project '%s' could not be installed: %w", pp.config.Path(), err)
-	}
-
+// Initializes the Python project
+func (pp *pythonProject) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
 	return nil
 }
 
-func (pp *pythonProject) getVenvName() string {
-	trimmedPath := strings.TrimSpace(pp.config.Path())
+// Restores the project dependencies using PIP requirements.txt
+func (pp *pythonProject) Restore(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+) *async.TaskWithProgress[*ServiceRestoreResult, ServiceProgress] {
+	return async.RunTaskWithProgress(
+		func(task *async.TaskContextWithProgress[*ServiceRestoreResult, ServiceProgress]) {
+			vEnvName := pp.getVenvName(serviceConfig)
+			vEnvPath := path.Join(serviceConfig.Path(), vEnvName)
+
+			_, err := os.Stat(vEnvPath)
+			if err != nil {
+				if os.IsNotExist(err) {
+					err = pp.cli.CreateVirtualEnv(ctx, serviceConfig.Path(), vEnvName)
+					if err != nil {
+						task.SetError(fmt.Errorf(
+							"python virtual environment for project '%s' could not be created: %w",
+							serviceConfig.Path(),
+							err,
+						))
+						return
+					}
+				} else {
+					task.SetError(
+						fmt.Errorf("python virtual environment for project '%s' is not accessible: %w", serviceConfig.Path(), err),
+					)
+					return
+				}
+			}
+
+			err = pp.cli.InstallRequirements(ctx, serviceConfig.Path(), vEnvName, "requirements.txt")
+			if err != nil {
+				task.SetError(
+					fmt.Errorf("requirements for project '%s' could not be installed: %w", serviceConfig.Path(), err),
+				)
+				return
+			}
+
+			task.SetResult(&ServiceRestoreResult{})
+		},
+	)
+}
+
+// Builds the Python project by copying source files into the configured output path
+func (pp *pythonProject) Build(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	restoreOutput *ServiceRestoreResult,
+) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress] {
+	return async.RunTaskWithProgress(
+		func(task *async.TaskContextWithProgress[*ServiceBuildResult, ServiceProgress]) {
+			publishRoot, err := os.MkdirTemp("", "azd")
+			if err != nil {
+				task.SetError(fmt.Errorf("creating package directory for %s: %w", serviceConfig.Name, err))
+				return
+			}
+
+			publishSource := serviceConfig.Path()
+
+			if serviceConfig.OutputPath != "" {
+				publishSource = filepath.Join(publishSource, serviceConfig.OutputPath)
+			}
+
+			task.SetProgress(NewServiceProgress("Copying deployment package"))
+
+			if err := copy.Copy(
+				publishSource,
+				publishRoot,
+				skipPatterns(
+					filepath.Join(publishSource, "__pycache__"), filepath.Join(publishSource, ".venv"),
+					filepath.Join(publishSource, ".azure"))); err != nil {
+				task.SetError(fmt.Errorf("publishing for %s: %w", serviceConfig.Name, err))
+				return
+			}
+
+			task.SetResult(&ServiceBuildResult{
+				Restore:         restoreOutput,
+				BuildOutputPath: publishRoot,
+			})
+		},
+	)
+}
+
+func (pp *pythonProject) getVenvName(serviceConfig *ServiceConfig) string {
+	trimmedPath := strings.TrimSpace(serviceConfig.Path())
 	if len(trimmedPath) > 0 && trimmedPath[len(trimmedPath)-1] == os.PathSeparator {
 		trimmedPath = trimmedPath[:len(trimmedPath)-1]
 	}
 	_, projectDir := filepath.Split(trimmedPath)
 	return projectDir + "_env"
-}
-
-func (pp *pythonProject) Config() *ServiceConfig {
-	return pp.config
-}
-
-func (pp *pythonProject) Initialize(ctx context.Context) error {
-	return nil
 }
 
 // skipPatterns returns a `copy.Options` which will skip any files
@@ -113,13 +151,5 @@ func skipPatterns(patterns ...string) copy.Options {
 
 			return false, nil
 		},
-	}
-}
-
-func NewPythonProject(ctx context.Context, config *ServiceConfig, env *environment.Environment) FrameworkService {
-	return &pythonProject{
-		config: config,
-		env:    env,
-		cli:    python.NewPythonCli(ctx),
 	}
 }

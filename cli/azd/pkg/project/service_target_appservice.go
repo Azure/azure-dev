@@ -7,80 +7,138 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/project/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
 type appServiceTarget struct {
-	config *ServiceConfig
-	env    *environment.Environment
-	scope  *environment.DeploymentScope
-	cli    azcli.AzCli
+	env *environment.Environment
+	cli azcli.AzCli
 }
 
-func (st *appServiceTarget) RequiredExternalTools() []tools.ExternalTool {
-	return []tools.ExternalTool{st.cli}
+// NewAppServiceTarget creates a new instance of the AppServiceTarget
+func NewAppServiceTarget(
+	env *environment.Environment,
+	azCli azcli.AzCli,
+) ServiceTarget {
+
+	return &appServiceTarget{
+		env: env,
+		cli: azCli,
+	}
 }
 
-func (st *appServiceTarget) Deploy(
+// Gets the required external tools
+func (st *appServiceTarget) RequiredExternalTools(context.Context) []tools.ExternalTool {
+	return []tools.ExternalTool{}
+}
+
+// Initializes the AppService target
+func (st *appServiceTarget) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
+	return nil
+}
+
+// Prepares a zip archive from the specified build output
+func (st *appServiceTarget) Package(
 	ctx context.Context,
-	_ *azdcontext.AzdContext,
-	path string,
-	progress chan<- string,
-) (ServiceDeploymentResult, error) {
-	progress <- "Compressing deployment artifacts"
+	serviceConfig *ServiceConfig,
+	buildOutput *ServiceBuildResult,
+) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
+	return async.RunTaskWithProgress(
+		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
+			task.SetProgress(NewServiceProgress("Compressing deployment artifacts"))
+			zipFilePath, err := internal.CreateDeployableZip(serviceConfig.Name, buildOutput.BuildOutputPath)
+			if err != nil {
+				task.SetError(err)
+				return
+			}
 
-	zipFilePath, err := internal.CreateDeployableZip(st.config.Name, path)
-	if err != nil {
-		return ServiceDeploymentResult{}, err
-	}
-
-	zipFile, err := os.Open(zipFilePath)
-	if err != nil {
-		return ServiceDeploymentResult{}, fmt.Errorf("failed reading deployment zip file: %w", err)
-	}
-
-	defer os.Remove(zipFilePath)
-	defer zipFile.Close()
-
-	progress <- "Publishing deployment package"
-	res, err := st.cli.DeployAppServiceZip(
-		ctx,
-		st.env.GetSubscriptionId(),
-		st.scope.ResourceGroupName(),
-		st.scope.ResourceName(),
-		zipFile,
+			task.SetResult(&ServicePackageResult{
+				Build:       buildOutput,
+				PackagePath: zipFilePath,
+			})
+		},
 	)
-	if err != nil {
-		return ServiceDeploymentResult{}, fmt.Errorf("deploying service %s: %w", st.config.Name, err)
-	}
-
-	progress <- "Fetching endpoints for app service"
-	endpoints, err := st.Endpoints(ctx)
-	if err != nil {
-		return ServiceDeploymentResult{}, err
-	}
-
-	sdr := NewServiceDeploymentResult(
-		azure.WebsiteRID(st.env.GetSubscriptionId(), st.scope.ResourceGroupName(), st.scope.ResourceName()),
-		AppServiceTarget,
-		*res,
-		endpoints,
-	)
-	return sdr, nil
 }
 
-func (st *appServiceTarget) Endpoints(ctx context.Context) ([]string, error) {
+// Publishes the prepared zip archive using Zip deploy to the Azure App Service resource
+func (st *appServiceTarget) Publish(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	packageOutput *ServicePackageResult,
+	targetResource *environment.TargetResource,
+) *async.TaskWithProgress[*ServicePublishResult, ServiceProgress] {
+	return async.RunTaskWithProgress(
+		func(task *async.TaskContextWithProgress[*ServicePublishResult, ServiceProgress]) {
+			if err := st.validateTargetResource(ctx, serviceConfig, targetResource); err != nil {
+				task.SetError(fmt.Errorf("validating target resource: %w", err))
+				return
+			}
+
+			zipFile, err := os.Open(packageOutput.PackagePath)
+			if err != nil {
+				task.SetError(fmt.Errorf("failed reading deployment zip file: %w", err))
+				return
+			}
+
+			defer os.Remove(packageOutput.PackagePath)
+			defer zipFile.Close()
+
+			task.SetProgress(NewServiceProgress("Publishing deployment package"))
+			res, err := st.cli.DeployAppServiceZip(
+				ctx,
+				targetResource.SubscriptionId(),
+				targetResource.ResourceGroupName(),
+				targetResource.ResourceName(),
+				zipFile,
+			)
+			if err != nil {
+				task.SetError(fmt.Errorf("deploying service %s: %w", serviceConfig.Name, err))
+				return
+			}
+
+			task.SetProgress(NewServiceProgress("Fetching endpoints for app service"))
+			endpoints, err := st.Endpoints(ctx, serviceConfig, targetResource)
+			if err != nil {
+				task.SetError(err)
+				return
+			}
+
+			sdr := NewServicePublishResult(
+				azure.WebsiteRID(
+					targetResource.SubscriptionId(),
+					targetResource.ResourceGroupName(),
+					targetResource.ResourceName(),
+				),
+				AppServiceTarget,
+				*res,
+				endpoints,
+			)
+			sdr.Package = packageOutput
+
+			task.SetResult(sdr)
+		},
+	)
+}
+
+// Gets the exposed endpoints for the App Service
+func (st *appServiceTarget) Endpoints(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	targetResource *environment.TargetResource,
+) ([]string, error) {
 	appServiceProperties, err := st.cli.GetAppServiceProperties(
 		ctx,
-		st.env.GetSubscriptionId(),
-		st.scope.ResourceGroupName(),
-		st.scope.ResourceName(),
+		targetResource.SubscriptionId(),
+		targetResource.ResourceGroupName(),
+		targetResource.ResourceName(),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("fetching service properties: %w", err)
@@ -94,16 +152,18 @@ func (st *appServiceTarget) Endpoints(ctx context.Context) ([]string, error) {
 	return endpoints, nil
 }
 
-func NewAppServiceTarget(
-	config *ServiceConfig,
-	env *environment.Environment,
-	scope *environment.DeploymentScope,
-	azCli azcli.AzCli,
-) ServiceTarget {
-	return &appServiceTarget{
-		config: config,
-		env:    env,
-		scope:  scope,
-		cli:    azCli,
+func (st *appServiceTarget) validateTargetResource(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	targetResource *environment.TargetResource,
+) error {
+	if !strings.EqualFold(targetResource.ResourceType(), string(infra.AzureResourceTypeWebSite)) {
+		return resourceTypeMismatchError(
+			targetResource.ResourceName(),
+			targetResource.ResourceType(),
+			infra.AzureResourceTypeWebSite,
+		)
 	}
+
+	return nil
 }

@@ -12,9 +12,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
 
-func NewSwaCli(ctx context.Context) SwaCli {
+func NewSwaCli(commandRunner exec.CommandRunner) SwaCli {
 	return &swaCli{
-		commandRunner: exec.GetCommandRunner(ctx),
+		commandRunner: commandRunner,
 	}
 }
 
@@ -109,7 +109,7 @@ func (cli *swaCli) InstallUrl() string {
 
 func (cli *swaCli) executeCommand(ctx context.Context, cwd string, args ...string) (exec.RunResult, error) {
 	runArgs := exec.
-		NewRunArgs("npx", "-y", "@azure/static-web-apps-cli@1.0.0").
+		NewRunArgs("npx", "-y", "@azure/static-web-apps-cli@1.0.6").
 		AppendParams(args...).
 		WithCwd(cwd).
 		WithEnrichError(true)

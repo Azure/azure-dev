@@ -5,74 +5,17 @@ package project
 
 import (
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
-	"github.com/stretchr/testify/assert"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockarmresources"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/exp/slices"
 )
-
-// If resource name is not specified, it should default to <environment name><service friendly name>
-func TestResourceNameDefaultValues(t *testing.T) {
-	const testProj = `
-name: test-proj
-metadata:
-  template: test-proj-template
-resourceGroup: rg-test
-services:
-  web:
-    project: src/web
-    language: js
-    host: appservice
-  api:
-    project: src/api
-    language: js
-    host: appservice
-  worker:
-    project: src/worker
-    language: js
-    host: containerapp
-`
-	mockContext := mocks.NewMockContext(context.Background())
-
-	e := environment.EphemeralWithValues("envA", map[string]string{
-		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
-	})
-	projectConfig, err := ParseProjectConfig(testProj, e)
-	assert.Nil(t, err)
-
-	project, err := projectConfig.GetProject(mockContext.Context, e)
-	assert.Nil(t, err)
-
-	azCli := azcli.GetAzCli(*mockContext.Context)
-
-	assertHasService(t,
-		project.Services,
-		func(s *Service) bool { return s.Scope.ResourceName() == "envAapi" },
-		"api service does not have expected resource name",
-	)
-	assertHasService(t,
-		project.Services,
-		func(s *Service) bool { return s.Scope.ResourceName() == "envAweb" },
-		"web service does not have expected resource name",
-	)
-	assertHasService(t,
-		project.Services,
-		func(s *Service) bool { return s.Scope.ResourceName() == "envAworker" },
-		"worker service does not have expected resource name",
-	)
-
-	sha := sha256.Sum256([]byte("test-proj-template"))
-	hash := hex.EncodeToString(sha[:])
-	require.Contains(t, azCli.UserAgent(), "azdtempl/"+hash)
-}
 
 // Specifying resource name in the project file should override the default
 func TestResourceNameOverrideFromProjectFile(t *testing.T) {
@@ -82,10 +25,6 @@ metadata:
   template: test-proj-template
 resourceGroup: rg-test
 services:
-  web:
-    project: src/web
-    language: js
-    host: appservice
   api:
     resourceName: deployedApiSvc
     project: src/api
@@ -93,28 +32,33 @@ services:
     host: appservice
 `
 	mockContext := mocks.NewMockContext(context.Background())
+	mockarmresources.AddAzResourceListMock(
+		mockContext.HttpClient,
+		convert.RefOf("rg-test"),
+		[]*armresources.GenericResourceExpanded{
+			{
+				ID:       convert.RefOf("deployedApiSvc"),
+				Name:     convert.RefOf("deployedApiSvc"),
+				Type:     convert.RefOf(string(infra.AzureResourceTypeWebSite)),
+				Location: convert.RefOf("eastus2"),
+			},
+		})
+	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 
-	e := environment.EphemeralWithValues("envA", map[string]string{
+	env := environment.EphemeralWithValues("envA", map[string]string{
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
 	})
-	projectConfig, err := ParseProjectConfig(testProj, e)
-	assert.Nil(t, err)
 
-	project, err := projectConfig.GetProject(mockContext.Context, e)
-	assert.Nil(t, err)
+	projectConfig, err := Parse(*mockContext.Context, testProj)
+	require.NoError(t, err)
 
-	assertHasService(t,
-		project.Services,
-		func(s *Service) bool { return s.Scope.ResourceName() == "deployedApiSvc" },
-		"api service does not have expected resource name",
-	)
+	resourceManager := NewResourceManager(env, azCli)
+	targetResource, err := resourceManager.GetTargetResource(
+		*mockContext.Context, env.GetSubscriptionId(), projectConfig.Services["api"])
+	require.NoError(t, err)
+	require.NotNil(t, targetResource)
 
-	// deploymentBaseName is not specified, the default name should be used
-	assertHasService(t,
-		project.Services,
-		func(s *Service) bool { return s.Scope.ResourceName() == "envAweb" },
-		"web service does not have expected resource name",
-	)
+	require.Equal(t, "deployedApiSvc", targetResource.ResourceName())
 }
 
 func TestResourceNameOverrideFromResourceTag(t *testing.T) {
@@ -129,39 +73,37 @@ services:
     language: js
     host: appservice
 `
-	rg := "rg-test"
-	resourceName := "app-api-abc123"
-	resourceId := "random"
-	resourceType := string(infra.AzureResourceTypeWebSite)
-	resourceLocation := "westus2"
 	mockContext := mocks.NewMockContext(context.Background())
-	mockContext.HttpClient.AddAzResourceListMock(&rg,
-		armresources.ResourceListResult{
-			Value: []*armresources.GenericResourceExpanded{
-				{
-					ID:       &resourceId,
-					Name:     &resourceName,
-					Type:     &resourceType,
-					Location: &resourceLocation,
+	resourceName := "app-api-abc123"
+	mockarmresources.AddAzResourceListMock(
+		mockContext.HttpClient,
+		convert.RefOf("rg-test"),
+		[]*armresources.GenericResourceExpanded{
+			{
+				ID:       convert.RefOf("app-api-abc123"),
+				Name:     &resourceName,
+				Type:     convert.RefOf(string(infra.AzureResourceTypeWebSite)),
+				Location: convert.RefOf("eastus2"),
+				Tags: map[string]*string{
+					defaultServiceTag: convert.RefOf("api"),
 				},
 			},
-		})
+		},
+	)
+	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 
-	e := environment.EphemeralWithValues("envA", map[string]string{
+	env := environment.EphemeralWithValues("envA", map[string]string{
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
 	})
-	projectConfig, err := ParseProjectConfig(testProj, e)
-	assert.Nil(t, err)
+	projectConfig, err := Parse(*mockContext.Context, testProj)
+	require.NoError(t, err)
 
-	project, err := projectConfig.GetProject(mockContext.Context, e)
-	assert.Nil(t, err)
-
-	// Deployment resource name comes from the found tag on the graph query request
-	assertHasService(t,
-		project.Services,
-		func(s *Service) bool { return s.Scope.ResourceName() == resourceName },
-		"api service does not have expected resource name",
-	)
+	resourceManager := NewResourceManager(env, azCli)
+	targetResource, err := resourceManager.GetTargetResource(
+		*mockContext.Context, env.GetSubscriptionId(), projectConfig.Services["api"])
+	require.NoError(t, err)
+	require.NotNil(t, targetResource)
+	require.Equal(t, resourceName, targetResource.ResourceName())
 }
 
 func TestResourceGroupOverrideFromProjectFile(t *testing.T) {
@@ -182,27 +124,44 @@ services:
     host: appservice
 `
 	mockContext := mocks.NewMockContext(context.Background())
+	resourceGroupName := "rg-custom-group"
+	mockarmresources.AddAzResourceListMock(
+		mockContext.HttpClient,
+		&resourceGroupName,
+		[]*armresources.GenericResourceExpanded{
+			{
+				ID:       convert.RefOf("deployedApiSvc"),
+				Name:     convert.RefOf("deployedApiSvc"),
+				Type:     convert.RefOf(string(infra.AzureResourceTypeWebSite)),
+				Location: convert.RefOf("eastus2"),
+			},
+			{
+				ID:       convert.RefOf("webResource"),
+				Name:     convert.RefOf("webResource"),
+				Type:     convert.RefOf(string(infra.AzureResourceTypeWebSite)),
+				Location: convert.RefOf("eastus2"),
+				Tags: map[string]*string{
+					defaultServiceTag: convert.RefOf("web"),
+				},
+			},
+		})
+	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 
-	e := environment.EphemeralWithValues("envA", map[string]string{
+	env := environment.EphemeralWithValues("envA", map[string]string{
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
 	})
-	projectConfig, err := ParseProjectConfig(testProj, e)
-	assert.Nil(t, err)
 
-	project, err := projectConfig.GetProject(mockContext.Context, e)
-	assert.Nil(t, err)
+	projectConfig, err := Parse(*mockContext.Context, testProj)
+	require.NoError(t, err)
 
-	assertHasService(t,
-		project.Services,
-		func(s *Service) bool { return s.Scope.ResourceGroupName() == "rg-custom-group" },
-		"api service does not have expected resource group name",
-	)
+	resourceManager := NewResourceManager(env, azCli)
 
-	assertHasService(t,
-		project.Services,
-		func(s *Service) bool { return s.Scope.ResourceGroupName() == "rg-custom-group" },
-		"web service does not have expected resource group name",
-	)
+	for _, svc := range projectConfig.Services {
+		targetResource, err := resourceManager.GetTargetResource(*mockContext.Context, env.GetSubscriptionId(), svc)
+		require.NoError(t, err)
+		require.NotNil(t, targetResource)
+		require.Equal(t, resourceGroupName, targetResource.ResourceGroupName())
+	}
 }
 
 func TestResourceGroupOverrideFromEnv(t *testing.T) {
@@ -225,31 +184,46 @@ services:
 
 	expectedResourceGroupName := "custom-name-from-env-rg"
 
-	e := environment.EphemeralWithValues("envA", map[string]string{
+	mockarmresources.AddAzResourceListMock(
+		mockContext.HttpClient,
+		&expectedResourceGroupName,
+		[]*armresources.GenericResourceExpanded{
+			{
+				ID:       convert.RefOf("deployedApiSvc"),
+				Name:     convert.RefOf("deployedApiSvc"),
+				Type:     convert.RefOf(string(infra.AzureResourceTypeWebSite)),
+				Location: convert.RefOf("eastus2"),
+			},
+			{
+				ID:       convert.RefOf("webResource"),
+				Name:     convert.RefOf("webResource"),
+				Type:     convert.RefOf(string(infra.AzureResourceTypeWebSite)),
+				Location: convert.RefOf("eastus2"),
+				Tags: map[string]*string{
+					defaultServiceTag: convert.RefOf("web"),
+				},
+			},
+		})
+	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
+
+	env := environment.EphemeralWithValues("envA", map[string]string{
 		environment.ResourceGroupEnvVarName:  expectedResourceGroupName,
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
 	})
 
-	projectConfig, err := ParseProjectConfig(testProj, e)
-	assert.Nil(t, err)
+	projectConfig, err := Parse(*mockContext.Context, testProj)
+	require.NoError(t, err)
 
-	project, err := projectConfig.GetProject(mockContext.Context, e)
-	assert.Nil(t, err)
+	resourceManager := NewResourceManager(env, azCli)
+	targetResource, err := resourceManager.GetTargetResource(
+		*mockContext.Context, env.GetSubscriptionId(), projectConfig.Services["api"])
+	require.NoError(t, err)
+	require.NotNil(t, targetResource)
 
-	assertHasService(t,
-		project.Services,
-		func(s *Service) bool { return s.Scope.ResourceGroupName() == expectedResourceGroupName },
-		"api service does not have expected resource group name",
-	)
-
-	assertHasService(t,
-		project.Services,
-		func(s *Service) bool { return s.Scope.ResourceGroupName() == expectedResourceGroupName },
-		"web service does not have expected resource group name",
-	)
-}
-
-func assertHasService(t *testing.T, ss []*Service, match func(*Service) bool, msgAndArgs ...interface{}) {
-	i := slices.IndexFunc(ss, match)
-	assert.GreaterOrEqual(t, i, 0, msgAndArgs)
+	for _, svc := range projectConfig.Services {
+		targetResource, err := resourceManager.GetTargetResource(*mockContext.Context, env.GetSubscriptionId(), svc)
+		require.NoError(t, err)
+		require.NotNil(t, targetResource)
+		require.Equal(t, expectedResourceGroupName, targetResource.ResourceGroupName())
+	}
 }

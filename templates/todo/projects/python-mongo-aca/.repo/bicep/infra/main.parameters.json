@@ -16,6 +16,12 @@
     },
     "webImageName": {
       "value": "${SERVICE_WEB_IMAGE_NAME}"
+    },
+    "webApiBaseUrl": {
+      "value": "${REACT_APP_API_BASE_URL}"
+    },
+    "useAPIM": {
+      "value": "${USE_APIM=false}"
     }
   }
 }

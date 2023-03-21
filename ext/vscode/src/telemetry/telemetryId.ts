@@ -28,6 +28,9 @@ export enum TelemetryId {
     // Extra data captured: whether the "purge" option was used.
     InfraDeleteCli = 'azure-dev.commands.cli.infra-delete.task',
 
+    // Reported when 'login' CLI command is invoked.
+    LoginCli = 'azure-dev.commands.cli.login-cli.task',
+
     // Reported when 'pipeline config' CLI command is invoked.
     PipelineConfigCli = 'azure-dev.commands.cli.pipeline-config.task',
 
@@ -40,8 +43,14 @@ export enum TelemetryId {
     // Reported when 'up' CLI command is invoked.
     UpCli = 'azure-dev.commands.cli.up.task',
 
+    // Reported when 'down' CLI command is invoked.
+    DownCli = 'azure-dev.commands.cli.down.task',
+
     // Reported when 'init' CLI command is invoked.
     InitCli = 'azure-dev.commands.cli.init.task',
+
+    // Reported when 'env new' CLI command is invoked.
+    EnvNewCli = 'azure-dev.commands.cli.env-new.task',
     
     // Reported when the product evaluates whether to prompt the user for a survey.
     // We capture 
@@ -52,5 +61,8 @@ export enum TelemetryId {
     SurveyCheck = 'azure-dev.survey-check',
 
     // Captures the result of a survey prompt
-    SurveyPromptResponse = 'azure-dev.survey-prompt-response'
+    SurveyPromptResponse = 'azure-dev.survey-prompt-response',
+
+    WorkspaceViewApplicationResolve = 'azure-dev.views.workspace.application.resolve',
+    WorkspaceViewEnvironmentResolve = 'azure-dev.views.workspace.environment.resolve'
 }

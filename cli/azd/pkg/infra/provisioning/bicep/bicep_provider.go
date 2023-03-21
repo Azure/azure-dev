@@ -18,8 +18,10 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -28,39 +30,27 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/cmdsubst"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/drone/envsubst"
 	"github.com/sethvargo/go-retry"
+	"golang.org/x/exp/maps"
+	"golang.org/x/exp/slices"
 )
 
-type BicepTemplate struct {
-	Schema         string                          `json:"$schema"`
-	ContentVersion string                          `json:"contentVersion"`
-	Parameters     map[string]BicepInputParameter  `json:"parameters"`
-	Outputs        map[string]BicepOutputParameter `json:"outputs"`
-}
-
-type BicepInputParameter struct {
-	Type         string      `json:"type"`
-	DefaultValue interface{} `json:"defaultValue"`
-	Value        interface{} `json:"value"`
-}
-
-type BicepOutputParameter struct {
-	Type  string      `json:"type"`
-	Value interface{} `json:"value"`
-}
-
 type BicepDeploymentDetails struct {
-	ParameterFilePath string
-	Template          *azure.ArmTemplate
+	// Template is the template to deploy during the deployment operation.
+	Template azure.RawArmTemplate
+	// Parameters are the values to provide to the template during the deployment operation.
+	Parameters azure.ArmParameters
+	// TemplateOutputs are the outputs as specified by the template.
+	TemplateOutputs azure.ArmTemplateOutputs
 }
 
 // BicepProvider exposes infrastructure provisioning using Azure Bicep templates
@@ -71,6 +61,7 @@ type BicepProvider struct {
 	console     input.Console
 	bicepCli    bicep.BicepCli
 	azCli       azcli.AzCli
+	prompters   Prompters
 }
 
 // Name gets the name of the infra provider
@@ -79,7 +70,7 @@ func (p *BicepProvider) Name() string {
 }
 
 func (p *BicepProvider) RequiredExternalTools() []tools.ExternalTool {
-	return []tools.ExternalTool{p.bicepCli, p.azCli}
+	return []tools.ExternalTool{}
 }
 
 func (p *BicepProvider) State(
@@ -90,7 +81,7 @@ func (p *BicepProvider) State(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*StateResult, *StateProgress]) {
 			asyncContext.SetProgress(&StateProgress{Message: "Loading Bicep template", Timestamp: time.Now()})
 			modulePath := p.modulePath()
-			deployment, _, err := p.createDeployment(ctx, modulePath)
+			_, template, err := p.compileBicep(ctx, modulePath)
 			if err != nil {
 				asyncContext.SetError(fmt.Errorf("compiling bicep template: %w", err))
 				return
@@ -114,7 +105,7 @@ func (p *BicepProvider) State(
 
 			asyncContext.SetProgress(&StateProgress{Message: "Normalizing output parameters", Timestamp: time.Now()})
 			state.Outputs = p.createOutputParameters(
-				deployment,
+				template.Outputs,
 				azcli.CreateDeploymentOutput(armDeployment.Properties.Outputs),
 			)
 
@@ -132,10 +123,12 @@ func (p *BicepProvider) Plan(
 ) *async.InteractiveTaskWithProgress[*DeploymentPlan, *DeploymentPlanningProgress] {
 	return async.RunInteractiveTaskWithProgress(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*DeploymentPlan, *DeploymentPlanningProgress]) {
+			p.console.ShowSpinner(ctx, "Creating a deployment plan", input.Step)
 			asyncContext.SetProgress(
 				&DeploymentPlanningProgress{Message: "Generating Bicep parameters file", Timestamp: time.Now()},
 			)
-			bicepTemplate, parameterFilePath, err := p.createParametersFile(ctx, asyncContext)
+
+			parameters, err := p.loadParameters(ctx, asyncContext)
 			if err != nil {
 				asyncContext.SetError(fmt.Errorf("creating parameters file: %w", err))
 				return
@@ -143,41 +136,34 @@ func (p *BicepProvider) Plan(
 
 			modulePath := p.modulePath()
 			asyncContext.SetProgress(&DeploymentPlanningProgress{Message: "Compiling Bicep template", Timestamp: time.Now()})
-			deployment, armTemplate, err := p.createDeployment(ctx, modulePath)
+			rawTemplate, template, err := p.compileBicep(ctx, modulePath)
 			if err != nil {
 				asyncContext.SetError(fmt.Errorf("creating template: %w", err))
 				return
 			}
 
-			// Merge parameter values from template
-			for key, param := range deployment.Parameters {
-				if bicepParam, has := bicepTemplate.Parameters[key]; has {
-					param.Value = bicepParam.Value
-					deployment.Parameters[key] = param
-				}
-			}
-
-			updated, err := p.ensureParameters(ctx, deployment)
+			configuredParameters, err := p.ensureParameters(ctx, asyncContext, template, parameters)
 			if err != nil {
 				asyncContext.SetError(err)
 				return
 			}
 
-			if updated {
-				if err := p.updateParametersFile(ctx, deployment, parameterFilePath); err != nil {
-					asyncContext.SetError(fmt.Errorf("updating deployment parameters: %w", err))
-					return
-				}
+			deployment, err := p.convertToDeployment(template)
+			if err != nil {
+				asyncContext.SetError(err)
+				return
 			}
 
 			result := DeploymentPlan{
 				Deployment: *deployment,
 				Details: BicepDeploymentDetails{
-					ParameterFilePath: parameterFilePath,
-					Template:          armTemplate,
+					Template:        rawTemplate,
+					TemplateOutputs: template.Outputs,
+					Parameters:      configuredParameters,
 				},
 			}
-
+			// remove the spinner with no message as no message is expected
+			p.console.StopSpinner(ctx, "", input.StepDone)
 			asyncContext.SetResult(&result)
 		})
 }
@@ -199,12 +185,13 @@ func (p *BicepProvider) Deploy(
 
 			// Report incremental progress
 			go func() {
-				resourceManager := infra.NewAzureResourceManager(ctx)
+				resourceManager := infra.NewAzureResourceManager(p.azCli)
 				progressDisplay := NewProvisioningProgressDisplay(resourceManager, p.console, scope)
 				// Make initial delay shorter to be more responsive in displaying initial progress
 				initialDelay := 3 * time.Second
 				regularDelay := 10 * time.Second
 				timer := time.NewTimer(initialDelay)
+				queryStartTime := time.Now()
 
 				for {
 					select {
@@ -212,14 +199,12 @@ func (p *BicepProvider) Deploy(
 						timer.Stop()
 						return
 					case <-timer.C:
-						progressReport, err := progressDisplay.ReportProgress(ctx)
-						if err != nil {
+						if progressReport, err := progressDisplay.ReportProgress(ctx, &queryStartTime); err == nil {
+							asyncContext.SetProgress(progressReport)
+						} else {
 							// We don't want to fail the whole deployment if a progress reporting error occurs
 							log.Printf("error while reporting progress: %s", err.Error())
-							continue
 						}
-
-						asyncContext.SetProgress(progressReport)
 
 						timer.Reset(regularDelay)
 					}
@@ -227,10 +212,10 @@ func (p *BicepProvider) Deploy(
 			}()
 
 			// Start the deployment
+			p.console.ShowSpinner(ctx, "Creating/Updating resources", input.Step)
 			bicepDeploymentData := pd.Details.(BicepDeploymentDetails)
-			deployResult, err := p.deployModule(
-				ctx, scope, bicepDeploymentData.Template, bicepDeploymentData.ParameterFilePath)
 
+			deployResult, err := p.deployModule(ctx, scope, bicepDeploymentData.Template, bicepDeploymentData.Parameters)
 			if err != nil {
 				asyncContext.SetError(err)
 				return
@@ -238,7 +223,7 @@ func (p *BicepProvider) Deploy(
 
 			deployment := pd.Deployment
 			deployment.Outputs = p.createOutputParameters(
-				&pd.Deployment,
+				bicepDeploymentData.TemplateOutputs,
 				azcli.CreateDeploymentOutput(deployResult.Properties.Outputs),
 			)
 
@@ -297,6 +282,15 @@ func (p *BicepProvider) Destroy(
 				return
 			}
 
+			asyncContext.SetProgress(
+				&DestroyProgress{Message: "Getting API Management Services to purge", Timestamp: time.Now()},
+			)
+			apiManagements, err := p.getApiManagementsToPurge(ctx, groupedResources)
+			if err != nil {
+				asyncContext.SetError(fmt.Errorf("getting API managements to purge: %w", err))
+				return
+			}
+
 			if err := p.destroyResourceGroups(ctx, asyncContext, options, groupedResources, len(allResources)); err != nil {
 				asyncContext.SetError(fmt.Errorf("destroying resource groups: %w", err))
 				return
@@ -316,10 +310,17 @@ func (p *BicepProvider) Destroy(
 					return p.purgeAppConfigs(ctx, asyncContext, appConfigs, options)
 				},
 			}
-			purgeItem := []itemToPurge{keyVaultsPurge, appConfigsPurge}
+			aPIManagement := itemToPurge{
+				resourceType: "API Managements",
+				count:        len(apiManagements),
+				purge: func() error {
+					return p.purgeAPIManagement(ctx, asyncContext, apiManagements, options)
+				},
+			}
+			purgeItem := []itemToPurge{keyVaultsPurge, appConfigsPurge, aPIManagement}
 
 			if err := p.purgeItems(ctx, asyncContext, purgeItem, options); err != nil {
-				asyncContext.SetError(fmt.Errorf("purging key vaults or app configurations: %w", err))
+				asyncContext.SetError(fmt.Errorf("purging resources: %w", err))
 				return
 			}
 
@@ -338,7 +339,7 @@ func (p *BicepProvider) Destroy(
 }
 
 func (p *BicepProvider) getResourceGroups(ctx context.Context) ([]string, error) {
-	resourceManager := infra.NewAzureResourceManager(ctx)
+	resourceManager := infra.NewAzureResourceManager(p.azCli)
 	resourceGroups, err := resourceManager.GetResourceGroupsForDeployment(ctx, p.env.GetSubscriptionId(), p.env.GetEnvName())
 	if err != nil {
 		return []string{}, err
@@ -356,7 +357,7 @@ func (p *BicepProvider) getAllResources(
 	for _, resourceGroup := range resourceGroups {
 		groupResources, err := p.azCli.ListResourceGroupResources(ctx, p.env.GetSubscriptionId(), resourceGroup, nil)
 		if err != nil {
-			return allResources, nil
+			return allResources, err
 		}
 
 		allResources[resourceGroup] = groupResources
@@ -479,13 +480,13 @@ func (p *BicepProvider) purgeItems(
 		if err != nil {
 			return err
 		}
-
-		for _, item := range items {
-			if err := item.purge(); err != nil {
-				return fmt.Errorf("failed to purge %s: %w", item.resourceType, err)
-			}
+	}
+	for _, item := range items {
+		if err := item.purge(); err != nil {
+			return fmt.Errorf("failed to purge %s: %w", item.resourceType, err)
 		}
 	}
+
 	return nil
 }
 
@@ -498,7 +499,7 @@ func (p *BicepProvider) getKeyVaults(
 	for resourceGroup, groupResources := range groupedResources {
 		for _, resource := range groupResources {
 			if resource.Type == string(infra.AzureResourceTypeKeyVault) {
-				vault, err := p.azCli.GetKeyVault(ctx, p.env.GetSubscriptionId(), resourceGroup, resource.Name)
+				vault, err := p.azCli.GetKeyVault(ctx, azure.SubscriptionFromRID(resource.Id), resourceGroup, resource.Name)
 				if err != nil {
 					return nil, fmt.Errorf("listing key vault %s properties: %w", resource.Name, err)
 				}
@@ -562,7 +563,7 @@ func (p *BicepProvider) purgeKeyVaults(
 
 		asyncContext.SetProgress(&progressReport)
 
-		err := p.azCli.PurgeKeyVault(ctx, p.env.GetSubscriptionId(), keyVault.Name, keyVault.Location)
+		err := p.azCli.PurgeKeyVault(ctx, azure.SubscriptionFromRID(keyVault.Id), keyVault.Name, keyVault.Location)
 		if err != nil {
 			return fmt.Errorf("purging key vault %s: %w", keyVault.Name, err)
 		}
@@ -585,7 +586,7 @@ func (p *BicepProvider) getAppConfigsToPurge(
 	for resourceGroup, groupResources := range groupedResources {
 		for _, resource := range groupResources {
 			if resource.Type == string(infra.AzureResourceTypeAppConfig) {
-				config, err := p.azCli.GetAppConfig(ctx, p.env.GetSubscriptionId(), resourceGroup, resource.Name)
+				config, err := p.azCli.GetAppConfig(ctx, azure.SubscriptionFromRID(resource.Id), resourceGroup, resource.Name)
 				if err != nil {
 					return nil, fmt.Errorf("listing app configuration %s properties: %w", resource.Name, err)
 				}
@@ -598,6 +599,30 @@ func (p *BicepProvider) getAppConfigsToPurge(
 	}
 
 	return configs, nil
+}
+
+func (p *BicepProvider) getApiManagementsToPurge(
+	ctx context.Context,
+	groupedResources map[string][]azcli.AzCliResource,
+) ([]*azcli.AzCliApim, error) {
+	apims := []*azcli.AzCliApim{}
+
+	for resourceGroup, groupResources := range groupedResources {
+		for _, resource := range groupResources {
+			if resource.Type == string(infra.AzureResourceTypeApim) {
+				apim, err := p.azCli.GetApim(ctx, azure.SubscriptionFromRID(resource.Id), resourceGroup, resource.Name)
+				if err != nil {
+					return nil, fmt.Errorf("listing api management service %s properties: %w", resource.Name, err)
+				}
+
+				//No filtering needed like it does in key vaults or app configuration
+				//as soft-delete happens for all Api Management resources
+				apims = append(apims, apim)
+			}
+		}
+	}
+
+	return apims, nil
 }
 
 // Azure AppConfigurations have a "soft delete" functionality (now enabled by default) where a configuration store
@@ -629,7 +654,7 @@ func (p *BicepProvider) purgeAppConfigs(
 
 		asyncContext.SetProgress(&progressReport)
 
-		err := p.azCli.PurgeAppConfig(ctx, p.env.GetSubscriptionId(), appConfig.Name, appConfig.Location)
+		err := p.azCli.PurgeAppConfig(ctx, azure.SubscriptionFromRID(appConfig.Id), appConfig.Name, appConfig.Location)
 		if err != nil {
 			return fmt.Errorf("purging app configuration %s: %w", appConfig.Name, err)
 		}
@@ -640,6 +665,42 @@ func (p *BicepProvider) purgeAppConfigs(
 				"%s app configuration %s",
 				output.WithErrorFormat("Purged"),
 				output.WithHighLightFormat(appConfig.Name),
+			),
+		)
+	}
+
+	return nil
+}
+
+func (p *BicepProvider) purgeAPIManagement(
+	ctx context.Context,
+	asyncContext *async.InteractiveTaskContextWithProgress[*DestroyResult, *DestroyProgress],
+	apims []*azcli.AzCliApim,
+	options DestroyOptions,
+) error {
+	for _, apim := range apims {
+		progressReport := DestroyProgress{
+			Timestamp: time.Now(),
+			Message: fmt.Sprintf(
+				"%s api management service %s",
+				output.WithErrorFormat("Purging"),
+				output.WithHighLightFormat(apim.Name),
+			),
+		}
+
+		asyncContext.SetProgress(&progressReport)
+
+		err := p.azCli.PurgeApim(ctx, azure.SubscriptionFromRID(apim.Id), apim.Name, apim.Location)
+		if err != nil {
+			return fmt.Errorf("purging api management service %s: %w", apim.Name, err)
+		}
+
+		p.console.Message(
+			ctx,
+			fmt.Sprintf(
+				"%s api management service %s",
+				output.WithErrorFormat("Purged"),
+				output.WithHighLightFormat(apim.Name),
 			),
 		)
 	}
@@ -668,43 +729,15 @@ func (p *BicepProvider) deleteDeployment(
 	return nil
 }
 
-// Converts the specified deployment to a bicep template parameters file and writes the file to disk.
-func (p *BicepProvider) updateParametersFile(ctx context.Context, deployment *Deployment, parameterFilePath string) error {
-	bicepFile := BicepTemplate{
-		Schema:         "https://schema.management.azure.com/schemas/2019-04-01/deploymentParameters.json#",
-		ContentVersion: "1.0.0.0",
-	}
-
-	parameters := make(map[string]BicepInputParameter)
-
-	for key, param := range deployment.Parameters {
-		parameters[key] = BicepInputParameter(param)
-	}
-
-	bicepFile.Parameters = parameters
-
-	bytes, err := json.MarshalIndent(bicepFile, "", "  ")
-	if err != nil {
-		return fmt.Errorf("marshaling parameters: %w", err)
-	}
-
-	err = os.WriteFile(parameterFilePath, bytes, osutil.PermissionFile)
-	if err != nil {
-		return fmt.Errorf("writing parameters file: %w", err)
-	}
-
-	return nil
-}
-
 func (p *BicepProvider) mapBicepTypeToInterfaceType(s string) ParameterType {
 	switch s {
-	case "String", "string":
+	case "String", "string", "secureString", "securestring":
 		return ParameterTypeString
 	case "Bool", "bool":
 		return ParameterTypeBoolean
 	case "Int", "int":
 		return ParameterTypeNumber
-	case "Object", "object":
+	case "Object", "object", "secureObject", "secureobject":
 		return ParameterTypeObject
 	case "Array", "array":
 		return ParameterTypeArray
@@ -716,12 +749,12 @@ func (p *BicepProvider) mapBicepTypeToInterfaceType(s string) ParameterType {
 // Creates a normalized view of the azure output parameters and resolves inconsistencies in the output parameter name
 // casings.
 func (p *BicepProvider) createOutputParameters(
-	template *Deployment,
+	templateOutputs azure.ArmTemplateOutputs,
 	azureOutputParams map[string]azcli.AzCliDeploymentOutput,
 ) map[string]OutputParameter {
-	canonicalOutputCasings := make(map[string]string, len(template.Outputs))
+	canonicalOutputCasings := make(map[string]string, len(templateOutputs))
 
-	for key := range template.Outputs {
+	for key := range templateOutputs {
 		canonicalOutputCasings[strings.ToLower(key)] = key
 	}
 
@@ -745,19 +778,17 @@ func (p *BicepProvider) createOutputParameters(
 	return outputParams
 }
 
-// createParametersFile will read the parameters file template for environment/module specified by Options,
-// do environment and command substitutions, and write out the result into a temporary file.
-//
-// The caller of the method is responsible for deleting the file when it is no longer necessary.
-func (p *BicepProvider) createParametersFile(
+// loadParameters reads the parameters file template for environment/module specified by Options,
+// doing environment and command substitutions, and returns the values.
+func (p *BicepProvider) loadParameters(
 	ctx context.Context,
 	asyncContext *async.InteractiveTaskContextWithProgress[*DeploymentPlan, *DeploymentPlanningProgress],
-) (*BicepTemplate, string, error) {
+) (map[string]azure.ArmParameterValue, error) {
 	parametersTemplateFilePath := p.parametersTemplateFilePath()
 	log.Printf("Reading parameters template file from: %s", parametersTemplateFilePath)
 	parametersBytes, err := os.ReadFile(parametersTemplateFilePath)
 	if err != nil {
-		return nil, "", fmt.Errorf("reading parameter file template: %w", err)
+		return nil, fmt.Errorf("reading parameter file template: %w", err)
 	}
 
 	replaced, err := envsubst.Eval(string(parametersBytes), func(name string) string {
@@ -767,69 +798,56 @@ func (p *BicepProvider) createParametersFile(
 		return os.Getenv(name)
 	})
 	if err != nil {
-		return nil, "", fmt.Errorf("substituting environment variables inside parameter file: %w", err)
+		return nil, fmt.Errorf("substituting environment variables inside parameter file: %w", err)
 	}
 
 	if cmdsubst.ContainsCommandInvocation(replaced, cmdsubst.SecretOrRandomPasswordCommandName) {
 		cmdExecutor := cmdsubst.NewSecretOrRandomPasswordExecutor(p.azCli)
 		replaced, err = cmdsubst.Eval(ctx, replaced, cmdExecutor)
 		if err != nil {
-			return nil, "", fmt.Errorf("substituting command output inside parameter file: %w", err)
+			return nil, fmt.Errorf("substituting command output inside parameter file: %w", err)
 		}
 	}
 
-	var bicepTemplate BicepTemplate
-	if err := json.Unmarshal([]byte(replaced), &bicepTemplate); err != nil {
-		return nil, "", fmt.Errorf("error unmarshalling Bicep template parameters: %w", err)
+	var armParameters azure.ArmParameterFile
+	if err := json.Unmarshal([]byte(replaced), &armParameters); err != nil {
+		return nil, fmt.Errorf("error unmarshalling Bicep template parameters: %w", err)
 	}
 
-	file, err := os.CreateTemp("", "deploymentParameters")
-	if err != nil {
-		return nil, "", err
-	}
-
-	_, err = file.Write([]byte(replaced))
-	file.Close() // Errors OK to ignore (see the docs) and we need to close the file whether Write() succeeded or not.
-	if err != nil {
-		os.Remove(file.Name()) // Error OK to ignore as well.
-		return nil, "", err
-	}
-
-	return &bicepTemplate, file.Name(), nil
+	return armParameters.Parameters, nil
 }
 
-// Creates the compiled template from the specified module path
-func (p *BicepProvider) createDeployment(ctx context.Context, modulePath string) (*Deployment, *azure.ArmTemplate, error) {
-	// Compile the bicep file into an ARM template we can create.
+func (p *BicepProvider) compileBicep(
+	ctx context.Context, modulePath string,
+) (azure.RawArmTemplate, azure.ArmTemplate, error) {
+
 	compiled, err := p.bicepCli.Build(ctx, modulePath)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to compile bicep template: %w", err)
+		return nil, azure.ArmTemplate{}, fmt.Errorf("failed to compile bicep template: %w", err)
 	}
 
-	// Fetch the parameters from the template and ensure we have a value for each one, otherwise
-	// prompt.
-	var bicepTemplate BicepTemplate
-	if err := json.Unmarshal([]byte(compiled), &bicepTemplate); err != nil {
-		log.Printf("failed un-marshaling compiled arm template to JSON (err: %v), template contents:\n%s", err, compiled)
-		return nil, nil, fmt.Errorf("error un-marshaling arm template from json: %w", err)
+	rawTemplate := azure.RawArmTemplate(compiled)
+
+	var template azure.ArmTemplate
+	if err := json.Unmarshal(rawTemplate, &template); err != nil {
+		log.Printf("failed unmarshalling compiled arm template to JSON (err: %v), template contents:\n%s", err, compiled)
+		return nil, azure.ArmTemplate{}, fmt.Errorf("failed unmarshalling arm template from json: %w", err)
 	}
 
-	compiledTemplate, err := p.convertToDeployment(bicepTemplate)
-	if err != nil {
-		return nil, nil, fmt.Errorf("converting from bicep to compiled template: %w", err)
-	}
-	arm := azure.ArmTemplate(compiled)
-	return compiledTemplate, &arm, nil
+	return rawTemplate, template, nil
 }
 
 // Converts a Bicep parameters file to a generic provisioning template
-func (p *BicepProvider) convertToDeployment(bicepTemplate BicepTemplate) (*Deployment, error) {
+func (p *BicepProvider) convertToDeployment(bicepTemplate azure.ArmTemplate) (*Deployment, error) {
 	template := Deployment{}
 	parameters := make(map[string]InputParameter)
 	outputs := make(map[string]OutputParameter)
 
 	for key, param := range bicepTemplate.Parameters {
-		parameters[key] = InputParameter(param)
+		parameters[key] = InputParameter{
+			Type:         string(p.mapBicepTypeToInterfaceType(param.Type)),
+			DefaultValue: param.DefaultValue,
+		}
 	}
 
 	for key, param := range bicepTemplate.Outputs {
@@ -847,23 +865,20 @@ func (p *BicepProvider) convertToDeployment(bicepTemplate BicepTemplate) (*Deplo
 
 // Deploys the specified Bicep module and parameters with the selected provisioning scope (subscription vs resource group)
 func (p *BicepProvider) deployModule(
-	ctx context.Context, scope infra.Scope, armTemplate *azure.ArmTemplate, parametersPath string) (
-	*armresources.DeploymentExtended, error) {
+	ctx context.Context,
+	scope infra.Scope,
+	armTemplate azure.RawArmTemplate,
+	armParameters azure.ArmParameters,
+) (*armresources.DeploymentExtended, error) {
+
+	if err := scope.Deploy(ctx, armTemplate, armParameters); err != nil {
+		return nil, fmt.Errorf("failed deploying: %w", err)
+	}
+
 	// We've seen issues where `Deploy` completes but for a short while after, fetching the deployment fails with a
 	// `DeploymentNotFound` error.
 	// Since other commands of ours use the deployment, let's try to fetch it here and if we fail with `DeploymentNotFound`,
 	// ignore this error, wait a short while and retry.
-
-	// deployments API takes an ARM template.
-	// At this point, the bicep file should have been already compiled and succeeded
-	// do panic if the application tries to deploy a bicep file without compiling it first
-	if armTemplate == nil {
-		log.Panic("deployModule: received nil for arm template.")
-	}
-
-	if err := scope.Deploy(ctx, armTemplate, parametersPath); err != nil {
-		return nil, fmt.Errorf("failed deploying: %w", err)
-	}
 
 	var deployment *armresources.DeploymentExtended
 	if err := retry.Do(ctx, retry.WithMaxRetries(10, retry.NewExponential(1*time.Second)), func(ctx context.Context) error {
@@ -906,57 +921,166 @@ func (p *BicepProvider) modulePath() string {
 }
 
 // Ensures the provisioning parameters are valid and prompts the user for input as needed
-func (p *BicepProvider) ensureParameters(ctx context.Context, deployment *Deployment) (bool, error) {
-	if len(deployment.Parameters) == 0 {
-		return false, nil
+func (p *BicepProvider) ensureParameters(
+	ctx context.Context,
+	asyncContext *async.InteractiveTaskContextWithProgress[*DeploymentPlan, *DeploymentPlanningProgress],
+	template azure.ArmTemplate,
+	parameters azure.ArmParameters,
+) (azure.ArmParameters, error) {
+	if len(template.Parameters) == 0 {
+		return azure.ArmParameters{}, nil
 	}
 
-	updatedParameters := false
-	for key, param := range deployment.Parameters {
-		// If this parameter has a default, then there is no need for us to configure it
-		if param.HasDefaultValue() {
+	configuredParameters := make(azure.ArmParameters, len(template.Parameters))
+
+	sortedKeys := maps.Keys(template.Parameters)
+	slices.Sort(sortedKeys)
+
+	configModified := false
+
+	for _, key := range sortedKeys {
+		param := template.Parameters[key]
+
+		// If a value is explicitly configured via a parameters file, use it.
+		if v, has := parameters[key]; has {
+			configuredParameters[key] = azure.ArmParameterValue{
+				Value: armParameterFileValue(p.mapBicepTypeToInterfaceType(param.Type), v.Value),
+			}
 			continue
 		}
-		if !param.HasValue() {
-			userValue, err := p.console.Prompt(ctx, input.ConsoleOptions{
-				Message: fmt.Sprintf("Please enter a value for the '%s' deployment parameter:", key),
-			})
 
-			if err != nil {
-				return false, fmt.Errorf("prompting for deployment parameter: %w", err)
+		// If this parameter has a default, then there is no need for us to configure it.
+		if param.DefaultValue != nil {
+			continue
+		}
+
+		// This required parameter was not in parameters file - see if we stored a value in config from an earlier
+		// prompt and if so use it.
+		configKey := fmt.Sprintf("infra.parameters.%s", key)
+
+		if v, has := p.env.Config.Get(configKey); has {
+
+			if !isValueAssignableToParameterType(p.mapBicepTypeToInterfaceType(param.Type), v) {
+				// The saved value is no longer valid (perhaps the user edited their template to change the type of a)
+				// parameter and then re-ran `azd provision`. Forget the saved value (if we can) and prompt for a new one.
+				_ = p.env.Config.Unset("infra.parameters.%s")
 			}
 
-			param.Value = userValue
+			configuredParameters[key] = azure.ArmParameterValue{
+				Value: v,
+			}
+			continue
+		}
 
+		// Otherwise, prompt for the value.
+		value, err := p.promptForParameter(ctx, key, param)
+		if err != nil {
+			return nil, fmt.Errorf("prompting for value: %w", err)
+		}
+
+		if !param.Secure() {
 			saveParameter, err := p.console.Confirm(ctx, input.ConsoleOptions{
 				Message: "Save the value in the environment for future use",
 			})
 
 			if err != nil {
-				return false, fmt.Errorf("prompting to save deployment parameter: %w", err)
+				return nil, fmt.Errorf("prompting to save deployment parameter: %w", err)
 			}
 
 			if saveParameter {
-				p.env.Values[key] = userValue
+				if err := p.env.Config.Set(configKey, value); err == nil {
+					configModified = true
+				} else {
+					p.console.Message(ctx, fmt.Sprintf("warning: failed to set value: %v", err))
+				}
 			}
+		}
 
-			updatedParameters = true
+		configuredParameters[key] = azure.ArmParameterValue{
+			Value: value,
 		}
 	}
 
-	return updatedParameters, nil
+	if configModified {
+		if err := p.env.Save(); err != nil {
+			p.console.Message(ctx, fmt.Sprintf("warning: failed to save configured values: %v", err))
+		}
+	}
+
+	return configuredParameters, nil
+}
+
+// Convert the ARM parameters file value into a value suitable for deployment
+func armParameterFileValue(paramType ParameterType, value any) any {
+	// Relax the handling of bool and number types to accept convertible strings
+	switch paramType {
+	case ParameterTypeBoolean:
+		if val, ok := value.(string); ok {
+			if boolVal, err := strconv.ParseBool(val); err == nil {
+				return boolVal
+			}
+		}
+	case ParameterTypeNumber:
+		if val, ok := value.(string); ok {
+			if intVal, err := strconv.ParseInt(val, 10, 64); err == nil {
+				return intVal
+			}
+		}
+	}
+
+	return value
+}
+
+func isValueAssignableToParameterType(paramType ParameterType, value any) bool {
+	switch paramType {
+	case ParameterTypeArray:
+		_, ok := value.([]any)
+		return ok
+	case ParameterTypeBoolean:
+		_, ok := value.(bool)
+		return ok
+	case ParameterTypeNumber:
+		switch t := value.(type) {
+		case int, int8, int16, int32, int64:
+			return true
+		case uint, uint8, uint16, uint32, uint64:
+			return true
+		case float32:
+			return float64(t) == math.Trunc(float64(t))
+		case float64:
+			return t == math.Trunc(t)
+		case json.Number:
+			_, err := t.Int64()
+			return err == nil
+		default:
+			return false
+		}
+	case ParameterTypeObject:
+		_, ok := value.(map[string]any)
+		return ok
+	case ParameterTypeString:
+		_, ok := value.(string)
+		return ok
+	default:
+		panic(fmt.Sprintf("unexpected type: %v", paramType))
+	}
 }
 
 // NewBicepProvider creates a new instance of a Bicep Infra provider
 func NewBicepProvider(
 	ctx context.Context,
+	azCli azcli.AzCli,
 	env *environment.Environment,
 	projectPath string,
 	infraOptions Options,
-) *BicepProvider {
-	azCli := azcli.GetAzCli(ctx)
-	bicepCli := bicep.GetBicepCli(ctx)
-	console := input.GetConsole(ctx)
+	commandRunner exec.CommandRunner,
+	console input.Console,
+	prompters Prompters,
+) (*BicepProvider, error) {
+	bicepCli, err := bicep.NewBicepCli(ctx, console, commandRunner)
+	if err != nil {
+		return nil, err
+	}
 
 	// Default to a module named "main" if not specified.
 	if strings.TrimSpace(infraOptions.Module) == "" {
@@ -970,14 +1094,24 @@ func NewBicepProvider(
 		console:     console,
 		bicepCli:    bicepCli,
 		azCli:       azCli,
-	}
+		prompters:   prompters,
+	}, nil
 }
 
 func init() {
 	err := RegisterProvider(
 		Bicep,
-		func(ctx context.Context, env *environment.Environment, projectPath string, options Options) (Provider, error) {
-			return NewBicepProvider(ctx, env, projectPath, options), nil
+		func(
+			ctx context.Context,
+			env *environment.Environment,
+			projectPath string,
+			options Options,
+			console input.Console,
+			azCli azcli.AzCli,
+			commandRunner exec.CommandRunner,
+			prompters Prompters,
+		) (Provider, error) {
+			return NewBicepProvider(ctx, azCli, env, projectPath, options, commandRunner, console, prompters)
 		},
 	)
 

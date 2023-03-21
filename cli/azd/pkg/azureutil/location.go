@@ -7,38 +7,51 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"sort"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
-	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
+	"golang.org/x/exp/slices"
 )
 
-type Locs []azcli.AzCliLocation
-
-func (s Locs) Len() int { return len(s) }
-func (s Locs) Less(i, j int) bool {
-	return strings.Compare(strings.ToLower(s[i].RegionalDisplayName), strings.ToLower(s[j].RegionalDisplayName)) < 0
+// PromptLocation asks the user to select a location from a list of supported azure locations for a given subscription.
+func PromptLocation(
+	ctx context.Context, subscriptionId string, message string, help string, console input.Console,
+	accountManager account.Manager,
+) (string, error) {
+	return PromptLocationWithFilter(ctx, subscriptionId, message, help, console, accountManager,
+		func(_ account.Location) bool {
+			return true
+		})
 }
-func (s Locs) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
 
-// PromptLocation asks the user to select a location from a list of supported azure location
-func PromptLocation(ctx context.Context, env *environment.Environment, message string) (string, error) {
-	accountManager, err := account.NewManager(config.NewManager(), azcli.GetAzCli(ctx))
-	if err != nil {
-		return "", fmt.Errorf("failed creating account manager: %w", err)
-	}
-	console := input.GetConsole(ctx)
-
-	locations, err := accountManager.GetLocations(ctx, env.GetSubscriptionId())
+func PromptLocationWithFilter(
+	ctx context.Context,
+	subscriptionId string,
+	message string,
+	help string,
+	console input.Console,
+	accountManager account.Manager,
+	shouldDisplay func(account.Location) bool,
+) (string, error) {
+	allLocations, err := accountManager.GetLocations(ctx, subscriptionId)
 	if err != nil {
 		return "", fmt.Errorf("listing locations: %w", err)
 	}
 
-	sort.Sort(Locs(locations))
+	locations := make([]account.Location, 0, len(allLocations))
+
+	for _, location := range allLocations {
+		if shouldDisplay(location) {
+			locations = append(locations, location)
+		}
+	}
+
+	slices.SortFunc(locations, func(a, b account.Location) bool {
+		return strings.Compare(
+			strings.ToLower(a.RegionalDisplayName), strings.ToLower(b.RegionalDisplayName)) < 0
+	})
 
 	// Allow the environment variable `AZURE_LOCATION` to control the default value for the location
 	// selection.
@@ -46,12 +59,7 @@ func PromptLocation(ctx context.Context, env *environment.Environment, message s
 
 	// If no location is set in the process environment, see what the azd config default is.
 	if defaultLocation == "" {
-		defaultConfig, err := accountManager.GetAccountDefaults(ctx)
-		if err != nil {
-			return "", fmt.Errorf("failed retrieving azd defaults. %w", err)
-		}
-
-		defaultLocation = defaultConfig.DefaultLocation.Name
+		defaultLocation = accountManager.GetDefaultLocationName(ctx)
 	}
 
 	var defaultOption string
@@ -68,6 +76,7 @@ func PromptLocation(ctx context.Context, env *environment.Environment, message s
 
 	selectedIndex, err := console.Select(ctx, input.ConsoleOptions{
 		Message:      message,
+		Help:         help,
 		Options:      locationOptions,
 		DefaultValue: defaultOption,
 	})

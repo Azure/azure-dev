@@ -1,7 +1,10 @@
 AlecAivazis
 alexandair
+benbjohnson
 blang
+bradleyjkemp
 briandowns
+cobey
 ellismg
 envsubst
 fatih
@@ -11,9 +14,10 @@ joho
 karolz
 mattn
 multierr
+nicksnyder
 otiai10
 pbnj
 sethvargo
 stretchr
 theckman
-benbjohnson
+tonybaloney

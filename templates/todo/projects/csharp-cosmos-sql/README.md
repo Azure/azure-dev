@@ -1,6 +1,29 @@
+---
+page_type: sample
+languages:
+- azdeveloper
+- aspx-csharp
+- csharp
+- bicep
+- typescript
+- html
+products:
+- azure
+- azure-cosmos-db
+- azure-app-service
+- azure-monitor
+- azure-pipelines
+- aspnet-core
+urlFragment: todo-csharp-cosmos-sql
+name: Web Application with a C# API and Azure Cosmos DB SQL API
+description: A complete ToDo app with C# API and Azure Cosmos DB SQL API for storage. Uses Azure Developer CLI (azd) to build, deploy, and monitor
+---
+<!-- YAML front-matter schema: https://review.learn.microsoft.com/en-us/help/contribute/samples/process/onboarding?branch=main#supported-metadata-fields-for-readmemd -->
+
 # ToDo Application with a C# API and Azure Cosmos DB SQL API
 
-[![Open in Remote - Containers](https://img.shields.io/static/v1?label=Remote%20-%20Containers&message=Open&color=blue&logo=visualstudiocode)](https://vscode.dev/redirect?url=vscode://ms-vscode-remote.remote-containers/cloneInVolume?url=https://github.com/azure-samples/todo-csharp-cosmos-sql)
+[![Open in GitHub Codespaces](https://img.shields.io/static/v1?style=for-the-badge&label=GitHub+Codespaces&message=Open&color=brightgreen&logo=github)](https://github.com/codespaces/new?hide_repo_select=true&ref=main&repo=446558288&machine=standardLinux32gb&devcontainer_path=.devcontainer%2Fdevcontainer.json&location=WestUs2)
+[![Open in Remote - Containers](https://img.shields.io/static/v1?style=for-the-badge&label=Remote%20-%20Containers&message=Open&color=blue&logo=visualstudiocode)](https://vscode.dev/redirect?url=vscode://ms-vscode-remote.remote-containers/cloneInVolume?url=https://github.com/azure-samples/todo-csharp-cosmos-sql)
 
 A complete ToDo application that includes everything you need to build, deploy, and monitor an Azure solution. This application uses the Azure Developer CLI (azd) to get you up and running on Azure quickly, React.js for the Web application, C# for the API, Azure Cosmos DB SQL API for storage, and Azure Monitor for monitoring and logging. It includes application code, tools, and pipelines that serve as a foundation from which you can build upon and customize when creating your own solutions.
 
@@ -111,10 +134,6 @@ This template includes a GitHub Actions pipeline configuration file that will de
 
 Setting up this pipeline requires you to give GitHub permission to deploy to Azure on your behalf, which is done via a Service Principal stored in a GitHub secret named `AZURE_CREDENTIALS`. The `azd pipeline config` command will automatically create a service principal for you. The command also helps to create a private GitHub repository and pushes code to the newly created repo.
 
-Before you call the `azd pipeline config` command, you'll need to install the following:
-
-- [GitHub CLI (2.3+)](https://github.com/cli/cli)
-
 Run the following command to set up a GitHub Action:
 
 ```bash
@@ -161,6 +180,33 @@ When you are done, you can delete all the Azure resources created with this temp
 azd down
 ```
 
+### Enable Additional Features
+
+#### Enable [Azure API Management](https://learn.microsoft.com/azure/api-management/)
+
+This template is prepared to use Azure API Management (aka APIM) for backend API protection and observability. APIM supports the complete API lifecycle and abstract backend complexity from API consumers.
+
+To use APIM on this template you just need to set the environment variable with the following command:
+
+```bash
+azd env set USE_APIM true
+```
+And then execute `azd up` to provision and deploy. No worries if you already did `azd up`! You can set the `USE_APIM` environment variable at anytime and then just repeat the `azd up` command to run the incremental deployment.
+
+Here's the high level architecture diagram when APIM is used:
+
+<img src="assets/resources-with-apim.png" width="60%" alt="Application architecture diagram with APIM"/>
+
+The frontend will be configured to make API requests through APIM instead of calling the backend directly, so that the following flow gets executed:
+
+1. APIM receives the frontend request, applies the configured policy to enable CORS, validates content and limits concurrency. Follow this [guide](https://learn.microsoft.com/azure/api-management/api-management-howto-policies) to understand how to customize the policy.  
+1. If there are no errors, the request is forwarded to the backend and then the backend response is sent back to the frontend.
+1. APIM emits logs, metrics, and traces for monitoring, reporting, and troubleshooting on every execution. Follow this [guide](https://learn.microsoft.com/azure/api-management/api-management-howto-use-azure-monitor) to visualize, query, and take actions on the metrics or logs coming from APIM.
+
+> NOTE:
+>
+> By default, this template uses the Consumption tier that is a lightweight and serverless version of API Management service, billed per execution. Please check the [pricing page](https://azure.microsoft.com/pricing/details/api-management/) for more details.
+
 ### Additional azd commands
 
 The Azure Developer CLI includes many other commands to help with your Azure development experience. You can view these commands at the terminal by running `azd help`. You can also view the full list of commands on our [Azure Developer CLI command](https://aka.ms/azure-dev/ref) page.
@@ -173,7 +219,7 @@ Sometimes, things go awry. If you happen to run into issues, then please review 
 
 ### Roles
 
-This template creates a [managed identity](https://docs.microsoft.com/azure/active-directory/managed-identities-azure-resources/overview) for your app inside your Azure Active Directory tenant, and it is used to authenticate your app with Azure and other services that support Azure AD authentication like Key Vault via access policies. You will see principalId referenced in the infrastructure as code files, that refers to the id of the currently logged in Azure CLI user, which will be granted access policies and permissions to run the application locally. To view your managed identity in the Azure Portal, follow these [steps](https://docs.microsoft.com/azure/active-directory/managed-identities-azure-resources/how-to-view-managed-identity-service-principal-portal).
+This template creates a [managed identity](https://docs.microsoft.com/azure/active-directory/managed-identities-azure-resources/overview) for your app inside your Azure Active Directory tenant, and it is used to authenticate your app with Azure and other services that support Azure AD authentication like Key Vault via access policies. You will see principalId referenced in the infrastructure as code files, that refers to the id of the currently logged in Azure Developer CLI user, which will be granted access policies and permissions to run the application locally. To view your managed identity in the Azure Portal, follow these [steps](https://docs.microsoft.com/azure/active-directory/managed-identities-azure-resources/how-to-view-managed-identity-service-principal-portal).
 
 ### Key Vault
 

@@ -9,6 +9,7 @@ const (
 	ShowTypeDotNet ShowType = "dotnet"
 	ShowTypePython ShowType = "python"
 	ShowTypeNode   ShowType = "node"
+	ShowTypeJava   ShowType = "java"
 )
 
 // ShowResult is the contract for the output of `azd show`

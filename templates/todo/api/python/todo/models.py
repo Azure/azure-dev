@@ -7,7 +7,6 @@ from azure.keyvault.secrets import SecretClient
 from beanie import Document, PydanticObjectId
 from pydantic import BaseModel, BaseSettings
 
-
 def keyvault_name_as_attr(name: str) -> str:
     return name.replace("-", "_").upper()
 

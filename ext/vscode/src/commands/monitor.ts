@@ -7,6 +7,8 @@ import { localize } from '../localize';
 import { createAzureDevCli } from '../utils/azureDevCli';
 import { quickPickWorkspaceFolder } from '../utils/quickPickWorkspaceFolder';
 import { spawnAsync } from '../utils/process';
+import { isTreeViewModel, TreeViewModel } from '../utils/isTreeViewModel';
+import { AzureDevCliApplication } from '../views/workspace/AzureDevCliApplication';
 
 const MonitorChoices: IAzureQuickPickItem<string>[] = [
     {
@@ -24,7 +26,8 @@ const MonitorChoices: IAzureQuickPickItem<string>[] = [
     }
 ];
 
-export async function monitor(context: IActionContext, selectedFile?: vscode.Uri): Promise<void> {
+export async function monitor(context: IActionContext, selectedItem?: vscode.Uri | TreeViewModel): Promise<void> {
+    const selectedFile = isTreeViewModel(selectedItem) ? selectedItem.unwrap<AzureDevCliApplication>().context.configurationFile : selectedItem;
     let folder: vscode.WorkspaceFolder | undefined = (selectedFile ? vscode.workspace.getWorkspaceFolder(selectedFile) : undefined);
     if (!folder) {
         folder = await quickPickWorkspaceFolder(context, localize('azure-dev.commands.util.needWorkspaceFolder', "To run '{0}' command you must first open a folder or workspace in VS Code", 'monitor'));

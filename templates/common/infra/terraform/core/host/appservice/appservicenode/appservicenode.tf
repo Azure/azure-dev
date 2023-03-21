@@ -1,12 +1,12 @@
 terraform {
   required_providers {
     azurerm = {
-      version = "~>3.18.0"
+      version = "~>3.47.0"
       source  = "hashicorp/azurerm"
     }
     azurecaf = {
       source  = "aztfmod/azurecaf"
-      version = "~>1.2.15"
+      version = "~>1.2.24"
     }
   }
 }
@@ -35,6 +35,7 @@ resource "azurerm_linux_web_app" "web" {
     application_stack {
       node_version = var.node_version
     }
+    health_check_path = var.health_check_path
   }
 
   app_settings = var.app_settings

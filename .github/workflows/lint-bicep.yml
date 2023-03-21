@@ -1,11 +1,19 @@
 on:
   workflow_call:
+  pull_request:
+    branches: 
+      - main
+    paths:
+      - eng/scripts/Test-BicepLint.ps1
+      - .github/workflows/lint-bicep.yml
+    
+
 
 jobs:
   bicep-lint:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - name: Lint .bicep files
-        run: $ErrorActionPreference='Continue'; eng/scripts/Test-BicepLint.ps1
+        run: $ErrorActionPreference='Continue'; eng/scripts/Test-BicepLint.ps1 -Verbose
         shell: pwsh

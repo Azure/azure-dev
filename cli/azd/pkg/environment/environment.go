@@ -4,11 +4,14 @@
 package environment
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/joho/godotenv"
@@ -33,17 +36,26 @@ const TenantIdEnvVarName = "AZURE_TENANT_ID"
 // to.
 const ContainerRegistryEndpointEnvVarName = "AZURE_CONTAINER_REGISTRY_ENDPOINT"
 
+// AksClusterEnvVarName is the name of they key used to store the endpoint of the AKS cluster to push to.
+const AksClusterEnvVarName = "AZURE_AKS_CLUSTER_NAME"
+
 // ResourceGroupEnvVarName is the name of the azure resource group that should be used for deployments
 const ResourceGroupEnvVarName = "AZURE_RESOURCE_GROUP"
 
 type Environment struct {
 	// Values is a map of setting names to values.
 	Values map[string]string
-	// File is a path to the file that backs this environment. If empty, the Environment
+
+	// Config is environment specific config
+	Config config.Config
+
+	// File is a path to the directory that backs this environment. If empty, the Environment
 	// will not be persisted when `Save` is called. This allows the zero value to be used
 	// for testing.
-	File string
+	Root string
 }
+
+type EnvironmentResolver func() (*Environment, error)
 
 // Same restrictions as a deployment name (ref:
 // https://docs.microsoft.com/azure/azure-resource-manager/management/resource-name-rules#microsoftresources)
@@ -53,41 +65,43 @@ func IsValidEnvironmentName(name string) bool {
 	return environmentNameRegexp.MatchString(name)
 }
 
-// FromFile loads an environment from a file on disk. On error,
+// FromRoot loads an environment located in a directory. On error,
 // an valid empty environment file, configured to persist its contents
-// to file, is returned.
-func FromFile(file string) (*Environment, error) {
+// to this directory, is returned.
+func FromRoot(root string) (*Environment, error) {
+	if _, err := os.Stat(root); err != nil {
+		return EmptyWithRoot(root), err
+	}
+
 	env := &Environment{
-		File:   file,
-		Values: make(map[string]string),
+		Root: root,
 	}
 
-	e, err := godotenv.Read(file)
-	if err != nil {
-		env.Values = make(map[string]string)
-		return env, fmt.Errorf("can't read %s: %w", file, err)
+	if err := env.Reload(); err != nil {
+		return EmptyWithRoot(root), err
 	}
 
-	env.Values = e
 	return env, nil
 }
 
 func GetEnvironment(azdContext *azdcontext.AzdContext, name string) (*Environment, error) {
-	return FromFile(azdContext.GetEnvironmentFilePath(name))
+	return FromRoot(azdContext.EnvironmentRoot(name))
 }
 
-// EmptyWithFile returns an empty environment, which will be persisted
-// to a given file when saved.
-func EmptyWithFile(file string) *Environment {
+// EmptyWithRoot returns an empty environment, which will be persisted
+// to a given directory when saved.
+func EmptyWithRoot(root string) *Environment {
 	return &Environment{
-		File:   file,
+		Root:   root,
 		Values: make(map[string]string),
+		Config: config.NewConfig(nil),
 	}
 }
 
 func Ephemeral() *Environment {
 	return &Environment{
 		Values: make(map[string]string),
+		Config: config.NewConfig(nil),
 	}
 }
 
@@ -107,21 +121,73 @@ func EphemeralWithValues(name string, values map[string]string) *Environment {
 	return env
 }
 
-// If `File` is set, Save writes the current contents of the environment to
-// the given file, creating it and any intermediate directories as needed.
+// Getenv fetches a key from e.Values, falling back to os.Getenv if it is not present.
+func (e *Environment) Getenv(key string) string {
+	if v, has := e.Values[key]; has {
+		return v
+	}
+
+	return os.Getenv(key)
+}
+
+// Reloads environment variables and configuration
+func (e *Environment) Reload() error {
+	// Reload env values
+	envPath := filepath.Join(e.Root, azdcontext.DotEnvFileName)
+	if envMap, err := godotenv.Read(envPath); errors.Is(err, os.ErrNotExist) {
+		e.Values = make(map[string]string)
+	} else if err != nil {
+		return fmt.Errorf("loading .env: %w", err)
+	} else {
+		e.Values = envMap
+	}
+
+	// Reload env config
+	cfgPath := filepath.Join(e.Root, azdcontext.ConfigFileName)
+	cfgMgr := config.NewManager()
+	if cfg, err := cfgMgr.Load(cfgPath); errors.Is(err, os.ErrNotExist) {
+		e.Config = config.NewConfig(nil)
+	} else if err != nil {
+		return fmt.Errorf("loading config: %w", err)
+	} else {
+		e.Config = cfg
+	}
+
+	return nil
+}
+
+// If `Root` is set, Save writes the current contents of the environment to
+// the given directory, creating it and any intermediate directories as needed.
 func (e *Environment) Save() error {
-	if e.File == "" {
+	if e.Root == "" {
 		return nil
 	}
 
-	err := os.MkdirAll(filepath.Dir(e.File), osutil.PermissionDirectory)
+	// Update configuration
+	cfgMgr := config.NewManager()
+	if err := cfgMgr.Save(e.Config, filepath.Join(e.Root, azdcontext.ConfigFileName)); err != nil {
+		return fmt.Errorf("saving config: %w", err)
+	}
+
+	// Cache current values & reload to get any new env vars
+	currentValues := e.Values
+	if err := e.Reload(); err != nil {
+		return fmt.Errorf("failed reloading env vars, %w", err)
+	}
+
+	// Overlay current values before saving
+	for key, value := range currentValues {
+		e.Values[key] = value
+	}
+
+	err := os.MkdirAll(e.Root, osutil.PermissionDirectory)
 	if err != nil {
 		return fmt.Errorf("failed to create a directory: %w", err)
 	}
 
-	err = godotenv.Write(e.Values, e.File)
+	err = godotenv.Write(e.Values, filepath.Join(e.Root, azdcontext.DotEnvFileName))
 	if err != nil {
-		return fmt.Errorf("can't write '%s': %w", e.File, err)
+		return fmt.Errorf("saving .env: %w", err)
 	}
 
 	return nil
@@ -161,4 +227,29 @@ func (e *Environment) SetPrincipalId(principalID string) {
 
 func (e *Environment) GetPrincipalId() string {
 	return e.Values[PrincipalIdEnvVarName]
+}
+
+func normalize(key string) string {
+	return strings.ReplaceAll(strings.ToUpper(key), "-", "_")
+}
+
+// Returns the value of a service-namespaced property in the environment.
+func (e *Environment) GetServiceProperty(serviceName string, propertyName string) string {
+	return e.Values[fmt.Sprintf("SERVICE_%s_%s", normalize(serviceName), propertyName)]
+}
+
+// Sets the value of a service-namespaced property in the environment.
+func (e *Environment) SetServiceProperty(serviceName string, propertyName string, value string) {
+	e.Values[fmt.Sprintf("SERVICE_%s_%s", normalize(serviceName), propertyName)] = value
+}
+
+// Creates a slice of key value pairs like `KEY=VALUE` that
+// can be used to pass into command runner or similar constructs
+func (e *Environment) Environ() []string {
+	envVars := []string{}
+	for k, v := range e.Values {
+		envVars = append(envVars, fmt.Sprintf("%s=%s", k, v))
+	}
+
+	return envVars
 }

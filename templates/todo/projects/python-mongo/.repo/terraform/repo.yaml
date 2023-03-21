@@ -35,7 +35,7 @@ repo:
         to: ./modules/cosmos
         patterns:
           - "**/*.tf"
-      
+
       - from: ../../../../../../common/infra/terraform/core/host/appserviceplan
         to: ./modules/appserviceplan
         patterns:
@@ -51,6 +51,16 @@ repo:
         patterns:
           - "**/*.tf"
 
+      - from: ../../../../../../common/infra/terraform/core/gateway/apim
+        to: ./modules/apim
+        patterns:
+          - "**/*.tf"
+
+      - from: ../../../../../../common/infra/terraform/core/gateway/apim-api
+        to: ./modules/apim-api
+        patterns:
+          - "**/*.tf"
+
       - from: ../../api/python
         to: ./src/api
         patterns:
@@ -60,26 +70,11 @@ repo:
         to: ./src/web
         patterns:
           - "**/azure.@(yml|yaml)"
-      
-      - from: "PLACEHOLDERIACTOOLS"
-        to: "- [Terraform CLI](https://aka.ms/azure-dev/terraform-install)"
-        patterns:
-          - "README.md"
-      
-      - from: "PLACEHOLDER_TITLE"
-        to: "ToDo Application with a Python API and Azure Cosmos DB API for MongoDB on Azure App Service (Terraform)"
-        patterns:
-          - "README.md"
-      
-      - from: "PLACEHOLDER_DESCRIPTION"
-        to: "using Terraform as the IaC provider"
-        patterns:
-          - "README.md"
 
-      - from: "todo-python-mongo"
-        to: "todo-python-mongo-terraform"
+      - from: ../../../../api/common/openapi.yaml
+        to: ../../../src/api/openapi.yaml
         patterns:
-          - "README.md"
+          - "apim-api.tf"
 
   assets:
     # Common assets
@@ -124,7 +119,7 @@ repo:
 
     - from: ../../../../../common/infra/terraform/core/monitor/loganalytics
       to: ./infra/modules/loganalytics
-    
+
     - from: ../../../../../common/infra/terraform/core/security/keyvault
       to: ./infra/modules/keyvault
 
@@ -136,9 +131,18 @@ repo:
 
     - from: ../../../../../common/infra/terraform/core/host/appservice/appservicenode
       to: ./infra/modules/appservicenode
-    
+
     - from: ../../../../../common/infra/terraform/core/host/appservice/appservicepython
       to: ./infra/modules/appservicepython
+
+    - from: ../../../../../common/infra/shared/gateway/apim
+      to: ./infra/modules/apim-api
+
+    - from: ../../../../../common/infra/terraform/core/gateway/apim
+      to: ./infra/modules/apim
+
+    - from: ../../../../../common/infra/terraform/core/gateway/apim-api
+      to: ./infra/modules/apim-api
 
     # .devcontainer common (devcontainer.json)
     - from: ../../../../../common/.devcontainer/devcontainer.json/python/terraform
@@ -155,6 +159,10 @@ repo:
     # Tests common
     - from: ../../../../common/tests
       to: ./tests
+
+    # Auth Python common
+    - from: ../../../../common/auth/py
+      to: ./src/api/todo
 
     # Python API
     - from: ../../../../api/python
@@ -177,3 +185,7 @@ repo:
     # Azure.yml
     - from: ./azure.yaml
       to: ./azure.yaml
+
+    # README.md
+    - from: ./README.md
+      to: ./README.md

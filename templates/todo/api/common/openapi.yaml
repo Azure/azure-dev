@@ -62,7 +62,7 @@ components:
       in: path
       required: true
       name: itemId
-      description: The Todo list unique identifier
+      description: The Todo item unique identifier
       schema:
         type: string
     state:
@@ -79,6 +79,7 @@ components:
       description: The max number of items to returns in a result
       schema:
         type: number
+        default: 20
     skip:
       in: query
       required: false
@@ -86,6 +87,7 @@ components:
       description: The number of items to skip within the results
       schema:
         type: number
+        default: 0
 
   requestBodies:
     TodoList:
@@ -113,6 +115,7 @@ components:
       content:
         application/json:
           schema:
+            type: array
             items:
               $ref: "#/components/schemas/TodoList"
     TodoItem:
@@ -126,6 +129,7 @@ components:
       content:
         application/json:
           schema:
+            type: array
             items:
               $ref: "#/components/schemas/TodoItem"
 
@@ -179,6 +183,8 @@ paths:
       responses:
         200:
           $ref: "#/components/responses/TodoList"
+        404:
+          description: Todo list not found
         400:
           description: Todo list is invalid
     delete:
@@ -288,6 +294,7 @@ paths:
       tags:
         - Items
       requestBody:
+        description: unique identifiers of the Todo items to update
         content:
           application/json:
             schema:

@@ -24,11 +24,34 @@ For advanced install scenarios see [Azure Developer CLI Installer Scripts](cli/i
 
 ### Windows
 
+#### Windows Package Manager (winget)
+
+```powershell
+winget install microsoft.azd
+```
+
+#### Chocolatey
+
+```powershell
+choco install azd
+```
+
+#### Install script
+
 ```powershell
 powershell -ex AllSigned -c "Invoke-RestMethod 'https://aka.ms/install-azd.ps1' | Invoke-Expression"
 ```
+### MacOS
 
-### Linux/MacOS
+#### Homebrew
+
+```bash
+brew tap azure/azd && brew install azd
+```
+
+If using `brew` to upgrade `azd` from a version not installed using `brew`, remove the existing version of `azd` using the uninstall script (if installed to the default location) or by deleting the `azd` binary manually.
+
+### Linux
 
 ```
 curl -fsSL https://aka.ms/install-azd.sh | bash
@@ -45,15 +68,27 @@ For example, to get the instructions for `bash` run `azd completion bash --help`
 
 ### Windows
 
+#### Uninstalling 0.5.0-beta.1 and later
+
+The Azure Developer CLI uses MSI to install on Windows. Use the "Add or remove programs" dialog in Windows to remove the "Azure Developer CLI" application. If installed using a package manager like winget or choco, uninstall using the package manager's uninstall command.
+
+#### Uninstalling version 0.4.0-beta.1 and earlier
+
+Use this PowerShell script to uninstall Azure Developer CLI 0.4.0-beta.1 and earlier.
+
 ```powershell
 powershell -ex AllSigned -c "Invoke-RestMethod 'https://aka.ms/uninstall-azd.ps1' | Invoke-Expression"
 ```
 
 ### Linux/MacOS
 
+If installed using the script, uninstall using this script.
+
 ```
 curl -fsSL https://aka.ms/uninstall-azd.sh | bash
 ```
+
+If installed using a package manager, uninstall using the package manager's uninstall command.
 
 ## Data Collection
 
@@ -84,3 +119,6 @@ contact [opencode@microsoft.com](mailto:opencode@microsoft.com) with any additio
 ## Trademark Notice
 
 Trademarks This project may contain trademarks or logos for projects, products, or services. Authorized use of Microsoft trademarks or logos is subject to and must follow Microsoft’s Trademark & Brand Guidelines. Use of Microsoft trademarks or logos in modified versions of this project must not cause confusion or imply Microsoft sponsorship. Any use of third-party trademarks or logos are subject to those third-party’s policies.
+
+## License - Azure Developer CLI Templates Trust Notice
+Learn more about running third-party code on [our DevHub](https://learn.microsoft.com/azure/developer/azure-developer-cli/azd-templates#guidelines-for-using-azd-templates)

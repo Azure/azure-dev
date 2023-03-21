@@ -7,16 +7,14 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"os"
-	"path"
 	"strings"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
-	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/stretchr/testify/require"
 )
 
@@ -45,6 +43,7 @@ func TestScopeGetDeployment(t *testing.T) {
 
 	t.Run("SubscriptionScopeSuccess", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
+		azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 
 		subscriptionId := "SUBSCRIPTION_ID"
 		deploymentName := "DEPLOYMENT_NAME"
@@ -66,7 +65,7 @@ func TestScopeGetDeployment(t *testing.T) {
 			}, nil
 		})
 
-		scope := NewSubscriptionScope(*mockContext.Context, "eastus2", subscriptionId, deploymentName)
+		scope := NewSubscriptionScope(azCli, "eastus2", subscriptionId, deploymentName)
 
 		deployment, err := scope.GetDeployment(*mockContext.Context)
 		require.NoError(t, err)
@@ -77,6 +76,7 @@ func TestScopeGetDeployment(t *testing.T) {
 
 	t.Run("ResourceGroupScopeSuccess", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
+		azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 
 		subscriptionId := "SUBSCRIPTION_ID"
 		deploymentName := "DEPLOYMENT_NAME"
@@ -100,7 +100,7 @@ func TestScopeGetDeployment(t *testing.T) {
 			}, nil
 		})
 
-		scope := NewResourceGroupScope(*mockContext.Context, subscriptionId, resourceGroupName, deploymentName)
+		scope := NewResourceGroupScope(azCli, subscriptionId, resourceGroupName, deploymentName)
 
 		deployment, err := scope.GetDeployment(*mockContext.Context)
 		require.NoError(t, err)
@@ -111,13 +111,11 @@ func TestScopeGetDeployment(t *testing.T) {
 }
 
 func TestScopeDeploy(t *testing.T) {
-	tmpPath := t.TempDir()
-	parametersPath := path.Join(tmpPath, "params.json")
-	createTmpFile := os.WriteFile(parametersPath, []byte(testArmParametersFile), osutil.PermissionFile)
-	require.NoError(t, createTmpFile)
 
 	t.Run("SubscriptionScopeSuccess", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
+		azCli := mockazcli.NewAzCliFromMockContext(mockContext)
+
 		mockContext.HttpClient.When(func(request *http.Request) bool {
 			return request.Method == http.MethodPut && strings.Contains(
 				request.URL.Path,
@@ -133,15 +131,17 @@ func TestScopeDeploy(t *testing.T) {
 			}, nil
 		})
 
-		scope := NewSubscriptionScope(*mockContext.Context, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
+		scope := NewSubscriptionScope(azCli, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
 
-		armTemplate := azure.ArmTemplate(testArmTemplate)
-		err := scope.Deploy(*mockContext.Context, &armTemplate, parametersPath)
+		armTemplate := azure.RawArmTemplate(testArmTemplate)
+		err := scope.Deploy(*mockContext.Context, armTemplate, testArmParameters)
 		require.NoError(t, err)
 	})
 
 	t.Run("ResourceGroupScopeSuccess", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
+		azCli := mockazcli.NewAzCliFromMockContext(mockContext)
+
 		mockContext.HttpClient.When(func(request *http.Request) bool {
 			return request.Method == http.MethodPut && strings.Contains(
 				request.URL.Path,
@@ -158,10 +158,10 @@ func TestScopeDeploy(t *testing.T) {
 			}, nil
 		})
 
-		scope := NewResourceGroupScope(*mockContext.Context, "SUBSCRIPTION_ID", "RESOURCE_GROUP", "DEPLOYMENT_NAME")
+		scope := NewResourceGroupScope(azCli, "SUBSCRIPTION_ID", "RESOURCE_GROUP", "DEPLOYMENT_NAME")
 
-		armTemplate := azure.ArmTemplate(testArmTemplate)
-		err := scope.Deploy(*mockContext.Context, &armTemplate, parametersPath)
+		armTemplate := azure.RawArmTemplate(testArmTemplate)
+		err := scope.Deploy(*mockContext.Context, armTemplate, testArmParameters)
 		require.NoError(t, err)
 	})
 }
@@ -169,6 +169,8 @@ func TestScopeDeploy(t *testing.T) {
 func TestScopeGetResourceOperations(t *testing.T) {
 	t.Run("SubscriptionScopeSuccess", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
+		azCli := mockazcli.NewAzCliFromMockContext(mockContext)
+
 		mockContext.HttpClient.When(func(request *http.Request) bool {
 			return request.Method == http.MethodGet && strings.Contains(
 				request.URL.Path,
@@ -184,7 +186,7 @@ func TestScopeGetResourceOperations(t *testing.T) {
 			}, nil
 		})
 
-		scope := NewSubscriptionScope(*mockContext.Context, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
+		scope := NewSubscriptionScope(azCli, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
 
 		operations, err := scope.GetResourceOperations(*mockContext.Context)
 		require.NoError(t, err)
@@ -193,6 +195,8 @@ func TestScopeGetResourceOperations(t *testing.T) {
 
 	t.Run("ResourceGroupScopeSuccess", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
+		azCli := mockazcli.NewAzCliFromMockContext(mockContext)
+
 		mockContext.HttpClient.When(func(request *http.Request) bool {
 			return request.Method == http.MethodGet && strings.Contains(
 				request.URL.Path,
@@ -207,7 +211,7 @@ func TestScopeGetResourceOperations(t *testing.T) {
 				},
 			}, nil
 		})
-		scope := NewResourceGroupScope(*mockContext.Context, "SUBSCRIPTION_ID", "RESOURCE_GROUP", "DEPLOYMENT_NAME")
+		scope := NewResourceGroupScope(azCli, "SUBSCRIPTION_ID", "RESOURCE_GROUP", "DEPLOYMENT_NAME")
 
 		operations, err := scope.GetResourceOperations(*mockContext.Context)
 		require.NoError(t, err)
@@ -240,13 +244,11 @@ var testArmResponse string = `{
 }
 `
 
-var testArmParametersFile string = `{
-	"parameters": {
-		"location": {
-			"value": "West US"
-		}
-	}
-}`
+var testArmParameters = azure.ArmParameters{
+	"location": {
+		Value: "West US",
+	},
+}
 
 var testArmTemplate string = `{
 "$schema": "https://schema.management.azure.com/schemas/2015-01-01/deploymentTemplate.json#",

@@ -7,10 +7,13 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -23,6 +26,7 @@ import (
 type Manager struct {
 	azCli       azcli.AzCli
 	env         *environment.Environment
+	prompters   Prompters
 	provider    Provider
 	writer      io.Writer
 	console     input.Console
@@ -121,39 +125,18 @@ func (m *Manager) Destroy(ctx context.Context, deployment *Deployment, options D
 
 // Plans the infrastructure provisioning and orchestrates interactive terminal operations
 func (m *Manager) plan(ctx context.Context) (*DeploymentPlan, error) {
-	var deploymentPlan *DeploymentPlan
 
-	err := m.runAction(
-		ctx,
-		"Planning infrastructure provisioning",
-		m.interactive,
-		func(ctx context.Context, spinner *spin.Spinner) error {
-			planningTask := m.provider.Plan(ctx)
+	planningTask := m.provider.Plan(ctx)
+	go func() {
+		for progress := range planningTask.Progress() {
+			log.Println(progress.Message)
+		}
+	}()
 
-			go func() {
-				for progress := range planningTask.Progress() {
-					m.updateSpinnerTitle(spinner, progress.Message)
-				}
-			}()
-
-			go m.monitorInteraction(spinner, planningTask.Interactive())
-
-			result, err := planningTask.Await()
-			if err != nil {
-				return err
-			}
-
-			deploymentPlan = result
-
-			return nil
-		},
-	)
-
+	deploymentPlan, err := planningTask.Await()
 	if err != nil {
 		return nil, fmt.Errorf("planning infrastructure provisioning: %w", err)
 	}
-
-	m.console.Message(ctx, output.WithSuccessFormat("\nInfrastructure provisioning plan completed successfully"))
 
 	return deploymentPlan, nil
 }
@@ -165,39 +148,22 @@ func (m *Manager) deploy(
 	plan *DeploymentPlan,
 	scope infra.Scope,
 ) (*DeployResult, error) {
-	var deployResult *DeployResult
 
-	err := m.runAction(
-		ctx,
-		"Provisioning Azure resources",
-		m.interactive,
-		func(ctx context.Context, spinner *spin.Spinner) error {
-			deployTask := m.provider.Deploy(ctx, plan, scope)
+	deployTask := m.provider.Deploy(ctx, plan, scope)
 
-			go func() {
-				for progress := range deployTask.Progress() {
-					m.updateSpinnerTitle(spinner, progress.Message)
-				}
-			}()
+	go func() {
+		for progress := range deployTask.Progress() {
+			log.Println(progress.Message)
+		}
+	}()
 
-			go m.monitorInteraction(spinner, deployTask.Interactive())
-
-			result, err := deployTask.Await()
-			if err != nil {
-				return err
-			}
-
-			deployResult = result
-
-			return nil
-		},
-	)
-
+	deployResult, err := deployTask.Await()
 	if err != nil {
 		return nil, fmt.Errorf("error deploying infrastructure: %w", err)
 	}
 
-	m.console.Message(ctx, output.WithSuccessFormat("\nAzure resource provisioning completed successfully"))
+	// make sure any spinner is stopped
+	m.console.StopSpinner(ctx, "", input.StepDone)
 
 	return deployResult, nil
 }
@@ -259,11 +225,11 @@ func (m *Manager) ensureLocation(ctx context.Context, deployment *Deployment) (s
 		// user on every deployment if they don't have a `location` parameter in their bicep file.
 		// When we store it, we should store it /per environment/ not as a property of the entire
 		// project.
-		selected, err := azureutil.PromptLocation(
-			ctx,
-			m.env,
+		selected, err := m.prompters.Location(
 			"Please select an Azure location to use to store deployment metadata:",
-		)
+			func(_ account.Location) bool {
+				return true
+			})
 		if err != nil {
 			return "", fmt.Errorf("prompting for deployment metadata region: %w", err)
 		}
@@ -325,8 +291,20 @@ func NewManager(
 	projectPath string,
 	infraOptions Options,
 	interactive bool,
+	azCli azcli.AzCli,
+	console input.Console,
+	commandRunner exec.CommandRunner,
+	accountManager account.Manager,
 ) (*Manager, error) {
-	infraProvider, err := NewProvider(ctx, env, projectPath, infraOptions)
+	locationPrompt := func(msg string, filter func(loc account.Location) bool) (location string, err error) {
+		return azureutil.PromptLocationWithFilter(ctx, env.GetSubscriptionId(), msg, "", console, accountManager, filter)
+	}
+
+	prompters := Prompters{
+		Location: locationPrompt,
+	}
+
+	infraProvider, err := NewProvider(ctx, console, azCli, commandRunner, env, projectPath, infraOptions, prompters)
 	if err != nil {
 		return nil, fmt.Errorf("error creating infra provider: %w", err)
 	}
@@ -336,13 +314,11 @@ func NewManager(
 		return nil, err
 	}
 
-	azCli := azcli.GetAzCli(ctx)
-	console := input.GetConsole(ctx)
-
 	return &Manager{
 		azCli:       azCli,
 		env:         env,
 		provider:    infraProvider,
+		prompters:   prompters,
 		writer:      console.GetWriter(),
 		console:     console,
 		interactive: interactive,

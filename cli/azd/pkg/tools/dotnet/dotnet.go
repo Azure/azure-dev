@@ -14,8 +14,9 @@ import (
 
 type DotNetCli interface {
 	tools.ExternalTool
-	Publish(ctx context.Context, project string, output string) error
 	Restore(ctx context.Context, project string) error
+	Build(ctx context.Context, project string, output string) error
+	Publish(ctx context.Context, project string, output string) error
 	InitializeSecret(ctx context.Context, project string) error
 	SetSecret(ctx context.Context, key string, value string, project string) error
 }
@@ -47,7 +48,7 @@ func (cli *dotNetCli) CheckInstalled(ctx context.Context) (bool, error) {
 	if !found {
 		return false, err
 	}
-	dotnetRes, err := tools.ExecuteCommand(ctx, "dotnet", "--version")
+	dotnetRes, err := tools.ExecuteCommand(ctx, cli.commandRunner, "dotnet", "--version")
 	if err != nil {
 		return false, fmt.Errorf("checking %s version: %w", cli.Name(), err)
 	}
@@ -80,6 +81,15 @@ func (cli *dotNetCli) Restore(ctx context.Context, project string) error {
 	return nil
 }
 
+func (cli *dotNetCli) Build(ctx context.Context, project string, output string) error {
+	runArgs := exec.NewRunArgs("dotnet", "build", project, "-c", "Release", "--output", output)
+	res, err := cli.commandRunner.Run(ctx, runArgs)
+	if err != nil {
+		return fmt.Errorf("dotnet build on project '%s' failed: %s: %w", project, res.String(), err)
+	}
+	return nil
+}
+
 func (cli *dotNetCli) InitializeSecret(ctx context.Context, project string) error {
 	runArgs := exec.NewRunArgs("dotnet", "user-secrets", "init", "--project", project)
 	res, err := cli.commandRunner.Run(ctx, runArgs)
@@ -98,8 +108,8 @@ func (cli *dotNetCli) SetSecret(ctx context.Context, key string, value string, p
 	return nil
 }
 
-func NewDotNetCli(ctx context.Context) DotNetCli {
+func NewDotNetCli(commandRunner exec.CommandRunner) DotNetCli {
 	return &dotNetCli{
-		commandRunner: exec.GetCommandRunner(ctx),
+		commandRunner: commandRunner,
 	}
 }

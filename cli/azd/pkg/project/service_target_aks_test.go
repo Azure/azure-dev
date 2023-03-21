@@ -11,6 +11,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
@@ -23,6 +24,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/kubectl"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
 	"github.com/azure/azure-dev/cli/azd/test/ostest"
 	"github.com/benbjohnson/clock"
 	"github.com/stretchr/testify/require"
@@ -509,8 +511,13 @@ func createServiceTarget(
 ) ServiceTarget {
 	kubeCtl := kubectl.NewKubectl(mockContext.CommandRunner)
 	dockerCli := docker.NewDocker(mockContext.CommandRunner)
-	managedClustersService := azcli.NewManagedClustersService(mockContext.Credentials, mockContext.HttpClient)
-	containerRegistryService := azcli.NewContainerRegistryService(mockContext.Credentials, mockContext.HttpClient, dockerCli)
+	credentialProvider := mockaccount.SubscriptionCredentialProviderFunc(
+		func(_ context.Context, _ string) (azcore.TokenCredential, error) {
+			return mockContext.Credentials, nil
+		})
+
+	managedClustersService := azcli.NewManagedClustersService(credentialProvider, mockContext.HttpClient)
+	containerRegistryService := azcli.NewContainerRegistryService(credentialProvider, mockContext.HttpClient, dockerCli)
 
 	return NewAksTarget(
 		env,

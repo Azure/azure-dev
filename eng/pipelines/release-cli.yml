@@ -3,7 +3,7 @@ resources:
     - repository: azure-sdk-build-tools
       type: git
       name: internal/azure-sdk-build-tools
-      ref: refs/tags/azure-sdk-build-tools_20230221.2
+      ref: refs/tags/azure-sdk-build-tools_20230307.1
 
 # Continuous deployment trigger
 trigger:
@@ -92,11 +92,8 @@ stages:
               Title: Build Test MSI
               Condition: and(succeeded(), eq(variables['BuildTestMsi'], 'true'))
 
-          - template: /eng/pipelines/templates/steps/install-bicep.yml
-            parameters:
-              Condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
-
           - template: /eng/pipelines/templates/steps/install-terraform.yml
+          - template: /eng/pipelines/templates/steps/install-kubectl.yml
 
           # Pinning DockerInstaller to 0.209.0 because 0.214.0 has failures.
           # Remove this pin when later versions succeed.
@@ -682,7 +679,8 @@ stages:
               TestShell: bash
               TestInstallCommand: >
                 ./test-sh-install.sh "bash" "$BASEURL" "" &&
-                ./test-telemetry-functions.sh "telemetry/linux.sh.telemetry.csv"
+                ./test-telemetry-functions.sh "telemetry/linux.sh.telemetry.csv" &&
+                ./test-sh-install-errors.sh "bash" "$BASEURL" ""
             LinuxPwsh:
               Pool: azsdk-pool-mms-ubuntu-2004-general
               OSVmImage:  MMSUbuntu20.04
@@ -697,14 +695,16 @@ stages:
               TestShell: bash
               TestInstallCommand: >
                 ./test-sh-install.sh "bash" "$BASEURL" "" &&
-                ./test-telemetry-functions.sh "telemetry/macos11.sh.telemetry.csv"
+                ./test-telemetry-functions.sh "telemetry/macos11.sh.telemetry.csv" &&
+                ./test-sh-install-errors.sh "bash" "$BASEURL" ""
             Mac12Sh:
               Pool: Azure Pipelines
               OSVmImage: macOS-12
               TestShell: bash
               TestInstallCommand: >
                 ./test-sh-install.sh "bash" "$BASEURL" "" &&
-                ./test-telemetry-functions.sh "telemetry/macos12.sh.telemetry.csv"
+                ./test-telemetry-functions.sh "telemetry/macos12.sh.telemetry.csv" &&
+                ./test-sh-install-errors.sh "bash" "$BASEURL" ""
             Mac12Pwsh:
               Pool: Azure Pipelines
               OSVmImage: macOS-12

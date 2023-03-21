@@ -13,6 +13,8 @@ words:
     - opentelemetry
     - bson
     - azdo
+    - choco
+    - winget
 ignoreWords:
     - AADSTS
     - afwp
@@ -24,6 +26,7 @@ ignoreWords:
     - armauthorization
     - armappcontainers
     - armappservice
+    - armcontainerservice
     - armkeyvault
     - armresources
     - armruntime
@@ -34,6 +37,7 @@ ignoreWords:
     - Azdo
     - aztfmod
     - azurecaf
+    - azurecr
     - azuredevops
     - azurerm
     - armcontainerregistry
@@ -48,6 +52,7 @@ ignoreWords:
     - configlist
     - conjunction
     - containerregistry
+    - containerservice
     - databricks
     - dedb
     - devcontainer
@@ -73,6 +78,9 @@ ignoreWords:
     - JOBOBJECT
     - kubernetes
     - kusto
+    - kubeconfig
+    - kubeconfigs
+    - kustomize
     - magefile
     - mainfic
     - menuid
@@ -156,6 +164,7 @@ ignoreWords:
     - menuid
     - PLACEHOLDERIACTOOLS
     - LOGANALYTICS
+    - webapprouting
     - zipdeploy
     - appinsights
 useGitignore: true

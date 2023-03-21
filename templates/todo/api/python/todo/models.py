@@ -2,7 +2,7 @@ from datetime import datetime
 from enum import Enum
 from typing import Optional
 
-from azure.identity import DefaultAzureCredential, ChainedTokenCredential
+from azure.identity import DefaultAzureCredential
 from azure.keyvault.secrets import SecretClient
 from beanie import Document, PydanticObjectId
 from pydantic import BaseModel, BaseSettings

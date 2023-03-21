@@ -16,6 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/repository"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -95,11 +96,14 @@ type initAction struct {
 	gitCli             git.GitCli
 	flags              *initFlags
 	repoInitializer    *repository.Initializer
+	subResolver        account.SubscriptionTenantResolver
 }
 
 func newInitAction(
 	accountManager account.Manager,
 	userProfileService *azcli.UserProfileService,
+	subResolver account.SubscriptionTenantResolver,
+	_ auth.LoggedInGuard,
 	cmdRun exec.CommandRunner,
 	console input.Console,
 	gitCli git.GitCli,
@@ -113,6 +117,7 @@ func newInitAction(
 		flags:              flags,
 		userProfileService: userProfileService,
 		repoInitializer:    repoInitializer,
+		subResolver:        subResolver,
 	}
 }
 
@@ -202,7 +207,8 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		subscription:    i.flags.subscription,
 		location:        i.flags.location,
 	}
-	env, err := createAndInitEnvironment(ctx, &envSpec, azdCtx, i.console, i.accountManager, i.userProfileService)
+	env, err := createAndInitEnvironment(
+		ctx, &envSpec, azdCtx, i.console, i.accountManager, i.userProfileService, i.subResolver)
 	if err != nil {
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}

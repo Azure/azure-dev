@@ -118,6 +118,11 @@ func EnsureLoggedInCredential(ctx context.Context, credential azcore.TokenCreden
 		Scopes: cLoginScopes,
 	})
 	if err != nil {
+		// It is important that we dump the failure which contains error code, correlation IDs from AAD to log
+		// An improvement to make here is to classify 'unhandled' vs 'handled' errors
+		// where handled errors would be fixed with rerunning login (i.e. token expiry), vs.
+		// unhandled errors where it indicates a setup issue.
+		log.Printf("failed fetching access token: %s", err.Error())
 		return &azcore.AccessToken{}, ErrNoCurrentUser
 	}
 
@@ -158,10 +163,11 @@ func (m *Manager) CredentialForCurrentUser(
 	}
 
 	if currentUser.HomeAccountID != nil {
-		for _, account := range m.publicClient.Accounts() {
+		accounts := m.publicClient.Accounts()
+		for i, account := range accounts {
 			if account.HomeAccountID == *currentUser.HomeAccountID {
 				if options.TenantID == "" {
-					return newAzdCredential(m.publicClient, &account), nil
+					return newAzdCredential(m.publicClient, &accounts[i]), nil
 				} else {
 					newAuthority := "https://login.microsoftonline.com/" + options.TenantID
 
@@ -177,7 +183,7 @@ func (m *Manager) CredentialForCurrentUser(
 						return nil, err
 					}
 
-					return newAzdCredential(&msalPublicClientAdapter{client: &clientWithNewTenant}, &account), nil
+					return newAzdCredential(&msalPublicClientAdapter{client: &clientWithNewTenant}, &accounts[i]), nil
 				}
 			}
 		}

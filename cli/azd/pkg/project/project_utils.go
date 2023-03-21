@@ -6,8 +6,10 @@ package project
 import (
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/rzip"
+	"github.com/otiai10/copy"
 )
 
 // CreateDeployableZip creates a zip file of a folder, recursively.
@@ -33,4 +35,56 @@ func createDeployableZip(appName string, path string) (string, error) {
 	}
 
 	return zipFile.Name(), nil
+}
+
+// excludeDirEntryCondition resolves when a file or directory should be considered or not as part of build, when build is a
+// copy-paste source strategy. Return true to exclude the directory entry.
+type excludeDirEntryCondition func(path string, file os.FileInfo) bool
+
+// buildForZipOptions provides a set of options for doing build for zip
+type buildForZipOptions struct {
+	excludeConditions []excludeDirEntryCondition
+}
+
+// buildForZip is use by projects which build strategy is to only copy the source code into a folder which is later
+// zipped for packaging. For example Python and Node framework languages. buildForZipOptions provides the specific
+// details for each language which should not be ever copied.
+func buildForZip(src, dst string, options buildForZipOptions) error {
+
+	// these exclude conditions applies to all projects
+	options.excludeConditions = append(options.excludeConditions, globalExcludeAzdFile, globalExcludeTestFolder)
+
+	return copy.Copy(src, dst, copy.Options{
+		Skip: func(srcInfo os.FileInfo, src, dest string) (bool, error) {
+			for _, checkExclude := range options.excludeConditions {
+				if checkExclude(src, srcInfo) {
+					return true, nil
+				}
+			}
+			return false, nil
+		},
+	})
+}
+
+func globalExcludeAzdFile(path string, file os.FileInfo) bool {
+	if file.IsDir() {
+		return false
+	}
+
+	if file.Name() == ".azure" {
+		return true
+	}
+	return false
+}
+
+func globalExcludeTestFolder(path string, file os.FileInfo) bool {
+	if !file.IsDir() {
+		return false
+	}
+
+	folderName := strings.ToLower(file.Name())
+	if folderName == "test" || folderName == "tests" {
+		return true
+	}
+	return false
 }

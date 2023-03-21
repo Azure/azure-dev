@@ -154,7 +154,7 @@ func (i *Initializer) promptForDuplicates(
 	if len(duplicateFiles) > 0 {
 		i.console.StopSpinner(ctx, "", input.StepDone)
 		i.console.MessageUxItem(ctx, &ux.WarningMessage{
-			Description: "the following files will be overwritten with the versions from the template:",
+			Description: "The following files are present both locally and in the template:",
 		})
 
 		for _, file := range duplicateFiles {
@@ -165,7 +165,7 @@ func (i *Initializer) promptForDuplicates(
 			Message: "What would you like to do with these files?",
 			Options: []string{
 				"Overwrite with versions from template",
-				"Keep the current files as-is",
+				"Keep my existing files unchanged",
 			},
 		})
 

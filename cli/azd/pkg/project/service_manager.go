@@ -204,7 +204,7 @@ func (sm *serviceManager) GetRequiredTools(ctx context.Context, serviceConfig *S
 	requiredTools = append(requiredTools, frameworkService.RequiredExternalTools(ctx)...)
 	requiredTools = append(requiredTools, serviceTarget.RequiredExternalTools(ctx)...)
 
-	return requiredTools, nil
+	return tools.Unique(requiredTools), nil
 }
 
 // Initializes the service configuration and dependent framework & service target

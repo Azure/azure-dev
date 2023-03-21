@@ -6,7 +6,6 @@ package project
 import (
 	"context"
 	"fmt"
-	"path/filepath"
 	"strings"
 	"testing"
 
@@ -258,7 +257,7 @@ func Test_DockerProject_Build(t *testing.T) {
 
 	env := environment.Ephemeral()
 	dockerCli := docker.NewDocker(mockContext.CommandRunner)
-	serviceConfig := createTestServiceConfig(ContainerAppTarget, ServiceLanguageTypeScript)
+	serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
 
 	dockerProject := NewDockerProject(env, dockerCli, clock.NewMock())
 	buildTask := dockerProject.Build(*mockContext.Context, serviceConfig, nil)
@@ -293,7 +292,7 @@ func Test_DockerProject_Package(t *testing.T) {
 		environment.ContainerRegistryEndpointEnvVarName: "ACR_ENDPOINT",
 	})
 	dockerCli := docker.NewDocker(mockContext.CommandRunner)
-	serviceConfig := createTestServiceConfig(ContainerAppTarget, ServiceLanguageTypeScript)
+	serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
 
 	dockerProject := NewDockerProject(env, dockerCli, clock.NewMock())
 	packageTask := dockerProject.Package(
@@ -338,7 +337,7 @@ func Test_Docker_Package_No_Container_Registry(t *testing.T) {
 	delete(env.Values, environment.ContainerRegistryEndpointEnvVarName)
 
 	dockerCli := docker.NewDocker(mockContext.CommandRunner)
-	serviceConfig := createTestServiceConfig(ContainerAppTarget, ServiceLanguageTypeScript)
+	serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
 
 	dockerProject := NewDockerProject(env, dockerCli, clock.NewMock())
 
@@ -355,17 +354,4 @@ func Test_Docker_Package_No_Container_Registry(t *testing.T) {
 	require.Error(t, err)
 	require.ErrorContains(t, err, "could not determine container registry endpoint")
 	require.Nil(t, packageResult)
-}
-
-func createTestServiceConfig(host ServiceTargetKind, language ServiceLanguageKind) *ServiceConfig {
-	return &ServiceConfig{
-		Name:         "api",
-		Host:         string(host),
-		Language:     string(language),
-		RelativePath: filepath.Join("./src/api"),
-		Project: &ProjectConfig{
-			Name: "test-app",
-			Path: ".",
-		},
-	}
 }

@@ -72,7 +72,7 @@ func Test_DotNetProject_Restore(t *testing.T) {
 
 	env := environment.Ephemeral()
 	dotNetCli := dotnet.NewDotNetCli(mockContext.CommandRunner)
-	serviceConfig := createTestServiceConfig(AppServiceTarget, ServiceLanguageCsharp)
+	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageCsharp)
 
 	dotnetProject := NewDotNetProject(dotNetCli, env)
 	restoreTask := dotnetProject.Restore(*mockContext.Context, serviceConfig)
@@ -103,7 +103,7 @@ func Test_DotNetProject_Build(t *testing.T) {
 
 	env := environment.Ephemeral()
 	dotNetCli := dotnet.NewDotNetCli(mockContext.CommandRunner)
-	serviceConfig := createTestServiceConfig(AppServiceTarget, ServiceLanguageCsharp)
+	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageCsharp)
 
 	dotnetProject := NewDotNetProject(dotNetCli, env)
 	buildTask := dotnetProject.Build(*mockContext.Context, serviceConfig, nil)
@@ -134,7 +134,7 @@ func Test_DotNetProject_Package(t *testing.T) {
 
 	env := environment.Ephemeral()
 	dotNetCli := dotnet.NewDotNetCli(mockContext.CommandRunner)
-	serviceConfig := createTestServiceConfig(AppServiceTarget, ServiceLanguageCsharp)
+	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageCsharp)
 
 	dotnetProject := NewDotNetProject(dotNetCli, env)
 	packageTask := dotnetProject.Package(

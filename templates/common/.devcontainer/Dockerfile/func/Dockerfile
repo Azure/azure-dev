@@ -6,4 +6,4 @@ RUN curl https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > mic
     && apt-get update && apt-get install -y xdg-utils \
     && apt-get update && apt-get install -y azure-functions-core-tools-4 \
     && apt-get clean -y && rm -rf /var/lib/apt/lists/*
-RUN curl -fsSL https://aka.ms/install-azd.sh | bash
+RUN curl -fsSL https://aka.ms/install-azd.sh | sudo bash

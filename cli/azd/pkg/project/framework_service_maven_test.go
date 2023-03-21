@@ -33,7 +33,7 @@ func Test_MavenProject_Restore(t *testing.T) {
 		})
 
 	env := environment.Ephemeral()
-	serviceConfig := createTestServiceConfig(AppServiceTarget, ServiceLanguageJava)
+	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageJava)
 	mavenCli := maven.NewMavenCli(mockContext.CommandRunner)
 	javaCli := javac.NewCli(mockContext.CommandRunner)
 
@@ -69,7 +69,7 @@ func Test_MavenProject_Build(t *testing.T) {
 		})
 
 	env := environment.Ephemeral()
-	serviceConfig := createTestServiceConfig(AppServiceTarget, ServiceLanguageJava)
+	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageJava)
 	mavenCli := maven.NewMavenCli(mockContext.CommandRunner)
 	javaCli := javac.NewCli(mockContext.CommandRunner)
 
@@ -107,7 +107,7 @@ func Test_MavenProject_Package(t *testing.T) {
 		})
 
 	env := environment.Ephemeral()
-	serviceConfig := createTestServiceConfig(AppServiceTarget, ServiceLanguageJava)
+	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageJava)
 	mavenCli := maven.NewMavenCli(mockContext.CommandRunner)
 	javaCli := javac.NewCli(mockContext.CommandRunner)
 

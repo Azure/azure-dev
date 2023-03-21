@@ -32,7 +32,7 @@ import (
 
 func Test_NewAksTarget(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
-	serviceConfig := createServiceConfig("")
+	serviceConfig := createTestServiceConfig("./src/api", AksTarget, ServiceLanguageTypeScript)
 	env := createEnv()
 
 	serviceTarget := createServiceTarget(mockContext, serviceConfig, env)
@@ -49,7 +49,7 @@ func Test_Required_Tools(t *testing.T) {
 	err := setupMocks(mockContext)
 	require.NoError(t, err)
 
-	serviceConfig := createServiceConfig(tempDir)
+	serviceConfig := createTestServiceConfig(tempDir, AksTarget, ServiceLanguageTypeScript)
 	env := createEnv()
 
 	serviceTarget := createServiceTarget(mockContext, serviceConfig, env)
@@ -68,7 +68,7 @@ func Test_Package_Publish_HappyPath(t *testing.T) {
 	err := setupMocks(mockContext)
 	require.NoError(t, err)
 
-	serviceConfig := createServiceConfig(tempDir)
+	serviceConfig := createTestServiceConfig(tempDir, AksTarget, ServiceLanguageTypeScript)
 	env := createEnv()
 
 	serviceTarget := createServiceTarget(mockContext, serviceConfig, env)
@@ -113,7 +113,7 @@ func Test_Publish_No_Cluster_Name(t *testing.T) {
 	err := setupMocks(mockContext)
 	require.NoError(t, err)
 
-	serviceConfig := createServiceConfig(tempDir)
+	serviceConfig := createTestServiceConfig(tempDir, AksTarget, ServiceLanguageTypeScript)
 	env := createEnv()
 
 	// Simulate AKS cluster name not found in env file
@@ -151,7 +151,7 @@ func Test_Publish_No_Admin_Credentials(t *testing.T) {
 	err = setupListClusterAdminCredentialsMock(mockContext, http.StatusUnauthorized)
 	require.NoError(t, err)
 
-	serviceConfig := createServiceConfig(tempDir)
+	serviceConfig := createTestServiceConfig(tempDir, AksTarget, ServiceLanguageTypeScript)
 	env := createEnv()
 
 	serviceTarget := createServiceTarget(mockContext, serviceConfig, env)
@@ -451,19 +451,6 @@ func createK8sResourceList[T any](resource T) *kubectl.List[T] {
 		Items: []T{
 			resource,
 		},
-	}
-}
-
-func createServiceConfig(projectDirectory string) *ServiceConfig {
-	return &ServiceConfig{
-		Project: &ProjectConfig{
-			Name: "project",
-			Path: projectDirectory,
-		},
-		Name:         "svc",
-		RelativePath: "./src",
-		Host:         string(AksTarget),
-		Language:     "js",
 	}
 }
 

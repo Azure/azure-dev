@@ -143,9 +143,12 @@ func Test_MavenProject_Package(t *testing.T) {
 }
 
 func getMvnCmd() string {
-	if runtime.GOOS == "windows" {
+	switch runtime.GOOS {
+	case "windows":
 		return "mvn.cmd"
-	} else {
+	case "darwin":
+		return "/usr/local/bin/mvn"
+	case "linux":
 		return "/usr/bin/mvn"
 	}
 }

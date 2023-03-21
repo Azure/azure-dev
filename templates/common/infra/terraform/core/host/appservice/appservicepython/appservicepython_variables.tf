@@ -60,6 +60,7 @@ variable "use_32_bit_worker" {
   description = "The use 32 bit worker setting for the app service."
   type        = bool
   default     = false
+}
 
 variable "health_check_path" {
   description = "The path to the health check endpoint"

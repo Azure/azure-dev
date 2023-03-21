@@ -147,10 +147,7 @@ func excludePyCache(path string, file os.FileInfo) bool {
 	}
 
 	folderName := strings.ToLower(file.Name())
-	if folderName == "__pycache__" {
-		return true
-	}
-	return false
+	return folderName == "__pycache__"
 }
 
 func (pp *pythonProject) getVenvName(serviceConfig *ServiceConfig) string {

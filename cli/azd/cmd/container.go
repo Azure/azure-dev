@@ -346,7 +346,6 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		project.ServiceLanguageCsharp:     project.NewDotNetProject,
 		project.ServiceLanguageFsharp:     project.NewDotNetProject,
 		project.ServiceLanguagePython:     project.NewPythonProject,
-		project.ServiceLanguagePy:         project.NewPythonProject,
 		project.ServiceLanguageJavaScript: project.NewNpmProject,
 		project.ServiceLanguageTypeScript: project.NewNpmProject,
 		project.ServiceLanguageJava:       project.NewMavenProject,

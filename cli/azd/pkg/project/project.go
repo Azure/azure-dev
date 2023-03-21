@@ -59,8 +59,19 @@ func Parse(ctx context.Context, yamlContent string) (*ProjectConfig, error) {
 			svc.Module = key
 		}
 
-		if svc.Language == "" || svc.Language == "csharp" || svc.Language == "fsharp" {
+		if svc.Language == "" {
 			svc.Language = "dotnet"
+		}
+
+		var err error
+		svc.Language, err = parseServiceLanguage(svc.Language)
+		if err != nil {
+			return nil, fmt.Errorf("parsing service %s: %w", svc.Name, err)
+		}
+
+		svc.Host, err = parseServiceHost(svc.Host)
+		if err != nil {
+			return nil, fmt.Errorf("parsing service %s: %w", svc.Name, err)
 		}
 	}
 
@@ -96,16 +107,16 @@ func Load(ctx context.Context, projectFilePath string) (*ProjectConfig, error) {
 		languages := make([]string, len(projectConfig.Services))
 		i := 0
 		for _, svcConfig := range projectConfig.Services {
-			hosts[i] = svcConfig.Host
-			languages[i] = svcConfig.Language
+			hosts[i] = string(svcConfig.Host)
+			languages[i] = string(svcConfig.Language)
 			i++
 		}
 
 		slices.Sort(hosts)
 		slices.Sort(languages)
 
-		telemetry.SetUsageAttributes(fields.StringSliceHashed(fields.ProjectServiceLanguagesKey, languages))
-		telemetry.SetUsageAttributes(fields.StringSliceHashed(fields.ProjectServiceHostsKey, hosts))
+		telemetry.SetUsageAttributes(fields.ProjectServiceLanguagesKey.StringSlice(languages))
+		telemetry.SetUsageAttributes(fields.ProjectServiceHostsKey.StringSlice(hosts))
 	}
 
 	projectConfig.Path = filepath.Dir(projectFilePath)

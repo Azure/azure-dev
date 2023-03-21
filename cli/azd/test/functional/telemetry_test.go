@@ -163,8 +163,8 @@ func Test_CLI_Telemetry_UsageData_EnvProjectLoad(t *testing.T) {
 			hosts := []string{}
 			languages := []string{}
 			for _, svc := range projConfig.Services {
-				hosts = append(hosts, svc.Host)
-				languages = append(languages, svc.Language)
+				hosts = append(hosts, string(svc.Host))
+				languages = append(languages, string(svc.Language))
 			}
 			require.Contains(t, m, fields.ProjectServiceHostsKey)
 			require.ElementsMatch(t, m[fields.ProjectServiceHostsKey], fields.CaseInsensitiveSliceHash(hosts))

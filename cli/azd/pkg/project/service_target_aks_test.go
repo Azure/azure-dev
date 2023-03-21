@@ -486,7 +486,7 @@ func createServiceConfig(projectDirectory string) *ServiceConfig {
 		},
 		Name:         "svc",
 		RelativePath: "./src",
-		Host:         string(AksTarget),
+		Host:         AksTarget,
 		Language:     "js",
 	}
 }

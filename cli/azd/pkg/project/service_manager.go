@@ -443,15 +443,13 @@ func (sm *serviceManager) Deploy(
 func (sm *serviceManager) GetServiceTarget(ctx context.Context, serviceConfig *ServiceConfig) (ServiceTarget, error) {
 	var target ServiceTarget
 
-	// If we fail resolving the service target here this is most likely due the user
-	// specifying a host value outside the bounds of our supported values.
-	if err := sm.serviceLocator.ResolveNamed(serviceConfig.Host, &target); err != nil {
-		return nil, fmt.Errorf(
-			"unsupported service host '%s' for service '%s', %w",
+	if err := sm.serviceLocator.ResolveNamed(string(serviceConfig.Host), &target); err != nil {
+		panic(fmt.Errorf(
+			"failed to resolve service host '%s' for service '%s', %w",
 			serviceConfig.Host,
 			serviceConfig.Name,
 			err,
-		)
+		))
 	}
 
 	return target, nil
@@ -461,19 +459,17 @@ func (sm *serviceManager) GetServiceTarget(ctx context.Context, serviceConfig *S
 func (sm *serviceManager) GetFrameworkService(ctx context.Context, serviceConfig *ServiceConfig) (FrameworkService, error) {
 	var frameworkService FrameworkService
 
-	// If we fail resolving the service target here this is most likely due the user
-	// specifying a language value outside the bounds of our supported values.
-	if err := sm.serviceLocator.ResolveNamed(serviceConfig.Language, &frameworkService); err != nil {
-		return nil, fmt.Errorf(
-			"unsupported language '%s' for service '%s', %w",
+	if err := sm.serviceLocator.ResolveNamed(string(serviceConfig.Language), &frameworkService); err != nil {
+		panic(fmt.Errorf(
+			"failed to resolve language '%s' for service '%s', %w",
 			serviceConfig.Language,
 			serviceConfig.Name,
 			err,
-		)
+		))
 	}
 
 	// For containerized applications we use a composite framework service
-	if serviceConfig.Host == string(ContainerAppTarget) || serviceConfig.Host == string(AksTarget) {
+	if serviceConfig.Host == ContainerAppTarget || serviceConfig.Host == AksTarget {
 		var compositeFramework CompositeFrameworkService
 		if err := sm.serviceLocator.ResolveNamed(string(ServiceLanguageDocker), &compositeFramework); err != nil {
 			panic(fmt.Errorf(

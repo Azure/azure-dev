@@ -150,5 +150,7 @@ func getMvnCmd() string {
 		return "/usr/local/bin/mvn"
 	case "linux":
 		return "/usr/bin/mvn"
+	default:
+		panic("OS not supported")
 	}
 }

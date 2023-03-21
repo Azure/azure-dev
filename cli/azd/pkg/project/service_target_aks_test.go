@@ -46,7 +46,7 @@ func Test_Required_Tools(t *testing.T) {
 	ostest.Chdir(t, tempDir)
 
 	mockContext := mocks.NewMockContext(context.Background())
-	err := setupMocks(mockContext)
+	err := setupMocksForAksTarget(mockContext)
 	require.NoError(t, err)
 
 	serviceConfig := createTestServiceConfig(tempDir, AksTarget, ServiceLanguageTypeScript)
@@ -65,7 +65,7 @@ func Test_Package_Publish_HappyPath(t *testing.T) {
 	ostest.Chdir(t, tempDir)
 
 	mockContext := mocks.NewMockContext(context.Background())
-	err := setupMocks(mockContext)
+	err := setupMocksForAksTarget(mockContext)
 	require.NoError(t, err)
 
 	serviceConfig := createTestServiceConfig(tempDir, AksTarget, ServiceLanguageTypeScript)
@@ -110,7 +110,7 @@ func Test_Publish_No_Cluster_Name(t *testing.T) {
 	ostest.Chdir(t, tempDir)
 
 	mockContext := mocks.NewMockContext(context.Background())
-	err := setupMocks(mockContext)
+	err := setupMocksForAksTarget(mockContext)
 	require.NoError(t, err)
 
 	serviceConfig := createTestServiceConfig(tempDir, AksTarget, ServiceLanguageTypeScript)
@@ -143,7 +143,7 @@ func Test_Publish_No_Admin_Credentials(t *testing.T) {
 	ostest.Chdir(t, tempDir)
 
 	mockContext := mocks.NewMockContext(context.Background())
-	err := setupMocks(mockContext)
+	err := setupMocksForAksTarget(mockContext)
 	require.NoError(t, err)
 
 	// Simulate list credentials fail.
@@ -218,7 +218,7 @@ func setupListClusterAdminCredentialsMock(mockContext *mocks.MockContext, status
 	return nil
 }
 
-func setupMocks(mockContext *mocks.MockContext) error {
+func setupMocksForAksTarget(mockContext *mocks.MockContext) error {
 	err := setupListClusterAdminCredentialsMock(mockContext, http.StatusOK)
 	if err != nil {
 		return err
@@ -331,8 +331,8 @@ func setupMocks(mockContext *mocks.MockContext) error {
 				ApiVersion: "apps/v1",
 				Kind:       "Deployment",
 				Metadata: kubectl.ResourceMetadata{
-					Name:      "svc-deployment",
-					Namespace: "svc-namespace",
+					Name:      "api-deployment",
+					Namespace: "api-namespace",
 				},
 			},
 			Spec: kubectl.DeploymentSpec{
@@ -367,8 +367,8 @@ func setupMocks(mockContext *mocks.MockContext) error {
 				ApiVersion: "v1",
 				Kind:       "Service",
 				Metadata: kubectl.ResourceMetadata{
-					Name:      "svc-service",
-					Namespace: "svc-namespace",
+					Name:      "api-service",
+					Namespace: "api-namespace",
 				},
 			},
 			Spec: kubectl.ServiceSpec{
@@ -400,8 +400,8 @@ func setupMocks(mockContext *mocks.MockContext) error {
 				ApiVersion: "networking.k8s.io/v1",
 				Kind:       "Ingress",
 				Metadata: kubectl.ResourceMetadata{
-					Name:      "svc-ingress",
-					Namespace: "svc-namespace",
+					Name:      "api-ingress",
+					Namespace: "api-namespace",
 				},
 			},
 			Spec: kubectl.IngressSpec{

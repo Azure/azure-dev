@@ -285,7 +285,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(templates.NewTemplateManager)
 	container.RegisterSingleton(auth.NewManager)
 	container.RegisterSingleton(azcli.NewUserProfileService)
-	container.RegisterSingleton(azcli.NewSubscriptionsService)
+	container.RegisterSingleton(account.NewSubscriptionsService)
 	container.RegisterSingleton(account.NewManager)
 	container.RegisterSingleton(account.NewSubscriptionsManager)
 	container.RegisterSingleton(azcli.NewManagedClustersService)

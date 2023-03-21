@@ -6,11 +6,11 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
@@ -259,7 +259,7 @@ func TestPromptForParametersLocation(t *testing.T) {
 		Stderr: "",
 	})
 
-	locations := []azcli.AzCliLocation{
+	locations := []account.Location{
 		{
 			Name:                "eastus",
 			DisplayName:         "East US",
@@ -278,7 +278,10 @@ func TestPromptForParametersLocation(t *testing.T) {
 	}
 
 	p := createBicepProvider(t, mockContext)
-	p.prompters.Location = func(msg string, shouldDisplay func(loc azcli.AzCliLocation) bool) (location string, err error) {
+	p.prompters.Location = func(
+		msg string,
+		shouldDisplay func(loc account.Location) bool,
+	) (location string, err error) {
 		displayLocations := []string{}
 		for _, location := range locations {
 			if shouldDisplay(location) {

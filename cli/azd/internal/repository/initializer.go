@@ -36,13 +36,22 @@ const (
 	DatabasePostgreSql DatabaseOption = "postgresql"
 )
 
-func DatabaseDisplayOptions() map[string]DatabaseOption {
-	return map[string]DatabaseOption{
+func DatabaseDisplayOptions(recommendOption DatabaseOption) map[string]DatabaseOption {
+	prompts := map[string]DatabaseOption{
 		"Azure Cosmos DB (MongoDB API)":                    DatabaseCosmos,
 		"Azure SQL DB":                                     DatabaseSql,
 		"Azure Database for PostgreSQL (Flexible servers)": DatabasePostgreSql,
 		"No, I would not like a database":                  DatabaseNone,
 	}
+
+	for k, v := range prompts {
+		if v == recommendOption {
+			delete(prompts, k)
+			prompts[output.WithBold(k+" (Recommended)")] = v
+		}
+	}
+
+	return prompts
 }
 
 type ScaffoldContext struct {

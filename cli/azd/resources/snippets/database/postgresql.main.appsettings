@@ -1,1 +1,1 @@
-      AZURE_POSTGRESQL_CONNECTION_STRING: 'dbname=${postgresql.outputs.databaseName} host=${postgresql.outputs.serverName}.postgres.database.azure.com port=5432 sslmode=require user=${sqlAdminPassword} password=${appUserPassword}'
+       {{.ConnectionStringKey}}: 'dbname=${postgresql.outputs.databaseName} host=${postgresql.outputs.serverName}.postgres.database.azure.com port=5432 sslmode=require user=${sqlAdminPassword} password=${appUserPassword}'

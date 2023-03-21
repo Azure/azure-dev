@@ -215,7 +215,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			}
 
 			i.console.StopSpinner(
-				ctx, "Analyzed code under current directory.", input.StepDone)
+				ctx, "Analyzed code under current directory.\n", input.StepDone)
 
 			useOptions := repository.InfraUseOptions{}
 			c := templates.Characteristics{}
@@ -230,7 +230,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 				}
 				i.console.Message(ctx, msg)
 
-				confirm, err := i.console.Confirm(ctx, input.ConsoleOptions{Message: "Is this correct?"})
+				confirm, err := i.console.Confirm(ctx, input.ConsoleOptions{Message: "\nIs this correct?"})
 				if err != nil {
 					return nil, err
 				}
@@ -271,9 +271,10 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			}
 
 			if i.flags.template.RepositoryPath == string(templates.ApiApp) {
-				options := repository.DatabaseDisplayOptions()
+				options := repository.DatabaseDisplayOptions(repository.DatabaseCosmos)
 				display := maps.Keys(options)
 				slices.Sort(display)
+
 				sel, err := i.console.Select(ctx, input.ConsoleOptions{
 					Message: "Would you like to create a database for your app?",
 					Options: display,
@@ -293,6 +294,15 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 					}
 
 					useOptions.DatabaseName = ans
+
+					ans, err = i.console.Prompt(ctx, input.ConsoleOptions{
+						Message: "Enter a name for the database connection string application setting",
+					})
+					if err != nil {
+						return nil, fmt.Errorf("prompting for database connection string: %w", err)
+					}
+
+					useOptions.ConnectionStringKey = ans
 				}
 			}
 

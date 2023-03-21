@@ -107,12 +107,17 @@ func Test_Initializer_InitializeWithOverwritePrompt(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			originalContent := "ORIGINAL"
+			originalReadme := "ORIGINAL"
+			originalProgram := "Console.WriteLine(\"Hello, Original World!\");"
 			projectDir := t.TempDir()
 			azdCtx := azdcontext.NewAzdContextWithDirectory(projectDir)
 			// set up duplicate files
-			err := os.WriteFile(filepath.Join(projectDir, "README.md"), []byte(originalContent), osutil.PermissionFile)
-			require.NoError(t, err, "setting up duplicate files")
+			err := os.WriteFile(filepath.Join(projectDir, "README.md"), []byte(originalReadme), osutil.PermissionFile)
+			require.NoError(t, err, "setting up duplicate readme.md")
+			err = os.MkdirAll(filepath.Join(projectDir, "src"), osutil.PermissionDirectory)
+			require.NoError(t, err, "setting up src folder")
+			err = os.WriteFile(filepath.Join(projectDir, "src", "Program.cs"), []byte(originalProgram), osutil.PermissionFile)
+			require.NoError(t, err, "setting up duplicate program.cs")
 
 			console := mockinput.NewMockConsole()
 			console.WhenSelect(func(options input.ConsoleOptions) bool {
@@ -138,6 +143,7 @@ func Test_Initializer_InitializeWithOverwritePrompt(t *testing.T) {
 
 			i := NewInitializer(console, git.NewGitCli(mockRunner))
 			err = i.Initialize(context.Background(), azdCtx, "local", "")
+			require.NoError(t, err)
 
 			switch tt.selection {
 			case 0:
@@ -147,11 +153,16 @@ func Test_Initializer_InitializeWithOverwritePrompt(t *testing.T) {
 				// keep
 				content, err := os.ReadFile(filepath.Join(projectDir, "README.md"))
 				require.NoError(t, err)
-				require.Equal(t, originalContent, string(content))
+				require.Equal(t, originalReadme, string(content))
+
+				content, err = os.ReadFile(filepath.Join(projectDir, "src", "Program.cs"))
+				require.NoError(t, err)
+				require.Equal(t, originalProgram, string(content))
 
 				verifyTemplateCopied(t, testDataPath(templateDir), projectDir, verifyOptions{
 					Skip: func(src string) (bool, error) {
-						return filepath.Match(testDataPath(templateDir, "README.md.txt"), src)
+						return src == testDataPath(templateDir, "README.md.txt") ||
+							src == testDataPath(templateDir, "src", "Program.cs.txt"), nil
 					},
 				})
 			default:
@@ -217,9 +228,12 @@ func verifyTemplateCopied(
 		}
 
 		if options.Skip != nil {
-			if skip, err := options.Skip(path); err != nil {
+			skip, err := options.Skip(path)
+			if err != nil {
 				return err
-			} else if skip {
+			}
+
+			if skip {
 				return nil
 			}
 		}

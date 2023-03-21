@@ -69,7 +69,7 @@ func (i *Initializer) Initialize(
 		return err
 	}
 
-	skipStagingFile, err := i.promptForDuplicates(ctx, staging, target)
+	skipStagingFiles, err := i.promptForDuplicates(ctx, staging, target)
 	if err != nil {
 		return err
 	}
@@ -80,19 +80,10 @@ func (i *Initializer) Initialize(
 	}
 
 	options := copy.Options{}
-	if skipStagingFile != nil {
+	if skipStagingFiles != nil {
 		options.Skip = func(src string) (bool, error) {
-			for _, fileToSkip := range skipStagingFile {
-				// If the user has specified to keep a file, we should skip the copy for that file.
-				// Note the following:
-				// 1. filepath.Match accepts glob patterns.
-				//    An exact filepath is a valid glob pattern that matches the file itself (and nothing else).
-				// 2. returning error stops the copy.
-				if skip, err := filepath.Match(fileToSkip, src); err != nil {
-					return false, err
-				} else if skip {
-					return true, nil
-				}
+			if _, shouldSkip := skipStagingFiles[src]; shouldSkip {
+				return true, nil
 			}
 
 			return false, nil
@@ -100,7 +91,7 @@ func (i *Initializer) Initialize(
 	}
 
 	if err := copy.Copy(staging, target, options); err != nil {
-		return fmt.Errorf("copying template contents: %w", err)
+		return fmt.Errorf("copying template contents from temp staging directory: %w", err)
 	}
 
 	err = i.writeAzdAssets(ctx, azdCtx)
@@ -145,8 +136,10 @@ func (i *Initializer) fetchCode(
 	return executableFilePaths, nil
 }
 
+// promptForDuplicates prompts the user for any duplicate files detected.
+// The list of absolute source file paths to skip are returned.
 func (i *Initializer) promptForDuplicates(
-	ctx context.Context, staging string, target string) (skipSourceFiles []string, err error) {
+	ctx context.Context, staging string, target string) (skipSourceFiles map[string]struct{}, err error) {
 	log.Printf(
 		"template init, checking for duplicates. source: %s target: %s",
 		staging,
@@ -168,25 +161,29 @@ func (i *Initializer) promptForDuplicates(
 			i.console.Message(ctx, fmt.Sprintf(" * %s", file))
 		}
 
-		if selection, err := i.console.Select(ctx, input.ConsoleOptions{
+		selection, err := i.console.Select(ctx, input.ConsoleOptions{
 			Message: "What would you like to do with these files?",
 			Options: []string{
 				"Overwrite with versions from template",
 				"Keep the current files as-is",
 			},
-		}); err != nil {
+		})
+
+		if err != nil {
 			return nil, fmt.Errorf("prompting to overwrite: %w", err)
-		} else {
-			switch selection {
-			case 0:
-				return nil, nil
-			case 1:
-				skipSourceFiles = make([]string, len(duplicateFiles))
-				for i, file := range duplicateFiles {
-					skipSourceFiles[i] = filepath.Join(staging, file)
-				}
-				return skipSourceFiles, nil
+		}
+
+		switch selection {
+		case 0: // overwrite
+			return nil, nil
+		case 1: // keep
+			skipSourceFiles = make(map[string]struct{}, len(duplicateFiles))
+			for _, file := range duplicateFiles {
+				// this also cleans the result, which is important for matching
+				sourceFile := filepath.Join(staging, file)
+				skipSourceFiles[sourceFile] = struct{}{}
 			}
+			return skipSourceFiles, nil
 		}
 	}
 

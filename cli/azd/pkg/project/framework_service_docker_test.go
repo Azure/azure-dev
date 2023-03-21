@@ -330,7 +330,7 @@ func Test_DockerProject_Package(t *testing.T) {
 
 func Test_Docker_Package_No_Container_Registry(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
-	err := setupMocks(mockContext)
+	err := setupMocksForAksTarget(mockContext)
 	require.NoError(t, err)
 
 	env := createEnv()

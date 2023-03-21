@@ -9,9 +9,9 @@ import (
 	"io"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
-	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -26,19 +26,17 @@ import (
 )
 
 func envActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
-	envCmd := &cobra.Command{
-		Use:   "env",
-		Short: "Manage environments.",
-		//nolint:lll
-		Long: `Manage environments.
-
-With this command group, you can create a new environment or get, set, and list your app environments. An app can have multiple environments (for example, dev, test, prod), each with a different configuration (that is, connectivity information) for accessing Azure resources.
-
-You can find all environment configurations under the ` + output.WithBackticks(`.azure\<environment-name>`) + ` directories. The environment name is stored as the AZURE_ENV_NAME environment variable in the ` + output.WithBackticks(`.azure\<environment-name>\directory\.env`) + ` file.`,
-	}
-
 	group := root.Add("env", &actions.ActionDescriptorOptions{
-		Command: envCmd,
+		Command: &cobra.Command{
+			Use:   "env",
+			Short: "Manage environments.",
+		},
+		HelpOptions: actions.ActionHelpOptions{
+			Description: getCmdEnvHelpDescription,
+		},
+		GroupingOptions: actions.CommandGroupOptions{
+			RootLevelHelp: actions.CmdGroupManage,
+		},
 	})
 
 	group.Add("set", &actions.ActionDescriptorOptions{
@@ -56,8 +54,7 @@ You can find all environment configurations under the ` + output.WithBackticks(`
 		Command:        newEnvNewCmd(),
 		FlagsResolver:  newEnvNewFlags,
 		ActionResolver: newEnvNewAction,
-	}).
-		UseMiddleware("ensureLogin", middleware.NewEnsureLoginMiddleware)
+	})
 
 	group.Add("list", &actions.ActionDescriptorOptions{
 		Command:        newEnvListCmd(),
@@ -95,7 +92,7 @@ func newEnvSetFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *
 func newEnvSetCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "set <key> <value>",
-		Short: "Set a value in the environment.",
+		Short: "Manage your environment settings.",
 		Args:  cobra.ExactArgs(2),
 	}
 }
@@ -267,6 +264,7 @@ func newEnvNewCmd() *cobra.Command {
 type envNewAction struct {
 	azdCtx             *azdcontext.AzdContext
 	userProfileService *azcli.UserProfileService
+	subResolver        account.SubscriptionTenantResolver
 	accountManager     account.Manager
 	flags              *envNewFlags
 	args               []string
@@ -276,6 +274,8 @@ type envNewAction struct {
 func newEnvNewAction(
 	azdCtx *azdcontext.AzdContext,
 	userProfileService *azcli.UserProfileService,
+	subResolver account.SubscriptionTenantResolver,
+	_ auth.LoggedInGuard,
 	accountManager account.Manager,
 	flags *envNewFlags,
 	args []string,
@@ -288,6 +288,7 @@ func newEnvNewAction(
 		flags:              flags,
 		args:               args,
 		console:            console,
+		subResolver:        subResolver,
 	}
 }
 
@@ -303,7 +304,7 @@ func (en *envNewAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		location:        en.flags.location,
 	}
 	if _, err := createAndInitEnvironment(
-		ctx, &envSpec, en.azdCtx, en.console, en.accountManager, en.userProfileService); err != nil {
+		ctx, &envSpec, en.azdCtx, en.console, en.accountManager, en.userProfileService, en.subResolver); err != nil {
 		return nil, fmt.Errorf("creating new environment: %w", err)
 	}
 
@@ -341,6 +342,7 @@ func newEnvRefreshCmd() *cobra.Command {
 type envRefreshAction struct {
 	azdCtx         *azdcontext.AzdContext
 	projectConfig  *project.ProjectConfig
+	projectManager project.ProjectManager
 	accountManager account.Manager
 	azCli          azcli.AzCli
 	env            *environment.Environment
@@ -356,6 +358,7 @@ func newEnvRefreshAction(
 	projectConfig *project.ProjectConfig,
 	azCli azcli.AzCli,
 	accountManager account.Manager,
+	projectManager project.ProjectManager,
 	env *environment.Environment,
 	commandRunner exec.CommandRunner,
 	flags *envRefreshFlags,
@@ -367,6 +370,7 @@ func newEnvRefreshAction(
 		azdCtx:         azdCtx,
 		azCli:          azCli,
 		accountManager: accountManager,
+		projectManager: projectManager,
 		env:            env,
 		flags:          flags,
 		console:        console,
@@ -413,7 +417,7 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 		}
 	}
 
-	if err = ef.projectConfig.Initialize(ctx, ef.env, ef.commandRunner); err != nil {
+	if err = ef.projectManager.Initialize(ctx, ef.projectConfig); err != nil {
 		return nil, err
 	}
 
@@ -492,4 +496,20 @@ func (eg *envGetValuesAction) Run(ctx context.Context) (*actions.ActionResult, e
 	}
 
 	return nil, nil
+}
+
+func getCmdEnvHelpDescription(*cobra.Command) string {
+	return generateCmdHelpDescription(
+		"Manage your application environments. With this command group, you can create a new environment or get, set,"+
+			" and list your application environments.",
+		[]string{
+			formatHelpNote("An Application can have multiple environments (ex: dev, test, prod)."),
+			formatHelpNote("Each environment may have a different configuration (that is, connectivity information)" +
+				" for accessing Azure resources."),
+			formatHelpNote(fmt.Sprintf("You can find all environment configuration under the %s folder.",
+				output.WithLinkFormat(".azure/<environment-name>"))),
+			formatHelpNote(fmt.Sprintf("The environment name is stored as the %s environment variable in the %s file.",
+				output.WithHighLightFormat("AZURE_ENV_NAME"),
+				output.WithLinkFormat(".azure/<environment-name>/.env"))),
+		})
 }

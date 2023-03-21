@@ -35,6 +35,11 @@ func WithBold(text string, a ...interface{}) string {
 	return format.Sprintf(text, a...)
 }
 
+func WithUnderline(text string, a ...interface{}) string {
+	format := color.New(color.Underline)
+	return format.Sprintf(text, a...)
+}
+
 // WithBackticks wraps text with the backtick (`) character.
 func WithBackticks(text string) string {
 	return "`" + text + "`"

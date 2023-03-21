@@ -26,7 +26,7 @@ import (
 // subareaProvider defines the base behavior from any pipeline provider
 type subareaProvider interface {
 	// requiredTools return the list of requires external tools required by the provider.
-	requiredTools(ctx context.Context) []tools.ExternalTool
+	requiredTools(ctx context.Context) ([]tools.ExternalTool, error)
 	// preConfigureCheck validates that the provider's state is ready to be used.
 	// a provider would typically use this method for checking if tools are logged in
 	// of checking if all expected input data is found.
@@ -34,7 +34,6 @@ type subareaProvider interface {
 	// for example, if Azdo prompt for a PAT or OrgName to the user and updated.
 	preConfigureCheck(
 		ctx context.Context,
-		console input.Console,
 		pipelineManagerArgs PipelineManagerArgs,
 		infraOptions provisioning.Options,
 	) (bool, error)
@@ -68,21 +67,19 @@ type ScmProvider interface {
 	// configureGitRemote makes sure that the remoteName is created and added to the git project.
 	// The provider can use the console to interact with the user and define how to get or create a remote url
 	// to set as the value for the remote name.
-	configureGitRemote(ctx context.Context, repoPath string, remoteName string, console input.Console) (string, error)
+	configureGitRemote(ctx context.Context, repoPath string, remoteName string) (string, error)
 	// preventGitPush is used as a mechanism to stop a push code petition from user in case something
 	// some scenario is found which indicates a failure triggering the CI pipeline.
 	preventGitPush(
 		ctx context.Context,
 		gitRepo *gitRepositoryDetails,
 		remoteName string,
-		branchName string,
-		console input.Console) (bool, error)
+		branchName string) (bool, error)
 	//Hook function to allow SCM providers to handle scenarios after the git push is complete
 	postGitPush(ctx context.Context,
 		gitRepo *gitRepositoryDetails,
 		remoteName string,
-		branchName string,
-		console input.Console) error
+		branchName string) error
 }
 
 type CiPipeline struct {
@@ -109,7 +106,6 @@ type CiProvider interface {
 		provisioningProvider provisioning.Options,
 		credential json.RawMessage,
 		authType PipelineAuthType,
-		console input.Console,
 	) error
 }
 
@@ -127,6 +123,33 @@ const (
 	azdoFolder      string = ".azdo"
 	envPersistedKey string = "AZD_PIPELINE_PROVIDER"
 )
+
+func resolveProvider(
+	ctx context.Context,
+	env *environment.Environment,
+	projectPath string,
+) (string, error) {
+	// 1) if provider is set on azure.yaml, it should override the `lastUsedProvider`, as it can be changed by customer
+	// at any moment.
+	prj, err := project.Load(ctx, projectPath)
+	if err != nil {
+		return "", fmt.Errorf("finding pipeline provider: %w", err)
+	}
+	if prj.Pipeline.Provider != "" {
+		return prj.Pipeline.Provider, nil
+	}
+
+	// 2) check if there is a persisted value from a previous run in env
+	if lastUsedProvider, configExists := env.Values[envPersistedKey]; configExists {
+		// Setting override value based on last run. This will force detector to use the same
+		// configuration.
+		return lastUsedProvider, nil
+	}
+
+	// 3) No config on azure.yaml or from previous run. The provider will be set after
+	// inspecting the existing project folders.
+	return "", nil
+}
 
 // DetectProviders get azd context from the context and pulls the project directory from it.
 // Depending on the project directory, returns pipeline scm and ci providers based on:
@@ -171,22 +194,11 @@ func DetectProviders(
 	// we can re-assign it based on a previous run (persisted data)
 	// or based on the azure.yaml
 	if overrideWith == "" {
-		// check if there is a persisted value from a previous run in env
-		lastUsedProvider, configExists := env.Values[envPersistedKey]
-		if configExists {
-			// Setting override value based on last run. This will force detector to use the same
-			// configuration.
-			overrideWith = lastUsedProvider
-		}
-		// Figure out what is the expected provider to use for provisioning
-		prj, err := project.LoadProjectConfig(azdContext.ProjectPath())
+		resolved, err := resolveProvider(ctx, env, azdContext.ProjectPath())
 		if err != nil {
-			return nil, nil, fmt.Errorf("finding pipeline provider: %w", err)
+			return nil, nil, fmt.Errorf("resolving provider when no provider arg was used: %w", err)
 		}
-		if prj.Pipeline.Provider != "" {
-			overrideWith = prj.Pipeline.Provider
-		}
-
+		overrideWith = resolved
 	}
 
 	// Check override errors for missing folder
@@ -220,8 +232,8 @@ func DetectProviders(
 	// Or override value is github and the folder is available
 	_ = savePipelineProviderToEnv(gitHubLabel, env)
 	log.Printf("Using pipeline provider: %s", output.WithHighLightFormat("GitHub"))
-	scmProvider := NewGitHubScmProvider(commandRunner)
-	ciProvider := NewGitHubCiProvider(credential, commandRunner)
+	scmProvider := NewGitHubScmProvider(commandRunner, console)
+	ciProvider := NewGitHubCiProvider(credential, commandRunner, console)
 	return scmProvider, ciProvider, nil
 }
 

@@ -15,9 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
-	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockarmresources"
-	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/stretchr/testify/require"
 )
 
@@ -40,6 +38,7 @@ services:
 	env.SetSubscriptionId("sub")
 
 	mockContext := mocks.NewMockContext(context.Background())
+
 	mockarmresources.AddAzResourceListMock(
 		mockContext.HttpClient,
 		convert.RefOf("rg-test"),
@@ -51,7 +50,6 @@ services:
 				Location: convert.RefOf("eastus2"),
 			},
 		})
-	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "docker build")
@@ -72,36 +70,32 @@ services:
 		}, nil
 	})
 
-	projectConfig, err := ParseProjectConfig(testProj)
+	projectConfig, err := Parse(*mockContext.Context, testProj)
 	require.NoError(t, err)
-	prj, err := projectConfig.GetProject(
-		*mockContext.Context, env, mockContext.Console, azCli,
-		mockContext.CommandRunner, &mockaccount.MockAccountManager{})
-	require.NoError(t, err)
-
-	service := prj.Services[0]
+	service := projectConfig.Services["web"]
 
 	docker := docker.NewDocker(mockContext.CommandRunner)
 
-	progress := make(chan string)
 	done := make(chan bool)
 
-	internalFramework := NewNpmProject(mockContext.CommandRunner, service.Config, env)
+	internalFramework := NewNpmProject(mockContext.CommandRunner, env)
 	progressMessages := []string{}
 
+	framework := NewDockerProject(env, docker)
+	framework.SetSource(internalFramework)
+
+	buildTask := framework.Build(*mockContext.Context, service, nil)
 	go func() {
-		for value := range progress {
-			progressMessages = append(progressMessages, value)
+		for value := range buildTask.Progress() {
+			progressMessages = append(progressMessages, value.Message)
 		}
 		done <- true
 	}()
 
-	framework := NewDockerProject(service.Config, env, docker, internalFramework)
-	res, err := framework.Package(*mockContext.Context, progress)
-	close(progress)
+	buildResult, err := buildTask.Await()
 	<-done
 
-	require.Equal(t, "imageId", res)
+	require.Equal(t, "imageId", buildResult.BuildOutputPath)
 	require.Nil(t, err)
 	require.Len(t, progressMessages, 1)
 	require.Equal(t, "Building docker image", progressMessages[0])
@@ -128,6 +122,7 @@ services:
 	env := environment.EphemeralWithValues("test-env", nil)
 	env.SetSubscriptionId("sub")
 	mockContext := mocks.NewMockContext(context.Background())
+
 	mockarmresources.AddAzResourceListMock(
 		mockContext.HttpClient,
 		convert.RefOf("rg-test"),
@@ -139,7 +134,6 @@ services:
 				Location: convert.RefOf("eastus2"),
 			},
 		})
-	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 
 	ran := false
 
@@ -164,35 +158,31 @@ services:
 
 	docker := docker.NewDocker(mockContext.CommandRunner)
 
-	projectConfig, err := ParseProjectConfig(testProj)
+	projectConfig, err := Parse(*mockContext.Context, testProj)
 	require.NoError(t, err)
 
-	prj, err := projectConfig.GetProject(
-		*mockContext.Context, env, mockContext.Console,
-		azCli, mockContext.CommandRunner, &mockaccount.MockAccountManager{})
-	require.NoError(t, err)
+	service := projectConfig.Services["web"]
 
-	service := prj.Services[0]
-
-	progress := make(chan string)
 	done := make(chan bool)
 
-	internalFramework := NewNpmProject(mockContext.CommandRunner, service.Config, env)
+	internalFramework := NewNpmProject(mockContext.CommandRunner, env)
 	status := ""
 
+	framework := NewDockerProject(env, docker)
+	framework.SetSource(internalFramework)
+
+	buildTask := framework.Build(*mockContext.Context, service, nil)
 	go func() {
-		for value := range progress {
-			status = value
+		for value := range buildTask.Progress() {
+			status = value.Message
 		}
 		done <- true
 	}()
 
-	framework := NewDockerProject(service.Config, env, docker, internalFramework)
-	res, err := framework.Package(*mockContext.Context, progress)
-	close(progress)
+	buildResult, err := buildTask.Await()
 	<-done
 
-	require.Equal(t, "imageId", res)
+	require.Equal(t, "imageId", buildResult.BuildOutputPath)
 	require.Nil(t, err)
 	require.Equal(t, "Building docker image", status)
 	require.Equal(t, true, ran)

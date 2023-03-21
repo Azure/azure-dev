@@ -16,6 +16,7 @@ words:
   - Canonicalize
   - devcontainers
   - goversioninfo
+  - nosec
 languageSettings:
   - languageId: go
     ignoreRegExpList:

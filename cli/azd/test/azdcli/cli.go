@@ -52,6 +52,7 @@ func NewCLI(t *testing.T) *CLI {
 func (cli *CLI) RunCommandWithStdIn(ctx context.Context, stdin string, args ...string) (*CliResult, error) {
 	description := "azd " + strings.Join(args, " ") + " in " + cli.WorkingDirectory
 
+	/* #nosec G204 - Subprocess launched with a potential tainted input or cmd arguments false positive */
 	cmd := exec.CommandContext(ctx, cli.AzdLocation, args...)
 	if cli.WorkingDirectory != "" {
 		cmd.Dir = cli.WorkingDirectory

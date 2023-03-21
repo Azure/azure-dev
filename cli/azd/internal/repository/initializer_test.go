@@ -317,14 +317,14 @@ func testDataPath(elem ...string) string {
 
 func copyFile(t *testing.T, source string, target string) {
 	content := readFile(t, source)
-	err := os.WriteFile(target, []byte(content), 0644)
+	err := os.WriteFile(target, []byte(content), 0600)
 
 	require.NoError(t, err)
 }
 
 func copyFileCrlf(t *testing.T, source string, target string) {
 	content := crlf(readFile(t, source))
-	err := os.WriteFile(target, []byte(content), 0644)
+	err := os.WriteFile(target, []byte(content), 0600)
 
 	require.NoError(t, err)
 }
@@ -353,7 +353,7 @@ func verifyProjectFile(t *testing.T, azdCtx *azdcontext.AzdContext, content stri
 	content = strings.Replace(content, "<project>", azdCtx.GetDefaultProjectName(), 1)
 	verifyFileContent(t, azdCtx.ProjectPath(), content)
 
-	_, err := project.LoadProjectConfig(azdCtx.ProjectPath())
+	_, err := project.Load(context.Background(), azdCtx.ProjectPath())
 	require.NoError(t, err)
 }
 
@@ -410,7 +410,7 @@ func Test_determineDuplicates(t *testing.T) {
 func createFiles(t *testing.T, dir string, files []string) {
 	for _, file := range files {
 		require.NoError(t, os.MkdirAll(filepath.Dir(filepath.Join(dir, file)), 0755))
-		require.NoError(t, os.WriteFile(filepath.Join(dir, file), []byte{}, 0644))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, file), []byte{}, 0600))
 	}
 }
 

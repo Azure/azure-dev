@@ -18,6 +18,8 @@
     "azure-dev.commands.cli.deploy.title": "deploy (deploy the application's code to Azure)",
     "azure-dev.commands.cli.restore.title": "restore (restores application dependencies)",
 
+    "azure-dev.commands.cli.infra-create.title": "infra create (create Azure resources for the application)",
+
     "azure-dev.commands.cli.infra-delete.title": "infra delete (delete Azure resources for the application)",
     "azure-dev.commands.cli.infra-delete.confirm-prompt": "Are you sure to delete all application's Azure resources?",
     "azure-dev.commands.cli.infra-delete.confirm-ack": "Delete resources",
@@ -26,6 +28,7 @@
     "azure-dev.commands.cli.infra-delete.purge-prompt": "Permanently delete resources with are soft-deleted by default (e.g. KeyVaults)?",
 
     "azure-dev.commands.cli.up.title": "up (initialize application, provision resources, and deploy)",
+    "azure-dev.commands.cli.down.title": "down (delete deployed application and infrastructure)",
 
     "azure-dev.commands.cli.monitor.title": "monitor (monitor a deployed application)",
     "azure-dev.commands.cli.monitor.open-live-metrics": "Application Insights Live Metrics",
@@ -33,6 +36,10 @@
     "azure-dev.commands.cli.monitor.open-overview": "Application Insights Overview Dashboard",
     "azure-dev.commands.cli.monitor.choose-pages": "What monitoring page(s) do you want to open?",
     "azure-dev.commands.cli.monitor.opening-pages": "Opening monitoring page(s)...",
+
+    "azure-dev.commands.cli.env-delete.title": "env delete (delete an environment)",
+
+    "azure-dev.commands.cli.env-edit.title": "Edit .env file",
 
     "azure-dev.commands.cli.env-select.title": "env select (set default environment)",
     "azure-dev.commands.cli.env-select.no-environments": "There are no environments to select. Would you like to create one?",
@@ -51,11 +58,17 @@
 
     "azure-dev.commands.cli.install.title": "Install or Update Azure Developer CLI",
 
+    "azure-dev.commands.cli.login.title": "Sign in with Azure Developer CLI",
+
     "azure-dev.commands.getDotEnvFilePath.title": "Get Azure developer environment's .env file path",
     "azure-dev.commands.getDotEnvFilePath.noEnvironments": "No Azure developer environments found. You can create one by running 'azd env new' in the terminal.",
     "azure-dev.commands.getDotEnvFilePath.environmentNotFound": "Azure developer environment '{0}' was not found",
     "azure-dev.commands.getDotEnvFilePath.noDefaultEnvironment": "There is no default Azure developer environment, cannot determine environment settings file path",
     "azure-dev.commands.getDotEnvFilePath.noWorkingFolder": "Working directory could not be determined",
+
+    "azure-dev.commands.azureWorkspace.revealAzureResource.title": "Show Azure Resource",
+
+    "azure-dev.commands.azureWorkspace.revealAzureResourceGroup.title": "Show Azure Resource Group",
 
     "azure-dev.utils.quickPickWorkspaceFolder.title": "Open Folder",
     "azure-dev.utils.spawn.exited": "Process '{0}' exited with code {1}",
@@ -79,5 +92,23 @@
     "azure-dev.surveys.surveyOne.prompt": "Can you please take 2 minutes to tell us how the Azure Developer CLI is working for you?",
     "azure-dev.surveys.surveyOne.button.take": "Take survey",
     "azure-dev.surveys.surveyOne.button.never": "Don't ask again",
-    "azure-dev.surveys.surveyOne.button.later": "Remind me later"
+    "azure-dev.surveys.surveyOne.button.later": "Remind me later",
+
+    "azure-dev.walkthroughs.start.title": "Deploy your App with the Azure Developer CLI",
+    "azure-dev.walkthroughs.start.description": "Your quick guide to set up, provision, and deploy a new app with the azd CLI.",
+
+    "azure-dev.walkthroughs.start.steps.install.title": "Install Azure Developer CLI",
+    "azure-dev.walkthroughs.start.steps.install.description": "Install the Azure Developer CLI (**azd**) to get started with Azure development.\n[Install](command:azure-dev.commands.cli.install)",
+
+    "azure-dev.walkthroughs.start.steps.login.title": "Sign In to your Azure Account",
+    "azure-dev.walkthroughs.start.steps.login.description": "Sign in or create an Azure account to successfully run **azd** commands.\n[Sign In](command:azure-dev.commands.cli.login)\nTip: Clicking the **Sign In** button may open a new browser window with a prompt to input your Azure credentials.",
+
+    "azure-dev.walkthroughs.start.steps.scaffold.title": "Scaffold the Code",
+    "azure-dev.walkthroughs.start.steps.scaffold.description": "View the [Awesome azd template gallery](https://azure.github.io/awesome-azd/) to find a template with the infrastructure that's right for your app, or select a template directly from the Command Palette (``azd init``).\n[Select a template and initialize your project](command:azure-dev.commands.cli.init)\nTip: To use a template from the Awesome azd site, copy its GitHub repo URL and enter it when prompted during ``azd init``.",
+
+    "azure-dev.walkthroughs.start.steps.up.title": "Get your App Up and Running in Azure",
+    "azure-dev.walkthroughs.start.steps.up.description": "Provision and deploy your app to Azure (``azd up``) by right-clicking your azure.yaml file and selecting **up** from the context menu (pictured), by clicking the button below.\n[One-click provision + deploy](command:azure-dev.commands.cli.up)\nTip: You can also run the ``azd up`` command in the [Command Palette](command:workbench.action.quickOpen?%5B%22%3E%20Azure%20Developer%3A%20up%22%5D) or your terminal to provision and deploy your app.",
+
+    "azure-dev.walkthroughs.start.steps.explore.title": "Explore More Resources",
+    "azure-dev.walkthroughs.start.steps.explore.description": "- View all available azd commands by searching \"Azure Developer\" in the [Command Palette](command:workbench.action.quickOpen?%5B%22%3E%20Azure%20Developer%3A%20%22%5D).\n- Check out our [blog](https://devblogs.microsoft.com/azure-sdk/introducing-the-azure-developer-cli-a-faster-way-to-build-apps-for-the-cloud/), [release notes](https://github.com/Azure/azure-dev/releases), or [GitHub](https://github.com/Azure/azure-dev) to learn more about our newest features and to contribute to the development of our tool!\n- Explore the latest azd-compatible templates at [Awesome azd](https://azure.github.io/awesome-azd/)."
 }

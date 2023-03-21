@@ -55,24 +55,23 @@ type AzdoRepositoryDetails struct {
 
 // requiredTools return the list of external tools required by
 // Azure DevOps provider during its execution.
-func (p *AzdoScmProvider) requiredTools(_ context.Context) []tools.ExternalTool {
-	return []tools.ExternalTool{}
+func (p *AzdoScmProvider) requiredTools(_ context.Context) ([]tools.ExternalTool, error) {
+	return []tools.ExternalTool{}, nil
 }
 
 // preConfigureCheck check the current state of external tools and any
 // other dependency to be as expected for execution.
 func (p *AzdoScmProvider) preConfigureCheck(
 	ctx context.Context,
-	console input.Console,
 	pipelineManagerArgs PipelineManagerArgs,
 	infraOptions provisioning.Options,
 ) (bool, error) {
-	_, updatedPat, err := azdo.EnsurePatExists(ctx, p.Env, console)
+	_, updatedPat, err := azdo.EnsurePatExists(ctx, p.Env, p.console)
 	if err != nil {
 		return updatedPat, err
 	}
 
-	_, updatedOrg, err := azdo.EnsureOrgNameExists(ctx, p.Env, console)
+	_, updatedOrg, err := azdo.EnsureOrgNameExists(ctx, p.Env, p.console)
 	return (updatedPat || updatedOrg), err
 }
 
@@ -283,9 +282,8 @@ func (p *AzdoScmProvider) configureGitRemote(
 	ctx context.Context,
 	repoPath string,
 	remoteName string,
-	console input.Console,
 ) (string, error) {
-	projectName, projectId, newProject, err := p.ensureProjectExists(ctx, console)
+	projectName, projectId, newProject, err := p.ensureProjectExists(ctx, p.console)
 	if err != nil {
 		return "", err
 	}
@@ -306,12 +304,12 @@ func (p *AzdoScmProvider) configureGitRemote(
 	var remoteUrl string
 
 	if !newProject {
-		remoteUrl, err = p.promptForAzdoRepository(ctx, console)
+		remoteUrl, err = p.promptForAzdoRepository(ctx, p.console)
 		if err != nil {
 			return "", err
 		}
 	} else {
-		remoteUrl, err = p.getDefaultRepoRemote(ctx, projectName, projectId, console)
+		remoteUrl, err = p.getDefaultRepoRemote(ctx, projectName, projectId, p.console)
 		if err != nil {
 			return "", err
 		}
@@ -519,8 +517,7 @@ func (p *AzdoScmProvider) preventGitPush(
 	ctx context.Context,
 	gitRepo *gitRepositoryDetails,
 	remoteName string,
-	branchName string,
-	console input.Console) (bool, error) {
+	branchName string) (bool, error) {
 	return false, nil
 }
 
@@ -531,8 +528,7 @@ func (p *AzdoScmProvider) postGitPush(
 	ctx context.Context,
 	gitRepo *gitRepositoryDetails,
 	remoteName string,
-	branchName string,
-	console input.Console) error {
+	branchName string) error {
 
 	connection, err := p.getAzdoConnection(ctx)
 	if err != nil {
@@ -570,14 +566,13 @@ type AzdoCiProvider struct {
 // ***  subareaProvider implementation ******
 
 // requiredTools defines the requires tools for GitHub to be used as CI manager
-func (p *AzdoCiProvider) requiredTools(_ context.Context) []tools.ExternalTool {
-	return []tools.ExternalTool{}
+func (p *AzdoCiProvider) requiredTools(_ context.Context) ([]tools.ExternalTool, error) {
+	return []tools.ExternalTool{}, nil
 }
 
 // preConfigureCheck nil for Azdo
 func (p *AzdoCiProvider) preConfigureCheck(
 	ctx context.Context,
-	console input.Console,
 	pipelineManagerArgs PipelineManagerArgs,
 	infraOptions provisioning.Options,
 ) (bool, error) {
@@ -592,12 +587,12 @@ func (p *AzdoCiProvider) preConfigureCheck(
 		)
 	}
 
-	_, updatedPat, err := azdo.EnsurePatExists(ctx, p.Env, console)
+	_, updatedPat, err := azdo.EnsurePatExists(ctx, p.Env, p.console)
 	if err != nil {
 		return updatedPat, err
 	}
 
-	_, updatedOrg, err := azdo.EnsureOrgNameExists(ctx, p.Env, console)
+	_, updatedOrg, err := azdo.EnsureOrgNameExists(ctx, p.Env, p.console)
 	return (updatedPat || updatedOrg), err
 }
 
@@ -616,7 +611,6 @@ func (p *AzdoCiProvider) configureConnection(
 	provisioningProvider provisioning.Options,
 	credentials json.RawMessage,
 	authType PipelineAuthType,
-	console input.Console,
 ) error {
 
 	azureCredentials, err := parseCredentials(ctx, credentials)
@@ -626,11 +620,11 @@ func (p *AzdoCiProvider) configureConnection(
 
 	p.credentials = azureCredentials
 	details := repoDetails.details.(*AzdoRepositoryDetails)
-	org, _, err := azdo.EnsureOrgNameExists(ctx, p.Env, console)
+	org, _, err := azdo.EnsureOrgNameExists(ctx, p.Env, p.console)
 	if err != nil {
 		return err
 	}
-	pat, _, err := azdo.EnsurePatExists(ctx, p.Env, console)
+	pat, _, err := azdo.EnsurePatExists(ctx, p.Env, p.console)
 	if err != nil {
 		return err
 	}
@@ -638,12 +632,12 @@ func (p *AzdoCiProvider) configureConnection(
 	if err != nil {
 		return err
 	}
-	err = azdo.CreateServiceConnection(ctx, connection, details.projectId, *p.Env, *p.credentials, console)
+	err = azdo.CreateServiceConnection(ctx, connection, details.projectId, *p.Env, *p.credentials, p.console)
 	if err != nil {
 		return err
 	}
 
-	console.MessageUxItem(ctx, &ux.MultilineMessage{
+	p.console.MessageUxItem(ctx, &ux.MultilineMessage{
 		Lines: []string{
 			"",
 			"Azure DevOps project and connection is now configured.",

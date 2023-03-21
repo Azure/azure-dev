@@ -8,25 +8,30 @@ import "strings"
 type AzureResourceType string
 
 const (
-	AzureResourceTypeResourceGroup           AzureResourceType = "Microsoft.Resources/resourceGroups"
-	AzureResourceTypeDeployment              AzureResourceType = "Microsoft.Resources/deployments"
-	AzureResourceTypeStorageAccount          AzureResourceType = "Microsoft.Storage/storageAccounts"
-	AzureResourceTypeKeyVault                AzureResourceType = "Microsoft.KeyVault/vaults"
+	AzureResourceTypeApim                    AzureResourceType = "Microsoft.ApiManagement/service"
 	AzureResourceTypeAppConfig               AzureResourceType = "Microsoft.AppConfiguration/configurationStores"
-	AzureResourceTypePortalDashboard         AzureResourceType = "Microsoft.Portal/dashboards"
 	AzureResourceTypeAppInsightComponent     AzureResourceType = "Microsoft.Insights/components"
-	AzureResourceTypeLogAnalyticsWorkspace   AzureResourceType = "Microsoft.OperationalInsights/workspaces"
-	AzureResourceTypeWebSite                 AzureResourceType = "Microsoft.Web/sites"
-	AzureResourceTypeStaticWebSite           AzureResourceType = "Microsoft.Web/staticSites"
-	AzureResourceTypeServicePlan             AzureResourceType = "Microsoft.Web/serverfarms"
-	AzureResourceTypeSqlServer               AzureResourceType = "Microsoft.Sql/servers"
+	AzureResourceTypeCacheForRedis           AzureResourceType = "Microsoft.Cache/redis"
+	AzureResourceTypeCDNProfile              AzureResourceType = "Microsoft.Cdn/profiles"
 	AzureResourceTypeCosmosDb                AzureResourceType = "Microsoft.DocumentDB/databaseAccounts"
 	AzureResourceTypeContainerApp            AzureResourceType = "Microsoft.App/containerApps"
 	AzureResourceTypeContainerAppEnvironment AzureResourceType = "Microsoft.App/managedEnvironments"
-	AzureResourceTypeApim                    AzureResourceType = "Microsoft.ApiManagement/service"
-	AzureResourceTypeCacheForRedis           AzureResourceType = "Microsoft.Cache/redis"
+	AzureResourceTypeDeployment              AzureResourceType = "Microsoft.Resources/deployments"
+	AzureResourceTypeKeyVault                AzureResourceType = "Microsoft.KeyVault/vaults"
+	AzureResourceTypeLoadTest                AzureResourceType = "Microsoft.LoadTestService/loadTests"
+	AzureResourceTypeLogAnalyticsWorkspace   AzureResourceType = "Microsoft.OperationalInsights/workspaces"
+	AzureResourceTypePortalDashboard         AzureResourceType = "Microsoft.Portal/dashboards"
 	AzureResourceTypePostgreSqlServer        AzureResourceType = "Microsoft.DBforPostgreSQL/flexibleServers"
-	AzureResourceTypeCDNProfile              AzureResourceType = "Microsoft.Cdn/profiles"
+	AzureResourceTypeResourceGroup           AzureResourceType = "Microsoft.Resources/resourceGroups"
+	AzureResourceTypeStorageAccount          AzureResourceType = "Microsoft.Storage/storageAccounts"
+	AzureResourceTypeStaticWebSite           AzureResourceType = "Microsoft.Web/staticSites"
+	AzureResourceTypeServicePlan             AzureResourceType = "Microsoft.Web/serverfarms"
+	AzureResourceTypeSqlServer               AzureResourceType = "Microsoft.Sql/servers"
+	AzureResourceTypeVirtualNetwork          AzureResourceType = "Microsoft.Network/virtualNetworks"
+	AzureResourceTypeWebSite                 AzureResourceType = "Microsoft.Web/sites"
+	AzureResourceTypeContainerRegistry       AzureResourceType = "Microsoft.ContainerRegistry/registries"
+	AzureResourceTypeManagedCluster          AzureResourceType = "Microsoft.ContainerService/managedClusters"
+	AzureResourceTypeAgentPool               AzureResourceType = "Microsoft.ContainerService/managedClusters/agentPools"
 )
 
 const resourceLevelSeparator = "/"
@@ -72,6 +77,16 @@ func GetResourceTypeDisplayName(resourceType AzureResourceType) string {
 		return "Azure Database for PostgreSQL flexible server"
 	case AzureResourceTypeCDNProfile:
 		return "Azure Front Door / CDN profile"
+	case AzureResourceTypeLoadTest:
+		return "Load Tests"
+	case AzureResourceTypeVirtualNetwork:
+		return "Virtual Network"
+	case AzureResourceTypeContainerRegistry:
+		return "Container Registry"
+	case AzureResourceTypeManagedCluster:
+		return "AKS Managed Cluster"
+	case AzureResourceTypeAgentPool:
+		return "AKS Agent Pool"
 	}
 
 	return ""

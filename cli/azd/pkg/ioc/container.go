@@ -141,7 +141,7 @@ func RegisterNamedInstance[F any](c *NestedContainer, name string, instance F) {
 // returned while instantiating a dependency.
 func inspectResolveError(err error) error {
 	if containerErrorRegex.Match([]byte(err.Error())) {
-		return fmt.Errorf("%w: %s", ErrResolveInstance, err.Error())
+		return fmt.Errorf("%w: %w", ErrResolveInstance, err)
 	}
 
 	return err

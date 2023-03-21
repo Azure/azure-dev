@@ -83,10 +83,17 @@ func NewPipelineManager(
 }
 
 // requiredTools get all the provider's required tools.
-func (i *PipelineManager) requiredTools(ctx context.Context) []tools.ExternalTool {
-	reqTools := i.ScmProvider.requiredTools(ctx)
-	reqTools = append(reqTools, i.CiProvider.requiredTools(ctx)...)
-	return reqTools
+func (i *PipelineManager) requiredTools(ctx context.Context) ([]tools.ExternalTool, error) {
+	scmReqTools, err := i.ScmProvider.requiredTools(ctx)
+	if err != nil {
+		return nil, err
+	}
+	ciReqTools, err := i.CiProvider.requiredTools(ctx)
+	if err != nil {
+		return nil, err
+	}
+	reqTools := append(scmReqTools, ciReqTools...)
+	return reqTools, nil
 }
 
 // preConfigureCheck invoke the validations from each provider.
@@ -108,13 +115,13 @@ func (i *PipelineManager) preConfigureCheck(ctx context.Context, infraOptions pr
 	}
 
 	ciConfigurationWasUpdated, err := i.CiProvider.preConfigureCheck(
-		ctx, i.console, i.PipelineManagerArgs, infraOptions)
+		ctx, i.PipelineManagerArgs, infraOptions)
 	if err != nil {
 		return configurationWasUpdated, fmt.Errorf("pre-config check error from %s provider: %w", i.CiProvider.name(), err)
 	}
 
 	scmConfigurationWasUpdated, err := i.ScmProvider.preConfigureCheck(
-		ctx, i.console, i.PipelineManagerArgs, infraOptions)
+		ctx, i.PipelineManagerArgs, infraOptions)
 	if err != nil {
 		return configurationWasUpdated, fmt.Errorf("pre-config check error from %s provider: %w", i.ScmProvider.name(), err)
 	}
@@ -208,7 +215,7 @@ func (i *PipelineManager) getGitRepoDetails(ctx context.Context) (*gitRepository
 			}
 
 			// the scm provider returns the repo url that is used as git remote
-			remoteUrl, err := i.ScmProvider.configureGitRemote(ctx, repoPath, i.PipelineRemoteName, i.console)
+			remoteUrl, err := i.ScmProvider.configureGitRemote(ctx, repoPath, i.PipelineRemoteName)
 			if err != nil {
 				return nil, err
 			}
@@ -271,13 +278,16 @@ func (manager *PipelineManager) Configure(ctx context.Context) (
 	validateDependencyInjection(ctx, manager)
 
 	// check all required tools are installed
-	requiredTools := manager.requiredTools(ctx)
+	requiredTools, err := manager.requiredTools(ctx)
+	if err != nil {
+		return result, err
+	}
 	if err := tools.EnsureInstalled(ctx, requiredTools...); err != nil {
 		return result, err
 	}
 
 	// Figure out what is the expected provider to use for provisioning
-	prj, err := project.LoadProjectConfig(manager.AzdCtx.ProjectPath())
+	prj, err := project.Load(ctx, manager.AzdCtx.ProjectPath())
 	if err != nil {
 		return result, fmt.Errorf("finding provisioning provider: %w", err)
 	}
@@ -328,8 +338,7 @@ func (manager *PipelineManager) Configure(ctx context.Context) (
 		gitRepoInfo,
 		prj.Infra,
 		credentials,
-		PipelineAuthType(manager.PipelineAuthTypeName),
-		manager.console)
+		PipelineAuthType(manager.PipelineAuthTypeName))
 	manager.console.StopSpinner(ctx, "", input.GetStepResultFormat(err))
 	if err != nil {
 		return result, err
@@ -364,8 +373,7 @@ func (manager *PipelineManager) Configure(ctx context.Context) (
 			ctx,
 			gitRepoInfo,
 			manager.PipelineRemoteName,
-			currentBranch,
-			manager.console)
+			currentBranch)
 		if err != nil {
 			return result, fmt.Errorf("check git push prevent: %w", err)
 		}
@@ -393,8 +401,7 @@ func (manager *PipelineManager) Configure(ctx context.Context) (
 			ctx,
 			gitRepoInfo,
 			manager.PipelineRemoteName,
-			currentBranch,
-			manager.console)
+			currentBranch)
 		manager.console.StopSpinner(ctx, displayMsg, input.GetStepResultFormat(err))
 		if err != nil {
 			return result, fmt.Errorf("post git push hook: %w", err)

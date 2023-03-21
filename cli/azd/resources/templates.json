@@ -36,7 +36,7 @@
     },
     {
         "name": "Azure-Samples/todo-csharp-sql-swa-func",
-        "description": "ToDo Application with a C# API and Azure SQL Databse on Static Web Apps and Functions",
+        "description": "ToDo Application with a C# API and Azure SQL Database on Static Web Apps and Functions",
         "repositoryPath": "Azure-Samples/todo-csharp-sql-swa-func"
     },
     {
@@ -63,5 +63,10 @@
         "name": "Azure-Samples/todo-python-mongo-terraform",
         "description": "ToDo Application with a Python API and Azure Cosmos DB API for MongoDB on Azure App Service",
         "repositoryPath": "Azure-Samples/todo-python-mongo-terraform"
+    },
+    {
+        "name": "Azure-Samples/todo-nodejs-mongo-aks",
+        "description": "ToDo Application with a Node.js API and Azure Cosmos DB API for MongoDB on Azure Kubernetes Service",
+        "repositoryPath": "Azure-Samples/todo-nodejs-mongo-aks"
     }
 ]

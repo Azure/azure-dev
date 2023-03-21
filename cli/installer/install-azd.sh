@@ -236,6 +236,12 @@ do
   shift
 done
 
+if [ ! -d "$install_folder" ]; then
+    say_error "Install folder does not exist: $install_folder. The install folder should be an existing directory."
+    say_error "Create the folder (and ensure that it is in your PATH) or specify a different install folder with the -i or --install-folder argument."
+    save_error_report_if_enabled "InstallFailed" "InstallFolderDoesNotExist"
+    exit 1
+fi
 
 say_verbose "Version: $version"
 say_verbose "Platform: $platform"

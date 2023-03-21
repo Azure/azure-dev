@@ -17,6 +17,7 @@ import (
 
 type MavenCli interface {
 	tools.ExternalTool
+	SetPath(projectPath string, rootProjectPath string)
 	Package(ctx context.Context, projectPath string) error
 	ResolveDependencies(ctx context.Context, projectPath string) error
 }
@@ -47,6 +48,11 @@ func (m *mavenCli) CheckInstalled(ctx context.Context) (bool, error) {
 	}
 
 	return true, nil
+}
+
+func (m *mavenCli) SetPath(projectPath string, rootProjectPath string) {
+	m.projectPath = projectPath
+	m.rootProjectPath = rootProjectPath
 }
 
 func (m *mavenCli) mvnCmd() (string, error) {
@@ -159,10 +165,8 @@ func (cli *mavenCli) ResolveDependencies(ctx context.Context, projectPath string
 	return nil
 }
 
-func NewMavenCli(commandRunner exec.CommandRunner, projectPath string, rootProjectPath string) MavenCli {
+func NewMavenCli(commandRunner exec.CommandRunner) MavenCli {
 	return &mavenCli{
-		commandRunner:   commandRunner,
-		projectPath:     projectPath,
-		rootProjectPath: rootProjectPath,
+		commandRunner: commandRunner,
 	}
 }

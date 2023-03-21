@@ -40,7 +40,8 @@ func NewInitializer(
 // Initializes a local repository in the project directory from a remote repository.
 //
 // A confirmation prompt is displayed for any existing files to be overwritten.
-func (i *Initializer) Initialize(ctx context.Context,
+func (i *Initializer) Initialize(
+	ctx context.Context,
 	azdCtx *azdcontext.AzdContext,
 	templateUrl string,
 	templateBranch string) error {
@@ -269,7 +270,7 @@ func (i *Initializer) InitializeEmpty(ctx context.Context, azdCtx *azdcontext.Az
 func (i *Initializer) writeAzdAssets(ctx context.Context, azdCtx *azdcontext.AzdContext) error {
 	// Check to see if `azure.yaml` exists, and if it doesn't, create it.
 	if _, err := os.Stat(azdCtx.ProjectPath()); errors.Is(err, os.ErrNotExist) {
-		_, err = project.NewProject(azdCtx.ProjectPath(), azdCtx.GetDefaultProjectName())
+		_, err = project.New(ctx, azdCtx.ProjectPath(), azdCtx.GetDefaultProjectName())
 		i.console.MessageUxItem(ctx,
 			&ux.DoneMessage{Message: fmt.Sprintf("Created a new %s file", azdcontext.ProjectFileName)})
 

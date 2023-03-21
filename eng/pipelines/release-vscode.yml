@@ -3,7 +3,7 @@ resources:
     - repository: azure-sdk-build-tools
       type: git
       name: internal/azure-sdk-build-tools
-      ref: refs/tags/azure-sdk-build-tools_20230112.1
+      ref: refs/tags/azure-sdk-build-tools_20230307.1
 
 # Continuous deployment trigger
 trigger:
@@ -46,7 +46,7 @@ stages:
           vmImage: $(OSVmImage)
 
         variables:
-          NodeVersion: 14.x
+          NodeVersion: 16.x
 
         steps:
           - checkout: self

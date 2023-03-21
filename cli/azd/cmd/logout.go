@@ -17,7 +17,7 @@ import (
 func newLogoutCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "logout",
-		Short: "Log out of Azure",
+		Short: "Log out of Azure.",
 		Long:  "Log out of Azure",
 	}
 }

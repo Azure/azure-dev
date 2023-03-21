@@ -54,6 +54,11 @@ func (c *manager) Save(config Config, filePath string) error {
 		return fmt.Errorf("failed marshalling config JSON: %w", err)
 	}
 
+	folderPath := filepath.Dir(filePath)
+	if err := os.MkdirAll(folderPath, osutil.PermissionDirectory); err != nil {
+		return fmt.Errorf("failed creating config directory: %w", err)
+	}
+
 	err = os.WriteFile(filePath, configJson, osutil.PermissionFile)
 	if err != nil {
 		return fmt.Errorf("failed writing configuration data: %w", err)

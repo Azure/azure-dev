@@ -167,10 +167,10 @@ func Test_CLI_Telemetry_UsageData_EnvProjectLoad(t *testing.T) {
 				languages = append(languages, string(svc.Language))
 			}
 			require.Contains(t, m, fields.ProjectServiceHostsKey)
-			require.ElementsMatch(t, m[fields.ProjectServiceHostsKey], fields.CaseInsensitiveSliceHash(hosts))
+			require.ElementsMatch(t, m[fields.ProjectServiceHostsKey], hosts)
 
 			require.Contains(t, m, fields.ProjectServiceLanguagesKey)
-			require.ElementsMatch(t, m[fields.ProjectServiceLanguagesKey], fields.CaseInsensitiveSliceHash(languages))
+			require.ElementsMatch(t, m[fields.ProjectServiceLanguagesKey], languages)
 
 			require.Contains(t, m, fields.CmdFlags)
 			require.ElementsMatch(t, m[fields.CmdFlags], []string{"service", "trace-log-file"})

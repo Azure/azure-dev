@@ -8,6 +8,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.2.0
 	github.com/Azure/azure-sdk-for-go/sdk/keyvault/azsecrets v0.10.1
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers v1.0.0
+	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appplatform/armappplatform v1.0.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice v1.0.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization v1.0.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry v0.6.0

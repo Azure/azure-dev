@@ -6,10 +6,6 @@ package project
 import (
 	"context"
 	"fmt"
-	"github.com/azure/azure-dev/cli/azd/pkg/project/internal"
-	"log"
-	"strings"
-
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -17,13 +13,16 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/project/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/benbjohnson/clock"
+	"log"
+	"strings"
 )
 
-type containerAppTarget struct {
+type springAppTarget struct {
 	config        *ServiceConfig
 	env           *environment.Environment
 	resource      *environment.TargetResource
@@ -36,11 +35,11 @@ type containerAppTarget struct {
 	clock clock.Clock
 }
 
-func (at *containerAppTarget) RequiredExternalTools() []tools.ExternalTool {
+func (at *springAppTarget) RequiredExternalTools() []tools.ExternalTool {
 	return []tools.ExternalTool{at.docker}
 }
 
-func (at *containerAppTarget) Deploy(
+func (at *springAppTarget) Deploy(
 	ctx context.Context,
 	azdCtx *azdcontext.AzdContext,
 	path string,
@@ -70,7 +69,7 @@ func (at *containerAppTarget) Deploy(
 		return ServiceDeploymentResult{}, fmt.Errorf("logging into registry '%s': %w", loginServer, err)
 	}
 
-	imageTag, err := at.generateImageTag()
+	imageTag, err := at.generateImageTag(at.clock.Now().Unix())
 	if err != nil {
 		return ServiceDeploymentResult{}, fmt.Errorf("generating image tag: %w", err)
 	}
@@ -99,7 +98,7 @@ func (at *containerAppTarget) Deploy(
 	log.Printf("writing image name to environment")
 
 	// Save the name of the image we pushed into the environment with a well known key.
-	at.env.Values[fmt.Sprintf("SERVICE_%s_IMAGE_NAME", strings.ReplaceAll(strings.ToUpper(at.config.Name), "-", "_"))] = fullTag
+	at.env.Values[fmt.Sprintf("SERVICE_%s_IMAGE_NAME", strings.ReplaceAll(strings.ToUpper(at.config.Name), "-", "_"))] = imageTag
 
 	if err := at.env.Save(); err != nil {
 		return ServiceDeploymentResult{}, fmt.Errorf("saving image name to environment: %w", err)
@@ -125,7 +124,7 @@ func (at *containerAppTarget) Deploy(
 		return ServiceDeploymentResult{}, fmt.Errorf("planning provisioning: %w", err)
 	}
 
-	progress <- "Updating container app image reference"
+	progress <- "Updating spring app image reference"
 	deploymentName := fmt.Sprintf("%s-%s", at.env.GetEnvName(), at.config.Name)
 	scope := infra.NewResourceGroupScope(
 		at.cli,
@@ -160,47 +159,47 @@ func (at *containerAppTarget) Deploy(
 			targetResource.Type,
 		)
 
-		if err := internal.CheckResourceType(at.resource, infra.AzureResourceTypeContainerApp); err != nil {
+		if err := internal.CheckResourceType(at.resource, infra.AzureResourceTypeSpringApp); err != nil {
 			return ServiceDeploymentResult{}, err
 		}
 	}
 
-	progress <- "Fetching endpoints for container app service"
+	progress <- "Fetching endpoints for spring app service"
 	endpoints, err := at.Endpoints(ctx)
 	if err != nil {
 		return ServiceDeploymentResult{}, err
 	}
 
 	return ServiceDeploymentResult{
-		TargetResourceId: azure.ContainerAppRID(
+		TargetResourceId: azure.SpringAppRID(
 			at.env.GetSubscriptionId(),
 			at.resource.ResourceGroupName(),
 			at.resource.ResourceName(),
 		),
-		Kind:      ContainerAppTarget,
+		Kind:      SpringAppTarget,
 		Details:   deployResult,
 		Endpoints: endpoints,
 	}, nil
 }
 
-func (at *containerAppTarget) Endpoints(ctx context.Context) ([]string, error) {
-	if containerAppProperties, err := at.cli.GetContainerAppProperties(
+func (at *springAppTarget) Endpoints(ctx context.Context) ([]string, error) {
+	if springAppProperties, err := at.cli.GetSpringAppProperties(
 		ctx, at.env.GetSubscriptionId(),
 		at.resource.ResourceGroupName(),
 		at.resource.ResourceName(),
 	); err != nil {
 		return nil, fmt.Errorf("fetching service properties: %w", err)
 	} else {
-		endpoints := make([]string, len(containerAppProperties.HostNames))
-		for idx, hostName := range containerAppProperties.HostNames {
-			endpoints[idx] = fmt.Sprintf("https://%s/", hostName)
+		endpoints := make([]string, len(springAppProperties.HostNames))
+		for idx, hostName := range springAppProperties.HostNames {
+			endpoints[idx] = fmt.Sprintf("https://%s/", getASAEndpoint(hostName))
 		}
 
 		return endpoints, nil
 	}
 }
 
-func (at *containerAppTarget) generateImageTag() (string, error) {
+func (at *springAppTarget) generateImageTag(timestamp int64) (string, error) {
 	configuredTag, err := at.config.Docker.Tag.Envsubst(at.env.Getenv)
 	if err != nil {
 		return "", err
@@ -214,15 +213,20 @@ func (at *containerAppTarget) generateImageTag() (string, error) {
 		strings.ToLower(at.config.Project.Name),
 		strings.ToLower(at.config.Name),
 		strings.ToLower(at.env.GetEnvName()),
-		at.clock.Now().Unix(),
+		timestamp,
 	), nil
 }
 
-// NewContainerAppTarget creates the container app service target.
+func getASAEndpoint(hostName string) string {
+	index := strings.IndexRune(hostName, '.')
+	return hostName[0:index] + "-default" + hostName[index:]
+}
+
+// NewSpringAppTarget creates the spring app service target.
 //
-// The target resource can be partially filled with only ResourceGroupName, since container apps
+// The target resource can be partially filled with only ResourceGroupName, since spring apps
 // can be provisioned during deployment.
-func NewContainerAppTarget(
+func NewSpringAppTarget(
 	config *ServiceConfig,
 	env *environment.Environment,
 	resource *environment.TargetResource,
@@ -236,12 +240,12 @@ func NewContainerAppTarget(
 	}
 
 	if resource.ResourceType() != "" {
-		if err := internal.CheckResourceType(resource, infra.AzureResourceTypeContainerApp); err != nil {
+		if err := internal.CheckResourceType(resource, infra.AzureResourceTypeSpringApp); err != nil {
 			return nil, err
 		}
 	}
 
-	return &containerAppTarget{
+	return &springAppTarget{
 		config:        config,
 		env:           env,
 		resource:      resource,

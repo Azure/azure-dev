@@ -22,6 +22,7 @@ const (
 	AzureResourceTypeSqlDatabase             AzureResourceType = "Microsoft.Sql/servers"
 	AzureResourceTypeCosmosDb                AzureResourceType = "Microsoft.DocumentDB/databaseAccounts"
 	AzureResourceTypeContainerApp            AzureResourceType = "Microsoft.App/containerApps"
+	AzureResourceTypeSpringApp               AzureResourceType = "Microsoft.AppPlatform/Spring"
 	AzureResourceTypeContainerAppEnvironment AzureResourceType = "Microsoft.App/managedEnvironments"
 )
 

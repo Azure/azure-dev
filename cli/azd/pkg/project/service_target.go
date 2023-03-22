@@ -20,6 +20,7 @@ const (
 	ContainerAppTarget  ServiceTargetKind = "containerapp"
 	AzureFunctionTarget ServiceTargetKind = "function"
 	StaticWebAppTarget  ServiceTargetKind = "staticwebapp"
+	SpringAppTarget     ServiceTargetKind = "springapp"
 )
 
 type ServiceDeploymentResult struct {

@@ -146,6 +146,12 @@ type AzCli interface {
 		resourceGroupName string,
 		applicationName string,
 	) (*AzCliContainerAppProperties, error)
+	GetSpringAppProperties(
+		ctx context.Context,
+		subscriptionId string,
+		resourceGroupName string,
+		applicationName string,
+	) (*AzCliSpringAppProperties, error)
 	GetStaticWebAppProperties(
 		ctx context.Context,
 		subscriptionID string,

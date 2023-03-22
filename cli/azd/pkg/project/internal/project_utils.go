@@ -5,7 +5,10 @@ package internal
 
 import (
 	"fmt"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"os"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/rzip"
 )
@@ -33,4 +36,29 @@ func CreateDeployableZip(appName string, path string) (string, error) {
 	}
 
 	return zipFile.Name(), nil
+}
+
+func CheckResourceType(resource *environment.TargetResource, resourceType infra.AzureResourceType) error {
+	if !strings.EqualFold(resource.ResourceType(), string(resourceType)) {
+		return resourceTypeMismatchError(
+			resource.ResourceName(),
+			resource.ResourceType(),
+			infra.AzureResourceTypeContainerApp,
+		)
+	}
+
+	return nil
+}
+
+func resourceTypeMismatchError(
+	resourceName string,
+	resourceType string,
+	expectedResourceType infra.AzureResourceType,
+) error {
+	return fmt.Errorf(
+		"resource '%s' with type '%s' does not match expected resource type '%s'",
+		resourceName,
+		resourceType,
+		string(expectedResourceType),
+	)
 }

@@ -119,6 +119,10 @@ func (sc *ServiceConfig) GetServiceTarget(
 		target, err = NewFunctionAppTarget(sc, env, resource, azCli)
 	case string(StaticWebAppTarget):
 		target, err = NewStaticWebAppTarget(sc, env, resource, azCli, swa.NewSwaCli(commandRunner))
+	case string(SpringAppTarget):
+		target, err = NewSpringAppTarget(
+			sc, env, resource, azCli, docker.NewDocker(commandRunner), console, commandRunner,
+		)
 	default:
 		return nil, fmt.Errorf("unsupported host '%s' for service '%s'", sc.Host, sc.Name)
 	}
@@ -149,7 +153,7 @@ func (sc *ServiceConfig) GetFrameworkService(
 	}
 
 	// For containerized applications we use a nested framework service
-	if sc.Host == string(ContainerAppTarget) {
+	if sc.Host == string(ContainerAppTarget) || sc.Host == string(SpringAppTarget) {
 		sourceFramework := frameworkService
 		frameworkService = NewDockerProject(sc, env, docker.NewDocker(commandRunner), sourceFramework)
 	}

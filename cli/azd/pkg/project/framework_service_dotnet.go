@@ -39,9 +39,13 @@ func (dp *dotnetProject) RequiredExternalTools(context.Context) []tools.External
 	return []tools.ExternalTool{dp.dotnetCli}
 }
 
-// Initializes the docker project
+// Initializes the dotnet project
 func (dp *dotnetProject) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
-	if err := dp.dotnetCli.InitializeSecret(ctx, serviceConfig.Path()); err != nil {
+	projFile, err := findProjectFile(serviceConfig.Path())
+	if err != nil {
+		return err
+	}
+	if err := dp.dotnetCli.InitializeSecret(ctx, projFile[0]); err != nil {
 		return err
 	}
 	handler := func(ctx context.Context, args ServiceLifecycleEventArgs) error {
@@ -136,4 +140,28 @@ func normalizeDotNetSecret(key string) string {
 	// dotnet recognizes "__" as the hierarchy key separator for environment variables, but for user secrets, it has to be
 	// ":".
 	return strings.ReplaceAll(key, "__", ":")
+}
+
+func findProjectFile(path string) ([]string, error) {
+	files, err := filepath.Glob(path + "/*proj")
+	// err := filepath.Walk(path, func(file string, info os.FileInfo, err error) error {
+	// 	if err != nil {
+	// 		return fmt.Errorf("error: walking through file path %s: %s", path, err)
+	// 	}
+
+	// 	if !info.IsDir() && (filepath.Ext(file) == ".csproj" || filepath.Ext(file) == ".vbproj" || filepath.Ext(file) == ".fsproj") {
+	// 		files = append(files, file)
+	// 	}
+	// 	return nil
+	// })
+	fmt.Println(files)
+	if err != nil {
+		return files, err
+	}
+	if len(files) == 0 {
+		return files, fmt.Errorf("no project file (.csproj or .vbproj or .fsproj) found")
+	} else if len(files) > 1 {
+		return files, fmt.Errorf("there are multiple project files. Please make sure the current directory %s only have one project file", path)
+	}
+	return files, err
 }

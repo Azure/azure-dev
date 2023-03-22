@@ -150,7 +150,8 @@ func findProjectFile(path string) ([]string, error) {
 	if len(files) == 0 {
 		return files, fmt.Errorf("no project file (.csproj or .vbproj or .fsproj) found")
 	} else if len(files) > 1 {
-		return files, fmt.Errorf("there are multiple project files. Please make sure the current directory %s only have one project file", path)
+		return files, fmt.Errorf("there are multiple project files. "+
+			"Please make sure the current directory %s only have one project file", path)
 	}
 	return files, err
 }

@@ -347,7 +347,7 @@ func (sm *serviceManager) Publish(
 			return
 		}
 
-		targetResource, err := sm.resourceManager.GetTargetResource(ctx, serviceConfig)
+		targetResource, err := sm.resourceManager.GetTargetResource(ctx, sm.env.GetSubscriptionId(), serviceConfig)
 		if err != nil {
 			task.SetError(fmt.Errorf("getting target resource: %w", err))
 			return

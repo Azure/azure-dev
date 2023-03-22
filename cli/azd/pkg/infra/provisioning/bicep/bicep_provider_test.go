@@ -8,6 +8,7 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
@@ -17,6 +18,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appconfiguration/armappconfiguration"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/keyvault/armkeyvault"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -442,7 +444,7 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 		HttpClient: mockContext.HttpClient,
 	})
 
-	locationPrompter := func(msg string, filter func(loc azcli.AzCliLocation) bool) (location string, err error) {
+	locationPrompter := func(msg string, filter func(loc account.Location) bool) (location string, err error) {
 		return "", nil
 	}
 
@@ -562,50 +564,27 @@ func prepareDeployShowMocks(
 }
 
 func prepareDestroyMocks(mockContext *mocks.MockContext) {
+	makeItem := func(resourceType infra.AzureResourceType, resourceName string) *armresources.GenericResourceExpanded {
+		id := fmt.Sprintf("subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/%s/%s",
+			string(resourceType), resourceName)
+
+		return &armresources.GenericResourceExpanded{
+			ID:       convert.RefOf(id),
+			Name:     convert.RefOf(resourceName),
+			Type:     convert.RefOf(string(resourceType)),
+			Location: convert.RefOf("eastus2"),
+		}
+	}
+
 	resourceList := armresources.ResourceListResult{
 		Value: []*armresources.GenericResourceExpanded{
-			{
-				ID:       convert.RefOf("webapp"),
-				Name:     convert.RefOf("app-123"),
-				Type:     convert.RefOf(string(infra.AzureResourceTypeWebSite)),
-				Location: convert.RefOf("eastus2"),
-			},
-			{
-				ID:       convert.RefOf("keyvault"),
-				Name:     convert.RefOf("kv-123"),
-				Type:     convert.RefOf(string(infra.AzureResourceTypeKeyVault)),
-				Location: convert.RefOf("eastus2"),
-			},
-			{
-				ID:       convert.RefOf("keyvault2"),
-				Name:     convert.RefOf("kv2-123"),
-				Type:     convert.RefOf(string(infra.AzureResourceTypeKeyVault)),
-				Location: convert.RefOf("eastus2"),
-			},
-			{
-				ID:       convert.RefOf("appconfiguration"),
-				Name:     convert.RefOf("ac-123"),
-				Type:     convert.RefOf(string(infra.AzureResourceTypeAppConfig)),
-				Location: convert.RefOf("eastus2"),
-			},
-			{
-				ID:       convert.RefOf("appconfiguration2"),
-				Name:     convert.RefOf("ac2-123"),
-				Type:     convert.RefOf(string(infra.AzureResourceTypeAppConfig)),
-				Location: convert.RefOf("eastus2"),
-			},
-			{
-				ID:       convert.RefOf("ApiManagement"),
-				Name:     convert.RefOf("apim-123"),
-				Type:     convert.RefOf(string(infra.AzureResourceTypeApim)),
-				Location: convert.RefOf("eastus2"),
-			},
-			{
-				ID:       convert.RefOf("ApiManagement"),
-				Name:     convert.RefOf("apim2-123"),
-				Type:     convert.RefOf(string(infra.AzureResourceTypeApim)),
-				Location: convert.RefOf("eastus2"),
-			},
+			makeItem(infra.AzureResourceTypeWebSite, "app-123"),
+			makeItem(infra.AzureResourceTypeKeyVault, "kv-123"),
+			makeItem(infra.AzureResourceTypeKeyVault, "kv2-123"),
+			makeItem(infra.AzureResourceTypeAppConfig, "ac-123"),
+			makeItem(infra.AzureResourceTypeAppConfig, "ac2-123"),
+			makeItem(infra.AzureResourceTypeApim, "apim-123"),
+			makeItem(infra.AzureResourceTypeApim, "apim2-123"),
 		},
 	}
 
@@ -693,7 +672,9 @@ func getKeyVaultMock(mockContext *mocks.MockContext, keyVaultString string, name
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		keyVaultResponse := armkeyvault.VaultsClientGetResponse{
 			Vault: armkeyvault.Vault{
-				ID:       convert.RefOf(name),
+				ID: convert.RefOf(
+					fmt.Sprintf("/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/%s/%s",
+						string(infra.AzureResourceTypeKeyVault), name)),
 				Name:     convert.RefOf(name),
 				Location: convert.RefOf(location),
 				Properties: &armkeyvault.VaultProperties{
@@ -718,7 +699,10 @@ func getAppConfigMock(mockContext *mocks.MockContext, appConfigString string, na
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		appConfigResponse := armappconfiguration.ConfigurationStoresClientGetResponse{
 			ConfigurationStore: armappconfiguration.ConfigurationStore{
-				ID:       convert.RefOf(name),
+				ID: convert.RefOf(
+					fmt.Sprintf("/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/%s/%s",
+						string(infra.AzureResourceTypeAppConfig), name)),
+
 				Name:     convert.RefOf(name),
 				Location: convert.RefOf(location),
 				Properties: &armappconfiguration.ConfigurationStoreProperties{
@@ -742,7 +726,10 @@ func getAPIMMock(mockContext *mocks.MockContext, apimString string, name string,
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		apimResponse := armapimanagement.ServiceClientGetResponse{
 			ServiceResource: armapimanagement.ServiceResource{
-				ID:       convert.RefOf(name),
+				ID: convert.RefOf(
+					fmt.Sprintf("/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/%s/%s",
+						string(infra.AzureResourceTypeApim), name)),
+
 				Name:     convert.RefOf(name),
 				Location: convert.RefOf(location),
 			},

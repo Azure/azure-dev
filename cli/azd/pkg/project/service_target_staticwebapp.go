@@ -90,7 +90,7 @@ func (at *staticWebAppTarget) Publish(
 			task.SetProgress(NewServiceProgress("Retrieving deployment token"))
 			deploymentToken, err := at.cli.GetStaticWebAppApiKey(
 				ctx,
-				at.env.GetSubscriptionId(),
+				targetResource.SubscriptionId(),
 				targetResource.ResourceGroupName(),
 				targetResource.ResourceName(),
 			)
@@ -104,7 +104,7 @@ func (at *staticWebAppTarget) Publish(
 			res, err := at.swa.Deploy(ctx,
 				serviceConfig.Project.Path,
 				at.env.GetTenantId(),
-				at.env.GetSubscriptionId(),
+				targetResource.SubscriptionId(),
 				targetResource.ResourceGroupName(),
 				targetResource.ResourceName(),
 				serviceConfig.RelativePath,
@@ -132,7 +132,7 @@ func (at *staticWebAppTarget) Publish(
 
 			sdr := NewServicePublishResult(
 				azure.StaticWebAppRID(
-					at.env.GetSubscriptionId(),
+					targetResource.SubscriptionId(),
 					targetResource.ResourceGroupName(),
 					targetResource.ResourceName(),
 				),
@@ -157,7 +157,7 @@ func (at *staticWebAppTarget) Endpoints(
 	// https://github.com/Azure/azure-dev/issues/1152
 	if envProps, err := at.cli.GetStaticWebAppEnvironmentProperties(
 		ctx,
-		at.env.GetSubscriptionId(),
+		targetResource.SubscriptionId(),
 		targetResource.ResourceGroupName(),
 		targetResource.ResourceName(),
 		DefaultStaticWebAppEnvironmentName,
@@ -191,7 +191,7 @@ func (at *staticWebAppTarget) verifyDeployment(ctx context.Context, targetResour
 	for {
 		envProps, err := at.cli.GetStaticWebAppEnvironmentProperties(
 			ctx,
-			at.env.GetSubscriptionId(),
+			targetResource.SubscriptionId(),
 			targetResource.ResourceGroupName(),
 			targetResource.ResourceName(),
 			DefaultStaticWebAppEnvironmentName,

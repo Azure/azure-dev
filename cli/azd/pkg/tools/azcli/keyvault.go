@@ -59,13 +59,18 @@ func (cli *azCli) GetKeyVault(
 	}, nil
 }
 
-func (cli *azCli) GetKeyVaultSecret(ctx context.Context, vaultName string, secretName string) (*AzCliKeyVaultSecret, error) {
+func (cli *azCli) GetKeyVaultSecret(
+	ctx context.Context,
+	subscriptionId string,
+	vaultName string,
+	secretName string,
+) (*AzCliKeyVaultSecret, error) {
 	vaultUrl := vaultName
 	if !strings.Contains(strings.ToLower(vaultName), "https://") {
 		vaultUrl = fmt.Sprintf("https://%s.vault.azure.net", vaultName)
 	}
 
-	client, err := cli.createSecretsDataClient(ctx, vaultUrl)
+	client, err := cli.createSecretsDataClient(ctx, subscriptionId, vaultUrl)
 	if err != nil {
 		return nil, nil
 	}
@@ -107,8 +112,13 @@ func (cli *azCli) PurgeKeyVault(ctx context.Context, subscriptionId string, vaul
 
 // Creates a KeyVault client for ARM control plane operations
 func (cli *azCli) createKeyVaultClient(ctx context.Context, subscriptionId string) (*armkeyvault.VaultsClient, error) {
+	credential, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
 	options := cli.createDefaultClientOptionsBuilder(ctx).BuildArmClientOptions()
-	client, err := armkeyvault.NewVaultsClient(subscriptionId, cli.credential, options)
+	client, err := armkeyvault.NewVaultsClient(subscriptionId, credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating Resource client: %w", err)
 	}
@@ -118,12 +128,21 @@ func (cli *azCli) createKeyVaultClient(ctx context.Context, subscriptionId strin
 
 // Creates a KeyVault client for data plan operations
 // Data plane client is able to fetch secret values. ARM control plane client never returns secret values.
-func (cli *azCli) createSecretsDataClient(ctx context.Context, vaultUrl string) (*azsecrets.Client, error) {
+func (cli *azCli) createSecretsDataClient(
+	ctx context.Context,
+	subscriptionId string,
+	vaultUrl string,
+) (*azsecrets.Client, error) {
+	credential, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
 	coreOptions := cli.createDefaultClientOptionsBuilder(ctx).BuildCoreClientOptions()
 	options := &azsecrets.ClientOptions{
 		ClientOptions:                        *coreOptions,
 		DisableChallengeResourceVerification: false,
 	}
 
-	return azsecrets.NewClient(vaultUrl, cli.credential, options), nil
+	return azsecrets.NewClient(vaultUrl, credential, options), nil
 }

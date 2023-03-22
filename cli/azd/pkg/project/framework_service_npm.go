@@ -113,12 +113,5 @@ func (np *npmProject) Build(
 const cNodeModulesName = "node_modules"
 
 func excludeNodeModules(path string, file os.FileInfo) bool {
-	if !file.IsDir() {
-		return false
-	}
-
-	if file.Name() == cNodeModulesName {
-		return true
-	}
-	return false
+	return !file.IsDir() && file.Name() == cNodeModulesName
 }

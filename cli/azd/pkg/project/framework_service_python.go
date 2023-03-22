@@ -158,23 +158,3 @@ func (pp *pythonProject) getVenvName(serviceConfig *ServiceConfig) string {
 	_, projectDir := filepath.Split(trimmedPath)
 	return projectDir + "_env"
 }
-
-// skipPatterns returns a `copy.Options` which will skip any files
-// that match a given pattern. Matching is done with `filepath.Match`.
-// func skipPatterns(patterns ...string) copy.Options {
-// 	return copy.Options{
-// 		Skip: func(src string) (bool, error) {
-// 			for _, pattern := range patterns {
-// 				skip, err := filepath.Match(pattern, src)
-// 				switch {
-// 				case err != nil:
-// 					return false, fmt.Errorf("error matching pattern %s: %w", pattern, err)
-// 				case skip:
-// 					return true, nil
-// 				}
-// 			}
-
-// 			return false, nil
-// 		},
-// 	}
-// }

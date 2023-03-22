@@ -6,7 +6,6 @@ package project
 import (
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/rzip"
 	"github.com/otiai10/copy"
@@ -52,7 +51,7 @@ type buildForZipOptions struct {
 func buildForZip(src, dst string, options buildForZipOptions) error {
 
 	// these exclude conditions applies to all projects
-	options.excludeConditions = append(options.excludeConditions, globalExcludeAzdFile, globalExcludeTestFolder)
+	options.excludeConditions = append(options.excludeConditions, globalExcludeAzdFolder)
 
 	return copy.Copy(src, dst, copy.Options{
 		Skip: func(srcInfo os.FileInfo, src, dest string) (bool, error) {
@@ -66,25 +65,6 @@ func buildForZip(src, dst string, options buildForZipOptions) error {
 	})
 }
 
-func globalExcludeAzdFile(path string, file os.FileInfo) bool {
-	if file.IsDir() {
-		return false
-	}
-
-	if file.Name() == ".azure" {
-		return true
-	}
-	return false
-}
-
-func globalExcludeTestFolder(path string, file os.FileInfo) bool {
-	if !file.IsDir() {
-		return false
-	}
-
-	folderName := strings.ToLower(file.Name())
-	if folderName == "test" || folderName == "tests" {
-		return true
-	}
-	return false
+func globalExcludeAzdFolder(path string, file os.FileInfo) bool {
+	return file.IsDir() && file.Name() == ".azure"
 }

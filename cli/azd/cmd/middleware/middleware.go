@@ -7,7 +7,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
-	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 // Registration function that returns a constructed middleware
@@ -33,7 +33,7 @@ type Options struct {
 	CommandPath   string
 	Name          string
 	Aliases       []string
-	Cmd           *cobra.Command
+	Flags         *pflag.FlagSet
 	isChildAction bool
 }
 

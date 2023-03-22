@@ -35,16 +35,16 @@ func (m *TelemetryMiddleware) Run(ctx context.Context, next NextFn) (*actions.Ac
 	// It does not contain user input, and is safe for telemetry emission.
 	spanCtx, span := telemetry.GetTracer().Start(ctx, events.GetCommandEventName(m.options.CommandPath))
 
-	if m.options.Cmd != nil {
+	if m.options.Flags != nil {
 		changedFlags := []string{}
-		m.options.Cmd.Flags().VisitAll(func(f *pflag.Flag) {
+		m.options.Flags.VisitAll(func(f *pflag.Flag) {
 			if f.Changed {
 				changedFlags = append(changedFlags, f.Name)
 			}
 		})
 		telemetry.SetUsageAttributes(fields.CmdFlags.StringSlice(changedFlags))
 
-		hasArgSet := m.options.Cmd.Args != nil
+		hasArgSet := len(m.options.Flags.Args()) > 0
 		telemetry.SetUsageAttributes(fields.CmdHasArg.Bool(hasArgSet))
 	}
 

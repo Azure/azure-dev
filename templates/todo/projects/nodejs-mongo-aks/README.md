@@ -1,3 +1,24 @@
+---
+page_type: sample
+languages:
+- azdeveloper
+- nodejs
+- bicep
+- typescript
+- html
+products:
+- azure
+- azure-cosmos-db
+- azure-functions
+- azure-kubernetes-service
+- azure-monitor
+- azure-pipelines
+urlFragment: todo-nodejs-mongo-aks
+name: Web Application with a Node.js API and Azure Cosmos DB API for MongoDB on Azure Kubernetes Service
+description: A complete ToDo app with Node.js API and Azure Cosmos API for MongoDB for storage. Uses Azure Developer CLI (azd) to build, deploy, and monitor
+---
+<!-- YAML front-matter schema: https://review.learn.microsoft.com/en-us/help/contribute/samples/process/onboarding?branch=main#supported-metadata-fields-for-readmemd -->
+
 # ToDo Application with a Node.js API and Azure Cosmos DB API for MongoDB on Azure Kubernetes Service (AKS)
 
 [![Open in GitHub Codespaces](https://img.shields.io/static/v1?style=for-the-badge&label=GitHub+Codespaces&message=Open&color=brightgreen&logo=github)](https://github.com/codespaces/new?hide_repo_select=true&ref=main&repo=607810498&machine=standardLinux32gb&devcontainer_path=.devcontainer%2Fdevcontainer.json&location=WestUs2)
@@ -7,7 +28,7 @@ A complete ToDo application that includes everything you need to build, deploy, 
 
 Let's jump in and get the ToDo app up and running in Azure. When you are finished, you will have a fully functional web app deployed on Azure. In later steps, you'll see how to setup a pipeline and monitor the application.
 
-<img src="assets/resources.png" width="75%" alt="Screenshot of deployed ToDo app">
+!["Screenshot of deployed ToDo app"](assets/resources.png)
 
 <sup>Screenshot of the deployed ToDo app</sup>
 
@@ -65,7 +86,7 @@ This application utilizes the following Azure resources:
 
 Here's a high level architecture diagram that illustrates these components. Notice that these are all contained within a single [resource group](https://docs.microsoft.com/azure/azure-resource-manager/management/manage-resource-groups-portal), that will be created for you when you create the resources.
 
-<img src="assets/resources.png" width="60%" alt="Application architecture diagram"/>
+!["Application architecture diagram"](assets/resources.png)
 
 > This template provisions resources to an Azure subscription that you will select upon provisioning them. Please refer to the [Pricing calculator for Microsoft Azure](https://azure.microsoft.com/pricing/calculator/) and, if needed, update the included Azure resource definitions found in `infra/main.bicep` to suit your needs.
 

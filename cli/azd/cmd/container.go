@@ -213,6 +213,9 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			return env, nil
 		},
 	)
+	container.RegisterSingleton(func() environment.EnvironmentResolver {
+		return func() (*environment.Environment, error) { return loadEnvironmentIfAvailable() }
+	})
 
 	// Lazy loads an existing environment, erroring out if not available
 	// One can repeatedly call GetValue to wait until the environment is available.
@@ -282,7 +285,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(templates.NewTemplateManager)
 	container.RegisterSingleton(auth.NewManager)
 	container.RegisterSingleton(azcli.NewUserProfileService)
-	container.RegisterSingleton(azcli.NewSubscriptionsService)
+	container.RegisterSingleton(account.NewSubscriptionsService)
 	container.RegisterSingleton(account.NewManager)
 	container.RegisterSingleton(account.NewSubscriptionsManager)
 	container.RegisterSingleton(azcli.NewManagedClustersService)

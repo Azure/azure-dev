@@ -55,6 +55,8 @@ type Environment struct {
 	Root string
 }
 
+type EnvironmentResolver func() (*Environment, error)
+
 // Same restrictions as a deployment name (ref:
 // https://docs.microsoft.com/azure/azure-resource-manager/management/resource-name-rules#microsoftresources)
 var environmentNameRegexp = regexp.MustCompile(`^[a-zA-Z0-9-\(\)_\.]{1,64}$`)

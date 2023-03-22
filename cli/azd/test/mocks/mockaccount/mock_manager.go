@@ -4,7 +4,6 @@ import (
 	"context"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
 type MockAccountManager struct {
@@ -12,7 +11,7 @@ type MockAccountManager struct {
 	DefaultSubscription string
 
 	Subscriptions []account.Subscription
-	Locations     []azcli.AzCliLocation
+	Locations     []account.Location
 }
 
 func (a *MockAccountManager) Clear(ctx context.Context) error {
@@ -59,7 +58,7 @@ func (a *MockAccountManager) GetDefaultSubscriptionID(ctx context.Context) strin
 	return a.DefaultSubscription
 }
 
-func (a *MockAccountManager) GetLocations(ctx context.Context, subscriptionId string) ([]azcli.AzCliLocation, error) {
+func (a *MockAccountManager) GetLocations(ctx context.Context, subscriptionId string) ([]account.Location, error) {
 	return a.Locations, nil
 }
 
@@ -81,8 +80,9 @@ func (a *MockAccountManager) SetDefaultLocation(
 	for _, loc := range a.Locations {
 		if loc.Name == location {
 			return &account.Location{
-				Name:        loc.Name,
-				DisplayName: loc.DisplayName,
+				Name:                loc.Name,
+				DisplayName:         loc.DisplayName,
+				RegionalDisplayName: loc.RegionalDisplayName,
 			}, nil
 		}
 	}

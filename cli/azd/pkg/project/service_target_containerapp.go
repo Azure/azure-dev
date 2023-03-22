@@ -181,7 +181,8 @@ func (at *containerAppTarget) Publish(
 
 			log.Printf("logging into registry %s", packageDetails.LoginServer)
 			task.SetProgress(NewServiceProgress("Logging into container registry"))
-			if err := at.containerRegistryService.LoginAcr(ctx, at.env.GetSubscriptionId(), packageDetails.LoginServer); err != nil {
+			err := at.containerRegistryService.LoginAcr(ctx, targetResource.SubscriptionId(), packageDetails.LoginServer)
+			if err != nil {
 				task.SetError(fmt.Errorf("logging into registry '%s': %w", packageDetails.LoginServer, err))
 				return
 			}
@@ -223,7 +224,7 @@ func (at *containerAppTarget) Publish(
 			deploymentName := fmt.Sprintf("%s-%s", at.env.GetEnvName(), serviceConfig.Name)
 			scope := infra.NewResourceGroupScope(
 				at.cli,
-				at.env.GetSubscriptionId(),
+				targetResource.SubscriptionId(),
 				targetResource.ResourceGroupName(),
 				deploymentName,
 			)
@@ -245,8 +246,9 @@ func (at *containerAppTarget) Publish(
 			if targetResource.ResourceName() == "" {
 				azureResource, err := at.resourceManager.GetServiceResource(
 					ctx,
-					serviceConfig,
+					targetResource.SubscriptionId(),
 					targetResource.ResourceGroupName(),
+					serviceConfig,
 					"deploy",
 				)
 				if err != nil {
@@ -256,7 +258,7 @@ func (at *containerAppTarget) Publish(
 
 				// Fill in the target resource
 				targetResource = environment.NewTargetResource(
-					at.env.GetSubscriptionId(),
+					targetResource.SubscriptionId(),
 					targetResource.ResourceGroupName(),
 					azureResource.Name,
 					azureResource.Type,
@@ -278,7 +280,7 @@ func (at *containerAppTarget) Publish(
 			task.SetResult(&ServicePublishResult{
 				Package: packageOutput,
 				TargetResourceId: azure.ContainerAppRID(
-					at.env.GetSubscriptionId(),
+					targetResource.SubscriptionId(),
 					targetResource.ResourceGroupName(),
 					targetResource.ResourceName(),
 				),
@@ -297,7 +299,8 @@ func (at *containerAppTarget) Endpoints(
 	targetResource *environment.TargetResource,
 ) ([]string, error) {
 	if containerAppProperties, err := at.cli.GetContainerAppProperties(
-		ctx, at.env.GetSubscriptionId(),
+		ctx,
+		targetResource.SubscriptionId(),
 		targetResource.ResourceGroupName(),
 		targetResource.ResourceName(),
 	); err != nil {

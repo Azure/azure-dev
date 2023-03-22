@@ -167,7 +167,7 @@ func Test_getSubscriptionOptions(t *testing.T) {
 					IsDefault:          false,
 				},
 			},
-			Locations: []azcli.AzCliLocation{},
+			Locations: []account.Location{},
 		}
 
 		subList, result, err := getSubscriptionOptions(ctx, mockAccount)
@@ -277,13 +277,19 @@ func Test_createAndInitEnvironment(t *testing.T) {
 			mockContext.Console,
 			&mockaccount.MockAccountManager{
 				Subscriptions: []account.Subscription{{Id: expectedSub}},
-				Locations:     []azcli.AzCliLocation{{DisplayName: "west", Name: expectedLocation}},
+				Locations: []account.Location{
+					{
+						Name:                expectedLocation,
+						DisplayName:         "West",
+						RegionalDisplayName: "(US) West",
+					},
+				},
 			},
 			azcli.NewUserProfileService(
 				&mocks.MockMultiTenantCredentialProvider{},
 				mockContext.HttpClient,
 			),
-			&mockSubscriptionTenantResolver{},
+			&mockUtilSubscriptionTenantResolver{},
 		)
 		require.NoError(t, err)
 
@@ -294,10 +300,10 @@ func Test_createAndInitEnvironment(t *testing.T) {
 	})
 }
 
-type mockSubscriptionTenantResolver struct {
+type mockUtilSubscriptionTenantResolver struct {
 }
 
-func (m *mockSubscriptionTenantResolver) LookupTenant(
+func (m *mockUtilSubscriptionTenantResolver) LookupTenant(
 	ctx context.Context, subscriptionId string) (tenantId string, err error) {
 	return "00000000-0000-0000-0000-000000000000", nil
 }

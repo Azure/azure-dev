@@ -144,17 +144,6 @@ func normalizeDotNetSecret(key string) string {
 
 func findProjectFile(path string) ([]string, error) {
 	files, err := filepath.Glob(path + "/*proj")
-	// err := filepath.Walk(path, func(file string, info os.FileInfo, err error) error {
-	// 	if err != nil {
-	// 		return fmt.Errorf("error: walking through file path %s: %s", path, err)
-	// 	}
-
-	// 	if !info.IsDir() && (filepath.Ext(file) == ".csproj" || filepath.Ext(file) == ".vbproj" || filepath.Ext(file) == ".fsproj") {
-	// 		files = append(files, file)
-	// 	}
-	// 	return nil
-	// })
-	fmt.Println(files)
 	if err != nil {
 		return files, err
 	}

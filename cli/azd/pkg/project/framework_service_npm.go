@@ -14,7 +14,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/npm"
-	"github.com/otiai10/copy"
 )
 
 type npmProject struct {
@@ -90,11 +89,15 @@ func (np *npmProject) Build(
 			}
 
 			task.SetProgress(NewServiceProgress("Copying deployment package"))
-			if err := copy.Copy(
+
+			if err := buildForZip(
 				publishSource,
 				publishRoot,
-				skipPatterns(
-					filepath.Join(publishSource, "node_modules"), filepath.Join(publishSource, ".azure"))); err != nil {
+				buildForZipOptions{
+					excludeConditions: []excludeDirEntryCondition{
+						excludeNodeModules,
+					},
+				}); err != nil {
 				task.SetError(fmt.Errorf("publishing for %s: %w", serviceConfig.Name, err))
 				return
 			}
@@ -105,4 +108,10 @@ func (np *npmProject) Build(
 			})
 		},
 	)
+}
+
+const cNodeModulesName = "node_modules"
+
+func excludeNodeModules(path string, file os.FileInfo) bool {
+	return !file.IsDir() && file.Name() == cNodeModulesName
 }

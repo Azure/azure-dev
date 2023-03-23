@@ -199,7 +199,7 @@ func normalizeDotNetSecret(key string) string {
 func findProjectFile(path string, dotnetProjectFile string) ([]string, error) {
 	files, err := filepath.Glob(path + "/*proj")
 	if err != nil {
-		return files, fmt.Errorf("error: checking project file in %s: %s", path, err)
+		return files, fmt.Errorf("error: checking project file in %s: %w", path, err)
 	}
 	if len(files) == 0 {
 		return files, fmt.Errorf("no project file (.csproj or .vbproj or .fsproj) found")

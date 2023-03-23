@@ -32,6 +32,8 @@ type ServiceConfig struct {
 	Infra provisioning.Options `yaml:"infra"`
 	// Hook configuration for service
 	Hooks map[string]*ext.HookConfig `yaml:"hooks,omitempty"`
+	// The optional dotnet project file if there're multiple project file in folder
+	DotnetProjectFile string `yaml:"dotnetProjectFile"`
 
 	*ext.EventDispatcher[ServiceLifecycleEventArgs] `yaml:",omitempty"`
 

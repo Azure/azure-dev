@@ -41,7 +41,7 @@ func (dp *dotnetProject) RequiredExternalTools(context.Context) []tools.External
 
 // Initializes the dotnet project
 func (dp *dotnetProject) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
-	projFile, err := findProjectFile(serviceConfig.Path())
+	projFile, err := findProjectFile(serviceConfig.Path(), serviceConfig.DotnetProjectFile)
 	if err != nil {
 		return err
 	}
@@ -142,16 +142,18 @@ func normalizeDotNetSecret(key string) string {
 	return strings.ReplaceAll(key, "__", ":")
 }
 
-func findProjectFile(path string) ([]string, error) {
+func findProjectFile(path string, dotnetProjectFile string) ([]string, error) {
 	files, err := filepath.Glob(path + "/*proj")
 	if err != nil {
 		return files, err
 	}
 	if len(files) == 0 {
 		return files, fmt.Errorf("no project file (.csproj or .vbproj or .fsproj) found")
-	} else if len(files) > 1 {
-		return files, fmt.Errorf("there are multiple project files. "+
-			"Please make sure the current directory %s only have one project file", path)
+	} else if len(files) > 1 && dotnetProjectFile == "" {
+		return files, fmt.Errorf("there are multiple project files in %s. "+
+			"Please add the project file path under row 'dotnetProjectFile' in azure.yaml", path)
+	} else if len(files) > 1 && dotnetProjectFile != "" {
+		files = []string{dotnetProjectFile}
 	}
 	return files, err
 }

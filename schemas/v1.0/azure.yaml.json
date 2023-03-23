@@ -320,6 +320,11 @@
                     "$ref": "#/definitions/hook"
                 }
             }
+        },
+        "dotnetProjectFile": {
+            "type": "string",
+            "minLength": 2,
+            "title": "File path of dotnet's project file"
         }
     },
     "definitions": {

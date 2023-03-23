@@ -41,6 +41,10 @@ steps:
           Write-Host "SynchronousCleanup: $SynchronousCleanup"
           Write-Host "##vso[task.setvariable variable=SynchronousCleanup]$SynchronousCleanup"
 
+          $randomNum = Get-Random
+          $EnvName = "env-name-$randomNum"
+          Write-Host "##vso[task.setvariable variable=EnvName]$EnvName"
+
           $CleanupImmediate = 'true'
           if ('$(CleanupHoursDelay)' -ne '0') {
             $CleanupImmediate = 'false'
@@ -60,6 +64,88 @@ steps:
           TargetFolder: "$(Build.SourcesDirectory)/temp"
       displayName: Copy test-templates.sh
 
+    - task: Bash@3
+      displayName: Azd Init
+      inputs:
+        targetType: filePath
+        filePath: templates/tests/azd-init.sh
+        arguments: >
+          -s '$(SubscriptionId)'
+          -t '$(TemplateName)'
+          -e '$(EnvName)'
+        workingDirectory: templates/tests
+
+    - task: Bash@3
+      displayName: Azd Pipeline Config Provider Github
+      inputs:
+        targetType: filePath
+        filePath: templates/tests/azd-pipeline-config-provider-github.sh
+        arguments: >
+          -e '$(EnvName)'
+          -t '$(TemplateName)'
+          -p '$(github-pat)'
+        workingDirectory: templates/tests
+
+    - task: Bash@3
+      displayName: Tracking Github Child Pipeline
+      inputs:
+        targetType: filePath
+        filePath: templates/tests/tracking-github-child-pipeline.sh
+        arguments: >
+          -e '$(EnvName)'
+        workingDirectory: templates/tests
+
+    - task: Bash@3
+      displayName: Azd Pipeline Config Provider Azdo
+      env:
+        AZURE_DEVOPS_EXT_PAT: $(AZURE_DEVOPS_EXT_PAT)
+        AZURE_DEVOPS_ORG_NAME: $(AZURE_DEVOPS_ORG_NAME)
+        SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+        GIT_TERMINAL_PROMPT: 1
+      inputs:
+        targetType: filePath
+        filePath: templates/tests/azd-pipeline-config-provider-azdo.sh
+        arguments: >
+          -p '$(AZURE_DEVOPS_EXT_PAT)'
+          -o '$(AZURE_DEVOPS_ORG_NAME)'
+          -t '$(TemplateName)'
+          -e '$(EnvName)'
+        workingDirectory: templates/tests
+
+    - task: Bash@3
+      displayName: Tracking Azdo Child Pipeline
+      env:
+        AZURE_DEVOPS_EXT_PAT: $(AZURE_DEVOPS_EXT_PAT)
+        AZURE_DEVOPS_ORG_NAME: $(AZURE_DEVOPS_ORG_NAME)
+        SYSTEM_ACCESSTOKEN: $(System.AccessToken)
+        GIT_TERMINAL_PROMPT: 1
+      inputs:
+        targetType: filePath
+        filePath: templates/tests/tracking-azdo-child-pipeline.sh
+        arguments: >
+          -e '$(EnvName)'
+          -p '$(AZURE_DEVOPS_EXT_PAT)'
+          -o '$(AZURE_DEVOPS_ORG_NAME)'
+        workingDirectory: templates/tests
+
+    - task: Bash@3
+      displayName: Azd Provision
+      inputs:
+        targetType: filePath
+        filePath: templates/tests/azd-provision.sh
+        arguments: >
+          -e '$(EnvName)'
+        workingDirectory: templates/tests
+
+    - task: Bash@3
+      displayName: Cleanup Resource
+      inputs:
+        targetType: filePath
+        filePath: templates/tests/cleanupResource.sh
+        arguments: >
+          -e '$(EnvName)'
+        workingDirectory: templates/tests
+        
     - task: DevcontainersCI@0
       inputs:
           env: |

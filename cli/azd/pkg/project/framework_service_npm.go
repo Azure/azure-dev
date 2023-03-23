@@ -11,7 +11,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/npm"
 )
@@ -22,10 +21,10 @@ type npmProject struct {
 }
 
 // NewNpmProject creates a new instance of a NPM project
-func NewNpmProject(commandRunner exec.CommandRunner, env *environment.Environment) FrameworkService {
+func NewNpmProject(cli npm.NpmCli, env *environment.Environment) FrameworkService {
 	return &npmProject{
 		env: env,
-		cli: npm.NewNpmCli(commandRunner),
+		cli: cli,
 	}
 }
 
@@ -46,9 +45,8 @@ func (np *npmProject) Restore(
 ) *async.TaskWithProgress[*ServiceRestoreResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServiceRestoreResult, ServiceProgress]) {
-			// Run NPM install
-			task.SetProgress(NewServiceProgress("Installing dependencies"))
-			if err := np.cli.Install(ctx, serviceConfig.Path(), false); err != nil {
+			task.SetProgress(NewServiceProgress("Installing NPM dependencies"))
+			if err := np.cli.Install(ctx, serviceConfig.Path()); err != nil {
 				task.SetError(err)
 				return
 			}
@@ -66,6 +64,35 @@ func (np *npmProject) Build(
 ) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServiceBuildResult, ServiceProgress]) {
+			// Exec custom `build` script if available
+			// If `build`` script is not defined in the package.json the NPM script will NOT fail
+			task.SetProgress(NewServiceProgress("Running NPM build script"))
+			if err := np.cli.RunScript(ctx, serviceConfig.Path(), "build", np.env.Environ()); err != nil {
+				task.SetError(err)
+				return
+			}
+
+			publishSource := serviceConfig.Path()
+
+			if serviceConfig.OutputPath != "" {
+				publishSource = filepath.Join(publishSource, serviceConfig.OutputPath)
+			}
+
+			task.SetResult(&ServiceBuildResult{
+				Restore:         restoreOutput,
+				BuildOutputPath: publishSource,
+			})
+		},
+	)
+}
+
+func (np *npmProject) Package(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	buildOutput *ServiceBuildResult,
+) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
+	return async.RunTaskWithProgress(
+		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
 			publishRoot, err := os.MkdirTemp("", "azd")
 			if err != nil {
 				task.SetError(fmt.Errorf("creating package directory for %s: %w", serviceConfig.Name, err))
@@ -75,8 +102,10 @@ func (np *npmProject) Build(
 			// Run Build, injecting env.
 			envs := append(np.env.Environ(), "NODE_ENV=production")
 
-			task.SetProgress(NewServiceProgress("Building service"))
-			if err := np.cli.Build(ctx, serviceConfig.Path(), envs); err != nil {
+			// Exec custom `package` script if available
+			// If `package` script is not defined in the package.json the NPM script will NOT fail
+			task.SetProgress(NewServiceProgress("Running NPM package script"))
+			if err := np.cli.RunScript(ctx, serviceConfig.Path(), "package", envs); err != nil {
 				task.SetError(err)
 				return
 			}
@@ -102,9 +131,9 @@ func (np *npmProject) Build(
 				return
 			}
 
-			task.SetResult(&ServiceBuildResult{
-				Restore:         restoreOutput,
-				BuildOutputPath: publishRoot,
+			task.SetResult(&ServicePackageResult{
+				Build:       buildOutput,
+				PackagePath: publishRoot,
 			})
 		},
 	)

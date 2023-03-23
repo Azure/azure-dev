@@ -15,9 +15,15 @@ import (
 	"strings"
 )
 
+// Settings to modify the way CmdTree is executed
+type CmdTreeOptions struct {
+	Interactive bool
+}
+
 // CommandRunner exposes the contract for executing console/shell commands for the specified runArgs
 type CommandRunner interface {
 	Run(ctx context.Context, args RunArgs) (RunResult, error)
+	RunList(ctx context.Context, commands []string, args RunArgs) (RunResult, error)
 }
 
 // Creates a new default instance of the CommandRunner
@@ -137,6 +143,40 @@ func (r *commandRunner) Run(ctx context.Context, args RunArgs) (RunResult, error
 	}
 
 	return result, err
+}
+
+func (r *commandRunner) RunList(ctx context.Context, commands []string, args RunArgs) (RunResult, error) {
+	process, err := newCmdTree(ctx, "", commands, true, false)
+	if err != nil {
+		return NewRunResult(-1, "", ""), err
+	}
+
+	process.Cmd.Dir = args.Cwd
+	process.Env = appendEnv(args.Env)
+
+	var stdOutBuf bytes.Buffer
+	var stdErrBuf bytes.Buffer
+
+	if process.Stdout == nil {
+		process.Stdout = &stdOutBuf
+	}
+
+	if process.Stderr == nil {
+		process.Stderr = &stdErrBuf
+	}
+
+	if err := process.Start(); err != nil {
+		return NewRunResult(-1, "", ""), fmt.Errorf("error starting process: %w", err)
+	}
+	defer process.Kill()
+
+	err = process.Wait()
+
+	return NewRunResult(
+		process.ProcessState.ExitCode(),
+		stdOutBuf.String(),
+		stdErrBuf.String(),
+	), err
 }
 
 func appendEnv(env []string) []string {

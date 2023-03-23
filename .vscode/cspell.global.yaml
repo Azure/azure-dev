@@ -104,7 +104,10 @@ ignoreWords:
     - PLACEHOLDERIACTOOLS
     - postcommand
     - postinit
+    - postbuild
+    - postpublish
     - preinline
+    - prebuild
     - precommand
     - predeploy
     - preinteractive
@@ -164,6 +167,7 @@ ignoreWords:
     - menuid
     - PLACEHOLDERIACTOOLS
     - LOGANALYTICS
+    - venv
     - webapprouting
     - zipdeploy
     - appinsights

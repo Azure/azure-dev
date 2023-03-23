@@ -13,7 +13,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/python"
 )
@@ -24,10 +23,10 @@ type pythonProject struct {
 }
 
 // NewPythonProject creates a new instance of the Python project
-func NewPythonProject(commandRunner exec.CommandRunner, env *environment.Environment) FrameworkService {
+func NewPythonProject(cli *python.PythonCli, env *environment.Environment) FrameworkService {
 	return &pythonProject{
 		env: env,
-		cli: python.NewPythonCli(commandRunner),
+		cli: cli,
 	}
 }
 
@@ -48,12 +47,14 @@ func (pp *pythonProject) Restore(
 ) *async.TaskWithProgress[*ServiceRestoreResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServiceRestoreResult, ServiceProgress]) {
+			task.SetProgress(NewServiceProgress("Checking for Python virtual environment"))
 			vEnvName := pp.getVenvName(serviceConfig)
 			vEnvPath := path.Join(serviceConfig.Path(), vEnvName)
 
 			_, err := os.Stat(vEnvPath)
 			if err != nil {
 				if os.IsNotExist(err) {
+					task.SetProgress(NewServiceProgress("Creating Python virtual environment"))
 					err = pp.cli.CreateVirtualEnv(ctx, serviceConfig.Path(), vEnvName)
 					if err != nil {
 						task.SetError(fmt.Errorf(
@@ -71,6 +72,7 @@ func (pp *pythonProject) Restore(
 				}
 			}
 
+			task.SetProgress(NewServiceProgress("Installing Python PIP dependencies"))
 			err = pp.cli.InstallRequirements(ctx, serviceConfig.Path(), vEnvName, "requirements.txt")
 			if err != nil {
 				task.SetError(
@@ -84,7 +86,7 @@ func (pp *pythonProject) Restore(
 	)
 }
 
-// Builds the Python project by copying source files into the configured output path
+// Build for Python apps performs a no-op and returns the service path with an optional output path when specified.
 func (pp *pythonProject) Build(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
@@ -92,20 +94,36 @@ func (pp *pythonProject) Build(
 ) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServiceBuildResult, ServiceProgress]) {
-			publishRoot, err := os.MkdirTemp("", "azd")
-			if err != nil {
-				task.SetError(fmt.Errorf("creating package directory for %s: %w", serviceConfig.Name, err))
-				return
-			}
-
 			publishSource := serviceConfig.Path()
 
 			if serviceConfig.OutputPath != "" {
 				publishSource = filepath.Join(publishSource, serviceConfig.OutputPath)
 			}
 
-			task.SetProgress(NewServiceProgress("Copying deployment package"))
+			task.SetResult(&ServiceBuildResult{
+				Restore:         restoreOutput,
+				BuildOutputPath: publishSource,
+			})
+		},
+	)
+}
 
+func (pp *pythonProject) Package(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	buildOutput *ServiceBuildResult,
+) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
+	return async.RunTaskWithProgress(
+		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
+			publishRoot, err := os.MkdirTemp("", "azd")
+			if err != nil {
+				task.SetError(fmt.Errorf("creating package directory for %s: %w", serviceConfig.Name, err))
+				return
+			}
+
+			publishSource := buildOutput.BuildOutputPath
+
+			task.SetProgress(NewServiceProgress("Copying deployment package"))
 			if err := buildForZip(
 				publishSource,
 				publishRoot,
@@ -119,9 +137,9 @@ func (pp *pythonProject) Build(
 				return
 			}
 
-			task.SetResult(&ServiceBuildResult{
-				Restore:         restoreOutput,
-				BuildOutputPath: publishRoot,
+			task.SetResult(&ServicePackageResult{
+				Build:       buildOutput,
+				PackagePath: publishRoot,
 			})
 		},
 	)

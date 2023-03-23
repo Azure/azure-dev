@@ -48,19 +48,19 @@ func (st *appServiceTarget) Initialize(ctx context.Context, serviceConfig *Servi
 func (st *appServiceTarget) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	buildOutput *ServiceBuildResult,
+	packageOutput *ServicePackageResult,
 ) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
 			task.SetProgress(NewServiceProgress("Compressing deployment artifacts"))
-			zipFilePath, err := createDeployableZip(serviceConfig.Name, buildOutput.BuildOutputPath)
+			zipFilePath, err := createDeployableZip(serviceConfig.Name, packageOutput.PackagePath)
 			if err != nil {
 				task.SetError(err)
 				return
 			}
 
 			task.SetResult(&ServicePackageResult{
-				Build:       buildOutput,
+				Build:       packageOutput.Build,
 				PackagePath: zipFilePath,
 			})
 		},

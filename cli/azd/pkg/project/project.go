@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/alphafeatures"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
@@ -45,6 +46,7 @@ func ReadProject(
 	projectPath string,
 	env *environment.Environment,
 	accountManager account.Manager,
+	alphaFeatureManager *alphafeatures.AlphaFeatureManager,
 ) (*Project, error) {
 	projectRootDir := filepath.Dir(projectPath)
 
@@ -55,7 +57,8 @@ func ReadProject(
 	}
 
 	// Evaluate project
-	project, err := projectConfig.GetProject(ctx, env, console, azCli, commandRunner, accountManager)
+	project, err := projectConfig.GetProject(
+		ctx, env, console, azCli, commandRunner, accountManager, alphaFeatureManager)
 	if err != nil {
 		return nil, fmt.Errorf("reading project: %w", err)
 	}

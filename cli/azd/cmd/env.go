@@ -11,6 +11,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/alphafeatures"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -337,16 +338,17 @@ func newEnvRefreshCmd() *cobra.Command {
 }
 
 type envRefreshAction struct {
-	azdCtx         *azdcontext.AzdContext
-	projectConfig  *project.ProjectConfig
-	accountManager account.Manager
-	azCli          azcli.AzCli
-	env            *environment.Environment
-	flags          *envRefreshFlags
-	console        input.Console
-	formatter      output.Formatter
-	writer         io.Writer
-	commandRunner  exec.CommandRunner
+	azdCtx              *azdcontext.AzdContext
+	projectConfig       *project.ProjectConfig
+	accountManager      account.Manager
+	azCli               azcli.AzCli
+	env                 *environment.Environment
+	flags               *envRefreshFlags
+	console             input.Console
+	formatter           output.Formatter
+	writer              io.Writer
+	commandRunner       exec.CommandRunner
+	alphaFeatureManager *alphafeatures.AlphaFeatureManager
 }
 
 func newEnvRefreshAction(
@@ -360,18 +362,20 @@ func newEnvRefreshAction(
 	console input.Console,
 	formatter output.Formatter,
 	writer io.Writer,
+	alphaFeatureManager *alphafeatures.AlphaFeatureManager,
 ) actions.Action {
 	return &envRefreshAction{
-		azdCtx:         azdCtx,
-		azCli:          azCli,
-		accountManager: accountManager,
-		env:            env,
-		flags:          flags,
-		console:        console,
-		formatter:      formatter,
-		projectConfig:  projectConfig,
-		writer:         writer,
-		commandRunner:  commandRunner,
+		azdCtx:              azdCtx,
+		azCli:               azCli,
+		accountManager:      accountManager,
+		env:                 env,
+		flags:               flags,
+		console:             console,
+		formatter:           formatter,
+		projectConfig:       projectConfig,
+		writer:              writer,
+		commandRunner:       commandRunner,
+		alphaFeatureManager: alphaFeatureManager,
 	}
 }
 
@@ -386,6 +390,7 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 		ef.console,
 		ef.commandRunner,
 		ef.accountManager,
+		ef.alphaFeatureManager,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("creating provisioning manager: %w", err)

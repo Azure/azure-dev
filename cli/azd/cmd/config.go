@@ -6,11 +6,14 @@ import (
 	"io"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/alphafeatures"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/spf13/cobra"
 )
@@ -137,6 +140,13 @@ $ azd config set defaults.location eastus`,
 			Long:  `Resets all configuration in ` + userConfigPath + ` to the default.`,
 		},
 		ActionResolver: newConfigResetAction,
+	})
+
+	group.Add("list-alpha", &actions.ActionDescriptorOptions{
+		Command: &cobra.Command{
+			Short: "Display the list of available features in alpha stage.",
+		},
+		ActionResolver: newConfigListAlphaAction,
 	})
 
 	return group
@@ -334,4 +344,47 @@ func getCmdConfigHelpFooter(c *cobra.Command) string {
 			output.WithHighLightFormat("azd config set defaults.location"),
 			output.WithWarningFormat("<location>")),
 	})
+}
+
+type configListAlphaAction struct {
+	alphaFeaturesManager *alphafeatures.AlphaFeatureManager
+	console              input.Console
+	args                 []string
+}
+
+func (a *configListAlphaAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	features, err := a.alphaFeaturesManager.ListFeatures()
+	if err != nil {
+		return nil, err
+	}
+	var alphaOutput []string
+	for _, alphaFeature := range features {
+		alphaOutput = append(alphaOutput,
+			strings.Join(
+				[]string{
+					fmt.Sprintf("Name: %s", alphaFeature.Id),
+					fmt.Sprintf("Description: %s", alphaFeature.Description),
+					fmt.Sprintf("Status: %s", alphaFeature.Status),
+				},
+				"\n",
+			))
+	}
+	a.console.Message(ctx, strings.Join(alphaOutput, "\n\n"))
+
+	return &actions.ActionResult{
+		Message: &actions.ResultMessage{
+			Header: "List alpha features.",
+		},
+	}, nil
+}
+
+func newConfigListAlphaAction(
+	alphaFeaturesManager *alphafeatures.AlphaFeatureManager,
+	console input.Console,
+	args []string) actions.Action {
+	return &configListAlphaAction{
+		alphaFeaturesManager: alphaFeaturesManager,
+		console:              console,
+		args:                 args,
+	}
 }

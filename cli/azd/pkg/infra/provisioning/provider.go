@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/alphafeatures"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -134,11 +135,22 @@ func NewProvider(
 	projectPath string,
 	infraOptions Options,
 	prompters Prompters,
+	alphaFeatureManager *alphafeatures.AlphaFeatureManager,
 ) (Provider, error) {
 	var provider Provider
 
 	if infraOptions.Provider == "" {
 		infraOptions.Provider = Bicep
+	}
+
+	if alphafeatures.IsAlphaKey(string(infraOptions.Provider)) {
+		alphaKey := alphafeatures.AlphaFeatureId(infraOptions.Provider)
+		if !alphaFeatureManager.IsEnabled(alphaKey) {
+			return nil, fmt.Errorf("provider '%s' is alpha feature and it is not enabled. Run `%s` to enable it.",
+				infraOptions.Provider,
+				alphafeatures.GetEnableCommand(alphaKey),
+			)
+		}
 	}
 
 	newProviderFn, ok := providers[infraOptions.Provider]

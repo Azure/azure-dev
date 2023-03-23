@@ -1,4 +1,5 @@
 AADSTS
+alphafeatures
 apimanagement
 apims
 appconfiguration
@@ -27,8 +28,8 @@ azureutil
 azureyaml
 Backticks
 BOOLSLICE
-BUILDNUMBER
 BUILDID
+BUILDNUMBER
 cflags
 circleci
 cmdsubst
@@ -86,8 +87,8 @@ pyapp
 restoreapp
 retriable
 rzip
-securestring
 secureobject
+securestring
 semconv
 serverfarms
 setenvs

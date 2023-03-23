@@ -13,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/alphafeatures"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -74,16 +75,17 @@ func newDeployCmd() *cobra.Command {
 }
 
 type deployAction struct {
-	flags          *deployFlags
-	projectConfig  *project.ProjectConfig
-	azdCtx         *azdcontext.AzdContext
-	env            *environment.Environment
-	accountManager account.Manager
-	azCli          azcli.AzCli
-	formatter      output.Formatter
-	writer         io.Writer
-	console        input.Console
-	commandRunner  exec.CommandRunner
+	flags               *deployFlags
+	projectConfig       *project.ProjectConfig
+	azdCtx              *azdcontext.AzdContext
+	env                 *environment.Environment
+	accountManager      account.Manager
+	azCli               azcli.AzCli
+	formatter           output.Formatter
+	writer              io.Writer
+	console             input.Console
+	commandRunner       exec.CommandRunner
+	alphaFeatureManager *alphafeatures.AlphaFeatureManager
 }
 
 func newDeployAction(
@@ -97,18 +99,20 @@ func newDeployAction(
 	console input.Console,
 	formatter output.Formatter,
 	writer io.Writer,
+	alphaFeatureManager *alphafeatures.AlphaFeatureManager,
 ) actions.Action {
 	return &deployAction{
-		flags:          flags,
-		projectConfig:  projectConfig,
-		azdCtx:         azdCtx,
-		env:            environment,
-		accountManager: accountManager,
-		azCli:          azCli,
-		formatter:      formatter,
-		writer:         writer,
-		console:        console,
-		commandRunner:  commandRunner,
+		flags:               flags,
+		projectConfig:       projectConfig,
+		azdCtx:              azdCtx,
+		env:                 environment,
+		accountManager:      accountManager,
+		azCli:               azCli,
+		formatter:           formatter,
+		writer:              writer,
+		console:             console,
+		commandRunner:       commandRunner,
+		alphaFeatureManager: alphaFeatureManager,
 	}
 }
 
@@ -118,7 +122,8 @@ type DeploymentResult struct {
 }
 
 func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	proj, err := d.projectConfig.GetProject(ctx, d.env, d.console, d.azCli, d.commandRunner, d.accountManager)
+	proj, err := d.projectConfig.GetProject(
+		ctx, d.env, d.console, d.azCli, d.commandRunner, d.accountManager, d.alphaFeatureManager)
 	if err != nil {
 		return nil, fmt.Errorf("creating project: %w", err)
 	}

@@ -9,9 +9,9 @@ As a customer, I can explicitly ask `azd` to unblock and show any _alpha_ functi
 The strategy to ask `azd` to `toggle` between modes is:
 
 - Enable _all_ experimental features: `azd config set experimental.all on`
-- Enable _specific_ experimental feature: `azd config set experimental.name.feature on`
+- Enable _specific_ experimental feature: `azd config set experimental.feature on`
 - Disable _all_ experimental features: `azd config unset experimental.all`
-- Disable _specific_ experimental feature: `azd config unset experimental.name.feature`
+- Disable _specific_ experimental feature: `azd config unset experimental.feature`
 
 ## Alpha feature
 
@@ -38,7 +38,7 @@ All features start as alpha features (e.g., experimental). In this phase, the go
 
 The Azure Developer CLI can list available experimental features running:
 
-> azd config list-experiments
+> azd config list-alpha
 
 ### Changelog notes
 

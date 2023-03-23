@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/alphafeatures"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -72,6 +73,7 @@ func (sc *ServiceConfig) GetService(
 	accountManager account.Manager,
 	commandRunner exec.CommandRunner,
 	console input.Console,
+	alphaFeatureManager *alphafeatures.AlphaFeatureManager,
 ) (*Service, error) {
 	framework, err := sc.GetFrameworkService(ctx, env, commandRunner)
 	if err != nil {
@@ -90,7 +92,8 @@ func (sc *ServiceConfig) GetService(
 		azureResource.Type,
 	)
 
-	serviceTarget, err := sc.GetServiceTarget(ctx, env, targetResource, azCli, commandRunner, console, accountManager)
+	serviceTarget, err := sc.GetServiceTarget(
+		ctx, env, targetResource, azCli, commandRunner, console, accountManager, alphaFeatureManager)
 	if err != nil {
 		return nil, fmt.Errorf("creating service target: %w", err)
 	}
@@ -114,6 +117,7 @@ func (sc *ServiceConfig) GetServiceTarget(
 	commandRunner exec.CommandRunner,
 	console input.Console,
 	accountManager account.Manager,
+	alphaFeatureManager *alphafeatures.AlphaFeatureManager,
 ) (ServiceTarget, error) {
 	var target ServiceTarget
 	var err error
@@ -140,6 +144,7 @@ func (sc *ServiceConfig) GetServiceTarget(
 			console,
 			commandRunner,
 			accountManager,
+			alphaFeatureManager,
 		)
 	case string(AzureFunctionTarget):
 		target, err = NewFunctionAppTarget(sc, env, resource, azCli)

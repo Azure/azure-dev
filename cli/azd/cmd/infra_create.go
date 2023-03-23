@@ -8,6 +8,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/alphafeatures"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -74,16 +75,17 @@ Depending on what Azure resources are created, running this command might take a
 }
 
 type infraCreateAction struct {
-	flags          *infraCreateFlags
-	accountManager account.Manager
-	azdCtx         *azdcontext.AzdContext
-	azCli          azcli.AzCli
-	env            *environment.Environment
-	formatter      output.Formatter
-	projectConfig  *project.ProjectConfig
-	writer         io.Writer
-	console        input.Console
-	commandRunner  exec.CommandRunner
+	flags               *infraCreateFlags
+	accountManager      account.Manager
+	azdCtx              *azdcontext.AzdContext
+	azCli               azcli.AzCli
+	env                 *environment.Environment
+	formatter           output.Formatter
+	projectConfig       *project.ProjectConfig
+	writer              io.Writer
+	console             input.Console
+	commandRunner       exec.CommandRunner
+	alphaFeatureManager *alphafeatures.AlphaFeatureManager
 }
 
 func newInfraCreateAction(
@@ -97,18 +99,20 @@ func newInfraCreateAction(
 	formatter output.Formatter,
 	writer io.Writer,
 	commandRunner exec.CommandRunner,
+	alphaFeatureManager *alphafeatures.AlphaFeatureManager,
 ) actions.Action {
 	return &infraCreateAction{
-		flags:          flags,
-		accountManager: accountManager,
-		azdCtx:         azdCtx,
-		azCli:          azCli,
-		env:            env,
-		formatter:      formatter,
-		projectConfig:  projectConfig,
-		writer:         writer,
-		console:        console,
-		commandRunner:  commandRunner,
+		flags:               flags,
+		accountManager:      accountManager,
+		azdCtx:              azdCtx,
+		azCli:               azCli,
+		env:                 env,
+		formatter:           formatter,
+		projectConfig:       projectConfig,
+		writer:              writer,
+		console:             console,
+		commandRunner:       commandRunner,
+		alphaFeatureManager: alphaFeatureManager,
 	}
 }
 
@@ -133,6 +137,7 @@ func (i *infraCreateAction) Run(ctx context.Context) (*actions.ActionResult, err
 		i.console,
 		i.commandRunner,
 		i.accountManager,
+		i.alphaFeatureManager,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("creating provisioning manager: %w", err)

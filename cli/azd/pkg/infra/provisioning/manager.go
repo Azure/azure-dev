@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/alphafeatures"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -295,6 +296,7 @@ func NewManager(
 	console input.Console,
 	commandRunner exec.CommandRunner,
 	accountManager account.Manager,
+	alphaFeatureManager *alphafeatures.AlphaFeatureManager,
 ) (*Manager, error) {
 	locationPrompt := func(msg string, filter func(loc azcli.AzCliLocation) bool) (location string, err error) {
 		return azureutil.PromptLocationWithFilter(ctx, env, msg, "", console, accountManager, filter)
@@ -304,7 +306,8 @@ func NewManager(
 		Location: locationPrompt,
 	}
 
-	infraProvider, err := NewProvider(ctx, console, azCli, commandRunner, env, projectPath, infraOptions, prompters)
+	infraProvider, err := NewProvider(
+		ctx, console, azCli, commandRunner, env, projectPath, infraOptions, prompters, alphaFeatureManager)
 	if err != nil {
 		return nil, fmt.Errorf("error creating infra provider: %w", err)
 	}

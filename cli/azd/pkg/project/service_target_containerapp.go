@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/alphafeatures"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -36,6 +37,7 @@ type containerAppTarget struct {
 	console                  input.Console
 	commandRunner            exec.CommandRunner
 	accountManager           account.Manager
+	alphaFeatureManager      *alphafeatures.AlphaFeatureManager
 
 	// Standard time library clock, unless mocked in tests
 	clock clock.Clock
@@ -122,6 +124,7 @@ func (at *containerAppTarget) Deploy(
 		}, // make provision output silence
 		at.commandRunner,
 		at.accountManager,
+		at.alphaFeatureManager,
 	)
 	if err != nil {
 		return ServiceDeploymentResult{}, fmt.Errorf("creating provisioning manager: %w", err)
@@ -240,6 +243,7 @@ func NewContainerAppTarget(
 	console input.Console,
 	commandRunner exec.CommandRunner,
 	accountManager account.Manager,
+	alphaFeatureManager *alphafeatures.AlphaFeatureManager,
 ) (ServiceTarget, error) {
 	if resource.ResourceGroupName() == "" {
 		return nil, fmt.Errorf("missing resource group name: %s", resource.ResourceGroupName())
@@ -262,6 +266,7 @@ func NewContainerAppTarget(
 		console:                  console,
 		commandRunner:            commandRunner,
 		clock:                    clock.New(),
+		alphaFeatureManager:      alphaFeatureManager,
 	}, nil
 }
 

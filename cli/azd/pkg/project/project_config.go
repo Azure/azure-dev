@@ -11,6 +11,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/alphafeatures"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
@@ -101,6 +102,7 @@ func (pc *ProjectConfig) GetProject(
 	azCli azcli.AzCli,
 	commandRunner exec.CommandRunner,
 	accountManager account.Manager,
+	alphaFeatureManager *alphafeatures.AlphaFeatureManager,
 ) (*Project, error) {
 	serviceMap := map[string]*Service{}
 
@@ -118,7 +120,8 @@ func (pc *ProjectConfig) GetProject(
 	project.ResourceGroupName = resourceGroupName
 
 	for key, serviceConfig := range pc.Services {
-		service, err := serviceConfig.GetService(ctx, &project, env, azCli, accountManager, commandRunner, console)
+		service, err := serviceConfig.GetService(
+			ctx, &project, env, azCli, accountManager, commandRunner, console, alphaFeatureManager)
 
 		if err != nil {
 			return nil, fmt.Errorf("creating service %s: %w", key, err)

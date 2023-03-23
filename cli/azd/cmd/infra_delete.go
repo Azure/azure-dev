@@ -7,6 +7,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/alphafeatures"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -54,14 +55,15 @@ func newInfraDeleteCmd() *cobra.Command {
 }
 
 type infraDeleteAction struct {
-	flags          *infraDeleteFlags
-	accountManager account.Manager
-	azCli          azcli.AzCli
-	azdCtx         *azdcontext.AzdContext
-	env            *environment.Environment
-	console        input.Console
-	commandRunner  exec.CommandRunner
-	projectConfig  *project.ProjectConfig
+	flags               *infraDeleteFlags
+	accountManager      account.Manager
+	azCli               azcli.AzCli
+	azdCtx              *azdcontext.AzdContext
+	env                 *environment.Environment
+	console             input.Console
+	commandRunner       exec.CommandRunner
+	projectConfig       *project.ProjectConfig
+	alphaFeatureManager *alphafeatures.AlphaFeatureManager
 }
 
 func newInfraDeleteAction(
@@ -73,16 +75,18 @@ func newInfraDeleteAction(
 	projectConfig *project.ProjectConfig,
 	console input.Console,
 	commandRunner exec.CommandRunner,
+	alphaFeatureManager *alphafeatures.AlphaFeatureManager,
 ) actions.Action {
 	return &infraDeleteAction{
-		flags:          flags,
-		accountManager: accountManager,
-		azCli:          azCli,
-		azdCtx:         azdCtx,
-		env:            env,
-		console:        console,
-		commandRunner:  commandRunner,
-		projectConfig:  projectConfig,
+		flags:               flags,
+		accountManager:      accountManager,
+		azCli:               azCli,
+		azdCtx:              azdCtx,
+		env:                 env,
+		console:             console,
+		commandRunner:       commandRunner,
+		projectConfig:       projectConfig,
+		alphaFeatureManager: alphaFeatureManager,
 	}
 }
 
@@ -97,6 +101,7 @@ func (a *infraDeleteAction) Run(ctx context.Context) (*actions.ActionResult, err
 		a.console,
 		a.commandRunner,
 		a.accountManager,
+		a.alphaFeatureManager,
 	)
 
 	if err != nil {

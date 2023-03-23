@@ -65,7 +65,12 @@ func (dp *dotnetProject) Restore(
 ) *async.TaskWithProgress[*ServiceRestoreResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServiceRestoreResult, ServiceProgress]) {
-			if err := dp.dotnetCli.Restore(ctx, serviceConfig.Path()); err != nil {
+			projFile, err := findProjectFile(serviceConfig.Path(), serviceConfig.DotnetProjectFile)
+			if err != nil {
+				task.SetError(err)
+				return
+			}
+			if err := dp.dotnetCli.Restore(ctx, projFile[0]); err != nil {
 				task.SetError(err)
 				return
 			}
@@ -90,7 +95,12 @@ func (dp *dotnetProject) Build(
 			}
 
 			task.SetProgress(NewServiceProgress("Creating deployment package"))
-			if err := dp.dotnetCli.Publish(ctx, serviceConfig.Path(), publishRoot); err != nil {
+			projFile, err := findProjectFile(serviceConfig.Path(), serviceConfig.DotnetProjectFile)
+			if err != nil {
+				task.SetError(err)
+				return
+			}
+			if err := dp.dotnetCli.Publish(ctx, projFile[0], publishRoot); err != nil {
 				task.SetError(err)
 				return
 			}
@@ -145,13 +155,13 @@ func normalizeDotNetSecret(key string) string {
 func findProjectFile(path string, dotnetProjectFile string) ([]string, error) {
 	files, err := filepath.Glob(path + "/*proj")
 	if err != nil {
-		return files, err
+		return files, fmt.Errorf("error: checking project file in %s: %s", path, err)
 	}
 	if len(files) == 0 {
 		return files, fmt.Errorf("no project file (.csproj or .vbproj or .fsproj) found")
 	} else if len(files) > 1 && dotnetProjectFile == "" {
 		return files, fmt.Errorf("there are multiple project files in %s. "+
-			"Please add the project file path under row 'dotnetProjectFile' in azure.yaml", path)
+			"Please add the project file path with row 'dotnetProjectFile' in azure.yaml", path)
 	} else if len(files) > 1 && dotnetProjectFile != "" {
 		files = []string{dotnetProjectFile}
 	}

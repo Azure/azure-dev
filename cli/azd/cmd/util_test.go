@@ -24,6 +24,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/stretchr/testify/require"
 )
 
@@ -111,9 +112,7 @@ func Test_promptEnvironmentName(t *testing.T) {
 			}, nil
 		})
 
-		azCli := azcli.NewAzCli(mockContext.Credentials, azcli.NewAzCliArgs{
-			HttpClient: mockContext.HttpClient,
-		})
+		azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 
 		resourceManager := infra.NewAzureResourceManager(azCli)
 		groups, err := resourceManager.GetResourceGroupsForDeployment(*mockContext.Context, "sub-id", "deployment-name")

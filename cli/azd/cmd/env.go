@@ -264,6 +264,7 @@ func newEnvNewCmd() *cobra.Command {
 type envNewAction struct {
 	azdCtx             *azdcontext.AzdContext
 	userProfileService *azcli.UserProfileService
+	subResolver        account.SubscriptionTenantResolver
 	accountManager     account.Manager
 	flags              *envNewFlags
 	args               []string
@@ -273,6 +274,7 @@ type envNewAction struct {
 func newEnvNewAction(
 	azdCtx *azdcontext.AzdContext,
 	userProfileService *azcli.UserProfileService,
+	subResolver account.SubscriptionTenantResolver,
 	_ auth.LoggedInGuard,
 	accountManager account.Manager,
 	flags *envNewFlags,
@@ -286,6 +288,7 @@ func newEnvNewAction(
 		flags:              flags,
 		args:               args,
 		console:            console,
+		subResolver:        subResolver,
 	}
 }
 
@@ -301,7 +304,7 @@ func (en *envNewAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		location:        en.flags.location,
 	}
 	if _, err := createAndInitEnvironment(
-		ctx, &envSpec, en.azdCtx, en.console, en.accountManager, en.userProfileService); err != nil {
+		ctx, &envSpec, en.azdCtx, en.console, en.accountManager, en.userProfileService, en.subResolver); err != nil {
 		return nil, fmt.Errorf("creating new environment: %w", err)
 	}
 
@@ -339,6 +342,7 @@ func newEnvRefreshCmd() *cobra.Command {
 type envRefreshAction struct {
 	azdCtx         *azdcontext.AzdContext
 	projectConfig  *project.ProjectConfig
+	projectManager project.ProjectManager
 	accountManager account.Manager
 	azCli          azcli.AzCli
 	env            *environment.Environment
@@ -354,6 +358,7 @@ func newEnvRefreshAction(
 	projectConfig *project.ProjectConfig,
 	azCli azcli.AzCli,
 	accountManager account.Manager,
+	projectManager project.ProjectManager,
 	env *environment.Environment,
 	commandRunner exec.CommandRunner,
 	flags *envRefreshFlags,
@@ -365,6 +370,7 @@ func newEnvRefreshAction(
 		azdCtx:         azdCtx,
 		azCli:          azCli,
 		accountManager: accountManager,
+		projectManager: projectManager,
 		env:            env,
 		flags:          flags,
 		console:        console,
@@ -411,7 +417,7 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 		}
 	}
 
-	if err = ef.projectConfig.Initialize(ctx, ef.env, ef.commandRunner); err != nil {
+	if err = ef.projectManager.Initialize(ctx, ef.projectConfig); err != nil {
 		return nil, err
 	}
 

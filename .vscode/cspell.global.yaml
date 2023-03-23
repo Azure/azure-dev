@@ -13,6 +13,8 @@ words:
     - opentelemetry
     - bson
     - azdo
+    - choco
+    - winget
 ignoreWords:
     - AADSTS
     - afwp

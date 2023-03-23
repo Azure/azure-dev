@@ -11,11 +11,12 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v2"
+	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
@@ -23,6 +24,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/kubectl"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
 	"github.com/azure/azure-dev/cli/azd/test/ostest"
 	"github.com/benbjohnson/clock"
 	"github.com/stretchr/testify/require"
@@ -34,9 +36,8 @@ func Test_NewAksTarget(t *testing.T) {
 	serviceConfig := createServiceConfig("")
 	env := createEnv()
 
-	serviceTarget, err := createServiceTarget(mockContext, serviceConfig, env)
+	serviceTarget := createServiceTarget(mockContext, serviceConfig, env)
 
-	require.NoError(t, err)
 	require.NotNil(t, serviceTarget)
 	require.NotNil(t, serviceConfig)
 }
@@ -52,16 +53,15 @@ func Test_Required_Tools(t *testing.T) {
 	serviceConfig := createServiceConfig(tempDir)
 	env := createEnv()
 
-	serviceTarget, err := createServiceTarget(mockContext, serviceConfig, env)
-	require.NoError(t, err)
+	serviceTarget := createServiceTarget(mockContext, serviceConfig, env)
 
-	requiredTools := serviceTarget.RequiredExternalTools()
+	requiredTools := serviceTarget.RequiredExternalTools(*mockContext.Context)
 	require.Len(t, requiredTools, 2)
 	require.Implements(t, new(docker.Docker), requiredTools[0])
 	require.Implements(t, new(kubectl.KubectlCli), requiredTools[1])
 }
 
-func Test_Deploy_HappyPath(t *testing.T) {
+func Test_Package_Publish_HappyPath(t *testing.T) {
 	tempDir := t.TempDir()
 	ostest.Chdir(t, tempDir)
 
@@ -72,25 +72,37 @@ func Test_Deploy_HappyPath(t *testing.T) {
 	serviceConfig := createServiceConfig(tempDir)
 	env := createEnv()
 
-	serviceTarget, err := createServiceTarget(mockContext, serviceConfig, env)
-	require.NoError(t, err)
-
+	serviceTarget := createServiceTarget(mockContext, serviceConfig, env)
 	err = setupK8sManifests(t, serviceConfig)
 	require.NoError(t, err)
 
-	azdContext := azdcontext.NewAzdContextWithDirectory(tempDir)
-	progressChan := createAndLogProgress()
+	packageTask := serviceTarget.Package(
+		*mockContext.Context,
+		serviceConfig,
+		&ServiceBuildResult{BuildOutputPath: "IMAGE_ID"},
+	)
+	logProgress(packageTask)
+	packageResult, err := packageTask.Await()
 
-	result, err := serviceTarget.Deploy(*mockContext.Context, azdContext, "", progressChan)
 	require.NoError(t, err)
-	require.NotNil(t, result)
-	require.Equal(t, AksTarget, result.Kind)
+	require.NotNil(t, packageResult)
 	require.NotNil(t, env.Values["SERVICE_SVC_IMAGE_NAME"])
-	require.IsType(t, new(kubectl.Deployment), result.Details)
-	require.Greater(t, len(result.Endpoints), 0)
+	require.Equal(t, packageResult.PackagePath, env.Values["SERVICE_SVC_IMAGE_NAME"])
+	require.IsType(t, new(aksPackageResult), packageResult.Details)
+
+	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "CLUSTER_NAME", string(infra.AzureResourceTypeManagedCluster))
+	publishTask := serviceTarget.Publish(*mockContext.Context, serviceConfig, packageResult, scope)
+	logProgress(publishTask)
+	publishResult, err := publishTask.Await()
+
+	require.NoError(t, err)
+	require.NotNil(t, publishResult)
+	require.Equal(t, AksTarget, publishResult.Kind)
+	require.IsType(t, new(kubectl.Deployment), publishResult.Details)
+	require.Greater(t, len(publishResult.Endpoints), 0)
 }
 
-func Test_Deploy_No_Cluster_Name(t *testing.T) {
+func Test_Publish_No_Cluster_Name(t *testing.T) {
 	tempDir := t.TempDir()
 	ostest.Chdir(t, tempDir)
 
@@ -104,19 +116,26 @@ func Test_Deploy_No_Cluster_Name(t *testing.T) {
 	// Simulate AKS cluster name not found in env file
 	delete(env.Values, environment.AksClusterEnvVarName)
 
-	serviceTarget, err := createServiceTarget(mockContext, serviceConfig, env)
-	require.NoError(t, err)
+	serviceTarget := createServiceTarget(mockContext, serviceConfig, env)
+	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "CLUSTER_NAME", string(infra.AzureResourceTypeManagedCluster))
+	packageOutput := &ServicePackageResult{
+		Build: &ServiceBuildResult{BuildOutputPath: "IMAGE_ID"},
+		Details: &aksPackageResult{
+			ImageTag:    "IMAGE_TAG",
+			LoginServer: env.Values[environment.ContainerRegistryEndpointEnvVarName],
+		},
+	}
 
-	azdContext := azdcontext.NewAzdContextWithDirectory(tempDir)
-	progressChan := createAndLogProgress()
+	publishTask := serviceTarget.Publish(*mockContext.Context, serviceConfig, packageOutput, scope)
+	logProgress(publishTask)
 
-	result, err := serviceTarget.Deploy(*mockContext.Context, azdContext, "", progressChan)
+	publishResult, err := publishTask.Await()
 	require.Error(t, err)
 	require.ErrorContains(t, err, "could not determine AKS cluster")
-	require.Equal(t, ServiceDeploymentResult{}, result)
+	require.Nil(t, publishResult)
 }
 
-func Test_Deploy_No_Container_Registry(t *testing.T) {
+func Test_Package_No_Container_Registry(t *testing.T) {
 	tempDir := t.TempDir()
 	ostest.Chdir(t, tempDir)
 
@@ -130,19 +149,22 @@ func Test_Deploy_No_Container_Registry(t *testing.T) {
 	// Simulate container registry endpoint not found in env file
 	delete(env.Values, environment.ContainerRegistryEndpointEnvVarName)
 
-	serviceTarget, err := createServiceTarget(mockContext, serviceConfig, env)
-	require.NoError(t, err)
+	serviceTarget := createServiceTarget(mockContext, serviceConfig, env)
 
-	azdContext := azdcontext.NewAzdContextWithDirectory(tempDir)
-	progressChan := createAndLogProgress()
+	packageTask := serviceTarget.Package(
+		*mockContext.Context,
+		serviceConfig,
+		&ServiceBuildResult{BuildOutputPath: "IMAGE_ID"},
+	)
+	logProgress(packageTask)
+	packageResult, err := packageTask.Await()
 
-	result, err := serviceTarget.Deploy(*mockContext.Context, azdContext, "", progressChan)
 	require.Error(t, err)
 	require.ErrorContains(t, err, "could not determine container registry endpoint")
-	require.Equal(t, ServiceDeploymentResult{}, result)
+	require.Nil(t, packageResult)
 }
 
-func Test_Deploy_No_Admin_Credentials(t *testing.T) {
+func Test_Publish_No_Admin_Credentials(t *testing.T) {
 	tempDir := t.TempDir()
 	ostest.Chdir(t, tempDir)
 
@@ -158,16 +180,23 @@ func Test_Deploy_No_Admin_Credentials(t *testing.T) {
 	serviceConfig := createServiceConfig(tempDir)
 	env := createEnv()
 
-	serviceTarget, err := createServiceTarget(mockContext, serviceConfig, env)
-	require.NoError(t, err)
+	serviceTarget := createServiceTarget(mockContext, serviceConfig, env)
+	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "CLUSTER_NAME", string(infra.AzureResourceTypeManagedCluster))
+	packageOutput := &ServicePackageResult{
+		Build: &ServiceBuildResult{BuildOutputPath: "IMAGE_ID"},
+		Details: &aksPackageResult{
+			ImageTag:    "IMAGE_TAG",
+			LoginServer: env.Values[environment.ContainerRegistryEndpointEnvVarName],
+		},
+	}
 
-	azdContext := azdcontext.NewAzdContextWithDirectory(tempDir)
-	progressChan := createAndLogProgress()
+	publishTask := serviceTarget.Publish(*mockContext.Context, serviceConfig, packageOutput, scope)
+	logProgress(publishTask)
+	publishResult, err := publishTask.Await()
 
-	result, err := serviceTarget.Deploy(*mockContext.Context, azdContext, "", progressChan)
 	require.Error(t, err)
 	require.ErrorContains(t, err, "failed retrieving cluster admin credentials")
-	require.Equal(t, ServiceDeploymentResult{}, result)
+	require.Nil(t, publishResult)
 }
 
 func setupK8sManifests(t *testing.T, serviceConfig *ServiceConfig) error {
@@ -479,17 +508,19 @@ func createServiceTarget(
 	mockContext *mocks.MockContext,
 	serviceConfig *ServiceConfig,
 	env *environment.Environment,
-) (ServiceTarget, error) {
-	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "CLUSTER_NAME", string(infra.AzureResourceTypeManagedCluster))
+) ServiceTarget {
 	kubeCtl := kubectl.NewKubectl(mockContext.CommandRunner)
 	dockerCli := docker.NewDocker(mockContext.CommandRunner)
-	managedClustersService := azcli.NewManagedClustersService(mockContext.Credentials, mockContext.HttpClient)
-	containerRegistryService := azcli.NewContainerRegistryService(mockContext.Credentials, mockContext.HttpClient, dockerCli)
+	credentialProvider := mockaccount.SubscriptionCredentialProviderFunc(
+		func(_ context.Context, _ string) (azcore.TokenCredential, error) {
+			return mockContext.Credentials, nil
+		})
+
+	managedClustersService := azcli.NewManagedClustersService(credentialProvider, mockContext.HttpClient)
+	containerRegistryService := azcli.NewContainerRegistryService(credentialProvider, mockContext.HttpClient, dockerCli)
 
 	return NewAksTarget(
-		serviceConfig,
 		env,
-		scope,
 		managedClustersService,
 		containerRegistryService,
 		kubeCtl,
@@ -529,14 +560,10 @@ func createTestCluster(clusterName, username string) *kubectl.KubeConfig {
 	}
 }
 
-func createAndLogProgress() chan (string) {
-	progressChan := make(chan (string))
-
+func logProgress[T comparable, P comparable](task *async.TaskWithProgress[T, P]) {
 	go func() {
-		for value := range progressChan {
+		for value := range task.Progress() {
 			log.Println(value)
 		}
 	}()
-
-	return progressChan
 }

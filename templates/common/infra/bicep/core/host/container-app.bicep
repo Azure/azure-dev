@@ -2,9 +2,9 @@ param name string
 param location string = resourceGroup().location
 param tags object = {}
 
-param containerAppsEnvironmentName string = ''
+param containerAppsEnvironmentName string
 param containerName string = 'main'
-param containerRegistryName string = ''
+param containerRegistryName string
 param env array = []
 param external bool = true
 param imageName string

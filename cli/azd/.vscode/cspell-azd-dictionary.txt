@@ -27,8 +27,8 @@ azureutil
 azureyaml
 Backticks
 BOOLSLICE
-BUILDNUMBER
 BUILDID
+BUILDNUMBER
 cflags
 circleci
 cmdsubst
@@ -71,6 +71,7 @@ nodeapp
 nolint
 notrail
 omitempty
+oneline
 opentelemetry
 ostest
 osutil
@@ -81,13 +82,14 @@ otlpconfig
 otlptrace
 otlptracehttp
 pflag
+preinit
 pulumi
 pyapp
 restoreapp
 retriable
 rzip
-securestring
 secureobject
+securestring
 semconv
 serverfarms
 setenvs
@@ -105,6 +107,7 @@ testdata
 tracesdk
 tracetest
 Truef
+typeflag
 unmarshalling
 unsetenvs
 unsets

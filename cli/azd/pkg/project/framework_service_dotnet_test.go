@@ -29,14 +29,16 @@ func TestBicepOutputsWithDoubleUnderscoresAreConverted(t *testing.T) {
 		return exec.NewRunResult(0, "", ""), nil
 	})
 
-	dp := NewDotNetProject(mockContext.CommandRunner, &ServiceConfig{
+	serviceConfig := &ServiceConfig{
 		Project: &ProjectConfig{
 			Path: "/sample/path/for/test",
 		},
 		RelativePath: "",
-	}, environment.Ephemeral()).(*dotnetProject)
+	}
 
-	err := dp.setUserSecretsFromOutputs(*mockContext.Context, ServiceLifecycleEventArgs{
+	dp := NewDotNetProject(mockContext.CommandRunner, environment.Ephemeral()).(*dotnetProject)
+
+	err := dp.setUserSecretsFromOutputs(*mockContext.Context, serviceConfig, ServiceLifecycleEventArgs{
 		Args: map[string]any{
 			"bicepOutput": map[string]provisioning.OutputParameter{
 				"EXAMPLE_OUTPUT":          {Type: "string", Value: "foo"},
@@ -51,5 +53,4 @@ func TestBicepOutputsWithDoubleUnderscoresAreConverted(t *testing.T) {
 	sort.Strings(keys)
 	require.Equal(t, "EXAMPLE:NESTED:OUTPUT", keys[0])
 	require.Equal(t, "EXAMPLE_OUTPUT", keys[1])
-
 }

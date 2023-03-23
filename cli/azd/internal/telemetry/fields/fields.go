@@ -73,6 +73,12 @@ const (
 	ProjectServiceLanguagesKey = attribute.Key("project.service.languages")
 )
 
+// Environment related attributes
+const (
+	// Hashed environment name
+	EnvNameKey = attribute.Key("env.name")
+)
+
 // Command entry-point attributes
 const (
 	// Flags set by the user. Only parsed flag names are available. Values are not recorded.

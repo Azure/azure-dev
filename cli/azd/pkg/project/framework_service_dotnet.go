@@ -94,7 +94,12 @@ func (dp *dotnetProject) Build(
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServiceBuildResult, ServiceProgress]) {
 			task.SetProgress(NewServiceProgress("Building .NET project"))
-			if err := dp.dotnetCli.Build(ctx, serviceConfig.Path(), defaultDotNetBuildConfiguration, ""); err != nil {
+			projFile, err := findProjectFile(serviceConfig.Path(), serviceConfig.DotnetProjectFile)
+			if err != nil {
+				task.SetError(err)
+				return
+			}
+			if err := dp.dotnetCli.Build(ctx, projFile[0], defaultDotNetBuildConfiguration, ""); err != nil {
 				task.SetError(err)
 				return
 			}
@@ -103,7 +108,7 @@ func (dp *dotnetProject) Build(
 
 			// Attempt to find the default build output location
 			buildOutputDir := serviceConfig.Path()
-			_, err := os.Stat(filepath.Join(buildOutputDir, defaultOutputDir))
+			_, err = os.Stat(filepath.Join(buildOutputDir, defaultOutputDir))
 			if err == nil {
 				buildOutputDir = filepath.Join(buildOutputDir, defaultOutputDir)
 			}
@@ -197,7 +202,7 @@ func normalizeDotNetSecret(key string) string {
 }
 
 func findProjectFile(path string, dotnetProjectFile string) ([]string, error) {
-	files, err := filepath.Glob(path + "/*proj")
+	files, err := filepath.Glob(path + "/*.*proj")
 	if err != nil {
 		return files, fmt.Errorf("error: checking project file in %s: %w", path, err)
 	}

@@ -133,6 +133,15 @@ func (at *containerAppTarget) Publish(
 				return
 			}
 
+			// Save the name of the image we pushed into the environment with a well known key.
+			log.Printf("writing image name to environment")
+			at.env.SetServiceProperty(serviceConfig.Name, "IMAGE_NAME", packageDetails.ImageTag)
+
+			if err := at.env.Save(); err != nil {
+				task.SetError(fmt.Errorf("saving image name to environment: %w", err))
+				return
+			}
+
 			infraManager, err := provisioning.NewManager(
 				ctx,
 				at.env,

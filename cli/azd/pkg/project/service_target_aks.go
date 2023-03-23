@@ -234,6 +234,15 @@ func (t *aksTarget) Publish(
 				return
 			}
 
+			// Save the name of the image we pushed into the environment with a well known key.
+			log.Printf("writing image name to environment")
+			t.env.SetServiceProperty(serviceConfig.Name, "IMAGE_NAME", packageDetails.ImageTag)
+
+			if err := t.env.Save(); err != nil {
+				task.SetError(fmt.Errorf("saving image name to environment: %w", err))
+				return
+			}
+
 			task.SetProgress(NewServiceProgress("Applying k8s manifests"))
 			t.kubectl.SetEnv(t.env.Values)
 			deploymentPath := serviceConfig.K8s.DeploymentPath

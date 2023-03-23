@@ -15,8 +15,8 @@ import (
 type DotNetCli interface {
 	tools.ExternalTool
 	Restore(ctx context.Context, project string) error
-	Build(ctx context.Context, project string, output string) error
-	Publish(ctx context.Context, project string, output string) error
+	Build(ctx context.Context, project string, configuration string, output string) error
+	Publish(ctx context.Context, project string, configuration string, output string) error
 	InitializeSecret(ctx context.Context, project string) error
 	SetSecret(ctx context.Context, key string, value string, project string) error
 }
@@ -72,8 +72,12 @@ func (cli *dotNetCli) Restore(ctx context.Context, project string) error {
 	return nil
 }
 
-func (cli *dotNetCli) Build(ctx context.Context, project string, output string) error {
-	runArgs := exec.NewRunArgs("dotnet", "build", project, "-c", "Release")
+func (cli *dotNetCli) Build(ctx context.Context, project string, configuration string, output string) error {
+	runArgs := exec.NewRunArgs("dotnet", "build", project)
+	if configuration != "" {
+		runArgs = runArgs.AppendParams("-c", configuration)
+	}
+
 	if output != "" {
 		runArgs = runArgs.AppendParams("--output", output)
 	}
@@ -85,8 +89,12 @@ func (cli *dotNetCli) Build(ctx context.Context, project string, output string) 
 	return nil
 }
 
-func (cli *dotNetCli) Publish(ctx context.Context, project string, output string) error {
-	runArgs := exec.NewRunArgs("dotnet", "publish", project, "-c", "Release")
+func (cli *dotNetCli) Publish(ctx context.Context, project string, configuration string, output string) error {
+	runArgs := exec.NewRunArgs("dotnet", "publish", project)
+	if configuration != "" {
+		runArgs = runArgs.AppendParams("-c", configuration)
+	}
+
 	if output != "" {
 		runArgs = runArgs.AppendParams("--output", output)
 	}

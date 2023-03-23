@@ -5,6 +5,8 @@ package project
 
 import (
 	"context"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
@@ -12,8 +14,10 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/azure/azure-dev/cli/azd/test/ostest"
 	"github.com/stretchr/testify/require"
 )
 
@@ -89,6 +93,9 @@ func Test_DotNetProject_Restore(t *testing.T) {
 }
 
 func Test_DotNetProject_Build(t *testing.T) {
+	tempDir := t.TempDir()
+	ostest.Chdir(t, tempDir)
+
 	var runArgs exec.RunArgs
 
 	mockContext := mocks.NewMockContext(context.Background())
@@ -104,6 +111,10 @@ func Test_DotNetProject_Build(t *testing.T) {
 	env := environment.Ephemeral()
 	dotNetCli := dotnet.NewDotNetCli(mockContext.CommandRunner)
 	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageCsharp)
+
+	buildOutputDir := filepath.Join(serviceConfig.Path(), "bin", "Release", "net6.0")
+	err := os.MkdirAll(buildOutputDir, osutil.PermissionDirectory)
+	require.NoError(t, err)
 
 	dotnetProject := NewDotNetProject(dotNetCli, env)
 	buildTask := dotnetProject.Build(*mockContext.Context, serviceConfig, nil)

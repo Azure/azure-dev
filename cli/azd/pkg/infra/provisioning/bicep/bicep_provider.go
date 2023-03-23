@@ -586,7 +586,12 @@ func (p *BicepProvider) getAppConfigsToPurge(
 	for resourceGroup, groupResources := range groupedResources {
 		for _, resource := range groupResources {
 			if resource.Type == string(infra.AzureResourceTypeAppConfig) {
-				config, err := p.azCli.GetAppConfig(ctx, azure.SubscriptionFromRID(resource.Id), resourceGroup, resource.Name)
+				config, err := p.azCli.GetAppConfig(
+					ctx,
+					azure.SubscriptionFromRID(resource.Id),
+					resourceGroup,
+					resource.Name,
+				)
 				if err != nil {
 					return nil, fmt.Errorf("listing app configuration %s properties: %w", resource.Name, err)
 				}

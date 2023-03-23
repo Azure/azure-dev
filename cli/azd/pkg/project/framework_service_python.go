@@ -87,7 +87,7 @@ func (pp *pythonProject) Restore(
 	)
 }
 
-// Builds the Python project by copying source files into the configured output path
+// Build for Python apps performs a no-op and returns the service path with an optional output path when specified.
 func (pp *pythonProject) Build(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,

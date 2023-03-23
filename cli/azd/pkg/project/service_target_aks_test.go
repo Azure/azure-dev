@@ -103,6 +103,8 @@ func Test_Package_Publish_HappyPath(t *testing.T) {
 	require.Equal(t, AksTarget, publishResult.Kind)
 	require.IsType(t, new(kubectl.Deployment), publishResult.Details)
 	require.Greater(t, len(publishResult.Endpoints), 0)
+	// New env variable is created
+	require.Equal(t, "IMAGE_TAG", env.Values["SERVICE_API_IMAGE_NAME"])
 }
 
 func Test_Publish_No_Cluster_Name(t *testing.T) {

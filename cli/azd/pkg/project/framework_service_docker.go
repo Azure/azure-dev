@@ -158,15 +158,6 @@ func (p *dockerProject) Package(
 				return
 			}
 
-			// Save the name of the image we pushed into the environment with a well known key.
-			log.Printf("writing image name to environment")
-			p.env.SetServiceProperty(serviceConfig.Name, "IMAGE_NAME", fullTag)
-
-			if err := p.env.Save(); err != nil {
-				task.SetError(fmt.Errorf("saving image name to environment: %w", err))
-				return
-			}
-
 			task.SetResult(&ServicePackageResult{
 				Build:       buildOutput,
 				PackagePath: fullTag,

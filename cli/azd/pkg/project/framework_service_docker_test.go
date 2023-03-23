@@ -309,9 +309,6 @@ func Test_DockerProject_Package(t *testing.T) {
 	require.NotNil(t, result)
 	require.IsType(t, new(dockerPackageResult), result.Details)
 
-	// New env variable is created
-	require.Equal(t, "ACR_ENDPOINT/test-app/api-test:azd-deploy-0", env.Values["SERVICE_API_IMAGE_NAME"])
-
 	// Result details contain ACR data
 	packageResult, ok := result.Details.(*dockerPackageResult)
 	require.Equal(t, "ACR_ENDPOINT/test-app/api-test:azd-deploy-0", result.PackagePath)

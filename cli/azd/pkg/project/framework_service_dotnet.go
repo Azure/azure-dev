@@ -18,6 +18,10 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 )
 
+const (
+	defaultDotNetBuildConfiguration string = "Release"
+)
+
 type dotnetProject struct {
 	env       *environment.Environment
 	dotnetCli dotnet.DotNetCli
@@ -81,14 +85,32 @@ func (dp *dotnetProject) Build(
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServiceBuildResult, ServiceProgress]) {
 			task.SetProgress(NewServiceProgress("Building .NET project"))
-			if err := dp.dotnetCli.Build(ctx, serviceConfig.Path(), ""); err != nil {
+			if err := dp.dotnetCli.Build(ctx, serviceConfig.Path(), defaultDotNetBuildConfiguration, ""); err != nil {
 				task.SetError(err)
 				return
 			}
 
+			defaultOutputDir := filepath.Join("./bin", defaultDotNetBuildConfiguration)
+
+			// Attempt to find the default build output location
+			buildOutputDir := serviceConfig.Path()
+			_, err := os.Stat(filepath.Join(buildOutputDir, defaultOutputDir))
+			if err == nil {
+				buildOutputDir = filepath.Join(buildOutputDir, defaultOutputDir)
+			}
+
+			// By default dotnet build will create a sub folder for the project framework version, etc. net6.0
+			// If we have a single folder under build configuration assume this location as build output result
+			subDirs, err := os.ReadDir(buildOutputDir)
+			if err == nil {
+				if len(subDirs) == 1 {
+					buildOutputDir = filepath.Join(buildOutputDir, subDirs[0].Name())
+				}
+			}
+
 			task.SetResult(&ServiceBuildResult{
 				Restore:         restoreOutput,
-				BuildOutputPath: serviceConfig.Path(),
+				BuildOutputPath: buildOutputDir,
 			})
 		},
 	)
@@ -108,7 +130,7 @@ func (dp *dotnetProject) Package(
 			}
 
 			task.SetProgress(NewServiceProgress("Publishing .NET project"))
-			if err := dp.dotnetCli.Publish(ctx, serviceConfig.Path(), publishRoot); err != nil {
+			if err := dp.dotnetCli.Publish(ctx, serviceConfig.Path(), defaultDotNetBuildConfiguration, publishRoot); err != nil {
 				task.SetError(err)
 				return
 			}

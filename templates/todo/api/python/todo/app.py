@@ -8,6 +8,7 @@ from opentelemetry.sdk.resources import SERVICE_NAME, Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 import os
+from pathlib import Path
 
 # CORS origins
 apiUrl = os.environ.get('REACT_APP_WEB_BASE_URL')
@@ -16,6 +17,7 @@ if apiUrl != "":
                "https://ms.portal.azure.com",
                "http://localhost:3000/",
                apiUrl]
+    print("CORS with %s is allowed for local host debugging. If you want to change pin number, go to %s.", origins[2], Path(__file__))
 else:
     origins = ["*"]
     print("Setting CORS = * (allow all origins) because env var REACT_APP_WEB_BASE_URL has not a value or is not set.")

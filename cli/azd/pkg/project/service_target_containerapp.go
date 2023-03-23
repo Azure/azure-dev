@@ -156,6 +156,7 @@ func (at *containerAppTarget) Publish(
 				}, // make provision output silence
 				at.commandRunner,
 				at.accountManager,
+				at.alphaFeatureManager,
 			)
 			if err != nil {
 				task.SetError(fmt.Errorf("creating provisioning manager: %w", err))

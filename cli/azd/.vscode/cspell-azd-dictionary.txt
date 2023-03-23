@@ -72,6 +72,7 @@ nodeapp
 nolint
 notrail
 omitempty
+oneline
 opentelemetry
 ostest
 osutil
@@ -82,8 +83,10 @@ otlpconfig
 otlptrace
 otlptracehttp
 pflag
+preinit
 pulumi
 pyapp
+pyvenv
 restoreapp
 retriable
 rzip
@@ -106,6 +109,7 @@ testdata
 tracesdk
 tracetest
 Truef
+typeflag
 unmarshalling
 unsetenvs
 unsets

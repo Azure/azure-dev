@@ -7,55 +7,51 @@ import (
 	"context"
 	"fmt"
 	"os"
-	"sort"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
+	"golang.org/x/exp/slices"
 )
 
-type Locs []azcli.AzCliLocation
-
-func (s Locs) Len() int { return len(s) }
-func (s Locs) Less(i, j int) bool {
-	return strings.Compare(strings.ToLower(s[i].RegionalDisplayName), strings.ToLower(s[j].RegionalDisplayName)) < 0
-}
-func (s Locs) Swap(i, j int) { s[i], s[j] = s[j], s[i] }
-
-// PromptLocation asks the user to select a location from a list of supported azure location
+// PromptLocation asks the user to select a location from a list of supported azure locations for a given subscription.
 func PromptLocation(
-	ctx context.Context, env *environment.Environment, message string, help string, console input.Console,
+	ctx context.Context, subscriptionId string, message string, help string, console input.Console,
 	accountManager account.Manager,
 ) (string, error) {
-	return PromptLocationWithFilter(ctx, env, message, help, console, accountManager, func(acl azcli.AzCliLocation) bool {
-		return true
-	})
+	return PromptLocationWithFilter(ctx, subscriptionId, message, help, console, accountManager,
+		func(_ account.Location) bool {
+			return true
+		})
 }
 
 func PromptLocationWithFilter(
 	ctx context.Context,
-	env *environment.Environment,
+	subscriptionId string,
 	message string,
 	help string,
 	console input.Console,
 	accountManager account.Manager,
-	shouldDisplay func(azcli.AzCliLocation) bool,
+	shouldDisplay func(account.Location) bool,
 ) (string, error) {
-	allLocations, err := accountManager.GetLocations(ctx, env.GetSubscriptionId())
+	allLocations, err := accountManager.GetLocations(ctx, subscriptionId)
 	if err != nil {
 		return "", fmt.Errorf("listing locations: %w", err)
 	}
 
-	locations := make([]azcli.AzCliLocation, 0, len(allLocations))
+	locations := make([]account.Location, 0, len(allLocations))
+
 	for _, location := range allLocations {
 		if shouldDisplay(location) {
 			locations = append(locations, location)
 		}
 	}
 
-	sort.Sort(Locs(locations))
+	slices.SortFunc(locations, func(a, b account.Location) bool {
+		return strings.Compare(
+			strings.ToLower(a.RegionalDisplayName), strings.ToLower(b.RegionalDisplayName)) < 0
+	})
 
 	// Allow the environment variable `AZURE_LOCATION` to control the default value for the location
 	// selection.

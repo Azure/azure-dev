@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -65,7 +66,12 @@ func Test_CLI_Telemetry_UsageData_Simple_Command(t *testing.T) {
 
 	traceFilePath := filepath.Join(dir, "trace.json")
 
-	envNew(ctx, t, cli, envName, true, "--trace-log-file", traceFilePath)
+	_, err = cli.RunCommandWithStdIn(
+		ctx,
+		"\n\n", // accept defaults for sub + location
+		"env", "new", envName, "--trace-log-file", traceFilePath)
+	require.NoError(t, err)
+	fmt.Printf("envName: %s\n", envName)
 
 	traceContent, err := os.ReadFile(traceFilePath)
 	require.NoError(t, err)
@@ -86,14 +92,17 @@ func Test_CLI_Telemetry_UsageData_Simple_Command(t *testing.T) {
 			usageCmdFound = true
 			m := attributesMap(span.Attributes)
 			require.Contains(t, m, fields.SubscriptionIdKey)
-			require.Equal(t, m[fields.SubscriptionIdKey], getEnvSubscriptionId(t, dir, envName))
+			require.Equal(t, getEnvSubscriptionId(t, dir, envName), m[fields.SubscriptionIdKey])
+
+			require.Contains(t, m, fields.EnvNameKey)
+			require.Equal(t, envName, m[fields.EnvNameKey])
 
 			require.Contains(t, m, fields.CmdFlags)
 			require.ElementsMatch(t, m[fields.CmdFlags], []string{"trace-log-file"})
 
-			// env new provides a arg. This should be set.
-			require.Contains(t, m, fields.CmdHasArg)
-			require.Equal(t, m[fields.CmdHasArg], true)
+			// env new provides a single position argument.
+			require.Contains(t, m, fields.CmdArgsCount)
+			require.Equal(t, float64(1), m[fields.CmdArgsCount])
 		}
 	}
 
@@ -152,13 +161,16 @@ func Test_CLI_Telemetry_UsageData_EnvProjectLoad(t *testing.T) {
 			usageCmdFound = true
 			m := attributesMap(span.Attributes)
 			require.Contains(t, m, fields.SubscriptionIdKey)
-			require.Equal(t, m[fields.SubscriptionIdKey], getEnvSubscriptionId(t, dir, envName))
+			require.Equal(t, getEnvSubscriptionId(t, dir, envName), m[fields.SubscriptionIdKey])
 
 			require.Contains(t, m, fields.ProjectTemplateIdKey)
-			require.Equal(t, m[fields.ProjectTemplateIdKey], fields.CaseInsensitiveHash(projConfig.Metadata.Template))
+			require.Equal(t, fields.CaseInsensitiveHash(projConfig.Metadata.Template), m[fields.ProjectTemplateIdKey])
 
 			require.Contains(t, m, fields.ProjectNameKey)
-			require.Equal(t, m[fields.ProjectNameKey], fields.CaseInsensitiveHash(projConfig.Name))
+			require.Equal(t, fields.CaseInsensitiveHash(projConfig.Name), m[fields.ProjectNameKey])
+
+			require.Contains(t, m, fields.EnvNameKey)
+			require.Equal(t, fields.CaseInsensitiveHash(envName), m[fields.EnvNameKey])
 
 			hosts := []string{}
 			languages := []string{}
@@ -175,8 +187,8 @@ func Test_CLI_Telemetry_UsageData_EnvProjectLoad(t *testing.T) {
 			require.Contains(t, m, fields.CmdFlags)
 			require.ElementsMatch(t, m[fields.CmdFlags], []string{"service", "trace-log-file"})
 
-			require.Contains(t, m, fields.CmdHasArg)
-			require.Equal(t, m[fields.CmdHasArg], false)
+			require.Contains(t, m, fields.CmdArgsCount)
+			require.Equal(t, float64(0), m[fields.CmdArgsCount])
 		}
 	}
 	require.True(t, usageCmdFound)

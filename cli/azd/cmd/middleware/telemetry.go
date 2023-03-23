@@ -43,10 +43,9 @@ func (m *TelemetryMiddleware) Run(ctx context.Context, next NextFn) (*actions.Ac
 			}
 		})
 		telemetry.SetUsageAttributes(fields.CmdFlags.StringSlice(changedFlags))
-
-		hasArgSet := len(m.options.Flags.Args()) > 0
-		telemetry.SetUsageAttributes(fields.CmdHasArg.Bool(hasArgSet))
 	}
+
+	telemetry.SetUsageAttributes(fields.CmdArgsCount.Int(len(m.options.Args)))
 
 	defer func() {
 		// Include any usage attributes set

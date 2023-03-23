@@ -83,8 +83,8 @@ const (
 const (
 	// Flags set by the user. Only parsed flag names are available. Values are not recorded.
 	CmdFlags = attribute.Key("cmd.flags")
-	// Boolean. Whether the user provided a positional argument.
-	CmdHasArg = attribute.Key("cmd.has-arg")
+	// Number of positional arguments set.
+	CmdArgsCount = attribute.Key("cmd.args.count")
 )
 
 // All possible enumerations of ExecutionEnvironmentKey

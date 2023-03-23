@@ -34,6 +34,7 @@ type Options struct {
 	Name          string
 	Aliases       []string
 	Flags         *pflag.FlagSet
+	Args          []string
 	isChildAction bool
 }
 

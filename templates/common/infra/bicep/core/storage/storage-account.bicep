@@ -2,9 +2,12 @@ param name string
 param location string = resourceGroup().location
 param tags object = {}
 
-@allowed([ 'Hot', 'Cool', 'Premium' ])
+@allowed([
+  'Cool'
+  'Hot'
+  'Premium' ])
 param accessTier string = 'Hot'
-param allowBlobPublicAccess bool = false
+param allowBlobPublicAccess bool = true
 param allowCrossTenantReplication bool = true
 param allowSharedKeyAccess bool = true
 param containers array = []
@@ -14,8 +17,12 @@ param deleteRetentionPolicy object = {}
 param dnsEndpointType string = 'Standard'
 param kind string = 'StorageV2'
 param minimumTlsVersion string = 'TLS1_2'
-@allowed([ 'Enabled', 'Disabled' ])
-param publicNetworkAccess string = 'Disabled'
+param networkAcls object = {
+  bypass: 'AzureServices'
+  defaultAction: 'Allow'
+}
+@allowed([ '', 'Enabled', 'Disabled' ])
+param publicNetworkAccess string = ''
 param sku object = { name: 'Standard_LRS' }
 
 resource storage 'Microsoft.Storage/storageAccounts@2022-05-01' = {
@@ -32,10 +39,7 @@ resource storage 'Microsoft.Storage/storageAccounts@2022-05-01' = {
     defaultToOAuthAuthentication: defaultToOAuthAuthentication
     dnsEndpointType: dnsEndpointType
     minimumTlsVersion: minimumTlsVersion
-    networkAcls: {
-      bypass: 'AzureServices'
-      defaultAction: 'Allow'
-    }
+    networkAcls: networkAcls
     publicNetworkAccess: publicNetworkAccess
   }
 

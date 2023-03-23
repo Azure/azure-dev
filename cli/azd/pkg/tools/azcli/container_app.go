@@ -44,8 +44,13 @@ func (cli *azCli) createContainerAppsClient(
 	ctx context.Context,
 	subscriptionId string,
 ) (*armappcontainers.ContainerAppsClient, error) {
+	credential, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
 	options := cli.createDefaultClientOptionsBuilder(ctx).BuildArmClientOptions()
-	client, err := armappcontainers.NewContainerAppsClient(subscriptionId, cli.credential, options)
+	client, err := armappcontainers.NewContainerAppsClient(subscriptionId, credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating ContainerApps client: %w", err)
 	}

@@ -187,7 +187,7 @@ func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		deploymentResults = append(deploymentResults, svcDeploymentResult)
 
 		// report endpoint
-		for _, endpoint := range svcDeploymentResult.Endpoints {
+		for _, endpoint := range svcDeploymentResult.Publish.Endpoints {
 			d.console.MessageUxItem(ctx, &ux.Endpoint{Endpoint: endpoint})
 		}
 	}

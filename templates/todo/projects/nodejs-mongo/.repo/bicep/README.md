@@ -43,15 +43,17 @@ The following prerequisites are required to use this application. Please ensure 
 The fastest way for you to get this application up and running on Azure is to use the `azd up` command. This single command will create and configure all necessary Azure resources - including access policies and roles for your account and service-to-service communication with Managed Identities.
 
 1. Open a terminal, create a new empty folder, and change into it.
-2. Run the following command to initialize the project. This command will clone the code to your current folder and prompt you for the following information:
+2. Run the following command to initialize the project. 
+
+```bash
+azd init --template todo-nodejs-mongo
+``` 
+
+This command will clone the code to your current folder and prompt you for the following information:
 
 - `Environment Name`: This will be used as a prefix for the resource group that will be created to hold all Azure resources. This name should be unique within your Azure subscription.
 - `Azure Location`: The Azure location where your resources will be deployed.
 - `Azure Subscription`: The Azure Subscription where your resources will be deployed.
-
-```bash
-azd init --template todo-nodejs-mongo
-```
 
 3.Run the following command to both provision the template's infrastructure to Azure and also deploy the applciation code to those newly provisioned resources.
 

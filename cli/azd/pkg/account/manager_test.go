@@ -10,7 +10,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockarmresources"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockconfig"
@@ -42,7 +41,7 @@ func Test_GetAccountDefaults(t *testing.T) {
 		manager, err := NewManager(
 			mockConfig.WithConfig(expectedConfig),
 			NewSubscriptionsManagerWithCache(
-				azcli.NewSubscriptionsService(
+				NewSubscriptionsService(
 					&mocks.MockMultiTenantCredentialProvider{},
 					mockHttp,
 				),
@@ -67,7 +66,7 @@ func Test_GetAccountDefaults(t *testing.T) {
 		manager, err := NewManager(
 			mockConfig.WithConfig(emptyConfig),
 			NewSubscriptionsManagerWithCache(
-				azcli.NewSubscriptionsService(
+				NewSubscriptionsService(
 					&mocks.MockMultiTenantCredentialProvider{},
 					mockHttp,
 				),
@@ -101,7 +100,7 @@ func Test_GetAccountDefaults(t *testing.T) {
 		manager, err := NewManager(
 			mockConfig.WithConfig(emptyConfig),
 			NewSubscriptionsManagerWithCache(
-				azcli.NewSubscriptionsService(
+				NewSubscriptionsService(
 					&mocks.MockMultiTenantCredentialProvider{},
 					mockHttp,
 				),
@@ -135,7 +134,7 @@ func Test_GetAccountDefaults(t *testing.T) {
 		manager, err := NewManager(
 			mockConfig.WithConfig(emptyConfig),
 			NewSubscriptionsManagerWithCache(
-				azcli.NewSubscriptionsService(
+				NewSubscriptionsService(
 					&mocks.MockMultiTenantCredentialProvider{},
 					mockHttp,
 				),
@@ -157,7 +156,7 @@ func Test_GetSubscriptionsWithDefaultSet(t *testing.T) {
 		setupAccountMocks(mockHttp)
 
 		manager, err := NewManager(mockConfig, NewSubscriptionsManagerWithCache(
-			azcli.NewSubscriptionsService(
+			NewSubscriptionsService(
 				&mocks.MockMultiTenantCredentialProvider{},
 				mockHttp,
 			),
@@ -192,7 +191,7 @@ func Test_GetSubscriptionsWithDefaultSet(t *testing.T) {
 		manager, err := NewManager(
 			mockConfig.WithConfig(defaultConfig),
 			NewSubscriptionsManagerWithCache(
-				azcli.NewSubscriptionsService(
+				NewSubscriptionsService(
 					&mocks.MockMultiTenantCredentialProvider{},
 					mockHttp,
 				),
@@ -221,7 +220,7 @@ func Test_GetSubscriptionsWithDefaultSet(t *testing.T) {
 		manager, err := NewManager(
 			mockConfig,
 			NewSubscriptionsManagerWithCache(
-				azcli.NewSubscriptionsService(
+				NewSubscriptionsService(
 					&mocks.MockMultiTenantCredentialProvider{},
 					mockHttp,
 				),
@@ -259,7 +258,7 @@ func Test_GetLocations(t *testing.T) {
 		manager, err := NewManager(
 			mockConfig.WithConfig(defaultConfig),
 			NewSubscriptionsManagerWithCache(
-				azcli.NewSubscriptionsService(
+				NewSubscriptionsService(
 					&mocks.MockMultiTenantCredentialProvider{},
 					mockHttp,
 				),
@@ -280,7 +279,7 @@ func Test_GetLocations(t *testing.T) {
 		setupAccountErrorMocks(mockHttp)
 
 		manager, err := NewManager(mockConfig, NewSubscriptionsManagerWithCache(
-			azcli.NewSubscriptionsService(
+			NewSubscriptionsService(
 				&mocks.MockMultiTenantCredentialProvider{},
 				mockHttp,
 			),
@@ -300,7 +299,7 @@ func Test_GetLocations(t *testing.T) {
 		setupGetSubscriptionMock(mockHttp, &subscription, nil)
 
 		manager, err := NewManager(mockConfig, NewSubscriptionsManagerWithCache(
-			azcli.NewSubscriptionsService(
+			NewSubscriptionsService(
 				&mocks.MockMultiTenantCredentialProvider{},
 				mockHttp,
 			),
@@ -328,7 +327,7 @@ func Test_SetDefaultSubscription(t *testing.T) {
 		setupGetSubscriptionMock(mockHttp, &expectedSubscription, nil)
 
 		manager, err := NewManager(mockConfig, NewSubscriptionsManagerWithCache(
-			azcli.NewSubscriptionsService(
+			NewSubscriptionsService(
 				&mocks.MockMultiTenantCredentialProvider{},
 				mockHttp,
 			),
@@ -354,7 +353,7 @@ func Test_SetDefaultSubscription(t *testing.T) {
 		setupGetSubscriptionMock(mockHttp, &expectedSubscription, errors.New("Not found"))
 
 		manager, err := NewManager(mockConfig, NewSubscriptionsManagerWithCache(
-			azcli.NewSubscriptionsService(
+			NewSubscriptionsService(
 				&mocks.MockMultiTenantCredentialProvider{},
 				mockHttp,
 			),
@@ -393,7 +392,7 @@ func Test_SetDefaultLocation(t *testing.T) {
 		manager, err := NewManager(
 			mockConfig.WithConfig(defaultConfig),
 			NewSubscriptionsManagerWithCache(
-				azcli.NewSubscriptionsService(
+				NewSubscriptionsService(
 					&mocks.MockMultiTenantCredentialProvider{},
 					mockHttp,
 				),
@@ -417,7 +416,7 @@ func Test_SetDefaultLocation(t *testing.T) {
 		setupGetSubscriptionMock(mockHttp, &subscription, nil)
 
 		manager, err := NewManager(mockConfig, NewSubscriptionsManagerWithCache(
-			azcli.NewSubscriptionsService(
+			NewSubscriptionsService(
 				&mocks.MockMultiTenantCredentialProvider{},
 				mockHttp,
 			),
@@ -444,7 +443,7 @@ func Test_Clear(t *testing.T) {
 	setupGetSubscriptionMock(mockHttp, &expectedSubscription, nil)
 
 	manager, err := NewManager(mockConfig, NewSubscriptionsManagerWithCache(
-		azcli.NewSubscriptionsService(
+		NewSubscriptionsService(
 			&mocks.MockMultiTenantCredentialProvider{},
 			mockHttp,
 		),
@@ -495,7 +494,7 @@ func Test_HasDefaults(t *testing.T) {
 		manager, err := NewManager(
 			mockConfig.WithConfig(azdConfig),
 			NewSubscriptionsManagerWithCache(
-				azcli.NewSubscriptionsService(
+				NewSubscriptionsService(
 					&mocks.MockMultiTenantCredentialProvider{},
 					mockHttp,
 				),
@@ -514,7 +513,7 @@ func Test_HasDefaults(t *testing.T) {
 		manager, err := NewManager(
 			mockConfig.WithConfig(azdConfig),
 			NewSubscriptionsManagerWithCache(
-				azcli.NewSubscriptionsService(
+				NewSubscriptionsService(
 					&mocks.MockMultiTenantCredentialProvider{},
 					mockHttp,
 				),
@@ -683,7 +682,7 @@ func NewInMemorySubscriptionsCache() *InMemorySubCache {
 }
 
 func NewSubscriptionsManagerWithCache(
-	service *azcli.SubscriptionsService,
+	service *SubscriptionsService,
 	cache subCache) *SubscriptionsManager {
 	return &SubscriptionsManager{
 		service:       service,

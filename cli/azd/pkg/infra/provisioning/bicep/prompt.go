@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"golang.org/x/exp/slices"
 
 	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
@@ -28,7 +28,7 @@ func (p *BicepProvider) promptForParameter(
 	var value any
 
 	if paramType == ParameterTypeString && azdMetadata.Type != nil && *azdMetadata.Type == "location" {
-		location, err := p.prompters.Location(msg, func(loc azcli.AzCliLocation) bool {
+		location, err := p.prompters.Location(msg, func(loc account.Location) bool {
 			if param.AllowedValues == nil {
 				return true
 			}

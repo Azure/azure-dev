@@ -59,8 +59,32 @@ const (
 	AccountTypeKey = attribute.Key("ad.account.type")
 	// Currently selected Subscription ID.
 	SubscriptionIdKey = attribute.Key("ad.subscription.id")
-	// Currently selected Project Template ID.
-	TemplateIdKey = attribute.Key("project.template.id")
+)
+
+// Project related attributes
+const (
+	// Hashed template referenced in the project.
+	ProjectTemplateIdKey = attribute.Key("project.template.id")
+	// Hashed project name. Could be used as an indicator for number of different azd projects.
+	ProjectNameKey = attribute.Key("project.name")
+	// The collection of hashed service hosts in the project.
+	ProjectServiceHostsKey = attribute.Key("project.service.hosts")
+	// The collection of hashed service languages in the project.
+	ProjectServiceLanguagesKey = attribute.Key("project.service.languages")
+)
+
+// Environment related attributes
+const (
+	// Hashed environment name
+	EnvNameKey = attribute.Key("env.name")
+)
+
+// Command entry-point attributes
+const (
+	// Flags set by the user. Only parsed flag names are available. Values are not recorded.
+	CmdFlags = attribute.Key("cmd.flags")
+	// Number of positional arguments set.
+	CmdArgsCount = attribute.Key("cmd.args.count")
 )
 
 // All possible enumerations of ExecutionEnvironmentKey

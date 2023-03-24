@@ -14,8 +14,9 @@ import (
 
 type NpmCli interface {
 	tools.ExternalTool
-	Install(ctx context.Context, project string, onlyProduction bool) error
-	Build(ctx context.Context, project string, env []string) error
+	Install(ctx context.Context, project string) error
+	RunScript(ctx context.Context, projectPath string, scriptName string, env []string) error
+	Prune(ctx context.Context, projectPath string, production bool) error
 }
 
 type npmCli struct {
@@ -69,9 +70,9 @@ func (cli *npmCli) Name() string {
 	return "npm CLI"
 }
 
-func (cli *npmCli) Install(ctx context.Context, project string, onlyProduction bool) error {
+func (cli *npmCli) Install(ctx context.Context, project string) error {
 	runArgs := exec.
-		NewRunArgs("npm", "install", "--production", fmt.Sprintf("%t", onlyProduction)).
+		NewRunArgs("npm", "install").
 		WithCwd(project)
 
 	res, err := cli.commandRunner.Run(ctx, runArgs)
@@ -82,16 +83,34 @@ func (cli *npmCli) Install(ctx context.Context, project string, onlyProduction b
 	return nil
 }
 
-func (cli *npmCli) Build(ctx context.Context, project string, env []string) error {
+func (cli *npmCli) RunScript(ctx context.Context, projectPath string, scriptName string, env []string) error {
 	runArgs := exec.
-		NewRunArgs("npm", "run", "build", "--if-present", "--production", "true").
-		WithCwd(project).
+		NewRunArgs("npm", "run", scriptName, "--if-present").
+		WithCwd(projectPath).
 		WithEnv(env)
 
-	res, err := cli.commandRunner.Run(ctx, runArgs)
+	_, err := cli.commandRunner.Run(ctx, runArgs)
 
 	if err != nil {
-		return fmt.Errorf("failed to build project %s, %s: %w", project, res.String(), err)
+		return fmt.Errorf("failed to run NPM script %s, %w", scriptName, err)
 	}
+
+	return nil
+}
+
+func (cli *npmCli) Prune(ctx context.Context, projectPath string, production bool) error {
+	runArgs := exec.
+		NewRunArgs("npm", "prune").
+		WithCwd(projectPath)
+
+	if production {
+		runArgs = runArgs.AppendParams("--production")
+	}
+
+	_, err := cli.commandRunner.Run(ctx, runArgs)
+	if err != nil {
+		return fmt.Errorf("failed pruning NPM packages, %w", err)
+	}
+
 	return nil
 }

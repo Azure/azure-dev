@@ -54,6 +54,31 @@ func (m *MockCommandRunner) Run(ctx context.Context, args exec.RunArgs) (exec.Ru
 	return match.response, match.error
 }
 
+func (m *MockCommandRunner) RunList(ctx context.Context, commands []string, args exec.RunArgs) (exec.RunResult, error) {
+	var match *CommandExpression
+
+	args.Args = commands
+	command := strings.Join(commands, " && ")
+
+	for i := len(m.expressions) - 1; i >= 0; i-- {
+		if m.expressions[i].predicateFn(args, command) {
+			match = m.expressions[i]
+			break
+		}
+	}
+
+	if match == nil {
+		panic(fmt.Sprintf("No mock found for command: '%s'", command))
+	}
+
+	// If the response function has been set, return the value
+	if match.responseFn != nil {
+		return match.responseFn(args)
+	}
+
+	return match.response, match.error
+}
+
 // Registers a mock expression against the mock exec
 func (m *MockCommandRunner) When(predicate CommandWhenPredicate) *CommandExpression {
 	expr := CommandExpression{

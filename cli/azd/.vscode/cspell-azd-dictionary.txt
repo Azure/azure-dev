@@ -85,6 +85,7 @@ pflag
 preinit
 pulumi
 pyapp
+pyvenv
 restoreapp
 retriable
 rzip

@@ -42,15 +42,32 @@ func TestBaggage(t *testing.T) {
 }
 
 func TestBaggageMutateCreatesCopy(t *testing.T) {
-	baggage := NewBaggage()
-	newBaggage := baggage.Set(attribute.String("key1", "val1"))
-	assert.Equal(t, newBaggage.Get("key1").AsString(), "val1")
-	assertNotFound(t, baggage, "key1")
+	empty := NewBaggage()
+	withKey := empty.Set(attribute.String("key1", "val1"))
 
-	baggage = newBaggage
-	newBaggage = newBaggage.Delete("key1")
-	assert.Equal(t, baggage.Get("key1").AsString(), "val1")
-	assertNotFound(t, newBaggage, "key1")
+	assertEmptyUnchanged := func() {
+		assertNotFound(t, empty, "key1")
+		assert.Equal(t, 1, withKey.Len())
+	}
+
+	assertWithKeyUnchanged := func() {
+		assert.Equal(t, "val1", withKey.Get("key1").AsString())
+		assert.Equal(t, 1, withKey.Len())
+	}
+	assertWithKeyUnchanged()
+	assertEmptyUnchanged()
+
+	withoutKey := withKey.Delete("key1")
+	assertWithKeyUnchanged()
+	assertEmptyUnchanged()
+	assertNotFound(t, withoutKey, "key1")
+
+	withKeyModified := withKey.Set(attribute.String("key1", "updated1"), attribute.String("key2", "val2"))
+	assertWithKeyUnchanged()
+	assertEmptyUnchanged()
+	assert.Equal(t, "updated1", withKeyModified.Get("key1").AsString())
+	assert.Equal(t, "val2", withKeyModified.Get("key2").AsString())
+	assert.Equal(t, 2, withKeyModified.Len())
 }
 
 func TestBaggageWhenEmpty(t *testing.T) {

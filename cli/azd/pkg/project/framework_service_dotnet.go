@@ -49,7 +49,7 @@ func (dp *dotnetProject) Initialize(ctx context.Context, serviceConfig *ServiceC
 	if err != nil {
 		return err
 	}
-	if err := dp.dotnetCli.InitializeSecret(ctx, projFile[0]); err != nil {
+	if err := dp.dotnetCli.InitializeSecret(ctx, projFile); err != nil {
 		return err
 	}
 	handler := func(ctx context.Context, args ServiceLifecycleEventArgs) error {
@@ -75,7 +75,7 @@ func (dp *dotnetProject) Restore(
 				task.SetError(err)
 				return
 			}
-			if err := dp.dotnetCli.Restore(ctx, projFile[0]); err != nil {
+			if err := dp.dotnetCli.Restore(ctx, projFile); err != nil {
 				task.SetError(err)
 				return
 			}
@@ -99,7 +99,7 @@ func (dp *dotnetProject) Build(
 				task.SetError(err)
 				return
 			}
-			if err := dp.dotnetCli.Build(ctx, projFile[0], defaultDotNetBuildConfiguration, ""); err != nil {
+			if err := dp.dotnetCli.Build(ctx, projFile, defaultDotNetBuildConfiguration, ""); err != nil {
 				task.SetError(err)
 				return
 			}
@@ -149,7 +149,7 @@ func (dp *dotnetProject) Package(
 				task.SetError(err)
 				return
 			}
-			if err := dp.dotnetCli.Publish(ctx, projFile[0], defaultDotNetBuildConfiguration, publishRoot); err != nil {
+			if err := dp.dotnetCli.Publish(ctx, projFile, defaultDotNetBuildConfiguration, publishRoot); err != nil {
 				task.SetError(err)
 				return
 			}
@@ -201,31 +201,29 @@ func normalizeDotNetSecret(key string) string {
 	return strings.ReplaceAll(key, "__", ":")
 }
 
-func findProjectFile(path string, dotnetProjectFile string) ([]string, error) {
+func findProjectFile(path string, dotnetProjectFile string) (string, error) {
 	files, err := filepath.Glob(path + "/*.*proj")
 	if err != nil {
-		return files, fmt.Errorf("error: checking project file in %s: %w", path, err)
+		return "", fmt.Errorf("error: checking project file in %s: %w", path, err)
 	}
-	if len(files) == 0 {
-		return files, fmt.Errorf("no project file (.csproj or .vbproj or .fsproj) found")
-        filesFound :+ len(files)
-	if filesFound  == 0 {
+	filesFound := len(files)
+	if filesFound == 0 {
 		return "", fmt.Errorf("no project file (.csproj or .vbproj or .fsproj) found")
 	}
-        if filesFound  == 1 {
+	if filesFound == 1 {
 		return files[0], err
 	}
-	// At this point, you know filesFound is greater than 1
+	// for filesFound > 1
 	if dotnetProjectFile == "" {
-    	     return files, fmt.Errorf("there are multiple project files in %s. "+
+		return "", fmt.Errorf("there are multiple project files in %s. "+
 			"Please add the project file path with row 'dotnetProjectFile' in azure.yaml", path)
 	}
-	// Need to check if the dotnetProjectFile is in the list of projects
+	// check if the dotnetProjectFile is in the list of projects
 	for _, foundProject := range files {
-	     if foundProject.Name == dotnetProjectFile {
-	       return dotnetProjectFile, nil
-	     }
+		if foundProject == dotnetProjectFile || foundProject == path+dotnetProjectFile {
+			return dotnetProjectFile, nil
+		}
 	}
 	return "", fmt.Errorf("expecting to find project %s, but it was not found", dotnetProjectFile)
-	
+
 }

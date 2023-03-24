@@ -43,11 +43,10 @@ The following prerequisites are required to use this application. Please ensure 
 The fastest way for you to get this application up and running on Azure is to use the `azd up` command. This single command will create and configure all necessary Azure resources - including access policies and roles for your account and service-to-service communication with Managed Identities.
 
 1. Open a terminal, create a new empty folder, and change into it.
-1. Run the following command to initialize the project, provision Azure resources, and deploy the application code.
+2. Run the following command to initialize the project. This command will clone the code to your current folder and prompt you for the following information:
 
 ```bash
 azd init --template todo-nodejs-mongo
-azd up
 ```
 
 You will be prompted for the following information:
@@ -56,7 +55,13 @@ You will be prompted for the following information:
 - `Azure Location`: The Azure location where your resources will be deployed.
 - `Azure Subscription`: The Azure Subscription where your resources will be deployed.
 
-> NOTE: This may take a while to complete as it executes three commands: `azd init` (initializes environment), `azd provision` (provisions Azure resources), and `azd deploy` (deploys application code). You will see a progress indicator as it provisions and deploys your application.
+3.Run the following command to both provision the template's infrastructure to Azure and also deploy the applciation code to those newly provisioned resources.
+
+```bash
+azd up
+```
+
+> NOTE: This may take a while to complete as it executes two commands: `azd provision` (provisions Azure resources), and `azd deploy` (deploys application code). You will see a progress indicator as it provisions and deploys your application.
 
 When `azd up` is complete it will output the following URLs:
 
@@ -71,7 +76,7 @@ Click the web application URL to launch the ToDo app. Create a new collection an
 > NOTE:
 >
 > - The `azd up` command will create Azure resources that will incur costs to your Azure subscription. You can clean up those resources manually via the Azure portal or with the `azd down` command.
-> - You can call `azd up` as many times as you like to both provision and deploy your solution, but you only need to provide the `--template` parameter the first time you call it to get the code locally. Subsequent `azd up` calls do not require the template parameter. If you do provide the parameter, all your local source code will be overwritten if you agree to overwrite when prompted.
+> - You can call `azd up` as many times as you like to both provision and deploy your solution.
 > - You can always create a new environment with `azd env new`.
 
 ### Application Architecture

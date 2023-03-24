@@ -1,3 +1,10 @@
+
+# Local development ignores
+.vscode/launch.json
+token-host/**
+djurekclsh/
+
+
 # Binaries for programs and plugins
 *.exe
 *.exe~

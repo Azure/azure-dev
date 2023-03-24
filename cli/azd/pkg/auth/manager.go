@@ -11,9 +11,12 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
@@ -44,6 +47,8 @@ const cUseAzCliAuthKey = "auth.useAzCliAuth"
 // allow both work/school accounts and personal accounts (this matches the default authority the `az` CLI uses when logging
 // in).
 const cDefaultAuthority = "https://login.microsoftonline.com/organizations"
+
+const cUseCloudShellAuthEnvVar = "AZD_IN_CLOUDSHELL"
 
 // The scopes to request when acquiring our token during the login flow or when requesting a token to validate if the client
 // is logged in.
@@ -159,6 +164,15 @@ func (m *Manager) CredentialForCurrentUser(
 
 	currentUser, err := readUserProperties(cfg)
 	if err != nil {
+		// User is not logged in, not using az credentials, try CloudShell if possible
+		if shouldUseCloudShellAuth() {
+			cloudShellCredential, err := newCredentialFromCloudShell()
+			if err != nil {
+				return nil, err
+			}
+			return cloudShellCredential, nil
+		}
+
 		return nil, ErrNoCurrentUser
 	}
 
@@ -224,6 +238,17 @@ func shouldUseLegacyAuth(cfg config.Config) bool {
 	return false
 }
 
+func shouldUseCloudShellAuth() bool {
+	if useCloudShellAuth, has := os.LookupEnv(cUseCloudShellAuthEnvVar); has {
+		if use, err := strconv.ParseBool(useCloudShellAuth); err == nil && use {
+			log.Printf("Using CloudShell auth")
+			return true
+		}
+	}
+
+	return false
+}
+
 // GetLoggedInServicePrincipalTenantID returns the stored service principal's tenant ID.
 //
 // Service principals are fixed to a particular tenant.
@@ -235,8 +260,8 @@ func (m *Manager) GetLoggedInServicePrincipalTenantID() (*string, error) {
 		return nil, fmt.Errorf("fetching current user: %w", err)
 	}
 
-	if shouldUseLegacyAuth(cfg) {
-		// When delegating to az, we have no way to determine what principal was used
+	if shouldUseLegacyAuth(cfg) || shouldUseCloudShellAuth() {
+		// When delegating to az or CloudShell, we have no way to determine what principal was used
 		return nil, err
 	}
 
@@ -311,6 +336,63 @@ func newCredentialFromClientAssertion(
 	}
 
 	return cred, nil
+}
+
+// TODO: REFACTOR
+type TokenFromCloudShell struct {
+	AccessToken  string      `json:"access_token"`
+	RefreshToken string      `json:"refresh_token"`
+	ExpiresIn    json.Number `json:"expires_in" type:"integer"`
+	ExpiresOn    json.Number `json:"expires_on" type:"integer" `
+	NotBefore    json.Number `json:"not_before" type:"integer" `
+	Resource     string      `json:"resource"`
+	TokenType    string      `json:"token_type"`
+}
+
+type CloudShellTokenPolicy struct {
+}
+
+func (t CloudShellTokenPolicy) GetToken(ctx context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {
+
+	// TODO: Refactor constants
+	// TODO: Note, resource=https://management.azure.com/ is different from the
+	// default resource.
+	req, err := http.NewRequestWithContext(
+		ctx, "POST", "http://localhost:50342/oauth2/token", strings.NewReader("resource=https://management.azure.com/"))
+	if err != nil {
+		return azcore.AccessToken{}, err
+	}
+	req.Header.Add("Metadata", "true")
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return azcore.AccessToken{}, err
+	}
+	defer resp.Body.Close()
+
+	responseBytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return azcore.AccessToken{}, err
+	}
+
+	var tokenObject TokenFromCloudShell
+	if err := json.Unmarshal(responseBytes, &tokenObject); err != nil {
+		return azcore.AccessToken{}, err
+	}
+
+	expiresOnSeconds, err := tokenObject.ExpiresOn.Int64()
+	if err != nil {
+		return azcore.AccessToken{}, err
+	}
+
+	return azcore.AccessToken{
+		Token:     tokenObject.AccessToken,
+		ExpiresOn: time.Unix(expiresOnSeconds, 0),
+	}, nil
+}
+
+func newCredentialFromCloudShell() (azcore.TokenCredential, error) {
+	return CloudShellTokenPolicy{}, nil
 }
 
 func (m *Manager) LoginInteractive(ctx context.Context, redirectPort int, tenantID string) (azcore.TokenCredential, error) {

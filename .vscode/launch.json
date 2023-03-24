@@ -5,11 +5,14 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Attach to Process",
+            "name": "azd login",
             "type": "go",
-            "request": "attach",
-            "mode": "local",
-            "processId": "${command:pickGoProcess}"
+            "request": "launch",
+            "mode": "debug",
+            "program": "${workspaceFolder}/cli/azd/main.go",
+            "args": [
+                "login", "--check-status"
+            ]
         }
     ]
 }

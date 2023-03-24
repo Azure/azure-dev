@@ -144,6 +144,14 @@ func Test_DotNetProject_Build(t *testing.T) {
 func Test_DotNetProject_Package(t *testing.T) {
 	var runArgs exec.RunArgs
 
+	tempDir := t.TempDir()
+	ostest.Chdir(t, tempDir)
+	err := os.MkdirAll("./src/api", osutil.PermissionDirectory)
+	require.NoError(t, err)
+	file, err := os.Create("./src/api/test.csproj")
+	require.NoError(t, err)
+	require.NoError(t, file.Close())
+
 	mockContext := mocks.NewMockContext(context.Background())
 	mockContext.CommandRunner.
 		When(func(args exec.RunArgs, command string) bool {
@@ -174,7 +182,7 @@ func Test_DotNetProject_Package(t *testing.T) {
 	require.NotEmpty(t, result.PackagePath)
 	require.Equal(t, "dotnet", runArgs.Cmd)
 	require.Equal(t,
-		[]string{"publish", serviceConfig.RelativePath, "-c", "Release", "--output"},
+		[]string{"publish", filepath.Join(serviceConfig.RelativePath, "test.csproj"), "-c", "Release", "--output"},
 		runArgs.Args[:5],
 	)
 }

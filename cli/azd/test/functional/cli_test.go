@@ -392,9 +392,14 @@ func Test_CLI_NoDebugSpewWhenHelpPassedWithoutDebug(t *testing.T) {
 //go:embed testdata/samples/*
 var samples embed.FS
 
+func samplePath(paths ...string) string {
+	elem := append([]string{"testdata", "samples"}, paths...)
+	return path.Join(elem...)
+}
+
 // copySample copies the given sample to targetRoot.
 func copySample(targetRoot string, sampleName string) error {
-	sampleRoot := path.Join("testdata", "samples", sampleName)
+	sampleRoot := samplePath(sampleName)
 
 	return fs.WalkDir(samples, sampleRoot, func(name string, d fs.DirEntry, err error) error {
 		// If there was some error that was preventing is from walking into the directory, just fail now,

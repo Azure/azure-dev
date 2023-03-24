@@ -226,8 +226,8 @@ func TestServiceConfigRaiseEventWithArgs(t *testing.T) {
 func createTestServiceConfig(path string, host ServiceTargetKind, language ServiceLanguageKind) *ServiceConfig {
 	return &ServiceConfig{
 		Name:         "api",
-		Host:         string(host),
-		Language:     string(language),
+		Host:         host,
+		Language:     language,
 		RelativePath: filepath.Join(path),
 		Project: &ProjectConfig{
 			Name: "test-app",

@@ -95,7 +95,7 @@ func Test_CLI_Telemetry_UsageData_Simple_Command(t *testing.T) {
 			require.Equal(t, getEnvSubscriptionId(t, dir, envName), m[fields.SubscriptionIdKey])
 
 			require.Contains(t, m, fields.EnvNameKey)
-			require.Equal(t, envName, m[fields.EnvNameKey])
+			require.Equal(t, fields.CaseInsensitiveHash(envName), m[fields.EnvNameKey])
 
 			require.Contains(t, m, fields.CmdFlags)
 			require.ElementsMatch(t, m[fields.CmdFlags], []string{"trace-log-file"})

@@ -156,7 +156,7 @@ func (e *Environment) Reload() error {
 	}
 
 	if e.GetEnvName() != "" {
-		telemetry.SetUsageAttributes(fields.EnvNameKey.String(e.GetEnvName()))
+		telemetry.SetUsageAttributes(fields.StringHashed(fields.EnvNameKey, e.GetEnvName()))
 	}
 
 	return nil
@@ -196,7 +196,7 @@ func (e *Environment) Save() error {
 		return fmt.Errorf("saving .env: %w", err)
 	}
 
-	telemetry.SetUsageAttributes(fields.EnvNameKey.String(e.GetEnvName()))
+	telemetry.SetUsageAttributes(fields.StringHashed(fields.EnvNameKey, e.GetEnvName()))
 	return nil
 }
 

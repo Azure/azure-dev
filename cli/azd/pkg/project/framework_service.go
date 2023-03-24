@@ -68,6 +68,14 @@ type FrameworkService interface {
 		serviceConfig *ServiceConfig,
 		restoreOutput *ServiceRestoreResult,
 	) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress]
+
+	// Packages the source suitable for publishing
+	// This may optionally perform a rebuild internally depending on the language/framework requirements
+	Package(
+		ctx context.Context,
+		serviceConfig *ServiceConfig,
+		buildOutput *ServiceBuildResult,
+	) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress]
 }
 
 // CompositeFrameworkService is a framework service that requires a nested

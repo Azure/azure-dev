@@ -96,7 +96,11 @@ type ServicePublishResult struct {
 
 // ServiceDeployResult is the result of a successful Deploy operation
 type ServiceDeployResult struct {
-	*ServicePublishResult
+	Restore *ServiceRestoreResult `json:"restore"`
+	Build   *ServiceBuildResult   `json:"build"`
+	Package *ServicePackageResult `json:"package"`
+	Publish *ServicePublishResult `json:"publish"`
+	Details interface{}           `json:"details"`
 }
 
 // ServiceManager provides a management layer for performing operations against an azd service within a project
@@ -200,7 +204,7 @@ func (sm *serviceManager) GetRequiredTools(ctx context.Context, serviceConfig *S
 	requiredTools = append(requiredTools, frameworkService.RequiredExternalTools(ctx)...)
 	requiredTools = append(requiredTools, serviceTarget.RequiredExternalTools(ctx)...)
 
-	return requiredTools, nil
+	return tools.Unique(requiredTools), nil
 }
 
 // Initializes the service configuration and dependent framework & service target
@@ -307,28 +311,48 @@ func (sm *serviceManager) Package(
 	buildOutput *ServiceBuildResult,
 ) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
 	return async.RunTaskWithProgress(func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
+		frameworkService, err := sm.GetFrameworkService(ctx, serviceConfig)
+		if err != nil {
+			task.SetError(fmt.Errorf("getting framework service: %w", err))
+			return
+		}
+
 		serviceTarget, err := sm.GetServiceTarget(ctx, serviceConfig)
 		if err != nil {
 			task.SetError(fmt.Errorf("getting service target: %w", err))
 			return
 		}
 
-		packageResult, err := runCommand(
-			ctx,
-			task,
-			ServiceEventPackage,
-			serviceConfig,
-			func() *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
-				return serviceTarget.Package(ctx, serviceConfig, buildOutput)
-			},
-		)
+		eventArgs := ServiceLifecycleEventArgs{
+			Project: serviceConfig.Project,
+			Service: serviceConfig,
+		}
+
+		err = serviceConfig.Invoke(ctx, ServiceEventPackage, eventArgs, func() error {
+			frameworkPackageTask := frameworkService.Package(ctx, serviceConfig, buildOutput)
+			syncProgress(task, frameworkPackageTask.Progress())
+
+			frameworkPackageResult, err := frameworkPackageTask.Await()
+			if err != nil {
+				return err
+			}
+
+			serviceTargetPackageTask := serviceTarget.Package(ctx, serviceConfig, frameworkPackageResult)
+			syncProgress(task, serviceTargetPackageTask.Progress())
+
+			serviceTargetPackageResult, err := serviceTargetPackageTask.Await()
+			if err != nil {
+				return err
+			}
+
+			task.SetResult(serviceTargetPackageResult)
+			return nil
+		})
 
 		if err != nil {
 			task.SetError(fmt.Errorf("failed packaging service '%s': %w", serviceConfig.Name, err))
 			return
 		}
-
-		task.SetResult(packageResult)
 	})
 }
 
@@ -423,7 +447,10 @@ func (sm *serviceManager) Deploy(
 			}
 
 			result = &ServiceDeployResult{
-				ServicePublishResult: publishResult,
+				Restore: restoreResult,
+				Build:   buildResult,
+				Package: packageResult,
+				Publish: publishResult,
 			}
 
 			return nil

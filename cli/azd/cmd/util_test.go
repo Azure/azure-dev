@@ -24,6 +24,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/stretchr/testify/require"
 )
 
@@ -111,9 +112,7 @@ func Test_promptEnvironmentName(t *testing.T) {
 			}, nil
 		})
 
-		azCli := azcli.NewAzCli(mockContext.Credentials, azcli.NewAzCliArgs{
-			HttpClient: mockContext.HttpClient,
-		})
+		azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 
 		resourceManager := infra.NewAzureResourceManager(azCli)
 		groups, err := resourceManager.GetResourceGroupsForDeployment(*mockContext.Context, "sub-id", "deployment-name")
@@ -167,7 +166,7 @@ func Test_getSubscriptionOptions(t *testing.T) {
 					IsDefault:          false,
 				},
 			},
-			Locations: []azcli.AzCliLocation{},
+			Locations: []account.Location{},
 		}
 
 		subList, result, err := getSubscriptionOptions(ctx, mockAccount)
@@ -277,7 +276,13 @@ func Test_createAndInitEnvironment(t *testing.T) {
 			mockContext.Console,
 			&mockaccount.MockAccountManager{
 				Subscriptions: []account.Subscription{{Id: expectedSub}},
-				Locations:     []azcli.AzCliLocation{{DisplayName: "west", Name: expectedLocation}},
+				Locations: []account.Location{
+					{
+						Name:                expectedLocation,
+						DisplayName:         "West",
+						RegionalDisplayName: "(US) West",
+					},
+				},
 			},
 			azcli.NewUserProfileService(
 				&mocks.MockMultiTenantCredentialProvider{},

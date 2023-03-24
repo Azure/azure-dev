@@ -21,8 +21,8 @@ param networkAcls object = {
   bypass: 'AzureServices'
   defaultAction: 'Allow'
 }
-@allowed([ '', 'Enabled', 'Disabled' ])
-param publicNetworkAccess string = ''
+@allowed([ 'Enabled', 'Disabled' ])
+param publicNetworkAccess string = 'Enabled'
 param sku object = { name: 'Standard_LRS' }
 
 resource storage 'Microsoft.Storage/storageAccounts@2022-05-01' = {

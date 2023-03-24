@@ -126,6 +126,10 @@ type DeploymentResult struct {
 }
 
 func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	if err := d.projectManager.Initialize(ctx, d.projectConfig); err != nil {
+		return nil, err
+	}
+
 	// Collect all the tools we will need to do the deployment and validate that
 	// the are installed. When a single project is being deployed, we need just
 	// the tools for that project, otherwise we need the tools from all project.
@@ -151,10 +155,6 @@ func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	var svcDeploymentResult *project.ServiceDeployResult
 	var deploymentResults []*project.ServiceDeployResult
-
-	if err := d.projectManager.Initialize(ctx, d.projectConfig); err != nil {
-		return nil, err
-	}
 
 	for _, svc := range d.projectConfig.Services {
 		// Skip this service if both cases are true:

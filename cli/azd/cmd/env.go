@@ -382,6 +382,10 @@ func newEnvRefreshAction(
 }
 
 func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	if err := ef.projectManager.Initialize(ctx, ef.projectConfig); err != nil {
+		return nil, err
+	}
+
 	infraManager, err := provisioning.NewManager(
 		ctx,
 		ef.env,
@@ -415,10 +419,6 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 		if err != nil {
 			return nil, fmt.Errorf("writing deployment result in JSON format: %w", err)
 		}
-	}
-
-	if err = ef.projectManager.Initialize(ctx, ef.projectConfig); err != nil {
-		return nil, err
 	}
 
 	for _, svc := range ef.projectConfig.Services {

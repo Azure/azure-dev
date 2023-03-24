@@ -208,11 +208,24 @@ func findProjectFile(path string, dotnetProjectFile string) ([]string, error) {
 	}
 	if len(files) == 0 {
 		return files, fmt.Errorf("no project file (.csproj or .vbproj or .fsproj) found")
-	} else if len(files) > 1 && dotnetProjectFile == "" {
-		return files, fmt.Errorf("there are multiple project files in %s. "+
-			"Please add the project file path with row 'dotnetProjectFile' in azure.yaml", path)
-	} else if len(files) > 1 && dotnetProjectFile != "" {
-		files = []string{dotnetProjectFile}
+        filesFound :+ len(files)
+	if filesFound  == 0 {
+		return "", fmt.Errorf("no project file (.csproj or .vbproj or .fsproj) found")
 	}
-	return files, err
+        if filesFound  == 1 {
+		return files[0], err
+	}
+	// At this point, you know filesFound is greater than 1
+	if dotnetProjectFile == "" {
+    	     return files, fmt.Errorf("there are multiple project files in %s. "+
+			"Please add the project file path with row 'dotnetProjectFile' in azure.yaml", path)
+	}
+	// Need to check if the dotnetProjectFile is in the list of projects
+	for _, foundProject := range files {
+	     if foundProject.Name == dotnetProjectFile {
+	       return dotnetProjectFile, nil
+	     }
+	}
+	return "", fmt.Errorf("expecting to find project %s, but it was not found", dotnetProjectFile)
+	
 }

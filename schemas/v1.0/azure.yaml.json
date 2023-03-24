@@ -223,6 +223,26 @@
                         }
                     },
                     {
+                        "if": {
+                            "not": {
+                                "properties": {
+                                    "language": {
+                                        "enum": [
+                                            "csharp",
+                                            "fsharp",
+                                            "dotnet"
+                                        ]
+                                    }
+                                }
+                            }
+                        },
+                        "then": {
+                            "properties": {
+                                "dotnetProjectFile": false
+                            }
+                        }
+                    },
+                    {
                         "properties": {
                             "dist": {
                                 "type": "string",

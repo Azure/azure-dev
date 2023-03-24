@@ -252,6 +252,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(project.NewServiceManager)
 	container.RegisterSingleton(repository.NewInitializer)
 	container.RegisterSingleton(config.NewUserConfigManager)
+	container.RegisterSingleton(alphafeatures.NewAlphaFeaturesManager)
 	container.RegisterSingleton(config.NewManager)
 	container.RegisterSingleton(templates.NewTemplateManager)
 	container.RegisterSingleton(auth.NewManager)
@@ -264,12 +265,6 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(azcli.NewContainerRegistryService)
 	container.RegisterSingleton(func() ioc.ServiceLocator {
 		return ioc.NewServiceLocator(container)
-	})
-
-	container.RegisterSingleton(func(userConfig config.UserConfigManager) *alphafeatures.AlphaFeatureManager {
-		return &alphafeatures.AlphaFeatureManager{
-			ConfigManager: userConfig,
-		}
 	})
 
 	container.RegisterSingleton(func(subManager *account.SubscriptionsManager) account.SubscriptionTenantResolver {

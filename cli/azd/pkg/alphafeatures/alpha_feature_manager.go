@@ -8,8 +8,14 @@ import (
 )
 
 type AlphaFeatureManager struct {
-	ConfigManager   config.UserConfigManager
+	configManager   config.UserConfigManager
 	userConfigCache config.Config
+}
+
+func NewAlphaFeaturesManager(configManager config.UserConfigManager) *AlphaFeatureManager {
+	return &AlphaFeatureManager{
+		configManager: configManager,
+	}
 }
 
 func (m *AlphaFeatureManager) ListFeatures() (map[string]AlphaFeature, error) {
@@ -35,9 +41,9 @@ func (m *AlphaFeatureManager) ListFeatures() (map[string]AlphaFeature, error) {
 
 func (m *AlphaFeatureManager) IsEnabled(featureId AlphaFeatureId) bool {
 	if m.userConfigCache == nil {
-		config, err := m.ConfigManager.Load()
+		config, err := m.configManager.Load()
 		if err != nil {
-			log.Panic("Can't load user config!! %s", err)
+			log.Panic("Can't load user config!! %w", err)
 		}
 		m.userConfigCache = config
 	}

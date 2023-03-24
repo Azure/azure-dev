@@ -63,6 +63,12 @@ func TestBicepOutputsWithDoubleUnderscoresAreConverted(t *testing.T) {
 
 func Test_DotNetProject_Restore(t *testing.T) {
 	var runArgs exec.RunArgs
+	ostest.Chdir(t, t.TempDir())
+	err := os.MkdirAll("./src/api", osutil.PermissionDirectory)
+	require.NoError(t, err)
+	file, err := os.Create("./src/api/test.csproj")
+	require.NoError(t, err)
+	require.NoError(t, file.Close())
 
 	mockContext := mocks.NewMockContext(context.Background())
 	mockContext.CommandRunner.
@@ -87,7 +93,7 @@ func Test_DotNetProject_Restore(t *testing.T) {
 	require.NotNil(t, result)
 	require.Equal(t, "dotnet", runArgs.Cmd)
 	require.Equal(t,
-		[]string{"restore", serviceConfig.RelativePath},
+		[]string{"restore", filepath.Join(serviceConfig.RelativePath, "test.csproj")},
 		runArgs.Args,
 	)
 }
@@ -97,6 +103,11 @@ func Test_DotNetProject_Build(t *testing.T) {
 	ostest.Chdir(t, tempDir)
 
 	var runArgs exec.RunArgs
+	err := os.MkdirAll("./src/api", osutil.PermissionDirectory)
+	require.NoError(t, err)
+	file, err := os.Create("./src/api/test.csproj")
+	require.NoError(t, err)
+	require.NoError(t, file.Close())
 
 	mockContext := mocks.NewMockContext(context.Background())
 	mockContext.CommandRunner.
@@ -113,7 +124,7 @@ func Test_DotNetProject_Build(t *testing.T) {
 	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageCsharp)
 
 	buildOutputDir := filepath.Join(serviceConfig.Path(), "bin", "Release", "net6.0")
-	err := os.MkdirAll(buildOutputDir, osutil.PermissionDirectory)
+	err = os.MkdirAll(buildOutputDir, osutil.PermissionDirectory)
 	require.NoError(t, err)
 
 	dotnetProject := NewDotNetProject(dotNetCli, env)
@@ -125,7 +136,7 @@ func Test_DotNetProject_Build(t *testing.T) {
 	require.NotNil(t, result)
 	require.Equal(t, "dotnet", runArgs.Cmd)
 	require.Equal(t,
-		[]string{"build", serviceConfig.RelativePath, "-c", "Release"},
+		[]string{"build", filepath.Join(serviceConfig.RelativePath, "test.csproj"), "-c", "Release"},
 		runArgs.Args,
 	)
 }

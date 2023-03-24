@@ -1,0 +1,184 @@
+templateApi: 1.0.0
+metadata:
+  type: repo
+  name: todo-java-postgresql-terraform
+  description: ToDo Application with a Java API and Azure Database for PostgreSQL - Flexible Server on Azure App Service
+
+repo:
+  includeProjectAssets: false
+
+  remotes:
+    - name: azure-samples-main
+      url: git@github.com:Azure-Samples/todo-java-postgresql-terraform.git
+    - name: azure-samples-staging
+      url: git@github.com:Azure-Samples/todo-java-postgresql-terraform.git
+      branch: staging
+
+  rewrite:
+    rules:
+      - from: ../../../../../../common/infra/terraform/core/monitor/applicationinsights
+        to: ./modules/applicationinsights
+        patterns:
+          - "**/*.tf"
+
+      - from: ../../../../../../common/infra/terraform/core/monitor/loganalytics
+        to: ./modules/loganalytics
+        patterns:
+          - "**/*.tf"
+
+      - from: ../../../../../../common/infra/terraform/core/host/appserviceplan
+        to: ./modules/appserviceplan
+        patterns:
+          - "**/*.tf"
+
+      - from: ../../../../../../common/infra/terraform/core/host/appservice/appservicenode
+        to: ./modules/appservicenode
+        patterns:
+          - "**/*.tf"
+
+      - from: ../../../../../../common/infra/terraform/core/host/appservice/appservicejava
+        to: ./modules/appservicejava
+        patterns:
+          - "**/*.tf"
+
+      - from: ../../../../../../common/infra/terraform/core/database/postgresql
+        to: ./modules/postgresql
+        patterns:
+          - "**/*.tf"
+
+      - from: ../../../../../../common/infra/terraform/core/security/passwordless/postgresql
+        to: ./modules/passwordless
+        patterns:
+          - "**/*.tf"
+
+      - from: ../../../../../../common/infra/terraform/core/gateway/apim
+        to: ./modules/apim
+        patterns:
+          - "**/*.tf"
+
+      - from: ../../../../../../common/infra/terraform/core/gateway/apim-api
+        to: ./modules/apim-api
+        patterns:
+          - "**/*.tf"
+
+      - from: ../../api/java
+        to: ./src/api
+        patterns:
+          - "**/azure.@(yml|yaml)"
+
+      - from: ../../web/react-fluent
+        to: ./src/web
+        patterns:
+          - "**/azure.@(yml|yaml)"
+
+      - from: ../../../../api/common/openapi.yaml
+        to: ../../../src/api/openapi.yaml
+        patterns:
+          - "apim-api.tf"
+
+  assets:
+    # Common assets
+    - from: ./../../
+      to: ./
+      ignore:
+        - ".repo/**/*"
+        - "repo.y[a]ml"
+        - "azure.y[a]ml"
+        - "githubworkflow/**/*"
+
+    # openapi.yaml to root
+    - from: ../../../../api/common
+      to: ./
+      patterns:
+        - openapi.yaml
+
+    # openapi.yaml to api root
+    - from: ../../../../api/common
+      to: ./src/api
+      patterns:
+        - openapi.yaml
+
+    # Templates common
+    - from: ../../../../../common
+      to: ./
+      ignore:
+        - .devcontainer/**/*
+        - "infra/**/*"
+        - .github/**/*
+        - .azdo/pipelines/*/azure-dev.yml
+
+    # AzDo workflows for bicep
+    - from: ../../../../../common/.azdo/pipelines/terraform/azure-dev.yml
+      to: ./.azdo/pipelines/azure-dev.yml
+
+    # Github workflows for terraform
+    - from: ../../githubworkflow/azure-dev.yml
+      to: ./.github/workflows/azure-dev.yml
+
+    - from: ../../../../../common/infra/terraform/core/monitor/applicationinsights
+      to: ./infra/modules/applicationinsights
+
+    - from: ../../../../../common/infra/terraform/core/monitor/loganalytics
+      to: ./infra/modules/loganalytics
+
+    - from: ../../../../../common/infra/terraform/core/database/postgresql
+      to: ./infra/modules/postgresql
+
+    - from: ../../../../../common/infra/terraform/core/host/appserviceplan
+      to: ./infra/modules/appserviceplan
+
+    - from: ../../../../../common/infra/terraform/core/host/appservice/appservicenode
+      to: ./infra/modules/appservicenode
+
+    - from: ../../../../../common/infra/terraform/core/host/appservice/appservicejava
+      to: ./infra/modules/appservicejava
+
+    - from: ../../../../../common/infra/terraform/core/security/passwordless/postgresql
+      to: ./infra/modules/passwordless
+
+    - from: ../../../../../common/infra/shared/gateway/apim
+      to: ./infra/modules/apim-api
+
+    - from: ../../../../../common/infra/terraform/core/gateway/apim
+      to: ./infra/modules/apim
+
+    - from: ../../../../../common/infra/terraform/core/gateway/apim-api
+      to: ./infra/modules/apim-api
+
+    # .devcontainer common (devcontainer.json)
+    - from: ../../../../../common/.devcontainer/devcontainer.json/nodejs/terraform
+      to: ./.devcontainer
+
+    # .devcontainer common (Dockerfile)
+    - from: ../../../../../common/.devcontainer/Dockerfile/base
+      to: ./.devcontainer
+
+    # Assets common
+    - from: ../../../../common/assets
+      to: ./assets
+
+    # Tests common
+    - from: ../../../../common/tests
+      to: ./tests
+
+    # Java API
+    - from: ../../../../api/java-postgresql
+      to: ./src/api
+      ignore:
+        - "target/**/*"
+        - "**/*.log"
+
+    # React Frontend
+    - from: ../../../../web/react-fluent
+      to: ./src/web
+      ignore:
+        - "build/**/*"
+        - "node_modules/**/*"
+
+    # Infra
+    - from: ./infra/
+      to: ./infra
+
+    # Azure.yml
+    - from: ./azure.yaml
+      to: ./azure.yaml

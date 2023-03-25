@@ -26,6 +26,7 @@ export const createApp = async (): Promise<Express> => {
                 "http://localhost:3000/",
                 apiUrl]
         }));
+        console.log('CORS with %s is allowed for local host debugging. If you want to change pin number, go to %s.', origin[2], __filename)
     }
     else{
         app.use(cors());

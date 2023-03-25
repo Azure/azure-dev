@@ -17,7 +17,7 @@ if apiUrl != "":
                "https://ms.portal.azure.com",
                "http://localhost:3000/",
                apiUrl]
-    print("CORS with %s is allowed for local host debugging. If you want to change pin number, go to %s.", origins[2], Path(__file__))
+    print("CORS with", origins[2] , "is allowed for local host debugging. If you want to change pin number, go to", Path(__file__))
 else:
     origins = ["*"]
     print("Setting CORS = * (allow all origins) because env var REACT_APP_WEB_BASE_URL has not a value or is not set.")

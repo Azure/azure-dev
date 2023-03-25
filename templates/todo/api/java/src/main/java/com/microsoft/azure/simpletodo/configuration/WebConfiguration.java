@@ -24,9 +24,15 @@ public class WebConfiguration implements WebMvcConfigurer {
                 String apiUrl = System.getenv("REACT_APP_WEB_BASE_URL");
 
                 if (apiUrl != "") {
+                    String localHostUrl = "http://localhost:3000/";
                     registry.addMapping("/**").allowedOrigins("https://portal.azure.com",
-                            "https://ms.portal.azure.com", "http://localhost:3000/",
+                            "https://ms.portal.azure.com", localHostUrl,
                             apiUrl).allowedMethods("*").allowedHeaders("*");
+                    System.out.println(
+                            "CORS with " + localHostUrl
+                                    + " is allowed for local host debugging. If you want to change pin number, go to "
+                                    + "getAbsolutePath()");
+
                 } else {
                     registry.addMapping("/**").allowedOrigins("*").allowedMethods("*").allowedHeaders("*");
                     System.out.println(

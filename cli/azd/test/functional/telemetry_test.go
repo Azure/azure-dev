@@ -7,6 +7,7 @@ import (
 	"bufio"
 	"bytes"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -16,6 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
@@ -42,8 +44,8 @@ type Attribute struct {
 
 var Sha256Regex = regexp.MustCompile("^[A-Fa-f0-9]{64}$")
 
-// Verifies telemetry usage data generated when environments are created.
-func Test_CLI_Telemetry_Usage_Data_EnvCreate(t *testing.T) {
+// Verifies telemetry usage data generated for simple commands, such as when environments are created.
+func Test_CLI_Telemetry_UsageData_Simple_Command(t *testing.T) {
 	// CLI process and working directory are isolated
 	t.Parallel()
 	ctx, cancel := newTestContext(t)
@@ -64,7 +66,12 @@ func Test_CLI_Telemetry_Usage_Data_EnvCreate(t *testing.T) {
 
 	traceFilePath := filepath.Join(dir, "trace.json")
 
-	envNew(ctx, t, cli, envName, true, "--trace-log-file", traceFilePath)
+	_, err = cli.RunCommandWithStdIn(
+		ctx,
+		"\n\n", // accept defaults for sub + location
+		"env", "new", envName, "--trace-log-file", traceFilePath)
+	require.NoError(t, err)
+	fmt.Printf("envName: %s\n", envName)
 
 	traceContent, err := os.ReadFile(traceFilePath)
 	require.NoError(t, err)
@@ -85,7 +92,17 @@ func Test_CLI_Telemetry_Usage_Data_EnvCreate(t *testing.T) {
 			usageCmdFound = true
 			m := attributesMap(span.Attributes)
 			require.Contains(t, m, fields.SubscriptionIdKey)
-			require.Equal(t, m[fields.SubscriptionIdKey], getEnvSubscriptionId(t, dir, envName))
+			require.Equal(t, getEnvSubscriptionId(t, dir, envName), m[fields.SubscriptionIdKey])
+
+			require.Contains(t, m, fields.EnvNameKey)
+			require.Equal(t, fields.CaseInsensitiveHash(envName), m[fields.EnvNameKey])
+
+			require.Contains(t, m, fields.CmdFlags)
+			require.ElementsMatch(t, m[fields.CmdFlags], []string{"trace-log-file"})
+
+			// env new provides a single position argument.
+			require.Contains(t, m, fields.CmdArgsCount)
+			require.Equal(t, float64(1), m[fields.CmdArgsCount])
 		}
 	}
 
@@ -93,7 +110,7 @@ func Test_CLI_Telemetry_Usage_Data_EnvCreate(t *testing.T) {
 }
 
 // Verifies telemetry usage data generated when environments and projects are loaded.
-func Test_CLI_Telemetry_Usage_Data_EnvProjectLoad(t *testing.T) {
+func Test_CLI_Telemetry_UsageData_EnvProjectLoad(t *testing.T) {
 	// CLI process and working directory are isolated
 	ctx, cancel := newTestContext(t)
 	defer cancel()
@@ -123,6 +140,11 @@ func Test_CLI_Telemetry_Usage_Data_EnvProjectLoad(t *testing.T) {
 	traceContent, err := os.ReadFile(traceFilePath)
 	require.NoError(t, err)
 
+	projectContent, err := samples.ReadFile(samplePath("restoreapp", "azure.yaml"))
+	require.NoError(t, err)
+	projConfig, err := project.Parse(ctx, string(projectContent))
+	require.NoError(t, err)
+
 	scanner := bufio.NewScanner(bytes.NewReader(traceContent))
 	usageCmdFound := false
 	for scanner.Scan() {
@@ -139,11 +161,34 @@ func Test_CLI_Telemetry_Usage_Data_EnvProjectLoad(t *testing.T) {
 			usageCmdFound = true
 			m := attributesMap(span.Attributes)
 			require.Contains(t, m, fields.SubscriptionIdKey)
-			require.Equal(t, m[fields.SubscriptionIdKey], getEnvSubscriptionId(t, dir, envName))
+			require.Equal(t, getEnvSubscriptionId(t, dir, envName), m[fields.SubscriptionIdKey])
 
-			require.Contains(t, m, fields.TemplateIdKey)
-			require.Equal(t, m[fields.TemplateIdKey], fields.CaseInsensitiveHash("azd-test/restoreapp@v1"))
+			require.Contains(t, m, fields.ProjectTemplateIdKey)
+			require.Equal(t, fields.CaseInsensitiveHash(projConfig.Metadata.Template), m[fields.ProjectTemplateIdKey])
 
+			require.Contains(t, m, fields.ProjectNameKey)
+			require.Equal(t, fields.CaseInsensitiveHash(projConfig.Name), m[fields.ProjectNameKey])
+
+			require.Contains(t, m, fields.EnvNameKey)
+			require.Equal(t, fields.CaseInsensitiveHash(envName), m[fields.EnvNameKey])
+
+			hosts := []string{}
+			languages := []string{}
+			for _, svc := range projConfig.Services {
+				hosts = append(hosts, string(svc.Host))
+				languages = append(languages, string(svc.Language))
+			}
+			require.Contains(t, m, fields.ProjectServiceHostsKey)
+			require.ElementsMatch(t, m[fields.ProjectServiceHostsKey], hosts)
+
+			require.Contains(t, m, fields.ProjectServiceLanguagesKey)
+			require.ElementsMatch(t, m[fields.ProjectServiceLanguagesKey], languages)
+
+			require.Contains(t, m, fields.CmdFlags)
+			require.ElementsMatch(t, m[fields.CmdFlags], []string{"service", "trace-log-file"})
+
+			require.Contains(t, m, fields.CmdArgsCount)
+			require.Equal(t, float64(0), m[fields.CmdArgsCount])
 		}
 	}
 	require.True(t, usageCmdFound)

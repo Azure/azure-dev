@@ -25,6 +25,19 @@ const (
 	AksTarget           ServiceTargetKind = "aks"
 )
 
+func parseServiceHost(kind ServiceTargetKind) (ServiceTargetKind, error) {
+	switch kind {
+	case AppServiceTarget,
+		ContainerAppTarget,
+		AzureFunctionTarget,
+		StaticWebAppTarget,
+		AksTarget:
+		return kind, nil
+	}
+
+	return ServiceTargetKind(""), fmt.Errorf("unsupported host '%s'", kind)
+}
+
 type ServiceTarget interface {
 	// Initializes the service target for the specified service configuration.
 	// This allows service targets to opt-in to service lifecycle events

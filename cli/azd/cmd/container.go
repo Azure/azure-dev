@@ -339,4 +339,8 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	registerActionInitializer[*initAction](container, "azd-init-action")
 	registerActionInitializer[*deployAction](container, "azd-deploy-action")
 	registerActionInitializer[*provisionAction](container, "azd-provision-action")
+
+	// Required for alias actions like 'infra create' and 'infra delete'
+	registerAction[*downAction](container, "azd-down-action")
+	registerAction[*provisionAction](container, "azd-provision-action")
 }

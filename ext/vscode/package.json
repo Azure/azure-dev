@@ -228,6 +228,11 @@
                     "group": "default@3"
                 },
                 {
+                    "command": "azure-dev.commands.cli.provision",
+                    "when": "viewItem =~ /ms-azuretools.azure-dev.views.workspace.application/i",
+                    "group": "default@4"
+                },
+                {
                     "command": "azure-dev.commands.cli.monitor",
                     "when": "viewItem =~ /ms-azuretools.azure-dev.views.workspace.application/i",
                     "group": "default@6"

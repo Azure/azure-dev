@@ -54,16 +54,6 @@
             },
             {
                 "category": "%azure-dev.commands_category%",
-                "command": "azure-dev.commands.cli.infra-create",
-                "title": "%azure-dev.commands.cli.infra-create.title%"
-            },
-            {
-                "category": "%azure-dev.commands_category%",
-                "command": "azure-dev.commands.cli.infra-delete",
-                "title": "%azure-dev.commands.cli.infra-delete.title%"
-            },
-            {
-                "category": "%azure-dev.commands_category%",
                 "command": "azure-dev.commands.cli.up",
                 "title": "%azure-dev.commands.cli.up.title%",
                 "icon": "$(cloud-upload)"
@@ -159,11 +149,6 @@
                 },
                 {
                     "when": "resourceFilename =~ /azure.yaml/i",
-                    "command": "azure-dev.commands.cli.infra-delete",
-                    "group": "azure-dev"
-                },
-                {
-                    "when": "resourceFilename =~ /azure.yaml/i",
                     "command": "azure-dev.commands.cli.up",
                     "group": "azure-dev"
                 },
@@ -241,16 +226,6 @@
                     "command": "azure-dev.commands.cli.deploy",
                     "when": "viewItem =~ /ms-azuretools.azure-dev.views.workspace.application/i",
                     "group": "default@3"
-                },
-                {
-                    "command": "azure-dev.commands.cli.infra-create",
-                    "when": "viewItem =~ /ms-azuretools.azure-dev.views.workspace.application/i",
-                    "group": "default@4"
-                },
-                {
-                    "command": "azure-dev.commands.cli.infra-delete",
-                    "when": "viewItem =~ /ms-azuretools.azure-dev.views.workspace.application/i",
-                    "group": "default@5"
                 },
                 {
                     "command": "azure-dev.commands.cli.monitor",
@@ -436,8 +411,7 @@
                         "completionEvents": [
                             "onCommand:azure-dev.commands.cli.up",
                             "onCommand:azure-dev.commands.cli.provision",
-                            "onCommand:azure-dev.commands.cli.deploy",
-                            "onCommand:azure-dev.commands.cli.infra-create"
+                            "onCommand:azure-dev.commands.cli.deploy"
                         ]
                     },
                     {

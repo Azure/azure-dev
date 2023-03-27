@@ -18,15 +18,6 @@
     "azure-dev.commands.cli.deploy.title": "deploy (deploy the application's code to Azure)",
     "azure-dev.commands.cli.restore.title": "restore (restores application dependencies)",
 
-    "azure-dev.commands.cli.infra-create.title": "infra create (create Azure resources for the application)",
-
-    "azure-dev.commands.cli.infra-delete.title": "infra delete (delete Azure resources for the application)",
-    "azure-dev.commands.cli.infra-delete.confirm-prompt": "Are you sure to delete all application's Azure resources?",
-    "azure-dev.commands.cli.infra-delete.confirm-ack": "Delete resources",
-    "azure-dev.commands.cli.infra-delete.purge": "Permanently delete (purge)",
-    "azure-dev.commands.cli.infra-delete.no-purge": "Do not purge",
-    "azure-dev.commands.cli.infra-delete.purge-prompt": "Permanently delete resources with are soft-deleted by default (e.g. KeyVaults)?",
-
     "azure-dev.commands.cli.up.title": "up (initialize application, provision resources, and deploy)",
     "azure-dev.commands.cli.down.title": "down (delete deployed application and infrastructure)",
 

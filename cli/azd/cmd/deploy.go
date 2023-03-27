@@ -135,7 +135,7 @@ type DeploymentResult struct {
 
 func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if d.flags.serviceName != "" {
-		fmt.Fprint(
+		fmt.Println(
 			d.console.Handles().Stderr,
 			//nolint:Lll
 			output.WithWarningFormat("--service flag is no longer required. Simply run azd deploy <service> instead."))

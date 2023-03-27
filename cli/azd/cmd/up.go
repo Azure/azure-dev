@@ -40,7 +40,7 @@ func newUpFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *upFl
 func newUpCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "up",
-		Short: "Initialize application, provision Azure resources, and deploy your project with a single command.",
+		Short: "Provision Azure resources, and deploy your project with a single command.",
 	}
 }
 
@@ -70,7 +70,7 @@ func newUpAction(
 
 func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if u.flags.infraCreateFlags.noProgress {
-		fmt.Fprint(
+		fmt.Fprintln(
 			u.console.Handles().Stderr,
 			output.WithWarningFormat("The --no-progress flag is deprecated and will be removed in the future."))
 		// this flag actually isn't used by the provision command, we set it to false to hide the extra warning
@@ -78,7 +78,7 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	if u.flags.deployFlags.serviceName != "" {
-		fmt.Fprint(
+		fmt.Fprintln(
 			u.console.Handles().Stderr,
 			output.WithWarningFormat("The --service flag is deprecated and will be removed in the future."))
 	}
@@ -120,8 +120,7 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 func getCmdUpHelpDescription(c *cobra.Command) string {
 	return generateCmdHelpDescription(
-		fmt.Sprintf("Executes the %s, %s and %s commands in a single step.",
-			output.WithHighLightFormat("azd init"),
+		fmt.Sprintf("Executes the %s and %s commands in a single step.",
 			output.WithHighLightFormat("azd provision"),
 			output.WithHighLightFormat("azd deploy")), getCmdHelpDescriptionNoteForInit(c))
 }

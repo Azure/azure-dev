@@ -95,7 +95,7 @@ func newRestoreAction(
 
 func (r *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if r.flags.serviceName != "" {
-		fmt.Fprint(
+		fmt.Fprintln(
 			r.console.Handles().Stderr,
 			//nolint:Lll
 			output.WithWarningFormat("--service flag is no longer required. Simply run azd deploy <service> instead."))

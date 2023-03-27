@@ -219,16 +219,11 @@ func findProjectFile(path string, dotnetProjectFile string) (string, error) {
 			"Please add the project file path with row 'dotnetProjectFile' in azure.yaml", path)
 	}
 	// check if the dotnetProjectFile is in the list of projects
-	fmt.Println(dotnetProjectFile)
-	fmt.Println(path)
-
-	fmt.Println()
 	for _, foundProject := range files {
-		fmt.Println(foundProject)
-		fileName := strings.Split(dotnetProjectFile, "/")
-		filePath := path + "\\" + fileName[len(fileName)-1]
-		fmt.Println(fileName)
-		fmt.Println(filePath)
+		// get the dir of absolute path
+		filePathDir, _ := filepath.Split(foundProject)
+		// combine and dir and file name from entered project file in azure.yaml
+		filePath := filePathDir + filepath.Base(dotnetProjectFile)
 		if foundProject == filePath {
 			return dotnetProjectFile, nil
 		}

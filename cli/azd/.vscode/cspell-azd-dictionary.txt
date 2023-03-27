@@ -45,6 +45,7 @@ dskip
 eastus
 endregion
 envname
+envlist
 errcheck
 errorinfo
 errorlint

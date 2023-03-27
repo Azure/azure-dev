@@ -2,14 +2,11 @@ package cmd
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/spf13/cobra"
@@ -17,7 +14,6 @@ import (
 )
 
 type upFlags struct {
-	initFlags
 	infraCreateFlags
 	deployFlags
 	global *internal.GlobalCommandOptions
@@ -28,17 +24,10 @@ func (u *upFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptio
 	u.envFlag.Bind(local, global)
 	u.global = global
 
-	initFlagNames := u.initFlags.bindNonCommon(local, global)
-	u.initFlags.setCommon(&u.envFlag)
 	u.infraCreateFlags.bindNonCommon(local, global)
 	u.infraCreateFlags.setCommon(&u.envFlag)
 	u.deployFlags.bindNonCommon(local, global)
 	u.deployFlags.setCommon(&u.envFlag)
-
-	//deprecate:flag hide init flags
-	for _, flagName := range initFlagNames {
-		local.MarkHidden(flagName)
-	}
 }
 
 func newUpFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *upFlags {
@@ -57,7 +46,6 @@ func newUpCmd() *cobra.Command {
 
 type upAction struct {
 	flags                        *upFlags
-	initActionInitializer        actions.ActionInitializer[*initAction]
 	infraCreateActionInitializer actions.ActionInitializer[*infraCreateAction]
 	deployActionInitializer      actions.ActionInitializer[*deployAction]
 	console                      input.Console
@@ -66,7 +54,6 @@ type upAction struct {
 
 func newUpAction(
 	flags *upFlags,
-	initActionInitializer actions.ActionInitializer[*initAction],
 	infraCreateActionInitializer actions.ActionInitializer[*infraCreateAction],
 	deployActionInitializer actions.ActionInitializer[*deployAction],
 	console input.Console,
@@ -74,7 +61,6 @@ func newUpAction(
 ) actions.Action {
 	return &upAction{
 		flags:                        flags,
-		initActionInitializer:        initActionInitializer,
 		infraCreateActionInitializer: infraCreateActionInitializer,
 		deployActionInitializer:      deployActionInitializer,
 		console:                      console,
@@ -83,16 +69,6 @@ func newUpAction(
 }
 
 func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	initFlags := u.flags.initFlags.flagsSet()
-	if len(initFlags) > 0 {
-		fmt.Fprint(
-			u.console.Handles().Stderr,
-			output.WithWarningFormat(
-				//nolint:lll
-				"init flags: %s are deprecated and will be removed in the future. Initialize from template by running `azd init`, then run `azd up` to get your app up-and-running.",
-				strings.Join(initFlags, ",")))
-	}
-
 	if u.flags.infraCreateFlags.noProgress {
 		fmt.Fprint(
 			u.console.Handles().Stderr,
@@ -105,11 +81,6 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		fmt.Fprint(
 			u.console.Handles().Stderr,
 			output.WithWarningFormat("The --service flag is deprecated and will be removed in the future."))
-	}
-
-	err := u.runInit(ctx)
-	if err != nil {
-		return nil, err
 	}
 
 	infraCreateAction, err := u.infraCreateActionInitializer()
@@ -145,24 +116,6 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	return deployResult, nil
-}
-
-func (u *upAction) runInit(ctx context.Context) error {
-	initAction, err := u.initActionInitializer()
-	if err != nil {
-		return err
-	}
-
-	initAction.flags = &u.flags.initFlags
-	initOptions := &middleware.Options{CommandPath: "init"}
-	_, err = u.runner.RunChildAction(ctx, initOptions, initAction)
-	var envInitError *environment.EnvironmentInitError
-	if errors.As(err, &envInitError) {
-		// We can ignore environment already initialized errors
-		return nil
-	}
-
-	return err
 }
 
 func getCmdUpHelpDescription(c *cobra.Command) string {

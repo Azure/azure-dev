@@ -112,44 +112,6 @@ func Test_CLI_Init_CanUseTemplate(t *testing.T) {
 	require.FileExists(t, filepath.Join(dir, "README.md"))
 }
 
-// Test_CLI_Up_CanUseTemplateWithoutExistingProject ensures that you can run `azd up --template <some-template>` in an
-// empty directory and the project will be initialize as expected.
-func Test_CLI_Up_CanUseTemplateWithoutExistingProject(t *testing.T) {
-	// running this test in parallel is ok as it uses a t.TempDir()
-	t.Parallel()
-	ctx, cancel := newTestContext(t)
-	defer cancel()
-
-	dir := tempDirWithDiagnostics(t)
-
-	cli := azdcli.NewCLI(t)
-	cli.WorkingDirectory = dir
-	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
-
-	// Since we provide a bogus Azure Subscription ID, we expect that this overall command will fail (the provision step of
-	// up will fail).  That's fine - we only care about validating that we were allowed to run `azd up --template` in an
-	// empty directory and that it brings down the template as expected.
-	res, _ := cli.RunCommandWithStdIn(
-		ctx,
-		"TESTENV\n\nOther (enter manually)\nMY_SUB_ID\n",
-		"up",
-		"--template",
-		"cosmos-dotnet-core-todo-app",
-	)
-
-	require.Contains(t, res.Stdout, "Initializing a new project")
-
-	// While `init` uses git behind the scenes to pull a template, we don't want to bring the history over in the new git
-	// repository.
-	cmdRun := exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
-	cmdRes, err := cmdRun.Run(ctx, exec.NewRunArgs("git", "-C", dir, "log", "--oneline", "-n", "1").WithEnrichError(true))
-	require.Error(t, err)
-	require.Contains(t, cmdRes.Stderr, "does not have any commits yet")
-
-	// Ensure the project was initialized from the template by checking that a file from the template is present.
-	require.FileExists(t, filepath.Join(dir, "README.md"))
-}
-
 func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 	// running this test in parallel is ok as it uses a t.TempDir()
 	t.Parallel()

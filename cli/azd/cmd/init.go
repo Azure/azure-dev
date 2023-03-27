@@ -59,7 +59,7 @@ func (i *initFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOpt
 	i.bindCommon(local, global)
 }
 
-func (i *initFlags) bindNonCommon(local *pflag.FlagSet, global *internal.GlobalCommandOptions) []string {
+func (i *initFlags) bindNonCommon(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	local.StringVarP(
 		&i.template.Name,
 		"template",
@@ -77,25 +77,6 @@ func (i *initFlags) bindNonCommon(local *pflag.FlagSet, global *internal.GlobalC
 	)
 	local.StringVarP(&i.location, "location", "l", "", "Azure location for the new environment")
 	i.global = global
-
-	return []string{"template", "branch", "subscription", "location"}
-}
-
-func (i *initFlags) flagsSet() []string {
-	flags := make([]string, 0, 4)
-	if i.template.Name != "" {
-		flags = append(flags, "--template/-t")
-	}
-	if i.templateBranch != "" {
-		flags = append(flags, "--branch/-b")
-	}
-	if i.subscription != "" {
-		flags = append(flags, "--subscription")
-	}
-	if i.location != "" {
-		flags = append(flags, "--location/-t")
-	}
-	return flags
 }
 
 func (i *initFlags) bindCommon(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {

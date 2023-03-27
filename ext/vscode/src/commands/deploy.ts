@@ -7,19 +7,24 @@ import { TelemetryId } from '../telemetry/telemetryId';
 import { createAzureDevCli } from '../utils/azureDevCli';
 import { executeAsTask } from '../utils/executeAsTask';
 import { isTreeViewModel, TreeViewModel } from '../utils/isTreeViewModel';
-import { AzureDevCliApplication } from '../views/workspace/AzureDevCliApplication';
+import { AzureDevCliModel } from '../views/workspace/AzureDevCliModel';
+import { AzureDevCliService } from '../views/workspace/AzureDevCliService';
 import { getAzDevTerminalTitle, getWorkingFolder } from './cmdUtil';
 
 export async function deploy(context: IActionContext, selectedItem?: vscode.Uri | TreeViewModel): Promise<void> {
-    const selectedFile = isTreeViewModel(selectedItem) ? selectedItem.unwrap<AzureDevCliApplication>().context.configurationFile : selectedItem;
-
+    const selectedModel = isTreeViewModel(selectedItem) ? selectedItem.unwrap<AzureDevCliModel>() : undefined;
+    const selectedFile = isTreeViewModel(selectedItem) ? selectedItem.unwrap<AzureDevCliModel>().context.configurationFile : selectedItem;
     const workingFolder = await getWorkingFolder(context, selectedFile);
 
     const azureCli = await createAzureDevCli(context);
 
-    // Only supporting "deploy all" mode (no support for deploying individual services)
-    // until https://github.com/Azure/azure-dev/issues/696 is resolved.
-    const command = azureCli.commandBuilder.withArg('deploy').build();
+    const commandBuilder = azureCli.commandBuilder.withArg('deploy');
+
+    if (selectedModel instanceof AzureDevCliService) {
+        commandBuilder.withArg(selectedModel.name);
+    }
+    
+    const command = commandBuilder.build();
 
     void executeAsTask(command, getAzDevTerminalTitle(), {
         alwaysRunNew: true,

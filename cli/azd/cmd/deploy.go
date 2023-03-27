@@ -241,7 +241,7 @@ func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 func getCmdDeployHelpDescription(*cobra.Command) string {
 	return generateCmdHelpDescription("Deploy application to Azure.", []string{
-		formatHelpNote(fmt.Sprintf("When no %s value is specified, all services in the 'azure.yaml'"+
+		formatHelpNote(fmt.Sprintf("When %s is not set, all services in the 'azure.yaml'"+
 			" file (found in the root of your project) are deployed.", output.WithHighLightFormat("<service>"))),
 		formatHelpNote("After the deployment is complete, the endpoint is printed. To start the service, select" +
 			" the endpoint or paste it in a browser."),

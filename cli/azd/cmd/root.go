@@ -227,7 +227,6 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 				RootLevelHelp: actions.CmdGroupManage,
 			},
 		}).
-		AddFlagCompletion("template", templateNameCompletion).
 		UseMiddleware("hooks", middleware.NewHooksMiddleware)
 
 	root.Add("monitor", &actions.ActionDescriptorOptions{
@@ -299,12 +298,12 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 }
 
 func getCmdRootHelpFooter(cmd *cobra.Command) string {
-	return fmt.Sprintf("%s\n%s\n\n%s\n\n%s",
+	return fmt.Sprintf("%s\n%s\n%s\n\n%s\n\n%s",
 		output.WithBold(output.WithUnderline("Deploying a sample application")),
 		"Initialize from a sample application by running the "+
 			output.WithHighLightFormat("azd init --template ")+
-			output.WithWarningFormat("[%s]", "template name")+" command in an empty directory."+
-			"Then, run "+output.WithHighLightFormat("azd up")+" to get the application up-and-running in Azure.",
+			output.WithWarningFormat("[%s]", "template name")+" command in an empty directory.",
+		"Then, run "+output.WithHighLightFormat("azd up")+" to get the application up-and-running in Azure.",
 		output.WithGrayFormat("To view available templates run `azd template list` or visit: ")+
 			output.WithLinkFormat("https://azure.github.io/awesome-azd"),
 		getCmdHelpDefaultFooter(cmd),

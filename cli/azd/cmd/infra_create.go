@@ -124,7 +124,7 @@ func (i *infraCreateAction) Run(ctx context.Context) (*actions.ActionResult, err
 		fmt.Fprint(
 			i.console.Handles().Stderr,
 			//nolint:Lll
-			output.WithWarningFormat("--no-progress flag is deprecated and will be removed."))
+			output.WithWarningFormat("--no-progress flag is deprecated and will be removed in the future."))
 	}
 
 	// Command title

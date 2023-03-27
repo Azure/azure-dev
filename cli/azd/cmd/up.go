@@ -104,8 +104,8 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	deployAction.flags = &u.flags.deployFlags
+	// move flag to args to avoid extra deprecation flag warning
 	if deployAction.flags.serviceName != "" {
-		// move flag to args to avoid extra deprecation flag warning
 		deployAction.args = []string{deployAction.flags.serviceName}
 		deployAction.flags.serviceName = ""
 	}

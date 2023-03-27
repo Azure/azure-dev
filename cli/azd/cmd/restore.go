@@ -38,7 +38,7 @@ func (r *restoreFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommand
 		"Restores a specific service (when the string is unspecified, all services that are listed in the "+azdcontext.ProjectFileName+" file are restored).",
 	)
 	//deprecate:flag hide --service
-	local.MarkHidden("service")
+	_ = local.MarkHidden("service")
 }
 
 func newRestoreFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *restoreFlags {

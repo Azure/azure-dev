@@ -47,7 +47,7 @@ func (d *deployFlags) bindNonCommon(
 		"Deploys a specific service (when the string is unspecified, all services that are listed in the "+azdcontext.ProjectFileName+" file are deployed).",
 	)
 	//deprecate:flag hide --service
-	local.MarkHidden("service")
+	_ = local.MarkHidden("service")
 	d.global = global
 }
 

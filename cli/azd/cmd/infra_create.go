@@ -37,7 +37,7 @@ func (i *infraCreateFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCom
 func (i *infraCreateFlags) bindNonCommon(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	local.BoolVar(&i.noProgress, "no-progress", false, "Suppresses progress information.")
 	//deprecate:Flag hide --no-progress
-	local.MarkHidden("no-progress")
+	_ = local.MarkHidden("no-progress")
 	i.global = global
 }
 

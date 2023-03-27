@@ -19,7 +19,7 @@ type AlphaFeature struct {
 type AlphaFeatureId string
 
 const (
-	parentKey   AlphaFeatureId = "experimental"
+	parentKey   AlphaFeatureId = "alpha"
 	AllId       AlphaFeatureId = "all"
 	TerraformId AlphaFeatureId = "terraform"
 )

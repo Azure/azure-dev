@@ -371,11 +371,8 @@ func (a *configListAlphaAction) Run(ctx context.Context) (*actions.ActionResult,
 	}
 	a.console.Message(ctx, strings.Join(alphaOutput, "\n\n"))
 
-	return &actions.ActionResult{
-		Message: &actions.ResultMessage{
-			Header: "List alpha features.",
-		},
-	}, nil
+	// No UX output
+	return nil, nil
 }
 
 func newConfigListAlphaAction(

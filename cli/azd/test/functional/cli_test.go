@@ -272,7 +272,7 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// test for azd deploy, azd deploy --service
+// test for azd deploy, azd deploy <service>
 func Test_CLI_DeployInvalidName(t *testing.T) {
 	// running this test in parallel is ok as it uses a t.TempDir()
 	t.Parallel()
@@ -295,7 +295,7 @@ func Test_CLI_DeployInvalidName(t *testing.T) {
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "init")
 	require.NoError(t, err)
 
-	_, err = cli.RunCommand(ctx, "deploy", "--service", "badServiceName")
+	_, err = cli.RunCommand(ctx, "deploy", "badServiceName")
 	require.Error(t, err)
 }
 

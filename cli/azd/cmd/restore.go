@@ -37,6 +37,8 @@ func (r *restoreFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommand
 		//nolint:lll
 		"Restores a specific service (when the string is unspecified, all services that are listed in the "+azdcontext.ProjectFileName+" file are restored).",
 	)
+	//deprecate:flag hide --service
+	local.MarkHidden("service")
 }
 
 func newRestoreFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *restoreFlags {
@@ -50,13 +52,14 @@ func newRestoreFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) 
 
 func restoreCmdDesign() *cobra.Command {
 	return &cobra.Command{
-		Use:   "restore",
+		Use:   "restore <service>",
 		Short: "Restore application dependencies.",
 	}
 }
 
 type restoreAction struct {
 	flags          *restoreFlags
+	args           []string
 	console        input.Console
 	azCli          azcli.AzCli
 	azdCtx         *azdcontext.AzdContext
@@ -68,6 +71,7 @@ type restoreAction struct {
 
 func newRestoreAction(
 	flags *restoreFlags,
+	args []string,
 	azCli azcli.AzCli,
 	console input.Console,
 	azdCtx *azdcontext.AzdContext,
@@ -78,6 +82,7 @@ func newRestoreAction(
 ) actions.Action {
 	return &restoreAction{
 		flags:          flags,
+		args:           args,
 		console:        console,
 		azdCtx:         azdCtx,
 		projectConfig:  projectConfig,
@@ -89,8 +94,20 @@ func newRestoreAction(
 }
 
 func (r *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	if r.flags.serviceName != "" && !r.projectConfig.HasService(r.flags.serviceName) {
-		return nil, fmt.Errorf("service name '%s' doesn't exist", r.flags.serviceName)
+	if r.flags.serviceName != "" {
+		fmt.Fprint(
+			r.console.Handles().Stderr,
+			//nolint:Lll
+			output.WithWarningFormat("--service flag is no longer required. Simply run azd deploy <service> instead."))
+	}
+
+	targetServiceName := r.flags.serviceName
+	if len(r.args) == 1 {
+		targetServiceName = r.args[0]
+	}
+
+	if targetServiceName != "" && !r.projectConfig.HasService(targetServiceName) {
+		return nil, fmt.Errorf("service name '%s' doesn't exist", targetServiceName)
 	}
 
 	count := 0
@@ -100,7 +117,7 @@ func (r *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	// the tools for that project, otherwise we need the tools from all project.
 	allTools := []tools.ExternalTool{}
 	for _, svc := range r.projectConfig.Services {
-		if r.flags.serviceName == "" || r.flags.serviceName == svc.Name {
+		if targetServiceName == "" || targetServiceName == svc.Name {
 			requiredTools, err := r.serviceManager.GetRequiredTools(ctx, svc)
 			if err != nil {
 				return nil, fmt.Errorf("failed getting required tools, %w", err)
@@ -115,7 +132,7 @@ func (r *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	}
 
 	for _, svc := range r.projectConfig.Services {
-		if r.flags.serviceName != "" && svc.Name != r.flags.serviceName {
+		if targetServiceName != "" && svc.Name != targetServiceName {
 			continue
 		}
 
@@ -140,8 +157,8 @@ func (r *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		count++
 	}
 
-	if r.flags.serviceName != "" && count == 0 {
-		return nil, fmt.Errorf("Dependencies were not restored (%s service was not found)", r.flags.serviceName)
+	if targetServiceName != "" && count == 0 {
+		return nil, fmt.Errorf("Dependencies were not restored (%s service was not found)", targetServiceName)
 	}
 
 	return nil, nil
@@ -165,7 +182,7 @@ func getCmdRestoreHelpFooter(*cobra.Command) string {
 		"Downloads and installs all application dependencies.": output.WithHighLightFormat("azd restore"),
 		"Downloads and installs a specific application service " +
 			"dependency, Individual services are listed in your azure.yaml file.": fmt.Sprintf("%s %s",
-			output.WithHighLightFormat("azd restore --service"),
+			output.WithHighLightFormat("azd restore <service>"),
 			output.WithWarningFormat("[Service name]")),
 	})
 }

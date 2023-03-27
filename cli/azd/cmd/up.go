@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
@@ -27,12 +28,17 @@ func (u *upFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptio
 	u.envFlag.Bind(local, global)
 	u.global = global
 
-	u.initFlags.bindNonCommon(local, global)
+	initFlagNames := u.initFlags.bindNonCommon(local, global)
 	u.initFlags.setCommon(&u.envFlag)
 	u.infraCreateFlags.bindNonCommon(local, global)
 	u.infraCreateFlags.setCommon(&u.envFlag)
 	u.deployFlags.bindNonCommon(local, global)
 	u.deployFlags.setCommon(&u.envFlag)
+
+	//deprecate:flag hide init flags
+	for _, flagName := range initFlagNames {
+		local.MarkHidden(flagName)
+	}
 }
 
 func newUpFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *upFlags {
@@ -77,6 +83,30 @@ func newUpAction(
 }
 
 func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	initFlags := u.flags.initFlags.flagsSet()
+	if len(initFlags) > 0 {
+		fmt.Fprint(
+			u.console.Handles().Stderr,
+			output.WithWarningFormat(
+				//nolint:lll
+				"init flags: %s are deprecated and will be removed in the future. Initialize from template by running `azd init`, then run `azd up` to get your app up-and-running.",
+				strings.Join(initFlags, ",")))
+	}
+
+	if u.flags.infraCreateFlags.noProgress {
+		fmt.Fprint(
+			u.console.Handles().Stderr,
+			output.WithWarningFormat("The --no-progress flag is deprecated and will be removed in the future."))
+		// this flag actually isn't used by the provision command, we set it to false to hide the extra warning
+		u.flags.infraCreateFlags.noProgress = false
+	}
+
+	if u.flags.deployFlags.serviceName != "" {
+		fmt.Fprint(
+			u.console.Handles().Stderr,
+			output.WithWarningFormat("The --service flag is deprecated and will be removed in the future."))
+	}
+
 	err := u.runInit(ctx)
 	if err != nil {
 		return nil, err
@@ -103,6 +133,11 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	deployAction.flags = &u.flags.deployFlags
+	if deployAction.flags.serviceName != "" {
+		// move flag to args to avoid extra deprecation flag warning
+		deployAction.args = []string{deployAction.flags.serviceName}
+		deployAction.flags.serviceName = ""
+	}
 	deployOptions := &middleware.Options{CommandPath: "deploy"}
 	deployResult, err := u.runner.RunChildAction(ctx, deployOptions, deployAction)
 	if err != nil {
@@ -131,19 +166,9 @@ func (u *upAction) runInit(ctx context.Context) error {
 }
 
 func getCmdUpHelpDescription(c *cobra.Command) string {
-
 	return generateCmdHelpDescription(
 		fmt.Sprintf("Executes the %s, %s and %s commands in a single step.",
 			output.WithHighLightFormat("azd init"),
 			output.WithHighLightFormat("azd provision"),
 			output.WithHighLightFormat("azd deploy")), getCmdHelpDescriptionNoteForInit(c))
-}
-
-func getCmdUpHelpFooter(*cobra.Command) string {
-	return generateCmdHelpSamplesBlock(map[string]string{
-		"Initialize, provision and deploy a template to Azure from a GitHub repo.": fmt.Sprintf("%s %s",
-			output.WithHighLightFormat("azd up --template"),
-			output.WithWarningFormat("[GitHub repo URL]"),
-		),
-	})
 }

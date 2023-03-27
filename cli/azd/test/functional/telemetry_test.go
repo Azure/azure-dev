@@ -133,7 +133,7 @@ func Test_CLI_Telemetry_UsageData_EnvProjectLoad(t *testing.T) {
 	_, err = cli.RunCommandWithStdIn(
 		ctx,
 		stdinForTests(envName),
-		"restore", "--service", "csharpapptest",
+		"restore", "csharpapptest",
 		"--trace-log-file", traceFilePath)
 	require.NoError(t, err)
 

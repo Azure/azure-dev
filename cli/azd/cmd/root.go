@@ -222,7 +222,6 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 			DefaultFormat:  output.NoneFormat,
 			HelpOptions: actions.ActionHelpOptions{
 				Description: getCmdUpHelpDescription,
-				Footer:      getCmdUpHelpFooter,
 			},
 			GroupingOptions: actions.CommandGroupOptions{
 				RootLevelHelp: actions.CmdGroupManage,
@@ -300,15 +299,14 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 }
 
 func getCmdRootHelpFooter(cmd *cobra.Command) string {
-	return fmt.Sprintf("%s\n%s %s %s %s\n%s %s.\n    %s\n\n%s",
+	return fmt.Sprintf("%s\n%s\n\n%s\n\n%s",
 		output.WithBold(output.WithUnderline("Deploying a sample application")),
-		"Initialize, provision, and deploy a template application by running the",
-		output.WithHighLightFormat("azd up --template"),
-		output.WithWarningFormat("[%s]", "template name"),
-		"command in an empty directory.",
-		output.WithGrayFormat("To view available templates run `azd template list` or visit:"),
-		output.WithLinkFormat("https://azure.github.io/awesome-azd"),
-		output.WithHighLightFormat("azd up --template todo-nodejs-mongo"),
+		"Initialize from a sample application by running the "+
+			output.WithHighLightFormat("azd init --template ")+
+			output.WithWarningFormat("[%s]", "template name")+" command in an empty directory."+
+			"Then, run "+output.WithHighLightFormat("azd up")+" to get the application up-and-running in Azure.",
+		output.WithGrayFormat("To view available templates run `azd template list` or visit: ")+
+			output.WithLinkFormat("https://azure.github.io/awesome-azd"),
 		getCmdHelpDefaultFooter(cmd),
 	)
 }

@@ -36,7 +36,8 @@ func (i *infraCreateFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCom
 
 func (i *infraCreateFlags) bindNonCommon(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	local.BoolVar(&i.noProgress, "no-progress", false, "Suppresses progress information.")
-
+	//deprecate:Flag hide --no-progress
+	local.MarkHidden("no-progress")
 	i.global = global
 }
 
@@ -119,6 +120,13 @@ func newInfraCreateAction(
 }
 
 func (i *infraCreateAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	if i.flags.noProgress {
+		fmt.Fprint(
+			i.console.Handles().Stderr,
+			//nolint:Lll
+			output.WithWarningFormat("--no-progress flag is deprecated and will be removed."))
+	}
+
 	// Command title
 	i.console.MessageUxItem(ctx, &ux.MessageTitle{
 		Title:     "Provisioning Azure resources (azd provision)",

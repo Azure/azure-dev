@@ -471,6 +471,7 @@
         "@types/glob": "~7",
         "@types/mocha": "~9",
         "@types/node": "~16",
+        "@types/semver": "^7.3.13",
         "@types/vscode": "~1.74",
         "@typescript-eslint/eslint-plugin": "~5",
         "@typescript-eslint/parser": "~5",
@@ -493,6 +494,7 @@
         "@microsoft/vscode-azureresources-api": "~2",
         "dayjs": "~1.11",
         "dotenv": "~16.0",
-        "rxjs": "~7.6.0"
+        "rxjs": "~7.6",
+        "semver": "~7"
     }
 }

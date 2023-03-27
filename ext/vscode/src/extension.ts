@@ -9,7 +9,7 @@ import { DotEnvTaskProvider } from './tasks/dotEnvTaskProvider';
 import { TelemetryId } from './telemetry/telemetryId';
 import { scheduleSurveys } from './telemetry/surveyScheduler';
 import { ActivityStatisticsService } from './telemetry/activityStatisticsService';
-import { scheduleAzdSignInCheck, scheduleAzdYamlCheck } from './utils/azureDevCli';
+import { scheduleAzdSignInCheck, scheduleAzdVersionCheck, scheduleAzdYamlCheck } from './utils/azureDevCli';
 import { activeSurveys } from './telemetry/activeSurveys';
 import { scheduleRegisterWorkspaceComponents } from './views/workspace/scheduleRegisterWorkspaceComponents';
 
@@ -48,6 +48,7 @@ export async function activateInternal(vscodeCtx: vscode.ExtensionContext, loadS
         registerDisposable(vscode.tasks.registerTaskProvider('dotenv', new DotEnvTaskProvider()));
         scheduleRegisterWorkspaceComponents(vscodeCtx);
         scheduleSurveys(vscodeCtx.globalState, activeSurveys);
+        scheduleAzdVersionCheck(); // Temporary
         scheduleAzdSignInCheck();
         scheduleAzdYamlCheck();
     });

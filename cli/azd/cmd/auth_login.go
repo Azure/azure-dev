@@ -176,8 +176,8 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if la.annotations[loginCmdParentAnnotation] == "" {
 		fmt.Fprintln(
 			la.console.Handles().Stderr,
-			//nolint:lll
-			"`azd login` is now available as `azd auth login`. Please use `azd auth login` instead. `azd login` may be removed in the future.")
+			output.WithWarningFormat(
+				"`azd login` is deprecated and will be removed in the future. Please use `azd auth login` instead."))
 	}
 
 	if !la.flags.onlyCheckStatus {

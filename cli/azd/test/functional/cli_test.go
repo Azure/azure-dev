@@ -305,7 +305,9 @@ func Test_CLI_ProjectIsNeeded(t *testing.T) {
 		args          []string
 		errorToStdOut bool
 	}{
+		{command: "provision"},
 		{command: "deploy"},
+		{command: "up"},
 		{command: "down"},
 		{command: "env get-values"},
 		{command: "env list"},
@@ -317,7 +319,6 @@ func Test_CLI_ProjectIsNeeded(t *testing.T) {
 		{command: "infra delete"},
 		{command: "monitor"},
 		{command: "pipeline config"},
-		{command: "provision"},
 		{command: "restore"},
 	}
 

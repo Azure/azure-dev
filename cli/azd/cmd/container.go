@@ -146,6 +146,10 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		return envFlag{environmentName: envValue}
 	})
 
+	container.RegisterSingleton(func(cmd *cobra.Command) CmdAnnotations {
+		return cmd.Annotations
+	})
+
 	// Azd Context
 	container.RegisterSingleton(azdcontext.NewAzdContext)
 
@@ -334,8 +338,5 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	// Required for nested actions called from composite actions like 'up'
 	registerActionInitializer[*initAction](container, "azd-init-action")
 	registerActionInitializer[*deployAction](container, "azd-deploy-action")
-	registerActionInitializer[*infraCreateAction](container, "azd-infra-create-action")
-	// Required for alias actions like 'provision' and 'down'
-	registerAction[*infraCreateAction](container, "azd-infra-create-action")
-	registerAction[*infraDeleteAction](container, "azd-infra-delete-action")
+	registerActionInitializer[*provisionAction](container, "azd-provision-action")
 }

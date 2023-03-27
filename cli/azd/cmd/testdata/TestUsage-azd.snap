@@ -6,10 +6,9 @@ Usage
 
 Commands
   Configure and develop your app
+    auth     	: Authenticate with Azure.
     config   	: Manage azd configurations (ex: default Azure subscription, location).
     init     	: Initialize a new application.
-    login    	: Log in to Azure.
-    logout   	: Log out of Azure.
     restore  	: Restore application dependencies.
     template 	: Find and view template details.
 
@@ -17,7 +16,6 @@ Commands
     deploy   	: Deploy the application's code to Azure.
     down     	: Delete Azure resources for an application.
     env      	: Manage environments.
-    infra    	: Manage your Azure infrastructure.
     provision	: Provision the Azure resources for an application.
     up       	: Initialize application, provision Azure resources, and deploy your project with a single command.
 

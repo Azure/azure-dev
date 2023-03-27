@@ -17,7 +17,7 @@ import (
 
 type upFlags struct {
 	initFlags
-	infraCreateFlags
+	provisionFlags
 	deployFlags
 	global *internal.GlobalCommandOptions
 	envFlag
@@ -29,8 +29,8 @@ func (u *upFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptio
 
 	u.initFlags.bindNonCommon(local, global)
 	u.initFlags.setCommon(&u.envFlag)
-	u.infraCreateFlags.bindNonCommon(local, global)
-	u.infraCreateFlags.setCommon(&u.envFlag)
+	u.provisionFlags.bindNonCommon(local, global)
+	u.provisionFlags.setCommon(&u.envFlag)
 	u.deployFlags.bindNonCommon(local, global)
 	u.deployFlags.setCommon(&u.envFlag)
 }
@@ -50,29 +50,29 @@ func newUpCmd() *cobra.Command {
 }
 
 type upAction struct {
-	flags                        *upFlags
-	initActionInitializer        actions.ActionInitializer[*initAction]
-	infraCreateActionInitializer actions.ActionInitializer[*infraCreateAction]
-	deployActionInitializer      actions.ActionInitializer[*deployAction]
-	console                      input.Console
-	runner                       middleware.MiddlewareContext
+	flags                      *upFlags
+	initActionInitializer      actions.ActionInitializer[*initAction]
+	provisionActionInitializer actions.ActionInitializer[*provisionAction]
+	deployActionInitializer    actions.ActionInitializer[*deployAction]
+	console                    input.Console
+	runner                     middleware.MiddlewareContext
 }
 
 func newUpAction(
 	flags *upFlags,
 	initActionInitializer actions.ActionInitializer[*initAction],
-	infraCreateActionInitializer actions.ActionInitializer[*infraCreateAction],
+	provisionActionInitializer actions.ActionInitializer[*provisionAction],
 	deployActionInitializer actions.ActionInitializer[*deployAction],
 	console input.Console,
 	runner middleware.MiddlewareContext,
 ) actions.Action {
 	return &upAction{
-		flags:                        flags,
-		initActionInitializer:        initActionInitializer,
-		infraCreateActionInitializer: infraCreateActionInitializer,
-		deployActionInitializer:      deployActionInitializer,
-		console:                      console,
-		runner:                       runner,
+		flags:                      flags,
+		initActionInitializer:      initActionInitializer,
+		provisionActionInitializer: provisionActionInitializer,
+		deployActionInitializer:    deployActionInitializer,
+		console:                    console,
+		runner:                     runner,
 	}
 }
 
@@ -82,14 +82,14 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, err
 	}
 
-	infraCreateAction, err := u.infraCreateActionInitializer()
+	provision, err := u.provisionActionInitializer()
 	if err != nil {
 		return nil, err
 	}
 
-	infraCreateAction.flags = &u.flags.infraCreateFlags
-	provisionOptions := &middleware.Options{CommandPath: "infra create", Aliases: []string{"provision"}}
-	_, err = u.runner.RunChildAction(ctx, provisionOptions, infraCreateAction)
+	provision.flags = &u.flags.provisionFlags
+	provisionOptions := &middleware.Options{CommandPath: "provision"}
+	_, err = u.runner.RunChildAction(ctx, provisionOptions, provision)
 	if err != nil {
 		return nil, err
 	}
@@ -97,14 +97,14 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	// Print an additional newline to separate provision from deploy
 	u.console.Message(ctx, "")
 
-	deployAction, err := u.deployActionInitializer()
+	deploy, err := u.deployActionInitializer()
 	if err != nil {
 		return nil, err
 	}
 
-	deployAction.flags = &u.flags.deployFlags
+	deploy.flags = &u.flags.deployFlags
 	deployOptions := &middleware.Options{CommandPath: "deploy"}
-	deployResult, err := u.runner.RunChildAction(ctx, deployOptions, deployAction)
+	deployResult, err := u.runner.RunChildAction(ctx, deployOptions, deploy)
 	if err != nil {
 		return nil, err
 	}

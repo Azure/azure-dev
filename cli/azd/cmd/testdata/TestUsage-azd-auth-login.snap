@@ -2,7 +2,7 @@
 Log in to Azure.
 
 Usage
-  azd login [flags]
+  azd auth login [flags]
 
 Flags
         --check-status                         	: Checks the log-in status instead of logging in.

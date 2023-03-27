@@ -24,6 +24,9 @@ import (
 	"github.com/spf13/pflag"
 )
 
+// The parent of the login command.
+const loginCmdParentAnnotation = "loginCmdParent"
+
 type loginFlags struct {
 	onlyCheckStatus        bool
 	useDeviceCode          bool
@@ -120,7 +123,7 @@ func newLoginFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *l
 	return flags
 }
 
-func newLoginCmd() *cobra.Command {
+func newLoginCmd(parent string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "login",
 		Short: "Log in to Azure.",
@@ -133,6 +136,9 @@ func newLoginCmd() *cobra.Command {
 		To log in as a service principal, pass --client-id and --tenant-id as well as one of: --client-secret, 
 		--client-certificate, --federated-credential, or --federated-credential-provider.
 		`),
+		Annotations: map[string]string{
+			loginCmdParentAnnotation: parent,
+		},
 	}
 }
 
@@ -143,6 +149,7 @@ type loginAction struct {
 	authManager       *auth.Manager
 	accountSubManager *account.SubscriptionsManager
 	flags             *loginFlags
+	annotations       CmdAnnotations
 }
 
 func newLoginAction(
@@ -152,6 +159,7 @@ func newLoginAction(
 	accountSubManager *account.SubscriptionsManager,
 	flags *loginFlags,
 	console input.Console,
+	annotations CmdAnnotations,
 ) actions.Action {
 	return &loginAction{
 		formatter:         formatter,
@@ -160,10 +168,18 @@ func newLoginAction(
 		authManager:       authManager,
 		accountSubManager: accountSubManager,
 		flags:             flags,
+		annotations:       annotations,
 	}
 }
 
 func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	if la.annotations[loginCmdParentAnnotation] == "" {
+		fmt.Fprintln(
+			la.console.Handles().Stderr,
+			//nolint:lll
+			"`azd login` is now available as `azd auth login`. Please use `azd auth login` instead. `azd login` may be removed in the future.")
+	}
+
 	if !la.flags.onlyCheckStatus {
 		if err := la.accountSubManager.ClearSubscriptions(ctx); err != nil {
 			log.Printf("failed clearing subscriptions: %v", err)

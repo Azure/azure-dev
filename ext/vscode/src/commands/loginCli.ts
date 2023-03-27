@@ -9,7 +9,10 @@ import { getAzDevTerminalTitle } from './cmdUtil';
 
 export async function loginCli(context: IActionContext, shouldPrompt: boolean = true): Promise<void> {
     const azureCli = await createAzureDevCli(context);
-    const command = azureCli.commandBuilder.withArg('login');
+    const command = azureCli.commandBuilder
+        .withArg('auth')
+        .withArg('login');
+
     await executeAsTask(command.build(), getAzDevTerminalTitle(), {
         focus: true,
         alwaysRunNew: true,

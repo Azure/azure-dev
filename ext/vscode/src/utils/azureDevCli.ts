@@ -200,7 +200,7 @@ async function getAzdVersion(): Promise<semver.SemVer | undefined> {
 
 async function getAzdLoginStatus(): Promise<LoginStatus | undefined> {
     const cli = createCli();
-    const command = cli.commandBuilder.withArgs(['login', '--check-status', '--output', 'json']).build();
+    const command = cli.commandBuilder.withArgs(['auth', 'login', '--check-status', '--output', 'json']).build();
     try {
         const stdout = (await execAsync(command, cli.spawnOptions())).stdout;
         const result = JSON.parse(stdout) as LoginStatus;

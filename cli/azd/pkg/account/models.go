@@ -16,6 +16,11 @@ type Subscription struct {
 }
 
 type Location struct {
-	Name        string `json:"name"`
+	// The name of the location (e.g. "westus2")
+	Name string `json:"name"`
+	// The human friendly name of the location (e.g. "West US 2")
 	DisplayName string `json:"displayName"`
+	// The human friendly name of the location, prefixed with a
+	// region name (e.g "(US) West US 2")
+	RegionalDisplayName string `json:"regionalDisplayName"`
 }

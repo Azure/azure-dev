@@ -163,10 +163,11 @@ func (m *Manager) CredentialForCurrentUser(
 	}
 
 	if currentUser.HomeAccountID != nil {
-		for _, account := range m.publicClient.Accounts() {
+		accounts := m.publicClient.Accounts()
+		for i, account := range accounts {
 			if account.HomeAccountID == *currentUser.HomeAccountID {
 				if options.TenantID == "" {
-					return newAzdCredential(m.publicClient, &account), nil
+					return newAzdCredential(m.publicClient, &accounts[i]), nil
 				} else {
 					newAuthority := "https://login.microsoftonline.com/" + options.TenantID
 
@@ -182,7 +183,7 @@ func (m *Manager) CredentialForCurrentUser(
 						return nil, err
 					}
 
-					return newAzdCredential(&msalPublicClientAdapter{client: &clientWithNewTenant}, &account), nil
+					return newAzdCredential(&msalPublicClientAdapter{client: &clientWithNewTenant}, &accounts[i]), nil
 				}
 			}
 		}

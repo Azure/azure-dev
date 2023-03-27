@@ -5,7 +5,6 @@
 package cli_test
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"embed"
@@ -15,6 +14,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"net/http"
 	"os"
 	osexec "os/exec"
 	"path"
@@ -25,6 +25,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -35,6 +36,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
 	"github.com/joho/godotenv"
 	"github.com/sethvargo/go-retry"
 	"github.com/stretchr/testify/assert"
@@ -72,7 +74,7 @@ func Test_CLI_Init_AsksForSubscriptionIdAndCreatesEnvAndProjectFile(t *testing.T
 	require.Regexp(t, regexp.MustCompile(fmt.Sprintf(`AZURE_SUBSCRIPTION_ID="%s"`, testSubscriptionId)+"\n"), string(file))
 	require.Regexp(t, regexp.MustCompile(`AZURE_ENV_NAME="TESTENV"`+"\n"), string(file))
 
-	proj, err := project.LoadProjectConfig(filepath.Join(dir, azdcontext.ProjectFileName))
+	proj, err := project.Load(ctx, filepath.Join(dir, azdcontext.ProjectFileName))
 	require.NoError(t, err)
 
 	require.Equal(t, filepath.Base(dir), proj.Name)
@@ -191,11 +193,16 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 		t.Fatal("could not create credential")
 	}
 
-	azCli := azcli.NewAzCli(cred, azcli.NewAzCliArgs{})
+	azCli := azcli.NewAzCli(mockaccount.SubscriptionCredentialProviderFunc(
+		func(_ context.Context, _ string) (azcore.TokenCredential, error) {
+			return cred, nil
+		}),
+		http.DefaultClient,
+		azcli.NewAzCliArgs{})
 
 	// Verify that resource groups are created with tag
 	resourceManager := infra.NewAzureResourceManager(azCli)
-	rgs, err := resourceManager.GetResourceGroupsForEnvironment(ctx, env)
+	rgs, err := resourceManager.GetResourceGroupsForEnvironment(ctx, env.GetSubscriptionId(), env.GetEnvName())
 	require.NoError(t, err)
 	require.NotNil(t, rgs)
 
@@ -247,11 +254,16 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 		t.Fatal("could not create credential")
 	}
 
-	azCli := azcli.NewAzCli(cred, azcli.NewAzCliArgs{})
+	azCli := azcli.NewAzCli(mockaccount.SubscriptionCredentialProviderFunc(
+		func(_ context.Context, _ string) (azcore.TokenCredential, error) {
+			return cred, nil
+		}),
+		http.DefaultClient,
+		azcli.NewAzCliArgs{})
 
 	// Verify that resource groups are created with tag
 	resourceManager := infra.NewAzureResourceManager(azCli)
-	rgs, err := resourceManager.GetResourceGroupsForEnvironment(ctx, env)
+	rgs, err := resourceManager.GetResourceGroupsForEnvironment(ctx, env.GetSubscriptionId(), env.GetEnvName())
 	require.NoError(t, err)
 	require.NotNil(t, rgs)
 
@@ -368,28 +380,26 @@ func Test_CLI_ProjectIsNeeded(t *testing.T) {
 }
 
 func Test_CLI_NoDebugSpewWhenHelpPassedWithoutDebug(t *testing.T) {
-	stdErrBuf := bytes.Buffer{}
-
-	cmd := osexec.Command(azdcli.GetAzdLocation(), "--help")
-	cmd.Stderr = &stdErrBuf
-
-	// Run the command and wait for it to complete, we don't expect any errors.
-	err := cmd.Start()
-	assert.NoError(t, err)
-
-	err = cmd.Wait()
-	assert.NoError(t, err)
+	cli := azdcli.NewCLI(t)
+	ctx := context.Background()
+	result, err := cli.RunCommand(ctx, "--help")
+	require.NoError(t, err)
 
 	// Ensure no output was written to stderr
-	assert.Equal(t, "", stdErrBuf.String(), "no output should be written to stderr when --help is passed")
+	assert.Equal(t, "", result.Stderr, "no output should be written to stderr when --help is passed")
 }
 
 //go:embed testdata/samples/*
 var samples embed.FS
 
+func samplePath(paths ...string) string {
+	elem := append([]string{"testdata", "samples"}, paths...)
+	return path.Join(elem...)
+}
+
 // copySample copies the given sample to targetRoot.
 func copySample(targetRoot string, sampleName string) error {
-	sampleRoot := path.Join("testdata", "samples", sampleName)
+	sampleRoot := samplePath(sampleName)
 
 	return fs.WalkDir(samples, sampleRoot, func(name string, d fs.DirEntry, err error) error {
 		// If there was some error that was preventing is from walking into the directory, just fail now,

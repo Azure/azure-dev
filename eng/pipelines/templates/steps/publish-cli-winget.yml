@@ -43,7 +43,7 @@ steps:
       filePath: eng/scripts/Update-WinGetManifest.ps1
       arguments: >-
         -PackageIdentifier Microsoft.Azd
-        -Version '$(WinGetVersion)'
+        -Version '$(MSI_VERSION)'
         -Url "https://github.com/Azure/azure-dev/releases/download/azure-dev-cli_${{ parameters.CliVersion }}/azd-windows-amd64.msi"
         -GitHubToken ${{ parameters.GitHubToken }}
         -Submit:$$(SubmitWinGetPackage)

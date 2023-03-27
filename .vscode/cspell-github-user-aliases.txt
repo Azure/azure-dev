@@ -4,6 +4,7 @@ benbjohnson
 blang
 bradleyjkemp
 briandowns
+cobey
 ellismg
 envsubst
 fatih
@@ -19,3 +20,4 @@ pbnj
 sethvargo
 stretchr
 theckman
+tonybaloney

@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"strings"
 
@@ -75,6 +76,7 @@ func createAndInitEnvironment(
 	console input.Console,
 	accountManager account.Manager,
 	userProfileService *azcli.UserProfileService,
+	subResolver account.SubscriptionTenantResolver,
 ) (*environment.Environment, error) {
 	if envSpec.environmentName != "" && !environment.IsValidEnvironmentName(envSpec.environmentName) {
 		errMsg := invalidEnvironmentNameMsg(envSpec.environmentName)
@@ -96,12 +98,25 @@ func createAndInitEnvironment(
 		return nil, fmt.Errorf("environment '%s' already exists", envSpec.environmentName)
 	}
 
-	if err := ensureEnvironmentInitialized(ctx, *envSpec, env, console, accountManager, userProfileService); err != nil {
+	if err := ensureEnvironmentInitialized(
+		ctx, *envSpec, env, console, accountManager, userProfileService, subResolver); err != nil {
 		return nil, fmt.Errorf("initializing environment: %w", err)
 	}
 
 	telemetry.SetGlobalAttributes(fields.SubscriptionIdKey.String(env.GetSubscriptionId()))
 	return env, nil
+}
+
+func loadEnvironmentIfAvailable() (*environment.Environment, error) {
+	azdCtx, err := azdcontext.NewAzdContext()
+	if err != nil {
+		return nil, err
+	}
+	defaultEnv, err := azdCtx.GetDefaultEnvironmentName()
+	if err != nil {
+		return nil, err
+	}
+	return environment.GetEnvironment(azdCtx, defaultEnv)
 }
 
 func loadOrInitEnvironment(
@@ -111,6 +126,7 @@ func loadOrInitEnvironment(
 	console input.Console,
 	accountManager account.Manager,
 	userProfileService *azcli.UserProfileService,
+	subResolver account.SubscriptionTenantResolver,
 ) (*environment.Environment, error) {
 	loadOrCreateEnvironment := func() (*environment.Environment, bool, error) {
 		// If there's a default environment, use that
@@ -179,7 +195,8 @@ func loadOrInitEnvironment(
 		env,
 		console,
 		accountManager,
-		userProfileService); err != nil {
+		userProfileService,
+		subResolver); err != nil {
 		return nil, fmt.Errorf("initializing environment: %w", err)
 	}
 
@@ -205,6 +222,7 @@ func ensureEnvironmentInitialized(
 	console input.Console,
 	accountManager account.Manager,
 	userProfileService *azcli.UserProfileService,
+	subResolver account.SubscriptionTenantResolver,
 ) error {
 	if env.Values == nil {
 		env.Values = make(map[string]string)
@@ -274,7 +292,7 @@ func ensureEnvironmentInitialized(
 			env.SetLocation(envSpec.location)
 		} else {
 			location, err := azureutil.PromptLocation(
-				ctx, env, "Please select an Azure location to use:", "", console, accountManager)
+				ctx, env.GetSubscriptionId(), "Please select an Azure location to use:", "", console, accountManager)
 			if err != nil {
 				return fmt.Errorf("prompting for location: %w", err)
 			}
@@ -283,7 +301,16 @@ func ensureEnvironmentInitialized(
 	}
 
 	if !hasPrincipalID {
-		principalID, err := azureutil.GetCurrentPrincipalId(ctx, userProfileService)
+		subscriptionId := env.GetSubscriptionId()
+		if subscriptionId == "" {
+			log.Panic("tried to get principal id without a subscription id selected")
+		}
+		tenantId, err := subResolver.LookupTenant(ctx, subscriptionId)
+		if err != nil {
+			return fmt.Errorf("getting tenant id for subscription %s. Error: %w", subscriptionId, err)
+		}
+
+		principalID, err := azureutil.GetCurrentPrincipalId(ctx, userProfileService, tenantId)
 		if err != nil {
 			return fmt.Errorf("fetching current user information: %w", err)
 		}
@@ -347,14 +374,17 @@ func getResourceGroupFollowUp(
 	formatter output.Formatter,
 	azCli azcli.AzCli,
 	projectConfig *project.ProjectConfig,
+	resourceManager project.ResourceManager,
 	env *environment.Environment,
 ) (followUp string) {
 	if formatter.Kind() != output.JsonFormat {
-		if resourceGroupName, err := project.GetResourceGroupName(ctx, azCli, projectConfig, env); err == nil {
+		subscriptionId := env.GetSubscriptionId()
+
+		if resourceGroupName, err := resourceManager.GetResourceGroupName(ctx, subscriptionId, projectConfig); err == nil {
 			followUp = fmt.Sprintf("You can view the resources created under the resource group %s in Azure Portal:\n%s",
 				resourceGroupName, output.WithLinkFormat(fmt.Sprintf(
 					"https://portal.azure.com/#@/resource/subscriptions/%s/resourceGroups/%s/overview",
-					env.GetSubscriptionId(),
+					subscriptionId,
 					resourceGroupName)))
 		}
 	}

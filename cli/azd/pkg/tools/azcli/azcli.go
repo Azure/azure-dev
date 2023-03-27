@@ -10,9 +10,9 @@ import (
 	"io"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
@@ -58,7 +58,12 @@ type AzCli interface {
 		resourceGroupName string,
 		vaultName string,
 	) (*AzCliKeyVault, error)
-	GetKeyVaultSecret(ctx context.Context, vaultName string, secretName string) (*AzCliKeyVaultSecret, error)
+	GetKeyVaultSecret(
+		ctx context.Context,
+		subscriptionId string,
+		vaultName string,
+		secretName string,
+	) (*AzCliKeyVaultSecret, error)
 	PurgeKeyVault(ctx context.Context, subscriptionId string, vaultName string, location string) error
 	GetAppConfig(
 		ctx context.Context, subscriptionId string, resourceGroupName string, configName string) (*AzCliAppConfig, error)
@@ -160,7 +165,6 @@ type AzCli interface {
 		appName string,
 		environmentName string,
 	) (*AzCliStaticWebAppEnvironmentProperties, error)
-	GetAccessToken(ctx context.Context) (*AzCliAccessToken, error)
 }
 
 type AzCliDeployment struct {
@@ -295,16 +299,19 @@ type Filter struct {
 type NewAzCliArgs struct {
 	EnableDebug     bool
 	EnableTelemetry bool
-	HttpClient      httputil.HttpClient
 }
 
-func NewAzCli(credential azcore.TokenCredential, args NewAzCliArgs) AzCli {
+func NewAzCli(
+	credentialProvider account.SubscriptionCredentialProvider,
+	httpClient httputil.HttpClient,
+	args NewAzCliArgs,
+) AzCli {
 	return &azCli{
-		userAgent:       azdinternal.MakeUserAgentString(""),
-		enableDebug:     args.EnableDebug,
-		enableTelemetry: args.EnableTelemetry,
-		httpClient:      args.HttpClient,
-		credential:      credential,
+		credentialProvider: credentialProvider,
+		enableDebug:        args.EnableDebug,
+		enableTelemetry:    args.EnableTelemetry,
+		httpClient:         httpClient,
+		userAgent:          azdinternal.MakeUserAgentString(""),
 	}
 }
 
@@ -316,7 +323,7 @@ type azCli struct {
 	// Allows us to mock the Http Requests from the go modules
 	httpClient httputil.HttpClient
 
-	credential azcore.TokenCredential
+	credentialProvider account.SubscriptionCredentialProvider
 }
 
 // SetUserAgent sets the user agent that's sent with each call to the Azure

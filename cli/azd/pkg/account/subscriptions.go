@@ -1,13 +1,16 @@
-package azcli
+package account
 
 import (
 	"context"
 	"fmt"
 	"sort"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
 	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
+	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
@@ -31,7 +34,7 @@ func NewSubscriptionsService(
 
 func (ss *SubscriptionsService) createSubscriptionsClient(
 	ctx context.Context, tenantId string) (*armsubscriptions.Client, error) {
-	options := clientOptionsBuilder(ss.httpClient, ss.userAgent).BuildArmClientOptions()
+	options := clientOptions(ss.httpClient, ss.userAgent)
 	cred, err := ss.credentialProvider.GetTokenCredential(ctx, tenantId)
 	if err != nil {
 		return nil, err
@@ -46,7 +49,7 @@ func (ss *SubscriptionsService) createSubscriptionsClient(
 }
 
 func (ss *SubscriptionsService) createTenantsClient(ctx context.Context) (*armsubscriptions.TenantsClient, error) {
-	options := clientOptionsBuilder(ss.httpClient, ss.userAgent).BuildArmClientOptions()
+	options := clientOptions(ss.httpClient, ss.userAgent)
 	// Use default home tenant, since tenants itself can be listed across tenants
 	cred, err := ss.credentialProvider.GetTokenCredential(ctx, "")
 	if err != nil {
@@ -60,13 +63,16 @@ func (ss *SubscriptionsService) createTenantsClient(ctx context.Context) (*armsu
 	return client, nil
 }
 
-func (s *SubscriptionsService) ListSubscriptions(ctx context.Context, tenantId string) ([]AzCliSubscriptionInfo, error) {
+func (s *SubscriptionsService) ListSubscriptions(
+	ctx context.Context,
+	tenantId string,
+) ([]*armsubscriptions.Subscription, error) {
 	client, err := s.createSubscriptionsClient(ctx, tenantId)
 	if err != nil {
 		return nil, err
 	}
 
-	subscriptions := []AzCliSubscriptionInfo{}
+	subscriptions := []*armsubscriptions.Subscription{}
 	pager := client.NewListPager(nil)
 
 	for pager.More() {
@@ -75,25 +81,18 @@ func (s *SubscriptionsService) ListSubscriptions(ctx context.Context, tenantId s
 			return nil, fmt.Errorf("failed getting next page of subscriptions: %w", err)
 		}
 
-		for _, subscription := range page.SubscriptionListResult.Value {
-			subscriptions = append(subscriptions,
-				AzCliSubscriptionInfo{
-					Id:       *subscription.SubscriptionID,
-					Name:     *subscription.DisplayName,
-					TenantId: *subscription.TenantID,
-				})
-		}
+		subscriptions = append(subscriptions, page.SubscriptionListResult.Value...)
 	}
 
 	sort.Slice(subscriptions, func(i, j int) bool {
-		return subscriptions[i].Name < subscriptions[j].Name
+		return *subscriptions[i].DisplayName < *subscriptions[j].DisplayName
 	})
 
 	return subscriptions, nil
 }
 
 func (s *SubscriptionsService) GetSubscription(
-	ctx context.Context, subscriptionId string, tenantId string) (*AzCliSubscriptionInfo, error) {
+	ctx context.Context, subscriptionId string, tenantId string) (*armsubscriptions.Subscription, error) {
 	client, err := s.createSubscriptionsClient(ctx, tenantId)
 	if err != nil {
 		return nil, err
@@ -104,22 +103,18 @@ func (s *SubscriptionsService) GetSubscription(
 		return nil, fmt.Errorf("failed getting subscription for '%s'", subscriptionId)
 	}
 
-	return &AzCliSubscriptionInfo{
-		Id:       *subscription.SubscriptionID,
-		Name:     *subscription.DisplayName,
-		TenantId: *subscription.TenantID,
-	}, nil
+	return &subscription.Subscription, nil
 }
 
 // ListSubscriptionLocations lists physical locations in Azure for the given subscription.
 func (s *SubscriptionsService) ListSubscriptionLocations(
-	ctx context.Context, subscriptionId string, tenantId string) ([]AzCliLocation, error) {
+	ctx context.Context, subscriptionId string, tenantId string) ([]Location, error) {
 	client, err := s.createSubscriptionsClient(ctx, tenantId)
 	if err != nil {
 		return nil, err
 	}
 
-	locations := []AzCliLocation{}
+	locations := []Location{}
 	pager := client.NewListLocationsPager(subscriptionId, nil)
 
 	for pager.More() {
@@ -134,10 +129,13 @@ func (s *SubscriptionsService) ListSubscriptionLocations(
 				continue
 			}
 
-			locations = append(locations, AzCliLocation{
+			displayName := convert.ToValueWithDefault(location.DisplayName, *location.Name)
+			regionalDisplayName := convert.ToValueWithDefault(location.RegionalDisplayName, displayName)
+
+			locations = append(locations, Location{
 				Name:                *location.Name,
-				DisplayName:         *location.DisplayName,
-				RegionalDisplayName: *location.RegionalDisplayName,
+				DisplayName:         displayName,
+				RegionalDisplayName: regionalDisplayName,
 			})
 		}
 	}
@@ -177,4 +175,13 @@ func (s *SubscriptionsService) ListTenants(ctx context.Context) ([]armsubscripti
 	})
 
 	return tenants, nil
+}
+
+func clientOptions(httpClient httputil.HttpClient, userAgent string) *arm.ClientOptions {
+	return &arm.ClientOptions{
+		ClientOptions: policy.ClientOptions{
+			Transport:       httpClient,
+			PerCallPolicies: []policy.Policy{azsdk.NewUserAgentPolicy(userAgent)},
+		},
+	}
 }

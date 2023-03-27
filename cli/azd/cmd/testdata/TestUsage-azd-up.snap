@@ -1,8 +1,5 @@
 
-Executes the azd init, azd provision and azd deploy commands in a single step.
-
-  • Running azd up without a template will prompt you to start with an empty template or select from a curated list of presets.
-  • To view all currently available sample templates visit: azd up.
+Executes the azd provision and azd deploy commands in a single step.
 
 Usage
   azd up [flags]

@@ -19,7 +19,7 @@ Commands
     env      	: Manage environments.
     infra    	: Manage your Azure infrastructure.
     provision	: Provision the Azure resources for an application.
-    up       	: Initialize application, provision Azure resources, and deploy your project with a single command.
+    up       	: Provision Azure resources, and deploy your project with a single command.
 
   Monitor, test and release your app
     monitor  	: Monitor a deployed application.

@@ -122,5 +122,5 @@ func getCmdUpHelpDescription(c *cobra.Command) string {
 	return generateCmdHelpDescription(
 		fmt.Sprintf("Executes the %s and %s commands in a single step.",
 			output.WithHighLightFormat("azd provision"),
-			output.WithHighLightFormat("azd deploy")), getCmdHelpDescriptionNoteForInit(c))
+			output.WithHighLightFormat("azd deploy")), nil)
 }

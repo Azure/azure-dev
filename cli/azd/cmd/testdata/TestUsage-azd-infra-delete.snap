@@ -8,7 +8,6 @@ Flags
     -e, --environment string 	: The name of the environment to use.
         --force              	: Does not require confirmation before it deletes resources.
     -h, --help               	: Gets help for delete.
-    -o, --output string      	: The output format (the supported formats are json, none).
         --purge              	: Does not require confirmation before it permanently deletes resources that are soft-deleted by default (for example, key vaults).
 
 Global Flags

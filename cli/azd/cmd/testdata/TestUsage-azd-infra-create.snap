@@ -7,8 +7,6 @@ Usage
 Flags
     -e, --environment string 	: The name of the environment to use.
     -h, --help               	: Gets help for create.
-        --no-progress        	: Suppresses progress information.
-    -o, --output string      	: The output format (the supported formats are json, none).
 
 Global Flags
     -C, --cwd string 	: Sets the current working directory.

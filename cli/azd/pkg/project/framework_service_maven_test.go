@@ -19,138 +19,138 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func Test_MavenProject_Restore(t *testing.T) {
-	var runArgs exec.RunArgs
-
-	mockContext := mocks.NewMockContext(context.Background())
-	mockContext.CommandRunner.
-		When(func(args exec.RunArgs, command string) bool {
-			return strings.Contains(command, fmt.Sprintf("%s dependency:resolve", getMvnCmd()))
-		}).
-		RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-			runArgs = args
-			return exec.NewRunResult(0, "", ""), nil
-		})
-
-	env := environment.Ephemeral()
-	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageJava)
-	mavenCli := maven.NewMavenCli(mockContext.CommandRunner)
-	javaCli := javac.NewCli(mockContext.CommandRunner)
-
-	mavenProject := NewMavenProject(env, mavenCli, javaCli)
-	err := mavenProject.Initialize(*mockContext.Context, serviceConfig)
+func Test_MavenProject(t *testing.T) {
+	ostest.Chdir(t, t.TempDir())
+	require.NoError(t, os.MkdirAll("./src/api", osutil.PermissionDirectory))
+	f, err := os.OpenFile(filepath.Join(".", "src", "api", getMvnwCmd()), os.O_CREATE, osutil.PermissionExecutableFile)
 	require.NoError(t, err)
+	require.NoError(t, f.Close())
 
-	restoreTask := mavenProject.Restore(*mockContext.Context, serviceConfig)
-	logProgress(restoreTask)
+	t.Run("Restore", func(t *testing.T) {
+		var runArgs exec.RunArgs
 
-	result, err := restoreTask.Await()
-	require.NoError(t, err)
-	require.NotNil(t, result)
-	require.Contains(t, runArgs.Cmd, getMvnCmd())
-	require.Equal(t, serviceConfig.Path(), runArgs.Cwd)
-	require.Equal(t,
-		[]string{"dependency:resolve"},
-		runArgs.Args,
-	)
+		mockContext := mocks.NewMockContext(context.Background())
+		mockContext.CommandRunner.
+			When(func(args exec.RunArgs, command string) bool {
+				return strings.Contains(command, fmt.Sprintf("%s dependency:resolve", getMvnwCmd()))
+			}).
+			RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+				runArgs = args
+				return exec.NewRunResult(0, "", ""), nil
+			})
+
+		env := environment.Ephemeral()
+		serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageJava)
+		mavenCli := maven.NewMavenCli(mockContext.CommandRunner)
+		javaCli := javac.NewCli(mockContext.CommandRunner)
+
+		mavenProject := NewMavenProject(env, mavenCli, javaCli)
+		err = mavenProject.Initialize(*mockContext.Context, serviceConfig)
+		require.NoError(t, err)
+
+		restoreTask := mavenProject.Restore(*mockContext.Context, serviceConfig)
+		logProgress(restoreTask)
+
+		result, err := restoreTask.Await()
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		require.Contains(t, runArgs.Cmd, getMvnwCmd())
+		require.Equal(t, serviceConfig.Path(), runArgs.Cwd)
+		require.Equal(t,
+			[]string{"dependency:resolve"},
+			runArgs.Args,
+		)
+	})
+
+	t.Run("Build", func(t *testing.T) {
+		var runArgs exec.RunArgs
+
+		mockContext := mocks.NewMockContext(context.Background())
+		mockContext.CommandRunner.
+			When(func(args exec.RunArgs, command string) bool {
+				return strings.Contains(command, fmt.Sprintf("%s compile", getMvnwCmd()))
+			}).
+			RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+				runArgs = args
+				return exec.NewRunResult(0, "", ""), nil
+			})
+
+		env := environment.Ephemeral()
+		serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageJava)
+		mavenCli := maven.NewMavenCli(mockContext.CommandRunner)
+		javaCli := javac.NewCli(mockContext.CommandRunner)
+
+		mavenProject := NewMavenProject(env, mavenCli, javaCli)
+		err = mavenProject.Initialize(*mockContext.Context, serviceConfig)
+		require.NoError(t, err)
+
+		buildTask := mavenProject.Build(*mockContext.Context, serviceConfig, nil)
+		logProgress(buildTask)
+
+		result, err := buildTask.Await()
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		require.Contains(t, runArgs.Cmd, getMvnwCmd())
+		require.Equal(t,
+			[]string{"compile"},
+			runArgs.Args,
+		)
+	})
+
+	t.Run("Package", func(t *testing.T) {
+		var runArgs exec.RunArgs
+
+		mockContext := mocks.NewMockContext(context.Background())
+		mockContext.CommandRunner.
+			When(func(args exec.RunArgs, command string) bool {
+				return strings.Contains(command, fmt.Sprintf("%s package", getMvnwCmd()))
+			}).
+			RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+				runArgs = args
+				return exec.NewRunResult(0, "", ""), nil
+			})
+
+		env := environment.Ephemeral()
+		serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageJava)
+		mavenCli := maven.NewMavenCli(mockContext.CommandRunner)
+		javaCli := javac.NewCli(mockContext.CommandRunner)
+
+		// Simulate a build output with a jar file
+		buildOutputDir := filepath.Join(serviceConfig.Path(), "target")
+		err = os.MkdirAll(buildOutputDir, osutil.PermissionDirectory)
+		require.NoError(t, err)
+		err = os.WriteFile(filepath.Join(buildOutputDir, "test.jar"), []byte("test"), osutil.PermissionFile)
+		require.NoError(t, err)
+
+		mavenProject := NewMavenProject(env, mavenCli, javaCli)
+		err = mavenProject.Initialize(*mockContext.Context, serviceConfig)
+		require.NoError(t, err)
+
+		packageTask := mavenProject.Package(
+			*mockContext.Context,
+			serviceConfig,
+			&ServiceBuildResult{
+				BuildOutputPath: serviceConfig.Path(),
+			},
+		)
+		logProgress(packageTask)
+
+		result, err := packageTask.Await()
+		require.NoError(t, err)
+		require.NotNil(t, result)
+		require.NotEmpty(t, result.PackagePath)
+		require.Contains(t, runArgs.Cmd, getMvnwCmd())
+		require.Equal(t,
+			[]string{"package", "-DskipTests"},
+			runArgs.Args,
+		)
+	})
 }
 
-func Test_MavenProject_Build(t *testing.T) {
-	var runArgs exec.RunArgs
-
-	mockContext := mocks.NewMockContext(context.Background())
-	mockContext.CommandRunner.
-		When(func(args exec.RunArgs, command string) bool {
-			return strings.Contains(command, fmt.Sprintf("%s compile", getMvnCmd()))
-		}).
-		RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-			runArgs = args
-			return exec.NewRunResult(0, "", ""), nil
-		})
-
-	env := environment.Ephemeral()
-	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageJava)
-	mavenCli := maven.NewMavenCli(mockContext.CommandRunner)
-	javaCli := javac.NewCli(mockContext.CommandRunner)
-
-	mavenProject := NewMavenProject(env, mavenCli, javaCli)
-	err := mavenProject.Initialize(*mockContext.Context, serviceConfig)
-	require.NoError(t, err)
-
-	buildTask := mavenProject.Build(*mockContext.Context, serviceConfig, nil)
-	logProgress(buildTask)
-
-	result, err := buildTask.Await()
-	require.NoError(t, err)
-	require.NotNil(t, result)
-	require.Contains(t, runArgs.Cmd, getMvnCmd())
-	require.Equal(t,
-		[]string{"compile"},
-		runArgs.Args,
-	)
-}
-
-func Test_MavenProject_Package(t *testing.T) {
-	tempDir := t.TempDir()
-	ostest.Chdir(t, tempDir)
-
-	var runArgs exec.RunArgs
-
-	mockContext := mocks.NewMockContext(context.Background())
-	mockContext.CommandRunner.
-		When(func(args exec.RunArgs, command string) bool {
-			return strings.Contains(command, fmt.Sprintf("%s package", getMvnCmd()))
-		}).
-		RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-			runArgs = args
-			return exec.NewRunResult(0, "", ""), nil
-		})
-
-	env := environment.Ephemeral()
-	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageJava)
-	mavenCli := maven.NewMavenCli(mockContext.CommandRunner)
-	javaCli := javac.NewCli(mockContext.CommandRunner)
-
-	// Simulate a build output with a jar file
-	buildOutputDir := filepath.Join(serviceConfig.Path(), "target")
-	err := os.MkdirAll(buildOutputDir, osutil.PermissionDirectory)
-	require.NoError(t, err)
-	err = os.WriteFile(filepath.Join(buildOutputDir, "test.jar"), []byte("test"), osutil.PermissionFile)
-	require.NoError(t, err)
-
-	mavenProject := NewMavenProject(env, mavenCli, javaCli)
-	err = mavenProject.Initialize(*mockContext.Context, serviceConfig)
-	require.NoError(t, err)
-
-	packageTask := mavenProject.Package(
-		*mockContext.Context,
-		serviceConfig,
-		&ServiceBuildResult{
-			BuildOutputPath: serviceConfig.Path(),
-		},
-	)
-	logProgress(packageTask)
-
-	result, err := packageTask.Await()
-	require.NoError(t, err)
-	require.NotNil(t, result)
-	require.NotEmpty(t, result.PackagePath)
-	require.Contains(t, runArgs.Cmd, getMvnCmd())
-	require.Equal(t,
-		[]string{"package", "-DskipTests"},
-		runArgs.Args,
-	)
-}
-
-func getMvnCmd() string {
-	switch runtime.GOOS {
-	case "windows":
-		return "mvn.cmd"
-	case "darwin":
-		return "/usr/local/bin/mvn"
-	case "linux":
-		return "/usr/bin/mvn"
-	default:
-		panic("OS not supported")
+func getMvnwCmd() string {
+	if runtime.GOOS == "windows" {
+		return "mvnw.cmd"
+	} else {
+		return "mvnw"
 	}
 }

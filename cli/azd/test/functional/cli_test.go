@@ -5,7 +5,6 @@
 package cli_test
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"embed"
@@ -381,29 +380,26 @@ func Test_CLI_ProjectIsNeeded(t *testing.T) {
 }
 
 func Test_CLI_NoDebugSpewWhenHelpPassedWithoutDebug(t *testing.T) {
-	stdErrBuf := bytes.Buffer{}
-
-	/* #nosec G204 - Subprocess launched with a potential tainted input or cmd arguments false positive */
-	cmd := osexec.Command(azdcli.GetAzdLocation(), "--help")
-	cmd.Stderr = &stdErrBuf
-
-	// Run the command and wait for it to complete, we don't expect any errors.
-	err := cmd.Start()
-	assert.NoError(t, err)
-
-	err = cmd.Wait()
-	assert.NoError(t, err)
+	cli := azdcli.NewCLI(t)
+	ctx := context.Background()
+	result, err := cli.RunCommand(ctx, "--help")
+	require.NoError(t, err)
 
 	// Ensure no output was written to stderr
-	assert.Equal(t, "", stdErrBuf.String(), "no output should be written to stderr when --help is passed")
+	assert.Equal(t, "", result.Stderr, "no output should be written to stderr when --help is passed")
 }
 
 //go:embed testdata/samples/*
 var samples embed.FS
 
+func samplePath(paths ...string) string {
+	elem := append([]string{"testdata", "samples"}, paths...)
+	return path.Join(elem...)
+}
+
 // copySample copies the given sample to targetRoot.
 func copySample(targetRoot string, sampleName string) error {
-	sampleRoot := path.Join("testdata", "samples", sampleName)
+	sampleRoot := samplePath(sampleName)
 
 	return fs.WalkDir(samples, sampleRoot, func(name string, d fs.DirEntry, err error) error {
 		// If there was some error that was preventing is from walking into the directory, just fail now,

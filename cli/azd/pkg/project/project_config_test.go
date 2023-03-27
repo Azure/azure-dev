@@ -6,10 +6,47 @@ import (
 	"fmt"
 	"testing"
 
+	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
+
+// Tests invalid project configurations.
+func TestProjectConfigParse_Invalid(t *testing.T) {
+	tests := []struct {
+		name          string
+		projectConfig string
+	}{
+		{
+			name: "ServiceLanguage",
+			projectConfig: heredoc.Doc(`
+				name: proj-invalid-lang
+				services:
+					web:
+						language: csharp-go-java++++
+						host: appservice
+			`),
+		},
+		{
+			name: "ServiceHost",
+			projectConfig: heredoc.Doc(`
+				name: proj-invalid-host
+				services:
+					web:
+						language: csharp
+						host: appservice-containerapp-hybrid-edge-cloud
+			`),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			_, err := Parse(ctx, tt.projectConfig)
+			require.Error(t, err)
+		})
+	}
+}
 
 func TestProjectConfigDefaults(t *testing.T) {
 	const testProj = `

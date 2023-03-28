@@ -20,13 +20,13 @@ func TestGetCommandEventName(t *testing.T) {
 		want string
 	}{
 		{"Single", args{"azd provision"}, "cmd.provision"},
-		{"Multiple", args{"azd infra create"}, "cmd.infra.create"},
+		{"Multiple", args{"azd env list"}, "cmd.env.list"},
 		{"SpecialChar", args{"azd env get-values"}, "cmd.env.get-values"},
 
 		// These cases should not happen in the actual application.
 		// However, we should be lenient in formatting these and not error.
 		{"LenientSingle", args{"provision"}, "cmd.provision"},
-		{"LenientMultiple", args{"infra create"}, "cmd.infra.create"},
+		{"LenientMultiple", args{"env list"}, "cmd.env.list"},
 		{"LenientSpecialChar", args{"env get-values"}, "cmd.env.get-values"},
 	}
 	for _, tt := range tests {

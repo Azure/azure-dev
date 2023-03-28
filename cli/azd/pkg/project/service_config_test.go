@@ -3,8 +3,10 @@ package project
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
@@ -219,4 +221,18 @@ func TestServiceConfigRaiseEventWithArgs(t *testing.T) {
 	err = service.RaiseEvent(ctx, ServiceEventDeploy, eventArgs)
 	require.Nil(t, err)
 	require.True(t, handlerCalled)
+}
+
+func createTestServiceConfig(path string, host ServiceTargetKind, language ServiceLanguageKind) *ServiceConfig {
+	return &ServiceConfig{
+		Name:         "api",
+		Host:         host,
+		Language:     language,
+		RelativePath: filepath.Join(path),
+		Project: &ProjectConfig{
+			Name: "test-app",
+			Path: ".",
+		},
+		EventDispatcher: ext.NewEventDispatcher[ServiceLifecycleEventArgs](),
+	}
 }

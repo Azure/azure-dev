@@ -3,6 +3,7 @@ package mockaccount
 import (
 	"context"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 )
 
@@ -88,4 +89,14 @@ func (a *MockAccountManager) SetDefaultLocation(
 	}
 
 	return nil, nil
+}
+
+// SubscriptionTenantResolverFunc implements [account.SubscriptionCredentialProvider] using the provided function.
+type SubscriptionCredentialProviderFunc func(ctx context.Context, subscriptionId string) (azcore.TokenCredential, error)
+
+func (f SubscriptionCredentialProviderFunc) CredentialForSubscription(
+	ctx context.Context,
+	subscriptionId string,
+) (azcore.TokenCredential, error) {
+	return f(ctx, subscriptionId)
 }

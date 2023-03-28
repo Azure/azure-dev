@@ -24,7 +24,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
-	"github.com/benbjohnson/clock"
 )
 
 type containerAppTarget struct {
@@ -37,14 +36,6 @@ type containerAppTarget struct {
 	accountManager           account.Manager
 	serviceManager           ServiceManager
 	resourceManager          ResourceManager
-
-	// Standard time library clock, unless mocked in tests
-	clock clock.Clock
-}
-
-type containerAppPackageResult struct {
-	ImageTag    string
-	LoginServer string
 }
 
 // NewContainerAppTarget creates the container app service target.
@@ -61,7 +52,6 @@ func NewContainerAppTarget(
 	accountManager account.Manager,
 	serviceManager ServiceManager,
 	resourceManager ResourceManager,
-	clock clock.Clock,
 ) ServiceTarget {
 	return &containerAppTarget{
 		env:                      env,
@@ -73,7 +63,6 @@ func NewContainerAppTarget(
 		docker:                   docker,
 		console:                  console,
 		commandRunner:            commandRunner,
-		clock:                    clock,
 	}
 }
 
@@ -91,62 +80,11 @@ func (at *containerAppTarget) Initialize(ctx context.Context, serviceConfig *Ser
 func (at *containerAppTarget) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	buildOutput *ServiceBuildResult,
+	packageOutput *ServicePackageResult,
 ) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
-			// Login to container registry.
-			loginServer, has := at.env.Values[environment.ContainerRegistryEndpointEnvVarName]
-			if !has {
-				task.SetError(fmt.Errorf(
-					"could not determine container registry endpoint, ensure %s is set as an output of your infrastructure",
-					environment.ContainerRegistryEndpointEnvVarName,
-				))
-				return
-			}
-
-			imageId := buildOutput.BuildOutputPath
-			if imageId == "" {
-				task.SetError(errors.New("missing container image id from build output"))
-				return
-			}
-
-			imageTag, err := at.generateImageTag(serviceConfig)
-			if err != nil {
-				task.SetError(fmt.Errorf("generating image tag: %w", err))
-				return
-			}
-
-			fullTag := fmt.Sprintf(
-				"%s/%s",
-				loginServer,
-				imageTag,
-			)
-
-			// Tag image.
-			log.Printf("tagging image %s as %s", imageId, fullTag)
-			task.SetProgress(NewServiceProgress("Tagging image"))
-			if err := at.docker.Tag(ctx, serviceConfig.Path(), imageId, fullTag); err != nil {
-				task.SetError(fmt.Errorf("tagging image: %w", err))
-				return
-			}
-
-			// Save the name of the image we pushed into the environment with a well known key.
-			log.Printf("writing image name to environment")
-			at.env.SetServiceProperty(serviceConfig.Name, "IMAGE_NAME", fullTag)
-
-			if err := at.env.Save(); err != nil {
-				task.SetError(fmt.Errorf("saving image name to environment: %w", err))
-				return
-			}
-
-			task.SetResult(&ServicePackageResult{
-				Build: buildOutput,
-				Details: &containerAppPackageResult{
-					ImageTag:    fullTag,
-					LoginServer: loginServer,
-				},
-			})
+			task.SetResult(packageOutput)
 		},
 	)
 }
@@ -173,7 +111,7 @@ func (at *containerAppTarget) Publish(
 				serviceConfig.Infra.Module = serviceConfig.Name
 			}
 
-			packageDetails, ok := packageOutput.Details.(*containerAppPackageResult)
+			packageDetails, ok := packageOutput.Details.(*dockerPackageResult)
 			if !ok {
 				task.SetError(errors.New("failed retrieving package result details"))
 				return
@@ -192,6 +130,15 @@ func (at *containerAppTarget) Publish(
 			task.SetProgress(NewServiceProgress("Pushing image"))
 			if err := at.docker.Push(ctx, serviceConfig.Path(), packageDetails.ImageTag); err != nil {
 				task.SetError(fmt.Errorf("pushing image: %w", err))
+				return
+			}
+
+			// Save the name of the image we pushed into the environment with a well known key.
+			log.Printf("writing image name to environment")
+			at.env.SetServiceProperty(serviceConfig.Name, "IMAGE_NAME", packageDetails.ImageTag)
+
+			if err := at.env.Save(); err != nil {
+				task.SetError(fmt.Errorf("saving image name to environment: %w", err))
 				return
 			}
 
@@ -331,24 +278,6 @@ func (at *containerAppTarget) validateTargetResource(
 	}
 
 	return nil
-}
-
-func (at *containerAppTarget) generateImageTag(serviceConfig *ServiceConfig) (string, error) {
-	configuredTag, err := serviceConfig.Docker.Tag.Envsubst(at.env.Getenv)
-	if err != nil {
-		return "", err
-	}
-
-	if configuredTag != "" {
-		return configuredTag, nil
-	}
-
-	return fmt.Sprintf("%s/%s-%s:azd-deploy-%d",
-		strings.ToLower(serviceConfig.Project.Name),
-		strings.ToLower(serviceConfig.Name),
-		strings.ToLower(at.env.GetEnvName()),
-		at.clock.Now().Unix(),
-	), nil
 }
 
 // A console implementation which output goes only to logs

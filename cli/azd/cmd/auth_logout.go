@@ -10,15 +10,19 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/spf13/cobra"
 )
 
-func newLogoutCmd() *cobra.Command {
+func newLogoutCmd(parent string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "logout",
 		Short: "Log out of Azure.",
 		Long:  "Log out of Azure",
+		Annotations: map[string]string{
+			loginCmdParentAnnotation: parent,
+		},
 	}
 }
 
@@ -27,17 +31,24 @@ type logoutAction struct {
 	accountSubManager *account.SubscriptionsManager
 	formatter         output.Formatter
 	writer            io.Writer
+	console           input.Console
+	annotations       CmdAnnotations
 }
 
 func newLogoutAction(
 	authManager *auth.Manager,
 	accountSubManager *account.SubscriptionsManager,
-	formatter output.Formatter, writer io.Writer) actions.Action {
+	formatter output.Formatter,
+	writer io.Writer,
+	console input.Console,
+	annotations CmdAnnotations) actions.Action {
 	return &logoutAction{
 		authManager:       authManager,
 		accountSubManager: accountSubManager,
 		formatter:         formatter,
 		writer:            writer,
+		console:           console,
+		annotations:       annotations,
 	}
 }
 

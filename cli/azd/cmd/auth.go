@@ -9,7 +9,11 @@ import (
 func authActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 	group := root.Add("auth", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
-			Hidden: true,
+			Use:   "auth",
+			Short: "Authenticate with Azure.",
+		},
+		GroupingOptions: actions.CommandGroupOptions{
+			RootLevelHelp: actions.CmdGroupConfig,
 		},
 	})
 
@@ -19,6 +23,19 @@ func authActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 		ActionResolver: newAuthTokenAction,
 		OutputFormats:  []output.Format{output.JsonFormat},
 		DefaultFormat:  output.NoneFormat,
+	})
+
+	group.Add("login", &actions.ActionDescriptorOptions{
+		Command:        newLoginCmd("auth"),
+		FlagsResolver:  newAuthLoginFlags,
+		ActionResolver: newAuthLoginAction,
+		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
+		DefaultFormat:  output.NoneFormat,
+	})
+
+	group.Add("logout", &actions.ActionDescriptorOptions{
+		Command:        newLogoutCmd("auth"),
+		ActionResolver: newLogoutAction,
 	})
 
 	return group

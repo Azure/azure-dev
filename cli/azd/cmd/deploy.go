@@ -46,6 +46,8 @@ func (d *deployFlags) bindNonCommon(
 		//nolint:lll
 		"Deploys a specific service (when the string is unspecified, all services that are listed in the "+azdcontext.ProjectFileName+" file are deployed).",
 	)
+	//deprecate:flag hide --service
+	_ = local.MarkHidden("service")
 	d.global = global
 }
 
@@ -66,14 +68,18 @@ func newDeployFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *
 }
 
 func newDeployCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "deploy",
+	cmd := &cobra.Command{
+		Use:   "deploy <service>",
 		Short: "Deploy the application's code to Azure.",
 	}
+	cmd.Args = cobra.MaximumNArgs(1)
+
+	return cmd
 }
 
 type deployAction struct {
 	flags           *deployFlags
+	args            []string
 	projectConfig   *project.ProjectConfig
 	azdCtx          *azdcontext.AzdContext
 	env             *environment.Environment
@@ -90,6 +96,7 @@ type deployAction struct {
 
 func newDeployAction(
 	flags *deployFlags,
+	args []string,
 	projectConfig *project.ProjectConfig,
 	projectManager project.ProjectManager,
 	serviceManager project.ServiceManager,
@@ -105,6 +112,7 @@ func newDeployAction(
 ) actions.Action {
 	return &deployAction{
 		flags:           flags,
+		args:            args,
 		projectConfig:   projectConfig,
 		azdCtx:          azdCtx,
 		env:             environment,
@@ -126,12 +134,32 @@ type DeploymentResult struct {
 }
 
 func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	if d.flags.serviceName != "" {
+		fmt.Println(
+			d.console.Handles().Stderr,
+			//nolint:Lll
+			output.WithWarningFormat("--service flag is no longer required. Simply run azd deploy <service> instead."))
+	}
+
+	targetServiceName := d.flags.serviceName
+	if len(d.args) == 1 {
+		targetServiceName = d.args[0]
+	}
+
+	if targetServiceName != "" && !d.projectConfig.HasService(targetServiceName) {
+		return nil, fmt.Errorf("service name '%s' doesn't exist", targetServiceName)
+	}
+
+	if err := d.projectManager.Initialize(ctx, d.projectConfig); err != nil {
+		return nil, err
+	}
+
 	// Collect all the tools we will need to do the deployment and validate that
 	// the are installed. When a single project is being deployed, we need just
 	// the tools for that project, otherwise we need the tools from all project.
 	var allTools []tools.ExternalTool
 	for _, svc := range d.projectConfig.Services {
-		if d.flags.serviceName == "" || d.flags.serviceName == svc.Name {
+		if targetServiceName == "" || targetServiceName == svc.Name {
 			serviceTools, err := d.serviceManager.GetRequiredTools(ctx, svc)
 			if err != nil {
 				return nil, fmt.Errorf("failed getting required tools for service %s: %w", svc.Name, err)
@@ -152,15 +180,11 @@ func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	var svcDeploymentResult *project.ServiceDeployResult
 	var deploymentResults []*project.ServiceDeployResult
 
-	if err := d.projectManager.Initialize(ctx, d.projectConfig); err != nil {
-		return nil, err
-	}
-
 	for _, svc := range d.projectConfig.Services {
 		// Skip this service if both cases are true:
 		// 1. The user specified a service name
 		// 2. This service is not the one the user specified
-		if d.flags.serviceName != "" && svc.Name != d.flags.serviceName {
+		if targetServiceName != "" && svc.Name != targetServiceName {
 			continue
 		}
 
@@ -187,12 +211,12 @@ func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		deploymentResults = append(deploymentResults, svcDeploymentResult)
 
 		// report endpoint
-		for _, endpoint := range svcDeploymentResult.Endpoints {
+		for _, endpoint := range svcDeploymentResult.Publish.Endpoints {
 			d.console.MessageUxItem(ctx, &ux.Endpoint{Endpoint: endpoint})
 		}
 	}
 
-	if d.flags.serviceName != "" && len(deploymentResults) == 0 {
+	if targetServiceName != "" && len(deploymentResults) == 0 {
 		return nil, fmt.Errorf("no services were deployed. Check the specified service name and try again.")
 	}
 
@@ -217,8 +241,8 @@ func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 func getCmdDeployHelpDescription(*cobra.Command) string {
 	return generateCmdHelpDescription("Deploy application to Azure.", []string{
-		formatHelpNote(fmt.Sprintf("When no %s value is specified, all services in the 'azure.yaml'"+
-			" file (found in the root of your project) are deployed.", output.WithHighLightFormat("--service"))),
+		formatHelpNote(fmt.Sprintf("When %s is not set, all services in the 'azure.yaml'"+
+			" file (found in the root of your project) are deployed.", output.WithHighLightFormat("<service>"))),
 		formatHelpNote("After the deployment is complete, the endpoint is printed. To start the service, select" +
 			" the endpoint or paste it in a browser."),
 	})
@@ -228,7 +252,7 @@ func getCmdDeployHelpFooter(*cobra.Command) string {
 	return generateCmdHelpSamplesBlock(map[string]string{
 		"Reviews all code and services in your azure.yaml file and deploys to Azure.": output.WithHighLightFormat(
 			"azd deploy"),
-		"Deploy all application API services to Azure.": output.WithHighLightFormat("azd deploy --service api"),
-		"Deploy all application web services to Azure.": output.WithHighLightFormat("azd deploy --service web"),
+		"Deploy all application API services to Azure.": output.WithHighLightFormat("azd deploy api"),
+		"Deploy all application web services to Azure.": output.WithHighLightFormat("azd deploy web"),
 	})
 }

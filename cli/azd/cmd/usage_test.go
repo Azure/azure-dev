@@ -19,6 +19,8 @@ import (
 // For Pwsh,
 // $env:UPDATE_SNAPSHOTS='true'; go test ./cmd; $env:UPDATE_SNAPSHOTS=$null
 func TestUsage(t *testing.T) {
+	// disable rich formatting output
+	t.Setenv("TERM", "dumb")
 	root := NewRootCmd(false, nil)
 
 	usageSnapshot(t, root)

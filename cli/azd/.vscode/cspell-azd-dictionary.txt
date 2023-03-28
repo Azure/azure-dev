@@ -45,6 +45,7 @@ dskip
 eastus
 endregion
 envname
+envlist
 errcheck
 errorinfo
 errorlint
@@ -85,6 +86,7 @@ pflag
 preinit
 pulumi
 pyapp
+pyvenv
 restoreapp
 retriable
 rzip

@@ -47,7 +47,19 @@ variable "resource_token" {
 variable "python_version" {
   description = "the application stack python version to set for the app service."
   type        = string
-  default     = "3.8"
+  default     = "3.10"
+}
+
+variable "always_on" {
+  description = "The always on setting for the app service."
+  type        = bool
+  default     = true
+}
+
+variable "use_32_bit_worker" {
+  description = "The use 32 bit worker setting for the app service."
+  type        = bool
+  default     = false
 }
 
 variable "health_check_path" {

@@ -19,7 +19,7 @@ Commands
     env      	: Manage environments.
     infra    	: Manage your Azure infrastructure.
     provision	: Provision the Azure resources for an application.
-    up       	: Initialize application, provision Azure resources, and deploy your project with a single command.
+    up       	: Provision Azure resources, and deploy your project with a single command.
 
   Monitor, test and release your app
     monitor  	: Monitor a deployed application.
@@ -37,9 +37,10 @@ Flags
 Use azd [command] --help to view examples and more information about a specific command.
 
 Deploying a sample application
-Initialize, provision, and deploy a template application by running the azd up --template [template name] command in an empty directory.
-To view available templates run `azd template list` or visit: https://azure.github.io/awesome-azd.
-    azd up --template todo-nodejs-mongo
+Initialize from a sample application by running the azd init --template [template name] command in an empty directory.
+Then, run azd up to get the application up-and-running in Azure.
+
+To view available templates run `azd template list` or visit: https://azure.github.io/awesome-azd
 
 Find a bug? Want to let us know how we're doing? Fill out this brief survey: https://aka.ms/azure-dev/hats.
 

@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"fmt"
 	"io"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -53,6 +54,15 @@ func newLogoutAction(
 }
 
 func (la *logoutAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	if la.annotations[loginCmdParentAnnotation] == "" {
+		fmt.Fprintln(
+			la.console.Handles().Stderr,
+			//nolint:lll
+			output.WithWarningFormat(
+				"WARNING: `azd logout` has been deprecated and will be removed in a future release. Please use `azd auth logout` instead."),
+		)
+	}
+
 	err := la.authManager.Logout(ctx)
 	if err != nil {
 		return nil, err

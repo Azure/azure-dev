@@ -336,7 +336,7 @@ func newCredentialFromClientAssertion(
 }
 
 func newCredentialFromCloudShell() (azcore.TokenCredential, error) {
-	return CloudShellTokenPolicy{}, nil
+	return CloudShellCredential{}, nil
 }
 
 func (m *Manager) LoginInteractive(ctx context.Context, redirectPort int, tenantID string) (azcore.TokenCredential, error) {

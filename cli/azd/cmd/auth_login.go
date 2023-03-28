@@ -27,6 +27,17 @@ import (
 // The parent of the login command.
 const loginCmdParentAnnotation = "loginCmdParent"
 
+type authLoginFlags struct {
+	loginFlags
+}
+
+func newAuthLoginFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *authLoginFlags {
+	flags := &authLoginFlags{}
+	flags.Bind(cmd.Flags(), global)
+
+	return flags
+}
+
 type loginFlags struct {
 	onlyCheckStatus        bool
 	useDeviceCode          bool
@@ -150,6 +161,26 @@ type loginAction struct {
 	accountSubManager *account.SubscriptionsManager
 	flags             *loginFlags
 	annotations       CmdAnnotations
+}
+
+func newAuthLoginAction(
+	formatter output.Formatter,
+	writer io.Writer,
+	authManager *auth.Manager,
+	accountSubManager *account.SubscriptionsManager,
+	flags *authLoginFlags,
+	console input.Console,
+	annotations CmdAnnotations,
+) actions.Action {
+	return &loginAction{
+		formatter:         formatter,
+		writer:            writer,
+		console:           console,
+		authManager:       authManager,
+		accountSubManager: accountSubManager,
+		flags:             &flags.loginFlags,
+		annotations:       annotations,
+	}
 }
 
 func newLoginAction(

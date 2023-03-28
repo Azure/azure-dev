@@ -27,8 +27,8 @@ func authActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 
 	group.Add("login", &actions.ActionDescriptorOptions{
 		Command:        newLoginCmd("auth"),
-		FlagsResolver:  newLoginFlags,
-		ActionResolver: newLoginAction,
+		FlagsResolver:  newAuthLoginFlags,
+		ActionResolver: newAuthLoginAction,
 		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 		DefaultFormat:  output.NoneFormat,
 	})

@@ -11,6 +11,7 @@ import (
 )
 
 func infraActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
+	//deprecate:cmd hide infra
 	group := root.Add("infra", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
 			Short:  "Manage your Azure infrastructure.",

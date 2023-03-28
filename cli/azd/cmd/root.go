@@ -147,6 +147,7 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 		}).
 		UseMiddleware("hooks", middleware.NewHooksMiddleware)
 
+	//deprecate:cmd hide login
 	login := newLoginCmd("")
 	login.Hidden = true
 	root.Add("login", &actions.ActionDescriptorOptions{
@@ -157,6 +158,7 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 		DefaultFormat:  output.NoneFormat,
 	})
 
+	//deprecate:cmd hide logout
 	logout := newLogoutCmd("")
 	logout.Hidden = true
 	root.Add("logout", &actions.ActionDescriptorOptions{

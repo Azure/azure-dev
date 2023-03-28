@@ -238,7 +238,7 @@ func shouldUseLegacyAuth(cfg config.Config) bool {
 func shouldUseCloudShellAuth() bool {
 	if useCloudShellAuth, has := os.LookupEnv(cUseCloudShellAuthEnvVar); has {
 		if use, err := strconv.ParseBool(useCloudShellAuth); err == nil && use {
-			log.Printf("Using CloudShell auth")
+			log.Printf("using CloudShell auth")
 			return true
 		}
 	}

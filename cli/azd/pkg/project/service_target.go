@@ -25,6 +25,19 @@ const (
 	AksTarget           ServiceTargetKind = "aks"
 )
 
+func parseServiceHost(kind ServiceTargetKind) (ServiceTargetKind, error) {
+	switch kind {
+	case AppServiceTarget,
+		ContainerAppTarget,
+		AzureFunctionTarget,
+		StaticWebAppTarget,
+		AksTarget:
+		return kind, nil
+	}
+
+	return ServiceTargetKind(""), fmt.Errorf("unsupported host '%s'", kind)
+}
+
 type ServiceTarget interface {
 	// Initializes the service target for the specified service configuration.
 	// This allows service targets to opt-in to service lifecycle events
@@ -38,7 +51,7 @@ type ServiceTarget interface {
 	Package(
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
-		buildOutput *ServiceBuildResult,
+		frameworkPackageOutput *ServicePackageResult,
 	) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress]
 
 	// Publish deploys the given deployment artifact to the target resource

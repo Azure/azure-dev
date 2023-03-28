@@ -89,8 +89,13 @@ func (cli *azCli) createStaticSitesClient(
 	ctx context.Context,
 	subscriptionId string,
 ) (*armappservice.StaticSitesClient, error) {
+	credential, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
 	options := cli.createDefaultClientOptionsBuilder(ctx).BuildArmClientOptions()
-	client, err := armappservice.NewStaticSitesClient(subscriptionId, cli.credential, options)
+	client, err := armappservice.NewStaticSitesClient(subscriptionId, credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating Static Sites client: %w", err)
 	}

@@ -12,6 +12,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"golang.org/x/exp/slices"
 	"gopkg.in/yaml.v3"
 )
 
@@ -58,8 +59,19 @@ func Parse(ctx context.Context, yamlContent string) (*ProjectConfig, error) {
 			svc.Module = key
 		}
 
-		if svc.Language == "" || svc.Language == "csharp" || svc.Language == "fsharp" {
+		if svc.Language == "" {
 			svc.Language = "dotnet"
+		}
+
+		var err error
+		svc.Language, err = parseServiceLanguage(svc.Language)
+		if err != nil {
+			return nil, fmt.Errorf("parsing service %s: %w", svc.Name, err)
+		}
+
+		svc.Host, err = parseServiceHost(svc.Host)
+		if err != nil {
+			return nil, fmt.Errorf("parsing service %s: %w", svc.Name, err)
 		}
 	}
 
@@ -83,7 +95,28 @@ func Load(ctx context.Context, projectFilePath string) (*ProjectConfig, error) {
 	}
 
 	if projectConfig.Metadata != nil {
-		telemetry.SetUsageAttributes(fields.StringHashed(fields.TemplateIdKey, projectConfig.Metadata.Template))
+		telemetry.SetUsageAttributes(fields.StringHashed(fields.ProjectTemplateIdKey, projectConfig.Metadata.Template))
+	}
+
+	if projectConfig.Name != "" {
+		telemetry.SetUsageAttributes(fields.StringHashed(fields.ProjectNameKey, projectConfig.Name))
+	}
+
+	if projectConfig.Services != nil {
+		hosts := make([]string, len(projectConfig.Services))
+		languages := make([]string, len(projectConfig.Services))
+		i := 0
+		for _, svcConfig := range projectConfig.Services {
+			hosts[i] = string(svcConfig.Host)
+			languages[i] = string(svcConfig.Language)
+			i++
+		}
+
+		slices.Sort(hosts)
+		slices.Sort(languages)
+
+		telemetry.SetUsageAttributes(fields.ProjectServiceLanguagesKey.StringSlice(languages))
+		telemetry.SetUsageAttributes(fields.ProjectServiceHostsKey.StringSlice(hosts))
 	}
 
 	projectConfig.Path = filepath.Dir(projectFilePath)

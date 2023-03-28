@@ -13,11 +13,11 @@ import (
 )
 
 // Use URL from https://learn.microsoft.com/en-us/azure/cloud-shell/msi-authorization
-const cLocalTokenUrl = "http://localhost:50342/oauth2/token"
+const cLocalTokenUrl = "http://localhost:50342/oauth2/token" //#nosec G101 -- This is a false positive
 
 // Note, resource=https://management.azure.com/ is different from the default
 // resource.
-const cTokenResource = "resource=https://management.azure.com/"
+const cTokenResource = "resource=https://management.azure.com/" //#nosec G101 -- This is a false positive
 
 type TokenFromCloudShell struct {
 	AccessToken  string      `json:"access_token"`

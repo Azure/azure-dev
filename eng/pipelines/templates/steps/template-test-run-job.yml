@@ -101,7 +101,7 @@ steps:
           subFolder: "$(Build.SourcesDirectory)/temp"
           runCmd: |
               # Login
-              azd login \
+              azd auth login \
                 --client-id "$(arm-client-id)" \
                 --client-secret "$(arm-client-secret)" \
                 --tenant-id "$(arm-tenant-id)"

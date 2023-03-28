@@ -21,6 +21,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -60,6 +61,7 @@ type BicepProvider struct {
 	console     input.Console
 	bicepCli    bicep.BicepCli
 	azCli       azcli.AzCli
+	prompters   Prompters
 }
 
 // Name gets the name of the infra provider
@@ -197,14 +199,12 @@ func (p *BicepProvider) Deploy(
 						timer.Stop()
 						return
 					case <-timer.C:
-						progressReport, err := progressDisplay.ReportProgress(ctx, &queryStartTime)
-						if err != nil {
+						if progressReport, err := progressDisplay.ReportProgress(ctx, &queryStartTime); err == nil {
+							asyncContext.SetProgress(progressReport)
+						} else {
 							// We don't want to fail the whole deployment if a progress reporting error occurs
 							log.Printf("error while reporting progress: %s", err.Error())
-							continue
 						}
-
-						asyncContext.SetProgress(progressReport)
 
 						timer.Reset(regularDelay)
 					}
@@ -282,6 +282,15 @@ func (p *BicepProvider) Destroy(
 				return
 			}
 
+			asyncContext.SetProgress(
+				&DestroyProgress{Message: "Getting API Management Services to purge", Timestamp: time.Now()},
+			)
+			apiManagements, err := p.getApiManagementsToPurge(ctx, groupedResources)
+			if err != nil {
+				asyncContext.SetError(fmt.Errorf("getting API managements to purge: %w", err))
+				return
+			}
+
 			if err := p.destroyResourceGroups(ctx, asyncContext, options, groupedResources, len(allResources)); err != nil {
 				asyncContext.SetError(fmt.Errorf("destroying resource groups: %w", err))
 				return
@@ -301,10 +310,17 @@ func (p *BicepProvider) Destroy(
 					return p.purgeAppConfigs(ctx, asyncContext, appConfigs, options)
 				},
 			}
-			purgeItem := []itemToPurge{keyVaultsPurge, appConfigsPurge}
+			aPIManagement := itemToPurge{
+				resourceType: "API Managements",
+				count:        len(apiManagements),
+				purge: func() error {
+					return p.purgeAPIManagement(ctx, asyncContext, apiManagements, options)
+				},
+			}
+			purgeItem := []itemToPurge{keyVaultsPurge, appConfigsPurge, aPIManagement}
 
 			if err := p.purgeItems(ctx, asyncContext, purgeItem, options); err != nil {
-				asyncContext.SetError(fmt.Errorf("purging key vaults or app configurations: %w", err))
+				asyncContext.SetError(fmt.Errorf("purging resources: %w", err))
 				return
 			}
 
@@ -483,7 +499,7 @@ func (p *BicepProvider) getKeyVaults(
 	for resourceGroup, groupResources := range groupedResources {
 		for _, resource := range groupResources {
 			if resource.Type == string(infra.AzureResourceTypeKeyVault) {
-				vault, err := p.azCli.GetKeyVault(ctx, p.env.GetSubscriptionId(), resourceGroup, resource.Name)
+				vault, err := p.azCli.GetKeyVault(ctx, azure.SubscriptionFromRID(resource.Id), resourceGroup, resource.Name)
 				if err != nil {
 					return nil, fmt.Errorf("listing key vault %s properties: %w", resource.Name, err)
 				}
@@ -547,7 +563,7 @@ func (p *BicepProvider) purgeKeyVaults(
 
 		asyncContext.SetProgress(&progressReport)
 
-		err := p.azCli.PurgeKeyVault(ctx, p.env.GetSubscriptionId(), keyVault.Name, keyVault.Location)
+		err := p.azCli.PurgeKeyVault(ctx, azure.SubscriptionFromRID(keyVault.Id), keyVault.Name, keyVault.Location)
 		if err != nil {
 			return fmt.Errorf("purging key vault %s: %w", keyVault.Name, err)
 		}
@@ -570,7 +586,12 @@ func (p *BicepProvider) getAppConfigsToPurge(
 	for resourceGroup, groupResources := range groupedResources {
 		for _, resource := range groupResources {
 			if resource.Type == string(infra.AzureResourceTypeAppConfig) {
-				config, err := p.azCli.GetAppConfig(ctx, p.env.GetSubscriptionId(), resourceGroup, resource.Name)
+				config, err := p.azCli.GetAppConfig(
+					ctx,
+					azure.SubscriptionFromRID(resource.Id),
+					resourceGroup,
+					resource.Name,
+				)
 				if err != nil {
 					return nil, fmt.Errorf("listing app configuration %s properties: %w", resource.Name, err)
 				}
@@ -583,6 +604,30 @@ func (p *BicepProvider) getAppConfigsToPurge(
 	}
 
 	return configs, nil
+}
+
+func (p *BicepProvider) getApiManagementsToPurge(
+	ctx context.Context,
+	groupedResources map[string][]azcli.AzCliResource,
+) ([]*azcli.AzCliApim, error) {
+	apims := []*azcli.AzCliApim{}
+
+	for resourceGroup, groupResources := range groupedResources {
+		for _, resource := range groupResources {
+			if resource.Type == string(infra.AzureResourceTypeApim) {
+				apim, err := p.azCli.GetApim(ctx, azure.SubscriptionFromRID(resource.Id), resourceGroup, resource.Name)
+				if err != nil {
+					return nil, fmt.Errorf("listing api management service %s properties: %w", resource.Name, err)
+				}
+
+				//No filtering needed like it does in key vaults or app configuration
+				//as soft-delete happens for all Api Management resources
+				apims = append(apims, apim)
+			}
+		}
+	}
+
+	return apims, nil
 }
 
 // Azure AppConfigurations have a "soft delete" functionality (now enabled by default) where a configuration store
@@ -614,7 +659,7 @@ func (p *BicepProvider) purgeAppConfigs(
 
 		asyncContext.SetProgress(&progressReport)
 
-		err := p.azCli.PurgeAppConfig(ctx, p.env.GetSubscriptionId(), appConfig.Name, appConfig.Location)
+		err := p.azCli.PurgeAppConfig(ctx, azure.SubscriptionFromRID(appConfig.Id), appConfig.Name, appConfig.Location)
 		if err != nil {
 			return fmt.Errorf("purging app configuration %s: %w", appConfig.Name, err)
 		}
@@ -625,6 +670,42 @@ func (p *BicepProvider) purgeAppConfigs(
 				"%s app configuration %s",
 				output.WithErrorFormat("Purged"),
 				output.WithHighLightFormat(appConfig.Name),
+			),
+		)
+	}
+
+	return nil
+}
+
+func (p *BicepProvider) purgeAPIManagement(
+	ctx context.Context,
+	asyncContext *async.InteractiveTaskContextWithProgress[*DestroyResult, *DestroyProgress],
+	apims []*azcli.AzCliApim,
+	options DestroyOptions,
+) error {
+	for _, apim := range apims {
+		progressReport := DestroyProgress{
+			Timestamp: time.Now(),
+			Message: fmt.Sprintf(
+				"%s api management service %s",
+				output.WithErrorFormat("Purging"),
+				output.WithHighLightFormat(apim.Name),
+			),
+		}
+
+		asyncContext.SetProgress(&progressReport)
+
+		err := p.azCli.PurgeApim(ctx, azure.SubscriptionFromRID(apim.Id), apim.Name, apim.Location)
+		if err != nil {
+			return fmt.Errorf("purging api management service %s: %w", apim.Name, err)
+		}
+
+		p.console.Message(
+			ctx,
+			fmt.Sprintf(
+				"%s api management service %s",
+				output.WithErrorFormat("Purged"),
+				output.WithHighLightFormat(apim.Name),
 			),
 		)
 	}
@@ -655,13 +736,13 @@ func (p *BicepProvider) deleteDeployment(
 
 func (p *BicepProvider) mapBicepTypeToInterfaceType(s string) ParameterType {
 	switch s {
-	case "String", "string", "secureString":
+	case "String", "string", "secureString", "securestring":
 		return ParameterTypeString
 	case "Bool", "bool":
 		return ParameterTypeBoolean
 	case "Int", "int":
 		return ParameterTypeNumber
-	case "Object", "object", "secureObject":
+	case "Object", "object", "secureObject", "secureobject":
 		return ParameterTypeObject
 	case "Array", "array":
 		return ParameterTypeArray
@@ -726,7 +807,7 @@ func (p *BicepProvider) loadParameters(
 	}
 
 	if cmdsubst.ContainsCommandInvocation(replaced, cmdsubst.SecretOrRandomPasswordCommandName) {
-		cmdExecutor := cmdsubst.NewSecretOrRandomPasswordExecutor(p.azCli)
+		cmdExecutor := cmdsubst.NewSecretOrRandomPasswordExecutor(p.azCli, p.env.GetSubscriptionId())
 		replaced, err = cmdsubst.Eval(ctx, replaced, cmdExecutor)
 		if err != nil {
 			return nil, fmt.Errorf("substituting command output inside parameter file: %w", err)
@@ -867,7 +948,9 @@ func (p *BicepProvider) ensureParameters(
 
 		// If a value is explicitly configured via a parameters file, use it.
 		if v, has := parameters[key]; has {
-			configuredParameters[key] = v
+			configuredParameters[key] = azure.ArmParameterValue{
+				Value: armParameterFileValue(p.mapBicepTypeToInterfaceType(param.Type), v.Value),
+			}
 			continue
 		}
 
@@ -895,38 +978,31 @@ func (p *BicepProvider) ensureParameters(
 		}
 
 		// Otherwise, prompt for the value.
-		err := asyncContext.Interact(func() error {
-			value, err := p.promptForParameter(ctx, key, param)
-			if err != nil {
-				return fmt.Errorf("prompting for value: %w", err)
-			}
-
-			if !param.Secure() {
-				saveParameter, err := p.console.Confirm(ctx, input.ConsoleOptions{
-					Message: "Save the value in the environment for future use",
-				})
-
-				if err != nil {
-					return fmt.Errorf("prompting to save deployment parameter: %w", err)
-				}
-
-				if saveParameter {
-					if err := p.env.Config.Set(configKey, value); err == nil {
-						configModified = true
-					} else {
-						p.console.Message(ctx, fmt.Sprintf("warning: failed to set value: %v", err))
-					}
-				}
-			}
-
-			configuredParameters[key] = azure.ArmParameterValue{
-				Value: value,
-			}
-
-			return nil
-		})
+		value, err := p.promptForParameter(ctx, key, param)
 		if err != nil {
-			return nil, err
+			return nil, fmt.Errorf("prompting for value: %w", err)
+		}
+
+		if !param.Secure() {
+			saveParameter, err := p.console.Confirm(ctx, input.ConsoleOptions{
+				Message: "Save the value in the environment for future use",
+			})
+
+			if err != nil {
+				return nil, fmt.Errorf("prompting to save deployment parameter: %w", err)
+			}
+
+			if saveParameter {
+				if err := p.env.Config.Set(configKey, value); err == nil {
+					configModified = true
+				} else {
+					p.console.Message(ctx, fmt.Sprintf("warning: failed to set value: %v", err))
+				}
+			}
+		}
+
+		configuredParameters[key] = azure.ArmParameterValue{
+			Value: value,
 		}
 	}
 
@@ -937,6 +1013,27 @@ func (p *BicepProvider) ensureParameters(
 	}
 
 	return configuredParameters, nil
+}
+
+// Convert the ARM parameters file value into a value suitable for deployment
+func armParameterFileValue(paramType ParameterType, value any) any {
+	// Relax the handling of bool and number types to accept convertible strings
+	switch paramType {
+	case ParameterTypeBoolean:
+		if val, ok := value.(string); ok {
+			if boolVal, err := strconv.ParseBool(val); err == nil {
+				return boolVal
+			}
+		}
+	case ParameterTypeNumber:
+		if val, ok := value.(string); ok {
+			if intVal, err := strconv.ParseInt(val, 10, 64); err == nil {
+				return intVal
+			}
+		}
+	}
+
+	return value
 }
 
 func isValueAssignableToParameterType(paramType ParameterType, value any) bool {
@@ -983,6 +1080,7 @@ func NewBicepProvider(
 	infraOptions Options,
 	commandRunner exec.CommandRunner,
 	console input.Console,
+	prompters Prompters,
 ) (*BicepProvider, error) {
 	bicepCli, err := bicep.NewBicepCli(ctx, console, commandRunner)
 	if err != nil {
@@ -1001,6 +1099,7 @@ func NewBicepProvider(
 		console:     console,
 		bicepCli:    bicepCli,
 		azCli:       azCli,
+		prompters:   prompters,
 	}, nil
 }
 
@@ -1015,8 +1114,9 @@ func init() {
 			console input.Console,
 			azCli azcli.AzCli,
 			commandRunner exec.CommandRunner,
+			prompters Prompters,
 		) (Provider, error) {
-			return NewBicepProvider(ctx, azCli, env, projectPath, options, commandRunner, console)
+			return NewBicepProvider(ctx, azCli, env, projectPath, options, commandRunner, console, prompters)
 		},
 	)
 

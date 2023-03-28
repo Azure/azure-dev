@@ -33,7 +33,7 @@ var mockSubDeploymentOperations string = `
 				"provisioningOperation":"Create",
 				"targetResource": {
 					"resourceType": "Microsoft.Resources/resourceGroups",
-					"id":"resource-group-id",
+					"id":"/subscriptions/SUBSCRIPTION_ID/resourceGroups/resource-group-name",
 					"resourceName": "resource-group-name"
 				},
 				"timestamp":"9999-10-31T14:00:00Z"
@@ -46,7 +46,20 @@ var mockSubDeploymentOperations string = `
 				"provisioningOperation":"Create",
 				"targetResource": {
 					"resourceType": "Microsoft.Resources/deployments",
-					"id":"group-deployment-id",
+					"id":"/subscriptions/SUBSCRIPTION_ID/resourceGroups/resource-group-name",
+					"resourceName": "group-deployment-id"
+				},
+				"timestamp":"9999-10-31T14:00:00Z"
+			}
+		},
+		{
+			"id": "deployment-id",
+			"operationId": "foo2",
+			"properties": {
+				"provisioningOperation":"Create",
+				"targetResource": {
+					"resourceType": "Microsoft.Resources/deployments",
+					"id":"/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources",
 					"resourceName": "group-deployment-id"
 				},
 				"timestamp":"9999-10-31T14:00:00Z"
@@ -67,7 +80,7 @@ var mockGroupDeploymentOperations string = `
 				"provisioningOperation":"Create",
 				"targetResource": {
 					"resourceType": "Microsoft.Web/sites",
-					"id":"website-resource-id",
+					"id":"/subscriptions/SUBSCRIPTION_ID/resourceGroups/resource-group-name",
 					"resourceName": "website-resource-name"
 				},
 				"timestamp":"9999-10-31T14:00:00Z"
@@ -80,7 +93,7 @@ var mockGroupDeploymentOperations string = `
 				"provisioningOperation":"Create",
 				"targetResource": {
 					"resourceType": "Microsoft.Storage/storageAccounts",
-					"id":"storage-resource-id",
+					"id":"/subscriptions/SUBSCRIPTION_ID/resourceGroups/resource-group-name",
 					"resourceName": "storage-resource-name"
 				},
 				"timestamp":"9999-10-31T14:00:00Z"
@@ -190,7 +203,7 @@ func TestGetDeploymentResourceOperationsSuccess(t *testing.T) {
 	require.NotNil(t, operations)
 	require.Nil(t, err)
 
-	require.Len(t, operations, 4)
+	require.Len(t, operations, 3)
 	require.Equal(t, 1, subCalls)
 	require.Equal(t, 1, groupCalls)
 }
@@ -355,7 +368,7 @@ func TestGetDeploymentResourceOperationsWithNestedDeployments(t *testing.T) {
 
 	require.NotNil(t, operations)
 	require.Nil(t, err)
-	require.Len(t, operations, 6)
+	require.Len(t, operations, 5)
 	require.Equal(t, 1, subCalls)
 	require.Equal(t, 2, groupCalls)
 }
@@ -444,7 +457,8 @@ func TestFindResourceGroupForEnvironment(t *testing.T) {
 			})
 
 			arm := NewAzureResourceManager(azCli)
-			rgName, err := arm.FindResourceGroupForEnvironment(*mockContext.Context, env)
+			rgName, err := arm.FindResourceGroupForEnvironment(
+				*mockContext.Context, env.GetSubscriptionId(), env.GetEnvName())
 
 			if tt.expectedErrorText == "" {
 				require.NoError(t, err)

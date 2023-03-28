@@ -4,7 +4,7 @@ using MongoDB.Driver;
 using SimpleTodo.Api;
 
 var builder = WebApplication.CreateBuilder(args);
-var credential = new ChainedTokenCredential(new AzureDeveloperCliCredential(), new DefaultAzureCredential());
+var credential = new DefaultAzureCredential();
 builder.Configuration.AddAzureKeyVault(new Uri(builder.Configuration["AZURE_KEY_VAULT_ENDPOINT"]), credential);
 
 builder.Services.AddSingleton<ListsRepository>();

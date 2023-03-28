@@ -5,7 +5,6 @@
 package cli_test
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"embed"
@@ -15,6 +14,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"net/http"
 	"os"
 	osexec "os/exec"
 	"path"
@@ -25,6 +25,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -35,10 +36,13 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
+	"github.com/joho/godotenv"
 	"github.com/sethvargo/go-retry"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/attribute"
+	"golang.org/x/exp/slices"
 )
 
 const (
@@ -70,7 +74,7 @@ func Test_CLI_Init_AsksForSubscriptionIdAndCreatesEnvAndProjectFile(t *testing.T
 	require.Regexp(t, regexp.MustCompile(fmt.Sprintf(`AZURE_SUBSCRIPTION_ID="%s"`, testSubscriptionId)+"\n"), string(file))
 	require.Regexp(t, regexp.MustCompile(`AZURE_ENV_NAME="TESTENV"`+"\n"), string(file))
 
-	proj, err := project.LoadProjectConfig(filepath.Join(dir, azdcontext.ProjectFileName))
+	proj, err := project.Load(ctx, filepath.Join(dir, azdcontext.ProjectFileName))
 	require.NoError(t, err)
 
 	require.Equal(t, filepath.Base(dir), proj.Name)
@@ -97,10 +101,50 @@ func Test_CLI_Init_CanUseTemplate(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	// While `init` uses git behind the scenes to pull a template, we don't want to bring the history over or initialize a
-	// git
+	// While `init` uses git behind the scenes to pull a template, we don't want to bring the history over in the new git
 	// repository.
-	require.NoDirExists(t, filepath.Join(dir, ".git"))
+	cmdRun := exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
+	cmdRes, err := cmdRun.Run(ctx, exec.NewRunArgs("git", "-C", dir, "log", "--oneline", "-n", "1").WithEnrichError(true))
+	require.Error(t, err)
+	require.Contains(t, cmdRes.Stderr, "does not have any commits yet")
+
+	// Ensure the project was initialized from the template by checking that a file from the template is present.
+	require.FileExists(t, filepath.Join(dir, "README.md"))
+}
+
+// Test_CLI_Up_CanUseTemplateWithoutExistingProject ensures that you can run `azd up --template <some-template>` in an
+// empty directory and the project will be initialize as expected.
+func Test_CLI_Up_CanUseTemplateWithoutExistingProject(t *testing.T) {
+	// running this test in parallel is ok as it uses a t.TempDir()
+	t.Parallel()
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
+
+	cli := azdcli.NewCLI(t)
+	cli.WorkingDirectory = dir
+	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
+
+	// Since we provide a bogus Azure Subscription ID, we expect that this overall command will fail (the provision step of
+	// up will fail).  That's fine - we only care about validating that we were allowed to run `azd up --template` in an
+	// empty directory and that it brings down the template as expected.
+	res, _ := cli.RunCommandWithStdIn(
+		ctx,
+		"TESTENV\n\nOther (enter manually)\nMY_SUB_ID\n",
+		"up",
+		"--template",
+		"cosmos-dotnet-core-todo-app",
+	)
+
+	require.Contains(t, res.Stdout, "Initializing a new project")
+
+	// While `init` uses git behind the scenes to pull a template, we don't want to bring the history over in the new git
+	// repository.
+	cmdRun := exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
+	cmdRes, err := cmdRun.Run(ctx, exec.NewRunArgs("git", "-C", dir, "log", "--oneline", "-n", "1").WithEnrichError(true))
+	require.Error(t, err)
+	require.Contains(t, cmdRes.Stderr, "does not have any commits yet")
 
 	// Ensure the project was initialized from the template by checking that a file from the template is present.
 	require.FileExists(t, filepath.Join(dir, "README.md"))
@@ -141,17 +185,24 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 	require.True(t, ok)
 	require.Regexp(t, `st\S*`, accountName)
 
+	assertEnvValuesStored(t, env)
+
 	// GetResourceGroupsForEnvironment requires a credential since it is using the SDK now
 	cred, err := azidentity.NewAzureCLICredential(nil)
 	if err != nil {
 		t.Fatal("could not create credential")
 	}
 
-	azCli := azcli.NewAzCli(cred, azcli.NewAzCliArgs{})
+	azCli := azcli.NewAzCli(mockaccount.SubscriptionCredentialProviderFunc(
+		func(_ context.Context, _ string) (azcore.TokenCredential, error) {
+			return cred, nil
+		}),
+		http.DefaultClient,
+		azcli.NewAzCliArgs{})
 
 	// Verify that resource groups are created with tag
 	resourceManager := infra.NewAzureResourceManager(azCli)
-	rgs, err := resourceManager.GetResourceGroupsForEnvironment(ctx, env)
+	rgs, err := resourceManager.GetResourceGroupsForEnvironment(ctx, env.GetSubscriptionId(), env.GetEnvName())
 	require.NoError(t, err)
 	require.NotNil(t, rgs)
 
@@ -182,7 +233,7 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "init")
 	require.NoError(t, err)
 
-	_, err = cli.RunCommand(ctx, "infra", "create")
+	_, err = cli.RunCommand(ctx, "infra", "create", "--output", "json")
 	require.NoError(t, err)
 
 	envPath := filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName)
@@ -195,22 +246,29 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 	require.True(t, ok)
 	require.Regexp(t, `st\S*`, accountName)
 
+	assertEnvValuesStored(t, env)
+
 	// GetResourceGroupsForEnvironment requires a credential since it is using the SDK now
 	cred, err := azidentity.NewAzureCLICredential(nil)
 	if err != nil {
 		t.Fatal("could not create credential")
 	}
 
-	azCli := azcli.NewAzCli(cred, azcli.NewAzCliArgs{})
+	azCli := azcli.NewAzCli(mockaccount.SubscriptionCredentialProviderFunc(
+		func(_ context.Context, _ string) (azcore.TokenCredential, error) {
+			return cred, nil
+		}),
+		http.DefaultClient,
+		azcli.NewAzCliArgs{})
 
 	// Verify that resource groups are created with tag
 	resourceManager := infra.NewAzureResourceManager(azCli)
-	rgs, err := resourceManager.GetResourceGroupsForEnvironment(ctx, env)
+	rgs, err := resourceManager.GetResourceGroupsForEnvironment(ctx, env.GetSubscriptionId(), env.GetEnvName())
 	require.NoError(t, err)
 	require.NotNil(t, rgs)
 
 	// Using `down` here to test the down alias to infra delete
-	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
+	_, err = cli.RunCommand(ctx, "down", "--force", "--purge", "--output", "json")
 	require.NoError(t, err)
 }
 
@@ -281,8 +339,9 @@ func Test_CLI_ProjectIsNeeded(t *testing.T) {
 	cli.WorkingDirectory = dir
 
 	tests := []struct {
-		command string
-		args    []string
+		command       string
+		args          []string
+		errorToStdOut bool
 	}{
 		{command: "deploy"},
 		{command: "down"},
@@ -300,7 +359,8 @@ func Test_CLI_ProjectIsNeeded(t *testing.T) {
 		{command: "restore"},
 	}
 
-	for _, test := range tests {
+	for _, tt := range tests {
+		test := tt
 		args := []string{"--cwd", dir}
 		args = append(args, strings.Split(test.command, " ")...)
 		if len(test.args) > 0 {
@@ -310,34 +370,36 @@ func Test_CLI_ProjectIsNeeded(t *testing.T) {
 		t.Run(test.command, func(t *testing.T) {
 			result, err := cli.RunCommand(ctx, args...)
 			assert.Error(t, err)
-			assert.Contains(t, result.Stderr, azdcontext.ErrNoProject.Error())
+			if test.errorToStdOut {
+				assert.Contains(t, result.Stdout, azdcontext.ErrNoProject.Error())
+			} else {
+				assert.Contains(t, result.Stderr, azdcontext.ErrNoProject.Error())
+			}
 		})
 	}
 }
 
 func Test_CLI_NoDebugSpewWhenHelpPassedWithoutDebug(t *testing.T) {
-	stdErrBuf := bytes.Buffer{}
-
-	cmd := osexec.Command(azdcli.GetAzdLocation(), "--help")
-	cmd.Stderr = &stdErrBuf
-
-	// Run the command and wait for it to complete, we don't expect any errors.
-	err := cmd.Start()
-	assert.NoError(t, err)
-
-	err = cmd.Wait()
-	assert.NoError(t, err)
+	cli := azdcli.NewCLI(t)
+	ctx := context.Background()
+	result, err := cli.RunCommand(ctx, "--help")
+	require.NoError(t, err)
 
 	// Ensure no output was written to stderr
-	assert.Equal(t, "", stdErrBuf.String(), "no output should be written to stderr when --help is passed")
+	assert.Equal(t, "", result.Stderr, "no output should be written to stderr when --help is passed")
 }
 
 //go:embed testdata/samples/*
 var samples embed.FS
 
+func samplePath(paths ...string) string {
+	elem := append([]string{"testdata", "samples"}, paths...)
+	return path.Join(elem...)
+}
+
 // copySample copies the given sample to targetRoot.
 func copySample(targetRoot string, sampleName string) error {
-	sampleRoot := path.Join("testdata", "samples", sampleName)
+	sampleRoot := samplePath(sampleName)
 
 	return fs.WalkDir(samples, sampleRoot, func(name string, d fs.DirEntry, err error) error {
 		// If there was some error that was preventing is from walking into the directory, just fail now,
@@ -426,8 +488,10 @@ func Test_CLI_InfraCreateAndDeleteResourceTerraform(t *testing.T) {
 	_, err = cli.RunCommand(ctx, "infra", "create", "--cwd", dir)
 	require.NoError(t, err)
 
-	_, err = cli.RunCommand(ctx, "env", "get-values", "-o", "json", "--cwd", dir)
+	envPath := filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName)
+	env, err := environment.FromRoot(envPath)
 	require.NoError(t, err)
+	assertEnvValuesStored(t, env)
 
 	t.Logf("Starting infra delete\n")
 	_, err = cli.RunCommand(ctx, "infra", "delete", "--cwd", dir, "--force", "--purge")
@@ -609,4 +673,22 @@ func removeAllWithDiagnostics(t *testing.T, path string) error {
 			return retry.RetryableError(removeErr)
 		},
 	)
+}
+
+// Assert that all supported types from the infrastructure provider is marshalled and stored correctly in the environment.
+func assertEnvValuesStored(t *testing.T, env *environment.Environment) {
+	expectedEnv, err := godotenv.Read(filepath.Join("testdata", "expected-output-types", "typed-values.env"))
+	require.NoError(t, err)
+	primitives := []string{"STRING", "BOOL", "INT"}
+
+	for k, v := range expectedEnv {
+		assert.Contains(t, env.Values, k)
+		actual := env.Values[k]
+
+		if slices.Contains(primitives, k) {
+			assert.Equal(t, v, actual)
+		} else {
+			assert.JSONEq(t, v, actual)
+		}
+	}
 }

@@ -8,7 +8,6 @@ import (
 	"io"
 	"log"
 	"os"
-	"os/user"
 	"path/filepath"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
@@ -55,9 +54,14 @@ func (c *manager) Save(config Config, filePath string) error {
 		return fmt.Errorf("failed marshalling config JSON: %w", err)
 	}
 
+	folderPath := filepath.Dir(filePath)
+	if err := os.MkdirAll(folderPath, osutil.PermissionDirectory); err != nil {
+		return fmt.Errorf("failed creating config directory: %w", err)
+	}
+
 	err = os.WriteFile(filePath, configJson, osutil.PermissionFile)
 	if err != nil {
-		return fmt.Errorf("failed writing configuration data")
+		return fmt.Errorf("failed writing configuration data: %w", err)
 	}
 
 	return nil
@@ -97,12 +101,12 @@ func Parse(configJson []byte) (Config, error) {
 func GetUserConfigDir() (string, error) {
 	configDirPath := os.Getenv("AZD_CONFIG_DIR")
 	if configDirPath == "" {
-		user, err := user.Current()
+		homeDir, err := os.UserHomeDir()
 		if err != nil {
-			return "", fmt.Errorf("could not determine current user: %w", err)
+			return "", fmt.Errorf("could not determine current home directory: %w", err)
 		}
 
-		configDirPath = filepath.Join(user.HomeDir, configDir)
+		configDirPath = filepath.Join(homeDir, configDir)
 	}
 
 	err := os.MkdirAll(configDirPath, osutil.PermissionDirectory)

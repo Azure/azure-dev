@@ -123,6 +123,31 @@ get_architecture() {
     fi;
 }
 
+ensure_rosetta() {
+    if [[ $(uname -m) == 'x86_64' ]]; then
+        # The current system is identified as an Intel system (either because it
+        # is running in Rosetta 2 or the system is running on Intel silicon) so
+        # Rosetta 2 is not needed.
+        say_verbose "Detected x86_64 system. Rosetta 2 is not needed."
+        return
+    fi
+
+    if /usr/bin/pgrep oahd >/dev/null 2>&1; then
+        say "Rosetta 2 is already installed and running. Nothing to do."
+    else
+        say "Rosetta 2 is not installed. You may be prompted to accept terms necessary to install Rosetta 2."
+
+        # Ensure that softwareupdate gets input from the terminal
+        if /usr/sbin/softwareupdate --install-rosetta </dev/tty; then
+            say "Rosetta has been successfully installed."
+        else
+            say_error "Rosetta 2 installation failed!"
+            save_error_report_if_enabled "InstallFailed" "Rosetta2InstallFailed"
+            exit 1
+        fi
+    fi
+}
+
 extract() {
     local compressed_file=$1
     local target_file=$2
@@ -236,11 +261,22 @@ do
   shift
 done
 
+if [ ! -d "$install_folder" ]; then
+    say_error "Install folder does not exist: $install_folder. The install folder should be an existing directory."
+    say_error "Create the folder (and ensure that it is in your PATH) or specify a different install folder with the -i or --install-folder argument."
+    save_error_report_if_enabled "InstallFailed" "InstallFolderDoesNotExist"
+    exit 1
+fi
 
 say_verbose "Version: $version"
 say_verbose "Platform: $platform"
 say_verbose "Architecture: $architecture"
 say_verbose "File extension: $extension"
+
+if [ "$platform" = "darwin" ]; then
+    say_verbose "Mac detected, ensuring compatailbity with amd64 binaries"
+    ensure_rosetta
+fi
 
 if [ -z "$version" ]; then
     url="$base_url/azd-$platform-$architecture.$extension"

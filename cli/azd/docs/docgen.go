@@ -24,17 +24,17 @@ import (
 // generate. This string is formatted with a single value, the
 // current date in MM/DD/YY format.
 const fontMatterFormatString = `---
-title: Azure Developer CLI Preview reference
+title: Azure Developer CLI reference (preview)
 description: This article explains the syntax and parameters for the various Azure Developer CLI Preview commands.
-author: puichan
-ms.author: puichan
+author: hhunter-ms
+ms.author: hannahhunter
 ms.date: %v
+ms.service: azure-dev-cli
 ms.topic: conceptual
 ms.custom: devx-track-azdevcli
-ms.prod: azure
 ---
 
-# Azure Developer CLI Preview reference
+# Azure Developer CLI reference (preview)
 
 This article explains the syntax and parameters for the various Azure Developer CLI Preview commands.
 
@@ -48,7 +48,7 @@ func main() {
 
 	// staticHelp is true to inform commands to use generate help text instead
 	// of generating help text that includes execution-specific state.
-	cmd := azd.NewRootCmd(true)
+	cmd := azd.NewRootCmd(true, nil)
 
 	basename := strings.Replace(cmd.CommandPath(), " ", "_", -1) + ".md"
 	filename := filepath.Join("./md", basename)
@@ -66,7 +66,7 @@ func main() {
 	defer docFile.Close()
 
 	// Write front-matter to the file:
-	if _, err := docFile.WriteString(fmt.Sprintf(fontMatterFormatString, time.Now().Format("01/02/06"))); err != nil {
+	if _, err := docFile.WriteString(fmt.Sprintf(fontMatterFormatString, time.Now().Format("01/02/2006"))); err != nil {
 		fmt.Printf("Error: %v", err)
 		os.Exit(1)
 	}
@@ -98,7 +98,7 @@ func addCodeFencesToSampleCommands(s string) string {
 			} else if !inBlock && idx+1 < len(lines) && strings.HasPrefix(lines[idx+1], "\t$") {
 				inBlock = true
 				newLines = append(newLines, line)
-				newLines = append(newLines, "```")
+				newLines = append(newLines, "```azdeveloper")
 			} else {
 				newLines = append(newLines, line)
 			}
@@ -203,11 +203,11 @@ func genMarkdownCustom(cmd *cobra.Command, w io.Writer, linkHandler func(string)
 	}
 
 	if cmd.Runnable() {
-		buf.WriteString(fmt.Sprintf("```\n%s\n```\n\n", cmd.UseLine()))
+		buf.WriteString(fmt.Sprintf("```azdeveloper\n%s\n```\n\n", cmd.UseLine()))
 	}
 
 	if len(cmd.Example) > 0 {
-		buf.WriteString("### Examples\n\n```\n")
+		buf.WriteString("### Examples\n\n```azdeveloper\n")
 		lines := strings.Split(cmd.Example, "\n")
 		for _, line := range lines {
 			buf.WriteString(formatCommandLine(line) + "\n")
@@ -275,7 +275,7 @@ func printOptions(buf *bytes.Buffer, cmd *cobra.Command, name string) error {
 	flags := cmd.NonInheritedFlags()
 	flags.SetOutput(buf)
 	if flags.HasAvailableFlags() {
-		buf.WriteString("### Options\n\n```\n")
+		buf.WriteString("### Options\n\n```azdeveloper\n")
 		flags.PrintDefaults()
 		buf.WriteString("```\n\n")
 	}
@@ -283,7 +283,7 @@ func printOptions(buf *bytes.Buffer, cmd *cobra.Command, name string) error {
 	parentFlags := cmd.InheritedFlags()
 	parentFlags.SetOutput(buf)
 	if parentFlags.HasAvailableFlags() {
-		buf.WriteString("### Options inherited from parent commands\n\n```\n")
+		buf.WriteString("### Options inherited from parent commands\n\n```azdeveloper\n")
 		parentFlags.PrintDefaults()
 		buf.WriteString("```\n\n")
 	}

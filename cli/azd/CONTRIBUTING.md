@@ -2,13 +2,15 @@
 
 ## Prerequisites
 
-`azd` is written in Golang and requires Go 1.19 or above:
+`azd` is written in Golang and requires Go 1.20 or above:
 
 - [Go](https://go.dev/dl/)
 
-If you don't have a preferred editor for Go code, we recommend [Visual Studio Code](https://code.visualstudio.com/Download). We have a `settings.json` file checked in, so if you launch `code` from within `cli/azd` you should get our customizations.
+If you don't have a preferred editor for Go code, we recommend [Visual Studio Code](https://code.visualstudio.com/Download).
+We have a `settings.json` file checked in, so if you launch `code` from within `cli/azd` you should get our customizations.
 
-It also requires the `az` CLI:
+While `azd` itself does not depend on the `az` CLI, some of our tests use it, so you should make sure you've installed it
+and logged in.
 
 - [AZ CLI](https://docs.microsoft.com/cli/azure/)
 
@@ -38,17 +40,21 @@ Docker:
 We use a fork based workflow for `azd`. Here are simple steps:
 
 1. Fork `azure/azure-dev` on GitHub.
-2. Create a branch named `<some-description>` (e.g. `fix-123` for a bug fix or `add-deploy-command`) in your forked Git repository.
+2. Create a branch named `<some-description>` (e.g. `fix-123` for a bug fix or `add-deploy-command`) in your forked Git
+   repository.
 3. Push the branch to your fork on GitHub.
 4. Open a pull request in GitHub.
 
 Here is a more [in-depth guide to forks in GitHub](https://guides.github.com/activities/forking/).
 
-As part of CI validation, we run a series of live tests which provision and deprovision Azure resources. For external contributors, these tests will not run automatically, but someone on the team will be able to run them for your PR on your behalf.
+As part of CI validation, we run a series of live tests which provision and deprovision Azure resources. For external
+contributors, these tests will not run automatically, but someone on the team will be able to run them for your PR on your
+behalf.
 
 ## Debugging
 
-In VS Code you can create a launch.json that runs the tool with a specified set of arguments and in a specific folder, for example:
+In VS Code you can create a launch.json that runs the tool with a specified set of arguments and in a specific folder, for
+example:
 
 ```json
 {
@@ -66,26 +72,26 @@ In VS Code you can create a launch.json that runs the tool with a specified set 
 
 ## Testing
 
-We use `gotestsum`, which is a simple tool that wraps `go test` except with better formatting output. Install the tool by running `go install gotest.tools/gotestsum@latest`.
+We use `gotestsum`, which is a simple tool that wraps `go test` except with better formatting output. Install the tool by
+running `go install gotest.tools/gotestsum@latest`.
 
-### Run all unit tests
+### Run unit tests
 
 `gotestsum -- -short ./...`
 
-### Run all end-to-end tests
+### Run end-to-end tests
+
+`gotestsum -- -timeout 20m -run Test_CLI ./...`
+
+This runs all end-to-end tests that target the standalone `azd` binary locally and **will** deploy live resources.
+By default, the `azd` binary produced in the cli/azd folder is automatically built once if not up-to-date,
+so it is sufficient to run end-to-end tests without having to first running `go build`.
+
+If testing against a custom binary, set `CLI_TEST_AZD_PATH` explicitly. See test/azdcli package for more details.
+
+### Run all tests
 
 ```bash
-go build
-gotestsum -- -timeout 20m -run Test_CLI ./...
-```
-
-This runs all end-to-end tests that run `azd` locally and deploy live resources. Run `go build`  first to ensure the integration tests target
-the latest `azd` binary built.
-
-### Run all tests (including end-to-end tests)
-
-```bash
-go build
 gotestsum -- -timeout 20m ./...
 ```
 
@@ -107,11 +113,32 @@ Run `golangci-lint run ./...`
 2. CD to /cli/azd
 3. Run `cspell lint "**/*.go" --relative --config ./.vscode/cspell.yaml`
 
+## Tracing
+
+`azd` supports logging trace information to either a file or an OpenTelemetry compatible HTTP endpoint. The
+`--trace-log-file` can be used to write a JSON file containing all the spans for an command execution. Also,
+`--trace-log-url` can be used to provide an endpoint to send spans using the OTLP HTTP protocol.
+
+You can use the Jaeger all in one docker image to run Jaeger locally to collect and inspect traces:
+
+```
+$ docker run -d --name jaeger \
+ -e COLLECTOR_OTLP_ENABLED=true \
+ -e JAEGER_DISABLED=true \
+ -p 16686:16686 \
+ -p 4318:4318 \
+ jaegertracing/all-in-one
+```
+
+And then pass `--trace-log-url localhost` to a command and view the results in the Jaeger UI served at
+[http://localhost:16686/search](http://localhost:16686/search)
+
 ## Troubleshooting
 
 ### Access is denied
 
-Windows Security may block execution of unsigned .exe files. This may happen when validating unsigned .exe files produced in a PR build.
+Windows Security may block execution of unsigned .exe files. This may happen when validating unsigned .exe files produced in
+a PR build.
 
 ```
 > azd version
@@ -119,11 +146,11 @@ Access is denied.
 >
 ```
 
-To fix: 
+To fix:
 
 1. Run `where azd` (cmd) or `(Get-Command azd).Source` (PowerShell) to get the command path
 1. Click the Start button and type `Windows Security`, select and launch the "Windows Security" application
 1. Select `Virus & threat protection` tab on the left side of the window
 1. Click the `Manage settings` link under `Virus & threat protection settings`
-1. Scroll down in the window to the `Exclusions` heading and click the `Add or remove exclusions link` 
+1. Scroll down in the window to the `Exclusions` heading and click the `Add or remove exclusions link`
 1. Select `Add an exclusion` and add the path to the exe from step 1

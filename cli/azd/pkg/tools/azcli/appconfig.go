@@ -17,12 +17,6 @@ type AzCliAppConfig struct {
 	} `json:"properties"`
 }
 
-type AzCliAppConfigSecret struct {
-	Id    string `json:"id"`
-	Name  string `json:"name"`
-	Value string `json:"value"`
-}
-
 func (cli *azCli) GetAppConfig(
 	ctx context.Context,
 	subscriptionId string,
@@ -75,8 +69,13 @@ func (cli *azCli) createAppConfigClient(
 	ctx context.Context,
 	subscriptionId string,
 ) (*armappconfiguration.ConfigurationStoresClient, error) {
+	credential, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
 	options := cli.createDefaultClientOptionsBuilder(ctx).BuildArmClientOptions()
-	appConfigStoresClient, err := armappconfiguration.NewConfigurationStoresClient(subscriptionId, cli.credential, options)
+	appConfigStoresClient, err := armappconfiguration.NewConfigurationStoresClient(subscriptionId, credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating Resource client: %w", err)
 	}

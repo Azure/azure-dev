@@ -6,26 +6,26 @@ package cmd
 import (
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/spf13/pflag"
 	"github.com/stretchr/testify/assert"
 )
 
 func TestPipelineCmd(t *testing.T) {
-	globalOpt := &internal.GlobalCommandOptions{}
-	command := pipelineCmd(globalOpt)
-	assert.EqualValues(t, "pipeline", command.Use)
-	assert.EqualValues(t, "Manage GitHub Actions pipelines.", command.Short)
+	root := actions.NewActionDescriptor("azd", &actions.ActionDescriptorOptions{})
+	group := pipelineActions(root)
+	assert.EqualValues(t, "pipeline", group.Options.Command.Use)
+	assert.EqualValues(t, "Manage and configure your deployment pipelines.", group.Options.Command.Short)
 
-	childCommands := command.Commands()
+	childCommands := group.Children()
 	assert.EqualValues(t, 1, len(childCommands))
 }
 
 func TestPipelineConfigCmd(t *testing.T) {
-	globalOpt := &internal.GlobalCommandOptions{}
-	command, _ := pipelineConfigCmdDesign(globalOpt)
+	command := newPipelineConfigCmd()
 	assert.EqualValues(t, "config", command.Use)
-	assert.EqualValues(t, "Create and configure your deployment pipeline by using GitHub Actions or Azure Pipelines.",
+	assert.EqualValues(t, "Create and configure your deployment pipeline by using GitHub or Azure Pipelines.",
 		command.Short)
 
 	childCommands := command.Commands()
@@ -33,9 +33,8 @@ func TestPipelineConfigCmd(t *testing.T) {
 }
 
 func TestSetupFlags(t *testing.T) {
-	globalOpt := &internal.GlobalCommandOptions{}
-	command, _ := pipelineConfigCmdDesign(globalOpt)
-
+	command := newPipelineConfigCmd()
+	_ = newPipelineConfigFlags(command, &internal.GlobalCommandOptions{})
 	flagName := "principal-name"
 	principalNameFlag := command.LocalFlags().Lookup(flagName)
 	assert.NotEqual(t, (*pflag.Flag)(nil), principalNameFlag)

@@ -29,6 +29,9 @@ type RunArgs struct {
 
 	// When set will attach commands to std input/output
 	Interactive bool
+
+	// When set will call the command with the specified StdIn
+	StdIn io.Reader
 }
 
 // NewRunArgs creates a new instance with the specified cmd and args
@@ -79,5 +82,11 @@ func (b RunArgs) WithEnrichError(enrichError bool) RunArgs {
 // Updates whether or not debug output will be written to default logger
 func (b RunArgs) WithDebug(debug bool) RunArgs {
 	b.Debug = debug
+	return b
+}
+
+// Updates the stdin reader that will be used while invoking the command
+func (b RunArgs) WithStdIn(stdIn io.Reader) RunArgs {
+	b.StdIn = stdIn
 	return b
 }

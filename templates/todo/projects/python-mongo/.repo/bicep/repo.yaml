@@ -31,25 +31,15 @@ repo:
         patterns:
           - "**/azure.@(yml|yaml)"
 
-      - from: "PLACEHOLDERIACTOOLS"
-        to: ""
-        patterns:
-          - "README.md"
-
-      - from: "PLACEHOLDER_TITLE"
-        to: "ToDo Application with a Python API and Azure Cosmos DB API for MongoDB on Azure App Service"
-        patterns:
-          - "README.md"
-
-      - from: "PLACEHOLDER_DESCRIPTION"
-        to: "using Bicep as the IaC provider"
-        patterns:
-          - "README.md"
-
       - from: ../../../../../common/infra/bicep/core
         to: ../core
         patterns:
           - "**/*.bicep"
+
+      - from: ../../../../../common/infra/shared/gateway/apim
+        to: ./
+        patterns:
+          - apim-api.bicep
 
       # app service modules
       - from: ../../../../../../common/infra/bicep
@@ -95,6 +85,11 @@ repo:
         patterns:
           - "**/main.bicep"
 
+      - from: ../../../../api/common/openapi.yaml
+        to: ../../src/api/openapi.yaml
+        patterns:
+          - "apim-api.bicep"
+
   assets:
     # Common assets
 
@@ -110,6 +105,12 @@ repo:
 
     - from: ../../../../common/infra/bicep/app/api-appservice-python.bicep
       to: ./infra/app/api.bicep
+
+    - from: ../../../../common/infra/bicep/app/apim-api.bicep
+      to: ./infra/app/apim-api.bicep  
+    
+    - from: ../../../../../common/infra/shared/gateway/apim/apim-api-policy.xml
+      to: ./infra/app/apim-api-policy.xml
 
     - from: ../../../../common/infra/bicep/app/cosmos-mongo-db.bicep
       to: ./infra/app/db.bicep
@@ -195,3 +196,7 @@ repo:
     # Azure.yml
     - from: ./azure.yaml
       to: ./azure.yaml
+
+    # README.md
+    - from: ./README.md
+      to: ./README.md

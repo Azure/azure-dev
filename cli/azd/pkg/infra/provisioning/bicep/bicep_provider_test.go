@@ -8,14 +8,17 @@ import (
 	"context"
 	_ "embed"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"strings"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/apimanagement/armapimanagement"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appconfiguration/armappconfiguration"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/keyvault/armkeyvault"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -23,7 +26,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockhttp"
@@ -291,7 +293,7 @@ func TestBicepDestroy(t *testing.T) {
 
 		// Verify console prompts
 		consoleOutput := mockContext.Console.Output()
-		require.Len(t, consoleOutput, 9)
+		require.Len(t, consoleOutput, 11)
 		require.Contains(t, consoleOutput[0], "This will delete")
 		require.Contains(t, consoleOutput[1], "Deleted resource group")
 		require.Contains(t, consoleOutput[2], "This operation will delete")
@@ -300,20 +302,25 @@ func TestBicepDestroy(t *testing.T) {
 		require.Contains(t, consoleOutput[5], "Purged key vault kv2-123")
 		require.Contains(t, consoleOutput[6], "Purged app configuration ac-123")
 		require.Contains(t, consoleOutput[7], "Purged app configuration ac2-123")
-		require.Contains(t, consoleOutput[8], "Deleted deployment")
+		require.Contains(t, consoleOutput[8], "Purged api management service apim-123")
+		require.Contains(t, consoleOutput[9], "Purged api management service apim2-123")
+		require.Contains(t, consoleOutput[10], "Deleted deployment")
 
 		// Verify progress output
-		require.Len(t, progressLog, 10)
+		require.Len(t, progressLog, 13)
 		require.Contains(t, progressLog[0], "Fetching resource groups")
 		require.Contains(t, progressLog[1], "Fetching resources")
 		require.Contains(t, progressLog[2], "Getting Key Vaults to purge")
 		require.Contains(t, progressLog[3], "Getting App Configurations to purge")
-		require.Contains(t, progressLog[4], "Deleting resource group")
-		require.Contains(t, progressLog[5], "Purging key vault kv-123")
-		require.Contains(t, progressLog[6], "Purging key vault kv2-123")
-		require.Contains(t, progressLog[7], "Purging app configuration ac-123")
-		require.Contains(t, progressLog[8], "Purging app configuration ac2-123")
-		require.Contains(t, progressLog[9], "Deleting deployment")
+		require.Contains(t, progressLog[4], "Getting API Management Services to purge")
+		require.Contains(t, progressLog[5], "Deleting resource group")
+		require.Contains(t, progressLog[6], "Purging key vault kv-123")
+		require.Contains(t, progressLog[7], "Purging key vault kv2-123")
+		require.Contains(t, progressLog[8], "Purging app configuration ac-123")
+		require.Contains(t, progressLog[9], "Purging app configuration ac2-123")
+		require.Contains(t, progressLog[10], "Purging api management service apim-123")
+		require.Contains(t, progressLog[11], "Purging api management service apim2-123")
+		require.Contains(t, progressLog[12], "Deleting deployment")
 	})
 
 	t.Run("InteractiveForceAndPurge", func(t *testing.T) {
@@ -353,26 +360,31 @@ func TestBicepDestroy(t *testing.T) {
 
 		// Verify console prompts
 		consoleOutput := mockContext.Console.Output()
-		require.Len(t, consoleOutput, 6)
+		require.Len(t, consoleOutput, 8)
 		require.Contains(t, consoleOutput[0], "Deleted resource group")
 		require.Contains(t, consoleOutput[1], "Purged key vault kv-123")
 		require.Contains(t, consoleOutput[2], "Purged key vault kv2-123")
 		require.Contains(t, consoleOutput[3], "Purged app configuration ac-123")
 		require.Contains(t, consoleOutput[4], "Purged app configuration ac2-123")
-		require.Contains(t, consoleOutput[5], "Deleted deployment")
+		require.Contains(t, consoleOutput[5], "Purged api management service apim-123")
+		require.Contains(t, consoleOutput[6], "Purged api management service apim2-123")
+		require.Contains(t, consoleOutput[7], "Deleted deployment")
 
 		// Verify progress output
-		require.Len(t, progressLog, 10)
+		require.Len(t, progressLog, 13)
 		require.Contains(t, progressLog[0], "Fetching resource groups")
 		require.Contains(t, progressLog[1], "Fetching resources")
 		require.Contains(t, progressLog[2], "Getting Key Vaults to purge")
 		require.Contains(t, progressLog[3], "Getting App Configurations to purge")
-		require.Contains(t, progressLog[4], "Deleting resource group")
-		require.Contains(t, progressLog[5], "Purging key vault kv-123")
-		require.Contains(t, progressLog[6], "Purging key vault kv2-123")
-		require.Contains(t, progressLog[7], "Purging app configuration ac-123")
-		require.Contains(t, progressLog[8], "Purging app configuration ac2-123")
-		require.Contains(t, progressLog[9], "Deleting deployment")
+		require.Contains(t, progressLog[4], "Getting API Management Services to purge")
+		require.Contains(t, progressLog[5], "Deleting resource group")
+		require.Contains(t, progressLog[6], "Purging key vault kv-123")
+		require.Contains(t, progressLog[7], "Purging key vault kv2-123")
+		require.Contains(t, progressLog[8], "Purging app configuration ac-123")
+		require.Contains(t, progressLog[9], "Purging app configuration ac2-123")
+		require.Contains(t, progressLog[10], "Purging api management service apim-123")
+		require.Contains(t, progressLog[11], "Purging api management service apim2-123")
+		require.Contains(t, progressLog[12], "Deleting deployment")
 
 	})
 }
@@ -404,6 +416,18 @@ func TestIsValueAssignableToParameterType(t *testing.T) {
 	assert.False(t, isValueAssignableToParameterType(ParameterTypeNumber, json.Number("1.5")))
 }
 
+type testBicep struct {
+	commandRunner exec.CommandRunner
+}
+
+func (b *testBicep) Build(ctx context.Context, file string) (string, error) {
+	result, err := b.commandRunner.Run(ctx, exec.NewRunArgs("bicep", ([]string{"build", file, "--stdout"})...))
+	if err != nil {
+		return "", err
+	}
+	return result.Stdout, nil
+}
+
 func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepProvider {
 	projectDir := "../../../../test/functional/testdata/samples/webapp"
 	options := Options{
@@ -415,17 +439,26 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
 	})
 
-	azCli := azcli.NewAzCli(mockContext.Credentials, azcli.NewAzCliArgs{
-		HttpClient: mockContext.HttpClient,
-	})
+	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 
-	provider, err := NewBicepProvider(
-		*mockContext.Context, azCli, env, projectDir, options,
-		mockContext.CommandRunner,
-		mockContext.Console,
-	)
+	locationPrompter := func(msg string, filter func(loc account.Location) bool) (location string, err error) {
+		return "", nil
+	}
 
-	require.NoError(t, err)
+	provider := &BicepProvider{
+		env:         env,
+		projectPath: projectDir,
+		options:     options,
+		console:     mockContext.Console,
+		bicepCli: &testBicep{
+			commandRunner: mockContext.CommandRunner,
+		},
+		azCli: azCli,
+		prompters: Prompters{
+			Location: locationPrompter,
+		},
+	}
+
 	return provider
 }
 
@@ -528,38 +561,27 @@ func prepareDeployShowMocks(
 }
 
 func prepareDestroyMocks(mockContext *mocks.MockContext) {
+	makeItem := func(resourceType infra.AzureResourceType, resourceName string) *armresources.GenericResourceExpanded {
+		id := fmt.Sprintf("subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/%s/%s",
+			string(resourceType), resourceName)
+
+		return &armresources.GenericResourceExpanded{
+			ID:       convert.RefOf(id),
+			Name:     convert.RefOf(resourceName),
+			Type:     convert.RefOf(string(resourceType)),
+			Location: convert.RefOf("eastus2"),
+		}
+	}
+
 	resourceList := armresources.ResourceListResult{
 		Value: []*armresources.GenericResourceExpanded{
-			{
-				ID:       convert.RefOf("webapp"),
-				Name:     convert.RefOf("app-123"),
-				Type:     convert.RefOf(string(infra.AzureResourceTypeWebSite)),
-				Location: convert.RefOf("eastus2"),
-			},
-			{
-				ID:       convert.RefOf("keyvault"),
-				Name:     convert.RefOf("kv-123"),
-				Type:     convert.RefOf(string(infra.AzureResourceTypeKeyVault)),
-				Location: convert.RefOf("eastus2"),
-			},
-			{
-				ID:       convert.RefOf("keyvault2"),
-				Name:     convert.RefOf("kv2-123"),
-				Type:     convert.RefOf(string(infra.AzureResourceTypeKeyVault)),
-				Location: convert.RefOf("eastus2"),
-			},
-			{
-				ID:       convert.RefOf("appconfiguration"),
-				Name:     convert.RefOf("ac-123"),
-				Type:     convert.RefOf(string(infra.AzureResourceTypeAppConfig)),
-				Location: convert.RefOf("eastus2"),
-			},
-			{
-				ID:       convert.RefOf("appconfiguration2"),
-				Name:     convert.RefOf("ac2-123"),
-				Type:     convert.RefOf(string(infra.AzureResourceTypeAppConfig)),
-				Location: convert.RefOf("eastus2"),
-			},
+			makeItem(infra.AzureResourceTypeWebSite, "app-123"),
+			makeItem(infra.AzureResourceTypeKeyVault, "kv-123"),
+			makeItem(infra.AzureResourceTypeKeyVault, "kv2-123"),
+			makeItem(infra.AzureResourceTypeAppConfig, "ac-123"),
+			makeItem(infra.AzureResourceTypeAppConfig, "ac2-123"),
+			makeItem(infra.AzureResourceTypeApim, "apim-123"),
+			makeItem(infra.AzureResourceTypeApim, "apim2-123"),
 		},
 	}
 
@@ -583,6 +605,10 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 	getAppConfigMock(mockContext, "/configurationStores/ac-123", "ac-123", "eastus2")
 	getAppConfigMock(mockContext, "/configurationStores/ac2-123", "ac2-123", "eastus2")
 
+	// Get APIM
+	getAPIMMock(mockContext, "/service/apim-123", "apim-123", "eastus2")
+	getAPIMMock(mockContext, "/service/apim2-123", "apim2-123", "eastus2")
+
 	// Delete resource group
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodDelete &&
@@ -601,6 +627,13 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 		return request.Method == http.MethodPost &&
 			(strings.Contains(request.URL.Path, "deletedConfigurationStores/ac-123/purge") ||
 				strings.Contains(request.URL.Path, "deletedConfigurationStores/ac2-123/purge"))
+	}).RespondFn(httpRespondFn)
+
+	// Purge APIM
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodDelete &&
+			(strings.Contains(request.URL.Path, "deletedservices/apim-123") ||
+				strings.Contains(request.URL.Path, "deletedservices/apim2-123"))
 	}).RespondFn(httpRespondFn)
 
 	// Delete deployment
@@ -636,7 +669,9 @@ func getKeyVaultMock(mockContext *mocks.MockContext, keyVaultString string, name
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		keyVaultResponse := armkeyvault.VaultsClientGetResponse{
 			Vault: armkeyvault.Vault{
-				ID:       convert.RefOf(name),
+				ID: convert.RefOf(
+					fmt.Sprintf("/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/%s/%s",
+						string(infra.AzureResourceTypeKeyVault), name)),
 				Name:     convert.RefOf(name),
 				Location: convert.RefOf(location),
 				Properties: &armkeyvault.VaultProperties{
@@ -661,7 +696,10 @@ func getAppConfigMock(mockContext *mocks.MockContext, appConfigString string, na
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		appConfigResponse := armappconfiguration.ConfigurationStoresClientGetResponse{
 			ConfigurationStore: armappconfiguration.ConfigurationStore{
-				ID:       convert.RefOf(name),
+				ID: convert.RefOf(
+					fmt.Sprintf("/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/%s/%s",
+						string(infra.AzureResourceTypeAppConfig), name)),
+
 				Name:     convert.RefOf(name),
 				Location: convert.RefOf(location),
 				Properties: &armappconfiguration.ConfigurationStoreProperties{
@@ -675,6 +713,30 @@ func getAppConfigMock(mockContext *mocks.MockContext, appConfigString string, na
 		return &http.Response{
 			StatusCode: http.StatusOK,
 			Body:       io.NopCloser(bytes.NewBuffer(appConfigBytes)),
+		}, nil
+	})
+}
+
+func getAPIMMock(mockContext *mocks.MockContext, apimString string, name string, location string) {
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet && strings.Contains(request.URL.Path, apimString)
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		apimResponse := armapimanagement.ServiceClientGetResponse{
+			ServiceResource: armapimanagement.ServiceResource{
+				ID: convert.RefOf(
+					fmt.Sprintf("/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/%s/%s",
+						string(infra.AzureResourceTypeApim), name)),
+
+				Name:     convert.RefOf(name),
+				Location: convert.RefOf(location),
+			},
+		}
+
+		apimBytes, _ := json.Marshal(apimResponse)
+
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(bytes.NewBuffer(apimBytes)),
 		}, nil
 	})
 }

@@ -7,60 +7,121 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
 
 type authTokenFlags struct {
-	outputFormat string
-	scopes       []string
-	global       *internal.GlobalCommandOptions
+	tenantID string
+	scopes   []string
+	global   *internal.GlobalCommandOptions
 }
 
-func authTokenCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *authTokenFlags) {
-	cmd := &cobra.Command{
-		Use:    "token",
+func newAuthTokenFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *authTokenFlags {
+	flags := &authTokenFlags{}
+	flags.Bind(cmd.Flags(), global)
+
+	return flags
+}
+
+func newAuthTokenCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:    "token --output json",
 		Hidden: true,
 	}
-
-	getAccessTokenFlags := &authTokenFlags{}
-	getAccessTokenFlags.Bind(cmd.Flags(), global)
-	return cmd, getAccessTokenFlags
 }
 
 func (f *authTokenFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	f.global = global
-	output.AddOutputFlag(local, &f.outputFormat, []output.Format{output.JsonFormat}, output.NoneFormat)
 	local.StringArrayVar(&f.scopes, "scope", nil, "The scope to use when requesting an access token")
+	local.StringVar(&f.tenantID, "tenant-id", "", "The tenant id to use when requesting an access token.")
 }
 
+type CredentialProviderFn func(context.Context, *auth.CredentialForCurrentUserOptions) (azcore.TokenCredential, error)
+
 type authTokenAction struct {
-	credential azcore.TokenCredential
-	formatter  output.Formatter
-	writer     io.Writer
-	flags      authTokenFlags
+	credentialProvider CredentialProviderFn
+	formatter          output.Formatter
+	writer             io.Writer
+	envResolver        environment.EnvironmentResolver
+	subResolver        account.SubscriptionTenantResolver
+	flags              *authTokenFlags
 }
 
 func newAuthTokenAction(
-	credential azcore.TokenCredential,
+	credentialProvider CredentialProviderFn,
 	formatter output.Formatter,
 	writer io.Writer,
-	flags authTokenFlags,
-) *authTokenAction {
+	flags *authTokenFlags,
+	envResolver environment.EnvironmentResolver,
+	subResolver account.SubscriptionTenantResolver,
+) actions.Action {
 	return &authTokenAction{
-		credential: credential,
-		formatter:  formatter,
-		writer:     writer,
-		flags:      flags,
+		credentialProvider: credentialProvider,
+		envResolver:        envResolver,
+		subResolver:        subResolver,
+		formatter:          formatter,
+		writer:             writer,
+		flags:              flags,
 	}
+}
+
+func getTenantIdFromAzdEnv(
+	ctx context.Context,
+	envResolver environment.EnvironmentResolver,
+	subResolver account.SubscriptionTenantResolver) (tenantId string, err error) {
+	azdEnv, err := envResolver()
+	if err != nil {
+		// No azd env, return empty tenantId
+		return tenantId, nil
+	}
+
+	subIdAtAzdEnv := azdEnv.GetSubscriptionId()
+	if subIdAtAzdEnv == "" {
+		// azd env found, but missing or empty subscriptionID
+		return tenantId, nil
+	}
+
+	tenantId, err = subResolver.LookupTenant(ctx, subIdAtAzdEnv)
+	if err != nil {
+		return tenantId, fmt.Errorf(
+			"resolving the Azure Directory from azd environment (%s): %w",
+			azdEnv.GetEnvName(),
+			err)
+	}
+
+	return tenantId, nil
+}
+
+func getTenantIdFromEnv(
+	ctx context.Context,
+	subResolver account.SubscriptionTenantResolver) (tenantId string, err error) {
+
+	subIdAtSysEnv, found := os.LookupEnv(environment.SubscriptionIdEnvVarName)
+	if !found {
+		// no env var from system
+		return tenantId, nil
+	}
+
+	tenantId, err = subResolver.LookupTenant(ctx, subIdAtSysEnv)
+	if err != nil {
+		return tenantId, fmt.Errorf(
+			"resolving the Azure Directory from system environment (%s): %w", environment.SubscriptionIdEnvVarName, err)
+	}
+
+	return tenantId, nil
 }
 
 func (a *authTokenAction) Run(ctx context.Context) (*actions.ActionResult, error) {
@@ -68,7 +129,36 @@ func (a *authTokenAction) Run(ctx context.Context) (*actions.ActionResult, error
 		a.flags.scopes = []string{azure.ManagementScope}
 	}
 
-	token, err := a.credential.GetToken(ctx, policy.TokenRequestOptions{
+	var cred azcore.TokenCredential
+
+	// 1) flag --tenant-id is the highest priority. If it is not use, azd will check if subscriptionId is set as env var
+	tenantId := a.flags.tenantID
+	// 2) From azd env
+	if tenantId == "" {
+		tenantIdFromAzdEnv, err := getTenantIdFromAzdEnv(ctx, a.envResolver, a.subResolver)
+		if err != nil {
+			return nil, err
+		}
+		tenantId = tenantIdFromAzdEnv
+	}
+	// 3) From system env
+	if tenantId == "" {
+		tenantIdFromSysEnv, err := getTenantIdFromEnv(ctx, a.subResolver)
+		if err != nil {
+			return nil, err
+		}
+		tenantId = tenantIdFromSysEnv
+	}
+
+	// If tenantId is still empty, the fallback is to use current logged in user's home-tenant id.
+	cred, err := a.credentialProvider(ctx, &auth.CredentialForCurrentUserOptions{
+		TenantID: tenantId,
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	token, err := cred.GetToken(ctx, policy.TokenRequestOptions{
 		Scopes: a.flags.scopes,
 	})
 	if err != nil {
@@ -77,7 +167,7 @@ func (a *authTokenAction) Run(ctx context.Context) (*actions.ActionResult, error
 
 	res := contracts.AuthTokenResult{
 		Token:     token.Token,
-		ExpiresOn: token.ExpiresOn,
+		ExpiresOn: contracts.RFC3339Time(token.ExpiresOn),
 	}
 
 	return nil, a.formatter.Format(res, a.writer, nil)

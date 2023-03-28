@@ -8,13 +8,13 @@ import (
 )
 
 func (cli *azCli) GetResource(
-	ctx context.Context, subscriptionId string, resourceId string) (AzCliResourceExtended, error) {
+	ctx context.Context, subscriptionId string, resourceId string, apiVersion string) (AzCliResourceExtended, error) {
 	client, err := cli.createResourcesClient(ctx, subscriptionId)
 	if err != nil {
 		return AzCliResourceExtended{}, err
 	}
 
-	res, err := client.GetByID(ctx, resourceId, "", nil)
+	res, err := client.GetByID(ctx, resourceId, apiVersion, nil)
 	if err != nil {
 		return AzCliResourceExtended{}, fmt.Errorf("getting resource by id: %w", err)
 	}
@@ -137,8 +137,13 @@ func (cli *azCli) DeleteResourceGroup(ctx context.Context, subscriptionId string
 }
 
 func (cli *azCli) createResourcesClient(ctx context.Context, subscriptionId string) (*armresources.Client, error) {
+	credential, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
 	options := cli.createDefaultClientOptionsBuilder(ctx).BuildArmClientOptions()
-	client, err := armresources.NewClient(subscriptionId, cli.credential, options)
+	client, err := armresources.NewClient(subscriptionId, credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating Resource client: %w", err)
 	}
@@ -150,8 +155,13 @@ func (cli *azCli) createResourceGroupClient(
 	ctx context.Context,
 	subscriptionId string,
 ) (*armresources.ResourceGroupsClient, error) {
+	credential, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
 	options := cli.createDefaultClientOptionsBuilder(ctx).BuildArmClientOptions()
-	client, err := armresources.NewResourceGroupsClient(subscriptionId, cli.credential, options)
+	client, err := armresources.NewResourceGroupsClient(subscriptionId, credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating ResourceGroup client: %w", err)
 	}

@@ -11,9 +11,13 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/azure"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/cli/browser"
 	"github.com/spf13/cobra"
@@ -33,7 +37,7 @@ func (m *monitorFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommand
 		&m.monitorLive,
 		"live",
 		false,
-		"Open a browser to Application Insights Live Metrics. Live Metrics is currently not supported for Python applications.",
+		"Open a browser to Application Insights Live Metrics. Live Metrics is currently not supported for Python apps.",
 	)
 	local.BoolVar(&m.monitorLogs, "logs", false, "Open a browser to Application Insights Logs.")
 	local.BoolVar(&m.monitorOverview, "overview", false, "Open a browser to Application Insights Overview Dashboard.")
@@ -41,43 +45,44 @@ func (m *monitorFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommand
 	m.global = global
 }
 
-func monitorCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *monitorFlags) {
-	cmd := &cobra.Command{
-		Use:   "monitor",
-		Short: "Monitor a deployed application.",
-		Long: `Monitor a deployed application.
-		
-Examples:
-
-	$ azd monitor --overview
-	$ azd monitor -–live
-	$ azd monitor --logs
-		
-For more information, go to https://aka.ms/azure-dev/monitor.`,
-	}
+func newMonitorFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *monitorFlags {
 	flags := &monitorFlags{}
 	flags.Bind(cmd.Flags(), global)
-	return cmd, flags
+
+	return flags
+}
+
+func newMonitorCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "monitor",
+		Short: "Monitor a deployed application.",
+	}
 }
 
 type monitorAction struct {
-	azdCtx  *azdcontext.AzdContext
-	azCli   azcli.AzCli
-	console input.Console
-	flags   monitorFlags
+	azdCtx      *azdcontext.AzdContext
+	env         *environment.Environment
+	subResolver account.SubscriptionTenantResolver
+	azCli       azcli.AzCli
+	console     input.Console
+	flags       *monitorFlags
 }
 
 func newMonitorAction(
 	azdCtx *azdcontext.AzdContext,
+	env *environment.Environment,
+	subResolver account.SubscriptionTenantResolver,
 	azCli azcli.AzCli,
 	console input.Console,
-	flags monitorFlags,
-) *monitorAction {
+	flags *monitorFlags,
+) actions.Action {
 	return &monitorAction{
-		azdCtx:  azdCtx,
-		azCli:   azCli,
-		console: console,
-		flags:   flags,
+		azdCtx:      azdCtx,
+		env:         env,
+		azCli:       azCli,
+		console:     console,
+		flags:       flags,
+		subResolver: subResolver,
 	}
 }
 
@@ -86,18 +91,9 @@ func (m *monitorAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		m.flags.monitorOverview = true
 	}
 
-	env, ctx, err := loadOrInitEnvironment(ctx, &m.flags.environmentName, m.azdCtx, m.console, m.azCli)
-	if err != nil {
-		return nil, fmt.Errorf("loading environment: %w", err)
-	}
-
-	account, err := m.azCli.GetAccount(ctx, env.GetSubscriptionId())
-	if err != nil {
-		return nil, fmt.Errorf("getting tenant id for subscription: %w", err)
-	}
-
 	resourceManager := infra.NewAzureResourceManager(m.azCli)
-	resourceGroups, err := resourceManager.GetResourceGroupsForEnvironment(ctx, env)
+	resourceGroups, err := resourceManager.GetResourceGroupsForEnvironment(
+		ctx, m.env.GetSubscriptionId(), m.env.GetEnvName())
 	if err != nil {
 		return nil, fmt.Errorf("discovering resource groups from deployment: %w", err)
 	}
@@ -106,7 +102,8 @@ func (m *monitorAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	var portalResources []azcli.AzCliResource
 
 	for _, resourceGroup := range resourceGroups {
-		resources, err := m.azCli.ListResourceGroupResources(ctx, env.GetSubscriptionId(), resourceGroup.Name, nil)
+		resources, err := m.azCli.ListResourceGroupResources(
+			ctx, azure.SubscriptionFromRID(resourceGroup.Id), resourceGroup.Name, nil)
 		if err != nil {
 			return nil, fmt.Errorf("listing resources: %w", err)
 		}
@@ -155,25 +152,43 @@ func (m *monitorAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		}
 	}
 
+	tenantId, err := m.subResolver.LookupTenant(ctx, m.env.GetSubscriptionId())
+	if err != nil {
+		return nil, err
+	}
+
 	for _, insightsResource := range insightsResources {
 		if m.flags.monitorLive {
 			openWithDefaultBrowser(
-				fmt.Sprintf("https://app.azure.com/%s%s/quickPulse", account.TenantId, insightsResource.Id),
+				fmt.Sprintf("https://app.azure.com/%s%s/quickPulse", tenantId, insightsResource.Id),
 			)
 		}
 
 		if m.flags.monitorLogs {
-			openWithDefaultBrowser(fmt.Sprintf("https://app.azure.com/%s%s/logs", account.TenantId, insightsResource.Id))
+			openWithDefaultBrowser(fmt.Sprintf("https://app.azure.com/%s%s/logs", tenantId, insightsResource.Id))
 		}
 	}
 
 	for _, portalResource := range portalResources {
 		if m.flags.monitorOverview {
 			openWithDefaultBrowser(
-				fmt.Sprintf("https://portal.azure.com/#@%s/dashboard/arm%s", account.TenantId, portalResource.Id),
+				fmt.Sprintf("https://portal.azure.com/#@%s/dashboard/arm%s", tenantId, portalResource.Id),
 			)
 		}
 	}
 
 	return nil, nil
+}
+
+func getCmdMonitorHelpDescription(*cobra.Command) string {
+	return generateCmdHelpDescription(fmt.Sprintf("Monitor a deployed application. For more information, go to: %s.",
+		output.WithLinkFormat("https://aka.ms/azure-dev/monitor")), nil)
+}
+
+func getCmdMonitorHelpFooter(c *cobra.Command) string {
+	return generateCmdHelpSamplesBlock(map[string]string{
+		"Open Application Insights Overview Dashboard.": output.WithHighLightFormat("azd monitor --overview"),
+		"Open Application Insights Live Metrics.":       output.WithHighLightFormat("azd monitor --live"),
+		"Open Application Insights Logs.":               output.WithHighLightFormat("azd monitor --logs"),
+	})
 }

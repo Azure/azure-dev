@@ -7,15 +7,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"strings"
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
+	"github.com/azure/azure-dev/cli/azd/internal/telemetry/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
-	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -73,16 +74,18 @@ func createAndInitEnvironment(
 	envSpec *environmentSpec,
 	azdCtx *azdcontext.AzdContext,
 	console input.Console,
-	azCli azcli.AzCli,
-) (*environment.Environment, context.Context, error) {
+	accountManager account.Manager,
+	userProfileService *azcli.UserProfileService,
+	subResolver account.SubscriptionTenantResolver,
+) (*environment.Environment, error) {
 	if envSpec.environmentName != "" && !environment.IsValidEnvironmentName(envSpec.environmentName) {
 		errMsg := invalidEnvironmentNameMsg(envSpec.environmentName)
 		fmt.Fprint(console.Handles().Stdout, errMsg)
-		return nil, nil, fmt.Errorf(errMsg)
+		return nil, fmt.Errorf(errMsg)
 	}
 
 	if err := ensureValidEnvironmentName(ctx, &envSpec.environmentName, console); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	// Ensure the environment does not already exist:
@@ -90,16 +93,30 @@ func createAndInitEnvironment(
 	switch {
 	case errors.Is(err, os.ErrNotExist):
 	case err != nil:
-		return nil, nil, fmt.Errorf("checking for existing environment: %w", err)
+		return nil, fmt.Errorf("checking for existing environment: %w", err)
 	case err == nil:
-		return nil, nil, fmt.Errorf("environment '%s' already exists", envSpec.environmentName)
+		return nil, fmt.Errorf("environment '%s' already exists", envSpec.environmentName)
 	}
 
-	if err := ensureEnvironmentInitialized(ctx, *envSpec, env, console, azCli); err != nil {
-		return nil, nil, fmt.Errorf("initializing environment: %w", err)
+	if err := ensureEnvironmentInitialized(
+		ctx, *envSpec, env, console, accountManager, userProfileService, subResolver); err != nil {
+		return nil, fmt.Errorf("initializing environment: %w", err)
 	}
 
-	return env, telemetry.ContextWithEnvironment(ctx, env), nil
+	telemetry.SetGlobalAttributes(fields.SubscriptionIdKey.String(env.GetSubscriptionId()))
+	return env, nil
+}
+
+func loadEnvironmentIfAvailable() (*environment.Environment, error) {
+	azdCtx, err := azdcontext.NewAzdContext()
+	if err != nil {
+		return nil, err
+	}
+	defaultEnv, err := azdCtx.GetDefaultEnvironmentName()
+	if err != nil {
+		return nil, err
+	}
+	return environment.GetEnvironment(azdCtx, defaultEnv)
 }
 
 func loadOrInitEnvironment(
@@ -107,8 +124,10 @@ func loadOrInitEnvironment(
 	environmentName *string,
 	azdCtx *azdcontext.AzdContext,
 	console input.Console,
-	azCli azcli.AzCli,
-) (*environment.Environment, context.Context, error) {
+	accountManager account.Manager,
+	userProfileService *azcli.UserProfileService,
+	subResolver account.SubscriptionTenantResolver,
+) (*environment.Environment, error) {
 	loadOrCreateEnvironment := func() (*environment.Environment, bool, error) {
 		// If there's a default environment, use that
 		if *environmentName == "" {
@@ -165,9 +184,9 @@ func loadOrInitEnvironment(
 	env, isNew, err := loadOrCreateEnvironment()
 	switch {
 	case errors.Is(err, os.ErrNotExist):
-		return nil, nil, fmt.Errorf("environment %s does not exist", *environmentName)
+		return nil, fmt.Errorf("environment %s does not exist", *environmentName)
 	case err != nil:
-		return nil, nil, err
+		return nil, err
 	}
 
 	if err := ensureEnvironmentInitialized(
@@ -175,17 +194,21 @@ func loadOrInitEnvironment(
 		environmentSpec{environmentName: *environmentName},
 		env,
 		console,
-		azCli); err != nil {
-		return nil, nil, fmt.Errorf("initializing environment: %w", err)
+		accountManager,
+		userProfileService,
+		subResolver); err != nil {
+		return nil, fmt.Errorf("initializing environment: %w", err)
 	}
 
 	if isNew {
 		if err := azdCtx.SetDefaultEnvironmentName(*environmentName); err != nil {
-			return nil, nil, fmt.Errorf("saving default environment name: %w", err)
+			return nil, fmt.Errorf("saving default environment name: %w", err)
 		}
 	}
 
-	return env, telemetry.ContextWithEnvironment(ctx, env), nil
+	telemetry.SetGlobalAttributes(fields.SubscriptionIdKey.String(env.GetSubscriptionId()))
+
+	return env, nil
 }
 
 // ensureEnvironmentInitialized ensures the environment is initialized, i.e. it contains values for `AZURE_ENV_NAME`,
@@ -197,7 +220,9 @@ func ensureEnvironmentInitialized(
 	envSpec environmentSpec,
 	env *environment.Environment,
 	console input.Console,
-	azCli azcli.AzCli,
+	accountManager account.Manager,
+	userProfileService *azcli.UserProfileService,
+	subResolver account.SubscriptionTenantResolver,
 ) error {
 	if env.Values == nil {
 		env.Values = make(map[string]string)
@@ -221,57 +246,71 @@ func ensureEnvironmentInitialized(
 		env.SetEnvName(envSpec.environmentName)
 	}
 
-	if !hasSubID && envSpec.subscription != "" {
-		env.SetSubscriptionId(envSpec.subscription)
-	} else {
-		subscriptionOptions, defaultSubscription, err := getSubscriptionOptions(ctx, azCli)
-		if err != nil {
-			return err
-		}
-
-		var subscriptionId = ""
-		for subscriptionId == "" {
-			subscriptionSelectionIndex, err := console.Select(ctx, input.ConsoleOptions{
-				Message:      "Please select an Azure Subscription to use:",
-				Options:      subscriptionOptions,
-				DefaultValue: defaultSubscription,
-			})
-
+	if !hasSubID {
+		if envSpec.subscription != "" {
+			env.SetSubscriptionId(envSpec.subscription)
+		} else {
+			subscriptionOptions, defaultSubscription, err := getSubscriptionOptions(ctx, accountManager)
 			if err != nil {
-				return fmt.Errorf("reading subscription id: %w", err)
+				return err
 			}
 
-			subscriptionSelection := subscriptionOptions[subscriptionSelectionIndex]
-
-			if subscriptionSelection == manualSubscriptionEntryOption {
-				subscriptionId, err = console.Prompt(ctx, input.ConsoleOptions{
-					Message: "Enter an Azure Subscription to use:",
+			var subscriptionId = ""
+			for subscriptionId == "" {
+				subscriptionSelectionIndex, err := console.Select(ctx, input.ConsoleOptions{
+					Message:      "Please select an Azure Subscription to use:",
+					Options:      subscriptionOptions,
+					DefaultValue: defaultSubscription,
 				})
 
 				if err != nil {
 					return fmt.Errorf("reading subscription id: %w", err)
 				}
-			} else {
-				subscriptionId = subscriptionSelection[len(subscriptionSelection)-
-					len("(00000000-0000-0000-0000-000000000000)")+1 : len(subscriptionSelection)-1]
-			}
-		}
 
-		env.SetSubscriptionId(strings.TrimSpace(subscriptionId))
+				subscriptionSelection := subscriptionOptions[subscriptionSelectionIndex]
+
+				if subscriptionSelection == manualSubscriptionEntryOption {
+					subscriptionId, err = console.Prompt(ctx, input.ConsoleOptions{
+						Message: "Enter an Azure Subscription to use:",
+					})
+
+					if err != nil {
+						return fmt.Errorf("reading subscription id: %w", err)
+					}
+				} else {
+					subscriptionId = subscriptionSelection[len(subscriptionSelection)-
+						len("(00000000-0000-0000-0000-000000000000)")+1 : len(subscriptionSelection)-1]
+				}
+			}
+
+			env.SetSubscriptionId(strings.TrimSpace(subscriptionId))
+		}
 	}
 
-	if !hasLocation && envSpec.location != "" {
-		env.SetLocation(envSpec.location)
-	} else {
-		location, err := azureutil.PromptLocation(ctx, env, "Please select an Azure location to use:", "", console, azCli)
-		if err != nil {
-			return fmt.Errorf("prompting for location: %w", err)
+	if !hasLocation {
+		if envSpec.location != "" {
+			env.SetLocation(envSpec.location)
+		} else {
+			location, err := azureutil.PromptLocation(
+				ctx, env.GetSubscriptionId(), "Please select an Azure location to use:", "", console, accountManager)
+			if err != nil {
+				return fmt.Errorf("prompting for location: %w", err)
+			}
+			env.SetLocation(strings.TrimSpace(location))
 		}
-		env.SetLocation(strings.TrimSpace(location))
 	}
 
 	if !hasPrincipalID {
-		principalID, err := azureutil.GetCurrentPrincipalId(ctx, azCli)
+		subscriptionId := env.GetSubscriptionId()
+		if subscriptionId == "" {
+			log.Panic("tried to get principal id without a subscription id selected")
+		}
+		tenantId, err := subResolver.LookupTenant(ctx, subscriptionId)
+		if err != nil {
+			return fmt.Errorf("getting tenant id for subscription %s. Error: %w", subscriptionId, err)
+		}
+
+		principalID, err := azureutil.GetCurrentPrincipalId(ctx, userProfileService, tenantId)
 		if err != nil {
 			return fmt.Errorf("fetching current user information: %w", err)
 		}
@@ -285,13 +324,8 @@ func ensureEnvironmentInitialized(
 	return nil
 }
 
-func getSubscriptionOptions(ctx context.Context, azCli azcli.AzCli) ([]string, any, error) {
-	accountManager, err := account.NewManager(config.GetConfigManager(ctx), azCli)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed creating account manager: %w", err)
-	}
-
-	subscriptionInfos, err := accountManager.GetSubscriptions(ctx)
+func getSubscriptionOptions(ctx context.Context, subscriptions account.Manager) ([]string, any, error) {
+	subscriptionInfos, err := subscriptions.GetSubscriptions(ctx)
 	if err != nil {
 		return nil, nil, fmt.Errorf("listing accounts: %w", err)
 	}
@@ -301,11 +335,7 @@ func getSubscriptionOptions(ctx context.Context, azCli azcli.AzCli) ([]string, a
 	// configured to use if the environment variable is unset.
 	defaultSubscriptionId := os.Getenv(environment.SubscriptionIdEnvVarName)
 	if defaultSubscriptionId == "" {
-		for _, info := range subscriptionInfos {
-			if info.IsDefault {
-				defaultSubscriptionId = info.Id
-			}
-		}
+		defaultSubscriptionId = subscriptions.GetDefaultSubscriptionID(ctx)
 	}
 
 	var subscriptionOptions = make([]string, len(subscriptionInfos)+1)
@@ -323,6 +353,8 @@ func getSubscriptionOptions(ctx context.Context, azCli azcli.AzCli) ([]string, a
 	return subscriptionOptions, defaultSubscription, nil
 }
 
+const environmentNameFlag string = "environment"
+
 type envFlag struct {
 	environmentName string
 }
@@ -330,7 +362,7 @@ type envFlag struct {
 func (e *envFlag) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	local.StringVarP(
 		&e.environmentName,
-		"environment",
+		environmentNameFlag,
 		"e",
 		// Set the default value to AZURE_ENV_NAME value if available
 		os.Getenv(environment.EnvNameEnvVarName),
@@ -342,14 +374,17 @@ func getResourceGroupFollowUp(
 	formatter output.Formatter,
 	azCli azcli.AzCli,
 	projectConfig *project.ProjectConfig,
+	resourceManager project.ResourceManager,
 	env *environment.Environment,
 ) (followUp string) {
 	if formatter.Kind() != output.JsonFormat {
-		if resourceGroupName, err := project.GetResourceGroupName(ctx, azCli, projectConfig, env); err == nil {
+		subscriptionId := env.GetSubscriptionId()
+
+		if resourceGroupName, err := resourceManager.GetResourceGroupName(ctx, subscriptionId, projectConfig); err == nil {
 			followUp = fmt.Sprintf("You can view the resources created under the resource group %s in Azure Portal:\n%s",
 				resourceGroupName, output.WithLinkFormat(fmt.Sprintf(
 					"https://portal.azure.com/#@/resource/subscriptions/%s/resourceGroups/%s/overview",
-					env.GetSubscriptionId(),
+					subscriptionId,
 					resourceGroupName)))
 		}
 	}

@@ -46,6 +46,16 @@ repo:
         patterns:
           - "**/*.tf"
 
+      - from: ../../../../../../common/infra/terraform/core/gateway/apim
+        to: ./modules/apim
+        patterns:
+          - "**/*.tf"
+
+      - from: ../../../../../../common/infra/terraform/core/gateway/apim-api
+        to: ./modules/apim-api
+        patterns:
+          - "**/*.tf"
+
       - from: ../../api/js
         to: ./src/api
         patterns:
@@ -56,25 +66,10 @@ repo:
         patterns:
           - "**/azure.@(yml|yaml)"
 
-      - from: "PLACEHOLDERIACTOOLS"
-        to: "- [Terraform CLI](https://aka.ms/azure-dev/terraform-install)"
+      - from: ../../../../api/common/openapi.yaml
+        to: ../../../src/api/openapi.yaml
         patterns:
-          - "README.md"
-
-      - from: "PLACEHOLDER_TITLE"
-        to: "ToDo Application with a Node.js API and Azure Cosmos DB API for MongoDB on Azure App Service (Terraform)"
-        patterns:
-          - "README.md"
-
-      - from: "PLACEHOLDER_DESCRIPTION"
-        to: "using Terraform as the IaC provider"
-        patterns:
-          - "README.md"
-
-      - from: "todo-nodejs-mongo"
-        to: "todo-nodejs-mongo-terraform"
-        patterns:
-          - "README.md"
+          - "apim-api.tf"
 
   assets:
     # Common assets
@@ -132,6 +127,15 @@ repo:
     - from: ../../../../../common/infra/terraform/core/host/appservice/appservicenode
       to: ./infra/modules/appservicenode
 
+    - from: ../../../../../common/infra/shared/gateway/apim
+      to: ./infra/modules/apim-api
+
+    - from: ../../../../../common/infra/terraform/core/gateway/apim
+      to: ./infra/modules/apim
+
+    - from: ../../../../../common/infra/terraform/core/gateway/apim-api
+      to: ./infra/modules/apim-api
+      
     # .devcontainer common (devcontainer.json)
     - from: ../../../../../common/.devcontainer/devcontainer.json/nodejs/terraform
       to: ./.devcontainer
@@ -175,3 +179,7 @@ repo:
     # Azure.yml
     - from: ./azure.yaml
       to: ./azure.yaml
+
+    # Readme.md
+    - from: ./README.md
+      to: ./README.md

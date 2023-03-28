@@ -5,189 +5,250 @@ package project
 
 import (
 	"context"
+	"errors"
 	"fmt"
-	"github.com/azure/azure-dev/cli/azd/pkg/project/internal"
+	"io"
 	"log"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
-	"github.com/benbjohnson/clock"
 )
 
 type containerAppTarget struct {
-	config        *ServiceConfig
-	env           *environment.Environment
-	resource      *environment.TargetResource
-	cli           azcli.AzCli
-	docker        *docker.Docker
-	console       input.Console
-	commandRunner exec.CommandRunner
-
-	// Standard time library clock, unless mocked in tests
-	clock clock.Clock
+	env                      *environment.Environment
+	cli                      azcli.AzCli
+	containerRegistryService azcli.ContainerRegistryService
+	docker                   docker.Docker
+	console                  input.Console
+	commandRunner            exec.CommandRunner
+	accountManager           account.Manager
+	serviceManager           ServiceManager
+	resourceManager          ResourceManager
 }
 
-func (at *containerAppTarget) RequiredExternalTools() []tools.ExternalTool {
+// NewContainerAppTarget creates the container app service target.
+//
+// The target resource can be partially filled with only ResourceGroupName, since container apps
+// can be provisioned during deployment.
+func NewContainerAppTarget(
+	env *environment.Environment,
+	containerRegistryService azcli.ContainerRegistryService,
+	azCli azcli.AzCli,
+	docker docker.Docker,
+	console input.Console,
+	commandRunner exec.CommandRunner,
+	accountManager account.Manager,
+	serviceManager ServiceManager,
+	resourceManager ResourceManager,
+) ServiceTarget {
+	return &containerAppTarget{
+		env:                      env,
+		accountManager:           accountManager,
+		serviceManager:           serviceManager,
+		resourceManager:          resourceManager,
+		cli:                      azCli,
+		containerRegistryService: containerRegistryService,
+		docker:                   docker,
+		console:                  console,
+		commandRunner:            commandRunner,
+	}
+}
+
+// Gets the required external tools
+func (at *containerAppTarget) RequiredExternalTools(context.Context) []tools.ExternalTool {
 	return []tools.ExternalTool{at.docker}
 }
 
-func (at *containerAppTarget) Deploy(
+// Initializes the Container App target
+func (at *containerAppTarget) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
+	return nil
+}
+
+// Prepares and tags the container image from the build output based on the specified service configuration
+func (at *containerAppTarget) Package(
 	ctx context.Context,
-	azdCtx *azdcontext.AzdContext,
-	path string,
-	progress chan<- string,
-) (ServiceDeploymentResult, error) {
-	// If the infra module has not been specified default to a module with the same name as the service.
-	if strings.TrimSpace(at.config.Infra.Module) == "" {
-		at.config.Infra.Module = at.config.Module
-	}
-	if strings.TrimSpace(at.config.Infra.Module) == "" {
-		at.config.Infra.Module = at.config.Name
-	}
-
-	// Login to container registry.
-	loginServer, has := at.env.Values[environment.ContainerRegistryEndpointEnvVarName]
-	if !has {
-		return ServiceDeploymentResult{}, fmt.Errorf(
-			"could not determine container registry endpoint, ensure %s is set as an output of your infrastructure",
-			environment.ContainerRegistryEndpointEnvVarName,
-		)
-	}
-
-	log.Printf("logging into registry %s", loginServer)
-
-	progress <- "Logging into container registry"
-	if err := at.cli.LoginAcr(ctx, at.commandRunner, at.env.GetSubscriptionId(), loginServer); err != nil {
-		return ServiceDeploymentResult{}, fmt.Errorf("logging into registry '%s': %w", loginServer, err)
-	}
-
-	imageTag, err := at.generateImageTag()
-	if err != nil {
-		return ServiceDeploymentResult{}, fmt.Errorf("generating image tag: %w", err)
-	}
-
-	fullTag := fmt.Sprintf(
-		"%s/%s",
-		loginServer,
-		imageTag,
+	serviceConfig *ServiceConfig,
+	packageOutput *ServicePackageResult,
+) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
+	return async.RunTaskWithProgress(
+		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
+			task.SetResult(packageOutput)
+		},
 	)
+}
 
-	// Tag image.
-	log.Printf("tagging image %s as %s", path, fullTag)
-	progress <- "Tagging image"
-	if err := at.docker.Tag(ctx, at.config.Path(), path, fullTag); err != nil {
-		return ServiceDeploymentResult{}, fmt.Errorf("tagging image: %w", err)
-	}
+// Deploys service container images to ACR and provisions the container app service.
+func (at *containerAppTarget) Publish(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	packageOutput *ServicePackageResult,
+	targetResource *environment.TargetResource,
+) *async.TaskWithProgress[*ServicePublishResult, ServiceProgress] {
+	return async.RunTaskWithProgress(
+		func(task *async.TaskContextWithProgress[*ServicePublishResult, ServiceProgress]) {
+			if err := at.validateTargetResource(ctx, serviceConfig, targetResource); err != nil {
+				task.SetError(fmt.Errorf("validating target resource: %w", err))
+				return
+			}
 
-	log.Printf("pushing %s to registry", fullTag)
+			// If the infra module has not been specified default to a module with the same name as the service.
+			if strings.TrimSpace(serviceConfig.Infra.Module) == "" {
+				serviceConfig.Infra.Module = serviceConfig.Module
+			}
+			if strings.TrimSpace(serviceConfig.Infra.Module) == "" {
+				serviceConfig.Infra.Module = serviceConfig.Name
+			}
 
-	// Push image.
-	progress <- "Pushing container image"
-	if err := at.docker.Push(ctx, at.config.Path(), fullTag); err != nil {
-		return ServiceDeploymentResult{}, fmt.Errorf("pushing image: %w", err)
-	}
+			packageDetails, ok := packageOutput.Details.(*dockerPackageResult)
+			if !ok {
+				task.SetError(errors.New("failed retrieving package result details"))
+				return
+			}
 
-	log.Printf("writing image name to environment")
+			log.Printf("logging into registry %s", packageDetails.LoginServer)
+			task.SetProgress(NewServiceProgress("Logging into container registry"))
+			err := at.containerRegistryService.LoginAcr(ctx, targetResource.SubscriptionId(), packageDetails.LoginServer)
+			if err != nil {
+				task.SetError(fmt.Errorf("logging into registry '%s': %w", packageDetails.LoginServer, err))
+				return
+			}
 
-	// Save the name of the image we pushed into the environment with a well known key.
-	at.env.Values[fmt.Sprintf("SERVICE_%s_IMAGE_NAME", strings.ReplaceAll(strings.ToUpper(at.config.Name), "-", "_"))] = fullTag
+			// Push image.
+			log.Printf("pushing %s to registry", packageDetails.ImageTag)
+			task.SetProgress(NewServiceProgress("Pushing image"))
+			if err := at.docker.Push(ctx, serviceConfig.Path(), packageDetails.ImageTag); err != nil {
+				task.SetError(fmt.Errorf("pushing image: %w", err))
+				return
+			}
 
-	if err := at.env.Save(); err != nil {
-		return ServiceDeploymentResult{}, fmt.Errorf("saving image name to environment: %w", err)
-	}
+			// Save the name of the image we pushed into the environment with a well known key.
+			log.Printf("writing image name to environment")
+			at.env.SetServiceProperty(serviceConfig.Name, "IMAGE_NAME", packageDetails.ImageTag)
 
-	infraManager, err := provisioning.NewManager(
-		ctx,
-		at.env,
-		at.config.Project.Path,
-		at.config.Infra,
-		at.console.IsUnformatted(),
-		at.cli,
-		&silentConsole{}, // make provision output silence
-		at.commandRunner,
-	)
-	if err != nil {
-		return ServiceDeploymentResult{}, fmt.Errorf("creating provisioning manager: %w", err)
-	}
+			if err := at.env.Save(); err != nil {
+				task.SetError(fmt.Errorf("saving image name to environment: %w", err))
+				return
+			}
 
-	progress <- "Creating deployment template"
-	deploymentPlan, err := infraManager.Plan(ctx)
-	if err != nil {
-		return ServiceDeploymentResult{}, fmt.Errorf("planning provisioning: %w", err)
-	}
+			infraManager, err := provisioning.NewManager(
+				ctx,
+				at.env,
+				serviceConfig.Project.Path,
+				serviceConfig.Infra,
+				at.console.IsUnformatted(),
+				at.cli,
+				&mutedConsole{
+					parentConsole: at.console,
+				}, // make provision output silence
+				at.commandRunner,
+				at.accountManager,
+			)
+			if err != nil {
+				task.SetError(fmt.Errorf("creating provisioning manager: %w", err))
+				return
+			}
 
-	progress <- "Updating container app image reference"
-	deploymentName := fmt.Sprintf("%s-%s", at.env.GetEnvName(), at.config.Name)
-	scope := infra.NewResourceGroupScope(
-		at.cli,
-		at.env.GetSubscriptionId(),
-		at.resource.ResourceGroupName(),
-		deploymentName,
-	)
-	deployResult, err := infraManager.Deploy(ctx, deploymentPlan, scope)
+			task.SetProgress(NewServiceProgress("Creating deployment template"))
+			deploymentPlan, err := infraManager.Plan(ctx)
+			if err != nil {
+				task.SetError(fmt.Errorf("planning provisioning: %w", err))
+				return
+			}
 
-	if err != nil {
-		return ServiceDeploymentResult{}, fmt.Errorf("provisioning infrastructure for app deployment: %w", err)
-	}
+			task.SetProgress(NewServiceProgress("Updating container app image reference"))
+			deploymentName := fmt.Sprintf("%s-%s", at.env.GetEnvName(), serviceConfig.Name)
+			scope := infra.NewResourceGroupScope(
+				at.cli,
+				targetResource.SubscriptionId(),
+				targetResource.ResourceGroupName(),
+				deploymentName,
+			)
+			deployResult, err := infraManager.Deploy(ctx, deploymentPlan, scope)
 
-	if len(deployResult.Deployment.Outputs) > 0 {
-		log.Printf("saving %d deployment outputs", len(deployResult.Deployment.Outputs))
-		if err := provisioning.UpdateEnvironment(at.env, deployResult.Deployment.Outputs); err != nil {
-			return ServiceDeploymentResult{}, fmt.Errorf("saving outputs to environment: %w", err)
-		}
-	}
+			if err != nil {
+				task.SetError(fmt.Errorf("provisioning infrastructure for app deployment: %w", err))
+				return
+			}
 
-	if at.resource.ResourceName() == "" {
-		targetResource, err := at.config.GetServiceResource(ctx, at.resource.ResourceGroupName(), at.env, at.cli, "deploy")
-		if err != nil {
-			return ServiceDeploymentResult{}, err
-		}
+			if len(deployResult.Deployment.Outputs) > 0 {
+				log.Printf("saving %d deployment outputs", len(deployResult.Deployment.Outputs))
+				if err := provisioning.UpdateEnvironment(at.env, deployResult.Deployment.Outputs); err != nil {
+					task.SetError(fmt.Errorf("saving outputs to environment: %w", err))
+					return
+				}
+			}
 
-		// Fill in the target resource
-		at.resource = environment.NewTargetResource(
-			at.env.GetSubscriptionId(),
-			at.resource.ResourceGroupName(),
-			targetResource.Name,
-			targetResource.Type,
-		)
+			if targetResource.ResourceName() == "" {
+				azureResource, err := at.resourceManager.GetServiceResource(
+					ctx,
+					targetResource.SubscriptionId(),
+					targetResource.ResourceGroupName(),
+					serviceConfig,
+					"deploy",
+				)
+				if err != nil {
+					task.SetError(err)
+					return
+				}
+
+				// Fill in the target resource
+				targetResource = environment.NewTargetResource(
+					targetResource.SubscriptionId(),
+					targetResource.ResourceGroupName(),
+					azureResource.Name,
+					azureResource.Type,
+				)
 
 		if err := internal.CheckResourceType(at.resource, infra.AzureResourceTypeContainerApp); err != nil {
 			return ServiceDeploymentResult{}, err
 		}
 	}
 
-	progress <- "Fetching endpoints for container app service"
-	endpoints, err := at.Endpoints(ctx)
-	if err != nil {
-		return ServiceDeploymentResult{}, err
-	}
+			task.SetProgress(NewServiceProgress("Fetching endpoints for container app service"))
+			endpoints, err := at.Endpoints(ctx, serviceConfig, targetResource)
+			if err != nil {
+				task.SetError(err)
+				return
+			}
 
-	return ServiceDeploymentResult{
-		TargetResourceId: azure.ContainerAppRID(
-			at.env.GetSubscriptionId(),
-			at.resource.ResourceGroupName(),
-			at.resource.ResourceName(),
-		),
-		Kind:      ContainerAppTarget,
-		Details:   deployResult,
-		Endpoints: endpoints,
-	}, nil
+			task.SetResult(&ServicePublishResult{
+				Package: packageOutput,
+				TargetResourceId: azure.ContainerAppRID(
+					targetResource.SubscriptionId(),
+					targetResource.ResourceGroupName(),
+					targetResource.ResourceName(),
+				),
+				Kind:      ContainerAppTarget,
+				Details:   deployResult,
+				Endpoints: endpoints,
+			})
+		},
+	)
 }
 
-func (at *containerAppTarget) Endpoints(ctx context.Context) ([]string, error) {
+// Gets endpoint for the container app service
+func (at *containerAppTarget) Endpoints(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	targetResource *environment.TargetResource,
+) ([]string, error) {
 	if containerAppProperties, err := at.cli.GetContainerAppProperties(
-		ctx, at.env.GetSubscriptionId(),
-		at.resource.ResourceGroupName(),
-		at.resource.ResourceName(),
+		ctx,
+		targetResource.SubscriptionId(),
+		targetResource.ResourceGroupName(),
+		targetResource.ResourceName(),
 	); err != nil {
 		return nil, fmt.Errorf("fetching service properties: %w", err)
 	} else {
@@ -200,46 +261,92 @@ func (at *containerAppTarget) Endpoints(ctx context.Context) ([]string, error) {
 	}
 }
 
-func (at *containerAppTarget) generateImageTag() (string, error) {
-	configuredTag, err := at.config.Docker.Tag.Envsubst(at.env.Getenv)
-	if err != nil {
-		return "", err
+func (at *containerAppTarget) validateTargetResource(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	targetResource *environment.TargetResource,
+) error {
+	if targetResource.ResourceGroupName() == "" {
+		return fmt.Errorf("missing resource group name: %s", targetResource.ResourceGroupName())
 	}
 
-	if configuredTag != "" {
-		return configuredTag, nil
-	}
-
-	return fmt.Sprintf("%s/%s-%s:azdev-deploy-%d",
-		strings.ToLower(at.config.Project.Name),
-		strings.ToLower(at.config.Name),
-		strings.ToLower(at.env.GetEnvName()),
-		at.clock.Now().Unix(),
-	), nil
-}
-
-// NewContainerAppTarget creates the container app service target.
-//
-// The target resource can be partially filled with only ResourceGroupName, since container apps
-// can be provisioned during deployment.
-func NewContainerAppTarget(
-	config *ServiceConfig,
-	env *environment.Environment,
-	resource *environment.TargetResource,
-	azCli azcli.AzCli,
-	docker *docker.Docker,
-	console input.Console,
-	commandRunner exec.CommandRunner,
-) (ServiceTarget, error) {
-	if resource.ResourceGroupName() == "" {
-		return nil, fmt.Errorf("missing resource group name: %s", resource.ResourceGroupName())
-	}
-
+	if targetResource.ResourceType() != "" {
+		if err := checkResourceType(targetResource, infra.AzureResourceTypeContainerApp); err != nil {
+			return err
 	if resource.ResourceType() != "" {
 		if err := internal.CheckResourceType(resource, infra.AzureResourceTypeContainerApp); err != nil {
 			return nil, err
 		}
 	}
+
+	return nil
+}
+
+// A console implementation which output goes only to logs
+// This is used to prevent or stop actions using the terminal output, for
+// example, when calling provision during deploying a service.
+type mutedConsole struct {
+	parentConsole input.Console
+}
+
+// Sets the underlying writer for output the console or
+// if writer is nil, sets it back to the default writer.
+func (sc *mutedConsole) SetWriter(writer io.Writer) {
+	log.Println("tried to set writer for silent console is a no-op action")
+}
+
+func (sc *mutedConsole) GetFormatter() output.Formatter {
+	return nil
+}
+
+func (sc *mutedConsole) IsUnformatted() bool {
+	return true
+}
+
+// Prints out a message to the underlying console write
+func (sc *mutedConsole) Message(ctx context.Context, message string) {
+	log.Println(message)
+}
+
+func (sc *mutedConsole) MessageUxItem(ctx context.Context, item ux.UxItem) {
+	sc.Message(ctx, item.ToString(""))
+}
+
+func (sc *mutedConsole) ShowSpinner(ctx context.Context, title string, format input.SpinnerUxType) {
+	log.Printf("request to show spinner on silent console with message: %s", title)
+}
+
+func (sc *mutedConsole) StopSpinner(ctx context.Context, lastMessage string, format input.SpinnerUxType) {
+	log.Printf("request to stop spinner on silent console with message: %s", lastMessage)
+}
+
+func (sc *mutedConsole) IsSpinnerRunning(ctx context.Context) bool {
+	return false
+}
+
+// Use parent console for input
+func (sc *mutedConsole) Prompt(ctx context.Context, options input.ConsoleOptions) (string, error) {
+	return sc.parentConsole.Prompt(ctx, options)
+}
+
+// Use parent console for input
+func (sc *mutedConsole) Select(ctx context.Context, options input.ConsoleOptions) (int, error) {
+	return sc.parentConsole.Select(ctx, options)
+}
+
+// Use parent console for input
+func (sc *mutedConsole) Confirm(ctx context.Context, options input.ConsoleOptions) (bool, error) {
+	return sc.parentConsole.Confirm(ctx, options)
+}
+
+func (sc *mutedConsole) GetWriter() io.Writer {
+	return nil
+}
+
+func (sc *mutedConsole) Handles() input.ConsoleHandles {
+	return sc.parentConsole.Handles()
+}
+
 
 	return &containerAppTarget{
 		config:        config,

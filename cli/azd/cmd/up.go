@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -18,80 +19,77 @@ type upFlags struct {
 	initFlags
 	infraCreateFlags
 	deployFlags
-	outputFormat string
-	global       *internal.GlobalCommandOptions
+	global *internal.GlobalCommandOptions
 	envFlag
 }
 
 func (u *upFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
-	output.AddOutputFlag(
-		local,
-		&u.outputFormat,
-		[]output.Format{output.JsonFormat, output.NoneFormat},
-		output.NoneFormat)
-
 	u.envFlag.Bind(local, global)
 	u.global = global
 
 	u.initFlags.bindNonCommon(local, global)
 	u.initFlags.setCommon(&u.envFlag)
 	u.infraCreateFlags.bindNonCommon(local, global)
-	u.infraCreateFlags.setCommon(&u.outputFormat, &u.envFlag)
+	u.infraCreateFlags.setCommon(&u.envFlag)
 	u.deployFlags.bindNonCommon(local, global)
-	u.deployFlags.setCommon(&u.outputFormat, &u.envFlag)
+	u.deployFlags.setCommon(&u.envFlag)
 }
 
-func upCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *upFlags) {
-	cmd := &cobra.Command{
+func newUpFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *upFlags {
+	flags := &upFlags{}
+	flags.Bind(cmd.Flags(), global)
+
+	return flags
+}
+
+func newUpCmd() *cobra.Command {
+	return &cobra.Command{
 		Use:   "up",
 		Short: "Initialize application, provision Azure resources, and deploy your project with a single command.",
-		//nolint:lll
-		Long: `Initialize the project (if the project folder has not been initialized or cloned from a template), provision Azure resources, and deploy your project with a single command.
-
-This command executes the following in one step:
-
-	$ azd init
-	$ azd provision
-	$ azd deploy
-
-When no template is supplied, you can optionally select an Azure Developer CLI template for cloning. Otherwise, running ` + output.WithBackticks(
-			"azd up",
-		) + ` initializes the current directory so that your project is compatible with Azure Developer CLI.`,
 	}
-
-	uf := &upFlags{}
-	uf.Bind(cmd.Flags(), global)
-
-	if err := cmd.RegisterFlagCompletionFunc("template", templateNameCompletion); err != nil {
-		panic(err)
-	}
-
-	return cmd, uf
 }
 
 type upAction struct {
-	init        *initAction
-	infraCreate *infraCreateAction
-	deploy      *deployAction
-	console     input.Console
+	flags                        *upFlags
+	initActionInitializer        actions.ActionInitializer[*initAction]
+	infraCreateActionInitializer actions.ActionInitializer[*infraCreateAction]
+	deployActionInitializer      actions.ActionInitializer[*deployAction]
+	console                      input.Console
+	runner                       middleware.MiddlewareContext
 }
 
-func newUpAction(init *initAction, infraCreate *infraCreateAction, deploy *deployAction, console input.Console) *upAction {
+func newUpAction(
+	flags *upFlags,
+	initActionInitializer actions.ActionInitializer[*initAction],
+	infraCreateActionInitializer actions.ActionInitializer[*infraCreateAction],
+	deployActionInitializer actions.ActionInitializer[*deployAction],
+	console input.Console,
+	runner middleware.MiddlewareContext,
+) actions.Action {
 	return &upAction{
-		init:        init,
-		infraCreate: infraCreate,
-		deploy:      deploy,
-		console:     console,
+		flags:                        flags,
+		initActionInitializer:        initActionInitializer,
+		infraCreateActionInitializer: infraCreateActionInitializer,
+		deployActionInitializer:      deployActionInitializer,
+		console:                      console,
+		runner:                       runner,
 	}
 }
 
 func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	err := u.runInit(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("running init: %w", err)
+		return nil, err
 	}
 
-	_, err = u.infraCreate.Run(ctx)
+	infraCreateAction, err := u.infraCreateActionInitializer()
+	if err != nil {
+		return nil, err
+	}
+
+	infraCreateAction.flags = &u.flags.infraCreateFlags
+	provisionOptions := &middleware.Options{CommandPath: "infra create", Aliases: []string{"provision"}}
+	_, err = u.runner.RunChildAction(ctx, provisionOptions, infraCreateAction)
 	if err != nil {
 		return nil, err
 	}
@@ -99,7 +97,14 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	// Print an additional newline to separate provision from deploy
 	u.console.Message(ctx, "")
 
-	deployResult, err := u.deploy.Run(ctx)
+	deployAction, err := u.deployActionInitializer()
+	if err != nil {
+		return nil, err
+	}
+
+	deployAction.flags = &u.flags.deployFlags
+	deployOptions := &middleware.Options{CommandPath: "deploy"}
+	deployResult, err := u.runner.RunChildAction(ctx, deployOptions, deployAction)
 	if err != nil {
 		return nil, err
 	}
@@ -108,7 +113,14 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 }
 
 func (u *upAction) runInit(ctx context.Context) error {
-	_, err := u.init.Run(ctx)
+	initAction, err := u.initActionInitializer()
+	if err != nil {
+		return err
+	}
+
+	initAction.flags = &u.flags.initFlags
+	initOptions := &middleware.Options{CommandPath: "init"}
+	_, err = u.runner.RunChildAction(ctx, initOptions, initAction)
 	var envInitError *environment.EnvironmentInitError
 	if errors.As(err, &envInitError) {
 		// We can ignore environment already initialized errors
@@ -116,4 +128,22 @@ func (u *upAction) runInit(ctx context.Context) error {
 	}
 
 	return err
+}
+
+func getCmdUpHelpDescription(c *cobra.Command) string {
+
+	return generateCmdHelpDescription(
+		fmt.Sprintf("Executes the %s, %s and %s commands in a single step.",
+			output.WithHighLightFormat("azd init"),
+			output.WithHighLightFormat("azd provision"),
+			output.WithHighLightFormat("azd deploy")), getCmdHelpDescriptionNoteForInit(c))
+}
+
+func getCmdUpHelpFooter(*cobra.Command) string {
+	return generateCmdHelpSamplesBlock(map[string]string{
+		"Initialize, provision and deploy a template to Azure from a GitHub repo.": fmt.Sprintf("%s %s",
+			output.WithHighLightFormat("azd up --template"),
+			output.WithWarningFormat("[GitHub repo URL]"),
+		),
+	})
 }

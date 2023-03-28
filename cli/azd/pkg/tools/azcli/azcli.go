@@ -10,13 +10,11 @@ import (
 	"io"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
 
@@ -37,10 +35,6 @@ type AzCli interface {
 	// UserAgent gets the currently configured user agent
 	UserAgent() string
 
-	LoginAcr(ctx context.Context, commandRunner exec.CommandRunner, subscriptionId string, loginServer string) error
-	GetContainerRegistries(ctx context.Context, subscriptionId string) ([]*armcontainerregistry.Registry, error)
-	ListAccounts(ctx context.Context) ([]*AzCliSubscriptionInfo, error)
-	GetAccount(ctx context.Context, subscriptionId string) (*AzCliSubscriptionInfo, error)
 	GetSubscriptionDeployment(
 		ctx context.Context,
 		subscriptionId string,
@@ -52,18 +46,31 @@ type AzCli interface {
 		resourceGroupName string,
 		deploymentName string,
 	) (*armresources.DeploymentExtended, error)
-	GetResource(ctx context.Context, subscriptionId string, resourceId string) (AzCliResourceExtended, error)
+	GetResource(
+		ctx context.Context,
+		subscriptionId string,
+		resourceId string,
+		apiVersion string,
+	) (AzCliResourceExtended, error)
 	GetKeyVault(
 		ctx context.Context,
 		subscriptionId string,
 		resourceGroupName string,
 		vaultName string,
 	) (*AzCliKeyVault, error)
-	GetKeyVaultSecret(ctx context.Context, vaultName string, secretName string) (*AzCliKeyVaultSecret, error)
+	GetKeyVaultSecret(
+		ctx context.Context,
+		subscriptionId string,
+		vaultName string,
+		secretName string,
+	) (*AzCliKeyVaultSecret, error)
 	PurgeKeyVault(ctx context.Context, subscriptionId string, vaultName string, location string) error
 	GetAppConfig(
 		ctx context.Context, subscriptionId string, resourceGroupName string, configName string) (*AzCliAppConfig, error)
 	PurgeAppConfig(ctx context.Context, subscriptionId string, configName string, location string) error
+	GetApim(
+		ctx context.Context, subscriptionId string, resourceGroupName string, apimName string) (*AzCliApim, error)
+	PurgeApim(ctx context.Context, subscriptionId string, apimName string, location string) error
 	DeployAppServiceZip(
 		ctx context.Context,
 		subscriptionId string,
@@ -122,8 +129,6 @@ type AzCli interface {
 		resourceGroupName string,
 		deploymentName string,
 	) ([]*armresources.DeploymentOperation, error)
-	// ListAccountLocations lists the physical locations in Azure.
-	ListAccountLocations(ctx context.Context, subscriptionId string) ([]AzCliLocation, error)
 	// CreateOrUpdateServicePrincipal creates a service principal using a given name and returns a JSON object which
 	// may be used by tools which understand the `AZURE_CREDENTIALS` format (i.e. the `sdk-auth` format). The service
 	// principal is assigned a given role. If an existing principal exists with the given name,
@@ -166,10 +171,6 @@ type AzCli interface {
 		appName string,
 		environmentName string,
 	) (*AzCliStaticWebAppEnvironmentProperties, error)
-
-	GetSignedInUserId(ctx context.Context) (*string, error)
-
-	GetAccessToken(ctx context.Context) (*AzCliAccessToken, error)
 }
 
 type AzCliDeployment struct {
@@ -304,16 +305,19 @@ type Filter struct {
 type NewAzCliArgs struct {
 	EnableDebug     bool
 	EnableTelemetry bool
-	HttpClient      httputil.HttpClient
 }
 
-func NewAzCli(credential azcore.TokenCredential, args NewAzCliArgs) AzCli {
+func NewAzCli(
+	credentialProvider account.SubscriptionCredentialProvider,
+	httpClient httputil.HttpClient,
+	args NewAzCliArgs,
+) AzCli {
 	return &azCli{
-		userAgent:       azdinternal.MakeUserAgentString(""),
-		enableDebug:     args.EnableDebug,
-		enableTelemetry: args.EnableTelemetry,
-		httpClient:      args.HttpClient,
-		credential:      credential,
+		credentialProvider: credentialProvider,
+		enableDebug:        args.EnableDebug,
+		enableTelemetry:    args.EnableTelemetry,
+		httpClient:         httpClient,
+		userAgent:          azdinternal.MakeUserAgentString(""),
 	}
 }
 
@@ -325,7 +329,7 @@ type azCli struct {
 	// Allows us to mock the Http Requests from the go modules
 	httpClient httputil.HttpClient
 
-	credential azcore.TokenCredential
+	credentialProvider account.SubscriptionCredentialProvider
 }
 
 // SetUserAgent sets the user agent that's sent with each call to the Azure
@@ -342,4 +346,10 @@ func (cli *azCli) createDefaultClientOptionsBuilder(ctx context.Context) *azsdk.
 	return azsdk.NewClientOptionsBuilder().
 		WithTransport(httputil.GetHttpClient(ctx)).
 		WithPerCallPolicy(azsdk.NewUserAgentPolicy(cli.UserAgent()))
+}
+
+func clientOptionsBuilder(httpClient httputil.HttpClient, userAgent string) *azsdk.ClientOptionsBuilder {
+	return azsdk.NewClientOptionsBuilder().
+		WithTransport(httpClient).
+		WithPerCallPolicy(azsdk.NewUserAgentPolicy(userAgent))
 }

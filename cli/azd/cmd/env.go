@@ -10,6 +10,9 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/auth"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
@@ -22,38 +25,76 @@ import (
 	"github.com/spf13/pflag"
 )
 
-func envCmd(rootOptions *internal.GlobalCommandOptions) *cobra.Command {
-	root := &cobra.Command{
-		Use:   "env",
-		Short: "Manage environments.",
-		//nolint:lll
-		Long: `Manage environments.
+func envActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
+	group := root.Add("env", &actions.ActionDescriptorOptions{
+		Command: &cobra.Command{
+			Use:   "env",
+			Short: "Manage environments.",
+		},
+		HelpOptions: actions.ActionHelpOptions{
+			Description: getCmdEnvHelpDescription,
+		},
+		GroupingOptions: actions.CommandGroupOptions{
+			RootLevelHelp: actions.CmdGroupManage,
+		},
+	})
 
-With this command group, you can create a new environment or get, set, and list your application environments. An application can have multiple environments (for example, dev, test, prod), each with a different configuration (that is, connectivity information) for accessing Azure resources. 
+	group.Add("set", &actions.ActionDescriptorOptions{
+		Command:        newEnvSetCmd(),
+		FlagsResolver:  newEnvSetFlags,
+		ActionResolver: newEnvSetAction,
+	})
 
-You can find all environment configurations under the *.azure\<environment-name>* folder. The environment name is stored as the AZURE_ENV_NAME environment variable in the *.azure\<environment-name>\folder\.env* file.`,
-	}
+	group.Add("select", &actions.ActionDescriptorOptions{
+		Command:        newEnvSelectCmd(),
+		ActionResolver: newEnvSelectAction,
+	})
 
-	root.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", root.Name()))
-	root.AddCommand(BuildCmd(rootOptions, envSetCmdDesign, initEnvSetAction, nil))
-	root.AddCommand(BuildCmd(rootOptions, envSelectCmdDesign, initEnvSelectAction, nil))
-	root.AddCommand(BuildCmd(rootOptions, envNewCmdDesign, initEnvNewAction, nil))
-	root.AddCommand(BuildCmd(rootOptions, envListCmdDesign, initEnvListAction, nil))
-	root.AddCommand(BuildCmd(rootOptions, envRefreshCmdDesign, initEnvRefreshAction, nil))
-	root.AddCommand(BuildCmd(rootOptions, envGetValuesDesign, initEnvGetValuesAction, nil))
+	group.Add("new", &actions.ActionDescriptorOptions{
+		Command:        newEnvNewCmd(),
+		FlagsResolver:  newEnvNewFlags,
+		ActionResolver: newEnvNewAction,
+	})
 
-	return root
+	group.Add("list", &actions.ActionDescriptorOptions{
+		Command:        newEnvListCmd(),
+		ActionResolver: newEnvListAction,
+		OutputFormats:  []output.Format{output.JsonFormat, output.TableFormat},
+		DefaultFormat:  output.TableFormat,
+	})
+
+	group.Add("refresh", &actions.ActionDescriptorOptions{
+		Command:        newEnvRefreshCmd(),
+		FlagsResolver:  newEnvRefreshFlags,
+		ActionResolver: newEnvRefreshAction,
+		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
+		DefaultFormat:  output.NoneFormat,
+	})
+
+	group.Add("get-values", &actions.ActionDescriptorOptions{
+		Command:        newEnvGetValuesCmd(),
+		FlagsResolver:  newEnvGetValuesFlags,
+		ActionResolver: newEnvGetValuesAction,
+		OutputFormats:  []output.Format{output.JsonFormat, output.EnvVarsFormat},
+		DefaultFormat:  output.EnvVarsFormat,
+	})
+
+	return group
 }
 
-func envSetCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *envSetFlags) {
-	cmd := &cobra.Command{
+func newEnvSetFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *envSetFlags {
+	flags := &envSetFlags{}
+	flags.Bind(cmd.Flags(), global)
+
+	return flags
+}
+
+func newEnvSetCmd() *cobra.Command {
+	return &cobra.Command{
 		Use:   "set <key> <value>",
-		Short: "Set a value in the environment.",
+		Short: "Manage your environment settings.",
+		Args:  cobra.ExactArgs(2),
 	}
-	cmd.Args = cobra.ExactArgs(2)
-	envSetFlags := &envSetFlags{}
-	envSetFlags.Bind(cmd.Flags(), global)
-	return cmd, envSetFlags
 }
 
 type envSetFlags struct {
@@ -70,55 +111,45 @@ type envSetAction struct {
 	azCli   azcli.AzCli
 	console input.Console
 	azdCtx  *azdcontext.AzdContext
-	flags   envSetFlags
+	env     *environment.Environment
+	flags   *envSetFlags
 	args    []string
 }
 
 func newEnvSetAction(
 	azdCtx *azdcontext.AzdContext,
 	azCli azcli.AzCli,
+	env *environment.Environment,
 	console input.Console,
-	flags envSetFlags,
+	flags *envSetFlags,
 	args []string,
-) *envSetAction {
+) actions.Action {
 	return &envSetAction{
 		azCli:   azCli,
 		console: console,
 		azdCtx:  azdCtx,
+		env:     env,
 		flags:   flags,
 		args:    args,
 	}
 }
 
 func (e *envSetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	//lint:ignore SA4006 // We want ctx overridden here for future changes
-	env, ctx, err := loadOrInitEnvironment( //nolint:ineffassign,staticcheck
-		ctx,
-		&e.flags.environmentName,
-		e.azdCtx,
-		e.console,
-		e.azCli,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("loading environment: %w", err)
-	}
+	e.env.Values[e.args[0]] = e.args[1]
 
-	env.Values[e.args[0]] = e.args[1]
-
-	if err := env.Save(); err != nil {
+	if err := e.env.Save(); err != nil {
 		return nil, fmt.Errorf("saving environment: %w", err)
 	}
 
 	return nil, nil
 }
 
-func envSelectCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *struct{}) {
-	cmd := &cobra.Command{
+func newEnvSelectCmd() *cobra.Command {
+	return &cobra.Command{
 		Use:   "select <environment>",
 		Short: "Set the default environment.",
+		Args:  cobra.ExactArgs(1),
 	}
-	cmd.Args = cobra.ExactArgs(1)
-	return cmd, &struct{}{}
 }
 
 type envSelectAction struct {
@@ -126,7 +157,7 @@ type envSelectAction struct {
 	args   []string
 }
 
-func newEnvSelectAction(azdCtx *azdcontext.AzdContext, args []string) *envSelectAction {
+func newEnvSelectAction(azdCtx *azdcontext.AzdContext, args []string) actions.Action {
 	return &envSelectAction{
 		azdCtx: azdCtx,
 		args:   args,
@@ -141,18 +172,12 @@ func (e *envSelectAction) Run(ctx context.Context) (*actions.ActionResult, error
 	return nil, nil
 }
 
-func envListCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *struct{}) {
-	cmd := &cobra.Command{
+func newEnvListCmd() *cobra.Command {
+	return &cobra.Command{
 		Use:     "list",
-		Short:   "List environments",
+		Short:   "List environments.",
 		Aliases: []string{"ls"},
 	}
-	output.AddOutputParam(
-		cmd,
-		[]output.Format{output.JsonFormat, output.TableFormat},
-		output.TableFormat,
-	)
-	return cmd, &struct{}{}
 }
 
 type envListAction struct {
@@ -161,7 +186,7 @@ type envListAction struct {
 	writer    io.Writer
 }
 
-func newEnvListAction(azdCtx *azdcontext.AzdContext, formatter output.Formatter, writer io.Writer) *envListAction {
+func newEnvListAction(azdCtx *azdcontext.AzdContext, formatter output.Formatter, writer io.Writer) actions.Action {
 	return &envListAction{
 		azdCtx:    azdCtx,
 		formatter: formatter,
@@ -219,38 +244,51 @@ func (f *envNewFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 	f.global = global
 }
 
-func envNewCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *envNewFlags) {
+func newEnvNewFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *envNewFlags {
+	flags := &envNewFlags{}
+	flags.Bind(cmd.Flags(), global)
+
+	return flags
+}
+
+func newEnvNewCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "new <environment>",
 		Short: "Create a new environment.",
 	}
-	f := &envNewFlags{}
-	f.Bind(cmd.Flags(), global)
 	cmd.Args = cobra.MaximumNArgs(1)
-	return cmd, f
+
+	return cmd
 }
 
 type envNewAction struct {
-	azdCtx  *azdcontext.AzdContext
-	azCli   azcli.AzCli
-	flags   envNewFlags
-	args    []string
-	console input.Console
+	azdCtx             *azdcontext.AzdContext
+	userProfileService *azcli.UserProfileService
+	subResolver        account.SubscriptionTenantResolver
+	accountManager     account.Manager
+	flags              *envNewFlags
+	args               []string
+	console            input.Console
 }
 
 func newEnvNewAction(
 	azdCtx *azdcontext.AzdContext,
-	azcli azcli.AzCli,
-	flags envNewFlags,
+	userProfileService *azcli.UserProfileService,
+	subResolver account.SubscriptionTenantResolver,
+	_ auth.LoggedInGuard,
+	accountManager account.Manager,
+	flags *envNewFlags,
 	args []string,
 	console input.Console,
-) *envNewAction {
+) actions.Action {
 	return &envNewAction{
-		azdCtx:  azdCtx,
-		azCli:   azcli,
-		flags:   flags,
-		args:    args,
-		console: console,
+		azdCtx:             azdCtx,
+		accountManager:     accountManager,
+		userProfileService: userProfileService,
+		flags:              flags,
+		args:               args,
+		console:            console,
+		subResolver:        subResolver,
 	}
 }
 
@@ -265,7 +303,8 @@ func (en *envNewAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		subscription:    en.flags.subscription,
 		location:        en.flags.location,
 	}
-	if _, _, err := createAndInitEnvironment(ctx, &envSpec, en.azdCtx, en.console, en.azCli); err != nil {
+	if _, err := createAndInitEnvironment(
+		ctx, &envSpec, en.azdCtx, en.console, en.accountManager, en.userProfileService, en.subResolver); err != nil {
 		return nil, fmt.Errorf("creating new environment: %w", err)
 	}
 
@@ -286,79 +325,90 @@ func (er *envRefreshFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCom
 	er.global = global
 }
 
-func envRefreshCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *envRefreshFlags) {
-	cmd := &cobra.Command{
+func newEnvRefreshFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *envRefreshFlags {
+	flags := &envRefreshFlags{}
+	flags.Bind(cmd.Flags(), global)
+
+	return flags
+}
+
+func newEnvRefreshCmd() *cobra.Command {
+	return &cobra.Command{
 		Use:   "refresh",
 		Short: "Refresh environment settings by using information from a previous infrastructure provision.",
 	}
-
-	output.AddOutputParam(
-		cmd,
-		[]output.Format{output.JsonFormat, output.NoneFormat},
-		output.NoneFormat,
-	)
-
-	envRefreshFlags := &envRefreshFlags{}
-	envRefreshFlags.Bind(cmd.Flags(), global)
-	return cmd, envRefreshFlags
 }
 
 type envRefreshAction struct {
-	azdCtx        *azdcontext.AzdContext
-	azCli         azcli.AzCli
-	flags         envRefreshFlags
-	console       input.Console
-	formatter     output.Formatter
-	writer        io.Writer
-	commandRunner exec.CommandRunner
+	azdCtx         *azdcontext.AzdContext
+	projectConfig  *project.ProjectConfig
+	projectManager project.ProjectManager
+	accountManager account.Manager
+	azCli          azcli.AzCli
+	env            *environment.Environment
+	flags          *envRefreshFlags
+	console        input.Console
+	formatter      output.Formatter
+	writer         io.Writer
+	commandRunner  exec.CommandRunner
 }
 
 func newEnvRefreshAction(
 	azdCtx *azdcontext.AzdContext,
+	projectConfig *project.ProjectConfig,
 	azCli azcli.AzCli,
+	accountManager account.Manager,
+	projectManager project.ProjectManager,
+	env *environment.Environment,
 	commandRunner exec.CommandRunner,
-	flags envRefreshFlags,
+	flags *envRefreshFlags,
 	console input.Console,
 	formatter output.Formatter,
 	writer io.Writer,
-) *envRefreshAction {
+) actions.Action {
 	return &envRefreshAction{
-		azdCtx:        azdCtx,
-		azCli:         azCli,
-		flags:         flags,
-		console:       console,
-		formatter:     formatter,
-		writer:        writer,
-		commandRunner: commandRunner,
+		azdCtx:         azdCtx,
+		azCli:          azCli,
+		accountManager: accountManager,
+		projectManager: projectManager,
+		env:            env,
+		flags:          flags,
+		console:        console,
+		formatter:      formatter,
+		projectConfig:  projectConfig,
+		writer:         writer,
+		commandRunner:  commandRunner,
 	}
 }
 
 func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	env, ctx, err := loadOrInitEnvironment(ctx, &ef.flags.environmentName, ef.azdCtx, ef.console, ef.azCli)
-	if err != nil {
-		return nil, fmt.Errorf("loading environment: %w", err)
-	}
-
-	prj, err := project.LoadProjectConfig(ef.azdCtx.ProjectPath())
-	if err != nil {
-		return nil, fmt.Errorf("loading project: %w", err)
+	if err := ef.projectManager.Initialize(ctx, ef.projectConfig); err != nil {
+		return nil, err
 	}
 
 	infraManager, err := provisioning.NewManager(
-		ctx, env, prj.Path, prj.Infra, !ef.flags.global.NoPrompt, ef.azCli, ef.console, ef.commandRunner,
+		ctx,
+		ef.env,
+		ef.projectConfig.Path,
+		ef.projectConfig.Infra,
+		!ef.flags.global.NoPrompt,
+		ef.azCli,
+		ef.console,
+		ef.commandRunner,
+		ef.accountManager,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("creating provisioning manager: %w", err)
 	}
 
-	scope := infra.NewSubscriptionScope(ef.azCli, env.GetLocation(), env.GetSubscriptionId(), env.GetEnvName())
+	scope := infra.NewSubscriptionScope(ef.azCli, ef.env.GetLocation(), ef.env.GetSubscriptionId(), ef.env.GetEnvName())
 
 	getStateResult, err := infraManager.State(ctx, scope)
 	if err != nil {
 		return nil, fmt.Errorf("getting deployment: %w", err)
 	}
 
-	if err := provisioning.UpdateEnvironment(env, getStateResult.State.Outputs); err != nil {
+	if err := provisioning.UpdateEnvironment(ef.env, getStateResult.State.Outputs); err != nil {
 		return nil, err
 	}
 
@@ -371,14 +421,16 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 		}
 	}
 
-	if err = prj.Initialize(ctx, env, ef.commandRunner); err != nil {
-		return nil, err
-	}
+	for _, svc := range ef.projectConfig.Services {
+		eventArgs := project.ServiceLifecycleEventArgs{
+			Project: ef.projectConfig,
+			Service: svc,
+			Args: map[string]any{
+				"bicepOutput": getStateResult.State.Outputs,
+			},
+		}
 
-	for _, svc := range prj.Services {
-		if err := svc.RaiseEvent(
-			ctx, project.EnvironmentUpdated,
-			map[string]any{"bicepOutput": getStateResult.State.Outputs}); err != nil {
+		if err := svc.RaiseEvent(ctx, project.ServiceEventEnvUpdated, eventArgs); err != nil {
 			return nil, err
 		}
 	}
@@ -386,21 +438,18 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 	return nil, nil
 }
 
-func envGetValuesDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *envGetValuesFlags) {
-	cmd := &cobra.Command{
+func newEnvGetValuesFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *envGetValuesFlags {
+	flags := &envGetValuesFlags{}
+	flags.Bind(cmd.Flags(), global)
+
+	return flags
+}
+
+func newEnvGetValuesCmd() *cobra.Command {
+	return &cobra.Command{
 		Use:   "get-values",
 		Short: "Get all environment values.",
 	}
-
-	output.AddOutputParam(
-		cmd,
-		[]output.Format{output.JsonFormat, output.EnvVarsFormat},
-		output.EnvVarsFormat,
-	)
-
-	envGetValuesFlags := &envGetValuesFlags{}
-	envGetValuesFlags.Bind(cmd.Flags(), global)
-	return cmd, envGetValuesFlags
 }
 
 type envGetValuesFlags struct {
@@ -416,47 +465,51 @@ func (eg *envGetValuesFlags) Bind(local *pflag.FlagSet, global *internal.GlobalC
 type envGetValuesAction struct {
 	azdCtx    *azdcontext.AzdContext
 	console   input.Console
+	env       *environment.Environment
 	formatter output.Formatter
 	writer    io.Writer
-	azCli     azcli.AzCli
-	flags     envGetValuesFlags
+	flags     *envGetValuesFlags
 }
 
 func newEnvGetValuesAction(
 	azdCtx *azdcontext.AzdContext,
+	env *environment.Environment,
 	console input.Console,
 	formatter output.Formatter,
 	writer io.Writer,
-	azCli azcli.AzCli,
-	flags envGetValuesFlags,
-) *envGetValuesAction {
+	flags *envGetValuesFlags,
+) actions.Action {
 	return &envGetValuesAction{
 		azdCtx:    azdCtx,
 		console:   console,
+		env:       env,
 		formatter: formatter,
 		writer:    writer,
-		azCli:     azCli,
 		flags:     flags,
 	}
 }
 
 func (eg *envGetValuesAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	//lint:ignore SA4006 // We want ctx overridden here for future changes
-	env, ctx, err := loadOrInitEnvironment( //nolint:ineffassign,staticcheck
-		ctx,
-		&eg.flags.environmentName,
-		eg.azdCtx,
-		eg.console,
-		eg.azCli,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	err = eg.formatter.Format(env.Values, eg.writer, nil)
+	err := eg.formatter.Format(eg.env.Values, eg.writer, nil)
 	if err != nil {
 		return nil, err
 	}
 
 	return nil, nil
+}
+
+func getCmdEnvHelpDescription(*cobra.Command) string {
+	return generateCmdHelpDescription(
+		"Manage your application environments. With this command group, you can create a new environment or get, set,"+
+			" and list your application environments.",
+		[]string{
+			formatHelpNote("An Application can have multiple environments (ex: dev, test, prod)."),
+			formatHelpNote("Each environment may have a different configuration (that is, connectivity information)" +
+				" for accessing Azure resources."),
+			formatHelpNote(fmt.Sprintf("You can find all environment configuration under the %s folder.",
+				output.WithLinkFormat(".azure/<environment-name>"))),
+			formatHelpNote(fmt.Sprintf("The environment name is stored as the %s environment variable in the %s file.",
+				output.WithHighLightFormat("AZURE_ENV_NAME"),
+				output.WithLinkFormat(".azure/<environment-name>/.env"))),
+		})
 }

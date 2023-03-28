@@ -11,8 +11,8 @@
     "imageName": {
       "value": "${SERVICE_WEB_IMAGE_NAME}"
     },
-    "apiContainerAppName": {
-      "value": "${SERVICE_API_NAME}"
+    "apiBaseUrl": {
+      "value": "${REACT_APP_API_BASE_URL}"
     },
     "applicationInsightsName": {
       "value": "${APPLICATIONINSIGHTS_NAME}"

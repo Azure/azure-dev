@@ -11,10 +11,12 @@ import (
 	"os"
 	"strings"
 
+	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/repository"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -29,26 +31,18 @@ import (
 	"github.com/spf13/pflag"
 )
 
-func initCmdDesign(rootOptions *internal.GlobalCommandOptions) (*cobra.Command, *initFlags) {
-	cmd := &cobra.Command{
+func newInitFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *initFlags {
+	flags := &initFlags{}
+	flags.Bind(cmd.Flags(), global)
+
+	return flags
+}
+
+func newInitCmd() *cobra.Command {
+	return &cobra.Command{
 		Use:   "init",
 		Short: "Initialize a new application.",
-		//nolint:lll
-		Long: `Initialize a new application.
-
-When no template is supplied, you can optionally select an Azure Developer CLI template for cloning. Otherwise, ` + output.WithBackticks("azd init") + ` initializes the current directory and creates resources so that your project is compatible with Azure Developer CLI.
-
-When a template is provided, the sample code is cloned to the current directory.`,
 	}
-
-	f := &initFlags{}
-	f.Bind(cmd.Flags(), rootOptions)
-
-	if err := cmd.RegisterFlagCompletionFunc("template", templateNameCompletion); err != nil {
-		panic(err)
-	}
-
-	return cmd, f
 }
 
 type initFlags struct {
@@ -95,32 +89,36 @@ func (i *initFlags) setCommon(envFlag *envFlag) {
 }
 
 type initAction struct {
-	azCli           azcli.AzCli
-	accountManager  *account.Manager
-	console         input.Console
-	cmdRun          exec.CommandRunner
-	gitCli          git.GitCli
-	flags           initFlags
-	repoInitializer *repository.Initializer
+	accountManager     account.Manager
+	userProfileService *azcli.UserProfileService
+	console            input.Console
+	cmdRun             exec.CommandRunner
+	gitCli             git.GitCli
+	flags              *initFlags
+	repoInitializer    *repository.Initializer
+	subResolver        account.SubscriptionTenantResolver
 }
 
 func newInitAction(
-	azCli azcli.AzCli,
-	accountManager *account.Manager,
+	accountManager account.Manager,
+	userProfileService *azcli.UserProfileService,
+	subResolver account.SubscriptionTenantResolver,
+	_ auth.LoggedInGuard,
 	cmdRun exec.CommandRunner,
 	console input.Console,
 	gitCli git.GitCli,
-	flags initFlags,
-	repoInitializer *repository.Initializer) (*initAction, error) {
+	flags *initFlags,
+	repoInitializer *repository.Initializer) actions.Action {
 	return &initAction{
-		azCli:           azCli,
-		accountManager:  accountManager,
-		console:         console,
-		cmdRun:          cmdRun,
-		gitCli:          gitCli,
-		flags:           flags,
-		repoInitializer: repoInitializer,
-	}, nil
+		accountManager:     accountManager,
+		console:            console,
+		cmdRun:             cmdRun,
+		gitCli:             gitCli,
+		flags:              flags,
+		userProfileService: userProfileService,
+		repoInitializer:    repoInitializer,
+		subResolver:        subResolver,
+	}
 }
 
 func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
@@ -135,14 +133,8 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, errors.New("template name required when specifying a branch name")
 	}
 
-	requiredTools := []tools.ExternalTool{}
-
-	// When using a template, we also require `git`, to acquire the template.
-	if i.flags.template.Name != "" {
-		requiredTools = append(requiredTools, i.gitCli)
-	}
-
-	if err := tools.EnsureInstalled(ctx, requiredTools...); err != nil {
+	// init now requires git all the time, even for empty template, azd initializes a local git project
+	if err := tools.EnsureInstalled(ctx, []tools.ExternalTool{i.gitCli}...); err != nil {
 		return nil, err
 	}
 
@@ -193,9 +185,11 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			return nil, fmt.Errorf("init from template repository: %w", err)
 		}
 	} else {
-		err = i.repoInitializer.InitializeEmpty(ctx, azdCtx)
-		if err != nil {
-			return nil, fmt.Errorf("init empty repository: %w", err)
+		if _, err := os.Stat(azdCtx.ProjectPath()); errors.Is(err, os.ErrNotExist) {
+			err = i.repoInitializer.InitializeEmpty(ctx, azdCtx)
+			if err != nil {
+				return nil, fmt.Errorf("init empty repository: %w", err)
+			}
 		}
 	}
 
@@ -213,7 +207,8 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		subscription:    i.flags.subscription,
 		location:        i.flags.location,
 	}
-	env, ctx, err := createAndInitEnvironment(ctx, &envSpec, azdCtx, i.console, i.azCli)
+	env, err := createAndInitEnvironment(
+		ctx, &envSpec, azdCtx, i.console, i.accountManager, i.userProfileService, i.subResolver)
 	if err != nil {
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}
@@ -235,10 +230,37 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 	}
 
+	//nolint:lll
+	azdTrustNotice := "https://learn.microsoft.com/azure/developer/azure-developer-cli/azd-templates#guidelines-for-using-azd-templates"
+
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			Header:   "New project initialized!",
-			FollowUp: fmt.Sprintf("You can view the template code in your directory: %s", output.WithLinkFormat("%s", wd)),
+			Header: "New project initialized!",
+			FollowUp: heredoc.Docf(`
+			You can view the template code in your directory: %s
+			Learn more about running 3rd party code on our DevHub: %s`,
+				output.WithLinkFormat("%s", wd),
+				output.WithLinkFormat("%s", azdTrustNotice)),
 		},
 	}, nil
+}
+
+func getCmdInitHelpDescription(c *cobra.Command) string {
+	return generateCmdHelpDescription("Initialize a new application in your current directory.",
+		getCmdHelpDescriptionNoteForInit(c))
+}
+
+func getCmdInitHelpFooter(*cobra.Command) string {
+	return generateCmdHelpSamplesBlock(map[string]string{
+		"Initialize a template to your current local directory from a GitHub repo.": fmt.Sprintf("%s %s",
+			output.WithHighLightFormat("azd init --template"),
+			output.WithWarningFormat("[GitHub repo URL]"),
+		),
+		"Initialize a template to your current local directory from a branch other than main.": fmt.Sprintf("%s %s %s %s",
+			output.WithHighLightFormat("azd init --template"),
+			output.WithWarningFormat("[GitHub repo URL]"),
+			output.WithHighLightFormat("--branch"),
+			output.WithWarningFormat("[Branch name]"),
+		),
+	})
 }

@@ -25,8 +25,18 @@ func (cli *azCli) GetContainerAppProperties(
 		return nil, fmt.Errorf("failed retrieving container app properties: %w", err)
 	}
 
+	var hostNames []string
+	if containerApp.Properties != nil &&
+		containerApp.Properties.Configuration != nil &&
+		containerApp.Properties.Configuration.Ingress != nil &&
+		containerApp.Properties.Configuration.Ingress.Fqdn != nil {
+		hostNames = []string{*containerApp.Properties.Configuration.Ingress.Fqdn}
+	} else {
+		hostNames = []string{}
+	}
+
 	return &AzCliContainerAppProperties{
-		HostNames: []string{*containerApp.Properties.Configuration.Ingress.Fqdn},
+		HostNames: hostNames,
 	}, nil
 }
 
@@ -34,8 +44,13 @@ func (cli *azCli) createContainerAppsClient(
 	ctx context.Context,
 	subscriptionId string,
 ) (*armappcontainers.ContainerAppsClient, error) {
+	credential, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
 	options := cli.createDefaultClientOptionsBuilder(ctx).BuildArmClientOptions()
-	client, err := armappcontainers.NewContainerAppsClient(subscriptionId, cli.credential, options)
+	client, err := armappcontainers.NewContainerAppsClient(subscriptionId, credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating ContainerApps client: %w", err)
 	}

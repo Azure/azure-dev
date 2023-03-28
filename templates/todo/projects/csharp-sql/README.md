@@ -1,12 +1,35 @@
+---
+page_type: sample
+languages:
+- azdeveloper
+- aspx-csharp
+- csharp
+- bicep
+- typescript
+- html
+products:
+- azure
+- azure-sql-database
+- azure-app-service
+- azure-monitor
+- azure-pipelines
+- aspnet-core
+urlFragment: todo-csharp-sql
+name: Web Application with a C# API and Azure SQL Database
+description: A complete ToDo app with C# API and Azure SQL database for storage. Uses Azure Developer CLI (azd) to build, deploy, and monitor
+---
+<!-- YAML front-matter schema: https://review.learn.microsoft.com/en-us/help/contribute/samples/process/onboarding?branch=main#supported-metadata-fields-for-readmemd -->
+
 # ToDo Application with a C# API and Azure SQL Database
 
-[![Open in Remote - Containers](https://img.shields.io/static/v1?label=Remote%20-%20Containers&message=Open&color=blue&logo=visualstudiocode)](https://vscode.dev/redirect?url=vscode://ms-vscode-remote.remote-containers/cloneInVolume?url=https://github.com/azure-samples/todo-csharp-cosmos-sql)
+[![Open in GitHub Codespaces](https://img.shields.io/static/v1?style=for-the-badge&label=GitHub+Codespaces&message=Open&color=brightgreen&logo=github)](https://github.com/codespaces/new?hide_repo_select=true&ref=main&repo=452043569&machine=standardLinux32gb&devcontainer_path=.devcontainer%2Fdevcontainer.json&location=WestUs2)
+[![Open in Remote - Containers](https://img.shields.io/static/v1?style=for-the-badge&label=Remote%20-%20Containers&message=Open&color=blue&logo=visualstudiocode)](https://vscode.dev/redirect?url=vscode://ms-vscode-remote.remote-containers/cloneInVolume?url=https://github.com/azure-samples/todo-csharp-sql)
 
 A complete ToDo application that includes everything you need to build, deploy, and monitor an Azure solution. This application uses the Azure Developer CLI (azd) to get you up and running on Azure quickly, React.js for the Web application, C# for the API, Azure SQL database for storage, and Azure Monitor for monitoring and logging. It includes application code, tools, and pipelines that serve as a foundation from which you can build upon and customize when creating your own solutions.
 
 Let's jump in and get the ToDo app up and running in Azure. When you are finished, you will have a fully functional web app deployed on Azure. In later steps, you'll see how to setup a pipeline and monitor the application.
 
-<img src="assets/web.png" width="75%" alt="Screenshot of deployed ToDo app"/>
+!["Screenshot of deployed ToDo app"](assets/web.png)
 
 <sup>Screenshot of the deployed ToDo app</sup>
 
@@ -64,7 +87,7 @@ This application utilizes the following Azure resources:
 
 Here's a high level architecture diagram that illustrates these components. Notice that these are all contained within a single [resource group](https://docs.microsoft.com/azure/azure-resource-manager/management/manage-resource-groups-portal), that will be created for you when you create the resources.
 
-<img src="assets/resources.png" width="60%" alt="Application architecture diagram"/>
+!["Application architecture diagram"](assets/resources.png)
 
 > This template provisions resources to an Azure subscription that you will select upon provisioning them. Please refer to the [Pricing calculator for Microsoft Azure](https://azure.microsoft.com/pricing/calculator/) and, if needed, update the included Azure resource definitions found in `infra/main.bicep` to suit your needs.
 
@@ -111,10 +134,6 @@ This template includes a GitHub Actions pipeline configuration file that will de
 
 Setting up this pipeline requires you to give GitHub permission to deploy to Azure on your behalf, which is done via a Service Principal stored in a GitHub secret named `AZURE_CREDENTIALS`. The `azd pipeline config` command will automatically create a service principal for you. The command also helps to create a private GitHub repository and pushes code to the newly created repo.
 
-Before you call the `azd pipeline config` command, you'll need to install the following:
-
-- [GitHub CLI (2.3+)](https://github.com/cli/cli)
-
 Run the following command to set up a GitHub Action:
 
 ```bash
@@ -160,6 +179,33 @@ When you are done, you can delete all the Azure resources created with this temp
 ```bash
 azd down
 ```
+
+### Enable Additional Features
+
+#### Enable [Azure API Management](https://learn.microsoft.com/azure/api-management/)
+
+This template is prepared to use Azure API Management (aka APIM) for backend API protection and observability. APIM supports the complete API lifecycle and abstract backend complexity from API consumers.
+
+To use APIM on this template you just need to set the environment variable with the following command:
+
+```bash
+azd env set USE_APIM true
+```
+And then execute `azd up` to provision and deploy. No worries if you already did `azd up`! You can set the `USE_APIM` environment variable at anytime and then just repeat the `azd up` command to run the incremental deployment.
+
+Here's the high level architecture diagram when APIM is used:
+
+!["Application architecture diagram with APIM"](assets/resources-with-apim.png)
+
+The frontend will be configured to make API requests through APIM instead of calling the backend directly, so that the following flow gets executed:
+
+1. APIM receives the frontend request, applies the configured policy to enable CORS, validates content and limits concurrency. Follow this [guide](https://learn.microsoft.com/azure/api-management/api-management-howto-policies) to understand how to customize the policy.  
+1. If there are no errors, the request is forwarded to the backend and then the backend response is sent back to the frontend.
+1. APIM emits logs, metrics, and traces for monitoring, reporting, and troubleshooting on every execution. Follow this [guide](https://learn.microsoft.com/azure/api-management/api-management-howto-use-azure-monitor) to visualize, query, and take actions on the metrics or logs coming from APIM.
+
+> NOTE:
+>
+> By default, this template uses the Consumption tier that is a lightweight and serverless version of API Management service, billed per execution. Please check the [pricing page](https://azure.microsoft.com/pricing/details/api-management/) for more details.
 
 ### Additional azd commands
 

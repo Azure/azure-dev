@@ -6,11 +6,10 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
-	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"golang.org/x/exp/slices"
 
 	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
@@ -29,17 +28,16 @@ func (p *BicepProvider) promptForParameter(
 	var value any
 
 	if paramType == ParameterTypeString && azdMetadata.Type != nil && *azdMetadata.Type == "location" {
-		location, err := azureutil.PromptLocationWithFilter(
-			ctx, p.env, msg, help, p.console, p.azCli, func(loc azcli.AzCliLocation) bool {
-				if param.AllowedValues == nil {
-					return true
-				}
+		location, err := p.prompters.Location(msg, func(loc account.Location) bool {
+			if param.AllowedValues == nil {
+				return true
+			}
 
-				return slices.IndexFunc(*param.AllowedValues, func(v any) bool {
-					s, ok := v.(string)
-					return ok && loc.Name == s
-				}) != -1
-			},
+			return slices.IndexFunc(*param.AllowedValues, func(v any) bool {
+				s, ok := v.(string)
+				return ok && loc.Name == s
+			}) != -1
+		},
 		)
 		if err != nil {
 			return nil, err
@@ -154,7 +152,7 @@ func convertString(s string) string {
 }
 
 func convertInt(s string) int {
-	if i, err := strconv.ParseInt(s, 10, 0); err != nil {
+	if i, err := strconv.ParseInt(s, 10, 64); err != nil {
 		panic(fmt.Sprintf("convertInt: %v", err))
 	} else {
 		return int(i)

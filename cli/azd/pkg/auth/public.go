@@ -13,9 +13,9 @@ import (
 type publicClient interface {
 	Accounts() []public.Account
 	RemoveAccount(public.Account) error
-	AcquireTokenInteractive(context.Context, []string, ...public.InteractiveAuthOption) (public.AuthResult, error)
-	AcquireTokenByDeviceCode(context.Context, []string) (deviceCodeResult, error)
-	AcquireTokenSilent(context.Context, []string, ...public.AcquireTokenSilentOption) (public.AuthResult, error)
+	AcquireTokenInteractive(context.Context, []string, ...public.AcquireInteractiveOption) (public.AuthResult, error)
+	AcquireTokenByDeviceCode(context.Context, []string, ...public.AcquireByDeviceCodeOption) (deviceCodeResult, error)
+	AcquireTokenSilent(context.Context, []string, ...public.AcquireSilentOption) (public.AuthResult, error)
 }
 
 type deviceCodeResult interface {
@@ -36,13 +36,14 @@ func (m *msalPublicClientAdapter) RemoveAccount(account public.Account) error {
 }
 
 func (m *msalPublicClientAdapter) AcquireTokenInteractive(
-	ctx context.Context, scopes []string, options ...public.InteractiveAuthOption,
+	ctx context.Context, scopes []string, options ...public.AcquireInteractiveOption,
 ) (public.AuthResult, error) {
 	return m.client.AcquireTokenInteractive(ctx, scopes, options...)
 }
 
-func (m *msalPublicClientAdapter) AcquireTokenByDeviceCode(ctx context.Context, scopes []string) (deviceCodeResult, error) {
-	code, err := m.client.AcquireTokenByDeviceCode(ctx, scopes)
+func (m *msalPublicClientAdapter) AcquireTokenByDeviceCode(
+	ctx context.Context, scopes []string, options ...public.AcquireByDeviceCodeOption) (deviceCodeResult, error) {
+	code, err := m.client.AcquireTokenByDeviceCode(ctx, scopes, options...)
 	if err != nil {
 		return nil, err
 	}
@@ -51,7 +52,7 @@ func (m *msalPublicClientAdapter) AcquireTokenByDeviceCode(ctx context.Context, 
 }
 
 func (m *msalPublicClientAdapter) AcquireTokenSilent(
-	ctx context.Context, scopes []string, options ...public.AcquireTokenSilentOption,
+	ctx context.Context, scopes []string, options ...public.AcquireSilentOption,
 ) (public.AuthResult, error) {
 	return m.client.AcquireTokenSilent(ctx, scopes, options...)
 }

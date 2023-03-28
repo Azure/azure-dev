@@ -12,7 +12,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
@@ -44,11 +43,12 @@ func (rm *AzureResourceManager) GetDeploymentResourceOperations(
 	queryStart *time.Time,
 ) ([]*armresources.DeploymentOperation, error) {
 	// Gets all the scope level resource operations
-	resourceOperations, err := scope.GetResourceOperations(ctx)
+	topLevelDeploymentOperations, err := scope.GetResourceOperations(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("getting subscription deployment: %w", err)
 	}
 
+	subscriptionId := scope.SubscriptionId()
 	var resourceGroupName string
 	resourceGroupScope, ok := scope.(*ResourceGroupScope)
 
@@ -57,7 +57,7 @@ func (rm *AzureResourceManager) GetDeploymentResourceOperations(
 		resourceGroupName = resourceGroupScope.ResourceGroup()
 	} else {
 		// Otherwise find the resource group within the deployment operations
-		for _, operation := range resourceOperations {
+		for _, operation := range topLevelDeploymentOperations {
 			if operation.Properties.TargetResource != nil &&
 				*operation.Properties.TargetResource.ResourceType == string(AzureResourceTypeResourceGroup) {
 				resourceGroupName = *operation.Properties.TargetResource.ResourceName
@@ -67,22 +67,39 @@ func (rm *AzureResourceManager) GetDeploymentResourceOperations(
 	}
 
 	if strings.TrimSpace(resourceGroupName) == "" {
-		return resourceOperations, nil
+		return topLevelDeploymentOperations, nil
 	}
+
+	allLevelsDeploymentOperations := []*armresources.DeploymentOperation{}
+	resourceIdPrefix := fmt.Sprintf("/subscriptions/%s/resourceGroups/%s", subscriptionId, resourceGroupName)
 
 	// Find all resource group deployments within the subscription operations
 	// Recursively append any resource group deployments that are found
-	deploymentOperations := make(map[string]*armresources.DeploymentOperation)
-	for _, operation := range resourceOperations {
-		if operation.Properties.TargetResource != nil &&
-			*operation.Properties.TargetResource.ResourceType == string(AzureResourceTypeDeployment) &&
+	innerLevelDeploymentOperations := make(map[string]*armresources.DeploymentOperation)
+	for _, operation := range topLevelDeploymentOperations {
+		if operation.Properties.TargetResource == nil {
+			// Operations w/o target data can't be resolved. Ignoring them
+			continue
+		}
+		if !strings.HasPrefix(*operation.Properties.TargetResource.ID, resourceIdPrefix) {
+			// topLevelDeploymentOperations might include deployments NOT within the resource group which we don't want to
+			// resolve
+			continue
+		}
+		if *operation.Properties.TargetResource.ResourceType != string(AzureResourceTypeDeployment) {
+			// non-deploy ops can be part of the final result, we don't need to resolve inner level operations
+			allLevelsDeploymentOperations = append(allLevelsDeploymentOperations, operation)
+			continue
+		}
+		if *operation.Properties.TargetResource.ResourceType == string(AzureResourceTypeDeployment) &&
 			*operation.Properties.ProvisioningOperation == armresources.ProvisioningOperationCreate {
+			// for deploy/create ops, we want to traverse all inner operations to fetch resources.
 			err = rm.appendDeploymentResourcesRecursive(
 				ctx,
-				scope.SubscriptionId(),
+				subscriptionId,
 				resourceGroupName,
 				*operation.Properties.TargetResource.ResourceName,
-				&deploymentOperations,
+				&innerLevelDeploymentOperations,
 				queryStart,
 			)
 			if err != nil {
@@ -90,10 +107,11 @@ func (rm *AzureResourceManager) GetDeploymentResourceOperations(
 			}
 		}
 	}
-	for _, op := range deploymentOperations {
-		resourceOperations = append(resourceOperations, op)
+	// Add the inner level dep-ops to the all level list to complete the result list
+	for _, op := range innerLevelDeploymentOperations {
+		allLevelsDeploymentOperations = append(allLevelsDeploymentOperations, op)
 	}
-	return resourceOperations, nil
+	return allLevelsDeploymentOperations, nil
 }
 
 // GetResourceGroupsForDeployment returns the names of all the resource groups from a subscription level deployment.
@@ -131,10 +149,11 @@ func (rm *AzureResourceManager) GetResourceGroupsForDeployment(
 // GetResourceGroupsForEnvironment gets all resources groups for a given environment
 func (rm *AzureResourceManager) GetResourceGroupsForEnvironment(
 	ctx context.Context,
-	env *environment.Environment,
+	subscriptionId string,
+	envName string,
 ) ([]azcli.AzCliResource, error) {
-	res, err := rm.azCli.ListResourceGroup(ctx, env.GetSubscriptionId(), &azcli.ListResourceGroupOptions{
-		TagFilter: &azcli.Filter{Key: "azd-env-name", Value: env.GetEnvName()},
+	res, err := rm.azCli.ListResourceGroup(ctx, subscriptionId, &azcli.ListResourceGroupOptions{
+		TagFilter: &azcli.Filter{Key: "azd-env-name", Value: envName},
 	})
 
 	if err != nil {
@@ -143,7 +162,7 @@ func (rm *AzureResourceManager) GetResourceGroupsForEnvironment(
 
 	if len(res) == 0 {
 		return nil, azureutil.ResourceNotFound(
-			fmt.Errorf("0 resource groups with azd-env-name with value: '%s'", env.GetEnvName()),
+			fmt.Errorf("0 resource groups with azd-env-name with value: '%s'", envName),
 		)
 	}
 
@@ -155,14 +174,15 @@ func (rm *AzureResourceManager) GetResourceGroupsForEnvironment(
 // We search for them instead using the rg- prefix or -rg suffix
 func (rm *AzureResourceManager) GetDefaultResourceGroups(
 	ctx context.Context,
-	env *environment.Environment,
+	subscriptionId string,
+	environmentName string,
 ) ([]azcli.AzCliResource, error) {
-	allGroups, err := rm.azCli.ListResourceGroup(ctx, env.GetSubscriptionId(), nil)
+	allGroups, err := rm.azCli.ListResourceGroup(ctx, subscriptionId, nil)
 
 	matchingGroups := []azcli.AzCliResource{}
 	for _, group := range allGroups {
-		if group.Name == fmt.Sprintf("rg-%[1]s", env.GetEnvName()) ||
-			group.Name == fmt.Sprintf("%[1]s-rg", env.GetEnvName()) {
+		if group.Name == fmt.Sprintf("rg-%[1]s", environmentName) ||
+			group.Name == fmt.Sprintf("%[1]s-rg", environmentName) {
 			matchingGroups = append(matchingGroups, group)
 		}
 	}
@@ -173,7 +193,7 @@ func (rm *AzureResourceManager) GetDefaultResourceGroups(
 
 	if len(matchingGroups) == 0 {
 		return nil, azureutil.ResourceNotFound(
-			fmt.Errorf("0 resource groups with prefix or suffix with value: '%s'", env.GetEnvName()),
+			fmt.Errorf("0 resource groups with prefix or suffix with value: '%s'", environmentName),
 		)
 	}
 
@@ -189,21 +209,22 @@ func (rm *AzureResourceManager) GetDefaultResourceGroups(
 // with the resource group to use.
 func (rm *AzureResourceManager) FindResourceGroupForEnvironment(
 	ctx context.Context,
-	env *environment.Environment,
+	subscriptionId string,
+	envName string,
 ) (string, error) {
 	// Let's first try to find the resource group by environment name tag (azd-env-name)
-	rgs, err := rm.GetResourceGroupsForEnvironment(ctx, env)
+	rgs, err := rm.GetResourceGroupsForEnvironment(ctx, subscriptionId, envName)
 	var notFoundError *azureutil.ResourceNotFoundError
 	if err != nil && !errors.As(err, &notFoundError) {
-		return "", fmt.Errorf("getting resource group for environment: %s: %w", env.GetEnvName(), err)
+		return "", fmt.Errorf("getting resource group for environment: %s: %w", envName, err)
 	}
 
 	if len(rgs) == 0 {
 		// We didn't find any Resource Groups for the environment, now let's try to find Resource Groups with the
 		// rg-{envname} prefix or {envname}-rg suffix
-		rgs, err = rm.GetDefaultResourceGroups(ctx, env)
+		rgs, err = rm.GetDefaultResourceGroups(ctx, subscriptionId, envName)
 		if err != nil {
-			return "", fmt.Errorf("getting default resource groups for environment: %s: %w", env.GetEnvName(), err)
+			return "", fmt.Errorf("getting default resource groups for environment: %s: %w", envName, err)
 		}
 	}
 
@@ -251,12 +272,15 @@ func (rm *AzureResourceManager) GetResourceTypeDisplayName(
 	}
 }
 
+// cWebAppApiVersion is the API Version we use when querying information about Web App resources
+const cWebAppApiVersion = "2021-03-01"
+
 func (rm *AzureResourceManager) GetWebAppResourceTypeDisplayName(
 	ctx context.Context,
 	subscriptionId string,
 	resourceId string,
 ) (string, error) {
-	resource, err := rm.azCli.GetResource(ctx, subscriptionId, resourceId)
+	resource, err := rm.azCli.GetResource(ctx, subscriptionId, resourceId, cWebAppApiVersion)
 
 	if err != nil {
 		return "", fmt.Errorf("getting web app resource type display names: %w", err)
@@ -286,27 +310,40 @@ func (rm *AzureResourceManager) appendDeploymentResourcesRecursive(
 	}
 
 	for _, operation := range operations {
-		if operation.Properties.TargetResource != nil &&
-			operation.Properties.Timestamp != nil {
-			_, alreadyAdded := (*resourceOperations)[*operation.OperationID]
-			if *operation.Properties.TargetResource.ResourceType == string(AzureResourceTypeDeployment) {
-				err := rm.appendDeploymentResourcesRecursive(
-					ctx,
-					subscriptionId,
-					resourceGroupName,
-					*operation.Properties.TargetResource.ResourceName,
-					resourceOperations,
-					queryStart,
-				)
-				if err != nil {
-					return fmt.Errorf("appending deployment resources: %w", err)
-				}
-			} else if *operation.Properties.ProvisioningOperation == "Create" &&
-				strings.TrimSpace(*operation.Properties.TargetResource.ResourceType) != "" &&
-				!alreadyAdded &&
-				operation.Properties.Timestamp.After(*queryStart) {
-				(*resourceOperations)[*operation.OperationID] = operation
+		if operation.Properties.TargetResource == nil {
+			// Operations w/o target data can't be resolved. Ignoring them
+			continue
+		}
+		if *operation.Properties.TargetResource.ResourceType == string(AzureResourceTypeDeployment) {
+			// go to inner levels to resolve resources
+			err := rm.appendDeploymentResourcesRecursive(
+				ctx,
+				subscriptionId,
+				resourceGroupName,
+				*operation.Properties.TargetResource.ResourceName,
+				resourceOperations,
+				queryStart,
+			)
+			if err != nil {
+				return fmt.Errorf("appending deployment resources: %w", err)
 			}
+			continue
+		}
+		if operation.Properties.Timestamp == nil {
+			// The time stamp is used to filter only records after the queryStart.
+			// We ignore the resource if we can't know when it was created
+			continue
+		}
+		if strings.TrimSpace(*operation.Properties.TargetResource.ResourceType) == "" {
+			// The resource type is required to resolve the name of the resource.
+			// If the dep-op is missing this, we can't resolve it.
+			continue
+		}
+		_, alreadyAdded := (*resourceOperations)[*operation.OperationID]
+		if !alreadyAdded &&
+			*operation.Properties.ProvisioningOperation == armresources.ProvisioningOperationCreate &&
+			operation.Properties.Timestamp.After(*queryStart) {
+			(*resourceOperations)[*operation.OperationID] = operation
 		}
 	}
 

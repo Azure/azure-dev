@@ -12,6 +12,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -23,36 +24,42 @@ import (
 )
 
 type showFlags struct {
-	outputFormat string
-	global       *internal.GlobalCommandOptions
+	global *internal.GlobalCommandOptions
 	envFlag
 }
 
 func (s *showFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
-	output.AddOutputFlag(local, &s.outputFormat, []output.Format{output.JsonFormat}, output.NoneFormat)
 	s.envFlag.Bind(local, global)
 	s.global = global
 }
 
-func showCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *showFlags) {
+func newShowFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *showFlags {
+	flags := &showFlags{}
+	flags.Bind(cmd.Flags(), global)
+
+	return flags
+}
+
+func newShowCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:    "show",
-		Short:  "Display information about your application and its resources.",
+		Use:    "show --output json",
+		Short:  "Display information about your app and its resources.",
 		Hidden: true,
 	}
 
-	flags := &showFlags{}
-	flags.Bind(cmd.Flags(), global)
-	return cmd, flags
+	return cmd
 }
 
 type showAction struct {
-	console   input.Console
-	formatter output.Formatter
-	writer    io.Writer
-	azCli     azcli.AzCli
-	azdCtx    *azdcontext.AzdContext
-	flags     showFlags
+	projectConfig   *project.ProjectConfig
+	resourceManager project.ResourceManager
+	console         input.Console
+	formatter       output.Formatter
+	writer          io.Writer
+	azCli           azcli.AzCli
+	azdCtx          *azdcontext.AzdContext
+	env             *environment.Environment
+	flags           *showFlags
 }
 
 func newShowAction(
@@ -60,36 +67,32 @@ func newShowAction(
 	formatter output.Formatter,
 	writer io.Writer,
 	azCli azcli.AzCli,
+	projectConfig *project.ProjectConfig,
+	resourceManager project.ResourceManager,
 	azdCtx *azdcontext.AzdContext,
-	flags showFlags,
-) *showAction {
+	env *environment.Environment,
+	flags *showFlags,
+) actions.Action {
 	return &showAction{
-		console:   console,
-		formatter: formatter,
-		writer:    writer,
-		azCli:     azCli,
-		azdCtx:    azdCtx,
-		flags:     flags,
+		projectConfig:   projectConfig,
+		resourceManager: resourceManager,
+		console:         console,
+		formatter:       formatter,
+		writer:          writer,
+		azCli:           azCli,
+		azdCtx:          azdCtx,
+		env:             env,
+		flags:           flags,
 	}
 }
 
 func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	env, ctx, err := loadOrInitEnvironment(ctx, &s.flags.environmentName, s.azdCtx, s.console, s.azCli)
-	if err != nil {
-		return nil, fmt.Errorf("loading environment: %w", err)
-	}
-
-	prj, err := project.LoadProjectConfig(s.azdCtx.ProjectPath())
-	if err != nil {
-		return nil, fmt.Errorf("loading project: %w", err)
-	}
-
 	res := contracts.ShowResult{
-		Name:     prj.Name,
-		Services: make(map[string]contracts.ShowService, len(prj.Services)),
+		Name:     s.projectConfig.Name,
+		Services: make(map[string]contracts.ShowService, len(s.projectConfig.Services)),
 	}
 
-	for name, svc := range prj.Services {
+	for name, svc := range s.projectConfig.Services {
 		path, err := getFullPathToProjectForService(svc)
 		if err != nil {
 			return nil, err
@@ -108,41 +111,45 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	// Add information about the target of each service, if we can determine it (if the infrastructure has
 	// not been deployed, for example, we'll just not include target information)
 	resourceManager := infra.NewAzureResourceManager(s.azCli)
+	subId := s.env.GetSubscriptionId()
+	envName := s.env.GetEnvName()
 
-	if resourceGroupName, err := resourceManager.FindResourceGroupForEnvironment(ctx, env); err == nil {
-		for name, serviceConfig := range prj.Services {
-			if resources, err := serviceConfig.GetServiceResources(ctx, resourceGroupName, env, s.azCli); err == nil {
+	if rgName, err := resourceManager.FindResourceGroupForEnvironment(ctx, subId, envName); err == nil {
+		for svcName, serviceConfig := range s.projectConfig.Services {
+			if resources, err := s.resourceManager.GetServiceResources(ctx, subId, rgName, serviceConfig); err == nil {
 				resourceIds := make([]string, len(resources))
 				for idx, res := range resources {
 					resourceIds[idx] = res.Id
 				}
 
-				resSvc := res.Services[name]
+				resSvc := res.Services[svcName]
 				resSvc.Target = &contracts.ShowTargetArm{
 					ResourceIds: resourceIds,
 				}
-				res.Services[name] = resSvc
+				res.Services[svcName] = resSvc
 			} else {
-				log.Printf("ignoring error determining resource id for service %s: %v", name, err)
+				log.Printf("ignoring error determining resource id for service %s: %v", svcName, err)
 			}
 		}
 	} else {
 		log.Printf("ignoring error determining resource group for environment %s, resource ids will not be available: %v",
-			env.GetEnvName(),
+			s.env.GetEnvName(),
 			err)
 	}
 
 	return nil, s.formatter.Format(res, s.writer, nil)
 }
 
-func showTypeFromLanguage(language string) contracts.ShowType {
+func showTypeFromLanguage(language project.ServiceLanguageKind) contracts.ShowType {
 	switch language {
-	case "dotnet":
+	case project.ServiceLanguageDotNet, project.ServiceLanguageCsharp, project.ServiceLanguageFsharp:
 		return contracts.ShowTypeDotNet
-	case "py", "python":
+	case project.ServiceLanguagePython:
 		return contracts.ShowTypePython
-	case "ts", "js":
+	case project.ServiceLanguageTypeScript, project.ServiceLanguageJavaScript:
 		return contracts.ShowTypeNode
+	case project.ServiceLanguageJava:
+		return contracts.ShowTypeJava
 	default:
 		panic(fmt.Sprintf("unknown language %s", language))
 	}

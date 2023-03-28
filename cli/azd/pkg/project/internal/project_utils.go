@@ -5,10 +5,7 @@ package internal
 
 import (
 	"fmt"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"os"
-	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/rzip"
 )

@@ -8,12 +8,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"os"
 	"strings"
 
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -25,7 +27,6 @@ import (
 type loginFlags struct {
 	onlyCheckStatus        bool
 	useDeviceCode          bool
-	outputFormat           string
 	tenantID               string
 	clientID               string
 	clientSecret           stringPtr
@@ -98,68 +99,76 @@ func (lf *loginFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 		cFederatedCredentialProviderFlagName,
 		"",
 		"The provider to use to acquire a federated token to authenticate with.")
-	local.StringVar(&lf.tenantID, "tenant-id", "", "The tenant id for the service principal to authenticate with.")
+	local.StringVar(
+		&lf.tenantID,
+		"tenant-id",
+		"",
+		"The tenant id or domain name to authenticate with.")
 	local.IntVar(
 		&lf.redirectPort,
 		"redirect-port",
 		0,
 		"Choose the port to be used as part of the redirect URI during interactive login.")
 
-	output.AddOutputFlag(
-		local,
-		&lf.outputFormat,
-		[]output.Format{output.JsonFormat, output.NoneFormat},
-		output.NoneFormat,
-	)
-
 	lf.global = global
 }
 
-func loginCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *loginFlags) {
-	cmd := &cobra.Command{
+func newLoginFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *loginFlags {
+	flags := &loginFlags{}
+	flags.Bind(cmd.Flags(), global)
+
+	return flags
+}
+
+func newLoginCmd() *cobra.Command {
+	return &cobra.Command{
 		Use:   "login",
 		Short: "Log in to Azure.",
 		Long: heredoc.Doc(`
 		Log in to Azure.
 
 		When run without any arguments, log in interactively using a browser. To log in using a device code, pass
-		--device-code.
-
-		To log in as a service principal, pass --client-id and --tenant-id as well as one of --client-secret, 
-		--client-certificate, --client-credential or --client-credential-provider.`),
+		--use-device-code.
+		
+		To log in as a service principal, pass --client-id and --tenant-id as well as one of: --client-secret, 
+		--client-certificate, --federated-credential, or --federated-credential-provider.
+		`),
 	}
-
-	flags := &loginFlags{}
-	flags.Bind(cmd.Flags(), global)
-	return cmd, flags
 }
 
 type loginAction struct {
-	formatter   output.Formatter
-	writer      io.Writer
-	console     input.Console
-	authManager *auth.Manager
-	flags       loginFlags
+	formatter         output.Formatter
+	writer            io.Writer
+	console           input.Console
+	authManager       *auth.Manager
+	accountSubManager *account.SubscriptionsManager
+	flags             *loginFlags
 }
 
 func newLoginAction(
 	formatter output.Formatter,
 	writer io.Writer,
 	authManager *auth.Manager,
-	flags loginFlags,
+	accountSubManager *account.SubscriptionsManager,
+	flags *loginFlags,
 	console input.Console,
-) *loginAction {
+) actions.Action {
 	return &loginAction{
-		formatter:   formatter,
-		writer:      writer,
-		console:     console,
-		authManager: authManager,
-		flags:       flags,
+		formatter:         formatter,
+		writer:            writer,
+		console:           console,
+		authManager:       authManager,
+		accountSubManager: accountSubManager,
+		flags:             flags,
 	}
 }
 
 func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if !la.flags.onlyCheckStatus {
+		if err := la.accountSubManager.ClearSubscriptions(ctx); err != nil {
+			log.Printf("failed clearing subscriptions: %v", err)
+		}
+
 		if err := la.login(ctx); err != nil {
 			return nil, err
 		}
@@ -167,7 +176,11 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	res := contracts.LoginResult{}
 
-	if cred, err := la.authManager.CredentialForCurrentUser(ctx); errors.Is(err, auth.ErrNoCurrentUser) {
+	credOptions := auth.CredentialForCurrentUserOptions{
+		TenantID: la.flags.tenantID,
+	}
+
+	if cred, err := la.authManager.CredentialForCurrentUser(ctx, &credOptions); errors.Is(err, auth.ErrNoCurrentUser) {
 		res.Status = contracts.LoginStatusUnauthenticated
 	} else if err != nil {
 		return nil, fmt.Errorf("checking auth status: %w", err)
@@ -179,6 +192,35 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		} else {
 			res.Status = contracts.LoginStatusSuccess
 			res.ExpiresOn = &token.ExpiresOn
+		}
+	}
+
+	if !la.flags.onlyCheckStatus && res.Status == contracts.LoginStatusSuccess {
+		// Rehydrate or clear the account's subscriptions cache.
+		// The caching is done here to increase responsiveness of listing subscriptions (during azd init).
+		// It also allows an implicit command for the user to refresh cached subscriptions.
+		if la.flags.clientID == "" {
+			// Deleting subscriptions on file is very unlikely to fail, unless there are serious filesystem issues.
+			// If this does fail, we want the user to be aware of this. Like other stored azd account data,
+			// stored subscriptions are currently tied to the OS user, and not the individual account being logged in,
+			// this means cross-contamination is possible.
+			if err := la.accountSubManager.ClearSubscriptions(ctx); err != nil {
+				return nil, err
+			}
+
+			err := la.accountSubManager.RefreshSubscriptions(ctx)
+			if err != nil {
+				// If this fails, the subscriptions will still be loaded on-demand.
+				// erroring out when the user interacts with subscriptions is much more user-friendly.
+				log.Printf("failed retrieving subscriptions: %v", err)
+			}
+		} else {
+			// Service principals do not typically require subscription caching (running in CI scenarios)
+			// We simply clear the cache, which is much faster than rehydrating.
+			err := la.accountSubManager.ClearSubscriptions(ctx)
+			if err != nil {
+				log.Printf("failed clearing subscriptions: %v", err)
+			}
 		}
 	}
 
@@ -208,8 +250,8 @@ func countTrue(elms ...bool) int {
 }
 
 func (la *loginAction) login(ctx context.Context) error {
-	if la.flags.clientID != "" || la.flags.tenantID != "" {
-		if la.flags.clientID == "" || la.flags.tenantID == "" {
+	if la.flags.clientID != "" {
+		if la.flags.tenantID == "" {
 			return errors.New("must set both `client-id` and `tenant-id` for service principal login")
 		}
 
@@ -290,11 +332,11 @@ func (la *loginAction) login(ctx context.Context) error {
 	}
 
 	if la.flags.useDeviceCode {
-		if _, err := la.authManager.LoginWithDeviceCode(ctx, la.writer); err != nil {
+		if _, err := la.authManager.LoginWithDeviceCode(ctx, la.writer, la.flags.tenantID); err != nil {
 			return fmt.Errorf("logging in: %w", err)
 		}
 	} else {
-		if _, err := la.authManager.LoginInteractive(ctx, la.flags.redirectPort); err != nil {
+		if _, err := la.authManager.LoginInteractive(ctx, la.flags.redirectPort, la.flags.tenantID); err != nil {
 			return fmt.Errorf("logging in: %w", err)
 		}
 	}

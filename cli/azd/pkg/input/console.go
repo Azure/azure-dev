@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"os"
 	"time"
 
 	"github.com/AlecAivazis/survey/v2"
@@ -23,6 +24,7 @@ const (
 	Step SpinnerUxType = iota
 	StepDone
 	StepFailed
+	StepWarning
 )
 
 // A shim to allow a single Console construction in the application.
@@ -49,6 +51,8 @@ type Console interface {
 	// Set lastMessage to empty string to clear the spinner message instead of a displaying a last message
 	// If there is no spinner running, this is a no-op function
 	StopSpinner(ctx context.Context, lastMessage string, format SpinnerUxType)
+	// Determines if there is a current spinner running.
+	IsSpinnerRunning(ctx context.Context) bool
 	// Prompts the user for a single value
 	Prompt(ctx context.Context, options ConsoleOptions) (string, error)
 	// Prompts the user to select from a set of values
@@ -151,30 +155,25 @@ func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format Spi
 		return
 	}
 
-	// make sure spinner exists
-	if c.spinner == nil {
-		c.spinner, _ = yacspin.New(yacspin.Config{
-			Frequency:       200 * time.Millisecond,
-			Writer:          c.writer,
-			Suffix:          " ",
-			SuffixAutoColon: true,
-		})
+	// mutating an existing spinner brings issues on how the messages are formatted
+	// so, instead of mutating, we stop any current spinner and replaced it for a new one
+	if c.spinner != nil {
+		_ = c.spinner.Stop()
 	}
-	// If running, pause to apply style changes
-	if c.spinner.Status() == yacspin.SpinnerRunning {
-		_ = c.spinner.Pause()
+	spinnerConfig := yacspin.Config{
+		Frequency:       200 * time.Millisecond,
+		Writer:          c.writer,
+		Suffix:          " ",
+		SuffixAutoColon: true,
+		Message:         title,
+		CharSet:         c.getCharset(format),
 	}
+	if os.Getenv("AZD_DEBUG_FORCE_NO_TTY") == "1" {
+		spinnerConfig.TerminalMode = yacspin.ForceNoTTYMode | yacspin.ForceDumbTerminalMode
+	}
+	c.spinner, _ = yacspin.New(spinnerConfig)
 
-	// Update style according to MessageUxType
-	c.spinner.Message(title)
-	_ = c.spinner.CharSet(c.getCharset(format))
-
-	// unpause if Paused
-	if c.spinner.Status() == yacspin.SpinnerPaused {
-		_ = c.spinner.Unpause()
-	} else if c.spinner.Status() == yacspin.SpinnerStopped {
-		_ = c.spinner.Start()
-	}
+	_ = c.spinner.Start()
 }
 
 var customCharSet []string = []string{
@@ -206,6 +205,8 @@ func (c *AskerConsole) getIndent(format SpinnerUxType) string {
 	case StepDone:
 		requiredSize = 2
 	case StepFailed:
+		requiredSize = 2
+	case StepWarning:
 		requiredSize = 2
 	}
 	if requiredSize != len(c.currentIndent) {
@@ -241,6 +242,10 @@ func (c *AskerConsole) StopSpinner(ctx context.Context, lastMessage string, form
 	_ = c.spinner.Stop()
 }
 
+func (c *AskerConsole) IsSpinnerRunning(ctx context.Context) bool {
+	return c.spinner != nil && c.spinner.Status() != yacspin.SpinnerStopped
+}
+
 var donePrefix string = output.WithSuccessFormat("(✓) Done:")
 
 func (c *AskerConsole) getStopChar(format SpinnerUxType) string {
@@ -250,6 +255,8 @@ func (c *AskerConsole) getStopChar(format SpinnerUxType) string {
 		stopChar = donePrefix
 	case StepFailed:
 		stopChar = output.WithErrorFormat("(x) Failed:")
+	case StepWarning:
+		stopChar = output.WithWarningFormat("(!) Warning:")
 	}
 	return fmt.Sprintf("%s%s", c.getIndent(format), stopChar)
 }
@@ -269,8 +276,11 @@ func (c *AskerConsole) Prompt(ctx context.Context, options ConsoleOptions) (stri
 
 	var response string
 
-	if err := c.asker(survey, &response); err != nil {
-		return "", err
+	err := c.doInteraction(func(c *AskerConsole) error {
+		return c.asker(survey, &response)
+	})
+	if err != nil {
+		return response, err
 	}
 
 	return response, nil
@@ -287,7 +297,10 @@ func (c *AskerConsole) Select(ctx context.Context, options ConsoleOptions) (int,
 
 	var response int
 
-	if err := c.asker(survey, &response); err != nil {
+	err := c.doInteraction(func(c *AskerConsole) error {
+		return c.asker(survey, &response)
+	})
+	if err != nil {
 		return -1, err
 	}
 
@@ -309,7 +322,10 @@ func (c *AskerConsole) Confirm(ctx context.Context, options ConsoleOptions) (boo
 
 	var response bool
 
-	if err := c.asker(survey, &response); err != nil {
+	err := c.doInteraction(func(c *AskerConsole) error {
+		return c.asker(survey, &response)
+	})
+	if err != nil {
 		return false, err
 	}
 
@@ -344,4 +360,69 @@ func GetStepResultFormat(result error) SpinnerUxType {
 		formatResult = StepFailed
 	}
 	return formatResult
+}
+
+// Handle doing interactive calls. It check if there's a spinner running to pause it before doing interactive actions.
+func (c *AskerConsole) doInteraction(fn func(c *AskerConsole) error) error {
+
+	if c.spinner != nil && c.spinner.Status() == yacspin.SpinnerRunning {
+		_ = c.spinner.Pause()
+
+		// calling fn might return an error. This defer make sure to recover the spinner
+		// status.
+		defer func() {
+			_ = c.spinner.Unpause()
+		}()
+	}
+
+	if err := fn(c); err != nil {
+		return err
+	}
+	return nil
+}
+
+type ProgressStopper func()
+
+// A messaging system that displays messages. Use this for application logic components that shouldn't be interactive
+// or require any formatting, but needs simple messages to be displayed.
+//
+// Currently, this outputs to console.
+// For ShowProgress which renders a spinner, priority is given to higher-level components
+// that have a spinner already running.
+type Messaging interface {
+	// Prints out a message to the underlying console write
+	Message(ctx context.Context, message string)
+	// Displays a progress message. Returns a closer() func that stops the progress message display.
+	ShowProgress(ctx context.Context, message string) ProgressStopper
+}
+
+// A messaging system that displays messages to console.
+type consoleMessaging struct {
+	console Console
+}
+
+func NewConsoleMessaging(console Console) Messaging {
+	return &consoleMessaging{
+		console: console,
+	}
+}
+
+func (m *consoleMessaging) Message(ctx context.Context, message string) {
+	m.console.Message(ctx, message)
+}
+
+// ShowProgress displays a spinner on console, if one isn't already running.
+//
+// Note that it is still possible to override existing spinners in multi-thread or multi-goroutine scenarios.
+func (m *consoleMessaging) ShowProgress(ctx context.Context, message string) ProgressStopper {
+	// This should be lower priority than any running console spinners
+	if m.console.IsSpinnerRunning(ctx) {
+		log.Println(message)
+		return func() {}
+	}
+
+	m.console.ShowSpinner(ctx, message, Step)
+	return func() {
+		m.console.StopSpinner(ctx, "", StepDone)
+	}
 }

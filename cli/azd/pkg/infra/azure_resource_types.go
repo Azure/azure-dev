@@ -8,22 +8,31 @@ import "strings"
 type AzureResourceType string
 
 const (
-	AzureResourceTypeResourceGroup           AzureResourceType = "Microsoft.Resources/resourceGroups"
-	AzureResourceTypeDeployment              AzureResourceType = "Microsoft.Resources/deployments"
-	AzureResourceTypeStorageAccount          AzureResourceType = "Microsoft.Storage/storageAccounts"
-	AzureResourceTypeKeyVault                AzureResourceType = "Microsoft.KeyVault/vaults"
+	AzureResourceTypeApim                    AzureResourceType = "Microsoft.ApiManagement/service"
 	AzureResourceTypeAppConfig               AzureResourceType = "Microsoft.AppConfiguration/configurationStores"
-	AzureResourceTypePortalDashboard         AzureResourceType = "Microsoft.Portal/dashboards"
 	AzureResourceTypeAppInsightComponent     AzureResourceType = "Microsoft.Insights/components"
-	AzureResourceTypeLogAnalyticsWorkspace   AzureResourceType = "Microsoft.OperationalInsights/workspaces"
-	AzureResourceTypeWebSite                 AzureResourceType = "Microsoft.Web/sites"
-	AzureResourceTypeStaticWebSite           AzureResourceType = "Microsoft.Web/staticSites"
-	AzureResourceTypeServicePlan             AzureResourceType = "Microsoft.Web/serverfarms"
-	AzureResourceTypeSqlDatabase             AzureResourceType = "Microsoft.Sql/servers"
+	AzureResourceTypeCacheForRedis           AzureResourceType = "Microsoft.Cache/redis"
+	AzureResourceTypeCDNProfile              AzureResourceType = "Microsoft.Cdn/profiles"
 	AzureResourceTypeCosmosDb                AzureResourceType = "Microsoft.DocumentDB/databaseAccounts"
 	AzureResourceTypeContainerApp            AzureResourceType = "Microsoft.App/containerApps"
 	AzureResourceTypeSpringApp               AzureResourceType = "Microsoft.AppPlatform/Spring"
 	AzureResourceTypeContainerAppEnvironment AzureResourceType = "Microsoft.App/managedEnvironments"
+	AzureResourceTypeDeployment              AzureResourceType = "Microsoft.Resources/deployments"
+	AzureResourceTypeKeyVault                AzureResourceType = "Microsoft.KeyVault/vaults"
+	AzureResourceTypeLoadTest                AzureResourceType = "Microsoft.LoadTestService/loadTests"
+	AzureResourceTypeLogAnalyticsWorkspace   AzureResourceType = "Microsoft.OperationalInsights/workspaces"
+	AzureResourceTypePortalDashboard         AzureResourceType = "Microsoft.Portal/dashboards"
+	AzureResourceTypePostgreSqlServer        AzureResourceType = "Microsoft.DBforPostgreSQL/flexibleServers"
+	AzureResourceTypeResourceGroup           AzureResourceType = "Microsoft.Resources/resourceGroups"
+	AzureResourceTypeStorageAccount          AzureResourceType = "Microsoft.Storage/storageAccounts"
+	AzureResourceTypeStaticWebSite           AzureResourceType = "Microsoft.Web/staticSites"
+	AzureResourceTypeServicePlan             AzureResourceType = "Microsoft.Web/serverfarms"
+	AzureResourceTypeSqlServer               AzureResourceType = "Microsoft.Sql/servers"
+	AzureResourceTypeVirtualNetwork          AzureResourceType = "Microsoft.Network/virtualNetworks"
+	AzureResourceTypeWebSite                 AzureResourceType = "Microsoft.Web/sites"
+	AzureResourceTypeContainerRegistry       AzureResourceType = "Microsoft.ContainerRegistry/registries"
+	AzureResourceTypeManagedCluster          AzureResourceType = "Microsoft.ContainerService/managedClusters"
+	AzureResourceTypeAgentPool               AzureResourceType = "Microsoft.ContainerService/managedClusters/agentPools"
 )
 
 const resourceLevelSeparator = "/"
@@ -59,6 +68,26 @@ func GetResourceTypeDisplayName(resourceType AzureResourceType) string {
 		return "App Service plan"
 	case AzureResourceTypeCosmosDb:
 		return "Azure Cosmos DB"
+	case AzureResourceTypeApim:
+		return "Azure API Management"
+	case AzureResourceTypeCacheForRedis:
+		return "Cache for Redis"
+	case AzureResourceTypeSqlServer:
+		return "Azure SQL Server"
+	case AzureResourceTypePostgreSqlServer:
+		return "Azure Database for PostgreSQL flexible server"
+	case AzureResourceTypeCDNProfile:
+		return "Azure Front Door / CDN profile"
+	case AzureResourceTypeLoadTest:
+		return "Load Tests"
+	case AzureResourceTypeVirtualNetwork:
+		return "Virtual Network"
+	case AzureResourceTypeContainerRegistry:
+		return "Container Registry"
+	case AzureResourceTypeManagedCluster:
+		return "AKS Managed Cluster"
+	case AzureResourceTypeAgentPool:
+		return "AKS Agent Pool"
 	}
 
 	return ""

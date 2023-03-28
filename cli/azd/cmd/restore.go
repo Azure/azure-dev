@@ -6,12 +6,15 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"log"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/spin"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -34,64 +37,59 @@ func (r *restoreFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommand
 		//nolint:lll
 		"Restores a specific service (when the string is unspecified, all services that are listed in the "+azdcontext.ProjectFileName+" file are restored).",
 	)
-	r.envFlag.Bind(local, global)
-	r.global = global
 }
 
-func restoreCmdDesign(global *internal.GlobalCommandOptions) (*cobra.Command, *restoreFlags) {
-	cmd := &cobra.Command{
-		Use:   "restore",
-		Short: "Restore application dependencies.",
-		//nolint:lll
-		Long: `Restore application dependencies.
-
-Run this command to download and install all the required libraries so that you can build, run, and debug the application locally.
-
-For the best local run and debug experience, go to https://aka.ms/azure-dev/vscode to learn how to use the Visual Studio Code extension.`,
-	}
-
+func newRestoreFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *restoreFlags {
 	flags := &restoreFlags{}
 	flags.Bind(cmd.Flags(), global)
-	return cmd, flags
+	flags.envFlag.Bind(cmd.Flags(), global)
+	flags.global = global
+
+	return flags
+}
+
+func restoreCmdDesign() *cobra.Command {
+	return &cobra.Command{
+		Use:   "restore",
+		Short: "Restore application dependencies.",
+	}
 }
 
 type restoreAction struct {
-	flags         restoreFlags
-	console       input.Console
-	azCli         azcli.AzCli
-	azdCtx        *azdcontext.AzdContext
-	commandRunner exec.CommandRunner
+	flags          *restoreFlags
+	console        input.Console
+	azCli          azcli.AzCli
+	azdCtx         *azdcontext.AzdContext
+	env            *environment.Environment
+	projectConfig  *project.ProjectConfig
+	serviceManager project.ServiceManager
+	commandRunner  exec.CommandRunner
 }
 
 func newRestoreAction(
-	flags restoreFlags,
+	flags *restoreFlags,
 	azCli azcli.AzCli,
 	console input.Console,
 	azdCtx *azdcontext.AzdContext,
+	env *environment.Environment,
+	projectConfig *project.ProjectConfig,
+	serviceManager project.ServiceManager,
 	commandRunner exec.CommandRunner,
-) *restoreAction {
+) actions.Action {
 	return &restoreAction{
-		flags:         flags,
-		console:       console,
-		azdCtx:        azdCtx,
-		azCli:         azCli,
-		commandRunner: commandRunner,
+		flags:          flags,
+		console:        console,
+		azdCtx:         azdCtx,
+		projectConfig:  projectConfig,
+		serviceManager: serviceManager,
+		azCli:          azCli,
+		env:            env,
+		commandRunner:  commandRunner,
 	}
 }
 
 func (r *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	env, ctx, err := loadOrInitEnvironment(ctx, &r.flags.environmentName, r.azdCtx, r.console, r.azCli)
-	if err != nil {
-		return nil, fmt.Errorf("loading environment: %w", err)
-	}
-
-	proj, err := project.LoadProjectConfig(r.azdCtx.ProjectPath())
-
-	if err != nil {
-		return nil, fmt.Errorf("loading project: %w", err)
-	}
-
-	if r.flags.serviceName != "" && !proj.HasService(r.flags.serviceName) {
+	if r.flags.serviceName != "" && !r.projectConfig.HasService(r.flags.serviceName) {
 		return nil, fmt.Errorf("service name '%s' doesn't exist", r.flags.serviceName)
 	}
 
@@ -101,13 +99,13 @@ func (r *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	// the are installed. When a single project is being deployed, we need just
 	// the tools for that project, otherwise we need the tools from all project.
 	allTools := []tools.ExternalTool{}
-	for _, svc := range proj.Services {
+	for _, svc := range r.projectConfig.Services {
 		if r.flags.serviceName == "" || r.flags.serviceName == svc.Name {
-			frameworkService, err := svc.GetFrameworkService(ctx, env, r.commandRunner)
+			requiredTools, err := r.serviceManager.GetRequiredTools(ctx, svc)
 			if err != nil {
-				return nil, fmt.Errorf("getting framework services: %w", err)
+				return nil, fmt.Errorf("failed getting required tools, %w", err)
 			}
-			requiredTools := (*frameworkService).RequiredExternalTools()
+
 			allTools = append(allTools, requiredTools...)
 		}
 	}
@@ -116,19 +114,26 @@ func (r *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		return nil, err
 	}
 
-	for _, svc := range proj.Services {
+	for _, svc := range r.projectConfig.Services {
 		if r.flags.serviceName != "" && svc.Name != r.flags.serviceName {
 			continue
 		}
 
 		installMsg := fmt.Sprintf("Installing dependencies for %s service...", svc.Name)
-		frameworkService, err := svc.GetFrameworkService(ctx, env, r.commandRunner)
-		if err != nil {
-			return nil, fmt.Errorf("getting framework services: %w", err)
-		}
-
 		spinner := spin.NewSpinner(r.console.Handles().Stdout, installMsg)
-		if err = spinner.Run(func() error { return (*frameworkService).InstallDependencies(ctx) }); err != nil {
+		if err := spinner.Run(func() error {
+			restoreTask := r.serviceManager.Restore(ctx, svc)
+			go func() {
+				for progress := range restoreTask.Progress() {
+					log.Printf("Restore progress: %s\n", progress.Message)
+				}
+			}()
+			_, err := restoreTask.Await()
+			if err != nil {
+				return err
+			}
+			return nil
+		}); err != nil {
 			return nil, err
 		}
 
@@ -140,4 +145,27 @@ func (r *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	}
 
 	return nil, nil
+}
+
+func getCmdRestoreHelpDescription(*cobra.Command) string {
+	return generateCmdHelpDescription(
+		"Restore application dependencies.",
+		[]string{
+			formatHelpNote("Run this command to download and install all required dependencies so that you can build," +
+				" run, and debug the application locally."),
+			formatHelpNote(fmt.Sprintf("For the best local rn and debug experience, go to %s to learn how "+
+				"to use the Visual Studio Code extension.",
+				output.WithLinkFormat("https://aka.ms/azure-dev/vscode"),
+			)),
+		})
+}
+
+func getCmdRestoreHelpFooter(*cobra.Command) string {
+	return generateCmdHelpSamplesBlock(map[string]string{
+		"Downloads and installs all application dependencies.": output.WithHighLightFormat("azd restore"),
+		"Downloads and installs a specific application service " +
+			"dependency, Individual services are listed in your azure.yaml file.": fmt.Sprintf("%s %s",
+			output.WithHighLightFormat("azd restore --service"),
+			output.WithWarningFormat("[Service name]")),
+	})
 }

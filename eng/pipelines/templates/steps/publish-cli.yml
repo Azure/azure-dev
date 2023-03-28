@@ -16,6 +16,8 @@ parameters:
   SyndicatedAcrHost: $(azdev-acr-syndicated-host)
   SyndicatedAcrUsername: $(azdev-acr-syndicated-username)
   SyndicatedAcrPassword: $(azdev-acr-syndicated-password)
+  PublishBrewFormula: false
+  PublishArm64Binaries: false
 
 steps:
   - ${{ if eq('true', parameters.CreateGitHubRelease) }}:
@@ -63,7 +65,19 @@ steps:
       # Copy the item from artifacts straight to where it will go
       path: release-staging
 
-  - bash: chmod +x signed/mac/azd-darwin-amd64 release-staging/azd-linux-amd64
+  - task: DownloadPipelineArtifact@2
+    inputs:
+      artifact: azd-linux-arm64
+      # Copy the item from artifacts straight to where it will go
+      path: release-staging
+
+
+  - bash: | 
+      chmod +x \
+      signed/mac/azd-darwin-amd64 \
+      signed/mac/azd-darwin-arm64 \
+      release-staging/azd-linux-amd64 \
+      release-staging/azd-linux-arm64
     displayName: Set execute bit for the mac and linux release
 
   - pwsh: |
@@ -76,6 +90,18 @@ steps:
       Copy-Item NOTICE.txt ./release-staging/
       tar -C ./release-staging/ -cvzf release/azd-linux-amd64.tar.gz azd-linux-amd64 NOTICE.txt
     displayName: Compress standalone binary for release
+
+  - ${{ if eq('true', parameters.PublishArm64Binaries) }}: 
+    - pwsh: |
+        New-Item -ItemType Directory -Path release -Force
+        zip release/azd-darwin-arm64.zip -j signed/mac/azd-darwin-arm64 NOTICE.txt
+
+        # Must place NOTICE.txt in file tree for tar to pick it up and place it in
+        # the same place in the directory structure
+        Copy-Item NOTICE.txt ./release-staging/
+        tar -C ./release-staging/ -cvzf release/azd-linux-arm64.tar.gz azd-linux-arm64 NOTICE.txt
+      displayName: Compress standalone binary for release (ARM64)
+
 
   - ${{ if eq('true', parameters.UploadMsi) }}: 
     - pwsh: Copy-Item signed/win/azd-windows-amd64.msi release/
@@ -165,6 +191,9 @@ steps:
       }
     displayName: Upload release to storage account
 
+  - publish: release
+    artifact: UploadedReleaseArtifacts
+
   - ${{ if eq('true', parameters.PublishShield) }}:
     - template: /eng/pipelines/templates/steps/publish-shield.yml
       parameters:
@@ -185,6 +214,30 @@ steps:
         docker push ${{ parameters.SyndicatedAcrHost }}/public/azure-dev-cli-apps --all-tags
       displayName: Push container tags (syndicated release)
 
+  - ${{ if eq('true', parameters.PublishBrewFormula) }}:
+    - pwsh: git clone https://github.com/Azure/homebrew-azd
+      displayName: Clone Azure/homebrew-azd
+
+    - task: PowerShell@2
+      displayName: Update brew formula
+      inputs:
+        targetType: filePath
+        filePath: eng/scripts/Update-HomebrewFormula.ps1
+        arguments: >-
+          -ZipFilePath release/azd-darwin-amd64.zip
+          -Version $(CLI_VERSION)
+          -OutFile homebrew-azd/Formula/azd.rb
+
+    - template: /eng/common/pipelines/templates/steps/git-push-changes.yml
+      parameters:
+        # The azure-sdk user has permission to push directly to main
+        BaseRepoBranch: main
+        BaseRepoOwner: Azure
+        CommitMsg: Update formula for azd release $(CLI_VERSION)
+        TargetRepoName: homebrew-azd
+        WorkingDirectory: homebrew-azd
+
+
   - ${{ if eq('true', parameters.PublishUpdatedDocs) }}:
     - task: DownloadPipelineArtifact@2
       displayName: Download docs
@@ -192,11 +245,13 @@ steps:
         artifact: docs
         path: docs
 
+    - template: /eng/pipelines/templates/steps/set-git-credentials.yml
+
     - pwsh: |
-        git clone https://github.com/azure-sdk/azure-dev-docs/
-        Copy-Item docs/azd.md azure-dev-docs/articles/azure-developer-cli/reference.md -Force
-      displayName: Clone azure-dev-docs and update reference.md
-        
+        git clone https://github.com/azure-sdk/azure-dev-docs-pr/
+        Copy-Item docs/azd.md azure-dev-docs-pr/articles/azure-developer-cli/reference.md -Force
+      displayName: Clone azure-dev-docs-pr and update reference.md
+
     - template: /eng/common/pipelines/templates/steps/create-pull-request.yml
       parameters:
         # Use a unique branch name per-build and per-attempt to prevent
@@ -204,7 +259,7 @@ steps:
         PRBranchName: azure-dev-cli/$(CLI_VERSION)-$(Build.BuildId).$(System.JobAttempt)
         CommitMsg: Update reference documents for Azure CLI @ $(CLI_VERSION)
         PRTitle: Update reference documents for Azure CLI @ $(CLI_VERSION)
-        WorkingDirectory: $(System.DefaultWorkingDirectory)/azure-dev-docs  
+        WorkingDirectory: $(System.DefaultWorkingDirectory)/azure-dev-docs-pr
         RepoOwner: MicrosoftDocs
-        RepoName: azure-dev-docs
+        RepoName: azure-dev-docs-pr
         BaseBranchName: main

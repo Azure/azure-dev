@@ -4,48 +4,41 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
+
 	// Importing for infrastructure provider plugin registrations
+
 	_ "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
 	_ "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/terraform"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
-	"github.com/azure/azure-dev/cli/azd/internal/telemetry/events"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/spf13/cobra"
-	"go.opentelemetry.io/otel/codes"
 )
 
-func NewRootCmd(staticHelp bool) *cobra.Command {
+// Creates the root Cobra command for AZD.
+// staticHelp - False, except for running for doc generation
+// middlewareChain - nil, except for running unit tests
+func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistration) *cobra.Command {
 	prevDir := ""
 	opts := &internal.GlobalCommandOptions{GenerateStaticHelp: staticHelp}
+	opts.EnableTelemetry = telemetry.IsTelemetryEnabled()
 
-	cmd := &cobra.Command{
+	productName := "The Azure Developer CLI"
+	if opts.GenerateStaticHelp {
+		productName = "The Azure Developer CLI (`azd`)"
+	}
+
+	rootCmd := &cobra.Command{
 		Use:   "azd",
-		Short: "Azure Developer CLI is a command-line interface for developers who build Azure solutions.",
-		//nolint:lll
-		Long: `Azure Developer CLI is a command-line interface for developers who build Azure solutions.
-
-To begin working with Azure Developer CLI, run the ` + output.WithBackticks("azd up") + ` command by supplying a sample template in an empty directory:
-
-	$ azd up –-template todo-nodejs-mongo
-
-You can pick a template by running ` + output.WithBackticks("azd template list") + `and then supplying the repo name as a value to ` + output.WithBackticks("--template") + `.
-
-The most common next commands are:
-
-	$ azd pipeline config
-	$ azd deploy
-	$ azd monitor --overview
-
-For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azure-dev/devhub.`,
+		Short: fmt.Sprintf("%s is an open-source tool that helps onboard and manage your application on Azure", productName),
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			if opts.Cwd != "" {
 				current, err := os.Getwd()
@@ -73,120 +66,288 @@ For more information, visit the Azure Developer CLI Dev Hub: https://aka.ms/azur
 
 			return nil
 		},
-		SilenceUsage: true,
+		SilenceUsage:      true,
+		DisableAutoGenTag: true,
 	}
 
-	cmd.DisableAutoGenTag = true
-	cmd.CompletionOptions.HiddenDefaultCmd = true
-	cmd.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", cmd.Name()))
-	cmd.PersistentFlags().StringVarP(&opts.Cwd, "cwd", "C", "", "Sets the current working directory.")
-	cmd.PersistentFlags().BoolVar(&opts.EnableDebugLogging, "debug", false, "Enables debugging and diagnostics logging.")
-	cmd.PersistentFlags().
-		BoolVar(
-			&opts.NoPrompt,
-			"no-prompt",
-			false,
-			"Accepts the default value instead of prompting, or it fails if there is no default.")
-	cmd.SetHelpTemplate(
-		fmt.Sprintf("%s\nPlease let us know how we are doing: https://aka.ms/azure-dev/hats\n", cmd.HelpTemplate()),
-	)
+	rootCmd.CompletionOptions.HiddenDefaultCmd = true
 
-	opts.EnableTelemetry = telemetry.IsTelemetryEnabled()
+	root := actions.NewActionDescriptor("azd", &actions.ActionDescriptorOptions{
+		Command: rootCmd,
+		FlagsResolver: func(cmd *cobra.Command) *internal.GlobalCommandOptions {
+			rootCmd.PersistentFlags().StringVarP(&opts.Cwd, "cwd", "C", "", "Sets the current working directory.")
+			rootCmd.PersistentFlags().
+				BoolVar(&opts.EnableDebugLogging, "debug", false, "Enables debugging and diagnostics logging.")
+			rootCmd.PersistentFlags().
+				BoolVar(
+					&opts.NoPrompt,
+					"no-prompt",
+					false,
+					"Accepts the default value instead of prompting, or it fails if there is no default.")
 
-	cmd.AddCommand(configCmd(opts))
-	cmd.AddCommand(envCmd(opts))
-	cmd.AddCommand(infraCmd(opts))
-	cmd.AddCommand(pipelineCmd(opts))
-	cmd.AddCommand(telemetryCmd(opts))
-	cmd.AddCommand(templatesCmd(opts))
-	cmd.AddCommand(authCmd(opts))
+			// The telemetry system is responsible for reading these flags value and using it to configure the telemetry
+			// system, but we still need to add it to our flag set so that when we parse the command line with Cobra we
+			// don't error due to an "unknown flag".
+			var traceLogFile string
+			var traceLogEndpoint string
 
-	cmd.AddCommand(BuildCmd(opts, versionCmdDesign, initVersionAction, &buildOptions{disableTelemetry: true}))
-	cmd.AddCommand(BuildCmd(opts, showCmdDesign, initShowAction, nil))
-	cmd.AddCommand(BuildCmd(opts, restoreCmdDesign, initRestoreAction, nil))
-	cmd.AddCommand(BuildCmd(opts, loginCmdDesign, initLoginAction, nil))
-	cmd.AddCommand(BuildCmd(opts, logoutCmdDesign, initLogoutAction, nil))
-	cmd.AddCommand(BuildCmd(opts, monitorCmdDesign, initMonitorAction, nil))
-	cmd.AddCommand(BuildCmd(opts, downCmdDesign, initInfraDeleteAction, nil))
-	cmd.AddCommand(BuildCmd(opts, initCmdDesign, initInitAction, nil))
-	cmd.AddCommand(BuildCmd(opts, upCmdDesign, initUpAction, nil))
-	cmd.AddCommand(BuildCmd(opts, provisionCmdDesign, initInfraCreateAction, nil))
-	cmd.AddCommand(BuildCmd(opts, deployCmdDesign, initDeployAction, nil))
+			rootCmd.PersistentFlags().StringVar(&traceLogFile, "trace-log-file", "", "Write a diagnostics trace to a file.")
+			_ = rootCmd.PersistentFlags().MarkHidden("trace-log-file")
 
-	return cmd
-}
+			rootCmd.PersistentFlags().StringVar(
+				&traceLogEndpoint, "trace-log-url", "", "Send traces to an Open Telemetry compatible endpoint.")
+			_ = rootCmd.PersistentFlags().MarkHidden("trace-log-url")
 
-type designBuilder[F any] func(opts *internal.GlobalCommandOptions) (*cobra.Command, *F)
+			return opts
+		},
+	})
 
-type actionBuilder[F any] func(
-	console input.Console,
-	ctx context.Context,
-	o *internal.GlobalCommandOptions,
-	flags F,
-	args []string) (actions.Action, error)
+	configActions(root, opts)
+	envActions(root)
+	infraActions(root)
+	pipelineActions(root)
+	telemetryActions(root)
+	templatesActions(root)
+	authActions(root)
 
-type buildOptions struct {
-	disableTelemetry bool
-}
+	root.Add("version", &actions.ActionDescriptorOptions{
+		Command: &cobra.Command{
+			Short: "Print the version number of Azure Developer CLI.",
+		},
+		ActionResolver:   newVersionAction,
+		FlagsResolver:    newVersionFlags,
+		DisableTelemetry: true,
+		OutputFormats:    []output.Format{output.JsonFormat, output.NoneFormat},
+		DefaultFormat:    output.NoneFormat,
+		GroupingOptions: actions.CommandGroupOptions{
+			RootLevelHelp: actions.CmdGroupAbout,
+		},
+	})
 
-func BuildCmd[F any](
-	opts *internal.GlobalCommandOptions,
-	buildDesign designBuilder[F],
-	buildAction actionBuilder[F],
-	buildOptions *buildOptions) *cobra.Command {
-	cmd, flags := buildDesign(opts)
-	cmd.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", cmd.Name()))
+	root.Add("show", &actions.ActionDescriptorOptions{
+		Command:        newShowCmd(),
+		FlagsResolver:  newShowFlags,
+		ActionResolver: newShowAction,
+		OutputFormats:  []output.Format{output.JsonFormat},
+		DefaultFormat:  output.NoneFormat,
+	})
 
-	runCmd := func(cmd *cobra.Command, ctx context.Context, args []string) error {
-		console, err := initConsole(cmd, opts)
-		if err != nil {
-			return err
+	root.
+		Add("restore", &actions.ActionDescriptorOptions{
+			Command:        restoreCmdDesign(),
+			FlagsResolver:  newRestoreFlags,
+			ActionResolver: newRestoreAction,
+			HelpOptions: actions.ActionHelpOptions{
+				Description: getCmdRestoreHelpDescription,
+				Footer:      getCmdRestoreHelpFooter,
+			},
+			GroupingOptions: actions.CommandGroupOptions{
+				RootLevelHelp: actions.CmdGroupConfig,
+			},
+		}).
+		UseMiddleware("hooks", middleware.NewHooksMiddleware)
+
+	root.Add("login", &actions.ActionDescriptorOptions{
+		Command:        newLoginCmd(),
+		FlagsResolver:  newLoginFlags,
+		ActionResolver: newLoginAction,
+		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
+		DefaultFormat:  output.NoneFormat,
+		GroupingOptions: actions.CommandGroupOptions{
+			RootLevelHelp: actions.CmdGroupConfig,
+		},
+	})
+
+	root.Add("logout", &actions.ActionDescriptorOptions{
+		Command:        newLogoutCmd(),
+		ActionResolver: newLogoutAction,
+		GroupingOptions: actions.CommandGroupOptions{
+			RootLevelHelp: actions.CmdGroupConfig,
+		},
+	})
+
+	root.Add("init", &actions.ActionDescriptorOptions{
+		Command:        newInitCmd(),
+		FlagsResolver:  newInitFlags,
+		ActionResolver: newInitAction,
+		HelpOptions: actions.ActionHelpOptions{
+			Description: getCmdInitHelpDescription,
+			Footer:      getCmdInitHelpFooter,
+		},
+		GroupingOptions: actions.CommandGroupOptions{
+			RootLevelHelp: actions.CmdGroupConfig,
+		},
+	}).AddFlagCompletion("template", templateNameCompletion)
+
+	root.
+		Add("provision", &actions.ActionDescriptorOptions{
+			Command:        newProvisionCmd(),
+			FlagsResolver:  newProvisionFlags,
+			ActionResolver: newProvisionAction,
+			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
+			DefaultFormat:  output.NoneFormat,
+			HelpOptions: actions.ActionHelpOptions{
+				Description: getCmdProvisionHelpDescription,
+				Footer:      getCmdHelpDefaultFooter,
+			},
+			GroupingOptions: actions.CommandGroupOptions{
+				RootLevelHelp: actions.CmdGroupManage,
+			},
+		}).
+		UseMiddleware("hooks", middleware.NewHooksMiddleware)
+
+	root.
+		Add("deploy", &actions.ActionDescriptorOptions{
+			Command:        newDeployCmd(),
+			FlagsResolver:  newDeployFlags,
+			ActionResolver: newDeployAction,
+			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
+			DefaultFormat:  output.NoneFormat,
+			HelpOptions: actions.ActionHelpOptions{
+				Description: getCmdDeployHelpDescription,
+				Footer:      getCmdDeployHelpFooter,
+			},
+			GroupingOptions: actions.CommandGroupOptions{
+				RootLevelHelp: actions.CmdGroupManage,
+			},
+		}).
+		UseMiddleware("hooks", middleware.NewHooksMiddleware)
+
+	root.
+		Add("up", &actions.ActionDescriptorOptions{
+			Command:        newUpCmd(),
+			FlagsResolver:  newUpFlags,
+			ActionResolver: newUpAction,
+			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
+			DefaultFormat:  output.NoneFormat,
+			HelpOptions: actions.ActionHelpOptions{
+				Description: getCmdUpHelpDescription,
+				Footer:      getCmdUpHelpFooter,
+			},
+			GroupingOptions: actions.CommandGroupOptions{
+				RootLevelHelp: actions.CmdGroupManage,
+			},
+		}).
+		AddFlagCompletion("template", templateNameCompletion).
+		UseMiddleware("hooks", middleware.NewHooksMiddleware)
+
+	root.Add("monitor", &actions.ActionDescriptorOptions{
+		Command:        newMonitorCmd(),
+		FlagsResolver:  newMonitorFlags,
+		ActionResolver: newMonitorAction,
+		HelpOptions: actions.ActionHelpOptions{
+			Description: getCmdMonitorHelpDescription,
+			Footer:      getCmdMonitorHelpFooter,
+		},
+		GroupingOptions: actions.CommandGroupOptions{
+			RootLevelHelp: actions.CmdGroupMonitor,
+		},
+	})
+
+	root.
+		Add("down", &actions.ActionDescriptorOptions{
+			Command:        newDownCmd(),
+			FlagsResolver:  newDownFlags,
+			ActionResolver: newDownAction,
+			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
+			DefaultFormat:  output.NoneFormat,
+			HelpOptions: actions.ActionHelpOptions{
+				Description: getCmdDownHelpDescription,
+				Footer:      getCmdDownHelpFooter,
+			},
+			GroupingOptions: actions.CommandGroupOptions{
+				RootLevelHelp: actions.CmdGroupManage,
+			},
+		}).
+		UseMiddleware("hooks", middleware.NewHooksMiddleware)
+
+	// Register any global middleware defined by the caller
+	if len(middlewareChain) > 0 {
+		for _, registration := range middlewareChain {
+			root.UseMiddlewareWhen(registration.Name, registration.Resolver, registration.Predicate)
 		}
-
-		action, err := buildAction(console, ctx, opts, *flags, args)
-		if err != nil {
-			return err
-		}
-
-		ctx = tools.WithInstalledCheckCache(ctx)
-
-		actionResult, err := action.Run(ctx)
-		// At this point, we know that there might be an error, so we can silence cobra from showing it after us.
-		cmd.SilenceErrors = true
-
-		// It is valid for a command to return a nil action result and error. If we have a result or an error, display it,
-		// otherwise don't print anything.
-		if actionResult != nil || err != nil {
-			console.MessageUxItem(ctx, actions.ToUxItem(actionResult, err))
-		}
-
-		return err
 	}
 
-	cmd.RunE = func(cmd *cobra.Command, args []string) error {
-		if buildOptions != nil && buildOptions.disableTelemetry {
-			return runCmd(cmd, cmd.Context(), args)
-		} else {
-			// Bind cmd, args. Only a different context needs to be passed.
-			runWithContext := func(ctx context.Context) error { return runCmd(cmd, ctx, args) }
-			return runCmdWithTelemetry(cmd, runWithContext)
-		}
-	}
+	// Global middleware registration
+	root.
+		UseMiddleware("debug", middleware.NewDebugMiddleware).
+		UseMiddlewareWhen("telemetry", middleware.NewTelemetryMiddleware, func(descriptor *actions.ActionDescriptor) bool {
+			return !descriptor.Options.DisableTelemetry
+		})
 
-	return cmd
-}
+	registerCommonDependencies(ioc.Global)
+	cobraBuilder := NewCobraBuilder(ioc.Global)
 
-func runCmdWithTelemetry(cmd *cobra.Command, runCmd func(ctx context.Context) error) error {
-	// Note: CommandPath is constructed using the Use member on each command up to the root.
-	// It does not contain user input, and is safe for telemetry emission.
-	spanCtx, span := telemetry.GetTracer().Start(cmd.Context(), events.GetCommandEventName(cmd.CommandPath()))
-	defer span.End()
+	// Compose the hierarchy of action descriptions into cobra commands
+	cmd, err := cobraBuilder.BuildCommand(root)
 
-	err := runCmd(spanCtx)
 	if err != nil {
-		span.SetStatus(codes.Error, "UnknownError")
+		// If their is a container registration issue or similar we'll get an error at this point
+		// Error descriptions should be clear enough to resolve the issue
+		panic(err)
 	}
 
-	return err
+	// The help template has to be set after calling `BuildCommand()` to ensure the command tree is built
+	cmd.SetHelpTemplate(generateCmdHelp(
+		cmd,
+		generateCmdHelpOptions{
+			Description: getCmdHelpDefaultDescription,
+			Commands:    func(c *cobra.Command) string { return getCmdHelpGroupedCommands(getCmdRootHelpCommands(c)) },
+			Footer:      getCmdRootHelpFooter,
+		}))
 
+	return cmd
+}
+
+func getCmdRootHelpFooter(cmd *cobra.Command) string {
+	return fmt.Sprintf("%s\n%s %s %s %s\n%s %s.\n    %s\n\n%s",
+		output.WithBold(output.WithUnderline("Deploying a sample application")),
+		"Initialize, provision, and deploy a template application by running the",
+		output.WithHighLightFormat("azd up --template"),
+		output.WithWarningFormat("[%s]", "template name"),
+		"command in an empty directory.",
+		output.WithGrayFormat("To view available templates run `azd template list` or visit:"),
+		output.WithLinkFormat("https://azure.github.io/awesome-azd"),
+		output.WithHighLightFormat("azd up --template todo-nodejs-mongo"),
+		getCmdHelpDefaultFooter(cmd),
+	)
+}
+
+func getCmdRootHelpCommands(cmd *cobra.Command) (result string) {
+	childrenCommands := cmd.Commands()
+	groups := actions.GetGroupAnnotations()
+
+	var commandGroups = make(map[string][]string, len(groups))
+	// stores the longes line len
+	max := 0
+
+	for _, childCommand := range childrenCommands {
+		// we rely on commands annotations for command grouping. Commands w/o annotation are ignored.
+		if childCommand.Annotations == nil {
+			continue
+		}
+		groupType, found := actions.GetGroupCommandAnnotation(childCommand)
+		if !found {
+			continue
+		}
+		commandName := childCommand.Name()
+		commandNameLen := len(commandName)
+		if commandNameLen > max {
+			max = commandNameLen
+		}
+		commandGroups[groupType] = append(commandGroups[groupType],
+			fmt.Sprintf("%s%s%s", commandName, endOfTitleSentinel, childCommand.Short))
+	}
+	// align all lines
+	for id := range commandGroups {
+		alignTitles(commandGroups[id], max)
+	}
+
+	var paragraph []string
+	for _, title := range groups {
+		paragraph = append(paragraph, fmt.Sprintf("  %s\n    %s\n",
+			output.WithBold(string(title)),
+			strings.Join(commandGroups[string(title)], "\n    ")))
+	}
+	return strings.Join(paragraph, "\n")
 }

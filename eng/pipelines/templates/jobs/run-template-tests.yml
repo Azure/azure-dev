@@ -24,13 +24,20 @@ parameters:
   type: string
   default: main
 
+- name: TemplateRunEnvironmentVariables
+  displayName: |
+    Comma-delimited list of environment variables in the format of (KEY=VALUE) to set for the template test run.
+    Example: USE_APIM=true,ENV_SUFFIX=MYSUFFIX
+  type: string
+  default: ''
+
 - name: AzureLocation
   displayName: Azure location for templates to be deployed to
   type: string
   default: eastus2
 
 - name: CleanupHoursDelay
-  displayName: Delay of cleanup for Azure resources for debugging purposes
+  displayName: Delay, in hours, before cleaning up Azure resources. Useful for debugging purposes
   type: number
   default: 0
 
@@ -84,6 +91,7 @@ jobs:
           # Generation parameters
           TemplateList: $(TemplateList)
           TemplateListFilter: ${{ parameters.TemplateListFilter }}
+          TemplateRunEnvironmentVariables: ${{ parameters.TemplateRunEnvironmentVariables }}
           OutputMatrixStepName: Generate
           OutputMatrixVariable: Matrix
           # Variables to set on the matrix job below

@@ -66,7 +66,7 @@ func TestServicePrincipalLoginClientSecret(t *testing.T) {
 	require.NoError(t, err)
 	require.IsType(t, new(azidentity.ClientSecretCredential), cred)
 
-	cred, err = m.CredentialForCurrentUser(context.Background())
+	cred, err = m.CredentialForCurrentUser(context.Background(), nil)
 
 	require.NoError(t, err)
 	require.IsType(t, new(azidentity.ClientSecretCredential), cred)
@@ -75,7 +75,7 @@ func TestServicePrincipalLoginClientSecret(t *testing.T) {
 
 	require.NoError(t, err)
 
-	_, err = m.CredentialForCurrentUser(context.Background())
+	_, err = m.CredentialForCurrentUser(context.Background(), nil)
 
 	require.True(t, errors.Is(err, ErrNoCurrentUser))
 }
@@ -100,7 +100,7 @@ func TestServicePrincipalLoginClientCertificate(t *testing.T) {
 	require.NoError(t, err)
 	require.IsType(t, new(azidentity.ClientCertificateCredential), cred)
 
-	cred, err = m.CredentialForCurrentUser(context.Background())
+	cred, err = m.CredentialForCurrentUser(context.Background(), nil)
 
 	require.NoError(t, err)
 	require.IsType(t, new(azidentity.ClientCertificateCredential), cred)
@@ -109,7 +109,7 @@ func TestServicePrincipalLoginClientCertificate(t *testing.T) {
 
 	require.NoError(t, err)
 
-	_, err = m.CredentialForCurrentUser(context.Background())
+	_, err = m.CredentialForCurrentUser(context.Background(), nil)
 
 	require.True(t, errors.Is(err, ErrNoCurrentUser))
 }
@@ -131,7 +131,7 @@ func TestServicePrincipalLoginFederatedToken(t *testing.T) {
 	require.NoError(t, err)
 	require.IsType(t, new(azidentity.ClientAssertionCredential), cred)
 
-	cred, err = m.CredentialForCurrentUser(context.Background())
+	cred, err = m.CredentialForCurrentUser(context.Background(), nil)
 
 	require.NoError(t, err)
 	require.IsType(t, new(azidentity.ClientAssertionCredential), cred)
@@ -140,7 +140,7 @@ func TestServicePrincipalLoginFederatedToken(t *testing.T) {
 
 	require.NoError(t, err)
 
-	_, err = m.CredentialForCurrentUser(context.Background())
+	_, err = m.CredentialForCurrentUser(context.Background(), nil)
 
 	require.True(t, errors.Is(err, ErrNoCurrentUser))
 }
@@ -176,7 +176,7 @@ func TestServicePrincipalLoginFederatedTokenProvider(t *testing.T) {
 	require.NoError(t, err)
 	require.IsType(t, new(azidentity.ClientAssertionCredential), cred)
 
-	cred, err = m.CredentialForCurrentUser(context.Background())
+	cred, err = m.CredentialForCurrentUser(context.Background(), nil)
 
 	require.NoError(t, err)
 	require.IsType(t, new(azidentity.ClientAssertionCredential), cred)
@@ -185,7 +185,7 @@ func TestServicePrincipalLoginFederatedTokenProvider(t *testing.T) {
 
 	require.NoError(t, err)
 
-	_, err = m.CredentialForCurrentUser(context.Background())
+	_, err = m.CredentialForCurrentUser(context.Background(), nil)
 
 	require.True(t, errors.Is(err, ErrNoCurrentUser))
 }
@@ -206,7 +206,7 @@ func TestLegacyAzCliCredentialSupport(t *testing.T) {
 		configManager: mgr,
 	}
 
-	cred, err := m.CredentialForCurrentUser(context.Background())
+	cred, err := m.CredentialForCurrentUser(context.Background(), nil)
 
 	require.NoError(t, err)
 	require.IsType(t, new(azidentity.AzureCLICredential), cred)
@@ -218,12 +218,12 @@ func TestLoginInteractive(t *testing.T) {
 		publicClient:  &mockPublicClient{},
 	}
 
-	cred, err := m.LoginInteractive(context.Background(), 0)
+	cred, err := m.LoginInteractive(context.Background(), 0, "")
 
 	require.NoError(t, err)
 	require.IsType(t, new(azdCredential), cred)
 
-	cred, err = m.CredentialForCurrentUser(context.Background())
+	cred, err = m.CredentialForCurrentUser(context.Background(), nil)
 
 	require.NoError(t, err)
 	require.IsType(t, new(azdCredential), cred)
@@ -232,7 +232,7 @@ func TestLoginInteractive(t *testing.T) {
 
 	require.NoError(t, err)
 
-	_, err = m.CredentialForCurrentUser(context.Background())
+	_, err = m.CredentialForCurrentUser(context.Background(), nil)
 
 	require.True(t, errors.Is(err, ErrNoCurrentUser))
 }
@@ -245,14 +245,14 @@ func TestLoginDeviceCode(t *testing.T) {
 
 	buf := bytes.Buffer{}
 
-	cred, err := m.LoginWithDeviceCode(context.Background(), &buf)
+	cred, err := m.LoginWithDeviceCode(context.Background(), &buf, "")
 
 	require.Regexp(t, "using the code 123-456", buf.String())
 
 	require.NoError(t, err)
 	require.IsType(t, new(azdCredential), cred)
 
-	cred, err = m.CredentialForCurrentUser(context.Background())
+	cred, err = m.CredentialForCurrentUser(context.Background(), nil)
 
 	require.NoError(t, err)
 	require.IsType(t, new(azdCredential), cred)
@@ -261,7 +261,7 @@ func TestLoginDeviceCode(t *testing.T) {
 
 	require.NoError(t, err)
 
-	_, err = m.CredentialForCurrentUser(context.Background())
+	_, err = m.CredentialForCurrentUser(context.Background(), nil)
 
 	require.True(t, errors.Is(err, ErrNoCurrentUser))
 }
@@ -301,7 +301,7 @@ func (m *mockPublicClient) RemoveAccount(account public.Account) error {
 }
 
 func (m *mockPublicClient) AcquireTokenInteractive(
-	ctx context.Context, scopes []string, options ...public.InteractiveAuthOption,
+	ctx context.Context, scopes []string, options ...public.AcquireInteractiveOption,
 ) (public.AuthResult, error) {
 	return public.AuthResult{
 		Account: public.Account{
@@ -311,7 +311,7 @@ func (m *mockPublicClient) AcquireTokenInteractive(
 }
 
 func (m *mockPublicClient) AcquireTokenSilent(
-	ctx context.Context, scopes []string, options ...public.AcquireTokenSilentOption,
+	ctx context.Context, scopes []string, options ...public.AcquireSilentOption,
 ) (public.AuthResult, error) {
 	return public.AuthResult{
 		Account: public.Account{
@@ -320,7 +320,8 @@ func (m *mockPublicClient) AcquireTokenSilent(
 	}, nil
 }
 
-func (m *mockPublicClient) AcquireTokenByDeviceCode(ctx context.Context, scopes []string) (deviceCodeResult, error) {
+func (m *mockPublicClient) AcquireTokenByDeviceCode(
+	ctx context.Context, scopes []string, options ...public.AcquireByDeviceCodeOption) (deviceCodeResult, error) {
 	return &mockDeviceCode{}, nil
 }
 

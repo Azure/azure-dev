@@ -4,14 +4,29 @@
 package github
 
 import (
+	"archive/tar"
+	"archive/zip"
+	"compress/gzip"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"log"
+	"net/http"
+	"os"
+	"path/filepath"
 	"regexp"
+	"runtime"
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
+	"github.com/azure/azure-dev/cli/azd/internal/telemetry/events"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/blang/semver/v4"
 )
@@ -33,10 +48,75 @@ type GitHubCli interface {
 	GitHubActionsExists(ctx context.Context, repoSlug string) (bool, error)
 }
 
-func NewGitHubCli(commandRunner exec.CommandRunner) GitHubCli {
-	return &ghCli{
+func NewGitHubCli(ctx context.Context, console input.Console, commandRunner exec.CommandRunner) (GitHubCli, error) {
+	return newGitHubCliImplementation(ctx, console, commandRunner, http.DefaultClient, downloadGh, extractGhCli)
+}
+
+// cGitHubCliVersion is the minimum version of GitHub cli that we require (and the one we fetch when we fetch bicep on
+// behalf of a user).
+var cGitHubCliVersion semver.Version = semver.MustParse("2.22.1")
+
+// newGitHubCliImplementation is like NewGitHubCli but allows providing a custom transport to use when downloading the
+// GitHub CLI, for testing purposes.
+func newGitHubCliImplementation(
+	ctx context.Context,
+	console input.Console,
+	commandRunner exec.CommandRunner,
+	transporter policy.Transporter,
+	acquireGitHubCliImpl getGitHubCliImplementation,
+	extractImplementation extractGitHubCliFromFileImplementation,
+) (GitHubCli, error) {
+	if override := os.Getenv("AZD_GH_CLI_TOOL_PATH"); override != "" {
+		log.Printf("using external github cli tool: %s", override)
+
+		return &ghCli{
+			path:          override,
+			commandRunner: commandRunner,
+		}, nil
+	}
+
+	githubCliPath, err := azdGithubCliPath()
+	if err != nil {
+		return nil, fmt.Errorf("getting github cli default path: %w", err)
+	}
+
+	if _, err = os.Stat(githubCliPath); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("getting file information from github cli default path: %w", err)
+	}
+	if errors.Is(err, os.ErrNotExist) {
+		if err := os.MkdirAll(filepath.Dir(githubCliPath), osutil.PermissionDirectory); err != nil {
+			return nil, fmt.Errorf("creating github cli default path: %w", err)
+		}
+
+		msg := "setting up github connection"
+		console.ShowSpinner(ctx, msg, input.Step)
+		err = acquireGitHubCliImpl(ctx, transporter, cGitHubCliVersion, extractImplementation, githubCliPath)
+		console.StopSpinner(ctx, "", input.Step)
+		if err != nil {
+			return nil, fmt.Errorf("setting up github connection: %w", err)
+		}
+	}
+
+	cli := &ghCli{
+		path:          githubCliPath,
 		commandRunner: commandRunner,
 	}
+
+	return cli, nil
+}
+
+// azdGithubCliPath returns the path where we store our local copy of github cli ($AZD_CONFIG_DIR/bin).
+func azdGithubCliPath() (string, error) {
+	configDir, err := config.GetUserConfigDir()
+	if err != nil {
+		return "", err
+	}
+
+	if runtime.GOOS == "windows" {
+		return filepath.Join(configDir, "bin", "gh.exe"), nil
+	}
+
+	return filepath.Join(configDir, "bin", "gh"), nil
 }
 
 var (
@@ -54,6 +134,7 @@ var (
 
 type ghCli struct {
 	commandRunner exec.CommandRunner
+	path          string
 
 	// Override token-specific environment variables, in format of key=value.
 	//
@@ -62,34 +143,7 @@ type ghCli struct {
 	overrideTokenEnv []string
 }
 
-func (cli *ghCli) versionInfo() tools.VersionInfo {
-	return tools.VersionInfo{
-		MinimumVersion: semver.Version{
-			Major: 2,
-			Minor: 4,
-			Patch: 0},
-		UpdateCommand: "Visit https://github.com/cli/cli/releases to upgrade",
-	}
-}
-
 func (cli *ghCli) CheckInstalled(ctx context.Context) (bool, error) {
-	found, err := tools.ToolInPath("gh")
-	if !found {
-		return false, err
-	}
-	ghRes, err := tools.ExecuteCommand(ctx, cli.commandRunner, "gh", "--version")
-	if err != nil {
-		return false, fmt.Errorf("checking %s version: %w", cli.Name(), err)
-	}
-	ghSemver, err := tools.ExtractVersion(ghRes)
-	if err != nil {
-		return false, fmt.Errorf("converting to semver version fails: %w", err)
-	}
-	updateDetail := cli.versionInfo()
-	if ghSemver.LT(updateDetail.MinimumVersion) {
-		return false, &tools.ErrSemver{ToolName: cli.Name(), VersionInfo: updateDetail}
-	}
-
 	return true, nil
 }
 
@@ -274,7 +328,7 @@ func (cli *ghCli) ForceConfigureAuth(authMode AuthTokenSource) {
 }
 
 func (cli *ghCli) newRunArgs(args ...string) exec.RunArgs {
-	runArgs := exec.NewRunArgs("gh", args...)
+	runArgs := exec.NewRunArgs(cli.path, args...)
 	if cli.overrideTokenEnv != nil {
 		runArgs = runArgs.WithEnv(cli.overrideTokenEnv)
 	}
@@ -322,4 +376,194 @@ func isEnvVarTokenSource(message string) bool {
 	}
 
 	return false
+}
+
+func extractFromZip(src, dst string) (string, error) {
+	zipReader, err := zip.OpenReader(src)
+	if err != nil {
+		return "", err
+	}
+
+	defer zipReader.Close()
+
+	var extractedAt string
+	for _, file := range zipReader.File {
+		if !file.FileInfo().IsDir() && strings.Contains(file.Name, "gh") {
+			fileReader, err := file.Open()
+			if err != nil {
+				return extractedAt, err
+			}
+			fileNameParts := strings.Split(file.Name, "/")
+			fileName := fileNameParts[len(fileNameParts)-1]
+			filePath := filepath.Join(dst, fileName)
+			ghCliFile, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, file.Mode())
+			if err != nil {
+				return extractedAt, err
+			}
+			defer ghCliFile.Close()
+			/* #nosec G110 - decompression bomb false positive */
+			_, err = io.Copy(ghCliFile, fileReader)
+			if err != nil {
+				return extractedAt, err
+			}
+			extractedAt = filePath
+			break
+		}
+	}
+	if extractedAt != "" {
+		return extractedAt, nil
+	}
+	return extractedAt, fmt.Errorf("github cli binary was not found within the zip file")
+}
+func extractFromTar(src, dst string) (string, error) {
+	gzFile, err := os.Open(src)
+	if err != nil {
+		return "", err
+	}
+	defer gzFile.Close()
+
+	gzReader, err := gzip.NewReader(gzFile)
+	if err != nil {
+		return "", err
+	}
+	defer gzReader.Close()
+
+	var extractedAt string
+	// tarReader doesn't need to be closed as it is closed by the gz reader
+	tarReader := tar.NewReader(gzReader)
+	for {
+		fileHeader, err := tarReader.Next()
+		if errors.Is(err, io.EOF) {
+			return extractedAt, fmt.Errorf("did not find gh cli within tar file")
+		}
+		if fileHeader == nil {
+			continue
+		}
+		if err != nil {
+			return extractedAt, err
+		}
+		// Tha name contains the path, remove it
+		fileNameParts := strings.Split(fileHeader.Name, "/")
+		fileName := fileNameParts[len(fileNameParts)-1]
+		// cspell: disable-next-line `Typeflag` is comming fron *tar.Header
+		if fileHeader.Typeflag == tar.TypeReg && fileName == "gh" {
+			filePath := filepath.Join(dst, fileName)
+			ghCliFile, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, os.FileMode(fileHeader.Mode))
+			if err != nil {
+				return extractedAt, err
+			}
+			defer ghCliFile.Close()
+			/* #nosec G110 - decompression bomb false positive */
+			_, err = io.Copy(ghCliFile, tarReader)
+			if err != nil {
+				return extractedAt, err
+			}
+			extractedAt = filePath
+			break
+		}
+	}
+	if extractedAt != "" {
+		return extractedAt, nil
+	}
+	return extractedAt, fmt.Errorf("extract from tar error. Extraction ended in unexpected state.")
+}
+
+// extractGhCli gets the Github cli from either a zip or a tar.gz
+func extractGhCli(src, dst string) (string, error) {
+	if strings.HasSuffix(src, ".zip") {
+		return extractFromZip(src, dst)
+	} else if strings.HasSuffix(src, ".tar.gz") {
+		return extractFromTar(src, dst)
+	}
+	return "", fmt.Errorf("Unknown format while trying to extract")
+}
+
+// getGitHubCliImplementation defines the contract function to acquire the GitHub cli.
+// The `outputPath` is the destination where the github cli is place it.
+type getGitHubCliImplementation func(
+	ctx context.Context,
+	transporter policy.Transporter,
+	ghVersion semver.Version,
+	extractImplementation extractGitHubCliFromFileImplementation,
+	outputPath string) error
+
+// extractGitHubCliFromFileImplementation defines how the cli is extracted
+type extractGitHubCliFromFileImplementation func(src, dst string) (string, error)
+
+// downloadGh downloads a given version of GitHub cli from the release site.
+func downloadGh(
+	ctx context.Context,
+	transporter policy.Transporter,
+	ghVersion semver.Version,
+	extractImplementation extractGitHubCliFromFileImplementation,
+	path string) error {
+
+	// arm and x86 not supported (similar to bicep)
+	var releaseName string
+	switch runtime.GOOS {
+	case "windows":
+		releaseName = "gh_2.22.1_windows_amd64.zip"
+	case "darwin":
+		releaseName = "gh_2.22.1_macOS_amd64.tar.gz"
+	case "linux":
+		releaseName = "gh_2.22.1_linux_amd64.tar.gz"
+	default:
+		return fmt.Errorf("unsupported platform")
+	}
+
+	//https://github.com/cli/cli/releases/download/v2.22.1/gh_2.22.1_linux_arm64.rpm
+	ghReleaseUrl := fmt.Sprintf("https://github.com/cli/cli/releases/download/v%s/%s", ghVersion, releaseName)
+
+	log.Printf("downloading github cli release %s -> %s", ghReleaseUrl, releaseName)
+
+	spanCtx, span := telemetry.GetTracer().Start(ctx, events.GitHubCliInstallEvent)
+	defer span.End()
+
+	req, err := http.NewRequestWithContext(spanCtx, "GET", ghReleaseUrl, nil)
+	if err != nil {
+		return err
+	}
+
+	resp, err := transporter.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("http error %d", resp.StatusCode)
+	}
+
+	tmpPath := filepath.Dir(path)
+	compressedRelease, err := os.CreateTemp(tmpPath, releaseName)
+	if err != nil {
+		return err
+	}
+	defer func() {
+		_ = compressedRelease.Close()
+		_ = os.Remove(compressedRelease.Name())
+	}()
+
+	if _, err := io.Copy(compressedRelease, resp.Body); err != nil {
+		return err
+	}
+	if err := compressedRelease.Close(); err != nil {
+		return err
+	}
+
+	// change file name from temporal name to the final name, as the download has completed
+	compressedFileName := filepath.Join(tmpPath, releaseName)
+	if err := osutil.Rename(ctx, compressedRelease.Name(), compressedFileName); err != nil {
+		return err
+	}
+	defer func() {
+		_ = os.Remove(compressedFileName)
+	}()
+
+	// unzip downloaded file
+	_, err = extractImplementation(compressedFileName, tmpPath)
+	if err != nil {
+		return err
+	}
+
+	return nil
 }

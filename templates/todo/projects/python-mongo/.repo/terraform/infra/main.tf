@@ -132,3 +132,33 @@ module "api" {
     type = "SystemAssigned"
   }]
 }
+
+# ------------------------------------------------------------------------------------------------------
+# Deploy app service apim
+# ------------------------------------------------------------------------------------------------------
+module "apim" {
+  count                     = var.useAPIM ? 1 : 0
+  source                    = "../../../../../../common/infra/terraform/core/gateway/apim"
+  name                      = "apim-${local.resource_token}"
+  location                  = var.location
+  rg_name                   = azurerm_resource_group.rg.name
+  tags                      = merge(local.tags, { "azd-service-name" : var.environment_name })
+  application_insights_name = module.applicationinsights.APPLICATIONINSIGHTS_NAME
+  sku                       = "Consumption"
+}
+
+# ------------------------------------------------------------------------------------------------------
+# Deploy app service apim-api
+# ------------------------------------------------------------------------------------------------------
+module "apimApi" {
+  count                    = var.useAPIM ? 1 : 0
+  source                   = "../../../../../../common/infra/terraform/core/gateway/apim-api"
+  name                     = module.apim[0].APIM_SERVICE_NAME
+  rg_name                  = azurerm_resource_group.rg.name
+  web_front_end_url        = module.web.URI
+  api_management_logger_id = module.apim[0].API_MANAGEMENT_LOGGER_ID
+  api_name                 = "todo-api"
+  api_display_name         = "Simple Todo API"
+  api_path                 = "todo"
+  api_backend_url          = module.api.URI
+}

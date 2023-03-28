@@ -1,12 +1,35 @@
+---
+page_type: sample
+languages:
+- azdeveloper
+- aspx-csharp
+- csharp
+- bicep
+- typescript
+- html
+products:
+- azure
+- azure-cosmos-db
+- azure-app-service
+- azure-monitor
+- azure-pipelines
+- aspnet-core
+urlFragment: todo-csharp-cosmos-sql
+name: Web Application with a C# API and Azure Cosmos DB SQL API
+description: A complete ToDo app with C# API and Azure Cosmos DB SQL API for storage. Uses Azure Developer CLI (azd) to build, deploy, and monitor
+---
+<!-- YAML front-matter schema: https://review.learn.microsoft.com/en-us/help/contribute/samples/process/onboarding?branch=main#supported-metadata-fields-for-readmemd -->
+
 # ToDo Application with a C# API and Azure Cosmos DB SQL API
 
-[![Open in Remote - Containers](https://img.shields.io/static/v1?label=Remote%20-%20Containers&message=Open&color=blue&logo=visualstudiocode)](https://vscode.dev/redirect?url=vscode://ms-vscode-remote.remote-containers/cloneInVolume?url=https://github.com/azure-samples/todo-csharp-cosmos-sql)
+[![Open in GitHub Codespaces](https://img.shields.io/static/v1?style=for-the-badge&label=GitHub+Codespaces&message=Open&color=brightgreen&logo=github)](https://github.com/codespaces/new?hide_repo_select=true&ref=main&repo=446558288&machine=standardLinux32gb&devcontainer_path=.devcontainer%2Fdevcontainer.json&location=WestUs2)
+[![Open in Remote - Containers](https://img.shields.io/static/v1?style=for-the-badge&label=Remote%20-%20Containers&message=Open&color=blue&logo=visualstudiocode)](https://vscode.dev/redirect?url=vscode://ms-vscode-remote.remote-containers/cloneInVolume?url=https://github.com/azure-samples/todo-csharp-cosmos-sql)
 
 A complete ToDo application that includes everything you need to build, deploy, and monitor an Azure solution. This application uses the Azure Developer CLI (azd) to get you up and running on Azure quickly, React.js for the Web application, C# for the API, Azure Cosmos DB SQL API for storage, and Azure Monitor for monitoring and logging. It includes application code, tools, and pipelines that serve as a foundation from which you can build upon and customize when creating your own solutions.
 
 Let's jump in and get the ToDo app up and running in Azure. When you are finished, you will have a fully functional web app deployed on Azure. In later steps, you'll see how to setup a pipeline and monitor the application.
 
-<img src="assets/web.png" width="75%" alt="Screenshot of deployed ToDo app">
+!["Screenshot of deployed ToDo app"](assets/web.png)
 
 <sup>Screenshot of the deployed ToDo app</sup>
 
@@ -64,7 +87,7 @@ This application utilizes the following Azure resources:
 
 Here's a high level architecture diagram that illustrates these components. Notice that these are all contained within a single [resource group](https://docs.microsoft.com/azure/azure-resource-manager/management/manage-resource-groups-portal), that will be created for you when you create the resources.
 
-<img src="assets/resources.png" width="60%" alt="Application architecture diagram"/>
+!["Application architecture diagram"](assets/resources.png)
 
 > This template provisions resources to an Azure subscription that you will select upon provisioning them. Please refer to the [Pricing calculator for Microsoft Azure](https://azure.microsoft.com/pricing/calculator/) and, if needed, update the included Azure resource definitions found in `infra/main.bicep` to suit your needs.
 
@@ -110,10 +133,6 @@ At this point, you have a complete application deployed on Azure. But there is m
 This template includes a GitHub Actions pipeline configuration file that will deploy your application whenever code is pushed to the main branch. You can find that pipeline file here: `.github/workflows`.
 
 Setting up this pipeline requires you to give GitHub permission to deploy to Azure on your behalf, which is done via a Service Principal stored in a GitHub secret named `AZURE_CREDENTIALS`. The `azd pipeline config` command will automatically create a service principal for you. The command also helps to create a private GitHub repository and pushes code to the newly created repo.
-
-Before you call the `azd pipeline config` command, you'll need to install the following:
-
-- [GitHub CLI (2.3+)](https://github.com/cli/cli)
 
 Run the following command to set up a GitHub Action:
 
@@ -176,7 +195,7 @@ And then execute `azd up` to provision and deploy. No worries if you already did
 
 Here's the high level architecture diagram when APIM is used:
 
-<img src="assets/resources-with-apim.png" width="60%" alt="Application architecture diagram with APIM"/>
+!["Application architecture diagram with APIM"](assets/resources-with-apim.png)
 
 The frontend will be configured to make API requests through APIM instead of calling the backend directly, so that the following flow gets executed:
 

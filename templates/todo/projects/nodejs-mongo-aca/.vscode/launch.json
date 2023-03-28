@@ -26,7 +26,7 @@
             "skipFiles": [
                 "<node_internals>/**"
             ],
-            "type": "pwa-node",
+            "type": "node",
             "cwd": "${workspaceFolder}/src/api",
             "envFile": "${input:dotEnvFilePath}",
             "env": {

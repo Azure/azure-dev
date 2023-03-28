@@ -9,11 +9,12 @@ ignorePaths:
     - ./go.mod
     - ./go.sum
     - ./NOTICE.txt
-    - ./templates/common/NOTICE.txt
 words:
     - opentelemetry
     - bson
     - azdo
+    - choco
+    - winget
 ignoreWords:
     - AADSTS
     - afwp
@@ -25,6 +26,7 @@ ignoreWords:
     - armauthorization
     - armappcontainers
     - armappservice
+    - armcontainerservice
     - armkeyvault
     - armresources
     - armruntime
@@ -35,6 +37,7 @@ ignoreWords:
     - Azdo
     - aztfmod
     - azurecaf
+    - azurecr
     - azuredevops
     - azurerm
     - armcontainerregistry
@@ -44,9 +47,12 @@ ignoreWords:
     - bicepcli
     - cdne
     - cdnp
+    - chooks
     - commandrunner
+    - configlist
     - conjunction
     - containerregistry
+    - containerservice
     - databricks
     - dedb
     - devcontainer
@@ -60,18 +66,25 @@ ignoreWords:
     - fdfp
     - fics
     - Frontdoor
+    - golobby
     - graphsdk
     - hndl
     - httpclient
     - httptrigger
+    - infracreate
+    - infradelete
     - inputhelper
     - ippre
     - JOBOBJECT
     - kubernetes
     - kusto
+    - kubeconfig
+    - kubeconfigs
+    - kustomize
     - magefile
     - mainfic
     - menuid
+    - middlewares
     - migr
     - mockconfig
     - mockconsole
@@ -87,7 +100,18 @@ ignoreWords:
     - pcert
     - pdnsz
     - Peerings
+    - pipefail
     - PLACEHOLDERIACTOOLS
+    - postcommand
+    - postinit
+    - postbuild
+    - postpublish
+    - preinline
+    - prebuild
+    - precommand
+    - predeploy
+    - preinteractive
+    - prealias
     - provs
     - psql
     - pview
@@ -143,7 +167,10 @@ ignoreWords:
     - menuid
     - PLACEHOLDERIACTOOLS
     - LOGANALYTICS
+    - venv
+    - webapprouting
     - zipdeploy
+    - appinsights
 useGitignore: true
 dictionaryDefinitions:
     - name: gitHubUserAliases
@@ -156,8 +183,14 @@ dictionaryDefinitions:
       description: Custom Notice Dictionary
       addWords: true
       scope: workspace
+    - name: schemas
+      path: ./cspell-schemas.txt
+      description: Custom Schema Dictionary
+      addWords: true
+      scope: workspace      
 dictionaries:
     - powershell
     - go
     - gitHubUserAliases
     - noticeMd
+    - schemas

@@ -6,12 +6,15 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"testing"
 
+	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockexec"
@@ -25,13 +28,17 @@ func Test_Initializer_Initialize(t *testing.T) {
 	tests := []struct {
 		name        string
 		templateDir string
+		// Files that will be mocked to be executable when fetched remotely.
+		// Equally, these files are asserted to be executable after init.
+		executableFiles []string
 	}{
-		{"RegularTemplate", "template"},
-		{"MinimalTemplate", "template-minimal"},
+		{"RegularTemplate", "template", []string{"script/test.sh"}},
+		{"MinimalTemplate", "template-minimal", []string{}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			projectDir := t.TempDir()
+			ctx := context.Background()
 			azdCtx := azdcontext.NewAzdContextWithDirectory(projectDir)
 			console := mockinput.NewMockConsole()
 			realRunner := exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
@@ -42,17 +49,45 @@ func Test_Initializer_Initialize(t *testing.T) {
 					if slices.Contains(args.Args, "clone") && slices.Contains(args.Args, "local") {
 						stagingDir := args.Args[len(args.Args)-1]
 						copyTemplate(t, testDataPath(tt.templateDir), stagingDir)
+
+						gitArgs := exec.NewRunArgs("git", "-C", stagingDir).WithEnrichError(true)
+
+						// Mock clone by creating a git repository locally
+						_, err := realRunner.Run(ctx, gitArgs.AppendParams("init"))
+						require.NoError(t, err)
+
+						_, err = realRunner.Run(ctx, gitArgs.AppendParams("add", "*"))
+						require.NoError(t, err)
+
+						for _, file := range tt.executableFiles {
+							_, err = realRunner.Run(
+								ctx,
+								gitArgs.AppendParams("update-index", "--chmod=+x", file))
+							require.NoError(t, err)
+
+							// Mocks the correct behavior in *nix when the file lands on the filesystem.
+							// git would have automatically set the correct file executable permissions.
+							//
+							// Note that `git update-index --chmod=+x` simply updates the tracked permissions in git,
+							// but does not update the files directly, hence this is needed.
+							if runtime.GOOS != "windows" {
+								err = os.Chmod(filepath.Join(stagingDir, file), 0755)
+								require.NoError(t, err)
+							}
+						}
+
 						return exec.NewRunResult(0, "", ""), nil
 					}
 
-					return realRunner.Run(context.Background(), args)
+					return realRunner.Run(ctx, args)
 				})
 
 			i := NewInitializer(console, git.NewGitCli(mockRunner))
-			err := i.Initialize(context.Background(), azdCtx, "local", "")
+			err := i.Initialize(ctx, azdCtx, "local", "")
 			require.NoError(t, err)
 
-			verifyTemplateCopied(t, testDataPath(tt.templateDir), projectDir)
+			verifyTemplateCopied(t, testDataPath(tt.templateDir), projectDir, verifyOptions{})
+			verifyExecutableFilePermissions(t, ctx, i.gitCli, projectDir, tt.executableFiles)
 
 			require.FileExists(t, filepath.Join(projectDir, ".gitignore"))
 			require.FileExists(t, azdCtx.ProjectPath())
@@ -64,23 +99,34 @@ func Test_Initializer_Initialize(t *testing.T) {
 func Test_Initializer_InitializeWithOverwritePrompt(t *testing.T) {
 	templateDir := "template"
 	tests := []struct {
-		name             string
-		confirmOverwrite bool
+		name      string
+		selection int
 	}{
-		{"Confirm", true},
-		{"Deny", false},
+		{"Overwrite", 0},
+		{"Keep", 1},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
+			originalReadme := "ORIGINAL"
+			originalProgram := "Console.WriteLine(\"Hello, Original World!\");"
 			projectDir := t.TempDir()
 			azdCtx := azdcontext.NewAzdContextWithDirectory(projectDir)
-			// Copy all files to project to set up duplicate files
-			copyTemplate(t, testDataPath(templateDir), projectDir)
+			// set up duplicate files
+			err := os.WriteFile(filepath.Join(projectDir, "README.md"), []byte(originalReadme), osutil.PermissionFile)
+			require.NoError(t, err, "setting up duplicate readme.md")
+			err = os.MkdirAll(filepath.Join(projectDir, "src"), osutil.PermissionDirectory)
+			require.NoError(t, err, "setting up src folder")
+			err = os.WriteFile(
+				filepath.Join(projectDir, "src", "Program.cs"),
+				[]byte(originalProgram),
+				osutil.PermissionFile,
+			)
+			require.NoError(t, err, "setting up duplicate program.cs")
 
 			console := mockinput.NewMockConsole()
-			console.WhenConfirm(func(options input.ConsoleOptions) bool {
-				return strings.Contains(options.Message, "Overwrite files with versions from template?")
-			}).Respond(tt.confirmOverwrite)
+			console.WhenSelect(func(options input.ConsoleOptions) bool {
+				return strings.Contains(options.Message, "What would you like to do with these files?")
+			}).Respond(tt.selection)
 
 			realRunner := exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
 			mockRunner := mockexec.NewMockCommandRunner()
@@ -90,6 +136,9 @@ func Test_Initializer_InitializeWithOverwritePrompt(t *testing.T) {
 					if slices.Contains(args.Args, "clone") && slices.Contains(args.Args, "local") {
 						stagingDir := args.Args[len(args.Args)-1]
 						copyTemplate(t, testDataPath(templateDir), stagingDir)
+						_, err := realRunner.Run(context.Background(), exec.NewRunArgs("git", "-C", stagingDir, "init"))
+						require.NoError(t, err)
+
 						return exec.NewRunResult(0, "", ""), nil
 					}
 
@@ -97,16 +146,32 @@ func Test_Initializer_InitializeWithOverwritePrompt(t *testing.T) {
 				})
 
 			i := NewInitializer(console, git.NewGitCli(mockRunner))
-			err := i.Initialize(context.Background(), azdCtx, "local", "")
-
-			if !tt.confirmOverwrite {
-				require.Error(t, err)
-				return
-			}
-
+			err = i.Initialize(context.Background(), azdCtx, "local", "")
 			require.NoError(t, err)
 
-			verifyTemplateCopied(t, testDataPath(templateDir), projectDir)
+			switch tt.selection {
+			case 0:
+				// overwrite
+				verifyTemplateCopied(t, testDataPath(templateDir), projectDir, verifyOptions{})
+			case 1:
+				// keep
+				content, err := os.ReadFile(filepath.Join(projectDir, "README.md"))
+				require.NoError(t, err)
+				require.Equal(t, originalReadme, string(content))
+
+				content, err = os.ReadFile(filepath.Join(projectDir, "src", "Program.cs"))
+				require.NoError(t, err)
+				require.Equal(t, originalProgram, string(content))
+
+				verifyTemplateCopied(t, testDataPath(templateDir), projectDir, verifyOptions{
+					Skip: func(src string) (bool, error) {
+						return src == testDataPath(templateDir, "README.md.txt") ||
+							src == testDataPath(templateDir, "src", "Program.cs.txt"), nil
+					},
+				})
+			default:
+				require.Fail(t, "unhandled user selection")
+			}
 
 			require.FileExists(t, filepath.Join(projectDir, ".gitignore"))
 			require.FileExists(t, azdCtx.ProjectPath())
@@ -146,8 +211,17 @@ func copyTemplate(t *testing.T, source string, target string) {
 	require.NoError(t, os.MkdirAll(filepath.Join(target, ".git"), 0755))
 }
 
+type verifyOptions struct {
+	// skip verification for a given file.
+	Skip func(src string) (bool, error)
+}
+
 // Verify all template code was copied to the destination.
-func verifyTemplateCopied(t *testing.T, original string, copied string) {
+func verifyTemplateCopied(
+	t *testing.T,
+	original string,
+	copied string,
+	options verifyOptions) {
 	err := filepath.WalkDir(original, func(path string, d fs.DirEntry, err error) error {
 		if err != nil {
 			require.NoError(t, err)
@@ -157,18 +231,60 @@ func verifyTemplateCopied(t *testing.T, original string, copied string) {
 			return nil
 		}
 
+		if options.Skip != nil {
+			skip, err := options.Skip(path)
+			if err != nil {
+				return err
+			}
+
+			if skip {
+				return nil
+			}
+		}
+
 		rel, err := filepath.Rel(original, path)
 		if err != nil {
 			return fmt.Errorf("computing relative path: %w", err)
 		}
 
 		relCopied := strings.TrimSuffix(rel, ".txt")
-		verifyFileContent(t, filepath.Join(copied, relCopied), readFile(t, filepath.Join(original, rel)))
+
+		verifyFileContent(
+			t,
+			filepath.Join(copied, relCopied),
+			readFile(t, filepath.Join(original, rel)))
 
 		return nil
 	})
 
 	require.NoError(t, err)
+}
+
+func verifyExecutableFilePermissions(t *testing.T,
+	ctx context.Context,
+	git git.GitCli,
+	repoPath string,
+	expectedFiles []string) {
+	output, err := git.ListStagedFiles(ctx, repoPath)
+	require.NoError(t, err)
+
+	// On windows, since the file system doesn't keep track of executable file permissions,
+	// we have to query git instead for the tracked permissions.
+	if runtime.GOOS == "windows" {
+		actual, err := parseExecutableFiles(output)
+		require.NoError(t, err)
+
+		require.ElementsMatch(t, actual, expectedFiles)
+
+	} else {
+		for _, file := range expectedFiles {
+			fi, err := os.Stat(filepath.Join(repoPath, file))
+			require.NoError(t, err)
+			mode := fi.Mode()
+			isExecutable := mode&0111 == 0111
+			require.Truef(t, isExecutable, "file is not executable for all, fileMode: %s", mode)
+		}
+	}
 }
 
 func Test_Initializer_InitializeEmpty(t *testing.T) {
@@ -225,8 +341,8 @@ func Test_Initializer_InitializeEmpty(t *testing.T) {
 			}
 
 			console := mockinput.NewMockConsole()
-			runner := mockexec.NewMockCommandRunner()
-			i := NewInitializer(console, git.NewGitCli(runner))
+			realRunner := exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
+			i := NewInitializer(console, git.NewGitCli(realRunner))
 			err := i.InitializeEmpty(context.Background(), azdCtx)
 			require.NoError(t, err)
 
@@ -253,14 +369,14 @@ func testDataPath(elem ...string) string {
 
 func copyFile(t *testing.T, source string, target string) {
 	content := readFile(t, source)
-	err := os.WriteFile(target, []byte(content), 0644)
+	err := os.WriteFile(target, []byte(content), 0600)
 
 	require.NoError(t, err)
 }
 
 func copyFileCrlf(t *testing.T, source string, target string) {
 	content := crlf(readFile(t, source))
-	err := os.WriteFile(target, []byte(content), 0644)
+	err := os.WriteFile(target, []byte(content), 0600)
 
 	require.NoError(t, err)
 }
@@ -289,7 +405,7 @@ func verifyProjectFile(t *testing.T, azdCtx *azdcontext.AzdContext, content stri
 	content = strings.Replace(content, "<project>", azdCtx.GetDefaultProjectName(), 1)
 	verifyFileContent(t, azdCtx.ProjectPath(), content)
 
-	_, err := project.LoadProjectConfig(azdCtx.ProjectPath())
+	_, err := project.Load(context.Background(), azdCtx.ProjectPath())
 	require.NoError(t, err)
 }
 
@@ -303,7 +419,11 @@ func Test_determineDuplicates(t *testing.T) {
 		args     args
 		expected []string
 	}{
-		{"NoDuplicates", args{[]string{"a.txt", "b.txt", "dir1/a.txt"}, []string{"c.txt", "d.txt", "dir2/a.txt"}}, []string{}},
+		{
+			"NoDuplicates",
+			args{[]string{"a.txt", "b.txt", "dir1/a.txt"}, []string{"c.txt", "d.txt", "dir2/a.txt"}},
+			[]string{},
+		},
 		{"Duplicates", args{
 			[]string{
 				"a.txt", "b.txt", "c.txt",
@@ -342,6 +462,62 @@ func Test_determineDuplicates(t *testing.T) {
 func createFiles(t *testing.T, dir string, files []string) {
 	for _, file := range files {
 		require.NoError(t, os.MkdirAll(filepath.Dir(filepath.Join(dir, file)), 0755))
-		require.NoError(t, os.WriteFile(filepath.Join(dir, file), []byte{}, 0644))
+		require.NoError(t, os.WriteFile(filepath.Join(dir, file), []byte{}, 0600))
+	}
+}
+
+func Test_parseExecutableFiles(t *testing.T) {
+	tests := []struct {
+		name              string
+		stagedFilesOutput string
+		expected          []string
+		expectErr         bool
+	}{
+		{
+			"ParseSome",
+			heredoc.Doc(`
+				100755 0744dc7835515b7f6246969cc3a6d5ae69490db9 0	init.sh
+				100755 0684640b0dad4297b21109f2a39a73f4b1e3ca41 0	script/script1.sh
+				100644 8b41c35f177e442a80c3a9c3bac826d14628e6b4 0	readme.md
+				100644 53f096183482e39868eecd1d1a54a2a17cbe72e6 0	src/any1.txt
+				100755 0684640b0dad4297b21109f2a39a73f4b1e3ca41 0	script/script2.sh
+				100644 7c6cfd932637e4e89ce03c79563ad4044bf5c030 0	src/any2.json
+				100644 9b69faf15e1ba7232aa2004940ac3419bfe8192e 0	src/any3.csv
+				100644 0a5ec605ae4bdfdf384780e1b713f9404d41d97f 0	src/any4.txt
+				100755 de6afa7b4a15f3ef63a1756160a026e2284c514d 0	script/script3.sh
+				100644 21df4a08f368817971d2b3da7f471b97874f572f 0	doc.md`),
+			[]string{
+				"init.sh",
+				"script/script1.sh",
+				"script/script2.sh",
+				"script/script3.sh",
+			},
+			false,
+		},
+		{
+			"ParseNone",
+			heredoc.Doc(`
+				100644 8b41c35f177e442a80c3a9c3bac826d14628e6b4 0	readme.md
+				100644 53f096183482e39868eecd1d1a54a2a17cbe72e6 0	src/any1.txt
+				100644 7c6cfd932637e4e89ce03c79563ad4044bf5c030 0	src/any2.json
+				100644 9b69faf15e1ba7232aa2004940ac3419bfe8192e 0	src/any3.csv
+				100644 0a5ec605ae4bdfdf384780e1b713f9404d41d97f 0	src/any4.txt
+				100644 21df4a08f368817971d2b3da7f471b97874f572f 0	doc.md`),
+			[]string{},
+			false,
+		},
+		{"ParseEmpty", "", []string{}, false},
+		{"ErrorInvalidFormat", "100755 de6afa7b4a15f3ef63a1756160a026e2284c514d", []string{}, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			actual, err := parseExecutableFiles(tt.stagedFilesOutput)
+
+			if tt.expectErr {
+				require.Error(t, err)
+			} else {
+				assert.Equal(t, tt.expected, actual)
+			}
+		})
 	}
 }

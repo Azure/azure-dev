@@ -7,7 +7,8 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
@@ -23,9 +24,8 @@ import (
 )
 
 type infraCreateFlags struct {
-	noProgress   bool
-	outputFormat *string // pointer to allow delay-initialization when used in "azd up"
-	global       *internal.GlobalCommandOptions
+	noProgress bool
+	global     *internal.GlobalCommandOptions
 	*envFlag
 }
 
@@ -43,59 +43,78 @@ func (i *infraCreateFlags) bindNonCommon(local *pflag.FlagSet, global *internal.
 func (i *infraCreateFlags) bindCommon(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	i.envFlag = &envFlag{}
 	i.envFlag.Bind(local, global)
-
-	i.outputFormat = convert.RefOf("")
-	output.AddOutputFlag(
-		local,
-		i.outputFormat,
-		[]output.Format{output.JsonFormat, output.NoneFormat},
-		output.NoneFormat)
 }
 
-func (i *infraCreateFlags) setCommon(outputFormat *string, envFlag *envFlag) {
+func (i *infraCreateFlags) setCommon(envFlag *envFlag) {
 	i.envFlag = envFlag
-	i.outputFormat = outputFormat
 }
 
-func infraCreateCmdDesign(rootOptions *internal.GlobalCommandOptions) (*cobra.Command, *infraCreateFlags) {
-	cmd := &cobra.Command{
-		Use:     "create",
-		Short:   "Create Azure resources for an application.",
-		Aliases: []string{"provision"},
-	}
-	f := &infraCreateFlags{}
-	f.Bind(cmd.Flags(), rootOptions)
+func newInfraCreateFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *infraCreateFlags {
+	flags := &infraCreateFlags{}
+	flags.Bind(cmd.Flags(), global)
 
-	return cmd, f
+	return flags
+}
+
+func newInfraCreateCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:     "create",
+		Aliases: []string{"provision"},
+		Short:   "Provision the Azure resources for an app.",
+		//nolint:lll
+		Long: `Provision the Azure resources for an app.
+
+The command prompts you for the following values:
+- Environment name: The name of your environment.
+- Azure location: The Azure location where your resources will be deployed.
+- Azure subscription: The Azure subscription where your resources will be deployed.
+
+Depending on what Azure resources are created, running this command might take a while. To view progress, go to the Azure portal and search for the resource group that contains your environment name.`,
+	}
 }
 
 type infraCreateAction struct {
-	flags         infraCreateFlags
-	azCli         azcli.AzCli
-	azdCtx        *azdcontext.AzdContext
-	formatter     output.Formatter
-	writer        io.Writer
-	console       input.Console
-	commandRunner exec.CommandRunner
+	flags           *infraCreateFlags
+	accountManager  account.Manager
+	projectManager  project.ProjectManager
+	resourceManager project.ResourceManager
+	azdCtx          *azdcontext.AzdContext
+	azCli           azcli.AzCli
+	env             *environment.Environment
+	formatter       output.Formatter
+	projectConfig   *project.ProjectConfig
+	writer          io.Writer
+	console         input.Console
+	commandRunner   exec.CommandRunner
 }
 
 func newInfraCreateAction(
-	f infraCreateFlags,
-	azCli azcli.AzCli,
+	flags *infraCreateFlags,
+	accountManager account.Manager,
+	projectManager project.ProjectManager,
+	resourceManager project.ResourceManager,
 	azdCtx *azdcontext.AzdContext,
+	projectConfig *project.ProjectConfig,
+	azCli azcli.AzCli,
+	env *environment.Environment,
 	console input.Console,
 	formatter output.Formatter,
 	writer io.Writer,
 	commandRunner exec.CommandRunner,
-) *infraCreateAction {
+) actions.Action {
 	return &infraCreateAction{
-		flags:         f,
-		azCli:         azCli,
-		azdCtx:        azdCtx,
-		formatter:     formatter,
-		writer:        writer,
-		console:       console,
-		commandRunner: commandRunner,
+		flags:           flags,
+		accountManager:  accountManager,
+		projectManager:  projectManager,
+		resourceManager: resourceManager,
+		azdCtx:          azdCtx,
+		azCli:           azCli,
+		env:             env,
+		formatter:       formatter,
+		projectConfig:   projectConfig,
+		writer:          writer,
+		console:         console,
+		commandRunner:   commandRunner,
 	}
 }
 
@@ -106,22 +125,20 @@ func (i *infraCreateAction) Run(ctx context.Context) (*actions.ActionResult, err
 		TitleNote: "Provisioning Azure resources can take some time"},
 	)
 
-	env, ctx, err := loadOrInitEnvironment(ctx, &i.flags.environmentName, i.azdCtx, i.console, i.azCli)
-	if err != nil {
-		return nil, fmt.Errorf("loading environment: %w", err)
-	}
-
-	prj, err := project.LoadProjectConfig(i.azdCtx.ProjectPath())
-	if err != nil {
-		return nil, fmt.Errorf("loading project: %w", err)
-	}
-
-	if err = prj.Initialize(ctx, env, i.commandRunner); err != nil {
+	if err := i.projectManager.Initialize(ctx, i.projectConfig); err != nil {
 		return nil, err
 	}
 
 	infraManager, err := provisioning.NewManager(
-		ctx, env, prj.Path, prj.Infra, i.console.IsUnformatted(), i.azCli, i.console, i.commandRunner,
+		ctx,
+		i.env,
+		i.projectConfig.Path,
+		i.projectConfig.Infra,
+		i.console.IsUnformatted(),
+		i.azCli,
+		i.console,
+		i.commandRunner,
+		i.accountManager,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("creating provisioning manager: %w", err)
@@ -133,7 +150,7 @@ func (i *infraCreateAction) Run(ctx context.Context) (*actions.ActionResult, err
 	}
 
 	provisioningScope := infra.NewSubscriptionScope(
-		i.azCli, env.GetLocation(), env.GetSubscriptionId(), env.GetEnvName(),
+		i.azCli, i.env.GetLocation(), i.env.GetSubscriptionId(), i.env.GetEnvName(),
 	)
 	deployResult, err := infraManager.Deploy(ctx, deploymentPlan, provisioningScope)
 
@@ -159,10 +176,16 @@ func (i *infraCreateAction) Run(ctx context.Context) (*actions.ActionResult, err
 		return nil, fmt.Errorf("deployment failed: %w", err)
 	}
 
-	for _, svc := range prj.Services {
-		if err := svc.RaiseEvent(
-			ctx, project.EnvironmentUpdated,
-			map[string]any{"bicepOutput": deployResult.Deployment.Outputs}); err != nil {
+	for _, svc := range i.projectConfig.Services {
+		eventArgs := project.ServiceLifecycleEventArgs{
+			Project: i.projectConfig,
+			Service: svc,
+			Args: map[string]any{
+				"bicepOutput": deployResult.Deployment.Outputs,
+			},
+		}
+
+		if err := svc.RaiseEvent(ctx, project.ServiceEventEnvUpdated, eventArgs); err != nil {
 			return nil, err
 		}
 	}
@@ -188,7 +211,7 @@ func (i *infraCreateAction) Run(ctx context.Context) (*actions.ActionResult, err
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
 			Header:   "Your project has been provisioned!",
-			FollowUp: getResourceGroupFollowUp(ctx, i.formatter, i.azCli, prj, env),
+			FollowUp: getResourceGroupFollowUp(ctx, i.formatter, i.azCli, i.projectConfig, i.resourceManager, i.env),
 		},
 	}, nil
 }

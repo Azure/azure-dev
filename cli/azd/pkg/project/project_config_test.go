@@ -6,15 +6,47 @@ import (
 	"fmt"
 	"testing"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
+	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
-	"github.com/azure/azure-dev/cli/azd/test/mocks/mockarmresources"
-	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/stretchr/testify/require"
 )
+
+// Tests invalid project configurations.
+func TestProjectConfigParse_Invalid(t *testing.T) {
+	tests := []struct {
+		name          string
+		projectConfig string
+	}{
+		{
+			name: "ServiceLanguage",
+			projectConfig: heredoc.Doc(`
+				name: proj-invalid-lang
+				services:
+					web:
+						language: csharp-go-java++++
+						host: appservice
+			`),
+		},
+		{
+			name: "ServiceHost",
+			projectConfig: heredoc.Doc(`
+				name: proj-invalid-host
+				services:
+					web:
+						language: csharp
+						host: appservice-containerapp-hybrid-edge-cloud
+			`),
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			ctx := context.Background()
+			_, err := Parse(ctx, tt.projectConfig)
+			require.Error(t, err)
+		})
+	}
+}
 
 func TestProjectConfigDefaults(t *testing.T) {
 	const testProj = `
@@ -37,7 +69,8 @@ services:
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
 	})
 
-	projectConfig, err := ParseProjectConfig(testProj)
+	mockContext := mocks.NewMockContext(context.Background())
+	projectConfig, err := Parse(*mockContext.Context, testProj)
 	require.Nil(t, err)
 	require.NotNil(t, projectConfig)
 
@@ -70,77 +103,13 @@ services:
     host: appservice
 `
 
-	projectConfig, err := ParseProjectConfig(testProj)
+	mockContext := mocks.NewMockContext(context.Background())
+	projectConfig, err := Parse(*mockContext.Context, testProj)
 	require.Nil(t, err)
 
 	require.True(t, projectConfig.HasService("web"))
 	require.True(t, projectConfig.HasService("api"))
 	require.False(t, projectConfig.HasService("foobar"))
-}
-
-func TestProjectConfigGetProject(t *testing.T) {
-	const testProj = `
-name: test-proj
-metadata:
-  template: test-proj-template
-resourceGroup: rg-test
-services:
-  web:
-    project: src/web
-    language: js
-    host: appservice
-  api:
-    project: src/api
-    language: js
-    host: appservice
-`
-	mockContext := mocks.NewMockContext(context.Background())
-	mockarmresources.AddAzResourceListMock(
-		mockContext.HttpClient,
-		convert.RefOf("rg-test"),
-		[]*armresources.GenericResourceExpanded{
-			{
-				ID:       convert.RefOf("test-api"),
-				Name:     convert.RefOf("test-api"),
-				Type:     convert.RefOf(string(infra.AzureResourceTypeWebSite)),
-				Location: convert.RefOf("eastus"),
-				Tags: map[string]*string{
-					defaultServiceTag: convert.RefOf("api"),
-				},
-			},
-			{
-				ID:       convert.RefOf("test-web"),
-				Name:     convert.RefOf("test-web"),
-				Type:     convert.RefOf(string(infra.AzureResourceTypeWebSite)),
-				Location: convert.RefOf("eastus"),
-				Tags: map[string]*string{
-					defaultServiceTag: convert.RefOf("web"),
-				},
-			},
-		},
-	)
-	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
-
-	e := environment.EphemeralWithValues("test-env", map[string]string{
-		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
-	})
-
-	projectConfig, err := ParseProjectConfig(testProj)
-	require.Nil(t, err)
-
-	project, err := projectConfig.GetProject(*mockContext.Context, e, mockContext.Console, azCli, mockContext.CommandRunner)
-	require.Nil(t, err)
-	require.NotNil(t, project)
-
-	require.Same(t, projectConfig, project.Config)
-
-	for _, svc := range project.Services {
-		require.Same(t, project, svc.Project)
-		require.NotNil(t, svc.Config)
-		require.NotNil(t, svc.Framework)
-		require.NotNil(t, svc.Target)
-		require.NotNil(t, svc.TargetResource)
-	}
 }
 
 func TestProjectWithCustomDockerOptions(t *testing.T) {
@@ -159,7 +128,8 @@ services:
       context: ../
 `
 
-	projectConfig, err := ParseProjectConfig(testProj)
+	mockContext := mocks.NewMockContext(context.Background())
+	projectConfig, err := Parse(*mockContext.Context, testProj)
 
 	require.NotNil(t, projectConfig)
 	require.Nil(t, err)
@@ -184,7 +154,8 @@ services:
     module: ./api/api
 `
 
-	projectConfig, err := ParseProjectConfig(testProj)
+	mockContext := mocks.NewMockContext(context.Background())
+	projectConfig, err := Parse(*mockContext.Context, testProj)
 
 	require.NotNil(t, projectConfig)
 	require.Nil(t, err)
@@ -204,14 +175,14 @@ func TestProjectConfigAddHandler(t *testing.T) {
 		return nil
 	}
 
-	err := project.AddHandler(Deployed, handler)
+	err := project.AddHandler(ServiceEventDeploy, handler)
 	require.Nil(t, err)
 
 	// Expected error if attempting to register the same handler more than 1 time
-	err = project.AddHandler(Deployed, handler)
+	err = project.AddHandler(ServiceEventDeploy, handler)
 	require.NotNil(t, err)
 
-	err = project.RaiseEvent(*mockContext.Context, Deployed, nil)
+	err = project.RaiseEvent(*mockContext.Context, ServiceEventDeploy, ProjectLifecycleEventArgs{Project: project})
 	require.Nil(t, err)
 	require.True(t, handlerCalled)
 }
@@ -233,18 +204,18 @@ func TestProjectConfigRemoveHandler(t *testing.T) {
 	}
 
 	// Only handler 1 was registered
-	err := project.AddHandler(Deployed, handler1)
+	err := project.AddHandler(ServiceEventDeploy, handler1)
 	require.Nil(t, err)
 
-	err = project.RemoveHandler(Deployed, handler1)
+	err = project.RemoveHandler(ServiceEventDeploy, handler1)
 	require.Nil(t, err)
 
 	// Handler 2 wasn't registered so should error on remove
-	err = project.RemoveHandler(Deployed, handler2)
+	err = project.RemoveHandler(ServiceEventDeploy, handler2)
 	require.NotNil(t, err)
 
 	// No events are registered at the time event was raised
-	err = project.RaiseEvent(*mockContext.Context, Deployed, nil)
+	err = project.RaiseEvent(*mockContext.Context, ServiceEventDeploy, ProjectLifecycleEventArgs{Project: project})
 	require.Nil(t, err)
 	require.False(t, handler1Called)
 	require.False(t, handler2Called)
@@ -268,12 +239,12 @@ func TestProjectConfigWithMultipleEventHandlers(t *testing.T) {
 		return nil
 	}
 
-	err := project.AddHandler(Deployed, handler1)
+	err := project.AddHandler(ServiceEventDeploy, handler1)
 	require.Nil(t, err)
-	err = project.AddHandler(Deployed, handler2)
+	err = project.AddHandler(ServiceEventDeploy, handler2)
 	require.Nil(t, err)
 
-	err = project.RaiseEvent(*mockContext.Context, Deployed, nil)
+	err = project.RaiseEvent(*mockContext.Context, ServiceEventDeploy, ProjectLifecycleEventArgs{Project: project})
 	require.Nil(t, err)
 	require.True(t, handlerCalled1)
 	require.True(t, handlerCalled2)
@@ -296,12 +267,12 @@ func TestProjectConfigWithMultipleEvents(t *testing.T) {
 		return nil
 	}
 
-	err := project.AddHandler(Provisioned, provisionHandler)
+	err := project.AddHandler(ProjectEventProvision, provisionHandler)
 	require.Nil(t, err)
-	err = project.AddHandler(Deployed, deployHandler)
+	err = project.AddHandler(ProjectEventDeploy, deployHandler)
 	require.Nil(t, err)
 
-	err = project.RaiseEvent(*mockContext.Context, Provisioned, nil)
+	err = project.RaiseEvent(*mockContext.Context, ProjectEventProvision, ProjectLifecycleEventArgs{Project: project})
 	require.Nil(t, err)
 
 	require.True(t, provisionHandlerCalled)
@@ -320,12 +291,12 @@ func TestProjectConfigWithEventHandlerErrors(t *testing.T) {
 		return errors.New("sample error 2")
 	}
 
-	err := project.AddHandler(Provisioned, handler1)
+	err := project.AddHandler(ProjectEventProvision, handler1)
 	require.Nil(t, err)
-	err = project.AddHandler(Provisioned, handler2)
+	err = project.AddHandler(ProjectEventProvision, handler2)
 	require.Nil(t, err)
 
-	err = project.RaiseEvent(*mockContext.Context, Provisioned, nil)
+	err = project.RaiseEvent(*mockContext.Context, ProjectEventProvision, ProjectLifecycleEventArgs{Project: project})
 	require.NotNil(t, err)
 	require.Contains(t, err.Error(), "sample error 1")
 	require.Contains(t, err.Error(), "sample error 2")
@@ -345,7 +316,8 @@ services:
     module: ./api/api
 `
 
-	projectConfig, _ := ParseProjectConfig(testProj)
+	mockContext := mocks.NewMockContext(context.Background())
+	projectConfig, _ := Parse(*mockContext.Context, testProj)
 
 	return projectConfig
 }
@@ -361,14 +333,14 @@ func TestProjectConfigRaiseEventWithoutArgs(t *testing.T) {
 		return nil
 	}
 
-	err := project.AddHandler(Deployed, handler)
+	err := project.AddHandler(ProjectEventDeploy, handler)
 	require.Nil(t, err)
 
 	// Expected error if attempting to register the same handler more than 1 time
-	err = project.AddHandler(Deployed, handler)
+	err = project.AddHandler(ProjectEventDeploy, handler)
 	require.NotNil(t, err)
 
-	err = project.RaiseEvent(ctx, Deployed, nil)
+	err = project.RaiseEvent(ctx, ProjectEventDeploy, ProjectLifecycleEventArgs{Project: project})
 	require.Nil(t, err)
 	require.True(t, handlerCalled)
 }
@@ -377,23 +349,25 @@ func TestProjectConfigRaiseEventWithArgs(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	project := getProjectConfig()
 	handlerCalled := false
-	eventArgs := make(map[string]any)
-	eventArgs["foo"] = "bar"
+	eventArgs := ProjectLifecycleEventArgs{
+		Project: project,
+		Args:    map[string]any{"foo": "bar"},
+	}
 
-	handler := func(ctx context.Context, args ProjectLifecycleEventArgs) error {
+	handler := func(ctx context.Context, eventArgs ProjectLifecycleEventArgs) error {
 		handlerCalled = true
-		require.Equal(t, args.Args["foo"], "bar")
+		require.Equal(t, eventArgs.Args["foo"], "bar")
 		return nil
 	}
 
-	err := project.AddHandler(Deployed, handler)
+	err := project.AddHandler(ProjectEventDeploy, handler)
 	require.Nil(t, err)
 
 	// Expected error if attempting to register the same handler more than 1 time
-	err = project.AddHandler(Deployed, handler)
+	err = project.AddHandler(ProjectEventDeploy, handler)
 	require.NotNil(t, err)
 
-	err = project.RaiseEvent(*mockContext.Context, Deployed, eventArgs)
+	err = project.RaiseEvent(*mockContext.Context, ProjectEventDeploy, eventArgs)
 	require.Nil(t, err)
 	require.True(t, handlerCalled)
 }
@@ -413,7 +387,8 @@ services:
     module: ./api/api
     `
 
-	projectConfig, err := ParseProjectConfig(testProj)
+	mockContext := mocks.NewMockContext(context.Background())
+	projectConfig, err := Parse(*mockContext.Context, testProj)
 	require.NoError(t, err)
 
 	env := environment.EphemeralWithValues("", map[string]string{

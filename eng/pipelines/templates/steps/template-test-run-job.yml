@@ -63,20 +63,6 @@ steps:
     - task: DevcontainersCI@0
       inputs:
           env: |
-              AZD_VERSION=$(AzdVersion)
-          subFolder: "$(Build.SourcesDirectory)/temp"
-          runCmd: |
-              # Install azd
-              curl -fsSL https://aka.ms/install-azd.sh | bash -s -- --version $(AzdVersion) --verbose
-
-              # Check azd version
-              azd version
-
-      displayName: Install devcontainer azd version
-
-    - task: DevcontainersCI@0
-      inputs:
-          env: |
               # Required secrets for Terraform service principal authentication
               ARM_CLIENT_ID=$(arm-client-id)
               ARM_CLIENT_SECRET=$(arm-client-secret)
@@ -100,6 +86,13 @@ steps:
               AZD_DEBUG_FORCE_NO_TTY="1"
           subFolder: "$(Build.SourcesDirectory)/temp"
           runCmd: |
+              # Uninstall azd version
+              curl -fsSL https://aka.ms/uninstall-azd.sh | bash
+
+              # Install azd from PR
+              curl -fsSL https://aka.ms/install-azd.sh | bash -s -- --version $(AzdVersion) --verbose
+              azd version
+
               # Login
               azd login \
                 --client-id "$(arm-client-id)" \

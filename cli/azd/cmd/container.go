@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/repository"
@@ -124,35 +123,6 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	// Auth
 	container.RegisterSingleton(auth.NewLoggedInGuard)
 	container.RegisterSingleton(auth.NewMultiTenantCredentialProvider)
-	// Register a default azcore.TokenCredential that is scoped to the tenantID
-	// required to access the current environment's subscription.
-	container.RegisterSingleton(
-		func(
-			ctx context.Context,
-			env *environment.Environment,
-			subResolver account.SubscriptionTenantResolver,
-			credProvider auth.MultiTenantCredentialProvider) (azcore.TokenCredential, error) {
-			if env == nil {
-				//nolint:lll
-				panic(
-					"command asked for azcore.TokenCredential, but prerequisite dependency environment. Environment was not registered.",
-				)
-			}
-
-			subscriptionId := env.GetSubscriptionId()
-			if subscriptionId == "" {
-				return nil, fmt.Errorf(
-					"environment %s does not have %s set",
-					env.GetEnvName(), environment.SubscriptionIdEnvVarName)
-			}
-
-			tenantId, err := subResolver.LookupTenant(ctx, subscriptionId)
-			if err != nil {
-				return nil, err
-			}
-
-			return credProvider.GetTokenCredential(ctx, tenantId)
-		})
 	container.RegisterSingleton(func(mgr *auth.Manager) CredentialProviderFn {
 		return mgr.CredentialForCurrentUser
 	})
@@ -288,6 +258,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(account.NewSubscriptionsService)
 	container.RegisterSingleton(account.NewManager)
 	container.RegisterSingleton(account.NewSubscriptionsManager)
+	container.RegisterSingleton(account.NewSubscriptionCredentialProvider)
 	container.RegisterSingleton(azcli.NewManagedClustersService)
 	container.RegisterSingleton(azcli.NewContainerRegistryService)
 	container.RegisterSingleton(func() ioc.ServiceLocator {
@@ -299,12 +270,14 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	})
 
 	// Tools
-	container.RegisterSingleton(func(rootOptions *internal.GlobalCommandOptions,
-		credential azcore.TokenCredential, httpClient httputil.HttpClient) azcli.AzCli {
-		return azcli.NewAzCli(credential, azcli.NewAzCliArgs{
+	container.RegisterSingleton(func(
+		rootOptions *internal.GlobalCommandOptions,
+		credentialProvider account.SubscriptionCredentialProvider,
+		httpClient httputil.HttpClient,
+	) azcli.AzCli {
+		return azcli.NewAzCli(credentialProvider, httpClient, azcli.NewAzCliArgs{
 			EnableDebug:     rootOptions.EnableDebugLogging,
 			EnableTelemetry: rootOptions.EnableTelemetry,
-			HttpClient:      httpClient,
 		})
 	})
 	container.RegisterSingleton(bicep.NewBicepCli)
@@ -346,7 +319,6 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		project.ServiceLanguageCsharp:     project.NewDotNetProject,
 		project.ServiceLanguageFsharp:     project.NewDotNetProject,
 		project.ServiceLanguagePython:     project.NewPythonProject,
-		project.ServiceLanguagePy:         project.NewPythonProject,
 		project.ServiceLanguageJavaScript: project.NewNpmProject,
 		project.ServiceLanguageTypeScript: project.NewNpmProject,
 		project.ServiceLanguageJava:       project.NewMavenProject,

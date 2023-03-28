@@ -122,7 +122,7 @@ func SetAttributeAsPropertyOrMeasurement(
 	case attribute.FLOAT64:
 		measurements[string(kv.Key)] = kv.Value.AsFloat64()
 	case attribute.BOOLSLICE, attribute.INT64SLICE, attribute.FLOAT64SLICE, attribute.STRINGSLICE:
-		arrayJson, err := json.Marshal(kv.Value)
+		arrayJson, err := json.Marshal(kv.Value.AsInterface())
 		if err != nil {
 			diagLog.Printf("Could not serialize slice of type '%s' as JSON array: %s", kv.Value.Type(), err.Error())
 			return

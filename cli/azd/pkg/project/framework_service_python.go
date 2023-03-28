@@ -147,11 +147,7 @@ func (pp *pythonProject) Package(
 
 const cVenvConfigFileName = "pyvenv.cfg"
 
-func excludeVirtualEnv(path string, file os.FileInfo) bool {
-	if !file.IsDir() {
-		return false
-	}
-
+func isPythonVirtualEnv(path string) bool {
 	// check if `pyvenv.cfg` is within the folder
 	if _, err := os.Stat(filepath.Join(path, cVenvConfigFileName)); err == nil {
 		return true
@@ -159,13 +155,12 @@ func excludeVirtualEnv(path string, file os.FileInfo) bool {
 	return false
 }
 
-func excludePyCache(path string, file os.FileInfo) bool {
-	if !file.IsDir() {
-		return false
-	}
+func excludeVirtualEnv(path string, file os.FileInfo) bool {
+	return file.IsDir() && isPythonVirtualEnv(path)
+}
 
-	folderName := strings.ToLower(file.Name())
-	return folderName == "__pycache__"
+func excludePyCache(path string, file os.FileInfo) bool {
+	return file.IsDir() && strings.ToLower(file.Name()) == "__pycache__"
 }
 
 func (pp *pythonProject) getVenvName(serviceConfig *ServiceConfig) string {

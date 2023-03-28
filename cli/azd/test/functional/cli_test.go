@@ -134,7 +134,7 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "init")
 	require.NoError(t, err)
 
-	_, err = cli.RunCommand(ctx, "infra", "create")
+	_, err = cli.RunCommand(ctx, "provision")
 	require.NoError(t, err)
 
 	envPath := filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName)
@@ -168,7 +168,6 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, rgs)
 
-	// Using `down` here to test the down alias to infra delete
 	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
 	require.NoError(t, err)
 }
@@ -195,6 +194,7 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "init")
 	require.NoError(t, err)
 
+	// test 'infra create' alias
 	_, err = cli.RunCommand(ctx, "infra", "create", "--output", "json")
 	require.NoError(t, err)
 
@@ -229,8 +229,8 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, rgs)
 
-	// Using `down` here to test the down alias to infra delete
-	_, err = cli.RunCommand(ctx, "down", "--force", "--purge", "--output", "json")
+	// test 'infra delete' alias
+	_, err = cli.RunCommand(ctx, "infra", "delete", "--force", "--purge", "--output", "json")
 	require.NoError(t, err)
 }
 
@@ -447,8 +447,8 @@ func Test_CLI_InfraCreateAndDeleteResourceTerraform(t *testing.T) {
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "init")
 	require.NoError(t, err)
 
-	t.Logf("Starting infra create\n")
-	_, err = cli.RunCommand(ctx, "infra", "create", "--cwd", dir)
+	t.Logf("Starting provision\n")
+	_, err = cli.RunCommand(ctx, "provision", "--cwd", dir)
 	require.NoError(t, err)
 
 	envPath := filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName)
@@ -456,8 +456,8 @@ func Test_CLI_InfraCreateAndDeleteResourceTerraform(t *testing.T) {
 	require.NoError(t, err)
 	assertEnvValuesStored(t, env)
 
-	t.Logf("Starting infra delete\n")
-	_, err = cli.RunCommand(ctx, "infra", "delete", "--cwd", dir, "--force", "--purge")
+	t.Logf("Starting down\n")
+	_, err = cli.RunCommand(ctx, "down", "--cwd", dir, "--force", "--purge")
 	require.NoError(t, err)
 
 	t.Logf("Done\n")

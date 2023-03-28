@@ -146,7 +146,7 @@ repo:
       to: ./infra/modules/apim-api
 
     # .devcontainer common (devcontainer.json)
-    - from: ../../../../../common/.devcontainer/devcontainer.json/java
+    - from: ../../../../../common/.devcontainer/devcontainer.json/java/terraform
       to: ./.devcontainer
 
     # .devcontainer common (Dockerfile)

@@ -58,6 +58,8 @@ var nonNullEnvVarRules = []struct {
 	// GitHub Codespaces -
 	// https://docs.github.com/en/codespaces/developing-in-codespaces/default-environment-variables-for-your-codespace
 	{"CODESPACES", fields.EnvCodespaces},
+	// Azure CloudShell
+	{"AZD_IN_CLOUDSHELL", fields.EnvCloudShell},
 	// Unknown CI cases
 	{"CI", fields.EnvUnknownCI},
 	{"BUILD_ID", fields.EnvUnknownCI},

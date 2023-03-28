@@ -88,6 +88,7 @@ const (
 	EnvTeamCity           = "TeamCity"
 	EnvJetBrainsSpace     = "JetBrains Space"
 	EnvCodespaces         = "GitHub Codespaces"
+	EnvCloudShell         = "Azure CloudShell"
 )
 
 // All possible enumerations of AccountTypeKey

@@ -3,8 +3,10 @@ package auth
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 	"time"
 
@@ -14,10 +16,6 @@ import (
 
 // Use URL from https://learn.microsoft.com/en-us/azure/cloud-shell/msi-authorization
 const cLocalTokenUrl = "http://localhost:50342/oauth2/token" //#nosec G101 -- This is a false positive
-
-// Note, resource=https://management.azure.com/ is different from the default
-// resource.
-const cTokenResource = "resource=https://management.azure.com/" //#nosec G101 -- This is a false positive
 
 type TokenFromCloudShell struct {
 	AccessToken  string      `json:"access_token"`
@@ -33,18 +31,26 @@ type CloudShellCredential struct {
 }
 
 func (t CloudShellCredential) GetToken(ctx context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {
+	postData := url.Values{}
+	postData.Set("resource", "https://management.azure.com/")
+
 	req, err := http.NewRequestWithContext(
-		ctx, "POST", cLocalTokenUrl, strings.NewReader(cTokenResource))
+		ctx, "POST", cLocalTokenUrl, strings.NewReader(postData.Encode()))
 	if err != nil {
 		return azcore.AccessToken{}, err
 	}
 	req.Header.Add("Metadata", "true")
+	req.Header.Add("Content-Type", "application/x-www-form-urlencoded")
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
 		return azcore.AccessToken{}, err
 	}
 	defer resp.Body.Close()
+
+	if resp.StatusCode != 200 {
+		return azcore.AccessToken{}, fmt.Errorf("invalid CloudShell token API response code: %d", resp.StatusCode)
+	}
 
 	responseBytes, err := io.ReadAll(resp.Body)
 	if err != nil {

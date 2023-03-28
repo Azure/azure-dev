@@ -60,3 +60,16 @@ webapprouting
 webfonts
 webui
 wwwroot
+passwordless
+jdbc
+datasource
+DATASOURCE
+rdbms
+RDBMS
+sslmode
+pgaadauth
+pqsl
+substr
+PGPASSWORD
+pathexpand
+dbname

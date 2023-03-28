@@ -150,7 +150,7 @@ repo:
       to: ./.devcontainer
 
     # .devcontainer common (Dockerfile)
-    - from: ../../../../../common/.devcontainer/Dockerfile/base
+    - from: ../../../../../common/.devcontainer/Dockerfile/postgresql
       to: ./.devcontainer
 
     # Assets common

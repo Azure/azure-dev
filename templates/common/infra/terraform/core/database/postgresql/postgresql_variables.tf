@@ -21,7 +21,7 @@ variable "resource_token" {
 variable "administrator_login" {
   type        = string
   description = "The PostgreSQL administrator login"
-  default     = "psqladmin"
+  default     = "psql-admin"
 }
 
 variable "database_name" {

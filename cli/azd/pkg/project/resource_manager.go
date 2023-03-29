@@ -143,7 +143,7 @@ func (rm *resourceManager) GetServiceResource(
 		if len(resources) == 0 {
 			err := fmt.Errorf(
 				//nolint:lll
-				"unable to find a resource tagged with '%s: %s'. Ensure the service resource is correctly tagged in your bicep files, and rerun %s",
+				"unable to find a resource tagged with '%s: %s'. Ensure the service resource is correctly tagged in your infrastructure templates, and rerun %s",
 				defaultServiceTag,
 				serviceConfig.Name,
 				rerunCommand,
@@ -154,7 +154,7 @@ func (rm *resourceManager) GetServiceResource(
 		if len(resources) != 1 {
 			return azcli.AzCliResource{}, fmt.Errorf(
 				//nolint:lll
-				"expecting only '1' resource tagged with '%s: %s', but found '%d'. Ensure a unique service resource is correctly tagged in your bicep files, and rerun %s",
+				"expecting only '1' resource tagged with '%s: %s', but found '%d'. Ensure a unique service resource is correctly tagged in your infrastructure templates, and rerun %s",
 				defaultServiceTag,
 				serviceConfig.Name,
 				len(resources),

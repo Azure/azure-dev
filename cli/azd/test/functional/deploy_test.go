@@ -1,74 +1,68 @@
 package cli_test
 
 import (
-	"errors"
-	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
-	"github.com/google/go-cmdtest"
 	"github.com/stretchr/testify/require"
 )
 
-func shouldUpdate() bool {
-	val, ok := os.LookupEnv("UPDATE")
-	if !ok {
-		return false
-	}
+// verifies deploy command's working directory behavior
+func Test_CLI_Deploy_Err_WorkingDirectory(t *testing.T) {
+	// running this test in parallel is ok as it uses a t.TempDir()
+	t.Parallel()
+	ctx, cancel := newTestContext(t)
+	defer cancel()
 
-	update, err := strconv.ParseBool(val)
-	if err != nil {
-		fmt.Printf("env var UPDATE is set to an invalid value: %s\n", val)
-		panic(err)
-	}
-	return update
-}
-
-func hideCmd(commands map[string]cmdtest.CommandFunc) cmdtest.CommandFunc {
-	return func(args []string, inputFile string) ([]byte, error) {
-		return hideCmdImpl(args, inputFile, commands)
-	}
-}
-
-// Hides command output. Useful for testing commands that output to stdout in a non-deterministic fashion (spinners).
-func hideCmdImpl(
-	args []string,
-	inputFile string,
-	commands map[string]cmdtest.CommandFunc) ([]byte, error) {
-	if len(args) < 1 {
-		return nil, errors.New("need at least 1 argument")
-	}
-	if inputFile != "" {
-		return nil, errors.New("input redirection not supported")
-	}
-	if args[0] == "hide" {
-		return nil, errors.New("cannot hide the hide command")
-	}
-
-	cmd, ok := commands[args[0]]
-	if !ok {
-		return nil, fmt.Errorf("invalid cmd: %s", args[0]))
-	}
-
-	// discard output
-	_, err := cmd(args[1:], "")
-	return nil, err
-}
-
-func Test_Deploy_Errors(t *testing.T) {
-	t.Setenv("TERM", "dumb")
-
-	ts, err := cmdtest.Read(filepath.Join("testdata", "cmd", "working-directory"))
-	require.NoError(t, err)
+	dir := tempDirWithDiagnostics(t)
+	t.Logf("DIR: %s", dir)
 
 	cli := azdcli.NewCLI(t)
-	ts.Commands["hide"] = hideCmd(ts.Commands)
-	ts.Commands["azd"] = cmdtest.Program(cli.AzdPath)
-	ts.Setup = func(path string) error {
-		return copySample(path, "webapp")
-	}
-	ts.Run(t, shouldUpdate())
+	cli.WorkingDirectory = dir
+	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
+
+	err := copySample(dir, "webapp")
+	require.NoError(t, err, "failed expanding sample")
+
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests("testenv"), "init")
+	require.NoError(t, err)
+
+	// cd infra
+	err = os.MkdirAll(filepath.Join(dir, "infra"), osutil.PermissionDirectory)
+	require.NoError(t, err)
+	cli.WorkingDirectory = filepath.Join(dir, "infra")
+
+	result, err := cli.RunCommand(ctx, "deploy")
+	require.Error(t, err, "deploy should fail in non-project and non-service directory")
+	require.Contains(t, result.Stdout, "current working directory")
+}
+
+// test for azd deploy, azd deploy <service>
+func Test_CLI_DeployInvalidName(t *testing.T) {
+	// running this test in parallel is ok as it uses a t.TempDir()
+	t.Parallel()
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
+	t.Logf("DIR: %s", dir)
+
+	envName := randomEnvName()
+	t.Logf("AZURE_ENV_NAME: %s", envName)
+
+	cli := azdcli.NewCLI(t)
+	cli.WorkingDirectory = dir
+	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
+
+	err := copySample(dir, "webapp")
+	require.NoError(t, err, "failed expanding sample")
+
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "init")
+	require.NoError(t, err)
+
+	_, err = cli.RunCommand(ctx, "deploy", "badServiceName")
+	require.Error(t, err)
 }

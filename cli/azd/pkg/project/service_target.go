@@ -32,6 +32,7 @@ func parseServiceHost(kind ServiceTargetKind) (ServiceTargetKind, error) {
 		ContainerAppTarget,
 		AzureFunctionTarget,
 		StaticWebAppTarget,
+		SpringAppTarget,
 		AksTarget:
 		return kind, nil
 	}

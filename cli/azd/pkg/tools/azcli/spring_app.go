@@ -34,8 +34,13 @@ func (cli *azCli) createSpringAppClient(
 	ctx context.Context,
 	subscriptionId string,
 ) (*armappplatform.AppsClient, error) {
+	credential, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
 	options := cli.createDefaultClientOptionsBuilder(ctx).BuildArmClientOptions()
-	client, err := armappplatform.NewAppsClient(subscriptionId, cli.credential, options)
+	client, err := armappplatform.NewAppsClient(subscriptionId, credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating SpringApp client: %w", err)
 	}

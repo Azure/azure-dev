@@ -10,7 +10,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// verifies deploy command's working directory behavior
+// test for errors when running deploy in invalid working directories
 func Test_CLI_Deploy_Err_WorkingDirectory(t *testing.T) {
 	// running this test in parallel is ok as it uses a t.TempDir()
 	t.Parallel()

@@ -12,48 +12,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Contains the name and restore directory of a service that is expected to be restored
-// in `restoreapp` sample
-type restoreAppService struct {
-	// the service name
-	name string
-
-	// the service projectDir
-	projectDir string
-
-	// the service's restore directory. relative to the service directory.
-	restoreDir string
-}
-
-func (s *restoreAppService) RequireRestored(t *testing.T, rootDir string) {
-	if s.name == "" || s.projectDir == "" || s.restoreDir == "" {
-		panic("service name, projectDir, or restoreDir is empty")
-	}
-	require.DirExists(
-		t,
-		filepath.Join(rootDir, s.projectDir, s.restoreDir),
-		fmt.Sprintf("service %s should be restored", s.name))
-}
-
-func (s *restoreAppService) RequireNotRestored(t *testing.T, rootDir string) {
-	if s.name == "" || s.projectDir == "" || s.restoreDir == "" {
-		panic("service name, projectDir, or restoreDir is empty")
-	}
-	require.NoDirExists(
-		t,
-		filepath.Join(rootDir, s.projectDir, s.restoreDir),
-		fmt.Sprintf("service %s should not be restored", s.name))
-}
-
-var restoreAppServices = map[string]restoreAppService{
-	"node":      {name: "nodeapptest", projectDir: "nodeapp", restoreDir: "node_modules"},
-	"container": {name: "containerapptest", projectDir: "containerapp", restoreDir: "node_modules"},
-	"py":        {name: "pyapptest", projectDir: "pyapp", restoreDir: "pyapp_env"},
-	"csharp":    {name: "csharpapptest", projectDir: "csharpapp", restoreDir: "obj"},
-	"func":      {name: "funcapptest", projectDir: "funcapp", restoreDir: "funcapp_env"},
-}
-
-// verifies restore command's working directory error behavior
+// test for errors when running restore in invalid working directories
 func Test_CLI_Restore_Err_WorkingDirectory(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := newTestContext(t)
@@ -114,6 +73,64 @@ func Test_CLI_Restore_Err_WorkingDirectory(t *testing.T) {
 	require.Contains(t, result.Stderr, azdcontext.ErrNoProject.Error())
 }
 
+// test restore in a service directory
+func Test_CLI_Restore_InServiceDirectory(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
+	t.Logf("DIR: %s", dir)
+
+	envName := randomEnvName()
+	t.Logf("AZURE_ENV_NAME: %s", envName)
+
+	cli := azdcli.NewCLI(t)
+	cli.WorkingDirectory = dir
+	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
+
+	err := copySample(dir, "restoreapp")
+	require.NoError(t, err, "failed expanding sample")
+
+	csharp := restoreAppServices["csharp"]
+	csharp.RequireNotRestored(t, dir)
+
+	cli.WorkingDirectory = filepath.Join(dir, csharp.projectDir)
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "restore")
+	require.NoError(t, err)
+
+	csharp.RequireRestored(t, dir)
+}
+
+// test restore using a service name passed explicitly
+func Test_CLI_Restore_UsingServiceName(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
+	t.Logf("DIR: %s", dir)
+
+	envName := randomEnvName()
+	t.Logf("AZURE_ENV_NAME: %s", envName)
+
+	cli := azdcli.NewCLI(t)
+	cli.WorkingDirectory = dir
+	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
+
+	err := copySample(dir, "restoreapp")
+	require.NoError(t, err, "failed expanding sample")
+
+	csharp := restoreAppServices["csharp"]
+	csharp.RequireNotRestored(t, dir)
+
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "restore", csharp.name)
+	require.NoError(t, err)
+
+	csharp.RequireRestored(t, dir)
+}
+
+// test restore all in the project directory
 func Test_CLI_RestoreAll_InProjectDir(t *testing.T) {
 	t.Parallel()
 	ctx, cancel := newTestContext(t)
@@ -144,63 +161,7 @@ func Test_CLI_RestoreAll_InProjectDir(t *testing.T) {
 	}
 }
 
-// restore in service directory
-func Test_CLI_Restore_InServiceDirectory(t *testing.T) {
-	t.Parallel()
-	ctx, cancel := newTestContext(t)
-	defer cancel()
-
-	dir := tempDirWithDiagnostics(t)
-	t.Logf("DIR: %s", dir)
-
-	envName := randomEnvName()
-	t.Logf("AZURE_ENV_NAME: %s", envName)
-
-	cli := azdcli.NewCLI(t)
-	cli.WorkingDirectory = dir
-	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
-
-	err := copySample(dir, "restoreapp")
-	require.NoError(t, err, "failed expanding sample")
-
-	csharp := restoreAppServices["csharp"]
-	csharp.RequireNotRestored(t, dir)
-
-	cli.WorkingDirectory = filepath.Join(dir, csharp.projectDir)
-	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "restore")
-	require.NoError(t, err)
-
-	csharp.RequireRestored(t, dir)
-}
-
-func Test_CLI_Restore_UsingServiceName(t *testing.T) {
-	t.Parallel()
-	ctx, cancel := newTestContext(t)
-	defer cancel()
-
-	dir := tempDirWithDiagnostics(t)
-	t.Logf("DIR: %s", dir)
-
-	envName := randomEnvName()
-	t.Logf("AZURE_ENV_NAME: %s", envName)
-
-	cli := azdcli.NewCLI(t)
-	cli.WorkingDirectory = dir
-	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
-
-	err := copySample(dir, "restoreapp")
-	require.NoError(t, err, "failed expanding sample")
-
-	csharp := restoreAppServices["csharp"]
-	csharp.RequireNotRestored(t, dir)
-
-	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "restore", csharp.name)
-	require.NoError(t, err)
-
-	csharp.RequireRestored(t, dir)
-}
-
-// restore --all
+// test restore --all
 func Test_CLI_RestoreAll_UsingFlags(t *testing.T) {
 	// running this test in parallel is ok as it uses a t.TempDir()
 	t.Parallel()
@@ -234,4 +195,45 @@ func Test_CLI_RestoreAll_UsingFlags(t *testing.T) {
 	for _, service := range restoreAppServices {
 		service.RequireRestored(t, dir)
 	}
+}
+
+// Contains the name and restore directory of a service that is expected to be restored
+// in `restoreapp` sample
+type restoreAppService struct {
+	// the service name
+	name string
+
+	// the service projectDir
+	projectDir string
+
+	// the service's restore directory. relative to the service directory.
+	restoreDir string
+}
+
+func (s *restoreAppService) RequireRestored(t *testing.T, rootDir string) {
+	if s.name == "" || s.projectDir == "" || s.restoreDir == "" {
+		panic("service name, projectDir, or restoreDir is empty")
+	}
+	require.DirExists(
+		t,
+		filepath.Join(rootDir, s.projectDir, s.restoreDir),
+		fmt.Sprintf("service %s should be restored", s.name))
+}
+
+func (s *restoreAppService) RequireNotRestored(t *testing.T, rootDir string) {
+	if s.name == "" || s.projectDir == "" || s.restoreDir == "" {
+		panic("service name, projectDir, or restoreDir is empty")
+	}
+	require.NoDirExists(
+		t,
+		filepath.Join(rootDir, s.projectDir, s.restoreDir),
+		fmt.Sprintf("service %s should not be restored", s.name))
+}
+
+var restoreAppServices = map[string]restoreAppService{
+	"node":      {name: "nodeapptest", projectDir: "nodeapp", restoreDir: "node_modules"},
+	"container": {name: "containerapptest", projectDir: "containerapp", restoreDir: "node_modules"},
+	"py":        {name: "pyapptest", projectDir: "pyapp", restoreDir: "pyapp_env"},
+	"csharp":    {name: "csharpapptest", projectDir: "csharpapp", restoreDir: "obj"},
+	"func":      {name: "funcapptest", projectDir: "funcapp", restoreDir: "funcapp_env"},
 }

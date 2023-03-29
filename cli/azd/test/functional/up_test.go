@@ -76,7 +76,7 @@ func Test_CLI_Up_Down_WebApp(t *testing.T) {
 	require.Equal(t, "webapp.csproj", filepath.Base(service.Project.Path))
 	require.Equal(t, 1, len(service.Target.ResourceIds))
 
-	_, err = cli.RunCommand(ctx, "deploy")
+	_, err = cli.RunCommand(ctx, "deploy", "web")
 	require.NoError(t, err)
 
 	env, err := godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
@@ -254,7 +254,7 @@ func Test_CLI_Up_Down_ContainerApp(t *testing.T) {
 			_, err = cli.RunCommand(ctx, "infra", "create")
 			require.NoError(t, err)
 
-			_, err = cli.RunCommand(ctx, "deploy")
+			_, err = cli.RunCommand(ctx, "deploy", "--cwd", filepath.Join(dir, "src", "dotnet"))
 			require.NoError(t, err)
 
 			// The sample hosts a small application that just responds with a 200 OK with a body of "Hello, `azd`."

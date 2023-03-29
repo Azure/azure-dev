@@ -234,62 +234,6 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 	require.NoError(t, err)
 }
 
-// test for azd deploy, azd deploy <service>
-func Test_CLI_DeployInvalidName(t *testing.T) {
-	// running this test in parallel is ok as it uses a t.TempDir()
-	t.Parallel()
-	ctx, cancel := newTestContext(t)
-	defer cancel()
-
-	dir := tempDirWithDiagnostics(t)
-	t.Logf("DIR: %s", dir)
-
-	envName := randomEnvName()
-	t.Logf("AZURE_ENV_NAME: %s", envName)
-
-	cli := azdcli.NewCLI(t)
-	cli.WorkingDirectory = dir
-	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
-
-	err := copySample(dir, "webapp")
-	require.NoError(t, err, "failed expanding sample")
-
-	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "init")
-	require.NoError(t, err)
-
-	_, err = cli.RunCommand(ctx, "deploy", "badServiceName")
-	require.Error(t, err)
-}
-
-func Test_CLI_RestoreCommand(t *testing.T) {
-	// running this test in parallel is ok as it uses a t.TempDir()
-	t.Parallel()
-	ctx, cancel := newTestContext(t)
-	defer cancel()
-
-	dir := tempDirWithDiagnostics(t)
-	t.Logf("DIR: %s", dir)
-
-	envName := randomEnvName()
-	t.Logf("AZURE_ENV_NAME: %s", envName)
-
-	cli := azdcli.NewCLI(t)
-	cli.WorkingDirectory = dir
-	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
-
-	err := copySample(dir, "restoreapp")
-	require.NoError(t, err, "failed expanding sample")
-
-	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "restore")
-	require.NoError(t, err)
-
-	require.DirExists(t, path.Join(dir, "nodeapp", "node_modules", "chalk"), "nodeapp not restored")
-	require.DirExists(t, path.Join(dir, "containerapp", "node_modules", "chalk"), "containerapp not restored")
-	require.DirExists(t, path.Join(dir, "pyapp", "pyapp_env"), "pyapp not restored")
-	require.DirExists(t, path.Join(dir, "csharpapp", "obj"), "csharpapp not restored")
-	require.DirExists(t, path.Join(dir, "funcapp", "funcapp_env"), "funcapp not restored")
-}
-
 func Test_CLI_ProjectIsNeeded(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()

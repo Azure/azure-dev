@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 
@@ -24,12 +25,19 @@ import (
 )
 
 type restoreFlags struct {
+	all         bool
 	global      *internal.GlobalCommandOptions
 	serviceName string
 	envFlag
 }
 
 func (r *restoreFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+	local.BoolVar(
+		&r.all,
+		"all",
+		false,
+		"Restores all services that are listed in "+azdcontext.ProjectFileName,
+	)
 	local.StringVar(
 		&r.serviceName,
 		"service",
@@ -106,36 +114,56 @@ func (r *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		targetServiceName = r.args[0]
 	}
 
+	if r.flags.all && targetServiceName != "" {
+		return nil, fmt.Errorf("cannot specify both --all and <service>")
+	}
+
+	if !r.flags.all && targetServiceName == "" {
+		var err error
+		targetServiceName, err = defaultServiceFromWd(r.azdCtx, r.projectConfig)
+		if errors.Is(err, errNoDefaultService) {
+			return nil, fmt.Errorf(
+				//nolint:lll
+				"current working directory is not a project or service directory. Please specify a service name to restore a service, or specify --all to restore all services")
+		} else if err != nil {
+			return nil, err
+		}
+	}
+
 	if targetServiceName != "" && !r.projectConfig.HasService(targetServiceName) {
 		return nil, fmt.Errorf("service name '%s' doesn't exist", targetServiceName)
 	}
 
 	count := 0
 
+	services := r.projectConfig.GetServicesStable()
+	targetServices := make([]*project.ServiceConfig, 0, len(services))
+	for _, svc := range services {
+		// If targetServiceName is empty (which is only allowed if --all is set),
+		// or if service is specified and matches the target service
+		if targetServiceName == "" || targetServiceName == svc.Name {
+			targetServices = append(targetServices, svc)
+		}
+	}
+
 	// Collect all the tools we will need to do the restore and validate that
 	// the are installed. When a single project is being deployed, we need just
 	// the tools for that project, otherwise we need the tools from all project.
 	allTools := []tools.ExternalTool{}
-	for _, svc := range r.projectConfig.Services {
-		if targetServiceName == "" || targetServiceName == svc.Name {
-			requiredTools, err := r.serviceManager.GetRequiredTools(ctx, svc)
-			if err != nil {
-				return nil, fmt.Errorf("failed getting required tools, %w", err)
-			}
-
-			allTools = append(allTools, requiredTools...)
+	for _, svc := range targetServices {
+		requiredTools, err := r.serviceManager.GetRequiredTools(ctx, svc)
+		if err != nil {
+			return nil, fmt.Errorf("failed getting required tools, %w", err)
 		}
+
+		allTools = append(allTools, requiredTools...)
 	}
 
 	if err := tools.EnsureInstalled(ctx, tools.Unique(allTools)...); err != nil {
 		return nil, err
 	}
 
-	for _, svc := range r.projectConfig.Services {
-		if targetServiceName != "" && svc.Name != targetServiceName {
-			continue
-		}
-
+	for _, svc := range targetServices {
 		installMsg := fmt.Sprintf("Installing dependencies for %s service...", svc.Name)
 		spinner := spin.NewSpinner(r.console.Handles().Stdout, installMsg)
 		if err := spinner.Run(func() error {

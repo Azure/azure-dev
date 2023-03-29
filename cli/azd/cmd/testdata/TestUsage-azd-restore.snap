@@ -11,7 +11,6 @@ Flags
         --all                	: Restores all services that are listed in azure.yaml
     -e, --environment string 	: The name of the environment to use.
     -h, --help               	: Gets help for restore.
-    -o, --output string      	: The output format (the supported formats are json, none).
 
 Global Flags
     -C, --cwd string 	: Sets the current working directory.

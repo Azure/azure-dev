@@ -6,7 +6,6 @@ Usage
 
 Flags
     -h, --help 	: Gets help for logout.
-        --only               	: Skips any prerequisite commands and only runs the specified command.
 
 Global Flags
     -C, --cwd string 	: Sets the current working directory.

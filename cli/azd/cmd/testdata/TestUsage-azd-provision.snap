@@ -13,7 +13,6 @@ Usage
 Flags
     -e, --environment string 	: The name of the environment to use.
     -h, --help               	: Gets help for provision.
-        --only               	: Skips any prerequisite commands and only runs the specified command.
 
 Global Flags
     -C, --cwd string 	: Sets the current working directory.

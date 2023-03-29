@@ -51,7 +51,12 @@ require (
 
 )
 
-require golang.org/x/text v0.7.0 // indirect
+require (
+	github.com/google/go-cmdtest v0.4.0 // indirect
+	github.com/google/go-cmp v0.5.8 // indirect
+	github.com/google/renameio v0.1.0 // indirect
+	golang.org/x/text v0.7.0 // indirect
+)
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.0.1 // indirect

@@ -1,0 +1,23 @@
+# Setup steps
+$ hide azd init --no-prompt -e TESTENV
+
+# Verify restore failure behavior
+$ cd infra
+$ azd restore --> FAIL
+
+ERROR: current working directory is not a project or service directory. Please specify a service name to restore a service, or use --all to restore all services
+
+# Restoring with --all is okay
+$ azd restore --all
+Installing dependencies for web service... |
+
+# Restoring in project directory is okay
+$ cd ..
+$ azd restore
+Installing dependencies for web service... |
+
+# Restoring in service directory is okay
+$ cd src
+$ cd dotnet
+$ azd restore
+Installing dependencies for web service... |

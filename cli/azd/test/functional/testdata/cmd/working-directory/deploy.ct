@@ -1,0 +1,8 @@
+# Setup steps
+$ hide azd init --no-prompt -e TESTENV
+
+# Verify deploy failure behavior
+$ cd infra
+$ azd deploy --> FAIL
+
+ERROR: current working directory is not a project or service directory. Please specify a service name to deploy a service, or use --all to deploy all services

@@ -9,6 +9,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
@@ -21,8 +22,9 @@ import (
 type buildFlags struct {
 	*envFlag
 	*onlyFlag
-	global *internal.GlobalCommandOptions
-	only   bool
+	serviceName string
+	global      *internal.GlobalCommandOptions
+	only        bool
 }
 
 func newBuildFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *buildFlags {
@@ -37,12 +39,21 @@ func newBuildFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *b
 	return flags
 }
 
-func (r *buildFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+func (bf *buildFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+	local.StringVar(
+		&bf.serviceName,
+		"service",
+		"",
+		//nolint:lll
+		"Restores a specific service (when the string is unspecified, all services that are listed in the "+azdcontext.ProjectFileName+" file are restored).",
+	)
+	//deprecate:flag hide --service
+	_ = local.MarkHidden("service")
 }
 
 func newBuildCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:    "build",
+		Use:    "build <service>",
 		Short:  "Builds the application's code.",
 		Hidden: true,
 	}
@@ -99,6 +110,7 @@ func (ba *buildAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if !ba.flags.only {
 		restoreAction, err := ba.restoreActionInitializer()
 		restoreAction.args = ba.args
+		restoreAction.flags.serviceName = ba.flags.serviceName
 		if err != nil {
 			return nil, err
 		}
@@ -115,7 +127,9 @@ func (ba *buildAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		Title: "Building services (azd build)",
 	})
 
-	targetServiceName := ""
+	serviceNameWarningCheck(ba.console, ba.flags.serviceName, "build")
+
+	targetServiceName := ba.flags.serviceName
 	if len(ba.args) == 1 {
 		targetServiceName = ba.args[0]
 	}

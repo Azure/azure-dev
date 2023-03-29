@@ -12,11 +12,13 @@ import (
 )
 
 type infraDeleteFlags struct {
-	downFlags
+	*downFlags
 }
 
 func newInfraDeleteFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *infraDeleteFlags {
-	flags := &infraDeleteFlags{}
+	flags := &infraDeleteFlags{
+		downFlags: newDownFlags(cmd, global),
+	}
 	flags.Bind(cmd.Flags(), global)
 
 	return flags
@@ -41,7 +43,7 @@ func newInfraDeleteAction(
 	console input.Console,
 ) actions.Action {
 	// Required to ensure the sub action flags are bound correctly to the actions
-	down.flags = &deleteFlags.downFlags
+	down.flags = deleteFlags.downFlags
 
 	return &infraDeleteAction{
 		down:    down,

@@ -44,10 +44,6 @@ func (d *deployFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 	_ = local.MarkHidden("service")
 }
 
-func (d *deployFlags) setCommon(envFlag *envFlag) {
-	d.envFlag = envFlag
-}
-
 func newDeployFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *deployFlags {
 	flags := &deployFlags{
 		envFlag: newEnvFlag(cmd, global),
@@ -130,90 +126,86 @@ type DeploymentResult struct {
 	Services  map[string]*project.ServicePublishResult `json:"services"`
 }
 
-func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	targetServiceName := d.flags.serviceName
-	if len(d.args) == 1 {
-		targetServiceName = d.args[0]
+func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	targetServiceName := da.flags.serviceName
+	if len(da.args) == 1 {
+		targetServiceName = da.args[0]
 	}
 
-	packageAction, err := d.packageActionInitializer()
-	packageAction.args = d.args
+	packageAction, err := da.packageActionInitializer()
+	packageAction.args = da.args
+	packageAction.flags.serviceName = da.flags.serviceName
 	if err != nil {
 		return nil, err
 	}
 
 	packageOptions := &middleware.Options{CommandPath: "package"}
-	_, err = d.middlewareRunner.RunChildAction(ctx, packageOptions, packageAction)
+	_, err = da.middlewareRunner.RunChildAction(ctx, packageOptions, packageAction)
 	if err != nil {
 		return nil, err
 	}
 
 	// Command title
-	d.console.MessageUxItem(ctx, &ux.MessageTitle{
+	da.console.MessageUxItem(ctx, &ux.MessageTitle{
 		Title: "Deploying services (azd deploy)",
 	})
 
-	if d.flags.serviceName != "" {
-		fmt.Fprintln(
-			d.console.Handles().Stderr,
-			//nolint:Lll
-			output.WithWarningFormat("--service flag is no longer required. Simply run azd deploy <service> instead."))
-	}
+	serviceNameWarningCheck(da.console, da.flags.serviceName, "deploy")
 
-	if targetServiceName != "" && !d.projectConfig.HasService(targetServiceName) {
+	if targetServiceName != "" && !da.projectConfig.HasService(targetServiceName) {
 		return nil, fmt.Errorf("service name '%s' doesn't exist", targetServiceName)
 	}
 
-	if err := d.ensureTools(ctx, targetServiceName); err != nil {
+	if err := da.ensureTools(ctx, targetServiceName); err != nil {
 		return nil, err
 	}
 
-	if err := d.projectManager.Initialize(ctx, d.projectConfig); err != nil {
+	if err := da.projectManager.Initialize(ctx, da.projectConfig); err != nil {
 		return nil, err
 	}
 
 	publishResults := map[string]*project.ServicePublishResult{}
 
-	for _, svc := range d.projectConfig.Services {
+	for _, svc := range da.projectConfig.Services {
 		stepMessage := fmt.Sprintf("Deploying service %s", svc.Name)
-		d.console.ShowSpinner(ctx, stepMessage, input.Step)
+		da.console.ShowSpinner(ctx, stepMessage, input.Step)
 
 		// Skip this service if both cases are true:
 		// 1. The user specified a service name
 		// 2. This service is not the one the user specified
 		if targetServiceName != "" && targetServiceName != svc.Name {
-			d.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
+			da.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
 			continue
 		}
 
-		publishTask := d.serviceManager.Publish(ctx, svc, nil)
+		publishTask := da.serviceManager.Publish(ctx, svc, nil)
 		go func() {
 			for publishProgress := range publishTask.Progress() {
 				progressMessage := fmt.Sprintf("Deploying service %s (%s)", svc.Name, publishProgress.Message)
-				d.console.ShowSpinner(ctx, progressMessage, input.Step)
+				da.console.ShowSpinner(ctx, progressMessage, input.Step)
 			}
 		}()
 
 		publishResult, err := publishTask.Await()
 		if err != nil {
-			d.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+			da.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 			return nil, err
 		}
 
-		d.console.StopSpinner(ctx, stepMessage, input.StepDone)
+		da.console.StopSpinner(ctx, stepMessage, input.StepDone)
 		publishResults[svc.Name] = publishResult
 
 		// report build outputs
-		d.console.MessageUxItem(ctx, publishResult)
+		da.console.MessageUxItem(ctx, publishResult)
 	}
 
-	if d.formatter.Kind() == output.JsonFormat {
+	if da.formatter.Kind() == output.JsonFormat {
 		deployResult := DeploymentResult{
 			Timestamp: time.Now(),
 			Services:  publishResults,
 		}
 
-		if fmtErr := d.formatter.Format(deployResult, d.writer, nil); fmtErr != nil {
+		if fmtErr := da.formatter.Format(deployResult, da.writer, nil); fmtErr != nil {
 			return nil, fmt.Errorf("deploy result could not be displayed: %w", fmtErr)
 		}
 	}
@@ -221,7 +213,7 @@ func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
 			Header:   "Your Azure app has been deployed!",
-			FollowUp: getResourceGroupFollowUp(ctx, d.formatter, d.azCli, d.projectConfig, d.resourceManager, d.env),
+			FollowUp: getResourceGroupFollowUp(ctx, da.formatter, da.azCli, da.projectConfig, da.resourceManager, da.env),
 		},
 	}, nil
 }

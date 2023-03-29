@@ -30,9 +30,9 @@ type restoreFlags struct {
 	*envFlag
 }
 
-func (r *restoreFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+func (rf *restoreFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	local.StringVar(
-		&r.serviceName,
+		&rf.serviceName,
 		"service",
 		"",
 		//nolint:lll
@@ -117,12 +117,7 @@ func (ra *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error)
 		Title: "Restoring services (azd restore)",
 	})
 
-	if ra.flags.serviceName != "" {
-		fmt.Fprintln(
-			ra.console.Handles().Stderr,
-			//nolint:Lll
-			output.WithWarningFormat("--service flag is no longer required. Simply run azd deploy <service> instead."))
-	}
+	serviceNameWarningCheck(ra.console, ra.flags.serviceName, "restore")
 
 	targetServiceName := ra.flags.serviceName
 	if len(ra.args) == 1 {
@@ -137,7 +132,7 @@ func (ra *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error)
 		return nil, err
 	}
 
-	if err := ra.ensureTools(ctx, targetServiceName); err != nil {
+	if err := ra.projectManager.Initialize(ctx, ra.projectConfig); err != nil {
 		return nil, err
 	}
 
@@ -150,7 +145,7 @@ func (ra *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error)
 		// Skip this service if both cases are true:
 		// 1. The user specified a service name
 		// 2. This service is not the one the user specified
-		if ra.flags.serviceName != "" && ra.flags.serviceName != svc.Name {
+		if targetServiceName != "" && targetServiceName != svc.Name {
 			ra.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
 			continue
 		}

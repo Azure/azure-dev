@@ -433,3 +433,15 @@ func getResourceGroupFollowUp(
 	}
 	return followUp
 }
+
+func serviceNameWarningCheck(console input.Console, serviceName string, commandName string) {
+	if serviceName == "" {
+		return
+	}
+
+	fmt.Fprintln(
+		console.Handles().Stderr,
+		output.WithWarningFormat("WARNING: The `--service` flag is deprecated and will be removed in a future release."),
+	)
+	fmt.Fprintf(console.Handles().Stderr, "Next time use `azd %s <service>`.\n\n", commandName)
+}

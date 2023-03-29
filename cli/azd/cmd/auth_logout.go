@@ -59,7 +59,8 @@ func (la *logoutAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 			la.console.Handles().Stderr,
 			//nolint:lll
 			output.WithWarningFormat(
-				"WARNING: `azd logout` has been deprecated and will be removed in a future release. Please use `azd auth logout` instead."),
+				"WARNING: `azd logout` has been deprecated and will be removed in a future release. Please use `azd auth logout` instead.",
+			),
 		)
 	}
 

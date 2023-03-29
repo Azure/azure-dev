@@ -21,8 +21,8 @@ type upFlags struct {
 }
 
 func (u *upFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
-	u.provisionFlags.setCommon(u.envFlag)
-	u.deployFlags.setCommon(u.envFlag)
+	u.provisionFlags.envFlag = u.envFlag
+	u.deployFlags.envFlag = u.envFlag
 }
 
 func newUpFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *upFlags {

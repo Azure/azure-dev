@@ -7,8 +7,8 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
-	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
@@ -19,16 +19,15 @@ import (
 )
 
 type packageFlags struct {
-	global *internal.GlobalCommandOptions
+	serviceName string
+	global      *internal.GlobalCommandOptions
 	*envFlag
-	*onlyFlag
 }
 
 func newPackageFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *packageFlags {
 	flags := &packageFlags{
-		global:   global,
-		envFlag:  newEnvFlag(cmd, global),
-		onlyFlag: newOnlyFlag(cmd, global),
+		global:  global,
+		envFlag: newEnvFlag(cmd, global),
 	}
 
 	flags.Bind(cmd.Flags(), global)
@@ -36,7 +35,16 @@ func newPackageFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) 
 	return flags
 }
 
-func (r *packageFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+func (pf *packageFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+	local.StringVar(
+		&pf.serviceName,
+		"service",
+		"",
+		//nolint:lll
+		"Deploys a specific service (when the string is unspecified, all services that are listed in the "+azdcontext.ProjectFileName+" file are deployed).",
+	)
+	//deprecate:flag hide --service
+	_ = local.MarkHidden("service")
 }
 
 func newPackageCmd() *cobra.Command {
@@ -50,16 +58,14 @@ func newPackageCmd() *cobra.Command {
 }
 
 type packageAction struct {
-	flags                  *packageFlags
-	args                   []string
-	projectConfig          *project.ProjectConfig
-	projectManager         project.ProjectManager
-	serviceManager         project.ServiceManager
-	console                input.Console
-	formatter              output.Formatter
-	writer                 io.Writer
-	middlewareRunner       middleware.MiddlewareContext
-	buildActionInitializer actions.ActionInitializer[*buildAction]
+	flags          *packageFlags
+	args           []string
+	projectConfig  *project.ProjectConfig
+	projectManager project.ProjectManager
+	serviceManager project.ServiceManager
+	console        input.Console
+	formatter      output.Formatter
+	writer         io.Writer
 }
 
 func newPackageAction(
@@ -71,20 +77,16 @@ func newPackageAction(
 	console input.Console,
 	formatter output.Formatter,
 	writer io.Writer,
-	middlewareRunner middleware.MiddlewareContext,
-	buildActionInitializer actions.ActionInitializer[*buildAction],
 ) actions.Action {
 	return &packageAction{
-		flags:                  flags,
-		args:                   args,
-		projectConfig:          projectConfig,
-		projectManager:         projectManager,
-		serviceManager:         serviceManager,
-		console:                console,
-		formatter:              formatter,
-		writer:                 writer,
-		middlewareRunner:       middlewareRunner,
-		buildActionInitializer: buildActionInitializer,
+		flags:          flags,
+		args:           args,
+		projectConfig:  projectConfig,
+		projectManager: projectManager,
+		serviceManager: serviceManager,
+		console:        console,
+		formatter:      formatter,
+		writer:         writer,
 	}
 }
 
@@ -94,31 +96,17 @@ type PackageResult struct {
 }
 
 func (pa *packageAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	// If --only flag is specified, skip restore task
-	// We assume user has previously restored the project
-	// if !pa.flags.only {
-	// 	buildAction, err := pa.buildActionInitializer()
-	// 	buildAction.flags.serviceName = pa.flags.serviceName
-	// 	if err != nil {
-	// 		return nil, err
-	// 	}
-
-	// 	buildOptions := &middleware.Options{CommandPath: "build"}
-	// 	_, err = pa.middlewareRunner.RunChildAction(ctx, buildOptions, buildAction)
-	// 	if err != nil {
-	// 		return nil, err
-	// 	}
-	// }
-
 	// Command title
 	pa.console.MessageUxItem(ctx, &ux.MessageTitle{
 		Title: "Packaging services (azd package)",
 	})
 
-	targetServiceName := ""
+	targetServiceName := pa.flags.serviceName
 	if len(pa.args) == 1 {
 		targetServiceName = pa.args[0]
 	}
+
+	serviceNameWarningCheck(pa.console, pa.flags.serviceName, "package")
 
 	if targetServiceName != "" && !pa.projectConfig.HasService(targetServiceName) {
 		return nil, fmt.Errorf("service name '%s' doesn't exist", targetServiceName)

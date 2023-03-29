@@ -447,6 +447,10 @@ func Test_CLI_InfraCreateAndDeleteResourceTerraform(t *testing.T) {
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "init")
 	require.NoError(t, err)
 
+	// turn alpha feature on
+	_, err = cli.RunCommand(ctx, "config", "set", "alpha.terraform", "on")
+	require.NoError(t, err)
+
 	t.Logf("Starting provision\n")
 	_, err = cli.RunCommand(ctx, "provision", "--cwd", dir)
 	require.NoError(t, err)
@@ -531,6 +535,10 @@ func Test_CLI_InfraCreateAndDeleteResourceTerraformRemote(t *testing.T) {
 	require.NoError(t, err)
 
 	_, err = cli.RunCommand(ctx, "env", "set", "RS_RESOURCE_GROUP", backendResourceGroupName, "--cwd", dir)
+	require.NoError(t, err)
+
+	// turn alpha feature on
+	_, err = cli.RunCommand(ctx, "config", "set", "alpha.terraform", "on")
 	require.NoError(t, err)
 
 	t.Logf("Starting infra create\n")

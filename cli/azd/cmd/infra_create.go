@@ -6,7 +6,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/alphafeatures"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/spf13/cobra"
@@ -32,24 +31,21 @@ func newInfraCreateCmd() *cobra.Command {
 }
 
 type infraCreateAction struct {
-	infraCreate         *provisionAction
-	console             input.Console
-	alphaFeatureManager *alphafeatures.AlphaFeatureManager
+	infraCreate *provisionAction
+	console     input.Console
 }
 
 func newInfraCreateAction(
 	createFlags *infraCreateFlags,
 	provision *provisionAction,
 	console input.Console,
-	alphaFeatureManager *alphafeatures.AlphaFeatureManager,
 ) actions.Action {
 	// Required to ensure the sub action flags are bound correctly to the actions
 	provision.flags = &createFlags.provisionFlags
 
 	return &infraCreateAction{
-		infraCreate:         provision,
-		console:             console,
-		alphaFeatureManager: alphaFeatureManager,
+		infraCreate: provision,
+		console:     console,
 	}
 }
 

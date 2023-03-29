@@ -37,4 +37,3 @@ docker run -e AZURE_COSMOS_CONNECTION_STRING=$AZURE_COSMOS_CONNECTION_STRING -p 
 ### Regenerate API from OpenAPI spec
 
 Run `./mvnw -P openapigen compile` to regenerate the API model and interfaces from the OpenAPI spec.
-update

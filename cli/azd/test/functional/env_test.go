@@ -37,7 +37,7 @@ func Test_CLI_EnvCommandsWorkWhenLoggedOut(t *testing.T) {
 	t.Setenv("AZD_CONFIG_DIR", configDir)
 
 	// check to make sure we are logged out as expected.
-	res, err := cli.RunCommand(ctx, "login", "--check-status", "--output", "json")
+	res, err := cli.RunCommand(ctx, "auth", "login", "--check-status", "--output", "json")
 	require.NoError(t, err)
 
 	var lr contracts.LoginResult

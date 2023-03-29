@@ -9,11 +9,12 @@ Usage
   azd config [command]
 
 Available Commands
-  get  	: Gets a configuration
-  list 	: Lists all configuration values
-  reset	: Resets configuration to default
-  set  	: Sets a configuration
-  unset	: Unsets a configuration
+  get       	: Gets a configuration
+  list      	: Lists all configuration values
+  list-alpha	: Display the list of available features in alpha stage.
+  reset     	: Resets configuration to default
+  set       	: Sets a configuration
+  unset     	: Unsets a configuration
 
 Flags
     -h, --help 	: Gets help for config.

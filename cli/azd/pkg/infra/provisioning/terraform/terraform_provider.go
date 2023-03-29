@@ -21,6 +21,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
+	"github.com/azure/azure-dev/cli/azd/internal/telemetry/fields"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -37,6 +40,7 @@ import (
 // TerraformProvider exposes infrastructure provisioning using Azure Terraform templates
 type TerraformProvider struct {
 	env          *environment.Environment
+	prompters    Prompters
 	projectPath  string
 	options      Options
 	console      input.Console
@@ -68,6 +72,7 @@ func NewTerraformProvider(
 	console input.Console,
 	commandRunner exec.CommandRunner,
 	curPrincipal CurrentPrincipalIdProvider,
+	prompters Prompters,
 ) *TerraformProvider {
 	terraformCli := terraform.NewTerraformCli(commandRunner)
 
@@ -83,12 +88,44 @@ func NewTerraformProvider(
 		console:      console,
 		cli:          terraformCli,
 		curPrincipal: curPrincipal,
+		prompters:    prompters,
 	}
 
 	return provider
 }
 
-func (t *TerraformProvider) EnsureConfigured(_ context.Context) error {
+func (t *TerraformProvider) EnsureConfigured(ctx context.Context) error {
+	if t.env.GetSubscriptionId() == "" {
+		subscriptionId, err := t.prompters.Subscription(ctx, "Please select an Azure Subscription to use:")
+		if err != nil {
+			return err
+		}
+
+		t.env.SetSubscriptionId(subscriptionId)
+		telemetry.SetGlobalAttributes(fields.SubscriptionIdKey.String(t.env.GetSubscriptionId()))
+
+		if err := t.env.Save(); err != nil {
+			return err
+		}
+	}
+
+	if t.env.GetLocation() == "" {
+		location, err := t.prompters.Location(
+			ctx,
+			t.env.GetSubscriptionId(),
+			"Please select an Azure location to use:",
+			func(_ account.Location) bool { return true })
+		if err != nil {
+			return err
+		}
+
+		t.env.SetLocation(location)
+
+		if err := t.env.Save(); err != nil {
+			return err
+		}
+	}
+
 	envVars := []string{
 		// Sets the terraform data directory env var that will get set on all terraform CLI commands
 		fmt.Sprintf("TF_DATA_DIR=%s", t.dataDirPath()),
@@ -731,10 +768,10 @@ func init() {
 			console input.Console,
 			_ azcli.AzCli,
 			commandRunner exec.CommandRunner,
-			_ Prompters,
+			prompters Prompters,
 			curPrincipal CurrentPrincipalIdProvider,
 		) (Provider, error) {
-			return NewTerraformProvider(ctx, env, projectPath, options, console, commandRunner, curPrincipal), nil
+			return NewTerraformProvider(ctx, env, projectPath, options, console, commandRunner, curPrincipal, prompters), nil
 		},
 	)
 

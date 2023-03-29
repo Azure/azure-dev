@@ -19,11 +19,23 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
-type LocationPromptFunc func(msg string, shouldDisplay func(loc account.Location) bool) (location string, err error)
+// LocationPromptFunc prompts the user for an Azure location, from the set of locations that the given subscription has
+// access to. This list may be further restricted by [shouldDisplay]. The return value is the short name of the location
+// (e.g. eastus2).
+type LocationPromptFunc func(
+	ctx context.Context,
+	subscriptionId string,
+	msg string,
+	shouldDisplay func(loc account.Location) bool,
+) (location string, err error)
+
+// SubscriptionPromptFunc prompts the user for an Azure subscription, from the set of subscriptions the user has access to.
+type SubscriptionPromptFunc func(ctx context.Context, msg string) (subscriptionId string, err error)
 
 // Prompters contains prompt functions that can be used for general scenarios.
 type Prompters struct {
-	Location LocationPromptFunc
+	Location     LocationPromptFunc
+	Subscription SubscriptionPromptFunc
 }
 
 type ProviderKind string

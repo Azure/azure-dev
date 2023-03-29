@@ -12,25 +12,20 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 )
 
-const (
-	manualSubscriptionEntryOption = "Other (enter manually)"
-)
-
 func getSubscriptionOptions(ctx context.Context, subscriptions account.Manager) ([]string, any, error) {
 	subscriptionInfos, err := subscriptions.GetSubscriptions(ctx)
 	if err != nil {
 		return nil, nil, fmt.Errorf("listing accounts: %w", err)
 	}
 
-	// If `AZURE_SUBSCRIPTION_ID` is set in the environment, use it to influence
-	// the default option in our prompt. Fall back to the what the `az` CLI is
-	// configured to use if the environment variable is unset.
+	// The default value is based on AZURE_SUBSCRIPTION_ID, falling back to whatever default subscription in
+	// set in azd's config.
 	defaultSubscriptionId := os.Getenv(environment.SubscriptionIdEnvVarName)
 	if defaultSubscriptionId == "" {
 		defaultSubscriptionId = subscriptions.GetDefaultSubscriptionID(ctx)
 	}
 
-	var subscriptionOptions = make([]string, len(subscriptionInfos)+1)
+	var subscriptionOptions = make([]string, len(subscriptionInfos))
 	var defaultSubscription any
 
 	for index, info := range subscriptionInfos {
@@ -41,6 +36,5 @@ func getSubscriptionOptions(ctx context.Context, subscriptions account.Manager) 
 		}
 	}
 
-	subscriptionOptions[len(subscriptionOptions)-1] = manualSubscriptionEntryOption
 	return subscriptionOptions, defaultSubscription, nil
 }

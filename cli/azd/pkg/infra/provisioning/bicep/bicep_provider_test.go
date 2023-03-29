@@ -441,10 +441,6 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 
 	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 
-	locationPrompter := func(msg string, filter func(loc account.Location) bool) (location string, err error) {
-		return "", nil
-	}
-
 	provider := &BicepProvider{
 		env:         env,
 		projectPath: projectDir,
@@ -455,7 +451,12 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 		},
 		azCli: azCli,
 		prompters: Prompters{
-			Location: locationPrompter,
+			Location: func(_ context.Context, _ string, _ string, _ func(loc account.Location) bool) (string, error) {
+				return "westus2", nil
+			},
+			Subscription: func(_ context.Context, _ string) (subscriptionId string, err error) {
+				return "SUBSCRIPTION_ID", nil
+			},
 		},
 		curPrincipal: &mockCurrentPrincipal{},
 	}

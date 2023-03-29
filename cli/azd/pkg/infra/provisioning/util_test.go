@@ -29,12 +29,12 @@ func Test_getSubscriptionOptions(t *testing.T) {
 		subList, result, err := getSubscriptionOptions(context.Background(), mockAccount)
 
 		require.Nil(t, err)
-		require.EqualValues(t, 2, len(subList))
+		require.EqualValues(t, 1, len(subList))
 		require.EqualValues(t, nil, result)
 	})
 
 	t.Run("default value set", func(t *testing.T) {
-		// mocked configk
+		// mocked config
 		defaultSubId := "SUBSCRIPTION_DEFAULT"
 		ctx := context.Background()
 		mockAccount := &mockaccount.MockAccountManager{
@@ -62,7 +62,7 @@ func Test_getSubscriptionOptions(t *testing.T) {
 		subList, result, err := getSubscriptionOptions(ctx, mockAccount)
 
 		require.Nil(t, err)
-		require.EqualValues(t, 3, len(subList))
+		require.EqualValues(t, 2, len(subList))
 		require.NotNil(t, result)
 		defSub, ok := result.(string)
 		require.True(t, ok)

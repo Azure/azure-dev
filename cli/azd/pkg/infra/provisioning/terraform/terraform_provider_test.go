@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
@@ -232,6 +233,14 @@ func createTerraformProvider(mockContext *mocks.MockContext) *TerraformProvider 
 		mockContext.Console,
 		mockContext.CommandRunner,
 		&mockCurrentPrincipal{},
+		Prompters{
+			Location: func(_ context.Context, _, _ string, _ func(loc account.Location) bool) (location string, err error) {
+				return "westus2", nil
+			},
+			Subscription: func(_ context.Context, _ string) (subscriptionId string, err error) {
+				return "00000000-0000-0000-0000-000000000000", nil
+			},
+		},
 	)
 }
 

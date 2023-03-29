@@ -8,10 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
-	"github.com/azure/azure-dev/cli/azd/internal/telemetry/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -28,7 +25,6 @@ import (
 type Manager struct {
 	azCli              azcli.AzCli
 	env                *environment.Environment
-	prompters          Prompters
 	provider           Provider
 	writer             io.Writer
 	console            input.Console
@@ -38,64 +34,12 @@ type Manager struct {
 	interactive        bool
 }
 
-// EnsureConfigured ensures that AZURE_SUBSCRIPTION_ID and AZURE_LOCATION are set in the environment, prompting the user
-// for them if they have not been set.
+// EnsureConfigured ensures that the underlying provider has been configured and is ready to be used.
 //
 // It should be run before any other instance method on the Manager.
 func (m *Manager) EnsureConfigured(ctx context.Context) error {
-	if m.env.GetSubscriptionId() == "" {
-		subscriptionOptions, defaultSubscription, err := getSubscriptionOptions(ctx, m.accountManager)
-		if err != nil {
-			return err
-		}
-
-		var subscriptionId = ""
-		for subscriptionId == "" {
-			subscriptionSelectionIndex, err := m.console.Select(ctx, input.ConsoleOptions{
-				Message:      "Please select an Azure Subscription to use:",
-				Options:      subscriptionOptions,
-				DefaultValue: defaultSubscription,
-			})
-
-			if err != nil {
-				return fmt.Errorf("reading subscription id: %w", err)
-			}
-
-			subscriptionSelection := subscriptionOptions[subscriptionSelectionIndex]
-
-			if subscriptionSelection == manualSubscriptionEntryOption {
-				subscriptionId, err = m.console.Prompt(ctx, input.ConsoleOptions{
-					Message: "Enter an Azure Subscription to use:",
-				})
-
-				if err != nil {
-					return fmt.Errorf("reading subscription id: %w", err)
-				}
-			} else {
-				subscriptionId = subscriptionSelection[len(subscriptionSelection)-
-					len("(00000000-0000-0000-0000-000000000000)")+1 : len(subscriptionSelection)-1]
-			}
-		}
-
-		m.env.SetSubscriptionId(strings.TrimSpace(subscriptionId))
-		telemetry.SetGlobalAttributes(fields.SubscriptionIdKey.String(m.env.GetSubscriptionId()))
-
-		if err := m.env.Save(); err != nil {
-			return err
-		}
-	}
-
-	if m.env.GetLocation() == "" {
-		location, err := azureutil.PromptLocation(
-			ctx, m.env.GetSubscriptionId(), "Please select an Azure location to use:", "", m.console, m.accountManager)
-		if err != nil {
-			return fmt.Errorf("prompting for location: %w", err)
-		}
-		m.env.SetLocation(strings.TrimSpace(location))
-
-		if err := m.env.Save(); err != nil {
-			return err
-		}
+	if err := m.provider.EnsureConfigured(ctx); err != nil {
+		return err
 	}
 
 	// If the configuration is empty, set default subscription & location
@@ -109,7 +53,7 @@ func (m *Manager) EnsureConfigured(ctx context.Context) error {
 		}
 	}
 
-	return m.provider.EnsureConfigured(ctx)
+	return nil
 }
 
 // Prepares for an infrastructure provision operation
@@ -338,18 +282,26 @@ func NewManager(
 	subResolver account.SubscriptionTenantResolver,
 ) (*Manager, error) {
 
-	locationPrompt := func(msg string, filter func(loc account.Location) bool) (location string, err error) {
-		return azureutil.PromptLocationWithFilter(ctx, env.GetSubscriptionId(), msg, "", console, accountManager, filter)
-	}
-
-	prompters := Prompters{
-		Location: locationPrompt,
-	}
-
 	principalProvider := &principalIDProvider{
 		env:                env,
 		userProfileService: userProfileService,
 		subResolver:        subResolver,
+	}
+
+	m := &Manager{
+		azCli:              azCli,
+		env:                env,
+		writer:             console.GetWriter(),
+		console:            console,
+		interactive:        interactive,
+		accountManager:     accountManager,
+		userProfileService: userProfileService,
+		subResolver:        subResolver,
+	}
+
+	prompters := Prompters{
+		Location:     m.promptLocation,
+		Subscription: m.promptSubscription,
 	}
 
 	infraProvider, err := NewProvider(
@@ -363,18 +315,43 @@ func NewManager(
 		return nil, err
 	}
 
-	return &Manager{
-		azCli:              azCli,
-		env:                env,
-		provider:           infraProvider,
-		prompters:          prompters,
-		writer:             console.GetWriter(),
-		console:            console,
-		interactive:        interactive,
-		accountManager:     accountManager,
-		userProfileService: userProfileService,
-		subResolver:        subResolver,
-	}, nil
+	m.provider = infraProvider
+
+	return m, nil
+}
+
+func (m *Manager) promptSubscription(ctx context.Context, msg string) (subscriptionId string, err error) {
+	subscriptionOptions, defaultSubscription, err := getSubscriptionOptions(ctx, m.accountManager)
+	if err != nil {
+		return "", err
+	}
+
+	for subscriptionId == "" {
+		subscriptionSelectionIndex, err := m.console.Select(ctx, input.ConsoleOptions{
+			Message:      msg,
+			Options:      subscriptionOptions,
+			DefaultValue: defaultSubscription,
+		})
+
+		if err != nil {
+			return "", fmt.Errorf("reading subscription id: %w", err)
+		}
+
+		subscriptionSelection := subscriptionOptions[subscriptionSelectionIndex]
+		subscriptionId = subscriptionSelection[len(subscriptionSelection)-
+			len("(00000000-0000-0000-0000-000000000000)")+1 : len(subscriptionSelection)-1]
+	}
+
+	return subscriptionId, nil
+}
+
+func (m *Manager) promptLocation(
+	ctx context.Context,
+	subId string,
+	msg string,
+	filter func(loc account.Location) bool,
+) (string, error) {
+	return azureutil.PromptLocationWithFilter(ctx, subId, msg, "", m.console, m.accountManager, filter)
 }
 
 type CurrentPrincipalIdProvider interface {

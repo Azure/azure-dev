@@ -17,6 +17,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -32,6 +33,7 @@ type TestProvider struct {
 	projectPath string
 	options     Options
 	console     input.Console
+	prompters   Prompters
 }
 
 // Name gets the name of the infra provider
@@ -43,7 +45,37 @@ func (p *TestProvider) RequiredExternalTools() []tools.ExternalTool {
 	return []tools.ExternalTool{}
 }
 
-func (p *TestProvider) EnsureConfigured(_ context.Context) error {
+func (p *TestProvider) EnsureConfigured(ctx context.Context) error {
+	if p.env.GetSubscriptionId() == "" {
+		subscriptionId, err := p.prompters.Subscription(ctx, "Please select an Azure Subscription to use:")
+		if err != nil {
+			return err
+		}
+
+		p.env.SetSubscriptionId(subscriptionId)
+
+		if err := p.env.Save(); err != nil {
+			return err
+		}
+	}
+
+	if p.env.GetLocation() == "" {
+		location, err := p.prompters.Location(
+			ctx,
+			p.env.GetSubscriptionId(),
+			"Please select an Azure location to use:",
+			func(_ account.Location) bool { return true })
+		if err != nil {
+			return err
+		}
+
+		p.env.SetLocation(location)
+
+		if err := p.env.Save(); err != nil {
+			return err
+		}
+	}
+
 	return nil
 }
 
@@ -188,12 +220,19 @@ func (p *TestProvider) Destroy(
 		})
 }
 
-func NewTestProvider(env *environment.Environment, projectPath string, console input.Console, options Options) Provider {
+func NewTestProvider(
+	env *environment.Environment,
+	projectPath string,
+	console input.Console,
+	options Options,
+	prompters Prompters,
+) Provider {
 	return &TestProvider{
 		env:         env,
 		projectPath: projectPath,
 		options:     options,
 		console:     console,
+		prompters:   prompters,
 	}
 }
 
@@ -209,10 +248,10 @@ func init() {
 			console input.Console,
 			_ azcli.AzCli,
 			_ exec.CommandRunner,
-			_ Prompters,
+			prompters Prompters,
 			_ CurrentPrincipalIdProvider,
 		) (Provider, error) {
-			return NewTestProvider(env, projectPath, console, options), nil
+			return NewTestProvider(env, projectPath, console, options, prompters), nil
 		},
 	)
 

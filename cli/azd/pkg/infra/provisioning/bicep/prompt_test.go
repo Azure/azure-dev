@@ -279,6 +279,8 @@ func TestPromptForParametersLocation(t *testing.T) {
 
 	p := createBicepProvider(t, mockContext)
 	p.prompters.Location = func(
+		ctx context.Context,
+		subscriptionId string,
 		msg string,
 		shouldDisplay func(loc account.Location) bool,
 	) (location string, err error) {
@@ -289,7 +291,7 @@ func TestPromptForParametersLocation(t *testing.T) {
 			}
 		}
 
-		index, err := mockContext.Console.Select(*mockContext.Context, input.ConsoleOptions{
+		index, err := mockContext.Console.Select(ctx, input.ConsoleOptions{
 			Message: msg,
 			Options: displayLocations,
 		})

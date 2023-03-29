@@ -286,7 +286,7 @@ func getCmdDeployHelpFooter(*cobra.Command) string {
 
 var errNoDefaultService = errors.New("no default service selection matches the working directory")
 
-// Returns the default service selection based on the current working directory.
+// Returns the default service name to target based on the current working directory.
 //
 //   - If the working directory is the project directory, then an empty string is returned to indicate all services.
 //   - If the working directory is a service directory, then the name of the service is returned.

@@ -32,7 +32,7 @@ resource "random_password" "password" {
   override_special = "_%@"
 }
 
-resource "azurerm_postgresql_flexible_server" "psqlServer" {
+resource "azurerm_postgresql_flexible_server" "psql_server" {
   name                            = azurecaf_name.psql.result
   location                        = var.location
   resource_group_name             = var.rg_name
@@ -56,20 +56,20 @@ resource "azurerm_postgresql_flexible_server" "psqlServer" {
 
 resource "azurerm_postgresql_flexible_server_firewall_rule" "firewall_rule" {
   name                            = "AllowAllFireWallRule"
-  server_id                       = azurerm_postgresql_flexible_server.psqlServer.id
+  server_id                       = azurerm_postgresql_flexible_server.psql_server.id
   start_ip_address                = "0.0.0.0"
   end_ip_address                  = "255.255.255.255"
 }
 
 resource "azurerm_postgresql_flexible_server_database" "database" {
   name      = var.database_name
-  server_id = azurerm_postgresql_flexible_server.psqlServer.id
+  server_id = azurerm_postgresql_flexible_server.psql_server.id
   collation = "en_US.utf8"
   charset   = "utf8"
 }
 
 resource "azurerm_postgresql_flexible_server_active_directory_administrator" "aad_admin" {
-  server_name         = azurerm_postgresql_flexible_server.psqlServer.name
+  server_name         = azurerm_postgresql_flexible_server.psql_server.name
   resource_group_name = var.rg_name
   tenant_id           = data.azurerm_client_config.current.tenant_id
   object_id           = data.azurerm_client_config.current.object_id

@@ -4,11 +4,11 @@ output "AZURE_POSTGRESQL_DATABASE_NAME" {
 }
 
 output "AZURE_POSTGRESQL_FQDN" {
-  value = azurerm_postgresql_flexible_server.psqlServer.fqdn
+  value = azurerm_postgresql_flexible_server.psql_server.fqdn
 }
 
 output "AZURE_POSTGRESQL_SPRING_DATASOURCE_URL" {
-  value = "jdbc:postgresql://${azurerm_postgresql_flexible_server.psqlServer.fqdn}:5432/${azurerm_postgresql_flexible_server_database.database.name}?sslmode=require"
+  value = "jdbc:postgresql://${azurerm_postgresql_flexible_server.psql_server.fqdn}:5432/${azurerm_postgresql_flexible_server_database.database.name}?sslmode=require"
 }
 
 output "AZURE_POSTGRESQL_ADMIN_USERNAME" {

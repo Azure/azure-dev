@@ -32,6 +32,6 @@ variable "database_name" {
 
 variable "client_id" {
   type        = string
-  description = "The database name of PostgreSQL"
+  description = "Client id of current account"
   default     = ""
 }

@@ -1,0 +1,121 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+      "accountName": {
+        "type": "string"
+      },
+      "databaseName": {
+        "type": "string"
+      },
+      "location": {
+        "type": "string",
+        "defaultValue": "[resourceGroup().location]"
+      },
+      "tags": {
+        "type": "object",
+        "defaultValue": {}
+      },
+      "collections": {
+        "type": "array",
+        "defaultValue": []
+      },
+      "connectionStringKey": {
+        "type": "string",
+        "defaultValue": "AZURE-COSMOS-CONNECTION-STRING"
+      },
+      "keyVaultName": {
+        "type": "string"
+      }
+    },
+    "resources": [
+      {
+        "copy": {
+          "name": "list",
+          "count": "[length(parameters('collections'))]"
+        },
+        "type": "Microsoft.DocumentDB/databaseAccounts/mongodbDatabases/collections",
+        "apiVersion": "2022-08-15",
+        "name": "[format('{0}/{1}/{2}', split(format('{0}/{1}', parameters('accountName'), parameters('databaseName')), '/')[0], split(format('{0}/{1}', parameters('accountName'), parameters('databaseName')), '/')[1], parameters('collections')[copyIndex()].name)]",
+        "properties": {
+          "resource": {
+            "id": "[parameters('collections')[copyIndex()].id]",
+            "shardKey": {
+              "_id": "[parameters('collections')[copyIndex()].shardKey]"
+            },
+            "indexes": [
+              {
+                "key": {
+                  "keys": [
+                    "[parameters('collections')[copyIndex()].indexKey]"
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        "dependsOn": [
+          "[resourceId('Microsoft.DocumentDB/databaseAccounts/mongodbDatabases', split(format('{0}/{1}', parameters('accountName'), parameters('databaseName')), '/')[0], split(format('{0}/{1}', parameters('accountName'), parameters('databaseName')), '/')[1])]"
+        ]
+      },
+      {
+        "type": "Microsoft.DocumentDB/databaseAccounts/mongodbDatabases",
+        "apiVersion": "2022-08-15",
+        "name": "[format('{0}/{1}', parameters('accountName'), parameters('databaseName'))]",
+        "tags": "[parameters('tags')]",
+        "properties": {
+          "resource": {
+            "id": "[parameters('databaseName')]"
+          }
+        },
+        "dependsOn": [
+          "[resourceId('Microsoft.Resources/deployments', 'cosmos-mongo-account')]"
+        ]
+      },
+      {
+        "type": "Microsoft.Resources/deployments",
+        "apiVersion": "2020-10-01",
+        "name": "cosmos-mongo-account",
+        "properties": {
+          "expressionEvaluationOptions": {
+            "scope": "inner"
+          },
+          "mode": "Incremental",
+          "parameters": {
+            "name": {
+              "value": "[parameters('accountName')]"
+            },
+            "location": {
+              "value": "[parameters('location')]"
+            },
+            "keyVaultName": {
+              "value": "[parameters('keyVaultName')]"
+            },
+            "tags": {
+              "value": "[parameters('tags')]"
+            },
+            "connectionStringKey": {
+              "value": "[parameters('connectionStringKey')]"
+            }
+          },
+          "templateLink": {
+            "uri": "https://raw.githubusercontent.com/zedy-wj/todo-nodejs-mongo-arm-work/main/infra/core/database/cosmos/mongo/cosmos-mongo-account.json"
+          }
+        }
+      }
+    ],
+    "outputs": {
+      "connectionStringKey": {
+        "type": "string",
+        "value": "[parameters('connectionStringKey')]"
+      },
+      "databaseName": {
+        "type": "string",
+        "value": "[parameters('databaseName')]"
+      },
+      "endpoint": {
+        "type": "string",
+        "value": "[reference(resourceId('Microsoft.Resources/deployments', 'cosmos-mongo-account'), '2020-10-01').outputs.endpoint.value]"
+      }
+    }
+}

@@ -1,0 +1,74 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+      "name": {
+        "type": "string"
+      },
+      "location": {
+        "type": "string",
+        "defaultValue": "[resourceGroup().location]"
+      },
+      "tags": {
+        "type": "object",
+        "defaultValue": {}
+      },
+      "keyVaultName": {
+        "type": "string"
+      },
+      "connectionStringKey": {
+        "type": "string",
+        "defaultValue": "AZURE-COSMOS-CONNECTION-STRING"
+      }
+    },
+    "resources": [
+      {
+        "type": "Microsoft.Resources/deployments",
+        "apiVersion": "2020-10-01",
+        "name": "cosmos-account",
+        "properties": {
+          "expressionEvaluationOptions": {
+            "scope": "inner"
+          },
+          "mode": "Incremental",
+          "parameters": {
+            "name": {
+              "value": "[parameters('name')]"
+            },
+            "location": {
+              "value": "[parameters('location')]"
+            },
+            "connectionStringKey": {
+              "value": "[parameters('connectionStringKey')]"
+            },
+            "keyVaultName": {
+              "value": "[parameters('keyVaultName')]"
+            },
+            "kind": {
+              "value": "MongoDB"
+            },
+            "tags": {
+              "value": "[parameters('tags')]"
+            }
+          },
+          "templateLink": {
+            "uri": "https://raw.githubusercontent.com/zedy-wj/todo-nodejs-mongo-arm-work/main/infra/core/database/cosmos/cosmos-account.json"
+          }
+        }
+      }
+    ],
+    "outputs": {
+      "connectionStringKey": {
+        "type": "string",
+        "value": "[reference(resourceId('Microsoft.Resources/deployments', 'cosmos-account'), '2020-10-01').outputs.connectionStringKey.value]"
+      },
+      "endpoint": {
+        "type": "string",
+        "value": "[reference(resourceId('Microsoft.Resources/deployments', 'cosmos-account'), '2020-10-01').outputs.endpoint.value]"
+      },
+      "id": {
+        "type": "string",
+        "value": "[reference(resourceId('Microsoft.Resources/deployments', 'cosmos-account'), '2020-10-01').outputs.id.value]"
+      }
+    }
+}

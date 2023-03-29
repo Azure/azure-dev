@@ -1,0 +1,197 @@
+{
+    "$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+    "contentVersion": "1.0.0.0",
+    "parameters": {
+      "name": {
+        "type": "string"
+      },
+      "location": {
+        "type": "string",
+        "defaultValue": "[resourceGroup().location]"
+      },
+      "tags": {
+        "type": "object",
+        "defaultValue": {}
+      },
+      "applicationInsightsName": {
+        "type": "string",
+        "defaultValue": ""
+      },
+      "appServicePlanId": {
+        "type": "string"
+      },
+      "keyVaultName": {
+        "type": "string",
+        "defaultValue": ""
+      },
+      "managedIdentity": {
+        "type": "bool",
+        "defaultValue": "[not(empty(parameters('keyVaultName')))]"
+      },
+      "runtimeName": {
+        "type": "string",
+        "allowedValues": [
+          "dotnet",
+          "dotnetcore",
+          "dotnet-isolated",
+          "node",
+          "python",
+          "java",
+          "powershell",
+          "custom"
+        ]
+      },
+      "runtimeNameAndVersion": {
+        "type": "string",
+        "defaultValue": "[format('{0}|{1}', parameters('runtimeName'), parameters('runtimeVersion'))]"
+      },
+      "runtimeVersion": {
+        "type": "string"
+      },
+      "kind": {
+        "type": "string",
+        "defaultValue": "app,linux"
+      },
+      "allowedOrigins": {
+        "type": "array",
+        "defaultValue": []
+      },
+      "alwaysOn": {
+        "type": "bool",
+        "defaultValue": true
+      },
+      "appCommandLine": {
+        "type": "string",
+        "defaultValue": ""
+      },
+      "appSettings": {
+        "type": "object",
+        "defaultValue": {}
+      },
+      "clientAffinityEnabled": {
+        "type": "bool",
+        "defaultValue": false
+      },
+      "enableOryxBuild": {
+        "type": "bool",
+        "defaultValue": "[contains(parameters('kind'), 'linux')]"
+      },
+      "functionAppScaleLimit": {
+        "type": "int",
+        "defaultValue": -1
+      },
+      "linuxFxVersion": {
+        "type": "string",
+        "defaultValue": "[parameters('runtimeNameAndVersion')]"
+      },
+      "minimumElasticInstanceCount": {
+        "type": "int",
+        "defaultValue": -1
+      },
+      "numberOfWorkers": {
+        "type": "int",
+        "defaultValue": -1
+      },
+      "scmDoBuildDuringDeployment": {
+        "type": "bool",
+        "defaultValue": false
+      },
+      "use32BitWorkerProcess": {
+        "type": "bool",
+        "defaultValue": false
+      },
+      "ftpsState": {
+        "type": "string",
+        "defaultValue": "FtpsOnly"
+      },
+      "healthCheckPath": {
+        "type": "string",
+        "defaultValue": ""
+      }
+    },
+    "resources": [
+      {
+        "type": "Microsoft.Web/sites/config",
+        "apiVersion": "2022-03-01",
+        "name": "[format('{0}/{1}', parameters('name'), 'appsettings')]",
+        "properties": "[union(parameters('appSettings'), createObject('SCM_DO_BUILD_DURING_DEPLOYMENT', string(parameters('scmDoBuildDuringDeployment')), 'ENABLE_ORYX_BUILD', string(parameters('enableOryxBuild'))), if(not(empty(parameters('applicationInsightsName'))), createObject('APPLICATIONINSIGHTS_CONNECTION_STRING', reference(resourceId('Microsoft.Insights/components', parameters('applicationInsightsName')), '2020-02-02').ConnectionString), createObject()), if(not(empty(parameters('keyVaultName'))), createObject('AZURE_KEY_VAULT_ENDPOINT', reference(resourceId('Microsoft.KeyVault/vaults', parameters('keyVaultName')), '2022-07-01').vaultUri), createObject()))]",
+        "dependsOn": [
+          "[resourceId('Microsoft.Web/sites', parameters('name'))]"
+        ]
+      },
+      {
+        "type": "Microsoft.Web/sites/config",
+        "apiVersion": "2022-03-01",
+        "name": "[format('{0}/{1}', parameters('name'), 'logs')]",
+        "properties": {
+          "applicationLogs": {
+            "fileSystem": {
+              "level": "Verbose"
+            }
+          },
+          "detailedErrorMessages": {
+            "enabled": true
+          },
+          "failedRequestsTracing": {
+            "enabled": true
+          },
+          "httpLogs": {
+            "fileSystem": {
+              "enabled": true,
+              "retentionInDays": 1,
+              "retentionInMb": 35
+            }
+          }
+        },
+        "dependsOn": [
+          "[resourceId('Microsoft.Web/sites', parameters('name'))]",
+          "[resourceId('Microsoft.Web/sites/config', parameters('name'), 'appsettings')]"
+        ]
+      },
+      {
+        "type": "Microsoft.Web/sites",
+        "apiVersion": "2022-03-01",
+        "name": "[parameters('name')]",
+        "location": "[parameters('location')]",
+        "tags": "[parameters('tags')]",
+        "kind": "[parameters('kind')]",
+        "properties": {
+          "serverFarmId": "[parameters('appServicePlanId')]",
+          "siteConfig": {
+            "linuxFxVersion": "[parameters('linuxFxVersion')]",
+            "alwaysOn": "[parameters('alwaysOn')]",
+            "ftpsState": "[parameters('ftpsState')]",
+            "minTlsVersion": "1.2",
+            "appCommandLine": "[parameters('appCommandLine')]",
+            "numberOfWorkers": "[if(not(equals(parameters('numberOfWorkers'), -1)), parameters('numberOfWorkers'), null())]",
+            "minimumElasticInstanceCount": "[if(not(equals(parameters('minimumElasticInstanceCount'), -1)), parameters('minimumElasticInstanceCount'), null())]",
+            "use32BitWorkerProcess": "[parameters('use32BitWorkerProcess')]",
+            "functionAppScaleLimit": "[if(not(equals(parameters('functionAppScaleLimit'), -1)), parameters('functionAppScaleLimit'), null())]",
+            "healthCheckPath": "[parameters('healthCheckPath')]",
+            "cors": {
+              "allowedOrigins": "[union(createArray('https://portal.azure.com', 'https://ms.portal.azure.com'), parameters('allowedOrigins'))]"
+            }
+          },
+          "clientAffinityEnabled": "[parameters('clientAffinityEnabled')]",
+          "httpsOnly": true
+        },
+        "identity": {
+          "type": "[if(parameters('managedIdentity'), 'SystemAssigned', 'None')]"
+        }
+      }
+    ],
+    "outputs": {
+      "identityPrincipalId": {
+        "type": "string",
+        "value": "[if(parameters('managedIdentity'), reference(resourceId('Microsoft.Web/sites', parameters('name')), '2022-03-01', 'full').identity.principalId, '')]"
+      },
+      "name": {
+        "type": "string",
+        "value": "[parameters('name')]"
+      },
+      "uri": {
+        "type": "string",
+        "value": "[format('https://{0}', reference(resourceId('Microsoft.Web/sites', parameters('name')), '2022-03-01').defaultHostName)]"
+      }
+    }
+  }

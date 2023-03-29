@@ -116,3 +116,6 @@ utsname
 westus2
 wireinject
 yacspin
+springapp
+appplatform
+armappplatform

@@ -2,6 +2,7 @@ package project
 
 import (
 	"context"
+	"sort"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
@@ -53,4 +54,20 @@ func (p *ProjectConfig) HasService(name string) bool {
 	}
 
 	return false
+}
+
+// Retrieves the list of services in the project.
+func (p *ProjectConfig) GetServices() []*ServiceConfig {
+	// Sort services by friendly name an then collect them into a list. This provides a stable ordering of services.
+	serviceKeys := make([]string, 0, len(p.Services))
+	for k := range p.Services {
+		serviceKeys = append(serviceKeys, k)
+	}
+	sort.Strings(serviceKeys)
+
+	services := make([]*ServiceConfig, 0, len(p.Services))
+	for _, key := range serviceKeys {
+		services = append(services, p.Services[key])
+	}
+	return services
 }

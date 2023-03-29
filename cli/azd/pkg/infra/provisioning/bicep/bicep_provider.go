@@ -74,6 +74,10 @@ func (p *BicepProvider) RequiredExternalTools() []tools.ExternalTool {
 	return []tools.ExternalTool{}
 }
 
+func (p *BicepProvider) EnsureConfigured(ctx context.Context) error {
+	return nil
+}
+
 func (p *BicepProvider) State(
 	ctx context.Context,
 	scope infra.Scope,

@@ -101,6 +101,9 @@ type StateProgress struct {
 type Provider interface {
 	Name() string
 	RequiredExternalTools() []tools.ExternalTool
+	// EnsureConfigured ensures that any required configuration for the provider has been loaded, prompting the user for
+	// any missing values. It should be called before [State], [Plan], [Deploy], or [Destroy].
+	EnsureConfigured(ctx context.Context) error
 	// State gets the current state of the infrastructure, this contains both the provisioned resources and any outputs from
 	// the module.
 	State(ctx context.Context, scope infra.Scope) *async.InteractiveTaskWithProgress[*StateResult, *StateProgress]

@@ -109,7 +109,7 @@ func (m *Manager) EnsureConfigured(ctx context.Context) error {
 		}
 	}
 
-	return nil
+	return m.provider.EnsureConfigured(ctx)
 }
 
 // Prepares for an infrastructure provision operation

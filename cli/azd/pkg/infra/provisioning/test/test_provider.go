@@ -43,6 +43,10 @@ func (p *TestProvider) RequiredExternalTools() []tools.ExternalTool {
 	return []tools.ExternalTool{}
 }
 
+func (p *TestProvider) EnsureConfigured(_ context.Context) error {
+	return nil
+}
+
 func (p *TestProvider) Plan(
 	ctx context.Context,
 ) *async.InteractiveTaskWithProgress[*DeploymentPlan, *DeploymentPlanningProgress] {

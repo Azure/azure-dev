@@ -88,7 +88,7 @@ func NewTerraformProvider(
 	return provider
 }
 
-func (t *TerraformProvider) setEnvVars() {
+func (t *TerraformProvider) EnsureConfigured(_ context.Context) error {
 	envVars := []string{
 		// Sets the terraform data directory env var that will get set on all terraform CLI commands
 		fmt.Sprintf("TF_DATA_DIR=%s", t.dataDirPath()),
@@ -100,6 +100,7 @@ func (t *TerraformProvider) setEnvVars() {
 	}
 
 	t.cli.SetEnv(envVars)
+	return nil
 }
 
 // Previews the infrastructure through terraform plan
@@ -108,8 +109,6 @@ func (t *TerraformProvider) Plan(
 ) *async.InteractiveTaskWithProgress[*DeploymentPlan, *DeploymentPlanningProgress] {
 	return async.RunInteractiveTaskWithProgress(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*DeploymentPlan, *DeploymentPlanningProgress]) {
-			t.setEnvVars()
-
 			isRemoteBackendConfig, err := t.isRemoteBackendConfig()
 			if err != nil {
 				asyncContext.SetError(fmt.Errorf("reading backend config: %w", err))
@@ -180,8 +179,6 @@ func (t *TerraformProvider) Deploy(
 ) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress] {
 	return async.RunInteractiveTaskWithProgress(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*DeployResult, *DeployProgress]) {
-			t.setEnvVars()
-
 			t.console.Message(ctx, "Locating plan file...")
 
 			modulePath := t.modulePath()
@@ -229,8 +226,6 @@ func (t *TerraformProvider) Destroy(
 ) *async.InteractiveTaskWithProgress[*DestroyResult, *DestroyProgress] {
 	return async.RunInteractiveTaskWithProgress(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*DestroyResult, *DestroyProgress]) {
-			t.setEnvVars()
-
 			isRemoteBackendConfig, err := t.isRemoteBackendConfig()
 			if err != nil {
 				asyncContext.SetError(fmt.Errorf("reading backend config: %w", err))
@@ -282,8 +277,6 @@ func (t *TerraformProvider) State(
 ) *async.InteractiveTaskWithProgress[*StateResult, *StateProgress] {
 	return async.RunInteractiveTaskWithProgress(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*StateResult, *StateProgress]) {
-			t.setEnvVars()
-
 			isRemoteBackendConfig, err := t.isRemoteBackendConfig()
 			if err != nil {
 				asyncContext.SetError(fmt.Errorf("reading backend config: %w", err))

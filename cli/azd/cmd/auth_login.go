@@ -204,6 +204,15 @@ func newLoginAction(
 }
 
 func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	if la.annotations[loginCmdParentAnnotation] == "" {
+		fmt.Fprintln(
+			la.console.Handles().Stderr,
+			//nolint:lll
+			output.WithWarningFormat(
+				"WARNING: `azd login` has been deprecated and will be removed in a future release. Please use `azd auth login` instead."),
+		)
+	}
+
 	if !la.flags.onlyCheckStatus {
 		if err := la.accountSubManager.ClearSubscriptions(ctx); err != nil {
 			log.Printf("failed clearing subscriptions: %v", err)
@@ -268,7 +277,7 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		if res.Status == contracts.LoginStatusSuccess {
 			fmt.Fprintln(la.console.Handles().Stdout, "Logged in to Azure.")
 		} else {
-			fmt.Fprintln(la.console.Handles().Stdout, "Not logged in, run `azd login` to login to Azure.")
+			fmt.Fprintln(la.console.Handles().Stdout, "Not logged in, run `azd auth login` to login to Azure.")
 		}
 
 		return nil, nil

@@ -17,7 +17,7 @@ const (
 	LoginStatusUnauthenticated LoginStatus = "unauthenticated"
 )
 
-// LoginResult is the contract for the output of `azd login`.
+// LoginResult is the contract for the output of `azd auth login`.
 type LoginResult struct {
 	// The result of checking for a valid access token.
 	Status LoginStatus `json:"status"`

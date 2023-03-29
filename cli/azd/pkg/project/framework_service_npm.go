@@ -121,10 +121,9 @@ func (np *npmProject) Package(
 			}
 
 			// Copy directory rooted by dist to publish root.
-			publishSource := serviceConfig.Path()
-
-			if serviceConfig.OutputPath != "" {
-				publishSource = filepath.Join(publishSource, serviceConfig.OutputPath)
+			publishSource := buildOutput.BuildOutputPath
+			if publishSource == "" {
+				publishSource = filepath.Join(serviceConfig.Path(), serviceConfig.OutputPath)
 			}
 
 			task.SetProgress(NewServiceProgress("Copying deployment package"))

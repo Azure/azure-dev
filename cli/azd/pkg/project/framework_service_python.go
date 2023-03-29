@@ -132,6 +132,9 @@ func (pp *pythonProject) Package(
 			}
 
 			publishSource := buildOutput.BuildOutputPath
+			if publishSource == "" {
+				publishSource = filepath.Join(serviceConfig.Path(), serviceConfig.OutputPath)
+			}
 
 			task.SetProgress(NewServiceProgress("Copying deployment package"))
 			if err := buildForZip(

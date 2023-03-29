@@ -236,24 +236,6 @@ func (at *containerAppTarget) Publish(
 	)
 }
 
-func (at *containerAppTarget) validateTargetResource(
-	ctx context.Context,
-	serviceConfig *ServiceConfig,
-	targetResource *environment.TargetResource,
-) error {
-	if targetResource.ResourceGroupName() == "" {
-		return fmt.Errorf("missing resource group name: %s", targetResource.ResourceGroupName())
-	}
-
-	if targetResource.ResourceType() != "" {
-		if err := checkResourceType(targetResource, infra.AzureResourceTypeContainerApp); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
 // Gets endpoint for the container app service
 func (at *containerAppTarget) Endpoints(
 	ctx context.Context,
@@ -275,4 +257,22 @@ func (at *containerAppTarget) Endpoints(
 
 		return endpoints, nil
 	}
+}
+
+func (at *containerAppTarget) validateTargetResource(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	targetResource *environment.TargetResource,
+) error {
+	if targetResource.ResourceGroupName() == "" {
+		return fmt.Errorf("missing resource group name: %s", targetResource.ResourceGroupName())
+	}
+
+	if targetResource.ResourceType() != "" {
+		if err := checkResourceType(targetResource, infra.AzureResourceTypeContainerApp); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }

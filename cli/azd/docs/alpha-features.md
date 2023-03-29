@@ -1,6 +1,6 @@
 # Alpha Features
 
-The Azure Developer CLI includes a `alpha feature toggle` which allows the cli to enable `experimental`. This document provides the feature design for it.
+The Azure Developer CLI includes a `alpha feature toggle` which allows the cli to enable functionality in `alpha` mode (experimental). This document provides the feature design for it.
 
 ## Main requirement
 
@@ -8,10 +8,10 @@ As a customer, I can explicitly ask `azd` to unblock and show any _alpha_ functi
 
 The strategy to ask `azd` to `toggle` between modes is:
 
-- Enable _all_ experimental features: `azd config set experimental.all on`
-- Enable _specific_ experimental feature: `azd config set experimental.feature on`
-- Disable _all_ experimental features: `azd config unset experimental.all`
-- Disable _specific_ experimental feature: `azd config unset experimental.feature`
+- Enable _all_ experimental features: `azd config set alpha.all on`
+- Enable _specific_ experimental feature: `azd config set alpha.featureName on`
+- Disable _all_ experimental features: `azd config unset alpha.all` or `azd config set alpha.all off`
+- Disable _specific_ experimental feature: `azd config unset alpha.featureName` or `azd config set alpha.featureName off`
 
 ## Alpha feature
 

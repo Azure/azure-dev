@@ -19,9 +19,13 @@ type AlphaFeature struct {
 type AlphaFeatureId string
 
 const (
-	parentKey   AlphaFeatureId = "alpha"
-	AllId       AlphaFeatureId = "all"
-	TerraformId AlphaFeatureId = "terraform"
+	parentKey     AlphaFeatureId = "alpha"
+	AllId         AlphaFeatureId = "all"
+	TerraformId   AlphaFeatureId = "terraform"
+	enabledValue  string         = "on"
+	disabledValue string         = "off"
+	enabledText   string         = "On"
+	disabledText  string         = "Off"
 )
 
 func mustUnmarshalAlphaFeatures() []AlphaFeature {

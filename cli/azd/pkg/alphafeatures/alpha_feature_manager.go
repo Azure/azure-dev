@@ -10,6 +10,8 @@ import (
 type AlphaFeatureManager struct {
 	configManager   config.UserConfigManager
 	userConfigCache config.Config
+	// used for mocking alpha features on testing
+	alphaFeaturesResolver func() []AlphaFeature
 }
 
 func NewAlphaFeaturesManager(configManager config.UserConfigManager) *AlphaFeatureManager {
@@ -20,13 +22,19 @@ func NewAlphaFeaturesManager(configManager config.UserConfigManager) *AlphaFeatu
 
 func (m *AlphaFeatureManager) ListFeatures() (map[string]AlphaFeature, error) {
 	result := make(map[string]AlphaFeature)
-	alphaFeatures := mustUnmarshalAlphaFeatures()
+
+	var alphaFeatures []AlphaFeature
+	if m.alphaFeaturesResolver != nil {
+		alphaFeatures = m.alphaFeaturesResolver()
+	} else {
+		alphaFeatures = mustUnmarshalAlphaFeatures()
+	}
 
 	for _, aFeature := range alphaFeatures {
 		// cast is safe here from string to AlphaFeatureId
-		status := "disabled"
+		status := disabledText
 		if m.IsEnabled(AlphaFeatureId(aFeature.Id)) {
-			status = "enabled"
+			status = enabledText
 		}
 
 		result[aFeature.Id] = AlphaFeature{
@@ -66,6 +74,18 @@ func isEnabled(config config.Config, id string) bool {
 		string(parentKey),
 		id,
 	}, ".")
-	_, exists := config.Get(longKey)
-	return exists
+	value, exists := config.Get(longKey)
+	if !exists {
+		return exists
+	}
+	// safe cast -> reading from config text file
+	stringValue, _ := value.(string)
+	stringValue = strings.ToLower(stringValue)
+
+	if stringValue != disabledValue && stringValue != enabledValue {
+		log.Panicf("invalid value: %s for alpha-feature config key: %s", longKey, stringValue)
+	}
+
+	// previous condition ensured that stringValue is either `enabledValue` or `disabledValue`
+	return stringValue == enabledValue
 }

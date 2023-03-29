@@ -1,4 +1,2 @@
 - id: terraform
   description: "Provision Azure resources from terraform files."
-- id: testCommand
-  description: "Just for fun."  

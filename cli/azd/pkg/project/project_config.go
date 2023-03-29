@@ -56,8 +56,8 @@ func (p *ProjectConfig) HasService(name string) bool {
 	return false
 }
 
-// Retrieves the list of services in the project.
-func (p *ProjectConfig) GetServices() []*ServiceConfig {
+// Retrieves the list of services in the project, in a stable ordering that is deterministic.
+func (p *ProjectConfig) GetServicesStable() []*ServiceConfig {
 	// Sort services by friendly name an then collect them into a list. This provides a stable ordering of services.
 	serviceKeys := make([]string, 0, len(p.Services))
 	for k := range p.Services {

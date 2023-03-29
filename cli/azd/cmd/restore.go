@@ -35,7 +35,7 @@ func (r *restoreFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommand
 		&r.all,
 		"all",
 		false,
-		"Deploys all services that are listed in "+azdcontext.ProjectFileName,
+		"Restores all services that are listed in "+azdcontext.ProjectFileName,
 	)
 	local.StringVar(
 		&r.serviceName,
@@ -135,7 +135,7 @@ func (r *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 
 	count := 0
 
-	services := r.projectConfig.GetServices()
+	services := r.projectConfig.GetServicesStable()
 	targetServices := make([]*project.ServiceConfig, 0, len(services))
 	for _, svc := range services {
 		// If targetServiceName is empty (which is only allowed if --all is set),

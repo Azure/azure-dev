@@ -42,12 +42,6 @@ func (d *deployFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 func (d *deployFlags) bindNonCommon(
 	local *pflag.FlagSet,
 	global *internal.GlobalCommandOptions) {
-	local.BoolVar(
-		&d.all,
-		"all",
-		false,
-		"Deploys all services that are listed in "+azdcontext.ProjectFileName,
-	)
 	local.StringVar(
 		&d.serviceName,
 		"service",
@@ -63,6 +57,13 @@ func (d *deployFlags) bindNonCommon(
 func (d *deployFlags) bindCommon(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	d.envFlag = &envFlag{}
 	d.envFlag.Bind(local, global)
+
+	local.BoolVar(
+		&d.all,
+		"all",
+		false,
+		"Deploys all services that are listed in "+azdcontext.ProjectFileName,
+	)
 }
 
 func (d *deployFlags) setCommon(envFlag *envFlag) {
@@ -179,7 +180,7 @@ func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, err
 	}
 
-	services := d.projectConfig.GetServices()
+	services := d.projectConfig.GetServicesStable()
 	targetServices := make([]*project.ServiceConfig, 0, len(services))
 	for _, svc := range services {
 		// If targetServiceName is empty (which is only allowed if --all is set),
@@ -268,8 +269,11 @@ func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 func getCmdDeployHelpDescription(*cobra.Command) string {
 	return generateCmdHelpDescription("Deploy application to Azure.", []string{
-		formatHelpNote(fmt.Sprintf("When %s is not set, all services in the 'azure.yaml'"+
-			" file (found in the root of your project) are deployed.", output.WithHighLightFormat("<service>"))),
+		formatHelpNote(
+			"By default, deploys all services listed in 'azure.yaml' in the current directory," +
+				" or the service described in the project that matches the current directory."),
+		formatHelpNote(
+			fmt.Sprintf("When %s is set, only the specific service is deployed.", output.WithHighLightFormat("<service>"))),
 		formatHelpNote("After the deployment is complete, the endpoint is printed. To start the service, select" +
 			" the endpoint or paste it in a browser."),
 	})
@@ -277,10 +281,9 @@ func getCmdDeployHelpDescription(*cobra.Command) string {
 
 func getCmdDeployHelpFooter(*cobra.Command) string {
 	return generateCmdHelpSamplesBlock(map[string]string{
-		"Reviews all code and services in your azure.yaml file and deploys to Azure.": output.WithHighLightFormat(
-			"azd deploy"),
-		"Deploy all application API services to Azure.": output.WithHighLightFormat("azd deploy api"),
-		"Deploy all application web services to Azure.": output.WithHighLightFormat("azd deploy web"),
+		"Deploy all services in the current project to Azure.": output.WithHighLightFormat("azd deploy --all"),
+		"Deploy the service named 'api' to Azure.":             output.WithHighLightFormat("azd deploy api"),
+		"Deploy the service named 'web' to Azure.":             output.WithHighLightFormat("azd deploy web"),
 	})
 }
 

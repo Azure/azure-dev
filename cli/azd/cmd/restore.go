@@ -127,7 +127,7 @@ func (r *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		if err == errNoDefaultService {
 			return nil, fmt.Errorf(
 				//nolint:lll
-				"current working directory is not a project or service directory. Please specify a service name to restore a service, or use --all to restore all services")
+				"current working directory is not a project or service directory. Please specify a service name to restore a service, or specify --all to restore all services")
 		} else if err != nil {
 			return nil, err
 		}

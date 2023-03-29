@@ -169,7 +169,7 @@ func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		if err == errNoDefaultService {
 			return nil, fmt.Errorf(
 				//nolint:lll
-				"current working directory is not a project or service directory. Please specify a service name to deploy a service, or use --all to deploy all services")
+				"current working directory is not a project or service directory. Please specify a service name to deploy a service, or specify --all to deploy all services")
 		} else if err != nil {
 			return nil, err
 		}
@@ -302,13 +302,13 @@ func defaultServiceFromWd(
 
 	if wd == azdCtx.ProjectDirectory() {
 		return "", nil
-	} else {
-		for _, svcConfig := range projConfig.Services {
-			if wd == svcConfig.Path() {
-				return svcConfig.Name, nil
-			}
-		}
-
-		return "", errNoDefaultService
 	}
+
+	for _, svcConfig := range projConfig.Services {
+		if wd == svcConfig.Path() {
+			return svcConfig.Name, nil
+		}
+	}
+
+	return "", errNoDefaultService
 }

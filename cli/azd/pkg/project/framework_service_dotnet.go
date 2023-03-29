@@ -38,6 +38,16 @@ func NewDotNetProject(
 	}
 }
 
+func (dp *dotnetProject) Requirements() FrameworkRequirements {
+	return FrameworkRequirements{
+		// dotnet will automatically restore & build the project if needed
+		Package: FrameworkPackageRequirements{
+			RequireRestore: false,
+			RequireBuild:   false,
+		},
+	}
+}
+
 // Gets the required external tools for the project
 func (dp *dotnetProject) RequiredExternalTools(context.Context) []tools.ExternalTool {
 	return []tools.ExternalTool{dp.dotnetCli}

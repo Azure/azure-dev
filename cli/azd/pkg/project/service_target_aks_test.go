@@ -26,6 +26,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
 	"github.com/azure/azure-dev/cli/azd/test/ostest"
+	"github.com/benbjohnson/clock"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 )
@@ -81,8 +82,7 @@ func Test_Package_Publish_HappyPath(t *testing.T) {
 		&ServicePackageResult{
 			PackagePath: "IMAGE_ID",
 			Details: &dockerPackageResult{
-				ImageTag:    "IMAGE_TAG",
-				LoginServer: "REGISTRY.azurecr.io",
+				ImageTag: "IMAGE_TAG",
 			},
 		},
 	)
@@ -126,8 +126,7 @@ func Test_Publish_No_Cluster_Name(t *testing.T) {
 	packageOutput := &ServicePackageResult{
 		Build: &ServiceBuildResult{BuildOutputPath: "IMAGE_ID"},
 		Details: &dockerPackageResult{
-			ImageTag:    "IMAGE_TAG",
-			LoginServer: env.Values[environment.ContainerRegistryEndpointEnvVarName],
+			ImageTag: "IMAGE_TAG",
 		},
 	}
 
@@ -161,8 +160,7 @@ func Test_Publish_No_Admin_Credentials(t *testing.T) {
 	packageOutput := &ServicePackageResult{
 		Build: &ServiceBuildResult{BuildOutputPath: "IMAGE_ID"},
 		Details: &dockerPackageResult{
-			ImageTag:    "IMAGE_TAG",
-			LoginServer: env.Values[environment.ContainerRegistryEndpointEnvVarName],
+			ImageTag: "IMAGE_TAG",
 		},
 	}
 
@@ -481,6 +479,7 @@ func createServiceTarget(
 
 	managedClustersService := azcli.NewManagedClustersService(credentialProvider, mockContext.HttpClient)
 	containerRegistryService := azcli.NewContainerRegistryService(credentialProvider, mockContext.HttpClient, dockerCli)
+	containerHelper := NewContainerHelper(env, clock.NewMock())
 
 	return NewAksTarget(
 		env,
@@ -488,6 +487,7 @@ func createServiceTarget(
 		containerRegistryService,
 		kubeCtl,
 		dockerCli,
+		containerHelper,
 	)
 }
 

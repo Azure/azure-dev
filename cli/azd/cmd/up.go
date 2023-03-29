@@ -14,24 +14,24 @@ import (
 )
 
 type upFlags struct {
-	provisionFlags
-	deployFlags
 	global *internal.GlobalCommandOptions
-	envFlag
+	*provisionFlags
+	*deployFlags
+	*envFlag
 }
 
 func (u *upFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
-	u.envFlag.Bind(local, global)
-	u.global = global
-
-	u.provisionFlags.bindNonCommon(local, global)
-	u.provisionFlags.setCommon(&u.envFlag)
-	u.deployFlags.bindNonCommon(local, global)
-	u.deployFlags.setCommon(&u.envFlag)
+	u.provisionFlags.setCommon(u.envFlag)
+	u.deployFlags.setCommon(u.envFlag)
 }
 
 func newUpFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *upFlags {
-	flags := &upFlags{}
+	flags := &upFlags{
+		global:         global,
+		envFlag:        newEnvFlag(cmd, global),
+		provisionFlags: newProvisionFlags(cmd, global),
+		deployFlags:    newDeployFlags(cmd, global),
+	}
 	flags.Bind(cmd.Flags(), global)
 
 	return flags
@@ -83,14 +83,14 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			output.WithWarningFormat("The --service flag is deprecated and will be removed in the future."))
 	}
 
-	provision, err := u.provisionActionInitializer()
+	provisionAction, err := u.provisionActionInitializer()
 	if err != nil {
 		return nil, err
 	}
 
-	provision.flags = &u.flags.provisionFlags
-	provisionOptions := &middleware.Options{CommandPath: "provision"}
-	_, err = u.runner.RunChildAction(ctx, provisionOptions, provision)
+	provisionAction.flags = u.flags.provisionFlags
+	provisionOptions := &middleware.Options{CommandPath: "infra create", Aliases: []string{"provision"}}
+	_, err = u.runner.RunChildAction(ctx, provisionOptions, provisionAction)
 	if err != nil {
 		return nil, err
 	}
@@ -98,19 +98,19 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	// Print an additional newline to separate provision from deploy
 	u.console.Message(ctx, "")
 
-	deploy, err := u.deployActionInitializer()
+	deployAction, err := u.deployActionInitializer()
 	if err != nil {
 		return nil, err
 	}
 
-	deploy.flags = &u.flags.deployFlags
+	deployAction.flags = u.flags.deployFlags
 	// move flag to args to avoid extra deprecation flag warning
-	if deploy.flags.serviceName != "" {
-		deploy.args = []string{deploy.flags.serviceName}
-		deploy.flags.serviceName = ""
+	if deployAction.flags.serviceName != "" {
+		deployAction.args = []string{deployAction.flags.serviceName}
+		deployAction.flags.serviceName = ""
 	}
 	deployOptions := &middleware.Options{CommandPath: "deploy"}
-	deployResult, err := u.runner.RunChildAction(ctx, deployOptions, deploy)
+	deployResult, err := u.runner.RunChildAction(ctx, deployOptions, deployAction)
 	if err != nil {
 		return nil, err
 	}

@@ -33,6 +33,16 @@ func NewMavenProject(env *environment.Environment, mavenCli maven.MavenCli, java
 	}
 }
 
+func (m *mavenProject) Requirements() FrameworkRequirements {
+	return FrameworkRequirements{
+		// Maven will automatically restore & build the project if needed
+		Package: FrameworkPackageRequirements{
+			RequireRestore: false,
+			RequireBuild:   false,
+		},
+	}
+}
+
 // Gets the required external tools for the project
 func (m *mavenProject) RequiredExternalTools(context.Context) []tools.ExternalTool {
 	return []tools.ExternalTool{

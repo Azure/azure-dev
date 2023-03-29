@@ -265,6 +265,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(account.NewSubscriptionCredentialProvider)
 	container.RegisterSingleton(azcli.NewManagedClustersService)
 	container.RegisterSingleton(azcli.NewContainerRegistryService)
+	container.RegisterSingleton(project.NewContainerHelper)
 	container.RegisterSingleton(func() ioc.ServiceLocator {
 		return ioc.NewServiceLocator(container)
 	})
@@ -337,8 +338,11 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 	// Required for nested actions called from composite actions like 'up'
 	registerActionInitializer[*initAction](container, "azd-init-action")
-	registerActionInitializer[*deployAction](container, "azd-deploy-action")
 	registerActionInitializer[*provisionAction](container, "azd-provision-action")
+	registerActionInitializer[*restoreAction](container, "azd-restore-action")
+	registerActionInitializer[*buildAction](container, "azd-build-action")
+	registerActionInitializer[*packageAction](container, "azd-package-action")
+	registerActionInitializer[*deployAction](container, "azd-deploy-action")
 
 	// Required for alias actions like 'infra create' and 'infra delete'
 	registerAction[*downAction](container, "azd-down-action")

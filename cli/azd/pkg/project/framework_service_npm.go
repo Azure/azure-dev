@@ -28,6 +28,16 @@ func NewNpmProject(cli npm.NpmCli, env *environment.Environment) FrameworkServic
 	}
 }
 
+func (np *npmProject) Requirements() FrameworkRequirements {
+	return FrameworkRequirements{
+		Package: FrameworkPackageRequirements{
+			// NPM requires a restore before running any NPM scripts
+			RequireRestore: true,
+			RequireBuild:   false,
+		},
+	}
+}
+
 // Gets the required external tools for the project
 func (np *npmProject) RequiredExternalTools(context.Context) []tools.ExternalTool {
 	return []tools.ExternalTool{np.cli}

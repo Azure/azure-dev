@@ -30,6 +30,16 @@ func NewPythonProject(cli *python.PythonCli, env *environment.Environment) Frame
 	}
 }
 
+func (pp *pythonProject) Requirements() FrameworkRequirements {
+	return FrameworkRequirements{
+		// Python does not require compilation and will just package the raw source files
+		Package: FrameworkPackageRequirements{
+			RequireRestore: false,
+			RequireBuild:   false,
+		},
+	}
+}
+
 // Gets the required external tools for the project
 func (pp *pythonProject) RequiredExternalTools(context.Context) []tools.ExternalTool {
 	return []tools.ExternalTool{pp.cli}

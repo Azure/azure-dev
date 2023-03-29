@@ -6,6 +6,7 @@ import (
 	"io"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -74,18 +75,20 @@ Depending on what Azure resources are created, running this command might take a
 }
 
 type provisionAction struct {
-	flags           *provisionFlags
-	accountManager  account.Manager
-	projectManager  project.ProjectManager
-	resourceManager project.ResourceManager
-	azdCtx          *azdcontext.AzdContext
-	azCli           azcli.AzCli
-	env             *environment.Environment
-	formatter       output.Formatter
-	projectConfig   *project.ProjectConfig
-	writer          io.Writer
-	console         input.Console
-	commandRunner   exec.CommandRunner
+	flags                    *provisionFlags
+	accountManager           account.Manager
+	projectManager           project.ProjectManager
+	resourceManager          project.ResourceManager
+	azdCtx                   *azdcontext.AzdContext
+	azCli                    azcli.AzCli
+	env                      *environment.Environment
+	formatter                output.Formatter
+	projectConfig            *project.ProjectConfig
+	writer                   io.Writer
+	console                  input.Console
+	commandRunner            exec.CommandRunner
+	middlewareRunner         middleware.MiddlewareContext
+	packageActionInitializer actions.ActionInitializer[*packageAction]
 }
 
 func newProvisionAction(
@@ -101,20 +104,24 @@ func newProvisionAction(
 	formatter output.Formatter,
 	writer io.Writer,
 	commandRunner exec.CommandRunner,
+	middlewareRunner middleware.MiddlewareContext,
+	packageActionInitializer actions.ActionInitializer[*packageAction],
 ) actions.Action {
 	return &provisionAction{
-		flags:           flags,
-		accountManager:  accountManager,
-		projectManager:  projectManager,
-		resourceManager: resourceManager,
-		azdCtx:          azdCtx,
-		azCli:           azCli,
-		env:             env,
-		formatter:       formatter,
-		projectConfig:   projectConfig,
-		writer:          writer,
-		console:         console,
-		commandRunner:   commandRunner,
+		flags:                    flags,
+		accountManager:           accountManager,
+		projectManager:           projectManager,
+		resourceManager:          resourceManager,
+		azdCtx:                   azdCtx,
+		azCli:                    azCli,
+		env:                      env,
+		formatter:                formatter,
+		projectConfig:            projectConfig,
+		writer:                   writer,
+		console:                  console,
+		commandRunner:            commandRunner,
+		middlewareRunner:         middlewareRunner,
+		packageActionInitializer: packageActionInitializer,
 	}
 }
 
@@ -124,6 +131,17 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 			p.console.Handles().Stderr,
 			//nolint:Lll
 			output.WithWarningFormat("--no-progress flag is deprecated and will be removed in the future.")+"\n")
+	}
+
+	packageAction, err := p.packageActionInitializer()
+	if err != nil {
+		return nil, err
+	}
+
+	packageOptions := &middleware.Options{CommandPath: "package"}
+	_, err = p.middlewareRunner.RunChildAction(ctx, packageOptions, packageAction)
+	if err != nil {
+		return nil, err
 	}
 
 	// Command title

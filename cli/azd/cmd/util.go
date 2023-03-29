@@ -23,6 +23,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
+	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
 
@@ -362,7 +363,19 @@ type envFlag struct {
 	environmentName string
 }
 
+func newEnvFlag(cmd *cobra.Command, global *internal.GlobalCommandOptions) *envFlag {
+	flag := &envFlag{}
+	flag.Bind(cmd.Flags(), global)
+
+	return flag
+}
+
 func (e *envFlag) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+	existing := local.Lookup(environmentNameFlag)
+	if existing != nil {
+		return
+	}
+
 	local.StringVarP(
 		&e.environmentName,
 		environmentNameFlag,
@@ -370,6 +383,33 @@ func (e *envFlag) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptio
 		// Set the default value to AZURE_ENV_NAME value if available
 		os.Getenv(environment.EnvNameEnvVarName),
 		"The name of the environment to use.")
+}
+
+const onlyNameFlag string = "only"
+
+type onlyFlag struct {
+	only bool
+}
+
+func newOnlyFlag(cmd *cobra.Command, global *internal.GlobalCommandOptions) *onlyFlag {
+	flag := &onlyFlag{}
+	flag.Bind(cmd.Flags(), global)
+
+	return flag
+}
+
+func (o *onlyFlag) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+	existing := local.Lookup(onlyNameFlag)
+	if existing != nil {
+		return
+	}
+
+	local.BoolVarP(
+		&o.only,
+		onlyNameFlag,
+		"",
+		false,
+		"Skips any prerequisite commands and only runs the specified command.")
 }
 
 func getResourceGroupFollowUp(

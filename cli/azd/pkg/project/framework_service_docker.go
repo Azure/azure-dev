@@ -5,6 +5,7 @@ package project
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -12,9 +13,9 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
-	"github.com/benbjohnson/clock"
 )
 
 type DockerProjectOptions struct {
@@ -24,16 +25,47 @@ type DockerProjectOptions struct {
 	Tag      ExpandableString `json:"tag"`
 }
 
+type dockerBuildResult struct {
+	ImageId   string `json:"imageId"`
+	ImageName string `json:"imageName"`
+}
+
+func (dbr *dockerBuildResult) ToString(currentIndentation string) string {
+	lines := []string{
+		fmt.Sprintf("%s- Image ID: %s", currentIndentation, output.WithLinkFormat(dbr.ImageId)),
+		fmt.Sprintf("%s- Image Name: %s", currentIndentation, output.WithLinkFormat(dbr.ImageName)),
+	}
+
+	return strings.Join(lines, "\n")
+}
+
+func (dbr *dockerBuildResult) MarshalJSON() ([]byte, error) {
+	return json.Marshal(dbr)
+}
+
 type dockerPackageResult struct {
-	ImageTag    string
-	LoginServer string
+	ImageHash string `json:"imageHash"`
+	ImageTag  string `json:"imageTag"`
+}
+
+func (dpr *dockerPackageResult) ToString(currentIndentation string) string {
+	lines := []string{
+		fmt.Sprintf("%s- Image Hash: %s", currentIndentation, output.WithLinkFormat(dpr.ImageHash)),
+		fmt.Sprintf("%s- Image Tag: %s", currentIndentation, output.WithLinkFormat(dpr.ImageTag)),
+	}
+
+	return strings.Join(lines, "\n")
+}
+
+func (dpr *dockerPackageResult) MarshalJSON() ([]byte, error) {
+	return json.Marshal(dpr)
 }
 
 type dockerProject struct {
-	env       *environment.Environment
-	docker    docker.Docker
-	framework FrameworkService
-	clock     clock.Clock
+	env             *environment.Environment
+	docker          docker.Docker
+	framework       FrameworkService
+	containerHelper *ContainerHelper
 }
 
 // NewDockerProject creates a new instance of a Azd project that
@@ -41,12 +73,22 @@ type dockerProject struct {
 func NewDockerProject(
 	env *environment.Environment,
 	docker docker.Docker,
-	clock clock.Clock,
+	containerHelper *ContainerHelper,
 ) CompositeFrameworkService {
 	return &dockerProject{
-		env:    env,
-		docker: docker,
-		clock:  clock,
+		env:             env,
+		docker:          docker,
+		containerHelper: containerHelper,
+	}
+}
+
+func (p *dockerProject) Requirements() FrameworkRequirements {
+	return FrameworkRequirements{
+		Package: FrameworkPackageRequirements{
+			RequireRestore: false,
+			// Docker project needs to build a container image
+			RequireBuild: true,
+		},
 	}
 }
 
@@ -93,6 +135,8 @@ func (p *dockerProject) Build(
 				dockerOptions.Context,
 			)
 
+			imageName := fmt.Sprintf("%s-%s", serviceConfig.Project.Name, serviceConfig.Name)
+
 			// Build the container
 			task.SetProgress(NewServiceProgress("Building docker image"))
 			imageId, err := p.docker.Build(
@@ -101,6 +145,7 @@ func (p *dockerProject) Build(
 				dockerOptions.Path,
 				dockerOptions.Platform,
 				dockerOptions.Context,
+				imageName,
 			)
 			if err != nil {
 				task.SetError(fmt.Errorf("building container: %s at %s: %w", serviceConfig.Name, dockerOptions.Context, err))
@@ -111,6 +156,10 @@ func (p *dockerProject) Build(
 			task.SetResult(&ServiceBuildResult{
 				Restore:         restoreOutput,
 				BuildOutputPath: imageId,
+				Details: &dockerBuildResult{
+					ImageId:   imageId,
+					ImageName: imageName,
+				},
 			})
 		},
 	)
@@ -123,69 +172,36 @@ func (p *dockerProject) Package(
 ) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
-			loginServer, has := p.env.Values[environment.ContainerRegistryEndpointEnvVarName]
-			if !has {
-				task.SetError(fmt.Errorf(
-					"could not determine container registry endpoint, ensure %s is set as an output of your infrastructure",
-					environment.ContainerRegistryEndpointEnvVarName,
-				))
-				return
-			}
-
 			imageId := buildOutput.BuildOutputPath
 			if imageId == "" {
 				task.SetError(errors.New("missing container image id from build output"))
 				return
 			}
 
-			imageTag, err := p.generateImageTag(serviceConfig)
+			localTag, err := p.containerHelper.LocalImageTag(ctx, serviceConfig)
 			if err != nil {
-				task.SetError(fmt.Errorf("generating image tag: %w", err))
+				task.SetError(fmt.Errorf("generating local image tag: %w", err))
 				return
 			}
 
-			fullTag := fmt.Sprintf(
-				"%s/%s",
-				loginServer,
-				imageTag,
-			)
-
 			// Tag image.
-			log.Printf("tagging image %s as %s", imageId, fullTag)
+			log.Printf("tagging image %s as %s", imageId, localTag)
 			task.SetProgress(NewServiceProgress("Tagging docker image"))
-			if err := p.docker.Tag(ctx, serviceConfig.Path(), imageId, fullTag); err != nil {
+			if err := p.docker.Tag(ctx, serviceConfig.Path(), imageId, localTag); err != nil {
 				task.SetError(fmt.Errorf("tagging image: %w", err))
 				return
 			}
 
 			task.SetResult(&ServicePackageResult{
 				Build:       buildOutput,
-				PackagePath: fullTag,
+				PackagePath: localTag,
 				Details: &dockerPackageResult{
-					ImageTag:    fullTag,
-					LoginServer: loginServer,
+					ImageHash: imageId,
+					ImageTag:  localTag,
 				},
 			})
 		},
 	)
-}
-
-func (p *dockerProject) generateImageTag(serviceConfig *ServiceConfig) (string, error) {
-	configuredTag, err := serviceConfig.Docker.Tag.Envsubst(p.env.Getenv)
-	if err != nil {
-		return "", err
-	}
-
-	if configuredTag != "" {
-		return configuredTag, nil
-	}
-
-	return fmt.Sprintf("%s/%s-%s:azd-deploy-%d",
-		strings.ToLower(serviceConfig.Project.Name),
-		strings.ToLower(serviceConfig.Name),
-		strings.ToLower(p.env.GetEnvName()),
-		p.clock.Now().Unix(),
-	), nil
 }
 
 func getDockerOptionsWithDefaults(options DockerProjectOptions) DockerProjectOptions {

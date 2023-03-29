@@ -132,21 +132,6 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 		DefaultFormat:  output.NoneFormat,
 	})
 
-	root.
-		Add("restore", &actions.ActionDescriptorOptions{
-			Command:        restoreCmdDesign(),
-			FlagsResolver:  newRestoreFlags,
-			ActionResolver: newRestoreAction,
-			HelpOptions: actions.ActionHelpOptions{
-				Description: getCmdRestoreHelpDescription,
-				Footer:      getCmdRestoreHelpFooter,
-			},
-			GroupingOptions: actions.CommandGroupOptions{
-				RootLevelHelp: actions.CmdGroupConfig,
-			},
-		}).
-		UseMiddleware("hooks", middleware.NewHooksMiddleware)
-
 	//deprecate:cmd hide login
 	login := newLoginCmd("")
 	login.Hidden = true
@@ -180,6 +165,33 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 	}).AddFlagCompletion("template", templateNameCompletion)
 
 	root.
+		Add("restore", &actions.ActionDescriptorOptions{
+			Command:        newRestoreCmd(),
+			FlagsResolver:  newRestoreFlags,
+			ActionResolver: newRestoreAction,
+			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
+			DefaultFormat:  output.NoneFormat,
+			HelpOptions: actions.ActionHelpOptions{
+				Description: getCmdRestoreHelpDescription,
+				Footer:      getCmdRestoreHelpFooter,
+			},
+			GroupingOptions: actions.CommandGroupOptions{
+				RootLevelHelp: actions.CmdGroupConfig,
+			},
+		}).
+		UseMiddleware("hooks", middleware.NewHooksMiddleware)
+
+	root.
+		Add("build", &actions.ActionDescriptorOptions{
+			Command:        newBuildCmd(),
+			FlagsResolver:  newBuildFlags,
+			ActionResolver: newBuildAction,
+			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
+			DefaultFormat:  output.NoneFormat,
+		}).
+		UseMiddleware("hooks", middleware.NewHooksMiddleware)
+
+	root.
 		Add("provision", &actions.ActionDescriptorOptions{
 			Command:        newProvisionCmd(),
 			FlagsResolver:  newProvisionFlags,
@@ -193,6 +205,16 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 			GroupingOptions: actions.CommandGroupOptions{
 				RootLevelHelp: actions.CmdGroupManage,
 			},
+		}).
+		UseMiddleware("hooks", middleware.NewHooksMiddleware)
+
+	root.
+		Add("package", &actions.ActionDescriptorOptions{
+			Command:        newPackageCmd(),
+			FlagsResolver:  newPackageFlags,
+			ActionResolver: newPackageAction,
+			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
+			DefaultFormat:  output.NoneFormat,
 		}).
 		UseMiddleware("hooks", middleware.NewHooksMiddleware)
 

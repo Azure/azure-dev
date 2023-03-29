@@ -12,6 +12,7 @@ Flags
         --all                	: Deploys all services that are listed in azure.yaml
     -e, --environment string 	: The name of the environment to use.
     -h, --help               	: Gets help for deploy.
+        --only               	: Skips any prerequisite commands and only runs the specified command.
 
 Global Flags
     -C, --cwd string 	: Sets the current working directory.

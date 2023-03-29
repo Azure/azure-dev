@@ -16,7 +16,14 @@ import (
 type Docker interface {
 	tools.ExternalTool
 	Login(ctx context.Context, loginServer string, username string, password string) error
-	Build(ctx context.Context, cwd string, dockerFilePath string, platform string, buildContext string) (string, error)
+	Build(
+		ctx context.Context,
+		cwd string,
+		dockerFilePath string,
+		platform string,
+		buildContext string,
+		name string,
+	) (string, error)
 	Tag(ctx context.Context, cwd string, imageName string, tag string) error
 	Push(ctx context.Context, cwd string, tag string) error
 }
@@ -54,12 +61,25 @@ func (d *docker) Build(
 	dockerFilePath string,
 	platform string,
 	buildContext string,
+	name string,
 ) (string, error) {
 	if strings.TrimSpace(platform) == "" {
 		platform = "amd64"
 	}
 
-	res, err := d.executeCommand(ctx, cwd, "build", "-q", "-f", dockerFilePath, "--platform", platform, buildContext)
+	args := []string{
+		"build", "-q",
+		"-f", dockerFilePath,
+		"--platform", platform,
+	}
+
+	if name != "" {
+		args = append(args, "-t", name)
+	}
+
+	args = append(args, buildContext)
+
+	res, err := d.executeCommand(ctx, cwd, args...)
 	if err != nil {
 		return "", fmt.Errorf("building image: %s: %w", res.String(), err)
 	}

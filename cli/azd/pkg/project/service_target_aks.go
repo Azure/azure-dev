@@ -59,6 +59,7 @@ type aksTarget struct {
 	containerRegistryService azcli.ContainerRegistryService
 	docker                   docker.Docker
 	kubectl                  kubectl.KubectlCli
+	containerHelper          *ContainerHelper
 }
 
 // Creates a new instance of the AKS service target
@@ -68,6 +69,7 @@ func NewAksTarget(
 	containerRegistryService azcli.ContainerRegistryService,
 	kubectlCli kubectl.KubectlCli,
 	docker docker.Docker,
+	containerHelper *ContainerHelper,
 ) ServiceTarget {
 	return &aksTarget{
 		env:                      env,
@@ -75,6 +77,7 @@ func NewAksTarget(
 		containerRegistryService: containerRegistryService,
 		docker:                   docker,
 		kubectl:                  kubectlCli,
+		containerHelper:          containerHelper,
 	}
 }
 
@@ -123,6 +126,13 @@ func (t *aksTarget) Publish(
 				return
 			}
 
+			// Get ACR Login Server
+			loginServer, err := t.containerHelper.LoginServer(ctx)
+			if err != nil {
+				task.SetError(err)
+				return
+			}
+
 			// Login to AKS cluster
 			clusterName, has := t.env.Values[environment.AksClusterEnvVarName]
 			if !has {
@@ -157,27 +167,57 @@ func (t *aksTarget) Publish(
 				return
 			}
 
-			packageDetails, ok := packageOutput.Details.(*dockerPackageResult)
-			if !ok {
-				task.SetError(errors.New("failed retrieving package result details"))
-				return
-			}
-
-			log.Printf("logging into container registry '%s'\n", packageDetails.LoginServer)
-
-			task.SetProgress(NewServiceProgress("Logging into container registry"))
-			err = t.containerRegistryService.LoginAcr(ctx, targetResource.SubscriptionId(), packageDetails.LoginServer)
-			if err != nil {
-				task.SetError(fmt.Errorf("failed logging into registry '%s': %w", packageDetails.LoginServer, err))
-				return
-			}
-
 			// The kubeConfig that we care about will also be at position 0
 			// I don't know if there is a valid use case where this credential results would container multiple configs
 			task.SetProgress(NewServiceProgress("Configuring k8s config context"))
 			err = t.configureK8sContext(ctx, clusterName, clusterCreds.Kubeconfigs[0])
 			if err != nil {
 				task.SetError(err)
+				return
+			}
+
+			packageDetails, ok := packageOutput.Details.(*dockerPackageResult)
+			if !ok {
+				task.SetError(errors.New("failed retrieving package result details"))
+				return
+			}
+
+			log.Printf("logging into container registry '%s'\n", loginServer)
+			task.SetProgress(NewServiceProgress("Logging into container registry"))
+			err = t.containerRegistryService.LoginAcr(ctx, targetResource.SubscriptionId(), loginServer)
+			if err != nil {
+				task.SetError(fmt.Errorf("failed logging into registry '%s': %w", loginServer, err))
+				return
+			}
+
+			// Tag image
+			// Get remote tag from the container helper then call docker cli tag command
+			remoteTag, err := t.containerHelper.RemoteImageTag(ctx, serviceConfig)
+			if err != nil {
+				task.SetError(fmt.Errorf("getting remote image tag: %w", err))
+				return
+			}
+
+			task.SetProgress(NewServiceProgress("Tagging container image"))
+			if err := t.docker.Tag(ctx, serviceConfig.Path(), packageDetails.ImageTag, remoteTag); err != nil {
+				task.SetError(fmt.Errorf("tagging image: %w", err))
+				return
+			}
+
+			// Push image.
+			log.Printf("pushing %s to registry", remoteTag)
+			task.SetProgress(NewServiceProgress("Pushing container image"))
+			if err := t.docker.Push(ctx, serviceConfig.Path(), remoteTag); err != nil {
+				task.SetError(fmt.Errorf("failed pushing image: %w", err))
+				return
+			}
+
+			// Save the name of the image we pushed into the environment with a well known key.
+			log.Printf("writing image name to environment")
+			t.env.SetServiceProperty(serviceConfig.Name, "IMAGE_NAME", remoteTag)
+
+			if err := t.env.Save(); err != nil {
+				task.SetError(fmt.Errorf("saving image name to environment: %w", err))
 				return
 			}
 
@@ -222,24 +262,6 @@ func (t *aksTarget) Publish(
 			_, err = t.kubectl.ApplyWithInput(ctx, secretResult.Stdout, nil)
 			if err != nil {
 				task.SetError(fmt.Errorf("failed applying kube secrets: %w", err))
-				return
-			}
-
-			log.Printf("pushing %s to registry", packageOutput.PackagePath)
-
-			// Push image.
-			task.SetProgress(NewServiceProgress("Pushing image"))
-			if err := t.docker.Push(ctx, serviceConfig.Path(), packageDetails.ImageTag); err != nil {
-				task.SetError(fmt.Errorf("failed pushing image: %w", err))
-				return
-			}
-
-			// Save the name of the image we pushed into the environment with a well known key.
-			log.Printf("writing image name to environment")
-			t.env.SetServiceProperty(serviceConfig.Name, "IMAGE_NAME", packageDetails.ImageTag)
-
-			if err := t.env.Save(); err != nil {
-				task.SetError(fmt.Errorf("saving image name to environment: %w", err))
 				return
 			}
 

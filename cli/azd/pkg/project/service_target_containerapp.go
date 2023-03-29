@@ -36,6 +36,7 @@ type containerAppTarget struct {
 	accountManager           account.Manager
 	serviceManager           ServiceManager
 	resourceManager          ResourceManager
+	containerHelper          *ContainerHelper
 }
 
 // NewContainerAppTarget creates the container app service target.
@@ -52,6 +53,7 @@ func NewContainerAppTarget(
 	accountManager account.Manager,
 	serviceManager ServiceManager,
 	resourceManager ResourceManager,
+	containerHelper *ContainerHelper,
 ) ServiceTarget {
 	return &containerAppTarget{
 		env:                      env,
@@ -63,6 +65,7 @@ func NewContainerAppTarget(
 		docker:                   docker,
 		console:                  console,
 		commandRunner:            commandRunner,
+		containerHelper:          containerHelper,
 	}
 }
 
@@ -103,6 +106,13 @@ func (at *containerAppTarget) Publish(
 				return
 			}
 
+			// Get ACR Login Server
+			loginServer, err := at.containerHelper.LoginServer(ctx)
+			if err != nil {
+				task.SetError(err)
+				return
+			}
+
 			// If the infra module has not been specified default to a module with the same name as the service.
 			if strings.TrimSpace(serviceConfig.Infra.Module) == "" {
 				serviceConfig.Infra.Module = serviceConfig.Module
@@ -117,25 +127,39 @@ func (at *containerAppTarget) Publish(
 				return
 			}
 
-			log.Printf("logging into registry %s", packageDetails.LoginServer)
+			log.Printf("logging into registry %s", loginServer)
 			task.SetProgress(NewServiceProgress("Logging into container registry"))
-			err := at.containerRegistryService.LoginAcr(ctx, targetResource.SubscriptionId(), packageDetails.LoginServer)
+			err = at.containerRegistryService.LoginAcr(ctx, targetResource.SubscriptionId(), loginServer)
 			if err != nil {
-				task.SetError(fmt.Errorf("logging into registry '%s': %w", packageDetails.LoginServer, err))
+				task.SetError(fmt.Errorf("logging into registry '%s': %w", loginServer, err))
+				return
+			}
+
+			// Tag image
+			// Get remote tag from the container helper then call docker cli tag command
+			remoteTag, err := at.containerHelper.RemoteImageTag(ctx, serviceConfig)
+			if err != nil {
+				task.SetError(fmt.Errorf("getting remote image tag: %w", err))
+				return
+			}
+
+			task.SetProgress(NewServiceProgress("Tagging container image"))
+			if err := at.docker.Tag(ctx, serviceConfig.Path(), packageDetails.ImageTag, remoteTag); err != nil {
+				task.SetError(fmt.Errorf("tagging image: %w", err))
 				return
 			}
 
 			// Push image.
-			log.Printf("pushing %s to registry", packageDetails.ImageTag)
-			task.SetProgress(NewServiceProgress("Pushing image"))
-			if err := at.docker.Push(ctx, serviceConfig.Path(), packageDetails.ImageTag); err != nil {
+			log.Printf("pushing %s to registry", remoteTag)
+			task.SetProgress(NewServiceProgress("Pushing container image"))
+			if err := at.docker.Push(ctx, serviceConfig.Path(), remoteTag); err != nil {
 				task.SetError(fmt.Errorf("pushing image: %w", err))
 				return
 			}
 
 			// Save the name of the image we pushed into the environment with a well known key.
 			log.Printf("writing image name to environment")
-			at.env.SetServiceProperty(serviceConfig.Name, "IMAGE_NAME", packageDetails.ImageTag)
+			at.env.SetServiceProperty(serviceConfig.Name, "IMAGE_NAME", remoteTag)
 
 			if err := at.env.Save(); err != nil {
 				task.SetError(fmt.Errorf("saving image name to environment: %w", err))

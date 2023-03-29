@@ -45,6 +45,15 @@ func parseServiceLanguage(kind ServiceLanguageKind) (ServiceLanguageKind, error)
 	return ServiceLanguageKind(""), fmt.Errorf("unsupported language '%s'", kind)
 }
 
+type FrameworkRequirements struct {
+	Package FrameworkPackageRequirements
+}
+
+type FrameworkPackageRequirements struct {
+	RequireRestore bool
+	RequireBuild   bool
+}
+
 // FrameworkService is an abstraction for a programming language or framework
 // that describe the required tools as well as implementations for
 // restore and build commands
@@ -55,6 +64,11 @@ type FrameworkService interface {
 	// Initializes the framework service for the specified service configuration
 	// This is useful if the framework needs to subscribe to any service events
 	Initialize(ctx context.Context, serviceConfig *ServiceConfig) error
+
+	// Gets the requirements for the language or framework service.
+	// This enables more fine grain control on whether the language / framework
+	// supports or requires lifecycle commands such as restore, build, and package
+	Requirements() FrameworkRequirements
 
 	// Restores dependencies for the framework service
 	Restore(

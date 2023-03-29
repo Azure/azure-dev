@@ -40,7 +40,7 @@ func createServiceManager(mockContext *mocks.MockContext, env *environment.Envir
 	return NewServiceManager(env, resourceManager, serviceLocator)
 }
 
-func Test_GetRequiredTools(t *testing.T) {
+func Test_ServiceManager_GetRequiredTools(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	setupMocksForServiceManager(mockContext)
 	env := environment.Ephemeral()
@@ -53,7 +53,7 @@ func Test_GetRequiredTools(t *testing.T) {
 	require.Len(t, tools, 1)
 }
 
-func Test_Initialize(t *testing.T) {
+func Test_ServiceManager_Initialize(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	setupMocksForServiceManager(mockContext)
 	env := environment.Ephemeral()
@@ -64,7 +64,7 @@ func Test_Initialize(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func Test_Restore(t *testing.T) {
+func Test_ServiceManager_Restore(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	setupMocksForServiceManager(mockContext)
 	env := environment.Ephemeral()
@@ -98,7 +98,7 @@ func Test_Restore(t *testing.T) {
 	require.True(t, raisedPostRestoreEvent)
 }
 
-func Test_Build(t *testing.T) {
+func Test_ServiceManager_Build(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	setupMocksForServiceManager(mockContext)
 	env := environment.Ephemeral()
@@ -132,7 +132,7 @@ func Test_Build(t *testing.T) {
 	require.True(t, raisedPostBuildEvent)
 }
 
-func Test_Package(t *testing.T) {
+func Test_ServiceManager_Package(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	setupMocksForServiceManager(mockContext)
 	env := environment.Ephemeral()
@@ -169,7 +169,7 @@ func Test_Package(t *testing.T) {
 	require.True(t, raisedPostPackageEvent)
 }
 
-func Test_Publish(t *testing.T) {
+func Test_ServiceManager_Publish(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	setupMocksForServiceManager(mockContext)
 	env := environment.EphemeralWithValues("test", map[string]string{
@@ -205,7 +205,7 @@ func Test_Publish(t *testing.T) {
 	require.True(t, raisedPostPublishEvent)
 }
 
-func Test_Deploy(t *testing.T) {
+func Test_ServiceManager_Deploy(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	setupMocksForServiceManager(mockContext)
 	env := environment.EphemeralWithValues("test", map[string]string{
@@ -252,7 +252,7 @@ func Test_Deploy(t *testing.T) {
 	require.True(t, raisedPostDeployEvent)
 }
 
-func Test_GetFrameworkService(t *testing.T) {
+func Test_ServiceManager_GetFrameworkService(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	setupMocksForServiceManager(mockContext)
 	env := environment.Ephemeral()
@@ -265,7 +265,7 @@ func Test_GetFrameworkService(t *testing.T) {
 	require.IsType(t, new(fakeFramework), framework)
 }
 
-func Test_GetServiceTarget(t *testing.T) {
+func Test_ServiceManager_GetServiceTarget(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	setupMocksForServiceManager(mockContext)
 	env := environment.Ephemeral()
@@ -276,6 +276,33 @@ func Test_GetServiceTarget(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, serviceTarget)
 	require.IsType(t, new(fakeServiceTarget), serviceTarget)
+}
+
+func Test_ServiceManager_CacheResults(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	setupMocksForServiceManager(mockContext)
+	env := environment.Ephemeral()
+	sm := createServiceManager(mockContext, env)
+	serviceConfig := createTestServiceConfig("./src/api", ServiceTargetFake, ServiceLanguageFake)
+
+	buildCalled := convert.RefOf(false)
+	ctx := context.WithValue(*mockContext.Context, frameworkBuildCalled, buildCalled)
+
+	buildTask1 := sm.Build(ctx, serviceConfig, nil)
+	logProgress(buildTask1)
+
+	buildResult1, _ := buildTask1.Await()
+
+	require.True(t, *buildCalled)
+	*buildCalled = false
+
+	buildTask2 := sm.Build(ctx, serviceConfig, nil)
+	logProgress(buildTask1)
+
+	buildResult2, _ := buildTask2.Await()
+
+	require.False(t, *buildCalled)
+	require.Same(t, buildResult1, buildResult2)
 }
 
 func setupMocksForServiceManager(mockContext *mocks.MockContext) {
@@ -346,6 +373,15 @@ type fakeFramework struct {
 func newFakeFramework(commandRunner exec.CommandRunner) FrameworkService {
 	return &fakeFramework{
 		commandRunner: commandRunner,
+	}
+}
+
+func (f *fakeFramework) Requirements() FrameworkRequirements {
+	return FrameworkRequirements{
+		Package: FrameworkPackageRequirements{
+			RequireRestore: false,
+			RequireBuild:   false,
+		},
 	}
 }
 

@@ -156,10 +156,6 @@ func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		targetServiceName = d.args[0]
 	}
 
-	if targetServiceName != "" && !d.projectConfig.HasService(targetServiceName) {
-		return nil, fmt.Errorf("service name '%s' doesn't exist", targetServiceName)
-	}
-
 	if d.flags.all && targetServiceName != "" {
 		return nil, fmt.Errorf("cannot specify both --all and <service>")
 	}
@@ -167,13 +163,17 @@ func (d *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if !d.flags.all && targetServiceName == "" {
 		var err error
 		targetServiceName, err = defaultServiceFromWd(d.azdCtx, d.projectConfig)
-		if err == errNoDefaultService {
+		if errors.Is(err, errNoDefaultService) {
 			return nil, fmt.Errorf(
 				//nolint:lll
 				"current working directory is not a project or service directory. Please specify a service name to deploy a service, or specify --all to deploy all services")
 		} else if err != nil {
 			return nil, err
 		}
+	}
+
+	if targetServiceName != "" && !d.projectConfig.HasService(targetServiceName) {
+		return nil, fmt.Errorf("service name '%s' doesn't exist", targetServiceName)
 	}
 
 	if err := d.projectManager.Initialize(ctx, d.projectConfig); err != nil {

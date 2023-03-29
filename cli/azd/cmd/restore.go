@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 
@@ -113,10 +114,6 @@ func (r *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		targetServiceName = r.args[0]
 	}
 
-	if targetServiceName != "" && !r.projectConfig.HasService(targetServiceName) {
-		return nil, fmt.Errorf("service name '%s' doesn't exist", targetServiceName)
-	}
-
 	if r.flags.all && targetServiceName != "" {
 		return nil, fmt.Errorf("cannot specify both --all and <service>")
 	}
@@ -124,13 +121,17 @@ func (r *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	if !r.flags.all && targetServiceName == "" {
 		var err error
 		targetServiceName, err = defaultServiceFromWd(r.azdCtx, r.projectConfig)
-		if err == errNoDefaultService {
+		if errors.Is(err, errNoDefaultService) {
 			return nil, fmt.Errorf(
 				//nolint:lll
 				"current working directory is not a project or service directory. Please specify a service name to restore a service, or specify --all to restore all services")
 		} else if err != nil {
 			return nil, err
 		}
+	}
+
+	if targetServiceName != "" && !r.projectConfig.HasService(targetServiceName) {
+		return nil, fmt.Errorf("service name '%s' doesn't exist", targetServiceName)
 	}
 
 	count := 0

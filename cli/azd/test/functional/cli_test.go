@@ -5,7 +5,6 @@
 package cli_test
 
 import (
-	"bytes"
 	"context"
 	"crypto/rand"
 	"embed"
@@ -113,44 +112,6 @@ func Test_CLI_Init_CanUseTemplate(t *testing.T) {
 	require.FileExists(t, filepath.Join(dir, "README.md"))
 }
 
-// Test_CLI_Up_CanUseTemplateWithoutExistingProject ensures that you can run `azd up --template <some-template>` in an
-// empty directory and the project will be initialize as expected.
-func Test_CLI_Up_CanUseTemplateWithoutExistingProject(t *testing.T) {
-	// running this test in parallel is ok as it uses a t.TempDir()
-	t.Parallel()
-	ctx, cancel := newTestContext(t)
-	defer cancel()
-
-	dir := tempDirWithDiagnostics(t)
-
-	cli := azdcli.NewCLI(t)
-	cli.WorkingDirectory = dir
-	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
-
-	// Since we provide a bogus Azure Subscription ID, we expect that this overall command will fail (the provision step of
-	// up will fail).  That's fine - we only care about validating that we were allowed to run `azd up --template` in an
-	// empty directory and that it brings down the template as expected.
-	res, _ := cli.RunCommandWithStdIn(
-		ctx,
-		"TESTENV\n\nOther (enter manually)\nMY_SUB_ID\n",
-		"up",
-		"--template",
-		"cosmos-dotnet-core-todo-app",
-	)
-
-	require.Contains(t, res.Stdout, "Initializing a new project")
-
-	// While `init` uses git behind the scenes to pull a template, we don't want to bring the history over in the new git
-	// repository.
-	cmdRun := exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
-	cmdRes, err := cmdRun.Run(ctx, exec.NewRunArgs("git", "-C", dir, "log", "--oneline", "-n", "1").WithEnrichError(true))
-	require.Error(t, err)
-	require.Contains(t, cmdRes.Stderr, "does not have any commits yet")
-
-	// Ensure the project was initialized from the template by checking that a file from the template is present.
-	require.FileExists(t, filepath.Join(dir, "README.md"))
-}
-
 func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 	// running this test in parallel is ok as it uses a t.TempDir()
 	t.Parallel()
@@ -173,7 +134,7 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "init")
 	require.NoError(t, err)
 
-	_, err = cli.RunCommand(ctx, "infra", "create")
+	_, err = cli.RunCommand(ctx, "provision")
 	require.NoError(t, err)
 
 	envPath := filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName)
@@ -207,7 +168,6 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, rgs)
 
-	// Using `down` here to test the down alias to infra delete
 	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
 	require.NoError(t, err)
 }
@@ -234,6 +194,7 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "init")
 	require.NoError(t, err)
 
+	// test 'infra create' alias
 	_, err = cli.RunCommand(ctx, "infra", "create", "--output", "json")
 	require.NoError(t, err)
 
@@ -268,12 +229,12 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, rgs)
 
-	// Using `down` here to test the down alias to infra delete
-	_, err = cli.RunCommand(ctx, "down", "--force", "--purge", "--output", "json")
+	// test 'infra delete' alias
+	_, err = cli.RunCommand(ctx, "infra", "delete", "--force", "--purge", "--output", "json")
 	require.NoError(t, err)
 }
 
-// test for azd deploy, azd deploy --service
+// test for azd deploy, azd deploy <service>
 func Test_CLI_DeployInvalidName(t *testing.T) {
 	// running this test in parallel is ok as it uses a t.TempDir()
 	t.Parallel()
@@ -296,7 +257,7 @@ func Test_CLI_DeployInvalidName(t *testing.T) {
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "init")
 	require.NoError(t, err)
 
-	_, err = cli.RunCommand(ctx, "deploy", "--service", "badServiceName")
+	_, err = cli.RunCommand(ctx, "deploy", "badServiceName")
 	require.Error(t, err)
 }
 
@@ -344,7 +305,9 @@ func Test_CLI_ProjectIsNeeded(t *testing.T) {
 		args          []string
 		errorToStdOut bool
 	}{
+		{command: "provision"},
 		{command: "deploy"},
+		{command: "up", errorToStdOut: true},
 		{command: "down"},
 		{command: "env get-values"},
 		{command: "env list"},
@@ -356,7 +319,6 @@ func Test_CLI_ProjectIsNeeded(t *testing.T) {
 		{command: "infra delete"},
 		{command: "monitor"},
 		{command: "pipeline config"},
-		{command: "provision"},
 		{command: "restore"},
 	}
 
@@ -381,29 +343,26 @@ func Test_CLI_ProjectIsNeeded(t *testing.T) {
 }
 
 func Test_CLI_NoDebugSpewWhenHelpPassedWithoutDebug(t *testing.T) {
-	stdErrBuf := bytes.Buffer{}
-
-	/* #nosec G204 - Subprocess launched with a potential tainted input or cmd arguments false positive */
-	cmd := osexec.Command(azdcli.GetAzdLocation(), "--help")
-	cmd.Stderr = &stdErrBuf
-
-	// Run the command and wait for it to complete, we don't expect any errors.
-	err := cmd.Start()
-	assert.NoError(t, err)
-
-	err = cmd.Wait()
-	assert.NoError(t, err)
+	cli := azdcli.NewCLI(t)
+	ctx := context.Background()
+	result, err := cli.RunCommand(ctx, "--help")
+	require.NoError(t, err)
 
 	// Ensure no output was written to stderr
-	assert.Equal(t, "", stdErrBuf.String(), "no output should be written to stderr when --help is passed")
+	assert.Equal(t, "", result.Stderr, "no output should be written to stderr when --help is passed")
 }
 
 //go:embed testdata/samples/*
 var samples embed.FS
 
+func samplePath(paths ...string) string {
+	elem := append([]string{"testdata", "samples"}, paths...)
+	return path.Join(elem...)
+}
+
 // copySample copies the given sample to targetRoot.
 func copySample(targetRoot string, sampleName string) error {
-	sampleRoot := path.Join("testdata", "samples", sampleName)
+	sampleRoot := samplePath(sampleName)
 
 	return fs.WalkDir(samples, sampleRoot, func(name string, d fs.DirEntry, err error) error {
 		// If there was some error that was preventing is from walking into the directory, just fail now,
@@ -488,8 +447,8 @@ func Test_CLI_InfraCreateAndDeleteResourceTerraform(t *testing.T) {
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "init")
 	require.NoError(t, err)
 
-	t.Logf("Starting infra create\n")
-	_, err = cli.RunCommand(ctx, "infra", "create", "--cwd", dir)
+	t.Logf("Starting provision\n")
+	_, err = cli.RunCommand(ctx, "provision", "--cwd", dir)
 	require.NoError(t, err)
 
 	envPath := filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName)
@@ -497,8 +456,8 @@ func Test_CLI_InfraCreateAndDeleteResourceTerraform(t *testing.T) {
 	require.NoError(t, err)
 	assertEnvValuesStored(t, env)
 
-	t.Logf("Starting infra delete\n")
-	_, err = cli.RunCommand(ctx, "infra", "delete", "--cwd", dir, "--force", "--purge")
+	t.Logf("Starting down\n")
+	_, err = cli.RunCommand(ctx, "down", "--cwd", dir, "--force", "--purge")
 	require.NoError(t, err)
 
 	t.Logf("Done\n")

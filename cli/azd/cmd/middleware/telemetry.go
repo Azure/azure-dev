@@ -6,6 +6,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry/events"
+	"github.com/azure/azure-dev/cli/azd/internal/telemetry/fields"
+	"github.com/spf13/pflag"
+
 	"go.opentelemetry.io/otel/codes"
 )
 
@@ -31,6 +34,19 @@ func (m *TelemetryMiddleware) Run(ctx context.Context, next NextFn) (*actions.Ac
 	// Note: CommandPath is constructed using the Use member on each command up to the root.
 	// It does not contain user input, and is safe for telemetry emission.
 	spanCtx, span := telemetry.GetTracer().Start(ctx, events.GetCommandEventName(m.options.CommandPath))
+
+	if m.options.Flags != nil {
+		changedFlags := []string{}
+		m.options.Flags.VisitAll(func(f *pflag.Flag) {
+			if f.Changed {
+				changedFlags = append(changedFlags, f.Name)
+			}
+		})
+		telemetry.SetUsageAttributes(fields.CmdFlags.StringSlice(changedFlags))
+	}
+
+	telemetry.SetUsageAttributes(fields.CmdArgsCount.Int(len(m.options.Args)))
+
 	defer func() {
 		// Include any usage attributes set
 		span.SetAttributes(telemetry.GetUsageAttributes()...)

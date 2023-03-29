@@ -109,7 +109,7 @@ func NewManager(configManager config.UserConfigManager) (*Manager, error) {
 	}, nil
 }
 
-var ErrNoCurrentUser = errors.New("not logged in, run `azd login` to login")
+var ErrNoCurrentUser = errors.New("not logged in, run `azd auth login` to login")
 
 // EnsureLoggedInCredential uses the credential's GetToken method to ensure an access token can be fetched. If this fails,
 // nil, ErrNoCurrentUser is returned. On success, the token we fetched is returned.
@@ -194,7 +194,7 @@ func (m *Manager) CredentialForCurrentUser(
 		}
 
 		// by default we used the stored tenant (i.e. the one provided with the tenant id parameter when a user ran
-		// `azd login`), but we allow an override using the options bag, when
+		// `azd auth login`), but we allow an override using the options bag, when
 		// TenantID is non-empty and PreferFallbackTenant is not true.
 		tenantID := *currentUser.TenantID
 

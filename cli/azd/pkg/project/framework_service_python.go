@@ -146,7 +146,7 @@ func (pp *pythonProject) Package(
 						excludePyCache,
 					},
 				}); err != nil {
-				task.SetError(fmt.Errorf("publishing for %s: %w", serviceConfig.Name, err))
+				task.SetError(fmt.Errorf("packaging for %s: %w", serviceConfig.Name, err))
 				return
 			}
 

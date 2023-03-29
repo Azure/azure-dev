@@ -116,7 +116,10 @@ func (m *mavenProject) Package(
 				return
 			}
 
-			publishSource := serviceConfig.Path()
+			publishSource := buildOutput.BuildOutputPath
+			if publishSource == "" {
+				publishSource = serviceConfig.Path()
+			}
 
 			if serviceConfig.OutputPath != "" {
 				publishSource = filepath.Join(publishSource, serviceConfig.OutputPath)

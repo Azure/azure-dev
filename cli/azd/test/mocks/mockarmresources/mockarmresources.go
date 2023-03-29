@@ -11,6 +11,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
+	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockhttp"
 )
 
@@ -49,6 +50,18 @@ func AddAzResourceListMock(
 			StatusCode: 200,
 			Body:       io.NopCloser(bytes.NewBuffer(jsonBytes)),
 		}, nil
+	})
+}
+
+func AddResourceGroupListMock(c *mockhttp.MockHttpClient, subscriptionId string, results []*armresources.ResourceGroup) {
+	c.When(func(request *http.Request) bool {
+		return strings.Contains(request.URL.Path, fmt.Sprintf("/subscriptions/%s/resourcegroups", subscriptionId))
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		result := armresources.ResourceGroupListResult{
+			Value: results,
+		}
+
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, result)
 	})
 }
 

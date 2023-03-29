@@ -534,7 +534,7 @@ func (p *BicepProvider) getKeyVaultsToPurge(
 // such that when it is deleted it can be recovered for a period of time. During that time, the name may
 // not be reused.
 //
-// This means that running `az dev provision`, then `az dev infra delete` and finally `az dev provision`
+// This means that running `azd provision`, then `azd down` and finally `azd provision`
 // again would lead to a deployment error since the vault name is in use.
 //
 // Since that's behavior we'd like to support, we run a purge operation for each KeyVault after
@@ -586,7 +586,12 @@ func (p *BicepProvider) getAppConfigsToPurge(
 	for resourceGroup, groupResources := range groupedResources {
 		for _, resource := range groupResources {
 			if resource.Type == string(infra.AzureResourceTypeAppConfig) {
-				config, err := p.azCli.GetAppConfig(ctx, azure.SubscriptionFromRID(resource.Id), resourceGroup, resource.Name)
+				config, err := p.azCli.GetAppConfig(
+					ctx,
+					azure.SubscriptionFromRID(resource.Id),
+					resourceGroup,
+					resource.Name,
+				)
 				if err != nil {
 					return nil, fmt.Errorf("listing app configuration %s properties: %w", resource.Name, err)
 				}
@@ -629,7 +634,7 @@ func (p *BicepProvider) getApiManagementsToPurge(
 // may be marked such that when it is deleted it can be recovered for a period of time. During that time,
 // the name may not be reused.
 //
-// This means that running `az dev provision`, then `az dev infra delete` and finally `az dev provision`
+// This means that running `azd provision`, then `azd down` and finally `azd provision`
 // again would lead to a deployment error since the configuration name is in use.
 //
 // Since that's behavior we'd like to support, we run a purge operation for each AppConfiguration after it has been deleted.

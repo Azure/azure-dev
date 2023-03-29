@@ -140,15 +140,15 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	return nil, s.formatter.Format(res, s.writer, nil)
 }
 
-func showTypeFromLanguage(language string) contracts.ShowType {
+func showTypeFromLanguage(language project.ServiceLanguageKind) contracts.ShowType {
 	switch language {
-	case "dotnet":
+	case project.ServiceLanguageDotNet, project.ServiceLanguageCsharp, project.ServiceLanguageFsharp:
 		return contracts.ShowTypeDotNet
-	case "py", "python":
+	case project.ServiceLanguagePython:
 		return contracts.ShowTypePython
-	case "ts", "js":
+	case project.ServiceLanguageTypeScript, project.ServiceLanguageJavaScript:
 		return contracts.ShowTypeNode
-	case "java":
+	case project.ServiceLanguageJava:
 		return contracts.ShowTypeJava
 	default:
 		panic(fmt.Sprintf("unknown language %s", language))

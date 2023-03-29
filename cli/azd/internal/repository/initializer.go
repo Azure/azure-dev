@@ -81,7 +81,7 @@ func (i *Initializer) Initialize(
 
 	options := copy.Options{}
 	if skipStagingFiles != nil {
-		options.Skip = func(src string) (bool, error) {
+		options.Skip = func(fileInfo os.FileInfo, src, dest string) (bool, error) {
 			if _, shouldSkip := skipStagingFiles[src]; shouldSkip {
 				return true, nil
 			}

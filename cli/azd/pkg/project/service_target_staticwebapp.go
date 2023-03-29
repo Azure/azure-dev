@@ -56,17 +56,18 @@ func (at *staticWebAppTarget) Initialize(ctx context.Context, serviceConfig *Ser
 func (at *staticWebAppTarget) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	buildOutput *ServiceBuildResult,
+	packageOutput *ServicePackageResult,
 ) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
-			if strings.TrimSpace(serviceConfig.OutputPath) == "" {
-				serviceConfig.OutputPath = "build"
+			packagePath := serviceConfig.OutputPath
+			if strings.TrimSpace(packagePath) == "" {
+				packagePath = "build"
 			}
 
 			task.SetResult(&ServicePackageResult{
-				Build:       buildOutput,
-				PackagePath: serviceConfig.OutputPath,
+				Build:       packageOutput.Build,
+				PackagePath: packagePath,
 			})
 		},
 	)

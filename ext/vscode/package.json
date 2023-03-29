@@ -12,7 +12,11 @@
         "vscode": "^1.74.0"
     },
     "categories": [
-        "Other"
+        "Azure"
+    ],
+    "keywords": [
+        "azure",
+        "azd"
     ],
     "bugs": {
         "url": "https://github.com/Azure/azure-dev/issues"

@@ -26,14 +26,13 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
 	"github.com/azure/azure-dev/cli/azd/test/ostest"
-	"github.com/benbjohnson/clock"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 )
 
 func Test_NewAksTarget(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
-	serviceConfig := createServiceConfig("")
+	serviceConfig := createTestServiceConfig("./src/api", AksTarget, ServiceLanguageTypeScript)
 	env := createEnv()
 
 	serviceTarget := createServiceTarget(mockContext, serviceConfig, env)
@@ -47,10 +46,10 @@ func Test_Required_Tools(t *testing.T) {
 	ostest.Chdir(t, tempDir)
 
 	mockContext := mocks.NewMockContext(context.Background())
-	err := setupMocks(mockContext)
+	err := setupMocksForAksTarget(mockContext)
 	require.NoError(t, err)
 
-	serviceConfig := createServiceConfig(tempDir)
+	serviceConfig := createTestServiceConfig(tempDir, AksTarget, ServiceLanguageTypeScript)
 	env := createEnv()
 
 	serviceTarget := createServiceTarget(mockContext, serviceConfig, env)
@@ -66,10 +65,10 @@ func Test_Package_Publish_HappyPath(t *testing.T) {
 	ostest.Chdir(t, tempDir)
 
 	mockContext := mocks.NewMockContext(context.Background())
-	err := setupMocks(mockContext)
+	err := setupMocksForAksTarget(mockContext)
 	require.NoError(t, err)
 
-	serviceConfig := createServiceConfig(tempDir)
+	serviceConfig := createTestServiceConfig(tempDir, AksTarget, ServiceLanguageTypeScript)
 	env := createEnv()
 
 	serviceTarget := createServiceTarget(mockContext, serviceConfig, env)
@@ -79,16 +78,20 @@ func Test_Package_Publish_HappyPath(t *testing.T) {
 	packageTask := serviceTarget.Package(
 		*mockContext.Context,
 		serviceConfig,
-		&ServiceBuildResult{BuildOutputPath: "IMAGE_ID"},
+		&ServicePackageResult{
+			PackagePath: "IMAGE_ID",
+			Details: &dockerPackageResult{
+				ImageTag:    "IMAGE_TAG",
+				LoginServer: "REGISTRY.azurecr.io",
+			},
+		},
 	)
 	logProgress(packageTask)
 	packageResult, err := packageTask.Await()
 
 	require.NoError(t, err)
 	require.NotNil(t, packageResult)
-	require.NotNil(t, env.Values["SERVICE_SVC_IMAGE_NAME"])
-	require.Equal(t, packageResult.PackagePath, env.Values["SERVICE_SVC_IMAGE_NAME"])
-	require.IsType(t, new(aksPackageResult), packageResult.Details)
+	require.IsType(t, new(dockerPackageResult), packageResult.Details)
 
 	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "CLUSTER_NAME", string(infra.AzureResourceTypeManagedCluster))
 	publishTask := serviceTarget.Publish(*mockContext.Context, serviceConfig, packageResult, scope)
@@ -100,6 +103,8 @@ func Test_Package_Publish_HappyPath(t *testing.T) {
 	require.Equal(t, AksTarget, publishResult.Kind)
 	require.IsType(t, new(kubectl.Deployment), publishResult.Details)
 	require.Greater(t, len(publishResult.Endpoints), 0)
+	// New env variable is created
+	require.Equal(t, "IMAGE_TAG", env.Values["SERVICE_API_IMAGE_NAME"])
 }
 
 func Test_Publish_No_Cluster_Name(t *testing.T) {
@@ -107,10 +112,10 @@ func Test_Publish_No_Cluster_Name(t *testing.T) {
 	ostest.Chdir(t, tempDir)
 
 	mockContext := mocks.NewMockContext(context.Background())
-	err := setupMocks(mockContext)
+	err := setupMocksForAksTarget(mockContext)
 	require.NoError(t, err)
 
-	serviceConfig := createServiceConfig(tempDir)
+	serviceConfig := createTestServiceConfig(tempDir, AksTarget, ServiceLanguageTypeScript)
 	env := createEnv()
 
 	// Simulate AKS cluster name not found in env file
@@ -120,7 +125,7 @@ func Test_Publish_No_Cluster_Name(t *testing.T) {
 	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "CLUSTER_NAME", string(infra.AzureResourceTypeManagedCluster))
 	packageOutput := &ServicePackageResult{
 		Build: &ServiceBuildResult{BuildOutputPath: "IMAGE_ID"},
-		Details: &aksPackageResult{
+		Details: &dockerPackageResult{
 			ImageTag:    "IMAGE_TAG",
 			LoginServer: env.Values[environment.ContainerRegistryEndpointEnvVarName],
 		},
@@ -135,41 +140,12 @@ func Test_Publish_No_Cluster_Name(t *testing.T) {
 	require.Nil(t, publishResult)
 }
 
-func Test_Package_No_Container_Registry(t *testing.T) {
-	tempDir := t.TempDir()
-	ostest.Chdir(t, tempDir)
-
-	mockContext := mocks.NewMockContext(context.Background())
-	err := setupMocks(mockContext)
-	require.NoError(t, err)
-
-	serviceConfig := createServiceConfig(tempDir)
-	env := createEnv()
-
-	// Simulate container registry endpoint not found in env file
-	delete(env.Values, environment.ContainerRegistryEndpointEnvVarName)
-
-	serviceTarget := createServiceTarget(mockContext, serviceConfig, env)
-
-	packageTask := serviceTarget.Package(
-		*mockContext.Context,
-		serviceConfig,
-		&ServiceBuildResult{BuildOutputPath: "IMAGE_ID"},
-	)
-	logProgress(packageTask)
-	packageResult, err := packageTask.Await()
-
-	require.Error(t, err)
-	require.ErrorContains(t, err, "could not determine container registry endpoint")
-	require.Nil(t, packageResult)
-}
-
 func Test_Publish_No_Admin_Credentials(t *testing.T) {
 	tempDir := t.TempDir()
 	ostest.Chdir(t, tempDir)
 
 	mockContext := mocks.NewMockContext(context.Background())
-	err := setupMocks(mockContext)
+	err := setupMocksForAksTarget(mockContext)
 	require.NoError(t, err)
 
 	// Simulate list credentials fail.
@@ -177,14 +153,14 @@ func Test_Publish_No_Admin_Credentials(t *testing.T) {
 	err = setupListClusterAdminCredentialsMock(mockContext, http.StatusUnauthorized)
 	require.NoError(t, err)
 
-	serviceConfig := createServiceConfig(tempDir)
+	serviceConfig := createTestServiceConfig(tempDir, AksTarget, ServiceLanguageTypeScript)
 	env := createEnv()
 
 	serviceTarget := createServiceTarget(mockContext, serviceConfig, env)
 	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "CLUSTER_NAME", string(infra.AzureResourceTypeManagedCluster))
 	packageOutput := &ServicePackageResult{
 		Build: &ServiceBuildResult{BuildOutputPath: "IMAGE_ID"},
-		Details: &aksPackageResult{
+		Details: &dockerPackageResult{
 			ImageTag:    "IMAGE_TAG",
 			LoginServer: env.Values[environment.ContainerRegistryEndpointEnvVarName],
 		},
@@ -244,7 +220,7 @@ func setupListClusterAdminCredentialsMock(mockContext *mocks.MockContext, status
 	return nil
 }
 
-func setupMocks(mockContext *mocks.MockContext) error {
+func setupMocksForAksTarget(mockContext *mocks.MockContext) error {
 	err := setupListClusterAdminCredentialsMock(mockContext, http.StatusOK)
 	if err != nil {
 		return err
@@ -357,8 +333,8 @@ func setupMocks(mockContext *mocks.MockContext) error {
 				ApiVersion: "apps/v1",
 				Kind:       "Deployment",
 				Metadata: kubectl.ResourceMetadata{
-					Name:      "svc-deployment",
-					Namespace: "svc-namespace",
+					Name:      "api-deployment",
+					Namespace: "api-namespace",
 				},
 			},
 			Spec: kubectl.DeploymentSpec{
@@ -393,8 +369,8 @@ func setupMocks(mockContext *mocks.MockContext) error {
 				ApiVersion: "v1",
 				Kind:       "Service",
 				Metadata: kubectl.ResourceMetadata{
-					Name:      "svc-service",
-					Namespace: "svc-namespace",
+					Name:      "api-service",
+					Namespace: "api-namespace",
 				},
 			},
 			Spec: kubectl.ServiceSpec{
@@ -426,8 +402,8 @@ func setupMocks(mockContext *mocks.MockContext) error {
 				ApiVersion: "networking.k8s.io/v1",
 				Kind:       "Ingress",
 				Metadata: kubectl.ResourceMetadata{
-					Name:      "svc-ingress",
-					Namespace: "svc-namespace",
+					Name:      "api-ingress",
+					Namespace: "api-namespace",
 				},
 			},
 			Spec: kubectl.IngressSpec{
@@ -480,19 +456,6 @@ func createK8sResourceList[T any](resource T) *kubectl.List[T] {
 	}
 }
 
-func createServiceConfig(projectDirectory string) *ServiceConfig {
-	return &ServiceConfig{
-		Project: &ProjectConfig{
-			Name: "project",
-			Path: projectDirectory,
-		},
-		Name:         "svc",
-		RelativePath: "./src",
-		Host:         string(AksTarget),
-		Language:     "js",
-	}
-}
-
 func createEnv() *environment.Environment {
 	return environment.EphemeralWithValues("test", map[string]string{
 		environment.TenantIdEnvVarName:                  "TENANT_ID",
@@ -525,7 +488,6 @@ func createServiceTarget(
 		containerRegistryService,
 		kubeCtl,
 		dockerCli,
-		clock.New(),
 	)
 }
 

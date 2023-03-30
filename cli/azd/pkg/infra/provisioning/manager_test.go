@@ -21,7 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestEnsureConfiguredInitializesEnvironment(t *testing.T) {
+func TestProvisionInitializesEnvironment(t *testing.T) {
 	env := environment.EphemeralWithValues("test-env", nil)
 	options := Options{Provider: "test"}
 	interactive := false
@@ -73,7 +73,7 @@ func TestEnsureConfiguredInitializesEnvironment(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	err = mgr.EnsureConfigured(*mockContext.Context)
+	_, err = mgr.Plan(*mockContext.Context)
 	require.NoError(t, err)
 
 	require.Equal(t, "00000000-0000-0000-0000-000000000000", env.GetSubscriptionId())
@@ -107,9 +107,6 @@ func TestManagerPlan(t *testing.T) {
 		),
 		&mockSubscriptionTenantResolver{},
 	)
-	require.NoError(t, err)
-
-	err = mgr.EnsureConfigured(*mockContext.Context)
 	require.NoError(t, err)
 
 	deploymentPlan, err := mgr.Plan(*mockContext.Context)
@@ -146,9 +143,6 @@ func TestManagerGetState(t *testing.T) {
 		),
 		&mockSubscriptionTenantResolver{},
 	)
-	require.NoError(t, err)
-
-	err = mgr.EnsureConfigured(*mockContext.Context)
 	require.NoError(t, err)
 
 	provisioningScope := infra.NewSubscriptionScope(
@@ -190,9 +184,6 @@ func TestManagerDeploy(t *testing.T) {
 		),
 		&mockSubscriptionTenantResolver{},
 	)
-	require.NoError(t, err)
-
-	err = mgr.EnsureConfigured(*mockContext.Context)
 	require.NoError(t, err)
 
 	deploymentPlan, _ := mgr.Plan(*mockContext.Context)
@@ -237,9 +228,6 @@ func TestManagerDestroyWithPositiveConfirmation(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	err = mgr.EnsureConfigured(*mockContext.Context)
-	require.NoError(t, err)
-
 	deploymentPlan, _ := mgr.Plan(*mockContext.Context)
 	destroyOptions := NewDestroyOptions(false, false)
 	destroyResult, err := mgr.Destroy(*mockContext.Context, &deploymentPlan.Deployment, destroyOptions)
@@ -281,9 +269,6 @@ func TestManagerDestroyWithNegativeConfirmation(t *testing.T) {
 		),
 		&mockSubscriptionTenantResolver{},
 	)
-	require.NoError(t, err)
-
-	err = mgr.EnsureConfigured(*mockContext.Context)
 	require.NoError(t, err)
 
 	deploymentPlan, _ := mgr.Plan(*mockContext.Context)

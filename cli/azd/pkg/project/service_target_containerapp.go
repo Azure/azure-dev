@@ -168,11 +168,6 @@ func (at *containerAppTarget) Publish(
 				return
 			}
 
-			if err := infraManager.EnsureConfigured(ctx); err != nil {
-				task.SetError(err)
-				return
-			}
-
 			task.SetProgress(NewServiceProgress("Creating deployment template"))
 			deploymentPlan, err := infraManager.Plan(ctx)
 			if err != nil {

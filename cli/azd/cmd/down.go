@@ -111,10 +111,6 @@ func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, fmt.Errorf("creating provisioning manager: %w", err)
 	}
 
-	if err := infraManager.EnsureConfigured(ctx); err != nil {
-		return nil, err
-	}
-
 	deploymentPlan, err := infraManager.Plan(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("planning destroy: %w", err)

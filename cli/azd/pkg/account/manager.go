@@ -26,7 +26,8 @@ var defaultLocation Location = Location{
 
 type Manager interface {
 	Clear(ctx context.Context) error
-	HasDefaults() bool
+	HasDefaultSubscription() bool
+	HasDefaultLocation() bool
 	GetAccountDefaults(ctx context.Context) (*Account, error)
 	GetDefaultLocationName(ctx context.Context) string
 	GetDefaultSubscriptionID(ctx context.Context) string
@@ -200,12 +201,18 @@ func (m *manager) SetDefaultLocation(ctx context.Context, subscriptionId string,
 	return &matchingLocation, nil
 }
 
-// Checks whether account related defaults of subscription and location have previously been set
-func (m *manager) HasDefaults() bool {
+// HasDefaultSubscription returns true if a default subscription has been configured (i.e defaults.subscription is set)
+func (m *manager) HasDefaultSubscription() bool {
 	_, hasDefaultSubscription := m.config.Get(defaultSubscriptionKeyPath)
+
+	return hasDefaultSubscription
+}
+
+// HasDefaultLocation returns true if a default location has been configured (i.e defaults.location is set)
+func (m *manager) HasDefaultLocation() bool {
 	_, hasDefaultLocation := m.config.Get(defaultLocationKeyPath)
 
-	return hasDefaultSubscription && hasDefaultLocation
+	return hasDefaultLocation
 }
 
 // Clears any persisted defaults in the AZD config

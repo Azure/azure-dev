@@ -34,28 +34,6 @@ type Manager struct {
 	interactive        bool
 }
 
-// EnsureConfigured ensures that the underlying provider has been configured and is ready to be used.
-//
-// It should be run before any other instance method on the Manager.
-func (m *Manager) EnsureConfigured(ctx context.Context) error {
-	if err := m.provider.EnsureConfigured(ctx); err != nil {
-		return err
-	}
-
-	// If the configuration is empty, set default subscription & location
-	// This will be the case for first run experience
-	if !m.accountManager.HasDefaults() {
-		if _, err := m.accountManager.SetDefaultSubscription(ctx, m.env.GetSubscriptionId()); err != nil {
-			log.Printf("failed setting default subscription. %s\n", err.Error())
-		}
-		if _, err := m.accountManager.SetDefaultLocation(ctx, m.env.GetSubscriptionId(), m.env.GetLocation()); err != nil {
-			log.Printf("failed setting default location. %s\n", err.Error())
-		}
-	}
-
-	return nil
-}
-
 // Prepares for an infrastructure provision operation
 func (m *Manager) Plan(ctx context.Context) (*DeploymentPlan, error) {
 	deploymentPlan, err := m.plan(ctx)
@@ -68,6 +46,10 @@ func (m *Manager) Plan(ctx context.Context) (*DeploymentPlan, error) {
 
 // Gets the latest deployment details for the specified scope
 func (m *Manager) State(ctx context.Context, scope infra.Scope) (*StateResult, error) {
+	if err := m.provider.EnsureConfigured(ctx); err != nil {
+		return nil, err
+	}
+
 	var stateResult *StateResult
 
 	err := m.runAction(
@@ -142,6 +124,9 @@ func (m *Manager) Destroy(ctx context.Context, deployment *Deployment, options D
 
 // Plans the infrastructure provisioning and orchestrates interactive terminal operations
 func (m *Manager) plan(ctx context.Context) (*DeploymentPlan, error) {
+	if err := m.provider.EnsureConfigured(ctx); err != nil {
+		return nil, err
+	}
 
 	planningTask := m.provider.Plan(ctx)
 	go func() {
@@ -164,6 +149,9 @@ func (m *Manager) deploy(
 	plan *DeploymentPlan,
 	scope infra.Scope,
 ) (*DeployResult, error) {
+	if err := m.provider.EnsureConfigured(ctx); err != nil {
+		return nil, err
+	}
 
 	deployTask := m.provider.Deploy(ctx, plan, scope)
 
@@ -186,6 +174,10 @@ func (m *Manager) deploy(
 
 // Destroys the specified infrastructure provisioning and orchestrates the interactive terminal operations
 func (m *Manager) destroy(ctx context.Context, deployment *Deployment, options DestroyOptions) (*DestroyResult, error) {
+	if err := m.provider.EnsureConfigured(ctx); err != nil {
+		return nil, err
+	}
+
 	var destroyResult *DestroyResult
 
 	err := m.runAction(
@@ -342,6 +334,12 @@ func (m *Manager) promptSubscription(ctx context.Context, msg string) (subscript
 			len("(00000000-0000-0000-0000-000000000000)")+1 : len(subscriptionSelection)-1]
 	}
 
+	if !m.accountManager.HasDefaultSubscription() {
+		if _, err := m.accountManager.SetDefaultSubscription(ctx, m.env.GetSubscriptionId()); err != nil {
+			log.Printf("failed setting default subscription. %s\n", err.Error())
+		}
+	}
+
 	return subscriptionId, nil
 }
 
@@ -351,7 +349,18 @@ func (m *Manager) promptLocation(
 	msg string,
 	filter func(loc account.Location) bool,
 ) (string, error) {
-	return azureutil.PromptLocationWithFilter(ctx, subId, msg, "", m.console, m.accountManager, filter)
+	loc, err := azureutil.PromptLocationWithFilter(ctx, subId, msg, "", m.console, m.accountManager, filter)
+	if err != nil {
+		return "", err
+	}
+
+	if !m.accountManager.HasDefaultLocation() {
+		if _, err := m.accountManager.SetDefaultLocation(ctx, m.env.GetSubscriptionId(), m.env.GetLocation()); err != nil {
+			log.Printf("failed setting default location. %s\n", err.Error())
+		}
+	}
+
+	return loc, nil
 }
 
 type CurrentPrincipalIdProvider interface {

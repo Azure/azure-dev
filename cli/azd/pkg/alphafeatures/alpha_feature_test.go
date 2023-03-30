@@ -15,19 +15,6 @@ func Test_AlphaToggle(t *testing.T) {
 		require.False(t, isAlpha)
 	})
 
-	t.Run("alpha key", func(t *testing.T) {
-		alphaFeatureId := "some-id"
-		alphaFeatureDescription := "some description"
-		mockAlphaFeatures := func() []AlphaFeature {
-			return []AlphaFeature{
-				{Id: alphaFeatureId, Description: alphaFeatureDescription},
-			}
-		}
-
-		_, isAlpha := IsAlphaKey("this-is-not-an-alpha-key-and-should-never-be")
-		require.False(t, isAlpha)
-	})
-
 	t.Run("list alpha features", func(t *testing.T) {
 		alphaFeatureId := "some-id"
 		alphaFeatureDescription := "some description"

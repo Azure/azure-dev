@@ -89,9 +89,13 @@ steps:
               # Uninstall azd version
               curl -fsSL https://aka.ms/uninstall-azd.sh | bash
 
-              # Install azd from PR
-              curl -fsSL https://aka.ms/install-azd.sh | bash -s -- --version $(AzdVersion) --verbose
-              azd version
+              # Install azd build
+              if [[ "$(AzdVersion)" == "pr/*" ]];
+              then
+                curl -fsSL https://aka.ms/install-azd.sh | bash -s -- --base-url "https://$(azdev-storage-account-name).blob.core.windows.net/azd/standalone/$(AzdVersion)" --version ''
+              else
+                curl -fsSL https://aka.ms/install-azd.sh | bash -s -- --version $(AzdVersion) --verbose
+              fi
 
               # Login
               azd auth login \

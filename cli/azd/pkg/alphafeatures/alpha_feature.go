@@ -19,9 +19,8 @@ type AlphaFeature struct {
 type AlphaFeatureId string
 
 const (
-	parentKey     AlphaFeatureId = "alpha"
+	parentKey     string         = "alpha"
 	AllId         AlphaFeatureId = "all"
-	TerraformId   AlphaFeatureId = "terraform"
 	enabledValue  string         = "on"
 	disabledValue string         = "off"
 	enabledText   string         = "On"
@@ -49,5 +48,5 @@ func IsAlphaKey(key string) bool {
 }
 
 func GetEnableCommand(key AlphaFeatureId) string {
-	return fmt.Sprintf("azd config set %s on", strings.Join([]string{string(parentKey), string(key)}, "."))
+	return fmt.Sprintf("azd config set %s on", strings.Join([]string{parentKey, string(key)}, "."))
 }

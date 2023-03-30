@@ -1,8 +1,10 @@
 package alphafeatures
 
 import (
+	"fmt"
 	"log"
 	"strings"
+	"sync"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 )
@@ -47,7 +49,9 @@ func (m *AlphaFeatureManager) ListFeatures() (map[string]AlphaFeature, error) {
 	return result, nil
 }
 
-func (m *AlphaFeatureManager) IsEnabled(featureId AlphaFeatureId) bool {
+var withSync *sync.Once = &sync.Once{}
+
+func (m *AlphaFeatureManager) initConfigCache() {
 	if m.userConfigCache == nil {
 		config, err := m.configManager.Load()
 		if err != nil {
@@ -55,35 +59,47 @@ func (m *AlphaFeatureManager) IsEnabled(featureId AlphaFeatureId) bool {
 		}
 		m.userConfigCache = config
 	}
+}
+
+func (m *AlphaFeatureManager) IsEnabled(featureId AlphaFeatureId) bool {
+	// guard from using the alphaFeatureManager from multiple routines. Only the first one will create the cache.
+	withSync.Do(m.initConfigCache)
 
 	//check if all features is ON
-	if allOn := isEnabled(m.userConfigCache, string(AllId)); allOn {
+	if allOn := isEnabled(m.userConfigCache, AllId); allOn {
 		return true
 	}
 
 	// check if the feature is ON
-	if featureOn := isEnabled(m.userConfigCache, string(featureId)); featureOn {
+	if featureOn := isEnabled(m.userConfigCache, featureId); featureOn {
 		return true
 	}
 
 	return false
 }
 
-func isEnabled(config config.Config, id string) bool {
-	longKey := strings.Join([]string{
-		string(parentKey),
-		id,
-	}, ".")
+func isEnabled(config config.Config, id AlphaFeatureId) bool {
+	longKey := fmt.Sprintf("%s.%s", parentKey, string(id))
 	value, exists := config.Get(longKey)
 	if !exists {
 		return exists
 	}
-	// safe cast -> reading from config text file
-	stringValue, _ := value.(string)
+
+	// need to check the cast here in case the config is manually updated
+	stringValue, castResult := value.(string)
+	if !castResult {
+		log.Panicf("Invalid configuration value for '%s': %s", longKey, value)
+	}
 	stringValue = strings.ToLower(stringValue)
 
 	if stringValue != disabledValue && stringValue != enabledValue {
-		log.Panicf("invalid value: %s for alpha-feature config key: %s", longKey, stringValue)
+		log.Panicf(
+			"invalid configuration value for '%s': %s. Valid options are '%s' or '%s'.",
+			longKey,
+			stringValue,
+			enabledValue,
+			disabledValue,
+		)
 	}
 
 	// previous condition ensured that stringValue is either `enabledValue` or `disabledValue`

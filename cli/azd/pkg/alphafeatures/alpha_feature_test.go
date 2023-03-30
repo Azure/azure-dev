@@ -25,7 +25,7 @@ func Test_AlphaToggle(t *testing.T) {
 		}
 
 		mockConfig := config.NewConfig(map[string]any{
-			string(parentKey): map[string]any{
+			parentKey: map[string]any{
 				alphaFeatureId: enabledValue,
 			},
 		})
@@ -56,7 +56,7 @@ func Test_AlphaToggle(t *testing.T) {
 		}
 
 		mockConfig := config.NewConfig(map[string]any{
-			string(parentKey): map[string]any{
+			parentKey: map[string]any{
 				alphaFeatureId: disabledValue,
 			},
 		})
@@ -91,7 +91,7 @@ func Test_AlphaToggle(t *testing.T) {
 		}
 
 		mockConfig := config.NewConfig(map[string]any{
-			string(parentKey): map[string]any{
+			parentKey: map[string]any{
 				alphaFeatureId: enabledValue,
 			},
 		})
@@ -130,7 +130,7 @@ func Test_AlphaToggle(t *testing.T) {
 		}
 
 		mockConfig := config.NewConfig(map[string]any{
-			string(parentKey): map[string]any{
+			parentKey: map[string]any{
 				string(AllId): enabledValue,
 			},
 		})

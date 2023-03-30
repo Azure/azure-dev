@@ -6,7 +6,6 @@ import (
 	"io"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
-	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -75,20 +74,18 @@ Depending on what Azure resources are created, running this command might take a
 }
 
 type provisionAction struct {
-	flags                    *provisionFlags
-	accountManager           account.Manager
-	projectManager           project.ProjectManager
-	resourceManager          project.ResourceManager
-	azdCtx                   *azdcontext.AzdContext
-	azCli                    azcli.AzCli
-	env                      *environment.Environment
-	formatter                output.Formatter
-	projectConfig            *project.ProjectConfig
-	writer                   io.Writer
-	console                  input.Console
-	commandRunner            exec.CommandRunner
-	middlewareRunner         middleware.MiddlewareContext
-	packageActionInitializer actions.ActionInitializer[*packageAction]
+	flags           *provisionFlags
+	accountManager  account.Manager
+	projectManager  project.ProjectManager
+	resourceManager project.ResourceManager
+	azdCtx          *azdcontext.AzdContext
+	azCli           azcli.AzCli
+	env             *environment.Environment
+	formatter       output.Formatter
+	projectConfig   *project.ProjectConfig
+	writer          io.Writer
+	console         input.Console
+	commandRunner   exec.CommandRunner
 }
 
 func newProvisionAction(
@@ -104,66 +101,51 @@ func newProvisionAction(
 	formatter output.Formatter,
 	writer io.Writer,
 	commandRunner exec.CommandRunner,
-	middlewareRunner middleware.MiddlewareContext,
-	packageActionInitializer actions.ActionInitializer[*packageAction],
 ) actions.Action {
 	return &provisionAction{
-		flags:                    flags,
-		accountManager:           accountManager,
-		projectManager:           projectManager,
-		resourceManager:          resourceManager,
-		azdCtx:                   azdCtx,
-		azCli:                    azCli,
-		env:                      env,
-		formatter:                formatter,
-		projectConfig:            projectConfig,
-		writer:                   writer,
-		console:                  console,
-		commandRunner:            commandRunner,
-		middlewareRunner:         middlewareRunner,
-		packageActionInitializer: packageActionInitializer,
+		flags:           flags,
+		accountManager:  accountManager,
+		projectManager:  projectManager,
+		resourceManager: resourceManager,
+		azdCtx:          azdCtx,
+		azCli:           azCli,
+		env:             env,
+		formatter:       formatter,
+		projectConfig:   projectConfig,
+		writer:          writer,
+		console:         console,
+		commandRunner:   commandRunner,
 	}
 }
 
-func (pa *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	if pa.flags.noProgress {
+func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	if p.flags.noProgress {
 		fmt.Fprintf(
-			pa.console.Handles().Stderr,
+			p.console.Handles().Stderr,
 			//nolint:Lll
 			output.WithWarningFormat("--no-progress flag is deprecated and will be removed in the future.")+"\n")
 	}
 
-	packageAction, err := pa.packageActionInitializer()
-	if err != nil {
-		return nil, err
-	}
-
-	packageOptions := &middleware.Options{CommandPath: "package"}
-	_, err = pa.middlewareRunner.RunChildAction(ctx, packageOptions, packageAction)
-	if err != nil {
-		return nil, err
-	}
-
 	// Command title
-	pa.console.MessageUxItem(ctx, &ux.MessageTitle{
+	p.console.MessageUxItem(ctx, &ux.MessageTitle{
 		Title:     "Provisioning Azure resources (azd provision)",
 		TitleNote: "Provisioning Azure resources can take some time"},
 	)
 
-	if err := pa.projectManager.Initialize(ctx, pa.projectConfig); err != nil {
+	if err := p.projectManager.Initialize(ctx, p.projectConfig); err != nil {
 		return nil, err
 	}
 
 	infraManager, err := provisioning.NewManager(
 		ctx,
-		pa.env,
-		pa.projectConfig.Path,
-		pa.projectConfig.Infra,
-		pa.console.IsUnformatted(),
-		pa.azCli,
-		pa.console,
-		pa.commandRunner,
-		pa.accountManager,
+		p.env,
+		p.projectConfig.Path,
+		p.projectConfig.Infra,
+		p.console.IsUnformatted(),
+		p.azCli,
+		p.console,
+		p.commandRunner,
+		p.accountManager,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("creating provisioning manager: %w", err)
@@ -175,12 +157,12 @@ func (pa *provisionAction) Run(ctx context.Context) (*actions.ActionResult, erro
 	}
 
 	provisioningScope := infra.NewSubscriptionScope(
-		pa.azCli, pa.env.GetLocation(), pa.env.GetSubscriptionId(), pa.env.GetEnvName(),
+		p.azCli, p.env.GetLocation(), p.env.GetSubscriptionId(), p.env.GetEnvName(),
 	)
 	deployResult, err := infraManager.Deploy(ctx, deploymentPlan, provisioningScope)
 
 	if err != nil {
-		if pa.formatter.Kind() == output.JsonFormat {
+		if p.formatter.Kind() == output.JsonFormat {
 			stateResult, err := infraManager.State(ctx, provisioningScope)
 			if err != nil {
 				return nil, fmt.Errorf(
@@ -189,8 +171,8 @@ func (pa *provisionAction) Run(ctx context.Context) (*actions.ActionResult, erro
 				)
 			}
 
-			if err := pa.formatter.Format(
-				provisioning.NewEnvRefreshResultFromState(stateResult.State), pa.writer, nil); err != nil {
+			if err := p.formatter.Format(
+				provisioning.NewEnvRefreshResultFromState(stateResult.State), p.writer, nil); err != nil {
 				return nil, fmt.Errorf(
 					"deployment failed and the deployment result could not be displayed: %w",
 					multierr.Combine(err, err),
@@ -201,9 +183,9 @@ func (pa *provisionAction) Run(ctx context.Context) (*actions.ActionResult, erro
 		return nil, fmt.Errorf("deployment failed: %w", err)
 	}
 
-	for _, svc := range pa.projectConfig.Services {
+	for _, svc := range p.projectConfig.Services {
 		eventArgs := project.ServiceLifecycleEventArgs{
-			Project: pa.projectConfig,
+			Project: p.projectConfig,
 			Service: svc,
 			Args: map[string]any{
 				"bicepOutput": deployResult.Deployment.Outputs,
@@ -215,7 +197,7 @@ func (pa *provisionAction) Run(ctx context.Context) (*actions.ActionResult, erro
 		}
 	}
 
-	if pa.formatter.Kind() == output.JsonFormat {
+	if p.formatter.Kind() == output.JsonFormat {
 		stateResult, err := infraManager.State(ctx, provisioningScope)
 		if err != nil {
 			return nil, fmt.Errorf(
@@ -224,8 +206,8 @@ func (pa *provisionAction) Run(ctx context.Context) (*actions.ActionResult, erro
 			)
 		}
 
-		if err := pa.formatter.Format(
-			provisioning.NewEnvRefreshResultFromState(stateResult.State), pa.writer, nil); err != nil {
+		if err := p.formatter.Format(
+			provisioning.NewEnvRefreshResultFromState(stateResult.State), p.writer, nil); err != nil {
 			return nil, fmt.Errorf(
 				"deployment succeeded but the deployment result could not be displayed: %w",
 				multierr.Combine(err, err),
@@ -236,7 +218,7 @@ func (pa *provisionAction) Run(ctx context.Context) (*actions.ActionResult, erro
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
 			Header:   "Your project has been provisioned!",
-			FollowUp: getResourceGroupFollowUp(ctx, pa.formatter, pa.azCli, pa.projectConfig, pa.resourceManager, pa.env),
+			FollowUp: getResourceGroupFollowUp(ctx, p.formatter, p.azCli, p.projectConfig, p.resourceManager, p.env),
 		},
 	}, nil
 }

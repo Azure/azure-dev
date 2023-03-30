@@ -83,14 +83,14 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			output.WithWarningFormat("The --service flag is deprecated and will be removed in the future."))
 	}
 
-	provisionAction, err := u.provisionActionInitializer()
+	provision, err := u.provisionActionInitializer()
 	if err != nil {
 		return nil, err
 	}
 
-	provisionAction.flags = &u.flags.provisionFlags
-	provisionOptions := &middleware.Options{CommandPath: "infra create", Aliases: []string{"provision"}}
-	_, err = u.runner.RunChildAction(ctx, provisionOptions, provisionAction)
+	provision.flags = &u.flags.provisionFlags
+	provisionOptions := &middleware.Options{CommandPath: "provision"}
+	_, err = u.runner.RunChildAction(ctx, provisionOptions, provision)
 	if err != nil {
 		return nil, err
 	}
@@ -98,19 +98,19 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	// Print an additional newline to separate provision from deploy
 	u.console.Message(ctx, "")
 
-	deployAction, err := u.deployActionInitializer()
+	deploy, err := u.deployActionInitializer()
 	if err != nil {
 		return nil, err
 	}
 
-	deployAction.flags = &u.flags.deployFlags
+	deploy.flags = &u.flags.deployFlags
 	// move flag to args to avoid extra deprecation flag warning
-	if deployAction.flags.serviceName != "" {
-		deployAction.args = []string{deployAction.flags.serviceName}
-		deployAction.flags.serviceName = ""
+	if deploy.flags.serviceName != "" {
+		deploy.args = []string{deploy.flags.serviceName}
+		deploy.flags.serviceName = ""
 	}
 	deployOptions := &middleware.Options{CommandPath: "deploy"}
-	deployResult, err := u.runner.RunChildAction(ctx, deployOptions, deployAction)
+	deployResult, err := u.runner.RunChildAction(ctx, deployOptions, deploy)
 	if err != nil {
 		return nil, err
 	}

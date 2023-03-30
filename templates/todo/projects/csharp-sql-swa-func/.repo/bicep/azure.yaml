@@ -9,6 +9,18 @@ services:
     dist: build
     language: js
     host: staticwebapp
+    hooks:
+      predeploy:
+        posix:
+          shell: sh
+          run: node gen-env-config.js -o ./build/env-config.js
+          continueOnError: false
+          interactive: false
+        windows:
+          shell: pwsh
+          run: node gen-env-config.js -o ./build/env-config.js
+          continueOnError: false
+          interactive: false
   api:
     project: ../../api/csharp-sql-func
     language: dotnet

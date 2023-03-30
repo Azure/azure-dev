@@ -17,7 +17,6 @@ import (
 	"errors"
 	"time"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -46,37 +45,7 @@ func (p *TestProvider) RequiredExternalTools() []tools.ExternalTool {
 }
 
 func (p *TestProvider) EnsureConfigured(ctx context.Context) error {
-	if p.env.GetSubscriptionId() == "" {
-		subscriptionId, err := p.prompters.Subscription(ctx, "Please select an Azure Subscription to use:")
-		if err != nil {
-			return err
-		}
-
-		p.env.SetSubscriptionId(subscriptionId)
-
-		if err := p.env.Save(); err != nil {
-			return err
-		}
-	}
-
-	if p.env.GetLocation() == "" {
-		location, err := p.prompters.Location(
-			ctx,
-			p.env.GetSubscriptionId(),
-			"Please select an Azure location to use:",
-			func(_ account.Location) bool { return true })
-		if err != nil {
-			return err
-		}
-
-		p.env.SetLocation(location)
-
-		if err := p.env.Save(); err != nil {
-			return err
-		}
-	}
-
-	return nil
+	return EnsureSubscriptionAndLocation(ctx, p.env, p.prompters)
 }
 
 func (p *TestProvider) Plan(

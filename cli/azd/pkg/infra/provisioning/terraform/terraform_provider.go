@@ -21,9 +21,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
-	"github.com/azure/azure-dev/cli/azd/internal/telemetry/fields"
-	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -95,35 +92,8 @@ func NewTerraformProvider(
 }
 
 func (t *TerraformProvider) EnsureConfigured(ctx context.Context) error {
-	if t.env.GetSubscriptionId() == "" {
-		subscriptionId, err := t.prompters.Subscription(ctx, "Please select an Azure Subscription to use:")
-		if err != nil {
-			return err
-		}
-
-		t.env.SetSubscriptionId(subscriptionId)
-		telemetry.SetGlobalAttributes(fields.SubscriptionIdKey.String(t.env.GetSubscriptionId()))
-
-		if err := t.env.Save(); err != nil {
-			return err
-		}
-	}
-
-	if t.env.GetLocation() == "" {
-		location, err := t.prompters.Location(
-			ctx,
-			t.env.GetSubscriptionId(),
-			"Please select an Azure location to use:",
-			func(_ account.Location) bool { return true })
-		if err != nil {
-			return err
-		}
-
-		t.env.SetLocation(location)
-
-		if err := t.env.Save(); err != nil {
-			return err
-		}
+	if err := EnsureSubscriptionAndLocation(ctx, t.env, t.prompters); err != nil {
+		return err
 	}
 
 	envVars := []string{

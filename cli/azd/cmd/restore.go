@@ -11,6 +11,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -68,6 +69,7 @@ type restoreAction struct {
 	args           []string
 	console        input.Console
 	azdCtx         *azdcontext.AzdContext
+	env            *environment.Environment
 	projectConfig  *project.ProjectConfig
 	serviceManager project.ServiceManager
 	commandRunner  exec.CommandRunner
@@ -78,6 +80,7 @@ func newRestoreAction(
 	args []string,
 	console input.Console,
 	azdCtx *azdcontext.AzdContext,
+	env *environment.Environment,
 	projectConfig *project.ProjectConfig,
 	serviceManager project.ServiceManager,
 	commandRunner exec.CommandRunner,
@@ -89,6 +92,7 @@ func newRestoreAction(
 		azdCtx:         azdCtx,
 		projectConfig:  projectConfig,
 		serviceManager: serviceManager,
+		env:            env,
 		commandRunner:  commandRunner,
 	}
 }

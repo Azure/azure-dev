@@ -84,7 +84,6 @@ func TestManagerPlan(t *testing.T) {
 	env := environment.EphemeralWithValues("test-env", map[string]string{
 		"AZURE_SUBSCRIPTION_ID": "SUBSCRIPTION_ID",
 		"AZURE_LOCATION":        "eastus2",
-		"AZURE_PRINCIPAL_ID":    "PRINCIPAL_ID",
 	})
 	options := Options{Provider: "test"}
 	interactive := false
@@ -120,7 +119,6 @@ func TestManagerGetState(t *testing.T) {
 	env := environment.EphemeralWithValues("test-env", map[string]string{
 		"AZURE_SUBSCRIPTION_ID": "SUBSCRIPTION_ID",
 		"AZURE_LOCATION":        "eastus2",
-		"AZURE_PRINCIPAL_ID":    "PRINCIPAL_ID",
 	})
 	options := Options{Provider: "test"}
 	interactive := false
@@ -161,7 +159,6 @@ func TestManagerDeploy(t *testing.T) {
 	env := environment.EphemeralWithValues("test-env", map[string]string{
 		"AZURE_SUBSCRIPTION_ID": "SUBSCRIPTION_ID",
 		"AZURE_LOCATION":        "eastus2",
-		"AZURE_PRINCIPAL_ID":    "PRINCIPAL_ID",
 	})
 	options := Options{Provider: "test"}
 	interactive := false
@@ -203,7 +200,6 @@ func TestManagerDestroyWithPositiveConfirmation(t *testing.T) {
 	env := environment.EphemeralWithValues("test-env", map[string]string{
 		"AZURE_SUBSCRIPTION_ID": "SUBSCRIPTION_ID",
 		"AZURE_LOCATION":        "eastus2",
-		"AZURE_PRINCIPAL_ID":    "PRINCIPAL_ID",
 	})
 	options := Options{Provider: "test"}
 	interactive := false
@@ -241,7 +237,6 @@ func TestManagerDestroyWithNegativeConfirmation(t *testing.T) {
 	env := environment.EphemeralWithValues("test-env", map[string]string{
 		"AZURE_SUBSCRIPTION_ID": "SUBSCRIPTION_ID",
 		"AZURE_LOCATION":        "eastus2",
-		"AZURE_PRINCIPAL_ID":    "PRINCIPAL_ID",
 	})
 	options := Options{Provider: "test"}
 	interactive := false

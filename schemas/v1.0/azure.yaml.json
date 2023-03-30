@@ -79,11 +79,6 @@
                         "type": "string",
                         "title": "Path to the service source code directory"
                     },
-                    "dotnetProjectFile": {
-                        "type": "string",
-                        "minLength": 2,
-                        "title": "File path of dotnet's project file"
-                    },
                     "host": {
                         "type": "string",
                         "title": "Type of Azure resource used for service implementation",
@@ -219,26 +214,6 @@
                                     "type": "string",
                                     "description": "The CLI will use the JAR file in this directory to create the deployment artifact (ZIP file). If omitted, the CLI will detect the output directory based on the build system in-use."
                                 }
-                            }
-                        }
-                    },
-                    {
-                        "if": {
-                            "not": {
-                                "properties": {
-                                    "language": {
-                                        "enum": [
-                                            "csharp",
-                                            "fsharp",
-                                            "dotnet"
-                                        ]
-                                    }
-                                }
-                            }
-                        },
-                        "then": {
-                            "properties": {
-                                "dotnetProjectFile": false
                             }
                         }
                     },

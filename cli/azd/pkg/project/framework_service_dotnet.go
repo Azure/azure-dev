@@ -216,7 +216,7 @@ func findProjectFile(path string, dotnetProjectFile string) (string, error) {
 	// for filesFound > 1
 	if dotnetProjectFile == "" {
 		return "", fmt.Errorf("there are multiple project files in %s. "+
-			"Please add the project file path with row 'dotnetProjectFile' in azure.yaml", path)
+			"Please add the project file path with row 'project' in azure.yaml", path)
 	}
 	// check if the dotnetProjectFile is in the list of projects
 	for _, foundProject := range files {

@@ -11,7 +11,7 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
-	"github.com/azure/azure-dev/cli/azd/pkg/alphafeatures"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -296,7 +296,7 @@ func NewManager(
 	console input.Console,
 	commandRunner exec.CommandRunner,
 	accountManager account.Manager,
-	alphaFeatureManager *alphafeatures.AlphaFeatureManager,
+	alphaFeatureManager *alpha.FeatureManager,
 ) (*Manager, error) {
 	locationPrompt := func(msg string, filter func(loc account.Location) bool) (location string, err error) {
 		return azureutil.PromptLocationWithFilter(ctx, env.GetSubscriptionId(), msg, "", console, accountManager, filter)

@@ -12,7 +12,7 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
-	"github.com/azure/azure-dev/cli/azd/pkg/alphafeatures"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -37,7 +37,7 @@ type containerAppTarget struct {
 	accountManager           account.Manager
 	serviceManager           ServiceManager
 	resourceManager          ResourceManager
-	alphaFeatureManager      *alphafeatures.AlphaFeatureManager
+	alphaFeatureManager      *alpha.FeatureManager
 }
 
 // NewContainerAppTarget creates the container app service target.

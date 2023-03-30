@@ -7,7 +7,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
-	"github.com/azure/azure-dev/cli/azd/pkg/alphafeatures"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -63,7 +63,7 @@ type downAction struct {
 	console             input.Console
 	commandRunner       exec.CommandRunner
 	projectConfig       *project.ProjectConfig
-	alphaFeatureManager *alphafeatures.AlphaFeatureManager
+	alphaFeatureManager *alpha.FeatureManager
 }
 
 func newDownAction(
@@ -75,7 +75,7 @@ func newDownAction(
 	projectConfig *project.ProjectConfig,
 	console input.Console,
 	commandRunner exec.CommandRunner,
-	alphaFeatureManager *alphafeatures.AlphaFeatureManager,
+	alphaFeatureManager *alpha.FeatureManager,
 ) actions.Action {
 	return &downAction{
 		flags:               flags,

@@ -1,4 +1,4 @@
-package alphafeatures
+package alpha
 
 import (
 	"testing"
@@ -11,15 +11,15 @@ func Test_AlphaToggle(t *testing.T) {
 	t.Parallel()
 
 	t.Run("not alpha key", func(t *testing.T) {
-		_, isAlpha := IsAlphaKey("this-is-not-an-alpha-key-and-should-never-be")
+		_, isAlpha := IsFeatureKey("this-is-not-an-alpha-key-and-should-never-be")
 		require.False(t, isAlpha)
 	})
 
 	t.Run("list alpha features", func(t *testing.T) {
 		alphaFeatureId := "some-id"
 		alphaFeatureDescription := "some description"
-		mockAlphaFeatures := func() []AlphaFeature {
-			return []AlphaFeature{
+		mockAlphaFeatures := func() []Feature {
+			return []Feature{
 				{Id: alphaFeatureId, Description: alphaFeatureDescription},
 			}
 		}
@@ -31,7 +31,7 @@ func Test_AlphaToggle(t *testing.T) {
 		})
 
 		// We don't need the user-config
-		alphaManager := &AlphaFeatureManager{
+		alphaManager := &FeatureManager{
 			alphaFeaturesResolver: mockAlphaFeatures,
 			userConfigCache:       mockConfig,
 		}
@@ -49,8 +49,8 @@ func Test_AlphaToggle(t *testing.T) {
 	t.Run("list alpha features off", func(t *testing.T) {
 		alphaFeatureId := "some-id"
 		alphaFeatureDescription := "some description"
-		mockAlphaFeatures := func() []AlphaFeature {
-			return []AlphaFeature{
+		mockAlphaFeatures := func() []Feature {
+			return []Feature{
 				{Id: alphaFeatureId, Description: alphaFeatureDescription},
 			}
 		}
@@ -62,7 +62,7 @@ func Test_AlphaToggle(t *testing.T) {
 		})
 
 		// We don't need the user-config
-		alphaManager := &AlphaFeatureManager{
+		alphaManager := &FeatureManager{
 			alphaFeaturesResolver: mockAlphaFeatures,
 			userConfigCache:       mockConfig,
 		}
@@ -83,8 +83,8 @@ func Test_AlphaToggle(t *testing.T) {
 		alphaFeatureIdOff := "some-id-off"
 		alphaFeatureDescriptionOff := "some description-off"
 
-		mockAlphaFeatures := func() []AlphaFeature {
-			return []AlphaFeature{
+		mockAlphaFeatures := func() []Feature {
+			return []Feature{
 				{Id: alphaFeatureId, Description: alphaFeatureDescription},
 				{Id: alphaFeatureIdOff, Description: alphaFeatureDescriptionOff},
 			}
@@ -97,7 +97,7 @@ func Test_AlphaToggle(t *testing.T) {
 		})
 
 		// We don't need the user-config
-		alphaManager := &AlphaFeatureManager{
+		alphaManager := &FeatureManager{
 			alphaFeaturesResolver: mockAlphaFeatures,
 			userConfigCache:       mockConfig,
 		}
@@ -122,8 +122,8 @@ func Test_AlphaToggle(t *testing.T) {
 		alphaFeatureIdOff := "some-id-off"
 		alphaFeatureDescriptionOff := "some description-off"
 
-		mockAlphaFeatures := func() []AlphaFeature {
-			return []AlphaFeature{
+		mockAlphaFeatures := func() []Feature {
+			return []Feature{
 				{Id: alphaFeatureId, Description: alphaFeatureDescription},
 				{Id: alphaFeatureIdOff, Description: alphaFeatureDescriptionOff},
 			}
@@ -136,7 +136,7 @@ func Test_AlphaToggle(t *testing.T) {
 		})
 
 		// We don't need the user-config
-		alphaManager := &AlphaFeatureManager{
+		alphaManager := &FeatureManager{
 			alphaFeaturesResolver: mockAlphaFeatures,
 			userConfigCache:       mockConfig,
 		}
@@ -156,7 +156,7 @@ func Test_AlphaToggle(t *testing.T) {
 	})
 
 	t.Run("cover constructor", func(t *testing.T) {
-		_ = NewAlphaFeaturesManager(config.NewUserConfigManager())
+		_ = NewFeaturesManager(config.NewUserConfigManager())
 	})
 
 }

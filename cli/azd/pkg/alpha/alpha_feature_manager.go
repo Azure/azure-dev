@@ -1,4 +1,4 @@
-package alphafeatures
+package alpha
 
 import (
 	"fmt"
@@ -9,41 +9,39 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 )
 
-// AlphaFeatureManager provides operations for handling features within the application which are in alpha mode.
-type AlphaFeatureManager struct {
+// FeatureManager provides operations for handling features within the application which are in alpha mode.
+type FeatureManager struct {
 	configManager   config.UserConfigManager
 	userConfigCache config.Config
 	// used for mocking alpha features on testing
-	alphaFeaturesResolver func() []AlphaFeature
+	alphaFeaturesResolver func() []Feature
 }
 
-// NewAlphaFeaturesManager creates the alpha features manager from the user configuration
-func NewAlphaFeaturesManager(configManager config.UserConfigManager) *AlphaFeatureManager {
-	return &AlphaFeatureManager{
+// NewFeaturesManager creates the alpha features manager from the user configuration
+func NewFeaturesManager(configManager config.UserConfigManager) *FeatureManager {
+	return &FeatureManager{
 		configManager: configManager,
 	}
 }
 
 // ListFeatures pulls the list of features in alpha mode available within the application and displays its current state
 // which is `on` or `off`.
-func (m *AlphaFeatureManager) ListFeatures() (map[string]AlphaFeature, error) {
-	result := make(map[string]AlphaFeature)
+func (m *FeatureManager) ListFeatures() (map[string]Feature, error) {
+	result := make(map[string]Feature)
 
-	var alphaFeatures []AlphaFeature
+	alphaFeatures := allFeatures
 	if m.alphaFeaturesResolver != nil {
 		alphaFeatures = m.alphaFeaturesResolver()
-	} else {
-		alphaFeatures = mustUnmarshalAlphaFeatures()
 	}
 
 	for _, aFeature := range alphaFeatures {
 		// cast is safe here from string to AlphaFeatureId
 		status := disabledText
-		if m.IsEnabled(AlphaFeatureId(aFeature.Id)) {
+		if m.IsEnabled(FeatureId(aFeature.Id)) {
 			status = enabledText
 		}
 
-		result[aFeature.Id] = AlphaFeature{
+		result[aFeature.Id] = Feature{
 			Id:          aFeature.Id,
 			Description: aFeature.Description,
 			Status:      status,
@@ -55,7 +53,7 @@ func (m *AlphaFeatureManager) ListFeatures() (map[string]AlphaFeature, error) {
 
 var withSync *sync.Once = &sync.Once{}
 
-func (m *AlphaFeatureManager) initConfigCache() {
+func (m *FeatureManager) initConfigCache() {
 	if m.userConfigCache == nil {
 		config, err := m.configManager.Load()
 		if err != nil {
@@ -66,7 +64,7 @@ func (m *AlphaFeatureManager) initConfigCache() {
 }
 
 // IsEnabled search and find out if the AlphaFeatureId is currently enabled
-func (m *AlphaFeatureManager) IsEnabled(featureId AlphaFeatureId) bool {
+func (m *FeatureManager) IsEnabled(featureId FeatureId) bool {
 	// guard from using the alphaFeatureManager from multiple routines. Only the first one will create the cache.
 	withSync.Do(m.initConfigCache)
 
@@ -83,7 +81,7 @@ func (m *AlphaFeatureManager) IsEnabled(featureId AlphaFeatureId) bool {
 	return false
 }
 
-func isEnabled(config config.Config, id AlphaFeatureId) bool {
+func isEnabled(config config.Config, id FeatureId) bool {
 	longKey := fmt.Sprintf("%s.%s", parentKey, string(id))
 	value, exists := config.Get(longKey)
 	if !exists {

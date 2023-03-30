@@ -11,7 +11,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
-	"github.com/azure/azure-dev/cli/azd/pkg/alphafeatures"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -352,7 +352,7 @@ type envRefreshAction struct {
 	formatter           output.Formatter
 	writer              io.Writer
 	commandRunner       exec.CommandRunner
-	alphaFeatureManager *alphafeatures.AlphaFeatureManager
+	alphaFeatureManager *alpha.FeatureManager
 }
 
 func newEnvRefreshAction(
@@ -367,7 +367,7 @@ func newEnvRefreshAction(
 	console input.Console,
 	formatter output.Formatter,
 	writer io.Writer,
-	alphaFeatureManager *alphafeatures.AlphaFeatureManager,
+	alphaFeatureManager *alpha.FeatureManager,
 ) actions.Action {
 	return &envRefreshAction{
 		azdCtx:              azdCtx,

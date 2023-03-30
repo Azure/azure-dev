@@ -1,4 +1,4 @@
-package alphafeatures
+package alpha
 
 import (
 	"fmt"
@@ -9,19 +9,19 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-// AlphaFeature defines the structure for a feature in alpha mode.
-type AlphaFeature struct {
+// Feature defines the structure for a feature in alpha mode.
+type Feature struct {
 	Id          string `yaml:"id"`
 	Description string `yaml:"description"`
 	Status      string
 }
 
 // constant keys are used within source code to pull the AlphaFeature
-type AlphaFeatureId string
+type FeatureId string
 
 const (
 	// the key for overriding all alpha features value.
-	AllId AlphaFeatureId = "all"
+	AllId FeatureId = "all"
 
 	disabledText  string = "Off"
 	disabledValue string = "off"
@@ -30,24 +30,21 @@ const (
 	parentKey     string = "alpha"
 )
 
-// mustUnmarshalAlphaFeatures parsed the alpha features from resources into a list of AlphaFeature
-func mustUnmarshalAlphaFeatures() []AlphaFeature {
-	var alphaFeatures []AlphaFeature
-	err := yaml.Unmarshal(resources.AlphaFeatures, &alphaFeatures)
+var allFeatures []Feature
+
+func init() {
+	err := yaml.Unmarshal(resources.AlphaFeatures, &allFeatures)
 	if err != nil {
 		log.Panic("Can't marshall alpha features!! %w", err)
 	}
-	return alphaFeatures
 }
 
-// IsAlphaKey inspect if `key` is an alpha feature. Returns the AlphaFeatureId and true in case it is.
+// IsFeatureKey inspect if `key` is an alpha feature. Returns the AlphaFeatureId and true in case it is.
 // otherwise returns empty AlphaFeatureId and false.
-func IsAlphaKey(key string) (featureId AlphaFeatureId, isAlpha bool) {
-	alphaFeatures := mustUnmarshalAlphaFeatures()
-
-	for _, alphaF := range alphaFeatures {
+func IsFeatureKey(key string) (featureId FeatureId, isAlpha bool) {
+	for _, alphaF := range allFeatures {
 		if key == alphaF.Id {
-			featureId, isAlpha = AlphaFeatureId(alphaF.Id), true
+			featureId, isAlpha = FeatureId(alphaF.Id), true
 			break
 		}
 	}
@@ -55,6 +52,6 @@ func IsAlphaKey(key string) (featureId AlphaFeatureId, isAlpha bool) {
 }
 
 // GetEnableCommand provides a message for how to enable the alpha feature.
-func GetEnableCommand(key AlphaFeatureId) string {
+func GetEnableCommand(key FeatureId) string {
 	return fmt.Sprintf("azd config set %s on", strings.Join([]string{parentKey, string(key)}, "."))
 }

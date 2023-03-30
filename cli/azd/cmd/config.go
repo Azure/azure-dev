@@ -11,7 +11,7 @@ import (
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/alphafeatures"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -91,7 +91,7 @@ func configActions(root *actions.ActionDescriptor, rootOptions *internal.GlobalC
 
 	group.Add("list", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
-			Short: "Lists all configuration values",
+			Short: "Lists all configuration values.",
 			Long:  `Lists all configuration values in ` + userConfigPath + `.`,
 		},
 		ActionResolver: newConfigListAction,
@@ -102,7 +102,7 @@ func configActions(root *actions.ActionDescriptor, rootOptions *internal.GlobalC
 	group.Add("get", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
 			Use:   "get <path>",
-			Short: "Gets a configuration",
+			Short: "Gets a configuration.",
 			Long:  `Gets a configuration in ` + userConfigPath + `.`,
 			Args:  cobra.ExactArgs(1),
 		},
@@ -114,7 +114,7 @@ func configActions(root *actions.ActionDescriptor, rootOptions *internal.GlobalC
 	group.Add("set", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
 			Use:   "set <path> <value>",
-			Short: "Sets a configuration",
+			Short: "Sets a configuration.",
 			Long:  `Sets a configuration in ` + userConfigPath + `.`,
 			Args:  cobra.ExactArgs(2),
 			Example: `$ azd config set defaults.subscription <yourSubscriptionID>
@@ -126,7 +126,7 @@ $ azd config set defaults.location eastus`,
 	group.Add("unset", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
 			Use:     "unset <path>",
-			Short:   "Unsets a configuration",
+			Short:   "Unsets a configuration.",
 			Long:    `Removes a configuration in ` + userConfigPath + `.`,
 			Example: `$ azd config unset defaults.location`,
 			Args:    cobra.ExactArgs(1),
@@ -136,7 +136,7 @@ $ azd config set defaults.location eastus`,
 
 	group.Add("reset", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
-			Short: "Resets configuration to default",
+			Short: "Resets configuration to default.",
 			Long:  `Resets all configuration in ` + userConfigPath + ` to the default.`,
 		},
 		ActionResolver: newConfigResetAction,
@@ -347,7 +347,7 @@ func getCmdConfigHelpFooter(c *cobra.Command) string {
 }
 
 type configListAlphaAction struct {
-	alphaFeaturesManager *alphafeatures.AlphaFeatureManager
+	alphaFeaturesManager *alpha.FeatureManager
 	console              input.Console
 	args                 []string
 }
@@ -376,7 +376,7 @@ func (a *configListAlphaAction) Run(ctx context.Context) (*actions.ActionResult,
 }
 
 func newConfigListAlphaAction(
-	alphaFeaturesManager *alphafeatures.AlphaFeatureManager,
+	alphaFeaturesManager *alpha.FeatureManager,
 	console input.Console,
 	args []string) actions.Action {
 	return &configListAlphaAction{

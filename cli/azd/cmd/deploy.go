@@ -14,7 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
-	"github.com/azure/azure-dev/cli/azd/pkg/alphafeatures"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -103,7 +103,7 @@ type deployAction struct {
 	writer              io.Writer
 	console             input.Console
 	commandRunner       exec.CommandRunner
-	alphaFeatureManager *alphafeatures.AlphaFeatureManager
+	alphaFeatureManager *alpha.FeatureManager
 }
 
 func newDeployAction(
@@ -121,7 +121,7 @@ func newDeployAction(
 	console input.Console,
 	formatter output.Formatter,
 	writer io.Writer,
-	alphaFeatureManager *alphafeatures.AlphaFeatureManager,
+	alphaFeatureManager *alpha.FeatureManager,
 ) actions.Action {
 	return &deployAction{
 		flags:               flags,

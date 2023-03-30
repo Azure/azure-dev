@@ -1,5 +1,5 @@
 
-Lists all configuration values
+Lists all configuration values.
 
 Usage
   azd config list [flags]

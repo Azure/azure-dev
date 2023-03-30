@@ -11,7 +11,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/repository"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
-	"github.com/azure/azure-dev/cli/azd/pkg/alphafeatures"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -256,7 +256,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(project.NewServiceManager)
 	container.RegisterSingleton(repository.NewInitializer)
 	container.RegisterSingleton(config.NewUserConfigManager)
-	container.RegisterSingleton(alphafeatures.NewAlphaFeaturesManager)
+	container.RegisterSingleton(alpha.NewFeaturesManager)
 	container.RegisterSingleton(config.NewManager)
 	container.RegisterSingleton(templates.NewTemplateManager)
 	container.RegisterSingleton(auth.NewManager)

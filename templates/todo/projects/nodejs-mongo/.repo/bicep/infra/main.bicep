@@ -75,6 +75,19 @@ module api '../../../../../common/infra/bicep/app/api-appservice-node.bicep' = {
   }
 }
 
+// Set web app settings to point to the API
+module webSettings '../../../../../../common/infra/bicep/core/host/appservice-appsettings-append.bicep' = {
+  name: 'websettings'
+  scope: rg
+  params: {
+    name: !empty(webServiceName) ? webServiceName : '${abbrs.webSitesAppService}web-${resourceToken}'
+    appSettings: {
+      REACT_APP_API_BASE_URL: api.outputs.SERVICE_API_URI
+      REACT_APP_APPLICATIONINSIGHTS_CONNECTION_STRING: monitoring.outputs.applicationInsightsConnectionString
+    }
+  }
+}
+
 // Give the API access to KeyVault
 module apiKeyVaultAccess '../../../../../../common/infra/bicep/core/security/keyvault-access.bicep' = {
   name: 'api-keyvault-access'

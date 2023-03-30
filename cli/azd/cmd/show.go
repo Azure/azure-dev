@@ -25,17 +25,16 @@ import (
 
 type showFlags struct {
 	global *internal.GlobalCommandOptions
-	*envFlag
+	envFlag
 }
 
 func (s *showFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+	s.envFlag.Bind(local, global)
 	s.global = global
 }
 
 func newShowFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *showFlags {
-	flags := &showFlags{
-		envFlag: newEnvFlag(cmd, global),
-	}
+	flags := &showFlags{}
 	flags.Bind(cmd.Flags(), global)
 
 	return flags

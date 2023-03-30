@@ -12,14 +12,11 @@ import (
 )
 
 type infraCreateFlags struct {
-	*provisionFlags
+	provisionFlags
 }
 
 func newInfraCreateFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *infraCreateFlags {
-	flags := &infraCreateFlags{
-		provisionFlags: newProvisionFlags(cmd, global),
-	}
-
+	flags := &infraCreateFlags{}
 	flags.Bind(cmd.Flags(), global)
 
 	return flags
@@ -44,7 +41,7 @@ func newInfraCreateAction(
 	console input.Console,
 ) actions.Action {
 	// Required to ensure the sub action flags are bound correctly to the actions
-	provision.flags = createFlags.provisionFlags
+	provision.flags = &createFlags.provisionFlags
 
 	return &infraCreateAction{
 		infraCreate: provision,

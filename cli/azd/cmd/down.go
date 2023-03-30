@@ -23,32 +23,24 @@ type downFlags struct {
 	forceDelete bool
 	purgeDelete bool
 	global      *internal.GlobalCommandOptions
-	*envFlag
+	envFlag
 }
 
-func (df *downFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
-	existingForce := local.Lookup("force")
-	if existingForce == nil {
-		local.BoolVar(&df.forceDelete, "force", false, "Does not require confirmation before it deletes resources.")
-	}
-
-	existingPurge := local.Lookup("purge")
-	if existingPurge == nil {
-		local.BoolVar(
-			&df.purgeDelete,
-			"purge",
-			false,
-			//nolint:lll
-			"Does not require confirmation before it permanently deletes resources that are soft-deleted by default (for example, key vaults).",
-		)
-	}
+func (i *downFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+	local.BoolVar(&i.forceDelete, "force", false, "Does not require confirmation before it deletes resources.")
+	local.BoolVar(
+		&i.purgeDelete,
+		"purge",
+		false,
+		//nolint:lll
+		"Does not require confirmation before it permanently deletes resources that are soft-deleted by default (for example, key vaults).",
+	)
+	i.envFlag.Bind(local, global)
+	i.global = global
 }
 
 func newDownFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *downFlags {
-	flags := &downFlags{
-		global:  global,
-		envFlag: newEnvFlag(cmd, global),
-	}
+	flags := &downFlags{}
 	flags.Bind(cmd.Flags(), global)
 
 	return flags
@@ -94,17 +86,17 @@ func newDownAction(
 	}
 }
 
-func (da *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	infraManager, err := provisioning.NewManager(
 		ctx,
-		da.env,
-		da.projectConfig.Path,
-		da.projectConfig.Infra,
-		da.console.IsUnformatted(),
-		da.azCli,
-		da.console,
-		da.commandRunner,
-		da.accountManager,
+		a.env,
+		a.projectConfig.Path,
+		a.projectConfig.Infra,
+		a.console.IsUnformatted(),
+		a.azCli,
+		a.console,
+		a.commandRunner,
+		a.accountManager,
 	)
 
 	if err != nil {
@@ -116,7 +108,7 @@ func (da *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, fmt.Errorf("planning destroy: %w", err)
 	}
 
-	destroyOptions := provisioning.NewDestroyOptions(da.flags.forceDelete, da.flags.purgeDelete)
+	destroyOptions := provisioning.NewDestroyOptions(a.flags.forceDelete, a.flags.purgeDelete)
 	destroyResult, err := infraManager.Destroy(ctx, &deploymentPlan.Deployment, destroyOptions)
 	if err != nil {
 		return nil, fmt.Errorf("destroying infrastructure: %w", err)
@@ -125,10 +117,10 @@ func (da *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	// Remove any outputs from the template from the environment since destroying the infrastructure
 	// invalidated them all.
 	for outputName := range destroyResult.Outputs {
-		delete(da.env.Values, outputName)
+		delete(a.env.Values, outputName)
 	}
 
-	if err := da.env.Save(); err != nil {
+	if err := a.env.Save(); err != nil {
 		return nil, fmt.Errorf("saving environment: %w", err)
 	}
 

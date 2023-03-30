@@ -26,7 +26,7 @@ import (
 type pipelineConfigFlags struct {
 	pipeline.PipelineManagerArgs
 	global *internal.GlobalCommandOptions
-	*envFlag
+	envFlag
 }
 
 func (pc *pipelineConfigFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
@@ -53,6 +53,7 @@ func (pc *pipelineConfigFlags) Bind(local *pflag.FlagSet, global *internal.Globa
 	// there no customer input using --provider
 	local.StringVar(&pc.PipelineProvider, "provider", "",
 		"The pipeline provider to use (github for Github Actions and azdo for Azure Pipelines).")
+	pc.envFlag.Bind(local, global)
 	pc.global = global
 }
 
@@ -81,9 +82,7 @@ func pipelineActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 }
 
 func newPipelineConfigFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *pipelineConfigFlags {
-	flags := &pipelineConfigFlags{
-		envFlag: newEnvFlag(cmd, global),
-	}
+	flags := &pipelineConfigFlags{}
 	flags.Bind(cmd.Flags(), global)
 
 	return flags

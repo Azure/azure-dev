@@ -31,21 +31,28 @@ type provisionFlags struct {
 }
 
 func (i *provisionFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
-	existing := local.Lookup("no-progress")
-	if existing != nil {
-		return
-	}
+	i.bindNonCommon(local, global)
+	i.bindCommon(local, global)
+}
 
+func (i *provisionFlags) bindNonCommon(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	local.BoolVar(&i.noProgress, "no-progress", false, "Suppresses progress information.")
 	//deprecate:Flag hide --no-progress
 	_ = local.MarkHidden("no-progress")
+	i.global = global
+}
+
+func (i *provisionFlags) bindCommon(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+	i.envFlag = &envFlag{}
+	i.envFlag.Bind(local, global)
+}
+
+func (i *provisionFlags) setCommon(envFlag *envFlag) {
+	i.envFlag = envFlag
 }
 
 func newProvisionFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *provisionFlags {
-	flags := &provisionFlags{
-		global:  global,
-		envFlag: newEnvFlag(cmd, global),
-	}
+	flags := &provisionFlags{}
 	flags.Bind(cmd.Flags(), global)
 
 	return flags

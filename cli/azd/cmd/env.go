@@ -83,9 +83,7 @@ func envActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 }
 
 func newEnvSetFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *envSetFlags {
-	flags := &envSetFlags{
-		envFlag: newEnvFlag(cmd, global),
-	}
+	flags := &envSetFlags{}
 	flags.Bind(cmd.Flags(), global)
 
 	return flags
@@ -100,11 +98,12 @@ func newEnvSetCmd() *cobra.Command {
 }
 
 type envSetFlags struct {
-	*envFlag
+	envFlag
 	global *internal.GlobalCommandOptions
 }
 
 func (f *envSetFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+	f.envFlag.Bind(local, global)
 	f.global = global
 }
 
@@ -318,17 +317,16 @@ func (en *envNewAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 
 type envRefreshFlags struct {
 	global *internal.GlobalCommandOptions
-	*envFlag
+	envFlag
 }
 
 func (er *envRefreshFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+	er.envFlag.Bind(local, global)
 	er.global = global
 }
 
 func newEnvRefreshFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *envRefreshFlags {
-	flags := &envRefreshFlags{
-		envFlag: newEnvFlag(cmd, global),
-	}
+	flags := &envRefreshFlags{}
 	flags.Bind(cmd.Flags(), global)
 
 	return flags
@@ -441,9 +439,7 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 }
 
 func newEnvGetValuesFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *envGetValuesFlags {
-	flags := &envGetValuesFlags{
-		envFlag: newEnvFlag(cmd, global),
-	}
+	flags := &envGetValuesFlags{}
 	flags.Bind(cmd.Flags(), global)
 
 	return flags
@@ -457,11 +453,12 @@ func newEnvGetValuesCmd() *cobra.Command {
 }
 
 type envGetValuesFlags struct {
-	*envFlag
+	envFlag
 	global *internal.GlobalCommandOptions
 }
 
 func (eg *envGetValuesFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+	eg.envFlag.Bind(local, global)
 	eg.global = global
 }
 

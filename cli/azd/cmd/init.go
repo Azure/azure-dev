@@ -32,9 +32,7 @@ import (
 )
 
 func newInitFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *initFlags {
-	flags := &initFlags{
-		envFlag: newEnvFlag(cmd, global),
-	}
+	flags := &initFlags{}
 	flags.Bind(cmd.Flags(), global)
 
 	return flags
@@ -53,7 +51,7 @@ type initFlags struct {
 	subscription   string
 	location       string
 	global         *internal.GlobalCommandOptions
-	*envFlag
+	envFlag
 }
 
 func (i *initFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
@@ -73,6 +71,7 @@ func (i *initFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOpt
 		"Name or ID of an Azure subscription to use for the new environment",
 	)
 	local.StringVarP(&i.location, "location", "l", "", "Azure location for the new environment")
+	i.envFlag.Bind(local, global)
 
 	i.global = global
 }

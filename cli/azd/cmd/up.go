@@ -14,24 +14,24 @@ import (
 )
 
 type upFlags struct {
+	provisionFlags
+	deployFlags
 	global *internal.GlobalCommandOptions
-	*provisionFlags
-	*deployFlags
-	*envFlag
+	envFlag
 }
 
 func (u *upFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
-	u.provisionFlags.envFlag = u.envFlag
-	u.deployFlags.envFlag = u.envFlag
+	u.envFlag.Bind(local, global)
+	u.global = global
+
+	u.provisionFlags.bindNonCommon(local, global)
+	u.provisionFlags.setCommon(&u.envFlag)
+	u.deployFlags.bindNonCommon(local, global)
+	u.deployFlags.setCommon(&u.envFlag)
 }
 
 func newUpFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *upFlags {
-	flags := &upFlags{
-		global:         global,
-		envFlag:        newEnvFlag(cmd, global),
-		provisionFlags: newProvisionFlags(cmd, global),
-		deployFlags:    newDeployFlags(cmd, global),
-	}
+	flags := &upFlags{}
 	flags.Bind(cmd.Flags(), global)
 
 	return flags
@@ -88,7 +88,7 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, err
 	}
 
-	provisionAction.flags = u.flags.provisionFlags
+	provisionAction.flags = &u.flags.provisionFlags
 	provisionOptions := &middleware.Options{CommandPath: "infra create", Aliases: []string{"provision"}}
 	_, err = u.runner.RunChildAction(ctx, provisionOptions, provisionAction)
 	if err != nil {
@@ -103,7 +103,7 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, err
 	}
 
-	deployAction.flags = u.flags.deployFlags
+	deployAction.flags = &u.flags.deployFlags
 	// move flag to args to avoid extra deprecation flag warning
 	if deployAction.flags.serviceName != "" {
 		deployAction.args = []string{deployAction.flags.serviceName}

@@ -33,6 +33,13 @@ type deployFlags struct {
 }
 
 func (d *deployFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+	d.bindNonCommon(local, global)
+	d.bindCommon(local, global)
+}
+
+func (d *deployFlags) bindNonCommon(
+	local *pflag.FlagSet,
+	global *internal.GlobalCommandOptions) {
 	local.StringVar(
 		&d.serviceName,
 		"service",
@@ -42,13 +49,20 @@ func (d *deployFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 	)
 	//deprecate:flag hide --service
 	_ = local.MarkHidden("service")
+	d.global = global
+}
+
+func (d *deployFlags) bindCommon(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+	d.envFlag = &envFlag{}
+	d.envFlag.Bind(local, global)
+}
+
+func (d *deployFlags) setCommon(envFlag *envFlag) {
+	d.envFlag = envFlag
 }
 
 func newDeployFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *deployFlags {
-	flags := &deployFlags{
-		envFlag: newEnvFlag(cmd, global),
-		global:  global,
-	}
+	flags := &deployFlags{}
 	flags.Bind(cmd.Flags(), global)
 
 	return flags
@@ -134,7 +148,6 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 
 	packageAction, err := da.packageActionInitializer()
 	packageAction.args = da.args
-	packageAction.flags.serviceName = da.flags.serviceName
 	if err != nil {
 		return nil, err
 	}

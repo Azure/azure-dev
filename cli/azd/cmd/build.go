@@ -9,7 +9,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
@@ -21,17 +20,13 @@ import (
 
 type buildFlags struct {
 	*envFlag
-	*onlyFlag
-	serviceName string
-	global      *internal.GlobalCommandOptions
-	only        bool
+	global *internal.GlobalCommandOptions
+	only   bool
 }
 
 func newBuildFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *buildFlags {
 	flags := &buildFlags{
-		global:   global,
-		envFlag:  newEnvFlag(cmd, global),
-		onlyFlag: newOnlyFlag(cmd, global),
+		envFlag: &envFlag{},
 	}
 
 	flags.Bind(cmd.Flags(), global)
@@ -40,15 +35,8 @@ func newBuildFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *b
 }
 
 func (bf *buildFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
-	local.StringVar(
-		&bf.serviceName,
-		"service",
-		"",
-		//nolint:lll
-		"Restores a specific service (when the string is unspecified, all services that are listed in the "+azdcontext.ProjectFileName+" file are restored).",
-	)
-	//deprecate:flag hide --service
-	_ = local.MarkHidden("service")
+	bf.envFlag.Bind(local, global)
+	bf.global = global
 }
 
 func newBuildCmd() *cobra.Command {
@@ -110,7 +98,6 @@ func (ba *buildAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if !ba.flags.only {
 		restoreAction, err := ba.restoreActionInitializer()
 		restoreAction.args = ba.args
-		restoreAction.flags.serviceName = ba.flags.serviceName
 		if err != nil {
 			return nil, err
 		}
@@ -127,12 +114,12 @@ func (ba *buildAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		Title: "Building services (azd build)",
 	})
 
-	serviceNameWarningCheck(ba.console, ba.flags.serviceName, "build")
-
-	targetServiceName := ba.flags.serviceName
+	targetServiceName := ""
 	if len(ba.args) == 1 {
 		targetServiceName = ba.args[0]
 	}
+
+	serviceNameWarningCheck(ba.console, targetServiceName, "build")
 
 	if targetServiceName != "" && !ba.projectConfig.HasService(targetServiceName) {
 		return nil, fmt.Errorf("service name '%s' doesn't exist", targetServiceName)

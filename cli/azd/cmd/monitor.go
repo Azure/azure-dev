@@ -29,7 +29,7 @@ type monitorFlags struct {
 	monitorLogs     bool
 	monitorOverview bool
 	global          *internal.GlobalCommandOptions
-	*envFlag
+	envFlag
 }
 
 func (m *monitorFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
@@ -41,13 +41,12 @@ func (m *monitorFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommand
 	)
 	local.BoolVar(&m.monitorLogs, "logs", false, "Open a browser to Application Insights Logs.")
 	local.BoolVar(&m.monitorOverview, "overview", false, "Open a browser to Application Insights Overview Dashboard.")
+	m.envFlag.Bind(local, global)
 	m.global = global
 }
 
 func newMonitorFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *monitorFlags {
-	flags := &monitorFlags{
-		envFlag: newEnvFlag(cmd, global),
-	}
+	flags := &monitorFlags{}
 	flags.Bind(cmd.Flags(), global)
 
 	return flags

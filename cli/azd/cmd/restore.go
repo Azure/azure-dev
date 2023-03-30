@@ -27,12 +27,12 @@ import (
 type restoreFlags struct {
 	global      *internal.GlobalCommandOptions
 	serviceName string
-	*envFlag
+	envFlag
 }
 
-func (rf *restoreFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+func (r *restoreFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	local.StringVar(
-		&rf.serviceName,
+		&r.serviceName,
 		"service",
 		"",
 		//nolint:lll
@@ -43,11 +43,10 @@ func (rf *restoreFlags) Bind(local *pflag.FlagSet, global *internal.GlobalComman
 }
 
 func newRestoreFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *restoreFlags {
-	flags := &restoreFlags{
-		global:  global,
-		envFlag: newEnvFlag(cmd, global),
-	}
+	flags := &restoreFlags{}
 	flags.Bind(cmd.Flags(), global)
+	flags.envFlag.Bind(cmd.Flags(), global)
+	flags.global = global
 
 	return flags
 }

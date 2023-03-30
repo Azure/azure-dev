@@ -8,7 +8,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
@@ -19,15 +18,13 @@ import (
 )
 
 type packageFlags struct {
-	serviceName string
-	global      *internal.GlobalCommandOptions
+	global *internal.GlobalCommandOptions
 	*envFlag
 }
 
 func newPackageFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *packageFlags {
 	flags := &packageFlags{
-		global:  global,
-		envFlag: newEnvFlag(cmd, global),
+		envFlag: &envFlag{},
 	}
 
 	flags.Bind(cmd.Flags(), global)
@@ -36,15 +33,8 @@ func newPackageFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) 
 }
 
 func (pf *packageFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
-	local.StringVar(
-		&pf.serviceName,
-		"service",
-		"",
-		//nolint:lll
-		"Deploys a specific service (when the string is unspecified, all services that are listed in the "+azdcontext.ProjectFileName+" file are deployed).",
-	)
-	//deprecate:flag hide --service
-	_ = local.MarkHidden("service")
+	pf.envFlag.Bind(local, global)
+	pf.global = global
 }
 
 func newPackageCmd() *cobra.Command {
@@ -101,12 +91,12 @@ func (pa *packageAction) Run(ctx context.Context) (*actions.ActionResult, error)
 		Title: "Packaging services (azd package)",
 	})
 
-	targetServiceName := pa.flags.serviceName
+	targetServiceName := ""
 	if len(pa.args) == 1 {
 		targetServiceName = pa.args[0]
 	}
 
-	serviceNameWarningCheck(pa.console, pa.flags.serviceName, "package")
+	serviceNameWarningCheck(pa.console, targetServiceName, "package")
 
 	if targetServiceName != "" && !pa.projectConfig.HasService(targetServiceName) {
 		return nil, fmt.Errorf("service name '%s' doesn't exist", targetServiceName)

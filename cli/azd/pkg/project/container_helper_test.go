@@ -47,7 +47,7 @@ func Test_ContainerHelper_LocalImageTag(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			env := environment.EphemeralWithValues("dev", map[string]string{})
-			containerHelper := NewContainerHelper(env, clock.NewMock())
+			containerHelper := NewContainerHelper(env, clock.NewMock(), nil, nil)
 			serviceConfig.Docker = tt.dockerConfig
 
 			tag, err := containerHelper.LocalImageTag(*mockContext.Context, serviceConfig)
@@ -62,9 +62,11 @@ func Test_ContainerHelper_RemoteImageTag(t *testing.T) {
 	env := environment.EphemeralWithValues("dev", map[string]string{
 		environment.ContainerRegistryEndpointEnvVarName: "contoso.azurecr.io",
 	})
-	containerHelper := NewContainerHelper(env, clock.NewMock())
+	containerHelper := NewContainerHelper(env, clock.NewMock(), nil, nil)
 	serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
-	remoteTag, err := containerHelper.RemoteImageTag(*mockContext.Context, serviceConfig)
+	localTag, err := containerHelper.LocalImageTag(*mockContext.Context, serviceConfig)
+	require.NoError(t, err)
+	remoteTag, err := containerHelper.RemoteImageTag(*mockContext.Context, serviceConfig, localTag)
 	require.NoError(t, err)
 	require.Equal(t, "contoso.azurecr.io/test-app/api-dev:azd-deploy-0", remoteTag)
 }
@@ -74,9 +76,9 @@ func Test_ContainerHelper_RemoteImageTag_NoContainer_Registry(t *testing.T) {
 
 	env := environment.Ephemeral()
 	serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
-	containerHelper := NewContainerHelper(env, clock.NewMock())
+	containerHelper := NewContainerHelper(env, clock.NewMock(), nil, nil)
 
-	imageTag, err := containerHelper.RemoteImageTag(*mockContext.Context, serviceConfig)
+	imageTag, err := containerHelper.RemoteImageTag(*mockContext.Context, serviceConfig, "local_tag")
 	require.Error(t, err)
 	require.Empty(t, imageTag)
 }

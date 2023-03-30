@@ -480,14 +480,12 @@ func createServiceTarget(
 
 	managedClustersService := azcli.NewManagedClustersService(credentialProvider, mockContext.HttpClient)
 	containerRegistryService := azcli.NewContainerRegistryService(credentialProvider, mockContext.HttpClient, dockerCli)
-	containerHelper := NewContainerHelper(env, clock.NewMock())
+	containerHelper := NewContainerHelper(env, clock.NewMock(), containerRegistryService, dockerCli)
 
 	return NewAksTarget(
 		env,
 		managedClustersService,
-		containerRegistryService,
 		kubeCtl,
-		dockerCli,
 		containerHelper,
 	)
 }

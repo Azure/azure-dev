@@ -61,7 +61,7 @@ func (d *docker) Build(
 	dockerFilePath string,
 	platform string,
 	buildContext string,
-	name string,
+	tagName string,
 ) (string, error) {
 	if strings.TrimSpace(platform) == "" {
 		platform = "amd64"
@@ -73,8 +73,8 @@ func (d *docker) Build(
 		"--platform", platform,
 	}
 
-	if name != "" {
-		args = append(args, "-t", name)
+	if tagName != "" {
+		args = append(args, "-t", tagName)
 	}
 
 	args = append(args, buildContext)

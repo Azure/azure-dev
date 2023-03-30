@@ -5,7 +5,6 @@ package project
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -23,20 +22,17 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 )
 
 type containerAppTarget struct {
-	env                      *environment.Environment
-	cli                      azcli.AzCli
-	containerRegistryService azcli.ContainerRegistryService
-	docker                   docker.Docker
-	console                  input.Console
-	commandRunner            exec.CommandRunner
-	accountManager           account.Manager
-	serviceManager           ServiceManager
-	resourceManager          ResourceManager
-	containerHelper          *ContainerHelper
+	env             *environment.Environment
+	cli             azcli.AzCli
+	console         input.Console
+	commandRunner   exec.CommandRunner
+	accountManager  account.Manager
+	serviceManager  ServiceManager
+	resourceManager ResourceManager
+	containerHelper *ContainerHelper
 }
 
 // NewContainerAppTarget creates the container app service target.
@@ -45,9 +41,7 @@ type containerAppTarget struct {
 // can be provisioned during deployment.
 func NewContainerAppTarget(
 	env *environment.Environment,
-	containerRegistryService azcli.ContainerRegistryService,
 	azCli azcli.AzCli,
-	docker docker.Docker,
 	console input.Console,
 	commandRunner exec.CommandRunner,
 	accountManager account.Manager,
@@ -56,22 +50,20 @@ func NewContainerAppTarget(
 	containerHelper *ContainerHelper,
 ) ServiceTarget {
 	return &containerAppTarget{
-		env:                      env,
-		accountManager:           accountManager,
-		serviceManager:           serviceManager,
-		resourceManager:          resourceManager,
-		cli:                      azCli,
-		containerRegistryService: containerRegistryService,
-		docker:                   docker,
-		console:                  console,
-		commandRunner:            commandRunner,
-		containerHelper:          containerHelper,
+		env:             env,
+		accountManager:  accountManager,
+		serviceManager:  serviceManager,
+		resourceManager: resourceManager,
+		cli:             azCli,
+		console:         console,
+		commandRunner:   commandRunner,
+		containerHelper: containerHelper,
 	}
 }
 
 // Gets the required external tools
-func (at *containerAppTarget) RequiredExternalTools(context.Context) []tools.ExternalTool {
-	return []tools.ExternalTool{at.docker}
+func (at *containerAppTarget) RequiredExternalTools(ctx context.Context) []tools.ExternalTool {
+	return at.containerHelper.RequiredExternalTools(ctx)
 }
 
 // Initializes the Container App target
@@ -106,13 +98,6 @@ func (at *containerAppTarget) Deploy(
 				return
 			}
 
-			// Get ACR Login Server
-			loginServer, err := at.containerHelper.LoginServer(ctx)
-			if err != nil {
-				task.SetError(err)
-				return
-			}
-
 			// If the infra module has not been specified default to a module with the same name as the service.
 			if strings.TrimSpace(serviceConfig.Infra.Module) == "" {
 				serviceConfig.Infra.Module = serviceConfig.Module
@@ -121,48 +106,13 @@ func (at *containerAppTarget) Deploy(
 				serviceConfig.Infra.Module = serviceConfig.Name
 			}
 
-			packageDetails, ok := packageOutput.Details.(*dockerPackageResult)
-			if !ok {
-				task.SetError(errors.New("failed retrieving package result details"))
-				return
-			}
+			// Login, tag & push container image to ACR
+			containerDeployTask := at.containerHelper.Deploy(ctx, serviceConfig, packageOutput, targetResource)
+			syncProgress(task, containerDeployTask.Progress())
 
-			log.Printf("logging into registry %s", loginServer)
-			task.SetProgress(NewServiceProgress("Logging into container registry"))
-			err = at.containerRegistryService.LoginAcr(ctx, targetResource.SubscriptionId(), loginServer)
+			_, err := containerDeployTask.Await()
 			if err != nil {
-				task.SetError(fmt.Errorf("logging into registry '%s': %w", loginServer, err))
-				return
-			}
-
-			// Tag image
-			// Get remote tag from the container helper then call docker cli tag command
-			remoteTag, err := at.containerHelper.RemoteImageTag(ctx, serviceConfig)
-			if err != nil {
-				task.SetError(fmt.Errorf("getting remote image tag: %w", err))
-				return
-			}
-
-			task.SetProgress(NewServiceProgress("Tagging container image"))
-			if err := at.docker.Tag(ctx, serviceConfig.Path(), packageDetails.ImageTag, remoteTag); err != nil {
-				task.SetError(fmt.Errorf("tagging image: %w", err))
-				return
-			}
-
-			// Push image.
-			log.Printf("pushing %s to registry", remoteTag)
-			task.SetProgress(NewServiceProgress("Pushing container image"))
-			if err := at.docker.Push(ctx, serviceConfig.Path(), remoteTag); err != nil {
-				task.SetError(fmt.Errorf("pushing image: %w", err))
-				return
-			}
-
-			// Save the name of the image we pushed into the environment with a well known key.
-			log.Printf("writing image name to environment")
-			at.env.SetServiceProperty(serviceConfig.Name, "IMAGE_NAME", remoteTag)
-
-			if err := at.env.Save(); err != nil {
-				task.SetError(fmt.Errorf("saving image name to environment: %w", err))
+				task.SetError(err)
 				return
 			}
 

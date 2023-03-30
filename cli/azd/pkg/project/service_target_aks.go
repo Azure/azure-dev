@@ -15,7 +15,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/kubectl"
 )
 
@@ -54,36 +53,34 @@ type AksServiceOptions struct {
 }
 
 type aksTarget struct {
-	env                      *environment.Environment
-	managedClustersService   azcli.ManagedClustersService
-	containerRegistryService azcli.ContainerRegistryService
-	docker                   docker.Docker
-	kubectl                  kubectl.KubectlCli
-	containerHelper          *ContainerHelper
+	env                    *environment.Environment
+	managedClustersService azcli.ManagedClustersService
+	kubectl                kubectl.KubectlCli
+	containerHelper        *ContainerHelper
 }
 
 // Creates a new instance of the AKS service target
 func NewAksTarget(
 	env *environment.Environment,
 	managedClustersService azcli.ManagedClustersService,
-	containerRegistryService azcli.ContainerRegistryService,
 	kubectlCli kubectl.KubectlCli,
-	docker docker.Docker,
 	containerHelper *ContainerHelper,
 ) ServiceTarget {
 	return &aksTarget{
-		env:                      env,
-		managedClustersService:   managedClustersService,
-		containerRegistryService: containerRegistryService,
-		docker:                   docker,
-		kubectl:                  kubectlCli,
-		containerHelper:          containerHelper,
+		env:                    env,
+		managedClustersService: managedClustersService,
+		kubectl:                kubectlCli,
+		containerHelper:        containerHelper,
 	}
 }
 
 // Gets the required external tools to support the AKS service
-func (t *aksTarget) RequiredExternalTools(context.Context) []tools.ExternalTool {
-	return []tools.ExternalTool{t.docker, t.kubectl}
+func (t *aksTarget) RequiredExternalTools(ctx context.Context) []tools.ExternalTool {
+	allTools := []tools.ExternalTool{}
+	allTools = append(allTools, t.containerHelper.RequiredExternalTools(ctx)...)
+	allTools = append(allTools, t.kubectl)
+
+	return allTools
 }
 
 // Initializes the AKS service target
@@ -123,13 +120,6 @@ func (t *aksTarget) Deploy(
 
 			if packageOutput == nil {
 				task.SetError(errors.New("missing package output"))
-				return
-			}
-
-			// Get ACR Login Server
-			loginServer, err := t.containerHelper.LoginServer(ctx)
-			if err != nil {
-				task.SetError(err)
 				return
 			}
 
@@ -176,48 +166,13 @@ func (t *aksTarget) Deploy(
 				return
 			}
 
-			packageDetails, ok := packageOutput.Details.(*dockerPackageResult)
-			if !ok {
-				task.SetError(errors.New("failed retrieving package result details"))
-				return
-			}
+			// Login, tag & push container image to ACR
+			containerDeployTask := t.containerHelper.Deploy(ctx, serviceConfig, packageOutput, targetResource)
+			syncProgress(task, containerDeployTask.Progress())
 
-			log.Printf("logging into container registry '%s'\n", loginServer)
-			task.SetProgress(NewServiceProgress("Logging into container registry"))
-			err = t.containerRegistryService.LoginAcr(ctx, targetResource.SubscriptionId(), loginServer)
+			_, err = containerDeployTask.Await()
 			if err != nil {
-				task.SetError(fmt.Errorf("failed logging into registry '%s': %w", loginServer, err))
-				return
-			}
-
-			// Tag image
-			// Get remote tag from the container helper then call docker cli tag command
-			remoteTag, err := t.containerHelper.RemoteImageTag(ctx, serviceConfig)
-			if err != nil {
-				task.SetError(fmt.Errorf("getting remote image tag: %w", err))
-				return
-			}
-
-			task.SetProgress(NewServiceProgress("Tagging container image"))
-			if err := t.docker.Tag(ctx, serviceConfig.Path(), packageDetails.ImageTag, remoteTag); err != nil {
-				task.SetError(fmt.Errorf("tagging image: %w", err))
-				return
-			}
-
-			// Push image.
-			log.Printf("pushing %s to registry", remoteTag)
-			task.SetProgress(NewServiceProgress("Pushing container image"))
-			if err := t.docker.Push(ctx, serviceConfig.Path(), remoteTag); err != nil {
-				task.SetError(fmt.Errorf("failed pushing image: %w", err))
-				return
-			}
-
-			// Save the name of the image we pushed into the environment with a well known key.
-			log.Printf("writing image name to environment")
-			t.env.SetServiceProperty(serviceConfig.Name, "IMAGE_NAME", remoteTag)
-
-			if err := t.env.Save(); err != nil {
-				task.SetError(fmt.Errorf("saving image name to environment: %w", err))
+				task.SetError(err)
 				return
 			}
 

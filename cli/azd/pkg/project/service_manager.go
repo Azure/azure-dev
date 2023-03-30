@@ -20,7 +20,6 @@ const (
 	ServiceEventRestore    ext.Event = "restore"
 	ServiceEventBuild      ext.Event = "build"
 	ServiceEventPackage    ext.Event = "package"
-	ServiceEventPublish    ext.Event = "publish"
 	ServiceEventDeploy     ext.Event = "deploy"
 )
 
@@ -72,21 +71,14 @@ type ServiceManager interface {
 		buildOutput *ServiceBuildResult,
 	) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress]
 
-	// Publishes the generated artifacts to the Azure resource that will
+	// Deploys the generated artifacts to the Azure resource that will
 	// host the service application
 	// Common examples would be uploading zip archive using ZipDeploy deployment or
 	// pushing container images to a container registry.
-	Publish(
-		ctx context.Context,
-		serviceConfig *ServiceConfig,
-		packageOutput *ServicePackageResult,
-	) *async.TaskWithProgress[*ServicePublishResult, ServiceProgress]
-
-	// Deploy is a composite command that will perform the following operations in sequence.
-	// Restore, build, package & publish
 	Deploy(
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
+		packageOutput *ServicePackageResult,
 	) *async.TaskWithProgress[*ServiceDeployResult, ServiceProgress]
 
 	// Gets the framework service for the specified service config
@@ -94,7 +86,7 @@ type ServiceManager interface {
 	GetFrameworkService(ctx context.Context, serviceConfig *ServiceConfig) (FrameworkService, error)
 
 	// Gets the service target service for the specified service config
-	// The service target is responsible for packaging & publishing the service app code
+	// The service target is responsible for packaging & deploying the service app code
 	// to the destination Azure resource
 	GetServiceTarget(ctx context.Context, serviceConfig *ServiceConfig) (ServiceTarget, error)
 }
@@ -367,18 +359,18 @@ func (sm *serviceManager) Package(
 	})
 }
 
-// Publishes the generated artifacts to the Azure resource that will host the service application
+// Deploys the generated artifacts to the Azure resource that will host the service application
 // Common examples would be uploading zip archive using ZipDeploy deployment or
 // pushing container images to a container registry.
-func (sm *serviceManager) Publish(
+func (sm *serviceManager) Deploy(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	packageResult *ServicePackageResult,
-) *async.TaskWithProgress[*ServicePublishResult, ServiceProgress] {
-	return async.RunTaskWithProgress(func(task *async.TaskContextWithProgress[*ServicePublishResult, ServiceProgress]) {
-		cachedResult, ok := sm.getOperationResult(ctx, serviceConfig, string(ServiceEventPublish))
+) *async.TaskWithProgress[*ServiceDeployResult, ServiceProgress] {
+	return async.RunTaskWithProgress(func(task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress]) {
+		cachedResult, ok := sm.getOperationResult(ctx, serviceConfig, string(ServiceEventDeploy))
 		if ok && cachedResult != nil {
-			task.SetResult(cachedResult.(*ServicePublishResult))
+			task.SetResult(cachedResult.(*ServiceDeployResult))
 			return
 		}
 
@@ -401,18 +393,18 @@ func (sm *serviceManager) Publish(
 			return
 		}
 
-		publishResult, err := runCommand(
+		deployResult, err := runCommand(
 			ctx,
 			task,
-			ServiceEventPublish,
+			ServiceEventDeploy,
 			serviceConfig,
-			func() *async.TaskWithProgress[*ServicePublishResult, ServiceProgress] {
-				return serviceTarget.Publish(ctx, serviceConfig, packageResult, targetResource)
+			func() *async.TaskWithProgress[*ServiceDeployResult, ServiceProgress] {
+				return serviceTarget.Deploy(ctx, serviceConfig, packageResult, targetResource)
 			},
 		)
 
 		if err != nil {
-			task.SetError(fmt.Errorf("failed publishing service '%s': %w", serviceConfig.Name, err))
+			task.SetError(fmt.Errorf("failed deploying service '%s': %w", serviceConfig.Name, err))
 			return
 		}
 
@@ -420,74 +412,11 @@ func (sm *serviceManager) Publish(
 		// reverse proxies or DNS host names outside of the service target (and prefer that to be used instead).
 		overriddenEndpoints := sm.getOverriddenEndpoints(ctx, serviceConfig)
 		if len(overriddenEndpoints) > 0 {
-			publishResult.Endpoints = overriddenEndpoints
+			deployResult.Endpoints = overriddenEndpoints
 		}
 
-		task.SetResult(publishResult)
-		sm.setOperationResult(ctx, serviceConfig, string(ServiceEventPublish), publishResult)
-	})
-}
-
-// Deploy is a composite command that will perform the following operations in sequence.
-// Restore, build, package & publish
-func (sm *serviceManager) Deploy(
-	ctx context.Context,
-	serviceConfig *ServiceConfig,
-) *async.TaskWithProgress[*ServiceDeployResult, ServiceProgress] {
-	return async.RunTaskWithProgress(func(task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress]) {
-		var result *ServiceDeployResult
-
-		serviceEventArgs := ServiceLifecycleEventArgs{
-			Project: serviceConfig.Project,
-			Service: serviceConfig,
-		}
-
-		err := serviceConfig.Invoke(ctx, ServiceEventDeploy, serviceEventArgs, func() error {
-			restoreTask := sm.Restore(ctx, serviceConfig)
-			go syncProgress(task, restoreTask.Progress())
-			restoreResult, err := restoreTask.Await()
-			if err != nil {
-				return err
-			}
-
-			buildTask := sm.Build(ctx, serviceConfig, restoreResult)
-			go syncProgress(task, buildTask.Progress())
-			buildResult, err := buildTask.Await()
-			if err != nil {
-				return err
-			}
-
-			packageTask := sm.Package(ctx, serviceConfig, buildResult)
-			go syncProgress(task, packageTask.Progress())
-			packageResult, err := packageTask.Await()
-			if err != nil {
-				return err
-			}
-
-			publishTask := sm.Publish(ctx, serviceConfig, packageResult)
-			go syncProgress(task, publishTask.Progress())
-			publishResult, err := publishTask.Await()
-			if err != nil {
-				return err
-			}
-
-			result = &ServiceDeployResult{
-				Restore: restoreResult,
-				Build:   buildResult,
-				Package: packageResult,
-				Publish: publishResult,
-			}
-
-			return nil
-		})
-
-		if err != nil {
-			task.SetError(fmt.Errorf("failed deploying service '%s': %w", serviceConfig.Name, err))
-			return
-		}
-
-		task.SetProgress(NewServiceProgress("Deployment completed"))
-		task.SetResult(result)
+		task.SetResult(deployResult)
+		sm.setOperationResult(ctx, serviceConfig, string(ServiceEventDeploy), deployResult)
 	})
 }
 

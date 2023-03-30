@@ -108,14 +108,14 @@ func (t *aksTarget) Package(
 }
 
 // Deploys service container images to ACR and AKS resources to the AKS cluster
-func (t *aksTarget) Publish(
+func (t *aksTarget) Deploy(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
 	targetResource *environment.TargetResource,
-) *async.TaskWithProgress[*ServicePublishResult, ServiceProgress] {
+) *async.TaskWithProgress[*ServiceDeployResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServicePublishResult, ServiceProgress]) {
+		func(task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress]) {
 			if err := t.validateTargetResource(ctx, serviceConfig, targetResource); err != nil {
 				task.SetError(fmt.Errorf("validating target resource: %w", err))
 				return
@@ -315,7 +315,7 @@ func (t *aksTarget) Publish(
 				}
 			}
 
-			task.SetResult(&ServicePublishResult{
+			task.SetResult(&ServiceDeployResult{
 				Package: packageOutput,
 				TargetResourceId: azure.KubernetesServiceRID(
 					targetResource.SubscriptionId(),

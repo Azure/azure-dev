@@ -18,19 +18,25 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
 
 type restoreFlags struct {
+	all         bool
 	global      *internal.GlobalCommandOptions
 	serviceName string
 	envFlag
 }
 
 func (r *restoreFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+	local.BoolVar(
+		&r.all,
+		"all",
+		false,
+		"Restores all services that are listed in "+azdcontext.ProjectFileName,
+	)
 	local.StringVar(
 		&r.serviceName,
 		"service",
@@ -123,11 +129,21 @@ func (ra *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error)
 		targetServiceName = ra.args[0]
 	}
 
-	if targetServiceName != "" && !ra.projectConfig.HasService(targetServiceName) {
-		return nil, fmt.Errorf("service name '%s' doesn't exist", targetServiceName)
+	targetServiceName, err := getTargetServiceName(
+		ctx,
+		ra.projectManager,
+		ra.projectConfig,
+		string(project.ServiceEventRestore),
+		targetServiceName,
+		ra.flags.all,
+	)
+	if err != nil {
+		return nil, err
 	}
 
-	if err := ra.ensureTools(ctx, targetServiceName); err != nil {
+	if err := ra.projectManager.EnsureFrameworkTools(ctx, ra.projectConfig, func(svc *project.ServiceConfig) bool {
+		return targetServiceName == "" || svc.Name == targetServiceName
+	}); err != nil {
 		return nil, err
 	}
 
@@ -137,7 +153,7 @@ func (ra *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error)
 
 	restoreResults := map[string]*project.ServiceRestoreResult{}
 
-	for _, svc := range ra.projectConfig.Services {
+	for _, svc := range ra.projectConfig.GetServicesStable() {
 		stepMessage := fmt.Sprintf("Restoring service %s", svc.Name)
 		ra.console.ShowSpinner(ctx, stepMessage, input.Step)
 
@@ -152,7 +168,7 @@ func (ra *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error)
 		restoreTask := ra.serviceManager.Restore(ctx, svc)
 		go func() {
 			for restoreProgress := range restoreTask.Progress() {
-				progressMessage := fmt.Sprintf("Building service %s (%s)", svc.Name, restoreProgress.Message)
+				progressMessage := fmt.Sprintf("Restoring service %s (%s)", svc.Name, restoreProgress.Message)
 				ra.console.ShowSpinner(ctx, progressMessage, input.Step)
 			}
 		}()
@@ -183,30 +199,6 @@ func (ra *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error)
 			Header: "Your Azure app has been restored!",
 		},
 	}, nil
-}
-
-func (ra *restoreAction) ensureTools(ctx context.Context, targetServiceName string) error {
-	// Collect all the tools we will need to do the deployment and validate that
-	// the are installed. When a single project is being deployed, we need just
-	// the tools for that project, otherwise we need the tools from all project.
-	var allTools []tools.ExternalTool
-	for _, svc := range ra.projectConfig.Services {
-		if targetServiceName == "" || targetServiceName == svc.Name {
-			frameworkService, err := ra.serviceManager.GetFrameworkService(ctx, svc)
-			if err != nil {
-				return err
-			}
-
-			serviceTools := frameworkService.RequiredExternalTools(ctx)
-			allTools = append(allTools, serviceTools...)
-		}
-	}
-
-	if err := tools.EnsureInstalled(ctx, tools.Unique(allTools)...); err != nil {
-		return fmt.Errorf("failed getting required tools for project")
-	}
-
-	return nil
 }
 
 func getCmdRestoreHelpDescription(*cobra.Command) string {

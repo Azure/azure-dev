@@ -394,8 +394,8 @@ func getResourceGroupFollowUp(
 	return followUp
 }
 
-func serviceNameWarningCheck(console input.Console, serviceName string, commandName string) {
-	if serviceName == "" {
+func serviceNameWarningCheck(console input.Console, serviceNameFlag string, commandName string) {
+	if serviceNameFlag == "" {
 		return
 	}
 
@@ -404,4 +404,41 @@ func serviceNameWarningCheck(console input.Console, serviceName string, commandN
 		output.WithWarningFormat("WARNING: The `--service` flag is deprecated and will be removed in a future release."),
 	)
 	fmt.Fprintf(console.Handles().Stderr, "Next time use `azd %s <service>`.\n\n", commandName)
+}
+
+func getTargetServiceName(
+	ctx context.Context,
+	projectManager project.ProjectManager,
+	projectConfig *project.ProjectConfig,
+	commandName string,
+	targetServiceName string,
+	allFlagValue bool,
+) (string, error) {
+	if allFlagValue && targetServiceName != "" {
+		return "", fmt.Errorf("cannot specify both --all and <service>")
+	}
+
+	if !allFlagValue && targetServiceName == "" {
+		targetService, err := projectManager.DefaultServiceFromWd(ctx, projectConfig)
+		if errors.Is(err, project.ErrNoDefaultService) {
+			return "", fmt.Errorf(
+				//nolint:lll
+				"current working directory is not a project or service directory. Please specify a service name to %s a service, or specify --all to %s all services",
+				commandName,
+				commandName,
+			)
+		} else if err != nil {
+			return "", err
+		}
+
+		if targetService != nil {
+			targetServiceName = targetService.Name
+		}
+	}
+
+	if targetServiceName != "" && !projectConfig.HasService(targetServiceName) {
+		return "", fmt.Errorf("service name '%s' doesn't exist", targetServiceName)
+	}
+
+	return targetServiceName, nil
 }

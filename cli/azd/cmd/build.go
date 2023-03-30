@@ -9,17 +9,18 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
 
 type buildFlags struct {
 	*envFlag
+	all    bool
 	global *internal.GlobalCommandOptions
 	only   bool
 }
@@ -37,6 +38,13 @@ func newBuildFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *b
 func (bf *buildFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	bf.envFlag.Bind(local, global)
 	bf.global = global
+
+	local.BoolVar(
+		&bf.all,
+		"all",
+		false,
+		"Deploys all services that are listed in "+azdcontext.ProjectFileName,
+	)
 }
 
 func newBuildCmd() *cobra.Command {
@@ -97,6 +105,7 @@ type BuildResult struct {
 func (ba *buildAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if !ba.flags.only {
 		restoreAction, err := ba.restoreActionInitializer()
+		restoreAction.flags.all = ba.flags.all
 		restoreAction.args = ba.args
 		if err != nil {
 			return nil, err
@@ -119,13 +128,21 @@ func (ba *buildAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		targetServiceName = ba.args[0]
 	}
 
-	serviceNameWarningCheck(ba.console, targetServiceName, "build")
-
-	if targetServiceName != "" && !ba.projectConfig.HasService(targetServiceName) {
-		return nil, fmt.Errorf("service name '%s' doesn't exist", targetServiceName)
+	targetServiceName, err := getTargetServiceName(
+		ctx,
+		ba.projectManager,
+		ba.projectConfig,
+		string(project.ServiceEventBuild),
+		targetServiceName,
+		ba.flags.all,
+	)
+	if err != nil {
+		return nil, err
 	}
 
-	if err := ba.ensureTools(ctx, targetServiceName); err != nil {
+	if err := ba.projectManager.EnsureFrameworkTools(ctx, ba.projectConfig, func(svc *project.ServiceConfig) bool {
+		return targetServiceName == "" || svc.Name == targetServiceName
+	}); err != nil {
 		return nil, err
 	}
 
@@ -135,7 +152,7 @@ func (ba *buildAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	buildResults := map[string]*project.ServiceBuildResult{}
 
-	for _, svc := range ba.projectConfig.Services {
+	for _, svc := range ba.projectConfig.GetServicesStable() {
 		stepMessage := fmt.Sprintf("Building service %s", svc.Name)
 		ba.console.ShowSpinner(ctx, stepMessage, input.Step)
 
@@ -184,28 +201,4 @@ func (ba *buildAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			Header: "Your Azure app has been built!",
 		},
 	}, nil
-}
-
-func (b *buildAction) ensureTools(ctx context.Context, targetServiceName string) error {
-	// Collect all the tools we will need to do the deployment and validate that
-	// the are installed. When a single project is being deployed, we need just
-	// the tools for that project, otherwise we need the tools from all project.
-	var allTools []tools.ExternalTool
-	for _, svc := range b.projectConfig.Services {
-		if targetServiceName == "" || targetServiceName == svc.Name {
-			frameworkService, err := b.serviceManager.GetFrameworkService(ctx, svc)
-			if err != nil {
-				return err
-			}
-
-			serviceTools := frameworkService.RequiredExternalTools(ctx)
-			allTools = append(allTools, serviceTools...)
-		}
-	}
-
-	if err := tools.EnsureInstalled(ctx, tools.Unique(allTools)...); err != nil {
-		return fmt.Errorf("failed getting required tools for project")
-	}
-
-	return nil
 }

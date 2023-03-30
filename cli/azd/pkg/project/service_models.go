@@ -19,7 +19,7 @@ type ServiceLifecycleEventArgs struct {
 }
 
 // ServiceProgress represents an incremental progress message
-// during a service operation such as restore, build, package, publish & deploy
+// during a service operation such as restore, build, package & deploy
 type ServiceProgress struct {
 	Message   string
 	Timestamp time.Time
@@ -81,8 +81,8 @@ func (spr *ServicePackageResult) MarshalJSON() ([]byte, error) {
 	return json.Marshal(spr)
 }
 
-// ServicePublishResult is the result of a successful Publish operation
-type ServicePublishResult struct {
+// ServiceDeployResult is the result of a successful Deploy operation
+type ServiceDeployResult struct {
 	Package *ServicePackageResult `json:"package"`
 	// Related Azure resource ID
 	TargetResourceId string            `json:"targetResourceId"`
@@ -92,7 +92,7 @@ type ServicePublishResult struct {
 }
 
 // Supports rendering messages for UX items
-func (spr *ServicePublishResult) ToString(currentIndentation string) string {
+func (spr *ServiceDeployResult) ToString(currentIndentation string) string {
 	uxItem, ok := spr.Details.(ux.UxItem)
 	if ok {
 		return uxItem.ToString(currentIndentation)
@@ -107,15 +107,6 @@ func (spr *ServicePublishResult) ToString(currentIndentation string) string {
 	return builder.String()
 }
 
-func (spr *ServicePublishResult) MarshalJSON() ([]byte, error) {
+func (spr *ServiceDeployResult) MarshalJSON() ([]byte, error) {
 	return json.Marshal(spr)
-}
-
-// ServiceDeployResult is the result of a successful Deploy operation
-type ServiceDeployResult struct {
-	Restore *ServiceRestoreResult `json:"restore"`
-	Build   *ServiceBuildResult   `json:"build"`
-	Package *ServicePackageResult `json:"package"`
-	Publish *ServicePublishResult `json:"publish"`
-	Details interface{}           `json:"details"`
 }

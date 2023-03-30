@@ -83,7 +83,7 @@ type FrameworkService interface {
 		restoreOutput *ServiceRestoreResult,
 	) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress]
 
-	// Packages the source suitable for publishing
+	// Packages the source suitable for deployment
 	// This may optionally perform a rebuild internally depending on the language/framework requirements
 	Package(
 		ctx context.Context,

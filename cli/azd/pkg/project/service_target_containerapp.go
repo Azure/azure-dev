@@ -93,14 +93,14 @@ func (at *containerAppTarget) Package(
 }
 
 // Deploys service container images to ACR and provisions the container app service.
-func (at *containerAppTarget) Publish(
+func (at *containerAppTarget) Deploy(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
 	targetResource *environment.TargetResource,
-) *async.TaskWithProgress[*ServicePublishResult, ServiceProgress] {
+) *async.TaskWithProgress[*ServiceDeployResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServicePublishResult, ServiceProgress]) {
+		func(task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress]) {
 			if err := at.validateTargetResource(ctx, serviceConfig, targetResource); err != nil {
 				task.SetError(fmt.Errorf("validating target resource: %w", err))
 				return
@@ -248,7 +248,7 @@ func (at *containerAppTarget) Publish(
 				return
 			}
 
-			task.SetResult(&ServicePublishResult{
+			task.SetResult(&ServiceDeployResult{
 				Package: packageOutput,
 				TargetResourceId: azure.ContainerAppRID(
 					targetResource.SubscriptionId(),

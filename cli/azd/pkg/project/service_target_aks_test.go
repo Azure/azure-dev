@@ -61,7 +61,7 @@ func Test_Required_Tools(t *testing.T) {
 	require.Implements(t, new(kubectl.KubectlCli), requiredTools[1])
 }
 
-func Test_Package_Publish_HappyPath(t *testing.T) {
+func Test_Package_Deploy_HappyPath(t *testing.T) {
 	tempDir := t.TempDir()
 	ostest.Chdir(t, tempDir)
 
@@ -95,20 +95,20 @@ func Test_Package_Publish_HappyPath(t *testing.T) {
 	require.IsType(t, new(dockerPackageResult), packageResult.Details)
 
 	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "CLUSTER_NAME", string(infra.AzureResourceTypeManagedCluster))
-	publishTask := serviceTarget.Publish(*mockContext.Context, serviceConfig, packageResult, scope)
-	logProgress(publishTask)
-	publishResult, err := publishTask.Await()
+	deployTask := serviceTarget.Deploy(*mockContext.Context, serviceConfig, packageResult, scope)
+	logProgress(deployTask)
+	deployResult, err := deployTask.Await()
 
 	require.NoError(t, err)
-	require.NotNil(t, publishResult)
-	require.Equal(t, AksTarget, publishResult.Kind)
-	require.IsType(t, new(kubectl.Deployment), publishResult.Details)
-	require.Greater(t, len(publishResult.Endpoints), 0)
+	require.NotNil(t, deployResult)
+	require.Equal(t, AksTarget, deployResult.Kind)
+	require.IsType(t, new(kubectl.Deployment), deployResult.Details)
+	require.Greater(t, len(deployResult.Endpoints), 0)
 	// New env variable is created
 	require.Equal(t, "REGISTRY.azurecr.io/test-app/api-test:azd-deploy-0", env.Values["SERVICE_API_IMAGE_NAME"])
 }
 
-func Test_Publish_No_Cluster_Name(t *testing.T) {
+func Test_Deploy_No_Cluster_Name(t *testing.T) {
 	tempDir := t.TempDir()
 	ostest.Chdir(t, tempDir)
 
@@ -131,16 +131,16 @@ func Test_Publish_No_Cluster_Name(t *testing.T) {
 		},
 	}
 
-	publishTask := serviceTarget.Publish(*mockContext.Context, serviceConfig, packageOutput, scope)
-	logProgress(publishTask)
+	deployTask := serviceTarget.Deploy(*mockContext.Context, serviceConfig, packageOutput, scope)
+	logProgress(deployTask)
 
-	publishResult, err := publishTask.Await()
+	deployResult, err := deployTask.Await()
 	require.Error(t, err)
 	require.ErrorContains(t, err, "could not determine AKS cluster")
-	require.Nil(t, publishResult)
+	require.Nil(t, deployResult)
 }
 
-func Test_Publish_No_Admin_Credentials(t *testing.T) {
+func Test_Deploy_No_Admin_Credentials(t *testing.T) {
 	tempDir := t.TempDir()
 	ostest.Chdir(t, tempDir)
 
@@ -165,13 +165,13 @@ func Test_Publish_No_Admin_Credentials(t *testing.T) {
 		},
 	}
 
-	publishTask := serviceTarget.Publish(*mockContext.Context, serviceConfig, packageOutput, scope)
-	logProgress(publishTask)
-	publishResult, err := publishTask.Await()
+	deployTask := serviceTarget.Deploy(*mockContext.Context, serviceConfig, packageOutput, scope)
+	logProgress(deployTask)
+	deployResult, err := deployTask.Await()
 
 	require.Error(t, err)
 	require.ErrorContains(t, err, "failed retrieving cluster admin credentials")
-	require.Nil(t, publishResult)
+	require.Nil(t, deployResult)
 }
 
 func setupK8sManifests(t *testing.T, serviceConfig *ServiceConfig) error {

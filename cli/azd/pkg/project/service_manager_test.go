@@ -29,7 +29,7 @@ const (
 	frameworkBuildCalled       contextKey = "frameworkBuildCalled"
 	frameworkPackageCalled     contextKey = "frameworkPackageCalled"
 	serviceTargetPackageCalled contextKey = "serviceTargetPackageCalled"
-	serviceTargetPublishCalled contextKey = "serviceTargetPublishCalled"
+	serviceTargetDeployCalled  contextKey = "serviceTargetDeployCalled"
 )
 
 func createServiceManager(mockContext *mocks.MockContext, env *environment.Environment) ServiceManager {
@@ -169,42 +169,6 @@ func Test_ServiceManager_Package(t *testing.T) {
 	require.True(t, raisedPostPackageEvent)
 }
 
-func Test_ServiceManager_Publish(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
-	setupMocksForServiceManager(mockContext)
-	env := environment.EphemeralWithValues("test", map[string]string{
-		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
-	})
-	sm := createServiceManager(mockContext, env)
-	serviceConfig := createTestServiceConfig("./src/api", ServiceTargetFake, ServiceLanguageFake)
-
-	raisedPrePublishEvent := false
-	raisedPostPublishEvent := false
-
-	_ = serviceConfig.AddHandler("prepublish", func(ctx context.Context, args ServiceLifecycleEventArgs) error {
-		raisedPrePublishEvent = true
-		return nil
-	})
-
-	_ = serviceConfig.AddHandler("postpublish", func(ctx context.Context, args ServiceLifecycleEventArgs) error {
-		raisedPostPublishEvent = true
-		return nil
-	})
-
-	publishCalled := convert.RefOf(false)
-	ctx := context.WithValue(*mockContext.Context, serviceTargetPublishCalled, publishCalled)
-
-	publishTask := sm.Publish(ctx, serviceConfig, nil)
-	logProgress(publishTask)
-
-	result, err := publishTask.Await()
-	require.NoError(t, err)
-	require.NotNil(t, result)
-	require.True(t, *publishCalled)
-	require.True(t, raisedPrePublishEvent)
-	require.True(t, raisedPostPublishEvent)
-}
-
 func Test_ServiceManager_Deploy(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	setupMocksForServiceManager(mockContext)
@@ -227,27 +191,16 @@ func Test_ServiceManager_Deploy(t *testing.T) {
 		return nil
 	})
 
-	restoreCalled := convert.RefOf(false)
-	buildCalled := convert.RefOf(false)
-	fakeFrameworkPackageCalled := convert.RefOf(false)
-	fakeServiceTargetPackageCalled := convert.RefOf(false)
-	publishCalled := convert.RefOf(false)
-	ctx := context.WithValue(*mockContext.Context, frameworkRestoreCalled, restoreCalled)
-	ctx = context.WithValue(ctx, frameworkBuildCalled, buildCalled)
-	ctx = context.WithValue(ctx, frameworkPackageCalled, fakeFrameworkPackageCalled)
-	ctx = context.WithValue(ctx, serviceTargetPackageCalled, fakeServiceTargetPackageCalled)
-	ctx = context.WithValue(ctx, serviceTargetPublishCalled, publishCalled)
+	deployCalled := convert.RefOf(false)
+	ctx := context.WithValue(*mockContext.Context, serviceTargetDeployCalled, deployCalled)
 
-	deployTask := sm.Deploy(ctx, serviceConfig)
+	deployTask := sm.Deploy(ctx, serviceConfig, nil)
 	logProgress(deployTask)
 
 	result, err := deployTask.Await()
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	require.True(t, *restoreCalled)
-	require.True(t, *buildCalled)
-	require.True(t, *fakeFrameworkPackageCalled)
-	require.True(t, *fakeServiceTargetPackageCalled)
+	require.True(t, *deployCalled)
 	require.True(t, raisedPreDeployEvent)
 	require.True(t, raisedPostDeployEvent)
 }
@@ -334,7 +287,7 @@ func setupMocksForServiceManager(mockContext *mocks.MockContext) {
 	})
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "fake-service-target publish")
+		return strings.Contains(command, "fake-service-target deploy")
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		return exec.NewRunResult(0, "", ""), nil
 	})
@@ -510,26 +463,26 @@ func (st *fakeServiceTarget) Package(
 	})
 }
 
-func (st *fakeServiceTarget) Publish(
+func (st *fakeServiceTarget) Deploy(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
 	targetResource *environment.TargetResource,
-) *async.TaskWithProgress[*ServicePublishResult, ServiceProgress] {
-	publishCalled, ok := ctx.Value(serviceTargetPublishCalled).(*bool)
+) *async.TaskWithProgress[*ServiceDeployResult, ServiceProgress] {
+	deployCalled, ok := ctx.Value(serviceTargetDeployCalled).(*bool)
 	if ok {
-		*publishCalled = true
+		*deployCalled = true
 	}
 
-	return async.RunTaskWithProgress(func(task *async.TaskContextWithProgress[*ServicePublishResult, ServiceProgress]) {
-		runArgs := exec.NewRunArgs("fake-service-target", "publish")
+	return async.RunTaskWithProgress(func(task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress]) {
+		runArgs := exec.NewRunArgs("fake-service-target", "deploy")
 		result, err := st.commandRunner.Run(ctx, runArgs)
 		if err != nil {
 			task.SetError(err)
 			return
 		}
 
-		task.SetResult(&ServicePublishResult{
+		task.SetResult(&ServiceDeployResult{
 			Package: packageOutput,
 			Details: result,
 		})

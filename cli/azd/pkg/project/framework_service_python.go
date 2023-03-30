@@ -104,15 +104,15 @@ func (pp *pythonProject) Build(
 ) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServiceBuildResult, ServiceProgress]) {
-			publishSource := serviceConfig.Path()
+			buildSource := serviceConfig.Path()
 
 			if serviceConfig.OutputPath != "" {
-				publishSource = filepath.Join(publishSource, serviceConfig.OutputPath)
+				buildSource = filepath.Join(buildSource, serviceConfig.OutputPath)
 			}
 
 			task.SetResult(&ServiceBuildResult{
 				Restore:         restoreOutput,
-				BuildOutputPath: publishSource,
+				BuildOutputPath: buildSource,
 			})
 		},
 	)
@@ -125,21 +125,21 @@ func (pp *pythonProject) Package(
 ) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
-			publishRoot, err := os.MkdirTemp("", "azd")
+			packageRoot, err := os.MkdirTemp("", "azd")
 			if err != nil {
 				task.SetError(fmt.Errorf("creating package directory for %s: %w", serviceConfig.Name, err))
 				return
 			}
 
-			publishSource := buildOutput.BuildOutputPath
-			if publishSource == "" {
-				publishSource = filepath.Join(serviceConfig.Path(), serviceConfig.OutputPath)
+			packageSource := buildOutput.BuildOutputPath
+			if packageSource == "" {
+				packageSource = filepath.Join(serviceConfig.Path(), serviceConfig.OutputPath)
 			}
 
 			task.SetProgress(NewServiceProgress("Copying deployment package"))
 			if err := buildForZip(
-				publishSource,
-				publishRoot,
+				packageSource,
+				packageRoot,
 				buildForZipOptions{
 					excludeConditions: []excludeDirEntryCondition{
 						excludeVirtualEnv,
@@ -152,7 +152,7 @@ func (pp *pythonProject) Package(
 
 			task.SetResult(&ServicePackageResult{
 				Build:       buildOutput,
-				PackagePath: publishRoot,
+				PackagePath: packageRoot,
 			})
 		},
 	)

@@ -20,7 +20,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -28,6 +27,7 @@ import (
 
 type deployFlags struct {
 	serviceName string
+	all         bool
 	global      *internal.GlobalCommandOptions
 	*envFlag
 }
@@ -55,6 +55,13 @@ func (d *deployFlags) bindNonCommon(
 func (d *deployFlags) bindCommon(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	d.envFlag = &envFlag{}
 	d.envFlag.Bind(local, global)
+
+	local.BoolVar(
+		&d.all,
+		"all",
+		false,
+		"Deploys all services that are listed in "+azdcontext.ProjectFileName,
+	)
 }
 
 func (d *deployFlags) setCommon(envFlag *envFlag) {
@@ -136,8 +143,8 @@ func newDeployAction(
 }
 
 type DeploymentResult struct {
-	Timestamp time.Time                                `json:"timestamp"`
-	Services  map[string]*project.ServicePublishResult `json:"services"`
+	Timestamp time.Time                               `json:"timestamp"`
+	Services  map[string]*project.ServiceDeployResult `json:"services"`
 }
 
 func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
@@ -147,7 +154,8 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	}
 
 	packageAction, err := da.packageActionInitializer()
-	packageAction.args = da.args
+	packageAction.flags.all = da.flags.all
+	packageAction.args = []string{targetServiceName}
 	if err != nil {
 		return nil, err
 	}
@@ -165,11 +173,21 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 
 	serviceNameWarningCheck(da.console, da.flags.serviceName, "deploy")
 
-	if targetServiceName != "" && !da.projectConfig.HasService(targetServiceName) {
-		return nil, fmt.Errorf("service name '%s' doesn't exist", targetServiceName)
+	targetServiceName, err = getTargetServiceName(
+		ctx,
+		da.projectManager,
+		da.projectConfig,
+		string(project.ServiceEventDeploy),
+		targetServiceName,
+		da.flags.all,
+	)
+	if err != nil {
+		return nil, err
 	}
 
-	if err := da.ensureTools(ctx, targetServiceName); err != nil {
+	if err := da.projectManager.EnsureServiceTargetTools(ctx, da.projectConfig, func(svc *project.ServiceConfig) bool {
+		return targetServiceName == "" || svc.Name == targetServiceName
+	}); err != nil {
 		return nil, err
 	}
 
@@ -177,9 +195,9 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		return nil, err
 	}
 
-	publishResults := map[string]*project.ServicePublishResult{}
+	deployResults := map[string]*project.ServiceDeployResult{}
 
-	for _, svc := range da.projectConfig.Services {
+	for _, svc := range da.projectConfig.GetServicesStable() {
 		stepMessage := fmt.Sprintf("Deploying service %s", svc.Name)
 		da.console.ShowSpinner(ctx, stepMessage, input.Step)
 
@@ -191,31 +209,31 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 			continue
 		}
 
-		publishTask := da.serviceManager.Publish(ctx, svc, nil)
+		deployTask := da.serviceManager.Deploy(ctx, svc, nil)
 		go func() {
-			for publishProgress := range publishTask.Progress() {
-				progressMessage := fmt.Sprintf("Deploying service %s (%s)", svc.Name, publishProgress.Message)
+			for deployProgress := range deployTask.Progress() {
+				progressMessage := fmt.Sprintf("Deploying service %s (%s)", svc.Name, deployProgress.Message)
 				da.console.ShowSpinner(ctx, progressMessage, input.Step)
 			}
 		}()
 
-		publishResult, err := publishTask.Await()
+		deployResult, err := deployTask.Await()
 		if err != nil {
 			da.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 			return nil, err
 		}
 
 		da.console.StopSpinner(ctx, stepMessage, input.StepDone)
-		publishResults[svc.Name] = publishResult
+		deployResults[svc.Name] = deployResult
 
 		// report build outputs
-		da.console.MessageUxItem(ctx, publishResult)
+		da.console.MessageUxItem(ctx, deployResult)
 	}
 
 	if da.formatter.Kind() == output.JsonFormat {
 		deployResult := DeploymentResult{
 			Timestamp: time.Now(),
-			Services:  publishResults,
+			Services:  deployResults,
 		}
 
 		if fmtErr := da.formatter.Format(deployResult, da.writer, nil); fmtErr != nil {
@@ -231,34 +249,13 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	}, nil
 }
 
-func (d *deployAction) ensureTools(ctx context.Context, targetServiceName string) error {
-	// Collect all the tools we will need to do the deployment and validate that
-	// the are installed. When a single project is being deployed, we need just
-	// the tools for that project, otherwise we need the tools from all project.
-	var allTools []tools.ExternalTool
-	for _, svc := range d.projectConfig.Services {
-		if targetServiceName == "" || targetServiceName == svc.Name {
-			serviceTarget, err := d.serviceManager.GetServiceTarget(ctx, svc)
-			if err != nil {
-				return err
-			}
-
-			serviceTools := serviceTarget.RequiredExternalTools(ctx)
-			allTools = append(allTools, serviceTools...)
-		}
-	}
-
-	if err := tools.EnsureInstalled(ctx, tools.Unique(allTools)...); err != nil {
-		return fmt.Errorf("failed getting required tools for project, %w", err)
-	}
-
-	return nil
-}
-
 func getCmdDeployHelpDescription(*cobra.Command) string {
 	return generateCmdHelpDescription("Deploy application to Azure.", []string{
-		formatHelpNote(fmt.Sprintf("When %s is not set, all services in the 'azure.yaml'"+
-			" file (found in the root of your project) are deployed.", output.WithHighLightFormat("<service>"))),
+		formatHelpNote(
+			"By default, deploys all services listed in 'azure.yaml' in the current directory," +
+				" or the service described in the project that matches the current directory."),
+		formatHelpNote(
+			fmt.Sprintf("When %s is set, only the specific service is deployed.", output.WithHighLightFormat("<service>"))),
 		formatHelpNote("After the deployment is complete, the endpoint is printed. To start the service, select" +
 			" the endpoint or paste it in a browser."),
 	})
@@ -266,9 +263,8 @@ func getCmdDeployHelpDescription(*cobra.Command) string {
 
 func getCmdDeployHelpFooter(*cobra.Command) string {
 	return generateCmdHelpSamplesBlock(map[string]string{
-		"Reviews all code and services in your azure.yaml file and deploys to Azure.": output.WithHighLightFormat(
-			"azd deploy"),
-		"Deploy all application API services to Azure.": output.WithHighLightFormat("azd deploy api"),
-		"Deploy all application web services to Azure.": output.WithHighLightFormat("azd deploy web"),
+		"Deploy all services in the current project to Azure.": output.WithHighLightFormat("azd deploy --all"),
+		"Deploy the service named 'api' to Azure.":             output.WithHighLightFormat("azd deploy api"),
+		"Deploy the service named 'web' to Azure.":             output.WithHighLightFormat("azd deploy web"),
 	})
 }

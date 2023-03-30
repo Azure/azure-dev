@@ -8,16 +8,17 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
 
 type packageFlags struct {
+	all    bool
 	global *internal.GlobalCommandOptions
 	*envFlag
 }
@@ -35,6 +36,13 @@ func newPackageFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) 
 func (pf *packageFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	pf.envFlag.Bind(local, global)
 	pf.global = global
+
+	local.BoolVar(
+		&pf.all,
+		"all",
+		false,
+		"Deploys all services that are listed in "+azdcontext.ProjectFileName,
+	)
 }
 
 func newPackageCmd() *cobra.Command {
@@ -96,23 +104,27 @@ func (pa *packageAction) Run(ctx context.Context) (*actions.ActionResult, error)
 		targetServiceName = pa.args[0]
 	}
 
-	serviceNameWarningCheck(pa.console, targetServiceName, "package")
-
-	if targetServiceName != "" && !pa.projectConfig.HasService(targetServiceName) {
-		return nil, fmt.Errorf("service name '%s' doesn't exist", targetServiceName)
-	}
-
-	if err := pa.projectManager.Initialize(ctx, pa.projectConfig); err != nil {
+	targetServiceName, err := getTargetServiceName(
+		ctx,
+		pa.projectManager,
+		pa.projectConfig,
+		string(project.ServiceEventPackage),
+		targetServiceName,
+		pa.flags.all,
+	)
+	if err != nil {
 		return nil, err
 	}
 
-	if err := pa.ensureTools(ctx, targetServiceName); err != nil {
+	if err := pa.projectManager.EnsureAllTools(ctx, pa.projectConfig, func(svc *project.ServiceConfig) bool {
+		return targetServiceName == "" || svc.Name == targetServiceName
+	}); err != nil {
 		return nil, err
 	}
 
 	packageResults := map[string]*project.ServicePackageResult{}
 
-	for _, svc := range pa.projectConfig.Services {
+	for _, svc := range pa.projectConfig.GetServicesStable() {
 		stepMessage := fmt.Sprintf("Packaging service %s", svc.Name)
 		pa.console.ShowSpinner(ctx, stepMessage, input.Step)
 
@@ -161,27 +173,4 @@ func (pa *packageAction) Run(ctx context.Context) (*actions.ActionResult, error)
 			Header: "Your Azure app has been packaged!",
 		},
 	}, nil
-}
-
-func (b *packageAction) ensureTools(ctx context.Context, targetServiceName string) error {
-	// Collect all the tools we will need to do the deployment and validate that
-	// the are installed. When a single project is being deployed, we need just
-	// the tools for that project, otherwise we need the tools from all project.
-	var allTools []tools.ExternalTool
-	for _, svc := range b.projectConfig.Services {
-		if targetServiceName == "" || targetServiceName == svc.Name {
-			serviceTools, err := b.serviceManager.GetRequiredTools(ctx, svc)
-			if err != nil {
-				return err
-			}
-
-			allTools = append(allTools, serviceTools...)
-		}
-	}
-
-	if err := tools.EnsureInstalled(ctx, tools.Unique(allTools)...); err != nil {
-		return fmt.Errorf("failed getting required tools for project")
-	}
-
-	return nil
 }

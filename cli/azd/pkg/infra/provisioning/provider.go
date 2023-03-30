@@ -144,12 +144,11 @@ func NewProvider(
 		infraOptions.Provider = Bicep
 	}
 
-	if alphafeatures.IsAlphaKey(string(infraOptions.Provider)) {
-		alphaKey := alphafeatures.AlphaFeatureId(infraOptions.Provider)
-		if !alphaFeatureManager.IsEnabled(alphaKey) {
+	if alphaFeatureId, isAlphaFeature := alphafeatures.IsAlphaKey(string(infraOptions.Provider)); isAlphaFeature {
+		if !alphaFeatureManager.IsEnabled(alphaFeatureId) {
 			return nil, fmt.Errorf("provider '%s' is alpha feature and it is not enabled. Run `%s` to enable it.",
 				infraOptions.Provider,
-				alphafeatures.GetEnableCommand(alphaKey),
+				alphafeatures.GetEnableCommand(alphaFeatureId),
 			)
 		}
 	}

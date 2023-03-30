@@ -9,6 +9,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 )
 
+// AlphaFeatureManager provides operations for handling features within the application which are in alpha mode.
 type AlphaFeatureManager struct {
 	configManager   config.UserConfigManager
 	userConfigCache config.Config
@@ -16,12 +17,15 @@ type AlphaFeatureManager struct {
 	alphaFeaturesResolver func() []AlphaFeature
 }
 
+// NewAlphaFeaturesManager creates the alpha features manager from the user configuration
 func NewAlphaFeaturesManager(configManager config.UserConfigManager) *AlphaFeatureManager {
 	return &AlphaFeatureManager{
 		configManager: configManager,
 	}
 }
 
+// ListFeatures pulls the list of features in alpha mode available within the application and displays its current state
+// which is `on` or `off`.
 func (m *AlphaFeatureManager) ListFeatures() (map[string]AlphaFeature, error) {
 	result := make(map[string]AlphaFeature)
 
@@ -61,6 +65,7 @@ func (m *AlphaFeatureManager) initConfigCache() {
 	}
 }
 
+// IsEnabled search and find out if the AlphaFeatureId is currently enabled
 func (m *AlphaFeatureManager) IsEnabled(featureId AlphaFeatureId) bool {
 	// guard from using the alphaFeatureManager from multiple routines. Only the first one will create the cache.
 	withSync.Do(m.initConfigCache)

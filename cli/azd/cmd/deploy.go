@@ -154,11 +154,12 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	}
 
 	packageAction, err := da.packageActionInitializer()
-	packageAction.flags.all = da.flags.all
-	packageAction.args = []string{targetServiceName}
 	if err != nil {
 		return nil, err
 	}
+
+	packageAction.flags.all = da.flags.all
+	packageAction.args = []string{targetServiceName}
 
 	packageOptions := &middleware.Options{CommandPath: "package"}
 	_, err = da.middlewareRunner.RunChildAction(ctx, packageOptions, packageAction)

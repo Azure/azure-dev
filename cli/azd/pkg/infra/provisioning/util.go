@@ -8,8 +8,6 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
-	"github.com/azure/azure-dev/cli/azd/internal/telemetry/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 )
@@ -24,7 +22,6 @@ func EnsureSubscriptionAndLocation(ctx context.Context, env *environment.Environ
 		}
 
 		env.SetSubscriptionId(subscriptionId)
-		telemetry.SetGlobalAttributes(fields.SubscriptionIdKey.String(env.GetSubscriptionId()))
 
 		if err := env.Save(); err != nil {
 			return err

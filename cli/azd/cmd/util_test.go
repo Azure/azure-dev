@@ -125,7 +125,7 @@ func Test_createAndInitEnvironment(t *testing.T) {
 		tempDir := t.TempDir()
 		azdContext := azdcontext.NewAzdContextWithDirectory(tempDir)
 		invalidEnvName := "*!33"
-		_, err := createAndInitEnvironment(
+		_, err := createEnvironment(
 			*mockContext.Context,
 			environmentSpec{
 				environmentName: invalidEnvName,
@@ -148,7 +148,7 @@ func Test_createAndInitEnvironment(t *testing.T) {
 		require.NoError(t, err)
 		azdContext := azdcontext.NewAzdContextWithDirectory(tempDir)
 
-		_, err = createAndInitEnvironment(
+		_, err = createEnvironment(
 			*mockContext.Context,
 			environmentSpec{
 				environmentName: validName,

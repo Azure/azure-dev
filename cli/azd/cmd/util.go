@@ -11,8 +11,6 @@ import (
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
-	"github.com/azure/azure-dev/cli/azd/internal/telemetry/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -63,7 +61,7 @@ type environmentSpec struct {
 
 // createEnvironment creates a new named environment. If an environment with this name already
 // exists, and error is returned.
-func createAndInitEnvironment(
+func createEnvironment(
 	ctx context.Context,
 	envSpec environmentSpec,
 	azdCtx *azdcontext.AzdContext,
@@ -93,7 +91,6 @@ func createAndInitEnvironment(
 
 	if envSpec.subscription != "" {
 		env.SetSubscriptionId(envSpec.subscription)
-		telemetry.SetGlobalAttributes(fields.SubscriptionIdKey.String(envSpec.subscription))
 	}
 
 	if envSpec.location != "" {
@@ -119,7 +116,7 @@ func loadEnvironmentIfAvailable() (*environment.Environment, error) {
 	return environment.GetEnvironment(azdCtx, defaultEnv)
 }
 
-func loadOrInitEnvironment(
+func loadOrCreateEnvironment(
 	ctx context.Context,
 	environmentName string,
 	azdCtx *azdcontext.AzdContext,
@@ -198,10 +195,6 @@ func loadOrInitEnvironment(
 		if err := azdCtx.SetDefaultEnvironmentName(env.GetEnvName()); err != nil {
 			return nil, fmt.Errorf("saving default environment: %w", err)
 		}
-	}
-
-	if env.GetSubscriptionId() != "" {
-		telemetry.SetGlobalAttributes(fields.SubscriptionIdKey.String(env.GetSubscriptionId()))
 	}
 
 	return env, nil

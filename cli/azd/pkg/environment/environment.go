@@ -159,6 +159,10 @@ func (e *Environment) Reload() error {
 		telemetry.SetUsageAttributes(fields.StringHashed(fields.EnvNameKey, e.GetEnvName()))
 	}
 
+	if e.GetSubscriptionId() != "" {
+		telemetry.SetGlobalAttributes(fields.SubscriptionIdKey.String(e.GetSubscriptionId()))
+	}
+
 	return nil
 }
 

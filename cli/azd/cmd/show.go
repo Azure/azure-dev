@@ -108,9 +108,9 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		res.Services[name] = showSvc
 	}
 
+	// Add information about the target of each service, if we can determine it (if the infrastructure has
+	// not been deployed, for example, we'll just not include target information)
 	if subId := s.env.GetSubscriptionId(); subId != "" {
-		// Add information about the target of each service, if we can determine it (if the infrastructure has
-		// not been deployed, for example, we'll just not include target information)
 		resourceManager := infra.NewAzureResourceManager(s.azCli)
 		envName := s.env.GetEnvName()
 
@@ -133,10 +133,13 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 				}
 			}
 		} else {
-			log.Printf("ignoring error determining resource group for environment %s, resource ids will not be available: %v",
+			log.Printf(
+				"ignoring error determining resource group for environment %s, resource ids will not be available: %v",
 				s.env.GetEnvName(),
 				err)
 		}
+	} else {
+		log.Printf("provision has not been run, resource ids will not be available")
 	}
 
 	return nil, s.formatter.Format(res, s.writer, nil)

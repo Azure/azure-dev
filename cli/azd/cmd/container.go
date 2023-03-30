@@ -176,7 +176,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			environmentName := envFlags.environmentName
 			var err error
 
-			env, err := loadOrInitEnvironment(ctx, environmentName, azdContext, console)
+			env, err := loadOrCreateEnvironment(ctx, environmentName, azdContext, console)
 			if err != nil {
 				return nil, fmt.Errorf("loading environment: %w", err)
 			}

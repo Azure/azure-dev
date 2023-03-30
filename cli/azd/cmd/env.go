@@ -290,7 +290,7 @@ func (en *envNewAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		location:        en.flags.location,
 	}
 
-	env, err := createAndInitEnvironment(ctx, envSpec, en.azdCtx, en.console)
+	env, err := createEnvironment(ctx, envSpec, en.azdCtx, en.console)
 	if err != nil {
 		return nil, fmt.Errorf("creating new environment: %w", err)
 	}

@@ -12,6 +12,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/stringutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
@@ -314,7 +315,7 @@ func (rm *AzureResourceManager) appendDeploymentResourcesRecursive(
 			// Operations w/o target data can't be resolved. Ignoring them
 			continue
 		}
-		if *operation.Properties.TargetResource.ResourceType == string(AzureResourceTypeDeployment) {
+		if stringutil.PtrValueEquals(operation.Properties.TargetResource.ResourceType, string(AzureResourceTypeDeployment)) {
 			// go to inner levels to resolve resources
 			err := rm.appendDeploymentResourcesRecursive(
 				ctx,
@@ -334,7 +335,7 @@ func (rm *AzureResourceManager) appendDeploymentResourcesRecursive(
 			// We ignore the resource if we can't know when it was created
 			continue
 		}
-		if strings.TrimSpace(*operation.Properties.TargetResource.ResourceType) == "" {
+		if stringutil.IsNilOrEmpty(operation.Properties.TargetResource.ResourceType) {
 			// The resource type is required to resolve the name of the resource.
 			// If the dep-op is missing this, we can't resolve it.
 			continue

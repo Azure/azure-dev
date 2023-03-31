@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -25,14 +26,15 @@ import (
 )
 
 type containerAppTarget struct {
-	env             *environment.Environment
-	cli             azcli.AzCli
-	console         input.Console
-	commandRunner   exec.CommandRunner
-	accountManager  account.Manager
-	serviceManager  ServiceManager
-	resourceManager ResourceManager
-	containerHelper *ContainerHelper
+	env                 *environment.Environment
+	cli                 azcli.AzCli
+	console             input.Console
+	commandRunner       exec.CommandRunner
+	accountManager      account.Manager
+	serviceManager      ServiceManager
+	resourceManager     ResourceManager
+	containerHelper     *ContainerHelper
+	alphaFeatureManager *alpha.FeatureManager
 }
 
 // NewContainerAppTarget creates the container app service target.
@@ -48,16 +50,18 @@ func NewContainerAppTarget(
 	serviceManager ServiceManager,
 	resourceManager ResourceManager,
 	containerHelper *ContainerHelper,
+	alphaFeatureManager *alpha.FeatureManager,
 ) ServiceTarget {
 	return &containerAppTarget{
-		env:             env,
-		accountManager:  accountManager,
-		serviceManager:  serviceManager,
-		resourceManager: resourceManager,
-		cli:             azCli,
-		console:         console,
-		commandRunner:   commandRunner,
-		containerHelper: containerHelper,
+		env:                 env,
+		accountManager:      accountManager,
+		serviceManager:      serviceManager,
+		resourceManager:     resourceManager,
+		cli:                 azCli,
+		console:             console,
+		commandRunner:       commandRunner,
+		containerHelper:     containerHelper,
+		alphaFeatureManager: alphaFeatureManager,
 	}
 }
 
@@ -128,6 +132,7 @@ func (at *containerAppTarget) Deploy(
 				}, // make provision output silence
 				at.commandRunner,
 				at.accountManager,
+				at.alphaFeatureManager,
 			)
 			if err != nil {
 				task.SetError(fmt.Errorf("creating provisioning manager: %w", err))

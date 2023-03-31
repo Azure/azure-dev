@@ -38,6 +38,7 @@ func TestManagerPlan(t *testing.T) {
 		mockContext.Console,
 		mockContext.CommandRunner,
 		&mockaccount.MockAccountManager{},
+		mockContext.AlphaFeaturesManager,
 	)
 
 	deploymentPlan, err := mgr.Plan(*mockContext.Context)
@@ -66,6 +67,7 @@ func TestManagerGetState(t *testing.T) {
 		mockContext.Console,
 		mockContext.CommandRunner,
 		&mockaccount.MockAccountManager{},
+		mockContext.AlphaFeaturesManager,
 	)
 
 	provisioningScope := infra.NewSubscriptionScope(
@@ -99,6 +101,7 @@ func TestManagerDeploy(t *testing.T) {
 		mockContext.Console,
 		mockContext.CommandRunner,
 		&mockaccount.MockAccountManager{},
+		mockContext.AlphaFeaturesManager,
 	)
 
 	deploymentPlan, _ := mgr.Plan(*mockContext.Context)
@@ -133,6 +136,7 @@ func TestManagerDestroyWithPositiveConfirmation(t *testing.T) {
 		mockContext.Console,
 		mockContext.CommandRunner,
 		&mockaccount.MockAccountManager{},
+		mockContext.AlphaFeaturesManager,
 	)
 
 	deploymentPlan, _ := mgr.Plan(*mockContext.Context)
@@ -168,6 +172,7 @@ func TestManagerDestroyWithNegativeConfirmation(t *testing.T) {
 		mockContext.Console,
 		mockContext.CommandRunner,
 		&mockaccount.MockAccountManager{},
+		mockContext.AlphaFeaturesManager,
 	)
 
 	deploymentPlan, _ := mgr.Plan(*mockContext.Context)

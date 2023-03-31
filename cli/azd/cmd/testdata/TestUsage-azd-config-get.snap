@@ -1,5 +1,5 @@
 
-Gets a configuration
+Gets a configuration.
 
 Usage
   azd config get <path> [flags]

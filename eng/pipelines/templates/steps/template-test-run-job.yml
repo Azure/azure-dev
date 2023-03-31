@@ -99,6 +99,9 @@ steps:
                 --client-secret "$(arm-client-secret)" \
                 --tenant-id "$(arm-tenant-id)"
 
+              # enable alpha features
+              azd config set alpha.all on
+
               # Install these packages for playwright tests. Otherwise, it will cause a error of playwright missing libraries 
               sudo add-apt-repository ppa:gstreamer-developers/ppa
               sudo apt-get update

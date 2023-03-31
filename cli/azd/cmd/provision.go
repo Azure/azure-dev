@@ -8,6 +8,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -74,18 +75,19 @@ Depending on what Azure resources are created, running this command might take a
 }
 
 type provisionAction struct {
-	flags           *provisionFlags
-	accountManager  account.Manager
-	projectManager  project.ProjectManager
-	resourceManager project.ResourceManager
-	azdCtx          *azdcontext.AzdContext
-	azCli           azcli.AzCli
-	env             *environment.Environment
-	formatter       output.Formatter
-	projectConfig   *project.ProjectConfig
-	writer          io.Writer
-	console         input.Console
-	commandRunner   exec.CommandRunner
+	flags               *provisionFlags
+	accountManager      account.Manager
+	projectManager      project.ProjectManager
+	resourceManager     project.ResourceManager
+	azdCtx              *azdcontext.AzdContext
+	azCli               azcli.AzCli
+	env                 *environment.Environment
+	formatter           output.Formatter
+	projectConfig       *project.ProjectConfig
+	writer              io.Writer
+	console             input.Console
+	commandRunner       exec.CommandRunner
+	alphaFeatureManager *alpha.FeatureManager
 }
 
 func newProvisionAction(
@@ -101,20 +103,22 @@ func newProvisionAction(
 	formatter output.Formatter,
 	writer io.Writer,
 	commandRunner exec.CommandRunner,
+	alphaFeatureManager *alpha.FeatureManager,
 ) actions.Action {
 	return &provisionAction{
-		flags:           flags,
-		accountManager:  accountManager,
-		projectManager:  projectManager,
-		resourceManager: resourceManager,
-		azdCtx:          azdCtx,
-		azCli:           azCli,
-		env:             env,
-		formatter:       formatter,
-		projectConfig:   projectConfig,
-		writer:          writer,
-		console:         console,
-		commandRunner:   commandRunner,
+		flags:               flags,
+		accountManager:      accountManager,
+		projectManager:      projectManager,
+		resourceManager:     resourceManager,
+		azdCtx:              azdCtx,
+		azCli:               azCli,
+		env:                 env,
+		formatter:           formatter,
+		projectConfig:       projectConfig,
+		writer:              writer,
+		console:             console,
+		commandRunner:       commandRunner,
+		alphaFeatureManager: alphaFeatureManager,
 	}
 }
 
@@ -146,6 +150,7 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		p.console,
 		p.commandRunner,
 		p.accountManager,
+		p.alphaFeatureManager,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("creating provisioning manager: %w", err)

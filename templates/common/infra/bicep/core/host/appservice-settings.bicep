@@ -13,7 +13,7 @@ param enableOryxBuild bool = true
 // Sets SCM_DO_BUILD_DURING_DEPLOYMENT
 param scmDoBuildDuringDeployment bool = false
 
-var orxyEnabled = !contains(appService, 'linux') ? false : enableOryxBuild
+var orxyEnabled = contains(appService.kind, 'linux') ? enableOryxBuild : false
 
 resource appService 'Microsoft.Web/sites@2022-03-01' existing = {
   name: name

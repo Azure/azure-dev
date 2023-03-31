@@ -127,7 +127,7 @@ func (pp *pythonProject) Package(
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
 			packageRoot := filepath.Join(serviceConfig.Path(), ".azdout")
-			err := os.Mkdir(packageRoot, osutil.PermissionDirectory)
+			err := os.MkdirAll(packageRoot, osutil.PermissionDirectory)
 			if err != nil {
 				task.SetError(fmt.Errorf("creating package directory for %s: %w", serviceConfig.Name, err))
 				return

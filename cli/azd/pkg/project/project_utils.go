@@ -51,7 +51,9 @@ type buildForZipOptions struct {
 func buildForZip(src, dst string, options buildForZipOptions) error {
 
 	// these exclude conditions applies to all projects
-	options.excludeConditions = append(options.excludeConditions, globalExcludeAzdFolder)
+	options.excludeConditions = append(options.excludeConditions,
+		globalExcludeAzdFolder,
+		globalExcludeAzdOutFolder)
 
 	return copy.Copy(src, dst, copy.Options{
 		Skip: func(srcInfo os.FileInfo, src, dest string) (bool, error) {
@@ -67,4 +69,8 @@ func buildForZip(src, dst string, options buildForZipOptions) error {
 
 func globalExcludeAzdFolder(path string, file os.FileInfo) bool {
 	return file.IsDir() && file.Name() == ".azure"
+}
+
+func globalExcludeAzdOutFolder(path string, file os.FileInfo) bool {
+	return file.IsDir() && file.Name() == ".azdout"
 }

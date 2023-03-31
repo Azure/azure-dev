@@ -356,7 +356,7 @@ func (i *Initializer) writeAzdAssets(ctx context.Context, azdCtx *azdcontext.Azd
 
 		// match on entire line
 		// gitignore files can't have comments inline
-		if azdcontext.EnvironmentDirectoryName == text {
+		if text == azdcontext.EnvironmentDirectoryName || text == ".azdout" {
 			writeGitignoreFile = false
 			break
 		}
@@ -374,6 +374,7 @@ func (i *Initializer) writeAzdAssets(ctx context.Context, azdCtx *azdcontext.Azd
 		}
 
 		appendContents := azdcontext.EnvironmentDirectoryName + newLine
+		appendContents += ".azdout" + newLine
 		if !hasTrailingNewLine {
 			appendContents = newLine + appendContents
 		}

@@ -52,7 +52,7 @@ func (at *staticWebAppTarget) Initialize(ctx context.Context, serviceConfig *Ser
 	return nil
 }
 
-// Sets the build output that will be consumed for the publish operation
+// Sets the build output that will be consumed for the deploy operation
 func (at *staticWebAppTarget) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
@@ -73,15 +73,15 @@ func (at *staticWebAppTarget) Package(
 	)
 }
 
-// Publishes the packaged build output using the SWA CLI
-func (at *staticWebAppTarget) Publish(
+// Deploys the packaged build output using the SWA CLI
+func (at *staticWebAppTarget) Deploy(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
 	targetResource *environment.TargetResource,
-) *async.TaskWithProgress[*ServicePublishResult, ServiceProgress] {
+) *async.TaskWithProgress[*ServiceDeployResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServicePublishResult, ServiceProgress]) {
+		func(task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress]) {
 			if err := at.validateTargetResource(ctx, serviceConfig, targetResource); err != nil {
 				task.SetError(fmt.Errorf("validating target resource: %w", err))
 				return
@@ -100,8 +100,8 @@ func (at *staticWebAppTarget) Publish(
 				return
 			}
 
-			// SWA performs a zip & deploy of the specified output folder and publishes it to the configured environment
-			task.SetProgress(NewServiceProgress("Publishing deployment artifacts"))
+			// SWA performs a zip & deploy of the specified output folder and deploys it to the configured environment
+			task.SetProgress(NewServiceProgress("Uploading deployment artifacts"))
 			res, err := at.swa.Deploy(ctx,
 				serviceConfig.Project.Path,
 				at.env.GetTenantId(),
@@ -131,7 +131,7 @@ func (at *staticWebAppTarget) Publish(
 				task.SetError(err)
 			}
 
-			sdr := NewServicePublishResult(
+			sdr := NewServiceDeployResult(
 				azure.StaticWebAppRID(
 					targetResource.SubscriptionId(),
 					targetResource.ResourceGroupName(),

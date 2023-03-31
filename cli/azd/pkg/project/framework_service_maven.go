@@ -33,6 +33,16 @@ func NewMavenProject(env *environment.Environment, mavenCli maven.MavenCli, java
 	}
 }
 
+func (m *mavenProject) Requirements() FrameworkRequirements {
+	return FrameworkRequirements{
+		// Maven will automatically restore & build the project if needed
+		Package: FrameworkPackageRequirements{
+			RequireRestore: false,
+			RequireBuild:   false,
+		},
+	}
+}
+
 // Gets the required external tools for the project
 func (m *mavenProject) RequiredExternalTools(context.Context) []tools.ExternalTool {
 	return []tools.ExternalTool{
@@ -94,7 +104,7 @@ func (m *mavenProject) Package(
 ) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
-			publishRoot, err := os.MkdirTemp("", "azd")
+			packageRoot, err := os.MkdirTemp("", "azd")
 			if err != nil {
 				task.SetError(fmt.Errorf("creating staging directory: %w", err))
 				return
@@ -106,17 +116,20 @@ func (m *mavenProject) Package(
 				return
 			}
 
-			publishSource := serviceConfig.Path()
-
-			if serviceConfig.OutputPath != "" {
-				publishSource = filepath.Join(publishSource, serviceConfig.OutputPath)
-			} else {
-				publishSource = filepath.Join(publishSource, "target")
+			packageSource := buildOutput.BuildOutputPath
+			if packageSource == "" {
+				packageSource = serviceConfig.Path()
 			}
 
-			entries, err := os.ReadDir(publishSource)
+			if serviceConfig.OutputPath != "" {
+				packageSource = filepath.Join(packageSource, serviceConfig.OutputPath)
+			} else {
+				packageSource = filepath.Join(packageSource, "target")
+			}
+
+			entries, err := os.ReadDir(packageSource)
 			if err != nil {
-				task.SetError(fmt.Errorf("discovering JAR files in %s: %w", publishSource, err))
+				task.SetError(fmt.Errorf("discovering JAR files in %s: %w", packageSource, err))
 				return
 			}
 
@@ -132,21 +145,21 @@ func (m *mavenProject) Package(
 			}
 
 			if len(matches) == 0 {
-				task.SetError(fmt.Errorf("no JAR files found in %s", publishSource))
+				task.SetError(fmt.Errorf("no JAR files found in %s", packageSource))
 				return
 			}
 			if len(matches) > 1 {
 				names := strings.Join(matches, ", ")
 				task.SetError(fmt.Errorf(
 					"multiple JAR files found in %s: %s. Only a single runnable JAR file is expected",
-					publishSource,
+					packageSource,
 					names,
 				))
 				return
 			}
 
 			task.SetProgress(NewServiceProgress("Copying deployment package"))
-			err = copy.Copy(filepath.Join(publishSource, matches[0]), filepath.Join(publishRoot, AppServiceJavaPackageName))
+			err = copy.Copy(filepath.Join(packageSource, matches[0]), filepath.Join(packageRoot, AppServiceJavaPackageName))
 			if err != nil {
 				task.SetError(fmt.Errorf("copying to staging directory failed: %w", err))
 				return
@@ -154,7 +167,7 @@ func (m *mavenProject) Package(
 
 			task.SetResult(&ServicePackageResult{
 				Build:       buildOutput,
-				PackagePath: publishRoot,
+				PackagePath: packageRoot,
 			})
 		},
 	)

@@ -40,7 +40,7 @@ func Test_CLI_Restore_Err_WorkingDirectory(t *testing.T) {
 	require.NoError(t, err)
 	cli.WorkingDirectory = nonProjectServiceDir
 
-	result, err := cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "restore")
+	result, err := cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "restore")
 	require.Error(t, err, "restore should fail in non-project and non-service directory")
 	require.Contains(t, result.Stdout, "current working directory")
 
@@ -55,7 +55,7 @@ func Test_CLI_Restore_Err_WorkingDirectory(t *testing.T) {
 	require.NoError(t, err)
 	cli.WorkingDirectory = subServiceDir
 
-	result, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "restore")
+	result, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "restore")
 	require.Error(t, err, "restore should fail in non-project and non-service directory")
 	require.Contains(t, result.Stdout, "current working directory")
 
@@ -68,7 +68,7 @@ func Test_CLI_Restore_Err_WorkingDirectory(t *testing.T) {
 	t.Logf("EMPTY_DIR: %s", dir)
 	cli.WorkingDirectory = dir
 
-	result, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "restore")
+	result, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "restore")
 	require.Error(t, err)
 	require.Contains(t, result.Stderr, azdcontext.ErrNoProject.Error())
 }
@@ -96,7 +96,7 @@ func Test_CLI_Restore_InServiceDirectory(t *testing.T) {
 	csharp.RequireNotRestored(t, dir)
 
 	cli.WorkingDirectory = filepath.Join(dir, csharp.projectDir)
-	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "restore")
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "restore")
 	require.NoError(t, err)
 
 	csharp.RequireRestored(t, dir)
@@ -124,7 +124,7 @@ func Test_CLI_Restore_UsingServiceName(t *testing.T) {
 	csharp := restoreAppServices["csharp"]
 	csharp.RequireNotRestored(t, dir)
 
-	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "restore", csharp.name)
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "restore", csharp.name)
 	require.NoError(t, err)
 
 	csharp.RequireRestored(t, dir)
@@ -153,7 +153,7 @@ func Test_CLI_RestoreAll_InProjectDir(t *testing.T) {
 		service.RequireNotRestored(t, dir)
 	}
 
-	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "restore")
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "restore")
 	require.NoError(t, err)
 
 	for _, service := range restoreAppServices {
@@ -189,7 +189,7 @@ func Test_CLI_RestoreAll_UsingFlags(t *testing.T) {
 	err = os.MkdirAll(nonProjectServiceDir, osutil.PermissionDirectory)
 	require.NoError(t, err)
 	cli.WorkingDirectory = nonProjectServiceDir
-	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "restore", "--all")
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "restore", "--all")
 	require.NoError(t, err)
 
 	for _, service := range restoreAppServices {

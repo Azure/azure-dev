@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"time"
@@ -178,6 +179,12 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 
 	serviceNameWarningCheck(da.console, da.flags.serviceName, "deploy")
 
+	if da.env.GetSubscriptionId() == "" {
+		return nil, errors.New(
+			"infrastructure has not been provisioned. Please run `azd provision`",
+		)
+	}
+
 	targetServiceName, err = getTargetServiceName(
 		ctx,
 		da.projectManager,
@@ -249,7 +256,7 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
 			Header:   "Your Azure app has been deployed!",
-			FollowUp: getResourceGroupFollowUp(ctx, da.formatter, da.azCli, da.projectConfig, da.resourceManager, da.env),
+			FollowUp: getResourceGroupFollowUp(ctx, da.formatter, da.projectConfig, da.resourceManager, da.env),
 		},
 	}, nil
 }

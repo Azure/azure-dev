@@ -159,6 +159,10 @@ func (e *Environment) Reload() error {
 		telemetry.SetUsageAttributes(fields.StringHashed(fields.EnvNameKey, e.GetEnvName()))
 	}
 
+	if e.GetSubscriptionId() != "" {
+		telemetry.SetGlobalAttributes(fields.SubscriptionIdKey.String(e.GetSubscriptionId()))
+	}
+
 	return nil
 }
 
@@ -226,14 +230,6 @@ func (e *Environment) GetLocation() string {
 
 func (e *Environment) SetLocation(location string) {
 	e.Values[LocationEnvVarName] = location
-}
-
-func (e *Environment) SetPrincipalId(principalID string) {
-	e.Values[PrincipalIdEnvVarName] = principalID
-}
-
-func (e *Environment) GetPrincipalId() string {
-	return e.Values[PrincipalIdEnvVarName]
 }
 
 func normalize(key string) string {

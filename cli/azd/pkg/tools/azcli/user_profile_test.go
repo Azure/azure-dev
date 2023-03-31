@@ -56,7 +56,7 @@ func Test_GetSignedInUserId(t *testing.T) {
 
 		userId, err := userProfile.GetSignedInUserId(*mockContext.Context, "")
 		require.NoError(t, err)
-		require.Equal(t, mockUserProfile.Id, *userId)
+		require.Equal(t, mockUserProfile.Id, userId)
 	})
 
 	t.Run("Error", func(t *testing.T) {
@@ -67,7 +67,7 @@ func Test_GetSignedInUserId(t *testing.T) {
 
 		userId, err := userProfile.GetSignedInUserId(*mockContext.Context, "")
 		require.Error(t, err)
-		require.Nil(t, userId)
+		require.Equal(t, "", userId)
 	})
 }
 

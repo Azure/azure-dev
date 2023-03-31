@@ -27,7 +27,7 @@ func Test_CLI_Deploy_Err_WorkingDirectory(t *testing.T) {
 	err := copySample(dir, "webapp")
 	require.NoError(t, err, "failed expanding sample")
 
-	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests("testenv"), "init")
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit("testenv"), "init")
 	require.NoError(t, err)
 
 	// cd infra
@@ -60,7 +60,7 @@ func Test_CLI_DeployInvalidName(t *testing.T) {
 	err := copySample(dir, "webapp")
 	require.NoError(t, err, "failed expanding sample")
 
-	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "init")
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
 	require.NoError(t, err)
 
 	_, err = cli.RunCommand(ctx, "deploy", "badServiceName")

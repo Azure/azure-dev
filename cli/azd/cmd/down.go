@@ -63,6 +63,8 @@ type downAction struct {
 	console             input.Console
 	commandRunner       exec.CommandRunner
 	projectConfig       *project.ProjectConfig
+	userProfileService  *azcli.UserProfileService
+	subResolver         account.SubscriptionTenantResolver
 	alphaFeatureManager *alpha.FeatureManager
 }
 
@@ -75,6 +77,8 @@ func newDownAction(
 	projectConfig *project.ProjectConfig,
 	console input.Console,
 	commandRunner exec.CommandRunner,
+	userProfileService *azcli.UserProfileService,
+	subResolver account.SubscriptionTenantResolver,
 	alphaFeatureManager *alpha.FeatureManager,
 ) actions.Action {
 	return &downAction{
@@ -86,6 +90,8 @@ func newDownAction(
 		console:             console,
 		commandRunner:       commandRunner,
 		projectConfig:       projectConfig,
+		userProfileService:  userProfileService,
+		subResolver:         subResolver,
 		alphaFeatureManager: alphaFeatureManager,
 	}
 }
@@ -101,6 +107,8 @@ func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		a.console,
 		a.commandRunner,
 		a.accountManager,
+		a.userProfileService,
+		a.subResolver,
 		a.alphaFeatureManager,
 	)
 

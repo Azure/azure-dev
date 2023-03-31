@@ -28,7 +28,7 @@ func (p *BicepProvider) promptForParameter(
 	var value any
 
 	if paramType == ParameterTypeString && azdMetadata.Type != nil && *azdMetadata.Type == "location" {
-		location, err := p.prompters.Location(msg, func(loc account.Location) bool {
+		location, err := p.prompters.Location(ctx, p.env.GetSubscriptionId(), msg, func(loc account.Location) bool {
 			if param.AllowedValues == nil {
 				return true
 			}

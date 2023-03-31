@@ -169,9 +169,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			azdContext *azdcontext.AzdContext,
 			envFlags envFlag,
 			console input.Console,
-			accountManager account.Manager,
-			userProfileService *azcli.UserProfileService,
-			subResolver account.SubscriptionTenantResolver) (*environment.Environment, error) {
+		) (*environment.Environment, error) {
 			if azdContext == nil {
 				return nil, azdcontext.ErrNoProject
 			}
@@ -179,8 +177,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			environmentName := envFlags.environmentName
 			var err error
 
-			env, err := loadOrInitEnvironment(
-				ctx, &environmentName, azdContext, console, accountManager, userProfileService, subResolver)
+			env, err := loadOrCreateEnvironment(ctx, environmentName, azdContext, console)
 			if err != nil {
 				return nil, fmt.Errorf("loading environment: %w", err)
 			}

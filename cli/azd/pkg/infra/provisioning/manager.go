@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
@@ -25,13 +24,15 @@ import (
 
 // Manages the orchestration of infrastructure provisioning
 type Manager struct {
-	azCli       azcli.AzCli
-	env         *environment.Environment
-	prompters   Prompters
-	provider    Provider
-	writer      io.Writer
-	console     input.Console
-	interactive bool
+	azCli              azcli.AzCli
+	env                *environment.Environment
+	provider           Provider
+	writer             io.Writer
+	console            input.Console
+	accountManager     account.Manager
+	userProfileService *azcli.UserProfileService
+	subResolver        account.SubscriptionTenantResolver
+	interactive        bool
 }
 
 // Prepares for an infrastructure provision operation
@@ -46,6 +47,10 @@ func (m *Manager) Plan(ctx context.Context) (*DeploymentPlan, error) {
 
 // Gets the latest deployment details for the specified scope
 func (m *Manager) State(ctx context.Context, scope infra.Scope) (*StateResult, error) {
+	if err := m.provider.EnsureConfigured(ctx); err != nil {
+		return nil, err
+	}
+
 	var stateResult *StateResult
 
 	err := m.runAction(
@@ -83,14 +88,8 @@ func (m *Manager) State(ctx context.Context, scope infra.Scope) (*StateResult, e
 
 // Deploys the Azure infrastructure for the specified project
 func (m *Manager) Deploy(ctx context.Context, plan *DeploymentPlan, scope infra.Scope) (*DeployResult, error) {
-	// Ensure that a location has been set prior to provisioning
-	location, err := m.ensureLocation(ctx, &plan.Deployment)
-	if err != nil {
-		return nil, err
-	}
-
 	// Apply the infrastructure deployment
-	deployResult, err := m.deploy(ctx, location, plan, scope)
+	deployResult, err := m.deploy(ctx, plan, scope)
 	if err != nil {
 		return nil, err
 	}
@@ -126,6 +125,9 @@ func (m *Manager) Destroy(ctx context.Context, deployment *Deployment, options D
 
 // Plans the infrastructure provisioning and orchestrates interactive terminal operations
 func (m *Manager) plan(ctx context.Context) (*DeploymentPlan, error) {
+	if err := m.provider.EnsureConfigured(ctx); err != nil {
+		return nil, err
+	}
 
 	planningTask := m.provider.Plan(ctx)
 	go func() {
@@ -145,10 +147,12 @@ func (m *Manager) plan(ctx context.Context) (*DeploymentPlan, error) {
 // Applies the specified infrastructure provisioning and orchestrates the interactive terminal operations
 func (m *Manager) deploy(
 	ctx context.Context,
-	location string,
 	plan *DeploymentPlan,
 	scope infra.Scope,
 ) (*DeployResult, error) {
+	if err := m.provider.EnsureConfigured(ctx); err != nil {
+		return nil, err
+	}
 
 	deployTask := m.provider.Deploy(ctx, plan, scope)
 
@@ -171,6 +175,10 @@ func (m *Manager) deploy(
 
 // Destroys the specified infrastructure provisioning and orchestrates the interactive terminal operations
 func (m *Manager) destroy(ctx context.Context, deployment *Deployment, options DestroyOptions) (*DestroyResult, error) {
+	if err := m.provider.EnsureConfigured(ctx); err != nil {
+		return nil, err
+	}
+
 	var destroyResult *DestroyResult
 
 	err := m.runAction(
@@ -206,39 +214,6 @@ func (m *Manager) destroy(ctx context.Context, deployment *Deployment, options D
 	m.console.Message(ctx, output.WithSuccessFormat("\nDestroyed Azure resources"))
 
 	return destroyResult, nil
-}
-
-// Ensures a provisioning location has been identified within the deployment or prompts the user for input
-func (m *Manager) ensureLocation(ctx context.Context, deployment *Deployment) (string, error) {
-	var location string
-
-	for key, param := range deployment.Parameters {
-		if key == "location" {
-			location = fmt.Sprint(param.Value)
-			if strings.TrimSpace(location) != "" {
-				return location, nil
-			}
-		}
-	}
-
-	for location == "" {
-		// TODO: We will want to store this information somewhere (so we don't have to prompt the
-		// user on every deployment if they don't have a `location` parameter in their bicep file.
-		// When we store it, we should store it /per environment/ not as a property of the entire
-		// project.
-		selected, err := m.prompters.Location(
-			"Please select an Azure location to use to store deployment metadata:",
-			func(_ account.Location) bool {
-				return true
-			})
-		if err != nil {
-			return "", fmt.Errorf("prompting for deployment metadata region: %w", err)
-		}
-
-		location = selected
-	}
-
-	return location, nil
 }
 
 func (m *Manager) runAction(
@@ -296,18 +271,45 @@ func NewManager(
 	console input.Console,
 	commandRunner exec.CommandRunner,
 	accountManager account.Manager,
+	userProfileService *azcli.UserProfileService,
+	subResolver account.SubscriptionTenantResolver,
 	alphaFeatureManager *alpha.FeatureManager,
 ) (*Manager, error) {
-	locationPrompt := func(msg string, filter func(loc account.Location) bool) (location string, err error) {
-		return azureutil.PromptLocationWithFilter(ctx, env.GetSubscriptionId(), msg, "", console, accountManager, filter)
+
+	principalProvider := &principalIDProvider{
+		env:                env,
+		userProfileService: userProfileService,
+		subResolver:        subResolver,
+	}
+
+	m := &Manager{
+		azCli:              azCli,
+		env:                env,
+		writer:             console.GetWriter(),
+		console:            console,
+		interactive:        interactive,
+		accountManager:     accountManager,
+		userProfileService: userProfileService,
+		subResolver:        subResolver,
 	}
 
 	prompters := Prompters{
-		Location: locationPrompt,
+		Location:     m.promptLocation,
+		Subscription: m.promptSubscription,
 	}
 
 	infraProvider, err := NewProvider(
-		ctx, console, azCli, commandRunner, env, projectPath, infraOptions, prompters, alphaFeatureManager)
+		ctx,
+		console,
+		azCli,
+		commandRunner,
+		env,
+		projectPath,
+		infraOptions,
+		prompters,
+		principalProvider,
+		alphaFeatureManager,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("error creating infra provider: %w", err)
 	}
@@ -317,13 +319,84 @@ func NewManager(
 		return nil, err
 	}
 
-	return &Manager{
-		azCli:       azCli,
-		env:         env,
-		provider:    infraProvider,
-		prompters:   prompters,
-		writer:      console.GetWriter(),
-		console:     console,
-		interactive: interactive,
-	}, nil
+	m.provider = infraProvider
+
+	return m, nil
+}
+
+func (m *Manager) promptSubscription(ctx context.Context, msg string) (subscriptionId string, err error) {
+	subscriptionOptions, defaultSubscription, err := getSubscriptionOptions(ctx, m.accountManager)
+	if err != nil {
+		return "", err
+	}
+
+	for subscriptionId == "" {
+		subscriptionSelectionIndex, err := m.console.Select(ctx, input.ConsoleOptions{
+			Message:      msg,
+			Options:      subscriptionOptions,
+			DefaultValue: defaultSubscription,
+		})
+
+		if err != nil {
+			return "", fmt.Errorf("reading subscription id: %w", err)
+		}
+
+		subscriptionSelection := subscriptionOptions[subscriptionSelectionIndex]
+		subscriptionId = subscriptionSelection[len(subscriptionSelection)-
+			len("(00000000-0000-0000-0000-000000000000)")+1 : len(subscriptionSelection)-1]
+	}
+
+	if !m.accountManager.HasDefaultSubscription() {
+		if _, err := m.accountManager.SetDefaultSubscription(ctx, m.env.GetSubscriptionId()); err != nil {
+			log.Printf("failed setting default subscription. %s\n", err.Error())
+		}
+	}
+
+	return subscriptionId, nil
+}
+
+func (m *Manager) promptLocation(
+	ctx context.Context,
+	subId string,
+	msg string,
+	filter func(loc account.Location) bool,
+) (string, error) {
+	loc, err := azureutil.PromptLocationWithFilter(ctx, subId, msg, "", m.console, m.accountManager, filter)
+	if err != nil {
+		return "", err
+	}
+
+	if !m.accountManager.HasDefaultLocation() {
+		if _, err := m.accountManager.SetDefaultLocation(ctx, m.env.GetSubscriptionId(), m.env.GetLocation()); err != nil {
+			log.Printf("failed setting default location. %s\n", err.Error())
+		}
+	}
+
+	return loc, nil
+}
+
+type CurrentPrincipalIdProvider interface {
+	// CurrentPrincipalId returns the object id of the current logged in principal, or an error if it can not be
+	// determined.
+	CurrentPrincipalId(ctx context.Context) (string, error)
+}
+
+type principalIDProvider struct {
+	env                *environment.Environment
+	userProfileService *azcli.UserProfileService
+	subResolver        account.SubscriptionTenantResolver
+}
+
+func (p *principalIDProvider) CurrentPrincipalId(ctx context.Context) (string, error) {
+	tenantId, err := p.subResolver.LookupTenant(ctx, p.env.GetSubscriptionId())
+	if err != nil {
+		return "", fmt.Errorf("getting tenant id for subscription %s. Error: %w", p.env.GetSubscriptionId(), err)
+	}
+
+	principalId, err := azureutil.GetCurrentPrincipalId(ctx, p.userProfileService, tenantId)
+	if err != nil {
+		return "", fmt.Errorf("fetching current user information: %w", err)
+	}
+
+	return principalId, nil
 }

@@ -87,6 +87,8 @@ type provisionAction struct {
 	writer              io.Writer
 	console             input.Console
 	commandRunner       exec.CommandRunner
+	userProfileService  *azcli.UserProfileService
+	subResolver         account.SubscriptionTenantResolver
 	alphaFeatureManager *alpha.FeatureManager
 }
 
@@ -103,6 +105,8 @@ func newProvisionAction(
 	formatter output.Formatter,
 	writer io.Writer,
 	commandRunner exec.CommandRunner,
+	userProfileService *azcli.UserProfileService,
+	subResolver account.SubscriptionTenantResolver,
 	alphaFeatureManager *alpha.FeatureManager,
 ) actions.Action {
 	return &provisionAction{
@@ -118,6 +122,8 @@ func newProvisionAction(
 		writer:              writer,
 		console:             console,
 		commandRunner:       commandRunner,
+		userProfileService:  userProfileService,
+		subResolver:         subResolver,
 		alphaFeatureManager: alphaFeatureManager,
 	}
 }
@@ -150,6 +156,8 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		p.console,
 		p.commandRunner,
 		p.accountManager,
+		p.userProfileService,
+		p.subResolver,
 		p.alphaFeatureManager,
 	)
 	if err != nil {
@@ -223,7 +231,7 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
 			Header:   "Your project has been provisioned!",
-			FollowUp: getResourceGroupFollowUp(ctx, p.formatter, p.azCli, p.projectConfig, p.resourceManager, p.env),
+			FollowUp: getResourceGroupFollowUp(ctx, p.formatter, p.projectConfig, p.resourceManager, p.env),
 		},
 	}, nil
 }

@@ -45,12 +45,12 @@ resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
   tags: tags
 }
 
-// The application frontend
-module web '../../../../../common/infra/bicep/app/web-appservice.bicep' = {
-  name: 'web'
+// The initial, empty application frontend
+module webInitial '../../../../../common/infra/bicep/app/web-appservice.bicep' = {
+  name: 'web-initial'
   scope: rg
   params: {
-    name: !empty(webServiceName) ? webServiceName : '${abbrs.webSitesAppService}web-${resourceToken}'
+    name: webName
     location: location
     tags: tags
     applicationInsightsName: monitoring.outputs.applicationInsightsName
@@ -69,7 +69,7 @@ module api '../../../../../common/infra/bicep/app/api-appservice-python.bicep' =
     applicationInsightsName: monitoring.outputs.applicationInsightsName
     appServicePlanId: appServicePlan.outputs.id
     keyVaultName: keyVault.outputs.name
-    allowedOrigins: [ web.outputs.SERVICE_WEB_URI ]
+    allowedOrigins: [ webInitial.outputs.SERVICE_WEB_URI ]
     appSettings: {
       AZURE_COSMOS_CONNECTION_STRING_KEY: cosmos.outputs.connectionStringKey
       AZURE_COSMOS_DATABASE_NAME: cosmos.outputs.databaseName
@@ -78,18 +78,23 @@ module api '../../../../../common/infra/bicep/app/api-appservice-python.bicep' =
   }
 }
 
-// Set additional web app settings
-module webSettings '../../../../../../common/infra/bicep/core/host/appservice-appsettings-append.bicep' = {
-  name: 'websettings'
+// The completed application frontend with app settings
+module web '../../../../../common/infra/bicep/app/web-appservice.bicep' = {
+  name: 'web'
   scope: rg
   params: {
     name: webName
+    location: location
+    tags: tags
+    applicationInsightsName: monitoring.outputs.applicationInsightsName
+    appServicePlanId: appServicePlan.outputs.id
     appSettings: {
       REACT_APP_API_BASE_URL: api.outputs.SERVICE_API_URI
       REACT_APP_APPLICATIONINSIGHTS_CONNECTION_STRING: monitoring.outputs.applicationInsightsConnectionString
     }
   }
 }
+
 
 // Give the API access to KeyVault
 module apiKeyVaultAccess '../../../../../../common/infra/bicep/core/security/keyvault-access.bicep' = {

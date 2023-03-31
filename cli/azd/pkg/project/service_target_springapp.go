@@ -59,14 +59,14 @@ func (st *springAppTarget) Package(
 }
 
 // Upload artifact to Storage File and deploy to Spring App
-func (st *springAppTarget) Publish(
+func (st *springAppTarget) Deploy(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
 	targetResource *environment.TargetResource,
-) *async.TaskWithProgress[*ServicePublishResult, ServiceProgress] {
+) *async.TaskWithProgress[*ServiceDeployResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServicePublishResult, ServiceProgress]) {
+		func(task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress]) {
 			if err := st.validateTargetResource(ctx, serviceConfig, targetResource); err != nil {
 				task.SetError(fmt.Errorf("validating target resource: %w", err))
 				return
@@ -132,7 +132,7 @@ func (st *springAppTarget) Publish(
 				return
 			}
 
-			sdr := NewServicePublishResult(
+			sdr := NewServiceDeployResult(
 				azure.SpringAppRID(
 					targetResource.SubscriptionId(),
 					targetResource.ResourceGroupName(),

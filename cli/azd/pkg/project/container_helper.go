@@ -102,8 +102,13 @@ func (ch *ContainerHelper) Deploy(
 				return
 			}
 
+			localImageTag := packageOutput.PackagePath
 			packageDetails, ok := packageOutput.Details.(*dockerPackageResult)
-			if !ok {
+			if ok && packageDetails != nil {
+				localImageTag = packageDetails.ImageTag
+			}
+
+			if localImageTag == "" {
 				task.SetError(errors.New("failed retrieving package result details"))
 				return
 			}
@@ -118,14 +123,14 @@ func (ch *ContainerHelper) Deploy(
 
 			// Tag image
 			// Get remote tag from the container helper then call docker cli tag command
-			remoteTag, err := ch.RemoteImageTag(ctx, serviceConfig, packageDetails.ImageTag)
+			remoteTag, err := ch.RemoteImageTag(ctx, serviceConfig, localImageTag)
 			if err != nil {
 				task.SetError(fmt.Errorf("getting remote image tag: %w", err))
 				return
 			}
 
 			task.SetProgress(NewServiceProgress("Tagging container image"))
-			if err := ch.docker.Tag(ctx, serviceConfig.Path(), packageDetails.ImageTag, remoteTag); err != nil {
+			if err := ch.docker.Tag(ctx, serviceConfig.Path(), localImageTag, remoteTag); err != nil {
 				task.SetError(fmt.Errorf("tagging image: %w", err))
 				return
 			}

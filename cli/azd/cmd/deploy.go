@@ -30,6 +30,7 @@ import (
 type deployFlags struct {
 	serviceName string
 	all         bool
+	fromPackage string
 	global      *internal.GlobalCommandOptions
 	*envFlag
 }
@@ -42,6 +43,12 @@ func (d *deployFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 func (d *deployFlags) bindNonCommon(
 	local *pflag.FlagSet,
 	global *internal.GlobalCommandOptions) {
+	local.StringVar(
+		&d.fromPackage,
+		"from-package",
+		"",
+		"Deploys the application from an existing package file.",
+	)
 	local.StringVar(
 		&d.serviceName,
 		"service",
@@ -158,18 +165,21 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		targetServiceName = da.args[0]
 	}
 
-	packageAction, err := da.packageActionInitializer()
-	if err != nil {
-		return nil, err
-	}
+	// Only run package action if --from-package is specified
+	if da.flags.fromPackage == "" {
+		packageAction, err := da.packageActionInitializer()
+		if err != nil {
+			return nil, err
+		}
 
-	packageAction.flags.all = da.flags.all
-	packageAction.args = []string{targetServiceName}
+		packageAction.flags.all = da.flags.all
+		packageAction.args = []string{targetServiceName}
 
-	packageOptions := &middleware.Options{CommandPath: "package"}
-	_, err = da.middlewareRunner.RunChildAction(ctx, packageOptions, packageAction)
-	if err != nil {
-		return nil, err
+		packageOptions := &middleware.Options{CommandPath: "package"}
+		_, err = da.middlewareRunner.RunChildAction(ctx, packageOptions, packageAction)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Command title
@@ -185,7 +195,7 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		)
 	}
 
-	targetServiceName, err = getTargetServiceName(
+	targetServiceName, err := getTargetServiceName(
 		ctx,
 		da.projectManager,
 		da.projectConfig,
@@ -195,6 +205,10 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	)
 	if err != nil {
 		return nil, err
+	}
+
+	if da.flags.fromPackage != "" && (targetServiceName == "" || da.flags.all) {
+		return nil, errors.New("cannot use --from-package with --all or without specifying a service")
 	}
 
 	if err := da.projectManager.Initialize(ctx, da.projectConfig); err != nil {
@@ -221,7 +235,14 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 			continue
 		}
 
-		deployTask := da.serviceManager.Deploy(ctx, svc, nil)
+		var packageOutput *project.ServicePackageResult
+		if da.flags.fromPackage != "" {
+			packageOutput = &project.ServicePackageResult{
+				PackagePath: da.flags.fromPackage,
+			}
+		}
+
+		deployTask := da.serviceManager.Deploy(ctx, svc, packageOutput)
 		go func() {
 			for deployProgress := range deployTask.Progress() {
 				progressMessage := fmt.Sprintf("Deploying service %s (%s)", svc.Name, deployProgress.Message)

@@ -28,6 +28,8 @@ type ServiceConfig struct {
 	Docker DockerProjectOptions `yaml:"docker"`
 	// The optional K8S / AKS options
 	K8s AksOptions `yaml:"k8s"`
+	// The optional ASA options
+	DeploymentName string `yaml:"deploymentName"`
 	// The infrastructure provisioning configuration
 	Infra provisioning.Options `yaml:"infra"`
 	// Hook configuration for service

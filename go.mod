@@ -16,6 +16,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/keyvault/armkeyvault v1.0.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources v1.0.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions v1.0.0
+	github.com/Azure/azure-storage-file-go v0.8.0
 	github.com/AzureAD/microsoft-authentication-library-for-go v0.8.1
 	github.com/MakeNowJust/heredoc/v2 v2.0.1
 	github.com/benbjohnson/clock v1.3.0
@@ -52,7 +53,11 @@ require (
 
 )
 
-require golang.org/x/text v0.7.0 // indirect
+require (
+	github.com/Azure/azure-pipeline-go v0.2.1 // indirect
+	github.com/mattn/go-ieproxy v0.0.0-20190610004146-91bb50d98149 // indirect
+	golang.org/x/text v0.7.0 // indirect
+)
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.0.1 // indirect

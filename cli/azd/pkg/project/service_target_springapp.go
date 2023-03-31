@@ -5,18 +5,17 @@ package project
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"log"
+	"github.com/azure/azure-dev/cli/azd/pkg/azure"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
-	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
@@ -63,16 +62,16 @@ func NewSpringAppTarget(
 	}
 }
 
-func (at *springAppTarget) RequiredExternalTools(context.Context) []tools.ExternalTool {
-	return []tools.ExternalTool{at.docker}
+func (st *springAppTarget) RequiredExternalTools(context.Context) []tools.ExternalTool {
+	return []tools.ExternalTool{st.docker}
 }
 
-func (at *springAppTarget) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
+func (st *springAppTarget) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
 	return nil
 }
 
-// Prepares and tags the container image from the build output based on the specified service configuration
-func (at *springAppTarget) Package(
+// Do nothing for Spring Apps
+func (st *springAppTarget) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
@@ -84,8 +83,8 @@ func (at *springAppTarget) Package(
 	)
 }
 
-// Deploys service container images to ACR and provisions the spring apps service.
-func (at *springAppTarget) Publish(
+// Upload artifact to Storage File and deploy to Spring App
+func (st *springAppTarget) Publish(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
@@ -93,146 +92,85 @@ func (at *springAppTarget) Publish(
 ) *async.TaskWithProgress[*ServicePublishResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServicePublishResult, ServiceProgress]) {
-			if err := at.validateTargetResource(ctx, serviceConfig, targetResource); err != nil {
+			if err := st.validateTargetResource(ctx, serviceConfig, targetResource); err != nil {
 				task.SetError(fmt.Errorf("validating target resource: %w", err))
 				return
 			}
 
-			// If the infra module has not been specified default to a module with the same name as the service.
-			if strings.TrimSpace(serviceConfig.Infra.Module) == "" {
-				serviceConfig.Infra.Module = serviceConfig.Module
-			}
-			if strings.TrimSpace(serviceConfig.Infra.Module) == "" {
-				serviceConfig.Infra.Module = serviceConfig.Name
-			}
-
-			packageDetails, ok := packageOutput.Details.(*dockerPackageResult)
-			if !ok {
-				task.SetError(errors.New("failed retrieving package result details"))
-				return
-			}
-
-			log.Printf("logging into registry %s", packageDetails.LoginServer)
-			task.SetProgress(NewServiceProgress("Logging into container registry"))
-			err := at.containerRegistryService.LoginAcr(ctx, targetResource.SubscriptionId(), packageDetails.LoginServer)
-			if err != nil {
-				task.SetError(fmt.Errorf("logging into registry '%s': %w", packageDetails.LoginServer, err))
-				return
-			}
-
-			// Push image.
-			log.Printf("pushing %s to registry", packageDetails.ImageTag)
-			task.SetProgress(NewServiceProgress("Pushing image"))
-			if err := at.docker.Push(ctx, serviceConfig.Path(), packageDetails.ImageTag); err != nil {
-				task.SetError(fmt.Errorf("pushing image: %w", err))
-				return
-			}
-
-			// Get image tag for Spring Apps
-			imageTag := packageDetails.ImageTag[strings.IndexRune(packageDetails.ImageTag, '/')+1:]
-
-			// Save the name of the image we pushed into the environment with a well known key.
-			log.Printf("writing image name to environment")
-			at.env.SetServiceProperty(serviceConfig.Name, "IMAGE_NAME", imageTag)
-
-			if err := at.env.Save(); err != nil {
-				task.SetError(fmt.Errorf("saving image name to environment: %w", err))
-				return
-			}
-
-			infraManager, err := provisioning.NewManager(
+			_, err := st.cli.GetSpringAppDeployment(
 				ctx,
-				at.env,
-				serviceConfig.Project.Path,
-				serviceConfig.Infra,
-				at.console.IsUnformatted(),
-				at.cli,
-				&mutedConsole{
-					parentConsole: at.console,
-				}, // make provision output silence
-				at.commandRunner,
-				at.accountManager,
-			)
-			if err != nil {
-				task.SetError(fmt.Errorf("creating provisioning manager: %w", err))
-				return
-			}
-
-			task.SetProgress(NewServiceProgress("Creating deployment template"))
-			deploymentPlan, err := infraManager.Plan(ctx)
-			if err != nil {
-				task.SetError(fmt.Errorf("planning provisioning: %w", err))
-				return
-			}
-
-			task.SetProgress(NewServiceProgress("Updating spring app image reference"))
-			deploymentName := fmt.Sprintf("%s-%s", at.env.GetEnvName(), serviceConfig.Name)
-			scope := infra.NewResourceGroupScope(
-				at.cli,
 				targetResource.SubscriptionId(),
 				targetResource.ResourceGroupName(),
-				deploymentName,
+				targetResource.ResourceName(),
+				serviceConfig.Name,
+				serviceConfig.DeploymentName,
 			)
-			deployResult, err := infraManager.Deploy(ctx, deploymentPlan, scope)
 
 			if err != nil {
-				task.SetError(fmt.Errorf("provisioning infrastructure for app deployment: %w", err))
+				task.SetError(fmt.Errorf("Spring Apps '%s' deployment '%s' not exists", serviceConfig.Name, serviceConfig.DeploymentName))
 				return
 			}
 
-			if len(deployResult.Deployment.Outputs) > 0 {
-				log.Printf("saving %d deployment outputs", len(deployResult.Deployment.Outputs))
-				if err := provisioning.UpdateEnvironment(at.env, deployResult.Deployment.Outputs); err != nil {
-					task.SetError(fmt.Errorf("saving outputs to environment: %w", err))
-					return
-				}
+			artifactPath := filepath.Join(packageOutput.PackagePath, AppServiceJavaPackageName)
+
+			if _, err := os.Stat(artifactPath); err != nil {
+				task.SetError(fmt.Errorf("artifact don't exists: %w", err))
+				return
 			}
 
-			if targetResource.ResourceName() == "" {
-				azureResource, err := at.resourceManager.GetServiceResource(
-					ctx,
-					targetResource.SubscriptionId(),
-					targetResource.ResourceGroupName(),
-					serviceConfig,
-					"deploy",
-				)
-				if err != nil {
-					task.SetError(err)
-					return
-				}
+			task.SetProgress(NewServiceProgress("Uploading spring artifact"))
 
-				// Fill in the target resource
-				targetResource = environment.NewTargetResource(
-					targetResource.SubscriptionId(),
-					targetResource.ResourceGroupName(),
-					azureResource.Name,
-					azureResource.Type,
-				)
+			relativePath, err := st.cli.UploadSpringArtifact(
+				ctx,
+				targetResource.SubscriptionId(),
+				targetResource.ResourceGroupName(),
+				targetResource.ResourceName(),
+				serviceConfig.Name,
+				artifactPath,
+			)
 
-				if err := checkResourceType(targetResource, infra.AzureResourceTypeSpringApp); err != nil {
-					task.SetError(err)
-					return
-				}
+			if err != nil {
+				task.SetError(fmt.Errorf("Artifact upload failed: %w", err))
+				return
 			}
 
-			task.SetProgress(NewServiceProgress("Fetching endpoints for spring apps service"))
-			endpoints, err := at.Endpoints(ctx, serviceConfig, targetResource)
+			task.SetProgress(NewServiceProgress("Deploying spring artifact"))
+
+			res, err := st.cli.DeploySpringAppArtifact(
+				ctx,
+				targetResource.SubscriptionId(),
+				targetResource.ResourceGroupName(),
+				targetResource.ResourceName(),
+				serviceConfig.Name,
+				*relativePath,
+				serviceConfig.DeploymentName,
+			)
+			if err != nil {
+				task.SetError(fmt.Errorf("deploying service %s: %w", serviceConfig.Name, err))
+				return
+			}
+
+			task.SetProgress(NewServiceProgress("Fetching endpoints for spring app service"))
+			endpoints, err := st.Endpoints(ctx, serviceConfig, targetResource)
 			if err != nil {
 				task.SetError(err)
 				return
 			}
 
-			task.SetResult(&ServicePublishResult{
-				Package: packageOutput,
-				TargetResourceId: azure.SpringAppRID(
+			sdr := NewServicePublishResult(
+				azure.SpringAppRID(
 					targetResource.SubscriptionId(),
 					targetResource.ResourceGroupName(),
 					targetResource.ResourceName(),
 				),
-				Kind:      SpringAppTarget,
-				Details:   deployResult,
-				Endpoints: endpoints,
-			})
+				SpringAppTarget,
+				*res,
+				endpoints,
+			)
+			sdr.Package = packageOutput
+
+			task.SetResult(sdr)
+
 		},
 	)
 }
@@ -248,20 +186,21 @@ func (st *springAppTarget) Endpoints(
 		targetResource.SubscriptionId(),
 		targetResource.ResourceGroupName(),
 		targetResource.ResourceName(),
+		serviceConfig.Name,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("fetching service properties: %w", err)
 	}
 
-	endpoints := make([]string, len(appServiceProperties.HostNames))
-	for idx, hostName := range appServiceProperties.HostNames {
-		endpoints[idx] = fmt.Sprintf("https://%s/", extractEndpoint(hostName))
+	endpoints := make([]string, len(appServiceProperties.Fqdn))
+	for idx, fqdn := range appServiceProperties.Fqdn {
+		endpoints[idx] = fmt.Sprintf("https://%s/", st.extractEndpoint(fqdn, serviceConfig.Name))
 	}
 
 	return endpoints, nil
 }
 
-func (at *springAppTarget) validateTargetResource(
+func (st *springAppTarget) validateTargetResource(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	targetResource *environment.TargetResource,
@@ -279,7 +218,7 @@ func (at *springAppTarget) validateTargetResource(
 	return nil
 }
 
-func extractEndpoint(hostName string) string {
-	index := strings.IndexRune(hostName, '.')
-	return hostName[0:index] + "-default" + hostName[index:]
+func (at *springAppTarget) extractEndpoint(fqdn string, appName string) string {
+	index := strings.IndexRune(fqdn, '.')
+	return fqdn[0:index] + "-" + appName + fqdn[index:]
 }

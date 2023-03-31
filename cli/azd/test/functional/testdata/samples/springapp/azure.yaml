@@ -1,0 +1,12 @@
+name: webapp
+metadata: 
+  template: azd-test/webapptest@v1
+services:
+  sweb:
+    project: ./
+    host: springapp
+    language: java
+    deploymentName: default
+infra:
+  provider: terraform
+

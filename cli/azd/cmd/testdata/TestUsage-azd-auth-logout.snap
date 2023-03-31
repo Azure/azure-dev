@@ -1,14 +1,11 @@
 
-Provision the Azure resources for an app.
+Log out of Azure.
 
 Usage
-  azd infra create [flags]
+  azd auth logout [flags]
 
 Flags
-    -e, --environment string 	: The name of the environment to use.
-    -h, --help               	: Gets help for create.
-        --no-progress        	: Suppresses progress information.
-    -o, --output string      	: The output format (the supported formats are json, none).
+    -h, --help 	: Gets help for logout.
 
 Global Flags
     -C, --cwd string 	: Sets the current working directory.

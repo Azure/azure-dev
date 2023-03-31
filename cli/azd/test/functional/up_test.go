@@ -46,10 +46,10 @@ func Test_CLI_Up_Down_WebApp(t *testing.T) {
 	err := copySample(dir, "webapp")
 	require.NoError(t, err, "failed expanding sample")
 
-	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "init")
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
 	require.NoError(t, err)
 
-	_, err = cli.RunCommand(ctx, "infra", "create")
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "infra", "create")
 	require.NoError(t, err)
 
 	t.Logf("Running show\n")
@@ -76,7 +76,7 @@ func Test_CLI_Up_Down_WebApp(t *testing.T) {
 	require.Equal(t, "webapp.csproj", filepath.Base(service.Project.Path))
 	require.Equal(t, 1, len(service.Target.ResourceIds))
 
-	_, err = cli.RunCommand(ctx, "deploy")
+	_, err = cli.RunCommand(ctx, "deploy", "web")
 	require.NoError(t, err)
 
 	env, err := godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
@@ -162,11 +162,11 @@ func Test_CLI_Up_Down_FuncApp(t *testing.T) {
 	err := copySample(dir, "funcapp")
 	require.NoError(t, err, "failed expanding sample")
 
-	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "init")
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
 	require.NoError(t, err)
 
 	t.Logf("Starting infra create\n")
-	_, err = cli.RunCommand(ctx, "infra", "create", "--cwd", dir)
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "infra", "create", "--cwd", dir)
 	require.NoError(t, err)
 
 	t.Logf("Starting deploy\n")
@@ -248,13 +248,13 @@ func Test_CLI_Up_Down_ContainerApp(t *testing.T) {
 			err := copySample(dir, "containerapp")
 			require.NoError(t, err, "failed expanding sample")
 
-			_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "init")
+			_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
 			require.NoError(t, err)
 
-			_, err = cli.RunCommand(ctx, "infra", "create")
+			_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "infra", "create")
 			require.NoError(t, err)
 
-			_, err = cli.RunCommand(ctx, "deploy")
+			_, err = cli.RunCommand(ctx, "deploy", "--cwd", filepath.Join(dir, "src", "dotnet"))
 			require.NoError(t, err)
 
 			// The sample hosts a small application that just responds with a 200 OK with a body of "Hello, `azd`."

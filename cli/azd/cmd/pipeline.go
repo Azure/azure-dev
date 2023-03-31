@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/MakeNowJust/heredoc/v2"
@@ -134,6 +135,12 @@ func newPipelineConfigAction(
 
 // Run implements action interface
 func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	if p.env.GetSubscriptionId() == "" {
+		return nil, errors.New(
+			"infrastructure has not been provisioned. Please run `azd provision`",
+		)
+	}
+
 	// Command title
 	p.console.MessageUxItem(ctx, &ux.MessageTitle{
 		Title: "Configure your azd pipeline",

@@ -37,7 +37,7 @@ func Test_CLI_EnvCommandsWorkWhenLoggedOut(t *testing.T) {
 	t.Setenv("AZD_CONFIG_DIR", configDir)
 
 	// check to make sure we are logged out as expected.
-	res, err := cli.RunCommand(ctx, "login", "--check-status", "--output", "json")
+	res, err := cli.RunCommand(ctx, "auth", "login", "--check-status", "--output", "json")
 	require.NoError(t, err)
 
 	var lr contracts.LoginResult
@@ -192,7 +192,7 @@ func envNew(ctx context.Context, t *testing.T, cli *azdcli.CLI, envName string, 
 
 	if usePrompt {
 		runArgs := append(defaultArgs, args...)
-		_, err := cli.RunCommandWithStdIn(ctx, stdinForTests(envName), runArgs...)
+		_, err := cli.RunCommandWithStdIn(ctx, stdinForInit(envName), runArgs...)
 		require.NoError(t, err)
 	} else {
 		runArgs := append(defaultArgs, envName, "--subscription", testSubscriptionId, "-l", defaultLocation)

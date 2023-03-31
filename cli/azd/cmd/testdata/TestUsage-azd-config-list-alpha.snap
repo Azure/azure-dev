@@ -1,11 +1,11 @@
 
-Log out of Azure.
+Display the list of available features in alpha stage.
 
 Usage
-  azd logout [flags]
+  azd config list-alpha [flags]
 
 Flags
-    -h, --help 	: Gets help for logout.
+    -h, --help 	: Gets help for list-alpha.
 
 Global Flags
     -C, --cwd string 	: Sets the current working directory.

@@ -24,6 +24,20 @@ import (
 	"github.com/spf13/pflag"
 )
 
+// The parent of the login command.
+const loginCmdParentAnnotation = "loginCmdParent"
+
+type authLoginFlags struct {
+	loginFlags
+}
+
+func newAuthLoginFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *authLoginFlags {
+	flags := &authLoginFlags{}
+	flags.Bind(cmd.Flags(), global)
+
+	return flags
+}
+
 type loginFlags struct {
 	onlyCheckStatus        bool
 	useDeviceCode          bool
@@ -120,7 +134,7 @@ func newLoginFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *l
 	return flags
 }
 
-func newLoginCmd() *cobra.Command {
+func newLoginCmd(parent string) *cobra.Command {
 	return &cobra.Command{
 		Use:   "login",
 		Short: "Log in to Azure.",
@@ -133,6 +147,9 @@ func newLoginCmd() *cobra.Command {
 		To log in as a service principal, pass --client-id and --tenant-id as well as one of: --client-secret, 
 		--client-certificate, --federated-credential, or --federated-credential-provider.
 		`),
+		Annotations: map[string]string{
+			loginCmdParentAnnotation: parent,
+		},
 	}
 }
 
@@ -143,6 +160,27 @@ type loginAction struct {
 	authManager       *auth.Manager
 	accountSubManager *account.SubscriptionsManager
 	flags             *loginFlags
+	annotations       CmdAnnotations
+}
+
+func newAuthLoginAction(
+	formatter output.Formatter,
+	writer io.Writer,
+	authManager *auth.Manager,
+	accountSubManager *account.SubscriptionsManager,
+	flags *authLoginFlags,
+	console input.Console,
+	annotations CmdAnnotations,
+) actions.Action {
+	return &loginAction{
+		formatter:         formatter,
+		writer:            writer,
+		console:           console,
+		authManager:       authManager,
+		accountSubManager: accountSubManager,
+		flags:             &flags.loginFlags,
+		annotations:       annotations,
+	}
 }
 
 func newLoginAction(
@@ -152,6 +190,7 @@ func newLoginAction(
 	accountSubManager *account.SubscriptionsManager,
 	flags *loginFlags,
 	console input.Console,
+	annotations CmdAnnotations,
 ) actions.Action {
 	return &loginAction{
 		formatter:         formatter,
@@ -160,10 +199,20 @@ func newLoginAction(
 		authManager:       authManager,
 		accountSubManager: accountSubManager,
 		flags:             flags,
+		annotations:       annotations,
 	}
 }
 
 func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	if la.annotations[loginCmdParentAnnotation] == "" {
+		fmt.Fprintln(
+			la.console.Handles().Stderr,
+			//nolint:lll
+			output.WithWarningFormat(
+				"WARNING: `azd login` has been deprecated and will be removed in a future release. Please use `azd auth login` instead."),
+		)
+	}
+
 	if !la.flags.onlyCheckStatus {
 		if err := la.accountSubManager.ClearSubscriptions(ctx); err != nil {
 			log.Printf("failed clearing subscriptions: %v", err)
@@ -228,7 +277,7 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		if res.Status == contracts.LoginStatusSuccess {
 			fmt.Fprintln(la.console.Handles().Stdout, "Logged in to Azure.")
 		} else {
-			fmt.Fprintln(la.console.Handles().Stdout, "Not logged in, run `azd login` to login to Azure.")
+			fmt.Fprintln(la.console.Handles().Stdout, "Not logged in, run `azd auth login` to login to Azure.")
 		}
 
 		return nil, nil

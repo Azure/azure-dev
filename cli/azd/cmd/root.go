@@ -132,38 +132,23 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 		DefaultFormat:  output.NoneFormat,
 	})
 
-	root.
-		Add("restore", &actions.ActionDescriptorOptions{
-			Command:        restoreCmdDesign(),
-			FlagsResolver:  newRestoreFlags,
-			ActionResolver: newRestoreAction,
-			HelpOptions: actions.ActionHelpOptions{
-				Description: getCmdRestoreHelpDescription,
-				Footer:      getCmdRestoreHelpFooter,
-			},
-			GroupingOptions: actions.CommandGroupOptions{
-				RootLevelHelp: actions.CmdGroupConfig,
-			},
-		}).
-		UseMiddleware("hooks", middleware.NewHooksMiddleware)
-
+	//deprecate:cmd hide login
+	login := newLoginCmd("")
+	login.Hidden = true
 	root.Add("login", &actions.ActionDescriptorOptions{
-		Command:        newLoginCmd(),
+		Command:        login,
 		FlagsResolver:  newLoginFlags,
 		ActionResolver: newLoginAction,
 		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 		DefaultFormat:  output.NoneFormat,
-		GroupingOptions: actions.CommandGroupOptions{
-			RootLevelHelp: actions.CmdGroupConfig,
-		},
 	})
 
+	//deprecate:cmd hide logout
+	logout := newLogoutCmd("")
+	logout.Hidden = true
 	root.Add("logout", &actions.ActionDescriptorOptions{
-		Command:        newLogoutCmd(),
+		Command:        logout,
 		ActionResolver: newLogoutAction,
-		GroupingOptions: actions.CommandGroupOptions{
-			RootLevelHelp: actions.CmdGroupConfig,
-		},
 	})
 
 	root.Add("init", &actions.ActionDescriptorOptions{
@@ -180,6 +165,33 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 	}).AddFlagCompletion("template", templateNameCompletion)
 
 	root.
+		Add("restore", &actions.ActionDescriptorOptions{
+			Command:        newRestoreCmd(),
+			FlagsResolver:  newRestoreFlags,
+			ActionResolver: newRestoreAction,
+			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
+			DefaultFormat:  output.NoneFormat,
+			HelpOptions: actions.ActionHelpOptions{
+				Description: getCmdRestoreHelpDescription,
+				Footer:      getCmdRestoreHelpFooter,
+			},
+			GroupingOptions: actions.CommandGroupOptions{
+				RootLevelHelp: actions.CmdGroupConfig,
+			},
+		}).
+		UseMiddleware("hooks", middleware.NewHooksMiddleware)
+
+	root.
+		Add("build", &actions.ActionDescriptorOptions{
+			Command:        newBuildCmd(),
+			FlagsResolver:  newBuildFlags,
+			ActionResolver: newBuildAction,
+			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
+			DefaultFormat:  output.NoneFormat,
+		}).
+		UseMiddleware("hooks", middleware.NewHooksMiddleware)
+
+	root.
 		Add("provision", &actions.ActionDescriptorOptions{
 			Command:        newProvisionCmd(),
 			FlagsResolver:  newProvisionFlags,
@@ -193,6 +205,16 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 			GroupingOptions: actions.CommandGroupOptions{
 				RootLevelHelp: actions.CmdGroupManage,
 			},
+		}).
+		UseMiddleware("hooks", middleware.NewHooksMiddleware)
+
+	root.
+		Add("package", &actions.ActionDescriptorOptions{
+			Command:        newPackageCmd(),
+			FlagsResolver:  newPackageFlags,
+			ActionResolver: newPackageAction,
+			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
+			DefaultFormat:  output.NoneFormat,
 		}).
 		UseMiddleware("hooks", middleware.NewHooksMiddleware)
 
@@ -222,13 +244,11 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 			DefaultFormat:  output.NoneFormat,
 			HelpOptions: actions.ActionHelpOptions{
 				Description: getCmdUpHelpDescription,
-				Footer:      getCmdUpHelpFooter,
 			},
 			GroupingOptions: actions.CommandGroupOptions{
 				RootLevelHelp: actions.CmdGroupManage,
 			},
 		}).
-		AddFlagCompletion("template", templateNameCompletion).
 		UseMiddleware("hooks", middleware.NewHooksMiddleware)
 
 	root.Add("monitor", &actions.ActionDescriptorOptions{
@@ -300,15 +320,14 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 }
 
 func getCmdRootHelpFooter(cmd *cobra.Command) string {
-	return fmt.Sprintf("%s\n%s %s %s %s\n%s %s.\n    %s\n\n%s",
+	return fmt.Sprintf("%s\n%s\n%s\n\n%s\n\n%s",
 		output.WithBold(output.WithUnderline("Deploying a sample application")),
-		"Initialize, provision, and deploy a template application by running the",
-		output.WithHighLightFormat("azd up --template"),
-		output.WithWarningFormat("[%s]", "template name"),
-		"command in an empty directory.",
-		output.WithGrayFormat("To view available templates run `azd template list` or visit:"),
-		output.WithLinkFormat("https://azure.github.io/awesome-azd"),
-		output.WithHighLightFormat("azd up --template todo-nodejs-mongo"),
+		"Initialize from a sample application by running the "+
+			output.WithHighLightFormat("azd init --template ")+
+			output.WithWarningFormat("[%s]", "template name")+" command in an empty directory.",
+		"Then, run "+output.WithHighLightFormat("azd up")+" to get the application up-and-running in Azure.",
+		output.WithGrayFormat("To view available templates run `azd template list` or visit: ")+
+			output.WithLinkFormat("https://azure.github.io/awesome-azd"),
 		getCmdHelpDefaultFooter(cmd),
 	)
 }

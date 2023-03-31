@@ -68,3 +68,6 @@ overrides:
       - keychain
       - crusername
       - azurecr
+ignorePaths:
+  - "**/*_test.go"
+  - "**/mock*.go"

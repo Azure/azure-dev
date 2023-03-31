@@ -9,6 +9,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
@@ -220,11 +221,26 @@ func createTerraformProvider(mockContext *mocks.MockContext) *TerraformProvider 
 	}
 
 	env := environment.EphemeralWithValues("test-env", map[string]string{
-		"AZURE_LOCATION": "westus2",
+		"AZURE_LOCATION":        "westus2",
+		"AZURE_SUBSCRIPTION_ID": "00000000-0000-0000-0000-000000000000",
 	})
 
 	return NewTerraformProvider(
-		*mockContext.Context, env, projectDir, options, mockContext.Console, mockContext.CommandRunner,
+		*mockContext.Context,
+		env,
+		projectDir,
+		options,
+		mockContext.Console,
+		mockContext.CommandRunner,
+		&mockCurrentPrincipal{},
+		Prompters{
+			Location: func(_ context.Context, _, _ string, _ func(loc account.Location) bool) (location string, err error) {
+				return "westus2", nil
+			},
+			Subscription: func(_ context.Context, _ string) (subscriptionId string, err error) {
+				return "00000000-0000-0000-0000-000000000000", nil
+			},
+		},
 	)
 }
 
@@ -321,4 +337,10 @@ func prepareDestroyMocks(commandRunner *mockexec.MockCommandRunner) {
 		Stdout: "",
 		Stderr: "",
 	})
+}
+
+type mockCurrentPrincipal struct{}
+
+func (m *mockCurrentPrincipal) CurrentPrincipalId(_ context.Context) (string, error) {
+	return "11111111-1111-1111-1111-111111111111", nil
 }

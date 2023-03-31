@@ -5,13 +5,13 @@ package project
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"log"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -23,19 +23,20 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 )
 
 type containerAppTarget struct {
-	env                      *environment.Environment
-	cli                      azcli.AzCli
-	containerRegistryService azcli.ContainerRegistryService
-	docker                   docker.Docker
-	console                  input.Console
-	commandRunner            exec.CommandRunner
-	accountManager           account.Manager
-	serviceManager           ServiceManager
-	resourceManager          ResourceManager
+	env                        *environment.Environment
+	cli                        azcli.AzCli
+	console                    input.Console
+	commandRunner              exec.CommandRunner
+	accountManager             account.Manager
+	serviceManager             ServiceManager
+	resourceManager            ResourceManager
+	containerHelper            *ContainerHelper
+	alphaFeatureManager        *alpha.FeatureManager
+	userProfileService         *azcli.UserProfileService
+	subscriptionTenantResolver account.SubscriptionTenantResolver
 }
 
 // NewContainerAppTarget creates the container app service target.
@@ -44,31 +45,35 @@ type containerAppTarget struct {
 // can be provisioned during deployment.
 func NewContainerAppTarget(
 	env *environment.Environment,
-	containerRegistryService azcli.ContainerRegistryService,
 	azCli azcli.AzCli,
-	docker docker.Docker,
 	console input.Console,
 	commandRunner exec.CommandRunner,
 	accountManager account.Manager,
 	serviceManager ServiceManager,
 	resourceManager ResourceManager,
+	userProfileService *azcli.UserProfileService,
+	subscriptionTenantResolver account.SubscriptionTenantResolver,
+	containerHelper *ContainerHelper,
+	alphaFeatureManager *alpha.FeatureManager,
 ) ServiceTarget {
 	return &containerAppTarget{
-		env:                      env,
-		accountManager:           accountManager,
-		serviceManager:           serviceManager,
-		resourceManager:          resourceManager,
-		cli:                      azCli,
-		containerRegistryService: containerRegistryService,
-		docker:                   docker,
-		console:                  console,
-		commandRunner:            commandRunner,
+		env:                        env,
+		accountManager:             accountManager,
+		serviceManager:             serviceManager,
+		resourceManager:            resourceManager,
+		cli:                        azCli,
+		console:                    console,
+		commandRunner:              commandRunner,
+		containerHelper:            containerHelper,
+		alphaFeatureManager:        alphaFeatureManager,
+		userProfileService:         userProfileService,
+		subscriptionTenantResolver: subscriptionTenantResolver,
 	}
 }
 
 // Gets the required external tools
-func (at *containerAppTarget) RequiredExternalTools(context.Context) []tools.ExternalTool {
-	return []tools.ExternalTool{at.docker}
+func (at *containerAppTarget) RequiredExternalTools(ctx context.Context) []tools.ExternalTool {
+	return at.containerHelper.RequiredExternalTools(ctx)
 }
 
 // Initializes the Container App target
@@ -90,14 +95,14 @@ func (at *containerAppTarget) Package(
 }
 
 // Deploys service container images to ACR and provisions the container app service.
-func (at *containerAppTarget) Publish(
+func (at *containerAppTarget) Deploy(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
 	targetResource *environment.TargetResource,
-) *async.TaskWithProgress[*ServicePublishResult, ServiceProgress] {
+) *async.TaskWithProgress[*ServiceDeployResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServicePublishResult, ServiceProgress]) {
+		func(task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress]) {
 			if err := at.validateTargetResource(ctx, serviceConfig, targetResource); err != nil {
 				task.SetError(fmt.Errorf("validating target resource: %w", err))
 				return
@@ -111,34 +116,13 @@ func (at *containerAppTarget) Publish(
 				serviceConfig.Infra.Module = serviceConfig.Name
 			}
 
-			packageDetails, ok := packageOutput.Details.(*dockerPackageResult)
-			if !ok {
-				task.SetError(errors.New("failed retrieving package result details"))
-				return
-			}
+			// Login, tag & push container image to ACR
+			containerDeployTask := at.containerHelper.Deploy(ctx, serviceConfig, packageOutput, targetResource)
+			syncProgress(task, containerDeployTask.Progress())
 
-			log.Printf("logging into registry %s", packageDetails.LoginServer)
-			task.SetProgress(NewServiceProgress("Logging into container registry"))
-			err := at.containerRegistryService.LoginAcr(ctx, targetResource.SubscriptionId(), packageDetails.LoginServer)
+			_, err := containerDeployTask.Await()
 			if err != nil {
-				task.SetError(fmt.Errorf("logging into registry '%s': %w", packageDetails.LoginServer, err))
-				return
-			}
-
-			// Push image.
-			log.Printf("pushing %s to registry", packageDetails.ImageTag)
-			task.SetProgress(NewServiceProgress("Pushing image"))
-			if err := at.docker.Push(ctx, serviceConfig.Path(), packageDetails.ImageTag); err != nil {
-				task.SetError(fmt.Errorf("pushing image: %w", err))
-				return
-			}
-
-			// Save the name of the image we pushed into the environment with a well known key.
-			log.Printf("writing image name to environment")
-			at.env.SetServiceProperty(serviceConfig.Name, "IMAGE_NAME", packageDetails.ImageTag)
-
-			if err := at.env.Save(); err != nil {
-				task.SetError(fmt.Errorf("saving image name to environment: %w", err))
+				task.SetError(err)
 				return
 			}
 
@@ -151,9 +135,12 @@ func (at *containerAppTarget) Publish(
 				at.cli,
 				&mutedConsole{
 					parentConsole: at.console,
-				}, // make provision output silence
+				}, // hide the bicep deployment output.
 				at.commandRunner,
 				at.accountManager,
+				at.userProfileService,
+				at.subscriptionTenantResolver,
+				at.alphaFeatureManager,
 			)
 			if err != nil {
 				task.SetError(fmt.Errorf("creating provisioning manager: %w", err))
@@ -224,7 +211,7 @@ func (at *containerAppTarget) Publish(
 				return
 			}
 
-			task.SetResult(&ServicePublishResult{
+			task.SetResult(&ServiceDeployResult{
 				Package: packageOutput,
 				TargetResourceId: azure.ContainerAppRID(
 					targetResource.SubscriptionId(),

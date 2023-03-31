@@ -47,7 +47,7 @@ resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
 
 // The application frontend
 module web '../../../../../common/infra/bicep/app/web-appservice.bicep' = {
-  name: 'web-initial'
+  name: 'web'
   scope: rg
   params: {
     name: webName

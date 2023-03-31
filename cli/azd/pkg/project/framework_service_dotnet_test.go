@@ -146,8 +146,6 @@ func Test_DotNetProject_Package(t *testing.T) {
 	env := environment.Ephemeral()
 	dotNetCli := dotnet.NewDotNetCli(mockContext.CommandRunner)
 	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageCsharp)
-	err := os.MkdirAll(serviceConfig.Path(), osutil.PermissionDirectory)
-	require.NoError(t, err)
 
 	dotnetProject := NewDotNetProject(dotNetCli, env)
 	packageTask := dotnetProject.Package(

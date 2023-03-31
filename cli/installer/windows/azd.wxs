@@ -50,6 +50,10 @@
             <!-- @Guid will be automatically and durably assigned based on key path -->
             <Component Directory="INSTALLDIR">
                 <File Name="azd.exe"/>
+
+                <!-- Attempt to clean up the downloaded files for the current user -->
+                <RemoveFile Id="DownloadedFiles" Property="BinFolder" Name="*" On="uninstall"/>
+                <RemoveFolder Id="DownloadedFolder" Property="BinFolder" On="uninstall"/>
             </Component>
             <Component Directory="INSTALLDIR">
                 <File Name="NOTICE.txt"/>
@@ -76,5 +80,13 @@
         <!-- Use customized WixUI_InstallDir that changes the license agreement to just a notice -->
         <Property Id="WIXUI_INSTALLDIR" Value="INSTALLDIR"/>
         <UIRef Id="AzureDevCLI_InstallDir"/>
+
+        <!-- Set the BinFolder property to use for cleaning up downloaded files -->
+        <SetProperty Id="BinFolder" Value="[%USERPROFILE]\.azd\bin" After="CostFinalize" Sequence="execute"/>
+
+        <!-- Do not attempt to remove files on upgrade -->
+        <InstallExecuteSequence>
+            <RemoveFiles Sequence="3500"><![CDATA[Installed AND NOT UPGRADINGPRODUCTCODE]]></RemoveFiles>
+        </InstallExecuteSequence>
     </Product>
 </Wix>

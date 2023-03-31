@@ -4,6 +4,7 @@ import (
 	"context"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
@@ -16,13 +17,14 @@ import (
 )
 
 type MockContext struct {
-	Credentials   *MockCredentials
-	Context       *context.Context
-	Console       *mockinput.MockConsole
-	HttpClient    *mockhttp.MockHttpClient
-	CommandRunner *mockexec.MockCommandRunner
-	ConfigManager *mockconfig.MockConfigManager
-	Container     *ioc.NestedContainer
+	Credentials          *MockCredentials
+	Context              *context.Context
+	Console              *mockinput.MockConsole
+	HttpClient           *mockhttp.MockHttpClient
+	CommandRunner        *mockexec.MockCommandRunner
+	ConfigManager        *mockconfig.MockConfigManager
+	Container            *ioc.NestedContainer
+	AlphaFeaturesManager *alpha.FeatureManager
 }
 
 func NewMockContext(ctx context.Context) *MockContext {
@@ -67,5 +69,8 @@ func registerCommonMocks(mockContext *MockContext) {
 	})
 	mockContext.Container.RegisterSingleton(func() config.Manager {
 		return mockContext.ConfigManager
+	})
+	mockContext.Container.RegisterSingleton(func() *alpha.FeatureManager {
+		return mockContext.AlphaFeaturesManager
 	})
 }

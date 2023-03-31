@@ -11,6 +11,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/repository"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -252,6 +253,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(project.NewServiceManager)
 	container.RegisterSingleton(repository.NewInitializer)
 	container.RegisterSingleton(config.NewUserConfigManager)
+	container.RegisterSingleton(alpha.NewFeaturesManager)
 	container.RegisterSingleton(config.NewManager)
 	container.RegisterSingleton(templates.NewTemplateManager)
 	container.RegisterSingleton(auth.NewManager)
@@ -262,6 +264,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(account.NewSubscriptionCredentialProvider)
 	container.RegisterSingleton(azcli.NewManagedClustersService)
 	container.RegisterSingleton(azcli.NewContainerRegistryService)
+	container.RegisterSingleton(project.NewContainerHelper)
 	container.RegisterSingleton(func() ioc.ServiceLocator {
 		return ioc.NewServiceLocator(container)
 	})
@@ -334,10 +337,12 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 	// Required for nested actions called from composite actions like 'up'
 	registerActionInitializer[*initAction](container, "azd-init-action")
-	registerActionInitializer[*deployAction](container, "azd-deploy-action")
 	registerActionInitializer[*provisionAction](container, "azd-provision-action")
+	registerActionInitializer[*restoreAction](container, "azd-restore-action")
+	registerActionInitializer[*buildAction](container, "azd-build-action")
+	registerActionInitializer[*packageAction](container, "azd-package-action")
+	registerActionInitializer[*deployAction](container, "azd-deploy-action")
 
-	// Required for alias actions like 'infra create' and 'infra delete'
-	registerAction[*downAction](container, "azd-down-action")
 	registerAction[*provisionAction](container, "azd-provision-action")
+	registerAction[*downAction](container, "azd-down-action")
 }

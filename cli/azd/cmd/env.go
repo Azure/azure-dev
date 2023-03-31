@@ -11,6 +11,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -338,6 +339,7 @@ type envRefreshAction struct {
 	formatter                  output.Formatter
 	writer                     io.Writer
 	commandRunner              exec.CommandRunner
+	alphaFeatureManager        *alpha.FeatureManager
 	userProfileService         *azcli.UserProfileService
 	subscriptionTenantResolver account.SubscriptionTenantResolver
 }
@@ -354,6 +356,7 @@ func newEnvRefreshAction(
 	console input.Console,
 	formatter output.Formatter,
 	writer io.Writer,
+	alphaFeatureManager *alpha.FeatureManager,
 	userProfileService *azcli.UserProfileService,
 	subscriptionTenantResolver account.SubscriptionTenantResolver,
 ) actions.Action {
@@ -371,6 +374,7 @@ func newEnvRefreshAction(
 		commandRunner:              commandRunner,
 		userProfileService:         userProfileService,
 		subscriptionTenantResolver: subscriptionTenantResolver,
+		alphaFeatureManager:        alphaFeatureManager,
 	}
 }
 
@@ -391,6 +395,7 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 		ef.accountManager,
 		ef.userProfileService,
 		ef.subscriptionTenantResolver,
+		ef.alphaFeatureManager,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("creating provisioning manager: %w", err)

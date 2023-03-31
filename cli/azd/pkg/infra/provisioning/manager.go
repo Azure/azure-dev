@@ -10,6 +10,7 @@ import (
 	"log"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -272,6 +273,7 @@ func NewManager(
 	accountManager account.Manager,
 	userProfileService *azcli.UserProfileService,
 	subResolver account.SubscriptionTenantResolver,
+	alphaFeatureManager *alpha.FeatureManager,
 ) (*Manager, error) {
 
 	principalProvider := &principalIDProvider{
@@ -297,7 +299,17 @@ func NewManager(
 	}
 
 	infraProvider, err := NewProvider(
-		ctx, console, azCli, commandRunner, env, projectPath, infraOptions, prompters, principalProvider)
+		ctx,
+		console,
+		azCli,
+		commandRunner,
+		env,
+		projectPath,
+		infraOptions,
+		prompters,
+		principalProvider,
+		alphaFeatureManager,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("error creating infra provider: %w", err)
 	}

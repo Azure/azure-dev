@@ -9,7 +9,7 @@ Commands
     auth     	: Authenticate with Azure.
     config   	: Manage azd configurations (ex: default Azure subscription, location).
     init     	: Initialize a new application.
-    restore  	: Restore application dependencies.
+    restore  	: Restores the application's dependencies.
     template 	: Find and view template details.
 
   Manage Azure resources and app deployments

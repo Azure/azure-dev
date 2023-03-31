@@ -5,9 +5,9 @@ package cmd
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"log"
+	"io"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -16,9 +16,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
-	"github.com/azure/azure-dev/cli/azd/pkg/spin"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -58,21 +57,26 @@ func newRestoreFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) 
 	return flags
 }
 
-func restoreCmdDesign() *cobra.Command {
-	return &cobra.Command{
+func newRestoreCmd() *cobra.Command {
+	cmd := &cobra.Command{
 		Use:   "restore <service>",
-		Short: "Restore application dependencies.",
+		Short: "Restores the application's dependencies.",
 	}
+	cmd.Args = cobra.MaximumNArgs(1)
+	return cmd
 }
 
 type restoreAction struct {
 	flags          *restoreFlags
 	args           []string
 	console        input.Console
+	formatter      output.Formatter
+	writer         io.Writer
 	azCli          azcli.AzCli
 	azdCtx         *azdcontext.AzdContext
 	env            *environment.Environment
 	projectConfig  *project.ProjectConfig
+	projectManager project.ProjectManager
 	serviceManager project.ServiceManager
 	commandRunner  exec.CommandRunner
 }
@@ -82,9 +86,12 @@ func newRestoreAction(
 	args []string,
 	azCli azcli.AzCli,
 	console input.Console,
+	formatter output.Formatter,
+	writer io.Writer,
 	azdCtx *azdcontext.AzdContext,
 	env *environment.Environment,
 	projectConfig *project.ProjectConfig,
+	projectManager project.ProjectManager,
 	serviceManager project.ServiceManager,
 	commandRunner exec.CommandRunner,
 ) actions.Action {
@@ -92,8 +99,11 @@ func newRestoreAction(
 		flags:          flags,
 		args:           args,
 		console:        console,
+		formatter:      formatter,
+		writer:         writer,
 		azdCtx:         azdCtx,
 		projectConfig:  projectConfig,
+		projectManager: projectManager,
 		serviceManager: serviceManager,
 		azCli:          azCli,
 		env:            env,
@@ -101,95 +111,94 @@ func newRestoreAction(
 	}
 }
 
-func (r *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	if r.flags.serviceName != "" {
-		fmt.Fprintln(
-			r.console.Handles().Stderr,
-			//nolint:Lll
-			output.WithWarningFormat("--service flag is no longer required. Simply run azd deploy <service> instead."))
+type RestoreResult struct {
+	Timestamp time.Time                                `json:"timestamp"`
+	Services  map[string]*project.ServiceRestoreResult `json:"services"`
+}
+
+func (ra *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	// Command title
+	ra.console.MessageUxItem(ctx, &ux.MessageTitle{
+		Title: "Restoring services (azd restore)",
+	})
+
+	serviceNameWarningCheck(ra.console, ra.flags.serviceName, "restore")
+
+	targetServiceName := ra.flags.serviceName
+	if len(ra.args) == 1 {
+		targetServiceName = ra.args[0]
 	}
 
-	targetServiceName := r.flags.serviceName
-	if len(r.args) == 1 {
-		targetServiceName = r.args[0]
-	}
-
-	if r.flags.all && targetServiceName != "" {
-		return nil, fmt.Errorf("cannot specify both --all and <service>")
-	}
-
-	if !r.flags.all && targetServiceName == "" {
-		var err error
-		targetServiceName, err = defaultServiceFromWd(r.azdCtx, r.projectConfig)
-		if errors.Is(err, errNoDefaultService) {
-			return nil, fmt.Errorf(
-				//nolint:lll
-				"current working directory is not a project or service directory. Please specify a service name to restore a service, or specify --all to restore all services")
-		} else if err != nil {
-			return nil, err
-		}
-	}
-
-	if targetServiceName != "" && !r.projectConfig.HasService(targetServiceName) {
-		return nil, fmt.Errorf("service name '%s' doesn't exist", targetServiceName)
-	}
-
-	count := 0
-
-	services := r.projectConfig.GetServicesStable()
-	targetServices := make([]*project.ServiceConfig, 0, len(services))
-	for _, svc := range services {
-		// If targetServiceName is empty (which is only allowed if --all is set),
-		// or if service is specified and matches the target service
-		if targetServiceName == "" || targetServiceName == svc.Name {
-			targetServices = append(targetServices, svc)
-		}
-	}
-
-	// Collect all the tools we will need to do the restore and validate that
-	// the are installed. When a single project is being deployed, we need just
-	// the tools for that project, otherwise we need the tools from all project.
-	allTools := []tools.ExternalTool{}
-	for _, svc := range targetServices {
-		requiredTools, err := r.serviceManager.GetRequiredTools(ctx, svc)
-		if err != nil {
-			return nil, fmt.Errorf("failed getting required tools, %w", err)
-		}
-
-		allTools = append(allTools, requiredTools...)
-	}
-
-	if err := tools.EnsureInstalled(ctx, tools.Unique(allTools)...); err != nil {
+	targetServiceName, err := getTargetServiceName(
+		ctx,
+		ra.projectManager,
+		ra.projectConfig,
+		string(project.ServiceEventRestore),
+		targetServiceName,
+		ra.flags.all,
+	)
+	if err != nil {
 		return nil, err
 	}
 
-	for _, svc := range targetServices {
-		installMsg := fmt.Sprintf("Installing dependencies for %s service...", svc.Name)
-		spinner := spin.NewSpinner(r.console.Handles().Stdout, installMsg)
-		if err := spinner.Run(func() error {
-			restoreTask := r.serviceManager.Restore(ctx, svc)
-			go func() {
-				for progress := range restoreTask.Progress() {
-					log.Printf("Restore progress: %s\n", progress.Message)
-				}
-			}()
-			_, err := restoreTask.Await()
-			if err != nil {
-				return err
+	if err := ra.projectManager.EnsureFrameworkTools(ctx, ra.projectConfig, func(svc *project.ServiceConfig) bool {
+		return targetServiceName == "" || svc.Name == targetServiceName
+	}); err != nil {
+		return nil, err
+	}
+
+	if err := ra.projectManager.Initialize(ctx, ra.projectConfig); err != nil {
+		return nil, err
+	}
+
+	restoreResults := map[string]*project.ServiceRestoreResult{}
+
+	for _, svc := range ra.projectConfig.GetServicesStable() {
+		stepMessage := fmt.Sprintf("Restoring service %s", svc.Name)
+		ra.console.ShowSpinner(ctx, stepMessage, input.Step)
+
+		// Skip this service if both cases are true:
+		// 1. The user specified a service name
+		// 2. This service is not the one the user specified
+		if targetServiceName != "" && targetServiceName != svc.Name {
+			ra.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
+			continue
+		}
+
+		restoreTask := ra.serviceManager.Restore(ctx, svc)
+		go func() {
+			for restoreProgress := range restoreTask.Progress() {
+				progressMessage := fmt.Sprintf("Restoring service %s (%s)", svc.Name, restoreProgress.Message)
+				ra.console.ShowSpinner(ctx, progressMessage, input.Step)
 			}
-			return nil
-		}); err != nil {
+		}()
+
+		restoreResult, err := restoreTask.Await()
+		if err != nil {
+			ra.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 			return nil, err
 		}
 
-		count++
+		ra.console.StopSpinner(ctx, stepMessage, input.StepDone)
+		restoreResults[svc.Name] = restoreResult
 	}
 
-	if targetServiceName != "" && count == 0 {
-		return nil, fmt.Errorf("Dependencies were not restored (%s service was not found)", targetServiceName)
+	if ra.formatter.Kind() == output.JsonFormat {
+		restoreResult := RestoreResult{
+			Timestamp: time.Now(),
+			Services:  restoreResults,
+		}
+
+		if fmtErr := ra.formatter.Format(restoreResult, ra.writer, nil); fmtErr != nil {
+			return nil, fmt.Errorf("restore result could not be displayed: %w", fmtErr)
+		}
 	}
 
-	return nil, nil
+	return &actions.ActionResult{
+		Message: &actions.ResultMessage{
+			Header: "Your Azure app has been restored!",
+		},
+	}, nil
 }
 
 func getCmdRestoreHelpDescription(*cobra.Command) string {

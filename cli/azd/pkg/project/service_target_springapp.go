@@ -82,7 +82,8 @@ func (st *springAppTarget) Deploy(
 			)
 
 			if err != nil {
-				task.SetError(fmt.Errorf("Spring Apps '%s' deployment '%s' not exists", serviceConfig.Name, serviceConfig.DeploymentName))
+				task.SetError(fmt.Errorf("Spring Apps '%s' deployment '%s' not exists",
+					serviceConfig.Name, serviceConfig.DeploymentName))
 				return
 			}
 

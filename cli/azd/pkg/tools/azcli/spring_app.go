@@ -108,7 +108,11 @@ func (cli *azCli) DeploySpringAppArtifact(
 			},
 		}, nil)
 
-	springClient.BeginSetActiveDeployments(ctx, resourceGroup, instanceName, appName,
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = springClient.BeginSetActiveDeployments(ctx, resourceGroup, instanceName, appName,
 		armappplatform.ActiveDeploymentCollection{
 			ActiveDeploymentNames: []*string{
 				to.Ptr(deploymentName),

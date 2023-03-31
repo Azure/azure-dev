@@ -61,7 +61,7 @@ func GetEnableCommand(key FeatureId) string {
 func WarningMessage(key FeatureId) ux.UxItem {
 	return &ux.WarningMessage{
 		Description: fmt.Sprintf(
-			"Feature: '%s' is in alpha stage, it can be changed or removed for next azd release.",
+			"Feature: '%s' is in alpha stage. Learn more about alpha: aka.ms/azd-feature-stages",
 			string(key),
 		),
 		HidePrefix: true,

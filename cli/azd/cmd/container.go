@@ -11,6 +11,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/repository"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -168,9 +169,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			azdContext *azdcontext.AzdContext,
 			envFlags envFlag,
 			console input.Console,
-			accountManager account.Manager,
-			userProfileService *azcli.UserProfileService,
-			subResolver account.SubscriptionTenantResolver) (*environment.Environment, error) {
+		) (*environment.Environment, error) {
 			if azdContext == nil {
 				return nil, azdcontext.ErrNoProject
 			}
@@ -178,8 +177,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			environmentName := envFlags.environmentName
 			var err error
 
-			env, err := loadOrInitEnvironment(
-				ctx, &environmentName, azdContext, console, accountManager, userProfileService, subResolver)
+			env, err := loadOrCreateEnvironment(ctx, environmentName, azdContext, console)
 			if err != nil {
 				return nil, fmt.Errorf("loading environment: %w", err)
 			}
@@ -255,6 +253,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(project.NewServiceManager)
 	container.RegisterSingleton(repository.NewInitializer)
 	container.RegisterSingleton(config.NewUserConfigManager)
+	container.RegisterSingleton(alpha.NewFeaturesManager)
 	container.RegisterSingleton(config.NewManager)
 	container.RegisterSingleton(templates.NewTemplateManager)
 	container.RegisterSingleton(auth.NewManager)

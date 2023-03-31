@@ -1,5 +1,5 @@
 
-Unsets a configuration
+Unsets a configuration.
 
 Usage
   azd config unset <path> [flags]

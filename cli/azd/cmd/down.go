@@ -7,6 +7,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -54,14 +55,17 @@ func newDownCmd() *cobra.Command {
 }
 
 type downAction struct {
-	flags          *downFlags
-	accountManager account.Manager
-	azCli          azcli.AzCli
-	azdCtx         *azdcontext.AzdContext
-	env            *environment.Environment
-	console        input.Console
-	commandRunner  exec.CommandRunner
-	projectConfig  *project.ProjectConfig
+	flags               *downFlags
+	accountManager      account.Manager
+	azCli               azcli.AzCli
+	azdCtx              *azdcontext.AzdContext
+	env                 *environment.Environment
+	console             input.Console
+	commandRunner       exec.CommandRunner
+	projectConfig       *project.ProjectConfig
+	userProfileService  *azcli.UserProfileService
+	subResolver         account.SubscriptionTenantResolver
+	alphaFeatureManager *alpha.FeatureManager
 }
 
 func newDownAction(
@@ -73,16 +77,22 @@ func newDownAction(
 	projectConfig *project.ProjectConfig,
 	console input.Console,
 	commandRunner exec.CommandRunner,
+	userProfileService *azcli.UserProfileService,
+	subResolver account.SubscriptionTenantResolver,
+	alphaFeatureManager *alpha.FeatureManager,
 ) actions.Action {
 	return &downAction{
-		flags:          flags,
-		accountManager: accountManager,
-		azCli:          azCli,
-		azdCtx:         azdCtx,
-		env:            env,
-		console:        console,
-		commandRunner:  commandRunner,
-		projectConfig:  projectConfig,
+		flags:               flags,
+		accountManager:      accountManager,
+		azCli:               azCli,
+		azdCtx:              azdCtx,
+		env:                 env,
+		console:             console,
+		commandRunner:       commandRunner,
+		projectConfig:       projectConfig,
+		userProfileService:  userProfileService,
+		subResolver:         subResolver,
+		alphaFeatureManager: alphaFeatureManager,
 	}
 }
 
@@ -97,6 +107,9 @@ func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		a.console,
 		a.commandRunner,
 		a.accountManager,
+		a.userProfileService,
+		a.subResolver,
+		a.alphaFeatureManager,
 	)
 
 	if err != nil {

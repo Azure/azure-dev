@@ -46,10 +46,10 @@ func Test_CLI_Up_Down_WebApp(t *testing.T) {
 	err := copySample(dir, "webapp")
 	require.NoError(t, err, "failed expanding sample")
 
-	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "init")
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
 	require.NoError(t, err)
 
-	_, err = cli.RunCommand(ctx, "infra", "create")
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "infra", "create")
 	require.NoError(t, err)
 
 	t.Logf("Running show\n")
@@ -162,11 +162,11 @@ func Test_CLI_Up_Down_FuncApp(t *testing.T) {
 	err := copySample(dir, "funcapp")
 	require.NoError(t, err, "failed expanding sample")
 
-	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "init")
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
 	require.NoError(t, err)
 
 	t.Logf("Starting infra create\n")
-	_, err = cli.RunCommand(ctx, "infra", "create", "--cwd", dir)
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "infra", "create", "--cwd", dir)
 	require.NoError(t, err)
 
 	t.Logf("Starting deploy\n")
@@ -248,10 +248,10 @@ func Test_CLI_Up_Down_ContainerApp(t *testing.T) {
 			err := copySample(dir, "containerapp")
 			require.NoError(t, err, "failed expanding sample")
 
-			_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "init")
+			_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
 			require.NoError(t, err)
 
-			_, err = cli.RunCommand(ctx, "infra", "create")
+			_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "infra", "create")
 			require.NoError(t, err)
 
 			_, err = cli.RunCommand(ctx, "deploy", "--cwd", filepath.Join(dir, "src", "dotnet"))

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -19,11 +20,23 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
-type LocationPromptFunc func(msg string, shouldDisplay func(loc account.Location) bool) (location string, err error)
+// LocationPromptFunc prompts the user for an Azure location, from the set of locations that the given subscription has
+// access to. This list may be further restricted by [shouldDisplay]. The return value is the short name of the location
+// (e.g. eastus2).
+type LocationPromptFunc func(
+	ctx context.Context,
+	subscriptionId string,
+	msg string,
+	shouldDisplay func(loc account.Location) bool,
+) (location string, err error)
+
+// SubscriptionPromptFunc prompts the user for an Azure subscription, from the set of subscriptions the user has access to.
+type SubscriptionPromptFunc func(ctx context.Context, msg string) (subscriptionId string, err error)
 
 // Prompters contains prompt functions that can be used for general scenarios.
 type Prompters struct {
-	Location LocationPromptFunc
+	Location     LocationPromptFunc
+	Subscription SubscriptionPromptFunc
 }
 
 type ProviderKind string
@@ -37,6 +50,7 @@ type NewProviderFn func(
 	cli azcli.AzCli,
 	commandRunner exec.CommandRunner,
 	prompters Prompters,
+	principalProvider CurrentPrincipalIdProvider,
 ) (Provider, error)
 
 var (
@@ -100,6 +114,9 @@ type StateProgress struct {
 type Provider interface {
 	Name() string
 	RequiredExternalTools() []tools.ExternalTool
+	// EnsureConfigured ensures that any required configuration for the provider has been loaded, prompting the user for
+	// any missing values. It should be called before [State], [Plan], [Deploy], or [Destroy].
+	EnsureConfigured(ctx context.Context) error
 	// State gets the current state of the infrastructure, this contains both the provisioned resources and any outputs from
 	// the module.
 	State(ctx context.Context, scope infra.Scope) *async.InteractiveTaskWithProgress[*StateResult, *StateProgress]
@@ -135,11 +152,23 @@ func NewProvider(
 	projectPath string,
 	infraOptions Options,
 	prompters Prompters,
+	principalProvider CurrentPrincipalIdProvider,
+	alphaFeatureManager *alpha.FeatureManager,
 ) (Provider, error) {
 	var provider Provider
 
 	if infraOptions.Provider == "" {
 		infraOptions.Provider = Bicep
+	}
+
+	if alphaFeatureId, isAlphaFeature := alpha.IsFeatureKey(string(infraOptions.Provider)); isAlphaFeature {
+		if !alphaFeatureManager.IsEnabled(alphaFeatureId) {
+			return nil, fmt.Errorf("provider '%s' is alpha feature and it is not enabled. Run `%s` to enable it.",
+				infraOptions.Provider,
+				alpha.GetEnableCommand(alphaFeatureId),
+			)
+		}
+		console.MessageUxItem(ctx, alpha.WarningMessage(alphaFeatureId))
 	}
 
 	newProviderFn, ok := providers[infraOptions.Provider]
@@ -148,7 +177,8 @@ func NewProvider(
 		return nil, fmt.Errorf("provider '%s' is not supported", infraOptions.Provider)
 	}
 
-	provider, err := newProviderFn(ctx, env, projectPath, infraOptions, console, azCli, commandRunner, prompters)
+	provider, err := newProviderFn(
+		ctx, env, projectPath, infraOptions, console, azCli, commandRunner, prompters, principalProvider)
 	if err != nil {
 		return nil, fmt.Errorf("error creating provider for type '%s' : %w", infraOptions.Provider, err)
 	}

@@ -1,11 +1,11 @@
 
-Lists all configuration values.
+Display the list of available features in alpha stage.
 
 Usage
-  azd config list [flags]
+  azd config list-alpha [flags]
 
 Flags
-    -h, --help 	: Gets help for list.
+    -h, --help 	: Gets help for list-alpha.
 
 Global Flags
     -C, --cwd string 	: Sets the current working directory.

@@ -11,6 +11,7 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -25,14 +26,17 @@ import (
 )
 
 type containerAppTarget struct {
-	env             *environment.Environment
-	cli             azcli.AzCli
-	console         input.Console
-	commandRunner   exec.CommandRunner
-	accountManager  account.Manager
-	serviceManager  ServiceManager
-	resourceManager ResourceManager
-	containerHelper *ContainerHelper
+	env                        *environment.Environment
+	cli                        azcli.AzCli
+	console                    input.Console
+	commandRunner              exec.CommandRunner
+	accountManager             account.Manager
+	serviceManager             ServiceManager
+	resourceManager            ResourceManager
+	containerHelper            *ContainerHelper
+	alphaFeatureManager        *alpha.FeatureManager
+	userProfileService         *azcli.UserProfileService
+	subscriptionTenantResolver account.SubscriptionTenantResolver
 }
 
 // NewContainerAppTarget creates the container app service target.
@@ -47,17 +51,23 @@ func NewContainerAppTarget(
 	accountManager account.Manager,
 	serviceManager ServiceManager,
 	resourceManager ResourceManager,
+	userProfileService *azcli.UserProfileService,
+	subscriptionTenantResolver account.SubscriptionTenantResolver,
 	containerHelper *ContainerHelper,
+	alphaFeatureManager *alpha.FeatureManager,
 ) ServiceTarget {
 	return &containerAppTarget{
-		env:             env,
-		accountManager:  accountManager,
-		serviceManager:  serviceManager,
-		resourceManager: resourceManager,
-		cli:             azCli,
-		console:         console,
-		commandRunner:   commandRunner,
-		containerHelper: containerHelper,
+		env:                        env,
+		accountManager:             accountManager,
+		serviceManager:             serviceManager,
+		resourceManager:            resourceManager,
+		cli:                        azCli,
+		console:                    console,
+		commandRunner:              commandRunner,
+		containerHelper:            containerHelper,
+		alphaFeatureManager:        alphaFeatureManager,
+		userProfileService:         userProfileService,
+		subscriptionTenantResolver: subscriptionTenantResolver,
 	}
 }
 
@@ -125,9 +135,12 @@ func (at *containerAppTarget) Deploy(
 				at.cli,
 				&mutedConsole{
 					parentConsole: at.console,
-				}, // make provision output silence
+				}, // hide the bicep deployment output.
 				at.commandRunner,
 				at.accountManager,
+				at.userProfileService,
+				at.subscriptionTenantResolver,
+				at.alphaFeatureManager,
 			)
 			if err != nil {
 				task.SetError(fmt.Errorf("creating provisioning manager: %w", err))

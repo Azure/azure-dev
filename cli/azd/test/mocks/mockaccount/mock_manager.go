@@ -21,8 +21,12 @@ func (a *MockAccountManager) Clear(ctx context.Context) error {
 	return nil
 }
 
-func (a *MockAccountManager) HasDefaults() bool {
-	return a.DefaultLocation != "" || a.DefaultSubscription != ""
+func (a *MockAccountManager) HasDefaultSubscription() bool {
+	return a.DefaultSubscription != ""
+}
+
+func (a *MockAccountManager) HasDefaultLocation() bool {
+	return a.DefaultLocation != ""
 }
 
 func (a *MockAccountManager) GetAccountDefaults(ctx context.Context) (*account.Account, error) {

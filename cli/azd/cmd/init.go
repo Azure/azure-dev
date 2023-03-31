@@ -7,7 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
 	"os"
 	"strings"
 
@@ -15,8 +14,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/repository"
-	"github.com/azure/azure-dev/cli/azd/pkg/account"
-	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -25,7 +22,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -77,35 +73,25 @@ func (i *initFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOpt
 }
 
 type initAction struct {
-	accountManager     account.Manager
-	userProfileService *azcli.UserProfileService
-	console            input.Console
-	cmdRun             exec.CommandRunner
-	gitCli             git.GitCli
-	flags              *initFlags
-	repoInitializer    *repository.Initializer
-	subResolver        account.SubscriptionTenantResolver
+	console         input.Console
+	cmdRun          exec.CommandRunner
+	gitCli          git.GitCli
+	flags           *initFlags
+	repoInitializer *repository.Initializer
 }
 
 func newInitAction(
-	accountManager account.Manager,
-	userProfileService *azcli.UserProfileService,
-	subResolver account.SubscriptionTenantResolver,
-	_ auth.LoggedInGuard,
 	cmdRun exec.CommandRunner,
 	console input.Console,
 	gitCli git.GitCli,
 	flags *initFlags,
 	repoInitializer *repository.Initializer) actions.Action {
 	return &initAction{
-		accountManager:     accountManager,
-		console:            console,
-		cmdRun:             cmdRun,
-		gitCli:             gitCli,
-		flags:              flags,
-		userProfileService: userProfileService,
-		repoInitializer:    repoInitializer,
-		subResolver:        subResolver,
+		console:         console,
+		cmdRun:          cmdRun,
+		gitCli:          gitCli,
+		flags:           flags,
+		repoInitializer: repoInitializer,
 	}
 }
 
@@ -195,27 +181,14 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		subscription:    i.flags.subscription,
 		location:        i.flags.location,
 	}
-	env, err := createAndInitEnvironment(
-		ctx, &envSpec, azdCtx, i.console, i.accountManager, i.userProfileService, i.subResolver)
+
+	env, err := createEnvironment(ctx, envSpec, azdCtx, i.console)
 	if err != nil {
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}
 
-	if err := azdCtx.SetDefaultEnvironmentName(envSpec.environmentName); err != nil {
+	if err := azdCtx.SetDefaultEnvironmentName(env.GetEnvName()); err != nil {
 		return nil, fmt.Errorf("saving default environment: %w", err)
-	}
-
-	// If the configuration is empty, set default subscription & location
-	// This will be the case for first run experience
-	if !i.accountManager.HasDefaults() {
-		_, err = i.accountManager.SetDefaultSubscription(ctx, env.GetSubscriptionId())
-		if err != nil {
-			log.Printf("failed setting default subscription. %s\n", err.Error())
-		}
-		_, err = i.accountManager.SetDefaultLocation(ctx, env.GetSubscriptionId(), env.GetLocation())
-		if err != nil {
-			log.Printf("failed setting default location. %s\n", err.Error())
-		}
 	}
 
 	//nolint:lll

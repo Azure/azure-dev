@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"time"
@@ -13,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -102,6 +104,7 @@ type deployAction struct {
 	commandRunner            exec.CommandRunner
 	middlewareRunner         middleware.MiddlewareContext
 	packageActionInitializer actions.ActionInitializer[*packageAction]
+	alphaFeatureManager      *alpha.FeatureManager
 }
 
 func newDeployAction(
@@ -121,6 +124,7 @@ func newDeployAction(
 	writer io.Writer,
 	middlewareRunner middleware.MiddlewareContext,
 	packageActionInitializer actions.ActionInitializer[*packageAction],
+	alphaFeatureManager *alpha.FeatureManager,
 ) actions.Action {
 	return &deployAction{
 		flags:                    flags,
@@ -139,6 +143,7 @@ func newDeployAction(
 		commandRunner:            commandRunner,
 		middlewareRunner:         middlewareRunner,
 		packageActionInitializer: packageActionInitializer,
+		alphaFeatureManager:      alphaFeatureManager,
 	}
 }
 
@@ -173,6 +178,12 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	})
 
 	serviceNameWarningCheck(da.console, da.flags.serviceName, "deploy")
+
+	if da.env.GetSubscriptionId() == "" {
+		return nil, errors.New(
+			"infrastructure has not been provisioned. Please run `azd provision`",
+		)
+	}
 
 	targetServiceName, err = getTargetServiceName(
 		ctx,
@@ -245,7 +256,7 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
 			Header:   "Your Azure app has been deployed!",
-			FollowUp: getResourceGroupFollowUp(ctx, da.formatter, da.azCli, da.projectConfig, da.resourceManager, da.env),
+			FollowUp: getResourceGroupFollowUp(ctx, da.formatter, da.projectConfig, da.resourceManager, da.env),
 		},
 	}, nil
 }

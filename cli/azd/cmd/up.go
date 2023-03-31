@@ -46,6 +46,7 @@ func newUpCmd() *cobra.Command {
 
 type upAction struct {
 	flags                      *upFlags
+	packageActionInitializer   actions.ActionInitializer[*packageAction]
 	provisionActionInitializer actions.ActionInitializer[*provisionAction]
 	deployActionInitializer    actions.ActionInitializer[*deployAction]
 	console                    input.Console
@@ -54,6 +55,7 @@ type upAction struct {
 
 func newUpAction(
 	flags *upFlags,
+	packageActionInitializer actions.ActionInitializer[*packageAction],
 	provisionActionInitializer actions.ActionInitializer[*provisionAction],
 	deployActionInitializer actions.ActionInitializer[*deployAction],
 	console input.Console,
@@ -61,6 +63,7 @@ func newUpAction(
 ) actions.Action {
 	return &upAction{
 		flags:                      flags,
+		packageActionInitializer:   packageActionInitializer,
 		provisionActionInitializer: provisionActionInitializer,
 		deployActionInitializer:    deployActionInitializer,
 		console:                    console,
@@ -81,6 +84,16 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		fmt.Fprintln(
 			u.console.Handles().Stderr,
 			output.WithWarningFormat("The --service flag is deprecated and will be removed in the future."))
+	}
+
+	packageAction, err := u.packageActionInitializer()
+	if err != nil {
+		return nil, err
+	}
+	packageOptions := &middleware.Options{CommandPath: "package"}
+	_, err = u.runner.RunChildAction(ctx, packageOptions, packageAction)
+	if err != nil {
+		return nil, err
 	}
 
 	provision, err := u.provisionActionInitializer()

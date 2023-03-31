@@ -151,6 +151,7 @@ func NewProvider(
 				alpha.GetEnableCommand(alphaFeatureId),
 			)
 		}
+		console.MessageUxItem(ctx, alpha.WarningMessage(alphaFeatureId))
 	}
 
 	newProviderFn, ok := providers[infraOptions.Provider]

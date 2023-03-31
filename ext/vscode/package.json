@@ -288,6 +288,11 @@
                     "group": "default@12"
                 },
                 {
+                    "command": "azure-dev.commands.cli.deploy",
+                    "when": "viewItem =~ /ms-azuretools.azure-dev.views.workspace.service(?!s)/i",
+                    "group": "default@13"
+                },
+                {
                     "command": "azure-dev.commands.cli.env-edit",
                     "when": "viewItem =~ /ms-azuretools.azure-dev.views.workspace.environment(?!s)/i",
                     "group": "nonDefault@1"

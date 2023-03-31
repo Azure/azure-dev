@@ -116,6 +116,7 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, err
 	}
 
+	deploy.skipPackage = true
 	deploy.flags = &u.flags.deployFlags
 	// move flag to args to avoid extra deprecation flag warning
 	if deploy.flags.serviceName != "" {

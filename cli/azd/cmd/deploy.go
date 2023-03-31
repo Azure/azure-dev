@@ -105,6 +105,7 @@ type deployAction struct {
 	middlewareRunner         middleware.MiddlewareContext
 	packageActionInitializer actions.ActionInitializer[*packageAction]
 	alphaFeatureManager      *alpha.FeatureManager
+	skipPackage              bool
 }
 
 func newDeployAction(
@@ -163,13 +164,15 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		return nil, err
 	}
 
-	packageAction.flags.all = da.flags.all
-	packageAction.args = []string{targetServiceName}
+	if !da.skipPackage {
+		packageAction.flags.all = da.flags.all
+		packageAction.args = []string{targetServiceName}
 
-	packageOptions := &middleware.Options{CommandPath: "package"}
-	_, err = da.middlewareRunner.RunChildAction(ctx, packageOptions, packageAction)
-	if err != nil {
-		return nil, err
+		packageOptions := &middleware.Options{CommandPath: "package"}
+		_, err = da.middlewareRunner.RunChildAction(ctx, packageOptions, packageAction)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	// Command title
@@ -197,13 +200,13 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		return nil, err
 	}
 
-	if err := da.projectManager.EnsureServiceTargetTools(ctx, da.projectConfig, func(svc *project.ServiceConfig) bool {
-		return targetServiceName == "" || svc.Name == targetServiceName
-	}); err != nil {
+	if err := da.projectManager.Initialize(ctx, da.projectConfig); err != nil {
 		return nil, err
 	}
 
-	if err := da.projectManager.Initialize(ctx, da.projectConfig); err != nil {
+	if err := da.projectManager.EnsureServiceTargetTools(ctx, da.projectConfig, func(svc *project.ServiceConfig) bool {
+		return targetServiceName == "" || svc.Name == targetServiceName
+	}); err != nil {
 		return nil, err
 	}
 

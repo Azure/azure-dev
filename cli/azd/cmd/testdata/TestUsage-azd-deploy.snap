@@ -9,9 +9,10 @@ Usage
   azd deploy <service> [flags]
 
 Flags
-        --all                	: Deploys all services that are listed in azure.yaml
-    -e, --environment string 	: The name of the environment to use.
-    -h, --help               	: Gets help for deploy.
+        --all                 	: Deploys all services that are listed in azure.yaml
+    -e, --environment string  	: The name of the environment to use.
+        --from-package string 	: Deploys the application from an existing package file.
+    -h, --help                	: Gets help for deploy.
 
 Global Flags
     -C, --cwd string 	: Sets the current working directory.

@@ -15,12 +15,12 @@ services:
           shell: sh
           run: node entrypoint.js -o ./build/env-config.js
           continueOnError: false
-          interactive: true
+          interactive: false
         windows:
           shell: pwsh
           run: node entrypoint.js -o ./build/env-config.js
           continueOnError: false
-          interactive: true
+          interactive: false
   api:
     project: ../../api/csharp-sql-func
     language: dotnet

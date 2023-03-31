@@ -5,6 +5,7 @@ import (
 	"log"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/resources"
 	"gopkg.in/yaml.v3"
@@ -59,11 +60,10 @@ func GetEnableCommand(key FeatureId) string {
 
 // WarningMessage generates the output message when customer is using alpha features.
 func WarningMessage(key FeatureId) ux.UxItem {
-	return &ux.WarningMessage{
-		Description: fmt.Sprintf(
-			"Feature: '%s' is in alpha stage. Learn more about alpha: aka.ms/azd-feature-stages",
-			string(key),
-		),
-		HidePrefix: true,
+	return &ux.MultilineMessage{
+		Lines: []string{
+			output.WithWarningFormat("WARNING: Feature '%s' is in alpha stage.", string(key)),
+			fmt.Sprintf("To learn more about alpha, visit %s.", output.WithHighLightFormat("aka.ms/azd-feature-stages")),
+		},
 	}
 }

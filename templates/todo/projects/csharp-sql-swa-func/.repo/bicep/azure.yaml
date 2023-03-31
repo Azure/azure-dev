@@ -13,12 +13,12 @@ services:
       predeploy:
         posix:
           shell: sh
-          run: node entrypoint.js -o ./build/env-config.js
+          run: node entrypoint.js -o ./.azdout/env-config.js
           continueOnError: false
           interactive: true
         windows:
           shell: pwsh
-          run: node entrypoint.js -o ./build/env-config.js
+          run: node entrypoint.js -o ./.azdout/env-config.js
           continueOnError: false
           interactive: true
   api:

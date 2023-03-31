@@ -45,8 +45,8 @@ resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
   tags: tags
 }
 
-// The initial, empty application frontend
-module webInitial '../../../../../common/infra/bicep/app/web-appservice.bicep' = {
+// The application frontend
+module web '../../../../../common/infra/bicep/app/web-appservice.bicep' = {
   name: 'web-initial'
   scope: rg
   params: {
@@ -69,7 +69,7 @@ module api '../../../../../common/infra/bicep/app/api-appservice-java.bicep' = {
     applicationInsightsName: monitoring.outputs.applicationInsightsName
     appServicePlanId: appServicePlan.outputs.id
     keyVaultName: keyVault.outputs.name
-    allowedOrigins: [ webInitial.outputs.SERVICE_WEB_URI ]
+    allowedOrigins: [ web.outputs.SERVICE_WEB_URI ]
     appSettings: {
       AZURE_COSMOS_CONNECTION_STRING_KEY: cosmos.outputs.connectionStringKey
       AZURE_COSMOS_DATABASE_NAME: cosmos.outputs.databaseName
@@ -78,16 +78,12 @@ module api '../../../../../common/infra/bicep/app/api-appservice-java.bicep' = {
   }
 }
 
-// The completed application frontend with app settings
-module web '../../../../../common/infra/bicep/app/web-appservice.bicep' = {
-  name: 'web'
+// The application frontend app settings
+module webSettings '../../../../../../common/infra/bicep/core/host/appservice-settings.bicep' = {
+  name: 'websettings'
   scope: rg
   params: {
     name: webName
-    location: location
-    tags: tags
-    applicationInsightsName: monitoring.outputs.applicationInsightsName
-    appServicePlanId: appServicePlan.outputs.id
     appSettings: {
       REACT_APP_API_BASE_URL: useAPIM ? apimApi.outputs.SERVICE_API_URI : api.outputs.SERVICE_API_URI
       REACT_APP_APPLICATIONINSIGHTS_CONNECTION_STRING: monitoring.outputs.applicationInsightsConnectionString
@@ -179,7 +175,7 @@ module apimApi '../../../../../common/infra/bicep/app/apim-api.bicep' = if (useA
     apiDisplayName: 'Simple Todo API'
     apiDescription: 'This is a simple Todo API'
     apiPath: 'todo'
-    webFrontendUrl: webInitial.outputs.SERVICE_WEB_URI
+    webFrontendUrl: web.outputs.SERVICE_WEB_URI
     apiBackendUrl: api.outputs.SERVICE_API_URI
     apiAppName: api.outputs.SERVICE_API_NAME
   }

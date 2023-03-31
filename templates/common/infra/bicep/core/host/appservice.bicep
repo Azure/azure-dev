@@ -77,24 +77,16 @@ resource appService 'Microsoft.Web/sites@2022-03-01' = {
   }
 }
 
-resource configAppSettings 'Microsoft.Web/sites/config@2022-03-01' = if(!empty(appSettings)) {
-  name: 'appsettings'
-  parent: appService
-  properties: union(appSettings,
-    {
-      SCM_DO_BUILD_DURING_DEPLOYMENT: string(scmDoBuildDuringDeployment)
-      ENABLE_ORYX_BUILD: string(enableOryxBuild)
-    },
-    !empty(applicationInsightsName) ? { APPLICATIONINSIGHTS_CONNECTION_STRING: applicationInsights.properties.ConnectionString } : {},
-    !empty(keyVaultName) ? { AZURE_KEY_VAULT_ENDPOINT: keyVault.properties.vaultUri } : {})   
-}
-
-resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' existing = if (!(empty(keyVaultName))) {
-  name: keyVaultName
-}
-
-resource applicationInsights 'Microsoft.Insights/components@2020-02-02' existing = if (!empty(applicationInsightsName)) {
-  name: applicationInsightsName
+module settings 'appservice-settings.bicep' = if(!empty(appSettings)) {
+  name: '${name}-appsettings'
+  params: {
+    name: appService.name
+    applicationInsightsName: applicationInsightsName
+    keyVaultName: keyVaultName
+    scmDoBuildDuringDeployment: scmDoBuildDuringDeployment 
+    enableOryxBuild: enableOryxBuild
+    appSettings: appSettings
+  }
 }
 
 output identityPrincipalId string = managedIdentity ? appService.identity.principalId : ''

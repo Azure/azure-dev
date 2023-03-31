@@ -44,12 +44,6 @@ func (d *deployFlags) bindNonCommon(
 	local *pflag.FlagSet,
 	global *internal.GlobalCommandOptions) {
 	local.StringVar(
-		&d.fromPackage,
-		"from-package",
-		"",
-		"Deploys the application from an existing package file.",
-	)
-	local.StringVar(
 		&d.serviceName,
 		"service",
 		"",
@@ -70,6 +64,12 @@ func (d *deployFlags) bindCommon(local *pflag.FlagSet, global *internal.GlobalCo
 		"all",
 		false,
 		"Deploys all services that are listed in "+azdcontext.ProjectFileName,
+	)
+	local.StringVar(
+		&d.fromPackage,
+		"from-package",
+		"",
+		"Deploys the application from an existing package file.",
 	)
 	local.StringVar(
 		&d.fromPackage,

@@ -44,6 +44,12 @@ func (d *deployFlags) bindNonCommon(
 	local *pflag.FlagSet,
 	global *internal.GlobalCommandOptions) {
 	local.StringVar(
+		&d.fromPackage,
+		"from-package",
+		"",
+		"Deploys the application from an existing package file.",
+	)
+	local.StringVar(
 		&d.serviceName,
 		"service",
 		"",

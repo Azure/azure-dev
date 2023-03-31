@@ -109,6 +109,9 @@ func (ch *ContainerHelper) Deploy(
 			}
 
 			if localImageTag == "" {
+			}
+
+			if localImageTag == "" {
 				task.SetError(errors.New("failed retrieving package result details"))
 				return
 			}

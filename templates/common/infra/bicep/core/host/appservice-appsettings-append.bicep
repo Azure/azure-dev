@@ -6,7 +6,7 @@ resource appService 'Microsoft.Web/sites@2022-03-01' existing = {
 }
 
 module apply 'appservice-appsettings.bicep' = {
-  name: 'appservice-appsettings'
+  name: '${name}-appservice-appsettings'
   params: {
     name: appService.name
     currentAppSettings: list('${appService.id}/config/appSettings', '2022-03-01').properties

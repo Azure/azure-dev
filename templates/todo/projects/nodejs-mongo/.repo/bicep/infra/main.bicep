@@ -35,6 +35,9 @@ var abbrs = loadJsonContent('../../../../../../common/infra/bicep/abbreviations.
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = { 'azd-env-name': environmentName }
 
+// The name of the web app resource
+var webName = !empty(webServiceName) ? webServiceName : '${abbrs.webSitesAppService}web-${resourceToken}'
+
 // Organize resources in a resource group
 resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
   name: !empty(resourceGroupName) ? resourceGroupName : '${abbrs.resourcesResourceGroups}${environmentName}'
@@ -75,12 +78,12 @@ module api '../../../../../common/infra/bicep/app/api-appservice-node.bicep' = {
   }
 }
 
-// Set web app settings to point to the API
+// Set additional web app settings
 module webSettings '../../../../../../common/infra/bicep/core/host/appservice-appsettings-append.bicep' = {
   name: 'websettings'
   scope: rg
   params: {
-    name: !empty(webServiceName) ? webServiceName : '${abbrs.webSitesAppService}web-${resourceToken}'
+    name: webName
     appSettings: {
       REACT_APP_API_BASE_URL: api.outputs.SERVICE_API_URI
       REACT_APP_APPLICATIONINSIGHTS_CONNECTION_STRING: monitoring.outputs.applicationInsightsConnectionString

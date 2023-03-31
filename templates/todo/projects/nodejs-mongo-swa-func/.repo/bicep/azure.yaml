@@ -9,6 +9,18 @@ services:
     dist: build
     language: js
     host: staticwebapp
+    hooks:
+      postpackage:
+        posix:
+          shell: sh
+          run: node entrypoint.js -o ./build/env-config.js
+          continueOnError: false
+          interactive: true
+        windows:
+          shell: pwsh
+          run: node entrypoint.js -o ./build/env-config.js
+          continueOnError: false
+          interactive: true
   api:
     project: ../../api/js
     language: js

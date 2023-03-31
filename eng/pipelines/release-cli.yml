@@ -609,6 +609,8 @@ stages:
       - job: Verify_MSI
         dependsOn: Compress_For_Hosting
         pool: azsdk-pool-mms-win-2022-general
+        variables: 
+          AZURE_DEV_COLLECT_TELEMETRY: no
         strategy:
           matrix:
             PerUser:

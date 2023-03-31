@@ -32,6 +32,7 @@ type TestProvider struct {
 	projectPath string
 	options     Options
 	console     input.Console
+	prompters   Prompters
 }
 
 // Name gets the name of the infra provider
@@ -41,6 +42,10 @@ func (p *TestProvider) Name() string {
 
 func (p *TestProvider) RequiredExternalTools() []tools.ExternalTool {
 	return []tools.ExternalTool{}
+}
+
+func (p *TestProvider) EnsureConfigured(ctx context.Context) error {
+	return EnsureSubscriptionAndLocation(ctx, p.env, p.prompters)
 }
 
 func (p *TestProvider) Plan(
@@ -184,12 +189,19 @@ func (p *TestProvider) Destroy(
 		})
 }
 
-func NewTestProvider(env *environment.Environment, projectPath string, console input.Console, options Options) Provider {
+func NewTestProvider(
+	env *environment.Environment,
+	projectPath string,
+	console input.Console,
+	options Options,
+	prompters Prompters,
+) Provider {
 	return &TestProvider{
 		env:         env,
 		projectPath: projectPath,
 		options:     options,
 		console:     console,
+		prompters:   prompters,
 	}
 }
 
@@ -205,9 +217,10 @@ func init() {
 			console input.Console,
 			_ azcli.AzCli,
 			_ exec.CommandRunner,
-			_ Prompters,
+			prompters Prompters,
+			_ CurrentPrincipalIdProvider,
 		) (Provider, error) {
-			return NewTestProvider(env, projectPath, console, options), nil
+			return NewTestProvider(env, projectPath, console, options, prompters), nil
 		},
 	)
 

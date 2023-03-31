@@ -49,20 +49,20 @@ type ServiceTarget interface {
 	// target.
 	RequiredExternalTools(ctx context.Context) []tools.ExternalTool
 
-	// Package prepares artifacts for publishing
+	// Package prepares artifacts for deployment
 	Package(
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
 		frameworkPackageOutput *ServicePackageResult,
 	) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress]
 
-	// Publish deploys the given deployment artifact to the target resource
-	Publish(
+	// Deploys the given deployment artifact to the target resource
+	Deploy(
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
 		servicePackage *ServicePackageResult,
 		targetResource *environment.TargetResource,
-	) *async.TaskWithProgress[*ServicePublishResult, ServiceProgress]
+	) *async.TaskWithProgress[*ServiceDeployResult, ServiceProgress]
 
 	// Endpoints gets the endpoints a service exposes.
 	Endpoints(
@@ -72,14 +72,14 @@ type ServiceTarget interface {
 	) ([]string, error)
 }
 
-// NewServicePublishResult is a helper function to create a new ServicePublishResult
-func NewServicePublishResult(
+// NewServiceDeployResult is a helper function to create a new ServiceDeployResult
+func NewServiceDeployResult(
 	relatedResourceId string,
 	kind ServiceTargetKind,
 	rawResult string,
 	endpoints []string,
-) *ServicePublishResult {
-	returnValue := &ServicePublishResult{
+) *ServiceDeployResult {
+	returnValue := &ServiceDeployResult{
 		TargetResourceId: relatedResourceId,
 		Kind:             kind,
 		Endpoints:        endpoints,

@@ -50,7 +50,7 @@ const (
 	defaultLocation    = "eastus2"
 )
 
-func Test_CLI_Init_AsksForSubscriptionIdAndCreatesEnvAndProjectFile(t *testing.T) {
+func Test_CLI_Init_CreatesEnvAndProjectFile(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
@@ -62,7 +62,7 @@ func Test_CLI_Init_AsksForSubscriptionIdAndCreatesEnvAndProjectFile(t *testing.T
 
 	_, err := cli.RunCommandWithStdIn(
 		ctx,
-		fmt.Sprintf("Empty Template\nTESTENV\nOther (enter manually)\n%s\n\n", testSubscriptionId),
+		"Empty Template\nTESTENV\n",
 		"init",
 	)
 	require.NoError(t, err)
@@ -71,7 +71,6 @@ func Test_CLI_Init_AsksForSubscriptionIdAndCreatesEnvAndProjectFile(t *testing.T
 
 	require.NoError(t, err)
 
-	require.Regexp(t, regexp.MustCompile(fmt.Sprintf(`AZURE_SUBSCRIPTION_ID="%s"`, testSubscriptionId)+"\n"), string(file))
 	require.Regexp(t, regexp.MustCompile(`AZURE_ENV_NAME="TESTENV"`+"\n"), string(file))
 
 	proj, err := project.Load(ctx, filepath.Join(dir, azdcontext.ProjectFileName))
@@ -94,50 +93,12 @@ func Test_CLI_Init_CanUseTemplate(t *testing.T) {
 
 	_, err := cli.RunCommandWithStdIn(
 		ctx,
-		"TESTENV\n\nOther (enter manually)\nMY_SUB_ID\n",
+		"TESTENV\n",
 		"init",
 		"--template",
 		"cosmos-dotnet-core-todo-app",
 	)
 	require.NoError(t, err)
-
-	// While `init` uses git behind the scenes to pull a template, we don't want to bring the history over in the new git
-	// repository.
-	cmdRun := exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
-	cmdRes, err := cmdRun.Run(ctx, exec.NewRunArgs("git", "-C", dir, "log", "--oneline", "-n", "1").WithEnrichError(true))
-	require.Error(t, err)
-	require.Contains(t, cmdRes.Stderr, "does not have any commits yet")
-
-	// Ensure the project was initialized from the template by checking that a file from the template is present.
-	require.FileExists(t, filepath.Join(dir, "README.md"))
-}
-
-// Test_CLI_Up_CanUseTemplateWithoutExistingProject ensures that you can run `azd up --template <some-template>` in an
-// empty directory and the project will be initialize as expected.
-func Test_CLI_Up_CanUseTemplateWithoutExistingProject(t *testing.T) {
-	// running this test in parallel is ok as it uses a t.TempDir()
-	t.Parallel()
-	ctx, cancel := newTestContext(t)
-	defer cancel()
-
-	dir := tempDirWithDiagnostics(t)
-
-	cli := azdcli.NewCLI(t)
-	cli.WorkingDirectory = dir
-	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
-
-	// Since we provide a bogus Azure Subscription ID, we expect that this overall command will fail (the provision step of
-	// up will fail).  That's fine - we only care about validating that we were allowed to run `azd up --template` in an
-	// empty directory and that it brings down the template as expected.
-	res, _ := cli.RunCommandWithStdIn(
-		ctx,
-		"TESTENV\n\nOther (enter manually)\nMY_SUB_ID\n",
-		"up",
-		"--template",
-		"cosmos-dotnet-core-todo-app",
-	)
-
-	require.Contains(t, res.Stdout, "Initializing a new project")
 
 	// While `init` uses git behind the scenes to pull a template, we don't want to bring the history over in the new git
 	// repository.
@@ -169,10 +130,10 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 	err := copySample(dir, "storage")
 	require.NoError(t, err, "failed expanding sample")
 
-	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "init")
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
 	require.NoError(t, err)
 
-	_, err = cli.RunCommand(ctx, "infra", "create")
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
 	require.NoError(t, err)
 
 	envPath := filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName)
@@ -206,7 +167,6 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, rgs)
 
-	// Using `down` here to test the down alias to infra delete
 	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
 	require.NoError(t, err)
 }
@@ -230,10 +190,11 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 	err := copySample(dir, "storage")
 	require.NoError(t, err, "failed expanding sample")
 
-	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "init")
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
 	require.NoError(t, err)
 
-	_, err = cli.RunCommand(ctx, "infra", "create", "--output", "json")
+	// test 'infra create' alias
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "infra", "create", "--output", "json")
 	require.NoError(t, err)
 
 	envPath := filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName)
@@ -267,65 +228,9 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, rgs)
 
-	// Using `down` here to test the down alias to infra delete
-	_, err = cli.RunCommand(ctx, "down", "--force", "--purge", "--output", "json")
+	// test 'infra delete' alias
+	_, err = cli.RunCommand(ctx, "infra", "delete", "--force", "--purge", "--output", "json")
 	require.NoError(t, err)
-}
-
-// test for azd deploy, azd deploy --service
-func Test_CLI_DeployInvalidName(t *testing.T) {
-	// running this test in parallel is ok as it uses a t.TempDir()
-	t.Parallel()
-	ctx, cancel := newTestContext(t)
-	defer cancel()
-
-	dir := tempDirWithDiagnostics(t)
-	t.Logf("DIR: %s", dir)
-
-	envName := randomEnvName()
-	t.Logf("AZURE_ENV_NAME: %s", envName)
-
-	cli := azdcli.NewCLI(t)
-	cli.WorkingDirectory = dir
-	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
-
-	err := copySample(dir, "webapp")
-	require.NoError(t, err, "failed expanding sample")
-
-	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "init")
-	require.NoError(t, err)
-
-	_, err = cli.RunCommand(ctx, "deploy", "--service", "badServiceName")
-	require.Error(t, err)
-}
-
-func Test_CLI_RestoreCommand(t *testing.T) {
-	// running this test in parallel is ok as it uses a t.TempDir()
-	t.Parallel()
-	ctx, cancel := newTestContext(t)
-	defer cancel()
-
-	dir := tempDirWithDiagnostics(t)
-	t.Logf("DIR: %s", dir)
-
-	envName := randomEnvName()
-	t.Logf("AZURE_ENV_NAME: %s", envName)
-
-	cli := azdcli.NewCLI(t)
-	cli.WorkingDirectory = dir
-	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
-
-	err := copySample(dir, "restoreapp")
-	require.NoError(t, err, "failed expanding sample")
-
-	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "restore")
-	require.NoError(t, err)
-
-	require.DirExists(t, path.Join(dir, "nodeapp", "node_modules", "chalk"), "nodeapp not restored")
-	require.DirExists(t, path.Join(dir, "containerapp", "node_modules", "chalk"), "containerapp not restored")
-	require.DirExists(t, path.Join(dir, "pyapp", "pyapp_env"), "pyapp not restored")
-	require.DirExists(t, path.Join(dir, "csharpapp", "obj"), "csharpapp not restored")
-	require.DirExists(t, path.Join(dir, "funcapp", "funcapp_env"), "funcapp not restored")
 }
 
 func Test_CLI_ProjectIsNeeded(t *testing.T) {
@@ -343,7 +248,9 @@ func Test_CLI_ProjectIsNeeded(t *testing.T) {
 		args          []string
 		errorToStdOut bool
 	}{
+		{command: "provision"},
 		{command: "deploy"},
+		{command: "up", errorToStdOut: true},
 		{command: "down"},
 		{command: "env get-values"},
 		{command: "env list"},
@@ -355,7 +262,6 @@ func Test_CLI_ProjectIsNeeded(t *testing.T) {
 		{command: "infra delete"},
 		{command: "monitor"},
 		{command: "pipeline config"},
-		{command: "provision"},
 		{command: "restore"},
 	}
 
@@ -438,11 +344,17 @@ func randomEnvName() string {
 	return ("azdtest-" + osInitial + hex.EncodeToString(bytes))[0:15]
 }
 
-// stdinForTests is just enough stdin to bypass all the prompts or choose defaults.
-func stdinForTests(envName string) string {
-	return fmt.Sprintf("%s\n", envName) + // "enter deployment name"
-		"\n" + // "choose location" (we're choosing the default)
-		"\n" // "choose subscription" (we're choosing the default)
+// stdinForInit builds the standard input string that will configure a given environment name
+// when `init` is run
+func stdinForInit(envName string) string {
+	return fmt.Sprintf("%s\n", envName)
+}
+
+// stdinForProvision is just enough stdin to accept the defaults for the two prompts
+// from `provision` (for a subscription and location)
+func stdinForProvision() string {
+	return "\n" + // "choose subscription" (we're choosing the default)
+		"\n" // "choose location" (we're choosing the default)
 }
 
 func getTestEnvPath(dir string, envName string) string {
@@ -481,11 +393,15 @@ func Test_CLI_InfraCreateAndDeleteResourceTerraform(t *testing.T) {
 	err := copySample(dir, "resourcegroupterraform")
 	require.NoError(t, err, "failed expanding sample")
 
-	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "init")
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
 	require.NoError(t, err)
 
-	t.Logf("Starting infra create\n")
-	_, err = cli.RunCommand(ctx, "infra", "create", "--cwd", dir)
+	// turn alpha feature on
+	_, err = cli.RunCommand(ctx, "config", "set", "alpha.terraform", "on")
+	require.NoError(t, err)
+
+	t.Logf("Starting provision\n")
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision", "--cwd", dir)
 	require.NoError(t, err)
 
 	envPath := filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName)
@@ -493,8 +409,8 @@ func Test_CLI_InfraCreateAndDeleteResourceTerraform(t *testing.T) {
 	require.NoError(t, err)
 	assertEnvValuesStored(t, env)
 
-	t.Logf("Starting infra delete\n")
-	_, err = cli.RunCommand(ctx, "infra", "delete", "--cwd", dir, "--force", "--purge")
+	t.Logf("Starting down\n")
+	_, err = cli.RunCommand(ctx, "down", "--cwd", dir, "--force", "--purge")
 	require.NoError(t, err)
 
 	t.Logf("Done\n")
@@ -558,7 +474,7 @@ func Test_CLI_InfraCreateAndDeleteResourceTerraformRemote(t *testing.T) {
 	require.NoError(t, err)
 
 	//Run azd init
-	_, err = cli.RunCommandWithStdIn(ctx, stdinForTests(envName), "init")
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
 	require.NoError(t, err)
 
 	_, err = cli.RunCommand(ctx, "env", "set", "RS_STORAGE_ACCOUNT", backendStorageAccountName, "--cwd", dir)
@@ -570,8 +486,12 @@ func Test_CLI_InfraCreateAndDeleteResourceTerraformRemote(t *testing.T) {
 	_, err = cli.RunCommand(ctx, "env", "set", "RS_RESOURCE_GROUP", backendResourceGroupName, "--cwd", dir)
 	require.NoError(t, err)
 
+	// turn alpha feature on
+	_, err = cli.RunCommand(ctx, "config", "set", "alpha.terraform", "on")
+	require.NoError(t, err)
+
 	t.Logf("Starting infra create\n")
-	_, err = cli.RunCommand(ctx, "infra", "create", "--cwd", dir)
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "infra", "create", "--cwd", dir)
 	require.NoError(t, err)
 
 	t.Logf("Starting infra delete\n")

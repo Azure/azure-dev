@@ -1,4 +1,5 @@
 AADSTS
+alphafeatures
 apimanagement
 apims
 appconfiguration
@@ -45,6 +46,7 @@ dskip
 eastus
 endregion
 envname
+envlist
 errcheck
 errorinfo
 errorlint

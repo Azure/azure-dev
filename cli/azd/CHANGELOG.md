@@ -4,7 +4,12 @@
 
 ### Features Added
 
+- [[#1715]](https://github.com/Azure/azure-dev/pull/1715) Adding feature alpha toggle:
+  - Moving terraform provider as alpha feature. Use `azd config set alpha.terraform on` to have it enabled.
+
 ### Breaking Changes
+
+- [[#1715]](https://github.com/Azure/azure-dev/pull/1715) Using `terraform` as provisioning provider will fail and require user to enable terraform running `azd config set alpha.terraform on`.
 
 ### Bugs Fixed
 

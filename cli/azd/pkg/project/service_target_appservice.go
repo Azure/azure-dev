@@ -67,15 +67,15 @@ func (st *appServiceTarget) Package(
 	)
 }
 
-// Publishes the prepared zip archive using Zip deploy to the Azure App Service resource
-func (st *appServiceTarget) Publish(
+// Deploys the prepared zip archive using Zip deploy to the Azure App Service resource
+func (st *appServiceTarget) Deploy(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
 	targetResource *environment.TargetResource,
-) *async.TaskWithProgress[*ServicePublishResult, ServiceProgress] {
+) *async.TaskWithProgress[*ServiceDeployResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServicePublishResult, ServiceProgress]) {
+		func(task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress]) {
 			if err := st.validateTargetResource(ctx, serviceConfig, targetResource); err != nil {
 				task.SetError(fmt.Errorf("validating target resource: %w", err))
 				return
@@ -90,7 +90,7 @@ func (st *appServiceTarget) Publish(
 			defer os.Remove(packageOutput.PackagePath)
 			defer zipFile.Close()
 
-			task.SetProgress(NewServiceProgress("Publishing deployment package"))
+			task.SetProgress(NewServiceProgress("Uploading deployment package"))
 			res, err := st.cli.DeployAppServiceZip(
 				ctx,
 				targetResource.SubscriptionId(),
@@ -110,7 +110,7 @@ func (st *appServiceTarget) Publish(
 				return
 			}
 
-			sdr := NewServicePublishResult(
+			sdr := NewServiceDeployResult(
 				azure.WebsiteRID(
 					targetResource.SubscriptionId(),
 					targetResource.ResourceGroupName(),

@@ -503,8 +503,8 @@ func Test_HasDefaults(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		value := manager.HasDefaults()
-		require.True(t, value)
+		require.True(t, manager.HasDefaultSubscription())
+		require.True(t, manager.HasDefaultLocation())
 	})
 
 	t.Run("DefaultsNotSet", func(t *testing.T) {
@@ -522,8 +522,8 @@ func Test_HasDefaults(t *testing.T) {
 		)
 		require.NoError(t, err)
 
-		value := manager.HasDefaults()
-		require.False(t, value)
+		require.False(t, manager.HasDefaultSubscription())
+		require.False(t, manager.HasDefaultLocation())
 	})
 }
 

@@ -3,16 +3,12 @@
     "build": {
         "dockerfile": "Dockerfile",
         "args": {
-            "VARIANT": "bullseye"
+            "IMAGE": "javascript-node:16"
         }
     },
     "features": {
         "ghcr.io/devcontainers/features/docker-from-docker:1": {
             "version": "20.10"
-        },
-        "ghcr.io/devcontainers/features/node:1": {
-            "version": "16",
-            "nodeGypDependencies": false
         }
     },
     "customizations": {
@@ -35,7 +31,7 @@
         3100
     ],
     "postCreateCommand": "",
-    "remoteUser": "vscode",
+    "remoteUser": "node",
     "hostRequirements": {
         "memory": "8gb"
     }

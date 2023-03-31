@@ -1,12 +1,11 @@
 
-Lists all configuration values
+Lists all configuration values.
 
 Usage
   azd config list [flags]
 
 Flags
-    -h, --help          	: Gets help for list.
-    -o, --output string 	: The output format (the supported formats are json).
+    -h, --help 	: Gets help for list.
 
 Global Flags
     -C, --cwd string 	: Sets the current working directory.

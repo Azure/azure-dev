@@ -11,27 +11,16 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 )
 
 type springAppTarget struct {
-	env                      *environment.Environment
-	cli                      azcli.AzCli
-	containerRegistryService azcli.ContainerRegistryService
-	docker                   docker.Docker
-	console                  input.Console
-	commandRunner            exec.CommandRunner
-	accountManager           account.Manager
-	serviceManager           ServiceManager
-	resourceManager          ResourceManager
+	env *environment.Environment
+	cli azcli.AzCli
 }
 
 // NewSpringAppTarget creates the spring app service target.
@@ -40,30 +29,16 @@ type springAppTarget struct {
 // can be provisioned during deployment.
 func NewSpringAppTarget(
 	env *environment.Environment,
-	containerRegistryService azcli.ContainerRegistryService,
 	azCli azcli.AzCli,
-	docker docker.Docker,
-	console input.Console,
-	commandRunner exec.CommandRunner,
-	accountManager account.Manager,
-	serviceManager ServiceManager,
-	resourceManager ResourceManager,
 ) ServiceTarget {
 	return &springAppTarget{
-		env:                      env,
-		accountManager:           accountManager,
-		serviceManager:           serviceManager,
-		resourceManager:          resourceManager,
-		cli:                      azCli,
-		containerRegistryService: containerRegistryService,
-		docker:                   docker,
-		console:                  console,
-		commandRunner:            commandRunner,
+		env: env,
+		cli: azCli,
 	}
 }
 
 func (st *springAppTarget) RequiredExternalTools(context.Context) []tools.ExternalTool {
-	return []tools.ExternalTool{st.docker}
+	return []tools.ExternalTool{}
 }
 
 func (st *springAppTarget) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
@@ -218,7 +193,7 @@ func (st *springAppTarget) validateTargetResource(
 	return nil
 }
 
-func (at *springAppTarget) extractEndpoint(fqdn string, appName string) string {
+func (st *springAppTarget) extractEndpoint(fqdn string, appName string) string {
 	index := strings.IndexRune(fqdn, '.')
 	return fqdn[0:index] + "-" + appName + fqdn[index:]
 }

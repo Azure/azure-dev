@@ -46,7 +46,7 @@
         {
             "label": "Restore Web",
             "type": "shell",
-            "command": "azd restore --service web",
+            "command": "azd restore web",
             "presentation": {
                 "reveal": "silent"
             },

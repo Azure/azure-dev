@@ -8,18 +8,8 @@ resource appService 'Microsoft.Web/sites@2022-03-01' existing = {
   name: name
 }
 
-resource appServiceConfig 'Microsoft.Web/sites/config@2022-03-01' existing = {
+resource settings 'Microsoft.Web/sites/config@2022-03-01' = {
   name: 'appsettings'
   parent: appService
-}
-
-// The retrieval of the current app settings needs to be completed in seperate module
-// from the applying of the app settings otherwise ARM will throw circular dependency errors.
-module appSettingsUnion 'appservice-appsettings-union.bicep' = {
-  name: 'appSettingsUnion'
-  params: {
-    name: name
-    currentSettings: appServiceConfig.list().properties
-    newSettings: appSettings
-  }
+  properties: appSettings
 }

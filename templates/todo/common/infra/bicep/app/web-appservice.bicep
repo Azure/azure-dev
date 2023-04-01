@@ -5,7 +5,6 @@ param serviceName string = 'web'
 param appCommandLine string = './entrypoint.sh -o ./env-config.js && pm2 serve /home/site/wwwroot --no-daemon --spa'
 param applicationInsightsName string = ''
 param appServicePlanId string
-param appSettings object = {}
 
 module web '../../../../../common/infra/bicep/core/host/appservice.bicep' = {
   name: '${name}-deployment'
@@ -15,7 +14,6 @@ module web '../../../../../common/infra/bicep/core/host/appservice.bicep' = {
     appCommandLine: appCommandLine
     applicationInsightsName: applicationInsightsName
     appServicePlanId: appServicePlanId
-    appSettings: appSettings
     runtimeName: 'node'
     runtimeVersion: '16-lts'
     tags: union(tags, { 'azd-service-name': serviceName })

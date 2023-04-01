@@ -95,11 +95,9 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			output.WithWarningFormat("The --service flag is deprecated and will be removed in the future."))
 	}
 
-	if u.env.GetSubscriptionId() == "" {
-		err := provisioning.EnsureSubscriptionAndLocation(ctx, u.console, u.env, u.accountManager)
-		if err != nil {
-			return nil, err
-		}
+	err := provisioning.EnsureSubscriptionAndLocation(ctx, u.console, u.env, u.accountManager)
+	if err != nil {
+		return nil, err
 	}
 
 	packageAction, err := u.packageActionInitializer()

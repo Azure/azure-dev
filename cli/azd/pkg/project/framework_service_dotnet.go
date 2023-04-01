@@ -53,7 +53,7 @@ func (dp *dotnetProject) RequiredExternalTools(context.Context) []tools.External
 	return []tools.ExternalTool{dp.dotnetCli}
 }
 
-// Initializes the docker project
+// Initializes the dotnet project
 func (dp *dotnetProject) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
 	return nil
 }

@@ -109,7 +109,6 @@ func (np *npmProject) Package(
 				return
 			}
 
-			// Run Build, injecting env.
 			envs := []string{"NODE_ENV=production"}
 
 			// Exec custom `package` script if available

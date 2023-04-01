@@ -43,6 +43,7 @@ ignoreWords:
     - armcontainerregistry
     - azidentity
     - azsecrets
+    - beginswith
     - Bfor
     - bicepcli
     - cdne

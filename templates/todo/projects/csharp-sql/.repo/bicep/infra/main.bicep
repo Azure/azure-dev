@@ -43,9 +43,6 @@ var abbrs = loadJsonContent('../../../../../../common/infra/bicep/abbreviations.
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = { 'azd-env-name': environmentName }
 
-// The name of the web app resource
-var webName = !empty(webServiceName) ? webServiceName : '${abbrs.webSitesAppService}web-${resourceToken}'
-
 // Organize resources in a resource group
 resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
   name: !empty(resourceGroupName) ? resourceGroupName : '${abbrs.resourcesResourceGroups}${environmentName}'
@@ -58,7 +55,7 @@ module web '../../../../../common/infra/bicep/app/web-appservice.bicep' = {
   name: 'web'
   scope: rg
   params: {
-    name: webName
+    name: !empty(webServiceName) ? webServiceName : '${abbrs.webSitesAppService}web-${resourceToken}'
     location: location
     tags: tags
     applicationInsightsName: monitoring.outputs.applicationInsightsName
@@ -80,19 +77,6 @@ module api '../../../../../common/infra/bicep/app/api-appservice-dotnet.bicep' =
     allowedOrigins: [ web.outputs.SERVICE_WEB_URI ]
     appSettings: {
       AZURE_SQL_CONNECTION_STRING_KEY: sqlServer.outputs.connectionStringKey
-    }
-  }
-}
-
-// The application frontend app settings
-module webSettings '../../../../../../common/infra/bicep/core/host/appservice-settings.bicep' = {
-  name: 'websettings'
-  scope: rg
-  params: {
-    name: webName
-    appSettings: {
-      REACT_APP_API_BASE_URL: useAPIM ? apimApi.outputs.SERVICE_API_URI : api.outputs.SERVICE_API_URI
-      REACT_APP_APPLICATIONINSIGHTS_CONNECTION_STRING: monitoring.outputs.applicationInsightsConnectionString
     }
   }
 }

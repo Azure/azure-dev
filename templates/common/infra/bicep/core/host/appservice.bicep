@@ -23,6 +23,7 @@ param kind string = 'app,linux'
 param allowedOrigins array = []
 param alwaysOn bool = true
 param appCommandLine string = ''
+param appSettings object = {}
 param clientAffinityEnabled bool = false
 param enableOryxBuild bool = contains(kind, 'linux')
 param functionAppScaleLimit int = -1
@@ -33,10 +34,6 @@ param scmDoBuildDuringDeployment bool = false
 param use32BitWorkerProcess bool = false
 param ftpsState string = 'FtpsOnly'
 param healthCheckPath string = ''
-
-// Settings for the application. If set to empty, the application settings will not be updated.
-// This allows for application settings to be provided after all infrastructure has been provisioned and known.
-param appSettings object = {}
 
 resource appService 'Microsoft.Web/sites@2022-03-01' = {
   name: name
@@ -66,6 +63,17 @@ resource appService 'Microsoft.Web/sites@2022-03-01' = {
 
   identity: { type: managedIdentity ? 'SystemAssigned' : 'None' }
 
+  resource configAppSettings 'config' = {
+    name: 'appsettings'
+    properties: union(appSettings,
+      {
+        SCM_DO_BUILD_DURING_DEPLOYMENT: string(scmDoBuildDuringDeployment)
+        ENABLE_ORYX_BUILD: string(enableOryxBuild)
+      },
+      !empty(applicationInsightsName) ? { APPLICATIONINSIGHTS_CONNECTION_STRING: applicationInsights.properties.ConnectionString } : {},
+      !empty(keyVaultName) ? { AZURE_KEY_VAULT_ENDPOINT: keyVault.properties.vaultUri } : {})
+  }
+
   resource configLogs 'config' = {
     name: 'logs'
     properties: {
@@ -74,19 +82,18 @@ resource appService 'Microsoft.Web/sites@2022-03-01' = {
       failedRequestsTracing: { enabled: true }
       httpLogs: { fileSystem: { enabled: true, retentionInDays: 1, retentionInMb: 35 } }
     }
+    dependsOn: [
+      configAppSettings
+    ]
   }
 }
 
-module settings 'appservice-settings.bicep' = if(!empty(appSettings)) {
-  name: '${name}-appsettings'
-  params: {
-    name: appService.name
-    applicationInsightsName: applicationInsightsName
-    keyVaultName: keyVaultName
-    scmDoBuildDuringDeployment: scmDoBuildDuringDeployment 
-    enableOryxBuild: enableOryxBuild
-    appSettings: appSettings
-  }
+resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' existing = if (!(empty(keyVaultName))) {
+  name: keyVaultName
+}
+
+resource applicationInsights 'Microsoft.Insights/components@2020-02-02' existing = if (!empty(applicationInsightsName)) {
+  name: applicationInsightsName
 }
 
 output identityPrincipalId string = managedIdentity ? appService.identity.principalId : ''

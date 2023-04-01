@@ -75,7 +75,7 @@ func (p *BicepProvider) RequiredExternalTools() []tools.ExternalTool {
 }
 
 func (p *BicepProvider) EnsureConfigured(ctx context.Context) error {
-	return EnsureSubscriptionAndLocation(ctx, p.env, p.prompters)
+	return p.prompters.EnsureSubscriptionLocation(ctx, p.env)
 }
 
 func (p *BicepProvider) State(

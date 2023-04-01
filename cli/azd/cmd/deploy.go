@@ -105,7 +105,6 @@ type deployAction struct {
 	middlewareRunner         middleware.MiddlewareContext
 	packageActionInitializer actions.ActionInitializer[*packageAction]
 	alphaFeatureManager      *alpha.FeatureManager
-	skipPackage              bool
 }
 
 func newDeployAction(
@@ -164,15 +163,13 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		return nil, err
 	}
 
-	if !da.skipPackage {
-		packageAction.flags.all = da.flags.all
-		packageAction.args = []string{targetServiceName}
+	packageAction.flags.all = da.flags.all
+	packageAction.args = []string{targetServiceName}
 
-		packageOptions := &middleware.Options{CommandPath: "package"}
-		_, err = da.middlewareRunner.RunChildAction(ctx, packageOptions, packageAction)
-		if err != nil {
-			return nil, err
-		}
+	packageOptions := &middleware.Options{CommandPath: "package"}
+	_, err = da.middlewareRunner.RunChildAction(ctx, packageOptions, packageAction)
+	if err != nil {
+		return nil, err
 	}
 
 	// Command title

@@ -7,6 +7,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/spf13/cobra"
@@ -46,6 +49,8 @@ func newUpCmd() *cobra.Command {
 
 type upAction struct {
 	flags                      *upFlags
+	env                        *environment.Environment
+	accountManager             account.Manager
 	packageActionInitializer   actions.ActionInitializer[*packageAction]
 	provisionActionInitializer actions.ActionInitializer[*provisionAction]
 	deployActionInitializer    actions.ActionInitializer[*deployAction]
@@ -55,6 +60,8 @@ type upAction struct {
 
 func newUpAction(
 	flags *upFlags,
+	env *environment.Environment,
+	accountManager account.Manager,
 	packageActionInitializer actions.ActionInitializer[*packageAction],
 	provisionActionInitializer actions.ActionInitializer[*provisionAction],
 	deployActionInitializer actions.ActionInitializer[*deployAction],
@@ -63,6 +70,8 @@ func newUpAction(
 ) actions.Action {
 	return &upAction{
 		flags:                      flags,
+		env:                        env,
+		accountManager:             accountManager,
 		packageActionInitializer:   packageActionInitializer,
 		provisionActionInitializer: provisionActionInitializer,
 		deployActionInitializer:    deployActionInitializer,
@@ -84,6 +93,13 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		fmt.Fprintln(
 			u.console.Handles().Stderr,
 			output.WithWarningFormat("The --service flag is deprecated and will be removed in the future."))
+	}
+
+	if u.env.GetSubscriptionId() == "" {
+		err := provisioning.EnsureSubscriptionAndLocation(ctx, u.console, u.env, u.accountManager)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	packageAction, err := u.packageActionInitializer()
@@ -116,7 +132,6 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, err
 	}
 
-	deploy.skipPackage = true
 	deploy.flags = &u.flags.deployFlags
 	// move flag to args to avoid extra deprecation flag warning
 	if deploy.flags.serviceName != "" {

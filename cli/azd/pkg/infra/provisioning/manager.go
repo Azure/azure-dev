@@ -294,8 +294,9 @@ func NewManager(
 	}
 
 	prompters := Prompters{
-		Location:     m.promptLocation,
-		Subscription: m.promptSubscription,
+		Location:                   m.promptLocation,
+		Subscription:               m.promptSubscription,
+		EnsureSubscriptionLocation: m.ensureSubscriptionLocation,
 	}
 
 	infraProvider, err := NewProvider(
@@ -325,34 +326,7 @@ func NewManager(
 }
 
 func (m *Manager) promptSubscription(ctx context.Context, msg string) (subscriptionId string, err error) {
-	subscriptionOptions, defaultSubscription, err := getSubscriptionOptions(ctx, m.accountManager)
-	if err != nil {
-		return "", err
-	}
-
-	for subscriptionId == "" {
-		subscriptionSelectionIndex, err := m.console.Select(ctx, input.ConsoleOptions{
-			Message:      msg,
-			Options:      subscriptionOptions,
-			DefaultValue: defaultSubscription,
-		})
-
-		if err != nil {
-			return "", fmt.Errorf("reading subscription id: %w", err)
-		}
-
-		subscriptionSelection := subscriptionOptions[subscriptionSelectionIndex]
-		subscriptionId = subscriptionSelection[len(subscriptionSelection)-
-			len("(00000000-0000-0000-0000-000000000000)")+1 : len(subscriptionSelection)-1]
-	}
-
-	if !m.accountManager.HasDefaultSubscription() {
-		if _, err := m.accountManager.SetDefaultSubscription(ctx, m.env.GetSubscriptionId()); err != nil {
-			log.Printf("failed setting default subscription. %s\n", err.Error())
-		}
-	}
-
-	return subscriptionId, nil
+	return promptSubscription(ctx, msg, m.console, m.env, m.accountManager)
 }
 
 func (m *Manager) promptLocation(
@@ -361,18 +335,11 @@ func (m *Manager) promptLocation(
 	msg string,
 	filter func(loc account.Location) bool,
 ) (string, error) {
-	loc, err := azureutil.PromptLocationWithFilter(ctx, subId, msg, "", m.console, m.accountManager, filter)
-	if err != nil {
-		return "", err
-	}
+	return promptLocation(ctx, subId, msg, filter, m.console, m.env, m.accountManager)
+}
 
-	if !m.accountManager.HasDefaultLocation() {
-		if _, err := m.accountManager.SetDefaultLocation(ctx, m.env.GetSubscriptionId(), m.env.GetLocation()); err != nil {
-			log.Printf("failed setting default location. %s\n", err.Error())
-		}
-	}
-
-	return loc, nil
+func (m *Manager) ensureSubscriptionLocation(ctx context.Context, env *environment.Environment) error {
+	return EnsureSubscriptionAndLocation(ctx, m.console, m.env, m.accountManager)
 }
 
 type CurrentPrincipalIdProvider interface {

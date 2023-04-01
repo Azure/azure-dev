@@ -57,10 +57,11 @@ func (la *logoutAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	if la.annotations[loginCmdParentAnnotation] == "" {
 		fmt.Fprintln(
 			la.console.Handles().Stderr,
-			//nolint:lll
 			output.WithWarningFormat(
-				"WARNING: `azd logout` has been deprecated and will be removed in a future release. Please use `azd auth logout` instead."),
-		)
+				"WARNING: `azd logout` is deprecated and will be removed in a future release."))
+		fmt.Fprintln(
+			la.console.Handles().Stderr,
+			"Next time use `azd auth logout`.")
 	}
 
 	err := la.authManager.Logout(ctx)

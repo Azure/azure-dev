@@ -53,7 +53,9 @@ func (a *infraDeleteAction) Run(ctx context.Context) (*actions.ActionResult, err
 	fmt.Fprintln(
 		a.console.Handles().Stderr,
 		output.WithWarningFormat(
-			"`azd infra delete` is deprecated and will be removed in a future release. Please use `azd down` instead."),
-	)
+			"WARNING: `azd infra delete` is deprecated and will be removed in a future release."))
+	fmt.Fprintln(
+		a.console.Handles().Stderr,
+		"Next time use `azd down`")
 	return a.down.Run(ctx)
 }

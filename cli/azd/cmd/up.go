@@ -72,7 +72,8 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if u.flags.provisionFlags.noProgress {
 		fmt.Fprintln(
 			u.console.Handles().Stderr,
-			output.WithWarningFormat("The --no-progress flag is deprecated and will be removed in the future."))
+			//nolint:lll
+			output.WithWarningFormat("WARNING: The '--no-progress' flag is deprecated and will be removed in a future release."))
 		// this flag actually isn't used by the provision command, we set it to false to hide the extra warning
 		u.flags.provisionFlags.noProgress = false
 	}
@@ -80,7 +81,8 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if u.flags.deployFlags.serviceName != "" {
 		fmt.Fprintln(
 			u.console.Handles().Stderr,
-			output.WithWarningFormat("The --service flag is deprecated and will be removed in the future."))
+			//nolint:lll
+			output.WithWarningFormat("WARNING: The '--service' flag is deprecated and will be removed in a future release."))
 	}
 
 	provision, err := u.provisionActionInitializer()

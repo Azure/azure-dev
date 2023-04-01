@@ -457,6 +457,11 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 			Subscription: func(_ context.Context, _ string) (subscriptionId string, err error) {
 				return "SUBSCRIPTION_ID", nil
 			},
+			EnsureSubscriptionLocation: func(ctx context.Context, env *environment.Environment) error {
+				env.SetSubscriptionId("SUBSCRIPTION_ID")
+				env.SetLocation("westus2")
+				return nil
+			},
 		},
 		curPrincipal: &mockCurrentPrincipal{},
 	}

@@ -250,7 +250,7 @@ func Test_CLI_ProjectIsNeeded(t *testing.T) {
 	}{
 		{command: "provision"},
 		{command: "deploy"},
-		{command: "up", errorToStdOut: true},
+		{command: "up"},
 		{command: "down"},
 		{command: "env get-values"},
 		{command: "env list"},

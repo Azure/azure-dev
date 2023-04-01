@@ -77,7 +77,7 @@ func (np *npmProject) Build(
 			// Exec custom `build` script if available
 			// If `build`` script is not defined in the package.json the NPM script will NOT fail
 			task.SetProgress(NewServiceProgress("Running NPM build script"))
-			if err := np.cli.RunScript(ctx, serviceConfig.Path(), "build", np.env.Environ()); err != nil {
+			if err := np.cli.RunScript(ctx, serviceConfig.Path(), "build", []string{}); err != nil {
 				task.SetError(err)
 				return
 			}
@@ -110,7 +110,7 @@ func (np *npmProject) Package(
 			}
 
 			// Run Build, injecting env.
-			envs := append(np.env.Environ(), "NODE_ENV=production")
+			envs := []string{"NODE_ENV=production"}
 
 			// Exec custom `package` script if available
 			// If `package` script is not defined in the package.json the NPM script will NOT fail

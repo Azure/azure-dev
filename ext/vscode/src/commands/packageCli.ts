@@ -11,6 +11,7 @@ import { AzureDevCliModel } from '../views/workspace/AzureDevCliModel';
 import { AzureDevCliService } from '../views/workspace/AzureDevCliService';
 import { getAzDevTerminalTitle, getWorkingFolder } from './cmdUtil';
 
+// `package` is a reserved identifier so `packageCli` had to be used instead
 export async function packageCli(context: IActionContext, selectedItem?: vscode.Uri | TreeViewModel): Promise<void> {
     const selectedModel = isTreeViewModel(selectedItem) ? selectedItem.unwrap<AzureDevCliModel>() : undefined;
     const selectedFile = isTreeViewModel(selectedItem) ? selectedItem.unwrap<AzureDevCliModel>().context.configurationFile : selectedItem;

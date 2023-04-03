@@ -35,7 +35,7 @@ func TestSubscriptionsManager_ListSubscriptions(t *testing.T) {
 			name: "WhenServicePrincipal",
 			args: args{
 				principalInfo: &principalInfoProviderMock{
-					GetLoggedInServicePrincipalTenantIDFunc: func() (*string, error) {
+					GetLoggedInServicePrincipalTenantIDFunc: func(context.Context) (*string, error) {
 						return convert.RefOf("TENANT_ID_1"), nil
 					},
 				},

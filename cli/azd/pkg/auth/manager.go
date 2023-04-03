@@ -24,6 +24,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/github"
+	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
 
@@ -72,9 +73,10 @@ type Manager struct {
 	configManager       config.UserConfigManager
 	credentialCache     Cache
 	ghClient            *github.FederatedTokenClient
+	httpClient          httputil.HttpClient
 }
 
-func NewManager(configManager config.UserConfigManager) (*Manager, error) {
+func NewManager(configManager config.UserConfigManager, httpClient httputil.HttpClient) (*Manager, error) {
 	cfgRoot, err := config.GetUserConfigDir()
 	if err != nil {
 		return nil, fmt.Errorf("getting config dir: %w", err)
@@ -108,6 +110,7 @@ func NewManager(configManager config.UserConfigManager) (*Manager, error) {
 		configManager:       configManager,
 		credentialCache:     newCredentialCache(authRoot),
 		ghClient:            ghClient,
+		httpClient:          httpClient,
 	}, nil
 }
 
@@ -160,16 +163,15 @@ func (m *Manager) CredentialForCurrentUser(
 	}
 
 	currentUser, err := readUserProperties(cfg)
-	if err != nil {
+	if errors.Is(err, ErrNoCurrentUser) {
 		// User is not logged in, not using az credentials, try CloudShell if possible
 		if shouldUseCloudShellAuth() {
-			cloudShellCredential, err := newCredentialFromCloudShell()
+			cloudShellCredential, err := m.newCredentialFromCloudShell()
 			if err != nil {
 				return nil, err
 			}
 			return cloudShellCredential, nil
 		}
-
 		return nil, ErrNoCurrentUser
 	}
 
@@ -251,19 +253,41 @@ func shouldUseCloudShellAuth() bool {
 // Service principals are fixed to a particular tenant.
 // This can be used to determine if the tenant is fixed, and if so short circuit performance intensive tenant-switching
 // for service principals.
-func (m *Manager) GetLoggedInServicePrincipalTenantID() (*string, error) {
+func (m *Manager) GetLoggedInServicePrincipalTenantID(ctx context.Context) (*string, error) {
 	cfg, err := m.configManager.Load()
 	if err != nil {
 		return nil, fmt.Errorf("fetching current user: %w", err)
 	}
 
-	if shouldUseLegacyAuth(cfg) || shouldUseCloudShellAuth() {
-		// When delegating to az or CloudShell, we have no way to determine what principal was used
+	if shouldUseLegacyAuth(cfg) {
+		// When delegating to az, we have no way to determine what principal was used
 		return nil, err
 	}
 
 	currentUser, err := readUserProperties(cfg)
 	if err != nil {
+		// No user is logged in, if running in CloudShell use tenant id from
+		// CloudShell session (single tenant)
+		if shouldUseCloudShellAuth() {
+			// Tenant ID is not required when requesting a token from CloudShell
+			credential, err := m.CredentialForCurrentUser(ctx, nil)
+			if err != nil {
+				return nil, err
+			}
+
+			token, err := EnsureLoggedInCredential(ctx, credential)
+			if err != nil {
+				return nil, err
+			}
+
+			tenantId, err := GetTenantIdFromToken(token.Token)
+			if err != nil {
+				return nil, err
+			}
+
+			return &tenantId, nil
+		}
+
 		return nil, ErrNoCurrentUser
 	}
 
@@ -335,8 +359,8 @@ func newCredentialFromClientAssertion(
 	return cred, nil
 }
 
-func newCredentialFromCloudShell() (azcore.TokenCredential, error) {
-	return CloudShellCredential{}, nil
+func (m *Manager) newCredentialFromCloudShell() (azcore.TokenCredential, error) {
+	return NewCloudShellCredential(m.httpClient), nil
 }
 
 func (m *Manager) LoginInteractive(ctx context.Context, redirectPort int, tenantID string) (azcore.TokenCredential, error) {

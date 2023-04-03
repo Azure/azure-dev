@@ -212,9 +212,9 @@ func normalizeDotNetSecret(key string) string {
 }
 
 // findDotnetProjectFile locates the project file to pass to the `dotnet` tool for a given dotnet service. In the case where
-// [Path] for the the service results in a directory, if current directory contains a single file matching the glob `*.*proj`,
-// then project file will be returned. If there are multiple or no project file, error is returned and user will be asked to
-// add project file path under "project" in azure.yaml.
+// [Path] for the the service results in a directory, if current directory contains a single file matching the
+// glob `*.*proj`, then project file will be returned. If there are multiple or no project file, error is returned
+// and user will be asked to add project file path under "project" in azure.yaml.
 func findDotnetProjectFile(serviceConfig *ServiceConfig) (string, error) {
 	info, err := os.Stat(serviceConfig.Path())
 	if err != nil {

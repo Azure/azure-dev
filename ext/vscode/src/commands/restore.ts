@@ -22,6 +22,8 @@ export async function restore(context: IActionContext, selectedItem?: vscode.Uri
 
     if (selectedModel instanceof AzureDevCliService) {
         commandBuilder.withArg(selectedModel.name);
+    } else {
+        commandBuilder.withArg('--all');
     }
 
     const command = commandBuilder.build();

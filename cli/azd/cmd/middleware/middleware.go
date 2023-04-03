@@ -48,17 +48,15 @@ type NextFn func(ctx context.Context) (*actions.ActionResult, error)
 // Middleware runner stores middleware registrations and orchestrates the
 // invocation of middleware components and actions.
 type MiddlewareRunner struct {
-	chain       []string
-	container   *ioc.NestedContainer
-	actionCache map[actions.Action]*actions.ActionResult
+	chain     []string
+	container *ioc.NestedContainer
 }
 
 // Creates a new middleware runner
 func NewMiddlewareRunner(container *ioc.NestedContainer) *MiddlewareRunner {
 	return &MiddlewareRunner{
-		container:   container,
-		chain:       []string{},
-		actionCache: map[actions.Action]*actions.ActionResult{},
+		container: container,
+		chain:     []string{},
 	}
 }
 
@@ -68,20 +66,9 @@ func (r *MiddlewareRunner) RunChildAction(
 	runOptions *Options,
 	action actions.Action,
 ) (*actions.ActionResult, error) {
-	// If we have previously run this action then return the cached result
-	if cachedActionResult, has := r.actionCache[action]; has {
-		return cachedActionResult, nil
-	}
-
 	// If we have not previously run this action then execute it
 	runOptions.isChildAction = true
 	result, err := r.RunAction(ctx, runOptions, action)
-
-	// Cache the result on action success
-	if err == nil {
-		r.actionCache[action] = result
-	}
-
 	return result, err
 }
 

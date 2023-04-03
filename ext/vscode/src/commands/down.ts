@@ -17,7 +17,7 @@ export async function down(context: IActionContext, selectedItem?: vscode.Uri | 
     const selectedFile = isTreeViewModel(selectedItem) ? selectedItem.unwrap<AzureDevCliApplication>().context.configurationFile : selectedItem;
     const workingFolder = await getWorkingFolder(context, selectedFile);
 
-    const confirmPrompt = localize('azure-dev.commands.cli.down.confirm-prompt', "Are you sure you want to delete all application's Azure resources? You can soft-delete certain resources like Azure KeyVaults to preserve their data, or permanently delete and purge them.");
+    const confirmPrompt = localize('azure-dev.commands.cli.down.confirm-prompt', "Are you sure you want to delete all this application's Azure resources? You can soft-delete certain resources like Azure KeyVaults to preserve their data, or permanently delete and purge them.");
     const confirmTitle = localize('azure-dev.commands.cli.down.confirm-ack', "Delete resources");
 
     const softDelete: MessageItem = { title: localize("azure-dev.commands.cli.down.soft-delete", "Soft Delete") };

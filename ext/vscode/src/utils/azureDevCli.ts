@@ -62,14 +62,14 @@ export function scheduleAzdVersionCheck(): void {
             // We won't show a warning if AZD is not installed, but if it is installed and less than 0.8.0, we will warn
 
             const install: vscode.MessageItem = {
-                title: localize('azure-dev.utils.azd.updateNow', 'Update'),
+                title: vscode.l10n.t('Update'),
             };
 
             const later: vscode.MessageItem = {
-                title: localize('azure-dev.utils.azd.updateLater', 'Later'),
+                title: vscode.l10n.t('Later'),
             };
 
-            const title = localize('azure-dev.utils.azd.minimumAzdVersion',
+            const title = vscode.l10n.t(
                 'The minimum version of the Azure Developer CLI supported by the extension is {0}, but you have {1}. Would you like to update?',
                 minimumSupportedVersion.version,
                 versionResult.version

@@ -258,14 +258,20 @@ func (sm *serviceManager) Package(
 	return async.RunTaskWithProgress(func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
 		cachedResult, ok := sm.getOperationResult(ctx, serviceConfig, string(ServiceEventPackage))
 		if ok && cachedResult != nil {
-			task.SetResult(cachedResult.(*ServicePackageResult))
-			return
+			// Static web apps should always be repackaged (enables the `up` flow to work)
+			if serviceConfig.Host != StaticWebAppTarget {
+				task.SetResult(cachedResult.(*ServicePackageResult))
+				return
+			}
 		}
 
 		if buildOutput == nil {
 			cachedResult, ok := sm.getOperationResult(ctx, serviceConfig, string(ServiceEventBuild))
 			if ok && cachedResult != nil {
-				buildOutput = cachedResult.(*ServiceBuildResult)
+				// Static web apps should always be repackaged (enables the `up` flow to work)
+				if serviceConfig.Host != StaticWebAppTarget {
+					buildOutput = cachedResult.(*ServiceBuildResult)
+				}
 			}
 		}
 

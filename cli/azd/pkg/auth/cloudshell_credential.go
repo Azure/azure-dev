@@ -35,9 +35,9 @@ type CloudShellCredential struct {
 	httpClient httputil.HttpClient
 }
 
-func NewCloudShellCredential(httpClient httputil.HttpClient) CloudShellCredential {
+func NewCloudShellCredential(httpClient httputil.HttpClient) *CloudShellCredential {
 	cloudShellCredential := CloudShellCredential{httpClient: httpClient}
-	return cloudShellCredential
+	return &cloudShellCredential
 }
 
 func (t CloudShellCredential) GetToken(ctx context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {

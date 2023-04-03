@@ -130,10 +130,10 @@ func newProvisionAction(
 
 func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if p.flags.noProgress {
-		fmt.Fprintf(
+		fmt.Fprintln(
 			p.console.Handles().Stderr,
 			//nolint:Lll
-			output.WithWarningFormat("--no-progress flag is deprecated and will be removed in the future.")+"\n")
+			output.WithWarningFormat("WARNING: The '--no-progress' flag is deprecated and will be removed in a future release."))
 	}
 
 	// Command title

@@ -53,7 +53,9 @@ func (a *infraCreateAction) Run(ctx context.Context) (*actions.ActionResult, err
 	fmt.Fprintln(
 		a.console.Handles().Stderr,
 		output.WithWarningFormat(
-			"`azd infra create` is deprecated and will be removed in a future release. Please use `azd provision` instead."),
-	)
+			"WARNING: `azd infra create` is deprecated and will be removed in a future release."))
+	fmt.Fprintln(
+		a.console.Handles().Stderr,
+		"Next time use `azd provision`")
 	return a.infraCreate.Run(ctx)
 }

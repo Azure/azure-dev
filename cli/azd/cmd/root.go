@@ -215,6 +215,13 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 			ActionResolver: newPackageAction,
 			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 			DefaultFormat:  output.NoneFormat,
+			HelpOptions: actions.ActionHelpOptions{
+				Description: getCmdPackageHelpDescription,
+				Footer:      getCmdPackageHelpFooter,
+			},
+			GroupingOptions: actions.CommandGroupOptions{
+				RootLevelHelp: actions.CmdGroupManage,
+			},
 		}).
 		UseMiddleware("hooks", middleware.NewHooksMiddleware)
 

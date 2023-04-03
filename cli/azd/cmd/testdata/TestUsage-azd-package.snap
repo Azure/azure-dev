@@ -1,0 +1,31 @@
+
+Packages application's code to be deployed to Azure. (beta)
+
+  • By default, packages all services listed in 'azure.yaml' in the current directory, or the service described in the project that matches the current directory.
+  • When <service> is set, only the specific service is packaged.
+  • After the packaging is complete, the package locations are printed.
+
+Usage
+  azd package <service> [flags]
+
+Flags
+        --all                	: Deploys all services that are listed in azure.yaml
+    -e, --environment string 	: The name of the environment to use.
+    -h, --help               	: Gets help for package.
+
+Global Flags
+    -C, --cwd string 	: Sets the current working directory.
+        --debug      	: Enables debugging and diagnostics logging.
+        --no-prompt  	: Accepts the default value instead of prompting, or it fails if there is no default.
+
+Examples
+  Packages all services in the current project to Azure.
+    azd package --all
+
+  Packages the service named 'api' to Azure.
+    azd package api
+
+  Packages the service named 'web' to Azure.
+    azd package web
+
+

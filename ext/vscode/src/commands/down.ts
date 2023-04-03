@@ -23,7 +23,7 @@ export async function down(context: IActionContext, selectedItem?: vscode.Uri | 
     const purgeDelete: MessageItem = { title: localize("azure-dev.commands.cli.down.purge-delete", "Delete and Purge") };
 
     // If cancel is chosen or the modal is closed, a `UserCancelledError` will automatically be thrown, so we don't need to check for it
-    const choice = await context.ui.showWarningMessage(confirmPrompt, { modal: true }, purgeDelete, softDelete, DialogResponses.cancel);
+    const choice = await context.ui.showWarningMessage(confirmPrompt, { modal: true }, softDelete, purgeDelete, DialogResponses.cancel);
 
     context.telemetry.properties.purge = choice === purgeDelete ? 'true' : 'false';
 

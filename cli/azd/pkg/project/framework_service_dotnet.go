@@ -216,15 +216,18 @@ func normalizeDotNetSecret(key string) string {
 // glob `*.*proj`, then project file will be returned. If there are multiple or no project file, error is returned
 // and user will be asked to add project file path under "project" in azure.yaml.
 func findProjectFile(serviceConfig *ServiceConfig) (string, error) {
-	info, err := os.Stat(serviceConfig.Path())
+	serviceName := serviceConfig.Name
+	path := serviceConfig.Path()
+
+	info, err := os.Stat(path)
 	if err != nil {
 		return "", err
 	}
 
 	if !info.IsDir() {
-		return serviceConfig.Path(), nil
+		return path, nil
 	}
-	files, err := filepath.Glob(filepath.Join(serviceConfig.Path(), "*.*proj"))
+	files, err := filepath.Glob(filepath.Join(path, "*.*proj"))
 	if err != nil {
 		return "", fmt.Errorf("searching for project file: %w", err)
 	}
@@ -232,13 +235,13 @@ func findProjectFile(serviceConfig *ServiceConfig) (string, error) {
 		return "", fmt.Errorf(
 			"could not locate a dotnet project file for service %s in %s. Please update the project setting of "+
 				"azure.yaml for service %s to be the path to the dotnet project for this service",
-			serviceConfig.Name, serviceConfig.Path(), serviceConfig.Name)
+			serviceName, path, serviceName)
 	} else if len(files) > 1 {
 		return "", fmt.Errorf(
 			"could not locate a dotnet project file for service %s in %s. Multiple project files exist. Please update "+
 				"the \"project\" setting of azure.yaml for service %s to be the path to the dotnet project to use for this "+
 				"service",
-			serviceConfig.Name, serviceConfig.Path(), serviceConfig.Name)
+			serviceName, path, serviceName)
 	}
 
 	return files[0], nil

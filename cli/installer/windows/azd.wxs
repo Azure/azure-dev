@@ -31,8 +31,8 @@
         <!-- Make sure any unversioned files including azd.exe (currently) are overwritten on install -->
         <Property Id="REINSTALLMODE" Value="amus"/>
 
-        <!-- Remove older product(s) early but within the transaction -->
-        <MajorUpgrade Schedule="afterInstallInitialize" DowngradeErrorMessage="A newer version of !(bind.property.ProductName) is already installed."/>
+        <!-- Remove older product(s) late but within the transaction to support removing ~\.azd\bin -->
+        <MajorUpgrade Schedule="afterInstallExecute" DowngradeErrorMessage="A newer version of !(bind.property.ProductName) is already installed."/>
 
         <Directory Id="TARGETDIR" Name="SourceDir">
             <Directory Id="$(var.ProgramFilesFolder)" Name="Program Files">
@@ -50,6 +50,14 @@
             <!-- @Guid will be automatically and durably assigned based on key path -->
             <Component Directory="INSTALLDIR">
                 <File Name="azd.exe"/>
+
+                <!--
+                    Attempt to clean up the downloaded files for the current user.
+                    Order matters since removing a folder requires it to be empty; however, Windows Installer makes no guarantees
+                    about order. To improve our chances, insert into the database the corret and lexically sortable order.
+                -->
+                <RemoveFile Id="DownloadedFiles" Property="BinFolder" Name="*" On="uninstall"/>
+                <RemoveFolder Id="DownloadedFolder" Property="BinFolder" On="uninstall"/>
             </Component>
             <Component Directory="INSTALLDIR">
                 <File Name="NOTICE.txt"/>
@@ -76,5 +84,8 @@
         <!-- Use customized WixUI_InstallDir that changes the license agreement to just a notice -->
         <Property Id="WIXUI_INSTALLDIR" Value="INSTALLDIR"/>
         <UIRef Id="AzureDevCLI_InstallDir"/>
+
+        <!-- Set the BinFolder property to use for cleaning up downloaded files -->
+        <SetProperty Id="BinFolder" Value="[%USERPROFILE]\.azd\bin" After="CostFinalize" Sequence="execute"/>
     </Product>
 </Wix>

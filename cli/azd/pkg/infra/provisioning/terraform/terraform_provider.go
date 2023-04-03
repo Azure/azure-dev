@@ -92,7 +92,7 @@ func NewTerraformProvider(
 }
 
 func (t *TerraformProvider) EnsureConfigured(ctx context.Context) error {
-	if err := EnsureSubscriptionAndLocation(ctx, t.env, t.prompters); err != nil {
+	if err := t.prompters.EnsureSubscriptionLocation(ctx, t.env); err != nil {
 		return err
 	}
 

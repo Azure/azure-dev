@@ -20,8 +20,8 @@
     "build": "tsc -b .",
     "pretest": "npm run envconfig",
     "test": "if-node-version '>= 17' && react-scripts --openssl-legacy-provider test || react-scripts test",
-    "prepackage": "npm run envconfig",
     "package": "if-node-version '>= 17' && react-scripts --openssl-legacy-provider build || react-scripts build",
+    "postpackage": "cp ./entrypoint.sh ./build",
     "eject": "if-node-version '>= 17' && react-scripts --openssl-legacy-provider eject || react-scripts eject",
     "lint": "eslint ./src --ext .ts,.tsx"
   },

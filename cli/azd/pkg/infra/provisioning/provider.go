@@ -33,10 +33,14 @@ type LocationPromptFunc func(
 // SubscriptionPromptFunc prompts the user for an Azure subscription, from the set of subscriptions the user has access to.
 type SubscriptionPromptFunc func(ctx context.Context, msg string) (subscriptionId string, err error)
 
+// Ensures subscription and location are available on the environment by prompting if necessary
+type EnsureSubscriptionLocationPromptFunc func(ctx context.Context, env *environment.Environment) error
+
 // Prompters contains prompt functions that can be used for general scenarios.
 type Prompters struct {
-	Location     LocationPromptFunc
-	Subscription SubscriptionPromptFunc
+	Location                   LocationPromptFunc
+	Subscription               SubscriptionPromptFunc
+	EnsureSubscriptionLocation EnsureSubscriptionLocationPromptFunc
 }
 
 type ProviderKind string

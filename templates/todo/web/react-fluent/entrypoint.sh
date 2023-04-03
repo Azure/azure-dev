@@ -1,33 +1,35 @@
 #!/bin/sh
-set -euo pipefail
+set -eu
 
 ENV_FILE_PATH=".env"
 CONFIG_ROOT="ENV_CONFIG"
 OUTPUT_FILE="./public/env-config.js"
 
-function generateOutput {
+generateOutput() {
     echo "Generating JS configuration output to: $OUTPUT_FILE"
-    echo -e "window.$CONFIG_ROOT = {" >$OUTPUT_FILE
+    echo "window.$CONFIG_ROOT = {" >"$OUTPUT_FILE"
     for line in $1; do
-        if [[ $line = REACT_APP_* ]]; then
+        if beginswith REACT_APP_ "$line"; then
             key=${line%%=*}
             value=${line#*=}
-            echo " - Found '$key'"
-            echo -e "  $key: '$value'," >>$OUTPUT_FILE
+            printf " - Found '%s'" "$key"
+            printf "\t%s: '%s',\n" "$key" "$value" >>"$OUTPUT_FILE"
         fi
     done
-    echo -e "}" >>$OUTPUT_FILE
+    echo "}" >>"$OUTPUT_FILE"
 }
 
-function usage() {
-    echo
-    echo "Arguments:"
-    echo -e "\t-e\t Sets the .env file to use (default: .env)"
-    echo -e "\t-o\t Sets the output filename (default: ./public/env-config.js)"
-    echo -e "\t-c\t Sets the JS configuration key (default: ENV_CONFIG)"
-    echo
-    echo "Example:"
-    echo -e "\tbash entrypoint.sh -e .env -o env-config.js"
+beginswith() { case $2 in "$1"*) true;; *) false;; esac; }
+
+usage() {
+    printf
+    printf "Arguments:"
+    printf "\t-e\t Sets the .env file to use (default: .env)"
+    printf "\t-o\t Sets the output filename (default: ./public/env-config.js)"
+    printf "\t-c\t Sets the JS configuration key (default: ENV_CONFIG)"
+    printf
+    printf "Example:"
+    printf "\tbash entrypoint.sh -e .env -o env-config.js"
 }
 
 while getopts "e:o:c:" opt; do
@@ -48,9 +50,9 @@ done
 
 # Load .env file if supplied
 ENV_FILE=""
-if [ -f $ENV_FILE_PATH ]; then
+if [ -f "$ENV_FILE_PATH" ]; then
     echo "Loading environment file from '$ENV_FILE_PATH'"
-    ENV_FILE="$(cat $ENV_FILE_PATH)"
+    ENV_FILE="$(cat "$ENV_FILE_PATH")"
 fi
 
 # Load system environment variables

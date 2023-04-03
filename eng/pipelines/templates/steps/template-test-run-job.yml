@@ -87,10 +87,16 @@ steps:
           subFolder: "$(Build.SourcesDirectory)/temp"
           runCmd: |
               # Uninstall azd version
-              curl -fsSL https://aka.ms/uninstall-azd.sh | bash
+              curl -fsSL https://aka.ms/uninstall-azd.sh | sudo bash
 
-              # Install azd from PR
-              curl -fsSL https://aka.ms/install-azd.sh | bash -s -- --version $(AzdVersion) --verbose
+              # Install azd build
+              if [[ $(AzdVersion) == pr/* ]];
+              then
+                curl -fsSL https://aka.ms/install-azd.sh | sudo bash -s -- --base-url "https://$(azdev-storage-account-name).blob.core.windows.net/azd/standalone/$(AzdVersion)" --version ''
+              else
+                curl -fsSL https://aka.ms/install-azd.sh | sudo bash -s -- --version $(AzdVersion) --verbose
+              fi
+
               azd version
 
               # Login

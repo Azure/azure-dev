@@ -7,6 +7,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/spf13/cobra"
@@ -46,6 +49,9 @@ func newUpCmd() *cobra.Command {
 
 type upAction struct {
 	flags                      *upFlags
+	env                        *environment.Environment
+	accountManager             account.Manager
+	packageActionInitializer   actions.ActionInitializer[*packageAction]
 	provisionActionInitializer actions.ActionInitializer[*provisionAction]
 	deployActionInitializer    actions.ActionInitializer[*deployAction]
 	console                    input.Console
@@ -54,6 +60,9 @@ type upAction struct {
 
 func newUpAction(
 	flags *upFlags,
+	env *environment.Environment,
+	accountManager account.Manager,
+	packageActionInitializer actions.ActionInitializer[*packageAction],
 	provisionActionInitializer actions.ActionInitializer[*provisionAction],
 	deployActionInitializer actions.ActionInitializer[*deployAction],
 	console input.Console,
@@ -61,6 +70,9 @@ func newUpAction(
 ) actions.Action {
 	return &upAction{
 		flags:                      flags,
+		env:                        env,
+		accountManager:             accountManager,
+		packageActionInitializer:   packageActionInitializer,
 		provisionActionInitializer: provisionActionInitializer,
 		deployActionInitializer:    deployActionInitializer,
 		console:                    console,
@@ -81,6 +93,21 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		fmt.Fprintln(
 			u.console.Handles().Stderr,
 			output.WithWarningFormat("The --service flag is deprecated and will be removed in the future."))
+	}
+
+	err := provisioning.EnsureSubscriptionAndLocation(ctx, u.console, u.env, u.accountManager)
+	if err != nil {
+		return nil, err
+	}
+
+	packageAction, err := u.packageActionInitializer()
+	if err != nil {
+		return nil, err
+	}
+	packageOptions := &middleware.Options{CommandPath: "package"}
+	_, err = u.runner.RunChildAction(ctx, packageOptions, packageAction)
+	if err != nil {
+		return nil, err
 	}
 
 	provision, err := u.provisionActionInitializer()

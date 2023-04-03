@@ -116,6 +116,10 @@ func (pa *packageAction) Run(ctx context.Context) (*actions.ActionResult, error)
 		return nil, err
 	}
 
+	if err := pa.projectManager.Initialize(ctx, pa.projectConfig); err != nil {
+		return nil, err
+	}
+
 	if err := pa.projectManager.EnsureAllTools(ctx, pa.projectConfig, func(svc *project.ServiceConfig) bool {
 		return targetServiceName == "" || svc.Name == targetServiceName
 	}); err != nil {

@@ -45,7 +45,7 @@ func (p *TestProvider) RequiredExternalTools() []tools.ExternalTool {
 }
 
 func (p *TestProvider) EnsureConfigured(ctx context.Context) error {
-	return EnsureSubscriptionAndLocation(ctx, p.env, p.prompters)
+	return p.prompters.EnsureSubscriptionLocation(ctx, p.env)
 }
 
 func (p *TestProvider) Plan(

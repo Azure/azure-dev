@@ -10,7 +10,7 @@ services:
     language: js
     host: staticwebapp
     hooks:
-      postpackage:
+      predeploy:
         posix:
           shell: sh
           run: node entrypoint.js -o ./build/env-config.js

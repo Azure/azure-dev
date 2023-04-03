@@ -29,9 +29,9 @@ func NewUserProfileService(
 	}
 }
 
-func (u *UserProfileService) createGraphClient(ctx context.Context) (*graphsdk.GraphClient, error) {
+func (u *UserProfileService) createGraphClient(ctx context.Context, tenantId string) (*graphsdk.GraphClient, error) {
 	options := clientOptionsBuilder(u.httpClient, u.userAgent).BuildCoreClientOptions()
-	cred, err := u.credentialProvider.GetTokenCredential(ctx, "")
+	cred, err := u.credentialProvider.GetTokenCredential(ctx, tenantId)
 	if err != nil {
 		return nil, err
 	}
@@ -44,22 +44,22 @@ func (u *UserProfileService) createGraphClient(ctx context.Context) (*graphsdk.G
 	return client, nil
 }
 
-func (user *UserProfileService) GetSignedInUserId(ctx context.Context) (*string, error) {
-	client, err := user.createGraphClient(ctx)
+func (user *UserProfileService) GetSignedInUserId(ctx context.Context, tenantId string) (string, error) {
+	client, err := user.createGraphClient(ctx, tenantId)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 
 	userProfile, err := client.Me().Get(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed retrieving current user profile: %w", err)
+		return "", fmt.Errorf("failed retrieving current user profile: %w", err)
 	}
 
-	return &userProfile.Id, nil
+	return userProfile.Id, nil
 }
 
-func (u *UserProfileService) GetAccessToken(ctx context.Context) (*AzCliAccessToken, error) {
-	cred, err := u.credentialProvider.GetTokenCredential(ctx, "")
+func (u *UserProfileService) GetAccessToken(ctx context.Context, tenantId string) (*AzCliAccessToken, error) {
+	cred, err := u.credentialProvider.GetTokenCredential(ctx, tenantId)
 	if err != nil {
 		return nil, err
 	}

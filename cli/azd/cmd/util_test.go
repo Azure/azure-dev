@@ -5,20 +5,22 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
+	"os"
+	"path/filepath"
 	"sort"
 	"strings"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
-	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
-	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/stretchr/testify/require"
 )
 
@@ -106,9 +108,7 @@ func Test_promptEnvironmentName(t *testing.T) {
 			}, nil
 		})
 
-		azCli := azcli.NewAzCli(mockContext.Credentials, azcli.NewAzCliArgs{
-			HttpClient: mockContext.HttpClient,
-		})
+		azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 
 		resourceManager := infra.NewAzureResourceManager(azCli)
 		groups, err := resourceManager.GetResourceGroupsForDeployment(*mockContext.Context, "sub-id", "deployment-name")
@@ -119,59 +119,47 @@ func Test_promptEnvironmentName(t *testing.T) {
 	})
 }
 
-func Test_getSubscriptionOptions(t *testing.T) {
-	t.Run("no default config set", func(t *testing.T) {
-		mockAccount := &mockaccount.MockAccountManager{
-			Subscriptions: []account.Subscription{
-				{
-					Id:                 "1",
-					Name:               "sub1",
-					TenantId:           "",
-					UserAccessTenantId: "",
-					IsDefault:          false,
-				},
+func Test_createAndInitEnvironment(t *testing.T) {
+	t.Run("invalid name", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		tempDir := t.TempDir()
+		azdContext := azdcontext.NewAzdContextWithDirectory(tempDir)
+		invalidEnvName := "*!33"
+		_, err := createEnvironment(
+			*mockContext.Context,
+			environmentSpec{
+				environmentName: invalidEnvName,
 			},
-		}
-		subList, result, err := getSubscriptionOptions(context.Background(), mockAccount)
-
-		require.Nil(t, err)
-		require.EqualValues(t, 2, len(subList))
-		require.EqualValues(t, nil, result)
+			azdContext,
+			mockContext.Console,
+		)
+		require.ErrorContains(
+			t,
+			err,
+			fmt.Sprintf("environment name '%s' is invalid (it should contain only alphanumeric characters and hyphens)\n",
+				invalidEnvName))
 	})
 
-	t.Run("default value set", func(t *testing.T) {
-		// mocked configk
-		defaultSubId := "SUBSCRIPTION_DEFAULT"
-		ctx := context.Background()
-		mockAccount := &mockaccount.MockAccountManager{
-			DefaultLocation:     "location",
-			DefaultSubscription: defaultSubId,
-			Subscriptions: []account.Subscription{
-				{
-					Id:                 defaultSubId,
-					Name:               "DISPLAY DEFAULT",
-					TenantId:           "TENANT",
-					UserAccessTenantId: "USER_TENANT",
-					IsDefault:          true,
-				},
-				{
-					Id:                 "SUBSCRIPTION_OTHER",
-					Name:               "DISPLAY OTHER",
-					TenantId:           "TENANT",
-					UserAccessTenantId: "USER_TENANT",
-					IsDefault:          false,
-				},
+	t.Run("env already exists", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		tempDir := t.TempDir()
+		validName := "azdEnv"
+		err := os.MkdirAll(filepath.Join(tempDir, ".azure", validName), 0755)
+		require.NoError(t, err)
+		azdContext := azdcontext.NewAzdContextWithDirectory(tempDir)
+
+		_, err = createEnvironment(
+			*mockContext.Context,
+			environmentSpec{
+				environmentName: validName,
 			},
-			Locations: []azcli.AzCliLocation{},
-		}
-
-		subList, result, err := getSubscriptionOptions(ctx, mockAccount)
-
-		require.Nil(t, err)
-		require.EqualValues(t, 3, len(subList))
-		require.NotNil(t, result)
-		defSub, ok := result.(string)
-		require.True(t, ok)
-		require.EqualValues(t, " 1. DISPLAY DEFAULT (SUBSCRIPTION_DEFAULT)", defSub)
+			azdContext,
+			mockContext.Console,
+		)
+		require.ErrorContains(
+			t,
+			err,
+			fmt.Sprintf("environment '%s' already exists",
+				validName))
 	})
 }

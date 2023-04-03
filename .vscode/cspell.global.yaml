@@ -43,6 +43,7 @@ ignoreWords:
     - armcontainerregistry
     - azidentity
     - azsecrets
+    - beginswith
     - Bfor
     - bicepcli
     - cdne
@@ -104,7 +105,10 @@ ignoreWords:
     - PLACEHOLDERIACTOOLS
     - postcommand
     - postinit
+    - postbuild
+    - postpublish
     - preinline
+    - prebuild
     - precommand
     - predeploy
     - preinteractive
@@ -164,6 +168,7 @@ ignoreWords:
     - menuid
     - PLACEHOLDERIACTOOLS
     - LOGANALYTICS
+    - venv
     - webapprouting
     - zipdeploy
     - appinsights

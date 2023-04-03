@@ -210,6 +210,7 @@ func TestPatchFederatedCredential(t *testing.T) {
 }
 
 func TestDeleteFederatedCredential(t *testing.T) {
+	/* #nosec G101 - Potential hardcoded credentials - false positive */
 	credentialId := "credential-to-delete"
 
 	t.Run("Success", func(t *testing.T) {

@@ -5,9 +5,9 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
 	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
@@ -23,23 +23,23 @@ type ContainerRegistryService interface {
 }
 
 type containerRegistryService struct {
-	userAgent  string
-	httpClient httputil.HttpClient
-	docker     docker.Docker
-	credential azcore.TokenCredential
+	credentialProvider account.SubscriptionCredentialProvider
+	docker             docker.Docker
+	httpClient         httputil.HttpClient
+	userAgent          string
 }
 
 // Creates a new instance of the ContainerRegistryService
 func NewContainerRegistryService(
-	credential azcore.TokenCredential,
+	credentialProvider account.SubscriptionCredentialProvider,
 	httpClient httputil.HttpClient,
 	docker docker.Docker,
 ) ContainerRegistryService {
 	return &containerRegistryService{
-		credential: credential,
-		httpClient: httpClient,
-		docker:     docker,
-		userAgent:  azdinternal.MakeUserAgentString(""),
+		credentialProvider: credentialProvider,
+		docker:             docker,
+		httpClient:         httpClient,
+		userAgent:          azdinternal.MakeUserAgentString(""),
 	}
 }
 
@@ -137,8 +137,13 @@ func (crs *containerRegistryService) createRegistriesClient(
 	ctx context.Context,
 	subscriptionId string,
 ) (*armcontainerregistry.RegistriesClient, error) {
+	credential, err := crs.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
 	options := clientOptionsBuilder(crs.httpClient, crs.userAgent).BuildArmClientOptions()
-	client, err := armcontainerregistry.NewRegistriesClient(subscriptionId, crs.credential, options)
+	client, err := armcontainerregistry.NewRegistriesClient(subscriptionId, credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating registries client: %w", err)
 	}

@@ -12,10 +12,13 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 )
@@ -23,6 +26,9 @@ import (
 const (
 	HeartbeatInterval = 10 * time.Second
 )
+
+// sync.Once for one-time build for the process invocation
+var buildOnce sync.Once
 
 // The result of calling an azd CLI command
 type CliResult struct {
@@ -38,21 +44,79 @@ type CLI struct {
 	T                *testing.T
 	WorkingDirectory string
 	Env              []string
-	// The location of azd to invoke. By default, set to GetAzdLocation()
-	AzdLocation string
+	// Path to the azd binary
+	AzdPath string
 }
 
+// Constructs the CLI.
+// On a local developer machine, this also ensures that the azd binary is up-to-date before running.
+//
+// By default, the path to the default source location is used, see GetSourcePath.
+// Environment variable CLI_TEST_AZD_PATH can be used to set the path to the azd binary. This can be done in CI to
+// run the tests against a specific azd binary.
+//
+// When CI is detected, no automatic build is performed. To disable automatic build behavior, CLI_TEST_SKIP_BUILD
+// can be set to a truthy value.
 func NewCLI(t *testing.T) *CLI {
+	// Allow a override for custom build
+	if os.Getenv("CLI_TEST_AZD_PATH") != "" {
+		return &CLI{
+			T:       t,
+			AzdPath: os.Getenv("CLI_TEST_AZD_PATH"),
+		}
+	}
+
+	// Reference the binary that is built in the same folder as source
+	cliPath := GetSourcePath()
+	if runtime.GOOS == "windows" {
+		cliPath = filepath.Join(cliPath, "azd.exe")
+	} else {
+		cliPath = filepath.Join(cliPath, "azd")
+	}
+
+	cli := &CLI{
+		T:       t,
+		AzdPath: cliPath,
+	}
+
+	// Manual override for skipping automatic build
+	skip, err := strconv.ParseBool(os.Getenv("CLI_TEST_SKIP_BUILD"))
+	if err == nil && skip {
+		return cli
+	}
+
+	// Skip automatic build in CI always
+	if os.Getenv("CI") != "" ||
+		strings.ToLower(os.Getenv("TF_BUILD")) == "true" ||
+		strings.ToLower(os.Getenv("GITHUB_ACTIONS")) == "true" {
+		return cli
+	}
+
+	buildOnce.Do(func() {
+		cmd := exec.Command("go", "build")
+		cmd.Dir = filepath.Dir(cliPath)
+		output, err := cmd.CombinedOutput()
+		if err != nil {
+			panic(fmt.Errorf(
+				"failed to build azd (ran %s in %s): %w:\n%s",
+				strings.Join(cmd.Args, " "),
+				cmd.Dir,
+				err,
+				output))
+		}
+	})
+
 	return &CLI{
-		T:           t,
-		AzdLocation: GetAzdLocation(),
+		T:       t,
+		AzdPath: cliPath,
 	}
 }
 
 func (cli *CLI) RunCommandWithStdIn(ctx context.Context, stdin string, args ...string) (*CliResult, error) {
 	description := "azd " + strings.Join(args, " ") + " in " + cli.WorkingDirectory
 
-	cmd := exec.CommandContext(ctx, cli.AzdLocation, args...)
+	/* #nosec G204 - Subprocess launched with a potential tainted input or cmd arguments false positive */
+	cmd := exec.CommandContext(ctx, cli.AzdPath, args...)
 	if cli.WorkingDirectory != "" {
 		cmd.Dir = cli.WorkingDirectory
 	}
@@ -124,12 +188,7 @@ func (cli *CLI) heartbeat(description string, done <-chan struct{}) {
 	}
 }
 
-func GetAzdLocation() string {
+func GetSourcePath() string {
 	_, b, _, _ := runtime.Caller(0)
-
-	if runtime.GOOS == "windows" {
-		return filepath.Join(filepath.Dir(b), "..", "..", "azd.exe")
-	} else {
-		return filepath.Join(filepath.Dir(b), "..", "..", "azd")
-	}
+	return filepath.Join(filepath.Dir(b), "..", "..")
 }

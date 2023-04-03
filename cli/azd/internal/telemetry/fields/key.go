@@ -16,14 +16,19 @@ func StringHashed(k attribute.Key, v string) attribute.KeyValue {
 }
 
 func StringSliceHashed(k attribute.Key, v []string) attribute.KeyValue {
-	val := make([]string, len(v))
-	for i := range v {
-		val[i] = CaseInsensitiveHash(v[i])
-	}
+	val := CaseInsensitiveSliceHash(v)
 	return attribute.KeyValue{
 		Key:   attribute.Key(k),
 		Value: attribute.StringSliceValue(val),
 	}
+}
+
+func CaseInsensitiveSliceHash(value []string) []string {
+	hashed := make([]string, len(value))
+	for i := range value {
+		hashed[i] = CaseInsensitiveHash(value[i])
+	}
+	return hashed
 }
 
 func CaseInsensitiveHash(value string) string {

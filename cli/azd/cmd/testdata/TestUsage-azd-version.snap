@@ -5,8 +5,7 @@ Usage
   azd version [flags]
 
 Flags
-    -h, --help          	: Gets help for version.
-    -o, --output string 	: The output format (the supported formats are json, none).
+    -h, --help 	: Gets help for version.
 
 Global Flags
     -C, --cwd string 	: Sets the current working directory.

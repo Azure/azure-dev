@@ -55,13 +55,14 @@ type BicepDeploymentDetails struct {
 
 // BicepProvider exposes infrastructure provisioning using Azure Bicep templates
 type BicepProvider struct {
-	env         *environment.Environment
-	projectPath string
-	options     Options
-	console     input.Console
-	bicepCli    bicep.BicepCli
-	azCli       azcli.AzCli
-	prompters   Prompters
+	env          *environment.Environment
+	projectPath  string
+	options      Options
+	console      input.Console
+	bicepCli     bicep.BicepCli
+	azCli        azcli.AzCli
+	prompters    Prompters
+	curPrincipal CurrentPrincipalIdProvider
 }
 
 // Name gets the name of the infra provider
@@ -71,6 +72,10 @@ func (p *BicepProvider) Name() string {
 
 func (p *BicepProvider) RequiredExternalTools() []tools.ExternalTool {
 	return []tools.ExternalTool{}
+}
+
+func (p *BicepProvider) EnsureConfigured(ctx context.Context) error {
+	return p.prompters.EnsureSubscriptionLocation(ctx, p.env)
 }
 
 func (p *BicepProvider) State(
@@ -303,6 +308,7 @@ func (p *BicepProvider) Destroy(
 					return p.purgeKeyVaults(ctx, asyncContext, keyVaults, options)
 				},
 			}
+
 			appConfigsPurge := itemToPurge{
 				resourceType: "App Configurations",
 				count:        len(appConfigs),
@@ -499,7 +505,7 @@ func (p *BicepProvider) getKeyVaults(
 	for resourceGroup, groupResources := range groupedResources {
 		for _, resource := range groupResources {
 			if resource.Type == string(infra.AzureResourceTypeKeyVault) {
-				vault, err := p.azCli.GetKeyVault(ctx, p.env.GetSubscriptionId(), resourceGroup, resource.Name)
+				vault, err := p.azCli.GetKeyVault(ctx, azure.SubscriptionFromRID(resource.Id), resourceGroup, resource.Name)
 				if err != nil {
 					return nil, fmt.Errorf("listing key vault %s properties: %w", resource.Name, err)
 				}
@@ -534,7 +540,7 @@ func (p *BicepProvider) getKeyVaultsToPurge(
 // such that when it is deleted it can be recovered for a period of time. During that time, the name may
 // not be reused.
 //
-// This means that running `az dev provision`, then `az dev infra delete` and finally `az dev provision`
+// This means that running `azd provision`, then `azd down` and finally `azd provision`
 // again would lead to a deployment error since the vault name is in use.
 //
 // Since that's behavior we'd like to support, we run a purge operation for each KeyVault after
@@ -563,7 +569,7 @@ func (p *BicepProvider) purgeKeyVaults(
 
 		asyncContext.SetProgress(&progressReport)
 
-		err := p.azCli.PurgeKeyVault(ctx, p.env.GetSubscriptionId(), keyVault.Name, keyVault.Location)
+		err := p.azCli.PurgeKeyVault(ctx, azure.SubscriptionFromRID(keyVault.Id), keyVault.Name, keyVault.Location)
 		if err != nil {
 			return fmt.Errorf("purging key vault %s: %w", keyVault.Name, err)
 		}
@@ -586,7 +592,12 @@ func (p *BicepProvider) getAppConfigsToPurge(
 	for resourceGroup, groupResources := range groupedResources {
 		for _, resource := range groupResources {
 			if resource.Type == string(infra.AzureResourceTypeAppConfig) {
-				config, err := p.azCli.GetAppConfig(ctx, p.env.GetSubscriptionId(), resourceGroup, resource.Name)
+				config, err := p.azCli.GetAppConfig(
+					ctx,
+					azure.SubscriptionFromRID(resource.Id),
+					resourceGroup,
+					resource.Name,
+				)
 				if err != nil {
 					return nil, fmt.Errorf("listing app configuration %s properties: %w", resource.Name, err)
 				}
@@ -610,7 +621,7 @@ func (p *BicepProvider) getApiManagementsToPurge(
 	for resourceGroup, groupResources := range groupedResources {
 		for _, resource := range groupResources {
 			if resource.Type == string(infra.AzureResourceTypeApim) {
-				apim, err := p.azCli.GetApim(ctx, p.env.GetSubscriptionId(), resourceGroup, resource.Name)
+				apim, err := p.azCli.GetApim(ctx, azure.SubscriptionFromRID(resource.Id), resourceGroup, resource.Name)
 				if err != nil {
 					return nil, fmt.Errorf("listing api management service %s properties: %w", resource.Name, err)
 				}
@@ -629,7 +640,7 @@ func (p *BicepProvider) getApiManagementsToPurge(
 // may be marked such that when it is deleted it can be recovered for a period of time. During that time,
 // the name may not be reused.
 //
-// This means that running `az dev provision`, then `az dev infra delete` and finally `az dev provision`
+// This means that running `azd provision`, then `azd down` and finally `azd provision`
 // again would lead to a deployment error since the configuration name is in use.
 //
 // Since that's behavior we'd like to support, we run a purge operation for each AppConfiguration after it has been deleted.
@@ -654,7 +665,7 @@ func (p *BicepProvider) purgeAppConfigs(
 
 		asyncContext.SetProgress(&progressReport)
 
-		err := p.azCli.PurgeAppConfig(ctx, p.env.GetSubscriptionId(), appConfig.Name, appConfig.Location)
+		err := p.azCli.PurgeAppConfig(ctx, azure.SubscriptionFromRID(appConfig.Id), appConfig.Name, appConfig.Location)
 		if err != nil {
 			return fmt.Errorf("purging app configuration %s: %w", appConfig.Name, err)
 		}
@@ -690,7 +701,7 @@ func (p *BicepProvider) purgeAPIManagement(
 
 		asyncContext.SetProgress(&progressReport)
 
-		err := p.azCli.PurgeApim(ctx, p.env.GetSubscriptionId(), apim.Name, apim.Location)
+		err := p.azCli.PurgeApim(ctx, azure.SubscriptionFromRID(apim.Id), apim.Name, apim.Location)
 		if err != nil {
 			return fmt.Errorf("purging api management service %s: %w", apim.Name, err)
 		}
@@ -791,18 +802,24 @@ func (p *BicepProvider) loadParameters(
 		return nil, fmt.Errorf("reading parameter file template: %w", err)
 	}
 
+	principalId, err := p.curPrincipal.CurrentPrincipalId(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("fetching current principal id: %w", err)
+	}
+
 	replaced, err := envsubst.Eval(string(parametersBytes), func(name string) string {
-		if val, has := p.env.Values[name]; has {
-			return val
+		if name == environment.PrincipalIdEnvVarName {
+			return principalId
 		}
-		return os.Getenv(name)
+
+		return p.env.Getenv(name)
 	})
 	if err != nil {
 		return nil, fmt.Errorf("substituting environment variables inside parameter file: %w", err)
 	}
 
 	if cmdsubst.ContainsCommandInvocation(replaced, cmdsubst.SecretOrRandomPasswordCommandName) {
-		cmdExecutor := cmdsubst.NewSecretOrRandomPasswordExecutor(p.azCli)
+		cmdExecutor := cmdsubst.NewSecretOrRandomPasswordExecutor(p.azCli, p.env.GetSubscriptionId())
 		replaced, err = cmdsubst.Eval(ctx, replaced, cmdExecutor)
 		if err != nil {
 			return nil, fmt.Errorf("substituting command output inside parameter file: %w", err)
@@ -1076,6 +1093,7 @@ func NewBicepProvider(
 	commandRunner exec.CommandRunner,
 	console input.Console,
 	prompters Prompters,
+	curPrincipal CurrentPrincipalIdProvider,
 ) (*BicepProvider, error) {
 	bicepCli, err := bicep.NewBicepCli(ctx, console, commandRunner)
 	if err != nil {
@@ -1088,13 +1106,14 @@ func NewBicepProvider(
 	}
 
 	return &BicepProvider{
-		env:         env,
-		projectPath: projectPath,
-		options:     infraOptions,
-		console:     console,
-		bicepCli:    bicepCli,
-		azCli:       azCli,
-		prompters:   prompters,
+		env:          env,
+		projectPath:  projectPath,
+		options:      infraOptions,
+		console:      console,
+		bicepCli:     bicepCli,
+		azCli:        azCli,
+		prompters:    prompters,
+		curPrincipal: curPrincipal,
 	}, nil
 }
 
@@ -1110,8 +1129,9 @@ func init() {
 			azCli azcli.AzCli,
 			commandRunner exec.CommandRunner,
 			prompters Prompters,
+			curPrincipal CurrentPrincipalIdProvider,
 		) (Provider, error) {
-			return NewBicepProvider(ctx, azCli, env, projectPath, options, commandRunner, console, prompters)
+			return NewBicepProvider(ctx, azCli, env, projectPath, options, commandRunner, console, prompters, curPrincipal)
 		},
 	)
 

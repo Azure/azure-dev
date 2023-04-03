@@ -287,7 +287,7 @@ func (manager *PipelineManager) Configure(ctx context.Context) (
 	}
 
 	// Figure out what is the expected provider to use for provisioning
-	prj, err := project.LoadProjectConfig(manager.AzdCtx.ProjectPath())
+	prj, err := project.Load(ctx, manager.AzdCtx.ProjectPath())
 	if err != nil {
 		return result, fmt.Errorf("finding provisioning provider: %w", err)
 	}

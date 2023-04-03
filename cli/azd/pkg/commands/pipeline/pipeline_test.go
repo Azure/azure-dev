@@ -320,7 +320,7 @@ func Test_detectProviders(t *testing.T) {
 		scmProvider, ciProvider, err := DetectProviders(
 			ctx,
 			azdContext,
-			&environment.Environment{Values: map[string]string{}},
+			environment.Ephemeral(),
 			"",
 			mockContext.Console,
 			mockContext.Credentials,
@@ -340,7 +340,7 @@ func Test_detectProviders(t *testing.T) {
 		scmProvider, ciProvider, err := DetectProviders(
 			ctx,
 			azdContext,
-			&environment.Environment{Values: map[string]string{}},
+			environment.Ephemeral(),
 			"",
 			mockContext.Console,
 			mockContext.Credentials,
@@ -363,7 +363,7 @@ func Test_detectProviders(t *testing.T) {
 		scmProvider, ciProvider, err := DetectProviders(
 			ctx,
 			azdContext,
-			&environment.Environment{Values: map[string]string{}},
+			environment.Ephemeral(),
 			"",
 			mockContext.Console,
 			mockContext.Credentials,
@@ -381,7 +381,7 @@ func Test_detectProviders(t *testing.T) {
 		err = os.Mkdir(azdoFolder, osutil.PermissionDirectory)
 		assert.NoError(t, err)
 
-		env := &environment.Environment{Values: map[string]string{}}
+		env := environment.Ephemeral()
 
 		scmProvider, ciProvider, err := DetectProviders(
 			ctx,
@@ -423,7 +423,7 @@ func Test_detectProviders(t *testing.T) {
 		err = os.Mkdir(ghFolder, osutil.PermissionDirectory)
 		assert.NoError(t, err)
 
-		env := &environment.Environment{Values: map[string]string{}}
+		env := environment.Ephemeral()
 
 		scmProvider, ciProvider, err := DetectProviders(
 			ctx,
@@ -527,5 +527,4 @@ func Test_detectProviders(t *testing.T) {
 		os.Remove(azdoFolder)
 		os.Remove(ghFolder)
 	})
-
 }

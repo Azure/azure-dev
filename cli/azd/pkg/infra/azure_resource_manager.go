@@ -12,7 +12,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
@@ -150,10 +149,11 @@ func (rm *AzureResourceManager) GetResourceGroupsForDeployment(
 // GetResourceGroupsForEnvironment gets all resources groups for a given environment
 func (rm *AzureResourceManager) GetResourceGroupsForEnvironment(
 	ctx context.Context,
-	env *environment.Environment,
+	subscriptionId string,
+	envName string,
 ) ([]azcli.AzCliResource, error) {
-	res, err := rm.azCli.ListResourceGroup(ctx, env.GetSubscriptionId(), &azcli.ListResourceGroupOptions{
-		TagFilter: &azcli.Filter{Key: "azd-env-name", Value: env.GetEnvName()},
+	res, err := rm.azCli.ListResourceGroup(ctx, subscriptionId, &azcli.ListResourceGroupOptions{
+		TagFilter: &azcli.Filter{Key: "azd-env-name", Value: envName},
 	})
 
 	if err != nil {
@@ -162,7 +162,7 @@ func (rm *AzureResourceManager) GetResourceGroupsForEnvironment(
 
 	if len(res) == 0 {
 		return nil, azureutil.ResourceNotFound(
-			fmt.Errorf("0 resource groups with azd-env-name with value: '%s'", env.GetEnvName()),
+			fmt.Errorf("0 resource groups with azd-env-name with value: '%s'", envName),
 		)
 	}
 
@@ -174,14 +174,15 @@ func (rm *AzureResourceManager) GetResourceGroupsForEnvironment(
 // We search for them instead using the rg- prefix or -rg suffix
 func (rm *AzureResourceManager) GetDefaultResourceGroups(
 	ctx context.Context,
-	env *environment.Environment,
+	subscriptionId string,
+	environmentName string,
 ) ([]azcli.AzCliResource, error) {
-	allGroups, err := rm.azCli.ListResourceGroup(ctx, env.GetSubscriptionId(), nil)
+	allGroups, err := rm.azCli.ListResourceGroup(ctx, subscriptionId, nil)
 
 	matchingGroups := []azcli.AzCliResource{}
 	for _, group := range allGroups {
-		if group.Name == fmt.Sprintf("rg-%[1]s", env.GetEnvName()) ||
-			group.Name == fmt.Sprintf("%[1]s-rg", env.GetEnvName()) {
+		if group.Name == fmt.Sprintf("rg-%[1]s", environmentName) ||
+			group.Name == fmt.Sprintf("%[1]s-rg", environmentName) {
 			matchingGroups = append(matchingGroups, group)
 		}
 	}
@@ -192,7 +193,7 @@ func (rm *AzureResourceManager) GetDefaultResourceGroups(
 
 	if len(matchingGroups) == 0 {
 		return nil, azureutil.ResourceNotFound(
-			fmt.Errorf("0 resource groups with prefix or suffix with value: '%s'", env.GetEnvName()),
+			fmt.Errorf("0 resource groups with prefix or suffix with value: '%s'", environmentName),
 		)
 	}
 
@@ -208,21 +209,22 @@ func (rm *AzureResourceManager) GetDefaultResourceGroups(
 // with the resource group to use.
 func (rm *AzureResourceManager) FindResourceGroupForEnvironment(
 	ctx context.Context,
-	env *environment.Environment,
+	subscriptionId string,
+	envName string,
 ) (string, error) {
 	// Let's first try to find the resource group by environment name tag (azd-env-name)
-	rgs, err := rm.GetResourceGroupsForEnvironment(ctx, env)
+	rgs, err := rm.GetResourceGroupsForEnvironment(ctx, subscriptionId, envName)
 	var notFoundError *azureutil.ResourceNotFoundError
 	if err != nil && !errors.As(err, &notFoundError) {
-		return "", fmt.Errorf("getting resource group for environment: %s: %w", env.GetEnvName(), err)
+		return "", fmt.Errorf("getting resource group for environment: %s: %w", envName, err)
 	}
 
 	if len(rgs) == 0 {
 		// We didn't find any Resource Groups for the environment, now let's try to find Resource Groups with the
 		// rg-{envname} prefix or {envname}-rg suffix
-		rgs, err = rm.GetDefaultResourceGroups(ctx, env)
+		rgs, err = rm.GetDefaultResourceGroups(ctx, subscriptionId, envName)
 		if err != nil {
-			return "", fmt.Errorf("getting default resource groups for environment: %s: %w", env.GetEnvName(), err)
+			return "", fmt.Errorf("getting default resource groups for environment: %s: %w", envName, err)
 		}
 	}
 

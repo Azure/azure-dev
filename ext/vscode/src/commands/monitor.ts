@@ -4,10 +4,10 @@
 import * as vscode from 'vscode';
 import { IActionContext, IAzureQuickPickItem, parseError, UserCancelledError } from '@microsoft/vscode-azext-utils';
 import { createAzureDevCli } from '../utils/azureDevCli';
-import { quickPickWorkspaceFolder } from '../utils/quickPickWorkspaceFolder';
 import { spawnAsync } from '../utils/process';
 import { isTreeViewModel, TreeViewModel } from '../utils/isTreeViewModel';
 import { AzureDevCliApplication } from '../views/workspace/AzureDevCliApplication';
+import { getWorkingFolder } from './cmdUtil';
 
 const MonitorChoices: IAzureQuickPickItem<string>[] = [
     {
@@ -27,11 +27,7 @@ const MonitorChoices: IAzureQuickPickItem<string>[] = [
 
 export async function monitor(context: IActionContext, selectedItem?: vscode.Uri | TreeViewModel): Promise<void> {
     const selectedFile = isTreeViewModel(selectedItem) ? selectedItem.unwrap<AzureDevCliApplication>().context.configurationFile : selectedItem;
-    let folder: vscode.WorkspaceFolder | undefined = (selectedFile ? vscode.workspace.getWorkspaceFolder(selectedFile) : undefined);
-    if (!folder) {
-        folder = await quickPickWorkspaceFolder(context, vscode.l10n.t("To run '{0}' command you must first open a folder or workspace in VS Code", 'monitor'));
-    }
-    const cwd = folder.uri.fsPath;
+    const workingFolder = await getWorkingFolder(context, selectedFile);
 
     const monitorChoices  = await context.ui.showQuickPick(MonitorChoices, {
         canPickMany: true,
@@ -54,10 +50,9 @@ export async function monitor(context: IActionContext, selectedItem?: vscode.Uri
     };
     try {
         await vscode.window.withProgress(progressOptions, async () => {
-            await spawnAsync(command.build(), azureCli.spawnOptions(cwd));
+            await spawnAsync(command.build(), azureCli.spawnOptions(workingFolder));
         });
-    }
-    catch(err) {
+    } catch(err) {
         const parsedErr = parseError(err);
         if (!parsedErr.isUserCancelledError) {
             await vscode.window.showErrorMessage(

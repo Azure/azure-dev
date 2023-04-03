@@ -90,7 +90,8 @@ func (cli *PythonCli) InstallRequirements(ctx context.Context, workingDir, envir
 		installCmd := fmt.Sprintf("%s -m pip install -r %s", pythonExe(), requirementFile)
 		commands := []string{envActivation, installCmd}
 
-		res, err = exec.RunCommandList(ctx, commands, nil, workingDir)
+		runArgs := exec.NewRunArgs("").WithCwd(workingDir)
+		res, err = cli.commandRunner.RunList(ctx, commands, runArgs)
 	}
 
 	if err != nil {

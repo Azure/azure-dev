@@ -367,7 +367,13 @@ try {
                 -Wait
 
             if ($installProcess.ExitCode) {
-                Write-Error "Could not install MSI at $releaseArtifactFilename"
+                if ($installProcess.ExitCode -eq 1603) {
+                    Write-Host "A later verison of Azure Developer CLI is already installed. Use 'Add or remove programs' to uninstall the current version and try again."
+                    exit 0
+                }
+
+                Write-Error "Could not install MSI at $releaseArtifactFilename. msiexec.exe returned exit code: $($installProcess.ExitCode)"
+
                 reportTelemetryIfEnabled 'InstallFailed' 'MsiFailure'
                 exit 1
             }

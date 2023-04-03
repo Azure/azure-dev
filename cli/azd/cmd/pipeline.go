@@ -5,12 +5,13 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/commands/pipeline"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -97,19 +98,19 @@ func newPipelineConfigCmd() *cobra.Command {
 
 // pipelineConfigAction defines the action for pipeline config command
 type pipelineConfigAction struct {
-	flags         *pipelineConfigFlags
-	manager       *pipeline.PipelineManager
-	azCli         azcli.AzCli
-	azdCtx        *azdcontext.AzdContext
-	env           *environment.Environment
-	console       input.Console
-	credential    azcore.TokenCredential
-	commandRunner exec.CommandRunner
+	flags              *pipelineConfigFlags
+	manager            *pipeline.PipelineManager
+	azCli              azcli.AzCli
+	azdCtx             *azdcontext.AzdContext
+	env                *environment.Environment
+	console            input.Console
+	commandRunner      exec.CommandRunner
+	credentialProvider account.SubscriptionCredentialProvider
 }
 
 func newPipelineConfigAction(
 	azCli azcli.AzCli,
-	credential azcore.TokenCredential,
+	credentialProvider account.SubscriptionCredentialProvider,
 	azdCtx *azdcontext.AzdContext,
 	env *environment.Environment,
 	console input.Console,
@@ -117,9 +118,9 @@ func newPipelineConfigAction(
 	commandRunner exec.CommandRunner,
 ) actions.Action {
 	pca := &pipelineConfigAction{
-		flags:      flags,
-		azCli:      azCli,
-		credential: credential,
+		flags:              flags,
+		azCli:              azCli,
+		credentialProvider: credentialProvider,
 		manager: pipeline.NewPipelineManager(
 			azCli, azdCtx, env, flags.global, commandRunner, console, flags.PipelineManagerArgs,
 		),
@@ -134,17 +135,27 @@ func newPipelineConfigAction(
 
 // Run implements action interface
 func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	if p.env.GetSubscriptionId() == "" {
+		return nil, errors.New(
+			"infrastructure has not been provisioned. Please run `azd provision`",
+		)
+	}
+
 	// Command title
 	p.console.MessageUxItem(ctx, &ux.MessageTitle{
 		Title: "Configure your azd pipeline",
 	})
 
+	credential, err := p.credentialProvider.CredentialForSubscription(ctx, p.env.GetSubscriptionId())
+	if err != nil {
+		return nil, err
+	}
+
 	// Detect the SCM and CI providers based on the project directory
-	var err error
 	p.manager.ScmProvider,
 		p.manager.CiProvider,
 		err = pipeline.DetectProviders(
-		ctx, p.azdCtx, p.env, p.manager.PipelineProvider, p.console, p.credential, p.commandRunner,
+		ctx, p.azdCtx, p.env, p.manager.PipelineProvider, p.console, credential, p.commandRunner,
 	)
 	if err != nil {
 		return nil, err

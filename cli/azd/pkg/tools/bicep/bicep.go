@@ -218,7 +218,7 @@ func downloadBicep(ctx context.Context, transporter policy.Transporter, bicepVer
 		return err
 	}
 
-	if err := os.Rename(f.Name(), name); err != nil {
+	if err := osutil.Rename(ctx, f.Name(), name); err != nil {
 		return err
 	}
 

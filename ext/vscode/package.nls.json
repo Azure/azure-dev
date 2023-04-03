@@ -5,9 +5,8 @@
     "azure-dev.commands.cli.provision.title": "provision (provision Azure resources)",
     "azure-dev.commands.cli.deploy.title": "deploy (deploy the application's code to Azure)",
     "azure-dev.commands.cli.restore.title": "restore (restores application dependencies)",
-    "azure-dev.commands.cli.infra-create.title": "infra create (create Azure resources for the application)",
-    "azure-dev.commands.cli.infra-delete.title": "infra delete (delete Azure resources for the application)",
-    "azure-dev.commands.cli.up.title": "up (initialize application, provision resources, and deploy)",
+
+    "azure-dev.commands.cli.up.title": "up (provision resources, and deploy application code to Azure)",
     "azure-dev.commands.cli.down.title": "down (delete deployed application and infrastructure)",
     "azure-dev.commands.cli.monitor.title": "monitor (monitor a deployed application)",
     "azure-dev.commands.cli.env-delete.title": "env delete (delete an environment)",

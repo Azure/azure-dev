@@ -12,7 +12,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockarmresources"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockhttp"
@@ -157,7 +156,7 @@ func TestSubscriptionsManager_ListSubscriptions(t *testing.T) {
 			}
 
 			subManager := &SubscriptionsManager{
-				service: azcli.NewSubscriptionsService(
+				service: NewSubscriptionsService(
 					&mocks.MockMultiTenantCredentialProvider{},
 					mockHttp,
 				),

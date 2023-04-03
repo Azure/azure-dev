@@ -16,6 +16,7 @@ words:
   - Canonicalize
   - devcontainers
   - goversioninfo
+  - nosec
 languageSettings:
   - languageId: go
     ignoreRegExpList:
@@ -67,3 +68,6 @@ overrides:
       - keychain
       - crusername
       - azurecr
+ignorePaths:
+  - "**/*_test.go"
+  - "**/mock*.go"

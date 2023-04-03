@@ -16,6 +16,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/stretchr/testify/require"
@@ -113,7 +114,7 @@ func TestNewGitHubCli(t *testing.T) {
 
 	mockExtract := func(src, dst string) (string, error) {
 		exp, _ := azdGithubCliPath()
-		_ = os.Rename(src, exp)
+		_ = osutil.Rename(context.Background(), src, exp)
 		return src, nil
 	}
 

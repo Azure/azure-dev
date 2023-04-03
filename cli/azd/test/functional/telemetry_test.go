@@ -66,10 +66,7 @@ func Test_CLI_Telemetry_UsageData_Simple_Command(t *testing.T) {
 
 	traceFilePath := filepath.Join(dir, "trace.json")
 
-	_, err = cli.RunCommandWithStdIn(
-		ctx,
-		"\n\n", // accept defaults for sub + location
-		"env", "new", envName, "--trace-log-file", traceFilePath)
+	_, err = cli.RunCommand(ctx, "env", "new", envName, "--trace-log-file", traceFilePath)
 	require.NoError(t, err)
 	fmt.Printf("envName: %s\n", envName)
 
@@ -91,9 +88,6 @@ func Test_CLI_Telemetry_UsageData_Simple_Command(t *testing.T) {
 		if strings.HasPrefix(span.Name, "cmd.") {
 			usageCmdFound = true
 			m := attributesMap(span.Attributes)
-			require.Contains(t, m, fields.SubscriptionIdKey)
-			require.Equal(t, getEnvSubscriptionId(t, dir, envName), m[fields.SubscriptionIdKey])
-
 			require.Contains(t, m, fields.EnvNameKey)
 			require.Equal(t, fields.CaseInsensitiveHash(envName), m[fields.EnvNameKey])
 
@@ -130,11 +124,13 @@ func Test_CLI_Telemetry_UsageData_EnvProjectLoad(t *testing.T) {
 
 	traceFilePath := filepath.Join(dir, "trace.json")
 
-	_, err = cli.RunCommandWithStdIn(
-		ctx,
-		stdinForTests(envName),
-		"restore", "--service", "csharpapptest",
-		"--trace-log-file", traceFilePath)
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
+	require.NoError(t, err)
+
+	_, err = cli.RunCommand(ctx, "env", "set", "AZURE_SUBSCRIPTION_ID", testSubscriptionId)
+	require.NoError(t, err)
+
+	_, err = cli.RunCommand(ctx, "restore", "csharpapptest", "--trace-log-file", traceFilePath)
 	require.NoError(t, err)
 
 	traceContent, err := os.ReadFile(traceFilePath)
@@ -185,10 +181,10 @@ func Test_CLI_Telemetry_UsageData_EnvProjectLoad(t *testing.T) {
 			require.ElementsMatch(t, m[fields.ProjectServiceLanguagesKey], languages)
 
 			require.Contains(t, m, fields.CmdFlags)
-			require.ElementsMatch(t, m[fields.CmdFlags], []string{"service", "trace-log-file"})
+			require.ElementsMatch(t, m[fields.CmdFlags], []string{"trace-log-file"})
 
 			require.Contains(t, m, fields.CmdArgsCount)
-			require.Equal(t, float64(0), m[fields.CmdArgsCount])
+			require.Equal(t, float64(1), m[fields.CmdArgsCount])
 		}
 	}
 	require.True(t, usageCmdFound)

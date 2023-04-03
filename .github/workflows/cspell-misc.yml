@@ -18,7 +18,7 @@ jobs:
       - uses: actions/checkout@v3
       - uses: actions/setup-node@v3
         with:
-          node-version: "16"
+          node-version: "18"
       - run: npm install -g cspell
       - name: Spell check for general files
         run: cspell lint '**/*' --config ./.vscode/cspell.misc.yaml --relative --no-progress

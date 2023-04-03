@@ -15,12 +15,14 @@
   "scripts": {
     "envconfig": "node entrypoint.js -e .env -o ./public/env-config.js",
     "prestart": "npm run envconfig",
-    "start": "if-node-version '>= 17' && react-scripts --openssl-legacy-provider start || react-scripts start",
-    "prebuild": "npm run envconfig",
-    "build": "if-node-version '>= 17' && react-scripts --openssl-legacy-provider build || react-scripts build",
+    "start": "react-scripts start",
+    "prebuild": "npm run lint",
+    "build": "tsc -b .",
     "pretest": "npm run envconfig",
-    "test": "if-node-version '>= 17' && react-scripts --openssl-legacy-provider test || react-scripts test",
-    "eject": "if-node-version '>= 17' && react-scripts --openssl-legacy-provider eject || react-scripts eject",
+    "test": "react-scripts test",
+    "package": "react-scripts build",
+    "postpackage": "shx cp ./entrypoint.sh ./build",
+    "eject": "react-scripts eject",
     "lint": "eslint ./src --ext .ts,.tsx"
   },
   "eslintConfig": {
@@ -59,6 +61,7 @@
     "if-node-version": "^1.1.1",
     "immer": "^9.0.14",
     "react-scripts": "^5.0.1",
+    "shx": "^0.3.4",
     "typescript": "^4.7.3"
   },
   "overrides": {
@@ -66,7 +69,7 @@
     "nth-check": "^2.0.1",
     "ejs": "^3.1.7",
     "svgo": "^2.8.0",
-    "react-scripts":{
+    "react-scripts": {
       "react-dev-utils": {
         "recursive-readdir": {
           "minimatch": "^3.0.5"

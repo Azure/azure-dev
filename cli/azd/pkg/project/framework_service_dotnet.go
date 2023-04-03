@@ -38,6 +38,16 @@ func NewDotNetProject(
 	}
 }
 
+func (dp *dotnetProject) Requirements() FrameworkRequirements {
+	return FrameworkRequirements{
+		// dotnet will automatically restore & build the project if needed
+		Package: FrameworkPackageRequirements{
+			RequireRestore: false,
+			RequireBuild:   false,
+		},
+	}
+}
+
 // Gets the required external tools for the project
 func (dp *dotnetProject) RequiredExternalTools(context.Context) []tools.ExternalTool {
 	return []tools.ExternalTool{dp.dotnetCli}
@@ -137,7 +147,7 @@ func (dp *dotnetProject) Package(
 ) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
-			publishRoot, err := os.MkdirTemp("", "azd")
+			packageRoot, err := os.MkdirTemp("", "azd")
 			if err != nil {
 				task.SetError(fmt.Errorf("creating package directory for %s: %w", serviceConfig.Name, err))
 				return
@@ -149,18 +159,18 @@ func (dp *dotnetProject) Package(
 				task.SetError(err)
 				return
 			}
-			if err := dp.dotnetCli.Publish(ctx, projFile, defaultDotNetBuildConfiguration, publishRoot); err != nil {
+			if err := dp.dotnetCli.Publish(ctx, projFile, defaultDotNetBuildConfiguration, packageRoot); err != nil {
 				task.SetError(err)
 				return
 			}
 
 			if serviceConfig.OutputPath != "" {
-				publishRoot = filepath.Join(publishRoot, serviceConfig.OutputPath)
+				packageRoot = filepath.Join(packageRoot, serviceConfig.OutputPath)
 			}
 
 			task.SetResult(&ServicePackageResult{
 				Build:       buildOutput,
-				PackagePath: publishRoot,
+				PackagePath: packageRoot,
 			})
 		},
 	)

@@ -25,6 +25,7 @@ const (
 	StepDone
 	StepFailed
 	StepWarning
+	StepSkipped
 )
 
 // A shim to allow a single Console construction in the application.
@@ -198,17 +199,7 @@ func setIndentation(spaces int) string {
 }
 
 func (c *AskerConsole) getIndent(format SpinnerUxType) string {
-	var requiredSize int
-	switch format {
-	case Step:
-		requiredSize = 2
-	case StepDone:
-		requiredSize = 2
-	case StepFailed:
-		requiredSize = 2
-	case StepWarning:
-		requiredSize = 2
-	}
+	requiredSize := 2
 	if requiredSize != len(c.currentIndent) {
 		c.currentIndent = setIndentation(requiredSize)
 	}
@@ -257,6 +248,8 @@ func (c *AskerConsole) getStopChar(format SpinnerUxType) string {
 		stopChar = output.WithErrorFormat("(x) Failed:")
 	case StepWarning:
 		stopChar = output.WithWarningFormat("(!) Warning:")
+	case StepSkipped:
+		stopChar = output.WithGrayFormat("(-) Skipped:")
 	}
 	return fmt.Sprintf("%s%s", c.getIndent(format), stopChar)
 }

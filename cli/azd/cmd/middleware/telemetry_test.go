@@ -14,8 +14,8 @@ func Test_Telemetry_Run(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 
 		options := &Options{
-			CommandPath:   "azd infra create",
-			Name:          "create",
+			CommandPath:   "azd provision",
+			Name:          "provision",
 			isChildAction: false,
 		}
 		middleware := NewTelemetryMiddleware(options)
@@ -44,8 +44,8 @@ func Test_Telemetry_Run(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 
 		options := &Options{
-			CommandPath:   "azd infra create",
-			Name:          "create",
+			CommandPath:   "azd provision",
+			Name:          "provision",
 			isChildAction: true,
 		}
 		middleware := NewTelemetryMiddleware(options)

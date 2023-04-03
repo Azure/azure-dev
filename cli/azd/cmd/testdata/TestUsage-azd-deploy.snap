@@ -1,17 +1,17 @@
 
 Deploy application to Azure.
 
-  • When no --service value is specified, all services in the 'azure.yaml' file (found in the root of your project) are deployed.
+  • By default, deploys all services listed in 'azure.yaml' in the current directory, or the service described in the project that matches the current directory.
+  • When <service> is set, only the specific service is deployed.
   • After the deployment is complete, the endpoint is printed. To start the service, select the endpoint or paste it in a browser.
 
 Usage
-  azd deploy [flags]
+  azd deploy <service> [flags]
 
 Flags
+        --all                	: Deploys all services that are listed in azure.yaml
     -e, --environment string 	: The name of the environment to use.
     -h, --help               	: Gets help for deploy.
-    -o, --output string      	: The output format (the supported formats are json, none).
-        --service string     	: Deploys a specific service (when the string is unspecified, all services that are listed in the azure.yaml file are deployed).
 
 Global Flags
     -C, --cwd string 	: Sets the current working directory.
@@ -19,13 +19,13 @@ Global Flags
         --no-prompt  	: Accepts the default value instead of prompting, or it fails if there is no default.
 
 Examples
-  Deploy all application API services to Azure.
-    azd deploy --service api
+  Deploy all services in the current project to Azure.
+    azd deploy --all
 
-  Deploy all application web services to Azure.
-    azd deploy --service web
+  Deploy the service named 'api' to Azure.
+    azd deploy api
 
-  Reviews all code and services in your azure.yaml file and deploys to Azure.
-    azd deploy
+  Deploy the service named 'web' to Azure.
+    azd deploy web
 
 

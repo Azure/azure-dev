@@ -125,7 +125,10 @@ func (hc *HookConfig) validate() error {
 		hc.Shell = scriptType
 	}
 
-	hc.validated = true
+	// stored validated, except for inline script which needs to be regenerated per-usage
+	if hc.location != ScriptLocationInline {
+		hc.validated = true
+	}
 
 	return nil
 }

@@ -298,6 +298,16 @@
                     "description": "Runs after the `up` command",
                     "$ref": "#/definitions/hook"
                 },
+                "prepackage": {
+                    "title": "pre package hook",
+                    "description": "Runs before the `package` command",
+                    "$ref": "#/definitions/hook"
+                },
+                "postpackage": {
+                    "title": "post package hook",
+                    "description": "Runs after the `package` command",
+                    "$ref": "#/definitions/hook"
+                },
                 "predeploy": {
                     "title": "pre deploy hook",
                     "description": "Runs before the `deploy` command",

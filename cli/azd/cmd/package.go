@@ -47,9 +47,11 @@ func (pf *packageFlags) Bind(local *pflag.FlagSet, global *internal.GlobalComman
 
 func newPackageCmd() *cobra.Command {
 	cmd := &cobra.Command{
-		Use:    "package <service>",
-		Short:  "Packages the application's code to be deployed to Azure.",
-		Hidden: true,
+		Use: "package <service>",
+		Short: fmt.Sprintf(
+			"Packages the application's code to be deployed to Azure. %s",
+			output.WithWarningFormat("(Beta)"),
+		),
 	}
 	cmd.Args = cobra.MaximumNArgs(1)
 	return cmd
@@ -96,7 +98,7 @@ type PackageResult struct {
 func (pa *packageAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	// Command title
 	pa.console.MessageUxItem(ctx, &ux.MessageTitle{
-		Title: "Packaging services (azd package)",
+		Title: fmt.Sprintf("Packaging services (azd package) %s", output.WithWarningFormat("(Beta)")),
 	})
 
 	targetServiceName := ""
@@ -177,4 +179,26 @@ func (pa *packageAction) Run(ctx context.Context) (*actions.ActionResult, error)
 			Header: "Your Azure app has been packaged!",
 		},
 	}, nil
+}
+
+func getCmdPackageHelpDescription(*cobra.Command) string {
+	return generateCmdHelpDescription(fmt.Sprintf(
+		"Packages application's code to be deployed to Azure. %s",
+		output.WithWarningFormat("(Beta)"),
+	), []string{
+		formatHelpNote(
+			"By default, packages all services listed in 'azure.yaml' in the current directory," +
+				" or the service described in the project that matches the current directory."),
+		formatHelpNote(
+			fmt.Sprintf("When %s is set, only the specific service is packaged.", output.WithHighLightFormat("<service>"))),
+		formatHelpNote("After the packaging is complete, the package locations are printed."),
+	})
+}
+
+func getCmdPackageHelpFooter(*cobra.Command) string {
+	return generateCmdHelpSamplesBlock(map[string]string{
+		"Packages all services in the current project to Azure.": output.WithHighLightFormat("azd package --all"),
+		"Packages the service named 'api' to Azure.":             output.WithHighLightFormat("azd package api"),
+		"Packages the service named 'web' to Azure.":             output.WithHighLightFormat("azd package web"),
+	})
 }

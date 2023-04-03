@@ -65,6 +65,8 @@ type ServicePackageResult struct {
 	Build       *ServiceBuildResult `json:"build"`
 	PackagePath string              `json:"packagePath"`
 	Details     interface{}         `json:"details"`
+	// true, if the package result from a previous cached run
+	FromCached bool
 }
 
 // Supports rendering messages for UX items

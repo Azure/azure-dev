@@ -260,6 +260,7 @@ func (sm *serviceManager) Package(
 		if ok && cachedResult != nil {
 			// Static web apps should always be repackaged (enables the `up` flow to work)
 			if serviceConfig.Host != StaticWebAppTarget {
+				cachedResult.(*ServicePackageResult).FromCached = true
 				task.SetResult(cachedResult.(*ServicePackageResult))
 				return
 			}

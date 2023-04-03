@@ -154,11 +154,14 @@ func (pa *packageAction) Run(ctx context.Context) (*actions.ActionResult, error)
 			return nil, err
 		}
 
-		pa.console.StopSpinner(ctx, stepMessage, input.StepDone)
+		if packageResult.FromCached {
+			pa.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
+		} else {
+			pa.console.StopSpinner(ctx, stepMessage, input.StepDone)
+			// report package output
+			pa.console.MessageUxItem(ctx, packageResult)
+		}
 		packageResults[svc.Name] = packageResult
-
-		// report package output
-		pa.console.MessageUxItem(ctx, packageResult)
 	}
 
 	if pa.formatter.Kind() == output.JsonFormat {

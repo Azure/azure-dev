@@ -22,5 +22,5 @@ func (cr *CreatedResource) ToString(currentIndentation string) string {
 func (cr *CreatedResource) MarshalJSON() ([]byte, error) {
 	// reusing the same envelope from console messages
 	return json.Marshal(output.EventForMessage(
-		fmt.Sprintf("%s Creating %s: %s", donePrefix, cr.Type, cr.Name)))
+		fmt.Sprintf("Done: Creating %s: %s", cr.Type, cr.Name)))
 }

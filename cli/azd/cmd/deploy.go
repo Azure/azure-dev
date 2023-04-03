@@ -69,7 +69,7 @@ func (d *deployFlags) bindCommon(local *pflag.FlagSet, global *internal.GlobalCo
 		&d.fromPackage,
 		"from-package",
 		"",
-		"Deploys the application from an existing package file.",
+		"Deploys the application from an existing package.",
 	)
 }
 
@@ -296,8 +296,9 @@ func getCmdDeployHelpDescription(*cobra.Command) string {
 
 func getCmdDeployHelpFooter(*cobra.Command) string {
 	return generateCmdHelpSamplesBlock(map[string]string{
-		"Deploy all services in the current project to Azure.": output.WithHighLightFormat("azd deploy --all"),
-		"Deploy the service named 'api' to Azure.":             output.WithHighLightFormat("azd deploy api"),
-		"Deploy the service named 'web' to Azure.":             output.WithHighLightFormat("azd deploy web"),
+		"Deploy all services in the current project to Azure.":                         output.WithHighLightFormat("azd deploy --all"),
+		"Deploy the service named 'api' to Azure.":                                     output.WithHighLightFormat("azd deploy api"),
+		"Deploy the service named 'web' to Azure.":                                     output.WithHighLightFormat("azd deploy web"),
+		"Deploy the service named 'api' to Azure from a previously generated package.": output.WithHighLightFormat("azd deploy api --from-package <package-path>"),
 	})
 }

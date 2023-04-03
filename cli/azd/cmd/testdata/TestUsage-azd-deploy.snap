@@ -11,7 +11,7 @@ Usage
 Flags
         --all                 	: Deploys all services that are listed in azure.yaml
     -e, --environment string  	: The name of the environment to use.
-        --from-package string 	: Deploys the application from an existing package file.
+        --from-package string 	: Deploys the application from an existing package.
     -h, --help                	: Gets help for deploy.
 
 Global Flags
@@ -22,6 +22,9 @@ Global Flags
 Examples
   Deploy all services in the current project to Azure.
     azd deploy --all
+
+  Deploy the service named 'api' to Azure from a previously generated package.
+    azd deploy api --from-package <package-path>
 
   Deploy the service named 'api' to Azure.
     azd deploy api

@@ -57,7 +57,7 @@ func (sbr *ServiceBuildResult) ToString(currentIndentation string) string {
 }
 
 func (sbr *ServiceBuildResult) MarshalJSON() ([]byte, error) {
-	return json.Marshal(sbr)
+	return json.Marshal(*sbr)
 }
 
 // ServicePackageResult is the result of a successful Package operation
@@ -78,7 +78,7 @@ func (spr *ServicePackageResult) ToString(currentIndentation string) string {
 }
 
 func (spr *ServicePackageResult) MarshalJSON() ([]byte, error) {
-	return json.Marshal(spr)
+	return json.Marshal(*spr)
 }
 
 // ServiceDeployResult is the result of a successful Deploy operation
@@ -108,5 +108,5 @@ func (spr *ServiceDeployResult) ToString(currentIndentation string) string {
 }
 
 func (spr *ServiceDeployResult) MarshalJSON() ([]byte, error) {
-	return json.Marshal(spr)
+	return json.Marshal(*spr)
 }

@@ -1,4 +1,4 @@
-package stringutil
+package compare
 
 import (
 	"testing"
@@ -6,7 +6,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 )
 
-func Test_StringUtil_IsNilOrEmpty(t *testing.T) {
+func Test_StringUtil_IsStringNilOrEmpty(t *testing.T) {
 	tests := []struct {
 		name  string
 		value *string
@@ -35,8 +35,8 @@ func Test_StringUtil_IsNilOrEmpty(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			if got := IsNilOrEmpty(tt.value); got != tt.want {
-				t.Errorf("IsNilOrEmpty() = %v, want %v", got, tt.want)
+			if got := IsStringNilOrEmpty(tt.value); got != tt.want {
+				t.Errorf("IsStringNilOrEmpty() = %v, want %v", got, tt.want)
 			}
 		})
 	}

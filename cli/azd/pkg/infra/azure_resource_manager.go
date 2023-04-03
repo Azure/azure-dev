@@ -12,7 +12,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
-	"github.com/azure/azure-dev/cli/azd/pkg/stringutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/compare"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
@@ -311,11 +311,18 @@ func (rm *AzureResourceManager) appendDeploymentResourcesRecursive(
 	}
 
 	for _, operation := range operations {
-		if operation.Properties.TargetResource == nil {
-			// Operations w/o target data can't be resolved. Ignoring them
+		// Operations w/o target data can't be resolved. Ignoring them
+		if operation.Properties.TargetResource == nil ||
+			// The time stamp is used to filter only records after the queryStart.
+			// We ignore the resource if we can't know when it was created
+			operation.Properties.Timestamp == nil ||
+			// The resource type is required to resolve the name of the resource.
+			// If the dep-op is missing this, we can't resolve it.
+			compare.IsStringNilOrEmpty(operation.Properties.TargetResource.ResourceType) {
 			continue
 		}
-		if stringutil.PtrValueEquals(operation.Properties.TargetResource.ResourceType, string(AzureResourceTypeDeployment)) {
+
+		if compare.PtrValueEquals(operation.Properties.TargetResource.ResourceType, string(AzureResourceTypeDeployment)) {
 			// go to inner levels to resolve resources
 			err := rm.appendDeploymentResourcesRecursive(
 				ctx,
@@ -330,16 +337,7 @@ func (rm *AzureResourceManager) appendDeploymentResourcesRecursive(
 			}
 			continue
 		}
-		if operation.Properties.Timestamp == nil {
-			// The time stamp is used to filter only records after the queryStart.
-			// We ignore the resource if we can't know when it was created
-			continue
-		}
-		if stringutil.IsNilOrEmpty(operation.Properties.TargetResource.ResourceType) {
-			// The resource type is required to resolve the name of the resource.
-			// If the dep-op is missing this, we can't resolve it.
-			continue
-		}
+
 		_, alreadyAdded := (*resourceOperations)[*operation.OperationID]
 		if !alreadyAdded &&
 			*operation.Properties.ProvisioningOperation == armresources.ProvisioningOperationCreate &&

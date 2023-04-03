@@ -50,7 +50,7 @@ func newPackageCmd() *cobra.Command {
 		Use: "package <service>",
 		Short: fmt.Sprintf(
 			"Packages the application's code to be deployed to Azure. %s",
-			output.WithWarningFormat("(BETA)"),
+			output.WithWarningFormat("(Beta)"),
 		),
 	}
 	cmd.Args = cobra.MaximumNArgs(1)
@@ -98,7 +98,7 @@ type PackageResult struct {
 func (pa *packageAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	// Command title
 	pa.console.MessageUxItem(ctx, &ux.MessageTitle{
-		Title: fmt.Sprintf("Packaging services (azd package) %s", output.WithWarningFormat("(BETA)")),
+		Title: fmt.Sprintf("Packaging services (azd package) %s", output.WithWarningFormat("(Beta)")),
 	})
 
 	targetServiceName := ""
@@ -184,7 +184,7 @@ func (pa *packageAction) Run(ctx context.Context) (*actions.ActionResult, error)
 func getCmdPackageHelpDescription(*cobra.Command) string {
 	return generateCmdHelpDescription(fmt.Sprintf(
 		"Packages application's code to be deployed to Azure. %s",
-		output.WithWarningFormat("(BETA)"),
+		output.WithWarningFormat("(Beta)"),
 	), []string{
 		formatHelpNote(
 			"By default, packages all services listed in 'azure.yaml' in the current directory," +

@@ -1,5 +1,5 @@
 
-Packages application's code to be deployed to Azure. (BETA)
+Packages application's code to be deployed to Azure. (Beta)
 
   • By default, packages all services listed in 'azure.yaml' in the current directory, or the service described in the project that matches the current directory.
   • When <service> is set, only the specific service is packaged.

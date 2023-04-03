@@ -53,6 +53,11 @@
             },
             {
                 "category": "%azure-dev.commands_category%",
+                "command": "azure-dev.commands.cli.package",
+                "title": "%azure-dev.commands.cli.package.title%"
+            },
+            {
+                "category": "%azure-dev.commands_category%",
                 "command": "azure-dev.commands.cli.up",
                 "title": "%azure-dev.commands.cli.up.title%",
                 "icon": "$(cloud-upload)"
@@ -144,6 +149,11 @@
                 {
                     "when": "resourceFilename =~ /azure.yaml/i",
                     "command": "azure-dev.commands.cli.restore",
+                    "group": "azure-dev"
+                },
+                {
+                    "when": "resourceFilename =~ /azure.yaml/i",
+                    "command": "azure-dev.commands.cli.package",
                     "group": "azure-dev"
                 },
                 {
@@ -252,6 +262,11 @@
                     "group": "default@8"
                 },
                 {
+                    "command": "azure-dev.commands.cli.package",
+                    "when": "viewItem =~ /ms-azuretools.azure-dev.views.workspace.application/i",
+                    "group": "default@9"
+                },
+                {
                     "command": "azure-dev.commands.cli.env-new",
                     "when": "viewItem =~ /ms-azuretools.azure-dev.views.workspace.environments/i",
                     "group": "default@8"
@@ -283,6 +298,11 @@
                 },
                 {
                     "command": "azure-dev.commands.cli.restore",
+                    "when": "viewItem =~ /ms-azuretools.azure-dev.views.workspace.service(?!s)/i",
+                    "group": "default@12"
+                },
+                {
+                    "command": "azure-dev.commands.cli.package",
                     "when": "viewItem =~ /ms-azuretools.azure-dev.views.workspace.service(?!s)/i",
                     "group": "default@12"
                 },

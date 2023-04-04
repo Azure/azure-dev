@@ -314,9 +314,12 @@ func Test_ServiceManager_Events_With_Errors(t *testing.T) {
 			for _, eventType := range eventTypes {
 				t.Run(test.eventName, func(t *testing.T) {
 					test.eventName = eventType + test.name
-					_ = serviceConfig.AddHandler(ext.Event(test.eventName), func(ctx context.Context, args ServiceLifecycleEventArgs) error {
-						return errors.New("error")
-					})
+					_ = serviceConfig.AddHandler(
+						ext.Event(test.eventName),
+						func(ctx context.Context, args ServiceLifecycleEventArgs) error {
+							return errors.New("error")
+						},
+					)
 
 					result, err := test.run(*mockContext.Context, sm, serviceConfig)
 					require.Error(t, err)

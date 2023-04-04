@@ -107,7 +107,7 @@ repo:
         - .github/**/*
         - .azdo/pipelines/*/azure-dev.yml
 
-    # AzDo workflows for bicep
+    # AzDo workflows for terraform
     - from: ../../../../../common/.azdo/pipelines/terraform/azure-dev.yml
       to: ./.azdo/pipelines/azure-dev.yml
 

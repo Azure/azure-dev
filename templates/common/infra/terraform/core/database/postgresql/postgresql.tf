@@ -13,7 +13,7 @@ terraform {
 # ------------------------------------------------------------------------------------------------------
 # Deploy PostgreSQL Server
 # ------------------------------------------------------------------------------------------------------
-resource "azurecaf_name" "psql" {
+resource "azurecaf_name" "psql_name" {
   name          = var.resource_token
   resource_type = "azurerm_postgresql_flexible_server"
   random_length = 0
@@ -23,7 +23,9 @@ resource "azurecaf_name" "psql" {
 data "azurerm_client_config" "current" {}
 
 locals {
-  principal_type = "${var.client_id == "" ? "User" : "ServicePrincipal"}"
+  tenant_id       = var.tenant_id == "" ? data.azurerm_client_config.current.tenant_id : var.tenant_id
+  object_id       = var.object_id == "" ? data.azurerm_client_config.current.object_id : var.object_id
+  principal_name  = var.principal_name == "" ? data.azurerm_client_config.current.object_id : var.principal_name
 }
 
 resource "random_password" "password" {
@@ -33,7 +35,7 @@ resource "random_password" "password" {
 }
 
 resource "azurerm_postgresql_flexible_server" "psql_server" {
-  name                            = azurecaf_name.psql.result
+  name                            = azurecaf_name.psql_name.result
   location                        = var.location
   resource_group_name             = var.rg_name
   tags                            = var.tags
@@ -71,8 +73,8 @@ resource "azurerm_postgresql_flexible_server_database" "database" {
 resource "azurerm_postgresql_flexible_server_active_directory_administrator" "aad_admin" {
   server_name         = azurerm_postgresql_flexible_server.psql_server.name
   resource_group_name = var.rg_name
-  tenant_id           = data.azurerm_client_config.current.tenant_id
-  object_id           = data.azurerm_client_config.current.object_id
-  principal_name      = data.azurerm_client_config.current.object_id
-  principal_type      = local.principal_type
+  tenant_id           = local.tenant_id
+  object_id           = local.object_id
+  principal_name      = local.principal_name
+  principal_type      = "${var.client_id == "" ? "User" : "ServicePrincipal"}"
 }

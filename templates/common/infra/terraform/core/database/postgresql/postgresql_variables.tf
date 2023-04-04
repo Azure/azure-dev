@@ -35,3 +35,21 @@ variable "client_id" {
   description = "Client id of current account"
   default     = ""
 }
+
+variable "tenant_id" {
+  type        = string
+  description = "TenantId id of current account"
+  default     = ""
+}
+
+variable "object_id" {
+  type        = string
+  description = "Object id of current account"
+  default     = ""
+}
+
+variable "principal_name" {
+  type        = string
+  description = "Principal name of current account"
+  default     = ""
+}

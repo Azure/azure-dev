@@ -64,13 +64,61 @@ type AzCli interface {
 		vaultName string,
 		secretName string,
 	) (*AzCliKeyVaultSecret, error)
-	PurgeKeyVault(ctx context.Context, subscriptionId string, vaultName string, location string) error
+	PurgeKeyVault(
+		ctx context.Context,
+		subscriptionId string,
+		vaultName string,
+		location string,
+	) error
 	GetAppConfig(
-		ctx context.Context, subscriptionId string, resourceGroupName string, configName string) (*AzCliAppConfig, error)
-	PurgeAppConfig(ctx context.Context, subscriptionId string, configName string, location string) error
+		ctx context.Context,
+		subscriptionId string,
+		resourceGroupName string,
+		configName string,
+	) (*AzCliAppConfig, error)
+	PurgeAppConfig(
+		ctx context.Context,
+		subscriptionId string,
+		configName string,
+		location string,
+	) error
 	GetApim(
-		ctx context.Context, subscriptionId string, resourceGroupName string, apimName string) (*AzCliApim, error)
-	PurgeApim(ctx context.Context, subscriptionId string, apimName string, location string) error
+		ctx context.Context,
+		subscriptionId string,
+		resourceGroupName string,
+		apimName string,
+	) (*AzCliApim, error)
+	PurgeApim(
+		ctx context.Context,
+		subscriptionId string,
+		apimName string,
+		location string,
+	) error
+	GetCognitiveService(
+		ctx context.Context,
+		subscriptionId string,
+		resourceGroupName string,
+		cogServiceName string,
+	) (*AzCliCongnitiveService, error)
+	PurgeCognitiveService(
+		ctx context.Context,
+		subscriptionId string,
+		resourceGroupName string,
+		cogServiceName string,
+		location string,
+	) error
+	// GetSearchService(
+	// 	ctx context.Context,
+	// 	subscriptionId string,
+	// 	resourceGroupName string,
+	// 	searchName string,
+	// ) (*AzCliSearchService, error)
+	// PurgeSearchService(
+	// 	ctx context.Context,
+	// 	subscriptionId string,
+	// 	searchName string,
+	// 	location string,
+	// ) error
 	DeployAppServiceZip(
 		ctx context.Context,
 		subscriptionId string,

@@ -291,6 +291,20 @@ func (p *BicepProvider) Destroy(
 				return
 			}
 
+			asyncContext.SetProgress(&DestroyProgress{Message: "Getting Cognitive Services to purge", Timestamp: time.Now()})
+			cognitiveServices, congServiceResources, err := p.getCognitiveServicesToPurge(ctx, groupedResources)
+			if err != nil {
+				asyncContext.SetError(fmt.Errorf("getting cognitive services to purge: %w", err))
+				return
+			}
+
+			// asyncContext.SetProgress(&DestroyProgress{Message: "Getting Search Services to purge", Timestamp: time.Now()})
+			// searchServices, err := p.getSearchServicesToPurge(ctx, groupedResources)
+			// if err != nil {
+			// 	asyncContext.SetError(fmt.Errorf("getting search services to purge: %w", err))
+			// 	return
+			// }
+
 			if err := p.destroyResourceGroups(ctx, asyncContext, options, groupedResources, len(allResources)); err != nil {
 				asyncContext.SetError(fmt.Errorf("destroying resource groups: %w", err))
 				return
@@ -317,7 +331,22 @@ func (p *BicepProvider) Destroy(
 					return p.purgeAPIManagement(ctx, asyncContext, apiManagements, options)
 				},
 			}
-			purgeItem := []itemToPurge{keyVaultsPurge, appConfigsPurge, aPIManagement}
+			cognitiveService := itemToPurge{
+				resourceType: "Cognitive Services",
+				count:        len(cognitiveServices),
+				purge: func() error {
+					return p.purgeCognitiveService(ctx, asyncContext, cognitiveServices, options, congServiceResources)
+				},
+			}
+			// searchService := itemToPurge{
+			// 	resourceType: "Search Services",
+			// 	count:        len(searchServices),
+			// 	purge: func() error {
+			// 		return p.purgeSearchService(ctx, asyncContext, searchServices, options)
+			// 	},
+			// }
+			// purgeItem := []itemToPurge{keyVaultsPurge, appConfigsPurge, aPIManagement, cognitiveService, searchService}
+			purgeItem := []itemToPurge{keyVaultsPurge, appConfigsPurge, aPIManagement, cognitiveService}
 
 			if err := p.purgeItems(ctx, asyncContext, purgeItem, options); err != nil {
 				asyncContext.SetError(fmt.Errorf("purging resources: %w", err))
@@ -630,6 +659,33 @@ func (p *BicepProvider) getApiManagementsToPurge(
 	return apims, nil
 }
 
+func (p *BicepProvider) getCognitiveServicesToPurge(
+	ctx context.Context,
+	groupedResources map[string][]azcli.AzCliResource,
+) ([]*azcli.AzCliCongnitiveService, []string, error) {
+	cogServices := []*azcli.AzCliCongnitiveService{}
+	congServiceResources := []string{}
+
+	for resourceGroup, groupResources := range groupedResources {
+		for _, resource := range groupResources {
+			if resource.Type == string(infra.AzureResourceTypeCognitiveServiceAccount) {
+				cogService, err := p.azCli.GetCognitiveService(ctx, azure.SubscriptionFromRID(resource.Id), resourceGroup, resource.Name)
+				if err != nil {
+					return nil, nil, fmt.Errorf("listing cognitive service %s properties: %w", resource.Name, err)
+				}
+
+				//No filtering needed like it does in key vaults or app configuration
+				//as soft-delete happens for all cognitive service accounts
+				cogServices = append(cogServices, cogService)
+
+				congServiceResources = append(congServiceResources, resourceGroup)
+			}
+		}
+	}
+
+	return cogServices, congServiceResources, nil
+}
+
 // Azure AppConfigurations have a "soft delete" functionality (now enabled by default) where a configuration store
 // may be marked such that when it is deleted it can be recovered for a period of time. During that time,
 // the name may not be reused.
@@ -706,6 +762,43 @@ func (p *BicepProvider) purgeAPIManagement(
 				"%s api management service %s",
 				output.WithErrorFormat("Purged"),
 				output.WithHighLightFormat(apim.Name),
+			),
+		)
+	}
+
+	return nil
+}
+
+func (p *BicepProvider) purgeCognitiveService(
+	ctx context.Context,
+	asyncContext *async.InteractiveTaskContextWithProgress[*DestroyResult, *DestroyProgress],
+	cogSearchs []*azcli.AzCliCongnitiveService,
+	options DestroyOptions,
+	resources []string,
+) error {
+	for index, cogSearch := range cogSearchs {
+		progressReport := DestroyProgress{
+			Timestamp: time.Now(),
+			Message: fmt.Sprintf(
+				"%s cognitive service %s",
+				output.WithErrorFormat("Purging"),
+				output.WithHighLightFormat(cogSearch.Name),
+			),
+		}
+
+		asyncContext.SetProgress(&progressReport)
+
+		err := p.azCli.PurgeCognitiveService(ctx, azure.SubscriptionFromRID(cogSearch.Id), resources[index], cogSearch.Name, cogSearch.Location)
+		if err != nil {
+			return fmt.Errorf("purging cognitive service %s: %w", cogSearch.Name, err)
+		}
+
+		p.console.Message(
+			ctx,
+			fmt.Sprintf(
+				"%s cognitive service %s",
+				output.WithErrorFormat("Purged"),
+				output.WithHighLightFormat(cogSearch.Name),
 			),
 		)
 	}

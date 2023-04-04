@@ -52,17 +52,17 @@ curl -fsSL https://aka.ms/install-azd.sh | bash
 
 ### Linux
 
-### Script
+#### Script
 
 ```bash
 curl -fsSL https://aka.ms/install-azd.sh | bash
 ```
 
-### DEB/RPM Packages
+#### DEB/RPM Packages
 
 The Azure Developer CLI releases signed `.deb` and `.rpm` packages to [GitHub Releases](https://github.com/Azure/azure-dev/releases). To install, download the appropriate file from the GitHub release and run the appropriate command to install the package: 
 
-#### .deb package (distros using apt-get)
+##### .deb package (distros using apt-get)
 
 You may need to use `sudo` when running `apt`
 
@@ -73,7 +73,7 @@ apt update
 apt install ./azd_<version>_amd64.deb -y
 ```
 
-### .rpm package (distros using yum/tdnf)
+##### .rpm package (distros using yum/tdnf)
 
 You may need to use `sudo` when running `yum`
 
@@ -101,8 +101,32 @@ powershell -ex AllSigned -c "Invoke-RestMethod 'https://aka.ms/uninstall-azd.ps1
 
 ### Linux/MacOS
 
+#### Uninstall script
+
+If you installed `azd` using the install script, you can use the uninstall script to remove `azd`. 
+
 ```
 curl -fsSL https://aka.ms/uninstall-azd.sh | bash
+```
+
+#### DEB/RPM packages
+
+If you installed `azd` using one of the .deb or .rpm packages, use the appropriate uninstall method for your package manager.
+
+##### .deb package
+
+You may need to use `sudo` when running `apt`.
+
+```bash 
+apt remove -y azd
+```
+
+##### .rpm package
+
+You may need to use `sudo` when running `yum`.
+
+```bash 
+yum remove -y azd
 ```
 
 ## Advanced installation scenarios

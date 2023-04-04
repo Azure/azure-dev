@@ -2,6 +2,7 @@ package project
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -256,6 +258,76 @@ func Test_ServiceManager_CacheResults(t *testing.T) {
 
 	require.False(t, *buildCalled)
 	require.Same(t, buildResult1, buildResult2)
+}
+
+func Test_ServiceManager_Events_With_Errors(t *testing.T) {
+	tests := []struct {
+		name      string
+		eventName string
+		run       func(ctx context.Context, serviceManager ServiceManager, serviceConfig *ServiceConfig) (any, error)
+	}{
+		{
+			name: "restore",
+			run: func(ctx context.Context, serviceManager ServiceManager, serviceConfig *ServiceConfig) (any, error) {
+				restoreTask := serviceManager.Restore(ctx, serviceConfig)
+				logProgress(restoreTask)
+				return restoreTask.Await()
+			},
+		},
+		{
+			name: "build",
+			run: func(ctx context.Context, serviceManager ServiceManager, serviceConfig *ServiceConfig) (any, error) {
+				buildTask := serviceManager.Build(ctx, serviceConfig, nil)
+				logProgress(buildTask)
+				return buildTask.Await()
+			},
+		},
+		{
+			name: "package",
+			run: func(ctx context.Context, serviceManager ServiceManager, serviceConfig *ServiceConfig) (any, error) {
+				packageTask := serviceManager.Package(ctx, serviceConfig, nil)
+				logProgress(packageTask)
+				return packageTask.Await()
+			},
+		},
+		{
+			name: "deploy",
+			run: func(ctx context.Context, serviceManager ServiceManager, serviceConfig *ServiceConfig) (any, error) {
+				deployTask := serviceManager.Deploy(ctx, serviceConfig, nil)
+				logProgress(deployTask)
+				return deployTask.Await()
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			mockContext := mocks.NewMockContext(context.Background())
+			setupMocksForServiceManager(mockContext)
+			env := environment.EphemeralWithValues("test", map[string]string{
+				environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
+			})
+			sm := createServiceManager(mockContext, env)
+			serviceConfig := createTestServiceConfig("./src/api", ServiceTargetFake, ServiceLanguageFake)
+
+			eventTypes := []string{"pre", "post"}
+			for _, eventType := range eventTypes {
+				t.Run(test.eventName, func(t *testing.T) {
+					test.eventName = eventType + test.name
+					_ = serviceConfig.AddHandler(
+						ext.Event(test.eventName),
+						func(ctx context.Context, args ServiceLifecycleEventArgs) error {
+							return errors.New("error")
+						},
+					)
+
+					result, err := test.run(*mockContext.Context, sm, serviceConfig)
+					require.Error(t, err)
+					require.Nil(t, result)
+				})
+			}
+		})
+	}
 }
 
 func setupMocksForServiceManager(mockContext *mocks.MockContext) {

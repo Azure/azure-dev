@@ -329,6 +329,8 @@ func (sm *serviceManager) Package(
 			buildOutput.Restore = restoreResult
 		}
 
+		var packageResult *ServicePackageResult
+
 		err = serviceConfig.Invoke(ctx, ServiceEventPackage, eventArgs, func() error {
 			frameworkPackageTask := frameworkService.Package(ctx, serviceConfig, buildOutput)
 			syncProgress(task, frameworkPackageTask.Progress())
@@ -346,8 +348,8 @@ func (sm *serviceManager) Package(
 				return err
 			}
 
-			task.SetResult(serviceTargetPackageResult)
-			sm.setOperationResult(ctx, serviceConfig, string(ServiceEventPackage), serviceTargetPackageResult)
+			packageResult = serviceTargetPackageResult
+			sm.setOperationResult(ctx, serviceConfig, string(ServiceEventPackage), packageResult)
 
 			return nil
 		})
@@ -356,6 +358,8 @@ func (sm *serviceManager) Package(
 			task.SetError(fmt.Errorf("failed packaging service '%s': %w", serviceConfig.Name, err))
 			return
 		}
+
+		task.SetResult(packageResult)
 	})
 }
 

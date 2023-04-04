@@ -7,8 +7,6 @@ import { init } from './init';
 import { provision } from './provision';
 import { deploy } from './deploy';
 import { restore } from './restore';
-import { infraCreate } from './infraCreate';
-import { infraDelete } from './infraDelete';
 import { up } from './up';
 import { down } from './down';
 import { monitor } from './monitor';
@@ -25,8 +23,6 @@ export function registerCommands(): void {
     registerActivityCommand('azure-dev.commands.cli.provision', provision);
     registerActivityCommand('azure-dev.commands.cli.deploy', deploy);
     registerActivityCommand('azure-dev.commands.cli.restore', restore);
-    registerActivityCommand('azure-dev.commands.cli.infra-create', infraCreate);
-    registerActivityCommand('azure-dev.commands.cli.infra-delete', infraDelete);
     registerActivityCommand('azure-dev.commands.cli.up', up);
     registerActivityCommand('azure-dev.commands.cli.down', down);
     registerActivityCommand('azure-dev.commands.cli.monitor', monitor);

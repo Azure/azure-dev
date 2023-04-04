@@ -33,10 +33,10 @@ Let's jump in and get the ToDo app up and running in Azure. When you are finishe
 
 ### Prerequisites
 
-The following prerequisites are required to use this application. Please ensure that you have them all installed locally.
+The following prerequisites are required to use this application. Please ensure that you have them all installed locally, or open the project in Github Codespaces or [VS Code](https://code.visualstudio.com/) with the [Remote - Containers extension](https://marketplace.visualstudio.com/items?itemName=ms-vscode-remote.remote-containers) where they will be installed automatically.
 
 - [Azure Developer CLI](https://aka.ms/azd-install)
-- [Python (3.8+)](https://www.python.org/downloads/) - for the API backend
+- [Python (3.10+)](https://www.python.org/downloads/) - for the API backend
 - [Node.js with npm (16.13.1+)](https://nodejs.org/) - for the Web frontend
 
 ### Quickstart

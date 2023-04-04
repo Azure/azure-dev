@@ -3,7 +3,7 @@ View details of your current template or browse a list of curated sample templat
 
   • The azd CLI includes a curated list of sample templates viewable by running azd template list.
   • To view all available sample templates, including those submitted by the azd community visit: https://azure.github.io/awesome-azd.
-  • Running azd up or azd init without a template will prompt you to start with an empty template or select from our curated list of samples.
+  • Running azd init without a template will prompt you to start with an empty template or select from our curated list of samples.
 
 Usage
   azd template [command]

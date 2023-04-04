@@ -122,6 +122,10 @@ func (c *AzdContext) SetDefaultEnvironmentName(name string) error {
 		return fmt.Errorf("serializing config file: %w", err)
 	}
 
+	if err := os.MkdirAll(c.EnvironmentDirectory(), osutil.PermissionDirectory); err != nil {
+		return fmt.Errorf("creating environment root: %w", err)
+	}
+
 	if err := os.WriteFile(path, bytes, osutil.PermissionFile); err != nil {
 		return fmt.Errorf("writing config file: %w", err)
 	}

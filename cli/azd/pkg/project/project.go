@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry/fields"
@@ -94,8 +95,16 @@ func Load(ctx context.Context, projectFilePath string) (*ProjectConfig, error) {
 		return nil, fmt.Errorf("parsing project file: %w", err)
 	}
 
-	if projectConfig.Metadata != nil {
-		telemetry.SetUsageAttributes(fields.StringHashed(fields.ProjectTemplateIdKey, projectConfig.Metadata.Template))
+	if projectConfig.Metadata != nil && projectConfig.Metadata.Template != "" {
+		template := strings.Split(projectConfig.Metadata.Template, "@")
+		if len(template) == 1 { // no version specifier, just the template ID
+			telemetry.SetUsageAttributes(fields.StringHashed(fields.ProjectTemplateIdKey, template[0]))
+		} else if len(template) == 2 { // templateID@version
+			telemetry.SetUsageAttributes(fields.StringHashed(fields.ProjectTemplateIdKey, template[0]))
+			telemetry.SetUsageAttributes(fields.StringHashed(fields.ProjectTemplateVersionKey, template[1]))
+		} else { // unknown format, just send the whole thing
+			telemetry.SetUsageAttributes(fields.StringHashed(fields.ProjectTemplateIdKey, projectConfig.Metadata.Template))
+		}
 	}
 
 	if projectConfig.Name != "" {

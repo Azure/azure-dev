@@ -29,7 +29,6 @@ type ResourceManager interface {
 		resourceId string,
 		resourceType AzureResourceType,
 	) (string, error)
-	GetWebAppResourceTypeDisplayName(ctx context.Context, subscriptionId string, resourceId string) (string, error)
 }
 
 func NewAzureResourceManager(azCli azcli.AzCli) *AzureResourceManager {
@@ -260,7 +259,15 @@ func (rm *AzureResourceManager) GetResourceTypeDisplayName(
 		// Web apps have different kinds of resources sharing the same resource type 'Microsoft.Web/sites', i.e. Function app
 		// vs. App service It is extremely important that we display the right one, thus we resolve it by querying the
 		// properties of the ARM resource.
-		resourceTypeDisplayName, err := rm.GetWebAppResourceTypeDisplayName(ctx, subscriptionId, resourceId)
+		resourceTypeDisplayName, err := rm.getWebAppResourceTypeDisplayName(ctx, subscriptionId, resourceId)
+
+		if err != nil {
+			return "", err
+		} else {
+			return resourceTypeDisplayName, nil
+		}
+	} else if resourceType == AzureResourceTypeCognitiveServiceAccount {
+		resourceTypeDisplayName, err := rm.getCognitiveServiceResourceTypeDisplayName(ctx, subscriptionId, resourceId)
 
 		if err != nil {
 			return "", err
@@ -276,7 +283,7 @@ func (rm *AzureResourceManager) GetResourceTypeDisplayName(
 // cWebAppApiVersion is the API Version we use when querying information about Web App resources
 const cWebAppApiVersion = "2021-03-01"
 
-func (rm *AzureResourceManager) GetWebAppResourceTypeDisplayName(
+func (rm *AzureResourceManager) getWebAppResourceTypeDisplayName(
 	ctx context.Context,
 	subscriptionId string,
 	resourceId string,
@@ -293,6 +300,29 @@ func (rm *AzureResourceManager) GetWebAppResourceTypeDisplayName(
 		return "App Service", nil
 	} else {
 		return "Web App", nil
+	}
+}
+
+// cognitiveServiceApiVersion is the API Version we use when querying information about Cognitive Service resources
+const cognitiveServiceApiVersion = "2021-04-30"
+
+func (rm *AzureResourceManager) getCognitiveServiceResourceTypeDisplayName(
+	ctx context.Context,
+	subscriptionId string,
+	resourceId string,
+) (string, error) {
+	resource, err := rm.azCli.GetResource(ctx, subscriptionId, resourceId, cognitiveServiceApiVersion)
+
+	if err != nil {
+		return "", fmt.Errorf("getting cognitive service resource type display names: %w", err)
+	}
+
+	if strings.Contains(resource.Kind, "OpenAI") {
+		return "Azure OpenAI", nil
+	} else if strings.Contains(resource.Kind, "FormRecognizer") {
+		return "Form recognizer", nil
+	} else {
+		return "Cognitive Service", nil
 	}
 }
 

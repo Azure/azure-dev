@@ -40,7 +40,7 @@ func (dbr *dockerBuildResult) ToString(currentIndentation string) string {
 }
 
 func (dbr *dockerBuildResult) MarshalJSON() ([]byte, error) {
-	return json.Marshal(dbr)
+	return json.Marshal(*dbr)
 }
 
 type dockerPackageResult struct {
@@ -58,7 +58,7 @@ func (dpr *dockerPackageResult) ToString(currentIndentation string) string {
 }
 
 func (dpr *dockerPackageResult) MarshalJSON() ([]byte, error) {
-	return json.Marshal(dpr)
+	return json.Marshal(*dpr)
 }
 
 type dockerProject struct {

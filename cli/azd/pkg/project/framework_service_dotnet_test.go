@@ -70,6 +70,11 @@ func Test_DotNetProject_Restore(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, file.Close())
 
+	// add another *proj file to test multiple project files condition
+	file2, err := os.Create("./src/api/test2.vbproj")
+	require.NoError(t, err)
+	require.NoError(t, file2.Close())
+
 	mockContext := mocks.NewMockContext(context.Background())
 	mockContext.CommandRunner.
 		When(func(args exec.RunArgs, command string) bool {
@@ -82,7 +87,7 @@ func Test_DotNetProject_Restore(t *testing.T) {
 
 	env := environment.Ephemeral()
 	dotNetCli := dotnet.NewDotNetCli(mockContext.CommandRunner)
-	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageCsharp)
+	serviceConfig := createTestServiceConfig("./src/api/test.csproj", AppServiceTarget, ServiceLanguageCsharp)
 
 	dotnetProject := NewDotNetProject(dotNetCli, env)
 	restoreTask := dotnetProject.Restore(*mockContext.Context, serviceConfig)
@@ -93,7 +98,7 @@ func Test_DotNetProject_Restore(t *testing.T) {
 	require.NotNil(t, result)
 	require.Equal(t, "dotnet", runArgs.Cmd)
 	require.Equal(t,
-		[]string{"restore", filepath.Join(serviceConfig.RelativePath, "test.csproj")},
+		[]string{"restore", serviceConfig.RelativePath},
 		runArgs.Args,
 	)
 }
@@ -105,6 +110,7 @@ func Test_DotNetProject_Build(t *testing.T) {
 	var runArgs exec.RunArgs
 	err := os.MkdirAll("./src/api", osutil.PermissionDirectory)
 	require.NoError(t, err)
+	// add only one project file to test only project file condition
 	file, err := os.Create("./src/api/test.csproj")
 	require.NoError(t, err)
 	require.NoError(t, file.Close())
@@ -152,6 +158,15 @@ func Test_DotNetProject_Package(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, file.Close())
 
+	// add another two *proj files to test multiple project files condition
+	file2, err := os.Create("./src/api/test2.vbproj")
+	require.NoError(t, err)
+	require.NoError(t, file2.Close())
+
+	file3, err := os.Create("./src/api/test3.csproj")
+	require.NoError(t, err)
+	require.NoError(t, file3.Close())
+
 	mockContext := mocks.NewMockContext(context.Background())
 	mockContext.CommandRunner.
 		When(func(args exec.RunArgs, command string) bool {
@@ -164,7 +179,7 @@ func Test_DotNetProject_Package(t *testing.T) {
 
 	env := environment.Ephemeral()
 	dotNetCli := dotnet.NewDotNetCli(mockContext.CommandRunner)
-	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageCsharp)
+	serviceConfig := createTestServiceConfig("./src/api/test3.csproj", AppServiceTarget, ServiceLanguageCsharp)
 
 	dotnetProject := NewDotNetProject(dotNetCli, env)
 	packageTask := dotnetProject.Package(
@@ -182,7 +197,7 @@ func Test_DotNetProject_Package(t *testing.T) {
 	require.NotEmpty(t, result.PackagePath)
 	require.Equal(t, "dotnet", runArgs.Cmd)
 	require.Equal(t,
-		[]string{"publish", filepath.Join(serviceConfig.RelativePath, "test.csproj"), "-c", "Release", "--output"},
+		[]string{"publish", serviceConfig.RelativePath, "-c", "Release", "--output"},
 		runArgs.Args[:5],
 	)
 }

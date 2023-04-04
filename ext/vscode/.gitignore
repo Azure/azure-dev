@@ -109,3 +109,4 @@ node_modules
 .vscode-test/
 package.nls.*.json
 *.vsix
+*.zip

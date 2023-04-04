@@ -92,7 +92,7 @@ func GetResourceTypeDisplayName(resourceType AzureResourceType) string {
 	case AzureResourceTypeCognitiveServiceAccount:
 		return "Azure Cognitive Search"
 	case AzureResourceTypeSearchService:
-		return "Azure Search Service"
+		return "Search Service"
 	}
 
 	return ""

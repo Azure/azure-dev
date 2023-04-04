@@ -30,6 +30,7 @@ type ResourceManager interface {
 		resourceType AzureResourceType,
 	) (string, error)
 	GetWebAppResourceTypeDisplayName(ctx context.Context, subscriptionId string, resourceId string) (string, error)
+	GetCognitiveServiceResourceTypeDisplayName(ctx context.Context, subscriptionId string, resourceId string) (string, error)
 }
 
 func NewAzureResourceManager(azCli azcli.AzCli) *AzureResourceManager {
@@ -267,6 +268,14 @@ func (rm *AzureResourceManager) GetResourceTypeDisplayName(
 		} else {
 			return resourceTypeDisplayName, nil
 		}
+	} else if resourceType == AzureResourceTypeCognitiveServiceAccount {
+		resourceTypeDisplayName, err := rm.GetCognitiveServiceResourceTypeDisplayName(ctx, subscriptionId, resourceId)
+
+		if err != nil {
+			return "", err
+		} else {
+			return resourceTypeDisplayName, nil
+		}
 	} else {
 		resourceTypeDisplayName := GetResourceTypeDisplayName(resourceType)
 		return resourceTypeDisplayName, nil
@@ -293,6 +302,26 @@ func (rm *AzureResourceManager) GetWebAppResourceTypeDisplayName(
 		return "App Service", nil
 	} else {
 		return "Web App", nil
+	}
+}
+
+func (rm *AzureResourceManager) GetCognitiveServiceResourceTypeDisplayName(
+	ctx context.Context,
+	subscriptionId string,
+	resourceId string,
+) (string, error) {
+	resource, err := rm.azCli.GetResource(ctx, subscriptionId, resourceId, cWebAppApiVersion)
+
+	if err != nil {
+		return "", fmt.Errorf("getting cognitive service resource type display names: %w", err)
+	}
+
+	if strings.Contains(resource.Kind, "OpenAI") {
+		return "Azure OpenAI", nil
+	} else if strings.Contains(resource.Kind, "FormRecognizer") {
+		return "Form Recognizer", nil
+	} else {
+		return "Cognitive Service", nil
 	}
 }
 

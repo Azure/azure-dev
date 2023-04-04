@@ -50,9 +50,18 @@
             <Publish Dialog="MaintenanceTypeDlg" Control="Back" Event="NewDialog" Value="MaintenanceWelcomeDlg">1</Publish>
 
             <Property Id="ARPNOMODIFY" Value="1" />
+
+            <InstallUISequence>
+                <Show Dialog="ResumeDlg" Before="ProgressDlg"><![CDATA[Installed AND RESUME]]></Show>
+                <Show Dialog="VerifyReadyDlg" Before="ProgressDlg"><![CDATA[Installed AND NOT RESUME AND Preselected]]></Show>
+            </InstallUISequence>
         </UI>
 
         <UIRef Id="WixUI_Common" />
+
+        <SetProperty Id="WixUI_InstallMode" Value="Remove" After="CostFinalize" Sequence="ui">
+            <![CDATA[Installed AND &DefaultFeature<=2]]>
+        </SetProperty>
     </Fragment>
     <Fragment>
         <UI>
@@ -91,7 +100,7 @@
 To remove such binaries from your home directory, run:
 
 rmdir %USERPROFILE%\.azd\bin.">
-                    <Condition Action="show"><![CDATA[Installed AND REMOVE=ALL]]></Condition>
+                <Condition Action="show"><![CDATA[&DefaultFeature<=2]]></Condition>
                 </Control>
             </Dialog>
 

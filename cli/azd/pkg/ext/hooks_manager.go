@@ -50,7 +50,7 @@ func (h *HooksManager) GetByParams(
 	validHookNames := map[string]struct{}{}
 
 	for _, commandName := range commands {
-		// Convert things like `azd infra create` => 'infracreate`
+		// Convert things like `azd env list` => 'envlist`
 		commandName = strings.TrimPrefix(commandName, "azd")
 		commandName = strings.TrimSpace(commandName)
 		commandName = strings.ReplaceAll(commandName, " ", "")

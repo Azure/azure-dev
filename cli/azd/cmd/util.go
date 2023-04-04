@@ -26,6 +26,9 @@ import (
 	"github.com/spf13/pflag"
 )
 
+// CmdAnnotations on a command
+type CmdAnnotations map[string]string
+
 type Asker func(p survey.Prompt, response interface{}) error
 
 const (

@@ -150,7 +150,7 @@ func assertAttributeInPropertiesOrMeasurement(
 		assert.Contains(t, measurements, string(attrib.Key))
 		assert.Equal(t, attrib.Value.AsFloat64(), measurements[string(attrib.Key)])
 	case attribute.BOOLSLICE, attribute.INT64SLICE, attribute.FLOAT64SLICE, attribute.STRINGSLICE:
-		val, err := json.Marshal(attrib.Value)
+		val, err := json.Marshal(attrib.Value.AsInterface())
 		if err != nil {
 			assert.Fail(t, fmt.Sprintf("value cannot be marshaled to JSON: %s", err.Error()))
 		}

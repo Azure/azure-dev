@@ -51,15 +51,10 @@ type initFlags struct {
 	subscription   string
 	location       string
 	global         *internal.GlobalCommandOptions
-	*envFlag
+	envFlag
 }
 
 func (i *initFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
-	i.bindNonCommon(local, global)
-	i.bindCommon(local, global)
-}
-
-func (i *initFlags) bindNonCommon(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	local.StringVarP(
 		&i.template.Name,
 		"template",
@@ -76,16 +71,9 @@ func (i *initFlags) bindNonCommon(local *pflag.FlagSet, global *internal.GlobalC
 		"Name or ID of an Azure subscription to use for the new environment",
 	)
 	local.StringVarP(&i.location, "location", "l", "", "Azure location for the new environment")
-	i.global = global
-}
-
-func (i *initFlags) bindCommon(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
-	i.envFlag = &envFlag{}
 	i.envFlag.Bind(local, global)
-}
 
-func (i *initFlags) setCommon(envFlag *envFlag) {
-	i.envFlag = envFlag
+	i.global = global
 }
 
 type initAction struct {

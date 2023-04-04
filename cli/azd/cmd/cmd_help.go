@@ -236,6 +236,10 @@ func getCommandsDetails(cmd *cobra.Command) (result string) {
 	max := 0
 	var lines []string
 	for _, childCommand := range childrenCommands {
+		if !childCommand.IsAvailableCommand() {
+			continue
+		}
+
 		commandName := fmt.Sprintf("  %s", childCommand.Name())
 		commandNameLen := len(commandName)
 		if commandNameLen > max {

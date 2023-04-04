@@ -133,7 +133,7 @@ func Test_CLI_Telemetry_UsageData_EnvProjectLoad(t *testing.T) {
 	_, err = cli.RunCommandWithStdIn(
 		ctx,
 		stdinForTests(envName),
-		"restore", "--service", "csharpapptest",
+		"restore", "csharpapptest",
 		"--trace-log-file", traceFilePath)
 	require.NoError(t, err)
 
@@ -185,10 +185,10 @@ func Test_CLI_Telemetry_UsageData_EnvProjectLoad(t *testing.T) {
 			require.ElementsMatch(t, m[fields.ProjectServiceLanguagesKey], languages)
 
 			require.Contains(t, m, fields.CmdFlags)
-			require.ElementsMatch(t, m[fields.CmdFlags], []string{"service", "trace-log-file"})
+			require.ElementsMatch(t, m[fields.CmdFlags], []string{"trace-log-file"})
 
 			require.Contains(t, m, fields.CmdArgsCount)
-			require.Equal(t, float64(0), m[fields.CmdArgsCount])
+			require.Equal(t, float64(1), m[fields.CmdArgsCount])
 		}
 	}
 	require.True(t, usageCmdFound)

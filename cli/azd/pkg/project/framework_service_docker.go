@@ -57,7 +57,7 @@ func (p *dockerProject) RequiredExternalTools(context.Context) []tools.ExternalT
 
 // Initializes the docker project
 func (p *dockerProject) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
-	return nil
+	return p.framework.Initialize(ctx, serviceConfig)
 }
 
 // Sets the inner framework service used for restore and build command

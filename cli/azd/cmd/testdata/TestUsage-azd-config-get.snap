@@ -5,8 +5,7 @@ Usage
   azd config get <path> [flags]
 
 Flags
-    -h, --help          	: Gets help for get.
-    -o, --output string 	: The output format (the supported formats are json).
+    -h, --help 	: Gets help for get.
 
 Global Flags
     -C, --cwd string 	: Sets the current working directory.

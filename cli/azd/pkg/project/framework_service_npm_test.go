@@ -3,6 +3,7 @@ package project
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -98,6 +99,8 @@ func Test_NpmProject_Package(t *testing.T) {
 	npmCli := npm.NewNpmCli(mockContext.CommandRunner)
 	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageTypeScript)
 	err := os.MkdirAll(serviceConfig.Path(), osutil.PermissionDirectory)
+	require.NoError(t, err)
+	err = os.WriteFile(filepath.Join(serviceConfig.Path(), "package.json"), nil, osutil.PermissionFile)
 	require.NoError(t, err)
 
 	npmProject := NewNpmProject(npmCli, env)

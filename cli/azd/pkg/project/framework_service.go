@@ -6,6 +6,7 @@ package project
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -99,4 +100,12 @@ type FrameworkService interface {
 type CompositeFrameworkService interface {
 	FrameworkService
 	SetSource(inner FrameworkService)
+}
+
+func validatePackageOutput(packagePath string) error {
+	if entries, err := os.ReadDir(packagePath); err != nil || len(entries) == 0 {
+		return fmt.Errorf("package output '%s' is empty or does not exist", packagePath)
+	}
+
+	return nil
 }

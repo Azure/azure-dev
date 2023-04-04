@@ -279,6 +279,8 @@ func TestPromptForParametersLocation(t *testing.T) {
 
 	p := createBicepProvider(t, mockContext)
 	p.prompters.Location = func(
+		ctx context.Context,
+		subscriptionId string,
 		msg string,
 		shouldDisplay func(loc account.Location) bool,
 	) (location string, err error) {
@@ -289,7 +291,7 @@ func TestPromptForParametersLocation(t *testing.T) {
 			}
 		}
 
-		index, err := mockContext.Console.Select(*mockContext.Context, input.ConsoleOptions{
+		index, err := mockContext.Console.Select(ctx, input.ConsoleOptions{
 			Message: msg,
 			Options: displayLocations,
 		})
@@ -331,4 +333,10 @@ func TestPromptForParametersLocation(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, "westus", value)
+}
+
+type mockCurrentPrincipal struct{}
+
+func (m *mockCurrentPrincipal) CurrentPrincipalId(_ context.Context) (string, error) {
+	return "11111111-1111-1111-1111-111111111111", nil
 }

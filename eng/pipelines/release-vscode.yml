@@ -46,7 +46,7 @@ stages:
           vmImage: $(OSVmImage)
 
         variables:
-          NodeVersion: 16.x
+          NodeVersion: 18.x
 
         steps:
           - checkout: self

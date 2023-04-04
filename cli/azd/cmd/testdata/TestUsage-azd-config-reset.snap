@@ -1,5 +1,5 @@
 
-Resets configuration to default
+Resets configuration to default.
 
 Usage
   azd config reset [flags]

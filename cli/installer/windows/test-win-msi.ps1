@@ -40,11 +40,13 @@ $originalPath = $regKey.GetValue( `
     [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames `
 )
 
+Write-Host "Starting install..."
 $process = Start-Process $MSIEXEC `
     -ArgumentList "/i", $MsiPath, "/qn", $additionalParameters `
     -PassThru `
     -Wait
 assertSuccessfulExecution "Install failed. Last exit code: $($process.ExitCode)" $process
+Write-Host "Install finished"
 
 $currentPath = $regKey.GetValue( `
     'PATH', `
@@ -60,14 +62,18 @@ if (!$currentPath.Contains($expectedPathEntry)) {
   exit 1
 }
 
+Write-Host "Running azd version..."
 & $installFolder/azd version
 assertSuccessfulExecution "Could not execute 'azd version'"
+Write-Host "Running azd version finished"
 
+Write-Host "Starting uninstall..."
 $process = Start-Process $MSIEXEC `
     -ArgumentList "/x", $MsiPath, "/qn" `
     -PassThru `
     -Wait
 assertSuccessfulExecution "Uninstall failed. Exit code: $($process.ExitCode)" $process
+Write-Host "Uninstall finished" 
 
 $currentPath = $regKey.GetValue( `
     'PATH', `

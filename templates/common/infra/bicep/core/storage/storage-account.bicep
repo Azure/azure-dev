@@ -36,4 +36,3 @@ resource storage 'Microsoft.Storage/storageAccounts@2022-05-01' = {
 
 output name string = storage.name
 output primaryEndpoints object = storage.properties.primaryEndpoints
-// on purpose comment to trigger a validation for all templates with test-templates.sh

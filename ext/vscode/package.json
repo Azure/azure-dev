@@ -304,12 +304,12 @@
                 {
                     "command": "azure-dev.commands.cli.package",
                     "when": "viewItem =~ /ms-azuretools.azure-dev.views.workspace.service(?!s)/i",
-                    "group": "default@12"
+                    "group": "default@13"
                 },
                 {
                     "command": "azure-dev.commands.cli.deploy",
                     "when": "viewItem =~ /ms-azuretools.azure-dev.views.workspace.service(?!s)/i",
-                    "group": "default@13"
+                    "group": "default@14"
                 },
                 {
                     "command": "azure-dev.commands.cli.env-edit",

@@ -3,9 +3,11 @@
 ## 0.5.0 (2023-04-05)
 
 ### Features Added
+
 - [[#1849]](https://github.com/Azure/azure-dev/pull/1849) Support for the `azd package` command has been added for both the entire application and individual services.
 
 ### Breaking Changes
+
 - [[#1798]](https://github.com/Azure/azure-dev/pull/1798) Version 0.8.0 or higher of the Azure Developer CLI is now required. If an older version is installed, you will be prompted to update.
 - [[#1658]](https://github.com/Azure/azure-dev/pull/1658) Version 1.76.0 or higher of VS Code is now required.
 

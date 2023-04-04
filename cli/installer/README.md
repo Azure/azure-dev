@@ -52,8 +52,35 @@ curl -fsSL https://aka.ms/install-azd.sh | bash
 
 ### Linux
 
+### Script
+
 ```bash
 curl -fsSL https://aka.ms/install-azd.sh | bash
+```
+
+### DEB/RPM Packages
+
+The Azure Developer CLI releases signed `.deb` and `.rpm` packages to [GitHub Releases](https://github.com/Azure/azure-dev/releases). To install, download the appropriate file from the GitHub release and run the appropriate command to install the package: 
+
+#### .deb package (distros using apt-get)
+
+You may need to use `sudo` when running `apt`
+
+```bash 
+curl -fSL https://github.com/Azure/azure-dev/releases/download/azure-dev-cli_<version>/azd_<version>_amd64.deb -o azd_<version>_amd64.deb
+
+apt update 
+apt install ./azd_<version>_amd64.deb -y
+```
+
+### .rpm package (distros using yum/tdnf)
+
+You may need to use `sudo` when running `yum`
+
+```bash 
+curl -fSL https://github.com/Azure/azure-dev/releases/download/azure-dev-cli_<version>/azd-<version>-1.x86_64.rpm -o azd-<version>-1.x86_64.rpm
+
+yum install -y azd-<version>-1.x86_64.rpm 
 ```
 
 ## Uninstall Azure Developer CLI

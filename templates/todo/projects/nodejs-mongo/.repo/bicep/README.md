@@ -52,8 +52,6 @@ azd init --template todo-nodejs-mongo
 This command will clone the code to your current folder and prompt you for the following information:
 
 - `Environment Name`: This will be used as a prefix for the resource group that will be created to hold all Azure resources. This name should be unique within your Azure subscription.
-- `Azure Location`: The Azure location where your resources will be deployed.
-- `Azure Subscription`: The Azure Subscription where your resources will be deployed.
 
 3.Run the following command to both provision the template's infrastructure to Azure and also deploy the applciation code to those newly provisioned resources.
 
@@ -61,7 +59,11 @@ This command will clone the code to your current folder and prompt you for the f
 azd up
 ```
 
-> NOTE: This may take a while to complete as it executes two commands: `azd provision` (provisions Azure resources), and `azd deploy` (deploys application code). You will see a progress indicator as it provisions and deploys your application.
+This command will prompt you for the following information:
+- `Azure Location`: The Azure location where your resources will be deployed.
+- `Azure Subscription`: The Azure Subscription where your resources will be deployed.
+
+> NOTE: This may take a while to complete as it executes three commands: `azd package` (builds a deployable copy of your application),`azd provision` (provisions Azure resources), and `azd deploy` (deploys application code). You will see a progress indicator as it packages, provisions and deploys your application.
 
 When `azd up` is complete it will output the following URLs:
 

@@ -26,6 +26,7 @@ locals {
   tenant_id       = var.tenant_id == "" ? data.azurerm_client_config.current.tenant_id : var.tenant_id
   object_id       = var.object_id == "" ? data.azurerm_client_config.current.object_id : var.object_id
   principal_name  = var.principal_name == "" ? data.azurerm_client_config.current.object_id : var.principal_name
+  principal_type  = var.client_id == "" ? "User" : "ServicePrincipal"
 }
 
 resource "random_password" "password" {
@@ -76,5 +77,5 @@ resource "azurerm_postgresql_flexible_server_active_directory_administrator" "aa
   tenant_id           = local.tenant_id
   object_id           = local.object_id
   principal_name      = local.principal_name
-  principal_type      = "${var.client_id == "" ? "User" : "ServicePrincipal"}"
+  principal_type      = local.principal_type
 }

@@ -101,11 +101,6 @@ module "api" {
   service_name       = "api"
   appservice_plan_id = module.appserviceplan.APPSERVICE_PLAN_ID
 
-  pg_custom_role_name_with_aad_identity = local.psql_custom_username
-  pg_aad_admin_user = module.postgresql.AZURE_POSTGRESQL_ADMIN_USERNAME
-  pg_database_name = module.postgresql.AZURE_POSTGRESQL_DATABASE_NAME
-  pg_server_fqdn = module.postgresql.AZURE_POSTGRESQL_FQDN
-
   app_settings = {
     "SCM_DO_BUILD_DURING_DEPLOYMENT"        = "true"
     "APPLICATIONINSIGHTS_CONNECTION_STRING" = module.applicationinsights.APPLICATIONINSIGHTS_CONNECTION_STRING

@@ -55,7 +55,7 @@ func (dp *dotnetProject) RequiredExternalTools(context.Context) []tools.External
 
 // Initializes the dotnet project
 func (dp *dotnetProject) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
-	projFile, err := findProjectFile(serviceConfig)
+	projFile, err := findProjectFile(serviceConfig.Name, serviceConfig.Path())
 	if err != nil {
 		return err
 	}
@@ -80,7 +80,7 @@ func (dp *dotnetProject) Restore(
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServiceRestoreResult, ServiceProgress]) {
 			task.SetProgress(NewServiceProgress("Restoring .NET project dependencies"))
-			projFile, err := findProjectFile(serviceConfig)
+			projFile, err := findProjectFile(serviceConfig.Name, serviceConfig.Path())
 			if err != nil {
 				task.SetError(err)
 				return
@@ -104,7 +104,7 @@ func (dp *dotnetProject) Build(
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServiceBuildResult, ServiceProgress]) {
 			task.SetProgress(NewServiceProgress("Building .NET project"))
-			projFile, err := findProjectFile(serviceConfig)
+			projFile, err := findProjectFile(serviceConfig.Name, serviceConfig.Path())
 			if err != nil {
 				task.SetError(err)
 				return
@@ -154,7 +154,7 @@ func (dp *dotnetProject) Package(
 			}
 
 			task.SetProgress(NewServiceProgress("Publishing .NET project"))
-			projFile, err := findProjectFile(serviceConfig)
+			projFile, err := findProjectFile(serviceConfig.Name, serviceConfig.Path())
 			if err != nil {
 				task.SetError(err)
 				return
@@ -211,23 +211,23 @@ func normalizeDotNetSecret(key string) string {
 	return strings.ReplaceAll(key, "__", ":")
 }
 
-// findProjectFile locates the project file to pass to the `dotnet` tool for a given dotnet service. In the case where
-// [Path] for the the service results in a directory, if current directory contains a single file matching the
-// glob `*.*proj`, then project file will be returned. If there are multiple or no project file, error is returned
-// and user will be asked to add project file path under "project" in azure.yaml.
-func findProjectFile(serviceConfig *ServiceConfig) (string, error) {
-	serviceName := serviceConfig.Name
-	path := serviceConfig.Path()
+/* findProjectFile locates the project file to pass to the `dotnet` tool for a given dotnet service.
+**
+** projectPath is either a path to a directory, or to a project file. When projectPath is a directory,
+** the first file matching the glob expression *.*proj (what dotnet expects) is returned.
+** If multiple files match, an error is returned.
+ */
 
-	info, err := os.Stat(path)
+func findProjectFile(serviceName string, projectPath string) (string, error) {
+	info, err := os.Stat(projectPath)
 	if err != nil {
 		return "", err
 	}
 
 	if !info.IsDir() {
-		return path, nil
+		return projectPath, nil
 	}
-	files, err := filepath.Glob(filepath.Join(path, "*.*proj"))
+	files, err := filepath.Glob(filepath.Join(projectPath, "*.*proj"))
 	if err != nil {
 		return "", fmt.Errorf("searching for project file: %w", err)
 	}
@@ -235,13 +235,13 @@ func findProjectFile(serviceConfig *ServiceConfig) (string, error) {
 		return "", fmt.Errorf(
 			"could not locate a dotnet project file for service %s in %s. Please update the project setting of "+
 				"azure.yaml for service %s to be the path to the dotnet project for this service",
-			serviceName, path, serviceName)
+			serviceName, projectPath, serviceName)
 	} else if len(files) > 1 {
 		return "", fmt.Errorf(
 			"could not locate a dotnet project file for service %s in %s. Multiple project files exist. Please update "+
 				"the \"project\" setting of azure.yaml for service %s to be the path to the dotnet project to use for this "+
 				"service",
-			serviceName, path, serviceName)
+			serviceName, projectPath, serviceName)
 	}
 
 	return files[0], nil

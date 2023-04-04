@@ -102,9 +102,28 @@ func (ch *ContainerHelper) Deploy(
 				return
 			}
 
+			localImageTag := packageOutput.PackagePath
 			packageDetails, ok := packageOutput.Details.(*dockerPackageResult)
-			if !ok {
+			if ok && packageDetails != nil {
+				localImageTag = packageDetails.ImageTag
+			}
+
+			if localImageTag == "" {
 				task.SetError(errors.New("failed retrieving package result details"))
+				return
+			}
+
+			// Tag image
+			// Get remote tag from the container helper then call docker cli tag command
+			remoteTag, err := ch.RemoteImageTag(ctx, serviceConfig, localImageTag)
+			if err != nil {
+				task.SetError(fmt.Errorf("getting remote image tag: %w", err))
+				return
+			}
+
+			task.SetProgress(NewServiceProgress("Tagging container image"))
+			if err := ch.docker.Tag(ctx, serviceConfig.Path(), localImageTag, remoteTag); err != nil {
+				task.SetError(err)
 				return
 			}
 
@@ -112,21 +131,7 @@ func (ch *ContainerHelper) Deploy(
 			task.SetProgress(NewServiceProgress("Logging into container registry"))
 			err = ch.containerRegistryService.LoginAcr(ctx, targetResource.SubscriptionId(), loginServer)
 			if err != nil {
-				task.SetError(fmt.Errorf("failed logging into registry '%s': %w", loginServer, err))
-				return
-			}
-
-			// Tag image
-			// Get remote tag from the container helper then call docker cli tag command
-			remoteTag, err := ch.RemoteImageTag(ctx, serviceConfig, packageDetails.ImageTag)
-			if err != nil {
-				task.SetError(fmt.Errorf("getting remote image tag: %w", err))
-				return
-			}
-
-			task.SetProgress(NewServiceProgress("Tagging container image"))
-			if err := ch.docker.Tag(ctx, serviceConfig.Path(), packageDetails.ImageTag, remoteTag); err != nil {
-				task.SetError(fmt.Errorf("tagging image: %w", err))
+				task.SetError(err)
 				return
 			}
 
@@ -134,7 +139,7 @@ func (ch *ContainerHelper) Deploy(
 			log.Printf("pushing %s to registry", remoteTag)
 			task.SetProgress(NewServiceProgress("Pushing container image"))
 			if err := ch.docker.Push(ctx, serviceConfig.Path(), remoteTag); err != nil {
-				task.SetError(fmt.Errorf("failed pushing image: %w", err))
+				task.SetError(err)
 				return
 			}
 

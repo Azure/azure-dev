@@ -85,7 +85,10 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		fmt.Fprintln(
 			u.console.Handles().Stderr,
 			//nolint:lll
-			output.WithWarningFormat("WARNING: The '--no-progress' flag is deprecated and will be removed in a future release."))
+			output.WithWarningFormat(
+				"WARNING: The '--no-progress' flag is deprecated and will be removed in a future release.",
+			),
+		)
 		// this flag actually isn't used by the provision command, we set it to false to hide the extra warning
 		u.flags.provisionFlags.noProgress = false
 	}

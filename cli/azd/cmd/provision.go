@@ -133,7 +133,10 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		fmt.Fprintln(
 			p.console.Handles().Stderr,
 			//nolint:Lll
-			output.WithWarningFormat("WARNING: The '--no-progress' flag is deprecated and will be removed in a future release."))
+			output.WithWarningFormat(
+				"WARNING: The '--no-progress' flag is deprecated and will be removed in a future release.",
+			),
+		)
 	}
 
 	// Command title

@@ -9,7 +9,6 @@ import { CommandLineBuilder } from "./commandLineBuilder";
 import ext from "../ext";
 import { execAsync } from './process';
 import { AsyncLazy } from './lazy';
-import { localize } from "../localize";
 import { AzExtErrorButton, IActionContext } from '@microsoft/vscode-azext-utils';
 import { isWindows } from './osUtils';
 import { setVsCodeContext } from './setVsCodeContext';
@@ -63,14 +62,14 @@ export function scheduleAzdVersionCheck(): void {
             // We won't show a warning if AZD is not installed, but if it is installed and less than 0.8.0, we will warn
 
             const install: vscode.MessageItem = {
-                title: localize('azure-dev.utils.azd.updateNow', 'Update'),
+                title: vscode.l10n.t('Update'),
             };
 
             const later: vscode.MessageItem = {
-                title: localize('azure-dev.utils.azd.updateLater', 'Later'),
+                title: vscode.l10n.t('Later'),
             };
 
-            const title = localize('azure-dev.utils.azd.minimumAzdVersion',
+            const title = vscode.l10n.t(
                 'The minimum version of the Azure Developer CLI supported by the extension is {0}, but you have {1}. Would you like to update?',
                 minimumSupportedVersion.version,
                 versionResult.version
@@ -225,19 +224,19 @@ function normalize(env: NodeJS.ProcessEnv): Environment {
 }
 
 function azdNotInstalledMsg(): string {
-    return localize("azure-dev.utils.azd.notInstalled", "Azure Developer CLI is not installed. Would you like to install it? [Learn More](https://aka.ms/azd-install)");
+    return vscode.l10n.t("Azure Developer CLI is not installed. Would you like to install it? [Learn More](https://aka.ms/azd-install)");
 }
 
 function azdNotInstalledUserChoices(): AzExtErrorButton[] {
     const choices: AzExtErrorButton[] = [
         {
-            title: localize("azure-dev.utils.azd.installNow", "Install"),
+            title: vscode.l10n.t("Install"),
             callback: async () => {
                 await vscode.commands.executeCommand("azure-dev.commands.cli.install", /* shouldPrompt: */ false);
             }
         },
         {
-            title: localize("azure-dev.utils.azd.later", "Later"),
+            title: vscode.l10n.t("Later"),
             callback: () => { return Promise.resolve(); /* no-op */ }
         }
     ];

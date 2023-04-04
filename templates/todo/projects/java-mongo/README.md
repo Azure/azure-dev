@@ -28,7 +28,7 @@ A complete ToDo application that includes everything you need to build, deploy, 
 
 Let's jump in and get the ToDo app up and running in Azure. When you are finished, you will have a fully functional web app deployed on Azure. In later steps, you'll see how to setup a pipeline and monitor the application.
 
-<img src="assets/web.png" width="75%" alt="Screenshot of deployed ToDo app">
+!["Screenshot of deployed ToDo app"](assets/web.png)
 
 <sup>Screenshot of the deployed ToDo app</sup>
 
@@ -86,7 +86,7 @@ This application utilizes the following Azure resources:
 
 Here's a high level architecture diagram that illustrates these components. Notice that these are all contained within a single [resource group](https://docs.microsoft.com/azure/azure-resource-manager/management/manage-resource-groups-portal), that will be created for you when you create the resources.
 
-<img src="assets/resources.png" width="60%" alt="Application architecture diagram"/>
+!["Application architecture diagram"](assets/resources.png)
 
 > This template provisions resources to an Azure subscription that you will select upon provisioning them. Please refer to the [Pricing calculator for Microsoft Azure](https://azure.microsoft.com/pricing/calculator/) and, if needed, update the included Azure resource definitions found in `infra/main.bicep` to suit your needs.
 
@@ -194,7 +194,7 @@ And then execute `azd up` to provision and deploy. No worries if you already did
 
 Here's the high level architecture diagram when APIM is used:
 
-<img src="assets/resources-with-apim.png" width="60%" alt="Application architecture diagram with APIM"/>
+!["Application architecture diagram with APIM"](assets/resources-with-apim.png)
 
 The frontend will be configured to make API requests through APIM instead of calling the backend directly, so that the following flow gets executed:
 

@@ -3,15 +3,12 @@
     "build": {
         "dockerfile": "Dockerfile",
         "args": {
-            "VARIANT": "bullseye"
+            "IMAGE": "java:17"
         }
     },
     "features": {
         "ghcr.io/devcontainers/features/docker-from-docker:1": {
             "version": "20.10"
-        },
-        "ghcr.io/devcontainers/features/java:1": {
-            "version": "17.0"
         },
         "ghcr.io/devcontainers/features/node:1": {
             "version": "16",

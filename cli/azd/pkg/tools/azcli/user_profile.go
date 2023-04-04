@@ -44,18 +44,18 @@ func (u *UserProfileService) createGraphClient(ctx context.Context, tenantId str
 	return client, nil
 }
 
-func (user *UserProfileService) GetSignedInUserId(ctx context.Context, tenantId string) (*string, error) {
+func (user *UserProfileService) GetSignedInUserId(ctx context.Context, tenantId string) (string, error) {
 	client, err := user.createGraphClient(ctx, tenantId)
 	if err != nil {
-		return nil, err
+		return "", err
 	}
 
 	userProfile, err := client.Me().Get(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("failed retrieving current user profile: %w", err)
+		return "", fmt.Errorf("failed retrieving current user profile: %w", err)
 	}
 
-	return &userProfile.Id, nil
+	return userProfile.Id, nil
 }
 
 func (u *UserProfileService) GetAccessToken(ctx context.Context, tenantId string) (*AzCliAccessToken, error) {

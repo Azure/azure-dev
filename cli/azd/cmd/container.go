@@ -11,6 +11,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/repository"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -146,6 +147,10 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		return envFlag{environmentName: envValue}
 	})
 
+	container.RegisterSingleton(func(cmd *cobra.Command) CmdAnnotations {
+		return cmd.Annotations
+	})
+
 	// Azd Context
 	container.RegisterSingleton(azdcontext.NewAzdContext)
 
@@ -164,9 +169,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			azdContext *azdcontext.AzdContext,
 			envFlags envFlag,
 			console input.Console,
-			accountManager account.Manager,
-			userProfileService *azcli.UserProfileService,
-			subResolver account.SubscriptionTenantResolver) (*environment.Environment, error) {
+		) (*environment.Environment, error) {
 			if azdContext == nil {
 				return nil, azdcontext.ErrNoProject
 			}
@@ -174,8 +177,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			environmentName := envFlags.environmentName
 			var err error
 
-			env, err := loadOrInitEnvironment(
-				ctx, &environmentName, azdContext, console, accountManager, userProfileService, subResolver)
+			env, err := loadOrCreateEnvironment(ctx, environmentName, azdContext, console)
 			if err != nil {
 				return nil, fmt.Errorf("loading environment: %w", err)
 			}
@@ -251,6 +253,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(project.NewServiceManager)
 	container.RegisterSingleton(repository.NewInitializer)
 	container.RegisterSingleton(config.NewUserConfigManager)
+	container.RegisterSingleton(alpha.NewFeaturesManager)
 	container.RegisterSingleton(config.NewManager)
 	container.RegisterSingleton(templates.NewTemplateManager)
 	container.RegisterSingleton(auth.NewManager)
@@ -261,6 +264,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(account.NewSubscriptionCredentialProvider)
 	container.RegisterSingleton(azcli.NewManagedClustersService)
 	container.RegisterSingleton(azcli.NewContainerRegistryService)
+	container.RegisterSingleton(project.NewContainerHelper)
 	container.RegisterSingleton(func() ioc.ServiceLocator {
 		return ioc.NewServiceLocator(container)
 	})
@@ -333,9 +337,12 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 	// Required for nested actions called from composite actions like 'up'
 	registerActionInitializer[*initAction](container, "azd-init-action")
+	registerActionInitializer[*provisionAction](container, "azd-provision-action")
+	registerActionInitializer[*restoreAction](container, "azd-restore-action")
+	registerActionInitializer[*buildAction](container, "azd-build-action")
+	registerActionInitializer[*packageAction](container, "azd-package-action")
 	registerActionInitializer[*deployAction](container, "azd-deploy-action")
-	registerActionInitializer[*infraCreateAction](container, "azd-infra-create-action")
-	// Required for alias actions like 'provision' and 'down'
-	registerAction[*infraCreateAction](container, "azd-infra-create-action")
-	registerAction[*infraDeleteAction](container, "azd-infra-delete-action")
+
+	registerAction[*provisionAction](container, "azd-provision-action")
+	registerAction[*downAction](container, "azd-down-action")
 }

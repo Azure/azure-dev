@@ -18,6 +18,7 @@ func Test_DockerBuild(t *testing.T) {
 	dockerFile := "./Dockerfile"
 	dockerContext := "../"
 	platform := "amd64"
+	imageName := "IMAGE_NAME"
 
 	t.Run("NoError", func(t *testing.T) {
 		ran := false
@@ -36,6 +37,7 @@ func Test_DockerBuild(t *testing.T) {
 				"-q",
 				"-f", dockerFile,
 				"--platform", platform,
+				"-t", imageName,
 				dockerContext,
 			}, args.Args)
 
@@ -46,7 +48,7 @@ func Test_DockerBuild(t *testing.T) {
 			}, nil
 		})
 
-		result, err := docker.Build(context.Background(), cwd, dockerFile, platform, dockerContext)
+		result, err := docker.Build(context.Background(), cwd, dockerFile, platform, dockerContext, imageName)
 
 		require.Equal(t, true, ran)
 		require.Nil(t, err)
@@ -57,6 +59,7 @@ func Test_DockerBuild(t *testing.T) {
 		ran := false
 		stdErr := "Error tagging DockerFile"
 		customErrorMessage := "example error message"
+		imageName := "IMAGE_NAME"
 
 		mockContext := mocks.NewMockContext(context.Background())
 		docker := NewDocker(mockContext.CommandRunner)
@@ -72,6 +75,7 @@ func Test_DockerBuild(t *testing.T) {
 				"-q",
 				"-f", dockerFile,
 				"--platform", platform,
+				"-t", imageName,
 				dockerContext,
 			}, args.Args)
 
@@ -82,7 +86,7 @@ func Test_DockerBuild(t *testing.T) {
 			}, errors.New(customErrorMessage)
 		})
 
-		result, err := docker.Build(context.Background(), cwd, dockerFile, platform, dockerContext)
+		result, err := docker.Build(context.Background(), cwd, dockerFile, platform, dockerContext, imageName)
 
 		require.Equal(t, true, ran)
 		require.NotNil(t, err)
@@ -101,6 +105,7 @@ func Test_DockerBuildEmptyPlatform(t *testing.T) {
 	dockerFile := "./Dockerfile"
 	dockerContext := "../"
 	platform := "amd64"
+	imageName := "IMAGE_NAME"
 
 	mockContext := mocks.NewMockContext(context.Background())
 	docker := NewDocker(mockContext.CommandRunner)
@@ -117,6 +122,7 @@ func Test_DockerBuildEmptyPlatform(t *testing.T) {
 			"-q",
 			"-f", dockerFile,
 			"--platform", platform,
+			"-t", imageName,
 			dockerContext,
 		}, args.Args)
 
@@ -127,7 +133,7 @@ func Test_DockerBuildEmptyPlatform(t *testing.T) {
 		}, nil
 	})
 
-	result, err := docker.Build(context.Background(), cwd, dockerFile, "", dockerContext)
+	result, err := docker.Build(context.Background(), cwd, dockerFile, "", dockerContext, imageName)
 
 	require.Equal(t, true, ran)
 	require.Nil(t, err)

@@ -11,6 +11,9 @@ steps:
   - pwsh: |
       azd config set auth.useAzCliAuth "true"
     displayName: Configure AZD to Use AZ CLI Authentication.
+  - pwsh: |
+      azd config set alpha.terraform on
+    displayName: Enable terraform alpha feature from azd
   - task: AzureCLI@2
     displayName: Azure Dev Provision
     inputs:

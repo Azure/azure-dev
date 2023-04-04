@@ -303,12 +303,12 @@ func (p *BicepProvider) Destroy(
 				return
 			}
 
-			// asyncContext.SetProgress(&DestroyProgress{Message: "Getting Search Services to purge", Timestamp: time.Now()})
-			// searchServices, err := p.getSearchServicesToPurge(ctx, groupedResources)
-			// if err != nil {
-			// 	asyncContext.SetError(fmt.Errorf("getting search services to purge: %w", err))
-			// 	return
-			// }
+			asyncContext.SetProgress(&DestroyProgress{Message: "Getting Search Services to purge", Timestamp: time.Now()})
+			searchServices, err := p.getSearchServicesToPurge(ctx, groupedResources)
+			if err != nil {
+				asyncContext.SetError(fmt.Errorf("getting search services to purge: %w", err))
+				return
+			}
 
 			if err := p.destroyResourceGroups(ctx, asyncContext, options, groupedResources, len(allResources)); err != nil {
 				asyncContext.SetError(fmt.Errorf("destroying resource groups: %w", err))
@@ -344,15 +344,14 @@ func (p *BicepProvider) Destroy(
 					return p.purgeCognitiveService(ctx, asyncContext, cognitiveServices, options, congServiceResources)
 				},
 			}
-			// searchService := itemToPurge{
-			// 	resourceType: "Search Services",
-			// 	count:        len(searchServices),
-			// 	purge: func() error {
-			// 		return p.purgeSearchService(ctx, asyncContext, searchServices, options)
-			// 	},
-			// }
-			// purgeItem := []itemToPurge{keyVaultsPurge, appConfigsPurge, aPIManagement, cognitiveService, searchService}
-			purgeItem := []itemToPurge{keyVaultsPurge, appConfigsPurge, aPIManagement, cognitiveService}
+			searchService := itemToPurge{
+				resourceType: "Search Services",
+				count:        len(searchServices),
+				purge: func() error {
+					return p.purgeSearchService(ctx, asyncContext, searchServices, options)
+				},
+			}
+			purgeItem := []itemToPurge{keyVaultsPurge, appConfigsPurge, aPIManagement, cognitiveService, searchService}
 
 			if err := p.purgeItems(ctx, asyncContext, purgeItem, options); err != nil {
 				asyncContext.SetError(fmt.Errorf("purging resources: %w", err))
@@ -692,6 +691,29 @@ func (p *BicepProvider) getCognitiveServicesToPurge(
 	return cogServices, congServiceResources, nil
 }
 
+func (p *BicepProvider) getSearchServicesToPurge(
+	ctx context.Context,
+	groupedResources map[string][]azcli.AzCliResource,
+) ([]*azcli.AzCliSearchService, error) {
+	searchServices := []*azcli.AzCliSearchService{}
+
+	for resourceGroup, groupResources := range groupedResources {
+		for _, resource := range groupResources {
+			if resource.Type == string(infra.AzureResourceTypeSearchService) {
+				searchService, err := p.azCli.GetSearchService(ctx, azure.SubscriptionFromRID(resource.Id), resourceGroup, resource.Name)
+				if err != nil {
+					return nil, fmt.Errorf("listing search service %s properties: %w", resource.Name, err)
+				}
+
+				searchServices = append(searchServices, searchService)
+
+			}
+		}
+	}
+
+	return searchServices, nil
+}
+
 // Azure AppConfigurations have a "soft delete" functionality (now enabled by default) where a configuration store
 // may be marked such that when it is deleted it can be recovered for a period of time. During that time,
 // the name may not be reused.
@@ -805,6 +827,42 @@ func (p *BicepProvider) purgeCognitiveService(
 				"%s cognitive service %s",
 				output.WithErrorFormat("Purged"),
 				output.WithHighLightFormat(cogSearch.Name),
+			),
+		)
+	}
+
+	return nil
+}
+
+func (p *BicepProvider) purgeSearchService(
+	ctx context.Context,
+	asyncContext *async.InteractiveTaskContextWithProgress[*DestroyResult, *DestroyProgress],
+	searchs []*azcli.AzCliSearchService,
+	options DestroyOptions,
+) error {
+	for _, search := range searchs {
+		progressReport := DestroyProgress{
+			Timestamp: time.Now(),
+			Message: fmt.Sprintf(
+				"%s search service %s",
+				output.WithErrorFormat("Purging"),
+				output.WithHighLightFormat(search.Name),
+			),
+		}
+
+		asyncContext.SetProgress(&progressReport)
+
+		err := p.azCli.PurgeSearchService(ctx, azure.SubscriptionFromRID(search.Id), search.Name, search.Location)
+		if err != nil {
+			return fmt.Errorf("purging search service %s: %w", search.Name, err)
+		}
+
+		p.console.Message(
+			ctx,
+			fmt.Sprintf(
+				"%s search service %s",
+				output.WithErrorFormat("Purged"),
+				output.WithHighLightFormat(search.Name),
 			),
 		)
 	}

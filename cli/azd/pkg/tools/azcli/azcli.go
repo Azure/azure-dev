@@ -107,18 +107,18 @@ type AzCli interface {
 		cogServiceName string,
 		location string,
 	) error
-	// GetSearchService(
-	// 	ctx context.Context,
-	// 	subscriptionId string,
-	// 	resourceGroupName string,
-	// 	searchName string,
-	// ) (*AzCliSearchService, error)
-	// PurgeSearchService(
-	// 	ctx context.Context,
-	// 	subscriptionId string,
-	// 	searchName string,
-	// 	location string,
-	// ) error
+	GetSearchService(
+		ctx context.Context,
+		subscriptionId string,
+		resourceGroupName string,
+		searchName string,
+	) (*AzCliSearchService, error)
+	PurgeSearchService(
+		ctx context.Context,
+		subscriptionId string,
+		searchName string,
+		location string,
+	) error
 	DeployAppServiceZip(
 		ctx context.Context,
 		subscriptionId string,

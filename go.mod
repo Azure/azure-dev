@@ -52,7 +52,10 @@ require (
 
 )
 
-require golang.org/x/text v0.7.0 // indirect
+require (
+	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/search/armsearch v1.1.0 // indirect
+	golang.org/x/text v0.7.0 // indirect
+)
 
 require (
 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.2.0 // indirect

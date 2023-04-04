@@ -43,8 +43,7 @@
                     "title": "Type of infrastructure provisioning provider",
                     "description": "Optional. The infrastructure provisioning provider used to provision the Azure resources for the application. (Default: bicep)",
                     "enum": [
-                        "bicep",
-                        "terraform"
+                        "bicep"
                     ]
                 },
                 "path": {
@@ -297,6 +296,16 @@
                 "postup": {
                     "title": "post up hook",
                     "description": "Runs after the `up` command",
+                    "$ref": "#/definitions/hook"
+                },
+                "prepackage": {
+                    "title": "pre package hook",
+                    "description": "Runs before the `package` command",
+                    "$ref": "#/definitions/hook"
+                },
+                "postpackage": {
+                    "title": "post package hook",
+                    "description": "Runs after the `package` command",
                     "$ref": "#/definitions/hook"
                 },
                 "predeploy": {

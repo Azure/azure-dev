@@ -43,6 +43,7 @@ ignoreWords:
     - armcontainerregistry
     - azidentity
     - azsecrets
+    - beginswith
     - Bfor
     - bicepcli
     - cdne
@@ -132,6 +133,7 @@ ignoreWords:
     - ssimp
     - stapp
     - startswith
+    - stringutil
     - stvm
     - syndp
     - synsp

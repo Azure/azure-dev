@@ -19,8 +19,8 @@ import (
 )
 
 var (
-	ErrAzCliNotLoggedIn         = errors.New("cli is not logged in. Try running \"azd login\" to fix")
-	ErrAzCliRefreshTokenExpired = errors.New("refresh token has expired. Try running \"azd login\" to fix")
+	ErrAzCliNotLoggedIn         = errors.New("cli is not logged in. Try running \"az login\" to fix")
+	ErrAzCliRefreshTokenExpired = errors.New("refresh token has expired. Try running \"az login\" to fix")
 	ErrClientAssertionExpired   = errors.New("client assertion expired")
 	ErrDeploymentNotFound       = errors.New("deployment not found")
 	ErrNoConfigurationValue     = errors.New("no value configured")

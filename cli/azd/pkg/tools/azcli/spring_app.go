@@ -6,20 +6,77 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appplatform/armappplatform"
 	"github.com/Azure/azure-storage-file-go/azfile"
+	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"log"
 	"net/url"
 	"os"
 )
 
+// SpringService provides access to query and login to Azure Container Registries (ACR) TODO
+type SpringService interface {
+	GetSpringAppProperties(
+		ctx context.Context,
+		subscriptionId string,
+		resourceGroupName string,
+		instanceName string,
+		appName string,
+	) (*AzCliSpringAppProperties, error)
+	DeploySpringAppArtifact(
+		ctx context.Context,
+		subscriptionId string,
+		resourceGroup string,
+		instanceName string,
+		appName string,
+		relativePath string,
+		deploymentName string,
+	) (*string, error)
+	UploadSpringArtifact(
+		ctx context.Context,
+		subscriptionId string,
+		resourceGroup string,
+		instanceName string,
+		appName string,
+		artifactPath string,
+	) (*string, error)
+	GetSpringAppDeployment(
+		ctx context.Context,
+		subscriptionId string,
+		resourceGroupName string,
+		instanceName string,
+		appName string,
+		deploymentName string,
+	) (*string, error)
+}
+
+type springService struct {
+	credentialProvider account.SubscriptionCredentialProvider
+	httpClient         httputil.HttpClient
+	userAgent          string
+}
+
+// Creates a new instance of the ContainerRegistryService
+func NewSpringService(
+	credentialProvider account.SubscriptionCredentialProvider,
+	httpClient httputil.HttpClient,
+) SpringService {
+	return &springService{
+		credentialProvider: credentialProvider,
+		httpClient:         httpClient,
+		userAgent:          azdinternal.MakeUserAgentString(""),
+	}
+}
+
 type AzCliSpringAppProperties struct {
 	Fqdn []string
 }
 
-func (cli *azCli) GetSpringAppProperties(
+func (ss *springService) GetSpringAppProperties(
 	ctx context.Context,
 	subscriptionId, resourceGroup, instanceName, appName string,
 ) (*AzCliSpringAppProperties, error) {
-	client, err := cli.createSpringAppClient(ctx, subscriptionId)
+	client, err := ss.createSpringAppClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
 	}
@@ -34,17 +91,17 @@ func (cli *azCli) GetSpringAppProperties(
 	}, nil
 }
 
-func (cli *azCli) UploadSpringArtifact(
+func (ss *springService) UploadSpringArtifact(
 	ctx context.Context,
 	subscriptionId, resourceGroup, instanceName, appName, artifactPath string,
 ) (*string, error) {
 
-	credential, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+	credential, err := ss.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
 	}
 
-	options := cli.createDefaultClientOptionsBuilder(ctx).BuildArmClientOptions()
+	options := clientOptionsBuilder(ss.httpClient, ss.userAgent).BuildArmClientOptions()
 
 	file, err := os.Open(artifactPath)
 	if err != nil {
@@ -79,7 +136,7 @@ func (cli *azCli) UploadSpringArtifact(
 	return storageInfo.RelativePath, nil
 }
 
-func (cli *azCli) DeploySpringAppArtifact(
+func (ss *springService) DeploySpringAppArtifact(
 	ctx context.Context,
 	subscriptionId string,
 	resourceGroup string,
@@ -88,12 +145,12 @@ func (cli *azCli) DeploySpringAppArtifact(
 	relativePath string,
 	deploymentName string,
 ) (*string, error) {
-	deploymentClient, err := cli.createSpringAppDeploymentClient(ctx, subscriptionId)
+	deploymentClient, err := ss.createSpringAppDeploymentClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
 	}
 
-	springClient, err := cli.createSpringAppClient(ctx, subscriptionId)
+	springClient, err := ss.createSpringAppClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
 	}
@@ -131,7 +188,7 @@ func (cli *azCli) DeploySpringAppArtifact(
 	return res.Name, nil
 }
 
-func (cli *azCli) GetSpringAppDeployment(
+func (ss *springService) GetSpringAppDeployment(
 	ctx context.Context,
 	subscriptionId string,
 	resourceGroupName string,
@@ -139,7 +196,7 @@ func (cli *azCli) GetSpringAppDeployment(
 	appName string,
 	deploymentName string,
 ) (*string, error) {
-	client, err := cli.createSpringAppDeploymentClient(ctx, subscriptionId)
+	client, err := ss.createSpringAppDeploymentClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
 	}
@@ -153,16 +210,16 @@ func (cli *azCli) GetSpringAppDeployment(
 	return resp.Name, nil
 }
 
-func (cli *azCli) createSpringAppClient(
+func (ss *springService) createSpringAppClient(
 	ctx context.Context,
 	subscriptionId string,
 ) (*armappplatform.AppsClient, error) {
-	credential, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+	credential, err := ss.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
 	}
 
-	options := cli.createDefaultClientOptionsBuilder(ctx).BuildArmClientOptions()
+	options := clientOptionsBuilder(ss.httpClient, ss.userAgent).BuildArmClientOptions()
 	client, err := armappplatform.NewAppsClient(subscriptionId, credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating SpringApp client: %w", err)
@@ -171,19 +228,19 @@ func (cli *azCli) createSpringAppClient(
 	return client, nil
 }
 
-func (cli *azCli) createSpringAppDeploymentClient(
+func (ss *springService) createSpringAppDeploymentClient(
 	ctx context.Context,
 	subscriptionId string,
 ) (*armappplatform.DeploymentsClient, error) {
-	credential, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+	credential, err := ss.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
 	}
 
-	options := cli.createDefaultClientOptionsBuilder(ctx).BuildArmClientOptions()
+	options := clientOptionsBuilder(ss.httpClient, ss.userAgent).BuildArmClientOptions()
 	client, err := armappplatform.NewDeploymentsClient(subscriptionId, credential, options)
 	if err != nil {
-		return nil, fmt.Errorf("creating SpringApp client: %w", err)
+		return nil, fmt.Errorf("creating SpringAppDeployment client: %w", err)
 	}
 
 	return client, nil

@@ -78,23 +78,6 @@ type AzCli interface {
 		appName string,
 		deployZipFile io.Reader,
 	) (*string, error)
-	DeploySpringAppArtifact(
-		ctx context.Context,
-		subscriptionId string,
-		resourceGroup string,
-		instanceName string,
-		appName string,
-		relativePath string,
-		deploymentName string,
-	) (*string, error)
-	UploadSpringArtifact(
-		ctx context.Context,
-		subscriptionId string,
-		resourceGroup string,
-		instanceName string,
-		appName string,
-		artifactPath string,
-	) (*string, error)
 	DeployFunctionAppUsingZipFile(
 		ctx context.Context,
 		subscriptionID string,
@@ -168,21 +151,6 @@ type AzCli interface {
 		resourceGroupName string,
 		applicationName string,
 	) (*AzCliContainerAppProperties, error)
-	GetSpringAppProperties(
-		ctx context.Context,
-		subscriptionId string,
-		resourceGroupName string,
-		instanceName string,
-		appName string,
-	) (*AzCliSpringAppProperties, error)
-	GetSpringAppDeployment(
-		ctx context.Context,
-		subscriptionId string,
-		resourceGroupName string,
-		instanceName string,
-		appName string,
-		deploymentName string,
-	) (*string, error)
 	GetStaticWebAppProperties(
 		ctx context.Context,
 		subscriptionID string,

@@ -25,8 +25,8 @@ type SpringOptions struct {
 }
 
 type springAppTarget struct {
-	env *environment.Environment
-	cli azcli.AzCli
+	env           *environment.Environment
+	springService azcli.SpringService
 }
 
 // NewSpringAppTarget creates the spring app service target.
@@ -35,11 +35,11 @@ type springAppTarget struct {
 // can be provisioned during deployment.
 func NewSpringAppTarget(
 	env *environment.Environment,
-	azCli azcli.AzCli,
+	springService azcli.SpringService,
 ) ServiceTarget {
 	return &springAppTarget{
-		env: env,
-		cli: azCli,
+		env:           env,
+		springService: springService,
 	}
 }
 
@@ -78,7 +78,7 @@ func (st *springAppTarget) Deploy(
 				return
 			}
 
-			_, err := st.cli.GetSpringAppDeployment(
+			_, err := st.springService.GetSpringAppDeployment(
 				ctx,
 				targetResource.SubscriptionId(),
 				targetResource.ResourceGroupName(),
@@ -102,7 +102,7 @@ func (st *springAppTarget) Deploy(
 
 			task.SetProgress(NewServiceProgress("Uploading spring artifact"))
 
-			relativePath, err := st.cli.UploadSpringArtifact(
+			relativePath, err := st.springService.UploadSpringArtifact(
 				ctx,
 				targetResource.SubscriptionId(),
 				targetResource.ResourceGroupName(),
@@ -118,7 +118,7 @@ func (st *springAppTarget) Deploy(
 
 			task.SetProgress(NewServiceProgress("Deploying spring artifact"))
 
-			res, err := st.cli.DeploySpringAppArtifact(
+			res, err := st.springService.DeploySpringAppArtifact(
 				ctx,
 				targetResource.SubscriptionId(),
 				targetResource.ResourceGroupName(),
@@ -163,7 +163,7 @@ func (st *springAppTarget) Endpoints(
 	serviceConfig *ServiceConfig,
 	targetResource *environment.TargetResource,
 ) ([]string, error) {
-	appServiceProperties, err := st.cli.GetSpringAppProperties(
+	appServiceProperties, err := st.springService.GetSpringAppProperties(
 		ctx,
 		targetResource.SubscriptionId(),
 		targetResource.ResourceGroupName(),

@@ -265,6 +265,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(azcli.NewManagedClustersService)
 	container.RegisterSingleton(azcli.NewContainerRegistryService)
 	container.RegisterSingleton(project.NewContainerHelper)
+	container.RegisterSingleton(azcli.NewSpringService)
 	container.RegisterSingleton(func() ioc.ServiceLocator {
 		return ioc.NewServiceLocator(container)
 	})

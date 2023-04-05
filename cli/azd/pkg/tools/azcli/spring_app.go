@@ -14,8 +14,9 @@ import (
 	"os"
 )
 
-// SpringService provides access to query and login to Azure Container Registries (ACR) TODO
+// SpringService provides artifacts upload/deploy and query to Azure Spring Apps (ASA)
 type SpringService interface {
+	// Get Spring app properties
 	GetSpringAppProperties(
 		ctx context.Context,
 		subscriptionId string,
@@ -23,6 +24,7 @@ type SpringService interface {
 		instanceName string,
 		appName string,
 	) (*AzCliSpringAppProperties, error)
+	// Deploy jar artifact to ASA app deployment
 	DeploySpringAppArtifact(
 		ctx context.Context,
 		subscriptionId string,
@@ -32,6 +34,7 @@ type SpringService interface {
 		relativePath string,
 		deploymentName string,
 	) (*string, error)
+	// Upload jar artifact to ASA app Storage File
 	UploadSpringArtifact(
 		ctx context.Context,
 		subscriptionId string,
@@ -40,6 +43,7 @@ type SpringService interface {
 		appName string,
 		artifactPath string,
 	) (*string, error)
+	// Get Spring app deployment
 	GetSpringAppDeployment(
 		ctx context.Context,
 		subscriptionId string,
@@ -56,7 +60,7 @@ type springService struct {
 	userAgent          string
 }
 
-// Creates a new instance of the ContainerRegistryService
+// Creates a new instance of the NewSpringService
 func NewSpringService(
 	credentialProvider account.SubscriptionCredentialProvider,
 	httpClient httputil.HttpClient,

@@ -63,10 +63,6 @@ func Parse(ctx context.Context, yamlContent string) (*ProjectConfig, error) {
 			svc.Language = "dotnet"
 		}
 
-		if svc.Host == SpringAppTarget && svc.spring.DeploymentName == "" {
-			svc.spring.DeploymentName = "default"
-		}
-
 		var err error
 		svc.Language, err = parseServiceLanguage(svc.Language)
 		if err != nil {

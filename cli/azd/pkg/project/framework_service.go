@@ -103,8 +103,13 @@ type CompositeFrameworkService interface {
 }
 
 func validatePackageOutput(packagePath string) error {
-	if entries, err := os.ReadDir(packagePath); err != nil || len(entries) == 0 {
-		return fmt.Errorf("package output '%s' is empty or does not exist", packagePath)
+	entries, err := os.ReadDir(packagePath)
+	if err != nil && os.IsNotExist(err) {
+		return fmt.Errorf("package output '%s' does not exist, %w", packagePath, err)
+	} else if err != nil {
+		return fmt.Errorf("failed to read package output '%s', %w", packagePath, err)
+	} else if err == nil && len(entries) == 0 {
+		return fmt.Errorf("package output '%s' is empty", packagePath)
 	}
 
 	return nil

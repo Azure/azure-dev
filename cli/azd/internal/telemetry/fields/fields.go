@@ -61,10 +61,12 @@ const (
 	SubscriptionIdKey = attribute.Key("ad.subscription.id")
 )
 
-// Project related attributes
+// Project (azure.yaml) related attributes
 const (
-	// Hashed template referenced in the project.
+	// Hashed template ID metadata
 	ProjectTemplateIdKey = attribute.Key("project.template.id")
+	// Hashed template.version metadata
+	ProjectTemplateVersionKey = attribute.Key("project.template.version")
 	// Hashed project name. Could be used as an indicator for number of different azd projects.
 	ProjectNameKey = attribute.Key("project.name")
 	// The collection of hashed service hosts in the project.

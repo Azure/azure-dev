@@ -58,6 +58,12 @@ steps:
       artifact: signed-mac
       path: signed/mac
 
+  - task: DownloadPipelineArtifact@2
+    displayName: Download signed Linux packages
+    inputs:
+      artifact: signed-linux
+      path: signed/linux
+
   # Linux binary is not signed today so download from output artifacts
   - task: DownloadPipelineArtifact@2
     inputs:
@@ -106,6 +112,11 @@ steps:
   - ${{ if eq('true', parameters.UploadMsi) }}: 
     - pwsh: Copy-Item signed/win/azd-windows-amd64.msi release/
       displayName: Copy MSI to release
+
+  - pwsh: |
+      Copy-Item signed/linux/*.deb release/
+      Copy-Item signed/linux/*.rpm release/
+    displayName: Copy signed Linux packages to release
 
   - ${{ if eq('true', parameters.UploadInstaller) }}:
     - pwsh: |

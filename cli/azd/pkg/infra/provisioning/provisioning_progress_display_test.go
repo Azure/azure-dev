@@ -44,14 +44,6 @@ func (mock *mockResourceManager) GetResourceTypeDisplayName(
 	return string(resourceType), nil
 }
 
-func (mock *mockResourceManager) GetWebAppResourceTypeDisplayName(
-	ctx context.Context,
-	subscriptionId string,
-	resourceId string,
-) (string, error) {
-	return "", nil
-}
-
 func (mock *mockResourceManager) AddInProgressSubResourceOperation() {
 	mock.operations = append(mock.operations, &armresources.DeploymentOperation{
 		ID: to.Ptr("website-deploy-id"),

@@ -165,7 +165,8 @@ func showTypeFromLanguage(language project.ServiceLanguageKind) contracts.ShowTy
 // does not include the project file, we attempt to determine it by looking for a single .csproj/.vbproj/.fsproj file
 // in that directory. If there are multiple, an error is returned.
 func getFullPathToProjectForService(svc *project.ServiceConfig) (string, error) {
-	if svc.Language != "dotnet" {
+	language := svc.Language
+	if !(language == "dotnet" || language == "csharp" || language == "fsharp") {
 		return svc.Path(), nil
 	}
 

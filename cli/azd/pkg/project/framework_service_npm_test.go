@@ -88,7 +88,7 @@ func Test_NpmProject_Package(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	mockContext.CommandRunner.
 		When(func(args exec.RunArgs, command string) bool {
-			return strings.Contains(command, "npm run package")
+			return strings.Contains(command, "npm run build")
 		}).
 		RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 			runArgs = args
@@ -119,7 +119,7 @@ func Test_NpmProject_Package(t *testing.T) {
 	require.NotEmpty(t, result.PackagePath)
 	require.Equal(t, "npm", runArgs.Cmd)
 	require.Equal(t,
-		[]string{"run", "package", "--if-present"},
+		[]string{"run", "build", "--if-present"},
 		runArgs.Args,
 	)
 }

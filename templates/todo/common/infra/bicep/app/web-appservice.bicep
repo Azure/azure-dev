@@ -15,7 +15,7 @@ module web '../../../../../common/infra/bicep/core/host/appservice.bicep' = {
     applicationInsightsName: applicationInsightsName
     appServicePlanId: appServicePlanId
     runtimeName: 'node'
-    runtimeVersion: '16-lts'
+    runtimeVersion: '18-lts'
     tags: union(tags, { 'azd-service-name': serviceName })
   }
 }

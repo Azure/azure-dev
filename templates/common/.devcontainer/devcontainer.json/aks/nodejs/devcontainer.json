@@ -3,12 +3,11 @@
     "build": {
         "dockerfile": "Dockerfile",
         "args": {
-            "VARIANT": "bullseye"
+            "IMAGE": "javascript-node:16"
         }
     },
     "features": {
-        "ghcr.io/devcontainers/features/docker-from-docker:1": {
-            "version": "20.10"
+        "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {
         },
         "ghcr.io/devcontainers/features/node:1": {
             "version": "16",

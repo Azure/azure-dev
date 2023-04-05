@@ -9,10 +9,6 @@
     "features": {
         "ghcr.io/devcontainers/features/docker-outside-of-docker:1": {
         },
-        "ghcr.io/devcontainers/features/node:1": {
-            "version": "16",
-            "nodeGypDependencies": false
-        },
         "ghcr.io/devcontainers/features/kubectl-helm-minikube:1": {
             "version": "latest",
             "helm": "latest",

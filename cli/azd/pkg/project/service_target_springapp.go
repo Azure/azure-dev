@@ -18,6 +18,12 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
+// The Azure Spring Apps configuration options
+type SpringOptions struct {
+	// The deployment name of ASA app
+	DeploymentName string `yaml:"deploymentName"`
+}
+
 type springAppTarget struct {
 	env *environment.Environment
 	cli azcli.AzCli
@@ -78,12 +84,12 @@ func (st *springAppTarget) Deploy(
 				targetResource.ResourceGroupName(),
 				targetResource.ResourceName(),
 				serviceConfig.Name,
-				serviceConfig.DeploymentName,
+				serviceConfig.spring.DeploymentName,
 			)
 
 			if err != nil {
 				task.SetError(fmt.Errorf("Spring Apps '%s' deployment '%s' not exists",
-					serviceConfig.Name, serviceConfig.DeploymentName))
+					serviceConfig.Name, serviceConfig.spring.DeploymentName))
 				return
 			}
 
@@ -119,7 +125,7 @@ func (st *springAppTarget) Deploy(
 				targetResource.ResourceName(),
 				serviceConfig.Name,
 				*relativePath,
-				serviceConfig.DeploymentName,
+				serviceConfig.spring.DeploymentName,
 			)
 			if err != nil {
 				task.SetError(fmt.Errorf("deploying service %s: %w", serviceConfig.Name, err))

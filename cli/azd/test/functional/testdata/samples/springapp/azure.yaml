@@ -6,7 +6,8 @@ services:
     project: ./
     host: springapp
     language: java
-    deploymentName: default
+    spring:
+      deploymentName: default
 infra:
   provider: terraform
 

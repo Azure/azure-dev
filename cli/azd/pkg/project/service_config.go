@@ -29,7 +29,7 @@ type ServiceConfig struct {
 	// The optional K8S / AKS options
 	K8s AksOptions `yaml:"k8s"`
 	// The optional ASA options
-	DeploymentName string `yaml:"deploymentName"`
+	spring SpringOptions `yaml:"spring"`
 	// The infrastructure provisioning configuration
 	Infra provisioning.Options `yaml:"infra"`
 	// Hook configuration for service

@@ -20,7 +20,7 @@ if apiUrl != "":
     print("CORS with", origins[2] , "is allowed for local host debugging. If you want to change pin number, go to", Path(__file__))
 else:
     origins = ["*"]
-    print("Setting CORS = * (allow all origins) because env var REACT_APP_WEB_BASE_URL has not a value or is not set.")
+    print("Setting CORS to allow all origins because env var REACT_APP_WEB_BASE_URL has no value or is not set.")
 
 from .models import Settings, __beanie_models__
 

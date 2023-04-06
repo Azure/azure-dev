@@ -40,7 +40,7 @@ public class WebConfiguration implements WebMvcConfigurer {
                 } else {
                     registry.addMapping("/**").allowedOrigins("*").allowedMethods("*").allowedHeaders("*");
                     System.out.println(
-                            "Setting CORS = * (allow all origins) because env var REACT_APP_WEB_BASE_URL has not a value or is not set.");
+                            "Setting CORS to allow all origins because env var REACT_APP_WEB_BASE_URL has no value or is not set.");
                 }
 
             }

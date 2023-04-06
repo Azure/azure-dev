@@ -231,6 +231,12 @@ func Test_DockerProject_Build(t *testing.T) {
 		},
 		runArgs.Args,
 	)
+
+	dockerBuildResult, ok := result.Details.(*dockerBuildResult)
+	require.True(t, ok)
+	require.NotNil(t, dockerBuildResult)
+	require.Equal(t, "test-app-api", dockerBuildResult.ImageName)
+	require.NotEmpty(t, dockerBuildResult.ImageId)
 }
 
 func Test_DockerProject_Package(t *testing.T) {

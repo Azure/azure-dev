@@ -167,9 +167,15 @@ func Test_DotNetProject_Package(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, file3.Close())
 
+	var packageDest string
+
 	mockContext := mocks.NewMockContext(context.Background())
 	mockContext.CommandRunner.
 		When(func(args exec.RunArgs, command string) bool {
+			packageDest = args.Args[5]
+			err := os.WriteFile(filepath.Join(packageDest, "test.txt"), nil, osutil.PermissionFile)
+			require.NoError(t, err)
+
 			return strings.Contains(command, "dotnet publish")
 		}).
 		RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
@@ -197,7 +203,13 @@ func Test_DotNetProject_Package(t *testing.T) {
 	require.NotEmpty(t, result.PackagePath)
 	require.Equal(t, "dotnet", runArgs.Cmd)
 	require.Equal(t,
-		[]string{"publish", serviceConfig.RelativePath, "-c", "Release", "--output"},
-		runArgs.Args[:5],
+		[]string{"publish",
+			serviceConfig.RelativePath,
+			"-c",
+			"Release",
+			"--output",
+			packageDest,
+		},
+		runArgs.Args,
 	)
 }

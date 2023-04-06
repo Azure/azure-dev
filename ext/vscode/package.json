@@ -2,7 +2,7 @@
     "name": "azure-dev",
     "displayName": "Azure Developer CLI",
     "description": "Makes it easy to run, provision, and deploy Azure applications using the Azure Developer CLI",
-    "version": "0.5.0-alpha.1",
+    "version": "0.5.0",
     "license": "MIT",
     "icon": "resources/icon.png",
     "preview": true,
@@ -50,6 +50,11 @@
                 "category": "%azure-dev.commands_category%",
                 "command": "azure-dev.commands.cli.restore",
                 "title": "%azure-dev.commands.cli.restore.title%"
+            },
+            {
+                "category": "%azure-dev.commands_category%",
+                "command": "azure-dev.commands.cli.package",
+                "title": "%azure-dev.commands.cli.package.title%"
             },
             {
                 "category": "%azure-dev.commands_category%",
@@ -144,6 +149,11 @@
                 {
                     "when": "resourceFilename =~ /azure.yaml/i",
                     "command": "azure-dev.commands.cli.restore",
+                    "group": "azure-dev"
+                },
+                {
+                    "when": "resourceFilename =~ /azure.yaml/i",
+                    "command": "azure-dev.commands.cli.package",
                     "group": "azure-dev"
                 },
                 {
@@ -252,6 +262,11 @@
                     "group": "default@8"
                 },
                 {
+                    "command": "azure-dev.commands.cli.package",
+                    "when": "viewItem =~ /ms-azuretools.azure-dev.views.workspace.application/i",
+                    "group": "default@9"
+                },
+                {
                     "command": "azure-dev.commands.cli.env-new",
                     "when": "viewItem =~ /ms-azuretools.azure-dev.views.workspace.environments/i",
                     "group": "default@8"
@@ -287,9 +302,14 @@
                     "group": "default@12"
                 },
                 {
-                    "command": "azure-dev.commands.cli.deploy",
+                    "command": "azure-dev.commands.cli.package",
                     "when": "viewItem =~ /ms-azuretools.azure-dev.views.workspace.service(?!s)/i",
                     "group": "default@13"
+                },
+                {
+                    "command": "azure-dev.commands.cli.deploy",
+                    "when": "viewItem =~ /ms-azuretools.azure-dev.views.workspace.service(?!s)/i",
+                    "group": "default@14"
                 },
                 {
                     "command": "azure-dev.commands.cli.env-edit",

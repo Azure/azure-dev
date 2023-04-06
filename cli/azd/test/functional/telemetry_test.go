@@ -159,8 +159,13 @@ func Test_CLI_Telemetry_UsageData_EnvProjectLoad(t *testing.T) {
 			require.Contains(t, m, fields.SubscriptionIdKey)
 			require.Equal(t, getEnvSubscriptionId(t, dir, envName), m[fields.SubscriptionIdKey])
 
+			templateAndVersion := strings.Split(projConfig.Metadata.Template, "@")
+			require.Len(t, templateAndVersion, 2)
 			require.Contains(t, m, fields.ProjectTemplateIdKey)
-			require.Equal(t, fields.CaseInsensitiveHash(projConfig.Metadata.Template), m[fields.ProjectTemplateIdKey])
+			require.Equal(t, fields.CaseInsensitiveHash(templateAndVersion[0]), m[fields.ProjectTemplateIdKey])
+
+			require.Contains(t, m, fields.ProjectTemplateVersionKey)
+			require.Equal(t, fields.CaseInsensitiveHash(templateAndVersion[1]), m[fields.ProjectTemplateVersionKey])
 
 			require.Contains(t, m, fields.ProjectNameKey)
 			require.Equal(t, fields.CaseInsensitiveHash(projConfig.Name), m[fields.ProjectNameKey])

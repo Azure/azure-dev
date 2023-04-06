@@ -1,20 +1,38 @@
 # Release History
 
-## 0.7.0-beta.2 (Unreleased)
+## 0.8.0-beta.1 (2023-04-10)
 
 ### Features Added
 
 - [[#1715]](https://github.com/Azure/azure-dev/pull/1715) Adding feature alpha toggle:
   - Moving terraform provider as alpha feature. Use `azd config set alpha.terraform on` to have it enabled.
+- [[#1754]](https://github.com/Azure/azure-dev/pull/1754) Add `build` support for azd services.
+- [[#1833]](https://github.com/Azure/azure-dev/pull/1833) Deploy from existing package using `--from-package` flag.
 
 ### Breaking Changes
 
 - [[#1715]](https://github.com/Azure/azure-dev/pull/1715) Using `terraform` as provisioning provider will fail and require user to enable terraform running `azd config set alpha.terraform on`.
+- [[#1801]](https://github.com/Azure/azure-dev/pull/1801) Restructuring specific command flags.
+  - Remove azd init from azd up (flags and execution).
+  - azd deploy and azd restore now accepts a positional arg. azd deploy <web> instead of azd deploy --service <web>..
+  - Hide --no-progress flag from azd provision and azd up.
+  - Hide --output flag from all commands.
+- [[#1804]](https://github.com/Azure/azure-dev/pull/1804) Adjust command aliases.
+  - Add azd auth login and azd auth logout. Hide azd login and azd logout from the usage documentation.
+  - Hide infra create and infra delete, issuing warning messages. Move the core logic into provision.go and down.go respectively.
+- [[#1752]](https://github.com/Azure/azure-dev/pull/1752) Ask fewer questions during `init`.
 
 ### Bugs Fixed
 
 - [[#1734]](https://github.com/Azure/azure-dev/pull/1734) Fix setting `AZURE_PRINCIPAL_ID` on multi-tenant directory.
 - [[#1738]](https://github.com/Azure/azure-dev/pull/1738) Fix generating auth token on multi-tenant directory.
+- [[#1762]](https://github.com/Azure/azure-dev/pull/1762) Allow local files to be kept when running `init`.
+- [[#1764]](https://github.com/Azure/azure-dev/pull/1764) Enhance zip-deploy during build for:
+ - Python: Do not include virtual environments for python.
+ - Node: Update node modules detection to exclude it from build.
+- [[#1857]](https://github.com/Azure/azure-dev/pull/1857) Adds `package` command hooks to azd schema.
+- [[#1878]](https://github.com/Azure/azure-dev/pull/1878) Ensure default generated docker repo/tags are all lowercase.
+- [[#1875]](https://github.com/Azure/azure-dev/pull/1875) Fixes panic for `postpackage` hook errors.
 
 ### Other Changes
 

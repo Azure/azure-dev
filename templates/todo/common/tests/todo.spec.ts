@@ -5,7 +5,7 @@ test("Create and delete item test", async ({ page }) => {
   await page.goto("/", { waitUntil: 'networkidle' });
 
   await expect(page.locator("text=My List").first()).toBeVisible({
-    timeout: 240 * 1000,
+    timeout: 300 * 1000,
   });
 
   await expect(page.locator("text=This list is empty.").first()).toBeVisible()

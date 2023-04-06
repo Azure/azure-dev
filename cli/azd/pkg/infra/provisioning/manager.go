@@ -16,7 +16,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/spin"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
@@ -181,38 +180,20 @@ func (m *Manager) destroy(ctx context.Context, deployment *Deployment, options D
 
 	var destroyResult *DestroyResult
 
-	err := m.runAction(
-		ctx,
-		"Destroying Azure resources",
-		m.interactive,
-		func(ctx context.Context, spinner *spin.Spinner) error {
-			destroyTask := m.provider.Destroy(ctx, deployment, options)
+	destroyTask := m.provider.Destroy(ctx, deployment, options)
 
-			go func() {
-				for progress := range destroyTask.Progress() {
-					m.updateSpinnerTitle(spinner, progress.Message)
-				}
-			}()
+	go func() {
+		for progress := range destroyTask.Progress() {
+			log.Println(progress.Message)
+		}
+	}()
 
-			go m.monitorInteraction(spinner, destroyTask.Interactive())
-
-			result, err := destroyTask.Await()
-			if err != nil {
-				return err
-			}
-
-			destroyResult = result
-
-			return nil
-		},
-	)
-
+	result, err := destroyTask.Await()
 	if err != nil {
 		return nil, fmt.Errorf("error destroying Azure resources: %w", err)
 	}
 
-	m.console.Message(ctx, output.WithSuccessFormat("\nDestroyed Azure resources"))
-
+	destroyResult = result
 	return destroyResult, nil
 }
 

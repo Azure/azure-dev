@@ -14,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
@@ -97,28 +98,32 @@ func newDownAction(
 }
 
 func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	infraManager, err := provisioning.NewManager(
-		ctx,
-		a.env,
-		a.projectConfig.Path,
-		a.projectConfig.Infra,
-		a.console.IsUnformatted(),
-		a.azCli,
-		a.console,
-		a.commandRunner,
-		a.accountManager,
-		a.userProfileService,
-		a.subResolver,
-		a.alphaFeatureManager,
-	)
-
+	// silent manager for running Plan()
+	infraManager, err := createProvisioningManager(ctx, a, &project.MutedConsole{ParentConsole: a.console})
 	if err != nil {
 		return nil, fmt.Errorf("creating provisioning manager: %w", err)
 	}
 
+	// Command title
+	a.console.MessageUxItem(ctx, &ux.MessageTitle{
+		Title:     "Deleting all resources and deployed code on Azure (azd down)",
+		TitleNote: "Local application code is not deleted when running 'azd down'.",
+	})
+
+	spinnerMsg := "Fetching resources groups."
+	a.console.ShowSpinner(ctx, spinnerMsg, input.Step)
+
 	deploymentPlan, err := infraManager.Plan(ctx)
+	a.console.StopSpinner(ctx, spinnerMsg, input.GetStepResultFormat(err))
+	a.console.Message(ctx, "")
 	if err != nil {
 		return nil, fmt.Errorf("planning destroy: %w", err)
+	}
+
+	// re-create manager with output capabilities to handle output
+	infraManager, err = createProvisioningManager(ctx, a, a.console)
+	if err != nil {
+		return nil, fmt.Errorf("creating provisioning manager: %w", err)
 	}
 
 	destroyOptions := provisioning.NewDestroyOptions(a.flags.forceDelete, a.flags.purgeDelete)
@@ -138,6 +143,24 @@ func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	return nil, nil
+}
+
+func createProvisioningManager(ctx context.Context, a *downAction, console input.Console) (*provisioning.Manager, error) {
+	infraManager, err := provisioning.NewManager(
+		ctx,
+		a.env,
+		a.projectConfig.Path,
+		a.projectConfig.Infra,
+		a.console.IsUnformatted(),
+		a.azCli,
+		console,
+		a.commandRunner,
+		a.accountManager,
+		a.userProfileService,
+		a.subResolver,
+		a.alphaFeatureManager,
+	)
+	return infraManager, err
 }
 
 func getCmdDownHelpDescription(*cobra.Command) string {

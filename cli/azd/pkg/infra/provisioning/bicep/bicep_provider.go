@@ -381,30 +381,25 @@ func (p *BicepProvider) destroyResourceGroups(
 	resourceCount int,
 ) error {
 	if !options.Force() {
-		err := asyncContext.Interact(func() error {
-			confirmDestroy, err := p.console.Confirm(ctx, input.ConsoleOptions{
-				Message: fmt.Sprintf(
-					"This will delete %d resources, are you sure you want to continue?",
-					resourceCount,
-				),
-				DefaultValue: false,
-			})
-
-			if err != nil {
-				return fmt.Errorf("prompting for delete confirmation: %w", err)
-			}
-
-			if !confirmDestroy {
-				return errors.New("user denied delete confirmation")
-			}
-
-			return nil
+		confirmDestroy, err := p.console.Confirm(ctx, input.ConsoleOptions{
+			Message: fmt.Sprintf(
+				"This will %s %d resources, are you sure you want to continue?",
+				output.WithErrorFormat("delete"),
+				resourceCount,
+			),
+			DefaultValue: false,
 		})
 
 		if err != nil {
-			return err
+			return fmt.Errorf("prompting for delete confirmation: %w", err)
+		}
+
+		if !confirmDestroy {
+			return errors.New("user denied delete confirmation")
 		}
 	}
+
+	p.console.Message(ctx, output.WithGrayFormat("Deleting your resources can take some time.\n"))
 
 	for resourceGroup := range groupedResources {
 		message := fmt.Sprintf(

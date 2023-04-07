@@ -26,8 +26,6 @@ export const createApp = async (): Promise<Express> => {
                 "http://localhost:3000/",
                 apiUrl]
         }));
-        const filePath:string = __filename;
-        console.log("CORS with "+origin[2]+" is allowed for local host debugging. If you want to change pin number, go to "+filePath);
     }
     else{
         app.use(cors());

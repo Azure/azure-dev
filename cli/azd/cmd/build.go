@@ -111,8 +111,8 @@ func (ba *buildAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			return nil, err
 		}
 
-		restoreOptions := &middleware.Options{CommandPath: "restore", Args: restoreAction.args}
-		_, err = ba.middlewareRunner.RunChildAction(ctx, restoreOptions, restoreAction)
+		buildOptions := &middleware.Options{CommandPath: "restore"}
+		_, err = ba.middlewareRunner.RunChildAction(ctx, buildOptions, restoreAction)
 		if err != nil {
 			return nil, err
 		}

@@ -24,7 +24,7 @@ public class WebConfiguration implements WebMvcConfigurer {
             public void addCorsMappings(CorsRegistry registry) {
                 String apiUrl = System.getenv("REACT_APP_WEB_BASE_URL");
 
-                if (apiUrl != "") {
+                if (apiUrl != null) {
                     String localHostUrl = "http://localhost:3000/";
                     registry.addMapping("/**").allowedOrigins("https://portal.azure.com",
                             "https://ms.portal.azure.com", localHostUrl,

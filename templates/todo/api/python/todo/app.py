@@ -12,7 +12,7 @@ from pathlib import Path
 
 # CORS origins
 apiUrl = os.environ.get('REACT_APP_WEB_BASE_URL')
-if apiUrl != "":
+if apiUrl is not None:
     origins = ["https://portal.azure.com",
                "https://ms.portal.azure.com",
                "http://localhost:3000/",

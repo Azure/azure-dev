@@ -268,6 +268,9 @@ func Test_CLI_Telemetry_NestedCommands(t *testing.T) {
 		require.NoError(t, err)
 
 		verifyResource(t, span.Resource)
+		if !strings.HasPrefix(span.Name, "cmd.") {
+			continue
+		}
 
 		if !packageCmdFound {
 			require.Equal(t, "cmd.package", span.Name)

@@ -285,6 +285,7 @@ func Test_CLI_ProjectIsNeeded(t *testing.T) {
 	}
 }
 
+// Verifies commands that requires `azd provision` to be successfully run beforehand correctly errors out.
 func Test_CLI_ProvisionIsNeeded(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()

@@ -23,4 +23,5 @@ resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2022-10
   name: logAnalyticsWorkspaceName
 }
 
+output defaultDomain string = containerAppsEnvironment.properties.defaultDomain
 output name string = containerAppsEnvironment.name

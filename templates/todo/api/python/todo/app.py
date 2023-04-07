@@ -7,11 +7,20 @@ from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
 from opentelemetry.sdk.resources import SERVICE_NAME, Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
+import os
+from pathlib import Path
 
 # CORS origins
-origins = [
-    "*",
-]
+apiUrl = os.environ.get('REACT_APP_WEB_BASE_URL')
+if apiUrl is not None:
+    origins = ["https://portal.azure.com",
+               "https://ms.portal.azure.com",
+               "http://localhost:3000/",
+               apiUrl]
+    print("CORS with", origins[2] , "is allowed for local host debugging. If you want to change pin number, go to", Path(__file__))
+else:
+    origins = ["*"]
+    print("Setting CORS to allow all origins because env var REACT_APP_WEB_BASE_URL has no value or is not set.")
 
 from .models import Settings, __beanie_models__
 

@@ -71,6 +71,7 @@ resource containerRegistry 'Microsoft.ContainerRegistry/registries@2022-02-01-pr
   name: containerRegistryName
 }
 
+output defaultDomain string = containerAppsEnvironment.properties.defaultDomain
 output identityPrincipalId string = managedIdentity ? app.identity.principalId : ''
 output imageName string = imageName
 output name string = app.name

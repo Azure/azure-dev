@@ -19,6 +19,7 @@ export const createApp = async (): Promise<Express> => {
     app.use(express.json());
 
     const apiUrl:string|undefined = process.env.REACT_APP_WEB_BASE_URL;
+    const localhost:string = "http://localhost:3000/";
     if ( typeof apiUrl !== "undefined"){
         app.use(cors({
             origin: ["https://portal.azure.com",
@@ -26,8 +27,8 @@ export const createApp = async (): Promise<Express> => {
                 "http://localhost:3000/",
                 apiUrl]
         }));
-        // __filename caused fails when interact with azure portal. hardcode file name here.
-        console.log("CORS with "+origin[2]+" is allowed for local host debugging. If you want to change pin number, go to app.ts.");
+        const filePath:string = __filename;
+        console.log("CORS with "+localhost+" is allowed for local host debugging. If you want to change pin number, go to "+filePath);
     }
     else{
         app.use(cors());

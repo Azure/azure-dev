@@ -45,7 +45,7 @@ func (cli *azCli) GetAppConfig(
 	}, nil
 }
 
-func (cli *azCli) PurgeAppConfig(ctx context.Context, subscriptionId string, configName string, location string) error {
+func (cli *azCli) purgeAppConfig(ctx context.Context, subscriptionId string, configName string, location string) error {
 	appConfigStoresClient, err := cli.createAppConfigClient(ctx, subscriptionId)
 	if err != nil {
 		return err

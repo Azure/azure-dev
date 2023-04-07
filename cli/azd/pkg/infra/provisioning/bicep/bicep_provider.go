@@ -35,6 +35,7 @@ import (
 	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
@@ -302,25 +303,24 @@ func (p *BicepProvider) Destroy(
 			}
 
 			keyVaultsPurge := itemToPurge{
-				resourceType: "Key Vaults",
+				resourceType: "Key Vault(s)",
 				count:        len(keyVaults),
 				purge: func() error {
-					return p.purgeKeyVaults(ctx, asyncContext, keyVaults, options)
+					return p.purgeKeyVaults(ctx, keyVaults, options)
 				},
 			}
-
 			appConfigsPurge := itemToPurge{
-				resourceType: "App Configurations",
+				resourceType: "App Configuration(s)",
 				count:        len(appConfigs),
 				purge: func() error {
-					return p.purgeAppConfigs(ctx, asyncContext, appConfigs, options)
+					return p.purgeAppConfigs(ctx, appConfigs, options)
 				},
 			}
 			aPIManagement := itemToPurge{
-				resourceType: "API Managements",
+				resourceType: "API Management(s)",
 				count:        len(apiManagements),
 				purge: func() error {
-					return p.purgeAPIManagement(ctx, asyncContext, apiManagements, options)
+					return p.purgeAPIManagement(ctx, apiManagements, options)
 				},
 			}
 			purgeItem := []itemToPurge{keyVaultsPurge, appConfigsPurge, aPIManagement}
@@ -330,7 +330,7 @@ func (p *BicepProvider) Destroy(
 				return
 			}
 
-			if err := p.deleteDeployment(ctx, asyncContext); err != nil {
+			if err := p.deleteDeployment(ctx); err != nil {
 				asyncContext.SetError(fmt.Errorf("deleting subscription deployment: %w", err))
 				return
 			}
@@ -402,28 +402,36 @@ func (p *BicepProvider) destroyResourceGroups(
 	p.console.Message(ctx, output.WithGrayFormat("Deleting your resources can take some time.\n"))
 
 	for resourceGroup := range groupedResources {
-		message := fmt.Sprintf(
-			"%s resource group %s",
-			output.WithErrorFormat("Deleting"),
+		message := fmt.Sprintf("Deleting resource group: %s",
 			output.WithHighLightFormat(resourceGroup),
 		)
-		asyncContext.SetProgress(&DestroyProgress{Message: message, Timestamp: time.Now()})
+		p.console.ShowSpinner(ctx, message, input.Step)
+		//err := p.azCli.DeleteResourceGroup(ctx, p.env.GetSubscriptionId(), resourceGroup)
+		var err error = nil
+		time.Sleep(time.Second * 20)
 
-		if err := p.azCli.DeleteResourceGroup(ctx, p.env.GetSubscriptionId(), resourceGroup); err != nil {
+		p.console.StopSpinner(ctx, message, input.GetStepResultFormat(err))
+		if err != nil {
 			return err
 		}
+	}
+	// empty line at the end of all resource group deletion
+	p.console.Message(ctx, "")
+	return nil
+}
 
-		p.console.Message(
-			ctx,
-			fmt.Sprintf(
-				"%s resource group %s",
-				output.WithErrorFormat("Deleted"),
-				output.WithHighLightFormat(resourceGroup),
-			),
-		)
+func itemsCountAsText(items []itemToPurge) string {
+	count := len(items)
+	if count < 1 {
+		log.Panic("calling itemsCountAsText() with empty list.")
 	}
 
-	return nil
+	var tokens []string
+	for _, item := range items {
+		tokens = append(tokens, fmt.Sprintf("%d %s", item.count, item.resourceType))
+	}
+
+	return ux.ItemsAsText(tokens)
 }
 
 func (p *BicepProvider) purgeItems(
@@ -432,47 +440,39 @@ func (p *BicepProvider) purgeItems(
 	items []itemToPurge,
 	options DestroyOptions,
 ) error {
-	if len(items) > 0 && !options.Purge() {
-		var itemString string
-		var itemsWarning string
-		for _, v := range items {
-			if v.count > 0 {
-				if itemString != "" {
-					itemString = itemString + "/" + v.resourceType
-				} else {
-					itemString = v.resourceType
-				}
-				itemsWarning = itemsWarning + fmt.Sprintf("\n				%d %s", v.count, v.resourceType)
-			}
-		}
+	if len(items) == 0 {
+		// nothing to purge
+		return nil
+	}
 
-		if len(itemsWarning) < 1 {
-			return nil
-		}
+	if !options.Purge() {
 
-		itemsWarning = "\n\nThis operation will delete:" + itemsWarning + fmt.Sprintf("\nThese %s have soft delete enabled "+
-			"allowing them to be recovered for a period "+
-			"of time after deletion. During this period, their names may not be reused.\n"+
-			"You can use argument --purge to skip this confirmation.\n\n", itemString)
-
-		p.console.Message(ctx, output.WithWarningFormat(itemsWarning))
+		p.console.MessageUxItem(ctx, &ux.WarningMessage{
+			Description: fmt.Sprintf(
+				"The following operation will delete %s.",
+				itemsCountAsText(items),
+			),
+		})
+		p.console.Message(ctx, fmt.Sprintf(
+			"These resources have soft delete enabled allowing them to be recovered for a period or time "+
+				"after deletion. During this period, their names may not be reused. In the future, you cant use "+
+				"the argument %s to skip this confirmation", output.WithHighLightFormat("--purge")))
 
 		err := asyncContext.Interact(func() error {
 			purgeItems, err := p.console.Confirm(ctx, input.ConsoleOptions{
 				Message: fmt.Sprintf(
-					"Would you like to %s delete these %s instead, allowing their names to be reused?",
-					output.WithErrorFormat("permanently"),
-					itemString,
+					"Would you like to %s these resources instead, allowing their names to be reused?",
+					output.WithErrorFormat("permanently delete"),
 				),
 				DefaultValue: false,
 			})
 
 			if err != nil {
-				return fmt.Errorf("prompting for %s confirmation: %w", itemString, err)
+				return fmt.Errorf("prompting for confirmation: %w", err)
 			}
 
 			if !purgeItems {
-				return fmt.Errorf("user denied %s confirmation", itemString)
+				return fmt.Errorf("user denied confirmation")
 			}
 
 			return nil
@@ -548,33 +548,16 @@ func (p *BicepProvider) getKeyVaultsToPurge(
 //nolint:lll
 func (p *BicepProvider) purgeKeyVaults(
 	ctx context.Context,
-	asyncContext *async.InteractiveTaskContextWithProgress[*DestroyResult, *DestroyProgress],
 	keyVaults []*azcli.AzCliKeyVault,
 	options DestroyOptions,
 ) error {
 	for _, keyVault := range keyVaults {
-		progressReport := DestroyProgress{
-			Timestamp: time.Now(),
-			Message: fmt.Sprintf(
-				"%s key vault %s",
-				output.WithErrorFormat("Purging"),
-				output.WithHighLightFormat(keyVault.Name),
-			),
-		}
-
-		asyncContext.SetProgress(&progressReport)
-
-		err := p.azCli.PurgeKeyVault(ctx, azure.SubscriptionFromRID(keyVault.Id), keyVault.Name, keyVault.Location)
+		err := p.azCli.PurgeResource(
+			ctx, azure.SubscriptionFromRID(keyVault.Id), keyVault.Name, azcli.KeyVault, keyVault.Location)
 		if err != nil {
 			return fmt.Errorf("purging key vault %s: %w", keyVault.Name, err)
 		}
-
-		p.console.Message(
-			ctx,
-			fmt.Sprintf("%s key vault %s", output.WithErrorFormat("Purged"), output.WithHighLightFormat(keyVault.Name)),
-		)
 	}
-
 	return nil
 }
 
@@ -644,35 +627,15 @@ func (p *BicepProvider) getApiManagementsToPurge(
 // on this feature.
 func (p *BicepProvider) purgeAppConfigs(
 	ctx context.Context,
-	asyncContext *async.InteractiveTaskContextWithProgress[*DestroyResult, *DestroyProgress],
 	appConfigs []*azcli.AzCliAppConfig,
 	options DestroyOptions,
 ) error {
 	for _, appConfig := range appConfigs {
-		progressReport := DestroyProgress{
-			Timestamp: time.Now(),
-			Message: fmt.Sprintf(
-				"%s app configuration %s",
-				output.WithErrorFormat("Purging"),
-				output.WithHighLightFormat(appConfig.Name),
-			),
-		}
-
-		asyncContext.SetProgress(&progressReport)
-
-		err := p.azCli.PurgeAppConfig(ctx, azure.SubscriptionFromRID(appConfig.Id), appConfig.Name, appConfig.Location)
+		err := p.azCli.PurgeResource(
+			ctx, azure.SubscriptionFromRID(appConfig.Id), appConfig.Name, azcli.AppConfig, appConfig.Location)
 		if err != nil {
 			return fmt.Errorf("purging app configuration %s: %w", appConfig.Name, err)
 		}
-
-		p.console.Message(
-			ctx,
-			fmt.Sprintf(
-				"%s app configuration %s",
-				output.WithErrorFormat("Purged"),
-				output.WithHighLightFormat(appConfig.Name),
-			),
-		)
 	}
 
 	return nil
@@ -680,58 +643,25 @@ func (p *BicepProvider) purgeAppConfigs(
 
 func (p *BicepProvider) purgeAPIManagement(
 	ctx context.Context,
-	asyncContext *async.InteractiveTaskContextWithProgress[*DestroyResult, *DestroyProgress],
 	apims []*azcli.AzCliApim,
 	options DestroyOptions,
 ) error {
 	for _, apim := range apims {
-		progressReport := DestroyProgress{
-			Timestamp: time.Now(),
-			Message: fmt.Sprintf(
-				"%s api management service %s",
-				output.WithErrorFormat("Purging"),
-				output.WithHighLightFormat(apim.Name),
-			),
-		}
-
-		asyncContext.SetProgress(&progressReport)
-
-		err := p.azCli.PurgeApim(ctx, azure.SubscriptionFromRID(apim.Id), apim.Name, apim.Location)
+		err := p.azCli.PurgeResource(ctx, azure.SubscriptionFromRID(apim.Id), apim.Name, azcli.Apim, apim.Location)
 		if err != nil {
 			return fmt.Errorf("purging api management service %s: %w", apim.Name, err)
 		}
-
-		p.console.Message(
-			ctx,
-			fmt.Sprintf(
-				"%s api management service %s",
-				output.WithErrorFormat("Purged"),
-				output.WithHighLightFormat(apim.Name),
-			),
-		)
 	}
 
 	return nil
 }
 
 // Deletes the azure deployment
-func (p *BicepProvider) deleteDeployment(
-	ctx context.Context,
-	asyncContext *async.InteractiveTaskContextWithProgress[*DestroyResult, *DestroyProgress],
-) error {
-	asyncContext.SetProgress(&DestroyProgress{Message: "Deleting deployment", Timestamp: time.Now()})
-
+func (p *BicepProvider) deleteDeployment(ctx context.Context) error {
 	deploymentName := p.env.GetEnvName()
-
 	if err := p.azCli.DeleteSubscriptionDeployment(ctx, p.env.GetSubscriptionId(), deploymentName); err != nil {
 		return err
 	}
-
-	p.console.Message(
-		ctx,
-		fmt.Sprintf("%s deployment %s", output.WithErrorFormat("Deleted"), output.WithHighLightFormat(deploymentName)),
-	)
-
 	return nil
 }
 

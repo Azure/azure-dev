@@ -66,8 +66,6 @@ type packageAction struct {
 	console        input.Console
 	formatter      output.Formatter
 	writer         io.Writer
-	// if true, (BETA) is omitted from the title message
-	omitBetaInTitle bool
 }
 
 func newPackageAction(
@@ -98,14 +96,9 @@ type PackageResult struct {
 }
 
 func (pa *packageAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	title := fmt.Sprintf("Packaging services (azd package) %s", output.WithWarningFormat("(Beta)"))
-	if pa.omitBetaInTitle {
-		title = "Packaging services (azd package)"
-	}
-
 	// Command title
 	pa.console.MessageUxItem(ctx, &ux.MessageTitle{
-		Title: title,
+		Title: "Packaging services (azd package)",
 	})
 
 	targetServiceName := ""

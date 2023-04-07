@@ -109,7 +109,6 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	packageAction.omitBetaInTitle = true
 	packageOptions := &middleware.Options{CommandPath: "package"}
 	_, err = u.runner.RunChildAction(ctx, packageOptions, packageAction)
 	if err != nil {

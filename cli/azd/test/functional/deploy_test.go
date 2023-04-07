@@ -30,6 +30,10 @@ func Test_CLI_Deploy_Err_WorkingDirectory(t *testing.T) {
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit("testenv"), "init")
 	require.NoError(t, err)
 
+	// Otherwise, deploy with 'infrastructure has not been provisioned. Please run `azd provision`'
+	_, err = cli.RunCommand(ctx, "env", "set", "AZURE_SUBSCRIPTION_ID", testSubscriptionId)
+	require.NoError(t, err)
+
 	// cd infra
 	err = os.MkdirAll(filepath.Join(dir, "infra"), osutil.PermissionDirectory)
 	require.NoError(t, err)

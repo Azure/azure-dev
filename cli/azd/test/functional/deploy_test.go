@@ -40,8 +40,8 @@ func Test_CLI_Deploy_Err_WorkingDirectory(t *testing.T) {
 	require.Contains(t, result.Stdout, "current working directory")
 }
 
-// test for azd deploy, azd deploy <service>
-func Test_CLI_DeployInvalidName(t *testing.T) {
+// test for azd deploy with invalid flag options
+func Test_CLI_DeployInvalidFlags(t *testing.T) {
 	// running this test in parallel is ok as it uses a t.TempDir()
 	t.Parallel()
 	ctx, cancel := newTestContext(t)
@@ -63,6 +63,24 @@ func Test_CLI_DeployInvalidName(t *testing.T) {
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
 	require.NoError(t, err)
 
-	_, err = cli.RunCommand(ctx, "deploy", "badServiceName")
+	// Otherwise, deploy with 'infrastructure has not been provisioned. Please run `azd provision`'
+	_, err = cli.RunCommand(ctx, "env", "set", "AZURE_SUBSCRIPTION_ID", testSubscriptionId)
+	require.NoError(t, err)
+
+	// invalid service name
+	res, err := cli.RunCommand(ctx, "deploy", "badServiceName")
 	require.Error(t, err)
+	require.Contains(t, res.Stdout, "badServiceName")
+
+	// --service with --all
+	res, err = cli.RunCommand(ctx, "deploy", "web", "--all")
+	require.Error(t, err)
+	require.Contains(t, res.Stdout, "--all")
+	require.Contains(t, res.Stdout, "<service>")
+
+	// --from-package with --all
+	res, err = cli.RunCommand(ctx, "deploy", "--all", "--from-package", "output")
+	require.Error(t, err)
+	require.Contains(t, res.Stdout, "--all")
+	require.Contains(t, res.Stdout, "--from-package")
 }

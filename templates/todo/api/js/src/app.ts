@@ -18,19 +18,20 @@ export const createApp = async (): Promise<Express> => {
     // Middleware
     app.use(express.json());
 
-    const apiUrl:string|undefined = process.env.REACT_APP_WEB_BASE_URL;
-    const localhost:string = "http://localhost:3000/";
-    if ( typeof apiUrl !== "undefined"){
+    const apiUrl = process.env.REACT_APP_WEB_BASE_URL;
+    const localhost = "http://localhost:3000/";
+    if (apiUrl) {
         app.use(cors({
-            origin: ["https://portal.azure.com",
+            origin: [
+                "https://portal.azure.com",
                 "https://ms.portal.azure.com",
                 "http://localhost:3000/",
-                apiUrl]
+                apiUrl,
+            ]
         }));
-        const filePath:string = __filename;
-        console.log("CORS with "+localhost+" is allowed for local host debugging. If you want to change pin number, go to "+filePath);
+        console.log(`CORS with ${localhost} is allowed for local host debugging. If you want to change port number, go to ${__filename}`);
     }
-    else{
+    else {
         app.use(cors());
         console.log("Setting CORS to allow all origins because env var REACT_APP_WEB_BASE_URL has no value or is not set.");
     }

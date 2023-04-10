@@ -1,5 +1,15 @@
 # Release History
 
+## 0.8.0-beta.2 (Unreleased)
+
+### Features Added
+
+### Breaking Changes
+
+### Bugs Fixed
+
+### Other Changes
+
 ## 0.8.0-beta.1 (2023-04-10)
 
 ### Features Added

@@ -6,6 +6,7 @@ package python
 import (
 	"context"
 	"fmt"
+	osexec "os/exec"
 	"path"
 	"path/filepath"
 	"runtime"
@@ -120,6 +121,9 @@ func (cli *PythonCli) CreateVirtualEnv(ctx context.Context, workingDir, name str
 
 func pythonExe() string {
 	if runtime.GOOS == "windows" {
+		if _, err := osexec.LookPath("py"); err != nil {
+			return "python"
+		}
 		return "py" // https://peps.python.org/pep-0397
 	} else {
 		return "python3"

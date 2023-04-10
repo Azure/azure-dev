@@ -165,28 +165,6 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		targetServiceName = da.args[0]
 	}
 
-	// Only run package action if --from-package is specified
-	if da.flags.fromPackage == "" {
-		packageAction, err := da.packageActionInitializer()
-		if err != nil {
-			return nil, err
-		}
-
-		packageAction.flags.all = da.flags.all
-		packageAction.args = []string{targetServiceName}
-
-		packageOptions := &middleware.Options{CommandPath: "package"}
-		_, err = da.middlewareRunner.RunChildAction(ctx, packageOptions, packageAction)
-		if err != nil {
-			return nil, err
-		}
-	}
-
-	// Command title
-	da.console.MessageUxItem(ctx, &ux.MessageTitle{
-		Title: "Deploying services (azd deploy)",
-	})
-
 	serviceNameWarningCheck(da.console, da.flags.serviceName, "deploy")
 
 	if da.env.GetSubscriptionId() == "" {
@@ -207,8 +185,15 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		return nil, err
 	}
 
-	if da.flags.fromPackage != "" && (targetServiceName == "" || da.flags.all) {
-		return nil, errors.New("cannot use --from-package with --all or without specifying a service")
+	if da.flags.all && da.flags.fromPackage != "" {
+		return nil, errors.New(
+			"'--from-package' cannot be specified when '--all' is set. Specify a specific service by passing a <service>")
+	}
+
+	if targetServiceName == "" && da.flags.fromPackage != "" {
+		return nil, errors.New(
+			//nolint:lll
+			"'--from-package' cannot be specified when deploying all services. Specify a specific service by passing a <service>")
 	}
 
 	if err := da.projectManager.Initialize(ctx, da.projectConfig); err != nil {
@@ -220,6 +205,11 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	}); err != nil {
 		return nil, err
 	}
+
+	// Command title
+	da.console.MessageUxItem(ctx, &ux.MessageTitle{
+		Title: "Deploying services (azd deploy)",
+	})
 
 	deployResults := map[string]*project.ServiceDeployResult{}
 
@@ -235,14 +225,30 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 			continue
 		}
 
-		var packageOutput *project.ServicePackageResult
+		var packageResult *project.ServicePackageResult
 		if da.flags.fromPackage != "" {
-			packageOutput = &project.ServicePackageResult{
+			// --from-package set, skip packaging
+			packageResult = &project.ServicePackageResult{
 				PackagePath: da.flags.fromPackage,
+			}
+		} else {
+			//  --from-package not set, package the application
+			packageTask := da.serviceManager.Package(ctx, svc, nil)
+			go func() {
+				for packageProgress := range packageTask.Progress() {
+					progressMessage := fmt.Sprintf("Deploying service %s (%s)", svc.Name, packageProgress.Message)
+					da.console.ShowSpinner(ctx, progressMessage, input.Step)
+				}
+			}()
+
+			packageResult, err = packageTask.Await()
+			if err != nil {
+				da.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+				return nil, err
 			}
 		}
 
-		deployTask := da.serviceManager.Deploy(ctx, svc, packageOutput)
+		deployTask := da.serviceManager.Deploy(ctx, svc, packageResult)
 		go func() {
 			for deployProgress := range deployTask.Progress() {
 				progressMessage := fmt.Sprintf("Deploying service %s (%s)", svc.Name, deployProgress.Message)
@@ -259,7 +265,7 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		da.console.StopSpinner(ctx, stepMessage, input.StepDone)
 		deployResults[svc.Name] = deployResult
 
-		// report build outputs
+		// report deploy outputs
 		da.console.MessageUxItem(ctx, deployResult)
 	}
 

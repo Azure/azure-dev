@@ -29,7 +29,7 @@ export const createApp = async (): Promise<Express> => {
                 apiUrl,
             ]
         }));
-        console.log(`CORS with ${localhost} is allowed for local host debugging. If you want to change pin number, go to ${__filename}`);
+        console.log(`CORS with ${localhost} is allowed for local host debugging. If you want to change port number, go to ${__filename}`);
     }
     else {
         app.use(cors());

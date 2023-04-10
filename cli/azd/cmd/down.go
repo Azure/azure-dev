@@ -142,7 +142,11 @@ func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, fmt.Errorf("saving environment: %w", err)
 	}
 
-	return nil, nil
+	return &actions.ActionResult{
+		Message: &actions.ResultMessage{
+			Header: "Your Azure resources have been destroyed.",
+		},
+	}, nil
 }
 
 func createProvisioningManager(ctx context.Context, a *downAction, console input.Console) (*provisioning.Manager, error) {

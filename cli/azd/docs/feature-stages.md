@@ -1,6 +1,6 @@
 # Alpha, Beta and Stable Feature Stages
 
-As of `0.8.0-beta.1`, each Azure Developer CLI feature has been evaluated and assigned to a feature stage. You can read more about the definition of each phase and the graduation criteria by visiting [aka.ms/azd](aka.ms/azd). Here is a list that includes each feature/command supported by `azd` and its current stage.
+As of `0.8.0-beta.1`, each Azure Developer CLI feature has been evaluated and assigned to a feature stage. You can read more about the definition of each phase and the graduation criteria by visiting [aka.ms/azd](https://aka.ms/azd). Here is a list that includes each feature/command supported by `azd` and its current stage.
 
 | **Category** | **Feature**              | **Stage** |
 | ------------ | ------------------------ | --------- |

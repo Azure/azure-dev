@@ -23,7 +23,7 @@ type SpringService interface {
 		resourceGroupName string,
 		instanceName string,
 		appName string,
-	) (*AzCliSpringAppProperties, error)
+	) (*SpringAppProperties, error)
 	// Deploy jar artifact to ASA app deployment
 	DeploySpringAppArtifact(
 		ctx context.Context,
@@ -72,14 +72,14 @@ func NewSpringService(
 	}
 }
 
-type AzCliSpringAppProperties struct {
+type SpringAppProperties struct {
 	Fqdn []string
 }
 
 func (ss *springService) GetSpringAppProperties(
 	ctx context.Context,
 	subscriptionId, resourceGroup, instanceName, appName string,
-) (*AzCliSpringAppProperties, error) {
+) (*SpringAppProperties, error) {
 	client, err := ss.createSpringAppClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
@@ -90,7 +90,7 @@ func (ss *springService) GetSpringAppProperties(
 		return nil, fmt.Errorf("failed retrieving spring app properties: %w", err)
 	}
 
-	return &AzCliSpringAppProperties{
+	return &SpringAppProperties{
 		Fqdn: []string{*springApp.Properties.Fqdn},
 	}, nil
 }
@@ -99,7 +99,6 @@ func (ss *springService) UploadSpringArtifact(
 	ctx context.Context,
 	subscriptionId, resourceGroup, instanceName, appName, artifactPath string,
 ) (*string, error) {
-
 	credential, err := ss.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
 	if err != nil {
 		return nil, err

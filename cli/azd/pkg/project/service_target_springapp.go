@@ -172,7 +172,7 @@ func (st *springAppTarget) Endpoints(
 	serviceConfig *ServiceConfig,
 	targetResource *environment.TargetResource,
 ) ([]string, error) {
-	appServiceProperties, err := st.springService.GetSpringAppProperties(
+	springAppProperties, err := st.springService.GetSpringAppProperties(
 		ctx,
 		targetResource.SubscriptionId(),
 		targetResource.ResourceGroupName(),
@@ -183,8 +183,8 @@ func (st *springAppTarget) Endpoints(
 		return nil, fmt.Errorf("fetching service properties: %w", err)
 	}
 
-	endpoints := make([]string, len(appServiceProperties.Fqdn))
-	for idx, fqdn := range appServiceProperties.Fqdn {
+	endpoints := make([]string, len(springAppProperties.Fqdn))
+	for idx, fqdn := range springAppProperties.Fqdn {
 		endpoints[idx] = fmt.Sprintf("https://%s/", st.extractEndpoint(fqdn, serviceConfig.Name))
 	}
 

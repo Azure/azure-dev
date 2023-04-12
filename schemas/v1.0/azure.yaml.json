@@ -211,7 +211,7 @@
                             "properties": {
                                 "dist": {
                                     "type": "string",
-                                    "description": "The CLI will use the JAR file in this directory to create the deployment artifact (ZIP file). If omitted, the CLI will detect the output directory based on the build system in-use."
+                                    "description": "Optional. The path to the directory containing a single Java archive file (.jar/.ear/.war), or the path to the specific Java archive file to be included in the deployment artifact. If omitted, a smart default is chosen based on the configured language."
                                 }
                             }
                         }
@@ -220,7 +220,7 @@
                         "properties": {
                             "dist": {
                                 "type": "string",
-                                "description": "The CLI will use files under this path to create the deployment artifact (ZIP file). If omitted, all files under service project directory will be included."
+                                "description": "Optional. The CLI will use files under this path to create the deployment artifact (ZIP file). If omitted, all files under service project directory will be included."
                             }
                         }
                     }

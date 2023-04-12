@@ -83,7 +83,7 @@ steps:
         arguments: >
           -e '$(EnvName)'
           -t '$(TemplateName)'
-          -p '$(github-pat)'
+          -p '$(azuresdk-github-pat)'
         workingDirectory: templates/tests
 
     - task: Bash@3

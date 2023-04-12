@@ -29,6 +29,7 @@ export class WorkspaceAzureDevEnvListProvider implements AzureDevEnvListProvider
         const command = azureCli.commandBuilder
             .withArg('env')
             .withArg('list')
+            .withArg('--no-prompt')
             .withNamedArg('--cwd', configurationFileDirectory)
             .withNamedArg('--output', 'json')
             .build();

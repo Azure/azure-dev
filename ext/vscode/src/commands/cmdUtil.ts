@@ -123,7 +123,8 @@ export async function getEnvironments(context: IActionContext, cwd: string): Pro
     const azureCli = await createAzureDevCli(context);
     const command = azureCli.commandBuilder
         .withArg('env').withArg('list')
-        .withArg('--output').withArg('json')
+        .withArg('--no-prompt')
+        .withNamedArg('--output', 'json')
         .build();
 
     const result = await execAsync(command, azureCli.spawnOptions(cwd));

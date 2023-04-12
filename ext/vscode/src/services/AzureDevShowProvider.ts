@@ -42,6 +42,7 @@ export class WorkspaceAzureDevShowProvider implements AzureDevShowProvider {
 
         const command = azureCli.commandBuilder
             .withArg('show')
+            .withArg('--no-prompt')
             .withNamedArg('--cwd', configurationFileDirectory)
             .withNamedArg('--environment', environmentName)
             .withNamedArg('--output', 'json')

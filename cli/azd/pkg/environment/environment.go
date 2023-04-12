@@ -6,6 +6,7 @@ package environment
 import (
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -16,6 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/fsnotify/fsnotify"
 	"github.com/joho/godotenv"
 )
 
@@ -55,6 +57,8 @@ type Environment struct {
 	// will not be persisted when `Save` is called. This allows the zero value to be used
 	// for testing.
 	Root string
+
+	watcher *fsnotify.Watcher
 }
 
 type EnvironmentResolver func() (*Environment, error)
@@ -79,7 +83,11 @@ func FromRoot(root string) (*Environment, error) {
 		Root: root,
 	}
 
-	if err := env.Reload(); err != nil {
+	if err := env.watchForChanges(); err != nil {
+		return EmptyWithRoot(root), fmt.Errorf("failed watching environment for changes, %w", err)
+	}
+
+	if err := env.reload(); err != nil {
 		return EmptyWithRoot(root), err
 	}
 
@@ -132,8 +140,134 @@ func (e *Environment) Getenv(key string) string {
 	return os.Getenv(key)
 }
 
+// If `Root` is set, Save writes the current contents of the environment to
+// the given directory, creating it and any intermediate directories as needed.
+func (e *Environment) Save() error {
+	if e.Root == "" {
+		return nil
+	}
+
+	// Update configuration
+	cfgMgr := config.NewManager()
+	if err := cfgMgr.Save(e.Config, filepath.Join(e.Root, azdcontext.ConfigFileName)); err != nil {
+		return fmt.Errorf("saving config: %w", err)
+	}
+
+	err := os.MkdirAll(e.Root, osutil.PermissionDirectory)
+	if err != nil {
+		return fmt.Errorf("failed to create a directory: %w", err)
+	}
+
+	err = godotenv.Write(e.Values, filepath.Join(e.Root, azdcontext.DotEnvFileName))
+	if err != nil {
+		return fmt.Errorf("saving .env: %w", err)
+	}
+
+	telemetry.SetUsageAttributes(fields.StringHashed(fields.EnvNameKey, e.GetEnvName()))
+
+	// If this was an empty (aka new) environment initialize the watcher
+	if e.watcher == nil {
+		if err := e.watchForChanges(); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func (e *Environment) GetEnvName() string {
+	return e.Values[EnvNameEnvVarName]
+}
+
+func (e *Environment) SetEnvName(envname string) {
+	e.Values[EnvNameEnvVarName] = envname
+}
+
+func (e *Environment) GetSubscriptionId() string {
+	return e.Values[SubscriptionIdEnvVarName]
+}
+
+func (e *Environment) GetTenantId() string {
+	return e.Values[TenantIdEnvVarName]
+}
+
+func (e *Environment) SetSubscriptionId(id string) {
+	e.Values[SubscriptionIdEnvVarName] = id
+}
+
+func (e *Environment) GetLocation() string {
+	return e.Values[LocationEnvVarName]
+}
+
+func (e *Environment) SetLocation(location string) {
+	e.Values[LocationEnvVarName] = location
+}
+
+// Returns the value of a service-namespaced property in the environment.
+func (e *Environment) GetServiceProperty(serviceName string, propertyName string) string {
+	return e.Values[fmt.Sprintf("SERVICE_%s_%s", normalize(serviceName), propertyName)]
+}
+
+// Sets the value of a service-namespaced property in the environment.
+func (e *Environment) SetServiceProperty(serviceName string, propertyName string, value string) {
+	e.Values[fmt.Sprintf("SERVICE_%s_%s", normalize(serviceName), propertyName)] = value
+}
+
+// Creates a slice of key value pairs like `KEY=VALUE` that
+// can be used to pass into command runner or similar constructs
+func (e *Environment) Environ() []string {
+	envVars := []string{}
+	for k, v := range e.Values {
+		envVars = append(envVars, fmt.Sprintf("%s=%s", k, v))
+	}
+
+	return envVars
+}
+
+func (e *Environment) watchForChanges() error {
+	if e.watcher != nil {
+		return nil
+	}
+
+	envFilePath := filepath.Join(e.Root, azdcontext.DotEnvFileName)
+
+	watcher, err := fsnotify.NewWatcher()
+	if err != nil {
+		return fmt.Errorf("failed creating file watcher, %w", err)
+	}
+
+	e.watcher = watcher
+
+	if err := e.watcher.Add(envFilePath); err != nil {
+		return fmt.Errorf("failed watching environment file %s, %e", envFilePath, err)
+	}
+
+	// Watch for changes to the environment file
+	go func() {
+		for {
+			select {
+			case event, ok := <-e.watcher.Events:
+				if !ok {
+					return
+				}
+				if event.Op&fsnotify.Write == fsnotify.Write {
+					log.Println("Environment file changed, reloading")
+
+					if err := e.reload(); err != nil {
+						panic("error reloading environment")
+					}
+				}
+			case err := <-e.watcher.Errors:
+				fmt.Println("Error watching environment file:", err)
+			}
+		}
+	}()
+
+	return nil
+}
+
 // Reloads environment variables and configuration
-func (e *Environment) Reload() error {
+func (e *Environment) reload() error {
 	// Reload env values
 	envPath := filepath.Join(e.Root, azdcontext.DotEnvFileName)
 	if envMap, err := godotenv.Read(envPath); errors.Is(err, os.ErrNotExist) {
@@ -166,93 +300,6 @@ func (e *Environment) Reload() error {
 	return nil
 }
 
-// If `Root` is set, Save writes the current contents of the environment to
-// the given directory, creating it and any intermediate directories as needed.
-func (e *Environment) Save() error {
-	if e.Root == "" {
-		return nil
-	}
-
-	// Update configuration
-	cfgMgr := config.NewManager()
-	if err := cfgMgr.Save(e.Config, filepath.Join(e.Root, azdcontext.ConfigFileName)); err != nil {
-		return fmt.Errorf("saving config: %w", err)
-	}
-
-	// Cache current values & reload to get any new env vars
-	currentValues := e.Values
-	if err := e.Reload(); err != nil {
-		return fmt.Errorf("failed reloading env vars, %w", err)
-	}
-
-	// Overlay current values before saving
-	for key, value := range currentValues {
-		e.Values[key] = value
-	}
-
-	err := os.MkdirAll(e.Root, osutil.PermissionDirectory)
-	if err != nil {
-		return fmt.Errorf("failed to create a directory: %w", err)
-	}
-
-	err = godotenv.Write(e.Values, filepath.Join(e.Root, azdcontext.DotEnvFileName))
-	if err != nil {
-		return fmt.Errorf("saving .env: %w", err)
-	}
-
-	telemetry.SetUsageAttributes(fields.StringHashed(fields.EnvNameKey, e.GetEnvName()))
-	return nil
-}
-
-func (e *Environment) GetEnvName() string {
-	return e.Values[EnvNameEnvVarName]
-}
-
-func (e *Environment) SetEnvName(envname string) {
-	e.Values[EnvNameEnvVarName] = envname
-}
-
-func (e *Environment) GetSubscriptionId() string {
-	return e.Values[SubscriptionIdEnvVarName]
-}
-
-func (e *Environment) GetTenantId() string {
-	return e.Values[TenantIdEnvVarName]
-}
-
-func (e *Environment) SetSubscriptionId(id string) {
-	e.Values[SubscriptionIdEnvVarName] = id
-}
-
-func (e *Environment) GetLocation() string {
-	return e.Values[LocationEnvVarName]
-}
-
-func (e *Environment) SetLocation(location string) {
-	e.Values[LocationEnvVarName] = location
-}
-
 func normalize(key string) string {
 	return strings.ReplaceAll(strings.ToUpper(key), "-", "_")
-}
-
-// Returns the value of a service-namespaced property in the environment.
-func (e *Environment) GetServiceProperty(serviceName string, propertyName string) string {
-	return e.Values[fmt.Sprintf("SERVICE_%s_%s", normalize(serviceName), propertyName)]
-}
-
-// Sets the value of a service-namespaced property in the environment.
-func (e *Environment) SetServiceProperty(serviceName string, propertyName string, value string) {
-	e.Values[fmt.Sprintf("SERVICE_%s_%s", normalize(serviceName), propertyName)] = value
-}
-
-// Creates a slice of key value pairs like `KEY=VALUE` that
-// can be used to pass into command runner or similar constructs
-func (e *Environment) Environ() []string {
-	envVars := []string{}
-	for k, v := range e.Values {
-		envVars = append(envVars, fmt.Sprintf("%s=%s", k, v))
-	}
-
-	return envVars
 }

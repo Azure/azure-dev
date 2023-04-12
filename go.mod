@@ -32,7 +32,7 @@ require (
 	github.com/mattn/go-isatty v0.0.14
 	github.com/microsoft/ApplicationInsights-Go v0.4.4
 	github.com/microsoft/azure-devops-go-api/azuredevops v1.0.0-b5
-	github.com/otiai10/copy v1.7.0
+	github.com/otiai10/copy v1.9.0
 	github.com/sethvargo/go-retry v0.2.3
 	github.com/spf13/cobra v1.3.0
 	github.com/spf13/pflag v1.0.5

@@ -552,7 +552,7 @@ func downloadGh(
 
 	// change file name from temporal name to the final name, as the download has completed
 	compressedFileName := filepath.Join(tmpPath, releaseName)
-	if err := os.Rename(compressedRelease.Name(), compressedFileName); err != nil {
+	if err := osutil.Rename(ctx, compressedRelease.Name(), compressedFileName); err != nil {
 		return err
 	}
 	defer func() {

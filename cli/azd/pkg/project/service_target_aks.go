@@ -15,9 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/kubectl"
-	"github.com/benbjohnson/clock"
 )
 
 const (
@@ -55,41 +53,34 @@ type AksServiceOptions struct {
 }
 
 type aksTarget struct {
-	env                      *environment.Environment
-	managedClustersService   azcli.ManagedClustersService
-	containerRegistryService azcli.ContainerRegistryService
-	docker                   docker.Docker
-	kubectl                  kubectl.KubectlCli
-	clock                    clock.Clock
-}
-
-type aksPackageResult struct {
-	ImageTag    string
-	LoginServer string
+	env                    *environment.Environment
+	managedClustersService azcli.ManagedClustersService
+	kubectl                kubectl.KubectlCli
+	containerHelper        *ContainerHelper
 }
 
 // Creates a new instance of the AKS service target
 func NewAksTarget(
 	env *environment.Environment,
 	managedClustersService azcli.ManagedClustersService,
-	containerRegistryService azcli.ContainerRegistryService,
 	kubectlCli kubectl.KubectlCli,
-	docker docker.Docker,
-	clock clock.Clock,
+	containerHelper *ContainerHelper,
 ) ServiceTarget {
 	return &aksTarget{
-		env:                      env,
-		managedClustersService:   managedClustersService,
-		containerRegistryService: containerRegistryService,
-		docker:                   docker,
-		kubectl:                  kubectlCli,
-		clock:                    clock,
+		env:                    env,
+		managedClustersService: managedClustersService,
+		kubectl:                kubectlCli,
+		containerHelper:        containerHelper,
 	}
 }
 
 // Gets the required external tools to support the AKS service
-func (t *aksTarget) RequiredExternalTools(context.Context) []tools.ExternalTool {
-	return []tools.ExternalTool{t.docker, t.kubectl}
+func (t *aksTarget) RequiredExternalTools(ctx context.Context) []tools.ExternalTool {
+	allTools := []tools.ExternalTool{}
+	allTools = append(allTools, t.containerHelper.RequiredExternalTools(ctx)...)
+	allTools = append(allTools, t.kubectl)
+
+	return allTools
 }
 
 // Initializes the AKS service target
@@ -104,73 +95,24 @@ func (t *aksTarget) Initialize(ctx context.Context, serviceConfig *ServiceConfig
 func (t *aksTarget) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	buildOutput *ServiceBuildResult,
+	packageOutput *ServicePackageResult,
 ) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
-			loginServer, has := t.env.Values[environment.ContainerRegistryEndpointEnvVarName]
-			if !has {
-				task.SetError(fmt.Errorf(
-					"could not determine container registry endpoint, ensure %s is set as an output of your infrastructure",
-					environment.ContainerRegistryEndpointEnvVarName,
-				))
-				return
-			}
-
-			imageId := buildOutput.BuildOutputPath
-			if imageId == "" {
-				task.SetError(errors.New("missing container image id from build output"))
-				return
-			}
-
-			imageTag, err := t.generateImageTag(serviceConfig)
-			if err != nil {
-				task.SetError(fmt.Errorf("failed generating image tag: %w", err))
-				return
-			}
-
-			fullTag := fmt.Sprintf(
-				"%s/%s",
-				loginServer,
-				imageTag,
-			)
-
-			// Tag image.
-			log.Printf("tagging image %s as %s", imageId, fullTag)
-			task.SetProgress(NewServiceProgress("Tagging image"))
-			if err := t.docker.Tag(ctx, serviceConfig.Path(), imageId, fullTag); err != nil {
-				task.SetError(fmt.Errorf("failed tagging image: %w", err))
-				return
-			}
-
-			// Save the name of the image we pushed into the environment with a well known key.
-			t.env.SetServiceProperty(serviceConfig.Name, "IMAGE_NAME", fullTag)
-
-			if err := t.env.Save(); err != nil {
-				task.SetError(fmt.Errorf("saving image name to environment: %w", err))
-				return
-			}
-
-			task.SetResult(&ServicePackageResult{
-				Details: &aksPackageResult{
-					ImageTag:    fullTag,
-					LoginServer: loginServer,
-				},
-				PackagePath: fullTag,
-			})
+			task.SetResult(packageOutput)
 		},
 	)
 }
 
 // Deploys service container images to ACR and AKS resources to the AKS cluster
-func (t *aksTarget) Publish(
+func (t *aksTarget) Deploy(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
 	targetResource *environment.TargetResource,
-) *async.TaskWithProgress[*ServicePublishResult, ServiceProgress] {
+) *async.TaskWithProgress[*ServiceDeployResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServicePublishResult, ServiceProgress]) {
+		func(task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress]) {
 			if err := t.validateTargetResource(ctx, serviceConfig, targetResource); err != nil {
 				task.SetError(fmt.Errorf("validating target resource: %w", err))
 				return
@@ -215,25 +157,20 @@ func (t *aksTarget) Publish(
 				return
 			}
 
-			packageDetails, ok := packageOutput.Details.(*aksPackageResult)
-			if !ok {
-				task.SetError(errors.New("failed retrieving package result details"))
-				return
-			}
-
-			log.Printf("logging into container registry '%s'\n", packageDetails.LoginServer)
-
-			task.SetProgress(NewServiceProgress("Logging into container registry"))
-			err = t.containerRegistryService.LoginAcr(ctx, targetResource.SubscriptionId(), packageDetails.LoginServer)
-			if err != nil {
-				task.SetError(fmt.Errorf("failed logging into registry '%s': %w", packageDetails.LoginServer, err))
-				return
-			}
-
 			// The kubeConfig that we care about will also be at position 0
 			// I don't know if there is a valid use case where this credential results would container multiple configs
 			task.SetProgress(NewServiceProgress("Configuring k8s config context"))
 			err = t.configureK8sContext(ctx, clusterName, clusterCreds.Kubeconfigs[0])
+			if err != nil {
+				task.SetError(err)
+				return
+			}
+
+			// Login, tag & push container image to ACR
+			containerDeployTask := t.containerHelper.Deploy(ctx, serviceConfig, packageOutput, targetResource)
+			syncProgress(task, containerDeployTask.Progress())
+
+			_, err = containerDeployTask.Await()
 			if err != nil {
 				task.SetError(err)
 				return
@@ -280,15 +217,6 @@ func (t *aksTarget) Publish(
 			_, err = t.kubectl.ApplyWithInput(ctx, secretResult.Stdout, nil)
 			if err != nil {
 				task.SetError(fmt.Errorf("failed applying kube secrets: %w", err))
-				return
-			}
-
-			log.Printf("pushing %s to registry", packageOutput.PackagePath)
-
-			// Push image.
-			task.SetProgress(NewServiceProgress("Pushing image"))
-			if err := t.docker.Push(ctx, serviceConfig.Path(), packageDetails.ImageTag); err != nil {
-				task.SetError(fmt.Errorf("failed pushing image: %w", err))
 				return
 			}
 
@@ -342,7 +270,7 @@ func (t *aksTarget) Publish(
 				}
 			}
 
-			task.SetResult(&ServicePublishResult{
+			task.SetResult(&ServiceDeployResult{
 				Package: packageOutput,
 				TargetResourceId: azure.KubernetesServiceRID(
 					targetResource.SubscriptionId(),
@@ -604,24 +532,6 @@ func (t *aksTarget) getIngressEndpoints(
 	}
 
 	return endpoints, nil
-}
-
-func (t *aksTarget) generateImageTag(serviceConfig *ServiceConfig) (string, error) {
-	configuredTag, err := serviceConfig.Docker.Tag.Envsubst(t.env.Getenv)
-	if err != nil {
-		return "", err
-	}
-
-	if configuredTag != "" {
-		return configuredTag, nil
-	}
-
-	return fmt.Sprintf("%s/%s-%s:azd-deploy-%d",
-		strings.ToLower(serviceConfig.Project.Name),
-		strings.ToLower(serviceConfig.Name),
-		strings.ToLower(t.env.GetEnvName()),
-		t.clock.Now().Unix(),
-	), nil
 }
 
 func (t *aksTarget) getK8sNamespace(serviceConfig *ServiceConfig) string {

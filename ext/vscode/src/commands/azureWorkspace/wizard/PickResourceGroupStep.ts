@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 
 import { IAzureQuickPickItem } from '@microsoft/vscode-azext-utils';
-import { localize } from '../../../localize';
+import * as vscode from 'vscode';
 import { AzureDevShowProvider, WorkspaceAzureDevShowProvider } from '../../../services/AzureDevShowProvider';
 import { parseAzureResourceId } from '../../../utils/parseAzureResourceId';
 import { RevealWizardContext } from './PickEnvironmentStep';
@@ -19,8 +19,8 @@ export class PickResourceGroupStep extends SkipIfOneStep<RevealResourceGroupWiza
         private readonly showProvider: AzureDevShowProvider = new WorkspaceAzureDevShowProvider()
     ) {
         super(
-            localize('azure-dev.commands.azureWorkspace.revealAzureResourceGroup.selectResource', 'Select a resource group'),
-            localize('azure-dev.commands.azureWorkspace.revealAzureResource.noResourceGroups', 'No resource groups found')
+            vscode.l10n.t('Select a resource group'),
+            vscode.l10n.t('No resource groups found')
         );
     }
 

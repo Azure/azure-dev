@@ -116,7 +116,11 @@ func Test_Initializer_InitializeWithOverwritePrompt(t *testing.T) {
 			require.NoError(t, err, "setting up duplicate readme.md")
 			err = os.MkdirAll(filepath.Join(projectDir, "src"), osutil.PermissionDirectory)
 			require.NoError(t, err, "setting up src folder")
-			err = os.WriteFile(filepath.Join(projectDir, "src", "Program.cs"), []byte(originalProgram), osutil.PermissionFile)
+			err = os.WriteFile(
+				filepath.Join(projectDir, "src", "Program.cs"),
+				[]byte(originalProgram),
+				osutil.PermissionFile,
+			)
 			require.NoError(t, err, "setting up duplicate program.cs")
 
 			console := mockinput.NewMockConsole()

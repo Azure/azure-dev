@@ -19,13 +19,16 @@ jobs:
           $info = $Env:AZURE_CREDENTIALS | ConvertFrom-Json -AsHashtable;
           Write-Host "::add-mask::$($info.clientSecret)"
 
-          azd login `
+          azd auth login `
             --client-id "$($info.clientId)" `
             --client-secret "$($info.clientSecret)" `
             --tenant-id "$($info.tenantId)"
         shell: pwsh
         env:
           AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
+      
+      - name: Enable terraform alpha feature
+        run: azd config set alpha.terraform on
 
       - name: Azure Dev Provision
         run: azd provision --no-prompt

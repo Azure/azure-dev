@@ -1,6 +1,6 @@
 # Release History
 
-## 0.7.0-beta.2 (Unreleased)
+## 0.8.0-beta.2 (Unreleased)
 
 ### Features Added
 
@@ -8,10 +8,74 @@
 
 ### Bugs Fixed
 
+### Other Changes
+
+## 0.8.0-beta.1 (2023-04-10)
+
+### Features Added
+
+- [[#1715]](https://github.com/Azure/azure-dev/pull/1715) Adding feature alpha toggle:
+  - Moving terraform provider as alpha feature. Use `azd config set alpha.terraform on` to have it enabled.
+- [[#1833]](https://github.com/Azure/azure-dev/pull/1833) Deploy from existing package using `--from-package` flag.
+
+### Breaking Changes
+
+- [[#1715]](https://github.com/Azure/azure-dev/pull/1715) Using `terraform` as provisioning provider will fail and require user to enable terraform running `azd config set alpha.terraform on`.
+- [[#1801]](https://github.com/Azure/azure-dev/pull/1801) Restructuring specific command flags.
+  - `azd up` no longer runs `azd init`. As a result, the following flags have been removed from `azd up`:
+    - `--template` / `-t`
+    - `--location` / `-l`
+    - `--branch` / `-b`
+    - `--subscription`
+  - Use of `--service` and `--no-progress` in `azd up` is being deprecated.
+  - `azd deploy` now accepts a positional argument. Use `azd deploy <web>` instead of `azd deploy --service <web>`
+  - Deprecate `--no-progress` flag as it currently does nothing. A warning message is shown when used.
+  - Hide `--output` flag in the usage printout to correctly reflect the current it's current alpha-preview status. The output contract for structured schema such as JSON has yet been finalized.
+- [[#1804]](https://github.com/Azure/azure-dev/pull/1804) Adjust command aliases.
+  - `azd login` and `azd logout` are now available as `azd auth login` and `azd auth logout` respectively. `azd login` and `azd logout` are still available for use, but will be removed in a future release.
+  - `azd infra create` and `azd infra delete`, which have always been aliases for `azd provision` and `azd down`, are now deprecated. The commands are still available for use, but will be removed in a future release.
+- [[#1824]](https://github.com/Azure/azure-dev/pull/1824) Add working directory sensitivity for `restore` and `deploy`.
+  - `azd deploy` will now deploy the current service, when the current working directory is set to a service directory.
+  - `azd deploy` will deploy all services, when the current working directory is set to the project directory containing `azure.yaml`
+  - In other directories, `azd deploy` will not attempt a deployment and instead error out with suggestions. `azd deploy --all` can be used to deploy all services, or `azd deploy <service>` to deploy a given service always.
+- [[#1752]](https://github.com/Azure/azure-dev/pull/1752) Ask fewer questions during `init`.
+  - `azd init` will now only prompt for the environment name. Azure subscription and location values are prompted only when infrastructure provisioning is needed, when running `azd provision`, and consequently when running `azd up`.
+
+### Bugs Fixed
+
 - [[#1734]](https://github.com/Azure/azure-dev/pull/1734) Fix setting `AZURE_PRINCIPAL_ID` on multi-tenant directory.
 - [[#1738]](https://github.com/Azure/azure-dev/pull/1738) Fix generating auth token on multi-tenant directory.
+- [[#1762]](https://github.com/Azure/azure-dev/pull/1762) Allow local files to be kept when running `init`.
+- [[#1764]](https://github.com/Azure/azure-dev/pull/1764) Enhance zip-deploy during build for:
+  - Python: Do not include virtual environments for python.
+  - Node: Update node modules detection to exclude it from build.
+- [[#1857]](https://github.com/Azure/azure-dev/pull/1857) Adds `package` command hooks to azd schema.
+- [[#1878]](https://github.com/Azure/azure-dev/pull/1878) Ensure default generated docker repo/tags are all lowercase.
+- [[#1875]](https://github.com/Azure/azure-dev/pull/1875) Fixes panic for `postpackage` hook errors.
 
 ### Other Changes
+
+#### `azd up` no longer runs `azd init`
+
+The behavior of `azd up -t <template>` can be reproduced with:
+
+```bash
+cd <empty dir>
+azd init -t <template>
+azd up
+```
+
+#### `azd deploy` no longer deploys all services when ran in any directory
+
+The new behavior is as follows:
+
+1. `azd deploy` will now deploy the current service, when the current working directory is set to a service directory.
+2. `azd deploy` will deploy all services, when the current working directory is set to the project directory containing `azure.yaml`.
+3. In other directories, `azd deploy` will not attempt a deployment and error out with suggestions. `azd deploy --all` can be used to deploy all services, or `azd deploy <service>` to deploy a given service always.
+
+#### `azd up` ordering
+
+`azd up` now packages artifacts prior to running `azd provision` and `azd deploy`. This should not affect most users, with the exception of users that may be taking advantage of `azd`'s environment values in packaging `staticwebapp` services. If `azd up` no longer works as expected, and you are currently taking advantage of `azd`'s provided environment values to package your application, a `predeploy` hook may be used to generate configuration files from `azd` environment values. See the working example in our ToDo templates that leverage `staticwebapp`, example [here](https://github.com/Azure-Samples/todo-python-mongo-swa-func/blob/main/azure.yaml). Note that script `hooks` automatically have `azd` environment values loaded in the shell environment.
 
 ## 0.7.0-beta.1 (2023-03-09)
 

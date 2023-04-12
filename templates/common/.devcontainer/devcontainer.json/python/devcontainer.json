@@ -3,19 +3,15 @@
     "build": {
         "dockerfile": "Dockerfile",
         "args": {
-            "VARIANT": "bullseye"
+            "IMAGE": "python:3.10"
         }
     },
     "features": {
-        "ghcr.io/devcontainers/features/docker-from-docker:1": {
-            "version": "20.10"
+        "ghcr.io/devcontainers/features/docker-in-docker:2": {
         },
         "ghcr.io/devcontainers/features/node:1": {
             "version": "16",
             "nodeGypDependencies": false
-        },
-        "ghcr.io/devcontainers/features/python:1": {
-            "version": "os-provided"
         }
     },
     "customizations": {

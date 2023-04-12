@@ -14,7 +14,7 @@ func GetCommandEventName(cmdPath string) string {
 //
 // It removes "azd" from command path and replaces spaces with dot.
 //
-// Example: "azd infra create" -> "infra.create"
+// Example: "azd env list" -> "env.list"
 func formatCommandPath(cmdPath string) string {
 	cmdPath = strings.TrimPrefix(cmdPath, "azd ")
 	return strings.ReplaceAll(cmdPath, " ", ".")

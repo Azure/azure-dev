@@ -125,6 +125,8 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 			Name:        cmd.Name(),
 			CommandPath: cmd.CommandPath(),
 			Aliases:     cmd.Aliases,
+			Flags:       cmd.Flags(),
+			Args:        args,
 		}
 
 		// Run the middleware chain with action

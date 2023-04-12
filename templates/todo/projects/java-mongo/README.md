@@ -28,7 +28,7 @@ A complete ToDo application that includes everything you need to build, deploy, 
 
 Let's jump in and get the ToDo app up and running in Azure. When you are finished, you will have a fully functional web app deployed on Azure. In later steps, you'll see how to setup a pipeline and monitor the application.
 
-<img src="assets/web.png" width="75%" alt="Screenshot of deployed ToDo app">
+!["Screenshot of deployed ToDo app"](assets/web.png)
 
 <sup>Screenshot of the deployed ToDo app</sup>
 
@@ -45,19 +45,28 @@ The following prerequisites are required to use this application. Please ensure 
 The fastest way for you to get this application up and running on Azure is to use the `azd up` command. This single command will create and configure all necessary Azure resources - including access policies and roles for your account and service-to-service communication with Managed Identities.
 
 1. Open a terminal, create a new empty folder, and change into it.
-1. Run the following command to initialize the project, provision Azure resources, and deploy the application code.
+2. Run the following command to initialize the project.
 
 ```bash
-azd up --template todo-java-mongo
+azd init --template todo-java-mongo
 ```
 
-You will be prompted for the following information:
+This command will clone the code to your current folder and prompt you for the following information:
 
 - `Environment Name`: This will be used as a prefix for the resource group that will be created to hold all Azure resources. This name should be unique within your Azure subscription.
+
+3. Run the following command to package a deployable copy of your application, provision the template's infrastructure to Azure and also deploy the application code to those newly provisioned resources.
+
+```bash
+azd up
+```
+
+This command will prompt you for the following information:
+
 - `Azure Location`: The Azure location where your resources will be deployed.
 - `Azure Subscription`: The Azure Subscription where your resources will be deployed.
 
-> NOTE: This may take a while to complete as it executes three commands: `azd init` (initializes environment), `azd provision` (provisions Azure resources), and `azd deploy` (deploys application code). You will see a progress indicator as it provisions and deploys your application.
+> NOTE: This may take a while to complete as it executes three commands: `azd package` (packages a deployable copy of your application), `azd provision` (provisions Azure resources), and `azd deploy` (deploys application code). You will see a progress indicator as it packages, provisions and deploys your application.
 
 When `azd up` is complete it will output the following URLs:
 
@@ -72,7 +81,7 @@ Click the web application URL to launch the ToDo app. Create a new collection an
 > NOTE:
 >
 > - The `azd up` command will create Azure resources that will incur costs to your Azure subscription. You can clean up those resources manually via the Azure portal or with the `azd down` command.
-> - You can call `azd up` as many times as you like to both provision and deploy your solution, but you only need to provide the `--template` parameter the first time you call it to get the code locally. Subsequent `azd up` calls do not require the template parameter. If you do provide the parameter, all your local source code will be overwritten if you agree to overwrite when prompted.
+> - You can call `azd up` as many times as you like to both provision and deploy your solution.
 > - You can always create a new environment with `azd env new`.
 
 ### Application Architecture
@@ -86,7 +95,7 @@ This application utilizes the following Azure resources:
 
 Here's a high level architecture diagram that illustrates these components. Notice that these are all contained within a single [resource group](https://docs.microsoft.com/azure/azure-resource-manager/management/manage-resource-groups-portal), that will be created for you when you create the resources.
 
-<img src="assets/resources.png" width="60%" alt="Application architecture diagram"/>
+!["Application architecture diagram"](assets/resources.png)
 
 > This template provisions resources to an Azure subscription that you will select upon provisioning them. Please refer to the [Pricing calculator for Microsoft Azure](https://azure.microsoft.com/pricing/calculator/) and, if needed, update the included Azure resource definitions found in `infra/main.bicep` to suit your needs.
 
@@ -194,7 +203,7 @@ And then execute `azd up` to provision and deploy. No worries if you already did
 
 Here's the high level architecture diagram when APIM is used:
 
-<img src="assets/resources-with-apim.png" width="60%" alt="Application architecture diagram with APIM"/>
+!["Application architecture diagram with APIM"](assets/resources-with-apim.png)
 
 The frontend will be configured to make API requests through APIM instead of calling the backend directly, so that the following flow gets executed:
 

@@ -13,10 +13,13 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
+)
+
+const (
+	defaultDotNetBuildConfiguration string = "Release"
 )
 
 type dotnetProject struct {
@@ -26,11 +29,22 @@ type dotnetProject struct {
 
 // NewDotNetProject creates a new instance of a dotnet project
 func NewDotNetProject(
-	commandRunner exec.CommandRunner, env *environment.Environment,
+	dotNetCli dotnet.DotNetCli,
+	env *environment.Environment,
 ) FrameworkService {
 	return &dotnetProject{
 		env:       env,
-		dotnetCli: dotnet.NewDotNetCli(commandRunner),
+		dotnetCli: dotNetCli,
+	}
+}
+
+func (dp *dotnetProject) Requirements() FrameworkRequirements {
+	return FrameworkRequirements{
+		// dotnet will automatically restore & build the project if needed
+		Package: FrameworkPackageRequirements{
+			RequireRestore: false,
+			RequireBuild:   false,
+		},
 	}
 }
 
@@ -39,9 +53,13 @@ func (dp *dotnetProject) RequiredExternalTools(context.Context) []tools.External
 	return []tools.ExternalTool{dp.dotnetCli}
 }
 
-// Initializes the docker project
+// Initializes the dotnet project
 func (dp *dotnetProject) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
-	if err := dp.dotnetCli.InitializeSecret(ctx, serviceConfig.Path()); err != nil {
+	projFile, err := findProjectFile(serviceConfig.Name, serviceConfig.Path())
+	if err != nil {
+		return err
+	}
+	if err := dp.dotnetCli.InitializeSecret(ctx, projFile); err != nil {
 		return err
 	}
 	handler := func(ctx context.Context, args ServiceLifecycleEventArgs) error {
@@ -61,7 +79,13 @@ func (dp *dotnetProject) Restore(
 ) *async.TaskWithProgress[*ServiceRestoreResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServiceRestoreResult, ServiceProgress]) {
-			if err := dp.dotnetCli.Restore(ctx, serviceConfig.Path()); err != nil {
+			task.SetProgress(NewServiceProgress("Restoring .NET project dependencies"))
+			projFile, err := findProjectFile(serviceConfig.Name, serviceConfig.Path())
+			if err != nil {
+				task.SetError(err)
+				return
+			}
+			if err := dp.dotnetCli.Restore(ctx, projFile); err != nil {
 				task.SetError(err)
 				return
 			}
@@ -79,25 +103,79 @@ func (dp *dotnetProject) Build(
 ) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServiceBuildResult, ServiceProgress]) {
-			publishRoot, err := os.MkdirTemp("", "azd")
+			task.SetProgress(NewServiceProgress("Building .NET project"))
+			projFile, err := findProjectFile(serviceConfig.Name, serviceConfig.Path())
+			if err != nil {
+				task.SetError(err)
+				return
+			}
+			if err := dp.dotnetCli.Build(ctx, projFile, defaultDotNetBuildConfiguration, ""); err != nil {
+				task.SetError(err)
+				return
+			}
+
+			defaultOutputDir := filepath.Join("./bin", defaultDotNetBuildConfiguration)
+
+			// Attempt to find the default build output location
+			buildOutputDir := serviceConfig.Path()
+			_, err = os.Stat(filepath.Join(buildOutputDir, defaultOutputDir))
+			if err == nil {
+				buildOutputDir = filepath.Join(buildOutputDir, defaultOutputDir)
+			}
+
+			// By default dotnet build will create a sub folder for the project framework version, etc. net6.0
+			// If we have a single folder under build configuration assume this location as build output result
+			subDirs, err := os.ReadDir(buildOutputDir)
+			if err == nil {
+				if len(subDirs) == 1 {
+					buildOutputDir = filepath.Join(buildOutputDir, subDirs[0].Name())
+				}
+			}
+
+			task.SetResult(&ServiceBuildResult{
+				Restore:         restoreOutput,
+				BuildOutputPath: buildOutputDir,
+			})
+		},
+	)
+}
+
+func (dp *dotnetProject) Package(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	buildOutput *ServiceBuildResult,
+) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
+	return async.RunTaskWithProgress(
+		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
+			packageDest, err := os.MkdirTemp("", "azd")
 			if err != nil {
 				task.SetError(fmt.Errorf("creating package directory for %s: %w", serviceConfig.Name, err))
 				return
 			}
 
-			task.SetProgress(NewServiceProgress("Creating deployment package"))
-			if err := dp.dotnetCli.Publish(ctx, serviceConfig.Path(), publishRoot); err != nil {
+			task.SetProgress(NewServiceProgress("Publishing .NET project"))
+			projFile, err := findProjectFile(serviceConfig.Name, serviceConfig.Path())
+			if err != nil {
+				task.SetError(err)
+				return
+			}
+			if err := dp.dotnetCli.Publish(ctx, projFile, defaultDotNetBuildConfiguration, packageDest); err != nil {
 				task.SetError(err)
 				return
 			}
 
 			if serviceConfig.OutputPath != "" {
-				publishRoot = filepath.Join(publishRoot, serviceConfig.OutputPath)
+				packageDest = filepath.Join(packageDest, serviceConfig.OutputPath)
 			}
 
-			task.SetResult(&ServiceBuildResult{
-				Restore:         restoreOutput,
-				BuildOutputPath: publishRoot,
+			if err := validatePackageOutput(packageDest); err != nil {
+				task.SetError(err)
+				return
+			}
+
+			task.SetResult(&ServicePackageResult{
+				Build:       buildOutput,
+				PackagePath: packageDest,
 			})
 		},
 	)
@@ -136,4 +214,40 @@ func normalizeDotNetSecret(key string) string {
 	// dotnet recognizes "__" as the hierarchy key separator for environment variables, but for user secrets, it has to be
 	// ":".
 	return strings.ReplaceAll(key, "__", ":")
+}
+
+/* findProjectFile locates the project file to pass to the `dotnet` tool for a given dotnet service.
+**
+** projectPath is either a path to a directory, or to a project file. When projectPath is a directory,
+** the first file matching the glob expression *.*proj (what dotnet expects) is returned.
+** If multiple files match, an error is returned.
+ */
+
+func findProjectFile(serviceName string, projectPath string) (string, error) {
+	info, err := os.Stat(projectPath)
+	if err != nil {
+		return "", err
+	}
+
+	if !info.IsDir() {
+		return projectPath, nil
+	}
+	files, err := filepath.Glob(filepath.Join(projectPath, "*.*proj"))
+	if err != nil {
+		return "", fmt.Errorf("searching for project file: %w", err)
+	}
+	if len(files) == 0 {
+		return "", fmt.Errorf(
+			"could not locate a dotnet project file for service %s in %s. Please update the project setting of "+
+				"azure.yaml for service %s to be the path to the dotnet project for this service",
+			serviceName, projectPath, serviceName)
+	} else if len(files) > 1 {
+		return "", fmt.Errorf(
+			"could not locate a dotnet project file for service %s in %s. Multiple project files exist. Please update "+
+				"the \"project\" setting of azure.yaml for service %s to be the path to the dotnet project to use for this "+
+				"service",
+			serviceName, projectPath, serviceName)
+	}
+
+	return files[0], nil
 }

@@ -50,7 +50,7 @@ parameters:
 variables:
   - template: /eng/pipelines/templates/variables/globals.yml
   - name: NodeVersion
-    value: 16
+    value: 18
 
 jobs:
 - template: /eng/pipelines/templates/jobs/run-template-tests.yml

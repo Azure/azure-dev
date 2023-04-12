@@ -1,0 +1,2 @@
+- id: terraform
+  description: "Provision Azure resources from terraform files."

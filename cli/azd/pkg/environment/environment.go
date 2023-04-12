@@ -11,6 +11,8 @@ import (
 	"regexp"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
+	"github.com/azure/azure-dev/cli/azd/internal/telemetry/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
@@ -153,6 +155,14 @@ func (e *Environment) Reload() error {
 		e.Config = cfg
 	}
 
+	if e.GetEnvName() != "" {
+		telemetry.SetUsageAttributes(fields.StringHashed(fields.EnvNameKey, e.GetEnvName()))
+	}
+
+	if e.GetSubscriptionId() != "" {
+		telemetry.SetGlobalAttributes(fields.SubscriptionIdKey.String(e.GetSubscriptionId()))
+	}
+
 	return nil
 }
 
@@ -190,6 +200,7 @@ func (e *Environment) Save() error {
 		return fmt.Errorf("saving .env: %w", err)
 	}
 
+	telemetry.SetUsageAttributes(fields.StringHashed(fields.EnvNameKey, e.GetEnvName()))
 	return nil
 }
 
@@ -219,14 +230,6 @@ func (e *Environment) GetLocation() string {
 
 func (e *Environment) SetLocation(location string) {
 	e.Values[LocationEnvVarName] = location
-}
-
-func (e *Environment) SetPrincipalId(principalID string) {
-	e.Values[PrincipalIdEnvVarName] = principalID
-}
-
-func (e *Environment) GetPrincipalId() string {
-	return e.Values[PrincipalIdEnvVarName]
 }
 
 func normalize(key string) string {

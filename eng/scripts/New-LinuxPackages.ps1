@@ -17,7 +17,6 @@ try {
     # Symlink points to potentially invalid location but will point correctly 
     # once package is installed
     ln -s /opt/microsoft/azd/azd-linux-amd64 azd
-    chmod +x azd
     chmod +x azd-linux-amd64
 
     foreach ($type in $PackageTypes) { 
@@ -26,6 +25,8 @@ try {
             --output-type $type `
             --version $Version `
             --architecture amd64 `
+            --after-install install-notice.sh `
+            --after-remove uninstall.sh `
             azd-linux-amd64=/opt/microsoft/azd/azd-linux-amd64 `
             azd=/usr/local/bin/azd `
             NOTICE.txt=/opt/microsoft/azd/NOTICE.txt `

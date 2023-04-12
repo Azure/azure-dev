@@ -1,5 +1,5 @@
 
-Sets a configuration
+Sets a configuration.
 
 Usage
   azd config set <path> <value> [flags]

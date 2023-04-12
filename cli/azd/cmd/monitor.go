@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -89,6 +90,12 @@ func newMonitorAction(
 func (m *monitorAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if !m.flags.monitorLive && !m.flags.monitorLogs && !m.flags.monitorOverview {
 		m.flags.monitorOverview = true
+	}
+
+	if m.env.GetSubscriptionId() == "" {
+		return nil, errors.New(
+			"infrastructure has not been provisioned. Please run `azd provision`",
+		)
 	}
 
 	resourceManager := infra.NewAzureResourceManager(m.azCli)

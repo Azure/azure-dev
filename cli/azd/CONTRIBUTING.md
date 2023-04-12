@@ -53,8 +53,8 @@ behalf.
 
 ## Debugging
 
-In VS Code you can create a launch.json that runs the tool with a specified set of arguments and in a specific folder, for
-example:
+In VS Code you can add a configuration to launch.json that runs the tool with a specified set of arguments and in a specific 
+folder, for example:
 
 ```json
 {
@@ -70,31 +70,32 @@ example:
 },
 ```
 
+You can also set `AZD_DEBUG=true` in your environment. If this environment variaible is set, `azd` will pause early in its
+startup process and allow you to attach to it. The checked in `launch.json` already has a configuration for this mode called
+"Attach To Process".
+
 ## Testing
 
 We use `gotestsum`, which is a simple tool that wraps `go test` except with better formatting output. Install the tool by
 running `go install gotest.tools/gotestsum@latest`.
 
-### Run all unit tests
+### Run unit tests
 
 `gotestsum -- -short ./...`
 
-### Run all end-to-end tests
+### Run end-to-end tests
+
+`gotestsum -- -timeout 20m -run Test_CLI ./...`
+
+This runs all end-to-end tests that target the standalone `azd` binary locally and **will** deploy live resources.
+By default, the `azd` binary produced in the cli/azd folder is automatically built once if not up-to-date,
+so it is sufficient to run end-to-end tests without having to first running `go build`.
+
+If testing against a custom binary, set `CLI_TEST_AZD_PATH` explicitly. See test/azdcli package for more details.
+
+### Run all tests
 
 ```bash
-go build
-gotestsum -- -timeout 20m -run Test_CLI ./...
-```
-
-This runs all end-to-end tests that run `azd` locally and deploy live resources. Run `go build` first to ensure the
-integration tests target the latest `azd` binary built at the root of `cli/azd`. Note that `go install` "helpfully" removes
-the binary produced by `go build` when run, and so if you've run `go install` since the last time you ran `go build` you'll
-have to run `go build` again or the end-to-end tests will fail.
-
-### Run all tests (including end-to-end tests)
-
-```bash
-go build
 gotestsum -- -timeout 20m ./...
 ```
 

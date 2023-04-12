@@ -7,10 +7,13 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry/fields"
@@ -58,7 +61,11 @@ type Environment struct {
 	// for testing.
 	Root string
 
+	// File watcher is configured to detect changes to the underlying .env file and automatically reload the instance
 	watcher *fsnotify.Watcher
+
+	// Only used for unit testing to have a consistent way to be notified of reload activities
+	reloadCallback func()
 }
 
 type EnvironmentResolver func() (*Environment, error)
@@ -239,26 +246,52 @@ func (e *Environment) watchForChanges() error {
 	e.watcher = watcher
 
 	if err := e.watcher.Add(envFilePath); err != nil {
-		return fmt.Errorf("failed watching environment file %s, %e", envFilePath, err)
+		return fmt.Errorf("failed watching environment file '%s', %w", envFilePath, err)
 	}
 
 	// Watch for changes to the environment file
 	go func() {
+		var mutex sync.Mutex
+		var timer *time.Timer
+		waitFor := 100 * time.Millisecond
+
 		for {
 			select {
 			case event, ok := <-e.watcher.Events:
-				if !ok {
-					return
+				if !ok || !event.Has(fsnotify.Write) {
+					continue
 				}
-				if event.Op&fsnotify.Write == fsnotify.Write {
-					log.Println("Environment file changed, reloading")
 
-					if err := e.reload(); err != nil {
-						panic("error reloading environment")
-					}
+				// Dedup multiple write events that happen within a short window
+				if timer == nil {
+					newTimer := time.AfterFunc(math.MaxInt64, func() {
+						if err := e.reload(); err != nil {
+							log.Printf("error reloading environment, %s\n", err.Error())
+							return
+						}
+
+						// This is primarily used to support unit test scenarios so we can avoid adding
+						// arbitrary sleeps timers into the test code.
+						if e.reloadCallback != nil {
+							e.reloadCallback()
+						}
+
+						log.Println("environment reloaded")
+
+						mutex.Lock()
+						timer = nil
+						mutex.Unlock()
+					})
+					newTimer.Stop()
+
+					mutex.Lock()
+					timer = newTimer
+					mutex.Unlock()
 				}
+
+				timer.Reset(waitFor)
 			case err := <-e.watcher.Errors:
-				fmt.Println("Error watching environment file:", err)
+				log.Printf("error watching environment file: %s\n", err.Error())
 			}
 		}
 	}()

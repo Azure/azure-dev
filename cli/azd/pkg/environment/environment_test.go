@@ -111,11 +111,17 @@ func TestFromRoot(t *testing.T) {
 }
 
 func Test_SaveAndReload(t *testing.T) {
+	reloadComplete := make(chan bool, 1)
+
 	tempDir := t.TempDir()
 	ostest.Chdir(t, tempDir)
 
 	env := EmptyWithRoot(tempDir)
 	require.NotNil(t, env)
+
+	env.reloadCallback = func() {
+		reloadComplete <- true
+	}
 
 	env.SetLocation("eastus2")
 	env.SetSubscriptionId("SUBSCRIPTION_ID")
@@ -123,23 +129,18 @@ func Test_SaveAndReload(t *testing.T) {
 	err := env.Save()
 	require.NoError(t, err)
 
-	asyncDone := make(chan bool)
+	// Simulate another process writing to .env file
+	envPath := filepath.Join(tempDir, azdcontext.DotEnvFileName)
+	envMap, err := godotenv.Read(envPath)
+	require.NotNil(t, envMap)
+	require.NoError(t, err)
 
-	go func() {
-		// Simulate another process updating the .env file
-		envPath := filepath.Join(tempDir, azdcontext.DotEnvFileName)
-		envMap, err := godotenv.Read(envPath)
-		require.NotNil(t, envMap)
-		require.NoError(t, err)
+	// This entry does not exist in the current env state but is added as part of the reload process
+	envMap["SERVICE_API_ENDPOINT_URL"] = "http://api.example.com"
+	err = godotenv.Write(envMap, envPath)
+	require.NoError(t, err)
 
-		// This entry does not exist in the current env state but is added as part of the reload process
-		envMap["SERVICE_API_ENDPOINT_URL"] = "http://api.example.com"
-		err = godotenv.Write(envMap, envPath)
-		require.NoError(t, err)
-		asyncDone <- true
-	}()
-
-	<-asyncDone
+	<-reloadComplete
 
 	// Set a new property in the env
 	env.SetServiceProperty("web", "ENDPOINT_URL", "http://web.example.com")

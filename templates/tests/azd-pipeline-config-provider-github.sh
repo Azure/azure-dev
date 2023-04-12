@@ -50,9 +50,9 @@ function configGithub {
     fi
 
     # github auth login
-    echo "$3" > mytoken.txt
-    gh auth login --with-token < mytoken.txt
-    rm -rf mytoken.txt
+    echo "$3" > my-token.txt
+    gh auth login --with-token < my-token.txt
+    rm -rf my-token.txt
 
     # Azd pipeline config steps:
     echo "Azd pipeline config for $2..."

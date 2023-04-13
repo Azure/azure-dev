@@ -247,11 +247,11 @@ func (e *Environment) watchForChanges() error {
 		return fmt.Errorf("failed creating file watcher, %w", err)
 	}
 
-	e.watcher = watcher
-
-	if err := e.watcher.Add(envFilePath); err != nil {
+	if err := watcher.Add(envFilePath); err != nil {
 		return fmt.Errorf("failed watching environment file '%s', %w", envFilePath, err)
 	}
+
+	e.watcher = watcher
 
 	// Watch for changes to the environment file
 	go func() {
@@ -267,6 +267,7 @@ func (e *Environment) watchForChanges() error {
 				}
 
 				// Dedup multiple write events that happen within a short window
+				// A single file write can spawn multiple OS level write events
 				if timer == nil {
 					newTimer := time.AfterFunc(math.MaxInt64, func() {
 						if err := e.reload(); err != nil {

@@ -38,6 +38,7 @@ contoso
 csharpapp
 csharpapptest
 cupaloy
+dedup
 deletedservices
 devel
 docf
@@ -51,6 +52,7 @@ errcheck
 errorinfo
 errorlint
 executil
+fsnotify
 funcapp
 functestapp
 functionapp

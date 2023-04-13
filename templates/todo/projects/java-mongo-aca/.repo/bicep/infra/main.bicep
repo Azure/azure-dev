@@ -44,6 +44,8 @@ param webApiBaseUrl string = ''
 var abbrs = loadJsonContent('../../../../../../common/infra/bicep/abbreviations.json')
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 var tags = { 'azd-env-name': environmentName }
+var apiContainerAppNameOrDefault = '${abbrs.appContainerApps}web-${resourceToken}'
+var corsAcaUrl = 'https://${apiContainerAppNameOrDefault}.${containerApps.outputs.defaultDomain}'
 
 // Organize resources in a resource group
 resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
@@ -93,6 +95,7 @@ module api '../../../../../common/infra/bicep/app/api-container-app.bicep' = {
     containerAppsEnvironmentName: containerApps.outputs.environmentName
     containerRegistryName: containerApps.outputs.registryName
     keyVaultName: keyVault.outputs.name
+    corsAcaUrl: corsAcaUrl
   }
 }
 
@@ -176,6 +179,7 @@ output AZURE_COSMOS_CONNECTION_STRING_KEY string = cosmos.outputs.connectionStri
 output AZURE_COSMOS_DATABASE_NAME string = cosmos.outputs.databaseName
 
 // App outputs
+output API_CORS_ACA_URL string = corsAcaUrl
 output APPLICATIONINSIGHTS_CONNECTION_STRING string = monitoring.outputs.applicationInsightsConnectionString
 output APPLICATIONINSIGHTS_NAME string = monitoring.outputs.applicationInsightsName
 output AZURE_CONTAINER_ENVIRONMENT_NAME string = containerApps.outputs.environmentName

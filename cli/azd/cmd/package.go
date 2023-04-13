@@ -98,7 +98,7 @@ type PackageResult struct {
 func (pa *packageAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	// Command title
 	pa.console.MessageUxItem(ctx, &ux.MessageTitle{
-		Title: fmt.Sprintf("Packaging services (azd package) %s", output.WithWarningFormat("(Beta)")),
+		Title: "Packaging services (azd package)",
 	})
 
 	targetServiceName := ""

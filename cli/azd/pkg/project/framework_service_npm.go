@@ -103,7 +103,7 @@ func (np *npmProject) Package(
 ) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
-			packageRoot, err := os.MkdirTemp("", "azd")
+			packageDest, err := os.MkdirTemp("", "azd")
 			if err != nil {
 				task.SetError(fmt.Errorf("creating package directory for %s: %w", serviceConfig.Name, err))
 				return
@@ -115,7 +115,11 @@ func (np *npmProject) Package(
 			// Exec custom `package` script if available
 			// If `package` script is not defined in the package.json the NPM script will NOT fail
 			task.SetProgress(NewServiceProgress("Running NPM package script"))
-			if err := np.cli.RunScript(ctx, serviceConfig.Path(), "package", envs); err != nil {
+
+			// Long term this script we call should better align with our inner-loop scenarios
+			// Keeping this defaulted to `build` will create confusion for users when we start to support
+			// both local dev / debug builds and production bundled builds
+			if err := np.cli.RunScript(ctx, serviceConfig.Path(), "build", envs); err != nil {
 				task.SetError(err)
 				return
 			}
@@ -126,11 +130,23 @@ func (np *npmProject) Package(
 				packageSource = filepath.Join(serviceConfig.Path(), serviceConfig.OutputPath)
 			}
 
+			if entries, err := os.ReadDir(packageSource); err != nil || len(entries) == 0 {
+				task.SetError(
+					fmt.Errorf(
+						//nolint:lll
+						"package source '%s' is empty or does not exist. If your service has custom packaging requirements create an NPM script named 'build' within your package.json and ensure your package artifacts are written to the '%s' directory",
+						packageSource,
+						packageSource,
+					),
+				)
+				return
+			}
+
 			task.SetProgress(NewServiceProgress("Copying deployment package"))
 
 			if err := buildForZip(
 				packageSource,
-				packageRoot,
+				packageDest,
 				buildForZipOptions{
 					excludeConditions: []excludeDirEntryCondition{
 						excludeNodeModules,
@@ -140,9 +156,14 @@ func (np *npmProject) Package(
 				return
 			}
 
+			if err := validatePackageOutput(packageDest); err != nil {
+				task.SetError(err)
+				return
+			}
+
 			task.SetResult(&ServicePackageResult{
 				Build:       buildOutput,
-				PackagePath: packageRoot,
+				PackagePath: packageDest,
 			})
 		},
 	)

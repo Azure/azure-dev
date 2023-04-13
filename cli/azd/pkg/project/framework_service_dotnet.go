@@ -147,7 +147,7 @@ func (dp *dotnetProject) Package(
 ) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
-			packageRoot, err := os.MkdirTemp("", "azd")
+			packageDest, err := os.MkdirTemp("", "azd")
 			if err != nil {
 				task.SetError(fmt.Errorf("creating package directory for %s: %w", serviceConfig.Name, err))
 				return
@@ -159,18 +159,23 @@ func (dp *dotnetProject) Package(
 				task.SetError(err)
 				return
 			}
-			if err := dp.dotnetCli.Publish(ctx, projFile, defaultDotNetBuildConfiguration, packageRoot); err != nil {
+			if err := dp.dotnetCli.Publish(ctx, projFile, defaultDotNetBuildConfiguration, packageDest); err != nil {
 				task.SetError(err)
 				return
 			}
 
 			if serviceConfig.OutputPath != "" {
-				packageRoot = filepath.Join(packageRoot, serviceConfig.OutputPath)
+				packageDest = filepath.Join(packageDest, serviceConfig.OutputPath)
+			}
+
+			if err := validatePackageOutput(packageDest); err != nil {
+				task.SetError(err)
+				return
 			}
 
 			task.SetResult(&ServicePackageResult{
 				Build:       buildOutput,
-				PackagePath: packageRoot,
+				PackagePath: packageDest,
 			})
 		},
 	)

@@ -236,7 +236,11 @@ func (e *Environment) watchForChanges() error {
 		return nil
 	}
 
+	// Don't setup the watcher if the .env file doesn't exist yet
 	envFilePath := filepath.Join(e.Root, azdcontext.DotEnvFileName)
+	if _, err := os.Stat(envFilePath); errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
 
 	watcher, err := fsnotify.NewWatcher()
 	if err != nil {

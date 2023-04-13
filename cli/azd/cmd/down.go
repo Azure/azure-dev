@@ -144,7 +144,7 @@ func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			Header: "Your Azure resources have been destroyed.",
+			Header: "Your Azure resources have been deleted.",
 		},
 	}, nil
 }

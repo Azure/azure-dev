@@ -256,13 +256,13 @@ func TestBicepDestroy(t *testing.T) {
 
 		// Setup console mocks
 		mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
-			return strings.Contains(options.Message, "This will delete")
+			return strings.Contains(options.Message, "are you sure you want to continue")
 		}).Respond(true)
 
 		mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
 			return strings.Contains(
 				options.Message,
-				"Would you like to permanently delete these Key Vaults/App Configurations",
+				"Would you like to permanently delete these resources instead",
 			)
 		}).Respond(true)
 
@@ -293,34 +293,23 @@ func TestBicepDestroy(t *testing.T) {
 
 		// Verify console prompts
 		consoleOutput := mockContext.Console.Output()
-		require.Len(t, consoleOutput, 11)
-		require.Contains(t, consoleOutput[0], "This will delete")
-		require.Contains(t, consoleOutput[1], "Deleted resource group")
-		require.Contains(t, consoleOutput[2], "This operation will delete")
-		require.Contains(t, consoleOutput[3], "Would you like to permanently delete these Key Vaults/App Configurations")
-		require.Contains(t, consoleOutput[4], "Purged key vault kv-123")
-		require.Contains(t, consoleOutput[5], "Purged key vault kv2-123")
-		require.Contains(t, consoleOutput[6], "Purged app configuration ac-123")
-		require.Contains(t, consoleOutput[7], "Purged app configuration ac2-123")
-		require.Contains(t, consoleOutput[8], "Purged api management service apim-123")
-		require.Contains(t, consoleOutput[9], "Purged api management service apim2-123")
-		require.Contains(t, consoleOutput[10], "Deleted deployment")
+		require.Len(t, consoleOutput, 8)
+		require.Contains(t, consoleOutput[0], "Resource group(s) to be deleted")
+		require.Contains(t, consoleOutput[1], "Total resources to delete")
+		require.Contains(t, consoleOutput[2], "Deleting your resources can take some time")
+		require.Contains(t, consoleOutput[3], "")
+		require.Contains(t, consoleOutput[4], "Warning: The following operation will delete")
+		require.Contains(t, consoleOutput[5], "These resources have soft delete enabled allowing")
+		require.Contains(t, consoleOutput[6], "Would you like to permanently delete these resources instead")
+		require.Contains(t, consoleOutput[7], "")
 
 		// Verify progress output
-		require.Len(t, progressLog, 13)
+		require.Len(t, progressLog, 5)
 		require.Contains(t, progressLog[0], "Fetching resource groups")
 		require.Contains(t, progressLog[1], "Fetching resources")
 		require.Contains(t, progressLog[2], "Getting Key Vaults to purge")
 		require.Contains(t, progressLog[3], "Getting App Configurations to purge")
 		require.Contains(t, progressLog[4], "Getting API Management Services to purge")
-		require.Contains(t, progressLog[5], "Deleting resource group")
-		require.Contains(t, progressLog[6], "Purging key vault kv-123")
-		require.Contains(t, progressLog[7], "Purging key vault kv2-123")
-		require.Contains(t, progressLog[8], "Purging app configuration ac-123")
-		require.Contains(t, progressLog[9], "Purging app configuration ac2-123")
-		require.Contains(t, progressLog[10], "Purging api management service apim-123")
-		require.Contains(t, progressLog[11], "Purging api management service apim2-123")
-		require.Contains(t, progressLog[12], "Deleting deployment")
 	})
 
 	t.Run("InteractiveForceAndPurge", func(t *testing.T) {
@@ -360,32 +349,17 @@ func TestBicepDestroy(t *testing.T) {
 
 		// Verify console prompts
 		consoleOutput := mockContext.Console.Output()
-		require.Len(t, consoleOutput, 8)
-		require.Contains(t, consoleOutput[0], "Deleted resource group")
-		require.Contains(t, consoleOutput[1], "Purged key vault kv-123")
-		require.Contains(t, consoleOutput[2], "Purged key vault kv2-123")
-		require.Contains(t, consoleOutput[3], "Purged app configuration ac-123")
-		require.Contains(t, consoleOutput[4], "Purged app configuration ac2-123")
-		require.Contains(t, consoleOutput[5], "Purged api management service apim-123")
-		require.Contains(t, consoleOutput[6], "Purged api management service apim2-123")
-		require.Contains(t, consoleOutput[7], "Deleted deployment")
+		require.Len(t, consoleOutput, 2)
+		require.Contains(t, consoleOutput[0], "Deleting your resources can take some time")
+		require.Contains(t, consoleOutput[1], "")
 
 		// Verify progress output
-		require.Len(t, progressLog, 13)
+		require.Len(t, progressLog, 5)
 		require.Contains(t, progressLog[0], "Fetching resource groups")
 		require.Contains(t, progressLog[1], "Fetching resources")
 		require.Contains(t, progressLog[2], "Getting Key Vaults to purge")
 		require.Contains(t, progressLog[3], "Getting App Configurations to purge")
 		require.Contains(t, progressLog[4], "Getting API Management Services to purge")
-		require.Contains(t, progressLog[5], "Deleting resource group")
-		require.Contains(t, progressLog[6], "Purging key vault kv-123")
-		require.Contains(t, progressLog[7], "Purging key vault kv2-123")
-		require.Contains(t, progressLog[8], "Purging app configuration ac-123")
-		require.Contains(t, progressLog[9], "Purging app configuration ac2-123")
-		require.Contains(t, progressLog[10], "Purging api management service apim-123")
-		require.Contains(t, progressLog[11], "Purging api management service apim2-123")
-		require.Contains(t, progressLog[12], "Deleting deployment")
-
 	})
 }
 

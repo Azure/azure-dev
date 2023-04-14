@@ -50,7 +50,7 @@ if ($IsWindows) {
         -ldflags="-s -w -X 'github.com/azure/azure-dev/cli/azd/internal.Version=$Version (commit $SourceVersion)' -linkmode=auto -extldflags=-Wl,--high-entropy-va"
 }
 elseif ($IsLinux) {
-    Write-Host "go build (posix)"
+    Write-Host "go build (linux)"
     go build `
         -buildmode=pie `
         -tags="cfi,cfg,cfgo,osusergo,netgo" `
@@ -59,7 +59,7 @@ elseif ($IsLinux) {
         -ldflags="-s -w -X 'github.com/azure/azure-dev/cli/azd/internal.Version=$Version (commit $SourceVersion)' -extldflags=-Wl,--high-entropy-va"
 }
 elseif ($IsMacOS) {
-    Write-Host "go build (posix)"
+    Write-Host "go build (macos)"
     go build `
         -buildmode=pie `
         -tags="cfi,cfg,cfgo,osusergo,netgo" `

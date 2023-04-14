@@ -43,6 +43,7 @@ func (pc *pipelineConfigFlags) Bind(local *pflag.FlagSet, global *internal.Globa
 		"origin",
 		"The name of the git remote to configure the pipeline to run on.",
 	)
+	//nolint:lll
 	local.StringVar(
 		&pc.PipelineAuthTypeName,
 		"auth-type",

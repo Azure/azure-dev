@@ -104,7 +104,7 @@ type AzCli interface {
 		armTemplate azure.RawArmTemplate,
 		parameters azure.ArmParameters,
 		location string) (
-		AzCliDeploymentResult, error)
+		*armresources.DeploymentExtended, error)
 	DeployToResourceGroup(
 		ctx context.Context,
 		subscriptionId,
@@ -112,7 +112,7 @@ type AzCli interface {
 		deploymentName string,
 		armTemplate azure.RawArmTemplate,
 		parameters azure.ArmParameters,
-	) (AzCliDeploymentResult, error)
+	) (*armresources.DeploymentExtended, error)
 	DeleteSubscriptionDeployment(ctx context.Context, subscriptionId string, deploymentName string) error
 	DeleteResourceGroup(ctx context.Context, subscriptionId string, resourceGroupName string) error
 	ListResourceGroup(
@@ -201,7 +201,8 @@ type AzCliDeploymentPropertiesBasicDependency struct {
 }
 
 type AzCliDeploymentResult struct {
-	Properties AzCliDeploymentResultProperties `json:"properties"`
+	Properties    AzCliDeploymentResultProperties `json:"properties"`
+	CorrelationId string
 }
 
 type AzCliDeploymentResultProperties struct {

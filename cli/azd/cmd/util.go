@@ -222,12 +222,20 @@ func getResourceGroupFollowUp(
 	projectConfig *project.ProjectConfig,
 	resourceManager project.ResourceManager,
 	env *environment.Environment,
+	correlationId string,
 ) (followUp string) {
 	if formatter.Kind() != output.JsonFormat {
 		subscriptionId := env.GetSubscriptionId()
 
+		var correlationIdMessage string
+		if correlationId != "" {
+			correlationIdMessage = fmt.Sprintf("Correlation id: %s\n", correlationId)
+		}
+
 		if resourceGroupName, err := resourceManager.GetResourceGroupName(ctx, subscriptionId, projectConfig); err == nil {
-			followUp = fmt.Sprintf("You can view the resources created under the resource group %s in Azure Portal:\n%s",
+			followUp = fmt.Sprintf(
+				"%sYou can view the resources created under the resource group %s in Azure Portal:\n%s",
+				correlationIdMessage,
 				resourceGroupName, output.WithLinkFormat(fmt.Sprintf(
 					"https://portal.azure.com/#@/resource/subscriptions/%s/resourceGroups/%s/overview",
 					subscriptionId,

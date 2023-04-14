@@ -283,7 +283,7 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
 			Header:   "Your Azure app has been deployed!",
-			FollowUp: getResourceGroupFollowUp(ctx, da.formatter, da.projectConfig, da.resourceManager, da.env),
+			FollowUp: getResourceGroupFollowUp(ctx, da.formatter, da.projectConfig, da.resourceManager, da.env, ""),
 		},
 	}, nil
 }

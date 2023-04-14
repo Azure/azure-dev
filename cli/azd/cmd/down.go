@@ -129,7 +129,7 @@ func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	destroyOptions := provisioning.NewDestroyOptions(a.flags.forceDelete, a.flags.purgeDelete)
 	destroyResult, err := infraManager.Destroy(ctx, &deploymentPlan.Deployment, destroyOptions)
 	if err != nil {
-		return nil, fmt.Errorf("destroying infrastructure: %w", err)
+		return nil, fmt.Errorf("deleting infrastructure: %w", err)
 	}
 
 	// Remove any outputs from the template from the environment since destroying the infrastructure

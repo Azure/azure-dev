@@ -190,7 +190,7 @@ func (m *Manager) destroy(ctx context.Context, deployment *Deployment, options D
 
 	result, err := destroyTask.Await()
 	if err != nil {
-		return nil, fmt.Errorf("error destroying Azure resources: %w", err)
+		return nil, fmt.Errorf("error deleting Azure resources: %w", err)
 	}
 
 	destroyResult = result

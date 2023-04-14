@@ -255,7 +255,7 @@ func (t *TerraformProvider) Destroy(
 				return
 			}
 
-			t.console.Message(ctx, "Destroying terraform deployment...")
+			t.console.Message(ctx, "Deleting terraform deployment...")
 			err = asyncContext.Interact(func() error {
 				destroyArgs := t.createDestroyArgs(isRemoteBackendConfig, options.Force())
 				runResult, err := t.cli.Destroy(ctx, modulePath, destroyArgs...)

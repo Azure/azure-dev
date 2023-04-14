@@ -29,6 +29,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/cmdsubst"
+	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
@@ -40,7 +41,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/drone/envsubst"
-	"github.com/sethvargo/go-retry"
 	"golang.org/x/exp/maps"
 	"golang.org/x/exp/slices"
 )
@@ -232,6 +232,7 @@ func (p *BicepProvider) Deploy(
 				bicepDeploymentData.TemplateOutputs,
 				azcli.CreateDeploymentOutput(deployResult.Properties.Outputs),
 			)
+			deployment.CorrelationId = convert.ToValueWithDefault(deployResult.Properties.CorrelationID, "")
 
 			result := &DeployResult{
 				Deployment: &deployment,
@@ -298,7 +299,7 @@ func (p *BicepProvider) Destroy(
 			}
 
 			if err := p.destroyResourceGroups(ctx, options, groupedResources, len(allResources)); err != nil {
-				asyncContext.SetError(fmt.Errorf("destroying resource groups: %w", err))
+				asyncContext.SetError(fmt.Errorf("deleting resource groups: %w", err))
 				return
 			}
 
@@ -372,6 +373,21 @@ func (p *BicepProvider) getAllResources(
 	return allResources, nil
 }
 
+func generateResourceGroupsToDelete(groupedResources map[string][]azcli.AzCliResource, subId string) []string {
+	lines := []string{"Resource group(s) to be deleted:", ""}
+
+	for rg := range groupedResources {
+		lines = append(lines, fmt.Sprintf("  • %s: %s",
+			rg,
+			output.WithLinkFormat("https://portal.azure.com/#@/resource/subscriptions/%s/resourceGroups/%s/overview",
+				subId,
+				rg,
+			),
+		))
+	}
+	return append(lines, "")
+}
+
 // Deletes the azure resources within the deployment
 func (p *BicepProvider) destroyResourceGroups(
 	ctx context.Context,
@@ -380,9 +396,12 @@ func (p *BicepProvider) destroyResourceGroups(
 	resourceCount int,
 ) error {
 	if !options.Force() {
+		p.console.MessageUxItem(ctx, &ux.MultilineMessage{
+			Lines: generateResourceGroupsToDelete(groupedResources, p.env.GetSubscriptionId())},
+		)
 		confirmDestroy, err := p.console.Confirm(ctx, input.ConsoleOptions{
 			Message: fmt.Sprintf(
-				"This will %s %d resources, are you sure you want to continue?",
+				"Total resources to %s: %d, are you sure you want to continue?",
 				output.WithErrorFormat("delete"),
 				resourceCount,
 			),
@@ -835,31 +854,31 @@ func (p *BicepProvider) deployModule(
 	armParameters azure.ArmParameters,
 ) (*armresources.DeploymentExtended, error) {
 
-	if err := scope.Deploy(ctx, armTemplate, armParameters); err != nil {
-		return nil, fmt.Errorf("failed deploying: %w", err)
-	}
+	// if _, err := scope.Deploy(ctx, armTemplate, armParameters); err != nil {
+	// 	return nil, fmt.Errorf("failed deploying: %w", err)
+	// }
 
-	// We've seen issues where `Deploy` completes but for a short while after, fetching the deployment fails with a
-	// `DeploymentNotFound` error.
-	// Since other commands of ours use the deployment, let's try to fetch it here and if we fail with `DeploymentNotFound`,
-	// ignore this error, wait a short while and retry.
+	// // We've seen issues where `Deploy` completes but for a short while after, fetching the deployment fails with a
+	// // `DeploymentNotFound` error.
+	// // Since other commands of ours use the deployment, let's try to fetch it here and if we fail with `DeploymentNotFound`,
+	// // ignore this error, wait a short while and retry.
 
-	var deployment *armresources.DeploymentExtended
-	if err := retry.Do(ctx, retry.WithMaxRetries(10, retry.NewExponential(1*time.Second)), func(ctx context.Context) error {
-		deploymentResult, err := scope.GetDeployment(ctx)
-		if errors.Is(err, azcli.ErrDeploymentNotFound) {
-			return retry.RetryableError(err)
-		} else if err != nil {
-			return fmt.Errorf("failed waiting for deployment: %w", err)
-		}
+	// var deployment *armresources.DeploymentExtended
+	// if err := retry.Do(ctx, retry.WithMaxRetries(10, retry.NewExponential(1*time.Second)), func(ctx context.Context) error {
+	// 	deploymentResult, err := scope.GetDeployment(ctx)
+	// 	if errors.Is(err, azcli.ErrDeploymentNotFound) {
+	// 		return retry.RetryableError(err)
+	// 	} else if err != nil {
+	// 		return fmt.Errorf("failed waiting for deployment: %w", err)
+	// 	}
 
-		deployment = deploymentResult
-		return nil
-	}); err != nil {
-		return nil, fmt.Errorf("timed out waiting for deployment: %w", err)
-	}
+	// 	deployment = deploymentResult
+	// 	return nil
+	// }); err != nil {
+	// 	return nil, fmt.Errorf("timed out waiting for deployment: %w", err)
+	// }
 
-	return deployment, nil
+	return scope.Deploy(ctx, armTemplate, armParameters)
 }
 
 // Gets the path to the project parameters file path

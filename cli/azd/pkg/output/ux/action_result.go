@@ -12,6 +12,7 @@ import (
 
 type ActionResult struct {
 	SuccessMessage string
+	CorrelationId  string
 	FollowUp       string
 	Err            error
 }
@@ -22,6 +23,9 @@ func (ar *ActionResult) ToString(currentIndentation string) (result string) {
 	}
 	if ar.SuccessMessage != "" {
 		result = output.WithSuccessFormat("\n%s: %s", "SUCCESS", ar.SuccessMessage)
+	}
+	if ar.CorrelationId != "" {
+		result += fmt.Sprintf("\nCorrelation Id: %s", ar.CorrelationId)
 	}
 	if ar.FollowUp != "" {
 		result += fmt.Sprintf("\n%s", ar.FollowUp)

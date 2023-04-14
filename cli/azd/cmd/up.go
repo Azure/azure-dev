@@ -122,7 +122,7 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	provision.flags = &u.flags.provisionFlags
 	provisionOptions := &middleware.Options{CommandPath: "provision"}
-	_, err = u.runner.RunChildAction(ctx, provisionOptions, provision)
+	provisionResult, err := u.runner.RunChildAction(ctx, provisionOptions, provision)
 	if err != nil {
 		return nil, err
 	}
@@ -146,6 +146,8 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if err != nil {
 		return nil, err
 	}
+	// Use the correlation id from the provision operation
+	deployResult.Message.CorrelationId = provisionResult.Message.CorrelationId
 
 	return deployResult, nil
 }

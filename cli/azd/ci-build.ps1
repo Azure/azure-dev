@@ -65,7 +65,7 @@ elseif ($IsMacOS) {
         -tags="cfi,cfg,cfgo,osusergo,netgo" `
         -gcflags="-trimpath" `
         -asmflags="-trimpath" `
-        -ldflags="-s -w -X 'github.com/azure/azure-dev/cli/azd/internal.Version=$Version (commit $SourceVersion)'  -linkmode=auto"
+        -ldflags="-s -w -X 'github.com/azure/azure-dev/cli/azd/internal.Version=$Version (commit $SourceVersion)' -linkmode=auto"
 }
 
 if ($LASTEXITCODE) {

@@ -28,6 +28,16 @@ func NewNpmProject(cli npm.NpmCli, env *environment.Environment) FrameworkServic
 	}
 }
 
+func (np *npmProject) Requirements() FrameworkRequirements {
+	return FrameworkRequirements{
+		Package: FrameworkPackageRequirements{
+			// NPM requires a restore before running any NPM scripts
+			RequireRestore: true,
+			RequireBuild:   false,
+		},
+	}
+}
+
 // Gets the required external tools for the project
 func (np *npmProject) RequiredExternalTools(context.Context) []tools.ExternalTool {
 	return []tools.ExternalTool{np.cli}
@@ -72,15 +82,15 @@ func (np *npmProject) Build(
 				return
 			}
 
-			publishSource := serviceConfig.Path()
+			buildSource := serviceConfig.Path()
 
 			if serviceConfig.OutputPath != "" {
-				publishSource = filepath.Join(publishSource, serviceConfig.OutputPath)
+				buildSource = filepath.Join(buildSource, serviceConfig.OutputPath)
 			}
 
 			task.SetResult(&ServiceBuildResult{
 				Restore:         restoreOutput,
-				BuildOutputPath: publishSource,
+				BuildOutputPath: buildSource,
 			})
 		},
 	)
@@ -93,7 +103,7 @@ func (np *npmProject) Package(
 ) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
-			publishRoot, err := os.MkdirTemp("", "azd")
+			packageDest, err := os.MkdirTemp("", "azd")
 			if err != nil {
 				task.SetError(fmt.Errorf("creating package directory for %s: %w", serviceConfig.Name, err))
 				return
@@ -105,35 +115,55 @@ func (np *npmProject) Package(
 			// Exec custom `package` script if available
 			// If `package` script is not defined in the package.json the NPM script will NOT fail
 			task.SetProgress(NewServiceProgress("Running NPM package script"))
-			if err := np.cli.RunScript(ctx, serviceConfig.Path(), "package", envs); err != nil {
+
+			// Long term this script we call should better align with our inner-loop scenarios
+			// Keeping this defaulted to `build` will create confusion for users when we start to support
+			// both local dev / debug builds and production bundled builds
+			if err := np.cli.RunScript(ctx, serviceConfig.Path(), "build", envs); err != nil {
 				task.SetError(err)
 				return
 			}
 
-			// Copy directory rooted by dist to publish root.
-			publishSource := serviceConfig.Path()
+			// Copy directory rooted by dist to package root.
+			packageSource := buildOutput.BuildOutputPath
+			if packageSource == "" {
+				packageSource = filepath.Join(serviceConfig.Path(), serviceConfig.OutputPath)
+			}
 
-			if serviceConfig.OutputPath != "" {
-				publishSource = filepath.Join(publishSource, serviceConfig.OutputPath)
+			if entries, err := os.ReadDir(packageSource); err != nil || len(entries) == 0 {
+				task.SetError(
+					fmt.Errorf(
+						//nolint:lll
+						"package source '%s' is empty or does not exist. If your service has custom packaging requirements create an NPM script named 'build' within your package.json and ensure your package artifacts are written to the '%s' directory",
+						packageSource,
+						packageSource,
+					),
+				)
+				return
 			}
 
 			task.SetProgress(NewServiceProgress("Copying deployment package"))
 
 			if err := buildForZip(
-				publishSource,
-				publishRoot,
+				packageSource,
+				packageDest,
 				buildForZipOptions{
 					excludeConditions: []excludeDirEntryCondition{
 						excludeNodeModules,
 					},
 				}); err != nil {
-				task.SetError(fmt.Errorf("publishing for %s: %w", serviceConfig.Name, err))
+				task.SetError(fmt.Errorf("packaging for %s: %w", serviceConfig.Name, err))
+				return
+			}
+
+			if err := validatePackageOutput(packageDest); err != nil {
+				task.SetError(err)
 				return
 			}
 
 			task.SetResult(&ServicePackageResult{
 				Build:       buildOutput,
-				PackagePath: publishRoot,
+				PackagePath: packageDest,
 			})
 		},
 	)

@@ -17,7 +17,24 @@ export const createApp = async (): Promise<Express> => {
     await configureMongoose(config.database);
     // Middleware
     app.use(express.json());
-    app.use(cors());
+
+    const apiUrl = process.env.REACT_APP_WEB_BASE_URL;
+    const localhost = "http://localhost:3000/";
+    if (apiUrl) {
+        app.use(cors({
+            origin: [
+                "https://portal.azure.com",
+                "https://ms.portal.azure.com",
+                "http://localhost:3000/",
+                apiUrl,
+            ]
+        }));
+        console.log(`CORS with ${localhost} is allowed for local host debugging. If you want to change port number, go to ${__filename}`);
+    }
+    else {
+        app.use(cors());
+        console.log("Setting CORS to allow all origins because env var REACT_APP_WEB_BASE_URL has no value or is not set.");
+    }
 
     // API Routes
     app.use("/lists/:listId/items", items);

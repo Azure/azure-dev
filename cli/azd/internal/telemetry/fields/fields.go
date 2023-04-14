@@ -61,10 +61,12 @@ const (
 	SubscriptionIdKey = attribute.Key("ad.subscription.id")
 )
 
-// Project related attributes
+// Project (azure.yaml) related attributes
 const (
-	// Hashed template referenced in the project.
+	// Hashed template ID metadata
 	ProjectTemplateIdKey = attribute.Key("project.template.id")
+	// Hashed template.version metadata
+	ProjectTemplateVersionKey = attribute.Key("project.template.version")
 	// Hashed project name. Could be used as an indicator for number of different azd projects.
 	ProjectNameKey = attribute.Key("project.name")
 	// The collection of hashed service hosts in the project.
@@ -85,6 +87,11 @@ const (
 	CmdFlags = attribute.Key("cmd.flags")
 	// Number of positional arguments set.
 	CmdArgsCount = attribute.Key("cmd.args.count")
+	// The command invocation entrypoint.
+	//
+	// The command invocation is formatted using [events.GetCommandEventName]. This makes it consistent with how
+	// commands are represented in telemetry.
+	CmdEntry = attribute.Key("cmd.entry")
 )
 
 // All possible enumerations of ExecutionEnvironmentKey

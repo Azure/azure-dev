@@ -8,6 +8,7 @@ Usage
   azd restore <service> [flags]
 
 Flags
+        --all                	: Restores all services that are listed in azure.yaml
     -e, --environment string 	: The name of the environment to use.
     -h, --help               	: Gets help for restore.
 

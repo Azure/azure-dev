@@ -30,6 +30,16 @@ func NewPythonProject(cli *python.PythonCli, env *environment.Environment) Frame
 	}
 }
 
+func (pp *pythonProject) Requirements() FrameworkRequirements {
+	return FrameworkRequirements{
+		// Python does not require compilation and will just package the raw source files
+		Package: FrameworkPackageRequirements{
+			RequireRestore: false,
+			RequireBuild:   false,
+		},
+	}
+}
+
 // Gets the required external tools for the project
 func (pp *pythonProject) RequiredExternalTools(context.Context) []tools.ExternalTool {
 	return []tools.ExternalTool{pp.cli}
@@ -94,15 +104,15 @@ func (pp *pythonProject) Build(
 ) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServiceBuildResult, ServiceProgress]) {
-			publishSource := serviceConfig.Path()
+			buildSource := serviceConfig.Path()
 
 			if serviceConfig.OutputPath != "" {
-				publishSource = filepath.Join(publishSource, serviceConfig.OutputPath)
+				buildSource = filepath.Join(buildSource, serviceConfig.OutputPath)
 			}
 
 			task.SetResult(&ServiceBuildResult{
 				Restore:         restoreOutput,
-				BuildOutputPath: publishSource,
+				BuildOutputPath: buildSource,
 			})
 		},
 	)
@@ -115,31 +125,44 @@ func (pp *pythonProject) Package(
 ) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
-			publishRoot, err := os.MkdirTemp("", "azd")
+			packageDest, err := os.MkdirTemp("", "azd")
 			if err != nil {
 				task.SetError(fmt.Errorf("creating package directory for %s: %w", serviceConfig.Name, err))
 				return
 			}
 
-			publishSource := buildOutput.BuildOutputPath
+			packageSource := buildOutput.BuildOutputPath
+			if packageSource == "" {
+				packageSource = filepath.Join(serviceConfig.Path(), serviceConfig.OutputPath)
+			}
+
+			if entries, err := os.ReadDir(packageSource); err != nil || len(entries) == 0 {
+				task.SetError(fmt.Errorf("package source '%s' is empty or does not exist", packageSource))
+				return
+			}
 
 			task.SetProgress(NewServiceProgress("Copying deployment package"))
 			if err := buildForZip(
-				publishSource,
-				publishRoot,
+				packageSource,
+				packageDest,
 				buildForZipOptions{
 					excludeConditions: []excludeDirEntryCondition{
 						excludeVirtualEnv,
 						excludePyCache,
 					},
 				}); err != nil {
-				task.SetError(fmt.Errorf("publishing for %s: %w", serviceConfig.Name, err))
+				task.SetError(fmt.Errorf("packaging for %s: %w", serviceConfig.Name, err))
+				return
+			}
+
+			if err := validatePackageOutput(packageDest); err != nil {
+				task.SetError(err)
 				return
 			}
 
 			task.SetResult(&ServicePackageResult{
 				Build:       buildOutput,
-				PackagePath: publishRoot,
+				PackagePath: packageDest,
 			})
 		},
 	)

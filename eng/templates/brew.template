@@ -16,6 +16,12 @@ class Azd < Formula
       You can opt-out of telemetry by setting the AZURE_DEV_COLLECT_TELEMETRY environment variable to 'no' in the shell you use.
 
       Read more about #{desc} telemetry: https://github.com/Azure/azure-dev#data-collection
+
+      azd may download binaries to ~/.azd/bin and, depending on how azd was used on this machine,
+      may download binaries to other users' home directories in their .azd/bin directory.
+      These binaries will need to be removed manually upon uninstall.
+      To remove such binaries from your home directory, run 'rm -rf ~/.azd/bin'.
+
     EOS
     on_arm do
       caveat += <<~EOS

@@ -2,6 +2,7 @@ package project
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
@@ -10,6 +11,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -29,7 +31,7 @@ const (
 	frameworkBuildCalled       contextKey = "frameworkBuildCalled"
 	frameworkPackageCalled     contextKey = "frameworkPackageCalled"
 	serviceTargetPackageCalled contextKey = "serviceTargetPackageCalled"
-	serviceTargetPublishCalled contextKey = "serviceTargetPublishCalled"
+	serviceTargetDeployCalled  contextKey = "serviceTargetDeployCalled"
 )
 
 func createServiceManager(mockContext *mocks.MockContext, env *environment.Environment) ServiceManager {
@@ -40,7 +42,7 @@ func createServiceManager(mockContext *mocks.MockContext, env *environment.Envir
 	return NewServiceManager(env, resourceManager, serviceLocator)
 }
 
-func Test_GetRequiredTools(t *testing.T) {
+func Test_ServiceManager_GetRequiredTools(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	setupMocksForServiceManager(mockContext)
 	env := environment.Ephemeral()
@@ -53,7 +55,7 @@ func Test_GetRequiredTools(t *testing.T) {
 	require.Len(t, tools, 1)
 }
 
-func Test_Initialize(t *testing.T) {
+func Test_ServiceManager_Initialize(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	setupMocksForServiceManager(mockContext)
 	env := environment.Ephemeral()
@@ -64,7 +66,7 @@ func Test_Initialize(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func Test_Restore(t *testing.T) {
+func Test_ServiceManager_Restore(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	setupMocksForServiceManager(mockContext)
 	env := environment.Ephemeral()
@@ -98,7 +100,7 @@ func Test_Restore(t *testing.T) {
 	require.True(t, raisedPostRestoreEvent)
 }
 
-func Test_Build(t *testing.T) {
+func Test_ServiceManager_Build(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	setupMocksForServiceManager(mockContext)
 	env := environment.Ephemeral()
@@ -132,7 +134,7 @@ func Test_Build(t *testing.T) {
 	require.True(t, raisedPostBuildEvent)
 }
 
-func Test_Package(t *testing.T) {
+func Test_ServiceManager_Package(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	setupMocksForServiceManager(mockContext)
 	env := environment.Ephemeral()
@@ -169,43 +171,7 @@ func Test_Package(t *testing.T) {
 	require.True(t, raisedPostPackageEvent)
 }
 
-func Test_Publish(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
-	setupMocksForServiceManager(mockContext)
-	env := environment.EphemeralWithValues("test", map[string]string{
-		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
-	})
-	sm := createServiceManager(mockContext, env)
-	serviceConfig := createTestServiceConfig("./src/api", ServiceTargetFake, ServiceLanguageFake)
-
-	raisedPrePublishEvent := false
-	raisedPostPublishEvent := false
-
-	_ = serviceConfig.AddHandler("prepublish", func(ctx context.Context, args ServiceLifecycleEventArgs) error {
-		raisedPrePublishEvent = true
-		return nil
-	})
-
-	_ = serviceConfig.AddHandler("postpublish", func(ctx context.Context, args ServiceLifecycleEventArgs) error {
-		raisedPostPublishEvent = true
-		return nil
-	})
-
-	publishCalled := convert.RefOf(false)
-	ctx := context.WithValue(*mockContext.Context, serviceTargetPublishCalled, publishCalled)
-
-	publishTask := sm.Publish(ctx, serviceConfig, nil)
-	logProgress(publishTask)
-
-	result, err := publishTask.Await()
-	require.NoError(t, err)
-	require.NotNil(t, result)
-	require.True(t, *publishCalled)
-	require.True(t, raisedPrePublishEvent)
-	require.True(t, raisedPostPublishEvent)
-}
-
-func Test_Deploy(t *testing.T) {
+func Test_ServiceManager_Deploy(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	setupMocksForServiceManager(mockContext)
 	env := environment.EphemeralWithValues("test", map[string]string{
@@ -227,32 +193,21 @@ func Test_Deploy(t *testing.T) {
 		return nil
 	})
 
-	restoreCalled := convert.RefOf(false)
-	buildCalled := convert.RefOf(false)
-	fakeFrameworkPackageCalled := convert.RefOf(false)
-	fakeServiceTargetPackageCalled := convert.RefOf(false)
-	publishCalled := convert.RefOf(false)
-	ctx := context.WithValue(*mockContext.Context, frameworkRestoreCalled, restoreCalled)
-	ctx = context.WithValue(ctx, frameworkBuildCalled, buildCalled)
-	ctx = context.WithValue(ctx, frameworkPackageCalled, fakeFrameworkPackageCalled)
-	ctx = context.WithValue(ctx, serviceTargetPackageCalled, fakeServiceTargetPackageCalled)
-	ctx = context.WithValue(ctx, serviceTargetPublishCalled, publishCalled)
+	deployCalled := convert.RefOf(false)
+	ctx := context.WithValue(*mockContext.Context, serviceTargetDeployCalled, deployCalled)
 
-	deployTask := sm.Deploy(ctx, serviceConfig)
+	deployTask := sm.Deploy(ctx, serviceConfig, nil)
 	logProgress(deployTask)
 
 	result, err := deployTask.Await()
 	require.NoError(t, err)
 	require.NotNil(t, result)
-	require.True(t, *restoreCalled)
-	require.True(t, *buildCalled)
-	require.True(t, *fakeFrameworkPackageCalled)
-	require.True(t, *fakeServiceTargetPackageCalled)
+	require.True(t, *deployCalled)
 	require.True(t, raisedPreDeployEvent)
 	require.True(t, raisedPostDeployEvent)
 }
 
-func Test_GetFrameworkService(t *testing.T) {
+func Test_ServiceManager_GetFrameworkService(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	setupMocksForServiceManager(mockContext)
 	env := environment.Ephemeral()
@@ -265,7 +220,7 @@ func Test_GetFrameworkService(t *testing.T) {
 	require.IsType(t, new(fakeFramework), framework)
 }
 
-func Test_GetServiceTarget(t *testing.T) {
+func Test_ServiceManager_GetServiceTarget(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	setupMocksForServiceManager(mockContext)
 	env := environment.Ephemeral()
@@ -276,6 +231,103 @@ func Test_GetServiceTarget(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, serviceTarget)
 	require.IsType(t, new(fakeServiceTarget), serviceTarget)
+}
+
+func Test_ServiceManager_CacheResults(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	setupMocksForServiceManager(mockContext)
+	env := environment.Ephemeral()
+	sm := createServiceManager(mockContext, env)
+	serviceConfig := createTestServiceConfig("./src/api", ServiceTargetFake, ServiceLanguageFake)
+
+	buildCalled := convert.RefOf(false)
+	ctx := context.WithValue(*mockContext.Context, frameworkBuildCalled, buildCalled)
+
+	buildTask1 := sm.Build(ctx, serviceConfig, nil)
+	logProgress(buildTask1)
+
+	buildResult1, _ := buildTask1.Await()
+
+	require.True(t, *buildCalled)
+	*buildCalled = false
+
+	buildTask2 := sm.Build(ctx, serviceConfig, nil)
+	logProgress(buildTask1)
+
+	buildResult2, _ := buildTask2.Await()
+
+	require.False(t, *buildCalled)
+	require.Same(t, buildResult1, buildResult2)
+}
+
+func Test_ServiceManager_Events_With_Errors(t *testing.T) {
+	tests := []struct {
+		name      string
+		eventName string
+		run       func(ctx context.Context, serviceManager ServiceManager, serviceConfig *ServiceConfig) (any, error)
+	}{
+		{
+			name: "restore",
+			run: func(ctx context.Context, serviceManager ServiceManager, serviceConfig *ServiceConfig) (any, error) {
+				restoreTask := serviceManager.Restore(ctx, serviceConfig)
+				logProgress(restoreTask)
+				return restoreTask.Await()
+			},
+		},
+		{
+			name: "build",
+			run: func(ctx context.Context, serviceManager ServiceManager, serviceConfig *ServiceConfig) (any, error) {
+				buildTask := serviceManager.Build(ctx, serviceConfig, nil)
+				logProgress(buildTask)
+				return buildTask.Await()
+			},
+		},
+		{
+			name: "package",
+			run: func(ctx context.Context, serviceManager ServiceManager, serviceConfig *ServiceConfig) (any, error) {
+				packageTask := serviceManager.Package(ctx, serviceConfig, nil)
+				logProgress(packageTask)
+				return packageTask.Await()
+			},
+		},
+		{
+			name: "deploy",
+			run: func(ctx context.Context, serviceManager ServiceManager, serviceConfig *ServiceConfig) (any, error) {
+				deployTask := serviceManager.Deploy(ctx, serviceConfig, nil)
+				logProgress(deployTask)
+				return deployTask.Await()
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			mockContext := mocks.NewMockContext(context.Background())
+			setupMocksForServiceManager(mockContext)
+			env := environment.EphemeralWithValues("test", map[string]string{
+				environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
+			})
+			sm := createServiceManager(mockContext, env)
+			serviceConfig := createTestServiceConfig("./src/api", ServiceTargetFake, ServiceLanguageFake)
+
+			eventTypes := []string{"pre", "post"}
+			for _, eventType := range eventTypes {
+				t.Run(test.eventName, func(t *testing.T) {
+					test.eventName = eventType + test.name
+					_ = serviceConfig.AddHandler(
+						ext.Event(test.eventName),
+						func(ctx context.Context, args ServiceLifecycleEventArgs) error {
+							return errors.New("error")
+						},
+					)
+
+					result, err := test.run(*mockContext.Context, sm, serviceConfig)
+					require.Error(t, err)
+					require.Nil(t, result)
+				})
+			}
+		})
+	}
 }
 
 func setupMocksForServiceManager(mockContext *mocks.MockContext) {
@@ -307,7 +359,7 @@ func setupMocksForServiceManager(mockContext *mocks.MockContext) {
 	})
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "fake-service-target publish")
+		return strings.Contains(command, "fake-service-target deploy")
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		return exec.NewRunResult(0, "", ""), nil
 	})
@@ -346,6 +398,15 @@ type fakeFramework struct {
 func newFakeFramework(commandRunner exec.CommandRunner) FrameworkService {
 	return &fakeFramework{
 		commandRunner: commandRunner,
+	}
+}
+
+func (f *fakeFramework) Requirements() FrameworkRequirements {
+	return FrameworkRequirements{
+		Package: FrameworkPackageRequirements{
+			RequireRestore: false,
+			RequireBuild:   false,
+		},
 	}
 }
 
@@ -474,26 +535,26 @@ func (st *fakeServiceTarget) Package(
 	})
 }
 
-func (st *fakeServiceTarget) Publish(
+func (st *fakeServiceTarget) Deploy(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
 	targetResource *environment.TargetResource,
-) *async.TaskWithProgress[*ServicePublishResult, ServiceProgress] {
-	publishCalled, ok := ctx.Value(serviceTargetPublishCalled).(*bool)
+) *async.TaskWithProgress[*ServiceDeployResult, ServiceProgress] {
+	deployCalled, ok := ctx.Value(serviceTargetDeployCalled).(*bool)
 	if ok {
-		*publishCalled = true
+		*deployCalled = true
 	}
 
-	return async.RunTaskWithProgress(func(task *async.TaskContextWithProgress[*ServicePublishResult, ServiceProgress]) {
-		runArgs := exec.NewRunArgs("fake-service-target", "publish")
+	return async.RunTaskWithProgress(func(task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress]) {
+		runArgs := exec.NewRunArgs("fake-service-target", "deploy")
 		result, err := st.commandRunner.Run(ctx, runArgs)
 		if err != nil {
 			task.SetError(err)
 			return
 		}
 
-		task.SetResult(&ServicePublishResult{
+		task.SetResult(&ServiceDeployResult{
 			Package: packageOutput,
 			Details: result,
 		})

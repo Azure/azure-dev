@@ -12,6 +12,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/compare"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
@@ -28,7 +29,6 @@ type ResourceManager interface {
 		resourceId string,
 		resourceType AzureResourceType,
 	) (string, error)
-	GetWebAppResourceTypeDisplayName(ctx context.Context, subscriptionId string, resourceId string) (string, error)
 }
 
 func NewAzureResourceManager(azCli azcli.AzCli) *AzureResourceManager {
@@ -259,7 +259,15 @@ func (rm *AzureResourceManager) GetResourceTypeDisplayName(
 		// Web apps have different kinds of resources sharing the same resource type 'Microsoft.Web/sites', i.e. Function app
 		// vs. App service It is extremely important that we display the right one, thus we resolve it by querying the
 		// properties of the ARM resource.
-		resourceTypeDisplayName, err := rm.GetWebAppResourceTypeDisplayName(ctx, subscriptionId, resourceId)
+		resourceTypeDisplayName, err := rm.getWebAppResourceTypeDisplayName(ctx, subscriptionId, resourceId)
+
+		if err != nil {
+			return "", err
+		} else {
+			return resourceTypeDisplayName, nil
+		}
+	} else if resourceType == AzureResourceTypeCognitiveServiceAccount {
+		resourceTypeDisplayName, err := rm.getCognitiveServiceResourceTypeDisplayName(ctx, subscriptionId, resourceId)
 
 		if err != nil {
 			return "", err
@@ -275,7 +283,7 @@ func (rm *AzureResourceManager) GetResourceTypeDisplayName(
 // cWebAppApiVersion is the API Version we use when querying information about Web App resources
 const cWebAppApiVersion = "2021-03-01"
 
-func (rm *AzureResourceManager) GetWebAppResourceTypeDisplayName(
+func (rm *AzureResourceManager) getWebAppResourceTypeDisplayName(
 	ctx context.Context,
 	subscriptionId string,
 	resourceId string,
@@ -295,6 +303,29 @@ func (rm *AzureResourceManager) GetWebAppResourceTypeDisplayName(
 	}
 }
 
+// cognitiveServiceApiVersion is the API Version we use when querying information about Cognitive Service resources
+const cognitiveServiceApiVersion = "2021-04-30"
+
+func (rm *AzureResourceManager) getCognitiveServiceResourceTypeDisplayName(
+	ctx context.Context,
+	subscriptionId string,
+	resourceId string,
+) (string, error) {
+	resource, err := rm.azCli.GetResource(ctx, subscriptionId, resourceId, cognitiveServiceApiVersion)
+
+	if err != nil {
+		return "", fmt.Errorf("getting cognitive service resource type display names: %w", err)
+	}
+
+	if strings.Contains(resource.Kind, "OpenAI") {
+		return "Azure OpenAI", nil
+	} else if strings.Contains(resource.Kind, "FormRecognizer") {
+		return "Form recognizer", nil
+	} else {
+		return "Cognitive Service", nil
+	}
+}
+
 func (rm *AzureResourceManager) appendDeploymentResourcesRecursive(
 	ctx context.Context,
 	subscriptionId string,
@@ -310,11 +341,18 @@ func (rm *AzureResourceManager) appendDeploymentResourcesRecursive(
 	}
 
 	for _, operation := range operations {
-		if operation.Properties.TargetResource == nil {
-			// Operations w/o target data can't be resolved. Ignoring them
+		// Operations w/o target data can't be resolved. Ignoring them
+		if operation.Properties.TargetResource == nil ||
+			// The time stamp is used to filter only records after the queryStart.
+			// We ignore the resource if we can't know when it was created
+			operation.Properties.Timestamp == nil ||
+			// The resource type is required to resolve the name of the resource.
+			// If the dep-op is missing this, we can't resolve it.
+			compare.IsStringNilOrEmpty(operation.Properties.TargetResource.ResourceType) {
 			continue
 		}
-		if *operation.Properties.TargetResource.ResourceType == string(AzureResourceTypeDeployment) {
+
+		if compare.PtrValueEquals(operation.Properties.TargetResource.ResourceType, string(AzureResourceTypeDeployment)) {
 			// go to inner levels to resolve resources
 			err := rm.appendDeploymentResourcesRecursive(
 				ctx,
@@ -329,16 +367,7 @@ func (rm *AzureResourceManager) appendDeploymentResourcesRecursive(
 			}
 			continue
 		}
-		if operation.Properties.Timestamp == nil {
-			// The time stamp is used to filter only records after the queryStart.
-			// We ignore the resource if we can't know when it was created
-			continue
-		}
-		if strings.TrimSpace(*operation.Properties.TargetResource.ResourceType) == "" {
-			// The resource type is required to resolve the name of the resource.
-			// If the dep-op is missing this, we can't resolve it.
-			continue
-		}
+
 		_, alreadyAdded := (*resourceOperations)[*operation.OperationID]
 		if !alreadyAdded &&
 			*operation.Properties.ProvisioningOperation == armresources.ProvisioningOperationCreate &&

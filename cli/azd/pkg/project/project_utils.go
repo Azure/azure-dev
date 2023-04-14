@@ -14,7 +14,7 @@ import (
 // CreateDeployableZip creates a zip file of a folder, recursively.
 // Returns the path to the created zip file or an error if it fails.
 func createDeployableZip(appName string, path string) (string, error) {
-	// TODO: should probably avoid picking up files that weren't meant to be published (ie, local .env files, etc..)
+	// TODO: should probably avoid picking up files that weren't meant to be deployed (ie, local .env files, etc..)
 	zipFile, err := os.CreateTemp("", "azddeploy*.zip")
 	if err != nil {
 		return "", fmt.Errorf("failed when creating zip package to deploy %s: %w", appName, err)

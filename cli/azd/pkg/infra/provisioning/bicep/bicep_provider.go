@@ -377,7 +377,8 @@ func generateResourceGroupsToDelete(groupedResources map[string][]azcli.AzCliRes
 	lines := []string{"Resource group(s) to be deleted:", ""}
 
 	for rg := range groupedResources {
-		lines = append(lines, fmt.Sprintf("  • %s: %s",
+		lines = append(lines, fmt.Sprintf(
+			"  • %s: %s",
 			rg,
 			output.WithLinkFormat("https://portal.azure.com/#@/resource/subscriptions/%s/resourceGroups/%s/overview",
 				subId,
@@ -853,31 +854,6 @@ func (p *BicepProvider) deployModule(
 	armTemplate azure.RawArmTemplate,
 	armParameters azure.ArmParameters,
 ) (*armresources.DeploymentExtended, error) {
-
-	// if _, err := scope.Deploy(ctx, armTemplate, armParameters); err != nil {
-	// 	return nil, fmt.Errorf("failed deploying: %w", err)
-	// }
-
-	// // We've seen issues where `Deploy` completes but for a short while after, fetching the deployment fails with a
-	// // `DeploymentNotFound` error.
-	// // Since other commands of ours use the deployment, let's try to fetch it here and if we fail with `DeploymentNotFound`,
-	// // ignore this error, wait a short while and retry.
-
-	// var deployment *armresources.DeploymentExtended
-	// if err := retry.Do(ctx, retry.WithMaxRetries(10, retry.NewExponential(1*time.Second)), func(ctx context.Context) error {
-	// 	deploymentResult, err := scope.GetDeployment(ctx)
-	// 	if errors.Is(err, azcli.ErrDeploymentNotFound) {
-	// 		return retry.RetryableError(err)
-	// 	} else if err != nil {
-	// 		return fmt.Errorf("failed waiting for deployment: %w", err)
-	// 	}
-
-	// 	deployment = deploymentResult
-	// 	return nil
-	// }); err != nil {
-	// 	return nil, fmt.Errorf("timed out waiting for deployment: %w", err)
-	// }
-
 	return scope.Deploy(ctx, armTemplate, armParameters)
 }
 

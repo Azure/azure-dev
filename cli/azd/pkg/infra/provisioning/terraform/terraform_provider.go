@@ -256,18 +256,11 @@ func (t *TerraformProvider) Destroy(
 			}
 
 			t.console.Message(ctx, "Deleting terraform deployment...")
-			err = asyncContext.Interact(func() error {
-				destroyArgs := t.createDestroyArgs(isRemoteBackendConfig, options.Force())
-				runResult, err := t.cli.Destroy(ctx, modulePath, destroyArgs...)
-				if err != nil {
-					return fmt.Errorf("template Deploy failed:%s , err :%w", runResult, err)
-				}
 
-				return nil
-			})
-
+			destroyArgs := t.createDestroyArgs(isRemoteBackendConfig, options.Force())
+			runResult, err := t.cli.Destroy(ctx, modulePath, destroyArgs...)
 			if err != nil {
-				asyncContext.SetError(err)
+				asyncContext.SetError(fmt.Errorf("template Deploy failed:%s , err :%w", runResult, err))
 				return
 			}
 

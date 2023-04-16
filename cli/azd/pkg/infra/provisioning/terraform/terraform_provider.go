@@ -256,7 +256,9 @@ func (t *TerraformProvider) Destroy(
 			}
 
 			t.console.Message(ctx, "Deleting terraform deployment...")
-
+			// terraform doesn't use the `t.console`, we must ensure no spinner is running before calling Destroy
+			// as it could be an interactive operation if it needs confirmation
+			t.console.StopSpinner(ctx, "", input.Step)
 			destroyArgs := t.createDestroyArgs(isRemoteBackendConfig, options.Force())
 			runResult, err := t.cli.Destroy(ctx, modulePath, destroyArgs...)
 			if err != nil {

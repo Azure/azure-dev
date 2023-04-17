@@ -62,7 +62,8 @@ type Environment struct {
 	Root string
 
 	// File watcher is configured to detect changes to the underlying .env file and automatically reload the instance
-	watcher *fsnotify.Watcher
+	watcher    *fsnotify.Watcher
+	watchMutex sync.Mutex
 
 	// Only used for unit testing to have a consistent way to be notified of reload activities
 	reloadCallback func()
@@ -236,6 +237,9 @@ func (e *Environment) watchForChanges() error {
 		return nil
 	}
 
+	e.watchMutex.Lock()
+	defer e.watchMutex.Unlock()
+
 	// Don't setup the watcher if the .env file doesn't exist yet
 	envFilePath := filepath.Join(e.Root, azdcontext.DotEnvFileName)
 	if _, err := os.Stat(envFilePath); errors.Is(err, os.ErrNotExist) {
@@ -262,7 +266,13 @@ func (e *Environment) watchForChanges() error {
 		for {
 			select {
 			case event, ok := <-e.watcher.Events:
-				if !ok || !event.Has(fsnotify.Write) {
+				if !ok {
+					log.Printf("environment watcher channel was closed")
+					return
+				}
+
+				// Ignore any non-write operations
+				if !event.Has(fsnotify.Write) {
 					continue
 				}
 
@@ -296,7 +306,7 @@ func (e *Environment) watchForChanges() error {
 
 				timer.Reset(waitFor)
 			case err := <-e.watcher.Errors:
-				log.Printf("error watching environment file: %s\n", err.Error())
+				log.Printf("non-terminating error while watching environment file: %s\n", err.Error())
 			}
 		}
 	}()

@@ -195,6 +195,15 @@ The Azure Developer CLI includes many other commands to help with your Azure dev
 
 ## Troubleshooting/Known issues
 
+> This templates requires `Owner` or `User Access Administrator` role to provision successfully
+
+This template creates `Microsoft.Authorization/roleAssignments` resources to apply the `AcrPull` role to the AKS managed identity required for the AKS cluster to pull images from the Azure container registry
+
+If you are deploying via CI/CD and are using `azd pipeline config` ensure you set the `--principal-role` so the service principal that is created has the required roles.
+
+### Example
+`azd pipeline config --provider github --principal-role owner`
+
 > This template does NOT currently support Azure API Management (APIM)
 
 Sometimes, things go awry. If you happen to run into issues, then please review our ["Known Issues"](https://aka.ms/azure-dev/knownissues) page for help. If you continue to have issues, then please file an issue in our main [Azure Dev](https://aka.ms/azure-dev/issues) repository.

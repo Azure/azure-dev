@@ -150,8 +150,9 @@ func Test_MavenProject(t *testing.T) {
 
 func Test_MavenProject_Package(t *testing.T) {
 	type args struct {
-		// config that describes the project layout, and is passed to the function being tested
+		// service config to be packaged.
 		svc *ServiceConfig
+		// test setup parameter.
 		// file extension of java archives to create. empty means no archives are created.
 		archivesExt []string
 	}

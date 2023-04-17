@@ -127,7 +127,7 @@ func (m *mavenProject) Package(
 				packageSrcPath = filepath.Join(packageSrcPath, "target")
 			}
 
-			info, err := os.Stat(packageSrcPath)
+			packageSrcFileInfo, err := os.Stat(packageSrcPath)
 			if err != nil {
 				if serviceConfig.OutputPath == "" {
 					task.SetError(fmt.Errorf("reading default maven target path %s: %w", packageSrcPath, err))
@@ -138,7 +138,7 @@ func (m *mavenProject) Package(
 			}
 
 			archive := ""
-			if info.IsDir() {
+			if packageSrcFileInfo.IsDir() {
 				archive, err = m.discoverArchive(packageSrcPath)
 				if err != nil {
 					task.SetError(err)

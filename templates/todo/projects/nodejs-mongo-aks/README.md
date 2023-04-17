@@ -202,7 +202,7 @@ This template creates `Microsoft.Authorization/roleAssignments` resources to app
 If you are deploying via CI/CD and are using `azd pipeline config` ensure you set the `--principal-role` so the service principal that is created has the required roles.
 
 ### Example
-`azd pipeline config --provider github --principal-role owner`
+`azd pipeline config --principal-role owner`
 
 > This template does NOT currently support Azure API Management (APIM)
 

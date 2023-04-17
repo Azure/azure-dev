@@ -114,37 +114,6 @@ func TestServicePrincipalLoginClientCertificate(t *testing.T) {
 	require.True(t, errors.Is(err, ErrNoCurrentUser))
 }
 
-func TestServicePrincipalLoginFederatedToken(t *testing.T) {
-	credentialCache := &memoryCache{
-		cache: make(map[string][]byte),
-	}
-
-	m := Manager{
-		configManager:   newMemoryConfigManager(),
-		credentialCache: credentialCache,
-	}
-
-	cred, err := m.LoginWithServicePrincipalFederatedToken(
-		context.Background(), "testClientId", "testTenantId", "testToken",
-	)
-
-	require.NoError(t, err)
-	require.IsType(t, new(azidentity.ClientAssertionCredential), cred)
-
-	cred, err = m.CredentialForCurrentUser(context.Background(), nil)
-
-	require.NoError(t, err)
-	require.IsType(t, new(azidentity.ClientAssertionCredential), cred)
-
-	err = m.Logout(context.Background())
-
-	require.NoError(t, err)
-
-	_, err = m.CredentialForCurrentUser(context.Background(), nil)
-
-	require.True(t, errors.Is(err, ErrNoCurrentUser))
-}
-
 func TestServicePrincipalLoginFederatedTokenProvider(t *testing.T) {
 	credentialCache := &memoryCache{
 		cache: make(map[string][]byte),

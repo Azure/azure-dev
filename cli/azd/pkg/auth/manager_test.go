@@ -212,6 +212,17 @@ func TestLegacyAzCliCredentialSupport(t *testing.T) {
 	require.IsType(t, new(azidentity.AzureCLICredential), cred)
 }
 
+func TestCloudShellCredentialSupport(t *testing.T) {
+	t.Setenv("AZD_IN_CLOUDSHELL", "1")
+	m := Manager{
+		configManager: newMemoryConfigManager(),
+	}
+
+	cred, err := m.CredentialForCurrentUser(context.Background(), nil)
+	require.NoError(t, err)
+	require.IsType(t, new(CloudShellCredential), cred)
+}
+
 func TestLoginInteractive(t *testing.T) {
 	m := &Manager{
 		configManager: newMemoryConfigManager(),

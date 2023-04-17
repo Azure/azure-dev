@@ -335,9 +335,6 @@
         "hook": {
             "type": "object",
             "additionalProperties": false,
-            "required": [
-                "run"
-            ],
             "properties": {
                 "shell": {
                     "type": "string",
@@ -378,6 +375,27 @@
                     "default": null,
                     "$ref": "#/definitions/hook"
                 }
+            },
+            "if": {
+                "not": {
+                    "anyOf": [
+                        {
+                            "required": [
+                                "windows"
+                            ]
+                        },
+                        {
+                            "required": [
+                                "posix"
+                            ]
+                        }
+                    ]
+                }
+            },
+            "then": {
+                "required": [
+                    "run"
+                ]
             }
         },
         "docker": {

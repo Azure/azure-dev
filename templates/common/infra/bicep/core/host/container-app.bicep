@@ -113,6 +113,7 @@ resource managedIdentityRes 'Microsoft.ManagedIdentity/userAssignedIdentities@20
 }
 
 
+output defaultDomain string = containerAppsEnvironment.properties.defaultDomain
 output identityPrincipalId string = managedIdentity ? app.identity.principalId : ''
 output userManagedIdentityId string = managedIdentityEnabled ? managedIdentityRes.id : ''
 output imageName string = imageName

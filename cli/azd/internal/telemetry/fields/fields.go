@@ -87,6 +87,11 @@ const (
 	CmdFlags = attribute.Key("cmd.flags")
 	// Number of positional arguments set.
 	CmdArgsCount = attribute.Key("cmd.args.count")
+	// The command invocation entrypoint.
+	//
+	// The command invocation is formatted using [events.GetCommandEventName]. This makes it consistent with how
+	// commands are represented in telemetry.
+	CmdEntry = attribute.Key("cmd.entry")
 )
 
 // All possible enumerations of ExecutionEnvironmentKey

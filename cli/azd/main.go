@@ -91,7 +91,10 @@ func main() {
 					"warning: your version of azd is out of date, you have %s and the latest version is %s",
 					curVersion.String(), latestVersion.String()))
 			fmt.Fprintln(os.Stderr)
-			fmt.Fprintln(os.Stderr, output.WithWarningFormat(`To update to the latest version, follow instructions at: %s`, upgradeUrl))
+			fmt.Fprintln(
+				os.Stderr,
+				output.WithWarningFormat(`To update to the latest version, follow instructions at: %s`,
+					upgradeUrl))
 		}
 	}
 

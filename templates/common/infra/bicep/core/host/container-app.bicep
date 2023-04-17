@@ -17,10 +17,11 @@ param imageName string
 param keyVaultName string = ''
 @description('Param to denote whether to use a managed identity or not. If not, the identityPrincipalId output will be empty. DEPRECATED: Use managedIdentityEnabled instead.')
 param managedIdentity bool = !empty(keyVaultName)
-@description('Param to denote whether to use a managed identity or not. If not, the identityPrincipalId output will be empty.')
+@description('Param to denote whether to use a managed identity or not. If false, the identityPrincipalId output will be empty.')
 param managedIdentityEnabled bool = !empty(keyVaultName)
 @description('Name of the managed identity to use.')
 param managedIdentityName string = ''
+
 param targetPort int = 80
 
 @description('Enable Dapr')
@@ -90,7 +91,7 @@ resource app 'Microsoft.App/containerApps@2022-03-01' = {
         }
       ]
       scale: {
-        minReplicas: containerMaxReplicas > 1 ? containerMaxReplicas : 1
+        minReplicas: containerMaxReplicas > 0 ? containerMaxReplicas : 0
         maxReplicas: containerMinReplicas > 1 ? containerMinReplicas : 1
       }
     }
@@ -113,7 +114,7 @@ resource managedIdentityRes 'Microsoft.ManagedIdentity/userAssignedIdentities@20
 
 
 output identityPrincipalId string = managedIdentity ? app.identity.principalId : ''
-output userManagedIdentitylId string = managedIdentityEnabled ? managedIdentityRes.id : ''
+output userManagedIdentityId string = managedIdentityEnabled ? managedIdentityRes.id : ''
 output imageName string = imageName
 output name string = app.name
 output uri string = 'https://${app.properties.configuration.ingress.fqdn}'

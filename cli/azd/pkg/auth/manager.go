@@ -206,13 +206,9 @@ func (m *Manager) CredentialForCurrentUser(
 			return newCredentialFromClientSecret(tenantID, *currentUser.ClientID, *ps.ClientSecret)
 		} else if ps.ClientCertificate != nil {
 			return newCredentialFromClientCertificate(tenantID, *currentUser.ClientID, *ps.ClientCertificate)
-		} else if ps.FederatedAuth != nil {
-			if ps.FederatedAuth.Token != nil {
-				return newCredentialFromClientAssertion(tenantID, *currentUser.ClientID, *ps.FederatedAuth.Token)
-			} else if ps.FederatedAuth.TokenProvider != nil {
-				//nolint:lll
-				return m.newCredentialFromFederatedTokenProvider(tenantID, *currentUser.ClientID, *ps.FederatedAuth.TokenProvider)
-			}
+		} else if ps.FederatedAuth != nil && ps.FederatedAuth.TokenProvider != nil {
+			return m.newCredentialFromFederatedTokenProvider(
+				tenantID, *currentUser.ClientID, *ps.FederatedAuth.TokenProvider)
 		}
 	}
 
@@ -288,27 +284,6 @@ func newCredentialFromClientCertificate(
 
 	cred, err := azidentity.NewClientCertificateCredential(
 		tenantID, clientID, certs, key, nil,
-	)
-
-	if err != nil {
-		return nil, fmt.Errorf("creating credential: %w: %w", err, ErrNoCurrentUser)
-	}
-
-	return cred, nil
-}
-
-func newCredentialFromClientAssertion(
-	tenantID string,
-	clientID string,
-	clientAssertion string,
-) (azcore.TokenCredential, error) {
-	cred, err := azidentity.NewClientAssertionCredential(
-		tenantID,
-		clientID,
-		func(_ context.Context) (string, error) {
-			return clientAssertion, nil
-		},
-		nil,
 	)
 
 	if err != nil {
@@ -438,35 +413,6 @@ func (m *Manager) LoginWithServicePrincipalCertificate(
 		clientId,
 		&persistedSecret{
 			ClientCertificate: &encodedCert,
-		},
-	); err != nil {
-		return nil, err
-	}
-
-	return cred, nil
-}
-
-func (m *Manager) LoginWithServicePrincipalFederatedToken(
-	ctx context.Context, tenantId, clientId, federatedToken string,
-) (azcore.TokenCredential, error) {
-	cred, err := azidentity.NewClientAssertionCredential(
-		tenantId,
-		clientId,
-		func(_ context.Context) (string, error) {
-			return federatedToken, nil
-		},
-		nil)
-	if err != nil {
-		return nil, fmt.Errorf("creating credential: %w", err)
-	}
-
-	if err := m.saveLoginForServicePrincipal(
-		tenantId,
-		clientId,
-		&persistedSecret{
-			FederatedAuth: &federatedAuth{
-				Token: &federatedToken,
-			},
 		},
 	); err != nil {
 		return nil, err
@@ -656,15 +602,8 @@ var (
 type federatedTokenProvider string
 
 // federatedAuth stores federated authentication information.
-//
-// federatedAuth operates under two distinct modes:
-//   - When Token is set, the static token (which may have limited lifetime) is used for authentication.
-//   - When Provider is set, a token is obtained by calling the provider as needed.
 type federatedAuth struct {
-	// The token to use for authentication. This may expire after some time.
-	Token *string `json:"token,omitempty"`
-
-	// The auth token provider. When set, tokens are obtained by calling the provider as needed.
+	// The auth token provider. Tokens are obtained by calling the provider as needed.
 	TokenProvider *federatedTokenProvider `json:"tokenProvider,omitempty"`
 }
 

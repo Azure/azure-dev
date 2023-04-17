@@ -128,11 +128,10 @@ func (cli *PythonCli) CreateVirtualEnv(ctx context.Context, workingDir, name str
 	return nil
 }
 
-func checkPath() (string, bool, error) {
-	var found bool
-	var err error
+func checkPath() (pyString string, found bool, err error) {
 	if runtime.GOOS == "windows" {
 		// py for https://peps.python.org/pep-0397
+		// order is important. we want to resolve 'py', if available, first
 		pyString := [2]string{"py", "python"}
 
 		for _, py := range pyString {

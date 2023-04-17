@@ -22,16 +22,17 @@ import (
 const defaultProgressTitle string = "Provisioning Azure resources"
 const succeededProvisioningState string = "Succeeded"
 const runningProvisioningState string = "Running"
+const failedProvisioningState string = "Failed"
 
 // ProvisioningProgressDisplay displays interactive progress for an ongoing Azure provisioning operation.
 type ProvisioningProgressDisplay struct {
 	// Whether the deployment has started
 	deploymentStarted bool
 	// Keeps track of created resources
-	createdResources map[string]bool
-	resourceManager  infra.ResourceManager
-	console          input.Console
-	scope            infra.Scope
+	displayedResources map[string]bool
+	resourceManager    infra.ResourceManager
+	console            input.Console
+	scope              infra.Scope
 }
 
 func NewProvisioningProgressDisplay(
@@ -40,10 +41,10 @@ func NewProvisioningProgressDisplay(
 	scope infra.Scope,
 ) ProvisioningProgressDisplay {
 	return ProvisioningProgressDisplay{
-		createdResources: map[string]bool{},
-		scope:            scope,
-		resourceManager:  rm,
-		console:          console,
+		displayedResources: map[string]bool{},
+		scope:              scope,
+		resourceManager:    rm,
+		console:            console,
 	}
 }
 
@@ -88,20 +89,24 @@ func (display *ProvisioningProgressDisplay) ReportProgress(
 	}
 
 	newlyDeployedResources := []*armresources.DeploymentOperation{}
+	newlyFailedResources := []*armresources.DeploymentOperation{}
 	runningDeployments := []*armresources.DeploymentOperation{}
 
 	for i := range operations {
 		if operations[i].Properties.TargetResource != nil {
 			resourceId := *operations[i].Properties.TargetResource.ResourceName
 
-			if !display.createdResources[resourceId] &&
+			if !display.displayedResources[resourceId] &&
 				infra.IsTopLevelResourceType(
 					infra.AzureResourceType(*operations[i].Properties.TargetResource.ResourceType)) {
 
-				if *operations[i].Properties.ProvisioningState == succeededProvisioningState {
+				switch *operations[i].Properties.ProvisioningState {
+				case succeededProvisioningState:
 					newlyDeployedResources = append(newlyDeployedResources, operations[i])
-				} else if *operations[i].Properties.ProvisioningState == runningProvisioningState {
+				case runningProvisioningState:
 					runningDeployments = append(runningDeployments, operations[i])
+				case failedProvisioningState:
+					newlyFailedResources = append(newlyFailedResources, operations[i])
 				}
 			}
 		}
@@ -114,7 +119,8 @@ func (display *ProvisioningProgressDisplay) ReportProgress(
 		)
 	})
 
-	display.logNewlyCreatedResources(ctx, newlyDeployedResources, runningDeployments)
+	displayedResources := append(newlyDeployedResources, newlyFailedResources...)
+	display.logNewlyCreatedResources(ctx, displayedResources, runningDeployments)
 	return &progress, nil
 }
 
@@ -123,12 +129,12 @@ func (display *ProvisioningProgressDisplay) logNewlyCreatedResources(
 	resources []*armresources.DeploymentOperation,
 	inProgressResources []*armresources.DeploymentOperation,
 ) {
-	for _, newResource := range resources {
-		resourceTypeName := *newResource.Properties.TargetResource.ResourceType
+	for _, resource := range resources {
+		resourceTypeName := *resource.Properties.TargetResource.ResourceType
 		resourceTypeDisplayName, err := display.resourceManager.GetResourceTypeDisplayName(
 			ctx,
 			display.scope.SubscriptionId(),
-			*newResource.Properties.TargetResource.ID,
+			*resource.Properties.TargetResource.ID,
 			infra.AzureResourceType(resourceTypeName),
 		)
 
@@ -142,21 +148,23 @@ func (display *ProvisioningProgressDisplay) logNewlyCreatedResources(
 		if resourceTypeDisplayName != "" {
 			display.console.MessageUxItem(
 				ctx,
-				&ux.CreatedResource{
-					Type: resourceTypeDisplayName,
-					Name: *newResource.Properties.TargetResource.ResourceName,
+				&ux.DisplayedResource{
+					Type:  resourceTypeDisplayName,
+					Name:  *resource.Properties.TargetResource.ResourceName,
+					State: ux.DisplayedResourceState(*resource.Properties.ProvisioningState),
 				},
 			)
 			resourceTypeName = resourceTypeDisplayName
 		}
 
 		log.Printf(
-			"%s - Created %s: %s",
-			newResource.Properties.Timestamp.Local().Format("2006-01-02 15:04:05"),
+			"%s - %s %s: %s",
+			resource.Properties.Timestamp.Local().Format("2006-01-02 15:04:05"),
+			*resource.Properties.ProvisioningState,
 			resourceTypeName,
-			*newResource.Properties.TargetResource.ResourceName)
+			*resource.Properties.TargetResource.ResourceName)
 
-		display.createdResources[*newResource.Properties.TargetResource.ResourceName] = true
+		display.displayedResources[*resource.Properties.TargetResource.ResourceName] = true
 	}
 	// update progress
 	inProgress := []string{}

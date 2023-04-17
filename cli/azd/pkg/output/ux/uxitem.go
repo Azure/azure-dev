@@ -17,3 +17,4 @@ type UxItem interface {
 }
 
 var donePrefix string = output.WithSuccessFormat("(✓) Done:")
+var failedPrefix string = output.WithErrorFormat("(x) Failed:")

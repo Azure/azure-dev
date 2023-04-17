@@ -39,8 +39,34 @@ if ($IsWindows) {
     Write-Host "go generate succeeded"
 }
 
-Write-Host "go build"
-go build -ldflags="-X 'github.com/azure/azure-dev/cli/azd/internal.Version=$Version (commit $SourceVersion)'"
+if ($IsWindows) {
+    Write-Host "go build (windows)"
+    go build `
+        -buildmode=exe `
+        -tags="cfi,cfg,osusergo,netgo" `
+        -trimpath `
+        -gcflags="-trimpath" `
+        -asmflags="-trimpath" `
+        -ldflags="-s -w -X 'github.com/azure/azure-dev/cli/azd/internal.Version=$Version (commit $SourceVersion)' -linkmode=auto -extldflags=-Wl,--high-entropy-va"
+}
+elseif ($IsLinux) {
+    Write-Host "go build (linux)"
+    go build `
+        -buildmode=pie `
+        -tags="cfi,cfg,cfgo,osusergo,netgo" `
+        -gcflags="-trimpath" `
+        -asmflags="-trimpath" `
+        -ldflags="-s -w -X 'github.com/azure/azure-dev/cli/azd/internal.Version=$Version (commit $SourceVersion)' -extldflags=-Wl,--high-entropy-va"
+}
+elseif ($IsMacOS) {
+    Write-Host "go build (macos)"
+    go build `
+        -buildmode=pie `
+        -tags="cfi,cfg,cfgo,osusergo,netgo" `
+        -gcflags="-trimpath" `
+        -asmflags="-trimpath" `
+        -ldflags="-s -w -X 'github.com/azure/azure-dev/cli/azd/internal.Version=$Version (commit $SourceVersion)' -linkmode=auto"
+}
 
 if ($LASTEXITCODE) {
     Write-Host "Error running go build"

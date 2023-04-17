@@ -211,7 +211,7 @@
                             "properties": {
                                 "dist": {
                                     "type": "string",
-                                    "description": "Optional. The path to the directory containing a single Java archive file (.jar/.ear/.war), or the path to the specific Java archive file to be included in the deployment artifact. If omitted, a smart default is chosen based on the configured language."
+                                    "description": "Optional. The path to the directory containing a single Java archive file (.jar/.ear/.war), or the path to the specific Java archive file to be included in the deployment artifact. If omitted, the CLI will detect the output directory based on the build system in-use."
                                 }
                             }
                         }

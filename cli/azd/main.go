@@ -77,7 +77,7 @@ func main() {
 			if runtime.GOOS == "windows" {
 				upgradeUrl = "https://aka.ms/azd/upgrade/windows"
 			} else if runtime.GOOS == "linux" {
-				upgradeUrl = "https://aka.ms/azd/upgrade/windows"
+				upgradeUrl = "https://aka.ms/azd/upgrade/linux"
 			} else if runtime.GOOS == "darwin" {
 				upgradeUrl = "https://aka.ms/azd/upgrade/mac"
 			} else {

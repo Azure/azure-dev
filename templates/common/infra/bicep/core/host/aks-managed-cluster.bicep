@@ -61,7 +61,7 @@ param systemPoolConfig object
 @description('The DNS prefix to associate with the AKS cluster')
 param dnsPrefix string = ''
 
-resource aks 'Microsoft.ContainerService/managedClusters@2023-01-02-preview' = {
+resource aks 'Microsoft.ContainerService/managedClusters@2023-02-01' = {
   name: name
   location: location
   tags: tags

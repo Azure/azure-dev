@@ -479,7 +479,7 @@
         "@typescript-eslint/eslint-plugin": "~5",
         "@typescript-eslint/parser": "~5",
         "@vscode/test-electron": "~2.1",
-        "@vscode/vsce": "~2",
+        "@vscode/vsce": "~2.19",
         "chai": "~4.3",
         "copy-webpack-plugin": "~11.0",
         "eslint": "~8.23",

@@ -1,16 +1,16 @@
 # Setting up a pipeline configuration manually
 
-The Azure Developer CLI provides the command `azd pipeline config` to automatically taking care of:
+The Azure Developer CLI provides the command `azd pipeline config` to automatically take care of:
 
-1. Set up a local git repository and a git remote for it.
+1. Setting up a local git repository and a git remote for it.
 1. Creating a `Service Principal` and assigning a role to it (`Contributor` by default).
 1. Creating `federated credential` or `client secrets` for the `Service principal`.
-1. Finding an existing git repo or creating a new one. (github or Azure DevOps).
-1. Setting up secrets for the git repo to use the `Service Principal` as authentication method.
+1. Finding an existing git repo or creating a new one. (GitHub or Azure DevOps).
+1. Configuring the git repo to use the created `Service Principal` to authenticate to Azure.
 1. Creating a pipeline definition.
 
-This command `must` be executed by someone who has a `Contributor` role. This ensures the creation or a `Service Principal` and the `role assignation` to be possible.
-The next steps can be used to manually configure a pipeline without a `Contributor` role, for example, by using an existing `service principal`.
+This command **must** be executed by someone who has a `Contributor` role, in order to create the service principal with the given role.
+The next steps can be used to manually configure a pipeline without a `Contributor` role, for example, by using an existing service principal.
 
 ## Setting up the local repository
 
@@ -20,7 +20,7 @@ There a few ways to get the initial project, even before thinking about the pipe
 
 - `git clone path-to-git-repo`: In this case, git will create a new folder with the content of the repository and with all the existing branches from the repository. It will also set a `git remote` (origin) to the source git repository.
 
-- `zip download`: From the repository website, we can download a zip file containing all the source code and extract it on any folder. On this case, there won't be a local git repository.
+- `zip download`: From the repository website, we can download a zip file containing all the source code and extract it to any folder. In this case, there won't be a local git repository.
 
 - `fork and clone`: Similar to `git clone`, but in this case, two `git remote` are created. `origin` will be pointing to the forked repository and typically `upstream` will be pointing to the original repository.
 
@@ -38,7 +38,7 @@ At this point, you can continue on [Set up remote repository](#set-up-remote-rep
 
 There are at least two reasons why you might use `git clone`. 
 
-1. You have previously set up your GitHub or Azure Devops repository and you are trying to add `azd` support for it. In this case, you own the repo that you clone and you will be pushing your source updates to this repo. If this is the case, you remote `origin` is correctly set and you can move on to [Set up remote repository](#set-up-remote-repository).
+1. You have previously set up your GitHub or Azure DevOps repository and you are trying to add `azd` support for it. In this case, you own the repo that you clone and you will be pushing your source updates to this repo. If this is the case, your remote `origin` is correctly set and you can move on to [Set up remote repository](#set-up-remote-repository).
 
 1. You found a repository that you want to try, for example, from [Azure-Samples](https://github.com/Azure-Samples) and you clone it locally. In this case, the remote `origin` is pointing to the original repository and you won't be able to push changes to this repo. You might want to submit PR changes to the repo, but if you are thinking on setting up a pipeline and your own repository, first you need to update the remote origin. One option is to remove the remote origin with `git remote remove origin`. This will disconnect the repo from where it was cloned and you will be in a state where you can follow the steps from [azd init -t path-to-git-repo](#azd-init--t-path-to-git-repo).
 
@@ -50,11 +50,11 @@ After extracting the code, you will need to run `git init -b main` to create a n
 
 ### fork and clone
 
-A fork and clone usually means that you have created your own repository but you still want to track what happens on the original repo. If you are not really planning to keep an eye to the main repository, you can optionally remote the remote `upstream` (or whatever is the name for the main repo) and to only let the `origin` remote. Since your remote is correctly set, you can move on to [Set up remote repository](#set-up-remote-repository)
+A fork and clone usually means that you have created your own repository but you still want to track what happens on the original repo. If you are not really planning to keep an eye to the main repository, you can optionally remove the remote `upstream` (or whatever is the name for the main repo) leaving only the `origin` remote. Since your remote is correctly set, you can move on to [Set up remote repository](#set-up-remote-repository)
 
 ## Set up remote repository
 
-At this point, you local git repository has the right remote (We'll call it `origin`), and your source code might either never been pushed to the the `origin` or you might have pushed it before. At any case, before the GitHub actions or Azure DevOps pipelines can success, there are some steps to be set.
+At this point, you local git repository has the right remote (named `origin`), and your source code might either never been pushed to the `origin` or you might have pushed it before. In either case, before the GitHub actions or Azure DevOps pipelines can run successfully, they need to be configured to use a service principal to communicate with Azure.
 
 ### Define the authentication for the pipeline
 
@@ -65,7 +65,7 @@ The sample pipelines included within the `todo` templates provide support for us
 You need to set `AZURE_CLIENT_ID` and `AZURE_TENANT_ID` secret for GitHub to use a federated credential.
 You can use the [github cli](https://cli.github.com) to set secrets for your GitHub repository.
 
-The `client id` and `tenant id` are the ones from a `Service Principal` which has configured a federated credential for the GitHub repository you are using. You can follow [this steps](https://learn.microsoft.com/en-us/azure/active-directory/workload-identities/workload-identity-federation-create-trust?pivots=identity-wif-apps-methods-azp#github-actions) to set up the federated credential for the app registration (Service principal).
+The `client id` and `tenant id` are the ones from a `Service Principal` which has configured a federated credential for the GitHub repository you are using. You can follow [these steps](https://learn.microsoft.com/en-us/azure/active-directory/workload-identities/workload-identity-federation-create-trust?pivots=identity-wif-apps-methods-azp#github-actions) to set up the federated credential for the app registration (Service principal).
 
 #### Client Secret with GitHub
 
@@ -79,7 +79,7 @@ You need to set the secret `AZURE_CREDENTIALS` which is a json file that include
 }
 ```
 
-You can follow [this steps](https://github.com/marketplace/actions/azure-login#configure-a-service-principal-with-a-secret) to set a secret value for your service principal. Or you might receive this values for an `existing service principal` which you want to use for the pipeline.
+You can follow [these steps](https://github.com/marketplace/actions/azure-login#configure-a-service-principal-with-a-secret) to set a secret value for your service principal. Or you might receive this values for an `existing service principal` which you want to use for the pipeline.
 
 #### Client Secret with Azure DevOps
 
@@ -99,15 +99,15 @@ The service connection from Azure DevOps is equivalent to the Service Principal 
 
 After setting up the authentication strategy for the pipeline, the next step is to tell `azd` about the environment. This is also set by using secrets for both GitHub and Azure DevOps. You need to set:
 
-- AZURE_ENV_NAME
-- AZURE_LOCATION
-- AZURE_SUBSCRIPTION_ID
+- `AZURE_ENV_NAME`
+- `AZURE_LOCATION`
+- `AZURE_SUBSCRIPTION_ID`
 
-If you have run `azd provision` locally, you can get this values by running `azd env get-values`.
+If you have run `azd provision` locally, you can get these values by running `azd env get-values`.
 
 ## Create Azure DevOps pipeline
 
-For Azure DevOps, you need to manually create the pipeline by using a yml definition. You can follow [this steps](https://learn.microsoft.com/en-us/azure/devops/pipelines/create-first-pipeline?view=azure-devops&tabs=java%2Ctfs-2018-2%2Cbrowser) to learn how to use the existing yml definition.
+For Azure DevOps, you need to manually create the pipeline by using a yml definition. You can follow [this these](https://learn.microsoft.com/en-us/azure/devops/pipelines/create-first-pipeline?view=azure-devops&tabs=java%2Ctfs-2018-2%2Cbrowser) to learn how to use the existing yml definition.
 
 This is not required on GitHub, as the GitHub actions is automatically created as soon as the yml file is pushed into an specific folder.
 

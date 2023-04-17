@@ -73,22 +73,25 @@ func main() {
 			// case
 			log.Printf("eliding update message for dev build")
 		} else if latestVersion.GT(curVersion) {
+			var upgradeUrl string
+			if runtime.GOOS == "windows" {
+				upgradeUrl = "https://aka.ms/azd/upgrade/windows"
+			} else if runtime.GOOS == "linux" {
+				upgradeUrl = "https://aka.ms/azd/upgrade/windows"
+			} else if runtime.GOOS == "darwin" {
+				upgradeUrl = "https://aka.ms/azd/upgrade/mac"
+			} else {
+				// Platform is not recognized, use the generic install link
+				upgradeUrl = "https://aka.ms/azd/upgrade"
+			}
+
 			fmt.Fprintln(
 				os.Stderr,
 				output.WithWarningFormat(
 					"warning: your version of azd is out of date, you have %s and the latest version is %s",
 					curVersion.String(), latestVersion.String()))
 			fmt.Fprintln(os.Stderr)
-			fmt.Fprintln(os.Stderr, output.WithWarningFormat(`To update to the latest version, run:`))
-
-			if runtime.GOOS == "windows" {
-				fmt.Fprintln(
-					os.Stderr,
-					output.WithWarningFormat(
-						`powershell -ex AllSigned -c "Invoke-RestMethod 'https://aka.ms/install-azd.ps1' | Invoke-Expression"`))
-			} else {
-				fmt.Fprintln(os.Stderr, output.WithWarningFormat(`curl -fsSL https://aka.ms/install-azd.sh | bash`))
-			}
+			fmt.Fprintln(os.Stderr, output.WithWarningFormat(`To update to the latest version, follow instructions at: %s`, upgradeUrl))
 		}
 	}
 

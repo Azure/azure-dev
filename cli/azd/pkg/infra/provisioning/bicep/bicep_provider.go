@@ -568,8 +568,8 @@ func (p *BicepProvider) purgeKeyVaults(
 ) error {
 	for _, keyVault := range keyVaults {
 		err := p.runPurgeAsStep(ctx, "key vault", keyVault.Name, func() error {
-			return p.azCli.PurgeResource(
-				ctx, azure.SubscriptionFromRID(keyVault.Id), keyVault.Name, azcli.KeyVault, keyVault.Location)
+			return p.azCli.PurgeKeyVault(
+				ctx, azure.SubscriptionFromRID(keyVault.Id), keyVault.Name, keyVault.Location)
 		}, skip)
 		if err != nil {
 			return fmt.Errorf("purging key vault %s: %w", keyVault.Name, err)
@@ -666,8 +666,8 @@ func (p *BicepProvider) purgeAppConfigs(
 ) error {
 	for _, appConfig := range appConfigs {
 		err := p.runPurgeAsStep(ctx, "app config", appConfig.Name, func() error {
-			return p.azCli.PurgeResource(
-				ctx, azure.SubscriptionFromRID(appConfig.Id), appConfig.Name, azcli.AppConfig, appConfig.Location)
+			return p.azCli.PurgeAppConfig(
+				ctx, azure.SubscriptionFromRID(appConfig.Id), appConfig.Name, appConfig.Location)
 		}, skip)
 		if err != nil {
 			return fmt.Errorf("purging app configuration %s: %w", appConfig.Name, err)
@@ -685,7 +685,7 @@ func (p *BicepProvider) purgeAPIManagement(
 ) error {
 	for _, apim := range apims {
 		err := p.runPurgeAsStep(ctx, "apim", apim.Name, func() error {
-			return p.azCli.PurgeResource(ctx, azure.SubscriptionFromRID(apim.Id), apim.Name, azcli.Apim, apim.Location)
+			return p.azCli.PurgeApim(ctx, azure.SubscriptionFromRID(apim.Id), apim.Name, apim.Location)
 		}, skip)
 		if err != nil {
 			return fmt.Errorf("purging api management service %s: %w", apim.Name, err)

@@ -36,7 +36,7 @@ func (cli *azCli) GetApim(
 	}, nil
 }
 
-func (cli *azCli) purgeApim(ctx context.Context, subscriptionId string, apimName string, location string) error {
+func (cli *azCli) PurgeApim(ctx context.Context, subscriptionId string, apimName string, location string) error {
 	apimClient, err := cli.createApimDeletedClient(ctx, subscriptionId)
 
 	if err != nil {

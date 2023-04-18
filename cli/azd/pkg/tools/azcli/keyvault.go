@@ -91,7 +91,7 @@ func (cli *azCli) GetKeyVaultSecret(
 	}, nil
 }
 
-func (cli *azCli) purgeKeyVault(ctx context.Context, subscriptionId string, vaultName string, location string) error {
+func (cli *azCli) PurgeKeyVault(ctx context.Context, subscriptionId string, vaultName string, location string) error {
 	client, err := cli.createKeyVaultClient(ctx, subscriptionId)
 	if err != nil {
 		return err

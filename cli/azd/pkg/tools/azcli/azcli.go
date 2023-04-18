@@ -8,7 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
-	"log"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
@@ -26,14 +25,6 @@ var (
 	ErrDeploymentNotFound       = errors.New("deployment not found")
 	ErrNoConfigurationValue     = errors.New("no value configured")
 	ErrAzCliSecretNotFound      = errors.New("secret not found")
-)
-
-type PurgeResourceType string
-
-const (
-	KeyVault  PurgeResourceType = "keyvault"
-	AppConfig PurgeResourceType = "appConfig"
-	Apim      PurgeResourceType = "apim"
 )
 
 type AzCli interface {
@@ -75,8 +66,9 @@ type AzCli interface {
 	) (*AzCliKeyVaultSecret, error)
 	GetAppConfig(
 		ctx context.Context, subscriptionId string, resourceGroupName string, configName string) (*AzCliAppConfig, error)
-	PurgeResource(
-		ctx context.Context, subscriptionId string, name string, resourceType PurgeResourceType, location string) error
+	PurgeApim(ctx context.Context, subscriptionId string, apimName string, location string) error
+	PurgeAppConfig(ctx context.Context, subscriptionId string, configName string, location string) error
+	PurgeKeyVault(ctx context.Context, subscriptionId string, vaultName string, location string) error
 	GetApim(
 		ctx context.Context, subscriptionId string, resourceGroupName string, apimName string) (*AzCliApim, error)
 	DeployAppServiceZip(
@@ -354,26 +346,4 @@ func clientOptionsBuilder(httpClient httputil.HttpClient, userAgent string) *azs
 	return azsdk.NewClientOptionsBuilder().
 		WithTransport(httpClient).
 		WithPerCallPolicy(azsdk.NewUserAgentPolicy(userAgent))
-}
-
-type PurgeImplementation func(ctx context.Context, subscriptionId string, name string, location string) error
-
-func (cli *azCli) getPurgeImplementation(resourceType PurgeResourceType) PurgeImplementation {
-	switch resourceType {
-	case KeyVault:
-		return cli.purgeKeyVault
-	case AppConfig:
-		return cli.purgeAppConfig
-	case Apim:
-		return cli.purgeApim
-	}
-
-	log.Panicf("no purge implementation for %s", string(resourceType))
-	return nil
-}
-
-func (cli *azCli) PurgeResource(
-	ctx context.Context, subscriptionId string, name string, resourceType PurgeResourceType, location string) error {
-	purgeImplementation := cli.getPurgeImplementation(resourceType)
-	return purgeImplementation(ctx, subscriptionId, name, location)
 }

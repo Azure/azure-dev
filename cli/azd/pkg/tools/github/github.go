@@ -34,10 +34,6 @@ import (
 type GitHubCli interface {
 	tools.ExternalTool
 	GetAuthStatus(ctx context.Context, hostname string) (AuthStatus, error)
-	// Forces the authentication token mode used by github CLI.
-	//
-	// If set to TokenSourceFile, environment variables such as GH_TOKEN and GITHUB_TOKEN are ignored.
-	ForceConfigureAuth(authMode AuthTokenSource)
 	ListSecrets(ctx context.Context, repo string) error
 	SetSecret(ctx context.Context, repo string, name string, value string) error
 	Login(ctx context.Context, hostname string) error
@@ -46,6 +42,7 @@ type GitHubCli interface {
 	CreatePrivateRepository(ctx context.Context, name string) error
 	GetGitProtocolType(ctx context.Context) (string, error)
 	GitHubActionsExists(ctx context.Context, repoSlug string) (bool, error)
+	GetBinaryPath() string
 }
 
 func NewGitHubCli(ctx context.Context, console input.Console, commandRunner exec.CommandRunner) (GitHubCli, error) {
@@ -101,7 +98,10 @@ func newGitHubCliImplementation(
 		path:          githubCliPath,
 		commandRunner: commandRunner,
 	}
-
+	if os.Getenv("CODESPACES") == "true" {
+		// Do not use default token on codespaces
+		cli.forceConfigureAuth(TokenSourceFile)
+	}
 	return cli, nil
 }
 
@@ -151,6 +151,10 @@ func (cli *ghCli) Name() string {
 	return "GitHub CLI"
 }
 
+func (cli *ghCli) GetBinaryPath() string {
+	return cli.path
+}
+
 func (cli *ghCli) InstallUrl() string {
 	return "https://aka.ms/azure-dev/github-cli-install"
 }
@@ -191,7 +195,7 @@ func (cli *ghCli) GetAuthStatus(ctx context.Context, hostname string) (AuthStatu
 }
 
 func (cli *ghCli) Login(ctx context.Context, hostname string) error {
-	runArgs := cli.newRunArgs("auth", "login", "--hostname", hostname).
+	runArgs := cli.newRunArgs("auth", "login", "--hostname", hostname, "--scopes", "repo,workflow").
 		WithInteractive(true)
 
 	res, err := cli.commandRunner.Run(ctx, runArgs)
@@ -311,7 +315,7 @@ func (cli *ghCli) GitHubActionsExists(ctx context.Context, repoSlug string) (boo
 	return true, nil
 }
 
-func (cli *ghCli) ForceConfigureAuth(authMode AuthTokenSource) {
+func (cli *ghCli) forceConfigureAuth(authMode AuthTokenSource) {
 	switch authMode {
 	case TokenSourceFile:
 		// Unset token environment variables to force file-base auth.

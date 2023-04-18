@@ -51,6 +51,7 @@ func Test_gitHub_provider_preConfigure_check(t *testing.T) {
 			*mockContext.Context,
 			PipelineManagerArgs{},
 			provisioning.Options{},
+			"",
 		)
 		require.NoError(t, err)
 		require.False(t, updatedConfig)
@@ -74,7 +75,7 @@ func Test_gitHub_provider_preConfigure_check(t *testing.T) {
 
 		provider := NewGitHubCiProvider(mockContext.Credentials, mockContext.CommandRunner, mockContext.Console)
 		updatedConfig, err := provider.preConfigureCheck(
-			*mockContext.Context, pipelineManagerArgs, infraOptions)
+			*mockContext.Context, pipelineManagerArgs, infraOptions, "")
 		require.Error(t, err)
 		require.False(t, updatedConfig)
 		require.True(t, errors.Is(err, ErrAuthNotSupported))
@@ -94,7 +95,7 @@ func Test_gitHub_provider_preConfigure_check(t *testing.T) {
 
 		provider := NewGitHubCiProvider(mockContext.Credentials, mockContext.CommandRunner, mockContext.Console)
 		updatedConfig, err := provider.preConfigureCheck(
-			*mockContext.Context, pipelineManagerArgs, infraOptions)
+			*mockContext.Context, pipelineManagerArgs, infraOptions, "")
 		require.NoError(t, err)
 		require.False(t, updatedConfig)
 

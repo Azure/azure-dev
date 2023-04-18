@@ -7,8 +7,10 @@ param containerName string = 'main'
 param containerRegistryName string
 
 @description('Minimum number of replicas to run')
+@minValue(0)
 param containerMinReplicas int = 1
 @description('Maximum number of replicas to run')
+@minValue(1)
 param containerMaxReplicas int = 1
 
 param env array = []
@@ -91,8 +93,8 @@ resource app 'Microsoft.App/containerApps@2022-03-01' = {
         }
       ]
       scale: {
-        minReplicas: containerMaxReplicas > 0 ? containerMaxReplicas : 0
-        maxReplicas: containerMinReplicas > 1 ? containerMinReplicas : 1
+        minReplicas: containerMinReplicas
+        maxReplicas: containerMaxReplicas
       }
     }
   }

@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"runtime"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -263,6 +264,10 @@ func (cli *gitCli) SetGitHubAuthForRepo(ctx context.Context, repositoryPath, cre
 	if err := setAuthCredentialHelper(
 		ctx, cli.commandRunner, repositoryPath, credential, "", "replace-all"); err != nil {
 		return err
+	}
+	// path needs to be quoted on windows
+	if runtime.GOOS == "windows" {
+		ghPath = fmt.Sprintf("'%s'", ghPath)
 	}
 	ghCredentialValue := fmt.Sprintf("!%s auth git-credential", ghPath)
 	if err := setAuthCredentialHelper(

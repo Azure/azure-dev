@@ -83,15 +83,18 @@ func (h *HooksRunner) RunHooks(ctx context.Context, hookType HookType, commands 
 		return fmt.Errorf("failed running scripts for hooks '%s', %w", strings.Join(commands, ","), err)
 	}
 
-	// Reload env vars before execution to enable support for hooks to generate new env vars between commands
-	if err := h.env.Reload(); err != nil {
-		return fmt.Errorf("failed reloading env values, %w", err)
-	}
-
 	for _, hookConfig := range hooks {
+		if err := h.env.Reload(); err != nil {
+			return fmt.Errorf("reloading environment before running hook: %w", err)
+		}
+
 		err := h.execHook(ctx, hookConfig)
 		if err != nil {
 			return err
+		}
+
+		if err := h.env.Reload(); err != nil {
+			return fmt.Errorf("reloading environment after running hook: %w", err)
 		}
 	}
 

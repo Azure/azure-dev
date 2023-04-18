@@ -22,7 +22,6 @@ require (
 	github.com/bradleyjkemp/cupaloy/v2 v2.8.0
 	github.com/drone/envsubst v1.0.3
 	github.com/fatih/color v1.13.0
-	github.com/fsnotify/fsnotify v1.6.0
 	github.com/gofrs/flock v0.8.1
 	github.com/golobby/container/v3 v3.3.1
 	github.com/google/uuid v1.3.0

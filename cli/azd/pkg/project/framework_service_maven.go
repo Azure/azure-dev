@@ -16,7 +16,7 @@ import (
 )
 
 // The default, conventional App Service Java package name
-const AppServiceJavaPackageName = "app.jar"
+const AppServiceJavaPackageName = "app"
 
 type mavenProject struct {
 	env      *environment.Environment
@@ -116,59 +116,51 @@ func (m *mavenProject) Package(
 				return
 			}
 
-			packageSource := buildOutput.BuildOutputPath
-			if packageSource == "" {
-				packageSource = serviceConfig.Path()
+			packageSrcPath := buildOutput.BuildOutputPath
+			if packageSrcPath == "" {
+				packageSrcPath = serviceConfig.Path()
 			}
 
 			if serviceConfig.OutputPath != "" {
-				packageSource = filepath.Join(packageSource, serviceConfig.OutputPath)
+				packageSrcPath = filepath.Join(packageSrcPath, serviceConfig.OutputPath)
 			} else {
-				packageSource = filepath.Join(packageSource, "target")
+				packageSrcPath = filepath.Join(packageSrcPath, "target")
 			}
 
-			entries, err := os.ReadDir(packageSource)
+			packageSrcFileInfo, err := os.Stat(packageSrcPath)
 			if err != nil {
-				task.SetError(fmt.Errorf("discovering JAR files in %s: %w", packageSource, err))
-				return
-			}
-
-			matches := []string{}
-			for _, entry := range entries {
-				if entry.IsDir() {
-					continue
+				if serviceConfig.OutputPath == "" {
+					task.SetError(fmt.Errorf("reading default maven target path %s: %w", packageSrcPath, err))
+				} else {
+					task.SetError(fmt.Errorf("reading dist path %s: %w", packageSrcPath, err))
 				}
+				return
+			}
 
-				if name := entry.Name(); strings.HasSuffix(name, ".jar") {
-					matches = append(matches, name)
+			archive := ""
+			if packageSrcFileInfo.IsDir() {
+				archive, err = m.discoverArchive(packageSrcPath)
+				if err != nil {
+					task.SetError(err)
+					return
+				}
+			} else {
+				archive = packageSrcPath
+				if !isSupportedJavaArchive(archive) {
+					ext := filepath.Ext(archive)
+					task.SetError(
+						fmt.Errorf(
+							//nolint:lll
+							"file %s with extension %s is not a supported java archive file (.ear, .war, .jar)", ext, archive))
+					return
 				}
 			}
-
-			if len(matches) == 0 {
-				task.SetError(fmt.Errorf("no JAR files found in %s", packageSource))
-				return
-			}
-			if len(matches) > 1 {
-				names := strings.Join(matches, ", ")
-				task.SetError(fmt.Errorf(
-					"multiple JAR files found in %s: %s. Only a single runnable JAR file is expected",
-					packageSource,
-					names,
-				))
-				return
-			}
-
-			packageSource = filepath.Join(packageSource, matches[0])
 
 			task.SetProgress(NewServiceProgress("Copying deployment package"))
-			err = copy.Copy(packageSource, filepath.Join(packageDest, AppServiceJavaPackageName))
+			ext := strings.ToLower(filepath.Ext(archive))
+			err = copy.Copy(archive, filepath.Join(packageDest, AppServiceJavaPackageName+ext))
 			if err != nil {
 				task.SetError(fmt.Errorf("copying to staging directory failed: %w", err))
-				return
-			}
-
-			if err := validatePackageOutput(packageDest); err != nil {
-				task.SetError(err)
 				return
 			}
 
@@ -178,4 +170,43 @@ func (m *mavenProject) Package(
 			})
 		},
 	)
+}
+
+func isSupportedJavaArchive(archiveFile string) bool {
+	ext := strings.ToLower(filepath.Ext(archiveFile))
+	return ext == ".jar" || ext == ".war" || ext == ".ear"
+}
+
+func (m *mavenProject) discoverArchive(dir string) (string, error) {
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return "", fmt.Errorf("discovering java archive files in %s: %w", dir, err)
+	}
+
+	archiveFiles := []string{}
+	for _, entry := range entries {
+		if entry.IsDir() {
+			continue
+		}
+
+		name := entry.Name()
+		if isSupportedJavaArchive(name) {
+			archiveFiles = append(archiveFiles, name)
+		}
+	}
+
+	switch len(archiveFiles) {
+	case 0:
+		return "", fmt.Errorf("no java archive files (.jar, .ear, .war) found in %s", dir)
+	case 1:
+		return filepath.Join(dir, archiveFiles[0]), nil
+	default:
+		names := strings.Join(archiveFiles, ", ")
+		return "", fmt.Errorf(
+			//nolint:lll
+			"multiple java archive files (.jar, .ear, .war) found in %s: %s. To pick a specific archive to be used, specify the relative path to the archive file using the 'dist' property in azure.yaml",
+			dir,
+			names,
+		)
+	}
 }

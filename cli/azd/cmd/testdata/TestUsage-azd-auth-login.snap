@@ -9,7 +9,6 @@ Flags
         --client-certificate string            	: The path to the client certificate for the service principal to authenticate with.
         --client-id string                     	: The client id for the service principal to authenticate with.
         --client-secret string                 	: The client secret for the service principal to authenticate with. Set to the empty string to read the value from the console.
-        --federated-credential string          	: The federated token for the service principal to authenticate with. Set to the empty string to read the value from the console.
         --federated-credential-provider string 	: The provider to use to acquire a federated token to authenticate with.
     -h, --help                                 	: Gets help for login.
         --redirect-port int                    	: Choose the port to be used as part of the redirect URI during interactive login.

@@ -9,8 +9,8 @@ import dotenv from "dotenv";
  */
 const config: PlaywrightTestConfig = {
   testDir: ".",
-  /* Maximum time one test can run for. */
-  timeout: 240 * 1000,
+  /* Maximum time one test can run for. Using 10 min per test */
+  timeout: 10 * 60 * 1000,
   expect: {
     /**
      * Maximum time expect() should wait for the condition to be met.

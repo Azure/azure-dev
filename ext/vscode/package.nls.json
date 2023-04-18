@@ -21,6 +21,8 @@
     "azure-dev.commands.azureWorkspace.revealAzureResourceGroup.title": "Show Azure Resource Group",
     "azure-dev.commands.getDotEnvFilePath.title": "Get Azure developer environment's .env file path",
 
+    "azure-dev.maximumAppsToDisplay.description": "Maximum number of Azure Developer CLI apps to display in the Workspace Resource view",
+
     "azure-dev.tasks.dotenv.properties.file": "The .env file to use to populate the target task environment",
     "azure-dev.tasks.dotenv.properties.targetTasks": "Name of the task(s) that will be launched with environment populated from the .env file",
 

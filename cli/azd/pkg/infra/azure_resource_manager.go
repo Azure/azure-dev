@@ -370,7 +370,6 @@ func (rm *AzureResourceManager) appendDeploymentResourcesRecursive(
 
 		_, alreadyAdded := (*resourceOperations)[*operation.OperationID]
 		if !alreadyAdded &&
-			*operation.Properties.ProvisioningOperation == armresources.ProvisioningOperationCreate &&
 			operation.Properties.Timestamp.After(*queryStart) {
 			(*resourceOperations)[*operation.OperationID] = operation
 		}

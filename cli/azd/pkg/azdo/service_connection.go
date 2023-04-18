@@ -81,7 +81,7 @@ func CreateServiceConnection(
 	ctx context.Context,
 	connection *azuredevops.Connection,
 	projectId string,
-	azdEnvironment *environment.Environment,
+	azdEnvironment environment.Environment,
 	credentials AzureServicePrincipalCredentials,
 	console input.Console) error {
 

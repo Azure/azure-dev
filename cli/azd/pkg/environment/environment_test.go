@@ -111,7 +111,7 @@ func TestFromRoot(t *testing.T) {
 }
 
 func Test_SaveAndReload(t *testing.T) {
-	reloadComplete := make(chan bool, 1)
+	//reloadComplete := make(chan bool, 1)
 
 	tempDir := t.TempDir()
 	ostest.Chdir(t, tempDir)
@@ -119,9 +119,9 @@ func Test_SaveAndReload(t *testing.T) {
 	env := EmptyWithRoot(tempDir)
 	require.NotNil(t, env)
 
-	env.reloadCallback = func() {
-		reloadComplete <- true
-	}
+	// env.reloadCallback = func() {
+	// 	reloadComplete <- true
+	// }
 
 	env.SetLocation("eastus2")
 	env.SetSubscriptionId("SUBSCRIPTION_ID")
@@ -140,7 +140,9 @@ func Test_SaveAndReload(t *testing.T) {
 	err = godotenv.Write(envMap, envPath)
 	require.NoError(t, err)
 
-	<-reloadComplete
+	err = env.Reload()
+	require.NoError(t, err)
+	//<-reloadComplete
 
 	// Set a new property in the env
 	env.SetServiceProperty("web", "ENDPOINT_URL", "http://web.example.com")

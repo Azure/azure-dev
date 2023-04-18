@@ -6,21 +6,16 @@ package environment
 import (
 	"errors"
 	"fmt"
-	"log"
-	"math"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
-	"sync"
-	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
-	"github.com/fsnotify/fsnotify"
 	"github.com/joho/godotenv"
 )
 
@@ -60,13 +55,6 @@ type Environment struct {
 	// will not be persisted when `Save` is called. This allows the zero value to be used
 	// for testing.
 	Root string
-
-	// File watcher is configured to detect changes to the underlying .env file and automatically reload the instance
-	watcher    *fsnotify.Watcher
-	watchMutex sync.Mutex
-
-	// Only used for unit testing to have a consistent way to be notified of reload activities
-	reloadCallback func()
 }
 
 type EnvironmentResolver func() (*Environment, error)
@@ -91,11 +79,7 @@ func FromRoot(root string) (*Environment, error) {
 		Root: root,
 	}
 
-	if err := env.initWatcher(); err != nil {
-		return EmptyWithRoot(root), fmt.Errorf("failed watching environment for changes, %w", err)
-	}
-
-	if err := env.reload(); err != nil {
+	if err := env.Reload(); err != nil {
 		return EmptyWithRoot(root), err
 	}
 
@@ -148,122 +132,8 @@ func (e *Environment) Getenv(key string) string {
 	return os.Getenv(key)
 }
 
-// If `Root` is set, Save writes the current contents of the environment to
-// the given directory, creating it and any intermediate directories as needed.
-func (e *Environment) Save() error {
-	if e.Root == "" {
-		return nil
-	}
-
-	// Update configuration
-	cfgMgr := config.NewManager()
-	if err := cfgMgr.Save(e.Config, filepath.Join(e.Root, azdcontext.ConfigFileName)); err != nil {
-		return fmt.Errorf("saving config: %w", err)
-	}
-
-	err := os.MkdirAll(e.Root, osutil.PermissionDirectory)
-	if err != nil {
-		return fmt.Errorf("failed to create a directory: %w", err)
-	}
-
-	err = godotenv.Write(e.Values, filepath.Join(e.Root, azdcontext.DotEnvFileName))
-	if err != nil {
-		return fmt.Errorf("saving .env: %w", err)
-	}
-
-	telemetry.SetUsageAttributes(fields.StringHashed(fields.EnvNameKey, e.GetEnvName()))
-
-	// If this was an empty (aka new) environment initialize the watcher
-	if e.watcher == nil {
-		if err := e.initWatcher(); err != nil {
-			return err
-		}
-	}
-
-	return nil
-}
-
-func (e *Environment) GetEnvName() string {
-	return e.Values[EnvNameEnvVarName]
-}
-
-func (e *Environment) SetEnvName(envname string) {
-	e.Values[EnvNameEnvVarName] = envname
-}
-
-func (e *Environment) GetSubscriptionId() string {
-	return e.Values[SubscriptionIdEnvVarName]
-}
-
-func (e *Environment) GetTenantId() string {
-	return e.Values[TenantIdEnvVarName]
-}
-
-func (e *Environment) SetSubscriptionId(id string) {
-	e.Values[SubscriptionIdEnvVarName] = id
-}
-
-func (e *Environment) GetLocation() string {
-	return e.Values[LocationEnvVarName]
-}
-
-func (e *Environment) SetLocation(location string) {
-	e.Values[LocationEnvVarName] = location
-}
-
-// Returns the value of a service-namespaced property in the environment.
-func (e *Environment) GetServiceProperty(serviceName string, propertyName string) string {
-	return e.Values[fmt.Sprintf("SERVICE_%s_%s", normalize(serviceName), propertyName)]
-}
-
-// Sets the value of a service-namespaced property in the environment.
-func (e *Environment) SetServiceProperty(serviceName string, propertyName string, value string) {
-	e.Values[fmt.Sprintf("SERVICE_%s_%s", normalize(serviceName), propertyName)] = value
-}
-
-// Creates a slice of key value pairs like `KEY=VALUE` that
-// can be used to pass into command runner or similar constructs
-func (e *Environment) Environ() []string {
-	envVars := []string{}
-	for k, v := range e.Values {
-		envVars = append(envVars, fmt.Sprintf("%s=%s", k, v))
-	}
-
-	return envVars
-}
-
-func (e *Environment) initWatcher() error {
-	if e.watcher != nil {
-		return nil
-	}
-
-	e.watchMutex.Lock()
-	defer e.watchMutex.Unlock()
-
-	// Don't setup the watcher if the .env file doesn't exist yet
-	envFilePath := filepath.Join(e.Root, azdcontext.DotEnvFileName)
-	if _, err := os.Stat(envFilePath); errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-
-	watcher, err := fsnotify.NewWatcher()
-	if err != nil {
-		return fmt.Errorf("failed creating file watcher, %w", err)
-	}
-
-	if err := watcher.Add(envFilePath); err != nil {
-		return fmt.Errorf("failed watching environment file '%s', %w", envFilePath, err)
-	}
-
-	e.watcher = watcher
-
-	go watchForChanges(e)
-
-	return nil
-}
-
 // Reloads environment variables and configuration
-func (e *Environment) reload() error {
+func (e *Environment) Reload() error {
 	// Reload env values
 	envPath := filepath.Join(e.Root, azdcontext.DotEnvFileName)
 	if envMap, err := godotenv.Read(envPath); errors.Is(err, os.ErrNotExist) {
@@ -296,67 +166,93 @@ func (e *Environment) reload() error {
 	return nil
 }
 
+// If `Root` is set, Save writes the current contents of the environment to
+// the given directory, creating it and any intermediate directories as needed.
+func (e *Environment) Save() error {
+	if e.Root == "" {
+		return nil
+	}
+
+	// Update configuration
+	cfgMgr := config.NewManager()
+	if err := cfgMgr.Save(e.Config, filepath.Join(e.Root, azdcontext.ConfigFileName)); err != nil {
+		return fmt.Errorf("saving config: %w", err)
+	}
+
+	// Cache current values & reload to get any new env vars
+	currentValues := e.Values
+	if err := e.Reload(); err != nil {
+		return fmt.Errorf("failed reloading env vars, %w", err)
+	}
+
+	// Overlay current values before saving
+	for key, value := range currentValues {
+		e.Values[key] = value
+	}
+
+	err := os.MkdirAll(e.Root, osutil.PermissionDirectory)
+	if err != nil {
+		return fmt.Errorf("failed to create a directory: %w", err)
+	}
+
+	err = godotenv.Write(e.Values, filepath.Join(e.Root, azdcontext.DotEnvFileName))
+	if err != nil {
+		return fmt.Errorf("saving .env: %w", err)
+	}
+
+	telemetry.SetUsageAttributes(fields.StringHashed(fields.EnvNameKey, e.GetEnvName()))
+	return nil
+}
+
+func (e *Environment) GetEnvName() string {
+	return e.Values[EnvNameEnvVarName]
+}
+
+func (e *Environment) SetEnvName(envname string) {
+	e.Values[EnvNameEnvVarName] = envname
+}
+
+func (e *Environment) GetSubscriptionId() string {
+	return e.Values[SubscriptionIdEnvVarName]
+}
+
+func (e *Environment) GetTenantId() string {
+	return e.Values[TenantIdEnvVarName]
+}
+
+func (e *Environment) SetSubscriptionId(id string) {
+	e.Values[SubscriptionIdEnvVarName] = id
+}
+
+func (e *Environment) GetLocation() string {
+	return e.Values[LocationEnvVarName]
+}
+
+func (e *Environment) SetLocation(location string) {
+	e.Values[LocationEnvVarName] = location
+}
+
 func normalize(key string) string {
 	return strings.ReplaceAll(strings.ToUpper(key), "-", "_")
 }
 
-// Watch for changes to the environment file
-func watchForChanges(env *Environment) {
-	var timerReadMutex sync.Mutex
-	var timerSetMutex sync.Mutex
-	var timer *time.Timer
-	waitFor := 100 * time.Millisecond
+// Returns the value of a service-namespaced property in the environment.
+func (e *Environment) GetServiceProperty(serviceName string, propertyName string) string {
+	return e.Values[fmt.Sprintf("SERVICE_%s_%s", normalize(serviceName), propertyName)]
+}
 
-	for {
-		select {
-		case event, ok := <-env.watcher.Events:
-			if !ok {
-				log.Printf("environment watcher channel was closed")
-				return
-			}
+// Sets the value of a service-namespaced property in the environment.
+func (e *Environment) SetServiceProperty(serviceName string, propertyName string, value string) {
+	e.Values[fmt.Sprintf("SERVICE_%s_%s", normalize(serviceName), propertyName)] = value
+}
 
-			// Ignore any non-write operations
-			if !event.Has(fsnotify.Write) {
-				continue
-			}
-
-			// Dedup multiple write events that happen within a short window
-			// A single file write can spawn multiple OS level write events
-			timerReadMutex.Lock()
-			if timer == nil {
-				newTimer := time.AfterFunc(math.MaxInt64, func() {
-					if err := env.reload(); err != nil {
-						log.Printf("error reloading environment, %s\n", err.Error())
-						return
-					}
-
-					// This is primarily used to support unit test scenarios so we can avoid adding
-					// arbitrary sleeps timers into the test code.
-					if env.reloadCallback != nil {
-						env.reloadCallback()
-					}
-
-					log.Println("environment reloaded")
-
-					timerSetMutex.Lock()
-					timer = nil
-					timerSetMutex.Unlock()
-				})
-				newTimer.Stop()
-
-				timerSetMutex.Lock()
-				timer = newTimer
-				timerSetMutex.Unlock()
-			}
-
-			// Double check that the timer has not been set to nil between the time we checked above and
-			// when the timer `AfterFunc` callback was invoked.
-			if timer != nil {
-				timer.Reset(waitFor)
-			}
-			timerReadMutex.Unlock()
-		case err := <-env.watcher.Errors:
-			log.Printf("non-terminating error while watching environment file: %s\n", err.Error())
-		}
+// Creates a slice of key value pairs like `KEY=VALUE` that
+// can be used to pass into command runner or similar constructs
+func (e *Environment) Environ() []string {
+	envVars := []string{}
+	for k, v := range e.Values {
+		envVars = append(envVars, fmt.Sprintf("%s=%s", k, v))
 	}
+
+	return envVars
 }

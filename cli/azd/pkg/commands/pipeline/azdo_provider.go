@@ -632,7 +632,7 @@ func (p *AzdoCiProvider) configureConnection(
 	if err != nil {
 		return err
 	}
-	err = azdo.CreateServiceConnection(ctx, connection, details.projectId, p.Env, *p.credentials, p.console)
+	err = azdo.CreateServiceConnection(ctx, connection, details.projectId, *p.Env, *p.credentials, p.console)
 	if err != nil {
 		return err
 	}

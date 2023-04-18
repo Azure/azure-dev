@@ -84,9 +84,17 @@ func (h *HooksRunner) RunHooks(ctx context.Context, hookType HookType, commands 
 	}
 
 	for _, hookConfig := range hooks {
+		if err := h.env.Reload(); err != nil {
+			return fmt.Errorf("reloading environment before running hook: %w", err)
+		}
+
 		err := h.execHook(ctx, hookConfig)
 		if err != nil {
 			return err
+		}
+
+		if err := h.env.Reload(); err != nil {
+			return fmt.Errorf("reloading environment after running hook: %w", err)
 		}
 	}
 

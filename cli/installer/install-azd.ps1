@@ -346,8 +346,9 @@ try {
     try {
         if (isLinuxOrMac) {
             if ($IsMacOS -and (-not $SkipVerify)) {
-                codesign -v "$tempFolder/decompress/$binFilename"
-                if ($LASTEXITCODE) {
+                Write-Verbose "Verifying signature of $binFilename" -Verbose:$Verbose
+                codesign -v "$tempFolder/decompress/$binFilename" *>$null
+                if (-not $?) {
                     Write-Error "Could not verify signature of $binFilename"
                     reportTelemetryIfEnabled 'InstallFailed' 'SignatureVerificationFailed'
                     exit 1

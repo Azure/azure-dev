@@ -313,8 +313,8 @@ extract "$compressed_file_path" "$bin_name" "$tmp_folder"
 chmod +x "$tmp_folder/$bin_name"
 
 if [ "$platform" = "darwin" ] && [ "$skip_verify" = false ]; then
-    codesign -v "$tmp_folder/$bin_name" > /dev/null 2>&1
-    if [ $? -ne 0 ]; then
+    say_verbose "Verifying signature of $bin_name"
+    if ! codesign -v "$tmp_folder/$bin_name" > /dev/null 2>&1; then
         say_error "Could not verify signature of $bin_name"
         save_error_report_if_enabled "InstallFailed" "SignatureVerificationFailure"
         exit 1

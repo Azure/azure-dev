@@ -167,6 +167,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(
 		func(ctx context.Context,
 			azdContext *azdcontext.AzdContext,
+			lazyEnv *lazy.Lazy[*environment.Environment],
 			envFlags envFlag,
 			console input.Console,
 		) (*environment.Environment, error) {
@@ -181,6 +182,10 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			if err != nil {
 				return nil, fmt.Errorf("loading environment: %w", err)
 			}
+
+			// Reset lazy env value after loading or creating environment
+			// This allows any previous lazy instances (such as hooks) to now point to the same instance
+			lazyEnv.SetValue(env)
 
 			return env, nil
 		},

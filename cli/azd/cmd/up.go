@@ -146,9 +146,6 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	// Use the correlation id from the provision operation
-	deployResult.Message.CorrelationId = provisionResult.Message.CorrelationId
-
 	return deployResult, nil
 }
 

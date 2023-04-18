@@ -17,9 +17,8 @@ func (a ActionFunc) Run(ctx context.Context) (*ActionResult, error) {
 
 // Define a message as the completion of an Action.
 type ResultMessage struct {
-	Header        string
-	CorrelationId string
-	FollowUp      string
+	Header   string
+	FollowUp string
 }
 
 // Define the Action outputs.
@@ -52,7 +51,6 @@ func ToUxItem(actionResult *ActionResult, err error) ux.UxItem {
 	return &ux.ActionResult{
 		SuccessMessage: actionResult.Message.Header,
 		FollowUp:       actionResult.Message.FollowUp,
-		CorrelationId:  actionResult.Message.CorrelationId,
 		Err:            nil,
 	}
 }

@@ -201,8 +201,7 @@ type AzCliDeploymentPropertiesBasicDependency struct {
 }
 
 type AzCliDeploymentResult struct {
-	Properties    AzCliDeploymentResultProperties `json:"properties"`
-	CorrelationId string
+	Properties AzCliDeploymentResultProperties `json:"properties"`
 }
 
 type AzCliDeploymentResultProperties struct {

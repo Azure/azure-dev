@@ -4,9 +4,8 @@
 package provisioning
 
 type Deployment struct {
-	Parameters    map[string]InputParameter
-	Outputs       map[string]OutputParameter
-	CorrelationId string
+	Parameters map[string]InputParameter
+	Outputs    map[string]OutputParameter
 }
 
 type ParameterType string

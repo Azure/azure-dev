@@ -29,7 +29,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/cmdsubst"
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
@@ -232,7 +231,6 @@ func (p *BicepProvider) Deploy(
 				bicepDeploymentData.TemplateOutputs,
 				azcli.CreateDeploymentOutput(deployResult.Properties.Outputs),
 			)
-			deployment.CorrelationId = convert.ToValueWithDefault(deployResult.Properties.CorrelationID, "")
 
 			result := &DeployResult{
 				Deployment: &deployment,

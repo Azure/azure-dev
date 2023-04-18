@@ -27,6 +27,9 @@ Do not update the PATH environment variable with the location of azd.
 .PARAMETER DownloadTimeoutSeconds
 Download timeout in seconds. Default is 120 (2 minutes).
 
+.PARAMETER SkipVerify
+Skips verification of the downloaded file.
+
 .EXAMPLE
 powershell -ex AllSigned -c "Invoke-RestMethod 'https://aka.ms/install-azd.ps1' | Invoke-Expression"
 
@@ -58,6 +61,7 @@ param(
     [switch] $DryRun,
     [string] $InstallFolder,
     [switch] $NoPath,
+    [switch] $SkipVerify,
     [int] $DownloadTimeoutSeconds = 120,
     [switch] $NoTelemetry
 )
@@ -341,6 +345,15 @@ try {
 
     try {
         if (isLinuxOrMac) {
+            if ($IsMacOS -and (-not $SkipVerify)) {
+                codesign -v "$tempFolder/decompress/$binFilename"
+                if ($LASTEXITCODE) {
+                    Write-Error "Could not verify signature of $binFilename"
+                    reportTelemetryIfEnabled 'InstallFailed' 'SignatureVerificationFailed'
+                    exit 1
+                }
+            }
+
             Write-Verbose "Installing azd in $InstallFolder" -Verbose:$Verbose
             if (!(Test-Path $InstallFolder)) {
                 New-Item -ItemType Directory -Path $InstallFolder -Force | Out-Null
@@ -359,6 +372,21 @@ try {
                 Copy-Item "$tempFolder/decompress/$binFilename" $outputFilename  -ErrorAction Stop | Out-Null
             }
         } else {
+            if (-not $SkipVerify) {
+                try {
+                    $signature = Get-AuthenticodeSignature $releaseArtifactFilename
+                    if ($signature -ne 'Valid') {
+                        Write-Error "Signature of $releaseArtifactFilename is not valid"
+                        reportTelemetryIfEnabled 'InstallFailed' 'SignatureVerificationFailed'
+                        exit 1
+                    }
+                } catch {
+                    Write-Error "Could not verify signature of $releaseArtifactFilename"
+                    reportTelemetryIfEnabled 'InstallFailed' 'SignatureVerificationFailed'
+                    exit 1
+                }
+            }
+
             Write-Verbose "Installing MSI" -Verbose:$Verbose
             $MSIEXEC = "${env:SystemRoot}\System32\msiexec.exe"
             $installProcess = Start-Process $MSIEXEC `

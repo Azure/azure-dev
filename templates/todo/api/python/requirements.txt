@@ -1,4 +1,4 @@
-fastapi == 0.92.*
+fastapi == 0.78.*
 uvicorn == 0.19.*
 beanie == 1.11.*
 python-dotenv == 0.20.*

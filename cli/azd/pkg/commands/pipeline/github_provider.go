@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
-	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -722,17 +721,6 @@ func (p *GitHubCiProvider) configurePipeline(
 // ensureGitHubLogin ensures the user is logged into the GitHub CLI. If not, it prompt the user
 // if they would like to log in and if so runs `gh auth login` interactively.
 func ensureGitHubLogin(ctx context.Context, ghCli github.GitHubCli, hostname string, console input.Console) (bool, error) {
-	githubToken := os.Getenv("GITHUB_TOKEN")
-	if githubToken != "" {
-		console.Message(ctx,
-			fmt.Sprintf(
-				"%s\n%s",
-				output.WithWarningFormat("WARNING: A value was detected for the 'GITHUB_TOKEN' environment variable."),
-				"Having this variable set can interfere with GitHub integration if not properly configured.",
-			),
-		)
-	}
-
 	authResult, err := ghCli.GetAuthStatus(ctx, hostname)
 	if err != nil {
 		return false, err

@@ -892,7 +892,7 @@ func ensureFederatedCredential(
 
 	console.MessageUxItem(
 		ctx,
-		&ux.CreatedResource{
+		&ux.DisplayedResource{
 			Type: "Federated identity credential for GitHub",
 			Name: fmt.Sprintf("subject %s", repoCredential.Subject),
 		},

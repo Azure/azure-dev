@@ -23,6 +23,7 @@
         To see how to enable this, visit https://github.com/HubSpot/prettier-maven-plugin
       -->
     <plugin.prettier.goal>write</plugin.prettier.goal>
+    <tomcat.version>9.0.70</tomcat.version>
   </properties>
 
   <dependencies>

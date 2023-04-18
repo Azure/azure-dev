@@ -18,16 +18,17 @@ const cDevVersionString = "0.0.0-dev.0 (commit 000000000000000000000000000000000
 //
 // This MUST be of the form "<semver> (commit <full commit hash>)"
 //
-// The default value here is used for a version built directly by a developer when running
-// `go install`
+// The default value here is used for a version built directly by a developer when running either
+// `go install` or `go build` without overriding the value at link time (the default behavior when
+// build or install are run without arguments).
 //
-// Official build set this value based on the version and commit we are building, using `-ldflags`
+// Official builds set this value based on the version and commit we are building, using `-ldflags`
 //
 // Example:
 //
 //	-ldflags="-X 'github.com/azure/azure-dev/cli/azd/internal.Version=0.0.1-alpha.1 (commit 8a49ae5ae9ab13beeade35f91ad4b4611c2f5574)'"
 //
-// This value is exported and not const so it can be mutated by certain tests. Instead of access this member
+// This value is exported and not const so it can be mutated by certain tests. Instead of accessing this member
 // directly, use [VersionInfo] which returns a structured version of this value.
 //
 // nolint: lll
@@ -60,9 +61,10 @@ func IsNonProdVersion() bool {
 	return strings.Contains(VersionInfo().Version.String(), "pr")
 }
 
+var cVersionStringRegexp = regexp.MustCompile(`^(\S+) \(commit ([0-9a-f]{40})\)$`)
+
 func VersionInfo() AzdVersionInfo {
-	r := regexp.MustCompile(`^(\S+) \(commit ([0-9a-f]{40})\)$`)
-	matches := r.FindStringSubmatch(Version)
+	matches := cVersionStringRegexp.FindStringSubmatch(Version)
 
 	if len(matches) != 3 {
 		panic("azd version is malformed, ensure github.com/azure/azure-dev/cli/azd/internal.Version is correct")

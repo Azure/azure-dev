@@ -329,6 +329,20 @@
                     "$ref": "#/definitions/hook"
                 }
             }
+        },
+        "requiredVersions": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "azd": {
+                    "type": "string",
+                    "title": "A range of supported versions of `azd` for this project",
+                    "description": "A range of supported versions of `azd` for this project. If the version of `azd` is outside this range, the project will fail to load. Optional (allows all versions if absent).",
+                    "examples": [
+                        ">= 0.6.0-beta.3"
+                    ]
+                }
+            }
         }
     },
     "definitions": {

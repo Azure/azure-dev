@@ -91,7 +91,7 @@ func FromRoot(root string) (*Environment, error) {
 		Root: root,
 	}
 
-	if err := env.watchForChanges(); err != nil {
+	if err := env.initWatcher(); err != nil {
 		return EmptyWithRoot(root), fmt.Errorf("failed watching environment for changes, %w", err)
 	}
 
@@ -175,7 +175,7 @@ func (e *Environment) Save() error {
 
 	// If this was an empty (aka new) environment initialize the watcher
 	if e.watcher == nil {
-		if err := e.watchForChanges(); err != nil {
+		if err := e.initWatcher(); err != nil {
 			return err
 		}
 	}
@@ -232,7 +232,7 @@ func (e *Environment) Environ() []string {
 	return envVars
 }
 
-func (e *Environment) watchForChanges() error {
+func (e *Environment) initWatcher() error {
 	if e.watcher != nil {
 		return nil
 	}
@@ -257,59 +257,7 @@ func (e *Environment) watchForChanges() error {
 
 	e.watcher = watcher
 
-	// Watch for changes to the environment file
-	go func() {
-		var mutex sync.Mutex
-		var timer *time.Timer
-		waitFor := 100 * time.Millisecond
-
-		for {
-			select {
-			case event, ok := <-e.watcher.Events:
-				if !ok {
-					log.Printf("environment watcher channel was closed")
-					return
-				}
-
-				// Ignore any non-write operations
-				if !event.Has(fsnotify.Write) {
-					continue
-				}
-
-				// Dedup multiple write events that happen within a short window
-				// A single file write can spawn multiple OS level write events
-				if timer == nil {
-					newTimer := time.AfterFunc(math.MaxInt64, func() {
-						if err := e.reload(); err != nil {
-							log.Printf("error reloading environment, %s\n", err.Error())
-							return
-						}
-
-						// This is primarily used to support unit test scenarios so we can avoid adding
-						// arbitrary sleeps timers into the test code.
-						if e.reloadCallback != nil {
-							e.reloadCallback()
-						}
-
-						log.Println("environment reloaded")
-
-						mutex.Lock()
-						timer = nil
-						mutex.Unlock()
-					})
-					newTimer.Stop()
-
-					mutex.Lock()
-					timer = newTimer
-					mutex.Unlock()
-				}
-
-				timer.Reset(waitFor)
-			case err := <-e.watcher.Errors:
-				log.Printf("non-terminating error while watching environment file: %s\n", err.Error())
-			}
-		}
-	}()
+	go watchForChanges(e)
 
 	return nil
 }
@@ -350,4 +298,65 @@ func (e *Environment) reload() error {
 
 func normalize(key string) string {
 	return strings.ReplaceAll(strings.ToUpper(key), "-", "_")
+}
+
+// Watch for changes to the environment file
+func watchForChanges(env *Environment) {
+	var timerReadMutex sync.Mutex
+	var timerSetMutex sync.Mutex
+	var timer *time.Timer
+	waitFor := 100 * time.Millisecond
+
+	for {
+		select {
+		case event, ok := <-env.watcher.Events:
+			if !ok {
+				log.Printf("environment watcher channel was closed")
+				return
+			}
+
+			// Ignore any non-write operations
+			if !event.Has(fsnotify.Write) {
+				continue
+			}
+
+			// Dedup multiple write events that happen within a short window
+			// A single file write can spawn multiple OS level write events
+			timerReadMutex.Lock()
+			if timer == nil {
+				newTimer := time.AfterFunc(math.MaxInt64, func() {
+					if err := env.reload(); err != nil {
+						log.Printf("error reloading environment, %s\n", err.Error())
+						return
+					}
+
+					// This is primarily used to support unit test scenarios so we can avoid adding
+					// arbitrary sleeps timers into the test code.
+					if env.reloadCallback != nil {
+						env.reloadCallback()
+					}
+
+					log.Println("environment reloaded")
+
+					timerSetMutex.Lock()
+					timer = nil
+					timerSetMutex.Unlock()
+				})
+				newTimer.Stop()
+
+				timerSetMutex.Lock()
+				timer = newTimer
+				timerSetMutex.Unlock()
+			}
+
+			// Double check that the timer has not been set to nil between the time we checked above and
+			// when the timer `AfterFunc` callback was invoked.
+			if timer != nil {
+				timer.Reset(waitFor)
+			}
+			timerReadMutex.Unlock()
+		case err := <-env.watcher.Errors:
+			log.Printf("non-terminating error while watching environment file: %s\n", err.Error())
+		}
+	}
 }

@@ -20,7 +20,7 @@ RUN export DEBIAN_FRONTEND=noninteractive \
      && curl -fsSL https://deb.nodesource.com/setup_16.x | bash - \
      && apt-get install -y nodejs \
      # python
-     && apt-get install -y --no-install-recommends python3-pip python-dev \
+     && apt-get install -y --no-install-recommends python3-pip python-dev python3-venv \
      && python3 -m pip install --upgrade pip \
      && echo 'alias python=python3' >> ~/.bashrc \
      && echo 'alias pip=pip3' >> ~/.bashrc \

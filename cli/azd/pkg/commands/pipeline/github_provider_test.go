@@ -6,11 +6,13 @@ package pipeline
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
@@ -44,7 +46,7 @@ func Test_gitHub_provider_getRepoDetails(t *testing.T) {
 func Test_gitHub_provider_preConfigure_check(t *testing.T) {
 	t.Run("success with all default values", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		setupGithubAuthMock(mockContext)
+		setupGithubCliMocks(mockContext)
 
 		provider := NewGitHubCiProvider(mockContext.Credentials, mockContext.CommandRunner, mockContext.Console)
 		updatedConfig, err := provider.preConfigureCheck(
@@ -71,7 +73,7 @@ func Test_gitHub_provider_preConfigure_check(t *testing.T) {
 		}
 
 		mockContext := mocks.NewMockContext(context.Background())
-		setupGithubAuthMock(mockContext)
+		setupGithubCliMocks(mockContext)
 
 		provider := NewGitHubCiProvider(mockContext.Credentials, mockContext.CommandRunner, mockContext.Console)
 		updatedConfig, err := provider.preConfigureCheck(
@@ -91,7 +93,7 @@ func Test_gitHub_provider_preConfigure_check(t *testing.T) {
 		}
 
 		mockContext := mocks.NewMockContext(context.Background())
-		setupGithubAuthMock(mockContext)
+		setupGithubCliMocks(mockContext)
 
 		provider := NewGitHubCiProvider(mockContext.Credentials, mockContext.CommandRunner, mockContext.Console)
 		updatedConfig, err := provider.preConfigureCheck(
@@ -105,10 +107,16 @@ func Test_gitHub_provider_preConfigure_check(t *testing.T) {
 	})
 }
 
-func setupGithubAuthMock(mockContext *mocks.MockContext) {
+func setupGithubCliMocks(mockContext *mocks.MockContext) {
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "auth status")
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		return exec.NewRunResult(0, "", ""), nil
+	})
+
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "--version")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		return exec.NewRunResult(0, fmt.Sprintf("gh version %s", github.GitHubCliVersion), ""), nil
 	})
 }

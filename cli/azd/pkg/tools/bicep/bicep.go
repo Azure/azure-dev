@@ -93,6 +93,8 @@ func newBicepCliWithTransporter(
 		return nil, fmt.Errorf("checking bicep version: %w", err)
 	}
 
+	log.Printf("bicep version: %s", ver)
+
 	if ver.LT(cBicepVersion) {
 		log.Printf("installed bicep version %s is older than %s; updating.", ver.String(), cBicepVersion.String())
 

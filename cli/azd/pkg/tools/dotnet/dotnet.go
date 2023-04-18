@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -54,6 +55,7 @@ func (cli *dotNetCli) CheckInstalled(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("checking %s version: %w", cli.Name(), err)
 	}
+	log.Printf("dotnet version: %s", dotnetRes)
 	dotnetSemver, err := tools.ExtractVersion(dotnetRes)
 	if err != nil {
 		return false, fmt.Errorf("converting to semver version fails: %w", err)

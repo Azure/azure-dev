@@ -108,7 +108,7 @@ func TestNewGitHubCli(t *testing.T) {
 		return strings.Contains(args.Cmd, "gh") && len(args.Args) == 1 && args.Args[0] == "--version"
 	}).Respond(exec.NewRunResult(
 		0,
-		fmt.Sprintf("gh version %s (abcdef0123)", cGitHubCliVersion.String()),
+		fmt.Sprintf("gh version %s (abcdef0123)", GitHubCliVersion.String()),
 		"",
 	))
 
@@ -144,6 +144,10 @@ func TestNewGitHubCli(t *testing.T) {
 	require.NoError(t, err)
 
 	require.Equal(t, []byte("this is github cli"), contents)
+
+	ver, err := cli.(*ghCli).extractVersion(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, GitHubCliVersion.String(), ver)
 }
 
 func createSampleZip(path, content, file string) (string, error) {

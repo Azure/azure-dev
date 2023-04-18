@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -673,17 +674,19 @@ func applyFederatedCredentials(
 		return fmt.Errorf("failed retrieving federated credentials: %w", err)
 	}
 
+	credentialSafeName := strings.ReplaceAll(repoSlug, "/", "-")
+
 	// List of desired federated credentials
 	federatedCredentials := []graphsdk.FederatedIdentityCredential{
 		{
-			Name:        "main",
+			Name:        fmt.Sprintf("%s-main", credentialSafeName),
 			Issuer:      federatedIdentityIssuer,
 			Subject:     fmt.Sprintf("repo:%s:ref:refs/heads/main", repoSlug),
 			Description: convert.RefOf("Created by Azure Developer CLI"),
 			Audiences:   []string{federatedIdentityAudience},
 		},
 		{
-			Name:        "pull_request",
+			Name:        fmt.Sprintf("%s-pull_request", credentialSafeName),
 			Issuer:      federatedIdentityIssuer,
 			Subject:     fmt.Sprintf("repo:%s:pull_request", repoSlug),
 			Description: convert.RefOf("Created by Azure Developer CLI"),
@@ -719,6 +722,17 @@ func (p *GitHubCiProvider) configurePipeline(
 // ensureGitHubLogin ensures the user is logged into the GitHub CLI. If not, it prompt the user
 // if they would like to log in and if so runs `gh auth login` interactively.
 func ensureGitHubLogin(ctx context.Context, ghCli github.GitHubCli, hostname string, console input.Console) (bool, error) {
+	githubToken := os.Getenv("GITHUB_TOKEN")
+	if githubToken != "" {
+		console.Message(ctx,
+			fmt.Sprintf(
+				"%s\n%s",
+				output.WithWarningFormat("WARNING: A value was detected for the 'GITHUB_TOKEN' environment variable."),
+				"Having this variable set can interfere with GitHub integration if not properly configured.",
+			),
+		)
+	}
+
 	authResult, err := ghCli.GetAuthStatus(ctx, hostname)
 	if err != nil {
 		return false, err

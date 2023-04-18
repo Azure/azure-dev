@@ -280,7 +280,7 @@ say_verbose "Architecture: $architecture"
 say_verbose "File extension: $extension"
 
 if [ "$platform" = "darwin" ]; then
-    say_verbose "Mac detected, ensuring compatailbity with amd64 binaries"
+    say_verbose "Mac detected, ensuring compatibility with amd64 binaries"
     ensure_rosetta
 fi
 

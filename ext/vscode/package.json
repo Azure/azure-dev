@@ -132,7 +132,14 @@
             }
         ],
         "configuration": {
-            "title": "azure-dev"
+            "title": "Azure Developer CLI",
+            "properties": {
+                "azure-dev.maximumAppsToDisplay": {
+                    "type": "number",
+                    "default": 5,
+                    "description": "%azure-dev.maximumAppsToDisplay.description%"
+                }
+            }
         },
         "menus": {
             "explorer/context": [

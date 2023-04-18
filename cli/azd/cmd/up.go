@@ -122,7 +122,7 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	provision.flags = &u.flags.provisionFlags
 	provisionOptions := &middleware.Options{CommandPath: "provision"}
-	provisionResult, err := u.runner.RunChildAction(ctx, provisionOptions, provision)
+	_, err = u.runner.RunChildAction(ctx, provisionOptions, provision)
 	if err != nil {
 		return nil, err
 	}

@@ -693,12 +693,12 @@ func NewSubscriptionsManagerWithCache(
 }
 
 type principalInfoProviderMock struct {
-	GetLoggedInServicePrincipalTenantIDFunc func() (*string, error)
+	GetLoggedInServicePrincipalTenantIDFunc func(context.Context) (*string, error)
 }
 
-func (p *principalInfoProviderMock) GetLoggedInServicePrincipalTenantID() (*string, error) {
+func (p *principalInfoProviderMock) GetLoggedInServicePrincipalTenantID(ctx context.Context) (*string, error) {
 	if p.GetLoggedInServicePrincipalTenantIDFunc != nil {
-		return p.GetLoggedInServicePrincipalTenantIDFunc()
+		return p.GetLoggedInServicePrincipalTenantIDFunc(ctx)
 	}
 
 	return nil, nil

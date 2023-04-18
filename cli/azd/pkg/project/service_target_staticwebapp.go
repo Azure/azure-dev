@@ -123,12 +123,14 @@ func (at *staticWebAppTarget) Deploy(
 			task.SetProgress(NewServiceProgress("Verifying deployment"))
 			if err := at.verifyDeployment(ctx, targetResource); err != nil {
 				task.SetError(err)
+				return
 			}
 
 			task.SetProgress(NewServiceProgress("Fetching endpoints for static web app"))
 			endpoints, err := at.Endpoints(ctx, serviceConfig, targetResource)
 			if err != nil {
 				task.SetError(err)
+				return
 			}
 
 			sdr := NewServiceDeployResult(

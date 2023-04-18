@@ -673,17 +673,19 @@ func applyFederatedCredentials(
 		return fmt.Errorf("failed retrieving federated credentials: %w", err)
 	}
 
+	credentialSafeName := strings.ReplaceAll(repoSlug, "/", "-")
+
 	// List of desired federated credentials
 	federatedCredentials := []graphsdk.FederatedIdentityCredential{
 		{
-			Name:        "main",
+			Name:        fmt.Sprintf("%s-main", credentialSafeName),
 			Issuer:      federatedIdentityIssuer,
 			Subject:     fmt.Sprintf("repo:%s:ref:refs/heads/main", repoSlug),
 			Description: convert.RefOf("Created by Azure Developer CLI"),
 			Audiences:   []string{federatedIdentityAudience},
 		},
 		{
-			Name:        "pull_request",
+			Name:        fmt.Sprintf("%s-pull_request", credentialSafeName),
 			Issuer:      federatedIdentityIssuer,
 			Subject:     fmt.Sprintf("repo:%s:pull_request", repoSlug),
 			Description: convert.RefOf("Created by Azure Developer CLI"),
@@ -892,7 +894,7 @@ func ensureFederatedCredential(
 
 	console.MessageUxItem(
 		ctx,
-		&ux.CreatedResource{
+		&ux.DisplayedResource{
 			Type: "Federated identity credential for GitHub",
 			Name: fmt.Sprintf("subject %s", repoCredential.Subject),
 		},

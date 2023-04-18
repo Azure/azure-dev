@@ -46,10 +46,6 @@ func (m *Manager) Plan(ctx context.Context) (*DeploymentPlan, error) {
 
 // Gets the latest deployment details for the specified scope
 func (m *Manager) State(ctx context.Context, scope infra.Scope) (*StateResult, error) {
-	if err := m.provider.EnsureConfigured(ctx); err != nil {
-		return nil, err
-	}
-
 	var stateResult *StateResult
 
 	err := m.runAction(
@@ -124,10 +120,6 @@ func (m *Manager) Destroy(ctx context.Context, deployment *Deployment, options D
 
 // Plans the infrastructure provisioning and orchestrates interactive terminal operations
 func (m *Manager) plan(ctx context.Context) (*DeploymentPlan, error) {
-	if err := m.provider.EnsureConfigured(ctx); err != nil {
-		return nil, err
-	}
-
 	planningTask := m.provider.Plan(ctx)
 	go func() {
 		for progress := range planningTask.Progress() {
@@ -149,10 +141,6 @@ func (m *Manager) deploy(
 	plan *DeploymentPlan,
 	scope infra.Scope,
 ) (*DeployResult, error) {
-	if err := m.provider.EnsureConfigured(ctx); err != nil {
-		return nil, err
-	}
-
 	deployTask := m.provider.Deploy(ctx, plan, scope)
 
 	go func() {
@@ -174,10 +162,6 @@ func (m *Manager) deploy(
 
 // Destroys the specified infrastructure provisioning and orchestrates the interactive terminal operations
 func (m *Manager) destroy(ctx context.Context, deployment *Deployment, options DestroyOptions) (*DestroyResult, error) {
-	if err := m.provider.EnsureConfigured(ctx); err != nil {
-		return nil, err
-	}
-
 	var destroyResult *DestroyResult
 
 	destroyTask := m.provider.Destroy(ctx, deployment, options)
@@ -302,6 +286,9 @@ func NewManager(
 	}
 
 	m.provider = infraProvider
+	if err := m.provider.EnsureConfigured(ctx); err != nil {
+		return nil, err
+	}
 
 	return m, nil
 }

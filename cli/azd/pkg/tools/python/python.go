@@ -36,11 +36,11 @@ func (cli *PythonCli) versionInfo() tools.VersionInfo {
 }
 
 func (cli *PythonCli) CheckInstalled(ctx context.Context) (bool, error) {
-	found, err := tools.ToolInPath(pythonExe())
+	pyString, found, err := checkPath()
 	if !found {
 		return false, err
 	}
-	pythonRes, err := tools.ExecuteCommand(ctx, cli.commandRunner, pythonExe(), "--version")
+	pythonRes, err := tools.ExecuteCommand(ctx, cli.commandRunner, pyString, "--version")
 	if err != nil {
 		return false, fmt.Errorf("checking %s version: %w", cli.Name(), err)
 	}
@@ -67,6 +67,11 @@ func (cli *PythonCli) InstallRequirements(ctx context.Context, workingDir, envir
 	var res exec.RunResult
 	var err error
 
+	pyString, _, err := checkPath()
+	if err != nil {
+		return err
+	}
+
 	if runtime.GOOS == "windows" {
 		// Unfortunately neither cmd.exe, nor PowerShell provide a straightforward way to use a script
 		// to modify environment for command(s) in a command list.
@@ -80,14 +85,14 @@ func (cli *PythonCli) InstallRequirements(ctx context.Context, workingDir, envir
 		vEnvSetting := fmt.Sprintf("VIRTUAL_ENV=%s", path.Join(absWorkingDir, environment))
 
 		runArgs := exec.
-			NewRunArgs(pythonExe(), "-m", "pip", "install", "-r", requirementFile).
+			NewRunArgs(pyString, "-m", "pip", "install", "-r", requirementFile).
 			WithCwd(workingDir).
 			WithEnv([]string{vEnvSetting})
 
 		res, err = cli.commandRunner.Run(ctx, runArgs)
 	} else {
 		envActivation := ". " + path.Join(environment, "bin", "activate")
-		installCmd := fmt.Sprintf("%s -m pip install -r %s", pythonExe(), requirementFile)
+		installCmd := fmt.Sprintf("%s -m pip install -r %s", pyString, requirementFile)
 		commands := []string{envActivation, installCmd}
 
 		runArgs := exec.NewRunArgs("").WithCwd(workingDir)
@@ -101,8 +106,13 @@ func (cli *PythonCli) InstallRequirements(ctx context.Context, workingDir, envir
 }
 
 func (cli *PythonCli) CreateVirtualEnv(ctx context.Context, workingDir, name string) error {
+	pyString, _, err := checkPath()
+	if err != nil {
+		return err
+	}
+
 	runArgs := exec.
-		NewRunArgs(pythonExe(), "-m", "venv", name).
+		NewRunArgs(pyString, "-m", "venv", name).
 		WithCwd(workingDir)
 
 	res, err := cli.commandRunner.Run(ctx, runArgs)
@@ -118,10 +128,24 @@ func (cli *PythonCli) CreateVirtualEnv(ctx context.Context, workingDir, name str
 	return nil
 }
 
-func pythonExe() string {
+func checkPath() (pyString string, found bool, err error) {
 	if runtime.GOOS == "windows" {
-		return "py" // https://peps.python.org/pep-0397
+		// py for https://peps.python.org/pep-0397
+		// order is important. we want to resolve 'py', if available, first
+		pyString := [2]string{"py", "python"}
+
+		for _, py := range pyString {
+			found, err = tools.ToolInPath(py)
+			if found && err == nil {
+				return py, found, nil
+			}
+		}
+		return "", found, err
 	} else {
-		return "python3"
+		found, err := tools.ToolInPath("python3")
+		if found && err == nil {
+			return "python3", found, err
+		}
+		return "", found, err
 	}
 }

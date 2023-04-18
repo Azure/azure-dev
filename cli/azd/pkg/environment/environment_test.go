@@ -114,17 +114,16 @@ func Test_SaveAndReload(t *testing.T) {
 	tempDir := t.TempDir()
 	ostest.Chdir(t, tempDir)
 
-	env, err := FromRoot(tempDir)
+	env := EmptyWithRoot(tempDir)
 	require.NotNil(t, env)
-	require.NoError(t, err)
 
 	env.SetLocation("eastus2")
 	env.SetSubscriptionId("SUBSCRIPTION_ID")
 
-	err = env.Save()
+	err := env.Save()
 	require.NoError(t, err)
 
-	// Simulate another process updating the .env file
+	// Simulate another process writing to .env file
 	envPath := filepath.Join(tempDir, azdcontext.DotEnvFileName)
 	envMap, err := godotenv.Read(envPath)
 	require.NotNil(t, envMap)
@@ -133,6 +132,9 @@ func Test_SaveAndReload(t *testing.T) {
 	// This entry does not exist in the current env state but is added as part of the reload process
 	envMap["SERVICE_API_ENDPOINT_URL"] = "http://api.example.com"
 	err = godotenv.Write(envMap, envPath)
+	require.NoError(t, err)
+
+	err = env.Reload()
 	require.NoError(t, err)
 
 	// Set a new property in the env

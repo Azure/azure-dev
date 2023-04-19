@@ -146,7 +146,6 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if err != nil {
 		return nil, err
 	}
-
 	return deployResult, nil
 }
 

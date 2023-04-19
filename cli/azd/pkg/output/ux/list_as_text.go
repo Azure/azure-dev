@@ -14,7 +14,7 @@ import (
 // ["foo", "bar"] 					=> "foo and bar"
 // ["foo", "bar", "axe"] 			=> "foo, bar and axe"
 // ["foo", "bar", ..., ..., "axe"] 	=> "foo, bar, ..., ... and axe"
-func ItemsAsText(items []string) string {
+func ListAsText(items []string) string {
 	count := len(items)
 	if count < 1 {
 		log.Panic("calling itemsCountAsText() with empty list.")

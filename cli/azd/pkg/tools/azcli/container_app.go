@@ -89,11 +89,6 @@ func (cas *containerAppService) AddRevision(
 	appName string,
 	imageName string,
 ) error {
-	appClient, err := cas.createContainerAppsClient(ctx, subscriptionId)
-	if err != nil {
-		return err
-	}
-
 	containerApp, err := cas.getContainerApp(ctx, subscriptionId, resourceGroupName, appName)
 	if err != nil {
 		return fmt.Errorf("getting container app: %w", err)
@@ -118,24 +113,10 @@ func (cas *containerAppService) AddRevision(
 
 	// Update the container app with the new revision
 	containerApp.Properties.Template = revision.Properties.Template
-
-	// Copy the secret configuration from the current version
-	// Secret values are not returned by the API, so we need to get them separately
-	// to ensure the update call succeeds
-	secretsResponse, err := appClient.ListSecrets(ctx, resourceGroupName, appName, nil)
+	containerApp, err = cas.syncSecrets(ctx, subscriptionId, resourceGroupName, appName, containerApp)
 	if err != nil {
-		return fmt.Errorf("listing secrets: %w", err)
+		return fmt.Errorf("syncing secrets: %w", err)
 	}
-
-	secrets := []*armappcontainers.Secret{}
-	for _, secret := range secretsResponse.SecretsCollection.Value {
-		secrets = append(secrets, &armappcontainers.Secret{
-			Name:  secret.Name,
-			Value: secret.Value,
-		})
-	}
-
-	containerApp.Properties.Configuration.Secrets = secrets
 
 	// Update the container app
 	err = cas.updateContainerApp(ctx, subscriptionId, resourceGroupName, appName, containerApp)
@@ -153,6 +134,44 @@ func (cas *containerAppService) AddRevision(
 	}
 
 	return nil
+}
+
+func (cas *containerAppService) syncSecrets(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroupName string,
+	appName string,
+	containerApp *armappcontainers.ContainerApp,
+) (*armappcontainers.ContainerApp, error) {
+	// If the container app doesn't have any secrets, we don't need to do anything
+	if len(containerApp.Properties.Configuration.Secrets) == 0 {
+		return containerApp, nil
+	}
+
+	appClient, err := cas.createContainerAppsClient(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	// Copy the secret configuration from the current version
+	// Secret values are not returned by the API, so we need to get them separately
+	// to ensure the update call succeeds
+	secretsResponse, err := appClient.ListSecrets(ctx, resourceGroupName, appName, nil)
+	if err != nil {
+		return nil, fmt.Errorf("listing secrets: %w", err)
+	}
+
+	secrets := []*armappcontainers.Secret{}
+	for _, secret := range secretsResponse.SecretsCollection.Value {
+		secrets = append(secrets, &armappcontainers.Secret{
+			Name:  secret.Name,
+			Value: secret.Value,
+		})
+	}
+
+	containerApp.Properties.Configuration.Secrets = secrets
+
+	return containerApp, nil
 }
 
 func (cas *containerAppService) setTrafficWeights(

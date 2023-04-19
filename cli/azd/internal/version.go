@@ -6,31 +6,48 @@ package internal
 import (
 	"regexp"
 	"strings"
+
+	"github.com/blang/semver/v4"
 )
 
-// Version is the version string printed out by the `Version` command.
-// It's updated using ldflags in CI.
+// cDevVersionString is the default version that is used when [Version] is not overridden at build time, i.e.
+// a developer building locally using `go install`.
+const cDevVersionString = "0.0.0-dev.0 (commit 0000000000000000000000000000000000000000)"
+
+// The version string, as printed by `azd version`.
+//
+// This MUST be of the form "<semver> (commit <full commit hash>)"
+//
+// The default value here is used for a version built directly by a developer when running either
+// `go install` or `go build` without overriding the value at link time (the default behavior when
+// build or install are run without arguments).
+//
+// Official builds set this value based on the version and commit we are building, using `-ldflags`
+//
 // Example:
 //
-//	-ldflags="-X 'github.com/azure/azure-dev/cli/azd/internal.Version=0.0.1-alpha.1 (commit
+//	-ldflags="-X 'github.com/azure/azure-dev/cli/azd/internal.Version=0.0.1-alpha.1 (commit 8a49ae5ae9ab13beeade35f91ad4b4611c2f5574)'"
 //
-// 8a49ae5ae9ab13beeade35f91ad4b4611c2f5574)'"
-var Version = "0.0.0-dev.0 (commit 0000000000000000000000000000000000000000)"
+// This value is exported and not const so it can be mutated by certain tests. Instead of accessing this member
+// directly, use [VersionInfo] which returns a structured version of this value.
+//
+// nolint: lll
+var Version = cDevVersionString
 
-const UnknownVersion string = "unknown"
-const UnknownCommit string = "unknown"
-
-type VersionSpec struct {
-	Azd AzdVersionSpec `json:"azd"`
+func init() {
+	// VersionInfo panics if the version string is malformed, run the code at package startup to
+	// ensure everything is okay. This allows the rest of the system to call VersionInfo() to get
+	// parsed version information without having to worry about error handling.
+	_ = VersionInfo()
 }
 
-type AzdVersionSpec struct {
-	Version string `json:"version"`
-	Commit  string `json:"commit"`
+type AzdVersionInfo struct {
+	Version semver.Version
+	Commit  string
 }
 
 func IsDevVersion() bool {
-	return GetVersionNumber() == "0.0.0-dev.0"
+	return Version == cDevVersionString
 }
 
 func IsNonProdVersion() bool {
@@ -41,45 +58,20 @@ func IsNonProdVersion() bool {
 	// This currently relies on checking for specific internal release tags.
 	// This can be improved to instead check for any presence of prerelease versioning
 	// once the product is GA.
-	ver := GetVersionNumber()
-	return strings.Contains(ver, "pr")
+	return strings.Contains(VersionInfo().Version.String(), "pr")
 }
 
-// GetVersionNumber splits the cmd.Version string to get the
-// semver for the command.
-// Returns a version string like `0.0.1-alpha.1`.
-func GetVersionNumber() string {
-	pieces := strings.SplitN(Version, " ", 2)
+var cVersionStringRegexp = regexp.MustCompile(`^(\S+) \(commit ([0-9a-f]{40})\)$`)
 
-	if len(pieces) < 2 {
-		return UnknownVersion
+func VersionInfo() AzdVersionInfo {
+	matches := cVersionStringRegexp.FindStringSubmatch(Version)
+
+	if len(matches) != 3 {
+		panic("azd version is malformed, ensure github.com/azure/azure-dev/cli/azd/internal.Version is correct")
 	}
 
-	return pieces[0]
-}
-
-// Non-whitespace (version number), followed by some whitespace, followed by open parenthesis,
-// optional whitespace, and word
-// 'commit', followed by not-whitespace, not-closing-parenthesis (commit hash),
-// followed by optional whitespace and closing
-// parenthesis.
-var azdVersionStrRegex = regexp.MustCompile(`(\S+)\s+\(\s*commit\s+([^)\s]+)\s*\)`)
-
-func GetVersionSpec() VersionSpec {
-	matches := azdVersionStrRegex.FindStringSubmatch(Version)
-	if matches == nil {
-		return VersionSpec{
-			Azd: AzdVersionSpec{
-				Version: UnknownVersion,
-				Commit:  UnknownCommit,
-			},
-		}
-	} else {
-		return VersionSpec{
-			Azd: AzdVersionSpec{
-				Version: matches[1],
-				Commit:  matches[2],
-			},
-		}
+	return AzdVersionInfo{
+		Version: semver.MustParse(matches[1]),
+		Commit:  matches[2],
 	}
 }

@@ -113,7 +113,7 @@ func (at *containerAppTarget) Deploy(
 			containerDeployTask := at.containerHelper.Deploy(ctx, serviceConfig, packageOutput, targetResource)
 			syncProgress(task, containerDeployTask.Progress())
 
-			deployResult, err := containerDeployTask.Await()
+			_, err := containerDeployTask.Await()
 			if err != nil {
 				task.SetError(err)
 				return
@@ -148,7 +148,6 @@ func (at *containerAppTarget) Deploy(
 					targetResource.ResourceName(),
 				),
 				Kind:      ContainerAppTarget,
-				Details:   deployResult,
 				Endpoints: endpoints,
 			})
 		},
@@ -161,7 +160,7 @@ func (at *containerAppTarget) Endpoints(
 	serviceConfig *ServiceConfig,
 	targetResource *environment.TargetResource,
 ) ([]string, error) {
-	if containerAppProperties, err := at.containerAppService.GetAppProperties(
+	if ingressConfig, err := at.containerAppService.GetIngressConfiguration(
 		ctx,
 		targetResource.SubscriptionId(),
 		targetResource.ResourceGroupName(),
@@ -169,8 +168,8 @@ func (at *containerAppTarget) Endpoints(
 	); err != nil {
 		return nil, fmt.Errorf("fetching service properties: %w", err)
 	} else {
-		endpoints := make([]string, len(containerAppProperties.HostNames))
-		for idx, hostName := range containerAppProperties.HostNames {
+		endpoints := make([]string, len(ingressConfig.HostNames))
+		for idx, hostName := range ingressConfig.HostNames {
 			endpoints[idx] = fmt.Sprintf("https://%s/", hostName)
 		}
 

@@ -314,8 +314,8 @@ chmod +x "$tmp_folder/$bin_name"
 
 if [ "$platform" = "darwin" ] && [ "$skip_verify" = false ]; then
     say_verbose "Verifying signature of $bin_name"
-    if ! output=$( codesign -v "$tmp_folder/$bin_name" ); then
-        say_error "Could not verify signature of $bin_name"
+    if ! output=$( codesign -v "$tmp_folder/$bin_name" 2>&1); then
+        say_error "Could not verify signature of $bin_name, error output:"
         say_error "$output"
         save_error_report_if_enabled "InstallFailed" "SignatureVerificationFailure"
         exit 1

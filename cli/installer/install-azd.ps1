@@ -375,8 +375,9 @@ try {
         } else {
             if (-not $SkipVerify) {
                 try {
+                    Write-Verbose "Verifying signature of $releaseArtifactFilename" -Verbose:$Verbose
                     $signature = Get-AuthenticodeSignature $releaseArtifactFilename
-                    if ($signature -ne 'Valid') {
+                    if ($signature.Status -ne 'Valid') {
                         Write-Error "Signature of $releaseArtifactFilename is not valid"
                         reportTelemetryIfEnabled 'InstallFailed' 'SignatureVerificationFailed'
                         exit 1

@@ -1126,13 +1126,13 @@ stages:
               bash:
               ``````
               curl -fsSL $urlBase/uninstall-azd.sh | bash;
-              curl -fsSL $urlBase/install-azd.sh | bash -s -- --base-url $urlBase --version '' --verbose
+              curl -fsSL $urlBase/install-azd.sh | bash -s -- --base-url $urlBase --version '' --verbose --skip-verify
               ``````
 
               pwsh:
               ``````
               Invoke-RestMethod '$urlBase/uninstall-azd.ps1' -OutFile uninstall-azd.ps1; ./uninstall-azd.ps1
-              Invoke-RestMethod '$urlBase/install-azd.ps1' -OutFile install-azd.ps1; ./install-azd.ps1 -BaseUrl '$urlBase' -Version '' -Verbose
+              Invoke-RestMethod '$urlBase/install-azd.ps1' -OutFile install-azd.ps1; ./install-azd.ps1 -BaseUrl '$urlBase' -Version '' -SkipVerify -Verbose
               ``````
 
 
@@ -1142,7 +1142,7 @@ stages:
 
               ``````
               powershell -c "Set-ExecutionPolicy Bypass Process; irm '$urlBase/uninstall-azd.ps1' > uninstall-azd.ps1; ./uninstall-azd.ps1;"
-              powershell -c "Set-ExecutionPolicy Bypass Process; irm '$urlBase/install-azd.ps1' > install-azd.ps1; ./install-azd.ps1 -BaseUrl '$urlBase' -Version '' -Verbose;"
+              powershell -c "Set-ExecutionPolicy Bypass Process; irm '$urlBase/install-azd.ps1' > install-azd.ps1; ./install-azd.ps1 -BaseUrl '$urlBase' -Version '' -SkipVerify -Verbose;"
               ``````
 
               MSI install

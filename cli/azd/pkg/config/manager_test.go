@@ -71,11 +71,11 @@ func Test_DirectoryPermissions(t *testing.T) {
 	require.NotZero(t, permissions&100)
 
 	// Ensure max permission is 0644 ()
-	os.Chmod(configDir, permissions&0644)
+	err := os.Chmod(configDir, permissions&0644)
+	require.NoError(t, err)
 
-	configDir, err = GetUserConfigDir()
+	configDir, err := GetUserConfigDir()
 	require.NoError(t, err)
 	permissions = getPermissions(t, configDir)
 	require.NotZero(t, permissions&100)
-
 }

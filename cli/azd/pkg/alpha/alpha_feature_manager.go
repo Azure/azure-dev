@@ -24,6 +24,12 @@ func NewFeaturesManager(configManager config.UserConfigManager) *FeatureManager 
 	}
 }
 
+func NewFeaturesManagerWithConfig(config config.Config) *FeatureManager {
+	return &FeatureManager{
+		userConfigCache: config,
+	}
+}
+
 // ListFeatures pulls the list of features in alpha mode available within the application and displays its current state
 // which is `on` or `off`.
 func (m *FeatureManager) ListFeatures() (map[string]Feature, error) {

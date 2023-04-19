@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"io"
 	"log"
-	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
@@ -17,7 +16,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
@@ -34,6 +32,7 @@ type containerAppTarget struct {
 	serviceManager             ServiceManager
 	resourceManager            ResourceManager
 	containerHelper            *ContainerHelper
+	containerAppService        azcli.ContainerAppService
 	alphaFeatureManager        *alpha.FeatureManager
 	userProfileService         *azcli.UserProfileService
 	subscriptionTenantResolver account.SubscriptionTenantResolver
@@ -54,6 +53,7 @@ func NewContainerAppTarget(
 	userProfileService *azcli.UserProfileService,
 	subscriptionTenantResolver account.SubscriptionTenantResolver,
 	containerHelper *ContainerHelper,
+	containerAppService azcli.ContainerAppService,
 	alphaFeatureManager *alpha.FeatureManager,
 ) ServiceTarget {
 	return &containerAppTarget{
@@ -65,6 +65,7 @@ func NewContainerAppTarget(
 		console:                    console,
 		commandRunner:              commandRunner,
 		containerHelper:            containerHelper,
+		containerAppService:        containerAppService,
 		alphaFeatureManager:        alphaFeatureManager,
 		userProfileService:         userProfileService,
 		subscriptionTenantResolver: subscriptionTenantResolver,
@@ -108,100 +109,28 @@ func (at *containerAppTarget) Deploy(
 				return
 			}
 
-			// If the infra module has not been specified default to a module with the same name as the service.
-			if strings.TrimSpace(serviceConfig.Infra.Module) == "" {
-				serviceConfig.Infra.Module = serviceConfig.Module
-			}
-			if strings.TrimSpace(serviceConfig.Infra.Module) == "" {
-				serviceConfig.Infra.Module = serviceConfig.Name
-			}
-
 			// Login, tag & push container image to ACR
 			containerDeployTask := at.containerHelper.Deploy(ctx, serviceConfig, packageOutput, targetResource)
 			syncProgress(task, containerDeployTask.Progress())
 
-			_, err := containerDeployTask.Await()
+			deployResult, err := containerDeployTask.Await()
 			if err != nil {
 				task.SetError(err)
 				return
 			}
 
-			infraManager, err := provisioning.NewManager(
+			imageName := at.env.GetServiceProperty(serviceConfig.Name, "IMAGE_NAME")
+			task.SetProgress(NewServiceProgress("Updating container app revision"))
+			err = at.containerAppService.AddRevision(
 				ctx,
-				at.env,
-				serviceConfig.Project.Path,
-				serviceConfig.Infra,
-				at.console.IsUnformatted(),
-				at.cli,
-				&MutedConsole{
-					ParentConsole: at.console,
-				}, // hide the bicep deployment output.
-				at.commandRunner,
-				at.accountManager,
-				at.userProfileService,
-				at.subscriptionTenantResolver,
-				at.alphaFeatureManager,
-			)
-			if err != nil {
-				task.SetError(fmt.Errorf("creating provisioning manager: %w", err))
-				return
-			}
-
-			task.SetProgress(NewServiceProgress("Creating deployment template"))
-			deploymentPlan, err := infraManager.Plan(ctx)
-			if err != nil {
-				task.SetError(fmt.Errorf("planning provisioning: %w", err))
-				return
-			}
-
-			task.SetProgress(NewServiceProgress("Updating container app image reference"))
-			deploymentName := fmt.Sprintf("%s-%s", at.env.GetEnvName(), serviceConfig.Name)
-			scope := infra.NewResourceGroupScope(
-				at.cli,
 				targetResource.SubscriptionId(),
 				targetResource.ResourceGroupName(),
-				deploymentName,
+				targetResource.ResourceName(),
+				imageName,
 			)
-			deployResult, err := infraManager.Deploy(ctx, deploymentPlan, scope)
-
 			if err != nil {
-				task.SetError(fmt.Errorf("provisioning infrastructure for app deployment: %w", err))
+				task.SetError(fmt.Errorf("updating container app service: %w", err))
 				return
-			}
-
-			if len(deployResult.Deployment.Outputs) > 0 {
-				log.Printf("saving %d deployment outputs", len(deployResult.Deployment.Outputs))
-				if err := provisioning.UpdateEnvironment(at.env, deployResult.Deployment.Outputs); err != nil {
-					task.SetError(fmt.Errorf("saving outputs to environment: %w", err))
-					return
-				}
-			}
-
-			if targetResource.ResourceName() == "" {
-				azureResource, err := at.resourceManager.GetServiceResource(
-					ctx,
-					targetResource.SubscriptionId(),
-					targetResource.ResourceGroupName(),
-					serviceConfig,
-					"deploy",
-				)
-				if err != nil {
-					task.SetError(err)
-					return
-				}
-
-				// Fill in the target resource
-				targetResource = environment.NewTargetResource(
-					targetResource.SubscriptionId(),
-					targetResource.ResourceGroupName(),
-					azureResource.Name,
-					azureResource.Type,
-				)
-
-				if err := checkResourceType(targetResource, infra.AzureResourceTypeContainerApp); err != nil {
-					task.SetError(err)
-					return
-				}
 			}
 
 			task.SetProgress(NewServiceProgress("Fetching endpoints for container app service"))
@@ -232,7 +161,7 @@ func (at *containerAppTarget) Endpoints(
 	serviceConfig *ServiceConfig,
 	targetResource *environment.TargetResource,
 ) ([]string, error) {
-	if containerAppProperties, err := at.cli.GetContainerAppProperties(
+	if containerAppProperties, err := at.containerAppService.GetAppProperties(
 		ctx,
 		targetResource.SubscriptionId(),
 		targetResource.ResourceGroupName(),

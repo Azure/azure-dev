@@ -90,7 +90,7 @@ func Test_azdo_scm_provider_preConfigureCheck(t *testing.T) {
 		ctx := context.Background()
 
 		// act
-		updatedConfig, e := provider.preConfigureCheck(ctx, PipelineManagerArgs{}, provisioning.Options{})
+		updatedConfig, e := provider.preConfigureCheck(ctx, PipelineManagerArgs{}, provisioning.Options{}, "")
 
 		// assert
 		require.NoError(t, e)
@@ -110,7 +110,7 @@ func Test_azdo_scm_provider_preConfigureCheck(t *testing.T) {
 		provider := getEmptyAzdoScmProviderTestHarness(testConsole)
 
 		// act
-		updatedConfig, e := provider.preConfigureCheck(ctx, PipelineManagerArgs{}, provisioning.Options{})
+		updatedConfig, e := provider.preConfigureCheck(ctx, PipelineManagerArgs{}, provisioning.Options{}, "")
 
 		// assert
 		require.Nil(t, e)
@@ -134,7 +134,7 @@ func Test_azdo_ci_provider_preConfigureCheck(t *testing.T) {
 			PipelineAuthTypeName: "",
 		}
 
-		updatedConfig, err := provider.preConfigureCheck(ctx, pipelineManagerArgs, provisioning.Options{})
+		updatedConfig, err := provider.preConfigureCheck(ctx, pipelineManagerArgs, provisioning.Options{}, "")
 		require.NoError(t, err)
 		require.True(t, updatedConfig)
 	})
@@ -148,7 +148,7 @@ func Test_azdo_ci_provider_preConfigureCheck(t *testing.T) {
 		}
 		provider := getAzdoCiProviderTestHarness(testConsole)
 
-		updatedConfig, err := provider.preConfigureCheck(ctx, pipelineManagerArgs, provisioning.Options{})
+		updatedConfig, err := provider.preConfigureCheck(ctx, pipelineManagerArgs, provisioning.Options{}, "")
 		require.Error(t, err)
 		require.False(t, updatedConfig)
 		require.True(t, errors.Is(err, ErrAuthNotSupported))

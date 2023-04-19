@@ -34,10 +34,6 @@ import (
 type GitHubCli interface {
 	tools.ExternalTool
 	GetAuthStatus(ctx context.Context, hostname string) (AuthStatus, error)
-	// Forces the authentication token mode used by github CLI.
-	//
-	// If set to TokenSourceFile, environment variables such as GH_TOKEN and GITHUB_TOKEN are ignored.
-	ForceConfigureAuth(authMode AuthTokenSource)
 	ListSecrets(ctx context.Context, repo string) error
 	SetSecret(ctx context.Context, repo string, name string, value string) error
 	Login(ctx context.Context, hostname string) error
@@ -46,6 +42,7 @@ type GitHubCli interface {
 	CreatePrivateRepository(ctx context.Context, name string) error
 	GetGitProtocolType(ctx context.Context) (string, error)
 	GitHubActionsExists(ctx context.Context, repoSlug string) (bool, error)
+	BinaryPath() string
 }
 
 func NewGitHubCli(ctx context.Context, console input.Console, commandRunner exec.CommandRunner) (GitHubCli, error) {
@@ -101,7 +98,6 @@ func newGitHubCliImplementation(
 		path:          githubCliPath,
 		commandRunner: commandRunner,
 	}
-
 	return cli, nil
 }
 
@@ -135,12 +131,6 @@ var (
 type ghCli struct {
 	commandRunner exec.CommandRunner
 	path          string
-
-	// Override token-specific environment variables, in format of key=value.
-	//
-	// This is used to unset the value of GITHUB_TOKEN, GH_TOKEN environment variables for gh cli calls,
-	// allowing a new token to be generated via gh auth login or gh auth refresh.
-	overrideTokenEnv []string
 }
 
 func (cli *ghCli) CheckInstalled(ctx context.Context) (bool, error) {
@@ -151,33 +141,24 @@ func (cli *ghCli) Name() string {
 	return "GitHub CLI"
 }
 
+func (cli *ghCli) BinaryPath() string {
+	return cli.path
+}
+
 func (cli *ghCli) InstallUrl() string {
 	return "https://aka.ms/azure-dev/github-cli-install"
 }
 
 // The result from calling GetAuthStatus
 type AuthStatus struct {
-	LoggedIn    bool
-	TokenSource AuthTokenSource
+	LoggedIn bool
 }
-
-// The source of the auth token used by `gh` CLI
-type AuthTokenSource int
-
-const (
-	TokenSourceFile AuthTokenSource = iota
-	// See TokenEnvVars for token env vars
-	TokenSourceEnvVar
-)
 
 func (cli *ghCli) GetAuthStatus(ctx context.Context, hostname string) (AuthStatus, error) {
 	runArgs := cli.newRunArgs("auth", "status", "--hostname", hostname)
 	res, err := cli.commandRunner.Run(ctx, runArgs)
 	if res.ExitCode == 0 {
-		authResult := AuthStatus{TokenSource: TokenSourceFile, LoggedIn: true}
-		if isEnvVarTokenSource(res.Stderr) {
-			authResult.TokenSource = TokenSourceEnvVar
-		}
+		authResult := AuthStatus{LoggedIn: true}
 		return authResult, nil
 	} else if isGhCliNotLoggedInMessageRegex.MatchString(res.Stderr) {
 		return AuthStatus{}, nil
@@ -191,7 +172,7 @@ func (cli *ghCli) GetAuthStatus(ctx context.Context, hostname string) (AuthStatu
 }
 
 func (cli *ghCli) Login(ctx context.Context, hostname string) error {
-	runArgs := cli.newRunArgs("auth", "login", "--hostname", hostname).
+	runArgs := cli.newRunArgs("auth", "login", "--hostname", hostname, "--scopes", "repo,workflow").
 		WithInteractive(true)
 
 	res, err := cli.commandRunner.Run(ctx, runArgs)
@@ -311,26 +292,11 @@ func (cli *ghCli) GitHubActionsExists(ctx context.Context, repoSlug string) (boo
 	return true, nil
 }
 
-func (cli *ghCli) ForceConfigureAuth(authMode AuthTokenSource) {
-	switch authMode {
-	case TokenSourceFile:
-		// Unset token environment variables to force file-base auth.
-		for _, tokenEnvVarName := range TokenEnvVars {
-			cli.overrideTokenEnv = append(cli.overrideTokenEnv, fmt.Sprintf("%v=", tokenEnvVarName))
-		}
-	case TokenSourceEnvVar:
-		// GitHub CLI will always use environment variables first.
-		// Therefore, we simply need to clear our environment context override (if any) to force environment variable usage.
-		cli.overrideTokenEnv = nil
-	default:
-		panic(fmt.Sprintf("Unsupported auth mode: %d", authMode))
-	}
-}
-
 func (cli *ghCli) newRunArgs(args ...string) exec.RunArgs {
+
 	runArgs := exec.NewRunArgs(cli.path, args...)
-	if cli.overrideTokenEnv != nil {
-		runArgs = runArgs.WithEnv(cli.overrideTokenEnv)
+	if os.Getenv("CODESPACES") == "true" {
+		runArgs = runArgs.WithEnv([]string{"GITHUB_TOKEN=", "GH_TOKEN="})
 	}
 
 	return runArgs
@@ -362,21 +328,6 @@ var notLoggedIntoAnyGitHubHostsMessageRegex = regexp.MustCompile(
 var isUserNotAuthorizedMessageRegex = regexp.MustCompile(
 	"HTTP 403: Resource not accessible by integration",
 )
-
-// Returns true if a login message contains an environment variable sourced token. See `gh environment` for full details
-//
-// Example matched message:
-//
-//	✓ Logged in to github.com as USER (GITHUB_TOKEN)
-func isEnvVarTokenSource(message string) bool {
-	for _, tokenEnvVar := range TokenEnvVars {
-		if strings.Contains(message, tokenEnvVar) {
-			return true
-		}
-	}
-
-	return false
-}
 
 func extractFromZip(src, dst string) (string, error) {
 	zipReader, err := zip.OpenReader(src)

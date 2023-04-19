@@ -65,12 +65,14 @@ func (p *GitHubScmProvider) preConfigureCheck(
 	ctx context.Context,
 	pipelineManagerArgs PipelineManagerArgs,
 	infraOptions provisioning.Options,
+	projectPath string,
 ) (bool, error) {
 	ghCli, err := github.NewGitHubCli(ctx, p.console, p.commandRunner)
+	gitCli := git.NewGitCli(p.commandRunner)
 	if err != nil {
 		return false, err
 	}
-	return ensureGitHubLogin(ctx, ghCli, github.GitHubHostName, p.console)
+	return ensureGitHubLogin(ctx, projectPath, ghCli, gitCli, github.GitHubHostName, p.console)
 }
 
 // name returns the name of the provider
@@ -348,12 +350,14 @@ func (p *GitHubCiProvider) preConfigureCheck(
 	ctx context.Context,
 	pipelineManagerArgs PipelineManagerArgs,
 	infraOptions provisioning.Options,
+	projectPath string,
 ) (bool, error) {
 	ghCli, err := github.NewGitHubCli(ctx, p.console, p.commandRunner)
 	if err != nil {
 		return false, err
 	}
-	updated, err := ensureGitHubLogin(ctx, ghCli, github.GitHubHostName, p.console)
+	gitCli := git.NewGitCli(p.commandRunner)
+	updated, err := ensureGitHubLogin(ctx, projectPath, ghCli, gitCli, github.GitHubHostName, p.console)
 	if err != nil {
 		return updated, err
 	}
@@ -392,48 +396,6 @@ func (p *GitHubCiProvider) name() string {
 
 // ***  ciProvider implementation ******
 
-// ensureAuthorizedForRepoSecrets ensures the user is authorized for modifying repository-level secrets.
-// If not, the user is prompted for login.
-func (p *GitHubCiProvider) ensureAuthorizedForRepoSecrets(
-	ctx context.Context,
-	ghCli github.GitHubCli,
-	repoSlug string) error {
-	// The actual scope for repository-level secrets is simply the `repo` scope in GitHub.
-	// Thus, listing secrets has the same access level permissions as writing secrets
-	// and can be used for probing secrets authorization.
-	err := ghCli.ListSecrets(ctx, repoSlug)
-
-	if err == nil {
-		return nil
-	}
-
-	if errors.Is(err, github.ErrUserNotAuthorized) {
-		authResult, err := ghCli.GetAuthStatus(ctx, github.GitHubHostName)
-		if err != nil {
-			return fmt.Errorf("getting auth status: %w", err)
-		}
-
-		if authResult.TokenSource == github.TokenSourceEnvVar {
-			log.Println("Switching gh to file authentication mode")
-			// Force file-based auth so that we can re-prompt for login.
-			// Otherwise, `gh auth` commands will simply report that we are authenticated.
-			ghCli.ForceConfigureAuth(github.TokenSourceFile)
-
-			// Since repository-level secrets only requires `repo` scope, and `gh auth login` always grants `repo` scope,
-			//  we can run `gh auth login`` without needing `gh auth refresh` with additional scopes
-			_, err = ensureGitHubLogin(ctx, ghCli, github.GitHubHostName, p.console)
-			if err != nil {
-				return fmt.Errorf("logging in: %w", err)
-			}
-
-			return nil
-		}
-
-	}
-
-	return fmt.Errorf("listing secrets: %w", err)
-}
-
 // configureConnection set up GitHub account with Azure Credentials for
 // GitHub actions to use a service principal account to log in to Azure
 // and make changes on behalf of a user.
@@ -447,13 +409,6 @@ func (p *GitHubCiProvider) configureConnection(
 ) error {
 
 	repoSlug := repoDetails.owner + "/" + repoDetails.repoName
-	ghCli, err := github.NewGitHubCli(ctx, p.console, p.commandRunner)
-	if err != nil {
-		return err
-	}
-	if err := p.ensureAuthorizedForRepoSecrets(ctx, ghCli, repoSlug); err != nil {
-		return fmt.Errorf("ensuring authorization: %w", err)
-	}
 
 	// Default auth type to client-credentials for terraform
 	if infraOptions.Provider == provisioning.Terraform && authType == "" {
@@ -720,7 +675,13 @@ func (p *GitHubCiProvider) configurePipeline(
 
 // ensureGitHubLogin ensures the user is logged into the GitHub CLI. If not, it prompt the user
 // if they would like to log in and if so runs `gh auth login` interactively.
-func ensureGitHubLogin(ctx context.Context, ghCli github.GitHubCli, hostname string, console input.Console) (bool, error) {
+func ensureGitHubLogin(
+	ctx context.Context,
+	projectPath string,
+	ghCli github.GitHubCli,
+	gitCli git.GitCli,
+	hostname string,
+	console input.Console) (bool, error) {
 	authResult, err := ghCli.GetAuthStatus(ctx, hostname)
 	if err != nil {
 		return false, err
@@ -744,7 +705,19 @@ func ensureGitHubLogin(ctx context.Context, ghCli github.GitHubCli, hostname str
 			return false, errors.New("interactive GitHub login declined; use `gh auth login` to log into GitHub")
 		}
 
+		ghGitProtocol, err := ghCli.GetGitProtocolType(ctx)
+		if err != nil {
+			return false, err
+		}
+
 		if err := ghCli.Login(ctx, hostname); err == nil {
+			if projectPath != "" && ghGitProtocol == github.GitHttpsProtocolType {
+				// For HTTPS, using gh as credential helper will avoid git asking for password
+				if err := gitCli.SetGitHubAuthForRepo(
+					ctx, projectPath, fmt.Sprintf("https://%s", hostname), ghCli.BinaryPath()); err != nil {
+					return false, err
+				}
+			}
 			return true, nil
 		}
 

@@ -43,11 +43,13 @@ func Test_SaveAndLoadEmptyConfig(t *testing.T) {
 	require.NotNil(t, existingConfig)
 }
 
-func Test_DirectoryPermissions(t *testing.T) {
-	if runtime.GOOS != "linux" && runtime.GOOS != "darwin" {
-		// Run this test only on Linux/macOS
-		return
-	}
+func Test_GetUserConfigDir(t *testing.T) {
+
+	// Setup temp directory for use in tests, delete after creation to validate
+	// folder creation
+	testDir := t.TempDir()
+	os.Remove(testDir)
+	t.Cleanup(func() { os.RemoveAll(testDir) })
 
 	getPermissions := func(t *testing.T, path string) fs.FileMode {
 		info, err := os.Stat(path)
@@ -56,26 +58,59 @@ func Test_DirectoryPermissions(t *testing.T) {
 		return info.Mode().Perm()
 	}
 
-	testDir, err := os.MkdirTemp(os.TempDir(), "azd_config_dir_test*")
-	require.NoError(t, err)
+	t.Run("Creates config directory at ~/.azd", func(t *testing.T) {
+		// Default case: Returns config directory at ~/.azd
+		// (This test case does NOT delete ~/.azd if it exists)
+		configDir, err := GetUserConfigDir()
+		require.NoError(t, err)
+		require.DirExists(t, configDir)
+	})
 
-	// Remove the test directory to validate creation
-	os.Remove(testDir)
+	t.Run("Creates config directory at AZD_CONFIG_DIR", func(t *testing.T) {
+		t.Cleanup(func() { os.RemoveAll(testDir) })
+		t.Setenv("AZD_CONFIG_DIR", testDir)
+		configDir, err := GetUserConfigDir()
+		require.NoError(t, err)
+		require.Equal(t, testDir, configDir)
+		require.DirExists(t, testDir)
+	})
 
-	t.Setenv("AZD_CONFIG_DIR", testDir)
-	configDir, err := GetUserConfigDir()
-	require.NoError(t, err)
-	require.DirExists(t, configDir)
+	t.Run("Creates config directory with correct permissions", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("skip file permission tests on Windows")
+			return
+		}
 
-	permissions := getPermissions(t, configDir)
-	require.NotZero(t, permissions&100)
+		t.Setenv("AZD_CONFIG_DIR", testDir)
+		configDir, err := GetUserConfigDir()
+		t.Cleanup(func() { os.RemoveAll(testDir) })
+		require.NoError(t, err)
 
-	// Ensure max permission is 0644 ()
-	err := os.Chmod(configDir, permissions&0644)
-	require.NoError(t, err)
+		// Directory permissions are set so directory can be accessed by
+		// current user.
+		permissions := getPermissions(t, configDir)
+		require.NotZero(t, permissions&100)
+	})
 
-	configDir, err := GetUserConfigDir()
-	require.NoError(t, err)
-	permissions = getPermissions(t, configDir)
-	require.NotZero(t, permissions&100)
+	t.Run("Updates permissions if not correct", func(t *testing.T) {
+		if runtime.GOOS == "windows" {
+			t.Skip("skip file permission tests on Windows")
+			return
+		}
+
+		os.RemoveAll(testDir)
+		// Setup: Ensure user does not have "x" permission on the configDir
+		// Permissions 644 (rw-r--r--)
+		err := os.MkdirAll(testDir, 644)
+		require.NoError(t, err)
+		t.Cleanup(func() { os.RemoveAll(testDir) })
+		t.Setenv("AZD_CONFIG_DIR", testDir)
+
+		configDir, err := GetUserConfigDir()
+
+		require.NoError(t, err)
+		permissions := getPermissions(t, configDir)
+		// Ensure permissions for user are "rwx" (user has access to directory)
+		require.NotZero(t, permissions&100)
+	})
 }

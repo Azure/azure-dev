@@ -304,7 +304,7 @@ try {
     Write-Verbose "Downloading build from $downloadUrl" -Verbose:$Verbose
     $releaseArtifactFilename = Join-Path $tempFolder $packageFilename
     try {
-        $LASTEXITCODE = 0
+        $global:LASTEXITCODE = 0
         Invoke-WebRequest -Uri $downloadUrl -OutFile $releaseArtifactFilename -TimeoutSec $DownloadTimeoutSeconds
         if ($LASTEXITCODE) {
             throw "Invoke-WebRequest failed with nonzero exit code: $LASTEXITCODE"
@@ -348,7 +348,7 @@ try {
             if ($IsMacOS -and (-not $SkipVerify)) {
                 Write-Verbose "Verifying signature of $binFilename" -Verbose:$Verbose
                 $codeSignOutput = codesign -v "$tempFolder/decompress/$binFilename" 2>&1
-                if (-not $?) {
+                if ($LASTEXITCODE) {
                     Write-Error "Could not verify signature of $binFilename, error output:"
                     $codeSignOutput |  ForEach-Object {
                         if ($_ -is [System.Management.Automation.ErrorRecord]) {

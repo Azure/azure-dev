@@ -738,6 +738,7 @@ stages:
               OSVmImage: MMS2022
               TestShell: pwsh
               TestInstallCommand: >
+                $ErrorActionPreference = 'Stop';
                 ./test-win-install.ps1 -BaseUrl $env:BASEURL -Version '';
                 ./test-telemetry-functions.ps1 -Shell pwsh -ExpectedFieldMap telemetry/windows.pwsh.telemetry.json
             WindowsPowerShell:
@@ -745,6 +746,7 @@ stages:
               OSVmImage: MMS2022
               TestShell: powershell
               TestInstallCommand: >
+                $ErrorActionPreference = 'Stop';
                 ./test-win-install.ps1 -BaseUrl $env:BASEURL -Version '';
                 ./test-telemetry-functions.ps1 -Shell powershell -ExpectedFieldMap telemetry/windows.powershell.telemetry.json
 
@@ -766,6 +768,35 @@ stages:
               path: hosting
 
           - bash: ls
+            workingDirectory: hosting
+
+          - bash: |
+              unzip ./azd-darwin-amd64.zip -d ./tmp
+
+              # Ad-hoc signing with "-" identity
+              codesign -s - tmp/azd-darwin-amd64
+
+              zip azd-darwin-amd64.zip -j tmp/azd-darwin-amd64
+            displayName: Self-sign (Darwin)
+            condition: and(succeeded(), contains(variables['Agent.OS'], 'Darwin'))
+            workingDirectory: hosting
+
+          - pwsh: |
+              $ErrorActionPreference = 'Stop'
+
+              # Generate self-sign cert
+              $cert = New-SelfSignedCertificate -CertStoreLocation Cert:\CurrentUser\My -Type CodeSigningCert -Subject "azd installer tests code signing"
+              
+              # Add as trusted root CA
+              $store = [System.Security.Cryptography.X509Certificates.X509Store]::new("Root", [System.Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser)
+              $store.Open('ReadWrite')
+              $store.Add($cert)
+              $store.Close()
+
+              # Sign the windows binary
+              Set-AuthenticodeSignature .\azd-windows-amd64.msi -Certificate $cert
+            displayName: Self-sign (Windows)
+            condition: and(succeeded(), contains(variables['Agent.OS'], 'Windows'))
             workingDirectory: hosting
 
           - bash: nohup npx -y http-server &
@@ -844,6 +875,24 @@ stages:
               script: $(TestInstallCommand)
               workingDirectory: cli/installer/
             displayName: Test install script (cmd)
+
+          - pwsh: |
+              Get-ChildItem Cert:\CurrentUser\My | ForEach-Object {
+                if ($_.Subject -match "azd installer tests code signing") {
+                  Write-Host "Deleting $($_.PSPath)"
+                  Remove-Item -Force $_.PSPath
+                }
+              }
+
+              Get-ChildItem Cert:\CurrentUser\Root | ForEach-Object {
+                if ($_.Subject -match "azd installer tests code signing") {
+                  Write-Host "Deleting $($_.PSPath)"
+                  Remove-Item -Force $_.PSPath
+                }
+              }
+            displayName: Clean up self-signed certificates (Windows)
+            condition: contains(variables['Agent.OS'], 'Windows')
+            workingDirectory: hosting
 
       - job: Verify_LinuxPackages
 

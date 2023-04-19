@@ -190,23 +190,23 @@ func isSupportedDockerVersion(cliOutput string) (bool, error) {
 	// If we reach this point, we don't understand how to validate the version based on its scheme.
 	return false, fmt.Errorf("could not determine version from docker version string: %s", version)
 }
-func (d *docker) CheckInstalled(ctx context.Context) (bool, error) {
-	found, err := tools.ToolInPath("docker")
-	if !found {
-		return false, err
+func (d *docker) CheckInstalled(ctx context.Context) error {
+	err := tools.ToolInPath("docker")
+	if err != nil {
+		return err
 	}
 	dockerRes, err := tools.ExecuteCommand(ctx, d.commandRunner, "docker", "--version")
 	if err != nil {
-		return false, fmt.Errorf("checking %s version: %w", d.Name(), err)
+		return fmt.Errorf("checking %s version: %w", d.Name(), err)
 	}
 	supported, err := isSupportedDockerVersion(dockerRes)
 	if err != nil {
-		return false, err
+		return err
 	}
 	if !supported {
-		return false, &tools.ErrSemver{ToolName: d.Name(), VersionInfo: d.versionInfo()}
+		return &tools.ErrSemver{ToolName: d.Name(), VersionInfo: d.versionInfo()}
 	}
-	return true, nil
+	return nil
 }
 
 func (d *docker) InstallUrl() string {

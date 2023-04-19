@@ -39,10 +39,10 @@ func (j *javacCli) VersionInfo() tools.VersionInfo {
 	}
 }
 
-func (j *javacCli) CheckInstalled(ctx context.Context) (bool, error) {
+func (j *javacCli) CheckInstalled(ctx context.Context) error {
 	path, err := getInstalledPath()
 	if err != nil {
-		return false, err
+		return err
 	}
 
 	runResult, err := j.cmdRun.Run(ctx, exec.RunArgs{
@@ -59,23 +59,23 @@ func (j *javacCli) CheckInstalled(ctx context.Context) (bool, error) {
 		})
 
 		if err == nil {
-			return false, &tools.ErrSemver{ToolName: j.Name(), VersionInfo: j.VersionInfo()}
+			return &tools.ErrSemver{ToolName: j.Name(), VersionInfo: j.VersionInfo()}
 		}
 
-		return false, fmt.Errorf("checking javac version: %w", err)
+		return fmt.Errorf("checking javac version: %w", err)
 	}
 
 	jdkVer, err := tools.ExtractVersion(runResult.Stdout)
 	if err != nil {
-		return false, fmt.Errorf("converting to semver version fails: %w", err)
+		return fmt.Errorf("converting to semver version fails: %w", err)
 	}
 
 	requiredVersion := j.VersionInfo()
 	if jdkVer.LT(requiredVersion.MinimumVersion) {
-		return false, &tools.ErrSemver{ToolName: j.Name(), VersionInfo: requiredVersion}
+		return &tools.ErrSemver{ToolName: j.Name(), VersionInfo: requiredVersion}
 	}
 
-	return true, nil
+	return nil
 }
 
 func (j *javacCli) InstallUrl() string {

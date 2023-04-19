@@ -45,14 +45,12 @@ func TestCheckInstalledVersion(t *testing.T) {
 				Respond(azdexec.NewRunResult(0, tt.stdOut, ""))
 
 			cli := NewCli(execMock)
-			ok, err := cli.CheckInstalled(context.Background())
+			err := cli.CheckInstalled(context.Background())
 			if tt.wantErr {
 				require.Error(t, err)
 			} else {
 				require.NoError(t, err)
 			}
-
-			assert.Equal(t, tt.want, ok)
 		})
 	}
 }
@@ -78,9 +76,8 @@ func TestCheckInstalled_OlderJavaVersion(t *testing.T) {
 		Respond(azdexec.NewRunResult(0, "", "javac 1.8_353"))
 
 	cli := NewCli(execMock)
-	ok, err := cli.CheckInstalled(context.Background())
+	err := cli.CheckInstalled(context.Background())
 
-	assert.False(t, ok)
 	assert.ErrorContains(t, err, "need at least version")
 }
 

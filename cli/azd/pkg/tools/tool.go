@@ -16,7 +16,7 @@ import (
 )
 
 type ExternalTool interface {
-	CheckInstalled(ctx context.Context) (bool, error)
+	CheckInstalled(ctx context.Context) error
 	InstallUrl() string
 	Name() string
 }
@@ -39,16 +39,16 @@ func (err *ErrSemver) Error() string {
 // toolInPath checks to see if a program can be found on the PATH, as exec.LookPath
 // does, but returns "(false, nil)" in the case where os.LookPath would return
 // exec.ErrNotFound.
-func ToolInPath(name string) (bool, error) {
+func ToolInPath(name string) error {
 	_, err := osexec.LookPath(name)
 
 	switch {
 	case err == nil:
-		return true, nil
+		return nil
 	case errors.Is(err, osexec.ErrNotFound):
-		return false, nil
+		return osexec.ErrNotFound
 	default:
-		return false, fmt.Errorf("failed searching for `%s` on PATH: %w", name, err)
+		return fmt.Errorf("failed searching for `%s` on PATH: %w", name, err)
 	}
 }
 

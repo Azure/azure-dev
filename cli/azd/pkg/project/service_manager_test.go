@@ -572,8 +572,8 @@ func (st *fakeServiceTarget) Endpoints(
 type fakeTool struct {
 }
 
-func (t *fakeTool) CheckInstalled(ctx context.Context) (bool, error) {
-	return true, nil
+func (t *fakeTool) CheckInstalled(ctx context.Context) error {
+	return nil
 }
 func (t *fakeTool) InstallUrl() string {
 	return "https://aka.ms"

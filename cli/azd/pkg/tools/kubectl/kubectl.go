@@ -84,7 +84,7 @@ func NewKubectl(commandRunner exec.CommandRunner) KubectlCli {
 }
 
 // Checks whether or not the K8s CLI is installed and available within the PATH
-func (cli *kubectlCli) CheckInstalled(ctx context.Context) (bool, error) {
+func (cli *kubectlCli) CheckInstalled(ctx context.Context) error {
 	return tools.ToolInPath("kubectl")
 }
 

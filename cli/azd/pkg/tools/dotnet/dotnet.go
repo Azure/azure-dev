@@ -43,24 +43,24 @@ func (cli *dotNetCli) versionInfo() tools.VersionInfo {
 	}
 }
 
-func (cli *dotNetCli) CheckInstalled(ctx context.Context) (bool, error) {
-	found, err := tools.ToolInPath("dotnet")
-	if !found {
-		return false, err
+func (cli *dotNetCli) CheckInstalled(ctx context.Context) error {
+	err := tools.ToolInPath("dotnet")
+	if err != nil {
+		return err
 	}
 	dotnetRes, err := tools.ExecuteCommand(ctx, cli.commandRunner, "dotnet", "--version")
 	if err != nil {
-		return false, fmt.Errorf("checking %s version: %w", cli.Name(), err)
+		return fmt.Errorf("checking %s version: %w", cli.Name(), err)
 	}
 	dotnetSemver, err := tools.ExtractVersion(dotnetRes)
 	if err != nil {
-		return false, fmt.Errorf("converting to semver version fails: %w", err)
+		return fmt.Errorf("converting to semver version fails: %w", err)
 	}
 	updateDetail := cli.versionInfo()
 	if dotnetSemver.LT(updateDetail.MinimumVersion) {
-		return false, &tools.ErrSemver{ToolName: cli.Name(), VersionInfo: updateDetail}
+		return &tools.ErrSemver{ToolName: cli.Name(), VersionInfo: updateDetail}
 	}
-	return true, nil
+	return nil
 }
 
 func (cli *dotNetCli) Restore(ctx context.Context, project string) error {

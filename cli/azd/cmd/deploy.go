@@ -215,16 +215,21 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 
 	for _, svc := range da.projectConfig.GetServicesStable() {
 		stepMessage := fmt.Sprintf("Deploying service %s", svc.Name)
-		da.console.ShowSpinner(ctx, stepMessage, input.Step)
 
 		// Skip this service if both cases are true:
 		// 1. The user specified a service name
 		// 2. This service is not the one the user specified
 		if targetServiceName != "" && targetServiceName != svc.Name {
-			da.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
 			continue
 		}
 
+		if alphaFeatureId, isAlphaFeature := alpha.IsFeatureKey(string(svc.Host)); isAlphaFeature {
+			// alpha feature on/off detection for host is done during initialization.
+			// This is just for displaying the warning during deployment.
+			da.console.MessageUxItem(ctx, alpha.WarningMessage(alphaFeatureId))
+		}
+
+		da.console.ShowSpinner(ctx, stepMessage, input.Step)
 		var packageResult *project.ServicePackageResult
 		if da.flags.fromPackage != "" {
 			// --from-package set, skip packaging

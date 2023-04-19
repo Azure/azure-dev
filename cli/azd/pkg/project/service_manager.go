@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
@@ -92,10 +93,11 @@ type ServiceManager interface {
 }
 
 type serviceManager struct {
-	env             *environment.Environment
-	resourceManager ResourceManager
-	serviceLocator  ioc.ServiceLocator
-	operationCache  map[string]any
+	env                 *environment.Environment
+	resourceManager     ResourceManager
+	serviceLocator      ioc.ServiceLocator
+	operationCache      map[string]any
+	alphaFeatureManager *alpha.FeatureManager
 }
 
 // NewServiceManager creates a new instance of the ServiceManager component
@@ -103,12 +105,14 @@ func NewServiceManager(
 	env *environment.Environment,
 	resourceManager ResourceManager,
 	serviceLocator ioc.ServiceLocator,
+	alphaFeatureManager *alpha.FeatureManager,
 ) ServiceManager {
 	return &serviceManager{
-		env:             env,
-		resourceManager: resourceManager,
-		serviceLocator:  serviceLocator,
-		operationCache:  map[string]any{},
+		env:                 env,
+		resourceManager:     resourceManager,
+		serviceLocator:      serviceLocator,
+		operationCache:      map[string]any{},
+		alphaFeatureManager: alphaFeatureManager,
 	}
 }
 
@@ -427,8 +431,18 @@ func (sm *serviceManager) Deploy(
 // GetServiceTarget constructs a ServiceTarget from the underlying service configuration
 func (sm *serviceManager) GetServiceTarget(ctx context.Context, serviceConfig *ServiceConfig) (ServiceTarget, error) {
 	var target ServiceTarget
+	host := string(serviceConfig.Host)
 
-	if err := sm.serviceLocator.ResolveNamed(string(serviceConfig.Host), &target); err != nil {
+	if alphaFeatureId, isAlphaFeature := alpha.IsFeatureKey(host); isAlphaFeature {
+		if !sm.alphaFeatureManager.IsEnabled(alphaFeatureId) {
+			return nil, fmt.Errorf("provider '%s' is alpha feature and it is not enabled. Run `%s` to enable it.",
+				host,
+				alpha.GetEnableCommand(alphaFeatureId),
+			)
+		}
+	}
+
+	if err := sm.serviceLocator.ResolveNamed(host, &target); err != nil {
 		panic(fmt.Errorf(
 			"failed to resolve service host '%s' for service '%s', %w",
 			serviceConfig.Host,

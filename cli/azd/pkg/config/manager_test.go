@@ -89,7 +89,7 @@ func Test_GetUserConfigDir(t *testing.T) {
 		// Directory permissions are set so directory can be accessed by
 		// current user.
 		permissions := getPermissions(t, configDir)
-		require.NotZero(t, permissions&100)
+		require.NotZero(t, permissions&0100)
 	})
 
 	t.Run("Updates permissions if not correct", func(t *testing.T) {
@@ -101,7 +101,7 @@ func Test_GetUserConfigDir(t *testing.T) {
 		os.RemoveAll(testDir)
 		// Setup: Ensure user does not have "x" permission on the configDir
 		// Permissions 644 (rw-r--r--)
-		err := os.MkdirAll(testDir, 644)
+		err := os.MkdirAll(testDir, 0644)
 		require.NoError(t, err)
 		t.Cleanup(func() { os.RemoveAll(testDir) })
 		t.Setenv("AZD_CONFIG_DIR", testDir)
@@ -111,6 +111,6 @@ func Test_GetUserConfigDir(t *testing.T) {
 		require.NoError(t, err)
 		permissions := getPermissions(t, configDir)
 		// Ensure permissions for user are "rwx" (user has access to directory)
-		require.NotZero(t, permissions&100)
+		require.NotZero(t, permissions&0100)
 	})
 }

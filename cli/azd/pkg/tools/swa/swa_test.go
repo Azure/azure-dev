@@ -107,7 +107,7 @@ func Test_SwaDeploy(t *testing.T) {
 				"--output-location", "build",
 				"--env", "default",
 				"--no-use-keychain",
-				"--deployment-token", "deploymentToken",
+				"--deployment-token", "deploymentToken", "--verbose=silly",
 			}, args.Args)
 
 			return exec.RunResult{
@@ -157,7 +157,7 @@ func Test_SwaDeploy(t *testing.T) {
 				"--output-location", "build",
 				"--env", "default",
 				"--no-use-keychain",
-				"--deployment-token", "deploymentToken",
+				"--deployment-token", "deploymentToken", "--verbose=silly",
 			}, args.Args)
 
 			return exec.RunResult{

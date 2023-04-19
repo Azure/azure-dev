@@ -262,7 +262,7 @@ func (t *TerraformProvider) Destroy(
 			destroyArgs := t.createDestroyArgs(isRemoteBackendConfig, options.Force())
 			runResult, err := t.cli.Destroy(ctx, modulePath, destroyArgs...)
 			if err != nil {
-				asyncContext.SetError(fmt.Errorf("template Deploy failed:%s , err :%w", runResult, err))
+				asyncContext.SetError(fmt.Errorf("template Deploy failed: %s, err: %w", runResult, err))
 				return
 			}
 

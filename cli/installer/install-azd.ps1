@@ -347,9 +347,16 @@ try {
         if (isLinuxOrMac) {
             if ($IsMacOS -and (-not $SkipVerify)) {
                 Write-Verbose "Verifying signature of $binFilename" -Verbose:$Verbose
-                codesign -v "$tempFolder/decompress/$binFilename" *>$null
+                $codeSignOutput = codesign -v "$tempFolder/decompress/$binFilename" 2>&1
                 if (-not $?) {
-                    Write-Error "Could not verify signature of $binFilename"
+                    Write-Error "Could not verify signature of $binFilename, error output:"
+                    $codeSignOutput |  ForEach-Object {
+                        if ($_ -is [System.Management.Automation.ErrorRecord]) {
+                          Write-Error $_
+                        } else {
+                          Write-Host $_
+                        }
+                    }
                     reportTelemetryIfEnabled 'InstallFailed' 'SignatureVerificationFailed'
                     exit 1
                 }
@@ -384,6 +391,7 @@ try {
                     }
                 } catch {
                     Write-Error "Could not verify signature of $releaseArtifactFilename"
+                    Write-Error $_
                     reportTelemetryIfEnabled 'InstallFailed' 'SignatureVerificationFailed'
                     exit 1
                 }

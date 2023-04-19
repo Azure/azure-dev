@@ -714,7 +714,7 @@ func ensureGitHubLogin(
 			if projectPath != "" && ghGitProtocol == github.GitHttpsProtocolType {
 				// For HTTPS, using gh as credential helper will avoid git asking for password
 				if err := gitCli.SetGitHubAuthForRepo(
-					ctx, projectPath, fmt.Sprintf("https://%s", hostname), ghCli.GetBinaryPath()); err != nil {
+					ctx, projectPath, fmt.Sprintf("https://%s", hostname), ghCli.BinaryPath()); err != nil {
 					return false, err
 				}
 			}

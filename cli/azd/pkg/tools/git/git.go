@@ -282,7 +282,7 @@ func setAuthCredentialHelper(
 	ctx context.Context, runner exec.CommandRunner, repositoryPath, credential, value, flag string) error {
 	runArgs := newRunArgs(
 		"-C", repositoryPath,
-		"config", fmt.Sprintf("--%s", flag),
+		"config", "--local", fmt.Sprintf("--%s", flag),
 		fmt.Sprintf("credential.%s.helper", credential),
 		value)
 

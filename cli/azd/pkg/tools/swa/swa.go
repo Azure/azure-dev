@@ -108,6 +108,7 @@ func (cli *swaCli) InstallUrl() string {
 }
 
 func (cli *swaCli) executeCommand(ctx context.Context, cwd string, args ...string) (exec.RunResult, error) {
+	args = append(args, "--verbose=silly")
 	runArgs := exec.
 		NewRunArgs("npx", "-y", "@azure/static-web-apps-cli@1.1.1").
 		AppendParams(args...).

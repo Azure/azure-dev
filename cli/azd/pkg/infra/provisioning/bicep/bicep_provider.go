@@ -322,7 +322,12 @@ func (p *BicepProvider) Destroy(
 					return p.purgeAPIManagement(ctx, apiManagements, options, skipPurge)
 				},
 			}
-			purgeItem := []itemToPurge{keyVaultsPurge, appConfigsPurge, aPIManagement}
+			var purgeItem []itemToPurge
+			for _, item := range []itemToPurge{keyVaultsPurge, appConfigsPurge, aPIManagement} {
+				if item.count > 0 {
+					purgeItem = append(purgeItem, item)
+				}
+			}
 
 			if err := p.purgeItems(ctx, purgeItem, options); err != nil {
 				asyncContext.SetError(fmt.Errorf("purging resources: %w", err))

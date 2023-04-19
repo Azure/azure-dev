@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
@@ -109,7 +110,28 @@ func GetUserConfigDir() (string, error) {
 		configDirPath = filepath.Join(homeDir, configDir)
 	}
 
-	err := os.MkdirAll(configDirPath, osutil.PermissionDirectory)
+	err := os.MkdirAll(configDirPath, osutil.PermissionDirectoryOwnerOnly)
+	if err != nil {
+		return configDirPath, err
+	}
+
+	// Ensure that the "x" permission is set on the folder for the current
+	// user. In cases where the config directory is ~/.azd, OS upgrades and
+	// other processes can remove the "x" permission
+	if runtime.GOOS == "linux" || runtime.GOOS == "darwin" {
+		info, err := os.Stat(configDirPath)
+		if err != nil {
+			return configDirPath, err
+		}
+
+		permissions := info.Mode().Perm()
+		if permissions&0100 == 0 {
+			// Ensure user execute permissions
+			err := os.Chmod(configDirPath, permissions|100)
+			return configDirPath, err
+		}
+	}
+
 	return configDirPath, err
 }
 

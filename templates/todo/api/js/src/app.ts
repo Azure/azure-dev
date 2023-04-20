@@ -30,7 +30,7 @@ export const createApp = async (): Promise<Express> => {
     const runningOnAzure = process.env.ENABLE_ORYX_BUILD;
 
     if (runningOnAzure) {
-        // REACT_APP_WEB_BASE_URL must be set for the api service as a proporty
+        // REACT_APP_WEB_BASE_URL must be set for the api service as a property
         // otherwise the api server will reject the origin.
         const apiUrlSet = process.env.REACT_APP_WEB_BASE_URL;
         const originList = [

@@ -785,12 +785,12 @@ stages:
               $ErrorActionPreference = 'Stop'
 
               # Generate self-sign cert
-              $cert = New-SelfSignedCertificate -CertStoreLocation Cert:\CurrentUser\My -Type CodeSigningCert -Subject "azd installer tests code signing"
+              $cert = New-SelfSignedCertificate -CertStoreLocation Cert:\LocalMachine\My -Type CodeSigningCert -Subject "azd installer tests code signing"
               
               # Add as temporary trusted root CA
               try {
                 Export-Certificate -Cert $cert -FilePath code_signing.crt
-                Import-Certificate -FilePath .\code_signing.crt -Cert Cert:\CurrentUser\Root
+                Import-Certificate -FilePath .\code_signing.crt -Cert Cert:\LocalMachine\Root
               }
               finally {
                 Remove-Item -Force .\code_signing.crt -ErrorAction SilentlyContinue
@@ -880,14 +880,14 @@ stages:
             displayName: Test install script (cmd)
 
           - pwsh: |
-              Get-ChildItem Cert:\CurrentUser\My | ForEach-Object {
+              Get-ChildItem Cert:\LocalMachine\My | ForEach-Object {
                 if ($_.Subject -match "azd installer tests code signing") {
                   Write-Host "Deleting $($_.PSPath) - $($_.Subject)"
                   Remove-Item -Force $_.PSPath
                 }
               }
 
-              Get-ChildItem Cert:\CurrentUser\Root | ForEach-Object {
+              Get-ChildItem Cert:\LocalMachine\Root | ForEach-Object {
                 if ($_.Subject -match "azd installer tests code signing") {
                   Write-Host "Deleting $($_.PSPath) - $($_.Subject)"
                   Remove-Item -Force $_.PSPath

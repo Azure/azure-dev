@@ -18,7 +18,7 @@
     </UI>
     
     <!-- This property must be uppercase and marked secure to cross from client to server. -->
-    <Property Id="INSTALLEDBY" Secure="yes" />
+    <Property Id="INSTALLEDBY" Value="MSI" Secure="yes" />
     
     <!-- Tab-delimited information for deferred custom action. -->
     <SetProperty Id="WriteInstalledByFile" Before="WriteInstalledByFile" Sequence="execute" Value="!(wix.InstalledByFile)&#9;[INSTALLEDBY]">

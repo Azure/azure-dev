@@ -31,7 +31,7 @@ func Test_SwaBuild(t *testing.T) {
 				"-y", "@azure/static-web-apps-cli@1.1.1",
 				"build",
 				"--app-location", "service/path",
-				"--output-location", "build",
+				"--output-location", "build", "--verbose=silly",
 			}, args.Args)
 
 			return exec.RunResult{
@@ -63,7 +63,7 @@ func Test_SwaBuild(t *testing.T) {
 				"-y", "@azure/static-web-apps-cli@1.1.1",
 				"build",
 				"--app-location", "service/path",
-				"--output-location", "build",
+				"--output-location", "build", "--verbose=silly",
 			}, args.Args)
 
 			return exec.RunResult{

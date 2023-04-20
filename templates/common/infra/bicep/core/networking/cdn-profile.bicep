@@ -4,7 +4,7 @@ param tags object = {}
 
 @description('The pricing tier of this CDN profile')
 @allowed([
-	'Custom_Verizon'
+  'Custom_Verizon'
   'Premium_AzureFrontDoor'
   'Premium_Verizon'
   'StandardPlus_955BandWidth_ChinaCdn'

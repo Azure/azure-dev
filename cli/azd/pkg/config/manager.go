@@ -9,11 +9,12 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
 
-const configDir = ".azd"
+const cConfigDir = ".azd"
 
 // Config Manager provides the ability to load, parse and save azd configuration files
 type manager struct {
@@ -106,10 +107,31 @@ func GetUserConfigDir() (string, error) {
 			return "", fmt.Errorf("could not determine current home directory: %w", err)
 		}
 
-		configDirPath = filepath.Join(homeDir, configDir)
+		configDirPath = filepath.Join(homeDir, cConfigDir)
 	}
 
-	err := os.MkdirAll(configDirPath, osutil.PermissionDirectory)
+	err := os.MkdirAll(configDirPath, osutil.PermissionDirectoryOwnerOnly)
+	if err != nil {
+		return configDirPath, err
+	}
+
+	// Ensure that the "x" permission is set on the folder for the current
+	// user. In cases where the config directory is ~/.azd, OS upgrades and
+	// other processes can remove the "x" permission
+	if runtime.GOOS == "linux" || runtime.GOOS == "darwin" {
+		info, err := os.Stat(configDirPath)
+		if err != nil {
+			return configDirPath, err
+		}
+
+		permissions := info.Mode().Perm()
+		if permissions&osutil.PermissionMaskDirectoryExecute == 0 {
+			// Ensure user execute permissions
+			err := os.Chmod(configDirPath, permissions|osutil.PermissionMaskDirectoryExecute)
+			return configDirPath, err
+		}
+	}
+
 	return configDirPath, err
 }
 

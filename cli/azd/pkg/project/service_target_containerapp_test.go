@@ -57,3 +57,7 @@ func TestNewContainerAppTargetTypeValidation(t *testing.T) {
 		})
 	}
 }
+
+func Test_ContainerApp_Deploy(t *testing.T) {
+	// TODO: Write test
+}

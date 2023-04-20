@@ -54,13 +54,13 @@ func Test_EnsureInstalled(t *testing.T) {
 	missingToolOne := &mockTool{
 		name:             "Missing One",
 		installUrl:       "https://example.com/tools/missing1",
-		checkInstalledFn: func(_ context.Context) error { return nil },
+		checkInstalledFn: func(_ context.Context) error { return osexec.ErrNotFound },
 	}
 
 	missingToolTwo := &mockTool{
 		name:             "Missing Two",
 		installUrl:       "https://example.com/tools/missing2",
-		checkInstalledFn: func(_ context.Context) error { return nil },
+		checkInstalledFn: func(_ context.Context) error { return osexec.ErrNotFound },
 	}
 
 	t.Run("HaveAll", func(t *testing.T) {

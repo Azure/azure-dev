@@ -345,7 +345,7 @@ try {
 
     try {
         if (isLinuxOrMac) {
-            if ($IsMacOS -and (-not $SkipVerify)) {
+            if ($IsMacOS -and !$SkipVerify) {
                 Write-Verbose "Verifying signature of $binFilename" -Verbose:$Verbose
                 $codeSignOutput = codesign -v "$tempFolder/decompress/$binFilename" 2>&1
                 if ($LASTEXITCODE) {
@@ -380,7 +380,7 @@ try {
                 Copy-Item "$tempFolder/decompress/$binFilename" $outputFilename  -ErrorAction Stop | Out-Null
             }
         } else {
-            if (-not $SkipVerify) {
+            if (!$SkipVerify) {
                 try {
                     Write-Verbose "Verifying signature of $releaseArtifactFilename" -Verbose:$Verbose
                     $signature = Get-AuthenticodeSignature $releaseArtifactFilename

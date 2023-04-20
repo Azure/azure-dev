@@ -93,7 +93,7 @@ func Test_GetUserConfigDir(t *testing.T) {
 		// Directory permissions are set so directory can be accessed by
 		// current user.
 		permissions := getPermissions(t, configDir)
-		require.NotZero(t, permissions&cDirExecutePermission)
+		require.NotZero(t, permissions&osutil.PermissionMaskDirectoryExecute)
 	})
 
 	t.Run("Updates permissions if not correct", func(t *testing.T) {
@@ -119,6 +119,6 @@ func Test_GetUserConfigDir(t *testing.T) {
 
 		permissions := getPermissions(t, configDir)
 		// Ensure permissions for user are "rwx" (user has access to directory)
-		require.NotZero(t, permissions&cDirExecutePermission)
+		require.NotZero(t, permissions&osutil.PermissionMaskDirectoryExecute)
 	})
 }

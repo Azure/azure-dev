@@ -31,3 +31,4 @@ resource profile 'Microsoft.Cdn/profiles@2022-05-01-preview' = {
 
 output id string = profile.id
 output name string = profile.name
+

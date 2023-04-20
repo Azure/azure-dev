@@ -125,9 +125,9 @@ func GetUserConfigDir() (string, error) {
 		}
 
 		permissions := info.Mode().Perm()
-		if permissions&0100 == 0 {
+		if permissions&osutil.PermissionMaskDirectoryExecute == 0 {
 			// Ensure user execute permissions
-			err := os.Chmod(configDirPath, permissions|0100)
+			err := os.Chmod(configDirPath, permissions|osutil.PermissionMaskDirectoryExecute)
 			return configDirPath, err
 		}
 	}

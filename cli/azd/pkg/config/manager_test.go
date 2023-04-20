@@ -7,6 +7,7 @@ import (
 	"runtime"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/stretchr/testify/require"
 )
 
@@ -44,13 +45,6 @@ func Test_SaveAndLoadEmptyConfig(t *testing.T) {
 }
 
 func Test_GetUserConfigDir(t *testing.T) {
-
-	// Setup temp directory for use in tests, delete after creation to validate
-	// folder creation
-	testDir := t.TempDir()
-	os.Remove(testDir)
-	t.Cleanup(func() { os.RemoveAll(testDir) })
-
 	getPermissions := func(t *testing.T, path string) fs.FileMode {
 		info, err := os.Stat(path)
 		require.NoError(t, err)
@@ -67,7 +61,12 @@ func Test_GetUserConfigDir(t *testing.T) {
 	})
 
 	t.Run("Creates config directory at AZD_CONFIG_DIR", func(t *testing.T) {
-		t.Cleanup(func() { os.RemoveAll(testDir) })
+		// Setup temp directory for use in tests, delete after creation to validate
+		// folder creation
+		testDir := t.TempDir()
+		err := os.RemoveAll(testDir)
+		require.NoError(t, err)
+
 		t.Setenv("AZD_CONFIG_DIR", testDir)
 		configDir, err := GetUserConfigDir()
 		require.NoError(t, err)
@@ -81,15 +80,20 @@ func Test_GetUserConfigDir(t *testing.T) {
 			return
 		}
 
+		// Setup temp directory for use in tests, delete after creation to validate
+		// folder creation
+		testDir := t.TempDir()
+		err := os.RemoveAll(testDir)
+		require.NoError(t, err)
+
 		t.Setenv("AZD_CONFIG_DIR", testDir)
 		configDir, err := GetUserConfigDir()
-		t.Cleanup(func() { os.RemoveAll(testDir) })
 		require.NoError(t, err)
 
 		// Directory permissions are set so directory can be accessed by
 		// current user.
 		permissions := getPermissions(t, configDir)
-		require.NotZero(t, permissions&0100)
+		require.NotZero(t, permissions&cDirExecutePermission)
 	})
 
 	t.Run("Updates permissions if not correct", func(t *testing.T) {
@@ -98,19 +102,23 @@ func Test_GetUserConfigDir(t *testing.T) {
 			return
 		}
 
-		os.RemoveAll(testDir)
-		// Setup: Ensure user does not have "x" permission on the configDir
-		// Permissions 644 (rw-r--r--)
-		err := os.MkdirAll(testDir, 0644)
+		// Setup temp directory for use in tests, delete after creation to validate
+		// folder creation
+		testDir := t.TempDir()
+		err := os.RemoveAll(testDir)
 		require.NoError(t, err)
-		t.Cleanup(func() { os.RemoveAll(testDir) })
+
+		// Setup: Ensure user does not have "x" permission on the configDir
+		// Permissions 0644 (rw-r--r--)
+		err = os.MkdirAll(testDir, osutil.PermissionFile)
+		require.NoError(t, err)
 		t.Setenv("AZD_CONFIG_DIR", testDir)
 
 		configDir, err := GetUserConfigDir()
-
 		require.NoError(t, err)
+
 		permissions := getPermissions(t, configDir)
 		// Ensure permissions for user are "rwx" (user has access to directory)
-		require.NotZero(t, permissions&0100)
+		require.NotZero(t, permissions&cDirExecutePermission)
 	})
 }

@@ -787,11 +787,14 @@ stages:
               # Generate self-sign cert
               $cert = New-SelfSignedCertificate -CertStoreLocation Cert:\CurrentUser\My -Type CodeSigningCert -Subject "azd installer tests code signing"
               
-              # Add as trusted root CA
-              $store = [System.Security.Cryptography.X509Certificates.X509Store]::new("Root", [System.Security.Cryptography.X509Certificates.StoreLocation]::CurrentUser)
-              $store.Open('ReadWrite')
-              $store.Add($cert)
-              $store.Close()
+              # Add as temporary trusted root CA
+              try {
+                Export-Certificate -Cert $cert -FilePath code_signing.crt
+                Import-Certificate -FilePath .\code_signing.crt -Cert Cert:\CurrentUser\Root
+              }
+              finally {
+                Remove-Item -Force .\code_signing.crt -ErrorAction SilentlyContinue
+              }
 
               # Sign the windows binary
               Set-AuthenticodeSignature .\azd-windows-amd64.msi -Certificate $cert
@@ -879,14 +882,14 @@ stages:
           - pwsh: |
               Get-ChildItem Cert:\CurrentUser\My | ForEach-Object {
                 if ($_.Subject -match "azd installer tests code signing") {
-                  Write-Host "Deleting $($_.PSPath)"
+                  Write-Host "Deleting $($_.PSPath) - $($_.Subject)"
                   Remove-Item -Force $_.PSPath
                 }
               }
 
               Get-ChildItem Cert:\CurrentUser\Root | ForEach-Object {
                 if ($_.Subject -match "azd installer tests code signing") {
-                  Write-Host "Deleting $($_.PSPath)"
+                  Write-Host "Deleting $($_.PSPath) - $($_.Subject)"
                   Remove-Item -Force $_.PSPath
                 }
               }

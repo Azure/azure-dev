@@ -8,6 +8,12 @@ import items from "./routes/items";
 import { configureMongoose } from "./models/mongoose";
 import { observability } from "./config/observability";
 
+// For Azure services which don't support setting CORS directly within the service (like Static Web Apps)
+// You can enable localhost cors access if you want to allow request from a localhost here.
+//    example: const localhostOrigin = "http://localhost:3000/";
+// Keep empty string to deny localhost origin.
+const localhostOrigin = "";
+
 export const createApp = async (): Promise<Express> => {
     const config = await getConfig();
     const app = express();
@@ -18,22 +24,34 @@ export const createApp = async (): Promise<Express> => {
     // Middleware
     app.use(express.json());
 
-    const apiUrl = process.env.REACT_APP_WEB_BASE_URL;
-    const localhost = "http://localhost:3000/";
-    if (apiUrl) {
+    // env.ENABLE_ORYX_BUILD is only set on Azure environment during azd provision for todo-templates
+    // You can update this to env.NODE_ENV in your app is using `development` to run locally and another value
+    // when the app is running on Azure (like production or stating)
+    const runningOnAzure = process.env.ENABLE_ORYX_BUILD;
+
+    if (runningOnAzure) {
+        // REACT_APP_WEB_BASE_URL must be set for the api service as a proporty
+        // otherwise the api server will reject the origin.
+        const apiUrlSet = process.env.REACT_APP_WEB_BASE_URL;
+        const originList = [
+            "https://portal.azure.com",
+            "https://ms.portal.azure.com",
+        ];
+        if (apiUrlSet) {
+            originList.push(apiUrlSet);
+        }
+        if (localhostOrigin) {
+            originList.push(localhostOrigin);
+            console.log(`Allowing requests from ${localhostOrigin}. To change or disable, go to ${__filename}`);
+        }
+
         app.use(cors({
-            origin: [
-                "https://portal.azure.com",
-                "https://ms.portal.azure.com",
-                "http://localhost:3000/",
-                apiUrl,
-            ]
+            origin: originList
         }));
-        console.log(`CORS with ${localhost} is allowed for local host debugging. If you want to change port number, go to ${__filename}`);
     }
     else {
         app.use(cors());
-        console.log("Setting CORS to allow all origins because env var REACT_APP_WEB_BASE_URL has no value or is not set.");
+        console.log("Allowing requests from any origin because the server is running locally.");
     }
 
     // API Routes

@@ -23,6 +23,10 @@
         <WixTargetsPath Condition="'$(WixTargetsPath)' == ''">$(MSBuildExtensionsPath)\Microsoft\WiX\v3.x\Wix.targets</WixTargetsPath>
     </PropertyGroup>
     <ItemGroup>
+        <!-- Build custom action(s) to bind into this package -->
+        <ProjectReference Include="..\windows-actions\actions.vcxproj"/>
+    </ItemGroup>
+    <ItemGroup>
         <Compile Include="azd.wxs"/>
         <Compile Include="ui.wxs"/>
     </ItemGroup>
@@ -35,9 +39,23 @@
         <WixExtension Include="WixUIExtension"/>
         <WixExtension Include="WixUtilExtension"/>
     </ItemGroup>
+    <Target Name="GetBindInputPaths" AfterTargets="ResolveProjectReferences">
+        <MSBuild Projects="@(ProjectReference)" Targets="GetNativeTargetPath">
+            <Output TaskParameter="TargetOutputs" ItemName="_NativeTargetPath"/>
+        </MSBuild>
+        <Message Importance="normal" Text="Adding native bind input paths: @(_NativeTargetPath->'%(RootDir)%(Directory)')"/>
+        <ItemGroup>
+            <BindInputPaths Include="@(_NativeTargetPath->'%(RootDir)%(Directory)')"/>
+            <Compile Include="@(_NativeTargetPath->'%(RootDir)%(Directory)actions.wxs')"/>
+        </ItemGroup>
+    </Target>
     <Target Name="SetMsiOutputPath" AfterTargets="Build" Condition="'$(TF_BUILD)' != ''">
         <!-- Make sure the correct target path is always set as the step output -->
         <Message Importance="high" Text="##vso[task.setvariable variable=MsiOutputPath;isoutput=true]$(TargetPath)"/>
     </Target>
     <Import Project="$(WixTargetsPath)"/>
+    <!-- Work around MSBuild regression: https://github.com/dotnet/msbuild/issues/8645 -->
+    <UsingTask TaskName="GenerateCompileWithObjectPath" AssemblyFile="$(WixTasksPath)" Override="true" Runtime="CLR2"/>
+    <UsingTask TaskName="ResolveWixReferences" AssemblyFile="$(WixTasksPath)" Override="true" Runtime="CLR2"/>
+    <UsingTask TaskName="WixAssignCulture" AssemblyFile="$(WixTasksPath)" Override="true" Runtime="CLR2"/>
 </Project>

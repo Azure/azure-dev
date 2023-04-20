@@ -5,37 +5,55 @@
 #include <fileutil.h>
 #include <strutil.h>
 
+const UINT msidberrCustomActionDataUndefined = 25000;
+const UINT msidberrCustomActionDataInvalid = 25001;
+const UINT msidberrFileWriteFailed = 25002;
+
 extern "C" UINT WINAPI WriteTextFile(__in MSIHANDLE hSession)
 {
     HRESULT hr = S_OK;
     LPWSTR pwzCustomActionData = NULL;
     LPWSTR* rgwzArgs = NULL;
     UINT cArgs = 0;
+    PMSIHANDLE hRecord;
 
     hr = WcaInitialize(hSession, __FUNCTION__);
     ExitOnFailure(hr, "failed to initialize");
 
     hr = WcaGetProperty(L"CustomActionData", &pwzCustomActionData);
-    ExitOnFailure(hr, "CustomActionData not defined");
+    MessageExitOnFailure(hr, msidberrCustomActionDataUndefined, "CustomActionData not defined");
 
     // Tab-delimited arguments:
     //
     // 0: Full path to file.
     // 1: Value to write to file.
-
     hr = StrSplitAllocArray(&rgwzArgs, &cArgs, pwzCustomActionData, L"\t");
     ExitOnFailure(hr, "failed to split CustomActionData");
 
     if (cArgs != 2)
     {
-        ExitOnFailure(hr = E_INVALIDARG, "expected 2 arguments, got %d", cArgs);
+        // All varargs have to be LPWSTR.
+        LPCWSTR pwzExpected = L"2";
+        WCHAR wzActual[11] = {};
+
+        _itow_s(cArgs, wzActual, 10);
+        MessageExitOnFailure(hr = E_INVALIDARG, msidberrCustomActionDataInvalid, "expected %ls arguments, got %ls", pwzExpected, wzActual);
     }
 
     LPCWSTR pwzPath = rgwzArgs[0];
-    LPCWSTR pwzValue = rgwzArgs[1];
+    LPCWSTR pwzContent = rgwzArgs[1];
 
-    hr = FileFromString(pwzPath, FILE_ATTRIBUTE_ARCHIVE | FILE_ATTRIBUTE_HIDDEN, pwzValue, FILE_ENCODING_UTF8);
-    ExitOnFailure(hr, "failed to write '%ls' to file path %ls", pwzValue, pwzPath);
+    hRecord = ::MsiCreateRecord(2);
+    hr = WcaSetRecordString(hRecord, 1, pwzPath);
+    ExitOnFailure(hr, "failed to set path in record");
+
+    hr = WcaSetRecordString(hRecord, 2, pwzContent);
+    ExitOnFailure(hr, "failed to set content in record");
+
+    WcaProcessMessage(INSTALLMESSAGE_ACTIONDATA, hRecord);
+
+    hr = FileFromString(pwzPath, FILE_ATTRIBUTE_ARCHIVE | FILE_ATTRIBUTE_HIDDEN, pwzContent, FILE_ENCODING_UTF8);
+    MessageExitOnFailure(hr, msidberrFileWriteFailed, "failed to write file '%ls', content: %ls", pwzPath, pwzContent);
 
 LExit:
     ReleaseStrArray(rgwzArgs, cArgs);

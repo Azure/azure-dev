@@ -1,4 +1,4 @@
-package azcli
+package containerapps
 
 import (
 	"context"
@@ -7,6 +7,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers"
 	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/benbjohnson/clock"
@@ -250,7 +251,7 @@ func (cas *containerAppService) createContainerAppsClient(
 		return nil, err
 	}
 
-	options := clientOptionsBuilder(cas.httpClient, cas.userAgent).BuildArmClientOptions()
+	options := azsdk.DefaultClientOptionsBuilder(cas.httpClient, cas.userAgent).BuildArmClientOptions()
 	client, err := armappcontainers.NewContainerAppsClient(subscriptionId, credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating ContainerApps client: %w", err)
@@ -268,7 +269,7 @@ func (cas *containerAppService) createRevisionsClient(
 		return nil, err
 	}
 
-	options := clientOptionsBuilder(cas.httpClient, cas.userAgent).BuildArmClientOptions()
+	options := azsdk.DefaultClientOptionsBuilder(cas.httpClient, cas.userAgent).BuildArmClientOptions()
 	client, err := armappcontainers.NewContainerAppsRevisionsClient(subscriptionId, credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating ContainerApps client: %w", err)

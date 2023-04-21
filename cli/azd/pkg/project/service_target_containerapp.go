@@ -6,36 +6,19 @@ package project
 import (
 	"context"
 	"fmt"
-	"io"
-	"log"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/account"
-	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
+	"github.com/azure/azure-dev/cli/azd/pkg/containerapps"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
 type containerAppTarget struct {
-	env                        *environment.Environment
-	cli                        azcli.AzCli
-	console                    input.Console
-	commandRunner              exec.CommandRunner
-	accountManager             account.Manager
-	serviceManager             ServiceManager
-	resourceManager            ResourceManager
-	containerHelper            *ContainerHelper
-	containerAppService        azcli.ContainerAppService
-	alphaFeatureManager        *alpha.FeatureManager
-	userProfileService         *azcli.UserProfileService
-	subscriptionTenantResolver account.SubscriptionTenantResolver
+	env                 *environment.Environment
+	containerHelper     *ContainerHelper
+	containerAppService containerapps.ContainerAppService
 }
 
 // NewContainerAppTarget creates the container app service target.
@@ -44,31 +27,13 @@ type containerAppTarget struct {
 // can be provisioned during deployment.
 func NewContainerAppTarget(
 	env *environment.Environment,
-	azCli azcli.AzCli,
-	console input.Console,
-	commandRunner exec.CommandRunner,
-	accountManager account.Manager,
-	serviceManager ServiceManager,
-	resourceManager ResourceManager,
-	userProfileService *azcli.UserProfileService,
-	subscriptionTenantResolver account.SubscriptionTenantResolver,
 	containerHelper *ContainerHelper,
-	containerAppService azcli.ContainerAppService,
-	alphaFeatureManager *alpha.FeatureManager,
+	containerAppService containerapps.ContainerAppService,
 ) ServiceTarget {
 	return &containerAppTarget{
-		env:                        env,
-		accountManager:             accountManager,
-		serviceManager:             serviceManager,
-		resourceManager:            resourceManager,
-		cli:                        azCli,
-		console:                    console,
-		commandRunner:              commandRunner,
-		containerHelper:            containerHelper,
-		containerAppService:        containerAppService,
-		alphaFeatureManager:        alphaFeatureManager,
-		userProfileService:         userProfileService,
-		subscriptionTenantResolver: subscriptionTenantResolver,
+		env:                 env,
+		containerHelper:     containerHelper,
+		containerAppService: containerAppService,
 	}
 }
 
@@ -193,69 +158,4 @@ func (at *containerAppTarget) validateTargetResource(
 	}
 
 	return nil
-}
-
-// A console implementation which output goes only to logs
-// This is used to prevent or stop actions using the terminal output, for
-// example, when calling provision during deploying a service.
-type MutedConsole struct {
-	ParentConsole input.Console
-}
-
-// Sets the underlying writer for output the console or
-// if writer is nil, sets it back to the default writer.
-func (sc *MutedConsole) SetWriter(writer io.Writer) {
-	log.Println("tried to set writer for silent console is a no-op action")
-}
-
-func (sc *MutedConsole) GetFormatter() output.Formatter {
-	return nil
-}
-
-func (sc *MutedConsole) IsUnformatted() bool {
-	return true
-}
-
-// Prints out a message to the underlying console write
-func (sc *MutedConsole) Message(ctx context.Context, message string) {
-	log.Println(message)
-}
-
-func (sc *MutedConsole) MessageUxItem(ctx context.Context, item ux.UxItem) {
-	sc.Message(ctx, item.ToString(""))
-}
-
-func (sc *MutedConsole) ShowSpinner(ctx context.Context, title string, format input.SpinnerUxType) {
-	log.Printf("request to show spinner on silent console with message: %s", title)
-}
-
-func (sc *MutedConsole) StopSpinner(ctx context.Context, lastMessage string, format input.SpinnerUxType) {
-	log.Printf("request to stop spinner on silent console with message: %s", lastMessage)
-}
-
-func (sc *MutedConsole) IsSpinnerRunning(ctx context.Context) bool {
-	return false
-}
-
-// Use parent console for input
-func (sc *MutedConsole) Prompt(ctx context.Context, options input.ConsoleOptions) (string, error) {
-	return sc.ParentConsole.Prompt(ctx, options)
-}
-
-// Use parent console for input
-func (sc *MutedConsole) Select(ctx context.Context, options input.ConsoleOptions) (int, error) {
-	return sc.ParentConsole.Select(ctx, options)
-}
-
-// Use parent console for input
-func (sc *MutedConsole) Confirm(ctx context.Context, options input.ConsoleOptions) (bool, error) {
-	return sc.ParentConsole.Confirm(ctx, options)
-}
-
-func (sc *MutedConsole) GetWriter() io.Writer {
-	return nil
-}
-
-func (sc *MutedConsole) Handles() input.ConsoleHandles {
-	return sc.ParentConsole.Handles()
 }

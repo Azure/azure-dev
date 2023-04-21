@@ -1,21 +1,18 @@
-package azcli
+package containerapps
 
 import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"net/http"
-	"strings"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazsdk"
 	"github.com/benbjohnson/clock"
 	"github.com/stretchr/testify/require"
 )
-
-// TODO: Write tests
 
 func Test_ContainerApp_GetIngressConfiguration(t *testing.T) {
 	subscriptionId := "SUBSCRIPTION_ID"
@@ -38,7 +35,7 @@ func Test_ContainerApp_GetIngressConfiguration(t *testing.T) {
 	}
 
 	mockContext := mocks.NewMockContext(context.Background())
-	mockRequest := mockContainerAppGet(mockContext, subscriptionId, resourceGroup, appName, containerApp)
+	mockRequest := mockazsdk.MockContainerAppGet(mockContext, subscriptionId, resourceGroup, appName, containerApp)
 
 	cas := NewContainerAppService(mockContext.SubscriptionCredentialProvider, mockContext.HttpClient, clock.NewMock())
 	ingressConfig, err := cas.GetIngressConfiguration(*mockContext.Context, subscriptionId, resourceGroup, appName)
@@ -112,10 +109,23 @@ func Test_ContainerApp_AddRevision(t *testing.T) {
 	}
 
 	mockContext := mocks.NewMockContext(context.Background())
-	_ = mockContainerAppGet(mockContext, subscriptionId, resourceGroup, appName, containerApp)
-	getRevisionRequest := mockContainerAppRevisionGet(mockContext, subscriptionId, resourceGroup, appName, originalRevisionName, revision)
-	_ = mockContainerAppSecretsList(mockContext, subscriptionId, resourceGroup, appName, secrets)
-	updateContainerAppRequest := mockContainerAppUpdate(mockContext, subscriptionId, resourceGroup, appName, containerApp)
+	_ = mockazsdk.MockContainerAppGet(mockContext, subscriptionId, resourceGroup, appName, containerApp)
+	getRevisionRequest := mockazsdk.MockContainerAppRevisionGet(
+		mockContext,
+		subscriptionId,
+		resourceGroup,
+		appName,
+		originalRevisionName,
+		revision,
+	)
+	_ = mockazsdk.MockContainerAppSecretsList(mockContext, subscriptionId, resourceGroup, appName, secrets)
+	updateContainerAppRequest := mockazsdk.MockContainerAppUpdate(
+		mockContext,
+		subscriptionId,
+		resourceGroup,
+		appName,
+		containerApp,
+	)
 
 	cas := NewContainerAppService(mockContext.SubscriptionCredentialProvider, mockContext.HttpClient, clock.NewMock())
 	err := cas.AddRevision(*mockContext.Context, subscriptionId, resourceGroup, appName, updatedImageName)
@@ -139,107 +149,4 @@ func Test_ContainerApp_AddRevision(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, updatedImageName, *updatedContainerApp.Properties.Template.Containers[0].Image)
 	require.Equal(t, "azd-deploy-0", *updatedContainerApp.Properties.Template.RevisionSuffix)
-}
-
-func mockContainerAppGet(mockContext *mocks.MockContext, subscriptionId string, resourceGroup string, appName string, containerApp *armappcontainers.ContainerApp) *http.Request {
-	mockRequest := &http.Request{}
-
-	mockContext.HttpClient.When(func(request *http.Request) bool {
-		return request.Method == http.MethodGet && strings.Contains(
-			request.URL.Path,
-			fmt.Sprintf(
-				"/subscriptions/%s/resourceGroups/%s/providers/Microsoft.App/containerApps/%s",
-				subscriptionId,
-				resourceGroup,
-				appName,
-			),
-		)
-	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		*mockRequest = *request
-
-		response := armappcontainers.ContainerAppsClientGetResponse{
-			ContainerApp: *containerApp,
-		}
-
-		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, response)
-	})
-
-	return mockRequest
-}
-
-func mockContainerAppUpdate(mockContext *mocks.MockContext, subscriptionId string, resourceGroup string, appName string, containerApp *armappcontainers.ContainerApp) *http.Request {
-	mockRequest := &http.Request{}
-
-	mockContext.HttpClient.When(func(request *http.Request) bool {
-		return request.Method == http.MethodPatch && strings.Contains(
-			request.URL.Path,
-			fmt.Sprintf(
-				"/subscriptions/%s/resourceGroups/%s/providers/Microsoft.App/containerApps/%s",
-				subscriptionId,
-				resourceGroup,
-				appName,
-			),
-		)
-	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		*mockRequest = *request
-
-		response := armappcontainers.ContainerAppsClientUpdateResponse{}
-
-		return mocks.CreateHttpResponseWithBody(request, http.StatusAccepted, response)
-	})
-
-	return mockRequest
-}
-
-func mockContainerAppRevisionGet(mockContext *mocks.MockContext, subscriptionId string, resourceGroup string, appName string, revisionName string, revision *armappcontainers.Revision) *http.Request {
-	mockRequest := &http.Request{}
-
-	mockContext.HttpClient.When(func(request *http.Request) bool {
-		return request.Method == http.MethodGet && strings.Contains(
-			request.URL.Path,
-			fmt.Sprintf(
-				"/subscriptions/%s/resourceGroups/%s/providers/Microsoft.App/containerApps/%s/revisions/%s",
-				subscriptionId,
-				resourceGroup,
-				appName,
-				revisionName,
-			),
-		)
-	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		*mockRequest = *request
-
-		response := armappcontainers.ContainerAppsRevisionsClientGetRevisionResponse{
-			Revision: *revision,
-		}
-
-		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, response)
-	})
-
-	return mockRequest
-}
-
-func mockContainerAppSecretsList(mockContext *mocks.MockContext, subscriptionId string, resourceGroup string, appName string, secrets *armappcontainers.SecretsCollection) *http.Request {
-	mockRequest := &http.Request{}
-
-	mockContext.HttpClient.When(func(request *http.Request) bool {
-		return request.Method == http.MethodPost && strings.Contains(
-			request.URL.Path,
-			fmt.Sprintf(
-				"/subscriptions/%s/resourceGroups/%s/providers/Microsoft.App/containerApps/%s/listSecrets",
-				subscriptionId,
-				resourceGroup,
-				appName,
-			),
-		)
-	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		*mockRequest = *request
-
-		response := armappcontainers.ContainerAppsClientListSecretsResponse{
-			SecretsCollection: *secrets,
-		}
-
-		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, response)
-	})
-
-	return mockRequest
 }

@@ -10,37 +10,34 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 import os
 from pathlib import Path
 
-# For Azure services which don't support setting CORS directly within the service (like Azure Container Apps)
-# You can enable localhost cors access here.
-#    example: localhostOrigin = "http://localhost:3000";
-# Keep empty string to deny localhost origin.
-localhostOrigin = ""
+# Use API_ALLOW_ORIGINS env var with comma separated urls like
+# `http://localhost:300, http://otherurl:100`
+# Requests coming to the api server from other urls will be rejected as per
+# CORS.
+allowOrigins = os.environ.get('API_ALLOW_ORIGINS')
 
-# CORS origins
-# env.ENABLE_ORYX_BUILD is only set on Azure environment during azd provision for todo-templates
-# You can update this to env.PYTHON_ENV if your app is using `development` to run locally and another value
-# when the app is running on Azure (like production or stating)
-runningOnAzure = os.environ.get('ENABLE_ORYX_BUILD')
-if runningOnAzure is not None:
+# Use API_ENVIRONMENT to change webConfiguration based on this value.
+# For example, setting API_ENVIRONMENT=development disables CORS checking,
+# allowing all origins.
+environment = os.environ.get('API_ENVIRONMENT')
+
+def originList():
+    if environment is not None and environment == "develop":
+        print("Allowing requests from any origins. API_ENVIRONMENT=", environment)
+        return ["*"]
+    
     origins = [
         "https://portal.azure.com",
         "https://ms.portal.azure.com",
     ]
     
-    # REACT_APP_WEB_BASE_URL must be set for the api service as a property
-    # otherwise the api server will reject the origin.
-    apiUrlSet = os.environ.get('REACT_APP_WEB_BASE_URL')
-    if apiUrlSet is not None:
-        origins.append(apiUrlSet)
+    if allowOrigins is not None:
+        for origin in allowOrigins.split(","):
+            print("Allowing requests from", origin, ". To change or disable, go to ", Path(__file__))
+            origins.append(origin)
+        
+    return origins
     
-    if localhostOrigin is not None:
-        origins.append(localhostOrigin)
-        print("Allowing requests from", localhostOrigin, ". To change or disable, go to ", Path(__file__))
-    
-else:
-    origins = ["*"]
-    print("Allowing requests from any origin because the server is running locally.")
-
 from .models import Settings, __beanie_models__
 
 settings = Settings()
@@ -52,7 +49,7 @@ app = FastAPI(
 )
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=originList(),
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -21,6 +21,12 @@ func (ar *ActionResult) ToString(currentIndentation string) (result string) {
 	if ar.Err != nil {
 		original := ar.Err.Error()
 		errMsg := ""
+
+		// Format the first line with error format, and leave subsequent lines without.
+		// This achieves the desired output of:
+		//
+		// <colored>ERROR: $error</colored>
+		// $errorHint / $details / $errorSuggestions
 		newLineIndex := strings.Index(original, "\n")
 		if newLineIndex > 0 {
 			errMsg = output.WithErrorFormat("\n%s: %s", "ERROR", original[:newLineIndex])

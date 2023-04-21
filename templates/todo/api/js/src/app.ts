@@ -8,9 +8,9 @@ import items from "./routes/items";
 import { configureMongoose } from "./models/mongoose";
 import { observability } from "./config/observability";
 
-// For Azure services which don't support setting CORS directly within the service (like Static Web Apps)
-// You can enable localhost cors access if you want to allow request from a localhost here.
-//    example: const localhostOrigin = "http://localhost:3000/";
+// For Azure services which don't support setting CORS directly within the service (like Azure Container Apps)
+// You can enable localhost cors access here.
+//    example: const localhostOrigin = "http://localhost:3000";
 // Keep empty string to deny localhost origin.
 const localhostOrigin = "";
 
@@ -25,7 +25,7 @@ export const createApp = async (): Promise<Express> => {
     app.use(express.json());
 
     // env.ENABLE_ORYX_BUILD is only set on Azure environment during azd provision for todo-templates
-    // You can update this to env.NODE_ENV in your app is using `development` to run locally and another value
+    // You can update this to env.NODE_ENV if your app is using `development` to run locally and another value
     // when the app is running on Azure (like production or stating)
     const runningOnAzure = process.env.ENABLE_ORYX_BUILD;
 

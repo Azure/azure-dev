@@ -30,7 +30,7 @@ module app '../../../../../common/infra/bicep/core/host/container-app.bicep' = {
         value: applicationInsights.properties.ConnectionString
       }
       {
-        name: 'REACT_APP_WEB_BASE_URL'
+        name: 'API_ALLOW_ORIGINS'
         value: corsAcaUrl
       }
     ]

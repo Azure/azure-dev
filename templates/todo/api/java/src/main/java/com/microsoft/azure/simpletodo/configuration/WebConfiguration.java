@@ -13,7 +13,7 @@ public class WebConfiguration implements WebMvcConfigurer {
 
     // Use API_ALLOW_ORIGINS env var with comma separated urls like
     // `http://localhost:300, http://otherurl:100`
-    // Requests comming to the api server from other urls will be rejected as per
+    // Requests coming to the api server from other urls will be rejected as per
     // CORS.
     private static String allowOrigins = System.getenv("API_ALLOW_ORIGINS");
 

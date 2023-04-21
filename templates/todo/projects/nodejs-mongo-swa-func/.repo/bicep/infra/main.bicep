@@ -71,7 +71,7 @@ module api '../../../../../common/infra/bicep/app/api-functions-node.bicep' = {
       AZURE_COSMOS_CONNECTION_STRING_KEY: cosmos.outputs.connectionStringKey
       AZURE_COSMOS_DATABASE_NAME: cosmos.outputs.databaseName
       AZURE_COSMOS_ENDPOINT: cosmos.outputs.endpoint
-      REACT_APP_WEB_BASE_URL: web.outputs.SERVICE_WEB_URI
+      API_ALLOW_ORIGINS: web.outputs.SERVICE_WEB_URI
      }
   }
 }

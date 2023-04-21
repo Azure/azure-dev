@@ -11,11 +11,16 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 @Configuration
 public class WebConfiguration implements WebMvcConfigurer {
 
-    // For Azure services which don't support setting CORS directly within the service (like Azure Container Apps)
-    // You can enable localhost cors access here.
-    //    example: localhostOrigin = "http://localhost:3000";
-    // Keep empty string to deny localhost origin.
-    private static String localhostOrigin = "";
+    // Use API_ALLOW_ORIGINS env var with comma separated urls like
+    // `http://localhost:300, http://otherurl:100`
+    // Requests comming to the api server from other urls will be rejected as per
+    // CORS.
+    private static String allowOrigins = System.getenv("API_ALLOW_ORIGINS");
+
+    // Use API_ENVIRONMENT to change webConfiguration based on this value.
+    // For example, setting API_ENVIRONMENT=development disables CORS checking,
+    // allowing all origins.
+    private static String environment = System.getenv("API_ENVIRONMENT");
 
     @Override
     public void addFormatters(FormatterRegistry registry) {
@@ -29,42 +34,37 @@ public class WebConfiguration implements WebMvcConfigurer {
         return new WebMvcConfigurer() {
             @Override
             public void addCorsMappings(CorsRegistry registry) {
-                // env.ENABLE_ORYX_BUILD is only set on Azure environment during azd provision for todo-templates
-                // You can update this to env.JAVA_ENV if your app is using `development` to run locally and another value
-                // when the app is running on Azure (like production or stating)
-                String runningOnAzure = System.getenv("ENABLE_ORYX_BUILD");
+                if (environment != null && environment.equals("develop")) {
+                    registry.addMapping("/**").allowedOrigins("*").allowedMethods("*").allowedHeaders("*");
+                    System.out.println("Allowing requests from any origins. API_ENVIRONMENT=" + environment);
+                    return;
+                }
 
-                if (runningOnAzure != null) {
-                    ArrayList<String> origins = new ArrayList<>();
-                    origins.add("https://portal.azure.com");
-                    origins.add("https://ms.portal.azure.com");
+                // Enforcing CORS
+                ArrayList<String> origins = new ArrayList<>();
+                // default Azure origins
+                origins.add("https://portal.azure.com");
+                origins.add("https://ms.portal.azure.com");
 
-                    if (localhostOrigin != "") {
-                        origins.add(localhostOrigin);
-                        String fileName = Thread.currentThread().getStackTrace()[1].getFileName();
-                        File file = new File(fileName);
-                        String absolutePath = file.getAbsolutePath();
+                if (allowOrigins != null) {
+                    String[] localhostOrigin = allowOrigins.split(",");
+                    String fileName = Thread.currentThread().getStackTrace()[1].getFileName();
+                    File file = new File(fileName);
+                    String absolutePath = file.getAbsolutePath();
+
+                    for (String origin : localhostOrigin) {
+                        origins.add(origin);
                         System.out.println(
-                            "Allowing requests from" + localhostOrigin + ". To change or disable, go to " + absolutePath
+                            "Allowing requests from" + origin + ". To change or disable, go to " + absolutePath
                         );
                     }
-
-                    // REACT_APP_WEB_BASE_URL must be set for the api service as a property
-                    // otherwise the api server will reject the origin.
-                    String apiUrlSet = System.getenv("REACT_APP_WEB_BASE_URL");
-                    if (apiUrlSet != null) {
-                        origins.add(apiUrlSet);
-                    }
-
-                    registry
-                        .addMapping("/**")
-                        .allowedOrigins(origins.toArray(new String[0]))
-                        .allowedMethods("*")
-                        .allowedHeaders("*");
-                } else {
-                    registry.addMapping("/**").allowedOrigins("*").allowedMethods("*").allowedHeaders("*");
-                    System.out.println("Allowing requests from any origin because the server is running locally.");
                 }
+
+                registry
+                    .addMapping("/**")
+                    .allowedOrigins(origins.toArray(new String[0]))
+                    .allowedMethods("*")
+                    .allowedHeaders("*");
             }
         };
     }

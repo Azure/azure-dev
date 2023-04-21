@@ -6,6 +6,7 @@ package ux
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
@@ -18,8 +19,18 @@ type ActionResult struct {
 
 func (ar *ActionResult) ToString(currentIndentation string) (result string) {
 	if ar.Err != nil {
-		return output.WithErrorFormat("\n%s: %s", "ERROR", ar.Err.Error())
+		original := ar.Err.Error()
+		errMsg := ""
+		newLineIndex := strings.Index(original, "\n")
+		if newLineIndex > 0 {
+			errMsg = output.WithErrorFormat("\n%s: %s", "ERROR", original[:newLineIndex])
+			errMsg += original[newLineIndex:]
+		} else {
+			errMsg = output.WithErrorFormat("\n%s: %s", "ERROR", original)
+		}
+		return errMsg
 	}
+
 	if ar.SuccessMessage != "" {
 		result = output.WithSuccessFormat("\n%s: %s", "SUCCESS", ar.SuccessMessage)
 	}

@@ -78,10 +78,8 @@ func promptSubscription(
 	if len(subscriptionOptions) == 0 {
 		return "", fmt.Errorf(heredoc.Doc(
 			`no subscriptions found.
-			
-			Ensure you have a subscription by visiting https://portal.azure.com and typing 'Subscriptions' in the search bar.
-			Once you have a subscription, run 'azd auth login' again to reload subscriptions.
-		`))
+			Ensure you have a subscription by visiting https://portal.azure.com and search for Subscriptions in the search bar.
+			Once you have a subscription, run 'azd auth login' again to reload subscriptions.`))
 	}
 
 	for subscriptionId == "" {

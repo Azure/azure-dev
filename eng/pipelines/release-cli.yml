@@ -46,7 +46,6 @@ stages:
               BuildOutputName: azd
               SetExecutableBit: true
               SetShieldInfo: true
-              GenerateCoverage: true
               BuildLinuxPackages: true
               AZURE_DEV_CI_OS: lin
             Mac:
@@ -84,8 +83,9 @@ stages:
               arguments: >-
                 -Version $(CLI_VERSION)
                 -SourceVersion $(Build.SourceVersion)
+                -CodeCoverageEnabled
               workingDirectory: cli/azd
-            displayName: Build Go Binary
+            displayName: Build Go Binary (Coverage enabled)
 
           - template: /eng/pipelines/templates/steps/build-msi.yml
             parameters:
@@ -124,6 +124,9 @@ stages:
               pwsh: true
               targetType: filePath
               filePath: cli/azd/ci-test.ps1
+              arguments: >-
+                -UnitTestCoverageDir './cover-$(AZURE_DEV_CI_OS)-unit'
+                -IntegrationTestCoverageDir './cover-$(AZURE_DEV_CI_OS)-int'
               workingDirectory: cli/azd
             displayName: Test Go Binary
             env:
@@ -148,31 +151,21 @@ stages:
             condition: succeededOrFailed()
 
           - pwsh: |
-              go install github.com/axw/gocov/gocov@latest
-              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-              go install github.com/AlekSi/gocov-xml@latest
-              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-              ~/go/bin/gocov convert cover.out | ~/go/bin/gocov-xml > coverage.xml
+              $coverage = (Get-ChildItem -Directory cover*).Name -join ","
+              go tool covdata merge -i="$coverage" -o ./cover-$(AZURE_DEV_CI_OS)
+            displayName: Merge code coverage files
             workingDirectory: cli/azd
-            condition: >-
-              and(
-                succeeded(),
-                eq(variables['GenerateCoverage'], 'true'),
-                ne(variables['Skip.LiveTest'], 'true')
-              )
-            displayName: Generate coverage
 
-          - task: PublishCodeCoverageResults@1
-            condition: >-
-              and(
-                succeeded(),
-                eq(variables['GenerateCoverage'], 'true'),
-                ne(variables['Skip.LiveTest'], 'true')
-              )
+          - task: PowerShell@2
             inputs:
-              codeCoverageTool: Cobertura
-              summaryFileLocation: '$(Build.SourcesDirectory)/**/coverage.xml'
-            displayName: Publish Code Coverage to DevOps
+              pwsh: true
+              targetType: filePath
+              filePath: cli/azd/ci-build.ps1
+              arguments: >-
+                -Version $(CLI_VERSION)
+                -SourceVersion $(Build.SourceVersion)
+              workingDirectory: cli/azd
+            displayName: Build Go Binary
 
           - pwsh: Move-Item $(BuildOutputName) $(BuildTarget)
             workingDirectory: cli/azd
@@ -197,6 +190,10 @@ stages:
                 -TemplatePath eng/shields/standalone.json
                 -Version "$(CLI_VERSION)"
             displayName: Set shield info
+
+          - publish: cli/azd/cover-$(AZURE_DEV_CI_OS)
+            artifact: cover-$(AZURE_DEV_CI_OS)
+            displayName: Upload code coverage
 
           - publish: eng/shields/standalone.json
             condition: and(succeeded(), eq(variables['SetShieldInfo'], 'true'))
@@ -361,6 +358,49 @@ stages:
           - publish: $(Pipeline.Workspace)/docs/
             artifact: docs
             displayName: Upload generated documentation
+
+  - stage: CodeCoverage_Upload
+    dependsOn: BuildAndTest
+    jobs:
+    - job: Upload
+      pool:
+        name: azsdk-pool-mms-ubuntu-2004-general
+        vmImage: MMSUbuntu20.04
+      steps:
+        - template: /eng/pipelines/templates/steps/setup-go.yml
+        - template: /eng/pipelines/templates/steps/download-artifacts.yml
+          parameters:
+            Artifacts:
+            - cover-win
+            - cover-lin
+            - cover-mac
+        - pwsh: |
+            $coverage = (Get-ChildItem cover*).Name -join ","
+
+            New-Item -ItemType Directory -Force -Path cover
+
+            # Merge all code coverage across platforms
+            go tool covdata merge -i="$coverage" -o cover
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+            # Convert to text format
+            go tool covdata textfmt -i=cover -o cover.out
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+            go install github.com/axw/gocov/gocov@latest
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            go install github.com/AlekSi/gocov-xml@latest
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            
+            ~/go/bin/gocov convert cover.out | ~/go/bin/gocov-xml > coverage.xml
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          displayName: Merge code coverage files
+
+        - task: PublishCodeCoverageResults@1
+          inputs:
+            codeCoverageTool: Cobertura
+            summaryFileLocation: '$(Build.SourcesDirectory)/**/coverage.xml'
+          displayName: Publish Code Coverage to DevOps
 
   - stage: Sign
     dependsOn: BuildAndTest

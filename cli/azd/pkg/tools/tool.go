@@ -37,8 +37,8 @@ func (err *ErrSemver) Error() string {
 }
 
 // toolInPath checks to see if a program can be found on the PATH, as exec.LookPath
-// does, but returns "(false, nil)" in the case where os.LookPath would return
-// exec.ErrNotFound.
+// does, returns exec.ErrNotFound in the case where os.LookPath would return
+// exec.ErrNotFound and other errors.
 func ToolInPath(name string) error {
 	_, err := osexec.LookPath(name)
 

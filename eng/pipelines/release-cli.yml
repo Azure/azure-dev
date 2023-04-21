@@ -151,6 +151,8 @@ stages:
             condition: succeededOrFailed()
 
           - pwsh: |
+              New-Item -ItemType Directory -Force -Path ./cover-$(AZURE_DEV_CI_OS) | Out-Null
+
               $coverage = (Get-ChildItem -Directory cover*).Name -join ","
               go tool covdata merge -i="$coverage" -o ./cover-$(AZURE_DEV_CI_OS)
             displayName: Merge code coverage files

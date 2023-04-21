@@ -10,17 +10,36 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor
 import os
 from pathlib import Path
 
+# For Azure services which don't support setting CORS directly within the service (like Static Web Apps)
+# You can enable localhost cors access if you want to allow request from a localhost here.
+#    example: const localhostOrigin = "http://localhost:3000/";
+# Keep empty string to deny localhost origin.
+localhostOrigin = ""
+
 # CORS origins
-apiUrl = os.environ.get('REACT_APP_WEB_BASE_URL')
-if apiUrl is not None:
-    origins = ["https://portal.azure.com",
-               "https://ms.portal.azure.com",
-               "http://localhost:3000/",
-               apiUrl]
-    print("CORS with", origins[2] , "is allowed for local host debugging. If you want to change pin number, go to", Path(__file__))
+# env.ENABLE_ORYX_BUILD is only set on Azure environment during azd provision for todo-templates
+# You can update this to env.NODE_ENV in your app is using `development` to run locally and another value
+# when the app is running on Azure (like production or stating)
+runningOnAzure = os.environ.get('ENABLE_ORYX_BUILD')
+if runningOnAzure is not None:
+    origins = [
+        "https://portal.azure.com",
+        "https://ms.portal.azure.com",
+    ]
+    
+    # REACT_APP_WEB_BASE_URL must be set for the api service as a property
+    # otherwise the api server will reject the origin.
+    apiUrlSet = os.environ.get('REACT_APP_WEB_BASE_URL')
+    if apiUrlSet is not None:
+        origins.append(apiUrlSet)
+    
+    if localhostOrigin is not None:
+        origins.append(localhostOrigin)
+        print("Allowing requests from", localhostOrigin, ". To change or disable, go to ", Path(__file__))
+    
 else:
     origins = ["*"]
-    print("Setting CORS to allow all origins because env var REACT_APP_WEB_BASE_URL has no value or is not set.")
+    print("Allowing requests from any origin because the server is running locally.")
 
 from .models import Settings, __beanie_models__
 

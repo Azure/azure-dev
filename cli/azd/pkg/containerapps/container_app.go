@@ -13,6 +13,7 @@ import (
 	"github.com/benbjohnson/clock"
 )
 
+// ContainerAppService exposes operations for managing Azure Container Apps
 type ContainerAppService interface {
 	// Gets the ingress configuration for the specified container app
 	GetIngressConfiguration(
@@ -31,6 +32,7 @@ type ContainerAppService interface {
 	) error
 }
 
+// NewContainerAppService creates a new ContainerAppService
 func NewContainerAppService(
 	credentialProvider account.SubscriptionCredentialProvider,
 	httpClient httputil.HttpClient,

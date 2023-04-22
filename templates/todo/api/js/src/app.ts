@@ -8,11 +8,37 @@ import items from "./routes/items";
 import { configureMongoose } from "./models/mongoose";
 import { observability } from "./config/observability";
 
-// For Azure services which don't support setting CORS directly within the service (like Azure Container Apps)
-// You can enable localhost cors access here.
-//    example: const localhostOrigin = "http://localhost:3000";
-// Keep empty string to deny localhost origin.
-const localhostOrigin = "";
+// Use API_ALLOW_ORIGINS env var with comma separated urls like
+// `http://localhost:300, http://otherurl:100`
+// Requests coming to the api server from other urls will be rejected as per
+// CORS.
+const allowOrigins = process.env.API_ALLOW_ORIGINS
+
+// Use NODE_ENV to change webConfiguration based on this value.
+// For example, setting NODE_ENV=development disables CORS checking,
+// allowing all origins.
+const environment = process.env.NODE_ENV
+
+const originList = ():string[]|string => {
+    
+    if (environment && environment === "development") {
+        console.log(`Allowing requests from any origins. NODE_ENV=${environment}`);
+        return "*"
+    }
+    
+    const origins = [
+        "https://portal.azure.com",
+        "https://ms.portal.azure.com",
+    ];
+
+    if (allowOrigins && allowOrigins !== "") {
+        allowOrigins.split(",").forEach(origin => {
+            origins.push(origin);
+        });
+    }
+
+    return origins
+}
 
 export const createApp = async (): Promise<Express> => {
     const config = await getConfig();
@@ -23,36 +49,10 @@ export const createApp = async (): Promise<Express> => {
     await configureMongoose(config.database);
     // Middleware
     app.use(express.json());
-
-    // env.ENABLE_ORYX_BUILD is only set on Azure environment during azd provision for todo-templates
-    // You can update this to env.NODE_ENV if your app is using `development` to run locally and another value
-    // when the app is running on Azure (like production or stating)
-    const runningOnAzure = process.env.ENABLE_ORYX_BUILD;
-
-    if (runningOnAzure) {
-        // REACT_APP_WEB_BASE_URL must be set for the api service as a property
-        // otherwise the api server will reject the origin.
-        const apiUrlSet = process.env.REACT_APP_WEB_BASE_URL;
-        const originList = [
-            "https://portal.azure.com",
-            "https://ms.portal.azure.com",
-        ];
-        if (apiUrlSet) {
-            originList.push(apiUrlSet);
-        }
-        if (localhostOrigin) {
-            originList.push(localhostOrigin);
-            console.log(`Allowing requests from ${localhostOrigin}. To change or disable, go to ${__filename}`);
-        }
-
-        app.use(cors({
-            origin: originList
-        }));
-    }
-    else {
-        app.use(cors());
-        console.log("Allowing requests from any origin because the server is running locally.");
-    }
+    
+    app.use(cors({
+        origin: originList()
+    }));
 
     // API Routes
     app.use("/lists/:listId/items", items);

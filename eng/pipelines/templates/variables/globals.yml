@@ -2,3 +2,5 @@ variables:
   # Globally disable Dockerfile scanning which generates alerts for
   # customer-facing containers.
   DisableDockerDetector: true
+  # Disable CodeQL injections except for where we specifically enable it
+  Codeql.SkipTaskAutoInjection: true

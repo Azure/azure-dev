@@ -18,7 +18,7 @@ public class WebConfiguration implements WebMvcConfigurer {
     private static String allowOrigins = System.getenv("API_ALLOW_ORIGINS");
 
     // Use API_ENVIRONMENT to change webConfiguration based on this value.
-    // For example, setting API_ENVIRONMENT=development disables CORS checking,
+    // For example, setting API_ENVIRONMENT=develop disables CORS checking,
     // allowing all origins.
     private static String environment = System.getenv("API_ENVIRONMENT");
 

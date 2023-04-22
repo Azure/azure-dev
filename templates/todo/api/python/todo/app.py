@@ -17,7 +17,7 @@ from pathlib import Path
 allowOrigins = os.environ.get('API_ALLOW_ORIGINS')
 
 # Use API_ENVIRONMENT to change webConfiguration based on this value.
-# For example, setting API_ENVIRONMENT=development disables CORS checking,
+# For example, setting API_ENVIRONMENT=develop disables CORS checking,
 # allowing all origins.
 environment = os.environ.get('API_ENVIRONMENT')
 

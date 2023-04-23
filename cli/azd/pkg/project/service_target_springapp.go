@@ -102,10 +102,11 @@ func (st *springAppTarget) Deploy(
 				return
 			}
 
-			artifactPath := filepath.Join(packageOutput.PackagePath, AppServiceJavaPackageName)
+			ext := ".jar"
+			artifactPath := filepath.Join(packageOutput.PackagePath, AppServiceJavaPackageName+ext)
 
 			if _, err := os.Stat(artifactPath); err != nil {
-				task.SetError(fmt.Errorf("artifact don't exists: %w", err))
+				task.SetError(fmt.Errorf("Spring Apps only support .jar file and artifact %s don't exists: %w", artifactPath, err))
 				return
 			}
 

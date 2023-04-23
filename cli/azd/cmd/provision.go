@@ -130,10 +130,13 @@ func newProvisionAction(
 
 func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if p.flags.noProgress {
-		fmt.Fprintf(
+		fmt.Fprintln(
 			p.console.Handles().Stderr,
 			//nolint:Lll
-			output.WithWarningFormat("--no-progress flag is deprecated and will be removed in the future.")+"\n")
+			output.WithWarningFormat(
+				"WARNING: The '--no-progress' flag is deprecated and will be removed in a future release.",
+			),
+		)
 	}
 
 	// Command title
@@ -230,8 +233,9 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			Header:   "Your project has been provisioned!",
-			FollowUp: getResourceGroupFollowUp(ctx, p.formatter, p.projectConfig, p.resourceManager, p.env),
+			Header: "Your project has been provisioned!",
+			FollowUp: getResourceGroupFollowUp(
+				ctx, p.formatter, p.projectConfig, p.resourceManager, p.env),
 		},
 	}, nil
 }

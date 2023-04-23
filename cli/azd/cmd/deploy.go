@@ -30,6 +30,7 @@ import (
 type deployFlags struct {
 	serviceName string
 	all         bool
+	fromPackage string
 	global      *internal.GlobalCommandOptions
 	*envFlag
 }
@@ -63,6 +64,12 @@ func (d *deployFlags) bindCommon(local *pflag.FlagSet, global *internal.GlobalCo
 		"all",
 		false,
 		"Deploys all services that are listed in "+azdcontext.ProjectFileName,
+	)
+	local.StringVar(
+		&d.fromPackage,
+		"from-package",
+		"",
+		"Deploys the application from an existing package.",
 	)
 }
 
@@ -158,25 +165,6 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		targetServiceName = da.args[0]
 	}
 
-	packageAction, err := da.packageActionInitializer()
-	if err != nil {
-		return nil, err
-	}
-
-	packageAction.flags.all = da.flags.all
-	packageAction.args = []string{targetServiceName}
-
-	packageOptions := &middleware.Options{CommandPath: "package"}
-	_, err = da.middlewareRunner.RunChildAction(ctx, packageOptions, packageAction)
-	if err != nil {
-		return nil, err
-	}
-
-	// Command title
-	da.console.MessageUxItem(ctx, &ux.MessageTitle{
-		Title: "Deploying services (azd deploy)",
-	})
-
 	serviceNameWarningCheck(da.console, da.flags.serviceName, "deploy")
 
 	if da.env.GetSubscriptionId() == "" {
@@ -185,7 +173,7 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		)
 	}
 
-	targetServiceName, err = getTargetServiceName(
+	targetServiceName, err := getTargetServiceName(
 		ctx,
 		da.projectManager,
 		da.projectConfig,
@@ -197,15 +185,31 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		return nil, err
 	}
 
+	if da.flags.all && da.flags.fromPackage != "" {
+		return nil, errors.New(
+			"'--from-package' cannot be specified when '--all' is set. Specify a specific service by passing a <service>")
+	}
+
+	if targetServiceName == "" && da.flags.fromPackage != "" {
+		return nil, errors.New(
+			//nolint:lll
+			"'--from-package' cannot be specified when deploying all services. Specify a specific service by passing a <service>")
+	}
+
+	if err := da.projectManager.Initialize(ctx, da.projectConfig); err != nil {
+		return nil, err
+	}
+
 	if err := da.projectManager.EnsureServiceTargetTools(ctx, da.projectConfig, func(svc *project.ServiceConfig) bool {
 		return targetServiceName == "" || svc.Name == targetServiceName
 	}); err != nil {
 		return nil, err
 	}
 
-	if err := da.projectManager.Initialize(ctx, da.projectConfig); err != nil {
-		return nil, err
-	}
+	// Command title
+	da.console.MessageUxItem(ctx, &ux.MessageTitle{
+		Title: "Deploying services (azd deploy)",
+	})
 
 	deployResults := map[string]*project.ServiceDeployResult{}
 
@@ -221,7 +225,30 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 			continue
 		}
 
-		deployTask := da.serviceManager.Deploy(ctx, svc, nil)
+		var packageResult *project.ServicePackageResult
+		if da.flags.fromPackage != "" {
+			// --from-package set, skip packaging
+			packageResult = &project.ServicePackageResult{
+				PackagePath: da.flags.fromPackage,
+			}
+		} else {
+			//  --from-package not set, package the application
+			packageTask := da.serviceManager.Package(ctx, svc, nil)
+			go func() {
+				for packageProgress := range packageTask.Progress() {
+					progressMessage := fmt.Sprintf("Deploying service %s (%s)", svc.Name, packageProgress.Message)
+					da.console.ShowSpinner(ctx, progressMessage, input.Step)
+				}
+			}()
+
+			packageResult, err = packageTask.Await()
+			if err != nil {
+				da.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+				return nil, err
+			}
+		}
+
+		deployTask := da.serviceManager.Deploy(ctx, svc, packageResult)
 		go func() {
 			for deployProgress := range deployTask.Progress() {
 				progressMessage := fmt.Sprintf("Deploying service %s (%s)", svc.Name, deployProgress.Message)
@@ -238,7 +265,7 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		da.console.StopSpinner(ctx, stepMessage, input.StepDone)
 		deployResults[svc.Name] = deployResult
 
-		// report build outputs
+		// report deploy outputs
 		da.console.MessageUxItem(ctx, deployResult)
 	}
 
@@ -275,8 +302,17 @@ func getCmdDeployHelpDescription(*cobra.Command) string {
 
 func getCmdDeployHelpFooter(*cobra.Command) string {
 	return generateCmdHelpSamplesBlock(map[string]string{
-		"Deploy all services in the current project to Azure.": output.WithHighLightFormat("azd deploy --all"),
-		"Deploy the service named 'api' to Azure.":             output.WithHighLightFormat("azd deploy api"),
-		"Deploy the service named 'web' to Azure.":             output.WithHighLightFormat("azd deploy web"),
+		"Deploy all services in the current project to Azure.": output.WithHighLightFormat(
+			"azd deploy --all",
+		),
+		"Deploy the service named 'api' to Azure.": output.WithHighLightFormat(
+			"azd deploy api",
+		),
+		"Deploy the service named 'web' to Azure.": output.WithHighLightFormat(
+			"azd deploy web",
+		),
+		"Deploy the service named 'api' to Azure from a previously generated package.": output.WithHighLightFormat(
+			"azd deploy api --from-package <package-path>",
+		),
 	})
 }

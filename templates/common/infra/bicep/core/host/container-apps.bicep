@@ -25,6 +25,7 @@ module containerRegistry 'container-registry.bicep' = {
   }
 }
 
+output defaultDomain string = containerAppsEnvironment.outputs.defaultDomain
 output environmentName string = containerAppsEnvironment.outputs.name
 output registryLoginServer string = containerRegistry.outputs.loginServer
 output registryName string = containerRegistry.outputs.name

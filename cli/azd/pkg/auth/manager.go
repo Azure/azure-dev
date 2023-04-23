@@ -24,6 +24,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/github"
+	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
 
@@ -44,6 +45,8 @@ const cUseAzCliAuthKey = "auth.useAzCliAuth"
 // allow both work/school accounts and personal accounts (this matches the default authority the `az` CLI uses when logging
 // in).
 const cDefaultAuthority = "https://login.microsoftonline.com/organizations"
+
+const cUseCloudShellAuthEnvVar = "AZD_IN_CLOUDSHELL"
 
 // The scopes to request when acquiring our token during the login flow or when requesting a token to validate if the client
 // is logged in.
@@ -70,9 +73,10 @@ type Manager struct {
 	configManager       config.UserConfigManager
 	credentialCache     Cache
 	ghClient            *github.FederatedTokenClient
+	httpClient          httputil.HttpClient
 }
 
-func NewManager(configManager config.UserConfigManager) (*Manager, error) {
+func NewManager(configManager config.UserConfigManager, httpClient httputil.HttpClient) (*Manager, error) {
 	cfgRoot, err := config.GetUserConfigDir()
 	if err != nil {
 		return nil, fmt.Errorf("getting config dir: %w", err)
@@ -106,6 +110,7 @@ func NewManager(configManager config.UserConfigManager) (*Manager, error) {
 		configManager:       configManager,
 		credentialCache:     newCredentialCache(authRoot),
 		ghClient:            ghClient,
+		httpClient:          httpClient,
 	}, nil
 }
 
@@ -158,7 +163,15 @@ func (m *Manager) CredentialForCurrentUser(
 	}
 
 	currentUser, err := readUserProperties(cfg)
-	if err != nil {
+	if errors.Is(err, ErrNoCurrentUser) {
+		// User is not logged in, not using az credentials, try CloudShell if possible
+		if shouldUseCloudShellAuth() {
+			cloudShellCredential, err := m.newCredentialFromCloudShell()
+			if err != nil {
+				return nil, err
+			}
+			return cloudShellCredential, nil
+		}
 		return nil, ErrNoCurrentUser
 	}
 
@@ -206,8 +219,9 @@ func (m *Manager) CredentialForCurrentUser(
 			return newCredentialFromClientSecret(tenantID, *currentUser.ClientID, *ps.ClientSecret)
 		} else if ps.ClientCertificate != nil {
 			return newCredentialFromClientCertificate(tenantID, *currentUser.ClientID, *ps.ClientCertificate)
-		} else if ps.FederatedToken != nil {
-			return newCredentialFromClientAssertion(tenantID, *currentUser.ClientID, *ps.FederatedToken)
+		} else if ps.FederatedAuth != nil && ps.FederatedAuth.TokenProvider != nil {
+			return m.newCredentialFromFederatedTokenProvider(
+				tenantID, *currentUser.ClientID, *ps.FederatedAuth.TokenProvider)
 		}
 	}
 
@@ -224,12 +238,23 @@ func shouldUseLegacyAuth(cfg config.Config) bool {
 	return false
 }
 
+func shouldUseCloudShellAuth() bool {
+	if useCloudShellAuth, has := os.LookupEnv(cUseCloudShellAuthEnvVar); has {
+		if use, err := strconv.ParseBool(useCloudShellAuth); err == nil && use {
+			log.Printf("using CloudShell auth")
+			return true
+		}
+	}
+
+	return false
+}
+
 // GetLoggedInServicePrincipalTenantID returns the stored service principal's tenant ID.
 //
 // Service principals are fixed to a particular tenant.
 // This can be used to determine if the tenant is fixed, and if so short circuit performance intensive tenant-switching
 // for service principals.
-func (m *Manager) GetLoggedInServicePrincipalTenantID() (*string, error) {
+func (m *Manager) GetLoggedInServicePrincipalTenantID(ctx context.Context) (*string, error) {
 	cfg, err := m.configManager.Load()
 	if err != nil {
 		return nil, fmt.Errorf("fetching current user: %w", err)
@@ -242,6 +267,28 @@ func (m *Manager) GetLoggedInServicePrincipalTenantID() (*string, error) {
 
 	currentUser, err := readUserProperties(cfg)
 	if err != nil {
+		// No user is logged in, if running in CloudShell use tenant id from
+		// CloudShell session (single tenant)
+		if shouldUseCloudShellAuth() {
+			// Tenant ID is not required when requesting a token from CloudShell
+			credential, err := m.CredentialForCurrentUser(ctx, nil)
+			if err != nil {
+				return nil, err
+			}
+
+			token, err := EnsureLoggedInCredential(ctx, credential)
+			if err != nil {
+				return nil, err
+			}
+
+			tenantId, err := GetTenantIdFromToken(token.Token)
+			if err != nil {
+				return nil, err
+			}
+
+			return &tenantId, nil
+		}
+
 		return nil, ErrNoCurrentUser
 	}
 
@@ -292,25 +339,36 @@ func newCredentialFromClientCertificate(
 	return cred, nil
 }
 
-func newCredentialFromClientAssertion(
+func (m *Manager) newCredentialFromFederatedTokenProvider(
 	tenantID string,
 	clientID string,
-	clientAssertion string,
+	provider federatedTokenProvider,
 ) (azcore.TokenCredential, error) {
+	if provider != gitHubFederatedAuth {
+		return nil, fmt.Errorf("unsupported federated token provider: '%s'", string(provider))
+	}
+
 	cred, err := azidentity.NewClientAssertionCredential(
 		tenantID,
 		clientID,
-		func(_ context.Context) (string, error) {
-			return clientAssertion, nil
-		},
-		nil,
-	)
+		func(ctx context.Context) (string, error) {
+			federatedToken, err := m.ghClient.TokenForAudience(ctx, "api://AzureADTokenExchange")
+			if err != nil {
+				return "", fmt.Errorf("fetching federated token: %w", err)
+			}
 
+			return federatedToken, nil
+		},
+		nil)
 	if err != nil {
-		return nil, fmt.Errorf("creating credential: %w: %w", err, ErrNoCurrentUser)
+		return nil, fmt.Errorf("creating credential: %w", err)
 	}
 
 	return cred, nil
+}
+
+func (m *Manager) newCredentialFromCloudShell() (azcore.TokenCredential, error) {
+	return NewCloudShellCredential(m.httpClient), nil
 }
 
 func (m *Manager) LoginInteractive(ctx context.Context, redirectPort int, tenantID string) (azcore.TokenCredential, error) {
@@ -413,62 +471,21 @@ func (m *Manager) LoginWithServicePrincipalCertificate(
 	return cred, nil
 }
 
-func (m *Manager) LoginWithServicePrincipalFederatedToken(
-	ctx context.Context, tenantId, clientId, federatedToken string,
+func (m *Manager) LoginWithServicePrincipalFederatedTokenProvider(
+	ctx context.Context, tenantId, clientId, provider string,
 ) (azcore.TokenCredential, error) {
-	cred, err := azidentity.NewClientAssertionCredential(
-		tenantId,
-		clientId,
-		func(_ context.Context) (string, error) {
-			return federatedToken, nil
-		},
-		nil)
+	cred, err := m.newCredentialFromFederatedTokenProvider(tenantId, clientId, federatedTokenProvider(provider))
 	if err != nil {
-		return nil, fmt.Errorf("creating credential: %w", err)
-	}
-
-	if err := m.saveLoginForServicePrincipal(
-		tenantId,
-		clientId,
-		&persistedSecret{
-			FederatedToken: &federatedToken,
-		},
-	); err != nil {
 		return nil, err
 	}
 
-	return cred, nil
-}
-
-func (m *Manager) LoginWithServicePrincipalFederatedTokenProvider(
-	ctx context.Context, tenantId, clientId, federatedTokenProvider string,
-) (azcore.TokenCredential, error) {
-
-	if federatedTokenProvider != "github" {
-		return nil, fmt.Errorf("unsupported federated token provider: '%s'", federatedTokenProvider)
-	}
-
-	federatedToken, err := m.ghClient.TokenForAudience(ctx, "api://AzureADTokenExchange")
-	if err != nil {
-		return nil, fmt.Errorf("fetching federated token: %w", err)
-	}
-
-	cred, err := azidentity.NewClientAssertionCredential(
-		tenantId,
-		clientId,
-		func(_ context.Context) (string, error) {
-			return federatedToken, nil
-		},
-		nil)
-	if err != nil {
-		return nil, fmt.Errorf("creating credential: %w", err)
-	}
-
 	if err := m.saveLoginForServicePrincipal(
 		tenantId,
 		clientId,
 		&persistedSecret{
-			FederatedToken: &federatedToken,
+			FederatedAuth: &federatedAuth{
+				TokenProvider: &gitHubFederatedAuth,
+			},
 		},
 	); err != nil {
 		return nil, err
@@ -613,7 +630,7 @@ type CredentialForCurrentUserOptions struct {
 }
 
 // persistedSecret is the model type for the value we store in the credential cache. It is logically a discriminated union
-// of a client secret and certificate.
+// of the different supported authentication modes
 type persistedSecret struct {
 	// The client secret.
 	ClientSecret *string `json:"clientSecret,omitempty"`
@@ -622,8 +639,22 @@ type persistedSecret struct {
 	// base64 string.
 	ClientCertificate *string `json:"clientCertificate,omitempty"`
 
-	// The federated client credential.
-	FederatedToken *string `json:"federatedToken,omitempty"`
+	// The federated auth credential.
+	FederatedAuth *federatedAuth `json:"federatedAuth,omitempty"`
+}
+
+// federated auth token providers
+var (
+	gitHubFederatedAuth federatedTokenProvider = "github"
+)
+
+// token provider for federated auth
+type federatedTokenProvider string
+
+// federatedAuth stores federated authentication information.
+type federatedAuth struct {
+	// The auth token provider. Tokens are obtained by calling the provider as needed.
+	TokenProvider *federatedTokenProvider `json:"tokenProvider,omitempty"`
 }
 
 // userProperties is the model type for the value we store in the user's config. It is logically a discriminated union of

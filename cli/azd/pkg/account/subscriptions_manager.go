@@ -28,7 +28,7 @@ type SubscriptionTenantResolver interface {
 }
 
 type principalInfoProvider interface {
-	GetLoggedInServicePrincipalTenantID() (*string, error)
+	GetLoggedInServicePrincipalTenantID(ctx context.Context) (*string, error)
 }
 
 type subCache interface {
@@ -100,7 +100,7 @@ func (m *SubscriptionsManager) RefreshSubscriptions(ctx context.Context) error {
 //     See SubscriptionCache for details about caching. On cache miss, all tenants and subscriptions are queried from
 //     azure management services for the current account to build the mapping and populate the cache.
 func (m *SubscriptionsManager) LookupTenant(ctx context.Context, subscriptionId string) (tenantId string, err error) {
-	principalTenantId, err := m.principalInfo.GetLoggedInServicePrincipalTenantID()
+	principalTenantId, err := m.principalInfo.GetLoggedInServicePrincipalTenantID(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -163,7 +163,7 @@ func (m *SubscriptionsManager) ListSubscriptions(ctx context.Context) ([]Subscri
 	stop := m.msg.ShowProgress(ctx, "Retrieving subscriptions...")
 	defer stop()
 
-	principalTenantId, err := m.principalInfo.GetLoggedInServicePrincipalTenantID()
+	principalTenantId, err := m.principalInfo.GetLoggedInServicePrincipalTenantID(ctx)
 	if err != nil {
 		return nil, err
 	}

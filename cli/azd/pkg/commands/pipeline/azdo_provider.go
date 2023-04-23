@@ -65,6 +65,7 @@ func (p *AzdoScmProvider) preConfigureCheck(
 	ctx context.Context,
 	pipelineManagerArgs PipelineManagerArgs,
 	infraOptions provisioning.Options,
+	projectPath string,
 ) (bool, error) {
 	_, updatedPat, err := azdo.EnsurePatExists(ctx, p.Env, p.console)
 	if err != nil {
@@ -575,6 +576,7 @@ func (p *AzdoCiProvider) preConfigureCheck(
 	ctx context.Context,
 	pipelineManagerArgs PipelineManagerArgs,
 	infraOptions provisioning.Options,
+	projectPath string,
 ) (bool, error) {
 	authType := PipelineAuthType(pipelineManagerArgs.PipelineAuthTypeName)
 

@@ -240,6 +240,11 @@ func createTerraformProvider(mockContext *mocks.MockContext) *TerraformProvider 
 			Subscription: func(_ context.Context, _ string) (subscriptionId string, err error) {
 				return "00000000-0000-0000-0000-000000000000", nil
 			},
+			EnsureSubscriptionLocation: func(ctx context.Context, env *environment.Environment) error {
+				env.SetSubscriptionId("00000000-0000-0000-0000-000000000000")
+				env.SetLocation("westus2")
+				return nil
+			},
 		},
 	)
 }

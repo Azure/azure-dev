@@ -250,7 +250,7 @@ func Test_CLI_ProjectIsNeeded(t *testing.T) {
 	}{
 		{command: "provision"},
 		{command: "deploy"},
-		{command: "up", errorToStdOut: true},
+		{command: "up"},
 		{command: "down"},
 		{command: "env get-values"},
 		{command: "env list"},
@@ -281,6 +281,53 @@ func Test_CLI_ProjectIsNeeded(t *testing.T) {
 			} else {
 				assert.Contains(t, result.Stderr, azdcontext.ErrNoProject.Error())
 			}
+		})
+	}
+}
+
+// Verifies commands that requires `azd provision` to be successfully run beforehand correctly errors out.
+func Test_CLI_ProvisionIsNeeded(t *testing.T) {
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
+	t.Logf("DIR: %s", dir)
+
+	envName := randomEnvName()
+	t.Logf("AZURE_ENV_NAME: %s", envName)
+
+	cli := azdcli.NewCLI(t)
+	cli.WorkingDirectory = dir
+	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
+
+	err := copySample(dir, "webapp")
+	require.NoError(t, err, "failed expanding sample")
+
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
+	require.NoError(t, err)
+
+	tests := []struct {
+		command       string
+		args          []string
+		errorToStdOut bool
+	}{
+		{command: "deploy"},
+		{command: "monitor"},
+		{command: "pipeline config"},
+	}
+
+	for _, tt := range tests {
+		test := tt
+		args := []string{"--cwd", dir}
+		args = append(args, strings.Split(test.command, " ")...)
+		if len(test.args) > 0 {
+			args = append(args, test.args...)
+		}
+
+		t.Run(test.command, func(t *testing.T) {
+			result, err := cli.RunCommand(ctx, args...)
+			assert.Error(t, err)
+			assert.Contains(t, result.Stdout, "azd provision")
 		})
 	}
 }

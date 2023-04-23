@@ -65,30 +65,33 @@ func main() {
 	// Don't write this message when JSON output is enabled, since in that case we use stderr to return structured
 	// information about command progress.
 	if !isJsonOutput() && ok {
-		curVersion, err := semver.Parse(internal.GetVersionNumber())
-		if err != nil {
-			log.Printf("failed to parse %s as a semver", internal.GetVersionNumber())
-		} else if curVersion.Equals(semver.MustParse("0.0.0-dev.0")) {
+		if internal.IsDevVersion() {
 			// This is a dev build (i.e. built using `go install without setting a version`) - don't print a warning in this
 			// case
 			log.Printf("eliding update message for dev build")
-		} else if latestVersion.GT(curVersion) {
+		} else if latestVersion.GT(internal.VersionInfo().Version) {
+			var upgradeUrl string
+			if runtime.GOOS == "windows" {
+				upgradeUrl = "https://aka.ms/azd/upgrade/windows"
+			} else if runtime.GOOS == "linux" {
+				upgradeUrl = "https://aka.ms/azd/upgrade/linux"
+			} else if runtime.GOOS == "darwin" {
+				upgradeUrl = "https://aka.ms/azd/upgrade/mac"
+			} else {
+				// Platform is not recognized, use the generic install link
+				upgradeUrl = "https://aka.ms/azd/upgrade"
+			}
+
 			fmt.Fprintln(
 				os.Stderr,
 				output.WithWarningFormat(
 					"warning: your version of azd is out of date, you have %s and the latest version is %s",
-					curVersion.String(), latestVersion.String()))
+					internal.VersionInfo().Version.String(), latestVersion.String()))
 			fmt.Fprintln(os.Stderr)
-			fmt.Fprintln(os.Stderr, output.WithWarningFormat(`To update to the latest version, run:`))
-
-			if runtime.GOOS == "windows" {
-				fmt.Fprintln(
-					os.Stderr,
-					output.WithWarningFormat(
-						`powershell -ex AllSigned -c "Invoke-RestMethod 'https://aka.ms/install-azd.ps1' | Invoke-Expression"`))
-			} else {
-				fmt.Fprintln(os.Stderr, output.WithWarningFormat(`curl -fsSL https://aka.ms/install-azd.sh | bash`))
-			}
+			fmt.Fprintln(
+				os.Stderr,
+				output.WithWarningFormat(`To update to the latest version, follow instructions at: %s`,
+					upgradeUrl))
 		}
 	}
 

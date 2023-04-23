@@ -1,0 +1,14 @@
+{
+    // If you set `AZD_DEBUG=true` in your environment, `azd` will pause early in start up and allow you to attach
+    // to it. Use the Attach to Process configuration and pick the corresponding `azd` process.
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "name": "Attach to Process",
+            "type": "go",
+            "request": "attach",
+            "mode": "local",
+            "processId": "${command:pickGoProcess}"
+        }
+    ]
+}

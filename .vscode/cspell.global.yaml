@@ -43,11 +43,13 @@ ignoreWords:
     - armcontainerregistry
     - azidentity
     - azsecrets
+    - beginswith
     - Bfor
     - bicepcli
     - cdne
     - cdnp
     - chooks
+    - cloudshell
     - commandrunner
     - configlist
     - conjunction
@@ -132,6 +134,7 @@ ignoreWords:
     - ssimp
     - stapp
     - startswith
+    - stringutil
     - stvm
     - syndp
     - synsp

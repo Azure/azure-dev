@@ -7,7 +7,7 @@ package events
 // Command event names follow the convention cmd.<command invocation path with spaces replaced by .>.
 //
 // Examples:
-//   - cmd.infra.create
+//   - cmd.auth.login
 //   - cmd.init
 //   - cmd.up
 const CommandEventPrefix = "cmd."

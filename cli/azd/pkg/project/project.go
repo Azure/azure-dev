@@ -7,11 +7,14 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/blang/semver/v4"
 	"golang.org/x/exp/slices"
 	"gopkg.in/yaml.v3"
 )
@@ -47,6 +50,21 @@ func Parse(ctx context.Context, yamlContent string) (*ProjectConfig, error) {
 	}
 
 	projectConfig.EventDispatcher = ext.NewEventDispatcher[ProjectLifecycleEventArgs]()
+
+	if projectConfig.RequiredVersions != nil && projectConfig.RequiredVersions.Azd != nil {
+		supportedRange, err := semver.ParseRange(*projectConfig.RequiredVersions.Azd)
+		if err != nil {
+			return nil, fmt.Errorf("%s is not a valid semver range (for requiredVersions.azd): %w",
+				*projectConfig.RequiredVersions.Azd, err)
+		}
+
+		if !internal.IsDevVersion() && !supportedRange(internal.VersionInfo().Version) {
+			return nil, fmt.Errorf("this project requires a version of azd within the range '%s', but you have '%s'. "+
+				"Visit https://aka.ms/azure-dev/install to install a supported version.",
+				*projectConfig.RequiredVersions.Azd,
+				internal.VersionInfo().Version.String())
+		}
+	}
 
 	for key, svc := range projectConfig.Services {
 		svc.Name = key
@@ -94,8 +112,16 @@ func Load(ctx context.Context, projectFilePath string) (*ProjectConfig, error) {
 		return nil, fmt.Errorf("parsing project file: %w", err)
 	}
 
-	if projectConfig.Metadata != nil {
-		telemetry.SetUsageAttributes(fields.StringHashed(fields.ProjectTemplateIdKey, projectConfig.Metadata.Template))
+	if projectConfig.Metadata != nil && projectConfig.Metadata.Template != "" {
+		template := strings.Split(projectConfig.Metadata.Template, "@")
+		if len(template) == 1 { // no version specifier, just the template ID
+			telemetry.SetUsageAttributes(fields.StringHashed(fields.ProjectTemplateIdKey, template[0]))
+		} else if len(template) == 2 { // templateID@version
+			telemetry.SetUsageAttributes(fields.StringHashed(fields.ProjectTemplateIdKey, template[0]))
+			telemetry.SetUsageAttributes(fields.StringHashed(fields.ProjectTemplateVersionKey, template[1]))
+		} else { // unknown format, just send the whole thing
+			telemetry.SetUsageAttributes(fields.StringHashed(fields.ProjectTemplateIdKey, projectConfig.Metadata.Template))
+		}
 	}
 
 	if projectConfig.Name != "" {

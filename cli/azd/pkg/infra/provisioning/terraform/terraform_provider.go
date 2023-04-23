@@ -92,7 +92,7 @@ func NewTerraformProvider(
 }
 
 func (t *TerraformProvider) EnsureConfigured(ctx context.Context) error {
-	if err := EnsureSubscriptionAndLocation(ctx, t.env, t.prompters); err != nil {
+	if err := t.prompters.EnsureSubscriptionLocation(ctx, t.env); err != nil {
 		return err
 	}
 
@@ -255,19 +255,14 @@ func (t *TerraformProvider) Destroy(
 				return
 			}
 
-			t.console.Message(ctx, "Destroying terraform deployment...")
-			err = asyncContext.Interact(func() error {
-				destroyArgs := t.createDestroyArgs(isRemoteBackendConfig, options.Force())
-				runResult, err := t.cli.Destroy(ctx, modulePath, destroyArgs...)
-				if err != nil {
-					return fmt.Errorf("template Deploy failed:%s , err :%w", runResult, err)
-				}
-
-				return nil
-			})
-
+			t.console.Message(ctx, "Deleting terraform deployment...")
+			// terraform doesn't use the `t.console`, we must ensure no spinner is running before calling Destroy
+			// as it could be an interactive operation if it needs confirmation
+			t.console.StopSpinner(ctx, "", input.Step)
+			destroyArgs := t.createDestroyArgs(isRemoteBackendConfig, options.Force())
+			runResult, err := t.cli.Destroy(ctx, modulePath, destroyArgs...)
 			if err != nil {
-				asyncContext.SetError(err)
+				asyncContext.SetError(fmt.Errorf("template Deploy failed: %s, err: %w", runResult, err))
 				return
 			}
 

@@ -63,6 +63,17 @@ func TestBicepOutputsWithDoubleUnderscoresAreConverted(t *testing.T) {
 
 func Test_DotNetProject_Restore(t *testing.T) {
 	var runArgs exec.RunArgs
+	ostest.Chdir(t, t.TempDir())
+	err := os.MkdirAll("./src/api", osutil.PermissionDirectory)
+	require.NoError(t, err)
+	file, err := os.Create("./src/api/test.csproj")
+	require.NoError(t, err)
+	require.NoError(t, file.Close())
+
+	// add another *proj file to test multiple project files condition
+	file2, err := os.Create("./src/api/test2.vbproj")
+	require.NoError(t, err)
+	require.NoError(t, file2.Close())
 
 	mockContext := mocks.NewMockContext(context.Background())
 	mockContext.CommandRunner.
@@ -76,7 +87,7 @@ func Test_DotNetProject_Restore(t *testing.T) {
 
 	env := environment.Ephemeral()
 	dotNetCli := dotnet.NewDotNetCli(mockContext.CommandRunner)
-	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageCsharp)
+	serviceConfig := createTestServiceConfig("./src/api/test.csproj", AppServiceTarget, ServiceLanguageCsharp)
 
 	dotnetProject := NewDotNetProject(dotNetCli, env)
 	restoreTask := dotnetProject.Restore(*mockContext.Context, serviceConfig)
@@ -97,6 +108,12 @@ func Test_DotNetProject_Build(t *testing.T) {
 	ostest.Chdir(t, tempDir)
 
 	var runArgs exec.RunArgs
+	err := os.MkdirAll("./src/api", osutil.PermissionDirectory)
+	require.NoError(t, err)
+	// add only one project file to test only project file condition
+	file, err := os.Create("./src/api/test.csproj")
+	require.NoError(t, err)
+	require.NoError(t, file.Close())
 
 	mockContext := mocks.NewMockContext(context.Background())
 	mockContext.CommandRunner.
@@ -113,7 +130,7 @@ func Test_DotNetProject_Build(t *testing.T) {
 	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageCsharp)
 
 	buildOutputDir := filepath.Join(serviceConfig.Path(), "bin", "Release", "net6.0")
-	err := os.MkdirAll(buildOutputDir, osutil.PermissionDirectory)
+	err = os.MkdirAll(buildOutputDir, osutil.PermissionDirectory)
 	require.NoError(t, err)
 
 	dotnetProject := NewDotNetProject(dotNetCli, env)
@@ -125,7 +142,7 @@ func Test_DotNetProject_Build(t *testing.T) {
 	require.NotNil(t, result)
 	require.Equal(t, "dotnet", runArgs.Cmd)
 	require.Equal(t,
-		[]string{"build", serviceConfig.RelativePath, "-c", "Release"},
+		[]string{"build", filepath.Join(serviceConfig.RelativePath, "test.csproj"), "-c", "Release"},
 		runArgs.Args,
 	)
 }
@@ -133,9 +150,32 @@ func Test_DotNetProject_Build(t *testing.T) {
 func Test_DotNetProject_Package(t *testing.T) {
 	var runArgs exec.RunArgs
 
+	tempDir := t.TempDir()
+	ostest.Chdir(t, tempDir)
+	err := os.MkdirAll("./src/api", osutil.PermissionDirectory)
+	require.NoError(t, err)
+	file, err := os.Create("./src/api/test.csproj")
+	require.NoError(t, err)
+	require.NoError(t, file.Close())
+
+	// add another two *proj files to test multiple project files condition
+	file2, err := os.Create("./src/api/test2.vbproj")
+	require.NoError(t, err)
+	require.NoError(t, file2.Close())
+
+	file3, err := os.Create("./src/api/test3.csproj")
+	require.NoError(t, err)
+	require.NoError(t, file3.Close())
+
+	var packageDest string
+
 	mockContext := mocks.NewMockContext(context.Background())
 	mockContext.CommandRunner.
 		When(func(args exec.RunArgs, command string) bool {
+			packageDest = args.Args[5]
+			err := os.WriteFile(filepath.Join(packageDest, "test.txt"), nil, osutil.PermissionFile)
+			require.NoError(t, err)
+
 			return strings.Contains(command, "dotnet publish")
 		}).
 		RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
@@ -145,7 +185,7 @@ func Test_DotNetProject_Package(t *testing.T) {
 
 	env := environment.Ephemeral()
 	dotNetCli := dotnet.NewDotNetCli(mockContext.CommandRunner)
-	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageCsharp)
+	serviceConfig := createTestServiceConfig("./src/api/test3.csproj", AppServiceTarget, ServiceLanguageCsharp)
 
 	dotnetProject := NewDotNetProject(dotNetCli, env)
 	packageTask := dotnetProject.Package(
@@ -163,7 +203,13 @@ func Test_DotNetProject_Package(t *testing.T) {
 	require.NotEmpty(t, result.PackagePath)
 	require.Equal(t, "dotnet", runArgs.Cmd)
 	require.Equal(t,
-		[]string{"publish", serviceConfig.RelativePath, "-c", "Release", "--output"},
-		runArgs.Args[:5],
+		[]string{"publish",
+			serviceConfig.RelativePath,
+			"-c",
+			"Release",
+			"--output",
+			packageDest,
+		},
+		runArgs.Args,
 	)
 }

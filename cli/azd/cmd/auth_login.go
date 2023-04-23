@@ -45,7 +45,6 @@ type loginFlags struct {
 	clientID               string
 	clientSecret           stringPtr
 	clientCertificate      string
-	federatedToken         stringPtr
 	federatedTokenProvider string
 	redirectPort           int
 	global                 *internal.GlobalCommandOptions
@@ -77,7 +76,6 @@ func (p *stringPtr) Type() string {
 const (
 	cClientSecretFlagName                = "client-secret"
 	cClientCertificateFlagName           = "client-certificate"
-	cFederatedCredentialFlagName         = "federated-credential"
 	cFederatedCredentialProviderFlagName = "federated-credential-provider"
 )
 
@@ -103,11 +101,6 @@ func (lf *loginFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 		cClientCertificateFlagName,
 		"",
 		"The path to the client certificate for the service principal to authenticate with.")
-	local.Var(
-		&lf.federatedToken,
-		cFederatedCredentialFlagName,
-		"The federated token for the service principal to authenticate with. "+
-			"Set to the empty string to read the value from the console.")
 	local.StringVar(
 		&lf.federatedTokenProvider,
 		cFederatedCredentialProviderFlagName,
@@ -145,7 +138,7 @@ func newLoginCmd(parent string) *cobra.Command {
 		--use-device-code.
 		
 		To log in as a service principal, pass --client-id and --tenant-id as well as one of: --client-secret, 
-		--client-certificate, --federated-credential, or --federated-credential-provider.
+		--client-certificate, or --federated-credential-provider.
 		`),
 		Annotations: map[string]string{
 			loginCmdParentAnnotation: parent,
@@ -207,10 +200,11 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if la.annotations[loginCmdParentAnnotation] == "" {
 		fmt.Fprintln(
 			la.console.Handles().Stderr,
-			//nolint:lll
 			output.WithWarningFormat(
-				"WARNING: `azd login` has been deprecated and will be removed in a future release. Please use `azd auth login` instead."),
-		)
+				"WARNING: `azd login` is deprecated and will be removed in a future release."))
+		fmt.Fprintln(
+			la.console.Handles().Stderr,
+			"Next time use `azd auth login`.")
 	}
 
 	if !la.flags.onlyCheckStatus {
@@ -307,14 +301,12 @@ func (la *loginAction) login(ctx context.Context) error {
 		if countTrue(
 			la.flags.clientSecret.ptr != nil,
 			la.flags.clientCertificate != "",
-			la.flags.federatedToken.ptr != nil,
 			la.flags.federatedTokenProvider != "",
 		) != 1 {
 			return fmt.Errorf(
 				"must set exactly one of %s for service principal", strings.Join([]string{
 					cClientSecretFlagName,
 					cClientCertificateFlagName,
-					cFederatedCredentialFlagName,
 					cFederatedCredentialProviderFlagName,
 				}, ", "))
 		}
@@ -350,22 +342,6 @@ func (la *loginAction) login(ctx context.Context) error {
 
 			if _, err := la.authManager.LoginWithServicePrincipalCertificate(
 				ctx, la.flags.tenantID, la.flags.clientID, cert,
-			); err != nil {
-				return fmt.Errorf("logging in: %w", err)
-			}
-		case la.flags.federatedToken.ptr != nil:
-			if *la.flags.federatedToken.ptr == "" {
-				v, err := la.console.Prompt(ctx, input.ConsoleOptions{
-					Message: "Enter your federated token",
-				})
-				if err != nil {
-					return fmt.Errorf("prompting for federated token: %w", err)
-				}
-				la.flags.federatedToken.ptr = &v
-			}
-
-			if _, err := la.authManager.LoginWithServicePrincipalFederatedToken(
-				ctx, la.flags.tenantID, la.flags.clientID, *la.flags.federatedToken.ptr,
 			); err != nil {
 				return fmt.Errorf("logging in: %w", err)
 			}

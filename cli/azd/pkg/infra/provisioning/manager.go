@@ -16,7 +16,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/spin"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
@@ -47,10 +46,6 @@ func (m *Manager) Plan(ctx context.Context) (*DeploymentPlan, error) {
 
 // Gets the latest deployment details for the specified scope
 func (m *Manager) State(ctx context.Context, scope infra.Scope) (*StateResult, error) {
-	if err := m.provider.EnsureConfigured(ctx); err != nil {
-		return nil, err
-	}
-
 	var stateResult *StateResult
 
 	err := m.runAction(
@@ -125,10 +120,6 @@ func (m *Manager) Destroy(ctx context.Context, deployment *Deployment, options D
 
 // Plans the infrastructure provisioning and orchestrates interactive terminal operations
 func (m *Manager) plan(ctx context.Context) (*DeploymentPlan, error) {
-	if err := m.provider.EnsureConfigured(ctx); err != nil {
-		return nil, err
-	}
-
 	planningTask := m.provider.Plan(ctx)
 	go func() {
 		for progress := range planningTask.Progress() {
@@ -150,10 +141,6 @@ func (m *Manager) deploy(
 	plan *DeploymentPlan,
 	scope infra.Scope,
 ) (*DeployResult, error) {
-	if err := m.provider.EnsureConfigured(ctx); err != nil {
-		return nil, err
-	}
-
 	deployTask := m.provider.Deploy(ctx, plan, scope)
 
 	go func() {
@@ -175,44 +162,22 @@ func (m *Manager) deploy(
 
 // Destroys the specified infrastructure provisioning and orchestrates the interactive terminal operations
 func (m *Manager) destroy(ctx context.Context, deployment *Deployment, options DestroyOptions) (*DestroyResult, error) {
-	if err := m.provider.EnsureConfigured(ctx); err != nil {
-		return nil, err
-	}
-
 	var destroyResult *DestroyResult
 
-	err := m.runAction(
-		ctx,
-		"Destroying Azure resources",
-		m.interactive,
-		func(ctx context.Context, spinner *spin.Spinner) error {
-			destroyTask := m.provider.Destroy(ctx, deployment, options)
+	destroyTask := m.provider.Destroy(ctx, deployment, options)
 
-			go func() {
-				for progress := range destroyTask.Progress() {
-					m.updateSpinnerTitle(spinner, progress.Message)
-				}
-			}()
+	go func() {
+		for progress := range destroyTask.Progress() {
+			log.Println(progress.Message)
+		}
+	}()
 
-			go m.monitorInteraction(spinner, destroyTask.Interactive())
-
-			result, err := destroyTask.Await()
-			if err != nil {
-				return err
-			}
-
-			destroyResult = result
-
-			return nil
-		},
-	)
-
+	result, err := destroyTask.Await()
 	if err != nil {
-		return nil, fmt.Errorf("error destroying Azure resources: %w", err)
+		return nil, fmt.Errorf("error deleting Azure resources: %w", err)
 	}
 
-	m.console.Message(ctx, output.WithSuccessFormat("\nDestroyed Azure resources"))
-
+	destroyResult = result
 	return destroyResult, nil
 }
 
@@ -294,8 +259,9 @@ func NewManager(
 	}
 
 	prompters := Prompters{
-		Location:     m.promptLocation,
-		Subscription: m.promptSubscription,
+		Location:                   m.promptLocation,
+		Subscription:               m.promptSubscription,
+		EnsureSubscriptionLocation: m.ensureSubscriptionLocation,
 	}
 
 	infraProvider, err := NewProvider(
@@ -320,39 +286,15 @@ func NewManager(
 	}
 
 	m.provider = infraProvider
+	if err := m.provider.EnsureConfigured(ctx); err != nil {
+		return nil, err
+	}
 
 	return m, nil
 }
 
 func (m *Manager) promptSubscription(ctx context.Context, msg string) (subscriptionId string, err error) {
-	subscriptionOptions, defaultSubscription, err := getSubscriptionOptions(ctx, m.accountManager)
-	if err != nil {
-		return "", err
-	}
-
-	for subscriptionId == "" {
-		subscriptionSelectionIndex, err := m.console.Select(ctx, input.ConsoleOptions{
-			Message:      msg,
-			Options:      subscriptionOptions,
-			DefaultValue: defaultSubscription,
-		})
-
-		if err != nil {
-			return "", fmt.Errorf("reading subscription id: %w", err)
-		}
-
-		subscriptionSelection := subscriptionOptions[subscriptionSelectionIndex]
-		subscriptionId = subscriptionSelection[len(subscriptionSelection)-
-			len("(00000000-0000-0000-0000-000000000000)")+1 : len(subscriptionSelection)-1]
-	}
-
-	if !m.accountManager.HasDefaultSubscription() {
-		if _, err := m.accountManager.SetDefaultSubscription(ctx, m.env.GetSubscriptionId()); err != nil {
-			log.Printf("failed setting default subscription. %s\n", err.Error())
-		}
-	}
-
-	return subscriptionId, nil
+	return promptSubscription(ctx, msg, m.console, m.env, m.accountManager)
 }
 
 func (m *Manager) promptLocation(
@@ -361,18 +303,11 @@ func (m *Manager) promptLocation(
 	msg string,
 	filter func(loc account.Location) bool,
 ) (string, error) {
-	loc, err := azureutil.PromptLocationWithFilter(ctx, subId, msg, "", m.console, m.accountManager, filter)
-	if err != nil {
-		return "", err
-	}
+	return promptLocation(ctx, subId, msg, filter, m.console, m.env, m.accountManager)
+}
 
-	if !m.accountManager.HasDefaultLocation() {
-		if _, err := m.accountManager.SetDefaultLocation(ctx, m.env.GetSubscriptionId(), m.env.GetLocation()); err != nil {
-			log.Printf("failed setting default location. %s\n", err.Error())
-		}
-	}
-
-	return loc, nil
+func (m *Manager) ensureSubscriptionLocation(ctx context.Context, env *environment.Environment) error {
+	return EnsureSubscriptionAndLocation(ctx, m.console, m.env, m.accountManager)
 }
 
 type CurrentPrincipalIdProvider interface {

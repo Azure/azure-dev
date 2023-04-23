@@ -33,6 +33,8 @@ const (
 	AzureResourceTypeContainerRegistry       AzureResourceType = "Microsoft.ContainerRegistry/registries"
 	AzureResourceTypeManagedCluster          AzureResourceType = "Microsoft.ContainerService/managedClusters"
 	AzureResourceTypeAgentPool               AzureResourceType = "Microsoft.ContainerService/managedClusters/agentPools"
+	AzureResourceTypeCognitiveServiceAccount AzureResourceType = "Microsoft.CognitiveServices/accounts"
+	AzureResourceTypeSearchService           AzureResourceType = "Microsoft.Search/searchServices"
 )
 
 const resourceLevelSeparator = "/"
@@ -88,6 +90,10 @@ func GetResourceTypeDisplayName(resourceType AzureResourceType) string {
 		return "AKS Managed Cluster"
 	case AzureResourceTypeAgentPool:
 		return "AKS Agent Pool"
+	case AzureResourceTypeCognitiveServiceAccount:
+		return "Cognitive Service"
+	case AzureResourceTypeSearchService:
+		return "Search service"
 	}
 
 	return ""

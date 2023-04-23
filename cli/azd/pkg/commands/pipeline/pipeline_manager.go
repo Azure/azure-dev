@@ -99,7 +99,7 @@ func (i *PipelineManager) requiredTools(ctx context.Context) ([]tools.ExternalTo
 // preConfigureCheck invoke the validations from each provider.
 // the returned configurationWasUpdated indicates if the current settings were updated during the check,
 // for example, if Azdo prompt for a PAT or OrgName to the user and updated.
-func (i *PipelineManager) preConfigureCheck(ctx context.Context, infraOptions provisioning.Options) (
+func (i *PipelineManager) preConfigureCheck(ctx context.Context, infraOptions provisioning.Options, projectPath string) (
 	configurationWasUpdated bool,
 	err error) {
 	// Validate the authentication types
@@ -115,13 +115,13 @@ func (i *PipelineManager) preConfigureCheck(ctx context.Context, infraOptions pr
 	}
 
 	ciConfigurationWasUpdated, err := i.CiProvider.preConfigureCheck(
-		ctx, i.PipelineManagerArgs, infraOptions)
+		ctx, i.PipelineManagerArgs, infraOptions, projectPath)
 	if err != nil {
 		return configurationWasUpdated, fmt.Errorf("pre-config check error from %s provider: %w", i.CiProvider.name(), err)
 	}
 
 	scmConfigurationWasUpdated, err := i.ScmProvider.preConfigureCheck(
-		ctx, i.PipelineManagerArgs, infraOptions)
+		ctx, i.PipelineManagerArgs, infraOptions, projectPath)
 	if err != nil {
 		return configurationWasUpdated, fmt.Errorf("pre-config check error from %s provider: %w", i.ScmProvider.name(), err)
 	}
@@ -287,14 +287,16 @@ func (manager *PipelineManager) Configure(ctx context.Context) (
 	}
 
 	// Figure out what is the expected provider to use for provisioning
-	prj, err := project.Load(ctx, manager.AzdCtx.ProjectPath())
+	projectPath := manager.AzdCtx.ProjectPath()
+	prj, err := project.Load(ctx, projectPath)
 	if err != nil {
 		return result, fmt.Errorf("finding provisioning provider: %w", err)
 	}
 
 	// run pre-config validations. manager will check az cli is logged in and
 	// will invoke the per-provider validations.
-	updatedConfig, errorsFromPreConfig := manager.preConfigureCheck(ctx, prj.Infra)
+	rootPath := manager.AzdCtx.ProjectDirectory()
+	updatedConfig, errorsFromPreConfig := manager.preConfigureCheck(ctx, prj.Infra, rootPath)
 	if errorsFromPreConfig != nil {
 		return result, errorsFromPreConfig
 	}

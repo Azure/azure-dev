@@ -40,7 +40,7 @@ func (dbr *dockerBuildResult) ToString(currentIndentation string) string {
 }
 
 func (dbr *dockerBuildResult) MarshalJSON() ([]byte, error) {
-	return json.Marshal(dbr)
+	return json.Marshal(*dbr)
 }
 
 type dockerPackageResult struct {
@@ -58,7 +58,7 @@ func (dpr *dockerPackageResult) ToString(currentIndentation string) string {
 }
 
 func (dpr *dockerPackageResult) MarshalJSON() ([]byte, error) {
-	return json.Marshal(dpr)
+	return json.Marshal(*dpr)
 }
 
 type dockerProject struct {
@@ -135,7 +135,11 @@ func (p *dockerProject) Build(
 				dockerOptions.Context,
 			)
 
-			imageName := fmt.Sprintf("%s-%s", serviceConfig.Project.Name, serviceConfig.Name)
+			imageName := fmt.Sprintf(
+				"%s-%s",
+				strings.ToLower(serviceConfig.Project.Name),
+				strings.ToLower(serviceConfig.Name),
+			)
 
 			// Build the container
 			task.SetProgress(NewServiceProgress("Building docker image"))

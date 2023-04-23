@@ -53,8 +53,8 @@ behalf.
 
 ## Debugging
 
-In VS Code you can create a launch.json that runs the tool with a specified set of arguments and in a specific folder, for
-example:
+In VS Code you can add a configuration to launch.json that runs the tool with a specified set of arguments and in a specific 
+folder, for example:
 
 ```json
 {
@@ -69,6 +69,10 @@ example:
     "cwd": "${workspaceFolder}"
 },
 ```
+
+You can also set `AZD_DEBUG=true` in your environment. If this environment variaible is set, `azd` will pause early in its
+startup process and allow you to attach to it. The checked in `launch.json` already has a configuration for this mode called
+"Attach To Process".
 
 ## Testing
 

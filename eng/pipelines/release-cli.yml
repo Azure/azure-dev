@@ -39,6 +39,9 @@ stages:
               BuildOutputName: azd.exe
               BuildTestMsi: true
               AZURE_DEV_CI_OS: win
+              Codeql.Enabled: true
+              Codeql.SkipTaskAutoInjection: false
+              Codeql.BuildIdentifier: cli_windows
             Linux:
               Pool: azsdk-pool-mms-ubuntu-2004-general
               OSVmImage:  MMSUbuntu20.04
@@ -49,6 +52,9 @@ stages:
               GenerateCoverage: true
               BuildLinuxPackages: true
               AZURE_DEV_CI_OS: lin
+              Codeql.Enabled: true
+              Codeql.SkipTaskAutoInjection: false
+              Codeql.BuildIdentifier: cli_linux
             Mac:
               Pool: Azure Pipelines
               OSVmImage: macOS-11
@@ -57,6 +63,8 @@ stages:
               MacLocalSign: false
               SetExecutableBit: true
               AZURE_DEV_CI_OS: mac
+              # CodeQL on macOS not supported by the Azure DevOps task as-of current.
+              # Codeql.BuildIdentifier: cli_darwin
         pool:
             name: $(Pool)
             vmImage: $(OSVmImage)

@@ -43,7 +43,7 @@ if ($IsWindows) {
     Write-Host "go build (windows)"
     go build `
         -buildmode=exe `
-        -tags="cfi,cfg,osusergo,netgo" `
+        -tags="cfi,cfg,osusergo" `
         -trimpath `
         -gcflags="-trimpath" `
         -asmflags="-trimpath" `
@@ -53,7 +53,7 @@ elseif ($IsLinux) {
     Write-Host "go build (linux)"
     go build `
         -buildmode=pie `
-        -tags="cfi,cfg,cfgo,osusergo,netgo" `
+        -tags="cfi,cfg,cfgo,osusergo" `
         -gcflags="-trimpath" `
         -asmflags="-trimpath" `
         -ldflags="-s -w -X 'github.com/azure/azure-dev/cli/azd/internal.Version=$Version (commit $SourceVersion)' -extldflags=-Wl,--high-entropy-va"
@@ -62,7 +62,7 @@ elseif ($IsMacOS) {
     Write-Host "go build (macos)"
     go build `
         -buildmode=pie `
-        -tags="cfi,cfg,cfgo,osusergo,netgo" `
+        -tags="cfi,cfg,cfgo,osusergo" `
         -gcflags="-trimpath" `
         -asmflags="-trimpath" `
         -ldflags="-s -w -X 'github.com/azure/azure-dev/cli/azd/internal.Version=$Version (commit $SourceVersion)' -linkmode=auto"

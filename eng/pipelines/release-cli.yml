@@ -161,8 +161,17 @@ stages:
           - pwsh: |
               New-Item -ItemType Directory -Force -Path ./cover-$(AZURE_DEV_CI_OS) | Out-Null
 
+              Write-Host "Integration test coverage"
+              go tool covdata percent -i="./cover-$(AZURE_DEV_CI_OS)-int"
+
+              Write-Host "Unit test coverage"
+              go tool covdata percent -i="./cover-$(AZURE_DEV_CI_OS)-unit"
+
               $coverage = (Get-ChildItem -Directory cover*).Name -join ","
               go tool covdata merge -i="$coverage" -o ./cover-$(AZURE_DEV_CI_OS)
+
+              Write-Host "Combined coverage"
+              go tool covdata percent -i="./cover-$(AZURE_DEV_CI_OS)"
             displayName: Merge code coverage files
             workingDirectory: cli/azd
 

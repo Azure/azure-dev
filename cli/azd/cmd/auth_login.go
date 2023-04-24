@@ -18,6 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/spf13/cobra"
@@ -41,6 +42,7 @@ func newAuthLoginFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions
 type loginFlags struct {
 	onlyCheckStatus        bool
 	useDeviceCode          bool
+	skipRemoteDetection    bool
 	tenantID               string
 	clientID               string
 	clientSecret           stringPtr
@@ -84,11 +86,14 @@ func (lf *loginFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 	local.BoolVar(
 		&lf.useDeviceCode,
 		"use-device-code",
-		// For Codespaces in VSCode Browser, interactive browser login will 404 when attempting to redirect to localhost
-		// (since azd cannot launch a localhost server when running remotely).
-		// Hence, we default to device-code. See https://github.com/Azure/azure-dev/issues/1006
-		os.Getenv("CODESPACES") == "true",
+		false,
 		"When true, log in by using a device code instead of a browser.",
+	)
+	local.BoolVar(
+		&lf.skipRemoteDetection,
+		"skip-remote-override",
+		false,
+		"When true, azd will not override login method with device code when running remote, like in Codespaces.",
 	)
 	local.StringVar(&lf.clientID, "client-id", "", "The client id for the service principal to authenticate with.")
 	local.Var(
@@ -154,6 +159,7 @@ type loginAction struct {
 	accountSubManager *account.SubscriptionsManager
 	flags             *loginFlags
 	annotations       CmdAnnotations
+	commandRunner     exec.CommandRunner
 }
 
 func newAuthLoginAction(
@@ -164,6 +170,7 @@ func newAuthLoginAction(
 	flags *authLoginFlags,
 	console input.Console,
 	annotations CmdAnnotations,
+	commandRunner exec.CommandRunner,
 ) actions.Action {
 	return &loginAction{
 		formatter:         formatter,
@@ -173,6 +180,7 @@ func newAuthLoginAction(
 		accountSubManager: accountSubManager,
 		flags:             &flags.loginFlags,
 		annotations:       annotations,
+		commandRunner:     commandRunner,
 	}
 }
 
@@ -292,6 +300,27 @@ func countTrue(elms ...bool) int {
 	return i
 }
 
+// runningOnCodespacesBrowser use `code --status` which returns:
+//
+//	> The --status argument is not yet supported in browsers.
+//
+// to detect when vscode is within a WebBrowser environment.
+func runningOnCodespacesBrowser(ctx context.Context, commandRunner exec.CommandRunner) bool {
+	runArgs := exec.NewRunArgs("code", "--status")
+	result, err := commandRunner.Run(ctx, runArgs)
+	if err != nil {
+		// An error here means VSCode is not installed or found, or something else.
+		// At any case, we know VSCode is not within a webBrowser
+		return false
+	}
+
+	if strings.Contains(result.Stdout, "The --status argument is not yet supported in browsers") {
+		return true
+	}
+
+	return false
+}
+
 func (la *loginAction) login(ctx context.Context) error {
 	if la.flags.clientID != "" {
 		if la.flags.tenantID == "" {
@@ -354,6 +383,14 @@ func (la *loginAction) login(ctx context.Context) error {
 		}
 
 		return nil
+	}
+
+	// For VSCode online (in web Browser), like GitHub Codespaces or VSCode online attached to any server,
+	// interactive browser login will 404 when attempting to redirect to localhost
+	// (since azd launches a localhost server running remotely and the login response is accepted locally).
+	// Hence, we override login to device-code. See https://github.com/Azure/azure-dev/issues/1006
+	if !la.flags.useDeviceCode && !la.flags.skipRemoteDetection {
+		la.flags.useDeviceCode = runningOnCodespacesBrowser(ctx, la.commandRunner)
 	}
 
 	if la.flags.useDeviceCode {

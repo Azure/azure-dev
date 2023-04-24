@@ -3,7 +3,7 @@
 If behind a proxy server, `HTTP_PROXY` and `HTTPS_PROXY` and environment variables can be configured which will set the proxy that `azd` will use for all http/https requests.
 
 The following examples illustrate using [Telerik Fiddler](https://www.telerik.com/fiddler) as a local proxy server.
-After setting the below environment variables you will start seeing requests within the fiddler trace output. 
+After setting the below environment variables, you will start seeing requests within the fiddler trace output. 
 An example `PROXY_ADDRESS` for fiddler would look like `127.0.0.1:8888`
 
 Setting the environment variables to invalid values will result in various HTTP related error messages when running `azd` commands.

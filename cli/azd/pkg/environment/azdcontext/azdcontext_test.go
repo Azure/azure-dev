@@ -12,7 +12,7 @@ func TestAzdContext_ListEnvironments(t *testing.T) {
 	tests := []struct {
 		name                string
 		setupEnv            []string
-		defaultEnv          string
+		setupDefaultEnv     string
 		expectedWithRelPath []contracts.EnvListEnvironment
 		expectedErr         error
 	}{
@@ -98,10 +98,10 @@ func TestAzdContext_ListEnvironments(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			temp := t.TempDir()
 			azdCtx := NewAzdContextWithDirectory(temp)
-			if tt.defaultEnv != "" {
+			if tt.setupDefaultEnv != "" {
 				config := configFile{
 					Version:            ConfigFileVersion,
-					DefaultEnvironment: tt.defaultEnv,
+					DefaultEnvironment: tt.setupDefaultEnv,
 				}
 				path := filepath.Join(temp, EnvironmentDirectoryName, ConfigFileName)
 				err := writeConfig(path, config)

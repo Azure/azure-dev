@@ -77,6 +77,8 @@ func (c *AzdContext) ListEnvironments() ([]contracts.EnvListEnvironment, error) 
 		return nil, fmt.Errorf("listing entries: %w", err)
 	}
 
+	// prefer empty array over `nil` since this is a contracted return value,
+	// where empty array is preferred for "NotFound" semantics.
 	envs := []contracts.EnvListEnvironment{}
 	for _, ent := range ents {
 		if ent.IsDir() {

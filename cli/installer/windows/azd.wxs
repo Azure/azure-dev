@@ -50,6 +50,7 @@
             <!-- @Guid will be automatically and durably assigned based on key path -->
             <Component Directory="INSTALLDIR">
                 <File Name="azd.exe"/>
+                <RemoveFile Id="InstalledByFile" Name=".installed-by.txt" On="uninstall"/>
 
                 <!--
                     Attempt to clean up the downloaded files for the current user.
@@ -87,5 +88,9 @@
 
         <!-- Set the BinFolder property to use for cleaning up downloaded files -->
         <SetProperty Id="BinFolder" Value="[%USERPROFILE]\.azd\bin" After="CostFinalize" Sequence="execute"/>
+
+        <!-- Use a custom action to write the bootstrapper installing this package -->
+        <CustomActionRef Id="WriteInstalledByFile" />
+        <WixVariable Id="InstalledByFile" Value="[INSTALLDIR].installed-by.txt" />
     </Product>
 </Wix>

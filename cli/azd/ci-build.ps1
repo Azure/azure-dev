@@ -69,8 +69,7 @@ if ($CodeCoverageEnabled) {
 # cfi: Enable Control Flow Integrity (CFI),
 # cfg: Enable Control Flow Guard (CFG),
 # osusergo: Optimize for OS user accounts
-# netgo: Optimize for network I/O performance
-$tagsFlag = "-tags=cfi,cfg,osusergo,netgo"
+$tagsFlag = "-tags=cfi,cfg,osusergo"
 
 # ld linker flags
 # -s: Omit symbol table and debug information

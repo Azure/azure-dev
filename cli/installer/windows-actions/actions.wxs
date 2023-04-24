@@ -1,0 +1,31 @@
+<?xml version="1.0"?>
+<Wix xmlns="http://schemas.microsoft.com/wix/2006/wi">
+  <Fragment>
+    <!-- Set up the custom action to include useful diagnostics. -->
+    <Binary Id="Actions" SourceFile="$(sys.SOURCEFILEDIR)\actions.dll" />
+    <CustomAction Id="WriteInstalledByFile" BinaryKey="Actions" DllEntry="WriteTextFile" Execute="deferred" />
+    <InstallExecuteSequence>
+      <Custom Action="WriteInstalledByFile" After="InstallFiles">
+        <![CDATA[NOT Installed AND INSTALLEDBY]]>
+      </Custom>
+    </InstallExecuteSequence>
+    <UI>
+      <!-- Fields: 1: Error ID, 2: HRESULT, ...: custom arguments -->
+      <Error Id="25000"><![CDATA[CustomActionData not defined]]></Error>
+      <Error Id="25001"><![CDATA[CustomActionData invalid; expected [3] columns, found [4]]]></Error>
+      <Error Id="25002"><![CDATA[Failed to write file [3]: [2]]]></Error>
+      <ProgressText Action="WriteInstalledByFile" Template="File: [1], Content: [2]" />
+    </UI>
+    
+    <!-- This property must be uppercase and marked secure to cross from client to server. -->
+    <Property Id="INSTALLEDBY" Value="MSI" Secure="yes" />
+    
+    <!-- Tab-delimited information for deferred custom action. -->
+    <SetProperty Id="WriteInstalledByFile" Before="WriteInstalledByFile" Sequence="execute" Value="!(wix.InstalledByFile)&#9;[INSTALLEDBY]">
+      <![CDATA[NOT Installed AND INSTALLEDBY]]>
+    </SetProperty>
+    
+    <!-- Product packages need to set this to the path of the file to write. -->
+    <WixVariable Id="InstalledByFile" Value="**undefined**" Overridable="yes" />
+  </Fragment>
+</Wix>

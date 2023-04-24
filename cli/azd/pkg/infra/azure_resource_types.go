@@ -94,6 +94,8 @@ func GetResourceTypeDisplayName(resourceType AzureResourceType) string {
 		return "Cognitive Service"
 	case AzureResourceTypeSearchService:
 		return "Search service"
+	case AzureResourceTypeSpringApp:
+		return "Spring App"
 	}
 
 	return ""

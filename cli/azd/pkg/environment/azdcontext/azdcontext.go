@@ -70,11 +70,14 @@ func (c *AzdContext) ListEnvironments() ([]contracts.EnvListEnvironment, error) 
 	}
 
 	ents, err := os.ReadDir(c.EnvironmentDirectory())
+	if errors.Is(err, os.ErrNotExist) {
+		return []contracts.EnvListEnvironment{}, nil
+	}
 	if err != nil {
 		return nil, fmt.Errorf("listing entries: %w", err)
 	}
 
-	var envs []contracts.EnvListEnvironment
+	envs := []contracts.EnvListEnvironment{}
 	for _, ent := range ents {
 		if ent.IsDir() {
 			ev := contracts.EnvListEnvironment{
@@ -114,41 +117,18 @@ func (c *AzdContext) GetDefaultEnvironmentName() (string, error) {
 
 func (c *AzdContext) SetDefaultEnvironmentName(name string) error {
 	path := filepath.Join(c.EnvironmentDirectory(), ConfigFileName)
-	bytes, err := json.Marshal(configFile{
+	config := configFile{
 		Version:            ConfigFileVersion,
 		DefaultEnvironment: name,
-	})
-	if err != nil {
-		return fmt.Errorf("serializing config file: %w", err)
 	}
 
-	if err := os.MkdirAll(c.EnvironmentDirectory(), osutil.PermissionDirectory); err != nil {
-		return fmt.Errorf("creating environment root: %w", err)
-	}
-
-	if err := os.WriteFile(path, bytes, osutil.PermissionFile); err != nil {
-		return fmt.Errorf("writing config file: %w", err)
-	}
-
-	return nil
+	return writeConfig(path, config)
 }
 
 var ErrEnvironmentExists = errors.New("environment already exists")
 
 func (c *AzdContext) NewEnvironment(name string) error {
-	if err := os.MkdirAll(c.EnvironmentDirectory(), osutil.PermissionDirectory); err != nil {
-		return fmt.Errorf("creating environment root: %w", err)
-	}
-
-	if err := os.Mkdir(filepath.Join(c.EnvironmentDirectory(), name), osutil.PermissionDirectory); err != nil {
-		if errors.Is(err, os.ErrExist) {
-			return ErrEnvironmentExists
-		}
-
-		return fmt.Errorf("creating environment directory: %w", err)
-	}
-
-	return nil
+	return createEnvironment(c.EnvironmentDirectory(), name)
 }
 
 // Creates context with project directory set to the desired directory.
@@ -205,4 +185,37 @@ func NewAzdContext() (*AzdContext, error) {
 type configFile struct {
 	Version            int    `json:"version"`
 	DefaultEnvironment string `json:"defaultEnvironment"`
+}
+
+func createEnvironment(dir string, name string) error {
+	if err := os.MkdirAll(dir, osutil.PermissionDirectory); err != nil {
+		return fmt.Errorf("creating environment root: %w", err)
+	}
+
+	if err := os.Mkdir(filepath.Join(dir, name), osutil.PermissionDirectory); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return ErrEnvironmentExists
+		}
+
+		return fmt.Errorf("creating environment directory: %w", err)
+	}
+
+	return nil
+}
+
+func writeConfig(path string, config configFile) error {
+	bytes, err := json.Marshal(config)
+	if err != nil {
+		return fmt.Errorf("serializing config file: %w", err)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(path), osutil.PermissionDirectory); err != nil {
+		return fmt.Errorf("creating environment root: %w", err)
+	}
+
+	if err := os.WriteFile(path, bytes, osutil.PermissionFile); err != nil {
+		return fmt.Errorf("writing config file: %w", err)
+	}
+
+	return nil
 }

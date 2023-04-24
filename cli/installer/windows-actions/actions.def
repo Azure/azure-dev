@@ -1,0 +1,4 @@
+LIBRARY "actions"
+EXPORTS
+    DllMain
+    WriteTextFile

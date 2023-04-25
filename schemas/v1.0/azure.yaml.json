@@ -122,9 +122,6 @@
                     "k8s": {
                         "$ref": "#/definitions/aksOptions"
                     },
-                    "dotnet": {
-                        "$ref": "#/definitions/dotnet"
-                    },
                     "hooks": {
                         "type": "object",
                         "title": "Service level hooks",
@@ -224,26 +221,6 @@
                             "dist": {
                                 "type": "string",
                                 "description": "Optional. The CLI will use files under this path to create the deployment artifact (ZIP file). If omitted, all files under service project directory will be included."
-                            }
-                        }
-                    },
-                    {
-                        "if": {
-                            "not": {
-                                "properties": {
-                                    "language": {
-                                        "enum": [
-                                            "dotnet",
-                                            "csharp",
-                                            "fsharp"
-                                        ]
-                                    }
-                                }
-                            }
-                        },
-                        "then": {
-                            "properties": {
-                                "dotnet": false
                             }
                         }
                     }
@@ -520,19 +497,6 @@
                             "description": "When set will be appended to the root of your ingress resource path."
                         }
                     }
-                }
-            }
-        },
-        "dotnet": {
-            "type": "object",
-            "title": "Optional. The .NET configuration options",
-            "additionalProperties": false,
-            "properties": {
-                "useSecrets": {
-                    "type": "boolean",
-                    "title": "Optional. Whether or not to use the .NET user secrets manager",
-                    "description": "When set to true will use the .NET user secrets manager to store secrets. (Default: false)",
-                    "default": false
                 }
             }
         }

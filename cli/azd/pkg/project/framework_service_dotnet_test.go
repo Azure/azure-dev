@@ -5,6 +5,7 @@ package project
 
 import (
 	"context"
+	"io"
 	"os"
 	"path/filepath"
 	"sort"
@@ -62,65 +63,57 @@ func TestBicepOutputsWithDoubleUnderscoresAreConverted(t *testing.T) {
 }
 
 func Test_DotNetProject_Init(t *testing.T) {
+	ranUserSecrets := false
+	var runArgs exec.RunArgs
 
-	tests := map[string]struct{ expected bool }{
-		"UserSecrets_Enabled": {
-			expected: true,
-		},
-		"UserSecrets_Disabled": {
-			expected: false,
+	ostest.Chdir(t, t.TempDir())
+	err := os.MkdirAll("./src/api", osutil.PermissionDirectory)
+	require.NoError(t, err)
+	file, err := os.Create("./src/api/test.csproj")
+	require.NoError(t, err)
+	require.NoError(t, file.Close())
+
+	mockContext := mocks.NewMockContext(context.Background())
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "dotnet user-secrets init")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		return exec.NewRunResult(0, "", ""), nil
+	})
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "dotnet user-secrets set")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		ranUserSecrets = true
+		runArgs = args
+
+		return exec.NewRunResult(0, "", ""), nil
+	})
+
+	env := environment.Ephemeral()
+	dotNetCli := dotnet.NewDotNetCli(mockContext.CommandRunner)
+	serviceConfig := createTestServiceConfig("./src/api/test.csproj", AppServiceTarget, ServiceLanguageDotNet)
+
+	dotnetProject := NewDotNetProject(dotNetCli, env)
+
+	err = dotnetProject.Initialize(*mockContext.Context, serviceConfig)
+	require.NoError(t, err)
+
+	eventArgs := ServiceLifecycleEventArgs{
+		Project: serviceConfig.Project,
+		Service: serviceConfig,
+		Args: map[string]any{
+			"bicepOutput": map[string]provisioning.OutputParameter{
+				"EXAMPLE_OUTPUT": {Type: "string", Value: "value"},
+			},
 		},
 	}
 
-	for name, test := range tests {
-		t.Run(name, func(t *testing.T) {
-			ranUserSecrets := false
+	err = serviceConfig.RaiseEvent(*mockContext.Context, ServiceEventEnvUpdated, eventArgs)
+	require.NoError(t, err)
+	require.True(t, ranUserSecrets)
 
-			ostest.Chdir(t, t.TempDir())
-			err := os.MkdirAll("./src/api", osutil.PermissionDirectory)
-			require.NoError(t, err)
-			file, err := os.Create("./src/api/test.csproj")
-			require.NoError(t, err)
-			require.NoError(t, file.Close())
-
-			mockContext := mocks.NewMockContext(context.Background())
-			mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-				return strings.Contains(command, "dotnet user-secrets init")
-			}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-				return exec.NewRunResult(0, "", ""), nil
-			})
-			mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-				return strings.Contains(command, "dotnet user-secrets set")
-			}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-				ranUserSecrets = true
-				return exec.NewRunResult(0, "", ""), nil
-			})
-
-			env := environment.Ephemeral()
-			dotNetCli := dotnet.NewDotNetCli(mockContext.CommandRunner)
-			serviceConfig := createTestServiceConfig("./src/api/test.csproj", AppServiceTarget, ServiceLanguageDotNet)
-			serviceConfig.DotNet.UserSecrets = test.expected
-
-			dotnetProject := NewDotNetProject(dotNetCli, env)
-
-			err = dotnetProject.Initialize(*mockContext.Context, serviceConfig)
-			require.NoError(t, err)
-
-			eventArgs := ServiceLifecycleEventArgs{
-				Project: serviceConfig.Project,
-				Service: serviceConfig,
-				Args: map[string]any{
-					"bicepOutput": map[string]provisioning.OutputParameter{
-						"EXAMPLE_OUTPUT": {Type: "string", Value: "value"},
-					},
-				},
-			}
-
-			err = serviceConfig.RaiseEvent(*mockContext.Context, ServiceEventEnvUpdated, eventArgs)
-			require.NoError(t, err)
-			require.Equal(t, test.expected, ranUserSecrets)
-		})
-	}
+	jsonBytes, err := io.ReadAll(runArgs.StdIn)
+	require.NoError(t, err)
+	require.Contains(t, string(jsonBytes), "EXAMPLE_OUTPUT")
 }
 
 func Test_DotNetProject_Restore(t *testing.T) {

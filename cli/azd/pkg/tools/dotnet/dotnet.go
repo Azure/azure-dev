@@ -5,7 +5,9 @@ package dotnet
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -18,7 +20,7 @@ type DotNetCli interface {
 	Build(ctx context.Context, project string, configuration string, output string) error
 	Publish(ctx context.Context, project string, configuration string, output string) error
 	InitializeSecret(ctx context.Context, project string) error
-	SetSecret(ctx context.Context, key string, value string, project string) error
+	SetSecrets(ctx context.Context, secrets map[string]string, project string) error
 }
 
 type dotNetCli struct {
@@ -115,9 +117,20 @@ func (cli *dotNetCli) InitializeSecret(ctx context.Context, project string) erro
 	return nil
 }
 
-func (cli *dotNetCli) SetSecret(ctx context.Context, key string, value string, project string) error {
-	runArgs := exec.NewRunArgs("dotnet", "user-secrets", "set", key, value, "--project", project)
+func (cli *dotNetCli) SetSecrets(ctx context.Context, secrets map[string]string, project string) error {
+	secretsJson, err := json.Marshal(secrets)
+	if err != nil {
+		return fmt.Errorf("failed to marshal secrets: %w", err)
+	}
+
+	// dotnet user-secrets now support setting multiple values at once
+	//https://learn.microsoft.com/en-us/aspnet/core/security/app-secrets?view=aspnetcore-7.0&tabs=windows#set-multiple-secrets
+	runArgs := exec.
+		NewRunArgs("dotnet", "user-secrets", "set", "--project", project).
+		WithStdIn(strings.NewReader(string(secretsJson)))
+
 	res, err := cli.commandRunner.Run(ctx, runArgs)
+	fmt.Println(res.String())
 	if err != nil {
 		return fmt.Errorf("failed running %s secret set %s: %w", cli.Name(), res.String(), err)
 	}

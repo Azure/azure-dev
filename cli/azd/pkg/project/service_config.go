@@ -30,8 +30,6 @@ type ServiceConfig struct {
 	K8s AksOptions `yaml:"k8s"`
 	// The infrastructure provisioning configuration
 	Infra provisioning.Options `yaml:"infra"`
-	// The dotnet service configuration
-	DotNet DotNetFrameworkOptions `yaml:"dotnet"`
 	// Hook configuration for service
 	Hooks map[string]*ext.HookConfig `yaml:"hooks,omitempty"`
 

@@ -22,12 +22,6 @@ const (
 	defaultDotNetBuildConfiguration string = "Release"
 )
 
-// DotNet Framework Options
-type DotNetFrameworkOptions struct {
-	// When set will enable integration with dotnet user-secrets for to support local development
-	UserSecrets bool `yaml:"userSecrets"`
-}
-
 type dotnetProject struct {
 	env       *environment.Environment
 	dotnetCli dotnet.DotNetCli
@@ -61,10 +55,6 @@ func (dp *dotnetProject) RequiredExternalTools(context.Context) []tools.External
 
 // Initializes the dotnet project
 func (dp *dotnetProject) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
-	if !serviceConfig.DotNet.UserSecrets {
-		return nil
-	}
-
 	projFile, err := findProjectFile(serviceConfig.Name, serviceConfig.Path())
 	if err != nil {
 		return err
@@ -207,16 +197,16 @@ func (dp *dotnetProject) setUserSecretsFromOutputs(
 		return fmt.Errorf("fail on interface conversion: no type in map")
 	}
 
+	secrets := map[string]string{}
+
 	for key, val := range bicepOutput {
-		if err := dp.dotnetCli.SetSecret(
-			ctx,
-			normalizeDotNetSecret(key),
-			fmt.Sprint(val.Value),
-			serviceConfig.Path(),
-		); err != nil {
-			return err
-		}
+		secrets[normalizeDotNetSecret(key)] = fmt.Sprint(val.Value)
 	}
+
+	if err := dp.dotnetCli.SetSecrets(ctx, secrets, serviceConfig.Path()); err != nil {
+		return fmt.Errorf("failed to set secrets: %w", err)
+	}
+
 	return nil
 }
 

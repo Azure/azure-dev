@@ -22,6 +22,12 @@ const (
 	defaultDotNetBuildConfiguration string = "Release"
 )
 
+// DotNet Framework Options
+type DotNetFrameworkOptions struct {
+	// When set will enable integration with dotnet user-secrets for to support local development
+	UserSecrets bool `yaml:"userSecrets"`
+}
+
 type dotnetProject struct {
 	env       *environment.Environment
 	dotnetCli dotnet.DotNetCli
@@ -55,6 +61,10 @@ func (dp *dotnetProject) RequiredExternalTools(context.Context) []tools.External
 
 // Initializes the dotnet project
 func (dp *dotnetProject) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
+	if !serviceConfig.DotNet.UserSecrets {
+		return nil
+	}
+
 	projFile, err := findProjectFile(serviceConfig.Name, serviceConfig.Path())
 	if err != nil {
 		return err

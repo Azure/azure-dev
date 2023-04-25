@@ -75,7 +75,7 @@ const (
 
 	SubscriptionScope  ScopeKind = "subscription"
 	ResourceGroupScope ScopeKind = "resourcegroup"
-	NotSpecifiedScope       ScopeKind = ""
+	NotSpecifiedScope  ScopeKind = ""
 )
 
 type Options struct {

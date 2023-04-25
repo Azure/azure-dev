@@ -91,6 +91,7 @@ preinit
 pulumi
 pyapp
 pyvenv
+resourcegroup
 restoreapp
 retriable
 rzip

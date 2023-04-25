@@ -435,7 +435,9 @@ func (sm *serviceManager) GetServiceTarget(ctx context.Context, serviceConfig *S
 
 	if alphaFeatureId, isAlphaFeature := alpha.IsFeatureKey(host); isAlphaFeature {
 		if !sm.alphaFeatureManager.IsEnabled(alphaFeatureId) {
-			return nil, fmt.Errorf("service host '%s' is currently in alpha and needs to be enabled explicitly. Run `%s` to enable the feature.",
+			return nil, fmt.Errorf(
+				"service host '%s' is currently in alpha and needs to be enabled explicitly."+
+					" Run `%s` to enable the feature.",
 				host,
 				alpha.GetEnableCommand(alphaFeatureId),
 			)

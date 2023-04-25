@@ -171,12 +171,12 @@ func (ss *springService) DeploySpringAppArtifact(
 	if err != nil {
 		return nil, err
 	}
-	appFqdn, err := ss.activeDeployment(springClient, ctx, resourceGroup, instanceName, appName, deploymentName)
+	resName, err := ss.activeDeployment(springClient, ctx, resourceGroup, instanceName, appName, deploymentName)
 	if err != nil {
 		return nil, err
 	}
 
-	return appFqdn, nil
+	return resName, nil
 }
 
 func (ss *springService) GetSpringAppDeployment(

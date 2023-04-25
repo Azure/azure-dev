@@ -130,7 +130,6 @@ func (cli *dotNetCli) SetSecrets(ctx context.Context, secrets map[string]string,
 		WithStdIn(strings.NewReader(string(secretsJson)))
 
 	res, err := cli.commandRunner.Run(ctx, runArgs)
-	fmt.Println(res.String())
 	if err != nil {
 		return fmt.Errorf("failed running %s secret set %s: %w", cli.Name(), res.String(), err)
 	}

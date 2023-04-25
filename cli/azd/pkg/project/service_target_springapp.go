@@ -5,6 +5,7 @@ package project
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"os"
@@ -97,16 +98,23 @@ func (st *springAppTarget) Deploy(
 			)
 
 			if err != nil {
-				task.SetError(fmt.Errorf("Spring Apps '%s' deployment '%s' not exists",
-					serviceConfig.Name, deploymentName))
+				task.SetError(fmt.Errorf("get deployment '%s' of Spring App '%s' failed: %w",
+					serviceConfig.Name, deploymentName, err))
 				return
 			}
 
+			// TODO: Consider support container image and buildpacks deployment in the future
+			// For now, Azure Spring Apps only support jar deployment
 			ext := ".jar"
 			artifactPath := filepath.Join(packageOutput.PackagePath, AppServiceJavaPackageName+ext)
 
-			if _, err := os.Stat(artifactPath); err != nil {
-				task.SetError(fmt.Errorf("Spring Apps only support .jar file and artifact %s don't exists: %w", artifactPath, err))
+			_, err = os.Stat(artifactPath)
+			if errors.Is(err, os.ErrNotExist) {
+				task.SetError(fmt.Errorf("artifact %s does not exist: %w", artifactPath, err))
+				return
+			}
+			if err != nil {
+				task.SetError(fmt.Errorf("reading artifact file %s: %w", artifactPath, err))
 				return
 			}
 
@@ -122,7 +130,7 @@ func (st *springAppTarget) Deploy(
 			)
 
 			if err != nil {
-				task.SetError(fmt.Errorf("Artifact upload failed: %w", err))
+				task.SetError(fmt.Errorf("failed to upload spring artifact: %w", err))
 				return
 			}
 
@@ -139,6 +147,14 @@ func (st *springAppTarget) Deploy(
 			)
 			if err != nil {
 				task.SetError(fmt.Errorf("deploying service %s: %w", serviceConfig.Name, err))
+				return
+			}
+
+			// save the storage relative, otherwise the relative path will be overwritten
+			// in the deployment from Bicep/Terraform
+			st.env.SetServiceProperty(serviceConfig.Name, "RELATIVE_PATH", *relativePath)
+			if err := st.env.Save(); err != nil {
+				task.SetError(fmt.Errorf("failed updating environment with relative path, %w", err))
 				return
 			}
 

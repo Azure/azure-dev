@@ -28,7 +28,7 @@ type ServiceConfig struct {
 	Docker DockerProjectOptions `yaml:"docker"`
 	// The optional K8S / AKS options
 	K8s AksOptions `yaml:"k8s"`
-	// The optional ASA options
+	// The optional Azure Spring Apps options
 	Spring SpringOptions `yaml:"spring"`
 	// The infrastructure provisioning configuration
 	Infra provisioning.Options `yaml:"infra"`

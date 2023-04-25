@@ -2,6 +2,7 @@ package azcli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appplatform/armappplatform"
@@ -9,7 +10,6 @@ import (
 	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
-	"log"
 	"net/url"
 	"os"
 )
@@ -90,8 +90,16 @@ func (ss *springService) GetSpringAppProperties(
 		return nil, fmt.Errorf("failed retrieving spring app properties: %w", err)
 	}
 
+	var fqdn []string
+	if springApp.Properties != nil &&
+		springApp.Properties.Fqdn != nil {
+		fqdn = []string{*springApp.Properties.Fqdn}
+	} else {
+		fqdn = []string{}
+	}
+
 	return &SpringAppProperties{
-		Fqdn: []string{*springApp.Properties.Fqdn},
+		Fqdn: fqdn,
 	}, nil
 }
 
@@ -99,41 +107,41 @@ func (ss *springService) UploadSpringArtifact(
 	ctx context.Context,
 	subscriptionId, resourceGroup, instanceName, appName, artifactPath string,
 ) (*string, error) {
-	credential, err := ss.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
-	if err != nil {
-		return nil, err
-	}
-
-	options := clientOptionsBuilder(ss.httpClient, ss.userAgent).BuildArmClientOptions()
-
 	file, err := os.Open(artifactPath)
+
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("artifact %s does not exist: %w", artifactPath, err)
+	}
 	if err != nil {
-		return nil, fmt.Errorf("artifact do not exists: %s", artifactPath)
+		return nil, fmt.Errorf("reading artifact file %s: %w", artifactPath, err)
 	}
 	defer file.Close()
 
-	springClient, err := armappplatform.NewAppsClient(subscriptionId, credential, options)
+	springClient, err := ss.createSpringAppClient(ctx, subscriptionId)
 	if err != nil {
-		return nil, fmt.Errorf("creating SpringApps client: %w", err)
+		return nil, err
 	}
 	storageInfo, err := springClient.GetResourceUploadURL(ctx, resourceGroup, instanceName, appName, nil)
 	if err != nil {
-		return nil, fmt.Errorf("get resource upload URL failed: %w", err)
+		return nil, fmt.Errorf("failed to get resource upload URL: %w", err)
 	}
 
-	url, _ := url.Parse(*storageInfo.UploadURL)
+	url, err := url.Parse(*storageInfo.UploadURL)
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse storage upload url %s : %w", *storageInfo.UploadURL, err)
+	}
 
+	// Pass NewAnonymousCredential here, since the URL returned by Azure Spring Apps already contains a SAS token
 	fileURL := azfile.NewFileURL(*url, azfile.NewPipeline(azfile.NewAnonymousCredential(), azfile.PipelineOptions{}))
 	err = azfile.UploadFileToAzureFile(ctx, file, fileURL,
 		azfile.UploadToAzureFileOptions{
-			Parallelism: 3,
 			Metadata: azfile.Metadata{
 				"createdby": "AZD",
 			},
 		})
 
 	if err != nil {
-		return nil, fmt.Errorf("artifact '%s' upload failed: %w", artifactPath, err)
+		return nil, fmt.Errorf("failed to upload artifact %s : %w", artifactPath, err)
 	}
 
 	return storageInfo.RelativePath, nil
@@ -158,37 +166,17 @@ func (ss *springService) DeploySpringAppArtifact(
 		return nil, err
 	}
 
-	poller, err := deploymentClient.BeginCreateOrUpdate(ctx, resourceGroup, instanceName, appName, deploymentName,
-		armappplatform.DeploymentResource{
-			Properties: &armappplatform.DeploymentResourceProperties{
-				Source: &armappplatform.JarUploadedUserSourceInfo{
-					Type:         to.Ptr("Jar"),
-					RelativePath: to.Ptr(relativePath),
-				},
-			},
-		}, nil)
-
+	_, err = ss.createOrUpdateDeployment(deploymentClient, ctx, resourceGroup, instanceName, appName,
+		deploymentName, relativePath)
+	if err != nil {
+		return nil, err
+	}
+	appFqdn, err := ss.activeDeployment(springClient, ctx, resourceGroup, instanceName, appName, deploymentName)
 	if err != nil {
 		return nil, err
 	}
 
-	_, err = springClient.BeginSetActiveDeployments(ctx, resourceGroup, instanceName, appName,
-		armappplatform.ActiveDeploymentCollection{
-			ActiveDeploymentNames: []*string{
-				to.Ptr(deploymentName),
-			},
-		}, nil)
-
-	if err != nil {
-		return nil, err
-	}
-
-	res, err := poller.PollUntilDone(ctx, nil)
-	if err != nil {
-		log.Fatalf("failed to pull the result: %v", err)
-	}
-
-	return res.Name, nil
+	return appFqdn, nil
 }
 
 func (ss *springService) GetSpringAppDeployment(
@@ -247,4 +235,61 @@ func (ss *springService) createSpringAppDeploymentClient(
 	}
 
 	return client, nil
+}
+
+func (ss *springService) createOrUpdateDeployment(
+	deploymentClient *armappplatform.DeploymentsClient,
+	ctx context.Context,
+	resourceGroup string,
+	instanceName string,
+	appName string,
+	deploymentName string,
+	relativePath string,
+) (*string, error) {
+	poller, err := deploymentClient.BeginCreateOrUpdate(ctx, resourceGroup, instanceName, appName, deploymentName,
+		armappplatform.DeploymentResource{
+			Properties: &armappplatform.DeploymentResourceProperties{
+				Source: &armappplatform.JarUploadedUserSourceInfo{
+					Type:         to.Ptr("Jar"),
+					RelativePath: to.Ptr(relativePath),
+				},
+			},
+		}, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	res, err := poller.PollUntilDone(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return res.Name, nil
+}
+
+func (ss *springService) activeDeployment(
+	springClient *armappplatform.AppsClient,
+	ctx context.Context,
+	resourceGroup string,
+	instanceName string,
+	appName string,
+	deploymentName string,
+) (*string, error) {
+	poller, err := springClient.BeginSetActiveDeployments(ctx, resourceGroup, instanceName, appName,
+		armappplatform.ActiveDeploymentCollection{
+			ActiveDeploymentNames: []*string{
+				to.Ptr(deploymentName),
+			},
+		}, nil)
+
+	if err != nil {
+		return nil, err
+	}
+
+	res, err := poller.PollUntilDone(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return res.Name, nil
 }

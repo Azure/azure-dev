@@ -484,7 +484,7 @@ func downloadGh(
 	case "windows":
 		releaseName = binaryName(fmt.Sprintf("windows_%s.zip", systemArch))
 	case "darwin":
-		releaseName = binaryName(fmt.Sprintf("macOS_%s.tar.gz", systemArch))
+		releaseName = binaryName(fmt.Sprintf("macOS_%s.zip", systemArch))
 	case "linux":
 		releaseName = binaryName(fmt.Sprintf("linux_%s.tar.gz", systemArch))
 	default:

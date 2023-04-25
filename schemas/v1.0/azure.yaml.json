@@ -232,7 +232,11 @@
                             "not": {
                                 "properties": {
                                     "language": {
-                                        "const": "dotnet"
+                                        "enum": [
+                                            "dotnet",
+                                            "csharp",
+                                            "fsharp"
+                                        ]
                                     }
                                 }
                             }

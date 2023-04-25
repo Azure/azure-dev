@@ -6,7 +6,6 @@ package ux
 import (
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
@@ -19,24 +18,8 @@ type ActionResult struct {
 
 func (ar *ActionResult) ToString(currentIndentation string) (result string) {
 	if ar.Err != nil {
-		original := ar.Err.Error()
-		errMsg := ""
-
-		// Format the first line with error format, and leave subsequent lines without.
-		// This achieves the desired output of:
-		//
-		// <colored>ERROR: $error</colored>
-		// $errorHint / $details / $errorSuggestions
-		newLineIndex := strings.Index(original, "\n")
-		if newLineIndex > 0 {
-			errMsg = output.WithErrorFormat("\n%s: %s", "ERROR", original[:newLineIndex])
-			errMsg += original[newLineIndex:]
-		} else {
-			errMsg = output.WithErrorFormat("\n%s: %s", "ERROR", original)
-		}
-		return errMsg
+		return output.WithErrorFormat("\n%s: %s", "ERROR", ar.Err.Error())
 	}
-
 	if ar.SuccessMessage != "" {
 		result = output.WithSuccessFormat("\n%s: %s", "SUCCESS", ar.SuccessMessage)
 	}

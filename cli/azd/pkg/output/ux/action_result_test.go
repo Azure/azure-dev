@@ -39,13 +39,6 @@ func TestActionResult_ToString(t *testing.T) {
 			},
 			expected: output.WithErrorFormat("\n%s: %s", "ERROR", "An error :("),
 		},
-		{
-			name: "ErrorMultiline",
-			ar: &ActionResult{
-				Err: errors.New("An error :(\nBut it's multiline"),
-			},
-			expected: output.WithErrorFormat("\n%s: %s", "ERROR", "An error :(") + "\nBut it's multiline",
-		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

@@ -51,7 +51,7 @@ func NewGitHubCli(ctx context.Context, console input.Console, commandRunner exec
 
 // cGitHubCliVersion is the minimum version of GitHub cli that we require (and the one we fetch when we fetch bicep on
 // behalf of a user).
-var cGitHubCliVersion semver.Version = semver.MustParse("2.22.1")
+var cGitHubCliVersion semver.Version = semver.MustParse("2.28.0")
 
 // newGitHubCliImplementation is like NewGitHubCli but allows providing a custom transport to use when downloading the
 // GitHub CLI, for testing purposes.
@@ -80,7 +80,11 @@ func newGitHubCliImplementation(
 	if _, err = os.Stat(githubCliPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, fmt.Errorf("getting file information from github cli default path: %w", err)
 	}
-	if errors.Is(err, os.ErrNotExist) {
+	var installGhCli bool
+	if errors.Is(err, os.ErrNotExist) || !expectedVersionInstalled(ctx, commandRunner, githubCliPath) {
+		installGhCli = true
+	}
+	if installGhCli {
 		if err := os.MkdirAll(filepath.Dir(githubCliPath), osutil.PermissionDirectory); err != nil {
 			return nil, fmt.Errorf("creating github cli default path: %w", err)
 		}
@@ -137,8 +141,28 @@ func (cli *ghCli) CheckInstalled(ctx context.Context) (bool, error) {
 	return true, nil
 }
 
+func expectedVersionInstalled(ctx context.Context, commandRunner exec.CommandRunner, binaryPath string) bool {
+	ghVersion, err := tools.ExecuteCommand(ctx, commandRunner, binaryPath, "--version")
+	if err != nil {
+		log.Printf("checking %s version: %s", cGhToolName, err.Error())
+		return false
+	}
+	ghSemver, err := tools.ExtractVersion(ghVersion)
+	if err != nil {
+		log.Printf("converting to semver version fails: %s", err.Error())
+		return false
+	}
+	if ghSemver.LT(cGitHubCliVersion) {
+		log.Printf("Found gh cli version %s. Expected version: %s.", ghSemver.String(), cGitHubCliVersion.String())
+		return false
+	}
+	return true
+}
+
+const cGhToolName = "GitHub CLI"
+
 func (cli *ghCli) Name() string {
-	return "GitHub CLI"
+	return cGhToolName
 }
 
 func (cli *ghCli) BinaryPath() string {
@@ -449,20 +473,25 @@ func downloadGh(
 	extractImplementation extractGitHubCliFromFileImplementation,
 	path string) error {
 
+	binaryName := func(platform string) string {
+		return fmt.Sprintf("gh_%s_%s", ghVersion, platform)
+	}
+
+	systemArch := runtime.GOARCH
 	// arm and x86 not supported (similar to bicep)
 	var releaseName string
 	switch runtime.GOOS {
 	case "windows":
-		releaseName = "gh_2.22.1_windows_amd64.zip"
+		releaseName = binaryName(fmt.Sprintf("windows_%s.zip", systemArch))
 	case "darwin":
-		releaseName = "gh_2.22.1_macOS_amd64.tar.gz"
+		releaseName = binaryName(fmt.Sprintf("macOS_%s.tar.gz", systemArch))
 	case "linux":
-		releaseName = "gh_2.22.1_linux_amd64.tar.gz"
+		releaseName = binaryName(fmt.Sprintf("linux_%s.tar.gz", systemArch))
 	default:
 		return fmt.Errorf("unsupported platform")
 	}
 
-	//https://github.com/cli/cli/releases/download/v2.22.1/gh_2.22.1_linux_arm64.rpm
+	// example: https://github.com/cli/cli/releases/download/v2.28.0/gh_2.28.0_linux_arm64.rpm
 	ghReleaseUrl := fmt.Sprintf("https://github.com/cli/cli/releases/download/v%s/%s", ghVersion, releaseName)
 
 	log.Printf("downloading github cli release %s -> %s", ghReleaseUrl, releaseName)

@@ -7,7 +7,9 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -39,7 +41,14 @@ func createServiceManager(mockContext *mocks.MockContext, env *environment.Envir
 	resourceManager := NewResourceManager(env, azCli)
 	serviceLocator := ioc.NewServiceLocator(mockContext.Container)
 
-	return NewServiceManager(env, resourceManager, serviceLocator)
+	alphaManager := alpha.NewFeaturesManagerWithConfig(config.NewConfig(
+		map[string]any{
+			"alpha": map[string]any{
+				"all": "on",
+			},
+		}))
+
+	return NewServiceManager(env, resourceManager, serviceLocator, alphaManager)
 }
 
 func Test_ServiceManager_GetRequiredTools(t *testing.T) {

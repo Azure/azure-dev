@@ -5,10 +5,10 @@ package project
 
 import (
 	"context"
+	"encoding/json"
 	"io"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"testing"
 
@@ -25,13 +25,18 @@ import (
 func TestBicepOutputsWithDoubleUnderscoresAreConverted(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 
-	keys := []string{}
+	var secrets map[string]string
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "dotnet user-secrets set")
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		t.Logf("dotnet user-secrets set was called with: %+v", args)
-		keys = append(keys, args.Args[2])
+
+		jsonBytes, err := io.ReadAll(args.StdIn)
+		require.NoError(t, err)
+		err = json.Unmarshal(jsonBytes, &secrets)
+		require.NoError(t, err)
+
 		return exec.NewRunResult(0, "", ""), nil
 	})
 
@@ -55,11 +60,10 @@ func TestBicepOutputsWithDoubleUnderscoresAreConverted(t *testing.T) {
 	})
 
 	require.NoError(t, err)
-	require.Len(t, keys, 2)
+	require.Len(t, secrets, 2)
 
-	sort.Strings(keys)
-	require.Equal(t, "EXAMPLE:NESTED:OUTPUT", keys[0])
-	require.Equal(t, "EXAMPLE_OUTPUT", keys[1])
+	require.Equal(t, "bar", secrets["EXAMPLE:NESTED:OUTPUT"])
+	require.Equal(t, "foo", secrets["EXAMPLE_OUTPUT"])
 }
 
 func Test_DotNetProject_Init(t *testing.T) {

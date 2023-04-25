@@ -2,7 +2,6 @@ locals {
   tags                         = { azd-env-name : var.environment_name, spring-cloud-azure : true }
   sha                          = base64encode(sha256("${var.environment_name}${var.location}${data.azurerm_client_config.current.subscription_id}"))
   resource_token               = substr(replace(lower(local.sha), "[^A-Za-z0-9_]", ""), 0, 13)
-  psql_custom_username         = "CUSTOM_ROLE"
 }
 # ------------------------------------------------------------------------------------------------------
 # Deploy resource Group

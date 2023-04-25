@@ -37,6 +37,9 @@ stages:
               Pool: azsdk-pool-mms-ubuntu-2004-general
               OSVmImage: MMSUbuntu20.04
               UploadArtifact: true
+              Codeql.Enabled: true
+              Codeql.SkipTaskAutoInjection: false
+              Codeql.BuildIdentifier: vscode_linux
             Mac:
               Pool: Azure Pipelines
               OSVmImage: macOS-11

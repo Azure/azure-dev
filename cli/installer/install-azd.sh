@@ -170,6 +170,7 @@ extension="$(get_extension_for_platform "$platform")"
 architecture="$(get_architecture "$platform")"
 version="latest"
 dry_run=false
+skip_verify=false
 install_folder="/usr/local/bin"
 no_telemetry=0
 verbose=false
@@ -200,6 +201,9 @@ do
         ;;
     --dry-run)
         dry_run=true
+        ;;
+    --skip-verify)
+        skip_verify=true
         ;;
     -i|--install-folder)
         shift
@@ -242,6 +246,8 @@ do
         echo "  --dry-run                     Do not download or install, just display the"
         echo "                                download URL."
         echo ""
+        echo "  --skip-verify                 Skip verification of the downloaded file (macOS only)."
+        echo ""
         echo "  -i,--install-folder <FOLDER>  Install azd CLI to FOLDER. Default is"
         echo "                                /usr/local/bin"
         echo ""
@@ -274,7 +280,7 @@ say_verbose "Architecture: $architecture"
 say_verbose "File extension: $extension"
 
 if [ "$platform" = "darwin" ]; then
-    say_verbose "Mac detected, ensuring compatailbity with amd64 binaries"
+    say_verbose "Mac detected, ensuring compatibility with amd64 binaries"
     ensure_rosetta
 fi
 
@@ -305,6 +311,16 @@ fi
 bin_name="azd-$platform-$architecture"
 extract "$compressed_file_path" "$bin_name" "$tmp_folder"
 chmod +x "$tmp_folder/$bin_name"
+
+if [ "$platform" = "darwin" ] && [ "$skip_verify" = false ]; then
+    say_verbose "Verifying signature of $bin_name"
+    if ! output=$( codesign -v "$tmp_folder/$bin_name" 2>&1); then
+        say_error "Could not verify signature of $bin_name, error output:"
+        say_error "$output"
+        save_error_report_if_enabled "InstallFailed" "SignatureVerificationFailure"
+        exit 1
+    fi
+fi
 
 install_location="$install_folder/azd"
 if [ -w "$install_folder/" ]; then

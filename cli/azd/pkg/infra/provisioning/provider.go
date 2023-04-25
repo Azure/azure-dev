@@ -44,6 +44,7 @@ type Prompters struct {
 }
 
 type ProviderKind string
+type ScopeKind string
 
 type NewProviderFn func(
 	ctx context.Context,
@@ -62,17 +63,26 @@ var (
 )
 
 const (
+	// Provider Provider Types
+
 	Bicep     ProviderKind = "bicep"
 	Arm       ProviderKind = "arm"
 	Terraform ProviderKind = "terraform"
 	Pulumi    ProviderKind = "pulumi"
 	Test      ProviderKind = "test"
+
+	// Provision Scope Types
+
+	SubscriptionScope  ScopeKind = "subscription"
+	ResourceGroupScope ScopeKind = "resourcegroup"
+	NotSpecifiedScope       ScopeKind = ""
 )
 
 type Options struct {
 	Provider ProviderKind `yaml:"provider"`
 	Path     string       `yaml:"path"`
 	Module   string       `yaml:"module"`
+	Scope    ScopeKind    `yaml:"scope"`
 }
 
 type DeploymentPlan struct {

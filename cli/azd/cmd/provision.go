@@ -172,9 +172,31 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		return nil, fmt.Errorf("planning deployment: %w", err)
 	}
 
-	provisioningScope := infra.NewSubscriptionScope(
-		p.azCli, p.env.GetLocation(), p.env.GetSubscriptionId(), p.env.GetEnvName(),
-	)
+	var provisioningScope infra.Scope
+	switch p.projectConfig.Infra.Scope {
+	case provisioning.SubscriptionScope:
+		provisioningScope = infra.NewSubscriptionScope(
+			p.azCli,
+			p.env.GetLocation(),
+			p.env.GetSubscriptionId(),
+			p.env.GetEnvName(),
+		)
+	case provisioning.ResourceGroupScope:
+		resourceGroupName, err := p.resourceManager.GetResourceGroupName(ctx, p.env.GetSubscriptionId(), p.projectConfig)
+		if err != nil {
+			return nil, fmt.Errorf("getting resource group name: %w", err)
+		}
+
+		provisioningScope = infra.NewResourceGroupScope(
+			p.azCli,
+			p.env.GetSubscriptionId(),
+			resourceGroupName,
+			p.env.GetEnvName(),
+		)
+	default:
+		return nil, fmt.Errorf("invalid infra scope '%s' specified", p.projectConfig.Infra.Scope)
+	}
+
 	deployResult, err := infraManager.Deploy(ctx, deploymentPlan, provisioningScope)
 
 	if err != nil {

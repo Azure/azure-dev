@@ -13,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/blang/semver/v4"
 	"golang.org/x/exp/slices"
@@ -64,6 +65,10 @@ func Parse(ctx context.Context, yamlContent string) (*ProjectConfig, error) {
 				*projectConfig.RequiredVersions.Azd,
 				internal.VersionInfo().Version.String())
 		}
+	}
+
+	if projectConfig.Infra.Scope == provisioning.NotSpecifiedScope {
+		projectConfig.Infra.Scope = provisioning.SubscriptionScope
 	}
 
 	for key, svc := range projectConfig.Services {

@@ -6,12 +6,14 @@ package pipeline
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/blang/semver/v4"
 	"github.com/stretchr/testify/require"
 )
 
@@ -111,4 +113,12 @@ func setupGithubAuthMock(mockContext *mocks.MockContext) {
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		return exec.NewRunResult(0, "", ""), nil
 	})
+
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(args.Cmd, "gh") && len(args.Args) == 1 && args.Args[0] == "--version"
+	}).Respond(exec.NewRunResult(
+		0,
+		fmt.Sprintf("gh version %s (abcdef0123)", semver.MustParse("2.28.0").String()),
+		"",
+	))
 }

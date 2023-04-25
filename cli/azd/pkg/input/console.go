@@ -168,6 +168,12 @@ func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format Spi
 		return
 	}
 
+	if c.consoleWidth == cMinConsoleWidth {
+		// no spinner for consoles with width <= cMinConsoleWidth
+		c.Message(ctx, title)
+		return
+	}
+
 	// mutating an existing spinner brings issues on how the messages are formatted
 	// so, instead of mutating, we stop any current spinner and replaced it for a new one
 	if c.spinner != nil {

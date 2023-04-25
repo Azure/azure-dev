@@ -52,7 +52,6 @@ func (st *appServiceTarget) Package(
 ) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
-			task.SetProgress(NewServiceProgress("Compressing deployment artifacts"))
 			zipFilePath, err := createDeployableZip(serviceConfig.Name, packageOutput.PackagePath)
 			if err != nil {
 				task.SetError(err)

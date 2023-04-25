@@ -30,7 +30,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/blang/semver/v4"
 	"github.com/mattn/go-colorable"
-	"github.com/nathan-fiscaletti/consolesize-go"
 	"github.com/spf13/pflag"
 )
 
@@ -55,10 +54,7 @@ func main() {
 	latest := make(chan semver.Version)
 	go fetchLatestVersion(latest)
 
-	cols, rows := consolesize.GetConsoleSize()
-	fmt.Printf("Rows: %v, Cols: %v\n", rows, cols)
-
-	//cmdErr := cmd.NewRootCmd(false, nil).ExecuteContext(ctx)
+	cmdErr := cmd.NewRootCmd(false, nil).ExecuteContext(ctx)
 	latestVersion, ok := <-latest
 
 	// If we were able to fetch a latest version, check to see if we are up to date and
@@ -113,9 +109,9 @@ func main() {
 		}
 	}
 
-	// if cmdErr != nil {
-	// 	os.Exit(1)
-	// }
+	if cmdErr != nil {
+		os.Exit(1)
+	}
 }
 
 // azdConfigDir is the name of the folder where `azd` writes user wide configuration data.

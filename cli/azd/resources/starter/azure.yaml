@@ -1,6 +1,6 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
 
-# This is an example starting azure.yml file containing several services.
+# This is an example starting azure.yaml file containing several services.
 # Make changes as needed to describe your application setup.
 
 # Name of the application.

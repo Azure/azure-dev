@@ -29,5 +29,10 @@ if which azd; then
     exit 1
 fi
 
+if stat /opt/microsoft/azd; then
+    say_error "Uninstall did not remove azd installation folder"
+    exit 1
+fi
+
 say "Test passed"
 exit 0

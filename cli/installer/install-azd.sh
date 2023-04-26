@@ -150,13 +150,12 @@ ensure_rosetta() {
 
 extract() {
     local compressed_file=$1
-    local target_file=$2
-    local extract_location=$3
+    local extract_location=$2
 
     if [[ $compressed_file == *.zip ]]; then
-        unzip "$compressed_file" "$target_file" -d "$extract_location"/
+        unzip "$compressed_file" -d "$extract_location"/
     elif [[ $compressed_file == *.tar.gz ]]; then
-        tar -zxvf "$compressed_file" -C "$extract_location"/ "$target_file"
+        tar -zxvf "$compressed_file" -C "$extract_location"/
     else
         say_error "Target file not supported: $compressed_file";
     fi
@@ -171,7 +170,8 @@ architecture="$(get_architecture "$platform")"
 version="latest"
 dry_run=false
 skip_verify=false
-install_folder="/usr/local/bin"
+symlink_folder="/usr/local/bin"
+install_folder="/opt/microsoft/azd"
 no_telemetry=0
 verbose=false
 
@@ -208,6 +208,10 @@ do
     -i|--install-folder)
         shift
         install_folder="$1"
+        ;;
+    -s|--symlink-folder)
+        shift
+        symlink_folder="$1"
         ;;
     --no-telemetry)
         shift
@@ -267,10 +271,10 @@ do
   shift
 done
 
-if [ ! -d "$install_folder" ]; then
-    say_error "Install folder does not exist: $install_folder. The install folder should be an existing directory."
-    say_error "Create the folder (and ensure that it is in your PATH) or specify a different install folder with the -i or --install-folder argument."
-    save_error_report_if_enabled "InstallFailed" "InstallFolderDoesNotExist"
+if [ ! -d "$symlink_folder" ]; then
+    say_error "Symlink folder does not exist: $symlink_folder. The symlink folder should exist and be in \$PATH"
+    say_error "Create the folder (and ensure that it is in your \$PATH), specify a different folder using -s or --symlink-folder, or specify an empty value using -s \"\" or --symlink-folder \"\""
+    save_error_report_if_enabled "InstallFailed" "SymlinkFolderDoesNotExist"
     exit 1
 fi
 
@@ -309,7 +313,8 @@ if ! curl -so "$compressed_file_path" "$url" --fail; then
 fi
 
 bin_name="azd-$platform-$architecture"
-extract "$compressed_file_path" "$bin_name" "$tmp_folder"
+extract "$compressed_file_path" "$tmp_folder"
+rm "$compressed_file_path"
 chmod +x "$tmp_folder/$bin_name"
 
 if [ "$platform" = "darwin" ] && [ "$skip_verify" = false ]; then
@@ -322,21 +327,48 @@ if [ "$platform" = "darwin" ] && [ "$skip_verify" = false ]; then
     fi
 fi
 
-install_location="$install_folder/azd"
-if [ -w "$install_folder/" ]; then
-    mv "$tmp_folder/$bin_name" "$install_location"
-else
+if [[ ! -d "$install_folder" ]]; then
+    say_verbose "Install folder does not exist: $install_folder. Creating..." 
+
+    if ! mkdir -p "$install_folder"; then 
+        say "Creating $install_folder requires elevated permission. You may be prompted to enter credentials." 
+        if ! sudo mkdir -p "$install_folder"; then
+            say_error "Could not create install folder: $install_folder"
+            save_error_report_if_enabled "InstallFailed" "SudoMkdirFailure"
+            exit 1
+        fi
+    fi
+fi
+
+mv_preface=""
+if [ ! -w "$install_folder/" ]; then
     say "Writing to $install_folder/ requires elevated permission. You may be prompted to enter credentials."
-    if ! sudo mv "$tmp_folder/$bin_name" "$install_location"; then
-        say_error "Could not copy file to install location: $install_location"
-        save_error_report_if_enabled "InstallFailed" "SudoMoveFailure"
-        exit 1
+    mv_preface="sudo"
+fi
+if ! $mv_preface mv -f "$tmp_folder"/* "$install_folder"; then
+    say_error "Could not move files to install location: $install_folder"
+    save_error_report_if_enabled "InstallFailed" "SudoMoveFailure"
+    exit 1
+fi
+
+if [ "$symlink_folder" != "" ]; then
+    ln_preface=""
+    if [ ! -w "$symlink_folder/" ]; then
+        say "Writing to $symlink_folder/ requires elevated permission. You may be prompted to enter credentials." 
+        ln_preface="sudo"
+    fi
+    if ! $ln_preface ln -fs "$install_folder/$bin_name" "$symlink_folder/azd"; then
+        say_error "Could not create symlink to azd in $symlink_folder"
+        save_error_report_if_enabled "InstallFailed" "SymlinkCreateFailure"
     fi
 fi
 
 say_verbose "Cleaning up temp folder: $tmp_folder"
 rm -rf "$tmp_folder"
-say "Successfully installed to $install_location"
+say "Successfully installed to $install_folder"
+if [ "$symlink_folder" != "" ]; then
+    say "Symlinked in $symlink_folder/azd"
+fi
 say ""
 say "The Azure Developer CLI collects usage data and sends that usage data to Microsoft in order to help us improve your experience."
 say "You can opt-out of telemetry by setting the AZURE_DEV_COLLECT_TELEMETRY environment variable to 'no' in the shell you use."

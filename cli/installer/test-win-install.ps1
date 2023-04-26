@@ -33,7 +33,7 @@ try {
         -Verbose
     assertSuccessfulExecution "Install failed. Last exit code: $LASTEXITCODE"
 
-    if (!((Get-Content "$InstallFolder/.installed-by.txt") -eq 'install-azd-ps1')) {
+    if (!((Get-Content "$InstallFolder/.installed-by.txt") -eq 'install-azd.ps1')) {
         Write-Error ".installed-by.txt does not contain expected value"
         exit 1
     }

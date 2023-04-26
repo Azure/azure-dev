@@ -33,8 +33,8 @@ resource "azurerm_linux_web_app" "web" {
     ftps_state       = "FtpsOnly"
     app_command_line = var.app_command_line
     application_stack {
-      java_version = var.java_version
-      java_server = "JAVA"
+      java_version        = var.java_version
+      java_server         = "JAVA"
       java_server_version = var.java_version
     }
   }

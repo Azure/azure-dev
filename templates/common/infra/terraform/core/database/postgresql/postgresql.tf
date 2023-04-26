@@ -23,10 +23,10 @@ resource "azurecaf_name" "psql_name" {
 data "azurerm_client_config" "current" {}
 
 locals {
-  tenant_id       = var.tenant_id == "" ? data.azurerm_client_config.current.tenant_id : var.tenant_id
-  object_id       = var.object_id == "" ? data.azurerm_client_config.current.object_id : var.object_id
-  principal_name  = var.principal_name == "" ? data.azurerm_client_config.current.object_id : var.principal_name
-  principal_type  = var.client_id == "" ? "User" : "ServicePrincipal"
+  tenant_id      = var.tenant_id == "" ? data.azurerm_client_config.current.tenant_id : var.tenant_id
+  object_id      = var.object_id == "" ? data.azurerm_client_config.current.object_id : var.object_id
+  principal_name = var.principal_name == "" ? data.azurerm_client_config.current.object_id : var.principal_name
+  principal_type = var.client_id == "" ? "User" : "ServicePrincipal"
 }
 
 resource "random_password" "password" {
@@ -36,18 +36,18 @@ resource "random_password" "password" {
 }
 
 resource "azurerm_postgresql_flexible_server" "psql_server" {
-  name                            = azurecaf_name.psql_name.result
-  location                        = var.location
-  resource_group_name             = var.rg_name
-  tags                            = var.tags
-  version                         = "12"
-  administrator_login             = var.administrator_login
-  administrator_password          = random_password.password.result
-  zone                            = "1"
+  name                   = azurecaf_name.psql_name.result
+  location               = var.location
+  resource_group_name    = var.rg_name
+  tags                   = var.tags
+  version                = "12"
+  administrator_login    = var.administrator_login
+  administrator_password = random_password.password.result
+  zone                   = "1"
 
-  storage_mb                      = 32768
+  storage_mb = 32768
 
-  sku_name                        = "GP_Standard_D4s_v3"
+  sku_name = "GP_Standard_D4s_v3"
 
   authentication {
     active_directory_auth_enabled = true
@@ -58,10 +58,10 @@ resource "azurerm_postgresql_flexible_server" "psql_server" {
 
 
 resource "azurerm_postgresql_flexible_server_firewall_rule" "firewall_rule" {
-  name                            = "AllowAllFireWallRule"
-  server_id                       = azurerm_postgresql_flexible_server.psql_server.id
-  start_ip_address                = "0.0.0.0"
-  end_ip_address                  = "255.255.255.255"
+  name             = "AllowAllFireWallRule"
+  server_id        = azurerm_postgresql_flexible_server.psql_server.id
+  start_ip_address = "0.0.0.0"
+  end_ip_address   = "255.255.255.255"
 }
 
 resource "azurerm_postgresql_flexible_server_database" "database" {

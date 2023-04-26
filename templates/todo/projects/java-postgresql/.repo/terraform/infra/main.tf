@@ -1,8 +1,8 @@
 locals {
-  tags                         = { azd-env-name : var.environment_name, spring-cloud-azure : true }
-  sha                          = base64encode(sha256("${var.environment_name}${var.location}${data.azurerm_client_config.current.subscription_id}"))
-  resource_token               = substr(replace(lower(local.sha), "[^A-Za-z0-9_]", ""), 0, 13)
-  psql_custom_username         = "CUSTOM_ROLE"
+  tags                 = { azd-env-name : var.environment_name, spring-cloud-azure : true }
+  sha                  = base64encode(sha256("${var.environment_name}${var.location}${data.azurerm_client_config.current.subscription_id}"))
+  resource_token       = substr(replace(lower(local.sha), "[^A-Za-z0-9_]", ""), 0, 13)
+  psql_custom_username = "CUSTOM_ROLE"
 }
 # ------------------------------------------------------------------------------------------------------
 # Deploy resource Group
@@ -121,13 +121,13 @@ module "api" {
 # Passwordless setting
 # ------------------------------------------------------------------------------------------------------
 module "psql-passwordless" {
-  source         = "../../../../../../common/infra/terraform/core/security/passwordless/postgresql"
+  source = "../../../../../../common/infra/terraform/core/security/passwordless/postgresql"
 
-  pg_custom_role_name_with_aad_identity     =   local.psql_custom_username
-  pg_aad_admin_user                         =   module.postgresql.AZURE_POSTGRESQL_ADMIN_USERNAME
-  pg_database_name                          =   module.postgresql.AZURE_POSTGRESQL_DATABASE_NAME
-  pg_server_fqdn                            =   module.postgresql.AZURE_POSTGRESQL_FQDN
-  hosting_service_aad_identity              =   module.api.IDENTITY_PRINCIPAL_ID
+  pg_custom_role_name_with_aad_identity = local.psql_custom_username
+  pg_aad_admin_user                     = module.postgresql.AZURE_POSTGRESQL_ADMIN_USERNAME
+  pg_database_name                      = module.postgresql.AZURE_POSTGRESQL_DATABASE_NAME
+  pg_server_fqdn                        = module.postgresql.AZURE_POSTGRESQL_FQDN
+  hosting_service_aad_identity          = module.api.IDENTITY_PRINCIPAL_ID
 }
 
 # ------------------------------------------------------------------------------------------------------

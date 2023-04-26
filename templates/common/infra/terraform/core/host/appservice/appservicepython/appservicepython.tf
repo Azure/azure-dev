@@ -62,3 +62,13 @@ resource "azurerm_linux_web_app" "web" {
     }
   }
 }
+
+resource "null_resource" "webapp_basic_auth_disable" {
+  triggers = {
+    account = azurerm_linux_web_app.web.name
+  }
+
+  provisioner "local-exec" {
+    command = "az resource update --resource-group ${var.rg_name} --name ftp --namespace Microsoft.Web --resource-type basicPublishingCredentialsPolicies --parent sites/${azurerm_linux_web_app.web.name} --set properties.allow=false && az resource update --resource-group ${var.rg_name} --name scm --namespace Microsoft.Web --resource-type basicPublishingCredentialsPolicies --parent sites/${azurerm_linux_web_app.web.name} --set properties.allow=false"
+  }
+}

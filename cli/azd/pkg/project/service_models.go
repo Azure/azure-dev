@@ -100,8 +100,12 @@ func (spr *ServiceDeployResult) ToString(currentIndentation string) string {
 
 	builder := strings.Builder{}
 
-	for _, endpoint := range spr.Endpoints {
-		builder.WriteString(fmt.Sprintf("%s- Endpoint: %s\n", currentIndentation, output.WithLinkFormat(endpoint)))
+	if len(spr.Endpoints) == 0 {
+		builder.WriteString(fmt.Sprintf("%s- No endpoints were found\n", currentIndentation))
+	} else {
+		for _, endpoint := range spr.Endpoints {
+			builder.WriteString(fmt.Sprintf("%s- Endpoint: %s\n", currentIndentation, output.WithLinkFormat(endpoint)))
+		}
 	}
 
 	return builder.String()

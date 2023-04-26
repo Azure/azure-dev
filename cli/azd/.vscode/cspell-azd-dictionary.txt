@@ -34,6 +34,7 @@ cflags
 circleci
 cmdsubst
 containerapp
+containerapps
 contoso
 csharpapp
 csharpapptest

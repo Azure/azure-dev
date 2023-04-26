@@ -33,6 +33,11 @@ try {
         -Verbose
     assertSuccessfulExecution "Install failed. Last exit code: $LASTEXITCODE"
 
+    if (!((Get-Content "$InstallFolder/.installed-by.txt") -eq 'install-azd-ps1')) {
+        Write-Error ".installed-by.txt does not contain expected value"
+        exit 1
+    }
+
     $currentPath = $regKey.GetValue( `
         'PATH', `
         '', `
@@ -41,9 +46,9 @@ try {
     $expectedPathEntry = $InstallFolder
 
     if (!$currentPath.Contains($expectedPathEntry)) {
-    Write-Error "Could not find path entry"
-    Write-Error "Expected substring: $expectedPathEntry"
-    Write-Error "Actual: $path"
+        Write-Error "Could not find path entry"
+        Write-Error "Expected substring: $expectedPathEntry"
+        Write-Error "Actual: $path"
     exit 1
     }
 

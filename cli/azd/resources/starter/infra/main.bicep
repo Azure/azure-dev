@@ -30,8 +30,8 @@ resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
 }
 
 // Store secrets in a keyvault, using a bicep module. Remove if unused.
-// To learn more about bicep: see <TODO LINK>
-// To learn more about using azd core bicep modules: see <TODO LINK>
+// A full example that leverages azd bicep modules can be seen in the todo-python-mongo template:
+// https://github.com/Azure-Samples/todo-python-mongo/tree/main/infra
 module keyVault 'keyvault.bicep' = {
   name: 'keyvault'
   scope: rg

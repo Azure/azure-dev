@@ -1,7 +1,8 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
 
-# This is an example starting azure.yaml file containing several services.
+# This is an example starting azure.yaml file containing several example services.
 # Make changes as needed to describe your application setup.
+# To learn more about the azure.yaml file, visit https://learn.microsoft.com/en-us/azure/developer/azure-developer-cli/azd-schema
 
 # Name of the application.
 name: azd-starter

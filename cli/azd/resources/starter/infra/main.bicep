@@ -1,5 +1,9 @@
 targetScope = 'subscription'
 
+// The main bicep module to provision Azure resources.
+// For a more complete walkthrough to understand how this file works with azd,
+// see https://learn.microsoft.com/en-us/azure/developer/azure-developer-cli/make-azd-compatible?pivots=azd-create
+
 @minLength(1)
 @maxLength(64)
 @description('Name of the the environment which is used to generate a short unique hash used in all resources.')
@@ -15,12 +19,15 @@ param location string
 //      "value": "myGroupName"
 // }
 param resourceGroupName string = ''
-param keyVaultName string = ''
 
 var abbrs = loadJsonContent('./abbreviations.json')
-var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 // Tag the resource group with the current environment.
 var tags = { 'azd-env-name': environmentName }
+// Generate a unique token to be used in naming resources.
+// Remove linter suppression if this is used.
+#disable-next-line no-unused-vars
+var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
+
 
 // Organize resources in a resource group
 resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
@@ -29,22 +36,15 @@ resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
   tags: tags
 }
 
-// Store secrets in a keyvault, using a bicep module. Remove if unused.
+// Add resources to be provisioned below.
 // A full example that leverages azd bicep modules can be seen in the todo-python-mongo template:
 // https://github.com/Azure-Samples/todo-python-mongo/tree/main/infra
-module keyVault 'keyvault.bicep' = {
-  name: 'keyvault'
-  scope: rg
-  params: {
-    name: !empty(keyVaultName) ? keyVaultName : '${abbrs.keyVaultVaults}${resourceToken}'
-    location: location
-    tags: tags
-  }
-}
+
+
 
 // Add outputs from the deployment here, if needed.
 //
-// This allows the ouputs to be referenced by other bicep deployments in the deployment pipeline,
+// This allows the outputs to be referenced by other bicep deployments in the deployment pipeline,
 // or by the local machine as a way to usefully reference created resources in Azure for local development.
 // Secrets should not be added here.
 //

@@ -168,7 +168,7 @@ func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format Spi
 		return
 	}
 
-	if c.consoleWidth == cMinConsoleWidth {
+	if c.consoleWidth <= cMinConsoleWidth {
 		// no spinner for consoles with width <= cMinConsoleWidth
 		c.Message(ctx, title)
 		return

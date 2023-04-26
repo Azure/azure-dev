@@ -42,6 +42,8 @@ jobs:
             --tenant-id "$Env:AZURE_TENANT_ID"
         shell: pwsh
 
+      # Remove if you don't need to use client credentials
+      # By default, `azd pipeline config` will configure federated credentials.
       - name: Log in with Azure (Client Credentials)
         if: ${{ env.AZURE_CREDENTIALS != '' }}
         run: |

@@ -22,8 +22,8 @@ resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
   tags: tags
 }
 
-module resources 'resources.bicep' = {
-  name: 'resources'
+module springapps 'core/host/springapps.bicep' = {
+  name: 'springapps'
   scope: rg
   params: {
     environmentName: environmentName

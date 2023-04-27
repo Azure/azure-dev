@@ -39,7 +39,7 @@ func TestZipExtractContents(t *testing.T) {
 func TestZipExtractContentsExe(t *testing.T) {
 	testPath := t.TempDir()
 	expectedPhrase := "this will be inside a zip file"
-	zipFilePath, err := createSampleZip(testPath, expectedPhrase, "bin/gh.exe")
+	zipFilePath, err := createSampleZip(testPath, expectedPhrase, "bin/"+ghCliName())
 	require.NoError(t, err)
 	ghCliPath, err := extractGhCli(zipFilePath, testPath)
 	require.NoError(t, err)

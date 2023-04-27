@@ -396,8 +396,8 @@ func (la *loginAction) login(ctx context.Context) error {
 func parseUseDeviceCode(ctx context.Context, flag stringPtr, commandRunner exec.CommandRunner) (bool, error) {
 	var useDevCode bool
 
-	explicitDeviceCodeInput := flag.ptr != nil
-	if explicitDeviceCodeInput {
+	useDevCodeFlag := flag.ptr != nil
+	if useDevCodeFlag {
 		userInput, err := strconv.ParseBool(*flag.ptr)
 		if err != nil {
 			return false, fmt.Errorf("unexpected boolean input for '--use-device-code': %w", err)
@@ -406,7 +406,8 @@ func parseUseDeviceCode(ctx context.Context, flag stringPtr, commandRunner exec.
 		return userInput, err
 	}
 
-	// Detect cases where the browser isn't available for interactive auth, and we instead want to set `useDeviceCode` to be true by default
+	// Detect cases where the browser isn't available for interactive auth, and we instead want to set `useDeviceCode`
+	// to be true by default
 	inCodespacesEnv := os.Getenv("CODESPACES") == "true"
 	if inCodespacesEnv {
 		// For VSCode online (in web Browser), like GitHub Codespaces or VSCode online attached to any server,

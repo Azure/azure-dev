@@ -29,7 +29,7 @@ resource app 'Microsoft.App/containerApps@2022-03-01' = {
   location: location
   tags: tags
   identity: {
-    type: managedIdentityType == 'SystemAssigned' ? 'SystemAssigned' : 'UserAssigned'
+    type: managedIdentityType
     userAssignedIdentities: managedIdentityType == 'UserAssigned' ? { '${userIdentity.id}': {} } : null
   }
   properties: {

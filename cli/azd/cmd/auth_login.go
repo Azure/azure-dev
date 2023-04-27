@@ -307,11 +307,7 @@ func runningOnCodespacesBrowser(ctx context.Context, commandRunner exec.CommandR
 		return false
 	}
 
-	if strings.Contains(result.Stdout, "The --status argument is not yet supported in browsers") {
-		return true
-	}
-
-	return false
+	return strings.Contains(result.Stdout, "The --status argument is not yet supported in browsers")
 }
 
 func (la *loginAction) login(ctx context.Context) error {

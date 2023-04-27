@@ -17,7 +17,7 @@ if [ ! $? ]; then
     exit 1
 fi
 
-if [[ "$install_folder_error" != *"Install folder does not exist"* ]]; then
+if [[ "$install_folder_error" != *"Symlink folder does not exist"* ]]; then
     say_error "Install should have notified the user that the folder does not exist"
     exit 1
 fi

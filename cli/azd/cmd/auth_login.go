@@ -10,6 +10,7 @@ import (
 	"io"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/MakeNowJust/heredoc/v2"
@@ -41,8 +42,7 @@ func newAuthLoginFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions
 
 type loginFlags struct {
 	onlyCheckStatus        bool
-	useDeviceCode          bool
-	skipRemoteDetection    bool
+	useDeviceCode          stringPtr
 	tenantID               string
 	clientID               string
 	clientSecret           stringPtr
@@ -83,17 +83,10 @@ const (
 
 func (lf *loginFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	local.BoolVar(&lf.onlyCheckStatus, "check-status", false, "Checks the log-in status instead of logging in.")
-	local.BoolVar(
+	local.Var(
 		&lf.useDeviceCode,
 		"use-device-code",
-		false,
 		"When true, log in by using a device code instead of a browser.",
-	)
-	local.BoolVar(
-		&lf.skipRemoteDetection,
-		"skip-remote-override",
-		false,
-		"When true, azd will not override login method with device code when running remote, like in Codespaces.",
 	)
 	local.StringVar(&lf.clientID, "client-id", "", "The client id for the service principal to authenticate with.")
 	local.Var(
@@ -389,11 +382,18 @@ func (la *loginAction) login(ctx context.Context) error {
 	// interactive browser login will 404 when attempting to redirect to localhost
 	// (since azd launches a localhost server running remotely and the login response is accepted locally).
 	// Hence, we override login to device-code. See https://github.com/Azure/azure-dev/issues/1006
-	if !la.flags.useDeviceCode && !la.flags.skipRemoteDetection {
-		la.flags.useDeviceCode = runningOnCodespacesBrowser(ctx, la.commandRunner)
+	var useDevCode bool
+	if la.flags.useDeviceCode.ptr == nil {
+		useDevCode = runningOnCodespacesBrowser(ctx, la.commandRunner)
+	} else {
+		userInput, err := strconv.ParseBool(*la.flags.useDeviceCode.ptr)
+		if err != nil {
+			return fmt.Errorf("unexpected boolean input for use-device-code: %w", err)
+		}
+		useDevCode = userInput
 	}
 
-	if la.flags.useDeviceCode {
+	if useDevCode {
 		if _, err := la.authManager.LoginWithDeviceCode(ctx, la.writer, la.flags.tenantID); err != nil {
 			return fmt.Errorf("logging in: %w", err)
 		}

@@ -43,17 +43,17 @@ func (m *mavenCli) InstallUrl() string {
 	return "https://maven.apache.org"
 }
 
-func (m *mavenCli) CheckInstalled(ctx context.Context) (bool, error) {
+func (m *mavenCli) CheckInstalled(ctx context.Context) error {
 	_, err := m.mvnCmd()
 	if err != nil {
-		return false, err
+		return err
 	}
 
 	if ver, err := m.extractVersion(ctx); err == nil {
 		log.Printf("maven version: %s", ver)
 	}
 
-	return true, nil
+	return nil
 }
 
 func (m *mavenCli) SetPath(projectPath string, rootProjectPath string) {

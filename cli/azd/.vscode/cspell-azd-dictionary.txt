@@ -33,6 +33,7 @@ BUILDNUMBER
 cflags
 circleci
 cmdsubst
+consolesize
 containerapp
 containerapps
 contoso
@@ -46,8 +47,8 @@ dockerproject
 dskip
 eastus
 endregion
-envname
 envlist
+envname
 errcheck
 errorinfo
 errorlint

@@ -61,7 +61,7 @@ func (j *javacCli) CheckInstalled(ctx context.Context) error {
 
 		if err == nil {
 			log.Printf("javac version: %s", runResult.Stdout)
-			return false, &tools.ErrSemver{ToolName: j.Name(), VersionInfo: j.VersionInfo()}
+			return &tools.ErrSemver{ToolName: j.Name(), VersionInfo: j.VersionInfo()}
 		}
 
 		return fmt.Errorf("checking javac version: %w", err)

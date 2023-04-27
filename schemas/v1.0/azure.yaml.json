@@ -107,11 +107,6 @@
                             "java"
                         ]
                     },
-                    "module": {
-                        "type": "string",
-                        "title": "Path of the infrastructure module used to deploy the service relative to the root infra folder",
-                        "description": "If omitted, the CLI will assume the module name is the same as the service name."
-                    },
                     "dist": {
                         "type": "string",
                         "title": "Relative path to service deployment artifacts"
@@ -327,6 +322,20 @@
                     "title": "post restore hook",
                     "description": "Runs after the `restore` command",
                     "$ref": "#/definitions/hook"
+                }
+            }
+        },
+        "requiredVersions": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "azd": {
+                    "type": "string",
+                    "title": "A range of supported versions of `azd` for this project",
+                    "description": "A range of supported versions of `azd` for this project. If the version of `azd` is outside this range, the project will fail to load. Optional (allows all versions if absent).",
+                    "examples": [
+                        ">= 0.6.0-beta.3"
+                    ]
                 }
             }
         }

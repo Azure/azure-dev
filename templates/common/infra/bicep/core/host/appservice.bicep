@@ -72,6 +72,22 @@ resource appService 'Microsoft.Web/sites@2022-03-01' = {
       httpLogs: { fileSystem: { enabled: true, retentionInDays: 1, retentionInMb: 35 } }
     }
   }
+
+  resource basicPublishingCredentialsPoliciesFtp 'basicPublishingCredentialsPolicies' = {
+    name: 'ftp'
+    location: location
+    properties: {
+      allow: false
+    }
+  }
+
+  resource basicPublishingCredentialsPoliciesScm 'basicPublishingCredentialsPolicies' = {
+    name: 'scm'
+    location: location
+    properties: {
+      allow: false
+    }
+  }
 }
 
 module config 'appservice-appsettings.bicep' = if (!empty(appSettings)) {

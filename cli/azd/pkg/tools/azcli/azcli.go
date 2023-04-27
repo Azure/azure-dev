@@ -64,13 +64,13 @@ type AzCli interface {
 		vaultName string,
 		secretName string,
 	) (*AzCliKeyVaultSecret, error)
-	PurgeKeyVault(ctx context.Context, subscriptionId string, vaultName string, location string) error
 	GetAppConfig(
 		ctx context.Context, subscriptionId string, resourceGroupName string, configName string) (*AzCliAppConfig, error)
+	PurgeApim(ctx context.Context, subscriptionId string, apimName string, location string) error
 	PurgeAppConfig(ctx context.Context, subscriptionId string, configName string, location string) error
+	PurgeKeyVault(ctx context.Context, subscriptionId string, vaultName string, location string) error
 	GetApim(
 		ctx context.Context, subscriptionId string, resourceGroupName string, apimName string) (*AzCliApim, error)
-	PurgeApim(ctx context.Context, subscriptionId string, apimName string, location string) error
 	DeployAppServiceZip(
 		ctx context.Context,
 		subscriptionId string,
@@ -96,7 +96,7 @@ type AzCli interface {
 		armTemplate azure.RawArmTemplate,
 		parameters azure.ArmParameters,
 		location string) (
-		AzCliDeploymentResult, error)
+		*armresources.DeploymentExtended, error)
 	DeployToResourceGroup(
 		ctx context.Context,
 		subscriptionId,
@@ -104,7 +104,7 @@ type AzCli interface {
 		deploymentName string,
 		armTemplate azure.RawArmTemplate,
 		parameters azure.ArmParameters,
-	) (AzCliDeploymentResult, error)
+	) (*armresources.DeploymentExtended, error)
 	DeleteSubscriptionDeployment(ctx context.Context, subscriptionId string, deploymentName string) error
 	DeleteResourceGroup(ctx context.Context, subscriptionId string, resourceGroupName string) error
 	ListResourceGroup(
@@ -145,12 +145,6 @@ type AzCli interface {
 		resourceGroupName string,
 		applicationName string,
 	) (*AzCliAppServiceProperties, error)
-	GetContainerAppProperties(
-		ctx context.Context,
-		subscriptionId string,
-		resourceGroupName string,
-		applicationName string,
-	) (*AzCliContainerAppProperties, error)
 	GetStaticWebAppProperties(
 		ctx context.Context,
 		subscriptionID string,

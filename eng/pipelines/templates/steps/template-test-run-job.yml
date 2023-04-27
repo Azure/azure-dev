@@ -92,7 +92,7 @@ steps:
               # Install azd build
               if [[ $(AzdVersion) == pr/* ]];
               then
-                curl -fsSL https://aka.ms/install-azd.sh | sudo bash -s -- --base-url "https://$(azdev-storage-account-name).blob.core.windows.net/azd/standalone/$(AzdVersion)" --version ''
+                curl -fsSL https://aka.ms/install-azd.sh | sudo bash -s -- --base-url "https://$(azdev-storage-account-name).blob.core.windows.net/azd/standalone/$(AzdVersion)" --skip-verify --version ''
               else
                 curl -fsSL https://aka.ms/install-azd.sh | sudo bash -s -- --version $(AzdVersion) --verbose
               fi

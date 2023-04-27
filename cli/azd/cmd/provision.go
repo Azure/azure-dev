@@ -233,8 +233,9 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			Header:   "Your project has been provisioned!",
-			FollowUp: getResourceGroupFollowUp(ctx, p.formatter, p.projectConfig, p.resourceManager, p.env),
+			Header: "Your project has been provisioned!",
+			FollowUp: getResourceGroupFollowUp(
+				ctx, p.formatter, p.projectConfig, p.resourceManager, p.env),
 		},
 	}, nil
 }

@@ -8,7 +8,7 @@ import (
 )
 
 func TestGetAzDevCliIdentifier(t *testing.T) {
-	version := GetVersionNumber()
+	version := VersionInfo().Version.String()
 	require.NotEmpty(t, version)
 
 	require.Equal(t, fmt.Sprintf("%s/%s %s", azDevProductIdentifierKey, version, getPlatformInfo()), getAzDevCliIdentifier())
@@ -62,7 +62,7 @@ func TestFormatTemplate(t *testing.T) {
 
 // Scenario tests
 func TestUserAgentStringScenarios(t *testing.T) {
-	version := GetVersionNumber()
+	version := VersionInfo().Version.String()
 	require.NotEmpty(t, version)
 
 	azDevIdentifier := fmt.Sprintf("azdev/%s %s", version, getPlatformInfo())

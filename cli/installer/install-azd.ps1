@@ -27,6 +27,9 @@ Do not update the PATH environment variable with the location of azd.
 .PARAMETER DownloadTimeoutSeconds
 Download timeout in seconds. Default is 120 (2 minutes).
 
+.PARAMETER SkipVerify
+Skips verification of the downloaded file.
+
 .EXAMPLE
 powershell -ex AllSigned -c "Invoke-RestMethod 'https://aka.ms/install-azd.ps1' | Invoke-Expression"
 
@@ -58,6 +61,7 @@ param(
     [switch] $DryRun,
     [string] $InstallFolder,
     [switch] $NoPath,
+    [switch] $SkipVerify,
     [int] $DownloadTimeoutSeconds = 120,
     [switch] $NoTelemetry
 )
@@ -300,7 +304,7 @@ try {
     Write-Verbose "Downloading build from $downloadUrl" -Verbose:$Verbose
     $releaseArtifactFilename = Join-Path $tempFolder $packageFilename
     try {
-        $LASTEXITCODE = 0
+        $global:LASTEXITCODE = 0
         Invoke-WebRequest -Uri $downloadUrl -OutFile $releaseArtifactFilename -TimeoutSec $DownloadTimeoutSeconds
         if ($LASTEXITCODE) {
             throw "Invoke-WebRequest failed with nonzero exit code: $LASTEXITCODE"
@@ -341,6 +345,23 @@ try {
 
     try {
         if (isLinuxOrMac) {
+            if ($IsMacOS -and !$SkipVerify) {
+                Write-Verbose "Verifying signature of $binFilename" -Verbose:$Verbose
+                $codeSignOutput = codesign -v "$tempFolder/decompress/$binFilename" 2>&1
+                if ($LASTEXITCODE) {
+                    Write-Error "Could not verify signature of $binFilename, error output:"
+                    $codeSignOutput |  ForEach-Object {
+                        if ($_ -is [System.Management.Automation.ErrorRecord]) {
+                          Write-Error $_
+                        } else {
+                          Write-Host $_
+                        }
+                    }
+                    reportTelemetryIfEnabled 'InstallFailed' 'SignatureVerificationFailed'
+                    exit 1
+                }
+            }
+
             Write-Verbose "Installing azd in $InstallFolder" -Verbose:$Verbose
             if (!(Test-Path $InstallFolder)) {
                 New-Item -ItemType Directory -Path $InstallFolder -Force | Out-Null
@@ -359,6 +380,23 @@ try {
                 Copy-Item "$tempFolder/decompress/$binFilename" $outputFilename  -ErrorAction Stop | Out-Null
             }
         } else {
+            if (!$SkipVerify) {
+                try {
+                    Write-Verbose "Verifying signature of $releaseArtifactFilename" -Verbose:$Verbose
+                    $signature = Get-AuthenticodeSignature $releaseArtifactFilename
+                    if ($signature.Status -ne 'Valid') {
+                        Write-Error "Signature of $releaseArtifactFilename is not valid"
+                        reportTelemetryIfEnabled 'InstallFailed' 'SignatureVerificationFailed'
+                        exit 1
+                    }
+                } catch {
+                    Write-Error "Could not verify signature of $releaseArtifactFilename"
+                    Write-Error $_
+                    reportTelemetryIfEnabled 'InstallFailed' 'SignatureVerificationFailed'
+                    exit 1
+                }
+            }
+
             Write-Verbose "Installing MSI" -Verbose:$Verbose
             $MSIEXEC = "${env:SystemRoot}\System32\msiexec.exe"
             $installProcess = Start-Process $MSIEXEC `

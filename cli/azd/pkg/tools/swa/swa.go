@@ -12,6 +12,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
 
+// cSwaCliPackage is the npm package (including the version version) we execute with npx to run the SWA CLI.
+const cSwaCliPackage = "@azure/static-web-apps-cli@1.0.6"
+
 func NewSwaCli(commandRunner exec.CommandRunner) SwaCli {
 	return &swaCli{
 		commandRunner: commandRunner,
@@ -109,7 +112,7 @@ func (cli *swaCli) InstallUrl() string {
 
 func (cli *swaCli) executeCommand(ctx context.Context, cwd string, args ...string) (exec.RunResult, error) {
 	runArgs := exec.
-		NewRunArgs("npx", "-y", "@azure/static-web-apps-cli@1.0.6").
+		NewRunArgs("npx", "-y", cSwaCliPackage).
 		AppendParams(args...).
 		WithCwd(cwd).
 		WithEnrichError(true)

@@ -36,6 +36,7 @@ type subareaProvider interface {
 		ctx context.Context,
 		pipelineManagerArgs PipelineManagerArgs,
 		infraOptions provisioning.Options,
+		projectPath string,
 	) (bool, error)
 	// name returns the name of the provider
 	name() string

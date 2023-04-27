@@ -163,26 +163,18 @@ func (p *TestProvider) Destroy(
 				Outputs:   deployment.Outputs,
 			}
 
-			err := asyncContext.Interact(func() error {
-				confirmOptions := input.ConsoleOptions{Message: "Are you sure you want to destroy?"}
-				confirmed, err := p.console.Confirm(ctx, confirmOptions)
-
-				if err != nil {
-					return err
-				}
-
-				if !confirmed {
-					return errors.New("user denied confirmation")
-				}
-
-				return nil
-			})
+			confirmOptions := input.ConsoleOptions{Message: "Are you sure you want to destroy?"}
+			confirmed, err := p.console.Confirm(ctx, confirmOptions)
 
 			if err != nil {
 				asyncContext.SetError(err)
 				return
 			}
 
+			if !confirmed {
+				asyncContext.SetError(errors.New("user denied confirmation"))
+				return
+			}
 			asyncContext.SetProgress(&DestroyProgress{Message: "Finishing destroy", Timestamp: time.Now()})
 
 			asyncContext.SetResult(&destroyResult)

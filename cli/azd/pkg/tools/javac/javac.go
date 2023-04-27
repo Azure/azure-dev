@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	osexec "os/exec"
 	"path/filepath"
@@ -53,17 +54,19 @@ func (j *javacCli) CheckInstalled(ctx context.Context) error {
 		// On older versions of javac (8 and below), `javac -version` is supported instead.
 		// If this returns successfully, we know that it's an older version
 		// and can safely recommend an upgrade.
-		_, err := j.cmdRun.Run(ctx, exec.RunArgs{
+		runResult, err = j.cmdRun.Run(ctx, exec.RunArgs{
 			Cmd:  path,
 			Args: []string{"-version"},
 		})
 
 		if err == nil {
-			return &tools.ErrSemver{ToolName: j.Name(), VersionInfo: j.VersionInfo()}
+			log.Printf("javac version: %s", runResult.Stdout)
+			return false, &tools.ErrSemver{ToolName: j.Name(), VersionInfo: j.VersionInfo()}
 		}
 
 		return fmt.Errorf("checking javac version: %w", err)
 	}
+	log.Printf("javac version: %s", runResult.Stdout)
 
 	jdkVer, err := tools.ExtractVersion(runResult.Stdout)
 	if err != nil {

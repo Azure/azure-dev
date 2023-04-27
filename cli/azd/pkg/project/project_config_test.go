@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/MakeNowJust/heredoc/v2"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
@@ -36,6 +37,14 @@ func TestProjectConfigParse_Invalid(t *testing.T) {
 					web:
 						language: csharp
 						host: appservice-containerapp-hybrid-edge-cloud
+			`),
+		},
+		{
+			name: "BadVersionConstraints",
+			projectConfig: heredoc.Doc(`
+				name: proj-bad-version-constraint
+				requiredVersions:
+					azd: notarange
 			`),
 		},
 	}
@@ -80,7 +89,6 @@ services:
 	require.Equal(t, 2, len(projectConfig.Services))
 
 	for key, svc := range projectConfig.Services {
-		require.Equal(t, key, svc.Module)
 		require.Equal(t, key, svc.Name)
 		require.Equal(t, projectConfig, svc.Project)
 	}
@@ -138,31 +146,6 @@ services:
 
 	require.Equal(t, "./Dockerfile.dev", service.Docker.Path)
 	require.Equal(t, "../", service.Docker.Context)
-}
-
-func TestProjectWithCustomModule(t *testing.T) {
-	const testProj = `
-name: test-proj
-metadata:
-  template: test-proj-template
-resourceGroup: rg-test
-services:
-  api:
-    project: src/api
-    language: js
-    host: containerapp
-    module: ./api/api
-`
-
-	mockContext := mocks.NewMockContext(context.Background())
-	projectConfig, err := Parse(*mockContext.Context, testProj)
-
-	require.NotNil(t, projectConfig)
-	require.Nil(t, err)
-
-	service := projectConfig.Services["api"]
-
-	require.Equal(t, "./api/api", service.Module)
 }
 
 func TestProjectConfigAddHandler(t *testing.T) {
@@ -313,7 +296,6 @@ services:
     project: src/api
     language: js
     host: containerapp
-    module: ./api/api
 `
 
 	mockContext := mocks.NewMockContext(context.Background())
@@ -384,7 +366,6 @@ services:
     project: src/api
     language: js
     host: containerapp
-    module: ./api/api
     `
 
 	mockContext := mocks.NewMockContext(context.Background())
@@ -397,4 +378,74 @@ services:
 	})
 
 	require.Equal(t, "hello", projectConfig.ResourceGroupName.MustEnvsubst(env.Getenv))
+}
+
+func TestMinVersion(t *testing.T) {
+	savedVersion := internal.Version
+	t.Cleanup(func() {
+		internal.Version = savedVersion
+	})
+
+	const testProjWithMinVersion = `
+name: test-proj
+requiredVersions:
+  azd: ">= 0.6.0-beta.3"
+metadata:
+  template: test-proj-template
+`
+
+	const testProjWithoutVersion = `
+name: test-proj
+metadata:
+  template: test-proj-template
+`
+
+	const testProjWithMaxVersion = `
+name: test-proj
+requiredVersions:
+  azd: "<= 0.5.0"
+metadata:
+  template: test-proj-template
+`
+
+	t.Run("noVersion", func(t *testing.T) {
+		internal.Version = "0.6.0-beta.3 (commit 0000000000000000000000000000000000000000)"
+
+		_, err := Parse(context.Background(), testProjWithoutVersion)
+		require.NoError(t, err)
+	})
+
+	t.Run("supportedVersion", func(t *testing.T) {
+		// Exact match of minimum version.
+		internal.Version = "0.6.0-beta.3 (commit 0000000000000000000000000000000000000000)"
+
+		_, err := Parse(context.Background(), testProjWithMinVersion)
+		require.NoError(t, err)
+
+		// Newer version than minimum.
+		internal.Version = "0.6.0 (commit 0000000000000000000000000000000000000000)"
+
+		_, err = Parse(context.Background(), testProjWithMinVersion)
+		require.NoError(t, err)
+	})
+
+	t.Run("unsupportedVersion", func(t *testing.T) {
+		internal.Version = "0.6.0-beta.2 (commit 0000000000000000000000000000000000000000)"
+
+		_, err := Parse(context.Background(), testProjWithMinVersion)
+		require.Error(t, err)
+
+		_, err = Parse(context.Background(), testProjWithMaxVersion)
+		require.Error(t, err)
+	})
+
+	t.Run("devVersionAllowsAll", func(t *testing.T) {
+		internal.Version = "0.0.0-dev.0 (commit 0000000000000000000000000000000000000000)"
+
+		_, err := Parse(context.Background(), testProjWithMinVersion)
+		require.NoError(t, err)
+
+		_, err = Parse(context.Background(), testProjWithoutVersion)
+		require.NoError(t, err)
+	})
 }

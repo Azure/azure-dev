@@ -14,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/containerapps"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -269,6 +270,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(account.NewSubscriptionCredentialProvider)
 	container.RegisterSingleton(azcli.NewManagedClustersService)
 	container.RegisterSingleton(azcli.NewContainerRegistryService)
+	container.RegisterSingleton(containerapps.NewContainerAppService)
 	container.RegisterSingleton(project.NewContainerHelper)
 	container.RegisterSingleton(func() ioc.ServiceLocator {
 		return ioc.NewServiceLocator(container)

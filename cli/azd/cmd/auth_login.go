@@ -304,7 +304,7 @@ func runningOnCodespacesBrowser(ctx context.Context, commandRunner exec.CommandR
 	if err != nil {
 		// An error here means VSCode is not installed or found, or something else.
 		// At any case, we know VSCode is not within a webBrowser
-		log.Printf("Error running code --status: %s", err.Error())
+		log.Printf("error running code --status: %s", err.Error())
 		return false
 	}
 
@@ -400,14 +400,13 @@ func parseUseDeviceCode(ctx context.Context, flag stringPtr, commandRunner exec.
 	if explicitDeviceCodeInput {
 		userInput, err := strconv.ParseBool(*flag.ptr)
 		if err != nil {
-			return false, fmt.Errorf("unexpected boolean input for use-device-code: %w", err)
+			return false, fmt.Errorf("unexpected boolean input for '--use-device-code': %w", err)
 		}
 		// honor the value from the user input. No override.
 		return userInput, err
 	}
 
-	// Only try to override to device code for Codespaces. There's no point on checking if running on the browser all
-	// the time, as that's has a dependency on vscode.
+	// Detect cases where the browser isn't available for interactive auth, and we instead want to set `useDeviceCode` to be true by default
 	inCodespacesEnv := os.Getenv("CODESPACES") == "true"
 	if inCodespacesEnv {
 		// For VSCode online (in web Browser), like GitHub Codespaces or VSCode online attached to any server,

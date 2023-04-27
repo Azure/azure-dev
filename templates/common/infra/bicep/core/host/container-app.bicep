@@ -26,10 +26,12 @@ param managedIdentityName string = ''
 
 param targetPort int = 80
 
+@description('Enabled Ingress for container app')
+param ingressEnabled bool = true
 @description('Enable Dapr')
 param daprEnabled bool = false
 @description('Dapr app ID')
-param daprApp string = containerName
+param daprAppId string = containerName
 @allowed(['http', 'grpc'])
 @description('Protocol used by Dapr to connect to the app, e.g. http or grpc')
 param daprAppProtocol string = 'http'
@@ -44,22 +46,21 @@ resource app 'Microsoft.App/containerApps@2022-03-01' = {
   name: name
   location: location
   tags: tags
-  identity: managedIdentityEnabled || managedIdentity ? {
-    type: 'SystemAssigned,UserAssigned'
-    userAssignedIdentities: !empty(managedIdentityName) ? {
-      '${managedIdentityRes.id}' : {}
-    } : {}
-  } : { type: 'None'}
-  dependsOn: [managedIdentityRes]
+  identity: (managedIdentityEnabled || managedIdentity) ? !empty(managedIdentityName) ? {
+    type: 'UserAssigned'
+    userAssignedIdentities:  {
+      '${userManagedIdentity.id}' : {}
+    }
+  } : { type: 'SystemAssigned' } : { type: 'None' }
   properties: {
     managedEnvironmentId: containerAppsEnvironment.id
     configuration: {
       activeRevisionsMode: 'single'
-      ingress: {
+      ingress: ingressEnabled ? {
         external: external
         targetPort: targetPort
         transport: 'auto'
-      }
+      } : null
       secrets: [
         {
           name: 'registry-password'
@@ -68,9 +69,9 @@ resource app 'Microsoft.App/containerApps@2022-03-01' = {
       ]
       dapr: daprEnabled ? {
         enabled: true
-        appId: daprApp
+        appId: daprAppId
         appProtocol: daprAppProtocol
-        appPort: targetPort
+        appPort: ingressEnabled ? targetPort : 0
       } : {enabled: false}
       registries: [
         {
@@ -110,14 +111,15 @@ resource containerRegistry 'Microsoft.ContainerRegistry/registries@2022-02-01-pr
 }
 
 // user assigned managed identity to use throughout
-resource managedIdentityRes 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' existing = {
+resource userManagedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' existing = if (managedIdentityName != '') {
   name: managedIdentityName
 }
 
 
 output defaultDomain string = containerAppsEnvironment.properties.defaultDomain
-output identityPrincipalId string = managedIdentity ? app.identity.principalId : ''
-output userManagedIdentityId string = managedIdentityEnabled ? managedIdentityRes.id : ''
+// If user managed identity is used, the output app.identity.principalId is not available to be queried
+output identityPrincipalId string = managedIdentity && empty(managedIdentityName) ? app.identity.principalId : ''
 output imageName string = imageName
 output name string = app.name
-output uri string = 'https://${app.properties.configuration.ingress.fqdn}'
+// If no ingress is enabled, the output uri is empty
+output uri string = ingressEnabled ? 'https://${app.properties.configuration.ingress.fqdn}': ''

@@ -95,7 +95,7 @@ func GetResourceTypeDisplayName(resourceType AzureResourceType) string {
 	case AzureResourceTypeSearchService:
 		return "Search service"
 	case AzureResourceTypeSpringApp:
-		return "Azure Spring App"
+		return "Azure Spring Apps"
 	}
 
 	return ""

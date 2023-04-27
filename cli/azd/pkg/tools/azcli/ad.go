@@ -13,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/google/uuid"
 	"github.com/sethvargo/go-retry"
 )
@@ -24,6 +25,18 @@ type AzureCredentials struct {
 	SubscriptionId             string `json:"subscriptionId"`
 	TenantId                   string `json:"tenantId"`
 	ResourceManagerEndpointUrl string `json:"resourceManagerEndpointUrl"`
+}
+
+// model structure for RoleAssignment tools
+type AzCliRoleAssignment struct {
+	Id         string `json:"id"`
+	Name       string `json:"name"`
+	Type       string `json:"type "`
+	Properties struct {
+		PrincipalID      string `json:"principalName"`
+		RoleDefinitionID string `json:"roleDefinitionName"`
+		Scope            string `json:"scope"`
+	} `json:"properties"`
 }
 
 func (cli *azCli) CreateOrUpdateServicePrincipal(
@@ -55,8 +68,10 @@ func (cli *azCli) CreateOrUpdateServicePrincipal(
 		return nil, fmt.Errorf("failed resetting application credentials: %w", err)
 	}
 
+	// Required role assignment for applying role assignment
+	checkRoles := []string{"Owner", "User Access Administrator"}
 	// Apply specified role assignment
-	err = cli.ensureRoleAssignments(ctx, subscriptionId, roleName, servicePrincipal)
+	err = cli.ensureRoleAssignments(ctx, subscriptionId, roleName, servicePrincipal, checkRoles)
 	if err != nil {
 		return nil, fmt.Errorf("failed applying role assignment: %w", err)
 	}
@@ -196,10 +211,17 @@ func (cli *azCli) ensureRoleAssignments(
 	subscriptionId string,
 	roleName string,
 	servicePrincipal *graphsdk.ServicePrincipal,
+	checkRoles []string,
 ) error {
 	// Find the specified role in the subscription scope
 	scope := azure.SubscriptionRID(subscriptionId)
 	roleDefinition, err := cli.getRoleDefinition(ctx, subscriptionId, scope, roleName)
+	if err != nil {
+		return err
+	}
+
+	// Check role assignment before creating
+	err = cli.checkRoleAssignments(ctx, subscriptionId, checkRoles)
 	if err != nil {
 		return err
 	}
@@ -349,4 +371,53 @@ func (cli *azCli) createRoleAssignmentsClient(
 	}
 
 	return client, nil
+}
+
+func (cli *azCli) GetUserRolesAssignment(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroupName string,
+	roleName string,
+) (*AzCliRoleAssignment, error) {
+	client, err := cli.createRoleAssignmentsClient(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	role, err := client.Get(ctx, resourceGroupName, roleName, nil)
+	if err != nil {
+		return nil, fmt.Errorf("getting role assignment: %w", err)
+	}
+
+	return &AzCliRoleAssignment{
+		Id:   *role.ID,
+		Name: *role.Name,
+		Type: *role.Type,
+		Properties: struct {
+			PrincipalID      string `json:"principalName"`
+			RoleDefinitionID string `json:"roleDefinitionName"`
+			Scope            string `json:"scope"`
+		}{
+			PrincipalID:      convert.ToValueWithDefault(role.Properties.PrincipalID, ""),
+			RoleDefinitionID: convert.ToValueWithDefault(role.Properties.RoleDefinitionID, ""),
+			Scope:            convert.ToValueWithDefault(role.Properties.Scope, ""),
+		},
+	}, nil
+}
+
+func (cli *azCli) checkRoleAssignments(
+	ctx context.Context,
+	subscriptionId string,
+	roleName []string,
+) error {
+	// Find the specified role in the subscription scope
+	scope := azure.SubscriptionRID(subscriptionId)
+	for _, role := range roleName {
+		result, err := cli.getRoleDefinition(ctx, subscriptionId, scope, role)
+		if result != nil {
+			// equals return nil because err == nil if result != nil
+			return err
+		}
+	}
+	return fmt.Errorf("required user roles are missing: %s", ux.ListAsText(roleName, "or"))
 }

@@ -453,7 +453,7 @@ func itemsCountAsText(items []itemToPurge) string {
 		}
 	}
 
-	return ux.ListAsText(tokens)
+	return ux.ListAsText(tokens, "and")
 }
 
 func (p *BicepProvider) purgeItems(

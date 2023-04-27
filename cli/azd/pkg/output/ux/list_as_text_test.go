@@ -12,25 +12,25 @@ import (
 func Test_ListAsText(t *testing.T) {
 	t.Run("single", func(t *testing.T) {
 		expected := "foo"
-		result := ListAsText([]string{expected})
+		result := ListAsText([]string{expected}, "and")
 		require.Equal(t, expected, result)
 	})
 
 	t.Run("double", func(t *testing.T) {
 		expected := "foo and bar"
-		result := ListAsText([]string{"foo", "bar"})
+		result := ListAsText([]string{"foo", "bar"}, "and")
 		require.Equal(t, expected, result)
 	})
 
 	t.Run("triple", func(t *testing.T) {
 		expected := "foo, bar and axe"
-		result := ListAsText([]string{"foo", "bar", "axe"})
+		result := ListAsText([]string{"foo", "bar", "axe"}, "and")
 		require.Equal(t, expected, result)
 	})
 
 	t.Run("long", func(t *testing.T) {
 		expected := "foo, bar, axe, x, y and z"
-		result := ListAsText([]string{"foo", "bar", "axe", "x", "y", "z"})
+		result := ListAsText([]string{"foo", "bar", "axe", "x", "y", "z"}, "and")
 		require.Equal(t, expected, result)
 	})
 }

@@ -14,7 +14,7 @@ import (
 // ["foo", "bar"] 					=> "foo and bar"
 // ["foo", "bar", "axe"] 			=> "foo, bar and axe"
 // ["foo", "bar", ..., ..., "axe"] 	=> "foo, bar, ..., ... and axe"
-func ListAsText(items []string) string {
+func ListAsText(items []string, connectWord string) string {
 	count := len(items)
 	if count < 1 {
 		log.Panic("calling itemsCountAsText() with empty list.")
@@ -25,8 +25,8 @@ func ListAsText(items []string) string {
 	}
 
 	if count == 2 {
-		return fmt.Sprintf("%s and %s", items[0], items[1])
+		return fmt.Sprintf("%s %s %s", items[0], connectWord, items[1])
 	}
 
-	return fmt.Sprintf("%s and %s", strings.Join(items[:count-1], ", "), items[count-1])
+	return fmt.Sprintf("%s %s %s", strings.Join(items[:count-1], ", "), connectWord, items[count-1])
 }

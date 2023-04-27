@@ -89,7 +89,6 @@ services:
 	require.Equal(t, 2, len(projectConfig.Services))
 
 	for key, svc := range projectConfig.Services {
-		require.Equal(t, key, svc.Module)
 		require.Equal(t, key, svc.Name)
 		require.Equal(t, projectConfig, svc.Project)
 	}
@@ -147,31 +146,6 @@ services:
 
 	require.Equal(t, "./Dockerfile.dev", service.Docker.Path)
 	require.Equal(t, "../", service.Docker.Context)
-}
-
-func TestProjectWithCustomModule(t *testing.T) {
-	const testProj = `
-name: test-proj
-metadata:
-  template: test-proj-template
-resourceGroup: rg-test
-services:
-  api:
-    project: src/api
-    language: js
-    host: containerapp
-    module: ./api/api
-`
-
-	mockContext := mocks.NewMockContext(context.Background())
-	projectConfig, err := Parse(*mockContext.Context, testProj)
-
-	require.NotNil(t, projectConfig)
-	require.Nil(t, err)
-
-	service := projectConfig.Services["api"]
-
-	require.Equal(t, "./api/api", service.Module)
 }
 
 func TestProjectConfigAddHandler(t *testing.T) {
@@ -322,7 +296,6 @@ services:
     project: src/api
     language: js
     host: containerapp
-    module: ./api/api
 `
 
 	mockContext := mocks.NewMockContext(context.Background())
@@ -393,7 +366,6 @@ services:
     project: src/api
     language: js
     host: containerapp
-    module: ./api/api
     `
 
 	mockContext := mocks.NewMockContext(context.Background())

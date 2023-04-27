@@ -6,37 +6,19 @@ package project
 import (
 	"context"
 	"fmt"
-	"io"
-	"log"
-	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/account"
-	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
+	"github.com/azure/azure-dev/cli/azd/pkg/containerapps"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
 type containerAppTarget struct {
-	env                        *environment.Environment
-	cli                        azcli.AzCli
-	console                    input.Console
-	commandRunner              exec.CommandRunner
-	accountManager             account.Manager
-	serviceManager             ServiceManager
-	resourceManager            ResourceManager
-	containerHelper            *ContainerHelper
-	alphaFeatureManager        *alpha.FeatureManager
-	userProfileService         *azcli.UserProfileService
-	subscriptionTenantResolver account.SubscriptionTenantResolver
+	env                 *environment.Environment
+	containerHelper     *ContainerHelper
+	containerAppService containerapps.ContainerAppService
 }
 
 // NewContainerAppTarget creates the container app service target.
@@ -45,29 +27,13 @@ type containerAppTarget struct {
 // can be provisioned during deployment.
 func NewContainerAppTarget(
 	env *environment.Environment,
-	azCli azcli.AzCli,
-	console input.Console,
-	commandRunner exec.CommandRunner,
-	accountManager account.Manager,
-	serviceManager ServiceManager,
-	resourceManager ResourceManager,
-	userProfileService *azcli.UserProfileService,
-	subscriptionTenantResolver account.SubscriptionTenantResolver,
 	containerHelper *ContainerHelper,
-	alphaFeatureManager *alpha.FeatureManager,
+	containerAppService containerapps.ContainerAppService,
 ) ServiceTarget {
 	return &containerAppTarget{
-		env:                        env,
-		accountManager:             accountManager,
-		serviceManager:             serviceManager,
-		resourceManager:            resourceManager,
-		cli:                        azCli,
-		console:                    console,
-		commandRunner:              commandRunner,
-		containerHelper:            containerHelper,
-		alphaFeatureManager:        alphaFeatureManager,
-		userProfileService:         userProfileService,
-		subscriptionTenantResolver: subscriptionTenantResolver,
+		env:                 env,
+		containerHelper:     containerHelper,
+		containerAppService: containerAppService,
 	}
 }
 
@@ -108,14 +74,6 @@ func (at *containerAppTarget) Deploy(
 				return
 			}
 
-			// If the infra module has not been specified default to a module with the same name as the service.
-			if strings.TrimSpace(serviceConfig.Infra.Module) == "" {
-				serviceConfig.Infra.Module = serviceConfig.Module
-			}
-			if strings.TrimSpace(serviceConfig.Infra.Module) == "" {
-				serviceConfig.Infra.Module = serviceConfig.Name
-			}
-
 			// Login, tag & push container image to ACR
 			containerDeployTask := at.containerHelper.Deploy(ctx, serviceConfig, packageOutput, targetResource)
 			syncProgress(task, containerDeployTask.Progress())
@@ -126,82 +84,18 @@ func (at *containerAppTarget) Deploy(
 				return
 			}
 
-			infraManager, err := provisioning.NewManager(
+			imageName := at.env.GetServiceProperty(serviceConfig.Name, "IMAGE_NAME")
+			task.SetProgress(NewServiceProgress("Updating container app revision"))
+			err = at.containerAppService.AddRevision(
 				ctx,
-				at.env,
-				serviceConfig.Project.Path,
-				serviceConfig.Infra,
-				at.console.IsUnformatted(),
-				at.cli,
-				&MutedConsole{
-					ParentConsole: at.console,
-				}, // hide the bicep deployment output.
-				at.commandRunner,
-				at.accountManager,
-				at.userProfileService,
-				at.subscriptionTenantResolver,
-				at.alphaFeatureManager,
-			)
-			if err != nil {
-				task.SetError(fmt.Errorf("creating provisioning manager: %w", err))
-				return
-			}
-
-			task.SetProgress(NewServiceProgress("Creating deployment template"))
-			deploymentPlan, err := infraManager.Plan(ctx)
-			if err != nil {
-				task.SetError(fmt.Errorf("planning provisioning: %w", err))
-				return
-			}
-
-			task.SetProgress(NewServiceProgress("Updating container app image reference"))
-			deploymentName := fmt.Sprintf("%s-%s", at.env.GetEnvName(), serviceConfig.Name)
-			scope := infra.NewResourceGroupScope(
-				at.cli,
 				targetResource.SubscriptionId(),
 				targetResource.ResourceGroupName(),
-				deploymentName,
+				targetResource.ResourceName(),
+				imageName,
 			)
-			deployResult, err := infraManager.Deploy(ctx, deploymentPlan, scope)
-
 			if err != nil {
-				task.SetError(fmt.Errorf("provisioning infrastructure for app deployment: %w", err))
+				task.SetError(fmt.Errorf("updating container app service: %w", err))
 				return
-			}
-
-			if len(deployResult.Deployment.Outputs) > 0 {
-				log.Printf("saving %d deployment outputs", len(deployResult.Deployment.Outputs))
-				if err := provisioning.UpdateEnvironment(at.env, deployResult.Deployment.Outputs); err != nil {
-					task.SetError(fmt.Errorf("saving outputs to environment: %w", err))
-					return
-				}
-			}
-
-			if targetResource.ResourceName() == "" {
-				azureResource, err := at.resourceManager.GetServiceResource(
-					ctx,
-					targetResource.SubscriptionId(),
-					targetResource.ResourceGroupName(),
-					serviceConfig,
-					"deploy",
-				)
-				if err != nil {
-					task.SetError(err)
-					return
-				}
-
-				// Fill in the target resource
-				targetResource = environment.NewTargetResource(
-					targetResource.SubscriptionId(),
-					targetResource.ResourceGroupName(),
-					azureResource.Name,
-					azureResource.Type,
-				)
-
-				if err := checkResourceType(targetResource, infra.AzureResourceTypeContainerApp); err != nil {
-					task.SetError(err)
-					return
-				}
 			}
 
 			task.SetProgress(NewServiceProgress("Fetching endpoints for container app service"))
@@ -219,7 +113,6 @@ func (at *containerAppTarget) Deploy(
 					targetResource.ResourceName(),
 				),
 				Kind:      ContainerAppTarget,
-				Details:   deployResult,
 				Endpoints: endpoints,
 			})
 		},
@@ -232,7 +125,7 @@ func (at *containerAppTarget) Endpoints(
 	serviceConfig *ServiceConfig,
 	targetResource *environment.TargetResource,
 ) ([]string, error) {
-	if containerAppProperties, err := at.cli.GetContainerAppProperties(
+	if ingressConfig, err := at.containerAppService.GetIngressConfiguration(
 		ctx,
 		targetResource.SubscriptionId(),
 		targetResource.ResourceGroupName(),
@@ -240,8 +133,8 @@ func (at *containerAppTarget) Endpoints(
 	); err != nil {
 		return nil, fmt.Errorf("fetching service properties: %w", err)
 	} else {
-		endpoints := make([]string, len(containerAppProperties.HostNames))
-		for idx, hostName := range containerAppProperties.HostNames {
+		endpoints := make([]string, len(ingressConfig.HostNames))
+		for idx, hostName := range ingressConfig.HostNames {
 			endpoints[idx] = fmt.Sprintf("https://%s/", hostName)
 		}
 
@@ -265,69 +158,4 @@ func (at *containerAppTarget) validateTargetResource(
 	}
 
 	return nil
-}
-
-// A console implementation which output goes only to logs
-// This is used to prevent or stop actions using the terminal output, for
-// example, when calling provision during deploying a service.
-type MutedConsole struct {
-	ParentConsole input.Console
-}
-
-// Sets the underlying writer for output the console or
-// if writer is nil, sets it back to the default writer.
-func (sc *MutedConsole) SetWriter(writer io.Writer) {
-	log.Println("tried to set writer for silent console is a no-op action")
-}
-
-func (sc *MutedConsole) GetFormatter() output.Formatter {
-	return nil
-}
-
-func (sc *MutedConsole) IsUnformatted() bool {
-	return true
-}
-
-// Prints out a message to the underlying console write
-func (sc *MutedConsole) Message(ctx context.Context, message string) {
-	log.Println(message)
-}
-
-func (sc *MutedConsole) MessageUxItem(ctx context.Context, item ux.UxItem) {
-	sc.Message(ctx, item.ToString(""))
-}
-
-func (sc *MutedConsole) ShowSpinner(ctx context.Context, title string, format input.SpinnerUxType) {
-	log.Printf("request to show spinner on silent console with message: %s", title)
-}
-
-func (sc *MutedConsole) StopSpinner(ctx context.Context, lastMessage string, format input.SpinnerUxType) {
-	log.Printf("request to stop spinner on silent console with message: %s", lastMessage)
-}
-
-func (sc *MutedConsole) IsSpinnerRunning(ctx context.Context) bool {
-	return false
-}
-
-// Use parent console for input
-func (sc *MutedConsole) Prompt(ctx context.Context, options input.ConsoleOptions) (string, error) {
-	return sc.ParentConsole.Prompt(ctx, options)
-}
-
-// Use parent console for input
-func (sc *MutedConsole) Select(ctx context.Context, options input.ConsoleOptions) (int, error) {
-	return sc.ParentConsole.Select(ctx, options)
-}
-
-// Use parent console for input
-func (sc *MutedConsole) Confirm(ctx context.Context, options input.ConsoleOptions) (bool, error) {
-	return sc.ParentConsole.Confirm(ctx, options)
-}
-
-func (sc *MutedConsole) GetWriter() io.Writer {
-	return nil
-}
-
-func (sc *MutedConsole) Handles() input.ConsoleHandles {
-	return sc.ParentConsole.Handles()
 }

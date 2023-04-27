@@ -107,11 +107,6 @@
                             "java"
                         ]
                     },
-                    "module": {
-                        "type": "string",
-                        "title": "Path of the infrastructure module used to deploy the service relative to the root infra folder",
-                        "description": "If omitted, the CLI will assume the module name is the same as the service name."
-                    },
                     "dist": {
                         "type": "string",
                         "title": "Relative path to service deployment artifacts"

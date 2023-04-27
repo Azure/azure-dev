@@ -151,13 +151,14 @@ func (c *AskerConsole) MessageUxItem(ctx context.Context, item ux.UxItem) {
 	}
 }
 
+const cPostfix = "..."
+
 func (c *AskerConsole) spinnerText(title, charset string) string {
 
 	spinnerLen := len(charset) + 1 // adding one for the empty space before the message
 
 	if len(title)+spinnerLen >= c.consoleWidth {
-		postfix := "..."
-		return fmt.Sprintf("%s%s", title[:c.consoleWidth-spinnerLen-len(postfix)], postfix)
+		return fmt.Sprintf("%s%s", title[:c.consoleWidth-spinnerLen-len(cPostfix)], cPostfix)
 	}
 	return title
 }

@@ -304,6 +304,7 @@ func runningOnCodespacesBrowser(ctx context.Context, commandRunner exec.CommandR
 	if err != nil {
 		// An error here means VSCode is not installed or found, or something else.
 		// At any case, we know VSCode is not within a webBrowser
+		log.Printf("Error running code --status: %s", err.Error())
 		return false
 	}
 
@@ -379,6 +380,7 @@ func (la *loginAction) login(ctx context.Context) error {
 	// (since azd launches a localhost server running remotely and the login response is accepted locally).
 	// Hence, we override login to device-code. See https://github.com/Azure/azure-dev/issues/1006
 	var useDevCode bool
+
 	if la.flags.useDeviceCode.ptr == nil {
 		useDevCode = runningOnCodespacesBrowser(ctx, la.commandRunner)
 	} else {

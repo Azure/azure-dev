@@ -27,18 +27,6 @@ type AzureCredentials struct {
 	ResourceManagerEndpointUrl string `json:"resourceManagerEndpointUrl"`
 }
 
-// model structure for RoleAssignment tools
-type AzCliRoleAssignment struct {
-	Id         string `json:"id"`
-	Name       string `json:"name"`
-	Type       string `json:"type "`
-	Properties struct {
-		PrincipalID      string `json:"principalName"`
-		RoleDefinitionID string `json:"roleDefinitionName"`
-		Scope            string `json:"scope"`
-	} `json:"properties"`
-}
-
 func (cli *azCli) CreateOrUpdateServicePrincipal(
 	ctx context.Context,
 	subscriptionId string,
@@ -371,38 +359,6 @@ func (cli *azCli) createRoleAssignmentsClient(
 	}
 
 	return client, nil
-}
-
-func (cli *azCli) GetUserRolesAssignment(
-	ctx context.Context,
-	subscriptionId string,
-	resourceGroupName string,
-	roleName string,
-) (*AzCliRoleAssignment, error) {
-	client, err := cli.createRoleAssignmentsClient(ctx, subscriptionId)
-	if err != nil {
-		return nil, err
-	}
-
-	role, err := client.Get(ctx, resourceGroupName, roleName, nil)
-	if err != nil {
-		return nil, fmt.Errorf("getting role assignment: %w", err)
-	}
-
-	return &AzCliRoleAssignment{
-		Id:   *role.ID,
-		Name: *role.Name,
-		Type: *role.Type,
-		Properties: struct {
-			PrincipalID      string `json:"principalName"`
-			RoleDefinitionID string `json:"roleDefinitionName"`
-			Scope            string `json:"scope"`
-		}{
-			PrincipalID:      convert.ToValueWithDefault(role.Properties.PrincipalID, ""),
-			RoleDefinitionID: convert.ToValueWithDefault(role.Properties.RoleDefinitionID, ""),
-			Scope:            convert.ToValueWithDefault(role.Properties.Scope, ""),
-		},
-	}, nil
 }
 
 func (cli *azCli) checkRoleAssignments(

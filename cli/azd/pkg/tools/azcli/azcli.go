@@ -58,12 +58,6 @@ type AzCli interface {
 		resourceGroupName string,
 		vaultName string,
 	) (*AzCliKeyVault, error)
-	GetUserRolesAssignment(
-		ctx context.Context,
-		subscriptionId string,
-		resourceGroupName string,
-		roleName string,
-	) (*AzCliRoleAssignment, error)
 	GetKeyVaultSecret(
 		ctx context.Context,
 		subscriptionId string,

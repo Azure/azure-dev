@@ -49,9 +49,9 @@ func NewGitHubCli(ctx context.Context, console input.Console, commandRunner exec
 	return newGitHubCliImplementation(ctx, console, commandRunner, http.DefaultClient, downloadGh, extractGhCli)
 }
 
-// cGitHubCliVersion is the minimum version of GitHub cli that we require (and the one we fetch when we fetch bicep on
+// GitHubCliVersion is the minimum version of GitHub cli that we require (and the one we fetch when we fetch bicep on
 // behalf of a user).
-var cGitHubCliVersion semver.Version = semver.MustParse("2.22.1")
+var GitHubCliVersion semver.Version = semver.MustParse("2.22.1")
 
 // newGitHubCliImplementation is like NewGitHubCli but allows providing a custom transport to use when downloading the
 // GitHub CLI, for testing purposes.
@@ -65,11 +65,13 @@ func newGitHubCliImplementation(
 ) (GitHubCli, error) {
 	if override := os.Getenv("AZD_GH_CLI_TOOL_PATH"); override != "" {
 		log.Printf("using external github cli tool: %s", override)
-
-		return &ghCli{
+		cli := &ghCli{
 			path:          override,
 			commandRunner: commandRunner,
-		}, nil
+		}
+		cli.logVersion(ctx)
+
+		return cli, nil
 	}
 
 	githubCliPath, err := azdGithubCliPath()
@@ -87,7 +89,7 @@ func newGitHubCliImplementation(
 
 		msg := "setting up github connection"
 		console.ShowSpinner(ctx, msg, input.Step)
-		err = acquireGitHubCliImpl(ctx, transporter, cGitHubCliVersion, extractImplementation, githubCliPath)
+		err = acquireGitHubCliImpl(ctx, transporter, GitHubCliVersion, extractImplementation, githubCliPath)
 		console.StopSpinner(ctx, "", input.Step)
 		if err != nil {
 			return nil, fmt.Errorf("setting up github connection: %w", err)
@@ -98,6 +100,7 @@ func newGitHubCliImplementation(
 		path:          githubCliPath,
 		commandRunner: commandRunner,
 	}
+	cli.logVersion(ctx)
 	return cli, nil
 }
 
@@ -200,6 +203,37 @@ func (cli *ghCli) SetSecret(ctx context.Context, repoSlug string, name string, v
 		return fmt.Errorf("failed running gh secret set %s: %w", res.String(), err)
 	}
 	return nil
+}
+
+// cGhCliVersionRegexp fetches the version number from the output of gh --version, which looks like this:
+//
+// gh version 2.6.0 (2022-03-15)
+// https://github.com/cli/cli/releases/tag/v2.6.0
+var cGhCliVersionRegexp = regexp.MustCompile(`gh version ([0-9]+\.[0-9]+\.[0-9]+)`)
+
+// logVersion writes the version of the GitHub CLI to the debug log for diagnostics purposes, or an error if
+// it could not be determined
+func (cli *ghCli) logVersion(ctx context.Context) {
+	if ver, err := cli.extractVersion(ctx); err == nil {
+		log.Printf("github cli version: %s", ver)
+	} else {
+		log.Printf("could not determine github cli version: %s", err)
+	}
+}
+
+// extractVersion gets the version of the GitHub CLI, from the output of `gh --version`
+func (cli *ghCli) extractVersion(ctx context.Context) (string, error) {
+	runArgs := cli.newRunArgs("--version")
+	res, err := cli.run(ctx, runArgs)
+	if err != nil {
+		return "", fmt.Errorf("error running gh --version: %w", err)
+	}
+
+	matches := cGhCliVersionRegexp.FindStringSubmatch(res.Stdout)
+	if len(matches) != 2 {
+		return "", fmt.Errorf("could not extract version from output: %s", res.Stdout)
+	}
+	return matches[1], nil
 }
 
 type GhCliRepository struct {

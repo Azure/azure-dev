@@ -164,7 +164,6 @@ services:
     project: src/api
     language: js
     host: containerapp
-    module: ./api/api
 `
 
 	mockContext := mocks.NewMockContext(context.Background())

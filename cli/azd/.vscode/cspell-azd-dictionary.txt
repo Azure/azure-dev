@@ -33,7 +33,9 @@ BUILDNUMBER
 cflags
 circleci
 cmdsubst
+consolesize
 containerapp
+containerapps
 contoso
 csharpapp
 csharpapptest
@@ -45,8 +47,8 @@ dockerproject
 dskip
 eastus
 endregion
-envname
 envlist
+envname
 errcheck
 errorinfo
 errorlint
@@ -57,6 +59,7 @@ functionapp
 GOARCH
 godotenv
 golangci
+hotspot
 ineffassign
 javac
 jmes

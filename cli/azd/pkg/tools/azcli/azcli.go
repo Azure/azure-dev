@@ -145,12 +145,6 @@ type AzCli interface {
 		resourceGroupName string,
 		applicationName string,
 	) (*AzCliAppServiceProperties, error)
-	GetContainerAppProperties(
-		ctx context.Context,
-		subscriptionId string,
-		resourceGroupName string,
-		applicationName string,
-	) (*AzCliContainerAppProperties, error)
 	GetStaticWebAppProperties(
 		ctx context.Context,
 		subscriptionID string,

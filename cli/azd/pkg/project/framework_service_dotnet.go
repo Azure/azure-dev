@@ -197,16 +197,16 @@ func (dp *dotnetProject) setUserSecretsFromOutputs(
 		return fmt.Errorf("fail on interface conversion: no type in map")
 	}
 
+	secrets := map[string]string{}
+
 	for key, val := range bicepOutput {
-		if err := dp.dotnetCli.SetSecret(
-			ctx,
-			normalizeDotNetSecret(key),
-			fmt.Sprint(val.Value),
-			serviceConfig.Path(),
-		); err != nil {
-			return err
-		}
+		secrets[normalizeDotNetSecret(key)] = fmt.Sprint(val.Value)
 	}
+
+	if err := dp.dotnetCli.SetSecrets(ctx, secrets, serviceConfig.Path()); err != nil {
+		return fmt.Errorf("failed to set secrets: %w", err)
+	}
+
 	return nil
 }
 

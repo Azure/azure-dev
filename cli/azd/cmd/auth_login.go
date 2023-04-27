@@ -375,20 +375,9 @@ func (la *loginAction) login(ctx context.Context) error {
 		return nil
 	}
 
-	// For VSCode online (in web Browser), like GitHub Codespaces or VSCode online attached to any server,
-	// interactive browser login will 404 when attempting to redirect to localhost
-	// (since azd launches a localhost server running remotely and the login response is accepted locally).
-	// Hence, we override login to device-code. See https://github.com/Azure/azure-dev/issues/1006
-	var useDevCode bool
-
-	if la.flags.useDeviceCode.ptr == nil {
-		useDevCode = runningOnCodespacesBrowser(ctx, la.commandRunner)
-	} else {
-		userInput, err := strconv.ParseBool(*la.flags.useDeviceCode.ptr)
-		if err != nil {
-			return fmt.Errorf("unexpected boolean input for use-device-code: %w", err)
-		}
-		useDevCode = userInput
+	useDevCode, err := parseUseDeviceCode(ctx, la.flags.useDeviceCode, la.commandRunner)
+	if err != nil {
+		return err
 	}
 
 	if useDevCode {
@@ -402,4 +391,31 @@ func (la *loginAction) login(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func parseUseDeviceCode(ctx context.Context, flag stringPtr, commandRunner exec.CommandRunner) (bool, error) {
+	var useDevCode bool
+
+	explicitDeviceCodeInput := flag.ptr != nil
+	if explicitDeviceCodeInput {
+		userInput, err := strconv.ParseBool(*flag.ptr)
+		if err != nil {
+			return false, fmt.Errorf("unexpected boolean input for use-device-code: %w", err)
+		}
+		// honor the value from the user input. No override.
+		return userInput, err
+	}
+
+	// Only try to override to device code for Codespaces. There's no point on checking if running on the browser all
+	// the time, as that's has a dependency on vscode.
+	inCodespacesEnv := os.Getenv("CODESPACES") == "true"
+	if inCodespacesEnv {
+		// For VSCode online (in web Browser), like GitHub Codespaces or VSCode online attached to any server,
+		// interactive browser login will 404 when attempting to redirect to localhost
+		// (since azd launches a localhost server running remotely and the login response is accepted locally).
+		// Hence, we override login to device-code. See https://github.com/Azure/azure-dev/issues/1006
+		useDevCode = runningOnCodespacesBrowser(ctx, commandRunner)
+	}
+
+	return useDevCode, nil
 }

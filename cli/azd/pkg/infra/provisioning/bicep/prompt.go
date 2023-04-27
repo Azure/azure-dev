@@ -48,6 +48,11 @@ func (p *BicepProvider) promptForParameter(
 		for _, option := range *param.AllowedValues {
 			options = append(options, fmt.Sprintf("%v", option))
 		}
+
+		if len(options) == 0 {
+			return nil, fmt.Errorf("parameter '%s' has no allowed values defined", key)
+		}
+
 		choice, err := p.console.Select(ctx, input.ConsoleOptions{
 			Message: msg,
 			Help:    help,

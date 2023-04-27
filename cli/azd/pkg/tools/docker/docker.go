@@ -199,6 +199,7 @@ func (d *docker) CheckInstalled(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("checking %s version: %w", d.Name(), err)
 	}
+	log.Printf("docker version: %s", dockerRes)
 	supported, err := isSupportedDockerVersion(dockerRes)
 	if err != nil {
 		return false, err

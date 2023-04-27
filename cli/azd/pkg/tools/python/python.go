@@ -6,6 +6,7 @@ package python
 import (
 	"context"
 	"fmt"
+	"log"
 	"path"
 	"path/filepath"
 	"runtime"
@@ -44,6 +45,9 @@ func (cli *PythonCli) CheckInstalled(ctx context.Context) (bool, error) {
 	if err != nil {
 		return false, fmt.Errorf("checking %s version: %w", cli.Name(), err)
 	}
+
+	log.Printf("python version: %s", pythonRes)
+
 	pythonSemver, err := tools.ExtractVersion(pythonRes)
 	if err != nil {
 		return false, fmt.Errorf("converting to semver version fails: %w", err)

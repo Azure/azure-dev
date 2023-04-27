@@ -25,6 +25,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
@@ -255,14 +256,14 @@ func (p *BicepProvider) Destroy(
 	return async.RunInteractiveTaskWithProgress(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*DestroyResult, *DestroyProgress]) {
 			asyncContext.SetProgress(&DestroyProgress{Message: "Fetching resource groups", Timestamp: time.Now()})
-			resourceGroups, err := p.getResourceGroups(ctx)
+			rgsFromDeployment, err := p.getResourceGroupsFromDeployment(ctx)
 			if err != nil {
 				asyncContext.SetError(err)
 				return
 			}
 
 			asyncContext.SetProgress(&DestroyProgress{Message: "Fetching resources", Timestamp: time.Now()})
-			groupedResources, err := p.getAllResources(ctx, resourceGroups)
+			groupedResources, err := p.getAllResourcesToDelete(ctx, rgsFromDeployment)
 			if err != nil {
 				asyncContext.SetError(fmt.Errorf("getting resources to delete: %w", err))
 				return
@@ -348,7 +349,7 @@ func (p *BicepProvider) Destroy(
 		})
 }
 
-func (p *BicepProvider) getResourceGroups(ctx context.Context) ([]string, error) {
+func (p *BicepProvider) getResourceGroupsFromDeployment(ctx context.Context) ([]string, error) {
 	resourceManager := infra.NewAzureResourceManager(p.azCli)
 	resourceGroups, err := resourceManager.GetResourceGroupsForDeployment(ctx, p.env.GetSubscriptionId(), p.env.GetEnvName())
 	if err != nil {
@@ -358,7 +359,7 @@ func (p *BicepProvider) getResourceGroups(ctx context.Context) ([]string, error)
 	return resourceGroups, nil
 }
 
-func (p *BicepProvider) getAllResources(
+func (p *BicepProvider) getAllResourcesToDelete(
 	ctx context.Context,
 	resourceGroups []string,
 ) (map[string][]azcli.AzCliResource, error) {
@@ -366,6 +367,12 @@ func (p *BicepProvider) getAllResources(
 
 	for _, resourceGroup := range resourceGroups {
 		groupResources, err := p.azCli.ListResourceGroupResources(ctx, p.env.GetSubscriptionId(), resourceGroup, nil)
+		var errDetails *azcore.ResponseError
+		if errors.As(err, &errDetails) && errDetails.StatusCode == 404 {
+			// Resource group not found and already deleted, skip grouping for deletion
+			continue
+		}
+
 		if err != nil {
 			return allResources, err
 		}

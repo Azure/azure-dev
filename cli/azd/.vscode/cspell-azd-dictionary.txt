@@ -59,6 +59,7 @@ functionapp
 GOARCH
 godotenv
 golangci
+hotspot
 ineffassign
 javac
 jmes

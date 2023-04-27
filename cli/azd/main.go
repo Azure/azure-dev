@@ -49,6 +49,8 @@ func main() {
 		log.SetOutput(io.Discard)
 	}
 
+	log.Printf("azd version: %s", internal.Version)
+
 	ts := telemetry.GetTelemetrySystem()
 
 	latest := make(chan semver.Version)

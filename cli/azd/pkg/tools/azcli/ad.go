@@ -301,6 +301,11 @@ func (cli *azCli) getRoleDefinition(
 		return nil, fmt.Errorf("role definition with scope: '%s' and name: '%s' was not found", scope, roleName)
 	}
 
+	//expect a maximum of one matching role to be found based on the applied filter
+	//return a error if there's more than one found
+	if len(roleDefinitions) > 1 {
+		return nil, fmt.Errorf("role definition with scope: '%s' and name: '%s' has multiple role definitions", scope, roleName)
+	}
 	return roleDefinitions[0], nil
 }
 
@@ -375,5 +380,5 @@ func (cli *azCli) checkRoleAssignments(
 			return err
 		}
 	}
-	return fmt.Errorf("required user roles are missing: %s", ux.ListAsText(roleName, "or"))
+	return fmt.Errorf("missing required user roles: %s", ux.ListAsText(roleName, "or"))
 }

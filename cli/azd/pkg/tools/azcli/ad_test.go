@@ -172,6 +172,27 @@ func Test_CreateOrUpdateServicePrincipal(t *testing.T) {
 		require.Error(t, err)
 		require.Nil(t, rawMessage)
 	})
+
+	// t.Run("UnauthorizedRoleDefinition", func(t *testing.T) {
+	// 	mockContext := mocks.NewMockContext(context.Background())
+	// 	mockgraphsdk.RegisterRoleDefinitionListMock(mockContext, http.StatusOK, roleDefinitions)
+	// 	// Required role assignment for applying role assignment
+	// 	checkRoles := []string{"Owner", "User Access Administrator"}
+
+	// 	azCli := newAzCliFromMockContext(mockContext)
+	// 	err := azCli.ensureRoleAssignments(
+	// 		*mockContext.Context,
+	// 		expectedServicePrincipalCredential.SubscriptionId,
+	// 		"Contributor",
+	// 		&servicePrincipal,
+	// 		checkRoles,
+	// 	)
+	// 	require.NoError(t, err)
+	// 	require.NotNil(t, rawMessage)
+	// 	assert.Contains(t, err, "ERROR: failed to create or update service principal: failed applying role assignment: required user roles are missing:")
+
+	// 	assertAzureCredentials(t, rawMessage)
+	// })
 }
 
 func assertAzureCredentials(t *testing.T, message json.RawMessage) {

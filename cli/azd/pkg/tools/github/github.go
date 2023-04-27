@@ -361,12 +361,14 @@ func extractFromZip(src, dst string) (string, error) {
 		return "", err
 	}
 
+	log.Printf("extract from zip %s", src)
 	defer zipReader.Close()
 
 	var extractedAt string
 	for _, file := range zipReader.File {
 		fileName := file.FileInfo().Name()
 		if !file.FileInfo().IsDir() && fileName == ghCliName() {
+			log.Printf("found cli at: %s", file.Name)
 			fileReader, err := file.Open()
 			if err != nil {
 				return extractedAt, err
@@ -387,6 +389,7 @@ func extractFromZip(src, dst string) (string, error) {
 		}
 	}
 	if extractedAt != "" {
+		log.Printf("extracted to: %s", extractedAt)
 		return extractedAt, nil
 	}
 	return extractedAt, fmt.Errorf("github cli binary was not found within the zip file")
@@ -537,10 +540,12 @@ func downloadGh(
 		return err
 	}
 	defer func() {
+		log.Printf("delete %s", compressedFileName)
 		_ = os.Remove(compressedFileName)
 	}()
 
 	// unzip downloaded file
+	log.Printf("extracting file %s", compressedFileName)
 	_, err = extractImplementation(compressedFileName, tmpPath)
 	if err != nil {
 		return err

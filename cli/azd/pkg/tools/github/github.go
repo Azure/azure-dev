@@ -111,12 +111,14 @@ func azdGithubCliPath() (string, error) {
 	if err != nil {
 		return "", err
 	}
+	return filepath.Join(configDir, "bin", ghCliName()), nil
+}
 
+func ghCliName() string {
 	if runtime.GOOS == "windows" {
-		return filepath.Join(configDir, "bin", "gh.exe"), nil
+		return "gh.exe"
 	}
-
-	return filepath.Join(configDir, "bin", "gh"), nil
+	return "gh"
 }
 
 var (
@@ -363,13 +365,12 @@ func extractFromZip(src, dst string) (string, error) {
 
 	var extractedAt string
 	for _, file := range zipReader.File {
-		if !file.FileInfo().IsDir() && strings.Contains(file.Name, "gh") {
+		fileName := file.FileInfo().Name()
+		if !file.FileInfo().IsDir() && fileName == ghCliName() {
 			fileReader, err := file.Open()
 			if err != nil {
 				return extractedAt, err
 			}
-			fileNameParts := strings.Split(file.Name, "/")
-			fileName := fileNameParts[len(fileNameParts)-1]
 			filePath := filepath.Join(dst, fileName)
 			ghCliFile, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, file.Mode())
 			if err != nil {

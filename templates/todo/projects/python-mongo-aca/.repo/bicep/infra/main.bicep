@@ -79,7 +79,6 @@ module web '../../../../../common/infra/bicep/app/web-container-app.bicep' = {
     applicationInsightsName: monitoring.outputs.applicationInsightsName
     containerAppsEnvironmentName: containerApps.outputs.environmentName
     containerRegistryName: containerApps.outputs.registryName
-    keyVaultName: keyVault.outputs.name
   }
 }
 
@@ -96,16 +95,6 @@ module api '../../../../../common/infra/bicep/app/api-container-app.bicep' = {
     containerRegistryName: containerApps.outputs.registryName
     keyVaultName: keyVault.outputs.name
     corsAcaUrl: 'https://${abbrs.appContainerApps}web-${resourceToken}.${containerApps.outputs.defaultDomain}'
-  }
-}
-
-// Give the API access to KeyVault
-module apiKeyVaultAccess '../../../../../../common/infra/bicep/core/security/keyvault-access.bicep' = {
-  name: 'api-keyvault-access'
-  scope: rg
-  params: {
-    keyVaultName: keyVault.outputs.name
-    principalId: api.outputs.SERVICE_API_IDENTITY_PRINCIPAL_ID
   }
 }
 

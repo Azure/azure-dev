@@ -7,7 +7,6 @@ param applicationInsightsName string
 param containerAppsEnvironmentName string
 param containerRegistryName string
 param imageName string = ''
-param keyVaultName string
 param serviceName string = 'web'
 
 module app '../../../../../common/infra/bicep/core/host/container-app.bicep' = {
@@ -32,18 +31,13 @@ module app '../../../../../common/infra/bicep/core/host/container-app.bicep' = {
         value: applicationInsights.properties.ConnectionString
       }
     ]
-    imageName: !empty(imageName) ? imageName : 'nginx:latest'
-    keyVaultName: keyVault.name
+    imageName: imageName
     targetPort: 80
   }
 }
 
 resource applicationInsights 'Microsoft.Insights/components@2020-02-02' existing = {
   name: applicationInsightsName
-}
-
-resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' existing = {
-  name: keyVaultName
 }
 
 output SERVICE_WEB_IDENTITY_PRINCIPAL_ID string = app.outputs.identityPrincipalId

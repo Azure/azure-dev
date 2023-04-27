@@ -8,6 +8,10 @@ terraform {
       source  = "aztfmod/azurecaf"
       version = "~>1.2.24"
     }
+    azapi = {
+      source  = "Azure/azapi"
+      version = "1.5.0"
+    }
   }
 }
 # ------------------------------------------------------------------------------------------------------
@@ -63,12 +67,30 @@ resource "azurerm_linux_web_app" "web" {
   }
 }
 
-resource "null_resource" "webapp_basic_auth_disable" {
-  triggers = {
-    account = azurerm_linux_web_app.web.name
-  }
+resource "azapi_resource" "webapp_basic_auth_disable_ftp" {
+  type      = "Microsoft.Web/sites/basicPublishingCredentialsPolicies@2022-03-01"
+  name      = "ftp"
+  parent_id = azurerm_linux_web_app.web.id
 
-  provisioner "local-exec" {
-    command = "az resource update --resource-group ${var.rg_name} --name ftp --namespace Microsoft.Web --resource-type basicPublishingCredentialsPolicies --parent sites/${azurerm_linux_web_app.web.name} --set properties.allow=false && az resource update --resource-group ${var.rg_name} --name scm --namespace Microsoft.Web --resource-type basicPublishingCredentialsPolicies --parent sites/${azurerm_linux_web_app.web.name} --set properties.allow=false"
-  }
+  location = var.location
+
+  body = jsonencode({
+    properties = {
+      allow = false
+    }
+  })
+}
+
+resource "azapi_resource" "webapp_basic_auth_disable_scm" {
+  type      = "Microsoft.Web/sites/basicPublishingCredentialsPolicies@2022-03-01"
+  name      = "scm"
+  parent_id = azurerm_linux_web_app.web.id
+
+  location = var.location
+
+  body = jsonencode({
+    properties = {
+      allow = false
+    }
+  })
 }

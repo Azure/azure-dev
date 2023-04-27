@@ -8,6 +8,10 @@ terraform {
       source  = "aztfmod/azurecaf"
       version = "~>1.2.24"
     }
+    azapi = {
+      source  = "Azure/azapi"
+      version = "1.5.0"
+    }
   }
 }
 # ------------------------------------------------------------------------------------------------------
@@ -61,4 +65,32 @@ resource "azurerm_linux_web_app" "web" {
       }
     }
   }
+}
+
+resource "azapi_resource" "webapp_basic_auth_disable_ftp" {
+  type      = "Microsoft.Web/sites/basicPublishingCredentialsPolicies@2022-03-01"
+  name      = "ftp"
+  parent_id = azurerm_linux_web_app.web.id
+
+  location = var.location
+
+  body = jsonencode({
+    properties = {
+      allow = false
+    }
+  })
+}
+
+resource "azapi_resource" "webapp_basic_auth_disable_scm" {
+  type      = "Microsoft.Web/sites/basicPublishingCredentialsPolicies@2022-03-01"
+  name      = "scm"
+  parent_id = azurerm_linux_web_app.web.id
+
+  location = var.location
+
+  body = jsonencode({
+    properties = {
+      allow = false
+    }
+  })
 }

@@ -26,19 +26,6 @@ import (
 func TestZipExtractContents(t *testing.T) {
 	testPath := t.TempDir()
 	expectedPhrase := "this will be inside a zip file"
-	zipFilePath, err := createSampleZip(testPath, expectedPhrase, "bin/gh")
-	require.NoError(t, err)
-	ghCliPath, err := extractGhCli(zipFilePath, testPath)
-	require.NoError(t, err)
-
-	content, err := os.ReadFile(ghCliPath)
-	require.NoError(t, err)
-	require.EqualValues(t, []byte(expectedPhrase), content)
-}
-
-func TestZipExtractContentsExe(t *testing.T) {
-	testPath := t.TempDir()
-	expectedPhrase := "this will be inside a zip file"
 	zipFilePath, err := createSampleZip(testPath, expectedPhrase, "bin/"+ghCliName())
 	require.NoError(t, err)
 	ghCliPath, err := extractGhCli(zipFilePath, testPath)

@@ -317,6 +317,9 @@ extract "$compressed_file_path" "$tmp_folder"
 rm "$compressed_file_path"
 chmod +x "$tmp_folder/$bin_name"
 
+say_verbose "Writing to $tmp_folder/.installed-by.txt"
+echo "install-azd.sh" > "$tmp_folder/.installed-by.txt"
+
 if [ "$platform" = "darwin" ] && [ "$skip_verify" = false ]; then
     say_verbose "Verifying signature of $bin_name"
     if ! output=$( codesign -v "$tmp_folder/$bin_name" 2>&1); then
@@ -360,6 +363,7 @@ if [ "$symlink_folder" != "" ]; then
     if ! $ln_preface ln -fs "$install_folder/$bin_name" "$symlink_folder/azd"; then
         say_error "Could not create symlink to azd in $symlink_folder"
         save_error_report_if_enabled "InstallFailed" "SymlinkCreateFailure"
+        exit 1
     fi
 fi
 

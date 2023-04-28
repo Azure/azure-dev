@@ -130,14 +130,6 @@ func (rm *AzureResourceManager) GetResourceGroupsForDeployment(
 	// unique set.
 	resourceGroups := map[string]struct{}{}
 
-	for _, dependency := range deployment.Properties.Dependencies {
-		for _, dependent := range dependency.DependsOn {
-			if *dependent.ResourceType == string(AzureResourceTypeResourceGroup) {
-				resourceGroups[*dependent.ResourceName] = struct{}{}
-			}
-		}
-	}
-
 	for _, resourceId := range deployment.Properties.OutputResources {
 		if resourceId != nil && resourceId.ID != nil {
 			resId, err := arm.ParseResourceID(*resourceId.ID)

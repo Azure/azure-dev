@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/resources"
@@ -62,11 +63,14 @@ func PromptTemplate(ctx context.Context, message string, console input.Console) 
 	// This will be used to map the user selection to the template
 	templateSelect := make(map[string]Template, len(templatesSet))
 	for _, template := range templatesSet {
+		// We trim the default prefix to make the template names more user-friendly
+		// This is okay since templates without an organization name are assumed to be under "Azure-Samples/" by default
+		name := strings.TrimPrefix(template.Name, "Azure-Samples/")
 		if template.DisplayName != "" {
 			// always show the proper name to the user
-			templateSelect[template.DisplayName+" ("+template.Name+")"] = template
+			templateSelect[template.DisplayName+" ("+name+")"] = template
 		} else {
-			templateSelect[template.Name] = template
+			templateSelect[name] = template
 		}
 	}
 

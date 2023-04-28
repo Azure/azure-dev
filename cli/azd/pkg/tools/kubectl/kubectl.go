@@ -86,9 +86,9 @@ func NewKubectl(commandRunner exec.CommandRunner) KubectlCli {
 }
 
 // Checks whether or not the K8s CLI is installed and available within the PATH
-func (cli *kubectlCli) CheckInstalled(ctx context.Context) (bool, error) {
-	if has, err := tools.ToolInPath("kubectl"); err != nil || !has {
-		return has, err
+func (cli *kubectlCli) CheckInstalled(ctx context.Context) error {
+	if err := tools.ToolInPath("kubectl"); err != nil {
+		return err
 	}
 
 	// We don't have a minimum required version of kubectl today, but
@@ -100,7 +100,7 @@ func (cli *kubectlCli) CheckInstalled(ctx context.Context) (bool, error) {
 		log.Printf("kubectl version: %s", ver)
 	}
 
-	return true, nil
+	return nil
 }
 
 func (cli *kubectlCli) getClientVersion(ctx context.Context) (string, error) {

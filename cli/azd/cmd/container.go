@@ -272,6 +272,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(azcli.NewContainerRegistryService)
 	container.RegisterSingleton(containerapps.NewContainerAppService)
 	container.RegisterSingleton(project.NewContainerHelper)
+	container.RegisterSingleton(azcli.NewSpringService)
 	container.RegisterSingleton(func() ioc.ServiceLocator {
 		return ioc.NewServiceLocator(container)
 	})
@@ -315,6 +316,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		project.ContainerAppTarget:  project.NewContainerAppTarget,
 		project.StaticWebAppTarget:  project.NewStaticWebAppTarget,
 		project.AksTarget:           project.NewAksTarget,
+		project.SpringAppTarget:     project.NewSpringAppTarget,
 	}
 
 	for target, constructor := range serviceTargetMap {

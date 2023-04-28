@@ -97,7 +97,8 @@ func (cli *swaCli) Deploy(
 	return res.Stdout + res.Stderr, nil
 }
 
-func (cli *swaCli) CheckInstalled(_ context.Context) (bool, error) {
+func (cli *swaCli) CheckInstalled(_ context.Context) error {
+
 	return tools.ToolInPath("npx")
 }
 

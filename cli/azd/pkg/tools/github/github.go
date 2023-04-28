@@ -142,8 +142,8 @@ type ghCli struct {
 	path          string
 }
 
-func (cli *ghCli) CheckInstalled(ctx context.Context) (bool, error) {
-	return true, nil
+func (cli *ghCli) CheckInstalled(ctx context.Context) error {
+	return nil
 }
 
 func expectedVersionInstalled(ctx context.Context, commandRunner exec.CommandRunner, binaryPath string) bool {

@@ -24,4 +24,6 @@ resource "azurerm_resource_group" "rg" {
 # To learn more, https://developer.hashicorp.com/terraform/tutorials/azure-get-started/azure-change
 # Note that a tag:
 #   azd-service-name: "<service name in azure.yaml>"
-# should be applied to targeted service host resources
+# should be applied to targeted service host resources, such as:
+#  azurerm_linux_web_app, azurerm_windows_web_app for appservice
+#  azurerm_function_app for funcapp

@@ -34,8 +34,8 @@ var tags = {
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 
 // Name of the service defined in azure.yaml
-// A tag named azd-service-name with this value should be applied to the service host resource,
-// i.e., Microsoft.Web/sites for appservice, funcapp
+// A tag named azd-service-name with this value should be applied to the service host resource, such as:
+//   Microsoft.Web/sites for appservice, funcapp
 // Example usage:
 //   tags: union(tags, { 'azd-service-name': apiServiceName })
 #disable-next-line no-unused-vars
@@ -57,7 +57,7 @@ resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
 // Add outputs from the deployment here, if needed.
 //
 // This allows the outputs to be referenced by other bicep deployments in the deployment pipeline,
-// or by the local machine as a way to usefully reference created resources in Azure for local development.
+// or by the local machine as a way to reference created resources in Azure for local development.
 // Secrets should not be added here.
 //
 // Outputs are automatically saved in the local azd environment .env file.

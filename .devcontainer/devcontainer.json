@@ -6,11 +6,6 @@
             "VARIANT": "bullseye"
         }
     },
-    "features": {
-        "ghcr.io/devcontainers/features/node:1.2.0": {},
-        "ghcr.io/devcontainers/features/terraform:1.3.0": {},
-        "ghcr.io/devcontainers/features/azure-cli:1.0.8": {}
-    },
     "customizations": {
         "vscode": {
             "extensions": [

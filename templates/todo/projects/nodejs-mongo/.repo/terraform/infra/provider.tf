@@ -12,14 +12,7 @@ terraform {
       source  = "aztfmod/azurecaf"
       version = "~>1.2.24"
     }
-    azapi = {
-      source  = "Azure/azapi"
-      version = "1.5.0"
-    }
   }
-}
-
-provider "azapi" {
 }
 
 provider "azurerm" {

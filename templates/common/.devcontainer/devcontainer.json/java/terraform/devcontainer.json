@@ -1,0 +1,48 @@
+{
+    "name": "Azure Developer CLI",
+    "build": {
+        "dockerfile": "Dockerfile",
+        "args": {
+            "VARIANT": "bullseye"
+        }
+    },
+    "features": {
+        "ghcr.io/devcontainers/features/azure-cli:1": {
+            "version": "2.38"
+        },
+        "ghcr.io/devcontainers/features/docker-from-docker:1": {
+            "version": "20.10"
+        },
+        "ghcr.io/devcontainers/features/java:1": {
+            "version": "17.0"
+        },
+        "ghcr.io/devcontainers/features/node:1": {
+            "version": "16",
+            "nodeGypDependencies": false
+        },
+        "ghcr.io/devcontainers/features/terraform:1": {
+            "version": "latest"
+        }
+    },
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-azuretools.azure-dev",
+                "ms-azuretools.vscode-bicep",
+                "ms-azuretools.vscode-docker",
+                "ms-vscode.vscode-node-azure-pack",
+                "vscjava.vscode-java-pack",
+                "ms-azuretools.vscode-azurefunctions"
+            ]
+        }
+    },
+    "forwardPorts": [
+        3000,
+        3100
+    ],
+    "postCreateCommand": "",
+    "remoteUser": "vscode",
+    "hostRequirements": {
+        "memory": "8gb"
+    }
+}

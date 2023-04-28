@@ -1,0 +1,1 @@
+select * from pgaadauth_create_principal_with_oid('%%CUSTOM_ROLE%%', '%%APPLICATION_IDENTITY_APPID%%', 'service', false, false);

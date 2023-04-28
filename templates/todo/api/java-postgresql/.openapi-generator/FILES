@@ -1,0 +1,6 @@
+src/main/java/com/microsoft/azure/simpletodo/api/ApiUtil.java
+src/main/java/com/microsoft/azure/simpletodo/api/ItemsApi.java
+src/main/java/com/microsoft/azure/simpletodo/api/ListsApi.java
+src/main/java/com/microsoft/azure/simpletodo/model/TodoItem.java
+src/main/java/com/microsoft/azure/simpletodo/model/TodoList.java
+src/main/java/com/microsoft/azure/simpletodo/model/TodoState.java

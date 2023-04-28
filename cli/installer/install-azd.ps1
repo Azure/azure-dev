@@ -21,8 +21,8 @@ Print the download URL and quit. Does not download or install.
 .PARAMETER InstallFolder
 Location to install azd.
 
-.PARAMETER NoPath
-Do not update the PATH environment variable with the location of azd.
+.PARAMETER SymlinkFolder
+(Mac/Linux only) Folder to symlink 
 
 .PARAMETER DownloadTimeoutSeconds
 Download timeout in seconds. Default is 120 (2 minutes).
@@ -60,10 +60,11 @@ param(
     [string] $Version = "latest",
     [switch] $DryRun,
     [string] $InstallFolder,
-    [switch] $NoPath,
+    [string] $SymlinkFolder,
     [switch] $SkipVerify,
     [int] $DownloadTimeoutSeconds = 120,
-    [switch] $NoTelemetry
+    [switch] $NoTelemetry,
+    [string] $InstallShScriptUrl = "https://aka.ms/install-azd.sh"
 )
 
 function isLinuxOrMac {
@@ -251,41 +252,52 @@ function reportTelemetryIfEnabled($eventName, $reason='', $additionalProperties 
     }
 }
 
+if (isLinuxOrMac) {
+    if (!(Get-Command curl)) { 
+        Write-Error "Command could not be found: curl."
+    }
+    if (!(Get-Command bash)) { 
+        Write-Error "Command could not be found: bash."
+    }
+
+    if (!$InstallFolder) {
+        $InstallFolder = "/opt/microsoft/azd"
+    }
+
+    if (!$SymlinkFolder) { 
+        $SymlinkFolder = "/usr/local/bin"
+    }
+
+    $params = @(
+        '--install-folder', $InstallFolder, 
+        '--symlink-folder', $SymlinkFolder,
+        '--base-url', $BaseUrl, 
+        '--version', $Version
+    )
+
+    if ($SkipVerify) { 
+        $params += '--skip-verify'
+    }
+
+    if ($DryRun) {
+        $params += '--dry-run'
+    }
+
+    if ($NoTelemetry) {
+        $params += '--no-telemetry'
+    }
+
+    if ($VerbosePreference -eq 'Continue') {
+        $params += '--verbose'
+    }
+
+    Write-Verbose "Running: curl -fsSL $InstallShScriptUrl | bash -s -- $($params -join ' ')" -Verbose:$Verbose
+    & curl -fsSL $InstallShScriptUrl | bash -s -- @params
+    exit $LASTEXITCODE
+}
+
 try {
-    if (isLinuxOrMac -and !$InstallFolder) {
-        $InstallFolder = "/usr/local/bin"
-    }
-
-    $binFilename = ''
-    $extension = 'msi'
-    $packageFilename = "azd-windows-amd64.$extension"
-
-    if (isLinuxOrMac) {
-        $platform = 'linux'
-        $extension = 'tar.gz'
-        if ($IsMacOS) {
-            $platform = 'darwin'
-            $extension = 'zip'
-        }
-
-        $architecture = 'amd64'
-        $rawArchitecture = uname -m
-        if ($rawArchitecture -eq 'arm64' -and $IsMacOS) {
-            # In the case of Apple silicon, use amd64
-            $architecture = 'amd64'
-        }
-
-        if ($architecture -ne 'amd64') {
-            Write-Error "Architecture not supported: $rawArchitecture on platform: $platform"
-        }
-
-        Write-Verbose "Platform: $platform"
-        Write-Verbose "Architecture: $architecture"
-        Write-Verbose "Extension: $extension"
-
-        $binFilename = "azd-$platform-$architecture"
-        $packageFilename = "$binFilename.$extension"
-    }
+    $packageFilename = "azd-windows-amd64.msi"
 
     $downloadUrl = "$BaseUrl/$packageFilename"
     if ($Version) {
@@ -315,106 +327,43 @@ try {
         reportTelemetryIfEnabled 'InstallFailed' 'DownloadFailed' @{ downloadUrl = $downloadUrl }
         exit 1
     }
-
-    Write-Verbose "Decompressing artifacts" -Verbose:$Verbose
-    if ($extension -eq 'zip') {
-        try {
-            Expand-Archive -Path $releaseArtifactFilename -DestinationPath $tempFolder/decompress
-        } catch {
-            Write-Error "Cannot expand $releaseArtifactFilename"
-            Write-Error $_
-            reportTelemetryIfEnabled 'InstallFailed' 'ArchiveDecompressionFailed'
-            exit 1
-        }
-    } elseif ($extension -eq 'tar.gz') {
-        Write-Verbose "Extracting to $tempFolder/decompress"
-        New-Item -ItemType Directory -Path "$tempFolder/decompress" | Out-Null
-        Write-Host "tar -zxvf $releaseArtifactFilename -C `"$tempFolder/decompress`" $binFilename"
-        tar -zxvf $releaseArtifactFilename -C "$tempFolder/decompress" $binFilename
-
-        if ($LASTEXITCODE) {
-            Write-Error "Cannot expand $releaseArtifactFilename"
-            reportTelemetryIfEnabled 'InstallFailed' 'ArchiveDecompressionFailed'
-            exit $LASTEXITCODE
-        }
-    } else { 
-        Write-Verbose "Decompression not required" -Verbose:$Verbose
-    }
-
-    
+   
 
     try {
-        if (isLinuxOrMac) {
-            if ($IsMacOS -and !$SkipVerify) {
-                Write-Verbose "Verifying signature of $binFilename" -Verbose:$Verbose
-                $codeSignOutput = codesign -v "$tempFolder/decompress/$binFilename" 2>&1
-                if ($LASTEXITCODE) {
-                    Write-Error "Could not verify signature of $binFilename, error output:"
-                    $codeSignOutput |  ForEach-Object {
-                        if ($_ -is [System.Management.Automation.ErrorRecord]) {
-                          Write-Error $_
-                        } else {
-                          Write-Host $_
-                        }
-                    }
+        if (!$SkipVerify) {
+            try {
+                Write-Verbose "Verifying signature of $releaseArtifactFilename" -Verbose:$Verbose
+                $signature = Get-AuthenticodeSignature $releaseArtifactFilename
+                if ($signature.Status -ne 'Valid') {
+                    Write-Error "Signature of $releaseArtifactFilename is not valid"
                     reportTelemetryIfEnabled 'InstallFailed' 'SignatureVerificationFailed'
                     exit 1
                 }
-            }
-
-            Write-Verbose "Installing azd in $InstallFolder" -Verbose:$Verbose
-            if (!(Test-Path $InstallFolder)) {
-                New-Item -ItemType Directory -Path $InstallFolder -Force | Out-Null
-            }
-            $outputFilename = "$InstallFolder/azd"
-            test -w "$InstallFolder/"
-            if ($LASTEXITCODE) {
-                Write-Host "Writing to $InstallFolder/ requires elevated permission. You may be prompted to enter credentials."
-                sudo cp "$tempFolder/decompress/$binFilename" $outputFilename
-                if ($LASTEXITCODE) {
-                    Write-Error "Could not copy $tempfolder/decompress/$binFilename to $outputFilename"
-                    reportTelemetryIfEnabled 'InstallFailed' 'FileCopyFailed'
-                    exit 1
-                }
-            } else {
-                Copy-Item "$tempFolder/decompress/$binFilename" $outputFilename  -ErrorAction Stop | Out-Null
-            }
-        } else {
-            if (!$SkipVerify) {
-                try {
-                    Write-Verbose "Verifying signature of $releaseArtifactFilename" -Verbose:$Verbose
-                    $signature = Get-AuthenticodeSignature $releaseArtifactFilename
-                    if ($signature.Status -ne 'Valid') {
-                        Write-Error "Signature of $releaseArtifactFilename is not valid"
-                        reportTelemetryIfEnabled 'InstallFailed' 'SignatureVerificationFailed'
-                        exit 1
-                    }
-                } catch {
-                    Write-Error "Could not verify signature of $releaseArtifactFilename"
-                    Write-Error $_
-                    reportTelemetryIfEnabled 'InstallFailed' 'SignatureVerificationFailed'
-                    exit 1
-                }
-            }
-
-            Write-Verbose "Installing MSI" -Verbose:$Verbose
-            $MSIEXEC = "${env:SystemRoot}\System32\msiexec.exe"
-            $installProcess = Start-Process $MSIEXEC `
-                -ArgumentList @("/i", "`"$releaseArtifactFilename`"", "/qn", "INSTALLDIR=`"$InstallFolder`"", "INSTALLEDBY=`"install-azd.ps1`"") `
-                -PassThru `
-                -Wait
-
-            if ($installProcess.ExitCode) {
-                if ($installProcess.ExitCode -eq 1603) {
-                    Write-Host "A later verison of Azure Developer CLI is already installed. Use 'Add or remove programs' to uninstall the current version and try again."
-                    exit 0
-                }
-
-                Write-Error "Could not install MSI at $releaseArtifactFilename. msiexec.exe returned exit code: $($installProcess.ExitCode)"
-
-                reportTelemetryIfEnabled 'InstallFailed' 'MsiFailure'
+            } catch {
+                Write-Error "Could not verify signature of $releaseArtifactFilename"
+                Write-Error $_
+                reportTelemetryIfEnabled 'InstallFailed' 'SignatureVerificationFailed'
                 exit 1
             }
+        }
+
+        Write-Verbose "Installing MSI" -Verbose:$Verbose
+        $MSIEXEC = "${env:SystemRoot}\System32\msiexec.exe"
+        $installProcess = Start-Process $MSIEXEC `
+            -ArgumentList @("/i", "`"$releaseArtifactFilename`"", "/qn", "INSTALLDIR=`"$InstallFolder`"", "INSTALLEDBY=`"install-azd.ps1`"") `
+            -PassThru `
+            -Wait
+
+        if ($installProcess.ExitCode) {
+            if ($installProcess.ExitCode -eq 1603) {
+                Write-Host "A later verison of Azure Developer CLI is already installed. Use 'Add or remove programs' to uninstall the current version and try again."
+                exit 0
+            }
+
+            Write-Error "Could not install MSI at $releaseArtifactFilename. msiexec.exe returned exit code: $($installProcess.ExitCode)"
+
+            reportTelemetryIfEnabled 'InstallFailed' 'MsiFailure'
+            exit 1
         }
     } catch {
         Write-Error "Could not copy to $InstallFolder"
@@ -426,11 +375,9 @@ try {
     Write-Verbose "Cleaning temporary install directory: $tempFolder" -Verbose:$Verbose
     Remove-Item $tempFolder -Recurse -Force | Out-Null
 
-    if (isLinuxOrMac) {
-        Write-Host "Successfully installed to $InstallFolder"
-    } else {
-        Write-Host "Successfully install azd"
+    if (!isLinuxOrMac) {
         # Installed on Windows
+        Write-Host "Successfully installed azd"
         Write-Host "Azure Developer CLI (azd) installed successfully. You may need to restart running programs for installation to take effect."
         Write-Host "- For Windows Terminal, start a new Windows Terminal instance."
         Write-Host "- For VSCode, close all instances of VSCode and then restart it."

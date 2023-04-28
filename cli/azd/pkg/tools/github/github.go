@@ -51,7 +51,7 @@ func NewGitHubCli(ctx context.Context, console input.Console, commandRunner exec
 
 // GitHubCliVersion is the minimum version of GitHub cli that we require (and the one we fetch when we fetch bicep on
 // behalf of a user).
-var GitHubCliVersion semver.Version = semver.MustParse("2.22.1")
+var GitHubCliVersion semver.Version = semver.MustParse("2.28.0")
 
 // newGitHubCliImplementation is like NewGitHubCli but allows providing a custom transport to use when downloading the
 // GitHub CLI, for testing purposes.
@@ -82,7 +82,11 @@ func newGitHubCliImplementation(
 	if _, err = os.Stat(githubCliPath); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, fmt.Errorf("getting file information from github cli default path: %w", err)
 	}
-	if errors.Is(err, os.ErrNotExist) {
+	var installGhCli bool
+	if errors.Is(err, os.ErrNotExist) || !expectedVersionInstalled(ctx, commandRunner, githubCliPath) {
+		installGhCli = true
+	}
+	if installGhCli {
 		if err := os.MkdirAll(filepath.Dir(githubCliPath), osutil.PermissionDirectory); err != nil {
 			return nil, fmt.Errorf("creating github cli default path: %w", err)
 		}
@@ -110,12 +114,14 @@ func azdGithubCliPath() (string, error) {
 	if err != nil {
 		return "", err
 	}
+	return filepath.Join(configDir, "bin", ghCliName()), nil
+}
 
+func ghCliName() string {
 	if runtime.GOOS == "windows" {
-		return filepath.Join(configDir, "bin", "gh.exe"), nil
+		return "gh.exe"
 	}
-
-	return filepath.Join(configDir, "bin", "gh"), nil
+	return "gh"
 }
 
 var (
@@ -140,8 +146,28 @@ func (cli *ghCli) CheckInstalled(ctx context.Context) error {
 	return nil
 }
 
+func expectedVersionInstalled(ctx context.Context, commandRunner exec.CommandRunner, binaryPath string) bool {
+	ghVersion, err := tools.ExecuteCommand(ctx, commandRunner, binaryPath, "--version")
+	if err != nil {
+		log.Printf("checking %s version: %s", cGhToolName, err.Error())
+		return false
+	}
+	ghSemver, err := tools.ExtractVersion(ghVersion)
+	if err != nil {
+		log.Printf("converting to semver version fails: %s", err.Error())
+		return false
+	}
+	if ghSemver.LT(GitHubCliVersion) {
+		log.Printf("Found gh cli version %s. Expected version: %s.", ghSemver.String(), GitHubCliVersion.String())
+		return false
+	}
+	return true
+}
+
+const cGhToolName = "GitHub CLI"
+
 func (cli *ghCli) Name() string {
-	return "GitHub CLI"
+	return cGhToolName
 }
 
 func (cli *ghCli) BinaryPath() string {
@@ -369,17 +395,18 @@ func extractFromZip(src, dst string) (string, error) {
 		return "", err
 	}
 
+	log.Printf("extract from zip %s", src)
 	defer zipReader.Close()
 
 	var extractedAt string
 	for _, file := range zipReader.File {
-		if !file.FileInfo().IsDir() && strings.Contains(file.Name, "gh") {
+		fileName := file.FileInfo().Name()
+		if !file.FileInfo().IsDir() && fileName == ghCliName() {
+			log.Printf("found cli at: %s", file.Name)
 			fileReader, err := file.Open()
 			if err != nil {
 				return extractedAt, err
 			}
-			fileNameParts := strings.Split(file.Name, "/")
-			fileName := fileNameParts[len(fileNameParts)-1]
 			filePath := filepath.Join(dst, fileName)
 			ghCliFile, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, file.Mode())
 			if err != nil {
@@ -396,6 +423,7 @@ func extractFromZip(src, dst string) (string, error) {
 		}
 	}
 	if extractedAt != "" {
+		log.Printf("extracted to: %s", extractedAt)
 		return extractedAt, nil
 	}
 	return extractedAt, fmt.Errorf("github cli binary was not found within the zip file")
@@ -483,20 +511,25 @@ func downloadGh(
 	extractImplementation extractGitHubCliFromFileImplementation,
 	path string) error {
 
+	binaryName := func(platform string) string {
+		return fmt.Sprintf("gh_%s_%s", ghVersion, platform)
+	}
+
+	systemArch := runtime.GOARCH
 	// arm and x86 not supported (similar to bicep)
 	var releaseName string
 	switch runtime.GOOS {
 	case "windows":
-		releaseName = "gh_2.22.1_windows_amd64.zip"
+		releaseName = binaryName(fmt.Sprintf("windows_%s.zip", systemArch))
 	case "darwin":
-		releaseName = "gh_2.22.1_macOS_amd64.tar.gz"
+		releaseName = binaryName(fmt.Sprintf("macOS_%s.zip", systemArch))
 	case "linux":
-		releaseName = "gh_2.22.1_linux_amd64.tar.gz"
+		releaseName = binaryName(fmt.Sprintf("linux_%s.tar.gz", systemArch))
 	default:
 		return fmt.Errorf("unsupported platform")
 	}
 
-	//https://github.com/cli/cli/releases/download/v2.22.1/gh_2.22.1_linux_arm64.rpm
+	// example: https://github.com/cli/cli/releases/download/v2.28.0/gh_2.28.0_linux_arm64.rpm
 	ghReleaseUrl := fmt.Sprintf("https://github.com/cli/cli/releases/download/v%s/%s", ghVersion, releaseName)
 
 	log.Printf("downloading github cli release %s -> %s", ghReleaseUrl, releaseName)
@@ -541,10 +574,12 @@ func downloadGh(
 		return err
 	}
 	defer func() {
+		log.Printf("delete %s", compressedFileName)
 		_ = os.Remove(compressedFileName)
 	}()
 
 	// unzip downloaded file
+	log.Printf("extracting file %s", compressedFileName)
 	_, err = extractImplementation(compressedFileName, tmpPath)
 	if err != nil {
 		return err

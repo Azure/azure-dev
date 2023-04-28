@@ -107,6 +107,11 @@
                             "java"
                         ]
                     },
+                    "module": {
+                        "type": "string",
+                        "title": "(DEPRECATED) Path of the infrastructure module used to deploy the service relative to the root infra folder",
+                        "description": "If omitted, the CLI will assume the module name is the same as the service name. This property will be deprecated in a future release."
+                    },
                     "dist": {
                         "type": "string",
                         "title": "Relative path to service deployment artifacts"

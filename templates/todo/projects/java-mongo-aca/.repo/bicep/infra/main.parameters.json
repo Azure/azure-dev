@@ -12,10 +12,10 @@
       "value": "${AZURE_PRINCIPAL_ID}"
     },
     "apiAppExists": {
-      "value": "${SERVICE_API_RESOURCE_EXISTS}"
+      "value": "${SERVICE_API_RESOURCE_EXISTS=false}"
     },
     "webAppExists": {
-      "value": "${SERVICE_WEB_RESOURCE_EXISTS}"
+      "value": "${SERVICE_WEB_RESOURCE_EXISTS=false}"
     },
     "webApiBaseUrl": {
       "value": "${REACT_APP_API_BASE_URL}"

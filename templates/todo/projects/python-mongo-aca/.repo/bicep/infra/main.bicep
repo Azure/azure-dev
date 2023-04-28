@@ -25,18 +25,14 @@ param logAnalyticsName string = ''
 param resourceGroupName string = ''
 param webContainerAppName string = ''
 param apimServiceName string = ''
+param apiResourceName string = ''
+param webResourceName string = ''
 
 @description('Flag to use Azure API Management to mediate the calls between the Web frontend and the backend API')
 param useAPIM bool = false
 
 @description('Id of the user or app to assign application roles')
 param principalId string = ''
-
-@description('The image name for the api service')
-param apiImageName string = ''
-
-@description('The image name for the web service')
-param webImageName string = ''
 
 @description('The base URL used by the web service for sending API requests')
 param webApiBaseUrl string = ''
@@ -74,11 +70,12 @@ module web '../../../../../common/infra/bicep/app/web-container-app.bicep' = {
   params: {
     name: !empty(webContainerAppName) ? webContainerAppName : '${abbrs.appContainerApps}web-${resourceToken}'
     location: location
-    imageName: webImageName
+    identityName: '${abbrs.managedIdentityUserAssignedIdentities}web-${resourceToken}'
     apiBaseUrl: !empty(webApiBaseUrl) ? webApiBaseUrl : api.outputs.SERVICE_API_URI
     applicationInsightsName: monitoring.outputs.applicationInsightsName
     containerAppsEnvironmentName: containerApps.outputs.environmentName
     containerRegistryName: containerApps.outputs.registryName
+    exists: !empty(webResourceName)
   }
 }
 
@@ -89,12 +86,13 @@ module api '../../../../../common/infra/bicep/app/api-container-app.bicep' = {
   params: {
     name: !empty(apiContainerAppName) ? apiContainerAppName : '${abbrs.appContainerApps}api-${resourceToken}'
     location: location
-    imageName: apiImageName
+    identityName: '${abbrs.managedIdentityUserAssignedIdentities}api-${resourceToken}'
     applicationInsightsName: monitoring.outputs.applicationInsightsName
     containerAppsEnvironmentName: containerApps.outputs.environmentName
     containerRegistryName: containerApps.outputs.registryName
     keyVaultName: keyVault.outputs.name
-    corsAcaUrl: 'https://${abbrs.appContainerApps}web-${resourceToken}.${containerApps.outputs.defaultDomain}'
+    corsAcaUrl: corsAcaUrl
+    exists: !empty(apiResourceName)
   }
 }
 

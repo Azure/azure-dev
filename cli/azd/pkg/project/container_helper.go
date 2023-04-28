@@ -151,5 +151,9 @@ func (ch *ContainerHelper) Deploy(
 				task.SetError(fmt.Errorf("saving image name to environment: %w", err))
 				return
 			}
+
+			task.SetResult(&ServiceDeployResult{
+				Package: packageOutput,
+			})
 		})
 }

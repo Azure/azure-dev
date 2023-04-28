@@ -733,9 +733,13 @@ func getRemoteUrlFromExisting(ctx context.Context, ghCli github.GitHubCli, conso
 		return "", fmt.Errorf("listing existing repositories: %w", err)
 	}
 
-	options := make([]string, len(repos))
-	for idx, repo := range repos {
-		options[idx] = repo.NameWithOwner
+	options := make([]string, 0, len(repos))
+	for _, repo := range repos {
+		options = append(options, repo.NameWithOwner)
+	}
+
+	if len(options) == 0 {
+		return "", errors.New("no existing GitHub repositories found")
 	}
 
 	repoIdx, err := console.Select(ctx, input.ConsoleOptions{

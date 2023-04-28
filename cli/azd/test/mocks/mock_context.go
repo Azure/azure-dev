@@ -17,21 +17,21 @@ import (
 )
 
 type MockContext struct {
-	Credentials          *MockCredentials
-	Context              *context.Context
-	Console              *mockinput.MockConsole
-	HttpClient           *mockhttp.MockHttpClient
-	CommandRunner        *mockexec.MockCommandRunner
-	ConfigManager        *mockconfig.MockConfigManager
-	Container            *ioc.NestedContainer
-	AlphaFeaturesManager *alpha.FeatureManager
+	Credentials                    *MockCredentials
+	Context                        *context.Context
+	Console                        *mockinput.MockConsole
+	HttpClient                     *mockhttp.MockHttpClient
+	CommandRunner                  *mockexec.MockCommandRunner
+	ConfigManager                  *mockconfig.MockConfigManager
+	Container                      *ioc.NestedContainer
+	AlphaFeaturesManager           *alpha.FeatureManager
+	SubscriptionCredentialProvider *MockSubscriptionCredentialProvider
+	MultiTenantCredentialProvider  *MockMultiTenantCredentialProvider
 }
 
 func NewMockContext(ctx context.Context) *MockContext {
-	mockConsole := mockinput.NewMockConsole()
 	commandRunner := mockexec.NewMockCommandRunner()
 	httpClient := mockhttp.NewMockHttpUtil()
-	credentials := MockCredentials{}
 	configManager := mockconfig.NewMockConfigManager()
 
 	mockexec.AddAzLoginMocks(commandRunner)
@@ -40,13 +40,15 @@ func NewMockContext(ctx context.Context) *MockContext {
 	ctx = config.WithConfigManager(ctx, configManager)
 
 	mockContext := &MockContext{
-		Credentials:   &credentials,
-		Context:       &ctx,
-		Console:       mockConsole,
-		CommandRunner: commandRunner,
-		HttpClient:    httpClient,
-		ConfigManager: configManager,
-		Container:     ioc.NewNestedContainer(nil),
+		Credentials:                    &MockCredentials{},
+		Context:                        &ctx,
+		Console:                        mockinput.NewMockConsole(),
+		CommandRunner:                  mockexec.NewMockCommandRunner(),
+		HttpClient:                     httpClient,
+		ConfigManager:                  configManager,
+		SubscriptionCredentialProvider: &MockSubscriptionCredentialProvider{},
+		MultiTenantCredentialProvider:  &MockMultiTenantCredentialProvider{},
+		Container:                      ioc.NewNestedContainer(nil),
 	}
 
 	registerCommonMocks(mockContext)

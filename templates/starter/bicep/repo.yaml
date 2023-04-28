@@ -14,6 +14,13 @@ repo:
       url: git@github.com:Azure-Samples/azd-bicep-starter.git
       branch: staging
 
+  rewrite:
+    rules:
+      - from: ../../../common/infra/bicep/abbreviations.json
+        to: ./abbreviations.json
+        patterns:
+          - "**/*.bicep"
+
   assets:
     # AzDo workflows for bicep
     - from: ../../common/.azdo/pipelines/bicep/azure-dev.yml

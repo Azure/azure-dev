@@ -20,7 +20,7 @@ param location string
 // }
 param resourceGroupName string = ''
 
-var abbrs = loadJsonContent('./abbreviations.json')
+var abbrs = loadJsonContent('../../../common/infra/bicep/abbreviations.json')
 
 // tags that should be applied to all resources.
 var tags = {

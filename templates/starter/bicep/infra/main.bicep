@@ -21,13 +21,25 @@ param location string
 param resourceGroupName string = ''
 
 var abbrs = loadJsonContent('./abbreviations.json')
-// Tag the resource group with the current environment.
-var tags = { 'azd-env-name': environmentName }
+
+// tags that should be applied to all resources.
+var tags = {
+  // Tag all resources with the environment name.
+  'azd-env-name': environmentName
+}
+
 // Generate a unique token to be used in naming resources.
-// Remove linter suppression if this is used.
+// Remove linter suppression after using.
 #disable-next-line no-unused-vars
 var resourceToken = toLower(uniqueString(subscription().id, environmentName, location))
 
+// Name of the service defined in azure.yaml
+// A tag named azd-service-name with this value should be applied to the service host resource,
+// i.e., Microsoft.Web/sites for appservice, funcapp
+// Example usage:
+//   tags: union(tags, { 'azd-service-name': apiServiceName })
+#disable-next-line no-unused-vars
+var apiServiceName = 'python-api'
 
 // Organize resources in a resource group
 resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
@@ -49,6 +61,6 @@ resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
 // Secrets should not be added here.
 //
 // Outputs are automatically saved in the local azd environment .env file.
-// To see these outputs, run `azd env get-values`. `azd env get-values --output json` for json output.
+// To see these outputs, run `azd env get-values`,  or `azd env get-values --output json` for json output.
 output AZURE_LOCATION string = location
 output AZURE_TENANT_ID string = tenant().tenantId

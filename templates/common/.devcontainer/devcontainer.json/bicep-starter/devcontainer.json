@@ -3,38 +3,34 @@
     "build": {
         "dockerfile": "Dockerfile",
         "args": {
+            // List of images: https://github.com/devcontainers/images/tree/main/src
             "IMAGE": "python:3.10"
         }
     },
     "features": {
-        "ghcr.io/devcontainers/features/azure-cli:1": {
-            "version": "2.38"
-        },
+        // Install Node.js and docker by default
         "ghcr.io/devcontainers/features/docker-in-docker:2": {
         },
         "ghcr.io/devcontainers/features/node:1": {
             "version": "16",
             "nodeGypDependencies": false
-        },
-        "ghcr.io/devcontainers/features/terraform:1": {
-            "version": "latest"
         }
     },
     "customizations": {
         "vscode": {
             "extensions": [
                 "ms-azuretools.azure-dev",
-                "hashicorp.terraform",
+                "ms-azuretools.vscode-bicep",
                 "ms-azuretools.vscode-docker",
+                "ms-azuretools.vscode-azurefunctions",
+                // Include other VSCode language extensions if needed
                 "ms-vscode.vscode-node-azure-pack",
-                "ms-python.python",
-                "ms-azuretools.vscode-azurefunctions"
+                "ms-python.python"
             ]
         }
     },
     "forwardPorts": [
-        3000,
-        3100
+        // Forward ports if needed for local development
     ],
     "postCreateCommand": "",
     "remoteUser": "vscode",

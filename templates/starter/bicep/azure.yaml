@@ -22,7 +22,7 @@ services:
     project: ./src/api
     host: appservice
   # An example for a React front-end app.
-  # The src/react-app/build folder is where the app is built to.
+  # The src/react-app/build folder is where the app is built to after `npm run build`.
   react-web:
     language: js
     project: ./src/react-app

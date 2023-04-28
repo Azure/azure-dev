@@ -1,21 +1,29 @@
+# Run when commits are pushed to mainline branch (main or master)
+# Set this to the mainline branch you are using
 trigger:
   - main
   - master
 
+# Azure Pipeline workflow to deploy to Azure using azd
+# To configure required secrets for connecting to Azure, simply run `azd pipeline config --provider azdo`
+
 pool:
   vmImage: ubuntu-latest
 
+# Use azd provided container image that has azd, infra, multi-language build tools pre-installed.
 container: mcr.microsoft.com/azure-dev-cli-apps:latest
 
 steps:
   - pwsh: |
       azd config set auth.useAzCliAuth "true"
     displayName: Configure AZD to Use AZ CLI Authentication.
+
   - pwsh: |
       azd config set alpha.terraform on
     displayName: Enable terraform alpha feature from azd
+
   - task: AzureCLI@2
-    displayName: Azure Dev Provision
+    displayName: Provision Infrastructure
     inputs:
       azureSubscription: azconnection
       scriptType: bash
@@ -32,8 +40,9 @@ steps:
       RS_RESOURCE_GROUP: $(RS_RESOURCE_GROUP)
       RS_STORAGE_ACCOUNT: $(RS_STORAGE_ACCOUNT)
       RS_CONTAINER_NAME: $(RS_CONTAINER_NAME)
+
   - task: AzureCLI@2
-    displayName: Azure Dev Deploy
+    displayName: Deploy Application
     inputs:
       azureSubscription: azconnection
       scriptType: bash

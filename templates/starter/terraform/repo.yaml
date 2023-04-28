@@ -1,0 +1,37 @@
+templateApi: 1.0.0
+metadata:
+  type: repo
+  name: azd-terraform-starter
+  description: Starter template with Bicep as infrastructure provider for Azure Developer CLI (azd).
+
+repo:
+  includeProjectAssets: true
+
+  remotes:
+    - name: azure-samples-main
+      url: git@github.com:Azure-Samples/azd-terraform-starter.git
+    - name: azure-samples-staging
+      url: git@github.com:Azure-Samples/azd-terraform-starter.git
+      branch: staging
+
+  assets:
+    # AzDo workflows for bicep
+    - from: ../../common/.azdo/pipelines/terraform/azure-dev.yml
+      to: ./.azdo/pipelines/azure-dev.yml
+
+    # Github workflows for bicep
+    - from: ../../common/.github/workflows/terraform
+      to: ./.github/workflows
+
+    # .gitignore
+    - from: ../../common/.gitignore
+      to: ./.gitignore
+
+    # .devcontainer common (devcontainer.json)
+    - from: ../../common/.devcontainer/devcontainer.json/terraform-starter/devcontainer.json
+      to: ./.devcontainer/devcontainer.json
+
+    # .devcontainer common (Dockerfile)
+    - from: ../../common/.devcontainer/Dockerfile/base
+      to: ./.devcontainer
+

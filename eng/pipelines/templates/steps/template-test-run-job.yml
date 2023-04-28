@@ -108,7 +108,7 @@ steps:
 
               # Login az CLI (required for scenarios where az is invoked)
               az login \
-                --service-principal 
+                --service-principal \
                 -u "$(arm-client-id)" \
                 -p "$(arm-client-secret)" \
                 --tenant "$(arm-tenant-id)"

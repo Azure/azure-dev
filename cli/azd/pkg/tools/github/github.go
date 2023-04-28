@@ -51,7 +51,7 @@ func NewGitHubCli(ctx context.Context, console input.Console, commandRunner exec
 
 // GitHubCliVersion is the minimum version of GitHub cli that we require (and the one we fetch when we fetch bicep on
 // behalf of a user).
-var GitHubCliVersion semver.Version = semver.MustParse("2.22.1")
+var GitHubCliVersion semver.Version = semver.MustParse("2.28.0")
 
 // newGitHubCliImplementation is like NewGitHubCli but allows providing a custom transport to use when downloading the
 // GitHub CLI, for testing purposes.

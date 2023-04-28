@@ -101,6 +101,10 @@ function deployTemplate {
     echo "Provisioning infrastructure for $3..."
     azd provision -e "$3"
 
+    if [ "$1" == "Azure-Samples/azd-starter*" ]; then
+        echo "Skipped deploy for azd-starter templates"
+        return
+    fi
     echo "Deploying apps for $3..."
     azd deploy -e "$3"
 }
@@ -110,6 +114,11 @@ function deployTemplate {
 # $2 - The branch name
 # $3 - The environment name
 function testTemplate {
+    if [ "$1" == "Azure-Samples/azd-starter*" ]; then
+        echo "Skipped smoke tests for azd-starter templates"
+        return
+    fi
+
     echo "Running template smoke tests for $3..."
     if [ $DEVCONTAINER == false ]; then
         cd "$FOLDER_PATH/$3/tests"

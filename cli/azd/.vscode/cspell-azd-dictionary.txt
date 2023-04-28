@@ -121,3 +121,9 @@ utsname
 westus2
 wireinject
 yacspin
+springapp
+appplatform
+armappplatform
+azfile
+createdby
+buildpacks

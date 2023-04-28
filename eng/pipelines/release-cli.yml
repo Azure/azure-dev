@@ -573,6 +573,8 @@ stages:
           vmImage: MMSUbuntu20.04
 
         steps:
+          - checkout: self
+
           - task: DownloadPipelineArtifact@2
             inputs:
               artifact: azd-windows-amd64.exe
@@ -607,6 +609,8 @@ stages:
               tar -C azd-linux-amd64 -cvzf hosting/azd-linux-amd64.tar.gz azd-linux-amd64
 
               Copy-Item msi/azd-windows-amd64.msi hosting/
+
+              Copy-Item cli/installer/*stall-azd.* hosting/
 
               Get-ChildItem hosting/ -Recurse | Select-Object -Property Name,Size
             displayName: Move folders to hosting location

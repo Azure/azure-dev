@@ -30,6 +30,9 @@ Download timeout in seconds. Default is 120 (2 minutes).
 .PARAMETER SkipVerify
 Skips verification of the downloaded file.
 
+.PARAMETER InstallShScriptUrl
+(Mac/Linux only) URL to the install-azd.sh script. Default is https://aka.ms/install-azd.sh
+
 .EXAMPLE
 powershell -ex AllSigned -c "Invoke-RestMethod 'https://aka.ms/install-azd.ps1' | Invoke-Expression"
 
@@ -260,20 +263,18 @@ if (isLinuxOrMac) {
         Write-Error "Command could not be found: bash."
     }
 
-    if (!$InstallFolder) {
-        $InstallFolder = "/opt/microsoft/azd"
-    }
-
-    if (!$SymlinkFolder) { 
-        $SymlinkFolder = "/usr/local/bin"
-    }
-
     $params = @(
-        '--install-folder', $InstallFolder, 
-        '--symlink-folder', $SymlinkFolder,
         '--base-url', $BaseUrl, 
         '--version', $Version
     )
+
+    if ($InstallFolder) {
+        $params += '--install-folder', $InstallFolder
+    }
+
+    if ($SymlinkFolder) {
+        $params += '--symlink-folder', $SymlinkFolder
+    }
 
     if ($SkipVerify) { 
         $params += '--skip-verify'

@@ -5,6 +5,8 @@ FROM ${prefix}${base}
 ARG shell='bash'
 ARG baseUrl='must set baseUrl'
 ARG version='must set version'
+ARG installShScriptUrl='must set installShScriptUrl'
+ARG uninstallShScriptUrl='must set uninstallShScriptUrl'
 
 # pwsh install instructions from
 # https://docs.microsoft.com/en-us/powershell/scripting/install/install-debian?view=powershell-7.2
@@ -23,5 +25,7 @@ COPY test/telemetry/debian.pwsh.telemetry.json /telemetry.json
 
 ENV BASE_URL="${baseUrl}"
 ENV VERSION="${version}"
+ENV INSTALL_SH_SCRIPT_URL="${installShScriptUrl}"
+ENV UNINSTALL_SH_SCRIPT_URL="${uninstallShScriptUrl}"
 
-ENTRYPOINT pwsh -NonInteractive -c "\$ProgressPreference = 'SilentlyContinue'; /test-pwsh-xplat-install.ps1 -BaseUrl \$env:BASE_URL -Version \$env:VERSION && /test-telemetry-functions.ps1"
+ENTRYPOINT pwsh -NonInteractive -c "\$ProgressPreference = 'SilentlyContinue'; /test-pwsh-xplat-install.ps1 -BaseUrl \$env:BASE_URL -Version \$env:VERSION -InstallShScriptUrl \$env:INSTALL_SH_SCRIPT_URL -UninstallShScriptUrl \$env:UNINSTALL_SH_SCRIPT_URL && /test-telemetry-functions.ps1"

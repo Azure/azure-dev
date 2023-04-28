@@ -83,8 +83,8 @@ func PromptTemplate(ctx context.Context, message string, console input.Console) 
 		return templateSelect[a].Name < templateSelect[b].Name
 	})
 
-	// prepend the minimal option to guarantee first selection
-	choices = append([]string{"Minimal"}, choices...)
+	// prepend the empty template option to guarantee first selection
+	choices = append([]string{"Empty Template"}, choices...)
 
 	selected, err := console.Select(ctx, input.ConsoleOptions{
 		Message:      message,

@@ -25,8 +25,8 @@ param logAnalyticsName string = ''
 param resourceGroupName string = ''
 param webContainerAppName string = ''
 param apimServiceName string = ''
-param apiResourceName string = ''
-param webResourceName string = ''
+param apiAppExists bool = false
+param webAppExists bool = false
 
 @description('Flag to use Azure API Management to mediate the calls between the Web frontend and the backend API')
 param useAPIM bool = false
@@ -75,7 +75,7 @@ module web '../../../../../common/infra/bicep/app/web-container-app.bicep' = {
     applicationInsightsName: monitoring.outputs.applicationInsightsName
     containerAppsEnvironmentName: containerApps.outputs.environmentName
     containerRegistryName: containerApps.outputs.registryName
-    exists: !empty(webResourceName)
+    exists: webAppExists
   }
 }
 
@@ -92,7 +92,7 @@ module api '../../../../../common/infra/bicep/app/api-container-app.bicep' = {
     containerRegistryName: containerApps.outputs.registryName
     keyVaultName: keyVault.outputs.name
     corsAcaUrl: corsAcaUrl
-    exists: !empty(apiResourceName)
+    exists: webAppExists
   }
 }
 

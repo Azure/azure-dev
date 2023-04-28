@@ -11,11 +11,11 @@
     "principalId": {
       "value": "${AZURE_PRINCIPAL_ID}"
     },
-    "apiResourceName": {
-      "value": "${SERVICE_API_NAME}"
+    "apiAppExists": {
+      "value": "${SERVICE_API_RESOURCE_EXISTS}"
     },
-    "webResourceName": {
-      "value": "${SERVICE_WEB_NAME}"
+    "webAppExists": {
+      "value": "${SERVICE_WEB_RESOURCE_EXISTS}"
     },
     "webApiBaseUrl": {
       "value": "${REACT_APP_API_BASE_URL}"

@@ -9,11 +9,10 @@
     "customizations": {
         "vscode": {
             "extensions": [
-				"redhat.vscode-yaml",
-				"streetsidesoftware.code-spell-checker",
-				"golang.go",
-				"hashicorp.terraform"
-			]
+                "redhat.vscode-yaml",
+                "streetsidesoftware.code-spell-checker",
+                "golang.go"
+            ]
         }
     }
 }

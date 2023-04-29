@@ -265,7 +265,7 @@ if (isLinuxOrMac) {
 
     $params = @(
         '--base-url', $BaseUrl, 
-        '--version', $Version
+        '--version', "'$Version'"
     )
 
     if ($InstallFolder) {
@@ -293,7 +293,7 @@ if (isLinuxOrMac) {
     }
 
     Write-Verbose "Running: curl -fsSL $InstallShScriptUrl | bash -s -- $($params -join ' ')" -Verbose:$Verbose
-    & curl -fsSL $InstallShScriptUrl | bash -s -- @params
+    bash -c "curl -fsSL $InstallShScriptUrl | bash -s -- $($params -join ' ')"
     exit $LASTEXITCODE
 }
 

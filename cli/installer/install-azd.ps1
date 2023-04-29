@@ -376,7 +376,7 @@ try {
     Write-Verbose "Cleaning temporary install directory: $tempFolder" -Verbose:$Verbose
     Remove-Item $tempFolder -Recurse -Force | Out-Null
 
-    if (!isLinuxOrMac) {
+    if (!(isLinuxOrMac)) {
         # Installed on Windows
         Write-Host "Successfully installed azd"
         Write-Host "Azure Developer CLI (azd) installed successfully. You may need to restart running programs for installation to take effect."

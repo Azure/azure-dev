@@ -700,7 +700,11 @@ stages:
               OSVmImage:  MMSUbuntu20.04
               TestShell: pwsh
               TestInstallCommand: >
-                ./test-pwsh-xplat-install.ps1 -BaseUrl $env:BASEURL -Version '';
+                ./test-pwsh-xplat-install.ps1 
+                  -BaseUrl $env:BASEURL 
+                  -Version '' 
+                  -InstallShScriptUrl "$($env:BASEURL)/install-azd.sh"
+                  -UninstallShScriptUrl "$($env:BASEURL)/uninstall-azd.sh";
                 ./test-telemetry-functions.ps1 -NonInteractive -Shell pwsh -ExpectedFieldMap telemetry/linux.telemetry.json
 
             Mac11Sh:
@@ -728,7 +732,11 @@ stages:
               # macs. Disabled for now.
               #  ./test-telemetry-functions.ps1 -Shell pwsh -ExpectedFieldMap telemetry/macos.telemetry.json
               TestInstallCommand: >
-                ./test-pwsh-xplat-install.ps1 -BaseUrl $env:BASEURL -Version ''
+                ./test-pwsh-xplat-install.ps1 
+                  -BaseUrl $env:BASEURL 
+                  -Version '' 
+                  -InstallShScriptUrl "$($env:BASEURL)/install-azd.sh"
+                  -UninstallShScriptUrl "$($env:BASEURL)/uninstall-azd.sh"
             Mac11Pwsh:
               Pool: Azure Pipelines
               OSVmImage: macOS-11
@@ -738,8 +746,11 @@ stages:
               # macs. Disabled for now.
               #  ./test-telemetry-functions.ps1 -Shell pwsh -ExpectedFieldMap telemetry/macos.telemetry.json
               TestInstallCommand: >
-                ./test-pwsh-xplat-install.ps1 -BaseUrl $env:BASEURL -Version ''
-
+                ./test-pwsh-xplat-install.ps1 
+                  -BaseUrl $env:BASEURL 
+                  -Version '' 
+                  -InstallShScriptUrl "$($env:BASEURL)/install-azd.sh"
+                  -UninstallShScriptUrl "$($env:BASEURL)/uninstall-azd.sh"
             WindowsCmd:
               Pool: azsdk-pool-mms-win-2022-general
               OSVmImage: MMS2022

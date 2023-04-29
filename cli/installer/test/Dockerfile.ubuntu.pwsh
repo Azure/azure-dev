@@ -23,6 +23,7 @@ RUN apt-get install -y curl
 
 COPY ./test-pwsh-xplat-install.ps1 /test-pwsh-xplat-install.ps1
 COPY ./*stall-azd.ps1 /
+COPY ./install-azd-report.sh /
 
 # Validate telemetry behavior by simulating an error
 COPY ./test-telemetry-functions.ps1 /

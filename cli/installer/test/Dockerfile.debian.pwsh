@@ -19,6 +19,7 @@ RUN apt update \
 
 COPY ./test-pwsh-xplat-install.ps1 /test-pwsh-xplat-install.ps1
 COPY ./*stall-azd.ps1 /
+COPY ./install-azd-report.sh /
 
 COPY ./test-telemetry-functions.ps1 /
 COPY test/telemetry/debian.pwsh.telemetry.json /telemetry.json

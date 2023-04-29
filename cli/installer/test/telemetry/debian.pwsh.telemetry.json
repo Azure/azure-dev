@@ -2,5 +2,5 @@
     "os": "debian",
     "osVersion": "11",
     "isWsl": "false",
-    "terminal": "pwsh"
+    "terminal": "bash"
 }

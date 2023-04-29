@@ -18,7 +18,7 @@ async function main() {
 		// Download VS Code, unzip it and run unit tests
 		await runTests({ extensionDevelopmentPath, extensionTestsPath });
 	} catch (err) {
-		console.error('Failed to run tests');
+		console.error('Failed to run tests: ', err);
 		process.exit(1);
 	}
 }

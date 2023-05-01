@@ -15,6 +15,7 @@ import (
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
+	"github.com/nathan-fiscaletti/consolesize-go"
 	"github.com/theckman/yacspin"
 )
 
@@ -79,6 +80,7 @@ type AskerConsole struct {
 	formatter     output.Formatter
 	spinner       *yacspin.Spinner
 	currentIndent string
+	consoleWidth  int
 }
 
 type ConsoleOptions struct {
@@ -149,9 +151,27 @@ func (c *AskerConsole) MessageUxItem(ctx context.Context, item ux.UxItem) {
 	}
 }
 
+const cPostfix = "..."
+
+func (c *AskerConsole) spinnerText(title, charset string) string {
+
+	spinnerLen := len(charset) + 1 // adding one for the empty space before the message
+
+	if len(title)+spinnerLen >= c.consoleWidth {
+		return fmt.Sprintf("%s%s", title[:c.consoleWidth-spinnerLen-len(cPostfix)], cPostfix)
+	}
+	return title
+}
+
 func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format SpinnerUxType) {
 	if c.formatter != nil && c.formatter.Kind() == output.JsonFormat {
 		// Spinner is disabled when using json format.
+		return
+	}
+
+	if c.consoleWidth <= cMinConsoleWidth {
+		// no spinner for consoles with width <= cMinConsoleWidth
+		c.Message(ctx, title)
 		return
 	}
 
@@ -160,13 +180,15 @@ func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format Spi
 	if c.spinner != nil {
 		_ = c.spinner.Stop()
 	}
+
+	charSet := c.getCharset(format)
 	spinnerConfig := yacspin.Config{
 		Frequency:       200 * time.Millisecond,
 		Writer:          c.writer,
 		Suffix:          " ",
 		SuffixAutoColon: true,
-		Message:         title,
-		CharSet:         c.getCharset(format),
+		Message:         c.spinnerText(title, charSet[0]),
+		CharSet:         charSet,
 	}
 	if os.Getenv("AZD_DEBUG_FORCE_NO_TTY") == "1" {
 		spinnerConfig.TerminalMode = yacspin.ForceNoTTYMode | yacspin.ForceDumbTerminalMode
@@ -332,6 +354,16 @@ func (c *AskerConsole) Handles() ConsoleHandles {
 	return c.handles
 }
 
+const cMinConsoleWidth int = 40
+
+func getConsoleWidth() int {
+	width, _ := consolesize.GetConsoleSize()
+	if width < cMinConsoleWidth {
+		return cMinConsoleWidth
+	}
+	return width
+}
+
 // Creates a new console with the specified writer, handles and formatter.
 func NewConsole(noPrompt bool, isTerminal bool, w io.Writer, handles ConsoleHandles, formatter output.Formatter) Console {
 	asker := NewAsker(noPrompt, isTerminal, handles.Stdout, handles.Stdin)
@@ -342,6 +374,7 @@ func NewConsole(noPrompt bool, isTerminal bool, w io.Writer, handles ConsoleHand
 		defaultWriter: w,
 		writer:        w,
 		formatter:     formatter,
+		consoleWidth:  getConsoleWidth(),
 	}
 }
 

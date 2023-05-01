@@ -168,32 +168,23 @@ export async function refreshEnvironment(context: IActionContext, selectedItem?:
     if (!folder) {
         folder = await quickPickWorkspaceFolder(context, vscode.l10n.t("To run '{0}' command you must first open a folder or workspace in VS Code", 'env refresh'));
     }
-    const cwd = folder.uri.fsPath;
 
     const azureCli = await createAzureDevCli(context);
-    const progressOptions: vscode.ProgressOptions = {
-        location: vscode.ProgressLocation.Notification,
-        title: vscode.l10n.t('Refreshing environment values...'),
-    };
-    azureCli.commandBuilder.withArg('env').withArg('refresh');
-
+    let command = azureCli.commandBuilder.withArg('env').withArg('refresh');
     if (selectedEnvironment) {
-        azureCli.commandBuilder.withNamedArg('--environment', selectedEnvironment.name);
+        command = command.withNamedArg('--environment', selectedEnvironment.name);
     }
 
-    let errorMsg: string | undefined = undefined;
-
-    await vscode.window.withProgress(progressOptions, async () => {
-        try {
-            await spawnAsync(azureCli.commandBuilder.build(), azureCli.spawnOptions(cwd));
-        } catch(err) {
-            errorMsg = parseError(err).message;
+    void executeAsTask(command.build(), getAzDevTerminalTitle(), {
+        focus: true,
+        alwaysRunNew: true,
+        cwd: folder.uri.fsPath,
+        env: azureCli.env
+    }, TelemetryId.EnvRefreshCli).then(() => {
+        if (selectedEnvironment) {
+            selectedEnvironment.context.refreshEnvironments();
         }
     });
-    if (errorMsg) {
-        await promptCreateNewEnvironment(
-            vscode.l10n.t('Environment values could not be refreshed. Infrastructure might have never been provisioned in Azure, or there might be no environments. Would you like to create one?'), errorMsg);
-    }
 }
 
 async function promptCreateNewEnvironment(message: string, details?: string): Promise<void> {

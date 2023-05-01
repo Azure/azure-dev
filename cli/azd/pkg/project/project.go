@@ -71,12 +71,6 @@ func Parse(ctx context.Context, yamlContent string) (*ProjectConfig, error) {
 		svc.Project = &projectConfig
 		svc.EventDispatcher = ext.NewEventDispatcher[ServiceLifecycleEventArgs]()
 
-		// By convention, the name of the infrastructure module to use when doing an IaC based deployment is the friendly
-		// name of the service. This may be overridden by the `module` property of `azure.yaml`
-		if svc.Module == "" {
-			svc.Module = key
-		}
-
 		if svc.Language == "" {
 			svc.Language = "dotnet"
 		}

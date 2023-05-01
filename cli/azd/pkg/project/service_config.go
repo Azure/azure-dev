@@ -22,12 +22,12 @@ type ServiceConfig struct {
 	Language ServiceLanguageKind `yaml:"language"`
 	// The output path for build artifacts
 	OutputPath string `yaml:"dist"`
-	// The infrastructure module path relative to the root infra folder to use for this project
-	Module string `yaml:"module"`
 	// The optional docker options
 	Docker DockerProjectOptions `yaml:"docker"`
 	// The optional K8S / AKS options
 	K8s AksOptions `yaml:"k8s"`
+	// The optional Azure Spring Apps options
+	Spring SpringOptions `yaml:"spring"`
 	// The infrastructure provisioning configuration
 	Infra provisioning.Options `yaml:"infra"`
 	// Hook configuration for service

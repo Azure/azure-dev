@@ -39,27 +39,27 @@ func (cli *npmCli) versionInfoNode() tools.VersionInfo {
 	}
 }
 
-func (cli *npmCli) CheckInstalled(ctx context.Context) (bool, error) {
-	found, err := tools.ToolInPath("npm")
-	if !found {
-		return false, err
+func (cli *npmCli) CheckInstalled(ctx context.Context) error {
+	err := tools.ToolInPath("npm")
+	if err != nil {
+		return err
 	}
 
 	//check node version
 	nodeRes, err := tools.ExecuteCommand(ctx, cli.commandRunner, "node", "--version")
 	if err != nil {
-		return false, fmt.Errorf("checking %s version: %w", cli.Name(), err)
+		return fmt.Errorf("checking %s version: %w", cli.Name(), err)
 	}
 	nodeSemver, err := tools.ExtractVersion(nodeRes)
 	if err != nil {
-		return false, fmt.Errorf("converting to semver version fails: %w", err)
+		return fmt.Errorf("converting to semver version fails: %w", err)
 	}
 	updateDetailNode := cli.versionInfoNode()
 	if nodeSemver.Compare(updateDetailNode.MinimumVersion) == -1 {
-		return false, &tools.ErrSemver{ToolName: "Node.js", VersionInfo: updateDetailNode}
+		return &tools.ErrSemver{ToolName: "Node.js", VersionInfo: updateDetailNode}
 	}
 
-	return true, nil
+	return nil
 }
 
 func (cli *npmCli) InstallUrl() string {

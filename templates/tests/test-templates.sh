@@ -101,7 +101,7 @@ function deployTemplate {
     echo "Provisioning infrastructure for $3..."
     azd provision -e "$3"
 
-    if [ "$1" == "Azure-Samples/azd-*-starter" ]; then
+    if [[ "$1" == "Azure-Samples/azd-"*"-starter" ]]; then
         echo "Skipped deploy for azd-starter templates"
         return
     fi
@@ -114,7 +114,7 @@ function deployTemplate {
 # $2 - The branch name
 # $3 - The environment name
 function testTemplate {
-    if [ "$1" == "Azure-Samples/azd-*-starter" ]; then
+    if [[ "$1" == "Azure-Samples/azd-"*"-starter" ]]; then
         echo "Skipped smoke tests for azd-starter templates"
         return
     fi

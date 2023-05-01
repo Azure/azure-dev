@@ -41,6 +41,10 @@ const cCurrentUserKey = "auth.account.currentUser"
 // it ourselves. The value should be a string as specified by [strconv.ParseBool].
 const cUseAzCliAuthKey = "auth.useAzCliAuth"
 
+// cAuthConfigFileName is the name of the file we store in the user configuration directory which is used to persist
+// auth related configuration information (e.g. the home account id of the current user). This information is not secret.
+const cAuthConfigFileName = "auth.json"
+
 // cDefaultAuthority is the default authority to use when a specific tenant is not presented. We use "organizations" to
 // allow both work/school accounts and personal accounts (this matches the default authority the `az` CLI uses when logging
 // in).
@@ -70,13 +74,18 @@ var cLoginScopes = []string{azure.ManagementScope}
 type Manager struct {
 	publicClient        publicClient
 	publicClientOptions []public.Option
-	configManager       config.UserConfigManager
+	configManager       config.Manager
+	userConfigManager   config.UserConfigManager
 	credentialCache     Cache
 	ghClient            *github.FederatedTokenClient
 	httpClient          httputil.HttpClient
 }
 
-func NewManager(configManager config.UserConfigManager, httpClient httputil.HttpClient) (*Manager, error) {
+func NewManager(
+	configManager config.Manager,
+	userConfigManager config.UserConfigManager,
+	httpClient httputil.HttpClient,
+) (*Manager, error) {
 	cfgRoot, err := config.GetUserConfigDir()
 	if err != nil {
 		return nil, fmt.Errorf("getting config dir: %w", err)
@@ -108,6 +117,7 @@ func NewManager(configManager config.UserConfigManager, httpClient httputil.Http
 		publicClient:        &msalPublicClientAdapter{client: &publicClientApp},
 		publicClientOptions: options,
 		configManager:       configManager,
+		userConfigManager:   userConfigManager,
 		credentialCache:     newCredentialCache(authRoot),
 		ghClient:            ghClient,
 		httpClient:          httpClient,
@@ -146,12 +156,12 @@ func (m *Manager) CredentialForCurrentUser(
 		options = &CredentialForCurrentUserOptions{}
 	}
 
-	cfg, err := m.configManager.Load()
+	userConfig, err := m.userConfigManager.Load()
 	if err != nil {
 		return nil, fmt.Errorf("fetching current user: %w", err)
 	}
 
-	if shouldUseLegacyAuth(cfg) {
+	if shouldUseLegacyAuth(userConfig) {
 		log.Printf("delegating auth to az since %s is set to true", cUseAzCliAuthKey)
 		cred, err := azidentity.NewAzureCLICredential(&azidentity.AzureCLICredentialOptions{
 			TenantID: options.TenantID,
@@ -162,7 +172,12 @@ func (m *Manager) CredentialForCurrentUser(
 		return cred, nil
 	}
 
-	currentUser, err := readUserProperties(cfg)
+	authConfig, err := m.readAuthConfig()
+	if err != nil {
+		return nil, fmt.Errorf("reading auth config: %w", err)
+	}
+
+	currentUser, err := readUserProperties(authConfig)
 	if errors.Is(err, ErrNoCurrentUser) {
 		// User is not logged in, not using az credentials, try CloudShell if possible
 		if shouldUseCloudShellAuth() {
@@ -252,20 +267,26 @@ func shouldUseCloudShellAuth() bool {
 // GetLoggedInServicePrincipalTenantID returns the stored service principal's tenant ID.
 //
 // Service principals are fixed to a particular tenant.
+//
 // This can be used to determine if the tenant is fixed, and if so short circuit performance intensive tenant-switching
 // for service principals.
 func (m *Manager) GetLoggedInServicePrincipalTenantID(ctx context.Context) (*string, error) {
-	cfg, err := m.configManager.Load()
+	cfg, err := m.userConfigManager.Load()
 	if err != nil {
 		return nil, fmt.Errorf("fetching current user: %w", err)
 	}
 
 	if shouldUseLegacyAuth(cfg) {
 		// When delegating to az, we have no way to determine what principal was used
-		return nil, err
+		return nil, nil
 	}
 
-	currentUser, err := readUserProperties(cfg)
+	authCfg, err := m.readAuthConfig()
+	if err != nil {
+		return nil, fmt.Errorf("fetching auth config: %w", err)
+	}
+
+	currentUser, err := readUserProperties(authCfg)
 	if err != nil {
 		// No user is logged in, if running in CloudShell use tenant id from
 		// CloudShell session (single tenant)
@@ -507,7 +528,7 @@ func (m *Manager) Logout(ctx context.Context) error {
 		}
 	}
 
-	cfg, err := m.configManager.Load()
+	cfg, err := m.readAuthConfig()
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)
 	}
@@ -528,7 +549,7 @@ func (m *Manager) Logout(ctx context.Context) error {
 		return fmt.Errorf("un-setting current user: %w", err)
 	}
 
-	if err := m.configManager.Save(cfg); err != nil {
+	if err := m.saveAuthConfig(cfg); err != nil {
 		return fmt.Errorf("saving config: %w", err)
 	}
 
@@ -558,7 +579,7 @@ func (m *Manager) saveLoginForServicePrincipal(tenantId, clientId string, secret
 // getSignedInAccount fetches the public.Account for the signed in user, or nil if one does not exist
 // (e.g when logged in with a service principal).
 func (m *Manager) getSignedInAccount(ctx context.Context) (*public.Account, error) {
-	cfg, err := m.configManager.Load()
+	cfg, err := m.userConfigManager.Load()
 	if err != nil {
 		return nil, fmt.Errorf("fetching current user: %w", err)
 	}
@@ -581,7 +602,7 @@ func (m *Manager) getSignedInAccount(ctx context.Context) (*public.Account, erro
 
 // saveUserProperties writes the properties under [cCurrentUserKey], overwriting any existing value.
 func (m *Manager) saveUserProperties(user *userProperties) error {
-	cfg, err := m.configManager.Load()
+	cfg, err := m.readAuthConfig()
 	if err != nil {
 		return fmt.Errorf("fetching current user: %w", err)
 	}
@@ -590,7 +611,68 @@ func (m *Manager) saveUserProperties(user *userProperties) error {
 		return fmt.Errorf("setting account id in config: %w", err)
 	}
 
-	return m.configManager.Save(cfg)
+	return m.saveAuthConfig(cfg)
+}
+
+// readAuthConfig loads the configuration from [cAuthConfigFileName] and returns a parsed version of it. If the config
+// file does not exist, an empty [config.Config] is returned, with no error.
+func (m *Manager) readAuthConfig() (config.Config, error) {
+	cfgPath, err := config.GetUserConfigDir()
+	if err != nil {
+		return nil, fmt.Errorf("getting user config dir: %w", err)
+	}
+
+	authCfgFile := filepath.Join(cfgPath, cAuthConfigFileName)
+
+	cfg, err := m.configManager.Load(authCfgFile)
+	if err == nil {
+		return cfg, nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("reading auth config: %w", err)
+	}
+
+	// We used to store auth related configuration in the user configuration file directly. If above file did not exist,
+	// see if there is the data in the old location, and if so migrate it to the new location. This upgrades the old
+	// format to the new format.
+	cfg, err = m.userConfigManager.Load()
+	if err != nil {
+		return nil, fmt.Errorf("reading user config: %w", err)
+	}
+
+	curUserData, has := cfg.Get(cCurrentUserKey)
+	if !has {
+		return config.NewConfig(map[string]any{}), nil
+	}
+
+	if err := cfg.Unset(cCurrentUserKey); err != nil {
+		return nil, err
+	}
+
+	authCfg := config.NewConfig(nil)
+	if err := authCfg.Set(cCurrentUserKey, curUserData); err != nil {
+		return nil, err
+	}
+
+	if err := m.configManager.Save(authCfg, authCfgFile); err != nil {
+		return nil, err
+	}
+
+	if err := m.saveAuthConfig(authCfg); err != nil {
+		return nil, err
+	}
+
+	return authCfg, nil
+}
+
+func (m *Manager) saveAuthConfig(c config.Config) error {
+	cfgPath, err := config.GetUserConfigDir()
+	if err != nil {
+		return fmt.Errorf("getting user config dir: %w", err)
+	}
+
+	authCfgFile := filepath.Join(cfgPath, cAuthConfigFileName)
+
+	return m.configManager.Save(c, authCfgFile)
 }
 
 // persistedSecretLookupKey returns the cache key we use for a given tenantId, clientId pair.

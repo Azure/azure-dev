@@ -251,7 +251,6 @@ func (c *AskerConsole) StopSpinner(ctx context.Context, lastMessage string, form
 
 	c.spinner.StopMessage(lastMessage)
 	_ = c.spinner.Stop()
-	c.currentIndent = ""
 }
 
 func (c *AskerConsole) IsSpinnerRunning(ctx context.Context) bool {

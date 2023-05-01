@@ -114,6 +114,14 @@ func (i *PipelineManager) preConfigureCheck(ctx context.Context, infraOptions pr
 		)
 	}
 
+	// Required authorized role assignments
+	checkRoles := []string{"Owner", "User Access Administrator"}
+	// Check permission on role assignment
+	err = i.azCli.CheckRoleAssignments(ctx, i.Environment.GetSubscriptionId(), checkRoles)
+	if err != nil {
+		return configurationWasUpdated, err
+	}
+
 	ciConfigurationWasUpdated, err := i.CiProvider.preConfigureCheck(
 		ctx, i.PipelineManagerArgs, infraOptions, projectPath)
 	if err != nil {

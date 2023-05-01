@@ -56,10 +56,8 @@ func (cli *azCli) CreateOrUpdateServicePrincipal(
 		return nil, fmt.Errorf("failed resetting application credentials: %w", err)
 	}
 
-	// Required role assignment for applying role assignment
-	checkRoles := []string{"Owner", "User Access Administrator"}
 	// Apply specified role assignment
-	err = cli.ensureRoleAssignments(ctx, subscriptionId, roleName, servicePrincipal, checkRoles)
+	err = cli.ensureRoleAssignments(ctx, subscriptionId, roleName, servicePrincipal)
 	if err != nil {
 		return nil, fmt.Errorf("failed applying role assignment: %w", err)
 	}
@@ -199,17 +197,10 @@ func (cli *azCli) ensureRoleAssignments(
 	subscriptionId string,
 	roleName string,
 	servicePrincipal *graphsdk.ServicePrincipal,
-	checkRoles []string,
 ) error {
 	// Find the specified role in the subscription scope
 	scope := azure.SubscriptionRID(subscriptionId)
 	roleDefinition, err := cli.getRoleDefinition(ctx, subscriptionId, scope, roleName)
-	if err != nil {
-		return err
-	}
-
-	// Check role assignment before creating
-	err = cli.checkRoleAssignments(ctx, subscriptionId, checkRoles)
 	if err != nil {
 		return err
 	}
@@ -366,7 +357,7 @@ func (cli *azCli) createRoleAssignmentsClient(
 	return client, nil
 }
 
-func (cli *azCli) checkRoleAssignments(
+func (cli *azCli) CheckRoleAssignments(
 	ctx context.Context,
 	subscriptionId string,
 	roleName []string,
@@ -380,5 +371,5 @@ func (cli *azCli) checkRoleAssignments(
 			return err
 		}
 	}
-	return fmt.Errorf("missing required user roles: %s", ux.ListAsText(roleName, "or"))
+	return fmt.Errorf("missing required user role assignment for authorization: %s", ux.OrListAsText(roleName))
 }

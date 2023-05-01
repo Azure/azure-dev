@@ -139,6 +139,11 @@ type AzCli interface {
 		applicationName string,
 		roleToAssign string,
 	) (json.RawMessage, error)
+	CheckRoleAssignments(
+		ctx context.Context,
+		subscriptionId string,
+		roleName []string,
+	) error
 	GetAppServiceProperties(
 		ctx context.Context,
 		subscriptionId string,

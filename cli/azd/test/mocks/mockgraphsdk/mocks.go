@@ -3,6 +3,7 @@ package mockgraphsdk
 import (
 	"fmt"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -206,10 +207,27 @@ func RegisterRoleDefinitionListMock(
 			return mocks.CreateEmptyHttpResponse(request, statusCode)
 		}
 
-		response := armauthorization.RoleDefinitionsClientListResponse{
-			RoleDefinitionListResult: armauthorization.RoleDefinitionListResult{
+		response := armauthorization.RoleDefinitionsClientListResponse{}
+
+		if request.URL.Query().Has("$filter") {
+			filter := request.URL.Query().Get("$filter")
+			roleName := regexp.MustCompile(`roleName eq '(.*)'`).FindStringSubmatch(filter)[1]
+
+			matches := []*armauthorization.RoleDefinition{}
+
+			for _, def := range roleDefinitions {
+				if *def.Name == roleName {
+					matches = append(matches, def)
+				}
+			}
+
+			response.RoleDefinitionListResult = armauthorization.RoleDefinitionListResult{
+				Value: matches,
+			}
+		} else {
+			response.RoleDefinitionListResult = armauthorization.RoleDefinitionListResult{
 				Value: roleDefinitions,
-			},
+			}
 		}
 
 		return mocks.CreateHttpResponseWithBody(request, statusCode, response)

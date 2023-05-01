@@ -16,6 +16,7 @@ async function main() {
 		const extensionTestsPath = path.resolve(__dirname, 'suite', 'unitTests');
 
 		// Download VS Code, unzip it and run unit tests
+		console.info('Using "%s" as extension path and "%s" as test path', extensionDevelopmentPath, extensionTestsPath)
 		await runTests({ extensionDevelopmentPath, extensionTestsPath });
 	} catch (err) {
 		console.error('Failed to run tests: ', err);

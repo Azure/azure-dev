@@ -62,11 +62,6 @@ jobs:
           npm ci --no-optional
         working-directory: ./ext/vscode
 
-      - name: Get running processes (temporary debugging step)
-        run: Get-Process
-        shell: pwsh
-        working-directory: ./ext/vscode
-
       - name: Test
         run: ./ci-test.ps1
         shell: pwsh

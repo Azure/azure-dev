@@ -94,9 +94,7 @@
                     "language": {
                         "type": "string",
                         "title": "Service implementation language",
-                        "description": "If omitted, .NET will be assumed.",
                         "enum": [
-                            "",
                             "dotnet",
                             "csharp",
                             "fsharp",

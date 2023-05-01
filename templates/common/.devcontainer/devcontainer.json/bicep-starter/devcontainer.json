@@ -9,6 +9,7 @@
     },
     "features": {
         // Install Node.js and docker by default
+        // See https://containers.dev/features for list of features
         "ghcr.io/devcontainers/features/docker-in-docker:2": {
         },
         "ghcr.io/devcontainers/features/node:1": {
@@ -24,6 +25,7 @@
                 "ms-azuretools.vscode-docker",
                 "ms-azuretools.vscode-azurefunctions",
                 // Include other VSCode language extensions if needed
+                // Right click on an extension inside VSCode to add directly to devcontainer.json, or copy the extension ID
                 "ms-vscode.vscode-node-azure-pack",
                 "ms-python.python"
             ]

@@ -5,7 +5,6 @@ package cmd
 
 import (
 	"context"
-	"errors"
 	"fmt"
 
 	"github.com/MakeNowJust/heredoc/v2"
@@ -16,6 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
@@ -101,6 +101,7 @@ func newPipelineConfigCmd() *cobra.Command {
 type pipelineConfigAction struct {
 	flags              *pipelineConfigFlags
 	manager            *pipeline.PipelineManager
+	accountManager     account.Manager
 	azCli              azcli.AzCli
 	azdCtx             *azdcontext.AzdContext
 	env                *environment.Environment
@@ -114,6 +115,7 @@ func newPipelineConfigAction(
 	credentialProvider account.SubscriptionCredentialProvider,
 	azdCtx *azdcontext.AzdContext,
 	env *environment.Environment,
+	accountManager account.Manager,
 	console input.Console,
 	flags *pipelineConfigFlags,
 	commandRunner exec.CommandRunner,
@@ -125,10 +127,11 @@ func newPipelineConfigAction(
 		manager: pipeline.NewPipelineManager(
 			azCli, azdCtx, env, flags.global, commandRunner, console, flags.PipelineManagerArgs,
 		),
-		azdCtx:        azdCtx,
-		env:           env,
-		console:       console,
-		commandRunner: commandRunner,
+		azdCtx:         azdCtx,
+		accountManager: accountManager,
+		env:            env,
+		console:        console,
+		commandRunner:  commandRunner,
 	}
 
 	return pca
@@ -136,10 +139,12 @@ func newPipelineConfigAction(
 
 // Run implements action interface
 func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	if p.env.GetSubscriptionId() == "" {
-		return nil, errors.New(
-			"infrastructure has not been provisioned. Please run `azd provision`",
-		)
+	// We need to ensure the env is set up correctly for provisioning,
+	// i.e., AZURE_SUBSCRIPTION_ID and AZURE_LOCATION must be set,
+	// so that the variables are set automatically on CI.
+	err := provisioning.EnsureSubscriptionAndLocation(ctx, p.console, p.env, p.accountManager)
+	if err != nil {
+		return nil, err
 	}
 
 	// Command title

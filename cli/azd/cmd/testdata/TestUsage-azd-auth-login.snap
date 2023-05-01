@@ -13,7 +13,7 @@ Flags
     -h, --help                                 	: Gets help for login.
         --redirect-port int                    	: Choose the port to be used as part of the redirect URI during interactive login.
         --tenant-id string                     	: The tenant id or domain name to authenticate with.
-        --use-device-code string               	: When true, log in by using a device code instead of a browser.
+        --use-device-code                      	: When true, log in by using a device code instead of a browser.
 
 Global Flags
     -C, --cwd string 	: Sets the current working directory.

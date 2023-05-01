@@ -42,7 +42,7 @@ func newAuthLoginFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions
 
 type loginFlags struct {
 	onlyCheckStatus        bool
-	useDeviceCode          stringPtr
+	useDeviceCode          boolPtr
 	tenantID               string
 	clientID               string
 	clientSecret           stringPtr
@@ -73,6 +73,29 @@ func (p *stringPtr) String() string {
 
 func (p *stringPtr) Type() string {
 	return "string"
+}
+
+// boolPtr implements a pflag.Value and allows us to distinguish between a flag value being explicitly set to
+// bool vs not being present.
+type boolPtr struct {
+	ptr *string
+}
+
+func (p *boolPtr) Set(s string) error {
+	p.ptr = &s
+	return nil
+}
+
+func (p *boolPtr) String() string {
+	if p.ptr != nil {
+		return *p.ptr
+	}
+
+	return "false"
+}
+
+func (p *boolPtr) Type() string {
+	return ""
 }
 
 const (
@@ -393,7 +416,7 @@ func (la *loginAction) login(ctx context.Context) error {
 	return nil
 }
 
-func parseUseDeviceCode(ctx context.Context, flag stringPtr, commandRunner exec.CommandRunner) (bool, error) {
+func parseUseDeviceCode(ctx context.Context, flag boolPtr, commandRunner exec.CommandRunner) (bool, error) {
 	var useDevCode bool
 
 	useDevCodeFlag := flag.ptr != nil

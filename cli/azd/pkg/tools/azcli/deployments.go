@@ -81,10 +81,11 @@ func (cli *azCli) createDeploymentsClient(
 
 func (cli *azCli) DeployToSubscription(
 	ctx context.Context,
-	subscriptionId, deploymentName string,
+	subscriptionId string,
+	location string,
+	deploymentName string,
 	armTemplate azure.RawArmTemplate,
 	parameters azure.ArmParameters,
-	location string,
 ) (*armresources.DeploymentExtended, error) {
 	deploymentClient, err := cli.createDeploymentsClient(ctx, subscriptionId)
 	if err != nil {

@@ -106,11 +106,14 @@ const (
 
 func (lf *loginFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	local.BoolVar(&lf.onlyCheckStatus, "check-status", false, "Checks the log-in status instead of logging in.")
-	local.Var(
+	f := local.VarPF(
 		&lf.useDeviceCode,
 		"use-device-code",
+		"",
 		"When true, log in by using a device code instead of a browser.",
 	)
+	// ensure the flag behaves as a common boolean flag which is set to true when used without any other arg
+	f.NoOptDefVal = "true"
 	local.StringVar(&lf.clientID, "client-id", "", "The client id for the service principal to authenticate with.")
 	local.Var(
 		&lf.clientSecret,

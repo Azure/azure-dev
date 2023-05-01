@@ -1,7 +1,7 @@
 templateApi: 1.0.0
 metadata:
   type: repo
-  name: azd-terraform-starter
+  name: azd-starter-terraform
   description: Starter template with Bicep as infrastructure provider for Azure Developer CLI (azd).
 
 repo:
@@ -9,9 +9,9 @@ repo:
 
   remotes:
     - name: azure-samples-main
-      url: git@github.com:Azure-Samples/azd-terraform-starter.git
+      url: git@github.com:Azure-Samples/azd-starter-terraform.git
     - name: azure-samples-staging
-      url: git@github.com:Azure-Samples/azd-terraform-starter.git
+      url: git@github.com:Azure-Samples/azd-starter-terraform.git
       branch: staging
 
   assets:

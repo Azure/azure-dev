@@ -1,23 +1,11 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-import * as path from 'path';
-
-import { runTests } from '@vscode/test-electron';
+import { runExtensionTests } from "./runExtensionTests";
 
 async function main() {
 	try {
-		// The folder containing the Extension Manifest package.json
-		// Passed to `--extensionDevelopmentPath`
-		const extensionDevelopmentPath = path.resolve(__dirname, '..', '..');
-
-		// The path to test runner
-		// Passed to --extensionTestsPath
-		const extensionTestsPath = path.resolve(__dirname, 'suite', 'unitTests');
-
-		// Download VS Code, unzip it and run unit tests
-		console.info('Using "%s" as extension path and "%s" as test path', extensionDevelopmentPath, extensionTestsPath)
-		await runTests({ extensionDevelopmentPath, extensionTestsPath });
+		await runExtensionTests('suite', 'unitTests');
 	} catch (err) {
 		console.error('Failed to run tests: ', err);
 		process.exit(1);

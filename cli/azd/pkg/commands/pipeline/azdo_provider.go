@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"path"
 	"regexp"
@@ -75,9 +76,9 @@ func (p *AzdoScmProvider) preConfigureCheck(
 	}
 
 	if updatedPat {
-		// pat was requested. Set git-credential helper
+		// setting credential helper is a plus. It should not interrupt the process
 		if err := setPatCredentialHelperForGit(ctx, p.commandRunner, projectPath); err != nil {
-			return updatedPat, err
+			log.Printf("Error trying to set git credential helper for PAT: %s", err.Error())
 		}
 	}
 
@@ -641,9 +642,9 @@ func (p *AzdoCiProvider) preConfigureCheck(
 	}
 
 	if updatedPat {
-		// pat was requested. Set git-credential helper
+		// setting credential helper is a plus. It should not interrupt the process
 		if err := setPatCredentialHelperForGit(ctx, p.commandRunner, projectPath); err != nil {
-			return updatedPat, err
+			log.Printf("Error trying to set git credential helper for PAT: %s", err.Error())
 		}
 	}
 

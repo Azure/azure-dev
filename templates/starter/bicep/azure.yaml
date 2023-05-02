@@ -1,30 +1,30 @@
 # yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
 
-# This is an example starter azure.yaml file containing several example services.
+# This is an example starter azure.yaml file containing several example services in comments below.
 # Make changes as needed to describe your application setup.
 # To learn more about the azure.yaml file, visit https://learn.microsoft.com/en-us/azure/developer/azure-developer-cli/azd-schema
 
 # Name of the application.
 name: azd-starter
-services:
-  # An example for a python API service.
-  # The service is named 'python-api'.
-  # The language is 'python'.
-  # The source code is located in the project (azure.yaml) directory.
-  # The service will be hosted on Azure App Service.
-  python-api:
-    language: python
-    project: ./
-    host: appservice
-  # An example for a NodeJS API, located in src/api.
-  nodejs-api:
-    language: js
-    project: ./src/api
-    host: appservice
-  # An example for a React front-end app.
-  # The src/react-app/build folder is where the app is built to after `npm run build`.
-  react-web:
-    language: js
-    project: ./src/react-app
-    host: appservice
-    dist: build
+# services:
+#   ## An example for a python API service.
+#   ## The service is named 'python-api'.
+#   ## The language is 'python'.
+#   ## The source code is located in the project (azure.yaml) directory.
+#   ## The service will be hosted on Azure App Service.
+#   python-api:
+#     language: python
+#     project: ./
+#     host: appservice
+#   ## An example for a NodeJS API, located in src/api.
+#   nodejs-api:
+#     language: js
+#     project: ./src/api
+#     host: appservice
+#   ## An example for a React front-end app.
+#   ## The src/react-app/build folder is where the app is built to after `npm run build`.
+#   react-web:
+#     language: js
+#     project: ./src/react-app
+#     host: appservice
+#     dist: build

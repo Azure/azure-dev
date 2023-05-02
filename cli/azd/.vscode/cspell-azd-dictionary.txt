@@ -51,6 +51,7 @@ errcheck
 errorinfo
 errorlint
 executil
+funcapp
 functestapp
 functionapp
 GOARCH

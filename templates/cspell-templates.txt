@@ -22,7 +22,6 @@ eastus
 envconfig
 ezfunc
 fasterxml
-funcapp
 hubspot
 immer
 inprogress

@@ -35,6 +35,8 @@ type GitCli interface {
 	AddFileExecPermission(ctx context.Context, repositoryPath string, file string) error
 	// make current repo to use gh-cli as credential helper.
 	SetGitHubAuthForRepo(ctx context.Context, repositoryPath, credential, ghPath string) error
+	// make current repo to use $AZURE_DEVOPS_EXT_PAT as credential helper.
+	SetAzdoPatAuth(ctx context.Context, repositoryPath, azdoPatFile string) error
 }
 
 type gitCli struct {
@@ -249,6 +251,33 @@ func (cli *gitCli) IsUntrackedFile(ctx context.Context, repositoryPath string, f
 	}
 
 	return false, nil
+}
+
+// SetAzdoPatAuth creates git config for the repositoryPath like
+//
+// [credential]
+// helper =
+// helper = azdoPatFile
+//
+// This way, git commands run from repositoryPath will use $AZURE_DEVOPS_EXT_PAT for auth.
+// Note: Removes any previous configuration for the credential.
+// Note: `helper = ` is intentional to break the chain of previously configured global helpers.
+func (cli *gitCli) SetAzdoPatAuth(ctx context.Context, repositoryPath, azdoPatFile string) error {
+	runArgs := newRunArgs(
+		"-C", repositoryPath,
+		"config", "--local", "--replace-all", "credential.helper", "")
+	if _, err := cli.commandRunner.Run(ctx, runArgs); err != nil {
+		return fmt.Errorf("failed to set break for azdo credential helper: %w", err)
+	}
+
+	runArgs = newRunArgs(
+		"-C", repositoryPath,
+		"config", "--local", "add", "credential.helper", azdoPatFile)
+	if _, err := cli.commandRunner.Run(ctx, runArgs); err != nil {
+		return fmt.Errorf("failed to set break for azdo credential helper: %w", err)
+	}
+
+	return nil
 }
 
 // SetGitHubAuthForRepo creates git config for the repositoryPath like

@@ -224,7 +224,7 @@ func DetectProviders(
 		_ = savePipelineProviderToEnv(azdoLabel, env)
 		log.Printf("Using pipeline provider: %s", output.WithHighLightFormat("Azure DevOps"))
 		scmProvider := createAzdoScmProvider(env, azdContext, commandRunner, console)
-		ciProvider := createAzdoCiProvider(env, azdContext, console)
+		ciProvider := createAzdoCiProvider(env, azdContext, commandRunner, console)
 
 		return scmProvider, ciProvider, nil
 	}
@@ -248,12 +248,16 @@ func savePipelineProviderToEnv(provider string, env *environment.Environment) er
 }
 
 func createAzdoCiProvider(
-	env *environment.Environment, azdCtx *azdcontext.AzdContext, console input.Console,
+	env *environment.Environment,
+	azdCtx *azdcontext.AzdContext,
+	commandRunner exec.CommandRunner,
+	console input.Console,
 ) *AzdoCiProvider {
 	return &AzdoCiProvider{
-		Env:        env,
-		AzdContext: azdCtx,
-		console:    console,
+		Env:           env,
+		AzdContext:    azdCtx,
+		console:       console,
+		commandRunner: commandRunner,
 	}
 }
 

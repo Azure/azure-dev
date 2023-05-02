@@ -8,6 +8,8 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
+	"path"
 	"regexp"
 	"strings"
 
@@ -72,8 +74,51 @@ func (p *AzdoScmProvider) preConfigureCheck(
 		return updatedPat, err
 	}
 
+	if updatedPat {
+		// pat was requested. Set git-credential helper
+		if err := setPatCredentialHelperForGit(ctx, p.commandRunner, projectPath); err != nil {
+			return updatedPat, err
+		}
+	}
+
 	_, updatedOrg, err := azdo.EnsureOrgNameExists(ctx, p.Env, p.console)
 	return (updatedPat || updatedOrg), err
+}
+
+func setPatCredentialHelperForGit(ctx context.Context, runner exec.CommandRunner, projectPath string) error {
+	gitCli := git.NewGitCli(runner)
+	credentialHelperPath, err := createCredentialHelper(ctx, projectPath)
+	if err != nil {
+		return err
+	}
+	return gitCli.SetAzdoPatAuth(ctx, projectPath, credentialHelperPath)
+}
+
+func createCredentialHelper(ctx context.Context, projectPath string) (string, error) {
+	const fileName = "git-credential-pat-dev-azure.sh"
+	filePath := path.Join(projectPath, ".git", fileName)
+
+	// 0755 => rwx r-x r-x  => file must be runnable
+	file, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0755)
+	if err != nil {
+		return "", err
+	}
+	defer file.Close()
+
+	for _, line := range []string{
+		"#!/bin/sh",
+		"echo protocol=https",
+		"echo host=dev.azure.com",
+		"echo path=",
+		"echo username=PersonalAccessToken",
+		"echo password=$AZURE_DEVOPS_EXT_PAT",
+	} {
+		if _, err := file.WriteString(line + "\n"); err != nil {
+			return "", err
+		}
+	}
+
+	return filePath, nil
 }
 
 // helper function to save configuration values to .env file
@@ -558,10 +603,11 @@ func (p *AzdoScmProvider) postGitPush(
 
 // AzdoCiProvider implements a CiProvider using Azure DevOps to manage CI with azdo pipelines.
 type AzdoCiProvider struct {
-	Env         *environment.Environment
-	AzdContext  *azdcontext.AzdContext
-	credentials *azdo.AzureServicePrincipalCredentials
-	console     input.Console
+	Env           *environment.Environment
+	AzdContext    *azdcontext.AzdContext
+	credentials   *azdo.AzureServicePrincipalCredentials
+	console       input.Console
+	commandRunner exec.CommandRunner
 }
 
 // ***  subareaProvider implementation ******
@@ -592,6 +638,13 @@ func (p *AzdoCiProvider) preConfigureCheck(
 	_, updatedPat, err := azdo.EnsurePatExists(ctx, p.Env, p.console)
 	if err != nil {
 		return updatedPat, err
+	}
+
+	if updatedPat {
+		// pat was requested. Set git-credential helper
+		if err := setPatCredentialHelperForGit(ctx, p.commandRunner, projectPath); err != nil {
+			return updatedPat, err
+		}
 	}
 
 	_, updatedOrg, err := azdo.EnsureOrgNameExists(ctx, p.Env, p.console)

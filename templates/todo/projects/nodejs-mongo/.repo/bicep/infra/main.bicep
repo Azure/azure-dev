@@ -108,7 +108,7 @@ module cosmos '../../../../../common/infra/bicep/app/cosmos-mongo-db.bicep' = {
     accountName: !empty(cosmosAccountName) ? cosmosAccountName : '${abbrs.documentDBDatabaseAccounts}${resourceToken}'
     databaseName: cosmosDatabaseName
     location: location
-    tags: tags
+    tags: updatedTags
     keyVaultName: keyVault.outputs.name
   }
 }

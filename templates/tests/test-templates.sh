@@ -101,10 +101,6 @@ function deployTemplate {
     echo "Provisioning infrastructure for $3..."
     azd provision -e "$3"
 
-    if [[ "$1" == "Azure-Samples/azd-starter"* ]]; then
-        echo "Skipped deploy for azd-starter templates"
-        return
-    fi
     echo "Deploying apps for $3..."
     azd deploy -e "$3"
 }

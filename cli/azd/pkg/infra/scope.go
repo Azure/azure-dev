@@ -13,9 +13,15 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
-type Deployment interface {
+type Scope interface {
 	// SubscriptionId is the id of the subscription which this deployment targets.
 	SubscriptionId() string
+	// ListDeployments returns all the deployments at this scope.
+	ListDeployments(ctx context.Context) ([]*armresources.DeploymentExtended, error)
+}
+
+type Deployment interface {
+	Scope
 	// Name is the name of this deployment.
 	Name() string
 	// PortalUrl is the URL that may be used to view this deployment in Azure Portal.
@@ -25,6 +31,7 @@ type Deployment interface {
 		ctx context.Context,
 		template azure.RawArmTemplate,
 		parameters azure.ArmParameters,
+		tags map[string]*string,
 	) (*armresources.DeploymentExtended, error)
 	// Deployment fetches information about this deployment.
 	Deployment(ctx context.Context) (*armresources.DeploymentExtended, error)
@@ -33,10 +40,8 @@ type Deployment interface {
 }
 
 type ResourceGroupDeployment struct {
-	azCli             azcli.AzCli
-	subscriptionId    string
-	resourceGroupName string
-	name              string
+	*ResourceGroupScope
+	name string
 }
 
 func (s *ResourceGroupDeployment) Name() string {
@@ -54,9 +59,9 @@ func (s *ResourceGroupDeployment) ResourceGroupName() string {
 }
 
 func (s *ResourceGroupDeployment) Deploy(
-	ctx context.Context, template azure.RawArmTemplate, parameters azure.ArmParameters,
+	ctx context.Context, template azure.RawArmTemplate, parameters azure.ArmParameters, tags map[string]*string,
 ) (*armresources.DeploymentExtended, error) {
-	return s.azCli.DeployToResourceGroup(ctx, s.subscriptionId, s.resourceGroupName, s.name, template, parameters)
+	return s.azCli.DeployToResourceGroup(ctx, s.subscriptionId, s.resourceGroupName, s.name, template, parameters, tags)
 }
 
 // GetDeployment fetches the result of the most recent deployment.
@@ -80,11 +85,36 @@ func NewResourceGroupDeployment(
 	azCli azcli.AzCli, subscriptionId string, resourceGroupName string, deploymentName string,
 ) Deployment {
 	return &ResourceGroupDeployment{
+		ResourceGroupScope: NewResourceGroupScope(azCli, subscriptionId, resourceGroupName),
+		name:               deploymentName,
+	}
+}
+
+type ResourceGroupScope struct {
+	azCli             azcli.AzCli
+	subscriptionId    string
+	resourceGroupName string
+}
+
+func NewResourceGroupScope(azCli azcli.AzCli, subscriptionId string, resourceGroupName string) *ResourceGroupScope {
+	return &ResourceGroupScope{
 		azCli:             azCli,
 		subscriptionId:    subscriptionId,
 		resourceGroupName: resourceGroupName,
-		name:              deploymentName,
 	}
+}
+
+func (s *ResourceGroupScope) SubscriptionId() string {
+	return s.subscriptionId
+}
+
+func (s *ResourceGroupScope) ResourceGroupName() string {
+	return s.resourceGroupName
+}
+
+// ListDeployments returns all the deployments in this resource group.
+func (s *ResourceGroupScope) ListDeployments(ctx context.Context) ([]*armresources.DeploymentExtended, error) {
+	return s.azCli.ListResourceGroupDeployments(ctx, s.subscriptionId, s.resourceGroupName)
 }
 
 // cPortalUrlPrefix is the prefix which can be combined with the RID of a deployment to produce a URL into the Azure Portal
@@ -92,10 +122,9 @@ func NewResourceGroupDeployment(
 const cPortalUrlPrefix = "https://portal.azure.com/#blade/HubsExtension/DeploymentDetailsBlade/overview/id"
 
 type SubscriptionDeployment struct {
-	azCli          azcli.AzCli
-	subscriptionId string
-	name           string
-	location       string
+	*SubscriptionScope
+	name     string
+	location string
 }
 
 func (s *SubscriptionDeployment) Name() string {
@@ -121,9 +150,9 @@ func (s *SubscriptionDeployment) Location() string {
 
 // Deploy a given template with a set of parameters.
 func (s *SubscriptionDeployment) Deploy(
-	ctx context.Context, template azure.RawArmTemplate, parameters azure.ArmParameters,
+	ctx context.Context, template azure.RawArmTemplate, parameters azure.ArmParameters, tags map[string]*string,
 ) (*armresources.DeploymentExtended, error) {
-	return s.azCli.DeployToSubscription(ctx, s.subscriptionId, s.location, s.name, template, parameters)
+	return s.azCli.DeployToSubscription(ctx, s.subscriptionId, s.location, s.name, template, parameters, tags)
 }
 
 // GetDeployment fetches the result of the most recent deployment.
@@ -140,9 +169,30 @@ func NewSubscriptionDeployment(
 	azCli azcli.AzCli, location string, subscriptionId string, deploymentName string,
 ) *SubscriptionDeployment {
 	return &SubscriptionDeployment{
+		SubscriptionScope: NewSubscriptionScope(azCli, subscriptionId),
+		name:              deploymentName,
+		location:          location,
+	}
+}
+
+type SubscriptionScope struct {
+	azCli          azcli.AzCli
+	subscriptionId string
+}
+
+// Gets the Azure subscription id
+func (s *SubscriptionScope) SubscriptionId() string {
+	return s.subscriptionId
+}
+
+// ListDeployments returns all the deployments at subscription scope.
+func (s *SubscriptionScope) ListDeployments(ctx context.Context) ([]*armresources.DeploymentExtended, error) {
+	return s.azCli.ListSubscriptionDeployments(ctx, s.subscriptionId)
+}
+
+func NewSubscriptionScope(azCli azcli.AzCli, subscriptionId string) *SubscriptionScope {
+	return &SubscriptionScope{
 		azCli:          azCli,
 		subscriptionId: subscriptionId,
-		name:           deploymentName,
-		location:       location,
 	}
 }

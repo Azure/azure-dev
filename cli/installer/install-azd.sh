@@ -350,7 +350,7 @@ if [ ! -w "$install_folder/" ]; then
 fi
 if ! $mv_preface mv -f "$tmp_folder"/* "$install_folder"; then
     say_error "Could not move files to install location: $install_folder"
-    save_error_report_if_enabled "InstallFailed" "SudoMoveFailure"
+    save_error_report_if_enabled "InstallFailed" "MoveFailure"
     exit 1
 fi
 
@@ -371,7 +371,7 @@ say_verbose "Cleaning up temp folder: $tmp_folder"
 rm -rf "$tmp_folder"
 say "Successfully installed to $install_folder"
 if [ "$symlink_folder" != "" ]; then
-    say "Symlinked in $symlink_folder/azd"
+    say ""Symlink to created in $symlink_folder/azd and pointing to $install_folder/$bin_name""
 fi
 say ""
 say "The Azure Developer CLI collects usage data and sends that usage data to Microsoft in order to help us improve your experience."

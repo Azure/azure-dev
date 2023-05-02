@@ -26,7 +26,7 @@ import (
 
 func TestReadUserProperties(t *testing.T) {
 	t.Run("homeID", func(t *testing.T) {
-		cfg := config.NewConfig(nil)
+		cfg := config.NewEmptyConfig()
 		require.NoError(t, cfg.Set("auth.account.currentUser.homeAccountId", "testAccountId"))
 
 		props, err := readUserProperties(cfg)
@@ -38,7 +38,7 @@ func TestReadUserProperties(t *testing.T) {
 	})
 
 	t.Run("clientID", func(t *testing.T) {
-		cfg := config.NewConfig(nil)
+		cfg := config.NewEmptyConfig()
 		require.NoError(t, cfg.Set("auth.account.currentUser.clientId", "testClientId"))
 		require.NoError(t, cfg.Set("auth.account.currentUser.tenantId", "testTenantId"))
 
@@ -256,7 +256,7 @@ func TestLoginDeviceCode(t *testing.T) {
 
 func TestAuthFileConfigUpgrade(t *testing.T) {
 	cfgMgr := newMemoryConfigManager()
-	userCfg := config.NewConfig(nil)
+	userCfg := config.NewEmptyConfig()
 	userCfgMgr := newMemoryUserConfigManager()
 
 	err := userCfg.Set(cCurrentUserKey, &userProperties{
@@ -280,11 +280,16 @@ func TestAuthFileConfigUpgrade(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, properties.HomeAccountID)
 	require.Equal(t, "homeAccountID", *properties.HomeAccountID)
+
+	// as part of running readAuthConfig, we migrated the setting from the user config to the auth config
+	// so the current user key should no longer be set in the user configuration.
+	_, has := userCfgMgr.config.Get(cCurrentUserKey)
+	require.False(t, has)
 }
 
 func newMemoryUserConfigManager() *memoryUserConfigManager {
 	return &memoryUserConfigManager{
-		config: config.NewConfig(nil),
+		config: config.NewEmptyConfig(),
 	}
 }
 

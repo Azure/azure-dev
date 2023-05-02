@@ -624,9 +624,9 @@ func (m *Manager) readAuthConfig() (config.Config, error) {
 
 	authCfgFile := filepath.Join(cfgPath, cAuthConfigFileName)
 
-	cfg, err := m.configManager.Load(authCfgFile)
+	authCfg, err := m.configManager.Load(authCfgFile)
 	if err == nil {
-		return cfg, nil
+		return authCfg, nil
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return nil, fmt.Errorf("reading auth config: %w", err)
 	}
@@ -634,30 +634,30 @@ func (m *Manager) readAuthConfig() (config.Config, error) {
 	// We used to store auth related configuration in the user configuration file directly. If above file did not exist,
 	// see if there is the data in the old location, and if so migrate it to the new location. This upgrades the old
 	// format to the new format.
-	cfg, err = m.userConfigManager.Load()
+	userCfg, err := m.userConfigManager.Load()
 	if err != nil {
 		return nil, fmt.Errorf("reading user config: %w", err)
 	}
 
-	curUserData, has := cfg.Get(cCurrentUserKey)
+	curUserData, has := userCfg.Get(cCurrentUserKey)
 	if !has {
-		return config.NewConfig(map[string]any{}), nil
+		return config.NewEmptyConfig(), nil
 	}
 
-	if err := cfg.Unset(cCurrentUserKey); err != nil {
-		return nil, err
-	}
-
-	authCfg := config.NewConfig(nil)
+	authCfg = config.NewEmptyConfig()
 	if err := authCfg.Set(cCurrentUserKey, curUserData); err != nil {
 		return nil, err
 	}
 
-	if err := m.configManager.Save(authCfg, authCfgFile); err != nil {
+	if err := m.saveAuthConfig(authCfg); err != nil {
 		return nil, err
 	}
 
-	if err := m.saveAuthConfig(authCfg); err != nil {
+	if err := userCfg.Unset(cCurrentUserKey); err != nil {
+		return nil, err
+	}
+
+	if err := m.userConfigManager.Save(userCfg); err != nil {
 		return nil, err
 	}
 

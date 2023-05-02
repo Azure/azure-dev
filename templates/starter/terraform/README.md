@@ -2,6 +2,8 @@
 
 A starter template with [Terraform](https://aka.ms/azure-dev/terraform) as infrastructure provider for [Azure Developer CLI](https://learn.microsoft.com/en-us/azure/developer/azure-developer-cli/overview) (azd).
 
+> Note: Terraform is in **alpha mode**. You need to enable it by running `azd config set alpha.terraform on`. Read more about [alpha features](https://github.com/Azure/azure-dev/tree/main/cli/azd/docs).
+
 The following assets have been provided:
 
 - Infrastructure-as-code (IaC) files under the `infra` directory that demonstrate how to provision resources and setup resource tagging for `azd`.

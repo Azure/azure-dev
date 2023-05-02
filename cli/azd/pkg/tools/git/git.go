@@ -272,7 +272,7 @@ func (cli *gitCli) SetAzdoPatAuth(ctx context.Context, repositoryPath, azdoPatFi
 
 	runArgs = newRunArgs(
 		"-C", repositoryPath,
-		"config", "--local", "add", "credential.helper", azdoPatFile)
+		"config", "--local", "--add", "credential.helper", azdoPatFile)
 	if _, err := cli.commandRunner.Run(ctx, runArgs); err != nil {
 		return fmt.Errorf("failed to set break for azdo credential helper: %w", err)
 	}

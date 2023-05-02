@@ -35,7 +35,7 @@ var resourceToken = toLower(uniqueString(subscription().id, environmentName, loc
 
 // Name of the service defined in azure.yaml
 // A tag named azd-service-name with this value should be applied to the service host resource, such as:
-//   Microsoft.Web/sites for appservice, funcapp
+//   Microsoft.Web/sites for appservice, function
 // Example usage:
 //   tags: union(tags, { 'azd-service-name': apiServiceName })
 #disable-next-line no-unused-vars

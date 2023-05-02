@@ -26,4 +26,4 @@ resource "azurerm_resource_group" "rg" {
 #   azd-service-name: "<service name in azure.yaml>"
 # should be applied to targeted service host resources, such as:
 #  azurerm_linux_web_app, azurerm_windows_web_app for appservice
-#  azurerm_function_app for funcapp
+#  azurerm_function_app for function

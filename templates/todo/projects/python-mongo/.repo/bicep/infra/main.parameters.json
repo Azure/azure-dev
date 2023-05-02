@@ -13,6 +13,12 @@
     },
     "useAPIM": {
       "value": "${USE_APIM=false}"
+    },
+    "resourceGroupName": {
+      "value": "${AZURE_RESOURCE_GROUP}"
+    },
+    "tags": {
+      "value": "${AZURE_TAGS}"
     }
   }
 }

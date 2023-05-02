@@ -6,6 +6,8 @@
 
 ### Breaking Changes
 
+- [[2066]](https://github.com/Azure/azure-dev/pull/2066) `azd` no longer assumes `dotnet` by default when `services.language` is not set, or empty in `azure.yaml`. If you receive an error message 'language property must not be empty', specify `language: dotnet` explicitly in `azure.yaml`.
+
 ### Bugs Fixed
 
 ### Other Changes

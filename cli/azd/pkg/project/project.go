@@ -71,10 +71,6 @@ func Parse(ctx context.Context, yamlContent string) (*ProjectConfig, error) {
 		svc.Project = &projectConfig
 		svc.EventDispatcher = ext.NewEventDispatcher[ServiceLifecycleEventArgs]()
 
-		if svc.Language == "" {
-			svc.Language = "dotnet"
-		}
-
 		var err error
 		svc.Language, err = parseServiceLanguage(svc.Language)
 		if err != nil {

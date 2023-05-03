@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/compare"
@@ -129,10 +130,11 @@ func (rm *AzureResourceManager) GetResourceGroupsForDeployment(
 	// unique set.
 	resourceGroups := map[string]struct{}{}
 
-	for _, dependency := range deployment.Properties.Dependencies {
-		for _, dependent := range dependency.DependsOn {
-			if *dependent.ResourceType == string(AzureResourceTypeResourceGroup) {
-				resourceGroups[*dependent.ResourceName] = struct{}{}
+	for _, resourceId := range deployment.Properties.OutputResources {
+		if resourceId != nil && resourceId.ID != nil {
+			resId, err := arm.ParseResourceID(*resourceId.ID)
+			if err == nil && resId.ResourceGroupName != "" {
+				resourceGroups[resId.ResourceGroupName] = struct{}{}
 			}
 		}
 	}

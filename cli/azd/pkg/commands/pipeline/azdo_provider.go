@@ -406,9 +406,15 @@ var azdoRemoteHttpsUrlRegex = regexp.MustCompile(`^https://[a-zA-Z0-9]+(?:-[a-zA
 // ErrRemoteHostIsNotAzDo the error used when a non Azure DevOps remote is found
 var ErrRemoteHostIsNotAzDo = errors.New("existing remote is not an Azure DevOps host")
 
+// ErrSSHNotSupported the error used when ssh git remote is detected
+var ErrSSHNotSupported = errors.New("ssh git remote is not supported. Please use HTTPS git remote to connect the remote repository")
+
 // helper function to determine if the provided remoteUrl is an azure devops repo.
 // currently supports AzDo PaaS
 func isAzDoRemote(remoteUrl string) error {
+	if azdoRemoteGitUrlRegex.MatchString(remoteUrl) {
+		return ErrSSHNotSupported
+	}
 	slug := ""
 	for _, r := range []*regexp.Regexp{azdoRemoteGitUrlRegex, azdoRemoteHttpsUrlRegex} {
 		captures := r.FindStringSubmatch(remoteUrl)

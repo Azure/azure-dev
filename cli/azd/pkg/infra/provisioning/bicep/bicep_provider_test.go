@@ -511,15 +511,9 @@ func prepareDeployShowMocks(
 		Name: convert.RefOf("DEPLOYMENT_NAME"),
 		Properties: &armresources.DeploymentPropertiesExtended{
 			Outputs: deployOutputs,
-			Dependencies: []*armresources.Dependency{
+			OutputResources: []*armresources.ResourceReference{
 				{
-					DependsOn: []*armresources.BasicDependency{
-						{
-							ID:           convert.RefOf("RESOURCE_ID"),
-							ResourceName: convert.RefOf("RESOURCE_GROUP"),
-							ResourceType: convert.RefOf(string(infra.AzureResourceTypeResourceGroup)),
-						},
-					},
+					ID: convert.RefOf("/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP"),
 				},
 			},
 		},

@@ -55,38 +55,21 @@ func Test_promptEnvironmentName(t *testing.T) {
 	t.Run("duplicate resource groups ignored", func(t *testing.T) {
 		mockDeployment := armresources.DeploymentExtended{
 			Properties: &armresources.DeploymentPropertiesExtended{
-				Dependencies: []*armresources.Dependency{
+				OutputResources: []*armresources.ResourceReference{
 					{
-						DependsOn: []*armresources.BasicDependency{
-							{
-								ResourceName: convert.RefOf("groupA"),
-								ResourceType: convert.RefOf(string(infra.AzureResourceTypeResourceGroup)),
-							},
-							{
-								ResourceName: convert.RefOf("groupB"),
-								ResourceType: convert.RefOf(string(infra.AzureResourceTypeResourceGroup)),
-							},
-							{
-								ResourceName: convert.RefOf("ignoredForWrongType"),
-								ResourceType: convert.RefOf(string(infra.AzureResourceTypeStorageAccount)),
-							},
-						},
+						ID: convert.RefOf("/subscriptions/sub-id/resourceGroups/groupA"),
 					},
 					{
-						DependsOn: []*armresources.BasicDependency{
-							{
-								ResourceName: convert.RefOf("groupA"),
-								ResourceType: convert.RefOf(string(infra.AzureResourceTypeResourceGroup)),
-							},
-							{
-								ResourceName: convert.RefOf("groupB"),
-								ResourceType: convert.RefOf(string(infra.AzureResourceTypeResourceGroup)),
-							},
-							{
-								ResourceName: convert.RefOf("groupC"),
-								ResourceType: convert.RefOf(string(infra.AzureResourceTypeResourceGroup)),
-							},
-						},
+						ID: convert.RefOf("/subscriptions/sub-id/resourceGroups/groupA/Microsoft.Storage/storageAccounts/storageAccount"),
+					},
+					{
+						ID: convert.RefOf("/subscriptions/sub-id/resourceGroups/groupB"),
+					},
+					{
+						ID: convert.RefOf("/subscriptions/sub-id/resourceGroups/groupB/Microsoft.web/sites/test"),
+					},
+					{
+						ID: convert.RefOf("/subscriptions/sub-id/resourceGroups/groupC"),
 					},
 				},
 			},

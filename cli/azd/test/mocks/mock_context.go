@@ -37,7 +37,6 @@ func NewMockContext(ctx context.Context) *MockContext {
 	mockexec.AddAzLoginMocks(commandRunner)
 
 	ctx = httputil.WithHttpClient(ctx, httpClient)
-	ctx = config.WithConfigManager(ctx, configManager)
 
 	mockContext := &MockContext{
 		Credentials:                    &MockCredentials{},

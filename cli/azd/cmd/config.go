@@ -315,7 +315,7 @@ func newConfigResetAction(configManager config.UserConfigManager, args []string)
 
 // Executes the `azd config reset` action
 func (a *configResetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	emptyConfig := config.NewConfig(nil)
+	emptyConfig := config.NewEmptyConfig()
 	return nil, a.configManager.Save(emptyConfig)
 }
 

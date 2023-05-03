@@ -108,11 +108,14 @@ func createCredentialHelper(ctx context.Context, projectPath string) (string, er
 
 	for _, line := range []string{
 		"#!/bin/sh",
-		"echo protocol=https",
-		"echo host=dev.azure.com",
-		"echo path=",
-		"echo username=PersonalAccessToken",
-		"echo password=$AZURE_DEVOPS_EXT_PAT",
+		"# Only if AZURE_DEVOPS_EXT_PAT has a value",
+		"if [ $AZURE_DEVOPS_EXT_PAT ]; then",
+		"    echo protocol=https",
+		"    echo host=dev.azure.com",
+		"    echo path=",
+		"    echo username=PersonalAccessToken",
+		"    echo password=$AZURE_DEVOPS_EXT_PAT",
+		"fi",
 	} {
 		if _, err := file.WriteString(line + "\n"); err != nil {
 			return "", err

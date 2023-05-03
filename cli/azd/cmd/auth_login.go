@@ -181,6 +181,9 @@ type loginAction struct {
 	commandRunner     exec.CommandRunner
 }
 
+// it is important to update both newAuthLoginAction and newLoginAction at the same time
+// newAuthLoginAction is the action that is bound to `azd auth login`,
+// and newLoginAction is the action that is bound to `azd login`
 func newAuthLoginAction(
 	formatter output.Formatter,
 	writer io.Writer,
@@ -203,6 +206,9 @@ func newAuthLoginAction(
 	}
 }
 
+// it is important to update both newAuthLoginAction and newLoginAction at the same time
+// newAuthLoginAction is the action that is bound to `azd auth login`,
+// and newLoginAction is the action that is bound to `azd login`
 func newLoginAction(
 	formatter output.Formatter,
 	writer io.Writer,
@@ -211,6 +217,7 @@ func newLoginAction(
 	flags *loginFlags,
 	console input.Console,
 	annotations CmdAnnotations,
+	commandRunner exec.CommandRunner,
 ) actions.Action {
 	return &loginAction{
 		formatter:         formatter,
@@ -220,6 +227,7 @@ func newLoginAction(
 		accountSubManager: accountSubManager,
 		flags:             flags,
 		annotations:       annotations,
+		commandRunner:     commandRunner,
 	}
 }
 

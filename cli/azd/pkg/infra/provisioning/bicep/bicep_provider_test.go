@@ -263,10 +263,9 @@ func TestBicepDestroy(t *testing.T) {
 		}).Respond(true)
 
 		infraProvider := createBicepProvider(t, mockContext)
-		deployment := Deployment{}
 
 		destroyOptions := NewDestroyOptions(false, false)
-		destroyTask := infraProvider.Destroy(*mockContext.Context, &deployment, destroyOptions)
+		destroyTask := infraProvider.Destroy(*mockContext.Context, destroyOptions)
 
 		go func() {
 			for destroyProgress := range destroyTask.Progress() {
@@ -300,12 +299,13 @@ func TestBicepDestroy(t *testing.T) {
 		require.Contains(t, consoleOutput[7], "")
 
 		// Verify progress output
-		require.Len(t, progressLog, 5)
-		require.Contains(t, progressLog[0], "Fetching resource groups")
-		require.Contains(t, progressLog[1], "Fetching resources")
-		require.Contains(t, progressLog[2], "Getting Key Vaults to purge")
-		require.Contains(t, progressLog[3], "Getting App Configurations to purge")
-		require.Contains(t, progressLog[4], "Getting API Management Services to purge")
+		require.Len(t, progressLog, 6)
+		require.Contains(t, progressLog[0], "Compiling Bicep template")
+		require.Contains(t, progressLog[1], "Fetching resource groups")
+		require.Contains(t, progressLog[2], "Fetching resources")
+		require.Contains(t, progressLog[3], "Getting Key Vaults to purge")
+		require.Contains(t, progressLog[4], "Getting App Configurations to purge")
+		require.Contains(t, progressLog[5], "Getting API Management Services to purge")
 	})
 
 	t.Run("InteractiveForceAndPurge", func(t *testing.T) {
@@ -319,10 +319,9 @@ func TestBicepDestroy(t *testing.T) {
 		progressDone := make(chan bool)
 
 		infraProvider := createBicepProvider(t, mockContext)
-		deployment := Deployment{}
 
 		destroyOptions := NewDestroyOptions(true, true)
-		destroyTask := infraProvider.Destroy(*mockContext.Context, &deployment, destroyOptions)
+		destroyTask := infraProvider.Destroy(*mockContext.Context, destroyOptions)
 
 		go func() {
 			for destroyProgress := range destroyTask.Progress() {
@@ -350,12 +349,13 @@ func TestBicepDestroy(t *testing.T) {
 		require.Contains(t, consoleOutput[1], "")
 
 		// Verify progress output
-		require.Len(t, progressLog, 5)
-		require.Contains(t, progressLog[0], "Fetching resource groups")
-		require.Contains(t, progressLog[1], "Fetching resources")
-		require.Contains(t, progressLog[2], "Getting Key Vaults to purge")
-		require.Contains(t, progressLog[3], "Getting App Configurations to purge")
-		require.Contains(t, progressLog[4], "Getting API Management Services to purge")
+		require.Len(t, progressLog, 6)
+		require.Contains(t, progressLog[0], "Compiling Bicep template")
+		require.Contains(t, progressLog[1], "Fetching resource groups")
+		require.Contains(t, progressLog[2], "Fetching resources")
+		require.Contains(t, progressLog[3], "Getting Key Vaults to purge")
+		require.Contains(t, progressLog[4], "Getting App Configurations to purge")
+		require.Contains(t, progressLog[5], "Getting API Management Services to purge")
 	})
 }
 
@@ -755,10 +755,8 @@ func httpRespondFn(request *http.Request) (*http.Response, error) {
 	}, nil
 }
 
-func TestResourceGroupsFromLatestDeployment(t *testing.T) {
+func TestResourceGroupsFromDeployment(t *testing.T) {
 	t.Run("duplicate resource groups ignored", func(t *testing.T) {
-
-		mockContext := mocks.NewMockContext(context.Background())
 
 		mockDeployment := armresources.DeploymentExtended{
 			ID:   convert.RefOf("DEPLOYMENT_ID"),
@@ -786,29 +784,7 @@ func TestResourceGroupsFromLatestDeployment(t *testing.T) {
 			},
 		}
 
-		mockContext.HttpClient.When(func(request *http.Request) bool {
-			return request.Method == http.MethodGet && strings.HasSuffix(
-				request.URL.Path,
-				"/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/",
-			)
-		}).RespondFn(func(request *http.Request) (*http.Response, error) {
-			subscriptionsListBytes, _ := json.Marshal(
-				armresources.DeploymentsClientListAtSubscriptionScopeResponse{
-					DeploymentListResult: armresources.DeploymentListResult{
-						Value: []*armresources.DeploymentExtended{&mockDeployment},
-					},
-				})
-
-			return &http.Response{
-				StatusCode: http.StatusOK,
-				Body:       io.NopCloser(bytes.NewBuffer(subscriptionsListBytes)),
-			}, nil
-		})
-
-		infraProvider := createBicepProvider(t, mockContext)
-		groups, err := infraProvider.getResourceGroupsFromLatestDeployment(*mockContext.Context)
-
-		require.NoError(t, err)
+		groups := resourceGroupsFromDeployment(&mockDeployment)
 
 		sort.Strings(groups)
 		require.Equal(t, []string{"groupA", "groupB", "groupC"}, groups)

@@ -5,7 +5,15 @@ package azure
 
 import (
 	"encoding/json"
+	"fmt"
+	"net/url"
+	"path"
 )
+
+type DeploymentScope string
+
+const DeploymentScopeSubscription DeploymentScope = "subscription"
+const DeploymentScopeResourceGroup DeploymentScope = "resourceGroup"
 
 // RawArmTemplate is a JSON encoded ARM template.
 type RawArmTemplate = json.RawMessage
@@ -18,6 +26,22 @@ type ArmTemplate struct {
 	ContentVersion string                          `json:"contentVersion"`
 	Parameters     ArmTemplateParameterDefinitions `json:"parameters"`
 	Outputs        ArmTemplateOutputs              `json:"outputs"`
+}
+
+func (t ArmTemplate) TargetScope() DeploymentScope {
+	u, err := url.Parse(t.Schema)
+	if err != nil {
+		panic(fmt.Sprintf("bad schema for template: %s", t.Schema))
+	}
+
+	switch path.Base(u.Path) {
+	case "subscriptionDeploymentTemplate.json":
+		return DeploymentScopeSubscription
+	case "deploymentTemplate.json":
+		return DeploymentScopeResourceGroup
+	default:
+		panic(fmt.Sprintf("unknown schema type: %s", path.Base(u.Path)))
+	}
 }
 
 type ArmTemplateParameterDefinitions map[string]ArmTemplateParameterDefinition

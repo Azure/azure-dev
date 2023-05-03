@@ -74,7 +74,7 @@ func (rm *resourceManager) GetResourceGroupName(
 		return name, nil
 	}
 
-	envResourceGroupName := environment.GetResourceGroupNameFromEnvVar(rm.env)
+	envResourceGroupName := rm.env.Getenv(environment.ResourceGroupEnvVarName)
 	if envResourceGroupName != "" {
 		return envResourceGroupName, nil
 	}

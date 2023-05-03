@@ -96,9 +96,9 @@ func (m *Manager) Deploy(ctx context.Context, plan *DeploymentPlan) (*DeployResu
 }
 
 // Destroys the Azure infrastructure for the specified project
-func (m *Manager) Destroy(ctx context.Context, deployment *Deployment, options DestroyOptions) (*DestroyResult, error) {
+func (m *Manager) Destroy(ctx context.Context, options DestroyOptions) (*DestroyResult, error) {
 	// Call provisioning provider to destroy the infrastructure
-	destroyResult, err := m.destroy(ctx, deployment, options)
+	destroyResult, err := m.destroy(ctx, options)
 	if err != nil {
 		return nil, err
 	}
@@ -159,10 +159,10 @@ func (m *Manager) deploy(
 }
 
 // Destroys the specified infrastructure provisioning and orchestrates the interactive terminal operations
-func (m *Manager) destroy(ctx context.Context, deployment *Deployment, options DestroyOptions) (*DestroyResult, error) {
+func (m *Manager) destroy(ctx context.Context, options DestroyOptions) (*DestroyResult, error) {
 	var destroyResult *DestroyResult
 
-	destroyTask := m.provider.Destroy(ctx, deployment, options)
+	destroyTask := m.provider.Destroy(ctx, options)
 
 	go func() {
 		for progress := range destroyTask.Progress() {

@@ -23,7 +23,7 @@ type AzureResourceManager struct {
 
 type ResourceManager interface {
 	GetDeploymentResourceOperations(
-		ctx context.Context, scope Scope, queryStart *time.Time) ([]*armresources.DeploymentOperation, error)
+		ctx context.Context, deployment Deployment, queryStart *time.Time) ([]*armresources.DeploymentOperation, error)
 	GetResourceTypeDisplayName(
 		ctx context.Context,
 		subscriptionId string,
@@ -40,22 +40,22 @@ func NewAzureResourceManager(azCli azcli.AzCli) *AzureResourceManager {
 
 func (rm *AzureResourceManager) GetDeploymentResourceOperations(
 	ctx context.Context,
-	scope Scope,
+	deployment Deployment,
 	queryStart *time.Time,
 ) ([]*armresources.DeploymentOperation, error) {
 	// Gets all the scope level resource operations
-	topLevelDeploymentOperations, err := scope.GetResourceOperations(ctx)
+	topLevelDeploymentOperations, err := deployment.Operations(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("getting subscription deployment: %w", err)
 	}
 
-	subscriptionId := scope.SubscriptionId()
+	subscriptionId := deployment.SubscriptionId()
 	var resourceGroupName string
-	resourceGroupScope, ok := scope.(*ResourceGroupScope)
+	resourceGroupDeployment, ok := deployment.(*ResourceGroupDeployment)
 
 	if ok {
 		// If the scope is a resource group scope get the resource group directly
-		resourceGroupName = resourceGroupScope.ResourceGroup()
+		resourceGroupName = resourceGroupDeployment.ResourceGroupName()
 	} else {
 		// Otherwise find the resource group within the deployment operations
 		for _, operation := range topLevelDeploymentOperations {

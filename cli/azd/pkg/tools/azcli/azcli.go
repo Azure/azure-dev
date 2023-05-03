@@ -92,10 +92,12 @@ type AzCli interface {
 		funcName string,
 	) (*AzCliFunctionAppProperties, error)
 	DeployToSubscription(
-		ctx context.Context, subscriptionId, deploymentName string,
+		ctx context.Context,
+		subscriptionId string,
+		location string,
+		deploymentName string,
 		armTemplate azure.RawArmTemplate,
-		parameters azure.ArmParameters,
-		location string) (
+		parameters azure.ArmParameters) (
 		*armresources.DeploymentExtended, error)
 	DeployToResourceGroup(
 		ctx context.Context,

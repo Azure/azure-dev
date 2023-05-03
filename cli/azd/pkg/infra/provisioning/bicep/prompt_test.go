@@ -218,7 +218,7 @@ func TestPromptForParameterAllowedValues(t *testing.T) {
 
 	mockContext := mocks.NewMockContext(context.Background())
 
-	preparePlanningMocks(mockContext)
+	prepareBicepMocks(mockContext)
 
 	p := createBicepProvider(t, mockContext)
 

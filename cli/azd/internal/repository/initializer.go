@@ -39,9 +39,7 @@ func NewInitializer(
 
 // Initializes a local repository in the project directory from a remote repository.
 //
-// A confirmation prompt is displayed if:
-//  1. The directory is non-empty.
-//  2. The placed files would overwrite existing files.
+// A confirmation prompt is displayed for any existing files to be overwritten.
 func (i *Initializer) Initialize(
 	ctx context.Context,
 	azdCtx *azdcontext.AzdContext,

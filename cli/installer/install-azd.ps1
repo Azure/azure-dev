@@ -400,7 +400,7 @@ try {
             Write-Verbose "Installing MSI" -Verbose:$Verbose
             $MSIEXEC = "${env:SystemRoot}\System32\msiexec.exe"
             $installProcess = Start-Process $MSIEXEC `
-                -ArgumentList @("/i", $releaseArtifactFilename, "/qn", "INSTALLDIR=`"$InstallFolder`"") `
+                -ArgumentList @("/i", "'$releaseArtifactFilename'", "/qn", "INSTALLDIR=`"$InstallFolder`"") `
                 -PassThru `
                 -Wait
 

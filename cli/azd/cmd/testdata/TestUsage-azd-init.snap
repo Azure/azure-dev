@@ -1,7 +1,7 @@
 
 Initialize a new application in your current directory.
 
-  • Running azd init without a template will prompt you to start with an empty template or select from a curated list of presets.
+  • Running azd init without a template will prompt you to start with a minimal template or select from a curated list of presets.
   • To view all currently available sample templates visit: azd init.
 
 Usage

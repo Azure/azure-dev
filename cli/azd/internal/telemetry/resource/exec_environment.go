@@ -21,7 +21,7 @@ func getExecutionEnvironment() string {
 		env = execEnvForCi()
 	}
 
-	// no execution environment found, default to plain desktop
+	// no special execution environment found, default to plain desktop
 	if env == "" {
 		env = fields.EnvDesktop
 	}

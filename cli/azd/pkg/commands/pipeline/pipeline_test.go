@@ -117,7 +117,8 @@ func Test_detectProviders(t *testing.T) {
 		)
 		assert.Nil(t, scmProvider)
 		assert.Nil(t, ciProvider)
-		assert.EqualError(t, err, ".azdo\\pipelines\\azure-dev.yml file is missing in .azdo\\pipelines folder. Can't use selected provider")
+		assert.EqualError(t, err, ".azdo\\pipelines\\azure-dev.yml file is missing "+
+			"in .azdo\\pipelines folder. Can't use selected provider")
 
 		os.Remove(azdoFolder)
 	})

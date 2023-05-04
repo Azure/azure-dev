@@ -11,8 +11,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/apimanagement/armapimanagement"
@@ -482,6 +484,7 @@ var cTestEnvDeployment armresources.DeploymentExtended = armresources.Deployment
 			},
 		},
 		ProvisioningState: to.Ptr(armresources.ProvisioningStateSucceeded),
+		Timestamp:         to.Ptr(time.Now()),
 	},
 }
 
@@ -750,4 +753,64 @@ func httpRespondFn(request *http.Request) (*http.Response, error) {
 		StatusCode: http.StatusOK,
 		Body:       http.NoBody,
 	}, nil
+}
+
+func TestResourceGroupsFromLatestDeployment(t *testing.T) {
+	t.Run("duplicate resource groups ignored", func(t *testing.T) {
+
+		mockContext := mocks.NewMockContext(context.Background())
+
+		mockDeployment := armresources.DeploymentExtended{
+			ID:   convert.RefOf("DEPLOYMENT_ID"),
+			Name: convert.RefOf("test-env"),
+			Properties: &armresources.DeploymentPropertiesExtended{
+				OutputResources: []*armresources.ResourceReference{
+					{
+						ID: convert.RefOf("/subscriptions/sub-id/resourceGroups/groupA"),
+					},
+					{
+						ID: convert.RefOf("/subscriptions/sub-id/resourceGroups/groupA/Microsoft.Storage/storageAccounts/storageAccount"),
+					},
+					{
+						ID: convert.RefOf("/subscriptions/sub-id/resourceGroups/groupB"),
+					},
+					{
+						ID: convert.RefOf("/subscriptions/sub-id/resourceGroups/groupB/Microsoft.web/sites/test"),
+					},
+					{
+						ID: convert.RefOf("/subscriptions/sub-id/resourceGroups/groupC"),
+					},
+				},
+				ProvisioningState: to.Ptr(armresources.ProvisioningStateSucceeded),
+				Timestamp:         to.Ptr(time.Now()),
+			},
+		}
+
+		mockContext.HttpClient.When(func(request *http.Request) bool {
+			return request.Method == http.MethodGet && strings.HasSuffix(
+				request.URL.Path,
+				"/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/",
+			)
+		}).RespondFn(func(request *http.Request) (*http.Response, error) {
+			subscriptionsListBytes, _ := json.Marshal(
+				armresources.DeploymentsClientListAtSubscriptionScopeResponse{
+					DeploymentListResult: armresources.DeploymentListResult{
+						Value: []*armresources.DeploymentExtended{&mockDeployment},
+					},
+				})
+
+			return &http.Response{
+				StatusCode: http.StatusOK,
+				Body:       io.NopCloser(bytes.NewBuffer(subscriptionsListBytes)),
+			}, nil
+		})
+
+		infraProvider := createBicepProvider(t, mockContext)
+		groups, err := infraProvider.getResourceGroupsFromLatestDeployment(*mockContext.Context)
+
+		require.NoError(t, err)
+
+		sort.Strings(groups)
+		require.Equal(t, []string{"groupA", "groupB", "groupC"}, groups)
+	})
 }

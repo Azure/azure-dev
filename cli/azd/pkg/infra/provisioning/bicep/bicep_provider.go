@@ -26,6 +26,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
@@ -102,7 +103,7 @@ func (p *BicepProvider) State(
 			}
 
 			asyncContext.SetProgress(&StateProgress{Message: "Retrieving Azure deployment", Timestamp: time.Now()})
-			armDeployment, err := p.latestDeployment(ctx, scope)
+			armDeployment, err := latestCompletedDeployment(ctx, p.env.GetEnvName(), scope)
 			if err != nil {
 				asyncContext.SetError(fmt.Errorf("retrieving deployment: %w", err))
 				return
@@ -243,7 +244,7 @@ func (p *BicepProvider) Deploy(
 				bicepDeploymentData.Template,
 				bicepDeploymentData.Parameters,
 				map[string]*string{
-					"azd-env-name": to.Ptr(p.env.GetEnvName()),
+					azure.TagKeyAzdEnvName: to.Ptr(p.env.GetEnvName()),
 				},
 			)
 			if err != nil {
@@ -280,7 +281,7 @@ func (p *BicepProvider) Destroy(
 	return async.RunInteractiveTaskWithProgress(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*DestroyResult, *DestroyProgress]) {
 			asyncContext.SetProgress(&DestroyProgress{Message: "Fetching resource groups", Timestamp: time.Now()})
-			rgsFromDeployment, err := p.getResourceGroups(ctx)
+			rgsFromDeployment, err := p.getResourceGroupsFromLatestDeployment(ctx)
 			if err != nil {
 				asyncContext.SetError(err)
 				return
@@ -368,8 +369,12 @@ func (p *BicepProvider) Destroy(
 		})
 }
 
-// latestDeployment finds the most recent deployment for the given environment in the provided scope.
-func (p *BicepProvider) latestDeployment(ctx context.Context, scope infra.Scope) (*armresources.DeploymentExtended, error) {
+// latestCompletedDeployment finds the most recent deployment the given environment in the provided scope,
+// considering only deployments which have completed (either successfully or unsuccessfully).
+func latestCompletedDeployment(
+	ctx context.Context, envName string, scope infra.Scope,
+) (*armresources.DeploymentExtended, error) {
+
 	deployments, err := scope.ListDeployments(ctx)
 	if err != nil {
 		return nil, err
@@ -387,11 +392,18 @@ func (p *BicepProvider) latestDeployment(ctx context.Context, scope infra.Scope)
 	var matchingBareDeployment *armresources.DeploymentExtended
 
 	for _, deployment := range deployments {
-		if v, has := deployment.Tags["azd-env-name"]; has && *v == p.env.GetEnvName() {
+
+		// We only want to consider deployments that are in a terminal state, not any which may be ongoing.
+		if *deployment.Properties.ProvisioningState != armresources.ProvisioningStateSucceeded &&
+			*deployment.Properties.ProvisioningState != armresources.ProvisioningStateFailed {
+			continue
+		}
+
+		if v, has := deployment.Tags[azure.TagKeyAzdEnvName]; has && *v == envName {
 			return deployment, nil
 		}
 
-		if *deployment.Name == p.env.GetEnvName() {
+		if *deployment.Name == envName {
 			matchingBareDeployment = deployment
 		}
 	}
@@ -400,24 +412,36 @@ func (p *BicepProvider) latestDeployment(ctx context.Context, scope infra.Scope)
 		return matchingBareDeployment, nil
 	}
 
-	return nil, fmt.Errorf("no deployment found for environment %s", p.env.GetEnvName())
+	return nil, fmt.Errorf("no deployments found for environment %s", envName)
 }
 
-func (p *BicepProvider) getResourceGroups(ctx context.Context) ([]string, error) {
+func (p *BicepProvider) getResourceGroupsFromLatestDeployment(ctx context.Context) ([]string, error) {
 	scope := infra.NewSubscriptionScope(p.azCli, p.env.GetSubscriptionId())
-	latestDeployment, err := p.latestDeployment(ctx, scope)
+	deployment, err := latestCompletedDeployment(ctx, p.env.GetEnvName(), scope)
 	if err != nil {
 		return []string{}, err
 	}
 
-	resourceManager := infra.NewAzureResourceManager(p.azCli)
-	resourceGroups, err := resourceManager.GetResourceGroupsForDeployment(
-		ctx, p.env.GetSubscriptionId(), *latestDeployment.Name)
-	if err != nil {
-		return []string{}, err
+	// NOTE: it's possible for a deployment to list a resource group more than once. We're only interested in the
+	// unique set.
+	resourceGroups := map[string]struct{}{}
+
+	for _, resourceId := range deployment.Properties.OutputResources {
+		if resourceId != nil && resourceId.ID != nil {
+			resId, err := arm.ParseResourceID(*resourceId.ID)
+			if err == nil && resId.ResourceGroupName != "" {
+				resourceGroups[resId.ResourceGroupName] = struct{}{}
+			}
+		}
 	}
 
-	return resourceGroups, nil
+	var resourceGroupNames []string
+
+	for k := range resourceGroups {
+		resourceGroupNames = append(resourceGroupNames, k)
+	}
+
+	return resourceGroupNames, nil
 }
 
 func (p *BicepProvider) getAllResourcesToDelete(

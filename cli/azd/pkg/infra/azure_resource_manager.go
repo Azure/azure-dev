@@ -10,8 +10,8 @@ import (
 	"strings"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/compare"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
@@ -115,39 +115,6 @@ func (rm *AzureResourceManager) GetDeploymentResourceOperations(
 	return allLevelsDeploymentOperations, nil
 }
 
-// GetResourceGroupsForDeployment returns the names of all the resource groups from a subscription level deployment.
-func (rm *AzureResourceManager) GetResourceGroupsForDeployment(
-	ctx context.Context,
-	subscriptionId string,
-	deploymentName string,
-) ([]string, error) {
-	deployment, err := rm.azCli.GetSubscriptionDeployment(ctx, subscriptionId, deploymentName)
-	if err != nil {
-		return nil, fmt.Errorf("fetching current deployment: %w", err)
-	}
-
-	// NOTE: it's possible for a deployment to list a resource group more than once. We're only interested in the
-	// unique set.
-	resourceGroups := map[string]struct{}{}
-
-	for _, resourceId := range deployment.Properties.OutputResources {
-		if resourceId != nil && resourceId.ID != nil {
-			resId, err := arm.ParseResourceID(*resourceId.ID)
-			if err == nil && resId.ResourceGroupName != "" {
-				resourceGroups[resId.ResourceGroupName] = struct{}{}
-			}
-		}
-	}
-
-	var keys []string
-
-	for k := range resourceGroups {
-		keys = append(keys, k)
-	}
-
-	return keys, nil
-}
-
 // GetResourceGroupsForEnvironment gets all resources groups for a given environment
 func (rm *AzureResourceManager) GetResourceGroupsForEnvironment(
 	ctx context.Context,
@@ -155,7 +122,7 @@ func (rm *AzureResourceManager) GetResourceGroupsForEnvironment(
 	envName string,
 ) ([]azcli.AzCliResource, error) {
 	res, err := rm.azCli.ListResourceGroup(ctx, subscriptionId, &azcli.ListResourceGroupOptions{
-		TagFilter: &azcli.Filter{Key: "azd-env-name", Value: envName},
+		TagFilter: &azcli.Filter{Key: azure.TagKeyAzdEnvName, Value: envName},
 	})
 
 	if err != nil {
@@ -164,7 +131,7 @@ func (rm *AzureResourceManager) GetResourceGroupsForEnvironment(
 
 	if len(res) == 0 {
 		return nil, azureutil.ResourceNotFound(
-			fmt.Errorf("0 resource groups with azd-env-name with value: '%s'", envName),
+			fmt.Errorf("0 resource groups with tag '%s' with value: '%s'", azure.TagKeyAzdEnvName, envName),
 		)
 	}
 

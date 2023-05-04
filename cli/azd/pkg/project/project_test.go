@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
@@ -85,7 +86,7 @@ services:
 				Type:     convert.RefOf(string(infra.AzureResourceTypeWebSite)),
 				Location: convert.RefOf("eastus2"),
 				Tags: map[string]*string{
-					defaultServiceTag: convert.RefOf("api"),
+					azure.TagKeyAzdServiceName: convert.RefOf("api"),
 				},
 			},
 		},
@@ -141,7 +142,7 @@ services:
 				Type:     convert.RefOf(string(infra.AzureResourceTypeWebSite)),
 				Location: convert.RefOf("eastus2"),
 				Tags: map[string]*string{
-					defaultServiceTag: convert.RefOf("web"),
+					azure.TagKeyAzdServiceName: convert.RefOf("web"),
 				},
 			},
 		})
@@ -200,7 +201,7 @@ services:
 				Type:     convert.RefOf(string(infra.AzureResourceTypeWebSite)),
 				Location: convert.RefOf("eastus2"),
 				Tags: map[string]*string{
-					defaultServiceTag: convert.RefOf("web"),
+					azure.TagKeyAzdServiceName: convert.RefOf("web"),
 				},
 			},
 		})

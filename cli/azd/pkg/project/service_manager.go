@@ -15,8 +15,6 @@ import (
 )
 
 const (
-	defaultServiceTag = "azd-service-name"
-
 	ServiceEventEnvUpdated ext.Event = "environment updated"
 	ServiceEventRestore    ext.Event = "restore"
 	ServiceEventBuild      ext.Event = "build"

@@ -8,9 +8,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"log"
-	"os"
-	"path"
 	"regexp"
 	"strings"
 
@@ -75,54 +72,8 @@ func (p *AzdoScmProvider) preConfigureCheck(
 		return updatedPat, err
 	}
 
-	if updatedPat {
-		// setting credential helper is a plus. It should not interrupt the process
-		if err := setPatCredentialHelperForGit(ctx, p.commandRunner, projectPath); err != nil {
-			log.Printf("Error trying to set git credential helper for PAT: %s", err.Error())
-		}
-	}
-
 	_, updatedOrg, err := azdo.EnsureOrgNameExists(ctx, p.Env, p.console)
 	return (updatedPat || updatedOrg), err
-}
-
-func setPatCredentialHelperForGit(ctx context.Context, runner exec.CommandRunner, projectPath string) error {
-	gitCli := git.NewGitCli(runner)
-	credentialHelperPath, err := createCredentialHelper(ctx, projectPath)
-	if err != nil {
-		return err
-	}
-	return gitCli.SetAzdoPatAuth(ctx, projectPath, credentialHelperPath)
-}
-
-func createCredentialHelper(ctx context.Context, projectPath string) (string, error) {
-	const fileName = "git-credential-pat-dev-azure.sh"
-	filePath := path.Join(projectPath, ".git", fileName)
-
-	// 0755 => rwx r-x r-x  => file must be runnable
-	file, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0755)
-	if err != nil {
-		return "", err
-	}
-	defer file.Close()
-
-	for _, line := range []string{
-		"#!/bin/sh",
-		"# Only if AZURE_DEVOPS_EXT_PAT has a value",
-		"if [ $AZURE_DEVOPS_EXT_PAT ]; then",
-		"    echo protocol=https",
-		"    echo host=dev.azure.com",
-		"    echo path=",
-		"    echo username=PersonalAccessToken",
-		"    echo password=$AZURE_DEVOPS_EXT_PAT",
-		"fi",
-	} {
-		if _, err := file.WriteString(line + "\n"); err != nil {
-			return "", err
-		}
-	}
-
-	return filePath, nil
 }
 
 // helper function to save configuration values to .env file
@@ -571,6 +522,19 @@ func (p *AzdoScmProvider) preventGitPush(
 	return false, nil
 }
 
+func (p *AzdoScmProvider) additionalScmConfigurationBeforePush(
+	ctx context.Context,
+	gitRepo *gitRepositoryDetails,
+	remoteName string,
+	branchName string) {
+}
+func (p *AzdoScmProvider) additionalScmConfigurationAfterPush(
+	ctx context.Context,
+	gitRepo *gitRepositoryDetails,
+	remoteName string,
+	branchName string) {
+}
+
 // hook function that fires after a git push
 // allows the provider to perform certain tasks after push including
 // cleanup on the remote url, creating the build policy for PRs and queuing an initial deployment
@@ -642,13 +606,6 @@ func (p *AzdoCiProvider) preConfigureCheck(
 	_, updatedPat, err := azdo.EnsurePatExists(ctx, p.Env, p.console)
 	if err != nil {
 		return updatedPat, err
-	}
-
-	if updatedPat {
-		// setting credential helper is a plus. It should not interrupt the process
-		if err := setPatCredentialHelperForGit(ctx, p.commandRunner, projectPath); err != nil {
-			log.Printf("Error trying to set git credential helper for PAT: %s", err.Error())
-		}
 	}
 
 	_, updatedOrg, err := azdo.EnsureOrgNameExists(ctx, p.Env, p.console)

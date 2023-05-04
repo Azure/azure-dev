@@ -81,6 +81,16 @@ type ScmProvider interface {
 		gitRepo *gitRepositoryDetails,
 		remoteName string,
 		branchName string) error
+	additionalScmConfigurationBeforePush(
+		ctx context.Context,
+		gitRepo *gitRepositoryDetails,
+		remoteName string,
+		branchName string)
+	additionalScmConfigurationAfterPush(
+		ctx context.Context,
+		gitRepo *gitRepositoryDetails,
+		remoteName string,
+		branchName string)
 }
 
 type CiPipeline struct {

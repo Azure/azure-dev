@@ -660,6 +660,19 @@ func applyFederatedCredentials(
 	return nil
 }
 
+func (p *GitHubScmProvider) additionalScmConfigurationBeforePush(
+	ctx context.Context,
+	gitRepo *gitRepositoryDetails,
+	remoteName string,
+	branchName string) {
+}
+func (p *GitHubScmProvider) additionalScmConfigurationAfterPush(
+	ctx context.Context,
+	gitRepo *gitRepositoryDetails,
+	remoteName string,
+	branchName string) {
+}
+
 // configurePipeline is a no-op for GitHub, as the pipeline is automatically
 // created by creating the workflow files in .github folder.
 func (p *GitHubCiProvider) configurePipeline(

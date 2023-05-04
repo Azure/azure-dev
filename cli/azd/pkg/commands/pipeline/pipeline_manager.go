@@ -384,6 +384,19 @@ func (manager *PipelineManager) Configure(ctx context.Context) (
 	}
 
 	if doPush {
+		// ScmProvider can use this function for setting up things like authentication during the scope of azd
+		// The configuration is expected to be reverted by additionalScmConfigurationAfterPush as a defer action
+		// regardless of the operation result. This should ensure any additional configuration will persist only
+		// while while config() method finishes
+		manager.ScmProvider.additionalScmConfigurationBeforePush(ctx,
+			gitRepoInfo,
+			manager.PipelineRemoteName,
+			currentBranch)
+		defer manager.ScmProvider.additionalScmConfigurationAfterPush(ctx,
+			gitRepoInfo,
+			manager.PipelineRemoteName,
+			currentBranch)
+
 		err = manager.pushGitRepo(ctx, currentBranch)
 		if err != nil {
 			return result, fmt.Errorf("git push: %w", err)

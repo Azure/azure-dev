@@ -259,6 +259,9 @@ type redactData struct {
 }
 
 func redactSensitiveArgs(args []string, sensitiveDataMatch []string) []string {
+	if len(sensitiveDataMatch) == 0 {
+		return args
+	}
 	redactedArgs := make([]string, len(args))
 	for _, arg := range args {
 		for _, sensitiveData := range sensitiveDataMatch {

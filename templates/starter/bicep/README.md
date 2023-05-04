@@ -22,7 +22,7 @@ Run `azd package` to validate that all service source code projects can be built
 
 ### Step 2: Provision Azure resources
 
-Update or add Infrastructure as Code (IaC) files to provision the relevant Azure resources. This can be done incrementally, as the list of Azure resources are explored and added. As an example, a reference library that contains all of the Bicep modules used by the azd templates can be found [here](https://github.com/Azure-Samples/todo-nodejs-mongo/tree/main/infra/core).
+Update or add Infrastructure as Code (IaC) files to provision the relevant Azure resources. This can be done incrementally, as the list of [Azure resources](https://learn.microsoft.com/en-us/azure/?product=popular) are explored and added. As an example, a reference library that contains all of the Bicep modules used by the azd templates can be found [here](https://github.com/Azure-Samples/todo-nodejs-mongo/tree/main/infra/core). All Azure resources available in Bicep format can be found [here](https://learn.microsoft.com/en-us/azure/templates/).
 
 Run `azd provision` whenever you want to ensure that changes made are applied correctly and work as expected.
 
@@ -44,7 +44,7 @@ Run `azd up` to run the end-to-end infrastructure provisioning (`azd provision`)
 
 ## Additional Details
 
-The following section examines different concepts that are involved in when tying in application and infrastructure.
+The following section examines different concepts that involved in tying in application and infrastructure.
 
 ### Application settings
 
@@ -68,4 +68,4 @@ For `appservice`, the following host configuration are often modified:
 - Language runtime
 - Exposed port from the running container (if running a web application service)
 - Allowed origins for CORS (Cross-Origin Resource Sharing) protection (if running a web application service)
-- The command that starts the service. This may be used when the default run command is not sufficient for your needs.
+- The run command to execute for the application. This may be used as an optimization when the default Oryx run command is not sufficient for your needs.

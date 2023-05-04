@@ -24,7 +24,7 @@ Run `azd package` to validate that all service source code projects can be built
 
 ### Step 2: Provision Azure resources
 
-Update or add Infrastructure as Code (IaC) files to provision the relevant Azure resources. This can be done incrementally, as the list of Azure resources are explored and added. As an example, a reference library that contains all of the Bicep modules used by the azd templates can be found [here](https://github.com/Azure-Samples/todo-nodejs-mongo/tree/main/infra/core).
+Update or add Infrastructure as Code (IaC) files to provision the relevant Azure resources. This can be done incrementally, as the list of [Azure resources](https://learn.microsoft.com/en-us/azure/?product=popular) are explored and added. As an example, a reference library that contains all of the Bicep modules used by the azd templates can be found [here](https://github.com/Azure-Samples/todo-nodejs-mongo/tree/main/infra/core). All Azure resources available in Bicep format can be found [here](https://learn.microsoft.com/en-us/azure/templates/).
 
 Run `azd provision` whenever you want to ensure that changes made are applied correctly and work as expected.
 

@@ -91,7 +91,33 @@ func Test_detectProviders(t *testing.T) {
 		)
 		assert.Nil(t, scmProvider)
 		assert.Nil(t, ciProvider)
-		assert.EqualError(t, err, ".azdo folder is missing. Can't use selected provider")
+		assert.EqualError(t, err, ".azdo\\pipelines folder is missing. Can't use selected provider")
+
+		os.Remove(azdoFolder)
+	})
+	t.Run("from persisted data azdo yml error", func(t *testing.T) {
+		azdoFolder := filepath.Join(tempDir, azdoFolder)
+		err := os.MkdirAll(azdoFolder, osutil.PermissionDirectory)
+		assert.NoError(t, err)
+
+		envValues := map[string]string{}
+		envValues[envPersistedKey] = azdoLabel
+		env := &environment.Environment{
+			Values: envValues,
+		}
+
+		scmProvider, ciProvider, err := DetectProviders(
+			ctx,
+			azdContext,
+			env,
+			"",
+			mockContext.Console,
+			mockContext.Credentials,
+			mockContext.CommandRunner,
+		)
+		assert.Nil(t, scmProvider)
+		assert.Nil(t, ciProvider)
+		assert.EqualError(t, err, ".azdo\\pipelines\\azure-dev.yml file is missing in .azdo\\pipelines folder. Can't use selected provider")
 
 		os.Remove(azdoFolder)
 	})
@@ -99,9 +125,10 @@ func Test_detectProviders(t *testing.T) {
 		azdoFolder := filepath.Join(tempDir, azdoFolder)
 		err := os.MkdirAll(azdoFolder, osutil.PermissionDirectory)
 		assert.NoError(t, err)
-		file, err := os.Create(filepath.Join(azdoYml))
-		assert.NoError(t, err)
+
+		file, err := os.Create(filepath.Join(tempDir, azdoYml))
 		file.Close()
+		assert.NoError(t, err)
 
 		envValues := map[string]string{}
 		envValues[envPersistedKey] = azdoLabel
@@ -128,9 +155,6 @@ func Test_detectProviders(t *testing.T) {
 		azdoFolder := filepath.Join(tempDir, azdoFolder)
 		err := os.MkdirAll(azdoFolder, osutil.PermissionDirectory)
 		assert.NoError(t, err)
-		file, err := os.Create(filepath.Join(azdoYml))
-		assert.NoError(t, err)
-		file.Close()
 
 		envValues := map[string]string{}
 		envValues[envPersistedKey] = gitHubLabel
@@ -147,7 +171,7 @@ func Test_detectProviders(t *testing.T) {
 		)
 		assert.Nil(t, scmProvider)
 		assert.Nil(t, ciProvider)
-		assert.EqualError(t, err, ".github folder is missing. Can't use selected provider")
+		assert.EqualError(t, err, ".github\\workflows folder is missing. Can't use selected provider")
 
 		os.Remove(azdoFolder)
 	})
@@ -193,7 +217,7 @@ func Test_detectProviders(t *testing.T) {
 		)
 		assert.Nil(t, scmProvider)
 		assert.Nil(t, ciProvider)
-		assert.EqualError(t, err, "other is not a known pipeline provider.", nil, nil)
+		assert.EqualError(t, err, "other is not a known pipeline provider")
 
 		// Remove folder - reset state
 		os.Remove(ghFolder)
@@ -219,7 +243,7 @@ func Test_detectProviders(t *testing.T) {
 		)
 		assert.Nil(t, scmProvider)
 		assert.Nil(t, ciProvider)
-		assert.EqualError(t, err, "other is not a known pipeline provider.")
+		assert.EqualError(t, err, "other is not a known pipeline provider")
 
 		// Remove folder - reset state
 		os.Remove(ghFolder)
@@ -242,7 +266,7 @@ func Test_detectProviders(t *testing.T) {
 		)
 		assert.Nil(t, scmProvider)
 		assert.Nil(t, ciProvider)
-		assert.EqualError(t, err, "other is not a known pipeline provider.")
+		assert.EqualError(t, err, "other is not a known pipeline provider")
 
 		// Remove folder - reset state
 		os.Remove(ghFolder)
@@ -275,7 +299,7 @@ func Test_detectProviders(t *testing.T) {
 		)
 		assert.Nil(t, scmProvider)
 		assert.Nil(t, ciProvider)
-		assert.EqualError(t, err, "fromYaml is not a known pipeline provider.")
+		assert.EqualError(t, err, "fromYaml is not a known pipeline provider")
 
 		// Remove folder - reset state
 		os.Remove(ghFolder)
@@ -309,7 +333,7 @@ func Test_detectProviders(t *testing.T) {
 		)
 		assert.Nil(t, scmProvider)
 		assert.Nil(t, ciProvider)
-		assert.EqualError(t, err, "arg is not a known pipeline provider.")
+		assert.EqualError(t, err, "arg is not a known pipeline provider")
 
 		// Remove folder - reset state
 		os.Remove(ghFolder)
@@ -342,9 +366,6 @@ func Test_detectProviders(t *testing.T) {
 		azdoFolder := filepath.Join(tempDir, azdoFolder)
 		err := os.MkdirAll(azdoFolder, osutil.PermissionDirectory)
 		assert.NoError(t, err)
-		file, err := os.Create(filepath.Join(azdoYml))
-		assert.NoError(t, err)
-		file.Close()
 
 		scmProvider, ciProvider, err := DetectProviders(
 			ctx,
@@ -368,9 +389,6 @@ func Test_detectProviders(t *testing.T) {
 		azdoFolder := filepath.Join(tempDir, azdoFolder)
 		err = os.MkdirAll(azdoFolder, osutil.PermissionDirectory)
 		assert.NoError(t, err)
-		file, err := os.Create(filepath.Join(azdoYml))
-		assert.NoError(t, err)
-		file.Close()
 
 		scmProvider, ciProvider, err := DetectProviders(
 			ctx,
@@ -392,9 +410,6 @@ func Test_detectProviders(t *testing.T) {
 		azdoFolder := filepath.Join(tempDir, azdoFolder)
 		err = os.MkdirAll(azdoFolder, osutil.PermissionDirectory)
 		assert.NoError(t, err)
-		file, err := os.Create(filepath.Join(azdoYml))
-		assert.NoError(t, err)
-		file.Close()
 
 		env := environment.Ephemeral()
 
@@ -434,9 +449,6 @@ func Test_detectProviders(t *testing.T) {
 		azdoFolder := filepath.Join(tempDir, azdoFolder)
 		err = os.MkdirAll(azdoFolder, osutil.PermissionDirectory)
 		assert.NoError(t, err)
-		file, err := os.Create(filepath.Join(azdoYml))
-		assert.NoError(t, err)
-		file.Close()
 		ghFolder := filepath.Join(tempDir, githubFolder)
 		err = os.MkdirAll(ghFolder, osutil.PermissionDirectory)
 		assert.NoError(t, err)

@@ -129,13 +129,13 @@ func ymlExists(ymlPath string) bool {
 const (
 	gitHubLabel     string = "github"
 	azdoLabel       string = "azdo"
-	azdoFolder      string = ".azdo"
 	envPersistedKey string = "AZD_PIPELINE_PROVIDER"
 )
 
 var (
 	githubFolder string = filepath.Join(".github", "workflows")
-	azdoYml      string = filepath.Join(azdoFolder, "pipelines", "azure-dev.yml")
+	azdoFolder   string = filepath.Join(".azdo", "pipelines")
+	azdoYml      string = filepath.Join(azdoFolder, "azure-dev.yml")
 )
 
 func resolveProvider(

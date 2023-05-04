@@ -117,9 +117,24 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		Title: "Initializing a new project (azd init)",
 	})
 
-	// Project not initialized and no template specified
-	// NOTE: Adding `azure.yaml` to a folder removes the option from selecting a template
-	if _, err := os.Stat(azdCtx.ProjectPath()); err != nil && errors.Is(err, os.ErrNotExist) {
+	// If azure.yaml project already exists, we should do the following:
+	//   - Not prompt for template selection (user can specify --template if needed to refresh from an existing template)
+	//   - Not overwrite azure.yaml (unless --template is explicitly specified)
+	//   - Allow for environment initialization
+	var existingProject bool
+	if _, err := os.Stat(azdCtx.ProjectPath()); err == nil {
+		existingProject = true
+	} else if errors.Is(err, os.ErrNotExist) {
+		existingProject = false
+	} else {
+		return nil, fmt.Errorf("checking if project exists: %w", err)
+	}
+
+	if !existingProject {
+		err = i.repoInitializer.PromptIfNonEmpty(ctx, azdCtx)
+		if err != nil {
+			return nil, err
+		}
 
 		if i.flags.template.Name == "" {
 			i.flags.template, err = templates.PromptTemplate(ctx, "Select a project template:", i.console)
@@ -158,12 +173,10 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		if err != nil {
 			return nil, fmt.Errorf("init from template repository: %w", err)
 		}
-	} else {
-		if _, err := os.Stat(azdCtx.ProjectPath()); errors.Is(err, os.ErrNotExist) {
-			err = i.repoInitializer.InitializeEmpty(ctx, azdCtx)
-			if err != nil {
-				return nil, fmt.Errorf("init empty repository: %w", err)
-			}
+	} else if !existingProject { // do not initialize for empty if azure.yaml is present
+		err = i.repoInitializer.InitializeEmpty(ctx, azdCtx)
+		if err != nil {
+			return nil, fmt.Errorf("init empty repository: %w", err)
 		}
 	}
 

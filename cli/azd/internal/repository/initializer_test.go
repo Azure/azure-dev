@@ -521,3 +521,91 @@ func Test_parseExecutableFiles(t *testing.T) {
 		})
 	}
 }
+
+func TestInitializer_PromptIfNonEmpty(t *testing.T) {
+	type dirSetup struct {
+		// whether the directory is a git repository
+		isGitRepo bool
+		// filenames to create in the directory before running tests
+		files []string
+	}
+	tests := []struct {
+		name        string
+		dir         dirSetup
+		userConfirm bool
+		expectedErr string
+	}{
+		{
+			"EmptyDir",
+			dirSetup{false, []string{}},
+			false,
+			"",
+		},
+		{
+			"NonEmptyDir",
+			dirSetup{false, []string{"a.txt"}},
+			true,
+			"",
+		},
+		{
+			"NonEmptyDir_Declined",
+			dirSetup{false, []string{"a.txt"}},
+			false,
+			"confirmation declined",
+		},
+		{
+			"NonEmptyGitDir",
+			dirSetup{true, []string{"a.txt"}},
+			true,
+			"",
+		},
+		{
+			"NonEmptyGitDir_Declined",
+			dirSetup{true, []string{"a.txt"}},
+			false,
+			"confirmation declined",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			console := mockinput.NewMockConsole()
+			cmdRun := mockexec.NewMockCommandRunner()
+			gitCli := git.NewGitCli(cmdRun)
+
+			// create files
+			for _, file := range tt.dir.files {
+				require.NoError(t, os.WriteFile(filepath.Join(dir, file), []byte{}, 0600))
+			}
+
+			// mock git branch command
+			gitBranchImpl := cmdRun.When(func(args exec.RunArgs, command string) bool {
+				return slices.Contains(args.Args, "branch") &&
+					slices.Contains(args.Args, "--show-current")
+			})
+			if tt.dir.isGitRepo {
+				gitBranchImpl.Respond(exec.RunResult{ExitCode: 0})
+			} else {
+				gitBranchImpl.Respond(exec.RunResult{ExitCode: 128, Stderr: "fatal: not a git repository"})
+			}
+
+			// mock console input
+			console.WhenConfirm(func(options input.ConsoleOptions) bool { return true }).
+				Respond(tt.userConfirm)
+
+			i := &Initializer{
+				console: console,
+				gitCli:  gitCli,
+			}
+			azdCtx := azdcontext.NewAzdContextWithDirectory(dir)
+			err := i.PromptIfNonEmpty(context.Background(), azdCtx)
+
+			if tt.expectedErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.expectedErr)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}

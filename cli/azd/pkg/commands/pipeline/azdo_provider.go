@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"regexp"
 	"strings"
 
@@ -522,17 +523,65 @@ func (p *AzdoScmProvider) preventGitPush(
 	return false, nil
 }
 
+// git config --local url."https://PAT@AzdoHost/".insteadOf "https://AzdoOrg@AzdoHost/"
+// git config --local --remove-section url."https://PAT@AzdoHost/"
+
 func (p *AzdoScmProvider) additionalScmConfigurationBeforePush(
 	ctx context.Context,
 	gitRepo *gitRepositoryDetails,
 	remoteName string,
 	branchName string) {
+	// use git config insteadOf (https://git-scm.com/docs/git-config#Documentation/git-config.txt-urlltbasegtinsteadOf)
+	// and set url+pat for the remote to ensure a successful `git push` without prompting for credentials.
+	// Ensure setting `defer additionalScmConfigurationAfterPush()` after calling this method to ensure the configuration
+	// is removed
+
+	if !strings.Contains(gitRepo.remote, "https://") {
+		// PAT is only for HTTPS
+		return
+	}
+
+	remoteAndPatUrl, originalUrl := gitInsteadOfConfig(ctx, p.Env, p.console, gitRepo)
+	runArgs := exec.NewRunArgs("git", "config", "--local", remoteAndPatUrl, originalUrl)
+	if _, err := p.commandRunner.Run(ctx, runArgs); err != nil {
+		// this error should not fail the operation
+		log.Printf("Error setting git config: insteadOf url: %s", err.Error())
+	}
 }
+
+func gitInsteadOfConfig(
+	ctx context.Context,
+	env *environment.Environment,
+	console input.Console,
+	gitRepo *gitRepositoryDetails) (string, string) {
+	pat, _, err := azdo.EnsurePatExists(ctx, env, console)
+	if err != nil {
+		log.Printf("Error getting PAT when it should be found: %s", err.Error())
+	}
+
+	azdoRepoDetails := gitRepo.details.(*AzdoRepositoryDetails)
+	remoteAndPatUrl := fmt.Sprintf("url.https://%s@%s/", pat, azdo.AzDoHostName)
+	originalUrl := fmt.Sprintf("https://%s@%s", azdoRepoDetails.projectName, azdo.AzDoHostName)
+	return remoteAndPatUrl, originalUrl
+}
+
 func (p *AzdoScmProvider) additionalScmConfigurationAfterPush(
 	ctx context.Context,
 	gitRepo *gitRepositoryDetails,
 	remoteName string,
 	branchName string) {
+
+	if !strings.Contains(gitRepo.remote, "https://") {
+		// PAT is only for HTTPS
+		return
+	}
+
+	_, originalUrl := gitInsteadOfConfig(ctx, p.Env, p.console, gitRepo)
+	runArgs := exec.NewRunArgs("git", "config", "--local", "--remove-section", originalUrl)
+	if _, err := p.commandRunner.Run(ctx, runArgs); err != nil {
+		// this error should not fail the operation
+		log.Printf("Error removing git config: insteadOf url: %s", err.Error())
+	}
 }
 
 // hook function that fires after a git push

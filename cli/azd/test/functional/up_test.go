@@ -213,65 +213,50 @@ func Test_CLI_Up_Down_FuncApp(t *testing.T) {
 }
 
 func Test_CLI_Up_Down_ContainerApp(t *testing.T) {
+	t.Parallel()
+
 	if ci_os := os.Getenv("AZURE_DEV_CI_OS"); ci_os != "" && ci_os != "lin" {
 		t.Skip("Skipping due to docker limitations for non-linux systems on CI")
 	}
 
-	tests := []struct {
-		name                  string
-		provisionContainerApp bool
-	}{
-		{"CreateContainerAppAtProvision", true},
-		{"CreateContainerAppAtDeploy", false},
-	}
+	ctx, cancel := newTestContext(t)
+	defer cancel()
 
-	for _, tt := range tests {
-		tc := tt
-		t.Run(tt.name, func(t *testing.T) {
-			t.Parallel()
+	dir := tempDirWithDiagnostics(t)
+	t.Logf("DIR: %s", dir)
 
-			ctx, cancel := newTestContext(t)
-			defer cancel()
+	envName := randomEnvName()
+	t.Logf("AZURE_ENV_NAME: %s", envName)
 
-			dir := tempDirWithDiagnostics(t)
-			t.Logf("DIR: %s", dir)
+	cli := azdcli.NewCLI(t)
+	cli.WorkingDirectory = dir
+	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
 
-			envName := randomEnvName()
-			t.Logf("AZURE_ENV_NAME: %s", envName)
+	err := copySample(dir, "containerapp")
+	require.NoError(t, err, "failed expanding sample")
 
-			cli := azdcli.NewCLI(t)
-			cli.WorkingDirectory = dir
-			cli.Env = append(os.Environ(),
-				"AZURE_LOCATION=eastus2",
-				fmt.Sprintf("AZURE_PROVISION_CONTAINER_APP=%t", tc.provisionContainerApp))
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
+	require.NoError(t, err)
 
-			err := copySample(dir, "containerapp")
-			require.NoError(t, err, "failed expanding sample")
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "infra", "create")
+	require.NoError(t, err)
 
-			_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
-			require.NoError(t, err)
+	_, err = cli.RunCommand(ctx, "deploy", "--cwd", filepath.Join(dir, "src", "dotnet"))
+	require.NoError(t, err)
 
-			_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "infra", "create")
-			require.NoError(t, err)
+	// The sample hosts a small application that just responds with a 200 OK with a body of "Hello, `azd`."
+	// (without the quotes). Validate that the application is working.
+	env, err := godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
+	require.NoError(t, err)
 
-			_, err = cli.RunCommand(ctx, "deploy", "--cwd", filepath.Join(dir, "src", "dotnet"))
-			require.NoError(t, err)
+	url, has := env["WEBSITE_URL"]
+	require.True(t, has, "WEBSITE_URL should be in environment after deploy")
 
-			// The sample hosts a small application that just responds with a 200 OK with a body of "Hello, `azd`."
-			// (without the quotes). Validate that the application is working.
-			env, err := godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
-			require.NoError(t, err)
+	err = probeServiceHealth(t, ctx, url, expectedTestAppResponse)
+	require.NoError(t, err)
 
-			url, has := env["WEBSITE_URL"]
-			require.True(t, has, "WEBSITE_URL should be in environment after deploy")
-
-			err = probeServiceHealth(t, ctx, url, expectedTestAppResponse)
-			require.NoError(t, err)
-
-			_, err = cli.RunCommand(ctx, "infra", "delete", "--force", "--purge")
-			require.NoError(t, err)
-		})
-	}
+	_, err = cli.RunCommand(ctx, "infra", "delete", "--force", "--purge")
+	require.NoError(t, err)
 }
 
 // Validates that the service is up-and-running, by issuing a GET request

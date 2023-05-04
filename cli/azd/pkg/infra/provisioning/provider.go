@@ -14,7 +14,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
@@ -125,12 +124,11 @@ type Provider interface {
 	EnsureConfigured(ctx context.Context) error
 	// State gets the current state of the infrastructure, this contains both the provisioned resources and any outputs from
 	// the module.
-	State(ctx context.Context, scope infra.Scope) *async.InteractiveTaskWithProgress[*StateResult, *StateProgress]
+	State(ctx context.Context) *async.InteractiveTaskWithProgress[*StateResult, *StateProgress]
 	Plan(ctx context.Context) *async.InteractiveTaskWithProgress[*DeploymentPlan, *DeploymentPlanningProgress]
 	Deploy(
 		ctx context.Context,
 		plan *DeploymentPlan,
-		scope infra.Scope,
 	) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress]
 	Destroy(
 		ctx context.Context,

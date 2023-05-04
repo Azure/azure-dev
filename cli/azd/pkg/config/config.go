@@ -21,7 +21,13 @@ type Config interface {
 	IsEmpty() bool
 }
 
-// Creates a new empty configuration
+// NewEmptyConfig creates a empty configuration object.
+func NewEmptyConfig() Config {
+	return NewConfig(nil)
+}
+
+// NewConfig creates a configuration object, populated with an initial set of keys and values. If [data] is nil or an
+// empty map, and empty configuration object is returned, but [NewEmptyConfig] might better express your intention.
 func NewConfig(data map[string]any) Config {
 	if data == nil {
 		data = map[string]any{}

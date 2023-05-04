@@ -1,5 +1,17 @@
 [
     {
+        "name": "Azure-Samples/azd-starter-bicep",
+        "displayName": "Starter - Bicep",
+        "description": "A starter template with Bicep as infrastructure provider",
+        "repositoryPath": "Azure-Samples/azd-starter-bicep"
+    },
+    {
+        "name": "Azure-Samples/azd-starter-terraform",
+        "displayName": "Starter - Terraform",
+        "description": "A starter template with Terraform as infrastructure provider",
+        "repositoryPath": "Azure-Samples/azd-starter-terraform"
+    },
+    {
         "name": "Azure-Samples/todo-nodejs-mongo",
         "description": "ToDo Application with a Node.js API and Azure Cosmos DB API for MongoDB on Azure App Service",
         "repositoryPath": "Azure-Samples/todo-nodejs-mongo"

@@ -193,7 +193,8 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	if targetServiceName == "" && da.flags.fromPackage != "" {
 		return nil, errors.New(
 			//nolint:lll
-			"'--from-package' cannot be specified when deploying all services. Specify a specific service by passing a <service>")
+			"'--from-package' cannot be specified when deploying all services. Specify a specific service by passing a <service>",
+		)
 	}
 
 	if err := da.projectManager.Initialize(ctx, da.projectConfig); err != nil {

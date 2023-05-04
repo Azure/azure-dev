@@ -15,6 +15,9 @@ The following environment variables are available for configuration:
 - `AZURE_KEY_VAULT_ENDPOINT`. If set, other secret environment properties such as `AZURE_COSMOS_CONNECTION_STRING` are loaded from KeyVault.
 - `AZURE_COSMOS_CONNECTION_STRING`. A direct override for specifying the Cosmos DB connection string (Mongo DB also supported).
 - `APPLICATIONINSIGHTS_CONNECTION_STRING`. (Optional) Connection string of an Application Insights instance for telemetry to be logged.
+- `API_ALLOW_ORIGINS`. Comma separated list of urls to be registered as allowed origins by the api server.
+- `API_ENVIRONMENT`. Set this to `develop` to:
+  - Disable CORS and allow all origins.
 
 ### Build & Compile
 

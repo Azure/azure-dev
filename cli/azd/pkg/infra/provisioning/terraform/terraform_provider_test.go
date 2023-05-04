@@ -12,11 +12,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 
-	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockexec"
 	"github.com/stretchr/testify/require"
 )
@@ -82,7 +80,6 @@ func TestTerraformDeploy(t *testing.T) {
 	prepareGenericMocks(mockContext.CommandRunner)
 	preparePlanningMocks(mockContext.CommandRunner)
 	prepareDeployMocks(mockContext.CommandRunner)
-	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 
 	infraProvider := createTerraformProvider(mockContext)
 
@@ -96,13 +93,7 @@ func TestTerraformDeploy(t *testing.T) {
 		},
 	}
 
-	scope := infra.NewSubscriptionScope(
-		azCli,
-		infraProvider.env.Values["AZURE_LOCATION"],
-		infraProvider.env.GetSubscriptionId(),
-		infraProvider.env.GetEnvName(),
-	)
-	deployTask := infraProvider.Deploy(*mockContext.Context, &deploymentPlan, scope)
+	deployTask := infraProvider.Deploy(*mockContext.Context, &deploymentPlan)
 
 	go func() {
 		for deployProgress := range deployTask.Progress() {
@@ -174,16 +165,9 @@ func TestTerraformState(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	prepareGenericMocks(mockContext.CommandRunner)
 	prepareShowMocks(mockContext.CommandRunner)
-	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 
 	infraProvider := createTerraformProvider(mockContext)
-	scope := infra.NewSubscriptionScope(
-		azCli,
-		infraProvider.env.Values["AZURE_LOCATION"],
-		infraProvider.env.GetSubscriptionId(),
-		infraProvider.env.GetEnvName(),
-	)
-	getStateTask := infraProvider.State(*mockContext.Context, scope)
+	getStateTask := infraProvider.State(*mockContext.Context)
 
 	go func() {
 		for progressReport := range getStateTask.Progress() {

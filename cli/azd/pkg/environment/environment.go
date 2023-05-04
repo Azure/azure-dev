@@ -96,14 +96,14 @@ func EmptyWithRoot(root string) *Environment {
 	return &Environment{
 		Root:   root,
 		Values: make(map[string]string),
-		Config: config.NewConfig(nil),
+		Config: config.NewEmptyConfig(),
 	}
 }
 
 func Ephemeral() *Environment {
 	return &Environment{
 		Values: make(map[string]string),
-		Config: config.NewConfig(nil),
+		Config: config.NewEmptyConfig(),
 	}
 }
 
@@ -148,7 +148,7 @@ func (e *Environment) Reload() error {
 	cfgPath := filepath.Join(e.Root, azdcontext.ConfigFileName)
 	cfgMgr := config.NewManager()
 	if cfg, err := cfgMgr.Load(cfgPath); errors.Is(err, os.ErrNotExist) {
-		e.Config = config.NewConfig(nil)
+		e.Config = config.NewEmptyConfig()
 	} else if err != nil {
 		return fmt.Errorf("loading config: %w", err)
 	} else {

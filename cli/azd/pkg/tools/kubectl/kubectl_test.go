@@ -186,3 +186,31 @@ type kubeCliTestConfig struct {
 	ran                  bool
 	testFn               func() error
 }
+
+func TestGetClientVersion(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "kubectl version")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		return exec.NewRunResult(0, `{
+			"clientVersion": {
+			  "major": "1",
+			  "minor": "25",
+			  "gitVersion": "v1.25.4",
+			  "gitCommit": "872a965c6c6526caa949f0c6ac028ef7aff3fb78",
+			  "gitTreeState": "clean",
+			  "buildDate": "2022-11-09T13:36:36Z",
+			  "goVersion": "go1.19.3",
+			  "compiler": "gc",
+			  "platform": "windows/amd64"
+			},
+			"kustomizeVersion": "v4.5.7"
+		  }`, ""), nil
+	})
+
+	cli := NewKubectl(mockContext.CommandRunner)
+
+	ver, err := (cli.(*kubectlCli)).getClientVersion(context.Background())
+	require.NoError(t, err)
+	require.Equal(t, "v1.25.4", ver)
+}

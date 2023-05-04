@@ -102,7 +102,7 @@ services:
 	require.Equal(t, "imageId", buildResult.BuildOutputPath)
 	require.Nil(t, err)
 	require.Len(t, progressMessages, 1)
-	require.Equal(t, "Building docker image", progressMessages[0])
+	require.Equal(t, "Building Docker image", progressMessages[0])
 	require.Equal(t, true, ran)
 }
 
@@ -190,7 +190,7 @@ services:
 
 	require.Equal(t, "imageId", buildResult.BuildOutputPath)
 	require.Nil(t, err)
-	require.Equal(t, "Building docker image", status)
+	require.Equal(t, "Building Docker image", status)
 	require.Equal(t, true, ran)
 }
 

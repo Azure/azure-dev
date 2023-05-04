@@ -145,7 +145,7 @@ func initialize() (*TelemetrySystem, error) {
 
 		// As a convenience we allow using localhost as an alias for http://localhost so that
 		// --trace-log-url localhost behaves as expected (for folks who are running something like Jaeger's all-in-one
-		// docker image locally.)
+		// Docker image locally.)
 		if logUrl == "localhost" {
 			logUrl = "http://localhost"
 		}

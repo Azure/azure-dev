@@ -65,7 +65,7 @@ type ServiceManager interface {
 	// Depending on the service configuration this will generate an artifact
 	// that can be consumed by the hosting Azure service.
 	// Common examples could be a zip archive for app service or
-	// docker images for container apps and AKS
+	// Docker images for container apps and AKS
 	Package(
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
@@ -253,7 +253,7 @@ func (sm *serviceManager) Build(
 
 // Packages the code for the specified service config
 // Depending on the service configuration this will generate an artifact that can be consumed by the hosting Azure service.
-// Common examples could be a zip archive for app service or docker images for container apps and AKS
+// Common examples could be a zip archive for app service or Docker images for container apps and AKS
 func (sm *serviceManager) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,

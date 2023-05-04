@@ -542,7 +542,13 @@ func (p *AzdoScmProvider) additionalScmConfigurationBeforePush(
 	}
 
 	remoteAndPatUrl, originalUrl := gitInsteadOfConfig(ctx, p.Env, p.console, gitRepo)
-	runArgs := exec.NewRunArgs("git", "config", "--local", remoteAndPatUrl, originalUrl)
+	runArgs := exec.NewRunArgs("git",
+		"-C",
+		gitRepo.gitProjectPath,
+		"config",
+		"--local",
+		fmt.Sprintf("%s.insteadOf", remoteAndPatUrl),
+		originalUrl)
 	if _, err := p.commandRunner.Run(ctx, runArgs); err != nil {
 		// this error should not fail the operation
 		log.Printf("Error setting git config: insteadOf url: %s", err.Error())
@@ -561,7 +567,7 @@ func gitInsteadOfConfig(
 
 	azdoRepoDetails := gitRepo.details.(*AzdoRepositoryDetails)
 	remoteAndPatUrl := fmt.Sprintf("url.https://%s@%s/", pat, azdo.AzDoHostName)
-	originalUrl := fmt.Sprintf("https://%s@%s", azdoRepoDetails.projectName, azdo.AzDoHostName)
+	originalUrl := fmt.Sprintf("https://%s@%s/", azdoRepoDetails.orgName, azdo.AzDoHostName)
 	return remoteAndPatUrl, originalUrl
 }
 
@@ -576,8 +582,8 @@ func (p *AzdoScmProvider) additionalScmConfigurationAfterPush(
 		return
 	}
 
-	_, originalUrl := gitInsteadOfConfig(ctx, p.Env, p.console, gitRepo)
-	runArgs := exec.NewRunArgs("git", "config", "--local", "--remove-section", originalUrl)
+	remoteAndPatUrl, _ := gitInsteadOfConfig(ctx, p.Env, p.console, gitRepo)
+	runArgs := exec.NewRunArgs("git", "-C", gitRepo.gitProjectPath, "config", "--local", "--remove-section", remoteAndPatUrl)
 	if _, err := p.commandRunner.Run(ctx, runArgs); err != nil {
 		// this error should not fail the operation
 		log.Printf("Error removing git config: insteadOf url: %s", err.Error())

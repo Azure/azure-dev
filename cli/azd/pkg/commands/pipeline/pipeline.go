@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"path"
+	"path/filepath"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -128,13 +128,14 @@ func ymlExists(ymlPath string) bool {
 
 const (
 	gitHubLabel     string = "github"
-	githubFolder    string = ".github"
-	githubSubfolder string = "workflows"
 	azdoLabel       string = "azdo"
 	azdoFolder      string = ".azdo"
-	azdoSubfolder   string = "pipelines"
-	azdoYml         string = "azure-dev.yml"
 	envPersistedKey string = "AZD_PIPELINE_PROVIDER"
+)
+
+var (
+	githubFolder string = filepath.Join(".github", "workflows")
+	azdoYml      string = filepath.Join(azdoFolder, "pipelines", "azure-dev.yml")
 )
 
 func resolveProvider(
@@ -192,9 +193,9 @@ func DetectProviders(
 	overrideWith := strings.ToLower(overrideProvider)
 
 	// detecting pipeline folder configuration
-	hasGitHubFolder := folderExists(path.Join(projectDir, githubFolder, githubSubfolder))
-	hasAzDevOpsFolder := folderExists(path.Join(projectDir, azdoFolder))
-	hasAzDevOpsYml := ymlExists(path.Join(projectDir, azdoFolder, azdoSubfolder, azdoYml))
+	hasGitHubFolder := folderExists(filepath.Join(projectDir, githubFolder))
+	hasAzDevOpsFolder := folderExists(filepath.Join(projectDir, azdoFolder))
+	hasAzDevOpsYml := ymlExists(filepath.Join(projectDir, azdoYml))
 
 	// Error missing config for any provider
 	if !hasGitHubFolder && !hasAzDevOpsFolder {

@@ -70,7 +70,7 @@ func PromptTemplate(ctx context.Context, message string, console input.Console) 
 	// prepend the minimal template option to guarantee first selection
 	choices = append(choices, "Minimal")
 	for _, template := range templates {
-		choices = append(choices, template.Name+" ("+template.Path+")")
+		choices = append(choices, template.Name)
 	}
 
 	selected, err := console.Select(ctx, input.ConsoleOptions{

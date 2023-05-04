@@ -117,11 +117,23 @@ func folderExists(folderPath string) bool {
 	return false
 }
 
+func ymlExists(ymlPath string) bool {
+	info, err := os.Stat(ymlPath)
+	if os.IsNotExist(err) {
+		return false
+	}
+	// if it is a yml file
+	return info.Mode().IsRegular()
+}
+
 const (
 	gitHubLabel     string = "github"
 	githubFolder    string = ".github"
+	githubSubfolder string = "workflows"
 	azdoLabel       string = "azdo"
 	azdoFolder      string = ".azdo"
+	azdoSubfolder   string = "pipelines"
+	azdoYml         string = "azure-dev.yml"
 	envPersistedKey string = "AZD_PIPELINE_PROVIDER"
 )
 
@@ -180,8 +192,9 @@ func DetectProviders(
 	overrideWith := strings.ToLower(overrideProvider)
 
 	// detecting pipeline folder configuration
-	hasGitHubFolder := folderExists(path.Join(projectDir, githubFolder))
+	hasGitHubFolder := folderExists(path.Join(projectDir, githubFolder, githubSubfolder))
 	hasAzDevOpsFolder := folderExists(path.Join(projectDir, azdoFolder))
+	hasAzDevOpsYml := ymlExists(path.Join(projectDir, azdoFolder, azdoSubfolder, azdoYml))
 
 	// Error missing config for any provider
 	if !hasGitHubFolder && !hasAzDevOpsFolder {
@@ -204,14 +217,18 @@ func DetectProviders(
 
 	// Check override errors for missing folder
 	if overrideWith == gitHubLabel && !hasGitHubFolder {
-		return nil, nil, fmt.Errorf("%s folder is missing. Can't use selected provider.", githubFolder)
+		return nil, nil, fmt.Errorf("%s folder is missing. Can't use selected provider", githubFolder)
 	}
 	if overrideWith == azdoLabel && !hasAzDevOpsFolder {
-		return nil, nil, fmt.Errorf("%s folder is missing. Can't use selected provider.", azdoFolder)
+		return nil, nil, fmt.Errorf("%s folder is missing. Can't use selected provider", azdoFolder)
+	}
+	// pipeline yml file is not in azdo folder
+	if overrideWith == azdoLabel && !hasAzDevOpsYml {
+		return nil, nil, fmt.Errorf("%s file is missing in %s folder. Can't use selected provider", azdoYml, azdoFolder)
 	}
 	// using wrong override value
 	if overrideWith != "" && overrideWith != azdoLabel && overrideWith != gitHubLabel {
-		return nil, nil, fmt.Errorf("%s is not a known pipeline provider.", overrideWith)
+		return nil, nil, fmt.Errorf("%s is not a known pipeline provider", overrideWith)
 	}
 
 	// At this point, we know that override value has either:

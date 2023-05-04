@@ -8,6 +8,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
+	"github.com/azure/azure-dev/cli/azd/pkg/containerapps"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -67,6 +68,7 @@ type downAction struct {
 	userProfileService  *azcli.UserProfileService
 	subResolver         account.SubscriptionTenantResolver
 	alphaFeatureManager *alpha.FeatureManager
+	containerAppService containerapps.ContainerAppService
 }
 
 func newDownAction(
@@ -81,6 +83,7 @@ func newDownAction(
 	userProfileService *azcli.UserProfileService,
 	subResolver account.SubscriptionTenantResolver,
 	alphaFeatureManager *alpha.FeatureManager,
+	containerAppService containerapps.ContainerAppService,
 ) actions.Action {
 	return &downAction{
 		flags:               flags,
@@ -94,6 +97,7 @@ func newDownAction(
 		userProfileService:  userProfileService,
 		subResolver:         subResolver,
 		alphaFeatureManager: alphaFeatureManager,
+		containerAppService: containerAppService,
 	}
 }
 
@@ -163,6 +167,7 @@ func createProvisioningManager(ctx context.Context, a *downAction, console input
 		a.userProfileService,
 		a.subResolver,
 		a.alphaFeatureManager,
+		a.containerAppService,
 	)
 	return infraManager, err
 }

@@ -8,8 +8,8 @@
     "location": {
       "value": "${AZURE_LOCATION}"
     },
-    "provisionContainerApp": {
-      "value": "${AZURE_PROVISION_CONTAINER_APP}"
+    "imageName": {
+      "value": "${SERVICE_WEB_IMAGE_NAME:=$(containerAppImage web main)}"
     }
   }
 }

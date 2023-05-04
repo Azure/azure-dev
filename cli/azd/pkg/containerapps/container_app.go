@@ -30,6 +30,12 @@ type ContainerAppService interface {
 		appName string,
 		imageName string,
 	) error
+	GetContainerApp(
+		ctx context.Context,
+		subscriptionId string,
+		resourceGroupName string,
+		appName string,
+	) (*armappcontainers.ContainerApp, error)
 }
 
 // NewContainerAppService creates a new ContainerAppService
@@ -64,7 +70,7 @@ func (cas *containerAppService) GetIngressConfiguration(
 	resourceGroup string,
 	appName string,
 ) (*ContainerAppIngressConfiguration, error) {
-	containerApp, err := cas.getContainerApp(ctx, subscriptionId, resourceGroup, appName)
+	containerApp, err := cas.GetContainerApp(ctx, subscriptionId, resourceGroup, appName)
 	if err != nil {
 		return nil, fmt.Errorf("failed retrieving container app properties: %w", err)
 	}
@@ -92,7 +98,7 @@ func (cas *containerAppService) AddRevision(
 	appName string,
 	imageName string,
 ) error {
-	containerApp, err := cas.getContainerApp(ctx, subscriptionId, resourceGroupName, appName)
+	containerApp, err := cas.GetContainerApp(ctx, subscriptionId, resourceGroupName, appName)
 	if err != nil {
 		return fmt.Errorf("getting container app: %w", err)
 	}
@@ -200,7 +206,7 @@ func (cas *containerAppService) setTrafficWeights(
 	return nil
 }
 
-func (cas *containerAppService) getContainerApp(
+func (cas *containerAppService) GetContainerApp(
 	ctx context.Context,
 	subscriptionId string,
 	resourceGroupName string,

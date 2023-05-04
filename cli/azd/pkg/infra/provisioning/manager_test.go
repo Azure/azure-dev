@@ -70,6 +70,7 @@ func TestProvisionInitializesEnvironment(t *testing.T) {
 		),
 		&mockSubscriptionTenantResolver{},
 		mockContext.AlphaFeaturesManager,
+		nil,
 	)
 	require.NoError(t, err)
 
@@ -106,6 +107,7 @@ func TestManagerPlan(t *testing.T) {
 		),
 		&mockSubscriptionTenantResolver{},
 		mockContext.AlphaFeaturesManager,
+		nil,
 	)
 	require.NoError(t, err)
 
@@ -142,6 +144,7 @@ func TestManagerGetState(t *testing.T) {
 		),
 		&mockSubscriptionTenantResolver{},
 		mockContext.AlphaFeaturesManager,
+		nil,
 	)
 	require.NoError(t, err)
 
@@ -177,6 +180,7 @@ func TestManagerDeploy(t *testing.T) {
 		),
 		&mockSubscriptionTenantResolver{},
 		mockContext.AlphaFeaturesManager,
+		nil,
 	)
 	require.NoError(t, err)
 
@@ -213,6 +217,7 @@ func TestManagerDestroyWithPositiveConfirmation(t *testing.T) {
 		),
 		&mockSubscriptionTenantResolver{},
 		mockContext.AlphaFeaturesManager,
+		nil,
 	)
 	require.NoError(t, err)
 
@@ -256,6 +261,7 @@ func TestManagerDestroyWithNegativeConfirmation(t *testing.T) {
 		),
 		&mockSubscriptionTenantResolver{},
 		mockContext.AlphaFeaturesManager,
+		nil,
 	)
 	require.NoError(t, err)
 

@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
+	"github.com/azure/azure-dev/cli/azd/pkg/containerapps"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
@@ -207,6 +208,7 @@ func init() {
 			_ exec.CommandRunner,
 			prompters Prompters,
 			_ CurrentPrincipalIdProvider,
+			_ containerapps.ContainerAppService,
 		) (Provider, error) {
 			return NewTestProvider(env, projectPath, console, options, prompters), nil
 		},

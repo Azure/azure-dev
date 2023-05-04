@@ -12,6 +12,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
+	"github.com/azure/azure-dev/cli/azd/pkg/containerapps"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -341,6 +342,7 @@ type envRefreshAction struct {
 	alphaFeatureManager        *alpha.FeatureManager
 	userProfileService         *azcli.UserProfileService
 	subscriptionTenantResolver account.SubscriptionTenantResolver
+	containerAppService        containerapps.ContainerAppService
 }
 
 func newEnvRefreshAction(
@@ -358,6 +360,7 @@ func newEnvRefreshAction(
 	alphaFeatureManager *alpha.FeatureManager,
 	userProfileService *azcli.UserProfileService,
 	subscriptionTenantResolver account.SubscriptionTenantResolver,
+	containerAppService containerapps.ContainerAppService,
 ) actions.Action {
 	return &envRefreshAction{
 		azdCtx:                     azdCtx,
@@ -374,6 +377,7 @@ func newEnvRefreshAction(
 		userProfileService:         userProfileService,
 		subscriptionTenantResolver: subscriptionTenantResolver,
 		alphaFeatureManager:        alphaFeatureManager,
+		containerAppService:        containerAppService,
 	}
 }
 
@@ -395,6 +399,7 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 		ef.userProfileService,
 		ef.subscriptionTenantResolver,
 		ef.alphaFeatureManager,
+		ef.containerAppService,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("creating provisioning manager: %w", err)

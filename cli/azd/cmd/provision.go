@@ -9,6 +9,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
+	"github.com/azure/azure-dev/cli/azd/pkg/containerapps"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -89,6 +90,7 @@ type provisionAction struct {
 	userProfileService  *azcli.UserProfileService
 	subResolver         account.SubscriptionTenantResolver
 	alphaFeatureManager *alpha.FeatureManager
+	containerAppService containerapps.ContainerAppService
 }
 
 func newProvisionAction(
@@ -107,6 +109,7 @@ func newProvisionAction(
 	userProfileService *azcli.UserProfileService,
 	subResolver account.SubscriptionTenantResolver,
 	alphaFeatureManager *alpha.FeatureManager,
+	containerAppService containerapps.ContainerAppService,
 ) actions.Action {
 	return &provisionAction{
 		flags:               flags,
@@ -124,6 +127,7 @@ func newProvisionAction(
 		userProfileService:  userProfileService,
 		subResolver:         subResolver,
 		alphaFeatureManager: alphaFeatureManager,
+		containerAppService: containerAppService,
 	}
 }
 
@@ -161,6 +165,7 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		p.userProfileService,
 		p.subResolver,
 		p.alphaFeatureManager,
+		p.containerAppService,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("creating provisioning manager: %w", err)

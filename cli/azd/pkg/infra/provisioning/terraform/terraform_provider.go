@@ -22,6 +22,7 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
+	"github.com/azure/azure-dev/cli/azd/pkg/containerapps"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
@@ -732,6 +733,7 @@ func init() {
 			commandRunner exec.CommandRunner,
 			prompters Prompters,
 			curPrincipal CurrentPrincipalIdProvider,
+			_ containerapps.ContainerAppService,
 		) (Provider, error) {
 			return NewTerraformProvider(ctx, env, projectPath, options, console, commandRunner, curPrincipal, prompters), nil
 		},

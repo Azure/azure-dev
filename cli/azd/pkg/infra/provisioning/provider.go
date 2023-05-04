@@ -12,6 +12,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
+	"github.com/azure/azure-dev/cli/azd/pkg/containerapps"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -54,6 +55,7 @@ type NewProviderFn func(
 	commandRunner exec.CommandRunner,
 	prompters Prompters,
 	principalProvider CurrentPrincipalIdProvider,
+	containerAppService containerapps.ContainerAppService,
 ) (Provider, error)
 
 var (
@@ -158,6 +160,7 @@ func NewProvider(
 	prompters Prompters,
 	principalProvider CurrentPrincipalIdProvider,
 	alphaFeatureManager *alpha.FeatureManager,
+	containerAppService containerapps.ContainerAppService,
 ) (Provider, error) {
 	var provider Provider
 
@@ -182,7 +185,9 @@ func NewProvider(
 	}
 
 	provider, err := newProviderFn(
-		ctx, env, projectPath, infraOptions, console, azCli, commandRunner, prompters, principalProvider)
+		ctx, env, projectPath, infraOptions, console, azCli,
+		commandRunner, prompters, principalProvider, containerAppService,
+	)
 	if err != nil {
 		return nil, fmt.Errorf("error creating provider for type '%s' : %w", infraOptions.Provider, err)
 	}

@@ -11,6 +11,9 @@ param location string
 @description('A time to mark on created resource groups, so they can be cleaned up via an automated process.')
 param deleteAfterTime string = dateTimeAdd(utcNow('o'), 'PT1H')
 
+@description('The name of the image to deploy into the docker container.')
+param imageName string = ''
+
 var tags = { 'azd-env-name': environmentName, DeleteAfter: deleteAfterTime }
 
 resource rg 'Microsoft.Resources/resourceGroups@2021-04-01' = {
@@ -37,7 +40,7 @@ module web 'web.bicep' = {
     containerAppsEnvironmentName: resources.outputs.containerAppsEnvironmentName
     environmentName: environmentName
     location: location
-    imageName: 'nginx:latest'
+    imageName: empty(imageName) ? 'nginx:latest' : imageName
   }
 }
 

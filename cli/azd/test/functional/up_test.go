@@ -255,6 +255,21 @@ func Test_CLI_Up_Down_ContainerApp(t *testing.T) {
 	err = probeServiceHealth(t, ctx, url, expectedTestAppResponse)
 	require.NoError(t, err)
 
+	// Unset the service image from the enviornment, to ensure that when we provision again, the live value is
+	// loaded from Azure instead of us resetting the container image back to nginx.
+	//
+	// This mimics cases in CI where `SERVICE_WEB_IMAGE_NAME is not persisted across runs`.
+	delete(env, "SERVICE_WEB_IMAGE_NAME")
+	err = godotenv.Write(env, filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
+	require.NoError(t, err)
+
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "infra", "create")
+	require.NoError(t, err)
+
+	// Ensure that the service did not reset by checking to see we still have our expected response.
+	err = probeServiceHealth(t, ctx, url, expectedTestAppResponse)
+	require.NoError(t, err)
+
 	_, err = cli.RunCommand(ctx, "infra", "delete", "--force", "--purge")
 	require.NoError(t, err)
 }

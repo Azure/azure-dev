@@ -32,13 +32,16 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/cmdsubst"
+	"github.com/azure/azure-dev/cli/azd/pkg/containerapps"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
@@ -62,14 +65,15 @@ type BicepDeploymentDetails struct {
 
 // BicepProvider exposes infrastructure provisioning using Azure Bicep templates
 type BicepProvider struct {
-	env          *environment.Environment
-	projectPath  string
-	options      Options
-	console      input.Console
-	bicepCli     bicep.BicepCli
-	azCli        azcli.AzCli
-	prompters    Prompters
-	curPrincipal CurrentPrincipalIdProvider
+	env                 *environment.Environment
+	projectPath         string
+	options             Options
+	console             input.Console
+	bicepCli            bicep.BicepCli
+	azCli               azcli.AzCli
+	prompters           Prompters
+	curPrincipal        CurrentPrincipalIdProvider
+	containerAppService containerapps.ContainerAppService
 }
 
 // Name gets the name of the infra provider
@@ -886,12 +890,27 @@ func (p *BicepProvider) loadParameters(
 		return nil, fmt.Errorf("substituting environment variables inside parameter file: %w", err)
 	}
 
-	if cmdsubst.ContainsCommandInvocation(replaced, cmdsubst.SecretOrRandomPasswordCommandName) {
-		cmdExecutor := cmdsubst.NewSecretOrRandomPasswordExecutor(p.azCli, p.env.GetSubscriptionId())
+	if cmdsubst.ContainsCommandInvocation(replaced, cmdsubst.SecretOrRandomPasswordCommandName) ||
+		cmdsubst.ContainsCommandInvocation(replaced, cmdsubst.ContainerAppImageCommandName) {
+
+		projectConfig, err := project.Load(ctx, filepath.Join(p.projectPath, azdcontext.ProjectFileName))
+		if err != nil {
+			return nil, fmt.Errorf("reading project: %w", err)
+		}
+
+		cmdExecutor := cmdsubst.Join(
+			cmdsubst.NewSecretOrRandomPasswordExecutor(p.azCli, p.env.GetSubscriptionId()),
+			cmdsubst.NewContainerAppImageExecutor(
+				project.NewResourceManager(p.env, p.azCli),
+				p.containerAppService,
+				p.env.GetSubscriptionId(),
+				projectConfig.Services,
+			))
 		replaced, err = cmdsubst.Eval(ctx, replaced, cmdExecutor)
 		if err != nil {
 			return nil, fmt.Errorf("substituting command output inside parameter file: %w", err)
 		}
+
 	}
 
 	var armParameters azure.ArmParameterFile
@@ -1138,6 +1157,7 @@ func NewBicepProvider(
 	console input.Console,
 	prompters Prompters,
 	curPrincipal CurrentPrincipalIdProvider,
+	containerAppService containerapps.ContainerAppService,
 ) (*BicepProvider, error) {
 	bicepCli, err := bicep.NewBicepCli(ctx, console, commandRunner)
 	if err != nil {
@@ -1150,14 +1170,15 @@ func NewBicepProvider(
 	}
 
 	return &BicepProvider{
-		env:          env,
-		projectPath:  projectPath,
-		options:      infraOptions,
-		console:      console,
-		bicepCli:     bicepCli,
-		azCli:        azCli,
-		prompters:    prompters,
-		curPrincipal: curPrincipal,
+		env:                 env,
+		projectPath:         projectPath,
+		options:             infraOptions,
+		console:             console,
+		bicepCli:            bicepCli,
+		azCli:               azCli,
+		prompters:           prompters,
+		curPrincipal:        curPrincipal,
+		containerAppService: containerAppService,
 	}, nil
 }
 
@@ -1174,8 +1195,10 @@ func init() {
 			commandRunner exec.CommandRunner,
 			prompters Prompters,
 			curPrincipal CurrentPrincipalIdProvider,
+			containerAppService containerapps.ContainerAppService,
 		) (Provider, error) {
-			return NewBicepProvider(ctx, azCli, env, projectPath, options, commandRunner, console, prompters, curPrincipal)
+			return NewBicepProvider(
+				ctx, azCli, env, projectPath, options, commandRunner, console, prompters, curPrincipal, containerAppService)
 		},
 	)
 

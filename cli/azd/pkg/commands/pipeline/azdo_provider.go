@@ -523,18 +523,16 @@ func (p *AzdoScmProvider) preventGitPush(
 	return false, nil
 }
 
-// git config --local url."https://PAT@AzdoHost/".insteadOf "https://AzdoOrg@AzdoHost/"
-// git config --local --remove-section url."https://PAT@AzdoHost/"
-
 func (p *AzdoScmProvider) additionalScmConfigurationBeforePush(
 	ctx context.Context,
 	gitRepo *gitRepositoryDetails,
 	remoteName string,
 	branchName string) {
-	// use git config insteadOf (https://git-scm.com/docs/git-config#Documentation/git-config.txt-urlltbasegtinsteadOf)
-	// and set url+pat for the remote to ensure a successful `git push` without prompting for credentials.
-	// Ensure setting `defer additionalScmConfigurationAfterPush()` after calling this method to ensure the configuration
-	// is removed
+
+	// Note:
+	// using "git config insteadOf" (https://git-scm.com/docs/git-config#Documentation/git-config.txt-urlltbasegtinsteadOf)
+	// to: set PAT+url for the remote. This ensure a successful `git push` without prompting for credentials.
+	// remember to: use `defer additionalScmConfigurationAfterPush()` after calling this method to remove configuration
 
 	if !strings.Contains(gitRepo.remote, "https://") {
 		// PAT is only for HTTPS
@@ -542,17 +540,31 @@ func (p *AzdoScmProvider) additionalScmConfigurationBeforePush(
 	}
 
 	remoteAndPatUrl, originalUrl := gitInsteadOfConfig(ctx, p.Env, p.console, gitRepo)
-	runArgs := exec.NewRunArgs("git",
-		"-C",
-		gitRepo.gitProjectPath,
-		"config",
-		"--local",
-		fmt.Sprintf("%s.insteadOf", remoteAndPatUrl),
-		originalUrl)
+	runArgs := exec.NewRunArgsWithSensitiveData("git",
+		[]string{
+			"-C",
+			gitRepo.gitProjectPath,
+			"config",
+			"--local",
+			fmt.Sprintf("%s.insteadOf", remoteAndPatUrl),
+			originalUrl,
+		},
+		[]string{
+			azdoPat(ctx, p.Env, p.console),
+		},
+	)
 	if _, err := p.commandRunner.Run(ctx, runArgs); err != nil {
 		// this error should not fail the operation
 		log.Printf("Error setting git config: insteadOf url: %s", err.Error())
 	}
+}
+
+func azdoPat(ctx context.Context, env *environment.Environment, console input.Console) string {
+	pat, _, err := azdo.EnsurePatExists(ctx, env, console)
+	if err != nil {
+		log.Printf("Error getting PAT when it should be found: %s", err.Error())
+	}
+	return pat
 }
 
 func gitInsteadOfConfig(
@@ -560,13 +572,9 @@ func gitInsteadOfConfig(
 	env *environment.Environment,
 	console input.Console,
 	gitRepo *gitRepositoryDetails) (string, string) {
-	pat, _, err := azdo.EnsurePatExists(ctx, env, console)
-	if err != nil {
-		log.Printf("Error getting PAT when it should be found: %s", err.Error())
-	}
 
 	azdoRepoDetails := gitRepo.details.(*AzdoRepositoryDetails)
-	remoteAndPatUrl := fmt.Sprintf("url.https://%s@%s/", pat, azdo.AzDoHostName)
+	remoteAndPatUrl := fmt.Sprintf("url.https://%s@%s/", azdoPat(ctx, env, console), azdo.AzDoHostName)
 	originalUrl := fmt.Sprintf("https://%s@%s/", azdoRepoDetails.orgName, azdo.AzDoHostName)
 	return remoteAndPatUrl, originalUrl
 }

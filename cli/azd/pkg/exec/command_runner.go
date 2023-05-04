@@ -91,7 +91,8 @@ func (r *commandRunner) Run(ctx context.Context, args RunArgs) (RunResult, error
 		}
 	}
 
-	log.Printf("Run exec: '%s %s'", args.Cmd, redactSensitiveData(strings.Join(args.Args, " ")))
+	log.Printf("Run exec: '%s %s'", args.Cmd, redactSensitiveData(strings.Join(
+		redactSensitiveArgs(args.Args, args.SensitiveData), " ")))
 
 	if args.Debug && len(args.Env) > 0 {
 		log.Println("Additional env:")
@@ -255,6 +256,16 @@ func newCmdTree(ctx context.Context, cmd string, args []string, useShell bool, i
 type redactData struct {
 	matchString   *regexp.Regexp
 	replaceString string
+}
+
+func redactSensitiveArgs(args []string, sensitiveDataMatch []string) []string {
+	redactedArgs := make([]string, len(args))
+	for _, arg := range args {
+		for _, sensitiveData := range sensitiveDataMatch {
+			redactedArgs = append(redactedArgs, strings.ReplaceAll(arg, sensitiveData, "***"))
+		}
+	}
+	return redactedArgs
 }
 
 func redactSensitiveData(msg string) string {

@@ -24,7 +24,7 @@ func TestTemplateList(t *testing.T) {
 	_, err := templateList.Run(context.Background())
 	require.NoError(t, err)
 
-	// Should be parsable JSON and non-empty
+	// The result should be parsable JSON and non-empty
 	storedTemplates := make([]templates.Template, 0)
 	err = json.Unmarshal(result.Bytes(), &storedTemplates)
 	require.NoError(t, err)

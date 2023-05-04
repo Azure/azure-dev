@@ -21,6 +21,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 )
 
 // subareaProvider defines the base behavior from any pipeline provider
@@ -77,20 +78,11 @@ type ScmProvider interface {
 		remoteName string,
 		branchName string) (bool, error)
 	//Hook function to allow SCM providers to handle scenarios after the git push is complete
-	postGitPush(ctx context.Context,
+	GitPush(ctx context.Context,
+		gitCli git.GitCli,
 		gitRepo *gitRepositoryDetails,
 		remoteName string,
 		branchName string) error
-	additionalScmConfigurationBeforePush(
-		ctx context.Context,
-		gitRepo *gitRepositoryDetails,
-		remoteName string,
-		branchName string)
-	additionalScmConfigurationAfterPush(
-		ctx context.Context,
-		gitRepo *gitRepositoryDetails,
-		remoteName string,
-		branchName string)
 }
 
 type CiPipeline struct {

@@ -188,12 +188,13 @@ func (p *GitHubScmProvider) preventGitPush(
 	return false, nil
 }
 
-func (p *GitHubScmProvider) postGitPush(
+func (p *GitHubScmProvider) GitPush(
 	ctx context.Context,
+	gitCli git.GitCli,
 	gitRepo *gitRepositoryDetails,
 	remoteName string,
 	branchName string) error {
-	return nil
+	return gitCli.PushUpstream(ctx, gitRepo.gitProjectPath, remoteName, branchName)
 }
 
 // enum type for taking a choice after finding GitHub actions disabled.
@@ -658,19 +659,6 @@ func applyFederatedCredentials(
 	}
 
 	return nil
-}
-
-func (p *GitHubScmProvider) additionalScmConfigurationBeforePush(
-	ctx context.Context,
-	gitRepo *gitRepositoryDetails,
-	remoteName string,
-	branchName string) {
-}
-func (p *GitHubScmProvider) additionalScmConfigurationAfterPush(
-	ctx context.Context,
-	gitRepo *gitRepositoryDetails,
-	remoteName string,
-	branchName string) {
 }
 
 // configurePipeline is a no-op for GitHub, as the pipeline is automatically

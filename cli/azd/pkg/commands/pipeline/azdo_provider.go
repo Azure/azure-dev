@@ -523,43 +523,6 @@ func (p *AzdoScmProvider) preventGitPush(
 	return false, nil
 }
 
-func (p *AzdoScmProvider) additionalScmConfigurationBeforePush(
-	ctx context.Context,
-	gitRepo *gitRepositoryDetails,
-	remoteName string,
-	branchName string) {
-
-	// Note:
-	// using "git config insteadOf" (https://git-scm.com/docs/git-config#Documentation/git-config.txt-urlltbasegtinsteadOf)
-	// to: set PAT+url for the remote. This ensure a successful `git push` without prompting for credentials.
-	// remember to: use `defer additionalScmConfigurationAfterPush()` after calling this method to remove configuration
-
-	if !strings.Contains(gitRepo.remote, "https://") {
-		// PAT is only for HTTPS
-		return
-	}
-
-	pat := azdoPat(ctx, p.Env, p.console)
-	remoteAndPatUrl, originalUrl := gitInsteadOfConfig(ctx, pat, gitRepo)
-	runArgs := exec.NewRunArgsWithSensitiveData("git",
-		[]string{
-			"-C",
-			gitRepo.gitProjectPath,
-			"config",
-			"--local",
-			fmt.Sprintf("%s.insteadOf", remoteAndPatUrl),
-			originalUrl,
-		},
-		[]string{
-			pat,
-		},
-	)
-	if _, err := p.commandRunner.Run(ctx, runArgs); err != nil {
-		// this error should not fail the operation
-		log.Printf("Error setting git config: insteadOf url: %s", err.Error())
-	}
-}
-
 func azdoPat(ctx context.Context, env *environment.Environment, console input.Console) string {
 	pat, _, err := azdo.EnsurePatExists(ctx, env, console)
 	if err != nil {
@@ -579,45 +542,45 @@ func gitInsteadOfConfig(
 	return remoteAndPatUrl, originalUrl
 }
 
-func (p *AzdoScmProvider) additionalScmConfigurationAfterPush(
+// Push code and queue pipeline
+func (p *AzdoScmProvider) GitPush(
 	ctx context.Context,
-	gitRepo *gitRepositoryDetails,
-	remoteName string,
-	branchName string) {
-
-	if !strings.Contains(gitRepo.remote, "https://") {
-		// PAT is only for HTTPS
-		return
-	}
-
-	pat := azdoPat(ctx, p.Env, p.console)
-	remoteAndPatUrl, _ := gitInsteadOfConfig(ctx, pat, gitRepo)
-	runArgs := exec.NewRunArgsWithSensitiveData("git",
-		[]string{
-			"-C", gitRepo.gitProjectPath, "config", "--local", "--remove-section", remoteAndPatUrl},
-		[]string{
-			pat,
-		})
-	if _, err := p.commandRunner.Run(ctx, runArgs); err != nil {
-		// this error should not fail the operation
-		log.Printf("Error removing git config: insteadOf url: %s", err.Error())
-	}
-}
-
-// hook function that fires after a git push
-// allows the provider to perform certain tasks after push including
-// cleanup on the remote url, creating the build policy for PRs and queuing an initial deployment
-func (p *AzdoScmProvider) postGitPush(
-	ctx context.Context,
+	gitCli git.GitCli,
 	gitRepo *gitRepositoryDetails,
 	remoteName string,
 	branchName string) error {
 
+	// ** Push code with PAT
+	// This is the same as gitCli.PushUpstream(), but it adds `-c url.PAT+HostName.insteadOf=HostName` to execute
+	// git push with the PAT to authenticate
+	pat := azdoPat(ctx, p.Env, p.console)
+	remoteAndPatUrl, originalUrl := gitInsteadOfConfig(ctx, pat, gitRepo)
+	runArgs := exec.NewRunArgsWithSensitiveData("git",
+		[]string{
+			"-C",
+			gitRepo.gitProjectPath,
+			"-c",
+			fmt.Sprintf("%s.insteadOf=%s", remoteAndPatUrl, originalUrl),
+			"push",
+			"--set-upstream",
+			"--quiet",
+			remoteName,
+			branchName,
+		},
+		[]string{
+			pat,
+		},
+	).WithInteractive(true)
+	if _, err := p.commandRunner.Run(ctx, runArgs); err != nil {
+		// this error should not fail the operation
+		log.Printf("Error setting git config: insteadOf url: %s", err.Error())
+	}
+
+	// *** Queue pipeline
 	connection, err := p.getAzdoConnection(ctx)
 	if err != nil {
 		return err
 	}
-
 	err = azdo.CreateBuildPolicy(
 		ctx,
 		connection,

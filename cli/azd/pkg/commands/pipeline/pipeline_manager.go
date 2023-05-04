@@ -247,7 +247,7 @@ func validateDependencyInjection(ctx context.Context, manager *PipelineManager) 
 }
 
 // pushGitRepo commit all changes in the git project and push it to upstream.
-func (i *PipelineManager) pushGitRepo(ctx context.Context, currentBranch string) error {
+func (i *PipelineManager) pushGitRepo(ctx context.Context, gitRepoInfo *gitRepositoryDetails, currentBranch string) error {
 	gitCli := git.NewGitCli(i.commandRunner)
 
 	if err := gitCli.AddFile(ctx, i.AzdCtx.ProjectDirectory(), "."); err != nil {
@@ -263,7 +263,12 @@ func (i *PipelineManager) pushGitRepo(ctx context.Context, currentBranch string)
 	// Then, on the next intent to push code, there should be a prompt for credentials.
 	// Due to this, we use retry here, so we can run the second intent to prompt for credentials one more time
 	return retry.Do(ctx, retry.WithMaxRetries(3, retry.NewConstant(100*time.Millisecond)), func(ctx context.Context) error {
-		if err := gitCli.PushUpstream(ctx, i.AzdCtx.ProjectDirectory(), i.PipelineRemoteName, currentBranch); err != nil {
+		if err := i.ScmProvider.GitPush(
+			ctx,
+			gitCli,
+			gitRepoInfo,
+			i.PipelineRemoteName,
+			currentBranch); err != nil {
 			return retry.RetryableError(fmt.Errorf("pushing changes: %w", err))
 		}
 		return nil
@@ -384,26 +389,12 @@ func (manager *PipelineManager) Configure(ctx context.Context) (
 	}
 
 	if doPush {
-		// ScmProvider can use this function for setting up things like authentication during the scope of azd
-		// The configuration is expected to be reverted by additionalScmConfigurationAfterPush as a defer action
-		// regardless of the operation result. This should ensure any additional configuration will persist only
-		// while while config() method finishes
-		manager.ScmProvider.additionalScmConfigurationBeforePush(ctx,
-			gitRepoInfo,
-			manager.PipelineRemoteName,
-			currentBranch)
-		defer manager.ScmProvider.additionalScmConfigurationAfterPush(ctx,
-			gitRepoInfo,
-			manager.PipelineRemoteName,
-			currentBranch)
-
-		err = manager.pushGitRepo(ctx, currentBranch)
+		err = manager.pushGitRepo(ctx, gitRepoInfo, currentBranch)
 		if err != nil {
 			return result, fmt.Errorf("git push: %w", err)
 		}
 
-		// The spinner can't run during `pushing changes` because it would block the console IN/OUT and git might
-		// need to request credentials.
+		// The spinner can't run during `pushing changes` the next UX messages are purely simulated
 		displayMsg := "Pushing changes"
 		manager.console.Message(ctx, "") // new line before the step
 		manager.console.ShowSpinner(ctx, displayMsg, input.Step)
@@ -412,15 +403,7 @@ func (manager *PipelineManager) Configure(ctx context.Context) (
 		displayMsg = "Queuing pipeline"
 		manager.console.ShowSpinner(ctx, displayMsg, input.Step)
 		gitRepoInfo.pushStatus = true
-		err = manager.ScmProvider.postGitPush(
-			ctx,
-			gitRepoInfo,
-			manager.PipelineRemoteName,
-			currentBranch)
 		manager.console.StopSpinner(ctx, displayMsg, input.GetStepResultFormat(err))
-		if err != nil {
-			return result, fmt.Errorf("post git push hook: %w", err)
-		}
 	} else {
 		manager.console.Message(ctx,
 			fmt.Sprintf(

@@ -20,10 +20,11 @@
     "customizations": {
         "vscode": {
             "extensions": [
-                "ms-azuretools.azure-dev",
+                "GitHub.vscode-github-actions",
                 "hashicorp.terraform",
-                "ms-azuretools.vscode-docker",
-                "ms-azuretools.vscode-azurefunctions"
+                "ms-azuretools.azure-dev",
+                "ms-azuretools.vscode-azurefunctions",
+                "ms-azuretools.vscode-docker"
                 // Include other VSCode extensions if needed
                 // Right click on an extension inside VSCode to add directly to devcontainer.json, or copy the extension ID
             ]

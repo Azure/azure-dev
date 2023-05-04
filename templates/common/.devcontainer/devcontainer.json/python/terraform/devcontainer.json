@@ -23,12 +23,13 @@
     "customizations": {
         "vscode": {
             "extensions": [
-                "ms-azuretools.azure-dev",
+                "GitHub.vscode-github-actions",
                 "hashicorp.terraform",
+                "ms-azuretools.azure-dev",
+                "ms-azuretools.vscode-azurefunctions",
                 "ms-azuretools.vscode-docker",
-                "ms-vscode.vscode-node-azure-pack",
                 "ms-python.python",
-                "ms-azuretools.vscode-azurefunctions"
+                "ms-vscode.vscode-node-azure-pack"
             ]
         }
     },

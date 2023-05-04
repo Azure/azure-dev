@@ -21,6 +21,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 )
 
 // subareaProvider defines the base behavior from any pipeline provider
@@ -77,7 +78,8 @@ type ScmProvider interface {
 		remoteName string,
 		branchName string) (bool, error)
 	//Hook function to allow SCM providers to handle scenarios after the git push is complete
-	postGitPush(ctx context.Context,
+	GitPush(ctx context.Context,
+		gitCli git.GitCli,
 		gitRepo *gitRepositoryDetails,
 		remoteName string,
 		branchName string) error
@@ -224,7 +226,7 @@ func DetectProviders(
 		_ = savePipelineProviderToEnv(azdoLabel, env)
 		log.Printf("Using pipeline provider: %s", output.WithHighLightFormat("Azure DevOps"))
 		scmProvider := createAzdoScmProvider(env, azdContext, commandRunner, console)
-		ciProvider := createAzdoCiProvider(env, azdContext, console)
+		ciProvider := createAzdoCiProvider(env, azdContext, commandRunner, console)
 
 		return scmProvider, ciProvider, nil
 	}
@@ -248,12 +250,16 @@ func savePipelineProviderToEnv(provider string, env *environment.Environment) er
 }
 
 func createAzdoCiProvider(
-	env *environment.Environment, azdCtx *azdcontext.AzdContext, console input.Console,
+	env *environment.Environment,
+	azdCtx *azdcontext.AzdContext,
+	commandRunner exec.CommandRunner,
+	console input.Console,
 ) *AzdoCiProvider {
 	return &AzdoCiProvider{
-		Env:        env,
-		AzdContext: azdCtx,
-		console:    console,
+		Env:           env,
+		AzdContext:    azdCtx,
+		console:       console,
+		commandRunner: commandRunner,
 	}
 }
 

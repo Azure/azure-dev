@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
@@ -90,14 +91,14 @@ func (rm *resourceManager) GetResourceGroupName(
 // GetServiceResources finds azure service resources targeted by the service.
 //
 // If an explicit `ResourceName` is specified in `azure.yaml`, a resource with that name is searched for.
-// Otherwise, searches for resources with 'azd-service-name' tag set to the service key.
+// Otherwise, searches for resources with a [azure.TagKeyAzdServiceName] tag set to the service key.
 func (rm *resourceManager) GetServiceResources(
 	ctx context.Context,
 	subscriptionId string,
 	resourceGroupName string,
 	serviceConfig *ServiceConfig,
 ) ([]azcli.AzCliResource, error) {
-	filter := fmt.Sprintf("tagName eq '%s' and tagValue eq '%s'", defaultServiceTag, serviceConfig.Name)
+	filter := fmt.Sprintf("tagName eq '%s' and tagValue eq '%s'", azure.TagKeyAzdServiceName, serviceConfig.Name)
 
 	subst, err := serviceConfig.ResourceName.Envsubst(rm.env.Getenv)
 	if err != nil {
@@ -144,7 +145,7 @@ func (rm *resourceManager) GetServiceResource(
 			err := fmt.Errorf(
 				//nolint:lll
 				"unable to find a resource tagged with '%s: %s'. Ensure the service resource is correctly tagged in your infrastructure configuration, and rerun %s",
-				defaultServiceTag,
+				azure.TagKeyAzdServiceName,
 				serviceConfig.Name,
 				rerunCommand,
 			)
@@ -155,7 +156,7 @@ func (rm *resourceManager) GetServiceResource(
 			return azcli.AzCliResource{}, fmt.Errorf(
 				//nolint:lll
 				"expecting only '1' resource tagged with '%s: %s', but found '%d'. Ensure a unique service resource is correctly tagged in your infrastructure configuration, and rerun %s",
-				defaultServiceTag,
+				azure.TagKeyAzdServiceName,
 				serviceConfig.Name,
 				len(resources),
 				rerunCommand,

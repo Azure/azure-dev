@@ -17,7 +17,6 @@ const EnvironmentDirectoryName = ".azure"
 const DotEnvFileName = ".env"
 const ConfigFileName = "config.json"
 const ConfigFileVersion = 1
-const InfraDirectoryName = "infra"
 
 type AzdContext struct {
 	projectDirectory string
@@ -39,10 +38,6 @@ func (c *AzdContext) EnvironmentDirectory() string {
 	return filepath.Join(c.ProjectDirectory(), EnvironmentDirectoryName)
 }
 
-func (c *AzdContext) InfrastructureDirectory() string {
-	return filepath.Join(c.ProjectDirectory(), InfraDirectoryName)
-}
-
 func (c *AzdContext) GetDefaultProjectName() string {
 	return filepath.Base(c.ProjectDirectory())
 }
@@ -57,10 +52,6 @@ func (c *AzdContext) EnvironmentRoot(name string) string {
 
 func (c *AzdContext) GetEnvironmentWorkDirectory(name string) string {
 	return filepath.Join(c.EnvironmentRoot(name), "wd")
-}
-
-func (c *AzdContext) GetInfrastructurePath() string {
-	return filepath.Join(c.ProjectDirectory(), InfraDirectoryName)
 }
 
 func (c *AzdContext) ListEnvironments() ([]contracts.EnvListEnvironment, error) {

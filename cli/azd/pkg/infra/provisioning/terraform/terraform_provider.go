@@ -592,10 +592,6 @@ func (t *TerraformProvider) getIdForManagedResource(r terraformResource) (string
 // Gets the path to the project parameters file path
 func (t *TerraformProvider) parametersTemplateFilePath() string {
 	infraPath := t.options.Path
-	if strings.TrimSpace(infraPath) == "" {
-		infraPath = "infra"
-	}
-
 	parametersFilename := fmt.Sprintf("%s.tfvars.json", t.options.Module)
 	return filepath.Join(t.projectPath, infraPath, parametersFilename)
 }
@@ -603,20 +599,12 @@ func (t *TerraformProvider) parametersTemplateFilePath() string {
 // Gets the path to the project backend config file path
 func (t *TerraformProvider) backendConfigTemplateFilePath() string {
 	infraPath := t.options.Path
-	if strings.TrimSpace(infraPath) == "" {
-		infraPath = "infra"
-	}
-
 	return filepath.Join(t.projectPath, infraPath, "provider.conf.json")
 }
 
 // Gets the folder path to the specified module
 func (t *TerraformProvider) modulePath() string {
 	infraPath := t.options.Path
-	if strings.TrimSpace(infraPath) == "" {
-		infraPath = "infra"
-	}
-
 	return filepath.Join(t.projectPath, infraPath)
 }
 

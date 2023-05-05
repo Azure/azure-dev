@@ -62,7 +62,7 @@ func Test_CLI_Init_CreatesEnvAndProjectFile(t *testing.T) {
 
 	_, err := cli.RunCommandWithStdIn(
 		ctx,
-		"Empty Template\nTESTENV\n",
+		"Minimal\nTESTENV\n",
 		"init",
 	)
 	require.NoError(t, err)

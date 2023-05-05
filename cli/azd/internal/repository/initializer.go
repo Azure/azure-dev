@@ -263,8 +263,8 @@ func parseExecutableFiles(stagedFilesOutput string) ([]string, error) {
 	return executableFiles, nil
 }
 
-// Initializes an empty (bare minimum) azd repository.
-func (i *Initializer) InitializeEmpty(ctx context.Context, azdCtx *azdcontext.AzdContext) error {
+// Initializes a minimal azd project.
+func (i *Initializer) InitializeMinimal(ctx context.Context, azdCtx *azdcontext.AzdContext) error {
 	projectDir := azdCtx.ProjectDirectory()
 	var err error
 

@@ -9,6 +9,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
+	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -392,7 +393,7 @@ func setupMocksForServiceManager(mockContext *mocks.MockContext) {
 				Location: convert.RefOf("eastus2"),
 				Type:     convert.RefOf(string(infra.AzureResourceTypeWebSite)),
 				Tags: map[string]*string{
-					"azd-service-name": convert.RefOf("api"),
+					azure.TagKeyAzdServiceName: convert.RefOf("api"),
 				},
 			},
 		},

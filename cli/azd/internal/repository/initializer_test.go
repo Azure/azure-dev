@@ -287,7 +287,7 @@ func verifyExecutableFilePermissions(t *testing.T,
 	}
 }
 
-func Test_Initializer_InitializeEmpty(t *testing.T) {
+func Test_Initializer_InitializeMinimal(t *testing.T) {
 	type setup struct {
 		projectFile   string
 		gitignoreFile string
@@ -343,7 +343,7 @@ func Test_Initializer_InitializeEmpty(t *testing.T) {
 			console := mockinput.NewMockConsole()
 			realRunner := exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
 			i := NewInitializer(console, git.NewGitCli(realRunner))
-			err := i.InitializeEmpty(context.Background(), azdCtx)
+			err := i.InitializeMinimal(context.Background(), azdCtx)
 			require.NoError(t, err)
 
 			projectFileContent := readFile(t, testDataPath("empty", tt.expected.projectFile))

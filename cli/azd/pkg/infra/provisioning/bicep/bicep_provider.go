@@ -26,6 +26,8 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
@@ -40,6 +42,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
+	"github.com/benbjohnson/clock"
 	"github.com/drone/envsubst"
 	"golang.org/x/exp/maps"
 	"golang.org/x/exp/slices"
@@ -87,11 +90,9 @@ func (p *BicepProvider) State(
 ) *async.InteractiveTaskWithProgress[*StateResult, *StateProgress] {
 	return async.RunInteractiveTaskWithProgress(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*StateResult, *StateProgress]) {
-			target := infra.NewSubscriptionDeployment(
+			scope := infra.NewSubscriptionScope(
 				p.azCli,
-				p.env.GetLocation(),
 				p.env.GetSubscriptionId(),
-				p.env.GetEnvName(),
 			)
 
 			asyncContext.SetProgress(&StateProgress{Message: "Loading Bicep template", Timestamp: time.Now()})
@@ -103,7 +104,7 @@ func (p *BicepProvider) State(
 			}
 
 			asyncContext.SetProgress(&StateProgress{Message: "Retrieving Azure deployment", Timestamp: time.Now()})
-			armDeployment, err := target.Deployment(ctx)
+			armDeployment, err := latestCompletedDeployment(ctx, p.env.GetEnvName(), scope)
 			if err != nil {
 				asyncContext.SetError(fmt.Errorf("retrieving deployment: %w", err))
 				return
@@ -173,7 +174,7 @@ func (p *BicepProvider) Plan(
 				p.azCli,
 				p.env.GetLocation(),
 				p.env.GetSubscriptionId(),
-				p.env.GetEnvName(),
+				deploymentNameForEnv(p.env.GetEnvName(), clock.New()),
 			)
 
 			result := DeploymentPlan{
@@ -189,6 +190,21 @@ func (p *BicepProvider) Plan(
 			p.console.StopSpinner(ctx, "", input.StepDone)
 			asyncContext.SetResult(&result)
 		})
+}
+
+// cArmDeploymentNameLengthMax is the maximum length of the name of a deployment in ARM.
+const cArmDeploymentNameLengthMax = 64
+
+// deploymentNameForEnv creates a name to use for the deployment object for a given environment. It appends the current
+// unix time to the environment name (separated by a hyphen) to provide a unique name for each deployment. If the resulting
+// name is longer than the ARM limit, the longest suffix of the name under the limit is returned.
+func deploymentNameForEnv(envName string, clock clock.Clock) string {
+	name := fmt.Sprintf("%s-%d", envName, clock.Now().Unix())
+	if len(name) <= cArmDeploymentNameLengthMax {
+		return name
+	}
+
+	return name[len(name)-cArmDeploymentNameLengthMax:]
 }
 
 // Provisioning the infrastructure within the specified template
@@ -243,6 +259,9 @@ func (p *BicepProvider) Deploy(
 				bicepDeploymentData.Target,
 				bicepDeploymentData.Template,
 				bicepDeploymentData.Parameters,
+				map[string]*string{
+					azure.TagKeyAzdEnvName: to.Ptr(p.env.GetEnvName()),
+				},
 			)
 			if err != nil {
 				asyncContext.SetError(err)
@@ -278,7 +297,7 @@ func (p *BicepProvider) Destroy(
 	return async.RunInteractiveTaskWithProgress(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*DestroyResult, *DestroyProgress]) {
 			asyncContext.SetProgress(&DestroyProgress{Message: "Fetching resource groups", Timestamp: time.Now()})
-			rgsFromDeployment, err := p.getResourceGroupsFromDeployment(ctx)
+			rgsFromDeployment, err := p.getResourceGroupsFromLatestDeployment(ctx)
 			if err != nil {
 				asyncContext.SetError(err)
 				return
@@ -356,10 +375,6 @@ func (p *BicepProvider) Destroy(
 				asyncContext.SetError(fmt.Errorf("purging resources: %w", err))
 				return
 			}
-			if err := p.deleteDeployment(ctx); err != nil {
-				asyncContext.SetError(fmt.Errorf("deleting subscription deployment: %w", err))
-				return
-			}
 
 			destroyResult := DestroyResult{
 				Resources: allResources,
@@ -370,14 +385,79 @@ func (p *BicepProvider) Destroy(
 		})
 }
 
-func (p *BicepProvider) getResourceGroupsFromDeployment(ctx context.Context) ([]string, error) {
-	resourceManager := infra.NewAzureResourceManager(p.azCli)
-	resourceGroups, err := resourceManager.GetResourceGroupsForDeployment(ctx, p.env.GetSubscriptionId(), p.env.GetEnvName())
+// latestCompletedDeployment finds the most recent deployment the given environment in the provided scope,
+// considering only deployments which have completed (either successfully or unsuccessfully).
+func latestCompletedDeployment(
+	ctx context.Context, envName string, scope infra.Scope,
+) (*armresources.DeploymentExtended, error) {
+
+	deployments, err := scope.ListDeployments(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	slices.SortFunc(deployments, func(x, y *armresources.DeploymentExtended) bool {
+		return x.Properties.Timestamp.After(*y.Properties.Timestamp)
+	})
+
+	// Earlier versions of `azd` did not use unique deployment names per deployment and also did not tag the deployment
+	// with an `azd` specific tag. Instead, the name of the deployment simply matched the environment name.
+	//
+	// As we walk the list of deployments, we note if we find a deployment matching this older strategy and will return
+	// it if we can't find a deployment that matches the newer one.
+	var matchingBareDeployment *armresources.DeploymentExtended
+
+	for _, deployment := range deployments {
+
+		// We only want to consider deployments that are in a terminal state, not any which may be ongoing.
+		if *deployment.Properties.ProvisioningState != armresources.ProvisioningStateSucceeded &&
+			*deployment.Properties.ProvisioningState != armresources.ProvisioningStateFailed {
+			continue
+		}
+
+		if v, has := deployment.Tags[azure.TagKeyAzdEnvName]; has && *v == envName {
+			return deployment, nil
+		}
+
+		if *deployment.Name == envName {
+			matchingBareDeployment = deployment
+		}
+	}
+
+	if matchingBareDeployment != nil {
+		return matchingBareDeployment, nil
+	}
+
+	return nil, fmt.Errorf("no deployments found for environment %s", envName)
+}
+
+func (p *BicepProvider) getResourceGroupsFromLatestDeployment(ctx context.Context) ([]string, error) {
+	scope := infra.NewSubscriptionScope(p.azCli, p.env.GetSubscriptionId())
+	deployment, err := latestCompletedDeployment(ctx, p.env.GetEnvName(), scope)
 	if err != nil {
 		return []string{}, err
 	}
 
-	return resourceGroups, nil
+	// NOTE: it's possible for a deployment to list a resource group more than once. We're only interested in the
+	// unique set.
+	resourceGroups := map[string]struct{}{}
+
+	for _, resourceId := range deployment.Properties.OutputResources {
+		if resourceId != nil && resourceId.ID != nil {
+			resId, err := arm.ParseResourceID(*resourceId.ID)
+			if err == nil && resId.ResourceGroupName != "" {
+				resourceGroups[resId.ResourceGroupName] = struct{}{}
+			}
+		}
+	}
+
+	var resourceGroupNames []string
+
+	for k := range resourceGroups {
+		resourceGroupNames = append(resourceGroupNames, k)
+	}
+
+	return resourceGroupNames, nil
 }
 
 func (p *BicepProvider) getAllResourcesToDelete(
@@ -728,15 +808,6 @@ func (p *BicepProvider) purgeAPIManagement(
 	return nil
 }
 
-// Deletes the azure deployment
-func (p *BicepProvider) deleteDeployment(ctx context.Context) error {
-	deploymentName := p.env.GetEnvName()
-	message := fmt.Sprintf("Deleting deployment: %s", output.WithHighLightFormat(deploymentName))
-	p.console.ShowSpinner(ctx, message, input.Step)
-	err := p.azCli.DeleteSubscriptionDeployment(ctx, p.env.GetSubscriptionId(), deploymentName)
-	p.console.StopSpinner(ctx, message, input.GetStepResultFormat(err))
-	return err
-}
 func (p *BicepProvider) mapBicepTypeToInterfaceType(s string) ParameterType {
 	switch s {
 	case "String", "string", "secureString", "securestring":
@@ -883,8 +954,9 @@ func (p *BicepProvider) deployModule(
 	target infra.Deployment,
 	armTemplate azure.RawArmTemplate,
 	armParameters azure.ArmParameters,
+	tags map[string]*string,
 ) (*armresources.DeploymentExtended, error) {
-	return target.Deploy(ctx, armTemplate, armParameters)
+	return target.Deploy(ctx, armTemplate, armParameters, tags)
 }
 
 // Gets the path to the project parameters file path

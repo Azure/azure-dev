@@ -5,6 +5,7 @@ package pipeline
 
 import (
 	"context"
+	"fmt"
 	"os"
 	"path/filepath"
 	"testing"
@@ -70,8 +71,8 @@ func Test_detectProviders(t *testing.T) {
 	defer projectFile.Close()
 
 	t.Run("from persisted data azdo error", func(t *testing.T) {
-		azdoFolder := filepath.Join(tempDir, githubFolder)
-		err := os.MkdirAll(azdoFolder, osutil.PermissionDirectory)
+		azdoFolderTest := filepath.Join(tempDir, githubFolder)
+		err := os.MkdirAll(azdoFolderTest, osutil.PermissionDirectory)
 		assert.NoError(t, err)
 
 		envValues := map[string]string{}
@@ -91,13 +92,14 @@ func Test_detectProviders(t *testing.T) {
 		)
 		assert.Nil(t, scmProvider)
 		assert.Nil(t, ciProvider)
-		assert.EqualError(t, err, ".azdo\\pipelines folder is missing. Can't use selected provider")
+		assert.EqualError(t, err, fmt.Sprintf("%s folder is missing. Can't use selected provider",
+			azdoFolder))
 
-		os.Remove(azdoFolder)
+		os.Remove(azdoFolderTest)
 	})
 	t.Run("from persisted data azdo yml error", func(t *testing.T) {
-		azdoFolder := filepath.Join(tempDir, azdoFolder)
-		err := os.MkdirAll(azdoFolder, osutil.PermissionDirectory)
+		azdoFolderTest := filepath.Join(tempDir, azdoFolder)
+		err := os.MkdirAll(azdoFolderTest, osutil.PermissionDirectory)
 		assert.NoError(t, err)
 
 		envValues := map[string]string{}
@@ -117,10 +119,10 @@ func Test_detectProviders(t *testing.T) {
 		)
 		assert.Nil(t, scmProvider)
 		assert.Nil(t, ciProvider)
-		assert.EqualError(t, err, ".azdo\\pipelines\\azure-dev.yml file is missing "+
-			"in .azdo\\pipelines folder. Can't use selected provider")
+		assert.EqualError(t, err, fmt.Sprintf("%s file is missing in %s folder. Can't use selected provider",
+			azdoYml, azdoFolder))
 
-		os.Remove(azdoFolder)
+		os.Remove(azdoFolderTest)
 	})
 	t.Run("from persisted data azdo", func(t *testing.T) {
 		azdoFolder := filepath.Join(tempDir, azdoFolder)
@@ -172,7 +174,8 @@ func Test_detectProviders(t *testing.T) {
 		)
 		assert.Nil(t, scmProvider)
 		assert.Nil(t, ciProvider)
-		assert.EqualError(t, err, ".github\\workflows folder is missing. Can't use selected provider")
+		assert.EqualError(t, err, fmt.Sprintf("%s folder is missing. Can't use selected provider",
+			githubFolder))
 
 		os.Remove(azdoFolder)
 	})

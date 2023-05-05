@@ -264,16 +264,16 @@ if (isLinuxOrMac) {
     }
 
     $params = @(
-        '--base-url', $BaseUrl, 
-        '--version', "'$Version'"
+        '--base-url', "`"$BaseUrl`"", 
+        '--version', "`"$Version`""
     )
 
     if ($InstallFolder) {
-        $params += '--install-folder', $InstallFolder
+        $params += '--install-folder', "`"$InstallFolder`""
     }
 
     if ($SymlinkFolder) {
-        $params += '--symlink-folder', $SymlinkFolder
+        $params += '--symlink-folder', "`"$SymlinkFolder`""
     }
 
     if ($SkipVerify) { 

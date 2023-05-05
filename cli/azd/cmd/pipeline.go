@@ -145,9 +145,6 @@ func newPipelineConfigAction(
 
 // Run implements action interface
 func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	// We need to ensure the env is set up correctly for provisioning,
-	// i.e., AZURE_SUBSCRIPTION_ID and AZURE_LOCATION must be set,
-	// so that the variables are set automatically on CI.
 	err := provisioning.EnsureEnv(ctx, p.console, p.env, p.accountManager)
 	if err != nil {
 		return nil, err

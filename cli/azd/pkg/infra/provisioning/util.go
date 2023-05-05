@@ -19,7 +19,7 @@ import (
 // EnsureEnv ensures that the environment is in a provision-ready state with required values set, prompting the user if
 // values are unset.
 //
-// This currently means that subscription and location are set.
+// This currently means that subscription (AZURE_SUBSCRIPTION_ID) and location (AZURE_LOCATION) variables are set.
 func EnsureEnv(
 	ctx context.Context,
 	console input.Console,

@@ -323,8 +323,7 @@ try {
             throw "Invoke-WebRequest failed with nonzero exit code: $LASTEXITCODE"
         }
     } catch {
-        Write-Error "Error downloading $downloadUrl"
-        Write-Error $_
+        Write-Error "Error downloading $downloadUrl" -Exception $_
         reportTelemetryIfEnabled 'InstallFailed' 'DownloadFailed' @{ downloadUrl = $downloadUrl }
         exit 1
     }
@@ -341,8 +340,7 @@ try {
                     exit 1
                 }
             } catch {
-                Write-Error "Could not verify signature of $releaseArtifactFilename"
-                Write-Error $_
+                Write-Error "Could not verify signature of $releaseArtifactFilename" -Exception $_
                 reportTelemetryIfEnabled 'InstallFailed' 'SignatureVerificationFailed'
                 exit 1
             }
@@ -367,8 +365,7 @@ try {
             exit 1
         }
     } catch {
-        Write-Error "Could not copy to $InstallFolder"
-        Write-Error $_
+        Write-Error "Could not copy to $InstallFolder" -Exception $_
         reportTelemetryIfEnabled 'InstallFailed' 'FileCopyFailed'
         exit 1
     }
@@ -391,8 +388,7 @@ try {
 
     exit 0
 } catch {
-    Write-Error "Unhandled error"
-    Write-Error $_
+    Write-Error "Unhandled error" -Exception $_
     reportTelemetryIfEnabled 'InstallFailed' 'UnhandledError' @{ exceptionName = $_.Exception.GetType().Name; }
     exit 1
 }

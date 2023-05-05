@@ -55,13 +55,12 @@ func TestGetTemplateWithValidPath(t *testing.T) {
 	full := "Azure-Samples/" + rel
 	templateManager := NewTemplateManager()
 	template, err := templateManager.GetTemplate(rel)
-	require.NoError(t, err)
-	require.Equal(t, rel, template.RepositoryPath)
+	assert.NoError(t, err)
+	assert.Equal(t, rel, template.RepositoryPath)
 
 	template, err = templateManager.GetTemplate(full)
-	require.NoError(t, err)
+	assert.NoError(t, err)
 	require.Equal(t, rel, template.RepositoryPath)
-
 }
 
 func TestGetTemplateWithInvalidPath(t *testing.T) {

@@ -10,5 +10,5 @@ type Template struct {
 	// RepositoryPath is a fully qualified URI to a git repository,
 	// "{owner}/{repo}" for GitHub repositories,
 	// or "{repo}" for GitHub repositories under Azure-Samples (default organization).
-	RepositoryPath string `json:"path"`
+	RepositoryPath string `json:"repositoryPath"`
 }

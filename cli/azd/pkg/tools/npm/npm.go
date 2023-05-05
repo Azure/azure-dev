@@ -15,7 +15,7 @@ import (
 type NpmCli interface {
 	tools.ExternalTool
 	Install(ctx context.Context, project string) error
-	RunScript(ctx context.Context, projectPath string, scriptName string, env []string) error
+	RunScript(ctx context.Context, projectPath string, scriptName string) error
 	Prune(ctx context.Context, projectPath string, production bool) error
 }
 
@@ -83,11 +83,10 @@ func (cli *npmCli) Install(ctx context.Context, project string) error {
 	return nil
 }
 
-func (cli *npmCli) RunScript(ctx context.Context, projectPath string, scriptName string, env []string) error {
+func (cli *npmCli) RunScript(ctx context.Context, projectPath string, scriptName string) error {
 	runArgs := exec.
 		NewRunArgs("npm", "run", scriptName, "--if-present").
-		WithCwd(projectPath).
-		WithEnv(env)
+		WithCwd(projectPath)
 
 	_, err := cli.commandRunner.Run(ctx, runArgs)
 

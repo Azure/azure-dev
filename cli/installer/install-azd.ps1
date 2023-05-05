@@ -255,12 +255,27 @@ function reportTelemetryIfEnabled($eventName, $reason='', $additionalProperties 
     }
 }
 
+function outputError($message, $err) { 
+    if ($err -is [System.Management.Automation.ErrorRecord]) { 
+        Write-Error $message -ErrorRecord $err
+    } elseif ($err -is [System.Exception]) { 
+        Write-Error $message -Exception $err
+    } else { 
+        Write-Error $message
+        if ($err) { 
+            Write-Error $err
+        }
+    }
+}
+
 if (isLinuxOrMac) {
     if (!(Get-Command curl)) { 
         Write-Error "Command could not be found: curl."
+        exit 1
     }
     if (!(Get-Command bash)) { 
         Write-Error "Command could not be found: bash."
+        exit 1
     }
 
     $params = @(
@@ -323,7 +338,7 @@ try {
             throw "Invoke-WebRequest failed with nonzero exit code: $LASTEXITCODE"
         }
     } catch {
-        Write-Error "Error downloading $downloadUrl" -Exception $_
+        outputError "Error downloading $downloadUrl" $_
         reportTelemetryIfEnabled 'InstallFailed' 'DownloadFailed' @{ downloadUrl = $downloadUrl }
         exit 1
     }
@@ -335,12 +350,12 @@ try {
                 Write-Verbose "Verifying signature of $releaseArtifactFilename" -Verbose:$Verbose
                 $signature = Get-AuthenticodeSignature $releaseArtifactFilename
                 if ($signature.Status -ne 'Valid') {
-                    Write-Error "Signature of $releaseArtifactFilename is not valid"
+                    outputError "Signature of $releaseArtifactFilename is not valid"
                     reportTelemetryIfEnabled 'InstallFailed' 'SignatureVerificationFailed'
                     exit 1
                 }
             } catch {
-                Write-Error "Could not verify signature of $releaseArtifactFilename" -Exception $_
+                outputError "Could not verify signature of $releaseArtifactFilename" $_
                 reportTelemetryIfEnabled 'InstallFailed' 'SignatureVerificationFailed'
                 exit 1
             }
@@ -358,13 +373,13 @@ try {
                 Write-Host "A later version of Azure Developer CLI may already be installed. Use 'Add or remove programs' to uninstall that version and try again."
             }
 
-            Write-Error "Could not install MSI at $releaseArtifactFilename. msiexec.exe returned exit code: $($installProcess.ExitCode)"
+            outputError "Could not install MSI at $releaseArtifactFilename. msiexec.exe returned exit code: $($installProcess.ExitCode)"
 
             reportTelemetryIfEnabled 'InstallFailed' 'MsiFailure' @{ msiExitCode = $installProcess.ExitCode }
             exit 1
         }
     } catch {
-        Write-Error "Could not copy to $InstallFolder" -Exception $_
+        outputError "Could not copy to $InstallFolder" $_
         reportTelemetryIfEnabled 'InstallFailed' 'FileCopyFailed'
         exit 1
     }
@@ -387,7 +402,7 @@ try {
 
     exit 0
 } catch {
-    Write-Error "Unhandled error" -Exception $_
+    outputError "Unhandled error" $_
     reportTelemetryIfEnabled 'InstallFailed' 'UnhandledError' @{ exceptionName = $_.Exception.GetType().Name; }
     exit 1
 }

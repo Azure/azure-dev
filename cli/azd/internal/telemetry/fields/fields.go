@@ -47,6 +47,12 @@ const (
 	//
 	// See EnvDesktop for complete set of values.
 	ExecutionEnvironmentKey = attribute.Key("execution.environment")
+
+	// Installer used to install the application. Set in .installed-by.txt file
+	// located in the same folder as the executable.
+	//
+	// Example: "msi", "brew", "choco", "rpm", "deb"
+	InstalledByKey = attribute.Key("service.installer")
 )
 
 // Context level fields. Availability depends on the command running.

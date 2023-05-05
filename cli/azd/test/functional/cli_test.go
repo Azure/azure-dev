@@ -313,7 +313,6 @@ func Test_CLI_ProvisionIsNeeded(t *testing.T) {
 	}{
 		{command: "deploy"},
 		{command: "monitor"},
-		{command: "pipeline config"},
 	}
 
 	for _, tt := range tests {

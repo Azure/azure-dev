@@ -109,8 +109,6 @@ func (np *npmProject) Package(
 				return
 			}
 
-			// Exec custom `package` script if available
-			// If `package` script is not defined in the package.json the NPM script will NOT fail
 			task.SetProgress(NewServiceProgress("Running NPM package script"))
 
 			// Long term this script we call should better align with our inner-loop scenarios

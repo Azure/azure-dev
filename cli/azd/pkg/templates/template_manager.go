@@ -37,7 +37,7 @@ func (tm *TemplateManager) GetTemplate(path string) (Template, error) {
 	}
 
 	for _, template := range templates {
-		absPath, err := Absolute(template.Path)
+		absPath, err := Absolute(template.RepositoryPath)
 		if err != nil {
 			panic(err)
 		}
@@ -91,7 +91,7 @@ func PromptTemplate(ctx context.Context, message string, console input.Console) 
 	}
 
 	template := templates[selected-1]
-	log.Printf("Selected template: %s", fmt.Sprint(template.Path))
+	log.Printf("Selected template: %s", fmt.Sprint(template.RepositoryPath))
 
 	return template, nil
 }

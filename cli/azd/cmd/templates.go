@@ -92,12 +92,7 @@ func (tl *templatesListAction) Run(ctx context.Context) (*actions.ActionResult, 
 		return nil, err
 	}
 
-	results := make([]templates.ContractedTemplate, 0, len(listedTemplates))
-	for _, template := range listedTemplates {
-		results = append(results, templates.NewContract(template))
-	}
-
-	return nil, formatTemplates(ctx, tl.formatter, tl.writer, results...)
+	return nil, formatTemplates(ctx, tl.formatter, tl.writer, listedTemplates...)
 }
 
 type templatesShowAction struct {
@@ -128,7 +123,7 @@ func (a *templatesShowAction) Run(ctx context.Context) (*actions.ActionResult, e
 		return nil, err
 	}
 
-	return nil, formatTemplates(ctx, a.formatter, a.writer, templates.NewContract(matchingTemplate))
+	return nil, formatTemplates(ctx, a.formatter, a.writer, matchingTemplate)
 }
 
 func newTemplateShowCmd() *cobra.Command {
@@ -143,14 +138,14 @@ func formatTemplates(
 	ctx context.Context,
 	formatter output.Formatter,
 	writer io.Writer,
-	templates ...templates.ContractedTemplate,
+	templates ...templates.Template,
 ) error {
 	var err error
 	if formatter.Kind() == output.TableFormat {
 		columns := []output.Column{
 			{
-				Heading:       "Path",
-				ValueTemplate: "{{.Path}}",
+				Heading:       "RepositoryPath",
+				ValueTemplate: "{{.RepositoryPath}}",
 			},
 			{
 				Heading:       "Name",

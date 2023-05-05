@@ -36,7 +36,7 @@ func TestListTemplates(t *testing.T) {
 	for i, template := range templates {
 		assert.Equal(t, template.Name, storedTemplates[i].Name)
 		assert.Equal(t, template.Description, storedTemplates[i].Description)
-		assert.Equal(t, template.Path, storedTemplates[i].Path)
+		assert.Equal(t, template.RepositoryPath, storedTemplates[i].RepositoryPath)
 	}
 
 	// Try listing multiple times to naively verify that the list is in a deterministic order
@@ -56,11 +56,11 @@ func TestGetTemplateWithValidPath(t *testing.T) {
 	templateManager := NewTemplateManager()
 	template, err := templateManager.GetTemplate(rel)
 	require.NoError(t, err)
-	require.Equal(t, rel, template.Path)
+	require.Equal(t, rel, template.RepositoryPath)
 
 	template, err = templateManager.GetTemplate(full)
 	require.NoError(t, err)
-	require.Equal(t, rel, template.Path)
+	require.Equal(t, rel, template.RepositoryPath)
 
 }
 

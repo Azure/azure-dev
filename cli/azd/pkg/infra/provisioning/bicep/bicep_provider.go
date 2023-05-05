@@ -42,6 +42,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
+	"github.com/benbjohnson/clock"
 	"github.com/drone/envsubst"
 	"golang.org/x/exp/maps"
 	"golang.org/x/exp/slices"
@@ -173,7 +174,7 @@ func (p *BicepProvider) Plan(
 				p.azCli,
 				p.env.GetLocation(),
 				p.env.GetSubscriptionId(),
-				fmt.Sprintf("%s-%d", p.env.GetEnvName(), time.Now().Unix()),
+				deploymentNameForEnv(p.env.GetEnvName(), clock.New()),
 			)
 
 			result := DeploymentPlan{
@@ -189,6 +190,21 @@ func (p *BicepProvider) Plan(
 			p.console.StopSpinner(ctx, "", input.StepDone)
 			asyncContext.SetResult(&result)
 		})
+}
+
+// cArmDeploymentNameLengthMax is the maximum length of the name of a deployment in ARM.
+const cArmDeploymentNameLengthMax = 64
+
+// deploymentNameForEnv creates a name to use for the deployment object for a given environment. It appends the current
+// unix time to the environment name (separated by a hyphen) to provide a unique name for each deployment. If the resulting
+// name is longer than the ARM limit, the longest suffix of the name under the limit is returned.
+func deploymentNameForEnv(envName string, clock clock.Clock) string {
+	name := fmt.Sprintf("%s-%d", envName, clock.Now().Unix())
+	if len(name) <= cArmDeploymentNameLengthMax {
+		return name
+	}
+
+	return name[len(name)-cArmDeploymentNameLengthMax:]
 }
 
 // Provisioning the infrastructure within the specified template

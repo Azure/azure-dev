@@ -244,7 +244,7 @@ func Test_CLI_Telemetry_NestedCommands(t *testing.T) {
 	// The current behavior is that `azd provision` will fail when trying to read the nonexistent bicep folder.
 	_, err := cli.RunCommandWithStdIn(
 		ctx,
-		// Choose the default empty template
+		// Choose the default minimal template
 		"\n"+stdinForInit(envName),
 		"init")
 	require.NoError(t, err)

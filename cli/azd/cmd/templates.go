@@ -12,25 +12,19 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/spf13/cobra"
-	"golang.org/x/exp/maps"
-	"golang.org/x/exp/slices"
 )
 
 func templateNameCompletion(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	templateManager := templates.NewTemplateManager()
-	templateSet, err := templateManager.ListTemplates()
+	templates, err := templateManager.ListTemplates()
 
 	if err != nil {
 		cobra.CompError(fmt.Sprintf("Error listing templates: %s", err))
 		return []string{}, cobra.ShellCompDirectiveError
 	}
 
-	templateList := maps.Values(templateSet)
-	slices.SortFunc(templateList, func(a, b templates.Template) bool {
-		return a.Name < b.Name
-	})
-	templateNames := make([]string, len(templateList))
-	for i, v := range templateList {
+	templateNames := make([]string, len(templates))
+	for i, v := range templates {
 		templateNames[i] = v.Name
 	}
 	return templateNames, cobra.ShellCompDirectiveDefault
@@ -93,25 +87,19 @@ func newTemplatesListAction(
 }
 
 func (tl *templatesListAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	templateSet, err := tl.templateManager.ListTemplates()
-
+	listedTemplates, err := tl.templateManager.ListTemplates()
 	if err != nil {
 		return nil, err
 	}
 
-	templateList := maps.Values(templateSet)
-	slices.SortFunc(templateList, func(a, b templates.Template) bool {
-		return a.Name < b.Name
-	})
-
-	return nil, formatTemplates(ctx, tl.formatter, tl.writer, templateList...)
+	return nil, formatTemplates(ctx, tl.formatter, tl.writer, listedTemplates...)
 }
 
 type templatesShowAction struct {
 	formatter       output.Formatter
 	writer          io.Writer
 	templateManager *templates.TemplateManager
-	templateName    string
+	path            string
 }
 
 func newTemplatesShowAction(
@@ -124,12 +112,12 @@ func newTemplatesShowAction(
 		formatter:       formatter,
 		writer:          writer,
 		templateManager: templateManager,
-		templateName:    args[0],
+		path:            args[0],
 	}
 }
 
 func (a *templatesShowAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	matchingTemplate, err := a.templateManager.GetTemplate(a.templateName)
+	matchingTemplate, err := a.templateManager.GetTemplate(a.path)
 
 	if err != nil {
 		return nil, err
@@ -155,6 +143,10 @@ func formatTemplates(
 	var err error
 	if formatter.Kind() == output.TableFormat {
 		columns := []output.Column{
+			{
+				Heading:       "RepositoryPath",
+				ValueTemplate: "{{.RepositoryPath}}",
+			},
 			{
 				Heading:       "Name",
 				ValueTemplate: "{{.Name}}",
@@ -187,7 +179,7 @@ func getCmdTemplateHelpDescription(*cobra.Command) string {
 			formatHelpNote(fmt.Sprintf("To view all available sample templates, including those submitted by the azd"+
 				" community visit: %s.",
 				output.WithLinkFormat("https://azure.github.io/awesome-azd"))),
-			formatHelpNote(fmt.Sprintf("Running %s without a template will prompt you to start with an empty"+
+			formatHelpNote(fmt.Sprintf("Running %s without a template will prompt you to start with a minimal"+
 				" template or select from our curated list of samples.",
 				output.WithHighLightFormat("azd init"))),
 		})

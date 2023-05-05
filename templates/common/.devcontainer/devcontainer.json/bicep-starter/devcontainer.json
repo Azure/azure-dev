@@ -1,0 +1,33 @@
+{
+    "name": "Azure Developer CLI",
+    "build": {
+        "dockerfile": "Dockerfile",
+        "args": {
+            // List of images: https://github.com/devcontainers/images/tree/main/src
+            "IMAGE": "python:3.10"
+        }
+    },
+    "features": {
+        // See https://containers.dev/features for list of features
+    },
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "ms-azuretools.azure-dev",
+                "ms-azuretools.vscode-bicep",
+                "ms-azuretools.vscode-docker",
+                "ms-azuretools.vscode-azurefunctions"
+                // Include other VSCode language extensions if needed
+                // Right click on an extension inside VSCode to add directly to devcontainer.json, or copy the extension ID
+            ]
+        }
+    },
+    "forwardPorts": [
+        // Forward ports if needed for local development
+    ],
+    "postCreateCommand": "",
+    "remoteUser": "vscode",
+    "hostRequirements": {
+        "memory": "8gb"
+    }
+}

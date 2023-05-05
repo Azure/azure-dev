@@ -20,7 +20,7 @@
         "vscode": {
             "extensions": [
                 "ms-azuretools.azure-dev",
-                "ms-azuretools.vscode-bicep",
+                "hashicorp.terraform",
                 "ms-azuretools.vscode-docker",
                 "ms-vscode.vscode-node-azure-pack",
                 "ms-vscode.js-debug",

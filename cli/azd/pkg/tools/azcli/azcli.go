@@ -92,11 +92,14 @@ type AzCli interface {
 		funcName string,
 	) (*AzCliFunctionAppProperties, error)
 	DeployToSubscription(
-		ctx context.Context, subscriptionId, deploymentName string,
+		ctx context.Context,
+		subscriptionId string,
+		location string,
+		deploymentName string,
 		armTemplate azure.RawArmTemplate,
 		parameters azure.ArmParameters,
-		location string) (
-		*armresources.DeploymentExtended, error)
+		tags map[string]*string,
+	) (*armresources.DeploymentExtended, error)
 	DeployToResourceGroup(
 		ctx context.Context,
 		subscriptionId,
@@ -104,6 +107,7 @@ type AzCli interface {
 		deploymentName string,
 		armTemplate azure.RawArmTemplate,
 		parameters azure.ArmParameters,
+		tags map[string]*string,
 	) (*armresources.DeploymentExtended, error)
 	DeleteSubscriptionDeployment(ctx context.Context, subscriptionId string, deploymentName string) error
 	DeleteResourceGroup(ctx context.Context, subscriptionId string, resourceGroupName string) error
@@ -112,12 +116,21 @@ type AzCli interface {
 		subscriptionId string,
 		listOptions *ListResourceGroupOptions,
 	) ([]AzCliResource, error)
+	ListResourceGroupDeployments(
+		ctx context.Context,
+		subscriptionId string,
+		resourceGroupName string,
+	) ([]*armresources.DeploymentExtended, error)
 	ListResourceGroupResources(
 		ctx context.Context,
 		subscriptionId string,
 		resourceGroupName string,
 		listOptions *ListResourceGroupResourcesOptions,
 	) ([]AzCliResource, error)
+	ListSubscriptionDeployments(
+		ctx context.Context,
+		subscriptionId string,
+	) ([]*armresources.DeploymentExtended, error)
 	ListSubscriptionDeploymentOperations(
 		ctx context.Context,
 		subscriptionId string,

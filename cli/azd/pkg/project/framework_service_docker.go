@@ -142,7 +142,7 @@ func (p *dockerProject) Build(
 			)
 
 			// Build the container
-			task.SetProgress(NewServiceProgress("Building docker image"))
+			task.SetProgress(NewServiceProgress("Building Docker image"))
 			imageId, err := p.docker.Build(
 				ctx,
 				serviceConfig.Path(),
@@ -190,7 +190,7 @@ func (p *dockerProject) Package(
 
 			// Tag image.
 			log.Printf("tagging image %s as %s", imageId, localTag)
-			task.SetProgress(NewServiceProgress("Tagging docker image"))
+			task.SetProgress(NewServiceProgress("Tagging Docker image"))
 			if err := p.docker.Tag(ctx, serviceConfig.Path(), imageId, localTag); err != nil {
 				task.SetError(fmt.Errorf("tagging image: %w", err))
 				return

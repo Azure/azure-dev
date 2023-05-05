@@ -5,11 +5,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"sort"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/resources"
-	"golang.org/x/exp/maps"
+	"golang.org/x/exp/slices"
 )
 
 type TemplateManager struct {
@@ -52,38 +52,59 @@ func NewTemplateManager() *TemplateManager {
 // PromptTemplate ask the user to select a template.
 // An empty Template with default values is returned if the user selects 'Empty Template' from the choices
 func PromptTemplate(ctx context.Context, message string, console input.Console) (Template, error) {
-	var result Template
 	templateManager := NewTemplateManager()
 	templatesSet, err := templateManager.ListTemplates()
 
 	if err != nil {
-		return result, fmt.Errorf("prompting for template: %w", err)
+		return Template{}, fmt.Errorf("prompting for template: %w", err)
 	}
 
-	templateNames := []string{"Empty Template"}
-	names := maps.Keys(templatesSet)
-	sort.Strings(names)
-	templateNames = append(templateNames, names...)
+	// Create a map of PromptText->Template to be used by the prompt
+	// This will be used to map the user selection to the template
+	templateSelect := make(map[string]Template, len(templatesSet))
+	for _, template := range templatesSet {
+		// We trim the default prefix to make the template names more user-friendly
+		// This is okay since templates without an organization name are assumed to be under "Azure-Samples/" by default
+		name := strings.TrimPrefix(template.Name, "Azure-Samples/")
+		if template.DisplayName != "" {
+			// always show the proper name to the user
+			templateSelect[template.DisplayName+" ("+name+")"] = template
+		} else {
+			templateSelect[name] = template
+		}
+	}
 
-	selectedIndex, err := console.Select(ctx, input.ConsoleOptions{
+	choices := make([]string, 0, len(templateSelect)+1)
+	for key := range templateSelect {
+		choices = append(choices, key)
+	}
+	// sort based on the template name to provider stable ordering
+	slices.SortFunc(choices, func(a, b string) bool {
+		return templateSelect[a].Name < templateSelect[b].Name
+	})
+
+	// prepend the empty template option to guarantee first selection
+	choices = append([]string{"Empty Template"}, choices...)
+
+	selected, err := console.Select(ctx, input.ConsoleOptions{
 		Message:      message,
-		Options:      templateNames,
-		DefaultValue: templateNames[0],
+		Options:      choices,
+		DefaultValue: choices[0],
 	})
 
 	// separate this prompt from the next log
 	console.Message(ctx, "")
 
 	if err != nil {
-		return result, fmt.Errorf("prompting for template: %w", err)
+		return Template{}, fmt.Errorf("prompting for template: %w", err)
 	}
 
-	if selectedIndex == 0 {
-		return result, nil
+	if selected == 0 {
+		return Template{}, nil
 	}
 
-	selectedTemplateName := templateNames[selectedIndex]
-	log.Printf("Selected template: %s", fmt.Sprint(selectedTemplateName))
+	template := templateSelect[choices[selected]]
+	log.Printf("Selected template: %s", fmt.Sprint(template.Name))
 
-	return templatesSet[selectedTemplateName], nil
+	return template, nil
 }

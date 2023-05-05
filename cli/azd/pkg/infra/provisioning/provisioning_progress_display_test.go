@@ -29,7 +29,7 @@ type mockResourceManager struct {
 
 func (mock *mockResourceManager) GetDeploymentResourceOperations(
 	ctx context.Context,
-	scope infra.Scope,
+	target infra.Deployment,
 	startTime *time.Time,
 ) ([]*armresources.DeploymentOperation, error) {
 	return mock.operations, nil
@@ -103,7 +103,7 @@ func TestReportProgress(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 
-	scope := infra.NewSubscriptionScope(azCli, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
+	scope := infra.NewSubscriptionDeployment(azCli, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
 	mockAzDeploymentShow(t, *mockContext)
 
 	startTime := time.Now()

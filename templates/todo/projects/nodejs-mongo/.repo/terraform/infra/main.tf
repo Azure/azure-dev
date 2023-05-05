@@ -126,6 +126,7 @@ module "api" {
     "SCM_DO_BUILD_DURING_DEPLOYMENT"        = "true"
     "AZURE_KEY_VAULT_ENDPOINT"              = module.keyvault.AZURE_KEY_VAULT_ENDPOINT
     "APPLICATIONINSIGHTS_CONNECTION_STRING" = module.applicationinsights.APPLICATIONINSIGHTS_CONNECTION_STRING
+    "API_ALLOW_ORIGINS"                     = "https://app-web-${local.resource_token}.azurewebsites.net"
   }
 
   app_command_line = ""

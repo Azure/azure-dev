@@ -1,7 +1,6 @@
 package config
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -28,24 +27,6 @@ type Manager interface {
 // Creates a new Configuration Manager
 func NewManager() Manager {
 	return &manager{}
-}
-
-type contextKey string
-
-const (
-	configManagerContextKey contextKey = "configManagerContextKey"
-)
-
-func WithConfigManager(ctx context.Context, manager Manager) context.Context {
-	return context.WithValue(ctx, configManagerContextKey, manager)
-}
-
-func GetConfigManager(ctx context.Context) Manager {
-	configManager, ok := ctx.Value(configManagerContextKey).(Manager)
-	if ok {
-		return configManager
-	}
-	return NewManager()
 }
 
 // Saves the azd configuration to the specified file path

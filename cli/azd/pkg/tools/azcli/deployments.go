@@ -16,6 +16,30 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/internal"
 )
 
+func (cli *azCli) ListSubscriptionDeployments(
+	ctx context.Context,
+	subscriptionId string,
+) ([]*armresources.DeploymentExtended, error) {
+	deploymentClient, err := cli.createDeploymentsClient(ctx, subscriptionId)
+	if err != nil {
+		return nil, fmt.Errorf("creating deployments client: %w", err)
+	}
+
+	results := []*armresources.DeploymentExtended{}
+
+	pager := deploymentClient.NewListAtSubscriptionScopePager(nil)
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		results = append(results, page.Value...)
+	}
+
+	return results, nil
+}
+
 func (cli *azCli) GetSubscriptionDeployment(
 	ctx context.Context,
 	subscriptionId string,
@@ -36,6 +60,31 @@ func (cli *azCli) GetSubscriptionDeployment(
 	}
 
 	return &deployment.DeploymentExtended, nil
+}
+
+func (cli *azCli) ListResourceGroupDeployments(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroupName string,
+) ([]*armresources.DeploymentExtended, error) {
+	deploymentClient, err := cli.createDeploymentsClient(ctx, subscriptionId)
+	if err != nil {
+		return nil, fmt.Errorf("creating deployments client: %w", err)
+	}
+
+	results := []*armresources.DeploymentExtended{}
+
+	pager := deploymentClient.NewListByResourceGroupPager(resourceGroupName, nil)
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		results = append(results, page.Value...)
+	}
+
+	return results, nil
 }
 
 func (cli *azCli) GetResourceGroupDeployment(
@@ -81,10 +130,12 @@ func (cli *azCli) createDeploymentsClient(
 
 func (cli *azCli) DeployToSubscription(
 	ctx context.Context,
-	subscriptionId, deploymentName string,
+	subscriptionId string,
+	location string,
+	deploymentName string,
 	armTemplate azure.RawArmTemplate,
 	parameters azure.ArmParameters,
-	location string,
+	tags map[string]*string,
 ) (*armresources.DeploymentExtended, error) {
 	deploymentClient, err := cli.createDeploymentsClient(ctx, subscriptionId)
 	if err != nil {
@@ -100,6 +151,7 @@ func (cli *azCli) DeployToSubscription(
 				Mode:       to.Ptr(armresources.DeploymentModeIncremental),
 			},
 			Location: to.Ptr(location),
+			Tags:     tags,
 		}, nil)
 	if err != nil {
 		return nil, fmt.Errorf("starting deployment to subscription: %w", err)
@@ -123,6 +175,7 @@ func (cli *azCli) DeployToResourceGroup(
 	subscriptionId, resourceGroup, deploymentName string,
 	armTemplate azure.RawArmTemplate,
 	parameters azure.ArmParameters,
+	tags map[string]*string,
 ) (*armresources.DeploymentExtended, error) {
 	deploymentClient, err := cli.createDeploymentsClient(ctx, subscriptionId)
 	if err != nil {
@@ -137,6 +190,7 @@ func (cli *azCli) DeployToResourceGroup(
 				Parameters: parameters,
 				Mode:       to.Ptr(armresources.DeploymentModeIncremental),
 			},
+			Tags: tags,
 		}, nil)
 	if err != nil {
 		return nil, fmt.Errorf("starting deployment to resource group: %w", err)

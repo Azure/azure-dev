@@ -265,8 +265,10 @@ func parseExecutableFiles(stagedFilesOutput string) ([]string, error) {
 
 // Initializes an empty (bare minimum) azd repository.
 func (i *Initializer) InitializeEmpty(ctx context.Context, azdCtx *azdcontext.AzdContext) error {
-	projectFormatted := output.WithLinkFormat("%s", azdCtx.ProjectDirectory())
+	projectDir := azdCtx.ProjectDirectory()
 	var err error
+
+	projectFormatted := output.WithLinkFormat("%s", projectDir)
 	i.console.ShowSpinner(ctx,
 		fmt.Sprintf("Creating minimal project files at: %s", projectFormatted),
 		input.Step)
@@ -274,7 +276,6 @@ func (i *Initializer) InitializeEmpty(ctx context.Context, azdCtx *azdcontext.Az
 		fmt.Sprintf("Created minimal project files at: %s", projectFormatted)+"\n",
 		input.GetStepResultFormat(err))
 
-	projectDir := azdCtx.ProjectDirectory()
 	isEmpty, err := isEmptyDir(projectDir)
 	if err != nil {
 		return err
@@ -380,6 +381,47 @@ func (i *Initializer) writeAzdAssets(ctx context.Context, azdCtx *azdcontext.Azd
 		_, err := gitignoreFile.WriteString(appendContents)
 		if err != nil {
 			return fmt.Errorf("fail to write '%s' in .gitignore: %w", azdcontext.EnvironmentDirectoryName, err)
+		}
+	}
+
+	return nil
+}
+
+// PromptIfNonEmpty prompts the user for confirmation if the project directory to initialize in is non-empty.
+// Returns error if an error occurred while prompting, or if the user declines confirmation.
+func (i *Initializer) PromptIfNonEmpty(ctx context.Context, azdCtx *azdcontext.AzdContext) error {
+	dir := azdCtx.ProjectDirectory()
+	isEmpty, err := isEmptyDir(dir)
+	if err != nil {
+		return err
+	}
+
+	if !isEmpty {
+		_, err := i.gitCli.GetCurrentBranch(ctx, dir)
+		if err != nil && !errors.Is(err, git.ErrNotRepository) {
+			return fmt.Errorf("determining current git repository state: %w", err)
+		}
+
+		message := fmt.Sprintf(
+			"The current directory is not empty. Would you like to initialize a project here in '%s'?",
+			dir)
+		if err != nil {
+			message = fmt.Sprintf(
+				"The current directory is not empty. "+
+					"Would you like to initialize a project here? "+
+					"Doing so will also initialize a new git repository in '%s'.",
+				dir)
+		}
+
+		confirm, err := i.console.Confirm(ctx, input.ConsoleOptions{
+			Message: message,
+		})
+		if err != nil {
+			return err
+		}
+
+		if !confirm {
+			return fmt.Errorf("confirmation declined")
 		}
 	}
 

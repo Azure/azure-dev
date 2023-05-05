@@ -107,7 +107,7 @@ func Test_CLI_Telemetry_UsageData_Simple_Command(t *testing.T) {
 		err = json.Unmarshal(scanner.Bytes(), &span)
 		require.NoError(t, err)
 
-		verifyResource(t, span.Resource)
+		verifyResource(t, cli.Env, span.Resource)
 		if strings.HasPrefix(span.Name, "cmd.") {
 			usageCmdFound = true
 			m := attributesMap(span.Attributes)
@@ -175,7 +175,7 @@ func Test_CLI_Telemetry_UsageData_EnvProjectLoad(t *testing.T) {
 		err = json.Unmarshal(scanner.Bytes(), &span)
 		require.NoError(t, err)
 
-		verifyResource(t, span.Resource)
+		verifyResource(t, cli.Env, span.Resource)
 		if span.Name == "cmd.restore" {
 			usageCmdFound = true
 			m := attributesMap(span.Attributes)
@@ -232,6 +232,9 @@ func Test_CLI_Telemetry_NestedCommands(t *testing.T) {
 	cli := azdcli.NewCLI(t)
 	// Always set telemetry opt-inn setting to avoid influence from user settings
 	cli.Env = append(os.Environ(), "AZURE_DEV_COLLECT_TELEMETRY=yes")
+
+	// set environment modifier
+	cli.Env = append(cli.Env, "AZURE_DEV_USER_AGENT=azure_app_space_portal:v1.0.0")
 	cli.WorkingDirectory = dir
 
 	envName := randomEnvName()
@@ -267,7 +270,7 @@ func Test_CLI_Telemetry_NestedCommands(t *testing.T) {
 		err = json.Unmarshal(scanner.Bytes(), &span)
 		require.NoError(t, err)
 
-		verifyResource(t, span.Resource)
+		verifyResource(t, cli.Env, span.Resource)
 		if !strings.HasPrefix(span.Name, "cmd.") {
 			continue
 		}
@@ -349,7 +352,10 @@ func getEnvSubscriptionId(t *testing.T, dir string, envName string) string {
 	return env.GetSubscriptionId()
 }
 
-func verifyResource(t *testing.T, attributes []Attribute) {
+func verifyResource(
+	t *testing.T,
+	cmdEnv []string,
+	attributes []Attribute) {
 	m := attributesMap(attributes)
 
 	require.Contains(t, m, fields.MachineIdKey)
@@ -368,10 +374,24 @@ func verifyResource(t *testing.T, attributes []Attribute) {
 
 	require.Contains(t, m, fields.ExecutionEnvironmentKey)
 
+	env := ""
 	if os.Getenv("BUILD_BUILDID") != "" {
-		require.Equal(t, m[fields.ExecutionEnvironmentKey], fields.EnvAzurePipelines)
+		env = fields.EnvAzurePipelines
+		require.Regexp(t, regexp.MustCompile("^"+fields.EnvAzurePipelines), m[fields.ExecutionEnvironmentKey])
 	} else if os.Getenv("GITHUB_RUN_ID") != "" {
-		require.Equal(t, m[fields.ExecutionEnvironmentKey], fields.EnvGitHubActions)
+		env = fields.EnvGitHubActions
+	}
+
+	if env != "" {
+		// basic regex that matches a very simple expression (not the entire grammar):
+		// env followed by an optional (;modifier)
+		require.Regexp(t, regexp.MustCompile("^"+env+"(;\\w)?"), m[fields.ExecutionEnvironmentKey])
+	}
+
+	for _, env := range cmdEnv {
+		if strings.HasPrefix(env, "AZURE_DEV_USER_AGENT=") && strings.Contains(env, "azure_app_space_portal") {
+			require.Contains(t, m[fields.ExecutionEnvironmentKey], ";"+fields.EnvModifierAzureSpace)
+		}
 	}
 
 	require.Contains(t, m, fields.OSTypeKey)

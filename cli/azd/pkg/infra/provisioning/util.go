@@ -16,9 +16,11 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 )
 
-// EnsureSubscriptionAndLocation ensures that a subscription and location are configured in the environment, prompting
-// for values if they are not.
-func EnsureSubscriptionAndLocation(
+// EnsureEnv ensures that the environment is in a provision-ready state with required values set, prompting the user if
+// values are unset.
+//
+// This currently means that subscription and location are set.
+func EnsureEnv(
 	ctx context.Context,
 	console input.Console,
 	env *environment.Environment,

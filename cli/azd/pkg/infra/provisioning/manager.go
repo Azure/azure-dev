@@ -307,7 +307,7 @@ func (m *Manager) promptLocation(
 }
 
 func (m *Manager) ensureSubscriptionLocation(ctx context.Context, env *environment.Environment) error {
-	return EnsureSubscriptionAndLocation(ctx, m.console, m.env, m.accountManager)
+	return EnsureEnv(ctx, m.console, m.env, m.accountManager)
 }
 
 type CurrentPrincipalIdProvider interface {

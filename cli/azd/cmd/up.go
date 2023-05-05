@@ -100,7 +100,7 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			output.WithWarningFormat("WARNING: The '--service' flag is deprecated and will be removed in a future release."))
 	}
 
-	err := provisioning.EnsureSubscriptionAndLocation(ctx, u.console, u.env, u.accountManager)
+	err := provisioning.EnsureEnv(ctx, u.console, u.env, u.accountManager)
 	if err != nil {
 		return nil, err
 	}

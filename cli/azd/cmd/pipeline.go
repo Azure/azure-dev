@@ -79,6 +79,10 @@ func pipelineActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 		Command:        newPipelineConfigCmd(),
 		FlagsResolver:  newPipelineConfigFlags,
 		ActionResolver: newPipelineConfigAction,
+		HelpOptions: actions.ActionHelpOptions{
+			Description: getCmdPipelineConfigHelpDescription,
+			Footer:      getCmdPipelineConfigHelpFooter,
+		},
 	})
 
 	return group
@@ -144,7 +148,7 @@ func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, 
 	// We need to ensure the env is set up correctly for provisioning,
 	// i.e., AZURE_SUBSCRIPTION_ID and AZURE_LOCATION must be set,
 	// so that the variables are set automatically on CI.
-	err := provisioning.EnsureSubscriptionAndLocation(ctx, p.console, p.env, p.accountManager)
+	err := provisioning.EnsureEnv(ctx, p.console, p.env, p.accountManager)
 	if err != nil {
 		return nil, err
 	}
@@ -202,5 +206,30 @@ func getCmdPipelineHelpFooter(c *cobra.Command) string {
 	return generateCmdHelpSamplesBlock(map[string]string{
 		"Walk through the steps required " +
 			"to set up your deployment pipeline.": output.WithHighLightFormat("azd pipeline config"),
+	})
+}
+
+func getCmdPipelineConfigHelpDescription(*cobra.Command) string {
+	return generateCmdHelpDescription(
+		"Create and configure your deployment pipeline by using GitHub or Azure Pipelines.",
+		[]string{
+			formatHelpNote("By default, " +
+				output.WithHighLightFormat("pipeline config") +
+				" will configure and set deployment pipeline variables using the current environment. " +
+				"To configure for a new or a different existing environment, use the '-e' flag."),
+		})
+}
+
+func getCmdPipelineConfigHelpFooter(c *cobra.Command) string {
+	return generateCmdHelpSamplesBlock(map[string]string{
+		"Set up a deployment pipeline for 'app-test' environment": fmt.Sprintf("%s %s",
+			output.WithHighLightFormat("azd pipeline config -e"),
+			output.WithWarningFormat("app-test"),
+		),
+		"Set up a deployment pipeline for 'app-test' environment on Azure Pipelines.": fmt.Sprintf("%s %s %s",
+			output.WithHighLightFormat("azd pipeline config -e"),
+			output.WithWarningFormat("app-test"),
+			output.WithHighLightFormat("--provider azdo"),
+		),
 	})
 }

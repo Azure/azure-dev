@@ -7,10 +7,69 @@
 ### Breaking Changes
 
 - [[2066]](https://github.com/Azure/azure-dev/pull/2066) `azd` no longer assumes `dotnet` by default when `services.language` is not set, or empty in `azure.yaml`. If you receive an error message 'language property must not be empty', specify `language: dotnet` explicitly in `azure.yaml`.
+- [[2100]](https://github.com/Azure/azure-dev/pull/2100) As a follow up from the change for [azd up ordering](#azd-up-ordering), automatic `.env` file injection when building `staticwebapp` services have been removed. For more details, read more about [Static Web App Dynamic Configuration](#static-web-app-dynamic-configuration) below.
 
 ### Bugs Fixed
 
 ### Other Changes
+
+#### Static Web App Dynamic Configuration
+
+This change affects `staticwebapp` services that are currently relying on azd provided `.env` file variables during `azd deploy`. If you have an application initialized from an older `azd` provided Static Web App template (before April 10, 2023), we recommend uptaking the latest changes if you're relying on `.env` variables being present. A way to check whether this affects you is by looking at contents in `azure.yaml`:
+
+Old, uptake needed:
+
+```yaml
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+
+name: <your project>
+metadata:
+  template: todo-nodejs-mongo-swa-func@0.0.1-beta
+services:
+  web:
+    project: ./src/web
+    dist: build
+    language: js
+    host: staticwebapp
+  api:
+    project: ./src/api
+    language: js
+    host: function
+```
+
+New, no changes necessary:
+
+```yaml
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+
+name: <your project>
+metadata:
+  template: todo-python-mongo-swa-func@0.0.1-beta
+services:
+  web:
+    project: ./src/web
+    dist: build
+    language: js
+    host: staticwebapp
+    hooks:
+      predeploy:
+        posix:
+          shell: sh
+          run: node entrypoint.js -o ./build/env-config.js
+          continueOnError: false
+          interactive: false
+        windows:
+          shell: pwsh
+          run: node entrypoint.js -o ./build/env-config.js
+          continueOnError: false
+          interactive: false
+  api:
+    project: ./src/api
+    language: py
+    host: function
+```
+
+From the example above, dynamic configuration can still be generated from azd `.env` files by creating a `predeploy` hook that embeds the configuration into web assets. See an example change [here](https://github.com/Azure-Samples/todo-nodejs-mongo-swa-func/commit/50f9268881717a796167c371cb60525f83be8a59#diff-fa5d677aeff171483fa03a69284506672cb9afafa0a7139e03a336e4fb7b773f).
 
 ## 0.8.0-beta.2 (2023-04-20)
 

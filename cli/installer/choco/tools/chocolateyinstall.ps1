@@ -7,7 +7,7 @@ $packageArgs = @{
   fileType      = 'MSI'
   file64        = $file64
   softwareName  = 'Azure Developer CLI'
-  silentArgs    = "/qn /norestart /l*v `"$($env:TEMP)\$($packageName).$($env:chocolateyPackageVersion).MsiInstall.log`" ALLUSERS=1"
+  silentArgs    = "/qn /norestart /l*v `"$($env:TEMP)\$($packageName).$($env:chocolateyPackageVersion).MsiInstall.log`" ALLUSERS=1 INSTALLEDBY=choco"
   validExitCodes= @(0, 3010, 1641)
 }
 

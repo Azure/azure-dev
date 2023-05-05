@@ -271,7 +271,7 @@ do
   shift
 done
 
-if [ ! -d "$symlink_folder" ]; then
+if [ "$symlink_folder" != "" ] && [ ! -d "$symlink_folder" ]; then
     say_error "Symlink folder does not exist: $symlink_folder. The symlink folder should exist and be in \$PATH"
     say_error "Create the folder (and ensure that it is in your \$PATH), specify a different folder using -s or --symlink-folder, or specify an empty value using -s \"\" or --symlink-folder \"\""
     save_error_report_if_enabled "InstallFailed" "SymlinkFolderDoesNotExist"
@@ -348,7 +348,7 @@ if [ ! -w "$install_folder/" ]; then
     say "Writing to $install_folder/ requires elevated permission. You may be prompted to enter credentials."
     mv_preface="sudo"
 fi
-if ! $mv_preface mv -f "$tmp_folder"/* "$install_folder"; then
+if ! $mv_preface mv -f "$tmp_folder"/* "$tmp_folder"/.*.txt "$install_folder"; then
     say_error "Could not move files to install location: $install_folder"
     save_error_report_if_enabled "InstallFailed" "MoveFailure"
     exit 1
@@ -371,7 +371,7 @@ say_verbose "Cleaning up temp folder: $tmp_folder"
 rm -rf "$tmp_folder"
 say "Successfully installed to $install_folder"
 if [ "$symlink_folder" != "" ]; then
-    say ""Symlink created at $symlink_folder/azd and pointing to $install_folder/$bin_name""
+    say "Symlink created at $symlink_folder/azd and pointing to $install_folder/$bin_name"
 fi
 say ""
 say "The Azure Developer CLI collects usage data and sends that usage data to Microsoft in order to help us improve your experience."

@@ -67,7 +67,7 @@ It is recommended to have application settings managed in Azure, separating conf
 
 ### Host configuration
 
-For `appservice` and `function`, the following host configuration options are often modified:
+For `appservice`, the following host configuration options are often modified:
 
 - Language runtime version
 - Exposed port from the running container (if running a web service)

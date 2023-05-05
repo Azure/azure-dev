@@ -119,11 +119,11 @@ func folderExists(folderPath string) bool {
 
 func ymlExists(ymlPath string) bool {
 	info, err := os.Stat(ymlPath)
-	if os.IsNotExist(err) {
-		return false
+	// if it is a file with no error
+	if err == nil && info.Mode().IsRegular() {
+		return true
 	}
-	// if it is a yml file
-	return info.Mode().IsRegular()
+	return false
 }
 
 const (

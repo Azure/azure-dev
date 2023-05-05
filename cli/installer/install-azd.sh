@@ -371,7 +371,7 @@ say_verbose "Cleaning up temp folder: $tmp_folder"
 rm -rf "$tmp_folder"
 say "Successfully installed to $install_folder"
 if [ "$symlink_folder" != "" ]; then
-    say ""Symlink to created in $symlink_folder/azd and pointing to $install_folder/$bin_name""
+    say ""Symlink created at $symlink_folder/azd and pointing to $install_folder/$bin_name""
 fi
 say ""
 say "The Azure Developer CLI collects usage data and sends that usage data to Microsoft in order to help us improve your experience."

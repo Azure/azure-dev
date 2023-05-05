@@ -13,7 +13,7 @@ import (
 
 const cInstalledByFileName = ".installed-by.txt"
 
-// Returns content of `.installed-by.txt` file in the same directory as
+// Returns a hash of the content of `.installed-by.txt` file in the same directory as
 // the executable. If the file does not exist, returns empty string.
 func getInstalledBy() string {
 	exePath, err := os.Executable()

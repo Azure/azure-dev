@@ -15,7 +15,7 @@ parameters:
 
 - name: TemplateList
   displayName: |
-    Comma-delimited list of templates to test against (by default, results of azd template list). Example: 'Azure-Samples/todo-csharp-sql, Azure-Samples/todo-nodejs-mongo'
+    Comma-delimited list of templates to test against (by default, 'all' to run all). Example: 'Azure-Samples/todo-csharp-sql, Azure-Samples/todo-nodejs-mongo'
   type: string
   default: 'all'
 

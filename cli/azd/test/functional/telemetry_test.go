@@ -239,15 +239,16 @@ func Test_CLI_Telemetry_NestedCommands(t *testing.T) {
 
 	envName := randomEnvName()
 
-	// Initialize an empty azure.yaml file with no services, and no infra folder.
-	// This allows us to avoid lengthy Azure operations while asserting the intended telemetry behavior.
-	// The current behavior is that `azd provision` will fail when trying to read the nonexistent bicep folder.
 	_, err := cli.RunCommandWithStdIn(
 		ctx,
 		// Choose the default minimal template
 		"\n"+stdinForInit(envName),
 		"init")
 	require.NoError(t, err)
+
+	// Remove infra folder to avoid lengthy Azure operations while asserting the intended telemetry behavior.
+	// The current behavior is that `azd provision` will fail when trying to read the nonexistent bicep folder.
+	require.NoError(t, os.RemoveAll(filepath.Join(dir, "infra")))
 
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "up", "--trace-log-file", traceFilePath)
 	require.Error(t, err)

@@ -48,6 +48,8 @@ import (
 	"golang.org/x/exp/slices"
 )
 
+const DefaultModule = "main"
+
 type BicepDeploymentDetails struct {
 	// Template is the template to deploy during the deployment operation.
 	Template azure.RawArmTemplate
@@ -962,10 +964,6 @@ func (p *BicepProvider) deployModule(
 // Gets the path to the project parameters file path
 func (p *BicepProvider) parametersTemplateFilePath() string {
 	infraPath := p.options.Path
-	if strings.TrimSpace(infraPath) == "" {
-		infraPath = "infra"
-	}
-
 	parametersFilename := fmt.Sprintf("%s.parameters.json", p.options.Module)
 	return filepath.Join(p.projectPath, infraPath, parametersFilename)
 }
@@ -973,10 +971,6 @@ func (p *BicepProvider) parametersTemplateFilePath() string {
 // Gets the folder path to the specified module
 func (p *BicepProvider) modulePath() string {
 	infraPath := p.options.Path
-	if strings.TrimSpace(infraPath) == "" {
-		infraPath = "infra"
-	}
-
 	moduleFilename := fmt.Sprintf("%s.bicep", p.options.Module)
 	return filepath.Join(p.projectPath, infraPath, moduleFilename)
 }
@@ -1144,9 +1138,9 @@ func NewBicepProvider(
 		return nil, err
 	}
 
-	// Default to a module named "main" if not specified.
+	// Default module if not specified.
 	if strings.TrimSpace(infraOptions.Module) == "" {
-		infraOptions.Module = "main"
+		infraOptions.Module = DefaultModule
 	}
 
 	return &BicepProvider{

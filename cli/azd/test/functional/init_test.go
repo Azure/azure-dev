@@ -16,7 +16,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func Test_CLI_Init_CreatesEnvAndProjectFile(t *testing.T) {
+// Verifies init for the minimal template.
+// - The project layout is valid (azure.yaml, .azure, infra/)
+// - The template creates a valid environment file
+func Test_CLI_Init_Minimal(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
@@ -36,13 +39,15 @@ func Test_CLI_Init_CreatesEnvAndProjectFile(t *testing.T) {
 	file, err := os.ReadFile(getTestEnvPath(dir, "TESTENV"))
 
 	require.NoError(t, err)
-
 	require.Regexp(t, regexp.MustCompile(`AZURE_ENV_NAME="TESTENV"`+"\n"), string(file))
 
 	proj, err := project.Load(ctx, filepath.Join(dir, azdcontext.ProjectFileName))
 	require.NoError(t, err)
-
 	require.Equal(t, filepath.Base(dir), proj.Name)
+
+	require.DirExists(t, filepath.Join(dir, ".azure"))
+	require.FileExists(t, filepath.Join(dir, "infra", "main.bicep"))
+	require.FileExists(t, filepath.Join(dir, "infra", "main.parameters.json"))
 }
 
 func Test_CLI_Init_CanUseTemplate(t *testing.T) {

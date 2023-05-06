@@ -121,6 +121,7 @@ function testTemplate {
     else
         cd "tests"
     fi
+
     npm i && npx playwright install
     npx -y playwright test --retries="$PLAYWRIGHT_RETRIES" --reporter="$PLAYWRIGHT_REPORTER"
 }

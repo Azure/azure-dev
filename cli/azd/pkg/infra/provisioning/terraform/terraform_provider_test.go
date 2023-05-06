@@ -201,7 +201,6 @@ func TestTerraformState(t *testing.T) {
 func createTerraformProvider(mockContext *mocks.MockContext) *TerraformProvider {
 	projectDir := "../../../../test/functional/testdata/samples/resourcegroupterraform"
 	options := Options{
-		Path:   "infra",
 		Module: "main",
 	}
 

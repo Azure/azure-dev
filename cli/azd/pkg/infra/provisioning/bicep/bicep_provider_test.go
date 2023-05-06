@@ -402,6 +402,7 @@ func (b *testBicep) Build(ctx context.Context, file string) (string, error) {
 func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepProvider {
 	projectDir := "../../../../test/functional/testdata/samples/webapp"
 	options := Options{
+		Path:   "infra",
 		Module: "main",
 	}
 

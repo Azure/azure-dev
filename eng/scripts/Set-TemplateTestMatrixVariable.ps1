@@ -78,7 +78,7 @@ $templateNames = @()
 if ($TemplateList -eq '(azd template list)') {
     Write-Host "Using results of (azd template list --output json)"
     
-    $templateNames += (azd template list --output json | ConvertFrom-Json).RepositoryPath
+    $templateNames += (azd template list --output json | ConvertFrom-Json).repositoryPath
     if ($LASTEXITCODE -ne 0) {
         Write-Error "azd template list failed"
         exit 1

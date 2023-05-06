@@ -91,12 +91,11 @@ if ($TemplateList -eq 'all') {
         exit 1
     }
 
-    $templateNames += $officialTemplates
-
     # Other templates outside of `azd template list` can be added here.
     # To add a template, add the repository path {owner}/{repo} to the list below.
     $otherTemplates = @()
 
+    $templateNames += $officialTemplates
     $templateNames += $otherTemplates
 } else {
     Write-Host "Using provided TemplateList value: $TemplateList"

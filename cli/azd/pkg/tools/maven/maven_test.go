@@ -122,6 +122,7 @@ func Test_extractVersion(t *testing.T) {
 		})
 
 	mvn := NewMavenCli(execMock).(*mavenCli)
+	placeExecutable(t, mvnwWithExt(), mvn.projectPath)
 	ver, err := mvn.extractVersion(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, "3.9.1", ver)

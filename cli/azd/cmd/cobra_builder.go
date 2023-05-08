@@ -150,13 +150,15 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 				var respErr *azcore.ResponseError
 				var azureErr *azcli.AzureDeploymentError
 
-				// We only want show trace ID for server-related errors,
+				// We only want to show trace ID for server-related errors,
 				// where we have full server logs to troubleshoot from.
 				//
 				// For client errors, we don't want to show the trace ID, as it is not useful to the user currently.
 				if errors.As(err, &respErr) || errors.As(err, &azureErr) {
 					if actionResult != nil && actionResult.TraceID != "" {
-						console.Message(ctx, fmt.Sprintf("Trace ID: %s", actionResult.TraceID))
+						console.Message(
+							ctx,
+							output.WithErrorFormat(fmt.Sprintf("Trace ID: %s", actionResult.TraceID)))
 					}
 				}
 			}

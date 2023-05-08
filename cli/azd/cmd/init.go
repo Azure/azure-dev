@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -171,10 +172,16 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, environment.NewEnvironmentInitError(envName)
 	}
 
+	suggest := environment.CleanName(filepath.Base(wd) + "-main")
+	if len(suggest) > environment.EnvironmentNameMaxLength {
+		suggest = suggest[len(suggest)-environment.EnvironmentNameMaxLength:]
+	}
+
 	envSpec := environmentSpec{
 		environmentName: i.flags.environmentName,
 		subscription:    i.flags.subscription,
 		location:        i.flags.location,
+		suggest:         suggest,
 	}
 
 	env, err := createEnvironment(ctx, envSpec, azdCtx, i.console)

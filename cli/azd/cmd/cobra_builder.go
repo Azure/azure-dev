@@ -158,7 +158,7 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 					if actionResult != nil && actionResult.TraceID != "" {
 						console.Message(
 							ctx,
-							output.WithErrorFormat(fmt.Sprintf("Trace ID: %s", actionResult.TraceID)))
+							output.WithErrorFormat(fmt.Sprintf("TraceID: %s", actionResult.TraceID)))
 					}
 				}
 			}

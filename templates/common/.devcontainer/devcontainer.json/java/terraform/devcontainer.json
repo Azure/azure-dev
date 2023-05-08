@@ -27,12 +27,13 @@
     "customizations": {
         "vscode": {
             "extensions": [
+                "GitHub.vscode-github-actions",
                 "ms-azuretools.azure-dev",
+                "ms-azuretools.vscode-azurefunctions",
                 "ms-azuretools.vscode-bicep",
                 "ms-azuretools.vscode-docker",
                 "ms-vscode.vscode-node-azure-pack",
-                "vscjava.vscode-java-pack",
-                "ms-azuretools.vscode-azurefunctions"
+                "vscjava.vscode-java-pack"
             ]
         }
     },

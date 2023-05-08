@@ -13,10 +13,11 @@
     "customizations": {
         "vscode": {
             "extensions": [
+                "GitHub.vscode-github-actions",
                 "ms-azuretools.azure-dev",
+                "ms-azuretools.vscode-azurefunctions",
                 "ms-azuretools.vscode-bicep",
-                "ms-azuretools.vscode-docker",
-                "ms-azuretools.vscode-azurefunctions"
+                "ms-azuretools.vscode-docker"
                 // Include other VSCode language extensions if needed
                 // Right click on an extension inside VSCode to add directly to devcontainer.json, or copy the extension ID
             ]

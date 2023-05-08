@@ -1,6 +1,8 @@
 
 Create and configure your deployment pipeline by using GitHub or Azure Pipelines.
 
+  • By default, pipeline config will configure and set deployment pipeline variables using the current environment. To configure for a new or a different existing environment, use the '-e' flag.
+
 Usage
   azd pipeline config [flags]
 
@@ -18,6 +20,11 @@ Global Flags
         --debug      	: Enables debugging and diagnostics logging.
         --no-prompt  	: Accepts the default value instead of prompting, or it fails if there is no default.
 
-Find a bug? Want to let us know how we're doing? Fill out this brief survey: https://aka.ms/azure-dev/hats.
+Examples
+  Set up a deployment pipeline for 'app-test' environment
+    azd pipeline config -e app-test
+
+  Set up a deployment pipeline for 'app-test' environment on Azure Pipelines.
+    azd pipeline config -e app-test --provider azdo
 
 

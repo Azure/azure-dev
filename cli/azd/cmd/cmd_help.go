@@ -145,7 +145,7 @@ func getCmdHelpAvailableCommands(commands string) string {
 func getCmdHelpDescriptionNoteForInit(c *cobra.Command) (notes []string) {
 	notes = append(notes, formatHelpNote(
 		fmt.Sprintf("Running %s without a template will prompt "+
-			"you to start with an empty template or select from a curated list of presets.",
+			"you to start with a minimal template or select from a curated list of presets.",
 			output.WithHighLightFormat(c.CommandPath()),
 		)))
 	notes = append(notes, formatHelpNote(

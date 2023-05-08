@@ -43,10 +43,13 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
+	"github.com/benbjohnson/clock"
 	"github.com/drone/envsubst"
 	"golang.org/x/exp/maps"
 	"golang.org/x/exp/slices"
 )
+
+const DefaultModule = "main"
 
 type BicepDeploymentDetails struct {
 	// Template is the template to deploy during the deployment operation.
@@ -192,7 +195,7 @@ func (p *BicepProvider) Plan(
 					p.azCli,
 					p.env.GetLocation(),
 					p.env.GetSubscriptionId(),
-					fmt.Sprintf("%s-%d", p.env.GetEnvName(), time.Now().Unix()),
+					deploymentNameForEnv(p.env.GetEnvName(), clock.New()),
 				)
 			} else if deploymentScope == azure.DeploymentScopeResourceGroup {
 				if !p.alphaFeatureManager.IsEnabled(ResourceGroupDeploymentFeature) {
@@ -216,7 +219,7 @@ func (p *BicepProvider) Plan(
 					p.azCli,
 					p.env.GetSubscriptionId(),
 					p.env.Getenv(environment.ResourceGroupEnvVarName),
-					fmt.Sprintf("%s-%d", p.env.GetEnvName(), time.Now().Unix()),
+					deploymentNameForEnv(p.env.GetEnvName(), clock.New()),
 				)
 			} else {
 				asyncContext.SetError(fmt.Errorf("unsupported scope: %s", deploymentScope))
@@ -237,6 +240,21 @@ func (p *BicepProvider) Plan(
 			p.console.StopSpinner(ctx, "", input.StepDone)
 			asyncContext.SetResult(&result)
 		})
+}
+
+// cArmDeploymentNameLengthMax is the maximum length of the name of a deployment in ARM.
+const cArmDeploymentNameLengthMax = 64
+
+// deploymentNameForEnv creates a name to use for the deployment object for a given environment. It appends the current
+// unix time to the environment name (separated by a hyphen) to provide a unique name for each deployment. If the resulting
+// name is longer than the ARM limit, the longest suffix of the name under the limit is returned.
+func deploymentNameForEnv(envName string, clock clock.Clock) string {
+	name := fmt.Sprintf("%s-%d", envName, clock.Now().Unix())
+	if len(name) <= cArmDeploymentNameLengthMax {
+		return name
+	}
+
+	return name[len(name)-cArmDeploymentNameLengthMax:]
 }
 
 // Provisioning the infrastructure within the specified template
@@ -1044,10 +1062,6 @@ func (p *BicepProvider) deployModule(
 // Gets the path to the project parameters file path
 func (p *BicepProvider) parametersTemplateFilePath() string {
 	infraPath := p.options.Path
-	if strings.TrimSpace(infraPath) == "" {
-		infraPath = "infra"
-	}
-
 	parametersFilename := fmt.Sprintf("%s.parameters.json", p.options.Module)
 	return filepath.Join(p.projectPath, infraPath, parametersFilename)
 }
@@ -1055,10 +1069,6 @@ func (p *BicepProvider) parametersTemplateFilePath() string {
 // Gets the folder path to the specified module
 func (p *BicepProvider) modulePath() string {
 	infraPath := p.options.Path
-	if strings.TrimSpace(infraPath) == "" {
-		infraPath = "infra"
-	}
-
 	moduleFilename := fmt.Sprintf("%s.bicep", p.options.Module)
 	return filepath.Join(p.projectPath, infraPath, moduleFilename)
 }
@@ -1227,9 +1237,9 @@ func NewBicepProvider(
 		return nil, err
 	}
 
-	// Default to a module named "main" if not specified.
+	// Default module if not specified.
 	if strings.TrimSpace(infraOptions.Module) == "" {
-		infraOptions.Module = "main"
+		infraOptions.Module = DefaultModule
 	}
 
 	return &BicepProvider{

@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"os"
-	"strings"
 
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -42,7 +41,7 @@ func newInitCmd() *cobra.Command {
 }
 
 type initFlags struct {
-	template       templates.Template
+	templatePath   string
 	templateBranch string
 	subscription   string
 	location       string
@@ -52,7 +51,7 @@ type initFlags struct {
 
 func (i *initFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	local.StringVarP(
-		&i.template.Name,
+		&i.templatePath,
 		"template",
 		"t",
 		"",
@@ -103,11 +102,11 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	azdCtx := azdcontext.NewAzdContextWithDirectory(wd)
 
-	if i.flags.templateBranch != "" && i.flags.template.Name == "" {
-		return nil, errors.New("template name required when specifying a branch name")
+	if i.flags.templateBranch != "" && i.flags.templatePath == "" {
+		return nil, errors.New("template required when specifying a branch name")
 	}
 
-	// init now requires git all the time, even for empty template, azd initializes a local git project
+	// ensure that git is available
 	if err := tools.EnsureInstalled(ctx, []tools.ExternalTool{i.gitCli}...); err != nil {
 		return nil, err
 	}
@@ -136,8 +135,9 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			return nil, err
 		}
 
-		if i.flags.template.Name == "" {
-			i.flags.template, err = templates.PromptTemplate(ctx, "Select a project template:", i.console)
+		if i.flags.templatePath == "" {
+			template, err := templates.PromptTemplate(ctx, "Select a project template:", i.console)
+			i.flags.templatePath = template.RepositoryPath
 
 			if err != nil {
 				return nil, err
@@ -145,36 +145,18 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 	}
 
-	if i.flags.template.Name != "" {
-		var templateUrl string
-
-		if i.flags.template.RepositoryPath == "" {
-			// using template name directly from command line
-			i.flags.template.RepositoryPath = i.flags.template.Name
+	if i.flags.templatePath != "" {
+		gitUri, err := templates.Absolute(i.flags.templatePath)
+		if err != nil {
+			return nil, err
 		}
 
-		// treat names that start with http or git as full URLs and don't change them
-		if strings.HasPrefix(i.flags.template.RepositoryPath, "git") ||
-			strings.HasPrefix(i.flags.template.RepositoryPath, "http") {
-			templateUrl = i.flags.template.RepositoryPath
-		} else {
-			switch strings.Count(i.flags.template.RepositoryPath, "/") {
-			case 0:
-				templateUrl = fmt.Sprintf("https://github.com/Azure-Samples/%s", i.flags.template.RepositoryPath)
-			case 1:
-				templateUrl = fmt.Sprintf("https://github.com/%s", i.flags.template.RepositoryPath)
-			default:
-				return nil, fmt.Errorf(
-					"template '%s' should be either <repository> or <repo>/<repository>", i.flags.template.RepositoryPath)
-			}
-		}
-
-		err = i.repoInitializer.Initialize(ctx, azdCtx, templateUrl, i.flags.templateBranch)
+		err = i.repoInitializer.Initialize(ctx, azdCtx, gitUri, i.flags.templateBranch)
 		if err != nil {
 			return nil, fmt.Errorf("init from template repository: %w", err)
 		}
 	} else if !existingProject { // do not initialize for empty if azure.yaml is present
-		err = i.repoInitializer.InitializeEmpty(ctx, azdCtx)
+		err = i.repoInitializer.InitializeMinimal(ctx, azdCtx)
 		if err != nil {
 			return nil, fmt.Errorf("init empty repository: %w", err)
 		}

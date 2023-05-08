@@ -8,6 +8,7 @@ class Azd < Formula
 
   def install
     bin.install "azd-darwin-amd64" => "azd"
+    (bin/".installed-by.txt").write "brew"
   end
 
   def caveats

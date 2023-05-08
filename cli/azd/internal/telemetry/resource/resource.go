@@ -29,6 +29,7 @@ func New() *resource.Resource {
 			fields.ProcessRuntimeVersionKey.String(runtime.Version()),
 			fields.ExecutionEnvironmentKey.String(getExecutionEnvironment()),
 			fields.MachineIdKey.String(getMachineId()),
+			fields.InstalledByKey.String(getInstalledBy()),
 		),
 	)
 

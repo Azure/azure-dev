@@ -13,12 +13,12 @@ products:
 - azure-monitor
 - azure-pipelines
 urlFragment: todo-nodejs-mongo-swa-func
-name: Web Application with a Node.js API and Azure Cosmos DB API for MongoDB on Static Web Apps and Functions
+name: Static React Web App + Functions with Node.js API and MongoDB on Azure
 description: A complete ToDo app with Node.js API and Azure Cosmos API for MongoDB for storage. Uses Azure Developer CLI (azd) to build, deploy, and monitor
 ---
 <!-- YAML front-matter schema: https://review.learn.microsoft.com/en-us/help/contribute/samples/process/onboarding?branch=main#supported-metadata-fields-for-readmemd -->
 
-# Static React Web App + Functions with Node.js API and MongoDB
+# Static React Web App + Functions with Node.js API and MongoDB on Azure
 
 [![Open in GitHub Codespaces](https://img.shields.io/static/v1?style=for-the-badge&label=GitHub+Codespaces&message=Open&color=brightgreen&logo=github)](https://github.com/codespaces/new?hide_repo_select=true&ref=main&repo=497092464&machine=standardLinux32gb&devcontainer_path=.devcontainer%2Fdevcontainer.json&location=WestUs2)
 [![Open in Remote - Containers](https://img.shields.io/static/v1?style=for-the-badge&label=Remote%20-%20Containers&message=Open&color=blue&logo=visualstudiocode)](https://vscode.dev/redirect?url=vscode://ms-vscode-remote.remote-containers/cloneInVolume?url=https://github.com/azure-samples/todo-nodejs-mongo-swa-func)

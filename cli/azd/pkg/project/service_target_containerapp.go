@@ -6,6 +6,7 @@ package project
 import (
 	"context"
 	"fmt"
+	"strconv"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
@@ -19,6 +20,7 @@ type containerAppTarget struct {
 	env                 *environment.Environment
 	containerHelper     *ContainerHelper
 	containerAppService containerapps.ContainerAppService
+	resourceManager     ResourceManager
 }
 
 // NewContainerAppTarget creates the container app service target.
@@ -29,11 +31,13 @@ func NewContainerAppTarget(
 	env *environment.Environment,
 	containerHelper *ContainerHelper,
 	containerAppService containerapps.ContainerAppService,
+	resourceManager ResourceManager,
 ) ServiceTarget {
 	return &containerAppTarget{
 		env:                 env,
 		containerHelper:     containerHelper,
 		containerAppService: containerAppService,
+		resourceManager:     resourceManager,
 	}
 }
 
@@ -44,6 +48,10 @@ func (at *containerAppTarget) RequiredExternalTools(ctx context.Context) []tools
 
 // Initializes the Container App target
 func (at *containerAppTarget) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
+	if err := at.addPreProvisionChecks(ctx, serviceConfig); err != nil {
+		return fmt.Errorf("initializing container app target: %w", err)
+	}
+
 	return nil
 }
 
@@ -158,4 +166,22 @@ func (at *containerAppTarget) validateTargetResource(
 	}
 
 	return nil
+}
+
+func (at *containerAppTarget) addPreProvisionChecks(ctx context.Context, serviceConfig *ServiceConfig) error {
+	// Attempt to retrieve the target resource for the current service
+	// This allows the resource deployment to detect whether or not to pull existing container image during
+	// provision operation to avoid resetting the container app back to a default image
+	return serviceConfig.Project.AddHandler("preprovision", func(ctx context.Context, args ProjectLifecycleEventArgs) error {
+		exists := false
+
+		// Check if the target resource already exists
+		targetResource, err := at.resourceManager.GetTargetResource(ctx, at.env.GetSubscriptionId(), serviceConfig)
+		if targetResource != nil && err == nil {
+			exists = true
+		}
+
+		at.env.SetServiceProperty(serviceConfig.Name, "RESOURCE_EXISTS", strconv.FormatBool(exists))
+		return at.env.Save()
+	})
 }

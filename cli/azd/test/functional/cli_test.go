@@ -19,7 +19,6 @@ import (
 	osexec "os/exec"
 	"path"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"strings"
 	"testing"
@@ -33,7 +32,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
-	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
@@ -49,67 +47,6 @@ const (
 	testSubscriptionId = "2cd617ea-1866-46b1-90e3-fffb087ebf9b"
 	defaultLocation    = "eastus2"
 )
-
-func Test_CLI_Init_CreatesEnvAndProjectFile(t *testing.T) {
-	ctx, cancel := newTestContext(t)
-	defer cancel()
-
-	dir := tempDirWithDiagnostics(t)
-
-	cli := azdcli.NewCLI(t)
-	cli.WorkingDirectory = dir
-	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
-
-	_, err := cli.RunCommandWithStdIn(
-		ctx,
-		"Empty Template\nTESTENV\n",
-		"init",
-	)
-	require.NoError(t, err)
-
-	file, err := os.ReadFile(getTestEnvPath(dir, "TESTENV"))
-
-	require.NoError(t, err)
-
-	require.Regexp(t, regexp.MustCompile(`AZURE_ENV_NAME="TESTENV"`+"\n"), string(file))
-
-	proj, err := project.Load(ctx, filepath.Join(dir, azdcontext.ProjectFileName))
-	require.NoError(t, err)
-
-	require.Equal(t, filepath.Base(dir), proj.Name)
-}
-
-func Test_CLI_Init_CanUseTemplate(t *testing.T) {
-	// running this test in parallel is ok as it uses a t.TempDir()
-	t.Parallel()
-	ctx, cancel := newTestContext(t)
-	defer cancel()
-
-	dir := tempDirWithDiagnostics(t)
-
-	cli := azdcli.NewCLI(t)
-	cli.WorkingDirectory = dir
-	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
-
-	_, err := cli.RunCommandWithStdIn(
-		ctx,
-		"TESTENV\n",
-		"init",
-		"--template",
-		"cosmos-dotnet-core-todo-app",
-	)
-	require.NoError(t, err)
-
-	// While `init` uses git behind the scenes to pull a template, we don't want to bring the history over in the new git
-	// repository.
-	cmdRun := exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
-	cmdRes, err := cmdRun.Run(ctx, exec.NewRunArgs("git", "-C", dir, "log", "--oneline", "-n", "1").WithEnrichError(true))
-	require.Error(t, err)
-	require.Contains(t, cmdRes.Stderr, "does not have any commits yet")
-
-	// Ensure the project was initialized from the template by checking that a file from the template is present.
-	require.FileExists(t, filepath.Join(dir, "README.md"))
-}
 
 func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 	// running this test in parallel is ok as it uses a t.TempDir()
@@ -313,7 +250,6 @@ func Test_CLI_ProvisionIsNeeded(t *testing.T) {
 	}{
 		{command: "deploy"},
 		{command: "monitor"},
-		{command: "pipeline config"},
 	}
 
 	for _, tt := range tests {

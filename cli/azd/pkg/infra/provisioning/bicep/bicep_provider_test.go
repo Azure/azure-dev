@@ -31,6 +31,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
+	"github.com/benbjohnson/clock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -401,6 +402,7 @@ func (b *testBicep) Build(ctx context.Context, file string) (string, error) {
 func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepProvider {
 	projectDir := "../../../../test/functional/testdata/samples/webapp"
 	options := Options{
+		Path:   "infra",
 		Module: "main",
 	}
 
@@ -813,4 +815,29 @@ func TestResourceGroupsFromLatestDeployment(t *testing.T) {
 		sort.Strings(groups)
 		require.Equal(t, []string{"groupA", "groupB", "groupC"}, groups)
 	})
+}
+
+func TestDeploymentNameForEnv(t *testing.T) {
+	clock := clock.NewMock()
+	clock.Set(time.Unix(1683303710, 0))
+
+	tcs := []struct {
+		envName  string
+		expected string
+	}{
+		{
+			envName:  "simple-name",
+			expected: "simple-name-1683303710",
+		},
+		{
+			envName:  "azd-template-test-apim-todo-csharp-sql-swa-func-2750207-2",
+			expected: "template-test-apim-todo-csharp-sql-swa-func-2750207-2-1683303710",
+		},
+	}
+
+	for _, tc := range tcs {
+		deploymentName := deploymentNameForEnv(tc.envName, clock)
+		assert.Equal(t, tc.expected, deploymentName)
+		assert.LessOrEqual(t, len(deploymentName), 64)
+	}
 }

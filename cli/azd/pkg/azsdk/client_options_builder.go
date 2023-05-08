@@ -58,6 +58,11 @@ func (b *ClientOptionsBuilder) BuildArmClientOptions() *arm.ClientOptions {
 			PerCallPolicies: b.perCallPolicies,
 			// Per retry policies to inject into HTTP pipeline
 			PerRetryPolicies: b.perRetryPolicies,
+			// Logging policy options.
+			// Always allow Azure correlation header
+			Logging: policy.LogOptions{
+				AllowedHeaders: []string{cMsCorrelationIdHeader},
+			},
 		},
 	}
 }

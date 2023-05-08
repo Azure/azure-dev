@@ -13,7 +13,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/internal"
 )
 
 func (cli *azCli) ListSubscriptionDeployments(
@@ -260,7 +259,7 @@ func createDeploymentError(err error) error {
 		} else {
 			errorText = string(rawBody)
 		}
-		return internal.NewAzureDeploymentError(errorText)
+		return NewAzureDeploymentError(errorText)
 	}
 
 	return err

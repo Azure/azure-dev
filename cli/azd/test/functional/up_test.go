@@ -263,8 +263,7 @@ func Test_CLI_Up_Down_ContainerApp(t *testing.T) {
 }
 
 func Test_CLI_Up_ResourceGroupScope(t *testing.T) {
-	t.Setenv("AZD_DEBUG_CONFIG_ALPHA_RESOURCEGROUPDEPLOYMENTS", "on")
-	t.Setenv("AZURE_SUBSCRIPTION_ID", "faa080af-c1d8-40ad-9cce-e1a450ca5b57")
+	t.Setenv("AZD_ENABLE_ALPHA_RESOURCEGROUPDEPLOYMENTS", "true")
 
 	ctx, cancel := newTestContext(t)
 	defer cancel()

@@ -207,6 +207,8 @@ func getTermMode() yacspin.TerminalMode {
 		return yacspin.ForceNoTTYMode | yacspin.ForceDumbTerminalMode
 	}
 
+	// By default, detect if we are running on CI and force no TTY mode if we are.
+	// Allow for an override if this is not desired.
 	shouldDetectCI := true
 	if strVal, has := os.LookupEnv("AZD_TERM_SKIP_CI_DETECT"); has {
 		skip, err := strconv.ParseBool(strVal)

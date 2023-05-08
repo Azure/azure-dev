@@ -179,25 +179,28 @@ func (p *BicepProvider) Plan(
 				return
 			}
 
+			deploymentScope, err := template.TargetScope()
+			if err != nil {
+				asyncContext.SetError(fmt.Errorf("getting template target scope: %w", err))
+				return
+			}
+
 			var target infra.Deployment
 
-			switch template.TargetScope() {
-			case azure.DeploymentScopeSubscription:
+			if deploymentScope == azure.DeploymentScopeSubscription {
 				target = infra.NewSubscriptionDeployment(
 					p.azCli,
 					p.env.GetLocation(),
 					p.env.GetSubscriptionId(),
 					fmt.Sprintf("%s-%d", p.env.GetEnvName(), time.Now().Unix()),
 				)
-			case azure.DeploymentScopeResourceGroup:
+			} else if deploymentScope == azure.DeploymentScopeResourceGroup {
 				if !p.alphaFeatureManager.IsEnabled(ResourceGroupDeploymentFeature) {
 					asyncContext.SetError(ErrResourceGroupScopeNotSupported)
 					return
 				}
 
-				if alpha.ShouldWarn(ResourceGroupDeploymentFeature) {
-					p.console.MessageUxItem(ctx, alpha.WarningMessage(ResourceGroupDeploymentFeature))
-				}
+				p.console.WarnForFeature(ctx, ResourceGroupDeploymentFeature)
 
 				if p.env.Getenv(environment.ResourceGroupEnvVarName) == "" {
 					asyncContext.SetError(
@@ -215,8 +218,9 @@ func (p *BicepProvider) Plan(
 					p.env.Getenv(environment.ResourceGroupEnvVarName),
 					fmt.Sprintf("%s-%d", p.env.GetEnvName(), time.Now().Unix()),
 				)
-			default:
-				panic(fmt.Sprintf("unknown template target scope: %s", template.TargetScope()))
+			} else {
+				asyncContext.SetError(fmt.Errorf("unsupported scope: %s", deploymentScope))
+				return
 			}
 
 			result := DeploymentPlan{
@@ -317,17 +321,19 @@ type itemToPurge struct {
 }
 
 func (p *BicepProvider) scopeForTemplate(ctx context.Context, t azure.ArmTemplate) (infra.Scope, error) {
-	switch t.TargetScope() {
-	case azure.DeploymentScopeSubscription:
+	deploymentScope, err := t.TargetScope()
+	if err != nil {
+		return nil, err
+	}
+
+	if deploymentScope == azure.DeploymentScopeSubscription {
 		return infra.NewSubscriptionScope(p.azCli, p.env.GetSubscriptionId()), nil
-	case azure.DeploymentScopeResourceGroup:
+	} else if deploymentScope == azure.DeploymentScopeResourceGroup {
 		if !p.alphaFeatureManager.IsEnabled(ResourceGroupDeploymentFeature) {
 			return nil, ErrResourceGroupScopeNotSupported
 		}
 
-		if alpha.ShouldWarn(ResourceGroupDeploymentFeature) {
-			p.console.MessageUxItem(ctx, alpha.WarningMessage(ResourceGroupDeploymentFeature))
-		}
+		p.console.WarnForFeature(ctx, ResourceGroupDeploymentFeature)
 
 		if p.env.Getenv(environment.ResourceGroupEnvVarName) == "" {
 			return nil, fmt.Errorf(
@@ -341,8 +347,8 @@ func (p *BicepProvider) scopeForTemplate(ctx context.Context, t azure.ArmTemplat
 			p.env.Getenv(environment.ResourceGroupEnvVarName),
 		), nil
 
-	default:
-		return nil, fmt.Errorf("unsupported deployment scope: %s", t.TargetScope())
+	} else {
+		return nil, fmt.Errorf("unsupported deployment scope: %s", deploymentScope)
 	}
 
 }

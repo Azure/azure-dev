@@ -5,9 +5,11 @@ package azure
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/url"
 	"path"
+	"strings"
 )
 
 type DeploymentScope string
@@ -28,19 +30,28 @@ type ArmTemplate struct {
 	Outputs        ArmTemplateOutputs              `json:"outputs"`
 }
 
-func (t ArmTemplate) TargetScope() DeploymentScope {
-	u, err := url.Parse(t.Schema)
-	if err != nil {
-		panic(fmt.Sprintf("bad schema for template: %s", t.Schema))
+var cResourceDeploymentTemplateSchemaLower = strings.ToLower("deploymentTemplate.json")
+var cSubscriptionDeploymentTemplateSchemaLower = strings.ToLower("deploymentTemplate.json")
+
+// TargetScope uses the $schema property of the template to determine what scope this template should be deployed
+// at or an error if the scope could not be determined.
+func (t ArmTemplate) TargetScope() (DeploymentScope, error) {
+	if t.Schema == "" {
+		return DeploymentScope(""), errors.New("no schema in template")
 	}
 
-	switch path.Base(u.Path) {
-	case "subscriptionDeploymentTemplate.json":
-		return DeploymentScopeSubscription
-	case "deploymentTemplate.json":
-		return DeploymentScopeResourceGroup
+	u, err := url.Parse(t.Schema)
+	if err != nil {
+		return DeploymentScope(""), fmt.Errorf("error parsing schema: %w", err)
+	}
+
+	switch strings.ToLower(path.Base(u.Path)) {
+	case cSubscriptionDeploymentTemplateSchemaLower:
+		return DeploymentScopeSubscription, nil
+	case cResourceDeploymentTemplateSchemaLower:
+		return DeploymentScopeResourceGroup, nil
 	default:
-		panic(fmt.Sprintf("unknown schema type: %s", path.Base(u.Path)))
+		return DeploymentScope(""), fmt.Errorf("unknown schema: %s", t.Schema)
 	}
 }
 

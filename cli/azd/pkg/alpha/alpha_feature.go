@@ -3,12 +3,8 @@ package alpha
 import (
 	"fmt"
 	"log"
-	"os"
-	"strconv"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/resources"
 	"gopkg.in/yaml.v3"
 )
@@ -68,23 +64,4 @@ func IsFeatureKey(key string) (featureId FeatureId, isAlpha bool) {
 // GetEnableCommand provides a message for how to enable the alpha feature.
 func GetEnableCommand(key FeatureId) string {
 	return fmt.Sprintf("azd config set %s on", strings.Join([]string{parentKey, string(key)}, "."))
-}
-
-// ShouldWarn returns true if a warning should be emitted when using a given alpha feature.
-func ShouldWarn(key FeatureId) bool {
-	noAlphaWarnings, err := strconv.ParseBool(os.Getenv("AZD_DEBUG_NO_ALPHA_WARNINGS"))
-
-	return err != nil || !noAlphaWarnings
-}
-
-// WarningMessage generates the output message when customer is using alpha features.
-func WarningMessage(key FeatureId) ux.UxItem {
-	return &ux.MultilineMessage{
-		Lines: []string{
-			output.WithWarningFormat("WARNING: Feature '%s' is in alpha stage.", string(key)),
-			fmt.Sprintf("To learn more about alpha features and their support, visit %s.",
-				output.WithLinkFormat("https://aka.ms/azd-feature-stages")),
-			"",
-		},
-	}
 }

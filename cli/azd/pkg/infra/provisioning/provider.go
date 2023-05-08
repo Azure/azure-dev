@@ -173,9 +173,7 @@ func NewProvider(
 			)
 		}
 
-		if alpha.ShouldWarn(alphaFeatureId) {
-			console.MessageUxItem(ctx, alpha.WarningMessage(alphaFeatureId))
-		}
+		console.WarnForFeature(ctx, alphaFeatureId)
 	}
 
 	newProviderFn, ok := providers[infraOptions.Provider]

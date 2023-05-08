@@ -165,13 +165,22 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 	if err != nil {
 		return nil, fmt.Errorf("creating provisioning manager: %w", err)
 	}
+	var deployResult *provisioning.DeployResult
 
-	deploymentPlan, err := infraManager.Plan(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("planning deployment: %w", err)
+	projectEventArgs := project.ProjectLifecycleEventArgs{
+		Project: p.projectConfig,
 	}
 
-	deployResult, err := infraManager.Deploy(ctx, deploymentPlan)
+	err = p.projectConfig.Invoke(ctx, project.ProjectEventProvision, projectEventArgs, func() error {
+		deploymentPlan, err := infraManager.Plan(ctx)
+		if err != nil {
+			return fmt.Errorf("planning deployment: %w", err)
+		}
+
+		deployResult, err = infraManager.Deploy(ctx, deploymentPlan)
+
+		return err
+	})
 
 	if err != nil {
 		if p.formatter.Kind() == output.JsonFormat {

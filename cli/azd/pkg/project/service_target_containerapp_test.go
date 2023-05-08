@@ -19,6 +19,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazsdk"
 	"github.com/azure/azure-dev/cli/azd/test/ostest"
 	"github.com/benbjohnson/clock"
@@ -131,11 +132,14 @@ func createContainerAppServiceTarget(
 	containerAppService := containerapps.NewContainerAppService(credentialProvider, mockContext.HttpClient, clock.NewMock())
 	containerRegistryService := azcli.NewContainerRegistryService(credentialProvider, mockContext.HttpClient, dockerCli)
 	containerHelper := NewContainerHelper(env, clock.NewMock(), containerRegistryService, dockerCli)
+	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
+	resourceManager := NewResourceManager(env, azCli)
 
 	return NewContainerAppTarget(
 		env,
 		containerHelper,
 		containerAppService,
+		resourceManager,
 	)
 }
 

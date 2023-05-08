@@ -10,23 +10,23 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
-type GitHubVariableKind string
+type GitHubValueKind string
 
 const (
-	GitHubSecret   GitHubVariableKind = "secret"
-	GitHubVariable GitHubVariableKind = "variable"
+	GitHubSecret   GitHubValueKind = "secret"
+	GitHubVariable GitHubValueKind = "variable"
 )
 
-type CreatedRepoVariable struct {
+type CreatedRepoValue struct {
 	Name string
-	Kind GitHubVariableKind
+	Kind GitHubValueKind
 }
 
-func (cr *CreatedRepoVariable) ToString(currentIndentation string) string {
+func (cr *CreatedRepoValue) ToString(currentIndentation string) string {
 	return fmt.Sprintf("%s%s Setting %s repo %s", currentIndentation, donePrefix, cr.Name, cr.Kind)
 }
 
-func (cr *CreatedRepoVariable) MarshalJSON() ([]byte, error) {
+func (cr *CreatedRepoValue) MarshalJSON() ([]byte, error) {
 	// reusing the same envelope from console messages
 	return json.Marshal(output.EventForMessage(
 		fmt.Sprintf("%s Setting %s repo %s", donePrefix, cr.Name, cr.Kind)))

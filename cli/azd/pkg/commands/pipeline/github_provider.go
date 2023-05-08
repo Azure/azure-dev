@@ -460,7 +460,7 @@ func (p *GitHubCiProvider) configureClientCredentialsAuth(
 	if err := ghCli.SetSecret(ctx, repoSlug, secretName, string(credentials)); err != nil {
 		return fmt.Errorf("failed setting %s secret: %w", secretName, err)
 	}
-	p.console.MessageUxItem(ctx, &ux.CreatedRepoVariable{
+	p.console.MessageUxItem(ctx, &ux.CreatedRepoValue{
 		Name: secretName,
 		Kind: ux.GitHubSecret,
 	})
@@ -482,7 +482,7 @@ func (p *GitHubCiProvider) configureClientCredentialsAuth(
 		if err := ghCli.SetVariable(ctx, repoSlug, secretName, values.Tenant); err != nil {
 			return fmt.Errorf("setting terraform ARM_TENANT_ID:: %w", err)
 		}
-		p.console.MessageUxItem(ctx, &ux.CreatedRepoVariable{
+		p.console.MessageUxItem(ctx, &ux.CreatedRepoValue{
 			Name: secretName,
 			Kind: ux.GitHubVariable,
 		})
@@ -492,7 +492,7 @@ func (p *GitHubCiProvider) configureClientCredentialsAuth(
 		if err := ghCli.SetVariable(ctx, repoSlug, secretName, values.ClientId); err != nil {
 			return fmt.Errorf("setting terraform ARM_CLIENT_ID:: %w", err)
 		}
-		p.console.MessageUxItem(ctx, &ux.CreatedRepoVariable{
+		p.console.MessageUxItem(ctx, &ux.CreatedRepoValue{
 			Name: secretName,
 			Kind: ux.GitHubVariable,
 		})
@@ -502,7 +502,7 @@ func (p *GitHubCiProvider) configureClientCredentialsAuth(
 		if err := ghCli.SetSecret(ctx, repoSlug, secretName, values.ClientSecret); err != nil {
 			return fmt.Errorf("setting terraform ARM_CLIENT_SECRET:: %w", err)
 		}
-		p.console.MessageUxItem(ctx, &ux.CreatedRepoVariable{
+		p.console.MessageUxItem(ctx, &ux.CreatedRepoValue{
 			Name: secretName,
 			Kind: ux.GitHubSecret,
 		})
@@ -531,7 +531,7 @@ func (p *GitHubCiProvider) configureClientCredentialsAuth(
 			if err := ghCli.SetVariable(ctx, repoSlug, key, value); err != nil {
 				return fmt.Errorf("setting terraform remote state variables: %w", err)
 			}
-			p.console.MessageUxItem(ctx, &ux.CreatedRepoVariable{
+			p.console.MessageUxItem(ctx, &ux.CreatedRepoValue{
 				Name: key,
 				Kind: ux.GitHubVariable,
 			})
@@ -546,7 +546,7 @@ func (p *GitHubCiProvider) configureClientCredentialsAuth(
 		if err := ghCli.SetVariable(ctx, repoSlug, envName, azdEnvironment.Values[envName]); err != nil {
 			return fmt.Errorf("failed setting %s variable: %w", envName, err)
 		}
-		p.console.MessageUxItem(ctx, &ux.CreatedRepoVariable{
+		p.console.MessageUxItem(ctx, &ux.CreatedRepoValue{
 			Name: envName,
 			Kind: ux.GitHubVariable,
 		})
@@ -591,7 +591,7 @@ func (p *GitHubCiProvider) configureFederatedAuth(
 		if err := ghCli.SetVariable(ctx, repoSlug, key, value); err != nil {
 			return fmt.Errorf("failed setting github variable '%s':  %w", key, err)
 		}
-		p.console.MessageUxItem(ctx, &ux.CreatedRepoVariable{
+		p.console.MessageUxItem(ctx, &ux.CreatedRepoValue{
 			Name: key,
 			Kind: ux.GitHubVariable,
 		})

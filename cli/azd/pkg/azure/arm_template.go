@@ -31,7 +31,7 @@ type ArmTemplate struct {
 }
 
 var cResourceDeploymentTemplateSchemaLower = strings.ToLower("deploymentTemplate.json")
-var cSubscriptionDeploymentTemplateSchemaLower = strings.ToLower("deploymentTemplate.json")
+var cSubscriptionDeploymentTemplateSchemaLower = strings.ToLower("subscriptionDeploymentTemplate.json")
 
 // TargetScope uses the $schema property of the template to determine what scope this template should be deployed
 // at or an error if the scope could not be determined.

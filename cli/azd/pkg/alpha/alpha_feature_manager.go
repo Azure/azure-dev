@@ -3,6 +3,7 @@ package alpha
 import (
 	"fmt"
 	"log"
+	"os"
 	"strings"
 	"sync"
 
@@ -82,6 +83,11 @@ func (m *FeatureManager) IsEnabled(featureId FeatureId) bool {
 	// check if the feature is ON
 	if featureOn := isEnabled(m.userConfigCache, featureId); featureOn {
 		return true
+	}
+
+	// For testing, allow enabling alpha features via the environment.
+	if v, has := os.LookupEnv(fmt.Sprintf("AZD_DEBUG_CONFIG_ALPHA_%s", strings.ToUpper(string(featureId)))); has {
+		return v == "on"
 	}
 
 	return false

@@ -32,6 +32,8 @@ type ActionResult struct {
 // Action is the representation of the application logic of a CLI command.
 type Action interface {
 	// Run executes the CLI command.
+	//
+	// It is currently valid to both return an error and a non-nil ActionResult.
 	Run(ctx context.Context) (*ActionResult, error)
 }
 

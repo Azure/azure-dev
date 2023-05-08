@@ -61,7 +61,10 @@ func (m *TelemetryMiddleware) Run(ctx context.Context, next NextFn) (*actions.Ac
 	}()
 
 	result, err := next(spanCtx)
-	result.TraceID = span.SpanContext().TraceID().String()
+	if result == nil {
+		result = &actions.ActionResult{}
+		result.TraceID = span.SpanContext().TraceID().String()
+	}
 
 	if err != nil {
 		span.SetStatus(codes.Error, "UnknownError")

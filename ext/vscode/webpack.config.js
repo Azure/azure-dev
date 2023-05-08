@@ -11,8 +11,6 @@
 
 /* eslint-disable @typescript-eslint/no-var-requires */
 const path = require('path');
-const fs = require('fs/promises');
-// const CopyPlugin = require('copy-webpack-plugin');
 const TerserPlugin = require('terser-webpack-plugin');
 const BundleAnalyzerPlugin = require('webpack-bundle-analyzer').BundleAnalyzerPlugin;
 /* eslint-enable @typescript-eslint/no-var-requires */
@@ -60,12 +58,6 @@ const config = {
         ]
     },
     plugins: [
-        // // Copy some needed resource files from external sources
-        // new CopyPlugin({
-        //     patterns: [
-        //         
-        //     ],
-        // }),
     ],
     optimization: {
         minimizer: [

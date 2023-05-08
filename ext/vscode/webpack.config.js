@@ -12,7 +12,7 @@
 /* eslint-disable @typescript-eslint/no-var-requires */
 const path = require('path');
 const fs = require('fs/promises');
-const CopyPlugin = require('copy-webpack-plugin');
+// const CopyPlugin = require('copy-webpack-plugin');
 const TerserPlugin = require('terser-webpack-plugin');
 const BundleAnalyzerPlugin = require('webpack-bundle-analyzer').BundleAnalyzerPlugin;
 /* eslint-enable @typescript-eslint/no-var-requires */
@@ -60,12 +60,12 @@ const config = {
         ]
     },
     plugins: [
-        // Copy some needed resource files from external sources
-        new CopyPlugin({
-            patterns: [
-                './node_modules/open/xdg-open*', // This script isn't included in the webpack but is needed by `open` on certain systems, so copy it in
-            ],
-        }),
+        // // Copy some needed resource files from external sources
+        // new CopyPlugin({
+        //     patterns: [
+        //         
+        //     ],
+        // }),
         {
             // Webpack does not preserve the execute permission on the above xdg-open script, so apply it again within the bundle
             apply: (compiler) => {

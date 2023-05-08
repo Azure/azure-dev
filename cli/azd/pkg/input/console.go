@@ -10,9 +10,11 @@ import (
 	"io"
 	"log"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/AlecAivazis/survey/v2"
+	"github.com/azure/azure-dev/cli/azd/internal/telemetry/resource"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/nathan-fiscaletti/consolesize-go"
@@ -191,12 +193,35 @@ func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format Spi
 		Message:         c.spinnerText(title, charSet[0]),
 		CharSet:         charSet,
 	}
-	if os.Getenv("AZD_DEBUG_FORCE_NO_TTY") == "1" {
-		spinnerConfig.TerminalMode = yacspin.ForceNoTTYMode | yacspin.ForceDumbTerminalMode
-	}
+	spinnerConfig.TerminalMode = getTermMode()
+
 	c.spinner, _ = yacspin.New(spinnerConfig)
 
 	_ = c.spinner.Start()
+}
+
+// getTermMode gets the appropriate terminal mode based on the current environment, taking into account of environment
+// variables that can control the terminal mode behavior.
+func getTermMode() yacspin.TerminalMode {
+	if os.Getenv("AZD_DEBUG_FORCE_NO_TTY") == "1" {
+		return yacspin.ForceNoTTYMode | yacspin.ForceDumbTerminalMode
+	}
+
+	shouldDetectCI := true
+	if strVal, has := os.LookupEnv("AZD_TERM_SKIP_CI_DETECT"); has {
+		skip, err := strconv.ParseBool(strVal)
+		if err != nil {
+			log.Println("AZD_TERM_SKIP_CI_DETECT is not a valid boolean value")
+		} else if skip {
+			shouldDetectCI = false
+		}
+	}
+
+	if shouldDetectCI && resource.IsRunningOnCI() {
+		return yacspin.ForceNoTTYMode | yacspin.ForceDumbTerminalMode
+	}
+
+	return yacspin.AutomaticMode
 }
 
 var customCharSet []string = []string{

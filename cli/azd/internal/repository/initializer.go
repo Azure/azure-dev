@@ -365,7 +365,7 @@ func (i *Initializer) writeFileSafe(
 			&ux.WarningMessage{
 				Description: fmt.Sprintf("A file already exists at %s, writing to %s instead", path, renamed),
 			})
-		return os.WriteFile(path, content, perm)
+		return os.WriteFile(renamed, content, perm)
 	}
 
 	// If both files exist, do nothing. We don't want to accidentally overwrite a user's file.

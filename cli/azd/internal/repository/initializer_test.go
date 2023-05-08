@@ -609,3 +609,69 @@ func TestInitializer_PromptIfNonEmpty(t *testing.T) {
 		})
 	}
 }
+
+func TestInitializer_writeFileSafe(t *testing.T) {
+	const nameNoExt = "test"
+	const ext = ".txt"
+	const name = nameNoExt + ext
+	const infix = "renamed"
+
+	type file struct {
+		path    string
+		content string
+	}
+
+	tests := []struct {
+		name     string
+		existing []file // existing files in the directory
+		args     file   // the file to write
+		expect   []file // expected files after writing
+	}{
+		{
+			name:     "Empty",
+			existing: []file{},
+			args:     file{name, "content"},
+			expect:   []file{{name, "content"}},
+		},
+		{
+			name:     "WhenExisting_Renamed",
+			existing: []file{{name, "existing"}},
+			args:     file{name, "content"},
+			expect:   []file{{name, "existing"}, {nameNoExt + infix + ext, "content"}},
+		},
+		{
+			name:     "BothExisting_NotModified",
+			existing: []file{{name, "existing"}, {nameNoExt + infix + ext, "existing2"}},
+			args:     file{name, "content"},
+			expect:   []file{{name, "existing"}, {nameNoExt + infix + ext, "existing2"}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			i := Initializer{
+				console: mockinput.NewMockConsole(),
+			}
+
+			dir := t.TempDir()
+			for _, f := range tt.existing {
+				require.NoError(t, os.WriteFile(filepath.Join(dir, f.path), []byte(f.content), osutil.PermissionFile))
+			}
+
+			err := i.writeFileSafe(
+				context.Background(),
+				filepath.Join(dir, tt.args.path),
+				infix,
+				[]byte(tt.args.content),
+				osutil.PermissionFile,
+			)
+			require.NoError(t, err)
+
+			for _, expect := range tt.expect {
+				require.FileExists(t, filepath.Join(dir, expect.path))
+				content, err := os.ReadFile(filepath.Join(dir, expect.path))
+				require.NoError(t, err)
+				require.Equal(t, expect.content, string(content))
+			}
+		})
+	}
+}

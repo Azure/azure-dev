@@ -77,7 +77,7 @@ func (m *FeatureManager) IsEnabled(featureId FeatureId) bool {
 	withSync.Do(m.initConfigCache)
 
 	// For testing, and in CI, allow enabling alpha features via the environment.
-	envName := fmt.Sprintf("AZD_ENABLE_ALPHA_%s", strings.ToUpper(string(featureId)))
+	envName := fmt.Sprintf("AZD_ALPHA_ENABLE_%s", strings.ToUpper(string(featureId)))
 	if v, has := os.LookupEnv(envName); has {
 		if b, err := strconv.ParseBool(v); err == nil {
 			return b

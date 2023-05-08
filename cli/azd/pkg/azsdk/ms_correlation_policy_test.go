@@ -80,7 +80,6 @@ func Test_msCorrelationPolicy_Do(t *testing.T) {
 					}
 				}
 			}
-
 		})
 	}
 }

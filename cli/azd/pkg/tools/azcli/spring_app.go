@@ -4,14 +4,15 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
+	"os"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appplatform/armappplatform"
 	"github.com/Azure/azure-storage-file-go/azfile"
 	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
-	"net/url"
-	"os"
 )
 
 // SpringService provides artifacts upload/deploy and query to Azure Spring Apps (ASA)
@@ -210,7 +211,7 @@ func (ss *springService) createSpringAppClient(
 		return nil, err
 	}
 
-	options := clientOptionsBuilder(ss.httpClient, ss.userAgent).BuildArmClientOptions()
+	options := clientOptionsBuilder(ctx, ss.httpClient, ss.userAgent).BuildArmClientOptions()
 	client, err := armappplatform.NewAppsClient(subscriptionId, credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating SpringApp client: %w", err)
@@ -228,7 +229,7 @@ func (ss *springService) createSpringAppDeploymentClient(
 		return nil, err
 	}
 
-	options := clientOptionsBuilder(ss.httpClient, ss.userAgent).BuildArmClientOptions()
+	options := clientOptionsBuilder(ctx, ss.httpClient, ss.userAgent).BuildArmClientOptions()
 	client, err := armappplatform.NewDeploymentsClient(subscriptionId, credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating SpringAppDeployment client: %w", err)

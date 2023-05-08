@@ -142,7 +142,7 @@ func (crs *containerRegistryService) createRegistriesClient(
 		return nil, err
 	}
 
-	options := clientOptionsBuilder(crs.httpClient, crs.userAgent).BuildArmClientOptions()
+	options := clientOptionsBuilder(ctx, crs.httpClient, crs.userAgent).BuildArmClientOptions()
 	client, err := armcontainerregistry.NewRegistriesClient(subscriptionId, credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating registries client: %w", err)

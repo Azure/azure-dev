@@ -480,7 +480,7 @@ func (p *GitHubCiProvider) configureClientCredentialsAuth(
 		/* #nosec G101 - Potential hardcoded credentials - false positive */
 		secretName = "ARM_TENANT_ID"
 		if err := ghCli.SetVariable(ctx, repoSlug, secretName, values.Tenant); err != nil {
-			return fmt.Errorf("setting terraform ARM_TENANT_ID:: %w", err)
+			return fmt.Errorf("setting terraform %s:: %w", secretName, err)
 		}
 		p.console.MessageUxItem(ctx, &ux.CreatedRepoValue{
 			Name: secretName,
@@ -490,7 +490,7 @@ func (p *GitHubCiProvider) configureClientCredentialsAuth(
 		/* #nosec G101 - Potential hardcoded credentials - false positive */
 		secretName = "ARM_CLIENT_ID"
 		if err := ghCli.SetVariable(ctx, repoSlug, secretName, values.ClientId); err != nil {
-			return fmt.Errorf("setting terraform ARM_CLIENT_ID:: %w", err)
+			return fmt.Errorf("setting terraform %s:: %w", secretName, err)
 		}
 		p.console.MessageUxItem(ctx, &ux.CreatedRepoValue{
 			Name: secretName,
@@ -500,7 +500,7 @@ func (p *GitHubCiProvider) configureClientCredentialsAuth(
 		/* #nosec G101 - Potential hardcoded credentials - false positive */
 		secretName = "ARM_CLIENT_SECRET"
 		if err := ghCli.SetSecret(ctx, repoSlug, secretName, values.ClientSecret); err != nil {
-			return fmt.Errorf("setting terraform ARM_CLIENT_SECRET:: %w", err)
+			return fmt.Errorf("setting terraform %s:: %w", secretName, err)
 		}
 		p.console.MessageUxItem(ctx, &ux.CreatedRepoValue{
 			Name: secretName,

@@ -8,7 +8,7 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-const cCorrelationIdHeader = "x-ms-correlation-request-id"
+const cMsCorrelationIdHeader = "x-ms-correlation-request-id"
 
 // msCorrelationNoOptPolicy is a no-opt policy. It doesn't do anything. It's used when no trace context exists.
 type msCorrelationNoOptPolicy struct {
@@ -22,9 +22,10 @@ type msCorrelationPolicy struct {
 	correlationId string
 }
 
-// Policy to ensure that 'x-ms-correlation-request-id' header is set on all HTTP requests.
+// NewMsCorrelationPolicy creates a policy to ensure that Microsoft correlation ID headers are set on all HTTP requests.
+// This works for Azure REST API, and could also work for other Microsoft-hosted services.
 //
-// If a trace context exists, the trace ID is used as the correlation ID.
+// Correlation IDs are taken from the existing trace context. If no trace context exists, then this policy is a no-op.
 func NewMsCorrelationPolicy(ctx context.Context) policy.Policy {
 	spanCtx := trace.SpanContextFromContext(ctx)
 	if spanCtx.HasTraceID() {
@@ -36,10 +37,9 @@ func NewMsCorrelationPolicy(ctx context.Context) policy.Policy {
 	}
 }
 
-// Sets the correlation ID string on the underlying request
 func (p *msCorrelationPolicy) Do(req *policy.Request) (*http.Response, error) {
 	rawRequest := req.Raw()
-	rawRequest.Header.Set(cCorrelationIdHeader, p.correlationId)
+	rawRequest.Header.Set(cMsCorrelationIdHeader, p.correlationId)
 
 	return req.Next()
 }

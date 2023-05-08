@@ -16,7 +16,7 @@ import (
 
 var traceId trace.TraceID
 
-// 0-bytes hex is by default invalid
+// The default trace.TraceID which is a 0-bytes hex that is invalid
 var invalidTraceId trace.TraceID
 
 func init() {
@@ -72,10 +72,10 @@ func Test_msCorrelationPolicy_Do(t *testing.T) {
 			_, _ = client.GetByID(ctx, "RESOURCE_ID", "", nil)
 
 			if tt.expect != nil {
-				require.Equal(t, response.Request.Header.Get(cCorrelationIdHeader), *tt.expect)
+				require.Equal(t, response.Request.Header.Get(cMsCorrelationIdHeader), *tt.expect)
 			} else {
 				for header := range response.Request.Header {
-					if header == cCorrelationIdHeader {
+					if header == cMsCorrelationIdHeader {
 						require.Fail(t, "should not contain correlation id header")
 					}
 				}

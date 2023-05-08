@@ -11,6 +11,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
 	"github.com/stretchr/testify/require"
@@ -48,6 +49,64 @@ func Test_CLI_Init_Minimal(t *testing.T) {
 	require.DirExists(t, filepath.Join(dir, ".azure"))
 	require.FileExists(t, filepath.Join(dir, "infra", "main.bicep"))
 	require.FileExists(t, filepath.Join(dir, "infra", "main.parameters.json"))
+}
+
+// Verifies init for the minimal template, when infra folder already exists with main.bicep and main.parameters.json.
+func Test_CLI_Init_Minimal_With_Existing_Infra(t *testing.T) {
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
+
+	cli := azdcli.NewCLI(t)
+	cli.WorkingDirectory = dir
+	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
+
+	err := os.MkdirAll(filepath.Join(dir, "infra"), osutil.PermissionDirectory)
+	require.NoError(t, err)
+
+	originalBicep := "param location string = 'eastus2'"
+	originalParameters := "{\"parameters\": {\"location\": {\"value\": \"eastus2\"}}}"
+
+	err = os.WriteFile(filepath.Join(dir, "infra", "main.bicep"), []byte(originalBicep), osutil.PermissionFile)
+	require.NoError(t, err)
+
+	err = os.WriteFile(
+		filepath.Join(dir, "infra", "main.parameters.json"),
+		[]byte(originalParameters),
+		osutil.PermissionFile)
+	require.NoError(t, err)
+
+	_, err = cli.RunCommandWithStdIn(
+		ctx,
+		"y\n"+ // Say yes to initialize in existing folder
+			"Minimal\n"+ // Choose minimal
+			"TESTENV\n", // Provide environment name
+		"init",
+	)
+	require.NoError(t, err)
+
+	file, err := os.ReadFile(getTestEnvPath(dir, "TESTENV"))
+
+	require.NoError(t, err)
+	require.Regexp(t, regexp.MustCompile(`AZURE_ENV_NAME="TESTENV"`+"\n"), string(file))
+
+	proj, err := project.Load(ctx, filepath.Join(dir, azdcontext.ProjectFileName))
+	require.NoError(t, err)
+	require.Equal(t, filepath.Base(dir), proj.Name)
+
+	require.DirExists(t, filepath.Join(dir, ".azure"))
+	bicep, err := os.ReadFile(filepath.Join(dir, "infra", "main.bicep"))
+	require.NoError(t, err)
+
+	parameters, err := os.ReadFile(filepath.Join(dir, "infra", "main.parameters.json"))
+	require.NoError(t, err)
+
+	require.Equal(t, originalBicep, string(bicep))
+	require.Equal(t, originalParameters, string(parameters))
+
+	require.FileExists(t, filepath.Join(dir, "infra", "main.azd.bicep"))
+	require.FileExists(t, filepath.Join(dir, "infra", "main.parameters.azd.json"))
 }
 
 func Test_CLI_Init_CanUseTemplate(t *testing.T) {

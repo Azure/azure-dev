@@ -214,7 +214,7 @@ func getDockerOptionsWithDefaults(options DockerProjectOptions) DockerProjectOpt
 	}
 
 	if options.Platform == "" {
-		options.Platform = "amd64"
+		options.Platform = "linux/amd64"
 	}
 
 	if options.Context == "" {

@@ -64,7 +64,7 @@ func (d *docker) Build(
 	tagName string,
 ) (string, error) {
 	if strings.TrimSpace(platform) == "" {
-		platform = "amd64"
+		platform = "linux/amd64"
 	}
 
 	args := []string{

@@ -8,6 +8,7 @@
 
 - [[2066]](https://github.com/Azure/azure-dev/pull/2066) `azd` no longer assumes `dotnet` by default when `services.language` is not set, or empty in `azure.yaml`. If you receive an error message 'language property must not be empty', specify `language: dotnet` explicitly in `azure.yaml`.
 - [[2100]](https://github.com/Azure/azure-dev/pull/2100) As a follow up from the change for [azd up ordering](#azd-up-ordering), automatic `.env` file injection when building `staticwebapp` services have been removed. For more details, read more about [Static Web App Dynamic Configuration](#static-web-app-dynamic-configuration) below.
+- [[2126]](https://github.com/Azure/azure-dev/pull/2126) During `azd pipeline config` commands `azd` will no longer store non-secret configuration values in [GitHub secrets](https://docs.github.com/actions/automating-your-workflow-with-github-actions/creating-and-using-encrypted-secrets) and instead will be stored in [GitHub variables](https://docs.github.com/actions/learn-github-actions/variables). Non-secret variables should be referenced using the `vars` context instead of the `secrets` context within your GitHub actions.
 
 ### Bugs Fixed
 

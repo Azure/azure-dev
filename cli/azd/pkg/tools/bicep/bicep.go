@@ -248,8 +248,7 @@ func (cli *bicepCli) Build(ctx context.Context, file string) (string, error) {
 
 	if err != nil {
 		return "", fmt.Errorf(
-			"failed running bicep build: %s (%w)",
-			buildRes.String(),
+			"failed running bicep build: %w",
 			err,
 		)
 	}

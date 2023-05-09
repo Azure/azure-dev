@@ -79,10 +79,10 @@ func (cli *npmCli) Install(ctx context.Context, project string) error {
 		NewRunArgs("npm", "install").
 		WithCwd(project)
 
-	res, err := cli.commandRunner.Run(ctx, runArgs)
+	_, err := cli.commandRunner.Run(ctx, runArgs)
 
 	if err != nil {
-		return fmt.Errorf("failed to install project %s, %s: %w", project, res.String(), err)
+		return fmt.Errorf("failed to install project %s: %w", project, err)
 	}
 	return nil
 }

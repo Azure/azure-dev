@@ -45,13 +45,13 @@ type swaCli struct {
 }
 
 func (cli *swaCli) Build(ctx context.Context, cwd string, appFolderPath string, outputRelativeFolderPath string) error {
-	res, err := cli.executeCommand(ctx,
+	_, err := cli.executeCommand(ctx,
 		cwd, "build",
 		"--app-location", appFolderPath,
 		"--output-location", outputRelativeFolderPath)
 
 	if err != nil {
-		return fmt.Errorf("swa build: %s: %w", res.String(), err)
+		return fmt.Errorf("swa build: %w", err)
 	}
 
 	return nil
@@ -91,7 +91,7 @@ func (cli *swaCli) Deploy(
 		"--deployment-token", deploymentToken)
 
 	if err != nil {
-		return "", fmt.Errorf("swa deploy: %s: %w", res.String(), err)
+		return "", fmt.Errorf("swa deploy: %w", err)
 	}
 
 	return res.Stdout + res.Stderr, nil

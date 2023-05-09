@@ -11,6 +11,7 @@ import (
 	"log"
 	"os"
 	"strconv"
+	"sync"
 	"time"
 
 	"github.com/AlecAivazis/survey/v2"
@@ -18,6 +19,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
+	"github.com/mattn/go-isatty"
 	"github.com/nathan-fiscaletti/consolesize-go"
 	"github.com/theckman/yacspin"
 )
@@ -59,6 +61,10 @@ type Console interface {
 	StopSpinner(ctx context.Context, lastMessage string, format SpinnerUxType)
 	// Determines if there is a current spinner running.
 	IsSpinnerRunning(ctx context.Context) bool
+	// Determines if the current spinner is an interactive spinner, where messages are updated periodically.
+	// If false, the spinner is non-interactive, which means messages are rendered as a new console message on each
+	// call to ShowSpinner, even when the title is unchanged.
+	IsSpinnerInteractive() bool
 	// Prompts the user for a single value
 	Prompt(ctx context.Context, options ConsoleOptions) (string, error)
 	// Prompts the user to select from a set of values
@@ -80,9 +86,14 @@ type AskerConsole struct {
 	// the writer the console was constructed with, and what we reset to when SetWriter(nil) is called.
 	defaultWriter io.Writer
 	// the writer which output is written to.
-	writer        io.Writer
-	formatter     output.Formatter
-	spinner       *yacspin.Spinner
+	writer     io.Writer
+	formatter  output.Formatter
+	isTerminal bool
+
+	spinner                 *yacspin.Spinner
+	spinnerTerminalMode     yacspin.TerminalMode
+	spinnerTerminalModeOnce sync.Once
+
 	currentIndent string
 	consoleWidth  int
 }
@@ -207,6 +218,12 @@ func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format Spi
 	}
 
 	charSet := c.getCharset(format)
+
+	// determine the terminal mode once
+	c.spinnerTerminalModeOnce.Do(func() {
+		c.spinnerTerminalMode = GetSpinnerTerminalMode(&c.isTerminal)
+	})
+
 	spinnerConfig := yacspin.Config{
 		Frequency:       200 * time.Millisecond,
 		Writer:          c.writer,
@@ -215,18 +232,29 @@ func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format Spi
 		Message:         c.spinnerText(title, charSet[0]),
 		CharSet:         charSet,
 	}
-	spinnerConfig.TerminalMode = GetTermMode()
+	spinnerConfig.TerminalMode = c.spinnerTerminalMode
 
 	c.spinner, _ = yacspin.New(spinnerConfig)
 
 	_ = c.spinner.Start()
 }
 
-// GetTermMode gets the appropriate terminal mode based on the current environment, taking into account of environment
-// variables that can control the terminal mode behavior.
-func GetTermMode() yacspin.TerminalMode {
+// GetSpinnerTerminalMode gets the appropriate terminal mode for the spinner based on the current environment,
+// taking into account of environment variables that can control the terminal mode behavior.
+func GetSpinnerTerminalMode(isTerminal *bool) yacspin.TerminalMode {
+	nonInteractiveMode := yacspin.ForceNoTTYMode | yacspin.ForceDumbTerminalMode
+	if isTerminal != nil && !*isTerminal {
+		return nonInteractiveMode
+	}
+
+	// isTerminal not provided, determine it ourselves
+	if isTerminal == nil && !isatty.IsTerminal(os.Stdout.Fd()) {
+		return nonInteractiveMode
+	}
+
+	// User override to force non-TTY behavior
 	if os.Getenv("AZD_DEBUG_FORCE_NO_TTY") == "1" {
-		return yacspin.ForceNoTTYMode | yacspin.ForceDumbTerminalMode
+		return nonInteractiveMode
 	}
 
 	// By default, detect if we are running on CI and force no TTY mode if we are.
@@ -242,10 +270,16 @@ func GetTermMode() yacspin.TerminalMode {
 	}
 
 	if shouldDetectCI && resource.IsRunningOnCI() {
-		return yacspin.ForceNoTTYMode | yacspin.ForceDumbTerminalMode
+		return nonInteractiveMode
 	}
 
-	return yacspin.AutomaticMode
+	termMode := yacspin.ForceTTYMode
+	if os.Getenv("TERM") == "dumb" {
+		termMode |= yacspin.ForceDumbTerminalMode
+	} else {
+		termMode |= yacspin.ForceSmartTerminalMode
+	}
+	return termMode
 }
 
 var customCharSet []string = []string{
@@ -305,6 +339,10 @@ func (c *AskerConsole) StopSpinner(ctx context.Context, lastMessage string, form
 
 func (c *AskerConsole) IsSpinnerRunning(ctx context.Context) bool {
 	return c.spinner != nil && c.spinner.Status() != yacspin.SpinnerStopped
+}
+
+func (c *AskerConsole) IsSpinnerInteractive() bool {
+	return c.spinnerTerminalMode&yacspin.ForceTTYMode > 0
 }
 
 var donePrefix string = output.WithSuccessFormat("(✓) Done:")
@@ -431,6 +469,7 @@ func NewConsole(noPrompt bool, isTerminal bool, w io.Writer, handles ConsoleHand
 		defaultWriter: w,
 		writer:        w,
 		formatter:     formatter,
+		isTerminal:    isTerminal,
 		consoleWidth:  getConsoleWidth(),
 	}
 }

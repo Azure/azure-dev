@@ -102,7 +102,7 @@ func NewSpinner(writer io.Writer, title string) *Spinner {
 		// The current LogMessage functionality depends on the StopMessage being empty.
 	}
 
-	config.TerminalMode = input.GetTermMode()
+	config.TerminalMode = input.GetSpinnerTerminalMode(nil)
 
 	spinner, _ := yacspin.New(config)
 

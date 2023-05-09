@@ -193,16 +193,16 @@ func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format Spi
 		Message:         c.spinnerText(title, charSet[0]),
 		CharSet:         charSet,
 	}
-	spinnerConfig.TerminalMode = getTermMode()
+	spinnerConfig.TerminalMode = GetTermMode()
 
 	c.spinner, _ = yacspin.New(spinnerConfig)
 
 	_ = c.spinner.Start()
 }
 
-// getTermMode gets the appropriate terminal mode based on the current environment, taking into account of environment
+// GetTermMode gets the appropriate terminal mode based on the current environment, taking into account of environment
 // variables that can control the terminal mode behavior.
-func getTermMode() yacspin.TerminalMode {
+func GetTermMode() yacspin.TerminalMode {
 	if os.Getenv("AZD_DEBUG_FORCE_NO_TTY") == "1" {
 		return yacspin.ForceNoTTYMode | yacspin.ForceDumbTerminalMode
 	}

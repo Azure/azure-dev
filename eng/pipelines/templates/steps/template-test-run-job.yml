@@ -22,8 +22,14 @@ steps:
     - template: /eng/pipelines/templates/steps/set-git-credentials.yml
 
     - pwsh: |
-          # Remove 'Azure-Samples/'
-          $templateName = '$(TemplateName)'.Substring(14)
+          # Get the name without any path
+          $template = '$(TemplateName)'
+          $lastSlash = $template.LastIndexOf('/')
+          if ($lastSlash -ne -1) {
+            $templateName = $template.Substring($lastSlash + 1)
+          } else {
+            $templateName = $template
+          }
           $scenario = "$env:TEST_SCENARIO"
           $envPrefixName = "azd-template-test"
           if($scenario -ne '') {

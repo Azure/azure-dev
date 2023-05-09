@@ -3,8 +3,7 @@
     "$id": "https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json",
     "type": "object",
     "required": [
-        "name",
-        "services"
+        "name"
     ],
     "additionalProperties": false,
     "properties": {
@@ -66,7 +65,8 @@
                 "type": "object",
                 "additionalProperties": false,
                 "required": [
-                    "project"
+                    "project",
+                    "language"
                 ],
                 "properties": {
                     "resourceName": {
@@ -94,9 +94,7 @@
                     "language": {
                         "type": "string",
                         "title": "Service implementation language",
-                        "description": "If omitted, .NET will be assumed.",
                         "enum": [
-                            "",
                             "dotnet",
                             "csharp",
                             "fsharp",

@@ -88,6 +88,7 @@ type ConsoleOptions struct {
 	Help         string
 	Options      []string
 	DefaultValue any
+	IsPassword   bool
 }
 
 type ConsoleHandles struct {
@@ -251,7 +252,6 @@ func (c *AskerConsole) StopSpinner(ctx context.Context, lastMessage string, form
 
 	c.spinner.StopMessage(lastMessage)
 	_ = c.spinner.Stop()
-	c.currentIndent = ""
 }
 
 func (c *AskerConsole) IsSpinnerRunning(ctx context.Context) bool {
@@ -275,23 +275,30 @@ func (c *AskerConsole) getStopChar(format SpinnerUxType) string {
 	return fmt.Sprintf("%s%s", c.getIndent(format), stopChar)
 }
 
-// Prompts the user for a single value
-func (c *AskerConsole) Prompt(ctx context.Context, options ConsoleOptions) (string, error) {
+func promptFromOptions(options ConsoleOptions) survey.Prompt {
+	if options.IsPassword {
+		return &survey.Password{
+			Message: options.Message,
+		}
+	}
+
 	var defaultValue string
 	if value, ok := options.DefaultValue.(string); ok {
 		defaultValue = value
 	}
-
-	survey := &survey.Input{
+	return &survey.Input{
 		Message: options.Message,
 		Default: defaultValue,
 		Help:    options.Help,
 	}
+}
 
+// Prompts the user for a single value
+func (c *AskerConsole) Prompt(ctx context.Context, options ConsoleOptions) (string, error) {
 	var response string
 
 	err := c.doInteraction(func(c *AskerConsole) error {
-		return c.asker(survey, &response)
+		return c.asker(promptFromOptions(options), &response)
 	})
 	if err != nil {
 		return response, err

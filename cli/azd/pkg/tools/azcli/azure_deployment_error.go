@@ -1,4 +1,4 @@
-package internal
+package azcli
 
 import (
 	"encoding/json"

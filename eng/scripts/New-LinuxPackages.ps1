@@ -10,6 +10,7 @@ try {
 
     if (!(Test-Path "./azd-linux-amd64")) { 
         Write-Error "Cannot find azd-linux-amd64"
+        exit 1
     }
     Copy-Item "$PSScriptRoot/../../NOTICE.txt" "NOTICE.txt"
     Copy-Item "$PSScriptRoot/../../LICENSE" "LICENSE"
@@ -30,7 +31,8 @@ try {
             azd-linux-amd64=/opt/microsoft/azd/azd-linux-amd64 `
             azd=/usr/local/bin/azd `
             NOTICE.txt=/opt/microsoft/azd/NOTICE.txt `
-            LICENSE=/opt/microsoft/azd/LICENSE
+            LICENSE=/opt/microsoft/azd/LICENSE `
+            installed-by-$type.txt=/opt/microsoft/azd/.installed-by.txt
         
         if ($LASTEXITCODE) { 
             Write-Host "Error building package type: $type"

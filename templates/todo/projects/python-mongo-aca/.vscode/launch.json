@@ -32,7 +32,10 @@
             "windows": {
                 "python": "${workspaceFolder}/src/api/api_env/scripts/python.exe",
             },
-            "preLaunchTask": "Restore API"
+            "preLaunchTask": "Restore API",
+            "env": {
+                "API_ENVIRONMENT":"develop"
+            }
         }
     ],
 

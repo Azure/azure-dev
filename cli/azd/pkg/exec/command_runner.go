@@ -91,7 +91,8 @@ func (r *commandRunner) Run(ctx context.Context, args RunArgs) (RunResult, error
 		}
 	}
 
-	log.Printf("Run exec: '%s %s'", args.Cmd, redactSensitiveData(strings.Join(args.Args, " ")))
+	log.Printf("Run exec: '%s %s'", args.Cmd, redactSensitiveData(strings.Join(
+		redactSensitiveArgs(args.Args, args.SensitiveData), " ")))
 
 	if args.Debug && len(args.Env) > 0 {
 		log.Println("Additional env:")
@@ -257,27 +258,44 @@ type redactData struct {
 	replaceString string
 }
 
+const cRedacted = "<redacted>"
+
+func redactSensitiveArgs(args []string, sensitiveDataMatch []string) []string {
+	if len(sensitiveDataMatch) == 0 {
+		return args
+	}
+	redactedArgs := make([]string, len(args))
+	for i, arg := range args {
+		redacted := arg
+		for _, sensitiveData := range sensitiveDataMatch {
+			redacted = strings.ReplaceAll(redacted, sensitiveData, cRedacted)
+		}
+		redactedArgs[i] = redacted
+	}
+	return redactedArgs
+}
+
 func redactSensitiveData(msg string) string {
 	var regexpRedactRules = map[string]redactData{
 		"access token": {
 			regexp.MustCompile("\"accessToken\": \".*\""),
-			"\"accessToken\": \"<redacted>\"",
+			"\"accessToken\": \"" + cRedacted + "\"",
 		},
 		"deployment token": {
 			regexp.MustCompile(`--deployment-token \S+`),
-			"--deployment-token <redacted>",
+			"--deployment-token " + cRedacted,
 		},
 		"username": {
 			regexp.MustCompile(`--username \S+`),
-			"--username <redacted>",
+			"--username " + cRedacted,
 		},
 		"password": {
 			regexp.MustCompile(`--password \S+`),
-			"--password <redacted>",
+			"--password " + cRedacted,
 		},
 		"kubectl-from-literal": {
 			regexp.MustCompile(`--from-literal=([^=]+)=(\S+)`),
-			"--from-literal=$1=<redacted>",
+			"--from-literal=$1=" + cRedacted,
 		},
 	}
 

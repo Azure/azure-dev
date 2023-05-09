@@ -106,6 +106,7 @@ staticwebapp
 stdouttrace
 STRINGSLICE
 structs
+substr
 swacli
 Syncer
 teamcity

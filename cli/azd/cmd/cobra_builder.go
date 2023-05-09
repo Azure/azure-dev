@@ -6,12 +6,14 @@ import (
 	"log"
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
 )
 
@@ -142,6 +144,23 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 			// If we have a result or an error, display it, otherwise don't print anything.
 			if actionResult != nil || err != nil {
 				console.MessageUxItem(ctx, actions.ToUxItem(actionResult, err))
+			}
+
+			if err != nil {
+				var respErr *azcore.ResponseError
+				var azureErr *azcli.AzureDeploymentError
+
+				// We only want to show trace ID for server-related errors,
+				// where we have full server logs to troubleshoot from.
+				//
+				// For client errors, we don't want to show the trace ID, as it is not useful to the user currently.
+				if errors.As(err, &respErr) || errors.As(err, &azureErr) {
+					if actionResult != nil && actionResult.TraceID != "" {
+						console.Message(
+							ctx,
+							output.WithErrorFormat(fmt.Sprintf("TraceID: %s", actionResult.TraceID)))
+					}
+				}
 			}
 		})
 

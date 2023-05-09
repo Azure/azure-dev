@@ -8,8 +8,10 @@ import (
 type RunArgs struct {
 	Cmd  string
 	Args []string
-	Cwd  string
-	Env  []string
+	// Any string from SensitiveData will be redacted as *** if found in Args
+	SensitiveData []string
+	Cwd           string
+	Env           []string
 
 	// Stderr will receive a copy of the text written to Stderr by
 	// the command.
@@ -39,6 +41,16 @@ func NewRunArgs(cmd string, args ...string) RunArgs {
 	return RunArgs{
 		Cmd:  cmd,
 		Args: args,
+	}
+}
+
+// NewRunArgs creates a new instance with the specified cmd and args and a list of SensitiveData
+// Use this constructor to protect known sensitive data from going to logs
+func NewRunArgsWithSensitiveData(cmd string, args, sensitiveData []string) RunArgs {
+	return RunArgs{
+		Cmd:           cmd,
+		Args:          args,
+		SensitiveData: sensitiveData,
 	}
 }
 

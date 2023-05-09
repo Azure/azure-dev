@@ -53,16 +53,18 @@ export class PickResourceGroupStep extends SkipIfOneStep<RevealResourceGroupWiza
                 });
         } else {
             const resourceGroupIds = new Set<string>();
-            for (const serviceName of Object.keys(showResults.services)) {
-                const service = showResults.services[serviceName];
+            if (showResults.services) {
+                for (const serviceName of Object.keys(showResults.services)) {
+                    const service = showResults.services[serviceName];
 
-                if (!service?.target?.resourceIds) {
-                    continue;
-                }
+                    if (!service?.target?.resourceIds) {
+                        continue;
+                    }
 
-                for (const resourceId of service.target.resourceIds) {
-                    const { subscription, resourceGroup } = parseAzureResourceId(resourceId);
-                    resourceGroupIds.add(`/subscriptions/${subscription}/resourceGroups/${resourceGroup}`);
+                    for (const resourceId of service.target.resourceIds) {
+                        const { subscription, resourceGroup } = parseAzureResourceId(resourceId);
+                        resourceGroupIds.add(`/subscriptions/${subscription}/resourceGroups/${resourceGroup}`);
+                    }
                 }
             }
 

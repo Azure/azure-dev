@@ -36,6 +36,7 @@ type GitHubCli interface {
 	GetAuthStatus(ctx context.Context, hostname string) (AuthStatus, error)
 	ListSecrets(ctx context.Context, repo string) error
 	SetSecret(ctx context.Context, repo string, name string, value string) error
+	SetVariable(ctx context.Context, repoSlug string, name string, value string) error
 	Login(ctx context.Context, hostname string) error
 	ListRepositories(ctx context.Context) ([]GhCliRepository, error)
 	ViewRepository(ctx context.Context, name string) (GhCliRepository, error)
@@ -227,6 +228,15 @@ func (cli *ghCli) SetSecret(ctx context.Context, repoSlug string, name string, v
 	res, err := cli.run(ctx, runArgs)
 	if err != nil {
 		return fmt.Errorf("failed running gh secret set %s: %w", res.String(), err)
+	}
+	return nil
+}
+
+func (cli *ghCli) SetVariable(ctx context.Context, repoSlug string, name string, value string) error {
+	runArgs := cli.newRunArgs("-R", repoSlug, "variable", "set", name, "--body", value)
+	res, err := cli.run(ctx, runArgs)
+	if err != nil {
+		return fmt.Errorf("failed running gh variable set %s: %w", res.String(), err)
 	}
 	return nil
 }

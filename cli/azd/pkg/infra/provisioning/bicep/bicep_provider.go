@@ -25,6 +25,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
@@ -39,10 +42,13 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
+	"github.com/benbjohnson/clock"
 	"github.com/drone/envsubst"
 	"golang.org/x/exp/maps"
 	"golang.org/x/exp/slices"
 )
+
+const DefaultModule = "main"
 
 type BicepDeploymentDetails struct {
 	// Template is the template to deploy during the deployment operation.
@@ -51,6 +57,9 @@ type BicepDeploymentDetails struct {
 	Parameters azure.ArmParameters
 	// TemplateOutputs are the outputs as specified by the template.
 	TemplateOutputs azure.ArmTemplateOutputs
+	// Target is the unique resource in azure that represents the deployment that will happen. A target can be scoped to
+	// either subscriptions, or resource groups.
+	Target infra.Deployment
 }
 
 // BicepProvider exposes infrastructure provisioning using Azure Bicep templates
@@ -80,10 +89,14 @@ func (p *BicepProvider) EnsureConfigured(ctx context.Context) error {
 
 func (p *BicepProvider) State(
 	ctx context.Context,
-	scope infra.Scope,
 ) *async.InteractiveTaskWithProgress[*StateResult, *StateProgress] {
 	return async.RunInteractiveTaskWithProgress(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*StateResult, *StateProgress]) {
+			scope := infra.NewSubscriptionScope(
+				p.azCli,
+				p.env.GetSubscriptionId(),
+			)
+
 			asyncContext.SetProgress(&StateProgress{Message: "Loading Bicep template", Timestamp: time.Now()})
 			modulePath := p.modulePath()
 			_, template, err := p.compileBicep(ctx, modulePath)
@@ -93,7 +106,7 @@ func (p *BicepProvider) State(
 			}
 
 			asyncContext.SetProgress(&StateProgress{Message: "Retrieving Azure deployment", Timestamp: time.Now()})
-			armDeployment, err := scope.GetDeployment(ctx)
+			armDeployment, err := latestCompletedDeployment(ctx, p.env.GetEnvName(), scope)
 			if err != nil {
 				asyncContext.SetError(fmt.Errorf("retrieving deployment: %w", err))
 				return
@@ -159,12 +172,20 @@ func (p *BicepProvider) Plan(
 				return
 			}
 
+			target := infra.NewSubscriptionDeployment(
+				p.azCli,
+				p.env.GetLocation(),
+				p.env.GetSubscriptionId(),
+				deploymentNameForEnv(p.env.GetEnvName(), clock.New()),
+			)
+
 			result := DeploymentPlan{
 				Deployment: *deployment,
 				Details: BicepDeploymentDetails{
 					Template:        rawTemplate,
 					TemplateOutputs: template.Outputs,
 					Parameters:      configuredParameters,
+					Target:          target,
 				},
 			}
 			// remove the spinner with no message as no message is expected
@@ -173,11 +194,25 @@ func (p *BicepProvider) Plan(
 		})
 }
 
+// cArmDeploymentNameLengthMax is the maximum length of the name of a deployment in ARM.
+const cArmDeploymentNameLengthMax = 64
+
+// deploymentNameForEnv creates a name to use for the deployment object for a given environment. It appends the current
+// unix time to the environment name (separated by a hyphen) to provide a unique name for each deployment. If the resulting
+// name is longer than the ARM limit, the longest suffix of the name under the limit is returned.
+func deploymentNameForEnv(envName string, clock clock.Clock) string {
+	name := fmt.Sprintf("%s-%d", envName, clock.Now().Unix())
+	if len(name) <= cArmDeploymentNameLengthMax {
+		return name
+	}
+
+	return name[len(name)-cArmDeploymentNameLengthMax:]
+}
+
 // Provisioning the infrastructure within the specified template
 func (p *BicepProvider) Deploy(
 	ctx context.Context,
 	pd *DeploymentPlan,
-	scope infra.Scope,
 ) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress] {
 	return async.RunInteractiveTaskWithProgress(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*DeployResult, *DeployProgress]) {
@@ -188,10 +223,12 @@ func (p *BicepProvider) Deploy(
 				done <- true
 			}()
 
+			bicepDeploymentData := pd.Details.(BicepDeploymentDetails)
+
 			// Report incremental progress
 			go func() {
 				resourceManager := infra.NewAzureResourceManager(p.azCli)
-				progressDisplay := NewProvisioningProgressDisplay(resourceManager, p.console, scope)
+				progressDisplay := NewProvisioningProgressDisplay(resourceManager, p.console, bicepDeploymentData.Target)
 				// Make initial delay shorter to be more responsive in displaying initial progress
 				initialDelay := 3 * time.Second
 				regularDelay := 10 * time.Second
@@ -218,9 +255,16 @@ func (p *BicepProvider) Deploy(
 
 			// Start the deployment
 			p.console.ShowSpinner(ctx, "Creating/Updating resources", input.Step)
-			bicepDeploymentData := pd.Details.(BicepDeploymentDetails)
 
-			deployResult, err := p.deployModule(ctx, scope, bicepDeploymentData.Template, bicepDeploymentData.Parameters)
+			deployResult, err := p.deployModule(
+				ctx,
+				bicepDeploymentData.Target,
+				bicepDeploymentData.Template,
+				bicepDeploymentData.Parameters,
+				map[string]*string{
+					azure.TagKeyAzdEnvName: to.Ptr(p.env.GetEnvName()),
+				},
+			)
 			if err != nil {
 				asyncContext.SetError(err)
 				return
@@ -255,14 +299,14 @@ func (p *BicepProvider) Destroy(
 	return async.RunInteractiveTaskWithProgress(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*DestroyResult, *DestroyProgress]) {
 			asyncContext.SetProgress(&DestroyProgress{Message: "Fetching resource groups", Timestamp: time.Now()})
-			resourceGroups, err := p.getResourceGroups(ctx)
+			rgsFromDeployment, err := p.getResourceGroupsFromLatestDeployment(ctx)
 			if err != nil {
 				asyncContext.SetError(err)
 				return
 			}
 
 			asyncContext.SetProgress(&DestroyProgress{Message: "Fetching resources", Timestamp: time.Now()})
-			groupedResources, err := p.getAllResources(ctx, resourceGroups)
+			groupedResources, err := p.getAllResourcesToDelete(ctx, rgsFromDeployment)
 			if err != nil {
 				asyncContext.SetError(fmt.Errorf("getting resources to delete: %w", err))
 				return
@@ -334,11 +378,6 @@ func (p *BicepProvider) Destroy(
 				return
 			}
 
-			if err := p.deleteDeployment(ctx); err != nil {
-				asyncContext.SetError(fmt.Errorf("deleting subscription deployment: %w", err))
-				return
-			}
-
 			destroyResult := DestroyResult{
 				Resources: allResources,
 				Outputs:   deployment.Outputs,
@@ -348,17 +387,82 @@ func (p *BicepProvider) Destroy(
 		})
 }
 
-func (p *BicepProvider) getResourceGroups(ctx context.Context) ([]string, error) {
-	resourceManager := infra.NewAzureResourceManager(p.azCli)
-	resourceGroups, err := resourceManager.GetResourceGroupsForDeployment(ctx, p.env.GetSubscriptionId(), p.env.GetEnvName())
+// latestCompletedDeployment finds the most recent deployment the given environment in the provided scope,
+// considering only deployments which have completed (either successfully or unsuccessfully).
+func latestCompletedDeployment(
+	ctx context.Context, envName string, scope infra.Scope,
+) (*armresources.DeploymentExtended, error) {
+
+	deployments, err := scope.ListDeployments(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	slices.SortFunc(deployments, func(x, y *armresources.DeploymentExtended) bool {
+		return x.Properties.Timestamp.After(*y.Properties.Timestamp)
+	})
+
+	// Earlier versions of `azd` did not use unique deployment names per deployment and also did not tag the deployment
+	// with an `azd` specific tag. Instead, the name of the deployment simply matched the environment name.
+	//
+	// As we walk the list of deployments, we note if we find a deployment matching this older strategy and will return
+	// it if we can't find a deployment that matches the newer one.
+	var matchingBareDeployment *armresources.DeploymentExtended
+
+	for _, deployment := range deployments {
+
+		// We only want to consider deployments that are in a terminal state, not any which may be ongoing.
+		if *deployment.Properties.ProvisioningState != armresources.ProvisioningStateSucceeded &&
+			*deployment.Properties.ProvisioningState != armresources.ProvisioningStateFailed {
+			continue
+		}
+
+		if v, has := deployment.Tags[azure.TagKeyAzdEnvName]; has && *v == envName {
+			return deployment, nil
+		}
+
+		if *deployment.Name == envName {
+			matchingBareDeployment = deployment
+		}
+	}
+
+	if matchingBareDeployment != nil {
+		return matchingBareDeployment, nil
+	}
+
+	return nil, fmt.Errorf("no deployments found for environment %s", envName)
+}
+
+func (p *BicepProvider) getResourceGroupsFromLatestDeployment(ctx context.Context) ([]string, error) {
+	scope := infra.NewSubscriptionScope(p.azCli, p.env.GetSubscriptionId())
+	deployment, err := latestCompletedDeployment(ctx, p.env.GetEnvName(), scope)
 	if err != nil {
 		return []string{}, err
 	}
 
-	return resourceGroups, nil
+	// NOTE: it's possible for a deployment to list a resource group more than once. We're only interested in the
+	// unique set.
+	resourceGroups := map[string]struct{}{}
+
+	for _, resourceId := range deployment.Properties.OutputResources {
+		if resourceId != nil && resourceId.ID != nil {
+			resId, err := arm.ParseResourceID(*resourceId.ID)
+			if err == nil && resId.ResourceGroupName != "" {
+				resourceGroups[resId.ResourceGroupName] = struct{}{}
+			}
+		}
+	}
+
+	var resourceGroupNames []string
+
+	for k := range resourceGroups {
+		resourceGroupNames = append(resourceGroupNames, k)
+	}
+
+	return resourceGroupNames, nil
 }
 
-func (p *BicepProvider) getAllResources(
+func (p *BicepProvider) getAllResourcesToDelete(
 	ctx context.Context,
 	resourceGroups []string,
 ) (map[string][]azcli.AzCliResource, error) {
@@ -366,6 +470,12 @@ func (p *BicepProvider) getAllResources(
 
 	for _, resourceGroup := range resourceGroups {
 		groupResources, err := p.azCli.ListResourceGroupResources(ctx, p.env.GetSubscriptionId(), resourceGroup, nil)
+		var errDetails *azcore.ResponseError
+		if errors.As(err, &errDetails) && errDetails.StatusCode == 404 {
+			// Resource group not found and already deleted, skip grouping for deletion
+			continue
+		}
+
 		if err != nil {
 			return allResources, err
 		}
@@ -700,16 +810,6 @@ func (p *BicepProvider) purgeAPIManagement(
 	return nil
 }
 
-// Deletes the azure deployment
-func (p *BicepProvider) deleteDeployment(ctx context.Context) error {
-	deploymentName := p.env.GetEnvName()
-	message := fmt.Sprintf("Deleting deployment: %s", output.WithHighLightFormat(deploymentName))
-	p.console.ShowSpinner(ctx, message, input.Step)
-	err := p.azCli.DeleteSubscriptionDeployment(ctx, p.env.GetSubscriptionId(), deploymentName)
-	p.console.StopSpinner(ctx, message, input.GetStepResultFormat(err))
-	return err
-}
-
 func (p *BicepProvider) mapBicepTypeToInterfaceType(s string) ParameterType {
 	switch s {
 	case "String", "string", "secureString", "securestring":
@@ -853,20 +953,17 @@ func (p *BicepProvider) convertToDeployment(bicepTemplate azure.ArmTemplate) (*D
 // Deploys the specified Bicep module and parameters with the selected provisioning scope (subscription vs resource group)
 func (p *BicepProvider) deployModule(
 	ctx context.Context,
-	scope infra.Scope,
+	target infra.Deployment,
 	armTemplate azure.RawArmTemplate,
 	armParameters azure.ArmParameters,
+	tags map[string]*string,
 ) (*armresources.DeploymentExtended, error) {
-	return scope.Deploy(ctx, armTemplate, armParameters)
+	return target.Deploy(ctx, armTemplate, armParameters, tags)
 }
 
 // Gets the path to the project parameters file path
 func (p *BicepProvider) parametersTemplateFilePath() string {
 	infraPath := p.options.Path
-	if strings.TrimSpace(infraPath) == "" {
-		infraPath = "infra"
-	}
-
 	parametersFilename := fmt.Sprintf("%s.parameters.json", p.options.Module)
 	return filepath.Join(p.projectPath, infraPath, parametersFilename)
 }
@@ -874,10 +971,6 @@ func (p *BicepProvider) parametersTemplateFilePath() string {
 // Gets the folder path to the specified module
 func (p *BicepProvider) modulePath() string {
 	infraPath := p.options.Path
-	if strings.TrimSpace(infraPath) == "" {
-		infraPath = "infra"
-	}
-
 	moduleFilename := fmt.Sprintf("%s.bicep", p.options.Module)
 	return filepath.Join(p.projectPath, infraPath, moduleFilename)
 }
@@ -1045,9 +1138,9 @@ func NewBicepProvider(
 		return nil, err
 	}
 
-	// Default to a module named "main" if not specified.
+	// Default module if not specified.
 	if strings.TrimSpace(infraOptions.Module) == "" {
-		infraOptions.Module = "main"
+		infraOptions.Module = DefaultModule
 	}
 
 	return &BicepProvider{

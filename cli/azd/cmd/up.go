@@ -8,6 +8,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -61,6 +62,7 @@ type upAction struct {
 func newUpAction(
 	flags *upFlags,
 	env *environment.Environment,
+	_ auth.LoggedInGuard,
 	accountManager account.Manager,
 	packageActionInitializer actions.ActionInitializer[*packageAction],
 	provisionActionInitializer actions.ActionInitializer[*provisionAction],
@@ -100,7 +102,7 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			output.WithWarningFormat("WARNING: The '--service' flag is deprecated and will be removed in a future release."))
 	}
 
-	err := provisioning.EnsureSubscriptionAndLocation(ctx, u.console, u.env, u.accountManager)
+	err := provisioning.EnsureEnv(ctx, u.console, u.env, u.accountManager)
 	if err != nil {
 		return nil, err
 	}

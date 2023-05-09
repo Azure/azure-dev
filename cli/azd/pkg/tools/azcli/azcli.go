@@ -92,11 +92,14 @@ type AzCli interface {
 		funcName string,
 	) (*AzCliFunctionAppProperties, error)
 	DeployToSubscription(
-		ctx context.Context, subscriptionId, deploymentName string,
+		ctx context.Context,
+		subscriptionId string,
+		location string,
+		deploymentName string,
 		armTemplate azure.RawArmTemplate,
 		parameters azure.ArmParameters,
-		location string) (
-		*armresources.DeploymentExtended, error)
+		tags map[string]*string,
+	) (*armresources.DeploymentExtended, error)
 	DeployToResourceGroup(
 		ctx context.Context,
 		subscriptionId,
@@ -104,6 +107,7 @@ type AzCli interface {
 		deploymentName string,
 		armTemplate azure.RawArmTemplate,
 		parameters azure.ArmParameters,
+		tags map[string]*string,
 	) (*armresources.DeploymentExtended, error)
 	DeleteSubscriptionDeployment(ctx context.Context, subscriptionId string, deploymentName string) error
 	DeleteResourceGroup(ctx context.Context, subscriptionId string, resourceGroupName string) error
@@ -112,12 +116,21 @@ type AzCli interface {
 		subscriptionId string,
 		listOptions *ListResourceGroupOptions,
 	) ([]AzCliResource, error)
+	ListResourceGroupDeployments(
+		ctx context.Context,
+		subscriptionId string,
+		resourceGroupName string,
+	) ([]*armresources.DeploymentExtended, error)
 	ListResourceGroupResources(
 		ctx context.Context,
 		subscriptionId string,
 		resourceGroupName string,
 		listOptions *ListResourceGroupResourcesOptions,
 	) ([]AzCliResource, error)
+	ListSubscriptionDeployments(
+		ctx context.Context,
+		subscriptionId string,
+	) ([]*armresources.DeploymentExtended, error)
 	ListSubscriptionDeploymentOperations(
 		ctx context.Context,
 		subscriptionId string,
@@ -333,11 +346,16 @@ func (cli *azCli) UserAgent() string {
 func (cli *azCli) createDefaultClientOptionsBuilder(ctx context.Context) *azsdk.ClientOptionsBuilder {
 	return azsdk.NewClientOptionsBuilder().
 		WithTransport(httputil.GetHttpClient(ctx)).
-		WithPerCallPolicy(azsdk.NewUserAgentPolicy(cli.UserAgent()))
+		WithPerCallPolicy(azsdk.NewUserAgentPolicy(cli.UserAgent())).
+		WithPerCallPolicy(azsdk.NewMsCorrelationPolicy(ctx))
 }
 
-func clientOptionsBuilder(httpClient httputil.HttpClient, userAgent string) *azsdk.ClientOptionsBuilder {
+func clientOptionsBuilder(
+	ctx context.Context,
+	httpClient httputil.HttpClient,
+	userAgent string) *azsdk.ClientOptionsBuilder {
 	return azsdk.NewClientOptionsBuilder().
 		WithTransport(httpClient).
-		WithPerCallPolicy(azsdk.NewUserAgentPolicy(userAgent))
+		WithPerCallPolicy(azsdk.NewUserAgentPolicy(userAgent)).
+		WithPerCallPolicy(azsdk.NewMsCorrelationPolicy(ctx))
 }

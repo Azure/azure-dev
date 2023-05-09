@@ -220,8 +220,7 @@ func (d *docker) Name() string {
 
 func (d *docker) executeCommand(ctx context.Context, cwd string, args ...string) (exec.RunResult, error) {
 	runArgs := exec.NewRunArgs("docker", args...).
-		WithCwd(cwd).
-		WithEnrichError(true)
+		WithCwd(cwd)
 
 	return d.commandRunner.Run(ctx, runArgs)
 }

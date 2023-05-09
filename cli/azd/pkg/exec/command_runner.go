@@ -81,10 +81,11 @@ type commandRunner struct {
 
 // Run runs the command specified in 'args'.
 //
-// If the underlying command exits with a non-zero exit code you will get an error _and_ a RunResult.
-// If you would like to automatically include the stdout/stderr of the process in the returned error you can
-// set RunArgs.EnrichError to 'true', which means your code can just check and return 'error' without having
-// to inspect the RunResult.
+// Returns a RunResult that is the result of the command.
+//   - If interactive is true, standard input/error is not captured in the returned result.
+//     Instead, standard output/error is simply redirected to the os standard output/error.
+//   - If the underlying command exits unsuccessfully, ExitError is returned. Other possible errors would likely be I/O
+//     errors or context cancellation.
 //
 // NOTE: on Windows the command will automatically be run within a shell. This means .bat/.cmd
 // file based commands should just work.
@@ -182,8 +183,10 @@ func (r *commandRunner) Run(ctx context.Context, args RunArgs) (RunResult, error
 		}
 	}
 
-	if err != nil && args.EnrichError {
-		err = fmt.Errorf("%s: %w", result, err)
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		outputAvailable := !args.Interactive
+		err = NewExitError(result, *exitErr, outputAvailable)
 	}
 
 	return result, err

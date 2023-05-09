@@ -114,8 +114,7 @@ func (cli *swaCli) executeCommand(ctx context.Context, cwd string, args ...strin
 	runArgs := exec.
 		NewRunArgs("npx", "-y", cSwaCliPackage).
 		AppendParams(args...).
-		WithCwd(cwd).
-		WithEnrichError(true)
+		WithCwd(cwd)
 
 	return cli.commandRunner.Run(ctx, runArgs)
 }

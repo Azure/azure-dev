@@ -128,9 +128,14 @@ var ErrNoCurrentUser = errors.New("not logged in, run `azd auth login` to login"
 
 // EnsureLoggedInCredential uses the credential's GetToken method to ensure an access token can be fetched. If this fails,
 // nil, ErrNoCurrentUser is returned. On success, the token we fetched is returned.
-func EnsureLoggedInCredential(ctx context.Context, credential azcore.TokenCredential) (*azcore.AccessToken, error) {
+func EnsureLoggedInCredential(
+	ctx context.Context, credential azcore.TokenCredential, scopes []string) (*azcore.AccessToken, error) {
+	if scopes == nil {
+		scopes = cLoginScopes
+	}
+
 	token, err := credential.GetToken(ctx, policy.TokenRequestOptions{
-		Scopes: cLoginScopes,
+		Scopes: scopes,
 	})
 	if err != nil {
 		// It is important that we dump the failure which contains error code, correlation IDs from AAD to log
@@ -297,7 +302,7 @@ func (m *Manager) GetLoggedInServicePrincipalTenantID(ctx context.Context) (*str
 				return nil, err
 			}
 
-			token, err := EnsureLoggedInCredential(ctx, credential)
+			token, err := EnsureLoggedInCredential(ctx, credential, nil)
 			if err != nil {
 				return nil, err
 			}
@@ -392,7 +397,11 @@ func (m *Manager) newCredentialFromCloudShell() (azcore.TokenCredential, error) 
 	return NewCloudShellCredential(m.httpClient), nil
 }
 
-func (m *Manager) LoginInteractive(ctx context.Context, redirectPort int, tenantID string) (azcore.TokenCredential, error) {
+func (m *Manager) LoginInteractive(
+	ctx context.Context, redirectPort int, tenantID string, scopes []string) (azcore.TokenCredential, error) {
+	if scopes == nil {
+		scopes = cLoginScopes
+	}
 	options := []public.AcquireInteractiveOption{}
 	if redirectPort > 0 {
 		options = append(options, public.WithRedirectURI(fmt.Sprintf("http://localhost:%d", redirectPort)))
@@ -402,7 +411,7 @@ func (m *Manager) LoginInteractive(ctx context.Context, redirectPort int, tenant
 		options = append(options, public.WithTenantID(tenantID))
 	}
 
-	res, err := m.publicClient.AcquireTokenInteractive(ctx, cLoginScopes, options...)
+	res, err := m.publicClient.AcquireTokenInteractive(ctx, scopes, options...)
 	if err != nil {
 		return nil, err
 	}
@@ -415,13 +424,16 @@ func (m *Manager) LoginInteractive(ctx context.Context, redirectPort int, tenant
 }
 
 func (m *Manager) LoginWithDeviceCode(
-	ctx context.Context, deviceCodeWriter io.Writer, tenantID string) (azcore.TokenCredential, error) {
+	ctx context.Context, deviceCodeWriter io.Writer, tenantID string, scopes []string) (azcore.TokenCredential, error) {
+	if scopes == nil {
+		scopes = cLoginScopes
+	}
 	options := []public.AcquireByDeviceCodeOption{}
 	if tenantID != "" {
 		options = append(options, public.WithTenantID(tenantID))
 	}
 
-	code, err := m.publicClient.AcquireTokenByDeviceCode(ctx, cLoginScopes, options...)
+	code, err := m.publicClient.AcquireTokenByDeviceCode(ctx, scopes, options...)
 	if err != nil {
 		return nil, err
 	}

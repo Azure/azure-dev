@@ -48,6 +48,7 @@ type loginFlags struct {
 	clientSecret           stringPtr
 	clientCertificate      string
 	federatedTokenProvider string
+	scope                  string
 	redirectPort           int
 	global                 *internal.GlobalCommandOptions
 }
@@ -135,6 +136,11 @@ func (lf *loginFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 		"tenant-id",
 		"",
 		"The tenant id or domain name to authenticate with.")
+	local.StringVar(
+		&lf.scope,
+		"scope",
+		"",
+		"The scope to acquire during login")
 	local.IntVar(
 		&lf.redirectPort,
 		"redirect-port",
@@ -179,6 +185,7 @@ type loginAction struct {
 	flags             *loginFlags
 	annotations       CmdAnnotations
 	commandRunner     exec.CommandRunner
+	scopes            []string
 }
 
 // it is important to update both newAuthLoginAction and newLoginAction at the same time
@@ -232,6 +239,10 @@ func newLoginAction(
 }
 
 func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	if la.flags.scope != "" {
+		la.scopes = append(la.scopes, la.flags.scope)
+	}
+
 	if la.annotations[loginCmdParentAnnotation] == "" {
 		fmt.Fprintln(
 			la.console.Handles().Stderr,
@@ -263,7 +274,7 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	} else if err != nil {
 		return nil, fmt.Errorf("checking auth status: %w", err)
 	} else {
-		if token, err := auth.EnsureLoggedInCredential(ctx, cred); errors.Is(err, auth.ErrNoCurrentUser) {
+		if token, err := auth.EnsureLoggedInCredential(ctx, cred, la.scopes); errors.Is(err, auth.ErrNoCurrentUser) {
 			res.Status = contracts.LoginStatusUnauthenticated
 		} else if err != nil {
 			return nil, fmt.Errorf("checking auth status: %w", err)
@@ -415,11 +426,11 @@ func (la *loginAction) login(ctx context.Context) error {
 	}
 
 	if useDevCode {
-		if _, err := la.authManager.LoginWithDeviceCode(ctx, la.writer, la.flags.tenantID); err != nil {
+		if _, err := la.authManager.LoginWithDeviceCode(ctx, la.writer, la.flags.tenantID, la.scopes); err != nil {
 			return fmt.Errorf("logging in: %w", err)
 		}
 	} else {
-		if _, err := la.authManager.LoginInteractive(ctx, la.flags.redirectPort, la.flags.tenantID); err != nil {
+		if _, err := la.authManager.LoginInteractive(ctx, la.flags.redirectPort, la.flags.tenantID, la.scopes); err != nil {
 			return fmt.Errorf("logging in: %w", err)
 		}
 	}

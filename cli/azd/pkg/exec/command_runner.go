@@ -26,15 +26,47 @@ type CommandRunner interface {
 	RunList(ctx context.Context, commands []string, args RunArgs) (RunResult, error)
 }
 
-// Creates a new default instance of the CommandRunner
-// stdin, stdout & stderr will be used by default during interactive commands
+type RunnerOptions struct {
+	// Stdin is the input stream. If nil, os.Stdin is used.
+	Stdin io.Reader
+	// Stdout is the output stream. If nil, os.Stdout is used.
+	Stdout io.Writer
+	// Stderr is the error stream. If nil, os.Stderr is used.
+	Stderr io.Writer
+	// Whether debug logging is enabled. False by default.
+	DebugLogging bool
+}
+
+// Creates a new default instance of the CommandRunner.
+// Passing nil will use the default values for RunnerOptions.
+//
+// These options will be used by default during interactive commands
 // unless specifically overridden within the command run arguments.
-func NewCommandRunner(stdin io.Reader, stdout io.Writer, stderr io.Writer) CommandRunner {
-	return &commandRunner{
-		stdin:  stdin,
-		stdout: stdout,
-		stderr: stderr,
+func NewCommandRunner(opt *RunnerOptions) CommandRunner {
+	if opt == nil {
+		opt = &RunnerOptions{}
 	}
+
+	runner := &commandRunner{
+		stdin:        opt.Stdin,
+		stdout:       opt.Stdout,
+		stderr:       opt.Stderr,
+		debugLogging: opt.DebugLogging,
+	}
+
+	if runner.stdin == nil {
+		runner.stdin = os.Stdin
+	}
+
+	if runner.stdout == nil {
+		runner.stdout = os.Stdout
+	}
+
+	if runner.stdout == nil {
+		runner.stderr = os.Stderr
+	}
+
+	return runner
 }
 
 // commandRunner is the default private implementation of the CommandRunner interface
@@ -43,6 +75,8 @@ type commandRunner struct {
 	stdin  io.Reader
 	stdout io.Writer
 	stderr io.Writer
+	// Whether debugLogging logging is enabled
+	debugLogging bool
 }
 
 // Run runs the command specified in 'args'.
@@ -91,14 +125,23 @@ func (r *commandRunner) Run(ctx context.Context, args RunArgs) (RunResult, error
 		}
 	}
 
-	log.Printf("Run exec: '%s %s'", args.Cmd, redactSensitiveData(strings.Join(
-		redactSensitiveArgs(args.Args, args.SensitiveData), " ")))
+	log.Printf("Run exec: '%s %s'",
+		args.Cmd,
+		redactSensitiveData(
+			strings.Join(redactSensitiveArgs(args.Args, args.SensitiveData), " ")))
 
-	if args.Debug && len(args.Env) > 0 {
-		log.Println("Additional env:")
+	debugLogEnabled := r.debugLogging
+	if args.DebugLogging != nil {
+		debugLogEnabled = *args.DebugLogging
+	}
+
+	if debugLogEnabled && len(args.Env) > 0 {
+		logMsg := strings.Builder{}
+		logMsg.WriteString("Additional env:\n")
 		for _, kv := range args.Env {
-			log.Printf("  %s", kv)
+			logMsg.WriteString(fmt.Sprintf("  %s\n", kv))
 		}
+		log.Print(logMsg.String())
 	}
 
 	if err := cmd.Start(); err != nil {
@@ -124,7 +167,7 @@ func (r *commandRunner) Run(ctx context.Context, args RunArgs) (RunResult, error
 			Stderr:   "",
 		}
 	} else {
-		if args.Debug {
+		if debugLogEnabled {
 			log.Printf(
 				"Exit Code:%d\nOut:%s\nErr:%s\n",
 				cmd.ProcessState.ExitCode(),

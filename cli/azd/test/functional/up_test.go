@@ -91,7 +91,7 @@ func Test_CLI_Up_Down_WebApp(t *testing.T) {
 	err = probeServiceHealth(t, ctx, url, expectedTestAppResponse)
 	require.NoError(t, err)
 
-	commandRunner := exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
+	commandRunner := exec.NewCommandRunner(nil)
 	runArgs := newRunArgs("dotnet", "user-secrets", "list", "--project", filepath.Join(dir, "/src/dotnet/webapp.csproj"))
 	secrets, err := commandRunner.Run(ctx, runArgs)
 	require.NoError(t, err)

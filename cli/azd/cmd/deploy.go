@@ -227,7 +227,7 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		if alphaFeatureId, isAlphaFeature := alpha.IsFeatureKey(string(svc.Host)); isAlphaFeature {
 			// alpha feature on/off detection for host is done during initialization.
 			// This is just for displaying the warning during deployment.
-			da.console.MessageUxItem(ctx, alpha.WarningMessage(alphaFeatureId))
+			da.console.WarnForFeature(ctx, alphaFeatureId)
 		}
 
 		da.console.ShowSpinner(ctx, stepMessage, input.Step)

@@ -17,6 +17,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -144,7 +145,6 @@ func (p *TestProvider) Deploy(
 
 func (p *TestProvider) Destroy(
 	ctx context.Context,
-	deployment *Deployment,
 	options DestroyOptions,
 ) *async.InteractiveTaskWithProgress[*DestroyResult, *DestroyProgress] {
 	return async.RunInteractiveTaskWithProgress(
@@ -156,7 +156,7 @@ func (p *TestProvider) Destroy(
 
 			destroyResult := DestroyResult{
 				Resources: []azcli.AzCliResource{},
-				Outputs:   deployment.Outputs,
+				Outputs:   map[string]OutputParameter{},
 			}
 
 			confirmOptions := input.ConsoleOptions{Message: "Are you sure you want to destroy?"}
@@ -207,6 +207,7 @@ func init() {
 			_ exec.CommandRunner,
 			prompters Prompters,
 			_ CurrentPrincipalIdProvider,
+			_ *alpha.FeatureManager,
 		) (Provider, error) {
 			return NewTestProvider(env, projectPath, console, options, prompters), nil
 		},

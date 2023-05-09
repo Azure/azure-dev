@@ -5,8 +5,6 @@ import (
 	"log"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/resources"
 	"gopkg.in/yaml.v3"
 )
@@ -41,6 +39,16 @@ func init() {
 	}
 }
 
+// MustFeatureKey converts the given key to a FeatureId as [IsFeatureKey] would and panics if the conversion fails.
+func MustFeatureKey(key string) FeatureId {
+	id, valid := IsFeatureKey(key)
+	if !valid {
+		panic(fmt.Sprintf("MustFeatureKey: unknown key %s", key))
+	}
+
+	return id
+}
+
 // IsFeatureKey inspect if `key` is an alpha feature. Returns the AlphaFeatureId and true in case it is.
 // otherwise returns empty AlphaFeatureId and false.
 func IsFeatureKey(key string) (featureId FeatureId, isAlpha bool) {
@@ -56,14 +64,4 @@ func IsFeatureKey(key string) (featureId FeatureId, isAlpha bool) {
 // GetEnableCommand provides a message for how to enable the alpha feature.
 func GetEnableCommand(key FeatureId) string {
 	return fmt.Sprintf("azd config set %s on", strings.Join([]string{parentKey, string(key)}, "."))
-}
-
-// WarningMessage generates the output message when customer is using alpha features.
-func WarningMessage(key FeatureId) ux.UxItem {
-	return &ux.MultilineMessage{
-		Lines: []string{
-			output.WithWarningFormat("WARNING: Feature '%s' is in alpha stage.", string(key)),
-			fmt.Sprintf("To learn more about alpha, visit %s.", output.WithHighLightFormat("aka.ms/azd-feature-stages")),
-		},
-	}
 }

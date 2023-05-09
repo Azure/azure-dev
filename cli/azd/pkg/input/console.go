@@ -10,9 +10,11 @@ import (
 	"io"
 	"log"
 	"os"
+	"strconv"
 	"time"
 
 	"github.com/AlecAivazis/survey/v2"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/nathan-fiscaletti/consolesize-go"
@@ -46,6 +48,7 @@ type Console interface {
 	Message(ctx context.Context, message string)
 	// Prints out a message following a contract ux item
 	MessageUxItem(ctx context.Context, item ux.UxItem)
+	WarnForFeature(ctx context.Context, id alpha.FeatureId)
 	// Prints progress spinner with the given title.
 	// If a previous spinner is running, the title is updated.
 	ShowSpinner(ctx context.Context, title string, format SpinnerUxType)
@@ -131,6 +134,26 @@ func (c *AskerConsole) Message(ctx context.Context, message string) {
 	} else {
 		log.Println(message)
 	}
+}
+
+func (c *AskerConsole) WarnForFeature(ctx context.Context, key alpha.FeatureId) {
+	if shouldWarn(key) {
+		c.MessageUxItem(ctx, &ux.MultilineMessage{
+			Lines: []string{
+				output.WithWarningFormat("WARNING: Feature '%s' is in alpha stage.", string(key)),
+				fmt.Sprintf("To learn more about alpha features and their support, visit %s.",
+					output.WithLinkFormat("https://aka.ms/azd-feature-stages")),
+				"",
+			},
+		})
+	}
+}
+
+// shouldWarn returns true if a warning should be emitted when using a given alpha feature.
+func shouldWarn(key alpha.FeatureId) bool {
+	noAlphaWarnings, err := strconv.ParseBool(os.Getenv("AZD_DEBUG_NO_ALPHA_WARNINGS"))
+
+	return err != nil || !noAlphaWarnings
 }
 
 func (c *AskerConsole) MessageUxItem(ctx context.Context, item ux.UxItem) {

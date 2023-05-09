@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -226,7 +227,6 @@ func (t *TerraformProvider) Deploy(
 // Destroys the specified deployment through terraform destroy
 func (t *TerraformProvider) Destroy(
 	ctx context.Context,
-	deployment *Deployment,
 	options DestroyOptions,
 ) *async.InteractiveTaskWithProgress[*DestroyResult, *DestroyProgress] {
 	return async.RunInteractiveTaskWithProgress(
@@ -732,6 +732,7 @@ func init() {
 			commandRunner exec.CommandRunner,
 			prompters Prompters,
 			curPrincipal CurrentPrincipalIdProvider,
+			_ *alpha.FeatureManager,
 		) (Provider, error) {
 			return NewTerraformProvider(ctx, env, projectPath, options, console, commandRunner, curPrincipal, prompters), nil
 		},

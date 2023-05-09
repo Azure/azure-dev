@@ -3,6 +3,8 @@ package alpha
 import (
 	"fmt"
 	"log"
+	"os"
+	"strconv"
 	"strings"
 	"sync"
 
@@ -73,6 +75,16 @@ func (m *FeatureManager) initConfigCache() {
 func (m *FeatureManager) IsEnabled(featureId FeatureId) bool {
 	// guard from using the alphaFeatureManager from multiple routines. Only the first one will create the cache.
 	withSync.Do(m.initConfigCache)
+
+	// For testing, and in CI, allow enabling alpha features via the environment.
+	envName := fmt.Sprintf("AZD_ALPHA_ENABLE_%s", strings.ToUpper(string(featureId)))
+	if v, has := os.LookupEnv(envName); has {
+		if b, err := strconv.ParseBool(v); err == nil {
+			return b
+		} else {
+			log.Printf("could not parse %s as a bool when considering %s", v, envName)
+		}
+	}
 
 	//check if all features is ON
 	if allOn := isEnabled(m.userConfigCache, AllId); allOn {

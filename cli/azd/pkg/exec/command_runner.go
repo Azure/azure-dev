@@ -169,7 +169,7 @@ func (r *commandRunner) Run(ctx context.Context, args RunArgs) (RunResult, error
 	} else {
 		if debugLogEnabled {
 			log.Printf(
-				"Exit Code:%d\nOut:%s\nErr:%s\n",
+				"exit code: %d, stdout: %s, stderr: %s",
 				cmd.ProcessState.ExitCode(),
 				redactSensitiveData(stdout.String()),
 				redactSensitiveData(stderr.String()))

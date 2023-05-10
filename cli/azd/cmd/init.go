@@ -172,7 +172,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, environment.NewEnvironmentInitError(envName)
 	}
 
-	suggest := environment.CleanName(filepath.Base(wd) + "-main")
+	suggest := environment.CleanName(filepath.Base(wd) + "-dev")
 	if len(suggest) > environment.EnvironmentNameMaxLength {
 		suggest = suggest[len(suggest)-environment.EnvironmentNameMaxLength:]
 	}

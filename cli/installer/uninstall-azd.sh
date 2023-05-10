@@ -8,11 +8,12 @@ if [ ! -f "$symlink_location" ]; then
     exit 1
 fi
 
-if [ -w "$symlink_location" ]; then
-    rm "$symlink_location"
-else
+if ! rm "$symlink_location"; then
     echo "Writing to $symlink_location requires elevated permission. You may be prompted to enter credentials."
-    sudo rm "$symlink_location"
+    if ! sudo rm "$symlink_location"; then 
+        echo "Could not remove $symlink_location" 
+        exit 1
+    fi
 fi
 
 if [ ! -d "$install_root" ]; then 
@@ -34,6 +35,7 @@ if [ -w "$HOME/.azd/bin" ]; then
     fi
 fi
 
+echo ""
 echo "azd may have downloaded binaries to ~/.azd/bin and, depending on how azd was used on this machine,"
 echo "may have downloaded binaries to other users' home directories in their .azd/bin directory."
 echo "These binaries will need to be removed manually."

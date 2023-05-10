@@ -266,16 +266,16 @@ if (isLinuxOrMac) {
     }
 
     $params = @(
-        '--base-url', "`"$BaseUrl`"", 
-        '--version', "`"$Version`""
+        '--base-url', "'$BaseUrl'", 
+        '--version', "'$Version'"
     )
 
     if ($InstallFolder) {
-        $params += '--install-folder', "`"$InstallFolder`""
+        $params += '--install-folder', "'$InstallFolder'"
     }
 
     if ($SymlinkFolder) {
-        $params += '--symlink-folder', "`"$SymlinkFolder`""
+        $params += '--symlink-folder', "'$SymlinkFolder'"
     }
 
     if ($SkipVerify) { 
@@ -294,8 +294,9 @@ if (isLinuxOrMac) {
         $params += '--verbose'
     }
 
-    Write-Verbose "Running: curl -fsSL $InstallShScriptUrl | bash -s -- $($params -join ' ')" -Verbose:$Verbose
-    bash -c "curl -fsSL $InstallShScriptUrl | bash -s -- $($params -join ' ')"
+    $bashParameters = $params -join ' '
+    Write-Verbose "Running: curl -fsSL $InstallShScriptUrl | bash -s -- $bashParameters" -Verbose:$Verbose
+    bash -c "curl -fsSL $InstallShScriptUrl | bash -s -- $bashParameters"
     exit $LASTEXITCODE
 }
 
@@ -325,7 +326,7 @@ try {
             throw "Invoke-WebRequest failed with nonzero exit code: $LASTEXITCODE"
         }
     } catch {
-        Write-Error "Error downloading $downloadUrl" -Error $_
+        Write-Error -ErrorRecord $_
         reportTelemetryIfEnabled 'InstallFailed' 'DownloadFailed' @{ downloadUrl = $downloadUrl }
         exit 1
     }
@@ -342,7 +343,7 @@ try {
                     exit 1
                 }
             } catch {
-                Write-Error "Could not verify signature of $releaseArtifactFilename" -Error $_
+                Write-Error -ErrorRecord $_
                 reportTelemetryIfEnabled 'InstallFailed' 'SignatureVerificationFailed'
                 exit 1
             }
@@ -366,8 +367,8 @@ try {
             exit 1
         }
     } catch {
-        Write-Error "Could not copy to $InstallFolder" -Error $_
-        reportTelemetryIfEnabled 'InstallFailed' 'FileCopyFailed'
+        Write-Error -ErrorRecord $_
+        reportTelemetryIfEnabled 'InstallFailed' 'GeneralInstallFailure'
         exit 1
     }
 
@@ -389,7 +390,7 @@ try {
 
     exit 0
 } catch {
-    Write-Error "Unhandled error" -Error $_
+    Write-Error -ErrorRecord $_
     reportTelemetryIfEnabled 'InstallFailed' 'UnhandledError' @{ exceptionName = $_.Exception.GetType().Name; }
     exit 1
 }

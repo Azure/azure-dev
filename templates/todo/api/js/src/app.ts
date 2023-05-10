@@ -12,18 +12,18 @@ import { observability } from "./config/observability";
 // `http://localhost:300, http://otherurl:100`
 // Requests coming to the api server from other urls will be rejected as per
 // CORS.
-const allowOrigins = process.env.API_ALLOW_ORIGINS
+const allowOrigins = process.env.API_ALLOW_ORIGINS;
 
 // Use NODE_ENV to change webConfiguration based on this value.
 // For example, setting NODE_ENV=development disables CORS checking,
 // allowing all origins.
-const environment = process.env.NODE_ENV
+const environment = process.env.NODE_ENV;
 
 const originList = ():string[]|string => {
     
     if (environment && environment === "development") {
         console.log(`Allowing requests from any origins. NODE_ENV=${environment}`);
-        return "*"
+        return "*";
     }
     
     const origins = [
@@ -37,8 +37,8 @@ const originList = ():string[]|string => {
         });
     }
 
-    return origins
-}
+    return origins;
+};
 
 export const createApp = async (): Promise<Express> => {
     const config = await getConfig();

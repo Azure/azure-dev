@@ -51,9 +51,6 @@ var ciVarSetRules = []struct {
 	{"bamboo.buildKey", fields.EnvBamboo},
 	// BitBucket - https://support.atlassian.com/bitbucket-cloud/docs/variables-and-secrets/
 	{"BITBUCKET_BUILD_NUMBER", fields.EnvBitBucketPipelines},
-	// GitHub Codespaces -
-	// https://docs.github.com/en/codespaces/developing-in-codespaces/default-environment-variables-for-your-codespace
-	{"CODESPACES", fields.EnvCodespaces},
 	// Unknown CI cases
 	{"CI", fields.EnvUnknownCI},
 	{"BUILD_ID", fields.EnvUnknownCI},

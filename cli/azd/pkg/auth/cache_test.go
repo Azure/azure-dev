@@ -4,14 +4,16 @@
 package auth
 
 import (
+	"context"
 	"testing"
 
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
 	"github.com/stretchr/testify/require"
 )
 
 func TestCache(t *testing.T) {
 	root := t.TempDir()
-
+	ctx := context.Background()
 	c := newCache(root)
 
 	d1 := fixedMarshaller{
@@ -23,15 +25,19 @@ func TestCache(t *testing.T) {
 	}
 
 	// write some data.
-	c.Export(&d1, "d1")
-	c.Export(&d2, "d2")
+	r := c.Export(ctx, &d1, cache.ExportHints{PartitionKey: "d1"})
+	require.NoError(t, r)
+	r = c.Export(ctx, &d2, cache.ExportHints{PartitionKey: "d2"})
+	require.NoError(t, r)
 
 	var r1 fixedMarshaller
 	var r2 fixedMarshaller
 
 	// read back that data we wrote.
-	c.Replace(&r1, "d1")
-	c.Replace(&r2, "d2")
+	r = c.Replace(ctx, &r1, cache.ReplaceHints{PartitionKey: "d1"})
+	require.NoError(t, r)
+	r = c.Replace(ctx, &r2, cache.ReplaceHints{PartitionKey: "d2"})
+	require.NoError(t, r)
 
 	require.NotNil(t, r1.val)
 	require.NotNil(t, r2.val)
@@ -41,8 +47,10 @@ func TestCache(t *testing.T) {
 	// the data should be shared across instances.
 	c = newCache(root)
 
-	c.Replace(&r1, "d1")
-	c.Replace(&r2, "d2")
+	r = c.Replace(ctx, &r1, cache.ReplaceHints{PartitionKey: "d1"})
+	require.NoError(t, r)
+	r = c.Replace(ctx, &r2, cache.ReplaceHints{PartitionKey: "d2"})
+	require.NoError(t, r)
 
 	require.NotNil(t, r1.val)
 	require.NotNil(t, r2.val)

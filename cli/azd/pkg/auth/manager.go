@@ -191,7 +191,10 @@ func (m *Manager) CredentialForCurrentUser(
 	}
 
 	if currentUser.HomeAccountID != nil {
-		accounts := m.publicClient.Accounts()
+		accounts, err := m.publicClient.Accounts(ctx)
+		if err != nil {
+			return nil, err
+		}
 		for i, account := range accounts {
 			if account.HomeAccountID == *currentUser.HomeAccountID {
 				if options.TenantID == "" {
@@ -523,7 +526,7 @@ func (m *Manager) Logout(ctx context.Context) error {
 	}
 
 	if act != nil {
-		if err := m.publicClient.RemoveAccount(*act); err != nil {
+		if err := m.publicClient.RemoveAccount(ctx, *act); err != nil {
 			return fmt.Errorf("removing account from msal cache: %w", err)
 		}
 	}
@@ -590,7 +593,11 @@ func (m *Manager) getSignedInAccount(ctx context.Context) (*public.Account, erro
 	}
 
 	if currentUser.HomeAccountID != nil {
-		for _, account := range m.publicClient.Accounts() {
+		accounts, err := m.publicClient.Accounts(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for _, account := range accounts {
 			if account.HomeAccountID == *currentUser.HomeAccountID {
 				return &account, nil
 			}

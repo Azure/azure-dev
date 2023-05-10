@@ -11,8 +11,8 @@ import (
 
 // publicClient looks like a subset of the public.Client surface area, with small tweaks, to aid testing.
 type publicClient interface {
-	Accounts() []public.Account
-	RemoveAccount(public.Account) error
+	Accounts(ctx context.Context) ([]public.Account, error)
+	RemoveAccount(ctx context.Context, account public.Account) error
 	AcquireTokenInteractive(context.Context, []string, ...public.AcquireInteractiveOption) (public.AuthResult, error)
 	AcquireTokenByDeviceCode(context.Context, []string, ...public.AcquireByDeviceCodeOption) (deviceCodeResult, error)
 	AcquireTokenSilent(context.Context, []string, ...public.AcquireSilentOption) (public.AuthResult, error)
@@ -27,12 +27,12 @@ type msalPublicClientAdapter struct {
 	client *public.Client
 }
 
-func (m *msalPublicClientAdapter) Accounts() []public.Account {
-	return m.client.Accounts()
+func (m *msalPublicClientAdapter) Accounts(ctx context.Context) ([]public.Account, error) {
+	return m.client.Accounts(ctx)
 }
 
-func (m *msalPublicClientAdapter) RemoveAccount(account public.Account) error {
-	return m.client.RemoveAccount(account)
+func (m *msalPublicClientAdapter) RemoveAccount(ctx context.Context, account public.Account) error {
+	return m.client.RemoveAccount(ctx, account)
 }
 
 func (m *msalPublicClientAdapter) AcquireTokenInteractive(

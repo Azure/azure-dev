@@ -14,12 +14,12 @@ products:
 - azure-pipelines
 - ms-build-openjdk
 urlFragment: todo-java-mongo
-name: Web Application with a Java API and Azure Cosmos DB API for MongoDB on Azure App Service
+name: React Web App with Java API and MongoDB on Azure
 description: A complete ToDo app with Java API and Azure Cosmos for MongoDB for storage. Uses Azure Developer CLI (azd) to build, deploy, and monitor
 ---
 <!-- YAML front-matter schema: https://review.learn.microsoft.com/en-us/help/contribute/samples/process/onboarding?branch=main#supported-metadata-fields-for-readmemd -->
 
-# React Web App with Java API and MongoDB
+# React Web App with Java API and MongoDB on Azure
 
 [![Open in GitHub Codespaces](https://img.shields.io/static/v1?style=for-the-badge&label=GitHub+Codespaces&message=Open&color=brightgreen&logo=github)](https://github.com/codespaces/new?hide_repo_select=true&ref=main&repo=452042919&machine=standardLinux32gb&devcontainer_path=.devcontainer%2Fdevcontainer.json&location=WestUs2)
 [![Open in Remote - Containers](https://img.shields.io/static/v1?style=for-the-badge&label=Remote%20-%20Containers&message=Open&color=blue&logo=visualstudiocode)](https://vscode.dev/redirect?url=vscode://ms-vscode-remote.remote-containers/cloneInVolume?url=https://github.com/azure-samples/todo-java-mongo)

@@ -13,6 +13,8 @@ import (
 	"github.com/blang/semver/v4"
 )
 
+const DefaultPlatform string = "linux/amd64"
+
 type Docker interface {
 	tools.ExternalTool
 	Login(ctx context.Context, loginServer string, username string, password string) error
@@ -64,7 +66,7 @@ func (d *docker) Build(
 	tagName string,
 ) (string, error) {
 	if strings.TrimSpace(platform) == "" {
-		platform = "amd64"
+		platform = DefaultPlatform
 	}
 
 	args := []string{

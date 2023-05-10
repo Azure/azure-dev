@@ -10,6 +10,7 @@ import (
 	"os"
 
 	"github.com/AlecAivazis/survey/v2"
+	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -33,10 +34,17 @@ func invalidEnvironmentNameMsg(environmentName string) string {
 
 // ensureValidEnvironmentName ensures the environment name is valid, if it is not, an error is printed
 // and the user is prompted for a new name.
-func ensureValidEnvironmentName(ctx context.Context, environmentName *string, console input.Console) error {
+func ensureValidEnvironmentName(ctx context.Context, environmentName *string, suggest string, console input.Console) error {
 	for !environment.IsValidEnvironmentName(*environmentName) {
 		userInput, err := console.Prompt(ctx, input.ConsoleOptions{
 			Message: "Please enter a new environment name:",
+			Help: heredoc.Doc(`
+			A unique string that can be used to differentiate copies of your application in Azure. 
+			
+			This value is typically used by the infrastructure as code templates to name the resource group that contains
+			the infrastructure for your application and to generate a unique suffix that is applied to resources to prevent
+			naming collisions.`),
+			DefaultValue: suggest,
 		})
 
 		if err != nil {
@@ -57,6 +65,8 @@ type environmentSpec struct {
 	environmentName string
 	subscription    string
 	location        string
+	// suggest is the name that is offered as a suggestion if we need to prompt the user for an environment name.
+	suggest string
 }
 
 // createEnvironment creates a new named environment. If an environment with this name already
@@ -73,7 +83,7 @@ func createEnvironment(
 		return nil, fmt.Errorf(errMsg)
 	}
 
-	if err := ensureValidEnvironmentName(ctx, &envSpec.environmentName, console); err != nil {
+	if err := ensureValidEnvironmentName(ctx, &envSpec.environmentName, envSpec.suggest, console); err != nil {
 		return nil, err
 	}
 
@@ -168,7 +178,7 @@ func loadOrCreateEnvironment(
 				environmentName)
 		}
 
-		if err := ensureValidEnvironmentName(ctx, &environmentName, console); err != nil {
+		if err := ensureValidEnvironmentName(ctx, &environmentName, "", console); err != nil {
 			return nil, false, err
 		}
 

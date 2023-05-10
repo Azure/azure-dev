@@ -422,14 +422,14 @@ func Test_CLI_InfraCreateAndDeleteResourceTerraformRemote(t *testing.T) {
 	require.NoError(t, err, "failed expanding sample")
 
 	//Create remote state resources
-	commandRunner := exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
+	commandRunner := exec.NewCommandRunner(nil)
 	runArgs := newRunArgs("az", "group", "create", "--name", backendResourceGroupName, "--location", location)
 
 	_, err = commandRunner.Run(ctx, runArgs)
 	require.NoError(t, err)
 
 	defer func() {
-		commandRunner := exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
+		commandRunner := exec.NewCommandRunner(nil)
 		runArgs := newRunArgs("az", "group", "delete", "--name", backendResourceGroupName, "--yes")
 		_, err = commandRunner.Run(ctx, runArgs)
 		require.NoError(t, err)
@@ -533,7 +533,7 @@ func logHandles(t *testing.T, path string) {
 	}
 
 	args := exec.NewRunArgs(handle, path, "-nobanner")
-	cmd := exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
+	cmd := exec.NewCommandRunner(nil)
 	rr, err := cmd.Run(context.Background(), args)
 	if err != nil {
 		t.Logf("handle.exe failed. stdout: %s, stderr: %s\n", rr.Stdout, rr.Stderr)

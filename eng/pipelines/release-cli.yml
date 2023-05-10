@@ -3,7 +3,7 @@ resources:
     - repository: azure-sdk-build-tools
       type: git
       name: internal/azure-sdk-build-tools
-      ref: refs/tags/azure-sdk-build-tools_20230307.1
+      ref: refs/tags/azure-sdk-build-tools_20230425.1
 
 # Continuous deployment trigger
 trigger:
@@ -573,6 +573,8 @@ stages:
           vmImage: MMSUbuntu20.04
 
         steps:
+          - checkout: self
+
           - task: DownloadPipelineArtifact@2
             inputs:
               artifact: azd-windows-amd64.exe
@@ -607,6 +609,8 @@ stages:
               tar -C azd-linux-amd64 -cvzf hosting/azd-linux-amd64.tar.gz azd-linux-amd64
 
               Copy-Item msi/azd-windows-amd64.msi hosting/
+
+              Copy-Item cli/installer/*stall-azd.* hosting/
 
               Get-ChildItem hosting/ -Recurse | Select-Object -Property Name,Size
             displayName: Move folders to hosting location
@@ -696,7 +700,11 @@ stages:
               OSVmImage:  MMSUbuntu20.04
               TestShell: pwsh
               TestInstallCommand: >
-                ./test-pwsh-xplat-install.ps1 -BaseUrl $env:BASEURL -Version '';
+                ./test-pwsh-xplat-install.ps1 
+                -BaseUrl $env:BASEURL 
+                -Version '' 
+                -InstallShScriptUrl "$($env:BASEURL)/install-azd.sh"
+                -UninstallShScriptUrl "$($env:BASEURL)/uninstall-azd.sh";
                 ./test-telemetry-functions.ps1 -NonInteractive -Shell pwsh -ExpectedFieldMap telemetry/linux.telemetry.json
 
             Mac11Sh:
@@ -724,7 +732,11 @@ stages:
               # macs. Disabled for now.
               #  ./test-telemetry-functions.ps1 -Shell pwsh -ExpectedFieldMap telemetry/macos.telemetry.json
               TestInstallCommand: >
-                ./test-pwsh-xplat-install.ps1 -BaseUrl $env:BASEURL -Version ''
+                ./test-pwsh-xplat-install.ps1 
+                -BaseUrl $env:BASEURL 
+                -Version '' 
+                -InstallShScriptUrl "$($env:BASEURL)/install-azd.sh"
+                -UninstallShScriptUrl "$($env:BASEURL)/uninstall-azd.sh"
             Mac11Pwsh:
               Pool: Azure Pipelines
               OSVmImage: macOS-11
@@ -734,8 +746,11 @@ stages:
               # macs. Disabled for now.
               #  ./test-telemetry-functions.ps1 -Shell pwsh -ExpectedFieldMap telemetry/macos.telemetry.json
               TestInstallCommand: >
-                ./test-pwsh-xplat-install.ps1 -BaseUrl $env:BASEURL -Version ''
-
+                ./test-pwsh-xplat-install.ps1 
+                -BaseUrl $env:BASEURL 
+                -Version '' 
+                -InstallShScriptUrl "$($env:BASEURL)/install-azd.sh"
+                -UninstallShScriptUrl "$($env:BASEURL)/uninstall-azd.sh"
             WindowsCmd:
               Pool: azsdk-pool-mms-win-2022-general
               OSVmImage: MMS2022

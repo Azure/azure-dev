@@ -16,7 +16,7 @@ func NewLoggedInGuard(manager *Manager, ctx context.Context) (LoggedInGuard, err
 		return LoggedInGuard{}, err
 	}
 
-	_, err = EnsureLoggedInCredential(ctx, cred, nil)
+	_, err = EnsureLoggedInCredential(ctx, cred)
 	if err != nil {
 		return LoggedInGuard{}, err
 	}

@@ -46,7 +46,7 @@ func (t *multiTenantCredentialProvider) GetTokenCredential(
 		return nil, err
 	}
 
-	if _, err := EnsureLoggedInCredential(ctx, credential, nil); err != nil {
+	if _, err := EnsureLoggedInCredential(ctx, credential); err != nil {
 		return nil, err
 	}
 

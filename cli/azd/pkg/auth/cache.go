@@ -34,10 +34,8 @@ func (a *msalCacheAdapter) Export(ctx context.Context, cache cache.Marshaler, ca
 		return err
 	}
 
-	if err := a.cache.Set(cacheHints.PartitionKey, val); err != nil {
-		return err
-	}
-	return nil
+	err = a.cache.Set(cacheHints.PartitionKey, val)
+	return err
 }
 
 type Cache interface {

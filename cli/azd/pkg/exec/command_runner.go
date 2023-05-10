@@ -125,10 +125,17 @@ func (r *commandRunner) Run(ctx context.Context, args RunArgs) (RunResult, error
 		}
 	}
 
-	log.Printf("Run exec: '%s %s'",
+	logTitle := strings.Builder{}
+	logBody := strings.Builder{}
+	defer func() {
+		logTitle.WriteString(logBody.String())
+		log.Print(logTitle.String())
+	}()
+
+	logTitle.WriteString(fmt.Sprintf("Run exec: '%s %s' ",
 		args.Cmd,
 		redactSensitiveData(
-			strings.Join(redactSensitiveArgs(args.Args, args.SensitiveData), " ")))
+			strings.Join(redactSensitiveArgs(args.Args, args.SensitiveData), " "))))
 
 	debugLogEnabled := r.debugLogging
 	if args.DebugLogging != nil {
@@ -136,12 +143,10 @@ func (r *commandRunner) Run(ctx context.Context, args RunArgs) (RunResult, error
 	}
 
 	if debugLogEnabled && len(args.Env) > 0 {
-		logMsg := strings.Builder{}
-		logMsg.WriteString("Additional env:\n")
+		logBody.WriteString("Additional env:\n")
 		for _, kv := range args.Env {
-			logMsg.WriteString(fmt.Sprintf("  %s\n", kv))
+			logBody.WriteString(fmt.Sprintf("   %s\n", kv))
 		}
-		log.Print(logMsg.String())
 	}
 
 	if err := cmd.Start(); err != nil {
@@ -168,11 +173,19 @@ func (r *commandRunner) Run(ctx context.Context, args RunArgs) (RunResult, error
 		}
 	} else {
 		if debugLogEnabled {
-			log.Printf(
-				"exit code: %d, stdout: %s, stderr: %s",
-				cmd.ProcessState.ExitCode(),
-				redactSensitiveData(stdout.String()),
-				redactSensitiveData(stderr.String()))
+			logStdOut := strings.TrimSuffix(redactSensitiveData(stdout.String()), "\n")
+			if len(logStdOut) > 0 {
+				logBody.WriteString(fmt.Sprintf(
+					"-------------------------------------stdout-------------------------------------------\n%s\n",
+					logStdOut))
+			}
+			logStdErr := strings.TrimSuffix(redactSensitiveData(stderr.String()), "\n")
+			if len(logStdErr) > 0 {
+				logBody.WriteString(fmt.Sprintf(
+					"-------------------------------------stderr-------------------------------------------\n%s\n",
+					logStdErr))
+			}
+
 		}
 
 		result = RunResult{
@@ -181,6 +194,7 @@ func (r *commandRunner) Run(ctx context.Context, args RunArgs) (RunResult, error
 			Stderr:   stderr.String(),
 		}
 	}
+	logTitle.WriteString(fmt.Sprintf(", exit code: %d\n", result.ExitCode))
 
 	if err != nil && args.EnrichError {
 		err = fmt.Errorf("%s: %w", result, err)

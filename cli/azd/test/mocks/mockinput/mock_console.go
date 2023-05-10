@@ -111,6 +111,10 @@ func (c *MockConsole) IsSpinnerRunning(ctx context.Context) bool {
 	return false
 }
 
+func (c *MockConsole) IsSpinnerInteractive() bool {
+	return false
+}
+
 // Prints a confirmation message to the console for the user to confirm
 func (c *MockConsole) Confirm(ctx context.Context, options input.ConsoleOptions) (bool, error) {
 	c.log = append(c.log, options.Message)

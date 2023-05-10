@@ -80,3 +80,8 @@ func execEnvForCi() string {
 
 	return ""
 }
+
+// IsRunningOnCI returns true if the current process is running on a CI/CD provider.
+func IsRunningOnCI() bool {
+	return execEnvForCi() != ""
+}

@@ -177,7 +177,7 @@ func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, 
 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			Header: "Your azd pipeline has been configured!",
+			Header: fmt.Sprintf("Your %s pipeline has been configured!", p.manager.CiProvider.Name()),
 			FollowUp: heredoc.Docf(`
 			Link to view your new repo: %s
 			Link to view your pipeline status: %s`,

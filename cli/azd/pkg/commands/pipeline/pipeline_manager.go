@@ -117,13 +117,13 @@ func (i *PipelineManager) preConfigureCheck(ctx context.Context, infraOptions pr
 	ciConfigurationWasUpdated, err := i.CiProvider.preConfigureCheck(
 		ctx, i.PipelineManagerArgs, infraOptions, projectPath)
 	if err != nil {
-		return configurationWasUpdated, fmt.Errorf("pre-config check error from %s provider: %w", i.CiProvider.name(), err)
+		return configurationWasUpdated, fmt.Errorf("pre-config check error from %s provider: %w", i.CiProvider.Name(), err)
 	}
 
 	scmConfigurationWasUpdated, err := i.ScmProvider.preConfigureCheck(
 		ctx, i.PipelineManagerArgs, infraOptions, projectPath)
 	if err != nil {
-		return configurationWasUpdated, fmt.Errorf("pre-config check error from %s provider: %w", i.ScmProvider.name(), err)
+		return configurationWasUpdated, fmt.Errorf("pre-config check error from %s provider: %w", i.ScmProvider.Name(), err)
 	}
 
 	configurationWasUpdated = ciConfigurationWasUpdated || scmConfigurationWasUpdated

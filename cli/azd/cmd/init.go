@@ -193,9 +193,6 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, fmt.Errorf("saving default environment: %w", err)
 	}
 
-	//nolint:lll
-	azdTrustNotice := "https://learn.microsoft.com/azure/developer/azure-developer-cli/azd-templates#guidelines-for-using-azd-templates"
-
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
 			Header: "New project initialized!",
@@ -203,7 +200,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			You can view the template code in your directory: %s
 			Learn more about running 3rd party code on our DevHub: %s`,
 				output.WithLinkFormat("%s", wd),
-				output.WithLinkFormat("%s", azdTrustNotice)),
+				output.WithLinkFormat("%s", "https://aka.ms/azd-third-party-code-notice")),
 		},
 	}, nil
 }

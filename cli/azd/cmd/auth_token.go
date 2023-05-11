@@ -15,7 +15,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
-	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -126,7 +125,7 @@ func getTenantIdFromEnv(
 
 func (a *authTokenAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if len(a.flags.scopes) == 0 {
-		a.flags.scopes = []string{azure.ManagementScope}
+		a.flags.scopes = auth.LoginScopes
 	}
 
 	var cred azcore.TokenCredential

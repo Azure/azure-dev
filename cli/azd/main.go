@@ -79,6 +79,7 @@ func main() {
 			if runtime.GOOS == "windows" {
 				switch installedBy {
 				case installer.InstallTypePs:
+					//nolint:lll
 					upgradeText = "run:\npowershell -ex AllSigned -c \"Invoke-RestMethod 'https://aka.ms/install-azd.ps1' | Invoke-Expression\"\n\nIf the install script was run with custom parameters, ensure that the same parameters are used for the upgrade. For advanced install instructions, see: https://aka.ms/azd/upgrade/windows"
 				case installer.InstallTypeWinget:
 					upgradeText = "run:\nwinget upgrade Microsoft.Azd"
@@ -92,6 +93,7 @@ func main() {
 			} else if runtime.GOOS == "linux" {
 				switch installedBy {
 				case installer.InstallTypeSh:
+					//nolint:lll
 					upgradeText = "run:\ncurl -fsSL https://aka.ms/install-azd.sh | bash\n\nIf the install script was run with custom parameters, ensure that the same parameters are used for the upgrade. For advanced install instructions, see: https://aka.ms/azd/upgrade/linux"
 				default:
 					// Also covers "deb" and "rpm" cases which are currently
@@ -104,6 +106,7 @@ func main() {
 				case installer.InstallTypeBrew:
 					upgradeText = "run:\nbrew upgrade azd"
 				case installer.InstallTypeSh:
+					//nolint:lll
 					upgradeText = "run:\ncurl -fsSL https://aka.ms/install-azd.sh | bash\n\nIf the install script was run with custom parameters, ensure that the same parameters are used for the upgrade. For advanced install instructions, see: https://aka.ms/azd/upgrade/mac"
 				default:
 					upgradeText = "visit https://aka.ms/azd/upgrade/mac"

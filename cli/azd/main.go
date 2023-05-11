@@ -26,6 +26,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
+	"github.com/azure/azure-dev/cli/azd/pkg/installer"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/blang/semver/v4"
@@ -74,14 +75,14 @@ func main() {
 		} else if latestVersion.GT(internal.VersionInfo().Version) {
 			var upgradeText string
 
-			installedBy := internal.GetRawInstalledBy()
+			installedBy := installer.InstalledBy()
 			if runtime.GOOS == "windows" {
 				switch installedBy {
-				case "install-azd.ps1":
-					upgradeText = "run:\npowershell -ex AllSigned -c \"Invoke-RestMethod 'https://aka.ms/install-azd.ps1' | Invoke-Expression\"\n\nIf the install script was run with custom parameters, ensure that the same parameters are used for the upgrade. https://aka.ms/azd/upgrade/windows"
-				case "winget":
+				case installer.InstallTypePs:
+					upgradeText = "run:\npowershell -ex AllSigned -c \"Invoke-RestMethod 'https://aka.ms/install-azd.ps1' | Invoke-Expression\"\n\nIf the install script was run with custom parameters, ensure that the same parameters are used for the upgrade. For advanced install instructions, see: https://aka.ms/azd/upgrade/windows"
+				case installer.InstallTypeWinget:
 					upgradeText = "run:\nwinget upgrade Microsoft.Azd"
-				case "choco":
+				case installer.InstallTypeChoco:
 					upgradeText = "run:\nchoco upgrade azd"
 				default:
 					// Also covers "msi" case where the user installed directly
@@ -90,8 +91,8 @@ func main() {
 				}
 			} else if runtime.GOOS == "linux" {
 				switch installedBy {
-				case "install-azd.sh":
-					upgradeText = "run:\ncurl -fsSL https://aka.ms/install-azd.sh | bash\n\nIf the install script was run with custom parameters, ensure that the same parameters are used for the upgrade. https://aka.ms/azd/upgrade/linux"
+				case installer.InstallTypeSh:
+					upgradeText = "run:\ncurl -fsSL https://aka.ms/install-azd.sh | bash\n\nIf the install script was run with custom parameters, ensure that the same parameters are used for the upgrade. For advanced install instructions, see: https://aka.ms/azd/upgrade/linux"
 				default:
 					// Also covers "deb" and "rpm" cases which are currently
 					// documented. When package manager distribution support is
@@ -100,10 +101,10 @@ func main() {
 				}
 			} else if runtime.GOOS == "darwin" {
 				switch installedBy {
-				case "brew":
+				case installer.InstallTypeBrew:
 					upgradeText = "run:\nbrew upgrade azd"
-				case "install-azd.sh":
-					upgradeText = "run:\ncurl -fsSL https://aka.ms/install-azd.sh | bash\n\nIf the install script was run with custom parameters, ensure that the same parameters are used for the upgrade. https://aka.ms/azd/upgrade/mac"
+				case installer.InstallTypeSh:
+					upgradeText = "run:\ncurl -fsSL https://aka.ms/install-azd.sh | bash\n\nIf the install script was run with custom parameters, ensure that the same parameters are used for the upgrade. For advanced install instructions, see: https://aka.ms/azd/upgrade/mac"
 				default:
 					upgradeText = "visit https://aka.ms/azd/upgrade/mac"
 				}

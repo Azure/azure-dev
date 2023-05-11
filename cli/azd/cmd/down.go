@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -110,6 +111,8 @@ func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		TitleNote: "Local application code is not deleted when running 'azd down'.",
 	})
 
+	startTime := time.Now()
+
 	destroyOptions := provisioning.NewDestroyOptions(a.flags.forceDelete, a.flags.purgeDelete)
 	destroyResult, err := infraManager.Destroy(ctx, destroyOptions)
 	if err != nil {
@@ -128,7 +131,7 @@ func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			Header: "Your Azure resources have been deleted.",
+			Header: fmt.Sprintf("Your Azure resources were deleted in %s.", ux.DurationAsText(time.Since(startTime))),
 		},
 	}, nil
 }

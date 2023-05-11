@@ -101,6 +101,8 @@ func (pa *packageAction) Run(ctx context.Context) (*actions.ActionResult, error)
 		Title: "Packaging services (azd package)",
 	})
 
+	startTime := time.Now()
+
 	targetServiceName := ""
 	if len(pa.args) == 1 {
 		targetServiceName = pa.args[0]
@@ -176,7 +178,7 @@ func (pa *packageAction) Run(ctx context.Context) (*actions.ActionResult, error)
 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			Header: "Your Azure app has been packaged!",
+			Header: fmt.Sprintf("Your Azure app was packaged in %s.", ux.DurationAsText(time.Since(startTime))),
 		},
 	}, nil
 }

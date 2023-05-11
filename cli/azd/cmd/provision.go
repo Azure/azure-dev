@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -144,6 +145,8 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		TitleNote: "Provisioning Azure resources can take some time"},
 	)
 
+	startTime := time.Now()
+
 	if err := p.projectManager.Initialize(ctx, p.projectConfig); err != nil {
 		return nil, err
 	}
@@ -238,7 +241,7 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			Header: "Your project has been provisioned!",
+			Header: fmt.Sprintf("Your Azure app was provisioned in %s.", ux.DurationAsText(time.Since(startTime))),
 			FollowUp: getResourceGroupFollowUp(
 				ctx, p.formatter, p.projectConfig, p.resourceManager, p.env),
 		},

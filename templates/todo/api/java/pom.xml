@@ -4,7 +4,7 @@
   <parent>
     <groupId>org.springframework.boot</groupId>
     <artifactId>spring-boot-starter-parent</artifactId>
-    <version>3.0.2</version>
+    <version>3.0.5</version>
     <relativePath/>
     <!-- lookup parent from repository -->
   </parent>
@@ -23,7 +23,6 @@
         To see how to enable this, visit https://github.com/HubSpot/prettier-maven-plugin
       -->
     <plugin.prettier.goal>write</plugin.prettier.goal>
-    <tomcat.version>9.0.70</tomcat.version>
   </properties>
 
   <dependencies>

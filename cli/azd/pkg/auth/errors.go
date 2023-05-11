@@ -87,7 +87,7 @@ func (e *AuthFailedError) Error() string {
 		"interaction_required":
 		// log the error in case this needs further diagnosis
 		log.Println(e.httpErrorDetails())
-		return fmt.Sprintf("login expired, run `%s` to re-login", e.loginCmd)
+		return fmt.Sprintf("re-authentication required, run `%s` to login", e.loginCmd)
 	}
 
 	// ErrorDescription contains multiline messaging that has TraceID, CorrelationID,

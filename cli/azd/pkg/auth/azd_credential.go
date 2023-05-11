@@ -43,7 +43,7 @@ func (c *azdCredential) GetToken(ctx context.Context, options policy.TokenReques
 	}, nil
 }
 
-// matchesLoginScopes checks if the scopes match (order-insensitive) the default login scopes
+// matchesLoginScopes checks if the elements contained in the slice match the default login scopes
 func matchesLoginScopes(scopes []string) bool {
 	for _, scope := range scopes {
 		_, matchLogin := loginScopesMap[scope]

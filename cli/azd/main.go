@@ -72,16 +72,44 @@ func main() {
 			// case
 			log.Printf("eliding update message for dev build")
 		} else if latestVersion.GT(internal.VersionInfo().Version) {
-			var upgradeUrl string
+			var upgradeText string
+
+			installedBy := internal.GetRawInstalledBy()
 			if runtime.GOOS == "windows" {
-				upgradeUrl = "https://aka.ms/azd/upgrade/windows"
+				switch installedBy {
+				case "install-azd.ps1":
+					upgradeText = "run:\npowershell -ex AllSigned -c \"Invoke-RestMethod 'https://aka.ms/install-azd.ps1' | Invoke-Expression\""
+				case "winget":
+					upgradeText = "run:\nwinget upgrade Microsoft.Azd"
+				case "choco":
+					upgradeText = "run:\nchoco upgrade azd"
+				default:
+					// Also covers "msi" case where the user installed directly
+					// via MSI
+					upgradeText = "visit https://aka.ms/azd/upgrade/windows"
+				}
 			} else if runtime.GOOS == "linux" {
-				upgradeUrl = "https://aka.ms/azd/upgrade/linux"
+				switch installedBy {
+				case "install-azd.sh":
+					upgradeText = "run:\ncurl -fsSL https://aka.ms/install-azd.sh | bash"
+				default:
+					// Also covers "deb" and "rpm" cases which are currently
+					// documented. When package manager distribution support is
+					// added, this will need to be updated.
+					upgradeText = "visit https://aka.ms/azd/upgrade/linux"
+				}
 			} else if runtime.GOOS == "darwin" {
-				upgradeUrl = "https://aka.ms/azd/upgrade/mac"
+				switch installedBy {
+				case "brew":
+					upgradeText = "run:\nbrew upgrade azd"
+				case "install-azd.sh":
+					upgradeText = "run:\ncurl -fsSL https://aka.ms/install-azd.sh | bash"
+				default:
+					upgradeText = "visit https://aka.ms/azd/upgrade/mac"
+				}
 			} else {
 				// Platform is not recognized, use the generic install link
-				upgradeUrl = "https://aka.ms/azd/upgrade"
+				upgradeText = "visit https://aka.ms/azd/upgrade"
 			}
 
 			fmt.Fprintln(
@@ -92,8 +120,8 @@ func main() {
 			fmt.Fprintln(os.Stderr)
 			fmt.Fprintln(
 				os.Stderr,
-				output.WithWarningFormat(`To update to the latest version, follow instructions at: %s`,
-					upgradeUrl))
+				output.WithWarningFormat(`To update to the latest version, %s`,
+					upgradeText))
 		}
 	}
 

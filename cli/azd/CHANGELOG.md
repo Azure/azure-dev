@@ -1,18 +1,36 @@
 # Release History
 
-## 0.8.0-beta.3 (Unreleased)
+## 0.9.0-beta.1 (2023-05-11)
 
 ### Features Added
+
+- [[1808]](https://github.com/Azure/azure-dev/pull/1808) Support for Azure Spring Apps.
 
 ### Breaking Changes
 
 - [[2066]](https://github.com/Azure/azure-dev/pull/2066) `azd` no longer assumes `dotnet` by default when `services.language` is not set, or empty in `azure.yaml`. If you receive an error message 'language property must not be empty', specify `language: dotnet` explicitly in `azure.yaml`.
 - [[2100]](https://github.com/Azure/azure-dev/pull/2100) As a follow up from the change for [azd up ordering](#azd-up-ordering), automatic `.env` file injection when building `staticwebapp` services have been removed. For more details, read more about [Static Web App Dynamic Configuration](#static-web-app-dynamic-configuration) below.
 - [[2126]](https://github.com/Azure/azure-dev/pull/2126) During `azd pipeline config` commands `azd` will no longer store non-secret configuration values in [GitHub secrets](https://docs.github.com/actions/automating-your-workflow-with-github-actions/creating-and-using-encrypted-secrets) and instead will be stored in [GitHub variables](https://docs.github.com/actions/learn-github-actions/variables). Non-secret variables should be referenced using the `vars` context instead of the `secrets` context within your GitHub actions.
+- [[1989]](https://github.com/Azure/azure-dev/pull/1989) Refactor Container App service target. Deploy will fail if you are using ACA apps that are not deploying the ACA resources as part of the initial `provision` step.
 
 ### Bugs Fixed
 
+- [[2013]](https://github.com/Azure/azure-dev/pull/2013) Fix `load template missing` error in `azd env list`.
+- [[2001]](https://github.com/Azure/azure-dev/pull/2001) Fix Azure Container Apps CORS strategy for Java/NodeJs/Python.
+- [[2071]](https://github.com/Azure/azure-dev/pull/2071) Fix logout error after running `azd config reset`.
+- [[2048]](https://github.com/Azure/azure-dev/pull/2048) Fix `azd down` deletion on an empty resource group environment.
+- [[2088]](https://github.com/Azure/azure-dev/pull/2088) Fix error when running `azd pipeline config --provider azdo`.
+- [[2094]](https://github.com/Azure/azure-dev/pull/2094) Add error check for pipeline yml file and ssh interaction when running `azd pipeline config`.
+
 ### Other Changes
+
+- [[1987]](https://github.com/Azure/azure-dev/pull/1987) Support adding new `host` as alpha feature.
+- [[2026]](https://github.com/Azure/azure-dev/pull/2026) Improve `dotnet user-secret` performance.
+- [[2004]](https://github.com/Azure/azure-dev/pull/2004) Improve error message when no subscriptions are found.
+- [[1792]](https://github.com/Azure/azure-dev/pull/1792) Add `java postgresql terraform` template.
+- [[2055]](https://github.com/Azure/azure-dev/pull/2055) Add new starter templates for bicep and terraform.
+- [[2090]](https://github.com/Azure/azure-dev/pull/2090) Update todo templates names and descriptions.
+- [[2083]](https://github.com/Azure/azure-dev/pull/2083) Allow resource group scope deployments.
 
 #### Static Web App Dynamic Configuration
 

@@ -150,11 +150,6 @@ func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, 
 		return nil, err
 	}
 
-	// Command title
-	p.console.MessageUxItem(ctx, &ux.MessageTitle{
-		Title: "Configure your azd pipeline",
-	})
-
 	credential, err := p.credentialProvider.CredentialForSubscription(ctx, p.env.GetSubscriptionId())
 	if err != nil {
 		return nil, err
@@ -170,6 +165,13 @@ func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, 
 		return nil, err
 	}
 
+	pipelineProviderName := p.manager.CiProvider.Name()
+
+	// Command title
+	p.console.MessageUxItem(ctx, &ux.MessageTitle{
+		Title: fmt.Sprintf("Configure your %s pipeline", pipelineProviderName),
+	})
+
 	pipelineResult, err := p.manager.Configure(ctx)
 	if err != nil {
 		return nil, err
@@ -177,7 +179,7 @@ func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, 
 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			Header: fmt.Sprintf("Your %s pipeline has been configured!", p.manager.CiProvider.Name()),
+			Header: fmt.Sprintf("Your %s pipeline has been configured!", pipelineProviderName),
 			FollowUp: heredoc.Docf(`
 			Link to view your new repo: %s
 			Link to view your pipeline status: %s`,

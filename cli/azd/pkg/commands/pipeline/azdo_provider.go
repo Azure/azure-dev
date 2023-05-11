@@ -88,7 +88,7 @@ func (p *AzdoScmProvider) saveEnvironmentConfig(key string, value string) error 
 }
 
 // name returns the name of the provider
-func (p *AzdoScmProvider) name() string {
+func (p *AzdoScmProvider) Name() string {
 	return "Azure DevOps"
 }
 
@@ -652,7 +652,7 @@ func (p *AzdoCiProvider) preConfigureCheck(
 }
 
 // name returns the name of the provider.
-func (p *AzdoCiProvider) name() string {
+func (p *AzdoCiProvider) Name() string {
 	return "Azure DevOps"
 }
 

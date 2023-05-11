@@ -119,7 +119,7 @@ func main() {
 			fmt.Fprintln(
 				os.Stderr,
 				output.WithWarningFormat(
-					"warning: your version of azd is out of date, you have %s and the latest version is %s",
+					"WARNING: your version of azd is out of date, you have %s and the latest version is %s",
 					internal.VersionInfo().Version.String(), latestVersion.String()))
 			fmt.Fprintln(os.Stderr)
 			fmt.Fprintln(

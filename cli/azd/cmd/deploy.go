@@ -193,7 +193,8 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	if targetServiceName == "" && da.flags.fromPackage != "" {
 		return nil, errors.New(
 			//nolint:lll
-			"'--from-package' cannot be specified when deploying all services. Specify a specific service by passing a <service>")
+			"'--from-package' cannot be specified when deploying all services. Specify a specific service by passing a <service>",
+		)
 	}
 
 	if err := da.projectManager.Initialize(ctx, da.projectConfig); err != nil {
@@ -215,16 +216,21 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 
 	for _, svc := range da.projectConfig.GetServicesStable() {
 		stepMessage := fmt.Sprintf("Deploying service %s", svc.Name)
-		da.console.ShowSpinner(ctx, stepMessage, input.Step)
 
 		// Skip this service if both cases are true:
 		// 1. The user specified a service name
 		// 2. This service is not the one the user specified
 		if targetServiceName != "" && targetServiceName != svc.Name {
-			da.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
 			continue
 		}
 
+		if alphaFeatureId, isAlphaFeature := alpha.IsFeatureKey(string(svc.Host)); isAlphaFeature {
+			// alpha feature on/off detection for host is done during initialization.
+			// This is just for displaying the warning during deployment.
+			da.console.WarnForFeature(ctx, alphaFeatureId)
+		}
+
+		da.console.ShowSpinner(ctx, stepMessage, input.Step)
 		var packageResult *project.ServicePackageResult
 		if da.flags.fromPackage != "" {
 			// --from-package set, skip packaging

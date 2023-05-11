@@ -3,7 +3,7 @@ resources:
     - repository: azure-sdk-build-tools
       type: git
       name: internal/azure-sdk-build-tools
-      ref: refs/tags/azure-sdk-build-tools_20230307.1
+      ref: refs/tags/azure-sdk-build-tools_20230425.1
 
 # Continuous deployment trigger
 trigger:
@@ -39,6 +39,9 @@ stages:
               BuildOutputName: azd.exe
               BuildTestMsi: true
               AZURE_DEV_CI_OS: win
+              Codeql.Enabled: true
+              Codeql.SkipTaskAutoInjection: false
+              Codeql.BuildIdentifier: cli_windows
             Linux:
               Pool: azsdk-pool-mms-ubuntu-2004-general
               OSVmImage:  MMSUbuntu20.04
@@ -49,6 +52,9 @@ stages:
               GenerateCoverage: true
               BuildLinuxPackages: true
               AZURE_DEV_CI_OS: lin
+              Codeql.Enabled: true
+              Codeql.SkipTaskAutoInjection: false
+              Codeql.BuildIdentifier: cli_linux
             Mac:
               Pool: Azure Pipelines
               OSVmImage: macOS-11
@@ -57,6 +63,8 @@ stages:
               MacLocalSign: false
               SetExecutableBit: true
               AZURE_DEV_CI_OS: mac
+              # CodeQL on macOS not supported by the Azure DevOps task as-of current.
+              # Codeql.BuildIdentifier: cli_darwin
         pool:
             name: $(Pool)
             vmImage: $(OSVmImage)
@@ -565,6 +573,8 @@ stages:
           vmImage: MMSUbuntu20.04
 
         steps:
+          - checkout: self
+
           - task: DownloadPipelineArtifact@2
             inputs:
               artifact: azd-windows-amd64.exe
@@ -599,6 +609,8 @@ stages:
               tar -C azd-linux-amd64 -cvzf hosting/azd-linux-amd64.tar.gz azd-linux-amd64
 
               Copy-Item msi/azd-windows-amd64.msi hosting/
+
+              Copy-Item cli/installer/*stall-azd.* hosting/
 
               Get-ChildItem hosting/ -Recurse | Select-Object -Property Name,Size
             displayName: Move folders to hosting location
@@ -688,7 +700,11 @@ stages:
               OSVmImage:  MMSUbuntu20.04
               TestShell: pwsh
               TestInstallCommand: >
-                ./test-pwsh-xplat-install.ps1 -BaseUrl $env:BASEURL -Version '';
+                ./test-pwsh-xplat-install.ps1 
+                -BaseUrl $env:BASEURL 
+                -Version '' 
+                -InstallShScriptUrl "$($env:BASEURL)/install-azd.sh"
+                -UninstallShScriptUrl "$($env:BASEURL)/uninstall-azd.sh";
                 ./test-telemetry-functions.ps1 -NonInteractive -Shell pwsh -ExpectedFieldMap telemetry/linux.telemetry.json
 
             Mac11Sh:
@@ -716,7 +732,11 @@ stages:
               # macs. Disabled for now.
               #  ./test-telemetry-functions.ps1 -Shell pwsh -ExpectedFieldMap telemetry/macos.telemetry.json
               TestInstallCommand: >
-                ./test-pwsh-xplat-install.ps1 -BaseUrl $env:BASEURL -Version ''
+                ./test-pwsh-xplat-install.ps1 
+                -BaseUrl $env:BASEURL 
+                -Version '' 
+                -InstallShScriptUrl "$($env:BASEURL)/install-azd.sh"
+                -UninstallShScriptUrl "$($env:BASEURL)/uninstall-azd.sh"
             Mac11Pwsh:
               Pool: Azure Pipelines
               OSVmImage: macOS-11
@@ -726,8 +746,11 @@ stages:
               # macs. Disabled for now.
               #  ./test-telemetry-functions.ps1 -Shell pwsh -ExpectedFieldMap telemetry/macos.telemetry.json
               TestInstallCommand: >
-                ./test-pwsh-xplat-install.ps1 -BaseUrl $env:BASEURL -Version ''
-
+                ./test-pwsh-xplat-install.ps1 
+                -BaseUrl $env:BASEURL 
+                -Version '' 
+                -InstallShScriptUrl "$($env:BASEURL)/install-azd.sh"
+                -UninstallShScriptUrl "$($env:BASEURL)/uninstall-azd.sh"
             WindowsCmd:
               Pool: azsdk-pool-mms-win-2022-general
               OSVmImage: MMS2022
@@ -738,6 +761,7 @@ stages:
               OSVmImage: MMS2022
               TestShell: pwsh
               TestInstallCommand: >
+                $ErrorActionPreference = 'Stop';
                 ./test-win-install.ps1 -BaseUrl $env:BASEURL -Version '';
                 ./test-telemetry-functions.ps1 -Shell pwsh -ExpectedFieldMap telemetry/windows.pwsh.telemetry.json
             WindowsPowerShell:
@@ -745,6 +769,7 @@ stages:
               OSVmImage: MMS2022
               TestShell: powershell
               TestInstallCommand: >
+                $ErrorActionPreference = 'Stop';
                 ./test-win-install.ps1 -BaseUrl $env:BASEURL -Version '';
                 ./test-telemetry-functions.ps1 -Shell powershell -ExpectedFieldMap telemetry/windows.powershell.telemetry.json
 
@@ -766,6 +791,38 @@ stages:
               path: hosting
 
           - bash: ls
+            workingDirectory: hosting
+
+          - bash: |
+              unzip ./azd-darwin-amd64.zip -d ./tmp
+
+              # Ad-hoc signing with "-" identity
+              codesign -s - tmp/azd-darwin-amd64
+
+              zip azd-darwin-amd64.zip -j tmp/azd-darwin-amd64
+            displayName: Self-sign (Darwin)
+            condition: and(succeeded(), contains(variables['Agent.OS'], 'Darwin'))
+            workingDirectory: hosting
+
+          - pwsh: |
+              $ErrorActionPreference = 'Stop'
+
+              # Generate self-sign cert
+              $cert = New-SelfSignedCertificate -CertStoreLocation Cert:\LocalMachine\My -Type CodeSigningCert -Subject "azd installer tests code signing"
+              
+              # Add as temporary trusted root CA
+              try {
+                Export-Certificate -Cert $cert -FilePath code_signing.crt
+                Import-Certificate -FilePath .\code_signing.crt -Cert Cert:\LocalMachine\Root
+              }
+              finally {
+                Remove-Item -Force .\code_signing.crt -ErrorAction SilentlyContinue
+              }
+
+              # Sign the windows binary
+              Set-AuthenticodeSignature .\azd-windows-amd64.msi -Certificate $cert
+            displayName: Self-sign (Windows)
+            condition: and(succeeded(), contains(variables['Agent.OS'], 'Windows'))
             workingDirectory: hosting
 
           - bash: nohup npx -y http-server &
@@ -844,6 +901,24 @@ stages:
               script: $(TestInstallCommand)
               workingDirectory: cli/installer/
             displayName: Test install script (cmd)
+
+          - pwsh: |
+              Get-ChildItem Cert:\LocalMachine\My | ForEach-Object {
+                if ($_.Subject -match "azd installer tests code signing") {
+                  Write-Host "Deleting $($_.PSPath) - $($_.Subject)"
+                  Remove-Item -Force $_.PSPath
+                }
+              }
+
+              Get-ChildItem Cert:\LocalMachine\Root | ForEach-Object {
+                if ($_.Subject -match "azd installer tests code signing") {
+                  Write-Host "Deleting $($_.PSPath) - $($_.Subject)"
+                  Remove-Item -Force $_.PSPath
+                }
+              }
+            displayName: Clean up self-signed certificates (Windows)
+            condition: contains(variables['Agent.OS'], 'Windows')
+            workingDirectory: hosting
 
       - job: Verify_LinuxPackages
 
@@ -1126,13 +1201,13 @@ stages:
               bash:
               ``````
               curl -fsSL $urlBase/uninstall-azd.sh | bash;
-              curl -fsSL $urlBase/install-azd.sh | bash -s -- --base-url $urlBase --version '' --verbose
+              curl -fsSL $urlBase/install-azd.sh | bash -s -- --base-url $urlBase --version '' --verbose --skip-verify
               ``````
 
               pwsh:
               ``````
               Invoke-RestMethod '$urlBase/uninstall-azd.ps1' -OutFile uninstall-azd.ps1; ./uninstall-azd.ps1
-              Invoke-RestMethod '$urlBase/install-azd.ps1' -OutFile install-azd.ps1; ./install-azd.ps1 -BaseUrl '$urlBase' -Version '' -Verbose
+              Invoke-RestMethod '$urlBase/install-azd.ps1' -OutFile install-azd.ps1; ./install-azd.ps1 -BaseUrl '$urlBase' -Version '' -SkipVerify -Verbose
               ``````
 
 
@@ -1142,7 +1217,7 @@ stages:
 
               ``````
               powershell -c "Set-ExecutionPolicy Bypass Process; irm '$urlBase/uninstall-azd.ps1' > uninstall-azd.ps1; ./uninstall-azd.ps1;"
-              powershell -c "Set-ExecutionPolicy Bypass Process; irm '$urlBase/install-azd.ps1' > install-azd.ps1; ./install-azd.ps1 -BaseUrl '$urlBase' -Version '' -Verbose;"
+              powershell -c "Set-ExecutionPolicy Bypass Process; irm '$urlBase/install-azd.ps1' > install-azd.ps1; ./install-azd.ps1 -BaseUrl '$urlBase' -Version '' -SkipVerify -Verbose;"
               ``````
 
               MSI install

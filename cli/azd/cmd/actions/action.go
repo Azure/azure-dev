@@ -24,11 +24,16 @@ type ResultMessage struct {
 // Define the Action outputs.
 type ActionResult struct {
 	Message *ResultMessage
+
+	// TraceID is a unique identifier of the end-to-end CLI command execution, that can be used to correlate events in logs.
+	TraceID string
 }
 
 // Action is the representation of the application logic of a CLI command.
 type Action interface {
 	// Run executes the CLI command.
+	//
+	// It is currently valid to both return an error and a non-nil ActionResult.
 	Run(ctx context.Context) (*ActionResult, error)
 }
 
@@ -38,25 +43,15 @@ type ActionInitializer[T Action] func() (T, error)
 func ToUxItem(actionResult *ActionResult, err error) ux.UxItem {
 	if err != nil {
 		return &ux.ActionResult{
-			SuccessMessage: "",
-			FollowUp:       "",
-			Err:            err,
+			Err: err,
 		}
 	}
 
 	if actionResult == nil {
-		return &ux.ActionResult{
-			SuccessMessage: "",
-			FollowUp:       "",
-			Err:            nil,
-		}
+		return &ux.ActionResult{}
 	}
 	if actionResult.Message == nil {
-		return &ux.ActionResult{
-			SuccessMessage: "",
-			FollowUp:       "",
-			Err:            nil,
-		}
+		return &ux.ActionResult{}
 	}
 	return &ux.ActionResult{
 		SuccessMessage: actionResult.Message.Header,

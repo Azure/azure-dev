@@ -9,15 +9,18 @@ import (
 	"log"
 	"os"
 
+	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 )
 
-// EnsureSubscriptionAndLocation ensures that a subscription and location are configured in the environment, prompting
-// for values if they are not.
-func EnsureSubscriptionAndLocation(
+// EnsureEnv ensures that the environment is in a provision-ready state with required values set, prompting the user if
+// values are unset.
+//
+// This currently means that subscription (AZURE_SUBSCRIPTION_ID) and location (AZURE_LOCATION) variables are set.
+func EnsureEnv(
 	ctx context.Context,
 	console input.Console,
 	env *environment.Environment,
@@ -72,6 +75,13 @@ func promptSubscription(
 	subscriptionOptions, defaultSubscription, err := getSubscriptionOptions(ctx, account)
 	if err != nil {
 		return "", err
+	}
+
+	if len(subscriptionOptions) == 0 {
+		return "", fmt.Errorf(heredoc.Doc(
+			`no subscriptions found.
+			Ensure you have a subscription by visiting https://portal.azure.com and search for Subscriptions in the search bar.
+			Once you have a subscription, run 'azd auth login' again to reload subscriptions.`))
 	}
 
 	for subscriptionId == "" {

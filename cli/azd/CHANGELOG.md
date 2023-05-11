@@ -1,6 +1,6 @@
 # Release History
 
-## 0.8.0-beta.2 (Unreleased)
+## 0.9.0-beta.2 (Unreleased)
 
 ### Features Added
 
@@ -9,6 +9,115 @@
 ### Bugs Fixed
 
 ### Other Changes
+
+## 0.9.0-beta.1 (2023-05-11)
+
+### Features Added
+
+- [[1808]](https://github.com/Azure/azure-dev/pull/1808) Support for Azure Spring Apps(alpha feature).
+- [[2083]](https://github.com/Azure/azure-dev/pull/2083) Allow resource group scope deployments(alpha feature).
+
+### Breaking Changes
+
+- [[2066]](https://github.com/Azure/azure-dev/pull/2066) `azd` no longer assumes `dotnet` by default when `services.language` is not set, or empty in `azure.yaml`. If you receive an error message 'language property must not be empty', specify `language: dotnet` explicitly in `azure.yaml`.
+- [[2100]](https://github.com/Azure/azure-dev/pull/2100) As a follow up from the change for [azd up ordering](#azd-up-ordering), automatic `.env` file injection when building `staticwebapp` services have been removed. For more details, read more about [Static Web App Dynamic Configuration](#static-web-app-dynamic-configuration) below.
+- [[2126]](https://github.com/Azure/azure-dev/pull/2126) During `azd pipeline config` commands `azd` will no longer store non-secret configuration values in [GitHub secrets](https://docs.github.com/actions/automating-your-workflow-with-github-actions/creating-and-using-encrypted-secrets) and instead will be stored in [GitHub variables](https://docs.github.com/actions/learn-github-actions/variables). Non-secret variables should be referenced using the `vars` context instead of the `secrets` context within your GitHub actions.
+- [[1989]](https://github.com/Azure/azure-dev/pull/1989) Refactor Container App service target. Deploy will fail if you are using Azure Container Apps that are not deploying the Azure Container Apps resources as part of the initial `provision` step.
+
+### Bugs Fixed
+
+- [[2071]](https://github.com/Azure/azure-dev/pull/2071) Fix `azd config reset` causing a logout to occur.
+- [[2048]](https://github.com/Azure/azure-dev/pull/2048) Fix `azd down` deletion on an empty resource group environment.
+- [[2088]](https://github.com/Azure/azure-dev/pull/2088) Fix error when running `azd pipeline config --provider azdo` on Codespaces.
+- [[2094]](https://github.com/Azure/azure-dev/pull/2094) Add error check for pipeline yml file and ssh interaction when running `azd pipeline config`.
+
+#### Template Fix
+- [[2013]](https://github.com/Azure/azure-dev/pull/2013) Fix `load template missing` error in `azd env list`.
+- [[2001]](https://github.com/Azure/azure-dev/pull/2001) Fix Azure Container Apps CORS strategy for Java, NodeJs and Python.
+
+### Other Changes
+
+- [[2026]](https://github.com/Azure/azure-dev/pull/2026) Improve provisioning performance for `dotnet` services by batching `dotnet user-secret` updates.
+- [[2004]](https://github.com/Azure/azure-dev/pull/2004) Improve error message when no subscriptions are found.
+- [[1792]](https://github.com/Azure/azure-dev/pull/1792) Add `java postgresql terraform` template.
+- [[2055]](https://github.com/Azure/azure-dev/pull/2055) Add new starter templates for bicep and terraform.
+- [[2090]](https://github.com/Azure/azure-dev/pull/2090) Update todo templates names and descriptions.
+
+#### Static Web App Dynamic Configuration
+
+This change affects `staticwebapp` services that are currently relying on azd provided `.env` file variables during `azd deploy`. If you have an application initialized from an older `azd` provided Static Web App template (before April 10, 2023), we recommend uptaking the latest changes if you're relying on `.env` variables being present. A way to check whether this affects you is by looking at contents in `azure.yaml`:
+
+Old, uptake needed:
+
+```yaml
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+
+name: <your project>
+metadata:
+  template: todo-nodejs-mongo-swa-func@0.0.1-beta
+services:
+  web:
+    project: ./src/web
+    dist: build
+    language: js
+    host: staticwebapp
+  api:
+    project: ./src/api
+    language: js
+    host: function
+```
+
+New, no changes necessary:
+
+```yaml
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+
+name: <your project>
+metadata:
+  template: todo-python-mongo-swa-func@0.0.1-beta
+services:
+  web:
+    project: ./src/web
+    dist: build
+    language: js
+    host: staticwebapp
+    hooks:
+      predeploy:
+        posix:
+          shell: sh
+          run: node entrypoint.js -o ./build/env-config.js
+          continueOnError: false
+          interactive: false
+        windows:
+          shell: pwsh
+          run: node entrypoint.js -o ./build/env-config.js
+          continueOnError: false
+          interactive: false
+  api:
+    project: ./src/api
+    language: py
+    host: function
+```
+
+From the example above, dynamic configuration can still be generated from azd `.env` files by creating a `predeploy` hook that embeds the configuration into web assets. See an example change [here](https://github.com/Azure-Samples/todo-nodejs-mongo-swa-func/commit/50f9268881717a796167c371cb60525f83be8a59#diff-fa5d677aeff171483fa03a69284506672cb9afafa0a7139e03a336e4fb7b773f).
+
+## 0.8.0-beta.2 (2023-04-20)
+
+### Features Added
+
+- [[#1931]](https://github.com/Azure/azure-dev/pull/1931) Support *.war and *.ear java archive files, and specify a specific archive file if multiple archives are present.
+- [[#1704]](https://github.com/Azure/azure-dev/pull/1704) Add `requiredVersions` to `azure.yaml`.
+- [[#1924]](https://github.com/Azure/azure-dev/pull/1924) Improve UX on `azd down`.
+- [[#1807]](https://github.com/Azure/azure-dev/pull/1807) Retrieves credentials using the token endpoint on `CloudShell`.
+
+### Bugs Fixed
+
+- [[#1923]](https://github.com/Azure/azure-dev/pull/1923) Fix `Python CLI not installed` error when Python is installed.
+- [[#1963]](https://github.com/Azure/azure-dev/pull/1963) Update GitHub federated auth token provider to allow for fetching of tokens when tokens expire.
+- [[#1967]](https://github.com/Azure/azure-dev/pull/1967) Display provisioning resources in `Failed` state.
+- [[#1940]](https://github.com/Azure/azure-dev/pull/1940) Detect and update environment changes before and after hook executions.
+- [[#1970]](https://github.com/Azure/azure-dev/pull/1970) Fix `pipeline config` issues on Codespaces for `ghcli` and `gitcli` auth.
+- [[#1982]](https://github.com/Azure/azure-dev/pull/1982) Ensure directory has user "execute" permissions.
 
 ## 0.8.0-beta.1 (2023-04-10)
 

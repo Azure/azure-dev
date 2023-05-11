@@ -12,16 +12,24 @@ import (
 // When changing project structure, make sure to update the JSON schema file for azure.yaml (<workspace
 // root>/schemas/vN.M/azure.yaml.json).
 type ProjectConfig struct {
+	RequiredVersions  *RequiredVersions          `yaml:"requiredVersions,omitempty"`
 	Name              string                     `yaml:"name"`
 	ResourceGroupName ExpandableString           `yaml:"resourceGroup,omitempty"`
 	Path              string                     `yaml:",omitempty"`
 	Metadata          *ProjectMetadata           `yaml:"metadata,omitempty"`
 	Services          map[string]*ServiceConfig  `yaml:",omitempty"`
-	Infra             provisioning.Options       `yaml:"infra"`
-	Pipeline          PipelineOptions            `yaml:"pipeline"`
+	Infra             provisioning.Options       `yaml:"infra,omitempty"`
+	Pipeline          PipelineOptions            `yaml:"pipeline,omitempty"`
 	Hooks             map[string]*ext.HookConfig `yaml:"hooks,omitempty"`
 
 	*ext.EventDispatcher[ProjectLifecycleEventArgs] `yaml:",omitempty"`
+}
+
+// RequiredVersions contains information about what versions of tools this project requires.
+// If a value is nil, it is treated as if there is no constraint.
+type RequiredVersions struct {
+	// When non nil, a semver range (in the format expected by semver.ParseRange).
+	Azd *string `yaml:"azd,omitempty"`
 }
 
 // options supported in azure.yaml

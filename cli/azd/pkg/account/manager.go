@@ -60,7 +60,7 @@ func NewManager(
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			log.Printf("configuration file '%s' does not exist. Creating new empty config.", filePath)
-			azdConfig = config.NewConfig(nil)
+			azdConfig = config.NewEmptyConfig()
 		} else {
 			return nil, err
 		}

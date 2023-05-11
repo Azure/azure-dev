@@ -150,13 +150,12 @@ ensure_rosetta() {
 
 extract() {
     local compressed_file=$1
-    local target_file=$2
-    local extract_location=$3
+    local extract_location=$2
 
     if [[ $compressed_file == *.zip ]]; then
-        unzip "$compressed_file" "$target_file" -d "$extract_location"/
+        unzip "$compressed_file" -d "$extract_location"/
     elif [[ $compressed_file == *.tar.gz ]]; then
-        tar -zxvf "$compressed_file" -C "$extract_location"/ "$target_file"
+        tar -zxvf "$compressed_file" -C "$extract_location"/
     else
         say_error "Target file not supported: $compressed_file";
     fi
@@ -170,7 +169,9 @@ extension="$(get_extension_for_platform "$platform")"
 architecture="$(get_architecture "$platform")"
 version="latest"
 dry_run=false
-install_folder="/usr/local/bin"
+skip_verify=false
+symlink_folder="/usr/local/bin"
+install_folder="/opt/microsoft/azd"
 no_telemetry=0
 verbose=false
 
@@ -201,9 +202,16 @@ do
     --dry-run)
         dry_run=true
         ;;
+    --skip-verify)
+        skip_verify=true
+        ;;
     -i|--install-folder)
         shift
         install_folder="$1"
+        ;;
+    -s|--symlink-folder)
+        shift
+        symlink_folder="$1"
         ;;
     --no-telemetry)
         shift
@@ -242,6 +250,8 @@ do
         echo "  --dry-run                     Do not download or install, just display the"
         echo "                                download URL."
         echo ""
+        echo "  --skip-verify                 Skip verification of the downloaded file (macOS only)."
+        echo ""
         echo "  -i,--install-folder <FOLDER>  Install azd CLI to FOLDER. Default is"
         echo "                                /usr/local/bin"
         echo ""
@@ -261,10 +271,10 @@ do
   shift
 done
 
-if [ ! -d "$install_folder" ]; then
-    say_error "Install folder does not exist: $install_folder. The install folder should be an existing directory."
-    say_error "Create the folder (and ensure that it is in your PATH) or specify a different install folder with the -i or --install-folder argument."
-    save_error_report_if_enabled "InstallFailed" "InstallFolderDoesNotExist"
+if [ "$symlink_folder" != "" ] && [ ! -d "$symlink_folder" ]; then
+    say_error "Symlink folder does not exist: $symlink_folder. The symlink folder should exist and be in \$PATH"
+    say_error "Create the folder (and ensure that it is in your \$PATH), specify a different folder using -s or --symlink-folder, or specify an empty value using -s \"\" or --symlink-folder \"\""
+    save_error_report_if_enabled "InstallFailed" "SymlinkFolderDoesNotExist"
     exit 1
 fi
 
@@ -274,7 +284,7 @@ say_verbose "Architecture: $architecture"
 say_verbose "File extension: $extension"
 
 if [ "$platform" = "darwin" ]; then
-    say_verbose "Mac detected, ensuring compatailbity with amd64 binaries"
+    say_verbose "Mac detected, ensuring compatibility with amd64 binaries"
     ensure_rosetta
 fi
 
@@ -303,24 +313,66 @@ if ! curl -so "$compressed_file_path" "$url" --fail; then
 fi
 
 bin_name="azd-$platform-$architecture"
-extract "$compressed_file_path" "$bin_name" "$tmp_folder"
+extract "$compressed_file_path" "$tmp_folder"
+rm "$compressed_file_path"
 chmod +x "$tmp_folder/$bin_name"
 
-install_location="$install_folder/azd"
-if [ -w "$install_folder/" ]; then
-    mv "$tmp_folder/$bin_name" "$install_location"
-else
+say_verbose "Writing to $tmp_folder/.installed-by.txt"
+echo "install-azd.sh" > "$tmp_folder/.installed-by.txt"
+
+if [ "$platform" = "darwin" ] && [ "$skip_verify" = false ]; then
+    say_verbose "Verifying signature of $bin_name"
+    if ! output=$( codesign -v "$tmp_folder/$bin_name" 2>&1); then
+        say_error "Could not verify signature of $bin_name, error output:"
+        say_error "$output"
+        save_error_report_if_enabled "InstallFailed" "SignatureVerificationFailure"
+        exit 1
+    fi
+fi
+
+if [[ ! -d "$install_folder" ]]; then
+    say_verbose "Install folder does not exist: $install_folder. Creating..." 
+
+    if ! mkdir -p "$install_folder"; then 
+        say "Creating $install_folder requires elevated permission. You may be prompted to enter credentials." 
+        if ! sudo mkdir -p "$install_folder"; then
+            say_error "Could not create install folder: $install_folder"
+            save_error_report_if_enabled "InstallFailed" "SudoMkdirFailure"
+            exit 1
+        fi
+    fi
+fi
+
+mv_preface=""
+if [ ! -w "$install_folder/" ]; then
     say "Writing to $install_folder/ requires elevated permission. You may be prompted to enter credentials."
-    if ! sudo mv "$tmp_folder/$bin_name" "$install_location"; then
-        say_error "Could not copy file to install location: $install_location"
-        save_error_report_if_enabled "InstallFailed" "SudoMoveFailure"
+    mv_preface="sudo"
+fi
+if ! $mv_preface mv -f "$tmp_folder"/* "$tmp_folder"/.*.txt "$install_folder"; then
+    say_error "Could not move files to install location: $install_folder"
+    save_error_report_if_enabled "InstallFailed" "MoveFailure"
+    exit 1
+fi
+
+if [ "$symlink_folder" != "" ]; then
+    ln_preface=""
+    if [ ! -w "$symlink_folder/" ]; then
+        say "Writing to $symlink_folder/ requires elevated permission. You may be prompted to enter credentials." 
+        ln_preface="sudo"
+    fi
+    if ! $ln_preface ln -fs "$install_folder/$bin_name" "$symlink_folder/azd"; then
+        say_error "Could not create symlink to azd in $symlink_folder"
+        save_error_report_if_enabled "InstallFailed" "SymlinkCreateFailure"
         exit 1
     fi
 fi
 
 say_verbose "Cleaning up temp folder: $tmp_folder"
 rm -rf "$tmp_folder"
-say "Successfully installed to $install_location"
+say "Successfully installed to $install_folder"
+if [ "$symlink_folder" != "" ]; then
+    say "Symlink created at $symlink_folder/azd and pointing to $install_folder/$bin_name"
+fi
 say ""
 say "The Azure Developer CLI collects usage data and sends that usage data to Microsoft in order to help us improve your experience."
 say "You can opt-out of telemetry by setting the AZURE_DEV_COLLECT_TELEMETRY environment variable to 'no' in the shell you use."

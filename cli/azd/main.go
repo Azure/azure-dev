@@ -49,6 +49,8 @@ func main() {
 		log.SetOutput(io.Discard)
 	}
 
+	log.Printf("azd version: %s", internal.Version)
+
 	ts := telemetry.GetTelemetrySystem()
 
 	latest := make(chan semver.Version)
@@ -65,14 +67,11 @@ func main() {
 	// Don't write this message when JSON output is enabled, since in that case we use stderr to return structured
 	// information about command progress.
 	if !isJsonOutput() && ok {
-		curVersion, err := semver.Parse(internal.GetVersionNumber())
-		if err != nil {
-			log.Printf("failed to parse %s as a semver", internal.GetVersionNumber())
-		} else if curVersion.Equals(semver.MustParse("0.0.0-dev.0")) {
+		if internal.IsDevVersion() {
 			// This is a dev build (i.e. built using `go install without setting a version`) - don't print a warning in this
 			// case
 			log.Printf("eliding update message for dev build")
-		} else if latestVersion.GT(curVersion) {
+		} else if latestVersion.GT(internal.VersionInfo().Version) {
 			var upgradeUrl string
 			if runtime.GOOS == "windows" {
 				upgradeUrl = "https://aka.ms/azd/upgrade/windows"
@@ -89,7 +88,7 @@ func main() {
 				os.Stderr,
 				output.WithWarningFormat(
 					"warning: your version of azd is out of date, you have %s and the latest version is %s",
-					curVersion.String(), latestVersion.String()))
+					internal.VersionInfo().Version.String(), latestVersion.String()))
 			fmt.Fprintln(os.Stderr)
 			fmt.Fprintln(
 				os.Stderr,

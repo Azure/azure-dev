@@ -14,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
@@ -97,34 +98,22 @@ func newDownAction(
 }
 
 func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	infraManager, err := provisioning.NewManager(
-		ctx,
-		a.env,
-		a.projectConfig.Path,
-		a.projectConfig.Infra,
-		a.console.IsUnformatted(),
-		a.azCli,
-		a.console,
-		a.commandRunner,
-		a.accountManager,
-		a.userProfileService,
-		a.subResolver,
-		a.alphaFeatureManager,
-	)
-
+	// silent manager for running Plan()
+	infraManager, err := createProvisioningManager(ctx, a, a.console)
 	if err != nil {
 		return nil, fmt.Errorf("creating provisioning manager: %w", err)
 	}
 
-	deploymentPlan, err := infraManager.Plan(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("planning destroy: %w", err)
-	}
+	// Command title
+	a.console.MessageUxItem(ctx, &ux.MessageTitle{
+		Title:     "Deleting all resources and deployed code on Azure (azd down)",
+		TitleNote: "Local application code is not deleted when running 'azd down'.",
+	})
 
 	destroyOptions := provisioning.NewDestroyOptions(a.flags.forceDelete, a.flags.purgeDelete)
-	destroyResult, err := infraManager.Destroy(ctx, &deploymentPlan.Deployment, destroyOptions)
+	destroyResult, err := infraManager.Destroy(ctx, destroyOptions)
 	if err != nil {
-		return nil, fmt.Errorf("destroying infrastructure: %w", err)
+		return nil, fmt.Errorf("deleting infrastructure: %w", err)
 	}
 
 	// Remove any outputs from the template from the environment since destroying the infrastructure
@@ -137,7 +126,29 @@ func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, fmt.Errorf("saving environment: %w", err)
 	}
 
-	return nil, nil
+	return &actions.ActionResult{
+		Message: &actions.ResultMessage{
+			Header: "Your Azure resources have been deleted.",
+		},
+	}, nil
+}
+
+func createProvisioningManager(ctx context.Context, a *downAction, console input.Console) (*provisioning.Manager, error) {
+	infraManager, err := provisioning.NewManager(
+		ctx,
+		a.env,
+		a.projectConfig.Path,
+		a.projectConfig.Infra,
+		a.console.IsUnformatted(),
+		a.azCli,
+		console,
+		a.commandRunner,
+		a.accountManager,
+		a.userProfileService,
+		a.subResolver,
+		a.alphaFeatureManager,
+	)
+	return infraManager, err
 }
 
 func getCmdDownHelpDescription(*cobra.Command) string {

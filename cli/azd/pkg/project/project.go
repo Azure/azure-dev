@@ -9,10 +9,12 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/blang/semver/v4"
 	"golang.org/x/exp/slices"
 	"gopkg.in/yaml.v3"
 )
@@ -20,6 +22,8 @@ import (
 const (
 	//nolint:lll
 	projectSchemaAnnotation = "# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json"
+
+	cInfraDirectory = "infra"
 )
 
 func New(ctx context.Context, projectFilePath string, projectName string) (*ProjectConfig, error) {
@@ -49,20 +53,25 @@ func Parse(ctx context.Context, yamlContent string) (*ProjectConfig, error) {
 
 	projectConfig.EventDispatcher = ext.NewEventDispatcher[ProjectLifecycleEventArgs]()
 
+	if projectConfig.RequiredVersions != nil && projectConfig.RequiredVersions.Azd != nil {
+		supportedRange, err := semver.ParseRange(*projectConfig.RequiredVersions.Azd)
+		if err != nil {
+			return nil, fmt.Errorf("%s is not a valid semver range (for requiredVersions.azd): %w",
+				*projectConfig.RequiredVersions.Azd, err)
+		}
+
+		if !internal.IsDevVersion() && !supportedRange(internal.VersionInfo().Version) {
+			return nil, fmt.Errorf("this project requires a version of azd within the range '%s', but you have '%s'. "+
+				"Visit https://aka.ms/azure-dev/install to install a supported version.",
+				*projectConfig.RequiredVersions.Azd,
+				internal.VersionInfo().Version.String())
+		}
+	}
+
 	for key, svc := range projectConfig.Services {
 		svc.Name = key
 		svc.Project = &projectConfig
 		svc.EventDispatcher = ext.NewEventDispatcher[ServiceLifecycleEventArgs]()
-
-		// By convention, the name of the infrastructure module to use when doing an IaC based deployment is the friendly
-		// name of the service. This may be overridden by the `module` property of `azure.yaml`
-		if svc.Module == "" {
-			svc.Module = key
-		}
-
-		if svc.Language == "" {
-			svc.Language = "dotnet"
-		}
 
 		var err error
 		svc.Language, err = parseServiceLanguage(svc.Language)
@@ -74,6 +83,10 @@ func Parse(ctx context.Context, yamlContent string) (*ProjectConfig, error) {
 		if err != nil {
 			return nil, fmt.Errorf("parsing service %s: %w", svc.Name, err)
 		}
+	}
+
+	if projectConfig.Infra.Path == "" {
+		projectConfig.Infra.Path = cInfraDirectory
 	}
 
 	return &projectConfig, nil

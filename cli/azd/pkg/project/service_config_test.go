@@ -24,10 +24,6 @@ func TestServiceConfigAddHandler(t *testing.T) {
 	err := service.AddHandler(ServiceEventDeploy, handler)
 	require.Nil(t, err)
 
-	// Expected error if attempting to register the same handler more than 1 time
-	err = service.AddHandler(ServiceEventDeploy, handler)
-	require.NotNil(t, err)
-
 	err = service.RaiseEvent(ctx, ServiceEventDeploy, ServiceLifecycleEventArgs{Service: service})
 	require.Nil(t, err)
 	require.True(t, handlerCalled)
@@ -164,7 +160,6 @@ services:
     project: src/api
     language: js
     host: containerapp
-    module: ./api/api
 `
 
 	mockContext := mocks.NewMockContext(context.Background())
@@ -186,10 +181,6 @@ func TestServiceConfigRaiseEventWithoutArgs(t *testing.T) {
 
 	err := service.AddHandler(ServiceEventDeploy, handler)
 	require.Nil(t, err)
-
-	// Expected error if attempting to register the same handler more than 1 time
-	err = service.AddHandler(ServiceEventDeploy, handler)
-	require.NotNil(t, err)
 
 	err = service.RaiseEvent(ctx, ServiceEventDeploy, ServiceLifecycleEventArgs{Service: service})
 	require.Nil(t, err)
@@ -213,10 +204,6 @@ func TestServiceConfigRaiseEventWithArgs(t *testing.T) {
 
 	err := service.AddHandler(ServiceEventDeploy, handler)
 	require.Nil(t, err)
-
-	// Expected error if attempting to register the same handler more than 1 time
-	err = service.AddHandler(ServiceEventDeploy, handler)
-	require.NotNil(t, err)
 
 	err = service.RaiseEvent(ctx, ServiceEventDeploy, eventArgs)
 	require.Nil(t, err)

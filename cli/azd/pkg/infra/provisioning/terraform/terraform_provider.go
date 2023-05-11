@@ -21,10 +21,10 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
@@ -182,7 +182,6 @@ func (t *TerraformProvider) Plan(
 func (t *TerraformProvider) Deploy(
 	ctx context.Context,
 	deployment *DeploymentPlan,
-	scope infra.Scope,
 ) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress] {
 	return async.RunInteractiveTaskWithProgress(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*DeployResult, *DeployProgress]) {
@@ -228,7 +227,6 @@ func (t *TerraformProvider) Deploy(
 // Destroys the specified deployment through terraform destroy
 func (t *TerraformProvider) Destroy(
 	ctx context.Context,
-	deployment *Deployment,
 	options DestroyOptions,
 ) *async.InteractiveTaskWithProgress[*DestroyResult, *DestroyProgress] {
 	return async.RunInteractiveTaskWithProgress(
@@ -255,19 +253,14 @@ func (t *TerraformProvider) Destroy(
 				return
 			}
 
-			t.console.Message(ctx, "Destroying terraform deployment...")
-			err = asyncContext.Interact(func() error {
-				destroyArgs := t.createDestroyArgs(isRemoteBackendConfig, options.Force())
-				runResult, err := t.cli.Destroy(ctx, modulePath, destroyArgs...)
-				if err != nil {
-					return fmt.Errorf("template Deploy failed:%s , err :%w", runResult, err)
-				}
-
-				return nil
-			})
-
+			t.console.Message(ctx, "Deleting terraform deployment...")
+			// terraform doesn't use the `t.console`, we must ensure no spinner is running before calling Destroy
+			// as it could be an interactive operation if it needs confirmation
+			t.console.StopSpinner(ctx, "", input.Step)
+			destroyArgs := t.createDestroyArgs(isRemoteBackendConfig, options.Force())
+			runResult, err := t.cli.Destroy(ctx, modulePath, destroyArgs...)
 			if err != nil {
-				asyncContext.SetError(err)
+				asyncContext.SetError(fmt.Errorf("template Deploy failed: %s, err: %w", runResult, err))
 				return
 			}
 
@@ -280,7 +273,6 @@ func (t *TerraformProvider) Destroy(
 
 func (t *TerraformProvider) State(
 	ctx context.Context,
-	_ infra.Scope,
 ) *async.InteractiveTaskWithProgress[*StateResult, *StateProgress] {
 	return async.RunInteractiveTaskWithProgress(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*StateResult, *StateProgress]) {
@@ -740,6 +732,7 @@ func init() {
 			commandRunner exec.CommandRunner,
 			prompters Prompters,
 			curPrincipal CurrentPrincipalIdProvider,
+			_ *alpha.FeatureManager,
 		) (Provider, error) {
 			return NewTerraformProvider(ctx, env, projectPath, options, console, commandRunner, curPrincipal, prompters), nil
 		},

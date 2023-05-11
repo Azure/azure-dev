@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
@@ -78,6 +79,10 @@ func (c *MockConsole) Message(ctx context.Context, message string) {
 	c.log = append(c.log, message)
 }
 
+func (c *MockConsole) WarnForFeature(ctx context.Context, id alpha.FeatureId) {
+	c.Message(ctx, fmt.Sprintf("warning: alpha feature %s is enabled", id))
+}
+
 func (c *MockConsole) MessageUxItem(ctx context.Context, item ux.UxItem) {
 	c.Message(ctx, item.ToString(""))
 }
@@ -103,6 +108,10 @@ func (c *MockConsole) IsSpinnerRunning(ctx context.Context) bool {
 		return true
 	}
 
+	return false
+}
+
+func (c *MockConsole) IsSpinnerInteractive() bool {
 	return false
 }
 

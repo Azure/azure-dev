@@ -99,7 +99,7 @@ func (i *PipelineManager) requiredTools(ctx context.Context) ([]tools.ExternalTo
 // preConfigureCheck invoke the validations from each provider.
 // the returned configurationWasUpdated indicates if the current settings were updated during the check,
 // for example, if Azdo prompt for a PAT or OrgName to the user and updated.
-func (i *PipelineManager) preConfigureCheck(ctx context.Context, infraOptions provisioning.Options) (
+func (i *PipelineManager) preConfigureCheck(ctx context.Context, infraOptions provisioning.Options, projectPath string) (
 	configurationWasUpdated bool,
 	err error) {
 	// Validate the authentication types
@@ -115,15 +115,15 @@ func (i *PipelineManager) preConfigureCheck(ctx context.Context, infraOptions pr
 	}
 
 	ciConfigurationWasUpdated, err := i.CiProvider.preConfigureCheck(
-		ctx, i.PipelineManagerArgs, infraOptions)
+		ctx, i.PipelineManagerArgs, infraOptions, projectPath)
 	if err != nil {
-		return configurationWasUpdated, fmt.Errorf("pre-config check error from %s provider: %w", i.CiProvider.name(), err)
+		return configurationWasUpdated, fmt.Errorf("pre-config check error from %s provider: %w", i.CiProvider.Name(), err)
 	}
 
 	scmConfigurationWasUpdated, err := i.ScmProvider.preConfigureCheck(
-		ctx, i.PipelineManagerArgs, infraOptions)
+		ctx, i.PipelineManagerArgs, infraOptions, projectPath)
 	if err != nil {
-		return configurationWasUpdated, fmt.Errorf("pre-config check error from %s provider: %w", i.ScmProvider.name(), err)
+		return configurationWasUpdated, fmt.Errorf("pre-config check error from %s provider: %w", i.ScmProvider.Name(), err)
 	}
 
 	configurationWasUpdated = ciConfigurationWasUpdated || scmConfigurationWasUpdated
@@ -247,7 +247,7 @@ func validateDependencyInjection(ctx context.Context, manager *PipelineManager) 
 }
 
 // pushGitRepo commit all changes in the git project and push it to upstream.
-func (i *PipelineManager) pushGitRepo(ctx context.Context, currentBranch string) error {
+func (i *PipelineManager) pushGitRepo(ctx context.Context, gitRepoInfo *gitRepositoryDetails, currentBranch string) error {
 	gitCli := git.NewGitCli(i.commandRunner)
 
 	if err := gitCli.AddFile(ctx, i.AzdCtx.ProjectDirectory(), "."); err != nil {
@@ -263,7 +263,12 @@ func (i *PipelineManager) pushGitRepo(ctx context.Context, currentBranch string)
 	// Then, on the next intent to push code, there should be a prompt for credentials.
 	// Due to this, we use retry here, so we can run the second intent to prompt for credentials one more time
 	return retry.Do(ctx, retry.WithMaxRetries(3, retry.NewConstant(100*time.Millisecond)), func(ctx context.Context) error {
-		if err := gitCli.PushUpstream(ctx, i.AzdCtx.ProjectDirectory(), i.PipelineRemoteName, currentBranch); err != nil {
+		if err := i.ScmProvider.GitPush(
+			ctx,
+			gitCli,
+			gitRepoInfo,
+			i.PipelineRemoteName,
+			currentBranch); err != nil {
 			return retry.RetryableError(fmt.Errorf("pushing changes: %w", err))
 		}
 		return nil
@@ -287,14 +292,16 @@ func (manager *PipelineManager) Configure(ctx context.Context) (
 	}
 
 	// Figure out what is the expected provider to use for provisioning
-	prj, err := project.Load(ctx, manager.AzdCtx.ProjectPath())
+	projectPath := manager.AzdCtx.ProjectPath()
+	prj, err := project.Load(ctx, projectPath)
 	if err != nil {
 		return result, fmt.Errorf("finding provisioning provider: %w", err)
 	}
 
 	// run pre-config validations. manager will check az cli is logged in and
 	// will invoke the per-provider validations.
-	updatedConfig, errorsFromPreConfig := manager.preConfigureCheck(ctx, prj.Infra)
+	rootPath := manager.AzdCtx.ProjectDirectory()
+	updatedConfig, errorsFromPreConfig := manager.preConfigureCheck(ctx, prj.Infra, rootPath)
 	if errorsFromPreConfig != nil {
 		return result, errorsFromPreConfig
 	}
@@ -382,13 +389,12 @@ func (manager *PipelineManager) Configure(ctx context.Context) (
 	}
 
 	if doPush {
-		err = manager.pushGitRepo(ctx, currentBranch)
+		err = manager.pushGitRepo(ctx, gitRepoInfo, currentBranch)
 		if err != nil {
 			return result, fmt.Errorf("git push: %w", err)
 		}
 
-		// The spinner can't run during `pushing changes` because it would block the console IN/OUT and git might
-		// need to request credentials.
+		// The spinner can't run during `pushing changes` the next UX messages are purely simulated
 		displayMsg := "Pushing changes"
 		manager.console.Message(ctx, "") // new line before the step
 		manager.console.ShowSpinner(ctx, displayMsg, input.Step)
@@ -397,15 +403,7 @@ func (manager *PipelineManager) Configure(ctx context.Context) (
 		displayMsg = "Queuing pipeline"
 		manager.console.ShowSpinner(ctx, displayMsg, input.Step)
 		gitRepoInfo.pushStatus = true
-		err = manager.ScmProvider.postGitPush(
-			ctx,
-			gitRepoInfo,
-			manager.PipelineRemoteName,
-			currentBranch)
 		manager.console.StopSpinner(ctx, displayMsg, input.GetStepResultFormat(err))
-		if err != nil {
-			return result, fmt.Errorf("post git push hook: %w", err)
-		}
 	} else {
 		manager.console.Message(ctx,
 			fmt.Sprintf(

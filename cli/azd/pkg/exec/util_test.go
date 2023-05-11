@@ -18,7 +18,7 @@ import (
 )
 
 func TestRunCommand(t *testing.T) {
-	runner := NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
+	runner := NewCommandRunner(nil)
 
 	args := RunArgs{
 		Cmd:  "git",
@@ -49,7 +49,7 @@ func TestKillCommand(t *testing.T) {
 
 	s := time.Now()
 
-	runner := NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
+	runner := NewCommandRunner(nil)
 	_, err := runner.Run(ctx, RunArgs{
 		Cmd: "pwsh",
 		Args: []string{
@@ -88,7 +88,7 @@ func TestAppendEnv(t *testing.T) {
 }
 
 func TestRunList(t *testing.T) {
-	runner := NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
+	runner := NewCommandRunner(nil)
 	res, err := runner.RunList(context.Background(), []string{
 		"git --version",
 	}, RunArgs{})
@@ -113,7 +113,7 @@ func TestRunList(t *testing.T) {
 func TestRunCapturingStderr(t *testing.T) {
 	myStderr := &bytes.Buffer{}
 
-	runner := NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
+	runner := NewCommandRunner(nil)
 	res, _ := runner.Run(context.Background(), RunArgs{
 		Cmd:    "go",
 		Args:   []string{"--help"},
@@ -125,7 +125,7 @@ func TestRunCapturingStderr(t *testing.T) {
 }
 
 func TestRunEnrichError(t *testing.T) {
-	runner := NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
+	runner := NewCommandRunner(nil)
 	_, err := runner.Run(context.Background(), RunArgs{
 		Cmd:  "go",
 		Args: []string{"--help"},

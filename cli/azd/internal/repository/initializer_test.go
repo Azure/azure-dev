@@ -41,7 +41,7 @@ func Test_Initializer_Initialize(t *testing.T) {
 			ctx := context.Background()
 			azdCtx := azdcontext.NewAzdContextWithDirectory(projectDir)
 			console := mockinput.NewMockConsole()
-			realRunner := exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
+			realRunner := exec.NewCommandRunner(nil)
 			mockRunner := mockexec.NewMockCommandRunner()
 			mockRunner.When(func(args exec.RunArgs, command string) bool { return true }).
 				RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
@@ -128,7 +128,7 @@ func Test_Initializer_InitializeWithOverwritePrompt(t *testing.T) {
 				return strings.Contains(options.Message, "What would you like to do with these files?")
 			}).Respond(tt.selection)
 
-			realRunner := exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
+			realRunner := exec.NewCommandRunner(nil)
 			mockRunner := mockexec.NewMockCommandRunner()
 			mockRunner.When(func(args exec.RunArgs, command string) bool { return true }).
 				RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
@@ -287,7 +287,7 @@ func verifyExecutableFilePermissions(t *testing.T,
 	}
 }
 
-func Test_Initializer_InitializeEmpty(t *testing.T) {
+func Test_Initializer_WriteCoreAssets(t *testing.T) {
 	type setup struct {
 		projectFile   string
 		gitignoreFile string
@@ -341,9 +341,9 @@ func Test_Initializer_InitializeEmpty(t *testing.T) {
 			}
 
 			console := mockinput.NewMockConsole()
-			realRunner := exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
+			realRunner := exec.NewCommandRunner(nil)
 			i := NewInitializer(console, git.NewGitCli(realRunner))
-			err := i.InitializeEmpty(context.Background(), azdCtx)
+			err := i.writeCoreAssets(context.Background(), azdCtx)
 			require.NoError(t, err)
 
 			projectFileContent := readFile(t, testDataPath("empty", tt.expected.projectFile))
@@ -517,6 +517,160 @@ func Test_parseExecutableFiles(t *testing.T) {
 				require.Error(t, err)
 			} else {
 				assert.Equal(t, tt.expected, actual)
+			}
+		})
+	}
+}
+
+func TestInitializer_PromptIfNonEmpty(t *testing.T) {
+	type dirSetup struct {
+		// whether the directory is a git repository
+		isGitRepo bool
+		// filenames to create in the directory before running tests
+		files []string
+	}
+	tests := []struct {
+		name        string
+		dir         dirSetup
+		userConfirm bool
+		expectedErr string
+	}{
+		{
+			"EmptyDir",
+			dirSetup{false, []string{}},
+			false,
+			"",
+		},
+		{
+			"NonEmptyDir",
+			dirSetup{false, []string{"a.txt"}},
+			true,
+			"",
+		},
+		{
+			"NonEmptyDir_Declined",
+			dirSetup{false, []string{"a.txt"}},
+			false,
+			"confirmation declined",
+		},
+		{
+			"NonEmptyGitDir",
+			dirSetup{true, []string{"a.txt"}},
+			true,
+			"",
+		},
+		{
+			"NonEmptyGitDir_Declined",
+			dirSetup{true, []string{"a.txt"}},
+			false,
+			"confirmation declined",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			dir := t.TempDir()
+			console := mockinput.NewMockConsole()
+			cmdRun := mockexec.NewMockCommandRunner()
+			gitCli := git.NewGitCli(cmdRun)
+
+			// create files
+			for _, file := range tt.dir.files {
+				require.NoError(t, os.WriteFile(filepath.Join(dir, file), []byte{}, 0600))
+			}
+
+			// mock git branch command
+			gitBranchImpl := cmdRun.When(func(args exec.RunArgs, command string) bool {
+				return slices.Contains(args.Args, "branch") &&
+					slices.Contains(args.Args, "--show-current")
+			})
+			if tt.dir.isGitRepo {
+				gitBranchImpl.Respond(exec.RunResult{ExitCode: 0})
+			} else {
+				gitBranchImpl.Respond(exec.RunResult{ExitCode: 128, Stderr: "fatal: not a git repository"})
+			}
+
+			// mock console input
+			console.WhenConfirm(func(options input.ConsoleOptions) bool { return true }).
+				Respond(tt.userConfirm)
+
+			i := &Initializer{
+				console: console,
+				gitCli:  gitCli,
+			}
+			azdCtx := azdcontext.NewAzdContextWithDirectory(dir)
+			err := i.PromptIfNonEmpty(context.Background(), azdCtx)
+
+			if tt.expectedErr != "" {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), tt.expectedErr)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestInitializer_writeFileSafe(t *testing.T) {
+	const nameNoExt = "test"
+	const ext = ".txt"
+	const name = nameNoExt + ext
+	const infix = "renamed"
+
+	type file struct {
+		path    string
+		content string
+	}
+
+	tests := []struct {
+		name     string
+		existing []file // existing files in the directory
+		args     file   // the file to write
+		expect   []file // expected files after writing
+	}{
+		{
+			name:     "Empty",
+			existing: []file{},
+			args:     file{name, "content"},
+			expect:   []file{{name, "content"}},
+		},
+		{
+			name:     "WhenExisting_Renamed",
+			existing: []file{{name, "existing"}},
+			args:     file{name, "content"},
+			expect:   []file{{name, "existing"}, {nameNoExt + infix + ext, "content"}},
+		},
+		{
+			name:     "BothExisting_NotModified",
+			existing: []file{{name, "existing"}, {nameNoExt + infix + ext, "existing2"}},
+			args:     file{name, "content"},
+			expect:   []file{{name, "existing"}, {nameNoExt + infix + ext, "existing2"}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			i := Initializer{
+				console: mockinput.NewMockConsole(),
+			}
+
+			dir := t.TempDir()
+			for _, f := range tt.existing {
+				require.NoError(t, os.WriteFile(filepath.Join(dir, f.path), []byte(f.content), osutil.PermissionFile))
+			}
+
+			err := i.writeFileSafe(
+				context.Background(),
+				filepath.Join(dir, tt.args.path),
+				infix,
+				[]byte(tt.args.content),
+				osutil.PermissionFile,
+			)
+			require.NoError(t, err)
+
+			for _, expect := range tt.expect {
+				require.FileExists(t, filepath.Join(dir, expect.path))
+				content, err := os.ReadFile(filepath.Join(dir, expect.path))
+				require.NoError(t, err)
+				require.Equal(t, expect.content, string(content))
 			}
 		})
 	}

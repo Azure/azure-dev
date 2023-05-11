@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"regexp"
 	"strings"
 
@@ -65,6 +66,7 @@ func (p *AzdoScmProvider) preConfigureCheck(
 	ctx context.Context,
 	pipelineManagerArgs PipelineManagerArgs,
 	infraOptions provisioning.Options,
+	projectPath string,
 ) (bool, error) {
 	_, updatedPat, err := azdo.EnsurePatExists(ctx, p.Env, p.console)
 	if err != nil {
@@ -86,7 +88,7 @@ func (p *AzdoScmProvider) saveEnvironmentConfig(key string, value string) error 
 }
 
 // name returns the name of the provider
-func (p *AzdoScmProvider) name() string {
+func (p *AzdoScmProvider) Name() string {
 	return "Azure DevOps"
 }
 
@@ -405,9 +407,16 @@ var azdoRemoteHttpsUrlRegex = regexp.MustCompile(`^https://[a-zA-Z0-9]+(?:-[a-zA
 // ErrRemoteHostIsNotAzDo the error used when a non Azure DevOps remote is found
 var ErrRemoteHostIsNotAzDo = errors.New("existing remote is not an Azure DevOps host")
 
+// ErrSSHNotSupported the error used when ssh git remote is detected
+var ErrSSHNotSupported = errors.New("ssh git remote is not supported. " +
+	"Please use HTTPS git remote to connect the remote repository")
+
 // helper function to determine if the provided remoteUrl is an azure devops repo.
 // currently supports AzDo PaaS
 func isAzDoRemote(remoteUrl string) error {
+	if azdoRemoteGitUrlRegex.MatchString(remoteUrl) {
+		return ErrSSHNotSupported
+	}
 	slug := ""
 	for _, r := range []*regexp.Regexp{azdoRemoteGitUrlRegex, azdoRemoteHttpsUrlRegex} {
 		captures := r.FindStringSubmatch(remoteUrl)
@@ -521,20 +530,64 @@ func (p *AzdoScmProvider) preventGitPush(
 	return false, nil
 }
 
-// hook function that fires after a git push
-// allows the provider to perform certain tasks after push including
-// cleanup on the remote url, creating the build policy for PRs and queuing an initial deployment
-func (p *AzdoScmProvider) postGitPush(
+func azdoPat(ctx context.Context, env *environment.Environment, console input.Console) string {
+	pat, _, err := azdo.EnsurePatExists(ctx, env, console)
+	if err != nil {
+		log.Printf("Error getting PAT when it should be found: %s", err.Error())
+	}
+	return pat
+}
+
+func gitInsteadOfConfig(
 	ctx context.Context,
+	pat string,
+	gitRepo *gitRepositoryDetails) (string, string) {
+
+	azdoRepoDetails := gitRepo.details.(*AzdoRepositoryDetails)
+	remoteAndPatUrl := fmt.Sprintf("url.https://%s@%s/", pat, azdo.AzDoHostName)
+	originalUrl := fmt.Sprintf("https://%s@%s/", azdoRepoDetails.orgName, azdo.AzDoHostName)
+	return remoteAndPatUrl, originalUrl
+}
+
+// Push code and queue pipeline
+func (p *AzdoScmProvider) GitPush(
+	ctx context.Context,
+	gitCli git.GitCli,
 	gitRepo *gitRepositoryDetails,
 	remoteName string,
 	branchName string) error {
 
+	// ** Push code with PAT
+	// This is the same as gitCli.PushUpstream(), but it adds `-c url.PAT+HostName.insteadOf=HostName` to execute
+	// git push with the PAT to authenticate
+	pat := azdoPat(ctx, p.Env, p.console)
+	remoteAndPatUrl, originalUrl := gitInsteadOfConfig(ctx, pat, gitRepo)
+	runArgs := exec.NewRunArgsWithSensitiveData("git",
+		[]string{
+			"-C",
+			gitRepo.gitProjectPath,
+			"-c",
+			fmt.Sprintf("%s.insteadOf=%s", remoteAndPatUrl, originalUrl),
+			"push",
+			"--set-upstream",
+			"--quiet",
+			remoteName,
+			branchName,
+		},
+		[]string{
+			pat,
+		},
+	).WithInteractive(true)
+	if _, err := p.commandRunner.Run(ctx, runArgs); err != nil {
+		// this error should not fail the operation
+		log.Printf("Error setting git config: insteadOf url: %s", err.Error())
+	}
+
+	// *** Queue pipeline
 	connection, err := p.getAzdoConnection(ctx)
 	if err != nil {
 		return err
 	}
-
 	err = azdo.CreateBuildPolicy(
 		ctx,
 		connection,
@@ -557,10 +610,11 @@ func (p *AzdoScmProvider) postGitPush(
 
 // AzdoCiProvider implements a CiProvider using Azure DevOps to manage CI with azdo pipelines.
 type AzdoCiProvider struct {
-	Env         *environment.Environment
-	AzdContext  *azdcontext.AzdContext
-	credentials *azdo.AzureServicePrincipalCredentials
-	console     input.Console
+	Env           *environment.Environment
+	AzdContext    *azdcontext.AzdContext
+	credentials   *azdo.AzureServicePrincipalCredentials
+	console       input.Console
+	commandRunner exec.CommandRunner
 }
 
 // ***  subareaProvider implementation ******
@@ -575,6 +629,7 @@ func (p *AzdoCiProvider) preConfigureCheck(
 	ctx context.Context,
 	pipelineManagerArgs PipelineManagerArgs,
 	infraOptions provisioning.Options,
+	projectPath string,
 ) (bool, error) {
 	authType := PipelineAuthType(pipelineManagerArgs.PipelineAuthTypeName)
 
@@ -597,7 +652,7 @@ func (p *AzdoCiProvider) preConfigureCheck(
 }
 
 // name returns the name of the provider.
-func (p *AzdoCiProvider) name() string {
+func (p *AzdoCiProvider) Name() string {
 	return "Azure DevOps"
 }
 

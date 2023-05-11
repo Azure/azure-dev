@@ -79,7 +79,7 @@ func MakeUserAgentString(template string) string {
 }
 
 func getAzDevCliIdentifier() string {
-	return fmt.Sprintf("%s/%s %s", azDevProductIdentifierKey, GetVersionNumber(), getPlatformInfo())
+	return fmt.Sprintf("%s/%s %s", azDevProductIdentifierKey, VersionInfo().Version.String(), getPlatformInfo())
 }
 
 func getPlatformInfo() string {

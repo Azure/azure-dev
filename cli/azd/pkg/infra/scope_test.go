@@ -65,9 +65,9 @@ func TestScopeGetDeployment(t *testing.T) {
 			}, nil
 		})
 
-		scope := NewSubscriptionScope(azCli, "eastus2", subscriptionId, deploymentName)
+		target := NewSubscriptionDeployment(azCli, "eastus2", subscriptionId, deploymentName)
 
-		deployment, err := scope.GetDeployment(*mockContext.Context)
+		deployment, err := target.Deployment(*mockContext.Context)
 		require.NoError(t, err)
 		responseOutputs := deployment.Properties.Outputs.(map[string]interface{})["APP_URL"].(map[string]interface{})
 		require.Equal(t, outputs["APP_URL"].Value, responseOutputs["value"].(string))
@@ -100,9 +100,9 @@ func TestScopeGetDeployment(t *testing.T) {
 			}, nil
 		})
 
-		scope := NewResourceGroupScope(azCli, subscriptionId, resourceGroupName, deploymentName)
+		target := NewResourceGroupDeployment(azCli, subscriptionId, resourceGroupName, deploymentName)
 
-		deployment, err := scope.GetDeployment(*mockContext.Context)
+		deployment, err := target.Deployment(*mockContext.Context)
 		require.NoError(t, err)
 		responseOutputs := deployment.Properties.Outputs.(map[string]interface{})["APP_URL"].(map[string]interface{})
 		require.Equal(t, outputs["APP_URL"].Value, responseOutputs["value"].(string))
@@ -131,10 +131,10 @@ func TestScopeDeploy(t *testing.T) {
 			}, nil
 		})
 
-		scope := NewSubscriptionScope(azCli, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
+		target := NewSubscriptionDeployment(azCli, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
 
 		armTemplate := azure.RawArmTemplate(testArmTemplate)
-		err := scope.Deploy(*mockContext.Context, armTemplate, testArmParameters)
+		_, err := target.Deploy(*mockContext.Context, armTemplate, testArmParameters, nil)
 		require.NoError(t, err)
 	})
 
@@ -158,10 +158,10 @@ func TestScopeDeploy(t *testing.T) {
 			}, nil
 		})
 
-		scope := NewResourceGroupScope(azCli, "SUBSCRIPTION_ID", "RESOURCE_GROUP", "DEPLOYMENT_NAME")
+		target := NewResourceGroupDeployment(azCli, "SUBSCRIPTION_ID", "RESOURCE_GROUP", "DEPLOYMENT_NAME")
 
 		armTemplate := azure.RawArmTemplate(testArmTemplate)
-		err := scope.Deploy(*mockContext.Context, armTemplate, testArmParameters)
+		_, err := target.Deploy(*mockContext.Context, armTemplate, testArmParameters, nil)
 		require.NoError(t, err)
 	})
 }
@@ -186,9 +186,9 @@ func TestScopeGetResourceOperations(t *testing.T) {
 			}, nil
 		})
 
-		scope := NewSubscriptionScope(azCli, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
+		target := NewSubscriptionDeployment(azCli, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
 
-		operations, err := scope.GetResourceOperations(*mockContext.Context)
+		operations, err := target.Operations(*mockContext.Context)
 		require.NoError(t, err)
 		require.Len(t, operations, 1)
 	})
@@ -211,9 +211,9 @@ func TestScopeGetResourceOperations(t *testing.T) {
 				},
 			}, nil
 		})
-		scope := NewResourceGroupScope(azCli, "SUBSCRIPTION_ID", "RESOURCE_GROUP", "DEPLOYMENT_NAME")
+		target := NewResourceGroupDeployment(azCli, "SUBSCRIPTION_ID", "RESOURCE_GROUP", "DEPLOYMENT_NAME")
 
-		operations, err := scope.GetResourceOperations(*mockContext.Context)
+		operations, err := target.Operations(*mockContext.Context)
 		require.NoError(t, err)
 		require.Len(t, operations, 1)
 	})

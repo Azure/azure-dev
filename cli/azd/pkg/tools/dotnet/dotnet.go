@@ -5,7 +5,10 @@ package dotnet
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"log"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -18,7 +21,7 @@ type DotNetCli interface {
 	Build(ctx context.Context, project string, configuration string, output string) error
 	Publish(ctx context.Context, project string, configuration string, output string) error
 	InitializeSecret(ctx context.Context, project string) error
-	SetSecret(ctx context.Context, key string, value string, project string) error
+	SetSecrets(ctx context.Context, secrets map[string]string, project string) error
 }
 
 type dotNetCli struct {
@@ -43,24 +46,25 @@ func (cli *dotNetCli) versionInfo() tools.VersionInfo {
 	}
 }
 
-func (cli *dotNetCli) CheckInstalled(ctx context.Context) (bool, error) {
-	found, err := tools.ToolInPath("dotnet")
-	if !found {
-		return false, err
+func (cli *dotNetCli) CheckInstalled(ctx context.Context) error {
+	err := tools.ToolInPath("dotnet")
+	if err != nil {
+		return err
 	}
 	dotnetRes, err := tools.ExecuteCommand(ctx, cli.commandRunner, "dotnet", "--version")
 	if err != nil {
-		return false, fmt.Errorf("checking %s version: %w", cli.Name(), err)
+		return fmt.Errorf("checking %s version: %w", cli.Name(), err)
 	}
+	log.Printf("dotnet version: %s", dotnetRes)
 	dotnetSemver, err := tools.ExtractVersion(dotnetRes)
 	if err != nil {
-		return false, fmt.Errorf("converting to semver version fails: %w", err)
+		return fmt.Errorf("converting to semver version fails: %w", err)
 	}
 	updateDetail := cli.versionInfo()
 	if dotnetSemver.LT(updateDetail.MinimumVersion) {
-		return false, &tools.ErrSemver{ToolName: cli.Name(), VersionInfo: updateDetail}
+		return &tools.ErrSemver{ToolName: cli.Name(), VersionInfo: updateDetail}
 	}
-	return true, nil
+	return nil
 }
 
 func (cli *dotNetCli) Restore(ctx context.Context, project string) error {
@@ -115,8 +119,18 @@ func (cli *dotNetCli) InitializeSecret(ctx context.Context, project string) erro
 	return nil
 }
 
-func (cli *dotNetCli) SetSecret(ctx context.Context, key string, value string, project string) error {
-	runArgs := exec.NewRunArgs("dotnet", "user-secrets", "set", key, value, "--project", project)
+func (cli *dotNetCli) SetSecrets(ctx context.Context, secrets map[string]string, project string) error {
+	secretsJson, err := json.Marshal(secrets)
+	if err != nil {
+		return fmt.Errorf("failed to marshal secrets: %w", err)
+	}
+
+	// dotnet user-secrets now support setting multiple values at once
+	//https://learn.microsoft.com/en-us/aspnet/core/security/app-secrets?view=aspnetcore-7.0&tabs=windows#set-multiple-secrets
+	runArgs := exec.
+		NewRunArgs("dotnet", "user-secrets", "set", "--project", project).
+		WithStdIn(strings.NewReader(string(secretsJson)))
+
 	res, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
 		return fmt.Errorf("failed running %s secret set %s: %w", cli.Name(), res.String(), err)

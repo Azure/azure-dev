@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"log"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
@@ -31,6 +32,8 @@ func (m *TelemetryMiddleware) Run(ctx context.Context, next NextFn) (*actions.Ac
 	cmdPath := events.GetCommandEventName(m.options.CommandPath)
 	spanCtx, span := telemetry.GetTracer().Start(ctx, cmdPath)
 
+	log.Printf("TraceID: %s", span.SpanContext().TraceID())
+
 	if !m.options.IsChildAction() {
 		// Set the command name as a baggage item on the span context.
 		// This allow inner actions to have command name attached.
@@ -58,6 +61,11 @@ func (m *TelemetryMiddleware) Run(ctx context.Context, next NextFn) (*actions.Ac
 	}()
 
 	result, err := next(spanCtx)
+	if result == nil {
+		result = &actions.ActionResult{}
+	}
+	result.TraceID = span.SpanContext().TraceID().String()
+
 	if err != nil {
 		span.SetStatus(codes.Error, "UnknownError")
 	}

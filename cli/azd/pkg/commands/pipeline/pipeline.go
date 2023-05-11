@@ -9,7 +9,7 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"path"
+	"path/filepath"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -21,6 +21,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 )
 
 // subareaProvider defines the base behavior from any pipeline provider
@@ -36,9 +37,10 @@ type subareaProvider interface {
 		ctx context.Context,
 		pipelineManagerArgs PipelineManagerArgs,
 		infraOptions provisioning.Options,
+		projectPath string,
 	) (bool, error)
-	// name returns the name of the provider
-	name() string
+	// Name returns the Name of the provider
+	Name() string
 }
 
 // gitRepositoryDetails provides a common abstraction across all scm providers.
@@ -76,7 +78,8 @@ type ScmProvider interface {
 		remoteName string,
 		branchName string) (bool, error)
 	//Hook function to allow SCM providers to handle scenarios after the git push is complete
-	postGitPush(ctx context.Context,
+	GitPush(ctx context.Context,
+		gitCli git.GitCli,
 		gitRepo *gitRepositoryDetails,
 		remoteName string,
 		branchName string) error
@@ -116,12 +119,25 @@ func folderExists(folderPath string) bool {
 	return false
 }
 
+func ymlExists(ymlPath string) bool {
+	info, err := os.Stat(ymlPath)
+	// if it is a file with no error
+	if err == nil && info.Mode().IsRegular() {
+		return true
+	}
+	return false
+}
+
 const (
 	gitHubLabel     string = "github"
-	githubFolder    string = ".github"
 	azdoLabel       string = "azdo"
-	azdoFolder      string = ".azdo"
 	envPersistedKey string = "AZD_PIPELINE_PROVIDER"
+)
+
+var (
+	githubFolder string = filepath.Join(".github", "workflows")
+	azdoFolder   string = filepath.Join(".azdo", "pipelines")
+	azdoYml      string = filepath.Join(azdoFolder, "azure-dev.yml")
 )
 
 func resolveProvider(
@@ -179,8 +195,9 @@ func DetectProviders(
 	overrideWith := strings.ToLower(overrideProvider)
 
 	// detecting pipeline folder configuration
-	hasGitHubFolder := folderExists(path.Join(projectDir, githubFolder))
-	hasAzDevOpsFolder := folderExists(path.Join(projectDir, azdoFolder))
+	hasGitHubFolder := folderExists(filepath.Join(projectDir, githubFolder))
+	hasAzDevOpsFolder := folderExists(filepath.Join(projectDir, azdoFolder))
+	hasAzDevOpsYml := ymlExists(filepath.Join(projectDir, azdoYml))
 
 	// Error missing config for any provider
 	if !hasGitHubFolder && !hasAzDevOpsFolder {
@@ -203,14 +220,18 @@ func DetectProviders(
 
 	// Check override errors for missing folder
 	if overrideWith == gitHubLabel && !hasGitHubFolder {
-		return nil, nil, fmt.Errorf("%s folder is missing. Can't use selected provider.", githubFolder)
+		return nil, nil, fmt.Errorf("%s folder is missing. Can't use selected provider", githubFolder)
 	}
 	if overrideWith == azdoLabel && !hasAzDevOpsFolder {
-		return nil, nil, fmt.Errorf("%s folder is missing. Can't use selected provider.", azdoFolder)
+		return nil, nil, fmt.Errorf("%s folder is missing. Can't use selected provider", azdoFolder)
+	}
+	// pipeline yml file is not in azdo folder
+	if overrideWith == azdoLabel && !hasAzDevOpsYml {
+		return nil, nil, fmt.Errorf("%s file is missing in %s folder. Can't use selected provider", azdoYml, azdoFolder)
 	}
 	// using wrong override value
 	if overrideWith != "" && overrideWith != azdoLabel && overrideWith != gitHubLabel {
-		return nil, nil, fmt.Errorf("%s is not a known pipeline provider.", overrideWith)
+		return nil, nil, fmt.Errorf("%s is not a known pipeline provider", overrideWith)
 	}
 
 	// At this point, we know that override value has either:
@@ -223,7 +244,7 @@ func DetectProviders(
 		_ = savePipelineProviderToEnv(azdoLabel, env)
 		log.Printf("Using pipeline provider: %s", output.WithHighLightFormat("Azure DevOps"))
 		scmProvider := createAzdoScmProvider(env, azdContext, commandRunner, console)
-		ciProvider := createAzdoCiProvider(env, azdContext, console)
+		ciProvider := createAzdoCiProvider(env, azdContext, commandRunner, console)
 
 		return scmProvider, ciProvider, nil
 	}
@@ -247,12 +268,16 @@ func savePipelineProviderToEnv(provider string, env *environment.Environment) er
 }
 
 func createAzdoCiProvider(
-	env *environment.Environment, azdCtx *azdcontext.AzdContext, console input.Console,
+	env *environment.Environment,
+	azdCtx *azdcontext.AzdContext,
+	commandRunner exec.CommandRunner,
+	console input.Console,
 ) *AzdoCiProvider {
 	return &AzdoCiProvider{
-		Env:        env,
-		AzdContext: azdCtx,
-		console:    console,
+		Env:           env,
+		AzdContext:    azdCtx,
+		console:       console,
+		commandRunner: commandRunner,
 	}
 }
 

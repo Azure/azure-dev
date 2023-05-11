@@ -8,6 +8,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.2.1
 	github.com/Azure/azure-sdk-for-go/sdk/keyvault/azsecrets v0.10.1
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers v1.0.0
+	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appplatform/armappplatform v1.0.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice v1.0.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization v1.0.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry v0.6.0
@@ -15,6 +16,7 @@ require (
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/keyvault/armkeyvault v1.0.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources v1.0.0
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions v1.0.0
+	github.com/Azure/azure-storage-file-go v0.8.0
 	github.com/AzureAD/microsoft-authentication-library-for-go v0.8.1
 	github.com/MakeNowJust/heredoc/v2 v2.0.1
 	github.com/benbjohnson/clock v1.3.0
@@ -49,6 +51,13 @@ require (
 	golang.org/x/sys v0.5.0
 	gopkg.in/yaml.v3 v3.0.0
 
+)
+
+require github.com/nathan-fiscaletti/consolesize-go v0.0.0-20220204101620-317176b6684d // indirect
+
+require (
+	github.com/Azure/azure-pipeline-go v0.2.1 // indirect
+	github.com/mattn/go-ieproxy v0.0.0-20190610004146-91bb50d98149 // indirect
 )
 
 require (

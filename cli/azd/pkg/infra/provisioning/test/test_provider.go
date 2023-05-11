@@ -17,10 +17,10 @@ import (
 	"errors"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -74,7 +74,6 @@ func (p *TestProvider) Plan(
 
 func (p *TestProvider) State(
 	ctx context.Context,
-	scope infra.Scope,
 ) *async.InteractiveTaskWithProgress[*StateResult, *StateProgress] {
 	return async.RunInteractiveTaskWithProgress(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*StateResult, *StateProgress]) {
@@ -98,7 +97,6 @@ func (p *TestProvider) State(
 
 func (p *TestProvider) GetDeployment(
 	ctx context.Context,
-	scope infra.Scope,
 ) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress] {
 	return async.RunInteractiveTaskWithProgress(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*DeployResult, *DeployProgress]) {
@@ -124,7 +122,6 @@ func (p *TestProvider) GetDeployment(
 func (p *TestProvider) Deploy(
 	ctx context.Context,
 	pd *DeploymentPlan,
-	scope infra.Scope,
 ) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress] {
 	return async.RunInteractiveTaskWithProgress(
 		func(asyncContext *async.InteractiveTaskContextWithProgress[*DeployResult, *DeployProgress]) {
@@ -148,7 +145,6 @@ func (p *TestProvider) Deploy(
 
 func (p *TestProvider) Destroy(
 	ctx context.Context,
-	deployment *Deployment,
 	options DestroyOptions,
 ) *async.InteractiveTaskWithProgress[*DestroyResult, *DestroyProgress] {
 	return async.RunInteractiveTaskWithProgress(
@@ -160,29 +156,21 @@ func (p *TestProvider) Destroy(
 
 			destroyResult := DestroyResult{
 				Resources: []azcli.AzCliResource{},
-				Outputs:   deployment.Outputs,
+				Outputs:   map[string]OutputParameter{},
 			}
 
-			err := asyncContext.Interact(func() error {
-				confirmOptions := input.ConsoleOptions{Message: "Are you sure you want to destroy?"}
-				confirmed, err := p.console.Confirm(ctx, confirmOptions)
-
-				if err != nil {
-					return err
-				}
-
-				if !confirmed {
-					return errors.New("user denied confirmation")
-				}
-
-				return nil
-			})
+			confirmOptions := input.ConsoleOptions{Message: "Are you sure you want to destroy?"}
+			confirmed, err := p.console.Confirm(ctx, confirmOptions)
 
 			if err != nil {
 				asyncContext.SetError(err)
 				return
 			}
 
+			if !confirmed {
+				asyncContext.SetError(errors.New("user denied confirmation"))
+				return
+			}
 			asyncContext.SetProgress(&DestroyProgress{Message: "Finishing destroy", Timestamp: time.Now()})
 
 			asyncContext.SetResult(&destroyResult)
@@ -219,6 +207,7 @@ func init() {
 			_ exec.CommandRunner,
 			prompters Prompters,
 			_ CurrentPrincipalIdProvider,
+			_ *alpha.FeatureManager,
 		) (Provider, error) {
 			return NewTestProvider(env, projectPath, console, options, prompters), nil
 		},

@@ -195,11 +195,15 @@ func GetProjectFromExisting(
 	}
 
 	projects := getProjectsResponse.Value
-	projectsList := make([]core.TeamProjectReference, len(projects))
-	options := make([]string, len(projects))
-	for idx, project := range projects {
-		options[idx] = *project.Name
-		projectsList[idx] = project
+	projectsList := make([]core.TeamProjectReference, 0, len(projects))
+	options := make([]string, 0, len(projects))
+	for _, project := range projects {
+		options = append(options, *project.Name)
+		projectsList = append(projectsList, project)
+	}
+
+	if len(options) == 0 {
+		return "", "", fmt.Errorf("no Azure DevOps projects found")
 	}
 
 	projectIdx, err := console.Select(ctx, input.ConsoleOptions{

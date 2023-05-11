@@ -57,7 +57,7 @@ func Test_GetAccountDefaults(t *testing.T) {
 	})
 
 	t.Run("FromCodeDefaults", func(t *testing.T) {
-		emptyConfig := config.NewConfig(nil)
+		emptyConfig := config.NewEmptyConfig()
 
 		mockConfig := mockconfig.NewMockConfigManager()
 		mockHttp := mockhttp.NewMockHttpUtil()
@@ -508,7 +508,7 @@ func Test_HasDefaults(t *testing.T) {
 	})
 
 	t.Run("DefaultsNotSet", func(t *testing.T) {
-		azdConfig := config.NewConfig(nil)
+		azdConfig := config.NewEmptyConfig()
 
 		manager, err := NewManager(
 			mockConfig.WithConfig(azdConfig),

@@ -13,12 +13,14 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
+	"github.com/azure/azure-dev/cli/azd/resources"
 	"github.com/otiai10/copy"
 )
 
@@ -94,7 +96,7 @@ func (i *Initializer) Initialize(
 		return fmt.Errorf("copying template contents from temp staging directory: %w", err)
 	}
 
-	err = i.writeAzdAssets(ctx, azdCtx)
+	err = i.writeCoreAssets(ctx, azdCtx)
 	if err != nil {
 		return err
 	}
@@ -263,10 +265,12 @@ func parseExecutableFiles(stagedFilesOutput string) ([]string, error) {
 	return executableFiles, nil
 }
 
-// Initializes an empty (bare minimum) azd repository.
-func (i *Initializer) InitializeEmpty(ctx context.Context, azdCtx *azdcontext.AzdContext) error {
-	projectFormatted := output.WithLinkFormat("%s", azdCtx.ProjectDirectory())
+// Initializes a minimal azd project.
+func (i *Initializer) InitializeMinimal(ctx context.Context, azdCtx *azdcontext.AzdContext) error {
+	projectDir := azdCtx.ProjectDirectory()
 	var err error
+
+	projectFormatted := output.WithLinkFormat("%s", projectDir)
 	i.console.ShowSpinner(ctx,
 		fmt.Sprintf("Creating minimal project files at: %s", projectFormatted),
 		input.Step)
@@ -274,13 +278,49 @@ func (i *Initializer) InitializeEmpty(ctx context.Context, azdCtx *azdcontext.Az
 		fmt.Sprintf("Created minimal project files at: %s", projectFormatted)+"\n",
 		input.GetStepResultFormat(err))
 
-	projectDir := azdCtx.ProjectDirectory()
 	isEmpty, err := isEmptyDir(projectDir)
 	if err != nil {
 		return err
 	}
 
-	err = i.writeAzdAssets(ctx, azdCtx)
+	err = i.writeCoreAssets(ctx, azdCtx)
+	if err != nil {
+		return err
+	}
+
+	projectConfig, err := project.Load(ctx, azdCtx.ProjectPath())
+	if err != nil {
+		return err
+	}
+
+	err = os.MkdirAll(projectConfig.Infra.Path, osutil.PermissionDirectory)
+	if err != nil {
+		return err
+	}
+
+	module := projectConfig.Infra.Module
+	if projectConfig.Infra.Module == "" {
+		module = bicep.DefaultModule
+	}
+
+	mainPath := filepath.Join(projectConfig.Infra.Path, module)
+	retryInfix := ".azd"
+	err = i.writeFileSafe(
+		ctx,
+		fmt.Sprintf("%s.bicep", mainPath),
+		retryInfix,
+		resources.MinimalBicep,
+		osutil.PermissionFile)
+	if err != nil {
+		return err
+	}
+
+	err = i.writeFileSafe(
+		ctx,
+		fmt.Sprintf("%s.parameters.json", mainPath),
+		retryInfix,
+		resources.MinimalBicepParameters,
+		osutil.PermissionFile)
 	if err != nil {
 		return err
 	}
@@ -293,16 +333,55 @@ func (i *Initializer) InitializeEmpty(ctx context.Context, azdCtx *azdcontext.Az
 	return nil
 }
 
-func (i *Initializer) writeAzdAssets(ctx context.Context, azdCtx *azdcontext.AzdContext) error {
+// writeFileSafe writes a file to path but only if it doesn't already exist.
+// If it does exist, an extra attempt is performed to write the file with the retryInfix appended to the filename,
+// before the file extension.
+// If both files exist, no action is taken.
+func (i *Initializer) writeFileSafe(
+	ctx context.Context,
+	path string,
+	retryInfix string,
+	content []byte,
+	perm fs.FileMode) error {
+	_, err := os.Stat(path)
+	if errors.Is(err, os.ErrNotExist) {
+		return os.WriteFile(path, content, perm)
+	}
+	if err != nil {
+		return err
+	}
+
+	if retryInfix == "" {
+		return nil
+	}
+
+	ext := filepath.Ext(path)
+	pathNoExt := strings.TrimSuffix(path, ext)
+	renamed := pathNoExt + retryInfix + ext
+	_, err = os.Stat(renamed)
+	if errors.Is(err, os.ErrNotExist) {
+		i.console.MessageUxItem(
+			ctx,
+			&ux.WarningMessage{
+				Description: fmt.Sprintf("A file already exists at %s, writing to %s instead", path, renamed),
+			})
+		return os.WriteFile(renamed, content, perm)
+	}
+
+	// If both files exist, do nothing. We don't want to accidentally overwrite a user's file.
+	return err
+}
+
+func (i *Initializer) writeCoreAssets(ctx context.Context, azdCtx *azdcontext.AzdContext) error {
 	// Check to see if `azure.yaml` exists, and if it doesn't, create it.
 	if _, err := os.Stat(azdCtx.ProjectPath()); errors.Is(err, os.ErrNotExist) {
 		_, err = project.New(ctx, azdCtx.ProjectPath(), azdCtx.GetDefaultProjectName())
-		i.console.MessageUxItem(ctx,
-			&ux.DoneMessage{Message: fmt.Sprintf("Created a new %s file", azdcontext.ProjectFileName)})
-
 		if err != nil {
 			return fmt.Errorf("failed to create a project file: %w", err)
 		}
+
+		i.console.MessageUxItem(ctx,
+			&ux.DoneMessage{Message: fmt.Sprintf("Created a new %s file", azdcontext.ProjectFileName)})
 	}
 
 	//create .azure when running azd init
@@ -380,6 +459,47 @@ func (i *Initializer) writeAzdAssets(ctx context.Context, azdCtx *azdcontext.Azd
 		_, err := gitignoreFile.WriteString(appendContents)
 		if err != nil {
 			return fmt.Errorf("fail to write '%s' in .gitignore: %w", azdcontext.EnvironmentDirectoryName, err)
+		}
+	}
+
+	return nil
+}
+
+// PromptIfNonEmpty prompts the user for confirmation if the project directory to initialize in is non-empty.
+// Returns error if an error occurred while prompting, or if the user declines confirmation.
+func (i *Initializer) PromptIfNonEmpty(ctx context.Context, azdCtx *azdcontext.AzdContext) error {
+	dir := azdCtx.ProjectDirectory()
+	isEmpty, err := isEmptyDir(dir)
+	if err != nil {
+		return err
+	}
+
+	if !isEmpty {
+		_, err := i.gitCli.GetCurrentBranch(ctx, dir)
+		if err != nil && !errors.Is(err, git.ErrNotRepository) {
+			return fmt.Errorf("determining current git repository state: %w", err)
+		}
+
+		message := fmt.Sprintf(
+			"The current directory is not empty. Would you like to initialize a project here in '%s'?",
+			dir)
+		if err != nil {
+			message = fmt.Sprintf(
+				"The current directory is not empty. "+
+					"Would you like to initialize a project here? "+
+					"Doing so will also initialize a new git repository in '%s'.",
+				dir)
+		}
+
+		confirm, err := i.console.Confirm(ctx, input.ConsoleOptions{
+			Message: message,
+		})
+		if err != nil {
+			return err
+		}
+
+		if !confirm {
+			return fmt.Errorf("confirmation declined")
 		}
 	}
 

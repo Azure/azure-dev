@@ -24,9 +24,9 @@ const cDefaultSuffix = "/.default"
 type TokenFromCloudShell struct {
 	AccessToken  string      `json:"access_token"`
 	RefreshToken string      `json:"refresh_token"`
-	ExpiresIn    json.Number `json:"expires_in" type:"integer"`
-	ExpiresOn    json.Number `json:"expires_on" type:"integer" `
-	NotBefore    json.Number `json:"not_before" type:"integer" `
+	ExpiresIn    json.Number `json:"expires_in"    type:"integer"`
+	ExpiresOn    json.Number `json:"expires_on"    type:"integer"`
+	NotBefore    json.Number `json:"not_before"    type:"integer"`
 	Resource     string      `json:"resource"`
 	TokenType    string      `json:"token_type"`
 }

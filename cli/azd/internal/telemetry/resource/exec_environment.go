@@ -11,93 +11,63 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry/fields"
 )
 
-// Rules that apply when the specified environment variable is set to "true" (case-insensitive)
-var booleanEnvVarRules = []struct {
-	envVar      string
-	environment string
-}{
-	// Azure Pipelines -
-	// https://docs.microsoft.com/en-us/azure/devops/pipelines/build/variables#system-variables-devops-servicesQ
-	{"TF_BUILD", fields.EnvAzurePipelines},
-	// GitHub Actions,
-	// https://docs.github.com/en/actions/learn-github-actions/environment-variables#default-environment-variables
-	{"GITHUB_ACTIONS", fields.EnvGitHubActions},
-	// AppVeyor - https://www.appveyor.com/docs/environment-variables/
-	{"APPVEYOR", fields.EnvAppVeyor},
-	// Travis CI - https://docs.travis-ci.com/user/environment-variables/#default-environment-variables
-	{"TRAVIS", fields.EnvTravisCI},
-	// Circle CI - https://circleci.com/docs/env-vars#built-in-environment-variables
-	{"CIRCLECI", fields.EnvCircleCI},
-	// GitLab CI
-	{"GITLAB_CI", fields.EnvGitLabCI},
-}
-
-// Rules that apply when the specified environment variable is set to any value
-var nonNullEnvVarRules = []struct {
-	envVar      string
-	environment string
-}{
-	// AWS CodeBuild - https://docs.aws.amazon.com/codebuild/latest/userguide/build-env-ref-env-vars.html
-	{"CODEBUILD_BUILD_ID", fields.EnvAwsCodeBuild},
-	//nolint:lll
-	// Jenkins -
-	// https://github.com/jenkinsci/jenkins/blob/master/core/src/main/resources/jenkins/model/CoreEnvironmentContributor/buildEnv.groovy
-	{"JENKINS_URL", fields.EnvJenkins},
-	//nolint:lll
-	// TeamCity - https://www.jetbrains.com/help/teamcity/predefined-build-parameters.html#Predefined+Server+Build+Parameters
-	{"TEAMCITY_VERSION", fields.EnvTeamCity},
-	//nolint:lll
-	// JetBrains Space -
-	// https://www.jetbrains.com/help/space/automation-environment-variables.html#when-does-automation-resolve-its-environment-variables
-	{"JB_SPACE_API_URL", fields.EnvJetBrainsSpace},
-	// Bamboo -
-	// https://confluence.atlassian.com/bamboo/bamboo-variables-289277087.html#Bamboovariables-Build-specificvariables
-	{"bamboo.buildKey", fields.EnvBamboo},
-	// BitBucket - https://support.atlassian.com/bitbucket-cloud/docs/variables-and-secrets/
-	{"BITBUCKET_BUILD_NUMBER", fields.EnvBitBucketPipelines},
-	// GitHub Codespaces -
-	// https://docs.github.com/en/codespaces/developing-in-codespaces/default-environment-variables-for-your-codespace
-	{"CODESPACES", fields.EnvCodespaces},
-	// Azure CloudShell
-	{"AZD_IN_CLOUDSHELL", fields.EnvCloudShell},
-	// Unknown CI cases
-	{"CI", fields.EnvUnknownCI},
-	{"BUILD_ID", fields.EnvUnknownCI},
-}
-
 func getExecutionEnvironment() string {
-	hostedEnv, ok := getExecutionEnvironmentForHosted()
-	if ok {
-		return hostedEnv
+	// calling programs receive the highest priority, since they end up wrapping the CLI and are the most
+	// inner layers.
+	env := execEnvFromCaller()
+
+	if env == "" {
+		// machine-level execution environments
+		env = execEnvForHosts()
 	}
 
-	return getExecutionEnvironmentForDesktop()
+	if env == "" {
+		// machine-level CI execution environments
+		env = execEnvForCi()
+	}
+
+	// no special execution environment found, default to plain desktop
+	if env == "" {
+		env = fields.EnvDesktop
+	}
+
+	// global modifiers that are applicable to all environments
+	modifiers := execEnvModifiers()
+
+	return strings.Join(append([]string{env}, modifiers...), ";")
 }
 
-func getExecutionEnvironmentForHosted() (string, bool) {
-	for _, rule := range booleanEnvVarRules {
-		// Some CI providers specify 'True' on Windows vs 'true' on Linux, while others use `True` always
-		// Thus, it's better to err on the side of being generous and be case-insensitive
-		if strings.ToLower(os.Getenv(rule.envVar)) == "true" {
-			return rule.environment, true
-		}
-	}
-
-	for _, rule := range nonNullEnvVarRules {
-		if _, ok := os.LookupEnv(rule.envVar); ok {
-			return rule.environment, true
-		}
-	}
-
-	return "", false
-}
-
-func getExecutionEnvironmentForDesktop() string {
+func execEnvFromCaller() string {
 	userAgent := internal.GetCallerUserAgent()
 
-	if strings.HasPrefix(userAgent, internal.VsCodeAgentPrefix) {
+	if strings.Contains(userAgent, internal.VsCodeAgentPrefix) {
 		return fields.EnvVisualStudioCode
 	}
 
-	return fields.EnvDesktop
+	return ""
+}
+
+func execEnvForHosts() string {
+	if _, ok := os.LookupEnv("AZD_IN_CLOUDSHELL"); ok {
+		return fields.EnvCloudShell
+	}
+
+	// GitHub Codespaces
+	// https://docs.github.com/en/codespaces/developing-in-codespaces/default-environment-variables-for-your-codespacei
+	if _, ok := os.LookupEnv("CODESPACES"); ok {
+		return fields.EnvCodespaces
+	}
+
+	return ""
+}
+
+func execEnvModifiers() []string {
+	modifiers := []string{}
+	userAgent := internal.GetCallerUserAgent()
+
+	if strings.Contains(userAgent, "azure_app_space_portal") {
+		modifiers = append(modifiers, fields.EnvModifierAzureSpace)
+	}
+
+	return modifiers
 }

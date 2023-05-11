@@ -22,13 +22,14 @@ func New() *resource.Resource {
 		resource.NewWithAttributes(
 			semconv.SchemaURL,
 			fields.ServiceNameKey.String(fields.ServiceNameAzd),
-			fields.ServiceVersionKey.String(internal.GetVersionNumber()),
+			fields.ServiceVersionKey.String(internal.VersionInfo().Version.String()),
 			fields.OSTypeKey.String(runtime.GOOS),
 			fields.OSVersionKey.String(getOsVersion()),
 			fields.HostArchKey.String(runtime.GOARCH),
 			fields.ProcessRuntimeVersionKey.String(runtime.Version()),
 			fields.ExecutionEnvironmentKey.String(getExecutionEnvironment()),
 			fields.MachineIdKey.String(getMachineId()),
+			fields.InstalledByKey.String(getInstalledBy()),
 		),
 	)
 

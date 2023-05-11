@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
 	"github.com/blang/semver/v4"
 	"github.com/stretchr/testify/require"
@@ -20,7 +21,7 @@ import (
 //   - When running in CI, the version specified by the CI pipeline.
 //   - When running locally, the version specified in source.
 func getExpectedVersion(t *testing.T) string {
-	expected := internal.GetVersionNumber()
+	expected := internal.VersionInfo().Version.String()
 
 	if os.Getenv("GITHUB_RUN_NUMBER") != "" {
 		// By using CLI_VERSION, we validate that azd was built with the correct version.
@@ -51,7 +52,7 @@ func Test_CLI_Version_Json(t *testing.T) {
 	result, err := cli.RunCommand(ctx, "version", "--output", "json")
 	require.NoError(t, err)
 
-	versionJson := &internal.VersionSpec{}
+	versionJson := &contracts.VersionResult{}
 	err = json.Unmarshal([]byte(result.Stdout), versionJson)
 	require.NoError(t, err)
 

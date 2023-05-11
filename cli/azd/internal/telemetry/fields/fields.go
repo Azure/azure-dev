@@ -47,6 +47,12 @@ const (
 	//
 	// See EnvDesktop for complete set of values.
 	ExecutionEnvironmentKey = attribute.Key("execution.environment")
+
+	// Installer used to install the application. Set in .installed-by.txt file
+	// located in the same folder as the executable.
+	//
+	// Example: "msi", "brew", "choco", "rpm", "deb"
+	InstalledByKey = attribute.Key("service.installer")
 )
 
 // Context level fields. Availability depends on the command running.
@@ -95,14 +101,22 @@ const (
 )
 
 // All possible enumerations of ExecutionEnvironmentKey
+//
+// Environments are mutually exclusive. Modifiers can be set additionally to signal different types of usages.
+// An execution environment is formatted as follows:
+// `<environment>[;<modifier1>;<modifier2>...]`
 const (
-	// Desktop environments
+	// A desktop environment. The user is directly interacting with azd via a terminal.
+	EnvDesktop = "Desktop"
 
-	EnvDesktop          = "Desktop"
+	// Environments that are wrapped by an intermediate calling program, and are significant enough to warrant
+	// being an environment and not an environment modifier.
+
 	EnvVisualStudio     = "Visual Studio"
 	EnvVisualStudioCode = "Visual Studio Code"
+	EnvCloudShell       = "Azure CloudShell"
 
-	// Hosted/Continuous Integration environments
+	// Continuous Integration environments
 
 	EnvUnknownCI          = "UnknownCI"
 	EnvAzurePipelines     = "Azure Pipelines"
@@ -119,7 +133,11 @@ const (
 	EnvTeamCity           = "TeamCity"
 	EnvJetBrainsSpace     = "JetBrains Space"
 	EnvCodespaces         = "GitHub Codespaces"
-	EnvCloudShell         = "Azure CloudShell"
+
+	// Environment modifiers. These are not environments themselves, but rather modifiers to the environment
+	// that signal specific types of usages.
+
+	EnvModifierAzureSpace = "Azure App Spaces Portal"
 )
 
 // All possible enumerations of AccountTypeKey

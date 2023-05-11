@@ -4,7 +4,7 @@
 
 ### Features Added
 
-- [[1808]](https://github.com/Azure/azure-dev/pull/1808) Support for Azure Spring Apps.
+- [[1808]](https://github.com/Azure/azure-dev/pull/1808) Support for Azure Spring Apps(alpha feature).
 - [[2083]](https://github.com/Azure/azure-dev/pull/2083) Allow resource group scope deployments.
 
 ### Breaking Changes

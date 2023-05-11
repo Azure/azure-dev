@@ -178,7 +178,7 @@ func (pa *packageAction) Run(ctx context.Context) (*actions.ActionResult, error)
 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			Header: fmt.Sprintf("Your Azure app was packaged in %s.", ux.DurationAsText(time.Since(startTime))),
+			Header: fmt.Sprintf("Your application was packaged for Azure in %s.", ux.DurationAsText(time.Since(startTime))),
 		},
 	}, nil
 }

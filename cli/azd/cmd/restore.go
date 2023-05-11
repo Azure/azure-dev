@@ -194,7 +194,8 @@ func (ra *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error)
 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			Header: fmt.Sprintf("Your Azure app was restored in %s.", ux.DurationAsText(time.Since(startTime))),
+			Header: fmt.Sprintf(
+				"Your applications dependencies were restored in %s.", ux.DurationAsText(time.Since(startTime))),
 		},
 	}, nil
 }

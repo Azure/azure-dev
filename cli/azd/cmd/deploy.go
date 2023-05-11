@@ -290,7 +290,7 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			Header:   fmt.Sprintf("Your Azure app was deployed in %s.", ux.DurationAsText(time.Since(startTime))),
+			Header:   fmt.Sprintf("Your application was deployed to Azure in %s.", ux.DurationAsText(time.Since(startTime))),
 			FollowUp: getResourceGroupFollowUp(ctx, da.formatter, da.projectConfig, da.resourceManager, da.env),
 		},
 	}, nil

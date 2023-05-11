@@ -155,7 +155,7 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			Header: fmt.Sprintf("Your Azure app was provisioned and deployed in %s.",
+			Header: fmt.Sprintf("Your application was provisioned and deployed to Azure in %s.",
 				ux.DurationAsText(time.Since(startTime))),
 		},
 	}, nil

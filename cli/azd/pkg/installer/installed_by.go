@@ -19,6 +19,9 @@ const InstallTypeWinget InstallType = "winget"
 const InstallTypeDeb InstallType = "deb"
 const InstallTypeRpm InstallType = "rpm"
 
+// InstalledBy Returns the type of installer that installed the CLI, based on
+// the contents of the `.installed-by.txt` file in the same directory as the
+// executing instance of azd.
 func InstalledBy() InstallType {
 	raw := RawInstalledBy()
 
@@ -42,6 +45,9 @@ func InstalledBy() InstallType {
 	}
 }
 
+// RawInstalledBy returns the raw value of the `.installed-by.txt` file in the
+// same directory as the executing instance of azd after removing leading and
+// trailing whitespace.
 func RawInstalledBy() string {
 	exePath, err := os.Executable()
 

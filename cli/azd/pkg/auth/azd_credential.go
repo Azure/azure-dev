@@ -28,7 +28,7 @@ func (c *azdCredential) GetToken(ctx context.Context, options policy.TokenReques
 	res, err := c.client.AcquireTokenSilent(ctx, options.Scopes, public.WithSilentAccount(*c.account))
 	if err != nil {
 		loginCmd := cLoginCmd
-		if !isLoginScopes(options.Scopes) { // if matching default login scopes, no scopes need to be specified
+		if !matchesLoginScopes(options.Scopes) { // if matching default login scopes, no scopes need to be specified
 			for _, scope := range options.Scopes {
 				loginCmd += fmt.Sprintf(" --scope %s", scope)
 			}
@@ -43,7 +43,8 @@ func (c *azdCredential) GetToken(ctx context.Context, options policy.TokenReques
 	}, nil
 }
 
-func isLoginScopes(scopes []string) bool {
+// matchesLoginScopes checks if the scopes match (order-insensitive) the default login scopes
+func matchesLoginScopes(scopes []string) bool {
 	for _, scope := range scopes {
 		_, matchLogin := loginScopesMap[scope]
 		if !matchLogin {

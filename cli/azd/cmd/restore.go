@@ -118,6 +118,8 @@ func (ra *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error)
 		Title: "Restoring services (azd restore)",
 	})
 
+	startTime := time.Now()
+
 	serviceNameWarningCheck(ra.console, ra.flags.serviceName, "restore")
 
 	targetServiceName := ra.flags.serviceName
@@ -192,7 +194,8 @@ func (ra *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error)
 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			Header: "Your Azure app has been restored!",
+			Header: fmt.Sprintf(
+				"Your applications dependencies were restored in %s.", ux.DurationAsText(time.Since(startTime))),
 		},
 	}, nil
 }

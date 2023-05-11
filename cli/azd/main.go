@@ -78,7 +78,7 @@ func main() {
 			if runtime.GOOS == "windows" {
 				switch installedBy {
 				case "install-azd.ps1":
-					upgradeText = "run:\npowershell -ex AllSigned -c \"Invoke-RestMethod 'https://aka.ms/install-azd.ps1' | Invoke-Expression\""
+					upgradeText = "run:\npowershell -ex AllSigned -c \"Invoke-RestMethod 'https://aka.ms/install-azd.ps1' | Invoke-Expression\"\n\nIf the install script was run with custom parameters, ensure that the same parameters are used for the upgrade. https://aka.ms/azd/upgrade/windows"
 				case "winget":
 					upgradeText = "run:\nwinget upgrade Microsoft.Azd"
 				case "choco":
@@ -91,7 +91,7 @@ func main() {
 			} else if runtime.GOOS == "linux" {
 				switch installedBy {
 				case "install-azd.sh":
-					upgradeText = "run:\ncurl -fsSL https://aka.ms/install-azd.sh | bash"
+					upgradeText = "run:\ncurl -fsSL https://aka.ms/install-azd.sh | bash\n\nIf the install script was run with custom parameters, ensure that the same parameters are used for the upgrade. https://aka.ms/azd/upgrade/linux"
 				default:
 					// Also covers "deb" and "rpm" cases which are currently
 					// documented. When package manager distribution support is
@@ -103,7 +103,7 @@ func main() {
 				case "brew":
 					upgradeText = "run:\nbrew upgrade azd"
 				case "install-azd.sh":
-					upgradeText = "run:\ncurl -fsSL https://aka.ms/install-azd.sh | bash"
+					upgradeText = "run:\ncurl -fsSL https://aka.ms/install-azd.sh | bash\n\nIf the install script was run with custom parameters, ensure that the same parameters are used for the upgrade. https://aka.ms/azd/upgrade/mac"
 				default:
 					upgradeText = "visit https://aka.ms/azd/upgrade/mac"
 				}

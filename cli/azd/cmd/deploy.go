@@ -212,6 +212,8 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		Title: "Deploying services (azd deploy)",
 	})
 
+	startTime := time.Now()
+
 	deployResults := map[string]*project.ServiceDeployResult{}
 
 	for _, svc := range da.projectConfig.GetServicesStable() {
@@ -288,7 +290,7 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			Header:   "Your Azure app has been deployed!",
+			Header:   fmt.Sprintf("Your application was deployed to Azure in %s.", ux.DurationAsText(time.Since(startTime))),
 			FollowUp: getResourceGroupFollowUp(ctx, da.formatter, da.projectConfig, da.resourceManager, da.env),
 		},
 	}, nil

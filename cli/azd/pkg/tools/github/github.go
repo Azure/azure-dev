@@ -187,7 +187,7 @@ type AuthStatus struct {
 func (cli *ghCli) GetAuthStatus(ctx context.Context, hostname string) (AuthStatus, error) {
 	runArgs := cli.newRunArgs("auth", "status", "--hostname", hostname)
 	res, err := cli.commandRunner.Run(ctx, runArgs)
-	if res.ExitCode == 0 {
+	if err == nil && res.ExitCode == 0 {
 		authResult := AuthStatus{LoggedIn: true}
 		return authResult, nil
 	} else if isGhCliNotLoggedInMessageRegex.MatchString(res.Stderr) {

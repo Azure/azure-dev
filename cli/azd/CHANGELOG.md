@@ -1,5 +1,12 @@
 # Release History
 
+## 0.9.0-beta.2 (2023-05-11)
+
+### Bugs Fixed
+
+- [[2177]](https://github.com/Azure/azure-dev/issues/2177) Use information in `.installed-by.txt` to advise the user on how to upgrade azd
+- [[2183]](https://github.com/Azure/azure-dev/pull/2182) Statically link CRT in MSI custom action
+
 ## 0.9.0-beta.1 (2023-05-11)
 
 ### Features Added

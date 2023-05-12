@@ -17,41 +17,49 @@ type RunResult struct {
 
 func NewRunResult(code int, stdout, stderr string) RunResult {
 	return RunResult{
-		ExitCode: code,
-		Stdout:   stdout,
-		Stderr:   stderr,
+		Stdout: stdout,
+		Stderr: stderr,
 	}
 }
 
 // ExitError is the error returned when a command unsuccessfully exits.
 type ExitError struct {
-	result       RunResult
-	attachOutput bool
-	err          exec.ExitError
+	// The exit code of the command.
+	ExitCode int
+
+	stdOut string
+	stdErr string
+
+	outputAvailable bool
+
+	// The underlying exec.ExitError.
+	err exec.ExitError
 }
 
 func NewExitError(
-	result RunResult,
 	exitErr exec.ExitError,
+	stdOut string,
+	stdErr string,
 	outputAvailable bool) error {
 	return &ExitError{
-		result:       result,
-		err:          exitErr,
-		attachOutput: outputAvailable,
+		err:             exitErr,
+		stdOut:          stdOut,
+		stdErr:          stdErr,
+		outputAvailable: outputAvailable,
 	}
 }
 
 func (e *ExitError) Error() string {
 	if e.err.Exited() {
-		if !e.attachOutput {
-			return fmt.Sprintf("exit code: %d", e.result.ExitCode)
+		if !e.outputAvailable {
+			return fmt.Sprintf("exit code: %d", e.err.ExitCode())
 		}
 
 		return fmt.Sprintf(
 			"exit code: %d, stdout: %s, stderr: %s",
-			e.result.ExitCode,
-			e.result.Stdout,
-			e.result.Stderr)
+			e.err.ExitCode(),
+			e.stdOut,
+			e.stdErr)
 	}
 
 	// for a non-exit-code error (such as a signal), just return the underlying exec.ExitError message

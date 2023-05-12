@@ -152,7 +152,7 @@ azd pipeline config
 
 #### Monitor the application using `azd monitor`
 
-To help with monitoring applications, the Azure Dev CLI provides a `monitor` command to help you get to the various Application Insights dashboards.
+To help with monitoring applications, the Azure Developer CLI provides a `monitor` command to help you get to the various Application Insights dashboards.
 
 - Run the following command to open the "Overview" dashboard:
 
@@ -221,7 +221,7 @@ The Azure Developer CLI includes many other commands to help with your Azure dev
 
 ## Troubleshooting/Known issues
 
-Sometimes, things go awry. If you happen to run into issues, then please review our ["Known Issues"](https://aka.ms/azure-dev/knownissues) page for help. If you continue to have issues, then please file an issue in our main [Azure Dev](https://aka.ms/azure-dev/issues) repository.
+Sometimes, things go awry. If you happen to run into issues, then please review our ["Known Issues"](https://aka.ms/azure-dev/knownissues) page for help. If you continue to have issues, then please file an issue in our main [Azure Developer CLI](https://aka.ms/azure-dev/issues) repository.
 
 ## Security
 

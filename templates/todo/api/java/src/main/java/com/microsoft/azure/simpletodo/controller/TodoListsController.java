@@ -6,7 +6,7 @@ import com.microsoft.azure.simpletodo.repository.TodoListRepository;
 import java.math.BigDecimal;
 import java.net.URI;
 import java.util.List;
-import javax.validation.constraints.NotNull;
+import jakarta.validation.constraints.NotNull;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;

@@ -15,8 +15,9 @@ import (
 const authFailedPrefix string = "failed to authenticate"
 
 // An error response from Azure Active Directory.
+//
 // See https://www.rfc-editor.org/rfc/rfc6749#section-5.2 for OAuth 2.0 spec
-// See https://learn.microsoft.com/en-us/azure/active-directory/develop/reference-aadsts-error-codes#handling-error-codes-in-your-application for AAD error spec
+// See https://learn.microsoft.com/en-us/azure/active-directory/develop/reference-aadsts-error-codes for AAD error codes
 type AadErrorResponse struct {
 	Error            string `json:"error"`
 	ErrorDescription string `json:"error_description"`
@@ -82,6 +83,8 @@ func (e *AuthFailedError) Error() string {
 		return fmt.Sprintf("%s: %s", authFailedPrefix, e.httpErrorDetails())
 	}
 
+	//nolint:lll
+	// https://learn.microsoft.com/en-us/azure/active-directory/develop/reference-aadsts-error-codes#handling-error-codes-in-your-application
 	switch e.parsed.Error {
 	case "invalid_grant",
 		"interaction_required":

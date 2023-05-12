@@ -50,7 +50,11 @@ resource userIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-
   name: identityName
 }
 
+// Private registry support requires both an ACR name and a User Assigned managed identity
 var usePrivateRegistry = !empty(identityName) && !empty(containerRegistryName)
+
+// Automatically set to `UserAssigned` when an `identityName` has been set
+var normalizedIdentityType = !empty(identityName) ? 'UserAssigned' : identityType
 
 module containerRegistryAccess '../security/registry-access.bicep' = if (usePrivateRegistry) {
   name: '${deployment().name}-registry-access'
@@ -68,10 +72,10 @@ resource app 'Microsoft.App/containerApps@2022-03-01' = {
   // otherwise the container app will throw a provision error
   // This also forces us to use an user assigned managed identity since there would no way to
   // provide the system assigned identity with the ACR pull access before the app is created
-  dependsOn: usePrivateRegistry ? [containerRegistryAccess] : []
+  dependsOn: usePrivateRegistry ? [ containerRegistryAccess ] : []
   identity: {
-    type: identityType
-    userAssignedIdentities: !empty(identityName) && identityType == 'UserAssigned' ? { '${userIdentity.id}': {} } : null
+    type: normalizedIdentityType
+    userAssignedIdentities: !empty(identityName) && normalizedIdentityType == 'UserAssigned' ? { '${userIdentity.id}': {} } : null
   }
   properties: {
     managedEnvironmentId: containerAppsEnvironment.id
@@ -124,4 +128,4 @@ output defaultDomain string = containerAppsEnvironment.properties.defaultDomain
 output imageName string = imageName
 output name string = app.name
 output uri string = 'https://${app.properties.configuration.ingress.fqdn}'
-output identityPrincipalId string = identityType == 'None' ? '' : (empty(identityName) ? app.identity.principalId : userIdentity.properties.principalId)
+output identityPrincipalId string = normalizedIdentityType == 'None' ? '' : (empty(identityName) ? app.identity.principalId : userIdentity.properties.principalId)

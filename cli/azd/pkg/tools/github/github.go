@@ -187,18 +187,18 @@ type AuthStatus struct {
 func (cli *ghCli) GetAuthStatus(ctx context.Context, hostname string) (AuthStatus, error) {
 	runArgs := cli.newRunArgs("auth", "status", "--hostname", hostname)
 	res, err := cli.commandRunner.Run(ctx, runArgs)
-	if err == nil && res.ExitCode == 0 {
+	if err == nil {
 		authResult := AuthStatus{LoggedIn: true}
 		return authResult, nil
-	} else if isGhCliNotLoggedInMessageRegex.MatchString(res.Stderr) {
+	}
+
+	if isGhCliNotLoggedInMessageRegex.MatchString(res.Stderr) {
 		return AuthStatus{}, nil
 	} else if notLoggedIntoAnyGitHubHostsMessageRegex.MatchString(res.Stderr) {
 		return AuthStatus{}, nil
-	} else if err != nil {
-		return AuthStatus{}, fmt.Errorf("failed running gh auth status: %w", err)
 	}
 
-	return AuthStatus{}, errors.New("could not determine auth status")
+	return AuthStatus{}, fmt.Errorf("failed running gh auth status: %w", err)
 }
 
 func (cli *ghCli) Login(ctx context.Context, hostname string) error {

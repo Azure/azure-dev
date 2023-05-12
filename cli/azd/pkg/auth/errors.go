@@ -12,6 +12,10 @@ import (
 	msal "github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
 )
 
+const cLoginCmd = "azd auth login"
+
+var ErrNoCurrentUser = errors.New("not logged in, run `azd auth login` to login")
+
 const authFailedPrefix string = "failed to authenticate"
 
 // An error response from Azure Active Directory.
@@ -90,7 +94,7 @@ func (e *AuthFailedError) Error() string {
 		"interaction_required":
 		// log the error in case this needs further diagnosis
 		log.Println(e.httpErrorDetails())
-		return fmt.Sprintf("re-authentication required, run `%s` to login", e.loginCmd)
+		return fmt.Sprintf("reauthentication required, run `%s` to log in", e.loginCmd)
 	}
 
 	// ErrorDescription contains multiline messaging that has TraceID, CorrelationID,

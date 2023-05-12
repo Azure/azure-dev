@@ -184,6 +184,13 @@ func (display *ProvisioningProgressDisplay) logNewlyCreatedResources(
 			inProgress = append(inProgress, resourceTypeDisplayName)
 		}
 	}
+
+	if !display.console.IsSpinnerInteractive() {
+		// If non-interactive, we simply do not want to display spinner messages that ends up
+		// being individual lines of messages on the console
+		return
+	}
+
 	if len(inProgress) > 0 {
 		display.console.ShowSpinner(ctx,
 			fmt.Sprintf("Creating/Updating resources (%s)", strings.Join(inProgress, ", ")), input.Step)

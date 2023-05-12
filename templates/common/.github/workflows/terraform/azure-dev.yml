@@ -31,26 +31,26 @@ jobs:
         shell: pwsh
         env:
           AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
-      
+
       - name: Enable terraform alpha feature
         run: azd config set alpha.terraform on
 
       - name: Provision Infrastructure
         run: azd provision --no-prompt
         env:
-          AZURE_ENV_NAME: ${{ secrets.AZURE_ENV_NAME }}
-          AZURE_LOCATION: ${{ secrets.AZURE_LOCATION }}
-          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
-          ARM_TENANT_ID: ${{ secrets.ARM_TENANT_ID }}
-          ARM_CLIENT_ID: ${{ secrets.ARM_CLIENT_ID }}
+          AZURE_ENV_NAME: ${{ vars.AZURE_ENV_NAME }}
+          AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
+          AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+          ARM_TENANT_ID: ${{ vars.ARM_TENANT_ID }}
+          ARM_CLIENT_ID: ${{ vars.ARM_CLIENT_ID }}
           ARM_CLIENT_SECRET: ${{ secrets.ARM_CLIENT_SECRET }}
-          RS_RESOURCE_GROUP: ${{ secrets.RS_RESOURCE_GROUP }}
-          RS_STORAGE_ACCOUNT: ${{ secrets.RS_STORAGE_ACCOUNT }}
-          RS_CONTAINER_NAME: ${{ secrets.RS_CONTAINER_NAME }}
+          RS_RESOURCE_GROUP: ${{ vars.RS_RESOURCE_GROUP }}
+          RS_STORAGE_ACCOUNT: ${{ vars.RS_STORAGE_ACCOUNT }}
+          RS_CONTAINER_NAME: ${{ vars.RS_CONTAINER_NAME }}
 
       - name: Deploy Application
         run: azd deploy --no-prompt
         env:
-          AZURE_ENV_NAME: ${{ secrets.AZURE_ENV_NAME }}
-          AZURE_LOCATION: ${{ secrets.AZURE_LOCATION }}
-          AZURE_SUBSCRIPTION_ID: ${{ secrets.AZURE_SUBSCRIPTION_ID }}
+          AZURE_ENV_NAME: ${{ vars.AZURE_ENV_NAME }}
+          AZURE_LOCATION: ${{ vars.AZURE_LOCATION }}
+          AZURE_SUBSCRIPTION_ID: ${{ vars.AZURE_SUBSCRIPTION_ID }}

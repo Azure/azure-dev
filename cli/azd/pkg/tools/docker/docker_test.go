@@ -13,11 +13,10 @@ import (
 )
 
 func Test_DockerBuild(t *testing.T) {
-
 	cwd := "."
 	dockerFile := "./Dockerfile"
 	dockerContext := "../"
-	platform := "amd64"
+	platform := DefaultPlatform
 	imageName := "IMAGE_NAME"
 
 	t.Run("NoError", func(t *testing.T) {
@@ -104,7 +103,7 @@ func Test_DockerBuildEmptyPlatform(t *testing.T) {
 	cwd := "."
 	dockerFile := "./Dockerfile"
 	dockerContext := "../"
-	platform := "amd64"
+	platform := DefaultPlatform
 	imageName := "IMAGE_NAME"
 
 	mockContext := mocks.NewMockContext(context.Background())

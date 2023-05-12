@@ -17,6 +17,11 @@ func getExecutionEnvironment() string {
 	env := execEnvFromCaller()
 
 	if env == "" {
+		// machine-level execution environments
+		env = execEnvForHosts()
+	}
+
+	if env == "" {
 		// machine-level CI execution environments
 		env = execEnvForCi()
 	}
@@ -39,8 +44,18 @@ func execEnvFromCaller() string {
 		return fields.EnvVisualStudioCode
 	}
 
+	return ""
+}
+
+func execEnvForHosts() string {
 	if _, ok := os.LookupEnv("AZD_IN_CLOUDSHELL"); ok {
 		return fields.EnvCloudShell
+	}
+
+	// GitHub Codespaces
+	// https://docs.github.com/en/codespaces/developing-in-codespaces/default-environment-variables-for-your-codespacei
+	if _, ok := os.LookupEnv("CODESPACES"); ok {
+		return fields.EnvCodespaces
 	}
 
 	return ""

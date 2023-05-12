@@ -53,7 +53,7 @@ func TestAuthFailedError_Error(t *testing.T) {
 					Error: "invalid_grant",
 				})),
 			},
-			want: fmt.Sprintf("login expired, run `%s` to re-login", loginCmd),
+			want: fmt.Sprintf("re-authentication required, run `%s` to login", loginCmd),
 		},
 		{
 			name: "Parsed_Error_interaction_required",
@@ -62,7 +62,7 @@ func TestAuthFailedError_Error(t *testing.T) {
 					Error: "interaction_required",
 				})),
 			},
-			want: fmt.Sprintf("login expired, run `%s` to re-login", loginCmd),
+			want: fmt.Sprintf("re-authentication required, run `%s` to login", loginCmd),
 		},
 		{
 			name: "Parsed_Error_UnknownError",

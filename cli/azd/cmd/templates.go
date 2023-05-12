@@ -33,7 +33,7 @@ func templateNameCompletion(cmd *cobra.Command, args []string, toComplete string
 func templatesActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 	group := root.Add("template", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
-			Short: "Find and view template details.",
+			Short: fmt.Sprintf("Find and view template details. %s", output.WithWarningFormat("(Beta)")),
 		},
 		HelpOptions: actions.ActionHelpOptions{
 			Description: getCmdTemplateHelpDescription,
@@ -63,7 +63,7 @@ func templatesActions(root *actions.ActionDescriptor) *actions.ActionDescriptor 
 func newTemplateListCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:     "list",
-		Short:   "Show list of sample azd templates.",
+		Short:   fmt.Sprintf("Show list of sample azd templates. %s", output.WithWarningFormat("(Beta)")),
 		Aliases: []string{"ls"},
 	}
 }
@@ -129,7 +129,7 @@ func (a *templatesShowAction) Run(ctx context.Context) (*actions.ActionResult, e
 func newTemplateShowCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "show <template>",
-		Short: "Show details for a given template.",
+		Short: fmt.Sprintf("Show details for a given template. %s", output.WithWarningFormat("(Beta)")),
 		Args:  cobra.ExactArgs(1),
 	}
 }
@@ -172,7 +172,10 @@ func formatTemplates(
 }
 
 func getCmdTemplateHelpDescription(*cobra.Command) string {
-	return generateCmdHelpDescription("View details of your current template or browse a list of curated sample templates.",
+	return generateCmdHelpDescription(
+		fmt.Sprintf(
+			"View details of your current template or browse a list of curated sample templates. %s",
+			output.WithWarningFormat("(Beta)")),
 		[]string{
 			formatHelpNote(fmt.Sprintf("The azd CLI includes a curated list of sample templates viewable by running %s.",
 				output.WithHighLightFormat("azd template list"))),

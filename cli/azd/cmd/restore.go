@@ -59,7 +59,7 @@ func newRestoreFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) 
 func newRestoreCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "restore <service>",
-		Short: "Restores the application's dependencies.",
+		Short: fmt.Sprintf("Restores the application's dependencies. %s", output.WithWarningFormat("(Beta)")),
 	}
 	cmd.Args = cobra.MaximumNArgs(1)
 	return cmd
@@ -202,7 +202,7 @@ func (ra *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error)
 
 func getCmdRestoreHelpDescription(*cobra.Command) string {
 	return generateCmdHelpDescription(
-		"Restore application dependencies.",
+		fmt.Sprintf("Restore application dependencies. %s", output.WithWarningFormat("(Beta)")),
 		[]string{
 			formatHelpNote("Run this command to download and install all required dependencies so that you can build," +
 				" run, and debug the application locally."),

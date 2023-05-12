@@ -84,7 +84,7 @@ type commandRunner struct {
 // Returns a RunResult that is the result of the command.
 //   - If interactive is true, standard input/error is not captured in the returned result.
 //     Instead, standard output/error is simply redirected to the os standard output/error.
-//   - If the underlying command exits unsuccessfully, ExitError is returned. Other possible errors would likely be I/O
+//   - If the underlying command exits unsuccessfully, *ExitError is returned. Other possible errors would likely be I/O
 //     errors or context cancellation.
 //
 // NOTE: on Windows the command will automatically be run within a shell. This means .bat/.cmd

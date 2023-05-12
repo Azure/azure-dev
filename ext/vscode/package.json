@@ -170,58 +170,58 @@
             "azure-dev.explorer.submenu": [
                 {
                     "when": "resourceFilename =~ /azure.yaml/i",
-                    "command": "azure-dev.commands.cli.restore",
-                    "group": "10develop@10"
-                },
-                {
-                    "when": "resourceFilename =~ /azure.yaml/i",
-                    "command": "azure-dev.commands.cli.env-new",
-                    "group": "10develop@20"
-                },
-                {
-                    "when": "resourceFilename =~ /azure.yaml/i",
-                    "command": "azure-dev.commands.cli.env-select",
-                    "group": "10develop@30"
-                },
-                {
-                    "when": "resourceFilename =~ /azure.yaml/i",
-                    "command": "azure-dev.commands.cli.env-refresh",
-                    "group": "10develop@40"
-                },
-                {
-                    "when": "resourceFilename =~ /azure.yaml/i",
-                    "command": "azure-dev.commands.cli.package",
-                    "group": "10develop@50"
-                },
-                {
-                    "when": "resourceFilename =~ /azure.yaml/i",
-                    "command": "azure-dev.commands.cli.pipeline-config",
-                    "group": "10develop@60"
-                },
-                {
-                    "when": "resourceFilename =~ /azure.yaml/i",
                     "command": "azure-dev.commands.cli.provision",
-                    "group": "20provision@10"
+                    "group": "10provision@10"
                 },
                 {
                     "when": "resourceFilename =~ /azure.yaml/i",
                     "command": "azure-dev.commands.cli.deploy",
-                    "group": "20provision@20"
+                    "group": "10provision@20"
                 },
                 {
                     "when": "resourceFilename =~ /azure.yaml/i",
                     "command": "azure-dev.commands.cli.up",
-                    "group": "20provision@30"
+                    "group": "10provision@30"
                 },
                 {
                     "when": "resourceFilename =~ /azure.yaml/i",
                     "command": "azure-dev.commands.cli.down",
-                    "group": "20provision@40"
+                    "group": "10provision@40"
+                },
+                {
+                    "when": "resourceFilename =~ /azure.yaml/i",
+                    "command": "azure-dev.commands.cli.env-new",
+                    "group": "20env@10"
+                },
+                {
+                    "when": "resourceFilename =~ /azure.yaml/i",
+                    "command": "azure-dev.commands.cli.env-select",
+                    "group": "20env@20"
+                },
+                {
+                    "when": "resourceFilename =~ /azure.yaml/i",
+                    "command": "azure-dev.commands.cli.env-refresh",
+                    "group": "20env@30"
+                },
+                {
+                    "when": "resourceFilename =~ /azure.yaml/i",
+                    "command": "azure-dev.commands.cli.restore",
+                    "group": "30develop@10"
+                },
+                {
+                    "when": "resourceFilename =~ /azure.yaml/i",
+                    "command": "azure-dev.commands.cli.package",
+                    "group": "30develop@20"
+                },
+                {
+                    "when": "resourceFilename =~ /azure.yaml/i",
+                    "command": "azure-dev.commands.cli.pipeline-config",
+                    "group": "30develop@30"
                 },
                 {
                     "when": "resourceFilename =~ /azure.yaml/i",
                     "command": "azure-dev.commands.cli.monitor",
-                    "group": "30monitor@10"
+                    "group": "40monitor@10"
                 }
             ],
             "view/item/context": [
@@ -246,84 +246,84 @@
                     "group": "inline@40"
                 },
                 {
-                    "command": "azure-dev.commands.cli.restore",
-                    "when": "viewItem =~ /ms-azuretools.azure-dev.views.workspace.(application|services|service(?!s))/i",
-                    "group": "10develop@10"
-                },
-                {
-                    "command": "azure-dev.commands.cli.env-new",
-                    "when": "viewItem =~ /ms-azuretools.azure-dev.views.workspace.environments/i",
-                    "group": "10develop@20"
-                },
-                {
-                    "command": "azure-dev.commands.cli.env-select",
-                    "when": "viewItem =~ /ms-azuretools.azure-dev.views.workspace.environment(?!s)(?!.*default)/i",
-                    "group": "10develop@30"
-                },
-                {
-                    "command": "azure-dev.commands.cli.env-edit",
-                    "when": "viewItem =~ /ms-azuretools.azure-dev.views.workspace.environment(?!s)/i",
-                    "group": "10develop@35"
-                },
-                {
-                    "command": "azure-dev.commands.cli.env-refresh",
-                    "when": "viewItem =~ /ms-azuretools.azure-dev.views.workspace.environment(?!s)/i",
-                    "group": "10develop@40"
-                },
-                {
-                    "command": "azure-dev.commands.cli.env-delete",
-                    "when": "viewItem =~ /ms-azuretools.azure-dev.views.workspace.environment(?!s)(?!.*default)/i",
-                    "group": "10develop@45"
-                },
-                {
-                    "command": "azure-dev.commands.cli.package",
-                    "when": "viewItem =~ /ms-azuretools.azure-dev.views.workspace.(application|services|service(?!s))/i",
-                    "group": "10develop@50"
-                },
-                {
-                    "command": "azure-dev.commands.cli.pipeline-config",
-                    "when": "viewItem =~ /ms-azuretools.azure-dev.views.workspace.application/i",
-                    "group": "10develop@60"
-                },
-                {
                     "command": "azure-dev.commands.cli.provision",
                     "when": "viewItem =~ /ms-azuretools.azure-dev.views.workspace.application/i",
-                    "group": "20provision@10"
+                    "group": "10provision@10"
                 },
                 {
                     "command": "azure-dev.commands.cli.deploy",
                     "when": "viewItem =~ /ms-azuretools.azure-dev.views.workspace.(application|service(?!s))/i",
-                    "group": "20provision@20"
+                    "group": "10provision@20"
                 },
                 {
                     "command": "azure-dev.commands.cli.up",
                     "when": "viewItem =~ /ms-azuretools.azure-dev.views.workspace.application/i",
-                    "group": "20provision@30"
+                    "group": "10provision@30"
                 },
                 {
                     "command": "azure-dev.commands.cli.down",
                     "when": "viewItem =~ /ms-azuretools.azure-dev.views.workspace.application/i",
-                    "group": "20provision@40"
+                    "group": "10provision@40"
+                },
+                {
+                    "command": "azure-dev.commands.cli.env-new",
+                    "when": "viewItem =~ /ms-azuretools.azure-dev.views.workspace.environments/i",
+                    "group": "20env@10"
+                },
+                {
+                    "command": "azure-dev.commands.cli.env-select",
+                    "when": "viewItem =~ /ms-azuretools.azure-dev.views.workspace.environment(?!s)(?!.*default)/i",
+                    "group": "20env@20"
+                },
+                {
+                    "command": "azure-dev.commands.cli.env-refresh",
+                    "when": "viewItem =~ /ms-azuretools.azure-dev.views.workspace.environment(?!s)/i",
+                    "group": "20env@30"
+                },
+                {
+                    "command": "azure-dev.commands.cli.env-edit",
+                    "when": "viewItem =~ /ms-azuretools.azure-dev.views.workspace.environment(?!s)/i",
+                    "group": "20env@40"
+                },
+                {
+                    "command": "azure-dev.commands.cli.env-delete",
+                    "when": "viewItem =~ /ms-azuretools.azure-dev.views.workspace.environment(?!s)(?!.*default)/i",
+                    "group": "20env@50"
+                },
+                {
+                    "command": "azure-dev.commands.cli.restore",
+                    "when": "viewItem =~ /ms-azuretools.azure-dev.views.workspace.(application|services|service(?!s))/i",
+                    "group": "30develop@10"
+                },
+                {
+                    "command": "azure-dev.commands.cli.package",
+                    "when": "viewItem =~ /ms-azuretools.azure-dev.views.workspace.(application|services|service(?!s))/i",
+                    "group": "30develop@20"
+                },
+                {
+                    "command": "azure-dev.commands.cli.pipeline-config",
+                    "when": "viewItem =~ /ms-azuretools.azure-dev.views.workspace.application/i",
+                    "group": "30develop@30"
                 },
                 {
                     "command": "azure-dev.commands.cli.monitor",
                     "when": "viewItem =~ /ms-azuretools.azure-dev.views.workspace.application/i",
-                    "group": "30monitor@10"
+                    "group": "40monitor@10"
                 },
                 {
                     "command": "azure-dev.commands.azureWorkspace.revealAzureResource",
                     "when": "viewItem =~ /ms-azuretools.azure-dev.views.workspace.service(?!s)/i",
-                    "group": "40navigation@10"
+                    "group": "50navigation@10"
                 },
                 {
                     "command": "azure-dev.commands.azureWorkspace.revealAzureResourceGroup",
                     "when": "viewItem =~ /ms-azuretools.azure-dev.views.workspace.application/i",
-                    "group": "40navigation@20"
+                    "group": "50navigation@20"
                 },
                 {
                     "command": "azure-dev.commands.azureWorkspace.revealAzureResourceGroup",
                     "when": "viewItem =~ /ms-azuretools.azure-dev.views.workspace.environment(?!s)/i",
-                    "group": "40navigation@20"
+                    "group": "50navigation@20"
                 }
             ]
         },

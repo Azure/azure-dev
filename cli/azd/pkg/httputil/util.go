@@ -31,7 +31,7 @@ func ReadRawResponse[T any](response *http.Response) (*T, error) {
 // Handles and errors executing the http request
 func HandleRequestError(response *http.Response, err error) error {
 	if response == nil {
-		return fmt.Errorf("failed executing request: %w", err)
+		return err
 	}
 
 	return runtime.NewResponseError(response)

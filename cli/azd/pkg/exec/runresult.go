@@ -17,8 +17,9 @@ type RunResult struct {
 
 func NewRunResult(code int, stdout, stderr string) RunResult {
 	return RunResult{
-		Stdout: stdout,
-		Stderr: stderr,
+		ExitCode: code,
+		Stdout:   stdout,
+		Stderr:   stderr,
 	}
 }
 

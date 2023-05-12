@@ -428,7 +428,7 @@
                         "description": "%azure-dev.walkthroughs.start.steps.scaffold.description%",
                         "media": {
                             "svg": "resources/walkthrough/azdScaffold.svg",
-                            "altText": "Choosing a template to initialize a new project with the Azure Dev CLI"
+                            "altText": "Choosing a template to initialize a new project with the Azure Developer CLI"
                         },
                         "completionEvents": [
                             "onContext:hideAzdScaffoldStep",

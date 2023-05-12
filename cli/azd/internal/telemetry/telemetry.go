@@ -16,7 +16,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	appinsightsexporter "github.com/azure/azure-dev/cli/azd/internal/telemetry/appinsights-exporter"
-	"github.com/azure/azure-dev/cli/azd/internal/telemetry/resource"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/benbjohnson/clock"
 	"github.com/gofrs/flock"

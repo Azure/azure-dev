@@ -127,12 +127,8 @@ func NewManager(
 	}, nil
 }
 
-const cLoginCmd = "azd auth login"
-
-var ErrNoCurrentUser = errors.New("not logged in, run `azd auth login` to login")
-
-// EnsureLoggedInCredential uses the credential's GetToken method to ensure an access token can be fetched. If this fails,
-// nil, ErrNoCurrentUser is returned. On success, the token we fetched is returned.
+// EnsureLoggedInCredential uses the credential's GetToken method to ensure an access token can be fetched.
+// On success, the token we fetched is returned.
 func EnsureLoggedInCredential(ctx context.Context, credential azcore.TokenCredential) (*azcore.AccessToken, error) {
 	token, err := credential.GetToken(ctx, policy.TokenRequestOptions{
 		Scopes: LoginScopes,

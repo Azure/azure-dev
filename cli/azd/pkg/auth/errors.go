@@ -10,11 +10,62 @@ import (
 	"net/http"
 
 	msal "github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
+	"golang.org/x/exp/slices"
 )
 
 const cLoginCmd = "azd auth login"
+const cDefaultReloginScenario = "reauthentication required"
 
+// ErrNoCurrentUser indicates that the current user is not logged in.
+// This is typically determined by inspecting the stored auth information and credentials on the machine.
+// If the credentials are not found or invalid, the user is considered not to be logged in.
 var ErrNoCurrentUser = errors.New("not logged in, run `azd auth login` to login")
+
+// ReLoginRequiredError indicates that the logged in user needs to perform a log in to reauthenticate.
+type ReLoginRequiredError struct {
+	loginCmd string
+
+	// The scenario in which the login is required
+	scenario string
+}
+
+func newReLoginRequiredError(
+	response *AadErrorResponse,
+	scopes []string) (error, bool) {
+	if response == nil {
+		return nil, false
+	}
+
+	//nolint:lll
+	// https://learn.microsoft.com/en-us/azure/active-directory/develop/reference-aadsts-error-codes#handling-error-codes-in-your-application
+	switch response.Error {
+	case "invalid_grant",
+		"interaction_required":
+		err := ReLoginRequiredError{}
+		err.init(response, scopes)
+		return &err, true
+	}
+
+	return nil, false
+}
+
+func (e *ReLoginRequiredError) init(response *AadErrorResponse, scopes []string) {
+	e.scenario = cDefaultReloginScenario
+	e.loginCmd = cLoginCmd
+	if !matchesLoginScopes(scopes) { // if matching default login scopes, no scopes need to be specified
+		for _, scope := range scopes {
+			e.loginCmd += fmt.Sprintf(" --scope %s", scope)
+		}
+	}
+
+	if slices.Contains(response.ErrorCodes, 70043) {
+		e.scenario = "login expired"
+	}
+}
+
+func (e *ReLoginRequiredError) Error() string {
+	return fmt.Sprintf("%s, run `%s` to log in", e.scenario, e.loginCmd)
+}
 
 const authFailedPrefix string = "failed to authenticate"
 
@@ -33,34 +84,36 @@ type AadErrorResponse struct {
 }
 
 // AuthFailedError indicates an authentication request has failed.
+// This serves as a wrapper around MSAL related errors.
 type AuthFailedError struct {
-	// The HTTP response motivating the error.
+	// The HTTP response motivating the error, if available
 	rawResp *http.Response
-	// Underlying error
-	err error
-	// The successfully parsed error response, if any
+	// The unmarshaled error response, if available
 	parsed *AadErrorResponse
 
-	loginCmd string
+	innerErr error
 }
 
-func newAuthFailedError(err error, loginCmd string) error {
+func newAuthFailedErrorFromMsalErr(err error) error {
 	var msalCallErr msal.CallErr
+	var authFailedErr *AuthFailedError
 	var res *http.Response
 	if errors.As(err, &msalCallErr) {
 		res = msalCallErr.Resp
+	} else if errors.As(err, &authFailedErr) { // in case this is re-thrown in a retry loop
+		res = authFailedErr.rawResp
 	}
 
-	if res == nil { // no response available, provide error wrapping
-		return fmt.Errorf("%s: %w", authFailedPrefix, err)
-	}
-
-	e := &AuthFailedError{rawResp: res, loginCmd: loginCmd}
+	e := &AuthFailedError{rawResp: res, innerErr: err}
 	e.parseResponse()
 	return e
 }
 
 func (e *AuthFailedError) parseResponse() {
+	if e.rawResp == nil {
+		return
+	}
+
 	body, err := io.ReadAll(e.rawResp.Body)
 	e.rawResp.Body.Close()
 	if err != nil {
@@ -79,30 +132,26 @@ func (e *AuthFailedError) parseResponse() {
 }
 
 func (e *AuthFailedError) Unwrap() error {
-	return e.err
+	return e.innerErr
 }
 
 func (e *AuthFailedError) Error() string {
+	if e.rawResp == nil { // non-http error, simply append inner error
+		return fmt.Sprintf("%s: %s", authFailedPrefix, e.innerErr.Error())
+	}
+
 	if e.parsed == nil { // unable to parse, provide HTTP error details
 		return fmt.Sprintf("%s: %s", authFailedPrefix, e.httpErrorDetails())
 	}
 
-	//nolint:lll
-	// https://learn.microsoft.com/en-us/azure/active-directory/develop/reference-aadsts-error-codes#handling-error-codes-in-your-application
-	switch e.parsed.Error {
-	case "invalid_grant",
-		"interaction_required":
-		// log the error in case this needs further diagnosis
-		log.Println(e.httpErrorDetails())
-		return fmt.Sprintf("reauthentication required, run `%s` to log in", e.loginCmd)
-	}
-
-	// ErrorDescription contains multiline messaging that has TraceID, CorrelationID,
-	// and other useful information embedded in it.
+	log.Println(e.httpErrorDetails())
+	// Provide user-friendly error message based on the parsed response.
 	return fmt.Sprintf(
 		"%s:\n(%s) %s\n",
 		authFailedPrefix,
 		e.parsed.Error,
+		// ErrorDescription contains multiline messaging that has TraceID, CorrelationID,
+		// and other useful information embedded in it. Thus, it is not required to log other response body fields.
 		e.parsed.ErrorDescription)
 }
 

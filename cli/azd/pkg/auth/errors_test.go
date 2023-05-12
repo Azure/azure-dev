@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -14,9 +13,13 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestAuthFailedError_Error(t *testing.T) {
-	loginCmd := "loginCmd"
+func TestAuthFailedError_NonMsalCallError(t *testing.T) {
+	err := newAuthFailedErrorFromMsalErr(errors.New("some error"))
+	require.NotNil(t, err)
+	require.Contains(t, err.Error(), "some error")
+}
 
+func TestAuthFailedError(t *testing.T) {
 	marshal := func(e *AadErrorResponse) string {
 		b, err := json.Marshal(e)
 		if err != nil {
@@ -47,25 +50,7 @@ func TestAuthFailedError_Error(t *testing.T) {
 		want string
 	}{
 		{
-			name: "Parsed_Error_invalid_grant",
-			e: msal.CallErr{
-				Resp: respWithBody(marshal(&AadErrorResponse{
-					Error: "invalid_grant",
-				})),
-			},
-			want: fmt.Sprintf("reauthentication required, run `%s` to log in", loginCmd),
-		},
-		{
-			name: "Parsed_Error_interaction_required",
-			e: msal.CallErr{
-				Resp: respWithBody(marshal(&AadErrorResponse{
-					Error: "interaction_required",
-				})),
-			},
-			want: fmt.Sprintf("reauthentication required, run `%s` to log in", loginCmd),
-		},
-		{
-			name: "Parsed_Error_UnknownError",
+			name: "Parsed_Error",
 			e: msal.CallErr{
 				Resp: respWithBody(marshal(&AadErrorResponse{
 					Error:            "invalid_request",
@@ -88,23 +73,29 @@ func TestAuthFailedError_Error(t *testing.T) {
 			},
 			want: "GET https://localhost/token",
 		},
-		{
-			name: "NotParsed_NilResponse",
-			e: msal.CallErr{
-				Err: errors.New("some error"),
-			},
-			want: "some error",
-		},
-		{
-			name: "NotParsed_NotMsalCallError",
-			e:    errors.New("some error"),
-			want: "some error",
-		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			err := newAuthFailedError(tt.e, loginCmd)
+			err := newAuthFailedErrorFromMsalErr(tt.e)
 			require.Contains(t, err.Error(), tt.want)
+		})
+	}
+}
+
+func TestReLoginRequired(t *testing.T) {
+	tests := []struct {
+		name string
+		resp *AadErrorResponse
+		want bool
+	}{
+		{"invalid_grant", &AadErrorResponse{Error: "invalid_grant"}, true},
+		{"interaction_required", &AadErrorResponse{Error: "interaction_required"}, true},
+		{"invalid_claim", &AadErrorResponse{Error: "invalid_claim"}, false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, got := newReLoginRequiredError(tt.resp, LoginScopes)
+			require.Equal(t, tt.want, got)
 		})
 	}
 }

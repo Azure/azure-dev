@@ -5,7 +5,8 @@ package auth
 
 import (
 	"context"
-	"fmt"
+	"errors"
+	"log"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
@@ -27,14 +28,17 @@ func newAzdCredential(client publicClient, account *public.Account) *azdCredenti
 func (c *azdCredential) GetToken(ctx context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {
 	res, err := c.client.AcquireTokenSilent(ctx, options.Scopes, public.WithSilentAccount(*c.account))
 	if err != nil {
-		loginCmd := cLoginCmd
-		if !matchesLoginScopes(options.Scopes) { // if matching default login scopes, no scopes need to be specified
-			for _, scope := range options.Scopes {
-				loginCmd += fmt.Sprintf(" --scope %s", scope)
+		var authFailed *AuthFailedError
+		if errors.As(err, &authFailed) {
+			if loginErr, ok := newReLoginRequiredError(authFailed.parsed, options.Scopes); ok {
+				log.Println(authFailed.httpErrorDetails())
+				return azcore.AccessToken{}, loginErr
 			}
+
+			return azcore.AccessToken{}, authFailed
 		}
 
-		return azcore.AccessToken{}, newAuthFailedError(err, loginCmd)
+		return azcore.AccessToken{}, err
 	}
 
 	return azcore.AccessToken{
@@ -43,7 +47,7 @@ func (c *azdCredential) GetToken(ctx context.Context, options policy.TokenReques
 	}, nil
 }
 
-// matchesLoginScopes checks if the elements contained in the slice match the default login scopes
+// matchesLoginScopes checks if the elements contained in the slice match the scopes acquired during login.
 func matchesLoginScopes(scopes []string) bool {
 	for _, scope := range scopes {
 		_, matchLogin := loginScopesMap[scope]

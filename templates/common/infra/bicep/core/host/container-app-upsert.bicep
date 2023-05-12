@@ -18,7 +18,7 @@ param env array = []
 param external bool = true
 param imageName string = ''
 param targetPort int = 80
-param exists bool
+param exists bool = false
 
 @allowed([ 'None', 'SystemAssigned', 'UserAssigned' ])
 param identityType string = 'None'

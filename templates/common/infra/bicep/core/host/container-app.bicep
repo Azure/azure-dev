@@ -4,9 +4,9 @@ param tags object = {}
 
 param containerAppsEnvironmentName string
 param containerName string = 'main'
-param containerRegistryName string
+param containerRegistryName string = ''
 
-@allowed(['Single','Multiple'])
+@allowed([ 'Single', 'Multiple' ])
 param revisionMode string = 'Single'
 
 @description('Minimum number of replicas to run')
@@ -50,11 +50,13 @@ resource userIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-
   name: identityName
 }
 
-module containerRegistryAccess '../security/registry-access.bicep' = if (!empty(containerRegistryName) && !empty(identityName)) {
+var usePrivateRegistry = !empty(identityName) && !empty(containerRegistryName)
+
+module containerRegistryAccess '../security/registry-access.bicep' = if (usePrivateRegistry) {
   name: '${deployment().name}-registry-access'
   params: {
     containerRegistryName: containerRegistryName
-    principalId: userIdentity.properties.principalId
+    principalId: usePrivateRegistry ? userIdentity.properties.principalId : ''
   }
 }
 
@@ -66,10 +68,10 @@ resource app 'Microsoft.App/containerApps@2022-03-01' = {
   // otherwise the container app will throw a provision error
   // This also forces us to use an user assigned managed identity since there would no way to
   // provide the system assigned identity with the ACR pull access before the app is created
-  dependsOn: [ containerRegistryAccess ]
+  dependsOn: usePrivateRegistry ? [containerRegistryAccess] : []
   identity: {
     type: identityType
-    userAssignedIdentities: identityType == 'UserAssigned' ? { '${userIdentity.id}': {} } : null
+    userAssignedIdentities: !empty(identityName) && identityType == 'UserAssigned' ? { '${userIdentity.id}': {} } : null
   }
   properties: {
     managedEnvironmentId: containerAppsEnvironment.id
@@ -87,9 +89,9 @@ resource app 'Microsoft.App/containerApps@2022-03-01' = {
         appPort: ingressEnabled ? targetPort : 0
       } : { enabled: false }
       secrets: secrets
-      registries: !empty(containerRegistryName) && !empty(identityName) ? [
+      registries: usePrivateRegistry ? [
         {
-          server: '${containerRegistry.name}.azurecr.io'
+          server: '${containerRegistryName}.azurecr.io'
           identity: userIdentity.id
         }
       ] : []
@@ -118,13 +120,8 @@ resource containerAppsEnvironment 'Microsoft.App/managedEnvironments@2022-03-01'
   name: containerAppsEnvironmentName
 }
 
-// 2022-02-01-preview needed for anonymousPullEnabled
-resource containerRegistry 'Microsoft.ContainerRegistry/registries@2022-02-01-preview' existing = if (!empty(containerRegistryName)) {
-  name: containerRegistryName
-}
-
 output defaultDomain string = containerAppsEnvironment.properties.defaultDomain
 output imageName string = imageName
 output name string = app.name
 output uri string = 'https://${app.properties.configuration.ingress.fqdn}'
-output identityPrincipalId string = identityType == 'None' ? '' : empty(identityName) ? app.identity.principalId : userIdentity.properties.principalId
+output identityPrincipalId string = identityType == 'None' ? '' : (empty(identityName) ? app.identity.principalId : userIdentity.properties.principalId)

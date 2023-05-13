@@ -64,7 +64,7 @@ func pipelineActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 	group := root.Add("pipeline", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
 			Use:   "pipeline",
-			Short: "Manage and configure your deployment pipelines.",
+			Short: fmt.Sprintf("Manage and configure your deployment pipelines. %s", output.WithWarningFormat("(Beta)")),
 		},
 		HelpOptions: actions.ActionHelpOptions{
 			Description: getCmdPipelineHelpDescription,
@@ -97,8 +97,10 @@ func newPipelineConfigFlags(cmd *cobra.Command, global *internal.GlobalCommandOp
 
 func newPipelineConfigCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "config",
-		Short: "Create and configure your deployment pipeline by using GitHub or Azure Pipelines.",
+		Use: "config",
+		Short: fmt.Sprintf(
+			"Create and configure your deployment pipeline by using GitHub or Azure Pipelines. %s",
+			output.WithWarningFormat("(Beta)")),
 	}
 }
 
@@ -191,7 +193,7 @@ func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, 
 
 func getCmdPipelineHelpDescription(*cobra.Command) string {
 	return generateCmdHelpDescription(
-		"Manage integrating your application with build pipelines.",
+		fmt.Sprintf("Manage integrating your application with build pipelines. %s", output.WithWarningFormat("(Beta)")),
 		[]string{
 			formatHelpNote(fmt.Sprintf("The Azure Developer CLI template includes a GitHub Actions pipeline"+
 				" configuration file (in the %s folder) that deploys your application whenever code is pushed"+

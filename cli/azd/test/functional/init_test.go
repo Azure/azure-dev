@@ -133,7 +133,7 @@ func Test_CLI_Init_CanUseTemplate(t *testing.T) {
 	// While `init` uses git behind the scenes to pull a template, we don't want to bring the history over in the new git
 	// repository.
 	cmdRun := exec.NewCommandRunner(nil)
-	cmdRes, err := cmdRun.Run(ctx, exec.NewRunArgs("git", "-C", dir, "log", "--oneline", "-n", "1").WithEnrichError(true))
+	cmdRes, err := cmdRun.Run(ctx, exec.NewRunArgs("git", "-C", dir, "log", "--oneline", "-n", "1"))
 	require.Error(t, err)
 	require.Contains(t, cmdRes.Stderr, "does not have any commits yet")
 

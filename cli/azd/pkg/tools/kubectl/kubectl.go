@@ -323,7 +323,6 @@ func (cli *kubectlCli) executeCommandWithArgs(
 	args exec.RunArgs,
 	flags *KubeCliFlags,
 ) (exec.RunResult, error) {
-	args = args.WithEnrichError(true)
 	if cli.cwd != "" {
 		args = args.WithCwd(cli.cwd)
 	}

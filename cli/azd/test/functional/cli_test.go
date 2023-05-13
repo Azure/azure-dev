@@ -485,8 +485,7 @@ func Test_CLI_InfraCreateAndDeleteResourceTerraformRemote(t *testing.T) {
 }
 
 func newRunArgs(cmd string, args ...string) exec.RunArgs {
-	runArgs := exec.NewRunArgs(cmd, args...)
-	return runArgs.WithEnrichError(true)
+	return exec.NewRunArgs(cmd, args...)
 }
 
 func TestMain(m *testing.M) {

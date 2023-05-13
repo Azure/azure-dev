@@ -180,9 +180,9 @@ func (cli *mavenCli) Compile(ctx context.Context, projectPath string) error {
 	}
 
 	runArgs := exec.NewRunArgs(mvnCmd, "compile").WithCwd(projectPath)
-	res, err := cli.commandRunner.Run(ctx, runArgs)
+	_, err = cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
-		return fmt.Errorf("mvn compile on project '%s' failed: %s: %w", projectPath, res.String(), err)
+		return fmt.Errorf("mvn compile on project '%s' failed: %w", projectPath, err)
 	}
 
 	return nil
@@ -196,9 +196,9 @@ func (cli *mavenCli) Package(ctx context.Context, projectPath string) error {
 
 	// Maven's package phase includes tests by default. Skip it explicitly.
 	runArgs := exec.NewRunArgs(mvnCmd, "package", "-DskipTests").WithCwd(projectPath)
-	res, err := cli.commandRunner.Run(ctx, runArgs)
+	_, err = cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
-		return fmt.Errorf("mvn package on project '%s' failed: %s: %w", projectPath, res.String(), err)
+		return fmt.Errorf("mvn package on project '%s' failed: %w", projectPath, err)
 	}
 
 	return nil
@@ -210,9 +210,9 @@ func (cli *mavenCli) ResolveDependencies(ctx context.Context, projectPath string
 		return err
 	}
 	runArgs := exec.NewRunArgs(mvnCmd, "dependency:resolve").WithCwd(projectPath)
-	res, err := cli.commandRunner.Run(ctx, runArgs)
+	_, err = cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
-		return fmt.Errorf("mvn dependency:resolve on project '%s' failed: %s: %w", projectPath, res.String(), err)
+		return fmt.Errorf("mvn dependency:resolve on project '%s' failed: %w", projectPath, err)
 	}
 
 	return nil

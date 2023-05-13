@@ -21,11 +21,6 @@ type RunArgs struct {
 	// Enables debug logging.
 	DebugLogging *bool
 
-	// EnrichError will include any command output if there is a failure
-	// and output is available.
-	// This is off by default.
-	EnrichError bool
-
 	// When set will run the command within a shell
 	UseShell bool
 
@@ -82,12 +77,6 @@ func (b RunArgs) WithInteractive(interactive bool) RunArgs {
 // Updates whether or not this will be run in a shell
 func (b RunArgs) WithShell(useShell bool) RunArgs {
 	b.UseShell = useShell
-	return b
-}
-
-// Updates whether or not errors will be enriched
-func (b RunArgs) WithEnrichError(enrichError bool) RunArgs {
-	b.EnrichError = enrichError
 	return b
 }
 

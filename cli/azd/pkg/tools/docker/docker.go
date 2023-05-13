@@ -83,25 +83,25 @@ func (d *docker) Build(
 
 	res, err := d.executeCommand(ctx, cwd, args...)
 	if err != nil {
-		return "", fmt.Errorf("building image: %s: %w", res.String(), err)
+		return "", fmt.Errorf("building image: %w", err)
 	}
 
 	return strings.TrimSpace(res.Stdout), nil
 }
 
 func (d *docker) Tag(ctx context.Context, cwd string, imageName string, tag string) error {
-	res, err := d.executeCommand(ctx, cwd, "tag", imageName, tag)
+	_, err := d.executeCommand(ctx, cwd, "tag", imageName, tag)
 	if err != nil {
-		return fmt.Errorf("tagging image: %s: %w", res.String(), err)
+		return fmt.Errorf("tagging image: %w", err)
 	}
 
 	return nil
 }
 
 func (d *docker) Push(ctx context.Context, cwd string, tag string) error {
-	res, err := d.executeCommand(ctx, cwd, "push", tag)
+	_, err := d.executeCommand(ctx, cwd, "push", tag)
 	if err != nil {
-		return fmt.Errorf("pushing image: %s: %w", res.String(), err)
+		return fmt.Errorf("pushing image: %w", err)
 	}
 
 	return nil
@@ -222,8 +222,7 @@ func (d *docker) Name() string {
 
 func (d *docker) executeCommand(ctx context.Context, cwd string, args ...string) (exec.RunResult, error) {
 	runArgs := exec.NewRunArgs("docker", args...).
-		WithCwd(cwd).
-		WithEnrichError(true)
+		WithCwd(cwd)
 
 	return d.commandRunner.Run(ctx, runArgs)
 }

@@ -79,13 +79,7 @@ Here's a high level architecture diagram that illustrates these components. Noti
 
 ### Application Code
 
-The repo is structured to follow the [Azure Developer CLI](https://aka.ms/azure-dev/overview) conventions including:
-
-- **Source Code**: All application source code is located in the `src` folder.
-- **Infrastructure as Code**: All application "infrastructure as code" files are located in the `infra` folder.
-- **Azure Developer Configuration**: An `azure.yaml` file located in the root that ties the application source code to the Azure services defined in your "infrastructure as code" files.
-- **GitHub Actions**: A sample GitHub action file is located in the `.github/workflows` folder.
-- **VS Code Configuration**: All VS Code configuration to run and debug the application is located in the `.vscode` folder.
+This template is structured to follow the [Azure Developer CLI](https://aka.ms/azure-dev/overview). You can learn more about `azd` architecture in [the official documentation](https://learn.microsoft.com/azure/developer/azure-developer-cli/make-azd-compatible?pivots=azd-create#understand-the-azd-architecture)
 
 ### Azure Developer CLI - VS Code Extension
 

@@ -58,6 +58,7 @@ virtuals
 VSIX
 webapprouting
 webfonts
+webmvc
 webui
 wwwroot
 passwordless

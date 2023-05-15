@@ -146,6 +146,9 @@ $ azd config set defaults.location eastus`,
 		Command: &cobra.Command{
 			Short: "Display the list of available features in alpha stage.",
 		},
+		HelpOptions: actions.ActionHelpOptions{
+			Footer: getCmdListAlphaHelpFooter,
+		},
 		ActionResolver: newConfigListAlphaAction,
 	})
 
@@ -384,4 +387,24 @@ func newConfigListAlphaAction(
 		console:              console,
 		args:                 args,
 	}
+}
+
+func getCmdListAlphaHelpFooter(*cobra.Command) string {
+	return generateCmdHelpSamplesBlock(map[string]string{
+		"Displays a list of all available features in the alpha stage": output.WithHighLightFormat(
+			"azd config list-alpha",
+		),
+		"Turn on a specific alpha feature": output.WithHighLightFormat(
+			"azd config set alpha.<feature-name> on",
+		),
+		"Turn off a specific alpha feature": output.WithHighLightFormat(
+			"azd config set alpha.<feature-name> off",
+		),
+		"Turn on all alpha features": output.WithHighLightFormat(
+			"azd config set alpha.all on",
+		),
+		"Turn off all alpha features": output.WithHighLightFormat(
+			"azd config set alpha.all off",
+		),
+	})
 }

@@ -4,7 +4,7 @@ param tags object = {}
 
 param containerAppsEnvironmentName string
 param containerName string = 'main'
-param containerRegistryName string
+param containerRegistryName string = ''
 
 @description('Minimum number of replicas to run')
 @minValue(1)
@@ -16,11 +16,15 @@ param containerMaxReplicas int = 10
 param secrets array = []
 param env array = []
 param external bool = true
+param imageName string = ''
 param targetPort int = 80
-param exists bool
+param exists bool = false
+
+@allowed([ 'None', 'SystemAssigned', 'UserAssigned' ])
+param identityType string = 'None'
 
 @description('User assigned identity name')
-param identityName string
+param identityName string = ''
 
 @description('Enabled Ingress for container app')
 param ingressEnabled bool = true
@@ -50,6 +54,7 @@ module app 'container-app.bicep' = {
     name: name
     location: location
     tags: tags
+    identityType: identityType
     identityName: identityName
     ingressEnabled: ingressEnabled
     containerName: containerName
@@ -65,7 +70,7 @@ module app 'container-app.bicep' = {
     secrets: secrets
     external: external
     env: env
-    imageName: exists ? existingApp.properties.template.containers[0].image : ''
+    imageName: !empty(imageName) ? imageName : exists ? existingApp.properties.template.containers[0].image : ''
     targetPort: targetPort
   }
 }

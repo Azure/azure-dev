@@ -68,7 +68,6 @@ func (cli *PythonCli) Name() string {
 }
 
 func (cli *PythonCli) InstallRequirements(ctx context.Context, workingDir, environment, requirementFile string) error {
-	var res exec.RunResult
 	var err error
 
 	pyString, err := checkPath()
@@ -93,18 +92,18 @@ func (cli *PythonCli) InstallRequirements(ctx context.Context, workingDir, envir
 			WithCwd(workingDir).
 			WithEnv([]string{vEnvSetting})
 
-		res, err = cli.commandRunner.Run(ctx, runArgs)
+		_, err = cli.commandRunner.Run(ctx, runArgs)
 	} else {
 		envActivation := ". " + path.Join(environment, "bin", "activate")
 		installCmd := fmt.Sprintf("%s -m pip install -r %s", pyString, requirementFile)
 		commands := []string{envActivation, installCmd}
 
 		runArgs := exec.NewRunArgs("").WithCwd(workingDir)
-		res, err = cli.commandRunner.RunList(ctx, commands, runArgs)
+		_, err = cli.commandRunner.RunList(ctx, commands, runArgs)
 	}
 
 	if err != nil {
-		return fmt.Errorf("failed to install requirements for project '%s': %w (%s)", workingDir, err, res.String())
+		return fmt.Errorf("failed to install requirements for project '%s': %w", workingDir, err)
 	}
 	return nil
 }
@@ -119,15 +118,13 @@ func (cli *PythonCli) CreateVirtualEnv(ctx context.Context, workingDir, name str
 		NewRunArgs(pyString, "-m", "venv", name).
 		WithCwd(workingDir)
 
-	res, err := cli.commandRunner.Run(ctx, runArgs)
+	_, err = cli.commandRunner.Run(ctx, runArgs)
 
 	if err != nil {
 		return fmt.Errorf(
-			"failed to create virtual Python environment for project '%s': %w (%s)",
+			"failed to create virtual Python environment for project '%s': %w",
 			workingDir,
-			err,
-			res.String(),
-		)
+			err)
 	}
 	return nil
 }

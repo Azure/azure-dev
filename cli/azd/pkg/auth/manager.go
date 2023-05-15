@@ -19,8 +19,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/public"
-	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
-	"github.com/azure/azure-dev/cli/azd/internal/telemetry/fields"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/github"
@@ -55,6 +55,9 @@ const cUseCloudShellAuthEnvVar = "AZD_IN_CLOUDSHELL"
 // The scopes to request when acquiring our token during the login flow or when requesting a token to validate if the client
 // is logged in.
 var LoginScopes = []string{azure.ManagementScope}
+var loginScopesMap = map[string]struct{}{
+	azure.ManagementScope: {},
+}
 
 // Manager manages the authentication system of azd. It allows a user to log in, either as a user principal or service
 // principal. Manager stores information so that the user can stay logged in across invocations of the CLI. When logged in
@@ -124,21 +127,14 @@ func NewManager(
 	}, nil
 }
 
-var ErrNoCurrentUser = errors.New("not logged in, run `azd auth login` to login")
-
-// EnsureLoggedInCredential uses the credential's GetToken method to ensure an access token can be fetched. If this fails,
-// nil, ErrNoCurrentUser is returned. On success, the token we fetched is returned.
+// EnsureLoggedInCredential uses the credential's GetToken method to ensure an access token can be fetched.
+// On success, the token we fetched is returned.
 func EnsureLoggedInCredential(ctx context.Context, credential azcore.TokenCredential) (*azcore.AccessToken, error) {
 	token, err := credential.GetToken(ctx, policy.TokenRequestOptions{
 		Scopes: LoginScopes,
 	})
 	if err != nil {
-		// It is important that we dump the failure which contains error code, correlation IDs from AAD to log
-		// An improvement to make here is to classify 'unhandled' vs 'handled' errors
-		// where handled errors would be fixed with rerunning login (i.e. token expiry), vs.
-		// unhandled errors where it indicates a setup issue.
-		log.Printf("failed fetching access token: %s", err.Error())
-		return &azcore.AccessToken{}, ErrNoCurrentUser
+		return &azcore.AccessToken{}, err
 	}
 
 	return &token, nil
@@ -315,11 +311,11 @@ func (m *Manager) GetLoggedInServicePrincipalTenantID(ctx context.Context) (*str
 
 	// Record type of account found
 	if currentUser.TenantID != nil {
-		telemetry.SetGlobalAttributes(fields.AccountTypeKey.String(fields.AccountTypeServicePrincipal))
+		tracing.SetGlobalAttributes(fields.AccountTypeKey.String(fields.AccountTypeServicePrincipal))
 	}
 
 	if currentUser.HomeAccountID != nil {
-		telemetry.SetGlobalAttributes(fields.AccountTypeKey.String(fields.AccountTypeUser))
+		tracing.SetGlobalAttributes(fields.AccountTypeKey.String(fields.AccountTypeUser))
 	}
 
 	return currentUser.TenantID, nil

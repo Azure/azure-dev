@@ -4,7 +4,7 @@ import (
 	"os"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/internal/telemetry/fields"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 )
 
 // Rules that apply when the specified environment variable is set to "true" (case-insensitive)

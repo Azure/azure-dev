@@ -50,7 +50,7 @@ func Test_Initializer_Initialize(t *testing.T) {
 						stagingDir := args.Args[len(args.Args)-1]
 						copyTemplate(t, testDataPath(tt.templateDir), stagingDir)
 
-						gitArgs := exec.NewRunArgs("git", "-C", stagingDir).WithEnrichError(true)
+						gitArgs := exec.NewRunArgs("git", "-C", stagingDir)
 
 						// Mock clone by creating a git repository locally
 						_, err := realRunner.Run(ctx, gitArgs.AppendParams("init"))

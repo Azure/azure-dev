@@ -97,9 +97,9 @@ func (cli *gitCli) ShallowClone(ctx context.Context, repositoryPath string, bran
 	args = append(args, target)
 
 	runArgs := newRunArgs(args...)
-	res, err := cli.commandRunner.Run(ctx, runArgs)
+	_, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
-		return fmt.Errorf("failed to clone repository %s, %s: %w", repositoryPath, res.String(), err)
+		return fmt.Errorf("failed to clone repository %s: %w", repositoryPath, err)
 	}
 
 	return nil
@@ -119,7 +119,7 @@ func (cli *gitCli) GetRemoteUrl(ctx context.Context, repositoryPath string, remo
 	} else if notGitRepositoryRegex.MatchString(res.Stderr) {
 		return "", ErrNotRepository
 	} else if err != nil {
-		return "", fmt.Errorf("failed to get remote url: %s: %w", res.String(), err)
+		return "", fmt.Errorf("failed to get remote url: %w", err)
 	}
 
 	return strings.TrimSpace(res.Stdout), nil
@@ -131,7 +131,7 @@ func (cli *gitCli) GetCurrentBranch(ctx context.Context, repositoryPath string) 
 	if notGitRepositoryRegex.MatchString(res.Stderr) {
 		return "", ErrNotRepository
 	} else if err != nil {
-		return "", fmt.Errorf("failed to get current branch: %s: %w", res.String(), err)
+		return "", fmt.Errorf("failed to get current branch: %w", err)
 	}
 
 	return strings.TrimSpace(res.Stdout), nil
@@ -139,16 +139,16 @@ func (cli *gitCli) GetCurrentBranch(ctx context.Context, repositoryPath string) 
 
 func (cli *gitCli) InitRepo(ctx context.Context, repositoryPath string) error {
 	runArgs := newRunArgs("-C", repositoryPath, "init")
-	res, err := cli.commandRunner.Run(ctx, runArgs)
+	_, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
-		return fmt.Errorf("failed to init repository: %s: %w", res.String(), err)
+		return fmt.Errorf("failed to init repository: %w", err)
 	}
 
 	// Set initial branch to main
 	runArgs = newRunArgs("-C", repositoryPath, "checkout", "-b", "main")
-	res, err = cli.commandRunner.Run(ctx, runArgs)
+	_, err = cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
-		return fmt.Errorf("failed to create main branch: %s: %w", res.String(), err)
+		return fmt.Errorf("failed to create main branch: %w", err)
 	}
 
 	return nil
@@ -156,9 +156,9 @@ func (cli *gitCli) InitRepo(ctx context.Context, repositoryPath string) error {
 
 func (cli *gitCli) SetCredentialStore(ctx context.Context, repositoryPath string) error {
 	runArgs := newRunArgs("-C", repositoryPath, "config", "credential.helper", "store")
-	res, err := cli.commandRunner.Run(ctx, runArgs)
+	_, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
-		return fmt.Errorf("failed to set credential store repository: %s: %w", res.String(), err)
+		return fmt.Errorf("failed to set credential store repository: %w", err)
 	}
 
 	return nil
@@ -166,9 +166,9 @@ func (cli *gitCli) SetCredentialStore(ctx context.Context, repositoryPath string
 
 func (cli *gitCli) AddRemote(ctx context.Context, repositoryPath string, remoteName string, remoteUrl string) error {
 	runArgs := newRunArgs("-C", repositoryPath, "remote", "add", remoteName, remoteUrl)
-	res, err := cli.commandRunner.Run(ctx, runArgs)
+	_, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
-		return fmt.Errorf("failed to add remote: %s: %w", res.String(), err)
+		return fmt.Errorf("failed to add remote: %w", err)
 	}
 
 	return nil
@@ -176,9 +176,9 @@ func (cli *gitCli) AddRemote(ctx context.Context, repositoryPath string, remoteN
 
 func (cli *gitCli) UpdateRemote(ctx context.Context, repositoryPath string, remoteName string, remoteUrl string) error {
 	runArgs := newRunArgs("-C", repositoryPath, "remote", "set-url", remoteName, remoteUrl)
-	res, err := cli.commandRunner.Run(ctx, runArgs)
+	_, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
-		return fmt.Errorf("failed to add remote: %s: %w", res.String(), err)
+		return fmt.Errorf("failed to add remote: %w", err)
 	}
 
 	return nil
@@ -186,9 +186,9 @@ func (cli *gitCli) UpdateRemote(ctx context.Context, repositoryPath string, remo
 
 func (cli *gitCli) AddFile(ctx context.Context, repositoryPath string, filespec string) error {
 	runArgs := newRunArgs("-C", repositoryPath, "add", filespec)
-	res, err := cli.commandRunner.Run(ctx, runArgs)
+	_, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
-		return fmt.Errorf("failed to add files: %s: %w", res.String(), err)
+		return fmt.Errorf("failed to add files: %w", err)
 	}
 
 	return nil
@@ -196,9 +196,9 @@ func (cli *gitCli) AddFile(ctx context.Context, repositoryPath string, filespec 
 
 func (cli *gitCli) Commit(ctx context.Context, repositoryPath string, message string) error {
 	runArgs := newRunArgs("-C", repositoryPath, "commit", "--allow-empty", "-m", message)
-	res, err := cli.commandRunner.Run(ctx, runArgs)
+	_, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
-		return fmt.Errorf("failed to commit: %s: %w", res.String(), err)
+		return fmt.Errorf("failed to commit: %w", err)
 	}
 
 	return nil
@@ -208,10 +208,10 @@ func (cli *gitCli) PushUpstream(ctx context.Context, repositoryPath string, orig
 	runArgs := newRunArgs("-C", repositoryPath, "push", "--set-upstream", "--quiet", origin, branch).
 		WithInteractive(true)
 
-	res, err := cli.commandRunner.Run(ctx, runArgs)
+	_, err := cli.commandRunner.Run(ctx, runArgs)
 
 	if err != nil {
-		return fmt.Errorf("failed to push: %s: %w", res.String(), err)
+		return fmt.Errorf("failed to push: %w", err)
 	}
 
 	return nil
@@ -221,7 +221,7 @@ func (cli *gitCli) ListStagedFiles(ctx context.Context, repositoryPath string) (
 	runArgs := newRunArgs("-C", repositoryPath, "ls-files", "--stage")
 	res, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
-		return "", fmt.Errorf("failed to list files: %s: %w", res.String(), err)
+		return "", fmt.Errorf("failed to list files: %w", err)
 	}
 
 	return res.Stdout, nil
@@ -229,9 +229,9 @@ func (cli *gitCli) ListStagedFiles(ctx context.Context, repositoryPath string) (
 
 func (cli *gitCli) AddFileExecPermission(ctx context.Context, repositoryPath string, file string) error {
 	runArgs := newRunArgs("-C", repositoryPath, "update-index", "--add", "--chmod=+x", file)
-	res, err := cli.commandRunner.Run(ctx, runArgs)
+	_, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
-		return fmt.Errorf("failed to add file exec permission: %s: %w", res.String(), err)
+		return fmt.Errorf("failed to add file exec permission: %w", err)
 	}
 
 	return nil
@@ -241,7 +241,7 @@ func (cli *gitCli) IsUntrackedFile(ctx context.Context, repositoryPath string, f
 	runArgs := newRunArgs("-C", repositoryPath, "status", filePath)
 	res, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
-		return false, fmt.Errorf("failed to check status file: %s: %w", res.String(), err)
+		return false, fmt.Errorf("failed to check status file: %w", err)
 	}
 
 	if gitUntrackedFileRegex.MatchString(res.Stdout) {

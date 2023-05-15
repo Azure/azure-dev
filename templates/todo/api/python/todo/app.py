@@ -64,10 +64,11 @@ async def startup_event():
         exporter = AzureMonitorTraceExporter.from_connection_string(
             settings.APPLICATIONINSIGHTS_CONNECTION_STRING
         )
+        #console exporter
         tracer = TracerProvider(
             resource=Resource({SERVICE_NAME: settings.APPLICATIONINSIGHTS_ROLENAME})
         )
-        tracer.add_span_processor(BatchSpanProcessor(exporter))
+        tracer.add_span_processor(BatchSpanProcessor(exporter)) #add it here check BatchSpanProcessor
 
         FastAPIInstrumentor.instrument_app(app, tracer_provider=tracer)
 

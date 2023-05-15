@@ -143,7 +143,7 @@ func (a *templatesShowAction) Run(ctx context.Context) (*actions.ActionResult, e
 	}
 
 	if a.formatter.Kind() == output.NoneFormat {
-		fmt.Fprintf(a.writer, "%s\n", matchingTemplate.Display())
+		err = matchingTemplate.Display(a.writer)
 	} else {
 		err = a.formatter.Format(matchingTemplate, a.writer, nil)
 	}

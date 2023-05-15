@@ -94,7 +94,7 @@ func ensureApplication(
 		Get(ctx)
 
 	if err != nil {
-		return nil, fmt.Errorf("failed retrieving application list, %w", err)
+		return nil, fmt.Errorf("failed retrieving application list: %w", err)
 	}
 
 	if len(matchingItems.Value) > 1 {
@@ -132,7 +132,7 @@ func ensureServicePrincipal(
 		Get(ctx)
 
 	if err != nil {
-		return nil, fmt.Errorf("failed retrieving application list, %w", err)
+		return nil, fmt.Errorf("failed retrieving application list: %w", err)
 	}
 
 	if len(matchingItems.Value) > 1 {

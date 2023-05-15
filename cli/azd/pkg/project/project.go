@@ -43,6 +43,10 @@ func New(ctx context.Context, projectFilePath string, projectName string) (*Proj
 func Parse(ctx context.Context, yamlContent string) (*ProjectConfig, error) {
 	var projectConfig ProjectConfig
 
+	if strings.TrimSpace(yamlContent) == "" {
+		return nil, fmt.Errorf("unable to parse azure.yaml file. File is empty.")
+	}
+
 	if err := yaml.Unmarshal([]byte(yamlContent), &projectConfig); err != nil {
 		return nil, fmt.Errorf(
 			"unable to parse azure.yaml file. Please check the format of the file, "+

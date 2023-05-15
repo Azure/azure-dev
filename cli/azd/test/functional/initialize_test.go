@@ -27,7 +27,7 @@ func Test_CommandsAndActions_Initialize(t *testing.T) {
 	ostest.Chdir(t, tempDir)
 
 	// Create a empty azure.yaml to ensure AzdContext can be constructed
-	err := os.WriteFile("azure.yaml", nil, osutil.PermissionFile)
+	err := os.WriteFile("azure.yaml", []byte("name: test"), osutil.PermissionFile)
 	require.NoError(t, err)
 
 	chain := []*actions.MiddlewareRegistration{

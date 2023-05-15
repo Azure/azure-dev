@@ -42,48 +42,15 @@ The following prerequisites are required to use this application. Please ensure 
 - [Kubernetes CLI (kubectl)](https://kubernetes.io/docs/tasks/tools/)
 
 ### Quickstart
+To learn how to get started with any template, follow the steps in [this quickstart](https://learn.microsoft.com/azure/developer/azure-developer-cli/get-started?tabs=localinstall&pivots=programming-language-nodejs) with this template(`Azure-Samples/todo-nodejs-mongo-aks`)
 
-The fastest way for you to get this application up and running on Azure is to use the `azd up` command. This single command will create and configure all necessary Azure resources - including access policies and roles for your account and service-to-service communication with Managed Identities.
+This quickstart will show you how to authenticate on Azure, initialize using a template, provision infrastructure and deploy code on Azure via the following commands:
 
-1. Open a terminal, create a new empty folder, and change into it.
-2. Run the following command to initialize the project.
-
-```bash
-azd init --template todo-nodejs-mongo-aks
 ```
-
-This command will clone the code to your current folder and prompt you for the following information:
-
-- `Environment Name`: This will be used as a prefix for the resource group that will be created to hold all Azure resources. This name should be unique within your Azure subscription.
-
-3. Run the following command to package a deployable copy of your application, provision the template's infrastructure to Azure and also deploy the application code to those newly provisioned resources.
-
-```bash
+azd auth login
+azd init --template Azure-Samples/todo-nodejs-mongo-aka
 azd up
 ```
-
-This command will prompt you for the following information:
-
-- `Azure Location`: The Azure location where your resources will be deployed.
-- `Azure Subscription`: The Azure Subscription where your resources will be deployed.
-
-> NOTE: This may take a while to complete as it executes three commands: `azd package` (packages a deployable copy of your application), `azd provision` (provisions Azure resources), and `azd deploy` (deploys application code). You will see a progress indicator as it packages, provisions and deploys your application.
-
-When `azd up` is complete it will output the following URLs:
-
-- Azure Portal link to view resources
-- ToDo Web application frontend
-- ToDo API application
-
-!["azd up output"](assets/urls.png)
-
-Click the web application URL to launch the ToDo app. Create a new collection and add some items. This will create monitoring activity in the application that you will be able to see later when you run `azd monitor`.
-
-> NOTE:
->
-> - The `azd up` command will create Azure resources that will incur costs to your Azure subscription. You can clean up those resources manually via the Azure portal or with the `azd down` command.
-> - You can call `azd up` as many times as you like to both provision and deploy your solution.
-> - You can always create a new environment with `azd env new`.
 
 ### Application Architecture
 

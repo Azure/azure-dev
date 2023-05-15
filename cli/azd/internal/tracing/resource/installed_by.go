@@ -4,7 +4,7 @@
 package resource
 
 import (
-	"github.com/azure/azure-dev/cli/azd/internal/telemetry/fields"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/installer"
 )
 

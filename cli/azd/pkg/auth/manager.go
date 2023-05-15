@@ -19,8 +19,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/public"
-	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
-	"github.com/azure/azure-dev/cli/azd/internal/telemetry/fields"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/github"
@@ -315,11 +315,11 @@ func (m *Manager) GetLoggedInServicePrincipalTenantID(ctx context.Context) (*str
 
 	// Record type of account found
 	if currentUser.TenantID != nil {
-		telemetry.SetGlobalAttributes(fields.AccountTypeKey.String(fields.AccountTypeServicePrincipal))
+		tracing.SetGlobalAttributes(fields.AccountTypeKey.String(fields.AccountTypeServicePrincipal))
 	}
 
 	if currentUser.HomeAccountID != nil {
-		telemetry.SetGlobalAttributes(fields.AccountTypeKey.String(fields.AccountTypeUser))
+		tracing.SetGlobalAttributes(fields.AccountTypeKey.String(fields.AccountTypeUser))
 	}
 
 	return currentUser.TenantID, nil

@@ -21,8 +21,8 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
-	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
-	"github.com/azure/azure-dev/cli/azd/internal/telemetry/events"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -545,7 +545,7 @@ func downloadGh(
 
 	log.Printf("downloading github cli release %s -> %s", ghReleaseUrl, releaseName)
 
-	spanCtx, span := telemetry.GetTracer().Start(ctx, events.GitHubCliInstallEvent)
+	spanCtx, span := tracing.Start(ctx, events.GitHubCliInstallEvent)
 	defer span.End()
 
 	req, err := http.NewRequestWithContext(spanCtx, "GET", ghReleaseUrl, nil)

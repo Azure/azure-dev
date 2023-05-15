@@ -1,10 +1,10 @@
-package telemetry
+package tracing
 
 import (
 	"context"
 	"sync"
 
-	"github.com/azure/azure-dev/cli/azd/internal/telemetry/baggage"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/baggage"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/trace"
 	"go.uber.org/atomic"

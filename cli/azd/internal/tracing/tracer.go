@@ -1,14 +1,12 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package telemetry
+package tracing
 
 import (
 	"context"
 
-	"github.com/azure/azure-dev/cli/azd/internal/telemetry/baggage"
-	"github.com/azure/azure-dev/cli/azd/internal/telemetry/fields"
-	"go.opentelemetry.io/otel"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/baggage"
 	"go.opentelemetry.io/otel/codes"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -150,9 +148,4 @@ func (s *wrapperSpan) SetAttributes(kv ...attribute.KeyValue) {
 // additional Spans on the same telemetry pipeline as the current Span.
 func (s *wrapperSpan) TracerProvider() trace.TracerProvider {
 	return s.span.TracerProvider()
-}
-
-// GetTracer returns the application tracer for azd.
-func GetTracer() Tracer {
-	return &wrapperTracer{otel.Tracer(fields.ServiceNameAzd)}
 }

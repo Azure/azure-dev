@@ -7,13 +7,17 @@ import (
 	"fmt"
 	"log"
 	"path/filepath"
+	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
+	"github.com/azure/azure-dev/cli/azd/pkg/azdo"
+	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/pflag"
 
@@ -110,10 +114,10 @@ func mapError(err error, span tracing.Span) {
 		errCode = fmt.Sprintf("service.%s.%d", serviceName, statusCode)
 	} else if errors.As(err, &armDeployErr) {
 		errDetails = append(errDetails, fields.ServiceName.String("arm"))
-		errCode = "service.arm.deploymentFailed"
+		errCode = "service.arm.deployment.failed"
 	} else if errors.As(err, &toolExecErr) {
 		toolName := "other"
-		cmdName := cleanCmd(toolExecErr.Cmd)
+		cmdName := cmdAsName(toolExecErr.Cmd)
 		if cmdName != "" {
 			toolName = cmdName
 		}
@@ -145,20 +149,18 @@ func mapServiceName(host string) string {
 	name := "other"
 
 	switch host {
-	case "dev.azure.com":
+	case azdo.AzDoHostName:
 		name = "azdo"
-	case "management.azure.com":
+	case azure.ManagementHostName:
 		name = "arm"
-	case "login.microsoftonline.com":
-		name = "aad"
-	case "graph.microsoft.com":
+	case graphsdk.HostName:
 		name = "graph"
 	}
 
 	return name
 }
 
-func cleanCmd(cmd string) string {
+func cmdAsName(cmd string) string {
 	cmd = filepath.Base(cmd)
 	if len(cmd) > 0 && cmd[0] == '.' { // hidden file, simply ignore the first period
 		if len(cmd) == 1 {
@@ -175,5 +177,5 @@ func cleanCmd(cmd string) string {
 		}
 	}
 
-	return cmd
+	return strings.ToLower(cmd)
 }

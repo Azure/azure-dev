@@ -158,6 +158,9 @@ func createTempScript(hookConfig *HookConfig) (string, error) {
 		}
 	case ShellTypePowershell:
 		ext = "ps1"
+		scriptHeader = []string{
+			"$ErrorActionPreference='Stop'",
+		}
 	}
 
 	// Write the temporary script file to OS temp dir

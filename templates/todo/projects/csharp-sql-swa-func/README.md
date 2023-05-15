@@ -75,118 +75,23 @@ Here's a high level architecture diagram that illustrates these components. Noti
 
 This template is structured to follow the [Azure Developer CLI](https://aka.ms/azure-dev/overview). You can learn more about `azd` architecture in [the official documentation](https://learn.microsoft.com/azure/developer/azure-developer-cli/make-azd-compatible?pivots=azd-create#understand-the-azd-architecture)
 
-### Azure Developer CLI - VS Code Extension
-
-The Azure Developer experience includes an Azure Developer CLI VS Code Extension that mirrors all of the Azure Developer CLI commands into the `azure.yaml` context menu and command palette options. If you are a VS Code user, then we highly recommend installing this extension for the best experience.
-
-Here's how to install it:
-
-#### VS Code
-
-1. Click on the "Extensions" tab in VS Code
-1. Search for "Azure Developer CLI" - authored by Microsoft
-1. Click "Install"
-
-#### Marketplace
-
-1. Go to the [Azure Developer CLI - VS Code Extension](https://marketplace.visualstudio.com/items?itemName=ms-azuretools.azure-dev) page
-1. Click "Install"
-
-Once the extension is installed, you can press `F1`, and type "Azure Developer CLI" to see all of your available options. You can also right click on your project's `azure.yaml` file for a list of commands.
-
 ### Next Steps
 
 At this point, you have a complete application deployed on Azure. But there is much more that the Azure Developer CLI can do. These next steps will introduce you to additional commands that will make creating applications on Azure much easier. Using the Azure Developer CLI, you can setup your pipelines, monitor your application, test and debug locally.
 
-#### Set up a pipeline using `azd pipeline`
+- [`azd pipeline config`](https://learn.microsoft.com/en-us/azure/developer/azure-developer-cli/configure-devops-pipeline?tabs=GitHub) - to configure a CI/CD pipeline (using GitHub Actions or Azure DevOps) to deploy your application whenever code is pushed to the main branch. 
 
-This template includes a GitHub Actions pipeline configuration file that will deploy your application whenever code is pushed to the main branch. You can find that pipeline file here: `.github/workflows`.
+- [`azd monitor`](https://learn.microsoft.com/en-us/azure/developer/azure-developer-cli/monitor-your-app) - to monitor the application and quickly navigate to the various Application Insights dashboards (e.g. overview, live metrics, logs)
 
-Setting up this pipeline requires you to give GitHub permission to deploy to Azure on your behalf, which is done via a Service Principal stored in a GitHub secret named `AZURE_CREDENTIALS`. The `azd pipeline config` command will automatically create a service principal for you. The command also helps to create a private GitHub repository and pushes code to the newly created repo.
+- [Run and Debug Locally](https://learn.microsoft.com/en-us/azure/developer/azure-developer-cli/debug?pivots=ide-vs-code) - using Visual Studio Code and the Azure Developer CLI extension
 
-Run the following command to set up a GitHub Action:
+- [`azd down`](https://learn.microsoft.com/en-us/azure/developer/azure-developer-cli/reference#azd-down) - to delete all the Azure resources created with this template 
 
-```bash
-azd pipeline config
-```
+- [Enable optional features, like APIM](./OPTIONAL_FEATURES.md) - for enhanced backend API protection and observability
 
-#### Monitor the application using `azd monitor`
-
-To help with monitoring applications, the Azure Developer CLI provides a `monitor` command to help you get to the various Application Insights dashboards.
-
-- Run the following command to open the "Overview" dashboard:
-
-  ```bash
-  azd monitor --overview
-  ```
-
-- Live Metrics Dashboard
-
-  Run the following command to open the "Live Metrics" dashboard:
-
-  ```bash
-  azd monitor --live
-  ```
-
-- Logs Dashboard
-
-  Run the following command to open the "Logs" dashboard:
-
-  ```bash
-  azd monitor --logs
-  ```
-
-#### Run and Debug Locally
-
-The easiest way to run and debug is to leverage the Azure Developer CLI Visual Studio Code Extension. Refer to this [walk-through](https://aka.ms/azure-dev/vscode) for more details.
-
-> **Note**
-> You'll have to manually start the `Start API` task, and then `Debug API` (F5). You'll be asked to pick from a list of running .NET processes, search for the name of your app and select it. 
-
-
-#### Clean up resources
-
-When you are done, you can delete all the Azure resources created with this template by running the following command:
-
-```bash
-azd down
-```
-
-### Enable Additional Features
-
-#### Enable [Azure API Management](https://learn.microsoft.com/azure/api-management/)
-
-This template is prepared to use Azure API Management (aka APIM) for backend API protection and observability. APIM supports the complete API lifecycle and abstract backend complexity from API consumers.
-
-To use APIM on this template you just need to set the environment variable with the following command:
-
-```bash
-azd env set USE_APIM true
-```
-And then execute `azd up` to provision and deploy. No worries if you already did `azd up`! You can set the `USE_APIM` environment variable at anytime and then just repeat the `azd up` command to run the incremental deployment.
-
-Here's the high level architecture diagram when APIM is used:
-
-!["Application architecture diagram with APIM"](assets/resources-with-apim.png)
-
-The frontend will be configured to make API requests through APIM instead of calling the backend directly, so that the following flow gets executed:
-
-1. APIM receives the frontend request, applies the configured policy to enable CORS, validates content and limits concurrency. Follow this [guide](https://learn.microsoft.com/azure/api-management/api-management-howto-policies) to understand how to customize the policy.  
-1. If there are no errors, the request is forwarded to the backend and then the backend response is sent back to the frontend.
-1. APIM emits logs, metrics, and traces for monitoring, reporting, and troubleshooting on every execution. Follow this [guide](https://learn.microsoft.com/azure/api-management/api-management-howto-use-azure-monitor) to visualize, query, and take actions on the metrics or logs coming from APIM.
-
-> NOTE:
->
-> By default, this template uses the Consumption tier that is a lightweight and serverless version of API Management service, billed per execution. Please check the [pricing page](https://azure.microsoft.com/pricing/details/api-management/) for more details.
-
-
-### Additional azd commands
+### Additional `azd` commands
 
 The Azure Developer CLI includes many other commands to help with your Azure development experience. You can view these commands at the terminal by running `azd help`. You can also view the full list of commands on our [Azure Developer CLI command](https://aka.ms/azure-dev/ref) page.
-
-## Troubleshooting/Known issues
-
-Sometimes, things go awry. If you happen to run into issues, then please review our ["Known Issues"](https://aka.ms/azure-dev/knownissues) page for help. If you continue to have issues, then please file an issue in our main [Azure Developer CLI](https://aka.ms/azure-dev/issues) repository.
 
 ## Security
 
@@ -197,22 +102,6 @@ This template creates a [managed identity](https://docs.microsoft.com/azure/acti
 ### Key Vault
 
 This template uses [Azure Key Vault](https://docs.microsoft.com/azure/key-vault/general/overview) to securely store your Azure SQL connection string for the provisioned Azure SQL Database. Key Vault is a cloud service for securely storing and accessing secrets (API keys, passwords, certificates, cryptographic keys) and makes it simple to give other Azure services access to them. As you continue developing your solution, you may add as many secrets to your Key Vault as you require.
-
-## Uninstall
-
-To uninstall the Azure Developer CLI:
-
-Windows:
-
-```
-powershell -ex AllSigned -c "Invoke-RestMethod 'https://aka.ms/uninstall-azd.ps1' | Invoke-Expression"
-```
-
-Linux/MacOS:
-
-```
-curl -fsSL https://aka.ms/uninstall-azd.sh | bash
-```
 
 ## Reporting Issues and Feedback
 

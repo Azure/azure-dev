@@ -50,88 +50,19 @@ Here's a high level architecture diagram that illustrates these components. Noti
 
 This template is structured to follow the [Azure Developer CLI](https://aka.ms/azure-dev/overview). You can learn more about `azd` architecture in [the official documentation](https://learn.microsoft.com/azure/developer/azure-developer-cli/make-azd-compatible?pivots=azd-create#understand-the-azd-architecture)
 
-### Azure Developer CLI - VS Code Extension
-
-The Azure Developer experience includes an Azure Developer CLI VS Code Extension that mirrors all of the Azure Developer CLI commands into the `azure.yaml` context menu and command palette options. If you are a VS Code user, then we highly recommend installing this extension for the best experience.
-
-Here's how to install it:
-
-#### VS Code
-
-1. Click on the "Extensions" tab in VS Code
-1. Search for "Azure Developer CLI" - authored by Microsoft
-1. Click "Install"
-
-#### Marketplace
-
-1. Go to the [Azure Developer CLI - VS Code Extension](https://marketplace.visualstudio.com/items?itemName=ms-azuretools.azure-dev) page
-1. Click "Install"
-
-Once the extension is installed, you can press `F1`, and type "Azure Developer CLI" to see all of your available options. You can also right click on your project's `azure.yaml` file for a list of commands.
-
 ### Next Steps
 
 At this point, you have a complete application deployed on Azure. But there is much more that the Azure Developer CLI can do. These next steps will introduce you to additional commands that will make creating applications on Azure much easier. Using the Azure Developer CLI, you can setup your pipelines, monitor your application, test and debug locally.
 
-#### Set up a pipeline using `azd pipeline`
+- [`azd pipeline config`](https://learn.microsoft.com/azure/developer/azure-developer-cli/configure-devops-pipeline?tabs=GitHub) - to configure a CI/CD pipeline (using GitHub Actions or Azure DevOps) to deploy your application whenever code is pushed to the main branch. 
 
-Please follow [https://aka.ms/azure-dev/terraform](https://aka.ms/azure-dev/terraform) to enable remote state before this section.
+- [`azd monitor`](https://learn.microsoft.com/azure/developer/azure-developer-cli/monitor-your-app) - to monitor the application and quickly navigate to the various Application Insights dashboards (e.g. overview, live metrics, logs)
 
-This template includes a GitHub Actions pipeline configuration file that will deploy your application whenever code is pushed to the main branch. You can find that pipeline file here: `.github/workflows`.
+- [Run and Debug Locally](https://learn.microsoft.com/azure/developer/azure-developer-cli/debug?pivots=ide-vs-code) - using Visual Studio Code and the Azure Developer CLI extension
 
-Setting up this pipeline requires you to give GitHub permission to deploy to Azure on your behalf, which is done via a Service Principal stored in a GitHub secret named `AZURE_CREDENTIALS`. The `azd pipeline config` command will automatically create a service principal for you. The command also helps to create a private GitHub repository and pushes code to the newly created repo.
+- [`azd down`](https://learn.microsoft.com/azure/developer/azure-developer-cli/reference#azd-down) - to delete all the Azure resources created with this template 
 
-Before you call the `azd pipeline config` command, you'll need to install the following:
-
-- [GitHub CLI (2.3+)](https://github.com/cli/cli)
-
-Also, you need to run `azd down` command before call the `azd pipeline config` command.
-
-Run the following command to set up a GitHub Action:
-
-```bash
-azd pipeline config
-```
-
-#### Monitor the application using `azd monitor`
-
-To help with monitoring applications, the Azure Developer CLI provides a `monitor` command to help you get to the various Application Insights dashboards.
-
-- Run the following command to open the "Overview" dashboard:
-
-  ```bash
-  azd monitor --overview
-  ```
-
-- Live Metrics Dashboard
-
-  Run the following command to open the "Live Metrics" dashboard:
-
-  ```bash
-  azd monitor --live
-  ```
-
-- Logs Dashboard
-
-  Run the following command to open the "Logs" dashboard:
-
-  ```bash
-  azd monitor --logs
-  ```
-
-#### Run and Debug Locally
-
-The easiest way to run and debug is to leverage the Azure Developer CLI Visual Studio Code Extension. Refer to this [walk-through](https://aka.ms/azure-dev/vscode) for more details.
-
-#### Clean up resources
-
-When you are done, you can delete all the Azure resources created with this template by running the following command:
-
-```bash
-azd down
-```
-
-### Additional azd commands
+### Additional `azd` commands
 
 The Azure Developer CLI includes many other commands to help with your Azure development experience. You can view these commands at the terminal by running `azd help`. You can also view the full list of commands on our [Azure Developer CLI command](https://aka.ms/azure-dev/ref) page.
 
@@ -145,16 +76,11 @@ Please retry to resolve when you meet the below error:
 
 ![image](https://user-images.githubusercontent.com/5254035/221769269-15914ac2-7260-4a29-b603-10baae2639cd.png)
 
-
 ## Security
 
 ### Roles
 
 This template creates a [managed identity](https://docs.microsoft.com/azure/active-directory/managed-identities-azure-resources/overview) for your app inside your Azure Active Directory tenant, and it is used to authenticate your app with Azure and other services that support Azure AD authentication like PostgreSQL Flexible server via access policies. You will see principalId referenced in the infrastructure as code files, that refers to the id of the currently logged in Azure CLI user, which will be granted access policies and permissions to run the application locally. To view your managed identity in the Azure Portal, follow these [steps](https://docs.microsoft.com/azure/active-directory/managed-identities-azure-resources/how-to-view-managed-identity-service-principal-portal).
-
-## Uninstall
-
-To remove the Azure Developer CLI, refer to [uninstall Azure Developer CLI](https://aka.ms/azd-install?tabs=baremetal%2Cwindows#uninstall-azd).
 
 ## Reporting Issues and Feedback
 

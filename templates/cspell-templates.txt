@@ -67,6 +67,7 @@ datasource
 DATASOURCE
 rdbms
 RDBMS
+snakeyaml
 sslmode
 pgaadauth
 pqsl

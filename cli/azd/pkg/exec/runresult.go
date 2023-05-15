@@ -25,6 +25,8 @@ func NewRunResult(code int, stdout, stderr string) RunResult {
 
 // ExitError is the error returned when a command unsuccessfully exits.
 type ExitError struct {
+	// The path or name of the command being invoked.
+	Cmd string
 	// The exit code of the command.
 	ExitCode int
 
@@ -39,10 +41,13 @@ type ExitError struct {
 
 func NewExitError(
 	exitErr exec.ExitError,
+	cmd string,
 	stdOut string,
 	stdErr string,
 	outputAvailable bool) error {
 	return &ExitError{
+		ExitCode:        exitErr.ExitCode(),
+		Cmd:             cmd,
 		err:             exitErr,
 		stdOut:          stdOut,
 		stdErr:          stdErr,

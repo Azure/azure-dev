@@ -200,7 +200,12 @@ func (r *commandRunner) Run(ctx context.Context, args RunArgs) (RunResult, error
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
 		outputAvailable := !args.Interactive
-		err = NewExitError(*exitErr, result.Stdout, result.Stderr, outputAvailable)
+		err = NewExitError(
+			*exitErr,
+			args.Cmd,
+			result.Stdout,
+			result.Stderr,
+			outputAvailable)
 	}
 
 	return result, err

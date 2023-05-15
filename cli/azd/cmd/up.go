@@ -15,6 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -54,6 +55,7 @@ type upAction struct {
 	flags                      *upFlags
 	env                        *environment.Environment
 	accountManager             account.Manager
+	projectConfig              *project.ProjectConfig
 	packageActionInitializer   actions.ActionInitializer[*packageAction]
 	provisionActionInitializer actions.ActionInitializer[*provisionAction]
 	deployActionInitializer    actions.ActionInitializer[*deployAction]
@@ -66,6 +68,7 @@ func newUpAction(
 	env *environment.Environment,
 	_ auth.LoggedInGuard,
 	accountManager account.Manager,
+	projectConfig *project.ProjectConfig,
 	packageActionInitializer actions.ActionInitializer[*packageAction],
 	provisionActionInitializer actions.ActionInitializer[*provisionAction],
 	deployActionInitializer actions.ActionInitializer[*deployAction],
@@ -76,6 +79,7 @@ func newUpAction(
 		flags:                      flags,
 		env:                        env,
 		accountManager:             accountManager,
+		projectConfig:              projectConfig,
 		packageActionInitializer:   packageActionInitializer,
 		provisionActionInitializer: provisionActionInitializer,
 		deployActionInitializer:    deployActionInitializer,

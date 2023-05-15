@@ -68,7 +68,13 @@ func testCommand(
 	// Run the command when we find a leaf command
 	if testCmd.Runnable() {
 		t.Run(testCmd.CommandPath(), func(t *testing.T) {
-			fullCmd := fmt.Sprintf("%s %s", testCmd.Parent().CommandPath(), testCmd.Use)
+			use := testCmd.Use
+
+			if v, has := testCmd.Annotations["azdtest.use"]; has {
+				use = v
+			}
+
+			fullCmd := fmt.Sprintf("%s %s", testCmd.Parent().CommandPath(), use)
 			args := strings.Split(fullCmd, " ")[1:]
 			args = append(args, "--cwd", cwd)
 			childCmd := cmd.NewRootCmd(true, chain)

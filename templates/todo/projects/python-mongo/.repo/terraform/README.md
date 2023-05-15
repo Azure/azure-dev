@@ -151,8 +151,6 @@ Run the following command to set up a GitHub Action:
 azd pipeline config
 ```
 
-> Support for Azure DevOps Pipelines is coming soon to `azd pipeline config`. In the meantime, you can follow the instructions found here: [.azdo/pipelines/README.md](./.azdo/pipelines/README.md) to set it up manually.
-
 #### Monitor the application using `azd monitor`
 
 To help with monitoring applications, the Azure Developer CLI provides a `monitor` command to help you get to the various Application Insights dashboards.

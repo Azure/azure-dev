@@ -46,15 +46,3 @@ func (c *azdCredential) GetToken(ctx context.Context, options policy.TokenReques
 		ExpiresOn: res.ExpiresOn.UTC(),
 	}, nil
 }
-
-// matchesLoginScopes checks if the elements contained in the slice match the scopes acquired during login.
-func matchesLoginScopes(scopes []string) bool {
-	for _, scope := range scopes {
-		_, matchLogin := loginScopesMap[scope]
-		if !matchLogin {
-			return false
-		}
-	}
-
-	return true
-}

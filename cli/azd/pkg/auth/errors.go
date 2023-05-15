@@ -18,10 +18,12 @@ const cDefaultReloginScenario = "reauthentication required"
 
 // ErrNoCurrentUser indicates that the current user is not logged in.
 // This is typically determined by inspecting the stored auth information and credentials on the machine.
-// If the credentials are not found or invalid, the user is considered not to be logged in.
+// If the auth information or credentials are not found or invalid, the user is considered not to be logged in.
 var ErrNoCurrentUser = errors.New("not logged in, run `azd auth login` to login")
 
 // ReLoginRequiredError indicates that the logged in user needs to perform a log in to reauthenticate.
+// This typically means that while the credentials stored on the machine are valid, the server has rejected
+// the credentials due to expired credentials, or additional challenges being required.
 type ReLoginRequiredError struct {
 	loginCmd string
 
@@ -29,6 +31,8 @@ type ReLoginRequiredError struct {
 	scenario string
 }
 
+// newReLoginRequiredError returns an error if the response indicates that the user needs to reauthenticate.
+// If it is not a reauthentication error, it returns false.
 func newReLoginRequiredError(
 	response *AadErrorResponse,
 	scopes []string) (error, bool) {
@@ -65,6 +69,18 @@ func (e *ReLoginRequiredError) init(response *AadErrorResponse, scopes []string)
 
 func (e *ReLoginRequiredError) Error() string {
 	return fmt.Sprintf("%s, run `%s` to log in", e.scenario, e.loginCmd)
+}
+
+// matchesLoginScopes checks if the elements contained in the slice match the scopes acquired during login.
+func matchesLoginScopes(scopes []string) bool {
+	for _, scope := range scopes {
+		_, matchLogin := loginScopesMap[scope]
+		if !matchLogin {
+			return false
+		}
+	}
+
+	return true
 }
 
 const authFailedPrefix string = "failed to authenticate"
@@ -144,7 +160,6 @@ func (e *AuthFailedError) Error() string {
 		return fmt.Sprintf("%s: %s", authFailedPrefix, e.httpErrorDetails())
 	}
 
-	log.Println(e.httpErrorDetails())
 	// Provide user-friendly error message based on the parsed response.
 	return fmt.Sprintf(
 		"%s:\n(%s) %s\n",

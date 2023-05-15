@@ -158,3 +158,38 @@ const (
 	// Number of tenants where listing of subscriptions failed
 	AccountSubscriptionsListTenantsFailed = attribute.Key("tenants.failed")
 )
+
+// Error related fields
+const (
+	ErrDetails = attribute.Key("error.details")
+)
+
+// Service related fields.
+const (
+	// The host of the service.
+	ServiceHost = attribute.Key("service.host")
+
+	// The name of the service.
+	ServiceName = attribute.Key("service.name")
+
+	// The status code of a response returned by the service.
+	// For HTTP, this corresponds to the HTTP status code.
+	ServiceStatusCode = attribute.Key("service.statusCode")
+
+	// The method of a request to the service.
+	// For HTTP, this corresponds to the HTTP method of the request made.
+	ServiceMethod = attribute.Key("service.method")
+
+	// An error code returned by the service in a response.
+	// For HTTP, the error code can be found in the response header or body.
+	ServiceErrorCode = attribute.Key("service.errorCode")
+)
+
+// Tool related fields
+const (
+	// The name of the tool.
+	ToolName = attribute.Key("tool.name")
+
+	// The exit code of the tool after invocation.
+	ToolExitCode = attribute.Key("tool.exitCode")
+)

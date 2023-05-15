@@ -70,3 +70,23 @@ func Test_Telemetry_Run(t *testing.T) {
 		)
 	})
 }
+
+func Test_mapError(t *testing.T) {
+
+	// type args struct {
+	// 	err  error
+	// 	span telemetry.Span
+	// }
+	// tests := []struct {
+	// 	name string
+	// 	args args
+	// }{
+	// 	// TODO: Add test cases.
+	// }
+	// for _, tt := range tests {
+	// 	t.Run(tt.name, func(t *testing.T) {
+	// 		span := &tracetest.SpanStub{}
+	// 		mapError(tt.args.err, span)
+	// 	})
+	// }
+}

@@ -5,9 +5,9 @@ import (
 	"log"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
-	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
-	"github.com/azure/azure-dev/cli/azd/internal/telemetry/events"
-	"github.com/azure/azure-dev/cli/azd/internal/telemetry/fields"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/spf13/pflag"
 
 	"go.opentelemetry.io/otel/codes"
@@ -30,14 +30,14 @@ func (m *TelemetryMiddleware) Run(ctx context.Context, next NextFn) (*actions.Ac
 	// Note: CommandPath is constructed using the Use member on each command up to the root.
 	// It does not contain user input, and is safe for telemetry emission.
 	cmdPath := events.GetCommandEventName(m.options.CommandPath)
-	spanCtx, span := telemetry.GetTracer().Start(ctx, cmdPath)
+	spanCtx, span := tracing.Start(ctx, cmdPath)
 
 	log.Printf("TraceID: %s", span.SpanContext().TraceID())
 
 	if !m.options.IsChildAction() {
 		// Set the command name as a baggage item on the span context.
 		// This allow inner actions to have command name attached.
-		spanCtx = telemetry.SetBaggageInContext(
+		spanCtx = tracing.SetBaggageInContext(
 			spanCtx,
 			fields.CmdEntry.String(cmdPath))
 	}
@@ -56,7 +56,7 @@ func (m *TelemetryMiddleware) Run(ctx context.Context, next NextFn) (*actions.Ac
 
 	defer func() {
 		// Include any usage attributes set
-		span.SetAttributes(telemetry.GetUsageAttributes()...)
+		span.SetAttributes(tracing.GetUsageAttributes()...)
 		span.End()
 	}()
 

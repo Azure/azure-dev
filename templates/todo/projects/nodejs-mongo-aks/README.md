@@ -33,6 +33,7 @@ Let's jump in and get this up and running in Azure. When you are finished, you w
 <sup>Screenshot of the deployed ToDo app</sup>
 
 ### Prerequisites
+> This template will create infrastructure and deploy code to Azure. If you don't have an Azure Subscription, you can sign up for a [free account here](https://azure.microsoft.com/free/). Make sure you have contributor role to the Azure subscription.
 
 The following prerequisites are required to use this application. Please ensure that you have them all installed locally.
 
@@ -109,10 +110,6 @@ The repo is structured to follow the [Azure Developer CLI](https://aka.ms/azure-
 - **GitHub Actions**: A sample GitHub action file is located in the `.github/workflows` folder.
 - **VS Code Configuration**: All VS Code configuration to run and debug the application is located in the `.vscode` folder.
 - **K8s Deployment Manifests**: All k8s manifest files to for deployment, services and ingress within the `manifests` folder or each service
-
-### Azure Subscription
-
-This template will create infrastructure and deploy code to Azure. If you don't have an Azure Subscription, you can sign up for a [free account here](https://azure.microsoft.com/free/).
 
 ### Azure Developer CLI - VS Code Extension
 

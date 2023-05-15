@@ -107,10 +107,6 @@ The repo is structured to follow the [Azure Developer CLI](https://aka.ms/azure-
 - **GitHub Actions**: A sample GitHub action file is located in the `.github/workflows` folder.
 - **VS Code Configuration**: All VS Code configuration to run and debug the application is located in the `.vscode` folder.
 
-### Azure Subscription
-
-This template will create infrastructure and deploy code to Azure. If you don't have an Azure Subscription, you can sign up for a [free account here](https://azure.microsoft.com/free/). Make sure you have contributor role to the Azure subscription.
-
 ### Azure Developer CLI - VS Code Extension
 
 The Azure Developer experience includes an Azure Developer CLI VS Code Extension that mirrors all of the Azure Developer CLI commands into the `azure.yaml` context menu and command palette options. If you are a VS Code user, then we highly recommend installing this extension for the best experience.

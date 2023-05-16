@@ -139,11 +139,11 @@ func mapError(err error, span tracing.Span) {
 		}
 
 		if len(codes) > 0 {
-			inner, err := json.Marshal(codes)
-			if err != nil {
+			if inner, err := json.Marshal(codes); err != nil {
 				log.Println("telemetry: failed to marshal inner error", err)
+			} else {
+				errDetails = append(errDetails, fields.ErrInner.String(string(inner)))
 			}
-			errDetails = append(errDetails, fields.ErrInner.String(string(inner)))
 		}
 
 		errCode = "service.arm.deployment.failed"

@@ -51,11 +51,12 @@ func (pc *pipelineConfigFlags) Bind(local *pflag.FlagSet, global *internal.Globa
 		"",
 		"The authentication type used between the pipeline provider and Azure for deployment (Only valid for GitHub provider). Valid values: federated, client-credentials.",
 	)
+	//nolint:lll
 	local.StringArrayVar(
 		&pc.PipelineRoleNames,
 		"principal-role",
 		pipeline.DefaultRoleNames,
-		"The roles to assign to the service principal.",
+		"The roles to assign to the service principal. By default the service principal will be granted the Contributor and User Access Administrator roles.",
 	)
 	// default provider is empty because it can be set from azure.yaml. By letting default here be empty, we know that
 	// there no customer input using --provider

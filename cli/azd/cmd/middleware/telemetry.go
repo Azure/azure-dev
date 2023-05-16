@@ -114,6 +114,40 @@ func mapError(err error, span tracing.Span) {
 		errCode = fmt.Sprintf("service.%s.%d", serviceName, statusCode)
 	} else if errors.As(err, &armDeployErr) {
 		errDetails = append(errDetails, fields.ServiceName.String("arm"))
+		codes := []*deploymentErrorCode{}
+		frame := 0
+		collect := func(details []*azcli.DeploymentErrorLine) {
+			code := collectCode(details, frame)
+			if code != nil {
+				codes = append(codes, code)
+			}
+
+			frame = frame + 1
+			for _, detail := range details {
+				if detail.Inner != nil {
+					code = collectCode(detail.Inner, frame)
+					if code != nil {
+						codes = append(codes, code)
+					}
+				}
+			}
+		}
+
+		collect([]*azcli.DeploymentErrorLine{armDeployErr.Details})
+
+		if len(codes) > 0 {
+			errDetails = append(errDetails, fields.ServiceErrorCode.String(codes[0].Code))
+			codes = codes[1:]
+		}
+
+		if len(codes) > 0 {
+			inner, err := json.Marshal(codes)
+			if err != nil {
+				log.Println("telemetry: failed to marshal inner error", err)
+			}
+			errDetails = append(errDetails, fields.ErrInner.String(string(inner)))
+		}
+
 		errCode = "service.arm.deployment.failed"
 	} else if errors.As(err, &toolExecErr) {
 		toolName := "other"
@@ -143,6 +177,32 @@ func mapError(err error, span tracing.Span) {
 	}
 
 	span.SetStatus(codes.Error, errCode)
+}
+
+type deploymentErrorCode struct {
+	Code  string
+	Frame int
+}
+
+// getDeploymentErrorCode returns the first error code from the deployment error details.
+func collectCode(lines []*azcli.DeploymentErrorLine, frame int) *deploymentErrorCode {
+	errCode := &deploymentErrorCode{Frame: frame}
+	sb := strings.Builder{}
+	for _, line := range lines {
+		if line != nil && line.Code != "" {
+			if sb.Len() > 0 {
+				sb.WriteString(",")
+			}
+			sb.WriteString(line.Code)
+		}
+	}
+
+	if sb.Len() > 0 {
+		errCode.Code = sb.String()
+		return errCode
+	}
+
+	return nil
 }
 
 func mapServiceName(host string) string {

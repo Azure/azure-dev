@@ -162,6 +162,8 @@ const (
 // Error related fields
 const (
 	ErrDetails = attribute.Key("error.details")
+
+	ErrInner = attribute.Key("error.inner")
 )
 
 // Service related fields.

@@ -179,3 +179,56 @@ func Test_cmdAsName(t *testing.T) {
 		})
 	}
 }
+
+// func Test_getDeploymentErrorCode(t *testing.T) {
+// 	tests := []struct {
+// 		name string
+// 		err  *azcli.DeploymentErrorLine
+// 		want string
+// 	}{
+// 		{
+// 			name: "WithNilError",
+// 			err:  nil,
+// 			want: "",
+// 		},
+// 		{
+// 			name: "WithEmptyError",
+// 			err:  &azcli.DeploymentErrorLine{},
+// 			want: "",
+// 		},
+// 		{
+// 			name: "WithErrorCode",
+// 			err: &azcli.DeploymentErrorLine{
+// 				Code: "SomeErrorCode",
+// 			},
+// 			want: "SomeErrorCode",
+// 		},
+// 		{
+// 			name: "WithInnerErrorCode",
+// 			err: &azcli.DeploymentErrorLine{
+// 				Inner: []*azcli.DeploymentErrorLine{
+// 					{Message: "MessageOnly"},
+// 					{Code: "InnerErrorCode"},
+// 				},
+// 			},
+// 			want: "InnerErrorCode",
+// 		},
+// 		{
+// 			name: "WithInnerErrorCode",
+// 			err: &azcli.DeploymentErrorLine{
+// 				Inner: []*azcli.DeploymentErrorLine{
+// 					{Message: "MessageOnly"},
+// 					{Code: "InnerErrorCode"},
+// 				},
+// 			},
+// 			want: "InnerErrorCode",
+// 		},
+// 	}
+// 	for _, tt := range tests {
+// 		t.Run(tt.name, func(t *testing.T) {
+// 			if got := getDeploymentErrorCode(tt.args.detail); got != tt.want {
+// 				t.Errorf("getDeploymentErrorCode() = %v, want %v", got, tt.want)
+// 			}
+// 		})
+// 	}
+// }

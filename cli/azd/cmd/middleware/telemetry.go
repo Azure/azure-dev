@@ -134,15 +134,10 @@ func mapError(err error, span tracing.Span) {
 
 		collect([]*azcli.DeploymentErrorLine{armDeployErr.Details}, 0)
 		if len(codes) > 0 {
-			errDetails = append(errDetails, fields.ServiceErrorCode.String(codes[0].Code))
-			codes = codes[1:]
-		}
-
-		if len(codes) > 0 {
-			if inner, err := json.Marshal(codes); err != nil {
-				log.Println("telemetry: failed to marshal inner error", err)
+			if codesJson, err := json.Marshal(codes); err != nil {
+				log.Println("telemetry: failed to marshal arm error codes", err)
 			} else {
-				errDetails = append(errDetails, fields.ErrInner.String(string(inner)))
+				errDetails = append(errDetails, fields.ServiceErrorCode.String(string(codesJson)))
 			}
 		}
 

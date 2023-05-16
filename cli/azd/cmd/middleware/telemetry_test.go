@@ -143,9 +143,12 @@ func Test_mapError(t *testing.T) {
 			},
 			wantErrReason: "service.arm.deployment.failed",
 			wantErrDetails: map[string]interface{}{
-				string(fields.ServiceName):      "arm",
-				string(fields.ServiceErrorCode): "Conflict,PreconditionFailed",
-				string(fields.ErrInner): mustMarshalJson([]interface{}{
+				string(fields.ServiceName): "arm",
+				string(fields.ServiceErrorCode): mustMarshalJson([]interface{}{
+					map[string]interface{}{
+						string(fields.ErrCode):  "Conflict,PreconditionFailed",
+						string(fields.ErrFrame): 0,
+					},
 					map[string]interface{}{
 						string(fields.ErrCode):  "OutOfCapacity,RegionOutOfCapacity",
 						string(fields.ErrFrame): 1,

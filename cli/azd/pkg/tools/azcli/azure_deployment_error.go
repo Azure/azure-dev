@@ -1,4 +1,4 @@
-package internal
+package azcli
 
 import (
 	"encoding/json"
@@ -8,37 +8,49 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
-type errorLine struct {
-	message     string
-	innerErrors []*errorLine
+type DeploymentErrorLine struct {
+	// The code of the error line, if applicable
+	Code string
+	// The message that represents the error
+	Message string
+	// Inner errors
+	Inner []*DeploymentErrorLine
 }
 
-func newErrorLine(message string, innerErrors []*errorLine) *errorLine {
-	return &errorLine{
-		message:     message,
-		innerErrors: innerErrors,
+func newErrorLine(code string, message string, inner []*DeploymentErrorLine) *DeploymentErrorLine {
+	return &DeploymentErrorLine{
+		Message: message,
+		Code:    code,
+		Inner:   inner,
 	}
 }
 
 type AzureDeploymentError struct {
 	Json string
+
+	Details *DeploymentErrorLine
 }
 
 func NewAzureDeploymentError(jsonErrorResponse string) *AzureDeploymentError {
-	return &AzureDeploymentError{Json: jsonErrorResponse}
+	err := &AzureDeploymentError{Json: jsonErrorResponse}
+	err.init()
+	return err
+}
+
+func (e *AzureDeploymentError) init() {
+	var errorMap map[string]interface{}
+	if err := json.Unmarshal([]byte(e.Json), &errorMap); err == nil {
+		e.Details = getErrorsFromMap(errorMap)
+	}
 }
 
 func (e *AzureDeploymentError) Error() string {
-	var errorMap map[string]interface{}
-	err := json.Unmarshal([]byte(e.Json), &errorMap)
-
-	// Return the original error string in the event of JSON marshaling error
-	if err != nil {
+	// Return the original error string if we can't parse the JSON
+	if e.Details == nil {
 		return e.Json
 	}
 
-	errors := getErrorsFromMap(errorMap)
-	lines := generateErrorOutput(errors)
+	lines := generateErrorOutput(e.Details)
 
 	var sb strings.Builder
 
@@ -49,14 +61,14 @@ func (e *AzureDeploymentError) Error() string {
 	return sb.String()
 }
 
-func generateErrorOutput(error *errorLine) []string {
+func generateErrorOutput(err *DeploymentErrorLine) []string {
 	lines := []string{}
 
-	if strings.TrimSpace(error.message) != "" {
-		lines = append(lines, error.message)
+	if strings.TrimSpace(err.Message) != "" {
+		lines = append(lines, err.Message)
 	}
 
-	for _, innerError := range error.innerErrors {
+	for _, innerError := range err.Inner {
 		if innerError != nil {
 			lines = append(lines, generateErrorOutput(innerError)...)
 		}
@@ -65,12 +77,12 @@ func generateErrorOutput(error *errorLine) []string {
 	return lines
 }
 
-func getErrorsFromMap(errorMap map[string]interface{}) *errorLine {
-	var output *errorLine
+func getErrorsFromMap(errorMap map[string]interface{}) *DeploymentErrorLine {
+	var output *DeploymentErrorLine
 	var code, message string
 
 	// Size of nested output is not known ahead of time.
-	nestedOutput := []*errorLine{}
+	nestedOutput := []*DeploymentErrorLine{}
 
 	for key, value := range errorMap {
 		switch strings.ToLower(key) {
@@ -87,9 +99,9 @@ func getErrorsFromMap(errorMap map[string]interface{}) *errorLine {
 			}
 		case "error":
 			errorMap, ok := value.(map[string]interface{})
-			var line *errorLine
+			var line *DeploymentErrorLine
 			if !ok {
-				line = &errorLine{message: fmt.Sprintf("%s", value)}
+				line = &DeploymentErrorLine{Message: fmt.Sprintf("%s", value)}
 			} else {
 				line = getErrorsFromMap(errorMap)
 			}
@@ -98,11 +110,11 @@ func getErrorsFromMap(errorMap map[string]interface{}) *errorLine {
 				nestedOutput = append(nestedOutput, line)
 			}
 		case "details":
-			var lines []*errorLine
+			var lines []*DeploymentErrorLine
 			errorArray, ok := value.([]interface{})
 			if !ok {
-				line := &errorLine{message: fmt.Sprintf("%s", value)}
-				lines = []*errorLine{line}
+				line := &DeploymentErrorLine{Message: fmt.Sprintf("%s", value)}
+				lines = []*DeploymentErrorLine{line}
 			} else {
 				lines = getErrorsFromArray(errorArray)
 			}
@@ -115,7 +127,7 @@ func getErrorsFromMap(errorMap map[string]interface{}) *errorLine {
 
 	// Omit generic deployment failed messages
 	if code == "DeploymentFailed" || code == "ResourceDeploymentFailure" {
-		return newErrorLine(errorMessage, nestedOutput)
+		return newErrorLine("", errorMessage, nestedOutput)
 	}
 
 	if code != "" && message != "" {
@@ -124,17 +136,17 @@ func getErrorsFromMap(errorMap map[string]interface{}) *errorLine {
 		errorMessage = fmt.Sprintf("- %s", message)
 	}
 
-	output = newErrorLine(errorMessage, nestedOutput)
+	output = newErrorLine(code, errorMessage, nestedOutput)
 
 	return output
 }
 
-func getErrorsFromArray(errorArray []interface{}) []*errorLine {
-	output := make([]*errorLine, len(errorArray))
+func getErrorsFromArray(errorArray []interface{}) []*DeploymentErrorLine {
+	output := make([]*DeploymentErrorLine, len(errorArray))
 	for index, value := range errorArray {
 		errorMap, ok := value.(map[string]interface{})
 		if !ok {
-			output[index] = &errorLine{message: fmt.Sprintf("%s", value)}
+			output[index] = &DeploymentErrorLine{Message: fmt.Sprintf("%s", value)}
 		} else {
 			output[index] = getErrorsFromMap(errorMap)
 		}

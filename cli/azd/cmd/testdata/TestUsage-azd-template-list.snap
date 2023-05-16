@@ -1,5 +1,5 @@
 
-Show list of sample azd templates.
+Show list of sample azd templates. (Beta)
 
 Usage
   azd template list [flags]

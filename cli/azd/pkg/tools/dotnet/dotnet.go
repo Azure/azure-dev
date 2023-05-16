@@ -69,9 +69,9 @@ func (cli *dotNetCli) CheckInstalled(ctx context.Context) error {
 
 func (cli *dotNetCli) Restore(ctx context.Context, project string) error {
 	runArgs := exec.NewRunArgs("dotnet", "restore", project)
-	res, err := cli.commandRunner.Run(ctx, runArgs)
+	_, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
-		return fmt.Errorf("dotnet restore on project '%s' failed: %s: %w", project, res.String(), err)
+		return fmt.Errorf("dotnet restore on project '%s' failed: %w", project, err)
 	}
 	return nil
 }
@@ -86,9 +86,9 @@ func (cli *dotNetCli) Build(ctx context.Context, project string, configuration s
 		runArgs = runArgs.AppendParams("--output", output)
 	}
 
-	res, err := cli.commandRunner.Run(ctx, runArgs)
+	_, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
-		return fmt.Errorf("dotnet build on project '%s' failed: %s: %w", project, res.String(), err)
+		return fmt.Errorf("dotnet build on project '%s' failed: %w", project, err)
 	}
 	return nil
 }
@@ -103,18 +103,18 @@ func (cli *dotNetCli) Publish(ctx context.Context, project string, configuration
 		runArgs = runArgs.AppendParams("--output", output)
 	}
 
-	res, err := cli.commandRunner.Run(ctx, runArgs)
+	_, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
-		return fmt.Errorf("dotnet publish on project '%s' failed: %s: %w", project, res.String(), err)
+		return fmt.Errorf("dotnet publish on project '%s' failed: %w", project, err)
 	}
 	return nil
 }
 
 func (cli *dotNetCli) InitializeSecret(ctx context.Context, project string) error {
 	runArgs := exec.NewRunArgs("dotnet", "user-secrets", "init", "--project", project)
-	res, err := cli.commandRunner.Run(ctx, runArgs)
+	_, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
-		return fmt.Errorf("failed to initialize secrets at project '%s': %w (%s)", project, err, res.String())
+		return fmt.Errorf("failed to initialize secrets at project '%s': %w", project, err)
 	}
 	return nil
 }
@@ -131,9 +131,9 @@ func (cli *dotNetCli) SetSecrets(ctx context.Context, secrets map[string]string,
 		NewRunArgs("dotnet", "user-secrets", "set", "--project", project).
 		WithStdIn(strings.NewReader(string(secretsJson)))
 
-	res, err := cli.commandRunner.Run(ctx, runArgs)
+	_, err = cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
-		return fmt.Errorf("failed running %s secret set %s: %w", cli.Name(), res.String(), err)
+		return fmt.Errorf("failed running %s secret set: %w", cli.Name(), err)
 	}
 	return nil
 }

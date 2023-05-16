@@ -76,7 +76,7 @@ func (p *GitHubScmProvider) preConfigureCheck(
 }
 
 // name returns the name of the provider
-func (p *GitHubScmProvider) name() string {
+func (p *GitHubScmProvider) Name() string {
 	return "GitHub"
 }
 
@@ -391,7 +391,7 @@ func (p *GitHubCiProvider) preConfigureCheck(
 }
 
 // name returns the name of the provider.
-func (p *GitHubCiProvider) name() string {
+func (p *GitHubCiProvider) Name() string {
 	return "GitHub"
 }
 

@@ -148,5 +148,5 @@ func Test_ContainerApp_AddRevision(t *testing.T) {
 	err = jsonDecoder.Decode(&updatedContainerApp)
 	require.NoError(t, err)
 	require.Equal(t, updatedImageName, *updatedContainerApp.Properties.Template.Containers[0].Image)
-	require.Equal(t, "azd-deploy-0", *updatedContainerApp.Properties.Template.RevisionSuffix)
+	require.Equal(t, "azd-0", *updatedContainerApp.Properties.Template.RevisionSuffix)
 }

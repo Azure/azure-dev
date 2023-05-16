@@ -11,7 +11,7 @@ import { fileExists } from '../utils/fileUtils';
 
 const AzureYamlGlobPattern: vscode.GlobPattern = '**/[aA][zZ][uU][rR][eE].[yY][aA][mM][lL]';
 
-// If the command was invoked with a specific file context, use the file context as the working directory for running Azure dev CLI commands.
+// If the command was invoked with a specific file context, use the file context as the working directory for running Azure developer CLI commands.
 // Otherwise search the workspace for "azure.yaml" files. If only one is found, use it (i.e. its folder). If more than one is found, ask the user which one to use.
 // If at this point we still do not have a working directory, prompt the user to select one.
 export async function getWorkingFolder(context: IActionContext, selectedFile?: vscode.Uri): Promise<string> {

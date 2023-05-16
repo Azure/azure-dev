@@ -150,7 +150,7 @@ type AzCli interface {
 		ctx context.Context,
 		subscriptionId string,
 		applicationName string,
-		roleToAssign string,
+		rolesToAssign []string,
 	) (json.RawMessage, error)
 	CheckRoleAssignments(
 		ctx context.Context,
@@ -351,11 +351,16 @@ func (cli *azCli) UserAgent() string {
 func (cli *azCli) createDefaultClientOptionsBuilder(ctx context.Context) *azsdk.ClientOptionsBuilder {
 	return azsdk.NewClientOptionsBuilder().
 		WithTransport(httputil.GetHttpClient(ctx)).
-		WithPerCallPolicy(azsdk.NewUserAgentPolicy(cli.UserAgent()))
+		WithPerCallPolicy(azsdk.NewUserAgentPolicy(cli.UserAgent())).
+		WithPerCallPolicy(azsdk.NewMsCorrelationPolicy(ctx))
 }
 
-func clientOptionsBuilder(httpClient httputil.HttpClient, userAgent string) *azsdk.ClientOptionsBuilder {
+func clientOptionsBuilder(
+	ctx context.Context,
+	httpClient httputil.HttpClient,
+	userAgent string) *azsdk.ClientOptionsBuilder {
 	return azsdk.NewClientOptionsBuilder().
 		WithTransport(httpClient).
-		WithPerCallPolicy(azsdk.NewUserAgentPolicy(userAgent))
+		WithPerCallPolicy(azsdk.NewUserAgentPolicy(userAgent)).
+		WithPerCallPolicy(azsdk.NewMsCorrelationPolicy(ctx))
 }

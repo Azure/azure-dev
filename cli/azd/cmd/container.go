@@ -111,12 +111,14 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		}, formatter)
 	})
 
-	container.RegisterSingleton(func(console input.Console) exec.CommandRunner {
+	container.RegisterSingleton(func(console input.Console, rootOptions *internal.GlobalCommandOptions) exec.CommandRunner {
 		return exec.NewCommandRunner(
-			console.Handles().Stdin,
-			console.Handles().Stdout,
-			console.Handles().Stderr,
-		)
+			&exec.RunnerOptions{
+				Stdin:        console.Handles().Stdin,
+				Stdout:       console.Handles().Stdout,
+				Stderr:       console.Handles().Stderr,
+				DebugLogging: rootOptions.EnableDebugLogging,
+			})
 	})
 	container.RegisterSingleton(input.NewConsoleMessaging)
 

@@ -96,6 +96,10 @@ func Test_CLI_Env_Management(t *testing.T) {
 	environmentList = envList(ctx, t, cli)
 	require.Len(t, environmentList, 2)
 	requireIsDefault(t, environmentList, envName)
+
+	// Verify that running refresh with an explicit env name from an argument and from a flag leads to an error.
+	_, err = cli.RunCommand(context.Background(), "env", "refresh", "-e", "from-flag", "from-arg")
+	require.Error(t, err)
 }
 
 // Verifies azd env commands that manage environment values.

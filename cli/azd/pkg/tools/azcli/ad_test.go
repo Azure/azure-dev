@@ -14,6 +14,8 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+var defaultRoleNames = []string{"Contributor", "User Access Administrator"}
+
 var expectedServicePrincipalCredential AzureCredentials = AzureCredentials{
 	ClientId:                   "CLIENT_ID",
 	ClientSecret:               "CLIENT_SECRET",
@@ -71,7 +73,7 @@ func Test_CreateOrUpdateServicePrincipal(t *testing.T) {
 			*mockContext.Context,
 			expectedServicePrincipalCredential.SubscriptionId,
 			"APPLICATION_NAME",
-			"Contributor",
+			defaultRoleNames,
 		)
 		require.NoError(t, err)
 		require.NotNil(t, rawMessage)
@@ -98,7 +100,7 @@ func Test_CreateOrUpdateServicePrincipal(t *testing.T) {
 			*mockContext.Context,
 			expectedServicePrincipalCredential.SubscriptionId,
 			"APPLICATION_NAME",
-			"Contributor",
+			defaultRoleNames,
 		)
 		require.NoError(t, err)
 		require.NotNil(t, rawMessage)
@@ -126,7 +128,7 @@ func Test_CreateOrUpdateServicePrincipal(t *testing.T) {
 			*mockContext.Context,
 			expectedServicePrincipalCredential.SubscriptionId,
 			"APPLICATION_NAME",
-			"Contributor",
+			defaultRoleNames,
 		)
 		require.NoError(t, err)
 		require.NotNil(t, rawMessage)
@@ -149,7 +151,7 @@ func Test_CreateOrUpdateServicePrincipal(t *testing.T) {
 			*mockContext.Context,
 			expectedServicePrincipalCredential.SubscriptionId,
 			"APPLICATION_NAME",
-			"Contributor",
+			defaultRoleNames,
 		)
 		require.Error(t, err)
 		require.Nil(t, rawMessage)
@@ -167,7 +169,7 @@ func Test_CreateOrUpdateServicePrincipal(t *testing.T) {
 			*mockContext.Context,
 			expectedServicePrincipalCredential.SubscriptionId,
 			"APPLICATION_NAME",
-			"Contributor",
+			defaultRoleNames,
 		)
 		require.Error(t, err)
 		require.Nil(t, rawMessage)

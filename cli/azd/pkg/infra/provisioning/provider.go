@@ -54,6 +54,7 @@ type NewProviderFn func(
 	commandRunner exec.CommandRunner,
 	prompters Prompters,
 	principalProvider CurrentPrincipalIdProvider,
+	alphaFeatureManager *alpha.FeatureManager,
 ) (Provider, error)
 
 var (
@@ -132,7 +133,6 @@ type Provider interface {
 	) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress]
 	Destroy(
 		ctx context.Context,
-		deployment *Deployment,
 		options DestroyOptions,
 	) *async.InteractiveTaskWithProgress[*DestroyResult, *DestroyProgress]
 }
@@ -172,7 +172,8 @@ func NewProvider(
 				alpha.GetEnableCommand(alphaFeatureId),
 			)
 		}
-		console.MessageUxItem(ctx, alpha.WarningMessage(alphaFeatureId))
+
+		console.WarnForFeature(ctx, alphaFeatureId)
 	}
 
 	newProviderFn, ok := providers[infraOptions.Provider]
@@ -182,7 +183,7 @@ func NewProvider(
 	}
 
 	provider, err := newProviderFn(
-		ctx, env, projectPath, infraOptions, console, azCli, commandRunner, prompters, principalProvider)
+		ctx, env, projectPath, infraOptions, console, azCli, commandRunner, prompters, principalProvider, alphaFeatureManager)
 	if err != nil {
 		return nil, fmt.Errorf("error creating provider for type '%s' : %w", infraOptions.Provider, err)
 	}

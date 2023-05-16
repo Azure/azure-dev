@@ -129,10 +129,8 @@ func TestTerraformDestroy(t *testing.T) {
 	progressDone := make(chan bool)
 
 	infraProvider := createTerraformProvider(mockContext)
-	deployment := Deployment{}
-
 	destroyOptions := NewDestroyOptions(false, false)
-	destroyTask := infraProvider.Destroy(*mockContext.Context, &deployment, destroyOptions)
+	destroyTask := infraProvider.Destroy(*mockContext.Context, destroyOptions)
 
 	go func() {
 		for destroyProgress := range destroyTask.Progress() {

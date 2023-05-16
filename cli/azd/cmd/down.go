@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -99,7 +100,7 @@ func newDownAction(
 
 func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	// silent manager for running Plan()
-	infraManager, err := createProvisioningManager(ctx, a, &project.MutedConsole{ParentConsole: a.console})
+	infraManager, err := createProvisioningManager(ctx, a, a.console)
 	if err != nil {
 		return nil, fmt.Errorf("creating provisioning manager: %w", err)
 	}
@@ -110,24 +111,10 @@ func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		TitleNote: "Local application code is not deleted when running 'azd down'.",
 	})
 
-	spinnerMsg := "Fetching resources groups."
-	a.console.ShowSpinner(ctx, spinnerMsg, input.Step)
-
-	deploymentPlan, err := infraManager.Plan(ctx)
-	a.console.StopSpinner(ctx, spinnerMsg, input.GetStepResultFormat(err))
-	a.console.Message(ctx, "")
-	if err != nil {
-		return nil, fmt.Errorf("planning destroy: %w", err)
-	}
-
-	// re-create manager with output capabilities to handle output
-	infraManager, err = createProvisioningManager(ctx, a, a.console)
-	if err != nil {
-		return nil, fmt.Errorf("creating provisioning manager: %w", err)
-	}
+	startTime := time.Now()
 
 	destroyOptions := provisioning.NewDestroyOptions(a.flags.forceDelete, a.flags.purgeDelete)
-	destroyResult, err := infraManager.Destroy(ctx, &deploymentPlan.Deployment, destroyOptions)
+	destroyResult, err := infraManager.Destroy(ctx, destroyOptions)
 	if err != nil {
 		return nil, fmt.Errorf("deleting infrastructure: %w", err)
 	}
@@ -144,7 +131,7 @@ func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			Header: "Your Azure resources have been deleted.",
+			Header: fmt.Sprintf("Your application was removed from Azure in %s.", ux.DurationAsText(time.Since(startTime))),
 		},
 	}, nil
 }

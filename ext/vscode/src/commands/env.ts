@@ -76,7 +76,7 @@ export async function deleteEnvironment(context: IActionContext, selectedItem?: 
         
         await vscode.workspace.fs.delete(environmentDirectory, { recursive: true, useTrash: false });
                 
-        // TODO: Use Azure Dev CLI to delete environment. https://github.com/Azure/azure-dev/issues/1554
+        // TODO: Use Azure Developer CLI to delete environment. https://github.com/Azure/azure-dev/issues/1554
         // const azureCli = await createAzureDevCli(context);
         // azureCli.commandBuilder.withArg('env').withArg('delete').withQuotedArg(name);
         // await spawnAsync(azureCli.commandBuilder.build(), azureCli.spawnOptions(cwd));

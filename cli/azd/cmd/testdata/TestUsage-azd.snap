@@ -9,8 +9,8 @@ Commands
     auth     	: Authenticate with Azure.
     config   	: Manage azd configurations (ex: default Azure subscription, location).
     init     	: Initialize a new application.
-    restore  	: Restores the application's dependencies.
-    template 	: Find and view template details.
+    restore  	: Restores the application's dependencies. (Beta)
+    template 	: Find and view template details. (Beta)
 
   Manage Azure resources and app deployments
     deploy   	: Deploy the application's code to Azure.
@@ -21,8 +21,8 @@ Commands
     up       	: Provision Azure resources, and deploy your project with a single command.
 
   Monitor, test and release your app
-    monitor  	: Monitor a deployed application.
-    pipeline 	: Manage and configure your deployment pipelines.
+    monitor  	: Monitor a deployed application. (Beta)
+    pipeline 	: Manage and configure your deployment pipelines. (Beta)
 
   About, help and upgrade
     version  	: Print the version number of Azure Developer CLI.

@@ -27,6 +27,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -422,14 +423,14 @@ func Test_CLI_InfraCreateAndDeleteResourceTerraformRemote(t *testing.T) {
 	require.NoError(t, err, "failed expanding sample")
 
 	//Create remote state resources
-	commandRunner := exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
+	commandRunner := exec.NewCommandRunner(nil)
 	runArgs := newRunArgs("az", "group", "create", "--name", backendResourceGroupName, "--location", location)
 
 	_, err = commandRunner.Run(ctx, runArgs)
 	require.NoError(t, err)
 
 	defer func() {
-		commandRunner := exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
+		commandRunner := exec.NewCommandRunner(nil)
 		runArgs := newRunArgs("az", "group", "delete", "--name", backendResourceGroupName, "--yes")
 		_, err = commandRunner.Run(ctx, runArgs)
 		require.NoError(t, err)
@@ -485,8 +486,7 @@ func Test_CLI_InfraCreateAndDeleteResourceTerraformRemote(t *testing.T) {
 }
 
 func newRunArgs(cmd string, args ...string) exec.RunArgs {
-	runArgs := exec.NewRunArgs(cmd, args...)
-	return runArgs.WithEnrichError(true)
+	return exec.NewRunArgs(cmd, args...)
 }
 
 func TestMain(m *testing.M) {
@@ -533,7 +533,7 @@ func logHandles(t *testing.T, path string) {
 	}
 
 	args := exec.NewRunArgs(handle, path, "-nobanner")
-	cmd := exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
+	cmd := exec.NewCommandRunner(nil)
 	rr, err := cmd.Run(context.Background(), args)
 	if err != nil {
 		t.Logf("handle.exe failed. stdout: %s, stderr: %s\n", rr.Stdout, rr.Stderr)
@@ -546,8 +546,7 @@ func logHandles(t *testing.T, path string) {
 	_ = telemetry.GetTelemetrySystem()
 
 	// Log this to telemetry for ease of correlation
-	tracer := telemetry.GetTracer()
-	_, span := tracer.Start(context.Background(), "test.file_cleanup_failure")
+	_, span := tracing.Start(context.Background(), "test.file_cleanup_failure")
 	span.SetAttributes(attribute.String("handle.stdout", rr.Stdout))
 	span.SetAttributes(attribute.String("ci.build.number", os.Getenv("BUILD_BUILDNUMBER")))
 	span.End()

@@ -39,8 +39,8 @@ type subareaProvider interface {
 		infraOptions provisioning.Options,
 		projectPath string,
 	) (bool, error)
-	// name returns the name of the provider
-	name() string
+	// Name returns the Name of the provider
+	Name() string
 }
 
 // gitRepositoryDetails provides a common abstraction across all scm providers.

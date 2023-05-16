@@ -64,6 +64,7 @@ ineffassign
 javac
 jmes
 keychain
+LASTEXITCODE
 ldflags
 lechnerc77
 mgmt
@@ -93,6 +94,9 @@ pyapp
 pyvenv
 restoreapp
 retriable
+# hyphen is optional, "re-authentication" and "reauthentication" are equivalent.
+reauthentication
+relogin
 rzip
 secureobject
 securestring
@@ -116,6 +120,7 @@ tracetest
 Truef
 typeflag
 unmarshalling
+unmarshaled
 unsetenvs
 unsets
 utsname

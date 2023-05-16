@@ -103,9 +103,9 @@ type AadErrorResponse struct {
 // This serves as a wrapper around MSAL related errors.
 type AuthFailedError struct {
 	// The HTTP response motivating the error, if available
-	rawResp *http.Response
+	RawResp *http.Response
 	// The unmarshaled error response, if available
-	parsed *AadErrorResponse
+	Parsed *AadErrorResponse
 
 	innerErr error
 }
@@ -117,26 +117,26 @@ func newAuthFailedErrorFromMsalErr(err error) error {
 	if errors.As(err, &msalCallErr) {
 		res = msalCallErr.Resp
 	} else if errors.As(err, &authFailedErr) { // in case this is re-thrown in a retry loop
-		res = authFailedErr.rawResp
+		res = authFailedErr.RawResp
 	}
 
-	e := &AuthFailedError{rawResp: res, innerErr: err}
+	e := &AuthFailedError{RawResp: res, innerErr: err}
 	e.parseResponse()
 	return e
 }
 
 func (e *AuthFailedError) parseResponse() {
-	if e.rawResp == nil {
+	if e.RawResp == nil {
 		return
 	}
 
-	body, err := io.ReadAll(e.rawResp.Body)
-	e.rawResp.Body.Close()
+	body, err := io.ReadAll(e.RawResp.Body)
+	e.RawResp.Body.Close()
 	if err != nil {
 		log.Printf("error reading aad response body: %v", err)
 		return
 	}
-	e.rawResp.Body = io.NopCloser(bytes.NewReader(body))
+	e.RawResp.Body = io.NopCloser(bytes.NewReader(body))
 
 	var er AadErrorResponse
 	if err := json.Unmarshal(body, &er); err != nil {
@@ -144,7 +144,7 @@ func (e *AuthFailedError) parseResponse() {
 		return
 	}
 
-	e.parsed = &er
+	e.Parsed = &er
 }
 
 func (e *AuthFailedError) Unwrap() error {
@@ -152,11 +152,11 @@ func (e *AuthFailedError) Unwrap() error {
 }
 
 func (e *AuthFailedError) Error() string {
-	if e.rawResp == nil { // non-http error, simply append inner error
+	if e.RawResp == nil { // non-http error, simply append inner error
 		return fmt.Sprintf("%s: %s", authFailedPrefix, e.innerErr.Error())
 	}
 
-	if e.parsed == nil { // unable to parse, provide HTTP error details
+	if e.Parsed == nil { // unable to parse, provide HTTP error details
 		return fmt.Sprintf("%s: %s", authFailedPrefix, e.httpErrorDetails())
 	}
 
@@ -164,29 +164,29 @@ func (e *AuthFailedError) Error() string {
 	return fmt.Sprintf(
 		"%s:\n(%s) %s\n",
 		authFailedPrefix,
-		e.parsed.Error,
+		e.Parsed.Error,
 		// ErrorDescription contains multiline messaging that has TraceID, CorrelationID,
 		// and other useful information embedded in it. Thus, it is not required to log other response body fields.
-		e.parsed.ErrorDescription)
+		e.Parsed.ErrorDescription)
 }
 
 func (e *AuthFailedError) httpErrorDetails() string {
 	msg := &bytes.Buffer{}
 	fmt.Fprintf(msg,
 		"%s %s://%s%s\n",
-		e.rawResp.Request.Method,
-		e.rawResp.Request.URL.Scheme,
-		e.rawResp.Request.URL.Host,
-		e.rawResp.Request.URL.Path)
+		e.RawResp.Request.Method,
+		e.RawResp.Request.URL.Scheme,
+		e.RawResp.Request.URL.Host,
+		e.RawResp.Request.URL.Path)
 	fmt.Fprintln(msg, "--------------------------------------------------------------------------------")
-	fmt.Fprintf(msg, "RESPONSE %d: %s\n", e.rawResp.StatusCode, e.rawResp.Status)
+	fmt.Fprintf(msg, "RESPONSE %d: %s\n", e.RawResp.StatusCode, e.RawResp.Status)
 	fmt.Fprintln(msg, "--------------------------------------------------------------------------------")
-	body, err := io.ReadAll(e.rawResp.Body)
-	e.rawResp.Body.Close()
+	body, err := io.ReadAll(e.RawResp.Body)
+	e.RawResp.Body.Close()
 	if err != nil {
 		fmt.Fprintf(msg, "Error reading response body: %v", err)
 	} else if len(body) > 0 {
-		e.rawResp.Body = io.NopCloser(bytes.NewReader(body))
+		e.RawResp.Body = io.NopCloser(bytes.NewReader(body))
 		if err := json.Indent(msg, body, "", "  "); err != nil {
 			// failed to pretty-print so just dump it verbatim
 			fmt.Fprint(msg, string(body))

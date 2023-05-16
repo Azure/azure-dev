@@ -10,6 +10,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
+	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -101,22 +102,63 @@ func Test_mapError(t *testing.T) {
 		{
 			name: "WithToolExitError",
 			err: &exec.ExitError{
-				Cmd:      "myTool",
+				Cmd:      "any",
 				ExitCode: 51,
 			},
-			wantErrReason: "tool.myTool.failed",
+			wantErrReason: "tool.any.failed",
 			wantErrDetails: map[string]interface{}{
-				string(fields.ToolName):     "myTool",
+				string(fields.ToolName):     "any",
 				string(fields.ToolExitCode): 51},
 		},
 		{
 			name: "WithArmDeploymentError",
 			err: &azcli.AzureDeploymentError{
-				Json: "",
+				Details: &azcli.DeploymentErrorLine{
+					Code: "",
+					Inner: []*azcli.DeploymentErrorLine{
+						{
+							Code: "Conflict",
+							Inner: []*azcli.DeploymentErrorLine{
+								{Code: "OutOfCapacity"},
+								{Code: "RegionOutOfCapacity"},
+							},
+						},
+						{
+							Code:  "PreconditionFailed",
+							Inner: []*azcli.DeploymentErrorLine{},
+						},
+						{
+							Code: "",
+							Inner: []*azcli.DeploymentErrorLine{
+								{
+									Code: "ServiceUnavailable",
+									Inner: []*azcli.DeploymentErrorLine{
+										{Code: "UnknownError"},
+									},
+								},
+							},
+						},
+					},
+				},
 			},
 			wantErrReason: "service.arm.deployment.failed",
 			wantErrDetails: map[string]interface{}{
-				string(fields.ServiceName): "arm",
+				string(fields.ServiceName):      "arm",
+				string(fields.ServiceErrorCode): "Conflict,PreconditionFailed",
+				string(fields.ErrInner): mustMarshalJson([]interface{}{
+					map[string]interface{}{
+						string(fields.ErrCode):  "OutOfCapacity,RegionOutOfCapacity",
+						string(fields.ErrFrame): 1,
+					},
+					map[string]interface{}{
+						string(fields.ErrCode):  "ServiceUnavailable",
+						string(fields.ErrFrame): 1,
+					},
+					map[string]interface{}{
+						string(fields.ErrCode):  "UnknownError",
+						string(fields.ErrFrame): 2,
+					},
+				}),
 			},
 		},
 		{
@@ -139,6 +181,27 @@ func Test_mapError(t *testing.T) {
 				string(fields.ServiceMethod):     "GET",
 				string(fields.ServiceErrorCode):  "ServiceUnavailable",
 				string(fields.ServiceStatusCode): 503,
+			},
+		},
+		{
+			name: "WithAuthFailedError",
+			err: &auth.AuthFailedError{
+				Parsed: &auth.AadErrorResponse{
+					Error: "invalid_grant",
+					ErrorCodes: []int{
+						50076,
+						50078,
+						50079,
+					},
+					CorrelationId: "12345",
+				},
+			},
+			wantErrReason: "service.aad.failed",
+			wantErrDetails: map[string]interface{}{
+				string(fields.ServiceName):          "aad",
+				string(fields.ServiceErrorCode):     "50076,50078,50079",
+				string(fields.ServiceStatusCode):    "invalid_grant",
+				string(fields.ServiceCorrelationId): "12345",
 			},
 		},
 	}
@@ -180,55 +243,10 @@ func Test_cmdAsName(t *testing.T) {
 	}
 }
 
-// func Test_getDeploymentErrorCode(t *testing.T) {
-// 	tests := []struct {
-// 		name string
-// 		err  *azcli.DeploymentErrorLine
-// 		want string
-// 	}{
-// 		{
-// 			name: "WithNilError",
-// 			err:  nil,
-// 			want: "",
-// 		},
-// 		{
-// 			name: "WithEmptyError",
-// 			err:  &azcli.DeploymentErrorLine{},
-// 			want: "",
-// 		},
-// 		{
-// 			name: "WithErrorCode",
-// 			err: &azcli.DeploymentErrorLine{
-// 				Code: "SomeErrorCode",
-// 			},
-// 			want: "SomeErrorCode",
-// 		},
-// 		{
-// 			name: "WithInnerErrorCode",
-// 			err: &azcli.DeploymentErrorLine{
-// 				Inner: []*azcli.DeploymentErrorLine{
-// 					{Message: "MessageOnly"},
-// 					{Code: "InnerErrorCode"},
-// 				},
-// 			},
-// 			want: "InnerErrorCode",
-// 		},
-// 		{
-// 			name: "WithInnerErrorCode",
-// 			err: &azcli.DeploymentErrorLine{
-// 				Inner: []*azcli.DeploymentErrorLine{
-// 					{Message: "MessageOnly"},
-// 					{Code: "InnerErrorCode"},
-// 				},
-// 			},
-// 			want: "InnerErrorCode",
-// 		},
-// 	}
-// 	for _, tt := range tests {
-// 		t.Run(tt.name, func(t *testing.T) {
-// 			if got := getDeploymentErrorCode(tt.args.detail); got != tt.want {
-// 				t.Errorf("getDeploymentErrorCode() = %v, want %v", got, tt.want)
-// 			}
-// 		})
-// 	}
-// }
+func mustMarshalJson(v interface{}) string {
+	b, err := json.Marshal(v)
+	if err != nil {
+		panic(err)
+	}
+	return string(b)
+}

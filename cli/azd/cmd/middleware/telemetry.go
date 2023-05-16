@@ -14,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
+	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azdo"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -92,6 +93,7 @@ func mapError(err error, span tracing.Span) {
 	var respErr *azcore.ResponseError
 	var armDeployErr *azcli.AzureDeploymentError
 	var toolExecErr *exec.ExitError
+	var authFailedErr *auth.AuthFailedError
 	if errors.As(err, &respErr) {
 		serviceName := "other"
 		statusCode := -1
@@ -115,26 +117,22 @@ func mapError(err error, span tracing.Span) {
 	} else if errors.As(err, &armDeployErr) {
 		errDetails = append(errDetails, fields.ServiceName.String("arm"))
 		codes := []*deploymentErrorCode{}
-		frame := 0
-		collect := func(details []*azcli.DeploymentErrorLine) {
+		var collect func(details []*azcli.DeploymentErrorLine, frame int)
+		collect = func(details []*azcli.DeploymentErrorLine, frame int) {
 			code := collectCode(details, frame)
 			if code != nil {
 				codes = append(codes, code)
+				frame = frame + 1
 			}
 
-			frame = frame + 1
 			for _, detail := range details {
 				if detail.Inner != nil {
-					code = collectCode(detail.Inner, frame)
-					if code != nil {
-						codes = append(codes, code)
-					}
+					collect(detail.Inner, frame)
 				}
 			}
 		}
 
-		collect([]*azcli.DeploymentErrorLine{armDeployErr.Details})
-
+		collect([]*azcli.DeploymentErrorLine{armDeployErr.Details}, 0)
 		if len(codes) > 0 {
 			errDetails = append(errDetails, fields.ServiceErrorCode.String(codes[0].Code))
 			codes = codes[1:]
@@ -161,6 +159,20 @@ func mapError(err error, span tracing.Span) {
 			fields.ToolName.String(toolName))
 
 		errCode = fmt.Sprintf("tool.%s.failed", toolName)
+	} else if errors.As(err, &authFailedErr) {
+		errDetails = append(errDetails, fields.ServiceName.String("aad"))
+		if authFailedErr.Parsed != nil {
+			codes := make([]string, 0, len(authFailedErr.Parsed.ErrorCodes))
+			for _, code := range authFailedErr.Parsed.ErrorCodes {
+				codes = append(codes, fmt.Sprintf("%d", code))
+			}
+			serviceErr := strings.Join(codes, ",")
+			errDetails = append(errDetails,
+				fields.ServiceStatusCode.String(authFailedErr.Parsed.Error),
+				fields.ServiceErrorCode.String(serviceErr),
+				fields.ServiceCorrelationId.String(authFailedErr.Parsed.CorrelationId))
+		}
+		errCode = "service.aad.failed"
 	}
 
 	if len(errDetails) > 0 {
@@ -180,13 +192,15 @@ func mapError(err error, span tracing.Span) {
 }
 
 type deploymentErrorCode struct {
-	Code  string
-	Frame int
+	Code  string `json:"error.code"`
+	Frame int    `json:"error.frame"`
 }
 
-// getDeploymentErrorCode returns the first error code from the deployment error details.
 func collectCode(lines []*azcli.DeploymentErrorLine, frame int) *deploymentErrorCode {
-	errCode := &deploymentErrorCode{Frame: frame}
+	if len(lines) == 0 {
+		return nil
+	}
+
 	sb := strings.Builder{}
 	for _, line := range lines {
 		if line != nil && line.Code != "" {
@@ -197,12 +211,14 @@ func collectCode(lines []*azcli.DeploymentErrorLine, frame int) *deploymentError
 		}
 	}
 
-	if sb.Len() > 0 {
-		errCode.Code = sb.String()
-		return errCode
+	if sb.Len() == 0 {
+		return nil
 	}
 
-	return nil
+	return &deploymentErrorCode{
+		Frame: frame,
+		Code:  sb.String(),
+	}
 }
 
 func mapServiceName(host string) string {

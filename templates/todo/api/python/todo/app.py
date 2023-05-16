@@ -64,21 +64,18 @@ if settings.APPLICATIONINSIGHTS_CONNECTION_STRING:
         settings.APPLICATIONINSIGHTS_CONNECTION_STRING
     )
 
-    tracer = TracerProvider(
+    tracerProvider = TracerProvider(
         resource=Resource({SERVICE_NAME: settings.APPLICATIONINSIGHTS_ROLENAME})
     )
-    tracer.add_span_processor(BatchSpanProcessor(exporter))
+    tracerProvider.add_span_processor(BatchSpanProcessor(exporter))
+    tracerProvider.add_span_processor(BatchSpanProcessor(ConsoleSpanExporter()))
 
-    resource = Resource(attributes={
-        SERVICE_NAME: "your-service-name"
-    })
-
-    provider = TracerProvider(resource=resource)
-    processor = BatchSpanProcessor(ConsoleSpanExporter())
-    provider.add_span_processor(processor)
-    trace.set_tracer_provider(provider)
+    trace.set_tracer_provider(tracerProvider)
     
-    FastAPIInstrumentor.instrument_app(app, tracer_provider=tracer)
+    span = tracerProvider.get_tracer("local").start_span("test")
+    span.end()
+    
+    FastAPIInstrumentor.instrument_app(app, tracer_provider=tracerProvider)
     
 from . import routes  # NOQA
 

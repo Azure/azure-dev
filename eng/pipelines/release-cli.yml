@@ -990,6 +990,7 @@ stages:
                     PublishUpdatedDocs: true
                     UploadMsi: true
                     PublishBrewFormula: true
+                    PublishArm64Binaries: true
 
       - deployment: Publish_Choco
         dependsOn: Publish_Release

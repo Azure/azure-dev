@@ -575,8 +575,5 @@ func semiManualLogin(
 	}
 
 	_, err = interactiveLogin.Await()
-	if err != nil {
-		return err
-	}
-	return nil
+	return err
 }

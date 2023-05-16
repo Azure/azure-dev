@@ -53,8 +53,8 @@ func templatesActions(root *actions.ActionDescriptor) *actions.ActionDescriptor 
 	group.Add("show", &actions.ActionDescriptorOptions{
 		Command:        newTemplateShowCmd(),
 		ActionResolver: newTemplatesShowAction,
-		OutputFormats:  []output.Format{output.JsonFormat, output.TableFormat},
-		DefaultFormat:  output.TableFormat,
+		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
+		DefaultFormat:  output.NoneFormat,
 	})
 
 	return group
@@ -92,7 +92,26 @@ func (tl *templatesListAction) Run(ctx context.Context) (*actions.ActionResult, 
 		return nil, err
 	}
 
-	return nil, formatTemplates(ctx, tl.formatter, tl.writer, listedTemplates...)
+	if tl.formatter.Kind() == output.TableFormat {
+		columns := []output.Column{
+			{
+				Heading:       "RepositoryPath",
+				ValueTemplate: "{{.RepositoryPath}}",
+			},
+			{
+				Heading:       "Name",
+				ValueTemplate: "{{.Name}}",
+			},
+		}
+
+		err = tl.formatter.Format(listedTemplates, tl.writer, output.TableFormatterOptions{
+			Columns: columns,
+		})
+	} else {
+		err = tl.formatter.Format(listedTemplates, tl.writer, nil)
+	}
+
+	return nil, err
 }
 
 type templatesShowAction struct {
@@ -123,7 +142,13 @@ func (a *templatesShowAction) Run(ctx context.Context) (*actions.ActionResult, e
 		return nil, err
 	}
 
-	return nil, formatTemplates(ctx, a.formatter, a.writer, matchingTemplate)
+	if a.formatter.Kind() == output.NoneFormat {
+		err = matchingTemplate.Display(a.writer)
+	} else {
+		err = a.formatter.Format(matchingTemplate, a.writer, nil)
+	}
+
+	return nil, err
 }
 
 func newTemplateShowCmd() *cobra.Command {
@@ -132,43 +157,6 @@ func newTemplateShowCmd() *cobra.Command {
 		Short: fmt.Sprintf("Show details for a given template. %s", output.WithWarningFormat("(Beta)")),
 		Args:  cobra.ExactArgs(1),
 	}
-}
-
-func formatTemplates(
-	ctx context.Context,
-	formatter output.Formatter,
-	writer io.Writer,
-	templates ...templates.Template,
-) error {
-	var err error
-	if formatter.Kind() == output.TableFormat {
-		columns := []output.Column{
-			{
-				Heading:       "RepositoryPath",
-				ValueTemplate: "{{.RepositoryPath}}",
-			},
-			{
-				Heading:       "Name",
-				ValueTemplate: "{{.Name}}",
-			},
-			{
-				Heading:       "Description",
-				ValueTemplate: "{{.Description}}",
-			},
-		}
-
-		err = formatter.Format(templates, writer, output.TableFormatterOptions{
-			Columns: columns,
-		})
-	} else {
-		err = formatter.Format(templates, writer, nil)
-	}
-
-	if err != nil {
-		return err
-	}
-
-	return nil
 }
 
 func getCmdTemplateHelpDescription(*cobra.Command) string {

@@ -110,7 +110,7 @@ func Test_CLI_Up_Down_WebApp(t *testing.T) {
 	secrets, err = commandRunner.Run(ctx, runArgs)
 	require.NoError(t, err)
 
-	_, err = cli.RunCommand(ctx, "env", "refresh")
+	_, err = cli.RunCommand(ctx, "env", "refresh", envName)
 	require.NoError(t, err)
 
 	env, err = godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))

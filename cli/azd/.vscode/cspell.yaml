@@ -33,7 +33,7 @@ overrides:
   - filename: docs/docgen.go
     words:
       - alexwolf
-      - alexwolftmsft
+      - alexwolfmsft
       - pname
       - puichan
       - devx

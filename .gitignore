@@ -16,8 +16,6 @@
 
 # GoLand temp files
 .idea 
-covcounter*
-covmeta*
 
 # Output of the go coverage tool, specifically when used with LiteIDE
 *.out

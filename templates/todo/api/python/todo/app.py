@@ -9,10 +9,6 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 import os
 from pathlib import Path
-from opentelemetry import trace
-from opentelemetry.sdk.trace import TracerProvider
-from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
-from opentelemetry.sdk.resources import SERVICE_NAME, Resource
 
 # Use API_ALLOW_ORIGINS env var with comma separated urls like
 # `http://localhost:300, http://otherurl:100`
@@ -63,22 +59,15 @@ if settings.APPLICATIONINSIGHTS_CONNECTION_STRING:
     exporter = AzureMonitorTraceExporter.from_connection_string(
         settings.APPLICATIONINSIGHTS_CONNECTION_STRING
     )
-
     tracerProvider = TracerProvider(
         resource=Resource({SERVICE_NAME: settings.APPLICATIONINSIGHTS_ROLENAME})
     )
     tracerProvider.add_span_processor(BatchSpanProcessor(exporter))
-    tracerProvider.add_span_processor(BatchSpanProcessor(ConsoleSpanExporter()))
 
-    trace.set_tracer_provider(tracerProvider)
-    
-    span = tracerProvider.get_tracer("local").start_span("test")
-    span.end()
-    
     FastAPIInstrumentor.instrument_app(app, tracer_provider=tracerProvider)
-    
-from . import routes  # NOQA
 
+
+from . import routes  # NOQA
 
 @app.on_event("startup")
 async def startup_event():

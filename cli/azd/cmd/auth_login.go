@@ -454,10 +454,7 @@ func (la *loginAction) login(ctx context.Context) error {
 
 		var loginError error
 		if !codespacesInBrowser {
-			_, err := la.authManager.LoginInteractive(ctx, la.flags.redirectPort, la.flags.tenantID, la.flags.scopes)
-			if err != nil {
-				return err
-			}
+			_, loginError = la.authManager.LoginInteractive(ctx, la.flags.redirectPort, la.flags.tenantID, la.flags.scopes)
 		} else {
 			loginError = semiManualLogin(
 				ctx, la.console, la.flags.redirectPort, func(port int) (azcore.TokenCredential, error) {

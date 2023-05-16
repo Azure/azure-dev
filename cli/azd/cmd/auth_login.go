@@ -9,15 +9,20 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"net"
+	"net/http"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -349,6 +354,15 @@ func countTrue(elms ...bool) int {
 //
 // to detect when vscode is within a WebBrowser environment.
 func runningOnCodespacesBrowser(ctx context.Context, commandRunner exec.CommandRunner) bool {
+
+	if os.Getenv("AZD_SEMI_MANUAL_LOGIN") == "true" {
+		return true
+	}
+
+	if os.Getenv("CODESPACES") != "true" {
+		return false
+	}
+
 	runArgs := exec.NewRunArgs("code", "--status")
 	result, err := commandRunner.Run(ctx, runArgs)
 	if err != nil {
@@ -425,7 +439,7 @@ func (la *loginAction) login(ctx context.Context) error {
 		return nil
 	}
 
-	useDevCode, err := parseUseDeviceCode(ctx, la.flags.useDeviceCode, la.commandRunner)
+	useDevCode, err := parseUseDeviceCode(ctx, la.flags.useDeviceCode)
 	if err != nil {
 		return err
 	}
@@ -436,16 +450,29 @@ func (la *loginAction) login(ctx context.Context) error {
 			return fmt.Errorf("logging in: %w", err)
 		}
 	} else {
-		_, err := la.authManager.LoginInteractive(ctx, la.flags.redirectPort, la.flags.tenantID, la.flags.scopes)
-		if err != nil {
-			return fmt.Errorf("logging in: %w", err)
+		codespacesInBrowser := runningOnCodespacesBrowser(ctx, la.commandRunner)
+
+		var loginError error
+		if !codespacesInBrowser {
+			_, err := la.authManager.LoginInteractive(ctx, la.flags.redirectPort, la.flags.tenantID, la.flags.scopes)
+			if err != nil {
+				return err
+			}
+		} else {
+			loginError = semiManualLogin(
+				ctx, la.console, la.flags.redirectPort, func(port int) (azcore.TokenCredential, error) {
+					return la.authManager.LoginInteractive(ctx, port, la.flags.tenantID, la.flags.scopes)
+				})
+		}
+		if loginError != nil {
+			return loginError
 		}
 	}
 
 	return nil
 }
 
-func parseUseDeviceCode(ctx context.Context, flag boolPtr, commandRunner exec.CommandRunner) (bool, error) {
+func parseUseDeviceCode(ctx context.Context, flag boolPtr) (bool, error) {
 	var useDevCode bool
 
 	useDevCodeFlag := flag.ptr != nil
@@ -458,16 +485,101 @@ func parseUseDeviceCode(ctx context.Context, flag boolPtr, commandRunner exec.Co
 		return userInput, err
 	}
 
-	// Detect cases where the browser isn't available for interactive auth, and we instead want to set `useDeviceCode`
-	// to be true by default
-	inCodespacesEnv := os.Getenv("CODESPACES") == "true"
-	if inCodespacesEnv {
-		// For VSCode online (in web Browser), like GitHub Codespaces or VSCode online attached to any server,
-		// interactive browser login will 404 when attempting to redirect to localhost
-		// (since azd launches a localhost server running remotely and the login response is accepted locally).
-		// Hence, we override login to device-code. See https://github.com/Azure/azure-dev/issues/1006
-		useDevCode = runningOnCodespacesBrowser(ctx, commandRunner)
+	return useDevCode, nil
+}
+
+func findFreePort() (int, error) {
+	var l net.Listener
+	var err error
+	var port int
+	for i := 0; i < 10; i++ {
+		l, err = net.Listen("tcp", "localhost:0")
+		if err != nil {
+			continue
+		}
+		// release port so it can be used by login
+		defer l.Close()
+		addr := l.Addr().String()
+		port, err = strconv.Atoi(addr[strings.LastIndex(addr, ":")+1:])
+		if err != nil {
+			return 0, err
+		}
+		break
+	}
+	return port, nil
+}
+
+func semiManualLogin(
+	ctx context.Context,
+	console input.Console,
+	userSelectedPort int,
+	loginFunc func(redirectPort int) (azcore.TokenCredential, error)) error {
+
+	loginPort := userSelectedPort
+	if loginPort == 0 {
+		overridePort, err := findFreePort()
+		if err != nil {
+			return err
+		}
+		loginPort = overridePort
+	}
+	interactiveLogin := async.NewTask(func(taskContext *async.TaskContext[bool]) {
+		_, err := loginFunc(loginPort)
+		if err != nil {
+			taskContext.SetError(err)
+			return
+		}
+		taskContext.SetResult(true)
+	})
+	if err := interactiveLogin.Run(); err != nil {
+		return err
 	}
 
-	return useDevCode, nil
+	console.Message(ctx, "running semi-manual login flow. Please follow next steps:")
+	console.Message(ctx, "  1) Login from web browser. After login, you will see a 404 error in the browser.")
+	console.Message(ctx, "  2) Copy the url from the browser when you see the 404 error.")
+	console.Message(ctx, "  3) Paste url below (in this terminal).")
+
+	loginUrl := ""
+	for loginUrl == "" {
+		inputLoginUrl, err := console.Prompt(ctx, input.ConsoleOptions{
+			Message:    "Url from browser:",
+			IsPassword: true,
+		})
+		if err != nil {
+			return err
+		}
+		url, err := url.Parse(inputLoginUrl)
+		if err != nil {
+			console.Message(ctx, "unexpected url format found. Try again.")
+			continue
+		}
+		expectedHostName := "localhost"
+		if url.Hostname() != expectedHostName {
+			console.Message(ctx, fmt.Sprintf("Expecting hostname: '%s' in the url. Try again.", expectedHostName))
+			continue
+		}
+		expectedPort := strconv.Itoa(loginPort)
+		if url.Port() != expectedPort {
+			console.Message(ctx, fmt.Sprintf("Expecting port number: '%s' in the url. Try again.", expectedPort))
+			continue
+		}
+		expectedQuery := "code"
+		if !url.Query().Has(expectedQuery) {
+			console.Message(ctx, fmt.Sprintf("Expecting query parameter '%s' in the url. Try again.", expectedQuery))
+			continue
+		}
+		loginUrl = inputLoginUrl
+	}
+
+	_, err := http.DefaultClient.Get(loginUrl)
+	if err != nil {
+		return fmt.Errorf("doing semi-manual login: doing HTTP GET: %w", err)
+	}
+
+	_, err = interactiveLogin.Await()
+	if err != nil {
+		return err
+	}
+	return nil
 }

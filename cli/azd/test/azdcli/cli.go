@@ -137,14 +137,10 @@ func (cli *CLI) RunCommandWithStdIn(ctx context.Context, stdin string, args ...s
 		done <- struct{}{}
 	}()
 
-	report := func(prefix string, p []byte) (n int, err error) {
-
-	}
-
 	var stderr, stdout bytes.Buffer
 	cmd.Stderr = &stderr
 	cmd.Stdout = &stdout
-	err := cmd.Start()
+	err := cmd.Run()
 
 	result := &CliResult{}
 	result.Stdout = stdout.String()
@@ -179,9 +175,6 @@ func (cli *CLI) RunCommandWithStdIn(ctx context.Context, stdin string, args ...s
 func (cli *CLI) RunCommand(ctx context.Context, args ...string) (*CliResult, error) {
 	return cli.RunCommandWithStdIn(ctx, "", args...)
 }
-
-func (cli *CLI) reportOutput(description string, done <-chan struct{}) {
-
 
 func (cli *CLI) heartbeat(description string, done <-chan struct{}) {
 	start := time.Now()

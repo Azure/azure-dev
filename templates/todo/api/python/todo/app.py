@@ -9,6 +9,10 @@ from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import BatchSpanProcessor
 import os
 from pathlib import Path
+from opentelemetry import trace
+from opentelemetry.sdk.trace import TracerProvider
+from opentelemetry.sdk.trace.export import BatchSpanProcessor, ConsoleSpanExporter
+from opentelemetry.sdk.resources import SERVICE_NAME, Resource
 
 # Use API_ALLOW_ORIGINS env var with comma separated urls like
 # `http://localhost:300, http://otherurl:100`
@@ -55,23 +59,32 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+if settings.APPLICATIONINSIGHTS_CONNECTION_STRING:
+    exporter = AzureMonitorTraceExporter.from_connection_string(
+        settings.APPLICATIONINSIGHTS_CONNECTION_STRING
+    )
+
+    tracer = TracerProvider(
+        resource=Resource({SERVICE_NAME: settings.APPLICATIONINSIGHTS_ROLENAME})
+    )
+    tracer.add_span_processor(BatchSpanProcessor(exporter))
+
+    resource = Resource(attributes={
+        SERVICE_NAME: "your-service-name"
+    })
+
+    provider = TracerProvider(resource=resource)
+    processor = BatchSpanProcessor(ConsoleSpanExporter())
+    provider.add_span_processor(processor)
+    trace.set_tracer_provider(provider)
+    
+    FastAPIInstrumentor.instrument_app(app, tracer_provider=tracer)
+    
 from . import routes  # NOQA
 
 
 @app.on_event("startup")
 async def startup_event():
-    if settings.APPLICATIONINSIGHTS_CONNECTION_STRING:
-        exporter = AzureMonitorTraceExporter.from_connection_string(
-            settings.APPLICATIONINSIGHTS_CONNECTION_STRING
-        )
-        #console exporter
-        tracer = TracerProvider(
-            resource=Resource({SERVICE_NAME: settings.APPLICATIONINSIGHTS_ROLENAME})
-        )
-        tracer.add_span_processor(BatchSpanProcessor(exporter)) #add it here check BatchSpanProcessor
-
-        FastAPIInstrumentor.instrument_app(app, tracer_provider=tracer)
-
     client = motor.motor_asyncio.AsyncIOMotorClient(
         settings.AZURE_COSMOS_CONNECTION_STRING
     )

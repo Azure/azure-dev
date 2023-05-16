@@ -156,7 +156,7 @@ func createTempScript(hookConfig *HookConfig) (string, error) {
 		ext = "sh"
 		scriptHeader = []string{
 			"#!/bin/sh",
-			"set -eo pipefail",
+			"set -e",
 		}
 	case ShellTypePowershell:
 		ext = "ps1"

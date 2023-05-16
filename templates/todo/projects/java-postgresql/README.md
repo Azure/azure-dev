@@ -19,6 +19,7 @@ The following prerequisites are required to use this application. Please ensure 
 - [Java 17 or later](https://jdk.java.net/) - for API backend
 - [Node.js with npm (16.13.1+)](https://nodejs.org/) - for Web frontend
 - [Terraform](https://www.terraform.io/)
+    - Requires the [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli)
 - [PostgreSQL 12 or later](https://www.postgresql.org/) - for PostgreSQL initialization (make sure `psql` command is available in your terminal)
 
 ### Quickstart

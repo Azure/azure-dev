@@ -44,7 +44,7 @@ func assertOutputsMatch(t *testing.T, jsonPath string, expectedOutputPath string
 	}
 
 	errorJson := string(data)
-	deploymentError := AzureDeploymentError{Json: errorJson}
+	deploymentError := NewAzureDeploymentError(errorJson)
 	errorString := deploymentError.Error()
 
 	actualLines := strings.Split(errorString, "\n")

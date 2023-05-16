@@ -149,15 +149,23 @@ func inferScriptTypeFromFilePath(path string) (ShellType, error) {
 func createTempScript(hookConfig *HookConfig) (string, error) {
 	var ext string
 	scriptHeader := []string{}
+	scriptFooter := []string{}
 
 	switch hookConfig.Shell {
 	case ShellTypeBash:
 		ext = "sh"
 		scriptHeader = []string{
 			"#!/bin/sh",
+			"set -eo pipefail",
 		}
 	case ShellTypePowershell:
 		ext = "ps1"
+		scriptHeader = []string{
+			"$ErrorActionPreference = 'Stop'",
+		}
+		scriptFooter = []string{
+			"if ((Test-Path -LiteralPath variable:\\LASTEXITCODE)) { exit $LASTEXITCODE }",
+		}
 	}
 
 	// Write the temporary script file to OS temp dir
@@ -172,9 +180,15 @@ func createTempScript(hookConfig *HookConfig) (string, error) {
 	for _, line := range scriptHeader {
 		scriptBuilder.WriteString(fmt.Sprintf("%s\n", line))
 	}
+
 	scriptBuilder.WriteString("\n")
 	scriptBuilder.WriteString("# Auto generated file from Azure Developer CLI\n")
 	scriptBuilder.WriteString(hookConfig.script)
+	scriptBuilder.WriteString("\n")
+
+	for _, line := range scriptFooter {
+		scriptBuilder.WriteString(fmt.Sprintf("%s\n", line))
+	}
 
 	// Temp generated files are cleaned up automatically after script execution has completed.
 	_, err = file.WriteString(scriptBuilder.String())

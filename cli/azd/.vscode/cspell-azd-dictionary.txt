@@ -64,6 +64,7 @@ ineffassign
 javac
 jmes
 keychain
+LASTEXITCODE
 ldflags
 lechnerc77
 mgmt

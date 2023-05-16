@@ -80,7 +80,7 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 
 	// AZURE_STORAGE_ACCOUNT_NAME is an output of the template, make sure it was added to the .env file.
 	// the name should start with 'st'
-	accountName, ok := env.Values["AZURE_STORAGE_ACCOUNT_NAME"]
+	accountName, ok := env.Dotenv()["AZURE_STORAGE_ACCOUNT_NAME"]
 	require.True(t, ok)
 	require.Regexp(t, `st\S*`, accountName)
 
@@ -141,7 +141,7 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 
 	// AZURE_STORAGE_ACCOUNT_NAME is an output of the template, make sure it was added to the .env file.
 	// the name should start with 'st'
-	accountName, ok := env.Values["AZURE_STORAGE_ACCOUNT_NAME"]
+	accountName, ok := env.Dotenv()["AZURE_STORAGE_ACCOUNT_NAME"]
 	require.True(t, ok)
 	require.Regexp(t, `st\S*`, accountName)
 
@@ -584,8 +584,8 @@ func assertEnvValuesStored(t *testing.T, env *environment.Environment) {
 	primitives := []string{"STRING", "BOOL", "INT"}
 
 	for k, v := range expectedEnv {
-		assert.Contains(t, env.Values, k)
-		actual := env.Values[k]
+		actual, has := env.Dotenv()[k]
+		assert.True(t, has)
 
 		if slices.Contains(primitives, k) {
 			assert.Equal(t, v, actual)

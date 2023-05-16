@@ -54,10 +54,10 @@ func TestTerraformPlan(t *testing.T) {
 
 	require.Len(t, consoleLog, 0)
 
-	require.Equal(t, infraProvider.env.Values["AZURE_LOCATION"], deploymentPlan.Deployment.Parameters["location"].Value)
+	require.Equal(t, infraProvider.env.Dotenv()["AZURE_LOCATION"], deploymentPlan.Deployment.Parameters["location"].Value)
 	require.Equal(
 		t,
-		infraProvider.env.Values["AZURE_ENV_NAME"],
+		infraProvider.env.Dotenv()["AZURE_ENV_NAME"],
 		deploymentPlan.Deployment.Parameters["environment_name"].Value,
 	)
 
@@ -83,7 +83,7 @@ func TestTerraformDeploy(t *testing.T) {
 
 	infraProvider := createTerraformProvider(mockContext)
 
-	envPath := path.Join(infraProvider.projectPath, ".azure", infraProvider.env.Values["AZURE_ENV_NAME"])
+	envPath := path.Join(infraProvider.projectPath, ".azure", infraProvider.env.Dotenv()["AZURE_ENV_NAME"])
 
 	deploymentPlan := DeploymentPlan{
 		Details: TerraformDeploymentDetails{
@@ -114,7 +114,7 @@ func TestTerraformDeploy(t *testing.T) {
 	require.Nil(t, err)
 	require.NotNil(t, deployResult)
 
-	require.Equal(t, deployResult.Deployment.Outputs["AZURE_LOCATION"].Value, infraProvider.env.Values["AZURE_LOCATION"])
+	require.Equal(t, deployResult.Deployment.Outputs["AZURE_LOCATION"].Value, infraProvider.env.Dotenv()["AZURE_LOCATION"])
 	require.Equal(t, deployResult.Deployment.Outputs["RG_NAME"].Value, fmt.Sprintf("rg-%s", infraProvider.env.GetEnvName()))
 }
 
@@ -151,7 +151,7 @@ func TestTerraformDestroy(t *testing.T) {
 	require.Nil(t, err)
 	require.NotNil(t, destroyResult)
 
-	require.Equal(t, destroyResult.Outputs["AZURE_LOCATION"].Value, infraProvider.env.Values["AZURE_LOCATION"])
+	require.Equal(t, destroyResult.Outputs["AZURE_LOCATION"].Value, infraProvider.env.Dotenv()["AZURE_LOCATION"])
 	require.Equal(t, destroyResult.Outputs["RG_NAME"].Value, fmt.Sprintf("rg-%s", infraProvider.env.GetEnvName()))
 }
 
@@ -186,7 +186,7 @@ func TestTerraformState(t *testing.T) {
 	require.Nil(t, err)
 	require.NotNil(t, getStateResult.State)
 
-	require.Equal(t, infraProvider.env.Values["AZURE_LOCATION"], getStateResult.State.Outputs["AZURE_LOCATION"].Value)
+	require.Equal(t, infraProvider.env.Dotenv()["AZURE_LOCATION"], getStateResult.State.Outputs["AZURE_LOCATION"].Value)
 	require.Equal(t, fmt.Sprintf("rg-%s", infraProvider.env.GetEnvName()), getStateResult.State.Outputs["RG_NAME"].Value)
 	require.Len(t, getStateResult.State.Resources, 1)
 	require.Regexp(

@@ -122,7 +122,7 @@ func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	// Remove any outputs from the template from the environment since destroying the infrastructure
 	// invalidated them all.
 	for outputName := range destroyResult.Outputs {
-		delete(a.env.Values, outputName)
+		a.env.DotenvDelete(outputName)
 	}
 
 	if err := a.env.Save(); err != nil {

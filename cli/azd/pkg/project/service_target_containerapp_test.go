@@ -115,7 +115,7 @@ func Test_ContainerApp_Deploy(t *testing.T) {
 	require.Equal(t, ContainerAppTarget, deployResult.Kind)
 	require.Greater(t, len(deployResult.Endpoints), 0)
 	// New env variable is created
-	require.Equal(t, "REGISTRY.azurecr.io/test-app/api-test:azd-deploy-0", env.Values["SERVICE_API_IMAGE_NAME"])
+	require.Equal(t, "REGISTRY.azurecr.io/test-app/api-test:azd-deploy-0", env.Dotenv()["SERVICE_API_IMAGE_NAME"])
 }
 
 func createContainerAppServiceTarget(

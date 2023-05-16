@@ -156,7 +156,7 @@ func resolveProvider(
 	}
 
 	// 2) check if there is a persisted value from a previous run in env
-	if lastUsedProvider, configExists := env.Values[envPersistedKey]; configExists {
+	if lastUsedProvider, configExists := env.LookupEnv(envPersistedKey); configExists {
 		// Setting override value based on last run. This will force detector to use the same
 		// configuration.
 		return lastUsedProvider, nil
@@ -259,7 +259,7 @@ func DetectProviders(
 }
 
 func savePipelineProviderToEnv(provider string, env *environment.Environment) error {
-	env.Values[envPersistedKey] = provider
+	env.DotenvSet(envPersistedKey, provider)
 	err := env.Save()
 	if err != nil {
 		return err

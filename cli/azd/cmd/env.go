@@ -131,7 +131,7 @@ func newEnvSetAction(
 }
 
 func (e *envSetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	e.env.Values[e.args[0]] = e.args[1]
+	e.env.DotenvSet(e.args[0], e.args[1])
 
 	if err := e.env.Save(); err != nil {
 		return nil, fmt.Errorf("saving environment: %w", err)
@@ -487,7 +487,7 @@ func newEnvGetValuesAction(
 }
 
 func (eg *envGetValuesAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	err := eg.formatter.Format(eg.env.Values, eg.writer, nil)
+	err := eg.formatter.Format(eg.env.Dotenv(), eg.writer, nil)
 	if err != nil {
 		return nil, err
 	}

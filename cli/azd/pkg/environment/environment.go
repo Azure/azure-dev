@@ -17,6 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/joho/godotenv"
+	"golang.org/x/exp/maps"
 )
 
 // EnvNameEnvVarName is the name of the key used to store the envname property in the environment.
@@ -44,9 +45,11 @@ const AksClusterEnvVarName = "AZURE_AKS_CLUSTER_NAME"
 // ResourceGroupEnvVarName is the name of the azure resource group that should be used for deployments
 const ResourceGroupEnvVarName = "AZURE_RESOURCE_GROUP"
 
+// The zero value of an Environment is not valid. Use [FromRoot] or [EmptyWithRoot] to create one. When writing tests,
+// [Ephemeral] and [EphemeralWithValues] are useful to create environments which are not persisted to disk.
 type Environment struct {
-	// Values is a map of setting names to values.
-	Values map[string]string
+	// dotenv is a map of keys to values, persisted to the `.env` file stored in this environment's [Root].
+	dotenv map[string]string
 
 	// Config is environment specific config
 	Config config.Config
@@ -121,14 +124,15 @@ func GetEnvironment(azdContext *azdcontext.AzdContext, name string) (*Environmen
 func EmptyWithRoot(root string) *Environment {
 	return &Environment{
 		Root:   root,
-		Values: make(map[string]string),
+		dotenv: make(map[string]string),
 		Config: config.NewEmptyConfig(),
 	}
 }
 
+// Ephemeral returns returns an empty ephemeral environment (i.e. not backed by a file) with a set
 func Ephemeral() *Environment {
 	return &Environment{
-		Values: make(map[string]string),
+		dotenv: make(map[string]string),
 		Config: config.NewEmptyConfig(),
 	}
 }
@@ -141,21 +145,49 @@ func EphemeralWithValues(name string, values map[string]string) *Environment {
 	env := Ephemeral()
 
 	if values != nil {
-		env.Values = values
+		env.dotenv = values
 	}
 
-	env.Values[EnvNameEnvVarName] = name
+	env.dotenv[EnvNameEnvVarName] = name
 
 	return env
 }
 
-// Getenv fetches a key from e.Values, falling back to os.Getenv if it is not present.
+// Getenv behaves like os.Getenv, except that any keys in the `.env` file associated with this environment are considered
+// first.
 func (e *Environment) Getenv(key string) string {
-	if v, has := e.Values[key]; has {
+	if v, has := e.dotenv[key]; has {
 		return v
 	}
 
 	return os.Getenv(key)
+}
+
+// LookupEnv behaves like os.LookupEnv, except that any keys in the `.env` file associated with this environment are
+// considered first.
+func (e *Environment) LookupEnv(key string) (string, bool) {
+	if v, has := e.dotenv[key]; has {
+		return v, true
+	}
+
+	return os.LookupEnv(key)
+}
+
+// DotenvDelete removes the given key from the .env file in the environment, it is a no-op if the key
+// does not exist. [Save] should be called to ensure this change is persisted.
+func (e *Environment) DotenvDelete(key string) {
+	delete(e.dotenv, key)
+}
+
+// Dotenv returns a copy of the key value pairs from the .env file in the environment.
+func (e *Environment) Dotenv() map[string]string {
+	return maps.Clone(e.dotenv)
+}
+
+// DotenvSet sets the value of [key] to [value] in the .env file associated with the environment. [Save] should be
+// called to ensure this change is persisted.
+func (e *Environment) DotenvSet(key string, value string) {
+	e.dotenv[key] = value
 }
 
 // Reloads environment variables and configuration
@@ -163,11 +195,11 @@ func (e *Environment) Reload() error {
 	// Reload env values
 	envPath := filepath.Join(e.Root, azdcontext.DotEnvFileName)
 	if envMap, err := godotenv.Read(envPath); errors.Is(err, os.ErrNotExist) {
-		e.Values = make(map[string]string)
+		e.dotenv = make(map[string]string)
 	} else if err != nil {
 		return fmt.Errorf("loading .env: %w", err)
 	} else {
-		e.Values = envMap
+		e.dotenv = envMap
 	}
 
 	// Reload env config
@@ -206,14 +238,14 @@ func (e *Environment) Save() error {
 	}
 
 	// Cache current values & reload to get any new env vars
-	currentValues := e.Values
+	currentValues := e.dotenv
 	if err := e.Reload(); err != nil {
 		return fmt.Errorf("failed reloading env vars, %w", err)
 	}
 
 	// Overlay current values before saving
 	for key, value := range currentValues {
-		e.Values[key] = value
+		e.dotenv[key] = value
 	}
 
 	err := os.MkdirAll(e.Root, osutil.PermissionDirectory)
@@ -221,7 +253,7 @@ func (e *Environment) Save() error {
 		return fmt.Errorf("failed to create a directory: %w", err)
 	}
 
-	err = godotenv.Write(e.Values, filepath.Join(e.Root, azdcontext.DotEnvFileName))
+	err = godotenv.Write(e.dotenv, filepath.Join(e.Root, azdcontext.DotEnvFileName))
 	if err != nil {
 		return fmt.Errorf("saving .env: %w", err)
 	}
@@ -230,53 +262,60 @@ func (e *Environment) Save() error {
 	return nil
 }
 
+// GetEnvName is shorthand for Getenv(EnvNameEnvVarName)
 func (e *Environment) GetEnvName() string {
-	return e.Values[EnvNameEnvVarName]
+	return e.Getenv(EnvNameEnvVarName)
 }
 
+// SetEnvName is shorthand for DotenvSet(EnvNameEnvVarName, envname)
 func (e *Environment) SetEnvName(envname string) {
-	e.Values[EnvNameEnvVarName] = envname
+	e.dotenv[EnvNameEnvVarName] = envname
 }
 
+// GetSubscriptionId is shorthand for Getenv(SubscriptionIdEnvVarName)
 func (e *Environment) GetSubscriptionId() string {
-	return e.Values[SubscriptionIdEnvVarName]
+	return e.Getenv(SubscriptionIdEnvVarName)
 }
 
+// GetTenantId is shorthand for Getenv(TenantIdEnvVarName)
 func (e *Environment) GetTenantId() string {
-	return e.Values[TenantIdEnvVarName]
+	return e.Getenv(TenantIdEnvVarName)
 }
 
+// SetLocation is shorthand for DotenvSet(SubscriptionIdEnvVarName, location)
 func (e *Environment) SetSubscriptionId(id string) {
-	e.Values[SubscriptionIdEnvVarName] = id
+	e.dotenv[SubscriptionIdEnvVarName] = id
 }
 
+// GetLocation is shorthand for Getenv(LocationEnvVarName)
 func (e *Environment) GetLocation() string {
-	return e.Values[LocationEnvVarName]
+	return e.Getenv(LocationEnvVarName)
 }
 
+// SetLocation is shorthand for DotenvSet(LocationEnvVarName, location)
 func (e *Environment) SetLocation(location string) {
-	e.Values[LocationEnvVarName] = location
+	e.dotenv[LocationEnvVarName] = location
 }
 
 func normalize(key string) string {
 	return strings.ReplaceAll(strings.ToUpper(key), "-", "_")
 }
 
-// Returns the value of a service-namespaced property in the environment.
+// GetServiceProperty is shorthand for Getenv(SERVICE_$SERVICE_NAME_$PROPERTY_NAME)
 func (e *Environment) GetServiceProperty(serviceName string, propertyName string) string {
-	return e.Values[fmt.Sprintf("SERVICE_%s_%s", normalize(serviceName), propertyName)]
+	return e.Getenv(fmt.Sprintf("SERVICE_%s_%s", normalize(serviceName), propertyName))
 }
 
 // Sets the value of a service-namespaced property in the environment.
 func (e *Environment) SetServiceProperty(serviceName string, propertyName string, value string) {
-	e.Values[fmt.Sprintf("SERVICE_%s_%s", normalize(serviceName), propertyName)] = value
+	e.dotenv[fmt.Sprintf("SERVICE_%s_%s", normalize(serviceName), propertyName)] = value
 }
 
-// Creates a slice of key value pairs like `KEY=VALUE` that
-// can be used to pass into command runner or similar constructs
+// Creates a slice of key value pairs, based on the entries in the `.env` file like `KEY=VALUE` that
+// can be used to pass into command runner or similar constructs.
 func (e *Environment) Environ() []string {
 	envVars := []string{}
-	for k, v := range e.Values {
+	for k, v := range e.dotenv {
 		envVars = append(envVars, fmt.Sprintf("%s=%s", k, v))
 	}
 

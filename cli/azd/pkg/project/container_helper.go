@@ -37,7 +37,7 @@ func NewContainerHelper(
 }
 
 func (ch *ContainerHelper) RegistryName(ctx context.Context) (string, error) {
-	loginServer, has := ch.env.Values[environment.ContainerRegistryEndpointEnvVarName]
+	loginServer, has := ch.env.LookupEnv(environment.ContainerRegistryEndpointEnvVarName)
 	if !has {
 		return "", fmt.Errorf(
 			"could not determine container registry endpoint, ensure %s is set as an output of your infrastructure",

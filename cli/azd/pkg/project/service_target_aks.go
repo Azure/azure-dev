@@ -124,7 +124,7 @@ func (t *aksTarget) Deploy(
 			}
 
 			// Login to AKS cluster
-			clusterName, has := t.env.Values[environment.AksClusterEnvVarName]
+			clusterName, has := t.env.LookupEnv(environment.AksClusterEnvVarName)
 			if !has {
 				task.SetError(fmt.Errorf(
 					"could not determine AKS cluster, ensure %s is set as an output of your infrastructure",
@@ -221,7 +221,7 @@ func (t *aksTarget) Deploy(
 			}
 
 			task.SetProgress(NewServiceProgress("Applying k8s manifests"))
-			t.kubectl.SetEnv(t.env.Values)
+			t.kubectl.SetEnv(t.env.Dotenv())
 			deploymentPath := serviceConfig.K8s.DeploymentPath
 			if deploymentPath == "" {
 				deploymentPath = defaultDeploymentPath

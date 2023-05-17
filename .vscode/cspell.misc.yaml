@@ -33,6 +33,7 @@ overrides:
           - prodapi
           - appservice
           - containerapp
+          - springapp
           - staticwebapp
           - myapp
           - azdev

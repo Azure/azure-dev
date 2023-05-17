@@ -260,10 +260,8 @@ func (crs *containerRegistryService) getAcrToken(
 	return acrTokenBody, nil
 }
 
-func setHttpRequestBody(req *policy.Request, formData url.Values) error {
+func setHttpRequestBody(req *policy.Request, formData url.Values) {
 	raw := req.Raw()
 	raw.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	raw.Body = io.NopCloser(strings.NewReader(formData.Encode()))
-
-	return nil
 }

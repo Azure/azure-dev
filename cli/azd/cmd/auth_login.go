@@ -269,23 +269,29 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			fmt.Fprintln(la.console.Handles().Stderr, err.Error())
 		}
 
-		if la.formatter.Kind() == output.NoneFormat {
-			if err != nil {
-				fmt.Fprintln(la.console.Handles().Stdout, "Not logged in, run `azd auth login` to login to Azure.")
-			} else {
-				fmt.Fprintln(la.console.Handles().Stdout, cLoginSuccessMessage)
+		res := contracts.LoginResult{}
+		if err != nil {
+			res.Status = contracts.LoginStatusUnauthenticated
+		} else {
+			res.Status = contracts.LoginStatusSuccess
+			res.ExpiresOn = &token.ExpiresOn
+		}
+
+		if la.formatter.Kind() != output.NoneFormat {
+			return nil, la.formatter.Format(res, la.writer, nil)
+		} else {
+			var msg string
+			switch res.Status {
+			case contracts.LoginStatusSuccess:
+				msg = cLoginSuccessMessage
+			case contracts.LoginStatusUnauthenticated:
+				msg = "Not logged in, run `azd auth login` to login to Azure."
+			default:
+				panic("Unhandled login status")
 			}
 
+			fmt.Fprintln(la.console.Handles().Stdout, msg)
 			return nil, nil
-		} else {
-			res := contracts.LoginResult{}
-			if err != nil {
-				res.Status = contracts.LoginStatusUnauthenticated
-			} else {
-				res.Status = contracts.LoginStatusSuccess
-				res.ExpiresOn = &token.ExpiresOn
-			}
-			return nil, la.formatter.Format(res, la.writer, nil)
 		}
 	}
 

@@ -374,15 +374,56 @@ func (cli *azCli) createRoleAssignmentsClient(
 	return client, nil
 }
 
+// Find the Azure role assignment for the specified scope and role name
+func (cli *azCli) getUserRoleAssignment(
+	ctx context.Context,
+	subscriptionId string,
+	scope string,
+	roleName string,
+	principalId string,
+) ([]*armauthorization.RoleAssignment, error) {
+	client, err := cli.createRoleAssignmentsClient(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	//ask about scope and above
+	// pager := client.NewListPager(scope, &armauthorization.RoleAssignmentsClientListForScopeOptions{
+	// 	Filter: convert.RefOf(fmt.Sprintf("roleName eq '%s'", roleName)),
+	// })
+
+	pager := client.NewListForScopePager(scope,
+		&armauthorization.RoleAssignmentsClientListForScopeOptions{
+			Filter: convert.RefOf(fmt.Sprintf("atScope()+and+assignedTo('%s')", principalId)),
+		})
+
+	roleDefinitions := []*armauthorization.RoleAssignment{}
+
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed getting next page of role assignments on scope '%s': %w", scope, err)
+		}
+		roleDefinitions = append(roleDefinitions, page.Value...)
+	}
+
+	if len(roleDefinitions) == 0 {
+		return nil, fmt.Errorf("role definition with scope: '%s' and name: '%s' was not found", scope, roleName)
+	}
+
+	return roleDefinitions, nil
+}
+
 func (cli *azCli) CheckRoleAssignments(
 	ctx context.Context,
 	subscriptionId string,
 	roleName []string,
+	principalId string,
 ) error {
 	// Find the specified role in the subscription scope
 	scope := azure.SubscriptionRID(subscriptionId)
 	for _, role := range roleName {
-		result, err := cli.getRoleDefinition(ctx, subscriptionId, scope, role)
+		result, err := cli.getUserRoleAssignment(ctx, subscriptionId, scope, role, principalId)
 		if result != nil {
 			// equals return nil because err == nil if result != nil
 			return err

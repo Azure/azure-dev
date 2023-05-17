@@ -121,6 +121,8 @@ type pipelineConfigAction struct {
 	console            input.Console
 	commandRunner      exec.CommandRunner
 	credentialProvider account.SubscriptionCredentialProvider
+	subResolver        account.SubscriptionTenantResolver
+	userProfile        *azcli.UserProfileService
 }
 
 func newPipelineConfigAction(
@@ -133,13 +135,15 @@ func newPipelineConfigAction(
 	console input.Console,
 	flags *pipelineConfigFlags,
 	commandRunner exec.CommandRunner,
+	subResolver account.SubscriptionTenantResolver,
+	userProfile *azcli.UserProfileService,
 ) actions.Action {
 	pca := &pipelineConfigAction{
 		flags:              flags,
 		azCli:              azCli,
 		credentialProvider: credentialProvider,
 		manager: pipeline.NewPipelineManager(
-			azCli, azdCtx, env, flags.global, commandRunner, console, flags.PipelineManagerArgs,
+			azCli, azdCtx, env, flags.global, commandRunner, console, flags.PipelineManagerArgs, subResolver, userProfile,
 		),
 		azdCtx:         azdCtx,
 		accountManager: accountManager,

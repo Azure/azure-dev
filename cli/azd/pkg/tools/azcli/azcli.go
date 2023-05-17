@@ -156,6 +156,7 @@ type AzCli interface {
 		ctx context.Context,
 		subscriptionId string,
 		roleName []string,
+		principalId string,
 	) error
 	GetAppServiceProperties(
 		ctx context.Context,

@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -63,6 +65,8 @@ type PipelineManager struct {
 	azCli         azcli.AzCli
 	commandRunner exec.CommandRunner
 	console       input.Console
+	subResolver   account.SubscriptionTenantResolver
+	userProfile   *azcli.UserProfileService
 }
 
 func NewPipelineManager(
@@ -73,6 +77,8 @@ func NewPipelineManager(
 	commandRunner exec.CommandRunner,
 	console input.Console,
 	args PipelineManagerArgs,
+	subResolver account.SubscriptionTenantResolver,
+	userProfile *azcli.UserProfileService,
 ) *PipelineManager {
 	return &PipelineManager{
 		AzdCtx:              azdCtx,
@@ -82,6 +88,8 @@ func NewPipelineManager(
 		azCli:               azCli,
 		commandRunner:       commandRunner,
 		console:             console,
+		subResolver:         subResolver,
+		userProfile:         userProfile,
 	}
 }
 
@@ -117,10 +125,19 @@ func (i *PipelineManager) preConfigureCheck(ctx context.Context, infraOptions pr
 		)
 	}
 
+	tenantId, err := i.subResolver.LookupTenant(ctx, i.Environment.GetSubscriptionId())
+	if err != nil {
+		return configurationWasUpdated, fmt.Errorf("getting tenant id for subscription %s. Error: %w", i.Environment.GetSubscriptionId(), err)
+	}
+
+	principalId, err := azureutil.GetCurrentPrincipalId(ctx, i.userProfile, tenantId)
+	if err != nil {
+		return configurationWasUpdated, fmt.Errorf("fetching current user information: %w", err)
+	}
 	// Required authorized role assignments
 	checkRoles := []string{"Owner", "User Access Administrator"}
 	// Check permission on role assignment
-	err = i.azCli.CheckRoleAssignments(ctx, i.Environment.GetSubscriptionId(), checkRoles)
+	err = i.azCli.CheckRoleAssignments(ctx, i.Environment.GetSubscriptionId(), checkRoles, principalId)
 	if err != nil {
 		return configurationWasUpdated, err
 	}

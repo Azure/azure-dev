@@ -127,5 +127,5 @@ resource containerAppsEnvironment 'Microsoft.App/managedEnvironments@2022-03-01'
 output defaultDomain string = containerAppsEnvironment.properties.defaultDomain
 output imageName string = imageName
 output name string = app.name
-output uri string = 'https://${app.properties.configuration.ingress.fqdn}'
+output uri string = ingressEnabled ? 'https://${app.properties.configuration.ingress.fqdn}' : ''
 output identityPrincipalId string = normalizedIdentityType == 'None' ? '' : (empty(identityName) ? app.identity.principalId : userIdentity.properties.principalId)

@@ -11,9 +11,12 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"sort"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/apimanagement/armapimanagement"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appconfiguration/armappconfiguration"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/keyvault/armkeyvault"
@@ -28,7 +31,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
-	"github.com/azure/azure-dev/cli/azd/test/mocks/mockhttp"
+	"github.com/benbjohnson/clock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -39,7 +42,7 @@ func TestBicepPlan(t *testing.T) {
 	progressDone := make(chan bool)
 
 	mockContext := mocks.NewMockContext(context.Background())
-	preparePlanningMocks(mockContext)
+	prepareBicepMocks(mockContext)
 	infraProvider := createBicepProvider(t, mockContext)
 	planningTask := infraProvider.Plan(*mockContext.Context)
 
@@ -69,10 +72,10 @@ func TestBicepPlan(t *testing.T) {
 	require.IsType(t, BicepDeploymentDetails{}, deploymentPlan.Details)
 	configuredParameters := deploymentPlan.Details.(BicepDeploymentDetails).Parameters
 
-	require.Equal(t, infraProvider.env.Values["AZURE_LOCATION"], configuredParameters["location"].Value)
+	require.Equal(t, infraProvider.env.GetLocation(), configuredParameters["location"].Value)
 	require.Equal(
 		t,
-		infraProvider.env.Values["AZURE_ENV_NAME"],
+		infraProvider.env.GetEnvName(),
 		configuredParameters["environmentName"].Value,
 	)
 }
@@ -154,18 +157,11 @@ func TestBicepState(t *testing.T) {
 	expectedWebsiteUrl := "http://myapp.azurewebsites.net"
 
 	mockContext := mocks.NewMockContext(context.Background())
-	preparePlanningMocks(mockContext)
-	prepareDeployShowMocks(mockContext.HttpClient)
-	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
+	prepareBicepMocks(mockContext)
+	prepareStateMocks(mockContext)
 
 	infraProvider := createBicepProvider(t, mockContext)
-	scope := infra.NewSubscriptionScope(
-		azCli,
-		infraProvider.env.Values["AZURE_LOCATION"],
-		infraProvider.env.GetSubscriptionId(),
-		infraProvider.env.GetEnvName(),
-	)
-	getDeploymentTask := infraProvider.State(*mockContext.Context, scope)
+	getDeploymentTask := infraProvider.State(*mockContext.Context)
 
 	go func() {
 		for progressReport := range getDeploymentTask.Progress() {
@@ -200,8 +196,9 @@ func TestBicepDeploy(t *testing.T) {
 	progressDone := make(chan bool)
 
 	mockContext := mocks.NewMockContext(context.Background())
-	preparePlanningMocks(mockContext)
-	prepareDeployShowMocks(mockContext.HttpClient)
+	prepareBicepMocks(mockContext)
+	prepareStateMocks(mockContext)
+	prepareDeployMocks(mockContext)
 	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 
 	infraProvider := createBicepProvider(t, mockContext)
@@ -211,16 +208,16 @@ func TestBicepDeploy(t *testing.T) {
 		Details: BicepDeploymentDetails{
 			Template:   azure.RawArmTemplate("{}"),
 			Parameters: testArmParameters,
+			Target: infra.NewSubscriptionDeployment(
+				azCli,
+				infraProvider.env.GetLocation(),
+				infraProvider.env.GetSubscriptionId(),
+				infraProvider.env.GetEnvName(),
+			),
 		},
 	}
 
-	scope := infra.NewSubscriptionScope(
-		azCli,
-		infraProvider.env.Values["AZURE_LOCATION"],
-		infraProvider.env.GetSubscriptionId(),
-		infraProvider.env.GetEnvName(),
-	)
-	deployTask := infraProvider.Deploy(*mockContext.Context, &deploymentPlan, scope)
+	deployTask := infraProvider.Deploy(*mockContext.Context, &deploymentPlan)
 
 	go func() {
 		for deployProgress := range deployTask.Progress() {
@@ -246,8 +243,8 @@ func TestBicepDeploy(t *testing.T) {
 func TestBicepDestroy(t *testing.T) {
 	t.Run("Interactive", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		preparePlanningMocks(mockContext)
-		prepareDeployShowMocks(mockContext.HttpClient)
+		prepareBicepMocks(mockContext)
+		prepareStateMocks(mockContext)
 		prepareDestroyMocks(mockContext)
 
 		progressLog := []string{}
@@ -267,10 +264,9 @@ func TestBicepDestroy(t *testing.T) {
 		}).Respond(true)
 
 		infraProvider := createBicepProvider(t, mockContext)
-		deployment := Deployment{}
 
 		destroyOptions := NewDestroyOptions(false, false)
-		destroyTask := infraProvider.Destroy(*mockContext.Context, &deployment, destroyOptions)
+		destroyTask := infraProvider.Destroy(*mockContext.Context, destroyOptions)
 
 		go func() {
 			for destroyProgress := range destroyTask.Progress() {
@@ -304,18 +300,19 @@ func TestBicepDestroy(t *testing.T) {
 		require.Contains(t, consoleOutput[7], "")
 
 		// Verify progress output
-		require.Len(t, progressLog, 5)
-		require.Contains(t, progressLog[0], "Fetching resource groups")
-		require.Contains(t, progressLog[1], "Fetching resources")
-		require.Contains(t, progressLog[2], "Getting Key Vaults to purge")
-		require.Contains(t, progressLog[3], "Getting App Configurations to purge")
-		require.Contains(t, progressLog[4], "Getting API Management Services to purge")
+		require.Len(t, progressLog, 6)
+		require.Contains(t, progressLog[0], "Compiling Bicep template")
+		require.Contains(t, progressLog[1], "Fetching resource groups")
+		require.Contains(t, progressLog[2], "Fetching resources")
+		require.Contains(t, progressLog[3], "Getting Key Vaults to purge")
+		require.Contains(t, progressLog[4], "Getting App Configurations to purge")
+		require.Contains(t, progressLog[5], "Getting API Management Services to purge")
 	})
 
 	t.Run("InteractiveForceAndPurge", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		preparePlanningMocks(mockContext)
-		prepareDeployShowMocks(mockContext.HttpClient)
+		prepareBicepMocks(mockContext)
+		prepareStateMocks(mockContext)
 		prepareDestroyMocks(mockContext)
 
 		progressLog := []string{}
@@ -323,10 +320,9 @@ func TestBicepDestroy(t *testing.T) {
 		progressDone := make(chan bool)
 
 		infraProvider := createBicepProvider(t, mockContext)
-		deployment := Deployment{}
 
 		destroyOptions := NewDestroyOptions(true, true)
-		destroyTask := infraProvider.Destroy(*mockContext.Context, &deployment, destroyOptions)
+		destroyTask := infraProvider.Destroy(*mockContext.Context, destroyOptions)
 
 		go func() {
 			for destroyProgress := range destroyTask.Progress() {
@@ -354,12 +350,13 @@ func TestBicepDestroy(t *testing.T) {
 		require.Contains(t, consoleOutput[1], "")
 
 		// Verify progress output
-		require.Len(t, progressLog, 5)
-		require.Contains(t, progressLog[0], "Fetching resource groups")
-		require.Contains(t, progressLog[1], "Fetching resources")
-		require.Contains(t, progressLog[2], "Getting Key Vaults to purge")
-		require.Contains(t, progressLog[3], "Getting App Configurations to purge")
-		require.Contains(t, progressLog[4], "Getting API Management Services to purge")
+		require.Len(t, progressLog, 6)
+		require.Contains(t, progressLog[0], "Compiling Bicep template")
+		require.Contains(t, progressLog[1], "Fetching resource groups")
+		require.Contains(t, progressLog[2], "Fetching resources")
+		require.Contains(t, progressLog[3], "Getting Key Vaults to purge")
+		require.Contains(t, progressLog[4], "Getting App Configurations to purge")
+		require.Contains(t, progressLog[5], "Getting API Management Services to purge")
 	})
 }
 
@@ -405,6 +402,7 @@ func (b *testBicep) Build(ctx context.Context, file string) (string, error) {
 func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepProvider {
 	projectDir := "../../../../test/functional/testdata/samples/webapp"
 	options := Options{
+		Path:   "infra",
 		Module: "main",
 	}
 
@@ -443,7 +441,7 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 	return provider
 }
 
-func preparePlanningMocks(
+func prepareBicepMocks(
 	mockContext *mocks.MockContext) {
 
 	armTemplate := azure.ArmTemplate{
@@ -459,16 +457,6 @@ func preparePlanningMocks(
 	}
 
 	bicepBytes, _ := json.Marshal(armTemplate)
-	deployResult := `
-	{
-		"id":"DEPLOYMENT_ID",
-		"name":"DEPLOYMENT_NAME",
-		"properties":{
-			"outputs":{
-				"WEBSITE_URL":{"type": "String", "value": "http://myapp.azurewebsites.net"}
-			}
-		}
-	}`
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(args.Cmd, "bicep") && args.Args[0] == "--version"
@@ -483,60 +471,98 @@ func preparePlanningMocks(
 		Stdout: string(bicepBytes),
 		Stderr: "",
 	})
-
-	mockContext.HttpClient.When(func(request *http.Request) bool {
-		return request.Method == http.MethodPut && strings.Contains(
-			request.URL.Path,
-			"/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments",
-		)
-	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		return &http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(bytes.NewBuffer([]byte(deployResult))),
-			Request: &http.Request{
-				Method: http.MethodGet,
-			},
-		}, nil
-	})
 }
 
-func prepareDeployShowMocks(
-	httpClient *mockhttp.MockHttpClient) {
-	expectedWebsiteUrl := "http://myapp.azurewebsites.net"
-
-	deployOutputs := make(map[string]interface{})
-	deployOutputs["WEBSITE_URL"] = map[string]interface{}{"value": expectedWebsiteUrl, "type": "string"}
-	azDeployment := armresources.DeploymentExtended{
-		ID:   convert.RefOf("DEPLOYMENT_ID"),
-		Name: convert.RefOf("DEPLOYMENT_NAME"),
-		Properties: &armresources.DeploymentPropertiesExtended{
-			Outputs: deployOutputs,
-			Dependencies: []*armresources.Dependency{
-				{
-					DependsOn: []*armresources.BasicDependency{
-						{
-							ID:           convert.RefOf("RESOURCE_ID"),
-							ResourceName: convert.RefOf("RESOURCE_GROUP"),
-							ResourceType: convert.RefOf(string(infra.AzureResourceTypeResourceGroup)),
-						},
-					},
-				},
+var cTestEnvDeployment armresources.DeploymentExtended = armresources.DeploymentExtended{
+	ID:   convert.RefOf("DEPLOYMENT_ID"),
+	Name: convert.RefOf("test-env"),
+	Properties: &armresources.DeploymentPropertiesExtended{
+		Outputs: map[string]interface{}{
+			"WEBSITE_URL": map[string]interface{}{"value": "http://myapp.azurewebsites.net", "type": "string"},
+		},
+		OutputResources: []*armresources.ResourceReference{
+			{
+				ID: to.Ptr("/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP"),
 			},
 		},
-	}
+		ProvisioningState: to.Ptr(armresources.ProvisioningStateSucceeded),
+		Timestamp:         to.Ptr(time.Now()),
+	},
+}
 
-	deployResultBytes, _ := json.Marshal(azDeployment)
+func prepareDeployMocks(mockContext *mocks.MockContext) {
+	deployResultBytes, _ := json.Marshal(cTestEnvDeployment)
 
-	// Get deployment result
-	httpClient.When(func(request *http.Request) bool {
-		return request.Method == http.MethodGet && strings.Contains(
+	// Create deployment at subscription scope
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodPut && strings.HasSuffix(
 			request.URL.Path,
-			"/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments",
+			"/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/test-env",
 		)
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		return &http.Response{
 			StatusCode: http.StatusOK,
 			Body:       io.NopCloser(bytes.NewBuffer(deployResultBytes)),
+			Request: &http.Request{
+				Method: http.MethodGet,
+			},
+		}, nil
+	})
+
+	deploymentsPage := &armresources.DeploymentListResult{
+		Value: []*armresources.DeploymentExtended{
+			&cTestEnvDeployment,
+		},
+	}
+
+	deploymentsPageResultBytes, _ := json.Marshal(deploymentsPage)
+
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet && strings.HasSuffix(
+			request.URL.Path,
+			"/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/",
+		)
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(bytes.NewBuffer(deploymentsPageResultBytes)),
+		}, nil
+	})
+}
+
+func prepareStateMocks(mockContext *mocks.MockContext) {
+	deployResultBytes, _ := json.Marshal(cTestEnvDeployment)
+
+	// Get deployment result
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet && strings.HasSuffix(
+			request.URL.Path,
+			"/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/test-env",
+		)
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(bytes.NewBuffer(deployResultBytes)),
+		}, nil
+	})
+
+	deploymentsPage := &armresources.DeploymentListResult{
+		Value: []*armresources.DeploymentExtended{
+			&cTestEnvDeployment,
+		},
+	}
+
+	deploymentsPageResultBytes, _ := json.Marshal(deploymentsPage)
+
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet && strings.HasSuffix(
+			request.URL.Path,
+			"/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/",
+		)
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(bytes.NewBuffer(deploymentsPageResultBytes)),
 		}, nil
 	})
 }
@@ -593,35 +619,35 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 	// Delete resource group
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodDelete &&
-			strings.Contains(request.URL.Path, "subscriptions/SUBSCRIPTION_ID/resourcegroups/RESOURCE_GROUP")
+			strings.HasSuffix(request.URL.Path, "subscriptions/SUBSCRIPTION_ID/resourcegroups/RESOURCE_GROUP")
 	}).RespondFn(httpRespondFn)
 
 	// Purge Key vault
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodPost &&
-			(strings.Contains(request.URL.Path, "deletedVaults/kv-123/purge") ||
-				strings.Contains(request.URL.Path, "deletedVaults/kv2-123/purge"))
+			(strings.HasSuffix(request.URL.Path, "deletedVaults/kv-123/purge") ||
+				strings.HasSuffix(request.URL.Path, "deletedVaults/kv2-123/purge"))
 	}).RespondFn(httpRespondFn)
 
 	// Purge App configuration
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodPost &&
-			(strings.Contains(request.URL.Path, "deletedConfigurationStores/ac-123/purge") ||
-				strings.Contains(request.URL.Path, "deletedConfigurationStores/ac2-123/purge"))
+			(strings.HasSuffix(request.URL.Path, "deletedConfigurationStores/ac-123/purge") ||
+				strings.HasSuffix(request.URL.Path, "deletedConfigurationStores/ac2-123/purge"))
 	}).RespondFn(httpRespondFn)
 
 	// Purge APIM
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodDelete &&
-			(strings.Contains(request.URL.Path, "deletedservices/apim-123") ||
-				strings.Contains(request.URL.Path, "deletedservices/apim2-123"))
+			(strings.HasSuffix(request.URL.Path, "deletedservices/apim-123") ||
+				strings.HasSuffix(request.URL.Path, "deletedservices/apim2-123"))
 	}).RespondFn(httpRespondFn)
 
 	// Delete deployment
 	mockPollingUrl := "https://url-to-poll.net/keep-deleting"
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodDelete &&
-			strings.Contains(
+			strings.HasSuffix(
 				request.URL.Path, "/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/test-env")
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		response, err := mocks.CreateEmptyHttpResponse(request, 202)
@@ -646,7 +672,7 @@ var testArmParameters = azure.ArmParameters{
 
 func getKeyVaultMock(mockContext *mocks.MockContext, keyVaultString string, name string, location string) {
 	mockContext.HttpClient.When(func(request *http.Request) bool {
-		return request.Method == http.MethodGet && strings.Contains(request.URL.Path, keyVaultString)
+		return request.Method == http.MethodGet && strings.HasSuffix(request.URL.Path, keyVaultString)
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		keyVaultResponse := armkeyvault.VaultsClientGetResponse{
 			Vault: armkeyvault.Vault{
@@ -673,7 +699,7 @@ func getKeyVaultMock(mockContext *mocks.MockContext, keyVaultString string, name
 
 func getAppConfigMock(mockContext *mocks.MockContext, appConfigString string, name string, location string) {
 	mockContext.HttpClient.When(func(request *http.Request) bool {
-		return request.Method == http.MethodGet && strings.Contains(request.URL.Path, appConfigString)
+		return request.Method == http.MethodGet && strings.HasSuffix(request.URL.Path, appConfigString)
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		appConfigResponse := armappconfiguration.ConfigurationStoresClientGetResponse{
 			ConfigurationStore: armappconfiguration.ConfigurationStore{
@@ -700,7 +726,7 @@ func getAppConfigMock(mockContext *mocks.MockContext, appConfigString string, na
 
 func getAPIMMock(mockContext *mocks.MockContext, apimString string, name string, location string) {
 	mockContext.HttpClient.When(func(request *http.Request) bool {
-		return request.Method == http.MethodGet && strings.Contains(request.URL.Path, apimString)
+		return request.Method == http.MethodGet && strings.HasSuffix(request.URL.Path, apimString)
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		apimResponse := armapimanagement.ServiceClientGetResponse{
 			ServiceResource: armapimanagement.ServiceResource{
@@ -729,4 +755,65 @@ func httpRespondFn(request *http.Request) (*http.Response, error) {
 		StatusCode: http.StatusOK,
 		Body:       http.NoBody,
 	}, nil
+}
+
+func TestResourceGroupsFromDeployment(t *testing.T) {
+	t.Run("duplicate resource groups ignored", func(t *testing.T) {
+
+		mockDeployment := armresources.DeploymentExtended{
+			ID:   convert.RefOf("DEPLOYMENT_ID"),
+			Name: convert.RefOf("test-env"),
+			Properties: &armresources.DeploymentPropertiesExtended{
+				OutputResources: []*armresources.ResourceReference{
+					{
+						ID: convert.RefOf("/subscriptions/sub-id/resourceGroups/groupA"),
+					},
+					{
+						ID: convert.RefOf("/subscriptions/sub-id/resourceGroups/groupA/Microsoft.Storage/storageAccounts/storageAccount"),
+					},
+					{
+						ID: convert.RefOf("/subscriptions/sub-id/resourceGroups/groupB"),
+					},
+					{
+						ID: convert.RefOf("/subscriptions/sub-id/resourceGroups/groupB/Microsoft.web/sites/test"),
+					},
+					{
+						ID: convert.RefOf("/subscriptions/sub-id/resourceGroups/groupC"),
+					},
+				},
+				ProvisioningState: to.Ptr(armresources.ProvisioningStateSucceeded),
+				Timestamp:         to.Ptr(time.Now()),
+			},
+		}
+
+		groups := resourceGroupsFromDeployment(&mockDeployment)
+
+		sort.Strings(groups)
+		require.Equal(t, []string{"groupA", "groupB", "groupC"}, groups)
+	})
+}
+
+func TestDeploymentNameForEnv(t *testing.T) {
+	clock := clock.NewMock()
+	clock.Set(time.Unix(1683303710, 0))
+
+	tcs := []struct {
+		envName  string
+		expected string
+	}{
+		{
+			envName:  "simple-name",
+			expected: "simple-name-1683303710",
+		},
+		{
+			envName:  "azd-template-test-apim-todo-csharp-sql-swa-func-2750207-2",
+			expected: "template-test-apim-todo-csharp-sql-swa-func-2750207-2-1683303710",
+		},
+	}
+
+	for _, tc := range tcs {
+		deploymentName := deploymentNameForEnv(tc.envName, clock)
+		assert.Equal(t, tc.expected, deploymentName)
+		assert.LessOrEqual(t, len(deploymentName), 64)
+	}
 }

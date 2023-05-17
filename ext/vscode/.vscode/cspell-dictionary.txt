@@ -6,3 +6,4 @@ azureresourcegroups
 azureresources
 walkthrough
 walkthroughs
+DEBUGTELEMETRY

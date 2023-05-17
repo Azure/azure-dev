@@ -19,15 +19,15 @@
     "customizations": {
         "vscode": {
             "extensions": [
-                "ms-azuretools.azure-dev",
-                "ms-azuretools.vscode-bicep",
-                "ms-azuretools.vscode-docker",
-                "ms-vscode.vscode-node-azure-pack",
-                "ms-vscode.js-debug",
-                "esbenp.prettier-vscode",
-                "eg2.vscode-npm-script",
                 "dbaeumer.vscode-eslint",
-                "ms-azuretools.vscode-azurefunctions"
+                "esbenp.prettier-vscode",
+                "GitHub.vscode-github-actions",
+                "hashicorp.terraform",
+                "ms-azuretools.azure-dev",
+                "ms-azuretools.vscode-azurefunctions",
+                "ms-azuretools.vscode-docker",
+                "ms-vscode.js-debug",
+                "ms-vscode.vscode-node-azure-pack"
             ]
         }
     },

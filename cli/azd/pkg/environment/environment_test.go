@@ -68,10 +68,10 @@ func TestFromRoot(t *testing.T) {
 		require.NotNil(t, e)
 
 		require.NotNil(t, e.Config)
-		require.NotNil(t, e.Values)
+		require.NotNil(t, e.dotenv)
 
 		require.NotNil(t, e.Config.IsEmpty())
-		require.Equal(t, 0, len(e.Values))
+		require.Equal(t, 0, len(e.dotenv))
 	})
 
 	t.Run("EmptyWhenMissing", func(t *testing.T) {
@@ -82,10 +82,10 @@ func TestFromRoot(t *testing.T) {
 		require.NotNil(t, e)
 
 		require.NotNil(t, e.Config)
-		require.NotNil(t, e.Values)
+		require.NotNil(t, e.dotenv)
 
 		require.NotNil(t, e.Config.IsEmpty())
-		require.Equal(t, 0, len(e.Values))
+		require.Equal(t, 0, len(e.dotenv))
 	})
 
 	// Simulate loading an environment written by an earlier version of `azd` which did not write `config.json`. We should
@@ -105,7 +105,7 @@ func TestFromRoot(t *testing.T) {
 		e, err := FromRoot(testRoot)
 		require.NoError(t, err)
 
-		require.Equal(t, "yes", e.Values["TEST"])
+		require.Equal(t, "yes", e.dotenv["TEST"])
 		require.True(t, e.Config.IsEmpty())
 	})
 }
@@ -144,8 +144,13 @@ func Test_SaveAndReload(t *testing.T) {
 
 	// Verify all values exist with expected values
 	// All values now exist whether or not they were in the env state to start with
-	require.Equal(t, env.Values["SERVICE_WEB_ENDPOINT_URL"], "http://web.example.com")
-	require.Equal(t, env.Values["SERVICE_API_ENDPOINT_URL"], "http://api.example.com")
+	require.Equal(t, env.dotenv["SERVICE_WEB_ENDPOINT_URL"], "http://web.example.com")
+	require.Equal(t, env.dotenv["SERVICE_API_ENDPOINT_URL"], "http://api.example.com")
 	require.Equal(t, "SUBSCRIPTION_ID", env.GetSubscriptionId())
 	require.Equal(t, "eastus2", env.GetLocation())
+}
+
+func TestCleanName(t *testing.T) {
+	require.Equal(t, "already-clean-name", CleanName("already-clean-name"))
+	require.Equal(t, "was-CLEANED-with--bad--things-(123)", CleanName("was CLEANED with *bad* things (123)"))
 }

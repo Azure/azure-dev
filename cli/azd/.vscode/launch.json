@@ -1,14 +1,27 @@
 {
-    // If you set `AZD_DEBUG=true` in your environment, `azd` will pause early in start up and allow you to attach
-    // to it. Use the Attach to Process configuration and pick the corresponding `azd` process.
+    // You can run `git update-index --skip-worktree .vscode/launch.json to have git
+    // ignore changes to this file so you don't need to worry about commiting your edits.
     "version": "0.2.0",
     "configurations": [
+        // If you set `AZD_DEBUG=true` in your environment, `azd` will pause early in start up and allow you to attach
+        // to it. Use the Attach to Process configuration and pick the corresponding `azd` process.
         {
             "name": "Attach to Process",
             "type": "go",
             "request": "attach",
             "mode": "local",
             "processId": "${command:pickGoProcess}"
+        },
+        // This will launch azd (starting from main.go), under the debugger.
+        {
+            "name": "Launch `azd`",
+            "type": "go",
+            "request": "launch",
+            "program": "${workspaceFolder}",
+
+            // Uncomment these settings to control how `azd` is launched.
+            // "cwd": "${workspaceFolder}",
+            // "args": ["provision"]
         }
     ]
 }

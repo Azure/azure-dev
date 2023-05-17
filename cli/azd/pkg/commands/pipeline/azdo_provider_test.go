@@ -22,8 +22,8 @@ func Test_azdo_provider_getRepoDetails(t *testing.T) {
 	t.Run("error", func(t *testing.T) {
 		// arrange
 		provider := getAzdoScmProviderTestHarness(mockinput.NewMockConsole())
-		testOrgName := provider.Env.Values[azdo.AzDoEnvironmentOrgName]
-		testRepoName := provider.Env.Values[azdo.AzDoEnvironmentRepoName]
+		testOrgName := provider.Env.Dotenv()[azdo.AzDoEnvironmentOrgName]
+		testRepoName := provider.Env.Dotenv()[azdo.AzDoEnvironmentRepoName]
 		ctx := context.Background()
 
 		// act
@@ -36,21 +36,17 @@ func Test_azdo_provider_getRepoDetails(t *testing.T) {
 		require.EqualValues(t, false, details.pushStatus)
 	})
 
-	t.Run("ssh", func(t *testing.T) {
+	t.Run("ssh not supported", func(t *testing.T) {
 		// arrange
 		provider := getAzdoScmProviderTestHarness(mockinput.NewMockConsole())
-		testOrgName := provider.Env.Values[azdo.AzDoEnvironmentOrgName]
-		testRepoName := provider.Env.Values[azdo.AzDoEnvironmentRepoName]
 		ctx := context.Background()
 
 		// act
 		details, e := provider.gitRepoDetails(ctx, "git@ssh.dev.azure.com:v3/fake_org/repo1/repo1")
 
 		// assert
-		require.NoError(t, e)
-		require.EqualValues(t, testOrgName, details.owner)
-		require.EqualValues(t, testRepoName, details.repoName)
-		require.EqualValues(t, false, details.pushStatus)
+		require.Error(t, e, ErrSSHNotSupported)
+		require.EqualValues(t, (*gitRepositoryDetails)(nil), details)
 	})
 
 	t.Run("non azure devops https remote", func(t *testing.T) {
@@ -115,7 +111,7 @@ func Test_azdo_scm_provider_preConfigureCheck(t *testing.T) {
 		// assert
 		require.Nil(t, e)
 		// PAT is not persisted to .env
-		require.EqualValues(t, "", provider.Env.Values[azdo.AzDoPatName])
+		require.EqualValues(t, "", provider.Env.Dotenv()[azdo.AzDoPatName])
 		require.True(t, updatedConfig)
 	})
 }
@@ -171,7 +167,8 @@ func Test_saveEnvironmentConfig(t *testing.T) {
 		writtenEnv, err := environment.FromRoot(envPath)
 		require.NoError(t, err)
 
-		require.EqualValues(t, writtenEnv.Values[key], value)
+		readValue := writtenEnv.Dotenv()[key]
+		require.EqualValues(t, readValue, value)
 		require.NoError(t, e)
 	})
 
@@ -179,17 +176,16 @@ func Test_saveEnvironmentConfig(t *testing.T) {
 
 func getEmptyAzdoScmProviderTestHarness(console input.Console) *AzdoScmProvider {
 	return &AzdoScmProvider{
-		Env: &environment.Environment{
-			Values: map[string]string{},
-		},
+		Env:     environment.Ephemeral(),
 		console: console,
 	}
 }
 
 func getAzdoScmProviderTestHarness(console input.Console) *AzdoScmProvider {
 	return &AzdoScmProvider{
-		Env: &environment.Environment{
-			Values: map[string]string{
+		Env: environment.EphemeralWithValues(
+			"test-env",
+			map[string]string{
 				azdo.AzDoEnvironmentOrgName:       "fake_org",
 				azdo.AzDoEnvironmentProjectName:   "project1",
 				azdo.AzDoEnvironmentProjectIdName: "12345",
@@ -197,15 +193,16 @@ func getAzdoScmProviderTestHarness(console input.Console) *AzdoScmProvider {
 				azdo.AzDoEnvironmentRepoIdName:    "9876",
 				azdo.AzDoEnvironmentRepoWebUrl:    "https://repo",
 			},
-		},
+		),
 		console: console,
 	}
 }
 
 func getAzdoCiProviderTestHarness(console input.Console) *AzdoCiProvider {
 	return &AzdoCiProvider{
-		Env: &environment.Environment{
-			Values: map[string]string{
+		Env: environment.EphemeralWithValues(
+			"test-env",
+			map[string]string{
 				azdo.AzDoEnvironmentOrgName:       "fake_org",
 				azdo.AzDoEnvironmentProjectName:   "project1",
 				azdo.AzDoEnvironmentProjectIdName: "12345",
@@ -213,7 +210,7 @@ func getAzdoCiProviderTestHarness(console input.Console) *AzdoCiProvider {
 				azdo.AzDoEnvironmentRepoIdName:    "9876",
 				azdo.AzDoEnvironmentRepoWebUrl:    "https://repo",
 			},
-		},
+		),
 		console: console,
 	}
 }

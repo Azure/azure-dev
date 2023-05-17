@@ -15,12 +15,7 @@ import (
 
 // helper method to verify that a configuration exists in the .env file or in system environment variables
 func ensureConfigExists(ctx context.Context, env *environment.Environment, key string, label string) (string, error) {
-	value := env.Values[key]
-	if value != "" {
-		return value, nil
-	}
-
-	value, exists := os.LookupEnv(key)
+	value, exists := env.LookupEnv(key)
 	if !exists || value == "" {
 		return value, fmt.Errorf("%s not found in environment variable %s", label, key)
 	}
@@ -41,8 +36,8 @@ func EnsurePatExists(ctx context.Context, env *environment.Environment, console 
 			output.WithHighLightFormat("%s", AzDoPatName)))
 
 		pat, err := console.Prompt(ctx, input.ConsoleOptions{
-			Message:      "Personal Access Token (PAT):",
-			DefaultValue: "",
+			Message:    "Personal Access Token (PAT):",
+			IsPassword: true,
 		})
 		if err != nil {
 			return "", false, fmt.Errorf("asking for pat: %w", err)
@@ -80,7 +75,7 @@ func EnsureOrgNameExists(ctx context.Context, env *environment.Environment, cons
 
 // helper function to save configuration values to .env file
 func saveEnvironmentConfig(key string, value string, env *environment.Environment) error {
-	env.Values[key] = value
+	env.DotenvSet(key, value)
 	err := env.Save()
 
 	if err != nil {

@@ -53,17 +53,8 @@ $buildFlags = @(
     # Remove file system paths from the compiled binary
     "-gcflags=-trimpath",
     # Remove file system paths from the assembled code
-    "-asmflags=-trimpath",
-    # remove all file system paths from the resulting executable.
-    # Instead of absolute file system paths, the recorded file names
-    # will begin either a module path@version (when using modules),
-    # or a plain import path (when using the standard library, or GOPATH).
-    "-trimpath"
+    "-asmflags=-trimpath"
 )
-
-if ($CodeCoverageEnabled) {
-    $buildFlags += "-cover"
-}
 
 # Build constraint tags
 # cfi: Enable Control Flow Integrity (CFI),
@@ -81,6 +72,11 @@ if ($IsWindows) {
     Write-Host "Building for windows"
     $buildFlags += @(
         "-buildmode=exe",
+        # remove all file system paths from the resulting executable.
+        # Instead of absolute file system paths, the recorded file names
+        # will begin either a module path@version (when using modules),
+        # or a plain import path (when using the standard library, or GOPATH).
+        "-trimpath",
         $tagsFlag,
         # -extldflags=-Wl,--high-entropy-va: Pass the high-entropy VA flag to the linker to enable high entropy virtual addresses
         ($ldFlag + "-linkmode=auto -extldflags=-Wl,--high-entropy-va`"")
@@ -117,6 +113,7 @@ foreach ($buildFlag in $buildFlags) {
         $buildFlag = "$($argWithValue[0])=`"$($argWithValue[1])`""
     }
 
+    # Write each flag on a newline with '`' acting as the multiline separator
     if ($i -eq $buildFlags.Length - 1) {
         Write-Host "  $buildFlag"
     }

@@ -333,8 +333,10 @@ func getCmdRootHelpFooter(cmd *cobra.Command) string {
 			output.WithHighLightFormat("azd init --template ")+
 			output.WithWarningFormat("[%s]", "template name")+" command in an empty directory.",
 		"Then, run "+output.WithHighLightFormat("azd up")+" to get the application up-and-running in Azure.",
-		output.WithGrayFormat("To view available templates run `azd template list` or visit: ")+
-			output.WithLinkFormat("https://azure.github.io/awesome-azd"),
+		"To view a curated list of sample templates, run "+
+			output.WithHighLightFormat("azd template list")+".\n"+
+			"To view all available sample templates, including those submitted by the azd community, visit: "+
+			output.WithLinkFormat("https://azure.github.io/awesome-azd")+".",
 		getCmdHelpDefaultFooter(cmd),
 	)
 }

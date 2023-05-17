@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
@@ -85,7 +86,7 @@ services:
 				Type:     convert.RefOf(string(infra.AzureResourceTypeWebSite)),
 				Location: convert.RefOf("eastus2"),
 				Tags: map[string]*string{
-					defaultServiceTag: convert.RefOf("api"),
+					azure.TagKeyAzdServiceName: convert.RefOf("api"),
 				},
 			},
 		},
@@ -141,7 +142,7 @@ services:
 				Type:     convert.RefOf(string(infra.AzureResourceTypeWebSite)),
 				Location: convert.RefOf("eastus2"),
 				Tags: map[string]*string{
-					defaultServiceTag: convert.RefOf("web"),
+					azure.TagKeyAzdServiceName: convert.RefOf("web"),
 				},
 			},
 		})
@@ -200,7 +201,7 @@ services:
 				Type:     convert.RefOf(string(infra.AzureResourceTypeWebSite)),
 				Location: convert.RefOf("eastus2"),
 				Tags: map[string]*string{
-					defaultServiceTag: convert.RefOf("web"),
+					azure.TagKeyAzdServiceName: convert.RefOf("web"),
 				},
 			},
 		})
@@ -225,5 +226,29 @@ services:
 		require.NoError(t, err)
 		require.NotNil(t, targetResource)
 		require.Equal(t, expectedResourceGroupName, targetResource.ResourceGroupName())
+	}
+}
+
+func Test_Invalid_Project_File(t *testing.T) {
+	tests := map[string]string{
+		"Empty":      "",
+		"Spaces":     "  ",
+		"Lines":      "\n\n\n",
+		"Tabs":       "\t\t\t",
+		"Whitespace": " \t \n \t \n \t \n",
+		"InvalidYaml": `
+			name: test-proj
+			metadata:
+				template: test-proj-template
+			services:
+		`,
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			projectConfig, err := Parse(context.Background(), test)
+			require.Nil(t, projectConfig)
+			require.Error(t, err)
+		})
 	}
 }

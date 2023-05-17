@@ -10,14 +10,17 @@ import (
 	"io"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/spf13/cobra"
@@ -40,12 +43,13 @@ func newAuthLoginFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions
 
 type loginFlags struct {
 	onlyCheckStatus        bool
-	useDeviceCode          bool
+	useDeviceCode          boolPtr
 	tenantID               string
 	clientID               string
 	clientSecret           stringPtr
 	clientCertificate      string
 	federatedTokenProvider string
+	scopes                 []string
 	redirectPort           int
 	global                 *internal.GlobalCommandOptions
 }
@@ -73,6 +77,29 @@ func (p *stringPtr) Type() string {
 	return "string"
 }
 
+// boolPtr implements a pflag.Value and allows us to distinguish between a flag value being explicitly set to
+// bool vs not being present.
+type boolPtr struct {
+	ptr *string
+}
+
+func (p *boolPtr) Set(s string) error {
+	p.ptr = &s
+	return nil
+}
+
+func (p *boolPtr) String() string {
+	if p.ptr != nil {
+		return *p.ptr
+	}
+
+	return "false"
+}
+
+func (p *boolPtr) Type() string {
+	return ""
+}
+
 const (
 	cClientSecretFlagName                = "client-secret"
 	cClientCertificateFlagName           = "client-certificate"
@@ -81,15 +108,14 @@ const (
 
 func (lf *loginFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	local.BoolVar(&lf.onlyCheckStatus, "check-status", false, "Checks the log-in status instead of logging in.")
-	local.BoolVar(
+	f := local.VarPF(
 		&lf.useDeviceCode,
 		"use-device-code",
-		// For Codespaces in VSCode Browser, interactive browser login will 404 when attempting to redirect to localhost
-		// (since azd cannot launch a localhost server when running remotely).
-		// Hence, we default to device-code. See https://github.com/Azure/azure-dev/issues/1006
-		os.Getenv("CODESPACES") == "true",
+		"",
 		"When true, log in by using a device code instead of a browser.",
 	)
+	// ensure the flag behaves as a common boolean flag which is set to true when used without any other arg
+	f.NoOptDefVal = "true"
 	local.StringVar(&lf.clientID, "client-id", "", "The client id for the service principal to authenticate with.")
 	local.Var(
 		&lf.clientSecret,
@@ -111,6 +137,12 @@ func (lf *loginFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 		"tenant-id",
 		"",
 		"The tenant id or domain name to authenticate with.")
+	local.StringArrayVar(
+		&lf.scopes,
+		"scope",
+		nil,
+		"The scope to acquire during login")
+	_ = local.MarkHidden("scope")
 	local.IntVar(
 		&lf.redirectPort,
 		"redirect-port",
@@ -154,8 +186,12 @@ type loginAction struct {
 	accountSubManager *account.SubscriptionsManager
 	flags             *loginFlags
 	annotations       CmdAnnotations
+	commandRunner     exec.CommandRunner
 }
 
+// it is important to update both newAuthLoginAction and newLoginAction at the same time
+// newAuthLoginAction is the action that is bound to `azd auth login`,
+// and newLoginAction is the action that is bound to `azd login`
 func newAuthLoginAction(
 	formatter output.Formatter,
 	writer io.Writer,
@@ -164,6 +200,7 @@ func newAuthLoginAction(
 	flags *authLoginFlags,
 	console input.Console,
 	annotations CmdAnnotations,
+	commandRunner exec.CommandRunner,
 ) actions.Action {
 	return &loginAction{
 		formatter:         formatter,
@@ -173,9 +210,13 @@ func newAuthLoginAction(
 		accountSubManager: accountSubManager,
 		flags:             &flags.loginFlags,
 		annotations:       annotations,
+		commandRunner:     commandRunner,
 	}
 }
 
+// it is important to update both newAuthLoginAction and newLoginAction at the same time
+// newAuthLoginAction is the action that is bound to `azd auth login`,
+// and newLoginAction is the action that is bound to `azd login`
 func newLoginAction(
 	formatter output.Formatter,
 	writer io.Writer,
@@ -184,6 +225,7 @@ func newLoginAction(
 	flags *loginFlags,
 	console input.Console,
 	annotations CmdAnnotations,
+	commandRunner exec.CommandRunner,
 ) actions.Action {
 	return &loginAction{
 		formatter:         formatter,
@@ -193,10 +235,15 @@ func newLoginAction(
 		accountSubManager: accountSubManager,
 		flags:             flags,
 		annotations:       annotations,
+		commandRunner:     commandRunner,
 	}
 }
 
 func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	if len(la.flags.scopes) == 0 {
+		la.flags.scopes = auth.LoginScopes
+	}
+
 	if la.annotations[loginCmdParentAnnotation] == "" {
 		fmt.Fprintln(
 			la.console.Handles().Stderr,
@@ -228,10 +275,14 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	} else if err != nil {
 		return nil, fmt.Errorf("checking auth status: %w", err)
 	} else {
-		if token, err := auth.EnsureLoggedInCredential(ctx, cred); errors.Is(err, auth.ErrNoCurrentUser) {
+		// Ensure ID token is valid, and can be exchanged for an access token
+		token, err := cred.GetToken(ctx, policy.TokenRequestOptions{
+			Scopes: la.flags.scopes,
+		})
+
+		if err != nil {
+			log.Printf("failed to check auth status: %s", err.Error())
 			res.Status = contracts.LoginStatusUnauthenticated
-		} else if err != nil {
-			return nil, fmt.Errorf("checking auth status: %w", err)
 		} else {
 			res.Status = contracts.LoginStatusSuccess
 			res.ExpiresOn = &token.ExpiresOn
@@ -290,6 +341,24 @@ func countTrue(elms ...bool) int {
 	}
 
 	return i
+}
+
+// runningOnCodespacesBrowser use `code --status` which returns:
+//
+//	> The --status argument is not yet supported in browsers.
+//
+// to detect when vscode is within a WebBrowser environment.
+func runningOnCodespacesBrowser(ctx context.Context, commandRunner exec.CommandRunner) bool {
+	runArgs := exec.NewRunArgs("code", "--status")
+	result, err := commandRunner.Run(ctx, runArgs)
+	if err != nil {
+		// An error here means VSCode is not installed or found, or something else.
+		// At any case, we know VSCode is not within a webBrowser
+		log.Printf("error running code --status: %s", err.Error())
+		return false
+	}
+
+	return strings.Contains(result.Stdout, "The --status argument is not yet supported in browsers")
 }
 
 func (la *loginAction) login(ctx context.Context) error {
@@ -356,15 +425,49 @@ func (la *loginAction) login(ctx context.Context) error {
 		return nil
 	}
 
-	if la.flags.useDeviceCode {
-		if _, err := la.authManager.LoginWithDeviceCode(ctx, la.writer, la.flags.tenantID); err != nil {
+	useDevCode, err := parseUseDeviceCode(ctx, la.flags.useDeviceCode, la.commandRunner)
+	if err != nil {
+		return err
+	}
+
+	if useDevCode {
+		_, err := la.authManager.LoginWithDeviceCode(ctx, la.writer, la.flags.tenantID, la.flags.scopes)
+		if err != nil {
 			return fmt.Errorf("logging in: %w", err)
 		}
 	} else {
-		if _, err := la.authManager.LoginInteractive(ctx, la.flags.redirectPort, la.flags.tenantID); err != nil {
+		_, err := la.authManager.LoginInteractive(ctx, la.flags.redirectPort, la.flags.tenantID, la.flags.scopes)
+		if err != nil {
 			return fmt.Errorf("logging in: %w", err)
 		}
 	}
 
 	return nil
+}
+
+func parseUseDeviceCode(ctx context.Context, flag boolPtr, commandRunner exec.CommandRunner) (bool, error) {
+	var useDevCode bool
+
+	useDevCodeFlag := flag.ptr != nil
+	if useDevCodeFlag {
+		userInput, err := strconv.ParseBool(*flag.ptr)
+		if err != nil {
+			return false, fmt.Errorf("unexpected boolean input for '--use-device-code': %w", err)
+		}
+		// honor the value from the user input. No override.
+		return userInput, err
+	}
+
+	// Detect cases where the browser isn't available for interactive auth, and we instead want to set `useDeviceCode`
+	// to be true by default
+	inCodespacesEnv := os.Getenv("CODESPACES") == "true"
+	if inCodespacesEnv {
+		// For VSCode online (in web Browser), like GitHub Codespaces or VSCode online attached to any server,
+		// interactive browser login will 404 when attempting to redirect to localhost
+		// (since azd launches a localhost server running remotely and the login response is accepted locally).
+		// Hence, we override login to device-code. See https://github.com/Azure/azure-dev/issues/1006
+		useDevCode = runningOnCodespacesBrowser(ctx, commandRunner)
+	}
+
+	return useDevCode, nil
 }

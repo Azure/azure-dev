@@ -89,7 +89,6 @@ services:
 	require.Equal(t, 2, len(projectConfig.Services))
 
 	for key, svc := range projectConfig.Services {
-		require.Equal(t, key, svc.Module)
 		require.Equal(t, key, svc.Name)
 		require.Equal(t, projectConfig, svc.Project)
 	}
@@ -149,31 +148,6 @@ services:
 	require.Equal(t, "../", service.Docker.Context)
 }
 
-func TestProjectWithCustomModule(t *testing.T) {
-	const testProj = `
-name: test-proj
-metadata:
-  template: test-proj-template
-resourceGroup: rg-test
-services:
-  api:
-    project: src/api
-    language: js
-    host: containerapp
-    module: ./api/api
-`
-
-	mockContext := mocks.NewMockContext(context.Background())
-	projectConfig, err := Parse(*mockContext.Context, testProj)
-
-	require.NotNil(t, projectConfig)
-	require.Nil(t, err)
-
-	service := projectConfig.Services["api"]
-
-	require.Equal(t, "./api/api", service.Module)
-}
-
 func TestProjectConfigAddHandler(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	project := getProjectConfig()
@@ -186,10 +160,6 @@ func TestProjectConfigAddHandler(t *testing.T) {
 
 	err := project.AddHandler(ServiceEventDeploy, handler)
 	require.Nil(t, err)
-
-	// Expected error if attempting to register the same handler more than 1 time
-	err = project.AddHandler(ServiceEventDeploy, handler)
-	require.NotNil(t, err)
 
 	err = project.RaiseEvent(*mockContext.Context, ServiceEventDeploy, ProjectLifecycleEventArgs{Project: project})
 	require.Nil(t, err)
@@ -322,7 +292,6 @@ services:
     project: src/api
     language: js
     host: containerapp
-    module: ./api/api
 `
 
 	mockContext := mocks.NewMockContext(context.Background())
@@ -344,10 +313,6 @@ func TestProjectConfigRaiseEventWithoutArgs(t *testing.T) {
 
 	err := project.AddHandler(ProjectEventDeploy, handler)
 	require.Nil(t, err)
-
-	// Expected error if attempting to register the same handler more than 1 time
-	err = project.AddHandler(ProjectEventDeploy, handler)
-	require.NotNil(t, err)
 
 	err = project.RaiseEvent(ctx, ProjectEventDeploy, ProjectLifecycleEventArgs{Project: project})
 	require.Nil(t, err)
@@ -372,10 +337,6 @@ func TestProjectConfigRaiseEventWithArgs(t *testing.T) {
 	err := project.AddHandler(ProjectEventDeploy, handler)
 	require.Nil(t, err)
 
-	// Expected error if attempting to register the same handler more than 1 time
-	err = project.AddHandler(ProjectEventDeploy, handler)
-	require.NotNil(t, err)
-
 	err = project.RaiseEvent(*mockContext.Context, ProjectEventDeploy, eventArgs)
 	require.Nil(t, err)
 	require.True(t, handlerCalled)
@@ -393,7 +354,6 @@ services:
     project: src/api
     language: js
     host: containerapp
-    module: ./api/api
     `
 
 	mockContext := mocks.NewMockContext(context.Background())

@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"net/url"
 	"sort"
 	"strings"
 	"time"
@@ -32,17 +31,17 @@ type ProvisioningProgressDisplay struct {
 	displayedResources map[string]bool
 	resourceManager    infra.ResourceManager
 	console            input.Console
-	scope              infra.Scope
+	target             infra.Deployment
 }
 
 func NewProvisioningProgressDisplay(
 	rm infra.ResourceManager,
 	console input.Console,
-	scope infra.Scope,
+	target infra.Deployment,
 ) ProvisioningProgressDisplay {
 	return ProvisioningProgressDisplay{
 		displayedResources: map[string]bool{},
-		scope:              scope,
+		target:             target,
 		resourceManager:    rm,
 		console:            console,
 	}
@@ -58,7 +57,7 @@ func (display *ProvisioningProgressDisplay) ReportProgress(
 	}
 
 	if !display.deploymentStarted {
-		_, err := display.scope.GetDeployment(ctx)
+		_, err := display.target.Deployment(ctx)
 		if err != nil {
 			// Return default progress
 			log.Printf("error while reporting progress: %s", err.Error())
@@ -66,10 +65,7 @@ func (display *ProvisioningProgressDisplay) ReportProgress(
 		}
 
 		display.deploymentStarted = true
-		deploymentUrl := fmt.Sprintf(
-			output.WithLinkFormat("https://portal.azure.com/#blade/HubsExtension/DeploymentDetailsBlade/overview/id/%s\n"),
-			url.PathEscape(display.scope.DeploymentUrl()),
-		)
+		deploymentUrl := fmt.Sprintf(output.WithLinkFormat("%s\n"), display.target.PortalUrl())
 
 		display.console.MessageUxItem(
 			ctx,
@@ -82,7 +78,7 @@ func (display *ProvisioningProgressDisplay) ReportProgress(
 		)
 	}
 
-	operations, err := display.resourceManager.GetDeploymentResourceOperations(ctx, display.scope, queryStart)
+	operations, err := display.resourceManager.GetDeploymentResourceOperations(ctx, display.target, queryStart)
 	if err != nil {
 		// Status display is best-effort activity.
 		return &progress, err
@@ -133,7 +129,7 @@ func (display *ProvisioningProgressDisplay) logNewlyCreatedResources(
 		resourceTypeName := *resource.Properties.TargetResource.ResourceType
 		resourceTypeDisplayName, err := display.resourceManager.GetResourceTypeDisplayName(
 			ctx,
-			display.scope.SubscriptionId(),
+			display.target.SubscriptionId(),
 			*resource.Properties.TargetResource.ID,
 			infra.AzureResourceType(resourceTypeName),
 		)
@@ -172,7 +168,7 @@ func (display *ProvisioningProgressDisplay) logNewlyCreatedResources(
 		resourceTypeName := *inProgResource.Properties.TargetResource.ResourceType
 		resourceTypeDisplayName, err := display.resourceManager.GetResourceTypeDisplayName(
 			ctx,
-			display.scope.SubscriptionId(),
+			display.target.SubscriptionId(),
 			*inProgResource.Properties.TargetResource.ID,
 			infra.AzureResourceType(resourceTypeName),
 		)
@@ -188,6 +184,13 @@ func (display *ProvisioningProgressDisplay) logNewlyCreatedResources(
 			inProgress = append(inProgress, resourceTypeDisplayName)
 		}
 	}
+
+	if !display.console.IsSpinnerInteractive() {
+		// If non-interactive, we simply do not want to display spinner messages that ends up
+		// being individual lines of messages on the console
+		return
+	}
+
 	if len(inProgress) > 0 {
 		display.console.ShowSpinner(ctx,
 			fmt.Sprintf("Creating/Updating resources (%s)", strings.Join(inProgress, ", ")), input.Step)

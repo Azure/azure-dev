@@ -76,7 +76,7 @@ func (p *GitHubScmProvider) preConfigureCheck(
 }
 
 // name returns the name of the provider
-func (p *GitHubScmProvider) name() string {
+func (p *GitHubScmProvider) Name() string {
 	return "GitHub"
 }
 
@@ -188,12 +188,13 @@ func (p *GitHubScmProvider) preventGitPush(
 	return false, nil
 }
 
-func (p *GitHubScmProvider) postGitPush(
+func (p *GitHubScmProvider) GitPush(
 	ctx context.Context,
+	gitCli git.GitCli,
 	gitRepo *gitRepositoryDetails,
 	remoteName string,
 	branchName string) error {
-	return nil
+	return gitCli.PushUpstream(ctx, gitRepo.gitProjectPath, remoteName, branchName)
 }
 
 // enum type for taking a choice after finding GitHub actions disabled.
@@ -390,7 +391,7 @@ func (p *GitHubCiProvider) preConfigureCheck(
 }
 
 // name returns the name of the provider.
-func (p *GitHubCiProvider) name() string {
+func (p *GitHubCiProvider) Name() string {
 	return "GitHub"
 }
 
@@ -459,8 +460,9 @@ func (p *GitHubCiProvider) configureClientCredentialsAuth(
 	if err := ghCli.SetSecret(ctx, repoSlug, secretName, string(credentials)); err != nil {
 		return fmt.Errorf("failed setting %s secret: %w", secretName, err)
 	}
-	p.console.MessageUxItem(ctx, &ux.CreatedRepoSecret{
+	p.console.MessageUxItem(ctx, &ux.CreatedRepoValue{
 		Name: secretName,
+		Kind: ux.GitHubSecret,
 	})
 
 	if infraOptions.Provider == provisioning.Terraform {
@@ -477,35 +479,38 @@ func (p *GitHubCiProvider) configureClientCredentialsAuth(
 
 		/* #nosec G101 - Potential hardcoded credentials - false positive */
 		secretName = "ARM_TENANT_ID"
-		if err := ghCli.SetSecret(ctx, repoSlug, secretName, values.Tenant); err != nil {
-			return fmt.Errorf("setting terraform env var credentials:: %w", err)
+		if err := ghCli.SetVariable(ctx, repoSlug, secretName, values.Tenant); err != nil {
+			return fmt.Errorf("setting terraform %s:: %w", secretName, err)
 		}
-		p.console.MessageUxItem(ctx, &ux.CreatedRepoSecret{
+		p.console.MessageUxItem(ctx, &ux.CreatedRepoValue{
 			Name: secretName,
+			Kind: ux.GitHubVariable,
 		})
 
 		/* #nosec G101 - Potential hardcoded credentials - false positive */
 		secretName = "ARM_CLIENT_ID"
-		if err := ghCli.SetSecret(ctx, repoSlug, secretName, values.ClientId); err != nil {
-			return fmt.Errorf("setting terraform env var credentials:: %w", err)
+		if err := ghCli.SetVariable(ctx, repoSlug, secretName, values.ClientId); err != nil {
+			return fmt.Errorf("setting terraform %s:: %w", secretName, err)
 		}
-		p.console.MessageUxItem(ctx, &ux.CreatedRepoSecret{
+		p.console.MessageUxItem(ctx, &ux.CreatedRepoValue{
 			Name: secretName,
+			Kind: ux.GitHubVariable,
 		})
 
 		/* #nosec G101 - Potential hardcoded credentials - false positive */
 		secretName = "ARM_CLIENT_SECRET"
 		if err := ghCli.SetSecret(ctx, repoSlug, secretName, values.ClientSecret); err != nil {
-			return fmt.Errorf("setting terraform env var credentials:: %w", err)
+			return fmt.Errorf("setting terraform %s:: %w", secretName, err)
 		}
-		p.console.MessageUxItem(ctx, &ux.CreatedRepoSecret{
+		p.console.MessageUxItem(ctx, &ux.CreatedRepoValue{
 			Name: secretName,
+			Kind: ux.GitHubSecret,
 		})
 
 		// Sets the terraform remote state environment variables in github
 		remoteStateKeys := []string{"RS_RESOURCE_GROUP", "RS_STORAGE_ACCOUNT", "RS_CONTAINER_NAME"}
 		for _, key := range remoteStateKeys {
-			value, ok := azdEnvironment.Values[key]
+			value, ok := azdEnvironment.LookupEnv(key)
 			if !ok || strings.TrimSpace(value) == "" {
 				p.console.StopSpinner(ctx, "Configuring terraform", input.StepWarning)
 				p.console.MessageUxItem(ctx, &ux.WarningMessage{
@@ -523,11 +528,12 @@ func (p *GitHubCiProvider) configureClientCredentialsAuth(
 				return errors.New("terraform remote state is not correctly configured")
 			}
 			// env var was found
-			if err := ghCli.SetSecret(ctx, repoSlug, key, value); err != nil {
+			if err := ghCli.SetVariable(ctx, repoSlug, key, value); err != nil {
 				return fmt.Errorf("setting terraform remote state variables: %w", err)
 			}
-			p.console.MessageUxItem(ctx, &ux.CreatedRepoSecret{
+			p.console.MessageUxItem(ctx, &ux.CreatedRepoValue{
 				Name: key,
+				Kind: ux.GitHubVariable,
 			})
 		}
 	}
@@ -537,11 +543,12 @@ func (p *GitHubCiProvider) configureClientCredentialsAuth(
 		environment.LocationEnvVarName,
 		environment.SubscriptionIdEnvVarName} {
 
-		if err := ghCli.SetSecret(ctx, repoSlug, envName, azdEnvironment.Values[envName]); err != nil {
-			return fmt.Errorf("failed setting %s secret: %w", envName, err)
+		if err := ghCli.SetVariable(ctx, repoSlug, envName, azdEnvironment.Getenv(envName)); err != nil {
+			return fmt.Errorf("failed setting %s variable: %w", envName, err)
 		}
-		p.console.MessageUxItem(ctx, &ux.CreatedRepoSecret{
+		p.console.MessageUxItem(ctx, &ux.CreatedRepoValue{
 			Name: envName,
+			Kind: ux.GitHubVariable,
 		})
 	}
 
@@ -572,7 +579,7 @@ func (p *GitHubCiProvider) configureFederatedAuth(
 		return err
 	}
 
-	githubSecrets := map[string]string{
+	githubVariables := map[string]string{
 		environment.EnvNameEnvVarName:        azdEnvironment.GetEnvName(),
 		environment.LocationEnvVarName:       azdEnvironment.GetLocation(),
 		environment.TenantIdEnvVarName:       azureCredentials.TenantId,
@@ -580,12 +587,13 @@ func (p *GitHubCiProvider) configureFederatedAuth(
 		"AZURE_CLIENT_ID":                    azureCredentials.ClientId,
 	}
 
-	for key, value := range githubSecrets {
-		if err := ghCli.SetSecret(ctx, repoSlug, key, value); err != nil {
-			return fmt.Errorf("failed setting github secret '%s':  %w", key, err)
+	for key, value := range githubVariables {
+		if err := ghCli.SetVariable(ctx, repoSlug, key, value); err != nil {
+			return fmt.Errorf("failed setting github variable '%s':  %w", key, err)
 		}
-		p.console.MessageUxItem(ctx, &ux.CreatedRepoSecret{
+		p.console.MessageUxItem(ctx, &ux.CreatedRepoValue{
 			Name: key,
+			Kind: ux.GitHubVariable,
 		})
 	}
 
@@ -733,9 +741,13 @@ func getRemoteUrlFromExisting(ctx context.Context, ghCli github.GitHubCli, conso
 		return "", fmt.Errorf("listing existing repositories: %w", err)
 	}
 
-	options := make([]string, len(repos))
-	for idx, repo := range repos {
-		options[idx] = repo.NameWithOwner
+	options := make([]string, 0, len(repos))
+	for _, repo := range repos {
+		options = append(options, repo.NameWithOwner)
+	}
+
+	if len(options) == 0 {
+		return "", errors.New("no existing GitHub repositories found")
 	}
 
 	repoIdx, err := console.Select(ctx, input.ConsoleOptions{

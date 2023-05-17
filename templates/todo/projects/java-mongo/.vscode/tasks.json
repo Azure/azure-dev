@@ -14,7 +14,10 @@
             "type": "shell",
             "command": "./mvnw spring-boot:run",
             "options": {
-                "cwd": "${workspaceFolder}/src/api/"
+                "cwd": "${workspaceFolder}/src/api/",
+                "env": {
+                    "API_ENVIRONMENT": "develop"
+                }
             },
             "presentation": {
                 "panel": "dedicated",

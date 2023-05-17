@@ -32,6 +32,8 @@ dictionaries:
 overrides:
   - filename: docs/docgen.go
     words:
+      - alexwolf
+      - alexwolfmsft
       - pname
       - puichan
       - devx

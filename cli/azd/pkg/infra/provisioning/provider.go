@@ -14,7 +14,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
@@ -55,6 +54,7 @@ type NewProviderFn func(
 	commandRunner exec.CommandRunner,
 	prompters Prompters,
 	principalProvider CurrentPrincipalIdProvider,
+	alphaFeatureManager *alpha.FeatureManager,
 ) (Provider, error)
 
 var (
@@ -125,16 +125,14 @@ type Provider interface {
 	EnsureConfigured(ctx context.Context) error
 	// State gets the current state of the infrastructure, this contains both the provisioned resources and any outputs from
 	// the module.
-	State(ctx context.Context, scope infra.Scope) *async.InteractiveTaskWithProgress[*StateResult, *StateProgress]
+	State(ctx context.Context) *async.InteractiveTaskWithProgress[*StateResult, *StateProgress]
 	Plan(ctx context.Context) *async.InteractiveTaskWithProgress[*DeploymentPlan, *DeploymentPlanningProgress]
 	Deploy(
 		ctx context.Context,
 		plan *DeploymentPlan,
-		scope infra.Scope,
 	) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress]
 	Destroy(
 		ctx context.Context,
-		deployment *Deployment,
 		options DestroyOptions,
 	) *async.InteractiveTaskWithProgress[*DestroyResult, *DestroyProgress]
 }
@@ -174,7 +172,8 @@ func NewProvider(
 				alpha.GetEnableCommand(alphaFeatureId),
 			)
 		}
-		console.MessageUxItem(ctx, alpha.WarningMessage(alphaFeatureId))
+
+		console.WarnForFeature(ctx, alphaFeatureId)
 	}
 
 	newProviderFn, ok := providers[infraOptions.Provider]
@@ -184,7 +183,7 @@ func NewProvider(
 	}
 
 	provider, err := newProviderFn(
-		ctx, env, projectPath, infraOptions, console, azCli, commandRunner, prompters, principalProvider)
+		ctx, env, projectPath, infraOptions, console, azCli, commandRunner, prompters, principalProvider, alphaFeatureManager)
 	if err != nil {
 		return nil, fmt.Errorf("error creating provider for type '%s' : %w", infraOptions.Provider, err)
 	}

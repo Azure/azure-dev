@@ -36,7 +36,7 @@ func Test_NewAksTarget(t *testing.T) {
 	serviceConfig := createTestServiceConfig("./src/api", AksTarget, ServiceLanguageTypeScript)
 	env := createEnv()
 
-	serviceTarget := createServiceTarget(mockContext, serviceConfig, env)
+	serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env)
 
 	require.NotNil(t, serviceTarget)
 	require.NotNil(t, serviceConfig)
@@ -53,7 +53,7 @@ func Test_Required_Tools(t *testing.T) {
 	serviceConfig := createTestServiceConfig(tempDir, AksTarget, ServiceLanguageTypeScript)
 	env := createEnv()
 
-	serviceTarget := createServiceTarget(mockContext, serviceConfig, env)
+	serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env)
 
 	requiredTools := serviceTarget.RequiredExternalTools(*mockContext.Context)
 	require.Len(t, requiredTools, 2)
@@ -72,7 +72,7 @@ func Test_Package_Deploy_HappyPath(t *testing.T) {
 	serviceConfig := createTestServiceConfig(tempDir, AksTarget, ServiceLanguageTypeScript)
 	env := createEnv()
 
-	serviceTarget := createServiceTarget(mockContext, serviceConfig, env)
+	serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env)
 	err = setupK8sManifests(t, serviceConfig)
 	require.NoError(t, err)
 
@@ -105,7 +105,7 @@ func Test_Package_Deploy_HappyPath(t *testing.T) {
 	require.IsType(t, new(kubectl.Deployment), deployResult.Details)
 	require.Greater(t, len(deployResult.Endpoints), 0)
 	// New env variable is created
-	require.Equal(t, "REGISTRY.azurecr.io/test-app/api-test:azd-deploy-0", env.Values["SERVICE_API_IMAGE_NAME"])
+	require.Equal(t, "REGISTRY.azurecr.io/test-app/api-test:azd-deploy-0", env.Dotenv()["SERVICE_API_IMAGE_NAME"])
 }
 
 func Test_Deploy_No_Cluster_Name(t *testing.T) {
@@ -120,9 +120,9 @@ func Test_Deploy_No_Cluster_Name(t *testing.T) {
 	env := createEnv()
 
 	// Simulate AKS cluster name not found in env file
-	delete(env.Values, environment.AksClusterEnvVarName)
+	env.DotenvDelete(environment.AksClusterEnvVarName)
 
-	serviceTarget := createServiceTarget(mockContext, serviceConfig, env)
+	serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env)
 	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "CLUSTER_NAME", string(infra.AzureResourceTypeManagedCluster))
 	packageOutput := &ServicePackageResult{
 		Build: &ServiceBuildResult{BuildOutputPath: "IMAGE_ID"},
@@ -156,7 +156,7 @@ func Test_Deploy_No_Admin_Credentials(t *testing.T) {
 	serviceConfig := createTestServiceConfig(tempDir, AksTarget, ServiceLanguageTypeScript)
 	env := createEnv()
 
-	serviceTarget := createServiceTarget(mockContext, serviceConfig, env)
+	serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env)
 	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "CLUSTER_NAME", string(infra.AzureResourceTypeManagedCluster))
 	packageOutput := &ServicePackageResult{
 		Build: &ServiceBuildResult{BuildOutputPath: "IMAGE_ID"},
@@ -185,6 +185,19 @@ func setupK8sManifests(t *testing.T, serviceConfig *ServiceConfig) error {
 		err = os.WriteFile(filepath.Join(manifestsDir, filename), []byte(""), osutil.PermissionFile)
 		require.NoError(t, err)
 	}
+
+	return nil
+}
+
+func setupMocksForAksTarget(mockContext *mocks.MockContext) error {
+	err := setupListClusterAdminCredentialsMock(mockContext, http.StatusOK)
+	if err != nil {
+		return err
+	}
+
+	setupMocksForAcr(mockContext)
+	setupMocksForKubectl(mockContext)
+	setupMocksForDocker(mockContext)
 
 	return nil
 }
@@ -219,47 +232,7 @@ func setupListClusterAdminCredentialsMock(mockContext *mocks.MockContext, status
 	return nil
 }
 
-func setupMocksForAksTarget(mockContext *mocks.MockContext) error {
-	err := setupListClusterAdminCredentialsMock(mockContext, http.StatusOK)
-	if err != nil {
-		return err
-	}
-
-	// Config view
-	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "kubectl config view")
-	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-		return exec.NewRunResult(0, "", ""), nil
-	})
-
-	// Config use context
-	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "kubectl config use-context")
-	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-		return exec.NewRunResult(0, "", ""), nil
-	})
-
-	// Create Namespace
-	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "kubectl create namespace")
-	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-		return exec.NewRunResult(0, "", ""), nil
-	})
-
-	// Apply Pipe
-	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "kubectl apply -f -")
-	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-		return exec.NewRunResult(0, "", ""), nil
-	})
-
-	// Create Secret
-	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "kubectl create secret generic")
-	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-		return exec.NewRunResult(0, "", ""), nil
-	})
-
+func setupMocksForAcr(mockContext *mocks.MockContext) {
 	// List container registries
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodGet &&
@@ -301,24 +274,40 @@ func setupMocksForAksTarget(mockContext *mocks.MockContext) error {
 
 		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, result)
 	})
+}
 
-	// Docker login
+func setupMocksForKubectl(mockContext *mocks.MockContext) {
+	// Config view
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "docker login")
+		return strings.Contains(command, "kubectl config view")
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		return exec.NewRunResult(0, "", ""), nil
 	})
 
-	// Docker Tag
+	// Config use context
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "docker tag")
+		return strings.Contains(command, "kubectl config use-context")
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		return exec.NewRunResult(0, "", ""), nil
 	})
 
-	// Push Container Image
+	// Create Namespace
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "docker push")
+		return strings.Contains(command, "kubectl create namespace")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		return exec.NewRunResult(0, "", ""), nil
+	})
+
+	// Apply Pipe
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "kubectl apply -f -")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		return exec.NewRunResult(0, "", ""), nil
+	})
+
+	// Create Secret
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "kubectl create secret generic")
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		return exec.NewRunResult(0, "", ""), nil
 	})
@@ -435,8 +424,29 @@ func setupMocksForAksTarget(mockContext *mocks.MockContext) error {
 
 		return exec.NewRunResult(0, string(jsonBytes), ""), nil
 	})
+}
 
-	return nil
+func setupMocksForDocker(mockContext *mocks.MockContext) {
+	// Docker login
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "docker login")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		return exec.NewRunResult(0, "", ""), nil
+	})
+
+	// Docker Tag
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "docker tag")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		return exec.NewRunResult(0, "", ""), nil
+	})
+
+	// Push Container Image
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "docker push")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		return exec.NewRunResult(0, "", ""), nil
+	})
 }
 
 func createK8sResourceList[T any](resource T) *kubectl.List[T] {
@@ -466,7 +476,7 @@ func createEnv() *environment.Environment {
 	})
 }
 
-func createServiceTarget(
+func createAksServiceTarget(
 	mockContext *mocks.MockContext,
 	serviceConfig *ServiceConfig,
 	env *environment.Environment,

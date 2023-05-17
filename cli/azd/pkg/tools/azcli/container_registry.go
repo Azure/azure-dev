@@ -210,6 +210,7 @@ func (crs *containerRegistryService) createRegistriesClient(
 	return client, nil
 }
 
+// Exchanges an AAD token for an ACR refresh token
 func (crs *containerRegistryService) getAcrToken(
 	ctx context.Context,
 	subscriptionId string,
@@ -225,6 +226,7 @@ func (crs *containerRegistryService) getAcrToken(
 		return nil, fmt.Errorf("getting token for subscription '%s': %w", subscriptionId, err)
 	}
 
+	// Implementation based on docs @ https://azure.github.io/acr/AAD-OAuth.html
 	options := clientOptionsBuilder(ctx, crs.httpClient, crs.userAgent).BuildCoreClientOptions()
 	pipeline := azruntime.NewPipeline("azd-acr", internal.Version, azruntime.PipelineOptions{}, options)
 

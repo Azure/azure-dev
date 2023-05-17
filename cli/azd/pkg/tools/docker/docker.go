@@ -46,7 +46,7 @@ func (d *docker) Login(ctx context.Context, loginServer string, username string,
 		"--username", username,
 		"--password-stdin",
 		loginServer,
-	).WithCwd(".").WithStdIn(strings.NewReader(password))
+	).WithStdIn(strings.NewReader(password))
 
 	_, err := d.commandRunner.Run(ctx, runArgs)
 	if err != nil {

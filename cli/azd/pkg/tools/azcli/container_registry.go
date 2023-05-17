@@ -2,18 +2,19 @@ package azcli
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 	"net/url"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	azruntime "github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
-	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
@@ -88,10 +89,12 @@ func (crs *containerRegistryService) Login(ctx context.Context, subscriptionId s
 	// First attempt to get ACR credentials from the logged in user
 	dockerCreds, tokenErr := crs.getTokenCredentials(ctx, subscriptionId, loginServer)
 	if tokenErr != nil {
+		log.Printf("failed getting ACR token credentials: %s\n", tokenErr.Error())
+
 		// If that fails, attempt to get ACR credentials from the admin user
 		adminCreds, adminErr := crs.getAdminUserCredentials(ctx, subscriptionId, loginServer)
 		if adminErr != nil {
-			return fmt.Errorf("failed logging into container registry: %w, %w", tokenErr, adminErr)
+			return fmt.Errorf("failed logging into container registry, token: %w, admin: %w", tokenErr, adminErr)
 		}
 
 		dockerCreds = adminCreds
@@ -217,10 +220,13 @@ func (crs *containerRegistryService) getAcrToken(
 		return nil, fmt.Errorf("getting credentials for subscription '%s': %w", subscriptionId, err)
 	}
 
-	token, err := creds.GetToken(ctx, policy.TokenRequestOptions{Scopes: auth.LoginScopes})
+	token, err := creds.GetToken(ctx, policy.TokenRequestOptions{Scopes: []string{azure.ManagementScope}})
 	if err != nil {
 		return nil, fmt.Errorf("getting token for subscription '%s': %w", subscriptionId, err)
 	}
+
+	options := clientOptionsBuilder(ctx, crs.httpClient, crs.userAgent).BuildCoreClientOptions()
+	pipeline := azruntime.NewPipeline("azd-acr", internal.Version, azruntime.PipelineOptions{}, options)
 
 	formData := url.Values{}
 	formData.Set("grant_type", "access_token")
@@ -228,34 +234,34 @@ func (crs *containerRegistryService) getAcrToken(
 	formData.Set("access_token", token.Token)
 
 	tokenUrl := fmt.Sprintf("https://%s/oauth2/exchange", loginServer)
-	req, err := http.NewRequestWithContext(ctx, http.MethodPost, tokenUrl, strings.NewReader(formData.Encode()))
+	req, err := azruntime.NewRequest(ctx, http.MethodPost, tokenUrl)
 	if err != nil {
 		return nil, fmt.Errorf("creating request: %w", err)
 	}
 
-	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	setHttpRequestBody(req, formData)
 
-	resp, err := crs.httpClient.Do(req)
+	response, err := pipeline.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("getting token: %w", err)
+		return nil, httputil.HandleRequestError(response, err)
 	}
 
-	defer resp.Body.Close()
+	if !azruntime.HasStatusCode(response, http.StatusOK) {
+		return nil, azruntime.NewResponseError(response)
+	}
 
-	body, err := io.ReadAll(resp.Body)
+	acrTokenBody, err := httputil.ReadRawResponse[acrToken](response)
 	if err != nil {
-		return nil, fmt.Errorf("reading response body: %w", err)
+		return nil, err
 	}
 
-	if resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("getting token: unexpected status code %d, %s", resp.StatusCode, string(body))
-	}
+	return acrTokenBody, nil
+}
 
-	var acrResponse acrToken
-	err = json.Unmarshal(body, &acrResponse)
-	if err != nil {
-		return nil, fmt.Errorf("unmarshalling response body: %w", err)
-	}
+func setHttpRequestBody(req *policy.Request, formData url.Values) error {
+	raw := req.Raw()
+	raw.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	raw.Body = io.NopCloser(strings.NewReader(formData.Encode()))
 
-	return &acrResponse, nil
+	return nil
 }

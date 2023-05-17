@@ -61,7 +61,7 @@ services:
 		require.Equal(t, []string{
 			"build", "-q",
 			"-f", "./Dockerfile",
-			"--platform", "amd64",
+			"--platform", docker.DefaultPlatform,
 			"-t", "test-proj-web",
 			".",
 		}, args.Args)
@@ -102,7 +102,7 @@ services:
 	require.Equal(t, "imageId", buildResult.BuildOutputPath)
 	require.Nil(t, err)
 	require.Len(t, progressMessages, 1)
-	require.Equal(t, "Building docker image", progressMessages[0])
+	require.Equal(t, "Building Docker image", progressMessages[0])
 	require.Equal(t, true, ran)
 }
 
@@ -149,7 +149,7 @@ services:
 		require.Equal(t, []string{
 			"build", "-q",
 			"-f", "./Dockerfile.dev",
-			"--platform", "amd64",
+			"--platform", docker.DefaultPlatform,
 			"-t", "test-proj-web",
 			"../",
 		}, args.Args)
@@ -190,7 +190,7 @@ services:
 
 	require.Equal(t, "imageId", buildResult.BuildOutputPath)
 	require.Nil(t, err)
-	require.Equal(t, "Building docker image", status)
+	require.Equal(t, "Building Docker image", status)
 	require.Equal(t, true, ran)
 }
 
@@ -225,7 +225,7 @@ func Test_DockerProject_Build(t *testing.T) {
 		[]string{
 			"build", "-q",
 			"-f", "./Dockerfile",
-			"--platform", "amd64",
+			"--platform", docker.DefaultPlatform,
 			"-t", "test-app-api",
 			".",
 		},

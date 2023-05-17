@@ -55,7 +55,7 @@ func (m *HooksMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 	}
 
 	projectConfig, err := m.lazyProjectConfig.GetValue()
-	if err != nil {
+	if err != nil || projectConfig == nil {
 		log.Println("azd project is not available, skipping all hook registrations.")
 		return next(ctx)
 	}

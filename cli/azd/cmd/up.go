@@ -3,15 +3,19 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -51,6 +55,7 @@ type upAction struct {
 	flags                      *upFlags
 	env                        *environment.Environment
 	accountManager             account.Manager
+	projectConfig              *project.ProjectConfig
 	packageActionInitializer   actions.ActionInitializer[*packageAction]
 	provisionActionInitializer actions.ActionInitializer[*provisionAction]
 	deployActionInitializer    actions.ActionInitializer[*deployAction]
@@ -61,7 +66,9 @@ type upAction struct {
 func newUpAction(
 	flags *upFlags,
 	env *environment.Environment,
+	_ auth.LoggedInGuard,
 	accountManager account.Manager,
+	projectConfig *project.ProjectConfig,
 	packageActionInitializer actions.ActionInitializer[*packageAction],
 	provisionActionInitializer actions.ActionInitializer[*provisionAction],
 	deployActionInitializer actions.ActionInitializer[*deployAction],
@@ -72,6 +79,7 @@ func newUpAction(
 		flags:                      flags,
 		env:                        env,
 		accountManager:             accountManager,
+		projectConfig:              projectConfig,
 		packageActionInitializer:   packageActionInitializer,
 		provisionActionInitializer: provisionActionInitializer,
 		deployActionInitializer:    deployActionInitializer,
@@ -100,10 +108,12 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			output.WithWarningFormat("WARNING: The '--service' flag is deprecated and will be removed in a future release."))
 	}
 
-	err := provisioning.EnsureSubscriptionAndLocation(ctx, u.console, u.env, u.accountManager)
+	err := provisioning.EnsureEnv(ctx, u.console, u.env, u.accountManager)
 	if err != nil {
 		return nil, err
 	}
+
+	startTime := time.Now()
 
 	packageAction, err := u.packageActionInitializer()
 	if err != nil {
@@ -142,11 +152,17 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		deploy.flags.serviceName = ""
 	}
 	deployOptions := &middleware.Options{CommandPath: "deploy"}
-	deployResult, err := u.runner.RunChildAction(ctx, deployOptions, deploy)
+	_, err = u.runner.RunChildAction(ctx, deployOptions, deploy)
 	if err != nil {
 		return nil, err
 	}
-	return deployResult, nil
+
+	return &actions.ActionResult{
+		Message: &actions.ResultMessage{
+			Header: fmt.Sprintf("Your application was provisioned and deployed to Azure in %s.",
+				ux.DurationAsText(time.Since(startTime))),
+		},
+	}, nil
 }
 
 func getCmdUpHelpDescription(c *cobra.Command) string {

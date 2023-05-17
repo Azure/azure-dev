@@ -10,7 +10,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	_ "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/test"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -146,13 +145,7 @@ func TestManagerGetState(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	provisioningScope := infra.NewSubscriptionScope(
-		azCli,
-		"eastus2",
-		env.GetSubscriptionId(),
-		env.GetEnvName(),
-	)
-	getResult, err := mgr.State(*mockContext.Context, provisioningScope)
+	getResult, err := mgr.State(*mockContext.Context)
 
 	require.NotNil(t, getResult)
 	require.Nil(t, err)
@@ -188,13 +181,7 @@ func TestManagerDeploy(t *testing.T) {
 	require.NoError(t, err)
 
 	deploymentPlan, _ := mgr.Plan(*mockContext.Context)
-	provisioningScope := infra.NewSubscriptionScope(
-		azCli,
-		"eastus2",
-		env.GetSubscriptionId(),
-		env.GetEnvName(),
-	)
-	deployResult, err := mgr.Deploy(*mockContext.Context, deploymentPlan, provisioningScope)
+	deployResult, err := mgr.Deploy(*mockContext.Context, deploymentPlan)
 
 	require.NotNil(t, deployResult)
 	require.Nil(t, err)
@@ -229,9 +216,8 @@ func TestManagerDestroyWithPositiveConfirmation(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	deploymentPlan, _ := mgr.Plan(*mockContext.Context)
 	destroyOptions := NewDestroyOptions(false, false)
-	destroyResult, err := mgr.Destroy(*mockContext.Context, &deploymentPlan.Deployment, destroyOptions)
+	destroyResult, err := mgr.Destroy(*mockContext.Context, destroyOptions)
 
 	require.NotNil(t, destroyResult)
 	require.Nil(t, err)
@@ -272,9 +258,8 @@ func TestManagerDestroyWithNegativeConfirmation(t *testing.T) {
 	)
 	require.NoError(t, err)
 
-	deploymentPlan, _ := mgr.Plan(*mockContext.Context)
 	destroyOptions := NewDestroyOptions(false, false)
-	destroyResult, err := mgr.Destroy(*mockContext.Context, &deploymentPlan.Deployment, destroyOptions)
+	destroyResult, err := mgr.Destroy(*mockContext.Context, destroyOptions)
 
 	require.Nil(t, destroyResult)
 	require.NotNil(t, err)

@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 
@@ -15,7 +16,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -321,10 +321,39 @@ func newEnvRefreshFlags(cmd *cobra.Command, global *internal.GlobalCommandOption
 }
 
 func newEnvRefreshCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "refresh",
+	cmd := &cobra.Command{
+		Use:   "refresh <environment>",
 		Short: "Refresh environment settings by using information from a previous infrastructure provision.",
+
+		// We want to support the usual -e / --environment arguments as all our commands which take environments do, but for
+		// ergonomics, we'd also like you to be able to run `azd env refresh some-environment-name` to behave the same way as
+		// `azd env refresh -e some-environment-name` would have.
+		Args: func(cmd *cobra.Command, args []string) error {
+			if err := cobra.MaximumNArgs(1)(cmd, args); err != nil {
+				return err
+			}
+
+			if len(args) == 0 {
+				return nil
+			}
+
+			if flagValue, err := cmd.Flags().GetString(environmentNameFlag); err == nil {
+				if flagValue != "" && args[0] != flagValue {
+					return errors.New(
+						"the --environment flag and an explicit environment name as an argument may not be used together")
+				}
+			}
+
+			return cmd.Flags().Set(environmentNameFlag, args[0])
+		},
+		Annotations: map[string]string{},
 	}
+
+	// This is like the Use property above, but does not include the hint to show an environment name is supported. This
+	// is used by some tests which need to construct a valid command line to run `azd` and here using `<environment>` would
+	// be invalid, since it is an invalid name.
+	cmd.Annotations["azdtest.use"] = "refresh"
+	return cmd
 }
 
 type envRefreshAction struct {
@@ -401,9 +430,7 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 		return nil, fmt.Errorf("creating provisioning manager: %w", err)
 	}
 
-	scope := infra.NewSubscriptionScope(ef.azCli, ef.env.GetLocation(), ef.env.GetSubscriptionId(), ef.env.GetEnvName())
-
-	getStateResult, err := infraManager.State(ctx, scope)
+	getStateResult, err := infraManager.State(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("getting deployment: %w", err)
 	}

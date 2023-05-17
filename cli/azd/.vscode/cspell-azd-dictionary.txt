@@ -33,7 +33,9 @@ BUILDNUMBER
 cflags
 circleci
 cmdsubst
+consolesize
 containerapp
+containerapps
 contoso
 csharpapp
 csharpapptest
@@ -45,8 +47,8 @@ dockerproject
 dskip
 eastus
 endregion
-envname
 envlist
+envname
 errcheck
 errorinfo
 errorlint
@@ -57,10 +59,12 @@ functionapp
 GOARCH
 godotenv
 golangci
+hotspot
 ineffassign
 javac
 jmes
 keychain
+LASTEXITCODE
 ldflags
 lechnerc77
 mgmt
@@ -90,6 +94,9 @@ pyapp
 pyvenv
 restoreapp
 retriable
+# hyphen is optional, "re-authentication" and "reauthentication" are equivalent.
+reauthentication
+relogin
 rzip
 secureobject
 securestring
@@ -103,6 +110,7 @@ staticwebapp
 stdouttrace
 STRINGSLICE
 structs
+substr
 swacli
 Syncer
 teamcity
@@ -112,9 +120,16 @@ tracetest
 Truef
 typeflag
 unmarshalling
+unmarshaled
 unsetenvs
 unsets
 utsname
 westus2
 wireinject
 yacspin
+springapp
+appplatform
+armappplatform
+azfile
+createdby
+buildpacks

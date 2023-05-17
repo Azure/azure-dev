@@ -8,21 +8,18 @@ import (
 type RunArgs struct {
 	Cmd  string
 	Args []string
-	Cwd  string
-	Env  []string
+	// Any string from SensitiveData will be redacted as *** if found in Args
+	SensitiveData []string
+	Cwd           string
+	Env           []string
 
 	// Stderr will receive a copy of the text written to Stderr by
 	// the command.
 	// NOTE: RunResult.Stderr will still contain stderr output.
 	Stderr io.Writer
 
-	// Debug will `log.Printf` the command and it's results after it completes.
-	Debug bool
-
-	// EnrichError will include any command output if there is a failure
-	// and output is available.
-	// This is off by default.
-	EnrichError bool
+	// Enables debug logging.
+	DebugLogging *bool
 
 	// When set will run the command within a shell
 	UseShell bool
@@ -39,6 +36,16 @@ func NewRunArgs(cmd string, args ...string) RunArgs {
 	return RunArgs{
 		Cmd:  cmd,
 		Args: args,
+	}
+}
+
+// NewRunArgs creates a new instance with the specified cmd and args and a list of SensitiveData
+// Use this constructor to protect known sensitive data from going to logs
+func NewRunArgsWithSensitiveData(cmd string, args, sensitiveData []string) RunArgs {
+	return RunArgs{
+		Cmd:           cmd,
+		Args:          args,
+		SensitiveData: sensitiveData,
 	}
 }
 
@@ -73,15 +80,9 @@ func (b RunArgs) WithShell(useShell bool) RunArgs {
 	return b
 }
 
-// Updates whether or not errors will be enriched
-func (b RunArgs) WithEnrichError(enrichError bool) RunArgs {
-	b.EnrichError = enrichError
-	return b
-}
-
 // Updates whether or not debug output will be written to default logger
-func (b RunArgs) WithDebug(debug bool) RunArgs {
-	b.Debug = debug
+func (b RunArgs) WithDebugLogging(debug bool) RunArgs {
+	b.DebugLogging = &debug
 	return b
 }
 

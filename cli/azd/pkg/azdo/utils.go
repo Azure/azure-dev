@@ -41,8 +41,8 @@ func EnsurePatExists(ctx context.Context, env *environment.Environment, console 
 			output.WithHighLightFormat("%s", AzDoPatName)))
 
 		pat, err := console.Prompt(ctx, input.ConsoleOptions{
-			Message:      "Personal Access Token (PAT):",
-			DefaultValue: "",
+			Message:    "Personal Access Token (PAT):",
+			IsPassword: true,
 		})
 		if err != nil {
 			return "", false, fmt.Errorf("asking for pat: %w", err)

@@ -14,7 +14,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/spin"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -45,7 +44,7 @@ func (m *Manager) Plan(ctx context.Context) (*DeploymentPlan, error) {
 }
 
 // Gets the latest deployment details for the specified scope
-func (m *Manager) State(ctx context.Context, scope infra.Scope) (*StateResult, error) {
+func (m *Manager) State(ctx context.Context) (*StateResult, error) {
 	var stateResult *StateResult
 
 	err := m.runAction(
@@ -53,7 +52,7 @@ func (m *Manager) State(ctx context.Context, scope infra.Scope) (*StateResult, e
 		"Retrieving Infrastructure State",
 		m.interactive,
 		func(ctx context.Context, spinner *spin.Spinner) error {
-			queryTask := m.provider.State(ctx, scope)
+			queryTask := m.provider.State(ctx)
 
 			go func() {
 				for progress := range queryTask.Progress() {
@@ -82,9 +81,9 @@ func (m *Manager) State(ctx context.Context, scope infra.Scope) (*StateResult, e
 }
 
 // Deploys the Azure infrastructure for the specified project
-func (m *Manager) Deploy(ctx context.Context, plan *DeploymentPlan, scope infra.Scope) (*DeployResult, error) {
+func (m *Manager) Deploy(ctx context.Context, plan *DeploymentPlan) (*DeployResult, error) {
 	// Apply the infrastructure deployment
-	deployResult, err := m.deploy(ctx, plan, scope)
+	deployResult, err := m.deploy(ctx, plan)
 	if err != nil {
 		return nil, err
 	}
@@ -97,9 +96,9 @@ func (m *Manager) Deploy(ctx context.Context, plan *DeploymentPlan, scope infra.
 }
 
 // Destroys the Azure infrastructure for the specified project
-func (m *Manager) Destroy(ctx context.Context, deployment *Deployment, options DestroyOptions) (*DestroyResult, error) {
+func (m *Manager) Destroy(ctx context.Context, options DestroyOptions) (*DestroyResult, error) {
 	// Call provisioning provider to destroy the infrastructure
-	destroyResult, err := m.destroy(ctx, deployment, options)
+	destroyResult, err := m.destroy(ctx, options)
 	if err != nil {
 		return nil, err
 	}
@@ -139,9 +138,8 @@ func (m *Manager) plan(ctx context.Context) (*DeploymentPlan, error) {
 func (m *Manager) deploy(
 	ctx context.Context,
 	plan *DeploymentPlan,
-	scope infra.Scope,
 ) (*DeployResult, error) {
-	deployTask := m.provider.Deploy(ctx, plan, scope)
+	deployTask := m.provider.Deploy(ctx, plan)
 
 	go func() {
 		for progress := range deployTask.Progress() {
@@ -161,10 +159,10 @@ func (m *Manager) deploy(
 }
 
 // Destroys the specified infrastructure provisioning and orchestrates the interactive terminal operations
-func (m *Manager) destroy(ctx context.Context, deployment *Deployment, options DestroyOptions) (*DestroyResult, error) {
+func (m *Manager) destroy(ctx context.Context, options DestroyOptions) (*DestroyResult, error) {
 	var destroyResult *DestroyResult
 
-	destroyTask := m.provider.Destroy(ctx, deployment, options)
+	destroyTask := m.provider.Destroy(ctx, options)
 
 	go func() {
 		for progress := range destroyTask.Progress() {
@@ -307,7 +305,7 @@ func (m *Manager) promptLocation(
 }
 
 func (m *Manager) ensureSubscriptionLocation(ctx context.Context, env *environment.Environment) error {
-	return EnsureSubscriptionAndLocation(ctx, m.console, m.env, m.accountManager)
+	return EnsureEnv(ctx, m.console, m.env, m.accountManager)
 }
 
 type CurrentPrincipalIdProvider interface {

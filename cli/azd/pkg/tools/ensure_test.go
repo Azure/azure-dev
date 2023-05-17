@@ -21,9 +21,9 @@ type TestTool struct {
 	installChecks int
 }
 
-func (t *TestTool) CheckInstalled(ctx context.Context) (bool, error) {
+func (t *TestTool) CheckInstalled(ctx context.Context) error {
 	t.installChecks++
-	return true, nil
+	return nil
 }
 
 func (t *TestTool) InstallUrl() string {

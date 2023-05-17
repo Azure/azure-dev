@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -12,7 +13,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -145,6 +145,8 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		TitleNote: "Provisioning Azure resources can take some time"},
 	)
 
+	startTime := time.Now()
+
 	if err := p.projectManager.Initialize(ctx, p.projectConfig); err != nil {
 		return nil, err
 	}
@@ -166,20 +168,26 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 	if err != nil {
 		return nil, fmt.Errorf("creating provisioning manager: %w", err)
 	}
+	var deployResult *provisioning.DeployResult
 
-	deploymentPlan, err := infraManager.Plan(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("planning deployment: %w", err)
+	projectEventArgs := project.ProjectLifecycleEventArgs{
+		Project: p.projectConfig,
 	}
 
-	provisioningScope := infra.NewSubscriptionScope(
-		p.azCli, p.env.GetLocation(), p.env.GetSubscriptionId(), p.env.GetEnvName(),
-	)
-	deployResult, err := infraManager.Deploy(ctx, deploymentPlan, provisioningScope)
+	err = p.projectConfig.Invoke(ctx, project.ProjectEventProvision, projectEventArgs, func() error {
+		deploymentPlan, err := infraManager.Plan(ctx)
+		if err != nil {
+			return fmt.Errorf("planning deployment: %w", err)
+		}
+
+		deployResult, err = infraManager.Deploy(ctx, deploymentPlan)
+
+		return err
+	})
 
 	if err != nil {
 		if p.formatter.Kind() == output.JsonFormat {
-			stateResult, err := infraManager.State(ctx, provisioningScope)
+			stateResult, err := infraManager.State(ctx)
 			if err != nil {
 				return nil, fmt.Errorf(
 					"deployment failed and the deployment result is unavailable: %w",
@@ -214,7 +222,7 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 	}
 
 	if p.formatter.Kind() == output.JsonFormat {
-		stateResult, err := infraManager.State(ctx, provisioningScope)
+		stateResult, err := infraManager.State(ctx)
 		if err != nil {
 			return nil, fmt.Errorf(
 				"deployment succeeded but the deployment result is unavailable: %w",
@@ -233,7 +241,8 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			Header: "Your project has been provisioned!",
+			Header: fmt.Sprintf(
+				"Your application was provisioned in Azure in %s.", ux.DurationAsText(time.Since(startTime))),
 			FollowUp: getResourceGroupFollowUp(
 				ctx, p.formatter, p.projectConfig, p.resourceManager, p.env),
 		},

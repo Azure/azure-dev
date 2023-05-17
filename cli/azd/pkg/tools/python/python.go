@@ -6,6 +6,7 @@ package python
 import (
 	"context"
 	"fmt"
+	"log"
 	"path"
 	"path/filepath"
 	"runtime"
@@ -35,24 +36,27 @@ func (cli *PythonCli) versionInfo() tools.VersionInfo {
 	}
 }
 
-func (cli *PythonCli) CheckInstalled(ctx context.Context) (bool, error) {
-	pyString, found, err := checkPath()
-	if !found {
-		return false, err
+func (cli *PythonCli) CheckInstalled(ctx context.Context) error {
+	pyString, err := checkPath()
+	if err != nil {
+		return err
 	}
 	pythonRes, err := tools.ExecuteCommand(ctx, cli.commandRunner, pyString, "--version")
 	if err != nil {
-		return false, fmt.Errorf("checking %s version: %w", cli.Name(), err)
+		return fmt.Errorf("checking %s version: %w", cli.Name(), err)
 	}
+
+	log.Printf("python version: %s", pythonRes)
+
 	pythonSemver, err := tools.ExtractVersion(pythonRes)
 	if err != nil {
-		return false, fmt.Errorf("converting to semver version fails: %w", err)
+		return fmt.Errorf("converting to semver version fails: %w", err)
 	}
 	updateDetail := cli.versionInfo()
 	if pythonSemver.LT(updateDetail.MinimumVersion) {
-		return false, &tools.ErrSemver{ToolName: cli.Name(), VersionInfo: updateDetail}
+		return &tools.ErrSemver{ToolName: cli.Name(), VersionInfo: updateDetail}
 	}
-	return true, nil
+	return nil
 }
 
 func (cli *PythonCli) InstallUrl() string {
@@ -64,10 +68,9 @@ func (cli *PythonCli) Name() string {
 }
 
 func (cli *PythonCli) InstallRequirements(ctx context.Context, workingDir, environment, requirementFile string) error {
-	var res exec.RunResult
 	var err error
 
-	pyString, _, err := checkPath()
+	pyString, err := checkPath()
 	if err != nil {
 		return err
 	}
@@ -89,24 +92,24 @@ func (cli *PythonCli) InstallRequirements(ctx context.Context, workingDir, envir
 			WithCwd(workingDir).
 			WithEnv([]string{vEnvSetting})
 
-		res, err = cli.commandRunner.Run(ctx, runArgs)
+		_, err = cli.commandRunner.Run(ctx, runArgs)
 	} else {
 		envActivation := ". " + path.Join(environment, "bin", "activate")
 		installCmd := fmt.Sprintf("%s -m pip install -r %s", pyString, requirementFile)
 		commands := []string{envActivation, installCmd}
 
 		runArgs := exec.NewRunArgs("").WithCwd(workingDir)
-		res, err = cli.commandRunner.RunList(ctx, commands, runArgs)
+		_, err = cli.commandRunner.RunList(ctx, commands, runArgs)
 	}
 
 	if err != nil {
-		return fmt.Errorf("failed to install requirements for project '%s': %w (%s)", workingDir, err, res.String())
+		return fmt.Errorf("failed to install requirements for project '%s': %w", workingDir, err)
 	}
 	return nil
 }
 
 func (cli *PythonCli) CreateVirtualEnv(ctx context.Context, workingDir, name string) error {
-	pyString, _, err := checkPath()
+	pyString, err := checkPath()
 	if err != nil {
 		return err
 	}
@@ -115,37 +118,35 @@ func (cli *PythonCli) CreateVirtualEnv(ctx context.Context, workingDir, name str
 		NewRunArgs(pyString, "-m", "venv", name).
 		WithCwd(workingDir)
 
-	res, err := cli.commandRunner.Run(ctx, runArgs)
+	_, err = cli.commandRunner.Run(ctx, runArgs)
 
 	if err != nil {
 		return fmt.Errorf(
-			"failed to create virtual Python environment for project '%s': %w (%s)",
+			"failed to create virtual Python environment for project '%s': %w",
 			workingDir,
-			err,
-			res.String(),
-		)
+			err)
 	}
 	return nil
 }
 
-func checkPath() (pyString string, found bool, err error) {
+func checkPath() (pyString string, err error) {
 	if runtime.GOOS == "windows" {
 		// py for https://peps.python.org/pep-0397
 		// order is important. we want to resolve 'py', if available, first
 		pyString := [2]string{"py", "python"}
 
 		for _, py := range pyString {
-			found, err = tools.ToolInPath(py)
-			if found && err == nil {
-				return py, found, nil
+			err = tools.ToolInPath(py)
+			if err == nil {
+				return py, nil
 			}
 		}
-		return "", found, err
+		return "", err
 	} else {
-		found, err := tools.ToolInPath("python3")
-		if found && err == nil {
-			return "python3", found, err
+		err := tools.ToolInPath("python3")
+		if err == nil {
+			return "python3", err
 		}
-		return "", found, err
+		return "", err
 	}
 }

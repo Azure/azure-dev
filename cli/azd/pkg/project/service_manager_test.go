@@ -7,7 +7,10 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
+	"github.com/azure/azure-dev/cli/azd/pkg/azure"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -39,7 +42,14 @@ func createServiceManager(mockContext *mocks.MockContext, env *environment.Envir
 	resourceManager := NewResourceManager(env, azCli)
 	serviceLocator := ioc.NewServiceLocator(mockContext.Container)
 
-	return NewServiceManager(env, resourceManager, serviceLocator)
+	alphaManager := alpha.NewFeaturesManagerWithConfig(config.NewConfig(
+		map[string]any{
+			"alpha": map[string]any{
+				"all": "on",
+			},
+		}))
+
+	return NewServiceManager(env, resourceManager, serviceLocator, alphaManager)
 }
 
 func Test_ServiceManager_GetRequiredTools(t *testing.T) {
@@ -383,7 +393,7 @@ func setupMocksForServiceManager(mockContext *mocks.MockContext) {
 				Location: convert.RefOf("eastus2"),
 				Type:     convert.RefOf(string(infra.AzureResourceTypeWebSite)),
 				Tags: map[string]*string{
-					"azd-service-name": convert.RefOf("api"),
+					azure.TagKeyAzdServiceName: convert.RefOf("api"),
 				},
 			},
 		},
@@ -572,8 +582,8 @@ func (st *fakeServiceTarget) Endpoints(
 type fakeTool struct {
 }
 
-func (t *fakeTool) CheckInstalled(ctx context.Context) (bool, error) {
-	return true, nil
+func (t *fakeTool) CheckInstalled(ctx context.Context) error {
+	return nil
 }
 func (t *fakeTool) InstallUrl() string {
 	return "https://aka.ms"

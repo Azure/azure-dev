@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -63,24 +64,27 @@ func (cli *terraformCli) versionInfo() tools.VersionInfo {
 	}
 }
 
-func (cli *terraformCli) CheckInstalled(ctx context.Context) (bool, error) {
-	found, err := tools.ToolInPath("terraform")
-	if !found {
-		return false, err
+func (cli *terraformCli) CheckInstalled(ctx context.Context) error {
+	err := tools.ToolInPath("terraform")
+	if err != nil {
+		return err
 	}
 	tfVer, err := cli.unmarshalCliVersion(ctx, "terraform_version")
 	if err != nil {
-		return false, fmt.Errorf("checking %s version:  %w", cli.Name(), err)
+		return fmt.Errorf("checking %s version:  %w", cli.Name(), err)
 	}
+
+	log.Printf("terraform version: %s", tfVer)
+
 	tfSemver, err := semver.Parse(tfVer)
 	if err != nil {
-		return false, fmt.Errorf("converting to semver version fails: %w", err)
+		return fmt.Errorf("converting to semver version fails: %w", err)
 	}
 	updateDetail := cli.versionInfo()
 	if tfSemver.LT(updateDetail.MinimumVersion) {
-		return false, &tools.ErrSemver{ToolName: cli.Name(), VersionInfo: updateDetail}
+		return &tools.ErrSemver{ToolName: cli.Name(), VersionInfo: updateDetail}
 	}
-	return true, nil
+	return nil
 }
 
 // Set environment variables to be used in all terraform commands

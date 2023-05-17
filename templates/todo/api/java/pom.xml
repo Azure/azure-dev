@@ -4,7 +4,7 @@
   <parent>
     <groupId>org.springframework.boot</groupId>
     <artifactId>spring-boot-starter-parent</artifactId>
-    <version>2.7.10</version>
+    <version>3.0.5</version>
     <relativePath/>
     <!-- lookup parent from repository -->
   </parent>
@@ -17,13 +17,12 @@
     <java.version>17</java.version>
     <maven.compiler.source>${java.version}</maven.compiler.source>
     <maven.compiler.target>${java.version}</maven.compiler.target>
-    <springdoc.version>1.6.11</springdoc.version>
+    <springdoc.version>2.0.0</springdoc.version>
     <!-- By default, set to write which formats the code.
         This sample does not include format check failures on CI.
         To see how to enable this, visit https://github.com/HubSpot/prettier-maven-plugin
       -->
     <plugin.prettier.goal>write</plugin.prettier.goal>
-    <tomcat.version>9.0.70</tomcat.version>
   </properties>
 
   <dependencies>
@@ -50,45 +49,32 @@
       <artifactId>spring-boot-starter-test</artifactId>
       <scope>test</scope>
     </dependency>
-    <!--SpringDoc dependencies -->
+    <dependency>
+      <groupId>org.yaml</groupId>
+      <artifactId>snakeyaml</artifactId>
+      <version>2.0</version>
+    </dependency>
+    <!-- Swagger UI dependencies -->
     <dependency>
       <groupId>org.springdoc</groupId>
-      <artifactId>springdoc-openapi-ui</artifactId>
+      <artifactId>springdoc-openapi-starter-webmvc-ui</artifactId>
       <version>${springdoc.version}</version>
-    </dependency>
-    <dependency>
-      <groupId>com.fasterxml.jackson.datatype</groupId>
-      <artifactId>jackson-datatype-jsr310</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>org.openapitools</groupId>
-      <artifactId>jackson-databind-nullable</artifactId>
-      <version>0.2.3</version>
-    </dependency>
-    <!-- Bean Validation API support -->
-    <dependency>
-      <groupId>jakarta.validation</groupId>
-      <artifactId>jakarta.validation-api</artifactId>
-    </dependency>
-    <dependency>
-      <groupId>com.fasterxml.jackson.core</groupId>
-      <artifactId>jackson-databind</artifactId>
     </dependency>
     <!-- Azure dependencies -->
     <dependency>
       <groupId>com.azure</groupId>
       <artifactId>azure-identity</artifactId>
-      <version>1.9.0-beta.3</version>
+      <version>1.9.0</version>
     </dependency>
     <dependency>
       <groupId>com.azure.spring</groupId>
       <artifactId>spring-cloud-azure-starter-keyvault-secrets</artifactId>
-      <version>4.3.0</version>
+      <version>5.1.0</version>
     </dependency>
     <dependency>
       <groupId>com.microsoft.azure</groupId>
       <artifactId>applicationinsights-runtime-attach</artifactId>
-      <version>3.3.1</version>
+      <version>3.4.12</version>
     </dependency>
   </dependencies>
   <build>
@@ -164,6 +150,7 @@
                   <configOptions>
                     <sourceFolder>src/main/java/</sourceFolder>
                     <delegatePattern>false</delegatePattern>
+                    <useSpringBoot3>true</useSpringBoot3>
                     <interfaceOnly>true</interfaceOnly>
                     <hideGenerationTimestamp>true</hideGenerationTimestamp>
                     <useTags>true</useTags>

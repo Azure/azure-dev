@@ -26,6 +26,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
+	"github.com/azure/azure-dev/cli/azd/pkg/installer"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/blang/semver/v4"
@@ -49,6 +50,8 @@ func main() {
 		log.SetOutput(io.Discard)
 	}
 
+	log.Printf("azd version: %s", internal.Version)
+
 	ts := telemetry.GetTelemetrySystem()
 
 	latest := make(chan semver.Version)
@@ -70,28 +73,59 @@ func main() {
 			// case
 			log.Printf("eliding update message for dev build")
 		} else if latestVersion.GT(internal.VersionInfo().Version) {
-			var upgradeUrl string
+			var upgradeText string
+
+			installedBy := installer.InstalledBy()
 			if runtime.GOOS == "windows" {
-				upgradeUrl = "https://aka.ms/azd/upgrade/windows"
+				switch installedBy {
+				case installer.InstallTypePs:
+					//nolint:lll
+					upgradeText = "run:\npowershell -ex AllSigned -c \"Invoke-RestMethod 'https://aka.ms/install-azd.ps1' | Invoke-Expression\"\n\nIf the install script was run with custom parameters, ensure that the same parameters are used for the upgrade. For advanced install instructions, see: https://aka.ms/azd/upgrade/windows"
+				case installer.InstallTypeWinget:
+					upgradeText = "run:\nwinget upgrade Microsoft.Azd"
+				case installer.InstallTypeChoco:
+					upgradeText = "run:\nchoco upgrade azd"
+				default:
+					// Also covers "msi" case where the user installed directly
+					// via MSI
+					upgradeText = "visit https://aka.ms/azd/upgrade/windows"
+				}
 			} else if runtime.GOOS == "linux" {
-				upgradeUrl = "https://aka.ms/azd/upgrade/linux"
+				switch installedBy {
+				case installer.InstallTypeSh:
+					//nolint:lll
+					upgradeText = "run:\ncurl -fsSL https://aka.ms/install-azd.sh | bash\n\nIf the install script was run with custom parameters, ensure that the same parameters are used for the upgrade. For advanced install instructions, see: https://aka.ms/azd/upgrade/linux"
+				default:
+					// Also covers "deb" and "rpm" cases which are currently
+					// documented. When package manager distribution support is
+					// added, this will need to be updated.
+					upgradeText = "visit https://aka.ms/azd/upgrade/linux"
+				}
 			} else if runtime.GOOS == "darwin" {
-				upgradeUrl = "https://aka.ms/azd/upgrade/mac"
+				switch installedBy {
+				case installer.InstallTypeBrew:
+					upgradeText = "run:\nbrew upgrade azd"
+				case installer.InstallTypeSh:
+					//nolint:lll
+					upgradeText = "run:\ncurl -fsSL https://aka.ms/install-azd.sh | bash\n\nIf the install script was run with custom parameters, ensure that the same parameters are used for the upgrade. For advanced install instructions, see: https://aka.ms/azd/upgrade/mac"
+				default:
+					upgradeText = "visit https://aka.ms/azd/upgrade/mac"
+				}
 			} else {
 				// Platform is not recognized, use the generic install link
-				upgradeUrl = "https://aka.ms/azd/upgrade"
+				upgradeText = "visit https://aka.ms/azd/upgrade"
 			}
 
 			fmt.Fprintln(
 				os.Stderr,
 				output.WithWarningFormat(
-					"warning: your version of azd is out of date, you have %s and the latest version is %s",
+					"WARNING: your version of azd is out of date, you have %s and the latest version is %s",
 					internal.VersionInfo().Version.String(), latestVersion.String()))
 			fmt.Fprintln(os.Stderr)
 			fmt.Fprintln(
 				os.Stderr,
-				output.WithWarningFormat(`To update to the latest version, follow instructions at: %s`,
-					upgradeUrl))
+				output.WithWarningFormat(`To update to the latest version, %s`,
+					upgradeText))
 		}
 	}
 

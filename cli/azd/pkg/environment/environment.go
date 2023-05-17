@@ -11,8 +11,8 @@ import (
 	"regexp"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
-	"github.com/azure/azure-dev/cli/azd/internal/telemetry/fields"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
@@ -61,10 +61,36 @@ type EnvironmentResolver func() (*Environment, error)
 
 // Same restrictions as a deployment name (ref:
 // https://docs.microsoft.com/azure/azure-resource-manager/management/resource-name-rules#microsoftresources)
-var environmentNameRegexp = regexp.MustCompile(`^[a-zA-Z0-9-\(\)_\.]{1,64}$`)
+var EnvironmentNameRegexp = regexp.MustCompile(`^[a-zA-Z0-9-\(\)_\.]{1,64}$`)
+
+// The maximum length of an environment name.
+var EnvironmentNameMaxLength = 64
 
 func IsValidEnvironmentName(name string) bool {
-	return environmentNameRegexp.MatchString(name)
+	return EnvironmentNameRegexp.MatchString(name)
+}
+
+// CleanName returns a version of [name] where all characters not allowed in an environment name have been replaced
+// with hyphens
+func CleanName(name string) string {
+	result := strings.Builder{}
+
+	for _, c := range name {
+		if (c >= 'a' && c <= 'z') ||
+			(c >= 'A' && c <= 'Z') ||
+			(c >= '0' && c <= '9') ||
+			c == '-' ||
+			c == '(' ||
+			c == ')' ||
+			c == '_' ||
+			c == '.' {
+			result.WriteRune(c)
+		} else {
+			result.WriteRune('-')
+		}
+	}
+
+	return result.String()
 }
 
 // FromRoot loads an environment located in a directory. On error,
@@ -96,14 +122,14 @@ func EmptyWithRoot(root string) *Environment {
 	return &Environment{
 		Root:   root,
 		Values: make(map[string]string),
-		Config: config.NewConfig(nil),
+		Config: config.NewEmptyConfig(),
 	}
 }
 
 func Ephemeral() *Environment {
 	return &Environment{
 		Values: make(map[string]string),
-		Config: config.NewConfig(nil),
+		Config: config.NewEmptyConfig(),
 	}
 }
 
@@ -148,7 +174,7 @@ func (e *Environment) Reload() error {
 	cfgPath := filepath.Join(e.Root, azdcontext.ConfigFileName)
 	cfgMgr := config.NewManager()
 	if cfg, err := cfgMgr.Load(cfgPath); errors.Is(err, os.ErrNotExist) {
-		e.Config = config.NewConfig(nil)
+		e.Config = config.NewEmptyConfig()
 	} else if err != nil {
 		return fmt.Errorf("loading config: %w", err)
 	} else {
@@ -156,11 +182,11 @@ func (e *Environment) Reload() error {
 	}
 
 	if e.GetEnvName() != "" {
-		telemetry.SetUsageAttributes(fields.StringHashed(fields.EnvNameKey, e.GetEnvName()))
+		tracing.SetUsageAttributes(fields.StringHashed(fields.EnvNameKey, e.GetEnvName()))
 	}
 
 	if e.GetSubscriptionId() != "" {
-		telemetry.SetGlobalAttributes(fields.SubscriptionIdKey.String(e.GetSubscriptionId()))
+		tracing.SetGlobalAttributes(fields.SubscriptionIdKey.String(e.GetSubscriptionId()))
 	}
 
 	return nil
@@ -200,7 +226,7 @@ func (e *Environment) Save() error {
 		return fmt.Errorf("saving .env: %w", err)
 	}
 
-	telemetry.SetUsageAttributes(fields.StringHashed(fields.EnvNameKey, e.GetEnvName()))
+	tracing.SetUsageAttributes(fields.StringHashed(fields.EnvNameKey, e.GetEnvName()))
 	return nil
 }
 

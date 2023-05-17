@@ -59,7 +59,7 @@ func newRestoreFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) 
 func newRestoreCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "restore <service>",
-		Short: "Restores the application's dependencies.",
+		Short: fmt.Sprintf("Restores the application's dependencies. %s", output.WithWarningFormat("(Beta)")),
 	}
 	cmd.Args = cobra.MaximumNArgs(1)
 	return cmd
@@ -117,6 +117,8 @@ func (ra *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error)
 	ra.console.MessageUxItem(ctx, &ux.MessageTitle{
 		Title: "Restoring services (azd restore)",
 	})
+
+	startTime := time.Now()
 
 	serviceNameWarningCheck(ra.console, ra.flags.serviceName, "restore")
 
@@ -192,14 +194,15 @@ func (ra *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error)
 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			Header: "Your Azure app has been restored!",
+			Header: fmt.Sprintf(
+				"Your applications dependencies were restored in %s.", ux.DurationAsText(time.Since(startTime))),
 		},
 	}, nil
 }
 
 func getCmdRestoreHelpDescription(*cobra.Command) string {
 	return generateCmdHelpDescription(
-		"Restore application dependencies.",
+		fmt.Sprintf("Restore application dependencies. %s", output.WithWarningFormat("(Beta)")),
 		[]string{
 			formatHelpNote("Run this command to download and install all required dependencies so that you can build," +
 				" run, and debug the application locally."),

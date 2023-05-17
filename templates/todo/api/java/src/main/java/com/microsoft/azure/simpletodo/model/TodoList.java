@@ -3,8 +3,8 @@ package com.microsoft.azure.simpletodo.model;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.Objects;
-import javax.annotation.Generated;
-import javax.validation.constraints.NotNull;
+import jakarta.annotation.Generated;
+import jakarta.validation.constraints.NotNull;
 
 /**
  * A list of related Todo items

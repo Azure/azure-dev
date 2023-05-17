@@ -13,6 +13,8 @@ import (
 	"github.com/blang/semver/v4"
 )
 
+const DefaultPlatform string = "linux/amd64"
+
 type Docker interface {
 	tools.ExternalTool
 	Login(ctx context.Context, loginServer string, username string, password string) error
@@ -64,7 +66,7 @@ func (d *docker) Build(
 	tagName string,
 ) (string, error) {
 	if strings.TrimSpace(platform) == "" {
-		platform = "amd64"
+		platform = DefaultPlatform
 	}
 
 	args := []string{
@@ -81,25 +83,25 @@ func (d *docker) Build(
 
 	res, err := d.executeCommand(ctx, cwd, args...)
 	if err != nil {
-		return "", fmt.Errorf("building image: %s: %w", res.String(), err)
+		return "", fmt.Errorf("building image: %w", err)
 	}
 
 	return strings.TrimSpace(res.Stdout), nil
 }
 
 func (d *docker) Tag(ctx context.Context, cwd string, imageName string, tag string) error {
-	res, err := d.executeCommand(ctx, cwd, "tag", imageName, tag)
+	_, err := d.executeCommand(ctx, cwd, "tag", imageName, tag)
 	if err != nil {
-		return fmt.Errorf("tagging image: %s: %w", res.String(), err)
+		return fmt.Errorf("tagging image: %w", err)
 	}
 
 	return nil
 }
 
 func (d *docker) Push(ctx context.Context, cwd string, tag string) error {
-	res, err := d.executeCommand(ctx, cwd, "push", tag)
+	_, err := d.executeCommand(ctx, cwd, "push", tag)
 	if err != nil {
-		return fmt.Errorf("pushing image: %s: %w", res.String(), err)
+		return fmt.Errorf("pushing image: %w", err)
 	}
 
 	return nil
@@ -190,23 +192,24 @@ func isSupportedDockerVersion(cliOutput string) (bool, error) {
 	// If we reach this point, we don't understand how to validate the version based on its scheme.
 	return false, fmt.Errorf("could not determine version from docker version string: %s", version)
 }
-func (d *docker) CheckInstalled(ctx context.Context) (bool, error) {
-	found, err := tools.ToolInPath("docker")
-	if !found {
-		return false, err
+func (d *docker) CheckInstalled(ctx context.Context) error {
+	err := tools.ToolInPath("docker")
+	if err != nil {
+		return err
 	}
 	dockerRes, err := tools.ExecuteCommand(ctx, d.commandRunner, "docker", "--version")
 	if err != nil {
-		return false, fmt.Errorf("checking %s version: %w", d.Name(), err)
+		return fmt.Errorf("checking %s version: %w", d.Name(), err)
 	}
+	log.Printf("docker version: %s", dockerRes)
 	supported, err := isSupportedDockerVersion(dockerRes)
 	if err != nil {
-		return false, err
+		return err
 	}
 	if !supported {
-		return false, &tools.ErrSemver{ToolName: d.Name(), VersionInfo: d.versionInfo()}
+		return &tools.ErrSemver{ToolName: d.Name(), VersionInfo: d.versionInfo()}
 	}
-	return true, nil
+	return nil
 }
 
 func (d *docker) InstallUrl() string {
@@ -219,8 +222,7 @@ func (d *docker) Name() string {
 
 func (d *docker) executeCommand(ctx context.Context, cwd string, args ...string) (exec.RunResult, error) {
 	runArgs := exec.NewRunArgs("docker", args...).
-		WithCwd(cwd).
-		WithEnrichError(true)
+		WithCwd(cwd)
 
 	return d.commandRunner.Run(ctx, runArgs)
 }

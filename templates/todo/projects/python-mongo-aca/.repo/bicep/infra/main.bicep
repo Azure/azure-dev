@@ -25,18 +25,14 @@ param logAnalyticsName string = ''
 param resourceGroupName string = ''
 param webContainerAppName string = ''
 param apimServiceName string = ''
+param apiAppExists bool = false
+param webAppExists bool = false
 
 @description('Flag to use Azure API Management to mediate the calls between the Web frontend and the backend API')
 param useAPIM bool = false
 
 @description('Id of the user or app to assign application roles')
 param principalId string = ''
-
-@description('The image name for the api service')
-param apiImageName string = ''
-
-@description('The image name for the web service')
-param webImageName string = ''
 
 @description('The base URL used by the web service for sending API requests')
 param webApiBaseUrl string = ''
@@ -60,10 +56,12 @@ module containerApps '../../../../../../common/infra/bicep/core/host/container-a
   scope: rg
   params: {
     name: 'app'
+    location: location
+    tags: tags
     containerAppsEnvironmentName: !empty(containerAppsEnvironmentName) ? containerAppsEnvironmentName : '${abbrs.appManagedEnvironments}${resourceToken}'
     containerRegistryName: !empty(containerRegistryName) ? containerRegistryName : '${abbrs.containerRegistryRegistries}${resourceToken}'
-    location: location
     logAnalyticsWorkspaceName: monitoring.outputs.logAnalyticsWorkspaceName
+    applicationInsightsName: monitoring.outputs.applicationInsightsName
   }
 }
 
@@ -74,12 +72,13 @@ module web '../../../../../common/infra/bicep/app/web-container-app.bicep' = {
   params: {
     name: !empty(webContainerAppName) ? webContainerAppName : '${abbrs.appContainerApps}web-${resourceToken}'
     location: location
-    imageName: webImageName
+    tags: tags
+    identityName: '${abbrs.managedIdentityUserAssignedIdentities}web-${resourceToken}'
     apiBaseUrl: !empty(webApiBaseUrl) ? webApiBaseUrl : api.outputs.SERVICE_API_URI
     applicationInsightsName: monitoring.outputs.applicationInsightsName
     containerAppsEnvironmentName: containerApps.outputs.environmentName
     containerRegistryName: containerApps.outputs.registryName
-    keyVaultName: keyVault.outputs.name
+    exists: webAppExists
   }
 }
 
@@ -90,22 +89,14 @@ module api '../../../../../common/infra/bicep/app/api-container-app.bicep' = {
   params: {
     name: !empty(apiContainerAppName) ? apiContainerAppName : '${abbrs.appContainerApps}api-${resourceToken}'
     location: location
-    imageName: apiImageName
+    tags: tags
+    identityName: '${abbrs.managedIdentityUserAssignedIdentities}api-${resourceToken}'
     applicationInsightsName: monitoring.outputs.applicationInsightsName
     containerAppsEnvironmentName: containerApps.outputs.environmentName
     containerRegistryName: containerApps.outputs.registryName
     keyVaultName: keyVault.outputs.name
-    corsAcaUrl: 'https://${abbrs.appContainerApps}web-${resourceToken}.${containerApps.outputs.defaultDomain}'
-  }
-}
-
-// Give the API access to KeyVault
-module apiKeyVaultAccess '../../../../../../common/infra/bicep/core/security/keyvault-access.bicep' = {
-  name: 'api-keyvault-access'
-  scope: rg
-  params: {
-    keyVaultName: keyVault.outputs.name
-    principalId: api.outputs.SERVICE_API_IDENTITY_PRINCIPAL_ID
+    corsAcaUrl: corsAcaUrl
+    exists: apiAppExists
   }
 }
 
@@ -195,4 +186,4 @@ output REACT_APP_WEB_BASE_URL string = web.outputs.SERVICE_WEB_URI
 output SERVICE_API_NAME string = api.outputs.SERVICE_API_NAME
 output SERVICE_WEB_NAME string = web.outputs.SERVICE_WEB_NAME
 output USE_APIM bool = useAPIM
-output SERVICE_API_ENDPOINTS array = useAPIM ? [ apimApi.outputs.SERVICE_API_URI, api.outputs.SERVICE_API_URI ]: []
+output SERVICE_API_ENDPOINTS array = useAPIM ? [ apimApi.outputs.SERVICE_API_URI, api.outputs.SERVICE_API_URI ] : []

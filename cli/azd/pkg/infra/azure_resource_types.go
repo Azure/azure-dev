@@ -15,6 +15,7 @@ const (
 	AzureResourceTypeCDNProfile              AzureResourceType = "Microsoft.Cdn/profiles"
 	AzureResourceTypeCosmosDb                AzureResourceType = "Microsoft.DocumentDB/databaseAccounts"
 	AzureResourceTypeContainerApp            AzureResourceType = "Microsoft.App/containerApps"
+	AzureResourceTypeSpringApp               AzureResourceType = "Microsoft.AppPlatform/Spring"
 	AzureResourceTypeContainerAppEnvironment AzureResourceType = "Microsoft.App/managedEnvironments"
 	AzureResourceTypeDeployment              AzureResourceType = "Microsoft.Resources/deployments"
 	AzureResourceTypeKeyVault                AzureResourceType = "Microsoft.KeyVault/vaults"
@@ -93,6 +94,8 @@ func GetResourceTypeDisplayName(resourceType AzureResourceType) string {
 		return "Cognitive Service"
 	case AzureResourceTypeSearchService:
 		return "Search service"
+	case AzureResourceTypeSpringApp:
+		return "Azure Spring Apps"
 	}
 
 	return ""

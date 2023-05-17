@@ -3,8 +3,7 @@
     "$id": "https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json",
     "type": "object",
     "required": [
-        "name",
-        "services"
+        "name"
     ],
     "additionalProperties": false,
     "properties": {
@@ -66,7 +65,8 @@
                 "type": "object",
                 "additionalProperties": false,
                 "required": [
-                    "project"
+                    "project",
+                    "language"
                 ],
                 "properties": {
                     "resourceName": {
@@ -94,9 +94,7 @@
                     "language": {
                         "type": "string",
                         "title": "Service implementation language",
-                        "description": "If omitted, .NET will be assumed.",
                         "enum": [
-                            "",
                             "dotnet",
                             "csharp",
                             "fsharp",
@@ -109,8 +107,8 @@
                     },
                     "module": {
                         "type": "string",
-                        "title": "Path of the infrastructure module used to deploy the service relative to the root infra folder",
-                        "description": "If omitted, the CLI will assume the module name is the same as the service name."
+                        "title": "(DEPRECATED) Path of the infrastructure module used to deploy the service relative to the root infra folder",
+                        "description": "If omitted, the CLI will assume the module name is the same as the service name. This property will be deprecated in a future release."
                     },
                     "dist": {
                         "type": "string",

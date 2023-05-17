@@ -149,3 +149,8 @@ func Test_SaveAndReload(t *testing.T) {
 	require.Equal(t, "SUBSCRIPTION_ID", env.GetSubscriptionId())
 	require.Equal(t, "eastus2", env.GetLocation())
 }
+
+func TestCleanName(t *testing.T) {
+	require.Equal(t, "already-clean-name", CleanName("already-clean-name"))
+	require.Equal(t, "was-CLEANED-with--bad--things-(123)", CleanName("was CLEANED with *bad* things (123)"))
+}

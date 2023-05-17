@@ -13,11 +13,10 @@ import (
 )
 
 func Test_DockerBuild(t *testing.T) {
-
 	cwd := "."
 	dockerFile := "./Dockerfile"
 	dockerContext := "../"
-	platform := "amd64"
+	platform := DefaultPlatform
 	imageName := "IMAGE_NAME"
 
 	t.Run("NoError", func(t *testing.T) {
@@ -92,7 +91,7 @@ func Test_DockerBuild(t *testing.T) {
 		require.NotNil(t, err)
 		require.Equal(
 			t,
-			fmt.Sprintf("building image: exit code: 1, stdout: , stderr: %s: %s", stdErr, customErrorMessage),
+			fmt.Sprintf("building image: %s", customErrorMessage),
 			err.Error(),
 		)
 		require.Equal(t, "", result)
@@ -104,7 +103,7 @@ func Test_DockerBuildEmptyPlatform(t *testing.T) {
 	cwd := "."
 	dockerFile := "./Dockerfile"
 	dockerContext := "../"
-	platform := "amd64"
+	platform := DefaultPlatform
 	imageName := "IMAGE_NAME"
 
 	mockContext := mocks.NewMockContext(context.Background())
@@ -211,7 +210,7 @@ func Test_DockerTag(t *testing.T) {
 		require.NotNil(t, err)
 		require.Equal(
 			t,
-			fmt.Sprintf("tagging image: exit code: 1, stdout: , stderr: %s: %s", stdErr, customErrorMessage),
+			fmt.Sprintf("tagging image: %s", customErrorMessage),
 			err.Error(),
 		)
 	})
@@ -285,7 +284,7 @@ func Test_DockerPush(t *testing.T) {
 		require.NotNil(t, err)
 		require.Equal(
 			t,
-			fmt.Sprintf("pushing image: exit code: 1, stdout: , stderr: %s: %s", stdErr, customErrorMessage),
+			fmt.Sprintf("pushing image: %s", customErrorMessage),
 			err.Error(),
 		)
 	})
@@ -329,7 +328,7 @@ func Test_DockerLogin(t *testing.T) {
 
 	t.Run("WithError", func(t *testing.T) {
 		ran := false
-		stdErr := "failed logging into docker"
+		stdErr := "Error logging into docker"
 		customErrorMessage := "example error message"
 
 		mockContext := mocks.NewMockContext(context.Background())
@@ -360,7 +359,7 @@ func Test_DockerLogin(t *testing.T) {
 
 		require.Equal(t, true, ran)
 		require.NotNil(t, err)
-		require.Equal(t, fmt.Sprintf("%s: %s", stdErr, customErrorMessage), err.Error())
+		require.Equal(t, fmt.Sprintf("failed logging into docker: %s", customErrorMessage), err.Error())
 	})
 }
 

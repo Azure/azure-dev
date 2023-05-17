@@ -309,7 +309,7 @@ func Test_DockerLogin(t *testing.T) {
 			require.Equal(t, []string{
 				"login",
 				"--username", "USERNAME",
-				"--password", "PASSWORD",
+				"--password-stdin",
 				"LOGIN_SERVER",
 			}, args.Args)
 
@@ -344,7 +344,7 @@ func Test_DockerLogin(t *testing.T) {
 			require.Equal(t, []string{
 				"login",
 				"--username", "USERNAME",
-				"--password", "PASSWORD",
+				"--password-stdin",
 				"LOGIN_SERVER",
 			}, args.Args)
 

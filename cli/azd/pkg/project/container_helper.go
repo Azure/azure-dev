@@ -129,7 +129,7 @@ func (ch *ContainerHelper) Deploy(
 
 			log.Printf("logging into container registry '%s'\n", loginServer)
 			task.SetProgress(NewServiceProgress("Logging into container registry"))
-			err = ch.containerRegistryService.LoginAcr(ctx, targetResource.SubscriptionId(), loginServer)
+			err = ch.containerRegistryService.Login(ctx, targetResource.SubscriptionId(), loginServer)
 			if err != nil {
 				task.SetError(err)
 				return

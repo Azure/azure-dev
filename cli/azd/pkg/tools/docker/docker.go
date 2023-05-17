@@ -41,11 +41,14 @@ type docker struct {
 }
 
 func (d *docker) Login(ctx context.Context, loginServer string, username string, password string) error {
-	_, err := d.executeCommand(ctx, ".", "login",
+	runArgs := exec.NewRunArgs(
+		"docker", "login",
 		"--username", username,
-		"--password", password,
-		loginServer)
+		"--password-stdin",
+		loginServer,
+	).WithCwd(".").WithStdIn(strings.NewReader(password))
 
+	_, err := d.commandRunner.Run(ctx, runArgs)
 	if err != nil {
 		return fmt.Errorf("failed logging into docker: %w", err)
 	}

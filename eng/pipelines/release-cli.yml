@@ -22,6 +22,7 @@ pr:
       - go.mod
       - cli/
       - eng/pipelines/release-cli.yml
+      - eng/pipelines/templates/steps/publish-cli.yml
 
 variables:
   - template: /eng/pipelines/templates/variables/globals.yml

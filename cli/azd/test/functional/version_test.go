@@ -18,16 +18,17 @@ import (
 
 // Returns the expected version number of `azd`.
 //
-//   - When running in CI, the version specified by the CI pipeline.
-//   - When running locally, the version specified in source.
+//   - If AZD_TEST_CLI_VERSION is set, the version specified by the variable. This is used as an end-to-end
+//     test that the version matches what is generated explicitly in CI.
+//   - Otherwise, the version specified in source.
 func getExpectedVersion(t *testing.T) string {
 	expected := internal.VersionInfo().Version.String()
 
-	if os.Getenv("GITHUB_RUN_NUMBER") != "" {
-		// By using CLI_VERSION, we validate that azd was built with the correct version.
-		expected = os.Getenv("CLI_VERSION")
-		require.NotEmpty(t, expected)
+	versionVar, ok := os.LookupEnv("AZD_TEST_CLI_VERSION")
+	if ok {
+		expected = versionVar
 	}
+	require.NotEmpty(t, expected)
 
 	return expected
 }

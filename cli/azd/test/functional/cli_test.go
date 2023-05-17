@@ -44,10 +44,52 @@ import (
 	"golang.org/x/exp/slices"
 )
 
-const (
-	testSubscriptionId = "2cd617ea-1866-46b1-90e3-fffb087ebf9b"
-	defaultLocation    = "eastus2"
-)
+// The current running configuration for the test suite.
+var cfg = config{}
+
+func init() {
+	cfg.init()
+}
+
+// Configuration for the test suite.
+type config struct {
+	// If true, the test is running in CI.
+	// This can be used to ensure tests that are skipped locally (due to complex setup), always strictly run in CI.
+	CI bool
+
+	// The client ID to use for live Azure tests.
+	ClientID string
+	// The client secret to use for live Azure tests.
+	ClientSecret string
+	// The tenant ID to use for live Azure tests.
+	TenantID string
+	// The Azure subscription ID to use for live Azure tests.
+	SubscriptionID string
+	// The Azure location to use for live Azure tests.
+	Location string
+}
+
+func (c *config) init() {
+	c.CI = os.Getenv("CI") != ""
+	c.ClientID = os.Getenv("AZD_TEST_CLIENT_ID")
+	c.ClientSecret = os.Getenv("AZD_TEST_CLIENT_SECRET")
+	c.TenantID = os.Getenv("AZD_TEST_TENANT_ID")
+	c.SubscriptionID = os.Getenv("AZD_TEST_AZURE_SUBSCRIPTION_ID")
+	c.Location = os.Getenv("AZD_TEST_AZURE_LOCATION")
+}
+
+func TestMain(m *testing.M) {
+	flag.Parse()
+
+	shortFlag := flag.Lookup("test.short")
+	if shortFlag != nil && shortFlag.Value.String() == "true" {
+		log.Println("Skipping tests in short mode")
+		os.Exit(0)
+	}
+
+	exitVal := m.Run()
+	os.Exit(exitVal)
+}
 
 func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 	// running this test in parallel is ok as it uses a t.TempDir()
@@ -487,18 +529,6 @@ func Test_CLI_InfraCreateAndDeleteResourceTerraformRemote(t *testing.T) {
 
 func newRunArgs(cmd string, args ...string) exec.RunArgs {
 	return exec.NewRunArgs(cmd, args...)
-}
-
-func TestMain(m *testing.M) {
-	flag.Parse()
-	shortFlag := flag.Lookup("test.short")
-	if shortFlag != nil && shortFlag.Value.String() == "true" {
-		log.Println("Skipping tests in short mode")
-		os.Exit(0)
-	}
-
-	exitVal := m.Run()
-	os.Exit(exitVal)
 }
 
 // TempDirWithDiagnostics creates a temp directory with cleanup that also provides additional

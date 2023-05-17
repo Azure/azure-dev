@@ -23,7 +23,7 @@ func Test_promptEnvironmentName(t *testing.T) {
 
 		environmentName := "hello"
 
-		err := ensureValidEnvironmentName(*mockContext.Context, &environmentName, mockContext.Console)
+		err := ensureValidEnvironmentName(*mockContext.Context, &environmentName, "", mockContext.Console)
 
 		require.NoError(t, err)
 	})
@@ -36,7 +36,7 @@ func Test_promptEnvironmentName(t *testing.T) {
 			return true
 		}).Respond("someEnv")
 
-		err := ensureValidEnvironmentName(*mockContext.Context, &environmentName, mockContext.Console)
+		err := ensureValidEnvironmentName(*mockContext.Context, &environmentName, "", mockContext.Console)
 
 		require.NoError(t, err)
 		require.Equal(t, "someEnv", environmentName)

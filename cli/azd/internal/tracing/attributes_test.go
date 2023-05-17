@@ -1,9 +1,9 @@
-package telemetry
+package tracing
 
 import (
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/internal/telemetry/baggage"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/baggage"
 	"github.com/stretchr/testify/assert"
 	"go.opentelemetry.io/otel/attribute"
 )

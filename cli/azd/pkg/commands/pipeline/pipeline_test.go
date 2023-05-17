@@ -68,6 +68,8 @@ func Test_detectProviders(t *testing.T) {
 	projectFileName := filepath.Join(tempDir, "azure.yaml")
 	projectFile, err := os.Create(projectFileName)
 	assert.NoError(t, err)
+	_, err = projectFile.WriteString("name: test\n")
+	assert.NoError(t, err)
 	defer projectFile.Close()
 
 	t.Run("from persisted data azdo error", func(t *testing.T) {
@@ -278,6 +280,8 @@ func Test_detectProviders(t *testing.T) {
 		os.Remove(projectFileName)
 		projectFile, err = os.Create(projectFileName)
 		assert.NoError(t, err)
+		_, err = projectFile.WriteString("name: test\n")
+		assert.NoError(t, err)
 	})
 	t.Run("override persisted value with yaml", func(t *testing.T) {
 		ghFolder := filepath.Join(tempDir, githubFolder)
@@ -310,6 +314,8 @@ func Test_detectProviders(t *testing.T) {
 		projectFile.Close()
 		os.Remove(projectFileName)
 		projectFile, err = os.Create(projectFileName)
+		assert.NoError(t, err)
+		_, err = projectFile.WriteString("name: test\n")
 		assert.NoError(t, err)
 	})
 	t.Run("override persisted and yaml with arg", func(t *testing.T) {
@@ -344,6 +350,8 @@ func Test_detectProviders(t *testing.T) {
 		projectFile.Close()
 		os.Remove(projectFileName)
 		projectFile, err = os.Create(projectFileName)
+		assert.NoError(t, err)
+		_, err = projectFile.WriteString("name: test\n")
 		assert.NoError(t, err)
 	})
 	t.Run("github folder only", func(t *testing.T) {

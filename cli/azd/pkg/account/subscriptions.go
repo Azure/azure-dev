@@ -11,6 +11,7 @@ import (
 	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
+	"github.com/azure/azure-dev/cli/azd/pkg/compare"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
@@ -124,19 +125,17 @@ func (s *SubscriptionsService) ListSubscriptionLocations(
 		}
 
 		for _, location := range page.LocationListResult.Value {
-			// Ignore non-physical locations
-			if *location.Metadata.RegionType != "Physical" {
-				continue
+			// Only include physical locations
+			if *location.Metadata.RegionType == "Physical" && !compare.PtrValueEquals(location.Metadata.PhysicalLocation, "") {
+				displayName := convert.ToValueWithDefault(location.DisplayName, *location.Name)
+				regionalDisplayName := convert.ToValueWithDefault(location.RegionalDisplayName, displayName)
+
+				locations = append(locations, Location{
+					Name:                *location.Name,
+					DisplayName:         displayName,
+					RegionalDisplayName: regionalDisplayName,
+				})
 			}
-
-			displayName := convert.ToValueWithDefault(location.DisplayName, *location.Name)
-			regionalDisplayName := convert.ToValueWithDefault(location.RegionalDisplayName, displayName)
-
-			locations = append(locations, Location{
-				Name:                *location.Name,
-				DisplayName:         displayName,
-				RegionalDisplayName: regionalDisplayName,
-			})
 		}
 	}
 

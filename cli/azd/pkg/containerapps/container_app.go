@@ -111,7 +111,7 @@ func (cas *containerAppService) AddRevision(
 
 	// Update the revision with the new image name and suffix
 	revision := revisionResponse.Revision
-	revision.Properties.Template.RevisionSuffix = convert.RefOf(fmt.Sprintf("azd-deploy-%d", cas.clock.Now().Unix()))
+	revision.Properties.Template.RevisionSuffix = convert.RefOf(fmt.Sprintf("azd-%d", cas.clock.Now().Unix()))
 	revision.Properties.Template.Containers[0].Image = convert.RefOf(imageName)
 
 	// Update the container app with the new revision

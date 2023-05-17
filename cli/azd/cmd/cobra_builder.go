@@ -12,6 +12,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
@@ -140,10 +141,20 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 
 		// TODO: Consider refactoring to move the UX writing to a middleware
 		invokeErr := cb.container.Invoke(func(console input.Console) {
-			// It is valid for a command to return a nil action result and error.
-			// If we have a result or an error, display it, otherwise don't print anything.
-			if actionResult != nil || err != nil {
-				console.MessageUxItem(ctx, actions.ToUxItem(actionResult, err))
+			var displayResult *ux.ActionResult
+			if actionResult != nil && actionResult.Message != nil {
+				displayResult = &ux.ActionResult{
+					SuccessMessage: actionResult.Message.Header,
+					FollowUp:       actionResult.Message.FollowUp,
+				}
+			} else if err != nil {
+				displayResult = &ux.ActionResult{
+					Err: err,
+				}
+			}
+
+			if displayResult != nil {
+				console.MessageUxItem(ctx, displayResult)
 			}
 
 			if err != nil {
@@ -188,7 +199,6 @@ func (cb *CobraBuilder) bindCommand(cmd *cobra.Command, descriptor *actions.Acti
 
 	// Create, register and bind flags when required
 	if descriptor.Options.FlagsResolver != nil {
-		log.Printf("registering flags for action '%s'\n", actionName)
 		ioc.RegisterInstance(cb.container, cmd)
 
 		// The flags resolver is constructed and bound to the cobra command via dependency injection
@@ -208,7 +218,6 @@ func (cb *CobraBuilder) bindCommand(cmd *cobra.Command, descriptor *actions.Acti
 	// These functions are typically the constructor function for the action. ex) newDeployAction(...)
 	// Action resolvers can take any number of dependencies and instantiated via the IoC container
 	if descriptor.Options.ActionResolver != nil {
-		log.Printf("registering resolver for action '%s'\n", actionName)
 		if err := cb.container.RegisterNamedSingleton(actionName, descriptor.Options.ActionResolver); err != nil {
 			return fmt.Errorf(
 				//nolint:lll

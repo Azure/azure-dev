@@ -150,7 +150,7 @@ type AzCli interface {
 		ctx context.Context,
 		subscriptionId string,
 		applicationName string,
-		roleToAssign string,
+		rolesToAssign []string,
 	) (json.RawMessage, error)
 	GetAppServiceProperties(
 		ctx context.Context,

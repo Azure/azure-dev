@@ -123,6 +123,8 @@ func (ba *buildAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		Title: "Building services (azd build)",
 	})
 
+	startTime := time.Now()
+
 	targetServiceName := ""
 	if len(ba.args) == 1 {
 		targetServiceName = ba.args[0]
@@ -198,7 +200,7 @@ func (ba *buildAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			Header: "Your Azure app has been built!",
+			Header: fmt.Sprintf("Your application was built for Azure in %s.", ux.DurationAsText(time.Since(startTime))),
 		},
 	}, nil
 }

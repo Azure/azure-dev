@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -48,6 +49,7 @@ type loginFlags struct {
 	clientSecret           stringPtr
 	clientCertificate      string
 	federatedTokenProvider string
+	scopes                 []string
 	redirectPort           int
 	global                 *internal.GlobalCommandOptions
 }
@@ -135,6 +137,12 @@ func (lf *loginFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 		"tenant-id",
 		"",
 		"The tenant id or domain name to authenticate with.")
+	local.StringArrayVar(
+		&lf.scopes,
+		"scope",
+		nil,
+		"The scope to acquire during login")
+	_ = local.MarkHidden("scope")
 	local.IntVar(
 		&lf.redirectPort,
 		"redirect-port",
@@ -232,6 +240,10 @@ func newLoginAction(
 }
 
 func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	if len(la.flags.scopes) == 0 {
+		la.flags.scopes = auth.LoginScopes
+	}
+
 	if la.annotations[loginCmdParentAnnotation] == "" {
 		fmt.Fprintln(
 			la.console.Handles().Stderr,
@@ -263,10 +275,14 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	} else if err != nil {
 		return nil, fmt.Errorf("checking auth status: %w", err)
 	} else {
-		if token, err := auth.EnsureLoggedInCredential(ctx, cred); errors.Is(err, auth.ErrNoCurrentUser) {
+		// Ensure ID token is valid, and can be exchanged for an access token
+		token, err := cred.GetToken(ctx, policy.TokenRequestOptions{
+			Scopes: la.flags.scopes,
+		})
+
+		if err != nil {
+			log.Printf("failed to check auth status: %s", err.Error())
 			res.Status = contracts.LoginStatusUnauthenticated
-		} else if err != nil {
-			return nil, fmt.Errorf("checking auth status: %w", err)
 		} else {
 			res.Status = contracts.LoginStatusSuccess
 			res.ExpiresOn = &token.ExpiresOn
@@ -415,11 +431,13 @@ func (la *loginAction) login(ctx context.Context) error {
 	}
 
 	if useDevCode {
-		if _, err := la.authManager.LoginWithDeviceCode(ctx, la.writer, la.flags.tenantID); err != nil {
+		_, err := la.authManager.LoginWithDeviceCode(ctx, la.writer, la.flags.tenantID, la.flags.scopes)
+		if err != nil {
 			return fmt.Errorf("logging in: %w", err)
 		}
 	} else {
-		if _, err := la.authManager.LoginInteractive(ctx, la.flags.redirectPort, la.flags.tenantID); err != nil {
+		_, err := la.authManager.LoginInteractive(ctx, la.flags.redirectPort, la.flags.tenantID, la.flags.scopes)
+		if err != nil {
 			return fmt.Errorf("logging in: %w", err)
 		}
 	}

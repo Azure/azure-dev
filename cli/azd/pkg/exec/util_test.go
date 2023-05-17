@@ -6,7 +6,6 @@ package exec
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"os"
 	"regexp"
 	"runtime"
@@ -18,7 +17,7 @@ import (
 )
 
 func TestRunCommand(t *testing.T) {
-	runner := NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
+	runner := NewCommandRunner(nil)
 
 	args := RunArgs{
 		Cmd:  "git",
@@ -49,7 +48,7 @@ func TestKillCommand(t *testing.T) {
 
 	s := time.Now()
 
-	runner := NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
+	runner := NewCommandRunner(nil)
 	_, err := runner.Run(ctx, RunArgs{
 		Cmd: "pwsh",
 		Args: []string{
@@ -88,7 +87,7 @@ func TestAppendEnv(t *testing.T) {
 }
 
 func TestRunList(t *testing.T) {
-	runner := NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
+	runner := NewCommandRunner(nil)
 	res, err := runner.RunList(context.Background(), []string{
 		"git --version",
 	}, RunArgs{})
@@ -113,7 +112,7 @@ func TestRunList(t *testing.T) {
 func TestRunCapturingStderr(t *testing.T) {
 	myStderr := &bytes.Buffer{}
 
-	runner := NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
+	runner := NewCommandRunner(nil)
 	res, _ := runner.Run(context.Background(), RunArgs{
 		Cmd:    "go",
 		Args:   []string{"--help"},
@@ -124,27 +123,30 @@ func TestRunCapturingStderr(t *testing.T) {
 	require.Equal(t, res.Stderr, myStderr.String())
 }
 
-func TestRunEnrichError(t *testing.T) {
-	runner := NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
+func TestError(t *testing.T) {
+	runner := NewCommandRunner(nil)
 	_, err := runner.Run(context.Background(), RunArgs{
 		Cmd:  "go",
 		Args: []string{"--help"},
 	})
 
-	// the non-enriched error is the standard error message that comes from (most likely)
-	// an ExitError
-	require.EqualError(t, err, "exit status 2")
+	var exitErr *ExitError
+	require.ErrorAs(t, err, &exitErr)
+	require.Contains(t, exitErr.Error(), "exit code: 2, stdout:")
+}
 
-	res, err := runner.Run(context.Background(), RunArgs{
+func TestError_Interactive(t *testing.T) {
+	runner := NewCommandRunner(nil)
+	_, err := runner.Run(context.Background(), RunArgs{
 		Cmd:         "go",
 		Args:        []string{"--help"},
-		EnrichError: true,
+		Interactive: true,
 	})
 
-	// 'enriched' errors contain the contents of the Res() as well. This makes it a bit
-	// easier for callers since they can just check that 'err ! nil', and not involve
-	// themselves in checking the ExitCode.
-	require.EqualError(t, err, fmt.Sprintf("%s: exit status 2", res.String()))
+	var exitErr *ExitError
+	require.ErrorAs(t, err, &exitErr)
+	// when interactive, no output is captured in the error
+	require.Equal(t, exitErr.Error(), "exit code: 2")
 }
 
 func TestRedactSensitiveData(t *testing.T) {

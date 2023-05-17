@@ -5,6 +5,8 @@ package auth
 
 import (
 	"context"
+	"errors"
+	"log"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
@@ -26,6 +28,16 @@ func newAzdCredential(client publicClient, account *public.Account) *azdCredenti
 func (c *azdCredential) GetToken(ctx context.Context, options policy.TokenRequestOptions) (azcore.AccessToken, error) {
 	res, err := c.client.AcquireTokenSilent(ctx, options.Scopes, public.WithSilentAccount(*c.account))
 	if err != nil {
+		var authFailed *AuthFailedError
+		if errors.As(err, &authFailed) {
+			if loginErr, ok := newReLoginRequiredError(authFailed.Parsed, options.Scopes); ok {
+				log.Println(authFailed.httpErrorDetails())
+				return azcore.AccessToken{}, loginErr
+			}
+
+			return azcore.AccessToken{}, authFailed
+		}
+
 		return azcore.AccessToken{}, err
 	}
 

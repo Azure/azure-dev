@@ -1,5 +1,5 @@
 
-Show details for a given template.
+Show details for a given template. (Beta)
 
 Usage
   azd template show <template> [flags]

@@ -33,12 +33,15 @@ const (
 	AuthTypeClientCredentials PipelineAuthType = "client-credentials"
 )
 
-var ErrAuthNotSupported = errors.New("pipeline authentication configuration is not supported")
+var (
+	ErrAuthNotSupported = errors.New("pipeline authentication configuration is not supported")
+	DefaultRoleNames    = []string{"Contributor", "User Access Administrator"}
+)
 
 type PipelineManagerArgs struct {
 	PipelineServicePrincipalName string
 	PipelineRemoteName           string
-	PipelineRoleName             string
+	PipelineRoleNames            []string
 	PipelineProvider             string
 	PipelineAuthTypeName         string
 }
@@ -117,13 +120,13 @@ func (i *PipelineManager) preConfigureCheck(ctx context.Context, infraOptions pr
 	ciConfigurationWasUpdated, err := i.CiProvider.preConfigureCheck(
 		ctx, i.PipelineManagerArgs, infraOptions, projectPath)
 	if err != nil {
-		return configurationWasUpdated, fmt.Errorf("pre-config check error from %s provider: %w", i.CiProvider.name(), err)
+		return configurationWasUpdated, fmt.Errorf("pre-config check error from %s provider: %w", i.CiProvider.Name(), err)
 	}
 
 	scmConfigurationWasUpdated, err := i.ScmProvider.preConfigureCheck(
 		ctx, i.PipelineManagerArgs, infraOptions, projectPath)
 	if err != nil {
-		return configurationWasUpdated, fmt.Errorf("pre-config check error from %s provider: %w", i.ScmProvider.name(), err)
+		return configurationWasUpdated, fmt.Errorf("pre-config check error from %s provider: %w", i.ScmProvider.Name(), err)
 	}
 
 	configurationWasUpdated = ciConfigurationWasUpdated || scmConfigurationWasUpdated
@@ -328,7 +331,7 @@ func (manager *PipelineManager) Configure(ctx context.Context) (
 		ctx,
 		manager.Environment.GetSubscriptionId(),
 		manager.PipelineServicePrincipalName,
-		manager.PipelineRoleName)
+		manager.PipelineRoleNames)
 	manager.console.StopSpinner(ctx, displayMsg, input.GetStepResultFormat(err))
 	if err != nil {
 		return result, fmt.Errorf("failed to create or update service principal: %w", err)

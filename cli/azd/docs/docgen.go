@@ -26,7 +26,7 @@ import (
 const fontMatterFormatString = `---
 title: Azure Developer CLI reference (preview)
 description: This article explains the syntax and parameters for the various Azure Developer CLI Preview commands.
-author: alexwolftmsft
+author: alexwolfmsft
 ms.author: alexwolf
 ms.date: %v
 ms.service: azure-dev-cli

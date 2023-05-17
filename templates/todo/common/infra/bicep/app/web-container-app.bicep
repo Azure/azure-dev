@@ -21,6 +21,7 @@ module app '../../../../../common/infra/bicep/core/host/container-app-upsert.bic
     name: name
     location: location
     tags: union(tags, { 'azd-service-name': serviceName })
+    identityType: 'UserAssigned'
     identityName: identityName
     exists: exists
     containerAppsEnvironmentName: containerAppsEnvironmentName

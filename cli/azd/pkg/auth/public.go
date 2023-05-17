@@ -38,14 +38,19 @@ func (m *msalPublicClientAdapter) RemoveAccount(ctx context.Context, account pub
 func (m *msalPublicClientAdapter) AcquireTokenInteractive(
 	ctx context.Context, scopes []string, options ...public.AcquireInteractiveOption,
 ) (public.AuthResult, error) {
-	return m.client.AcquireTokenInteractive(ctx, scopes, options...)
+	res, err := m.client.AcquireTokenInteractive(ctx, scopes, options...)
+	if err != nil {
+		return res, newAuthFailedErrorFromMsalErr(err)
+	}
+
+	return res, nil
 }
 
 func (m *msalPublicClientAdapter) AcquireTokenByDeviceCode(
 	ctx context.Context, scopes []string, options ...public.AcquireByDeviceCodeOption) (deviceCodeResult, error) {
 	code, err := m.client.AcquireTokenByDeviceCode(ctx, scopes, options...)
 	if err != nil {
-		return nil, err
+		return nil, newAuthFailedErrorFromMsalErr(err)
 	}
 
 	return &msalDeviceCodeAdapter{code: &code}, nil
@@ -54,7 +59,12 @@ func (m *msalPublicClientAdapter) AcquireTokenByDeviceCode(
 func (m *msalPublicClientAdapter) AcquireTokenSilent(
 	ctx context.Context, scopes []string, options ...public.AcquireSilentOption,
 ) (public.AuthResult, error) {
-	return m.client.AcquireTokenSilent(ctx, scopes, options...)
+	res, err := m.client.AcquireTokenSilent(ctx, scopes, options...)
+	if err != nil {
+		return res, newAuthFailedErrorFromMsalErr(err)
+	}
+
+	return res, nil
 }
 
 type msalDeviceCodeAdapter struct {
@@ -66,5 +76,10 @@ func (m *msalDeviceCodeAdapter) Message() string {
 }
 
 func (m *msalDeviceCodeAdapter) AuthenticationResult(ctx context.Context) (public.AuthResult, error) {
-	return m.code.AuthenticationResult(ctx)
+	res, err := m.code.AuthenticationResult(ctx)
+	if err != nil {
+		return res, newAuthFailedErrorFromMsalErr(err)
+	}
+
+	return res, nil
 }

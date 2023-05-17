@@ -18,13 +18,8 @@ type RunArgs struct {
 	// NOTE: RunResult.Stderr will still contain stderr output.
 	Stderr io.Writer
 
-	// Debug will `log.Printf` the command and it's results after it completes.
-	Debug bool
-
-	// EnrichError will include any command output if there is a failure
-	// and output is available.
-	// This is off by default.
-	EnrichError bool
+	// Enables debug logging.
+	DebugLogging *bool
 
 	// When set will run the command within a shell
 	UseShell bool
@@ -85,15 +80,9 @@ func (b RunArgs) WithShell(useShell bool) RunArgs {
 	return b
 }
 
-// Updates whether or not errors will be enriched
-func (b RunArgs) WithEnrichError(enrichError bool) RunArgs {
-	b.EnrichError = enrichError
-	return b
-}
-
 // Updates whether or not debug output will be written to default logger
-func (b RunArgs) WithDebug(debug bool) RunArgs {
-	b.Debug = debug
+func (b RunArgs) WithDebugLogging(debug bool) RunArgs {
+	b.DebugLogging = &debug
 	return b
 }
 

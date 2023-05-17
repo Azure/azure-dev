@@ -62,15 +62,6 @@ func newProvisionCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "provision",
 		Short: "Provision the Azure resources for an application.",
-		//nolint:lll
-		Long: `Provision the Azure resources for an application.
-
-The command prompts you for the following values:
-- Environment name: The name of your environment.
-- Azure location: The Azure location where your resources will be deployed.
-- Azure subscription: The Azure subscription where your resources will be deployed.
-
-Depending on what Azure resources are created, running this command might take a while. To view progress, go to the Azure portal and search for the resource group that contains your environment name.`,
 	}
 }
 
@@ -256,7 +247,6 @@ func getCmdProvisionHelpDescription(c *cobra.Command) string {
 			" You should run %s any time you update your Bicep or Terraform file."+
 			"\n\nThis command prompts you to input the following:",
 		output.WithHighLightFormat(c.CommandPath())), []string{
-		formatHelpNote("Environment name: The name of your environment (ex: dev, test, prod)."),
 		formatHelpNote("Azure location: The Azure location where your resources will be deployed."),
 		formatHelpNote("Azure subscription: The Azure subscription where your resources will be deployed."),
 	})

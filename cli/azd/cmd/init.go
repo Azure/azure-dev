@@ -205,9 +205,18 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}, nil
 }
 
-func getCmdInitHelpDescription(c *cobra.Command) string {
+func getCmdInitHelpDescription(*cobra.Command) string {
 	return generateCmdHelpDescription("Initialize a new application in your current directory.",
-		getCmdHelpDescriptionNoteForInit(c))
+		[]string{
+			formatHelpNote(
+				fmt.Sprintf("Running %s without a template will prompt "+
+					"you to start with a minimal template or select from a curated list of presets.",
+					output.WithHighLightFormat("init"),
+				)),
+			formatHelpNote(
+				"To view all available sample templates, including those submitted by the azd community, visit: " +
+					output.WithLinkFormat("https://azure.github.io/awesome-azd") + "."),
+		})
 }
 
 func getCmdInitHelpFooter(*cobra.Command) string {

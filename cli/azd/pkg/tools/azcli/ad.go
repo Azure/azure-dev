@@ -13,7 +13,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
-	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/google/uuid"
 	"github.com/sethvargo/go-retry"
 )
@@ -374,60 +373,87 @@ func (cli *azCli) createRoleAssignmentsClient(
 	return client, nil
 }
 
-// Find the Azure role assignment for the specified scope and role name
-func (cli *azCli) getUserRoleAssignment(
+// Find the Azure role definition for the specified scope and principalID
+func (cli *azCli) getUserRoleDefinitionID(
 	ctx context.Context,
 	subscriptionId string,
 	scope string,
-	roleName string,
 	principalId string,
-) ([]*armauthorization.RoleAssignment, error) {
+) ([]string, error) {
 	client, err := cli.createRoleAssignmentsClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
 	}
 
-	//ask about scope and above
-	// pager := client.NewListPager(scope, &armauthorization.RoleAssignmentsClientListForScopeOptions{
-	// 	Filter: convert.RefOf(fmt.Sprintf("roleName eq '%s'", roleName)),
-	// })
-
 	pager := client.NewListForScopePager(scope,
 		&armauthorization.RoleAssignmentsClientListForScopeOptions{
-			Filter: convert.RefOf(fmt.Sprintf("atScope()+and+assignedTo('%s')", principalId)),
+			Filter: convert.RefOf(fmt.Sprintf("atScope() and assignedTo('%s')", principalId)),
 		})
 
-	roleDefinitions := []*armauthorization.RoleAssignment{}
+	roleDefinitions := []string{}
 
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
 			return nil, fmt.Errorf("failed getting next page of role assignments on scope '%s': %w", scope, err)
 		}
-		roleDefinitions = append(roleDefinitions, page.Value...)
+		for _, v := range page.Value {
+			// TODO: use page item
+			roleDefinitions = append(roleDefinitions, *v.Properties.RoleDefinitionID)
+		}
 	}
 
 	if len(roleDefinitions) == 0 {
-		return nil, fmt.Errorf("role definition with scope: '%s' and name: '%s' was not found", scope, roleName)
+		return nil, fmt.Errorf("role assignment with scope '%s' was not found", scope)
 	}
 
 	return roleDefinitions, nil
 }
 
+func (cli *azCli) getUserRoleDefinitionName(
+	ctx context.Context,
+	subscriptionId string,
+	scope string,
+	principalId string,
+) ([]string, error) {
+	roleDefinitionName := []string{}
+	client, err := cli.createRoleDefinitionsClient(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	roleDefinitionID, err := cli.getUserRoleDefinitionID(ctx, subscriptionId, scope, principalId)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, id := range roleDefinitionID {
+		roleDefinitionListResult, err := client.GetByID(ctx, id, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failing to get role definition name from role definition id: %w", err)
+		}
+		roleDefinitionName = append(roleDefinitionName, *roleDefinitionListResult.Properties.RoleName)
+	}
+
+	return roleDefinitionName, nil
+}
+
 func (cli *azCli) CheckRoleAssignments(
 	ctx context.Context,
 	subscriptionId string,
-	roleName []string,
 	principalId string,
 ) error {
 	// Find the specified role in the subscription scope
 	scope := azure.SubscriptionRID(subscriptionId)
-	for _, role := range roleName {
-		result, err := cli.getUserRoleAssignment(ctx, subscriptionId, scope, role, principalId)
-		if result != nil {
-			// equals return nil because err == nil if result != nil
-			return err
+	roles, err := cli.getUserRoleDefinitionName(ctx, subscriptionId, scope, principalId)
+	if err != nil {
+		return err
+	}
+	for _, name := range roles {
+		if name == "Owner" || name == "User Access Administrator" {
+			return nil
 		}
 	}
-	return fmt.Errorf("missing required user role assignment for authorization: %s", ux.OrListAsText(roleName))
+
+	return fmt.Errorf("missing required user role assignment for authorization: Owner or User Access Administrator")
 }

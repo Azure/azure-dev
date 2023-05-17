@@ -155,7 +155,6 @@ type AzCli interface {
 	CheckRoleAssignments(
 		ctx context.Context,
 		subscriptionId string,
-		roleName []string,
 		principalId string,
 	) error
 	GetAppServiceProperties(

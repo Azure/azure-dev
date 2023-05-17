@@ -105,7 +105,7 @@ func newPipelineConfigCmd() *cobra.Command {
 	return &cobra.Command{
 		Use: "config",
 		Short: fmt.Sprintf(
-			"Create and configure your deployment pipeline by using GitHub or Azure Pipelines. %s",
+			"Configure your deployment pipeline to connect securely to Azure. %s",
 			output.WithWarningFormat("(Beta)")),
 	}
 }
@@ -199,12 +199,19 @@ func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, 
 
 func getCmdPipelineHelpDescription(*cobra.Command) string {
 	return generateCmdHelpDescription(
-		fmt.Sprintf("Manage integrating your application with build pipelines. %s", output.WithWarningFormat("(Beta)")),
+		fmt.Sprintf("Manage integrating your application with deployment pipelines. %s", output.WithWarningFormat("(Beta)")),
 		[]string{
-			formatHelpNote(fmt.Sprintf("The Azure Developer CLI template includes a GitHub Actions pipeline"+
-				" configuration file (in the %s folder) that deploys your application whenever code is pushed"+
-				" to the main branch.", output.WithLinkFormat(".github/workflows"))),
-			formatHelpNote(fmt.Sprintf("For more information, go to: %s.",
+			formatHelpNote(
+				"azd commands (e.g. " +
+					output.WithHighLightFormat("provision") + ", " +
+					output.WithHighLightFormat("deploy") + ") " +
+					"can be used within GitHub Actions and Azure Pipelines to test your code against real Azure resources " +
+					"and facilitate deployments."),
+			formatHelpNote(
+				"After creating a pipeline definition file, running " +
+					output.WithHighLightFormat("pipeline config") +
+					" will help configure your deployment pipeline to connect securely to Azure."),
+			formatHelpNote(fmt.Sprintf("For more information on how to use azd in your pipeline, go to: %s.",
 				output.WithLinkFormat("https://aka.ms/azure-dev/pipeline"))),
 		})
 }
@@ -218,22 +225,33 @@ func getCmdPipelineHelpFooter(c *cobra.Command) string {
 
 func getCmdPipelineConfigHelpDescription(*cobra.Command) string {
 	return generateCmdHelpDescription(
-		"Create and configure your deployment pipeline by using GitHub or Azure Pipelines.",
+		"Configure your deployment pipeline to connect securely to Azure",
 		[]string{
+			formatHelpNote(
+				"Supports GitHub Actions and Azure Pipelines. To set the pipeline provider to be configured, " +
+					"provide a value for the '--provider' flag."),
+			formatHelpNote(
+				output.WithHighLightFormat("pipeline config") +
+					" creates or uses a service principal on the Azure subscription to create a secure connection between" +
+					" your deployment pipeline and Azure."),
 			formatHelpNote("By default, " +
 				output.WithHighLightFormat("pipeline config") +
-				" will configure and set deployment pipeline variables using the current environment. " +
-				"To configure for a new or a different existing environment, use the '-e' flag."),
+				" will set deployment pipeline variables and secrets using the current environment. " +
+				"To configure for a new or a different existing environment, provide a value for the '-e' flag."),
 		})
 }
 
 func getCmdPipelineConfigHelpFooter(c *cobra.Command) string {
 	return generateCmdHelpSamplesBlock(map[string]string{
-		"Set up a deployment pipeline for 'app-test' environment": fmt.Sprintf("%s %s",
+		"Configure a deployment pipeline using an existing service principal": fmt.Sprintf("%s %s",
+			output.WithHighLightFormat("azd pipeline config --principal-name"),
+			output.WithWarningFormat("[Principal name]"),
+		),
+		"Configure a deployment pipeline for 'app-test' environment": fmt.Sprintf("%s %s",
 			output.WithHighLightFormat("azd pipeline config -e"),
 			output.WithWarningFormat("app-test"),
 		),
-		"Set up a deployment pipeline for 'app-test' environment on Azure Pipelines.": fmt.Sprintf("%s %s %s",
+		"Configure a deployment pipeline for 'app-test' environment on Azure Pipelines.": fmt.Sprintf("%s %s %s",
 			output.WithHighLightFormat("azd pipeline config -e"),
 			output.WithWarningFormat("app-test"),
 			output.WithHighLightFormat("--provider azdo"),

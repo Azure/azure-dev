@@ -25,19 +25,19 @@ func TestCache(t *testing.T) {
 	}
 
 	// write some data.
-	r := c.Export(ctx, &d1, cache.ExportHints{PartitionKey: "d1"})
-	require.NoError(t, r)
-	r = c.Export(ctx, &d2, cache.ExportHints{PartitionKey: "d2"})
-	require.NoError(t, r)
+	err := c.Export(ctx, &d1, cache.ExportHints{PartitionKey: "d1"})
+	require.NoError(t, err)
+	err = c.Export(ctx, &d2, cache.ExportHints{PartitionKey: "d2"})
+	require.NoError(t, err)
 
 	var r1 fixedMarshaller
 	var r2 fixedMarshaller
 
 	// read back that data we wrote.
-	r = c.Replace(ctx, &r1, cache.ReplaceHints{PartitionKey: "d1"})
-	require.NoError(t, r)
-	r = c.Replace(ctx, &r2, cache.ReplaceHints{PartitionKey: "d2"})
-	require.NoError(t, r)
+	err = c.Replace(ctx, &r1, cache.ReplaceHints{PartitionKey: "d1"})
+	require.NoError(t, err)
+	err = c.Replace(ctx, &r2, cache.ReplaceHints{PartitionKey: "d2"})
+	require.NoError(t, err)
 
 	require.NotNil(t, r1.val)
 	require.NotNil(t, r2.val)
@@ -47,10 +47,10 @@ func TestCache(t *testing.T) {
 	// the data should be shared across instances.
 	c = newCache(root)
 
-	r = c.Replace(ctx, &r1, cache.ReplaceHints{PartitionKey: "d1"})
-	require.NoError(t, r)
-	r = c.Replace(ctx, &r2, cache.ReplaceHints{PartitionKey: "d2"})
-	require.NoError(t, r)
+	err = c.Replace(ctx, &r1, cache.ReplaceHints{PartitionKey: "d1"})
+	require.NoError(t, err)
+	err = c.Replace(ctx, &r2, cache.ReplaceHints{PartitionKey: "d2"})
+	require.NoError(t, err)
 
 	require.NotNil(t, r1.val)
 	require.NotNil(t, r2.val)

@@ -228,7 +228,7 @@ func getCmdPipelineConfigHelpDescription(*cobra.Command) string {
 		"Configure your deployment pipeline to connect securely to Azure",
 		[]string{
 			formatHelpNote(
-				"Supports GitHub Actions and Azure Pipelines. To set the pipeline provider to be configured, " +
+				"Supports GitHub Actions and Azure Pipelines. To configure using a specific pipeline provider, " +
 					"provide a value for the '--provider' flag."),
 			formatHelpNote(
 				output.WithHighLightFormat("pipeline config") +
@@ -237,7 +237,7 @@ func getCmdPipelineConfigHelpDescription(*cobra.Command) string {
 			formatHelpNote("By default, " +
 				output.WithHighLightFormat("pipeline config") +
 				" will set deployment pipeline variables and secrets using the current environment. " +
-				"To configure for a new or a different existing environment, provide a value for the '-e' flag."),
+				"To configure for a new or an existing environment, provide a value for the '-e' flag."),
 		})
 }
 

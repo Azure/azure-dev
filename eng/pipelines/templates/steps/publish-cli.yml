@@ -99,8 +99,8 @@ steps:
 
   - ${{ if eq('true', parameters.PublishArm64Binaries) }}: 
     - pwsh: |
-        Rename-Item release-staging/azd-linux-arm64 release-staging/azd-linux-arm64-beta 
-        Rename-Item signed/mac/azd-darwin-arm64 signed/mac/azd-darwin-arm64-beta
+        Move-Item release-staging/azd-linux-arm64 release-staging/azd-linux-arm64-beta 
+        Move-Item signed/mac/azd-darwin-arm64 signed/mac/azd-darwin-arm64-beta
 
         New-Item -ItemType Directory -Path release -Force
         zip release/azd-darwin-arm64-beta.zip -j signed/mac/azd-darwin-arm64-beta NOTICE.txt

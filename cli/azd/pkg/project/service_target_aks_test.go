@@ -25,6 +25,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/kubectl"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazsdk"
 	"github.com/azure/azure-dev/cli/azd/test/ostest"
 	"github.com/benbjohnson/clock"
 	"github.com/stretchr/testify/require"
@@ -233,47 +234,31 @@ func setupListClusterAdminCredentialsMock(mockContext *mocks.MockContext, status
 }
 
 func setupMocksForAcr(mockContext *mocks.MockContext) {
-	// List container registries
-	mockContext.HttpClient.When(func(request *http.Request) bool {
-		return request.Method == http.MethodGet &&
-			strings.Contains(request.URL.Path, "Microsoft.ContainerRegistry/registries")
-	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		result := armcontainerregistry.RegistryListResult{
-			NextLink: nil,
-			Value: []*armcontainerregistry.Registry{
-				{
-					ID: convert.RefOf(
-						//nolint:lll
-						"/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/providers/Microsoft.ContainerRegistry/registries/REGISTRY",
-					),
-					Location: convert.RefOf("eastus2"),
-					Name:     convert.RefOf("REGISTRY"),
-					Properties: &armcontainerregistry.RegistryProperties{
-						LoginServer: convert.RefOf("REGISTRY.azurecr.io"),
-					},
-				},
+	mockazsdk.MockContainerRegistryList(mockContext, []*armcontainerregistry.Registry{
+		{
+			ID: convert.RefOf(
+				//nolint:lll
+				"/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/providers/Microsoft.ContainerRegistry/registries/REGISTRY",
+			),
+			Location: convert.RefOf("eastus2"),
+			Name:     convert.RefOf("REGISTRY"),
+			Properties: &armcontainerregistry.RegistryProperties{
+				LoginServer: convert.RefOf("REGISTRY.azurecr.io"),
 			},
-		}
-
-		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, result)
+		},
 	})
 
-	// List container credentials
-	mockContext.HttpClient.When(func(request *http.Request) bool {
-		return request.Method == http.MethodPost && strings.Contains(request.URL.Path, "listCredentials")
-	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		result := armcontainerregistry.RegistryListCredentialsResult{
-			Username: convert.RefOf("admin"),
-			Passwords: []*armcontainerregistry.RegistryPassword{
-				{
-					Name:  convert.RefOf(armcontainerregistry.PasswordName("admin")),
-					Value: convert.RefOf("password"),
-				},
+	mockazsdk.MockContainerRegistryCredentials(mockContext, &armcontainerregistry.RegistryListCredentialsResult{
+		Username: convert.RefOf("admin"),
+		Passwords: []*armcontainerregistry.RegistryPassword{
+			{
+				Name:  convert.RefOf(armcontainerregistry.PasswordName("admin")),
+				Value: convert.RefOf("password"),
 			},
-		}
-
-		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, result)
+		},
 	})
+
+	mockazsdk.MockContainerRegistryTokenExchange(mockContext, "SUBSCRIPTION_ID", "LOGIN_SERVER", "REFRESH_TOKEN")
 }
 
 func setupMocksForKubectl(mockContext *mocks.MockContext) {

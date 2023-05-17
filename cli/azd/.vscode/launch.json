@@ -22,6 +22,18 @@
             // Uncomment these settings to control how `azd` is launched.
             // "cwd": "${workspaceFolder}",
             // "args": ["provision"]
+        },
+        {
+            "name": "dev-azd (launch)",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "program": "${workspaceFolder}",
+            "args": [
+                "auth", "login"
+            ],
+            "cwd": "${workspaceFolder}",
+            "console": "integratedTerminal",
         }
     ]
 }

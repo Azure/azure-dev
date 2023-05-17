@@ -104,6 +104,7 @@ foreach ($buildFlag in $buildFlags) {
         $buildFlag = "$($argWithValue[0])=`"$($argWithValue[1])`""
     }
 
+    # Write each flag on a newline with '`' acting as the multiline separator
     if ($i -eq $buildFlags.Length - 1) {
         Write-Host "  $buildFlag"
     }

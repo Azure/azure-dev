@@ -4,8 +4,11 @@
 package cli_test
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
+	"fmt"
+	"strings"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
@@ -102,8 +105,45 @@ func Test_CLI_Env_Management(t *testing.T) {
 	require.Error(t, err)
 }
 
-// Verifies azd env commands that manage environment values.
-func Test_CLI_Env_Values_SingleEnvironment(t *testing.T) {
+func Test_CLI_Env_Values_Json(t *testing.T) {
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
+	t.Logf("DIR: %s", dir)
+
+	cli := azdcli.NewCLI(t)
+	cli.WorkingDirectory = dir
+
+	err := copySample(dir, "storage")
+	require.NoError(t, err, "failed expanding sample")
+
+	// Create one environment
+	envName := randomEnvName()
+	envNew(ctx, t, cli, envName, false)
+
+	// Add key1
+	envSetValue(ctx, t, cli, "key1", "value1")
+	values := envGetValues(ctx, t, cli, "--output", "json")
+	require.Contains(t, values, "key1")
+	require.Equal(t, values["key1"], "value1")
+
+	// Add key2
+	envSetValue(ctx, t, cli, "key2", "value2")
+	values = envGetValues(ctx, t, cli, "--output", "json")
+	require.Contains(t, values, "key2")
+	require.Equal(t, values["key2"], "value2")
+
+	// Modify key1
+	envSetValue(ctx, t, cli, "key1", "modified1")
+	values = envGetValues(ctx, t, cli, "--output", "json")
+	require.Contains(t, values, "key1")
+	require.Equal(t, values["key1"], "modified1")
+	require.Contains(t, values, "key2")
+	require.Equal(t, values["key2"], "value2")
+}
+
+func Test_CLI_Env_Values(t *testing.T) {
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
@@ -163,9 +203,13 @@ func Test_CLI_Env_Values_MultipleEnvironments(t *testing.T) {
 	envName2 := randomEnvName()
 	envNew(ctx, t, cli, envName2, false)
 
+	values := envGetValues(ctx, t, cli)
+	require.Contains(t, values, "AZURE_ENV_NAME")
+	require.Equal(t, envName2, values["AZURE_ENV_NAME"])
+
 	// Get and set values via -e flag for first environment
 	envSetValue(ctx, t, cli, "envName1", envName1, "--environment", envName1)
-	values := envGetValues(ctx, t, cli, "--environment", envName1)
+	values = envGetValues(ctx, t, cli, "--environment", envName1)
 	require.Contains(t, values, "AZURE_ENV_NAME")
 	require.Equal(t, values["AZURE_ENV_NAME"], envName1)
 	require.Contains(t, values, "envName1")
@@ -230,16 +274,58 @@ func envSetValue(ctx context.Context, t *testing.T, cli *azdcli.CLI, key string,
 	require.NoError(t, err)
 }
 
-func envGetValues(ctx context.Context, t *testing.T, cli *azdcli.CLI, args ...string) map[string]string {
-	defaultArgs := []string{"env", "get-values", "--output", "json"}
+func envGetValues(
+	ctx context.Context,
+	t *testing.T,
+	cli *azdcli.CLI,
+	args ...string) map[string]string {
+	defaultArgs := []string{"env", "get-values"}
 	args = append(defaultArgs, args...)
 
 	result, err := cli.RunCommand(ctx, args...)
 	require.NoError(t, err)
 
-	var envValues map[string]string
-	err = json.Unmarshal([]byte(result.Stdout), &envValues)
-	require.NoError(t, err)
+	outputMode := azdcli.GetOutputFlagValue(args)
+
+	envValues := map[string]string{}
+
+	switch outputMode {
+	case "json":
+		err = json.Unmarshal([]byte(result.Stdout), &envValues)
+		require.NoError(t, err)
+	case "", "none":
+		scanner := bufio.NewScanner(strings.NewReader(result.Stdout))
+		for scanner.Scan() {
+			line := scanner.Text()
+			if !strings.Contains(line, "=") {
+				t.Fatal("unexpected line in output: " + line)
+			}
+
+			parts := strings.Split(line, "=")
+			require.Len(t, parts, 2)
+			val, err := unquote(parts[1])
+			require.NoError(t, err)
+			envValues[parts[0]] = val
+		}
+	default:
+		panic("unhandled output mode: " + outputMode)
+	}
 
 	return envValues
+}
+
+func unquote(s string) (string, error) {
+	if len(s) == 0 {
+		return s, nil
+	}
+
+	if s[0] == '"' || s[0] == '\'' {
+		if len(s) == 1 || s[len(s)-1] != s[0] {
+			return "", fmt.Errorf("unmatched quote in: %s", s)
+		}
+
+		return s[1 : len(s)-1], nil
+	}
+
+	return s, nil
 }

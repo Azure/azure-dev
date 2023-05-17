@@ -214,9 +214,8 @@ func getCmdInitHelpDescription(*cobra.Command) string {
 					output.WithHighLightFormat("init"),
 				)),
 			formatHelpNote(
-				output.WithGrayFormat("To view available templates run `azd template list` or visit: ") +
-					output.WithLinkFormat("https://azure.github.io/awesome-azd"),
-			),
+				"To view all available sample templates, including those submitted by the azd community, visit: " +
+					output.WithLinkFormat("https://azure.github.io/awesome-azd") + "."),
 		})
 }
 

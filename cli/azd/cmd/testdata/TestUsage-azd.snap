@@ -39,7 +39,8 @@ Deploying a sample application
 Initialize from a sample application by running the azd init --template [template name] command in an empty directory.
 Then, run azd up to get the application up-and-running in Azure.
 
-To view available templates run `azd template list` or visit: https://azure.github.io/awesome-azd
+To view a curated list of sample templates, run azd template list.
+To view all available sample templates, including those submitted by the azd community, visit: https://azure.github.io/awesome-azd.
 
 Find a bug? Want to let us know how we're doing? Fill out this brief survey: https://aka.ms/azure-dev/hats.
 

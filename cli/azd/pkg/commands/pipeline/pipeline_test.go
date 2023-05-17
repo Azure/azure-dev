@@ -79,9 +79,7 @@ func Test_detectProviders(t *testing.T) {
 
 		envValues := map[string]string{}
 		envValues[envPersistedKey] = azdoLabel
-		env := &environment.Environment{
-			Values: envValues,
-		}
+		env := environment.EphemeralWithValues("test-env", envValues)
 
 		scmProvider, ciProvider, err := DetectProviders(
 			ctx,
@@ -106,9 +104,7 @@ func Test_detectProviders(t *testing.T) {
 
 		envValues := map[string]string{}
 		envValues[envPersistedKey] = azdoLabel
-		env := &environment.Environment{
-			Values: envValues,
-		}
+		env := environment.EphemeralWithValues("test-env", envValues)
 
 		scmProvider, ciProvider, err := DetectProviders(
 			ctx,
@@ -137,9 +133,7 @@ func Test_detectProviders(t *testing.T) {
 
 		envValues := map[string]string{}
 		envValues[envPersistedKey] = azdoLabel
-		env := &environment.Environment{
-			Values: envValues,
-		}
+		env := environment.EphemeralWithValues("test-env", envValues)
 
 		scmProvider, ciProvider, err := DetectProviders(
 			ctx,
@@ -163,9 +157,7 @@ func Test_detectProviders(t *testing.T) {
 
 		envValues := map[string]string{}
 		envValues[envPersistedKey] = gitHubLabel
-		env := &environment.Environment{
-			Values: envValues,
-		}
+		env := environment.EphemeralWithValues("test-env", envValues)
 		scmProvider, ciProvider, err := DetectProviders(ctx,
 			azdContext,
 			env,
@@ -188,9 +180,7 @@ func Test_detectProviders(t *testing.T) {
 
 		envValues := map[string]string{}
 		envValues[envPersistedKey] = gitHubLabel
-		env := &environment.Environment{
-			Values: envValues,
-		}
+		env := environment.EphemeralWithValues("test-env", envValues)
 
 		scmProvider, ciProvider, err := DetectProviders(ctx,
 			azdContext,
@@ -215,7 +205,7 @@ func Test_detectProviders(t *testing.T) {
 		scmProvider, ciProvider, err := DetectProviders(
 			ctx,
 			azdContext,
-			&environment.Environment{Values: map[string]string{}},
+			environment.Ephemeral(),
 			"other",
 			mockContext.Console,
 			mockContext.Credentials,
@@ -235,9 +225,7 @@ func Test_detectProviders(t *testing.T) {
 
 		envValues := map[string]string{}
 		envValues[envPersistedKey] = "other"
-		env := &environment.Environment{
-			Values: envValues,
-		}
+		env := environment.EphemeralWithValues("test-env", envValues)
 
 		scmProvider, ciProvider, err := DetectProviders(ctx,
 			azdContext,
@@ -293,9 +281,7 @@ func Test_detectProviders(t *testing.T) {
 
 		envValues := map[string]string{}
 		envValues[envPersistedKey] = "persisted"
-		env := &environment.Environment{
-			Values: envValues,
-		}
+		env := environment.EphemeralWithValues("test-env", envValues)
 
 		scmProvider, ciProvider, err := DetectProviders(ctx,
 			azdContext,
@@ -328,9 +314,7 @@ func Test_detectProviders(t *testing.T) {
 
 		envValues := map[string]string{}
 		envValues[envPersistedKey] = "persisted"
-		env := &environment.Environment{
-			Values: envValues,
-		}
+		env := environment.EphemeralWithValues("test-env", envValues)
 
 		scmProvider, ciProvider, err := DetectProviders(
 			ctx,
@@ -438,7 +422,7 @@ func Test_detectProviders(t *testing.T) {
 		assert.IsType(t, &AzdoCiProvider{}, ciProvider)
 		assert.NoError(t, err)
 
-		envValue, found := env.Values[envPersistedKey]
+		envValue, found := env.Dotenv()[envPersistedKey]
 		assert.True(t, found)
 		assert.Equal(t, azdoLabel, envValue)
 
@@ -512,7 +496,7 @@ func Test_detectProviders(t *testing.T) {
 		assert.NoError(t, err)
 
 		// the persisted choice should be updated based on the value set on yaml
-		envValue, found := env.Values[envPersistedKey]
+		envValue, found := env.Dotenv()[envPersistedKey]
 		assert.True(t, found)
 		assert.Equal(t, gitHubLabel, envValue)
 
@@ -544,7 +528,7 @@ func Test_detectProviders(t *testing.T) {
 		assert.NoError(t, err)
 
 		// the persisted selection is now azdo(env) but yaml is github
-		envValue, found = env.Values[envPersistedKey]
+		envValue, found = env.Dotenv()[envPersistedKey]
 		assert.True(t, found)
 		assert.Equal(t, azdoLabel, envValue)
 

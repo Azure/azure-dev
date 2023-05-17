@@ -106,7 +106,7 @@ func (m *Manager) Destroy(ctx context.Context, options DestroyOptions) (*Destroy
 	// Remove any outputs from the template from the environment since destroying the infrastructure
 	// invalidated them all.
 	for outputName := range destroyResult.Outputs {
-		delete(m.env.Values, outputName)
+		m.env.DotenvDelete(outputName)
 	}
 
 	// Update environment files to remove invalid infrastructure parameters

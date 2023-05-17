@@ -72,10 +72,10 @@ func TestBicepPlan(t *testing.T) {
 	require.IsType(t, BicepDeploymentDetails{}, deploymentPlan.Details)
 	configuredParameters := deploymentPlan.Details.(BicepDeploymentDetails).Parameters
 
-	require.Equal(t, infraProvider.env.Values["AZURE_LOCATION"], configuredParameters["location"].Value)
+	require.Equal(t, infraProvider.env.GetLocation(), configuredParameters["location"].Value)
 	require.Equal(
 		t,
-		infraProvider.env.Values["AZURE_ENV_NAME"],
+		infraProvider.env.GetEnvName(),
 		configuredParameters["environmentName"].Value,
 	)
 }
@@ -210,7 +210,7 @@ func TestBicepDeploy(t *testing.T) {
 			Parameters: testArmParameters,
 			Target: infra.NewSubscriptionDeployment(
 				azCli,
-				infraProvider.env.Values["AZURE_LOCATION"],
+				infraProvider.env.GetLocation(),
 				infraProvider.env.GetSubscriptionId(),
 				infraProvider.env.GetEnvName(),
 			),

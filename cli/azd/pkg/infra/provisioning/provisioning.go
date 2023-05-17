@@ -20,9 +20,9 @@ func UpdateEnvironment(env *environment.Environment, outputs map[string]OutputPa
 				if err != nil {
 					return fmt.Errorf("invalid value for output parameter '%s' (%s): %w", key, string(param.Type), err)
 				}
-				env.Values[key] = string(bytes)
+				env.DotenvSet(key, string(bytes))
 			} else {
-				env.Values[key] = fmt.Sprintf("%v", param.Value)
+				env.DotenvSet(key, fmt.Sprintf("%v", param.Value))
 			}
 		}
 

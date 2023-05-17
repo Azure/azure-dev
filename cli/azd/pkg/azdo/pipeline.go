@@ -162,7 +162,7 @@ func getDefinitionVariables(
 		// Sets the terraform remote state environment variables in azure devops
 		remoteStateKeys := []string{"RS_RESOURCE_GROUP", "RS_STORAGE_ACCOUNT", "RS_CONTAINER_NAME"}
 		for _, key := range remoteStateKeys {
-			value, ok := env.Values[key]
+			value, ok := env.LookupEnv(key)
 			if !ok || strings.TrimSpace(value) == "" {
 				return nil, fmt.Errorf(fmt.Sprintf(`terraform remote state is not correctly configured,
 Visit %s for more information on configuring Terraform remote state`,

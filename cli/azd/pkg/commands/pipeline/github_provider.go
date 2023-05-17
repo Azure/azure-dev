@@ -510,7 +510,7 @@ func (p *GitHubCiProvider) configureClientCredentialsAuth(
 		// Sets the terraform remote state environment variables in github
 		remoteStateKeys := []string{"RS_RESOURCE_GROUP", "RS_STORAGE_ACCOUNT", "RS_CONTAINER_NAME"}
 		for _, key := range remoteStateKeys {
-			value, ok := azdEnvironment.Values[key]
+			value, ok := azdEnvironment.LookupEnv(key)
 			if !ok || strings.TrimSpace(value) == "" {
 				p.console.StopSpinner(ctx, "Configuring terraform", input.StepWarning)
 				p.console.MessageUxItem(ctx, &ux.WarningMessage{
@@ -543,7 +543,7 @@ func (p *GitHubCiProvider) configureClientCredentialsAuth(
 		environment.LocationEnvVarName,
 		environment.SubscriptionIdEnvVarName} {
 
-		if err := ghCli.SetVariable(ctx, repoSlug, envName, azdEnvironment.Values[envName]); err != nil {
+		if err := ghCli.SetVariable(ctx, repoSlug, envName, azdEnvironment.Getenv(envName)); err != nil {
 			return fmt.Errorf("failed setting %s variable: %w", envName, err)
 		}
 		p.console.MessageUxItem(ctx, &ux.CreatedRepoValue{

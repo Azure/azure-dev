@@ -105,7 +105,7 @@ func Test_Package_Deploy_HappyPath(t *testing.T) {
 	require.IsType(t, new(kubectl.Deployment), deployResult.Details)
 	require.Greater(t, len(deployResult.Endpoints), 0)
 	// New env variable is created
-	require.Equal(t, "REGISTRY.azurecr.io/test-app/api-test:azd-deploy-0", env.Values["SERVICE_API_IMAGE_NAME"])
+	require.Equal(t, "REGISTRY.azurecr.io/test-app/api-test:azd-deploy-0", env.Dotenv()["SERVICE_API_IMAGE_NAME"])
 }
 
 func Test_Deploy_No_Cluster_Name(t *testing.T) {
@@ -120,7 +120,7 @@ func Test_Deploy_No_Cluster_Name(t *testing.T) {
 	env := createEnv()
 
 	// Simulate AKS cluster name not found in env file
-	delete(env.Values, environment.AksClusterEnvVarName)
+	env.DotenvDelete(environment.AksClusterEnvVarName)
 
 	serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env)
 	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "CLUSTER_NAME", string(infra.AzureResourceTypeManagedCluster))

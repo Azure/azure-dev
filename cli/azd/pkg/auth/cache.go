@@ -4,7 +4,7 @@
 package auth
 
 import (
-	"log"
+	"context"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
 )
@@ -16,26 +16,25 @@ type msalCacheAdapter struct {
 	cache Cache
 }
 
-func (a *msalCacheAdapter) Replace(cache cache.Unmarshaler, key string) {
-	val, err := a.cache.Read(key)
+func (a *msalCacheAdapter) Replace(ctx context.Context, cache cache.Unmarshaler, cacheHints cache.ReplaceHints) error {
+	val, err := a.cache.Read(cacheHints.PartitionKey)
 	if err != nil {
-		log.Printf("ignoring error in adapter: %v", err)
+		return err
 	}
 
 	if err := cache.Unmarshal(val); err != nil {
-		log.Printf("ignoring error in adapter: %v", err)
+		return err
 	}
+	return nil
 }
 
-func (a *msalCacheAdapter) Export(cache cache.Marshaler, key string) {
+func (a *msalCacheAdapter) Export(ctx context.Context, cache cache.Marshaler, cacheHints cache.ExportHints) error {
 	val, err := cache.Marshal()
 	if err != nil {
-		log.Printf("ignoring error in adapter: %v", err)
+		return err
 	}
 
-	if err := a.cache.Set(key, val); err != nil {
-		log.Printf("ignoring error in adapter: %v", err)
-	}
+	return a.cache.Set(cacheHints.PartitionKey, val)
 }
 
 type Cache interface {

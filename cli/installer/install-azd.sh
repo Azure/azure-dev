@@ -166,7 +166,6 @@ DEFAULT_BASE_URL="https://azure-dev.azureedge.net/azd/standalone/release"
 base_url="$DEFAULT_BASE_URL"
 platform="$(get_platform)"
 extension="$(get_extension_for_platform "$platform")"
-architecture="$(get_architecture "$platform")"
 version="latest"
 dry_run=false
 skip_verify=false
@@ -271,6 +270,10 @@ do
   shift
 done
 
+if [ "${architecture:-}" = "" ]; then
+    architecture="$(get_architecture "$platform")"
+fi
+
 if [ "$symlink_folder" != "" ] && [ ! -d "$symlink_folder" ]; then
     say_error "Symlink folder does not exist: $symlink_folder. The symlink folder should exist and be in \$PATH"
     say_error "Create the folder (and ensure that it is in your \$PATH), specify a different folder using -s or --symlink-folder, or specify an empty value using -s \"\" or --symlink-folder \"\""
@@ -283,15 +286,22 @@ say_verbose "Platform: $platform"
 say_verbose "Architecture: $architecture"
 say_verbose "File extension: $extension"
 
-if [ "$platform" = "darwin" ]; then
+if [ "$platform" = "darwin" ] && [ "$architecture" = "amd64" ]; then
     say_verbose "Mac detected, ensuring compatibility with amd64 binaries"
     ensure_rosetta
 fi
 
+# ARM64 bits are in beta, and so both the distribution package and the azd binary inside have a `-beta` suffix we
+# need to take into account.
+suffix=""
+if [ "$architecture" = "arm64" ]; then
+    suffix="-beta"
+fi
+
 if [ -z "$version" ]; then
-    url="$base_url/azd-$platform-$architecture.$extension"
+    url="$base_url/azd-$platform-$architecture$suffix.$extension"
 else
-    url="$base_url/$version/azd-$platform-$architecture.$extension"
+    url="$base_url/$version/azd-$platform-$architecture$suffix.$extension"
 fi
 
 if [ "$dry_run" = true ]; then
@@ -300,7 +310,7 @@ if [ "$dry_run" = true ]; then
 fi
 
 tmp_folder="$(mktemp -d)";
-compressed_file_path="$tmp_folder/azd-$platform-$architecture.$extension"
+compressed_file_path="$tmp_folder/azd-$platform-$architecture$suffix.$extension"
 say_verbose "Downloading $url to $tmp_folder"
 
 if ! curl -so "$compressed_file_path" "$url" --fail; then
@@ -312,7 +322,7 @@ if ! curl -so "$compressed_file_path" "$url" --fail; then
     exit 1
 fi
 
-bin_name="azd-$platform-$architecture"
+bin_name="azd-$platform-$architecture$suffix"
 extract "$compressed_file_path" "$tmp_folder"
 rm "$compressed_file_path"
 chmod +x "$tmp_folder/$bin_name"

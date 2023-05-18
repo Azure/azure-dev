@@ -7,7 +7,5 @@ services:
     host: springapp
     language: java
 infra:
-#  provider: terraform
-#  path: infra-terraform
   path: infra-bicep
 

@@ -402,7 +402,7 @@ func (cli *azCli) getUserRoleDefinitionIdList(
 			if Id != "" {
 				roleDefinitionIds = append(roleDefinitionIds, Id)
 			} else {
-				return nil, fmt.Errorf("failed getting role definition id from role assignment scope '%s': %w", *v.Properties.Scope, err)
+				return nil, fmt.Errorf("failed getting role definition id from role assignment: %w", err)
 			}
 		}
 	}
@@ -441,8 +441,7 @@ func (cli *azCli) GetUserRoleDefinitionName(
 		if roleName != "" {
 			roleDefinitionName = append(roleDefinitionName, roleName)
 		} else {
-			return nil, fmt.Errorf("failed getting role definition name from role definition id '%s': %w",
-				*roleDefinitionResult.ID, err)
+			return nil, fmt.Errorf("failed getting role definition name from role definition id: %w", err)
 		}
 	}
 

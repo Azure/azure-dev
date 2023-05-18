@@ -13,6 +13,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -137,7 +138,7 @@ func (i *PipelineManager) preConfigureCheck(ctx context.Context, infraOptions pr
 	}
 
 	// Check permission on role assignment
-	err = i.azCli.CheckRoleAssignments(ctx, i.Environment.GetSubscriptionId(), principalId, i.console)
+	err = checkRoleAssignments(ctx, i.azCli, i.Environment.GetSubscriptionId(), principalId, i.console)
 	if err != nil {
 		return configurationWasUpdated, err
 	}
@@ -444,4 +445,43 @@ func (manager *PipelineManager) Configure(ctx context.Context) (
 		RepositoryLink: gitRepoInfo.remote,
 		PipelineLink:   ciPipeline.remote,
 	}, nil
+}
+
+func checkRoleAssignments(
+	ctx context.Context,
+	azcli azcli.AzCli,
+	subscriptionId string,
+	principalId string,
+	console input.Console,
+) error {
+	// Find the specified role in the subscription scope
+	scope := azure.SubscriptionRID(subscriptionId)
+	roles, err := azcli.GetUserRoleDefinitionName(ctx, subscriptionId, scope, principalId)
+	if err != nil {
+		return err
+	}
+	for _, name := range roles {
+		if name == "Owner" || name == "User Access Administrator" {
+			return nil
+		}
+	}
+
+	message := fmt.Sprintf(
+		"Required azure build-in user role assignments Owner or User Access Administrator are not detected in your account. " +
+			"Without these role assignments, assigning roles to service principal may fail in later operations. " +
+			"Do you want to continue with your custom role assignment?")
+
+	confirm, err := console.Confirm(ctx, input.ConsoleOptions{
+		Message: message,
+	})
+	if err != nil {
+		return err
+	}
+
+	if !confirm {
+		return fmt.Errorf("missing required user role assignment for authorization: Owner or User Access Administrator. " +
+			"If required role assignment is not assigned, run `azd pipeline config --principal-role <RoleAssignment>`")
+	}
+
+	return nil
 }

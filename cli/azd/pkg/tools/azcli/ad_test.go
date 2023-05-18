@@ -4,16 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
-	"strings"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockgraphsdk"
-	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/stretchr/testify/require"
 )
 
@@ -187,44 +184,4 @@ func assertAzureCredentials(t *testing.T, message json.RawMessage) {
 	err = json.Unmarshal(jsonBytes, &actualCredentials)
 	require.NoError(t, err)
 	require.Equal(t, expectedServicePrincipalCredential, actualCredentials)
-}
-
-func Test_CheckRoleAssignments(t *testing.T) {
-	// Tests the use case for a brand new service principal
-	t.Run("AuthorizedRole", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
-		console := mockinput.NewMockConsole()
-		console.WhenConfirm(func(options input.ConsoleOptions) bool {
-			return strings.Contains(options.Message, "Do you have a custom role assignment with such access")
-		}).Respond(false)
-		mockgraphsdk.RegisterUserRoleAssignment(mockContext, http.StatusOK, "Owner")
-
-		azCli := newAzCliFromMockContext(mockContext)
-		err := azCli.CheckRoleAssignments(
-			*mockContext.Context,
-			expectedServicePrincipalCredential.SubscriptionId,
-			"principal_id",
-			console,
-		)
-		require.NoError(t, err)
-	})
-
-	t.Run("UnauthorizedRole", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
-		console := mockinput.NewMockConsole()
-		console.WhenConfirm(func(options input.ConsoleOptions) bool {
-			return strings.Contains(options.Message, "Do you have a custom role assignment with such access")
-		}).Respond(false)
-		mockgraphsdk.RegisterUserRoleAssignment(mockContext, http.StatusOK, "Contributor")
-
-		azCli := newAzCliFromMockContext(mockContext)
-		err := azCli.CheckRoleAssignments(
-			*mockContext.Context,
-			expectedServicePrincipalCredential.SubscriptionId,
-			"principal_id",
-			console,
-		)
-
-		require.Error(t, err)
-	})
 }

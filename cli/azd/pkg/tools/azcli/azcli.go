@@ -16,7 +16,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
 )
 
 var (
@@ -153,12 +152,6 @@ type AzCli interface {
 		applicationName string,
 		rolesToAssign []string,
 	) (json.RawMessage, error)
-	CheckRoleAssignments(
-		ctx context.Context,
-		subscriptionId string,
-		principalId string,
-		console input.Console,
-	) error
 	GetAppServiceProperties(
 		ctx context.Context,
 		subscriptionId string,
@@ -179,6 +172,12 @@ type AzCli interface {
 		appName string,
 		environmentName string,
 	) (*AzCliStaticWebAppEnvironmentProperties, error)
+	GetUserRoleDefinitionName(
+		ctx context.Context,
+		subscriptionId string,
+		scope string,
+		principalId string,
+	) ([]string, error)
 }
 
 type AzCliDeployment struct {

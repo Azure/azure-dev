@@ -203,7 +203,7 @@ func getCmdRestoreHelpDescription(*cobra.Command) string {
 		[]string{
 			formatHelpNote("Run this command to download and install all required dependencies so that you can build," +
 				" run, and debug the application locally."),
-			formatHelpNote(fmt.Sprintf("For the best local rn and debug experience, go to %s to learn how "+
+			formatHelpNote(fmt.Sprintf("For the best local run and debug experience, go to %s to learn how "+
 				"to use the Visual Studio Code extension.",
 				output.WithLinkFormat("https://aka.ms/azure-dev/vscode"),
 			)),

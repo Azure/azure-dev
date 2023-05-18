@@ -15,10 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
-	"github.com/azure/azure-dev/cli/azd/pkg/azdo"
-	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
-	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/pflag"
 
@@ -218,52 +215,13 @@ func collectCode(lines []*azcli.DeploymentErrorLine, frame int) *deploymentError
 // and corresponding anonymized domain is returned. If the domain name is unrecognized,
 // it is returned as "other", "other".
 func mapService(host string) (service string, hostDomain string) {
-	for _, domain := range knownSubDomains {
+	for _, domain := range fields.Domains {
 		if strings.HasSuffix(host, domain.Name) {
 			return domain.Service, domain.Name
 		}
 	}
 
 	return "other", "other"
-}
-
-type subDomain struct {
-	Name    string
-	Service string
-}
-
-// Taken from https://learn.microsoft.com/en-us/azure/security/fundamentals/azure-domains.
-// Order determines evaluation precedence with short-circuiting
-var knownSubDomains = []subDomain{
-	{azdo.AzDoHostName, "azdo"},
-	{azure.ManagementHostName, "arm"},
-	{graphsdk.HostName, "graph"},
-	{"graph.windows.net", "graph"},
-	{"azmk8s.io", "aks"},
-	{"azure-api.net", "apim"},
-	{"azure-mobile.net", "mobile"},
-	{"azurecontainerapps.io", "aca"},
-	{"azurecr.io", "acr"},
-	{"azureedge.net", "edge"},
-	{"azurefd.net", "frontdoor"},
-	{"scm.azurewebsites.net", "kudu"},
-	{"azurewebsites.net", "websites"},
-	{"blob.core.windows.net", "blob"},
-	{"cloudapp.azure.com", "vm"},
-	{"cloudapp.net", "vm"},
-	{"cosmos.azure.com", "cosmos"},
-	{"database.windows.net", "sql"},
-	{"documents.azure.com", "cosmos"},
-	{"file.core.windows.net", "files"},
-	{"management.core.windows.net", "arm"},
-	{"origin.mediaservices.windows.net", "media"},
-	{"queue.core.windows.net", "queue"},
-	{"servicebus.windows.net", "servicebus"},
-	{"table.core.windows.net", "table"},
-	{"trafficmanager.net", "trafficmanager"},
-	{"vault.azure.net", "keyvault"},
-	{"visualstudio.com", "vs"},
-	{"vo.msecnd.net", "cdn"},
 }
 
 func cmdAsName(cmd string) string {

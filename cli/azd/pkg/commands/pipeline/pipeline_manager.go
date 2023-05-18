@@ -136,7 +136,7 @@ func (i *PipelineManager) preConfigureCheck(ctx context.Context, infraOptions pr
 	}
 
 	// Check permission on role assignment
-	err = i.azCli.CheckRoleAssignments(ctx, i.Environment.GetSubscriptionId(), principalId)
+	err = i.azCli.CheckRoleAssignments(ctx, i.Environment.GetSubscriptionId(), principalId, i.console)
 	if err != nil {
 		return configurationWasUpdated, err
 	}

@@ -4,13 +4,16 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"strings"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockgraphsdk"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/stretchr/testify/require"
 )
 
@@ -187,48 +190,39 @@ func assertAzureCredentials(t *testing.T, message json.RawMessage) {
 }
 
 func Test_CheckRoleAssignments(t *testing.T) {
-	roleDefinitionOwner := []*armauthorization.RoleDefinition{
-		{
-			ID:   convert.RefOf("ROLE_ID"),
-			Name: convert.RefOf("Owner"),
-			Type: convert.RefOf("ROLE_TYPE"),
-		},
-	}
-	roleDefinitionContributor := []*armauthorization.RoleDefinition{
-		{
-			ID:   convert.RefOf("ROLE_ID"),
-			Name: convert.RefOf("Contributor"),
-			Type: convert.RefOf("ROLE_TYPE"),
-		},
-	}
-	// Required authorized role assignments
-	checkRoles := []string{"Owner", "User Access Administrator"}
-
 	// Tests the use case for a brand new service principal
 	t.Run("AuthorizedRole", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		mockgraphsdk.RegisterRoleDefinitionListMock(mockContext, http.StatusOK, roleDefinitionOwner)
-		mockgraphsdk.RegisterRoleAssignmentPutMock(mockContext, http.StatusCreated)
+		console := mockinput.NewMockConsole()
+		console.WhenConfirm(func(options input.ConsoleOptions) bool {
+			return strings.Contains(options.Message, "Do you have a custom role assignment with such access")
+		}).Respond(false)
+		mockgraphsdk.RegisterUserRoleAssignment(mockContext, http.StatusOK, "Owner")
 
 		azCli := newAzCliFromMockContext(mockContext)
 		err := azCli.CheckRoleAssignments(
 			*mockContext.Context,
 			expectedServicePrincipalCredential.SubscriptionId,
-			checkRoles,
+			"principal_id",
+			console,
 		)
 		require.NoError(t, err)
 	})
 
 	t.Run("UnauthorizedRole", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		mockgraphsdk.RegisterRoleDefinitionListMock(mockContext, http.StatusOK, roleDefinitionContributor)
-		mockgraphsdk.RegisterRoleAssignmentPutMock(mockContext, http.StatusCreated)
+		console := mockinput.NewMockConsole()
+		console.WhenConfirm(func(options input.ConsoleOptions) bool {
+			return strings.Contains(options.Message, "Do you have a custom role assignment with such access")
+		}).Respond(false)
+		mockgraphsdk.RegisterUserRoleAssignment(mockContext, http.StatusOK, "Contributor")
 
 		azCli := newAzCliFromMockContext(mockContext)
 		err := azCli.CheckRoleAssignments(
 			*mockContext.Context,
 			expectedServicePrincipalCredential.SubscriptionId,
-			checkRoles,
+			"principal_id",
+			console,
 		)
 
 		require.Error(t, err)

@@ -16,6 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 )
 
 var (
@@ -156,6 +157,7 @@ type AzCli interface {
 		ctx context.Context,
 		subscriptionId string,
 		principalId string,
+		console input.Console,
 	) error
 	GetAppServiceProperties(
 		ctx context.Context,

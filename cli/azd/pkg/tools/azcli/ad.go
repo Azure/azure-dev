@@ -13,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/google/uuid"
 	"github.com/sethvargo/go-retry"
 )
@@ -398,7 +399,6 @@ func (cli *azCli) getUserRoleDefinitionID(
 			return nil, fmt.Errorf("failed getting next page of role assignments on scope '%s': %w", scope, err)
 		}
 		for _, v := range page.Value {
-			// TODO: use page item
 			roleDefinitions = append(roleDefinitions, *v.Properties.RoleDefinitionID)
 		}
 	}
@@ -442,6 +442,7 @@ func (cli *azCli) CheckRoleAssignments(
 	ctx context.Context,
 	subscriptionId string,
 	principalId string,
+	console input.Console,
 ) error {
 	// Find the specified role in the subscription scope
 	scope := azure.SubscriptionRID(subscriptionId)
@@ -455,5 +456,21 @@ func (cli *azCli) CheckRoleAssignments(
 		}
 	}
 
-	return fmt.Errorf("missing required user role assignment for authorization: Owner or User Access Administrator")
+	message := fmt.Sprintf(
+		"Required azure build-in user role assignments Owner or User Access Administrator are not detected in your account. " +
+			"Do you have a custom role assignment with such access?")
+
+	confirm, err := console.Confirm(ctx, input.ConsoleOptions{
+		Message: message,
+	})
+	if err != nil {
+		return err
+	}
+
+	if !confirm {
+		return fmt.Errorf("missing required user role assignment for authorization: Owner or User Access Administrator. " +
+			"If required role assignment is not assigned, run `azd pipeline config --principal-role <RoleAssignment>`")
+	}
+
+	return nil
 }

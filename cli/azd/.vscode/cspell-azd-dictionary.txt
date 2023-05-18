@@ -104,6 +104,7 @@ securestring
 semconv
 serverfarms
 setenvs
+servicebus
 snapshotter
 sstore
 staticcheck
@@ -118,6 +119,7 @@ teamcity
 testdata
 tracesdk
 tracetest
+trafficmanager
 Truef
 typeflag
 unmarshalling

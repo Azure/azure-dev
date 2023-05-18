@@ -11,13 +11,18 @@ func (cli *azCli) GetCognitiveAccount(
 	ctx context.Context,
 	subscriptionId string,
 	resourceGroupName string,
-	accountName string) (armcognitiveservices.AccountsClientGetResponse, error) {
+	accountName string) (armcognitiveservices.Account, error) {
 	client, err := cli.createCognitiveAccountClient(ctx, subscriptionId)
 	if err != nil {
-		return armcognitiveservices.AccountsClientGetResponse{}, err
+		return armcognitiveservices.Account{}, err
 	}
 
-	return client.Get(ctx, resourceGroupName, accountName, nil)
+	response, err := client.Get(ctx, resourceGroupName, accountName, nil)
+	if err != nil {
+		return armcognitiveservices.Account{}, err
+	}
+
+	return response.Account, nil
 }
 
 func (cli *azCli) PurgeCognitiveAccount(

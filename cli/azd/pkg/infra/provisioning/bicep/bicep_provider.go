@@ -781,11 +781,11 @@ func (p *BicepProvider) getKeyVaultsToPurge(
 func (p *BicepProvider) getCognitiveAccountsToPurge(
 	ctx context.Context,
 	groupedResources map[string][]azcli.AzCliResource,
-) (map[string][]armcognitiveservices.AccountsClientGetResponse, error) {
-	result := make(map[string][]armcognitiveservices.AccountsClientGetResponse)
+) (map[string][]armcognitiveservices.Account, error) {
+	result := make(map[string][]armcognitiveservices.Account)
 
 	for resourceGroup, groupResources := range groupedResources {
-		cognitiveAccounts := []armcognitiveservices.AccountsClientGetResponse{}
+		cognitiveAccounts := []armcognitiveservices.Account{}
 		for _, resource := range groupResources {
 			if resource.Type == string(infra.AzureResourceTypeCognitiveServiceAccount) {
 				account, err := p.azCli.GetCognitiveAccount(
@@ -840,7 +840,7 @@ func (p *BicepProvider) purgeKeyVaults(
 func (p *BicepProvider) purgeCognitiveAccounts(
 	ctx context.Context,
 	resourceGroup string,
-	cognitiveAccounts []armcognitiveservices.AccountsClientGetResponse,
+	cognitiveAccounts []armcognitiveservices.Account,
 	options DestroyOptions,
 	skip bool,
 ) error {

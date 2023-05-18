@@ -64,7 +64,7 @@ type AzCli interface {
 		subscriptionId string,
 		resourceGroupName string,
 		accountName string,
-	) (armcognitiveservices.AccountsClientGetResponse, error)
+	) (armcognitiveservices.Account, error)
 	GetKeyVaultSecret(
 		ctx context.Context,
 		subscriptionId string,

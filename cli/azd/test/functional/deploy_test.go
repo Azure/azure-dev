@@ -31,7 +31,7 @@ func Test_CLI_Deploy_Err_WorkingDirectory(t *testing.T) {
 	require.NoError(t, err)
 
 	// Otherwise, deploy with 'infrastructure has not been provisioned. Please run `azd provision`'
-	_, err = cli.RunCommand(ctx, "env", "set", "AZURE_SUBSCRIPTION_ID", testSubscriptionId)
+	_, err = cli.RunCommand(ctx, "env", "set", "AZURE_SUBSCRIPTION_ID", cfg.SubscriptionID)
 	require.NoError(t, err)
 
 	// cd infra
@@ -68,7 +68,7 @@ func Test_CLI_DeployInvalidFlags(t *testing.T) {
 	require.NoError(t, err)
 
 	// Otherwise, deploy with 'infrastructure has not been provisioned. Please run `azd provision`'
-	_, err = cli.RunCommand(ctx, "env", "set", "AZURE_SUBSCRIPTION_ID", testSubscriptionId)
+	_, err = cli.RunCommand(ctx, "env", "set", "AZURE_SUBSCRIPTION_ID", cfg.SubscriptionID)
 	require.NoError(t, err)
 
 	// invalid service name

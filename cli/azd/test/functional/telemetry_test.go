@@ -150,7 +150,7 @@ func Test_CLI_Telemetry_UsageData_EnvProjectLoad(t *testing.T) {
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
 	require.NoError(t, err)
 
-	_, err = cli.RunCommand(ctx, "env", "set", "AZURE_SUBSCRIPTION_ID", testSubscriptionId)
+	_, err = cli.RunCommand(ctx, "env", "set", "AZURE_SUBSCRIPTION_ID", cfg.SubscriptionID)
 	require.NoError(t, err)
 
 	_, err = cli.RunCommand(ctx, "restore", "csharpapptest", "--trace-log-file", traceFilePath)

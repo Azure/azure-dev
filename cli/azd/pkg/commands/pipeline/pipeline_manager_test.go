@@ -27,7 +27,7 @@ func Test_checkRoleAssignments(t *testing.T) {
 		}).Respond(false)
 		mockgraphsdk.RegisterUserRoleAssignment(mockContext, http.StatusOK, "Owner")
 
-		azCli := mockazcli.newAzCliFromMockContext(mockContext)
+		azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 		err := checkRoleAssignments(
 			*mockContext.Context,
 			azCli,

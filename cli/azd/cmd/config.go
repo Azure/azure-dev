@@ -326,7 +326,7 @@ func getCmdConfigHelpDescription(*cobra.Command) string {
 	return generateCmdHelpDescription(
 		"Manage the Azure Developer CLI user configuration, which includes your default Azure subscription and location.",
 		[]string{
-			formatHelpNote(fmt.Sprintf("Applications are initially configures when you run %s.",
+			formatHelpNote(fmt.Sprintf("Applications are initially configured when you run %s.",
 				output.WithHighLightFormat("azd init"),
 			)),
 			formatHelpNote(fmt.Sprintf("The subscription and location you select will be stored at: %s.",

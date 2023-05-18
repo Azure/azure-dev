@@ -791,7 +791,7 @@ func (p *BicepProvider) getCognitiveAccountsToPurge(
 				account, err := p.azCli.GetCognitiveAccount(
 					ctx, azure.SubscriptionFromRID(resource.Id), resourceGroup, resource.Name)
 				if err != nil {
-					return nil, fmt.Errorf("Getting cognitive account %s: %w", resource.Name, err)
+					return nil, fmt.Errorf("getting cognitive account %s: %w", resource.Name, err)
 				}
 				cognitiveAccounts = append(cognitiveAccounts, account)
 			}

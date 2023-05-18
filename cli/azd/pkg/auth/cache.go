@@ -5,6 +5,7 @@ package auth
 
 import (
 	"context"
+	"errors"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
 )
@@ -18,10 +19,13 @@ type msalCacheAdapter struct {
 
 func (a *msalCacheAdapter) Replace(ctx context.Context, cache cache.Unmarshaler, cacheHints cache.ReplaceHints) error {
 	val, err := a.cache.Read(cacheHints.PartitionKey)
-	if err != nil {
+	if errors.Is(err, errCacheKeyNotFound) {
+		return nil
+	} else if err != nil {
 		return err
 	}
 
+	// Replace the msal cache contents with the new value retrieved.
 	if err := cache.Unmarshal(val); err != nil {
 		return err
 	}
@@ -41,3 +45,5 @@ type Cache interface {
 	Read(key string) ([]byte, error)
 	Set(key string, value []byte) error
 }
+
+var errCacheKeyNotFound = errors.New("key not found")

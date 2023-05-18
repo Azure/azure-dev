@@ -41,7 +41,7 @@ func (c *fileCache) Read(key string) ([]byte, error) {
 
 	contents, err := os.ReadFile(cachePath)
 	if errors.Is(err, os.ErrNotExist) {
-		return nil, nil
+		return nil, errCacheKeyNotFound
 	}
 
 	return contents, err

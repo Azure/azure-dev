@@ -16,6 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mocktracing"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/attribute"
 )
 
 func Test_Telemetry_Run(t *testing.T) {
@@ -85,7 +86,7 @@ func Test_mapError(t *testing.T) {
 		name           string
 		err            error
 		wantErrReason  string
-		wantErrDetails map[string]interface{}
+		wantErrDetails []attribute.KeyValue
 	}{
 		{
 			name:           "WithNilError",
@@ -106,9 +107,10 @@ func Test_mapError(t *testing.T) {
 				ExitCode: 51,
 			},
 			wantErrReason: "tool.any.failed",
-			wantErrDetails: map[string]interface{}{
-				string(fields.ToolName):     "any",
-				string(fields.ToolExitCode): 51},
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrorKey(fields.ToolName).String("any"),
+				fields.ErrorKey(fields.ToolExitCode).Int(51),
+			},
 		},
 		{
 			name: "WithArmDeploymentError",
@@ -142,26 +144,27 @@ func Test_mapError(t *testing.T) {
 				},
 			},
 			wantErrReason: "service.arm.deployment.failed",
-			wantErrDetails: map[string]interface{}{
-				string(fields.ServiceName): "arm",
-				string(fields.ServiceErrorCode): mustMarshalJson([]interface{}{
-					map[string]interface{}{
-						string(fields.ErrCode):  "Conflict,PreconditionFailed",
-						string(fields.ErrFrame): 0,
-					},
-					map[string]interface{}{
-						string(fields.ErrCode):  "OutOfCapacity,RegionOutOfCapacity",
-						string(fields.ErrFrame): 1,
-					},
-					map[string]interface{}{
-						string(fields.ErrCode):  "ServiceUnavailable",
-						string(fields.ErrFrame): 1,
-					},
-					map[string]interface{}{
-						string(fields.ErrCode):  "UnknownError",
-						string(fields.ErrFrame): 2,
-					},
-				}),
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrorKey(fields.ServiceName).String("arm"),
+				fields.ErrorKey(fields.ServiceErrorCode).String(mustMarshalJson(
+					[]map[string]interface{}{
+						{
+							string(fields.ErrCode):  "Conflict,PreconditionFailed",
+							string(fields.ErrFrame): 0,
+						},
+						{
+							string(fields.ErrCode):  "OutOfCapacity,RegionOutOfCapacity",
+							string(fields.ErrFrame): 1,
+						},
+						{
+							string(fields.ErrCode):  "ServiceUnavailable",
+							string(fields.ErrFrame): 1,
+						},
+						{
+							string(fields.ErrCode):  "UnknownError",
+							string(fields.ErrFrame): 2,
+						},
+					})),
 			},
 		},
 		{
@@ -178,12 +181,12 @@ func Test_mapError(t *testing.T) {
 				},
 			},
 			wantErrReason: "service.arm.503",
-			wantErrDetails: map[string]interface{}{
-				string(fields.ServiceName):       "arm",
-				string(fields.ServiceHost):       "management.azure.com",
-				string(fields.ServiceMethod):     "GET",
-				string(fields.ServiceErrorCode):  "ServiceUnavailable",
-				string(fields.ServiceStatusCode): 503,
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrorKey(fields.ServiceName).String("arm"),
+				fields.ErrorKey(fields.ServiceHost).String("management.azure.com"),
+				fields.ErrorKey(fields.ServiceMethod).String("GET"),
+				fields.ErrorKey(fields.ServiceErrorCode).String("ServiceUnavailable"),
+				fields.ErrorKey(fields.ServiceStatusCode).Int(503),
 			},
 		},
 		{
@@ -200,11 +203,11 @@ func Test_mapError(t *testing.T) {
 				},
 			},
 			wantErrReason: "service.aad.failed",
-			wantErrDetails: map[string]interface{}{
-				string(fields.ServiceName):          "aad",
-				string(fields.ServiceErrorCode):     "50076,50078,50079",
-				string(fields.ServiceStatusCode):    "invalid_grant",
-				string(fields.ServiceCorrelationId): "12345",
+			wantErrDetails: []attribute.KeyValue{
+				fields.ErrorKey(fields.ServiceName).String("aad"),
+				fields.ErrorKey(fields.ServiceErrorCode).String("50076,50078,50079"),
+				fields.ErrorKey(fields.ServiceStatusCode).String("invalid_grant"),
+				fields.ErrorKey(fields.ServiceCorrelationId).String("12345"),
 			},
 		},
 	}
@@ -214,14 +217,7 @@ func Test_mapError(t *testing.T) {
 			mapError(tt.err, span)
 
 			require.Equal(t, tt.wantErrReason, span.Status.Description)
-
-			for _, kv := range span.Attributes {
-				if kv.Key == fields.ErrDetails {
-					expected, err := json.Marshal(tt.wantErrDetails)
-					require.NoError(t, err)
-					require.JSONEq(t, string(expected), kv.Value.AsString())
-				}
-			}
+			require.ElementsMatch(t, tt.wantErrDetails, span.Attributes)
 		})
 	}
 }

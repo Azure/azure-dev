@@ -41,3 +41,8 @@ func Sha256Hash(val string) string {
 	hash := hex.EncodeToString(sha[:])
 	return hash
 }
+
+// ErrorKey returns a new Key with "error." prefix appended.
+func ErrorKey(k attribute.Key) attribute.Key {
+	return attribute.Key("error." + string(k))
+}

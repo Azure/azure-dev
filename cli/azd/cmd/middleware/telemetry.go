@@ -104,9 +104,10 @@ func mapError(err error, span tracing.Span) {
 			errDetails = append(errDetails, fields.ServiceStatusCode.Int(statusCode))
 
 			if respErr.RawResponse.Request != nil {
-				serviceName = mapServiceName(respErr.RawResponse.Request.Host)
+				var hostName string
+				serviceName, hostName = mapService(respErr.RawResponse.Request.Host)
 				errDetails = append(errDetails,
-					fields.ServiceHost.String(respErr.RawResponse.Request.Host),
+					fields.ServiceHost.String(hostName),
 					fields.ServiceMethod.String(respErr.RawResponse.Request.Method),
 					fields.ServiceName.String(serviceName),
 				)
@@ -171,16 +172,11 @@ func mapError(err error, span tracing.Span) {
 	}
 
 	if len(errDetails) > 0 {
-		errDetailsMap := make(map[string]interface{}, len(errDetails))
-		for _, detail := range errDetails {
-			errDetailsMap[string(detail.Key)] = detail.Value.AsInterface()
+		for i, detail := range errDetails {
+			errDetails[i].Key = fields.ErrorKey(detail.Key)
 		}
 
-		if errDetailsStr, err := json.Marshal(errDetailsMap); err != nil {
-			log.Println("telemetry: failed to marshal error details", err)
-		} else {
-			span.SetAttributes(fields.ErrDetails.String(string(errDetailsStr)))
-		}
+		span.SetAttributes(errDetails...)
 	}
 
 	span.SetStatus(codes.Error, errCode)
@@ -216,19 +212,58 @@ func collectCode(lines []*azcli.DeploymentErrorLine, frame int) *deploymentError
 	}
 }
 
-func mapServiceName(host string) string {
-	name := "other"
-
-	switch host {
-	case azdo.AzDoHostName:
-		name = "azdo"
-	case azure.ManagementHostName:
-		name = "arm"
-	case graphsdk.HostName:
-		name = "graph"
+// mapService maps the given hostname to a service and host domain for telemetry purposes.
+//
+// The host name is validated against well-known domains, and if a match is found, the service
+// and corresponding anonymized domain is returned. If the domain name is unrecognized,
+// it is returned as "other", "other".
+func mapService(host string) (service string, hostDomain string) {
+	for _, domain := range knownSubDomains {
+		if strings.HasSuffix(host, domain.Name) {
+			return domain.Service, domain.Name
+		}
 	}
 
-	return name
+	return "other", "other"
+}
+
+type subDomain struct {
+	Name    string
+	Service string
+}
+
+// Taken from https://learn.microsoft.com/en-us/azure/security/fundamentals/azure-domains.
+// Order determines evaluation precedence with short-circuiting
+var knownSubDomains = []subDomain{
+	{azdo.AzDoHostName, "azdo"},
+	{azure.ManagementHostName, "arm"},
+	{graphsdk.HostName, "graph"},
+	{"graph.windows.net", "graph"},
+	{"azmk8s.io", "aks"},
+	{"azure-api.net", "apim"},
+	{"azure-mobile.net", "mobile"},
+	{"azurecontainerapps.io", "aca"},
+	{"azurecr.io", "acr"},
+	{"azureedge.net", "edge"},
+	{"azurefd.net", "frontdoor"},
+	{"scm.azurewebsites.net", "kudu"},
+	{"azurewebsites.net", "websites"},
+	{"blob.core.windows.net", "blob"},
+	{"cloudapp.azure.com", "vm"},
+	{"cloudapp.net", "vm"},
+	{"cosmos.azure.com", "cosmos"},
+	{"database.windows.net", "sql"},
+	{"documents.azure.com", "cosmos"},
+	{"file.core.windows.net", "files"},
+	{"management.core.windows.net", "arm"},
+	{"origin.mediaservices.windows.net", "media"},
+	{"queue.core.windows.net", "queue"},
+	{"servicebus.windows.net", "servicebus"},
+	{"table.core.windows.net", "table"},
+	{"trafficmanager.net", "trafficmanager"},
+	{"vault.azure.net", "keyvault"},
+	{"visualstudio.com", "vs"},
+	{"vo.msecnd.net", "cdn"},
 }
 
 func cmdAsName(cmd string) string {

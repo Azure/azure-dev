@@ -374,7 +374,7 @@ func (cli *azCli) createRoleAssignmentsClient(
 	return client, nil
 }
 
-// Find the Azure role definition for the specified scope and principalID
+// Get role definition id from role assignment within specific scope and principalID
 func (cli *azCli) getUserRoleDefinitionID(
 	ctx context.Context,
 	subscriptionId string,
@@ -391,7 +391,7 @@ func (cli *azCli) getUserRoleDefinitionID(
 			Filter: convert.RefOf(fmt.Sprintf("atScope() and assignedTo('%s')", principalId)),
 		})
 
-	roleDefinitions := []string{}
+	roleDefinitionIds := []string{}
 
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
@@ -399,17 +399,18 @@ func (cli *azCli) getUserRoleDefinitionID(
 			return nil, fmt.Errorf("failed getting next page of role assignments on scope '%s': %w", scope, err)
 		}
 		for _, v := range page.Value {
-			roleDefinitions = append(roleDefinitions, *v.Properties.RoleDefinitionID)
+			roleDefinitionIds = append(roleDefinitionIds, *v.Properties.RoleDefinitionID)
 		}
 	}
 
-	if len(roleDefinitions) == 0 {
+	if len(roleDefinitionIds) == 0 {
 		return nil, fmt.Errorf("role assignment with scope '%s' was not found", scope)
 	}
 
-	return roleDefinitions, nil
+	return roleDefinitionIds, nil
 }
 
+// Get role definition name from role definition id
 func (cli *azCli) getUserRoleDefinitionName(
 	ctx context.Context,
 	subscriptionId string,
@@ -428,11 +429,11 @@ func (cli *azCli) getUserRoleDefinitionName(
 	}
 
 	for _, id := range roleDefinitionID {
-		roleDefinitionListResult, err := client.GetByID(ctx, id, nil)
+		roleDefinitionResult, err := client.GetByID(ctx, id, nil)
 		if err != nil {
 			return nil, fmt.Errorf("failing to get role definition name from role definition id: %w", err)
 		}
-		roleDefinitionName = append(roleDefinitionName, *roleDefinitionListResult.Properties.RoleName)
+		roleDefinitionName = append(roleDefinitionName, *roleDefinitionResult.Properties.RoleName)
 	}
 
 	return roleDefinitionName, nil

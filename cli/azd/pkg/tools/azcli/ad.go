@@ -374,7 +374,7 @@ func (cli *azCli) createRoleAssignmentsClient(
 }
 
 // Get role definition id from role assignment within specific scope and principalID
-func (cli *azCli) getUserRoleDefinitionID(
+func (cli *azCli) getUserRoleDefinitionIdList(
 	ctx context.Context,
 	subscriptionId string,
 	scope string,
@@ -422,7 +422,7 @@ func (cli *azCli) GetUserRoleDefinitionName(
 		return nil, err
 	}
 
-	roleDefinitionID, err := cli.getUserRoleDefinitionID(ctx, subscriptionId, scope, principalId)
+	roleDefinitionID, err := cli.getUserRoleDefinitionIdList(ctx, subscriptionId, scope, principalId)
 	if err != nil {
 		return nil, err
 	}

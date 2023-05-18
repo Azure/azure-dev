@@ -23,7 +23,7 @@ func Test_checkRoleAssignments(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		console := mockinput.NewMockConsole()
 		console.WhenConfirm(func(options input.ConsoleOptions) bool {
-			return strings.Contains(options.Message, "Do you want to continue with your custom role assignment")
+			return strings.Contains(options.Message, "Do you want to continue with configuring your pipeline")
 		}).Respond(false)
 		mockgraphsdk.RegisterUserRoleAssignment(mockContext, http.StatusOK, "Owner")
 
@@ -42,7 +42,7 @@ func Test_checkRoleAssignments(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		console := mockinput.NewMockConsole()
 		console.WhenConfirm(func(options input.ConsoleOptions) bool {
-			return strings.Contains(options.Message, "Do you want to continue with your custom role assignment")
+			return strings.Contains(options.Message, "Do you want to continue with configuring your pipeline")
 		}).Respond(false)
 		mockgraphsdk.RegisterUserRoleAssignment(mockContext, http.StatusOK, "Contributor")
 

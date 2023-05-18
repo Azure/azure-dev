@@ -20,6 +20,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -466,10 +467,11 @@ func checkRoleAssignments(
 		}
 	}
 
-	message := fmt.Sprintf(
-		"Required azure build-in user role assignments Owner or User Access Administrator are not detected in your account. " +
-			"Without these role assignments, assigning roles to service principal may fail in later operations. " +
-			"Do you want to continue with your custom role assignment?")
+	message := output.WithWarningFormat(
+		"WARNING: Your user account does not appear to have either the Owner or User Access Administrator role assigned to it. " +
+			"This operation will attempt to grant permissions to the newly created service principal and this will fail " +
+			"unless you have been granted these permissions with a custom role assignment. " +
+			"Do you want to continue with configuring your pipeline?")
 
 	confirm, err := console.Confirm(ctx, input.ConsoleOptions{
 		Message: message,
@@ -480,7 +482,9 @@ func checkRoleAssignments(
 
 	if !confirm {
 		return fmt.Errorf("missing required user role assignment for authorization: Owner or User Access Administrator. " +
-			"If required role assignment is not assigned, run `azd pipeline config --principal-role <RoleAssignment>`")
+			"Please contact your Azure subscription administrator to assign required role to your account or" +
+			"login to azd with an account that has required role assignment")
+
 	}
 
 	return nil

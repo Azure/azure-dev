@@ -79,7 +79,7 @@ func (p *AzdoScmProvider) preConfigureCheck(
 
 // helper function to save configuration values to .env file
 func (p *AzdoScmProvider) saveEnvironmentConfig(key string, value string) error {
-	p.Env.Values[key] = value
+	p.Env.DotenvSet(key, value)
 	err := p.Env.Save()
 	if err != nil {
 		return err
@@ -454,22 +454,22 @@ func (p *AzdoScmProvider) gitRepoDetails(ctx context.Context, remoteUrl string) 
 	// While using the same .env file, the outputs from creating a project and repository
 	// are memorized in .env file
 	if repoDetails.orgName == "" {
-		repoDetails.orgName = p.Env.Values[azdo.AzDoEnvironmentOrgName]
+		repoDetails.orgName = p.Env.Getenv(azdo.AzDoEnvironmentOrgName)
 	}
 	if repoDetails.projectName == "" {
-		repoDetails.projectName = p.Env.Values[azdo.AzDoEnvironmentProjectName]
+		repoDetails.projectName = p.Env.Getenv(azdo.AzDoEnvironmentProjectName)
 	}
 	if repoDetails.projectId == "" {
-		repoDetails.projectId = p.Env.Values[azdo.AzDoEnvironmentProjectIdName]
+		repoDetails.projectId = p.Env.Getenv(azdo.AzDoEnvironmentProjectIdName)
 	}
 	if repoDetails.repoName == "" {
-		repoDetails.repoName = p.Env.Values[azdo.AzDoEnvironmentRepoName]
+		repoDetails.repoName = p.Env.Getenv(azdo.AzDoEnvironmentRepoName)
 	}
 	if repoDetails.repoId == "" {
-		repoDetails.repoId = p.Env.Values[azdo.AzDoEnvironmentRepoIdName]
+		repoDetails.repoId = p.Env.Getenv(azdo.AzDoEnvironmentRepoIdName)
 	}
 	if repoDetails.repoWebUrl == "" {
-		repoDetails.repoWebUrl = p.Env.Values[azdo.AzDoEnvironmentRepoWebUrl]
+		repoDetails.repoWebUrl = p.Env.Getenv(azdo.AzDoEnvironmentRepoWebUrl)
 	}
 	if repoDetails.remoteUrl == "" {
 		repoDetails.remoteUrl = remoteUrl
@@ -485,9 +485,9 @@ func (p *AzdoScmProvider) gitRepoDetails(ctx context.Context, remoteUrl string) 
 		// azdoSlug => Org/Project/_git/repoName
 		parts := strings.Split(azdoSlug, "_git/")
 		repoDetails.projectName = strings.Split(parts[0], "/")[1]
-		p.Env.Values[azdo.AzDoEnvironmentProjectName] = repoDetails.projectName
+		p.Env.DotenvSet(azdo.AzDoEnvironmentProjectName, repoDetails.projectName)
 		repoDetails.repoName = parts[1]
-		p.Env.Values[azdo.AzDoEnvironmentRepoName] = repoDetails.repoName
+		p.Env.DotenvSet(azdo.AzDoEnvironmentRepoName, repoDetails.repoName)
 
 		connection, err := p.getAzdoConnection(ctx)
 		if err != nil {
@@ -499,16 +499,16 @@ func (p *AzdoScmProvider) gitRepoDetails(ctx context.Context, remoteUrl string) 
 			return nil, fmt.Errorf("Looking for repository: %w", err)
 		}
 		repoDetails.repoId = repo.Id.String()
-		p.Env.Values[azdo.AzDoEnvironmentRepoIdName] = repoDetails.repoId
+		p.Env.DotenvSet(azdo.AzDoEnvironmentRepoIdName, repoDetails.repoId)
 		repoDetails.repoWebUrl = *repo.WebUrl
-		p.Env.Values[azdo.AzDoEnvironmentRepoWebUrl] = repoDetails.repoWebUrl
+		p.Env.DotenvSet(azdo.AzDoEnvironmentRepoWebUrl, repoDetails.repoWebUrl)
 
 		proj, err := azdo.GetProjectByName(ctx, connection, repoDetails.projectName)
 		if err != nil {
 			return nil, fmt.Errorf("Looking for project: %w", err)
 		}
 		repoDetails.projectId = proj.Id.String()
-		p.Env.Values[azdo.AzDoEnvironmentProjectIdName] = repoDetails.projectId
+		p.Env.DotenvSet(azdo.AzDoEnvironmentProjectIdName, repoDetails.projectId)
 
 		_ = p.Env.Save() // best effort to persist in the env
 	}

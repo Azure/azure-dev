@@ -56,7 +56,7 @@ func (p *TestProvider) Plan(
 			asyncContext.SetProgress(&DeploymentPlanningProgress{Message: "Planning deployment", Timestamp: time.Now()})
 
 			params := make(map[string]InputParameter)
-			params["location"] = InputParameter{Value: p.env.Values["AZURE_LOCATION"]}
+			params["location"] = InputParameter{Value: p.env.GetLocation()}
 
 			deploymentPlan := DeploymentPlan{
 				Deployment: Deployment{

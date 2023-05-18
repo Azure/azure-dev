@@ -113,7 +113,7 @@ func TestManagerPlan(t *testing.T) {
 
 	require.NotNil(t, deploymentPlan)
 	require.Nil(t, err)
-	require.Equal(t, deploymentPlan.Deployment.Parameters["location"].Value, env.Values["AZURE_LOCATION"])
+	require.Equal(t, deploymentPlan.Deployment.Parameters["location"].Value, env.Dotenv()["AZURE_LOCATION"])
 }
 
 func TestManagerGetState(t *testing.T) {

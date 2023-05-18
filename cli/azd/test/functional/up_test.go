@@ -279,7 +279,7 @@ func Test_CLI_Up_ResourceGroupScope(t *testing.T) {
 	cred, err := azidentity.NewAzureCLICredential(nil)
 	require.NoError(t, err)
 
-	rgClient, err := armresources.NewResourceGroupsClient(testSubscriptionId, cred, nil)
+	rgClient, err := armresources.NewResourceGroupsClient(cfg.SubscriptionID, cred, nil)
 	require.NoError(t, err)
 
 	_, err = rgClient.CreateOrUpdate(context.Background(), resourceGroupName, armresources.ResourceGroup{

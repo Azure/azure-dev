@@ -1,7 +1,7 @@
 package com.microsoft.azure.simpletodo.api;
 
 import java.io.IOException;
-import javax.servlet.http.HttpServletResponse;
+import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.web.context.request.NativeWebRequest;
 
 public class ApiUtil {

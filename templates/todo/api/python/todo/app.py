@@ -55,22 +55,22 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-from . import routes  # NOQA
+if settings.APPLICATIONINSIGHTS_CONNECTION_STRING:
+    exporter = AzureMonitorTraceExporter.from_connection_string(
+        settings.APPLICATIONINSIGHTS_CONNECTION_STRING
+    )
+    tracerProvider = TracerProvider(
+        resource=Resource({SERVICE_NAME: settings.APPLICATIONINSIGHTS_ROLENAME})
+    )
+    tracerProvider.add_span_processor(BatchSpanProcessor(exporter))
 
+    FastAPIInstrumentor.instrument_app(app, tracer_provider=tracerProvider)
+
+
+from . import routes  # NOQA
 
 @app.on_event("startup")
 async def startup_event():
-    if settings.APPLICATIONINSIGHTS_CONNECTION_STRING:
-        exporter = AzureMonitorTraceExporter.from_connection_string(
-            settings.APPLICATIONINSIGHTS_CONNECTION_STRING
-        )
-        tracer = TracerProvider(
-            resource=Resource({SERVICE_NAME: settings.APPLICATIONINSIGHTS_ROLENAME})
-        )
-        tracer.add_span_processor(BatchSpanProcessor(exporter))
-
-        FastAPIInstrumentor.instrument_app(app, tracer_provider=tracer)
-
     client = motor.motor_asyncio.AsyncIOMotorClient(
         settings.AZURE_COSMOS_CONNECTION_STRING
     )

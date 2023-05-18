@@ -135,15 +135,20 @@ stages:
               workingDirectory: cli/azd
             displayName: Test Go Binary
             env:
-              # Set GITHUB_RUN_NUMBER because cli_test.go is coupled to that
-              # environment variable.
-              GITHUB_RUN_NUMBER: $(Build.BuildId)
-              # Generate junit report to publish results
-              GOTESTSUM_JUNITFILE: junitTestReport.xml
-              # Required for Terraform service principal authentication
+              # AZD live test setup variables
+              CI: true
+              AZD_TEST_CLI_VERSION: $(CLI_VERSION)
+              AZD_TEST_CLIENT_ID: $(arm-client-id)
+              AZD_TEST_CLIENT_SECRET: $(arm-client-secret)
+              AZD_TEST_TENANT_ID: $(arm-tenant-id)
+              AZD_TEST_AZURE_SUBSCRIPTION_ID: $(SubscriptionId)
+              AZD_TEST_AZURE_LOCATION: eastus2
+              # AZD Live Test: Terraform service principal authentication
               ARM_CLIENT_ID: $(arm-client-id)
               ARM_CLIENT_SECRET: $(arm-client-secret)
               ARM_TENANT_ID: $(arm-tenant-id)
+              # Code Coverage: Generate junit report to publish results
+              GOTESTSUM_JUNITFILE: junitTestReport.xml
 
           - task: PublishTestResults@2
             inputs:

@@ -20,6 +20,7 @@ azdinternal
 azdtempl
 azdtempl
 azdtest
+azruntime
 azsdk
 AZURECLI
 azurestaticapps

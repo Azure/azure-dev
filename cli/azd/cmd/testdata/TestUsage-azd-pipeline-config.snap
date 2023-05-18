@@ -1,7 +1,9 @@
 
-Create and configure your deployment pipeline by using GitHub or Azure Pipelines.
+Configure your deployment pipeline to connect securely to Azure
 
-  • By default, pipeline config will configure and set deployment pipeline variables using the current environment. To configure for a new or a different existing environment, use the '-e' flag.
+  • Supports GitHub Actions and Azure Pipelines. To configure using a specific pipeline provider, provide a value for the '--provider' flag.
+  • pipeline config creates or uses a service principal on the Azure subscription to create a secure connection between your deployment pipeline and Azure.
+  • By default, pipeline config will set deployment pipeline variables and secrets using the current environment. To configure for a new or an existing environment, provide a value for the '-e' flag.
 
 Usage
   azd pipeline config [flags]
@@ -21,10 +23,13 @@ Global Flags
         --no-prompt  	: Accepts the default value instead of prompting, or it fails if there is no default.
 
 Examples
-  Set up a deployment pipeline for 'app-test' environment
+  Configure a deployment pipeline for 'app-test' environment
     azd pipeline config -e app-test
 
-  Set up a deployment pipeline for 'app-test' environment on Azure Pipelines.
+  Configure a deployment pipeline for 'app-test' environment on Azure Pipelines.
     azd pipeline config -e app-test --provider azdo
+
+  Configure a deployment pipeline using an existing service principal
+    azd pipeline config --principal-name [Principal name]
 
 

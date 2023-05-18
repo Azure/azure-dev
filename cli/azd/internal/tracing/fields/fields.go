@@ -164,9 +164,6 @@ const (
 	// Error code that describes an error.
 	ErrCode = attribute.Key("error.code")
 
-	// Details of an error.
-	ErrDetails = attribute.Key("error.details")
-
 	// Inner error.
 	ErrInner = attribute.Key("error.inner")
 

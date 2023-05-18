@@ -58,10 +58,11 @@ func (cli *azCli) ListResourceGroupResources(
 
 		for _, resource := range page.ResourceListResult.Value {
 			resources = append(resources, AzCliResource{
-				Id:       *resource.ID,
-				Name:     *resource.Name,
-				Type:     *resource.Type,
-				Location: *resource.Location,
+				Id:            *resource.ID,
+				Name:          *resource.Name,
+				Type:          *resource.Type,
+				Location:      *resource.Location,
+				ResourceGroup: resourceGroupName,
 			})
 		}
 	}

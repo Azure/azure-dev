@@ -28,6 +28,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
@@ -437,6 +438,13 @@ func (p *BicepProvider) Destroy(
 				return
 			}
 
+			asyncContext.SetProgress(&DestroyProgress{Message: "Getting Cognitive Accounts to purge", Timestamp: time.Now()})
+			cognitiveAccounts, err := p.getCognitiveAccountsToPurge(ctx, groupedResources)
+			if err != nil {
+				asyncContext.SetError(fmt.Errorf("getting cognitive accounts to purge: %w", err))
+				return
+			}
+
 			if err := p.destroyResourceGroups(ctx, options, groupedResources, len(allResources)); err != nil {
 				asyncContext.SetError(fmt.Errorf("deleting resource groups: %w", err))
 				return
@@ -463,11 +471,23 @@ func (p *BicepProvider) Destroy(
 					return p.purgeAPIManagement(ctx, apiManagements, options, skipPurge)
 				},
 			}
+
 			var purgeItem []itemToPurge
 			for _, item := range []itemToPurge{keyVaultsPurge, appConfigsPurge, aPIManagement} {
 				if item.count > 0 {
 					purgeItem = append(purgeItem, item)
 				}
+			}
+
+			// cognitive services are grouped by resource group because the name of the resource group is required to purge
+			for resourceGroup, cogAccounts := range cognitiveAccounts {
+				purgeItem = append(purgeItem, itemToPurge{
+					resourceType: "Cognitive account from resource group: " + resourceGroup,
+					count:        len(cogAccounts),
+					purge: func(skipPurge bool) error {
+						return p.purgeCognitiveAccounts(ctx, resourceGroup, cogAccounts, options, skipPurge)
+					},
+				})
 			}
 
 			if err := p.purgeItems(ctx, purgeItem, options); err != nil {
@@ -758,6 +778,32 @@ func (p *BicepProvider) getKeyVaultsToPurge(
 	return vaultsToPurge, nil
 }
 
+func (p *BicepProvider) getCognitiveAccountsToPurge(
+	ctx context.Context,
+	groupedResources map[string][]azcli.AzCliResource,
+) (map[string][]armcognitiveservices.AccountsClientGetResponse, error) {
+	result := make(map[string][]armcognitiveservices.AccountsClientGetResponse)
+
+	for resourceGroup, groupResources := range groupedResources {
+		cognitiveAccounts := []armcognitiveservices.AccountsClientGetResponse{}
+		for _, resource := range groupResources {
+			if resource.Type == string(infra.AzureResourceTypeCognitiveServiceAccount) {
+				account, err := p.azCli.GetCognitiveAccount(
+					ctx, azure.SubscriptionFromRID(resource.Id), resourceGroup, resource.Name)
+				if err != nil {
+					return nil, fmt.Errorf("Getting cognitive account %s: %w", resource.Name, err)
+				}
+				cognitiveAccounts = append(cognitiveAccounts, account)
+			}
+			if len(cognitiveAccounts) > 0 {
+				result[resourceGroup] = cognitiveAccounts
+			}
+		}
+	}
+
+	return result, nil
+}
+
 // Azure KeyVaults have a "soft delete" functionality (now enabled by default) where a vault may be marked
 // such that when it is deleted it can be recovered for a period of time. During that time, the name may
 // not be reused.
@@ -786,6 +832,38 @@ func (p *BicepProvider) purgeKeyVaults(
 		}, skip)
 		if err != nil {
 			return fmt.Errorf("purging key vault %s: %w", keyVault.Name, err)
+		}
+	}
+	return nil
+}
+
+func (p *BicepProvider) purgeCognitiveAccounts(
+	ctx context.Context,
+	resourceGroup string,
+	cognitiveAccounts []armcognitiveservices.AccountsClientGetResponse,
+	options DestroyOptions,
+	skip bool,
+) error {
+	for _, cogAccount := range cognitiveAccounts {
+		accountName := cogAccount.Name
+		if accountName == nil {
+			return fmt.Errorf("Cognitive account without a name")
+		}
+		accountId := cogAccount.ID
+		if accountId == nil {
+			return fmt.Errorf("Cognitive account without an id")
+		}
+		location := cogAccount.Location
+		if location == nil {
+			return fmt.Errorf("Cognitive account without a location")
+		}
+
+		err := p.runPurgeAsStep(ctx, "Cognitive Account", *accountName, func() error {
+			return p.azCli.PurgeCognitiveAccount(
+				ctx, azure.SubscriptionFromRID(*accountId), *location, resourceGroup, *accountName)
+		}, skip)
+		if err != nil {
+			return fmt.Errorf("purging cognitive account %s: %w", *accountName, err)
 		}
 	}
 	return nil

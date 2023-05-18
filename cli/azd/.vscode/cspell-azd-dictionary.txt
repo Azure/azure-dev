@@ -1,3 +1,4 @@
+# hyphen is optional, "re-authentication" and "reauthentication" are equivalent.
 AADSTS
 alphafeatures
 apimanagement
@@ -6,9 +7,12 @@ appconfiguration
 appinsights
 appinsightsexporter
 appinsightsstorage
+appplatform
 appservice
 armapimanagement
 armappconfiguration
+armappplatform
+armcognitiveservices
 AZCLI
 azcorelog
 azdcli
@@ -20,6 +24,7 @@ azdinternal
 azdtempl
 azdtempl
 azdtest
+azfile
 azruntime
 azsdk
 AZURECLI
@@ -31,6 +36,7 @@ Backticks
 BOOLSLICE
 BUILDID
 BUILDNUMBER
+buildpacks
 cflags
 circleci
 cmdsubst
@@ -38,6 +44,7 @@ consolesize
 containerapp
 containerapps
 contoso
+createdby
 csharpapp
 csharpapptest
 cupaloy
@@ -93,11 +100,10 @@ preinit
 pulumi
 pyapp
 pyvenv
-restoreapp
-retriable
-# hyphen is optional, "re-authentication" and "reauthentication" are equivalent.
 reauthentication
 relogin
+restoreapp
+retriable
 rzip
 secureobject
 securestring
@@ -105,6 +111,7 @@ semconv
 serverfarms
 setenvs
 snapshotter
+springapp
 sstore
 staticcheck
 staticwebapp
@@ -120,17 +127,11 @@ tracesdk
 tracetest
 Truef
 typeflag
-unmarshalling
 unmarshaled
+unmarshalling
 unsetenvs
 unsets
 utsname
 westus2
 wireinject
 yacspin
-springapp
-appplatform
-armappplatform
-azfile
-createdby
-buildpacks

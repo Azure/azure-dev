@@ -10,6 +10,7 @@ import (
 	"io"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
@@ -58,6 +59,12 @@ type AzCli interface {
 		resourceGroupName string,
 		vaultName string,
 	) (*AzCliKeyVault, error)
+	GetCognitiveAccount(
+		ctx context.Context,
+		subscriptionId string,
+		resourceGroupName string,
+		accountName string,
+	) (armcognitiveservices.AccountsClientGetResponse, error)
 	GetKeyVaultSecret(
 		ctx context.Context,
 		subscriptionId string,
@@ -69,6 +76,7 @@ type AzCli interface {
 	PurgeApim(ctx context.Context, subscriptionId string, apimName string, location string) error
 	PurgeAppConfig(ctx context.Context, subscriptionId string, configName string, location string) error
 	PurgeKeyVault(ctx context.Context, subscriptionId string, vaultName string, location string) error
+	PurgeCognitiveAccount(ctx context.Context, subscriptionId, location, resourceGroup, accountName string) error
 	GetApim(
 		ctx context.Context, subscriptionId string, resourceGroupName string, apimName string) (*AzCliApim, error)
 	DeployAppServiceZip(
@@ -226,10 +234,11 @@ type AzCliDeploymentOutput struct {
 }
 
 type AzCliResource struct {
-	Id       string `json:"id"`
-	Name     string `json:"name"`
-	Type     string `json:"type"`
-	Location string `json:"location"`
+	Id            string `json:"id"`
+	Name          string `json:"name"`
+	Type          string `json:"type"`
+	Location      string `json:"location"`
+	ResourceGroup string
 }
 
 type AzCliResourceExtended struct {

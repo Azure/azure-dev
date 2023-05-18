@@ -2,7 +2,7 @@
 Restore application dependencies.
 
   • Run this command to download and install all required dependencies so that you can build, run, and debug the application locally.
-  • For the best local rn and debug experience, go to https://aka.ms/azure-dev/vscode to learn how to use the Visual Studio Code extension.
+  • For the best local run and debug experience, go to https://aka.ms/azure-dev/vscode to learn how to use the Visual Studio Code extension.
 
 Usage
   azd restore <service> [flags]

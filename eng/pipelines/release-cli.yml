@@ -22,6 +22,7 @@ pr:
       - go.mod
       - cli/
       - eng/pipelines/release-cli.yml
+      - eng/pipelines/templates/steps/publish-cli.yml
 
 variables:
   - template: /eng/pipelines/templates/variables/globals.yml
@@ -1186,9 +1187,9 @@ stages:
           - pwsh: |
               $urlBase = "$(GenerateUrlBase.UrlBase)"
               $linuxReleaseUrl = "$urlBase/azd-linux-amd64.tar.gz"
-              $linuxReleaseUrlArm64 = "$urlBase/azd-linux-arm64.tar.gz"
+              $linuxReleaseUrlArm64 = "$urlBase/azd-linux-arm64-beta.tar.gz"
               $macosReleaseUrl = "$urlBase/azd-darwin-amd64.zip"
-              $macosReleaseUrlArm64 = "$urlBase/azd-darwin-arm64.zip"
+              $macosReleaseUrlArm64 = "$urlBase/azd-darwin-arm64-beta.zip"
               $windowsReleaseUrl = "$urlBase/azd-windows-amd64.zip"
               $msiReleaseUrl = "$urlBase/azd-windows-amd64.msi"
 

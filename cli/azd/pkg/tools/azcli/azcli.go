@@ -234,11 +234,10 @@ type AzCliDeploymentOutput struct {
 }
 
 type AzCliResource struct {
-	Id            string `json:"id"`
-	Name          string `json:"name"`
-	Type          string `json:"type"`
-	Location      string `json:"location"`
-	ResourceGroup string
+	Id       string `json:"id"`
+	Name     string `json:"name"`
+	Type     string `json:"type"`
+	Location string `json:"location"`
 }
 
 type AzCliResourceExtended struct {

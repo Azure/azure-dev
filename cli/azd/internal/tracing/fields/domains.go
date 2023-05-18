@@ -3,7 +3,7 @@ package fields
 type Domain struct {
 	// The domain name.
 	Name string
-	// The name of the service that owns the domain name.
+	// The name of the service that is responsible for the domain name.
 	Service string
 }
 
@@ -11,7 +11,7 @@ type Domain struct {
 //
 // Taken from https://learn.microsoft.com/en-us/azure/security/fundamentals/azure-domains.
 var Domains = []Domain{
-	// Order here likely determines evaluation precedence due to short-circuiting.
+	// Order here matters, as it likely determines evaluation precedence due to short-circuiting.
 	{"dev.azure.com", "azdo"},
 	{"management.azure.com", "arm"},
 	{"management.core.windows.net", "arm"},

@@ -174,6 +174,7 @@ const (
 // Service related fields.
 const (
 	// Hostname of the service.
+	// The list of allowed values can be found in [Domains].
 	ServiceHost = attribute.Key("service.host")
 
 	// Name of the service.

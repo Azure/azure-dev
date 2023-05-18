@@ -291,8 +291,6 @@ func Test_DockerPush(t *testing.T) {
 }
 
 func Test_DockerLogin(t *testing.T) {
-	cwd := "."
-
 	t.Run("NoError", func(t *testing.T) {
 		ran := false
 
@@ -305,11 +303,10 @@ func Test_DockerLogin(t *testing.T) {
 			ran = true
 
 			require.Equal(t, "docker", args.Cmd)
-			require.Equal(t, cwd, args.Cwd)
 			require.Equal(t, []string{
 				"login",
 				"--username", "USERNAME",
-				"--password", "PASSWORD",
+				"--password-stdin",
 				"LOGIN_SERVER",
 			}, args.Args)
 
@@ -340,11 +337,10 @@ func Test_DockerLogin(t *testing.T) {
 			ran = true
 
 			require.Equal(t, "docker", args.Cmd)
-			require.Equal(t, cwd, args.Cwd)
 			require.Equal(t, []string{
 				"login",
 				"--username", "USERNAME",
-				"--password", "PASSWORD",
+				"--password-stdin",
 				"LOGIN_SERVER",
 			}, args.Args)
 

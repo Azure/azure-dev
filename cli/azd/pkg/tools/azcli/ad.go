@@ -441,7 +441,8 @@ func (cli *azCli) GetUserRoleDefinitionName(
 		if roleName != "" {
 			roleDefinitionName = append(roleDefinitionName, roleName)
 		} else {
-			return nil, fmt.Errorf("failed getting role definition name from role definition id '%s': %w", *roleDefinitionResult.ID, err)
+			return nil, fmt.Errorf("failed getting role definition name from role definition id '%s': %w",
+				*roleDefinitionResult.ID, err)
 		}
 	}
 

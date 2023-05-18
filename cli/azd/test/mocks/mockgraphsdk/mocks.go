@@ -211,7 +211,36 @@ func RegisterRoleDefinitionListMock(
 				Value: roleDefinitions,
 			},
 		}
+
 		return mocks.CreateHttpResponseWithBody(request, statusCode, response)
+	})
+}
+
+func RegisterRoleAssignmentPutMock(mockContext *mocks.MockContext, statusCode int) {
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodPut &&
+			strings.Contains(request.URL.Path, "/providers/Microsoft.Authorization/roleAssignments/")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		response := armauthorization.RoleAssignmentsClientCreateResponse{
+			RoleAssignment: armauthorization.RoleAssignment{
+				ID:   convert.RefOf("ASSIGNMENT_ID"),
+				Name: convert.RefOf("ROLE_NAME"),
+				Type: convert.RefOf("ASSIGNMENT_TYPE"),
+			},
+		}
+
+		if statusCode == http.StatusCreated {
+			return mocks.CreateHttpResponseWithBody(request, statusCode, response)
+		} else {
+			errorBody := map[string]any{
+				"error": map[string]any{
+					"code":    "RoleAlreadyExists",
+					"message": "The role is already assigned",
+				},
+			}
+
+			return mocks.CreateHttpResponseWithBody(request, statusCode, errorBody)
+		}
 	})
 }
 

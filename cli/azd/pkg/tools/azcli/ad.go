@@ -398,7 +398,12 @@ func (cli *azCli) getUserRoleDefinitionIdList(
 			return nil, fmt.Errorf("failed getting next page of role assignments on scope '%s': %w", scope, err)
 		}
 		for _, v := range page.Value {
-			roleDefinitionIds = append(roleDefinitionIds, *v.Properties.RoleDefinitionID)
+			Id := *v.Properties.RoleDefinitionID
+			if Id != "" {
+				roleDefinitionIds = append(roleDefinitionIds, Id)
+			} else {
+				return nil, fmt.Errorf("failed getting role definition id from role assignment scope '%s': %w", *v.Properties.Scope, err)
+			}
 		}
 	}
 
@@ -430,9 +435,14 @@ func (cli *azCli) GetUserRoleDefinitionName(
 	for _, id := range roleDefinitionID {
 		roleDefinitionResult, err := client.GetByID(ctx, id, nil)
 		if err != nil {
-			return nil, fmt.Errorf("failing to get role definition name from role definition id: %w", err)
+			return nil, fmt.Errorf("failed getting role definition name from role definition id: %w", err)
 		}
-		roleDefinitionName = append(roleDefinitionName, *roleDefinitionResult.Properties.RoleName)
+		roleName := *roleDefinitionResult.Properties.RoleName
+		if roleName != "" {
+			roleDefinitionName = append(roleDefinitionName, roleName)
+		} else {
+			return nil, fmt.Errorf("failed getting role definition name from role definition id '%s': %w", *roleDefinitionResult.ID, err)
+		}
 	}
 
 	return roleDefinitionName, nil

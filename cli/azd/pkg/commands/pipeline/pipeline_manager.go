@@ -482,8 +482,8 @@ func checkRoleAssignments(
 
 	if !confirm {
 		return fmt.Errorf("missing required user role assignment for authorization: Owner or User Access Administrator. " +
-			"Please contact your Azure subscription administrator to assign required role to your account or" +
-			"login to azd with an account that has required role assignment")
+			"Please contact your Azure subscription administrator to assign required role(s) to your account or " +
+			"login with an account that has the required roles assigned.")
 
 	}
 

@@ -10,9 +10,7 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
 )
 
-// msalCacheAdapter adapts our interface to the one expected by cache.ExportReplace. Since that
-// interface is not error returning, any errors during Export or Replace are simply logged for
-// debugging purposes.
+// msalCacheAdapter adapts our interface to the one expected by cache.ExportReplace.
 type msalCacheAdapter struct {
 	cache Cache
 }

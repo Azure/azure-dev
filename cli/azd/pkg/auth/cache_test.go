@@ -57,12 +57,13 @@ func TestCache(t *testing.T) {
 	require.Equal(t, d1.val, r1.val)
 	require.Equal(t, d2.val, r2.val)
 
-	// read some non-existing data, ensure nil is returned.
+	// read some non-existing data
 	nonExist := fixedMarshaller{
 		val: []byte("some data"),
 	}
 	err = c.Replace(ctx, &nonExist, cache.ReplaceHints{PartitionKey: "nonExist"})
 	require.NoError(t, err)
+	// data should not be overwritten when key is not found.
 	require.Equal(t, []byte("some data"), nonExist.val)
 }
 
@@ -105,7 +106,7 @@ func TestCredentialCache(t *testing.T) {
 	require.Equal(t, d1, r1)
 	require.Equal(t, d2, r2)
 
-	// read some non-existing data, ensure key not exist is returned.
+	// read some non-existing data, ensure errCacheKeyNotFound is returned.
 	_, err = c.Read("nonExist")
 	require.ErrorIs(t, err, errCacheKeyNotFound)
 }

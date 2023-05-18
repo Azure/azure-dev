@@ -121,8 +121,6 @@ type pipelineConfigAction struct {
 	console            input.Console
 	commandRunner      exec.CommandRunner
 	credentialProvider account.SubscriptionCredentialProvider
-	subResolver        account.SubscriptionTenantResolver
-	userProfile        *azcli.UserProfileService
 }
 
 func newPipelineConfigAction(

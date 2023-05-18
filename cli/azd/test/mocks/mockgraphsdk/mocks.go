@@ -270,7 +270,7 @@ func RegisterUserRoleAssignment(mockContext *mocks.MockContext, statusCode int, 
 		response := armauthorization.RoleAssignmentsClientListForScopeResponse{
 			RoleAssignmentListResult: armauthorization.RoleAssignmentListResult{
 				Value: []*armauthorization.RoleAssignment{
-					&armauthorization.RoleAssignment{
+					{
 						Properties: &armauthorization.RoleAssignmentPropertiesWithScope{
 							RoleDefinitionID: convert.RefOf("RoleDefinition_ID"),
 						},

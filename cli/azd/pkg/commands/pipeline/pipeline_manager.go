@@ -127,7 +127,8 @@ func (i *PipelineManager) preConfigureCheck(ctx context.Context, infraOptions pr
 
 	tenantId, err := i.subResolver.LookupTenant(ctx, i.Environment.GetSubscriptionId())
 	if err != nil {
-		return configurationWasUpdated, fmt.Errorf("getting tenant id for subscription %s. Error: %w", i.Environment.GetSubscriptionId(), err)
+		return configurationWasUpdated, fmt.Errorf("getting tenant id for subscription %s. Error: %w",
+			i.Environment.GetSubscriptionId(), err)
 	}
 
 	principalId, err := azureutil.GetCurrentPrincipalId(ctx, i.userProfile, tenantId)

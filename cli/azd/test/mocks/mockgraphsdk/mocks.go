@@ -3,7 +3,6 @@ package mockgraphsdk
 import (
 	"fmt"
 	"net/http"
-	"regexp"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -207,58 +206,12 @@ func RegisterRoleDefinitionListMock(
 			return mocks.CreateEmptyHttpResponse(request, statusCode)
 		}
 
-		response := armauthorization.RoleDefinitionsClientListResponse{}
-
-		if request.URL.Query().Has("$filter") {
-			filter := request.URL.Query().Get("$filter")
-			roleName := regexp.MustCompile(`roleName eq '(.*)'`).FindStringSubmatch(filter)[1]
-
-			matches := []*armauthorization.RoleDefinition{}
-
-			for _, def := range roleDefinitions {
-				if *def.Name == roleName {
-					matches = append(matches, def)
-				}
-			}
-
-			response.RoleDefinitionListResult = armauthorization.RoleDefinitionListResult{
-				Value: matches,
-			}
-		} else {
-			response.RoleDefinitionListResult = armauthorization.RoleDefinitionListResult{
+		response := armauthorization.RoleDefinitionsClientListResponse{
+			RoleDefinitionListResult: armauthorization.RoleDefinitionListResult{
 				Value: roleDefinitions,
-			}
-		}
-
-		return mocks.CreateHttpResponseWithBody(request, statusCode, response)
-	})
-}
-
-func RegisterRoleAssignmentPutMock(mockContext *mocks.MockContext, statusCode int) {
-	mockContext.HttpClient.When(func(request *http.Request) bool {
-		return request.Method == http.MethodPut &&
-			strings.Contains(request.URL.Path, "/providers/Microsoft.Authorization/roleAssignments/")
-	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		response := armauthorization.RoleAssignmentsClientCreateResponse{
-			RoleAssignment: armauthorization.RoleAssignment{
-				ID:   convert.RefOf("ASSIGNMENT_ID"),
-				Name: convert.RefOf("ROLE_NAME"),
-				Type: convert.RefOf("ASSIGNMENT_TYPE"),
 			},
 		}
-
-		if statusCode == http.StatusCreated {
-			return mocks.CreateHttpResponseWithBody(request, statusCode, response)
-		} else {
-			errorBody := map[string]any{
-				"error": map[string]any{
-					"code":    "RoleAlreadyExists",
-					"message": "The role is already assigned",
-				},
-			}
-
-			return mocks.CreateHttpResponseWithBody(request, statusCode, errorBody)
-		}
+		return mocks.CreateHttpResponseWithBody(request, statusCode, response)
 	})
 }
 

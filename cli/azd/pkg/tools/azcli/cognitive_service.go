@@ -7,6 +7,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 )
 
+// GetCognitiveAccount finds the cognitive account within a subscription
 func (cli *azCli) GetCognitiveAccount(
 	ctx context.Context,
 	subscriptionId string,
@@ -25,6 +26,7 @@ func (cli *azCli) GetCognitiveAccount(
 	return response.Account, nil
 }
 
+// PurgeCognitiveAccount starts purge operation and wait until it is completed.
 func (cli *azCli) PurgeCognitiveAccount(
 	ctx context.Context, subscriptionId, location, resourceGroup, accountName string) error {
 	client, err := cli.createDeletedCognitiveAccountClient(ctx, subscriptionId)

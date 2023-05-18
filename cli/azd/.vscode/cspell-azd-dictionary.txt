@@ -111,6 +111,7 @@ securestring
 semconv
 serverfarms
 setenvs
+servicebus
 snapshotter
 springapp
 sstore
@@ -126,6 +127,7 @@ teamcity
 testdata
 tracesdk
 tracetest
+trafficmanager
 Truef
 typeflag
 unmarshaled

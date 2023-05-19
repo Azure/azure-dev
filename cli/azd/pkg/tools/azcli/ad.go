@@ -308,6 +308,11 @@ func (cli *azCli) getRoleDefinition(
 		return nil, fmt.Errorf("role definition with scope: '%s' and name: '%s' was not found", scope, roleName)
 	}
 
+	//expect a maximum of one matching role to be found based on the applied filter
+	//return a error if there's more than one found
+	if len(roleDefinitions) > 1 {
+		return nil, fmt.Errorf("role definition with scope: '%s' and name: '%s' has multiple role definitions", scope, roleName)
+	}
 	return roleDefinitions[0], nil
 }
 
@@ -366,4 +371,79 @@ func (cli *azCli) createRoleAssignmentsClient(
 	}
 
 	return client, nil
+}
+
+// Get role definition id from role assignment within specific scope and principalID
+func (cli *azCli) getUserRoleDefinitionIdList(
+	ctx context.Context,
+	subscriptionId string,
+	scope string,
+	principalId string,
+) ([]string, error) {
+	client, err := cli.createRoleAssignmentsClient(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	pager := client.NewListForScopePager(scope,
+		&armauthorization.RoleAssignmentsClientListForScopeOptions{
+			Filter: convert.RefOf(fmt.Sprintf("atScope() and assignedTo('%s')", principalId)),
+		})
+
+	roleDefinitionIds := []string{}
+
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return nil, fmt.Errorf("failed getting next page of role assignments on scope '%s': %w", scope, err)
+		}
+		for _, v := range page.Value {
+			Id := *v.Properties.RoleDefinitionID
+			if Id != "" {
+				roleDefinitionIds = append(roleDefinitionIds, Id)
+			} else {
+				return nil, fmt.Errorf("failed getting role definition id from role assignment: %w", err)
+			}
+		}
+	}
+
+	if len(roleDefinitionIds) == 0 {
+		return nil, fmt.Errorf("role assignment with scope '%s' was not found", scope)
+	}
+
+	return roleDefinitionIds, nil
+}
+
+// Get role definition name from role definition id
+func (cli *azCli) GetUserRoleDefinitionName(
+	ctx context.Context,
+	subscriptionId string,
+	scope string,
+	principalId string,
+) ([]string, error) {
+	roleDefinitionName := []string{}
+	client, err := cli.createRoleDefinitionsClient(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	roleDefinitionID, err := cli.getUserRoleDefinitionIdList(ctx, subscriptionId, scope, principalId)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, id := range roleDefinitionID {
+		roleDefinitionResult, err := client.GetByID(ctx, id, nil)
+		if err != nil {
+			return nil, fmt.Errorf("failed getting role definition name from role definition id: %w", err)
+		}
+		roleName := *roleDefinitionResult.Properties.RoleName
+		if roleName != "" {
+			roleDefinitionName = append(roleDefinitionName, roleName)
+		} else {
+			return nil, fmt.Errorf("failed getting role definition name from role definition id: %w", err)
+		}
+	}
+
+	return roleDefinitionName, nil
 }

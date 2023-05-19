@@ -172,6 +172,12 @@ type AzCli interface {
 		appName string,
 		environmentName string,
 	) (*AzCliStaticWebAppEnvironmentProperties, error)
+	GetUserRoleDefinitionName(
+		ctx context.Context,
+		subscriptionId string,
+		scope string,
+		principalId string,
+	) ([]string, error)
 }
 
 type AzCliDeployment struct {

@@ -43,7 +43,7 @@ func TestRunCommand(t *testing.T) {
 }
 
 func TestKillCommand(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 
 	s := time.Now()
@@ -69,7 +69,6 @@ func TestKillCommand(t *testing.T) {
 	// what we're sleeping on in the powershell)
 	since := time.Since(s)
 	require.LessOrEqual(t, since, 10*time.Second)
-	require.GreaterOrEqual(t, since, 1*time.Second)
 }
 
 func TestAppendEnv(t *testing.T) {

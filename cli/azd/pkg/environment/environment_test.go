@@ -157,6 +157,19 @@ func Test_SaveAndReload(t *testing.T) {
 	// Verify the property is deleted
 	_, ok := env.LookupEnv("SERVICE_WEB_ENDPOINT_URL")
 	require.False(t, ok)
+
+	// Delete an existing key, then add it with a different value and save the environment, to ensure we
+	// don't drop the existing key even though it was deleted in an earlier operation.
+	env.DotenvDelete("SERVICE_API_ENDPOINT_URL")
+	env.DotenvSet("SERVICE_API_ENDPOINT_URL", "http://api.example.com/updated")
+
+	err = env.Save()
+	require.NoError(t, err)
+
+	// Verify the property still exists, and has the updated value.
+	value, ok := env.LookupEnv("SERVICE_API_ENDPOINT_URL")
+	require.True(t, ok)
+	require.Equal(t, "http://api.example.com/updated", value)
 }
 
 func TestCleanName(t *testing.T) {

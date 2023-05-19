@@ -53,7 +53,7 @@ type Environment struct {
 
 	// dotEnvDeleted keeps track of deleted keys to be reapplied before a merge operation
 	// happens in Save
-	dotenvDeleted map[string]bool
+	dotenvDeleted map[string]struct{}
 
 	// Config is environment specific config
 	Config config.Config
@@ -181,7 +181,7 @@ func (e *Environment) LookupEnv(key string) (string, bool) {
 // does not exist. [Save] should be called to ensure this change is persisted.
 func (e *Environment) DotenvDelete(key string) {
 	delete(e.dotenv, key)
-	e.dotenvDeleted[key] = true
+	e.dotenvDeleted[key] = struct{}{}
 }
 
 // Dotenv returns a copy of the key value pairs from the .env file in the environment.
@@ -193,6 +193,7 @@ func (e *Environment) Dotenv() map[string]string {
 // called to ensure this change is persisted.
 func (e *Environment) DotenvSet(key string, value string) {
 	e.dotenv[key] = value
+	delete(e.dotenvDeleted, key)
 }
 
 // Reloads environment variables and configuration
@@ -201,12 +202,12 @@ func (e *Environment) Reload() error {
 	envPath := filepath.Join(e.Root, azdcontext.DotEnvFileName)
 	if envMap, err := godotenv.Read(envPath); errors.Is(err, os.ErrNotExist) {
 		e.dotenv = make(map[string]string)
-		e.dotenvDeleted = make(map[string]bool)
+		e.dotenvDeleted = make(map[string]struct{})
 	} else if err != nil {
 		return fmt.Errorf("loading .env: %w", err)
 	} else {
 		e.dotenv = envMap
-		e.dotenvDeleted = make(map[string]bool)
+		e.dotenvDeleted = make(map[string]struct{})
 	}
 
 	// Reload env config
@@ -282,7 +283,7 @@ func (e *Environment) GetEnvName() string {
 
 // SetEnvName is shorthand for DotenvSet(EnvNameEnvVarName, envname)
 func (e *Environment) SetEnvName(envname string) {
-	e.dotenv[EnvNameEnvVarName] = envname
+	e.DotenvSet(EnvNameEnvVarName, envname)
 }
 
 // GetSubscriptionId is shorthand for Getenv(SubscriptionIdEnvVarName)
@@ -297,7 +298,7 @@ func (e *Environment) GetTenantId() string {
 
 // SetLocation is shorthand for DotenvSet(SubscriptionIdEnvVarName, location)
 func (e *Environment) SetSubscriptionId(id string) {
-	e.dotenv[SubscriptionIdEnvVarName] = id
+	e.DotenvSet(SubscriptionIdEnvVarName, id)
 }
 
 // GetLocation is shorthand for Getenv(LocationEnvVarName)
@@ -307,7 +308,7 @@ func (e *Environment) GetLocation() string {
 
 // SetLocation is shorthand for DotenvSet(LocationEnvVarName, location)
 func (e *Environment) SetLocation(location string) {
-	e.dotenv[LocationEnvVarName] = location
+	e.DotenvSet(LocationEnvVarName, location)
 }
 
 func normalize(key string) string {
@@ -321,7 +322,7 @@ func (e *Environment) GetServiceProperty(serviceName string, propertyName string
 
 // Sets the value of a service-namespaced property in the environment.
 func (e *Environment) SetServiceProperty(serviceName string, propertyName string, value string) {
-	e.dotenv[fmt.Sprintf("SERVICE_%s_%s", normalize(serviceName), propertyName)] = value
+	e.DotenvSet(fmt.Sprintf("SERVICE_%s_%s", normalize(serviceName), propertyName), value)
 }
 
 // Creates a slice of key value pairs, based on the entries in the `.env` file like `KEY=VALUE` that

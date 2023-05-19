@@ -107,7 +107,7 @@ type ServiceStatus struct {
 
 type Port struct {
 	Port       int    `json:"port"`
-	TargetPort string `json:"targetPort"`
+	TargetPort any    `json:"targetPort"`
 	Protocol   string `json:"protocol"`
 }
 

@@ -354,7 +354,7 @@ func setupMocksForKubectl(mockContext *mocks.MockContext) {
 				Ports: []kubectl.Port{
 					{
 						Port:       80,
-						TargetPort: "3000",
+						TargetPort: 3000,
 						Protocol:   "http",
 					},
 				},

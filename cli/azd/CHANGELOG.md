@@ -14,6 +14,7 @@
 
 ### Bugs Fixed
 
+- [[2257]](https://github.com/Azure/azure-dev/pull/2257) Add purge option of cognitive accounts for `azd down`.
 - [[2243]](https://github.com/Azure/azure-dev/pull/2243) Return error when login fails.
 - [[2251]](https://github.com/Azure/azure-dev/pull/2251) Create an `alpha` version of azure.yaml schema with `terraform`.
 - [[2028]](https://github.com/Azure/azure-dev/pull/2028) Add check on required role assignments for `azd pipeline config`.

@@ -56,6 +56,10 @@ $buildFlags = @(
     "-asmflags=-trimpath"
 )
 
+if ($CodeCoverageEnabled) {
+    $buildFlags += "-cover"
+}
+
 # Build constraint tags
 # cfi: Enable Control Flow Integrity (CFI),
 # cfg: Enable Control Flow Guard (CFG),

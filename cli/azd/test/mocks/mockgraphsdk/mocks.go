@@ -15,7 +15,7 @@ import (
 
 func CreateGraphClient(mockContext *mocks.MockContext) (*graphsdk.GraphClient, error) {
 	clientOptions := CreateDefaultClientOptions(mockContext)
-
+	clientOptions.Retry.RetryDelay = -1
 	return graphsdk.NewGraphClient(mockContext.Credentials, clientOptions)
 }
 

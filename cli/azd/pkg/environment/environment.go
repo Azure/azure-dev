@@ -51,7 +51,9 @@ type Environment struct {
 	// dotenv is a map of keys to values, persisted to the `.env` file stored in this environment's [Root].
 	dotenv map[string]string
 
-	dotEnvDeleted map[string]bool
+	// dotEnvDeleted keeps track of deleted keys to be reapplied before a merge operation
+	// happens in Save
+	dotenvDeleted map[string]bool
 
 	// Config is environment specific config
 	Config config.Config
@@ -179,7 +181,7 @@ func (e *Environment) LookupEnv(key string) (string, bool) {
 // does not exist. [Save] should be called to ensure this change is persisted.
 func (e *Environment) DotenvDelete(key string) {
 	delete(e.dotenv, key)
-	e.dotEnvDeleted[key] = true
+	e.dotenvDeleted[key] = true
 }
 
 // Dotenv returns a copy of the key value pairs from the .env file in the environment.
@@ -199,12 +201,12 @@ func (e *Environment) Reload() error {
 	envPath := filepath.Join(e.Root, azdcontext.DotEnvFileName)
 	if envMap, err := godotenv.Read(envPath); errors.Is(err, os.ErrNotExist) {
 		e.dotenv = make(map[string]string)
-		e.dotEnvDeleted = make(map[string]bool)
+		e.dotenvDeleted = make(map[string]bool)
 	} else if err != nil {
 		return fmt.Errorf("loading .env: %w", err)
 	} else {
 		e.dotenv = envMap
-		e.dotEnvDeleted = make(map[string]bool)
+		e.dotenvDeleted = make(map[string]bool)
 	}
 
 	// Reload env config
@@ -244,7 +246,7 @@ func (e *Environment) Save() error {
 
 	// Cache current values & reload to get any new env vars
 	currentValues := e.dotenv
-	deletedValues := e.dotEnvDeleted
+	deletedValues := e.dotenvDeleted
 	if err := e.Reload(); err != nil {
 		return fmt.Errorf("failed reloading env vars, %w", err)
 	}

@@ -300,13 +300,14 @@ func TestBicepDestroy(t *testing.T) {
 		require.Contains(t, consoleOutput[7], "")
 
 		// Verify progress output
-		require.Len(t, progressLog, 6)
+		require.Len(t, progressLog, 7)
 		require.Contains(t, progressLog[0], "Compiling Bicep template")
 		require.Contains(t, progressLog[1], "Fetching resource groups")
 		require.Contains(t, progressLog[2], "Fetching resources")
 		require.Contains(t, progressLog[3], "Getting Key Vaults to purge")
 		require.Contains(t, progressLog[4], "Getting App Configurations to purge")
 		require.Contains(t, progressLog[5], "Getting API Management Services to purge")
+		require.Contains(t, progressLog[6], "Getting Cognitive Accounts to purge")
 	})
 
 	t.Run("InteractiveForceAndPurge", func(t *testing.T) {
@@ -350,13 +351,14 @@ func TestBicepDestroy(t *testing.T) {
 		require.Contains(t, consoleOutput[1], "")
 
 		// Verify progress output
-		require.Len(t, progressLog, 6)
+		require.Len(t, progressLog, 7)
 		require.Contains(t, progressLog[0], "Compiling Bicep template")
 		require.Contains(t, progressLog[1], "Fetching resource groups")
 		require.Contains(t, progressLog[2], "Fetching resources")
 		require.Contains(t, progressLog[3], "Getting Key Vaults to purge")
 		require.Contains(t, progressLog[4], "Getting App Configurations to purge")
 		require.Contains(t, progressLog[5], "Getting API Management Services to purge")
+		require.Contains(t, progressLog[6], "Getting Cognitive Accounts to purge")
 	})
 }
 

@@ -334,9 +334,10 @@ func (p *BicepProvider) Deploy(
 }
 
 type itemToPurge struct {
-	resourceType string
-	count        int
-	purge        func(skipPurge bool) error
+	resourceType      string
+	count             int
+	purge             func(skipPurge bool, self *itemToPurge) error
+	cognitiveAccounts []cognitiveAccount
 }
 
 func (p *BicepProvider) scopeForTemplate(ctx context.Context, t azure.ArmTemplate) (infra.Scope, error) {
@@ -451,23 +452,23 @@ func (p *BicepProvider) Destroy(
 			}
 
 			keyVaultsPurge := itemToPurge{
-				resourceType: "Key Vault(s)",
+				resourceType: "Key Vault",
 				count:        len(keyVaults),
-				purge: func(skipPurge bool) error {
+				purge: func(skipPurge bool, self *itemToPurge) error {
 					return p.purgeKeyVaults(ctx, keyVaults, options, skipPurge)
 				},
 			}
 			appConfigsPurge := itemToPurge{
-				resourceType: "App Configuration(s)",
+				resourceType: "App Configuration",
 				count:        len(appConfigs),
-				purge: func(skipPurge bool) error {
+				purge: func(skipPurge bool, self *itemToPurge) error {
 					return p.purgeAppConfigs(ctx, appConfigs, options, skipPurge)
 				},
 			}
 			aPIManagement := itemToPurge{
-				resourceType: "API Management(s)",
+				resourceType: "API Management",
 				count:        len(apiManagements),
-				purge: func(skipPurge bool) error {
+				purge: func(skipPurge bool, self *itemToPurge) error {
 					return p.purgeAPIManagement(ctx, apiManagements, options, skipPurge)
 				},
 			}
@@ -480,14 +481,17 @@ func (p *BicepProvider) Destroy(
 			}
 
 			// cognitive services are grouped by resource group because the name of the resource group is required to purge
-			for name, cogAccounts := range cognitiveAccountsByKind(cognitiveAccounts) {
-				purgeItem = append(purgeItem, itemToPurge{
-					resourceType: name + " (s)",
+			groupByKind := cognitiveAccountsByKind(cognitiveAccounts)
+			for name, cogAccounts := range groupByKind {
+				addPurgeItem := itemToPurge{
+					resourceType: name,
 					count:        len(cogAccounts),
-					purge: func(skipPurge bool) error {
-						return p.purgeCognitiveAccounts(ctx, cogAccounts, options, skipPurge)
+					purge: func(skipPurge bool, self *itemToPurge) error {
+						return p.purgeCognitiveAccounts(ctx, self.cognitiveAccounts, options, skipPurge)
 					},
-				})
+					cognitiveAccounts: groupByKind[name],
+				}
+				purgeItem = append(purgeItem, addPurgeItem)
 			}
 
 			if err := p.purgeItems(ctx, purgeItem, options); err != nil {
@@ -760,8 +764,8 @@ func (p *BicepProvider) purgeItems(
 			return err
 		}
 	}
-	for _, item := range items {
-		if err := item.purge(skipPurge); err != nil {
+	for index, item := range items {
+		if err := item.purge(skipPurge, &items[index]); err != nil {
 			return fmt.Errorf("failed to purge %s: %w", item.resourceType, err)
 		}
 	}

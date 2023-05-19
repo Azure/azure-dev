@@ -1,6 +1,6 @@
 # Release History
 
-## 0.9.0-beta.2 (Unreleased)
+## 0.9.0-beta.4 (Unreleased)
 
 ### Features Added
 
@@ -9,6 +9,38 @@
 ### Bugs Fixed
 
 ### Other Changes
+
+## 0.9.0-beta.3 (2023-05-19)
+
+### Features Added
+ 
+- [[2245]](https://github.com/Azure/azure-dev/pull/2245) Add support to login to Azure Container Registry with current identity.
+- [[2228]](https://github.com/Azure/azure-dev/pull/2228) Add error classification and reporting for external errors to `azd`.
+- [[2219]](https://github.com/Azure/azure-dev/pull/2219) Support environment name as explicit argument for `azd env refresh`.
+- [[2164]](https://github.com/Azure/azure-dev/pull/2164) Add timing information on `up`,`package`,`build`, `provision`,`deploy`, `down` and `restore` commands.
+
+#### Template Feature
+- [[2157]](https://github.com/Azure/azure-dev/pull/2157) Add `Dapr` and container configuration properties to Azure Container Apps modules.
+
+### Bugs Fixed
+
+- [[2257]](https://github.com/Azure/azure-dev/pull/2257) Add purge option of cognitive accounts for `azd down`.
+- [[2243]](https://github.com/Azure/azure-dev/pull/2243) Return error when login fails.
+- [[2251]](https://github.com/Azure/azure-dev/pull/2251) Create an `alpha` version of azure.yaml schema with `terraform`.
+- [[2028]](https://github.com/Azure/azure-dev/pull/2028) Add check on required role assignments for `azd pipeline config`.
+
+### Other Changes
+
+
+- [[2218]](https://github.com/Azure/azure-dev/pull/2218) Update `azd pipeline config` default roles to include `User Access Administrator`.
+- [[2185]](https://github.com/Azure/azure-dev/pull/2185) Improve error messages on `auth` command.
+
+## 0.9.0-beta.2 (2023-05-11)
+
+### Bugs Fixed
+
+- [[2177]](https://github.com/Azure/azure-dev/issues/2177) Use information in `.installed-by.txt` to advise the user on how to upgrade azd.
+- [[2183]](https://github.com/Azure/azure-dev/pull/2182) Statically link CRT in MSI custom action.
 
 ## 0.9.0-beta.1 (2023-05-11)
 

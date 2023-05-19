@@ -22,6 +22,7 @@ pr:
       - go.mod
       - cli/
       - eng/pipelines/release-cli.yml
+      - eng/pipelines/templates/steps/publish-cli.yml
 
 variables:
   - template: /eng/pipelines/templates/variables/globals.yml
@@ -138,15 +139,20 @@ stages:
               workingDirectory: cli/azd
             displayName: Test Go Binary
             env:
-              # Set GITHUB_RUN_NUMBER because cli_test.go is coupled to that
-              # environment variable.
-              GITHUB_RUN_NUMBER: $(Build.BuildId)
-              # Generate junit report to publish results
-              GOTESTSUM_JUNITFILE: junitTestReport.xml
-              # Required for Terraform service principal authentication
+              # AZD live test setup variables
+              CI: true
+              AZD_TEST_CLI_VERSION: $(CLI_VERSION)
+              AZD_TEST_CLIENT_ID: $(arm-client-id)
+              AZD_TEST_CLIENT_SECRET: $(arm-client-secret)
+              AZD_TEST_TENANT_ID: $(arm-tenant-id)
+              AZD_TEST_AZURE_SUBSCRIPTION_ID: $(SubscriptionId)
+              AZD_TEST_AZURE_LOCATION: eastus2
+              # AZD Live Test: Terraform service principal authentication
               ARM_CLIENT_ID: $(arm-client-id)
               ARM_CLIENT_SECRET: $(arm-client-secret)
               ARM_TENANT_ID: $(arm-tenant-id)
+              # Code Coverage: Generate junit report to publish results
+              GOTESTSUM_JUNITFILE: junitTestReport.xml
 
           - task: PublishTestResults@2
             inputs:
@@ -1232,9 +1238,9 @@ stages:
           - pwsh: |
               $urlBase = "$(GenerateUrlBase.UrlBase)"
               $linuxReleaseUrl = "$urlBase/azd-linux-amd64.tar.gz"
-              $linuxReleaseUrlArm64 = "$urlBase/azd-linux-arm64.tar.gz"
+              $linuxReleaseUrlArm64 = "$urlBase/azd-linux-arm64-beta.tar.gz"
               $macosReleaseUrl = "$urlBase/azd-darwin-amd64.zip"
-              $macosReleaseUrlArm64 = "$urlBase/azd-darwin-arm64.zip"
+              $macosReleaseUrlArm64 = "$urlBase/azd-darwin-arm64-beta.zip"
               $windowsReleaseUrl = "$urlBase/azd-windows-amd64.zip"
               $msiReleaseUrl = "$urlBase/azd-windows-amd64.msi"
 

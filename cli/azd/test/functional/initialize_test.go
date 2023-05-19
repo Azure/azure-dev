@@ -46,8 +46,8 @@ func Test_CommandsAndActions_Initialize(t *testing.T) {
 	require.NoError(t, err)
 
 	env, _ := environment.GetEnvironment(azdCtx, envName)
-	env.SetSubscriptionId(testSubscriptionId)
-	env.SetLocation(defaultLocation)
+	env.SetSubscriptionId(cfg.SubscriptionID)
+	env.SetLocation(cfg.Location)
 	err = env.Save()
 	require.NoError(t, err)
 

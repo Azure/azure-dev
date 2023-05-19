@@ -164,9 +164,6 @@ const (
 	// Error code that describes an error.
 	ErrCode = attribute.Key("error.code")
 
-	// Details of an error.
-	ErrDetails = attribute.Key("error.details")
-
 	// Inner error.
 	ErrInner = attribute.Key("error.inner")
 
@@ -177,6 +174,7 @@ const (
 // Service related fields.
 const (
 	// Hostname of the service.
+	// The list of allowed values can be found in [Domains].
 	ServiceHost = attribute.Key("service.host")
 
 	// Name of the service.

@@ -15,10 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
-	"github.com/azure/azure-dev/cli/azd/pkg/azdo"
-	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
-	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/pflag"
 
@@ -104,9 +101,10 @@ func mapError(err error, span tracing.Span) {
 			errDetails = append(errDetails, fields.ServiceStatusCode.Int(statusCode))
 
 			if respErr.RawResponse.Request != nil {
-				serviceName = mapServiceName(respErr.RawResponse.Request.Host)
+				var hostName string
+				serviceName, hostName = mapService(respErr.RawResponse.Request.Host)
 				errDetails = append(errDetails,
-					fields.ServiceHost.String(respErr.RawResponse.Request.Host),
+					fields.ServiceHost.String(hostName),
 					fields.ServiceMethod.String(respErr.RawResponse.Request.Method),
 					fields.ServiceName.String(serviceName),
 				)
@@ -171,16 +169,11 @@ func mapError(err error, span tracing.Span) {
 	}
 
 	if len(errDetails) > 0 {
-		errDetailsMap := make(map[string]interface{}, len(errDetails))
-		for _, detail := range errDetails {
-			errDetailsMap[string(detail.Key)] = detail.Value.AsInterface()
+		for i, detail := range errDetails {
+			errDetails[i].Key = fields.ErrorKey(detail.Key)
 		}
 
-		if errDetailsStr, err := json.Marshal(errDetailsMap); err != nil {
-			log.Println("telemetry: failed to marshal error details", err)
-		} else {
-			span.SetAttributes(fields.ErrDetails.String(string(errDetailsStr)))
-		}
+		span.SetAttributes(errDetails...)
 	}
 
 	span.SetStatus(codes.Error, errCode)
@@ -216,19 +209,19 @@ func collectCode(lines []*azcli.DeploymentErrorLine, frame int) *deploymentError
 	}
 }
 
-func mapServiceName(host string) string {
-	name := "other"
-
-	switch host {
-	case azdo.AzDoHostName:
-		name = "azdo"
-	case azure.ManagementHostName:
-		name = "arm"
-	case graphsdk.HostName:
-		name = "graph"
+// mapService maps the given hostname to a service and host domain for telemetry purposes.
+//
+// The host name is validated against well-known domains, and if a match is found, the service
+// and corresponding anonymized domain is returned. If the domain name is unrecognized,
+// it is returned as "other", "other".
+func mapService(host string) (service string, hostDomain string) {
+	for _, domain := range fields.Domains {
+		if strings.HasSuffix(host, domain.Name) {
+			return domain.Service, domain.Name
+		}
 	}
 
-	return name
+	return "other", "other"
 }
 
 func cmdAsName(cmd string) string {

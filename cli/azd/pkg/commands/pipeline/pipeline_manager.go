@@ -12,11 +12,15 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/azure"
+	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -63,6 +67,8 @@ type PipelineManager struct {
 	azCli         azcli.AzCli
 	commandRunner exec.CommandRunner
 	console       input.Console
+	subResolver   account.SubscriptionTenantResolver
+	userProfile   *azcli.UserProfileService
 }
 
 func NewPipelineManager(
@@ -73,6 +79,8 @@ func NewPipelineManager(
 	commandRunner exec.CommandRunner,
 	console input.Console,
 	args PipelineManagerArgs,
+	subResolver account.SubscriptionTenantResolver,
+	userProfile *azcli.UserProfileService,
 ) *PipelineManager {
 	return &PipelineManager{
 		AzdCtx:              azdCtx,
@@ -82,6 +90,8 @@ func NewPipelineManager(
 		azCli:               azCli,
 		commandRunner:       commandRunner,
 		console:             console,
+		subResolver:         subResolver,
+		userProfile:         userProfile,
 	}
 }
 
@@ -115,6 +125,23 @@ func (i *PipelineManager) preConfigureCheck(ctx context.Context, infraOptions pr
 			i.PipelineManagerArgs.PipelineAuthTypeName,
 			strings.Join(validAuthTypes, ", "),
 		)
+	}
+
+	tenantId, err := i.subResolver.LookupTenant(ctx, i.Environment.GetSubscriptionId())
+	if err != nil {
+		return configurationWasUpdated, fmt.Errorf("getting tenant id for subscription %s. Error: %w",
+			i.Environment.GetSubscriptionId(), err)
+	}
+
+	principalId, err := azureutil.GetCurrentPrincipalId(ctx, i.userProfile, tenantId)
+	if err != nil {
+		return configurationWasUpdated, fmt.Errorf("fetching current user information: %w", err)
+	}
+
+	// Check permission on role assignment
+	err = checkRoleAssignments(ctx, i.azCli, i.Environment.GetSubscriptionId(), principalId, i.console)
+	if err != nil {
+		return configurationWasUpdated, err
 	}
 
 	ciConfigurationWasUpdated, err := i.CiProvider.preConfigureCheck(
@@ -419,4 +446,46 @@ func (manager *PipelineManager) Configure(ctx context.Context) (
 		RepositoryLink: strings.TrimSuffix(gitRepoInfo.remote, ".git"),
 		PipelineLink:   strings.TrimSuffix(ciPipeline.remote, ".git"),
 	}, nil
+}
+
+func checkRoleAssignments(
+	ctx context.Context,
+	azcli azcli.AzCli,
+	subscriptionId string,
+	principalId string,
+	console input.Console,
+) error {
+	// Find the specified role in the subscription scope
+	scope := azure.SubscriptionRID(subscriptionId)
+	roles, err := azcli.GetUserRoleDefinitionName(ctx, subscriptionId, scope, principalId)
+	if err != nil {
+		return err
+	}
+	for _, name := range roles {
+		if name == "Owner" || name == "User Access Administrator" {
+			return nil
+		}
+	}
+
+	message := output.WithWarningFormat(
+		"WARNING: Your user account does not appear to have either the Owner or User Access Administrator role assigned to it. " +
+			"This operation will attempt to grant permissions to the newly created service principal and this will fail " +
+			"unless you have been granted these permissions with a custom role assignment. " +
+			"Do you want to continue with configuring your pipeline?")
+
+	confirm, err := console.Confirm(ctx, input.ConsoleOptions{
+		Message: message,
+	})
+	if err != nil {
+		return err
+	}
+
+	if !confirm {
+		return fmt.Errorf("missing required user role assignment for authorization: Owner or User Access Administrator. " +
+			"Please contact your Azure subscription administrator to assign required role(s) to your account or " +
+			"login with an account that has the required roles assigned.")
+
+	}
+
+	return nil
 }

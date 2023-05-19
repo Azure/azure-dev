@@ -332,15 +332,15 @@ func (m *memoryConfigManager) Save(cfg config.Config, path string) error {
 type mockPublicClient struct {
 }
 
-func (m *mockPublicClient) Accounts() []public.Account {
+func (m *mockPublicClient) Accounts(ctx context.Context) ([]public.Account, error) {
 	return []public.Account{
 		{
 			HomeAccountID: "test.id",
 		},
-	}
+	}, nil
 }
 
-func (m *mockPublicClient) RemoveAccount(account public.Account) error {
+func (m *mockPublicClient) RemoveAccount(ctx context.Context, account public.Account) error {
 	return nil
 }
 

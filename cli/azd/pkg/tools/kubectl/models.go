@@ -1,5 +1,10 @@
 package kubectl
 
+import (
+	"encoding/json"
+	"fmt"
+)
+
 type ResourceType string
 
 const (
@@ -106,9 +111,32 @@ type ServiceStatus struct {
 }
 
 type Port struct {
-	Port       int    `json:"port"`
-	TargetPort any    `json:"targetPort"`
-	Protocol   string `json:"protocol"`
+	Port       int         `json:"port"`
+	TargetPort interface{} `json:"targetPort"`
+	Protocol   string      `json:"protocol"`
+}
+
+func (p *Port) UnmarshalJSON(data []byte) error {
+	var aux struct {
+		Port       int         `json:"port"`
+		TargetPort interface{} `json:"targetPort"`
+		Protocol   string      `json:"protocol"`
+	}
+
+	if err := json.Unmarshal(data, &aux); err != nil {
+		return err
+	}
+
+	p.Port = aux.Port
+	p.Protocol = aux.Protocol
+
+	switch v := aux.TargetPort.(type) {
+	case string, int, float64:
+		p.TargetPort = v
+		return nil
+	default:
+		return fmt.Errorf("unsupported type for TargetPort")
+	}
 }
 
 type KubeConfig struct {

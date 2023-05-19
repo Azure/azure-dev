@@ -111,16 +111,17 @@ type ServiceStatus struct {
 }
 
 type Port struct {
-	Port       int         `json:"port"`
-	TargetPort interface{} `json:"targetPort"`
-	Protocol   string      `json:"protocol"`
+	Port int `json:"port"`
+	// The target port can be a valid port number or well known service name like 'redis'
+	TargetPort any    `json:"targetPort"`
+	Protocol   string `json:"protocol"`
 }
 
 func (p *Port) UnmarshalJSON(data []byte) error {
 	var aux struct {
-		Port       int         `json:"port"`
-		TargetPort interface{} `json:"targetPort"`
-		Protocol   string      `json:"protocol"`
+		Port       int    `json:"port"`
+		TargetPort any    `json:"targetPort"`
+		Protocol   string `json:"protocol"`
 	}
 
 	if err := json.Unmarshal(data, &aux); err != nil {

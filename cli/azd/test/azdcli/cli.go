@@ -95,6 +95,12 @@ func NewCLI(t *testing.T) *CLI {
 	buildOnce.Do(func() {
 		cmd := exec.Command("go", "build")
 		cmd.Dir = filepath.Dir(cliPath)
+
+		// Build with coverage if GOCOVERDIR is specified.
+		if os.Getenv("GOCOVERDIR") != "" {
+			cmd.Args = append(cmd.Args, "-cover")
+		}
+
 		output, err := cmd.CombinedOutput()
 		if err != nil {
 			panic(fmt.Errorf(

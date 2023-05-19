@@ -13,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/containerapps"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
+	"github.com/azure/azure-dev/cli/azd/pkg/messaging"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
 
@@ -21,6 +22,7 @@ type containerAppTarget struct {
 	containerHelper     *ContainerHelper
 	containerAppService containerapps.ContainerAppService
 	resourceManager     ResourceManager
+	publisher                  messaging.Publisher
 }
 
 // NewContainerAppTarget creates the container app service target.
@@ -32,12 +34,14 @@ func NewContainerAppTarget(
 	containerHelper *ContainerHelper,
 	containerAppService containerapps.ContainerAppService,
 	resourceManager ResourceManager,
+	publisher messaging.Publisher,
 ) ServiceTarget {
 	return &containerAppTarget{
 		env:                 env,
 		containerHelper:     containerHelper,
 		containerAppService: containerAppService,
 		resourceManager:     resourceManager,
+		publisher:                  publisher,
 	}
 }
 
@@ -60,12 +64,8 @@ func (at *containerAppTarget) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
-) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
-			task.SetResult(packageOutput)
-		},
-	)
+) (*ServicePackageResult, error) {
+	return packageOutput, nil
 }
 
 // Deploys service container images to ACR and provisions the container app service.

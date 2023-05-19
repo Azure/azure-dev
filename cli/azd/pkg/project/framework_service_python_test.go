@@ -14,6 +14,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/messaging"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/python"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -58,7 +59,7 @@ func Test_PythonProject_Restore(t *testing.T) {
 	pythonCli := python.NewPythonCli(mockContext.CommandRunner)
 	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguagePython)
 
-	pythonProject := NewPythonProject(pythonCli, env)
+	pythonProject := NewPythonProject(pythonCli, env, messaging.NewService())
 	restoreTask := pythonProject.Restore(*mockContext.Context, serviceConfig)
 	logProgress(restoreTask)
 
@@ -92,7 +93,7 @@ func Test_PythonProject_Build(t *testing.T) {
 	pythonCli := python.NewPythonCli(mockContext.CommandRunner)
 	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguagePython)
 
-	pythonProject := NewPythonProject(pythonCli, env)
+	pythonProject := NewPythonProject(pythonCli, env, messaging.NewService())
 	buildTask := pythonProject.Build(*mockContext.Context, serviceConfig, nil)
 	logProgress(buildTask)
 
@@ -114,17 +115,14 @@ func Test_PythonProject_Package(t *testing.T) {
 	err = os.WriteFile(filepath.Join(serviceConfig.Path(), "requirements.txt"), nil, osutil.PermissionFile)
 	require.NoError(t, err)
 
-	pythonProject := NewPythonProject(pythonCli, env)
-	packageTask := pythonProject.Package(
+	pythonProject := NewPythonProject(pythonCli, env, messaging.NewService())
+	result, err := pythonProject.Package(
 		*mockContext.Context,
 		serviceConfig,
 		&ServiceBuildResult{
 			BuildOutputPath: serviceConfig.Path(),
 		},
 	)
-	logProgress(packageTask)
-
-	result, err := packageTask.Await()
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.NotEmpty(t, result.PackagePath)

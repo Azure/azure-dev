@@ -11,20 +11,27 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/messaging"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/npm"
 )
 
 type npmProject struct {
-	env *environment.Environment
-	cli npm.NpmCli
+	env       *environment.Environment
+	cli       npm.NpmCli
+	publisher messaging.Publisher
 }
 
 // NewNpmProject creates a new instance of a NPM project
-func NewNpmProject(cli npm.NpmCli, env *environment.Environment) FrameworkService {
+func NewNpmProject(
+	cli npm.NpmCli,
+	env *environment.Environment,
+	publisher messaging.Publisher,
+) FrameworkService {
 	return &npmProject{
-		env: env,
-		cli: cli,
+		env:       env,
+		cli:       cli,
+		publisher: publisher,
 	}
 }
 
@@ -55,6 +62,7 @@ func (np *npmProject) Restore(
 ) *async.TaskWithProgress[*ServiceRestoreResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServiceRestoreResult, ServiceProgress]) {
+			np.publisher.Send(ctx, messaging.NewMessage(ProgressMessage, "Installing NPM dependencies"))
 			task.SetProgress(NewServiceProgress("Installing NPM dependencies"))
 			if err := np.cli.Install(ctx, serviceConfig.Path()); err != nil {
 				task.SetError(err)
@@ -76,6 +84,7 @@ func (np *npmProject) Build(
 		func(task *async.TaskContextWithProgress[*ServiceBuildResult, ServiceProgress]) {
 			// Exec custom `build` script if available
 			// If `build`` script is not defined in the package.json the NPM script will NOT fail
+			np.publisher.Send(ctx, messaging.NewMessage(ProgressMessage, "Running NPM build script"))
 			task.SetProgress(NewServiceProgress("Running NPM build script"))
 			if err := np.cli.RunScript(ctx, serviceConfig.Path(), "build"); err != nil {
 				task.SetError(err)
@@ -100,68 +109,58 @@ func (np *npmProject) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	buildOutput *ServiceBuildResult,
-) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
-			packageDest, err := os.MkdirTemp("", "azd")
-			if err != nil {
-				task.SetError(fmt.Errorf("creating package directory for %s: %w", serviceConfig.Name, err))
-				return
-			}
+) (*ServicePackageResult, error) {
+	packageDest, err := os.MkdirTemp("", "azd")
+	if err != nil {
+		return nil, fmt.Errorf("creating package directory for %s: %w", serviceConfig.Name, err)
+	}
 
-			task.SetProgress(NewServiceProgress("Running NPM package script"))
+	// Exec custom `package` script if available
+	// If `package` script is not defined in the package.json the NPM script will NOT fail
+	np.publisher.Send(ctx, messaging.NewMessage(ProgressMessage, "Running NPM package script"))
 
-			// Long term this script we call should better align with our inner-loop scenarios
-			// Keeping this defaulted to `build` will create confusion for users when we start to support
-			// both local dev / debug builds and production bundled builds
-			if err := np.cli.RunScript(ctx, serviceConfig.Path(), "build"); err != nil {
-				task.SetError(err)
-				return
-			}
+	// Long term this script we call should better align with our inner-loop scenarios
+	// Keeping this defaulted to `build` will create confusion for users when we start to support
+	// both local dev / debug builds and production bundled builds
+	if err := np.cli.RunScript(ctx, serviceConfig.Path(), "build"); err != nil {
+		return nil, err
+	}
 
-			// Copy directory rooted by dist to package root.
-			packageSource := buildOutput.BuildOutputPath
-			if packageSource == "" {
-				packageSource = filepath.Join(serviceConfig.Path(), serviceConfig.OutputPath)
-			}
+	// Copy directory rooted by dist to package root.
+	packageSource := buildOutput.BuildOutputPath
+	if packageSource == "" {
+		packageSource = filepath.Join(serviceConfig.Path(), serviceConfig.OutputPath)
+	}
 
-			if entries, err := os.ReadDir(packageSource); err != nil || len(entries) == 0 {
-				task.SetError(
-					fmt.Errorf(
-						//nolint:lll
-						"package source '%s' is empty or does not exist. If your service has custom packaging requirements create an NPM script named 'build' within your package.json and ensure your package artifacts are written to the '%s' directory",
-						packageSource,
-						packageSource,
-					),
-				)
-				return
-			}
+	if entries, err := os.ReadDir(packageSource); err != nil || len(entries) == 0 {
+		return nil, fmt.Errorf(
+			//nolint:lll
+			"package source '%s' is empty or does not exist. If your service has custom packaging requirements create an NPM script named 'build' within your package.json and ensure your package artifacts are written to the '%s' directory",
+			packageSource,
+			packageSource,
+		)
+	}
 
-			task.SetProgress(NewServiceProgress("Copying deployment package"))
+	np.publisher.Send(ctx, messaging.NewMessage(ProgressMessage, "Copying deployment package"))
+	if err := buildForZip(
+		packageSource,
+		packageDest,
+		buildForZipOptions{
+			excludeConditions: []excludeDirEntryCondition{
+				excludeNodeModules,
+			},
+		}); err != nil {
+		return nil, fmt.Errorf("packaging for %s: %w", serviceConfig.Name, err)
+	}
 
-			if err := buildForZip(
-				packageSource,
-				packageDest,
-				buildForZipOptions{
-					excludeConditions: []excludeDirEntryCondition{
-						excludeNodeModules,
-					},
-				}); err != nil {
-				task.SetError(fmt.Errorf("packaging for %s: %w", serviceConfig.Name, err))
-				return
-			}
+	if err := validatePackageOutput(packageDest); err != nil {
+		return nil, err
+	}
 
-			if err := validatePackageOutput(packageDest); err != nil {
-				task.SetError(err)
-				return
-			}
-
-			task.SetResult(&ServicePackageResult{
-				Build:       buildOutput,
-				PackagePath: packageDest,
-			})
-		},
-	)
+	return &ServicePackageResult{
+		Build:       buildOutput,
+		PackagePath: packageDest,
+	}, nil
 }
 
 const cNodeModulesName = "node_modules"

@@ -22,6 +22,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
+	"github.com/azure/azure-dev/cli/azd/pkg/messaging"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
@@ -277,6 +278,13 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(azcli.NewSpringService)
 	container.RegisterSingleton(func() ioc.ServiceLocator {
 		return ioc.NewServiceLocator(container)
+	})
+	container.RegisterSingleton(messaging.NewService)
+	container.RegisterSingleton(func(msgSvc *messaging.Service) messaging.Publisher {
+		return msgSvc
+	})
+	container.RegisterSingleton(func(msgSvc *messaging.Service) messaging.Subscriber {
+		return msgSvc
 	})
 
 	container.RegisterSingleton(func(subManager *account.SubscriptionsManager) account.SubscriptionTenantResolver {

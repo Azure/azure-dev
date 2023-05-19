@@ -7,6 +7,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/messaging"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
 
@@ -23,7 +24,11 @@ const (
 	// Executes pre hooks
 	HookTypePre HookType = "pre"
 	// Execute post hooks
-	HookTypePost HookType = "post"
+	HookTypePost            HookType              = "post"
+	HookExecProgressMessage messaging.MessageKind = "HookExecProgressMessage"
+	HookExecDoneMessage     messaging.MessageKind = "HookExecDoneMessage"
+	HookExecErrorMessage    messaging.MessageKind = "HookExecErrorMessage"
+	HookExecWarningMessage  messaging.MessageKind = "HookExecWarningMessage"
 )
 
 var (

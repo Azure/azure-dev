@@ -19,6 +19,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/messaging"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -112,6 +113,7 @@ type deployAction struct {
 	middlewareRunner         middleware.MiddlewareContext
 	packageActionInitializer actions.ActionInitializer[*packageAction]
 	alphaFeatureManager      *alpha.FeatureManager
+	subscriber               messaging.Subscriber
 }
 
 func newDeployAction(
@@ -132,6 +134,7 @@ func newDeployAction(
 	middlewareRunner middleware.MiddlewareContext,
 	packageActionInitializer actions.ActionInitializer[*packageAction],
 	alphaFeatureManager *alpha.FeatureManager,
+	subscriber messaging.Subscriber,
 ) actions.Action {
 	return &deployAction{
 		flags:                    flags,
@@ -151,6 +154,7 @@ func newDeployAction(
 		middlewareRunner:         middlewareRunner,
 		packageActionInitializer: packageActionInitializer,
 		alphaFeatureManager:      alphaFeatureManager,
+		subscriber:               subscriber,
 	}
 }
 
@@ -214,10 +218,20 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 
 	startTime := time.Now()
 
+	var stepMessage string
+	progressFilter := func(msg *messaging.Message) bool {
+		return msg.Type == project.ProgressMessage
+	}
+	progressSubscription := da.subscriber.Subscribe(ctx, progressFilter, func(msg *messaging.Message) {
+		progressMessage := fmt.Sprintf("%s (%s)", stepMessage, msg.Value)
+		da.console.ShowSpinner(ctx, progressMessage, input.Step)
+	})
+	defer progressSubscription.Close(ctx)
+
 	deployResults := map[string]*project.ServiceDeployResult{}
 
 	for _, svc := range da.projectConfig.GetServicesStable() {
-		stepMessage := fmt.Sprintf("Deploying service %s", svc.Name)
+		stepMessage = fmt.Sprintf("Deploying service %s", svc.Name)
 
 		// Skip this service if both cases are true:
 		// 1. The user specified a service name
@@ -241,15 +255,7 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 			}
 		} else {
 			//  --from-package not set, package the application
-			packageTask := da.serviceManager.Package(ctx, svc, nil)
-			go func() {
-				for packageProgress := range packageTask.Progress() {
-					progressMessage := fmt.Sprintf("Deploying service %s (%s)", svc.Name, packageProgress.Message)
-					da.console.ShowSpinner(ctx, progressMessage, input.Step)
-				}
-			}()
-
-			packageResult, err = packageTask.Await()
+			packageResult, err = da.serviceManager.Package(ctx, svc, nil)
 			if err != nil {
 				da.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 				return nil, err

@@ -13,6 +13,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/messaging"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
@@ -66,6 +67,7 @@ type dockerProject struct {
 	docker          docker.Docker
 	framework       FrameworkService
 	containerHelper *ContainerHelper
+	publisher       messaging.Publisher
 }
 
 // NewDockerProject creates a new instance of a Azd project that
@@ -74,11 +76,13 @@ func NewDockerProject(
 	env *environment.Environment,
 	docker docker.Docker,
 	containerHelper *ContainerHelper,
+	publisher messaging.Publisher,
 ) CompositeFrameworkService {
 	return &dockerProject{
 		env:             env,
 		docker:          docker,
 		containerHelper: containerHelper,
+		publisher:       publisher,
 	}
 }
 
@@ -142,7 +146,7 @@ func (p *dockerProject) Build(
 			)
 
 			// Build the container
-			task.SetProgress(NewServiceProgress("Building Docker image"))
+			p.publisher.Send(ctx, messaging.NewMessage(ProgressMessage, "Building Docker image"))
 			imageId, err := p.docker.Build(
 				ctx,
 				serviceConfig.Path(),
@@ -173,39 +177,32 @@ func (p *dockerProject) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	buildOutput *ServiceBuildResult,
-) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
-			imageId := buildOutput.BuildOutputPath
-			if imageId == "" {
-				task.SetError(errors.New("missing container image id from build output"))
-				return
-			}
+) (*ServicePackageResult, error) {
+	imageId := buildOutput.BuildOutputPath
+	if imageId == "" {
+		return nil, errors.New("missing container image id from build output")
+	}
 
-			localTag, err := p.containerHelper.LocalImageTag(ctx, serviceConfig)
-			if err != nil {
-				task.SetError(fmt.Errorf("generating local image tag: %w", err))
-				return
-			}
+	localTag, err := p.containerHelper.LocalImageTag(ctx, serviceConfig)
+	if err != nil {
+		return nil, fmt.Errorf("generating local image tag: %w", err)
+	}
 
-			// Tag image.
-			log.Printf("tagging image %s as %s", imageId, localTag)
-			task.SetProgress(NewServiceProgress("Tagging Docker image"))
-			if err := p.docker.Tag(ctx, serviceConfig.Path(), imageId, localTag); err != nil {
-				task.SetError(fmt.Errorf("tagging image: %w", err))
-				return
-			}
+	// Tag image.
+	log.Printf("tagging image %s as %s", imageId, localTag)
+	p.publisher.Send(ctx, messaging.NewMessage(ProgressMessage, "Tagging Docker image"))
+	if err := p.docker.Tag(ctx, serviceConfig.Path(), imageId, localTag); err != nil {
+		return nil, fmt.Errorf("tagging image: %w", err)
+	}
 
-			task.SetResult(&ServicePackageResult{
-				Build:       buildOutput,
-				PackagePath: localTag,
-				Details: &dockerPackageResult{
-					ImageHash: imageId,
-					ImageTag:  localTag,
-				},
-			})
+	return &ServicePackageResult{
+		Build:       buildOutput,
+		PackagePath: localTag,
+		Details: &dockerPackageResult{
+			ImageHash: imageId,
+			ImageTag:  localTag,
 		},
-	)
+	}, nil
 }
 
 func getDockerOptionsWithDefaults(options DockerProjectOptions) DockerProjectOptions {

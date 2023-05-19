@@ -215,6 +215,9 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 			ActionResolver: newPackageAction,
 			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 			DefaultFormat:  output.NoneFormat,
+			TitleOptions: &actions.ActionTitleOptions{
+				Title: "Packaging services (azd package)",
+			},
 			HelpOptions: actions.ActionHelpOptions{
 				Description: getCmdPackageHelpDescription,
 				Footer:      getCmdPackageHelpFooter,
@@ -300,7 +303,8 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 		UseMiddleware("debug", middleware.NewDebugMiddleware).
 		UseMiddlewareWhen("telemetry", middleware.NewTelemetryMiddleware, func(descriptor *actions.ActionDescriptor) bool {
 			return !descriptor.Options.DisableTelemetry
-		})
+		}).
+		UseMiddleware("ux", middleware.NewUxMiddleware)
 
 	registerCommonDependencies(ioc.Global)
 	cobraBuilder := NewCobraBuilder(ioc.Global)

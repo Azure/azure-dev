@@ -19,6 +19,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
+	"github.com/azure/azure-dev/cli/azd/pkg/messaging"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
@@ -77,7 +78,7 @@ func Test_Package_Deploy_HappyPath(t *testing.T) {
 	err = setupK8sManifests(t, serviceConfig)
 	require.NoError(t, err)
 
-	packageTask := serviceTarget.Package(
+	packageResult, err := serviceTarget.Package(
 		*mockContext.Context,
 		serviceConfig,
 		&ServicePackageResult{
@@ -88,8 +89,6 @@ func Test_Package_Deploy_HappyPath(t *testing.T) {
 			},
 		},
 	)
-	logProgress(packageTask)
-	packageResult, err := packageTask.Await()
 
 	require.NoError(t, err)
 	require.NotNil(t, packageResult)
@@ -482,6 +481,7 @@ func createAksServiceTarget(
 		managedClustersService,
 		kubeCtl,
 		containerHelper,
+		messaging.NewService(),
 	)
 }
 

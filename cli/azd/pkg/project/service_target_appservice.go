@@ -13,24 +13,28 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
+	"github.com/azure/azure-dev/cli/azd/pkg/messaging"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
 type appServiceTarget struct {
-	env *environment.Environment
-	cli azcli.AzCli
+	env       *environment.Environment
+	cli       azcli.AzCli
+	publisher messaging.Publisher
 }
 
 // NewAppServiceTarget creates a new instance of the AppServiceTarget
 func NewAppServiceTarget(
 	env *environment.Environment,
 	azCli azcli.AzCli,
+	publisher messaging.Publisher,
 ) ServiceTarget {
 
 	return &appServiceTarget{
-		env: env,
-		cli: azCli,
+		env:       env,
+		cli:       azCli,
+		publisher: publisher,
 	}
 }
 
@@ -49,22 +53,17 @@ func (st *appServiceTarget) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
-) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
-			task.SetProgress(NewServiceProgress("Compressing deployment artifacts"))
-			zipFilePath, err := createDeployableZip(serviceConfig.Name, packageOutput.PackagePath)
-			if err != nil {
-				task.SetError(err)
-				return
-			}
+) (*ServicePackageResult, error) {
+	st.publisher.Send(ctx, messaging.NewMessage(ProgressMessage, "Compressing deployment artifacts"))
+	zipFilePath, err := createDeployableZip(serviceConfig.Name, packageOutput.PackagePath)
+	if err != nil {
+		return nil, err
+	}
 
-			task.SetResult(&ServicePackageResult{
-				Build:       packageOutput.Build,
-				PackagePath: zipFilePath,
-			})
-		},
-	)
+	return &ServicePackageResult{
+		Build:       packageOutput.Build,
+		PackagePath: zipFilePath,
+	}, nil
 }
 
 // Deploys the prepared zip archive using Zip deploy to the Azure App Service resource

@@ -13,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
+	"github.com/azure/azure-dev/cli/azd/pkg/messaging"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/npm"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -82,10 +83,10 @@ services:
 
 	done := make(chan bool)
 
-	internalFramework := NewNpmProject(npmCli, env)
+	internalFramework := NewNpmProject(npmCli, env, messaging.NewService())
 	progressMessages := []string{}
 
-	framework := NewDockerProject(env, docker, NewContainerHelper(env, clock.NewMock(), nil, docker))
+	framework := NewDockerProject(env, docker, NewContainerHelper(env, clock.NewMock(), nil, docker), messaging.NewService())
 	framework.SetSource(internalFramework)
 
 	buildTask := framework.Build(*mockContext.Context, service, nil)
@@ -171,10 +172,10 @@ services:
 
 	done := make(chan bool)
 
-	internalFramework := NewNpmProject(npmCli, env)
+	internalFramework := NewNpmProject(npmCli, env, messaging.NewService())
 	status := ""
 
-	framework := NewDockerProject(env, docker, NewContainerHelper(env, clock.NewMock(), nil, docker))
+	framework := NewDockerProject(env, docker, NewContainerHelper(env, clock.NewMock(), nil, docker), messaging.NewService())
 	framework.SetSource(internalFramework)
 
 	buildTask := framework.Build(*mockContext.Context, service, nil)
@@ -211,7 +212,12 @@ func Test_DockerProject_Build(t *testing.T) {
 	dockerCli := docker.NewDocker(mockContext.CommandRunner)
 	serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
 
-	dockerProject := NewDockerProject(env, dockerCli, NewContainerHelper(env, clock.NewMock(), nil, dockerCli))
+	dockerProject := NewDockerProject(
+		env,
+		dockerCli,
+		NewContainerHelper(env, clock.NewMock(), nil, dockerCli),
+		messaging.NewService(),
+	)
 	buildTask := dockerProject.Build(*mockContext.Context, serviceConfig, nil)
 	logProgress(buildTask)
 
@@ -256,17 +262,19 @@ func Test_DockerProject_Package(t *testing.T) {
 	dockerCli := docker.NewDocker(mockContext.CommandRunner)
 	serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
 
-	dockerProject := NewDockerProject(env, dockerCli, NewContainerHelper(env, clock.NewMock(), nil, dockerCli))
-	packageTask := dockerProject.Package(
+	dockerProject := NewDockerProject(
+		env,
+		dockerCli,
+		NewContainerHelper(env, clock.NewMock(), nil, dockerCli),
+		messaging.NewService(),
+	)
+	result, err := dockerProject.Package(
 		*mockContext.Context,
 		serviceConfig,
 		&ServiceBuildResult{
 			BuildOutputPath: "IMAGE_ID",
 		},
 	)
-	logProgress(packageTask)
-
-	result, err := packageTask.Await()
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.IsType(t, new(dockerPackageResult), result.Details)

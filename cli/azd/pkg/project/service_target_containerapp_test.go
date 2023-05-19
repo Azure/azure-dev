@@ -15,6 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
+	"github.com/azure/azure-dev/cli/azd/pkg/messaging"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -82,7 +83,7 @@ func Test_ContainerApp_Deploy(t *testing.T) {
 
 	serviceTarget := createContainerAppServiceTarget(mockContext, serviceConfig, env)
 
-	packageTask := serviceTarget.Package(
+	packageResult, err := serviceTarget.Package(
 		*mockContext.Context,
 		serviceConfig,
 		&ServicePackageResult{
@@ -93,8 +94,6 @@ func Test_ContainerApp_Deploy(t *testing.T) {
 			},
 		},
 	)
-	logProgress(packageTask)
-	packageResult, err := packageTask.Await()
 
 	require.NoError(t, err)
 	require.NotNil(t, packageResult)
@@ -140,6 +139,7 @@ func createContainerAppServiceTarget(
 		containerHelper,
 		containerAppService,
 		resourceManager,
+		messaging.NewService(),
 	)
 }
 

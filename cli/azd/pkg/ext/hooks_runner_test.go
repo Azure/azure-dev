@@ -9,6 +9,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/messaging"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/ostest"
@@ -67,7 +68,15 @@ func Test_Hooks_Execute(t *testing.T) {
 		})
 
 		hooksManager := NewHooksManager(cwd)
-		runner := NewHooksRunner(hooksManager, mockContext.CommandRunner, mockContext.Console, cwd, hooks, env)
+		runner := NewHooksRunner(
+			hooksManager,
+			mockContext.CommandRunner,
+			mockContext.Console,
+			cwd,
+			hooks,
+			env,
+			messaging.NewService(),
+		)
 		err := runner.RunHooks(*mockContext.Context, HookTypePre, "command")
 
 		require.True(t, ranPreHook)
@@ -93,7 +102,15 @@ func Test_Hooks_Execute(t *testing.T) {
 		})
 
 		hooksManager := NewHooksManager(cwd)
-		runner := NewHooksRunner(hooksManager, mockContext.CommandRunner, mockContext.Console, cwd, hooks, env)
+		runner := NewHooksRunner(
+			hooksManager,
+			mockContext.CommandRunner,
+			mockContext.Console,
+			cwd,
+			hooks,
+			env,
+			messaging.NewService(),
+		)
 		err := runner.RunHooks(*mockContext.Context, HookTypePost, "command")
 
 		require.False(t, ranPreHook)
@@ -119,7 +136,15 @@ func Test_Hooks_Execute(t *testing.T) {
 		})
 
 		hooksManager := NewHooksManager(cwd)
-		runner := NewHooksRunner(hooksManager, mockContext.CommandRunner, mockContext.Console, cwd, hooks, env)
+		runner := NewHooksRunner(
+			hooksManager,
+			mockContext.CommandRunner,
+			mockContext.Console,
+			cwd,
+			hooks,
+			env,
+			messaging.NewService(),
+		)
 		err := runner.RunHooks(*mockContext.Context, HookTypePre, "interactive")
 
 		require.False(t, ranPreHook)
@@ -141,7 +166,15 @@ func Test_Hooks_Execute(t *testing.T) {
 		})
 
 		hooksManager := NewHooksManager(cwd)
-		runner := NewHooksRunner(hooksManager, mockContext.CommandRunner, mockContext.Console, cwd, hooks, env)
+		runner := NewHooksRunner(
+			hooksManager,
+			mockContext.CommandRunner,
+			mockContext.Console,
+			cwd,
+			hooks,
+			env,
+			messaging.NewService(),
+		)
 		err := runner.RunHooks(*mockContext.Context, HookTypePre, "inline")
 
 		require.False(t, ranPreHook)
@@ -178,7 +211,15 @@ func Test_Hooks_Execute(t *testing.T) {
 		})
 
 		hooksManager := NewHooksManager(cwd)
-		runner := NewHooksRunner(hooksManager, mockContext.CommandRunner, mockContext.Console, cwd, hooks, env)
+		runner := NewHooksRunner(
+			hooksManager,
+			mockContext.CommandRunner,
+			mockContext.Console,
+			cwd,
+			hooks,
+			env,
+			messaging.NewService(),
+		)
 		err := runner.Invoke(*mockContext.Context, []string{"command"}, func() error {
 			ranAction = true
 			hookLog = append(hookLog, "action")
@@ -231,7 +272,15 @@ func Test_Hooks_GetScript(t *testing.T) {
 		hookConfig := hooks["bash"]
 		mockContext := mocks.NewMockContext(context.Background())
 		hooksManager := NewHooksManager(cwd)
-		runner := NewHooksRunner(hooksManager, mockContext.CommandRunner, mockContext.Console, cwd, hooks, env)
+		runner := NewHooksRunner(
+			hooksManager,
+			mockContext.CommandRunner,
+			mockContext.Console,
+			cwd,
+			hooks,
+			env,
+			messaging.NewService(),
+		)
 
 		script, err := runner.GetScript(hookConfig)
 		require.NotNil(t, script)
@@ -245,7 +294,15 @@ func Test_Hooks_GetScript(t *testing.T) {
 		hookConfig := hooks["pwsh"]
 		mockContext := mocks.NewMockContext(context.Background())
 		hooksManager := NewHooksManager(cwd)
-		runner := NewHooksRunner(hooksManager, mockContext.CommandRunner, mockContext.Console, cwd, hooks, env)
+		runner := NewHooksRunner(
+			hooksManager,
+			mockContext.CommandRunner,
+			mockContext.Console,
+			cwd,
+			hooks,
+			env,
+			messaging.NewService(),
+		)
 
 		script, err := runner.GetScript(hookConfig)
 		require.NotNil(t, script)
@@ -262,7 +319,15 @@ func Test_Hooks_GetScript(t *testing.T) {
 		hookConfig := hooks["inline"]
 		mockContext := mocks.NewMockContext(context.Background())
 		hooksManager := NewHooksManager(cwd)
-		runner := NewHooksRunner(hooksManager, mockContext.CommandRunner, mockContext.Console, cwd, hooks, env)
+		runner := NewHooksRunner(
+			hooksManager,
+			mockContext.CommandRunner,
+			mockContext.Console,
+			cwd,
+			hooks,
+			env,
+			messaging.NewService(),
+		)
 
 		script, err := runner.GetScript(hookConfig)
 		require.NotNil(t, script)
@@ -304,6 +369,7 @@ func Test_GetScript_Validation(t *testing.T) {
 		tempDir,
 		map[string]*HookConfig{},
 		env,
+		messaging.NewService(),
 	)
 
 	scriptValidations := []scriptValidationTest{

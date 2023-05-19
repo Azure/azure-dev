@@ -9,6 +9,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/messaging"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/javac"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/maven"
@@ -19,17 +20,24 @@ import (
 const AppServiceJavaPackageName = "app"
 
 type mavenProject struct {
-	env      *environment.Environment
-	mavenCli maven.MavenCli
-	javacCli javac.JavacCli
+	env       *environment.Environment
+	mavenCli  maven.MavenCli
+	javacCli  javac.JavacCli
+	publisher messaging.Publisher
 }
 
 // NewMavenProject creates a new instance of a maven project
-func NewMavenProject(env *environment.Environment, mavenCli maven.MavenCli, javaCli javac.JavacCli) FrameworkService {
+func NewMavenProject(
+	env *environment.Environment,
+	mavenCli maven.MavenCli,
+	javaCli javac.JavacCli,
+	publisher messaging.Publisher,
+) FrameworkService {
 	return &mavenProject{
-		env:      env,
-		mavenCli: mavenCli,
-		javacCli: javaCli,
+		env:       env,
+		mavenCli:  mavenCli,
+		javacCli:  javaCli,
+		publisher: publisher,
 	}
 }
 
@@ -101,75 +109,65 @@ func (m *mavenProject) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	buildOutput *ServiceBuildResult,
-) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
-			packageDest, err := os.MkdirTemp("", "azd")
-			if err != nil {
-				task.SetError(fmt.Errorf("creating staging directory: %w", err))
-				return
-			}
+) (*ServicePackageResult, error) {
+	packageDest, err := os.MkdirTemp("", "azd")
+	if err != nil {
+		return nil, fmt.Errorf("creating staging directory: %w", err)
+	}
 
-			task.SetProgress(NewServiceProgress("Packaging maven project"))
-			if err := m.mavenCli.Package(ctx, serviceConfig.Path()); err != nil {
-				task.SetError(err)
-				return
-			}
+	m.publisher.Send(ctx, messaging.NewMessage(ProgressMessage, "Packaging maven project"))
+	if err := m.mavenCli.Package(ctx, serviceConfig.Path()); err != nil {
+		return nil, err
+	}
 
-			packageSrcPath := buildOutput.BuildOutputPath
-			if packageSrcPath == "" {
-				packageSrcPath = serviceConfig.Path()
-			}
+	packageSrcPath := buildOutput.BuildOutputPath
+	if packageSrcPath == "" {
+		packageSrcPath = serviceConfig.Path()
+	}
 
-			if serviceConfig.OutputPath != "" {
-				packageSrcPath = filepath.Join(packageSrcPath, serviceConfig.OutputPath)
-			} else {
-				packageSrcPath = filepath.Join(packageSrcPath, "target")
-			}
+	if serviceConfig.OutputPath != "" {
+		packageSrcPath = filepath.Join(packageSrcPath, serviceConfig.OutputPath)
+	} else {
+		packageSrcPath = filepath.Join(packageSrcPath, "target")
+	}
 
-			packageSrcFileInfo, err := os.Stat(packageSrcPath)
-			if err != nil {
-				if serviceConfig.OutputPath == "" {
-					task.SetError(fmt.Errorf("reading default maven target path %s: %w", packageSrcPath, err))
-				} else {
-					task.SetError(fmt.Errorf("reading dist path %s: %w", packageSrcPath, err))
-				}
-				return
-			}
+	packageSrcFileInfo, err := os.Stat(packageSrcPath)
+	if err != nil {
+		if serviceConfig.OutputPath == "" {
+			return nil, fmt.Errorf("reading default maven target path %s: %w", packageSrcPath, err)
+		} else {
+			return nil, fmt.Errorf("reading dist path %s: %w", packageSrcPath, err)
+		}
+	}
 
-			archive := ""
-			if packageSrcFileInfo.IsDir() {
-				archive, err = m.discoverArchive(packageSrcPath)
-				if err != nil {
-					task.SetError(err)
-					return
-				}
-			} else {
-				archive = packageSrcPath
-				if !isSupportedJavaArchive(archive) {
-					ext := filepath.Ext(archive)
-					task.SetError(
-						fmt.Errorf(
-							//nolint:lll
-							"file %s with extension %s is not a supported java archive file (.ear, .war, .jar)", ext, archive))
-					return
-				}
-			}
+	archive := ""
+	if packageSrcFileInfo.IsDir() {
+		archive, err = m.discoverArchive(packageSrcPath)
+		if err != nil {
+			return nil, err
+		}
+	} else {
+		archive = packageSrcPath
+		if !isSupportedJavaArchive(archive) {
+			ext := filepath.Ext(archive)
+			return nil, fmt.Errorf(
+				//nolint:lll
+				"file %s with extension %s is not a supported java archive file (.ear, .war, .jar)", ext, archive,
+			)
+		}
+	}
 
-			task.SetProgress(NewServiceProgress("Copying deployment package"))
-			ext := strings.ToLower(filepath.Ext(archive))
-			err = copy.Copy(archive, filepath.Join(packageDest, AppServiceJavaPackageName+ext))
-			if err != nil {
-				task.SetError(fmt.Errorf("copying to staging directory failed: %w", err))
-				return
-			}
+	m.publisher.Send(ctx, messaging.NewMessage(ProgressMessage, "Copying deployment package"))
+	ext := strings.ToLower(filepath.Ext(archive))
+	err = copy.Copy(archive, filepath.Join(packageDest, AppServiceJavaPackageName+ext))
+	if err != nil {
+		return nil, fmt.Errorf("copying to staging directory failed: %w", err)
+	}
 
-			task.SetResult(&ServicePackageResult{
-				Build:       buildOutput,
-				PackagePath: packageDest,
-			})
-		},
-	)
+	return &ServicePackageResult{
+		Build:       buildOutput,
+		PackagePath: packageDest,
+	}, nil
 }
 
 func isSupportedJavaArchive(archiveFile string) bool {

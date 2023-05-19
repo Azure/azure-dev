@@ -10,6 +10,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/messaging"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bash"
@@ -25,6 +26,7 @@ type HooksRunner struct {
 	cwd           string
 	hooks         map[string]*HookConfig
 	env           *environment.Environment
+	publisher     messaging.Publisher
 }
 
 // NewHooks creates a new instance of CommandHooks
@@ -36,6 +38,7 @@ func NewHooksRunner(
 	cwd string,
 	hooks map[string]*HookConfig,
 	env *environment.Environment,
+	publisher messaging.Publisher,
 ) *HooksRunner {
 	if cwd == "" {
 		osWd, err := os.Getwd()
@@ -53,6 +56,7 @@ func NewHooksRunner(
 		cwd:           cwd,
 		hooks:         hooks,
 		env:           env,
+		publisher:     publisher,
 	}
 }
 
@@ -131,23 +135,12 @@ func (h *HooksRunner) execHook(ctx context.Context, hookConfig *HookConfig) erro
 	consoleInteractive := formatter == nil || formatter.Kind() == output.NoneFormat
 	scriptInteractive := consoleInteractive && hookConfig.Interactive
 
-	// When running in an interactive terminal broadcast a message to the dev to remind them that custom hooks are running.
-	if consoleInteractive {
-		h.console.Message(
-			ctx,
-			output.WithBold(
-				fmt.Sprintf(
-					"Executing %s hook => %s",
-					output.WithHighLightFormat(hookConfig.Name),
-					output.WithHighLightFormat(hookConfig.path),
-				),
-			),
-		)
-	}
+	h.publisher.Send(ctx, messaging.NewMessage(HookExecProgressMessage, hookConfig))
 
 	log.Printf("Executing script '%s'\n", hookConfig.path)
 	res, err := script.Execute(ctx, hookConfig.path, scriptInteractive)
 	if err != nil {
+		h.publisher.Send(ctx, messaging.NewMessage(HookExecErrorMessage, hookConfig))
 		execErr := fmt.Errorf(
 			"'%s' hook failed with exit code: '%d', Path: '%s'. : %w",
 			hookConfig.Name,
@@ -158,16 +151,13 @@ func (h *HooksRunner) execHook(ctx context.Context, hookConfig *HookConfig) erro
 
 		// If an error occurred log the failure but continue
 		if hookConfig.ContinueOnError {
-			h.console.Message(ctx, output.WithBold(output.WithWarningFormat("WARNING: %s", execErr.Error())))
-			h.console.Message(
-				ctx,
-				output.WithWarningFormat("Execution will continue since ContinueOnError has been set to true."),
-			)
-			log.Println(execErr.Error())
+			h.publisher.Send(ctx, messaging.NewMessage(HookExecWarningMessage, hookConfig))
 		} else {
 			return execErr
 		}
 	}
+
+	h.publisher.Send(ctx, messaging.NewMessage(HookExecDoneMessage, hookConfig))
 
 	// Delete any temporary inline scripts after execution
 	// Removing temp scripts only on success to support better debugging with failing scripts.

@@ -94,7 +94,7 @@ type FrameworkService interface {
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
 		buildOutput *ServiceBuildResult,
-	) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress]
+	) (*ServicePackageResult, error)
 }
 
 // CompositeFrameworkService is a framework service that requires a nested

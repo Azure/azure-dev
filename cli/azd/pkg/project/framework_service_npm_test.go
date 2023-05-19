@@ -9,6 +9,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/messaging"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/npm"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -33,7 +34,7 @@ func Test_NpmProject_Restore(t *testing.T) {
 	npmCli := npm.NewNpmCli(mockContext.CommandRunner)
 	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageTypeScript)
 
-	npmProject := NewNpmProject(npmCli, env)
+	npmProject := NewNpmProject(npmCli, env, messaging.NewService())
 	restoreTask := npmProject.Restore(*mockContext.Context, serviceConfig)
 	logProgress(restoreTask)
 
@@ -65,7 +66,7 @@ func Test_NpmProject_Build(t *testing.T) {
 	npmCli := npm.NewNpmCli(mockContext.CommandRunner)
 	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageTypeScript)
 
-	npmProject := NewNpmProject(npmCli, env)
+	npmProject := NewNpmProject(npmCli, env, messaging.NewService())
 	buildTask := npmProject.Build(*mockContext.Context, serviceConfig, nil)
 	logProgress(buildTask)
 
@@ -103,17 +104,14 @@ func Test_NpmProject_Package(t *testing.T) {
 	err = os.WriteFile(filepath.Join(serviceConfig.Path(), "package.json"), nil, osutil.PermissionFile)
 	require.NoError(t, err)
 
-	npmProject := NewNpmProject(npmCli, env)
-	packageTask := npmProject.Package(
+	npmProject := NewNpmProject(npmCli, env, messaging.NewService())
+	result, err := npmProject.Package(
 		*mockContext.Context,
 		serviceConfig,
 		&ServiceBuildResult{
 			BuildOutputPath: serviceConfig.Path(),
 		},
 	)
-	logProgress(packageTask)
-
-	result, err := packageTask.Await()
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.NotEmpty(t, result.PackagePath)

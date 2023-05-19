@@ -125,6 +125,11 @@ type ActionHelpOptions struct {
 	Footer      ActionHelpGenerator
 }
 
+type ActionTitleOptions struct {
+	Title       string
+	Description string
+}
+
 // RootLevelHelpOption describe a group where the command belongs. The types are later used by cmd package to
 // annotate the command.
 type RootLevelHelpOption string
@@ -186,6 +191,8 @@ type ActionDescriptorOptions struct {
 	HelpOptions ActionHelpOptions
 	// Defines grouping options for the command
 	GroupingOptions CommandGroupOptions
+	// Defines the title options for the command
+	TitleOptions *ActionTitleOptions
 }
 
 // Completion function used for cobra command flag completion

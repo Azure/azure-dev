@@ -9,7 +9,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/messaging"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -66,6 +68,7 @@ type packageAction struct {
 	console        input.Console
 	formatter      output.Formatter
 	writer         io.Writer
+	subscriber     messaging.Subscriber
 }
 
 func newPackageAction(
@@ -77,6 +80,7 @@ func newPackageAction(
 	console input.Console,
 	formatter output.Formatter,
 	writer io.Writer,
+	subscriber messaging.Subscriber,
 ) actions.Action {
 	return &packageAction{
 		flags:          flags,
@@ -87,6 +91,7 @@ func newPackageAction(
 		console:        console,
 		formatter:      formatter,
 		writer:         writer,
+		subscriber:     subscriber,
 	}
 }
 
@@ -96,11 +101,6 @@ type PackageResult struct {
 }
 
 func (pa *packageAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	// Command title
-	pa.console.MessageUxItem(ctx, &ux.MessageTitle{
-		Title: "Packaging services (azd package)",
-	})
-
 	startTime := time.Now()
 
 	targetServiceName := ""
@@ -130,10 +130,41 @@ func (pa *packageAction) Run(ctx context.Context) (*actions.ActionResult, error)
 		return nil, err
 	}
 
+	var stepMessage string
+	progressFilter := func(msg *messaging.Message) bool {
+		switch msg.Type {
+		case project.ProgressMessage,
+			ext.HookExecProgressMessage,
+			ext.HookExecDoneMessage,
+			ext.HookExecErrorMessage:
+			return true
+		default:
+			return false
+		}
+	}
+	progressSubscription := pa.subscriber.Subscribe(ctx, progressFilter, func(msg *messaging.Message) {
+		msg.Tags["handled"] = true
+
+		var statusMessage string
+		switch msg.Type {
+		case project.ProgressMessage:
+			statusMessage = msg.Value.(string)
+		case ext.HookExecProgressMessage:
+			hookConfig := msg.Value.(*ext.HookConfig)
+			statusMessage = fmt.Sprintf("Executing '%s' service hook", hookConfig.Name)
+		case ext.HookExecDoneMessage, ext.HookExecErrorMessage:
+			return
+		}
+
+		progressMessage := fmt.Sprintf("%s (%s)", stepMessage, statusMessage)
+		pa.console.ShowSpinner(ctx, progressMessage, input.Step)
+	})
+	defer progressSubscription.Close(ctx)
+
 	packageResults := map[string]*project.ServicePackageResult{}
 
 	for _, svc := range pa.projectConfig.GetServicesStable() {
-		stepMessage := fmt.Sprintf("Packaging service %s", svc.Name)
+		stepMessage = fmt.Sprintf("Packaging service %s", svc.Name)
 		pa.console.ShowSpinner(ctx, stepMessage, input.Step)
 
 		// Skip this service if both cases are true:
@@ -144,15 +175,7 @@ func (pa *packageAction) Run(ctx context.Context) (*actions.ActionResult, error)
 			continue
 		}
 
-		packageTask := pa.serviceManager.Package(ctx, svc, nil)
-		go func() {
-			for packageProgress := range packageTask.Progress() {
-				progressMessage := fmt.Sprintf("Packaging service %s (%s)", svc.Name, packageProgress.Message)
-				pa.console.ShowSpinner(ctx, progressMessage, input.Step)
-			}
-		}()
-
-		packageResult, err := packageTask.Await()
+		packageResult, err := pa.serviceManager.Package(ctx, svc, nil)
 		if err != nil {
 			pa.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 			return nil, err

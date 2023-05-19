@@ -17,6 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/messaging"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockarmresources"
@@ -49,7 +50,7 @@ func createServiceManager(mockContext *mocks.MockContext, env *environment.Envir
 			},
 		}))
 
-	return NewServiceManager(env, resourceManager, serviceLocator, alphaManager)
+	return NewServiceManager(env, resourceManager, serviceLocator, alphaManager, messaging.NewService())
 }
 
 func Test_ServiceManager_GetRequiredTools(t *testing.T) {
@@ -169,10 +170,7 @@ func Test_ServiceManager_Package(t *testing.T) {
 	ctx := context.WithValue(*mockContext.Context, frameworkPackageCalled, fakeFrameworkPackageCalled)
 	ctx = context.WithValue(ctx, serviceTargetPackageCalled, fakeServiceTargetPackageCalled)
 
-	packageTask := sm.Package(ctx, serviceConfig, nil)
-	logProgress(packageTask)
-
-	result, err := packageTask.Await()
+	result, err := sm.Package(ctx, serviceConfig, nil)
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.True(t, *fakeFrameworkPackageCalled)
@@ -295,9 +293,7 @@ func Test_ServiceManager_Events_With_Errors(t *testing.T) {
 		{
 			name: "package",
 			run: func(ctx context.Context, serviceManager ServiceManager, serviceConfig *ServiceConfig) (any, error) {
-				packageTask := serviceManager.Package(ctx, serviceConfig, nil)
-				logProgress(packageTask)
-				return packageTask.Await()
+				return serviceManager.Package(ctx, serviceConfig, nil)
 			},
 		},
 		{
@@ -480,25 +476,22 @@ func (f *fakeFramework) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	buildOutput *ServiceBuildResult,
-) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
+) (*ServicePackageResult, error) {
 	packageCalled, ok := ctx.Value(frameworkPackageCalled).(*bool)
 	if ok {
 		*packageCalled = true
 	}
 
-	return async.RunTaskWithProgress(func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
-		runArgs := exec.NewRunArgs("fake-framework", "package")
-		result, err := f.commandRunner.Run(ctx, runArgs)
-		if err != nil {
-			task.SetError(err)
-			return
-		}
+	runArgs := exec.NewRunArgs("fake-framework", "package")
+	result, err := f.commandRunner.Run(ctx, runArgs)
+	if err != nil {
+		return nil, err
+	}
 
-		task.SetResult(&ServicePackageResult{
-			Build:   buildOutput,
-			Details: result,
-		})
-	})
+	return &ServicePackageResult{
+		Build:   buildOutput,
+		Details: result,
+	}, nil
 }
 
 // Fake implementation of a service target
@@ -524,25 +517,22 @@ func (st *fakeServiceTarget) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
-) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
+) (*ServicePackageResult, error) {
 	packageCalled, ok := ctx.Value(serviceTargetPackageCalled).(*bool)
 	if ok {
 		*packageCalled = true
 	}
 
-	return async.RunTaskWithProgress(func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
-		runArgs := exec.NewRunArgs("fake-service-target", "package")
-		result, err := st.commandRunner.Run(ctx, runArgs)
-		if err != nil {
-			task.SetError(err)
-			return
-		}
+	runArgs := exec.NewRunArgs("fake-service-target", "package")
+	result, err := st.commandRunner.Run(ctx, runArgs)
+	if err != nil {
+		return nil, err
+	}
 
-		task.SetResult(&ServicePackageResult{
-			Build:   packageOutput.Build,
-			Details: result,
-		})
-	})
+	return &ServicePackageResult{
+		Build:   packageOutput.Build,
+		Details: result,
+	}, nil
 }
 
 func (st *fakeServiceTarget) Deploy(

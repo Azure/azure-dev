@@ -54,7 +54,7 @@ type ServiceTarget interface {
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
 		frameworkPackageOutput *ServicePackageResult,
-	) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress]
+	) (*ServicePackageResult, error)
 
 	// Deploys the given deployment artifact to the target resource
 	Deploy(

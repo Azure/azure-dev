@@ -14,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/messaging"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 )
@@ -25,16 +26,19 @@ const (
 type dotnetProject struct {
 	env       *environment.Environment
 	dotnetCli dotnet.DotNetCli
+	publisher messaging.Publisher
 }
 
 // NewDotNetProject creates a new instance of a dotnet project
 func NewDotNetProject(
 	dotNetCli dotnet.DotNetCli,
 	env *environment.Environment,
+	publisher messaging.Publisher,
 ) FrameworkService {
 	return &dotnetProject{
 		env:       env,
 		dotnetCli: dotNetCli,
+		publisher: publisher,
 	}
 }
 
@@ -79,6 +83,7 @@ func (dp *dotnetProject) Restore(
 ) *async.TaskWithProgress[*ServiceRestoreResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServiceRestoreResult, ServiceProgress]) {
+			dp.publisher.Send(ctx, messaging.NewMessage(ProgressMessage, "Restoring .NET project dependencies"))
 			task.SetProgress(NewServiceProgress("Restoring .NET project dependencies"))
 			projFile, err := findProjectFile(serviceConfig.Name, serviceConfig.Path())
 			if err != nil {
@@ -103,6 +108,7 @@ func (dp *dotnetProject) Build(
 ) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServiceBuildResult, ServiceProgress]) {
+			dp.publisher.Send(ctx, messaging.NewMessage(ProgressMessage, "Building .NET project"))
 			task.SetProgress(NewServiceProgress("Building .NET project"))
 			projFile, err := findProjectFile(serviceConfig.Name, serviceConfig.Path())
 			if err != nil {
@@ -144,41 +150,33 @@ func (dp *dotnetProject) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	buildOutput *ServiceBuildResult,
-) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
-			packageDest, err := os.MkdirTemp("", "azd")
-			if err != nil {
-				task.SetError(fmt.Errorf("creating package directory for %s: %w", serviceConfig.Name, err))
-				return
-			}
+) (*ServicePackageResult, error) {
+	packageDest, err := os.MkdirTemp("", "azd")
+	if err != nil {
+		return nil, fmt.Errorf("creating package directory for %s: %w", serviceConfig.Name, err)
+	}
 
-			task.SetProgress(NewServiceProgress("Publishing .NET project"))
-			projFile, err := findProjectFile(serviceConfig.Name, serviceConfig.Path())
-			if err != nil {
-				task.SetError(err)
-				return
-			}
-			if err := dp.dotnetCli.Publish(ctx, projFile, defaultDotNetBuildConfiguration, packageDest); err != nil {
-				task.SetError(err)
-				return
-			}
+	dp.publisher.Send(ctx, messaging.NewMessage(ProgressMessage, "Publishing .NET project"))
+	projFile, err := findProjectFile(serviceConfig.Name, serviceConfig.Path())
+	if err != nil {
+		return nil, err
+	}
+	if err := dp.dotnetCli.Publish(ctx, projFile, defaultDotNetBuildConfiguration, packageDest); err != nil {
+		return nil, err
+	}
 
-			if serviceConfig.OutputPath != "" {
-				packageDest = filepath.Join(packageDest, serviceConfig.OutputPath)
-			}
+	if serviceConfig.OutputPath != "" {
+		packageDest = filepath.Join(packageDest, serviceConfig.OutputPath)
+	}
 
-			if err := validatePackageOutput(packageDest); err != nil {
-				task.SetError(err)
-				return
-			}
+	if err := validatePackageOutput(packageDest); err != nil {
+		return nil, err
+	}
 
-			task.SetResult(&ServicePackageResult{
-				Build:       buildOutput,
-				PackagePath: packageDest,
-			})
-		},
-	)
+	return &ServicePackageResult{
+		Build:       buildOutput,
+		PackagePath: packageDest,
+	}, nil
 }
 
 func (dp *dotnetProject) setUserSecretsFromOutputs(

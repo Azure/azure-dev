@@ -11,6 +11,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/messaging"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
 
@@ -68,7 +69,7 @@ type ServiceManager interface {
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
 		buildOutput *ServiceBuildResult,
-	) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress]
+	) (*ServicePackageResult, error)
 
 	// Deploys the generated artifacts to the Azure resource that will
 	// host the service application
@@ -96,6 +97,7 @@ type serviceManager struct {
 	serviceLocator      ioc.ServiceLocator
 	operationCache      map[string]any
 	alphaFeatureManager *alpha.FeatureManager
+	publisher       messaging.Publisher
 }
 
 // NewServiceManager creates a new instance of the ServiceManager component
@@ -104,6 +106,7 @@ func NewServiceManager(
 	resourceManager ResourceManager,
 	serviceLocator ioc.ServiceLocator,
 	alphaFeatureManager *alpha.FeatureManager,
+	publisher messaging.Publisher,
 ) ServiceManager {
 	return &serviceManager{
 		env:                 env,
@@ -111,6 +114,7 @@ func NewServiceManager(
 		serviceLocator:      serviceLocator,
 		operationCache:      map[string]any{},
 		alphaFeatureManager: alphaFeatureManager,
+		publisher:       publisher,
 	}
 }
 
@@ -256,113 +260,99 @@ func (sm *serviceManager) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	buildOutput *ServiceBuildResult,
-) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
-	return async.RunTaskWithProgress(func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
-		cachedResult, ok := sm.getOperationResult(ctx, serviceConfig, string(ServiceEventPackage))
+) (*ServicePackageResult, error) {
+	cachedResult, ok := sm.getOperationResult(ctx, serviceConfig, string(ServiceEventPackage))
+	if ok && cachedResult != nil {
+		return cachedResult.(*ServicePackageResult), nil
+	}
+
+	if buildOutput == nil {
+		cachedResult, ok := sm.getOperationResult(ctx, serviceConfig, string(ServiceEventBuild))
 		if ok && cachedResult != nil {
-			task.SetResult(cachedResult.(*ServicePackageResult))
-			return
+			buildOutput = cachedResult.(*ServiceBuildResult)
 		}
+	}
 
-		if buildOutput == nil {
-			cachedResult, ok := sm.getOperationResult(ctx, serviceConfig, string(ServiceEventBuild))
-			if ok && cachedResult != nil {
-				buildOutput = cachedResult.(*ServiceBuildResult)
-			}
-		}
+	frameworkService, err := sm.GetFrameworkService(ctx, serviceConfig)
+	if err != nil {
+		return nil, fmt.Errorf("getting framework service: %w", err)
+	}
 
-		frameworkService, err := sm.GetFrameworkService(ctx, serviceConfig)
+	serviceTarget, err := sm.GetServiceTarget(ctx, serviceConfig)
+	if err != nil {
+		return nil, fmt.Errorf("getting service target: %w", err)
+	}
+
+	eventArgs := ServiceLifecycleEventArgs{
+		Project: serviceConfig.Project,
+		Service: serviceConfig,
+	}
+
+	hasBuildOutput := buildOutput != nil
+	restoreResult := &ServiceRestoreResult{}
+
+	// Get the language / framework requirements
+	frameworkRequirements := frameworkService.Requirements()
+
+	// When a previous restore result was not provided, and we require it
+	// Then we need to restore the dependencies
+	if frameworkRequirements.Package.RequireRestore && (!hasBuildOutput || buildOutput.Restore == nil) {
+		restoreTask := sm.Restore(ctx, serviceConfig)
+		publishProgress(ctx, sm.publisher, restoreTask.Progress())
+
+		restoreTaskResult, err := restoreTask.Await()
 		if err != nil {
-			task.SetError(fmt.Errorf("getting framework service: %w", err))
-			return
+			return nil, err
 		}
 
-		serviceTarget, err := sm.GetServiceTarget(ctx, serviceConfig)
+		restoreResult = restoreTaskResult
+	}
+
+	buildResult := &ServiceBuildResult{}
+
+	// When a previous build result was not provided, and we require it
+	// Then we need to build the project
+	if frameworkRequirements.Package.RequireBuild && !hasBuildOutput {
+		buildTask := sm.Build(ctx, serviceConfig, restoreResult)
+		publishProgress(ctx, sm.publisher, buildTask.Progress())
+
+		buildTaskResult, err := buildTask.Await()
 		if err != nil {
-			task.SetError(fmt.Errorf("getting service target: %w", err))
-			return
+			return nil, err
 		}
 
-		eventArgs := ServiceLifecycleEventArgs{
-			Project: serviceConfig.Project,
-			Service: serviceConfig,
-		}
+		buildResult = buildTaskResult
+	}
 
-		hasBuildOutput := buildOutput != nil
-		restoreResult := &ServiceRestoreResult{}
+	if !hasBuildOutput {
+		buildOutput = buildResult
+		buildOutput.Restore = restoreResult
+	}
 
-		// Get the language / framework requirements
-		frameworkRequirements := frameworkService.Requirements()
+	var packageResult *ServicePackageResult
 
-		// When a previous restore result was not provided, and we require it
-		// Then we need to restore the dependencies
-		if frameworkRequirements.Package.RequireRestore && (!hasBuildOutput || buildOutput.Restore == nil) {
-			restoreTask := sm.Restore(ctx, serviceConfig)
-			syncProgress(task, restoreTask.Progress())
-
-			restoreTaskResult, err := restoreTask.Await()
-			if err != nil {
-				task.SetError(err)
-				return
-			}
-
-			restoreResult = restoreTaskResult
-		}
-
-		buildResult := &ServiceBuildResult{}
-
-		// When a previous build result was not provided, and we require it
-		// Then we need to build the project
-		if frameworkRequirements.Package.RequireBuild && !hasBuildOutput {
-			buildTask := sm.Build(ctx, serviceConfig, restoreResult)
-			syncProgress(task, buildTask.Progress())
-
-			buildTaskResult, err := buildTask.Await()
-			if err != nil {
-				task.SetError(err)
-				return
-			}
-
-			buildResult = buildTaskResult
-		}
-
-		if !hasBuildOutput {
-			buildOutput = buildResult
-			buildOutput.Restore = restoreResult
-		}
-
-		var packageResult *ServicePackageResult
-
-		err = serviceConfig.Invoke(ctx, ServiceEventPackage, eventArgs, func() error {
-			frameworkPackageTask := frameworkService.Package(ctx, serviceConfig, buildOutput)
-			syncProgress(task, frameworkPackageTask.Progress())
-
-			frameworkPackageResult, err := frameworkPackageTask.Await()
-			if err != nil {
-				return err
-			}
-
-			serviceTargetPackageTask := serviceTarget.Package(ctx, serviceConfig, frameworkPackageResult)
-			syncProgress(task, serviceTargetPackageTask.Progress())
-
-			serviceTargetPackageResult, err := serviceTargetPackageTask.Await()
-			if err != nil {
-				return err
-			}
-
-			packageResult = serviceTargetPackageResult
-			sm.setOperationResult(ctx, serviceConfig, string(ServiceEventPackage), packageResult)
-
-			return nil
-		})
-
+	err = serviceConfig.Invoke(ctx, ServiceEventPackage, eventArgs, func() error {
+		frameworkPackageResult, err := frameworkService.Package(ctx, serviceConfig, buildOutput)
 		if err != nil {
-			task.SetError(fmt.Errorf("failed packaging service '%s': %w", serviceConfig.Name, err))
-			return
+			return err
 		}
 
-		task.SetResult(packageResult)
+		serviceTargetPackageResult, err := serviceTarget.Package(ctx, serviceConfig, frameworkPackageResult)
+		if err != nil {
+			return err
+		}
+
+		packageResult = serviceTargetPackageResult
+		sm.setOperationResult(ctx, serviceConfig, string(ServiceEventPackage), packageResult)
+
+		return nil
 	})
+
+	if err != nil {
+		return nil, fmt.Errorf("failed packaging service '%s': %w", serviceConfig.Name, err)
+	}
+
+	return packageResult, nil
 }
 
 // Deploys the generated artifacts to the Azure resource that will host the service application
@@ -567,5 +557,12 @@ func runCommand[T comparable, P comparable](
 func syncProgress[T comparable, P comparable](task *async.TaskContextWithProgress[T, P], progressChannel <-chan P) {
 	for progress := range progressChannel {
 		task.SetProgress(progress)
+	}
+}
+
+// This method is to only support the transition between task progress and pub/sub topics
+func publishProgress(ctx context.Context, publisher messaging.Publisher, progress <-chan ServiceProgress) {
+	for msg := range progress {
+		publisher.Send(ctx, messaging.NewMessage(ProgressMessage, msg.Message))
 	}
 }

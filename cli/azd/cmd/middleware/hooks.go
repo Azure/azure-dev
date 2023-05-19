@@ -12,6 +12,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
+	"github.com/azure/azure-dev/cli/azd/pkg/messaging"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 )
 
@@ -24,6 +25,7 @@ type HooksMiddleware struct {
 	lazyProjectConfig *lazy.Lazy[*project.ProjectConfig]
 	commandRunner     exec.CommandRunner
 	console           input.Console
+	publisher         messaging.Publisher
 	options           *Options
 }
 
@@ -33,6 +35,7 @@ func NewHooksMiddleware(
 	projectConfig *lazy.Lazy[*project.ProjectConfig],
 	commandRunner exec.CommandRunner,
 	console input.Console,
+	publisher messaging.Publisher,
 	options *Options,
 ) Middleware {
 	return &HooksMiddleware{
@@ -40,6 +43,7 @@ func NewHooksMiddleware(
 		lazyProjectConfig: projectConfig,
 		commandRunner:     commandRunner,
 		console:           console,
+		publisher:         publisher,
 		options:           options,
 	}
 }
@@ -91,6 +95,7 @@ func (m *HooksMiddleware) registerCommandHooks(
 		projectConfig.Path,
 		projectConfig.Hooks,
 		env,
+		m.publisher,
 	)
 
 	var actionResult *actions.ActionResult
@@ -143,6 +148,7 @@ func (m *HooksMiddleware) registerServiceHooks(
 			service.Path(),
 			service.Hooks,
 			env,
+			m.publisher,
 		)
 
 		for hookName, hookConfig := range service.Hooks {

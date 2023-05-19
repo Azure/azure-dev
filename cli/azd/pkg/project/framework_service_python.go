@@ -13,20 +13,23 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/messaging"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/python"
 )
 
 type pythonProject struct {
-	env *environment.Environment
-	cli *python.PythonCli
+	env       *environment.Environment
+	cli       *python.PythonCli
+	publisher messaging.Publisher
 }
 
 // NewPythonProject creates a new instance of the Python project
-func NewPythonProject(cli *python.PythonCli, env *environment.Environment) FrameworkService {
+func NewPythonProject(cli *python.PythonCli, env *environment.Environment, publisher messaging.Publisher) FrameworkService {
 	return &pythonProject{
-		env: env,
-		cli: cli,
+		env:       env,
+		cli:       cli,
+		publisher: publisher,
 	}
 }
 
@@ -122,50 +125,42 @@ func (pp *pythonProject) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	buildOutput *ServiceBuildResult,
-) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
-			packageDest, err := os.MkdirTemp("", "azd")
-			if err != nil {
-				task.SetError(fmt.Errorf("creating package directory for %s: %w", serviceConfig.Name, err))
-				return
-			}
+) (*ServicePackageResult, error) {
+	packageDest, err := os.MkdirTemp("", "azd")
+	if err != nil {
+		return nil, fmt.Errorf("creating package directory for %s: %w", serviceConfig.Name, err)
+	}
 
-			packageSource := buildOutput.BuildOutputPath
-			if packageSource == "" {
-				packageSource = filepath.Join(serviceConfig.Path(), serviceConfig.OutputPath)
-			}
+	packageSource := buildOutput.BuildOutputPath
+	if packageSource == "" {
+		packageSource = filepath.Join(serviceConfig.Path(), serviceConfig.OutputPath)
+	}
 
-			if entries, err := os.ReadDir(packageSource); err != nil || len(entries) == 0 {
-				task.SetError(fmt.Errorf("package source '%s' is empty or does not exist", packageSource))
-				return
-			}
+	if entries, err := os.ReadDir(packageSource); err != nil || len(entries) == 0 {
+		return nil, fmt.Errorf("package source '%s' is empty or does not exist", packageSource)
+	}
 
-			task.SetProgress(NewServiceProgress("Copying deployment package"))
-			if err := buildForZip(
-				packageSource,
-				packageDest,
-				buildForZipOptions{
-					excludeConditions: []excludeDirEntryCondition{
-						excludeVirtualEnv,
-						excludePyCache,
-					},
-				}); err != nil {
-				task.SetError(fmt.Errorf("packaging for %s: %w", serviceConfig.Name, err))
-				return
-			}
+	pp.publisher.Send(ctx, messaging.NewMessage(ProgressMessage, "Copying deployment package"))
+	if err := buildForZip(
+		packageSource,
+		packageDest,
+		buildForZipOptions{
+			excludeConditions: []excludeDirEntryCondition{
+				excludeVirtualEnv,
+				excludePyCache,
+			},
+		}); err != nil {
+		return nil, fmt.Errorf("packaging for %s: %w", serviceConfig.Name, err)
+	}
 
-			if err := validatePackageOutput(packageDest); err != nil {
-				task.SetError(err)
-				return
-			}
+	if err := validatePackageOutput(packageDest); err != nil {
+		return nil, err
+	}
 
-			task.SetResult(&ServicePackageResult{
-				Build:       buildOutput,
-				PackagePath: packageDest,
-			})
-		},
-	)
+	return &ServicePackageResult{
+		Build:       buildOutput,
+		PackagePath: packageDest,
+	}, nil
 }
 
 const cVenvConfigFileName = "pyvenv.cfg"

@@ -13,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/messaging"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/kubectl"
@@ -57,6 +58,7 @@ type aksTarget struct {
 	managedClustersService azcli.ManagedClustersService
 	kubectl                kubectl.KubectlCli
 	containerHelper        *ContainerHelper
+	publisher              messaging.Publisher
 }
 
 // Creates a new instance of the AKS service target
@@ -65,12 +67,14 @@ func NewAksTarget(
 	managedClustersService azcli.ManagedClustersService,
 	kubectlCli kubectl.KubectlCli,
 	containerHelper *ContainerHelper,
+	publisher messaging.Publisher,
 ) ServiceTarget {
 	return &aksTarget{
 		env:                    env,
 		managedClustersService: managedClustersService,
 		kubectl:                kubectlCli,
 		containerHelper:        containerHelper,
+		publisher:              publisher,
 	}
 }
 
@@ -96,12 +100,8 @@ func (t *aksTarget) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
-) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
-			task.SetResult(packageOutput)
-		},
-	)
+) (*ServicePackageResult, error) {
+	return packageOutput, nil
 }
 
 // Deploys service container images to ACR and AKS resources to the AKS cluster

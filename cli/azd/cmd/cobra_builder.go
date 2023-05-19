@@ -6,15 +6,11 @@ import (
 	"log"
 	"strings"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
 )
 
@@ -104,6 +100,7 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 		ioc.RegisterInstance(cb.container, ctx)
 		ioc.RegisterInstance(cb.container, cmd)
 		ioc.RegisterInstance(cb.container, args)
+		ioc.RegisterInstance(cb.container, descriptor)
 
 		if err := cb.registerMiddleware(descriptor); err != nil {
 			return err
@@ -134,51 +131,10 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 
 		// Run the middleware chain with action
 		log.Printf("Resolved action '%s'\n", actionName)
-		actionResult, err := cb.runner.RunAction(ctx, runOptions, action)
+		_, err := cb.runner.RunAction(ctx, runOptions, action)
 
 		// At this point, we know that there might be an error, so we can silence cobra from showing it after us.
 		cmd.SilenceErrors = true
-
-		// TODO: Consider refactoring to move the UX writing to a middleware
-		invokeErr := cb.container.Invoke(func(console input.Console) {
-			var displayResult *ux.ActionResult
-			if actionResult != nil && actionResult.Message != nil {
-				displayResult = &ux.ActionResult{
-					SuccessMessage: actionResult.Message.Header,
-					FollowUp:       actionResult.Message.FollowUp,
-				}
-			} else if err != nil {
-				displayResult = &ux.ActionResult{
-					Err: err,
-				}
-			}
-
-			if displayResult != nil {
-				console.MessageUxItem(ctx, displayResult)
-			}
-
-			if err != nil {
-				var respErr *azcore.ResponseError
-				var azureErr *azcli.AzureDeploymentError
-
-				// We only want to show trace ID for server-related errors,
-				// where we have full server logs to troubleshoot from.
-				//
-				// For client errors, we don't want to show the trace ID, as it is not useful to the user currently.
-				if errors.As(err, &respErr) || errors.As(err, &azureErr) {
-					if actionResult != nil && actionResult.TraceID != "" {
-						console.Message(
-							ctx,
-							output.WithErrorFormat(fmt.Sprintf("TraceID: %s", actionResult.TraceID)))
-					}
-				}
-			}
-		})
-
-		if invokeErr != nil {
-			return invokeErr
-		}
-
 		return err
 	}
 

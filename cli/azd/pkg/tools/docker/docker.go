@@ -25,6 +25,7 @@ type Docker interface {
 		platform string,
 		buildContext string,
 		name string,
+		buildArgs string,
 	) (string, error)
 	Tag(ctx context.Context, cwd string, imageName string, tag string) error
 	Push(ctx context.Context, cwd string, tag string) error
@@ -67,6 +68,7 @@ func (d *docker) Build(
 	platform string,
 	buildContext string,
 	tagName string,
+	buildArgs string,
 ) (string, error) {
 	if strings.TrimSpace(platform) == "" {
 		platform = DefaultPlatform
@@ -80,6 +82,10 @@ func (d *docker) Build(
 
 	if tagName != "" {
 		args = append(args, "-t", tagName)
+	}
+
+	if buildArgs != "" {
+		args = append(args, "--build-arg", buildArgs)
 	}
 
 	args = append(args, buildContext)

@@ -19,10 +19,11 @@ import (
 )
 
 type DockerProjectOptions struct {
-	Path     string           `json:"path"`
-	Context  string           `json:"context"`
-	Platform string           `json:"platform"`
-	Tag      ExpandableString `json:"tag"`
+	Path      string           `json:"path"`
+	Context   string           `json:"context"`
+	Platform  string           `json:"platform"`
+	Tag       ExpandableString `json:"tag"`
+	BuildArgs string           `json:"buildArgs"`
 }
 
 type dockerBuildResult struct {
@@ -128,11 +129,12 @@ func (p *dockerProject) Build(
 			dockerOptions := getDockerOptionsWithDefaults(serviceConfig.Docker)
 
 			log.Printf(
-				"building image for service %s, cwd: %s, path: %s, context: %s)",
+				"building image for service %s, cwd: %s, path: %s, context: %s, buildArgs: %s)",
 				serviceConfig.Name,
 				serviceConfig.Path(),
 				dockerOptions.Path,
 				dockerOptions.Context,
+				dockerOptions.BuildArgs,
 			)
 
 			imageName := fmt.Sprintf(
@@ -150,6 +152,7 @@ func (p *dockerProject) Build(
 				dockerOptions.Platform,
 				dockerOptions.Context,
 				imageName,
+				dockerOptions.BuildArgs,
 			)
 			if err != nil {
 				task.SetError(fmt.Errorf("building container: %s at %s: %w", serviceConfig.Name, dockerOptions.Context, err))

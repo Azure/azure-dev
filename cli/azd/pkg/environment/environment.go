@@ -51,9 +51,9 @@ type Environment struct {
 	// dotenv is a map of keys to values, persisted to the `.env` file stored in this environment's [Root].
 	dotenv map[string]string
 
-	// dotEnvDeleted keeps track of deleted keys to be reapplied before a merge operation
+	// deletedKeys keeps track of deleted keys from the `.env` to be reapplied before a merge operation
 	// happens in Save
-	dotenvDeleted map[string]struct{}
+	deletedKeys map[string]struct{}
 
 	// Config is environment specific config
 	Config config.Config
@@ -127,17 +127,19 @@ func GetEnvironment(azdContext *azdcontext.AzdContext, name string) (*Environmen
 // to a given directory when saved.
 func EmptyWithRoot(root string) *Environment {
 	return &Environment{
-		Root:   root,
-		dotenv: make(map[string]string),
-		Config: config.NewEmptyConfig(),
+		Root:        root,
+		dotenv:      make(map[string]string),
+		deletedKeys: make(map[string]struct{}),
+		Config:      config.NewEmptyConfig(),
 	}
 }
 
 // Ephemeral returns returns an empty ephemeral environment (i.e. not backed by a file) with a set
 func Ephemeral() *Environment {
 	return &Environment{
-		dotenv: make(map[string]string),
-		Config: config.NewEmptyConfig(),
+		dotenv:      make(map[string]string),
+		deletedKeys: make(map[string]struct{}),
+		Config:      config.NewEmptyConfig(),
 	}
 }
 
@@ -181,7 +183,7 @@ func (e *Environment) LookupEnv(key string) (string, bool) {
 // does not exist. [Save] should be called to ensure this change is persisted.
 func (e *Environment) DotenvDelete(key string) {
 	delete(e.dotenv, key)
-	e.dotenvDeleted[key] = struct{}{}
+	e.deletedKeys[key] = struct{}{}
 }
 
 // Dotenv returns a copy of the key value pairs from the .env file in the environment.
@@ -193,7 +195,7 @@ func (e *Environment) Dotenv() map[string]string {
 // called to ensure this change is persisted.
 func (e *Environment) DotenvSet(key string, value string) {
 	e.dotenv[key] = value
-	delete(e.dotenvDeleted, key)
+	delete(e.deletedKeys, key)
 }
 
 // Reloads environment variables and configuration
@@ -202,12 +204,12 @@ func (e *Environment) Reload() error {
 	envPath := filepath.Join(e.Root, azdcontext.DotEnvFileName)
 	if envMap, err := godotenv.Read(envPath); errors.Is(err, os.ErrNotExist) {
 		e.dotenv = make(map[string]string)
-		e.dotenvDeleted = make(map[string]struct{})
+		e.deletedKeys = make(map[string]struct{})
 	} else if err != nil {
 		return fmt.Errorf("loading .env: %w", err)
 	} else {
 		e.dotenv = envMap
-		e.dotenvDeleted = make(map[string]struct{})
+		e.deletedKeys = make(map[string]struct{})
 	}
 
 	// Reload env config
@@ -247,7 +249,7 @@ func (e *Environment) Save() error {
 
 	// Cache current values & reload to get any new env vars
 	currentValues := e.dotenv
-	deletedValues := e.dotenvDeleted
+	deletedValues := e.deletedKeys
 	if err := e.Reload(); err != nil {
 		return fmt.Errorf("failed reloading env vars, %w", err)
 	}

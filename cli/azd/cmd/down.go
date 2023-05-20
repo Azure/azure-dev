@@ -114,19 +114,8 @@ func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	startTime := time.Now()
 
 	destroyOptions := provisioning.NewDestroyOptions(a.flags.forceDelete, a.flags.purgeDelete)
-	destroyResult, err := infraManager.Destroy(ctx, destroyOptions)
-	if err != nil {
+	if _, err = infraManager.Destroy(ctx, destroyOptions); err != nil {
 		return nil, fmt.Errorf("deleting infrastructure: %w", err)
-	}
-
-	// Remove any outputs from the template from the environment since destroying the infrastructure
-	// invalidated them all.
-	for outputName := range destroyResult.Outputs {
-		a.env.DotenvDelete(outputName)
-	}
-
-	if err := a.env.Save(); err != nil {
-		return nil, fmt.Errorf("saving environment: %w", err)
 	}
 
 	return &actions.ActionResult{

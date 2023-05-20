@@ -12,7 +12,7 @@ if ($LASTEXITCODE) {
     throw "go env GOPATH failed with exit code: $LASTEXITCODE, stdout: $gopath"
 }
 
-$gotestsum = "$gopath/bin/gotestsum"
+$gotestsum = Join-Path $gopath "bin" "gotestsum"
 if (-not (Test-Path $gotestsum)) {
     throw "gotestsum is not installed at $gotestsum"
 }

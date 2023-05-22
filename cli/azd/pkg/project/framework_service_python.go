@@ -140,7 +140,7 @@ func (pp *pythonProject) Package(
 		return nil, fmt.Errorf("package source '%s' is empty or does not exist", packageSource)
 	}
 
-	pp.publisher.Send(ctx, messaging.NewMessage(ProgressMessage, "Copying deployment package"))
+	pp.publisher.Send(ctx, messaging.NewMessage(ProgressMessageKind, "Copying deployment package"))
 	if err := buildForZip(
 		packageSource,
 		packageDest,

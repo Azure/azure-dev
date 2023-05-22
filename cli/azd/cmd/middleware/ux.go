@@ -12,15 +12,16 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/messaging"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
+	"github.com/azure/azure-dev/cli/azd/pkg/progress"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
 // Adds support to easily debug and attach a debugger to AZD for development purposes
 type UxMiddleware struct {
-	options    *Options
-	console    input.Console
-	descriptor *actions.ActionDescriptor
-	subscriber messaging.Subscriber
+	options         *Options
+	console         input.Console
+	descriptor      *actions.ActionDescriptor
+	progressPrinter *progress.Printer
 }
 
 // Creates a new instance of the Debug middleware
@@ -28,13 +29,13 @@ func NewUxMiddleware(
 	options *Options,
 	console input.Console,
 	descriptor *actions.ActionDescriptor,
-	subscriber messaging.Subscriber,
+	progressPrinter *progress.Printer,
 ) Middleware {
 	return &UxMiddleware{
-		options:    options,
-		console:    console,
-		descriptor: descriptor,
-		subscriber: subscriber,
+		options:         options,
+		console:         console,
+		descriptor:      descriptor,
+		progressPrinter: progressPrinter,
 	}
 }
 
@@ -53,32 +54,9 @@ func (m *UxMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionRes
 		})
 	}
 
-	messageFilter := func(msg *messaging.Message) bool {
-		if _, has := msg.Tags["handled"]; has {
-			return false
-		}
-
-		switch msg.Type {
-		case ext.HookExecProgressMessage, ext.HookExecDoneMessage, ext.HookExecErrorMessage:
-			return true
-		default:
-			return false
-		}
-	}
-
-	subscription := m.subscriber.Subscribe(ctx, messageFilter, func(msg *messaging.Message) {
-		hookConfig := msg.Value.(*ext.HookConfig)
-		stepMessage := fmt.Sprintf("Executing '%s' command hook", hookConfig.Name)
-		switch msg.Type {
-		case ext.HookExecProgressMessage:
-			m.console.ShowSpinner(ctx, stepMessage, input.Step)
-		case ext.HookExecDoneMessage:
-			m.console.StopSpinner(ctx, stepMessage, input.StepDone)
-		case ext.HookExecErrorMessage:
-			m.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-		case ext.HookExecWarningMessage:
-			m.console.StopSpinner(ctx, stepMessage, input.StepWarning)
-		}
+	subscription := m.progressPrinter.Register(ctx, func(msg *messaging.Message) bool {
+		_, handled := msg.Tags["handled"]
+		return msg.Type == ext.HookMessageKind && !handled
 	})
 	defer subscription.Close(ctx)
 

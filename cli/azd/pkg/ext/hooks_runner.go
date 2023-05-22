@@ -135,12 +135,12 @@ func (h *HooksRunner) execHook(ctx context.Context, hookConfig *HookConfig) erro
 	consoleInteractive := formatter == nil || formatter.Kind() == output.NoneFormat
 	scriptInteractive := consoleInteractive && hookConfig.Interactive
 
-	h.publisher.Send(ctx, messaging.NewMessage(HookExecProgressMessage, hookConfig))
+	h.publisher.Send(ctx, NewHookMessage(hookConfig, StateInProgress))
 
 	log.Printf("Executing script '%s'\n", hookConfig.path)
 	res, err := script.Execute(ctx, hookConfig.path, scriptInteractive)
 	if err != nil {
-		h.publisher.Send(ctx, messaging.NewMessage(HookExecErrorMessage, hookConfig))
+		h.publisher.Send(ctx, NewHookMessage(hookConfig, StateFailed))
 		execErr := fmt.Errorf(
 			"'%s' hook failed with exit code: '%d', Path: '%s'. : %w",
 			hookConfig.Name,
@@ -151,13 +151,13 @@ func (h *HooksRunner) execHook(ctx context.Context, hookConfig *HookConfig) erro
 
 		// If an error occurred log the failure but continue
 		if hookConfig.ContinueOnError {
-			h.publisher.Send(ctx, messaging.NewMessage(HookExecWarningMessage, hookConfig))
+			h.publisher.Send(ctx, NewHookMessage(hookConfig, StateWarning))
 		} else {
 			return execErr
 		}
 	}
 
-	h.publisher.Send(ctx, messaging.NewMessage(HookExecDoneMessage, hookConfig))
+	h.publisher.Send(ctx, NewHookMessage(hookConfig, StateCompleted))
 
 	// Delete any temporary inline scripts after execution
 	// Removing temp scripts only on success to support better debugging with failing scripts.

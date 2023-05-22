@@ -24,11 +24,8 @@ const (
 	// Executes pre hooks
 	HookTypePre HookType = "pre"
 	// Execute post hooks
-	HookTypePost            HookType              = "post"
-	HookExecProgressMessage messaging.MessageKind = "HookExecProgressMessage"
-	HookExecDoneMessage     messaging.MessageKind = "HookExecDoneMessage"
-	HookExecErrorMessage    messaging.MessageKind = "HookExecErrorMessage"
-	HookExecWarningMessage  messaging.MessageKind = "HookExecWarningMessage"
+	HookTypePost    HookType              = "post"
+	HookMessageKind messaging.MessageKind = "hook"
 )
 
 var (
@@ -37,10 +34,32 @@ var (
 	)
 	ErrRunRequired           error = errors.New("run is always required")
 	ErrUnsupportedScriptType error = errors.New("script type is not valid. Only '.sh' and '.ps1' are supported")
+
+	// Hook states
+	StateInProgress HookState = "InProgress"
+	StateCompleted  HookState = "Completed"
+	StateWarning    HookState = "Warning"
+	StateFailed     HookState = "Failed"
 )
 
 // Generic action function that may return an error
 type InvokeFn func() error
+
+type HookState string
+
+type HookMessage struct {
+	Config *HookConfig
+	State  HookState
+}
+
+func NewHookMessage(config *HookConfig, state HookState) *messaging.Message {
+	msg := &HookMessage{
+		Config: config,
+		State:  state,
+	}
+
+	return messaging.NewMessage(HookMessageKind, msg)
+}
 
 // The type of hooks. Supported values are 'pre' and 'post'
 type HookType string
@@ -72,6 +91,10 @@ type HookConfig struct {
 	Windows *HookConfig `yaml:"windows,omitempty"`
 	// When running on linux/macos use this override config
 	Posix *HookConfig `yaml:"posix,omitempty"`
+}
+
+func (hc *HookConfig) Cwd() string {
+	return hc.cwd
 }
 
 // Validates and normalizes the hook configuration

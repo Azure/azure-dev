@@ -146,7 +146,7 @@ func (p *dockerProject) Build(
 			)
 
 			// Build the container
-			p.publisher.Send(ctx, messaging.NewMessage(ProgressMessage, "Building Docker image"))
+			p.publisher.Send(ctx, messaging.NewMessage(ProgressMessageKind, "Building Docker image"))
 			imageId, err := p.docker.Build(
 				ctx,
 				serviceConfig.Path(),
@@ -190,7 +190,7 @@ func (p *dockerProject) Package(
 
 	// Tag image.
 	log.Printf("tagging image %s as %s", imageId, localTag)
-	p.publisher.Send(ctx, messaging.NewMessage(ProgressMessage, "Tagging Docker image"))
+	p.publisher.Send(ctx, messaging.NewMessage(ProgressMessageKind, "Tagging Docker image"))
 	if err := p.docker.Tag(ctx, serviceConfig.Path(), imageId, localTag); err != nil {
 		return nil, fmt.Errorf("tagging image: %w", err)
 	}

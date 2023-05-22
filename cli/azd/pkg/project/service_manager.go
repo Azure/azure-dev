@@ -97,7 +97,7 @@ type serviceManager struct {
 	serviceLocator      ioc.ServiceLocator
 	operationCache      map[string]any
 	alphaFeatureManager *alpha.FeatureManager
-	publisher       messaging.Publisher
+	publisher           messaging.Publisher
 }
 
 // NewServiceManager creates a new instance of the ServiceManager component
@@ -114,7 +114,7 @@ func NewServiceManager(
 		serviceLocator:      serviceLocator,
 		operationCache:      map[string]any{},
 		alphaFeatureManager: alphaFeatureManager,
-		publisher:       publisher,
+		publisher:           publisher,
 	}
 }
 
@@ -563,6 +563,6 @@ func syncProgress[T comparable, P comparable](task *async.TaskContextWithProgres
 // This method is to only support the transition between task progress and pub/sub topics
 func publishProgress(ctx context.Context, publisher messaging.Publisher, progress <-chan ServiceProgress) {
 	for msg := range progress {
-		publisher.Send(ctx, messaging.NewMessage(ProgressMessage, msg.Message))
+		publisher.Send(ctx, messaging.NewMessage(ProgressMessageKind, msg.Message))
 	}
 }

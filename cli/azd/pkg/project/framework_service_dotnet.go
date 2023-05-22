@@ -83,7 +83,7 @@ func (dp *dotnetProject) Restore(
 ) *async.TaskWithProgress[*ServiceRestoreResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServiceRestoreResult, ServiceProgress]) {
-			dp.publisher.Send(ctx, messaging.NewMessage(ProgressMessage, "Restoring .NET project dependencies"))
+			dp.publisher.Send(ctx, messaging.NewMessage(ProgressMessageKind, "Restoring .NET project dependencies"))
 			task.SetProgress(NewServiceProgress("Restoring .NET project dependencies"))
 			projFile, err := findProjectFile(serviceConfig.Name, serviceConfig.Path())
 			if err != nil {
@@ -108,7 +108,7 @@ func (dp *dotnetProject) Build(
 ) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServiceBuildResult, ServiceProgress]) {
-			dp.publisher.Send(ctx, messaging.NewMessage(ProgressMessage, "Building .NET project"))
+			dp.publisher.Send(ctx, messaging.NewMessage(ProgressMessageKind, "Building .NET project"))
 			task.SetProgress(NewServiceProgress("Building .NET project"))
 			projFile, err := findProjectFile(serviceConfig.Name, serviceConfig.Path())
 			if err != nil {
@@ -156,7 +156,7 @@ func (dp *dotnetProject) Package(
 		return nil, fmt.Errorf("creating package directory for %s: %w", serviceConfig.Name, err)
 	}
 
-	dp.publisher.Send(ctx, messaging.NewMessage(ProgressMessage, "Publishing .NET project"))
+	dp.publisher.Send(ctx, messaging.NewMessage(ProgressMessageKind, "Publishing .NET project"))
 	projFile, err := findProjectFile(serviceConfig.Name, serviceConfig.Path())
 	if err != nil {
 		return nil, err

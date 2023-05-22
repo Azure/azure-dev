@@ -115,7 +115,7 @@ func (m *mavenProject) Package(
 		return nil, fmt.Errorf("creating staging directory: %w", err)
 	}
 
-	m.publisher.Send(ctx, messaging.NewMessage(ProgressMessage, "Packaging maven project"))
+	m.publisher.Send(ctx, messaging.NewMessage(ProgressMessageKind, "Packaging maven project"))
 	if err := m.mavenCli.Package(ctx, serviceConfig.Path()); err != nil {
 		return nil, err
 	}
@@ -157,7 +157,7 @@ func (m *mavenProject) Package(
 		}
 	}
 
-	m.publisher.Send(ctx, messaging.NewMessage(ProgressMessage, "Copying deployment package"))
+	m.publisher.Send(ctx, messaging.NewMessage(ProgressMessageKind, "Copying deployment package"))
 	ext := strings.ToLower(filepath.Ext(archive))
 	err = copy.Copy(archive, filepath.Join(packageDest, AppServiceJavaPackageName+ext))
 	if err != nil {

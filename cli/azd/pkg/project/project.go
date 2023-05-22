@@ -23,8 +23,8 @@ import (
 const (
 	//nolint:lll
 	projectSchemaAnnotation                       = "# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json"
-	ProgressMessage         messaging.MessageKind = "Progress"
-	cInfraDirectory = "infra"
+	ProgressMessageKind     messaging.MessageKind = "Progress"
+	cInfraDirectory                               = "infra"
 )
 
 func New(ctx context.Context, projectFilePath string, projectName string) (*ProjectConfig, error) {

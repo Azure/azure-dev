@@ -220,7 +220,7 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 
 	var stepMessage string
 	progressFilter := func(msg *messaging.Message) bool {
-		return msg.Type == project.ProgressMessage
+		return msg.Type == project.ProgressMessageKind
 	}
 	progressSubscription := da.subscriber.Subscribe(ctx, progressFilter, func(msg *messaging.Message) {
 		progressMessage := fmt.Sprintf("%s (%s)", stepMessage, msg.Value)

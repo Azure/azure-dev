@@ -24,6 +24,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/messaging"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/progress"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
@@ -280,6 +281,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		return ioc.NewServiceLocator(container)
 	})
 	container.RegisterSingleton(messaging.NewService)
+	container.RegisterTransient(progress.NewPrinter)
 	container.RegisterSingleton(func(msgSvc *messaging.Service) messaging.Publisher {
 		return msgSvc
 	})

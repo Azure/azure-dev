@@ -54,7 +54,7 @@ func (st *appServiceTarget) Package(
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
 ) (*ServicePackageResult, error) {
-	st.publisher.Send(ctx, messaging.NewMessage(ProgressMessage, "Compressing deployment artifacts"))
+	st.publisher.Send(ctx, messaging.NewMessage(ProgressMessageKind, "Compressing deployment artifacts"))
 	zipFilePath, err := createDeployableZip(serviceConfig.Name, packageOutput.PackagePath)
 	if err != nil {
 		return nil, err

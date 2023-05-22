@@ -14,9 +14,11 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/messaging"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
+	"github.com/azure/azure-dev/cli/azd/pkg/progress"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
+	"golang.org/x/exp/slices"
 )
 
 type packageFlags struct {
@@ -60,15 +62,15 @@ func newPackageCmd() *cobra.Command {
 }
 
 type packageAction struct {
-	flags          *packageFlags
-	args           []string
-	projectConfig  *project.ProjectConfig
-	projectManager project.ProjectManager
-	serviceManager project.ServiceManager
-	console        input.Console
-	formatter      output.Formatter
-	writer         io.Writer
-	subscriber     messaging.Subscriber
+	flags           *packageFlags
+	args            []string
+	projectConfig   *project.ProjectConfig
+	projectManager  project.ProjectManager
+	serviceManager  project.ServiceManager
+	console         input.Console
+	formatter       output.Formatter
+	writer          io.Writer
+	progressPrinter *progress.Printer
 }
 
 func newPackageAction(
@@ -80,18 +82,18 @@ func newPackageAction(
 	console input.Console,
 	formatter output.Formatter,
 	writer io.Writer,
-	subscriber messaging.Subscriber,
+	progressPrinter *progress.Printer,
 ) actions.Action {
 	return &packageAction{
-		flags:          flags,
-		args:           args,
-		projectConfig:  projectConfig,
-		projectManager: projectManager,
-		serviceManager: serviceManager,
-		console:        console,
-		formatter:      formatter,
-		writer:         writer,
-		subscriber:     subscriber,
+		flags:           flags,
+		args:            args,
+		projectConfig:   projectConfig,
+		projectManager:  projectManager,
+		serviceManager:  serviceManager,
+		console:         console,
+		formatter:       formatter,
+		writer:          writer,
+		progressPrinter: progressPrinter,
 	}
 }
 
@@ -132,56 +134,34 @@ func (pa *packageAction) Run(ctx context.Context) (*actions.ActionResult, error)
 
 	var stepMessage string
 	progressFilter := func(msg *messaging.Message) bool {
-		switch msg.Type {
-		case project.ProgressMessage,
-			ext.HookExecProgressMessage,
-			ext.HookExecDoneMessage,
-			ext.HookExecErrorMessage:
-			return true
-		default:
-			return false
-		}
+		kinds := []messaging.MessageKind{project.ProgressMessageKind, ext.HookMessageKind}
+		return slices.Contains(kinds, msg.Type)
 	}
-	progressSubscription := pa.subscriber.Subscribe(ctx, progressFilter, func(msg *messaging.Message) {
-		msg.Tags["handled"] = true
 
-		var statusMessage string
-		switch msg.Type {
-		case project.ProgressMessage:
-			statusMessage = msg.Value.(string)
-		case ext.HookExecProgressMessage:
-			hookConfig := msg.Value.(*ext.HookConfig)
-			statusMessage = fmt.Sprintf("Executing '%s' service hook", hookConfig.Name)
-		case ext.HookExecDoneMessage, ext.HookExecErrorMessage:
-			return
-		}
-
-		progressMessage := fmt.Sprintf("%s (%s)", stepMessage, statusMessage)
-		pa.console.ShowSpinner(ctx, progressMessage, input.Step)
-	})
+	progressSubscription := pa.progressPrinter.Register(ctx, progressFilter)
 	defer progressSubscription.Close(ctx)
 
 	packageResults := map[string]*project.ServicePackageResult{}
 
 	for _, svc := range pa.projectConfig.GetServicesStable() {
 		stepMessage = fmt.Sprintf("Packaging service %s", svc.Name)
-		pa.console.ShowSpinner(ctx, stepMessage, input.Step)
+		pa.progressPrinter.Start(ctx, stepMessage)
 
 		// Skip this service if both cases are true:
 		// 1. The user specified a service name
 		// 2. This service is not the one the user specified
 		if targetServiceName != "" && targetServiceName != svc.Name {
-			pa.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
+			pa.progressPrinter.Skip(ctx)
 			continue
 		}
 
 		packageResult, err := pa.serviceManager.Package(ctx, svc, nil)
 		if err != nil {
-			pa.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+			pa.progressPrinter.Fail(ctx)
 			return nil, err
 		}
 
-		pa.console.StopSpinner(ctx, stepMessage, input.StepDone)
+		pa.progressPrinter.Done(ctx)
 		packageResults[svc.Name] = packageResult
 
 		// report package output

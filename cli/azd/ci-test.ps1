@@ -17,7 +17,7 @@ if ($IsWindows) {
     $gotestsumBinary += ".exe"
 }
 
-$gotestsum = Join-Path $gopath "bin" "gotestsum"
+$gotestsum = Join-Path $gopath "bin" gotestsumBinary
 if (-not (Test-Path $gotestsum)) {
     throw "gotestsum is not installed at $gotestsum"
 }

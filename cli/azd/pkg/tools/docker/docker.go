@@ -25,7 +25,7 @@ type Docker interface {
 		platform string,
 		buildContext string,
 		name string,
-		buildArgs string,
+		buildArgs []string,
 	) (string, error)
 	Tag(ctx context.Context, cwd string, imageName string, tag string) error
 	Push(ctx context.Context, cwd string, tag string) error
@@ -84,8 +84,8 @@ func (d *docker) Build(
 		args = append(args, "-t", tagName)
 	}
 
-	if buildArgs != "" {
-		args = append(args, "--build-arg", buildArgs)
+	for _, arg := range buildArgs {
+		args = append(args, "--build-arg", arg)
 	}
 
 	args = append(args, buildContext)

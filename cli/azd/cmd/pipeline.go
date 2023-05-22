@@ -133,15 +133,13 @@ func newPipelineConfigAction(
 	console input.Console,
 	flags *pipelineConfigFlags,
 	commandRunner exec.CommandRunner,
-	subResolver account.SubscriptionTenantResolver,
-	userProfile *azcli.UserProfileService,
 ) actions.Action {
 	pca := &pipelineConfigAction{
 		flags:              flags,
 		azCli:              azCli,
 		credentialProvider: credentialProvider,
 		manager: pipeline.NewPipelineManager(
-			azCli, azdCtx, env, flags.global, commandRunner, console, flags.PipelineManagerArgs, subResolver, userProfile,
+			azCli, azdCtx, env, flags.global, commandRunner, console, flags.PipelineManagerArgs,
 		),
 		azdCtx:         azdCtx,
 		accountManager: accountManager,

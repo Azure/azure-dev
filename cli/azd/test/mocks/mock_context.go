@@ -27,14 +27,13 @@ type MockContext struct {
 	AlphaFeaturesManager           *alpha.FeatureManager
 	SubscriptionCredentialProvider *MockSubscriptionCredentialProvider
 	MultiTenantCredentialProvider  *MockMultiTenantCredentialProvider
+	Config                         config.Config
 }
 
 func NewMockContext(ctx context.Context) *MockContext {
-	commandRunner := mockexec.NewMockCommandRunner()
 	httpClient := mockhttp.NewMockHttpUtil()
 	configManager := mockconfig.NewMockConfigManager()
-
-	mockexec.AddAzLoginMocks(commandRunner)
+	config := config.NewEmptyConfig()
 
 	ctx = httputil.WithHttpClient(ctx, httpClient)
 
@@ -48,6 +47,8 @@ func NewMockContext(ctx context.Context) *MockContext {
 		SubscriptionCredentialProvider: &MockSubscriptionCredentialProvider{},
 		MultiTenantCredentialProvider:  &MockMultiTenantCredentialProvider{},
 		Container:                      ioc.NewNestedContainer(nil),
+		Config:                         config,
+		AlphaFeaturesManager:           alpha.NewFeaturesManagerWithConfig(config),
 	}
 
 	registerCommonMocks(mockContext)

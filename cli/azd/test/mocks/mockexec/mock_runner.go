@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 )
@@ -116,14 +115,4 @@ func (e *CommandExpression) RespondFn(responseFn ResponseFn) *MockCommandRunner 
 func (e *CommandExpression) SetError(err error) *MockCommandRunner {
 	e.error = err
 	return e.exec
-}
-
-func AddAzLoginMocks(commandRunner *MockCommandRunner) {
-	commandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "az account get-access-token")
-	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-		now := time.Now().UTC().Format(time.RFC3339)
-		requestJson := fmt.Sprintf(`{"AccessToken": "abc123", "ExpiresOn": "%s"}`, now)
-		return exec.NewRunResult(0, requestJson, ""), nil
-	})
 }

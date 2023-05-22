@@ -119,6 +119,13 @@ type AzCli interface {
 	) (*armresources.DeploymentExtended, error)
 	DeleteSubscriptionDeployment(ctx context.Context, subscriptionId string, deploymentName string) error
 	DeleteResourceGroup(ctx context.Context, subscriptionId string, resourceGroupName string) error
+	CreateOrUpdateResourceGroup(
+		ctx context.Context,
+		subscriptionId string,
+		resourceGroupName string,
+		location string,
+		tags map[string]*string,
+	) error
 	ListResourceGroup(
 		ctx context.Context,
 		subscriptionId string,

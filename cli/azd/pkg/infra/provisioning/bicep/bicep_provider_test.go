@@ -362,6 +362,141 @@ func TestBicepDestroy(t *testing.T) {
 	})
 }
 
+func TestPlanForResourceGroup(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+
+	// Enable the feature
+	err := mockContext.Config.Set("alpha.resourceGroupDeployments", "on")
+	require.NoError(t, err)
+
+	// Have `bicep build` return a ARM template that targets a resource group.
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(args.Cmd, "bicep") && args.Args[0] == "build"
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		armTemplate := azure.ArmTemplate{
+			Schema:         "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+			ContentVersion: "1.0.0.0",
+			Parameters: azure.ArmTemplateParameterDefinitions{
+				"environmentName": {Type: "string"},
+				"location":        {Type: "string"},
+			},
+			Outputs: azure.ArmTemplateOutputs{
+				"WEBSITE_URL": {Type: "string"},
+			},
+		}
+
+		bicepBytes, _ := json.Marshal(armTemplate)
+
+		return exec.RunResult{
+			Stdout: string(bicepBytes),
+		}, nil
+	})
+
+	// Mock the list resource group operation to return two existing resource groups (we expect these to be offered)
+	// as choices when selecting a resource group.
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet &&
+			strings.HasSuffix(request.URL.Path, "/subscriptions/SUBSCRIPTION_ID/resourcegroups")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		body := armresources.ResourceGroupListResult{
+			Value: []*armresources.ResourceGroup{
+				{
+					ID:       to.Ptr("/subscriptions/SUBSCRIPTION_ID/resourcegroups/existingGroup1"),
+					Name:     to.Ptr("existingGroup1"),
+					Type:     to.Ptr("Microsoft.Resources/resourceGroup"),
+					Location: to.Ptr("eastus2"),
+				},
+				{
+					ID:       to.Ptr("/subscriptions/SUBSCRIPTION_ID/resourcegroups/existingGroup2"),
+					Name:     to.Ptr("existingGroup2"),
+					Type:     to.Ptr("Microsoft.Resources/resourceGroup"),
+					Location: to.Ptr("eastus2"),
+				},
+			},
+		}
+
+		bodyBytes, _ := json.Marshal(body)
+
+		return &http.Response{
+			Request:    request,
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(bytes.NewBuffer(bodyBytes)),
+		}, nil
+	})
+
+	// Our test will create a new resource group, instead of using one of the existing ones, so mock that operation.
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodPut &&
+			strings.HasSuffix(request.URL.Path, "/subscriptions/SUBSCRIPTION_ID/resourcegroups/rg-test-env")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		body := armresources.ResourceGroup{
+			ID:       to.Ptr("/subscriptions/SUBSCRIPTION_ID/resourcegroups/rg-test-env"),
+			Name:     to.Ptr("rg-test-env"),
+			Type:     to.Ptr("Microsoft.Resources/resourceGroup"),
+			Location: to.Ptr("eastus2"),
+		}
+
+		bodyBytes, _ := json.Marshal(body)
+
+		return &http.Response{
+			Request:    request,
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(bytes.NewBuffer(bodyBytes)),
+		}, nil
+	})
+
+	// Validate that we correctly show the selection of existing groups, but pick the option to create a new one instead.
+	mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool {
+		return options.Message == "Please pick a resource group to use"
+	}).RespondFn(func(options input.ConsoleOptions) (any, error) {
+		require.Len(t, options.Options, 3)
+		require.Equal(t, "Create a new resource group", options.Options[0])
+		require.Equal(t, "1. existingGroup1", options.Options[1])
+		require.Equal(t, "2. existingGroup2", options.Options[2])
+
+		return 0, nil
+	})
+
+	// Validate that we are prompted for a name for the new resource group, and that a suitable default is provided based
+	// our current environment name.
+	mockContext.Console.WhenPrompt(func(options input.ConsoleOptions) bool {
+		return options.Message == "Please enter a name for the new resource group"
+	}).RespondFn(func(options input.ConsoleOptions) (any, error) {
+		require.Equal(t, "rg-test-env", options.DefaultValue)
+		return options.DefaultValue, nil
+	})
+
+	progressLog := []string{}
+	interactiveLog := []bool{}
+	progressDone := make(chan bool)
+
+	infraProvider := createBicepProvider(t, mockContext)
+
+	planTask := infraProvider.Plan(*mockContext.Context)
+
+	go func() {
+		for planProgress := range planTask.Progress() {
+			progressLog = append(progressLog, planProgress.Message)
+		}
+		progressDone <- true
+	}()
+
+	go func() {
+		for planInteractive := range planTask.Interactive() {
+			interactiveLog = append(interactiveLog, planInteractive)
+		}
+	}()
+
+	planResult, err := planTask.Await()
+	<-progressDone
+
+	// The computed plan should target the resource group we picked.
+	require.Nil(t, err)
+	require.NotNil(t, planResult)
+	require.Equal(t, "rg-test-env",
+		planResult.Details.(BicepDeploymentDetails).Target.(*infra.ResourceGroupDeployment).ResourceGroupName())
+}
+
 func TestIsValueAssignableToParameterType(t *testing.T) {
 	cases := map[ParameterType]any{
 		ParameterTypeNumber:  1,
@@ -437,7 +572,8 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 				return nil
 			},
 		},
-		curPrincipal: &mockCurrentPrincipal{},
+		curPrincipal:        &mockCurrentPrincipal{},
+		alphaFeatureManager: mockContext.AlphaFeaturesManager,
 	}
 
 	return provider

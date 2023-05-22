@@ -1024,8 +1024,6 @@ stages:
 
                 - template: /eng/pipelines/templates/steps/publish-cli-choco.yml
                   parameters:
-                    # Set to false after GA (https://github.com/Azure/azure-dev/issues/1485)
-                    AllowPrerelease: true
                     CliVersion: $(CLI_VERSION)
 
       - deployment: Publish_WinGet
@@ -1054,8 +1052,6 @@ stages:
 
                 - template: /eng/pipelines/templates/steps/publish-cli-winget.yml
                   parameters:
-                    # Set to false after GA (https://github.com/Azure/azure-dev/issues/1485)
-                    AllowPrerelease: true
                     CliVersion: $(CLI_VERSION)
 
       - deployment: Increment_Version

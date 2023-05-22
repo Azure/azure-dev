@@ -68,7 +68,7 @@ func (d *docker) Build(
 	platform string,
 	buildContext string,
 	tagName string,
-	buildArgs string,
+	buildArgs []string,
 ) (string, error) {
 	if strings.TrimSpace(platform) == "" {
 		platform = DefaultPlatform

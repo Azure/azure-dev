@@ -1,14 +1,12 @@
 # Release History
 
-## 0.9.0-beta.4 (Unreleased)
-
-### Features Added
-
-### Breaking Changes
+## 1.0.0 (2023-05-22)
 
 ### Bugs Fixed
 
-### Other Changes
+- [[2279]](https://github.com/Azure/azure-dev/pull/2279) Fetch k8s GPG key from alternate location.
+- [[2278]](https://github.com/Azure/azure-dev/pull/2278) Remove infrastructure outputs from .env on azd down.
+- [[2274]](https://github.com/Azure/azure-dev/pull/2274) Change AKS service spec 'targetPort' from int to string.
 
 ## 0.9.0-beta.3 (2023-05-19)
 

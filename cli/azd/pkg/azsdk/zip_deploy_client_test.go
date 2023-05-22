@@ -162,7 +162,7 @@ func registerPollingErrorMocks(mockContext *mocks.MockContext) {
 		errorStatus := DeployStatusResponse{
 			DeployStatus: DeployStatus{
 				Id:         "ID",
-				Status:     http.StatusInternalServerError,
+				Status:     http.StatusBadRequest,
 				StatusText: "Error",
 				Message:    "Bad deploy package",
 				Progress:   nil,
@@ -172,6 +172,6 @@ func registerPollingErrorMocks(mockContext *mocks.MockContext) {
 			},
 		}
 
-		return mocks.CreateHttpResponseWithBody(request, http.StatusInternalServerError, errorStatus)
+		return mocks.CreateHttpResponseWithBody(request, http.StatusBadRequest, errorStatus)
 	})
 }

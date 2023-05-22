@@ -12,6 +12,11 @@ if ($LASTEXITCODE) {
     throw "go env GOPATH failed with exit code: $LASTEXITCODE, stdout: $gopath"
 }
 
+$gotestsumBinary = "gotestsum"
+if ($IsWindows) {
+    $gotestsumBinary += ".exe"
+}
+
 $gotestsum = Join-Path $gopath "bin" "gotestsum"
 if (-not (Test-Path $gotestsum)) {
     throw "gotestsum is not installed at $gotestsum"

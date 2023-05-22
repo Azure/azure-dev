@@ -1128,6 +1128,7 @@ stages:
               PublishShield: false
               DockerImageTags: daily;$(CLI_VERSION)
               UploadMsi: true
+              PublishArm64Binaries: true
 
       - job: Publish_For_PR
         condition: >-

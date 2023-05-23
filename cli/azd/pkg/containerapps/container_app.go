@@ -41,7 +41,7 @@ func NewContainerAppService(
 	return &containerAppService{
 		credentialProvider: credentialProvider,
 		httpClient:         httpClient,
-		userAgent:          azdinternal.MakeUserAgentString(""),
+		userAgent:          azdinternal.UserAgent(),
 		clock:              clock,
 	}
 }

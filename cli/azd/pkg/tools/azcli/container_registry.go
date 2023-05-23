@@ -56,7 +56,7 @@ func NewContainerRegistryService(
 		credentialProvider: credentialProvider,
 		docker:             docker,
 		httpClient:         httpClient,
-		userAgent:          azdinternal.MakeUserAgentString(""),
+		userAgent:          azdinternal.UserAgent(),
 	}
 }
 

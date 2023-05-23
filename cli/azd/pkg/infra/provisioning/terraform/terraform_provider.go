@@ -107,7 +107,7 @@ func (t *TerraformProvider) EnsureConfigured(ctx context.Context) error {
 		fmt.Sprintf("ARM_CLIENT_ID=%s", os.Getenv("ARM_CLIENT_ID")),
 		fmt.Sprintf("ARM_CLIENT_SECRET=%s", os.Getenv("ARM_CLIENT_SECRET")),
 		// Include azd in user agent
-		fmt.Sprintf("TF_APPEND_USER_AGENT=%s", internal.MakeUserAgentString("")),
+		fmt.Sprintf("TF_APPEND_USER_AGENT=%s", internal.UserAgent()),
 	}
 
 	spanCtx := trace.SpanContextFromContext(ctx)

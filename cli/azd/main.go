@@ -231,7 +231,7 @@ func fetchLatestVersion(version chan<- semver.Version) {
 			log.Printf("failed to create request object: %v, skipping update check", err)
 		}
 
-		req.Header.Set("User-Agent", internal.MakeUserAgentString(""))
+		req.Header.Set("User-Agent", internal.UserAgent())
 
 		res, err := http.DefaultClient.Do(req)
 		if err != nil {

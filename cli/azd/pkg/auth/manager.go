@@ -80,6 +80,7 @@ type Manager struct {
 	configManager       config.Manager
 	userConfigManager   config.UserConfigManager
 	credentialCache     Cache
+	msalCache           Cache
 	ghClient            *github.FederatedTokenClient
 	httpClient          httputil.HttpClient
 }
@@ -104,8 +105,9 @@ func NewManager(
 		return nil, fmt.Errorf("creating msal cache root: %w", err)
 	}
 
+	exportReplacer, msalCache := newCache(cacheRoot)
 	options := []public.Option{
-		public.WithCache(newCache(cacheRoot)),
+		public.WithCache(exportReplacer),
 		public.WithAuthority(cDefaultAuthority),
 	}
 
@@ -117,6 +119,7 @@ func NewManager(
 	ghClient := github.NewFederatedTokenClient(nil)
 
 	return &Manager{
+		msalCache:           msalCache,
 		publicClient:        &msalPublicClientAdapter{client: &publicClientApp},
 		publicClientOptions: options,
 		configManager:       configManager,
@@ -534,6 +537,17 @@ func (m *Manager) Logout(ctx context.Context) error {
 		}
 	}
 
+	// In addition to calling `RemoveAccount`, we also explicitly call `UnsetAll``
+	// here on our underlying MSAL cache implementation.
+	// This is due to the current observed behavior, where MSAL will correctly
+	// call our cache.Export implementation to unset cache.json,
+	// but not files like cache.<homeId>json.
+	// It is safer to remove all state and start from a known blank state.
+	err = m.msalCache.UnsetAll()
+	if err != nil {
+		return fmt.Errorf("removing msal cache: %w", err)
+	}
+
 	cfg, err := m.readAuthConfig()
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)
@@ -585,7 +599,7 @@ func (m *Manager) saveLoginForServicePrincipal(tenantId, clientId string, secret
 // getSignedInAccount fetches the public.Account for the signed in user, or nil if one does not exist
 // (e.g when logged in with a service principal).
 func (m *Manager) getSignedInAccount(ctx context.Context) (*public.Account, error) {
-	cfg, err := m.userConfigManager.Load()
+	cfg, err := m.readAuthConfig()
 	if err != nil {
 		return nil, fmt.Errorf("fetching current user: %w", err)
 	}

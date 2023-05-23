@@ -54,3 +54,11 @@ func (c *memoryCache) Set(key string, value []byte) error {
 	c.cache[key] = value
 	return nil
 }
+
+func (c *memoryCache) UnsetAll() error {
+	c.cache = make(map[string][]byte)
+	if c.inner != nil {
+		return c.inner.UnsetAll()
+	}
+	return nil
+}

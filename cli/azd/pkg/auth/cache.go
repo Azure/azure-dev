@@ -42,6 +42,7 @@ func (a *msalCacheAdapter) Export(ctx context.Context, cache cache.Marshaler, ca
 type Cache interface {
 	Read(key string) ([]byte, error)
 	Set(key string, value []byte) error
+	UnsetAll() error
 }
 
 var errCacheKeyNotFound = errors.New("key not found")

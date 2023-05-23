@@ -65,6 +65,28 @@ func (c *fileCache) Set(key string, value []byte) error {
 	return os.WriteFile(cachePath, value, osutil.PermissionFileOwnerOnly)
 }
 
+func (c *fileCache) UnsetAll() error {
+	entries, err := os.ReadDir(c.root)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+
+	ext := "." + c.ext
+	for _, entry := range entries {
+		if !entry.IsDir() && filepath.Ext(entry.Name()) == ext {
+			err := os.Remove(filepath.Join(c.root, entry.Name()))
+			if err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
 func (c *fileCache) pathForCache(key string) string {
 	return filepath.Join(c.root, fmt.Sprintf("%s%s.%s", c.prefix, key, c.ext))
 }

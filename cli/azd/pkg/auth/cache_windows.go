@@ -32,8 +32,8 @@ type encryptionType string
 // for more information on these APIs.
 const cCryptProtectDataEncryptionType encryptionType = "CryptProtectData"
 
-func newCache(root string) cache.ExportReplace {
-	return &msalCacheAdapter{
+func newCache(root string) (cache.ExportReplace, Cache) {
+	adapter := &msalCacheAdapter{
 		cache: &memoryCache{
 			cache: make(map[string][]byte),
 			inner: &encryptedCache{
@@ -45,6 +45,8 @@ func newCache(root string) cache.ExportReplace {
 			},
 		},
 	}
+
+	return adapter, adapter.cache
 }
 
 func newCredentialCache(root string) Cache {
@@ -158,4 +160,8 @@ func (c *encryptedCache) Set(key string, val []byte) error {
 	}
 
 	return c.inner.Set(key, toStore)
+}
+
+func (c *encryptedCache) UnsetAll() error {
+	return c.inner.UnsetAll()
 }

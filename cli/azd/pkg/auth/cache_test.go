@@ -14,7 +14,7 @@ import (
 func TestCache(t *testing.T) {
 	root := t.TempDir()
 	ctx := context.Background()
-	c := newCache(root)
+	c, _ := newCache(root)
 
 	d1 := fixedMarshaller{
 		val: []byte("some data"),
@@ -45,7 +45,7 @@ func TestCache(t *testing.T) {
 	require.Equal(t, d2.val, r2.val)
 
 	// the data should be shared across instances.
-	c = newCache(root)
+	c, cImpl := newCache(root)
 
 	err = c.Replace(ctx, &r1, cache.ReplaceHints{PartitionKey: "d1"})
 	require.NoError(t, err)
@@ -59,12 +59,24 @@ func TestCache(t *testing.T) {
 
 	// read some non-existing data
 	nonExist := fixedMarshaller{
-		val: []byte("some data"),
+		val: []byte(""),
 	}
 	err = c.Replace(ctx, &nonExist, cache.ReplaceHints{PartitionKey: "nonExist"})
 	require.NoError(t, err)
 	// data should not be overwritten when key is not found.
-	require.Equal(t, []byte("some data"), nonExist.val)
+	require.Equal(t, []byte(""), nonExist.val)
+
+	// Unset all values
+	err = cImpl.UnsetAll()
+	require.NoError(t, err)
+
+	err = c.Replace(ctx, &nonExist, cache.ReplaceHints{PartitionKey: "d1"})
+	require.NoError(t, err)
+	require.Equal(t, []byte(""), nonExist.val)
+
+	err = c.Replace(ctx, &nonExist, cache.ReplaceHints{PartitionKey: "d2"})
+	require.NoError(t, err)
+	require.Equal(t, []byte(""), nonExist.val)
 }
 
 func TestCredentialCache(t *testing.T) {
@@ -108,5 +120,15 @@ func TestCredentialCache(t *testing.T) {
 
 	// read some non-existing data, ensure errCacheKeyNotFound is returned.
 	_, err = c.Read("nonExist")
+	require.ErrorIs(t, err, errCacheKeyNotFound)
+
+	// Unset all values
+	err = c.UnsetAll()
+	require.NoError(t, err)
+
+	_, err = c.Read("d1")
+	require.ErrorIs(t, err, errCacheKeyNotFound)
+
+	_, err = c.Read("d2")
 	require.ErrorIs(t, err, errCacheKeyNotFound)
 }

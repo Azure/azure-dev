@@ -495,6 +495,7 @@ func Test_CLI_InfraCreateAndDeleteResourceTerraformRemote(t *testing.T) {
 	// Create storage container
 	runArgs = newRunArgs("az", "storage", "container", "create", "--name", backendContainerName,
 		"--account-name", backendStorageAccountName, "--account-key", storageAccountKey)
+	runArgs.SensitiveData = append(runArgs.SensitiveData, storageAccountKey)
 	result, err := commandRunner.Run(ctx, runArgs)
 	_ = result
 	require.NoError(t, err)

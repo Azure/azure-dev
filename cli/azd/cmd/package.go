@@ -9,16 +9,13 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
-	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/messaging"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/progress"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
-	"golang.org/x/exp/slices"
 )
 
 type packageFlags struct {
@@ -133,13 +130,6 @@ func (pa *packageAction) Run(ctx context.Context) (*actions.ActionResult, error)
 	}
 
 	var stepMessage string
-	progressFilter := func(msg *messaging.Message) bool {
-		kinds := []messaging.MessageKind{project.ProgressMessageKind, ext.HookMessageKind}
-		return slices.Contains(kinds, msg.Type)
-	}
-
-	progressSubscription := pa.progressPrinter.Register(ctx, progressFilter)
-	defer progressSubscription.Close(ctx)
 
 	packageResults := map[string]*project.ServicePackageResult{}
 

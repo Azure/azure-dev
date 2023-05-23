@@ -98,6 +98,7 @@ func (spr *ServiceDeployResult) ToString(currentIndentation string) string {
 		return uxItem.ToString(currentIndentation)
 	}
 
+	currentIndentation += "  "
 	builder := strings.Builder{}
 
 	if len(spr.Endpoints) == 0 {

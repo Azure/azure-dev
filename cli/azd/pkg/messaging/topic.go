@@ -56,7 +56,7 @@ func (t *Topic) init(ctx context.Context) {
 	go func() {
 		for msg := range t.channel {
 			for i := len(t.subscribers) - 1; i >= 0; i-- {
-				t.subscribers[i].receive(msg)
+				t.subscribers[i].receive(ctx, msg)
 			}
 		}
 	}()

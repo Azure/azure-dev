@@ -281,7 +281,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		return ioc.NewServiceLocator(container)
 	})
 	container.RegisterSingleton(messaging.NewService)
-	container.RegisterTransient(progress.NewPrinter)
+	container.RegisterSingleton(progress.NewPrinter)
 	container.RegisterSingleton(func(msgSvc *messaging.Service) messaging.Publisher {
 		return msgSvc
 	})

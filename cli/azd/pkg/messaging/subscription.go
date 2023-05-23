@@ -2,9 +2,9 @@ package messaging
 
 import "context"
 
-type MessageFilter func(msg *Message) bool
+type MessageFilter func(ctx context.Context, msg *Message) bool
 
-type MessageHandler func(msg *Message)
+type MessageHandler func(ctx context.Context, msg *Message)
 
 type Subscription struct {
 	topic   *Topic
@@ -20,12 +20,12 @@ func NewSubscription(topic *Topic, filter MessageFilter, handler MessageHandler)
 	}
 }
 
-func (s *Subscription) receive(msg *Message) {
-	if s.filter != nil && !s.filter(msg) {
+func (s *Subscription) receive(ctx context.Context, msg *Message) {
+	if s.filter != nil && !s.filter(ctx, msg) {
 		return
 	}
 
-	s.handler(msg)
+	s.handler(ctx, msg)
 }
 
 func (s *Subscription) Close(ctx context.Context) {

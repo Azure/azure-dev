@@ -19,9 +19,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/messaging"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
+	"github.com/azure/azure-dev/cli/azd/pkg/progress"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
@@ -113,7 +113,7 @@ type deployAction struct {
 	middlewareRunner         middleware.MiddlewareContext
 	packageActionInitializer actions.ActionInitializer[*packageAction]
 	alphaFeatureManager      *alpha.FeatureManager
-	subscriber               messaging.Subscriber
+	progressPrinter          *progress.Printer
 }
 
 func newDeployAction(
@@ -134,7 +134,7 @@ func newDeployAction(
 	middlewareRunner middleware.MiddlewareContext,
 	packageActionInitializer actions.ActionInitializer[*packageAction],
 	alphaFeatureManager *alpha.FeatureManager,
-	subscriber messaging.Subscriber,
+	progressPrinter *progress.Printer,
 ) actions.Action {
 	return &deployAction{
 		flags:                    flags,
@@ -154,7 +154,7 @@ func newDeployAction(
 		middlewareRunner:         middlewareRunner,
 		packageActionInitializer: packageActionInitializer,
 		alphaFeatureManager:      alphaFeatureManager,
-		subscriber:               subscriber,
+		progressPrinter:          progressPrinter,
 	}
 }
 
@@ -219,26 +219,10 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	startTime := time.Now()
 
 	var stepMessage string
-	progressFilter := func(msg *messaging.Message) bool {
-		return msg.Type == project.ProgressMessageKind
-	}
-	progressSubscription := da.subscriber.Subscribe(ctx, progressFilter, func(msg *messaging.Message) {
-		progressMessage := fmt.Sprintf("%s (%s)", stepMessage, msg.Value)
-		da.console.ShowSpinner(ctx, progressMessage, input.Step)
-	})
-	defer progressSubscription.Close(ctx)
-
 	deployResults := map[string]*project.ServiceDeployResult{}
 
 	for _, svc := range da.projectConfig.GetServicesStable() {
 		stepMessage = fmt.Sprintf("Deploying service %s", svc.Name)
-
-		// Skip this service if both cases are true:
-		// 1. The user specified a service name
-		// 2. This service is not the one the user specified
-		if targetServiceName != "" && targetServiceName != svc.Name {
-			continue
-		}
 
 		if alphaFeatureId, isAlphaFeature := alpha.IsFeatureKey(string(svc.Host)); isAlphaFeature {
 			// alpha feature on/off detection for host is done during initialization.
@@ -247,6 +231,15 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		}
 
 		da.console.ShowSpinner(ctx, stepMessage, input.Step)
+
+		// Skip this service if both cases are true:
+		// 1. The user specified a service name
+		// 2. This service is not the one the user specified
+		if targetServiceName != "" && targetServiceName != svc.Name {
+			da.progressPrinter.Skip(ctx)
+			continue
+		}
+
 		var packageResult *project.ServicePackageResult
 		if da.flags.fromPackage != "" {
 			// --from-package set, skip packaging
@@ -266,17 +259,17 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		go func() {
 			for deployProgress := range deployTask.Progress() {
 				progressMessage := fmt.Sprintf("Deploying service %s (%s)", svc.Name, deployProgress.Message)
-				da.console.ShowSpinner(ctx, progressMessage, input.Step)
+				da.progressPrinter.Start(ctx, progressMessage)
 			}
 		}()
 
 		deployResult, err := deployTask.Await()
 		if err != nil {
-			da.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+			da.progressPrinter.Fail(ctx)
 			return nil, err
 		}
 
-		da.console.StopSpinner(ctx, stepMessage, input.StepDone)
+		da.progressPrinter.Done(ctx)
 		deployResults[svc.Name] = deployResult
 
 		// report deploy outputs

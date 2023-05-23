@@ -231,8 +231,8 @@ func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format Spi
 		SuffixAutoColon: true,
 		Message:         c.spinnerText(title, charSet[0]),
 		CharSet:         charSet,
+		TerminalMode:    c.spinnerTerminalMode,
 	}
-	spinnerConfig.TerminalMode = c.spinnerTerminalMode
 
 	c.spinner, _ = yacspin.New(spinnerConfig)
 

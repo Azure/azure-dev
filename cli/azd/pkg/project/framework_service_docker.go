@@ -50,6 +50,7 @@ type dockerPackageResult struct {
 }
 
 func (dpr *dockerPackageResult) ToString(currentIndentation string) string {
+	currentIndentation += "  "
 	lines := []string{
 		fmt.Sprintf("%s- Image Hash: %s", currentIndentation, output.WithLinkFormat(dpr.ImageHash)),
 		fmt.Sprintf("%s- Image Tag: %s", currentIndentation, output.WithLinkFormat(dpr.ImageTag)),

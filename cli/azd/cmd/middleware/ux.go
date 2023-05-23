@@ -13,7 +13,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/progress"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
+	"golang.org/x/exp/slices"
 )
 
 // Adds support to easily debug and attach a debugger to AZD for development purposes
@@ -54,13 +56,14 @@ func (m *UxMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionRes
 		})
 	}
 
-	subscription := m.progressPrinter.Register(ctx, func(msg *messaging.Message) bool {
-		_, handled := msg.Tags["handled"]
-		return msg.Type == ext.HookMessageKind && !handled
+	subscription := m.progressPrinter.Register(ctx, func(ctx context.Context, msg *messaging.Message) bool {
+		kinds := []messaging.MessageKind{project.ProgressMessageKind, ext.HookMessageKind}
+		return slices.Contains(kinds, msg.Type)
 	})
 	defer subscription.Close(ctx)
 
 	actionResult, err := next(ctx)
+
 	var displayResult *ux.ActionResult
 	if actionResult != nil && actionResult.Message != nil {
 		displayResult = &ux.ActionResult{

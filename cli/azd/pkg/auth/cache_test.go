@@ -59,12 +59,12 @@ func TestCache(t *testing.T) {
 
 	// read some non-existing data
 	nonExist := fixedMarshaller{
-		val: []byte(""),
+		val: []byte("nonExist data"),
 	}
 	err = c.Replace(ctx, &nonExist, cache.ReplaceHints{PartitionKey: "nonExist"})
 	require.NoError(t, err)
 	// data should not be overwritten when key is not found.
-	require.Equal(t, []byte(""), nonExist.val)
+	require.Equal(t, []byte("nonExist data"), nonExist.val)
 
 	// Unset all values
 	err = cImpl.UnsetAll()
@@ -72,11 +72,11 @@ func TestCache(t *testing.T) {
 
 	err = c.Replace(ctx, &nonExist, cache.ReplaceHints{PartitionKey: "d1"})
 	require.NoError(t, err)
-	require.Equal(t, []byte(""), nonExist.val)
+	require.Equal(t, []byte("nonExist data"), nonExist.val)
 
 	err = c.Replace(ctx, &nonExist, cache.ReplaceHints{PartitionKey: "d2"})
 	require.NoError(t, err)
-	require.Equal(t, []byte(""), nonExist.val)
+	require.Equal(t, []byte("nonExist data"), nonExist.val)
 }
 
 func TestCredentialCache(t *testing.T) {

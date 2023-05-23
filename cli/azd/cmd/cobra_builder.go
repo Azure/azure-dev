@@ -9,6 +9,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -160,12 +161,15 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 			if err != nil {
 				var respErr *azcore.ResponseError
 				var azureErr *azcli.AzureDeploymentError
+				var toolExitErr *exec.ExitError
 
 				// We only want to show trace ID for server-related errors,
 				// where we have full server logs to troubleshoot from.
 				//
 				// For client errors, we don't want to show the trace ID, as it is not useful to the user currently.
-				if errors.As(err, &respErr) || errors.As(err, &azureErr) {
+				if errors.As(err, &respErr) ||
+					errors.As(err, &azureErr) ||
+					(errors.As(err, &toolExitErr) && toolExitErr.Cmd == "terraform") {
 					if actionResult != nil && actionResult.TraceID != "" {
 						console.Message(
 							ctx,

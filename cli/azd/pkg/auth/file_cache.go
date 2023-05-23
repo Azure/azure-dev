@@ -78,7 +78,7 @@ func (c *fileCache) UnsetAll() error {
 	for _, entry := range entries {
 		if !entry.IsDir() && filepath.Ext(entry.Name()) == ext {
 			err := os.Remove(filepath.Join(c.root, entry.Name()))
-			if err != nil {
+			if err != nil && !errors.Is(err, os.ErrNotExist) {
 				return err
 			}
 		}

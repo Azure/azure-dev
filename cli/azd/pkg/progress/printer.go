@@ -3,17 +3,20 @@ package progress
 import (
 	"context"
 	"fmt"
+	"log"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/messaging"
-	"github.com/azure/azure-dev/cli/azd/pkg/project"
 )
+
+type PrintableMessage interface {
+	Print(ctx context.Context, printer *Printer)
+}
 
 type Printer struct {
 	subscriber     messaging.Subscriber
 	console        input.Console
-	defaultMessage string
+	currentMessage string
 }
 
 func NewPrinter(subscriber messaging.Subscriber, console input.Console) *Printer {
@@ -23,79 +26,50 @@ func NewPrinter(subscriber messaging.Subscriber, console input.Console) *Printer
 	}
 }
 
+func (p *Printer) CurrentMessage() string {
+	return p.currentMessage
+}
+
 func (p *Printer) Register(ctx context.Context, progressFilter messaging.MessageFilter) *messaging.Subscription {
 	return p.subscriber.Subscribe(ctx, progressFilter, p.writeMessage)
 }
 
 func (p *Printer) Start(ctx context.Context, defaultMessage string) {
-	p.defaultMessage = defaultMessage
-	//p.console.Message(ctx, fmt.Sprintf("Start: %s", defaultMessage))
+	p.currentMessage = defaultMessage
 	p.console.ShowSpinner(ctx, defaultMessage, input.Step)
 }
 
 func (p *Printer) Progress(ctx context.Context, status string) {
-	progressMessage := fmt.Sprintf("%s (%s)", p.defaultMessage, status)
-	//p.console.Message(ctx, fmt.Sprintf("Progress: %s", progressMessage))
+	progressMessage := fmt.Sprintf("%s (%s)", p.currentMessage, status)
 	p.console.ShowSpinner(ctx, progressMessage, input.Step)
 }
 
 func (p *Printer) Done(ctx context.Context) {
-	//p.console.Message(ctx, fmt.Sprintf("Done: %s", p.defaultMessage))
-	p.console.StopSpinner(ctx, p.defaultMessage, input.StepDone)
-	p.defaultMessage = ""
+	p.console.StopSpinner(ctx, p.currentMessage, input.StepDone)
+	p.currentMessage = ""
 }
 
 func (p *Printer) Fail(ctx context.Context) {
-	//p.console.Message(ctx, fmt.Sprintf("Fail: %s", p.defaultMessage))
-	p.console.StopSpinner(ctx, p.defaultMessage, input.StepFailed)
-	p.defaultMessage = ""
+	p.console.StopSpinner(ctx, p.currentMessage, input.StepFailed)
+	p.currentMessage = ""
 }
 
 func (p *Printer) Warn(ctx context.Context) {
-	//p.console.Message(ctx, fmt.Sprintf("Warn: %s", p.defaultMessage))
-	p.console.StopSpinner(ctx, p.defaultMessage, input.StepWarning)
-	p.defaultMessage = ""
+	p.console.StopSpinner(ctx, p.currentMessage, input.StepWarning)
+	p.currentMessage = ""
 }
 
 func (p *Printer) Skip(ctx context.Context) {
-	//p.console.Message(ctx, fmt.Sprintf("Skip: %s", p.defaultMessage))
-	p.console.StopSpinner(ctx, p.defaultMessage, input.StepSkipped)
-	p.defaultMessage = ""
+	p.console.StopSpinner(ctx, p.currentMessage, input.StepSkipped)
+	p.currentMessage = ""
 }
 
 func (p *Printer) writeMessage(ctx context.Context, msg *messaging.Message) {
-	switch msg.Type {
-	case project.ProgressMessageKind:
-		statusMessage := msg.Value.(string)
-		p.Progress(ctx, statusMessage)
-	case ext.HookMessageKind:
-		hookMsg, ok := msg.Value.(*ext.HookMessage)
-		if !ok {
-			return
-		}
-
-		commandHookMsg := fmt.Sprintf("Executing '%s' command hook", hookMsg.Config.Name)
-		serviceHookMsg := fmt.Sprintf("Executing '%s' service hook", hookMsg.Config.Name)
-
-		switch hookMsg.State {
-		case ext.StateInProgress:
-			if p.defaultMessage == "" {
-				p.Start(ctx, commandHookMsg)
-			} else {
-				p.Progress(ctx, serviceHookMsg)
-			}
-		case ext.StateCompleted:
-			if p.defaultMessage == commandHookMsg {
-				p.Done(ctx)
-			}
-		case ext.StateWarning:
-			if p.defaultMessage == commandHookMsg {
-				p.Warn(ctx)
-			}
-		case ext.StateFailed:
-			if p.defaultMessage == commandHookMsg {
-				p.Fail(ctx)
-			}
-		}
+	printableMessage, ok := msg.Value.(PrintableMessage)
+	if !ok {
+		log.Printf("Message of type '%s' is not printable", msg.Type)
+		return
 	}
+
+	printableMessage.Print(ctx, p)
 }

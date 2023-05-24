@@ -69,7 +69,7 @@ func (m *mavenProject) Restore(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 ) (*ServiceRestoreResult, error) {
-	m.publisher.Send(ctx, messaging.NewMessage(ProgressMessageKind, "Resolving maven dependencies"))
+	m.publisher.Send(ctx, NewProgressMessage("Resolving maven dependencies"))
 	if err := m.mavenCli.ResolveDependencies(ctx, serviceConfig.Path()); err != nil {
 		return nil, fmt.Errorf("resolving maven dependencies: %w", err)
 	}
@@ -83,7 +83,7 @@ func (m *mavenProject) Build(
 	serviceConfig *ServiceConfig,
 	restoreOutput *ServiceRestoreResult,
 ) (*ServiceBuildResult, error) {
-	m.publisher.Send(ctx, messaging.NewMessage(ProgressMessageKind, "Compiling maven project"))
+	m.publisher.Send(ctx, NewProgressMessage("Compiling maven project"))
 	if err := m.mavenCli.Compile(ctx, serviceConfig.Path()); err != nil {
 		return nil, err
 	}
@@ -104,7 +104,7 @@ func (m *mavenProject) Package(
 		return nil, fmt.Errorf("creating staging directory: %w", err)
 	}
 
-	m.publisher.Send(ctx, messaging.NewMessage(ProgressMessageKind, "Packaging maven project"))
+	m.publisher.Send(ctx, NewProgressMessage("Packaging maven project"))
 	if err := m.mavenCli.Package(ctx, serviceConfig.Path()); err != nil {
 		return nil, err
 	}
@@ -146,7 +146,7 @@ func (m *mavenProject) Package(
 		}
 	}
 
-	m.publisher.Send(ctx, messaging.NewMessage(ProgressMessageKind, "Copying deployment package"))
+	m.publisher.Send(ctx, NewProgressMessage("Copying deployment package"))
 	ext := strings.ToLower(filepath.Ext(archive))
 	err = copy.Copy(archive, filepath.Join(packageDest, AppServiceJavaPackageName+ext))
 	if err != nil {

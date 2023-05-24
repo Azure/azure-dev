@@ -111,7 +111,7 @@ func (st *springAppTarget) Deploy(
 		return nil, fmt.Errorf("reading artifact file %s: %w", artifactPath, err)
 	}
 
-	st.publisher.Send(ctx, messaging.NewMessage(ProgressMessageKind, "Uploading spring artifact"))
+	st.publisher.Send(ctx, NewProgressMessage("Uploading spring artifact"))
 	relativePath, err := st.springService.UploadSpringArtifact(
 		ctx,
 		targetResource.SubscriptionId(),
@@ -125,7 +125,7 @@ func (st *springAppTarget) Deploy(
 		return nil, fmt.Errorf("failed to upload spring artifact: %w", err)
 	}
 
-	st.publisher.Send(ctx, messaging.NewMessage(ProgressMessageKind, "Deploying spring artifact"))
+	st.publisher.Send(ctx, NewProgressMessage("Deploying spring artifact"))
 	res, err := st.springService.DeploySpringAppArtifact(
 		ctx,
 		targetResource.SubscriptionId(),
@@ -146,7 +146,7 @@ func (st *springAppTarget) Deploy(
 		return nil, fmt.Errorf("failed updating environment with relative path, %w", err)
 	}
 
-	st.publisher.Send(ctx, messaging.NewMessage(ProgressMessageKind, "Fetching endpoints for spring app service"))
+	st.publisher.Send(ctx, NewProgressMessage("Fetching endpoints for spring app service"))
 	endpoints, err := st.Endpoints(ctx, serviceConfig, targetResource)
 	if err != nil {
 		return nil, err

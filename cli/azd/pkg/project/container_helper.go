@@ -119,13 +119,13 @@ func (ch *ContainerHelper) Deploy(
 		return nil, fmt.Errorf("getting remote image tag: %w", err)
 	}
 
-	ch.publisher.Send(ctx, messaging.NewMessage(ProgressMessageKind, "Tagging container image"))
+	ch.publisher.Send(ctx, NewProgressMessage("Tagging container image"))
 	if err := ch.docker.Tag(ctx, serviceConfig.Path(), localImageTag, remoteTag); err != nil {
 		return nil, err
 	}
 
 	log.Printf("logging into container registry '%s'\n", loginServer)
-	ch.publisher.Send(ctx, messaging.NewMessage(ProgressMessageKind, "Logging into container registry"))
+	ch.publisher.Send(ctx, NewProgressMessage("Logging into container registry"))
 	err = ch.containerRegistryService.Login(ctx, targetResource.SubscriptionId(), loginServer)
 	if err != nil {
 		return nil, err
@@ -133,7 +133,7 @@ func (ch *ContainerHelper) Deploy(
 
 	// Push image.
 	log.Printf("pushing %s to registry", remoteTag)
-	ch.publisher.Send(ctx, messaging.NewMessage(ProgressMessageKind, "Pushing container image"))
+	ch.publisher.Send(ctx, NewProgressMessage("Pushing container image"))
 	if err := ch.docker.Push(ctx, serviceConfig.Path(), remoteTag); err != nil {
 		return nil, err
 	}

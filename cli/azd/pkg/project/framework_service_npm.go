@@ -59,7 +59,7 @@ func (np *npmProject) Restore(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 ) (*ServiceRestoreResult, error) {
-	np.publisher.Send(ctx, messaging.NewMessage(ProgressMessageKind, "Installing NPM dependencies"))
+	np.publisher.Send(ctx, NewProgressMessage("Installing NPM dependencies"))
 	if err := np.cli.Install(ctx, serviceConfig.Path()); err != nil {
 		return nil, err
 	}
@@ -75,7 +75,7 @@ func (np *npmProject) Build(
 ) (*ServiceBuildResult, error) {
 	// Exec custom `build` script if available
 	// If `build`` script is not defined in the package.json the NPM script will NOT fail
-	np.publisher.Send(ctx, messaging.NewMessage(ProgressMessageKind, "Running NPM build script"))
+	np.publisher.Send(ctx, NewProgressMessage("Running NPM build script"))
 	if err := np.cli.RunScript(ctx, serviceConfig.Path(), "build"); err != nil {
 		return nil, err
 	}
@@ -104,7 +104,7 @@ func (np *npmProject) Package(
 
 	// Exec custom `package` script if available
 	// If `package` script is not defined in the package.json the NPM script will NOT fail
-	np.publisher.Send(ctx, messaging.NewMessage(ProgressMessageKind, "Running NPM package script"))
+	np.publisher.Send(ctx, NewProgressMessage("Running NPM package script"))
 
 	// Long term this script we call should better align with our inner-loop scenarios
 	// Keeping this defaulted to `build` will create confusion for users when we start to support
@@ -128,7 +128,7 @@ func (np *npmProject) Package(
 		)
 	}
 
-	np.publisher.Send(ctx, messaging.NewMessage(ProgressMessageKind, "Copying deployment package"))
+	np.publisher.Send(ctx, NewProgressMessage("Copying deployment package"))
 	if err := buildForZip(
 		packageSource,
 		packageDest,

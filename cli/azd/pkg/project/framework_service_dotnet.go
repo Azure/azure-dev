@@ -80,7 +80,7 @@ func (dp *dotnetProject) Restore(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 ) (*ServiceRestoreResult, error) {
-	dp.publisher.Send(ctx, messaging.NewMessage(ProgressMessageKind, "Restoring .NET project dependencies"))
+	dp.publisher.Send(ctx, NewProgressMessage("Restoring .NET project dependencies"))
 	projFile, err := findProjectFile(serviceConfig.Name, serviceConfig.Path())
 	if err != nil {
 		return nil, err
@@ -98,7 +98,7 @@ func (dp *dotnetProject) Build(
 	serviceConfig *ServiceConfig,
 	restoreOutput *ServiceRestoreResult,
 ) (*ServiceBuildResult, error) {
-	dp.publisher.Send(ctx, messaging.NewMessage(ProgressMessageKind, "Building .NET project"))
+	dp.publisher.Send(ctx, NewProgressMessage("Building .NET project"))
 	projFile, err := findProjectFile(serviceConfig.Name, serviceConfig.Path())
 	if err != nil {
 		return nil, err
@@ -141,7 +141,7 @@ func (dp *dotnetProject) Package(
 		return nil, fmt.Errorf("creating package directory for %s: %w", serviceConfig.Name, err)
 	}
 
-	dp.publisher.Send(ctx, messaging.NewMessage(ProgressMessageKind, "Publishing .NET project"))
+	dp.publisher.Send(ctx, NewProgressMessage("Publishing .NET project"))
 	projFile, err := findProjectFile(serviceConfig.Name, serviceConfig.Path())
 	if err != nil {
 		return nil, err

@@ -57,14 +57,14 @@ func (pp *pythonProject) Restore(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 ) (*ServiceRestoreResult, error) {
-	pp.publisher.Send(ctx, messaging.NewMessage(ProgressMessageKind, "Checking for Python virtual environment"))
+	pp.publisher.Send(ctx, NewProgressMessage("Checking for Python virtual environment"))
 	vEnvName := pp.getVenvName(serviceConfig)
 	vEnvPath := path.Join(serviceConfig.Path(), vEnvName)
 
 	_, err := os.Stat(vEnvPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			pp.publisher.Send(ctx, messaging.NewMessage(ProgressMessageKind, "Creating Python virtual environment"))
+			pp.publisher.Send(ctx, NewProgressMessage("Creating Python virtual environment"))
 			err = pp.cli.CreateVirtualEnv(ctx, serviceConfig.Path(), vEnvName)
 			if err != nil {
 				return nil, fmt.Errorf(
@@ -82,7 +82,7 @@ func (pp *pythonProject) Restore(
 		}
 	}
 
-	pp.publisher.Send(ctx, messaging.NewMessage(ProgressMessageKind, "Installing Python PIP dependencies"))
+	pp.publisher.Send(ctx, NewProgressMessage("Installing Python PIP dependencies"))
 	err = pp.cli.InstallRequirements(ctx, serviceConfig.Path(), vEnvName, "requirements.txt")
 	if err != nil {
 		return nil, fmt.Errorf("requirements for project '%s' could not be installed: %w", serviceConfig.Path(), err)
@@ -128,7 +128,7 @@ func (pp *pythonProject) Package(
 		return nil, fmt.Errorf("package source '%s' is empty or does not exist", packageSource)
 	}
 
-	pp.publisher.Send(ctx, messaging.NewMessage(ProgressMessageKind, "Copying deployment package"))
+	pp.publisher.Send(ctx, NewProgressMessage("Copying deployment package"))
 	if err := buildForZip(
 		packageSource,
 		packageDest,

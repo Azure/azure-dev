@@ -1,6 +1,7 @@
 package ext
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -9,6 +10,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/messaging"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/progress"
 )
 
 type ShellType string
@@ -59,6 +61,33 @@ func NewHookMessage(config *HookConfig, state HookState) *messaging.Message {
 	}
 
 	return messaging.NewMessage(HookMessageKind, msg)
+}
+
+func (hm *HookMessage) Print(ctx context.Context, printer *progress.Printer) {
+	currentMessage := printer.CurrentMessage()
+	commandHookMsg := fmt.Sprintf("Executing '%s' command hook", hm.Config.Name)
+	serviceHookMsg := fmt.Sprintf("Executing '%s' service hook", hm.Config.Name)
+
+	switch hm.State {
+	case StateInProgress:
+		if currentMessage == "" {
+			printer.Start(ctx, commandHookMsg)
+		} else {
+			printer.Progress(ctx, serviceHookMsg)
+		}
+	case StateCompleted:
+		if currentMessage == commandHookMsg {
+			printer.Done(ctx)
+		}
+	case StateWarning:
+		if currentMessage == commandHookMsg {
+			printer.Warn(ctx)
+		}
+	case StateFailed:
+		if currentMessage == commandHookMsg {
+			printer.Fail(ctx)
+		}
+	}
 }
 
 // The type of hooks. Supported values are 'pre' and 'post'

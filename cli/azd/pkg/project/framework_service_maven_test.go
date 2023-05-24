@@ -50,10 +50,7 @@ func Test_MavenProject(t *testing.T) {
 		err = mavenProject.Initialize(*mockContext.Context, serviceConfig)
 		require.NoError(t, err)
 
-		restoreTask := mavenProject.Restore(*mockContext.Context, serviceConfig)
-		logProgress(restoreTask)
-
-		result, err := restoreTask.Await()
+		result, err := mavenProject.Restore(*mockContext.Context, serviceConfig)
 		require.NoError(t, err)
 		require.NotNil(t, result)
 		require.Contains(t, runArgs.Cmd, getMvnwCmd())
@@ -86,10 +83,7 @@ func Test_MavenProject(t *testing.T) {
 		err = mavenProject.Initialize(*mockContext.Context, serviceConfig)
 		require.NoError(t, err)
 
-		buildTask := mavenProject.Build(*mockContext.Context, serviceConfig, nil)
-		logProgress(buildTask)
-
-		result, err := buildTask.Await()
+		result, err := mavenProject.Build(*mockContext.Context, serviceConfig, nil)
 		require.NoError(t, err)
 		require.NotNil(t, result)
 		require.Contains(t, runArgs.Cmd, getMvnwCmd())

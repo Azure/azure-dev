@@ -35,10 +35,8 @@ func Test_NpmProject_Restore(t *testing.T) {
 	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageTypeScript)
 
 	npmProject := NewNpmProject(npmCli, env, messaging.NewService())
-	restoreTask := npmProject.Restore(*mockContext.Context, serviceConfig)
-	logProgress(restoreTask)
 
-	result, err := restoreTask.Await()
+	result, err := npmProject.Restore(*mockContext.Context, serviceConfig)
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, "npm", runArgs.Cmd)
@@ -67,10 +65,8 @@ func Test_NpmProject_Build(t *testing.T) {
 	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageTypeScript)
 
 	npmProject := NewNpmProject(npmCli, env, messaging.NewService())
-	buildTask := npmProject.Build(*mockContext.Context, serviceConfig, nil)
-	logProgress(buildTask)
 
-	result, err := buildTask.Await()
+	result, err := npmProject.Build(*mockContext.Context, serviceConfig, nil)
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, "npm", runArgs.Cmd)

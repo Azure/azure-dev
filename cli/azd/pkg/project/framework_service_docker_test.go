@@ -81,24 +81,13 @@ services:
 	npmCli := npm.NewNpmCli(mockContext.CommandRunner)
 	docker := docker.NewDocker(mockContext.CommandRunner)
 
-	done := make(chan bool)
-
 	internalFramework := NewNpmProject(npmCli, env, messaging.NewService())
 	progressMessages := []string{}
 
-	framework := NewDockerProject(env, docker, NewContainerHelper(env, clock.NewMock(), nil, docker), messaging.NewService())
+	framework := NewDockerProject(env, docker, NewContainerHelper(env, clock.NewMock(), nil, docker, messaging.NewService()), messaging.NewService())
 	framework.SetSource(internalFramework)
 
-	buildTask := framework.Build(*mockContext.Context, service, nil)
-	go func() {
-		for value := range buildTask.Progress() {
-			progressMessages = append(progressMessages, value.Message)
-		}
-		done <- true
-	}()
-
-	buildResult, err := buildTask.Await()
-	<-done
+	buildResult, err := framework.Build(*mockContext.Context, service, nil)
 
 	require.Equal(t, "imageId", buildResult.BuildOutputPath)
 	require.Nil(t, err)
@@ -170,24 +159,13 @@ services:
 
 	service := projectConfig.Services["web"]
 
-	done := make(chan bool)
-
 	internalFramework := NewNpmProject(npmCli, env, messaging.NewService())
 	status := ""
 
-	framework := NewDockerProject(env, docker, NewContainerHelper(env, clock.NewMock(), nil, docker), messaging.NewService())
+	framework := NewDockerProject(env, docker, NewContainerHelper(env, clock.NewMock(), nil, docker, messaging.NewService()), messaging.NewService())
 	framework.SetSource(internalFramework)
 
-	buildTask := framework.Build(*mockContext.Context, service, nil)
-	go func() {
-		for value := range buildTask.Progress() {
-			status = value.Message
-		}
-		done <- true
-	}()
-
-	buildResult, err := buildTask.Await()
-	<-done
+	buildResult, err := framework.Build(*mockContext.Context, service, nil)
 
 	require.Equal(t, "imageId", buildResult.BuildOutputPath)
 	require.Nil(t, err)
@@ -215,13 +193,11 @@ func Test_DockerProject_Build(t *testing.T) {
 	dockerProject := NewDockerProject(
 		env,
 		dockerCli,
-		NewContainerHelper(env, clock.NewMock(), nil, dockerCli),
+		NewContainerHelper(env, clock.NewMock(), nil, dockerCli, messaging.NewService()),
 		messaging.NewService(),
 	)
-	buildTask := dockerProject.Build(*mockContext.Context, serviceConfig, nil)
-	logProgress(buildTask)
 
-	result, err := buildTask.Await()
+	result, err := dockerProject.Build(*mockContext.Context, serviceConfig, nil)
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, "IMAGE_ID", result.BuildOutputPath)
@@ -265,7 +241,7 @@ func Test_DockerProject_Package(t *testing.T) {
 	dockerProject := NewDockerProject(
 		env,
 		dockerCli,
-		NewContainerHelper(env, clock.NewMock(), nil, dockerCli),
+		NewContainerHelper(env, clock.NewMock(), nil, dockerCli, messaging.NewService()),
 		messaging.NewService(),
 	)
 	result, err := dockerProject.Package(

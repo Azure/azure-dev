@@ -105,9 +105,7 @@ func Test_ContainerApp_Deploy(t *testing.T) {
 		"CONTAINER_APP",
 		string(infra.AzureResourceTypeContainerApp),
 	)
-	deployTask := serviceTarget.Deploy(*mockContext.Context, serviceConfig, packageResult, scope)
-	logProgress(deployTask)
-	deployResult, err := deployTask.Await()
+	deployResult, err := serviceTarget.Deploy(*mockContext.Context, serviceConfig, packageResult, scope)
 
 	require.NoError(t, err)
 	require.NotNil(t, deployResult)
@@ -130,7 +128,7 @@ func createContainerAppServiceTarget(
 
 	containerAppService := containerapps.NewContainerAppService(credentialProvider, mockContext.HttpClient, clock.NewMock())
 	containerRegistryService := azcli.NewContainerRegistryService(credentialProvider, mockContext.HttpClient, dockerCli)
-	containerHelper := NewContainerHelper(env, clock.NewMock(), containerRegistryService, dockerCli)
+	containerHelper := NewContainerHelper(env, clock.NewMock(), containerRegistryService, dockerCli, messaging.NewService())
 	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 	resourceManager := NewResourceManager(env, azCli)
 

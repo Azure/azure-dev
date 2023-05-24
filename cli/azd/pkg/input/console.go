@@ -152,6 +152,7 @@ func (c *AskerConsole) WarnForFeature(ctx context.Context, key alpha.FeatureId) 
 	if shouldWarn(key) {
 		c.MessageUxItem(ctx, &ux.MultilineMessage{
 			Lines: []string{
+				"",
 				output.WithWarningFormat("WARNING: Feature '%s' is in alpha stage.", string(key)),
 				fmt.Sprintf("To learn more about alpha features and their support, visit %s.",
 					output.WithLinkFormat("https://aka.ms/azd-feature-stages")),

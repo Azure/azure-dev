@@ -11,10 +11,40 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestCacheFixed(t *testing.T) {
+	root := t.TempDir()
+	ctx := context.Background()
+	fixedKey := cCurrentUserCacheKey
+	c := newCache(root, &fixedKey)
+
+	data := fixedMarshaller{
+		val: []byte("some data"),
+	}
+
+	// write some data.
+	err := c.Export(ctx, &data, cache.ExportHints{})
+	require.NoError(t, err)
+
+	// read back that data we wrote.
+	var reader fixedMarshaller
+	err = c.Replace(ctx, &reader, cache.ReplaceHints{})
+	require.NoError(t, err)
+	require.NotNil(t, reader.val)
+	require.Equal(t, data.val, reader.val)
+
+	// the data should be shared across instances.
+	c = newCache(root, &fixedKey)
+
+	reader = fixedMarshaller{}
+	err = c.Replace(ctx, &reader, cache.ReplaceHints{PartitionKey: "d1"})
+	require.NoError(t, err)
+	require.Equal(t, data.val, reader.val)
+}
+
 func TestCache(t *testing.T) {
 	root := t.TempDir()
 	ctx := context.Background()
-	c := newCache(root)
+	c := newCache(root, nil)
 
 	d1 := fixedMarshaller{
 		val: []byte("some data"),
@@ -45,7 +75,7 @@ func TestCache(t *testing.T) {
 	require.Equal(t, d2.val, r2.val)
 
 	// the data should be shared across instances.
-	c = newCache(root)
+	c = newCache(root, nil)
 
 	err = c.Replace(ctx, &r1, cache.ReplaceHints{PartitionKey: "d1"})
 	require.NoError(t, err)

@@ -16,11 +16,21 @@ const cCurrentUserCacheKey = ""
 
 // msalCacheAdapter adapts our interface to the one expected by cache.ExportReplace.
 type msalCacheAdapter struct {
-	cache Cache
+	cache    Cache
+	fixedKey *string
+}
+
+func (a *msalCacheAdapter) key(suggestedKey string) string {
+	if a.fixedKey != nil {
+		return *a.fixedKey
+	}
+
+	return suggestedKey
 }
 
 func (a *msalCacheAdapter) Replace(ctx context.Context, cache cache.Unmarshaler, cacheHints cache.ReplaceHints) error {
-	val, err := a.cache.Read(cCurrentUserCacheKey)
+	key := a.key(cacheHints.PartitionKey)
+	val, err := a.cache.Read(key)
 	if errors.Is(err, errCacheKeyNotFound) {
 		return nil
 	} else if err != nil {
@@ -35,12 +45,13 @@ func (a *msalCacheAdapter) Replace(ctx context.Context, cache cache.Unmarshaler,
 }
 
 func (a *msalCacheAdapter) Export(ctx context.Context, cache cache.Marshaler, cacheHints cache.ExportHints) error {
+	key := a.key(cacheHints.PartitionKey)
 	val, err := cache.Marshal()
 	if err != nil {
 		return err
 	}
 
-	return a.cache.Set(cCurrentUserCacheKey, val)
+	return a.cache.Set(key, val)
 }
 
 type Cache interface {

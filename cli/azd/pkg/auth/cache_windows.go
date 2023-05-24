@@ -44,6 +44,7 @@ func newCache(root string) cache.ExportReplace {
 				},
 			},
 		},
+		fixedKey: fixedKey,
 	}
 }
 

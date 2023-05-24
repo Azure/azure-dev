@@ -23,6 +23,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/github"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
@@ -105,7 +106,7 @@ func NewManager(
 	}
 
 	options := []public.Option{
-		public.WithCache(newCache(cacheRoot)),
+		public.WithCache(newCache(cacheRoot, convert.RefOf(cCurrentUserCacheKey))),
 		public.WithAuthority(cDefaultAuthority),
 	}
 

@@ -13,7 +13,7 @@ import (
 // newCache creates a cache implementation that satisfies [cache.ExportReplace] from the MSAL library.
 //
 // root must be created beforehand, and must point to a directory.
-func newCache(root string) cache.ExportReplace {
+func newCache(root string, fixedKey *string) cache.ExportReplace {
 	return &msalCacheAdapter{
 		cache: &memoryCache{
 			cache: make(map[string][]byte),
@@ -23,6 +23,7 @@ func newCache(root string) cache.ExportReplace {
 				ext:    "json",
 			},
 		},
+		fixedKey: fixedKey,
 	}
 }
 

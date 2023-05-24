@@ -5,6 +5,7 @@ package auth
 
 import (
 	"log"
+	"runtime"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
 )
@@ -17,6 +18,12 @@ type msalCacheAdapter struct {
 }
 
 func (a *msalCacheAdapter) Replace(cache cache.Unmarshaler, key string) {
+	pc, _, _, ok := runtime.Caller(1)
+	details := runtime.FuncForPC(pc)
+	if ok && details != nil {
+		log.Printf("Replace(%s): called from %s\n", key, details.Name())
+	}
+
 	val, err := a.cache.Read(key)
 	if err != nil {
 		log.Printf("ignoring error in adapter: %v", err)
@@ -28,6 +35,12 @@ func (a *msalCacheAdapter) Replace(cache cache.Unmarshaler, key string) {
 }
 
 func (a *msalCacheAdapter) Export(cache cache.Marshaler, key string) {
+	pc, _, _, ok := runtime.Caller(1)
+	details := runtime.FuncForPC(pc)
+	if ok && details != nil {
+		log.Printf("Export(%s): called from %s\n", key, details.Name())
+	}
+
 	val, err := cache.Marshal()
 	if err != nil {
 		log.Printf("ignoring error in adapter: %v", err)

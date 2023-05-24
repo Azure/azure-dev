@@ -27,7 +27,9 @@ func TestCacheFixed(t *testing.T) {
 	ctx := context.Background()
 	fixedKey := cCurrentUserCacheKey
 	c := newCache(root, &fixedKey)
-	rng := rand.New(rand.NewSource(0)) //nolint:gosec weak rng is fine for testing
+	// weak rng is fine for testing
+	//nolint:gosec
+	rng := rand.New(rand.NewSource(0))
 
 	key := func() string {
 		return randSeq(10, *rng)

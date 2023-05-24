@@ -447,7 +447,7 @@ func TestPlanForResourceGroup(t *testing.T) {
 
 	// Validate that we correctly show the selection of existing groups, but pick the option to create a new one instead.
 	mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool {
-		return options.Message == "Please pick a resource group to use"
+		return options.Message == "Please pick a resource group to use:"
 	}).RespondFn(func(options input.ConsoleOptions) (any, error) {
 		require.Len(t, options.Options, 3)
 		require.Equal(t, "Create a new resource group", options.Options[0])
@@ -460,7 +460,7 @@ func TestPlanForResourceGroup(t *testing.T) {
 	// Validate that we are prompted for a name for the new resource group, and that a suitable default is provided based
 	// our current environment name.
 	mockContext.Console.WhenPrompt(func(options input.ConsoleOptions) bool {
-		return options.Message == "Please enter a name for the new resource group"
+		return options.Message == "Please enter a name for the new resource group:"
 	}).RespondFn(func(options input.ConsoleOptions) (any, error) {
 		require.Equal(t, "rg-test-env", options.DefaultValue)
 		return options.DefaultValue, nil

@@ -10,7 +10,6 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v2"
-	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/messaging"
@@ -110,178 +109,157 @@ func (t *aksTarget) Deploy(
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
 	targetResource *environment.TargetResource,
-) *async.TaskWithProgress[*ServiceDeployResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress]) {
-			if err := t.validateTargetResource(ctx, serviceConfig, targetResource); err != nil {
-				task.SetError(fmt.Errorf("validating target resource: %w", err))
-				return
-			}
+) (*ServiceDeployResult, error) {
+	if err := t.validateTargetResource(ctx, serviceConfig, targetResource); err != nil {
+		return nil, fmt.Errorf("validating target resource: %w", err)
+	}
 
-			if packageOutput == nil {
-				task.SetError(errors.New("missing package output"))
-				return
-			}
+	if packageOutput == nil {
+		return nil, errors.New("missing package output")
+	}
 
-			// Login to AKS cluster
-			clusterName, has := t.env.LookupEnv(environment.AksClusterEnvVarName)
-			if !has {
-				task.SetError(fmt.Errorf(
-					"could not determine AKS cluster, ensure %s is set as an output of your infrastructure",
-					environment.AksClusterEnvVarName,
-				))
-				return
-			}
+	// Login to AKS cluster
+	clusterName, has := t.env.LookupEnv(environment.AksClusterEnvVarName)
+	if !has {
+		return nil, fmt.Errorf(
+			"could not determine AKS cluster, ensure %s is set as an output of your infrastructure",
+			environment.AksClusterEnvVarName,
+		)
+	}
 
-			log.Printf("getting AKS credentials for cluster '%s'\n", clusterName)
-			task.SetProgress(NewServiceProgress("Getting AKS credentials"))
-			clusterCreds, err := t.managedClustersService.GetAdminCredentials(
-				ctx,
-				targetResource.SubscriptionId(),
-				targetResource.ResourceGroupName(),
-				clusterName,
-			)
-			if err != nil {
-				task.SetError(fmt.Errorf(
-					"failed retrieving cluster admin credentials. Ensure your cluster has been configured to support admin credentials, %w",
-					err,
-				))
-				return
-			}
+	log.Printf("getting AKS credentials for cluster '%s'\n", clusterName)
+	t.publisher.Send(ctx, messaging.NewMessage(ProgressMessageKind, "Getting AKS credentials"))
+	clusterCreds, err := t.managedClustersService.GetAdminCredentials(
+		ctx,
+		targetResource.SubscriptionId(),
+		targetResource.ResourceGroupName(),
+		clusterName,
+	)
+	if err != nil {
+		return nil, fmt.Errorf(
+			"failed retrieving cluster admin credentials. Ensure your cluster has been configured to support admin credentials, %w",
+			err,
+		)
+	}
 
-			if len(clusterCreds.Kubeconfigs) == 0 {
-				task.SetError(fmt.Errorf(
-					"cluster credentials is empty. Ensure your cluster has been configured to support admin credentials. , %w",
-					err,
-				))
-				return
-			}
+	if len(clusterCreds.Kubeconfigs) == 0 {
+		return nil, fmt.Errorf(
+			"cluster credentials is empty. Ensure your cluster has been configured to support admin credentials. , %w",
+			err,
+		)
+	}
 
-			// The kubeConfig that we care about will also be at position 0
-			// I don't know if there is a valid use case where this credential results would container multiple configs
-			task.SetProgress(NewServiceProgress("Configuring k8s config context"))
-			err = t.configureK8sContext(ctx, clusterName, clusterCreds.Kubeconfigs[0])
-			if err != nil {
-				task.SetError(err)
-				return
-			}
+	// The kubeConfig that we care about will also be at position 0
+	// I don't know if there is a valid use case where this credential results would container multiple configs
+	t.publisher.Send(ctx, messaging.NewMessage(ProgressMessageKind, "Configuring k8s config context"))
+	err = t.configureK8sContext(ctx, clusterName, clusterCreds.Kubeconfigs[0])
+	if err != nil {
+		return nil, err
+	}
 
-			// Login, tag & push container image to ACR
-			containerDeployTask := t.containerHelper.Deploy(ctx, serviceConfig, packageOutput, targetResource)
-			syncProgress(task, containerDeployTask.Progress())
+	// Login, tag & push container image to ACR
+	_, err = t.containerHelper.Deploy(ctx, serviceConfig, packageOutput, targetResource)
+	if err != nil {
+		return nil, err
+	}
 
-			_, err = containerDeployTask.Await()
-			if err != nil {
-				task.SetError(err)
-				return
-			}
+	namespace := t.getK8sNamespace(serviceConfig)
 
-			namespace := t.getK8sNamespace(serviceConfig)
+	t.publisher.Send(ctx, messaging.NewMessage(ProgressMessageKind, "Creating k8s namespace"))
+	namespaceResult, err := t.kubectl.CreateNamespace(
+		ctx,
+		namespace,
+		&kubectl.KubeCliFlags{
+			DryRun: kubectl.DryRunTypeClient,
+			Output: kubectl.OutputTypeYaml,
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed creating kube namespace: %w", err)
+	}
 
-			task.SetProgress(NewServiceProgress("Creating k8s namespace"))
-			namespaceResult, err := t.kubectl.CreateNamespace(
-				ctx,
-				namespace,
-				&kubectl.KubeCliFlags{
-					DryRun: kubectl.DryRunTypeClient,
-					Output: kubectl.OutputTypeYaml,
-				},
-			)
-			if err != nil {
-				task.SetError(fmt.Errorf("failed creating kube namespace: %w", err))
-				return
-			}
+	_, err = t.kubectl.ApplyWithInput(ctx, namespaceResult.Stdout, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed applying kube namespace: %w", err)
+	}
 
-			_, err = t.kubectl.ApplyWithInput(ctx, namespaceResult.Stdout, nil)
-			if err != nil {
-				task.SetError(fmt.Errorf("failed applying kube namespace: %w", err))
-				return
-			}
+	t.publisher.Send(ctx, messaging.NewMessage(ProgressMessageKind, "Creating k8s secrets"))
+	secretResult, err := t.kubectl.CreateSecretGenericFromLiterals(
+		ctx,
+		"azd",
+		t.env.Environ(),
+		&kubectl.KubeCliFlags{
+			Namespace: namespace,
+			DryRun:    kubectl.DryRunTypeClient,
+			Output:    kubectl.OutputTypeYaml,
+		},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed setting kube secrets: %w", err)
+	}
 
-			task.SetProgress(NewServiceProgress("Creating k8s secrets"))
-			secretResult, err := t.kubectl.CreateSecretGenericFromLiterals(
-				ctx,
-				"azd",
-				t.env.Environ(),
-				&kubectl.KubeCliFlags{
-					Namespace: namespace,
-					DryRun:    kubectl.DryRunTypeClient,
-					Output:    kubectl.OutputTypeYaml,
-				},
-			)
-			if err != nil {
-				task.SetError(fmt.Errorf("failed setting kube secrets: %w", err))
-				return
-			}
+	_, err = t.kubectl.ApplyWithInput(ctx, secretResult.Stdout, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed applying kube secrets: %w", err)
+	}
 
-			_, err = t.kubectl.ApplyWithInput(ctx, secretResult.Stdout, nil)
-			if err != nil {
-				task.SetError(fmt.Errorf("failed applying kube secrets: %w", err))
-				return
-			}
+	t.publisher.Send(ctx, messaging.NewMessage(ProgressMessageKind, "Applying k8s manifests"))
+	t.kubectl.SetEnv(t.env.Dotenv())
+	deploymentPath := serviceConfig.K8s.DeploymentPath
+	if deploymentPath == "" {
+		deploymentPath = defaultDeploymentPath
+	}
 
-			task.SetProgress(NewServiceProgress("Applying k8s manifests"))
-			t.kubectl.SetEnv(t.env.Dotenv())
-			deploymentPath := serviceConfig.K8s.DeploymentPath
-			if deploymentPath == "" {
-				deploymentPath = defaultDeploymentPath
-			}
+	err = t.kubectl.Apply(
+		ctx,
+		filepath.Join(serviceConfig.RelativePath, deploymentPath),
+		&kubectl.KubeCliFlags{Namespace: namespace},
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed applying kube manifests: %w", err)
+	}
 
-			err = t.kubectl.Apply(
-				ctx,
-				filepath.Join(serviceConfig.RelativePath, deploymentPath),
-				&kubectl.KubeCliFlags{Namespace: namespace},
-			)
-			if err != nil {
-				task.SetError(fmt.Errorf("failed applying kube manifests: %w", err))
-				return
-			}
+	deploymentName := serviceConfig.K8s.Deployment.Name
+	if deploymentName == "" {
+		deploymentName = serviceConfig.Name
+	}
 
-			deploymentName := serviceConfig.K8s.Deployment.Name
-			if deploymentName == "" {
-				deploymentName = serviceConfig.Name
-			}
+	// It is not a requirement for a AZD deploy to contain a deployment object
+	// If we don't find any deployment within the namespace we will continue
+	t.publisher.Send(ctx, messaging.NewMessage(ProgressMessageKind, "Verifying deployment"))
+	deployment, err := t.waitForDeployment(ctx, namespace, deploymentName)
+	if err != nil && !errors.Is(err, kubectl.ErrResourceNotFound) {
+		return nil, err
+	}
 
-			// It is not a requirement for a AZD deploy to contain a deployment object
-			// If we don't find any deployment within the namespace we will continue
-			task.SetProgress(NewServiceProgress("Verifying deployment"))
-			deployment, err := t.waitForDeployment(ctx, namespace, deploymentName)
-			if err != nil && !errors.Is(err, kubectl.ErrResourceNotFound) {
-				task.SetError(err)
-				return
-			}
+	t.publisher.Send(ctx, messaging.NewMessage(ProgressMessageKind, "Fetching endpoints for AKS service"))
+	endpoints, err := t.Endpoints(ctx, serviceConfig, targetResource)
+	if err != nil {
+		return nil, err
+	}
 
-			task.SetProgress(NewServiceProgress("Fetching endpoints for AKS service"))
-			endpoints, err := t.Endpoints(ctx, serviceConfig, targetResource)
-			if err != nil {
-				task.SetError(err)
-				return
-			}
+	if len(endpoints) > 0 {
+		// The AKS endpoints contain some additional identifying information
+		// Split on common to pull out the URL as the first segment
+		// The last endpoint in the array will be the most publicly exposed
+		endpointParts := strings.Split(endpoints[len(endpoints)-1], ",")
+		t.env.SetServiceProperty(serviceConfig.Name, "ENDPOINT_URL", endpointParts[0])
+		if err := t.env.Save(); err != nil {
+			return nil, fmt.Errorf("failed updating environment with endpoint url, %w", err)
+		}
+	}
 
-			if len(endpoints) > 0 {
-				// The AKS endpoints contain some additional identifying information
-				// Split on common to pull out the URL as the first segment
-				// The last endpoint in the array will be the most publicly exposed
-				endpointParts := strings.Split(endpoints[len(endpoints)-1], ",")
-				t.env.SetServiceProperty(serviceConfig.Name, "ENDPOINT_URL", endpointParts[0])
-				if err := t.env.Save(); err != nil {
-					task.SetError(fmt.Errorf("failed updating environment with endpoint url, %w", err))
-					return
-				}
-			}
-
-			task.SetResult(&ServiceDeployResult{
-				Package: packageOutput,
-				TargetResourceId: azure.KubernetesServiceRID(
-					targetResource.SubscriptionId(),
-					targetResource.ResourceGroupName(),
-					targetResource.ResourceName(),
-				),
-				Kind:      AksTarget,
-				Details:   deployment,
-				Endpoints: endpoints,
-			})
-		})
+	return &ServiceDeployResult{
+		Package: packageOutput,
+		TargetResourceId: azure.KubernetesServiceRID(
+			targetResource.SubscriptionId(),
+			targetResource.ResourceGroupName(),
+			targetResource.ResourceName(),
+		),
+		Kind:      AksTarget,
+		Details:   deployment,
+		Endpoints: endpoints,
+	}, nil
 }
 
 // Gets the service endpoints for the AKS service target

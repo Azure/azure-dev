@@ -49,7 +49,7 @@ type ServiceManager interface {
 	Restore(
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
-	) *async.TaskWithProgress[*ServiceRestoreResult, ServiceProgress]
+	) (*ServiceRestoreResult, error)
 
 	// Builds the code for the specified service config
 	// Will call the language compile for compiled languages or
@@ -58,7 +58,7 @@ type ServiceManager interface {
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
 		restoreOutput *ServiceRestoreResult,
-	) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress]
+	) (*ServiceBuildResult, error)
 
 	// Packages the code for the specified service config
 	// Depending on the service configuration this will generate an artifact
@@ -169,41 +169,33 @@ func (sm *serviceManager) Initialize(ctx context.Context, serviceConfig *Service
 }
 
 // Restores the code dependencies for the specified service config
-func (sm *serviceManager) Restore(
-	ctx context.Context,
-	serviceConfig *ServiceConfig,
-) *async.TaskWithProgress[*ServiceRestoreResult, ServiceProgress] {
-	return async.RunTaskWithProgress(func(task *async.TaskContextWithProgress[*ServiceRestoreResult, ServiceProgress]) {
-		cachedResult, ok := sm.getOperationResult(ctx, serviceConfig, string(ServiceEventRestore))
-		if ok && cachedResult != nil {
-			task.SetResult(cachedResult.(*ServiceRestoreResult))
-			return
-		}
+func (sm *serviceManager) Restore(ctx context.Context, serviceConfig *ServiceConfig) (*ServiceRestoreResult, error) {
+	cachedResult, ok := sm.getOperationResult(ctx, serviceConfig, string(ServiceEventRestore))
+	if ok && cachedResult != nil {
+		return cachedResult.(*ServiceRestoreResult), nil
+	}
 
-		frameworkService, err := sm.GetFrameworkService(ctx, serviceConfig)
-		if err != nil {
-			task.SetError(fmt.Errorf("getting framework services: %w", err))
-			return
-		}
+	frameworkService, err := sm.GetFrameworkService(ctx, serviceConfig)
+	if err != nil {
+		return nil, fmt.Errorf("getting framework services: %w", err)
+	}
 
-		restoreResult, err := runCommand(
-			ctx,
-			task,
-			ServiceEventRestore,
-			serviceConfig,
-			func() *async.TaskWithProgress[*ServiceRestoreResult, ServiceProgress] {
-				return frameworkService.Restore(ctx, serviceConfig)
-			},
-		)
+	restoreResult, err := runCommand(
+		ctx,
+		ServiceEventRestore,
+		serviceConfig,
+		func() (*ServiceRestoreResult, error) {
+			return frameworkService.Restore(ctx, serviceConfig)
+		},
+	)
 
-		if err != nil {
-			task.SetError(fmt.Errorf("failed restoring service '%s': %w", serviceConfig.Name, err))
-			return
-		}
+	if err != nil {
+		return nil, fmt.Errorf("failed restoring service '%s': %w", serviceConfig.Name, err)
+	}
 
-		task.SetResult(restoreResult)
-		sm.setOperationResult(ctx, serviceConfig, string(ServiceEventRestore), restoreResult)
-	})
+	sm.setOperationResult(ctx, serviceConfig, string(ServiceEventRestore), restoreResult)
+
+	return restoreResult
 }
 
 // Builds the code for the specified service config
@@ -212,45 +204,40 @@ func (sm *serviceManager) Build(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	restoreOutput *ServiceRestoreResult,
-) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress] {
-	return async.RunTaskWithProgress(func(task *async.TaskContextWithProgress[*ServiceBuildResult, ServiceProgress]) {
-		cachedResult, ok := sm.getOperationResult(ctx, serviceConfig, string(ServiceEventBuild))
+) (*ServiceBuildResult, error) {
+	cachedResult, ok := sm.getOperationResult(ctx, serviceConfig, string(ServiceEventBuild))
+	if ok && cachedResult != nil {
+		return cachedResult.(*ServiceBuildResult), nil
+	}
+
+	if restoreOutput == nil {
+		cachedResult, ok := sm.getOperationResult(ctx, serviceConfig, string(ServiceEventRestore))
 		if ok && cachedResult != nil {
-			task.SetResult(cachedResult.(*ServiceBuildResult))
-			return
+			restoreOutput = cachedResult.(*ServiceRestoreResult)
 		}
+	}
 
-		if restoreOutput == nil {
-			cachedResult, ok := sm.getOperationResult(ctx, serviceConfig, string(ServiceEventRestore))
-			if ok && cachedResult != nil {
-				restoreOutput = cachedResult.(*ServiceRestoreResult)
-			}
-		}
+	frameworkService, err := sm.GetFrameworkService(ctx, serviceConfig)
+	if err != nil {
+		return nil, fmt.Errorf("getting framework services: %w", err)
+	}
 
-		frameworkService, err := sm.GetFrameworkService(ctx, serviceConfig)
-		if err != nil {
-			task.SetError(fmt.Errorf("getting framework services: %w", err))
-			return
-		}
+	buildResult, err := runCommand(
+		ctx,
+		ServiceEventBuild,
+		serviceConfig,
+		func() (*ServiceBuildResult, error) {
+			return frameworkService.Build(ctx, serviceConfig, restoreOutput)
+		},
+	)
 
-		buildResult, err := runCommand(
-			ctx,
-			task,
-			ServiceEventBuild,
-			serviceConfig,
-			func() *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress] {
-				return frameworkService.Build(ctx, serviceConfig, restoreOutput)
-			},
-		)
+	if err != nil {
+		return nil, fmt.Errorf("failed building service '%s': %w", serviceConfig.Name, err)
+	}
 
-		if err != nil {
-			task.SetError(fmt.Errorf("failed building service '%s': %w", serviceConfig.Name, err))
-			return
-		}
+	sm.setOperationResult(ctx, serviceConfig, string(ServiceEventBuild), buildResult)
 
-		task.SetResult(buildResult)
-		sm.setOperationResult(ctx, serviceConfig, string(ServiceEventBuild), buildResult)
-	})
+	return buildResult, nil
 }
 
 // Packages the code for the specified service config
@@ -313,10 +300,9 @@ func (sm *serviceManager) Package(
 	// When a previous build result was not provided, and we require it
 	// Then we need to build the project
 	if frameworkRequirements.Package.RequireBuild && !hasBuildOutput {
-		buildTask := sm.Build(ctx, serviceConfig, restoreResult)
 		publishProgress(ctx, sm.publisher, buildTask.Progress())
 
-		buildTaskResult, err := buildTask.Await()
+		buildTaskResult, err := sm.Build(ctx, serviceConfig, restoreResult)
 		if err != nil {
 			return nil, err
 		}
@@ -362,58 +348,52 @@ func (sm *serviceManager) Deploy(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	packageResult *ServicePackageResult,
-) *async.TaskWithProgress[*ServiceDeployResult, ServiceProgress] {
-	return async.RunTaskWithProgress(func(task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress]) {
-		cachedResult, ok := sm.getOperationResult(ctx, serviceConfig, string(ServiceEventDeploy))
+) (*ServiceDeployResult, error) {
+	cachedResult, ok := sm.getOperationResult(ctx, serviceConfig, string(ServiceEventDeploy))
+	if ok && cachedResult != nil {
+		return cachedResult.(*ServiceDeployResult), nil
+	}
+
+	if packageResult == nil {
+		cachedResult, ok := sm.getOperationResult(ctx, serviceConfig, string(ServiceEventPackage))
 		if ok && cachedResult != nil {
-			task.SetResult(cachedResult.(*ServiceDeployResult))
-			return
+			packageResult = cachedResult.(*ServicePackageResult)
 		}
+	}
 
-		if packageResult == nil {
-			cachedResult, ok := sm.getOperationResult(ctx, serviceConfig, string(ServiceEventPackage))
-			if ok && cachedResult != nil {
-				packageResult = cachedResult.(*ServicePackageResult)
-			}
-		}
+	serviceTarget, err := sm.GetServiceTarget(ctx, serviceConfig)
+	if err != nil {
+		return nil, fmt.Errorf("getting service target: %w", err)
+	}
 
-		serviceTarget, err := sm.GetServiceTarget(ctx, serviceConfig)
-		if err != nil {
-			task.SetError(fmt.Errorf("getting service target: %w", err))
-			return
-		}
+	targetResource, err := sm.resourceManager.GetTargetResource(ctx, sm.env.GetSubscriptionId(), serviceConfig)
+	if err != nil {
+		return nil, fmt.Errorf("getting target resource: %w", err)
+	}
 
-		targetResource, err := sm.resourceManager.GetTargetResource(ctx, sm.env.GetSubscriptionId(), serviceConfig)
-		if err != nil {
-			task.SetError(fmt.Errorf("getting target resource: %w", err))
-			return
-		}
+	deployResult, err := runCommand(
+		ctx,
+		ServiceEventDeploy,
+		serviceConfig,
+		func() (*ServiceDeployResult, error) {
+			return serviceTarget.Deploy(ctx, serviceConfig, packageResult, targetResource)
+		},
+	)
 
-		deployResult, err := runCommand(
-			ctx,
-			task,
-			ServiceEventDeploy,
-			serviceConfig,
-			func() *async.TaskWithProgress[*ServiceDeployResult, ServiceProgress] {
-				return serviceTarget.Deploy(ctx, serviceConfig, packageResult, targetResource)
-			},
-		)
+	if err != nil {
+		return nil, fmt.Errorf("failed deploying service '%s': %w", serviceConfig.Name, err)
+	}
 
-		if err != nil {
-			task.SetError(fmt.Errorf("failed deploying service '%s': %w", serviceConfig.Name, err))
-			return
-		}
+	// Allow users to specify their own endpoints, in cases where they've configured their own front-end load balancers,
+	// reverse proxies or DNS host names outside of the service target (and prefer that to be used instead).
+	overriddenEndpoints := sm.getOverriddenEndpoints(ctx, serviceConfig)
+	if len(overriddenEndpoints) > 0 {
+		deployResult.Endpoints = overriddenEndpoints
+	}
 
-		// Allow users to specify their own endpoints, in cases where they've configured their own front-end load balancers,
-		// reverse proxies or DNS host names outside of the service target (and prefer that to be used instead).
-		overriddenEndpoints := sm.getOverriddenEndpoints(ctx, serviceConfig)
-		if len(overriddenEndpoints) > 0 {
-			deployResult.Endpoints = overriddenEndpoints
-		}
+	sm.setOperationResult(ctx, serviceConfig, string(ServiceEventDeploy), deployResult)
 
-		task.SetResult(deployResult)
-		sm.setOperationResult(ctx, serviceConfig, string(ServiceEventDeploy), deployResult)
-	})
+	return deployResult, nil
 }
 
 // GetServiceTarget constructs a ServiceTarget from the underlying service configuration
@@ -522,10 +502,9 @@ func (sm *serviceManager) setOperationResult(
 
 func runCommand[T comparable, P comparable](
 	ctx context.Context,
-	task *async.TaskContextWithProgress[T, P],
 	eventName ext.Event,
 	serviceConfig *ServiceConfig,
-	taskFunc func() *async.TaskWithProgress[T, P],
+	taskFunc func() (T, error),
 ) (T, error) {
 	eventArgs := ServiceLifecycleEventArgs{
 		Project: serviceConfig.Project,
@@ -535,10 +514,7 @@ func runCommand[T comparable, P comparable](
 	var result T
 
 	err := serviceConfig.Invoke(ctx, eventName, eventArgs, func() error {
-		serviceTask := taskFunc()
-		go syncProgress(task, serviceTask.Progress())
-
-		taskResult, err := serviceTask.Await()
+		taskResult, err := taskFunc()
 		if err != nil {
 			return err
 		}
@@ -547,22 +523,5 @@ func runCommand[T comparable, P comparable](
 		return nil
 	})
 
-	if err != nil {
-		return result, err
-	}
-
-	return result, nil
-}
-
-func syncProgress[T comparable, P comparable](task *async.TaskContextWithProgress[T, P], progressChannel <-chan P) {
-	for progress := range progressChannel {
-		task.SetProgress(progress)
-	}
-}
-
-// This method is to only support the transition between task progress and pub/sub topics
-func publishProgress(ctx context.Context, publisher messaging.Publisher, progress <-chan ServiceProgress) {
-	for msg := range progress {
-		publisher.Send(ctx, messaging.NewMessage(ProgressMessageKind, msg.Message))
-	}
+	return result, err
 }

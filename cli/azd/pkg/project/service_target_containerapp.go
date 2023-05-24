@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/containerapps"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -22,7 +21,7 @@ type containerAppTarget struct {
 	containerHelper     *ContainerHelper
 	containerAppService containerapps.ContainerAppService
 	resourceManager     ResourceManager
-	publisher                  messaging.Publisher
+	publisher           messaging.Publisher
 }
 
 // NewContainerAppTarget creates the container app service target.
@@ -41,7 +40,7 @@ func NewContainerAppTarget(
 		containerHelper:     containerHelper,
 		containerAppService: containerAppService,
 		resourceManager:     resourceManager,
-		publisher:                  publisher,
+		publisher:           publisher,
 	}
 }
 
@@ -74,57 +73,46 @@ func (at *containerAppTarget) Deploy(
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
 	targetResource *environment.TargetResource,
-) *async.TaskWithProgress[*ServiceDeployResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress]) {
-			if err := at.validateTargetResource(ctx, serviceConfig, targetResource); err != nil {
-				task.SetError(fmt.Errorf("validating target resource: %w", err))
-				return
-			}
+) (*ServiceDeployResult, error) {
+	if err := at.validateTargetResource(ctx, serviceConfig, targetResource); err != nil {
+		return nil, fmt.Errorf("validating target resource: %w", err)
+	}
 
-			// Login, tag & push container image to ACR
-			containerDeployTask := at.containerHelper.Deploy(ctx, serviceConfig, packageOutput, targetResource)
-			syncProgress(task, containerDeployTask.Progress())
+	// Login, tag & push container image to ACR
+	_, err := at.containerHelper.Deploy(ctx, serviceConfig, packageOutput, targetResource)
+	if err != nil {
+		return nil, err
+	}
 
-			_, err := containerDeployTask.Await()
-			if err != nil {
-				task.SetError(err)
-				return
-			}
-
-			imageName := at.env.GetServiceProperty(serviceConfig.Name, "IMAGE_NAME")
-			task.SetProgress(NewServiceProgress("Updating container app revision"))
-			err = at.containerAppService.AddRevision(
-				ctx,
-				targetResource.SubscriptionId(),
-				targetResource.ResourceGroupName(),
-				targetResource.ResourceName(),
-				imageName,
-			)
-			if err != nil {
-				task.SetError(fmt.Errorf("updating container app service: %w", err))
-				return
-			}
-
-			task.SetProgress(NewServiceProgress("Fetching endpoints for container app service"))
-			endpoints, err := at.Endpoints(ctx, serviceConfig, targetResource)
-			if err != nil {
-				task.SetError(err)
-				return
-			}
-
-			task.SetResult(&ServiceDeployResult{
-				Package: packageOutput,
-				TargetResourceId: azure.ContainerAppRID(
-					targetResource.SubscriptionId(),
-					targetResource.ResourceGroupName(),
-					targetResource.ResourceName(),
-				),
-				Kind:      ContainerAppTarget,
-				Endpoints: endpoints,
-			})
-		},
+	imageName := at.env.GetServiceProperty(serviceConfig.Name, "IMAGE_NAME")
+	at.publisher.Send(ctx, messaging.NewMessage(ProgressMessageKind, "Updating container app revision"))
+	err = at.containerAppService.AddRevision(
+		ctx,
+		targetResource.SubscriptionId(),
+		targetResource.ResourceGroupName(),
+		targetResource.ResourceName(),
+		imageName,
 	)
+	if err != nil {
+		return nil, fmt.Errorf("updating container app service: %w", err)
+	}
+
+	at.publisher.Send(ctx, messaging.NewMessage(ProgressMessageKind, "Fetching endpoints for container app service"))
+	endpoints, err := at.Endpoints(ctx, serviceConfig, targetResource)
+	if err != nil {
+		return nil, err
+	}
+
+	return &ServiceDeployResult{
+		Package: packageOutput,
+		TargetResourceId: azure.ContainerAppRID(
+			targetResource.SubscriptionId(),
+			targetResource.ResourceGroupName(),
+			targetResource.ResourceName(),
+		),
+		Kind:      ContainerAppTarget,
+		Endpoints: endpoints,
+	}, nil
 }
 
 // Gets endpoint for the container app service

@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -62,7 +61,7 @@ type ServiceTarget interface {
 		serviceConfig *ServiceConfig,
 		servicePackage *ServicePackageResult,
 		targetResource *environment.TargetResource,
-	) *async.TaskWithProgress[*ServiceDeployResult, ServiceProgress]
+	) (*ServiceDeployResult, error)
 
 	// Endpoints gets the endpoints a service exposes.
 	Endpoints(

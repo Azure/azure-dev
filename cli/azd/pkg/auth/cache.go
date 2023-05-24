@@ -10,27 +10,20 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
 )
 
-// The MSAL cache key for the current user.
-// For historical purposes, this is an empty string.
+// The MSAL cache key for the current user. The stored MSAL cached data contains
+// all accounts with stored credentials, across all tenants.
+//
+// For simplicity in naming the final cached file, which has a unique directory (see [fileCache]),
+// and for historical purposes, we use empty string as the key.
 const cCurrentUserCacheKey = ""
 
 // msalCacheAdapter adapts our interface to the one expected by cache.ExportReplace.
 type msalCacheAdapter struct {
-	cache    Cache
-	fixedKey *string
-}
-
-func (a *msalCacheAdapter) key(suggestedKey string) string {
-	if a.fixedKey != nil {
-		return *a.fixedKey
-	}
-
-	return suggestedKey
+	cache Cache
 }
 
 func (a *msalCacheAdapter) Replace(ctx context.Context, cache cache.Unmarshaler, cacheHints cache.ReplaceHints) error {
-	key := a.key(cacheHints.PartitionKey)
-	val, err := a.cache.Read(key)
+	val, err := a.cache.Read(cCurrentUserCacheKey)
 	if errors.Is(err, errCacheKeyNotFound) {
 		return nil
 	} else if err != nil {
@@ -45,13 +38,12 @@ func (a *msalCacheAdapter) Replace(ctx context.Context, cache cache.Unmarshaler,
 }
 
 func (a *msalCacheAdapter) Export(ctx context.Context, cache cache.Marshaler, cacheHints cache.ExportHints) error {
-	key := a.key(cacheHints.PartitionKey)
 	val, err := cache.Marshal()
 	if err != nil {
 		return err
 	}
 
-	return a.cache.Set(key, val)
+	return a.cache.Set(cCurrentUserCacheKey, val)
 }
 
 type Cache interface {

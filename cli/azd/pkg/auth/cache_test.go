@@ -25,8 +25,7 @@ func randSeq(n int, rng rand.Rand) string {
 func TestCacheFixed(t *testing.T) {
 	root := t.TempDir()
 	ctx := context.Background()
-	fixedKey := cCurrentUserCacheKey
-	c := newCache(root, &fixedKey)
+	c := newCache(root)
 	// weak rng is fine for testing
 	//nolint:gosec
 	rng := rand.New(rand.NewSource(0))
@@ -51,7 +50,7 @@ func TestCacheFixed(t *testing.T) {
 	require.Equal(t, data.val, reader.val)
 
 	// the data should be shared across instances.
-	c = newCache(root, &fixedKey)
+	c = newCache(root)
 	reader = fixedMarshaller{}
 	err = c.Replace(ctx, &reader, cache.ReplaceHints{PartitionKey: key()})
 	require.NoError(t, err)
@@ -69,87 +68,6 @@ func TestCacheFixed(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, reader.val)
 	require.Equal(t, otherData.val, reader.val)
-}
-
-func TestCache(t *testing.T) {
-	root := t.TempDir()
-	ctx := context.Background()
-	c := newCache(root, nil)
-
-	d1 := fixedMarshaller{
-		val: []byte("some data"),
-	}
-
-	d2 := fixedMarshaller{
-		val: []byte("some different data"),
-	}
-
-	// write some data.
-	err := c.Export(ctx, &d1, cache.ExportHints{PartitionKey: "d1"})
-	require.NoError(t, err)
-	err = c.Export(ctx, &d2, cache.ExportHints{PartitionKey: "d2"})
-	require.NoError(t, err)
-
-	var r1 fixedMarshaller
-	var r2 fixedMarshaller
-
-	// read back that data we wrote.
-	err = c.Replace(ctx, &r1, cache.ReplaceHints{PartitionKey: "d1"})
-	require.NoError(t, err)
-	err = c.Replace(ctx, &r2, cache.ReplaceHints{PartitionKey: "d2"})
-	require.NoError(t, err)
-
-	require.NotNil(t, r1.val)
-	require.NotNil(t, r2.val)
-	require.Equal(t, d1.val, r1.val)
-	require.Equal(t, d2.val, r2.val)
-
-	// the data should be shared across instances.
-	c = newCache(root, nil)
-
-	r1 = fixedMarshaller{}
-	r2 = fixedMarshaller{}
-	err = c.Replace(ctx, &r1, cache.ReplaceHints{PartitionKey: "d1"})
-	require.NoError(t, err)
-	err = c.Replace(ctx, &r2, cache.ReplaceHints{PartitionKey: "d2"})
-	require.NoError(t, err)
-
-	require.NotNil(t, r1.val)
-	require.NotNil(t, r2.val)
-	require.Equal(t, d1.val, r1.val)
-	require.Equal(t, d2.val, r2.val)
-
-	// update existing data
-	d1Update := fixedMarshaller{
-		val: []byte("some data (updated)"),
-	}
-	d2Update := fixedMarshaller{
-		val: []byte("some different data (updated)"),
-	}
-	err = c.Export(ctx, &d1Update, cache.ExportHints{PartitionKey: "d1"})
-	require.NoError(t, err)
-	err = c.Export(ctx, &d2Update, cache.ExportHints{PartitionKey: "d2"})
-	require.NoError(t, err)
-
-	// read back that data we wrote.
-	err = c.Replace(ctx, &r1, cache.ReplaceHints{PartitionKey: "d1"})
-	require.NoError(t, err)
-	err = c.Replace(ctx, &r2, cache.ReplaceHints{PartitionKey: "d2"})
-	require.NoError(t, err)
-
-	require.NotNil(t, r1.val)
-	require.NotNil(t, r2.val)
-	require.Equal(t, d1Update.val, r1.val)
-	require.Equal(t, d2Update.val, r2.val)
-
-	// read some non-existing data
-	nonExist := fixedMarshaller{
-		val: []byte("some data"),
-	}
-	err = c.Replace(ctx, &nonExist, cache.ReplaceHints{PartitionKey: "nonExist"})
-	require.NoError(t, err)
-	// data should not be overwritten when key is not found.
-	require.Equal(t, []byte("some data"), nonExist.val)
 }
 
 func TestCredentialCache(t *testing.T) {

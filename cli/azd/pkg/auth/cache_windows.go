@@ -32,7 +32,7 @@ type encryptionType string
 // for more information on these APIs.
 const cCryptProtectDataEncryptionType encryptionType = "CryptProtectData"
 
-func newCache(root string, fixedKey *string) cache.ExportReplace {
+func newCache(root string) cache.ExportReplace {
 	return &msalCacheAdapter{
 		cache: &memoryCache{
 			cache: make(map[string][]byte),
@@ -44,7 +44,6 @@ func newCache(root string, fixedKey *string) cache.ExportReplace {
 				},
 			},
 		},
-		fixedKey: fixedKey,
 	}
 }
 

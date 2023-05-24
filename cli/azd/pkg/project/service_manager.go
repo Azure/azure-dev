@@ -7,7 +7,6 @@ import (
 	"log"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
-	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
@@ -79,7 +78,7 @@ type ServiceManager interface {
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
 		packageOutput *ServicePackageResult,
-	) *async.TaskWithProgress[*ServiceDeployResult, ServiceProgress]
+	) (*ServiceDeployResult, error)
 
 	// Gets the framework service for the specified service config
 	// The framework service performs the restoration and building of the service app code
@@ -195,7 +194,7 @@ func (sm *serviceManager) Restore(ctx context.Context, serviceConfig *ServiceCon
 
 	sm.setOperationResult(ctx, serviceConfig, string(ServiceEventRestore), restoreResult)
 
-	return restoreResult
+	return restoreResult, nil
 }
 
 // Builds the code for the specified service config
@@ -284,10 +283,7 @@ func (sm *serviceManager) Package(
 	// When a previous restore result was not provided, and we require it
 	// Then we need to restore the dependencies
 	if frameworkRequirements.Package.RequireRestore && (!hasBuildOutput || buildOutput.Restore == nil) {
-		restoreTask := sm.Restore(ctx, serviceConfig)
-		publishProgress(ctx, sm.publisher, restoreTask.Progress())
-
-		restoreTaskResult, err := restoreTask.Await()
+		restoreTaskResult, err := sm.Restore(ctx, serviceConfig)
 		if err != nil {
 			return nil, err
 		}
@@ -300,8 +296,6 @@ func (sm *serviceManager) Package(
 	// When a previous build result was not provided, and we require it
 	// Then we need to build the project
 	if frameworkRequirements.Package.RequireBuild && !hasBuildOutput {
-		publishProgress(ctx, sm.publisher, buildTask.Progress())
-
 		buildTaskResult, err := sm.Build(ctx, serviceConfig, restoreResult)
 		if err != nil {
 			return nil, err
@@ -500,7 +494,7 @@ func (sm *serviceManager) setOperationResult(
 	sm.operationCache[key] = result
 }
 
-func runCommand[T comparable, P comparable](
+func runCommand[T comparable](
 	ctx context.Context,
 	eventName ext.Event,
 	serviceConfig *ServiceConfig,

@@ -7,7 +7,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/messaging"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -69,18 +68,13 @@ func (m *mavenProject) Initialize(ctx context.Context, serviceConfig *ServiceCon
 func (m *mavenProject) Restore(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-) *async.TaskWithProgress[*ServiceRestoreResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServiceRestoreResult, ServiceProgress]) {
-			task.SetProgress(NewServiceProgress("Resolving maven dependencies"))
-			if err := m.mavenCli.ResolveDependencies(ctx, serviceConfig.Path()); err != nil {
-				task.SetError(fmt.Errorf("resolving maven dependencies: %w", err))
-				return
-			}
+) (*ServiceRestoreResult, error) {
+	m.publisher.Send(ctx, messaging.NewMessage(ProgressMessageKind, "Resolving maven dependencies"))
+	if err := m.mavenCli.ResolveDependencies(ctx, serviceConfig.Path()); err != nil {
+		return nil, fmt.Errorf("resolving maven dependencies: %w", err)
+	}
 
-			task.SetResult(&ServiceRestoreResult{})
-		},
-	)
+	return &ServiceRestoreResult{}, nil
 }
 
 // Builds the maven project
@@ -88,21 +82,16 @@ func (m *mavenProject) Build(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	restoreOutput *ServiceRestoreResult,
-) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServiceBuildResult, ServiceProgress]) {
-			task.SetProgress(NewServiceProgress("Compiling maven project"))
-			if err := m.mavenCli.Compile(ctx, serviceConfig.Path()); err != nil {
-				task.SetError(err)
-				return
-			}
+) (*ServiceBuildResult, error) {
+	m.publisher.Send(ctx, messaging.NewMessage(ProgressMessageKind, "Compiling maven project"))
+	if err := m.mavenCli.Compile(ctx, serviceConfig.Path()); err != nil {
+		return nil, err
+	}
 
-			task.SetResult(&ServiceBuildResult{
-				Restore:         restoreOutput,
-				BuildOutputPath: serviceConfig.Path(),
-			})
-		},
-	)
+	return &ServiceBuildResult{
+		Restore:         restoreOutput,
+		BuildOutputPath: serviceConfig.Path(),
+	}, nil
 }
 
 func (m *mavenProject) Package(

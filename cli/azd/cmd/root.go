@@ -171,6 +171,9 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 			ActionResolver: newRestoreAction,
 			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 			DefaultFormat:  output.NoneFormat,
+			TitleOptions: &actions.ActionTitleOptions{
+				Title: "Restoring services (azd restore)",
+			},
 			HelpOptions: actions.ActionHelpOptions{
 				Description: getCmdRestoreHelpDescription,
 				Footer:      getCmdRestoreHelpFooter,
@@ -188,6 +191,9 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 			ActionResolver: newBuildAction,
 			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 			DefaultFormat:  output.NoneFormat,
+			TitleOptions: &actions.ActionTitleOptions{
+				Title: "Building services (azd deploy)",
+			},
 		}).
 		UseMiddleware("hooks", middleware.NewHooksMiddleware)
 
@@ -198,6 +204,10 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 			ActionResolver: newProvisionAction,
 			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 			DefaultFormat:  output.NoneFormat,
+			TitleOptions: &actions.ActionTitleOptions{
+				Title:       "Provisioning Azure resources (azd provision)",
+				Description: "Provisioning Azure resources can take some time",
+			},
 			HelpOptions: actions.ActionHelpOptions{
 				Description: getCmdProvisionHelpDescription,
 				Footer:      getCmdHelpDefaultFooter,
@@ -235,6 +245,9 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 			ActionResolver: newDeployAction,
 			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 			DefaultFormat:  output.NoneFormat,
+			TitleOptions: &actions.ActionTitleOptions{
+				Title: "Deploying services (azd deploy)",
+			},
 			HelpOptions: actions.ActionHelpOptions{
 				Description: getCmdDeployHelpDescription,
 				Footer:      getCmdDeployHelpFooter,

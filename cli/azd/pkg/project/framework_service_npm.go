@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/messaging"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -59,19 +58,13 @@ func (np *npmProject) Initialize(ctx context.Context, serviceConfig *ServiceConf
 func (np *npmProject) Restore(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-) *async.TaskWithProgress[*ServiceRestoreResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServiceRestoreResult, ServiceProgress]) {
-			np.publisher.Send(ctx, messaging.NewMessage(ProgressMessageKind, "Installing NPM dependencies"))
-			task.SetProgress(NewServiceProgress("Installing NPM dependencies"))
-			if err := np.cli.Install(ctx, serviceConfig.Path()); err != nil {
-				task.SetError(err)
-				return
-			}
+) (*ServiceRestoreResult, error) {
+	np.publisher.Send(ctx, messaging.NewMessage(ProgressMessageKind, "Installing NPM dependencies"))
+	if err := np.cli.Install(ctx, serviceConfig.Path()); err != nil {
+		return nil, err
+	}
 
-			task.SetResult(&ServiceRestoreResult{})
-		},
-	)
+	return &ServiceRestoreResult{}, nil
 }
 
 // Builds the project executing the npm `build` script defined within the project package.json
@@ -79,30 +72,24 @@ func (np *npmProject) Build(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	restoreOutput *ServiceRestoreResult,
-) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServiceBuildResult, ServiceProgress]) {
-			// Exec custom `build` script if available
-			// If `build`` script is not defined in the package.json the NPM script will NOT fail
-			np.publisher.Send(ctx, messaging.NewMessage(ProgressMessageKind, "Running NPM build script"))
-			task.SetProgress(NewServiceProgress("Running NPM build script"))
-			if err := np.cli.RunScript(ctx, serviceConfig.Path(), "build"); err != nil {
-				task.SetError(err)
-				return
-			}
+) (*ServiceBuildResult, error) {
+	// Exec custom `build` script if available
+	// If `build`` script is not defined in the package.json the NPM script will NOT fail
+	np.publisher.Send(ctx, messaging.NewMessage(ProgressMessageKind, "Running NPM build script"))
+	if err := np.cli.RunScript(ctx, serviceConfig.Path(), "build"); err != nil {
+		return nil, err
+	}
 
-			buildSource := serviceConfig.Path()
+	buildSource := serviceConfig.Path()
 
-			if serviceConfig.OutputPath != "" {
-				buildSource = filepath.Join(buildSource, serviceConfig.OutputPath)
-			}
+	if serviceConfig.OutputPath != "" {
+		buildSource = filepath.Join(buildSource, serviceConfig.OutputPath)
+	}
 
-			task.SetResult(&ServiceBuildResult{
-				Restore:         restoreOutput,
-				BuildOutputPath: buildSource,
-			})
-		},
-	)
+	return &ServiceBuildResult{
+		Restore:         restoreOutput,
+		BuildOutputPath: buildSource,
+	}, nil
 }
 
 func (np *npmProject) Package(

@@ -85,7 +85,7 @@ func (f *functionAppTarget) Deploy(
 	defer os.Remove(packageOutput.PackagePath)
 	defer zipFile.Close()
 
-	task.SetProgress(NewServiceProgress("Uploading deployment package"))
+	f.publisher.Send(ctx, messaging.NewMessage(ProgressMessageKind, "Uploading deployment package"))
 	res, err := f.cli.DeployFunctionAppUsingZipFile(
 		ctx,
 		targetResource.SubscriptionId(),
@@ -97,7 +97,7 @@ func (f *functionAppTarget) Deploy(
 		return nil, err
 	}
 
-	task.SetProgress(NewServiceProgress("Fetching endpoints for function app"))
+	f.publisher.Send(ctx, messaging.NewMessage(ProgressMessageKind, "Fetching endpoints for function app"))
 	endpoints, err := f.Endpoints(ctx, serviceConfig, targetResource)
 	if err != nil {
 		return nil, err
@@ -115,7 +115,7 @@ func (f *functionAppTarget) Deploy(
 	)
 	sdr.Package = packageOutput
 
-	task.SetResult(sdr)
+	return sdr, nil
 }
 
 // Gets the exposed endpoints for the Function App

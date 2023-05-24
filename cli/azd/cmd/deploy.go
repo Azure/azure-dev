@@ -211,11 +211,6 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		return nil, err
 	}
 
-	// Command title
-	da.console.MessageUxItem(ctx, &ux.MessageTitle{
-		Title: "Deploying services (azd deploy)",
-	})
-
 	startTime := time.Now()
 
 	var stepMessage string
@@ -223,14 +218,13 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 
 	for _, svc := range da.projectConfig.GetServicesStable() {
 		stepMessage = fmt.Sprintf("Deploying service %s", svc.Name)
+		da.progressPrinter.Start(ctx, stepMessage)
 
 		if alphaFeatureId, isAlphaFeature := alpha.IsFeatureKey(string(svc.Host)); isAlphaFeature {
 			// alpha feature on/off detection for host is done during initialization.
 			// This is just for displaying the warning during deployment.
 			da.console.WarnForFeature(ctx, alphaFeatureId)
 		}
-
-		da.console.ShowSpinner(ctx, stepMessage, input.Step)
 
 		// Skip this service if both cases are true:
 		// 1. The user specified a service name
@@ -250,20 +244,12 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 			//  --from-package not set, package the application
 			packageResult, err = da.serviceManager.Package(ctx, svc, nil)
 			if err != nil {
-				da.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+				da.progressPrinter.Fail(ctx)
 				return nil, err
 			}
 		}
 
-		deployTask := da.serviceManager.Deploy(ctx, svc, packageResult)
-		go func() {
-			for deployProgress := range deployTask.Progress() {
-				progressMessage := fmt.Sprintf("Deploying service %s (%s)", svc.Name, deployProgress.Message)
-				da.progressPrinter.Start(ctx, progressMessage)
-			}
-		}()
-
-		deployResult, err := deployTask.Await()
+		deployResult, err := da.serviceManager.Deploy(ctx, svc, packageResult)
 		if err != nil {
 			da.progressPrinter.Fail(ctx)
 			return nil, err

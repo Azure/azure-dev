@@ -17,6 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
+	"github.com/azure/azure-dev/cli/azd/pkg/progress"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -66,17 +67,18 @@ func newRestoreCmd() *cobra.Command {
 }
 
 type restoreAction struct {
-	flags          *restoreFlags
-	args           []string
-	console        input.Console
-	formatter      output.Formatter
-	writer         io.Writer
-	azdCtx         *azdcontext.AzdContext
-	env            *environment.Environment
-	projectConfig  *project.ProjectConfig
-	projectManager project.ProjectManager
-	serviceManager project.ServiceManager
-	commandRunner  exec.CommandRunner
+	flags           *restoreFlags
+	args            []string
+	console         input.Console
+	formatter       output.Formatter
+	writer          io.Writer
+	azdCtx          *azdcontext.AzdContext
+	env             *environment.Environment
+	projectConfig   *project.ProjectConfig
+	projectManager  project.ProjectManager
+	serviceManager  project.ServiceManager
+	commandRunner   exec.CommandRunner
+	progressPrinter *progress.Printer
 }
 
 func newRestoreAction(
@@ -91,19 +93,21 @@ func newRestoreAction(
 	projectManager project.ProjectManager,
 	serviceManager project.ServiceManager,
 	commandRunner exec.CommandRunner,
+	progressPrinter *progress.Printer,
 ) actions.Action {
 	return &restoreAction{
-		flags:          flags,
-		args:           args,
-		console:        console,
-		formatter:      formatter,
-		writer:         writer,
-		azdCtx:         azdCtx,
-		projectConfig:  projectConfig,
-		projectManager: projectManager,
-		serviceManager: serviceManager,
-		env:            env,
-		commandRunner:  commandRunner,
+		flags:           flags,
+		args:            args,
+		console:         console,
+		formatter:       formatter,
+		writer:          writer,
+		azdCtx:          azdCtx,
+		projectConfig:   projectConfig,
+		projectManager:  projectManager,
+		serviceManager:  serviceManager,
+		env:             env,
+		commandRunner:   commandRunner,
+		progressPrinter: progressPrinter,
 	}
 }
 
@@ -113,13 +117,7 @@ type RestoreResult struct {
 }
 
 func (ra *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	// Command title
-	ra.console.MessageUxItem(ctx, &ux.MessageTitle{
-		Title: "Restoring services (azd restore)",
-	})
-
 	startTime := time.Now()
-
 	serviceNameWarningCheck(ra.console, ra.flags.serviceName, "restore")
 
 	targetServiceName := ra.flags.serviceName
@@ -153,31 +151,23 @@ func (ra *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error)
 
 	for _, svc := range ra.projectConfig.GetServicesStable() {
 		stepMessage := fmt.Sprintf("Restoring service %s", svc.Name)
-		ra.console.ShowSpinner(ctx, stepMessage, input.Step)
+		ra.progressPrinter.Start(ctx, stepMessage)
 
 		// Skip this service if both cases are true:
 		// 1. The user specified a service name
 		// 2. This service is not the one the user specified
 		if targetServiceName != "" && targetServiceName != svc.Name {
-			ra.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
+			ra.progressPrinter.Skip(ctx)
 			continue
 		}
 
-		restoreTask := ra.serviceManager.Restore(ctx, svc)
-		go func() {
-			for restoreProgress := range restoreTask.Progress() {
-				progressMessage := fmt.Sprintf("Restoring service %s (%s)", svc.Name, restoreProgress.Message)
-				ra.console.ShowSpinner(ctx, progressMessage, input.Step)
-			}
-		}()
-
-		restoreResult, err := restoreTask.Await()
+		restoreResult, err := ra.serviceManager.Restore(ctx, svc)
 		if err != nil {
-			ra.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+			ra.progressPrinter.Fail(ctx)
 			return nil, err
 		}
 
-		ra.console.StopSpinner(ctx, stepMessage, input.StepDone)
+		ra.progressPrinter.Done(ctx)
 		restoreResults[svc.Name] = restoreResult
 	}
 

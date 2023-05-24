@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/messaging"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -57,46 +56,39 @@ func (pp *pythonProject) Initialize(ctx context.Context, serviceConfig *ServiceC
 func (pp *pythonProject) Restore(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-) *async.TaskWithProgress[*ServiceRestoreResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServiceRestoreResult, ServiceProgress]) {
-			task.SetProgress(NewServiceProgress("Checking for Python virtual environment"))
-			vEnvName := pp.getVenvName(serviceConfig)
-			vEnvPath := path.Join(serviceConfig.Path(), vEnvName)
+) (*ServiceRestoreResult, error) {
+	pp.publisher.Send(ctx, messaging.NewMessage(ProgressMessageKind, "Checking for Python virtual environment"))
+	vEnvName := pp.getVenvName(serviceConfig)
+	vEnvPath := path.Join(serviceConfig.Path(), vEnvName)
 
-			_, err := os.Stat(vEnvPath)
+	_, err := os.Stat(vEnvPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			pp.publisher.Send(ctx, messaging.NewMessage(ProgressMessageKind, "Creating Python virtual environment"))
+			err = pp.cli.CreateVirtualEnv(ctx, serviceConfig.Path(), vEnvName)
 			if err != nil {
-				if os.IsNotExist(err) {
-					task.SetProgress(NewServiceProgress("Creating Python virtual environment"))
-					err = pp.cli.CreateVirtualEnv(ctx, serviceConfig.Path(), vEnvName)
-					if err != nil {
-						task.SetError(fmt.Errorf(
-							"python virtual environment for project '%s' could not be created: %w",
-							serviceConfig.Path(),
-							err,
-						))
-						return
-					}
-				} else {
-					task.SetError(
-						fmt.Errorf("python virtual environment for project '%s' is not accessible: %w", serviceConfig.Path(), err),
-					)
-					return
-				}
-			}
-
-			task.SetProgress(NewServiceProgress("Installing Python PIP dependencies"))
-			err = pp.cli.InstallRequirements(ctx, serviceConfig.Path(), vEnvName, "requirements.txt")
-			if err != nil {
-				task.SetError(
-					fmt.Errorf("requirements for project '%s' could not be installed: %w", serviceConfig.Path(), err),
+				return nil, fmt.Errorf(
+					"python virtual environment for project '%s' could not be created: %w",
+					serviceConfig.Path(),
+					err,
 				)
-				return
 			}
+		} else {
+			return nil, fmt.Errorf(
+				"python virtual environment for project '%s' is not accessible: %w",
+				serviceConfig.Path(),
+				err,
+			)
+		}
+	}
 
-			task.SetResult(&ServiceRestoreResult{})
-		},
-	)
+	pp.publisher.Send(ctx, messaging.NewMessage(ProgressMessageKind, "Installing Python PIP dependencies"))
+	err = pp.cli.InstallRequirements(ctx, serviceConfig.Path(), vEnvName, "requirements.txt")
+	if err != nil {
+		return nil, fmt.Errorf("requirements for project '%s' could not be installed: %w", serviceConfig.Path(), err)
+	}
+
+	return &ServiceRestoreResult{}, nil
 }
 
 // Build for Python apps performs a no-op and returns the service path with an optional output path when specified.
@@ -104,21 +96,17 @@ func (pp *pythonProject) Build(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	restoreOutput *ServiceRestoreResult,
-) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServiceBuildResult, ServiceProgress]) {
-			buildSource := serviceConfig.Path()
+) (*ServiceBuildResult, error) {
+	buildSource := serviceConfig.Path()
 
-			if serviceConfig.OutputPath != "" {
-				buildSource = filepath.Join(buildSource, serviceConfig.OutputPath)
-			}
+	if serviceConfig.OutputPath != "" {
+		buildSource = filepath.Join(buildSource, serviceConfig.OutputPath)
+	}
 
-			task.SetResult(&ServiceBuildResult{
-				Restore:         restoreOutput,
-				BuildOutputPath: buildSource,
-			})
-		},
-	)
+	return &ServiceBuildResult{
+		Restore:         restoreOutput,
+		BuildOutputPath: buildSource,
+	}, nil
 }
 
 func (pp *pythonProject) Package(

@@ -130,12 +130,6 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		)
 	}
 
-	// Command title
-	p.console.MessageUxItem(ctx, &ux.MessageTitle{
-		Title:     "Provisioning Azure resources (azd provision)",
-		TitleNote: "Provisioning Azure resources can take some time"},
-	)
-
 	startTime := time.Now()
 
 	if err := p.projectManager.Initialize(ctx, p.projectConfig); err != nil {

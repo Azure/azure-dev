@@ -13,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
+	"github.com/azure/azure-dev/cli/azd/pkg/progress"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -68,6 +69,7 @@ type buildAction struct {
 	writer                   io.Writer
 	middlewareRunner         middleware.MiddlewareContext
 	restoreActionInitializer actions.ActionInitializer[*restoreAction]
+	progressPrinter          *progress.Printer
 }
 
 func newBuildAction(
@@ -81,6 +83,7 @@ func newBuildAction(
 	writer io.Writer,
 	middlewareRunner middleware.MiddlewareContext,
 	restoreActionInitializer actions.ActionInitializer[*restoreAction],
+	progressPrinter *progress.Printer,
 
 ) actions.Action {
 	return &buildAction{
@@ -94,6 +97,7 @@ func newBuildAction(
 		writer:                   writer,
 		middlewareRunner:         middlewareRunner,
 		restoreActionInitializer: restoreActionInitializer,
+		progressPrinter:          progressPrinter,
 	}
 }
 
@@ -117,11 +121,6 @@ func (ba *buildAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			return nil, err
 		}
 	}
-
-	// Command title
-	ba.console.MessageUxItem(ctx, &ux.MessageTitle{
-		Title: "Building services (azd build)",
-	})
 
 	startTime := time.Now()
 
@@ -156,31 +155,23 @@ func (ba *buildAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	for _, svc := range ba.projectConfig.GetServicesStable() {
 		stepMessage := fmt.Sprintf("Building service %s", svc.Name)
-		ba.console.ShowSpinner(ctx, stepMessage, input.Step)
+		ba.progressPrinter.Start(ctx, stepMessage)
 
 		// Skip this service if both cases are true:
 		// 1. The user specified a service name
 		// 2. This service is not the one the user specified
 		if targetServiceName != "" && targetServiceName != svc.Name {
-			ba.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
+			ba.progressPrinter.Skip(ctx)
 			continue
 		}
 
-		buildTask := ba.serviceManager.Build(ctx, svc, nil)
-		go func() {
-			for buildProgress := range buildTask.Progress() {
-				progressMessage := fmt.Sprintf("Building service %s (%s)", svc.Name, buildProgress.Message)
-				ba.console.ShowSpinner(ctx, progressMessage, input.Step)
-			}
-		}()
-
-		buildResult, err := buildTask.Await()
+		buildResult, err := ba.serviceManager.Build(ctx, svc, nil)
 		if err != nil {
-			ba.console.StopSpinner(ctx, stepMessage, input.StepFailed)
+			ba.progressPrinter.Fail(ctx)
 			return nil, err
 		}
 
-		ba.console.StopSpinner(ctx, stepMessage, input.StepDone)
+		ba.progressPrinter.Done(ctx)
 		buildResults[svc.Name] = buildResult
 
 		// report build outputs

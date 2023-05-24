@@ -10,13 +10,17 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
 )
 
+// The MSAL cache key for the current user.
+// For historical purposes, this is an empty string.
+const cCurrentUserCacheKey = ""
+
 // msalCacheAdapter adapts our interface to the one expected by cache.ExportReplace.
 type msalCacheAdapter struct {
 	cache Cache
 }
 
 func (a *msalCacheAdapter) Replace(ctx context.Context, cache cache.Unmarshaler, cacheHints cache.ReplaceHints) error {
-	val, err := a.cache.Read(cacheHints.PartitionKey)
+	val, err := a.cache.Read(cCurrentUserCacheKey)
 	if errors.Is(err, errCacheKeyNotFound) {
 		return nil
 	} else if err != nil {
@@ -36,7 +40,7 @@ func (a *msalCacheAdapter) Export(ctx context.Context, cache cache.Marshaler, ca
 		return err
 	}
 
-	return a.cache.Set(cacheHints.PartitionKey, val)
+	return a.cache.Set(cCurrentUserCacheKey, val)
 }
 
 type Cache interface {

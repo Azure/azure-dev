@@ -5,40 +5,68 @@ package auth
 
 import (
 	"context"
+	"math/rand"
 	"testing"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
 	"github.com/stretchr/testify/require"
 )
 
+var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+
+func randSeq(n int, rng rand.Rand) string {
+	b := make([]rune, n)
+	for i := range b {
+		b[i] = letters[rng.Intn(len(letters))]
+	}
+	return string(b)
+}
+
 func TestCacheFixed(t *testing.T) {
 	root := t.TempDir()
 	ctx := context.Background()
 	fixedKey := cCurrentUserCacheKey
 	c := newCache(root, &fixedKey)
+	rng := rand.New(rand.NewSource(0)) //nolint:gosec weak rng is fine for testing
+
+	key := func() string {
+		return randSeq(10, *rng)
+	}
 
 	data := fixedMarshaller{
 		val: []byte("some data"),
 	}
 
 	// write some data.
-	err := c.Export(ctx, &data, cache.ExportHints{})
+	err := c.Export(ctx, &data, cache.ExportHints{PartitionKey: key()})
 	require.NoError(t, err)
 
 	// read back that data we wrote.
 	var reader fixedMarshaller
-	err = c.Replace(ctx, &reader, cache.ReplaceHints{})
+	err = c.Replace(ctx, &reader, cache.ReplaceHints{PartitionKey: key()})
 	require.NoError(t, err)
 	require.NotNil(t, reader.val)
 	require.Equal(t, data.val, reader.val)
 
 	// the data should be shared across instances.
 	c = newCache(root, &fixedKey)
-
 	reader = fixedMarshaller{}
-	err = c.Replace(ctx, &reader, cache.ReplaceHints{PartitionKey: "d1"})
+	err = c.Replace(ctx, &reader, cache.ReplaceHints{PartitionKey: key()})
 	require.NoError(t, err)
 	require.Equal(t, data.val, reader.val)
+
+	// update existing data
+	otherData := fixedMarshaller{
+		val: []byte("other data"),
+	}
+	err = c.Export(ctx, &otherData, cache.ExportHints{PartitionKey: key()})
+	require.NoError(t, err)
+
+	// read back data
+	err = c.Replace(ctx, &reader, cache.ReplaceHints{PartitionKey: key()})
+	require.NoError(t, err)
+	require.NotNil(t, reader.val)
+	require.Equal(t, otherData.val, reader.val)
 }
 
 func TestCache(t *testing.T) {
@@ -77,6 +105,8 @@ func TestCache(t *testing.T) {
 	// the data should be shared across instances.
 	c = newCache(root, nil)
 
+	r1 = fixedMarshaller{}
+	r2 = fixedMarshaller{}
 	err = c.Replace(ctx, &r1, cache.ReplaceHints{PartitionKey: "d1"})
 	require.NoError(t, err)
 	err = c.Replace(ctx, &r2, cache.ReplaceHints{PartitionKey: "d2"})
@@ -86,6 +116,29 @@ func TestCache(t *testing.T) {
 	require.NotNil(t, r2.val)
 	require.Equal(t, d1.val, r1.val)
 	require.Equal(t, d2.val, r2.val)
+
+	// update existing data
+	d1Update := fixedMarshaller{
+		val: []byte("some data (updated)"),
+	}
+	d2Update := fixedMarshaller{
+		val: []byte("some different data (updated)"),
+	}
+	err = c.Export(ctx, &d1Update, cache.ExportHints{PartitionKey: "d1"})
+	require.NoError(t, err)
+	err = c.Export(ctx, &d2Update, cache.ExportHints{PartitionKey: "d2"})
+	require.NoError(t, err)
+
+	// read back that data we wrote.
+	err = c.Replace(ctx, &r1, cache.ReplaceHints{PartitionKey: "d1"})
+	require.NoError(t, err)
+	err = c.Replace(ctx, &r2, cache.ReplaceHints{PartitionKey: "d2"})
+	require.NoError(t, err)
+
+	require.NotNil(t, r1.val)
+	require.NotNil(t, r2.val)
+	require.Equal(t, d1Update.val, r1.val)
+	require.Equal(t, d2Update.val, r2.val)
 
 	// read some non-existing data
 	nonExist := fixedMarshaller{

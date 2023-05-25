@@ -27,7 +27,7 @@ func NewSubscriptionsService(
 	credentialProvider auth.MultiTenantCredentialProvider,
 	httpClient httputil.HttpClient) *SubscriptionsService {
 	return &SubscriptionsService{
-		userAgent:          azdinternal.MakeUserAgentString(""),
+		userAgent:          azdinternal.UserAgent(),
 		httpClient:         httpClient,
 		credentialProvider: credentialProvider,
 	}

@@ -35,7 +35,7 @@ func NewManagedClustersService(
 	return &managedClustersService{
 		credentialProvider: credentialProvider,
 		httpClient:         httpClient,
-		userAgent:          azdinternal.MakeUserAgentString(""),
+		userAgent:          azdinternal.UserAgent(),
 	}
 }
 

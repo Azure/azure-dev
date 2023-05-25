@@ -326,7 +326,7 @@ func NewAzCli(
 		enableDebug:        args.EnableDebug,
 		enableTelemetry:    args.EnableTelemetry,
 		httpClient:         httpClient,
-		userAgent:          azdinternal.MakeUserAgentString(""),
+		userAgent:          azdinternal.UserAgent(),
 	}
 }
 

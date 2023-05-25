@@ -23,11 +23,11 @@ type CreatedRepoValue struct {
 }
 
 func (cr *CreatedRepoValue) ToString(currentIndentation string) string {
-	return fmt.Sprintf("%s%s Setting %s repo %s", currentIndentation, donePrefix, cr.Name, cr.Kind)
+	return fmt.Sprintf("%s%s Setting %s repo %s", currentIndentation, DonePrefix, cr.Name, cr.Kind)
 }
 
 func (cr *CreatedRepoValue) MarshalJSON() ([]byte, error) {
 	// reusing the same envelope from console messages
 	return json.Marshal(output.EventForMessage(
-		fmt.Sprintf("%s Setting %s repo %s", donePrefix, cr.Name, cr.Kind)))
+		fmt.Sprintf("%s Setting %s repo %s", DonePrefix, cr.Name, cr.Kind)))
 }

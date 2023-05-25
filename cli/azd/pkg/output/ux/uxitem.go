@@ -16,5 +16,7 @@ type UxItem interface {
 	json.Marshaler
 }
 
-var donePrefix string = output.WithSuccessFormat("(✓) Done:")
-var failedPrefix string = output.WithErrorFormat("(x) Failed:")
+var DonePrefix string = output.WithSuccessFormat("(✓) Done:")
+var FailedPrefix string = output.WithErrorFormat("(x) Failed:")
+var WarningPrefix string = output.WithWarningFormat("(!) Warning:")
+var SkippedPrefix string = output.WithGrayFormat("(-) Skipped:")

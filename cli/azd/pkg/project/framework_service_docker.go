@@ -14,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/messaging"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/progress"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 )
@@ -146,7 +147,7 @@ func (p *dockerProject) Build(
 	)
 
 	// Build the container
-	p.publisher.Send(ctx, NewProgressMessage("Building Docker image"))
+	p.publisher.Send(ctx, progress.NewMessage("Building Docker image"))
 	imageId, err := p.docker.Build(
 		ctx,
 		serviceConfig.Path(),
@@ -187,7 +188,7 @@ func (p *dockerProject) Package(
 
 	// Tag image.
 	log.Printf("tagging image %s as %s", imageId, localTag)
-	p.publisher.Send(ctx, NewProgressMessage("Tagging Docker image"))
+	p.publisher.Send(ctx, progress.NewMessage("Tagging Docker image"))
 	if err := p.docker.Tag(ctx, serviceConfig.Path(), imageId, localTag); err != nil {
 		return nil, fmt.Errorf("tagging image: %w", err)
 	}

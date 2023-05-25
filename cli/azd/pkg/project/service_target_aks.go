@@ -13,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/messaging"
+	"github.com/azure/azure-dev/cli/azd/pkg/progress"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/kubectl"
@@ -128,7 +129,7 @@ func (t *aksTarget) Deploy(
 	}
 
 	log.Printf("getting AKS credentials for cluster '%s'\n", clusterName)
-	t.publisher.Send(ctx, NewProgressMessage("Getting AKS credentials"))
+	t.publisher.Send(ctx, progress.NewMessage("Getting AKS credentials"))
 	clusterCreds, err := t.managedClustersService.GetAdminCredentials(
 		ctx,
 		targetResource.SubscriptionId(),
@@ -151,7 +152,7 @@ func (t *aksTarget) Deploy(
 
 	// The kubeConfig that we care about will also be at position 0
 	// I don't know if there is a valid use case where this credential results would container multiple configs
-	t.publisher.Send(ctx, NewProgressMessage("Configuring k8s config context"))
+	t.publisher.Send(ctx, progress.NewMessage("Configuring k8s config context"))
 	err = t.configureK8sContext(ctx, clusterName, clusterCreds.Kubeconfigs[0])
 	if err != nil {
 		return nil, err
@@ -165,7 +166,7 @@ func (t *aksTarget) Deploy(
 
 	namespace := t.getK8sNamespace(serviceConfig)
 
-	t.publisher.Send(ctx, NewProgressMessage("Creating k8s namespace"))
+	t.publisher.Send(ctx, progress.NewMessage("Creating k8s namespace"))
 	namespaceResult, err := t.kubectl.CreateNamespace(
 		ctx,
 		namespace,
@@ -183,7 +184,7 @@ func (t *aksTarget) Deploy(
 		return nil, fmt.Errorf("failed applying kube namespace: %w", err)
 	}
 
-	t.publisher.Send(ctx, NewProgressMessage("Creating k8s secrets"))
+	t.publisher.Send(ctx, progress.NewMessage("Creating k8s secrets"))
 	secretResult, err := t.kubectl.CreateSecretGenericFromLiterals(
 		ctx,
 		"azd",
@@ -203,7 +204,7 @@ func (t *aksTarget) Deploy(
 		return nil, fmt.Errorf("failed applying kube secrets: %w", err)
 	}
 
-	t.publisher.Send(ctx, NewProgressMessage("Applying k8s manifests"))
+	t.publisher.Send(ctx, progress.NewMessage("Applying k8s manifests"))
 	t.kubectl.SetEnv(t.env.Dotenv())
 	deploymentPath := serviceConfig.K8s.DeploymentPath
 	if deploymentPath == "" {
@@ -226,13 +227,13 @@ func (t *aksTarget) Deploy(
 
 	// It is not a requirement for a AZD deploy to contain a deployment object
 	// If we don't find any deployment within the namespace we will continue
-	t.publisher.Send(ctx, NewProgressMessage("Verifying deployment"))
+	t.publisher.Send(ctx, progress.NewMessage("Verifying deployment"))
 	deployment, err := t.waitForDeployment(ctx, namespace, deploymentName)
 	if err != nil && !errors.Is(err, kubectl.ErrResourceNotFound) {
 		return nil, err
 	}
 
-	t.publisher.Send(ctx, NewProgressMessage("Fetching endpoints for AKS service"))
+	t.publisher.Send(ctx, progress.NewMessage("Fetching endpoints for AKS service"))
 	endpoints, err := t.Endpoints(ctx, serviceConfig, targetResource)
 	if err != nil {
 		return nil, err

@@ -13,9 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
-	"github.com/azure/azure-dev/cli/azd/pkg/messaging"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
-	"github.com/azure/azure-dev/cli/azd/pkg/progress"
 	"github.com/blang/semver/v4"
 	"golang.org/x/exp/slices"
 	"gopkg.in/yaml.v3"
@@ -23,26 +21,9 @@ import (
 
 const (
 	//nolint:lll
-	projectSchemaAnnotation                       = "# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json"
-	ProgressMessageKind     messaging.MessageKind = "Progress"
-	cInfraDirectory                               = "infra"
+	projectSchemaAnnotation = "# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json"
+	cInfraDirectory         = "infra"
 )
-
-type ProgressMessage struct {
-	Message string
-}
-
-func NewProgressMessage(message string) *messaging.Message {
-	progressMessage := &ProgressMessage{
-		Message: message,
-	}
-
-	return messaging.NewMessage(ProgressMessageKind, progressMessage)
-}
-
-func (pm *ProgressMessage) Print(ctx context.Context, printer *progress.Printer) {
-	printer.Progress(ctx, pm.Message)
-}
 
 func New(ctx context.Context, projectFilePath string, projectName string) (*ProjectConfig, error) {
 	newProject := &ProjectConfig{

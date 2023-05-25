@@ -13,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/messaging"
+	"github.com/azure/azure-dev/cli/azd/pkg/progress"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
@@ -54,7 +55,7 @@ func (f *functionAppTarget) Package(
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
 ) (*ServicePackageResult, error) {
-	f.publisher.Send(ctx, NewProgressMessage("Compressing deployment artifacts"))
+	f.publisher.Send(ctx, progress.NewMessage("Compressing deployment artifacts"))
 	zipFilePath, err := createDeployableZip(serviceConfig.Name, packageOutput.PackagePath)
 	if err != nil {
 		return nil, err
@@ -85,7 +86,7 @@ func (f *functionAppTarget) Deploy(
 	defer os.Remove(packageOutput.PackagePath)
 	defer zipFile.Close()
 
-	f.publisher.Send(ctx, NewProgressMessage("Uploading deployment package"))
+	f.publisher.Send(ctx, progress.NewMessage("Uploading deployment package"))
 	res, err := f.cli.DeployFunctionAppUsingZipFile(
 		ctx,
 		targetResource.SubscriptionId(),
@@ -97,7 +98,7 @@ func (f *functionAppTarget) Deploy(
 		return nil, err
 	}
 
-	f.publisher.Send(ctx, NewProgressMessage("Fetching endpoints for function app"))
+	f.publisher.Send(ctx, progress.NewMessage("Fetching endpoints for function app"))
 	endpoints, err := f.Endpoints(ctx, serviceConfig, targetResource)
 	if err != nil {
 		return nil, err

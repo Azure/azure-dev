@@ -13,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/messaging"
+	"github.com/azure/azure-dev/cli/azd/pkg/progress"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
 
@@ -85,7 +86,7 @@ func (at *containerAppTarget) Deploy(
 	}
 
 	imageName := at.env.GetServiceProperty(serviceConfig.Name, "IMAGE_NAME")
-	at.publisher.Send(ctx, NewProgressMessage("Updating container app revision"))
+	at.publisher.Send(ctx, progress.NewMessage("Updating container app revision"))
 	err = at.containerAppService.AddRevision(
 		ctx,
 		targetResource.SubscriptionId(),
@@ -97,7 +98,7 @@ func (at *containerAppTarget) Deploy(
 		return nil, fmt.Errorf("updating container app service: %w", err)
 	}
 
-	at.publisher.Send(ctx, NewProgressMessage("Fetching endpoints for container app service"))
+	at.publisher.Send(ctx, progress.NewMessage("Fetching endpoints for container app service"))
 	endpoints, err := at.Endpoints(ctx, serviceConfig, targetResource)
 	if err != nil {
 		return nil, err

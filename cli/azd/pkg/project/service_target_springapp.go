@@ -13,6 +13,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/messaging"
+	"github.com/azure/azure-dev/cli/azd/pkg/progress"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
@@ -111,7 +112,7 @@ func (st *springAppTarget) Deploy(
 		return nil, fmt.Errorf("reading artifact file %s: %w", artifactPath, err)
 	}
 
-	st.publisher.Send(ctx, NewProgressMessage("Uploading spring artifact"))
+	st.publisher.Send(ctx, progress.NewMessage("Uploading spring artifact"))
 	relativePath, err := st.springService.UploadSpringArtifact(
 		ctx,
 		targetResource.SubscriptionId(),
@@ -125,7 +126,7 @@ func (st *springAppTarget) Deploy(
 		return nil, fmt.Errorf("failed to upload spring artifact: %w", err)
 	}
 
-	st.publisher.Send(ctx, NewProgressMessage("Deploying spring artifact"))
+	st.publisher.Send(ctx, progress.NewMessage("Deploying spring artifact"))
 	res, err := st.springService.DeploySpringAppArtifact(
 		ctx,
 		targetResource.SubscriptionId(),
@@ -146,7 +147,7 @@ func (st *springAppTarget) Deploy(
 		return nil, fmt.Errorf("failed updating environment with relative path, %w", err)
 	}
 
-	st.publisher.Send(ctx, NewProgressMessage("Fetching endpoints for spring app service"))
+	st.publisher.Send(ctx, progress.NewMessage("Fetching endpoints for spring app service"))
 	endpoints, err := st.Endpoints(ctx, serviceConfig, targetResource)
 	if err != nil {
 		return nil, err

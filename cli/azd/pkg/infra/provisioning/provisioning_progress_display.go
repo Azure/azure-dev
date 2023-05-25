@@ -14,14 +14,18 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/messaging"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 )
 
-const defaultProgressTitle string = "Provisioning Azure resources"
-const succeededProvisioningState string = "Succeeded"
-const runningProvisioningState string = "Running"
-const failedProvisioningState string = "Failed"
+const (
+	defaultProgressTitle       string                = "Provisioning Azure resources"
+	succeededProvisioningState string                = "Succeeded"
+	runningProvisioningState   string                = "Running"
+	failedProvisioningState    string                = "Failed"
+	HookMessageKind            messaging.MessageKind = "hook"
+)
 
 // ProvisioningProgressDisplay displays interactive progress for an ongoing Azure provisioning operation.
 type ProvisioningProgressDisplay struct {
@@ -32,18 +36,21 @@ type ProvisioningProgressDisplay struct {
 	resourceManager    infra.ResourceManager
 	console            input.Console
 	target             infra.Deployment
+	publisher          messaging.Publisher
 }
 
 func NewProvisioningProgressDisplay(
 	rm infra.ResourceManager,
 	console input.Console,
 	target infra.Deployment,
+	publisher messaging.Publisher,
 ) ProvisioningProgressDisplay {
 	return ProvisioningProgressDisplay{
 		displayedResources: map[string]bool{},
 		target:             target,
 		resourceManager:    rm,
 		console:            console,
+		publisher:          publisher,
 	}
 }
 
@@ -142,14 +149,12 @@ func (display *ProvisioningProgressDisplay) logNewlyCreatedResources(
 		// Don't log resource types for Azure resources that we do not have a translation of the resource type for.
 		// This will be improved on in a future iteration.
 		if resourceTypeDisplayName != "" {
-			display.console.MessageUxItem(
-				ctx,
-				&ux.DisplayedResource{
-					Type:  resourceTypeDisplayName,
-					Name:  *resource.Properties.TargetResource.ResourceName,
-					State: ux.DisplayedResourceState(*resource.Properties.ProvisioningState),
-				},
-			)
+			display.publisher.Send(ctx, NewDisplayedResourceMessage(&DisplayedResource{
+				Type:  resourceTypeDisplayName,
+				Name:  *resource.Properties.TargetResource.ResourceName,
+				State: DisplayedResourceState(*resource.Properties.ProvisioningState),
+			}))
+
 			resourceTypeName = resourceTypeDisplayName
 		}
 

@@ -34,6 +34,10 @@ func (p *Printer) Register(ctx context.Context, progressFilter messaging.Message
 	return p.subscriber.Subscribe(ctx, progressFilter, p.writeMessage)
 }
 
+func (p *Printer) Message(ctx context.Context, message string) {
+	p.console.Message(ctx, message)
+}
+
 func (p *Printer) Start(ctx context.Context, defaultMessage string) {
 	p.currentMessage = defaultMessage
 	p.console.ShowSpinner(ctx, defaultMessage, input.Step)

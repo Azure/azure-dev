@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"log"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
@@ -15,7 +14,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/spin"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
@@ -45,39 +43,12 @@ func (m *Manager) Plan(ctx context.Context) (*DeploymentPlan, error) {
 
 // Gets the latest deployment details for the specified scope
 func (m *Manager) State(ctx context.Context) (*StateResult, error) {
-	var stateResult *StateResult
-
-	err := m.runAction(
-		ctx,
-		"Retrieving Infrastructure State",
-		m.interactive,
-		func(ctx context.Context, spinner *spin.Spinner) error {
-			queryTask := m.provider.State(ctx)
-
-			go func() {
-				for progress := range queryTask.Progress() {
-					m.updateSpinnerTitle(spinner, progress.Message)
-				}
-			}()
-
-			go m.monitorInteraction(spinner, queryTask.Interactive())
-
-			result, err := queryTask.Await()
-			if err != nil {
-				return err
-			}
-
-			stateResult = result
-
-			return nil
-		},
-	)
-
+	result, err := m.provider.State(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("error retrieving state: %w", err)
 	}
 
-	return stateResult, nil
+	return result, nil
 }
 
 // Deploys the Azure infrastructure for the specified project
@@ -119,14 +90,7 @@ func (m *Manager) Destroy(ctx context.Context, options DestroyOptions) (*Destroy
 
 // Plans the infrastructure provisioning and orchestrates interactive terminal operations
 func (m *Manager) plan(ctx context.Context) (*DeploymentPlan, error) {
-	planningTask := m.provider.Plan(ctx)
-	go func() {
-		for progress := range planningTask.Progress() {
-			log.Println(progress.Message)
-		}
-	}()
-
-	deploymentPlan, err := planningTask.Await()
+	deploymentPlan, err := m.provider.Plan(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("planning infrastructure provisioning: %w", err)
 	}
@@ -139,88 +103,22 @@ func (m *Manager) deploy(
 	ctx context.Context,
 	plan *DeploymentPlan,
 ) (*DeployResult, error) {
-	deployTask := m.provider.Deploy(ctx, plan)
-
-	go func() {
-		for progress := range deployTask.Progress() {
-			log.Println(progress.Message)
-		}
-	}()
-
-	deployResult, err := deployTask.Await()
+	deployResult, err := m.provider.Deploy(ctx, plan)
 	if err != nil {
 		return nil, fmt.Errorf("error deploying infrastructure: %w", err)
 	}
-
-	// make sure any spinner is stopped
-	m.console.StopSpinner(ctx, "", input.StepDone)
 
 	return deployResult, nil
 }
 
 // Destroys the specified infrastructure provisioning and orchestrates the interactive terminal operations
 func (m *Manager) destroy(ctx context.Context, options DestroyOptions) (*DestroyResult, error) {
-	var destroyResult *DestroyResult
-
-	destroyTask := m.provider.Destroy(ctx, options)
-
-	go func() {
-		for progress := range destroyTask.Progress() {
-			log.Println(progress.Message)
-		}
-	}()
-
-	result, err := destroyTask.Await()
+	result, err := m.provider.Destroy(ctx, options)
 	if err != nil {
 		return nil, fmt.Errorf("error deleting Azure resources: %w", err)
 	}
 
-	destroyResult = result
-	return destroyResult, nil
-}
-
-func (m *Manager) runAction(
-	ctx context.Context,
-	title string,
-	interactive bool,
-	action func(ctx context.Context, spinner *spin.Spinner) error,
-) error {
-	var spinner *spin.Spinner
-
-	if interactive {
-		spinner, ctx = spin.GetOrCreateSpinner(ctx, m.console.Handles().Stdout, title)
-		defer spinner.Stop()
-		defer m.console.SetWriter(nil)
-
-		spinner.Start()
-		m.console.SetWriter(spinner)
-	}
-
-	return action(ctx, spinner)
-}
-
-// Updates the spinner title during interactive console session
-func (m *Manager) updateSpinnerTitle(spinner *spin.Spinner, message string) {
-	if spinner == nil {
-		return
-	}
-
-	spinner.Title(fmt.Sprintf("%s...", message))
-}
-
-// Monitors the interactive channel and starts/stops the terminal spinner as needed
-func (m *Manager) monitorInteraction(spinner *spin.Spinner, interactiveChannel <-chan bool) {
-	for isInteractive := range interactiveChannel {
-		if spinner == nil {
-			continue
-		}
-
-		if isInteractive {
-			spinner.Stop()
-		} else {
-			spinner.Start()
-		}
-	}
+	return result, nil
 }
 
 // Creates a new instance of the Provisioning Manager

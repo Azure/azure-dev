@@ -345,19 +345,17 @@ func (c *AskerConsole) IsSpinnerInteractive() bool {
 	return c.spinnerTerminalMode&yacspin.ForceTTYMode > 0
 }
 
-var donePrefix string = output.WithSuccessFormat("(✓) Done:")
-
 func (c *AskerConsole) getStopChar(format SpinnerUxType) string {
 	var stopChar string
 	switch format {
 	case StepDone:
-		stopChar = donePrefix
+		stopChar = ux.DonePrefix
 	case StepFailed:
-		stopChar = output.WithErrorFormat("(x) Failed:")
+		stopChar = ux.FailedPrefix
 	case StepWarning:
-		stopChar = output.WithWarningFormat("(!) Warning:")
+		stopChar = ux.WarningPrefix
 	case StepSkipped:
-		stopChar = output.WithGrayFormat("(-) Skipped:")
+		stopChar = ux.SkippedPrefix
 	}
 	return fmt.Sprintf("%s%s", c.getIndent(format), stopChar)
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/messaging"
+	"github.com/azure/azure-dev/cli/azd/pkg/progress"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/swa"
@@ -84,7 +85,7 @@ func (at *staticWebAppTarget) Deploy(
 	}
 
 	// Get the static webapp deployment token
-	at.publisher.Send(ctx, NewProgressMessage("Retrieving deployment token"))
+	at.publisher.Send(ctx, progress.NewMessage("Retrieving deployment token"))
 	deploymentToken, err := at.cli.GetStaticWebAppApiKey(
 		ctx,
 		targetResource.SubscriptionId(),
@@ -96,7 +97,7 @@ func (at *staticWebAppTarget) Deploy(
 	}
 
 	// SWA performs a zip & deploy of the specified output folder and deploys it to the configured environment
-	at.publisher.Send(ctx, NewProgressMessage("Uploading deployment artifacts"))
+	at.publisher.Send(ctx, progress.NewMessage("Uploading deployment artifacts"))
 	res, err := at.swa.Deploy(ctx,
 		serviceConfig.Project.Path,
 		at.env.GetTenantId(),
@@ -114,12 +115,12 @@ func (at *staticWebAppTarget) Deploy(
 		return nil, fmt.Errorf("failed deploying static web app: %w", err)
 	}
 
-	at.publisher.Send(ctx, NewProgressMessage("Verifying deployment"))
+	at.publisher.Send(ctx, progress.NewMessage("Verifying deployment"))
 	if err := at.verifyDeployment(ctx, targetResource); err != nil {
 		return nil, err
 	}
 
-	at.publisher.Send(ctx, NewProgressMessage("Fetching endpoints for static web app"))
+	at.publisher.Send(ctx, progress.NewMessage("Fetching endpoints for static web app"))
 	endpoints, err := at.Endpoints(ctx, serviceConfig, targetResource)
 	if err != nil {
 		return nil, err

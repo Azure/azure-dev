@@ -17,6 +17,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
+	"github.com/azure/azure-dev/cli/azd/pkg/messaging"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/stretchr/testify/assert"
@@ -109,7 +110,7 @@ func TestReportProgress(t *testing.T) {
 	startTime := time.Now()
 	outputLength := 0
 	mockResourceManager := mockResourceManager{}
-	progressDisplay := NewProvisioningProgressDisplay(&mockResourceManager, mockContext.Console, scope)
+	progressDisplay := NewProvisioningProgressDisplay(&mockResourceManager, mockContext.Console, scope, messaging.NewService())
 	progressReport, _ := progressDisplay.ReportProgress(*mockContext.Context, &startTime)
 	outputLength++
 	assert.Len(t, mockContext.Console.Output(), outputLength)

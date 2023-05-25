@@ -21,15 +21,12 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
-	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/messaging"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/progress"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/terraform"
 	"github.com/drone/envsubst"
 )
@@ -40,9 +37,9 @@ type TerraformProvider struct {
 	prompters    Prompters
 	projectPath  string
 	options      Options
-	console      input.Console
 	cli          terraform.TerraformCli
 	curPrincipal CurrentPrincipalIdProvider
+	publisher    messaging.Publisher
 }
 
 type TerraformDeploymentDetails struct {
@@ -66,13 +63,11 @@ func NewTerraformProvider(
 	env *environment.Environment,
 	projectPath string,
 	infraOptions Options,
-	console input.Console,
-	commandRunner exec.CommandRunner,
+	cli terraform.TerraformCli,
 	curPrincipal CurrentPrincipalIdProvider,
 	prompters Prompters,
+	publisher messaging.Publisher,
 ) *TerraformProvider {
-	terraformCli := terraform.NewTerraformCli(commandRunner)
-
 	// Default to a module named "main" if not specified.
 	if strings.TrimSpace(infraOptions.Module) == "" {
 		infraOptions.Module = "main"
@@ -82,10 +77,10 @@ func NewTerraformProvider(
 		env:          env,
 		projectPath:  projectPath,
 		options:      infraOptions,
-		console:      console,
-		cli:          terraformCli,
+		cli:          cli,
 		curPrincipal: curPrincipal,
 		prompters:    prompters,
+		publisher:    publisher,
 	}
 
 	return provider
@@ -111,197 +106,149 @@ func (t *TerraformProvider) EnsureConfigured(ctx context.Context) error {
 }
 
 // Previews the infrastructure through terraform plan
-func (t *TerraformProvider) Plan(
-	ctx context.Context,
-) *async.InteractiveTaskWithProgress[*DeploymentPlan, *DeploymentPlanningProgress] {
-	return async.RunInteractiveTaskWithProgress(
-		func(asyncContext *async.InteractiveTaskContextWithProgress[*DeploymentPlan, *DeploymentPlanningProgress]) {
-			isRemoteBackendConfig, err := t.isRemoteBackendConfig()
-			if err != nil {
-				asyncContext.SetError(fmt.Errorf("reading backend config: %w", err))
-				return
-			}
+func (t *TerraformProvider) Plan(ctx context.Context) (*DeploymentPlan, error) {
+	isRemoteBackendConfig, err := t.isRemoteBackendConfig()
+	if err != nil {
+		return nil, fmt.Errorf("reading backend config: %w", err)
+	}
 
-			modulePath := t.modulePath()
+	modulePath := t.modulePath()
 
-			initRes, err := t.init(ctx, isRemoteBackendConfig)
-			if err != nil {
-				asyncContext.SetError(fmt.Errorf("terraform init failed: %s , err: %w", initRes, err))
-				return
-			}
+	initRes, err := t.init(ctx, isRemoteBackendConfig)
+	if err != nil {
+		return nil, fmt.Errorf("terraform init failed: %s , err: %w", initRes, err)
+	}
 
-			if err != nil {
-				asyncContext.SetError(err)
-				return
-			}
+	if err != nil {
+		return nil, err
+	}
 
-			err = t.createInputParametersFile(ctx, t.parametersTemplateFilePath(), t.parametersFilePath())
-			if err != nil {
-				asyncContext.SetError(fmt.Errorf("creating parameters file: %w", err))
-				return
-			}
+	err = t.createInputParametersFile(ctx, t.parametersTemplateFilePath(), t.parametersFilePath())
+	if err != nil {
+		return nil, fmt.Errorf("creating parameters file: %w", err)
+	}
 
-			validated, err := t.cli.Validate(ctx, modulePath)
-			if err != nil {
-				asyncContext.SetError(fmt.Errorf("terraform validate failed: %s, err %w", validated, err))
-				return
-			}
+	validated, err := t.cli.Validate(ctx, modulePath)
+	if err != nil {
+		return nil, fmt.Errorf("terraform validate failed: %s, err %w", validated, err)
+	}
 
-			planArgs := t.createPlanArgs(isRemoteBackendConfig)
-			runResult, err := t.cli.Plan(ctx, modulePath, t.planFilePath(), planArgs...)
-			if err != nil {
-				asyncContext.SetError(fmt.Errorf("terraform plan failed:%s err %w", runResult, err))
-				return
-			}
+	planArgs := t.createPlanArgs(isRemoteBackendConfig)
+	runResult, err := t.cli.Plan(ctx, modulePath, t.planFilePath(), planArgs...)
+	if err != nil {
+		return nil, fmt.Errorf("terraform plan failed:%s err %w", runResult, err)
+	}
 
-			//create deployment plan
-			deployment, err := t.createDeployment(ctx, modulePath)
-			if err != nil {
-				asyncContext.SetError(fmt.Errorf("create terraform template failed: %w", err))
-				return
-			}
+	//create deployment plan
+	deployment, err := t.createDeployment(ctx, modulePath)
+	if err != nil {
+		return nil, fmt.Errorf("create terraform template failed: %w", err)
+	}
 
-			deploymentDetails := TerraformDeploymentDetails{
-				ParameterFilePath: t.parametersFilePath(),
-				PlanFilePath:      t.planFilePath(),
-			}
-			if !isRemoteBackendConfig {
-				deploymentDetails.localStateFilePath = t.localStateFilePath()
-			}
+	deploymentDetails := TerraformDeploymentDetails{
+		ParameterFilePath: t.parametersFilePath(),
+		PlanFilePath:      t.planFilePath(),
+	}
+	if !isRemoteBackendConfig {
+		deploymentDetails.localStateFilePath = t.localStateFilePath()
+	}
 
-			result := DeploymentPlan{
-				Deployment: *deployment,
-				Details:    deploymentDetails,
-			}
-
-			asyncContext.SetResult(&result)
-		})
+	return &DeploymentPlan{
+		Deployment: *deployment,
+		Details:    deploymentDetails,
+	}, nil
 }
 
 // Deploy the infrastructure within the specified template through terraform apply
-func (t *TerraformProvider) Deploy(
-	ctx context.Context,
-	deployment *DeploymentPlan,
-) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress] {
-	return async.RunInteractiveTaskWithProgress(
-		func(asyncContext *async.InteractiveTaskContextWithProgress[*DeployResult, *DeployProgress]) {
-			t.console.Message(ctx, "Locating plan file...")
+func (t *TerraformProvider) Deploy(ctx context.Context, deployment *DeploymentPlan) (*DeployResult, error) {
+	t.publisher.Send(ctx, progress.NewMessage("Locating plan file..."))
 
-			modulePath := t.modulePath()
-			terraformDeploymentData := deployment.Details.(TerraformDeploymentDetails)
-			isRemoteBackendConfig, err := t.isRemoteBackendConfig()
-			if err != nil {
-				asyncContext.SetError(fmt.Errorf("reading backend config: %w", err))
-				return
-			}
+	modulePath := t.modulePath()
+	terraformDeploymentData := deployment.Details.(TerraformDeploymentDetails)
+	isRemoteBackendConfig, err := t.isRemoteBackendConfig()
+	if err != nil {
+		return nil, fmt.Errorf("reading backend config: %w", err)
+	}
 
-			applyArgs, err := t.createApplyArgs(isRemoteBackendConfig, terraformDeploymentData)
-			if err != nil {
-				asyncContext.SetError(err)
-				return
-			}
+	applyArgs, err := t.createApplyArgs(isRemoteBackendConfig, terraformDeploymentData)
+	if err != nil {
+		return nil, err
+	}
 
-			runResult, err := t.cli.Apply(ctx, modulePath, applyArgs...)
-			if err != nil {
-				asyncContext.SetError(fmt.Errorf("template Deploy failed: %s , err:%w", runResult, err))
-				return
-			}
+	runResult, err := t.cli.Apply(ctx, modulePath, applyArgs...)
+	if err != nil {
+		return nil, fmt.Errorf("template Deploy failed: %s , err:%w", runResult, err)
+	}
 
-			// Set the deployment result
-			outputs, err := t.createOutputParameters(ctx, modulePath, isRemoteBackendConfig)
-			if err != nil {
-				asyncContext.SetError(fmt.Errorf("create terraform template failed: %w", err))
-				return
-			}
+	// Set the deployment result
+	outputs, err := t.createOutputParameters(ctx, modulePath, isRemoteBackendConfig)
+	if err != nil {
+		return nil, fmt.Errorf("create terraform template failed: %w", err)
+	}
 
-			currentDeployment := deployment.Deployment
-			currentDeployment.Outputs = outputs
-			result := &DeployResult{
-				Deployment: &currentDeployment,
-			}
+	currentDeployment := deployment.Deployment
+	currentDeployment.Outputs = outputs
 
-			asyncContext.SetResult(result)
-		})
+	return &DeployResult{
+		Deployment: &currentDeployment,
+	}, nil
 }
 
 // Destroys the specified deployment through terraform destroy
-func (t *TerraformProvider) Destroy(
-	ctx context.Context,
-	options DestroyOptions,
-) *async.InteractiveTaskWithProgress[*DestroyResult, *DestroyProgress] {
-	return async.RunInteractiveTaskWithProgress(
-		func(asyncContext *async.InteractiveTaskContextWithProgress[*DestroyResult, *DestroyProgress]) {
-			isRemoteBackendConfig, err := t.isRemoteBackendConfig()
-			if err != nil {
-				asyncContext.SetError(fmt.Errorf("reading backend config: %w", err))
-				return
-			}
+func (t *TerraformProvider) Destroy(ctx context.Context, options DestroyOptions) (*DestroyResult, error) {
+	isRemoteBackendConfig, err := t.isRemoteBackendConfig()
+	if err != nil {
+		return nil, fmt.Errorf("reading backend config: %w", err)
+	}
 
-			t.console.Message(ctx, "Locating parameters file...")
-			err = t.ensureParametersFile(ctx)
-			if err != nil {
-				asyncContext.SetError(err)
-				return
-			}
+	t.publisher.Send(ctx, progress.NewMessage("Locating parameters file..."))
+	err = t.ensureParametersFile(ctx)
+	if err != nil {
+		return nil, err
+	}
 
-			modulePath := t.modulePath()
+	modulePath := t.modulePath()
 
-			//load the deployment result
-			outputs, err := t.createOutputParameters(ctx, modulePath, isRemoteBackendConfig)
-			if err != nil {
-				asyncContext.SetError(fmt.Errorf("load terraform template output failed: %w", err))
-				return
-			}
+	//load the deployment result
+	outputs, err := t.createOutputParameters(ctx, modulePath, isRemoteBackendConfig)
+	if err != nil {
+		return nil, fmt.Errorf("load terraform template output failed: %w", err)
+	}
 
-			t.console.Message(ctx, "Deleting terraform deployment...")
-			// terraform doesn't use the `t.console`, we must ensure no spinner is running before calling Destroy
-			// as it could be an interactive operation if it needs confirmation
-			t.console.StopSpinner(ctx, "", input.Step)
-			destroyArgs := t.createDestroyArgs(isRemoteBackendConfig, options.Force())
-			runResult, err := t.cli.Destroy(ctx, modulePath, destroyArgs...)
-			if err != nil {
-				asyncContext.SetError(fmt.Errorf("template Deploy failed: %s, err: %w", runResult, err))
-				return
-			}
+	t.publisher.Send(ctx, progress.NewMessage("Deleting terraform deployment..."))
+	destroyArgs := t.createDestroyArgs(isRemoteBackendConfig, options.Force())
+	runResult, err := t.cli.Destroy(ctx, modulePath, destroyArgs...)
+	if err != nil {
+		return nil, fmt.Errorf("template Deploy failed: %s, err: %w", runResult, err)
+	}
 
-			result := DestroyResult{
-				Outputs: outputs,
-			}
-			asyncContext.SetResult(&result)
-		})
+	return &DestroyResult{
+		Outputs: outputs,
+	}, nil
 }
 
-func (t *TerraformProvider) State(
-	ctx context.Context,
-) *async.InteractiveTaskWithProgress[*StateResult, *StateProgress] {
-	return async.RunInteractiveTaskWithProgress(
-		func(asyncContext *async.InteractiveTaskContextWithProgress[*StateResult, *StateProgress]) {
-			isRemoteBackendConfig, err := t.isRemoteBackendConfig()
-			if err != nil {
-				asyncContext.SetError(fmt.Errorf("reading backend config: %w", err))
-				return
-			}
+func (t *TerraformProvider) State(ctx context.Context) (*StateResult, error) {
+	isRemoteBackendConfig, err := t.isRemoteBackendConfig()
+	if err != nil {
+		return nil, fmt.Errorf("reading backend config: %w", err)
+	}
 
-			t.console.Message(ctx, "Retrieving terraform state...")
-			modulePath := t.modulePath()
+	t.publisher.Send(ctx, progress.NewMessage("Retrieving terraform state..."))
+	modulePath := t.modulePath()
 
-			terraformState, err := t.showCurrentState(ctx, modulePath, isRemoteBackendConfig)
-			if err != nil {
-				asyncContext.SetError(fmt.Errorf("fetching terraform state failed: %w", err))
-				return
-			}
+	terraformState, err := t.showCurrentState(ctx, modulePath, isRemoteBackendConfig)
+	if err != nil {
+		return nil, fmt.Errorf("fetching terraform state failed: %w", err)
+	}
 
-			state := State{}
+	state := State{}
 
-			state.Outputs = t.convertOutputs(terraformState.Values.Outputs)
-			state.Resources = t.collectAzureResources(terraformState.Values.RootModule)
+	state.Outputs = t.convertOutputs(terraformState.Values.Outputs)
+	state.Resources = t.collectAzureResources(terraformState.Values.RootModule)
 
-			result := StateResult{
-				State: &state,
-			}
-
-			asyncContext.SetResult(&result)
-		})
+	return &StateResult{
+		State: &state,
+	}, nil
 }
 
 // Creates the terraform plan CLI arguments
@@ -369,7 +316,7 @@ func (t *TerraformProvider) init(ctx context.Context, isRemoteBackendConfig bool
 	cmd := []string{}
 
 	if isRemoteBackendConfig {
-		t.console.Message(ctx, "Generating terraform backend config file...")
+		t.publisher.Send(ctx, progress.NewMessage("Generating terraform backend config file..."))
 
 		err := t.createInputParametersFile(ctx, t.backendConfigTemplateFilePath(), t.backendConfigFilePath())
 		if err != nil {
@@ -717,30 +664,6 @@ func (t *TerraformProvider) createInputParametersFile(
 	}
 
 	return nil
-}
-
-func init() {
-	err := RegisterProvider(
-		Terraform,
-		func(
-			ctx context.Context,
-			env *environment.Environment,
-			projectPath string,
-			options Options,
-			console input.Console,
-			_ azcli.AzCli,
-			commandRunner exec.CommandRunner,
-			prompters Prompters,
-			curPrincipal CurrentPrincipalIdProvider,
-			_ *alpha.FeatureManager,
-		) (Provider, error) {
-			return NewTerraformProvider(ctx, env, projectPath, options, console, commandRunner, curPrincipal, prompters), nil
-		},
-	)
-
-	if err != nil {
-		panic(err)
-	}
 }
 
 // terraformShowOutput is a model type for the output of `terraform show` for a tfstate file.

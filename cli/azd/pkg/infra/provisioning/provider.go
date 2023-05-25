@@ -5,13 +5,11 @@ package provisioning
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
-	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -125,26 +123,10 @@ type Provider interface {
 	EnsureConfigured(ctx context.Context) error
 	// State gets the current state of the infrastructure, this contains both the provisioned resources and any outputs from
 	// the module.
-	State(ctx context.Context) *async.InteractiveTaskWithProgress[*StateResult, *StateProgress]
-	Plan(ctx context.Context) *async.InteractiveTaskWithProgress[*DeploymentPlan, *DeploymentPlanningProgress]
-	Deploy(
-		ctx context.Context,
-		plan *DeploymentPlan,
-	) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress]
-	Destroy(
-		ctx context.Context,
-		options DestroyOptions,
-	) *async.InteractiveTaskWithProgress[*DestroyResult, *DestroyProgress]
-}
-
-// Registers a provider creation function for the specified provider kind
-func RegisterProvider(kind ProviderKind, newFn NewProviderFn) error {
-	if newFn == nil {
-		return errors.New("NewProviderFn is required")
-	}
-
-	providers[kind] = newFn
-	return nil
+	State(ctx context.Context) (*StateResult, error)
+	Plan(ctx context.Context) (*DeploymentPlan, error)
+	Deploy(ctx context.Context, plan *DeploymentPlan) (*DeployResult, error)
+	Destroy(ctx context.Context, options DestroyOptions) (*DestroyResult, error)
 }
 
 func NewProvider(

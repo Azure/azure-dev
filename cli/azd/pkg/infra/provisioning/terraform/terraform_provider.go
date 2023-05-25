@@ -21,6 +21,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -32,6 +33,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/terraform"
 	"github.com/drone/envsubst"
+	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/exp/maps"
 )
 
@@ -105,6 +107,13 @@ func (t *TerraformProvider) EnsureConfigured(ctx context.Context) error {
 		fmt.Sprintf("ARM_SUBSCRIPTION_ID=%s", t.env.GetSubscriptionId()),
 		fmt.Sprintf("ARM_CLIENT_ID=%s", os.Getenv("ARM_CLIENT_ID")),
 		fmt.Sprintf("ARM_CLIENT_SECRET=%s", os.Getenv("ARM_CLIENT_SECRET")),
+		// Include azd in user agent
+		fmt.Sprintf("TF_APPEND_USER_AGENT=%s", internal.MakeUserAgentString("")),
+	}
+
+	spanCtx := trace.SpanContextFromContext(ctx)
+	if spanCtx.HasTraceID() {
+		envVars = append(envVars, fmt.Sprintf("ARM_CORRELATION_REQUEST_ID=%s", spanCtx.TraceID().String()))
 	}
 
 	t.cli.SetEnv(envVars)

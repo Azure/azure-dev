@@ -15,7 +15,7 @@ import (
 
 func CreateGraphClient(mockContext *mocks.MockContext) (*graphsdk.GraphClient, error) {
 	clientOptions := CreateDefaultClientOptions(mockContext)
-
+	clientOptions.Retry.RetryDelay = -1
 	return graphsdk.NewGraphClient(mockContext.Credentials, clientOptions)
 }
 
@@ -241,42 +241,6 @@ func RegisterRoleAssignmentPutMock(mockContext *mocks.MockContext, statusCode in
 
 			return mocks.CreateHttpResponseWithBody(request, statusCode, errorBody)
 		}
-	})
-}
-
-func RegisterUserRoleAssignment(mockContext *mocks.MockContext, statusCode int, roleName string) {
-	mockContext.HttpClient.When(func(request *http.Request) bool {
-		return request.Method == http.MethodGet &&
-			strings.Contains(request.URL.Path, "subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Authorization/roleAssignments")
-	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		response := armauthorization.RoleAssignmentsClientListForScopeResponse{
-			RoleAssignmentListResult: armauthorization.RoleAssignmentListResult{
-				Value: []*armauthorization.RoleAssignment{
-					{
-						Properties: &armauthorization.RoleAssignmentPropertiesWithScope{
-							RoleDefinitionID: convert.RefOf("RoleDefinition_ID"),
-						},
-					},
-				},
-			},
-		}
-
-		return mocks.CreateHttpResponseWithBody(request, statusCode, response)
-	})
-
-	mockContext.HttpClient.When(func(request *http.Request) bool {
-		return request.Method == http.MethodGet &&
-			strings.Contains(request.URL.Path, "RoleDefinition_ID")
-	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		response := armauthorization.RoleDefinitionsClientGetByIDResponse{
-			RoleDefinition: armauthorization.RoleDefinition{
-				Properties: &armauthorization.RoleDefinitionProperties{
-					RoleName: convert.RefOf(roleName),
-				},
-			},
-		}
-
-		return mocks.CreateHttpResponseWithBody(request, statusCode, response)
 	})
 }
 

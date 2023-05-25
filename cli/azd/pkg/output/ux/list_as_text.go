@@ -9,7 +9,12 @@ import (
 	"strings"
 )
 
-func listAsText(items []string, connectWord string) string {
+// generates text from a list of strings, for example:
+// ["foo"]        					=> "foo"
+// ["foo", "bar"] 					=> "foo and bar"
+// ["foo", "bar", "axe"] 			=> "foo, bar and axe"
+// ["foo", "bar", ..., ..., "axe"] 	=> "foo, bar, ..., ... and axe"
+func ListAsText(items []string) string {
 	count := len(items)
 	if count < 1 {
 		log.Panic("calling itemsCountAsText() with empty list.")
@@ -20,26 +25,8 @@ func listAsText(items []string, connectWord string) string {
 	}
 
 	if count == 2 {
-		return fmt.Sprintf("%s %s %s", items[0], connectWord, items[1])
+		return fmt.Sprintf("%s and %s", items[0], items[1])
 	}
 
-	return fmt.Sprintf("%s %s %s", strings.Join(items[:count-1], ", "), connectWord, items[count-1])
-}
-
-// generates text from a list of strings, for example:
-// ["foo"]        					=> "foo"
-// ["foo", "bar"] 					=> "foo and bar"
-// ["foo", "bar", "axe"] 			=> "foo, bar and axe"
-// ["foo", "bar", ..., ..., "axe"] 	=> "foo, bar, ..., ... and axe"
-func AndListAsText(items []string) string {
-	return listAsText(items, "and")
-}
-
-// generates text from a list of strings, for example:
-// ["foo"]        					=> "foo"
-// ["foo", "bar"] 					=> "foo or bar"
-// ["foo", "bar", "axe"] 			=> "foo, bar or axe"
-// ["foo", "bar", ..., ..., "axe"] 	=> "foo, bar, ..., ... or axe"
-func OrListAsText(items []string) string {
-	return listAsText(items, "or")
+	return fmt.Sprintf("%s and %s", strings.Join(items[:count-1], ", "), items[count-1])
 }

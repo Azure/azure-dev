@@ -1,7 +1,16 @@
 param(
     [string] $Version = (Get-Content "$PSScriptRoot/../version.txt"),
-    [string] $SourceVersion = (git rev-parse HEAD)
+    [string] $SourceVersion = (git rev-parse HEAD),
+    [switch] $CodeCoverageEnabled
 )
+
+# Remove any previously built binaries
+go clean
+
+if ($LASTEXITCODE) {
+    Write-Host "Error running go clean"
+    exit $LASTEXITCODE
+}
 
 # On Windows, use the goversioninfo tool to embed the version information into the executable.
 if ($IsWindows) {
@@ -46,6 +55,10 @@ $buildFlags = @(
     # Remove file system paths from the assembled code
     "-asmflags=-trimpath"
 )
+
+if ($CodeCoverageEnabled) {
+    $buildFlags += "-cover"
+}
 
 # Build constraint tags
 # cfi: Enable Control Flow Integrity (CFI),

@@ -22,7 +22,7 @@ func randSeq(n int, rng rand.Rand) string {
 	return string(b)
 }
 
-func TestCacheFixed(t *testing.T) {
+func TestCache(t *testing.T) {
 	root := t.TempDir()
 	ctx := context.Background()
 	c := newCache(root)

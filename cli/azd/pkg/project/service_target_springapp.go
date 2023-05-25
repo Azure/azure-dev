@@ -20,13 +20,21 @@ import (
 )
 
 const (
-	defaultDeploymentName = "default"
+	defaultDeploymentName   = "default"
+	defaultBuildServiceName = "default"
+	defaultBuilderName      = "default"
+	defaultAgentPoolName    = "default"
+	enterpriseTierName      = "Enterprise"
+	buildNameSuffix         = "-azd-build"
 )
 
 // The Azure Spring Apps configuration options
 type SpringOptions struct {
 	// The deployment name of ASA app
-	DeploymentName string `yaml:"deploymentName"`
+	DeploymentName   string `yaml:"deploymentName"`
+	BuildServiceName string `yaml:"buildServiceName"`
+	BuilderName      string `yaml:"builderName"`
+	AgentPoolName    string `yaml:"agentPoolName"`
 }
 
 type springAppTarget struct {
@@ -87,6 +95,18 @@ func (st *springAppTarget) Deploy(
 			if deploymentName == "" {
 				deploymentName = defaultDeploymentName
 			}
+			buildServiceName := serviceConfig.Spring.BuildServiceName
+			if buildServiceName == "" {
+				buildServiceName = defaultBuildServiceName
+			}
+			builderName := serviceConfig.Spring.BuilderName
+			if builderName == "" {
+				builderName = defaultBuilderName
+			}
+			agentPoolName := serviceConfig.Spring.AgentPoolName
+			if agentPoolName == "" {
+				agentPoolName = defaultAgentPoolName
+			}
 
 			_, err := st.springService.GetSpringAppDeployment(
 				ctx,
@@ -134,20 +154,82 @@ func (st *springAppTarget) Deploy(
 				return
 			}
 
-			task.SetProgress(NewServiceProgress("Deploying spring artifact"))
-
-			res, err := st.springService.DeploySpringAppArtifact(
-				ctx,
-				targetResource.SubscriptionId(),
+			tier, err := st.springService.GetSpringInstanceTier(ctx, targetResource.SubscriptionId(),
 				targetResource.ResourceGroupName(),
-				targetResource.ResourceName(),
-				serviceConfig.Name,
-				*relativePath,
-				deploymentName,
-			)
+				targetResource.ResourceName())
+
 			if err != nil {
-				task.SetError(fmt.Errorf("deploying service %s: %w", serviceConfig.Name, err))
+				task.SetError(fmt.Errorf("failed to get tier: %w", err))
 				return
+			}
+
+			var result string
+			if *tier == enterpriseTierName {
+				task.SetProgress(NewServiceProgress("Creating build for artifact"))
+				// Extra operation for Enterprise tier
+				buildResultId, err := st.springService.CreateBuild(ctx, targetResource.SubscriptionId(),
+					targetResource.ResourceGroupName(),
+					targetResource.ResourceName(),
+					buildServiceName,
+					agentPoolName,
+					builderName,
+					serviceConfig.Name+buildNameSuffix,
+					*relativePath)
+
+				if err != nil {
+					task.SetError(fmt.Errorf("construct build failed"))
+					return
+				}
+
+				task.SetProgress(NewServiceProgress("Getting build result"))
+
+				_, err = st.springService.GetBuildResult(ctx,
+					targetResource.SubscriptionId(),
+					targetResource.ResourceGroupName(),
+					targetResource.ResourceName(),
+					buildServiceName,
+					serviceConfig.Name+buildNameSuffix,
+					*buildResultId)
+
+				if err != nil {
+					task.SetError(fmt.Errorf("fetch build result failed: %w", err))
+					return
+				}
+
+				task.SetProgress(NewServiceProgress("Deploying build result"))
+				buildResult, err := st.springService.DeployBuildResult(
+					ctx,
+					targetResource.SubscriptionId(),
+					targetResource.ResourceGroupName(),
+					targetResource.ResourceName(),
+					serviceConfig.Name,
+					*buildResultId,
+					deploymentName,
+				)
+				if err != nil {
+					task.SetError(fmt.Errorf("deploying service %s: %w", serviceConfig.Name, err))
+					return
+				}
+
+				result = *buildResult
+			} else {
+				// for non-Enterprise tier
+				task.SetProgress(NewServiceProgress("Deploying spring artifact"))
+				deployResult, err := st.springService.DeploySpringAppArtifact(
+					ctx,
+					targetResource.SubscriptionId(),
+					targetResource.ResourceGroupName(),
+					targetResource.ResourceName(),
+					serviceConfig.Name,
+					*relativePath,
+					deploymentName,
+				)
+				if err != nil {
+					task.SetError(fmt.Errorf("deploying service %s: %w", serviceConfig.Name, err))
+					return
+				}
+
+				result = *deployResult
 			}
 
 			// save the storage relative, otherwise the relative path will be overwritten
@@ -172,7 +254,7 @@ func (st *springAppTarget) Deploy(
 					targetResource.ResourceName(),
 				),
 				SpringAppTarget,
-				*res,
+				result,
 				endpoints,
 			)
 			sdr.Package = packageOutput

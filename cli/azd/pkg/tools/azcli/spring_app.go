@@ -4,15 +4,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"net/url"
-	"os"
-
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appplatform/armappplatform"
 	"github.com/Azure/azure-storage-file-go/azfile"
 	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
+	"log"
+	"net/url"
+	"os"
+	"strings"
+	"time"
 )
 
 // SpringService provides artifacts upload/deploy and query to Azure Spring Apps (ASA)
@@ -51,6 +53,45 @@ type SpringService interface {
 		resourceGroupName string,
 		instanceName string,
 		appName string,
+		deploymentName string,
+	) (*string, error)
+	// Get ASA instance tier
+	GetSpringInstanceTier(
+		ctx context.Context,
+		subscriptionId string,
+		resourceGroup string,
+		instanceName string,
+	) (*string, error)
+	// Create build in BuildService
+	CreateBuild(
+		ctx context.Context,
+		subscriptionId string,
+		resourceGroupName string,
+		instanceName string,
+		buildServiceName string,
+		agentPoolName string,
+		builderName string,
+		buildName string,
+		relativePath string,
+	) (*string, error)
+	// Get build result from BuildService
+	GetBuildResult(
+		ctx context.Context,
+		subscriptionId string,
+		resourceGroupName string,
+		instanceName string,
+		buildServiceName string,
+		buildName string,
+		buildResult string,
+	) (*armappplatform.BuildResultProvisioningState, error)
+	// Deploy build result
+	DeployBuildResult(
+		ctx context.Context,
+		subscriptionId string,
+		resourceGroup string,
+		instanceName string,
+		appName string,
+		buildResult string,
 		deploymentName string,
 	) (*string, error)
 }
@@ -102,6 +143,101 @@ func (ss *springService) GetSpringAppProperties(
 	return &SpringAppProperties{
 		Fqdn: fqdn,
 	}, nil
+}
+
+func (ss *springService) GetSpringInstanceTier(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroup string,
+	instanceName string,
+) (*string, error) {
+	client, err := ss.createSpringClient(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+	resp, err := client.Get(ctx, resourceGroup, instanceName, nil)
+	if err != nil {
+		return nil, err
+	}
+	return resp.SKU.Tier, nil
+}
+
+func (ss *springService) CreateBuild(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroupName string,
+	instanceName string,
+	buildServiceName string,
+	agentPoolName string,
+	builderName string,
+	buildName string,
+	relativePath string,
+) (*string, error) {
+	client, err := ss.createBuildServiceClient(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	agentPoolId := "/subscriptions/" + subscriptionId + "/resourceGroups/" + resourceGroupName + "/providers/Microsoft.AppPlatform/Spring/" + instanceName + "/buildServices/" + buildServiceName + "/agentPools/" + agentPoolName
+	builderId := "/subscriptions/" + subscriptionId + "/resourceGroups/" + resourceGroupName + "/providers/Microsoft.AppPlatform/Spring/" + instanceName + "/buildServices/" + buildServiceName + "/builders/" + builderName
+
+	resp, err := client.CreateOrUpdateBuild(ctx, resourceGroupName, instanceName, buildServiceName, buildName, armappplatform.Build{
+		Properties: &armappplatform.BuildProperties{
+			AgentPool: to.Ptr(agentPoolId),
+			Builder:   to.Ptr(builderId),
+			Env: map[string]*string{
+				"environmentVariable": to.Ptr("test"),
+				"BP_JVM_VERSION":      to.Ptr("17"), // hard code for JDK version
+			},
+			RelativePath: to.Ptr(relativePath),
+		},
+	}, nil)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return resp.Properties.TriggeredBuildResult.ID, nil
+}
+
+func (ss *springService) GetBuildResult(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroupName string,
+	instanceName string,
+	buildServiceName string,
+	buildName string,
+	buildResult string,
+) (*armappplatform.BuildResultProvisioningState, error) {
+	client, err := ss.createBuildServiceClient(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	buildResultName := buildResult[strings.LastIndex(buildResult, "/")+1:]
+	retries := 0
+	const maxRetries = 30
+	for {
+		resp, err := client.GetBuildResult(ctx, resourceGroupName, instanceName, buildServiceName, buildName, buildResultName, nil)
+		if err != nil {
+			return nil, err
+		}
+
+		if *resp.Properties.ProvisioningState == armappplatform.BuildResultProvisioningStateSucceeded {
+			return resp.Properties.ProvisioningState, nil
+		} else if *resp.Properties.ProvisioningState == armappplatform.BuildResultProvisioningStateFailed {
+			return resp.Properties.ProvisioningState, errors.New("build result failed")
+		}
+		retries++
+
+		if retries >= maxRetries {
+			return nil, errors.New("get build result timeout")
+		}
+
+		time.Sleep(20 * time.Second)
+	}
+
+	return nil, errors.New("unexpected error")
 }
 
 func (ss *springService) UploadSpringArtifact(
@@ -180,6 +316,38 @@ func (ss *springService) DeploySpringAppArtifact(
 	return resName, nil
 }
 
+func (ss *springService) DeployBuildResult(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroup string,
+	instanceName string,
+	appName string,
+	buildResult string,
+	deploymentName string,
+) (*string, error) {
+	deploymentClient, err := ss.createSpringAppDeploymentClient(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	springClient, err := ss.createSpringAppClient(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	_, err = ss.createOrUpdateDeploymentByBuildResult(deploymentClient, ctx, resourceGroup, instanceName, appName,
+		deploymentName, buildResult)
+	if err != nil {
+		return nil, err
+	}
+	resName, err := ss.activeDeployment(springClient, ctx, resourceGroup, instanceName, appName, deploymentName)
+	if err != nil {
+		return nil, err
+	}
+
+	return resName, nil
+}
+
 func (ss *springService) GetSpringAppDeployment(
 	ctx context.Context,
 	subscriptionId string,
@@ -188,6 +356,59 @@ func (ss *springService) GetSpringAppDeployment(
 	appName string,
 	deploymentName string,
 ) (*string, error) {
+
+	client5, _ := ss.createBuildServiceClient(ctx, subscriptionId)
+	pager5 := client5.NewListBuildServicesPager(resourceGroupName, instanceName, nil)
+
+	for pager5.More() {
+		page, err := pager5.NextPage(ctx)
+		if err != nil {
+			log.Fatalf("failed to advance page: %v", err)
+		}
+		for _, v := range page.Value {
+			// You could use page here. We use blank identifier for just demo purposes.
+			fmt.Println("builder service item ------: " + *v.ID)
+		}
+	}
+
+	client2, _ := ss.createBuildServiceBuilderClient(ctx, subscriptionId)
+	pager := client2.NewListPager(resourceGroupName, instanceName, "default", nil)
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			log.Fatalf("failed to advance page: %v", err)
+		}
+		for _, v := range page.Value {
+			// You could use page here. We use blank identifier for just demo purposes.
+			fmt.Println("builder item ------: " + *v.ID)
+			for _, vv := range v.Properties.BuildpackGroups {
+				for _, vvv := range vv.Buildpacks {
+					fmt.Println("buildpacks item ------: " + *vvv.ID)
+				}
+			}
+		}
+	}
+
+	client3, _ := ss.createBuildServiceAgentPoolClient(ctx, subscriptionId)
+	pager2 := client3.NewListPager(resourceGroupName, instanceName, "default", nil)
+	for pager2.More() {
+		page, err := pager2.NextPage(ctx)
+		if err != nil {
+			log.Fatalf("failed to advance page: %v", err)
+		}
+		for _, v := range page.Value {
+			// You could use page here. We use blank identifier for just demo purposes.
+			fmt.Println("build agent pool item ------: " + *v.ID)
+			fmt.Println("build agent pool item ------: " + *v.Properties.PoolSize.CPU)
+			fmt.Println("build agent pool item ------: " + *v.Properties.PoolSize.Memory)
+			//v.Properties.ProvisioningState
+		}
+	}
+
+	//client4, _ := ss.createBuildServiceClient(ctx, subscriptionId)
+	//resp1, _ := client4.GetBuildResultLog(ctx, resourceGroupName, instanceName, "default", "jimmybuild", "1", nil)
+	//fmt.Println("storage blob url: " + *resp1.BuildResultLog.BlobURL)
+
 	client, err := ss.createSpringAppDeploymentClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
@@ -213,6 +434,83 @@ func (ss *springService) createSpringAppClient(
 
 	options := clientOptionsBuilder(ctx, ss.httpClient, ss.userAgent).BuildArmClientOptions()
 	client, err := armappplatform.NewAppsClient(subscriptionId, credential, options)
+
+	if err != nil {
+		return nil, fmt.Errorf("creating SpringApp client: %w", err)
+	}
+
+	return client, nil
+}
+
+func (ss *springService) createSpringClient(
+	ctx context.Context,
+	subscriptionId string,
+) (*armappplatform.ServicesClient, error) {
+	credential, err := ss.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	options := clientOptionsBuilder(ctx, ss.httpClient, ss.userAgent).BuildArmClientOptions()
+	client, err := armappplatform.NewServicesClient(subscriptionId, credential, options)
+
+	if err != nil {
+		return nil, fmt.Errorf("creating SpringApp client: %w", err)
+	}
+
+	return client, nil
+}
+
+func (ss *springService) createBuildServiceClient(
+	ctx context.Context,
+	subscriptionId string,
+) (*armappplatform.BuildServiceClient, error) {
+	credential, err := ss.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	options := clientOptionsBuilder(ctx, ss.httpClient, ss.userAgent).BuildArmClientOptions()
+	client, err := armappplatform.NewBuildServiceClient(subscriptionId, credential, options)
+
+	if err != nil {
+		return nil, fmt.Errorf("creating SpringApp client: %w", err)
+	}
+
+	return client, nil
+}
+
+func (ss *springService) createBuildServiceBuilderClient(
+	ctx context.Context,
+	subscriptionId string,
+) (*armappplatform.BuildServiceBuilderClient, error) {
+	credential, err := ss.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	options := clientOptionsBuilder(ctx, ss.httpClient, ss.userAgent).BuildArmClientOptions()
+	client, err := armappplatform.NewBuildServiceBuilderClient(subscriptionId, credential, options)
+
+	if err != nil {
+		return nil, fmt.Errorf("creating SpringApp client: %w", err)
+	}
+
+	return client, nil
+}
+
+func (ss *springService) createBuildServiceAgentPoolClient(
+	ctx context.Context,
+	subscriptionId string,
+) (*armappplatform.BuildServiceAgentPoolClient, error) {
+	credential, err := ss.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	options := clientOptionsBuilder(ctx, ss.httpClient, ss.userAgent).BuildArmClientOptions()
+	client, err := armappplatform.NewBuildServiceAgentPoolClient(subscriptionId, credential, options)
+
 	if err != nil {
 		return nil, fmt.Errorf("creating SpringApp client: %w", err)
 	}
@@ -236,6 +534,36 @@ func (ss *springService) createSpringAppDeploymentClient(
 	}
 
 	return client, nil
+}
+
+func (ss *springService) createOrUpdateDeploymentByBuildResult(
+	deploymentClient *armappplatform.DeploymentsClient,
+	ctx context.Context,
+	resourceGroup string,
+	instanceName string,
+	appName string,
+	deploymentName string,
+	buildResult string,
+) (*string, error) {
+	poller, err := deploymentClient.BeginCreateOrUpdate(ctx, resourceGroup, instanceName, appName, deploymentName,
+		armappplatform.DeploymentResource{
+			Properties: &armappplatform.DeploymentResourceProperties{
+				Source: &armappplatform.BuildResultUserSourceInfo{
+					Type:          to.Ptr("BuildResult"),
+					BuildResultID: to.Ptr(buildResult),
+				},
+			},
+		}, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	res, err := poller.PollUntilDone(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return res.Name, nil
 }
 
 func (ss *springService) createOrUpdateDeployment(

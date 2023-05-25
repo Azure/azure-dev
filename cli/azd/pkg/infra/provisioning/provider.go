@@ -92,8 +92,8 @@ type DeployResult struct {
 }
 
 type DestroyResult struct {
-	Resources []azcli.AzCliResource
-	Outputs   map[string]OutputParameter
+	// InvalidatedEnvKeys is a list of keys that should be removed from the environment after the destroy is complete.
+	InvalidatedEnvKeys []string
 }
 
 type DeployProgress struct {

@@ -102,6 +102,10 @@ func (p *BicepProvider) promptResourceGroupName(ctx context.Context) (string, er
 		return "", fmt.Errorf("listing resource groups: %w", err)
 	}
 
+	slices.SortFunc(groups, func(a, b azcli.AzCliResource) bool {
+		return strings.Compare(a.Name, b.Name) < 0
+	})
+
 	choices := make([]string, len(groups)+1)
 	choices[0] = "Create a new resource group"
 	for idx, group := range groups {
@@ -260,7 +264,10 @@ func (p *BicepProvider) Plan(
 					}
 
 					p.env.DotenvSet(environment.ResourceGroupEnvVarName, rgName)
-					_ = p.env.Save()
+					if err := p.env.Save(); err != nil {
+						asyncContext.SetError(fmt.Errorf("saving environment: %w", err))
+						return
+					}
 				}
 
 				target = infra.NewResourceGroupDeployment(
@@ -551,19 +558,17 @@ func (p *BicepProvider) Destroy(
 			}
 
 			destroyResult := DestroyResult{
-				Resources: allResources,
-				Outputs: p.createOutputParameters(
+				InvalidatedEnvKeys: maps.Keys(p.createOutputParameters(
 					template.Outputs,
 					azcli.CreateDeploymentOutput(deployment.Properties.Outputs),
-				),
+				)),
 			}
 
-			// If this template targeted resource group scope, remove `RESOURCE_GROUP_NAME` from our .env file. This means
-			// that a future `azd provision` will prompt the user to pick a resource group or create a new one. If we
-			// kept the current value in the .env file, we wouldn't prompt on the next run of `azd provision` and it is
-			// very likely the operation would fail (since we just deleted the resource group!)
+			// Since we have deleted the resource group, add AZURE_RESOURCE_GROUP to the list of invlidated env vars
+			// so it will be removed from the .env file.
 			if _, ok := scope.(*infra.ResourceGroupScope); ok {
-				p.env.DotenvDelete(environment.ResourceGroupEnvVarName)
+				destroyResult.InvalidatedEnvKeys = append(
+					destroyResult.InvalidatedEnvKeys, environment.ResourceGroupEnvVarName)
 			}
 
 			asyncContext.SetResult(&destroyResult)

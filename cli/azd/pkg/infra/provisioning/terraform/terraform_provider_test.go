@@ -151,8 +151,8 @@ func TestTerraformDestroy(t *testing.T) {
 	require.Nil(t, err)
 	require.NotNil(t, destroyResult)
 
-	require.Equal(t, destroyResult.Outputs["AZURE_LOCATION"].Value, infraProvider.env.Dotenv()["AZURE_LOCATION"])
-	require.Equal(t, destroyResult.Outputs["RG_NAME"].Value, fmt.Sprintf("rg-%s", infraProvider.env.GetEnvName()))
+	require.Contains(t, destroyResult.InvalidatedEnvKeys, "AZURE_LOCATION")
+	require.Contains(t, destroyResult.InvalidatedEnvKeys, "RG_NAME")
 }
 
 func TestTerraformState(t *testing.T) {

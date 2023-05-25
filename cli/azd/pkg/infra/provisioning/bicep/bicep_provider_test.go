@@ -401,14 +401,14 @@ func TestPlanForResourceGroup(t *testing.T) {
 		body := armresources.ResourceGroupListResult{
 			Value: []*armresources.ResourceGroup{
 				{
-					ID:       to.Ptr("/subscriptions/SUBSCRIPTION_ID/resourcegroups/existingGroup1"),
-					Name:     to.Ptr("existingGroup1"),
+					ID:       to.Ptr("/subscriptions/SUBSCRIPTION_ID/resourcegroups/existingGroup2"),
+					Name:     to.Ptr("existingGroup2"),
 					Type:     to.Ptr("Microsoft.Resources/resourceGroup"),
 					Location: to.Ptr("eastus2"),
 				},
 				{
-					ID:       to.Ptr("/subscriptions/SUBSCRIPTION_ID/resourcegroups/existingGroup2"),
-					Name:     to.Ptr("existingGroup2"),
+					ID:       to.Ptr("/subscriptions/SUBSCRIPTION_ID/resourcegroups/existingGroup1"),
+					Name:     to.Ptr("existingGroup1"),
 					Type:     to.Ptr("Microsoft.Resources/resourceGroup"),
 					Location: to.Ptr("eastus2"),
 				},

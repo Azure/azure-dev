@@ -32,6 +32,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/terraform"
 	"github.com/drone/envsubst"
+	"golang.org/x/exp/maps"
 )
 
 // TerraformProvider exposes infrastructure provisioning using Azure Terraform templates
@@ -265,7 +266,7 @@ func (t *TerraformProvider) Destroy(
 			}
 
 			result := DestroyResult{
-				Outputs: outputs,
+				InvalidatedEnvKeys: maps.Keys(outputs),
 			}
 			asyncContext.SetResult(&result)
 		})

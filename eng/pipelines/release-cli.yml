@@ -1116,7 +1116,7 @@ stages:
                     CommitMsg: Increment CLI version after release
                     PRTitle: Increment CLI version after release
 
-  - stage: PublishIntegration
+  - stage: Publish_Integration
     dependsOn: Sign
     jobs:
       - job: Publish_Continuous_Deployment

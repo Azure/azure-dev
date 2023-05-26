@@ -60,7 +60,7 @@ Download the installer and install the "daily" build
 
 param(
     [string] $BaseUrl = "https://azure-dev.azureedge.net/azd/standalone/release",
-    [string] $Version = "latest",
+    [string] $Version = "GA",
     [switch] $DryRun,
     [string] $InstallFolder,
     [string] $SymlinkFolder,

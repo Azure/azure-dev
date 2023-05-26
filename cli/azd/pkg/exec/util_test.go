@@ -49,14 +49,27 @@ func TestKillCommand(t *testing.T) {
 	s := time.Now()
 
 	runner := NewCommandRunner(nil)
-	_, err := runner.Run(ctx, RunArgs{
-		Cmd: "pwsh",
-		Args: []string{
-			"-c",
-			"sleep",
-			"10000",
-		},
-	})
+	var args RunArgs
+	if runtime.GOOS == "windows" {
+		args = RunArgs{
+			Cmd: "pwsh",
+			Args: []string{
+				"-c",
+				"sleep",
+				"10000",
+			},
+		}
+	} else {
+		args = RunArgs{
+			Cmd: "sh",
+			Args: []string{
+				"-c",
+				"sleep 10s",
+			},
+		}
+	}
+
+	_, err := runner.Run(ctx, args)
 
 	if runtime.GOOS == "windows" {
 		// on Windows terminating the process doesn't register as an error

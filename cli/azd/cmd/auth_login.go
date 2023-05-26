@@ -466,6 +466,8 @@ func (la *loginAction) login(ctx context.Context) error {
 		if err != nil {
 			return fmt.Errorf("logging in: %w", err)
 		}
+	} else if auth.ShouldUseCloudShellAuth() {
+		return fmt.Errorf("logging in: already logged in using CloudShell")
 	} else {
 		_, err := la.authManager.LoginInteractive(ctx, la.flags.redirectPort, la.flags.tenantID, la.flags.scopes)
 		if err != nil {

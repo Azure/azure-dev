@@ -321,7 +321,7 @@ func (cli *azCli) createGraphClient(
 		return nil, err
 	}
 
-	options := cli.createDefaultClientOptionsBuilder(ctx).BuildCoreClientOptions()
+	options := cli.clientOptionsBuilder(ctx).BuildCoreClientOptions()
 	client, err := graphsdk.NewGraphClient(credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating Graph Users client: %w", err)
@@ -340,7 +340,7 @@ func (cli *azCli) createRoleDefinitionsClient(
 		return nil, err
 	}
 
-	options := cli.createDefaultClientOptionsBuilder(ctx).BuildArmClientOptions()
+	options := cli.clientOptionsBuilder(ctx).BuildArmClientOptions()
 	client, err := armauthorization.NewRoleDefinitionsClient(credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating ARM Role Definitions client: %w", err)
@@ -359,7 +359,7 @@ func (cli *azCli) createRoleAssignmentsClient(
 		return nil, err
 	}
 
-	options := cli.createDefaultClientOptionsBuilder(ctx).BuildArmClientOptions()
+	options := cli.clientOptionsBuilder(ctx).BuildArmClientOptions()
 	client, err := armauthorization.NewRoleAssignmentsClient(subscriptionId, credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating ARM Role Assignments client: %w", err)

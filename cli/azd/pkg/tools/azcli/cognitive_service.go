@@ -54,7 +54,7 @@ func (cli *azCli) createCognitiveAccountClient(
 		return nil, err
 	}
 
-	options := cli.createDefaultClientOptionsBuilder(ctx).BuildArmClientOptions()
+	options := cli.clientOptionsBuilder(ctx).BuildArmClientOptions()
 	client, err := armcognitiveservices.NewAccountsClient(subscriptionId, credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating Resource client: %w", err)
@@ -70,7 +70,7 @@ func (cli *azCli) createDeletedCognitiveAccountClient(
 		return nil, err
 	}
 
-	options := cli.createDefaultClientOptionsBuilder(ctx).BuildArmClientOptions()
+	options := cli.clientOptionsBuilder(ctx).BuildArmClientOptions()
 	client, err := armcognitiveservices.NewDeletedAccountsClient(subscriptionId, credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating Resource client: %w", err)

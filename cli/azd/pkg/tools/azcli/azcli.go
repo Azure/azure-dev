@@ -351,9 +351,9 @@ func (cli *azCli) UserAgent() string {
 	return cli.userAgent
 }
 
-func (cli *azCli) createDefaultClientOptionsBuilder(ctx context.Context) *azsdk.ClientOptionsBuilder {
+func (cli *azCli) clientOptionsBuilder(ctx context.Context) *azsdk.ClientOptionsBuilder {
 	return azsdk.NewClientOptionsBuilder().
-		WithTransport(httputil.GetHttpClient(ctx)).
+		WithTransport(cli.httpClient).
 		WithPerCallPolicy(azsdk.NewUserAgentPolicy(cli.UserAgent())).
 		WithPerCallPolicy(azsdk.NewMsCorrelationPolicy(ctx))
 }

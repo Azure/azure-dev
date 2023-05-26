@@ -48,7 +48,11 @@ func Test_gitHub_provider_preConfigure_check(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		setupGithubCliMocks(mockContext)
 
-		provider := NewGitHubCiProvider(mockContext.Credentials, mockContext.CommandRunner, mockContext.Console)
+		provider := NewGitHubCiProvider(
+			mockContext.Credentials,
+			mockContext.CommandRunner,
+			mockContext.Console,
+			mockContext.HttpClient)
 		updatedConfig, err := provider.preConfigureCheck(
 			*mockContext.Context,
 			PipelineManagerArgs{},
@@ -75,7 +79,11 @@ func Test_gitHub_provider_preConfigure_check(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		setupGithubCliMocks(mockContext)
 
-		provider := NewGitHubCiProvider(mockContext.Credentials, mockContext.CommandRunner, mockContext.Console)
+		provider := NewGitHubCiProvider(
+			mockContext.Credentials,
+			mockContext.CommandRunner,
+			mockContext.Console,
+			mockContext.HttpClient)
 		updatedConfig, err := provider.preConfigureCheck(
 			*mockContext.Context, pipelineManagerArgs, infraOptions, "")
 		require.Error(t, err)
@@ -95,7 +103,11 @@ func Test_gitHub_provider_preConfigure_check(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		setupGithubCliMocks(mockContext)
 
-		provider := NewGitHubCiProvider(mockContext.Credentials, mockContext.CommandRunner, mockContext.Console)
+		provider := NewGitHubCiProvider(
+			mockContext.Credentials,
+			mockContext.CommandRunner,
+			mockContext.Console,
+			mockContext.HttpClient)
 		updatedConfig, err := provider.preConfigureCheck(
 			*mockContext.Context, pipelineManagerArgs, infraOptions, "")
 		require.NoError(t, err)

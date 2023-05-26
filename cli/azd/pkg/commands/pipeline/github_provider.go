@@ -40,7 +40,9 @@ type GitHubScmProvider struct {
 	console              input.Console
 }
 
-func NewGitHubScmProvider(commandRunner exec.CommandRunner, console input.Console) *GitHubScmProvider {
+func NewGitHubScmProvider(
+	commandRunner exec.CommandRunner,
+	console input.Console) *GitHubScmProvider {
 	return &GitHubScmProvider{
 		commandRunner: commandRunner,
 		console:       console,
@@ -323,14 +325,19 @@ type GitHubCiProvider struct {
 	credential    azcore.TokenCredential
 	commandRunner exec.CommandRunner
 	console       input.Console
+	httpClient    httputil.HttpClient
 }
 
 func NewGitHubCiProvider(
-	credential azcore.TokenCredential, commandRunner exec.CommandRunner, console input.Console) *GitHubCiProvider {
+	credential azcore.TokenCredential,
+	commandRunner exec.CommandRunner,
+	console input.Console,
+	httpClient httputil.HttpClient) *GitHubCiProvider {
 	return &GitHubCiProvider{
 		credential:    credential,
 		commandRunner: commandRunner,
 		console:       console,
+		httpClient:    httpClient,
 	}
 }
 
@@ -574,7 +581,7 @@ func (p *GitHubCiProvider) configureFederatedAuth(
 		return fmt.Errorf("failed unmarshalling azure credentials: %w", err)
 	}
 
-	err = applyFederatedCredentials(ctx, repoSlug, &azureCredentials, p.console, credential)
+	err = applyFederatedCredentials(ctx, repoSlug, &azureCredentials, p.console, p.httpClient, credential)
 	if err != nil {
 		return err
 	}
@@ -610,9 +617,10 @@ func applyFederatedCredentials(
 	repoSlug string,
 	azureCredentials *azcli.AzureCredentials,
 	console input.Console,
+	httpClient httputil.HttpClient,
 	credential azcore.TokenCredential,
 ) error {
-	graphClient, err := createGraphClient(ctx, credential)
+	graphClient, err := createGraphClient(ctx, httpClient, credential)
 	if err != nil {
 		return err
 	}
@@ -888,10 +896,13 @@ func ensureFederatedCredential(
 	return nil
 }
 
-func createGraphClient(ctx context.Context, credential azcore.TokenCredential) (*graphsdk.GraphClient, error) {
+func createGraphClient(
+	ctx context.Context,
+	httpClient httputil.HttpClient,
+	credential azcore.TokenCredential) (*graphsdk.GraphClient, error) {
 	graphOptions := azsdk.
 		NewClientOptionsBuilder().
-		WithTransport(httputil.GetHttpClient(ctx)).
+		WithTransport(httpClient).
 		BuildCoreClientOptions()
 
 	return graphsdk.NewGraphClient(credential, graphOptions)

@@ -15,6 +15,8 @@ import (
 	"time"
 
 	"github.com/AlecAivazis/survey/v2"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -484,7 +486,6 @@ func GetStepResultFormat(result error) SpinnerUxType {
 
 // Handle doing interactive calls. It check if there's a spinner running to pause it before doing interactive actions.
 func (c *AskerConsole) doInteraction(fn func(c *AskerConsole) error) error {
-
 	if c.spinner != nil && c.spinner.Status() == yacspin.SpinnerRunning {
 		_ = c.spinner.Pause()
 
@@ -495,10 +496,12 @@ func (c *AskerConsole) doInteraction(fn func(c *AskerConsole) error) error {
 		}()
 	}
 
-	if err := fn(c); err != nil {
-		return err
-	}
-	return nil
+	start := time.Now()
+	defer func() {
+		tracing.SetUsageAttributes(fields.PerfInteractTime.Int64(time.Since(start).Milliseconds()))
+	}()
+
+	return fn(c)
 }
 
 type ProgressStopper func()

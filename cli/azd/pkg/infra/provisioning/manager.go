@@ -292,7 +292,7 @@ func NewManager(
 }
 
 func (m *Manager) promptSubscription(ctx context.Context, msg string) (subscriptionId string, err error) {
-	return promptSubscription(ctx, msg, m.console, m.env, m.accountManager)
+	return promptSubscription(ctx, msg, m.console, m.accountManager)
 }
 
 func (m *Manager) promptLocation(
@@ -301,7 +301,7 @@ func (m *Manager) promptLocation(
 	msg string,
 	filter func(loc account.Location) bool,
 ) (string, error) {
-	return promptLocation(ctx, subId, msg, filter, m.console, m.env, m.accountManager)
+	return promptLocation(ctx, subId, msg, filter, m.console, m.accountManager)
 }
 
 func (m *Manager) ensureSubscriptionLocation(ctx context.Context, env *environment.Environment) error {

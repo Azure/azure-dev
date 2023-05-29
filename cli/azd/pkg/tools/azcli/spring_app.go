@@ -93,7 +93,8 @@ func (ss *springService) GetSpringAppProperties(
 
 	var fqdn []string
 	if springApp.Properties != nil &&
-		springApp.Properties.Fqdn != nil {
+		springApp.Properties.Fqdn != nil &&
+		*springApp.Properties.Public {
 		fqdn = []string{*springApp.Properties.Fqdn}
 	} else {
 		fqdn = []string{}

@@ -9,7 +9,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/microsoft/azure-devops-go-api/azuredevops"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/build"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/serviceendpoint"
@@ -112,10 +111,10 @@ func CreateServiceConnection(
 		if err != nil {
 			return fmt.Errorf("updating service connection: %w", err)
 		}
-		console.MessageUxItem(ctx, &ux.DisplayedResource{
-			Type: "Azure DevOps",
-			Name: "Updated service connection",
-		})
+		// console.MessageUxItem(ctx, &provisioning.DisplayedResource{
+		// 	Type: "Azure DevOps",
+		// 	Name: "Updated service connection",
+		// })
 		return nil
 	}
 
@@ -124,10 +123,10 @@ func CreateServiceConnection(
 	if err != nil {
 		return fmt.Errorf("Creating new service connection: %w", err)
 	}
-	console.MessageUxItem(ctx, &ux.DisplayedResource{
-		Type: "Azure DevOps",
-		Name: "Service connection",
-	})
+	// console.MessageUxItem(ctx, &provisioning.DisplayedResource{
+	// 	Type: "Azure DevOps",
+	// 	Name: "Service connection",
+	// })
 
 	err = authorizeServiceConnectionToAllPipelines(ctx, projectId, endpoint, connection)
 	if err != nil {

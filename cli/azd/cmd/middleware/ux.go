@@ -13,7 +13,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/progress"
-	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"golang.org/x/exp/slices"
 )
@@ -57,7 +56,7 @@ func (m *UxMiddleware) Run(ctx context.Context, next NextFn) (*actions.ActionRes
 	}
 
 	subscription := m.progressPrinter.Register(ctx, func(ctx context.Context, msg *messaging.Message) bool {
-		kinds := []messaging.MessageKind{project.ProgressMessageKind, ext.HookMessageKind}
+		kinds := []messaging.MessageKind{progress.MessageKind, ext.HookMessageKind}
 		return slices.Contains(kinds, msg.Type)
 	})
 	defer subscription.Close(ctx)

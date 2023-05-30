@@ -877,13 +877,13 @@ func ensureFederatedCredential(
 		return fmt.Errorf("failed creating federated credential: %w", err)
 	}
 
-	console.MessageUxItem(
-		ctx,
-		&ux.DisplayedResource{
-			Type: "Federated identity credential for GitHub",
-			Name: fmt.Sprintf("subject %s", repoCredential.Subject),
-		},
-	)
+	// console.MessageUxItem(
+	// 	ctx,
+	// 	&ux.DisplayedResource{
+	// 		Type: "Federated identity credential for GitHub",
+	// 		Name: fmt.Sprintf("subject %s", repoCredential.Subject),
+	// 	},
+	// )
 
 	return nil
 }

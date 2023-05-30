@@ -19,6 +19,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	bicepInfra "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
+	terraformInfra "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/terraform"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
@@ -355,6 +358,10 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			panic(fmt.Errorf("registering framework service %s: %w", language, err))
 		}
 	}
+
+	// Infra providers
+	container.RegisterNamedSingleton(string(provisioning.Bicep), bicepInfra.NewBicepProvider)
+	container.RegisterNamedSingleton(string(provisioning.Terraform), terraformInfra.NewTerraformProvider)
 
 	// Required for nested actions called from composite actions like 'up'
 	registerActionInitializer[*initAction](container, "azd-init-action")

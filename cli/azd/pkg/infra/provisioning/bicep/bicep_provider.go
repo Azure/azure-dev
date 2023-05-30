@@ -416,7 +416,9 @@ func (p *BicepProvider) scopeForTemplate(ctx context.Context, t azure.ArmTemplat
 			}
 
 			p.env.DotenvSet(environment.ResourceGroupEnvVarName, rgName)
-			_ = p.env.Save()
+			if err := p.env.Save(); err != nil {
+				return nil, fmt.Errorf("saving resource group name: %w", err)
+			}
 		}
 
 		return infra.NewResourceGroupScope(
@@ -564,7 +566,7 @@ func (p *BicepProvider) Destroy(
 				)),
 			}
 
-			// Since we have deleted the resource group, add AZURE_RESOURCE_GROUP to the list of invlidated env vars
+			// Since we have deleted the resource group, add AZURE_RESOURCE_GROUP to the list of invalidated env vars
 			// so it will be removed from the .env file.
 			if _, ok := scope.(*infra.ResourceGroupScope); ok {
 				destroyResult.InvalidatedEnvKeys = append(

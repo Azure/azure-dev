@@ -994,7 +994,7 @@ stages:
                       -CliVersion '$(CLI_VERSION)'
 
                     if ($isPublishingGa) {
-                      $publishUploadLocations += ";release/GA"
+                      $publishUploadLocations += ";release/stable"
                     }
 
                     Write-Host "Setting StorageUploadLocations to $publishUploadLocations"

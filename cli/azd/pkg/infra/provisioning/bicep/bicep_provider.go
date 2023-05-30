@@ -95,6 +95,56 @@ func (p *BicepProvider) EnsureConfigured(ctx context.Context) error {
 	return p.prompters.EnsureSubscriptionLocation(ctx, p.env)
 }
 
+func (p *BicepProvider) promptResourceGroupName(ctx context.Context) (string, error) {
+	// Get current resource groups
+	groups, err := p.azCli.ListResourceGroup(ctx, p.env.GetSubscriptionId(), nil)
+	if err != nil {
+		return "", fmt.Errorf("listing resource groups: %w", err)
+	}
+
+	slices.SortFunc(groups, func(a, b azcli.AzCliResource) bool {
+		return strings.Compare(a.Name, b.Name) < 0
+	})
+
+	choices := make([]string, len(groups)+1)
+	choices[0] = "Create a new resource group"
+	for idx, group := range groups {
+		choices[idx+1] = fmt.Sprintf("%d. %s", idx+1, group.Name)
+	}
+
+	choice, err := p.console.Select(ctx, input.ConsoleOptions{
+		Message: "Please pick a resource group to use:",
+		Options: choices,
+	})
+	if err != nil {
+		return "", fmt.Errorf("selecting resource group: %w", err)
+	}
+
+	if choice > 0 {
+		return groups[choice-1].Name, nil
+	}
+
+	name, err := p.console.Prompt(ctx, input.ConsoleOptions{
+		Message:      "Please enter a name for the new resource group:",
+		DefaultValue: fmt.Sprintf("rg-%s", p.env.GetEnvName()),
+	})
+	if err != nil {
+		return "", fmt.Errorf("prompting for resource group name: %w", err)
+	}
+
+	err = p.azCli.CreateOrUpdateResourceGroup(ctx, p.env.GetSubscriptionId(), name, p.env.GetLocation(),
+		map[string]*string{
+			azure.TagKeyAzdEnvName: to.Ptr(p.env.GetEnvName()),
+		},
+	)
+	if err != nil {
+		return "", fmt.Errorf("creating resource group: %w", err)
+	}
+
+	return name, nil
+
+}
+
 func (p *BicepProvider) State(
 	ctx context.Context,
 ) *async.InteractiveTaskWithProgress[*StateResult, *StateProgress] {
@@ -207,13 +257,17 @@ func (p *BicepProvider) Plan(
 				p.console.WarnForFeature(ctx, ResourceGroupDeploymentFeature)
 
 				if p.env.Getenv(environment.ResourceGroupEnvVarName) == "" {
-					asyncContext.SetError(
-						fmt.Errorf(
-							"%s must be set to the name of the resource group to use",
-							environment.ResourceGroupEnvVarName,
-						),
-					)
-					return
+					rgName, err := p.promptResourceGroupName(ctx)
+					if err != nil {
+						asyncContext.SetError(err)
+						return
+					}
+
+					p.env.DotenvSet(environment.ResourceGroupEnvVarName, rgName)
+					if err := p.env.Save(); err != nil {
+						asyncContext.SetError(fmt.Errorf("saving environment: %w", err))
+						return
+					}
 				}
 
 				target = infra.NewResourceGroupDeployment(
@@ -356,9 +410,15 @@ func (p *BicepProvider) scopeForTemplate(ctx context.Context, t azure.ArmTemplat
 		p.console.WarnForFeature(ctx, ResourceGroupDeploymentFeature)
 
 		if p.env.Getenv(environment.ResourceGroupEnvVarName) == "" {
-			return nil, fmt.Errorf(
-				"%s must be set to the name of the resource group to use", environment.ResourceGroupEnvVarName,
-			)
+			rgName, err := p.promptResourceGroupName(ctx)
+			if err != nil {
+				return nil, err
+			}
+
+			p.env.DotenvSet(environment.ResourceGroupEnvVarName, rgName)
+			if err := p.env.Save(); err != nil {
+				return nil, fmt.Errorf("saving resource group name: %w", err)
+			}
 		}
 
 		return infra.NewResourceGroupScope(
@@ -500,11 +560,17 @@ func (p *BicepProvider) Destroy(
 			}
 
 			destroyResult := DestroyResult{
-				Resources: allResources,
-				Outputs: p.createOutputParameters(
+				InvalidatedEnvKeys: maps.Keys(p.createOutputParameters(
 					template.Outputs,
 					azcli.CreateDeploymentOutput(deployment.Properties.Outputs),
-				),
+				)),
+			}
+
+			// Since we have deleted the resource group, add AZURE_RESOURCE_GROUP to the list of invalidated env vars
+			// so it will be removed from the .env file.
+			if _, ok := scope.(*infra.ResourceGroupScope); ok {
+				destroyResult.InvalidatedEnvKeys = append(
+					destroyResult.InvalidatedEnvKeys, environment.ResourceGroupEnvVarName)
 			}
 
 			asyncContext.SetResult(&destroyResult)

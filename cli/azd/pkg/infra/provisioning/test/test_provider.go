@@ -155,8 +155,7 @@ func (p *TestProvider) Destroy(
 			})
 
 			destroyResult := DestroyResult{
-				Resources: []azcli.AzCliResource{},
-				Outputs:   map[string]OutputParameter{},
+				InvalidatedEnvKeys: []string{},
 			}
 
 			confirmOptions := input.ConsoleOptions{Message: "Are you sure you want to destroy?"}

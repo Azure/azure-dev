@@ -8,7 +8,7 @@ import (
 	"os"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appplatform/armappplatform"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appplatform/armappplatform/v2"
 	"github.com/Azure/azure-storage-file-go/azfile"
 	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
@@ -93,7 +93,8 @@ func (ss *springService) GetSpringAppProperties(
 
 	var fqdn []string
 	if springApp.Properties != nil &&
-		springApp.Properties.Fqdn != nil {
+		springApp.Properties.Fqdn != nil &&
+		*springApp.Properties.Public {
 		fqdn = []string{*springApp.Properties.Fqdn}
 	} else {
 		fqdn = []string{}

@@ -54,7 +54,7 @@ func NewDefaultPrompter(
 // This currently means that subscription (AZURE_SUBSCRIPTION_ID) and location (AZURE_LOCATION) variables are set.
 func (p *DefaultPrompter) EnsureEnv(ctx context.Context) error {
 	if p.env.GetSubscriptionId() == "" {
-		subscriptionId, err := p.PromptSubscription(ctx, "Please select an Azure Subscription to use:")
+		subscriptionId, err := p.PromptSubscription(ctx, "Select an Azure Subscription to use:")
 		if err != nil {
 			return err
 		}
@@ -163,7 +163,7 @@ func (p *DefaultPrompter) PromptResourceGroup(ctx context.Context) (string, erro
 	}
 
 	choice, err := p.console.Select(ctx, input.ConsoleOptions{
-		Message: "Please pick a resource group to use:",
+		Message: "Pick a resource group to use:",
 		Options: choices,
 	})
 	if err != nil {
@@ -175,7 +175,7 @@ func (p *DefaultPrompter) PromptResourceGroup(ctx context.Context) (string, erro
 	}
 
 	name, err := p.console.Prompt(ctx, input.ConsoleOptions{
-		Message:      "Please enter a name for the new resource group:",
+		Message:      "Enter a name for the new resource group:",
 		DefaultValue: fmt.Sprintf("rg-%s", p.env.GetEnvName()),
 	})
 	if err != nil {

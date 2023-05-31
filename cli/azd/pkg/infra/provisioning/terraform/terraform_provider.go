@@ -74,6 +74,10 @@ func NewTerraformProvider(
 }
 
 func (t *TerraformProvider) Initialize(ctx context.Context, projectPath string, options Options) error {
+	if strings.TrimSpace(options.Module) == "" {
+		options.Module = "main"
+	}
+
 	t.projectPath = projectPath
 	t.options = options
 

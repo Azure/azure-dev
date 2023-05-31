@@ -283,7 +283,7 @@ func notifyWhenGitHubActionsAreDisabled(
 
 	if ghLocalWorkflowFiles {
 		message := fmt.Sprintf("\n%s\n"+
-			" - If you forked and cloned a template, please enable actions here: %s.\n"+
+			" - If you forked and cloned a template, enable actions here: %s.\n"+
 			" - Otherwise, check the GitHub Actions permissions here: %s.\n",
 			output.WithHighLightFormat("GitHub actions are currently disabled for your repository."),
 			output.WithHighLightFormat("https://github.com/%s/actions", repoSlug),
@@ -751,7 +751,7 @@ func getRemoteUrlFromExisting(ctx context.Context, ghCli github.GitHubCli, conso
 	}
 
 	repoIdx, err := console.Select(ctx, input.ConsoleOptions{
-		Message: "Please choose an existing GitHub repository",
+		Message: "Choose an existing GitHub repository",
 		Options: options,
 	})
 
@@ -826,7 +826,7 @@ func getRemoteUrlFromPrompt(ctx context.Context, remoteName string, console inpu
 
 	for remoteUrl == "" {
 		promptValue, err := console.Prompt(ctx, input.ConsoleOptions{
-			Message: fmt.Sprintf("Please enter the url to use for remote %s:", remoteName),
+			Message: fmt.Sprintf("Enter the url to use for remote %s:", remoteName),
 		})
 
 		if err != nil {

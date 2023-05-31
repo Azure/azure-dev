@@ -207,7 +207,7 @@ func GetProjectFromExisting(
 	}
 
 	projectIdx, err := console.Select(ctx, input.ConsoleOptions{
-		Message: "Please choose an existing Azure DevOps Project",
+		Message: "Choose an existing Azure DevOps Project",
 		Options: options,
 	})
 

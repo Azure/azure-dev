@@ -49,7 +49,7 @@ func Parse(ctx context.Context, yamlContent string) (*ProjectConfig, error) {
 
 	if err := yaml.Unmarshal([]byte(yamlContent), &projectConfig); err != nil {
 		return nil, fmt.Errorf(
-			"unable to parse azure.yaml file. Please check the format of the file, "+
+			"unable to parse azure.yaml file. Check the format of the file, "+
 				"and also verify you have the latest version of the CLI: %w",
 			err,
 		)

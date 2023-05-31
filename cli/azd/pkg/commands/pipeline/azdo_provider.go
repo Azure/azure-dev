@@ -409,7 +409,7 @@ var ErrRemoteHostIsNotAzDo = errors.New("existing remote is not an Azure DevOps 
 
 // ErrSSHNotSupported the error used when ssh git remote is detected
 var ErrSSHNotSupported = errors.New("ssh git remote is not supported. " +
-	"Please use HTTPS git remote to connect the remote repository")
+	"Use HTTPS git remote to connect the remote repository")
 
 // helper function to determine if the provided remoteUrl is an azure devops repo.
 // currently supports AzDo PaaS

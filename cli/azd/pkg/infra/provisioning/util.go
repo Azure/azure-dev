@@ -28,7 +28,7 @@ func EnsureEnv(
 	if env.GetSubscriptionId() == "" {
 		subscriptionId, err := promptSubscription(
 			ctx,
-			"Please select an Azure Subscription to use:",
+			"Select an Azure Subscription to use:",
 			console,
 			accountManager)
 		if err != nil {
@@ -46,7 +46,7 @@ func EnsureEnv(
 		location, err := promptLocation(
 			ctx,
 			env.GetSubscriptionId(),
-			"Please select an Azure location to use:",
+			"Select an Azure location to use:",
 			func(_ account.Location) bool { return true },
 			console,
 			accountManager)

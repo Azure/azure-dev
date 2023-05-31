@@ -27,13 +27,13 @@ func TestProvisionInitializesEnvironment(t *testing.T) {
 
 	mockContext := mocks.NewMockContext(context.Background())
 	mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool {
-		return strings.Contains(options.Message, "Please select an Azure Subscription to use")
+		return strings.Contains(options.Message, "Select an Azure Subscription to use")
 	}).RespondFn(func(options input.ConsoleOptions) (any, error) {
 		// Select the first from the list
 		return 0, nil
 	})
 	mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool {
-		return strings.Contains(options.Message, "Please select an Azure location")
+		return strings.Contains(options.Message, "Select an Azure location")
 	}).RespondFn(func(options input.ConsoleOptions) (any, error) {
 		// Select the first from the list
 		return 0, nil

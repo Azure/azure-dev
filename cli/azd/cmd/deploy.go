@@ -169,7 +169,7 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 
 	if da.env.GetSubscriptionId() == "" {
 		return nil, errors.New(
-			"infrastructure has not been provisioned. Please run `azd provision`",
+			"infrastructure has not been provisioned. Run `azd provision`",
 		)
 	}
 

@@ -15,7 +15,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
 type TestProvider struct {
@@ -100,7 +99,7 @@ func (p *TestProvider) Destroy(ctx context.Context, options DestroyOptions) (*De
 	// TODO: progress, "Starting destroy"
 
 	destroyResult := DestroyResult{
-				InvalidatedEnvKeys: []string{},
+		InvalidatedEnvKeys: []string{},
 	}
 
 	confirmOptions := input.ConsoleOptions{Message: "Are you sure you want to destroy?"}

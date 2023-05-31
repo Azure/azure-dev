@@ -18,6 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockexec"
 	"github.com/stretchr/testify/require"
 )
@@ -129,6 +130,7 @@ func createTerraformProvider(t *testing.T, mockContext *mocks.MockContext) *Terr
 		"AZURE_SUBSCRIPTION_ID": "00000000-0000-0000-0000-000000000000",
 	})
 
+	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 	accountManager := &mockaccount.MockAccountManager{
 		Subscriptions: []account.Subscription{
 			{
@@ -150,7 +152,7 @@ func createTerraformProvider(t *testing.T, mockContext *mocks.MockContext) *Terr
 		env,
 		mockContext.Console,
 		&mockCurrentPrincipal{},
-		prompt.NewDefaultPrompter(env, mockContext.Console, accountManager),
+		prompt.NewDefaultPrompter(env, mockContext.Console, accountManager, azCli),
 	)
 
 	err := provider.Initialize(*mockContext.Context, projectDir, options)

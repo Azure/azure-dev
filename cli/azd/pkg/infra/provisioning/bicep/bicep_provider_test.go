@@ -325,31 +325,12 @@ func TestPlanForResourceGroup(t *testing.T) {
 		return options.DefaultValue, nil
 	})
 
-	progressLog := []string{}
-	interactiveLog := []bool{}
-	progressDone := make(chan bool)
-
 	infraProvider := createBicepProvider(t, mockContext)
-
-	planTask := infraProvider.Plan(*mockContext.Context)
-
-	go func() {
-		for planProgress := range planTask.Progress() {
-			progressLog = append(progressLog, planProgress.Message)
-		}
-		progressDone <- true
-	}()
-
-	go func() {
-		for planInteractive := range planTask.Interactive() {
-			interactiveLog = append(interactiveLog, planInteractive)
-		}
-	}()
-
-	planResult, err := planTask.Await()
-	<-progressDone
-
+	err = infraProvider.Initialize(*mockContext.Context, "", Options{Provider: Test})
+	require.NoError(t, err)
 	// The computed plan should target the resource group we picked.
+
+	planResult, err := infraProvider.Plan(*mockContext.Context)
 	require.Nil(t, err)
 	require.NotNil(t, planResult)
 	require.Equal(t, "rg-test-env",
@@ -412,7 +393,6 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 				RegionalDisplayName: "(US) Test Location",
 			},
 		},
-		alphaFeatureManager: mockContext.AlphaFeaturesManager,
 	}
 
 	provider := NewBicepProvider(
@@ -420,7 +400,7 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 		azCli,
 		env,
 		mockContext.Console,
-		prompt.NewDefaultPrompter(env, mockContext.Console, accountManager),
+		prompt.NewDefaultPrompter(env, mockContext.Console, accountManager, azCli),
 		&mockCurrentPrincipal{},
 		alpha.NewFeaturesManager(config.NewUserConfigManager()),
 	)

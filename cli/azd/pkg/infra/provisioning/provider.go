@@ -5,8 +5,6 @@ package provisioning
 
 import (
 	"context"
-
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
 type ProviderKind string

@@ -102,7 +102,7 @@ func (p *BicepProvider) Initialize(ctx context.Context, projectPath string, opti
 
 func (p *BicepProvider) State(ctx context.Context) (*StateResult, error) {
 	// TODO: Report progress, "Loading Bicep template"
-	
+
 	modulePath := p.modulePath()
 	_, template, err := p.compileBicep(ctx, modulePath)
 	if err != nil {
@@ -191,18 +191,16 @@ func (p *BicepProvider) Plan(ctx context.Context) (*DeploymentPlan, error) {
 		p.console.WarnForFeature(ctx, ResourceGroupDeploymentFeature)
 
 		if p.env.Getenv(environment.ResourceGroupEnvVarName) == "" {
-					rgName, err := p.promptResourceGroupName(ctx)
-					if err != nil {
-						asyncContext.SetError(err)
-						return
-					}
+			rgName, err := p.prompters.PromptResourceGroup(ctx)
+			if err != nil {
+				return nil, err
+			}
 
-					p.env.DotenvSet(environment.ResourceGroupEnvVarName, rgName)
-					if err := p.env.Save(); err != nil {
-						asyncContext.SetError(fmt.Errorf("saving environment: %w", err))
-						return
-					}
-				}
+			p.env.DotenvSet(environment.ResourceGroupEnvVarName, rgName)
+			if err := p.env.Save(); err != nil {
+				return nil, fmt.Errorf("saving environment: %w", err)
+			}
+		}
 
 		target = infra.NewResourceGroupDeployment(
 			p.azCli,
@@ -327,7 +325,7 @@ func (p *BicepProvider) scopeForTemplate(ctx context.Context, t azure.ArmTemplat
 		p.console.WarnForFeature(ctx, ResourceGroupDeploymentFeature)
 
 		if p.env.Getenv(environment.ResourceGroupEnvVarName) == "" {
-			rgName, err := p.promptResourceGroupName(ctx)
+			rgName, err := p.prompters.PromptResourceGroup(ctx)
 			if err != nil {
 				return nil, err
 			}
@@ -458,18 +456,22 @@ func (p *BicepProvider) Destroy(ctx context.Context, options DestroyOptions) (*D
 		return nil, fmt.Errorf("purging resources: %w", err)
 	}
 
-	return &DestroyResult{
-				InvalidatedEnvKeys: maps.Keys(p.createOutputParameters(
+	destroyResult := &DestroyResult{
+		InvalidatedEnvKeys: maps.Keys(p.createOutputParameters(
 			template.Outputs,
 			azcli.CreateDeploymentOutput(deployment.Properties.Outputs),
-				)),
-			}
+		)),
+	}
 
-			// Since we have deleted the resource group, add AZURE_RESOURCE_GROUP to the list of invalidated env vars
-			// so it will be removed from the .env file.
-			if _, ok := scope.(*infra.ResourceGroupScope); ok {
-				destroyResult.InvalidatedEnvKeys = append(
-					destroyResult.InvalidatedEnvKeys, environment.ResourceGroupEnvVarName)
+	// Since we have deleted the resource group, add AZURE_RESOURCE_GROUP to the list of invalidated env vars
+	// so it will be removed from the .env file.
+	if _, ok := scope.(*infra.ResourceGroupScope); ok {
+		destroyResult.InvalidatedEnvKeys = append(
+			destroyResult.InvalidatedEnvKeys, environment.ResourceGroupEnvVarName,
+		)
+	}
+
+	return destroyResult, nil
 }
 
 // A local type for adding the resource group to a cognitive account as it is required for purging

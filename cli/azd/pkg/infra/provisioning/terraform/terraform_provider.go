@@ -227,7 +227,7 @@ func (t *TerraformProvider) Destroy(ctx context.Context, options DestroyOptions)
 	}
 
 	return &DestroyResult{
-				InvalidatedEnvKeys: maps.Keys(outputs),
+		InvalidatedEnvKeys: maps.Keys(outputs),
 	}, nil
 }
 

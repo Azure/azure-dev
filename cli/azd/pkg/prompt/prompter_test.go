@@ -11,6 +11,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/stretchr/testify/require"
 )
 
@@ -18,7 +19,7 @@ func Test_getSubscriptionOptions(t *testing.T) {
 	t.Run("no default config set", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		env := environment.Ephemeral()
-
+		azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 		mockAccount := &mockaccount.MockAccountManager{
 			Subscriptions: []account.Subscription{
 				{
@@ -31,7 +32,7 @@ func Test_getSubscriptionOptions(t *testing.T) {
 			},
 		}
 
-		prompter := NewDefaultPrompter(env, mockContext.Console, mockAccount).(*DefaultPrompter)
+		prompter := NewDefaultPrompter(env, mockContext.Console, mockAccount, azCli).(*DefaultPrompter)
 		subList, result, err := prompter.getSubscriptionOptions(*mockContext.Context)
 
 		require.Nil(t, err)
@@ -44,6 +45,7 @@ func Test_getSubscriptionOptions(t *testing.T) {
 		defaultSubId := "SUBSCRIPTION_DEFAULT"
 		mockContext := mocks.NewMockContext(context.Background())
 		env := environment.Ephemeral()
+		azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 		mockAccount := &mockaccount.MockAccountManager{
 			DefaultLocation:     "location",
 			DefaultSubscription: defaultSubId,
@@ -66,7 +68,7 @@ func Test_getSubscriptionOptions(t *testing.T) {
 			Locations: []account.Location{},
 		}
 
-		prompter := NewDefaultPrompter(env, mockContext.Console, mockAccount).(*DefaultPrompter)
+		prompter := NewDefaultPrompter(env, mockContext.Console, mockAccount, azCli).(*DefaultPrompter)
 		subList, result, err := prompter.getSubscriptionOptions(*mockContext.Context)
 
 		require.Nil(t, err)

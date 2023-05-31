@@ -30,7 +30,6 @@ func EnsureEnv(
 			ctx,
 			"Please select an Azure Subscription to use:",
 			console,
-			env,
 			accountManager)
 		if err != nil {
 			return err
@@ -50,7 +49,6 @@ func EnsureEnv(
 			"Please select an Azure location to use:",
 			func(_ account.Location) bool { return true },
 			console,
-			env,
 			accountManager)
 		if err != nil {
 			return err
@@ -70,7 +68,6 @@ func promptSubscription(
 	ctx context.Context,
 	msg string,
 	console input.Console,
-	env *environment.Environment,
 	account account.Manager) (subscriptionId string, err error) {
 	subscriptionOptions, defaultSubscription, err := getSubscriptionOptions(ctx, account)
 	if err != nil {
@@ -101,7 +98,7 @@ func promptSubscription(
 	}
 
 	if !account.HasDefaultSubscription() {
-		if _, err := account.SetDefaultSubscription(ctx, env.GetSubscriptionId()); err != nil {
+		if _, err := account.SetDefaultSubscription(ctx, subscriptionId); err != nil {
 			log.Printf("failed setting default subscription. %s\n", err.Error())
 		}
 	}
@@ -115,7 +112,6 @@ func promptLocation(
 	msg string,
 	filter func(loc account.Location) bool,
 	console input.Console,
-	env *environment.Environment,
 	account account.Manager,
 ) (string, error) {
 	loc, err := azureutil.PromptLocationWithFilter(ctx, subId, msg, "", console, account, filter)
@@ -124,7 +120,7 @@ func promptLocation(
 	}
 
 	if !account.HasDefaultLocation() {
-		if _, err := account.SetDefaultLocation(ctx, env.GetSubscriptionId(), env.GetLocation()); err != nil {
+		if _, err := account.SetDefaultLocation(ctx, subId, loc); err != nil {
 			log.Printf("failed setting default location. %s\n", err.Error())
 		}
 	}

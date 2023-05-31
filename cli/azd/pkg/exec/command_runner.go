@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"strings"
 )
@@ -135,8 +134,8 @@ func (r *commandRunner) Run(ctx context.Context, args RunArgs) (RunResult, error
 
 	logTitle.WriteString(fmt.Sprintf("Run exec: '%s %s' ",
 		args.Cmd,
-		redactSensitiveData(
-			strings.Join(redactSensitiveArgs(args.Args, args.SensitiveData), " "))))
+		RedactSensitiveData(
+			strings.Join(RedactSensitiveArgs(args.Args, args.SensitiveData), " "))))
 
 	debugLogEnabled := r.debugLogging
 	if args.DebugLogging != nil {
@@ -174,13 +173,13 @@ func (r *commandRunner) Run(ctx context.Context, args RunArgs) (RunResult, error
 		}
 	} else {
 		if debugLogEnabled {
-			logStdOut := strings.TrimSuffix(redactSensitiveData(stdout.String()), "\n")
+			logStdOut := strings.TrimSuffix(RedactSensitiveData(stdout.String()), "\n")
 			if len(logStdOut) > 0 {
 				logBody.WriteString(fmt.Sprintf(
 					"-------------------------------------stdout-------------------------------------------\n%s\n",
 					logStdOut))
 			}
-			logStdErr := strings.TrimSuffix(redactSensitiveData(stderr.String()), "\n")
+			logStdErr := strings.TrimSuffix(RedactSensitiveData(stderr.String()), "\n")
 			if len(logStdErr) > 0 {
 				logBody.WriteString(fmt.Sprintf(
 					"-------------------------------------stderr-------------------------------------------\n%s\n",
@@ -316,57 +315,4 @@ func newCmdTree(ctx context.Context, cmd string, args []string, useShell bool, i
 		CmdTreeOptions: options,
 		Cmd:            exec.Command(shellName, allArgs...),
 	}, nil
-}
-
-type redactData struct {
-	matchString   *regexp.Regexp
-	replaceString string
-}
-
-const cRedacted = "<redacted>"
-
-func redactSensitiveArgs(args []string, sensitiveDataMatch []string) []string {
-	if len(sensitiveDataMatch) == 0 {
-		return args
-	}
-	redactedArgs := make([]string, len(args))
-	for i, arg := range args {
-		redacted := arg
-		for _, sensitiveData := range sensitiveDataMatch {
-			redacted = strings.ReplaceAll(redacted, sensitiveData, cRedacted)
-		}
-		redactedArgs[i] = redacted
-	}
-	return redactedArgs
-}
-
-func redactSensitiveData(msg string) string {
-	var regexpRedactRules = map[string]redactData{
-		"access token": {
-			regexp.MustCompile("\"accessToken\": \".*\""),
-			"\"accessToken\": \"" + cRedacted + "\"",
-		},
-		"deployment token": {
-			regexp.MustCompile(`--deployment-token \S+`),
-			"--deployment-token " + cRedacted,
-		},
-		"username": {
-			regexp.MustCompile(`--username \S+`),
-			"--username " + cRedacted,
-		},
-		"password": {
-			regexp.MustCompile(`--password \S+`),
-			"--password " + cRedacted,
-		},
-		"kubectl-from-literal": {
-			regexp.MustCompile(`--from-literal=([^=]+)=(\S+)`),
-			"--from-literal=$1=" + cRedacted,
-		},
-	}
-
-	for _, redactRule := range regexpRedactRules {
-		regMatchString := redactRule.matchString
-		msg = regMatchString.ReplaceAllString(msg, redactRule.replaceString)
-	}
-	return msg
 }

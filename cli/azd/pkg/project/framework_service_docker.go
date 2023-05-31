@@ -13,6 +13,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
@@ -128,13 +129,18 @@ func (p *dockerProject) Build(
 		func(task *async.TaskContextWithProgress[*ServiceBuildResult, ServiceProgress]) {
 			dockerOptions := getDockerOptionsWithDefaults(serviceConfig.Docker)
 
+			buildArgs := []string{}
+			for _, arg := range dockerOptions.BuildArgs {
+				buildArgs = append(buildArgs, exec.RedactSensitiveData(arg))
+			}
+
 			log.Printf(
 				"building image for service %s, cwd: %s, path: %s, context: %s, buildArgs: %s)",
 				serviceConfig.Name,
 				serviceConfig.Path(),
 				dockerOptions.Path,
 				dockerOptions.Context,
-				dockerOptions.BuildArgs,
+				buildArgs,
 			)
 
 			imageName := fmt.Sprintf(

@@ -22,9 +22,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/keyvault/armkeyvault"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
-	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
-	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -228,6 +226,12 @@ func TestPlanForResourceGroup(t *testing.T) {
 	err := mockContext.Config.Set("alpha.resourceGroupDeployments", "on")
 	require.NoError(t, err)
 
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(args.Cmd, "bicep") && strings.Contains(command, "--version")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		return exec.NewRunResult(0, "Bicep CLI version 0.17.1 (d423d61882)", ""), nil
+	})
+
 	// Have `bicep build` return a ARM template that targets a resource group.
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(args.Cmd, "bicep") && args.Args[0] == "build"
@@ -326,7 +330,6 @@ func TestPlanForResourceGroup(t *testing.T) {
 	})
 
 	infraProvider := createBicepProvider(t, mockContext)
-	err = infraProvider.Initialize(*mockContext.Context, "", Options{Provider: Test})
 	require.NoError(t, err)
 	// The computed plan should target the resource group we picked.
 
@@ -402,7 +405,7 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 		mockContext.Console,
 		prompt.NewDefaultPrompter(env, mockContext.Console, accountManager, azCli),
 		&mockCurrentPrincipal{},
-		alpha.NewFeaturesManager(config.NewUserConfigManager()),
+		mockContext.AlphaFeaturesManager,
 	)
 
 	err = provider.Initialize(*mockContext.Context, projectDir, options)

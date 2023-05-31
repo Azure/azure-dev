@@ -15,8 +15,10 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/test"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/stretchr/testify/require"
 )
 
@@ -179,5 +181,8 @@ func registerContainerDependencies(mockContext *mocks.MockContext, env *environm
 	})
 	mockContext.Container.RegisterSingleton(func() *environment.Environment {
 		return env
+	})
+	mockContext.Container.RegisterSingleton(func() azcli.AzCli {
+		return mockazcli.NewAzCliFromMockContext(mockContext)
 	})
 }

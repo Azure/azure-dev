@@ -30,7 +30,7 @@ func (c *ApplicationListRequestBuilder) Get(ctx context.Context) (*ApplicationLi
 
 	res, err := c.client.pipeline.Do(req)
 	if err != nil {
-		return nil, httputil.HandleRequestError(res, err)
+		return nil, err
 	}
 
 	if !runtime.HasStatusCode(res, http.StatusOK) {
@@ -53,7 +53,7 @@ func (c *ApplicationListRequestBuilder) Post(ctx context.Context, application *A
 
 	res, err := c.client.pipeline.Do(req)
 	if err != nil {
-		return nil, httputil.HandleRequestError(res, err)
+		return nil, err
 	}
 
 	if !runtime.HasStatusCode(res, http.StatusCreated) {
@@ -93,7 +93,7 @@ func (c *ApplicationItemRequestBuilder) Get(ctx context.Context) (*Application, 
 
 	res, err := c.client.pipeline.Do(req)
 	if err != nil {
-		return nil, httputil.HandleRequestError(res, err)
+		return nil, err
 	}
 
 	if !runtime.HasStatusCode(res, http.StatusOK) {
@@ -112,7 +112,7 @@ func (c *ApplicationItemRequestBuilder) Delete(ctx context.Context) error {
 
 	res, err := c.client.pipeline.Do(req)
 	if err != nil {
-		return httputil.HandleRequestError(res, err)
+		return err
 	}
 
 	if !runtime.HasStatusCode(res, http.StatusNoContent) {
@@ -143,7 +143,7 @@ func (c *ApplicationItemRequestBuilder) RemovePassword(ctx context.Context, keyI
 
 	res, err := c.client.pipeline.Do(req)
 	if err != nil {
-		return httputil.HandleRequestError(res, err)
+		return err
 	}
 
 	if !runtime.HasStatusCode(res, http.StatusNoContent) {
@@ -172,7 +172,7 @@ func (c *ApplicationItemRequestBuilder) AddPassword(ctx context.Context) (*Appli
 
 	res, err := c.client.pipeline.Do(req)
 	if err != nil {
-		return nil, httputil.HandleRequestError(res, err)
+		return nil, err
 	}
 
 	if !runtime.HasStatusCode(res, http.StatusOK) {

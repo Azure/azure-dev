@@ -27,6 +27,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
@@ -310,9 +311,22 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(swa.NewSwaCli)
 	container.RegisterSingleton(terraform.NewTerraformCli)
 
-	// Infra Providers
-	container.RegisterNamedTransient(string(provisioning.Bicep), infraBicep.NewBicepProvider)
-	container.RegisterNamedTransient(string(provisioning.Terraform), infraTerraform.NewTerraformProvider)
+	// Provisioning
+	container.RegisterTransient(provisioning.NewManager)
+	container.RegisterSingleton(provisioning.NewPrincipalIdProvider)
+	container.RegisterSingleton(prompt.NewDefaultPrompter)
+
+	// Provisioning Providers
+	provisionProviderMap := map[provisioning.ProviderKind]any{
+		provisioning.Bicep:     infraBicep.NewBicepProvider,
+		provisioning.Terraform: infraTerraform.NewTerraformProvider,
+	}
+
+	for provider, constructor := range provisionProviderMap {
+		if err := container.RegisterNamedTransient(string(provider), constructor); err != nil {
+			panic(fmt.Errorf("registering IaC provider %s: %w", provider, err))
+		}
+	}
 
 	// Other
 	container.RegisterSingleton(clock.New)

@@ -6,34 +6,25 @@ package provisioning
 import (
 	"context"
 	"fmt"
-	"io"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
-	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
 // Manages the orchestration of infrastructure provisioning
 type Manager struct {
 	serviceLocator      ioc.ServiceLocator
+	env                 *environment.Environment
+	console             input.Console
+	provider            Provider
+	alphaFeatureManager *alpha.FeatureManager
 	projectPath         string
 	options             *Options
-	azCli               azcli.AzCli
-	env                 *environment.Environment
-	provider            Provider
-	writer              io.Writer
-	console             input.Console
-	accountManager      account.Manager
-	userProfileService  *azcli.UserProfileService
-	subResolver         account.SubscriptionTenantResolver
-	alphaFeatureManager *alpha.FeatureManager
 }
 
-func (m *Manager) Init(ctx context.Context, projectPath string, options Options) error {
+func (m *Manager) Initialize(ctx context.Context, projectPath string, options Options) error {
 	m.projectPath = projectPath
 	m.options = &options
 
@@ -43,7 +34,7 @@ func (m *Manager) Init(ctx context.Context, projectPath string, options Options)
 	}
 
 	m.provider = provider
-	return m.provider.Init(ctx, projectPath, options)
+	return m.provider.Initialize(ctx, projectPath, options)
 }
 
 // Prepares for an infrastructure provision operation
@@ -78,6 +69,9 @@ func (m *Manager) Deploy(ctx context.Context, plan *DeploymentPlan) (*DeployResu
 		return nil, fmt.Errorf("updating environment with deployment outputs: %w", err)
 	}
 
+	// make sure any spinner is stopped
+	m.console.StopSpinner(ctx, "", input.StepDone)
+
 	return deployResult, nil
 }
 
@@ -106,21 +100,13 @@ func (m *Manager) Destroy(ctx context.Context, options DestroyOptions) (*Destroy
 func NewManager(
 	serviceLocator ioc.ServiceLocator,
 	env *environment.Environment,
-	azCli azcli.AzCli,
 	console input.Console,
-	accountManager account.Manager,
-	userProfileService *azcli.UserProfileService,
-	subResolver account.SubscriptionTenantResolver,
 	alphaFeatureManager *alpha.FeatureManager,
 ) *Manager {
 	return &Manager{
 		serviceLocator:      serviceLocator,
-		azCli:               azCli,
 		env:                 env,
-		writer:              console.GetWriter(),
-		accountManager:      accountManager,
-		userProfileService:  userProfileService,
-		subResolver:         subResolver,
+		console:             console,
 		alphaFeatureManager: alphaFeatureManager,
 	}
 }
@@ -148,30 +134,4 @@ func (m *Manager) newProvider(ctx context.Context) (Provider, error) {
 	}
 
 	return provider, nil
-}
-
-type CurrentPrincipalIdProvider interface {
-	// CurrentPrincipalId returns the object id of the current logged in principal, or an error if it can not be
-	// determined.
-	CurrentPrincipalId(ctx context.Context) (string, error)
-}
-
-type principalIDProvider struct {
-	env                *environment.Environment
-	userProfileService *azcli.UserProfileService
-	subResolver        account.SubscriptionTenantResolver
-}
-
-func (p *principalIDProvider) CurrentPrincipalId(ctx context.Context) (string, error) {
-	tenantId, err := p.subResolver.LookupTenant(ctx, p.env.GetSubscriptionId())
-	if err != nil {
-		return "", fmt.Errorf("getting tenant id for subscription %s. Error: %w", p.env.GetSubscriptionId(), err)
-	}
-
-	principalId, err := azureutil.GetCurrentPrincipalId(ctx, p.userProfileService, tenantId)
-	if err != nil {
-		return "", fmt.Errorf("fetching current user information: %w", err)
-	}
-
-	return principalId, nil
 }

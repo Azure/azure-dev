@@ -4,12 +4,6 @@
 // Package bicep contains an implementation of provider.Provider for Bicep. This
 // provider is registered for use when this package is imported, and can be imported for
 // side effects only to register the provider, e.g.:
-//
-// require(
-//
-//	_ "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
-//
-// )
 package bicep
 
 import (
@@ -71,7 +65,7 @@ type BicepProvider struct {
 	console             input.Console
 	bicepCli            bicep.BicepCli
 	azCli               azcli.AzCli
-	prompters           prompt.Prompters
+	prompters           prompt.Prompter
 	curPrincipal        CurrentPrincipalIdProvider
 	alphaFeatureManager *alpha.FeatureManager
 }
@@ -90,7 +84,11 @@ func (p *BicepProvider) RequiredExternalTools() []tools.ExternalTool {
 	return []tools.ExternalTool{}
 }
 
-func (p *BicepProvider) Init(ctx context.Context, projectPath string, options Options) error {
+func (p *BicepProvider) Initialize(ctx context.Context, projectPath string, options Options) error {
+	if strings.TrimSpace(options.Module) == "" {
+		options.Module = DefaultModule
+	}
+
 	p.projectPath = projectPath
 	p.options = options
 
@@ -99,7 +97,7 @@ func (p *BicepProvider) Init(ctx context.Context, projectPath string, options Op
 		return err
 	}
 
-	return p.prompters.PromptAll(ctx)
+	return p.prompters.EnsureEnv(ctx)
 }
 
 func (p *BicepProvider) State(ctx context.Context) (*StateResult, error) {
@@ -1296,7 +1294,7 @@ func NewBicepProvider(
 	azCli azcli.AzCli,
 	env *environment.Environment,
 	console input.Console,
-	prompters prompt.Prompters,
+	prompters prompt.Prompter,
 	curPrincipal CurrentPrincipalIdProvider,
 	alphaFeatureManager *alpha.FeatureManager,
 ) Provider {

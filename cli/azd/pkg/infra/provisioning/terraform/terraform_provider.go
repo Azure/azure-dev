@@ -4,12 +4,6 @@
 // Package terraform contains an implementation of provider.Provider for Terraform. This
 // provider is registered for use when this package is imported, and can be imported for
 // side effects only to register the provider, e.g.:
-//
-// require(
-//
-//	_ "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/terraform"
-//
-// )
 package terraform
 
 import (
@@ -37,12 +31,12 @@ import (
 // TerraformProvider exposes infrastructure provisioning using Azure Terraform templates
 type TerraformProvider struct {
 	env          *environment.Environment
-	prompters    prompt.Prompters
-	projectPath  string
-	options      Options
+	prompters    prompt.Prompter
 	console      input.Console
 	cli          terraform.TerraformCli
 	curPrincipal CurrentPrincipalIdProvider
+	projectPath  string
+	options      Options
 }
 
 type TerraformDeploymentDetails struct {
@@ -66,7 +60,7 @@ func NewTerraformProvider(
 	env *environment.Environment,
 	console input.Console,
 	curPrincipal CurrentPrincipalIdProvider,
-	prompters prompt.Prompters,
+	prompters prompt.Prompter,
 ) Provider {
 	provider := &TerraformProvider{
 		env:          env,
@@ -79,7 +73,7 @@ func NewTerraformProvider(
 	return provider
 }
 
-func (t *TerraformProvider) Init(ctx context.Context, projectPath string, options Options) error {
+func (t *TerraformProvider) Initialize(ctx context.Context, projectPath string, options Options) error {
 	t.projectPath = projectPath
 	t.options = options
 
@@ -88,7 +82,7 @@ func (t *TerraformProvider) Init(ctx context.Context, projectPath string, option
 		return err
 	}
 
-	if err := t.prompters.PromptAll(ctx); err != nil {
+	if err := t.prompters.EnsureEnv(ctx); err != nil {
 		return err
 	}
 

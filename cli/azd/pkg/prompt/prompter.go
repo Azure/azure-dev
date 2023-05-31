@@ -13,17 +13,33 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 )
 
-type Prompters struct {
+type LocationFilterPredicate func(loc account.Location) bool
+
+type Prompter interface {
+	EnsureEnv(ctx context.Context) error
+	PromptSubscription(ctx context.Context, msg string) (subscriptionId string, err error)
+	PromptLocation(ctx context.Context, subId string, msg string, filter LocationFilterPredicate) (string, error)
+}
+
+type DefaultPrompter struct {
 	console        input.Console
 	env            *environment.Environment
 	accountManager account.Manager
+}
+
+func NewDefaultPrompter(env *environment.Environment, console input.Console, accountManager account.Manager) Prompter {
+	return &DefaultPrompter{
+		console:        console,
+		env:            env,
+		accountManager: accountManager,
+	}
 }
 
 // EnsureEnv ensures that the environment is in a provision-ready state with required values set, prompting the user if
 // values are unset.
 //
 // This currently means that subscription (AZURE_SUBSCRIPTION_ID) and location (AZURE_LOCATION) variables are set.
-func (p *Prompters) PromptAll(ctx context.Context) error {
+func (p *DefaultPrompter) EnsureEnv(ctx context.Context) error {
 	if p.env.GetSubscriptionId() == "" {
 		subscriptionId, err := p.PromptSubscription(ctx, "Please select an Azure Subscription to use:")
 		if err != nil {
@@ -58,7 +74,7 @@ func (p *Prompters) PromptAll(ctx context.Context) error {
 	return nil
 }
 
-func (p *Prompters) PromptSubscription(ctx context.Context, msg string) (subscriptionId string, err error) {
+func (p *DefaultPrompter) PromptSubscription(ctx context.Context, msg string) (subscriptionId string, err error) {
 	subscriptionOptions, defaultSubscription, err := p.getSubscriptionOptions(ctx)
 	if err != nil {
 		return "", err
@@ -96,7 +112,11 @@ func (p *Prompters) PromptSubscription(ctx context.Context, msg string) (subscri
 	return subscriptionId, nil
 }
 
-func (p *Prompters) PromptLocation(ctx context.Context, subId string, msg string, filter func(loc account.Location) bool,
+func (p *DefaultPrompter) PromptLocation(
+	ctx context.Context,
+	subId string,
+	msg string,
+	filter LocationFilterPredicate,
 ) (string, error) {
 	loc, err := azureutil.PromptLocationWithFilter(ctx, subId, msg, "", p.console, p.accountManager, filter)
 	if err != nil {
@@ -112,8 +132,8 @@ func (p *Prompters) PromptLocation(ctx context.Context, subId string, msg string
 	return loc, nil
 }
 
-func (m *Prompters) getSubscriptionOptions(ctx context.Context) ([]string, any, error) {
-	subscriptionInfos, err := m.accountManager.GetSubscriptions(ctx)
+func (p *DefaultPrompter) getSubscriptionOptions(ctx context.Context) ([]string, any, error) {
+	subscriptionInfos, err := p.accountManager.GetSubscriptions(ctx)
 	if err != nil {
 		return nil, nil, fmt.Errorf("listing accounts: %w", err)
 	}
@@ -122,7 +142,7 @@ func (m *Prompters) getSubscriptionOptions(ctx context.Context) ([]string, any, 
 	// set in azd's config.
 	defaultSubscriptionId := os.Getenv(environment.SubscriptionIdEnvVarName)
 	if defaultSubscriptionId == "" {
-		defaultSubscriptionId = m.accountManager.GetDefaultSubscriptionID(ctx)
+		defaultSubscriptionId = p.accountManager.GetDefaultSubscriptionID(ctx)
 	}
 
 	var subscriptionOptions = make([]string, len(subscriptionInfos))

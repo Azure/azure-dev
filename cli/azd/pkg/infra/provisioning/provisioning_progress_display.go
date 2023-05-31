@@ -18,7 +18,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 )
 
-const defaultProgressTitle string = "Provisioning Azure resources"
 const succeededProvisioningState string = "Succeeded"
 const runningProvisioningState string = "Running"
 const failedProvisioningState string = "Failed"

@@ -9,9 +9,12 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
 	"github.com/stretchr/testify/require"
 )
 
@@ -259,45 +262,36 @@ func TestPromptForParametersLocation(t *testing.T) {
 		Stderr: "",
 	})
 
-	locations := []account.Location{
-		{
-			Name:                "eastus",
-			DisplayName:         "East US",
-			RegionalDisplayName: "(US) East US",
+	env := environment.Ephemeral()
+
+	accountManager := &mockaccount.MockAccountManager{
+		Subscriptions: []account.Subscription{
+			{
+				Id:   "00000000-0000-0000-0000-000000000000",
+				Name: "test",
+			},
 		},
-		{
-			Name:                "eastus2",
-			DisplayName:         "East US 2",
-			RegionalDisplayName: "(US) East US 2",
-		},
-		{
-			Name:                "westus",
-			DisplayName:         "West US",
-			RegionalDisplayName: "(US) West US",
+		Locations: []account.Location{
+			{
+				Name:                "eastus",
+				DisplayName:         "East US",
+				RegionalDisplayName: "(US) East US",
+			},
+			{
+				Name:                "eastus2",
+				DisplayName:         "East US 2",
+				RegionalDisplayName: "(US) East US 2",
+			},
+			{
+				Name:                "westus",
+				DisplayName:         "West US",
+				RegionalDisplayName: "(US) West US",
+			},
 		},
 	}
 
 	p := createBicepProvider(t, mockContext)
-	p.prompters.Location = func(
-		ctx context.Context,
-		subscriptionId string,
-		msg string,
-		shouldDisplay func(loc account.Location) bool,
-	) (location string, err error) {
-		displayLocations := []string{}
-		for _, location := range locations {
-			if shouldDisplay(location) {
-				displayLocations = append(displayLocations, location.Name)
-			}
-		}
-
-		index, err := mockContext.Console.Select(ctx, input.ConsoleOptions{
-			Message: msg,
-			Options: displayLocations,
-		})
-		require.NoError(t, err)
-		return displayLocations[index], nil
-	}
+	p.prompters = prompt.NewDefaultPrompter(env, mockContext.Console, accountManager)
 
 	mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool {
 		return strings.Contains(options.Message, "'unfilteredLocation")

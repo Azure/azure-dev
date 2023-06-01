@@ -446,7 +446,12 @@ func (c *AskerConsole) Confirm(ctx context.Context, options ConsoleOptions) (boo
 
 // wait until the next enter
 func (c *AskerConsole) WaitForEnter() {
-	_ = bufio.NewScanner(c.handles.Stdin).Scan()
+	inputScanner := bufio.NewScanner(c.handles.Stdin)
+	if scan := inputScanner.Scan(); !scan {
+		if err := inputScanner.Err(); err != nil {
+			log.Printf("error while waiting for enter: %v", err)
+		}
+	}
 }
 
 // Gets the underlying writer for the console

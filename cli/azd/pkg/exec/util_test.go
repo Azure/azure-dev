@@ -64,7 +64,7 @@ func TestKillCommand(t *testing.T) {
 			Cmd: "sh",
 			Args: []string{
 				"-c",
-				"sleep 10s",
+				"sleep 10",
 			},
 		}
 	}

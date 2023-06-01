@@ -16,6 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -188,6 +189,7 @@ func DetectProviders(
 	console input.Console,
 	credential azcore.TokenCredential,
 	commandRunner exec.CommandRunner,
+	httpClient httputil.HttpClient,
 ) (ScmProvider, CiProvider, error) {
 	projectDir := azdContext.ProjectDirectory()
 
@@ -254,7 +256,7 @@ func DetectProviders(
 	_ = savePipelineProviderToEnv(gitHubLabel, env)
 	log.Printf("Using pipeline provider: %s", output.WithHighLightFormat("GitHub"))
 	scmProvider := NewGitHubScmProvider(commandRunner, console)
-	ciProvider := NewGitHubCiProvider(credential, commandRunner, console)
+	ciProvider := NewGitHubCiProvider(credential, commandRunner, console, httpClient)
 	return scmProvider, ciProvider, nil
 }
 

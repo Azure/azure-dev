@@ -118,7 +118,7 @@ func (cli *azCli) createDeploymentsClient(
 		return nil, err
 	}
 
-	options := cli.createDefaultClientOptionsBuilder(ctx).BuildArmClientOptions()
+	options := cli.clientOptionsBuilder(ctx).BuildArmClientOptions()
 	client, err := armresources.NewDeploymentsClient(subscriptionId, credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating deployments client: %w", err)

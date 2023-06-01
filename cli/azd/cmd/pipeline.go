@@ -16,6 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -120,6 +121,7 @@ type pipelineConfigAction struct {
 	env                *environment.Environment
 	console            input.Console
 	commandRunner      exec.CommandRunner
+	httpClient         httputil.HttpClient
 	credentialProvider account.SubscriptionCredentialProvider
 }
 
@@ -133,6 +135,7 @@ func newPipelineConfigAction(
 	console input.Console,
 	flags *pipelineConfigFlags,
 	commandRunner exec.CommandRunner,
+	httpClient httputil.HttpClient,
 ) actions.Action {
 	pca := &pipelineConfigAction{
 		flags:              flags,
@@ -146,6 +149,7 @@ func newPipelineConfigAction(
 		env:            env,
 		console:        console,
 		commandRunner:  commandRunner,
+		httpClient:     httpClient,
 	}
 
 	return pca
@@ -167,7 +171,7 @@ func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, 
 	p.manager.ScmProvider,
 		p.manager.CiProvider,
 		err = pipeline.DetectProviders(
-		ctx, p.azdCtx, p.env, p.manager.PipelineProvider, p.console, credential, p.commandRunner,
+		ctx, p.azdCtx, p.env, p.manager.PipelineProvider, p.console, credential, p.commandRunner, p.httpClient,
 	)
 	if err != nil {
 		return nil, err

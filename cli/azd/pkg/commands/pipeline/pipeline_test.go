@@ -34,6 +34,7 @@ func Test_detectProviders(t *testing.T) {
 			mockContext.Console,
 			mockContext.Credentials,
 			mockContext.CommandRunner,
+			mockContext.HttpClient,
 		)
 		assert.Nil(t, scmProvider)
 		assert.Nil(t, ciProvider)
@@ -57,6 +58,7 @@ func Test_detectProviders(t *testing.T) {
 			mockContext.Console,
 			mockContext.Credentials,
 			mockContext.CommandRunner,
+			mockContext.HttpClient,
 		)
 		assert.Nil(t, scmProvider)
 		assert.Nil(t, ciProvider)
@@ -89,6 +91,7 @@ func Test_detectProviders(t *testing.T) {
 			mockContext.Console,
 			mockContext.Credentials,
 			mockContext.CommandRunner,
+			mockContext.HttpClient,
 		)
 		assert.Nil(t, scmProvider)
 		assert.Nil(t, ciProvider)
@@ -114,6 +117,7 @@ func Test_detectProviders(t *testing.T) {
 			mockContext.Console,
 			mockContext.Credentials,
 			mockContext.CommandRunner,
+			mockContext.HttpClient,
 		)
 		assert.Nil(t, scmProvider)
 		assert.Nil(t, ciProvider)
@@ -143,6 +147,7 @@ func Test_detectProviders(t *testing.T) {
 			mockContext.Console,
 			mockContext.Credentials,
 			mockContext.CommandRunner,
+			mockContext.HttpClient,
 		)
 		assert.IsType(t, &AzdoScmProvider{}, scmProvider)
 		assert.IsType(t, &AzdoCiProvider{}, ciProvider)
@@ -165,6 +170,7 @@ func Test_detectProviders(t *testing.T) {
 			mockContext.Console,
 			mockContext.Credentials,
 			mockContext.CommandRunner,
+			mockContext.HttpClient,
 		)
 		assert.Nil(t, scmProvider)
 		assert.Nil(t, ciProvider)
@@ -189,6 +195,7 @@ func Test_detectProviders(t *testing.T) {
 			mockContext.Console,
 			mockContext.Credentials,
 			mockContext.CommandRunner,
+			mockContext.HttpClient,
 		)
 		assert.IsType(t, &GitHubScmProvider{}, scmProvider)
 		assert.IsType(t, &GitHubCiProvider{}, ciProvider)
@@ -210,6 +217,7 @@ func Test_detectProviders(t *testing.T) {
 			mockContext.Console,
 			mockContext.Credentials,
 			mockContext.CommandRunner,
+			mockContext.HttpClient,
 		)
 		assert.Nil(t, scmProvider)
 		assert.Nil(t, ciProvider)
@@ -234,6 +242,7 @@ func Test_detectProviders(t *testing.T) {
 			mockContext.Console,
 			mockContext.Credentials,
 			mockContext.CommandRunner,
+			mockContext.HttpClient,
 		)
 		assert.Nil(t, scmProvider)
 		assert.Nil(t, ciProvider)
@@ -257,6 +266,7 @@ func Test_detectProviders(t *testing.T) {
 			"", mockContext.Console,
 			mockContext.Credentials,
 			mockContext.CommandRunner,
+			mockContext.HttpClient,
 		)
 		assert.Nil(t, scmProvider)
 		assert.Nil(t, ciProvider)
@@ -290,6 +300,7 @@ func Test_detectProviders(t *testing.T) {
 			mockContext.Console,
 			mockContext.Credentials,
 			mockContext.CommandRunner,
+			mockContext.HttpClient,
 		)
 		assert.Nil(t, scmProvider)
 		assert.Nil(t, ciProvider)
@@ -324,6 +335,7 @@ func Test_detectProviders(t *testing.T) {
 			mockContext.Console,
 			mockContext.Credentials,
 			mockContext.CommandRunner,
+			mockContext.HttpClient,
 		)
 		assert.Nil(t, scmProvider)
 		assert.Nil(t, ciProvider)
@@ -351,6 +363,7 @@ func Test_detectProviders(t *testing.T) {
 			mockContext.Console,
 			mockContext.Credentials,
 			mockContext.CommandRunner,
+			mockContext.HttpClient,
 		)
 		assert.IsType(t, &GitHubScmProvider{}, scmProvider)
 		assert.IsType(t, &GitHubCiProvider{}, ciProvider)
@@ -371,6 +384,7 @@ func Test_detectProviders(t *testing.T) {
 			mockContext.Console,
 			mockContext.Credentials,
 			mockContext.CommandRunner,
+			mockContext.HttpClient,
 		)
 		assert.IsType(t, &AzdoScmProvider{}, scmProvider)
 		assert.IsType(t, &AzdoCiProvider{}, ciProvider)
@@ -394,6 +408,7 @@ func Test_detectProviders(t *testing.T) {
 			mockContext.Console,
 			mockContext.Credentials,
 			mockContext.CommandRunner,
+			mockContext.HttpClient,
 		)
 		assert.IsType(t, &GitHubScmProvider{}, scmProvider)
 		assert.IsType(t, &GitHubCiProvider{}, ciProvider)
@@ -417,6 +432,7 @@ func Test_detectProviders(t *testing.T) {
 			mockContext.Console,
 			mockContext.Credentials,
 			mockContext.CommandRunner,
+			mockContext.HttpClient,
 		)
 		assert.IsType(t, &AzdoScmProvider{}, scmProvider)
 		assert.IsType(t, &AzdoCiProvider{}, ciProvider)
@@ -434,6 +450,7 @@ func Test_detectProviders(t *testing.T) {
 			mockContext.Console,
 			mockContext.Credentials,
 			mockContext.CommandRunner,
+			mockContext.HttpClient,
 		)
 		assert.IsType(t, &AzdoScmProvider{}, scmProvider)
 		assert.IsType(t, &AzdoCiProvider{}, ciProvider)
@@ -459,6 +476,7 @@ func Test_detectProviders(t *testing.T) {
 			mockContext.Console,
 			mockContext.Credentials,
 			mockContext.CommandRunner,
+			mockContext.HttpClient,
 		)
 		assert.IsType(t, &AzdoScmProvider{}, scmProvider)
 		assert.IsType(t, &AzdoCiProvider{}, ciProvider)
@@ -472,6 +490,7 @@ func Test_detectProviders(t *testing.T) {
 			mockContext.Console,
 			mockContext.Credentials,
 			mockContext.CommandRunner,
+			mockContext.HttpClient,
 		)
 		assert.IsType(t, &AzdoScmProvider{}, scmProvider)
 		assert.IsType(t, &AzdoCiProvider{}, ciProvider)
@@ -490,6 +509,7 @@ func Test_detectProviders(t *testing.T) {
 			mockContext.Console,
 			mockContext.Credentials,
 			mockContext.CommandRunner,
+			mockContext.HttpClient,
 		)
 		assert.IsType(t, &GitHubScmProvider{}, scmProvider)
 		assert.IsType(t, &GitHubCiProvider{}, ciProvider)
@@ -508,6 +528,7 @@ func Test_detectProviders(t *testing.T) {
 			mockContext.Console,
 			mockContext.Credentials,
 			mockContext.CommandRunner,
+			mockContext.HttpClient,
 		)
 		assert.IsType(t, &GitHubScmProvider{}, scmProvider)
 		assert.IsType(t, &GitHubCiProvider{}, ciProvider)
@@ -522,6 +543,7 @@ func Test_detectProviders(t *testing.T) {
 			mockContext.Console,
 			mockContext.Credentials,
 			mockContext.CommandRunner,
+			mockContext.HttpClient,
 		)
 		assert.IsType(t, &AzdoScmProvider{}, scmProvider)
 		assert.IsType(t, &AzdoCiProvider{}, ciProvider)
@@ -541,6 +563,7 @@ func Test_detectProviders(t *testing.T) {
 			mockContext.Console,
 			mockContext.Credentials,
 			mockContext.CommandRunner,
+			mockContext.HttpClient,
 		)
 		assert.IsType(t, &GitHubScmProvider{}, scmProvider)
 		assert.IsType(t, &GitHubCiProvider{}, ciProvider)

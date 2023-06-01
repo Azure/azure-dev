@@ -220,7 +220,7 @@ func TestRedactSensitiveData(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.scenario, func(t *testing.T) {
-			actual := redactSensitiveData(test.input)
+			actual := RedactSensitiveData(test.input)
 			require.Equal(t, test.expected, actual)
 		})
 	}

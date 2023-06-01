@@ -13,16 +13,18 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 )
 
 type DockerProjectOptions struct {
-	Path     string           `json:"path"`
-	Context  string           `json:"context"`
-	Platform string           `json:"platform"`
-	Tag      ExpandableString `json:"tag"`
+	Path      string           `json:"path"`
+	Context   string           `json:"context"`
+	Platform  string           `json:"platform"`
+	Tag       ExpandableString `json:"tag"`
+	BuildArgs []string         `json:"buildArgs"`
 }
 
 type dockerBuildResult struct {
@@ -127,12 +129,18 @@ func (p *dockerProject) Build(
 		func(task *async.TaskContextWithProgress[*ServiceBuildResult, ServiceProgress]) {
 			dockerOptions := getDockerOptionsWithDefaults(serviceConfig.Docker)
 
+			buildArgs := []string{}
+			for _, arg := range dockerOptions.BuildArgs {
+				buildArgs = append(buildArgs, exec.RedactSensitiveData(arg))
+			}
+
 			log.Printf(
-				"building image for service %s, cwd: %s, path: %s, context: %s)",
+				"building image for service %s, cwd: %s, path: %s, context: %s, buildArgs: %s)",
 				serviceConfig.Name,
 				serviceConfig.Path(),
 				dockerOptions.Path,
 				dockerOptions.Context,
+				buildArgs,
 			)
 
 			imageName := fmt.Sprintf(
@@ -150,6 +158,7 @@ func (p *dockerProject) Build(
 				dockerOptions.Platform,
 				dockerOptions.Context,
 				imageName,
+				dockerOptions.BuildArgs,
 			)
 			if err != nil {
 				task.SetError(fmt.Errorf("building container: %s at %s: %w", serviceConfig.Name, dockerOptions.Context, err))

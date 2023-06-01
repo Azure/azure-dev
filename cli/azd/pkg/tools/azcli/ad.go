@@ -272,8 +272,8 @@ func (cli *azCli) applyRoleAssignmentWithRetry(
 						*roleDefinition.Name,
 						servicePrincipal.DisplayName,
 						err,
-						output.WithHighLightFormat("Suggested Action: Add `User Access Administrator` or `Owner` azure roles to your subscription. "+
-							"Those roles are required to manage azure resources\n"),
+						output.WithHighLightFormat("Suggested Action: Add `User Access Administrator` or `Owner` azure roles to "+
+							"your subscription. Those roles are required to manage azure resources\n"),
 					),
 				)
 			}

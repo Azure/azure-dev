@@ -14,7 +14,6 @@ import (
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
-	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -301,12 +300,6 @@ func getTargetServiceName(
 
 // Calculate the total time since t, excluding user interaction time.
 func since(t time.Time) time.Duration {
-	usage := tracing.GetUsageAttributes()
-	for _, kv := range usage {
-		if kv.Key == fields.PerfInteractTime {
-			return time.Since(t) - time.Duration(kv.Value.AsInt64())*time.Millisecond
-		}
-	}
-
-	return time.Since(t)
+	userInteractTime := tracing.InteractTimeMs.Load()
+	return time.Since(t) - time.Duration(userInteractTime)*time.Millisecond
 }

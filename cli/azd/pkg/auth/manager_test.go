@@ -233,7 +233,6 @@ func TestLoginDeviceCode(t *testing.T) {
 		publicClient:      &mockPublicClient{},
 		launchBrowserFn:   func(url string) error { return nil },
 		console:           console,
-		pausedConsole:     console,
 	}
 
 	cred, err := m.LoginWithDeviceCode(context.Background(), "", nil)

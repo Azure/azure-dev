@@ -87,7 +87,6 @@ type Manager struct {
 	httpClient          httputil.HttpClient
 	launchBrowserFn     func(url string) error
 	console             input.Console
-	pausedConsole       input.Console
 }
 
 func NewManager(
@@ -133,7 +132,6 @@ func NewManager(
 		httpClient:          httpClient,
 		launchBrowserFn:     browser.OpenURL,
 		console:             console,
-		pausedConsole:       input.NewPausedConsole(console),
 	}, nil
 }
 
@@ -442,13 +440,13 @@ func (m *Manager) LoginWithDeviceCode(
 		return nil, err
 	}
 
-	// paused console will block terminal until pressing enter
-	m.pausedConsole.MessageUxItem(ctx, &ux.MultilineMessage{
+	m.console.MessageUxItem(ctx, &ux.MultilineMessage{
 		Lines: []string{
 			fmt.Sprintf("Start by copying the next code: %s", output.WithBold(code.UserCode())),
 			"Then press enter and continue to log in from your browser...",
 		},
 	})
+	m.console.WaitForEnter()
 
 	url := "https://microsoft.com/devicelogin"
 	if err := m.launchBrowserFn(url); err != nil {

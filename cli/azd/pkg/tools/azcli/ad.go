@@ -13,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/google/uuid"
 	"github.com/sethvargo/go-retry"
 )
@@ -267,11 +268,12 @@ func (cli *azCli) applyRoleAssignmentWithRetry(
 			if errors.As(err, &responseError) && responseError.StatusCode == http.StatusForbidden {
 				return retry.RetryableError(
 					fmt.Errorf(
-						"failed assigning role assignment '%s' to service principal '%s' : %w"+
-							"\nSolution: Add `User Access Administrator` or `Owner`  azure roles to your subscription. Those roles are required to manage azure resources",
+						"failed assigning role assignment '%s' to service principal '%s' : %w \n%s",
 						*roleDefinition.Name,
 						servicePrincipal.DisplayName,
 						err,
+						output.WithHighLightFormat("Suggested Action: Add `User Access Administrator` or `Owner` azure roles to your subscription. "+
+							"Those roles are required to manage azure resources\n"),
 					),
 				)
 			}

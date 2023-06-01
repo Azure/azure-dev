@@ -99,6 +99,7 @@ func (p *BicepProvider) Initialize(ctx context.Context, projectPath string, opti
 
 func (p *BicepProvider) State(ctx context.Context) (*StateResult, error) {
 	// TODO: Report progress, "Loading Bicep template"
+	p.console.ShowSpinner(ctx, "Loading Bicep template", input.Step)
 
 	modulePath := p.modulePath()
 	_, template, err := p.compileBicep(ctx, modulePath)
@@ -112,6 +113,8 @@ func (p *BicepProvider) State(ctx context.Context) (*StateResult, error) {
 	}
 
 	// TODO: Report progress, "Retrieving Azure deployment"
+	p.console.ShowSpinner(ctx, "Retrieving Azure deployment", input.Step)
+
 	armDeployment, err := latestCompletedDeployment(ctx, p.env.GetEnvName(), scope)
 	if err != nil {
 		return nil, fmt.Errorf("retrieving deployment: %w", err)
@@ -127,6 +130,8 @@ func (p *BicepProvider) State(ctx context.Context) (*StateResult, error) {
 	}
 
 	// TODO: Report progress, "Normalizing output parameters"
+	p.console.ShowSpinner(ctx, "Normalizing output parameters", input.Step)
+
 	state.Outputs = p.createOutputParameters(
 		template.Outputs,
 		azcli.CreateDeploymentOutput(armDeployment.Properties.Outputs),

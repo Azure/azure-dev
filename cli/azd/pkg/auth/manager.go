@@ -445,7 +445,7 @@ func (m *Manager) LoginWithDeviceCode(
 	if err := m.launchBrowserFn(url); err != nil {
 		console.Message(ctx, fmt.Sprintf("Error launching browser. Manually go to: %s", url))
 	}
-	console.Message(ctx, "Now waiting for user to complete authentication...")
+	console.Message(ctx, "Waiting for you to complete authentication in the browser...")
 	res, err := code.AuthenticationResult(ctx)
 	if err != nil {
 		return nil, err

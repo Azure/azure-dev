@@ -1,7 +1,6 @@
 <!-- Policy configuration for the API. Explore other sample policies at https://learn.microsoft.com/en-us/azure/api-management/policies/ -->
 <policies>
     <inbound>
-        <base />
         <!-- This policy is needed to handle preflight requests using the OPTIONS method. Learn more at https://learn.microsoft.com/en-us/azure/api-management/api-management-cross-domain-policies  -->
         <cors allow-credentials="false">
             <allowed-origins>
@@ -40,7 +39,6 @@
         </limit-concurrency>
     </backend>
     <outbound>
-        <base />
         <!-- Optional policy to validate the response headers. Learn more at https://learn.microsoft.com/en-us/azure/api-management/validation-policies#validate-headers -->
         <validate-headers specified-header-action="ignore" unspecified-header-action="ignore" errors-variable-name="responseHeadersValidation" />
         <!-- Optional policy to to send custom metrics to Application Insights. Learn more at https://learn.microsoft.com/en-us/azure/api-management/api-management-advanced-policies#emit-metrics -->
@@ -65,7 +63,6 @@
         </choose>
     </outbound>
     <on-error>
-        <base />
         <!-- Optional policy to handle errors. Learn more at https://learn.microsoft.com/en-us/azure/api-management/api-management-error-handling-policies -->
         <trace source="@(context.Api.Name)" severity="error">
             <message>Failed to process the @(context.Api.Name)</message>

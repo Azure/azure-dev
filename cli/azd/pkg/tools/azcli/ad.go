@@ -257,10 +257,23 @@ func (cli *azCli) applyRoleAssignmentWithRetry(
 		}, nil)
 
 		if err != nil {
-			// If the response is a 409 conflict then the role has already been assigned.
 			var responseError *azcore.ResponseError
+			// If the response is a 409 conflict then the role has already been assigned.
 			if errors.As(err, &responseError) && responseError.StatusCode == http.StatusConflict {
 				return nil
+			}
+
+			// If the response is a 403 then the required role is missing.
+			if errors.As(err, &responseError) && responseError.StatusCode == http.StatusForbidden {
+				return retry.RetryableError(
+					fmt.Errorf(
+						"failed assigning role assignment '%s' to service principal '%s' : %w"+
+							"\nSolution: Add `User Access Administrator` or `Owner`  azure roles to your subscription. Those roles are required to manage azure resources",
+						*roleDefinition.Name,
+						servicePrincipal.DisplayName,
+						err,
+					),
+				)
 			}
 
 			return retry.RetryableError(

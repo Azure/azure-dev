@@ -112,8 +112,10 @@ func NewManager(
 }
 
 func (m *Manager) newProvider(ctx context.Context) (Provider, error) {
-	if m.options.Provider == "" {
-		m.options.Provider = Bicep
+	var err error
+	m.options.Provider, err = ParseProvider(m.options.Provider)
+	if err != nil {
+		return nil, err
 	}
 
 	if alphaFeatureId, isAlphaFeature := alpha.IsFeatureKey(string(m.options.Provider)); isAlphaFeature {
@@ -128,9 +130,9 @@ func (m *Manager) newProvider(ctx context.Context) (Provider, error) {
 	}
 
 	var provider Provider
-	err := m.serviceLocator.ResolveNamed(string(m.options.Provider), &provider)
+	err = m.serviceLocator.ResolveNamed(string(m.options.Provider), &provider)
 	if err != nil {
-		return nil, fmt.Errorf("resolving provider '%s': %w", m.options.Provider, err)
+		return nil, fmt.Errorf("failed resolving IaC provider '%s': %w", m.options.Provider, err)
 	}
 
 	return provider, nil

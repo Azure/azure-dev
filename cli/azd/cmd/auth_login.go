@@ -462,7 +462,7 @@ func (la *loginAction) login(ctx context.Context) error {
 	}
 
 	if useDevCode {
-		_, err := la.authManager.LoginWithDeviceCode(ctx, la.console, la.flags.tenantID, la.flags.scopes)
+		_, err := la.authManager.LoginWithDeviceCode(ctx, la.flags.tenantID, la.flags.scopes)
 		if err != nil {
 			return fmt.Errorf("logging in: %w", err)
 		}

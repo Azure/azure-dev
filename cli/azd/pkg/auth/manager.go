@@ -4,7 +4,6 @@
 package auth
 
 import (
-	"bufio"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -28,6 +27,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/cli/browser"
 )
 
@@ -86,12 +86,15 @@ type Manager struct {
 	ghClient            *github.FederatedTokenClient
 	httpClient          httputil.HttpClient
 	launchBrowserFn     func(url string) error
+	console             input.Console
+	pausedConsole       input.Console
 }
 
 func NewManager(
 	configManager config.Manager,
 	userConfigManager config.UserConfigManager,
 	httpClient httputil.HttpClient,
+	console input.Console,
 ) (*Manager, error) {
 	cfgRoot, err := config.GetUserConfigDir()
 	if err != nil {
@@ -129,6 +132,8 @@ func NewManager(
 		ghClient:            ghClient,
 		httpClient:          httpClient,
 		launchBrowserFn:     browser.OpenURL,
+		console:             console,
+		pausedConsole:       input.NewPausedConsole(console),
 	}, nil
 }
 
@@ -423,7 +428,7 @@ func (m *Manager) LoginInteractive(
 }
 
 func (m *Manager) LoginWithDeviceCode(
-	ctx context.Context, console input.Console, tenantID string, scopes []string) (azcore.TokenCredential, error) {
+	ctx context.Context, tenantID string, scopes []string) (azcore.TokenCredential, error) {
 	if scopes == nil {
 		scopes = LoginScopes
 	}
@@ -437,20 +442,24 @@ func (m *Manager) LoginWithDeviceCode(
 		return nil, err
 	}
 
-	console.Message(ctx, fmt.Sprintf("Start by copying the next code: %s", output.WithBold(code.UserCode())))
-	console.Message(ctx, "Then press enter and continue to log in from your browser...")
-	_ = bufio.NewScanner(console.Handles().Stdin).Scan()
+	// paused console will block terminal until pressing enter
+	m.pausedConsole.MessageUxItem(ctx, &ux.MultilineMessage{
+		Lines: []string{
+			fmt.Sprintf("Start by copying the next code: %s", output.WithBold(code.UserCode())),
+			"Then press enter and continue to log in from your browser...",
+		},
+	})
 
 	url := "https://login.microsoftonline.com/common/oauth2/deviceauth"
 	if err := m.launchBrowserFn(url); err != nil {
-		console.Message(ctx, fmt.Sprintf("Error launching browser. Manually go to: %s", url))
+		m.console.Message(ctx, fmt.Sprintf("Error launching browser. Manually go to: %s", url))
 	}
-	console.Message(ctx, "Waiting for you to complete authentication in the browser...")
+	m.console.Message(ctx, "Waiting for you to complete authentication in the browser...")
 	res, err := code.AuthenticationResult(ctx)
 	if err != nil {
 		return nil, err
 	}
-	console.Message(ctx, "Device code authentication completed.")
+	m.console.Message(ctx, "Device code authentication completed.")
 
 	if err := m.saveLoginForPublicClient(res); err != nil {
 		return nil, err

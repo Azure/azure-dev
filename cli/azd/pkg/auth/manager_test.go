@@ -21,6 +21,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/github"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/stretchr/testify/require"
 )
 
@@ -229,13 +230,13 @@ func TestLoginDeviceCode(t *testing.T) {
 		configManager:     newMemoryConfigManager(),
 		userConfigManager: newMemoryUserConfigManager(),
 		publicClient:      &mockPublicClient{},
+		launchBrowserFn:   func(url string) error { return nil },
 	}
 
-	buf := bytes.Buffer{}
+	console := mockinput.NewMockConsole()
+	cred, err := m.LoginWithDeviceCode(context.Background(), console, "", nil)
 
-	cred, err := m.LoginWithDeviceCode(context.Background(), &buf, "", nil)
-
-	require.Regexp(t, "using the code 123-456", buf.String())
+	require.Regexp(t, "Start by copying the next code: 123-456", console.Output())
 
 	require.NoError(t, err)
 	require.IsType(t, new(azdCredential), cred)
@@ -374,6 +375,10 @@ type mockDeviceCode struct {
 
 func (m *mockDeviceCode) Message() string {
 	return "Complete the device code flow on your second device using the code 123-456"
+}
+
+func (m *mockDeviceCode) UserCode() string {
+	return "123-456"
 }
 
 func (m *mockDeviceCode) AuthenticationResult(ctx context.Context) (public.AuthResult, error) {

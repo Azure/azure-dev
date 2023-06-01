@@ -20,6 +20,7 @@ type publicClient interface {
 
 type deviceCodeResult interface {
 	Message() string
+	UserCode() string
 	AuthenticationResult(context.Context) (public.AuthResult, error)
 }
 
@@ -73,6 +74,10 @@ type msalDeviceCodeAdapter struct {
 
 func (m *msalDeviceCodeAdapter) Message() string {
 	return m.code.Result.Message
+}
+
+func (m *msalDeviceCodeAdapter) UserCode() string {
+	return m.code.Result.UserCode
 }
 
 func (m *msalDeviceCodeAdapter) AuthenticationResult(ctx context.Context) (public.AuthResult, error) {

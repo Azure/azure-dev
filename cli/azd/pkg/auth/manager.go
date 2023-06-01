@@ -450,7 +450,7 @@ func (m *Manager) LoginWithDeviceCode(
 		},
 	})
 
-	url := "https://login.microsoftonline.com/common/oauth2/deviceauth"
+	url := "https://microsoft.com/devicelogin"
 	if err := m.launchBrowserFn(url); err != nil {
 		m.console.Message(ctx, fmt.Sprintf("Error launching browser. Manually go to: %s", url))
 	}

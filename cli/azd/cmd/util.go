@@ -8,10 +8,12 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -294,4 +296,10 @@ func getTargetServiceName(
 	}
 
 	return targetServiceName, nil
+}
+
+// Calculate the total time since t, excluding user interaction time.
+func since(t time.Time) time.Duration {
+	userInteractTime := tracing.InteractTimeMs.Load()
+	return time.Since(t) - time.Duration(userInteractTime)*time.Millisecond
 }

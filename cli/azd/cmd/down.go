@@ -120,7 +120,7 @@ func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			Header: fmt.Sprintf("Your application was removed from Azure in %s.", ux.DurationAsText(time.Since(startTime))),
+			Header: fmt.Sprintf("Your application was removed from Azure in %s.", ux.DurationAsText(since(startTime))),
 		},
 	}, nil
 }

@@ -1,9 +1,3 @@
-// Copyright (c) Microsoft Corporation. All rights reserved.
-// Licensed under the MIT License.
-
-// Package terraform contains an implementation of provider.Provider for Terraform. This
-// provider is registered for use when this package is imported, and can be imported for
-// side effects only to register the provider, e.g.:
 package terraform
 
 import (

@@ -33,8 +33,22 @@ type AppOptions struct {
 }
 
 func NewAppOptions() *AppOptions {
+	var client httputil.HttpClient
+	if os.Getenv("AZURE_RECORD_ID") != "" &&
+		os.Getenv("AZURE_RECORD_MODE") != "" {
+		client = &recordClient{
+			httpClient: &http.Client{},
+			additionalHeaders: map[string]string{
+				"x-recording-id":   os.Getenv("AZURE_RECORD_ID"),
+				"x-recording-mode": os.Getenv("AZURE_RECORD_MODE"),
+			},
+		}
+	} else {
+		client = &http.Client{}
+	}
+
 	return &AppOptions{
-		HttpClient: &http.Client{},
+		HttpClient: client,
 		Clock:      clock.New(),
 		ConsoleHandles: input.ConsoleHandles{
 			Stdin:  os.Stdin,
@@ -42,6 +56,19 @@ func NewAppOptions() *AppOptions {
 			Stderr: os.Stderr,
 		},
 	}
+}
+
+type recordClient struct {
+	additionalHeaders map[string]string
+	httpClient        *http.Client
+}
+
+func (c *recordClient) Do(req *http.Request) (*http.Response, error) {
+	for key, value := range c.additionalHeaders {
+		req.Header.Add(key, value)
+	}
+
+	return c.httpClient.Do(req)
 }
 
 // Creates the root Cobra command for AZD.

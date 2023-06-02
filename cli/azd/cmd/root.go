@@ -5,14 +5,16 @@ package cmd
 
 import (
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
+	"github.com/benbjohnson/clock"
 
-	// Importing for infrastructure provider plugin registrations
-
+	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -21,10 +23,39 @@ import (
 	"github.com/spf13/cobra"
 )
 
+// AppOptions contains the options for constructing the application.
+// The default options used by the application are created by calling NewAppOptions().
+// In integration tests, this may be overridden.
+type AppOptions struct {
+	HttpClient     httputil.HttpClient
+	Clock          clock.Clock
+	ConsoleHandles input.ConsoleHandles
+}
+
+func NewAppOptions() *AppOptions {
+	return &AppOptions{
+		HttpClient: &http.Client{},
+		Clock:      clock.New(),
+		ConsoleHandles: input.ConsoleHandles{
+			Stdin:  os.Stdin,
+			Stdout: os.Stdout,
+			Stderr: os.Stderr,
+		},
+	}
+}
+
 // Creates the root Cobra command for AZD.
 // staticHelp - False, except for running for doc generation
 // middlewareChain - nil, except for running unit tests
-func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistration) *cobra.Command {
+// appOptions - nil, except for running integration tests
+func NewRootCmd(
+	staticHelp bool,
+	middlewareChain []*actions.MiddlewareRegistration,
+	appOptions *AppOptions) *cobra.Command {
+	if appOptions == nil {
+		appOptions = NewAppOptions()
+	}
+
 	prevDir := ""
 	opts := &internal.GlobalCommandOptions{GenerateStaticHelp: staticHelp}
 	opts.EnableTelemetry = telemetry.IsTelemetryEnabled()
@@ -300,7 +331,7 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 			return !descriptor.Options.DisableTelemetry
 		})
 
-	registerCommonDependencies(ioc.Global)
+	registerCommonDependencies(*appOptions, ioc.Global)
 	cobraBuilder := NewCobraBuilder(ioc.Global)
 
 	// Compose the hierarchy of action descriptions into cobra commands

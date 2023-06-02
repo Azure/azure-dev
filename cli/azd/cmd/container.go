@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -87,32 +86,26 @@ func resolveAction[T actions.Action](container *ioc.NestedContainer, actionName 
 }
 
 // Registers common Azd dependencies
-func registerCommonDependencies(container *ioc.NestedContainer) {
+func registerCommonDependencies(options AppOptions, container *ioc.NestedContainer) {
 	container.RegisterSingleton(output.GetCommandFormatter)
 
 	container.RegisterSingleton(func(
 		rootOptions *internal.GlobalCommandOptions,
-		formatter output.Formatter,
-		cmd *cobra.Command) input.Console {
-		writer := cmd.OutOrStdout()
+		formatter output.Formatter) input.Console {
+		writer := options.ConsoleHandles.Stdout
 		// When using JSON formatting, we want to ensure we always write messages from the console to stderr.
 		if formatter != nil && formatter.Kind() == output.JsonFormat {
-			writer = cmd.ErrOrStderr()
+			writer = options.ConsoleHandles.Stderr
 		}
 
 		if os.Getenv("NO_COLOR") != "" {
 			writer = colorable.NewNonColorable(writer)
 		}
 
-		isTerminal := cmd.OutOrStdout() == os.Stdout &&
-			cmd.InOrStdin() == os.Stdin && isatty.IsTerminal(os.Stdin.Fd()) &&
-			isatty.IsTerminal(os.Stdout.Fd())
+		isTerminal := options.ConsoleHandles.Stdin == os.Stdin && isatty.IsTerminal(os.Stdin.Fd()) &&
+			options.ConsoleHandles.Stdout == os.Stdout && isatty.IsTerminal(os.Stdout.Fd())
 
-		return input.NewConsole(rootOptions.NoPrompt, isTerminal, writer, input.ConsoleHandles{
-			Stdin:  cmd.InOrStdin(),
-			Stdout: cmd.OutOrStdout(),
-			Stderr: cmd.ErrOrStderr(),
-		}, formatter)
+		return input.NewConsole(rootOptions.NoPrompt, isTerminal, writer, options.ConsoleHandles, formatter)
 	})
 
 	container.RegisterSingleton(func(console input.Console, rootOptions *internal.GlobalCommandOptions) exec.CommandRunner {
@@ -126,7 +119,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	})
 	container.RegisterSingleton(input.NewConsoleMessaging)
 
-	container.RegisterSingleton(func() httputil.HttpClient { return &http.Client{} })
+	container.RegisterSingleton(func() httputil.HttpClient { return options.HttpClient })
 
 	// Auth
 	container.RegisterSingleton(auth.NewLoggedInGuard)
@@ -329,7 +322,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	}
 
 	// Other
-	container.RegisterSingleton(clock.New)
+	container.RegisterSingleton(func() clock.Clock { return options.Clock })
 
 	// Service Targets
 	serviceTargetMap := map[project.ServiceTargetKind]any{

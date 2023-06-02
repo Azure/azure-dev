@@ -266,15 +266,13 @@ func (cli *azCli) applyRoleAssignmentWithRetry(
 
 			// If the response is a 403 then the required role is missing.
 			if errors.As(err, &responseError) && responseError.StatusCode == http.StatusForbidden {
-				return retry.RetryableError(
-					fmt.Errorf(
-						"failed assigning role assignment '%s' to service principal '%s' : %w \n%s",
-						*roleDefinition.Name,
-						servicePrincipal.DisplayName,
-						err,
-						output.WithHighLightFormat("Suggested Action: Add `User Access Administrator` or `Owner` azure roles to "+
-							"your subscription. Those roles are required to manage azure resources\n"),
-					),
+				return fmt.Errorf(
+					"failed assigning role assignment '%s' to service principal '%s' : %w \n%s",
+					*roleDefinition.Name,
+					servicePrincipal.DisplayName,
+					err,
+					output.WithHighLightFormat("Suggested Action: Ensure you have either the `User Access Administrator`, `Owner` or custom azure roles assigned"+
+						" to your subscription to perform action 'Microsoft.Authorization/roleAssignments/write', in order to manage role assignments\n"),
 				)
 			}
 

@@ -7,17 +7,13 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -57,54 +53,31 @@ func newDownCmd() *cobra.Command {
 }
 
 type downAction struct {
-	flags               *downFlags
-	accountManager      account.Manager
-	azCli               azcli.AzCli
-	azdCtx              *azdcontext.AzdContext
-	env                 *environment.Environment
-	console             input.Console
-	commandRunner       exec.CommandRunner
-	projectConfig       *project.ProjectConfig
-	userProfileService  *azcli.UserProfileService
-	subResolver         account.SubscriptionTenantResolver
-	alphaFeatureManager *alpha.FeatureManager
+	flags            *downFlags
+	provisionManager *provisioning.Manager
+	env              *environment.Environment
+	console          input.Console
+	projectConfig    *project.ProjectConfig
 }
 
 func newDownAction(
 	flags *downFlags,
-	accountManager account.Manager,
-	azCli azcli.AzCli,
-	azdCtx *azdcontext.AzdContext,
+	provisionManager *provisioning.Manager,
 	env *environment.Environment,
 	projectConfig *project.ProjectConfig,
 	console input.Console,
-	commandRunner exec.CommandRunner,
-	userProfileService *azcli.UserProfileService,
-	subResolver account.SubscriptionTenantResolver,
 	alphaFeatureManager *alpha.FeatureManager,
 ) actions.Action {
 	return &downAction{
-		flags:               flags,
-		accountManager:      accountManager,
-		azCli:               azCli,
-		azdCtx:              azdCtx,
-		env:                 env,
-		console:             console,
-		commandRunner:       commandRunner,
-		projectConfig:       projectConfig,
-		userProfileService:  userProfileService,
-		subResolver:         subResolver,
-		alphaFeatureManager: alphaFeatureManager,
+		flags:            flags,
+		provisionManager: provisionManager,
+		env:              env,
+		console:          console,
+		projectConfig:    projectConfig,
 	}
 }
 
 func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	// silent manager for running Plan()
-	infraManager, err := createProvisioningManager(ctx, a, a.console)
-	if err != nil {
-		return nil, fmt.Errorf("creating provisioning manager: %w", err)
-	}
-
 	// Command title
 	a.console.MessageUxItem(ctx, &ux.MessageTitle{
 		Title:     "Deleting all resources and deployed code on Azure (azd down)",
@@ -113,8 +86,12 @@ func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	startTime := time.Now()
 
+	if err := a.provisionManager.Initialize(ctx, a.projectConfig.Path, a.projectConfig.Infra); err != nil {
+		return nil, fmt.Errorf("initializing provisioning manager: %w", err)
+	}
+
 	destroyOptions := provisioning.NewDestroyOptions(a.flags.forceDelete, a.flags.purgeDelete)
-	if _, err = infraManager.Destroy(ctx, destroyOptions); err != nil {
+	if _, err := a.provisionManager.Destroy(ctx, destroyOptions); err != nil {
 		return nil, fmt.Errorf("deleting infrastructure: %w", err)
 	}
 
@@ -123,24 +100,6 @@ func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			Header: fmt.Sprintf("Your application was removed from Azure in %s.", ux.DurationAsText(since(startTime))),
 		},
 	}, nil
-}
-
-func createProvisioningManager(ctx context.Context, a *downAction, console input.Console) (*provisioning.Manager, error) {
-	infraManager, err := provisioning.NewManager(
-		ctx,
-		a.env,
-		a.projectConfig.Path,
-		a.projectConfig.Infra,
-		a.console.IsUnformatted(),
-		a.azCli,
-		console,
-		a.commandRunner,
-		a.accountManager,
-		a.userProfileService,
-		a.subResolver,
-		a.alphaFeatureManager,
-	)
-	return infraManager, err
 }
 
 func getCmdDownHelpDescription(*cobra.Command) string {

@@ -17,10 +17,10 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
+	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -123,6 +123,7 @@ type pipelineConfigAction struct {
 	commandRunner      exec.CommandRunner
 	httpClient         httputil.HttpClient
 	credentialProvider account.SubscriptionCredentialProvider
+	prompters          prompt.Prompter
 }
 
 func newPipelineConfigAction(
@@ -136,6 +137,7 @@ func newPipelineConfigAction(
 	flags *pipelineConfigFlags,
 	commandRunner exec.CommandRunner,
 	httpClient httputil.HttpClient,
+	prompters prompt.Prompter,
 ) actions.Action {
 	pca := &pipelineConfigAction{
 		flags:              flags,
@@ -150,6 +152,7 @@ func newPipelineConfigAction(
 		console:        console,
 		commandRunner:  commandRunner,
 		httpClient:     httpClient,
+		prompters:      prompters,
 	}
 
 	return pca
@@ -157,7 +160,7 @@ func newPipelineConfigAction(
 
 // Run implements action interface
 func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	err := provisioning.EnsureEnv(ctx, p.console, p.env, p.accountManager)
+	err := p.prompters.EnsureEnv(ctx)
 	if err != nil {
 		return nil, err
 	}

@@ -110,14 +110,15 @@ func TestReportProgress(t *testing.T) {
 	outputLength := 0
 	mockResourceManager := mockResourceManager{}
 	progressDisplay := NewProvisioningProgressDisplay(&mockResourceManager, mockContext.Console, scope)
-	progressReport, _ := progressDisplay.ReportProgress(*mockContext.Context, &startTime)
+	err := progressDisplay.ReportProgress(*mockContext.Context, &startTime)
+	require.NoError(t, err)
+
 	outputLength++
 	assert.Len(t, mockContext.Console.Output(), outputLength)
 	assert.Contains(t, mockContext.Console.Output()[0], "You can view detailed progress in the Azure Portal:")
-	assert.Equal(t, defaultProgressTitle, progressReport.Message)
 
 	mockResourceManager.AddInProgressOperation()
-	progressReport, _ = progressDisplay.ReportProgress(*mockContext.Context, &startTime)
+	err = progressDisplay.ReportProgress(*mockContext.Context, &startTime)
+	require.NoError(t, err)
 	assert.Len(t, mockContext.Console.Output(), outputLength)
-	assert.Equal(t, "Provisioning Azure resources", progressReport.Message)
 }

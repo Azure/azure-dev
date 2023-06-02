@@ -18,7 +18,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 )
 
-const defaultProgressTitle string = "Provisioning Azure resources"
 const succeededProvisioningState string = "Succeeded"
 const runningProvisioningState string = "Running"
 const failedProvisioningState string = "Failed"
@@ -50,18 +49,13 @@ func NewProvisioningProgressDisplay(
 // ReportProgress reports the current deployment progress, setting the currently executing operation title and logging
 // progress.
 func (display *ProvisioningProgressDisplay) ReportProgress(
-	ctx context.Context, queryStart *time.Time) (*DeployProgress, error) {
-	progress := DeployProgress{
-		Timestamp: time.Now(),
-		Message:   defaultProgressTitle,
-	}
-
+	ctx context.Context, queryStart *time.Time) error {
 	if !display.deploymentStarted {
 		_, err := display.target.Deployment(ctx)
 		if err != nil {
 			// Return default progress
 			log.Printf("error while reporting progress: %s", err.Error())
-			return &progress, nil
+			return nil
 		}
 
 		display.deploymentStarted = true
@@ -81,7 +75,7 @@ func (display *ProvisioningProgressDisplay) ReportProgress(
 	operations, err := display.resourceManager.GetDeploymentResourceOperations(ctx, display.target, queryStart)
 	if err != nil {
 		// Status display is best-effort activity.
-		return &progress, err
+		return err
 	}
 
 	newlyDeployedResources := []*armresources.DeploymentOperation{}
@@ -117,7 +111,7 @@ func (display *ProvisioningProgressDisplay) ReportProgress(
 
 	displayedResources := append(newlyDeployedResources, newlyFailedResources...)
 	display.logNewlyCreatedResources(ctx, displayedResources, runningDeployments)
-	return &progress, nil
+	return nil
 }
 
 func (display *ProvisioningProgressDisplay) logNewlyCreatedResources(

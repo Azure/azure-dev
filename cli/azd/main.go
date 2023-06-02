@@ -31,12 +31,26 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/blang/semver/v4"
 	"github.com/mattn/go-colorable"
+	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
 
 func main() {
-	ctx := context.Background()
+	err := ExecuteMain()
+	if err != nil {
+		os.Exit(1)
+	}
+}
 
+// The main entrypoint for the CLI invoked typically from main().
+func ExecuteMain() error {
+	cmd := cmd.NewRootCmd(false, nil, nil)
+	return Execute(cmd)
+}
+
+// Executes the command (typically the root command).
+func Execute(cmd *cobra.Command) error {
+	ctx := context.Background()
 	restoreColorMode := colorable.EnableColorsStdout(nil)
 	defer restoreColorMode()
 
@@ -57,7 +71,8 @@ func main() {
 	latest := make(chan semver.Version)
 	go fetchLatestVersion(latest)
 
-	cmdErr := cmd.NewRootCmd(false, nil).ExecuteContext(ctx)
+	cmdErr := cmd.ExecuteContext(ctx)
+
 	latestVersion, ok := <-latest
 
 	// If we were able to fetch a latest version, check to see if we are up to date and
@@ -142,10 +157,7 @@ func main() {
 			}
 		}
 	}
-
-	if cmdErr != nil {
-		os.Exit(1)
-	}
+	return cmdErr
 }
 
 // azdConfigDir is the name of the folder where `azd` writes user wide configuration data.

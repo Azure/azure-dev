@@ -4,6 +4,14 @@ import (
 	"context"
 )
 
+type Publisher interface {
+	Send(ctx context.Context, msg *Message) error
+}
+
+type Subscriber interface {
+	Subscribe(ctx context.Context, filter MessageFilter, handler MessageHandler) (*Subscription, error)
+}
+
 type Service struct {
 	topics map[string]*Topic
 }
@@ -25,22 +33,19 @@ func (s *Service) WithTopic(ctx context.Context, topicName string) context.Conte
 	return context.WithValue(ctx, topicContextKey, topicName)
 }
 
-func (s *Service) Send(ctx context.Context, msg *Message) {
-	topic := s.ensureTopic(ctx)
-	topic.Send(ctx, msg)
+func (s *Service) Send(ctx context.Context, msg *Message) error {
+	return s.Topic(ctx).Send(ctx, msg)
 }
 
-func (s *Service) Subscribe(ctx context.Context, filter MessageFilter, handler MessageHandler) *Subscription {
-	topic := s.ensureTopic(ctx)
-	return topic.Subscribe(ctx, filter, handler)
+func (s *Service) Subscribe(ctx context.Context, filter MessageFilter, handler MessageHandler) (*Subscription, error) {
+	return s.Topic(ctx).Subscribe(ctx, filter, handler)
 }
 
-func (s *Service) ensureTopic(ctx context.Context) *Topic {
+func (s *Service) Topic(ctx context.Context) *Topic {
 	topicName := s.getTopicName(ctx)
 	topic, has := s.topics[topicName]
 	if !has {
-		topic = NewTopic(topicName)
-		topic.init(ctx)
+		topic = NewTopic(ctx, topicName)
 		s.topics[topicName] = topic
 	}
 

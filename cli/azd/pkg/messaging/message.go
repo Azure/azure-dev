@@ -1,7 +1,6 @@
 package messaging
 
 import (
-	"context"
 	"time"
 )
 
@@ -18,10 +17,6 @@ type Message struct {
 	Tags      map[string]any
 }
 
-func NewSimpleMessage(message string) *Message {
-	return NewMessage(SimpleMessage, message)
-}
-
 func NewMessage[T any](kind MessageKind, value T) *Message {
 	return &Message{
 		Type:      kind,
@@ -29,12 +24,4 @@ func NewMessage[T any](kind MessageKind, value T) *Message {
 		Timestamp: time.Now(),
 		Tags:      map[string]any{},
 	}
-}
-
-type Publisher interface {
-	Send(ctx context.Context, msg *Message)
-}
-
-type Subscriber interface {
-	Subscribe(ctx context.Context, filter MessageFilter, handler MessageHandler) *Subscription
 }

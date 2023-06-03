@@ -389,6 +389,12 @@ func (p *BicepProvider) Destroy(ctx context.Context, options DestroyOptions) (*D
 		return nil, fmt.Errorf("getting key vaults to purge: %w", err)
 	}
 
+	// TODO: Report progress, "Getting Managed HSMs to purge"
+	managedHSMs, err := p.getManagedHSMsToPurge(ctx, groupedResources)
+	if err != nil {
+		return nil, fmt.Errorf("getting managed hsms to purge: %w", err)
+	}
+
 	// TODO: Report progress, "Getting App Configurations to purge"
 	appConfigs, err := p.getAppConfigsToPurge(ctx, groupedResources)
 	if err != nil {
@@ -418,6 +424,13 @@ func (p *BicepProvider) Destroy(ctx context.Context, options DestroyOptions) (*D
 			return p.purgeKeyVaults(ctx, keyVaults, options, skipPurge)
 		},
 	}
+	managedHSMsPurge := itemToPurge{
+		resourceType: "Managed HSM",
+		count:        len(managedHSMs),
+		purge: func(skipPurge bool, self *itemToPurge) error {
+			return p.purgeManagedHSMs(ctx, managedHSMs, options, skipPurge)
+		},
+	}
 	appConfigsPurge := itemToPurge{
 		resourceType: "App Configuration",
 		count:        len(appConfigs),
@@ -434,7 +447,7 @@ func (p *BicepProvider) Destroy(ctx context.Context, options DestroyOptions) (*D
 	}
 
 	var purgeItem []itemToPurge
-	for _, item := range []itemToPurge{keyVaultsPurge, appConfigsPurge, aPIManagement} {
+	for _, item := range []itemToPurge{keyVaultsPurge, managedHSMsPurge, appConfigsPurge, aPIManagement} {
 		if item.count > 0 {
 			purgeItem = append(purgeItem, item)
 		}
@@ -778,6 +791,46 @@ func (p *BicepProvider) getKeyVaultsToPurge(
 	return vaultsToPurge, nil
 }
 
+func (p *BicepProvider) getManagedHSMs(
+	ctx context.Context,
+	groupedResources map[string][]azcli.AzCliResource,
+) ([]*azcli.AzCliManagedHSM, error) {
+	managedHSMs := []*azcli.AzCliManagedHSM{}
+
+	for resourceGroup, groupResources := range groupedResources {
+		for _, resource := range groupResources {
+			if resource.Type == string(infra.AzureResourceTypeManagedHSM) {
+				managedHSM, err := p.azCli.GetManagedHSM(ctx, azure.SubscriptionFromRID(resource.Id), resourceGroup, resource.Name)
+				if err != nil {
+					return nil, fmt.Errorf("listing managed hsm %s properties: %w", resource.Name, err)
+				}
+				managedHSMs = append(managedHSMs, managedHSM)
+			}
+		}
+	}
+
+	return managedHSMs, nil
+}
+
+func (p *BicepProvider) getManagedHSMsToPurge(
+	ctx context.Context,
+	groupedResources map[string][]azcli.AzCliResource,
+) ([]*azcli.AzCliManagedHSM, error) {
+	managedHSMs, err := p.getManagedHSMs(ctx, groupedResources)
+	if err != nil {
+		return nil, err
+	}
+
+	managedHSMsToPurge := []*azcli.AzCliManagedHSM{}
+	for _, v := range managedHSMs {
+		if v.Properties.EnableSoftDelete && !v.Properties.EnablePurgeProtection {
+			managedHSMsToPurge = append(managedHSMsToPurge, v)
+		}
+	}
+
+	return managedHSMsToPurge, nil
+}
+
 func (p *BicepProvider) getCognitiveAccountsToPurge(
 	ctx context.Context,
 	groupedResources map[string][]azcli.AzCliResource,
@@ -826,12 +879,30 @@ func (p *BicepProvider) purgeKeyVaults(
 	skip bool,
 ) error {
 	for _, keyVault := range keyVaults {
-		err := p.runPurgeAsStep(ctx, "key vault", keyVault.Name, func() error {
+		err := p.runPurgeAsStep(ctx, "Key Vault", keyVault.Name, func() error {
 			return p.azCli.PurgeKeyVault(
 				ctx, azure.SubscriptionFromRID(keyVault.Id), keyVault.Name, keyVault.Location)
 		}, skip)
 		if err != nil {
 			return fmt.Errorf("purging key vault %s: %w", keyVault.Name, err)
+		}
+	}
+	return nil
+}
+
+func (p *BicepProvider) purgeManagedHSMs(
+	ctx context.Context,
+	managedHSMs []*azcli.AzCliManagedHSM,
+	options DestroyOptions,
+	skip bool,
+) error {
+	for _, managedHSM := range managedHSMs {
+		err := p.runPurgeAsStep(ctx, "Managed HSM", managedHSM.Name, func() error {
+			return p.azCli.PurgeManagedHSM(
+				ctx, azure.SubscriptionFromRID(managedHSM.Id), managedHSM.Name, managedHSM.Location)
+		}, skip)
+		if err != nil {
+			return fmt.Errorf("purging managed hsm %s: %w", managedHSM.Name, err)
 		}
 	}
 	return nil

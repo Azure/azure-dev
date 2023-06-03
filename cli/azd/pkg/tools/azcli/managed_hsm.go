@@ -68,7 +68,10 @@ func (cli *azCli) PurgeManagedHSM(ctx context.Context, subscriptionId string, hs
 }
 
 // Creates a Managed HSM client for ARM control plane operations
-func (cli *azCli) createManagedHSMClient(ctx context.Context, subscriptionId string) (*armkeyvault.ManagedHsmsClient, error) {
+func (cli *azCli) createManagedHSMClient(
+	ctx context.Context,
+	subscriptionId string,
+) (*armkeyvault.ManagedHsmsClient, error) {
 	credential, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
 	if err != nil {
 		return nil, err

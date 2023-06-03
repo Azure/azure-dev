@@ -50,14 +50,4 @@ type Provider interface {
 	Plan(ctx context.Context) (*DeploymentPlan, error)
 	Deploy(ctx context.Context, plan *DeploymentPlan) (*DeployResult, error)
 	Destroy(ctx context.Context, options DestroyOptions) (*DestroyResult, error)
-		env,
-		projectPath,
-		infraOptions,
-		console,
-		azCli,
-		commandRunner,
-		prompters,
-		principalProvider,
-		alphaFeatureManager,
-	)
 }

@@ -42,7 +42,7 @@ func (cli *azCli) GetKeyVault(
 
 	vault, err := client.Get(ctx, resourceGroupName, vaultName, nil)
 	if err != nil {
-		return nil, fmt.Errorf("getting keyvault: %w", err)
+		return nil, fmt.Errorf("getting key vault: %w", err)
 	}
 
 	return &AzCliKeyVault{

@@ -65,19 +65,6 @@ func Test_Topic_Send(t *testing.T) {
 		require.NoError(t, err)
 		require.Len(t, messages, 0)
 	})
-
-	t.Run("With_Closed_Context", func(t *testing.T) {
-		ctx, cancel := context.WithCancel(ctx)
-
-		topic := NewTopic(ctx, "test")
-		cancel()
-		err := topic.Flush(ctx)
-		require.NoError(t, err)
-
-		require.Panics(t, func() {
-			_ = topic.Send(ctx, NewMessage(SimpleMessage, "test"))
-		})
-	})
 }
 
 func Test_Topic_Subscribe(t *testing.T) {

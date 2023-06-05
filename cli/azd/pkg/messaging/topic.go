@@ -8,6 +8,7 @@ import (
 	"golang.org/x/exp/slices"
 )
 
+// Topic receives messages from the messaging system and broadcasts them to subscribers.
 type Topic struct {
 	Name        string
 	channel     chan *Message
@@ -16,6 +17,7 @@ type Topic struct {
 	closed      bool
 }
 
+// NewTopic creates a new topic with the specified name.
 func NewTopic(ctx context.Context, name string) *Topic {
 	topic := &Topic{
 		Name:        name,
@@ -27,6 +29,8 @@ func NewTopic(ctx context.Context, name string) *Topic {
 	return topic
 }
 
+// Subscribe subscribes to the topic with the specified filter and handler.
+// The filter is used to filter messages. If not filter is specified, all messages are received.
 func (t *Topic) Subscribe(ctx context.Context, filter MessageFilter, handler MessageHandler) (*Subscription, error) {
 	if err := t.ensureOpen(); err != nil {
 		return nil, err
@@ -42,6 +46,7 @@ func (t *Topic) Subscribe(ctx context.Context, filter MessageFilter, handler Mes
 	return subscription, nil
 }
 
+// Unsubscribe unsubscribes from the topic.
 func (t *Topic) Unsubscribe(ctx context.Context, subscription *Subscription) {
 	index := slices.IndexFunc(t.subscribers, func(s *Subscription) bool {
 		return s == subscription
@@ -55,6 +60,7 @@ func (t *Topic) Unsubscribe(ctx context.Context, subscription *Subscription) {
 	t.subscribers = append(t.subscribers[:index], t.subscribers[index+1:]...)
 }
 
+// Send sends a message to the topic.
 func (t *Topic) Send(ctx context.Context, msg *Message) error {
 	if err := t.ensureOpen(); err != nil {
 		return err
@@ -68,6 +74,7 @@ func (t *Topic) Send(ctx context.Context, msg *Message) error {
 	return nil
 }
 
+// Close closes the topic.
 func (t *Topic) Close(ctx context.Context) error {
 	if err := t.ensureOpen(); err != nil {
 		return err
@@ -84,6 +91,8 @@ func (t *Topic) Close(ctx context.Context) error {
 	return nil
 }
 
+// Flush flushes the topic.
+// This method blocks until all messages have been delivered to all subscribers.
 func (t *Topic) Flush(ctx context.Context) error {
 	if err := t.ensureOpen(); err != nil {
 		return err

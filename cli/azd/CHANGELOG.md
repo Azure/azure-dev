@@ -4,6 +4,8 @@
 
 ### Features Added
 
+- [[2352]](https://github.com/Azure/azure-dev/issues/2352) Add `--parameters`/`-p` to `azd provision` and `up` to pass parameters to deployment.
+
 ### Breaking Changes
 
 ### Bugs Fixed

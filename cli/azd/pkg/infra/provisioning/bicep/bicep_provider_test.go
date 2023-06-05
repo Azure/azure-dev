@@ -137,7 +137,15 @@ func TestBicepDeploy(t *testing.T) {
 	infraProvider := createBicepProvider(t, mockContext)
 
 	deploymentPlan := DeploymentPlan{
-		Deployment: Deployment{},
+		Deployment: Deployment{
+			Parameters: map[string]InputParameter{
+				"stringParam": {
+					Type:     "string",
+					Override: true,
+					Value:    "value",
+				},
+			},
+		},
 		Details: BicepDeploymentDetails{
 			Template:   azure.RawArmTemplate("{}"),
 			Parameters: testArmParameters,
@@ -154,7 +162,10 @@ func TestBicepDeploy(t *testing.T) {
 
 	require.Nil(t, err)
 	require.NotNil(t, deployResult)
-	require.Equal(t, deployResult.Deployment.Outputs["WEBSITE_URL"].Value, expectedWebsiteUrl)
+	require.Equal(t, expectedWebsiteUrl, deployResult.Deployment.Outputs["WEBSITE_URL"].Value)
+
+	bicepDetails := deploymentPlan.Details.(BicepDeploymentDetails)
+	require.Equal(t, "value", bicepDetails.Parameters["stringParam"].Value)
 }
 
 func TestBicepDestroy(t *testing.T) {
@@ -423,6 +434,7 @@ func prepareBicepMocks(
 		Parameters: azure.ArmTemplateParameterDefinitions{
 			"environmentName": {Type: "string"},
 			"location":        {Type: "string"},
+			"stringParam":     {Type: "string"},
 		},
 		Outputs: azure.ArmTemplateOutputs{
 			"WEBSITE_URL": {Type: "string"},
@@ -641,6 +653,7 @@ var testArmParameters = azure.ArmParameters{
 	"location": {
 		Value: "West US",
 	},
+	"stringParam": azure.ArmParameterValue{},
 }
 
 func getKeyVaultMock(mockContext *mocks.MockContext, keyVaultString string, name string, location string) {

@@ -17,9 +17,11 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"go.uber.org/multierr"
+	"golang.org/x/exp/slices"
 )
 
 type provisionFlags struct {
+	parameters map[string]string
 	noProgress bool
 	global     *internal.GlobalCommandOptions
 	*envFlag
@@ -31,6 +33,12 @@ func (i *provisionFlags) Bind(local *pflag.FlagSet, global *internal.GlobalComma
 }
 
 func (i *provisionFlags) bindNonCommon(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+	local.StringToStringVarP(
+		&i.parameters,
+		"parameters",
+		"p",
+		map[string]string{},
+		"Template parameters as `parameter=value` pairs.")
 	local.BoolVar(&i.noProgress, "no-progress", false, "Suppresses progress information.")
 	//deprecate:Flag hide --no-progress
 	_ = local.MarkHidden("no-progress")
@@ -129,10 +137,28 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		Project: p.projectConfig,
 	}
 
+	reservedParameters := []string{
+		"environmentName",
+	}
 	err := p.projectConfig.Invoke(ctx, project.ProjectEventProvision, projectEventArgs, func() error {
 		deploymentPlan, err := p.provisionManager.Plan(ctx)
 		if err != nil {
 			return fmt.Errorf("planning deployment: %w", err)
+		}
+
+		// Specified parameters override other parameters.
+		parameters := deploymentPlan.Deployment.Parameters
+		for k, v := range p.flags.parameters {
+			if slices.Contains(reservedParameters, k) {
+				return fmt.Errorf("cannot set parameter %s", k)
+			}
+			if param, ok := parameters[k]; ok {
+				if err = param.SetValue(v); err != nil {
+					return fmt.Errorf("setting parameters: %w", err)
+				}
+				param.Override = true
+				parameters[k] = param
+			}
 		}
 
 		deployResult, err = p.provisionManager.Deploy(ctx, deploymentPlan)

@@ -20,8 +20,8 @@
             "program": "${workspaceFolder}",
 
             // Uncomment these settings to control how `azd` is launched.
-            // "cwd": "${workspaceFolder}",
-            // "args": ["provision"]
+            "cwd": "/home/heaths/src/azcrypto",
+            "args": ["provision", "--parameters", "vaultName=heathskv2"]
         },
         {
             "name": "dev-azd (launch)",

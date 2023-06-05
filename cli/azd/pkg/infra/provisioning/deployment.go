@@ -3,6 +3,11 @@
 
 package provisioning
 
+import (
+	"fmt"
+	"strconv"
+)
+
 type Deployment struct {
 	Parameters map[string]InputParameter
 	Outputs    map[string]OutputParameter
@@ -22,6 +27,7 @@ type InputParameter struct {
 	Type         string
 	DefaultValue interface{}
 	Value        interface{}
+	Override     bool
 }
 
 type OutputParameter struct {
@@ -49,4 +55,26 @@ func (p *InputParameter) HasValue() bool {
 
 func (p *InputParameter) HasDefaultValue() bool {
 	return p.DefaultValue != nil
+}
+
+func (p *InputParameter) SetValue(value string) error {
+	switch p.Type {
+	case string(ParameterTypeString):
+		p.Value = value
+	case string(ParameterTypeNumber):
+		i, err := strconv.Atoi(value)
+		if err != nil {
+			return err
+		}
+		p.Value = i
+	case string(ParameterTypeBoolean):
+		b, err := strconv.ParseBool(value)
+		if err != nil {
+			return err
+		}
+		p.Value = b
+	default:
+		return fmt.Errorf("conversion from string to %s not supported", p.Type)
+	}
+	return nil
 }

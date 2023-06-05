@@ -34,9 +34,10 @@ type TerraformProvider struct {
 }
 
 type TerraformDeploymentDetails struct {
-	ParameterFilePath  string
-	PlanFilePath       string
-	localStateFilePath string
+	ParameterFilePath          string
+	PlanFilePath               string
+	localStateFilePath         string
+	overrideParametersFilePath string
 }
 
 // Name gets the name of the infra provider
@@ -170,6 +171,27 @@ func (t *TerraformProvider) Deploy(ctx context.Context, deployment *DeploymentPl
 		return nil, fmt.Errorf("reading backend config: %w", err)
 	}
 
+	// Create parameter overrides file if needed.
+	overrides := make(map[string]interface{}, len(deployment.Deployment.Parameters))
+	for k, v := range deployment.Deployment.Parameters {
+		if v.Override {
+			overrides[k] = v.Value
+		}
+	}
+	if len(overrides) > 0 {
+		if terraformDeploymentData.overrideParametersFilePath == "" {
+			tmp, err := os.CreateTemp("", "*.json")
+			if err != nil {
+				return nil, fmt.Errorf("creating parameter overrides file: %w", err)
+			}
+			terraformDeploymentData.overrideParametersFilePath = tmp.Name()
+			defer func() {
+				_ = tmp.Close()
+				_ = os.Remove(tmp.Name())
+			}()
+		}
+	}
+
 	applyArgs, err := t.createApplyArgs(isRemoteBackendConfig, terraformDeploymentData)
 	if err != nil {
 		return nil, err
@@ -266,7 +288,9 @@ func (t *TerraformProvider) createPlanArgs(isRemoteBackendConfig bool) []string 
 
 // Creates the terraform apply CLI arguments
 func (t *TerraformProvider) createApplyArgs(
-	isRemoteBackendConfig bool, data TerraformDeploymentDetails) ([]string, error) {
+	isRemoteBackendConfig bool,
+	data TerraformDeploymentDetails,
+) ([]string, error) {
 	args := []string{}
 	if !isRemoteBackendConfig {
 		args = append(args, fmt.Sprintf("-state=%s", data.localStateFilePath))
@@ -276,9 +300,13 @@ func (t *TerraformProvider) createApplyArgs(
 		args = append(args, data.PlanFilePath)
 	} else {
 		if _, err := os.Stat(data.ParameterFilePath); err != nil {
-			return nil, fmt.Errorf("parameters file not found:: %w", err)
+			return nil, fmt.Errorf("parameters file not found: %w", err)
 		}
 		args = append(args, fmt.Sprintf("-var-file=%s", data.ParameterFilePath))
+	}
+
+	if data.overrideParametersFilePath != "" {
+		args = append(args, fmt.Sprintf("-var-file=%s", data.overrideParametersFilePath))
 	}
 
 	return args, nil

@@ -249,7 +249,16 @@ func (p *BicepProvider) Deploy(ctx context.Context, pd *DeploymentPlan) (*Deploy
 		done <- true
 	}()
 
+	// Override specified parameters.
 	bicepDeploymentData := pd.Details.(BicepDeploymentDetails)
+	for k, v := range pd.Deployment.Parameters {
+		if v.Override {
+			if param, ok := bicepDeploymentData.Parameters[k]; ok {
+				param.Value = v.Value
+				bicepDeploymentData.Parameters[k] = param
+			}
+		}
+	}
 
 	// Report incremental progress
 	go func() {

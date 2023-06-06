@@ -44,6 +44,7 @@ func Test_Topic_Send(t *testing.T) {
 		topic := NewTopic(ctx, "test")
 		topic.Close(ctx)
 
+		// Topic was closed before sending messages. Expect error
 		err := topic.Send(ctx, NewMessage(SimpleMessage, "test"))
 		require.Error(t, err)
 	})
@@ -61,9 +62,64 @@ func Test_Topic_Send(t *testing.T) {
 
 		topic.Unsubscribe(ctx, subscription)
 
+		// Subscription was unsubscribed before sending messages.
+		// Not expecting any error but no messages should be received
 		err = topic.Send(ctx, NewMessage(SimpleMessage, "test"))
 		require.NoError(t, err)
 		require.Len(t, messages, 0)
+	})
+}
+
+func Test_Topic_Receive(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("Single_Subscriber", func(t *testing.T) {
+		messages := []*Message{}
+
+		topic := NewTopic(ctx, "test")
+
+		sub, err := topic.Subscribe(ctx, nil, func(ctx context.Context, msg *Message) {
+			messages = append(messages, msg)
+		})
+		require.NoError(t, err)
+		require.NotNil(t, sub)
+
+		err = topic.Send(ctx, NewMessage(SimpleMessage, "test"))
+		require.NoError(t, err)
+
+		err = topic.Flush(ctx)
+		require.NoError(t, err)
+
+		require.Len(t, messages, 1)
+	})
+
+	t.Run("Multiple_Subscibers", func(t *testing.T) {
+		sub1Messages := []*Message{}
+		sub2Messages := []*Message{}
+
+		topic := NewTopic(ctx, "test")
+
+		sub1, err := topic.Subscribe(ctx, nil, func(ctx context.Context, msg *Message) {
+			sub1Messages = append(sub1Messages, msg)
+		})
+		require.NoError(t, err)
+		require.NotNil(t, sub1)
+
+		sub2, err := topic.Subscribe(ctx, nil, func(ctx context.Context, msg *Message) {
+			sub2Messages = append(sub2Messages, msg)
+		})
+		require.NoError(t, err)
+		require.NotNil(t, sub2)
+
+		// Sending a single message should be received across all subscriptions
+		err = topic.Send(ctx, NewMessage(SimpleMessage, "test"))
+		require.NoError(t, err)
+
+		err = topic.Flush(ctx)
+		require.NoError(t, err)
+
+		require.Len(t, sub1Messages, 1)
+		require.Len(t, sub2Messages, 1)
 	})
 }
 
@@ -79,6 +135,8 @@ func Test_Topic_Subscribe(t *testing.T) {
 
 	t.Run("With_Nil_Handler", func(t *testing.T) {
 		topic := NewTopic(ctx, "test")
+
+		// Subscription Handler is nil. Expect error
 		_, err := topic.Subscribe(ctx, nil, nil)
 		require.Error(t, err)
 	})
@@ -87,6 +145,7 @@ func Test_Topic_Subscribe(t *testing.T) {
 		topic := NewTopic(ctx, "test")
 		topic.Close(ctx)
 
+		// Topic was closed before subscribing. Expect error
 		_, err := topic.Subscribe(ctx, nil, func(ctx context.Context, msg *Message) {})
 		require.Error(t, err)
 	})
@@ -131,6 +190,7 @@ func Test_Topic_Close(t *testing.T) {
 		err := topic.Close(ctx)
 		require.NoError(t, err)
 
+		// Topic was already closed. Expect error
 		err = topic.Close(ctx)
 		require.Error(t, err)
 	})

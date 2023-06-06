@@ -22,6 +22,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/azure/azure-dev/cli/azd/test/recording"
 )
 
 const (
@@ -102,6 +104,7 @@ func NewCLI(t *testing.T) *CLI {
 			cmd.Args = append(cmd.Args, "-cover")
 		}
 
+		t.Logf("Running go build in %v", cmd.Dir)
 		output, err := cmd.CombinedOutput()
 		if err != nil {
 			panic(fmt.Errorf(
@@ -111,12 +114,24 @@ func NewCLI(t *testing.T) *CLI {
 				err,
 				output))
 		}
+
+		t.Logf("output: %v", output)
 	})
 
 	return &CLI{
 		T:       t,
 		AzdPath: cliPath,
 	}
+}
+
+func (cli *CLI) Proxy(session *recording.Session) {
+	if session == nil {
+		return
+	}
+
+	cli.Env = append(cli.Env,
+		"HTTP_PROXY="+session.ProxyUrl,
+		"HTTPS_PROXY="+session.ProxyUrl)
 }
 
 func (cli *CLI) RunCommandWithStdIn(ctx context.Context, stdin string, args ...string) (*CliResult, error) {
@@ -130,6 +145,8 @@ func (cli *CLI) RunCommandWithStdIn(ctx context.Context, stdin string, args ...s
 
 	if stdin != "" {
 		cmd.Stdin = strings.NewReader(stdin)
+	} else {
+		cmd.Stdin = os.Stdin
 	}
 
 	cmd.Env = cli.Env

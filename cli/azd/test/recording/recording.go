@@ -2,12 +2,13 @@ package recording
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"net/http/httputil"
+	"net/url"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -49,7 +50,22 @@ func (m modeOption) Apply(r *recordOption) {
 	r.mode = m.mode
 }
 
-func Start(t *testing.T, env *[]string, opts ...Options) {
+type Session struct {
+	ProxyUrl string
+}
+
+func (s *Session) ProxyClient() *http.Client {
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.Proxy = func(req *http.Request) (*url.URL, error) {
+		return url.Parse(s.ProxyUrl)
+	}
+	transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+	client := &http.Client{Transport: transport}
+
+	return client
+}
+
+func Start(t *testing.T, opts ...Options) *Session {
 	opt := recordOption{}
 	for _, o := range opts {
 		o.Apply(&opt)
@@ -79,7 +95,7 @@ func Start(t *testing.T, env *[]string, opts ...Options) {
 
 	writer := &logWriter{t: t}
 	log := slog.New(slog.NewTextHandler(writer, &slog.HandlerOptions{
-		Level: slog.LevelError,
+		Level: slog.LevelDebug,
 	}))
 
 	var cst *cassette.Cassette
@@ -88,7 +104,7 @@ func Start(t *testing.T, env *[]string, opts ...Options) {
 
 	switch opt.mode {
 	case Live:
-		return
+		return nil
 	case Playback:
 		var err error
 		cst, err = cassette.Load(name)
@@ -122,18 +138,19 @@ func Start(t *testing.T, env *[]string, opts ...Options) {
 	server := httptest.NewTLSServer(proxy)
 	proxy.TLS = server.TLS
 	t.Logf("recordingProxy started with mode %s at %s", modeStr, server.URL)
-	*env = append(*env,
-		"HTTP_PROXY="+server.URL,
-		"HTTPS_PROXY="+server.URL)
-
 	t.Cleanup(func() {
 		server.Close()
 		if !t.Failed() {
+			cst.Name = cst.Name + ".failed"
 			if err := cst.Save(); err != nil {
 				t.Errorf("failed to save recording: %v", err)
 			}
 		}
 	})
+
+	return &Session{
+		ProxyUrl: server.URL,
+	}
 }
 
 func callingDir(skip int) string {
@@ -189,7 +206,7 @@ func (p *recorderProxy) panic(msg string, args ...interface{}) {
 }
 
 func (p *recorderProxy) ServeConn(conn io.Writer, req *http.Request) {
-	p.Log.Debug("incoming request", httpRequestDump{req})
+	p.Log.Debug("recorderProxy: incoming request", "url", req.URL)
 
 	if p.Playback {
 		interact, err := p.Cst.GetInteraction(req)
@@ -209,9 +226,10 @@ func (p *recorderProxy) ServeConn(conn io.Writer, req *http.Request) {
 	} else {
 		var resp *http.Response
 		var err error
+
 		err = retry.Do(
 			context.Background(),
-			retry.WithMaxRetries(3, retry.NewConstant(1*time.Second)),
+			retry.WithMaxRetries(3, retry.NewConstant(100*time.Millisecond)),
 			func(_ context.Context) error {
 				resp, err = http.DefaultClient.Do(req)
 				return retry.RetryableError(err)
@@ -219,7 +237,7 @@ func (p *recorderProxy) ServeConn(conn io.Writer, req *http.Request) {
 		if err != nil {
 			p.panic("recorderProxy: error sending request to target: %v", err)
 		}
-		p.Log.Debug("target response", httpResponseDump{resp})
+		p.Log.Debug("recorderProxy: outgoing response", "url", req.URL, "status", resp.Status)
 
 		interaction, err := capture(req, resp)
 		if err != nil {
@@ -228,37 +246,14 @@ func (p *recorderProxy) ServeConn(conn io.Writer, req *http.Request) {
 
 		p.Cst.AddInteraction(interaction)
 
+		p.Log.Debug("recorderProxy: sending outgoing response", "url", req.URL, "status", resp.Status)
+
 		// Send the target server's response back to the client.
 		if err := resp.Write(conn); err != nil {
 			p.panic("recorderProxy: error writing response: %v", err)
 		}
+
+		p.Log.Debug("recorderProxy: sent outgoing response", "url", req.URL, "status", resp.Status)
+
 	}
-}
-
-type httpRequestDump struct{ req *http.Request }
-
-func (e httpRequestDump) LogValue() slog.Value {
-	return slog.AnyValue(mustDumpRequest(e.req))
-}
-
-func mustDumpRequest(req *http.Request) slog.Value {
-	b, err := httputil.DumpRequest(req, false)
-	if err != nil {
-		panic(err)
-	}
-	return slog.StringValue(string(b))
-}
-
-type httpResponseDump struct{ resp *http.Response }
-
-func (e httpResponseDump) LogValue() slog.Value {
-	return slog.AnyValue(mustDumpResponse(e.resp))
-}
-
-func mustDumpResponse(resp *http.Response) slog.Value {
-	b, err := httputil.DumpResponse(resp, false)
-	if err != nil {
-		panic(err)
-	}
-	return slog.StringValue(string(b))
 }

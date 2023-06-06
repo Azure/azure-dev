@@ -5,7 +5,6 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io"
-	"log"
 	"net"
 	"net/http"
 	"net/url"
@@ -29,7 +28,7 @@ type connectProxy struct {
 }
 
 func (p *connectProxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	p.Log.Debug("connectProxy: %s %s", req.Method, req.URL)
+	p.Log.Debug("connectProxy:", "method", req.Method, "url", req.URL)
 
 	conn, err := p.hijack(w)
 	if err != nil {
@@ -38,7 +37,7 @@ func (p *connectProxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 	// Handle HTTPS CONNECT
 	if req.Method == http.MethodConnect {
-		p.Log.Debug("CONNECT requested to %v (from %v)", req.Host, req.RemoteAddr)
+		p.Log.Debug("connectProxy: CONNECT requested to ", "host", req.Host, "remoteAddr", req.RemoteAddr)
 		p.connectThenServe(conn, req)
 	} else { // Handle direct HTTP
 		p.HttpHandler.ServeConn(conn, req)
@@ -110,7 +109,8 @@ func addrToUrl(addr string) *url.URL {
 	}
 	u, err := url.Parse(addr)
 	if err != nil {
-		log.Fatal(err)
+		panic(err)
 	}
+
 	return u
 }

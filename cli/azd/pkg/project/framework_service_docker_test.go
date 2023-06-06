@@ -55,12 +55,32 @@ services:
 		})
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "docker build")
+		return strings.Contains(command, "docker build") && strings.Contains(command, "-q")
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		ran = true
 
 		require.Equal(t, []string{
-			"build", "-q",
+			"build",
+			"-f", "./Dockerfile",
+			"--platform", docker.DefaultPlatform,
+			"-t", "test-proj-web",
+			".", "-q",
+		}, args.Args)
+
+		return exec.RunResult{
+			Stdout:   "imageId",
+			Stderr:   "",
+			ExitCode: 0,
+		}, nil
+	})
+
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "docker build") && !strings.Contains(command, "-q")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		ran = true
+
+		require.Equal(t, []string{
+			"build",
 			"-f", "./Dockerfile",
 			"--platform", docker.DefaultPlatform,
 			"-t", "test-proj-web",
@@ -143,12 +163,32 @@ services:
 	ran := false
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "docker build")
+		return strings.Contains(command, "docker build") && strings.Contains(command, "-q")
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		ran = true
 
 		require.Equal(t, []string{
-			"build", "-q",
+			"build",
+			"-f", "./Dockerfile.dev",
+			"--platform", docker.DefaultPlatform,
+			"-t", "test-proj-web",
+			"../", "-q",
+		}, args.Args)
+
+		return exec.RunResult{
+			Stdout:   "imageId",
+			Stderr:   "",
+			ExitCode: 0,
+		}, nil
+	})
+
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "docker build") && !strings.Contains(command, "-q")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		ran = true
+
+		require.Equal(t, []string{
+			"build",
 			"-f", "./Dockerfile.dev",
 			"--platform", docker.DefaultPlatform,
 			"-t", "test-proj-web",
@@ -224,11 +264,11 @@ func Test_DockerProject_Build(t *testing.T) {
 	require.Equal(t, serviceConfig.RelativePath, runArgs.Cwd)
 	require.Equal(t,
 		[]string{
-			"build", "-q",
+			"build",
 			"-f", "./Dockerfile",
 			"--platform", docker.DefaultPlatform,
 			"-t", "test-app-api",
-			".",
+			".", "-q",
 		},
 		runArgs.Args,
 	)

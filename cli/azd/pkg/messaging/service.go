@@ -14,6 +14,7 @@ type Publisher interface {
 type Subscriber interface {
 	// Subscribe subscribes to the topic specified in the context with the specified filter and handler.
 	Subscribe(ctx context.Context, filter MessageFilter, handler MessageHandler) (*Subscription, error)
+	Unsubscribe(ctx context.Context, subscription *Subscription)
 }
 
 // Service is a messaging service for sending and receiving messages.
@@ -49,6 +50,10 @@ func (s *Service) Send(ctx context.Context, msg *Message) error {
 // Subscribe subscribes to the topic specified in the context with the specified filter and handler.
 func (s *Service) Subscribe(ctx context.Context, filter MessageFilter, handler MessageHandler) (*Subscription, error) {
 	return s.Topic(ctx).Subscribe(ctx, filter, handler)
+}
+
+func (s *Service) Unsubscribe(ctx context.Context, subscription *Subscription) {
+	s.Topic(ctx).Unsubscribe(ctx, subscription)
 }
 
 // Topic returns the topic specified in the context.

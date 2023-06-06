@@ -27,7 +27,7 @@ func Test_DockerBuild(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		docker := NewDocker(mockContext.CommandRunner, mockinput.NewMockConsole())
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-			return strings.Contains(command, "docker build")
+			return strings.Contains(command, "docker build") && !strings.Contains(command, "-q")
 		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 			ran = true
 
@@ -35,12 +35,33 @@ func Test_DockerBuild(t *testing.T) {
 			require.Equal(t, cwd, args.Cwd)
 			require.Equal(t, []string{
 				"build",
-				"-q",
 				"-f", dockerFile,
 				"--platform", platform,
 				"-t", imageName,
 				"--build-arg", buildArgs[0],
 				dockerContext,
+			}, args.Args)
+
+			return exec.RunResult{
+				Stdout:   "Docker build output",
+				Stderr:   "",
+				ExitCode: 0,
+			}, nil
+		})
+		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+			return strings.Contains(command, "docker build") && strings.Contains(command, "-q")
+		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+			ran = true
+
+			require.Equal(t, "docker", args.Cmd)
+			require.Equal(t, cwd, args.Cwd)
+			require.Equal(t, []string{
+				"build",
+				"-f", dockerFile,
+				"--platform", platform,
+				"-t", imageName,
+				"--build-arg", buildArgs[0],
+				dockerContext, "-q",
 			}, args.Args)
 
 			return exec.RunResult{
@@ -66,6 +87,7 @@ func Test_DockerBuild(t *testing.T) {
 
 		mockContext := mocks.NewMockContext(context.Background())
 		docker := NewDocker(mockContext.CommandRunner, mockinput.NewMockConsole())
+
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "docker build")
 		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
@@ -75,7 +97,6 @@ func Test_DockerBuild(t *testing.T) {
 			require.Equal(t, cwd, args.Cwd)
 			require.Equal(t, []string{
 				"build",
-				"-q",
 				"-f", dockerFile,
 				"--platform", platform,
 				"-t", imageName,
@@ -116,7 +137,7 @@ func Test_DockerBuildEmptyPlatform(t *testing.T) {
 	docker := NewDocker(mockContext.CommandRunner, mockinput.NewMockConsole())
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "docker build")
+		return strings.Contains(command, "docker build") && !strings.Contains(command, "-q")
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		ran = true
 
@@ -124,12 +145,33 @@ func Test_DockerBuildEmptyPlatform(t *testing.T) {
 		require.Equal(t, cwd, args.Cwd)
 		require.Equal(t, []string{
 			"build",
-			"-q",
 			"-f", dockerFile,
 			"--platform", platform,
 			"-t", imageName,
 			"--build-arg", buildArgs[0],
 			dockerContext,
+		}, args.Args)
+
+		return exec.RunResult{
+			Stdout:   "Docker build output",
+			Stderr:   "",
+			ExitCode: 0,
+		}, nil
+	})
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "docker build") && strings.Contains(command, "-q")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		ran = true
+
+		require.Equal(t, "docker", args.Cmd)
+		require.Equal(t, cwd, args.Cwd)
+		require.Equal(t, []string{
+			"build",
+			"-f", dockerFile,
+			"--platform", platform,
+			"-t", imageName,
+			"--build-arg", buildArgs[0],
+			dockerContext, "-q",
 		}, args.Args)
 
 		return exec.RunResult{
@@ -159,7 +201,7 @@ func Test_DockerBuildArgsEmpty(t *testing.T) {
 	docker := NewDocker(mockContext.CommandRunner, mockinput.NewMockConsole())
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "docker build")
+		return strings.Contains(command, "docker build") && !strings.Contains(command, "-q")
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		ran = true
 
@@ -167,11 +209,31 @@ func Test_DockerBuildArgsEmpty(t *testing.T) {
 		require.Equal(t, cwd, args.Cwd)
 		require.Equal(t, []string{
 			"build",
-			"-q",
 			"-f", dockerFile,
 			"--platform", platform,
 			"-t", imageName,
 			dockerContext,
+		}, args.Args)
+
+		return exec.RunResult{
+			Stdout:   "Docker build output",
+			Stderr:   "",
+			ExitCode: 0,
+		}, nil
+	})
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "docker build") && strings.Contains(command, "-q")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		ran = true
+
+		require.Equal(t, "docker", args.Cmd)
+		require.Equal(t, cwd, args.Cwd)
+		require.Equal(t, []string{
+			"build",
+			"-f", dockerFile,
+			"--platform", platform,
+			"-t", imageName,
+			dockerContext, "-q",
 		}, args.Args)
 
 		return exec.RunResult{
@@ -201,7 +263,7 @@ func Test_DockerBuildArgsMultiple(t *testing.T) {
 	docker := NewDocker(mockContext.CommandRunner, mockinput.NewMockConsole())
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "docker build")
+		return strings.Contains(command, "docker build") && !strings.Contains(command, "-q")
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		ran = true
 
@@ -209,13 +271,36 @@ func Test_DockerBuildArgsMultiple(t *testing.T) {
 		require.Equal(t, cwd, args.Cwd)
 		require.Equal(t, []string{
 			"build",
-			"-q",
 			"-f", dockerFile,
 			"--platform", platform,
 			"-t", imageName,
 			"--build-arg", buildArgs[0],
 			"--build-arg", buildArgs[1],
 			dockerContext,
+		}, args.Args)
+
+		return exec.RunResult{
+			Stdout:   "Docker build output",
+			Stderr:   "",
+			ExitCode: 0,
+		}, nil
+	})
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "docker build") && strings.Contains(command, "-q")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		ran = true
+
+		require.Equal(t, "docker", args.Cmd)
+		require.Equal(t, cwd, args.Cwd)
+		require.Equal(t, []string{
+			"build",
+			"-f", dockerFile,
+			"--platform", platform,
+			"-t", imageName,
+			"--build-arg", buildArgs[0],
+			"--build-arg", buildArgs[1],
+			dockerContext,
+			"-q",
 		}, args.Args)
 
 		return exec.RunResult{

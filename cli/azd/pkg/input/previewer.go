@@ -56,8 +56,14 @@ func (p *previewer) Write(logBytes []byte) (int, error) {
 		logBytes = logBytes[:lastChar]
 	}
 	log := string(logBytes)
-	maxWidth := tm.Width()
 	fullLog := p.prefix + log
+	maxWidth := tm.Width()
+
+	if maxWidth <= 0 {
+		// tm.Width <= 0 means a CI terminal, where logs can be just written
+		return tm.Println(fullLog)
+	}
+
 	if len(fullLog) > maxWidth {
 		fullLog = fullLog[:maxWidth-4] + cPostfix
 	}

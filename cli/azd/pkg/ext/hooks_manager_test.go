@@ -103,7 +103,7 @@ func ensureScriptsExist(t *testing.T, configs map[string]*HookConfig) {
 	for _, hook := range configs {
 		ext := filepath.Ext(hook.Run)
 
-		if ext != "" {
+		if ext != "" && len(ext) <= 5 {
 			err := os.MkdirAll(filepath.Dir(hook.Run), osutil.PermissionDirectory)
 			require.NoError(t, err)
 			err = os.WriteFile(hook.Run, nil, osutil.PermissionExecutableFile)

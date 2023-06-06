@@ -52,8 +52,9 @@ func capture(req *http.Request, resp *http.Response) (*cassette.Interaction, err
 	resp.Body = ioutil.NopCloser(bytes.NewBuffer(content))
 
 	// Read the potentially g-zipped content
-	cloned := bytes.Clone(content)
-	var contentReader io.Reader = bytes.NewReader(cloned)
+	contentCopy := make([]byte, len(content))
+	copy(contentCopy, content)
+	var contentReader io.Reader = bytes.NewReader(contentCopy)
 	if resp.Header.Get("Content-Encoding") == "gzip" {
 		contentReader, err = gzip.NewReader(contentReader)
 		if err != nil {

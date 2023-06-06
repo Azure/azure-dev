@@ -1,6 +1,7 @@
 package exec
 
 import (
+	"bufio"
 	"bytes"
 	"context"
 	"errors"
@@ -78,6 +79,37 @@ type commandRunner struct {
 	debugLogging bool
 }
 
+func runWithPreview(ctx context.Context, cmd CmdTree, args RunArgs) (RunResult, error) {
+	console := args.ConsolePreview.Console
+	console.ShowPreviewer(ctx, args.ConsolePreview.PreviewOptions)
+	defer console.StopPreviewer(ctx)
+
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return RunResult{}, err
+	}
+	finalOutput := strings.Builder{}
+	var stderr bytes.Buffer
+	cmd.Stderr = &stderr
+
+	if err := cmd.Start(); err != nil {
+		return RunResult{}, err
+	}
+
+	scanner := bufio.NewScanner(stdout)
+	for scanner.Scan() {
+		line := scanner.Text()
+		finalOutput.WriteString(line)
+		console.Message(ctx, line)
+	}
+	cmd.Wait()
+	return RunResult{
+		ExitCode: cmd.ProcessState.ExitCode(),
+		Stderr:   stderr.String(),
+		Stdout:   finalOutput.String(),
+	}, nil
+}
+
 // Run runs the command specified in 'args'.
 //
 // Returns a RunResult that is the result of the command.
@@ -92,13 +124,17 @@ func (r *commandRunner) Run(ctx context.Context, args RunArgs) (RunResult, error
 	// use the shell on Windows since most commands are actually just batch files wrapping
 	// real commands. And even if they're not, this will work fine without having to do any
 	// probing or checking.
-	cmd, err := newCmdTree(ctx, args.Cmd, args.Args, args.UseShell || runtime.GOOS == "windows", args.Interactive)
+	cmd, err := NewCmdTree(ctx, args.Cmd, args.Args, args.UseShell || runtime.GOOS == "windows", args.Interactive)
 
 	if err != nil {
 		return RunResult{}, err
 	}
 
 	cmd.Dir = args.Cwd
+
+	if args.ConsolePreview.Console != nil {
+		return runWithPreview(ctx, cmd, args)
+	}
 
 	var stdin io.Reader
 	if args.StdIn != nil {
@@ -211,7 +247,7 @@ func (r *commandRunner) Run(ctx context.Context, args RunArgs) (RunResult, error
 }
 
 func (r *commandRunner) RunList(ctx context.Context, commands []string, args RunArgs) (RunResult, error) {
-	process, err := newCmdTree(ctx, "", commands, true, false)
+	process, err := NewCmdTree(ctx, "", commands, true, false)
 	if err != nil {
 		return NewRunResult(-1, "", ""), err
 	}
@@ -252,11 +288,11 @@ func appendEnv(env []string) []string {
 	return nil
 }
 
-// newCmdTree creates a `CmdTree`, optionally using a shell appropriate for windows
+// NewCmdTree creates a `CmdTree`, optionally using a shell appropriate for windows
 // or POSIX environments.
 // An empty cmd parameter indicates "command list mode", which means that args are combined into a single command list,
 // joined with && operator.
-func newCmdTree(ctx context.Context, cmd string, args []string, useShell bool, interactive bool) (CmdTree, error) {
+func NewCmdTree(ctx context.Context, cmd string, args []string, useShell bool, interactive bool) (CmdTree, error) {
 	options := CmdTreeOptions{Interactive: interactive}
 
 	if !useShell {

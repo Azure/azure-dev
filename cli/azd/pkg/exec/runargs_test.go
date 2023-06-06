@@ -1,6 +1,9 @@
 package exec
 
 import (
+	"context"
+	"os"
+	"runtime"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -39,4 +42,34 @@ func TestNewRunArgs(t *testing.T) {
 		require.Len(t, runArgs.Env, 2)
 		require.Equal(t, runArgs.Env, []string{"foo", "bar"})
 	})
+}
+
+type list struct {
+	t string
+}
+
+func TestInteLimited(t *testing.T) {
+	t.Run("limited", func(t *testing.T) {
+
+		args := NewRunArgs("sudo", "docker", "build", "/home/vivazqu/workspace/build/openai/.devcontainer", "--progress=plain")
+		args = args.WithInteractive(true)
+
+		ctx := context.Background()
+		cmd, err := NewCmdTree(ctx, args.Cmd, args.Args, args.UseShell || runtime.GOOS == "windows", args.Interactive)
+		require.NoError(t, err)
+
+		cmd.Stdout = os.Stdout
+		cmd.Stderr = os.Stderr
+		cmd.Stdin = os.Stdin
+		cmd.Start()
+
+		// scanner := bufio.NewScanner(stdout)
+		// scanner.Split(bufio.ScanRunes)
+		// for scanner.Scan() {
+		// 	m := scanner.Text()
+		// 	fmt.Println(m)
+		// }
+		cmd.Wait()
+	})
+
 }

@@ -2,6 +2,8 @@ package exec
 
 import (
 	"io"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 )
 
 // RunArgs exposes the command, arguments and other options when running console/shell commands
@@ -29,6 +31,14 @@ type RunArgs struct {
 
 	// When set will call the command with the specified StdIn
 	StdIn io.Reader
+
+	// Groups a console and previewer options. When setting a console, commands are running displaying output preview
+	ConsolePreview WithPreviewOptions
+}
+
+type WithPreviewOptions struct {
+	Console        input.Console
+	PreviewOptions *input.ShowPreviewerOptions
 }
 
 // NewRunArgs creates a new instance with the specified cmd and args

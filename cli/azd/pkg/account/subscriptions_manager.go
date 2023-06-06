@@ -46,13 +46,13 @@ type SubscriptionsManager struct {
 	service       *SubscriptionsService
 	principalInfo principalInfoProvider
 	cache         subCache
-	msg           input.Messaging
+	console       input.Console
 }
 
 func NewSubscriptionsManager(
 	service *SubscriptionsService,
 	auth *auth.Manager,
-	msg input.Messaging) (*SubscriptionsManager, error) {
+	console input.Console) (*SubscriptionsManager, error) {
 	cache, err := NewSubscriptionsCache()
 	if err != nil {
 		return nil, err
@@ -62,7 +62,7 @@ func NewSubscriptionsManager(
 		service:       service,
 		cache:         cache,
 		principalInfo: auth,
-		msg:           msg,
+		console:       console,
 	}, nil
 }
 
@@ -160,8 +160,9 @@ func (m *SubscriptionsManager) ListSubscriptions(ctx context.Context) ([]Subscri
 	ctx, span := tracing.Start(ctx, events.AccountSubscriptionsListEvent)
 	defer span.EndWithStatus(err)
 
-	stop := m.msg.ShowProgress(ctx, "Retrieving subscriptions...")
-	defer stop()
+	msg := "Retrieving subscriptions..."
+	m.console.ShowSpinner(ctx, msg, input.Step)
+	defer m.console.StopSpinner(ctx, msg, input.GetStepResultFormat(err))
 
 	principalTenantId, err := m.principalInfo.GetLoggedInServicePrincipalTenantID(ctx)
 	if err != nil {
@@ -281,8 +282,10 @@ func (m *SubscriptionsManager) ListLocations(
 	ctx context.Context,
 	subscriptionId string,
 ) ([]Location, error) {
-	stop := m.msg.ShowProgress(ctx, "Retrieving locations...")
-	defer stop()
+	var err error
+	msg := "Retrieving locations..."
+	m.console.ShowSpinner(ctx, msg, input.Step)
+	defer m.console.StopSpinner(ctx, msg, input.GetStepResultFormat(err))
 
 	tenantId, err := m.LookupTenant(ctx, subscriptionId)
 	if err != nil {

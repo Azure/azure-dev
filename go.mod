@@ -54,6 +54,8 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 )
 
+require github.com/buger/goterm v1.0.4 // indirect
+
 require (
 	github.com/Azure/azure-pipeline-go v0.2.1 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.3.0 // indirect

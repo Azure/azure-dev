@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/blang/semver/v4"
 )
@@ -31,14 +32,16 @@ type Docker interface {
 	Push(ctx context.Context, cwd string, tag string) error
 }
 
-func NewDocker(commandRunner exec.CommandRunner) Docker {
+func NewDocker(commandRunner exec.CommandRunner, console input.Console) Docker {
 	return &docker{
 		commandRunner: commandRunner,
+		console:       console,
 	}
 }
 
 type docker struct {
 	commandRunner exec.CommandRunner
+	console       input.Console
 }
 
 func (d *docker) Login(ctx context.Context, loginServer string, username string, password string) error {
@@ -75,7 +78,7 @@ func (d *docker) Build(
 	}
 
 	args := []string{
-		"build", "-q",
+		"build",
 		"-f", dockerFilePath,
 		"--platform", platform,
 	}
@@ -90,11 +93,24 @@ func (d *docker) Build(
 
 	args = append(args, buildContext)
 
-	res, err := d.executeCommand(ctx, cwd, args...)
+	// Build and produce output
+	runArgs := exec.NewRunArgs("docker", args...).WithCwd(cwd)
+	runArgs.ConsolePreview.Console = d.console
+	runArgs.ConsolePreview.PreviewOptions = &input.ShowPreviewerOptions{
+		Prefix:       "    ",
+		MaxLineCount: 8,
+		Title:        "Building docker",
+	}
+	_, err := d.commandRunner.Run(ctx, runArgs)
 	if err != nil {
 		return "", fmt.Errorf("building image: %w", err)
 	}
 
+	// Build should just return cached img id
+	res, err := d.executeCommand(ctx, cwd, append(args, "-q")...)
+	if err != nil {
+		return "", fmt.Errorf("building image: %w", err)
+	}
 	return strings.TrimSpace(res.Stdout), nil
 }
 

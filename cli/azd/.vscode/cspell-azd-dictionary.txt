@@ -69,6 +69,7 @@ GOARCH
 GOCOVERDIR
 godotenv
 golangci
+goterm
 hotspot
 ineffassign
 javac
@@ -111,8 +112,8 @@ secureobject
 securestring
 semconv
 serverfarms
-setenvs
 servicebus
+setenvs
 snapshotter
 springapp
 sstore

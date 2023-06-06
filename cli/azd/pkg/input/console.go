@@ -46,6 +46,12 @@ type ConsoleShim interface {
 
 type PromptValidator func(response string) error
 
+type ShowPreviewerOptions struct {
+	Prefix       string
+	MaxLineCount int
+	Title        string
+}
+
 type Console interface {
 	// Prints out a message to the underlying console write
 	Message(ctx context.Context, message string)
@@ -59,6 +65,11 @@ type Console interface {
 	// Set lastMessage to empty string to clear the spinner message instead of a displaying a last message
 	// If there is no spinner running, this is a no-op function
 	StopSpinner(ctx context.Context, lastMessage string, format SpinnerUxType)
+	// Preview mode brings an embedded console within the current session.
+	// Use nil for options to use defaults.
+	ShowPreviewer(ctx context.Context, options *ShowPreviewerOptions)
+	// Finalize the preview mode from console.
+	StopPreviewer(ctx context.Context)
 	// Determines if there is a current spinner running.
 	IsSpinnerRunning(ctx context.Context) bool
 	// Determines if the current spinner is an interactive spinner, where messages are updated periodically.
@@ -96,6 +107,8 @@ type AskerConsole struct {
 
 	currentIndent string
 	consoleWidth  int
+	previewer     *previewer
+	initialWriter io.Writer
 }
 
 type ConsoleOptions struct {
@@ -188,6 +201,38 @@ func (c *AskerConsole) MessageUxItem(ctx context.Context, item ux.UxItem) {
 	}
 }
 
+func defaultShowPreviewerOptions() *ShowPreviewerOptions {
+	return &ShowPreviewerOptions{
+		MaxLineCount: 5,
+	}
+}
+
+func (c *AskerConsole) ShowPreviewer(ctx context.Context, options *ShowPreviewerOptions) {
+	if c.formatter != nil && c.formatter.Kind() == output.JsonFormat {
+		return
+	}
+
+	if options == nil {
+		options = defaultShowPreviewerOptions()
+	}
+
+	// auto-stop any spinner
+	c.StopSpinner(ctx, "", StepSkipped)
+
+	c.previewer = NewPreviewer(options.MaxLineCount, options.Prefix)
+	if options.Title != "" {
+		c.previewer.SetTitle(options.Title)
+	}
+	c.previewer.Start()
+	c.writer = c.previewer
+}
+
+func (c *AskerConsole) StopPreviewer(ctx context.Context) {
+	c.previewer.Stop()
+	c.previewer = nil
+	c.writer = c.initialWriter
+}
+
 const cPostfix = "..."
 
 func (c *AskerConsole) spinnerText(title, charset string) string {
@@ -209,6 +254,12 @@ func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format Spi
 	if c.consoleWidth <= cMinConsoleWidth {
 		// no spinner for consoles with width <= cMinConsoleWidth
 		c.Message(ctx, title)
+		return
+	}
+
+	if c.previewer != nil {
+		// spinner is not compatible with previewer. Set the previewer title instead.
+		c.previewer.SetTitle(title)
 		return
 	}
 
@@ -472,6 +523,7 @@ func NewConsole(noPrompt bool, isTerminal bool, w io.Writer, handles ConsoleHand
 		formatter:     formatter,
 		isTerminal:    isTerminal,
 		consoleWidth:  getConsoleWidth(),
+		initialWriter: w,
 	}
 }
 
@@ -500,50 +552,4 @@ func (c *AskerConsole) doInteraction(fn func(c *AskerConsole) error) error {
 		return err
 	}
 	return nil
-}
-
-type ProgressStopper func()
-
-// A messaging system that displays messages. Use this for application logic components that shouldn't be interactive
-// or require any formatting, but needs simple messages to be displayed.
-//
-// Currently, this outputs to console.
-// For ShowProgress which renders a spinner, priority is given to higher-level components
-// that have a spinner already running.
-type Messaging interface {
-	// Prints out a message to the underlying console write
-	Message(ctx context.Context, message string)
-	// Displays a progress message. Returns a closer() func that stops the progress message display.
-	ShowProgress(ctx context.Context, message string) ProgressStopper
-}
-
-// A messaging system that displays messages to console.
-type consoleMessaging struct {
-	console Console
-}
-
-func NewConsoleMessaging(console Console) Messaging {
-	return &consoleMessaging{
-		console: console,
-	}
-}
-
-func (m *consoleMessaging) Message(ctx context.Context, message string) {
-	m.console.Message(ctx, message)
-}
-
-// ShowProgress displays a spinner on console, if one isn't already running.
-//
-// Note that it is still possible to override existing spinners in multi-thread or multi-goroutine scenarios.
-func (m *consoleMessaging) ShowProgress(ctx context.Context, message string) ProgressStopper {
-	// This should be lower priority than any running console spinners
-	if m.console.IsSpinnerRunning(ctx) {
-		log.Println(message)
-		return func() {}
-	}
-
-	m.console.ShowSpinner(ctx, message, Step)
-	return func() {
-		m.console.StopSpinner(ctx, "", StepDone)
-	}
 }

@@ -3,6 +3,7 @@ package ext
 import (
 	"os"
 	"path/filepath"
+	"regexp"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
@@ -103,11 +104,17 @@ func ensureScriptsExist(t *testing.T, configs map[string]*HookConfig) {
 	for _, hook := range configs {
 		ext := filepath.Ext(hook.Run)
 
-		if ext != "" && len(ext) <= 5 {
+		if ext != "" && isValidFileExtension(ext) {
 			err := os.MkdirAll(filepath.Dir(hook.Run), osutil.PermissionDirectory)
 			require.NoError(t, err)
 			err = os.WriteFile(hook.Run, nil, osutil.PermissionExecutableFile)
 			require.NoError(t, err)
 		}
 	}
+}
+
+var fileExtensionRegex = regexp.MustCompile(`^\.[\w]{1,4}$`)
+
+func isValidFileExtension(extension string) bool {
+	return fileExtensionRegex.MatchString(extension)
 }

@@ -32,8 +32,8 @@ type RunArgs struct {
 	// When set will call the command with the specified StdIn
 	StdIn io.Reader
 
-	// Groups a console and previewer options. When setting a console, commands are running displaying output preview
-	ConsolePreview WithPreviewOptions
+	// When set will call the command with the specified StdOut
+	StdOut io.Writer
 }
 
 type WithPreviewOptions struct {

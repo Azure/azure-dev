@@ -52,6 +52,19 @@ type ShowPreviewerOptions struct {
 	Title        string
 }
 
+type ConsolePreviewer struct {
+	Console   Console
+	Previewer *previewer
+}
+
+func (cp *ConsolePreviewer) Write(logBytes []byte) (int, error) {
+	return cp.Previewer.Write(logBytes)
+}
+
+func (cp *ConsolePreviewer) Stop(ctx context.Context) {
+	cp.Console.StopPreviewer(ctx)
+}
+
 type Console interface {
 	// Prints out a message to the underlying console write
 	Message(ctx context.Context, message string)
@@ -67,7 +80,7 @@ type Console interface {
 	StopSpinner(ctx context.Context, lastMessage string, format SpinnerUxType)
 	// Preview mode brings an embedded console within the current session.
 	// Use nil for options to use defaults.
-	ShowPreviewer(ctx context.Context, options *ShowPreviewerOptions)
+	ShowPreviewer(ctx context.Context, options *ShowPreviewerOptions) *ConsolePreviewer
 	// Finalize the preview mode from console.
 	StopPreviewer(ctx context.Context)
 	// Determines if there is a current spinner running.
@@ -207,9 +220,9 @@ func defaultShowPreviewerOptions() *ShowPreviewerOptions {
 	}
 }
 
-func (c *AskerConsole) ShowPreviewer(ctx context.Context, options *ShowPreviewerOptions) {
+func (c *AskerConsole) ShowPreviewer(ctx context.Context, options *ShowPreviewerOptions) *ConsolePreviewer {
 	if c.formatter != nil && c.formatter.Kind() == output.JsonFormat {
-		return
+		return nil
 	}
 
 	if options == nil {
@@ -225,6 +238,10 @@ func (c *AskerConsole) ShowPreviewer(ctx context.Context, options *ShowPreviewer
 	}
 	c.previewer.Start()
 	c.writer = c.previewer
+	return &ConsolePreviewer{
+		Console:   c,
+		Previewer: c.previewer,
+	}
 }
 
 func (c *AskerConsole) StopPreviewer(ctx context.Context) {

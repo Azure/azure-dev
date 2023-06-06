@@ -19,7 +19,6 @@ type previewer struct {
 func NewPreviewer(lines int, prefix string) *previewer {
 	return &previewer{
 		lines:  lines,
-		output: make([]string, lines),
 		prefix: prefix,
 	}
 }
@@ -29,6 +28,7 @@ func (p *previewer) SetTitle(title string) {
 }
 
 func (p *previewer) Start() {
+	p.output = make([]string, p.lines)
 	printOutput(p.output, p.title)
 }
 
@@ -41,6 +41,15 @@ func clearString(text string) {
 }
 
 func (p *previewer) Stop() {
+	p.clear()
+	p.output = nil
+}
+
+func (p *previewer) clear() {
+	if p.output == nil {
+		return
+	}
+
 	for _, log := range p.output {
 		clearString(log)
 	}
@@ -51,26 +60,26 @@ func (p *previewer) Stop() {
 }
 
 func (p *previewer) Write(logBytes []byte) (int, error) {
-	lastChar := len(logBytes) - 1
-	if logBytes[lastChar] == '\n' {
-		logBytes = logBytes[:lastChar]
-	}
-	log := string(logBytes)
-	fullLog := p.prefix + log
+	fullText := strings.Split(string(logBytes), "\n")
 	maxWidth := tm.Width()
-
 	if maxWidth <= 0 {
 		// tm.Width <= 0 means a CI terminal, where logs can be just written
-		return tm.Println(fullLog)
+		return tm.Println(fullText)
 	}
 
-	if len(fullLog) > maxWidth {
-		fullLog = fullLog[:maxWidth-4] + cPostfix
-	}
+	for _, log := range fullText {
+		if log == "" {
+			continue
+		}
+		fullLog := p.prefix + log
+		if len(fullLog) > maxWidth {
+			fullLog = fullLog[:maxWidth-4] + cPostfix
+		}
 
-	p.Stop()
-	p.output = pushRemove(p.output, fullLog)
-	printOutput(p.output, p.title)
+		p.clear()
+		p.output = pushRemove(p.output, fullLog)
+		printOutput(p.output, p.title)
+	}
 	return len(logBytes), nil
 }
 

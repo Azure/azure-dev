@@ -103,7 +103,12 @@ func (c *MockConsole) StopSpinner(ctx context.Context, lastMessage string, forma
 	})
 }
 
-func (c *MockConsole) ShowPreviewer(ctx context.Context, options *input.ShowPreviewerOptions) {}
+func (c *MockConsole) ShowPreviewer(ctx context.Context, options *input.ShowPreviewerOptions) *input.ConsolePreviewer {
+	return &input.ConsolePreviewer{
+		Console:   c,
+		Previewer: input.NewPreviewer(10, ""),
+	}
+}
 
 func (c *MockConsole) StopPreviewer(ctx context.Context) {}
 

@@ -1,7 +1,6 @@
 package exec
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"errors"
@@ -79,38 +78,6 @@ type commandRunner struct {
 	debugLogging bool
 }
 
-func runWithPreview(ctx context.Context, cmd CmdTree, args RunArgs) (RunResult, error) {
-	console := args.ConsolePreview.Console
-	console.ShowPreviewer(ctx, args.ConsolePreview.PreviewOptions)
-	defer console.StopPreviewer(ctx)
-
-	stdout, err := cmd.StdoutPipe()
-	if err != nil {
-		return RunResult{}, err
-	}
-	finalOutput := strings.Builder{}
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
-
-	if err := cmd.Start(); err != nil {
-		return RunResult{}, err
-	}
-
-	scanner := bufio.NewScanner(stdout)
-	for scanner.Scan() {
-		line := scanner.Text()
-		finalOutput.WriteString(line)
-		console.Message(ctx, line)
-	}
-	err = cmd.Wait()
-
-	return RunResult{
-		ExitCode: cmd.ProcessState.ExitCode(),
-		Stderr:   stderr.String(),
-		Stdout:   finalOutput.String(),
-	}, err
-}
-
 // Run runs the command specified in 'args'.
 //
 // Returns a RunResult that is the result of the command.
@@ -133,10 +100,6 @@ func (r *commandRunner) Run(ctx context.Context, args RunArgs) (RunResult, error
 
 	cmd.Dir = args.Cwd
 
-	if args.ConsolePreview.Console != nil {
-		return runWithPreview(ctx, cmd, args)
-	}
-
 	var stdin io.Reader
 	if args.StdIn != nil {
 		stdin = args.StdIn
@@ -156,6 +119,10 @@ func (r *commandRunner) Run(ctx context.Context, args RunArgs) (RunResult, error
 		cmd.Stdin = stdin
 		cmd.Stdout = &stdout
 		cmd.Stderr = &stderr
+
+		if args.StdOut != nil {
+			cmd.Stdout = io.MultiWriter(args.StdOut, &stdout)
+		}
 
 		if args.Stderr != nil {
 			cmd.Stderr = io.MultiWriter(args.Stderr, &stderr)

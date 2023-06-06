@@ -95,13 +95,15 @@ func (d *docker) Build(
 
 	// Build and produce output
 	runArgs := exec.NewRunArgs("docker", args...).WithCwd(cwd)
-	runArgs.ConsolePreview.Console = d.console
-	runArgs.ConsolePreview.PreviewOptions = &input.ShowPreviewerOptions{
-		Prefix:       "    ",
-		MaxLineCount: 8,
-		Title:        "Building docker",
-	}
+	previewer := d.console.ShowPreviewer(ctx,
+		&input.ShowPreviewerOptions{
+			Prefix:       "    ",
+			MaxLineCount: 8,
+			Title:        "Building docker",
+		})
+	runArgs.StdOut = previewer
 	_, err := d.commandRunner.Run(ctx, runArgs)
+	previewer.Stop(ctx)
 	if err != nil {
 		return "", fmt.Errorf("building image: %w", err)
 	}

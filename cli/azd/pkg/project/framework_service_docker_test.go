@@ -17,6 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/npm"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockarmresources"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/benbjohnson/clock"
 	"github.com/stretchr/testify/require"
 )
@@ -78,7 +79,7 @@ services:
 	service := projectConfig.Services["web"]
 
 	npmCli := npm.NewNpmCli(mockContext.CommandRunner)
-	docker := docker.NewDocker(mockContext.CommandRunner)
+	docker := docker.NewDocker(mockContext.CommandRunner, mockinput.NewMockConsole())
 
 	done := make(chan bool)
 
@@ -162,7 +163,7 @@ services:
 	})
 
 	npmCli := npm.NewNpmCli(mockContext.CommandRunner)
-	docker := docker.NewDocker(mockContext.CommandRunner)
+	docker := docker.NewDocker(mockContext.CommandRunner, mockinput.NewMockConsole())
 
 	projectConfig, err := Parse(*mockContext.Context, testProj)
 	require.NoError(t, err)
@@ -208,7 +209,7 @@ func Test_DockerProject_Build(t *testing.T) {
 		})
 
 	env := environment.Ephemeral()
-	dockerCli := docker.NewDocker(mockContext.CommandRunner)
+	dockerCli := docker.NewDocker(mockContext.CommandRunner, mockinput.NewMockConsole())
 	serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
 
 	dockerProject := NewDockerProject(env, dockerCli, NewContainerHelper(env, clock.NewMock(), nil, dockerCli))
@@ -253,7 +254,7 @@ func Test_DockerProject_Package(t *testing.T) {
 		})
 
 	env := environment.EphemeralWithValues("test", map[string]string{})
-	dockerCli := docker.NewDocker(mockContext.CommandRunner)
+	dockerCli := docker.NewDocker(mockContext.CommandRunner, mockinput.NewMockConsole())
 	serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
 
 	dockerProject := NewDockerProject(env, dockerCli, NewContainerHelper(env, clock.NewMock(), nil, dockerCli))

@@ -102,12 +102,13 @@ func runWithPreview(ctx context.Context, cmd CmdTree, args RunArgs) (RunResult, 
 		finalOutput.WriteString(line)
 		console.Message(ctx, line)
 	}
-	cmd.Wait()
+	err = cmd.Wait()
+
 	return RunResult{
 		ExitCode: cmd.ProcessState.ExitCode(),
 		Stderr:   stderr.String(),
 		Stdout:   finalOutput.String(),
-	}, nil
+	}, err
 }
 
 // Run runs the command specified in 'args'.

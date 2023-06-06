@@ -25,9 +25,12 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
+	"github.com/azure/azure-dev/cli/azd/pkg/messaging"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/progress"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
+	"github.com/azure/azure-dev/cli/azd/pkg/sample"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
@@ -310,6 +313,19 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(python.NewPythonCli)
 	container.RegisterSingleton(swa.NewSwaCli)
 	container.RegisterSingleton(terraform.NewTerraformCli)
+
+	// Messaging
+	container.RegisterSingleton(messaging.NewService)
+	container.RegisterSingleton(func(messageService *messaging.Service) messaging.Publisher {
+		return messageService
+	})
+	container.RegisterSingleton(func(messageService *messaging.Service) messaging.Subscriber {
+		return messageService
+	})
+
+	// Sample
+	container.RegisterSingleton(sample.NewSampler)
+	container.RegisterSingleton(progress.NewPrinter)
 
 	// Provisioning
 	container.RegisterTransient(provisioning.NewManager)

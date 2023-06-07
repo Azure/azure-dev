@@ -238,7 +238,8 @@ func (p *recorderProxy) ServeConn(conn io.Writer, req *http.Request) {
 			p.panic("recorderProxy: error sending request to target: %v", err)
 		}
 		p.Log.Debug("recorderProxy: outgoing response", "url", req.URL, "status", resp.Status)
-
+		// Always use chunked encoding for sending the response back.
+		resp.TransferEncoding = []string{"chunked"}
 		interaction, err := capture(req, resp)
 		if err != nil {
 			p.panic(fmt.Sprintf("recorderProxy: error capturing interaction: %v", err))

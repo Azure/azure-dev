@@ -108,12 +108,6 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 	templatesActions(root)
 	authActions(root)
 
-	root.Add("sample", &actions.ActionDescriptorOptions{
-		Command:        newSampleCmd(),
-		FlagsResolver:  newSampleFlags,
-		ActionResolver: newSampleAction,
-	})
-
 	root.Add("version", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
 			Short: "Print the version number of Azure Developer CLI.",
@@ -304,7 +298,8 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 		UseMiddleware("debug", middleware.NewDebugMiddleware).
 		UseMiddlewareWhen("telemetry", middleware.NewTelemetryMiddleware, func(descriptor *actions.ActionDescriptor) bool {
 			return !descriptor.Options.DisableTelemetry
-		})
+		}).
+		UseMiddleware("ux", middleware.NewUxMiddleware)
 
 	registerCommonDependencies(ioc.Global)
 	cobraBuilder := NewCobraBuilder(ioc.Global)

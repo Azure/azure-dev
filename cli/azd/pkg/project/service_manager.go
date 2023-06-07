@@ -78,7 +78,7 @@ type ServiceManager interface {
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
 		packageOutput *ServicePackageResult,
-	) *async.TaskWithProgress[*ServiceDeployResult, ServiceProgress]
+	) (*ServiceDeployResult, error)
 
 	// Gets the framework service for the specified service config
 	// The framework service performs the restoration and building of the service app code
@@ -372,58 +372,51 @@ func (sm *serviceManager) Deploy(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	packageResult *ServicePackageResult,
-) *async.TaskWithProgress[*ServiceDeployResult, ServiceProgress] {
-	return async.RunTaskWithProgress(func(task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress]) {
-		cachedResult, ok := sm.getOperationResult(ctx, serviceConfig, string(ServiceEventDeploy))
+) (*ServiceDeployResult, error) {
+	cachedResult, ok := sm.getOperationResult(ctx, serviceConfig, string(ServiceEventDeploy))
+	if ok && cachedResult != nil {
+		return cachedResult.(*ServiceDeployResult), nil
+	}
+
+	if packageResult == nil {
+		cachedResult, ok := sm.getOperationResult(ctx, serviceConfig, string(ServiceEventPackage))
 		if ok && cachedResult != nil {
-			task.SetResult(cachedResult.(*ServiceDeployResult))
-			return
+			packageResult = cachedResult.(*ServicePackageResult)
 		}
+	}
 
-		if packageResult == nil {
-			cachedResult, ok := sm.getOperationResult(ctx, serviceConfig, string(ServiceEventPackage))
-			if ok && cachedResult != nil {
-				packageResult = cachedResult.(*ServicePackageResult)
-			}
-		}
+	serviceTarget, err := sm.GetServiceTarget(ctx, serviceConfig)
+	if err != nil {
+		return nil, fmt.Errorf("getting service target: %w", err)
+	}
 
-		serviceTarget, err := sm.GetServiceTarget(ctx, serviceConfig)
-		if err != nil {
-			task.SetError(fmt.Errorf("getting service target: %w", err))
-			return
-		}
+	targetResource, err := sm.resourceManager.GetTargetResource(ctx, sm.env.GetSubscriptionId(), serviceConfig)
+	if err != nil {
+		return nil, fmt.Errorf("getting target resource: %w", err)
+	}
 
-		targetResource, err := sm.resourceManager.GetTargetResource(ctx, sm.env.GetSubscriptionId(), serviceConfig)
-		if err != nil {
-			task.SetError(fmt.Errorf("getting target resource: %w", err))
-			return
-		}
+	deployResult, err := runCommandWithEvent(
+		ctx,
+		ServiceEventDeploy,
+		serviceConfig,
+		func() *async.TaskWithProgress[*ServiceDeployResult, ServiceProgress] {
+			return serviceTarget.Deploy(ctx, serviceConfig, packageResult, targetResource)
+		},
+	)
 
-		deployResult, err := runCommand(
-			ctx,
-			task,
-			ServiceEventDeploy,
-			serviceConfig,
-			func() *async.TaskWithProgress[*ServiceDeployResult, ServiceProgress] {
-				return serviceTarget.Deploy(ctx, serviceConfig, packageResult, targetResource)
-			},
-		)
+	if err != nil {
+		return nil, fmt.Errorf("failed deploying service '%s': %w", serviceConfig.Name, err)
+	}
 
-		if err != nil {
-			task.SetError(fmt.Errorf("failed deploying service '%s': %w", serviceConfig.Name, err))
-			return
-		}
+	// Allow users to specify their own endpoints, in cases where they've configured their own front-end load balancers,
+	// reverse proxies or DNS host names outside of the service target (and prefer that to be used instead).
+	overriddenEndpoints := sm.getOverriddenEndpoints(ctx, serviceConfig)
+	if len(overriddenEndpoints) > 0 {
+		deployResult.Endpoints = overriddenEndpoints
+	}
 
-		// Allow users to specify their own endpoints, in cases where they've configured their own front-end load balancers,
-		// reverse proxies or DNS host names outside of the service target (and prefer that to be used instead).
-		overriddenEndpoints := sm.getOverriddenEndpoints(ctx, serviceConfig)
-		if len(overriddenEndpoints) > 0 {
-			deployResult.Endpoints = overriddenEndpoints
-		}
-
-		task.SetResult(deployResult)
-		sm.setOperationResult(ctx, serviceConfig, string(ServiceEventDeploy), deployResult)
-	})
+	sm.setOperationResult(ctx, serviceConfig, string(ServiceEventDeploy), deployResult)
+	return deployResult, nil
 }
 
 // GetServiceTarget constructs a ServiceTarget from the underlying service configuration
@@ -530,6 +523,39 @@ func (sm *serviceManager) setOperationResult(
 	sm.operationCache[key] = result
 }
 
+func runCommandWithEvent[T comparable, P comparable](
+	ctx context.Context,
+	eventName ext.Event,
+	serviceConfig *ServiceConfig,
+	taskFunc func() *async.TaskWithProgress[T, P],
+) (T, error) {
+	eventArgs := ServiceLifecycleEventArgs{
+		Project: serviceConfig.Project,
+		Service: serviceConfig,
+	}
+
+	var result T
+
+	err := serviceConfig.Invoke(ctx, eventName, eventArgs, func() error {
+		serviceTask := taskFunc()
+		go flushProgress(serviceTask.Progress())
+
+		taskResult, err := serviceTask.Await()
+		if err != nil {
+			return err
+		}
+
+		result = taskResult
+		return nil
+	})
+
+	if err != nil {
+		return result, err
+	}
+
+	return result, nil
+}
+
 func runCommand[T comparable, P comparable](
 	ctx context.Context,
 	task *async.TaskContextWithProgress[T, P],
@@ -567,5 +593,11 @@ func runCommand[T comparable, P comparable](
 func syncProgress[T comparable, P comparable](task *async.TaskContextWithProgress[T, P], progressChannel <-chan P) {
 	for progress := range progressChannel {
 		task.SetProgress(progress)
+	}
+}
+
+func flushProgress[P comparable](progressChannel <-chan P) {
+	for progress := range progressChannel {
+		log.Println(progress)
 	}
 }

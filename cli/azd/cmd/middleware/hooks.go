@@ -12,6 +12,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
+	"github.com/azure/azure-dev/cli/azd/pkg/operations"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 )
 
@@ -23,6 +24,7 @@ type HooksMiddleware struct {
 	lazyEnv           *lazy.Lazy[*environment.Environment]
 	lazyProjectConfig *lazy.Lazy[*project.ProjectConfig]
 	commandRunner     exec.CommandRunner
+	operationManager  operations.Manager
 	console           input.Console
 	options           *Options
 }
@@ -32,6 +34,7 @@ func NewHooksMiddleware(
 	env *lazy.Lazy[*environment.Environment],
 	projectConfig *lazy.Lazy[*project.ProjectConfig],
 	commandRunner exec.CommandRunner,
+	operationManager operations.Manager,
 	console input.Console,
 	options *Options,
 ) Middleware {
@@ -39,6 +42,7 @@ func NewHooksMiddleware(
 		lazyEnv:           env,
 		lazyProjectConfig: projectConfig,
 		commandRunner:     commandRunner,
+		operationManager:  operationManager,
 		console:           console,
 		options:           options,
 	}
@@ -87,6 +91,7 @@ func (m *HooksMiddleware) registerCommandHooks(
 	hooksRunner := ext.NewHooksRunner(
 		hooksManager,
 		m.commandRunner,
+		m.operationManager,
 		m.console,
 		projectConfig.Path,
 		projectConfig.Hooks,
@@ -139,6 +144,7 @@ func (m *HooksMiddleware) registerServiceHooks(
 		serviceHooksRunner := ext.NewHooksRunner(
 			serviceHooksManager,
 			m.commandRunner,
+			m.operationManager,
 			m.console,
 			service.Path(),
 			service.Hooks,

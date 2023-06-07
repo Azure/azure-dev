@@ -19,6 +19,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/operations"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -112,6 +113,8 @@ type deployAction struct {
 	middlewareRunner         middleware.MiddlewareContext
 	packageActionInitializer actions.ActionInitializer[*packageAction]
 	alphaFeatureManager      *alpha.FeatureManager
+	operationManager         operations.Manager
+	operationPrinter         operations.Printer
 }
 
 func newDeployAction(
@@ -132,6 +135,8 @@ func newDeployAction(
 	middlewareRunner middleware.MiddlewareContext,
 	packageActionInitializer actions.ActionInitializer[*packageAction],
 	alphaFeatureManager *alpha.FeatureManager,
+	operationManager operations.Manager,
+	operationPrinter operations.Printer,
 ) actions.Action {
 	return &deployAction{
 		flags:                    flags,
@@ -151,6 +156,8 @@ func newDeployAction(
 		middlewareRunner:         middlewareRunner,
 		packageActionInitializer: packageActionInitializer,
 		alphaFeatureManager:      alphaFeatureManager,
+		operationManager:         operationManager,
+		operationPrinter:         operationPrinter,
 	}
 }
 
@@ -217,64 +224,63 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	deployResults := map[string]*project.ServiceDeployResult{}
 
 	for _, svc := range da.projectConfig.GetServicesStable() {
-		stepMessage := fmt.Sprintf("Deploying service %s", svc.Name)
-
-		// Skip this service if both cases are true:
-		// 1. The user specified a service name
-		// 2. This service is not the one the user specified
-		if targetServiceName != "" && targetServiceName != svc.Name {
-			continue
-		}
-
-		if alphaFeatureId, isAlphaFeature := alpha.IsFeatureKey(string(svc.Host)); isAlphaFeature {
-			// alpha feature on/off detection for host is done during initialization.
-			// This is just for displaying the warning during deployment.
-			da.console.WarnForFeature(ctx, alphaFeatureId)
-		}
-
-		da.console.ShowSpinner(ctx, stepMessage, input.Step)
-		var packageResult *project.ServicePackageResult
-		if da.flags.fromPackage != "" {
-			// --from-package set, skip packaging
-			packageResult = &project.ServicePackageResult{
-				PackagePath: da.flags.fromPackage,
+		var deployResult *project.ServiceDeployResult
+		operationMessage := fmt.Sprintf("Deploying service %s", svc.Name)
+		err = da.operationManager.Run(ctx, operationMessage, func(operation *operations.Operation) error {
+			// Skip this service if both cases are true:
+			// 1. The user specified a service name
+			// 2. This service is not the one the user specified
+			if targetServiceName != "" && targetServiceName != svc.Name {
+				operation.Skip(ctx)
+				return nil
 			}
-		} else {
-			//  --from-package not set, package the application
-			packageTask := da.serviceManager.Package(ctx, svc, nil)
-			go func() {
-				for packageProgress := range packageTask.Progress() {
-					progressMessage := fmt.Sprintf("Deploying service %s (%s)", svc.Name, packageProgress.Message)
-					da.console.ShowSpinner(ctx, progressMessage, input.Step)
+
+			if alphaFeatureId, isAlphaFeature := alpha.IsFeatureKey(string(svc.Host)); isAlphaFeature {
+				// alpha feature on/off detection for host is done during initialization.
+				// This is just for displaying the warning during deployment.
+				da.console.WarnForFeature(ctx, alphaFeatureId)
+			}
+
+			var packageResult *project.ServicePackageResult
+			if da.flags.fromPackage != "" {
+				// --from-package set, skip packaging
+				packageResult = &project.ServicePackageResult{
+					PackagePath: da.flags.fromPackage,
 				}
-			}()
+			} else {
+				//  --from-package not set, package the application
+				packageTask := da.serviceManager.Package(ctx, svc, nil)
+				go func() {
+					for packageProgress := range packageTask.Progress() {
+						da.operationManager.ReportProgress(ctx, packageProgress.Message)
+					}
+				}()
 
-			packageResult, err = packageTask.Await()
+				packageResult, err = packageTask.Await()
+				if err != nil {
+					return err
+				}
+			}
+
+			operationResult, err := da.serviceManager.Deploy(ctx, svc, packageResult)
 			if err != nil {
-				da.console.StopSpinner(ctx, stepMessage, input.StepFailed)
-				return nil, err
+				return err
 			}
-		}
 
-		deployTask := da.serviceManager.Deploy(ctx, svc, packageResult)
-		go func() {
-			for deployProgress := range deployTask.Progress() {
-				progressMessage := fmt.Sprintf("Deploying service %s (%s)", svc.Name, deployProgress.Message)
-				da.console.ShowSpinner(ctx, progressMessage, input.Step)
-			}
-		}()
+			deployResult = operationResult
+			return nil
+		})
 
-		deployResult, err := deployTask.Await()
 		if err != nil {
-			da.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 			return nil, err
 		}
 
-		da.console.StopSpinner(ctx, stepMessage, input.StepDone)
-		deployResults[svc.Name] = deployResult
+		if deployResult != nil {
+			deployResults[svc.Name] = deployResult
 
-		// report deploy outputs
-		da.console.MessageUxItem(ctx, deployResult)
+			// report deploy outputs
+			da.console.MessageUxItem(ctx, deployResult)
+		}
 	}
 
 	if da.formatter.Kind() == output.JsonFormat {
@@ -286,6 +292,10 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		if fmtErr := da.formatter.Format(deployResult, da.writer, nil); fmtErr != nil {
 			return nil, fmt.Errorf("deploy result could not be displayed: %w", fmtErr)
 		}
+	}
+
+	if err := da.operationPrinter.Flush(ctx); err != nil {
+		return nil, err
 	}
 
 	return &actions.ActionResult{

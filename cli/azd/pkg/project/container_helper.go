@@ -9,6 +9,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/operations"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
@@ -20,6 +21,7 @@ type ContainerHelper struct {
 	containerRegistryService azcli.ContainerRegistryService
 	docker                   docker.Docker
 	clock                    clock.Clock
+	operationManager         operations.Manager
 }
 
 func NewContainerHelper(
@@ -27,12 +29,14 @@ func NewContainerHelper(
 	clock clock.Clock,
 	containerRegistryService azcli.ContainerRegistryService,
 	docker docker.Docker,
+	operationManager operations.Manager,
 ) *ContainerHelper {
 	return &ContainerHelper{
 		env:                      env,
 		containerRegistryService: containerRegistryService,
 		docker:                   docker,
 		clock:                    clock,
+		operationManager:         operationManager,
 	}
 }
 
@@ -121,14 +125,14 @@ func (ch *ContainerHelper) Deploy(
 				return
 			}
 
-			task.SetProgress(NewServiceProgress("Tagging container image"))
+			ch.operationManager.ReportProgress(ctx, "Tagging container image")
 			if err := ch.docker.Tag(ctx, serviceConfig.Path(), localImageTag, remoteTag); err != nil {
 				task.SetError(err)
 				return
 			}
 
 			log.Printf("logging into container registry '%s'\n", loginServer)
-			task.SetProgress(NewServiceProgress("Logging into container registry"))
+			ch.operationManager.ReportProgress(ctx, "Logging into container registry")
 			err = ch.containerRegistryService.Login(ctx, targetResource.SubscriptionId(), loginServer)
 			if err != nil {
 				task.SetError(err)
@@ -137,7 +141,7 @@ func (ch *ContainerHelper) Deploy(
 
 			// Push image.
 			log.Printf("pushing %s to registry", remoteTag)
-			task.SetProgress(NewServiceProgress("Pushing container image"))
+			ch.operationManager.ReportProgress(ctx, "Pushing container image")
 			if err := ch.docker.Push(ctx, serviceConfig.Path(), remoteTag); err != nil {
 				task.SetError(err)
 				return

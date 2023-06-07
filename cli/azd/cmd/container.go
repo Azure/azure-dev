@@ -26,11 +26,10 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/messaging"
+	"github.com/azure/azure-dev/cli/azd/pkg/operations"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	"github.com/azure/azure-dev/cli/azd/pkg/progress"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
-	"github.com/azure/azure-dev/cli/azd/pkg/sample"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
@@ -323,9 +322,9 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		return messageService
 	})
 
-	// Sample
-	container.RegisterSingleton(sample.NewSampler)
-	container.RegisterSingleton(progress.NewPrinter)
+	// Operations
+	container.RegisterSingleton(operations.NewMessageManager)
+	container.RegisterSingleton(operations.NewMessagePrinter)
 
 	// Provisioning
 	container.RegisterTransient(provisioning.NewManager)

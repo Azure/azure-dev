@@ -10,6 +10,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/operations"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bash"
@@ -19,12 +20,13 @@ import (
 // Hooks enable support to invoke integration scripts before & after commands
 // Scripts can be invoked at the project or service level or
 type HooksRunner struct {
-	hooksManager  *HooksManager
-	commandRunner exec.CommandRunner
-	console       input.Console
-	cwd           string
-	hooks         map[string]*HookConfig
-	env           *environment.Environment
+	hooksManager     *HooksManager
+	commandRunner    exec.CommandRunner
+	operationManager operations.Manager
+	console          input.Console
+	cwd              string
+	hooks            map[string]*HookConfig
+	env              *environment.Environment
 }
 
 // NewHooks creates a new instance of CommandHooks
@@ -32,6 +34,7 @@ type HooksRunner struct {
 func NewHooksRunner(
 	hooksManager *HooksManager,
 	commandRunner exec.CommandRunner,
+	operationManager operations.Manager,
 	console input.Console,
 	cwd string,
 	hooks map[string]*HookConfig,
@@ -47,12 +50,13 @@ func NewHooksRunner(
 	}
 
 	return &HooksRunner{
-		hooksManager:  hooksManager,
-		commandRunner: commandRunner,
-		console:       console,
-		cwd:           cwd,
-		hooks:         hooks,
-		env:           env,
+		hooksManager:     hooksManager,
+		commandRunner:    commandRunner,
+		operationManager: operationManager,
+		console:          console,
+		cwd:              cwd,
+		hooks:            hooks,
+		env:              env,
 	}
 }
 
@@ -131,49 +135,34 @@ func (h *HooksRunner) execHook(ctx context.Context, hookConfig *HookConfig) erro
 	consoleInteractive := formatter == nil || formatter.Kind() == output.NoneFormat
 	scriptInteractive := consoleInteractive && hookConfig.Interactive
 
-	// When running in an interactive terminal broadcast a message to the dev to remind them that custom hooks are running.
-	if consoleInteractive {
-		h.console.Message(
-			ctx,
-			output.WithBold(
-				fmt.Sprintf(
-					"Executing %s hook => %s",
-					output.WithHighLightFormat(hookConfig.Name),
-					output.WithHighLightFormat(hookConfig.path),
-				),
-			),
-		)
-	}
-
-	log.Printf("Executing script '%s'\n", hookConfig.path)
-	res, err := script.Execute(ctx, hookConfig.path, scriptInteractive)
-	if err != nil {
-		execErr := fmt.Errorf(
-			"'%s' hook failed with exit code: '%d', Path: '%s'. : %w",
-			hookConfig.Name,
-			res.ExitCode,
-			hookConfig.path,
-			err,
-		)
-
-		// If an error occurred log the failure but continue
-		if hookConfig.ContinueOnError {
-			h.console.Message(ctx, output.WithBold(output.WithWarningFormat("WARNING: %s", execErr.Error())))
-			h.console.Message(
-				ctx,
-				output.WithWarningFormat("Execution will continue since ContinueOnError has been set to true."),
+	operationMessage := fmt.Sprintf("Running %s hook", hookConfig.Name)
+	return h.operationManager.Run(ctx, operationMessage, func(operation *operations.Operation) error {
+		log.Printf("Executing script '%s'\n", hookConfig.path)
+		res, err := script.Execute(ctx, hookConfig.path, scriptInteractive)
+		if err != nil {
+			execErr := fmt.Errorf(
+				"'%s' hook failed with exit code: '%d', Path: '%s'. : %w",
+				hookConfig.Name,
+				res.ExitCode,
+				hookConfig.path,
+				err,
 			)
-			log.Println(execErr.Error())
-		} else {
-			return execErr
+
+			// If an error occurred log the failure but continue
+			if hookConfig.ContinueOnError {
+				log.Println(execErr.Error())
+				operation.Warn(ctx, "Script failed! Execution will continue since ContinueOnError has been set to true.")
+			} else {
+				return execErr
+			}
 		}
-	}
 
-	// Delete any temporary inline scripts after execution
-	// Removing temp scripts only on success to support better debugging with failing scripts.
-	if hookConfig.location == ScriptLocationInline {
-		defer os.Remove(hookConfig.path)
-	}
+		// Delete any temporary inline scripts after execution
+		// Removing temp scripts only on success to support better debugging with failing scripts.
+		if hookConfig.location == ScriptLocationInline {
+			defer os.Remove(hookConfig.path)
+		}
 
-	return nil
+		return nil
+	})
 }

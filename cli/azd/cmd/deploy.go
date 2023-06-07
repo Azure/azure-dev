@@ -250,9 +250,10 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 			} else {
 				//  --from-package not set, package the application
 				packageTask := da.serviceManager.Package(ctx, svc, nil)
+				// TODO: After async refactor this progress reporting go away
 				go func() {
 					for packageProgress := range packageTask.Progress() {
-						da.operationManager.ReportProgress(ctx, packageProgress.Message)
+						operation.Progress(ctx, packageProgress.Message)
 					}
 				}()
 
@@ -262,7 +263,15 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 				}
 			}
 
-			operationResult, err := da.serviceManager.Deploy(ctx, svc, packageResult)
+			deployTask := da.serviceManager.Deploy(ctx, svc, packageResult)
+			// TODO: After async refactor this progress reporting go away
+			go func() {
+				for packageProgress := range deployTask.Progress() {
+					operation.Progress(ctx, packageProgress.Message)
+				}
+			}()
+
+			operationResult, err := deployTask.Await()
 			if err != nil {
 				return err
 			}

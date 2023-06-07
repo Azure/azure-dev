@@ -22,8 +22,6 @@ import (
 	"sync"
 	"testing"
 	"time"
-
-	"github.com/azure/azure-dev/cli/azd/test/recording"
 )
 
 const (
@@ -32,6 +30,9 @@ const (
 
 // sync.Once for one-time build for the process invocation
 var buildOnce sync.Once
+
+// sync.Once for one-time build for the process invocation (record mode)
+var buildRecordOnce sync.Once
 
 // The result of calling an azd CLI command
 type CliResult struct {
@@ -60,13 +61,25 @@ type CLI struct {
 //
 // When CI is detected, no automatic build is performed. To disable automatic build behavior, CLI_TEST_SKIP_BUILD
 // can be set to a truthy value.
-func NewCLI(t *testing.T) *CLI {
+func NewCLI(t *testing.T, opts ...Options) *CLI {
+	cli := &CLI{T: t}
+	opt := option{}
+	for _, o := range opts {
+		o.Apply(&opt)
+	}
+
+	if opt.Session != nil {
+		env := append(
+			opt.Session.Environ(),
+			"HTTP_PROXY="+opt.Session.ProxyUrl,
+			"HTTPS_PROXY="+opt.Session.ProxyUrl)
+		cli.Env = append(cli.Env, env...)
+	}
+
 	// Allow a override for custom build
 	if os.Getenv("CLI_TEST_AZD_PATH") != "" {
-		return &CLI{
-			T:       t,
-			AzdPath: os.Getenv("CLI_TEST_AZD_PATH"),
-		}
+		cli.AzdPath = os.Getenv("CLI_TEST_AZD_PATH")
+		return cli
 	}
 
 	// Reference the binary that is built in the same folder as source
@@ -77,11 +90,7 @@ func NewCLI(t *testing.T) *CLI {
 		cliPath = filepath.Join(cliPath, "azd")
 	}
 
-	cli := &CLI{
-		T:       t,
-		AzdPath: cliPath,
-	}
-
+	cli.AzdPath = cliPath
 	// Manual override for skipping automatic build
 	skip, err := strconv.ParseBool(os.Getenv("CLI_TEST_SKIP_BUILD"))
 	if err == nil && skip {
@@ -95,43 +104,17 @@ func NewCLI(t *testing.T) *CLI {
 		return cli
 	}
 
-	buildOnce.Do(func() {
-		cmd := exec.Command("go", "build")
-		cmd.Dir = filepath.Dir(cliPath)
-
-		// Build with coverage if GOCOVERDIR is specified.
-		if os.Getenv("GOCOVERDIR") != "" {
-			cmd.Args = append(cmd.Args, "-cover")
-		}
-
-		t.Logf("Running go build in %v", cmd.Dir)
-		output, err := cmd.CombinedOutput()
-		if err != nil {
-			panic(fmt.Errorf(
-				"failed to build azd (ran %s in %s): %w:\n%s",
-				strings.Join(cmd.Args, " "),
-				cmd.Dir,
-				err,
-				output))
-		}
-
-		t.Logf("output: %v", output)
-	})
-
-	return &CLI{
-		T:       t,
-		AzdPath: cliPath,
-	}
-}
-
-func (cli *CLI) Proxy(session *recording.Session) {
-	if session == nil {
-		return
+	if opt.Session != nil {
+		buildRecordOnce.Do(func() {
+			build(t, filepath.Dir(cliPath), "-t", "record")
+		})
+	} else {
+		buildOnce.Do(func() {
+			build(t, filepath.Dir(cliPath))
+		})
 	}
 
-	cli.Env = append(cli.Env,
-		"HTTP_PROXY="+session.ProxyUrl,
-		"HTTPS_PROXY="+session.ProxyUrl)
+	return cli
 }
 
 func (cli *CLI) RunCommandWithStdIn(ctx context.Context, stdin string, args ...string) (*CliResult, error) {
@@ -236,4 +219,28 @@ func (l *logWriter) Write(bytes []byte) (n int, err error) {
 func GetSourcePath() string {
 	_, b, _, _ := runtime.Caller(0)
 	return filepath.Join(filepath.Dir(b), "..", "..")
+}
+
+func build(t *testing.T, pkgPath string, args ...string) {
+	startTime := time.Now()
+	cmd := exec.Command("go", "build")
+	cmd.Dir = pkgPath
+	cmd.Args = args
+
+	// Build with coverage if GOCOVERDIR is specified.
+	if os.Getenv("GOCOVERDIR") != "" {
+		cmd.Args = append(cmd.Args, "-cover")
+	}
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		panic(fmt.Errorf(
+			"failed to build azd (ran %s in %s): %w:\n%s",
+			strings.Join(cmd.Args, " "),
+			cmd.Dir,
+			err,
+			output))
+	}
+
+	t.Logf("built azd in %s", time.Since(startTime))
 }

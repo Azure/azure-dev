@@ -3,6 +3,7 @@ package recording
 import (
 	"crypto/tls"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -46,7 +47,26 @@ func (m modeOption) Apply(r *recordOption) {
 }
 
 type Session struct {
+	// ProxyUrl is the URL of the proxy server that will be recording or replaying interactions.
 	ProxyUrl string
+
+	// If true, playing back from recording.
+	// Otherwise, recording.
+	Playback bool
+
+	// Variables stored in the session.
+	// These variables are automatically set as environment variables for the CLI process under test.
+	// See [test/azdcli] for more details.
+	Variables map[string]string
+}
+
+func (s *Session) Environ() []string {
+	var env []string
+	for k, v := range s.Variables {
+		env = append(env, fmt.Sprintf("%s=%s", k, v))
+	}
+
+	return env
 }
 
 func (s *Session) ProxyClient() *http.Client {

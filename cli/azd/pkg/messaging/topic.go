@@ -11,7 +11,7 @@ import (
 // Topic receives messages from the messaging system and broadcasts them to subscribers.
 type Topic struct {
 	Name        string
-	channel     chan *Message
+	channel     chan *Envelope
 	subscribers []*Subscription
 	flushLock   sync.Mutex
 	closed      bool
@@ -21,7 +21,7 @@ type Topic struct {
 func NewTopic(ctx context.Context, name string) *Topic {
 	topic := &Topic{
 		Name:        name,
-		channel:     make(chan *Message),
+		channel:     make(chan *Envelope),
 		subscribers: []*Subscription{},
 	}
 
@@ -61,7 +61,7 @@ func (t *Topic) Unsubscribe(ctx context.Context, subscription *Subscription) {
 }
 
 // Send sends a message to the topic.
-func (t *Topic) Send(ctx context.Context, msg *Message) error {
+func (t *Topic) Send(ctx context.Context, msg *Envelope) error {
 	if err := t.ensureOpen(); err != nil {
 		return err
 	}
@@ -104,7 +104,7 @@ func (t *Topic) Flush(ctx context.Context) error {
 	return nil
 }
 
-func (t *Topic) receive(ctx context.Context, msg *Message) {
+func (t *Topic) receive(ctx context.Context, msg *Envelope) {
 	// Attempt to re-lock the flush mutex
 	_ = t.flushLock.TryLock()
 	for i := len(t.subscribers) - 1; i >= 0; i-- {

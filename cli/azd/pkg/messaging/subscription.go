@@ -6,10 +6,10 @@ import (
 )
 
 // MessageFilter is a function that determines whether a message should be handled by a subscription.
-type MessageFilter func(ctx context.Context, msg *Message) bool
+type MessageFilter func(ctx context.Context, msg *Envelope) bool
 
 // MessageHandler is a function that handles a message.
-type MessageHandler func(ctx context.Context, msg *Message)
+type MessageHandler func(ctx context.Context, msg *Envelope)
 
 // Subscription is a subscription to a topic.
 type Subscription struct {
@@ -47,7 +47,7 @@ func (s *Subscription) Flush(ctx context.Context) error {
 	return s.topic.Flush(ctx)
 }
 
-func (s *Subscription) receive(ctx context.Context, msg *Message) {
+func (s *Subscription) receive(ctx context.Context, msg *Envelope) {
 	if s.filter != nil && !s.filter(ctx, msg) {
 		return
 	}

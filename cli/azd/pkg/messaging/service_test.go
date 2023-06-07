@@ -13,15 +13,15 @@ func Test_Service_Send_Receive(t *testing.T) {
 	service := NewService()
 
 	t.Run("With_Default_Topic", func(t *testing.T) {
-		recievedMessages := []*Message{}
+		recievedMessages := []*Envelope{}
 
-		subscription, err := service.Subscribe(ctx, nil, func(ctx context.Context, msg *Message) {
+		subscription, err := service.Subscribe(ctx, nil, func(ctx context.Context, msg *Envelope) {
 			recievedMessages = append(recievedMessages, msg)
 		})
 		require.NoError(t, err)
 		defer subscription.Close(ctx)
 
-		err = service.Send(ctx, NewMessage(SimpleMessage, "Hello World"))
+		err = service.Send(ctx, NewEnvelope(SimpleMessage, "Hello World"))
 		require.NoError(t, err)
 		subscription.Flush(ctx)
 
@@ -30,9 +30,9 @@ func Test_Service_Send_Receive(t *testing.T) {
 
 	t.Run("With_Custom_Topic", func(t *testing.T) {
 		topicCtx := service.WithTopic(ctx, "custom")
-		recievedMessages := []*Message{}
+		recievedMessages := []*Envelope{}
 
-		subscription, err := service.Subscribe(topicCtx, nil, func(ctx context.Context, msg *Message) {
+		subscription, err := service.Subscribe(topicCtx, nil, func(ctx context.Context, msg *Envelope) {
 			recievedMessages = append(recievedMessages, msg)
 		})
 		require.NoError(t, err)
@@ -40,7 +40,7 @@ func Test_Service_Send_Receive(t *testing.T) {
 
 		subscription.Flush(topicCtx)
 
-		err = service.Send(topicCtx, NewMessage(SimpleMessage, "Hello World"))
+		err = service.Send(topicCtx, NewEnvelope(SimpleMessage, "Hello World"))
 		require.NoError(t, err)
 		require.Len(t, recievedMessages, 1)
 	})
@@ -49,25 +49,25 @@ func Test_Service_Send_Receive(t *testing.T) {
 		topic1Ctx := service.WithTopic(ctx, "topic1")
 		topic2Ctx := service.WithTopic(ctx, "topic2")
 
-		topic1ReceivedMessages := []*Message{}
-		topic2ReceivedMessages := []*Message{}
+		topic1ReceivedMessages := []*Envelope{}
+		topic2ReceivedMessages := []*Envelope{}
 
-		subscription1, err := service.Subscribe(topic1Ctx, nil, func(ctx context.Context, msg *Message) {
+		subscription1, err := service.Subscribe(topic1Ctx, nil, func(ctx context.Context, msg *Envelope) {
 			topic1ReceivedMessages = append(topic1ReceivedMessages, msg)
 		})
 		require.NoError(t, err)
 		defer subscription1.Close(topic1Ctx)
 
-		subscription2, err := service.Subscribe(topic2Ctx, nil, func(ctx context.Context, msg *Message) {
+		subscription2, err := service.Subscribe(topic2Ctx, nil, func(ctx context.Context, msg *Envelope) {
 			topic2ReceivedMessages = append(topic2ReceivedMessages, msg)
 		})
 		require.NoError(t, err)
 		defer subscription2.Close(topic2Ctx)
 
-		err = service.Send(topic1Ctx, NewMessage(SimpleMessage, "Hello World"))
+		err = service.Send(topic1Ctx, NewEnvelope(SimpleMessage, "Hello World"))
 		require.NoError(t, err)
 
-		err = service.Send(topic2Ctx, NewMessage(SimpleMessage, "Hello World"))
+		err = service.Send(topic2Ctx, NewEnvelope(SimpleMessage, "Hello World"))
 		require.NoError(t, err)
 
 		err = subscription1.Flush(topic1Ctx)
@@ -81,9 +81,9 @@ func Test_Service_Send_Receive(t *testing.T) {
 	})
 
 	t.Run("With_Multiple_Messages", func(t *testing.T) {
-		recievedMessages := []*Message{}
+		recievedMessages := []*Envelope{}
 
-		subscription, err := service.Subscribe(ctx, nil, func(ctx context.Context, msg *Message) {
+		subscription, err := service.Subscribe(ctx, nil, func(ctx context.Context, msg *Envelope) {
 			recievedMessages = append(recievedMessages, msg)
 		})
 		require.NoError(t, err)
@@ -91,7 +91,7 @@ func Test_Service_Send_Receive(t *testing.T) {
 
 		messageCount := 100
 		for i := 0; i < 100; i++ {
-			err = service.Send(ctx, NewMessage(SimpleMessage, fmt.Sprintf("Hello World %d", i)))
+			err = service.Send(ctx, NewEnvelope(SimpleMessage, fmt.Sprintf("Hello World %d", i)))
 			require.NoError(t, err)
 		}
 
@@ -102,9 +102,9 @@ func Test_Service_Send_Receive(t *testing.T) {
 	})
 
 	t.Run("With_More_Messages_After_Flush", func(t *testing.T) {
-		recievedMessages := []*Message{}
+		recievedMessages := []*Envelope{}
 
-		subscription, err := service.Subscribe(ctx, nil, func(ctx context.Context, msg *Message) {
+		subscription, err := service.Subscribe(ctx, nil, func(ctx context.Context, msg *Envelope) {
 			recievedMessages = append(recievedMessages, msg)
 		})
 		require.NoError(t, err)
@@ -112,7 +112,7 @@ func Test_Service_Send_Receive(t *testing.T) {
 
 		messageCount := 100
 		for i := 0; i < 100; i++ {
-			err = service.Send(ctx, NewMessage(SimpleMessage, fmt.Sprintf("Hello World %d", i)))
+			err = service.Send(ctx, NewEnvelope(SimpleMessage, fmt.Sprintf("Hello World %d", i)))
 			require.NoError(t, err)
 		}
 
@@ -120,7 +120,7 @@ func Test_Service_Send_Receive(t *testing.T) {
 		require.NoError(t, err)
 
 		for i := 0; i < 100; i++ {
-			err = service.Send(ctx, NewMessage(SimpleMessage, fmt.Sprintf("Hello World %d", i)))
+			err = service.Send(ctx, NewEnvelope(SimpleMessage, fmt.Sprintf("Hello World %d", i)))
 			require.NoError(t, err)
 		}
 

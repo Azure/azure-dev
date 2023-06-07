@@ -13,17 +13,17 @@ const (
 	SimpleMessage MessageKind = "Simple"
 )
 
-// Message represents a message sent to a topic.
-type Message struct {
+// Envelope represents a message sent to a topic.
+type Envelope struct {
 	Timestamp time.Time
 	Type      MessageKind
 	Value     any
 	Tags      map[string]any
 }
 
-// NewMessage creates a new message with the specified kind and value.
-func NewMessage[T any](kind MessageKind, value T) *Message {
-	return &Message{
+// NewEnvelope creates a new message with the specified kind and value.
+func NewEnvelope[T any](kind MessageKind, value T) *Envelope {
+	return &Envelope{
 		Type:      kind,
 		Value:     value,
 		Timestamp: time.Now(),

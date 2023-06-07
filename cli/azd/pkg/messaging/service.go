@@ -7,13 +7,14 @@ import (
 // Publisher is an interface for sending messages.
 type Publisher interface {
 	// Send sends a message to the topic specified in the context.
-	Send(ctx context.Context, msg *Message) error
+	Send(ctx context.Context, msg *Envelope) error
 }
 
 // Subscriber is an interface for receiving messages.
 type Subscriber interface {
 	// Subscribe subscribes to the topic specified in the context with the specified filter and handler.
 	Subscribe(ctx context.Context, filter MessageFilter, handler MessageHandler) (*Subscription, error)
+	Unsubscribe(ctx context.Context, subscription *Subscription)
 }
 
 // Service is a messaging service for sending and receiving messages.
@@ -42,13 +43,17 @@ func (s *Service) WithTopic(ctx context.Context, topicName string) context.Conte
 }
 
 // Send sends a message to the topic specified in the context.
-func (s *Service) Send(ctx context.Context, msg *Message) error {
+func (s *Service) Send(ctx context.Context, msg *Envelope) error {
 	return s.Topic(ctx).Send(ctx, msg)
 }
 
 // Subscribe subscribes to the topic specified in the context with the specified filter and handler.
 func (s *Service) Subscribe(ctx context.Context, filter MessageFilter, handler MessageHandler) (*Subscription, error) {
 	return s.Topic(ctx).Subscribe(ctx, filter, handler)
+}
+
+func (s *Service) Unsubscribe(ctx context.Context, subscription *Subscription) {
+	s.Topic(ctx).Unsubscribe(ctx, subscription)
 }
 
 // Topic returns the topic specified in the context.

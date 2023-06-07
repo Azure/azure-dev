@@ -11,16 +11,16 @@ func Test_Subscription_Receive(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("All_Messages", func(t *testing.T) {
-		messages := []*Message{}
+		messages := []*Envelope{}
 		topic := NewTopic(ctx, "test")
-		subscription, err := topic.Subscribe(ctx, nil, func(ctx context.Context, msg *Message) {
+		subscription, err := topic.Subscribe(ctx, nil, func(ctx context.Context, msg *Envelope) {
 			messages = append(messages, msg)
 		})
 		require.NoError(t, err)
 		require.NotNil(t, subscription)
 
 		for i := 0; i < 10; i++ {
-			err := topic.Send(ctx, NewMessage(SimpleMessage, "test"))
+			err := topic.Send(ctx, NewEnvelope(SimpleMessage, "test"))
 			require.NoError(t, err)
 		}
 
@@ -31,11 +31,11 @@ func Test_Subscription_Receive(t *testing.T) {
 	})
 
 	t.Run("With_Message_Filter", func(t *testing.T) {
-		messages := []*Message{}
+		messages := []*Envelope{}
 		topic := NewTopic(ctx, "test")
-		subscription, err := topic.Subscribe(ctx, func(ctx context.Context, msg *Message) bool {
+		subscription, err := topic.Subscribe(ctx, func(ctx context.Context, msg *Envelope) bool {
 			return msg.Type == SimpleMessage
-		}, func(ctx context.Context, msg *Message) {
+		}, func(ctx context.Context, msg *Envelope) {
 			messages = append(messages, msg)
 		})
 		require.NoError(t, err)
@@ -44,10 +44,10 @@ func Test_Subscription_Receive(t *testing.T) {
 		var customMessage MessageKind = "custom"
 
 		for i := 0; i < 10; i++ {
-			err := topic.Send(ctx, NewMessage(SimpleMessage, "test"))
+			err := topic.Send(ctx, NewEnvelope(SimpleMessage, "test"))
 			require.NoError(t, err)
 
-			err = topic.Send(ctx, NewMessage(customMessage, "custom"))
+			err = topic.Send(ctx, NewEnvelope(customMessage, "custom"))
 			require.NoError(t, err)
 		}
 
@@ -61,9 +61,9 @@ func Test_Subscription_Receive(t *testing.T) {
 func Test_Subscription_Close(t *testing.T) {
 	ctx := context.Background()
 
-	messages := []*Message{}
+	messages := []*Envelope{}
 	topic := NewTopic(ctx, "test")
-	subscription, err := topic.Subscribe(ctx, nil, func(ctx context.Context, msg *Message) {
+	subscription, err := topic.Subscribe(ctx, nil, func(ctx context.Context, msg *Envelope) {
 		messages = append(messages, msg)
 	})
 	require.NoError(t, err)
@@ -72,7 +72,7 @@ func Test_Subscription_Close(t *testing.T) {
 	err = subscription.Close(ctx)
 	require.NoError(t, err)
 
-	err = topic.Send(ctx, NewMessage(SimpleMessage, "test"))
+	err = topic.Send(ctx, NewEnvelope(SimpleMessage, "test"))
 	require.NoError(t, err)
 
 	err = subscription.Flush(ctx)

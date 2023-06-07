@@ -1,3 +1,5 @@
+//go:build !record
+
 package cmd
 
 import (

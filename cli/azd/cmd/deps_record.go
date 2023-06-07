@@ -1,5 +1,4 @@
 //go:build record
-// +build record
 
 package cmd
 

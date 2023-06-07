@@ -1,11 +1,8 @@
 package recording
 
 import (
-	"context"
 	"crypto/tls"
 	"errors"
-	"fmt"
-	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -14,9 +11,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
-	"time"
 
-	"github.com/sethvargo/go-retry"
 	"golang.org/x/exp/slog"
 	"gopkg.in/dnaeon/go-vcr.v3/cassette"
 )
@@ -123,7 +118,7 @@ func Start(t *testing.T, opts ...Options) *Session {
 		t.Fatalf("invalid record mode: %v", opt.mode)
 	}
 
-	proxy := &connectProxy{
+	proxy := &connectHandler{
 		Log: log,
 		HttpHandler: &recorderProxy{
 			Log: log,
@@ -176,85 +171,4 @@ func (l *logWriter) Write(bytes []byte) (n int, err error) {
 		}
 	}
 	return len(bytes), nil
-}
-
-// recorderProxy is a server that responds to incoming requests by either
-// proxy-ing from the upstream server or responding from playback.
-//
-// The mode is determined by the value of Playback.
-type recorderProxy struct {
-	Log *slog.Logger
-
-	// Panic specifies the function to call when the server panics.
-	// If nil, `panic` is used.
-	Panic func(msg string)
-
-	// If true, playing back from recording.
-	// Otherwise, recording.
-	Playback bool
-
-	// Cst contains the cassette to save interactions to, or to playback interactions from saved recording.
-	Cst *cassette.Cassette
-}
-
-func (p *recorderProxy) panic(msg string, args ...interface{}) {
-	if p.Panic != nil {
-		p.Panic(fmt.Sprintf(msg, args...))
-	} else {
-		panic(fmt.Sprintf(msg, args...))
-	}
-}
-
-func (p *recorderProxy) ServeConn(conn io.Writer, req *http.Request) {
-	p.Log.Debug("recorderProxy: incoming request", "url", req.URL)
-
-	if p.Playback {
-		interact, err := p.Cst.GetInteraction(req)
-		if err != nil {
-			p.panic("recorderProxy: %v", err)
-		}
-
-		resp, err := interact.GetHTTPResponse()
-		if err != nil {
-			p.panic("recorderProxy: %v", err)
-		}
-
-		err = resp.Write(conn)
-		if err != nil {
-			p.panic(err.Error())
-		}
-	} else {
-		var resp *http.Response
-		var err error
-
-		err = retry.Do(
-			context.Background(),
-			retry.WithMaxRetries(3, retry.NewConstant(100*time.Millisecond)),
-			func(_ context.Context) error {
-				resp, err = http.DefaultClient.Do(req)
-				return retry.RetryableError(err)
-			})
-		if err != nil {
-			p.panic("recorderProxy: error sending request to target: %v", err)
-		}
-		p.Log.Debug("recorderProxy: outgoing response", "url", req.URL, "status", resp.Status)
-		// Always use chunked encoding for sending the response back.
-		resp.TransferEncoding = []string{"chunked"}
-		interaction, err := capture(req, resp)
-		if err != nil {
-			p.panic(fmt.Sprintf("recorderProxy: error capturing interaction: %v", err))
-		}
-
-		p.Cst.AddInteraction(interaction)
-
-		p.Log.Debug("recorderProxy: sending outgoing response", "url", req.URL, "status", resp.Status)
-
-		// Send the target server's response back to the client.
-		if err := resp.Write(conn); err != nil {
-			p.panic("recorderProxy: error writing response: %v", err)
-		}
-
-		p.Log.Debug("recorderProxy: sent outgoing response", "url", req.URL, "status", resp.Status)
-
-	}
 }

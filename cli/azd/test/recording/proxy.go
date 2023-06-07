@@ -2,6 +2,7 @@ package recording
 
 import (
 	"bufio"
+	"context"
 	"crypto/tls"
 	"fmt"
 	"io"
@@ -9,26 +10,115 @@ import (
 	"net/http"
 	"net/url"
 	"strings"
+	"time"
 
+	"github.com/sethvargo/go-retry"
 	"golang.org/x/exp/slog"
+	"gopkg.in/dnaeon/go-vcr.v3/cassette"
 )
 
-// Like http.Handler, except with a io.Writer instead of a http.ResponseWriter.
+// recorderProxy is a server that records and plays back interactions. The mode is determined by the value of Playback.
+//
+// In record mode, recorderProxy responds to requests by proxy-ing to the upstream server
+// while recording the interactions.
+//
+// In playback mode, recorderProxy replays interactions from previously stored interactions.
+type recorderProxy struct {
+	Log *slog.Logger
+
+	// Panic specifies the function to call when the server panics.
+	// If nil, `panic` is used.
+	Panic func(msg string)
+
+	// If true, playing back from recording.
+	// Otherwise, recording.
+	Playback bool
+
+	// Cst contains the cassette to save interactions to, or to playback interactions from saved recording.
+	Cst *cassette.Cassette
+}
+
+func (p *recorderProxy) ServeConn(conn io.Writer, req *http.Request) {
+	p.Log.Debug("recorderProxy: incoming request", "url", req.URL)
+
+	if p.Playback {
+		interact, err := p.Cst.GetInteraction(req)
+		if err != nil {
+			p.panic("recorderProxy: %v", err)
+		}
+
+		resp, err := interact.GetHTTPResponse()
+		if err != nil {
+			p.panic("recorderProxy: %v", err)
+		}
+
+		err = resp.Write(conn)
+		if err != nil {
+			p.panic(err.Error())
+		}
+	} else {
+		var resp *http.Response
+		var err error
+
+		err = retry.Do(
+			context.Background(),
+			retry.WithMaxRetries(3, retry.NewConstant(100*time.Millisecond)),
+			func(_ context.Context) error {
+				resp, err = http.DefaultClient.Do(req)
+				return retry.RetryableError(err)
+			})
+		if err != nil {
+			p.panic("recorderProxy: error sending request to target: %v", err)
+		}
+		// Always use chunked encoding for sending the response back.
+		resp.TransferEncoding = []string{"chunked"}
+		interaction, err := capture(req, resp)
+		if err != nil {
+			p.panic(fmt.Sprintf("recorderProxy: error capturing interaction: %v", err))
+		}
+
+		p.Cst.AddInteraction(interaction)
+
+		p.Log.Debug("recorderProxy: outgoing response", "url", req.URL, "status", resp.Status)
+		// Send the target server's response back to the client.
+		if err := resp.Write(conn); err != nil {
+			p.panic("recorderProxy: error writing response: %v", err)
+		}
+	}
+}
+
+// panic calls the user-defined Panic function if set, otherwise the default panic function.
+func (p *recorderProxy) panic(msg string, args ...interface{}) {
+	if p.Panic != nil {
+		p.Panic(fmt.Sprintf(msg, args...))
+	} else {
+		panic(fmt.Sprintf(msg, args...))
+	}
+}
+
+// Like http.Handler, except writing to an underlying network connection (io.Writer),
+// instead of a http.ResponseWriter.
 type httpHandler interface {
 	ServeConn(w io.Writer, req *http.Request)
 }
 
-// connectProxy is a proxy that supports for both HTTPS connect and direct HTTP methods.
-type connectProxy struct {
+// connectHandler is a http.Handler server implementation that provides support for negotiating
+// HTTPS connect and direct HTTP methods proxy protocols which is relayed to an underlying HttpHandler.
+//
+// HttpHandler can be set to an implementation that handles the HTTP requests, with the CONNECT handshake abstracted away.
+type connectHandler struct {
+	// TLS configuration that will be used for the TLS CONNECT tunnel.
 	TLS *tls.Config
 
+	// Log is the logger that will be used to log messages.
 	Log *slog.Logger
 
+	// The HTTP handler that will be used to handle the HTTP requests.
 	HttpHandler httpHandler
 }
 
-func (p *connectProxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	p.Log.Debug("connectProxy:", "method", req.Method, "url", req.URL)
+func (p *connectHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	p.Log.Debug("connectHandler:", "method", req.Method, "url", req.URL)
 
 	conn, err := p.hijack(w)
 	if err != nil {
@@ -37,16 +127,16 @@ func (p *connectProxy) ServeHTTP(w http.ResponseWriter, req *http.Request) {
 
 	// Handle HTTPS CONNECT
 	if req.Method == http.MethodConnect {
-		p.Log.Debug("connectProxy: CONNECT requested to ", "host", req.Host, "remoteAddr", req.RemoteAddr)
+		p.Log.Debug("connectHandler: CONNECT requested to ", "host", req.Host, "remoteAddr", req.RemoteAddr)
 		p.connectThenServe(conn, req)
 	} else { // Handle direct HTTP
 		p.HttpHandler.ServeConn(conn, req)
 	}
 }
 
-// "hijack" client connection to get a TCP (or TLS) socket we can read
+// hijack "hijacks" the client connection to get a TCP (or TLS) socket we can read
 // and write arbitrary data to/from.
-func (p *connectProxy) hijack(w http.ResponseWriter) (net.Conn, error) {
+func (p *connectHandler) hijack(w http.ResponseWriter) (net.Conn, error) {
 	hj, ok := w.(http.Hijacker)
 	if !ok {
 		return nil, fmt.Errorf("http server doesn't support hijacking connection")
@@ -60,7 +150,7 @@ func (p *connectProxy) hijack(w http.ResponseWriter) (net.Conn, error) {
 	return clientConn, nil
 }
 
-func (p *connectProxy) connectThenServe(clientConn net.Conn, connectReq *http.Request) {
+func (p *connectHandler) connectThenServe(clientConn net.Conn, connectReq *http.Request) {
 	// Send an HTTP OK response back to the client; this initiates the CONNECT
 	// tunnel. From this point on the client will assume it's connected directly
 	// to the target.

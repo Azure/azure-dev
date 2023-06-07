@@ -5,16 +5,14 @@ package cmd
 
 import (
 	"fmt"
-	"net/http"
 	"os"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
-	"github.com/benbjohnson/clock"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	// Importing for infrastructure provider plugin registrations
+
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -23,66 +21,10 @@ import (
 	"github.com/spf13/cobra"
 )
 
-// AppOptions contains the options for constructing the application.
-// The default options used by the application are created by calling NewAppOptions().
-// In integration tests, this may be overridden.
-type AppOptions struct {
-	HttpClient     httputil.HttpClient
-	Clock          clock.Clock
-	ConsoleHandles input.ConsoleHandles
-}
-
-func NewAppOptions() *AppOptions {
-	var client httputil.HttpClient
-	if os.Getenv("AZURE_RECORD_ID") != "" &&
-		os.Getenv("AZURE_RECORD_MODE") != "" {
-		client = &recordClient{
-			httpClient: &http.Client{},
-			additionalHeaders: map[string]string{
-				"x-recording-id":   os.Getenv("AZURE_RECORD_ID"),
-				"x-recording-mode": os.Getenv("AZURE_RECORD_MODE"),
-			},
-		}
-	} else {
-		client = &http.Client{}
-	}
-
-	return &AppOptions{
-		HttpClient: client,
-		Clock:      clock.New(),
-		ConsoleHandles: input.ConsoleHandles{
-			Stdin:  os.Stdin,
-			Stdout: os.Stdout,
-			Stderr: os.Stderr,
-		},
-	}
-}
-
-type recordClient struct {
-	additionalHeaders map[string]string
-	httpClient        *http.Client
-}
-
-func (c *recordClient) Do(req *http.Request) (*http.Response, error) {
-	for key, value := range c.additionalHeaders {
-		req.Header.Add(key, value)
-	}
-
-	return c.httpClient.Do(req)
-}
-
 // Creates the root Cobra command for AZD.
 // staticHelp - False, except for running for doc generation
 // middlewareChain - nil, except for running unit tests
-// appOptions - nil, except for running integration tests
-func NewRootCmd(
-	staticHelp bool,
-	middlewareChain []*actions.MiddlewareRegistration,
-	appOptions *AppOptions) *cobra.Command {
-	if appOptions == nil {
-		appOptions = NewAppOptions()
-	}
-
+func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistration) *cobra.Command {
 	prevDir := ""
 	opts := &internal.GlobalCommandOptions{GenerateStaticHelp: staticHelp}
 	opts.EnableTelemetry = telemetry.IsTelemetryEnabled()
@@ -358,7 +300,7 @@ func NewRootCmd(
 			return !descriptor.Options.DisableTelemetry
 		})
 
-	registerCommonDependencies(*appOptions, ioc.Global)
+	registerCommonDependencies(ioc.Global)
 	cobraBuilder := NewCobraBuilder(ioc.Global)
 
 	// Compose the hierarchy of action descriptions into cobra commands

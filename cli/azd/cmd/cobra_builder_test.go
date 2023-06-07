@@ -210,7 +210,7 @@ func Test_BuildCommandsWithAutomaticHelpAndOutputFlags(t *testing.T) {
 }
 
 func setup(container *ioc.NestedContainer) {
-	registerCommonDependencies(*NewAppOptions(), container)
+	registerCommonDependencies(container)
 	globalOptions := &internal.GlobalCommandOptions{
 		EnableTelemetry:    false,
 		EnableDebugLogging: false,

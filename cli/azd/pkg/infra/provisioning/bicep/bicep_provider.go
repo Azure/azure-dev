@@ -63,7 +63,6 @@ type BicepProvider struct {
 	bicepCli            bicep.BicepCli
 	azCli               azcli.AzCli
 	prompters           prompt.Prompter
-	clock               clock.Clock
 	curPrincipal        CurrentPrincipalIdProvider
 	alphaFeatureManager *alpha.FeatureManager
 }
@@ -184,7 +183,7 @@ func (p *BicepProvider) Plan(ctx context.Context) (*DeploymentPlan, error) {
 			p.azCli,
 			p.env.GetLocation(),
 			p.env.GetSubscriptionId(),
-			deploymentNameForEnv(p.env.GetEnvName(), p.clock),
+			deploymentNameForEnv(p.env.GetEnvName(), clock.New()),
 		)
 	} else if deploymentScope == azure.DeploymentScopeResourceGroup {
 		if !p.alphaFeatureManager.IsEnabled(ResourceGroupDeploymentFeature) {
@@ -209,7 +208,7 @@ func (p *BicepProvider) Plan(ctx context.Context) (*DeploymentPlan, error) {
 			p.azCli,
 			p.env.GetSubscriptionId(),
 			p.env.Getenv(environment.ResourceGroupEnvVarName),
-			deploymentNameForEnv(p.env.GetEnvName(), p.clock),
+			deploymentNameForEnv(p.env.GetEnvName(), clock.New()),
 		)
 	} else {
 		return nil, fmt.Errorf("unsupported scope: %s", deploymentScope)
@@ -1302,7 +1301,6 @@ func NewBicepProvider(
 	prompters prompt.Prompter,
 	curPrincipal CurrentPrincipalIdProvider,
 	alphaFeatureManager *alpha.FeatureManager,
-	clock clock.Clock,
 ) Provider {
 	return &BicepProvider{
 		env:                 env,
@@ -1312,6 +1310,5 @@ func NewBicepProvider(
 		prompters:           prompters,
 		curPrincipal:        curPrincipal,
 		alphaFeatureManager: alphaFeatureManager,
-		clock:               clock,
 	}
 }

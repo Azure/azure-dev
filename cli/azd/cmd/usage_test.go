@@ -21,7 +21,7 @@ import (
 func TestUsage(t *testing.T) {
 	// disable rich formatting output
 	t.Setenv("TERM", "dumb")
-	root := NewRootCmd(false, nil, nil)
+	root := NewRootCmd(false, nil)
 
 	usageSnapshot(t, root)
 }

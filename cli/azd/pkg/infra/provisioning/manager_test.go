@@ -19,7 +19,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
-	"github.com/benbjohnson/clock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -185,8 +184,5 @@ func registerContainerDependencies(mockContext *mocks.MockContext, env *environm
 	})
 	mockContext.Container.RegisterSingleton(func() azcli.AzCli {
 		return mockazcli.NewAzCliFromMockContext(mockContext)
-	})
-	mockContext.Container.RegisterSingleton(func() clock.Clock {
-		return clock.NewMock()
 	})
 }

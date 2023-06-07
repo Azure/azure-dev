@@ -406,7 +406,6 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 		prompt.NewDefaultPrompter(env, mockContext.Console, accountManager, azCli),
 		&mockCurrentPrincipal{},
 		mockContext.AlphaFeaturesManager,
-		clock.NewMock(),
 	)
 
 	err = provider.Initialize(*mockContext.Context, projectDir, options)

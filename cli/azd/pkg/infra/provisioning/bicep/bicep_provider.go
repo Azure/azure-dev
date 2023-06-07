@@ -98,8 +98,16 @@ func (p *BicepProvider) Initialize(ctx context.Context, projectPath string, opti
 }
 
 func (p *BicepProvider) State(ctx context.Context) (*StateResult, error) {
+	var err error
+	spinnerMessage := "Loading Bicep template"
 	// TODO: Report progress, "Loading Bicep template"
-	p.console.ShowSpinner(ctx, "Loading Bicep template", input.Step)
+	p.console.ShowSpinner(ctx, spinnerMessage, input.Step)
+	defer func() {
+		// Make sure we stop the spinner if an error occurs with the last message.
+		if err != nil {
+			p.console.StopSpinner(ctx, spinnerMessage, input.StepFailed)
+		}
+	}()
 
 	modulePath := p.modulePath()
 	_, template, err := p.compileBicep(ctx, modulePath)
@@ -113,7 +121,8 @@ func (p *BicepProvider) State(ctx context.Context) (*StateResult, error) {
 	}
 
 	// TODO: Report progress, "Retrieving Azure deployment"
-	p.console.ShowSpinner(ctx, "Retrieving Azure deployment", input.Step)
+	spinnerMessage = "Retrieving Azure deployment"
+	p.console.ShowSpinner(ctx, spinnerMessage, input.Step)
 
 	armDeployment, err := latestCompletedDeployment(ctx, p.env.GetEnvName(), scope)
 	if err != nil {
@@ -130,7 +139,8 @@ func (p *BicepProvider) State(ctx context.Context) (*StateResult, error) {
 	}
 
 	// TODO: Report progress, "Normalizing output parameters"
-	p.console.ShowSpinner(ctx, "Normalizing output parameters", input.Step)
+	spinnerMessage = "Normalizing output parameters"
+	p.console.ShowSpinner(ctx, spinnerMessage, input.Step)
 
 	state.Outputs = p.createOutputParameters(
 		template.Outputs,

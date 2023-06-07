@@ -199,6 +199,7 @@ func (i *PipelineManager) getGitRepoDetails(ctx context.Context) (*gitRepository
 			i.console.Message(ctx, "") // we need a new line here
 			i.console.ShowSpinner(ctx, initRepoMsg, input.Step)
 			if err := gitCli.InitRepo(ctx, repoPath); err != nil {
+				i.console.StopSpinner(ctx, initRepoMsg, input.StepFailed)
 				return nil, fmt.Errorf("initializing repository: %w", err)
 			}
 			i.console.StopSpinner(ctx, initRepoMsg, input.StepDone)

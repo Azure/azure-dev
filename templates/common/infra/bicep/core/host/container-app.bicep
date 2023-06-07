@@ -40,7 +40,7 @@ param daprEnabled bool = false
 @description('The environment variables for the container')
 param env array = []
 
-@description('Specifies if the resource is external')
+@description('Specifies if the resource ingress is exposed externally')
 param external bool = true
 
 @description('The name of the user-assigned identity')

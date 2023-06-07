@@ -57,7 +57,7 @@ param secrets array = []
 @description('The environment variables for the container')
 param env array = []
 
-@description('Specifies if the resource is external')
+@description('Specifies if the resource ingress is exposed externally')
 param external bool = true
 
 @description('The service binds associated with the container')

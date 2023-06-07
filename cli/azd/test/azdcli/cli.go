@@ -22,6 +22,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/azure/azure-dev/cli/azd/test/recording"
 )
 
 const (
@@ -70,7 +72,7 @@ func NewCLI(t *testing.T, opts ...Options) *CLI {
 
 	if opt.Session != nil {
 		env := append(
-			opt.Session.Environ(),
+			environ(opt.Session),
 			"HTTP_PROXY="+opt.Session.ProxyUrl,
 			"HTTPS_PROXY="+opt.Session.ProxyUrl)
 		cli.Env = append(cli.Env, env...)
@@ -106,7 +108,7 @@ func NewCLI(t *testing.T, opts ...Options) *CLI {
 
 	if opt.Session != nil {
 		buildRecordOnce.Do(func() {
-			build(t, filepath.Dir(cliPath), "-t", "record")
+			build(t, filepath.Dir(cliPath), "-tags=record")
 		})
 	} else {
 		buildOnce.Do(func() {
@@ -225,7 +227,7 @@ func build(t *testing.T, pkgPath string, args ...string) {
 	startTime := time.Now()
 	cmd := exec.Command("go", "build")
 	cmd.Dir = pkgPath
-	cmd.Args = args
+	cmd.Args = append(cmd.Args, args...)
 
 	// Build with coverage if GOCOVERDIR is specified.
 	if os.Getenv("GOCOVERDIR") != "" {
@@ -243,4 +245,23 @@ func build(t *testing.T, pkgPath string, args ...string) {
 	}
 
 	t.Logf("built azd in %s", time.Since(startTime))
+}
+
+// Recording variables that are mapped to environment variables.
+var recordingVarToEnvVar = map[string]string{
+	recording.TimeKey: "AZD_TEST_FIXED_UNIX_TIME",
+}
+
+func environ(session *recording.Session) []string {
+	if session == nil {
+		return nil
+	}
+
+	env := []string{}
+	for recordKey, envKey := range recordingVarToEnvVar {
+		if _, ok := session.Variables[recordKey]; ok {
+			env = append(env, fmt.Sprintf("%s=%s", envKey, session.Variables[recordKey]))
+		}
+	}
+	return env
 }

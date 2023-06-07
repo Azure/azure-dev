@@ -160,10 +160,10 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 	dir := tempDirWithDiagnostics(t)
 	t.Logf("DIR: %s", dir)
 
-	envName := randomEnvName()
-	t.Logf("AZURE_ENV_NAME: %s", envName)
-
 	session := recording.Start(t)
+
+	envName := randomOrStoredEnvName(session)
+	t.Logf("AZURE_ENV_NAME: %s", envName)
 
 	cli := azdcli.NewCLI(t, azdcli.WithSession(session))
 	cli.WorkingDirectory = dir
@@ -191,30 +191,30 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 	assertEnvValuesStored(t, env)
 
 	// GetResourceGroupsForEnvironment requires a credential since it is using the SDK now
-	// cred, err := azidentity.NewAzureCLICredential(nil)
-	// if err != nil {
-	// 	t.Fatal("could not create credential")
-	// }
+	cred, err := azidentity.NewAzureCLICredential(nil)
+	if err != nil {
+		t.Fatal("could not create credential")
+	}
 
-	// var client *http.Client
-	// if session != nil {
-	// 	client = session.ProxyClient()
-	// } else {
-	// 	client = http.DefaultClient
-	// }
+	var client *http.Client
+	if session != nil {
+		client = session.ProxyClient()
+	} else {
+		client = http.DefaultClient
+	}
 
-	// azCli := azcli.NewAzCli(mockaccount.SubscriptionCredentialProviderFunc(
-	// 	func(_ context.Context, _ string) (azcore.TokenCredential, error) {
-	// 		return cred, nil
-	// 	}),
-	// 	client,
-	// 	azcli.NewAzCliArgs{})
+	azCli := azcli.NewAzCli(mockaccount.SubscriptionCredentialProviderFunc(
+		func(_ context.Context, _ string) (azcore.TokenCredential, error) {
+			return cred, nil
+		}),
+		client,
+		azcli.NewAzCliArgs{})
 
-	// // Verify that resource groups are created with tag
-	// resourceManager := infra.NewAzureResourceManager(azCli)
-	// rgs, err := resourceManager.GetResourceGroupsForEnvironment(ctx, env.GetSubscriptionId(), env.GetEnvName())
-	// require.NoError(t, err)
-	// require.NotNil(t, rgs)
+	// Verify that resource groups are created with tag
+	resourceManager := infra.NewAzureResourceManager(azCli)
+	rgs, err := resourceManager.GetResourceGroupsForEnvironment(ctx, env.GetSubscriptionId(), env.GetEnvName())
+	require.NoError(t, err)
+	require.NotNil(t, rgs)
 
 	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
 	require.NoError(t, err)
@@ -420,6 +420,21 @@ func copySample(targetRoot string, sampleName string) error {
 		}
 		return os.WriteFile(targetPath, contents, osutil.PermissionFile)
 	})
+}
+
+func randomOrStoredEnvName(session *recording.Session) string {
+	if session != nil {
+		if _, ok := session.Variables[recording.EnvNameKey]; ok {
+			return session.Variables[recording.EnvNameKey]
+		}
+	}
+
+	randName := randomEnvName()
+	if session != nil {
+		session.Variables[recording.EnvNameKey] = randName
+	}
+
+	return randName
 }
 
 func randomEnvName() string {

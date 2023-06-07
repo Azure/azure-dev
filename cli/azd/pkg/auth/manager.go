@@ -59,6 +59,13 @@ var loginScopesMap = map[string]struct{}{
 	azure.ManagementScope: {},
 }
 
+type HttpClient interface {
+	httputil.HttpClient
+
+	// CloseIdleConnections closes any idle connections in a "keep-alive" state.
+	CloseIdleConnections()
+}
+
 // Manager manages the authentication system of azd. It allows a user to log in, either as a user principal or service
 // principal. Manager stores information so that the user can stay logged in across invocations of the CLI. When logged in
 // as a user (either interactively or via a device code flow), we provide a durable cache to MSAL which is used to cache
@@ -81,13 +88,13 @@ type Manager struct {
 	userConfigManager   config.UserConfigManager
 	credentialCache     Cache
 	ghClient            *github.FederatedTokenClient
-	httpClient          httputil.HttpClient
+	httpClient          HttpClient
 }
 
 func NewManager(
 	configManager config.Manager,
 	userConfigManager config.UserConfigManager,
-	httpClient httputil.HttpClient,
+	httpClient HttpClient,
 ) (*Manager, error) {
 	cfgRoot, err := config.GetUserConfigDir()
 	if err != nil {
@@ -107,6 +114,7 @@ func NewManager(
 	options := []public.Option{
 		public.WithCache(newCache(cacheRoot)),
 		public.WithAuthority(cDefaultAuthority),
+		public.WithHTTPClient(httpClient),
 	}
 
 	publicClientApp, err := public.New(cAZD_CLIENT_ID, options...)

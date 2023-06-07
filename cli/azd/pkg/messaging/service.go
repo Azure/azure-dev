@@ -43,8 +43,8 @@ func (s *Service) WithTopic(ctx context.Context, topicName string) context.Conte
 }
 
 // Send sends a message to the topic specified in the context.
-func (s *Service) Send(ctx context.Context, msg *Envelope) error {
-	return s.Topic(ctx).Send(ctx, msg)
+func (s *Service) Send(ctx context.Context, envelope *Envelope) error {
+	return s.Topic(ctx).Send(ctx, envelope)
 }
 
 // Subscribe subscribes to the topic specified in the context with the specified filter and handler.

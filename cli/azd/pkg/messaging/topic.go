@@ -61,16 +61,16 @@ func (t *Topic) Unsubscribe(ctx context.Context, subscription *Subscription) {
 }
 
 // Send sends a message to the topic.
-func (t *Topic) Send(ctx context.Context, msg *Envelope) error {
+func (t *Topic) Send(ctx context.Context, envelope *Envelope) error {
 	if err := t.ensureOpen(); err != nil {
 		return err
 	}
 
-	if msg == nil {
-		return fmt.Errorf("sending message: message is nil")
+	if envelope == nil {
+		return fmt.Errorf("sending message: envelope is nil")
 	}
 
-	t.channel <- msg
+	t.channel <- envelope
 	return nil
 }
 

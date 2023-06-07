@@ -8,6 +8,9 @@
 
 ### Bugs Fixed
 
+- [[2348]](https://github.com/Azure/azure-dev/pull/2279) Support purging Managed HSMs.
+- [[2362]](https://github.com/Azure/azure-dev/pull/2362) Prevent more errors from interrupting console progress.
+
 ### Other Changes
 
 ## 1.0.0 (2023-05-22)

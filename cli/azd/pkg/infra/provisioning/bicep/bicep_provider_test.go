@@ -558,6 +558,8 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 			makeItem(infra.AzureResourceTypeWebSite, "app-123"),
 			makeItem(infra.AzureResourceTypeKeyVault, "kv-123"),
 			makeItem(infra.AzureResourceTypeKeyVault, "kv2-123"),
+			makeItem(infra.AzureResourceTypeManagedHSM, "hsm-123"),
+			makeItem(infra.AzureResourceTypeManagedHSM, "hsm2-123"),
 			makeItem(infra.AzureResourceTypeAppConfig, "ac-123"),
 			makeItem(infra.AzureResourceTypeAppConfig, "ac2-123"),
 			makeItem(infra.AzureResourceTypeApim, "apim-123"),
@@ -581,6 +583,10 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 	getKeyVaultMock(mockContext, "/vaults/kv-123", "kv-123", "eastus2")
 	getKeyVaultMock(mockContext, "/vaults/kv2-123", "kv2-123", "eastus2")
 
+	// Get Managed HSM
+	getManagedHSMMock(mockContext, "/managedHSMs/hsm-123", "hsm-123", "eastus2")
+	getManagedHSMMock(mockContext, "/managedHSMs/hsm2-123", "hsm2-123", "eastus2")
+
 	// Get App Configuration
 	getAppConfigMock(mockContext, "/configurationStores/ac-123", "ac-123", "eastus2")
 	getAppConfigMock(mockContext, "/configurationStores/ac2-123", "ac2-123", "eastus2")
@@ -595,12 +601,33 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 			strings.HasSuffix(request.URL.Path, "subscriptions/SUBSCRIPTION_ID/resourcegroups/RESOURCE_GROUP")
 	}).RespondFn(httpRespondFn)
 
-	// Purge Key vault
+	// Purge Key Vault
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodPost &&
 			(strings.HasSuffix(request.URL.Path, "deletedVaults/kv-123/purge") ||
 				strings.HasSuffix(request.URL.Path, "deletedVaults/kv2-123/purge"))
 	}).RespondFn(httpRespondFn)
+
+	// Set up the end of any LRO with a 204 response since we are using the Location header.
+	mockPollingUrl := "https://url-to-poll.net/keep-deleting"
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet &&
+			strings.Contains(
+				request.URL.String(), mockPollingUrl)
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateEmptyHttpResponse(request, 204)
+	})
+
+	// Purge Managed HSM
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodPost &&
+			(strings.HasSuffix(request.URL.Path, "deletedManagedHSMs/hsm-123/purge") ||
+				strings.HasSuffix(request.URL.Path, "deletedManagedHSMs/hsm2-123/purge"))
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		response, err := mocks.CreateEmptyHttpResponse(request, http.StatusAccepted)
+		response.Header.Add("location", mockPollingUrl)
+		return response, err
+	})
 
 	// Purge App configuration
 	mockContext.HttpClient.When(func(request *http.Request) bool {
@@ -617,7 +644,6 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 	}).RespondFn(httpRespondFn)
 
 	// Delete deployment
-	mockPollingUrl := "https://url-to-poll.net/keep-deleting"
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodDelete &&
 			strings.HasSuffix(
@@ -626,14 +652,6 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 		response, err := mocks.CreateEmptyHttpResponse(request, 202)
 		response.Header.Add("location", mockPollingUrl)
 		return response, err
-	})
-	mockContext.HttpClient.When(func(request *http.Request) bool {
-		return request.Method == http.MethodGet &&
-			strings.Contains(
-				request.URL.String(), mockPollingUrl)
-	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		// set the end of LRO with 204 response (since we are using location header)
-		return mocks.CreateEmptyHttpResponse(request, 204)
 	})
 }
 
@@ -666,6 +684,33 @@ func getKeyVaultMock(mockContext *mocks.MockContext, keyVaultString string, name
 		return &http.Response{
 			StatusCode: http.StatusOK,
 			Body:       io.NopCloser(bytes.NewBuffer(keyVaultBytes)),
+		}, nil
+	})
+}
+
+func getManagedHSMMock(mockContext *mocks.MockContext, managedHSMString string, name string, location string) {
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet && strings.HasSuffix(request.URL.Path, managedHSMString)
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		managedHSMResponse := armkeyvault.ManagedHsmsClientGetResponse{
+			ManagedHsm: armkeyvault.ManagedHsm{
+				ID: convert.RefOf(
+					fmt.Sprintf("/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/%s/%s",
+						string(infra.AzureResourceTypeManagedHSM), name)),
+				Name:     convert.RefOf(name),
+				Location: convert.RefOf(location),
+				Properties: &armkeyvault.ManagedHsmProperties{
+					EnableSoftDelete:      convert.RefOf(true),
+					EnablePurgeProtection: convert.RefOf(false),
+				},
+			},
+		}
+
+		managedHSMBytes, _ := json.Marshal(managedHSMResponse)
+
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(bytes.NewBuffer(managedHSMBytes)),
 		}, nil
 	})
 }

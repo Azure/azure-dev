@@ -1,9 +1,11 @@
 package recording
 
 import (
+	"bufio"
 	"crypto/tls"
 	"errors"
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -15,6 +17,7 @@ import (
 
 	"golang.org/x/exp/slog"
 	"gopkg.in/dnaeon/go-vcr.v3/cassette"
+	"gopkg.in/yaml.v3"
 )
 
 type RecordMode int64
@@ -45,6 +48,9 @@ type modeOption struct {
 func (m modeOption) Apply(r *recordOption) {
 	r.mode = m.mode
 }
+
+const EnvNameKey = "env_name"
+const TimeKey = "time"
 
 type Session struct {
 	// ProxyUrl is the URL of the proxy server that will be recording or replaying interactions.
@@ -80,6 +86,8 @@ func (s *Session) ProxyClient() *http.Client {
 	return client
 }
 
+// Start returns a [recording.Session] if recording or playback is enabled.
+// In live mode, it returns nil.
 func Start(t *testing.T, opts ...Options) *Session {
 	opt := recordOption{}
 	for _, o := range opts {
@@ -91,7 +99,7 @@ func Start(t *testing.T, opts ...Options) *Session {
 	baseName := filepath.Base(name)
 
 	if opt.mode == Unknown {
-		_, err := cassette.Load(name)
+		_, err := load(name)
 		if errors.Is(err, os.ErrNotExist) {
 			if os.Getenv("CI") != "" {
 				t.Fatalf(
@@ -112,6 +120,7 @@ func Start(t *testing.T, opts ...Options) *Session {
 	log := slog.New(slog.NewTextHandler(writer, &slog.HandlerOptions{
 		Level: slog.LevelDebug,
 	}))
+	session := &Session{}
 
 	var cst *cassette.Cassette
 	var isPlayback bool
@@ -121,17 +130,20 @@ func Start(t *testing.T, opts ...Options) *Session {
 	case Live:
 		return nil
 	case Playback:
-		var err error
-		cst, err = cassette.Load(name)
+		r, err := load(name)
 		if err != nil {
-			t.Fatalf("failed to load cassette: %v", err)
+			t.Fatalf("failed to load recording: %v", err)
 		}
+
+		cst = r.Cst
 		isPlayback = true
 		modeStr = "playback"
+		session.Variables = r.Variables
 	case Record:
 		cst = cassette.New(name)
 		isPlayback = false
 		modeStr = "record"
+		session.Variables = map[string]string{}
 	}
 
 	if opt.mode != Playback && opt.mode != Record {
@@ -152,20 +164,112 @@ func Start(t *testing.T, opts ...Options) *Session {
 
 	server := httptest.NewTLSServer(proxy)
 	proxy.TLS = server.TLS
-	t.Logf("recordingProxy started with mode %s at %s", modeStr, server.URL)
+	t.Logf("recorderProxy started with mode %s at %s", modeStr, server.URL)
+	session.ProxyUrl = server.URL
+
 	t.Cleanup(func() {
 		server.Close()
 		if !t.Failed() {
-			cst.Name = cst.Name + ".failed"
-			if err := cst.Save(); err != nil {
-				t.Errorf("failed to save recording: %v", err)
+			err := save(recording{Cst: cst, Variables: session.Variables})
+			if err != nil {
+				t.Fatalf("failed to save recording: %v", err)
 			}
 		}
 	})
 
-	return &Session{
-		ProxyUrl: server.URL,
+	return session
+}
+
+// recording contains the items stored locally on disk for a recording.
+type recording struct {
+	Cst *cassette.Cassette
+
+	Variables map[string]string
+}
+
+func load(name string) (recording, error) {
+	cst, err := cassette.Load(name)
+	if err != nil {
+		return recording{}, fmt.Errorf("failed to load cassette: %w", err)
 	}
+
+	f, err := os.Open(cst.File)
+	if err != nil {
+		return recording{}, fmt.Errorf("failed to load cassette file: %w", err)
+	}
+
+	// This implementation uses a buf reader to scan for the second document delimiter for performance.
+	// A more robust implementation would use the YAML decoder to scan for the second document.
+	r := bufio.NewReader(f)
+	docIndex := 0
+	for {
+		text, err := r.ReadString('\n')
+		if text == "---\n" {
+			docIndex++
+		}
+
+		if docIndex == 2 {
+			break
+		}
+
+		// EOF
+		if err != nil {
+			break
+		}
+	}
+
+	if docIndex != 2 {
+		return recording{Cst: cst}, nil
+	}
+
+	bytes, err := ioutil.ReadAll(r)
+	if err != nil {
+		return recording{}, fmt.Errorf("failed to read recording file: %w", err)
+	}
+
+	var variables map[string]string
+	err = yaml.Unmarshal(bytes, &variables)
+	if err != nil {
+		return recording{}, fmt.Errorf("failed to parse recording file: %w", err)
+	}
+
+	return recording{Cst: cst, Variables: variables}, nil
+}
+
+func save(r recording) error {
+	if err := r.Cst.Save(); err != nil {
+		return fmt.Errorf("failed to save interactions: %v", err)
+	}
+
+	file := r.Cst.File
+	f, err := os.OpenFile(file, os.O_APPEND|os.O_RDWR, 0755)
+	if err != nil {
+		return err
+	}
+
+	defer f.Close()
+	bytes, err := yaml.Marshal(r.Variables)
+	if err != nil {
+		return err
+	}
+
+	// YAML document separator, see http://www.yaml.org/spec/1.2/spec.html#id2760395
+	_, err = f.WriteString("---\n")
+	if err != nil {
+		return err
+	}
+
+	_, err = f.Write(bytes)
+	if err != nil {
+		return fmt.Errorf("failed to write variables: %v", err)
+	}
+
+	err = f.Close()
+	if err != nil {
+		return fmt.Errorf("failed to close file: %v", err)
+	}
+
+	return nil
 }
 
 func callingDir(skip int) string {

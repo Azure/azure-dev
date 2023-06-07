@@ -86,7 +86,8 @@ func (p *messagePrinter) receiveMessage(ctx context.Context, envelope *messaging
 
 		p.console.ShowSpinner(ctx, displayMessage, input.Step)
 	case StateProgress:
-		if p.currentMessage != "" {
+		// Only display progress when we are already running an operation
+		if p.currentOperationId != uuid.Nil {
 			displayMessage := fmt.Sprintf("%s (%s)", p.currentMessage, msg.Message)
 			p.console.ShowSpinner(ctx, displayMessage, input.Step)
 		}
@@ -103,7 +104,7 @@ func (p *messagePrinter) receiveMessage(ctx context.Context, envelope *messaging
 			spinnerType = input.StepSkipped
 		}
 
-		// We only stop the spinner and reset the state if messages are from the same operation
+		// Only stop the spinner and reset the state if messages are from the same operation
 		if p.currentOperationId == msg.CorrelationId {
 			p.console.StopSpinner(ctx, p.currentMessage, spinnerType)
 			p.reset()

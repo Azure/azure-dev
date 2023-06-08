@@ -450,6 +450,7 @@ func (m *Manager) LoginWithDeviceCode(
 
 	url := "https://microsoft.com/devicelogin"
 	if err := m.launchBrowserFn(url); err != nil {
+		log.Println("error launching browser: ", err.Error())
 		m.console.Message(ctx, fmt.Sprintf("Error launching browser. Manually go to: %s", url))
 	}
 	m.console.Message(ctx, "Waiting for you to complete authentication in the browser...")

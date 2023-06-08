@@ -86,8 +86,11 @@ func (s *Session) ProxyClient() *http.Client {
 	return client
 }
 
-// Start returns a [recording.Session] if recording or playback is enabled.
+// Start starts the recorder proxy, returning a [recording.Session] if recording or playback is enabled.
 // In live mode, it returns nil.
+//
+// By default, the recorder proxy will log errors and info messages.
+// The environment variable RECORDER_PROXY_DEBUG can be set to enable debug logging for the recorder proxy.
 func Start(t *testing.T, opts ...Options) *Session {
 	opt := recordOption{}
 	for _, o := range opts {
@@ -117,9 +120,14 @@ func Start(t *testing.T, opts ...Options) *Session {
 	}
 
 	writer := &logWriter{t: t}
+	level := slog.LevelInfo
+	if os.Getenv("RECORDER_PROXY_DEBUG") != "" {
+		level = slog.LevelDebug
+	}
 	log := slog.New(slog.NewTextHandler(writer, &slog.HandlerOptions{
-		Level: slog.LevelDebug,
+		Level: level,
 	}))
+
 	session := &Session{}
 
 	var cst *cassette.Cassette

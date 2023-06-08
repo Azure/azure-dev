@@ -4,6 +4,7 @@
 package input
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -72,6 +73,8 @@ type Console interface {
 	Select(ctx context.Context, options ConsoleOptions) (int, error)
 	// Prompts the user to confirm an operation
 	Confirm(ctx context.Context, options ConsoleOptions) (bool, error)
+	// block terminal until the next enter
+	WaitForEnter()
 	// Sets the underlying writer for the console
 	SetWriter(writer io.Writer)
 	// Gets the underlying writer for the console
@@ -440,6 +443,16 @@ func (c *AskerConsole) Confirm(ctx context.Context, options ConsoleOptions) (boo
 	}
 
 	return response, nil
+}
+
+// wait until the next enter
+func (c *AskerConsole) WaitForEnter() {
+	inputScanner := bufio.NewScanner(c.handles.Stdin)
+	if scan := inputScanner.Scan(); !scan {
+		if err := inputScanner.Err(); err != nil {
+			log.Printf("error while waiting for enter: %v", err)
+		}
+	}
 }
 
 // Gets the underlying writer for the console

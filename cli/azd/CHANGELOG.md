@@ -1,6 +1,6 @@
 # Release History
 
-## 1.1.0-beta.1 (Unreleased)
+## 1.1.0 (Unreleased)
 
 ### Features Added
 
@@ -12,6 +12,8 @@
 - [[2362]](https://github.com/Azure/azure-dev/pull/2362) Prevent more errors from interrupting console progress.
 
 ### Other Changes
+
+- [[2337]](https://github.com/Azure/azure-dev/pull/2337) Update device-code auth flow.
 
 ## 1.0.0 (2023-05-22)
 

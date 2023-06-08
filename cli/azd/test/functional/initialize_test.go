@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -28,6 +29,11 @@ func Test_CommandsAndActions_Initialize(t *testing.T) {
 
 	// Create a empty azure.yaml to ensure AzdContext can be constructed
 	err := os.WriteFile("azure.yaml", []byte("name: test"), osutil.PermissionFile)
+	require.NoError(t, err)
+
+	// Create a empty .github/workflows directory to ensure CI provider can be constructed
+	ciProviderPath := filepath.Join(".github", "workflows")
+	err = os.MkdirAll(ciProviderPath, osutil.PermissionDirectory)
 	require.NoError(t, err)
 
 	chain := []*actions.MiddlewareRegistration{

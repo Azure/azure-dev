@@ -108,7 +108,8 @@ func Test_CLI_Show(t *testing.T) {
 
 	cli := azdcli.NewCLI(t, azdcli.WithSession(session))
 	cli.WorkingDirectory = dir
-	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
+	cli.Env = append(cli.Env, os.Environ()...)
+	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
 	_, err := cli.RunCommand(ctx, "show", "--output", "json")
 	require.NoError(t, err)
 }
@@ -167,7 +168,8 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 
 	cli := azdcli.NewCLI(t, azdcli.WithSession(session))
 	cli.WorkingDirectory = dir
-	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
+	cli.Env = append(cli.Env, os.Environ()...)
+	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
 
 	err := copySample(dir, "storage")
 	require.NoError(t, err, "failed expanding sample")

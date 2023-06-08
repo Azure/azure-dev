@@ -296,11 +296,7 @@ func Test_Hooks_GetScript(t *testing.T) {
 		require.Equal(t, "*powershell.powershellScript", reflect.TypeOf(script).String())
 		require.Equal(t, ScriptLocationInline, hookConfig.location)
 		require.Equal(t, ShellTypePowershell, hookConfig.Shell)
-		require.Contains(
-			t,
-			hookConfig.script,
-			"Invoke-WebRequest -Uri \"https://sample.com/sample.json\" -OutFile \"out.json\"",
-		)
+		require.Contains(t, hookConfig.script, "Invoke-WebRequest -Uri \"https://sample.com/sample.json\" -OutFile \"out.json\"")
 		require.Contains(t, hookConfig.path, os.TempDir())
 		require.Contains(t, hookConfig.path, ".ps1")
 		require.NoError(t, err)

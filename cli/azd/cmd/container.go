@@ -26,6 +26,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/pipeline"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
@@ -364,6 +365,25 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	for language, constructor := range frameworkServiceMap {
 		if err := container.RegisterNamedSingleton(string(language), constructor); err != nil {
 			panic(fmt.Errorf("registering framework service %s: %w", language, err))
+		}
+	}
+
+	// Pipelines
+	container.RegisterSingleton(pipeline.NewPipelineManager)
+	container.RegisterSingleton(func(flags *pipelineConfigFlags) *pipeline.PipelineManagerArgs {
+		return &flags.PipelineManagerArgs
+	})
+
+	pipelineProviderMap := map[string]any{
+		"github-ci":  pipeline.NewGitHubCiProvider,
+		"github-scm": pipeline.NewGitHubScmProvider,
+		"azdo-ci":    pipeline.NewAzdoCiProvider,
+		"azdo-scm":   pipeline.NewAzdoScmProvider,
+	}
+
+	for provider, constructor := range pipelineProviderMap {
+		if err := container.RegisterNamedSingleton(string(provider), constructor); err != nil {
+			panic(fmt.Errorf("registering pipeline provider %s: %w", provider, err))
 		}
 	}
 

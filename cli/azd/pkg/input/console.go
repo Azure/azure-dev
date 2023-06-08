@@ -232,10 +232,7 @@ func (c *AskerConsole) ShowPreviewer(ctx context.Context, options *ShowPreviewer
 	// auto-stop any spinner
 	c.StopSpinner(ctx, "", StepSkipped)
 
-	c.previewer = NewPreviewer(options.MaxLineCount, options.Prefix)
-	if options.Title != "" {
-		c.previewer.SetTitle(options.Title)
-	}
+	c.previewer = NewPreviewer(options.MaxLineCount, options.Prefix, options.Title)
 	c.previewer.Start()
 	c.writer = c.previewer
 	return &ConsolePreviewer{
@@ -275,8 +272,7 @@ func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format Spi
 	}
 
 	if c.previewer != nil {
-		// spinner is not compatible with previewer. Set the previewer title instead.
-		c.previewer.SetTitle(title)
+		// spinner is not compatible with previewer.
 		return
 	}
 

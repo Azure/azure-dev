@@ -100,6 +100,7 @@ func (d *docker) Build(
 		&input.ShowPreviewerOptions{
 			Prefix:       "    ",
 			MaxLineCount: 8,
+			Title:        "Docker Output",
 		})
 	runArgs.StdOut = previewer
 

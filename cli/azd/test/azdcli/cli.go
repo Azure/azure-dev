@@ -249,7 +249,7 @@ func build(t *testing.T, pkgPath string, args ...string) {
 
 // Recording variables that are mapped to environment variables.
 var recordingVarToEnvVar = map[string]string{
-	recording.TimeKey: "AZD_TEST_FIXED_UNIX_TIME",
+	recording.TimeKey: "AZD_TEST_FIXED_CLOCK_UNIX_TIME",
 }
 
 func environ(session *recording.Session) []string {

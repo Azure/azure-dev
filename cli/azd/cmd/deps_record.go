@@ -32,12 +32,12 @@ func createClock() clock.Clock {
 }
 
 func fixedClock() (clock.Clock, bool) {
-	if _, ok := os.LookupEnv("AZD_TEST_FIXED_UNIX_TIME"); !ok {
+	if _, ok := os.LookupEnv("AZD_TEST_FIXED_CLOCK_UNIX_TIME"); !ok {
 		return nil, false
 	}
 
 	mockClock := clock.NewMock()
-	val := os.Getenv("AZD_TEST_FIXED_UNIX_TIME")
+	val := os.Getenv("AZD_TEST_FIXED_CLOCK_UNIX_TIME")
 	unixSec, err := strconv.ParseInt(val, 0, 64)
 	if err != nil {
 		panic(err)

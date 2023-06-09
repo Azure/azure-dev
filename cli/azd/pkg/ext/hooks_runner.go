@@ -128,11 +128,11 @@ func (h *HooksRunner) execHook(ctx context.Context, hookConfig *HookConfig) erro
 	}
 
 	formatter := h.console.GetFormatter()
-	consoleInteractive := formatter == nil || formatter.Kind() == output.NoneFormat
+	consoleInteractive := (formatter == nil || formatter.Kind() == output.NoneFormat)
 	scriptInteractive := consoleInteractive && hookConfig.Interactive
 
 	// When running in an interactive terminal broadcast a message to the dev to remind them that custom hooks are running.
-	if consoleInteractive {
+	if consoleInteractive && !hookConfig.Quiet {
 		h.console.Message(
 			ctx,
 			output.WithBold(

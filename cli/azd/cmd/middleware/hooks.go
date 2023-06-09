@@ -145,8 +145,8 @@ func (m *HooksMiddleware) registerServiceHooks(
 			env,
 		)
 
-		for hookName, hookConfig := range service.Hooks {
-			hookType, eventName, err := inferHookType(hookName, hookConfig)
+		for hookName := range service.Hooks {
+			hookType, eventName, err := ext.InferHookType(hookName)
 			if err != nil {
 				return fmt.Errorf(
 					//nolint:lll
@@ -186,19 +186,6 @@ func (m *HooksMiddleware) createServiceEventHandler(
 	return func(ctx context.Context, eventArgs project.ServiceLifecycleEventArgs) error {
 		return hooksRunner.RunHooks(ctx, hookType, hookName)
 	}
-}
-
-func inferHookType(name string, config *ext.HookConfig) (ext.HookType, string, error) {
-	// Validate name length so go doesn't PANIC for string slicing below
-	if len(name) < 4 {
-		return "", "", fmt.Errorf("unable to infer hook '%s'", name)
-	} else if name[:3] == "pre" {
-		return ext.HookTypePre, name[3:], nil
-	} else if name[:4] == "post" {
-		return ext.HookTypePost, name[4:], nil
-	}
-
-	return "", "", fmt.Errorf("unable to infer hook '%s'", name)
 }
 
 // Gets a value that returns whether or not service hooks have already been registered

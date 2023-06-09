@@ -10,6 +10,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
 
+// The type of hooks. Supported values are 'pre' and 'post'
+type HookType string
+type HookPlatformType string
 type ShellType string
 type ScriptLocation string
 
@@ -23,7 +26,9 @@ const (
 	// Executes pre hooks
 	HookTypePre HookType = "pre"
 	// Execute post hooks
-	HookTypePost HookType = "post"
+	HookTypePost        HookType         = "post"
+	HookPlatformWindows HookPlatformType = "windows"
+	HookPlatformPosix   HookPlatformType = "posix"
 )
 
 var (
@@ -36,9 +41,6 @@ var (
 
 // Generic action function that may return an error
 type InvokeFn func() error
-
-// The type of hooks. Supported values are 'pre' and 'post'
-type HookType string
 
 // Azd hook configuration
 type HookConfig struct {
@@ -67,6 +69,9 @@ type HookConfig struct {
 	Windows *HookConfig `yaml:"windows,omitempty"`
 	// When running on linux/macos use this override config
 	Posix *HookConfig `yaml:"posix,omitempty"`
+	// Hides executing messages printed to the console
+	// This is a temp workaround until we have a better way to handle this
+	Quiet bool
 }
 
 // Validates and normalizes the hook configuration
@@ -127,6 +132,19 @@ func (hc *HookConfig) validate() error {
 	hc.validated = true
 
 	return nil
+}
+
+func InferHookType(name string) (HookType, string, error) {
+	// Validate name length so go doesn't PANIC for string slicing below
+	if len(name) < 4 {
+		return "", "", fmt.Errorf("unable to infer hook '%s'", name)
+	} else if name[:3] == "pre" {
+		return HookTypePre, name[3:], nil
+	} else if name[:4] == "post" {
+		return HookTypePost, name[4:], nil
+	}
+
+	return "", "", fmt.Errorf("unable to infer hook '%s'", name)
 }
 
 func inferScriptTypeFromFilePath(path string) (ShellType, error) {

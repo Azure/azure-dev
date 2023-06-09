@@ -176,3 +176,29 @@ func TestCleanName(t *testing.T) {
 	require.Equal(t, "already-clean-name", CleanName("already-clean-name"))
 	require.Equal(t, "was-CLEANED-with--bad--things-(123)", CleanName("was CLEANED with *bad* things (123)"))
 }
+
+func TestRoundTripNumberWithLeadingZeros(t *testing.T) {
+	root := t.TempDir()
+	e := EmptyWithRoot(root)
+	e.DotenvSet("TEST", "01")
+	err := e.Save()
+	require.NoError(t, err)
+
+	e2, err := FromRoot(root)
+	require.NoError(t, err)
+	require.Equal(t, "01", e2.dotenv["TEST"])
+}
+
+func Test_fixupUnquotedDotenv(t *testing.T) {
+	test := map[string]string{
+		"TEST_SHOULD_NOT_QUOTE": "1",
+		"TEST_SHOULD_QUOTE":     "01",
+	}
+
+	dotenv, err := godotenv.Marshal(test)
+	require.NoError(t, err)
+	require.Equal(t, "TEST_SHOULD_NOT_QUOTE=1\nTEST_SHOULD_QUOTE=1", dotenv)
+
+	fixed := fixupUnquotedDotenv(test, dotenv)
+	require.Equal(t, "TEST_SHOULD_NOT_QUOTE=1\nTEST_SHOULD_QUOTE=\"01\"", fixed)
+}

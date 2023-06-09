@@ -23,13 +23,11 @@ export class AzureYamlCompletionItemProvider implements vscode.CompletionItemPro
     }
 
     private getPathPrefix(document: vscode.TextDocument, position: vscode.Position): string | undefined {
-        const prefixRange = document.getWordRangeAtPosition(position);
+        const line = document.lineAt(position.line);
+        const lineRegex = /\s+project:\s*(?<project>\S*)/i;
+        const match = lineRegex.exec(line.text);
 
-        if (!prefixRange) {
-            return undefined;
-        }
-
-        return document.getText(prefixRange);
+        return match?.groups?.['project'];
     }
 
     private async getMatchingPaths(document: vscode.TextDocument, pathPrefix: string | undefined, token: vscode.CancellationToken): Promise<string[]> {
@@ -37,11 +35,14 @@ export class AzureYamlCompletionItemProvider implements vscode.CompletionItemPro
             return [];
         }
 
-        const currentFolder = vscode.Uri.joinPath(document.uri, '.' + pathPrefix);
+        const currentFolder = vscode.Uri.joinPath(document.uri, '..', pathPrefix);
         const results: string[] = [];
         
         for (const [file, type] of await vscode.workspace.fs.readDirectory(currentFolder)) {
             if (type !== vscode.FileType.Directory) {
+                continue;
+            } else if (file[0] === '.') {
+                // Ignore folders that start with '.'
                 continue;
             }
 

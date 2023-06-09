@@ -24,6 +24,10 @@ import (
 //
 // In playback mode, recorderProxy replays interactions from previously stored interactions.
 type recorderProxy struct {
+	// Passthrough is a function that determines whether a request should be proxied to the upstream server even in
+	// playback mode.
+	Passthrough func(req *http.Request) bool
+
 	Log *slog.Logger
 
 	// Panic specifies the function to call when the server panics.
@@ -41,7 +45,9 @@ type recorderProxy struct {
 func (p *recorderProxy) ServeConn(conn io.Writer, req *http.Request) {
 	p.Log.Debug("recorderProxy: incoming request", "url", req.URL)
 
-	if p.Playback {
+	// If we're in playback mode and the request should not be proxied, then we need to
+	// replay the interaction.
+	if p.Playback && (p.Passthrough != nil && !p.Passthrough(req)) {
 		interact, err := p.Cst.GetInteraction(req)
 		if err != nil {
 			p.panic("recorderProxy: %v", err)
@@ -56,35 +62,37 @@ func (p *recorderProxy) ServeConn(conn io.Writer, req *http.Request) {
 		if err != nil {
 			p.panic(err.Error())
 		}
-	} else {
-		var resp *http.Response
-		var err error
-
-		err = retry.Do(
-			context.Background(),
-			retry.WithMaxRetries(3, retry.NewConstant(100*time.Millisecond)),
-			func(_ context.Context) error {
-				resp, err = http.DefaultClient.Do(req)
-				return retry.RetryableError(err)
-			})
-		if err != nil {
-			p.panic("recorderProxy: error sending request to target: %v", err)
-		}
-		// Always use chunked encoding for sending the response back.
-		resp.TransferEncoding = []string{"chunked"}
-		interaction, err := capture(req, resp)
-		if err != nil {
-			p.panic(fmt.Sprintf("recorderProxy: error capturing interaction: %v", err))
-		}
-
-		p.Cst.AddInteraction(interaction)
-
-		p.Log.Debug("recorderProxy: outgoing response", "url", req.URL, "status", resp.Status)
-		// Send the target server's response back to the client.
-		if err := resp.Write(conn); err != nil {
-			p.panic("recorderProxy: error writing response: %v", err)
-		}
+		return
 	}
+
+	var resp *http.Response
+	var err error
+
+	err = retry.Do(
+		context.Background(),
+		retry.WithMaxRetries(3, retry.NewConstant(100*time.Millisecond)),
+		func(_ context.Context) error {
+			resp, err = http.DefaultClient.Do(req)
+			return retry.RetryableError(err)
+		})
+	if err != nil {
+		p.panic("recorderProxy: error sending request to target: %v", err)
+	}
+	// Always use chunked encoding for sending the response back.
+	resp.TransferEncoding = []string{"chunked"}
+	interaction, err := capture(req, resp)
+	if err != nil {
+		p.panic(fmt.Sprintf("recorderProxy: error capturing interaction: %v", err))
+	}
+
+	p.Cst.AddInteraction(interaction)
+
+	p.Log.Debug("recorderProxy: outgoing response", "url", req.URL, "status", resp.Status)
+	// Send the target server's response back to the client.
+	if err := resp.Write(conn); err != nil {
+		p.panic("recorderProxy: error writing response: %v", err)
+	}
+
 }
 
 // panic calls the user-defined Panic function if set, otherwise the default panic function.

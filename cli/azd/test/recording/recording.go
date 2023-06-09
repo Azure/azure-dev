@@ -167,6 +167,10 @@ func Start(t *testing.T, opts ...Options) *Session {
 			},
 			Playback: isPlayback,
 			Cst:      cst,
+			Passthrough: func(req *http.Request) bool {
+				return strings.Contains(req.URL.Host, "login.microsoftonline.com") ||
+					strings.Contains(req.URL.Host, "graph.microsoft.com")
+			},
 		},
 	}
 

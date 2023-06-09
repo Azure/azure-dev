@@ -2,97 +2,111 @@ package recording
 
 import (
 	"bufio"
-	"context"
+	"compress/gzip"
 	"crypto/tls"
 	"fmt"
 	"io"
+	"io/fs"
 	"net"
 	"net/http"
 	"net/url"
 	"strings"
-	"time"
 
-	"github.com/sethvargo/go-retry"
 	"golang.org/x/exp/slog"
-	"gopkg.in/dnaeon/go-vcr.v3/cassette"
+	"gopkg.in/dnaeon/go-vcr.v3/recorder"
 )
 
-// recorderProxy is a server that records and plays back interactions. The mode is determined by the value of Playback.
-//
-// In record mode, recorderProxy responds to requests by proxy-ing to the upstream server
-// while recording the interactions.
-//
-// In playback mode, recorderProxy replays interactions from previously stored interactions.
-type recorderProxy struct {
-	// Passthrough is a function that determines whether a request should be proxied to the upstream server even in
-	// playback mode.
-	Passthrough func(req *http.Request) bool
+// gzipReader wraps a response body so it can lazily
+// call gzip.NewReader on the first call to Read.
+// Inspired by http2gzipReader in http/h2_bundle.go
+type http2gzipReader struct {
+	body io.ReadCloser // underlying Response.Body
+	zr   *gzip.Reader  // lazily-initialized gzip reader
+	zerr error         // sticky error
+}
 
+func (gz *http2gzipReader) Read(p []byte) (n int, err error) {
+	if gz.zerr != nil {
+		return 0, gz.zerr
+	}
+	if gz.zr == nil {
+		gz.zr, err = gzip.NewReader(gz.body)
+		if err != nil {
+			gz.zerr = err
+			return 0, err
+		}
+	}
+	return gz.zr.Read(p)
+}
+
+func (gz *http2gzipReader) Close() error {
+	if err := gz.body.Close(); err != nil {
+		return err
+	}
+	gz.zerr = fs.ErrClosed
+	return nil
+}
+
+// A HTTP round tripper that automatically decompresses gzip content.
+type gzip2HttpRoundTripper struct {
+	transport http.RoundTripper
+}
+
+func (u *gzip2HttpRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+	resp, err := u.transport.RoundTrip(req)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.Header.Get("Content-Encoding") == "gzip" {
+		resp.Header.Del("Content-Encoding")
+		resp.Header.Del("Content-Length")
+		resp.ContentLength = -1
+		resp.Body = &http2gzipReader{body: resp.Body}
+		resp.Uncompressed = true
+	}
+
+	return resp, nil
+}
+
+// recorderProxy is a server that communicates using HTTP over an underlying connection using [go-vcr/recorder]
+// to record or playback interactions.
+type recorderProxy struct {
 	Log *slog.Logger
 
 	// Panic specifies the function to call when the server panics.
 	// If nil, `panic` is used.
 	Panic func(msg string)
 
-	// If true, playing back from recording.
-	// Otherwise, recording.
-	Playback bool
-
-	// Cst contains the cassette to save interactions to, or to playback interactions from saved recording.
-	Cst *cassette.Cassette
+	// The recorder that will be used to record or replay interactions.
+	Recorder *recorder.Recorder
 }
 
 func (p *recorderProxy) ServeConn(conn io.Writer, req *http.Request) {
 	p.Log.Debug("recorderProxy: incoming request", "url", req.URL)
 
-	// If we're in playback mode and the request should not be proxied, then we need to
-	// replay the interaction.
-	if p.Playback && (p.Passthrough != nil && !p.Passthrough(req)) {
-		interact, err := p.Cst.GetInteraction(req)
-		if err != nil {
-			p.panic("recorderProxy: %v", err)
-		}
+	resp, err := p.Recorder.RoundTrip(req)
 
-		resp, err := interact.GetHTTPResponse()
-		if err != nil {
-			p.panic("recorderProxy: %v", err)
-		}
-
-		err = resp.Write(conn)
-		if err != nil {
-			p.panic(err.Error())
-		}
-		return
+	if p.Recorder.IsRecording() {
+		p.Log.Debug("recorderProxy: recording response", "url", req.URL, "status", resp.Status)
+	} else {
+		p.Log.Debug("recorderProxy: replaying response", "url", req.URL, "status", resp.Status)
 	}
 
-	var resp *http.Response
-	var err error
-
-	err = retry.Do(
-		context.Background(),
-		retry.WithMaxRetries(3, retry.NewConstant(100*time.Millisecond)),
-		func(_ context.Context) error {
-			resp, err = http.DefaultClient.Do(req)
-			return retry.RetryableError(err)
-		})
 	if err != nil {
-		p.panic("recorderProxy: error sending request to target: %v", err)
+		// report the error back to the client
+		resp = &http.Response{}
+		resp.StatusCode = http.StatusBadRequest
+		resp.Header.Add("x-ms-error-code", err.Error())
+		resp.Body = io.NopCloser(strings.NewReader(fmt.Sprintf(`{"error":{"code":"%s"}}`, err.Error())))
 	}
-	// Always use chunked encoding for sending the response back.
+
+	// Always use chunked encoding for transferring the response back, which handles large response bodies.
 	resp.TransferEncoding = []string{"chunked"}
-	interaction, err := capture(req, resp)
+	err = resp.Write(conn)
 	if err != nil {
-		p.panic(fmt.Sprintf("recorderProxy: error capturing interaction: %v", err))
+		p.panic(err.Error())
 	}
-
-	p.Cst.AddInteraction(interaction)
-
-	p.Log.Debug("recorderProxy: outgoing response", "url", req.URL, "status", resp.Status)
-	// Send the target server's response back to the client.
-	if err := resp.Write(conn); err != nil {
-		p.panic("recorderProxy: error writing response: %v", err)
-	}
-
 }
 
 // panic calls the user-defined Panic function if set, otherwise the default panic function.

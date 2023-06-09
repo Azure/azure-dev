@@ -17,36 +17,29 @@ import (
 
 	"golang.org/x/exp/slog"
 	"gopkg.in/dnaeon/go-vcr.v3/cassette"
+	"gopkg.in/dnaeon/go-vcr.v3/recorder"
 	"gopkg.in/yaml.v3"
 )
 
-type RecordMode int64
-
-const (
-	Unknown RecordMode = iota
-	Playback
-	Record
-	Live
-)
-
-type recordOption struct {
-	mode RecordMode
+type recordOptions struct {
+	mode recorder.Mode
 }
 
 type Options interface {
-	Apply(r *recordOption)
+	Apply(r recordOptions) recordOptions
 }
 
-func WithRecordMode(mode RecordMode) Options {
+func WithRecordMode(mode recorder.Mode) Options {
 	return modeOption{mode: mode}
 }
 
 type modeOption struct {
-	mode RecordMode
+	mode recorder.Mode
 }
 
-func (m modeOption) Apply(r *recordOption) {
-	r.mode = m.mode
+func (in modeOption) Apply(out recordOptions) recordOptions {
+	out.mode = in.mode
+	return out
 }
 
 const EnvNameKey = "env_name"
@@ -92,71 +85,75 @@ func (s *Session) ProxyClient() *http.Client {
 // By default, the recorder proxy will log errors and info messages.
 // The environment variable RECORDER_PROXY_DEBUG can be set to enable debug logging for the recorder proxy.
 func Start(t *testing.T, opts ...Options) *Session {
-	opt := recordOption{}
+	opt := recordOptions{}
+	// for local dev, use recordOnce which will record once if no recording isn't available on disk.
+	// if the recording is available, it will playback.
+	if os.Getenv("CI") == "" {
+		opt.mode = recorder.ModeRecordOnce
+	}
+
+	if os.Getenv("AZURE_RECORD_MODE") != "" {
+		switch strings.ToLower(os.Getenv("AZURE_RECORD_MODE")) {
+		case "live":
+			opt.mode = recorder.ModePassthrough
+		case "playback":
+			opt.mode = recorder.ModeReplayOnly
+		case "record":
+			opt.mode = recorder.ModeRecordOnly
+		default:
+			t.Fatalf(
+				"unsupported AZURE_RECORD_MODE: %s , valid options are: record, live, playback",
+				os.Getenv("AZURE_RECORD_MODE"))
+		}
+	}
+
 	for _, o := range opts {
-		o.Apply(&opt)
+		opt = o.Apply(opt)
 	}
 
 	dir := callingDir(1)
-	name := filepath.Join(dir, "testdata", t.Name())
-	baseName := filepath.Base(name)
-
-	if opt.mode == Unknown {
-		_, err := load(name)
-		if errors.Is(err, os.ErrNotExist) {
-			if os.Getenv("CI") != "" {
-				t.Fatalf(
-					"no recording available for %s. record this locally before re-running the pipeline",
-					baseName)
-			}
-
-			t.Logf("playback not available for %s. recording locally", baseName)
-			opt.mode = Record
-		} else if err != nil {
-			t.Fatalf("failed to load cassette: %v", err)
-		} else {
-			opt.mode = Playback
-		}
-	}
+	name := filepath.Join(dir, "testdata", "recordings", t.Name())
 
 	writer := &logWriter{t: t}
 	level := slog.LevelInfo
 	if os.Getenv("RECORDER_PROXY_DEBUG") != "" {
 		level = slog.LevelDebug
 	}
-	log := slog.New(slog.NewTextHandler(writer, &slog.HandlerOptions{
+	log := slog.New(slog.NewJSONHandler(writer, &slog.HandlerOptions{
 		Level: level,
 	}))
 
 	session := &Session{}
 
-	var cst *cassette.Cassette
-	var isPlayback bool
-	var modeStr string
+	recorderOptions := &recorder.Options{
+		CassetteName:       name,
+		Mode:               opt.mode,
+		SkipRequestLatency: false,
+	}
 
-	switch opt.mode {
-	case Live:
+	// This also automatically loads the recording.
+	vcr, err := recorder.NewWithOptions(recorderOptions)
+	if err != nil {
+		t.Fatalf("failed to load recordings: %v", err)
+	}
+	err = loadVariables(name+".yaml", &session.Variables)
+	if err != nil {
+		t.Fatalf("failed to load variables: %v", err)
+	}
+
+	vcr.SetRealTransport(&gzip2HttpRoundTripper{
+		transport: http.DefaultTransport,
+	})
+
+	vcr.AddHook(func(i *cassette.Interaction) error {
+		i.Request.Headers.Del("Authorization")
 		return nil
-	case Playback:
-		r, err := load(name)
-		if err != nil {
-			t.Fatalf("failed to load recording: %v", err)
-		}
+	}, recorder.BeforeSaveHook)
 
-		cst = r.Cst
-		isPlayback = true
-		modeStr = "playback"
-		session.Variables = r.Variables
-	case Record:
-		cst = cassette.New(name)
-		isPlayback = false
-		modeStr = "record"
-		session.Variables = map[string]string{}
-	}
-
-	if opt.mode != Playback && opt.mode != Record {
-		t.Fatalf("invalid record mode: %v", opt.mode)
-	}
+	vcr.AddPassthrough(func(req *http.Request) bool {
+		return strings.Contains(req.URL.Host, "login.microsoftonline.com") ||
+			strings.Contains(req.URL.Host, "graph.microsoft.com")
+	})
 
 	proxy := &connectHandler{
 		Log: log,
@@ -165,26 +162,29 @@ func Start(t *testing.T, opts ...Options) *Session {
 			Panic: func(msg string) {
 				t.Fatal(msg)
 			},
-			Playback: isPlayback,
-			Cst:      cst,
-			Passthrough: func(req *http.Request) bool {
-				return strings.Contains(req.URL.Host, "login.microsoftonline.com") ||
-					strings.Contains(req.URL.Host, "graph.microsoft.com")
-			},
+			Recorder: vcr,
 		},
 	}
 
 	server := httptest.NewTLSServer(proxy)
 	proxy.TLS = server.TLS
-	t.Logf("recorderProxy started with mode %s at %s", modeStr, server.URL)
+	t.Logf("recorderProxy started with mode %v at %s", displayMode(vcr.Mode()), server.URL)
 	session.ProxyUrl = server.URL
 
 	t.Cleanup(func() {
 		server.Close()
 		if !t.Failed() {
-			err := save(recording{Cst: cst, Variables: session.Variables})
+			shouldSave := vcr.IsRecording()
+			err = vcr.Stop()
 			if err != nil {
 				t.Fatalf("failed to save recording: %v", err)
+			}
+
+			if shouldSave {
+				err = saveVariables(recorderOptions.CassetteName+".yaml", session.Variables)
+				if err != nil {
+					t.Fatalf("failed to save variables: %v", err)
+				}
 			}
 		}
 	})
@@ -192,22 +192,28 @@ func Start(t *testing.T, opts ...Options) *Session {
 	return session
 }
 
-// recording contains the items stored locally on disk for a recording.
-type recording struct {
-	Cst *cassette.Cassette
+var modeStrMap = map[recorder.Mode]string{
+	recorder.ModeRecordOnly: "record",
+	recorder.ModeRecordOnce: "recordOnce",
 
-	Variables map[string]string
+	recorder.ModeReplayOnly:  "replay",
+	recorder.ModePassthrough: "live",
 }
 
-func load(name string) (recording, error) {
-	cst, err := cassette.Load(name)
-	if err != nil {
-		return recording{}, fmt.Errorf("failed to load cassette: %w", err)
+func displayMode(mode recorder.Mode) string {
+	return modeStrMap[mode]
+}
+
+// Loads variables from disk. The variables are expected to be the second document in the provided yaml file.
+// If the file doesn't exist, returns nil.
+func loadVariables(name string, variables *map[string]string) error {
+	f, err := os.Open(name)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
 	}
 
-	f, err := os.Open(cst.File)
 	if err != nil {
-		return recording{}, fmt.Errorf("failed to load cassette file: %w", err)
+		return fmt.Errorf("failed to load cassette file: %w", err)
 	}
 
 	// This implementation uses a buf reader to scan for the second document delimiter for performance.
@@ -220,7 +226,7 @@ func load(name string) (recording, error) {
 			docIndex++
 		}
 
-		if docIndex == 2 {
+		if docIndex == 2 { // found the second document containing variables
 			break
 		}
 
@@ -230,37 +236,32 @@ func load(name string) (recording, error) {
 		}
 	}
 
-	if docIndex != 2 {
-		return recording{Cst: cst}, nil
+	if docIndex != 2 { // no variables
+		return nil
 	}
 
 	bytes, err := ioutil.ReadAll(r)
 	if err != nil {
-		return recording{}, fmt.Errorf("failed to read recording file: %w", err)
+		return fmt.Errorf("failed to read recording file: %w", err)
 	}
 
-	var variables map[string]string
 	err = yaml.Unmarshal(bytes, &variables)
 	if err != nil {
-		return recording{}, fmt.Errorf("failed to parse recording file: %w", err)
+		return fmt.Errorf("failed to parse recording file: %w", err)
 	}
 
-	return recording{Cst: cst, Variables: variables}, nil
+	return nil
 }
 
-func save(r recording) error {
-	if err := r.Cst.Save(); err != nil {
-		return fmt.Errorf("failed to save interactions: %v", err)
-	}
-
-	file := r.Cst.File
-	f, err := os.OpenFile(file, os.O_APPEND|os.O_RDWR, 0755)
+// Saves variables into the named file. The variables are appended as a separate YAML document to the file.
+func saveVariables(name string, variables map[string]string) error {
+	f, err := os.OpenFile(name, os.O_APPEND|os.O_RDWR, 0755)
 	if err != nil {
 		return err
 	}
 
 	defer f.Close()
-	bytes, err := yaml.Marshal(r.Variables)
+	bytes, err := yaml.Marshal(variables)
 	if err != nil {
 		return err
 	}

@@ -16,6 +16,7 @@ Commands
     deploy   	: Deploy the application's code to Azure.
     down     	: Delete Azure resources for an application.
     env      	: Manage environments.
+    hooks    	: Manage hooks.
     package  	: Packages the application's code to be deployed to Azure. (Beta)
     provision	: Provision the Azure resources for an application.
     up       	: Provision Azure resources, and deploy your project with a single command.

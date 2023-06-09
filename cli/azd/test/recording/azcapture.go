@@ -8,15 +8,8 @@ import (
 	"gopkg.in/dnaeon/go-vcr.v3/cassette"
 )
 
-const (
-	Op       = "op"
-	Async    = "async"
-	Location = "location"
-	Body     = "body"
-)
-
 type httpPollDiscarder struct {
-	pollingOp *pollOperation
+	pollInProgress poller
 }
 
 // "Location"
@@ -39,109 +32,146 @@ func pollLocation(i *cassette.Interaction) (*url.URL, error) {
 }
 
 func (d *httpPollDiscarder) BeforeSave(i *cassette.Interaction) error {
-	if d.pollingOp != nil && pollingDone(d.pollingOp, i) {
-		d.pollingOp = nil
+	if d.pollInProgress != nil && d.pollInProgress.Done(i) {
+		// Polling is done, reset pollInProgress
+		d.pollInProgress = nil
 	}
 
-	if d.pollingOp != nil {
+	if d.pollInProgress != nil {
+		// Fast forward messages that are simply waiting for polling to complete
 		i.DiscardOnSave = true
 	}
 
-	if op := pollingOperation(i); op != nil {
-		d.pollingOp = op
+	// Check if the interaction is a polling request.
+	// If so, set the current poll in progress.
+	if op, err := NewPoller(i); op != nil {
+		if err != nil {
+			return err
+		}
+		d.pollInProgress = op
 	}
 
 	return nil
 }
 
-func pollingOperation(i *cassette.Interaction) *pollOperation {
-	if isOpPoll(i) {
-		return Op
-	}
+func NewPoller(i *cassette.Interaction) (poller, error) {
+	// order here matches what azruntime.Poller does
+
 	if isAsyncPoll(i) {
-		return Async
+		return newAsyncPoll(i)
+	}
+
+	if isOpPoll(i) {
+		return newOpPoll(i)
 	}
 	if isLocationPoll(i) {
-		return Location
-	}
-	if isBodyPoll(i) {
-		return Body
+		return newLocationPoll(i)
 	}
 
-	return ""
+	if isBodyPoll(i) {
+		return newBodyPoll(i)
+	}
+
+	return nil, nil
 }
 
-type pollOperation struct {
-	location url.URL
-
-	done func(*cassette.Interaction) bool
+type poller interface {
+	Done(i *cassette.Interaction) bool
 }
 
 type asyncPoller struct {
 	location url.URL
 }
 
-func newAsyncPoll(i *cassette.Interaction) (*asyncPoller, error) {
-	if i.Request.Method == "PUT" && i.Response.Headers.Get("Azure-AsyncOperation") != "" {
-		url, err := url.Parse(i.Response.Headers.Get("Azure-AsyncOperation"))
-		if err != nil {
-			return nil, err
-		}
-		return &asyncPoller{
-			location: *url,
-		}, nil
-	}
+func isAsyncPoll(i *cassette.Interaction) bool {
+	return i.Request.Method == "PUT" && i.Response.Headers.Get("Azure-AsyncOperation") != ""
+}
 
-	return nil, nil
+func newAsyncPoll(i *cassette.Interaction) (*asyncPoller, error) {
+	url, err := url.Parse(i.Response.Headers.Get("Azure-AsyncOperation"))
+	if err != nil {
+		return nil, err
+	}
+	return &asyncPoller{
+		location: *url,
+	}, nil
 }
 
 func (a *asyncPoller) Done(i *cassette.Interaction) bool {
-	reqUrl, err := url.Parse(i.Request.URL)
+	if !urlMatch(i.Request.URL, a.location) {
+		return false
+	}
+
+	status, err := GetStatus(i.Response.Body)
 	if err != nil {
 		panic(err)
 	}
 
-	if reqUrl.String() == a.location.String() {
-
-	}
-
-	return i.Response.StatusCode == http.StatusOK
+	//!TODO
+	return status != statusInProgress
 }
 
 type opPoller struct {
 	location url.URL
 }
 
+func isOpPoll(i *cassette.Interaction) bool {
+	return i.Request.Method == "PUT" && i.Response.Headers.Get("Operation-Location") != ""
+}
+
 func newOpPoll(i *cassette.Interaction) (*opPoller, error) {
-	if i.Request.Method == "PUT" && i.Response.Headers.Get("Operation-Location") != "" {
-		url, err := url.Parse(i.Response.Headers.Get("Operation-Location"))
-		if err != nil {
-			return nil, err
-		}
-		return &opPoller{
-			location: *url,
-		}, nil
+	url, err := url.Parse(i.Response.Headers.Get("Operation-Location"))
+	if err != nil {
+		return nil, err
+	}
+	return &opPoller{
+		location: *url,
+	}, nil
+}
+
+func urlMatch(reqUrl string, loc url.URL) bool {
+	req, err := url.Parse(reqUrl)
+	if err != nil {
+		panic(err)
 	}
 
-	return nil, nil
+	return req.String() == loc.String()
+}
+
+func (o *opPoller) Done(i *cassette.Interaction) bool {
+	if !urlMatch(i.Request.URL, o.location) {
+		return false
+	}
+
+	//!TODO
+	return false
 }
 
 type locPoller struct {
 	location url.URL
 }
 
+func isLocationPoll(i *cassette.Interaction) bool {
+	return i.Request.Method == "PUT" && i.Response.Headers.Get("Location") != ""
+}
+
 func newLocationPoll(i *cassette.Interaction) (*locPoller, error) {
-	if i.Request.Method == "PUT" && i.Response.Headers.Get("Location") != "" {
-		url, err := url.Parse(i.Response.Headers.Get("Location"))
-		if err != nil {
-			return nil, err
-		}
-		return &locPoller{
-			location: *url,
-		}, nil
+	url, err := url.Parse(i.Response.Headers.Get("Location"))
+	if err != nil {
+		return nil, err
+	}
+	return &locPoller{
+		location: *url,
+	}, nil
+}
+
+func (l *locPoller) Done(i *cassette.Interaction) bool {
+	if !urlMatch(i.Request.URL, l.location) {
+		return false
 	}
 
-	return nil, nil
+	//!TODO
+	return false
 }
 
 type bodyPoller struct {
@@ -157,25 +187,47 @@ const (
 	statusInProgress = "InProgress"
 )
 
-func newBodyPoll(i *cassette.Interaction) (*bodyPoller, error) {
-	if i.Request.Method == "PATCH" || i.Request.Method == "PUT" && i.Response.Code == http.StatusCreated {
-		body, _ := jsonBody(i.Response.Body)
-		state := provisioningState(body)
-		if state == "" {
-			state = statusInProgress
-		}
+func isBodyPoll(i *cassette.Interaction) bool {
+	return (i.Request.Method == "PATCH" ||
+		i.Request.Method == "PUT") &&
+		i.Response.Code == http.StatusCreated
+}
 
-		loc, err := url.Parse(i.Request.URL)
-		if err != nil {
-			return nil, err
-		}
-		return &bodyPoller{
-			state:    state,
-			location: *loc,
-		}, nil
+func newBodyPoll(i *cassette.Interaction) (*bodyPoller, error) {
+	body, _ := jsonBody(i.Response.Body)
+	state := provisioningState(body)
+	if state == "" {
+		state = statusInProgress
 	}
 
-	return nil, nil
+	loc, err := url.Parse(i.Request.URL)
+	if err != nil {
+		return nil, err
+	}
+	return &bodyPoller{
+		state:    state,
+		location: *loc,
+	}, nil
+}
+
+func (b *bodyPoller) Done(i *cassette.Interaction) bool {
+	if !urlMatch(i.Request.URL, b.location) {
+		return false
+	}
+
+	if i.Response.Code != http.StatusAccepted {
+		return true
+	}
+
+	body, err := jsonBody(i.Response.Body)
+	if err != nil {
+		panic(err)
+	}
+
+	state := provisioningState(body)
+
+	//!TODO
+	return state != statusInProgress
 }
 
 func jsonBody(respBody string) (map[string]any, error) {

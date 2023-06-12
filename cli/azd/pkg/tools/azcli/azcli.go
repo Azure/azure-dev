@@ -59,6 +59,12 @@ type AzCli interface {
 		resourceGroupName string,
 		vaultName string,
 	) (*AzCliKeyVault, error)
+	GetManagedHSM(
+		ctx context.Context,
+		subscriptionId string,
+		resourceGroupName string,
+		hsmName string,
+	) (*AzCliManagedHSM, error)
 	GetCognitiveAccount(
 		ctx context.Context,
 		subscriptionId string,
@@ -76,6 +82,7 @@ type AzCli interface {
 	PurgeApim(ctx context.Context, subscriptionId string, apimName string, location string) error
 	PurgeAppConfig(ctx context.Context, subscriptionId string, configName string, location string) error
 	PurgeKeyVault(ctx context.Context, subscriptionId string, vaultName string, location string) error
+	PurgeManagedHSM(ctx context.Context, subscriptionId string, hsmName string, location string) error
 	PurgeCognitiveAccount(ctx context.Context, subscriptionId, location, resourceGroup, accountName string) error
 	GetApim(
 		ctx context.Context, subscriptionId string, resourceGroupName string, apimName string) (*AzCliApim, error)

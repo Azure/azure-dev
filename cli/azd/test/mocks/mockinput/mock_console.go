@@ -131,6 +131,10 @@ func (c *MockConsole) Confirm(ctx context.Context, options input.ConsoleOptions)
 	return value.(bool), err
 }
 
+// no-op for mock-console when calling WaitForEnter()
+func (c *MockConsole) WaitForEnter() {
+}
+
 // Writes a single answer prompt to the console for the user to complete
 func (c *MockConsole) Prompt(ctx context.Context, options input.ConsoleOptions) (string, error) {
 	c.log = append(c.log, options.Message)

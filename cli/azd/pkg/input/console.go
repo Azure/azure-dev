@@ -4,6 +4,7 @@
 package input
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"github.com/AlecAivazis/survey/v2"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -95,6 +97,8 @@ type Console interface {
 	Select(ctx context.Context, options ConsoleOptions) (int, error)
 	// Prompts the user to confirm an operation
 	Confirm(ctx context.Context, options ConsoleOptions) (bool, error)
+	// block terminal until the next enter
+	WaitForEnter()
 	// Sets the underlying writer for the console
 	SetWriter(writer io.Writer)
 	// Gets the underlying writer for the console
@@ -505,6 +509,16 @@ func (c *AskerConsole) Confirm(ctx context.Context, options ConsoleOptions) (boo
 	return response, nil
 }
 
+// wait until the next enter
+func (c *AskerConsole) WaitForEnter() {
+	inputScanner := bufio.NewScanner(c.handles.Stdin)
+	if scan := inputScanner.Scan(); !scan {
+		if err := inputScanner.Err(); err != nil {
+			log.Printf("error while waiting for enter: %v", err)
+		}
+	}
+}
+
 // Gets the underlying writer for the console
 func (c *AskerConsole) GetWriter() io.Writer {
 	return c.writer
@@ -548,21 +562,25 @@ func GetStepResultFormat(result error) SpinnerUxType {
 	return formatResult
 }
 
-// Handle doing interactive calls. It check if there's a spinner running to pause it before doing interactive actions.
-func (c *AskerConsole) doInteraction(fn func(c *AskerConsole) error) error {
-
+// Handle doing interactive calls. It checks if there's a spinner running to pause it before doing interactive actions.
+func (c *AskerConsole) doInteraction(promptFn func(c *AskerConsole) error) error {
 	if c.spinner != nil && c.spinner.Status() == yacspin.SpinnerRunning {
 		_ = c.spinner.Pause()
 
-		// calling fn might return an error. This defer make sure to recover the spinner
-		// status.
+		// Ensure the spinner is always resumed
 		defer func() {
 			_ = c.spinner.Unpause()
 		}()
 	}
 
-	if err := fn(c); err != nil {
-		return err
-	}
-	return nil
+	// Track total time for promptFn.
+	// It includes the time spent in rendering the prompt (likely <1ms)
+	// before the user has a chance to interact with the prompt.
+	start := time.Now()
+	defer func() {
+		tracing.InteractTimeMs.Add(time.Since(start).Milliseconds())
+	}()
+
+	// Execute the interactive prompt
+	return promptFn(c)
 }

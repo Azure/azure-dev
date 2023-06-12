@@ -11,7 +11,6 @@ import (
 	"log"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -113,10 +112,11 @@ func (p *dockerProject) SetSource(inner FrameworkService) {
 func (p *dockerProject) Restore(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-) *async.TaskWithProgress[*ServiceRestoreResult, ServiceProgress] {
+	showProgress ShowProgress,
+) (ServiceRestoreResult, error) {
 	// When the program runs the restore actions for the underlying project (containerapp),
 	// the dependencies are installed locally
-	return p.framework.Restore(ctx, serviceConfig)
+	return p.framework.Restore(ctx, serviceConfig, showProgress)
 }
 
 // Builds the docker project based on the docker options specified within the Service configuration
@@ -124,97 +124,91 @@ func (p *dockerProject) Build(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	restoreOutput *ServiceRestoreResult,
-) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServiceBuildResult, ServiceProgress]) {
-			dockerOptions := getDockerOptionsWithDefaults(serviceConfig.Docker)
+	showProgress ShowProgress,
+) (ServiceBuildResult, error) {
+	dockerOptions := getDockerOptionsWithDefaults(serviceConfig.Docker)
 
-			buildArgs := []string{}
-			for _, arg := range dockerOptions.BuildArgs {
-				buildArgs = append(buildArgs, exec.RedactSensitiveData(arg))
-			}
+	buildArgs := []string{}
+	for _, arg := range dockerOptions.BuildArgs {
+		buildArgs = append(buildArgs, exec.RedactSensitiveData(arg))
+	}
 
-			log.Printf(
-				"building image for service %s, cwd: %s, path: %s, context: %s, buildArgs: %s)",
-				serviceConfig.Name,
-				serviceConfig.Path(),
-				dockerOptions.Path,
-				dockerOptions.Context,
-				buildArgs,
-			)
-
-			imageName := fmt.Sprintf(
-				"%s-%s",
-				strings.ToLower(serviceConfig.Project.Name),
-				strings.ToLower(serviceConfig.Name),
-			)
-
-			// Build the container
-			task.SetProgress(NewServiceProgress("Building Docker image"))
-			imageId, err := p.docker.Build(
-				ctx,
-				serviceConfig.Path(),
-				dockerOptions.Path,
-				dockerOptions.Platform,
-				dockerOptions.Context,
-				imageName,
-				dockerOptions.BuildArgs,
-			)
-			if err != nil {
-				task.SetError(fmt.Errorf("building container: %s at %s: %w", serviceConfig.Name, dockerOptions.Context, err))
-				return
-			}
-
-			log.Printf("built image %s for %s", imageId, serviceConfig.Name)
-			task.SetResult(&ServiceBuildResult{
-				Restore:         restoreOutput,
-				BuildOutputPath: imageId,
-				Details: &dockerBuildResult{
-					ImageId:   imageId,
-					ImageName: imageName,
-				},
-			})
-		},
+	log.Printf(
+		"building image for service %s, cwd: %s, path: %s, context: %s, buildArgs: %s)",
+		serviceConfig.Name,
+		serviceConfig.Path(),
+		dockerOptions.Path,
+		dockerOptions.Context,
+		buildArgs,
 	)
+
+	imageName := fmt.Sprintf(
+		"%s-%s",
+		strings.ToLower(serviceConfig.Project.Name),
+		strings.ToLower(serviceConfig.Name),
+	)
+
+	// Build the container
+	showProgress("Building Docker image")
+	imageId, err := p.docker.Build(
+		ctx,
+		serviceConfig.Path(),
+		dockerOptions.Path,
+		dockerOptions.Platform,
+		dockerOptions.Context,
+		imageName,
+		dockerOptions.BuildArgs,
+	)
+	if err != nil {
+		return ServiceBuildResult{}, fmt.Errorf(
+			"building container: %s at %s: %w",
+			serviceConfig.Name,
+			dockerOptions.Context,
+			err)
+	}
+
+	log.Printf("built image %s for %s", imageId, serviceConfig.Name)
+	return ServiceBuildResult{
+		Restore:         restoreOutput,
+		BuildOutputPath: imageId,
+		Details: &dockerBuildResult{
+			ImageId:   imageId,
+			ImageName: imageName,
+		},
+	}, nil
 }
 
 func (p *dockerProject) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	buildOutput *ServiceBuildResult,
-) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
-			imageId := buildOutput.BuildOutputPath
-			if imageId == "" {
-				task.SetError(errors.New("missing container image id from build output"))
-				return
-			}
+	showProgress ShowProgress,
+) (ServicePackageResult, error) {
+	imageId := buildOutput.BuildOutputPath
+	if imageId == "" {
+		return ServicePackageResult{}, errors.New("missing container image id from build output")
+	}
 
-			localTag, err := p.containerHelper.LocalImageTag(ctx, serviceConfig)
-			if err != nil {
-				task.SetError(fmt.Errorf("generating local image tag: %w", err))
-				return
-			}
+	localTag, err := p.containerHelper.LocalImageTag(ctx, serviceConfig)
+	if err != nil {
+		return ServicePackageResult{}, fmt.Errorf("generating local image tag: %w", err)
+	}
 
-			// Tag image.
-			log.Printf("tagging image %s as %s", imageId, localTag)
-			task.SetProgress(NewServiceProgress("Tagging Docker image"))
-			if err := p.docker.Tag(ctx, serviceConfig.Path(), imageId, localTag); err != nil {
-				task.SetError(fmt.Errorf("tagging image: %w", err))
-				return
-			}
+	// Tag image.
+	log.Printf("tagging image %s as %s", imageId, localTag)
+	showProgress("Tagging Docker image")
+	if err := p.docker.Tag(ctx, serviceConfig.Path(), imageId, localTag); err != nil {
+		return ServicePackageResult{}, fmt.Errorf("tagging image: %w", err)
+	}
 
-			task.SetResult(&ServicePackageResult{
-				Build:       buildOutput,
-				PackagePath: localTag,
-				Details: &dockerPackageResult{
-					ImageHash: imageId,
-					ImageTag:  localTag,
-				},
-			})
+	return ServicePackageResult{
+		Build:       buildOutput,
+		PackagePath: localTag,
+		Details: &dockerPackageResult{
+			ImageHash: imageId,
+			ImageTag:  localTag,
 		},
-	)
+	}, nil
 }
 
 func getDockerOptionsWithDefaults(options DockerProjectOptions) DockerProjectOptions {

@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -76,23 +75,18 @@ func (dp *dotnetProject) Initialize(ctx context.Context, serviceConfig *ServiceC
 func (dp *dotnetProject) Restore(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-) *async.TaskWithProgress[*ServiceRestoreResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServiceRestoreResult, ServiceProgress]) {
-			task.SetProgress(NewServiceProgress("Restoring .NET project dependencies"))
-			projFile, err := findProjectFile(serviceConfig.Name, serviceConfig.Path())
-			if err != nil {
-				task.SetError(err)
-				return
-			}
-			if err := dp.dotnetCli.Restore(ctx, projFile); err != nil {
-				task.SetError(err)
-				return
-			}
+	showProgress ShowProgress,
+) (ServiceRestoreResult, error) {
+	showProgress("Restoring .NET project dependencies")
+	projFile, err := findProjectFile(serviceConfig.Name, serviceConfig.Path())
+	if err != nil {
+		return ServiceRestoreResult{}, err
+	}
+	if err := dp.dotnetCli.Restore(ctx, projFile); err != nil {
+		return ServiceRestoreResult{}, err
+	}
 
-			task.SetResult(&ServiceRestoreResult{})
-		},
-	)
+	return ServiceRestoreResult{}, nil
 }
 
 // Builds the dotnet project using the dotnet CLI
@@ -100,85 +94,73 @@ func (dp *dotnetProject) Build(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	restoreOutput *ServiceRestoreResult,
-) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServiceBuildResult, ServiceProgress]) {
-			task.SetProgress(NewServiceProgress("Building .NET project"))
-			projFile, err := findProjectFile(serviceConfig.Name, serviceConfig.Path())
-			if err != nil {
-				task.SetError(err)
-				return
-			}
-			if err := dp.dotnetCli.Build(ctx, projFile, defaultDotNetBuildConfiguration, ""); err != nil {
-				task.SetError(err)
-				return
-			}
+	showProgress ShowProgress,
+) (ServiceBuildResult, error) {
+	showProgress("Building .NET project")
+	projFile, err := findProjectFile(serviceConfig.Name, serviceConfig.Path())
+	if err != nil {
+		return ServiceBuildResult{}, err
+	}
+	if err := dp.dotnetCli.Build(ctx, projFile, defaultDotNetBuildConfiguration, ""); err != nil {
+		return ServiceBuildResult{}, err
+	}
 
-			defaultOutputDir := filepath.Join("./bin", defaultDotNetBuildConfiguration)
+	defaultOutputDir := filepath.Join("./bin", defaultDotNetBuildConfiguration)
 
-			// Attempt to find the default build output location
-			buildOutputDir := serviceConfig.Path()
-			_, err = os.Stat(filepath.Join(buildOutputDir, defaultOutputDir))
-			if err == nil {
-				buildOutputDir = filepath.Join(buildOutputDir, defaultOutputDir)
-			}
+	// Attempt to find the default build output location
+	buildOutputDir := serviceConfig.Path()
+	_, err = os.Stat(filepath.Join(buildOutputDir, defaultOutputDir))
+	if err == nil {
+		buildOutputDir = filepath.Join(buildOutputDir, defaultOutputDir)
+	}
 
-			// By default dotnet build will create a sub folder for the project framework version, etc. net6.0
-			// If we have a single folder under build configuration assume this location as build output result
-			subDirs, err := os.ReadDir(buildOutputDir)
-			if err == nil {
-				if len(subDirs) == 1 {
-					buildOutputDir = filepath.Join(buildOutputDir, subDirs[0].Name())
-				}
-			}
+	// By default dotnet build will create a sub folder for the project framework version, etc. net6.0
+	// If we have a single folder under build configuration assume this location as build output result
+	subDirs, err := os.ReadDir(buildOutputDir)
+	if err == nil {
+		if len(subDirs) == 1 {
+			buildOutputDir = filepath.Join(buildOutputDir, subDirs[0].Name())
+		}
+	}
 
-			task.SetResult(&ServiceBuildResult{
-				Restore:         restoreOutput,
-				BuildOutputPath: buildOutputDir,
-			})
-		},
-	)
+	return ServiceBuildResult{
+		Restore:         restoreOutput,
+		BuildOutputPath: buildOutputDir,
+	}, nil
 }
 
 func (dp *dotnetProject) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	buildOutput *ServiceBuildResult,
-) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
-			packageDest, err := os.MkdirTemp("", "azd")
-			if err != nil {
-				task.SetError(fmt.Errorf("creating package directory for %s: %w", serviceConfig.Name, err))
-				return
-			}
+	showProgress ShowProgress,
+) (ServicePackageResult, error) {
+	packageDest, err := os.MkdirTemp("", "azd")
+	if err != nil {
+		return ServicePackageResult{}, fmt.Errorf("creating package directory for %s: %w", serviceConfig.Name, err)
+	}
 
-			task.SetProgress(NewServiceProgress("Publishing .NET project"))
-			projFile, err := findProjectFile(serviceConfig.Name, serviceConfig.Path())
-			if err != nil {
-				task.SetError(err)
-				return
-			}
-			if err := dp.dotnetCli.Publish(ctx, projFile, defaultDotNetBuildConfiguration, packageDest); err != nil {
-				task.SetError(err)
-				return
-			}
+	showProgress("Publishing .NET project")
+	projFile, err := findProjectFile(serviceConfig.Name, serviceConfig.Path())
+	if err != nil {
+		return ServicePackageResult{}, err
+	}
+	if err := dp.dotnetCli.Publish(ctx, projFile, defaultDotNetBuildConfiguration, packageDest); err != nil {
+		return ServicePackageResult{}, err
+	}
 
-			if serviceConfig.OutputPath != "" {
-				packageDest = filepath.Join(packageDest, serviceConfig.OutputPath)
-			}
+	if serviceConfig.OutputPath != "" {
+		packageDest = filepath.Join(packageDest, serviceConfig.OutputPath)
+	}
 
-			if err := validatePackageOutput(packageDest); err != nil {
-				task.SetError(err)
-				return
-			}
+	if err := validatePackageOutput(packageDest); err != nil {
+		return ServicePackageResult{}, err
+	}
 
-			task.SetResult(&ServicePackageResult{
-				Build:       buildOutput,
-				PackagePath: packageDest,
-			})
-		},
-	)
+	return ServicePackageResult{
+		Build:       buildOutput,
+		PackagePath: packageDest,
+	}, nil
 }
 
 func (dp *dotnetProject) setUserSecretsFromOutputs(

@@ -21,6 +21,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func saveMessages(msg *[]string) func(s string) {
+	return func(s string) {
+		*msg = append(*msg, s)
+	}
+}
+
 func TestDefaultDockerOptions(t *testing.T) {
 	const testProj = `
 name: test-proj
@@ -80,26 +86,16 @@ services:
 	npmCli := npm.NewNpmCli(mockContext.CommandRunner)
 	docker := docker.NewDocker(mockContext.CommandRunner)
 
-	done := make(chan bool)
-
 	internalFramework := NewNpmProject(npmCli, env)
-	progressMessages := []string{}
 
 	framework := NewDockerProject(env, docker, NewContainerHelper(env, clock.NewMock(), nil, docker))
 	framework.SetSource(internalFramework)
 
-	buildTask := framework.Build(*mockContext.Context, service, nil)
-	go func() {
-		for value := range buildTask.Progress() {
-			progressMessages = append(progressMessages, value.Message)
-		}
-		done <- true
-	}()
+	progressMessages := []string{}
+	showProgress := saveMessages(&progressMessages)
+	res, err := framework.Build(*mockContext.Context, service, nil, showProgress)
 
-	buildResult, err := buildTask.Await()
-	<-done
-
-	require.Equal(t, "imageId", buildResult.BuildOutputPath)
+	require.Equal(t, "imageId", res.BuildOutputPath)
 	require.Nil(t, err)
 	require.Len(t, progressMessages, 1)
 	require.Equal(t, "Building Docker image", progressMessages[0])
@@ -168,29 +164,18 @@ services:
 	require.NoError(t, err)
 
 	service := projectConfig.Services["web"]
-
-	done := make(chan bool)
-
 	internalFramework := NewNpmProject(npmCli, env)
-	status := ""
-
 	framework := NewDockerProject(env, docker, NewContainerHelper(env, clock.NewMock(), nil, docker))
 	framework.SetSource(internalFramework)
 
-	buildTask := framework.Build(*mockContext.Context, service, nil)
-	go func() {
-		for value := range buildTask.Progress() {
-			status = value.Message
-		}
-		done <- true
-	}()
+	messages := []string{}
+	showProgress := saveMessages(&messages)
+	res, err := framework.Build(*mockContext.Context, service, nil, showProgress)
 
-	buildResult, err := buildTask.Await()
-	<-done
-
-	require.Equal(t, "imageId", buildResult.BuildOutputPath)
+	require.Equal(t, "imageId", res)
 	require.Nil(t, err)
-	require.Equal(t, "Building Docker image", status)
+	require.Len(t, messages, 1)
+	require.Equal(t, "Building Docker image", messages[0])
 	require.Equal(t, true, ran)
 }
 
@@ -212,13 +197,13 @@ func Test_DockerProject_Build(t *testing.T) {
 	serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
 
 	dockerProject := NewDockerProject(env, dockerCli, NewContainerHelper(env, clock.NewMock(), nil, dockerCli))
-	buildTask := dockerProject.Build(*mockContext.Context, serviceConfig, nil)
-	logProgress(buildTask)
 
-	result, err := buildTask.Await()
+	messages := []string{}
+	showProgress := saveMessages(&messages)
+	res, err := dockerProject.Build(*mockContext.Context, serviceConfig, nil, showProgress)
 	require.NoError(t, err)
-	require.NotNil(t, result)
-	require.Equal(t, "IMAGE_ID", result.BuildOutputPath)
+	require.NotNil(t, res)
+	require.Equal(t, "IMAGE_ID", res.BuildOutputPath)
 	require.Equal(t, "docker", runArgs.Cmd)
 	require.Equal(t, serviceConfig.RelativePath, runArgs.Cwd)
 	require.Equal(t,
@@ -232,7 +217,7 @@ func Test_DockerProject_Build(t *testing.T) {
 		runArgs.Args,
 	)
 
-	dockerBuildResult, ok := result.Details.(*dockerBuildResult)
+	dockerBuildResult, ok := res.Details.(*dockerBuildResult)
 	require.True(t, ok)
 	require.NotNil(t, dockerBuildResult)
 	require.Equal(t, "test-app-api", dockerBuildResult.ImageName)
@@ -257,22 +242,22 @@ func Test_DockerProject_Package(t *testing.T) {
 	serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
 
 	dockerProject := NewDockerProject(env, dockerCli, NewContainerHelper(env, clock.NewMock(), nil, dockerCli))
-	packageTask := dockerProject.Package(
+	messages := []string{}
+	showProgress := saveMessages(&messages)
+	res, err := dockerProject.Package(
 		*mockContext.Context,
 		serviceConfig,
 		&ServiceBuildResult{
 			BuildOutputPath: "IMAGE_ID",
 		},
+		showProgress,
 	)
-	logProgress(packageTask)
-
-	result, err := packageTask.Await()
 	require.NoError(t, err)
-	require.NotNil(t, result)
-	require.IsType(t, new(dockerPackageResult), result.Details)
+	require.NotNil(t, res)
+	require.IsType(t, new(dockerPackageResult), res.Details)
 
-	packageResult, ok := result.Details.(*dockerPackageResult)
-	require.Equal(t, "test-app/api-test:azd-deploy-0", result.PackagePath)
+	packageResult, ok := res.Details.(*dockerPackageResult)
+	require.Equal(t, "test-app/api-test:azd-deploy-0", res.PackagePath)
 
 	require.True(t, ok)
 	require.Equal(t, "test-app/api-test:azd-deploy-0", packageResult.ImageTag)

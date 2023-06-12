@@ -11,7 +11,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/python"
@@ -54,46 +53,39 @@ func (pp *pythonProject) Initialize(ctx context.Context, serviceConfig *ServiceC
 func (pp *pythonProject) Restore(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-) *async.TaskWithProgress[*ServiceRestoreResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServiceRestoreResult, ServiceProgress]) {
-			task.SetProgress(NewServiceProgress("Checking for Python virtual environment"))
-			vEnvName := pp.getVenvName(serviceConfig)
-			vEnvPath := path.Join(serviceConfig.Path(), vEnvName)
+	showProgress ShowProgress,
+) (ServiceRestoreResult, error) {
+	showProgress("Checking for Python virtual environment")
+	vEnvName := pp.getVenvName(serviceConfig)
+	vEnvPath := path.Join(serviceConfig.Path(), vEnvName)
 
-			_, err := os.Stat(vEnvPath)
+	_, err := os.Stat(vEnvPath)
+	if err != nil {
+		if os.IsNotExist(err) {
+			showProgress("Creating Python virtual environment")
+			err = pp.cli.CreateVirtualEnv(ctx, serviceConfig.Path(), vEnvName)
 			if err != nil {
-				if os.IsNotExist(err) {
-					task.SetProgress(NewServiceProgress("Creating Python virtual environment"))
-					err = pp.cli.CreateVirtualEnv(ctx, serviceConfig.Path(), vEnvName)
-					if err != nil {
-						task.SetError(fmt.Errorf(
-							"python virtual environment for project '%s' could not be created: %w",
-							serviceConfig.Path(),
-							err,
-						))
-						return
-					}
-				} else {
-					task.SetError(
-						fmt.Errorf("python virtual environment for project '%s' is not accessible: %w", serviceConfig.Path(), err),
-					)
-					return
-				}
-			}
-
-			task.SetProgress(NewServiceProgress("Installing Python PIP dependencies"))
-			err = pp.cli.InstallRequirements(ctx, serviceConfig.Path(), vEnvName, "requirements.txt")
-			if err != nil {
-				task.SetError(
-					fmt.Errorf("requirements for project '%s' could not be installed: %w", serviceConfig.Path(), err),
+				return ServiceRestoreResult{}, fmt.Errorf(
+					"python virtual environment for project '%s' could not be created: %w",
+					serviceConfig.Path(),
+					err,
 				)
-				return
 			}
+		} else {
+			return ServiceRestoreResult{}, fmt.Errorf(
+				"python virtual environment for project '%s' is not accessible: %w", serviceConfig.Path(), err)
+		}
+	}
 
-			task.SetResult(&ServiceRestoreResult{})
-		},
-	)
+	showProgress("Installing Python PIP dependencies")
+	err = pp.cli.InstallRequirements(ctx, serviceConfig.Path(), vEnvName, "requirements.txt")
+	if err != nil {
+		return ServiceRestoreResult{}, fmt.Errorf(
+			"requirements for project '%s' could not be installed: %w", serviceConfig.Path(), err)
+
+	}
+
+	return ServiceRestoreResult{}, nil
 }
 
 // Build for Python apps performs a no-op and returns the service path with an optional output path when specified.
@@ -101,71 +93,61 @@ func (pp *pythonProject) Build(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	restoreOutput *ServiceRestoreResult,
-) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServiceBuildResult, ServiceProgress]) {
-			buildSource := serviceConfig.Path()
+	showProgress ShowProgress,
+) (ServiceBuildResult, error) {
+	buildSource := serviceConfig.Path()
 
-			if serviceConfig.OutputPath != "" {
-				buildSource = filepath.Join(buildSource, serviceConfig.OutputPath)
-			}
+	if serviceConfig.OutputPath != "" {
+		buildSource = filepath.Join(buildSource, serviceConfig.OutputPath)
+	}
 
-			task.SetResult(&ServiceBuildResult{
-				Restore:         restoreOutput,
-				BuildOutputPath: buildSource,
-			})
-		},
-	)
+	return ServiceBuildResult{
+		Restore:         restoreOutput,
+		BuildOutputPath: buildSource,
+	}, nil
 }
 
 func (pp *pythonProject) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	buildOutput *ServiceBuildResult,
-) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
-			packageDest, err := os.MkdirTemp("", "azd")
-			if err != nil {
-				task.SetError(fmt.Errorf("creating package directory for %s: %w", serviceConfig.Name, err))
-				return
-			}
+	showProgress ShowProgress,
+) (ServicePackageResult, error) {
+	packageDest, err := os.MkdirTemp("", "azd")
+	if err != nil {
+		return ServicePackageResult{}, fmt.Errorf("creating package directory for %s: %w", serviceConfig.Name, err)
+	}
 
-			packageSource := buildOutput.BuildOutputPath
-			if packageSource == "" {
-				packageSource = filepath.Join(serviceConfig.Path(), serviceConfig.OutputPath)
-			}
+	packageSource := buildOutput.BuildOutputPath
+	if packageSource == "" {
+		packageSource = filepath.Join(serviceConfig.Path(), serviceConfig.OutputPath)
+	}
 
-			if entries, err := os.ReadDir(packageSource); err != nil || len(entries) == 0 {
-				task.SetError(fmt.Errorf("package source '%s' is empty or does not exist", packageSource))
-				return
-			}
+	if entries, err := os.ReadDir(packageSource); err != nil || len(entries) == 0 {
+		return ServicePackageResult{}, fmt.Errorf("package source '%s' is empty or does not exist", packageSource)
+	}
 
-			task.SetProgress(NewServiceProgress("Copying deployment package"))
-			if err := buildForZip(
-				packageSource,
-				packageDest,
-				buildForZipOptions{
-					excludeConditions: []excludeDirEntryCondition{
-						excludeVirtualEnv,
-						excludePyCache,
-					},
-				}); err != nil {
-				task.SetError(fmt.Errorf("packaging for %s: %w", serviceConfig.Name, err))
-				return
-			}
+	showProgress("Copying deployment package")
+	if err := buildForZip(
+		packageSource,
+		packageDest,
+		buildForZipOptions{
+			excludeConditions: []excludeDirEntryCondition{
+				excludeVirtualEnv,
+				excludePyCache,
+			},
+		}); err != nil {
+		return ServicePackageResult{}, fmt.Errorf("packaging for %s: %w", serviceConfig.Name, err)
+	}
 
-			if err := validatePackageOutput(packageDest); err != nil {
-				task.SetError(err)
-				return
-			}
+	if err := validatePackageOutput(packageDest); err != nil {
+		return ServicePackageResult{}, err
+	}
 
-			task.SetResult(&ServicePackageResult{
-				Build:       buildOutput,
-				PackagePath: packageDest,
-			})
-		},
-	)
+	return ServicePackageResult{
+		Build:       buildOutput,
+		PackagePath: packageDest,
+	}, nil
 }
 
 const cVenvConfigFileName = "pyvenv.cfg"

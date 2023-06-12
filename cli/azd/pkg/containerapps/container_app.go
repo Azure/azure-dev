@@ -3,6 +3,7 @@ package containerapps
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v2"
 	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
@@ -11,10 +12,17 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/benbjohnson/clock"
+	"github.com/sethvargo/go-retry"
 )
 
 // ContainerAppService exposes operations for managing Azure Container Apps
 type ContainerAppService interface {
+	Get(
+		ctx context.Context,
+		subscriptionId,
+		resourceGroup,
+		appName string,
+	) (*armappcontainers.ContainerApp, error)
 	// Gets the ingress configuration for the specified container app
 	GetIngressConfiguration(
 		ctx context.Context,
@@ -29,6 +37,22 @@ type ContainerAppService interface {
 		resourceGroupName string,
 		appName string,
 		imageName string,
+	) (*armappcontainers.Revision, error)
+	// Validates the revision for the specified container app
+	ValidateRevision(
+		ctx context.Context,
+		subscriptionId string,
+		resourceGroupName string,
+		appName string,
+		revisionName string,
+	) (*armappcontainers.Revision, error)
+	// Shifts traffic to the revision for the specified container app
+	ShiftTrafficToRevision(
+		ctx context.Context,
+		subscriptionId string,
+		resourceGroupName string,
+		appName string,
+		revisionName string,
 	) error
 }
 
@@ -57,6 +81,25 @@ type ContainerAppIngressConfiguration struct {
 	HostNames []string
 }
 
+func (cas *containerAppService) Get(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroupName string,
+	appName string,
+) (*armappcontainers.ContainerApp, error) {
+	appClient, err := cas.createContainerAppsClient(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	containerAppResponse, err := appClient.Get(ctx, resourceGroupName, appName, nil)
+	if err != nil {
+		return nil, fmt.Errorf("getting container app: %w", err)
+	}
+
+	return &containerAppResponse.ContainerApp, nil
+}
+
 // Gets the ingress configuration for the specified container app
 func (cas *containerAppService) GetIngressConfiguration(
 	ctx context.Context,
@@ -64,7 +107,7 @@ func (cas *containerAppService) GetIngressConfiguration(
 	resourceGroup string,
 	appName string,
 ) (*ContainerAppIngressConfiguration, error) {
-	containerApp, err := cas.getContainerApp(ctx, subscriptionId, resourceGroup, appName)
+	containerApp, err := cas.Get(ctx, subscriptionId, resourceGroup, appName)
 	if err != nil {
 		return nil, fmt.Errorf("failed retrieving container app properties: %w", err)
 	}
@@ -91,22 +134,22 @@ func (cas *containerAppService) AddRevision(
 	resourceGroupName string,
 	appName string,
 	imageName string,
-) error {
-	containerApp, err := cas.getContainerApp(ctx, subscriptionId, resourceGroupName, appName)
+) (*armappcontainers.Revision, error) {
+	containerApp, err := cas.Get(ctx, subscriptionId, resourceGroupName, appName)
 	if err != nil {
-		return fmt.Errorf("getting container app: %w", err)
+		return nil, fmt.Errorf("getting container app: %w", err)
 	}
 
 	// Get the latest revision name
 	currentRevisionName := *containerApp.Properties.LatestRevisionName
 	revisionsClient, err := cas.createRevisionsClient(ctx, subscriptionId)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	revisionResponse, err := revisionsClient.GetRevision(ctx, resourceGroupName, appName, currentRevisionName, nil)
 	if err != nil {
-		return fmt.Errorf("getting revision '%s': %w", currentRevisionName, err)
+		return nil, fmt.Errorf("getting revision '%s': %w", currentRevisionName, err)
 	}
 
 	// Update the revision with the new image name and suffix
@@ -118,22 +161,104 @@ func (cas *containerAppService) AddRevision(
 	containerApp.Properties.Template = revision.Properties.Template
 	containerApp, err = cas.syncSecrets(ctx, subscriptionId, resourceGroupName, appName, containerApp)
 	if err != nil {
-		return fmt.Errorf("syncing secrets: %w", err)
+		return nil, fmt.Errorf("syncing secrets: %w", err)
 	}
 
 	// Update the container app
 	err = cas.updateContainerApp(ctx, subscriptionId, resourceGroupName, appName, containerApp)
 	if err != nil {
-		return fmt.Errorf("updating container app revision: %w", err)
+		return nil, fmt.Errorf("updating container app revision: %w", err)
 	}
 
-	// If the container app is in multiple revision mode, update the traffic to point to the new revision
-	if *containerApp.Properties.Configuration.ActiveRevisionsMode == armappcontainers.ActiveRevisionsModeMultiple {
-		newRevisionName := fmt.Sprintf("%s--%s", appName, *revision.Properties.Template.RevisionSuffix)
-		err = cas.setTrafficWeights(ctx, subscriptionId, resourceGroupName, appName, containerApp, newRevisionName)
+	newRevisionName := fmt.Sprintf("%s--%s", appName, *revision.Properties.Template.RevisionSuffix)
+	newRevisionResponse, err := revisionsClient.GetRevision(ctx, resourceGroupName, appName, newRevisionName, nil)
+	if err != nil {
+		return nil, fmt.Errorf("getting new revision '%s': %w", newRevisionName, err)
+	}
+
+	return &newRevisionResponse.Revision, nil
+}
+
+func (cas *containerAppService) ValidateRevision(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroupName string,
+	appName string,
+	revisionName string,
+) (*armappcontainers.Revision, error) {
+	revisionsClient, err := cas.createRevisionsClient(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	var result *armappcontainers.Revision
+
+	err = retry.Do(ctx, retry.WithMaxRetries(10, retry.NewConstant(time.Second*5)), func(ctx context.Context) error {
+		getRevisionResponse, err := revisionsClient.GetRevision(ctx, resourceGroupName, appName, revisionName, nil)
 		if err != nil {
-			return fmt.Errorf("setting traffic weights: %w", err)
+			return fmt.Errorf("getting revision '%s': %w", revisionName, err)
 		}
+
+		revision := getRevisionResponse.Revision
+
+		isProvisioned := false
+		isHealthy := false
+
+		switch *revision.Properties.ProvisioningState {
+		case armappcontainers.RevisionProvisioningStateProvisioning,
+			armappcontainers.RevisionProvisioningStateDeprovisioned,
+			armappcontainers.RevisionProvisioningStateDeprovisioning:
+			return retry.RetryableError(fmt.Errorf("revision '%s' is not ready", revisionName))
+		case armappcontainers.RevisionProvisioningStateFailed:
+			return fmt.Errorf("revision '%s' failed to provision, %s", revisionName, *revision.Properties.ProvisioningError)
+		case armappcontainers.RevisionProvisioningStateProvisioned:
+			isProvisioned = true
+		}
+
+		switch *revision.Properties.HealthState {
+		case armappcontainers.RevisionHealthStateUnhealthy:
+			return fmt.Errorf("revision '%s' is unhealthy", revisionName)
+		case armappcontainers.RevisionHealthStateNone, armappcontainers.RevisionHealthStateHealthy:
+			isHealthy = true
+		}
+
+		if isProvisioned && isHealthy {
+			result = &revision
+			return nil
+		}
+
+		return fmt.Errorf("revision '%s' is an unknown state", revisionName)
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("validating revision '%s': %w", revisionName, err)
+	}
+
+	return result, nil
+}
+
+func (cas *containerAppService) ShiftTrafficToRevision(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroupName string,
+	appName string,
+	revisionName string,
+) error {
+	containerApp, err := cas.Get(ctx, subscriptionId, resourceGroupName, appName)
+	if err != nil {
+		return fmt.Errorf("getting container app: %w", err)
+	}
+
+	containerApp.Properties.Configuration.Ingress.Traffic = []*armappcontainers.TrafficWeight{
+		{
+			RevisionName: &revisionName,
+			Weight:       convert.RefOf[int32](100),
+		},
+	}
+
+	err = cas.updateContainerApp(ctx, subscriptionId, resourceGroupName, appName, containerApp)
+	if err != nil {
+		return fmt.Errorf("updating traffic weights: %w", err)
 	}
 
 	return nil
@@ -175,48 +300,6 @@ func (cas *containerAppService) syncSecrets(
 	containerApp.Properties.Configuration.Secrets = secrets
 
 	return containerApp, nil
-}
-
-func (cas *containerAppService) setTrafficWeights(
-	ctx context.Context,
-	subscriptionId string,
-	resourceGroupName string,
-	appName string,
-	containerApp *armappcontainers.ContainerApp,
-	revisionName string,
-) error {
-	containerApp.Properties.Configuration.Ingress.Traffic = []*armappcontainers.TrafficWeight{
-		{
-			RevisionName: &revisionName,
-			Weight:       convert.RefOf[int32](100),
-		},
-	}
-
-	err := cas.updateContainerApp(ctx, subscriptionId, resourceGroupName, appName, containerApp)
-	if err != nil {
-		return fmt.Errorf("updating traffic weights: %w", err)
-	}
-
-	return nil
-}
-
-func (cas *containerAppService) getContainerApp(
-	ctx context.Context,
-	subscriptionId string,
-	resourceGroupName string,
-	appName string,
-) (*armappcontainers.ContainerApp, error) {
-	appClient, err := cas.createContainerAppsClient(ctx, subscriptionId)
-	if err != nil {
-		return nil, err
-	}
-
-	containerAppResponse, err := appClient.Get(ctx, resourceGroupName, appName, nil)
-	if err != nil {
-		return nil, fmt.Errorf("getting container app: %w", err)
-	}
-
-	return &containerAppResponse.ContainerApp, nil
 }
 
 func (cas *containerAppService) updateContainerApp(

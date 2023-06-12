@@ -156,7 +156,7 @@ func setupMocksForContainerApps(mockContext *mocks.MockContext) {
 	appName := "CONTAINER_APP"
 	originalImageName := "ORIGINAL_IMAGE_NAME"
 	originalRevisionName := "ORIGINAL_REVISION_NAME"
-	updatedRevisionName := "UPDATED_REVISION_NAME"
+	updatedRevisionName := "CONTAINER_APP--azd-0"
 	hostName := fmt.Sprintf("%s.%s.azurecontainerapps.io", appName, location)
 
 	containerApp := &armappcontainers.ContainerApp{
@@ -187,7 +187,10 @@ func setupMocksForContainerApps(mockContext *mocks.MockContext) {
 	}
 
 	revision := &armappcontainers.Revision{
+		Name: convert.RefOf(updatedRevisionName),
 		Properties: &armappcontainers.RevisionProperties{
+			ProvisioningState: convert.RefOf(armappcontainers.RevisionProvisioningStateProvisioned),
+			HealthState:       convert.RefOf(armappcontainers.RevisionHealthStateNone),
 			Template: &armappcontainers.Template{
 				Containers: []*armappcontainers.Container{
 					{
@@ -209,6 +212,14 @@ func setupMocksForContainerApps(mockContext *mocks.MockContext) {
 		resourceGroup,
 		appName,
 		originalRevisionName,
+		revision,
+	)
+	mockazsdk.MockContainerAppRevisionGet(
+		mockContext,
+		subscriptionId,
+		resourceGroup,
+		appName,
+		updatedRevisionName,
 		revision,
 	)
 	mockazsdk.MockContainerAppSecretsList(mockContext, subscriptionId, resourceGroup, appName, secrets)

@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/containerapps"
@@ -94,7 +95,7 @@ func (at *containerAppTarget) Deploy(
 
 			imageName := at.env.GetServiceProperty(serviceConfig.Name, "IMAGE_NAME")
 			task.SetProgress(NewServiceProgress("Updating container app revision"))
-			err = at.containerAppService.AddRevision(
+			revision, err := at.containerAppService.AddRevision(
 				ctx,
 				targetResource.SubscriptionId(),
 				targetResource.ResourceGroupName(),
@@ -104,6 +105,45 @@ func (at *containerAppTarget) Deploy(
 			if err != nil {
 				task.SetError(fmt.Errorf("updating container app service: %w", err))
 				return
+			}
+
+			task.SetProgress(NewServiceProgress("Validating container app revision"))
+			revision, err = at.containerAppService.ValidateRevision(
+				ctx,
+				targetResource.SubscriptionId(),
+				targetResource.ResourceGroupName(),
+				targetResource.ResourceName(),
+				*revision.Name,
+			)
+			if err != nil {
+				task.SetError(fmt.Errorf("validating container app revision: %w", err))
+				return
+			}
+
+			containerApp, err := at.containerAppService.Get(
+				ctx,
+				targetResource.SubscriptionId(),
+				targetResource.ResourceGroupName(),
+				targetResource.ResourceName(),
+			)
+			if err != nil {
+				task.SetError(fmt.Errorf("fetching container app: %w", err))
+				return
+			}
+
+			// If the container app is in multiple revision mode, update the traffic to point to the new revision
+			if *containerApp.Properties.Configuration.ActiveRevisionsMode == armappcontainers.ActiveRevisionsModeMultiple {
+				task.SetProgress(NewServiceProgress("Shifting traffic to new revision"))
+				err = at.containerAppService.ShiftTrafficToRevision(ctx,
+					targetResource.SubscriptionId(),
+					targetResource.ResourceGroupName(),
+					targetResource.ResourceName(),
+					*revision.Name,
+				)
+				if err != nil {
+					task.SetError(fmt.Errorf("setting traffic weights: %w", err))
+					return
+				}
 			}
 
 			task.SetProgress(NewServiceProgress("Fetching endpoints for container app service"))

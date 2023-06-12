@@ -137,7 +137,7 @@ func Test_Deploy_No_Cluster_Name(t *testing.T) {
 	deployRes, err := serviceTarget.Deploy(*mockContext.Context, serviceConfig, packageOutput, scope, showProgress)
 	require.Error(t, err)
 	require.ErrorContains(t, err, "could not determine AKS cluster")
-	require.Nil(t, deployRes)
+	require.Empty(t, deployRes.TargetResourceId)
 }
 
 func Test_Deploy_No_Admin_Credentials(t *testing.T) {
@@ -171,7 +171,7 @@ func Test_Deploy_No_Admin_Credentials(t *testing.T) {
 
 	require.Error(t, err)
 	require.ErrorContains(t, err, "failed retrieving cluster admin credentials")
-	require.Nil(t, deployRes)
+	require.Empty(t, deployRes.TargetResourceId)
 }
 
 func setupK8sManifests(t *testing.T, serviceConfig *ServiceConfig) error {

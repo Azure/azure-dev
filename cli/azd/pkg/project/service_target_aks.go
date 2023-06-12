@@ -97,7 +97,7 @@ func (t *aksTarget) Package(
 	packageOutput *ServicePackageResult,
 	showProgress ShowProgress,
 ) (ServicePackageResult, error) {
-	return ServicePackageResult{}, nil
+	return *packageOutput, nil
 }
 
 // Deploys service container images to ACR and AKS resources to the AKS cluster

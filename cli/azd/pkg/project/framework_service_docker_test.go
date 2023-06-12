@@ -172,7 +172,7 @@ services:
 	showProgress := saveMessages(&messages)
 	res, err := framework.Build(*mockContext.Context, service, nil, showProgress)
 
-	require.Equal(t, "imageId", res)
+	require.Equal(t, "imageId", res.BuildOutputPath)
 	require.Nil(t, err)
 	require.Len(t, messages, 1)
 	require.Equal(t, "Building Docker image", messages[0])

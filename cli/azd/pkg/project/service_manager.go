@@ -218,14 +218,14 @@ func (sm *serviceManager) Restore(
 		return ServiceRestoreResult{}, fmt.Errorf("getting framework services: %w", err)
 	}
 
-	if sm.pre(ctx, serviceConfig, ServiceEventRestore); err != nil {
+	if err := sm.pre(ctx, serviceConfig, ServiceEventRestore); err != nil {
 		return ServiceRestoreResult{}, err
 	}
 	restoreResult, err := frameworkService.Restore(ctx, serviceConfig, sm.progressDisplay)
 	if err != nil {
 		return ServiceRestoreResult{}, fmt.Errorf("failed restoring service '%s': %w", serviceConfig.Name, err)
 	}
-	if sm.post(ctx, serviceConfig, ServiceEventRestore); err != nil {
+	if err := sm.post(ctx, serviceConfig, ServiceEventRestore); err != nil {
 		return ServiceRestoreResult{}, err
 	}
 
@@ -257,14 +257,14 @@ func (sm *serviceManager) Build(
 		return ServiceBuildResult{}, fmt.Errorf("getting framework services: %w", err)
 	}
 
-	if sm.pre(ctx, serviceConfig, ServiceEventBuild); err != nil {
+	if err := sm.pre(ctx, serviceConfig, ServiceEventBuild); err != nil {
 		return ServiceBuildResult{}, err
 	}
 	res, err := frameworkService.Build(ctx, serviceConfig, restoreOutput, sm.progressDisplay)
 	if err != nil {
 		return ServiceBuildResult{}, fmt.Errorf("failed building service '%s': %w", serviceConfig.Name, err)
 	}
-	if sm.post(ctx, serviceConfig, ServiceEventBuild); err != nil {
+	if err := sm.post(ctx, serviceConfig, ServiceEventBuild); err != nil {
 		return ServiceBuildResult{}, err
 	}
 

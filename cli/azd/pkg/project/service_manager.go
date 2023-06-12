@@ -105,7 +105,6 @@ type serviceManager struct {
 	serviceLocator      ioc.ServiceLocator
 	operationCache      map[string]any
 	alphaFeatureManager *alpha.FeatureManager
-	console             input.Console
 	progressDisplay     ShowProgress
 }
 
@@ -123,7 +122,12 @@ func NewServiceManager(
 		serviceLocator:      serviceLocator,
 		operationCache:      map[string]any{},
 		alphaFeatureManager: alphaFeatureManager,
-		console:             console,
+		progressDisplay: func(msg string) { // default progress display
+			console.ShowSpinner(
+				context.Background(),
+				msg,
+				input.Step)
+		},
 	}
 }
 

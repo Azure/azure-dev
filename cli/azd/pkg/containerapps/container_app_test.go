@@ -105,7 +105,13 @@ func Test_ContainerApp_Get(t *testing.T) {
 	}
 
 	mockContext := mocks.NewMockContext(context.Background())
-	mockGetContainerAppRequest := mockazsdk.MockContainerAppGet(mockContext, subscriptionId, resourceGroup, appName, expected)
+	mockGetContainerAppRequest := mockazsdk.MockContainerAppGet(
+		mockContext,
+		subscriptionId,
+		resourceGroup,
+		appName,
+		expected,
+	)
 
 	cas := NewContainerAppService(mockContext.SubscriptionCredentialProvider, mockContext.HttpClient, clock.NewMock())
 	containerApp, err := cas.Get(*mockContext.Context, subscriptionId, resourceGroup, appName)

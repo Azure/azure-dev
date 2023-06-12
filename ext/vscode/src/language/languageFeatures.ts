@@ -3,10 +3,15 @@
 
 import * as vscode from 'vscode';
 import ext from '../ext';
+import { AzureYamlCompletionItemProvider } from './AzureYamlCompletionItemProvider';
 import { AzureYamlDiagnosticProvider } from './AzureYamlDiagnosticProvider';
 
 export function registerLanguageFeatures(): void {
     const selector: vscode.DocumentSelector = { language: 'yaml', scheme: 'file', pattern: '**/azure.{yml,yaml}' };
+
+    ext.context.subscriptions.push(
+        vscode.languages.registerCompletionItemProvider(selector, new AzureYamlCompletionItemProvider(), '/'),
+    );
 
     ext.context.subscriptions.push(
         new AzureYamlDiagnosticProvider(selector)

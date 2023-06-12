@@ -108,8 +108,8 @@ func newRestoreAction(
 }
 
 type RestoreResult struct {
-	Timestamp time.Time                                `json:"timestamp"`
-	Services  map[string]*project.ServiceRestoreResult `json:"services"`
+	Timestamp time.Time                               `json:"timestamp"`
+	Services  map[string]project.ServiceRestoreResult `json:"services"`
 }
 
 func (ra *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error) {
@@ -149,7 +149,7 @@ func (ra *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error)
 		return nil, err
 	}
 
-	restoreResults := map[string]*project.ServiceRestoreResult{}
+	restoreResults := map[string]project.ServiceRestoreResult{}
 
 	for _, svc := range ra.projectConfig.GetServicesStable() {
 		stepMessage := fmt.Sprintf("Restoring service %s", svc.Name)
@@ -163,15 +163,10 @@ func (ra *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error)
 			continue
 		}
 
-		restoreTask := ra.serviceManager.Restore(ctx, svc)
-		go func() {
-			for restoreProgress := range restoreTask.Progress() {
-				progressMessage := fmt.Sprintf("Restoring service %s (%s)", svc.Name, restoreProgress.Message)
-				ra.console.ShowSpinner(ctx, progressMessage, input.Step)
-			}
-		}()
-
-		restoreResult, err := restoreTask.Await()
+		ra.serviceManager.SetProgressDisplay(func(msg string) {
+			ra.console.ShowSpinner(ctx, fmt.Sprintf("Restoring service %s (%s)", svc.Name, msg), input.Step)
+		})
+		restoreResult, err := ra.serviceManager.Restore(ctx, svc)
 		if err != nil {
 			ra.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 			return nil, err

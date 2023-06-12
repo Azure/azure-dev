@@ -98,8 +98,8 @@ func newBuildAction(
 }
 
 type BuildResult struct {
-	Timestamp time.Time                              `json:"timestamp"`
-	Services  map[string]*project.ServiceBuildResult `json:"services"`
+	Timestamp time.Time                             `json:"timestamp"`
+	Services  map[string]project.ServiceBuildResult `json:"services"`
 }
 
 func (ba *buildAction) Run(ctx context.Context) (*actions.ActionResult, error) {
@@ -152,7 +152,7 @@ func (ba *buildAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, err
 	}
 
-	buildResults := map[string]*project.ServiceBuildResult{}
+	buildResults := map[string]project.ServiceBuildResult{}
 
 	for _, svc := range ba.projectConfig.GetServicesStable() {
 		stepMessage := fmt.Sprintf("Building service %s", svc.Name)
@@ -166,15 +166,14 @@ func (ba *buildAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			continue
 		}
 
-		buildTask := ba.serviceManager.Build(ctx, svc, nil)
-		go func() {
-			for buildProgress := range buildTask.Progress() {
-				progressMessage := fmt.Sprintf("Building service %s (%s)", svc.Name, buildProgress.Message)
-				ba.console.ShowSpinner(ctx, progressMessage, input.Step)
-			}
-		}()
-
-		buildResult, err := buildTask.Await()
+		var err error
+		ba.serviceManager.SetProgressDisplay(func(msg string) {
+			ba.console.ShowSpinner(
+				ctx,
+				fmt.Sprintf("Building service %s (%s)", svc.Name, msg),
+				input.Step)
+		})
+		buildResult, err := ba.serviceManager.Build(ctx, svc, nil)
 		if err != nil {
 			ba.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 			return nil, err
@@ -184,7 +183,7 @@ func (ba *buildAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		buildResults[svc.Name] = buildResult
 
 		// report build outputs
-		ba.console.MessageUxItem(ctx, buildResult)
+		ba.console.MessageUxItem(ctx, &buildResult)
 	}
 
 	if ba.formatter.Kind() == output.JsonFormat {

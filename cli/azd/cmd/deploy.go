@@ -155,8 +155,8 @@ func newDeployAction(
 }
 
 type DeploymentResult struct {
-	Timestamp time.Time                               `json:"timestamp"`
-	Services  map[string]*project.ServiceDeployResult `json:"services"`
+	Timestamp time.Time                              `json:"timestamp"`
+	Services  map[string]project.ServiceDeployResult `json:"services"`
 }
 
 func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
@@ -214,7 +214,7 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 
 	startTime := time.Now()
 
-	deployResults := map[string]*project.ServiceDeployResult{}
+	deployResults := map[string]project.ServiceDeployResult{}
 
 	for _, svc := range da.projectConfig.GetServicesStable() {
 		stepMessage := fmt.Sprintf("Deploying service %s", svc.Name)
@@ -233,38 +233,26 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		}
 
 		da.console.ShowSpinner(ctx, stepMessage, input.Step)
-		var packageResult *project.ServicePackageResult
+		da.serviceManager.SetProgressDisplay(func(msg string) {
+			da.console.ShowSpinner(ctx, fmt.Sprintf("Deploying service %s (%s)", svc.Name, msg), input.Step)
+		})
+
+		var packageResult project.ServicePackageResult
 		if da.flags.fromPackage != "" {
 			// --from-package set, skip packaging
-			packageResult = &project.ServicePackageResult{
+			packageResult = project.ServicePackageResult{
 				PackagePath: da.flags.fromPackage,
 			}
 		} else {
 			//  --from-package not set, package the application
-			packageTask := da.serviceManager.Package(ctx, svc, nil)
-			go func() {
-				for packageProgress := range packageTask.Progress() {
-					progressMessage := fmt.Sprintf("Deploying service %s (%s)", svc.Name, packageProgress.Message)
-					da.console.ShowSpinner(ctx, progressMessage, input.Step)
-				}
-			}()
-
-			packageResult, err = packageTask.Await()
+			packageResult, err = da.serviceManager.Package(ctx, svc, nil)
 			if err != nil {
 				da.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 				return nil, err
 			}
 		}
 
-		deployTask := da.serviceManager.Deploy(ctx, svc, packageResult)
-		go func() {
-			for deployProgress := range deployTask.Progress() {
-				progressMessage := fmt.Sprintf("Deploying service %s (%s)", svc.Name, deployProgress.Message)
-				da.console.ShowSpinner(ctx, progressMessage, input.Step)
-			}
-		}()
-
-		deployResult, err := deployTask.Await()
+		deployResult, err := da.serviceManager.Deploy(ctx, svc, &packageResult)
 		if err != nil {
 			da.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 			return nil, err
@@ -274,7 +262,7 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		deployResults[svc.Name] = deployResult
 
 		// report deploy outputs
-		da.console.MessageUxItem(ctx, deployResult)
+		da.console.MessageUxItem(ctx, &deployResult)
 	}
 
 	if da.formatter.Kind() == output.JsonFormat {

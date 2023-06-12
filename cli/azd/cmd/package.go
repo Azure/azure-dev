@@ -91,8 +91,8 @@ func newPackageAction(
 }
 
 type PackageResult struct {
-	Timestamp time.Time                                `json:"timestamp"`
-	Services  map[string]*project.ServicePackageResult `json:"services"`
+	Timestamp time.Time                               `json:"timestamp"`
+	Services  map[string]project.ServicePackageResult `json:"services"`
 }
 
 func (pa *packageAction) Run(ctx context.Context) (*actions.ActionResult, error) {
@@ -130,7 +130,7 @@ func (pa *packageAction) Run(ctx context.Context) (*actions.ActionResult, error)
 		return nil, err
 	}
 
-	packageResults := map[string]*project.ServicePackageResult{}
+	packageResults := map[string]project.ServicePackageResult{}
 
 	for _, svc := range pa.projectConfig.GetServicesStable() {
 		stepMessage := fmt.Sprintf("Packaging service %s", svc.Name)
@@ -144,15 +144,10 @@ func (pa *packageAction) Run(ctx context.Context) (*actions.ActionResult, error)
 			continue
 		}
 
-		packageTask := pa.serviceManager.Package(ctx, svc, nil)
-		go func() {
-			for packageProgress := range packageTask.Progress() {
-				progressMessage := fmt.Sprintf("Packaging service %s (%s)", svc.Name, packageProgress.Message)
-				pa.console.ShowSpinner(ctx, progressMessage, input.Step)
-			}
-		}()
-
-		packageResult, err := packageTask.Await()
+		pa.serviceManager.SetProgressDisplay(func(msg string) {
+			pa.console.ShowSpinner(ctx, fmt.Sprintf("Packaging service %s (%s)", svc.Name, msg), input.Step)
+		})
+		packageResult, err := pa.serviceManager.Package(ctx, svc, nil)
 		if err != nil {
 			pa.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 			return nil, err
@@ -162,7 +157,7 @@ func (pa *packageAction) Run(ctx context.Context) (*actions.ActionResult, error)
 		packageResults[svc.Name] = packageResult
 
 		// report package output
-		pa.console.MessageUxItem(ctx, packageResult)
+		pa.console.MessageUxItem(ctx, &packageResult)
 	}
 
 	if pa.formatter.Kind() == output.JsonFormat {

@@ -440,20 +440,32 @@ func (m *Manager) LoginWithDeviceCode(
 		return nil, err
 	}
 
-	m.console.MessageUxItem(ctx, &ux.MultilineMessage{
-		Lines: []string{
-			fmt.Sprintf("Start by copying the next code: %s", output.WithBold(code.UserCode())),
-			"Then press enter and continue to log in from your browser...",
-		},
-	})
-	m.console.WaitForEnter()
-
 	url := "https://microsoft.com/devicelogin"
-	if err := m.launchBrowserFn(url); err != nil {
-		log.Println("error launching browser: ", err.Error())
-		m.console.Message(ctx, fmt.Sprintf("Error launching browser. Manually go to: %s", url))
+
+	if ShouldUseCloudShellAuth() {
+		m.console.MessageUxItem(ctx, &ux.MultilineMessage{
+			Lines: []string{
+				"Cloud Shell is automatically authenticated under the initial account used to sign in. Run 'azd login' only if you need to use a different account.",
+				"To continue using Cloud Shell automatic authentication, press Ctrl+C",
+				fmt.Sprintf("To sign in, use a web browser to open the page %s and enter the code %s to authenticate.", output.WithUnderline(url), output.WithBold(code.UserCode())),
+			},
+		})
+	} else {
+		m.console.MessageUxItem(ctx, &ux.MultilineMessage{
+			Lines: []string{
+				fmt.Sprintf("Start by copying the next code: %s", output.WithBold(code.UserCode())),
+				"Then press enter and continue to log in from your browser...",
+			},
+		})
+		m.console.WaitForEnter()
+
+		if err := m.launchBrowserFn(url); err != nil {
+			log.Println("error launching browser: ", err.Error())
+			m.console.Message(ctx, fmt.Sprintf("Error launching browser. Manually go to: %s", url))
+		}
+		m.console.Message(ctx, "Waiting for you to complete authentication in the browser...")
 	}
-	m.console.Message(ctx, "Waiting for you to complete authentication in the browser...")
+
 	res, err := code.AuthenticationResult(ctx)
 	if err != nil {
 		return nil, err

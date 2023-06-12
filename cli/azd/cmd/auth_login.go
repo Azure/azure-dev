@@ -461,13 +461,13 @@ func (la *loginAction) login(ctx context.Context) error {
 		return err
 	}
 
-	if useDevCode {
+	// Following behavior seen in the az CLI, offer the option of authenticating
+	// with a device code.
+	if useDevCode || auth.ShouldUseCloudShellAuth() {
 		_, err := la.authManager.LoginWithDeviceCode(ctx, la.flags.tenantID, la.flags.scopes)
 		if err != nil {
 			return fmt.Errorf("logging in: %w", err)
 		}
-	} else if auth.ShouldUseCloudShellAuth() {
-		return fmt.Errorf("logging in: already logged in using CloudShell")
 	} else {
 		_, err := la.authManager.LoginInteractive(ctx, la.flags.redirectPort, la.flags.tenantID, la.flags.scopes)
 		if err != nil {

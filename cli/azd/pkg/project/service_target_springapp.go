@@ -7,12 +7,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/async"
+	"github.com/azure/azure-dev/cli/azd/pkg/azure"
+
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -61,12 +61,9 @@ func (st *springAppTarget) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
-) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
-			task.SetResult(packageOutput)
-		},
-	)
+	showProgress ShowProgress,
+) (ServicePackageResult, error) {
+	return *packageOutput, nil
 }
 
 // Upload artifact to Storage File and deploy to Spring App
@@ -75,112 +72,101 @@ func (st *springAppTarget) Deploy(
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
 	targetResource *environment.TargetResource,
-) *async.TaskWithProgress[*ServiceDeployResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress]) {
-			if err := st.validateTargetResource(ctx, serviceConfig, targetResource); err != nil {
-				task.SetError(fmt.Errorf("validating target resource: %w", err))
-				return
-			}
+	showProgress ShowProgress,
+) (ServiceDeployResult, error) {
+	if err := st.validateTargetResource(ctx, serviceConfig, targetResource); err != nil {
+		return ServiceDeployResult{}, fmt.Errorf("validating target resource: %w", err)
+	}
 
-			deploymentName := serviceConfig.Spring.DeploymentName
-			if deploymentName == "" {
-				deploymentName = defaultDeploymentName
-			}
+	deploymentName := serviceConfig.Spring.DeploymentName
+	if deploymentName == "" {
+		deploymentName = defaultDeploymentName
+	}
 
-			_, err := st.springService.GetSpringAppDeployment(
-				ctx,
-				targetResource.SubscriptionId(),
-				targetResource.ResourceGroupName(),
-				targetResource.ResourceName(),
-				serviceConfig.Name,
-				deploymentName,
-			)
-
-			if err != nil {
-				task.SetError(fmt.Errorf("get deployment '%s' of Spring App '%s' failed: %w",
-					serviceConfig.Name, deploymentName, err))
-				return
-			}
-
-			// TODO: Consider support container image and buildpacks deployment in the future
-			// For now, Azure Spring Apps only support jar deployment
-			ext := ".jar"
-			artifactPath := filepath.Join(packageOutput.PackagePath, AppServiceJavaPackageName+ext)
-
-			_, err = os.Stat(artifactPath)
-			if errors.Is(err, os.ErrNotExist) {
-				task.SetError(fmt.Errorf("artifact %s does not exist: %w", artifactPath, err))
-				return
-			}
-			if err != nil {
-				task.SetError(fmt.Errorf("reading artifact file %s: %w", artifactPath, err))
-				return
-			}
-
-			task.SetProgress(NewServiceProgress("Uploading spring artifact"))
-
-			relativePath, err := st.springService.UploadSpringArtifact(
-				ctx,
-				targetResource.SubscriptionId(),
-				targetResource.ResourceGroupName(),
-				targetResource.ResourceName(),
-				serviceConfig.Name,
-				artifactPath,
-			)
-
-			if err != nil {
-				task.SetError(fmt.Errorf("failed to upload spring artifact: %w", err))
-				return
-			}
-
-			task.SetProgress(NewServiceProgress("Deploying spring artifact"))
-
-			res, err := st.springService.DeploySpringAppArtifact(
-				ctx,
-				targetResource.SubscriptionId(),
-				targetResource.ResourceGroupName(),
-				targetResource.ResourceName(),
-				serviceConfig.Name,
-				*relativePath,
-				deploymentName,
-			)
-			if err != nil {
-				task.SetError(fmt.Errorf("deploying service %s: %w", serviceConfig.Name, err))
-				return
-			}
-
-			// save the storage relative, otherwise the relative path will be overwritten
-			// in the deployment from Bicep/Terraform
-			st.env.SetServiceProperty(serviceConfig.Name, "RELATIVE_PATH", *relativePath)
-			if err := st.env.Save(); err != nil {
-				task.SetError(fmt.Errorf("failed updating environment with relative path, %w", err))
-				return
-			}
-
-			task.SetProgress(NewServiceProgress("Fetching endpoints for spring app service"))
-			endpoints, err := st.Endpoints(ctx, serviceConfig, targetResource)
-			if err != nil {
-				task.SetError(err)
-				return
-			}
-
-			sdr := NewServiceDeployResult(
-				azure.SpringAppRID(
-					targetResource.SubscriptionId(),
-					targetResource.ResourceGroupName(),
-					targetResource.ResourceName(),
-				),
-				SpringAppTarget,
-				*res,
-				endpoints,
-			)
-			sdr.Package = packageOutput
-
-			task.SetResult(sdr)
-
-		},
+	_, err := st.springService.GetSpringAppDeployment(
+		ctx,
+		targetResource.SubscriptionId(),
+		targetResource.ResourceGroupName(),
+		targetResource.ResourceName(),
+		serviceConfig.Name,
+		deploymentName,
 	)
+
+	if err != nil {
+		return ServiceDeployResult{}, fmt.Errorf(
+			"get deployment '%s' of Spring App '%s' failed: %w",
+			serviceConfig.Name, deploymentName, err)
+	}
+
+	// TODO: Consider support container image and buildpacks deployment in the future
+	// For now, Azure Spring Apps only support jar deployment
+	ext := ".jar"
+	artifactPath := filepath.Join(packageOutput.PackagePath, AppServiceJavaPackageName+ext)
+
+	_, err = os.Stat(artifactPath)
+	if errors.Is(err, os.ErrNotExist) {
+		return ServiceDeployResult{}, fmt.Errorf("artifact %s does not exist: %w", artifactPath, err)
+	}
+	if err != nil {
+		return ServiceDeployResult{}, fmt.Errorf("reading artifact file %s: %w", artifactPath, err)
+	}
+
+	showProgress("Uploading spring artifact")
+
+	relativePath, err := st.springService.UploadSpringArtifact(
+		ctx,
+		targetResource.SubscriptionId(),
+		targetResource.ResourceGroupName(),
+		targetResource.ResourceName(),
+		serviceConfig.Name,
+		artifactPath,
+	)
+
+	if err != nil {
+		return ServiceDeployResult{}, fmt.Errorf("failed to upload spring artifact: %w", err)
+	}
+
+	showProgress("Deploying spring artifact")
+
+	res, err := st.springService.DeploySpringAppArtifact(
+		ctx,
+		targetResource.SubscriptionId(),
+		targetResource.ResourceGroupName(),
+		targetResource.ResourceName(),
+		serviceConfig.Name,
+		*relativePath,
+		deploymentName,
+	)
+	if err != nil {
+		return ServiceDeployResult{}, fmt.Errorf("deploying service %s: %w", serviceConfig.Name, err)
+	}
+
+	// save the storage relative, otherwise the relative path will be overwritten
+	// in the deployment from Bicep/Terraform
+	st.env.SetServiceProperty(serviceConfig.Name, "RELATIVE_PATH", *relativePath)
+	if err := st.env.Save(); err != nil {
+		return ServiceDeployResult{}, fmt.Errorf("failed updating environment with relative path, %w", err)
+	}
+
+	showProgress("Fetching endpoints for spring app service")
+	endpoints, err := st.Endpoints(ctx, serviceConfig, targetResource)
+	if err != nil {
+		return ServiceDeployResult{}, err
+	}
+
+	sdr := ServiceDeployResult{
+		TargetResourceId: azure.SpringAppRID(
+			targetResource.SubscriptionId(),
+			targetResource.ResourceGroupName(),
+			targetResource.ResourceName(),
+		),
+		Kind:      SpringAppTarget,
+		Details:   jsonStringOrUnmarshaled(*res),
+		Endpoints: endpoints,
+		Package:   packageOutput,
+	}
+
+	return sdr, nil
 }
 
 // Gets the exposed endpoints for the Spring Apps Service

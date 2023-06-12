@@ -82,7 +82,9 @@ func Test_ContainerApp_Deploy(t *testing.T) {
 
 	serviceTarget := createContainerAppServiceTarget(mockContext, serviceConfig, env)
 
-	packageTask := serviceTarget.Package(
+	messages := []string{}
+	showProgress := saveMessages(&messages)
+	res, err := serviceTarget.Package(
 		*mockContext.Context,
 		serviceConfig,
 		&ServicePackageResult{
@@ -92,13 +94,11 @@ func Test_ContainerApp_Deploy(t *testing.T) {
 				ImageTag:  "test-app/api-test:azd-deploy-0",
 			},
 		},
+		showProgress,
 	)
-	logProgress(packageTask)
-	packageResult, err := packageTask.Await()
-
 	require.NoError(t, err)
-	require.NotNil(t, packageResult)
-	require.IsType(t, new(dockerPackageResult), packageResult.Details)
+	require.NotNil(t, res)
+	require.IsType(t, new(dockerPackageResult), res.Details)
 
 	scope := environment.NewTargetResource(
 		"SUBSCRIPTION_ID",
@@ -106,14 +106,12 @@ func Test_ContainerApp_Deploy(t *testing.T) {
 		"CONTAINER_APP",
 		string(infra.AzureResourceTypeContainerApp),
 	)
-	deployTask := serviceTarget.Deploy(*mockContext.Context, serviceConfig, packageResult, scope)
-	logProgress(deployTask)
-	deployResult, err := deployTask.Await()
+	deployRes, err := serviceTarget.Deploy(*mockContext.Context, serviceConfig, &res, scope, showProgress)
 
 	require.NoError(t, err)
-	require.NotNil(t, deployResult)
-	require.Equal(t, ContainerAppTarget, deployResult.Kind)
-	require.Greater(t, len(deployResult.Endpoints), 0)
+	require.NotNil(t, deployRes)
+	require.Equal(t, ContainerAppTarget, deployRes.Kind)
+	require.Greater(t, len(deployRes.Endpoints), 0)
 	// New env variable is created
 	require.Equal(t, "REGISTRY.azurecr.io/test-app/api-test:azd-deploy-0", env.Dotenv()["SERVICE_API_IMAGE_NAME"])
 }

@@ -77,7 +77,10 @@ func Test_Package_Deploy_HappyPath(t *testing.T) {
 	err = setupK8sManifests(t, serviceConfig)
 	require.NoError(t, err)
 
-	packageTask := serviceTarget.Package(
+	messages := []string{}
+	showProgress := saveMessages(&messages)
+
+	res, err := serviceTarget.Package(
 		*mockContext.Context,
 		serviceConfig,
 		&ServicePackageResult{
@@ -87,24 +90,21 @@ func Test_Package_Deploy_HappyPath(t *testing.T) {
 				ImageTag:  "test-app/api-test:azd-deploy-0",
 			},
 		},
+		showProgress,
 	)
-	logProgress(packageTask)
-	packageResult, err := packageTask.Await()
 
 	require.NoError(t, err)
-	require.NotNil(t, packageResult)
-	require.IsType(t, new(dockerPackageResult), packageResult.Details)
+	require.NotNil(t, res)
+	require.IsType(t, new(dockerPackageResult), res.Details)
 
 	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "CLUSTER_NAME", string(infra.AzureResourceTypeManagedCluster))
-	deployTask := serviceTarget.Deploy(*mockContext.Context, serviceConfig, packageResult, scope)
-	logProgress(deployTask)
-	deployResult, err := deployTask.Await()
+	deployRes, err := serviceTarget.Deploy(*mockContext.Context, serviceConfig, &res, scope, showProgress)
 
 	require.NoError(t, err)
-	require.NotNil(t, deployResult)
-	require.Equal(t, AksTarget, deployResult.Kind)
-	require.IsType(t, new(kubectl.Deployment), deployResult.Details)
-	require.Greater(t, len(deployResult.Endpoints), 0)
+	require.NotNil(t, deployRes)
+	require.Equal(t, AksTarget, deployRes.Kind)
+	require.IsType(t, new(kubectl.Deployment), deployRes.Details)
+	require.Greater(t, len(deployRes.Endpoints), 0)
 	// New env variable is created
 	require.Equal(t, "REGISTRY.azurecr.io/test-app/api-test:azd-deploy-0", env.Dotenv()["SERVICE_API_IMAGE_NAME"])
 }
@@ -132,13 +132,12 @@ func Test_Deploy_No_Cluster_Name(t *testing.T) {
 		},
 	}
 
-	deployTask := serviceTarget.Deploy(*mockContext.Context, serviceConfig, packageOutput, scope)
-	logProgress(deployTask)
-
-	deployResult, err := deployTask.Await()
+	messages := []string{}
+	showProgress := saveMessages(&messages)
+	deployRes, err := serviceTarget.Deploy(*mockContext.Context, serviceConfig, packageOutput, scope, showProgress)
 	require.Error(t, err)
 	require.ErrorContains(t, err, "could not determine AKS cluster")
-	require.Nil(t, deployResult)
+	require.Nil(t, deployRes)
 }
 
 func Test_Deploy_No_Admin_Credentials(t *testing.T) {
@@ -166,13 +165,13 @@ func Test_Deploy_No_Admin_Credentials(t *testing.T) {
 		},
 	}
 
-	deployTask := serviceTarget.Deploy(*mockContext.Context, serviceConfig, packageOutput, scope)
-	logProgress(deployTask)
-	deployResult, err := deployTask.Await()
+	messages := []string{}
+	showProgress := saveMessages(&messages)
+	deployRes, err := serviceTarget.Deploy(*mockContext.Context, serviceConfig, packageOutput, scope, showProgress)
 
 	require.Error(t, err)
 	require.ErrorContains(t, err, "failed retrieving cluster admin credentials")
-	require.Nil(t, deployResult)
+	require.Nil(t, deployRes)
 }
 
 func setupK8sManifests(t *testing.T, serviceConfig *ServiceConfig) error {

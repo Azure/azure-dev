@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -54,7 +53,8 @@ type ServiceTarget interface {
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
 		frameworkPackageOutput *ServicePackageResult,
-	) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress]
+		showProgress ShowProgress,
+	) (ServicePackageResult, error)
 
 	// Deploys the given deployment artifact to the target resource
 	Deploy(
@@ -62,7 +62,8 @@ type ServiceTarget interface {
 		serviceConfig *ServiceConfig,
 		servicePackage *ServicePackageResult,
 		targetResource *environment.TargetResource,
-	) *async.TaskWithProgress[*ServiceDeployResult, ServiceProgress]
+		showProgress ShowProgress,
+	) (ServiceDeployResult, error)
 
 	// Endpoints gets the endpoints a service exposes.
 	Endpoints(
@@ -70,6 +71,15 @@ type ServiceTarget interface {
 		serviceConfig *ServiceConfig,
 		targetResource *environment.TargetResource,
 	) ([]string, error)
+}
+
+func jsonStringOrUnmarshaled(value string) interface{} {
+	var valueJson interface{}
+	err := json.Unmarshal([]byte(value), &valueJson)
+	if err != nil {
+		return value
+	}
+	return valueJson
 }
 
 // NewServiceDeployResult is a helper function to create a new ServiceDeployResult

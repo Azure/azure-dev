@@ -7,7 +7,6 @@ import (
 	"log"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
@@ -92,68 +91,59 @@ func (ch *ContainerHelper) Deploy(
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
 	targetResource *environment.TargetResource,
-) *async.TaskWithProgress[*ServiceDeployResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress]) {
-			// Get ACR Login Server
-			loginServer, err := ch.RegistryName(ctx)
-			if err != nil {
-				task.SetError(err)
-				return
-			}
+	showProgress ShowProgress,
+) (ServiceDeployResult, error) {
+	// Get ACR Login Server
+	loginServer, err := ch.RegistryName(ctx)
+	if err != nil {
+		return ServiceDeployResult{}, err
+	}
 
-			localImageTag := packageOutput.PackagePath
-			packageDetails, ok := packageOutput.Details.(*dockerPackageResult)
-			if ok && packageDetails != nil {
-				localImageTag = packageDetails.ImageTag
-			}
+	localImageTag := packageOutput.PackagePath
+	packageDetails, ok := packageOutput.Details.(*dockerPackageResult)
+	if ok && packageDetails != nil {
+		localImageTag = packageDetails.ImageTag
+	}
 
-			if localImageTag == "" {
-				task.SetError(errors.New("failed retrieving package result details"))
-				return
-			}
+	if localImageTag == "" {
+		return ServiceDeployResult{}, errors.New("failed retrieving package result details")
+	}
 
-			// Tag image
-			// Get remote tag from the container helper then call docker cli tag command
-			remoteTag, err := ch.RemoteImageTag(ctx, serviceConfig, localImageTag)
-			if err != nil {
-				task.SetError(fmt.Errorf("getting remote image tag: %w", err))
-				return
-			}
+	// Tag image
+	// Get remote tag from the container helper then call docker cli tag command
+	remoteTag, err := ch.RemoteImageTag(ctx, serviceConfig, localImageTag)
+	if err != nil {
+		return ServiceDeployResult{}, fmt.Errorf("getting remote image tag: %w", err)
+	}
 
-			task.SetProgress(NewServiceProgress("Tagging container image"))
-			if err := ch.docker.Tag(ctx, serviceConfig.Path(), localImageTag, remoteTag); err != nil {
-				task.SetError(err)
-				return
-			}
+	showProgress("Tagging container image")
+	if err := ch.docker.Tag(ctx, serviceConfig.Path(), localImageTag, remoteTag); err != nil {
+		return ServiceDeployResult{}, err
+	}
 
-			log.Printf("logging into container registry '%s'\n", loginServer)
-			task.SetProgress(NewServiceProgress("Logging into container registry"))
-			err = ch.containerRegistryService.Login(ctx, targetResource.SubscriptionId(), loginServer)
-			if err != nil {
-				task.SetError(err)
-				return
-			}
+	log.Printf("logging into container registry '%s'\n", loginServer)
+	showProgress("Logging into container registry")
+	err = ch.containerRegistryService.Login(ctx, targetResource.SubscriptionId(), loginServer)
+	if err != nil {
+		return ServiceDeployResult{}, err
+	}
 
-			// Push image.
-			log.Printf("pushing %s to registry", remoteTag)
-			task.SetProgress(NewServiceProgress("Pushing container image"))
-			if err := ch.docker.Push(ctx, serviceConfig.Path(), remoteTag); err != nil {
-				task.SetError(err)
-				return
-			}
+	// Push image.
+	log.Printf("pushing %s to registry", remoteTag)
+	showProgress("Pushing container image")
+	if err := ch.docker.Push(ctx, serviceConfig.Path(), remoteTag); err != nil {
+		return ServiceDeployResult{}, err
+	}
 
-			// Save the name of the image we pushed into the environment with a well known key.
-			log.Printf("writing image name to environment")
-			ch.env.SetServiceProperty(serviceConfig.Name, "IMAGE_NAME", remoteTag)
+	// Save the name of the image we pushed into the environment with a well known key.
+	log.Printf("writing image name to environment")
+	ch.env.SetServiceProperty(serviceConfig.Name, "IMAGE_NAME", remoteTag)
 
-			if err := ch.env.Save(); err != nil {
-				task.SetError(fmt.Errorf("saving image name to environment: %w", err))
-				return
-			}
+	if err := ch.env.Save(); err != nil {
+		return ServiceDeployResult{}, fmt.Errorf("saving image name to environment: %w", err)
+	}
 
-			task.SetResult(&ServiceDeployResult{
-				Package: packageOutput,
-			})
-		})
+	return ServiceDeployResult{
+		Package: packageOutput,
+	}, nil
 }

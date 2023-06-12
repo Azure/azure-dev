@@ -19,7 +19,7 @@ export class AzureYamlDiagnosticProvider extends vscode.Disposable {
         const diagnosticCollection = vscode.languages.createDiagnosticCollection('azure.yaml');
         disposables.push(diagnosticCollection);
     
-        disposables.push(vscode.workspace.onDidChangeTextDocument((e: vscode.TextDocumentChangeEvent) => this.updateDiagnosticsFor(e.document))); // TODO: do a delayed debounce
+        disposables.push(vscode.workspace.onDidChangeTextDocument((e: vscode.TextDocumentChangeEvent) => this.updateDiagnosticsFor(e.document)));
         disposables.push(vscode.workspace.onDidRenameFiles(() => this.updateDiagnosticsForOpenTabs()));
         disposables.push(vscode.window.onDidChangeVisibleTextEditors(() => this.updateDiagnosticsForOpenTabs()));
 

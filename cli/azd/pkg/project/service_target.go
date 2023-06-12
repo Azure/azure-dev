@@ -82,32 +82,6 @@ func jsonStringOrUnmarshaled(value string) interface{} {
 	return valueJson
 }
 
-// NewServiceDeployResult is a helper function to create a new ServiceDeployResult
-func NewServiceDeployResult(
-	relatedResourceId string,
-	kind ServiceTargetKind,
-	rawResult string,
-	endpoints []string,
-) *ServiceDeployResult {
-	returnValue := &ServiceDeployResult{
-		TargetResourceId: relatedResourceId,
-		Kind:             kind,
-		Endpoints:        endpoints,
-	}
-
-	// If the result can be parsed as JSON, store it as such.
-	// Otherwise, just preserve in raw (string) format.
-	var detailsObj interface{}
-	err := json.Unmarshal([]byte(rawResult), &detailsObj)
-	if err != nil {
-		returnValue.Details = rawResult
-	} else {
-		returnValue.Details = detailsObj
-	}
-
-	return returnValue
-}
-
 func resourceTypeMismatchError(
 	resourceName string,
 	resourceType string,

@@ -149,10 +149,9 @@ func Test_DotNetProject_Restore(t *testing.T) {
 	serviceConfig := createTestServiceConfig("./src/api/test.csproj", AppServiceTarget, ServiceLanguageCsharp)
 
 	dotnetProject := NewDotNetProject(dotNetCli, env)
-	restoreTask := dotnetProject.Restore(*mockContext.Context, serviceConfig)
-	logProgress(restoreTask)
-
-	result, err := restoreTask.Await()
+	messages := []string{}
+	showProgress := saveMessages(&messages)
+	result, err := dotnetProject.Restore(*mockContext.Context, serviceConfig, showProgress)
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, "dotnet", runArgs.Cmd)
@@ -193,10 +192,9 @@ func Test_DotNetProject_Build(t *testing.T) {
 	require.NoError(t, err)
 
 	dotnetProject := NewDotNetProject(dotNetCli, env)
-	buildTask := dotnetProject.Build(*mockContext.Context, serviceConfig, nil)
-	logProgress(buildTask)
-
-	result, err := buildTask.Await()
+	messages := []string{}
+	showProgress := saveMessages(&messages)
+	result, err := dotnetProject.Build(*mockContext.Context, serviceConfig, nil, showProgress)
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, "dotnet", runArgs.Cmd)
@@ -247,16 +245,16 @@ func Test_DotNetProject_Package(t *testing.T) {
 	serviceConfig := createTestServiceConfig("./src/api/test3.csproj", AppServiceTarget, ServiceLanguageCsharp)
 
 	dotnetProject := NewDotNetProject(dotNetCli, env)
-	packageTask := dotnetProject.Package(
+	messages := []string{}
+	showProgress := saveMessages(&messages)
+	result, err := dotnetProject.Package(
 		*mockContext.Context,
 		serviceConfig,
 		&ServiceBuildResult{
 			BuildOutputPath: serviceConfig.Path(),
 		},
+		showProgress,
 	)
-	logProgress(packageTask)
-
-	result, err := packageTask.Await()
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.NotEmpty(t, result.PackagePath)

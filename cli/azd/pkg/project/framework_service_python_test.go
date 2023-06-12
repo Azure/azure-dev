@@ -59,10 +59,9 @@ func Test_PythonProject_Restore(t *testing.T) {
 	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguagePython)
 
 	pythonProject := NewPythonProject(pythonCli, env)
-	restoreTask := pythonProject.Restore(*mockContext.Context, serviceConfig)
-	logProgress(restoreTask)
-
-	result, err := restoreTask.Await()
+	messages := []string{}
+	showProgress := saveMessages(&messages)
+	result, err := pythonProject.Restore(*mockContext.Context, serviceConfig, showProgress)
 	require.NoError(t, err)
 	require.NotNil(t, result)
 
@@ -93,10 +92,9 @@ func Test_PythonProject_Build(t *testing.T) {
 	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguagePython)
 
 	pythonProject := NewPythonProject(pythonCli, env)
-	buildTask := pythonProject.Build(*mockContext.Context, serviceConfig, nil)
-	logProgress(buildTask)
-
-	result, err := buildTask.Await()
+	messages := []string{}
+	showProgress := saveMessages(&messages)
+	result, err := pythonProject.Build(*mockContext.Context, serviceConfig, nil, showProgress)
 	require.NoError(t, err)
 	require.NotNil(t, result)
 }
@@ -115,16 +113,16 @@ func Test_PythonProject_Package(t *testing.T) {
 	require.NoError(t, err)
 
 	pythonProject := NewPythonProject(pythonCli, env)
-	packageTask := pythonProject.Package(
+	messages := []string{}
+	showProgress := saveMessages(&messages)
+	result, err := pythonProject.Package(
 		*mockContext.Context,
 		serviceConfig,
 		&ServiceBuildResult{
 			BuildOutputPath: serviceConfig.Path(),
 		},
+		showProgress,
 	)
-	logProgress(packageTask)
-
-	result, err := packageTask.Await()
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.NotEmpty(t, result.PackagePath)

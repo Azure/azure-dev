@@ -7,7 +7,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
-	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
@@ -431,74 +430,68 @@ func (f *fakeFramework) Initialize(ctx context.Context, serviceConfig *ServiceCo
 func (f *fakeFramework) Restore(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-) *async.TaskWithProgress[*ServiceRestoreResult, ServiceProgress] {
+	showProgress ShowProgress,
+) (ServiceRestoreResult, error) {
 	restoreCalled, ok := ctx.Value(frameworkRestoreCalled).(*bool)
 	if ok {
 		*restoreCalled = true
 	}
 
-	return async.RunTaskWithProgress(func(task *async.TaskContextWithProgress[*ServiceRestoreResult, ServiceProgress]) {
-		runArgs := exec.NewRunArgs("fake-framework", "restore")
-		result, err := f.commandRunner.Run(ctx, runArgs)
-		if err != nil {
-			task.SetError(err)
-			return
-		}
+	runArgs := exec.NewRunArgs("fake-framework", "restore")
+	result, err := f.commandRunner.Run(ctx, runArgs)
+	if err != nil {
+		return ServiceRestoreResult{}, err
+	}
 
-		task.SetResult(&ServiceRestoreResult{
-			Details: result,
-		})
-	})
+	return ServiceRestoreResult{
+		Details: result,
+	}, nil
 }
 
 func (f *fakeFramework) Build(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	restoreOutput *ServiceRestoreResult,
-) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress] {
+	showProgress ShowProgress,
+) (ServiceBuildResult, error) {
 	buildCalled, ok := ctx.Value(frameworkBuildCalled).(*bool)
 	if ok {
 		*buildCalled = true
 	}
 
-	return async.RunTaskWithProgress(func(task *async.TaskContextWithProgress[*ServiceBuildResult, ServiceProgress]) {
-		runArgs := exec.NewRunArgs("fake-framework", "build")
-		result, err := f.commandRunner.Run(ctx, runArgs)
-		if err != nil {
-			task.SetError(err)
-			return
-		}
+	runArgs := exec.NewRunArgs("fake-framework", "build")
+	result, err := f.commandRunner.Run(ctx, runArgs)
+	if err != nil {
+		return ServiceBuildResult{}, err
+	}
 
-		task.SetResult(&ServiceBuildResult{
-			Restore: restoreOutput,
-			Details: result,
-		})
-	})
+	return ServiceBuildResult{
+		Restore: restoreOutput,
+		Details: result,
+	}, nil
 }
 
 func (f *fakeFramework) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	buildOutput *ServiceBuildResult,
-) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
+	showProgress ShowProgress,
+) (ServicePackageResult, error) {
 	packageCalled, ok := ctx.Value(frameworkPackageCalled).(*bool)
 	if ok {
 		*packageCalled = true
 	}
 
-	return async.RunTaskWithProgress(func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
-		runArgs := exec.NewRunArgs("fake-framework", "package")
-		result, err := f.commandRunner.Run(ctx, runArgs)
-		if err != nil {
-			task.SetError(err)
-			return
-		}
+	runArgs := exec.NewRunArgs("fake-framework", "package")
+	result, err := f.commandRunner.Run(ctx, runArgs)
+	if err != nil {
+		return ServicePackageResult{}, err
+	}
 
-		task.SetResult(&ServicePackageResult{
-			Build:   buildOutput,
-			Details: result,
-		})
-	})
+	return ServicePackageResult{
+		Build:   buildOutput,
+		Details: result,
+	}, nil
 }
 
 // Fake implementation of a service target
@@ -524,25 +517,23 @@ func (st *fakeServiceTarget) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
-) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
+	showProgress ShowProgress,
+) (ServicePackageResult, error) {
 	packageCalled, ok := ctx.Value(serviceTargetPackageCalled).(*bool)
 	if ok {
 		*packageCalled = true
 	}
 
-	return async.RunTaskWithProgress(func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
-		runArgs := exec.NewRunArgs("fake-service-target", "package")
-		result, err := st.commandRunner.Run(ctx, runArgs)
-		if err != nil {
-			task.SetError(err)
-			return
-		}
+	runArgs := exec.NewRunArgs("fake-service-target", "package")
+	result, err := st.commandRunner.Run(ctx, runArgs)
+	if err != nil {
+		return ServicePackageResult{}, err
+	}
 
-		task.SetResult(&ServicePackageResult{
-			Build:   packageOutput.Build,
-			Details: result,
-		})
-	})
+	return ServicePackageResult{
+		Build:   packageOutput.Build,
+		Details: result,
+	}, nil
 }
 
 func (st *fakeServiceTarget) Deploy(
@@ -550,25 +541,23 @@ func (st *fakeServiceTarget) Deploy(
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
 	targetResource *environment.TargetResource,
-) *async.TaskWithProgress[*ServiceDeployResult, ServiceProgress] {
+	showProgress ShowProgress,
+) (ServiceDeployResult, error) {
 	deployCalled, ok := ctx.Value(serviceTargetDeployCalled).(*bool)
 	if ok {
 		*deployCalled = true
 	}
 
-	return async.RunTaskWithProgress(func(task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress]) {
-		runArgs := exec.NewRunArgs("fake-service-target", "deploy")
-		result, err := st.commandRunner.Run(ctx, runArgs)
-		if err != nil {
-			task.SetError(err)
-			return
-		}
+	runArgs := exec.NewRunArgs("fake-service-target", "deploy")
+	result, err := st.commandRunner.Run(ctx, runArgs)
+	if err != nil {
+		return ServiceDeployResult{}, err
+	}
 
-		task.SetResult(&ServiceDeployResult{
-			Package: packageOutput,
-			Details: result,
-		})
-	})
+	return ServiceDeployResult{
+		Package: packageOutput,
+		Details: result,
+	}, nil
 }
 
 func (st *fakeServiceTarget) Endpoints(

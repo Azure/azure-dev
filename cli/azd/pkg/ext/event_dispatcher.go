@@ -98,7 +98,11 @@ func (ed *EventDispatcher[T]) RaiseEvent(ctx context.Context, name Event, eventA
 }
 
 // Invokes an action and raises an event before and after the action
-func (ed *EventDispatcher[T]) Invoke(ctx context.Context, name Event, eventArgs T, action InvokeFn) error {
+func (ed *EventDispatcher[T]) Invoke(
+	ctx context.Context,
+	name Event,
+	eventArgs T,
+	action InvokeFn) error {
 	if err := ed.validateEvent(name); err != nil {
 		return err
 	}
@@ -114,6 +118,32 @@ func (ed *EventDispatcher[T]) Invoke(ctx context.Context, name Event, eventArgs 
 		return fmt.Errorf("failing invoking action '%s', %w", name, err)
 	}
 
+	if err := ed.RaiseEvent(ctx, postEventName, eventArgs); err != nil {
+		return fmt.Errorf("failed invoking event handlers for 'post%s', %w", name, err)
+	}
+
+	return nil
+}
+
+func (ed *EventDispatcher[T]) PreInvokeHook(ctx context.Context, name Event, eventArgs T) error {
+	if err := ed.validateEvent(name); err != nil {
+		return err
+	}
+
+	preEventName := Event(fmt.Sprintf("pre%s", name))
+	if err := ed.RaiseEvent(ctx, preEventName, eventArgs); err != nil {
+		return fmt.Errorf("failed invoking event handlers for 'pre%s', %w", name, err)
+	}
+
+	return nil
+}
+
+func (ed *EventDispatcher[T]) PostInvokeHook(ctx context.Context, name Event, eventArgs T) error {
+	if err := ed.validateEvent(name); err != nil {
+		return err
+	}
+
+	postEventName := Event(fmt.Sprintf("post%s", name))
 	if err := ed.RaiseEvent(ctx, postEventName, eventArgs); err != nil {
 		return fmt.Errorf("failed invoking event handlers for 'post%s', %w", name, err)
 	}

@@ -54,7 +54,7 @@ export class AzureYamlDiagnosticProvider extends vscode.Disposable {
                 } else {
                     const projectFolder = vscode.Uri.joinPath(getContainingFolderUri(document.uri), projectPath);
 
-                    if (await AzExtFsExtra.pathExists(projectFolder) && await AzExtFsExtra.isDirectory(projectFolder)) {
+                    if (await AzExtFsExtra.pathExists(projectFolder)) {
                         continue;
                     }
                 }

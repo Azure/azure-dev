@@ -74,7 +74,7 @@ func NewSpringService(
 }
 
 type SpringAppProperties struct {
-	Fqdn []string
+	Url []string
 }
 
 func (ss *springService) GetSpringAppProperties(
@@ -91,17 +91,17 @@ func (ss *springService) GetSpringAppProperties(
 		return nil, fmt.Errorf("failed retrieving spring app properties: %w", err)
 	}
 
-	var fqdn []string
+	var url []string
 	if springApp.Properties != nil &&
-		springApp.Properties.Fqdn != nil &&
+		springApp.Properties.URL != nil &&
 		*springApp.Properties.Public {
-		fqdn = []string{*springApp.Properties.Fqdn}
+		url = []string{*springApp.Properties.URL}
 	} else {
-		fqdn = []string{}
+		url = []string{}
 	}
 
 	return &SpringAppProperties{
-		Fqdn: fqdn,
+		Url: url,
 	}, nil
 }
 

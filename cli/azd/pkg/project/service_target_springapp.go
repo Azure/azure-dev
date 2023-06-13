@@ -7,10 +7,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"os"
 	"path/filepath"
-	"strings"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -200,10 +200,8 @@ func (st *springAppTarget) Endpoints(
 		return nil, fmt.Errorf("fetching service properties: %w", err)
 	}
 
-	endpoints := make([]string, len(springAppProperties.Fqdn))
-	for idx, fqdn := range springAppProperties.Fqdn {
-		endpoints[idx] = fmt.Sprintf("https://%s/", st.extractEndpoint(fqdn, serviceConfig.Name))
-	}
+	endpoints := make([]string, len(springAppProperties.Url))
+	copy(endpoints, springAppProperties.Url)
 
 	return endpoints, nil
 }
@@ -224,9 +222,4 @@ func (st *springAppTarget) validateTargetResource(
 	}
 
 	return nil
-}
-
-func (st *springAppTarget) extractEndpoint(fqdn string, appName string) string {
-	index := strings.IndexRune(fqdn, '.')
-	return fqdn[0:index] + "-" + appName + fqdn[index:]
 }

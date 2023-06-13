@@ -250,6 +250,9 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 			}()
 
 			packageResult, err = packageTask.Await()
+			// adding a few seconds to wait for all async ops to be flush
+			time.Sleep(2 * time.Second)
+			// do not stop progress here as next step is to deploy
 			if err != nil {
 				da.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 				return nil, err
@@ -265,12 +268,13 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		}()
 
 		deployResult, err := deployTask.Await()
+		// adding a few seconds to wait for all async ops to be flush
+		time.Sleep(2 * time.Second)
+		da.console.StopSpinner(ctx, stepMessage, input.GetStepResultFormat(err))
 		if err != nil {
-			da.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 			return nil, err
 		}
 
-		da.console.StopSpinner(ctx, stepMessage, input.StepDone)
 		deployResults[svc.Name] = deployResult
 
 		// report deploy outputs

@@ -3,9 +3,8 @@
 
 import { AzExtFsExtra } from '@microsoft/vscode-azext-utils';
 import * as vscode from 'vscode';
-import * as yaml from 'yaml';
 import { documentDebounce } from './documentDebounce';
-import { getContainingFolderUri } from './getContainingFolderUri';
+import { getAzureYamlProjectInformation } from './getAzureYamlProjectInformation';
 
 // Time between when the user stops typing and when we send diagnostics
 const DiagnosticDelay = 1000;
@@ -38,39 +37,18 @@ export class AzureYamlDiagnosticProvider extends vscode.Disposable {
         const results: vscode.Diagnostic[] = [];
 
         try {
-            // Parse the document
-            const yamlDocument = yaml.parseDocument(document.getText()) as yaml.Document;
-            if (!yamlDocument || yamlDocument.errors.length > 0) {
-                throw new Error(vscode.l10n.t('Unable to parse {0}', document.uri.toString()));
-            }
+            const projectInformation = await getAzureYamlProjectInformation(document);
 
-            const services = yamlDocument.get('services') as yaml.YAMLMap<yaml.Scalar, yaml.YAMLMap>;
-
-            // For each service, ensure that a directory exists matching the relative path specified for the service
-            for (const service of services?.items || []) {
-                const projectNode = service.value?.get('project', true) as yaml.Scalar<string>;
-                const projectPath = projectNode?.value;
-
-                if (!projectPath) {
+            for (const project of projectInformation) {
+                if (await AzExtFsExtra.pathExists(project.projectUri)) {
                     continue;
-                } else {
-                    const projectFolder = vscode.Uri.joinPath(getContainingFolderUri(document.uri), projectPath);
-
-                    if (await AzExtFsExtra.pathExists(projectFolder)) {
-                        continue;
-                    }
                 }
 
-                // If not existent, then emit an error diagnostic about it
-                const rangeStart = document.positionAt(projectNode.range?.[0] ?? 0);
-                const rangeEnd = document.positionAt(projectNode.range?.[1] ?? 0);
-                const range = new vscode.Range(rangeStart, rangeEnd);
-
                 const diagnostic = new AzureYamlProjectPathDiagnostic(
-                    range,
+                    project.projectValueNodeRange,
                     vscode.l10n.t('The project path must be an existing folder path relative to the azure.yaml file.'),
                     vscode.DiagnosticSeverity.Error,
-                    projectNode
+                    project.projectValue,
                 );
 
                 results.push(diagnostic);
@@ -115,7 +93,7 @@ export class AzureYamlProjectPathDiagnostic extends vscode.Diagnostic {
         range: vscode.Range,
         message: string,
         severity: vscode.DiagnosticSeverity,
-        public readonly sourceNode: yaml.Scalar<string>
+        public readonly projectValue: string
     ) {
         super(range, message, severity);
     }

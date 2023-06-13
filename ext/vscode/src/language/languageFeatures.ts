@@ -7,18 +7,18 @@ import { AzureYamlCompletionItemProvider } from './AzureYamlCompletionItemProvid
 import { AzureYamlDiagnosticProvider } from './AzureYamlDiagnosticProvider';
 import { AzureYamlCodeActionProvider } from './AzureYamlCodeActionProvider';
 
+export const AzureYamlSelector: vscode.DocumentSelector = { language: 'yaml', scheme: 'file', pattern: '**/azure.{yml,yaml}' };
+
 export function registerLanguageFeatures(): void {
-    const selector: vscode.DocumentSelector = { language: 'yaml', scheme: 'file', pattern: '**/azure.{yml,yaml}' };
-
     ext.context.subscriptions.push(
-        vscode.languages.registerCompletionItemProvider(selector, new AzureYamlCompletionItemProvider(), '/'),
+        vscode.languages.registerCompletionItemProvider(AzureYamlSelector, new AzureYamlCompletionItemProvider(), '/'),
     );
 
     ext.context.subscriptions.push(
-        vscode.languages.registerCodeActionsProvider(selector, new AzureYamlCodeActionProvider(), { providedCodeActionKinds: [vscode.CodeActionKind.QuickFix, vscode.CodeActionKind.RefactorMove] })
+        vscode.languages.registerCodeActionsProvider(AzureYamlSelector, new AzureYamlCodeActionProvider(), { providedCodeActionKinds: [vscode.CodeActionKind.QuickFix] })
     );
 
     ext.context.subscriptions.push(
-        new AzureYamlDiagnosticProvider(selector)
+        new AzureYamlDiagnosticProvider(AzureYamlSelector)
     );
 }

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http"
 	"net/url"
+	"strings"
 
 	"gopkg.in/dnaeon/go-vcr.v3/cassette"
 )
@@ -22,9 +23,10 @@ func (d *httpPollDiscarder) BeforeSave(i *cassette.Interaction) error {
 		d.pollInProgress = nil
 	}
 
+	// Discard awaiting-done polling interactions
 	if d.pollInProgress != nil {
-		// Fast forward messages that are simply waiting for polling to complete
 		i.DiscardOnSave = true
+		return nil
 	}
 
 	// Check if the interaction is a polling request.
@@ -327,11 +329,24 @@ func isAsyncPoll(i *cassette.Interaction) bool {
 	return i.Response.Headers.Get("Azure-AsyncOperation") != ""
 }
 
+// urlMatch returns true if the two URLs are equal, ignoring the port portion of Host
+// (which is generally present when proxying through https connect).
 func urlMatch(reqUrl string, loc url.URL) bool {
 	req, err := url.Parse(reqUrl)
 	if err != nil {
 		panic(err)
 	}
 
+	// remove port from host
+	req.Host = trimPort(req.Host)
+	loc.Host = trimPort(loc.Host)
+
 	return req.String() == loc.String()
+}
+
+func trimPort(host string) string {
+	if i := strings.LastIndex(host, ":"); i != -1 {
+		return host[:i]
+	}
+	return host
 }

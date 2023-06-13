@@ -11,12 +11,12 @@ import (
 )
 
 // httpPollDiscarder discards awaiting-done polling interactions from the cassette.
-// As a result of this, the cassette will only contain the final result of the polling operation,
-// thus fast-forwarding the cassette in playback mode.
+// As a result of this, the cassette will only contain the final result of the polling operation.
+// When playing back interactions from the cassette, this results in fast-forwarding behavior.
 //
 // The type of polling protocols httpPollDiscarder detects includes:
 // - Azure specific async polling protocols (implementation loosely matches ones supported by azure-sdk-for-go)
-// - Idiomatic HTTP async polling protocols (Location header, 202/202 status codes)
+// - Idiomatic HTTP async polling protocols (Location header, 201,202 status codes)
 type httpPollDiscarder struct {
 	pollInProgress poller
 }
@@ -110,6 +110,7 @@ func (a *asyncPoller) Done(i *cassette.Interaction) bool {
 	return isTerminalState(status)
 }
 
+// Poller that uses Operation-Location header.
 type opPoller struct {
 	location url.URL
 }
@@ -197,6 +198,7 @@ func (l *locPoller) Done(i *cassette.Interaction) bool {
 //
 // The resource is created with a PUT or PATCH request with a response code of 201.
 // The client awaits a 202 or 204 response for the requested resource.
+// Azure also returns a response with a "state" in the body, which is used as a fallback.
 type bodyPoller struct {
 	location url.URL
 }

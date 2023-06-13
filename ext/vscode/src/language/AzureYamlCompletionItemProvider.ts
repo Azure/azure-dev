@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 import * as vscode from 'vscode';
+import { getContainingFolderUri } from './getContainingFolderUri';
 
 export class AzureYamlCompletionItemProvider implements vscode.CompletionItemProvider {
     public async provideCompletionItems(document: vscode.TextDocument, position: vscode.Position, token: vscode.CancellationToken, context: vscode.CompletionContext): Promise<vscode.CompletionItem[]> {
@@ -35,7 +36,7 @@ export class AzureYamlCompletionItemProvider implements vscode.CompletionItemPro
             return [];
         }
 
-        const currentFolder = vscode.Uri.joinPath(document.uri, '..', pathPrefix);
+        const currentFolder = vscode.Uri.joinPath(getContainingFolderUri(document.uri), pathPrefix);
         const results: string[] = [];
         
         for (const [file, type] of await vscode.workspace.fs.readDirectory(currentFolder)) {

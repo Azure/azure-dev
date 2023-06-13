@@ -83,14 +83,11 @@ type recorderProxy struct {
 }
 
 func (p *recorderProxy) ServeConn(conn io.Writer, req *http.Request) {
-	p.Log.Debug("recorderProxy: incoming request", "url", req.URL)
+	p.Log.Debug("recorderProxy: incoming request", "url", req.URL.String())
 
 	resp, err := p.Recorder.RoundTrip(req)
-
-	if p.Recorder.IsRecording() {
-		p.Log.Debug("recorderProxy: recording response", "url", req.URL, "status", resp.Status)
-	} else {
-		p.Log.Debug("recorderProxy: replaying response", "url", req.URL, "status", resp.Status)
+	if err != nil {
+		p.panic(err.Error())
 	}
 
 	if err != nil {
@@ -140,7 +137,7 @@ type connectHandler struct {
 }
 
 func (p *connectHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	p.Log.Debug("connectHandler:", "method", req.Method, "url", req.URL)
+	p.Log.Debug("connectHandler:", "method", req.Method, "url", req.URL.String())
 
 	conn, err := p.hijack(w)
 	if err != nil {

@@ -123,7 +123,9 @@ func Start(t *testing.T, opts ...Options) *Session {
 		Level: level,
 	}))
 
-	session := &Session{}
+	session := &Session{
+		Variables: map[string]string{},
+	}
 
 	recorderOptions := &recorder.Options{
 		CassetteName:       name,
@@ -141,14 +143,34 @@ func Start(t *testing.T, opts ...Options) *Session {
 		t.Fatalf("failed to load variables: %v", err)
 	}
 
+	transport := http.DefaultTransport.(*http.Transport).Clone()
 	vcr.SetRealTransport(&gzip2HttpRoundTripper{
-		transport: http.DefaultTransport,
+		transport: transport,
 	})
 
 	vcr.AddHook(func(i *cassette.Interaction) error {
 		i.Request.Headers.Del("Authorization")
 		return nil
 	}, recorder.BeforeSaveHook)
+
+	discarder := httpPollDiscarder{}
+	vcr.AddHook(discarder.BeforeSave, recorder.BeforeSaveHook)
+
+	vcr.AddHook(func(i *cassette.Interaction) error {
+		if i.DiscardOnSave {
+			log.Debug("recorderProxy: discarded response", "url", i.Request.URL, "status", i.Response.Code)
+		}
+		return nil
+	}, recorder.BeforeSaveHook)
+
+	vcr.AddHook(func(i *cassette.Interaction) error {
+		if vcr.IsRecording() {
+			log.Debug("recorderProxy: recording response", "url", i.Request.URL, "status", i.Response.Code)
+		} else {
+			log.Debug("recorderProxy: replaying response", "url", i.Request.URL, "status", i.Response.Code)
+		}
+		return nil
+	}, recorder.BeforeResponseReplayHook)
 
 	vcr.AddPassthrough(func(req *http.Request) bool {
 		return strings.Contains(req.URL.Host, "login.microsoftonline.com") ||
@@ -168,7 +190,7 @@ func Start(t *testing.T, opts ...Options) *Session {
 
 	server := httptest.NewTLSServer(proxy)
 	proxy.TLS = server.TLS
-	t.Logf("recorderProxy started with mode %v at %s", displayMode(vcr.Mode()), server.URL)
+	t.Logf("recorderProxy started with mode %v at %s", displayMode(vcr), server.URL)
 	session.ProxyUrl = server.URL
 
 	t.Cleanup(func() {
@@ -200,7 +222,16 @@ var modeStrMap = map[recorder.Mode]string{
 	recorder.ModePassthrough: "live",
 }
 
-func displayMode(mode recorder.Mode) string {
+func displayMode(vcr *recorder.Recorder) string {
+	mode := vcr.Mode()
+	if mode == recorder.ModeRecordOnce {
+		actualMode := "playback"
+		if vcr.IsNewCassette() {
+			actualMode = "record"
+		}
+		return fmt.Sprintf("%s (%s)", modeStrMap[mode], actualMode)
+	}
+
 	return modeStrMap[mode]
 }
 

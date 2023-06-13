@@ -36,6 +36,7 @@ export class AzureYamlCodeActionProvider extends vscode.Disposable implements vs
             const azureYamlFolder = getContainingFolderUri(document.uri);
             const missingFolder = vscode.Uri.joinPath(azureYamlFolder, diagnostic.sourceNode.value);
 
+            // Add a code action to rename the folder if possible
             const knownFolderRename = this.knownFolderRenames.find(r => r.oldFolder.fsPath === missingFolder.fsPath);
             if (knownFolderRename) {
                 const newRelativeFolder = path.posix
@@ -46,13 +47,13 @@ export class AzureYamlCodeActionProvider extends vscode.Disposable implements vs
                     .replace(/^\.?\/?/, './'); // Ensure it starts with ./
                 
 
-                const action = new vscode.CodeAction(vscode.l10n.t('Change path to "{0}"', newRelativeFolder), vscode.CodeActionKind.QuickFix);
+                const renameFolderAction = new vscode.CodeAction(vscode.l10n.t('Change path to "{0}"', newRelativeFolder), vscode.CodeActionKind.QuickFix);
 
-                const edit = new vscode.WorkspaceEdit();
-                edit.replace(document.uri, diagnostic.range, newRelativeFolder);
-                action.edit = edit;
+                const renameFolderEdit = new vscode.WorkspaceEdit();
+                renameFolderEdit.replace(document.uri, diagnostic.range, newRelativeFolder);
+                renameFolderAction.edit = renameFolderEdit;
 
-                results.push(action);
+                results.push(renameFolderAction);
             }
         }
 

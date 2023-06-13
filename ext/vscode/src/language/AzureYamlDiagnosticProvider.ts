@@ -23,6 +23,8 @@ export class AzureYamlDiagnosticProvider extends vscode.Disposable {
     
         disposables.push(vscode.workspace.onDidChangeTextDocument((e: vscode.TextDocumentChangeEvent) => this.updateDiagnosticsFor(e.document)));
         disposables.push(vscode.workspace.onDidRenameFiles(() => this.updateDiagnosticsForOpenTabs()));
+        disposables.push(vscode.workspace.onDidCreateFiles(() => this.updateDiagnosticsForOpenTabs()));
+        disposables.push(vscode.workspace.onDidDeleteFiles(() => this.updateDiagnosticsForOpenTabs()));
         disposables.push(vscode.window.onDidChangeVisibleTextEditors(() => this.updateDiagnosticsForOpenTabs()));
 
         super(() => {

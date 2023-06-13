@@ -111,11 +111,6 @@ func (hra *hooksRunAction) Run(ctx context.Context) (*actions.ActionResult, erro
 		),
 	})
 
-	// Validate hook type
-	if _, _, err := ext.InferHookType(hookName); err != nil {
-		return nil, fmt.Errorf("hook name is invalid. Hook names should start with 'pre' or 'post', %w", err)
-	}
-
 	// Validate service name
 	if _, ok := hra.projectConfig.Services[hra.flags.service]; hra.flags.service != "" && !ok {
 		return nil, fmt.Errorf("service name '%s' doesn't exist", hra.flags.service)
@@ -179,10 +174,7 @@ func (hra *hooksRunAction) processHooks(
 		return nil
 	}
 
-	hookType, commandName, err := ext.InferHookType(hookName)
-	if err != nil {
-		return err
-	}
+	hookType, commandName := ext.InferHookType(hookName)
 
 	if err := hra.prepareHook(hookName, hook); err != nil {
 		return err
@@ -193,7 +185,7 @@ func (hra *hooksRunAction) processHooks(
 		hra.console.Message(ctx, output.WithBold(output.WithUnderline(message)))
 	}
 
-	err = hra.execHook(ctx, cwd, hookType, commandName, hook)
+	err := hra.execHook(ctx, cwd, hookType, commandName, hook)
 	if err != nil {
 		hra.console.StopSpinner(ctx, message, input.StepFailed)
 		return fmt.Errorf("failed running hook %s, %w", hookName, err)

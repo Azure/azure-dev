@@ -27,6 +27,7 @@ const (
 	HookTypePre HookType = "pre"
 	// Execute post hooks
 	HookTypePost        HookType         = "post"
+	HookTypeNone        HookType         = ""
 	HookPlatformWindows HookPlatformType = "windows"
 	HookPlatformPosix   HookPlatformType = "posix"
 )
@@ -134,17 +135,17 @@ func (hc *HookConfig) validate() error {
 	return nil
 }
 
-func InferHookType(name string) (HookType, string, error) {
+func InferHookType(name string) (HookType, string) {
 	// Validate name length so go doesn't PANIC for string slicing below
 	if len(name) < 4 {
-		return "", "", fmt.Errorf("unable to infer hook '%s'", name)
+		return HookTypeNone, name
 	} else if name[:3] == "pre" {
-		return HookTypePre, name[3:], nil
+		return HookTypePre, name[3:]
 	} else if name[:4] == "post" {
-		return HookTypePost, name[4:], nil
+		return HookTypePost, name[4:]
 	}
 
-	return "", "", fmt.Errorf("unable to infer hook '%s'", name)
+	return HookTypeNone, name
 }
 
 func inferScriptTypeFromFilePath(path string) (ShellType, error) {

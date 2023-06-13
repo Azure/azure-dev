@@ -146,14 +146,10 @@ func (m *HooksMiddleware) registerServiceHooks(
 		)
 
 		for hookName := range service.Hooks {
-			hookType, eventName, err := ext.InferHookType(hookName)
-			if err != nil {
-				return fmt.Errorf(
-					//nolint:lll
-					"%w for service '%s'. Hooks must start with 'pre' or 'post' and end in a valid service event name. Examples: restore, package, deploy",
-					err,
-					serviceName,
-				)
+			hookType, eventName := ext.InferHookType(hookName)
+			// If not a pre or post hook we can continue on.
+			if hookType == ext.HookTypeNone {
+				continue
 			}
 
 			if err := service.AddHandler(

@@ -5,7 +5,7 @@ import * as vscode from 'vscode';
 import ext from '../ext';
 import { AzureYamlCompletionItemProvider } from './AzureYamlCompletionItemProvider';
 import { AzureYamlDiagnosticProvider } from './AzureYamlDiagnosticProvider';
-import { AzureYamlCodeActionProvider } from './AzureYamlCodeActionProvider';
+import { AzureYamlProjectRenameProvider } from './AzureYamlProjectRenameProvider';
 
 export const AzureYamlSelector: vscode.DocumentSelector = { language: 'yaml', scheme: 'file', pattern: '**/azure.{yml,yaml}' };
 
@@ -15,10 +15,10 @@ export function registerLanguageFeatures(): void {
     );
 
     ext.context.subscriptions.push(
-        vscode.languages.registerCodeActionsProvider(AzureYamlSelector, new AzureYamlCodeActionProvider(), { providedCodeActionKinds: [vscode.CodeActionKind.QuickFix] })
+        new AzureYamlDiagnosticProvider(AzureYamlSelector)
     );
 
     ext.context.subscriptions.push(
-        new AzureYamlDiagnosticProvider(AzureYamlSelector)
+        new AzureYamlProjectRenameProvider()
     );
 }

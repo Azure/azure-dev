@@ -193,7 +193,13 @@ func (cas *containerAppService) ValidateRevision(
 
 	var result *armappcontainers.Revision
 
-	err = retry.Do(ctx, retry.WithMaxRetries(10, retry.NewConstant(time.Second*5)), func(ctx context.Context) error {
+	// Wait 10 seconds between retries
+	backoff := retry.NewConstant(time.Second * 10)
+
+	// Keep trying for up to 10 minutes or has reached a terminal state
+	maxDuration := retry.WithMaxDuration(time.Minute*10, backoff)
+
+	err = retry.Do(ctx, maxDuration, func(ctx context.Context) error {
 		getRevisionResponse, err := revisionsClient.GetRevision(ctx, resourceGroupName, appName, revisionName, nil)
 		if err != nil {
 			return fmt.Errorf("getting revision '%s': %w", revisionName, err)

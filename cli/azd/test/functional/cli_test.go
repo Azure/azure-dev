@@ -231,12 +231,15 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 	dir := tempDirWithDiagnostics(t)
 	t.Logf("DIR: %s", dir)
 
-	envName := "UpperCase" + randomEnvName()
+	session := recording.Start(t)
+
+	envName := "UpperCase" + randomOrStoredEnvName(session)
 	t.Logf("AZURE_ENV_NAME: %s", envName)
 
-	cli := azdcli.NewCLI(t)
+	cli := azdcli.NewCLI(t, azdcli.WithSession(session))
 	cli.WorkingDirectory = dir
-	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
+	cli.Env = append(cli.Env, os.Environ()...)
+	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
 
 	err := copySample(dir, "storage")
 	require.NoError(t, err, "failed expanding sample")
@@ -261,6 +264,12 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 	assertEnvValuesStored(t, env)
 
 	// GetResourceGroupsForEnvironment requires a credential since it is using the SDK now
+	var client *http.Client
+	if session != nil {
+		client = session.ProxyClient()
+	} else {
+		client = http.DefaultClient
+	}
 	cred, err := azidentity.NewAzureCLICredential(nil)
 	if err != nil {
 		t.Fatal("could not create credential")
@@ -270,7 +279,7 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 		func(_ context.Context, _ string) (azcore.TokenCredential, error) {
 			return cred, nil
 		}),
-		http.DefaultClient,
+		client,
 		azcli.NewAzCliArgs{})
 
 	// Verify that resource groups are created with tag

@@ -137,7 +137,7 @@ type connectHandler struct {
 }
 
 func (p *connectHandler) ServeHTTP(w http.ResponseWriter, req *http.Request) {
-	p.Log.Debug("connectHandler:", "method", req.Method, "url", req.URL.String())
+	p.Log.Debug("connectHandler: incoming", "method", req.Method, "url", req.URL.String())
 
 	conn, err := p.hijack(w)
 	if err != nil {
@@ -197,6 +197,9 @@ func (p *connectHandler) connectThenServe(clientConn net.Conn, connectReq *http.
 
 		changeRequestToTarget(req, connectReq.Host)
 		p.HttpHandler.ServeConn(tlsConn, req)
+
+		// Always close the request body
+		_ = req.Body.Close()
 	}
 }
 

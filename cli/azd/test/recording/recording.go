@@ -14,6 +14,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"golang.org/x/exp/slog"
 	"gopkg.in/dnaeon/go-vcr.v3/cassette"
@@ -138,7 +139,7 @@ func Start(t *testing.T, opts ...Options) *Session {
 	if err != nil {
 		t.Fatalf("failed to load recordings: %v", err)
 	}
-	err = loadVariables(name+".yaml", &session.Variables)
+	err = initVariables(name+".yaml", &session.Variables)
 	if err != nil {
 		t.Fatalf("failed to load variables: %v", err)
 	}
@@ -235,11 +236,14 @@ func displayMode(vcr *recorder.Recorder) string {
 	return modeStrMap[mode]
 }
 
-// Loads variables from disk. The variables are expected to be the second document in the provided yaml file.
-// If the file doesn't exist, returns nil.
-func loadVariables(name string, variables *map[string]string) error {
+// Loads variables from disk, or by initializing default variables if not available.
+// When loading from disk, the variables are expected to be the second document in the provided yaml file.
+func initVariables(name string, variables *map[string]string) error {
 	f, err := os.Open(name)
 	if errors.Is(err, os.ErrNotExist) {
+		initVars := map[string]string{}
+		initVars[TimeKey] = fmt.Sprintf("%d", time.Now().Unix())
+		variables = &initVars
 		return nil
 	}
 

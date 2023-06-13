@@ -3,22 +3,10 @@ items:
   - apiVersion: networking.k8s.io/v1
     kind: Ingress
     metadata:
-      annotations:
-        acme.cert-manager.io/http01-edit-in-place: "true"
-        appgw.ingress.kubernetes.io/ssl-redirect: "true"
-        cert-manager.io/acme-challenge-type: http01
-        cert-manager.io/issuer: letsencrypt-staging
-        kubectl.kubernetes.io/last-applied-configuration:
-          '{"apiVersion":"networking.k8s.io/v1","kind":"Ingress","metadata":{"annotations":{"acme.cert-manager.io/http01-edit-in-place":"true","appgw.ingress.kubernetes.io/ssl-redirect":"true","cert-manager.io/acme-challenge-type":"http01","cert-manager.io/issuer":"letsencrypt-staging","kubernetes.io/ingress.class":"azure/application-gateway"},"name":"ratings-web-https","namespace":"ratingsapp"},"spec":{"rules":[{"host":"cqtst15.centralus.cloudapp.azure.com","http":{"paths":[{"backend":{"service":{"name":"ratings-web","port":{"number":80}}},"path":"/","pathType":"Prefix"}]}}],"tls":[{"hosts":["cqtst15.centralus.cloudapp.azure.com"],"secretName":"aks-tls-akv"}]}}
-
-          '
-        kubernetes.io/ingress.class: azure/application-gateway
       creationTimestamp: "2023-06-10T12:33:44Z"
       generation: 1
       name: ratings-web-https
       namespace: ratingsapp
-      resourceVersion: "344181"
-      uid: 3dc21e51-f556-46f9-bd2f-81bcd912a838
     spec:
       rules:
         - host: myapp.centralus.cloudapp.azure.com

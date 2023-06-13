@@ -147,7 +147,7 @@ func (pa *packageAction) Run(ctx context.Context) (*actions.ActionResult, error)
 		packageTask := pa.serviceManager.Package(ctx, svc, nil)
 		go func() {
 			for packageProgress := range packageTask.Progress() {
-				progressMessage := fmt.Sprintf("  Packaging service %s (%s)", svc.Name, packageProgress.Message)
+				progressMessage := fmt.Sprintf("Packaging service %s (%s)", svc.Name, packageProgress.Message)
 				pa.console.ShowSpinner(ctx, progressMessage, input.Step)
 			}
 		}()
@@ -163,6 +163,7 @@ func (pa *packageAction) Run(ctx context.Context) (*actions.ActionResult, error)
 
 		// report package output
 		pa.console.MessageUxItem(ctx, packageResult)
+		pa.console.Message(ctx, "")
 	}
 
 	if pa.formatter.Kind() == output.JsonFormat {

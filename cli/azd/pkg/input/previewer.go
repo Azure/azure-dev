@@ -5,6 +5,7 @@ package input
 
 import (
 	"strings"
+	"sync"
 
 	tm "github.com/buger/goterm"
 )
@@ -13,16 +14,19 @@ type previewer struct {
 	title        string
 	displayTitle string
 	footerLine   string
+	header       string
 	lines        int
 	prefix       string
 	output       []string
+	outputMutex  sync.Mutex
 }
 
-func NewPreviewer(lines int, prefix, title string) *previewer {
+func NewPreviewer(lines int, prefix, title, header string) *previewer {
 	return &previewer{
 		lines:  lines,
 		prefix: prefix,
 		title:  title,
+		header: header,
 	}
 }
 
@@ -32,48 +36,41 @@ func (p *previewer) Start() {
 	// if terminal is resized between stop and start, the previewer will
 	// react to it and update the size.
 	p.buildTitleMargins()
+
+	// header
+	if p.header != "" {
+		tm.ResetLine("")
+		tm.Println(p.header)
+		// margin after title
+		tm.Println("")
+	}
+
+	// title
+	tm.ResetLine("")
+	tm.Println(p.displayTitle)
+	tm.Println("")
+
 	p.printOutput()
 }
 
-func clearLine(text string) {
-	sizeLog := len(text)
-	if sizeLog == 0 {
-		return
-	}
-	maxWidth := tm.Width()
-	if sizeLog > maxWidth {
-		sizeLog = maxWidth
-	}
-	eraseWith := strings.Repeat(" ", sizeLog)
-	tm.Printf(eraseWith)
-	tm.MoveCursorBackward(sizeLog)
-}
-
 func (p *previewer) Stop() {
+	p.outputMutex.Lock()
+	defer p.outputMutex.Unlock()
+
 	p.clear()
-	p.output = nil
-}
 
-func (p *previewer) clear() {
-	if p.output == nil {
-		return
-	}
-
-	tm.MoveCursorBackward(len(p.footerLine))
-	clearLine(p.footerLine)
-	// skip empty line between footer and log
-	tm.MoveCursorUp(1)
-	size := len(p.output) - 1
-	for index := range p.output {
-		tm.MoveCursorUp(1)
-		clearLine(p.output[size-index])
-	}
-	// moving up two times, one is the empty line between title and logs
-	tm.MoveCursorUp(1)
-	tm.MoveCursorUp(1)
+	// title
+	tm.MoveCursorUp(2)
 	clearLine(p.displayTitle)
 
+	// header
+	if p.header != "" {
+		tm.MoveCursorUp(2)
+		clearLine(p.header)
+	}
+
 	tm.Flush()
+	p.output = nil
 }
 
 func (p *previewer) Write(logBytes []byte) (int, error) {
@@ -83,6 +80,9 @@ func (p *previewer) Write(logBytes []byte) (int, error) {
 		// tm.Width <= 0 means a CI terminal, where logs can be just written
 		return tm.Println(fullText)
 	}
+
+	p.outputMutex.Lock()
+	defer p.outputMutex.Unlock()
 
 	for _, log := range fullText {
 		if log == "" {
@@ -100,6 +100,68 @@ func (p *previewer) Write(logBytes []byte) (int, error) {
 	return len(logBytes), nil
 }
 
+// Header updates the previewer's top header
+func (p *previewer) Header(header string) {
+	p.outputMutex.Lock()
+	defer p.outputMutex.Unlock()
+	p.header = header
+
+	p.clear()
+	tm.MoveCursorUp(2)
+	clearLine(p.displayTitle)
+	if p.header != "" {
+		tm.MoveCursorUp(2)
+		clearLine(p.header)
+	}
+
+	if p.header != "" {
+		tm.ResetLine("")
+		tm.Println(p.header)
+		// margin after title
+		tm.Println("")
+	}
+	// title
+	tm.ResetLine("")
+	tm.Println(p.displayTitle)
+	tm.Println("")
+
+	p.printOutput()
+}
+
+func clearLine(text string) {
+	sizeLog := len(text)
+	if sizeLog == 0 {
+		return
+	}
+	maxWidth := tm.Width()
+	if sizeLog > maxWidth {
+		sizeLog = maxWidth
+	}
+	eraseWith := strings.Repeat(" ", sizeLog)
+	tm.Printf(eraseWith)
+	tm.MoveCursorBackward(sizeLog)
+}
+
+func (p *previewer) clear() {
+	if p.output == nil {
+		return
+	}
+
+	// footer
+	tm.MoveCursorBackward(len(p.footerLine))
+	clearLine(p.footerLine)
+	tm.MoveCursorUp(1)
+
+	// output
+	size := len(p.output) - 1
+	for index := range p.output {
+		tm.MoveCursorUp(1)
+		clearLine(p.output[size-index])
+	}
+
+	tm.Flush()
+}
+
 func pushRemove(original []string, value string) []string {
 	copy := original[1:] // remove first
 	return append(copy, value)
@@ -108,11 +170,6 @@ func pushRemove(original []string, value string) []string {
 func (p *previewer) printOutput() {
 	size := len(p.output)
 	count := 0
-
-	tm.ResetLine("")
-	tm.Println(p.displayTitle)
-	// margin after title
-	tm.Println("")
 
 	for count < size {
 		tm.ResetLine("")
@@ -174,7 +231,7 @@ func (p *previewer) buildTitleMargins() {
 	remainingSpace -= 2
 
 	// the line from the left will be 1/6 from what's available
-	left := remainingSpace / 6
+	left := remainingSpace / 10
 	right := remainingSpace - left
 
 	p.displayTitle = p.prefix + strings.Repeat("─", left) + " " + p.title + " " + strings.Repeat("─", right)

@@ -122,10 +122,11 @@ type AskerConsole struct {
 	spinnerTerminalMode     yacspin.TerminalMode
 	spinnerTerminalModeOnce sync.Once
 
-	currentIndent string
-	consoleWidth  int
-	previewer     *previewer
-	initialWriter io.Writer
+	currentIndent         string
+	consoleWidth          int
+	previewer             *previewer
+	initialWriter         io.Writer
+	currentSpinnerMessage string
 }
 
 type ConsoleOptions struct {
@@ -225,18 +226,15 @@ func defaultShowPreviewerOptions() *ShowPreviewerOptions {
 }
 
 func (c *AskerConsole) ShowPreviewer(ctx context.Context, options *ShowPreviewerOptions) *ConsolePreviewer {
-	if c.formatter != nil && c.formatter.Kind() == output.JsonFormat {
-		return nil
-	}
+	// auto-stop any spinner
+	currentMsg := c.currentSpinnerMessage
+	c.StopSpinner(ctx, "", Step)
 
 	if options == nil {
 		options = defaultShowPreviewerOptions()
 	}
 
-	// auto-stop any spinner
-	c.StopSpinner(ctx, "", StepSkipped)
-
-	c.previewer = NewPreviewer(options.MaxLineCount, options.Prefix, options.Title)
+	c.previewer = NewPreviewer(options.MaxLineCount, options.Prefix, options.Title, c.currentIndent+currentMsg)
 	c.previewer.Start()
 	c.writer = c.previewer
 	return &ConsolePreviewer{
@@ -277,6 +275,7 @@ func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format Spi
 
 	if c.previewer != nil {
 		// spinner is not compatible with previewer.
+		c.previewer.Header(c.currentIndent + title)
 		return
 	}
 
@@ -287,6 +286,7 @@ func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format Spi
 	}
 
 	charSet := c.getCharset(format)
+	c.currentSpinnerMessage = title
 
 	// determine the terminal mode once
 	c.spinnerTerminalModeOnce.Do(func() {
@@ -381,6 +381,7 @@ func (c *AskerConsole) getIndent(format SpinnerUxType) string {
 }
 
 func (c *AskerConsole) StopSpinner(ctx context.Context, lastMessage string, format SpinnerUxType) {
+	c.currentSpinnerMessage = ""
 	if c.formatter != nil && c.formatter.Kind() == output.JsonFormat {
 		// Spinner is disabled when using json format.
 		return
@@ -402,6 +403,7 @@ func (c *AskerConsole) StopSpinner(ctx context.Context, lastMessage string, form
 		c.spinner.StopCharacter(c.getStopChar(format))
 	}
 
+	_ = c.spinner.Pause()
 	c.spinner.StopMessage(lastMessage)
 	_ = c.spinner.Stop()
 }

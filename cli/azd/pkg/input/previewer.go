@@ -77,8 +77,9 @@ func (p *previewer) Write(logBytes []byte) (int, error) {
 	fullText := strings.Split(string(logBytes), "\n")
 	maxWidth := tm.Width()
 	if maxWidth <= 0 {
-		// tm.Width <= 0 means a CI terminal, where logs can be just written
-		return tm.Println(fullText)
+		// tm.Width <= 0 means there's no terminal to write and the stdout pipe is mostly connected to a file or a buffer
+		// while azd is been called by another process, like go-test in CI
+		return len(logBytes), nil
 	}
 
 	p.outputMutex.Lock()
@@ -137,7 +138,10 @@ func clearLine(text string) {
 	if sizeLog > maxWidth {
 		sizeLog = maxWidth
 	}
-	eraseWith := strings.Repeat(" ", sizeLog)
+	eraseWith := ""
+	if sizeLog > 0 {
+		eraseWith = strings.Repeat(" ", sizeLog)
+	}
 	tm.Printf(eraseWith)
 	tm.MoveCursorBackward(sizeLog)
 }

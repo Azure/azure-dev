@@ -13,6 +13,10 @@ import (
 // httpPollDiscarder discards awaiting-done polling interactions from the cassette.
 // As a result of this, the cassette will only contain the final result of the polling operation,
 // thus fast-forwarding the cassette in playback mode.
+//
+// The type of polling protocols httpPollDiscarder detects includes:
+// - Azure specific async polling protocols (implementation loosely matches ones supported by azure-sdk-for-go)
+// - Idiomatic HTTP async polling protocols (Location header, 202/202 status codes)
 type httpPollDiscarder struct {
 	pollInProgress poller
 }

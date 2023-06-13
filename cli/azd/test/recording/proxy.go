@@ -192,7 +192,7 @@ func (p *connectHandler) connectThenServe(clientConn net.Conn, connectReq *http.
 		if err == io.EOF {
 			break
 		} else if err != nil {
-			panic(err)
+			panic("connectHandler:" + err.Error())
 		}
 
 		changeRequestToTarget(req, connectReq.Host)

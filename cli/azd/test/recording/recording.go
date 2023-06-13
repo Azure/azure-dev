@@ -60,15 +60,6 @@ type Session struct {
 	Variables map[string]string
 }
 
-func (s *Session) Environ() []string {
-	var env []string
-	for k, v := range s.Variables {
-		env = append(env, fmt.Sprintf("%s=%s", k, v))
-	}
-
-	return env
-}
-
 func (s *Session) ProxyClient() *http.Client {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.Proxy = func(req *http.Request) (*url.URL, error) {
@@ -124,14 +115,12 @@ func Start(t *testing.T, opts ...Options) *Session {
 		Level: level,
 	}))
 
-	session := &Session{
-		Variables: map[string]string{},
-	}
+	session := &Session{}
 
 	recorderOptions := &recorder.Options{
 		CassetteName:       name,
 		Mode:               opt.mode,
-		SkipRequestLatency: false,
+		SkipRequestLatency: true,
 	}
 
 	// This also automatically loads the recording.
@@ -183,7 +172,7 @@ func Start(t *testing.T, opts ...Options) *Session {
 		HttpHandler: &recorderProxy{
 			Log: log,
 			Panic: func(msg string) {
-				t.Fatal(msg)
+				t.Fatal("recorderProxy: " + msg)
 			},
 			Recorder: vcr,
 		},
@@ -243,7 +232,7 @@ func initVariables(name string, variables *map[string]string) error {
 	if errors.Is(err, os.ErrNotExist) {
 		initVars := map[string]string{}
 		initVars[TimeKey] = fmt.Sprintf("%d", time.Now().Unix())
-		variables = &initVars
+		*variables = initVars
 		return nil
 	}
 

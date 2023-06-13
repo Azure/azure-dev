@@ -7,6 +7,7 @@ import (
 	"testing"
 
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 )
 
 func Test_Port_TargetPort_Unmarshalling(t *testing.T) {
@@ -47,13 +48,27 @@ func Test_Port_TargetPort_Unmarshalling(t *testing.T) {
 }
 
 func Test_Ingress_UnMarshalling(t *testing.T) {
-	var ingress Ingress
-	ingressBytes, err := os.ReadFile("../../../test/testdata/k8s/ingress.json")
-	require.NoError(t, err)
+	t.Run("json", func(t *testing.T) {
+		var ingressResources List[Ingress]
+		ingressBytes, err := os.ReadFile("../../../test/testdata/k8s/ingress.json")
+		require.NoError(t, err)
 
-	err = json.Unmarshal(ingressBytes, &ingress)
-	require.NoError(t, err)
+		err = json.Unmarshal(ingressBytes, &ingressResources)
+		require.NoError(t, err)
 
-	require.Equal(t, "myapp.centralus.cloudapp.azure.com", ingress.Spec.Rules[0].Host)
-	require.Equal(t, "myapp.centralus.cloudapp.azure.com", ingress.Spec.Tls[0].Hosts[0])
+		require.Equal(t, "myapp.centralus.cloudapp.azure.com", *ingressResources.Items[0].Spec.Rules[0].Host)
+		require.Equal(t, "myapp.centralus.cloudapp.azure.com", ingressResources.Items[0].Spec.Tls[0].Hosts[0])
+	})
+
+	t.Run("yaml", func(t *testing.T) {
+		var ingressResources List[Ingress]
+		ingressBytes, err := os.ReadFile("../../../test/testdata/k8s/ingress.yaml")
+		require.NoError(t, err)
+
+		err = yaml.Unmarshal(ingressBytes, &ingressResources)
+		require.NoError(t, err)
+
+		require.Equal(t, "myapp.centralus.cloudapp.azure.com", *ingressResources.Items[0].Spec.Rules[0].Host)
+		require.Equal(t, "myapp.centralus.cloudapp.azure.com", ingressResources.Items[0].Spec.Tls[0].Hosts[0])
+	})
 }

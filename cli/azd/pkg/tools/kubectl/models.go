@@ -14,78 +14,78 @@ const (
 )
 
 type Resource struct {
-	ApiVersion string           `json:"apiVersion"`
-	Kind       string           `json:"kind"`
-	Metadata   ResourceMetadata `json:"metadata"`
+	ApiVersion string           `json:"apiVersion" yaml:"apiVersion"`
+	Kind       string           `json:"kind"       yaml:"kind"`
+	Metadata   ResourceMetadata `json:"metadata"   yaml:"metadata"`
 }
 
 type List[T any] struct {
 	Resource
-	Items []T `json:"items"`
+	Items []T `json:"items" yaml:"items"`
 }
 
 type ResourceWithSpec[T any, S any] struct {
 	Resource
-	Spec   T `json:"spec"`
-	Status S `json:"status"`
+	Spec   T `json:"spec"   yaml:"spec"`
+	Status S `json:"status" yaml:"status"`
 }
 
 type ResourceMetadata struct {
-	Name        string `json:"name"`
-	Namespace   string `json:"namespace"`
+	Name        string `json:"name"      yaml:"name"`
+	Namespace   string `json:"namespace" yaml:"namespace"`
 	Annotations map[string]any
 }
 
 type Deployment ResourceWithSpec[DeploymentSpec, DeploymentStatus]
 
 type DeploymentSpec struct {
-	Replicas int `yaml:"replicas"`
+	Replicas int `json:"replicas" yaml:"replicas"`
 }
 
 type DeploymentStatus struct {
-	AvailableReplicas int `yaml:"availableReplicas"`
-	ReadyReplicas     int `yaml:"readyReplicas"`
-	Replicas          int `yaml:"replicas"`
-	UpdatedReplicas   int `yaml:"updatedReplicas"`
+	AvailableReplicas int `json:"availableReplicas" yaml:"availableReplicas"`
+	ReadyReplicas     int `json:"readyReplicas"     yaml:"readyReplicas"`
+	Replicas          int `json:"replicas"          yaml:"replicas"`
+	UpdatedReplicas   int `json:"updatedReplicas"   yaml:"updatedReplicas"`
 }
 
 type Ingress ResourceWithSpec[IngressSpec, IngressStatus]
 
 type IngressSpec struct {
-	IngressClassName string `json:"ingressClassName"`
-	Tls              []IngressTls
-	Rules            []IngressRule
+	IngressClassName string        `json:"ingressClassName" yaml:"ingressClassName"`
+	Tls              []IngressTls  `json:"tls"              yaml:"tls"`
+	Rules            []IngressRule `json:"rules"            yaml:"rules"`
 }
 
 type IngressTls struct {
-	Hosts      []string `yaml:"hosts"`
-	SecretName string   `yaml:"secretName"`
+	Hosts      []string `json:"hosts"      yaml:"hosts"`
+	SecretName string   `json:"secretName" yaml:"secretName"`
 }
 
 type IngressRule struct {
-	Host *string         `yaml:"host"`
-	Http IngressRuleHttp `yaml:"http"`
+	Host *string         `json:"host" yaml:"host"`
+	Http IngressRuleHttp `json:"http" yaml:"http"`
 }
 
 type IngressRuleHttp struct {
-	Paths []IngressPath `yaml:"paths"`
+	Paths []IngressPath `json:"paths" yaml:"paths"`
 }
 
 type IngressPath struct {
-	Path     string `yaml:"path"`
-	PathType string `yaml:"pathType"`
+	Path     string `json:"path"     yaml:"path"`
+	PathType string `json:"pathType" yaml:"pathType"`
 }
 
 type IngressStatus struct {
-	LoadBalancer LoadBalancer `json:"loadBalancer"`
+	LoadBalancer LoadBalancer `json:"loadBalancer" yaml:"loadBalancer"`
 }
 
 type LoadBalancer struct {
-	Ingress []LoadBalancerIngress `json:"ingress"`
+	Ingress []LoadBalancerIngress `json:"ingress" yaml:"ingress"`
 }
 
 type LoadBalancerIngress struct {
-	Ip string `json:"ip"`
+	Ip string `json:"ip" yaml:"ip"`
 }
 
 type Service ResourceWithSpec[ServiceSpec, ServiceStatus]
@@ -100,28 +100,28 @@ const (
 )
 
 type ServiceSpec struct {
-	Type       ServiceType `json:"type"`
-	ClusterIp  string      `json:"clusterIP"`
-	ClusterIps []string    `json:"clusterIPs"`
-	Ports      []Port      `json:"ports"`
+	Type       ServiceType `json:"type"       yaml:"type"`
+	ClusterIp  string      `json:"clusterIP"  yaml:"clusterIP"`
+	ClusterIps []string    `json:"clusterIPs" yaml:"clusterIPs"`
+	Ports      []Port      `json:"ports"      yaml:"ports"`
 }
 
 type ServiceStatus struct {
-	LoadBalancer LoadBalancer `json:"loadBalancer"`
+	LoadBalancer LoadBalancer `json:"loadBalancer" yaml:"loadBalancer"`
 }
 
 type Port struct {
 	Port int `json:"port"`
 	// The target port can be a valid port number or well known service name like 'redis'
-	TargetPort any    `json:"targetPort"`
-	Protocol   string `json:"protocol"`
+	TargetPort any    `json:"targetPort" yaml:"targetPort"`
+	Protocol   string `json:"protocol"   yaml:"protocol"`
 }
 
 func (p *Port) UnmarshalJSON(data []byte) error {
 	var aux struct {
-		Port       int    `json:"port"`
-		TargetPort any    `json:"targetPort"`
-		Protocol   string `json:"protocol"`
+		Port       int    `json:"port" yaml:"port"`
+		TargetPort any    `json:"targetPort" yaml:"targetPort"`
+		Protocol   string `json:"protocol" yaml:"protocol"`
 	}
 
 	if err := json.Unmarshal(data, &aux); err != nil {

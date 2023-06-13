@@ -445,8 +445,9 @@ func (m *Manager) LoginWithDeviceCode(
 	if ShouldUseCloudShellAuth() {
 		m.console.MessageUxItem(ctx, &ux.MultilineMessage{
 			Lines: []string{
-				"Cloud Shell is automatically authenticated under the initial account used to sign in. Run 'azd login' only if you need to use a different account.",
-				"To continue using Cloud Shell automatic authentication, press Ctrl+C",
+				// nolint:lll
+				"Cloud Shell is automatically authenticated under the initial account used to sign in. Run 'azd auth login' only if you need to use a different account.",
+				// nolint:lll
 				fmt.Sprintf("To sign in, use a web browser to open the page %s and enter the code %s to authenticate.", output.WithUnderline(url), output.WithBold(code.UserCode())),
 			},
 		})

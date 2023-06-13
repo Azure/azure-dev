@@ -3,6 +3,7 @@ package kubectl
 import (
 	"encoding/json"
 	"fmt"
+	"os"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -43,4 +44,16 @@ func Test_Port_TargetPort_Unmarshalling(t *testing.T) {
 			require.Equal(t, "http", port.Protocol)
 		})
 	}
+}
+
+func Test_Ingress_UnMarshalling(t *testing.T) {
+	var ingress Ingress
+	ingressBytes, err := os.ReadFile("../../../test/testdata/k8s/ingress.json")
+	require.NoError(t, err)
+
+	err = json.Unmarshal(ingressBytes, &ingress)
+	require.NoError(t, err)
+
+	require.Equal(t, "myapp.centralus.cloudapp.azure.com", ingress.Spec.Rules[0].Host)
+	require.Equal(t, "myapp.centralus.cloudapp.azure.com", ingress.Spec.Tls[0].Hosts[0])
 }

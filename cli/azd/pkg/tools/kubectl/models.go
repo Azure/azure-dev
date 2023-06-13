@@ -53,7 +53,7 @@ type Ingress ResourceWithSpec[IngressSpec, IngressStatus]
 
 type IngressSpec struct {
 	IngressClassName string `json:"ingressClassName"`
-	Tls              *IngressTls
+	Tls              []IngressTls
 	Rules            []IngressRule
 }
 

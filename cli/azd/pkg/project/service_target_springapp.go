@@ -199,10 +199,7 @@ func (st *springAppTarget) Endpoints(
 		return nil, fmt.Errorf("fetching service properties: %w", err)
 	}
 
-	endpoints := make([]string, len(springAppProperties.Url))
-	copy(endpoints, springAppProperties.Url)
-
-	return endpoints, nil
+	return springAppProperties.Url, nil
 }
 
 func (st *springAppTarget) validateTargetResource(

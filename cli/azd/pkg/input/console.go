@@ -208,6 +208,10 @@ func (c *AskerConsole) spinnerText(title, charset string) string {
 }
 
 func (c *AskerConsole) Progress(ctx context.Context, progress string) {
+	if c.spinner == nil {
+		return
+	}
+
 	_ = c.spinner.Pause()
 	c.spinner.Message(fmt.Sprintf("%s (%s)", c.currentSpinnerMessage, progress))
 	_ = c.spinner.Unpause()

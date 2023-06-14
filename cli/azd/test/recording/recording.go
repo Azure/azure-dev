@@ -244,6 +244,7 @@ func proxyClient(proxyUrl string) (*http.Client, error) {
 	transport.Proxy = func(req *http.Request) (*url.URL, error) {
 		return proxyAddr, nil
 	}
+	//nolint:gosec
 	transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
 	client := &http.Client{Transport: transport}
 	return client, nil
@@ -343,12 +344,12 @@ func saveVariables(name string, variables map[string]string) error {
 
 	_, err = f.Write(bytes)
 	if err != nil {
-		return fmt.Errorf("failed to write variables: %v", err)
+		return fmt.Errorf("failed to write variables: %w", err)
 	}
 
 	err = f.Close()
 	if err != nil {
-		return fmt.Errorf("failed to close file: %v", err)
+		return fmt.Errorf("failed to close file: %w", err)
 	}
 
 	return nil

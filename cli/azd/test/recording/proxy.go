@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"compress/gzip"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"io"
 	"io/fs"
@@ -189,7 +190,7 @@ func (p *connectHandler) connectThenServe(clientConn net.Conn, connectReq *http.
 		// Read an HTTP request from the client; the request is sent over TLS that
 		// connReader is configured to serve.
 		req, err := http.ReadRequest(connReader)
-		if err == io.EOF {
+		if errors.Is(err, io.EOF) {
 			break
 		} else if err != nil {
 			panic("connectHandler:" + err.Error())

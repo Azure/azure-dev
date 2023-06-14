@@ -51,6 +51,7 @@ csharpapptest
 cupaloy
 deletedservices
 devel
+discarder
 docf
 dockerproject
 dskip
@@ -77,6 +78,7 @@ keychain
 LASTEXITCODE
 ldflags
 lechnerc77
+microsoftonline
 mgmt
 mgutz
 mockarmresources
@@ -99,6 +101,7 @@ otlptrace
 otlptracehttp
 pflag
 preinit
+proxying
 pulumi
 pyapp
 pyvenv
@@ -139,3 +142,4 @@ utsname
 westus2
 wireinject
 yacspin
+zerr

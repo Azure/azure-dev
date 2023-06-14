@@ -461,9 +461,7 @@ func (la *loginAction) login(ctx context.Context) error {
 		return err
 	}
 
-	// Following behavior seen in the az CLI, offer the option of authenticating
-	// with a device code.
-	if useDevCode || auth.ShouldUseCloudShellAuth() {
+	if useDevCode {
 		_, err := la.authManager.LoginWithDeviceCode(ctx, la.flags.tenantID, la.flags.scopes)
 		if err != nil {
 			return fmt.Errorf("logging in: %w", err)
@@ -500,6 +498,13 @@ func parseUseDeviceCode(ctx context.Context, flag boolPtr, commandRunner exec.Co
 		// (since azd launches a localhost server running remotely and the login response is accepted locally).
 		// Hence, we override login to device-code. See https://github.com/Azure/azure-dev/issues/1006
 		useDevCode = runningOnCodespacesBrowser(ctx, commandRunner)
+	}
+
+	if auth.ShouldUseCloudShellAuth() {
+		// Following az CLI's behavior in Cloud Shell, use device code authentication when the user is trying to
+		// authenticate. The normal interactive authentication flow will not work in Cloud Shell because the browser
+		// cannot be opened or (if it could) cannot be redirected back to a port on the Cloud Shell instance.
+		return true, nil
 	}
 
 	return useDevCode, nil

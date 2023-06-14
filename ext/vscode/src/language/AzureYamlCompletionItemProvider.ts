@@ -13,7 +13,7 @@ export class AzureYamlCompletionItemProvider implements vscode.CompletionItemPro
         // }
 
         const pathPrefix = this.getPathPrefix(document, position);
-        const matchingPaths = await this.getMatchingPaths(document, pathPrefix, token);
+        const matchingPaths = await this.getMatchingWorkspacePaths(document, pathPrefix, token);
     
         return matchingPaths.map((path) => {
             const completionItem = new vscode.CompletionItem(path);
@@ -31,7 +31,7 @@ export class AzureYamlCompletionItemProvider implements vscode.CompletionItemPro
         return match?.groups?.['project'];
     }
 
-    private async getMatchingPaths(document: vscode.TextDocument, pathPrefix: string | undefined, token: vscode.CancellationToken): Promise<string[]> {
+    private async getMatchingWorkspacePaths(document: vscode.TextDocument, pathPrefix: string | undefined, token: vscode.CancellationToken): Promise<string[]> {
         if (!pathPrefix || pathPrefix[0] !== '.') {
             return [];
         }

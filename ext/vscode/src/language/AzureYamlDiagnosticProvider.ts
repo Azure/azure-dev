@@ -44,11 +44,10 @@ export class AzureYamlDiagnosticProvider extends vscode.Disposable {
                     continue;
                 }
 
-                const diagnostic = new AzureYamlProjectPathDiagnostic(
+                const diagnostic = new vscode.Diagnostic(
                     project.projectValueNodeRange,
                     vscode.l10n.t('The project path must be an existing folder path relative to the azure.yaml file.'),
-                    vscode.DiagnosticSeverity.Error,
-                    project.projectValue,
+                    vscode.DiagnosticSeverity.Error
                 );
 
                 results.push(diagnostic);
@@ -84,21 +83,4 @@ export class AzureYamlDiagnosticProvider extends vscode.Disposable {
             await this.updateDiagnosticsFor(editor.document, false);
         }));
     }
-}
-
-export class AzureYamlProjectPathDiagnostic extends vscode.Diagnostic {
-    public readonly isAzureYamlProjectPathDiagnostic: boolean = true;
-
-    public constructor(
-        range: vscode.Range,
-        message: string,
-        severity: vscode.DiagnosticSeverity,
-        public readonly projectValue: string
-    ) {
-        super(range, message, severity);
-    }
-}
-
-export function isAzureYamlProjectPathDiagnostic(diagnostic: vscode.Diagnostic): diagnostic is AzureYamlProjectPathDiagnostic {
-    return (diagnostic as AzureYamlProjectPathDiagnostic).isAzureYamlProjectPathDiagnostic;
 }

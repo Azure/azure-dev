@@ -31,7 +31,7 @@ export class AzureYamlProjectRenameProvider extends vscode.Disposable {
 
         const projectToUpdate = projectInformation.find(pi => pi.projectUri.toString() === oldUri.toString());
         if (!projectToUpdate) {
-            return new vscode.WorkspaceEdit();
+            return undefined;
         }
 
         const newRelativePath = getProjectRelativePath(azureYamlUri, newUri);

@@ -2,9 +2,8 @@
 // Licensed under the MIT License.
 
 import { AzExtFsExtra } from '@microsoft/vscode-azext-utils';
-import * as path from 'path';
 import * as vscode from 'vscode';
-import { getAzureYamlProjectInformation } from './getAzureYamlProjectInformation';
+import { getAzureYamlProjectInformation, getProjectRelativePath } from './azureYamlUtils';
 
 export class AzureYamlProjectRenameProvider extends vscode.Disposable {
     public constructor() {
@@ -35,7 +34,7 @@ export class AzureYamlProjectRenameProvider extends vscode.Disposable {
             return new vscode.WorkspaceEdit();
         }
 
-        const newRelativePath = path.posix.normalize(path.relative(path.dirname(azureYamlUri.fsPath), newUri.fsPath)).replace(/\\/g, '/').replace(/^\.?\/?/, './');
+        const newRelativePath = getProjectRelativePath(azureYamlUri, newUri);
         const projectUriEdit = new vscode.WorkspaceEdit();
         projectUriEdit.replace(azureYamlUri, projectToUpdate.projectValueNodeRange, newRelativePath);
         return projectUriEdit;

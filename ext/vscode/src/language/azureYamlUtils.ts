@@ -1,10 +1,10 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
+import * as path from 'path';
 import * as vscode from 'vscode';
 import * as yaml from 'yaml';
 import { AzureYamlSelector } from './languageFeatures';
-import { getContainingFolderUri } from './getContainingFolderUri';
 
 interface AzureYamlProjectInformation {
     azureYamlUri: vscode.Uri;
@@ -53,4 +53,17 @@ export async function getAzureYamlProjectInformation(document: vscode.TextDocume
     }
 
     return results;
+}
+
+export function getContainingFolderUri(targetUri: vscode.Uri): vscode.Uri {
+    return vscode.Uri.joinPath(targetUri, '..');
+}
+
+export function getProjectRelativePath(azureYamlUri: vscode.Uri, projectUri: vscode.Uri): string {
+    const relativePath = path.relative(path.dirname(azureYamlUri.fsPath), projectUri.fsPath);
+    const normalizedPosixRelativePath = path.posix.normalize(relativePath)
+        .replace(/\\/g, '/') // Replace backslashes with forward slashes
+        .replace(/^\.?\/?/, './'); // Make sure it starts with `./`
+    
+    return normalizedPosixRelativePath;
 }

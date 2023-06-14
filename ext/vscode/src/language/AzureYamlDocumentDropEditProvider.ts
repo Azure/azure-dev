@@ -4,16 +4,18 @@
 import { AzExtFsExtra } from '@microsoft/vscode-azext-utils';
 import * as path from 'path';
 import * as vscode from 'vscode';
+import { getProjectRelativePath } from './azureYamlUtils';
 
 export class AzureYamlDocumentDropEditProvider implements vscode.DocumentDropEditProvider {
     public async provideDocumentDropEdits(document: vscode.TextDocument, position: vscode.Position, dataTransfer: vscode.DataTransfer, token: vscode.CancellationToken): Promise<vscode.DocumentDropEdit | undefined> {
         const maybeFolder = dataTransfer.get('text/uri-list')?.value;
-        const folder = vscode.Uri.parse(maybeFolder);
+        const maybeFolderUri = vscode.Uri.parse(maybeFolder);
 
-        const basename = path.basename(folder.fsPath);
-        const newRelativePath = path.posix.normalize(path.relative(path.dirname(document.uri.fsPath), folder.fsPath)).replace(/\\/g, '/').replace(/^\.?\/?/, './');
 
-        if (await AzExtFsExtra.pathExists(folder) && await AzExtFsExtra.isDirectory(folder)) {
+        if (await AzExtFsExtra.pathExists(maybeFolderUri) && await AzExtFsExtra.isDirectory(maybeFolderUri)) {
+            const basename = path.basename(maybeFolderUri.fsPath);
+            const newRelativePath = getProjectRelativePath(document.uri, maybeFolderUri);
+
             const snippet = new vscode.SnippetString('\t')
                 .appendPlaceholder(basename).appendText(':\n')
                 .appendText(`\t\tproject: ${newRelativePath}\n`)

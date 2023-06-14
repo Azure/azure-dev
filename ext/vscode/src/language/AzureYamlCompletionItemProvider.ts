@@ -2,7 +2,7 @@
 // Licensed under the MIT License.
 
 import * as vscode from 'vscode';
-import { getContainingFolderUri } from './getContainingFolderUri';
+import { getContainingFolderUri } from './azureYamlUtils';
 
 export class AzureYamlCompletionItemProvider implements vscode.CompletionItemProvider {
     public async provideCompletionItems(document: vscode.TextDocument, position: vscode.Position, token: vscode.CancellationToken, context: vscode.CompletionContext): Promise<vscode.CompletionItem[]> {

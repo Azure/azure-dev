@@ -4,7 +4,7 @@
 import { AzExtFsExtra } from '@microsoft/vscode-azext-utils';
 import * as vscode from 'vscode';
 import { documentDebounce } from './documentDebounce';
-import { getAzureYamlProjectInformation } from './getAzureYamlProjectInformation';
+import { getAzureYamlProjectInformation } from './azureYamlUtils';
 
 // Time between when the user stops typing and when we send diagnostics
 const DiagnosticDelay = 1000;

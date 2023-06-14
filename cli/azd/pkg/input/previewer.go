@@ -4,6 +4,8 @@
 package input
 
 import (
+	"bufio"
+	"log"
 	"strings"
 	"sync"
 
@@ -83,7 +85,7 @@ func (p *progressLog) Start() {
 	// title is created on Start() because it depends on terminal width
 	// if terminal is resized between stop and start, the previewer will
 	// react to it and update the size.
-	p.buildTitleMargins()
+	p.buildTopBottom()
 
 	// header
 	if p.header != "" {
@@ -133,8 +135,7 @@ func (p *progressLog) Write(logBytes []byte) (int, error) {
 	if p.output == nil {
 		return len(logBytes), nil
 	}
-
-	fullText := strings.Split(string(logBytes), "\n")
+	logsScanner := bufio.NewScanner(strings.NewReader(string(logBytes)))
 	maxWidth := tm.Width()
 	if maxWidth <= 0 {
 		// tm.Width <= 0 means there's no terminal to write and the stdout pipe is mostly connected to a file or a buffer
@@ -145,19 +146,22 @@ func (p *progressLog) Write(logBytes []byte) (int, error) {
 	p.outputMutex.Lock()
 	defer p.outputMutex.Unlock()
 
-	for _, log := range fullText {
-		if log == "" {
-			continue
-		}
+	for logsScanner.Scan() {
+		log := logsScanner.Text()
 		fullLog := p.prefix + log
 		if len(fullLog) > maxWidth {
-			fullLog = fullLog[:maxWidth-4] + cPostfix
+			fullLog = fullLog[:maxWidth-(len(cPostfix)+1)] + cPostfix
 		}
 
 		p.clearContentAndFlush()
 		p.output = append(p.output[1:], fullLog)
 		p.printLogs()
 	}
+
+	if err := logsScanner.Err(); err != nil {
+		log.Printf("error while reading logs for previewer: %v", err)
+	}
+
 	return len(logBytes), nil
 }
 
@@ -225,13 +229,9 @@ func (p *progressLog) clearContentAndFlush() {
 
 // printLogs write the content from the buffer as logs.
 func (p *progressLog) printLogs() {
-	size := len(p.output)
-	count := 0
-
-	for count < size {
+	for index := range p.output {
 		tm.ResetLine("")
-		tm.Println(p.output[count])
-		count++
+		tm.Println(p.output[index])
 	}
 
 	// margin after output
@@ -241,8 +241,8 @@ func (p *progressLog) printLogs() {
 	tm.Flush()
 }
 
-// buildTitleMargins creates the display title and frames during initialization.
-func (p *progressLog) buildTitleMargins() {
+// buildTopBottom creates the display title and frames during initialization.
+func (p *progressLog) buildTopBottom() {
 	consoleLen := tm.Width()
 	withPrefixTitle := p.prefix + p.title
 	titleLen := len(withPrefixTitle)
@@ -266,7 +266,7 @@ func (p *progressLog) buildTitleMargins() {
 		return
 	}
 
-	// Note that titleLen is > than consoleLen at this point
+	// Guaranteed titleLen < consoleLen at this point
 	remainingSpace := consoleLen - titleLen
 
 	if p.title == "" {

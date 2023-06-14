@@ -16,6 +16,7 @@ import (
 	"time"
 
 	azd "github.com/azure/azure-dev/cli/azd/cmd"
+	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 )
 
@@ -44,6 +45,10 @@ This article explains the syntax and parameters for the various Azure Developer 
 const directoryMode fs.FileMode = 0755
 
 func main() {
+	// Disable color output for markdown generation otherwise help strings with
+	// color configurations will contain color escape sequences in the markdown
+	// text.
+	color.NoColor = true
 	fmt.Println("Generating documentation")
 
 	// staticHelp is true to inform commands to use generate help text instead

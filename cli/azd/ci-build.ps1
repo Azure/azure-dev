@@ -61,15 +61,15 @@ if ($CodeCoverageEnabled) {
     $buildFlags += "-cover"
 }
 
-if ($RecordEnabled) {
-    $buildFlags += "-record"
-}
-
 # Build constraint tags
 # cfi: Enable Control Flow Integrity (CFI),
 # cfg: Enable Control Flow Guard (CFG),
 # osusergo: Optimize for OS user accounts
 $tagsFlag = "-tags=cfi,cfg,osusergo"
+
+if ($RecordEnabled) {
+    $tagsFlag += ",record"
+}
 
 # ld linker flags
 # -s: Omit symbol table and debug information

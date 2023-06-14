@@ -501,7 +501,7 @@ func parseUseDeviceCode(ctx context.Context, flag boolPtr, commandRunner exec.Co
 	}
 
 	if auth.ShouldUseCloudShellAuth() {
-		// Following az CLI's behavior in Cloud Shell, use device code authentication when the user is trying to
+		// Following az CLI behavior in Cloud Shell, use device code authentication when the user is trying to
 		// authenticate. The normal interactive authentication flow will not work in Cloud Shell because the browser
 		// cannot be opened or (if it could) cannot be redirected back to a port on the Cloud Shell instance.
 		return true, nil

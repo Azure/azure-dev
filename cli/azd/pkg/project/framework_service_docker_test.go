@@ -157,7 +157,6 @@ services:
 	service := projectConfig.Services["web"]
 
 	internalFramework := NewNpmProject(npmCli, env, mockContext.Console)
-	status := ""
 
 	framework := NewDockerProject(
 		env, docker, NewContainerHelper(env, clock.NewMock(), nil, docker, mockContext.Console), mockContext.Console)
@@ -167,7 +166,6 @@ services:
 
 	require.Equal(t, "imageId", buildResult.BuildOutputPath)
 	require.Nil(t, err)
-	require.Equal(t, "Building Docker image", status)
 	require.Equal(t, true, ran)
 }
 

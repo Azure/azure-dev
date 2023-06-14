@@ -1,7 +1,8 @@
 param(
     [string] $Version = (Get-Content "$PSScriptRoot/../version.txt"),
     [string] $SourceVersion = (git rev-parse HEAD),
-    [switch] $CodeCoverageEnabled
+    [switch] $CodeCoverageEnabled,
+    [switch] $RecordEnabled
 )
 
 # Remove any previously built binaries
@@ -58,6 +59,10 @@ $buildFlags = @(
 
 if ($CodeCoverageEnabled) {
     $buildFlags += "-cover"
+}
+
+if ($RecordEnabled) {
+    $buildFlags += "-record"
 }
 
 # Build constraint tags

@@ -92,7 +92,7 @@ func (r *commandRunner) Run(ctx context.Context, args RunArgs) (RunResult, error
 	// use the shell on Windows since most commands are actually just batch files wrapping
 	// real commands. And even if they're not, this will work fine without having to do any
 	// probing or checking.
-	cmd, err := NewCmdTree(ctx, args.Cmd, args.Args, args.UseShell || runtime.GOOS == "windows", args.Interactive)
+	cmd, err := newCmdTree(ctx, args.Cmd, args.Args, args.UseShell || runtime.GOOS == "windows", args.Interactive)
 
 	if err != nil {
 		return RunResult{}, err
@@ -215,7 +215,7 @@ func (r *commandRunner) Run(ctx context.Context, args RunArgs) (RunResult, error
 }
 
 func (r *commandRunner) RunList(ctx context.Context, commands []string, args RunArgs) (RunResult, error) {
-	process, err := NewCmdTree(ctx, "", commands, true, false)
+	process, err := newCmdTree(ctx, "", commands, true, false)
 	if err != nil {
 		return NewRunResult(-1, "", ""), err
 	}
@@ -256,11 +256,11 @@ func appendEnv(env []string) []string {
 	return nil
 }
 
-// NewCmdTree creates a `CmdTree`, optionally using a shell appropriate for windows
+// newCmdTree creates a `CmdTree`, optionally using a shell appropriate for windows
 // or POSIX environments.
 // An empty cmd parameter indicates "command list mode", which means that args are combined into a single command list,
 // joined with && operator.
-func NewCmdTree(ctx context.Context, cmd string, args []string, useShell bool, interactive bool) (CmdTree, error) {
+func newCmdTree(ctx context.Context, cmd string, args []string, useShell bool, interactive bool) (CmdTree, error) {
 	options := CmdTreeOptions{Interactive: interactive}
 
 	if !useShell {

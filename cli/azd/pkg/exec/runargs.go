@@ -94,3 +94,9 @@ func (b RunArgs) WithStdIn(stdIn io.Reader) RunArgs {
 	b.StdIn = stdIn
 	return b
 }
+
+// Updates the stdout writer that will be used while invoking the command
+func (b RunArgs) WithStdOut(stdOut io.Writer) RunArgs {
+	b.StdOut = stdOut
+	return b
+}

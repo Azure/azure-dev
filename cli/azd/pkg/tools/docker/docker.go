@@ -94,14 +94,13 @@ func (d *docker) Build(
 	args = append(args, buildContext)
 
 	// Build and produce output
-	runArgs := exec.NewRunArgs("docker", args...).WithCwd(cwd)
 	previewer := d.console.ShowPreviewer(ctx,
 		&input.ShowPreviewerOptions{
 			Prefix:       "  ",
 			MaxLineCount: 8,
 			Title:        "Docker Output",
 		})
-	runArgs.StdOut = previewer
+	runArgs := exec.NewRunArgs("docker", args...).WithCwd(cwd).WithStdOut(previewer)
 
 	_, err := d.commandRunner.Run(ctx, runArgs)
 	previewer.Stop(ctx)

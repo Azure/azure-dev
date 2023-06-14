@@ -11,17 +11,20 @@ import (
 	"gopkg.in/dnaeon/go-vcr.v3/cassette"
 )
 
+// Matches a request with path ending in subscriptions/<guid>/providers/Microsoft.Resources/deployments,
+// with an optional trailing slash,
+// which indicates an operation on all deployments on a subscription
 var subscriptionDeploymentUrl = regexp.MustCompile(
-	`subscriptions\/[a-f0-9A-F-]+\/providers\/Microsoft\.Resources\/deployments\?`)
+	`subscriptions\/[a-f0-9A-F-]+\/providers\/Microsoft\.Resources\/deployments\/?$`)
 
 func TrimSubscriptionsDeployment(i *cassette.Interaction, variables map[string]string) error {
+	if i.Request.Method != http.MethodGet {
+		return nil
+	}
+
 	url, err := url.Parse(i.Request.URL)
 	if err != nil {
 		return err
-	}
-
-	if i.Request.Method != http.MethodGet {
-		return nil
 	}
 
 	if !subscriptionDeploymentUrl.Match([]byte(url.Path)) {

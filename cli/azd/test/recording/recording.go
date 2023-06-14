@@ -5,7 +5,7 @@ import (
 	"crypto/tls"
 	"errors"
 	"fmt"
-	"io/ioutil"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -51,7 +51,6 @@ type Session struct {
 	ProxyUrl string
 
 	// If true, playing back from recording.
-	// Otherwise, recording.
 	Playback bool
 
 	// Variables stored in the session.
@@ -116,7 +115,6 @@ func Start(t *testing.T, opts ...Options) *Session {
 	}))
 
 	session := &Session{}
-
 	recorderOptions := &recorder.Options{
 		CassetteName:       name,
 		Mode:               opt.mode,
@@ -133,18 +131,30 @@ func Start(t *testing.T, opts ...Options) *Session {
 		t.Fatalf("failed to load variables: %v", err)
 	}
 
+	if opt.mode == recorder.ModeReplayOnly {
+		session.Playback = true
+	} else if opt.mode == recorder.ModeRecordOnce && !vcr.IsNewCassette() {
+		session.Playback = true
+	}
+
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	vcr.SetRealTransport(&gzip2HttpRoundTripper{
 		transport: transport,
 	})
 
 	vcr.AddHook(func(i *cassette.Interaction) error {
-		i.Request.Headers.Del("Authorization")
+		i.Request.Headers.Set("Authorization", "SANITIZED")
 		return nil
 	}, recorder.BeforeSaveHook)
 
+	// Fast-forward polling operations
 	discarder := httpPollDiscarder{}
 	vcr.AddHook(discarder.BeforeSave, recorder.BeforeSaveHook)
+
+	// Trim GET subscriptions-level deployment responses
+	vcr.AddHook(func(i *cassette.Interaction) error {
+		return TrimSubscriptionsDeployment(i, session.Variables)
+	}, recorder.BeforeSaveHook)
 
 	vcr.AddHook(func(i *cassette.Interaction) error {
 		if i.DiscardOnSave {
@@ -264,7 +274,7 @@ func initVariables(name string, variables *map[string]string) error {
 		return nil
 	}
 
-	bytes, err := ioutil.ReadAll(r)
+	bytes, err := io.ReadAll(r)
 	if err != nil {
 		return fmt.Errorf("failed to read recording file: %w", err)
 	}

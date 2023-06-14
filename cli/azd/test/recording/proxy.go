@@ -87,7 +87,7 @@ func (p *recorderProxy) ServeConn(conn io.Writer, req *http.Request) {
 
 	resp, err := p.Recorder.RoundTrip(req)
 	if err != nil {
-		p.panic(err.Error())
+		p.panic(fmt.Sprintf("%s %s: %s", req.Method, req.URL.String(), err.Error()))
 	}
 
 	if err != nil {

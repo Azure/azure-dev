@@ -68,7 +68,7 @@ func newRestoreCmd() *cobra.Command {
 type restoreAction struct {
 	flags          *restoreFlags
 	args           []string
-	console        input.Console
+	console        input.Bioc
 	formatter      output.Formatter
 	writer         io.Writer
 	azdCtx         *azdcontext.AzdContext
@@ -82,7 +82,7 @@ type restoreAction struct {
 func newRestoreAction(
 	flags *restoreFlags,
 	args []string,
-	console input.Console,
+	console input.Bioc,
 	formatter output.Formatter,
 	writer io.Writer,
 	azdCtx *azdcontext.AzdContext,
@@ -163,15 +163,7 @@ func (ra *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error)
 			continue
 		}
 
-		restoreTask := ra.serviceManager.Restore(ctx, svc)
-		go func() {
-			for restoreProgress := range restoreTask.Progress() {
-				progressMessage := fmt.Sprintf("Restoring service %s (%s)", svc.Name, restoreProgress.Message)
-				ra.console.ShowSpinner(ctx, progressMessage, input.Step)
-			}
-		}()
-
-		restoreResult, err := restoreTask.Await()
+		restoreResult, err := ra.serviceManager.Restore(ctx, svc)
 		if err != nil {
 			ra.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 			return nil, err

@@ -13,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
@@ -20,18 +21,21 @@ import (
 // functionAppTarget specifies an Azure Function to deploy to.
 // Implements `project.ServiceTarget`
 type functionAppTarget struct {
-	env *environment.Environment
-	cli azcli.AzCli
+	env     *environment.Environment
+	cli     azcli.AzCli
+	console input.Bioc
 }
 
 // NewFunctionAppTarget creates a new instance of the Function App target
 func NewFunctionAppTarget(
 	env *environment.Environment,
 	azCli azcli.AzCli,
+	console input.Bioc,
 ) ServiceTarget {
 	return &functionAppTarget{
-		env: env,
-		cli: azCli,
+		env:     env,
+		cli:     azCli,
+		console: console,
 	}
 }
 
@@ -50,22 +54,18 @@ func (f *functionAppTarget) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
-) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
-			task.SetProgress(NewServiceProgress("Compressing deployment artifacts"))
-			zipFilePath, err := createDeployableZip(serviceConfig.Name, packageOutput.PackagePath)
-			if err != nil {
-				task.SetError(err)
-				return
-			}
+) (*ServicePackageResult, error) {
 
-			task.SetResult(&ServicePackageResult{
-				Build:       packageOutput.Build,
-				PackagePath: zipFilePath,
-			})
-		},
-	)
+	f.console.Progress(ctx, "Compressing deployment artifacts")
+	zipFilePath, err := createDeployableZip(serviceConfig.Name, packageOutput.PackagePath)
+	if err != nil {
+		return nil, err
+	}
+
+	return &ServicePackageResult{
+		Build:       packageOutput.Build,
+		PackagePath: zipFilePath,
+	}, nil
 }
 
 // Deploys the prepared zip archive using Zip deploy to the Azure App Service resource

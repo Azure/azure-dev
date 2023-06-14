@@ -17,7 +17,7 @@ import (
 type Manager struct {
 	serviceLocator      ioc.ServiceLocator
 	env                 *environment.Environment
-	console             input.Console
+	console             input.Bioc
 	provider            Provider
 	alphaFeatureManager *alpha.FeatureManager
 	projectPath         string
@@ -100,7 +100,7 @@ func (m *Manager) Destroy(ctx context.Context, options DestroyOptions) (*Destroy
 func NewManager(
 	serviceLocator ioc.ServiceLocator,
 	env *environment.Environment,
-	console input.Console,
+	console input.Bioc,
 	alphaFeatureManager *alpha.FeatureManager,
 ) *Manager {
 	return &Manager{

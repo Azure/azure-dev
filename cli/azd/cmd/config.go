@@ -351,7 +351,7 @@ func getCmdConfigHelpFooter(c *cobra.Command) string {
 
 type configListAlphaAction struct {
 	alphaFeaturesManager *alpha.FeatureManager
-	console              input.Console
+	console              input.Bioc
 	args                 []string
 }
 
@@ -380,7 +380,7 @@ func (a *configListAlphaAction) Run(ctx context.Context) (*actions.ActionResult,
 
 func newConfigListAlphaAction(
 	alphaFeaturesManager *alpha.FeatureManager,
-	console input.Console,
+	console input.Bioc,
 	args []string) actions.Action {
 	return &configListAlphaAction{
 		alphaFeaturesManager: alphaFeaturesManager,

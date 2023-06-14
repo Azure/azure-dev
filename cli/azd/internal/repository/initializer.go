@@ -26,12 +26,12 @@ import (
 
 // Initializer handles the initialization of a local repository.
 type Initializer struct {
-	console input.Console
+	console input.Bioc
 	gitCli  git.GitCli
 }
 
 func NewInitializer(
-	console input.Console,
+	console input.Bioc,
 	gitCli git.GitCli) *Initializer {
 	return &Initializer{
 		console: console,

@@ -32,7 +32,7 @@ type logoutAction struct {
 	accountSubManager *account.SubscriptionsManager
 	formatter         output.Formatter
 	writer            io.Writer
-	console           input.Console
+	console           input.Bioc
 	annotations       CmdAnnotations
 }
 
@@ -41,7 +41,7 @@ func newLogoutAction(
 	accountSubManager *account.SubscriptionsManager,
 	formatter output.Formatter,
 	writer io.Writer,
-	console input.Console,
+	console input.Bioc,
 	annotations CmdAnnotations) actions.Action {
 	return &logoutAction{
 		authManager:       authManager,

@@ -94,7 +94,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(func(
 		rootOptions *internal.GlobalCommandOptions,
 		formatter output.Formatter,
-		cmd *cobra.Command) input.Console {
+		cmd *cobra.Command) input.Bioc {
 		writer := cmd.OutOrStdout()
 		// When using JSON formatting, we want to ensure we always write messages from the console to stderr.
 		if formatter != nil && formatter.Kind() == output.JsonFormat {
@@ -116,7 +116,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		}, formatter)
 	})
 
-	container.RegisterSingleton(func(console input.Console, rootOptions *internal.GlobalCommandOptions) exec.CommandRunner {
+	container.RegisterSingleton(func(console input.Bioc, rootOptions *internal.GlobalCommandOptions) exec.CommandRunner {
 		return exec.NewCommandRunner(
 			&exec.RunnerOptions{
 				Stdin:        console.Handles().Stdin,
@@ -136,7 +136,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		return mgr.CredentialForCurrentUser
 	})
 
-	container.RegisterSingleton(func(console input.Console) io.Writer {
+	container.RegisterSingleton(func(console input.Bioc) io.Writer {
 		writer := console.Handles().Stdout
 
 		if os.Getenv("NO_COLOR") != "" {
@@ -177,7 +177,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			azdContext *azdcontext.AzdContext,
 			lazyEnv *lazy.Lazy[*environment.Environment],
 			envFlags envFlag,
-			console input.Console,
+			console input.Bioc,
 		) (*environment.Environment, error) {
 			if azdContext == nil {
 				return nil, azdcontext.ErrNoProject

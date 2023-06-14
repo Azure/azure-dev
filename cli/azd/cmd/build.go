@@ -63,7 +63,7 @@ type buildAction struct {
 	projectConfig            *project.ProjectConfig
 	projectManager           project.ProjectManager
 	serviceManager           project.ServiceManager
-	console                  input.Console
+	console                  input.Bioc
 	formatter                output.Formatter
 	writer                   io.Writer
 	middlewareRunner         middleware.MiddlewareContext
@@ -76,7 +76,7 @@ func newBuildAction(
 	projectConfig *project.ProjectConfig,
 	projectManager project.ProjectManager,
 	serviceManager project.ServiceManager,
-	console input.Console,
+	console input.Bioc,
 	formatter output.Formatter,
 	writer io.Writer,
 	middlewareRunner middleware.MiddlewareContext,
@@ -166,15 +166,7 @@ func (ba *buildAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			continue
 		}
 
-		buildTask := ba.serviceManager.Build(ctx, svc, nil)
-		go func() {
-			for buildProgress := range buildTask.Progress() {
-				progressMessage := fmt.Sprintf("Building service %s (%s)", svc.Name, buildProgress.Message)
-				ba.console.ShowSpinner(ctx, progressMessage, input.Step)
-			}
-		}()
-
-		buildResult, err := buildTask.Await()
+		buildResult, err := ba.serviceManager.Build(ctx, svc, nil)
 		if err != nil {
 			ba.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 			return nil, err

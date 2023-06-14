@@ -174,14 +174,14 @@ func Test_saveEnvironmentConfig(t *testing.T) {
 
 }
 
-func getEmptyAzdoScmProviderTestHarness(console input.Console) *AzdoScmProvider {
+func getEmptyAzdoScmProviderTestHarness(console input.Bioc) *AzdoScmProvider {
 	return &AzdoScmProvider{
 		Env:     environment.Ephemeral(),
 		console: console,
 	}
 }
 
-func getAzdoScmProviderTestHarness(console input.Console) *AzdoScmProvider {
+func getAzdoScmProviderTestHarness(console input.Bioc) *AzdoScmProvider {
 	return &AzdoScmProvider{
 		Env: environment.EphemeralWithValues(
 			"test-env",
@@ -198,7 +198,7 @@ func getAzdoScmProviderTestHarness(console input.Console) *AzdoScmProvider {
 	}
 }
 
-func getAzdoCiProviderTestHarness(console input.Console) *AzdoCiProvider {
+func getAzdoCiProviderTestHarness(console input.Bioc) *AzdoCiProvider {
 	return &AzdoCiProvider{
 		Env: environment.EphemeralWithValues(
 			"test-env",

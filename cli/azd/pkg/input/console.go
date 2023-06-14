@@ -48,7 +48,8 @@ type ConsoleShim interface {
 
 type PromptValidator func(response string) error
 
-type Console interface {
+// Basic input and output contract (Bioc) sets the contract for sending events within azd.
+type Bioc interface {
 	// Prints out a message to the underlying console write
 	Message(ctx context.Context, message string)
 	// Prints out a message following a contract ux item
@@ -57,6 +58,7 @@ type Console interface {
 	// Prints progress spinner with the given title.
 	// If a previous spinner is running, the title is updated.
 	ShowSpinner(ctx context.Context, title string, format SpinnerUxType)
+	Progress(ctx context.Context, progress string)
 	// Stop the current spinner from the console and change the spinner bar for the lastMessage
 	// Set lastMessage to empty string to clear the spinner message instead of a displaying a last message
 	// If there is no spinner running, this is a no-op function
@@ -97,6 +99,7 @@ type AskerConsole struct {
 	spinner                 *yacspin.Spinner
 	spinnerTerminalMode     yacspin.TerminalMode
 	spinnerTerminalModeOnce sync.Once
+	currentSpinnerMessage   string
 
 	currentIndent string
 	consoleWidth  int
@@ -204,6 +207,12 @@ func (c *AskerConsole) spinnerText(title, charset string) string {
 	return title
 }
 
+func (c *AskerConsole) Progress(ctx context.Context, progress string) {
+	_ = c.spinner.Pause()
+	c.spinner.Message(fmt.Sprintf("%s (%s)", c.currentSpinnerMessage, progress))
+	_ = c.spinner.Unpause()
+}
+
 func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format SpinnerUxType) {
 	if c.formatter != nil && c.formatter.Kind() == output.JsonFormat {
 		// Spinner is disabled when using json format.
@@ -229,12 +238,13 @@ func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format Spi
 		c.spinnerTerminalMode = GetSpinnerTerminalMode(&c.isTerminal)
 	})
 
+	c.currentSpinnerMessage = c.spinnerText(title, charSet[0])
 	spinnerConfig := yacspin.Config{
 		Frequency:       200 * time.Millisecond,
 		Writer:          c.writer,
 		Suffix:          " ",
 		SuffixAutoColon: true,
-		Message:         c.spinnerText(title, charSet[0]),
+		Message:         c.currentSpinnerMessage,
 		CharSet:         charSet,
 	}
 	spinnerConfig.TerminalMode = c.spinnerTerminalMode
@@ -475,7 +485,7 @@ func getConsoleWidth() int {
 }
 
 // Creates a new console with the specified writer, handles and formatter.
-func NewConsole(noPrompt bool, isTerminal bool, w io.Writer, handles ConsoleHandles, formatter output.Formatter) Console {
+func NewConsole(noPrompt bool, isTerminal bool, w io.Writer, handles ConsoleHandles, formatter output.Formatter) Bioc {
 	asker := NewAsker(noPrompt, isTerminal, handles.Stdout, handles.Stdin)
 
 	return &AskerConsole{
@@ -537,10 +547,10 @@ type Messaging interface {
 
 // A messaging system that displays messages to console.
 type consoleMessaging struct {
-	console Console
+	console Bioc
 }
 
-func NewConsoleMessaging(console Console) Messaging {
+func NewConsoleMessaging(console Bioc) Messaging {
 	return &consoleMessaging{
 		console: console,
 	}

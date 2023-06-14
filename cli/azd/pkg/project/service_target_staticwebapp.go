@@ -14,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/swa"
@@ -24,9 +25,10 @@ import (
 const DefaultStaticWebAppEnvironmentName = "default"
 
 type staticWebAppTarget struct {
-	env *environment.Environment
-	cli azcli.AzCli
-	swa swa.SwaCli
+	env  *environment.Environment
+	cli  azcli.AzCli
+	swa  swa.SwaCli
+	bioc input.Bioc
 }
 
 // NewStaticWebAppTarget creates a new instance of the Static Web App target
@@ -34,11 +36,13 @@ func NewStaticWebAppTarget(
 	env *environment.Environment,
 	azCli azcli.AzCli,
 	swaCli swa.SwaCli,
+	bioc input.Bioc,
 ) ServiceTarget {
 	return &staticWebAppTarget{
-		env: env,
-		cli: azCli,
-		swa: swaCli,
+		env:  env,
+		cli:  azCli,
+		swa:  swaCli,
+		bioc: bioc,
 	}
 }
 
@@ -57,20 +61,18 @@ func (at *staticWebAppTarget) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
-) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
-			packagePath := serviceConfig.OutputPath
-			if strings.TrimSpace(packagePath) == "" {
-				packagePath = "build"
-			}
+) (*ServicePackageResult, error) {
 
-			task.SetResult(&ServicePackageResult{
-				Build:       packageOutput.Build,
-				PackagePath: packagePath,
-			})
-		},
-	)
+	packagePath := serviceConfig.OutputPath
+	if strings.TrimSpace(packagePath) == "" {
+		packagePath = "build"
+	}
+
+	return &ServicePackageResult{
+		Build:       packageOutput.Build,
+		PackagePath: packagePath,
+	}, nil
+
 }
 
 // Deploys the packaged build output using the SWA CLI

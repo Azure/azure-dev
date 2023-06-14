@@ -15,11 +15,11 @@ import (
 // Adds support to easily debug and attach a debugger to AZD for development purposes
 type DebugMiddleware struct {
 	options *Options
-	console input.Console
+	console input.Bioc
 }
 
 // Creates a new instance of the Debug middleware
-func NewDebugMiddleware(options *Options, console input.Console) Middleware {
+func NewDebugMiddleware(options *Options, console input.Bioc) Middleware {
 	return &DebugMiddleware{
 		options: options,
 		console: console,

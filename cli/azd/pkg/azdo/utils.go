@@ -23,7 +23,7 @@ func ensureConfigExists(ctx context.Context, env *environment.Environment, key s
 }
 
 // helper method to ensure an Azure DevOps PAT exists either in .env or system environment variables
-func EnsurePatExists(ctx context.Context, env *environment.Environment, console input.Console) (
+func EnsurePatExists(ctx context.Context, env *environment.Environment, console input.Bioc) (
 	string, bool, error) {
 	value, err := ensureConfigExists(ctx, env, AzDoPatName, "azure devops personal access token")
 	if err != nil {
@@ -51,7 +51,7 @@ func EnsurePatExists(ctx context.Context, env *environment.Environment, console 
 }
 
 // helper method to ensure an Azure DevOps organization name exists either in .env or system environment variables
-func EnsureOrgNameExists(ctx context.Context, env *environment.Environment, console input.Console) (
+func EnsureOrgNameExists(ctx context.Context, env *environment.Environment, console input.Bioc) (
 	string, bool, error) {
 	value, err := ensureConfigExists(ctx, env, AzDoEnvironmentOrgName, "azure devops organization name")
 	if err != nil {

@@ -90,7 +90,7 @@ func CreatePipeline(
 	connection *azuredevops.Connection,
 	credentials AzureServicePrincipalCredentials,
 	env *environment.Environment,
-	console input.Console,
+	console input.Bioc,
 	provisioningProvider provisioning.Options) (*build.BuildDefinition, error) {
 
 	client, err := build.NewClient(ctx, connection)

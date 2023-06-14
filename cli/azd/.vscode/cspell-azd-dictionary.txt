@@ -33,6 +33,7 @@ azuretools
 azureutil
 azureyaml
 Backticks
+bioc
 BOOLSLICE
 BUILDID
 BUILDNUMBER
@@ -111,8 +112,8 @@ secureobject
 securestring
 semconv
 serverfarms
-setenvs
 servicebus
+setenvs
 snapshotter
 springapp
 sstore

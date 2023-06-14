@@ -52,7 +52,7 @@ func newShowCmd() *cobra.Command {
 
 type showAction struct {
 	projectConfig *project.ProjectConfig
-	console       input.Console
+	console       input.Bioc
 	formatter     output.Formatter
 	writer        io.Writer
 	azCli         azcli.AzCli
@@ -61,7 +61,7 @@ type showAction struct {
 }
 
 func newShowAction(
-	console input.Console,
+	console input.Bioc,
 	formatter output.Formatter,
 	writer io.Writer,
 	azCli azcli.AzCli,

@@ -125,7 +125,7 @@ func (p *BicepProvider) promptForParameter(
 // error prompting it is returned as is.
 func promptWithValidation[T any](
 	ctx context.Context,
-	console input.Console,
+	console input.Bioc,
 	options input.ConsoleOptions,
 	converter func(string) T,
 	validators ...func(string) error,

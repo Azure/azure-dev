@@ -23,7 +23,7 @@ type HooksMiddleware struct {
 	lazyEnv           *lazy.Lazy[*environment.Environment]
 	lazyProjectConfig *lazy.Lazy[*project.ProjectConfig]
 	commandRunner     exec.CommandRunner
-	console           input.Console
+	console           input.Bioc
 	options           *Options
 }
 
@@ -32,7 +32,7 @@ func NewHooksMiddleware(
 	env *lazy.Lazy[*environment.Environment],
 	projectConfig *lazy.Lazy[*project.ProjectConfig],
 	commandRunner exec.CommandRunner,
-	console input.Console,
+	console input.Bioc,
 	options *Options,
 ) Middleware {
 	return &HooksMiddleware{

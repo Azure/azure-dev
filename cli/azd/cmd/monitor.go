@@ -65,7 +65,7 @@ type monitorAction struct {
 	env         *environment.Environment
 	subResolver account.SubscriptionTenantResolver
 	azCli       azcli.AzCli
-	console     input.Console
+	console     input.Bioc
 	flags       *monitorFlags
 }
 
@@ -74,7 +74,7 @@ func newMonitorAction(
 	env *environment.Environment,
 	subResolver account.SubscriptionTenantResolver,
 	azCli azcli.AzCli,
-	console input.Console,
+	console input.Bioc,
 	flags *monitorFlags,
 ) actions.Action {
 	return &monitorAction{

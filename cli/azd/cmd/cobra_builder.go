@@ -141,7 +141,7 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 		cmd.SilenceErrors = true
 
 		// TODO: Consider refactoring to move the UX writing to a middleware
-		invokeErr := cb.container.Invoke(func(console input.Console) {
+		invokeErr := cb.container.Invoke(func(console input.Bioc) {
 			var displayResult *ux.ActionResult
 			if actionResult != nil && actionResult.Message != nil {
 				displayResult = &ux.ActionResult{

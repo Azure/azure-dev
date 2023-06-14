@@ -57,7 +57,7 @@ type upAction struct {
 	packageActionInitializer   actions.ActionInitializer[*packageAction]
 	provisionActionInitializer actions.ActionInitializer[*provisionAction]
 	deployActionInitializer    actions.ActionInitializer[*deployAction]
-	console                    input.Console
+	console                    input.Bioc
 	runner                     middleware.MiddlewareContext
 	prompters                  prompt.Prompter
 }
@@ -70,7 +70,7 @@ func newUpAction(
 	packageActionInitializer actions.ActionInitializer[*packageAction],
 	provisionActionInitializer actions.ActionInitializer[*provisionAction],
 	deployActionInitializer actions.ActionInitializer[*deployAction],
-	console input.Console,
+	console input.Bioc,
 	runner middleware.MiddlewareContext,
 	prompters prompt.Prompter,
 ) actions.Action {

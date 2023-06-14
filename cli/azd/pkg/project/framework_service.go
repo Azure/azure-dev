@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"os"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
 
@@ -79,14 +78,14 @@ type FrameworkService interface {
 	Restore(
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
-	) *async.TaskWithProgress[*ServiceRestoreResult, ServiceProgress]
+	) (*ServiceRestoreResult, error)
 
 	// Builds the source for the framework service
 	Build(
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
 		restoreOutput *ServiceRestoreResult,
-	) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress]
+	) (*ServiceBuildResult, error)
 
 	// Packages the source suitable for deployment
 	// This may optionally perform a rebuild internally depending on the language/framework requirements
@@ -94,7 +93,7 @@ type FrameworkService interface {
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
 		buildOutput *ServiceBuildResult,
-	) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress]
+	) (*ServicePackageResult, error)
 }
 
 // CompositeFrameworkService is a framework service that requires a nested

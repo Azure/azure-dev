@@ -36,7 +36,7 @@ func invalidEnvironmentNameMsg(environmentName string) string {
 
 // ensureValidEnvironmentName ensures the environment name is valid, if it is not, an error is printed
 // and the user is prompted for a new name.
-func ensureValidEnvironmentName(ctx context.Context, environmentName *string, suggest string, console input.Console) error {
+func ensureValidEnvironmentName(ctx context.Context, environmentName *string, suggest string, console input.Bioc) error {
 	for !environment.IsValidEnvironmentName(*environmentName) {
 		userInput, err := console.Prompt(ctx, input.ConsoleOptions{
 			Message: "Enter a new environment name:",
@@ -77,7 +77,7 @@ func createEnvironment(
 	ctx context.Context,
 	envSpec environmentSpec,
 	azdCtx *azdcontext.AzdContext,
-	console input.Console,
+	console input.Bioc,
 ) (*environment.Environment, error) {
 	if envSpec.environmentName != "" && !environment.IsValidEnvironmentName(envSpec.environmentName) {
 		errMsg := invalidEnvironmentNameMsg(envSpec.environmentName)
@@ -132,7 +132,7 @@ func loadOrCreateEnvironment(
 	ctx context.Context,
 	environmentName string,
 	azdCtx *azdcontext.AzdContext,
-	console input.Console,
+	console input.Bioc,
 ) (*environment.Environment, error) {
 	loadOrCreateEnvironment := func() (*environment.Environment, bool, error) {
 		// If there's a default environment, use that
@@ -249,7 +249,7 @@ func getResourceGroupFollowUp(
 	return followUp
 }
 
-func serviceNameWarningCheck(console input.Console, serviceNameFlag string, commandName string) {
+func serviceNameWarningCheck(console input.Bioc, serviceNameFlag string, commandName string) {
 	if serviceNameFlag == "" {
 		return
 	}

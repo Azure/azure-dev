@@ -104,7 +104,7 @@ func (f *envSetFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 }
 
 type envSetAction struct {
-	console input.Console
+	console input.Bioc
 	azdCtx  *azdcontext.AzdContext
 	env     *environment.Environment
 	flags   *envSetFlags
@@ -114,7 +114,7 @@ type envSetAction struct {
 func newEnvSetAction(
 	azdCtx *azdcontext.AzdContext,
 	env *environment.Environment,
-	console input.Console,
+	console input.Bioc,
 	flags *envSetFlags,
 	args []string,
 ) actions.Action {
@@ -258,14 +258,14 @@ type envNewAction struct {
 	azdCtx  *azdcontext.AzdContext
 	flags   *envNewFlags
 	args    []string
-	console input.Console
+	console input.Bioc
 }
 
 func newEnvNewAction(
 	azdCtx *azdcontext.AzdContext,
 	flags *envNewFlags,
 	args []string,
-	console input.Console,
+	console input.Bioc,
 ) actions.Action {
 	return &envNewAction{
 		azdCtx:  azdCtx,
@@ -358,7 +358,7 @@ type envRefreshAction struct {
 	projectManager   project.ProjectManager
 	env              *environment.Environment
 	flags            *envRefreshFlags
-	console          input.Console
+	console          input.Bioc
 	formatter        output.Formatter
 	writer           io.Writer
 }
@@ -369,7 +369,7 @@ func newEnvRefreshAction(
 	projectManager project.ProjectManager,
 	env *environment.Environment,
 	flags *envRefreshFlags,
-	console input.Console,
+	console input.Bioc,
 	formatter output.Formatter,
 	writer io.Writer,
 ) actions.Action {
@@ -455,7 +455,7 @@ func (eg *envGetValuesFlags) Bind(local *pflag.FlagSet, global *internal.GlobalC
 
 type envGetValuesAction struct {
 	azdCtx    *azdcontext.AzdContext
-	console   input.Console
+	console   input.Bioc
 	env       *environment.Environment
 	formatter output.Formatter
 	writer    io.Writer
@@ -465,7 +465,7 @@ type envGetValuesAction struct {
 func newEnvGetValuesAction(
 	azdCtx *azdcontext.AzdContext,
 	env *environment.Environment,
-	console input.Console,
+	console input.Bioc,
 	formatter output.Formatter,
 	writer io.Writer,
 	flags *envGetValuesFlags,

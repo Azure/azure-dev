@@ -57,7 +57,7 @@ func NewTemplateManager() *TemplateManager {
 // PromptTemplate asks the user to select a template.
 // An empty Template can be returned if the user selects the minimal template. This corresponds to the minimal azd template.
 // See
-func PromptTemplate(ctx context.Context, message string, console input.Console) (Template, error) {
+func PromptTemplate(ctx context.Context, message string, console input.Bioc) (Template, error) {
 	templateManager := NewTemplateManager()
 	templates, err := templateManager.ListTemplates()
 

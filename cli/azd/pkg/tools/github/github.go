@@ -46,7 +46,7 @@ type GitHubCli interface {
 	BinaryPath() string
 }
 
-func NewGitHubCli(ctx context.Context, console input.Console, commandRunner exec.CommandRunner) (GitHubCli, error) {
+func NewGitHubCli(ctx context.Context, console input.Bioc, commandRunner exec.CommandRunner) (GitHubCli, error) {
 	return newGitHubCliImplementation(ctx, console, commandRunner, http.DefaultClient, downloadGh, extractGhCli)
 }
 
@@ -58,7 +58,7 @@ var GitHubCliVersion semver.Version = semver.MustParse("2.28.0")
 // GitHub CLI, for testing purposes.
 func newGitHubCliImplementation(
 	ctx context.Context,
-	console input.Console,
+	console input.Bioc,
 	commandRunner exec.CommandRunner,
 	transporter policy.Transporter,
 	acquireGitHubCliImpl getGitHubCliImplementation,

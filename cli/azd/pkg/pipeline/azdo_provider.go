@@ -35,7 +35,7 @@ type AzdoScmProvider struct {
 	AzdContext     *azdcontext.AzdContext
 	azdoConnection *azuredevops.Connection
 	commandRunner  exec.CommandRunner
-	console        input.Console
+	console        input.Bioc
 	gitCli         git.GitCli
 }
 
@@ -43,7 +43,7 @@ func NewAzdoScmProvider(
 	env *environment.Environment,
 	azdContext *azdcontext.AzdContext,
 	commandRunner exec.CommandRunner,
-	console input.Console,
+	console input.Bioc,
 	gitCli git.GitCli,
 ) ScmProvider {
 	return &AzdoScmProvider{
@@ -139,7 +139,7 @@ func (p *AzdoScmProvider) StoreRepoDetails(ctx context.Context, repo *azdoGit.Gi
 }
 
 // prompts the user for a new AzDo Git repo and creates the repo
-func (p *AzdoScmProvider) createNewGitRepositoryFromInput(ctx context.Context, console input.Console) (string, error) {
+func (p *AzdoScmProvider) createNewGitRepositoryFromInput(ctx context.Context, console input.Bioc) (string, error) {
 	connection, err := p.getAzdoConnection(ctx)
 	if err != nil {
 		return "", err
@@ -185,7 +185,7 @@ func (p *AzdoScmProvider) createNewGitRepositoryFromInput(ctx context.Context, c
 }
 
 // verifies that a repo exists or prompts the user to select from a list of existing AzDo repos
-func (p *AzdoScmProvider) ensureGitRepositoryExists(ctx context.Context, console input.Console) (string, error) {
+func (p *AzdoScmProvider) ensureGitRepositoryExists(ctx context.Context, console input.Bioc) (string, error) {
 	if p.repoDetails != nil && p.repoDetails.repoName != "" {
 		return p.repoDetails.remoteUrl, nil
 	}
@@ -246,7 +246,7 @@ func (p *AzdoScmProvider) getAzdoConnection(ctx context.Context) (*azuredevops.C
 }
 
 // returns an existing project or prompts the user to either select a project or a create a new AzDo project
-func (p *AzdoScmProvider) ensureProjectExists(ctx context.Context, console input.Console) (string, string, bool, error) {
+func (p *AzdoScmProvider) ensureProjectExists(ctx context.Context, console input.Bioc) (string, string, bool, error) {
 	if p.repoDetails != nil && p.repoDetails.projectName != "" {
 		return p.repoDetails.projectName, p.repoDetails.projectId, false, nil
 	}
@@ -356,7 +356,7 @@ func (p *AzdoScmProvider) getDefaultRepoRemote(
 	ctx context.Context,
 	projectName string,
 	projectId string,
-	console input.Console,
+	console input.Bioc,
 ) (string, error) {
 	connection, err := p.getAzdoConnection(ctx)
 	if err != nil {
@@ -376,7 +376,7 @@ func (p *AzdoScmProvider) getDefaultRepoRemote(
 }
 
 // prompt the user to select azdo repo or create a new one
-func (p *AzdoScmProvider) promptForAzdoRepository(ctx context.Context, console input.Console) (string, error) {
+func (p *AzdoScmProvider) promptForAzdoRepository(ctx context.Context, console input.Bioc) (string, error) {
 	var remoteUrl string
 	// There are a few ways to configure the remote so offer a choice to the user.
 	idx, err := console.Select(ctx, input.ConsoleOptions{
@@ -546,7 +546,7 @@ func (p *AzdoScmProvider) preventGitPush(
 	return false, nil
 }
 
-func azdoPat(ctx context.Context, env *environment.Environment, console input.Console) string {
+func azdoPat(ctx context.Context, env *environment.Environment, console input.Bioc) string {
 	pat, _, err := azdo.EnsurePatExists(ctx, env, console)
 	if err != nil {
 		log.Printf("Error getting PAT when it should be found: %s", err.Error())
@@ -629,14 +629,14 @@ type AzdoCiProvider struct {
 	Env           *environment.Environment
 	AzdContext    *azdcontext.AzdContext
 	credentials   *azdo.AzureServicePrincipalCredentials
-	console       input.Console
+	console       input.Bioc
 	commandRunner exec.CommandRunner
 }
 
 func NewAzdoCiProvider(
 	env *environment.Environment,
 	azdContext *azdcontext.AzdContext,
-	console input.Console,
+	console input.Bioc,
 	commandRunner exec.CommandRunner,
 ) CiProvider {
 	return &AzdoCiProvider{

@@ -60,12 +60,8 @@ func (at *containerAppTarget) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
-) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
-			task.SetResult(packageOutput)
-		},
-	)
+) (*ServicePackageResult, error) {
+	return packageOutput, nil
 }
 
 // Deploys service container images to ACR and provisions the container app service.

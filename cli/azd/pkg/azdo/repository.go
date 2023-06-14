@@ -80,7 +80,7 @@ func GetGitRepositoriesInProject(
 	projectName string,
 	orgName string,
 	connection *azuredevops.Connection,
-	console input.Console,
+	console input.Bioc,
 ) (*git.GitRepository, error) {
 	gitClient, err := git.NewClient(ctx, connection)
 	if err != nil {

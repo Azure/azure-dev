@@ -69,7 +69,7 @@ type provisionAction struct {
 	formatter        output.Formatter
 	projectConfig    *project.ProjectConfig
 	writer           io.Writer
-	console          input.Console
+	console          input.Bioc
 }
 
 func newProvisionAction(
@@ -79,7 +79,7 @@ func newProvisionAction(
 	resourceManager project.ResourceManager,
 	projectConfig *project.ProjectConfig,
 	env *environment.Environment,
-	console input.Console,
+	console input.Bioc,
 	formatter output.Formatter,
 	writer io.Writer,
 ) actions.Action {

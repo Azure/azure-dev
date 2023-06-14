@@ -26,7 +26,7 @@ import (
 type TerraformProvider struct {
 	env          *environment.Environment
 	prompters    prompt.Prompter
-	console      input.Console
+	console      input.Bioc
 	cli          terraform.TerraformCli
 	curPrincipal CurrentPrincipalIdProvider
 	projectPath  string
@@ -52,7 +52,7 @@ func (t *TerraformProvider) RequiredExternalTools() []tools.ExternalTool {
 func NewTerraformProvider(
 	cli terraform.TerraformCli,
 	env *environment.Environment,
-	console input.Console,
+	console input.Bioc,
 	curPrincipal CurrentPrincipalIdProvider,
 	prompters prompt.Prompter,
 ) Provider {

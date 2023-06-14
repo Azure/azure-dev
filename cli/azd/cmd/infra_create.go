@@ -32,13 +32,13 @@ func newInfraCreateCmd() *cobra.Command {
 
 type infraCreateAction struct {
 	infraCreate *provisionAction
-	console     input.Console
+	console     input.Bioc
 }
 
 func newInfraCreateAction(
 	createFlags *infraCreateFlags,
 	provision *provisionAction,
-	console input.Console,
+	console input.Bioc,
 ) actions.Action {
 	// Required to ensure the sub action flags are bound correctly to the actions
 	provision.flags = &createFlags.provisionFlags

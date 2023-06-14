@@ -83,7 +83,7 @@ func CreateServiceConnection(
 	projectId string,
 	azdEnvironment environment.Environment,
 	credentials AzureServicePrincipalCredentials,
-	console input.Console) error {
+	console input.Bioc) error {
 
 	client, err := serviceendpoint.NewClient(ctx, connection)
 	if err != nil {

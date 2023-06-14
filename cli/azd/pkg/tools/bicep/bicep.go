@@ -38,7 +38,7 @@ type BicepCli interface {
 // downloaded.
 func NewBicepCli(
 	ctx context.Context,
-	console input.Console,
+	console input.Bioc,
 	commandRunner exec.CommandRunner,
 ) (BicepCli, error) {
 	return newBicepCliWithTransporter(ctx, console, commandRunner, http.DefaultClient)
@@ -48,7 +48,7 @@ func NewBicepCli(
 // bicep CLI, for testing purposes.
 func newBicepCliWithTransporter(
 	ctx context.Context,
-	console input.Console,
+	console input.Bioc,
 	commandRunner exec.CommandRunner,
 	transporter policy.Transporter,
 ) (BicepCli, error) {
@@ -113,7 +113,7 @@ func newBicepCliWithTransporter(
 }
 
 // runStep runs a long running operation, using the console to show a spinner for progress and status.
-func runStep(ctx context.Context, console input.Console, title string, action func() error) error {
+func runStep(ctx context.Context, console input.Bioc, title string, action func() error) error {
 	console.ShowSpinner(ctx, title, input.Step)
 	err := action()
 

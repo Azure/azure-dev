@@ -182,7 +182,7 @@ func newLoginCmd(parent string) *cobra.Command {
 type loginAction struct {
 	formatter         output.Formatter
 	writer            io.Writer
-	console           input.Console
+	console           input.Bioc
 	authManager       *auth.Manager
 	accountSubManager *account.SubscriptionsManager
 	flags             *loginFlags
@@ -199,7 +199,7 @@ func newAuthLoginAction(
 	authManager *auth.Manager,
 	accountSubManager *account.SubscriptionsManager,
 	flags *authLoginFlags,
-	console input.Console,
+	console input.Bioc,
 	annotations CmdAnnotations,
 	commandRunner exec.CommandRunner,
 ) actions.Action {
@@ -224,7 +224,7 @@ func newLoginAction(
 	authManager *auth.Manager,
 	accountSubManager *account.SubscriptionsManager,
 	flags *loginFlags,
-	console input.Console,
+	console input.Bioc,
 	annotations CmdAnnotations,
 	commandRunner exec.CommandRunner,
 ) actions.Action {

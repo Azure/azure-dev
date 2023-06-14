@@ -107,7 +107,7 @@ type deployAction struct {
 	azCli                    azcli.AzCli
 	formatter                output.Formatter
 	writer                   io.Writer
-	console                  input.Console
+	console                  input.Bioc
 	commandRunner            exec.CommandRunner
 	middlewareRunner         middleware.MiddlewareContext
 	packageActionInitializer actions.ActionInitializer[*packageAction]
@@ -126,7 +126,7 @@ func newDeployAction(
 	accountManager account.Manager,
 	azCli azcli.AzCli,
 	commandRunner exec.CommandRunner,
-	console input.Console,
+	console input.Bioc,
 	formatter output.Formatter,
 	writer io.Writer,
 	middlewareRunner middleware.MiddlewareContext,
@@ -241,15 +241,7 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 			}
 		} else {
 			//  --from-package not set, package the application
-			packageTask := da.serviceManager.Package(ctx, svc, nil)
-			go func() {
-				for packageProgress := range packageTask.Progress() {
-					progressMessage := fmt.Sprintf("Deploying service %s (%s)", svc.Name, packageProgress.Message)
-					da.console.ShowSpinner(ctx, progressMessage, input.Step)
-				}
-			}()
-
-			packageResult, err = packageTask.Await()
+			packageResult, err = da.serviceManager.Package(ctx, svc, nil)
 			if err != nil {
 				da.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 				return nil, err

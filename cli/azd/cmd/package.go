@@ -63,7 +63,7 @@ type packageAction struct {
 	projectConfig  *project.ProjectConfig
 	projectManager project.ProjectManager
 	serviceManager project.ServiceManager
-	console        input.Console
+	console        input.Bioc
 	formatter      output.Formatter
 	writer         io.Writer
 }
@@ -74,7 +74,7 @@ func newPackageAction(
 	projectConfig *project.ProjectConfig,
 	projectManager project.ProjectManager,
 	serviceManager project.ServiceManager,
-	console input.Console,
+	console input.Bioc,
 	formatter output.Formatter,
 	writer io.Writer,
 ) actions.Action {
@@ -144,15 +144,8 @@ func (pa *packageAction) Run(ctx context.Context) (*actions.ActionResult, error)
 			continue
 		}
 
-		packageTask := pa.serviceManager.Package(ctx, svc, nil)
-		go func() {
-			for packageProgress := range packageTask.Progress() {
-				progressMessage := fmt.Sprintf("Packaging service %s (%s)", svc.Name, packageProgress.Message)
-				pa.console.ShowSpinner(ctx, progressMessage, input.Step)
-			}
-		}()
+		packageResult, err := pa.serviceManager.Package(ctx, svc, nil)
 
-		packageResult, err := packageTask.Await()
 		if err != nil {
 			pa.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 			return nil, err

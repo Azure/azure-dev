@@ -36,13 +36,13 @@ import (
 // for source control manager.
 type GitHubScmProvider struct {
 	newGitHubRepoCreated bool
-	console              input.Console
+	console              input.Bioc
 	ghCli                github.GitHubCli
 	gitCli               git.GitCli
 }
 
 func NewGitHubScmProvider(
-	console input.Console,
+	console input.Bioc,
 	ghCli github.GitHubCli,
 	gitCli git.GitCli,
 ) ScmProvider {
@@ -307,7 +307,7 @@ type GitHubCiProvider struct {
 	credentialProvider account.SubscriptionCredentialProvider
 	ghCli              github.GitHubCli
 	gitCli             git.GitCli
-	console            input.Console
+	console            input.Bioc
 	httpClient         httputil.HttpClient
 }
 
@@ -316,7 +316,7 @@ func NewGitHubCiProvider(
 	credentialProvider account.SubscriptionCredentialProvider,
 	ghCli github.GitHubCli,
 	gitCli git.GitCli,
-	console input.Console,
+	console input.Bioc,
 	httpClient httputil.HttpClient) CiProvider {
 	return &GitHubCiProvider{
 		env:                env,
@@ -583,7 +583,7 @@ func applyFederatedCredentials(
 	ctx context.Context,
 	repoSlug string,
 	azureCredentials *azcli.AzureCredentials,
-	console input.Console,
+	console input.Bioc,
 	httpClient httputil.HttpClient,
 	credential azcore.TokenCredential,
 ) error {
@@ -664,7 +664,7 @@ func ensureGitHubLogin(
 	ghCli github.GitHubCli,
 	gitCli git.GitCli,
 	hostname string,
-	console input.Console) (bool, error) {
+	console input.Bioc) (bool, error) {
 	authResult, err := ghCli.GetAuthStatus(ctx, hostname)
 	if err != nil {
 		return false, err
@@ -710,7 +710,7 @@ func ensureGitHubLogin(
 
 // getRemoteUrlFromExisting let user to select an existing repository from his/her account and
 // returns the remote url for that repository.
-func getRemoteUrlFromExisting(ctx context.Context, ghCli github.GitHubCli, console input.Console) (string, error) {
+func getRemoteUrlFromExisting(ctx context.Context, ghCli github.GitHubCli, console input.Bioc) (string, error) {
 	repos, err := ghCli.ListRepositories(ctx)
 	if err != nil {
 		return "", fmt.Errorf("listing existing repositories: %w", err)
@@ -760,7 +760,7 @@ func getRemoteUrlFromNewRepository(
 	ctx context.Context,
 	ghCli github.GitHubCli,
 	currentPathName string,
-	console input.Console,
+	console input.Bioc,
 ) (string, error) {
 	var repoName string
 	currentFolderName := filepath.Base(currentPathName)
@@ -796,7 +796,7 @@ func getRemoteUrlFromNewRepository(
 
 // getRemoteUrlFromPrompt interactively prompts the user for a URL for a GitHub repository. It validates
 // that the URL is well formed and is in the correct format for a GitHub repository.
-func getRemoteUrlFromPrompt(ctx context.Context, remoteName string, console input.Console) (string, error) {
+func getRemoteUrlFromPrompt(ctx context.Context, remoteName string, console input.Bioc) (string, error) {
 	remoteUrl := ""
 
 	for remoteUrl == "" {
@@ -828,7 +828,7 @@ func ensureFederatedCredential(
 	application *graphsdk.Application,
 	existingCredentials []graphsdk.FederatedIdentityCredential,
 	repoCredential *graphsdk.FederatedIdentityCredential,
-	console input.Console,
+	console input.Bioc,
 ) error {
 	// If a federated credential already exists for the same subject then nothing to do.
 	for _, existing := range existingCredentials {

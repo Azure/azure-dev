@@ -10,19 +10,61 @@ import (
 	tm "github.com/buger/goterm"
 )
 
-type previewer struct {
-	title        string
+/* progressLog implements the io.Writer interface and writes bytes applying a framed style like
+*
+************************************************
+*  <header>
+*
+*  <displayTitle>
+*
+*  <prefix><logA
+*  <prefix><logB>
+*  <prefix><logC>
+*  <prefix><logD>
+*  <prefix><logN...>
+*
+*  ───────────────────────────────────────────
+*************************************************
+*
+* Notes:
+* - prefix can be used for setting indentation for the output.
+* - The line size for the title and the footer are calculated during Start(), filling the available space from the screen.
+* - <displayTitle> is generated as `<prefix>──── <title> ──────────────` where:
+*    - lines on the left and right of the title are calculated based on the available space on screen minus the prefix and
+*      title length. The left line represent 1/10 of the entire line, leaving the rest for the right line.
+*    - The less space on the screen, the shorter the lines will be. Lines won't be displayed if there is not enough room.
+* - The title and the logs are truncated with the symbol `...` at the end when it is bigger than the screen width.
+ */
+type progressLog struct {
+	// The initial top wording. This value can be updated using Header() method.
+	header string
+	// The raw initial title for the component. This value can't be changed after Starting the component.
+	title string
+	// The title that is displayed on the form of `<prefix>──── <title> ──────────────`.
 	displayTitle string
-	footerLine   string
-	header       string
-	lines        int
-	prefix       string
-	output       []string
-	outputMutex  sync.Mutex
+	// The line on the bottom. The value is saved on the component state so it is not generated on every re-draw.
+	footerLine string
+	// The number of rows to display for logging.
+	lines int
+	// Use prefix for indentation or any other symbol before each line.
+	prefix string
+	// This list is used as the memory buffer for the logs. The buffer is kept with the size of `lines`
+	output []string
+	// The mutex is used to coordinate updating the header, stopping the component and printing logs.
+	outputMutex sync.Mutex
 }
 
-func NewPreviewer(lines int, prefix, title, header string) *previewer {
-	return &previewer{
+/****************** Exported method ****************
+- NewProgressLog
+- Start
+- Stop
+- Write
+- Header
+*/
+
+// NewProgressLog returns a new instance of a progressLog.
+func NewProgressLog(lines int, prefix, title, header string) *progressLog {
+	return &progressLog{
 		lines:  lines,
 		prefix: prefix,
 		title:  title,
@@ -30,7 +72,13 @@ func NewPreviewer(lines int, prefix, title, header string) *previewer {
 	}
 }
 
-func (p *previewer) Start() {
+// Start must be call to initialize the component and draw the initial empty frame in the screen.
+// Calling Start() a second time is a no-op. The screen is only updated during the first call.
+// Call Stop() to remove the frame and logs from the screen.
+func (p *progressLog) Start() {
+	if p.output != nil {
+		return
+	}
 	p.output = make([]string, p.lines)
 	// title is created on Start() because it depends on terminal width
 	// if terminal is resized between stop and start, the previewer will
@@ -50,14 +98,20 @@ func (p *previewer) Start() {
 	tm.Println(p.displayTitle)
 	tm.Println("")
 
-	p.printOutput()
+	p.printLogs()
 }
 
-func (p *previewer) Stop() {
+// Stop clears the screen from any previous output and clear the buffer.
+// Calling Stop() before Start() is a no-op.
+func (p *progressLog) Stop() {
+	if p.output == nil {
+		return
+	}
+
 	p.outputMutex.Lock()
 	defer p.outputMutex.Unlock()
 
-	p.clear()
+	p.clearContentAndFlush()
 
 	// title
 	tm.MoveCursorUp(2)
@@ -73,7 +127,13 @@ func (p *previewer) Stop() {
 	p.output = nil
 }
 
-func (p *previewer) Write(logBytes []byte) (int, error) {
+// Write implements oi.Writer and updates the internal buffer before flushing it into the screen.
+// Calling Write() before Start() or after Stop() is a no-op
+func (p *progressLog) Write(logBytes []byte) (int, error) {
+	if p.output == nil {
+		return len(logBytes), nil
+	}
+
 	fullText := strings.Split(string(logBytes), "\n")
 	maxWidth := tm.Width()
 	if maxWidth <= 0 {
@@ -94,41 +154,37 @@ func (p *previewer) Write(logBytes []byte) (int, error) {
 			fullLog = fullLog[:maxWidth-4] + cPostfix
 		}
 
-		p.clear()
-		p.output = pushRemove(p.output, fullLog)
-		p.printOutput()
+		p.clearContentAndFlush()
+		p.output = append(p.output[1:], fullLog)
+		p.printLogs()
 	}
 	return len(logBytes), nil
 }
 
 // Header updates the previewer's top header
-func (p *previewer) Header(header string) {
+// Calling Header() before Start() or after Stop() is a no-op
+func (p *progressLog) Header(header string) {
+	if p.output == nil {
+		return
+	}
+
 	p.outputMutex.Lock()
 	defer p.outputMutex.Unlock()
 	p.header = header
 
-	p.clear()
-	tm.MoveCursorUp(2)
-	clearLine(p.displayTitle)
+	p.clearContentAndFlush()
 	if p.header != "" {
-		tm.MoveCursorUp(2)
+		tm.MoveCursorUp(4)
 		clearLine(p.header)
-	}
-
-	if p.header != "" {
-		tm.ResetLine("")
 		tm.Println(p.header)
-		// margin after title
-		tm.Println("")
+		tm.MoveCursorDown(3)
 	}
-	// title
-	tm.ResetLine("")
-	tm.Println(p.displayTitle)
-	tm.Println("")
-
-	p.printOutput()
+	p.printLogs()
 }
 
+/****************** Not exported method ****************/
+
+// clearLine override text with empty spaces.
 func clearLine(text string) {
 	sizeLog := len(text)
 	if sizeLog == 0 {
@@ -146,7 +202,8 @@ func clearLine(text string) {
 	tm.MoveCursorBackward(sizeLog)
 }
 
-func (p *previewer) clear() {
+// clearContentAndFlush removes the current logs from the screen.
+func (p *progressLog) clearContentAndFlush() {
 	if p.output == nil {
 		return
 	}
@@ -166,12 +223,8 @@ func (p *previewer) clear() {
 	tm.Flush()
 }
 
-func pushRemove(original []string, value string) []string {
-	copy := original[1:] // remove first
-	return append(copy, value)
-}
-
-func (p *previewer) printOutput() {
+// printLogs write the content from the buffer as logs.
+func (p *progressLog) printLogs() {
 	size := len(p.output)
 	count := 0
 
@@ -188,7 +241,8 @@ func (p *previewer) printOutput() {
 	tm.Flush()
 }
 
-func (p *previewer) buildTitleMargins() {
+// buildTitleMargins creates the display title and frames during initialization.
+func (p *progressLog) buildTitleMargins() {
 	consoleLen := tm.Width()
 	withPrefixTitle := p.prefix + p.title
 	titleLen := len(withPrefixTitle)

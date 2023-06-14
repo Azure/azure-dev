@@ -56,7 +56,7 @@ type ShowPreviewerOptions struct {
 
 type ConsolePreviewer struct {
 	Console   Console
-	Previewer *previewer
+	Previewer *progressLog
 }
 
 func (cp *ConsolePreviewer) Write(logBytes []byte) (int, error) {
@@ -124,7 +124,7 @@ type AskerConsole struct {
 
 	currentIndent         string
 	consoleWidth          int
-	previewer             *previewer
+	previewer             *progressLog
 	initialWriter         io.Writer
 	currentSpinnerMessage string
 }
@@ -234,7 +234,7 @@ func (c *AskerConsole) ShowPreviewer(ctx context.Context, options *ShowPreviewer
 		options = defaultShowPreviewerOptions()
 	}
 
-	c.previewer = NewPreviewer(options.MaxLineCount, options.Prefix, options.Title, c.currentIndent+currentMsg)
+	c.previewer = NewProgressLog(options.MaxLineCount, options.Prefix, options.Title, c.currentIndent+currentMsg)
 	c.previewer.Start()
 	c.writer = c.previewer
 	return &ConsolePreviewer{

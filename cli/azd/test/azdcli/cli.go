@@ -73,7 +73,6 @@ func NewCLI(t *testing.T, opts ...Options) *CLI {
 	if opt.Session != nil {
 		env := append(
 			environ(opt.Session),
-			"HTTP_PROXY="+opt.Session.ProxyUrl,
 			"HTTPS_PROXY="+opt.Session.ProxyUrl)
 		cli.Env = append(cli.Env, env...)
 	}

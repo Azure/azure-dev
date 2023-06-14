@@ -10,12 +10,12 @@
 
 ### Bugs Fixed
 
-- [[2426]](https://github.com/Azure/azure-dev/pull/2426) Fix saving of subscription and location defaults.
 - [[2348]](https://github.com/Azure/azure-dev/pull/2279) Support purging Managed HSMs.
 - [[2362]](https://github.com/Azure/azure-dev/pull/2362) Prevent more errors from interrupting console progress.
 - [[2366]](https://github.com/Azure/azure-dev/pull/2366) Fixes issue where hooks inline script slashes are replaced.
 - [[2375]](https://github.com/Azure/azure-dev/pull/2375) Store numeric values with leading zeros in .env correctly.
 - [[2401]](https://github.com/Azure/azure-dev/pull/2401) Fix the application url fetched from ASA consumption plan.
+- [[2426]](https://github.com/Azure/azure-dev/pull/2426) Fix saving of subscription and location defaults.
 
 ### Other Changes
 

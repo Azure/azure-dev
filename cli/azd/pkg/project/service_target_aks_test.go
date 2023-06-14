@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -14,7 +13,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v2"
-	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -77,7 +75,7 @@ func Test_Package_Deploy_HappyPath(t *testing.T) {
 	err = setupK8sManifests(t, serviceConfig)
 	require.NoError(t, err)
 
-	packageTask := serviceTarget.Package(
+	packageResult, err := serviceTarget.Package(
 		*mockContext.Context,
 		serviceConfig,
 		&ServicePackageResult{
@@ -88,17 +86,13 @@ func Test_Package_Deploy_HappyPath(t *testing.T) {
 			},
 		},
 	)
-	logProgress(packageTask)
-	packageResult, err := packageTask.Await()
 
 	require.NoError(t, err)
 	require.NotNil(t, packageResult)
 	require.IsType(t, new(dockerPackageResult), packageResult.Details)
 
 	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "CLUSTER_NAME", string(infra.AzureResourceTypeManagedCluster))
-	deployTask := serviceTarget.Deploy(*mockContext.Context, serviceConfig, packageResult, scope)
-	logProgress(deployTask)
-	deployResult, err := deployTask.Await()
+	deployResult, err := serviceTarget.Deploy(*mockContext.Context, serviceConfig, packageResult, scope)
 
 	require.NoError(t, err)
 	require.NotNil(t, deployResult)
@@ -132,10 +126,7 @@ func Test_Deploy_No_Cluster_Name(t *testing.T) {
 		},
 	}
 
-	deployTask := serviceTarget.Deploy(*mockContext.Context, serviceConfig, packageOutput, scope)
-	logProgress(deployTask)
-
-	deployResult, err := deployTask.Await()
+	deployResult, err := serviceTarget.Deploy(*mockContext.Context, serviceConfig, packageOutput, scope)
 	require.Error(t, err)
 	require.ErrorContains(t, err, "could not determine AKS cluster")
 	require.Nil(t, deployResult)
@@ -166,9 +157,7 @@ func Test_Deploy_No_Admin_Credentials(t *testing.T) {
 		},
 	}
 
-	deployTask := serviceTarget.Deploy(*mockContext.Context, serviceConfig, packageOutput, scope)
-	logProgress(deployTask)
-	deployResult, err := deployTask.Await()
+	deployResult, err := serviceTarget.Deploy(*mockContext.Context, serviceConfig, packageOutput, scope)
 
 	require.Error(t, err)
 	require.ErrorContains(t, err, "failed retrieving cluster admin credentials")
@@ -475,13 +464,14 @@ func createAksServiceTarget(
 
 	managedClustersService := azcli.NewManagedClustersService(credentialProvider, mockContext.HttpClient)
 	containerRegistryService := azcli.NewContainerRegistryService(credentialProvider, mockContext.HttpClient, dockerCli)
-	containerHelper := NewContainerHelper(env, clock.NewMock(), containerRegistryService, dockerCli)
+	containerHelper := NewContainerHelper(env, clock.NewMock(), containerRegistryService, dockerCli, mockContext.Console)
 
 	return NewAksTarget(
 		env,
 		managedClustersService,
 		kubeCtl,
 		containerHelper,
+		mockContext.Console,
 	)
 }
 
@@ -514,12 +504,4 @@ func createTestCluster(clusterName, username string) *kubectl.KubeConfig {
 			},
 		},
 	}
-}
-
-func logProgress[T comparable, P comparable](task *async.TaskWithProgress[T, P]) {
-	go func() {
-		for value := range task.Progress() {
-			log.Println(value)
-		}
-	}()
 }

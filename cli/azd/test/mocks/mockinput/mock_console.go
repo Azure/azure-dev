@@ -95,6 +95,10 @@ func (c *MockConsole) ShowSpinner(ctx context.Context, title string, format inpu
 	})
 }
 
+func (c *MockConsole) Progress(ctx context.Context, progress string) {
+
+}
+
 func (c *MockConsole) StopSpinner(ctx context.Context, lastMessage string, format input.SpinnerUxType) {
 	c.spinnerOps = append(c.spinnerOps, SpinnerOp{
 		Op:      SpinnerOpStop,

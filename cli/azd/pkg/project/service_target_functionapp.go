@@ -9,7 +9,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
@@ -21,9 +20,9 @@ import (
 // functionAppTarget specifies an Azure Function to deploy to.
 // Implements `project.ServiceTarget`
 type functionAppTarget struct {
-	env     *environment.Environment
-	cli     azcli.AzCli
-	console input.Bioc
+	env  *environment.Environment
+	cli  azcli.AzCli
+	bioc input.Bioc
 }
 
 // NewFunctionAppTarget creates a new instance of the Function App target
@@ -33,9 +32,9 @@ func NewFunctionAppTarget(
 	console input.Bioc,
 ) ServiceTarget {
 	return &functionAppTarget{
-		env:     env,
-		cli:     azCli,
-		console: console,
+		env:  env,
+		cli:  azCli,
+		bioc: console,
 	}
 }
 
@@ -56,7 +55,7 @@ func (f *functionAppTarget) Package(
 	packageOutput *ServicePackageResult,
 ) (*ServicePackageResult, error) {
 
-	f.console.Progress(ctx, "Compressing deployment artifacts")
+	f.bioc.Progress(ctx, "Compressing deployment artifacts")
 	zipFilePath, err := createDeployableZip(serviceConfig.Name, packageOutput.PackagePath)
 	if err != nil {
 		return nil, err
@@ -74,58 +73,52 @@ func (f *functionAppTarget) Deploy(
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
 	targetResource *environment.TargetResource,
-) *async.TaskWithProgress[*ServiceDeployResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress]) {
-			if err := f.validateTargetResource(ctx, serviceConfig, targetResource); err != nil {
-				task.SetError(fmt.Errorf("validating target resource: %w", err))
-				return
-			}
+) (*ServiceDeployResult, error) {
 
-			zipFile, err := os.Open(packageOutput.PackagePath)
-			if err != nil {
-				task.SetError(fmt.Errorf("failed reading deployment zip file: %w", err))
-				return
-			}
+	if err := f.validateTargetResource(ctx, serviceConfig, targetResource); err != nil {
+		return nil, fmt.Errorf("validating target resource: %w", err)
+	}
 
-			defer os.Remove(packageOutput.PackagePath)
-			defer zipFile.Close()
+	zipFile, err := os.Open(packageOutput.PackagePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed reading deployment zip file: %w", err)
+	}
 
-			task.SetProgress(NewServiceProgress("Uploading deployment package"))
-			res, err := f.cli.DeployFunctionAppUsingZipFile(
-				ctx,
-				targetResource.SubscriptionId(),
-				targetResource.ResourceGroupName(),
-				targetResource.ResourceName(),
-				zipFile,
-			)
-			if err != nil {
-				task.SetError(err)
-				return
-			}
+	defer os.Remove(packageOutput.PackagePath)
+	defer zipFile.Close()
 
-			task.SetProgress(NewServiceProgress("Fetching endpoints for function app"))
-			endpoints, err := f.Endpoints(ctx, serviceConfig, targetResource)
-			if err != nil {
-				task.SetError(err)
-				return
-			}
-
-			sdr := NewServiceDeployResult(
-				azure.WebsiteRID(
-					targetResource.SubscriptionId(),
-					targetResource.ResourceGroupName(),
-					targetResource.ResourceName(),
-				),
-				AzureFunctionTarget,
-				*res,
-				endpoints,
-			)
-			sdr.Package = packageOutput
-
-			task.SetResult(sdr)
-		},
+	f.bioc.Progress(ctx, "Uploading deployment package")
+	res, err := f.cli.DeployFunctionAppUsingZipFile(
+		ctx,
+		targetResource.SubscriptionId(),
+		targetResource.ResourceGroupName(),
+		targetResource.ResourceName(),
+		zipFile,
 	)
+	if err != nil {
+		return nil, err
+	}
+
+	f.bioc.Progress(ctx, "Fetching endpoints for function app")
+	endpoints, err := f.Endpoints(ctx, serviceConfig, targetResource)
+	if err != nil {
+		return nil, err
+	}
+
+	sdr := NewServiceDeployResult(
+		azure.WebsiteRID(
+			targetResource.SubscriptionId(),
+			targetResource.ResourceGroupName(),
+			targetResource.ResourceName(),
+		),
+		AzureFunctionTarget,
+		*res,
+		endpoints,
+	)
+	sdr.Package = packageOutput
+
+	return sdr, nil
+
 }
 
 // Gets the exposed endpoints for the Function App

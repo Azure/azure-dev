@@ -45,14 +45,12 @@ func Test_MavenProject(t *testing.T) {
 		mavenCli := maven.NewMavenCli(mockContext.CommandRunner)
 		javaCli := javac.NewCli(mockContext.CommandRunner)
 
-		mavenProject := NewMavenProject(env, mavenCli, javaCli)
+		mavenProject := NewMavenProject(env, mavenCli, javaCli, mockContext.Console)
 		err = mavenProject.Initialize(*mockContext.Context, serviceConfig)
 		require.NoError(t, err)
 
-		restoreTask := mavenProject.Restore(*mockContext.Context, serviceConfig)
-		logProgress(restoreTask)
+		result, err := mavenProject.Restore(*mockContext.Context, serviceConfig)
 
-		result, err := restoreTask.Await()
 		require.NoError(t, err)
 		require.NotNil(t, result)
 		require.Contains(t, runArgs.Cmd, getMvnwCmd())
@@ -81,14 +79,12 @@ func Test_MavenProject(t *testing.T) {
 		mavenCli := maven.NewMavenCli(mockContext.CommandRunner)
 		javaCli := javac.NewCli(mockContext.CommandRunner)
 
-		mavenProject := NewMavenProject(env, mavenCli, javaCli)
+		mavenProject := NewMavenProject(env, mavenCli, javaCli, mockContext.Console)
 		err = mavenProject.Initialize(*mockContext.Context, serviceConfig)
 		require.NoError(t, err)
 
-		buildTask := mavenProject.Build(*mockContext.Context, serviceConfig, nil)
-		logProgress(buildTask)
+		result, err := mavenProject.Build(*mockContext.Context, serviceConfig, nil)
 
-		result, err := buildTask.Await()
 		require.NoError(t, err)
 		require.NotNil(t, result)
 		require.Contains(t, runArgs.Cmd, getMvnwCmd())
@@ -123,20 +119,18 @@ func Test_MavenProject(t *testing.T) {
 		err = os.WriteFile(filepath.Join(buildOutputDir, "test.jar"), []byte("test"), osutil.PermissionFile)
 		require.NoError(t, err)
 
-		mavenProject := NewMavenProject(env, mavenCli, javaCli)
+		mavenProject := NewMavenProject(env, mavenCli, javaCli, mockContext.Console)
 		err = mavenProject.Initialize(*mockContext.Context, serviceConfig)
 		require.NoError(t, err)
 
-		packageTask := mavenProject.Package(
+		result, err := mavenProject.Package(
 			*mockContext.Context,
 			serviceConfig,
 			&ServiceBuildResult{
 				BuildOutputPath: serviceConfig.Path(),
 			},
 		)
-		logProgress(packageTask)
 
-		result, err := packageTask.Await()
 		require.NoError(t, err)
 		require.NotNil(t, result)
 		require.NotEmpty(t, result.PackagePath)
@@ -284,18 +278,16 @@ func Test_MavenProject_Package(t *testing.T) {
 			env := environment.Ephemeral()
 			mavenCli := maven.NewMavenCli(mockContext.CommandRunner)
 			javaCli := javac.NewCli(mockContext.CommandRunner)
-			mavenProject := NewMavenProject(env, mavenCli, javaCli)
+			mavenProject := NewMavenProject(env, mavenCli, javaCli, mockContext.Console)
 			err = mavenProject.Initialize(*mockContext.Context, tt.args.svc)
 			require.NoError(t, err)
 
-			packageTask := mavenProject.Package(
+			result, err := mavenProject.Package(
 				*mockContext.Context,
 				tt.args.svc,
 				&ServiceBuildResult{},
 			)
-			logProgress(packageTask)
 
-			result, err := packageTask.Await()
 			if tt.wantErr {
 				require.Error(t, err)
 			} else {

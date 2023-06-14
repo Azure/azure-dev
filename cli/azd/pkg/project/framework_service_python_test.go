@@ -58,11 +58,9 @@ func Test_PythonProject_Restore(t *testing.T) {
 	pythonCli := python.NewPythonCli(mockContext.CommandRunner)
 	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguagePython)
 
-	pythonProject := NewPythonProject(pythonCli, env)
-	restoreTask := pythonProject.Restore(*mockContext.Context, serviceConfig)
-	logProgress(restoreTask)
+	pythonProject := NewPythonProject(pythonCli, env, mockContext.Console)
+	result, err := pythonProject.Restore(*mockContext.Context, serviceConfig)
 
-	result, err := restoreTask.Await()
 	require.NoError(t, err)
 	require.NotNil(t, result)
 
@@ -92,11 +90,9 @@ func Test_PythonProject_Build(t *testing.T) {
 	pythonCli := python.NewPythonCli(mockContext.CommandRunner)
 	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguagePython)
 
-	pythonProject := NewPythonProject(pythonCli, env)
-	buildTask := pythonProject.Build(*mockContext.Context, serviceConfig, nil)
-	logProgress(buildTask)
+	pythonProject := NewPythonProject(pythonCli, env, mockContext.Console)
+	result, err := pythonProject.Build(*mockContext.Context, serviceConfig, nil)
 
-	result, err := buildTask.Await()
 	require.NoError(t, err)
 	require.NotNil(t, result)
 }
@@ -114,17 +110,15 @@ func Test_PythonProject_Package(t *testing.T) {
 	err = os.WriteFile(filepath.Join(serviceConfig.Path(), "requirements.txt"), nil, osutil.PermissionFile)
 	require.NoError(t, err)
 
-	pythonProject := NewPythonProject(pythonCli, env)
-	packageTask := pythonProject.Package(
+	pythonProject := NewPythonProject(pythonCli, env, mockContext.Console)
+	result, err := pythonProject.Package(
 		*mockContext.Context,
 		serviceConfig,
 		&ServiceBuildResult{
 			BuildOutputPath: serviceConfig.Path(),
 		},
 	)
-	logProgress(packageTask)
 
-	result, err := packageTask.Await()
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.NotEmpty(t, result.PackagePath)

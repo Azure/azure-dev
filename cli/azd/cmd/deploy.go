@@ -248,15 +248,8 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 			}
 		}
 
-		deployTask := da.serviceManager.Deploy(ctx, svc, packageResult)
-		go func() {
-			for deployProgress := range deployTask.Progress() {
-				progressMessage := fmt.Sprintf("Deploying service %s (%s)", svc.Name, deployProgress.Message)
-				da.console.ShowSpinner(ctx, progressMessage, input.Step)
-			}
-		}()
+		deployResult, err := da.serviceManager.Deploy(ctx, svc, packageResult)
 
-		deployResult, err := deployTask.Await()
 		if err != nil {
 			da.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 			return nil, err

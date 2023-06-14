@@ -33,11 +33,8 @@ func Test_NpmProject_Restore(t *testing.T) {
 	npmCli := npm.NewNpmCli(mockContext.CommandRunner)
 	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageTypeScript)
 
-	npmProject := NewNpmProject(npmCli, env)
-	restoreTask := npmProject.Restore(*mockContext.Context, serviceConfig)
-	logProgress(restoreTask)
-
-	result, err := restoreTask.Await()
+	npmProject := NewNpmProject(npmCli, env, mockContext.Console)
+	result, err := npmProject.Restore(*mockContext.Context, serviceConfig)
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, "npm", runArgs.Cmd)
@@ -65,11 +62,9 @@ func Test_NpmProject_Build(t *testing.T) {
 	npmCli := npm.NewNpmCli(mockContext.CommandRunner)
 	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageTypeScript)
 
-	npmProject := NewNpmProject(npmCli, env)
-	buildTask := npmProject.Build(*mockContext.Context, serviceConfig, nil)
-	logProgress(buildTask)
+	npmProject := NewNpmProject(npmCli, env, mockContext.Console)
+	result, err := npmProject.Build(*mockContext.Context, serviceConfig, nil)
 
-	result, err := buildTask.Await()
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, "npm", runArgs.Cmd)
@@ -103,17 +98,15 @@ func Test_NpmProject_Package(t *testing.T) {
 	err = os.WriteFile(filepath.Join(serviceConfig.Path(), "package.json"), nil, osutil.PermissionFile)
 	require.NoError(t, err)
 
-	npmProject := NewNpmProject(npmCli, env)
-	packageTask := npmProject.Package(
+	npmProject := NewNpmProject(npmCli, env, mockContext.Console)
+
+	result, err := npmProject.Package(
 		*mockContext.Context,
 		serviceConfig,
 		&ServiceBuildResult{
 			BuildOutputPath: serviceConfig.Path(),
 		},
 	)
-	logProgress(packageTask)
-
-	result, err := packageTask.Await()
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.NotEmpty(t, result.PackagePath)

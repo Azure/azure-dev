@@ -9,7 +9,6 @@ import (
 	"os"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
@@ -73,58 +72,52 @@ func (st *appServiceTarget) Deploy(
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
 	targetResource *environment.TargetResource,
-) *async.TaskWithProgress[*ServiceDeployResult, ServiceProgress] {
-	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress]) {
-			if err := st.validateTargetResource(ctx, serviceConfig, targetResource); err != nil {
-				task.SetError(fmt.Errorf("validating target resource: %w", err))
-				return
-			}
+) (*ServiceDeployResult, error) {
 
-			zipFile, err := os.Open(packageOutput.PackagePath)
-			if err != nil {
-				task.SetError(fmt.Errorf("failed reading deployment zip file: %w", err))
-				return
-			}
+	if err := st.validateTargetResource(ctx, serviceConfig, targetResource); err != nil {
+		return nil, fmt.Errorf("validating target resource: %w", err)
+	}
 
-			defer os.Remove(packageOutput.PackagePath)
-			defer zipFile.Close()
+	zipFile, err := os.Open(packageOutput.PackagePath)
+	if err != nil {
+		return nil, fmt.Errorf("failed reading deployment zip file: %w", err)
+	}
 
-			task.SetProgress(NewServiceProgress("Uploading deployment package"))
-			res, err := st.cli.DeployAppServiceZip(
-				ctx,
-				targetResource.SubscriptionId(),
-				targetResource.ResourceGroupName(),
-				targetResource.ResourceName(),
-				zipFile,
-			)
-			if err != nil {
-				task.SetError(fmt.Errorf("deploying service %s: %w", serviceConfig.Name, err))
-				return
-			}
+	defer os.Remove(packageOutput.PackagePath)
+	defer zipFile.Close()
 
-			task.SetProgress(NewServiceProgress("Fetching endpoints for app service"))
-			endpoints, err := st.Endpoints(ctx, serviceConfig, targetResource)
-			if err != nil {
-				task.SetError(err)
-				return
-			}
-
-			sdr := NewServiceDeployResult(
-				azure.WebsiteRID(
-					targetResource.SubscriptionId(),
-					targetResource.ResourceGroupName(),
-					targetResource.ResourceName(),
-				),
-				AppServiceTarget,
-				*res,
-				endpoints,
-			)
-			sdr.Package = packageOutput
-
-			task.SetResult(sdr)
-		},
+	st.bioc.Progress(ctx, "Uploading deployment package")
+	res, err := st.cli.DeployAppServiceZip(
+		ctx,
+		targetResource.SubscriptionId(),
+		targetResource.ResourceGroupName(),
+		targetResource.ResourceName(),
+		zipFile,
 	)
+	if err != nil {
+		return nil, fmt.Errorf("deploying service %s: %w", serviceConfig.Name, err)
+	}
+
+	st.bioc.Progress(ctx, "Fetching endpoints for app service")
+	endpoints, err := st.Endpoints(ctx, serviceConfig, targetResource)
+	if err != nil {
+		return nil, err
+	}
+
+	sdr := NewServiceDeployResult(
+		azure.WebsiteRID(
+			targetResource.SubscriptionId(),
+			targetResource.ResourceGroupName(),
+			targetResource.ResourceName(),
+		),
+		AppServiceTarget,
+		*res,
+		endpoints,
+	)
+	sdr.Package = packageOutput
+
+	return sdr, nil
+
 }
 
 // Gets the exposed endpoints for the App Service

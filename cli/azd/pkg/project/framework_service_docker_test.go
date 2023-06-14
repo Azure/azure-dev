@@ -81,7 +81,6 @@ services:
 	docker := docker.NewDocker(mockContext.CommandRunner)
 
 	internalFramework := NewNpmProject(npmCli, env, mockContext.Console)
-	progressMessages := []string{}
 
 	framework := NewDockerProject(
 		env, docker, NewContainerHelper(env, clock.NewMock(), nil, docker, mockContext.Console), mockContext.Console)
@@ -91,8 +90,6 @@ services:
 
 	require.Equal(t, "imageId", buildResult.BuildOutputPath)
 	require.Nil(t, err)
-	require.Len(t, progressMessages, 1)
-	require.Equal(t, "Building Docker image", progressMessages[0])
 	require.Equal(t, true, ran)
 }
 

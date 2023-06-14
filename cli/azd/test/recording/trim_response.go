@@ -17,6 +17,7 @@ import (
 var subscriptionDeploymentUrl = regexp.MustCompile(
 	`subscriptions\/[a-f0-9A-F-]+\/providers\/Microsoft\.Resources\/deployments\/?$`)
 
+// Trims subscription-level deployment responses to only contain the ones that match the current environment.
 func TrimSubscriptionsDeployment(i *cassette.Interaction, variables map[string]string) error {
 	if i.Request.Method != http.MethodGet {
 		return nil

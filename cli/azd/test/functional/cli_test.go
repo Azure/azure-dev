@@ -92,59 +92,6 @@ func TestMain(m *testing.M) {
 	os.Exit(exitVal)
 }
 
-func Test_CLI_Show(t *testing.T) {
-	// running this test in parallel is ok as it uses a t.TempDir()
-	t.Parallel()
-	ctx, cancel := newTestContext(t)
-	defer cancel()
-
-	dir := "/home/weilim/repos/playground-azd/minimal"
-	t.Logf("DIR: %s", dir)
-
-	envName := randomEnvName()
-	t.Logf("AZURE_ENV_NAME: %s", envName)
-
-	session := recording.Start(t)
-
-	cli := azdcli.NewCLI(t, azdcli.WithSession(session))
-	cli.WorkingDirectory = dir
-	cli.Env = append(cli.Env, os.Environ()...)
-	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
-	_, err := cli.RunCommand(ctx, "show", "--output", "json")
-	require.NoError(t, err)
-}
-
-func Test_CLI_ListDeployments(t *testing.T) {
-	// running this test in parallel is ok as it uses a t.TempDir()
-	t.Parallel()
-	ctx, cancel := newTestContext(t)
-	defer cancel()
-
-	dir := "/home/weilim/repos/playground-azd/minimal"
-	t.Logf("DIR: %s", dir)
-
-	envName := randomEnvName()
-	t.Logf("AZURE_ENV_NAME: %s", envName)
-
-	session := recording.Start(t)
-
-	cred, err := azidentity.NewAzureCLICredential(nil)
-	if err != nil {
-		t.Fatal("could not create credential")
-	}
-
-	azCli := azcli.NewAzCli(mockaccount.SubscriptionCredentialProviderFunc(
-		func(_ context.Context, _ string) (azcore.TokenCredential, error) {
-			return cred, nil
-		}),
-		session.ProxyClient(),
-		azcli.NewAzCliArgs{})
-
-	// Verify that resource groups are created with tag
-	_, err = azCli.ListSubscriptionDeployments(ctx, "faa080af-c1d8-40ad-9cce-e1a450ca5b57")
-	require.NoError(t, err)
-}
-
 func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 	// running this test in parallel is ok as it uses a t.TempDir()
 	t.Parallel()
@@ -193,7 +140,7 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 
 	var client *http.Client
 	if session != nil {
-		client = session.ProxyClient()
+		client = session.ProxyClient
 	} else {
 		client = http.DefaultClient
 	}
@@ -259,7 +206,7 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 	// GetResourceGroupsForEnvironment requires a credential since it is using the SDK now
 	var client *http.Client
 	if session != nil {
-		client = session.ProxyClient()
+		client = session.ProxyClient
 	} else {
 		client = http.DefaultClient
 	}

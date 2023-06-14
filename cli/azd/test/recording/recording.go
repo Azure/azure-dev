@@ -57,17 +57,9 @@ type Session struct {
 	// These variables are automatically set as environment variables for the CLI process under test.
 	// See [test/azdcli] for more details.
 	Variables map[string]string
-}
 
-func (s *Session) ProxyClient() *http.Client {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
-	transport.Proxy = func(req *http.Request) (*url.URL, error) {
-		return url.Parse(s.ProxyUrl)
-	}
-	transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
-	client := &http.Client{Transport: transport}
-
-	return client
+	// The recorder proxy server.
+	ProxyClient *http.Client
 }
 
 // Start starts the recorder proxy, returning a [recording.Session] if recording or playback is enabled.
@@ -83,6 +75,7 @@ func Start(t *testing.T, opts ...Options) *Session {
 		opt.mode = recorder.ModeRecordOnce
 	}
 
+	// Set defaults based on AZURE_RECORD_MODE
 	if os.Getenv("AZURE_RECORD_MODE") != "" {
 		switch strings.ToLower(os.Getenv("AZURE_RECORD_MODE")) {
 		case "live":
@@ -98,8 +91,14 @@ func Start(t *testing.T, opts ...Options) *Session {
 		}
 	}
 
+	// Apply user-defined options
 	for _, o := range opts {
 		opt = o.Apply(opt)
+	}
+
+	// Return nil for live mode
+	if opt.mode == recorder.ModePassthrough {
+		return nil
 	}
 
 	dir := callingDir(1)
@@ -193,6 +192,12 @@ func Start(t *testing.T, opts ...Options) *Session {
 	t.Logf("recorderProxy started with mode %v at %s", displayMode(vcr), server.URL)
 	session.ProxyUrl = server.URL
 
+	client, err := proxyClient(server.URL)
+	if err != nil {
+		t.Fatalf("failed to create proxy client: %v", err)
+	}
+	session.ProxyClient = client
+
 	t.Cleanup(func() {
 		server.Close()
 		if !t.Failed() {
@@ -212,6 +217,21 @@ func Start(t *testing.T, opts ...Options) *Session {
 	})
 
 	return session
+}
+
+func proxyClient(proxyUrl string) (*http.Client, error) {
+	proxyAddr, err := url.Parse(proxyUrl)
+	if err != nil {
+		return nil, err
+	}
+
+	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport.Proxy = func(req *http.Request) (*url.URL, error) {
+		return proxyAddr, nil
+	}
+	transport.TLSClientConfig = &tls.Config{InsecureSkipVerify: true}
+	client := &http.Client{Transport: transport}
+	return client, nil
 }
 
 var modeStrMap = map[recorder.Mode]string{

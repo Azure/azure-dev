@@ -243,7 +243,7 @@ func build(t *testing.T, pkgPath string, args ...string) {
 			output))
 	}
 
-	t.Logf("built azd in %s", time.Since(startTime))
+	t.Logf("built azd in %s (%s)", time.Since(startTime), strings.Join(cmd.Args, " "))
 }
 
 // Recording variables that are mapped to environment variables.

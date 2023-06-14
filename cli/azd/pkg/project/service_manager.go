@@ -179,7 +179,15 @@ func (sm *serviceManager) Restore(
 		return nil, fmt.Errorf("getting framework services: %w", err)
 	}
 
-	restoreResult, err := frameworkService.Restore(ctx, serviceConfig)
+	restoreResult, err := runCommand(
+		ctx,
+		ServiceEventRestore,
+		serviceConfig,
+		func() (*ServiceRestoreResult, error) {
+			return frameworkService.Restore(ctx, serviceConfig)
+		},
+	)
+
 	if err != nil {
 		return nil, fmt.Errorf("failed restoring service '%s': %w", serviceConfig.Name, err)
 	}
@@ -213,7 +221,14 @@ func (sm *serviceManager) Build(
 		return nil, fmt.Errorf("getting framework services: %w", err)
 	}
 
-	buildResult, err := frameworkService.Build(ctx, serviceConfig, restoreOutput)
+	buildResult, err := runCommand(
+		ctx,
+		ServiceEventBuild,
+		serviceConfig,
+		func() (*ServiceBuildResult, error) {
+			return frameworkService.Build(ctx, serviceConfig, restoreOutput)
+		},
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed building service '%s': %w", serviceConfig.Name, err)
 	}
@@ -350,7 +365,14 @@ func (sm *serviceManager) Deploy(
 		return nil, fmt.Errorf("getting target resource: %w", err)
 	}
 
-	deployResult, err := serviceTarget.Deploy(ctx, serviceConfig, packageResult, targetResource)
+	deployResult, err := runCommand(
+		ctx,
+		ServiceEventDeploy,
+		serviceConfig,
+		func() (*ServiceDeployResult, error) {
+			return serviceTarget.Deploy(ctx, serviceConfig, packageResult, targetResource)
+		},
+	)
 
 	if err != nil {
 		return nil, fmt.Errorf("failed deploying service '%s': %w", serviceConfig.Name, err)
@@ -469,4 +491,35 @@ func (sm *serviceManager) setOperationResult(
 ) {
 	key := fmt.Sprintf("%s:%s", serviceConfig.Name, operationName)
 	sm.operationCache[key] = result
+}
+
+func runCommand[T comparable](
+	ctx context.Context,
+	eventName ext.Event,
+	serviceConfig *ServiceConfig,
+	taskFunc func() (T, error),
+) (T, error) {
+	eventArgs := ServiceLifecycleEventArgs{
+		Project: serviceConfig.Project,
+		Service: serviceConfig,
+	}
+
+	var result T
+
+	err := serviceConfig.Invoke(ctx, eventName, eventArgs, func() error {
+		taskResult, err := taskFunc()
+
+		if err != nil {
+			return err
+		}
+
+		result = taskResult
+		return nil
+	})
+
+	if err != nil {
+		return result, err
+	}
+
+	return result, nil
 }

@@ -1,5 +1,20 @@
 # Release History
 
+## 1.1.0 (Unreleased)
+
+### Features Added
+
+### Breaking Changes
+
+### Bugs Fixed
+
+- [[2348]](https://github.com/Azure/azure-dev/pull/2279) Support purging Managed HSMs.
+- [[2362]](https://github.com/Azure/azure-dev/pull/2362) Prevent more errors from interrupting console progress.
+
+### Other Changes
+
+- [[2337]](https://github.com/Azure/azure-dev/pull/2337) Update device-code auth flow.
+
 ## 1.0.1 (2023-05-25)
 
 - [[2300]](https://github.com/Azure/azure-dev/pull/2300) Fix `azd auth login` failing with error "reauthentication required: run `azd auth login` to log in" due to stale cache data.

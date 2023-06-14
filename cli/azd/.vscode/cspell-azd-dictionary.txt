@@ -66,6 +66,7 @@ funcapp
 functestapp
 functionapp
 GOARCH
+GOCOVERDIR
 godotenv
 golangci
 hotspot

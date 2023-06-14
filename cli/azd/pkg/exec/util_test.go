@@ -49,14 +49,27 @@ func TestKillCommand(t *testing.T) {
 	s := time.Now()
 
 	runner := NewCommandRunner(nil)
-	_, err := runner.Run(ctx, RunArgs{
-		Cmd: "pwsh",
-		Args: []string{
-			"-c",
-			"sleep",
-			"10000",
-		},
-	})
+	var args RunArgs
+	if runtime.GOOS == "windows" {
+		args = RunArgs{
+			Cmd: "pwsh",
+			Args: []string{
+				"-c",
+				"sleep",
+				"10000",
+			},
+		}
+	} else {
+		args = RunArgs{
+			Cmd: "sh",
+			Args: []string{
+				"-c",
+				"sleep 10",
+			},
+		}
+	}
+
+	_, err := runner.Run(ctx, args)
 
 	if runtime.GOOS == "windows" {
 		// on Windows terminating the process doesn't register as an error
@@ -207,7 +220,7 @@ func TestRedactSensitiveData(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.scenario, func(t *testing.T) {
-			actual := redactSensitiveData(test.input)
+			actual := RedactSensitiveData(test.input)
 			require.Equal(t, test.expected, actual)
 		})
 	}

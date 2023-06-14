@@ -59,6 +59,12 @@ type AzCli interface {
 		resourceGroupName string,
 		vaultName string,
 	) (*AzCliKeyVault, error)
+	GetManagedHSM(
+		ctx context.Context,
+		subscriptionId string,
+		resourceGroupName string,
+		hsmName string,
+	) (*AzCliManagedHSM, error)
 	GetCognitiveAccount(
 		ctx context.Context,
 		subscriptionId string,
@@ -76,6 +82,7 @@ type AzCli interface {
 	PurgeApim(ctx context.Context, subscriptionId string, apimName string, location string) error
 	PurgeAppConfig(ctx context.Context, subscriptionId string, configName string, location string) error
 	PurgeKeyVault(ctx context.Context, subscriptionId string, vaultName string, location string) error
+	PurgeManagedHSM(ctx context.Context, subscriptionId string, hsmName string, location string) error
 	PurgeCognitiveAccount(ctx context.Context, subscriptionId, location, resourceGroup, accountName string) error
 	GetApim(
 		ctx context.Context, subscriptionId string, resourceGroupName string, apimName string) (*AzCliApim, error)
@@ -119,6 +126,13 @@ type AzCli interface {
 	) (*armresources.DeploymentExtended, error)
 	DeleteSubscriptionDeployment(ctx context.Context, subscriptionId string, deploymentName string) error
 	DeleteResourceGroup(ctx context.Context, subscriptionId string, resourceGroupName string) error
+	CreateOrUpdateResourceGroup(
+		ctx context.Context,
+		subscriptionId string,
+		resourceGroupName string,
+		location string,
+		tags map[string]*string,
+	) error
 	ListResourceGroup(
 		ctx context.Context,
 		subscriptionId string,
@@ -326,7 +340,7 @@ func NewAzCli(
 		enableDebug:        args.EnableDebug,
 		enableTelemetry:    args.EnableTelemetry,
 		httpClient:         httpClient,
-		userAgent:          azdinternal.MakeUserAgentString(""),
+		userAgent:          azdinternal.UserAgent(),
 	}
 }
 
@@ -351,9 +365,9 @@ func (cli *azCli) UserAgent() string {
 	return cli.userAgent
 }
 
-func (cli *azCli) createDefaultClientOptionsBuilder(ctx context.Context) *azsdk.ClientOptionsBuilder {
+func (cli *azCli) clientOptionsBuilder(ctx context.Context) *azsdk.ClientOptionsBuilder {
 	return azsdk.NewClientOptionsBuilder().
-		WithTransport(httputil.GetHttpClient(ctx)).
+		WithTransport(cli.httpClient).
 		WithPerCallPolicy(azsdk.NewUserAgentPolicy(cli.UserAgent())).
 		WithPerCallPolicy(azsdk.NewMsCorrelationPolicy(ctx))
 }

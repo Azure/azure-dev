@@ -204,3 +204,9 @@ const (
 	// The exit code of the tool after invocation.
 	ToolExitCode = attribute.Key("tool.exitCode")
 )
+
+// Performance related fields
+const (
+	// The time spent waiting on user interaction in milliseconds.
+	PerfInteractTime = attribute.Key("perf.interact_time")
+)

@@ -27,7 +27,7 @@ import (
 
 // cBicepVersion is the minimum version of bicep that we require (and the one we fetch when we fetch bicep on behalf of a
 // user).
-var cBicepVersion semver.Version = semver.MustParse("0.16.1")
+var cBicepVersion semver.Version = semver.MustParse("0.17.1")
 
 type BicepCli interface {
 	Build(ctx context.Context, file string) (string, error)

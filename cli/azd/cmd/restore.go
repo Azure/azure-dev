@@ -195,7 +195,7 @@ func (ra *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error)
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
 			Header: fmt.Sprintf(
-				"Your applications dependencies were restored in %s.", ux.DurationAsText(time.Since(startTime))),
+				"Your applications dependencies were restored in %s.", ux.DurationAsText(since(startTime))),
 		},
 	}, nil
 }

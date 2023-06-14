@@ -20,7 +20,7 @@ func (p *BicepProvider) promptForParameter(
 	key string,
 	param azure.ArmTemplateParameterDefinition,
 ) (any, error) {
-	msg := fmt.Sprintf("Please enter a value for the '%s' infrastructure parameter:", key)
+	msg := fmt.Sprintf("Enter a value for the '%s' infrastructure parameter:", key)
 	help, _ := param.Description()
 	azdMetadata, _ := param.AzdMetadata()
 	paramType := p.mapBicepTypeToInterfaceType(param.Type)
@@ -28,7 +28,7 @@ func (p *BicepProvider) promptForParameter(
 	var value any
 
 	if paramType == ParameterTypeString && azdMetadata.Type != nil && *azdMetadata.Type == "location" {
-		location, err := p.prompters.Location(ctx, p.env.GetSubscriptionId(), msg, func(loc account.Location) bool {
+		location, err := p.prompters.PromptLocation(ctx, p.env.GetSubscriptionId(), msg, func(loc account.Location) bool {
 			if param.AllowedValues == nil {
 				return true
 			}

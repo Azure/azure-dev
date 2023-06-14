@@ -56,7 +56,7 @@ func NewContainerRegistryService(
 		credentialProvider: credentialProvider,
 		docker:             docker,
 		httpClient:         httpClient,
-		userAgent:          azdinternal.MakeUserAgentString(""),
+		userAgent:          azdinternal.UserAgent(),
 	}
 }
 
@@ -245,7 +245,7 @@ func (crs *containerRegistryService) getAcrToken(
 
 	response, err := pipeline.Do(req)
 	if err != nil {
-		return nil, httputil.HandleRequestError(response, err)
+		return nil, err
 	}
 
 	if !azruntime.HasStatusCode(response, http.StatusOK) {

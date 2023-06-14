@@ -27,7 +27,7 @@ func NewSubscriptionsService(
 	credentialProvider auth.MultiTenantCredentialProvider,
 	httpClient httputil.HttpClient) *SubscriptionsService {
 	return &SubscriptionsService{
-		userAgent:          azdinternal.MakeUserAgentString(""),
+		userAgent:          azdinternal.UserAgent(),
 		httpClient:         httpClient,
 		credentialProvider: credentialProvider,
 	}
@@ -126,7 +126,8 @@ func (s *SubscriptionsService) ListSubscriptionLocations(
 
 		for _, location := range page.LocationListResult.Value {
 			// Only include physical locations
-			if *location.Metadata.RegionType == "Physical" && !compare.PtrValueEquals(location.Metadata.PhysicalLocation, "") {
+			if *location.Metadata.RegionType == "Physical" &&
+				!compare.PtrValueEquals(location.Metadata.PhysicalLocation, "") {
 				displayName := convert.ToValueWithDefault(location.DisplayName, *location.Name)
 				regionalDisplayName := convert.ToValueWithDefault(location.RegionalDisplayName, displayName)
 

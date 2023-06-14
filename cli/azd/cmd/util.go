@@ -8,10 +8,12 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/AlecAivazis/survey/v2"
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -37,7 +39,7 @@ func invalidEnvironmentNameMsg(environmentName string) string {
 func ensureValidEnvironmentName(ctx context.Context, environmentName *string, suggest string, console input.Console) error {
 	for !environment.IsValidEnvironmentName(*environmentName) {
 		userInput, err := console.Prompt(ctx, input.ConsoleOptions{
-			Message: "Please enter a new environment name:",
+			Message: "Enter a new environment name:",
 			Help: heredoc.Doc(`
 			A unique string that can be used to differentiate copies of your application in Azure. 
 			
@@ -275,8 +277,8 @@ func getTargetServiceName(
 		targetService, err := projectManager.DefaultServiceFromWd(ctx, projectConfig)
 		if errors.Is(err, project.ErrNoDefaultService) {
 			return "", fmt.Errorf(
-				//nolint:lll
-				"current working directory is not a project or service directory. Please specify a service name to %s a service, or specify --all to %s all services",
+				"current working directory is not a project or service directory. Specify a service name to %s a service, "+
+					"or specify --all to %s all services",
 				commandName,
 				commandName,
 			)
@@ -294,4 +296,10 @@ func getTargetServiceName(
 	}
 
 	return targetServiceName, nil
+}
+
+// Calculate the total time since t, excluding user interaction time.
+func since(t time.Time) time.Duration {
+	userInteractTime := tracing.InteractTimeMs.Load()
+	return time.Since(t) - time.Duration(userInteractTime)*time.Millisecond
 }

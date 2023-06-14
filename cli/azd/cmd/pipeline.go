@@ -10,17 +10,13 @@ import (
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
-	"github.com/azure/azure-dev/cli/azd/pkg/commands/pipeline"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
+	"github.com/azure/azure-dev/cli/azd/pkg/pipeline"
+	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -112,40 +108,27 @@ func newPipelineConfigCmd() *cobra.Command {
 
 // pipelineConfigAction defines the action for pipeline config command
 type pipelineConfigAction struct {
-	flags              *pipelineConfigFlags
-	manager            *pipeline.PipelineManager
-	accountManager     account.Manager
-	azCli              azcli.AzCli
-	azdCtx             *azdcontext.AzdContext
-	env                *environment.Environment
-	console            input.Console
-	commandRunner      exec.CommandRunner
-	credentialProvider account.SubscriptionCredentialProvider
+	flags     *pipelineConfigFlags
+	manager   *pipeline.PipelineManager
+	env       *environment.Environment
+	console   input.Console
+	prompters prompt.Prompter
 }
 
 func newPipelineConfigAction(
-	azCli azcli.AzCli,
-	credentialProvider account.SubscriptionCredentialProvider,
-	azdCtx *azdcontext.AzdContext,
 	env *environment.Environment,
-	accountManager account.Manager,
 	_ auth.LoggedInGuard,
 	console input.Console,
 	flags *pipelineConfigFlags,
-	commandRunner exec.CommandRunner,
+	prompters prompt.Prompter,
+	manager *pipeline.PipelineManager,
 ) actions.Action {
 	pca := &pipelineConfigAction{
-		flags:              flags,
-		azCli:              azCli,
-		credentialProvider: credentialProvider,
-		manager: pipeline.NewPipelineManager(
-			azCli, azdCtx, env, flags.global, commandRunner, console, flags.PipelineManagerArgs,
-		),
-		azdCtx:         azdCtx,
-		accountManager: accountManager,
-		env:            env,
-		console:        console,
-		commandRunner:  commandRunner,
+		flags:     flags,
+		manager:   manager,
+		env:       env,
+		console:   console,
+		prompters: prompters,
 	}
 
 	return pca
@@ -153,27 +136,12 @@ func newPipelineConfigAction(
 
 // Run implements action interface
 func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	err := provisioning.EnsureEnv(ctx, p.console, p.env, p.accountManager)
+	err := p.prompters.EnsureEnv(ctx)
 	if err != nil {
 		return nil, err
 	}
 
-	credential, err := p.credentialProvider.CredentialForSubscription(ctx, p.env.GetSubscriptionId())
-	if err != nil {
-		return nil, err
-	}
-
-	// Detect the SCM and CI providers based on the project directory
-	p.manager.ScmProvider,
-		p.manager.CiProvider,
-		err = pipeline.DetectProviders(
-		ctx, p.azdCtx, p.env, p.manager.PipelineProvider, p.console, credential, p.commandRunner,
-	)
-	if err != nil {
-		return nil, err
-	}
-
-	pipelineProviderName := p.manager.CiProvider.Name()
+	pipelineProviderName := p.manager.CiProviderName()
 
 	// Command title
 	p.console.MessageUxItem(ctx, &ux.MessageTitle{

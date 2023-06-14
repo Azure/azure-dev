@@ -139,9 +139,13 @@ func Start(t *testing.T, opts ...Options) *Session {
 	}
 
 	session := &Session{}
-	err = initVariables(name+".yaml", &session.Variables)
+	variables, err := loadOrInitVariables(name + ".yaml")
 	if err != nil {
 		t.Fatalf("failed to load variables: %v", err)
+	}
+	session.Variables = variables
+	if session.Variables == nil { // prefer empty map over nil
+		session.Variables = map[string]string{}
 	}
 
 	if opt.mode == recorder.ModeReplayOnly {
@@ -274,26 +278,23 @@ func displayMode(vcr *recorder.Recorder) string {
 
 // Loads variables from disk, or by initializing default variables if not available.
 // When loading from disk, the variables are expected to be the second document in the provided yaml file.
-func initVariables(name string, variables *map[string]string) error {
+func loadOrInitVariables(name string) (map[string]string, error) {
 	f, err := os.Open(name)
 	if errors.Is(err, os.ErrNotExist) {
 		initVars := map[string]string{}
 		initVars[TimeKey] = fmt.Sprintf("%d", time.Now().Unix())
-		*variables = initVars
-		return nil
+		return initVars, nil
 	}
 
 	if err != nil {
-		return fmt.Errorf("failed to load cassette file: %w", err)
+		return nil, fmt.Errorf("failed to load cassette file: %w", err)
 	}
 
-	// This implementation uses a buf reader to scan for the second document delimiter for performance.
-	// A more robust implementation would use the YAML decoder to scan for the second document.
 	r := bufio.NewReader(f)
 	docIndex := 0
 	for {
 		text, err := r.ReadString('\n')
-		if text == "---\n" {
+		if text == "---\n" || text == "---\r\n" {
 			docIndex++
 		}
 
@@ -308,20 +309,20 @@ func initVariables(name string, variables *map[string]string) error {
 	}
 
 	if docIndex != 2 { // no variables
-		return nil
+		return nil, nil
 	}
 
 	bytes, err := io.ReadAll(r)
 	if err != nil {
-		return fmt.Errorf("failed to read recording file: %w", err)
+		return nil, fmt.Errorf("failed to read recording file: %w", err)
 	}
 
+	var variables map[string]string
 	err = yaml.Unmarshal(bytes, &variables)
 	if err != nil {
-		return fmt.Errorf("failed to parse recording file: %w", err)
+		return nil, fmt.Errorf("failed to parse recording file: %w", err)
 	}
-
-	return nil
+	return variables, nil
 }
 
 // Saves variables into the named file. The variables are appended as a separate YAML document to the file.

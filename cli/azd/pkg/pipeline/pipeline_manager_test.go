@@ -10,34 +10,28 @@ import (
 	"path/filepath"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/stretchr/testify/assert"
 )
 
-func Test_detectProviders(t *testing.T) {
+func Test_PipelineManager_Initialize(t *testing.T) {
 	tempDir := t.TempDir()
 	ctx := context.Background()
 
 	azdContext := azdcontext.NewAzdContextWithDirectory(tempDir)
-
 	mockContext := mocks.NewMockContext(ctx)
+	setupGithubCliMocks(mockContext)
 
 	t.Run("no folders error", func(t *testing.T) {
-		scmProvider, ciProvider, err := DetectProviders(
-			ctx,
-			azdContext,
-			environment.Ephemeral(),
-			"",
-			mockContext.Console,
-			mockContext.Credentials,
-			mockContext.CommandRunner,
-			mockContext.HttpClient,
-		)
-		assert.Nil(t, scmProvider)
-		assert.Nil(t, ciProvider)
+		manager, err := createPipelineManager(t, mockContext, azdContext, nil, nil)
+		assert.Nil(t, manager)
 		assert.EqualError(
 			t,
 			err,
@@ -50,18 +44,8 @@ func Test_detectProviders(t *testing.T) {
 		err := os.MkdirAll(ghFolder, osutil.PermissionDirectory)
 		assert.NoError(t, err)
 
-		scmProvider, ciProvider, err := DetectProviders(
-			ctx,
-			azdContext,
-			environment.Ephemeral(),
-			"",
-			mockContext.Console,
-			mockContext.Credentials,
-			mockContext.CommandRunner,
-			mockContext.HttpClient,
-		)
-		assert.Nil(t, scmProvider)
-		assert.Nil(t, ciProvider)
+		manager, err := createPipelineManager(t, mockContext, azdContext, nil, nil)
+		assert.Nil(t, manager)
 		assert.ErrorContains(
 			t, err, "finding pipeline provider: reading project file:")
 		os.Remove(ghFolder)
@@ -83,18 +67,8 @@ func Test_detectProviders(t *testing.T) {
 		envValues[envPersistedKey] = azdoLabel
 		env := environment.EphemeralWithValues("test-env", envValues)
 
-		scmProvider, ciProvider, err := DetectProviders(
-			ctx,
-			azdContext,
-			env,
-			"",
-			mockContext.Console,
-			mockContext.Credentials,
-			mockContext.CommandRunner,
-			mockContext.HttpClient,
-		)
-		assert.Nil(t, scmProvider)
-		assert.Nil(t, ciProvider)
+		manager, err := createPipelineManager(t, mockContext, azdContext, env, nil)
+		assert.Nil(t, manager)
 		assert.EqualError(t, err, fmt.Sprintf("%s folder is missing. Can't use selected provider",
 			azdoFolder))
 
@@ -109,18 +83,8 @@ func Test_detectProviders(t *testing.T) {
 		envValues[envPersistedKey] = azdoLabel
 		env := environment.EphemeralWithValues("test-env", envValues)
 
-		scmProvider, ciProvider, err := DetectProviders(
-			ctx,
-			azdContext,
-			env,
-			"",
-			mockContext.Console,
-			mockContext.Credentials,
-			mockContext.CommandRunner,
-			mockContext.HttpClient,
-		)
-		assert.Nil(t, scmProvider)
-		assert.Nil(t, ciProvider)
+		manager, err := createPipelineManager(t, mockContext, azdContext, env, nil)
+		assert.Nil(t, manager)
 		assert.EqualError(t, err, fmt.Sprintf("%s file is missing in %s folder. Can't use selected provider",
 			azdoYml, azdoFolder))
 
@@ -139,18 +103,9 @@ func Test_detectProviders(t *testing.T) {
 		envValues[envPersistedKey] = azdoLabel
 		env := environment.EphemeralWithValues("test-env", envValues)
 
-		scmProvider, ciProvider, err := DetectProviders(
-			ctx,
-			azdContext,
-			env,
-			"",
-			mockContext.Console,
-			mockContext.Credentials,
-			mockContext.CommandRunner,
-			mockContext.HttpClient,
-		)
-		assert.IsType(t, &AzdoScmProvider{}, scmProvider)
-		assert.IsType(t, &AzdoCiProvider{}, ciProvider)
+		manager, err := createPipelineManager(t, mockContext, azdContext, env, nil)
+		assert.IsType(t, &AzdoScmProvider{}, manager.scmProvider)
+		assert.IsType(t, &AzdoCiProvider{}, manager.ciProvider)
 		assert.NoError(t, err)
 
 		os.Remove(azdoFolder)
@@ -163,17 +118,8 @@ func Test_detectProviders(t *testing.T) {
 		envValues := map[string]string{}
 		envValues[envPersistedKey] = gitHubLabel
 		env := environment.EphemeralWithValues("test-env", envValues)
-		scmProvider, ciProvider, err := DetectProviders(ctx,
-			azdContext,
-			env,
-			"",
-			mockContext.Console,
-			mockContext.Credentials,
-			mockContext.CommandRunner,
-			mockContext.HttpClient,
-		)
-		assert.Nil(t, scmProvider)
-		assert.Nil(t, ciProvider)
+		manager, err := createPipelineManager(t, mockContext, azdContext, env, nil)
+		assert.Nil(t, manager)
 		assert.EqualError(t, err, fmt.Sprintf("%s folder is missing. Can't use selected provider",
 			githubFolder))
 
@@ -188,39 +134,23 @@ func Test_detectProviders(t *testing.T) {
 		envValues[envPersistedKey] = gitHubLabel
 		env := environment.EphemeralWithValues("test-env", envValues)
 
-		scmProvider, ciProvider, err := DetectProviders(ctx,
-			azdContext,
-			env,
-			"",
-			mockContext.Console,
-			mockContext.Credentials,
-			mockContext.CommandRunner,
-			mockContext.HttpClient,
-		)
-		assert.IsType(t, &GitHubScmProvider{}, scmProvider)
-		assert.IsType(t, &GitHubCiProvider{}, ciProvider)
+		manager, err := createPipelineManager(t, mockContext, azdContext, env, nil)
+		assert.IsType(t, &GitHubScmProvider{}, manager.scmProvider)
+		assert.IsType(t, &GitHubCiProvider{}, manager.ciProvider)
 		assert.NoError(t, err)
 
 		os.Remove(azdoFolder)
 	})
-
 	t.Run("unknown override value from arg", func(t *testing.T) {
 		ghFolder := filepath.Join(tempDir, githubFolder)
 		err := os.MkdirAll(ghFolder, osutil.PermissionDirectory)
 		assert.NoError(t, err)
 
-		scmProvider, ciProvider, err := DetectProviders(
-			ctx,
-			azdContext,
-			environment.Ephemeral(),
-			"other",
-			mockContext.Console,
-			mockContext.Credentials,
-			mockContext.CommandRunner,
-			mockContext.HttpClient,
-		)
-		assert.Nil(t, scmProvider)
-		assert.Nil(t, ciProvider)
+		args := &PipelineManagerArgs{
+			PipelineProvider: "other",
+		}
+		manager, err := createPipelineManager(t, mockContext, azdContext, nil, args)
+		assert.Nil(t, manager)
 		assert.EqualError(t, err, "other is not a known pipeline provider")
 
 		// Remove folder - reset state
@@ -235,17 +165,8 @@ func Test_detectProviders(t *testing.T) {
 		envValues[envPersistedKey] = "other"
 		env := environment.EphemeralWithValues("test-env", envValues)
 
-		scmProvider, ciProvider, err := DetectProviders(ctx,
-			azdContext,
-			env,
-			"",
-			mockContext.Console,
-			mockContext.Credentials,
-			mockContext.CommandRunner,
-			mockContext.HttpClient,
-		)
-		assert.Nil(t, scmProvider)
-		assert.Nil(t, ciProvider)
+		manager, err := createPipelineManager(t, mockContext, azdContext, env, nil)
+		assert.Nil(t, manager)
 		assert.EqualError(t, err, "other is not a known pipeline provider")
 
 		// Remove folder - reset state
@@ -259,17 +180,8 @@ func Test_detectProviders(t *testing.T) {
 		_, err = projectFile.WriteString("pipeline:\n\r  provider: other")
 		assert.NoError(t, err)
 
-		scmProvider, ciProvider, err := DetectProviders(
-			ctx,
-			azdContext,
-			environment.Ephemeral(),
-			"", mockContext.Console,
-			mockContext.Credentials,
-			mockContext.CommandRunner,
-			mockContext.HttpClient,
-		)
-		assert.Nil(t, scmProvider)
-		assert.Nil(t, ciProvider)
+		manager, err := createPipelineManager(t, mockContext, azdContext, nil, nil)
+		assert.Nil(t, manager)
 		assert.EqualError(t, err, "other is not a known pipeline provider")
 
 		// Remove folder - reset state
@@ -293,17 +205,8 @@ func Test_detectProviders(t *testing.T) {
 		envValues[envPersistedKey] = "persisted"
 		env := environment.EphemeralWithValues("test-env", envValues)
 
-		scmProvider, ciProvider, err := DetectProviders(ctx,
-			azdContext,
-			env,
-			"",
-			mockContext.Console,
-			mockContext.Credentials,
-			mockContext.CommandRunner,
-			mockContext.HttpClient,
-		)
-		assert.Nil(t, scmProvider)
-		assert.Nil(t, ciProvider)
+		manager, err := createPipelineManager(t, mockContext, azdContext, env, nil)
+		assert.Nil(t, manager)
 		assert.EqualError(t, err, "fromYaml is not a known pipeline provider")
 
 		// Remove folder - reset state
@@ -326,19 +229,12 @@ func Test_detectProviders(t *testing.T) {
 		envValues := map[string]string{}
 		envValues[envPersistedKey] = "persisted"
 		env := environment.EphemeralWithValues("test-env", envValues)
+		args := &PipelineManagerArgs{
+			PipelineProvider: "arg",
+		}
 
-		scmProvider, ciProvider, err := DetectProviders(
-			ctx,
-			azdContext,
-			env,
-			"arg",
-			mockContext.Console,
-			mockContext.Credentials,
-			mockContext.CommandRunner,
-			mockContext.HttpClient,
-		)
-		assert.Nil(t, scmProvider)
-		assert.Nil(t, ciProvider)
+		manager, err := createPipelineManager(t, mockContext, azdContext, env, args)
+		assert.Nil(t, manager)
 		assert.EqualError(t, err, "arg is not a known pipeline provider")
 
 		// Remove folder - reset state
@@ -355,18 +251,9 @@ func Test_detectProviders(t *testing.T) {
 		err := os.MkdirAll(ghFolder, osutil.PermissionDirectory)
 		assert.NoError(t, err)
 
-		scmProvider, ciProvider, err := DetectProviders(
-			ctx,
-			azdContext,
-			environment.Ephemeral(),
-			"",
-			mockContext.Console,
-			mockContext.Credentials,
-			mockContext.CommandRunner,
-			mockContext.HttpClient,
-		)
-		assert.IsType(t, &GitHubScmProvider{}, scmProvider)
-		assert.IsType(t, &GitHubCiProvider{}, ciProvider)
+		manager, err := createPipelineManager(t, mockContext, azdContext, nil, nil)
+		assert.IsType(t, &GitHubScmProvider{}, manager.scmProvider)
+		assert.IsType(t, &GitHubCiProvider{}, manager.ciProvider)
 		assert.NoError(t, err)
 
 		os.Remove(ghFolder)
@@ -376,18 +263,9 @@ func Test_detectProviders(t *testing.T) {
 		err := os.MkdirAll(azdoFolder, osutil.PermissionDirectory)
 		assert.NoError(t, err)
 
-		scmProvider, ciProvider, err := DetectProviders(
-			ctx,
-			azdContext,
-			environment.Ephemeral(),
-			"",
-			mockContext.Console,
-			mockContext.Credentials,
-			mockContext.CommandRunner,
-			mockContext.HttpClient,
-		)
-		assert.IsType(t, &AzdoScmProvider{}, scmProvider)
-		assert.IsType(t, &AzdoCiProvider{}, ciProvider)
+		manager, err := createPipelineManager(t, mockContext, azdContext, nil, nil)
+		assert.IsType(t, &AzdoScmProvider{}, manager.scmProvider)
+		assert.IsType(t, &AzdoCiProvider{}, manager.ciProvider)
 		assert.NoError(t, err)
 
 		os.Remove(azdoFolder)
@@ -400,18 +278,9 @@ func Test_detectProviders(t *testing.T) {
 		err = os.MkdirAll(azdoFolder, osutil.PermissionDirectory)
 		assert.NoError(t, err)
 
-		scmProvider, ciProvider, err := DetectProviders(
-			ctx,
-			azdContext,
-			environment.Ephemeral(),
-			"",
-			mockContext.Console,
-			mockContext.Credentials,
-			mockContext.CommandRunner,
-			mockContext.HttpClient,
-		)
-		assert.IsType(t, &GitHubScmProvider{}, scmProvider)
-		assert.IsType(t, &GitHubCiProvider{}, ciProvider)
+		manager, err := createPipelineManager(t, mockContext, azdContext, nil, nil)
+		assert.IsType(t, &GitHubScmProvider{}, manager.scmProvider)
+		assert.IsType(t, &GitHubCiProvider{}, manager.ciProvider)
 		assert.NoError(t, err)
 
 		os.Remove(ghFolder)
@@ -423,19 +292,13 @@ func Test_detectProviders(t *testing.T) {
 		assert.NoError(t, err)
 
 		env := environment.Ephemeral()
+		args := &PipelineManagerArgs{
+			PipelineProvider: azdoLabel,
+		}
 
-		scmProvider, ciProvider, err := DetectProviders(
-			ctx,
-			azdContext,
-			env,
-			azdoLabel,
-			mockContext.Console,
-			mockContext.Credentials,
-			mockContext.CommandRunner,
-			mockContext.HttpClient,
-		)
-		assert.IsType(t, &AzdoScmProvider{}, scmProvider)
-		assert.IsType(t, &AzdoCiProvider{}, ciProvider)
+		manager, err := createPipelineManager(t, mockContext, azdContext, env, args)
+		assert.IsType(t, &AzdoScmProvider{}, manager.scmProvider)
+		assert.IsType(t, &AzdoCiProvider{}, manager.ciProvider)
 		assert.NoError(t, err)
 
 		envValue, found := env.Dotenv()[envPersistedKey]
@@ -443,17 +306,9 @@ func Test_detectProviders(t *testing.T) {
 		assert.Equal(t, azdoLabel, envValue)
 
 		// Calling function again with same env and without override arg should use the persisted
-		scmProvider, ciProvider, err = DetectProviders(ctx,
-			azdContext,
-			env,
-			"",
-			mockContext.Console,
-			mockContext.Credentials,
-			mockContext.CommandRunner,
-			mockContext.HttpClient,
-		)
-		assert.IsType(t, &AzdoScmProvider{}, scmProvider)
-		assert.IsType(t, &AzdoCiProvider{}, ciProvider)
+		err = manager.initialize(*mockContext.Context, "")
+		assert.IsType(t, &AzdoScmProvider{}, manager.scmProvider)
+		assert.IsType(t, &AzdoCiProvider{}, manager.ciProvider)
 		assert.NoError(t, err)
 
 		os.Remove(azdoFolder)
@@ -467,52 +322,28 @@ func Test_detectProviders(t *testing.T) {
 		assert.NoError(t, err)
 
 		env := environment.Ephemeral()
-
-		scmProvider, ciProvider, err := DetectProviders(
-			ctx,
-			azdContext,
-			env,
-			azdoLabel,
-			mockContext.Console,
-			mockContext.Credentials,
-			mockContext.CommandRunner,
-			mockContext.HttpClient,
-		)
-		assert.IsType(t, &AzdoScmProvider{}, scmProvider)
-		assert.IsType(t, &AzdoCiProvider{}, ciProvider)
+		args := &PipelineManagerArgs{
+			PipelineProvider: azdoLabel,
+		}
+		manager, err := createPipelineManager(t, mockContext, azdContext, env, args)
+		assert.IsType(t, &AzdoScmProvider{}, manager.scmProvider)
+		assert.IsType(t, &AzdoCiProvider{}, manager.ciProvider)
 		assert.NoError(t, err)
 
 		// Calling function again with same env and without override arg should use the persisted
-		scmProvider, ciProvider, err = DetectProviders(ctx,
-			azdContext,
-			env,
-			"",
-			mockContext.Console,
-			mockContext.Credentials,
-			mockContext.CommandRunner,
-			mockContext.HttpClient,
-		)
-		assert.IsType(t, &AzdoScmProvider{}, scmProvider)
-		assert.IsType(t, &AzdoCiProvider{}, ciProvider)
+		err = manager.initialize(*mockContext.Context, "")
+		assert.IsType(t, &AzdoScmProvider{}, manager.scmProvider)
+		assert.IsType(t, &AzdoCiProvider{}, manager.ciProvider)
 		assert.NoError(t, err)
 
 		// Write yaml to override
 		_, err = projectFile.WriteString("pipeline:\n\r  provider: github")
 		assert.NoError(t, err)
 
-		// Calling function again with same env and without override arg should detect yaml change and override
-		// persisted
-		scmProvider, ciProvider, err = DetectProviders(ctx,
-			azdContext,
-			env,
-			"",
-			mockContext.Console,
-			mockContext.Credentials,
-			mockContext.CommandRunner,
-			mockContext.HttpClient,
-		)
-		assert.IsType(t, &GitHubScmProvider{}, scmProvider)
-		assert.IsType(t, &GitHubCiProvider{}, ciProvider)
+		// Calling function again with same env and without override arg should detect yaml change and override persisted
+		err = manager.initialize(*mockContext.Context, "")
+		assert.IsType(t, &GitHubScmProvider{}, manager.scmProvider)
+		assert.IsType(t, &GitHubCiProvider{}, manager.ciProvider)
 		assert.NoError(t, err)
 
 		// the persisted choice should be updated based on the value set on yaml
@@ -521,32 +352,15 @@ func Test_detectProviders(t *testing.T) {
 		assert.Equal(t, gitHubLabel, envValue)
 
 		// Call again to check persisted(github) after one change (and yaml is still present)
-		scmProvider, ciProvider, err = DetectProviders(ctx,
-			azdContext,
-			env,
-			"",
-			mockContext.Console,
-			mockContext.Credentials,
-			mockContext.CommandRunner,
-			mockContext.HttpClient,
-		)
-		assert.IsType(t, &GitHubScmProvider{}, scmProvider)
-		assert.IsType(t, &GitHubCiProvider{}, ciProvider)
+		err = manager.initialize(*mockContext.Context, "")
+		assert.IsType(t, &GitHubScmProvider{}, manager.scmProvider)
+		assert.IsType(t, &GitHubCiProvider{}, manager.ciProvider)
 		assert.NoError(t, err)
 
 		// Check argument override having yaml(github) config and persisted config(github)
-		scmProvider, ciProvider, err = DetectProviders(
-			ctx,
-			azdContext,
-			env,
-			azdoLabel,
-			mockContext.Console,
-			mockContext.Credentials,
-			mockContext.CommandRunner,
-			mockContext.HttpClient,
-		)
-		assert.IsType(t, &AzdoScmProvider{}, scmProvider)
-		assert.IsType(t, &AzdoCiProvider{}, ciProvider)
+		err = manager.initialize(*mockContext.Context, azdoLabel)
+		assert.IsType(t, &AzdoScmProvider{}, manager.scmProvider)
+		assert.IsType(t, &AzdoCiProvider{}, manager.ciProvider)
 		assert.NoError(t, err)
 
 		// the persisted selection is now azdo(env) but yaml is github
@@ -556,17 +370,9 @@ func Test_detectProviders(t *testing.T) {
 
 		// persisted = azdo (per last run) and yaml = github, should return github
 		// as yaml overrides a persisted run
-		scmProvider, ciProvider, err = DetectProviders(ctx,
-			azdContext,
-			env,
-			"",
-			mockContext.Console,
-			mockContext.Credentials,
-			mockContext.CommandRunner,
-			mockContext.HttpClient,
-		)
-		assert.IsType(t, &GitHubScmProvider{}, scmProvider)
-		assert.IsType(t, &GitHubCiProvider{}, ciProvider)
+		err = manager.initialize(*mockContext.Context, "")
+		assert.IsType(t, &GitHubScmProvider{}, manager.scmProvider)
+		assert.IsType(t, &GitHubCiProvider{}, manager.ciProvider)
 		assert.NoError(t, err)
 
 		// reset state
@@ -576,4 +382,54 @@ func Test_detectProviders(t *testing.T) {
 		os.Remove(azdoFolder)
 		os.Remove(ghFolder)
 	})
+}
+
+func createPipelineManager(
+	t *testing.T,
+	mockContext *mocks.MockContext,
+	azdContext *azdcontext.AzdContext,
+	env *environment.Environment,
+	args *PipelineManagerArgs,
+) (*PipelineManager, error) {
+	if env == nil {
+		env = environment.Ephemeral()
+	}
+
+	if args == nil {
+		args = &PipelineManagerArgs{}
+	}
+
+	// Singletons
+	mockContext.Container.RegisterSingleton(func() context.Context { return *mockContext.Context })
+	mockContext.Container.RegisterSingleton(func() *azdcontext.AzdContext { return azdContext })
+	mockContext.Container.RegisterSingleton(func() *environment.Environment { return env })
+	mockContext.Container.RegisterSingleton(github.NewGitHubCli)
+	mockContext.Container.RegisterSingleton(git.NewGitCli)
+	mockContext.Container.RegisterSingleton(func() account.SubscriptionCredentialProvider {
+		return mockContext.SubscriptionCredentialProvider
+	})
+
+	// Pipeline providers
+	pipelineProviderMap := map[string]any{
+		"github-ci":  NewGitHubCiProvider,
+		"github-scm": NewGitHubScmProvider,
+		"azdo-ci":    NewAzdoCiProvider,
+		"azdo-scm":   NewAzdoScmProvider,
+	}
+
+	for provider, constructor := range pipelineProviderMap {
+		err := mockContext.Container.RegisterNamedSingleton(string(provider), constructor)
+		assert.NoError(t, err)
+	}
+
+	return NewPipelineManager(
+		*mockContext.Context,
+		mockazcli.NewAzCliFromMockContext(mockContext),
+		git.NewGitCli(mockContext.CommandRunner),
+		azdContext,
+		env,
+		mockContext.Console,
+		args,
+		mockContext.Container,
+	)
 }

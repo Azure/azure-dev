@@ -10,8 +10,10 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
@@ -48,11 +50,7 @@ func Test_gitHub_provider_preConfigure_check(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		setupGithubCliMocks(mockContext)
 
-		provider := NewGitHubCiProvider(
-			mockContext.Credentials,
-			mockContext.CommandRunner,
-			mockContext.Console,
-			mockContext.HttpClient)
+		provider := createGitHubCiProvider(t, mockContext)
 		updatedConfig, err := provider.preConfigureCheck(
 			*mockContext.Context,
 			PipelineManagerArgs{},
@@ -79,13 +77,8 @@ func Test_gitHub_provider_preConfigure_check(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		setupGithubCliMocks(mockContext)
 
-		provider := NewGitHubCiProvider(
-			mockContext.Credentials,
-			mockContext.CommandRunner,
-			mockContext.Console,
-			mockContext.HttpClient)
-		updatedConfig, err := provider.preConfigureCheck(
-			*mockContext.Context, pipelineManagerArgs, infraOptions, "")
+		provider := createGitHubCiProvider(t, mockContext)
+		updatedConfig, err := provider.preConfigureCheck(*mockContext.Context, pipelineManagerArgs, infraOptions, "")
 		require.Error(t, err)
 		require.False(t, updatedConfig)
 		require.True(t, errors.Is(err, ErrAuthNotSupported))
@@ -103,11 +96,7 @@ func Test_gitHub_provider_preConfigure_check(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		setupGithubCliMocks(mockContext)
 
-		provider := NewGitHubCiProvider(
-			mockContext.Credentials,
-			mockContext.CommandRunner,
-			mockContext.Console,
-			mockContext.HttpClient)
+		provider := createGitHubCiProvider(t, mockContext)
 		updatedConfig, err := provider.preConfigureCheck(
 			*mockContext.Context, pipelineManagerArgs, infraOptions, "")
 		require.NoError(t, err)
@@ -117,6 +106,25 @@ func Test_gitHub_provider_preConfigure_check(t *testing.T) {
 		require.Len(t, consoleLog, 1)
 		require.Contains(t, consoleLog[0], "Warning: Terraform provisioning does not support federated authentication")
 	})
+}
+
+func createGitHubCiProvider(t *testing.T, mockContext *mocks.MockContext) CiProvider {
+	env := environment.Ephemeral()
+	ghCli, err := github.NewGitHubCli(
+		*mockContext.Context,
+		mockContext.Console,
+		mockContext.CommandRunner,
+	)
+	require.NoError(t, err)
+
+	return NewGitHubCiProvider(
+		env,
+		mockContext.SubscriptionCredentialProvider,
+		ghCli,
+		git.NewGitCli(mockContext.CommandRunner),
+		mockContext.Console,
+		mockContext.HttpClient,
+	)
 }
 
 func setupGithubCliMocks(mockContext *mocks.MockContext) {

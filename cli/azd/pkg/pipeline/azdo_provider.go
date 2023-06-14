@@ -36,6 +36,23 @@ type AzdoScmProvider struct {
 	azdoConnection *azuredevops.Connection
 	commandRunner  exec.CommandRunner
 	console        input.Console
+	gitCli         git.GitCli
+}
+
+func NewAzdoScmProvider(
+	env *environment.Environment,
+	azdContext *azdcontext.AzdContext,
+	commandRunner exec.CommandRunner,
+	console input.Console,
+	gitCli git.GitCli,
+) ScmProvider {
+	return &AzdoScmProvider{
+		Env:           env,
+		AzdContext:    azdContext,
+		commandRunner: commandRunner,
+		console:       console,
+		gitCli:        gitCli,
+	}
 }
 
 // AzdoRepositoryDetails provides extra state needed for the AzDo provider.
@@ -327,8 +344,7 @@ func (p *AzdoScmProvider) configureGitRemote(
 }
 
 func (p *AzdoScmProvider) getCurrentGitBranch(ctx context.Context, repoPath string) (string, error) {
-	gitCli := git.NewGitCli(p.commandRunner)
-	branch, err := gitCli.GetCurrentBranch(ctx, repoPath)
+	branch, err := p.gitCli.GetCurrentBranch(ctx, repoPath)
 	if err != nil {
 		return "", err
 	}
@@ -617,6 +633,20 @@ type AzdoCiProvider struct {
 	commandRunner exec.CommandRunner
 }
 
+func NewAzdoCiProvider(
+	env *environment.Environment,
+	azdContext *azdcontext.AzdContext,
+	console input.Console,
+	commandRunner exec.CommandRunner,
+) CiProvider {
+	return &AzdoCiProvider{
+		Env:           env,
+		AzdContext:    azdContext,
+		console:       console,
+		commandRunner: commandRunner,
+	}
+}
+
 // ***  subareaProvider implementation ******
 
 // requiredTools defines the requires tools for GitHub to be used as CI manager
@@ -661,7 +691,6 @@ func (p *AzdoCiProvider) Name() string {
 // configureConnection set up Azure DevOps with the Azure credential
 func (p *AzdoCiProvider) configureConnection(
 	ctx context.Context,
-	azdEnvironment *environment.Environment,
 	repoDetails *gitRepositoryDetails,
 	provisioningProvider provisioning.Options,
 	credentials json.RawMessage,

@@ -1,3 +1,7 @@
+// recording implements a proxy server that can record and playback HTTP interactions.
+// The implementation largely reuses go-vcr, but adds support for:
+// - Saving and loading of variables in the recording session
+// - Enabling recording in a HTTP/1.1 proxy server that uses HTTP Connect (instead of client-side recording with go-vcr)
 package recording
 
 import (
@@ -63,7 +67,9 @@ type Session struct {
 }
 
 // Start starts the recorder proxy, returning a [recording.Session] if recording or playback is enabled.
-// In live mode, it returns nil.
+// In live mode, it returns nil. By default, on a non-CI machine, it will record once if no recording is available on disk.
+// To set the record mode, either specify AZURE_RECORD_MODE='live', 'playback, or 'record'. Alternatively, for a test
+// that needs control over the record mode, pass WithRecordMode to Start.
 //
 // By default, the recorder proxy will log errors and info messages.
 // The environment variable RECORDER_PROXY_DEBUG can be set to enable debug logging for the recorder proxy.
@@ -122,8 +128,13 @@ func Start(t *testing.T, opts ...Options) *Session {
 
 	// This also automatically loads the recording.
 	vcr, err := recorder.NewWithOptions(recorderOptions)
-	if err != nil {
+	if errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("failed to load recordings: %v: %s",
+			err,
+			"to record this test, re-run the test with AZURE_RECORD_MODE='record'")
+	} else if err != nil {
 		t.Fatalf("failed to load recordings: %v", err)
+
 	}
 	err = initVariables(name+".yaml", &session.Variables)
 	if err != nil {

@@ -173,7 +173,17 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 
 	session := recording.Start(t)
 
-	envName := "UpperCase" + randomOrStoredEnvName(session)
+	envName := "UpperCase" + randomEnvName()
+	if session != nil {
+		if session.Playback {
+			if _, ok := session.Variables[recording.EnvNameKey]; ok {
+				envName = session.Variables[recording.EnvNameKey]
+			}
+		} else {
+			session.Variables[recording.EnvNameKey] = envName
+		}
+	}
+
 	t.Logf("AZURE_ENV_NAME: %s", envName)
 
 	cli := azdcli.NewCLI(t, azdcli.WithSession(session))
@@ -374,14 +384,16 @@ func copySample(targetRoot string, sampleName string) error {
 }
 
 func randomOrStoredEnvName(session *recording.Session) string {
-	if session.Playback {
+	if session != nil && session.Playback {
 		if _, ok := session.Variables[recording.EnvNameKey]; ok {
 			return session.Variables[recording.EnvNameKey]
 		}
 	}
 
 	randName := randomEnvName()
-	session.Variables[recording.EnvNameKey] = randName
+	if session != nil {
+		session.Variables[recording.EnvNameKey] = randName
+	}
 
 	return randName
 }

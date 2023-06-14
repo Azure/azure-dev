@@ -313,6 +313,7 @@ func Test_CLI_ProvisionIsNeeded(t *testing.T) {
 
 func Test_CLI_NoDebugSpewWhenHelpPassedWithoutDebug(t *testing.T) {
 	cli := azdcli.NewCLI(t)
+	cli.Env = append(cli.Env, "AZD_SKIP_UPDATE_CHECK=true")
 	ctx := context.Background()
 	result, err := cli.RunCommand(ctx, "--help")
 	require.NoError(t, err)

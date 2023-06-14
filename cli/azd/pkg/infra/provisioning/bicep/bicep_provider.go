@@ -267,7 +267,7 @@ func (p *BicepProvider) Deploy(ctx context.Context, pd *DeploymentPlan) (*Deploy
 		resourceManager := infra.NewAzureResourceManager(p.azCli)
 		progressDisplay := NewProvisioningProgressDisplay(resourceManager, p.console, bicepDeploymentData.Target)
 		// Make initial delay shorter to be more responsive in displaying initial progress
-		initialDelay := 3 * time.Second
+		initialDelay := 5 * time.Second
 		regularDelay := 10 * time.Second
 		timer := time.NewTimer(initialDelay)
 		queryStartTime := time.Now()

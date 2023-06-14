@@ -1,7 +1,8 @@
-// recording implements a proxy server that can record and playback HTTP interactions.
-// The implementation largely reuses go-vcr, but adds support for:
-// - Saving and loading of variables in the recording session
-// - Enabling recording in a HTTP/1.1 proxy server that uses HTTP Connect (instead of client-side recording with go-vcr)
+// recording implements a proxy server that records and plays back HTTP interactions.
+// The implementation largely reuses [go-vcr], but adds support for:
+//   - Saving and loading of variables in the recording session
+//   - Enabling recording on a HTTP/1.1 proxy server that uses HTTP Connect, unlike [go-vcr/recorder] which by default
+//     supports client-side recording
 package recording
 
 import (
@@ -58,20 +59,22 @@ type Session struct {
 	Playback bool
 
 	// Variables stored in the session.
-	// These variables are automatically set as environment variables for the CLI process under test.
-	// See [test/azdcli] for more details.
 	Variables map[string]string
 
-	// The recorder proxy server.
+	// A http.Client that is configured to communicate through the proxy server.
 	ProxyClient *http.Client
 }
 
-// Start starts the recorder proxy, returning a [recording.Session] if recording or playback is enabled.
-// In live mode, it returns nil. By default, on a non-CI machine, it will record once if no recording is available on disk.
-// To set the record mode, either specify AZURE_RECORD_MODE='live', 'playback, or 'record'. Alternatively, for a test
-// that needs control over the record mode, pass WithRecordMode to Start.
+// Start starts the recorder proxy, returning a [recording.Session].
+// In live mode, it returns nil. By default, interactions are automatically recorded once
+// if no recording is available on disk.
+// To set the record mode, specify AZURE_RECORD_MODE='live', 'playback', or 'record'. To control the exact behavior
+// in a test, pass WithRecordMode to Start.
 //
-// By default, the recorder proxy will log errors and info messages.
+// Start automatically adds the required t.Cleanup to save recordings when the test succeeds,
+// and handles shutting down the proxy server.
+//
+// By default, the recorder proxy will log error and info messages.
 // The environment variable RECORDER_PROXY_DEBUG can be set to enable debug logging for the recorder proxy.
 func Start(t *testing.T, opts ...Options) *Session {
 	opt := recordOptions{}
@@ -119,7 +122,6 @@ func Start(t *testing.T, opts ...Options) *Session {
 		Level: level,
 	}))
 
-	session := &Session{}
 	recorderOptions := &recorder.Options{
 		CassetteName:       name,
 		Mode:               opt.mode,
@@ -134,8 +136,9 @@ func Start(t *testing.T, opts ...Options) *Session {
 			"to record this test, re-run the test with AZURE_RECORD_MODE='record'")
 	} else if err != nil {
 		t.Fatalf("failed to load recordings: %v", err)
-
 	}
+
+	session := &Session{}
 	err = initVariables(name+".yaml", &session.Variables)
 	if err != nil {
 		t.Fatalf("failed to load variables: %v", err)
@@ -182,6 +185,7 @@ func Start(t *testing.T, opts ...Options) *Session {
 		return nil
 	}, recorder.BeforeResponseReplayHook)
 
+	// Add passthrough for services that return personal data and need not be recorded
 	vcr.AddPassthrough(func(req *http.Request) bool {
 		return strings.Contains(req.URL.Host, "login.microsoftonline.com") ||
 			strings.Contains(req.URL.Host, "graph.microsoft.com")

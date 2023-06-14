@@ -62,6 +62,7 @@ var loginScopesMap = map[string]struct{}{
 	azure.ManagementScope: {},
 }
 
+// HttpClient interface as required by MSAL library.
 type HttpClient interface {
 	httputil.HttpClient
 

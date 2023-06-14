@@ -133,18 +133,11 @@ func Test_CLI_ListDeployments(t *testing.T) {
 		t.Fatal("could not create credential")
 	}
 
-	var client *http.Client
-	if session != nil {
-		client = session.ProxyClient()
-	} else {
-		client = http.DefaultClient
-	}
-
 	azCli := azcli.NewAzCli(mockaccount.SubscriptionCredentialProviderFunc(
 		func(_ context.Context, _ string) (azcore.TokenCredential, error) {
 			return cred, nil
 		}),
-		client,
+		session.ProxyClient(),
 		azcli.NewAzCliArgs{})
 
 	// Verify that resource groups are created with tag
@@ -434,16 +427,14 @@ func copySample(targetRoot string, sampleName string) error {
 }
 
 func randomOrStoredEnvName(session *recording.Session) string {
-	if session != nil {
+	if session.Playback {
 		if _, ok := session.Variables[recording.EnvNameKey]; ok {
 			return session.Variables[recording.EnvNameKey]
 		}
 	}
 
 	randName := randomEnvName()
-	if session != nil {
-		session.Variables[recording.EnvNameKey] = randName
-	}
+	session.Variables[recording.EnvNameKey] = randName
 
 	return randName
 }

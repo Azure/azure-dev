@@ -188,7 +188,8 @@ func Start(t *testing.T, opts ...Options) *Session {
 	// Add passthrough for services that return personal data and need not be recorded
 	vcr.AddPassthrough(func(req *http.Request) bool {
 		return strings.Contains(req.URL.Host, "login.microsoftonline.com") ||
-			strings.Contains(req.URL.Host, "graph.microsoft.com")
+			strings.Contains(req.URL.Host, "graph.microsoft.com") ||
+			strings.Contains(req.URL.Host, "applicationinsights.azure.com")
 	})
 
 	proxy := &connectHandler{

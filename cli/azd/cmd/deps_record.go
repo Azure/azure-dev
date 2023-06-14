@@ -20,6 +20,7 @@ func createHttpClient() *http.Client {
 		Transport: transport,
 	}
 
+	http.DefaultClient = client
 	return client
 }
 

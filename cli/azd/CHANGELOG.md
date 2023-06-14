@@ -5,7 +5,6 @@
 ### Features Added
 
 - [[2266]](https://github.com/Azure/azure-dev/pull/2266) Support for buildArgs on Docker builds.
-- [[2289]](https://github.com/Azure/azure-dev/pull/2289) Alpha feature: resource group deployments.
 - [[2322]](https://github.com/Azure/azure-dev/pull/2322) Support Azure Spring Apps consumption dedicated plan.
 
 ### Bugs Fixed

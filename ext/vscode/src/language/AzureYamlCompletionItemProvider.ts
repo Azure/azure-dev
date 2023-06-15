@@ -14,7 +14,7 @@ export class AzureYamlCompletionItemProvider implements vscode.CompletionItemPro
 
         const pathPrefix = this.getPathPrefix(document, position);
         const matchingPaths = await this.getMatchingWorkspacePaths(document, pathPrefix, token);
-    
+
         return matchingPaths.map((path) => {
             const completionItem = new vscode.CompletionItem(path);
             completionItem.insertText = path;
@@ -38,7 +38,7 @@ export class AzureYamlCompletionItemProvider implements vscode.CompletionItemPro
 
         const currentFolder = vscode.Uri.joinPath(getContainingFolderUri(document.uri), pathPrefix);
         const results: string[] = [];
-        
+
         for (const [file, type] of await vscode.workspace.fs.readDirectory(currentFolder)) {
             if (type !== vscode.FileType.Directory) {
                 continue;

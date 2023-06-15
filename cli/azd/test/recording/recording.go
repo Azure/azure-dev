@@ -50,6 +50,7 @@ func (in modeOption) Apply(out recordOptions) recordOptions {
 
 const EnvNameKey = "env_name"
 const TimeKey = "time"
+const SubscriptionIdKey = "subscription_id"
 
 type Session struct {
 	// ProxyUrl is the URL of the proxy server that will be recording or replaying interactions.
@@ -193,7 +194,10 @@ func Start(t *testing.T, opts ...Options) *Session {
 	vcr.AddPassthrough(func(req *http.Request) bool {
 		return strings.Contains(req.URL.Host, "login.microsoftonline.com") ||
 			strings.Contains(req.URL.Host, "graph.microsoft.com") ||
-			strings.Contains(req.URL.Host, "applicationinsights.azure.com")
+			strings.Contains(req.URL.Host, "applicationinsights.azure.com") ||
+			(strings.Contains(req.URL.Host, "aka.ms") &&
+				strings.Contains(req.URL.Path, "/azure-dev")) ||
+			strings.Contains(req.URL.Host, "azure-dev.azureedge.net")
 	})
 
 	proxy := &connectHandler{

@@ -40,6 +40,11 @@ func (d *httpPollDiscarder) BeforeSave(i *cassette.Interaction) error {
 			return err
 		}
 		d.pollInProgress = op
+
+		// Shorten Retry-After
+		if i.Response.Headers.Get("Retry-After") != "" {
+			i.Response.Headers.Set("Retry-After", "0")
+		}
 	}
 
 	return nil

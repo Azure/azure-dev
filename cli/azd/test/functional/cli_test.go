@@ -132,6 +132,16 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 
 	assertEnvValuesStored(t, env)
 
+	if session != nil {
+		if session.Playback {
+			// This is currently required because azd doesn't stored AZURE_SUBSCRIPTION_ID in the .env file
+			// See #2423
+			env.SetSubscriptionId(session.Variables[recording.SubscriptionIdKey])
+		} else {
+			session.Variables[recording.SubscriptionIdKey] = env.GetSubscriptionId()
+		}
+	}
+
 	// GetResourceGroupsForEnvironment requires a credential since it is using the SDK now
 	cred, err := azidentity.NewAzureCLICredential(nil)
 	if err != nil {
@@ -212,6 +222,16 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 	require.Regexp(t, `st\S*`, accountName)
 
 	assertEnvValuesStored(t, env)
+
+	if session != nil {
+		if session.Playback {
+			// This is currently required because azd doesn't stored AZURE_SUBSCRIPTION_ID in the .env file
+			// See #2423
+			env.SetSubscriptionId(session.Variables[recording.SubscriptionIdKey])
+		} else {
+			session.Variables[recording.SubscriptionIdKey] = env.GetSubscriptionId()
+		}
+	}
 
 	// GetResourceGroupsForEnvironment requires a credential since it is using the SDK now
 	var client *http.Client

@@ -145,8 +145,9 @@ func (cli *CLI) RunCommandWithStdIn(ctx context.Context, stdin string, args ...s
 		done <- struct{}{}
 	}()
 
-	stdOutLogger := &logWriter{t: cli.T, prefix: "[stdout] "}
-	stdErrLogger := &logWriter{t: cli.T, prefix: "[stderr] "}
+	now := time.Now()
+	stdOutLogger := &logWriter{t: cli.T, prefix: "[stdout] ", initialTime: now}
+	stdErrLogger := &logWriter{t: cli.T, prefix: "[stderr] ", initialTime: now}
 
 	var stderr, stdout bytes.Buffer
 	cmd.Stderr = io.MultiWriter(&stderr, stdErrLogger)
@@ -197,9 +198,10 @@ func (cli *CLI) heartbeat(description string, done <-chan struct{}) {
 }
 
 type logWriter struct {
-	t      *testing.T
-	sb     strings.Builder
-	prefix string
+	t           *testing.T
+	sb          strings.Builder
+	prefix      string
+	initialTime time.Time
 }
 
 func (l *logWriter) Write(bytes []byte) (n int, err error) {
@@ -210,7 +212,7 @@ func (l *logWriter) Write(bytes []byte) (n int, err error) {
 		}
 
 		if b == '\n' {
-			l.t.Logf("%s%s", l.prefix, l.sb.String())
+			l.t.Logf("%s %s%s", time.Since(l.initialTime).Round(1*time.Millisecond), l.prefix, l.sb.String())
 			l.sb.Reset()
 		}
 	}
@@ -248,7 +250,10 @@ func build(t *testing.T, pkgPath string, args ...string) {
 
 // Recording variables that are mapped to environment variables.
 var recordingVarToEnvVar = map[string]string{
+	// Fixed time for the CLI. See deps_record.go
 	recording.TimeKey: "AZD_TEST_FIXED_CLOCK_UNIX_TIME",
+	// Set the default subscription used in the test
+	recording.SubscriptionIdKey: "AZURE_SUBSCRIPTION_ID",
 }
 
 func environ(session *recording.Session) []string {

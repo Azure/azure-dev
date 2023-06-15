@@ -25,6 +25,7 @@ azdtempl
 azdtempl
 azdtest
 azfile
+azureedge
 azruntime
 azsdk
 AZURECLI

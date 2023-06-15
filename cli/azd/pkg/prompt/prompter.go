@@ -53,20 +53,20 @@ func NewDefaultPrompter(
 //
 // This currently means that subscription (AZURE_SUBSCRIPTION_ID) and location (AZURE_LOCATION) variables are set.
 func (p *DefaultPrompter) EnsureEnv(ctx context.Context) error {
-	if p.env.GetSubscriptionId() == "" {
+	if p.env.DotenvGet(environment.SubscriptionIdEnvVarName) == "" {
 		subscriptionId, err := p.PromptSubscription(ctx, "Select an Azure Subscription to use:")
 		if err != nil {
 			return err
 		}
 
-		p.env.SetSubscriptionId(subscriptionId)
+		p.env.DotenvSet(environment.SubscriptionIdEnvVarName, subscriptionId)
 
 		if err := p.env.Save(); err != nil {
 			return err
 		}
 	}
 
-	if p.env.GetLocation() == "" {
+	if p.env.DotenvGet(environment.LocationEnvVarName) == "" {
 		location, err := p.PromptLocation(
 			ctx,
 			p.env.GetSubscriptionId(),
@@ -77,7 +77,7 @@ func (p *DefaultPrompter) EnsureEnv(ctx context.Context) error {
 			return err
 		}
 
-		p.env.SetLocation(location)
+		p.env.DotenvSet(environment.LocationEnvVarName, location)
 
 		if err := p.env.Save(); err != nil {
 			return err

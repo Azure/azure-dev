@@ -191,6 +191,12 @@ func (e *Environment) Dotenv() map[string]string {
 	return maps.Clone(e.dotenv)
 }
 
+// DotenvGet returns the value named by the given key stored in the .env file in the environment.
+// If the key does not exist, an empty string is returned.
+func (e *Environment) DotenvGet(key string) string {
+	return e.dotenv[key]
+}
+
 // DotenvSet sets the value of [key] to [value] in the .env file associated with the environment. [Save] should be
 // called to ensure this change is persisted.
 func (e *Environment) DotenvSet(key string, value string) {

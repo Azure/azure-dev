@@ -18,6 +18,8 @@ parameters:
   SyndicatedAcrPassword: $(azdev-acr-syndicated-password)
   PublishBrewFormula: false
   PublishArm64Binaries: false
+  AllowPrerelease: false
+  CliVersion: $(CLI_VERSION)
 
 steps:
   - ${{ if eq('true', parameters.CreateGitHubRelease) }}:

@@ -16,6 +16,8 @@ export class AzureYamlProjectRenameProvider extends vscode.Disposable {
     }
 
     public async provideWorkspaceEdits(oldUri: vscode.Uri, newUri: vscode.Uri): Promise<vscode.WorkspaceEdit | undefined> {
+        // When a folder is renamed, only the folder is passed in as the old URI
+        // At the time this is called, the rename has not happened yet
         if (!await AzExtFsExtra.isDirectory(oldUri)) {
             return undefined;
         }
@@ -41,8 +43,6 @@ export class AzureYamlProjectRenameProvider extends vscode.Disposable {
     }
 
     private handleWillRenameFile(evt: vscode.FileWillRenameEvent): void {
-        // When a folder is renamed, only the folder is passed in as the old URI
-        // At the time this is called, the rename has not happened yet
         const oldUri = evt.files[0].oldUri;
         const newUri = evt.files[0].newUri;
 

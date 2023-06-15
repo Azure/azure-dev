@@ -193,7 +193,9 @@ func (p *connectHandler) connectThenServe(clientConn net.Conn, connectReq *http.
 		if errors.Is(err, io.EOF) {
 			break
 		} else if err != nil {
-			panic("connectHandler:" + err.Error())
+			// Terminate the connection if we fail to read the request.
+			p.Log.Error("connectHandler failed to read HTTP request", "error", err.Error())
+			return
 		}
 
 		changeRequestToTarget(req, connectReq.Host)

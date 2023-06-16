@@ -190,7 +190,7 @@ func setupMocksForContainerApps(mockContext *mocks.MockContext) {
 		Name: convert.RefOf(updatedRevisionName),
 		Properties: &armappcontainers.RevisionProperties{
 			ProvisioningState: convert.RefOf(armappcontainers.RevisionProvisioningStateProvisioned),
-			HealthState:       convert.RefOf(armappcontainers.RevisionHealthStateNone),
+			HealthState:       convert.RefOf(armappcontainers.RevisionHealthStateHealthy),
 			Template: &armappcontainers.Template{
 				Containers: []*armappcontainers.Container{
 					{

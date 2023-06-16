@@ -131,8 +131,13 @@ func (at *containerAppTarget) Deploy(
 				return
 			}
 
-			// If the container app is in multiple revision mode, update the traffic to point to the new revision
-			if *containerApp.Properties.Configuration.ActiveRevisionsMode == armappcontainers.ActiveRevisionsModeMultiple {
+			ingressEnabled := containerApp.Properties.Configuration.Ingress != nil
+			//nolint:lll
+			supportsMultipleRevisions := *containerApp.Properties.Configuration.ActiveRevisionsMode == armappcontainers.ActiveRevisionsModeMultiple
+
+			// If the container app has ingress enabled and supports multiple revisions
+			// then update the traffic to point to the new revision
+			if ingressEnabled && supportsMultipleRevisions {
 				task.SetProgress(NewServiceProgress("Shifting traffic to new revision"))
 				err = at.containerAppService.ShiftTrafficToRevision(ctx,
 					targetResource.SubscriptionId(),

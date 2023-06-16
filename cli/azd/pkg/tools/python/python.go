@@ -98,7 +98,7 @@ func (cli *PythonCli) InstallRequirements(ctx context.Context, workingDir, envir
 		installCmd := fmt.Sprintf("%s -m pip install -r %s", pyString, requirementFile)
 		commands := []string{envActivation, installCmd}
 
-		runArgs := exec.NewRunArgs("").WithCwd(workingDir)
+		runArgs := exec.NewRunArgs(pyString).WithCwd(workingDir)
 		_, err = cli.commandRunner.RunList(ctx, commands, runArgs)
 	}
 

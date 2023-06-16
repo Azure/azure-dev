@@ -8,7 +8,7 @@ import (
 	"fmt"
 	"strconv"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/containerapps"
@@ -120,7 +120,7 @@ func (at *containerAppTarget) Deploy(
 				return
 			}
 
-			containerApp, err := at.containerAppService.Get(
+			containerApp, err := at.containerAppService.App(
 				ctx,
 				targetResource.SubscriptionId(),
 				targetResource.ResourceGroupName(),

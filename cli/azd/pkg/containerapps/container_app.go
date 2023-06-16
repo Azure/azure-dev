@@ -17,7 +17,7 @@ import (
 
 // ContainerAppService exposes operations for managing Azure Container Apps
 type ContainerAppService interface {
-	Get(
+	App(
 		ctx context.Context,
 		subscriptionId,
 		resourceGroup,
@@ -81,7 +81,7 @@ type ContainerAppIngressConfiguration struct {
 	HostNames []string
 }
 
-func (cas *containerAppService) Get(
+func (cas *containerAppService) App(
 	ctx context.Context,
 	subscriptionId string,
 	resourceGroupName string,
@@ -107,7 +107,7 @@ func (cas *containerAppService) GetIngressConfiguration(
 	resourceGroup string,
 	appName string,
 ) (*ContainerAppIngressConfiguration, error) {
-	containerApp, err := cas.Get(ctx, subscriptionId, resourceGroup, appName)
+	containerApp, err := cas.App(ctx, subscriptionId, resourceGroup, appName)
 	if err != nil {
 		return nil, fmt.Errorf("failed retrieving container app properties: %w", err)
 	}
@@ -135,7 +135,7 @@ func (cas *containerAppService) AddRevision(
 	appName string,
 	imageName string,
 ) (*armappcontainers.Revision, error) {
-	containerApp, err := cas.Get(ctx, subscriptionId, resourceGroupName, appName)
+	containerApp, err := cas.App(ctx, subscriptionId, resourceGroupName, appName)
 	if err != nil {
 		return nil, fmt.Errorf("getting container app: %w", err)
 	}
@@ -159,7 +159,7 @@ func (cas *containerAppService) AddRevision(
 
 	// Update the container app with the new revision
 	containerApp.Properties.Template = revision.Properties.Template
-	containerApp, err = cas.syncSecrets(ctx, subscriptionId, resourceGroupName, appName, containerApp)
+	err = cas.syncSecrets(ctx, subscriptionId, resourceGroupName, appName, containerApp)
 	if err != nil {
 		return nil, fmt.Errorf("syncing secrets: %w", err)
 	}
@@ -179,6 +179,11 @@ func (cas *containerAppService) AddRevision(
 	return &newRevisionResponse.Revision, nil
 }
 
+// Validates that a revision is ready to accept traffic.
+// This method will block until the revision is ready, reaches a terminal state or times out
+// Expects that revision to be in the following states:
+// ProvisioningState: "Provisioned"
+// HealthState: "Healthy"
 func (cas *containerAppService) ValidateRevision(
 	ctx context.Context,
 	subscriptionId string,
@@ -194,10 +199,10 @@ func (cas *containerAppService) ValidateRevision(
 	var result *armappcontainers.Revision
 
 	// Wait 10 seconds between retries
-	backoff := retry.NewConstant(time.Second * 10)
+	backOffDuration := retry.NewConstant(time.Second * 10)
 
 	// Keep trying for up to 10 minutes or has reached a terminal state
-	maxDuration := retry.WithMaxDuration(time.Minute*10, backoff)
+	maxDuration := retry.WithMaxDuration(time.Minute*10, backOffDuration)
 
 	err = retry.Do(ctx, maxDuration, func(ctx context.Context) error {
 		getRevisionResponse, err := revisionsClient.GetRevision(ctx, resourceGroupName, appName, revisionName, nil)
@@ -211,21 +216,23 @@ func (cas *containerAppService) ValidateRevision(
 		isHealthy := false
 
 		switch *revision.Properties.ProvisioningState {
-		case armappcontainers.RevisionProvisioningStateProvisioning,
-			armappcontainers.RevisionProvisioningStateDeprovisioned,
-			armappcontainers.RevisionProvisioningStateDeprovisioning:
-			return retry.RetryableError(fmt.Errorf("revision '%s' is not ready", revisionName))
-		case armappcontainers.RevisionProvisioningStateFailed:
-			return fmt.Errorf("revision '%s' failed to provision, %s", revisionName, *revision.Properties.ProvisioningError)
 		case armappcontainers.RevisionProvisioningStateProvisioned:
 			isProvisioned = true
+		case armappcontainers.RevisionProvisioningStateProvisioning:
+			return retry.RetryableError(fmt.Errorf("revision '%s' is not ready", revisionName))
+		case armappcontainers.RevisionProvisioningStateFailed:
+			provisioningError := revision.Properties.ProvisioningError
+			if provisioningError == nil {
+				provisioningError = convert.RefOf("unknown error")
+			}
+			return fmt.Errorf("revision '%s' failed to provision, %s", revisionName, *provisioningError)
 		}
 
 		switch *revision.Properties.HealthState {
-		case armappcontainers.RevisionHealthStateUnhealthy:
-			return fmt.Errorf("revision '%s' is unhealthy", revisionName)
-		case armappcontainers.RevisionHealthStateNone, armappcontainers.RevisionHealthStateHealthy:
+		case armappcontainers.RevisionHealthStateHealthy:
 			isHealthy = true
+		case armappcontainers.RevisionHealthStateUnhealthy, armappcontainers.RevisionHealthStateNone:
+			return retry.RetryableError(fmt.Errorf("revision '%s' not healthy", revisionName))
 		}
 
 		if isProvisioned && isHealthy {
@@ -233,7 +240,12 @@ func (cas *containerAppService) ValidateRevision(
 			return nil
 		}
 
-		return fmt.Errorf("revision '%s' is an unknown state", revisionName)
+		return fmt.Errorf(
+			"revision '%s' is not ready. State: %s, Health: %s",
+			revisionName,
+			*revision.Properties.ProvisioningState,
+			*revision.Properties.HealthState,
+		)
 	})
 
 	if err != nil {
@@ -250,7 +262,7 @@ func (cas *containerAppService) ShiftTrafficToRevision(
 	appName string,
 	revisionName string,
 ) error {
-	containerApp, err := cas.Get(ctx, subscriptionId, resourceGroupName, appName)
+	containerApp, err := cas.App(ctx, subscriptionId, resourceGroupName, appName)
 	if err != nil {
 		return fmt.Errorf("getting container app: %w", err)
 	}
@@ -270,21 +282,22 @@ func (cas *containerAppService) ShiftTrafficToRevision(
 	return nil
 }
 
+// Fetches any secrets from the container app and mutates the container app to include them
 func (cas *containerAppService) syncSecrets(
 	ctx context.Context,
 	subscriptionId string,
 	resourceGroupName string,
 	appName string,
 	containerApp *armappcontainers.ContainerApp,
-) (*armappcontainers.ContainerApp, error) {
+) error {
 	// If the container app doesn't have any secrets, we don't need to do anything
 	if len(containerApp.Properties.Configuration.Secrets) == 0 {
-		return containerApp, nil
+		return nil
 	}
 
 	appClient, err := cas.createContainerAppsClient(ctx, subscriptionId)
 	if err != nil {
-		return nil, err
+		return err
 	}
 
 	// Copy the secret configuration from the current version
@@ -292,7 +305,7 @@ func (cas *containerAppService) syncSecrets(
 	// to ensure the update call succeeds
 	secretsResponse, err := appClient.ListSecrets(ctx, resourceGroupName, appName, nil)
 	if err != nil {
-		return nil, fmt.Errorf("listing secrets: %w", err)
+		return fmt.Errorf("listing secrets: %w", err)
 	}
 
 	secrets := []*armappcontainers.Secret{}
@@ -305,7 +318,7 @@ func (cas *containerAppService) syncSecrets(
 
 	containerApp.Properties.Configuration.Secrets = secrets
 
-	return containerApp, nil
+	return nil
 }
 
 func (cas *containerAppService) updateContainerApp(

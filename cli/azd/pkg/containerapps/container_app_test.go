@@ -114,7 +114,7 @@ func Test_ContainerApp_Get(t *testing.T) {
 	)
 
 	cas := NewContainerAppService(mockContext.SubscriptionCredentialProvider, mockContext.HttpClient, clock.NewMock())
-	containerApp, err := cas.Get(*mockContext.Context, subscriptionId, resourceGroup, appName)
+	containerApp, err := cas.App(*mockContext.Context, subscriptionId, resourceGroup, appName)
 	require.NotNil(t, expected)
 	require.NoError(t, err)
 	require.Equal(t, expected, containerApp)

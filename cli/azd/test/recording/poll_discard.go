@@ -18,33 +18,48 @@ import (
 // - Azure specific async polling protocols (implementation closely matches ones supported by azure-sdk-for-go)
 // - Idiomatic HTTP async polling protocols (Location header, 201,202 status codes)
 type httpPollDiscarder struct {
-	pollInProgress poller
+	pollsInProgress []poller
 }
 
 func (d *httpPollDiscarder) BeforeSave(i *cassette.Interaction) error {
-	if d.pollInProgress != nil && d.pollInProgress.Done(i) {
-		// Polling is done, reset pollInProgress
-		d.pollInProgress = nil
+	// Remove any polling interactions that are done.
+	for idx := range d.pollsInProgress {
+		if d.pollsInProgress[idx].Done(i) {
+			// Polling is done, remove
+			d.pollsInProgress = append(
+				d.pollsInProgress[:idx], d.pollsInProgress[idx+1:]...)
+		}
 	}
 
-	// Discard awaiting-done polling interactions
-	if d.pollInProgress != nil {
+	// Discard awaiting-done polling interactions if any polling operation is in progress.
+	if len(d.pollsInProgress) > 0 {
 		i.DiscardOnSave = true
+	}
+
+	// Check if the interaction starts a new polling operation.
+	// If so, add it to the list of operations in progress.
+	op, err := NewPoller(i)
+	if err != nil {
+		return err
+	}
+	if op == nil { // not a polling operation
 		return nil
 	}
 
-	// Check if the interaction is a polling request.
-	// If so, set the current poll in progress.
-	if op, err := NewPoller(i); op != nil {
-		if err != nil {
-			return err
-		}
-		d.pollInProgress = op
+	if op.Done(i) { // a polling operation, but it's already done.
+		return nil
+	}
 
-		// Shorten Retry-After
-		if i.Response.Headers.Get("Retry-After") != "" {
-			i.Response.Headers.Set("Retry-After", "0")
+	for _, poll := range d.pollsInProgress {
+		if poll.Same(op) { // poll is already captured
+			return nil
 		}
+	}
+
+	d.pollsInProgress = append(d.pollsInProgress, op)
+	// Shorten Retry-After
+	if i.Response.Headers.Get("Retry-After") != "" {
+		i.Response.Headers.Set("Retry-After", "0")
 	}
 
 	return nil
@@ -80,7 +95,11 @@ func NewPoller(i *cassette.Interaction) (poller, error) {
 }
 
 type poller interface {
+	// Done returns true if the given interaction indicates the polling operation is done.
 	Done(i *cassette.Interaction) bool
+
+	// Same returns true if the poller is for the same operation as the given poller.
+	Same(p poller) bool
 }
 
 // Poller that uses Azure-AsyncOperation header.
@@ -113,6 +132,14 @@ func (a *asyncPoller) Done(i *cassette.Interaction) bool {
 	}
 
 	return isTerminalState(status)
+}
+
+func (a *asyncPoller) Same(p poller) bool {
+	if ap, ok := p.(*asyncPoller); ok {
+		return a.location.String() == ap.location.String()
+	}
+
+	return false
 }
 
 // Poller that uses Operation-Location header.
@@ -151,12 +178,21 @@ func (o *opPoller) Done(i *cassette.Interaction) bool {
 	return isTerminalState(status)
 }
 
+func (o *opPoller) Same(p poller) bool {
+	if op, ok := p.(*opPoller); ok {
+		return o.location.String() == op.location.String()
+	}
+
+	return false
+}
+
 // Poller that uses Location header.
 //
 // By default, this is a poller that checks for termination when HTTP status code is not 202.
 // In cases where the Azure-specific provisioning state is present in the body, that is used instead
 type locPoller struct {
-	location url.URL
+	location      url.URL
+	locationsSeen []url.URL
 }
 
 // isLocationPoll verifies the response must have status code 202 with Location header set
@@ -165,12 +201,13 @@ func isLocationPoll(i *cassette.Interaction) bool {
 }
 
 func newLocationPoll(i *cassette.Interaction) (*locPoller, error) {
-	url, err := parseLocationUrl(i.Response.Headers.Get("Location"))
+	loc, err := parseLocationUrl(i.Response.Headers.Get("Location"))
 	if err != nil {
 		return nil, err
 	}
 	return &locPoller{
-		location: *url,
+		location:      *loc,
+		locationsSeen: []url.URL{*loc},
 	}, nil
 }
 
@@ -187,6 +224,7 @@ func (l *locPoller) Done(i *cassette.Interaction) bool {
 		}
 
 		l.location = *url
+		l.locationsSeen = append(l.locationsSeen, *url)
 	}
 
 	// if provisioning state is available, use that. this is only
@@ -197,6 +235,22 @@ func (l *locPoller) Done(i *cassette.Interaction) bool {
 	}
 
 	return i.Response.Code != http.StatusAccepted
+}
+
+func (l *locPoller) Same(p poller) bool {
+	if lp, ok := p.(*locPoller); ok {
+		// In reality, it's unlikely that server
+		// returns a location that isn't the recent one,
+		// but one from previous history.
+		// However, we still check all to be safe.
+		for _, loc := range l.locationsSeen {
+			if loc.String() == lp.location.String() {
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 // Poller for resource creation polling.
@@ -252,6 +306,14 @@ func (b *bodyPoller) Done(i *cassette.Interaction) bool {
 	}
 
 	return isTerminalState(state)
+}
+
+func (b *bodyPoller) Same(p poller) bool {
+	if bp, ok := p.(*bodyPoller); ok {
+		return b.location.String() == bp.location.String()
+	}
+
+	return false
 }
 
 var errNoBody = errors.New("response did not contain a body")
@@ -350,8 +412,6 @@ func urlMatch(reqUrl string, loc url.URL) bool {
 
 	// remove port from host
 	req.Host = trimPort(req.Host)
-	loc.Host = trimPort(loc.Host)
-
 	return req.String() == loc.String()
 }
 

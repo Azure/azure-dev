@@ -19,7 +19,7 @@ func Test_httpPollDiscarder_BeforeSave(t *testing.T) {
 			name: "Simple",
 			in: build(
 				locStart("1"),
-				locPoll(locPollOptions{id: "1", newLocId: "3"}),
+				locPoll(locPollOptions{id: "1", newLocId: "2"}),
 				repl(2, locPoll(locPollOptions{id: "2", newLocId: "3"})),
 				locPoll(locPollOptions{id: "3", done: true}),
 			),

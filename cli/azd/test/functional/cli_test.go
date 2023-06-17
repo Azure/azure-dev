@@ -134,7 +134,8 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 
 	if session != nil {
 		if session.Playback {
-			// This is currently required because azd doesn't stored AZURE_SUBSCRIPTION_ID in the .env file
+			// This is currently required because azd doesn't store
+			// AZURE_SUBSCRIPTION_ID in the .env file
 			// See #2423
 			env.SetSubscriptionId(session.Variables[recording.SubscriptionIdKey])
 		} else {
@@ -225,7 +226,8 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 
 	if session != nil {
 		if session.Playback {
-			// This is currently required because azd doesn't stored AZURE_SUBSCRIPTION_ID in the .env file
+			// This is currently required because azd doesn't store
+			// AZURE_SUBSCRIPTION_ID in the .env file
 			// See #2423
 			env.SetSubscriptionId(session.Variables[recording.SubscriptionIdKey])
 		} else {

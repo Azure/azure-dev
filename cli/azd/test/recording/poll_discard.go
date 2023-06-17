@@ -22,7 +22,7 @@ type httpPollDiscarder struct {
 }
 
 func (d *httpPollDiscarder) BeforeSave(i *cassette.Interaction) error {
-	isPollWaitInteraction := false
+	isPollInteraction := false
 	// Remove any polling interactions that are done.
 	for idx := range d.pollsInProgress {
 		done, err := d.pollsInProgress[idx].Done(i)
@@ -32,7 +32,7 @@ func (d *httpPollDiscarder) BeforeSave(i *cassette.Interaction) error {
 			panic(err)
 		}
 
-		isPollWaitInteraction = !done
+		isPollInteraction = true
 		if done {
 			// Polling is done, remove
 			d.pollsInProgress = append(
@@ -41,7 +41,7 @@ func (d *httpPollDiscarder) BeforeSave(i *cassette.Interaction) error {
 		}
 	}
 
-	if isPollWaitInteraction {
+	if isPollInteraction {
 		// discard the in-progress polling operation
 		i.DiscardOnSave = true
 		return nil
@@ -55,13 +55,6 @@ func (d *httpPollDiscarder) BeforeSave(i *cassette.Interaction) error {
 	}
 	if op == nil { // not a polling operation
 		return nil
-	}
-
-	for _, poll := range d.pollsInProgress {
-		if poll.Same(op) { // poll is already captured
-			i.DiscardOnSave = true
-			return nil
-		}
 	}
 
 	d.pollsInProgress = append(d.pollsInProgress, op)
@@ -108,9 +101,6 @@ type poller interface {
 	// Done returns true if the given interaction indicates the polling operation is done.
 	// An error errPollInteractionUnmatched is returned if the interaction does not match the current polling operation.
 	Done(i *cassette.Interaction) (bool, error)
-
-	// Same returns true if the poller is for the same operation as the given poller.
-	Same(p poller) bool
 }
 
 // Poller that uses Azure-AsyncOperation header.
@@ -143,14 +133,6 @@ func (a *asyncPoller) Done(i *cassette.Interaction) (bool, error) {
 	}
 
 	return isTerminalState(status), nil
-}
-
-func (a *asyncPoller) Same(p poller) bool {
-	if ap, ok := p.(*asyncPoller); ok {
-		return a.location.String() == ap.location.String()
-	}
-
-	return false
 }
 
 // Poller that uses Operation-Location header.
@@ -189,21 +171,12 @@ func (o *opPoller) Done(i *cassette.Interaction) (bool, error) {
 	return isTerminalState(status), nil
 }
 
-func (o *opPoller) Same(p poller) bool {
-	if op, ok := p.(*opPoller); ok {
-		return o.location.String() == op.location.String()
-	}
-
-	return false
-}
-
 // Poller that uses Location header.
 //
 // By default, this is a poller that checks for termination when HTTP status code is not 202.
 // In cases where the Azure-specific provisioning state is present in the body, that is used instead
 type locPoller struct {
-	location      url.URL
-	locationsSeen map[string]struct{}
+	location url.URL
 }
 
 // isLocationPoll verifies the response must have status code 202 with Location header set
@@ -218,9 +191,6 @@ func newLocationPoll(i *cassette.Interaction) (*locPoller, error) {
 	}
 	return &locPoller{
 		location: *loc,
-		locationsSeen: map[string]struct{}{
-			loc.String(): {},
-		},
 	}, nil
 }
 
@@ -237,7 +207,6 @@ func (l *locPoller) Done(i *cassette.Interaction) (bool, error) {
 		}
 
 		l.location = *url
-		l.locationsSeen[url.String()] = struct{}{}
 	}
 
 	// if provisioning state is available, use that. this is only
@@ -250,21 +219,8 @@ func (l *locPoller) Done(i *cassette.Interaction) (bool, error) {
 	return i.Response.Code != http.StatusAccepted, nil
 }
 
-func (l *locPoller) Same(p poller) bool {
-	if lp, ok := p.(*locPoller); ok {
-		// In reality, it's unlikely that server
-		// returns a location that isn't the recent one,
-		// but one from previous history.
-		// However, we still check all to be safe.
-		if _, ok := l.locationsSeen[lp.location.String()]; ok {
-			return true
-		}
-	}
-
-	return false
-}
-
-// Poller for resource creation polling.
+// Poller for resource creation polling, where we're awaiting a complete
+// body response.
 //
 // The resource is created with a PUT or PATCH request with a response code of 201.
 // The client awaits a 202 or 204 response for the requested resource.
@@ -317,14 +273,6 @@ func (b *bodyPoller) Done(i *cassette.Interaction) (bool, error) {
 	}
 
 	return isTerminalState(state), nil
-}
-
-func (b *bodyPoller) Same(p poller) bool {
-	if bp, ok := p.(*bodyPoller); ok {
-		return b.location.String() == bp.location.String()
-	}
-
-	return false
 }
 
 var errNoBody = errors.New("response did not contain a body")

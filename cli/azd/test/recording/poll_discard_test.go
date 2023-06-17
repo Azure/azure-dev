@@ -17,20 +17,22 @@ func Test_httpPollDiscarder_BeforeSave(t *testing.T) {
 	}{
 		{
 			name: "Simple",
-			in: build(
+			in: []cassette.Interaction{
 				locStart("1"),
+				locPoll(locPollOptions{id: "1"}),
+				locPoll(locPollOptions{id: "1"}),
 				locPoll(locPollOptions{id: "1", newLocId: "2"}),
-				repl(2, locPoll(locPollOptions{id: "2", newLocId: "3"})),
+				locPoll(locPollOptions{id: "2", newLocId: "3"}),
 				locPoll(locPollOptions{id: "3", done: true}),
-			),
-			out: build(
+			},
+			out: []cassette.Interaction{
 				locStart("1"),
 				locPoll(locPollOptions{id: "3", done: true}),
-			),
+			},
 		},
 		{
 			name: "Concurrent",
-			in: build(
+			in: []cassette.Interaction{
 				locStart("1"),
 				locPoll(locPollOptions{id: "1"}),
 				locStart("2"),
@@ -42,29 +44,35 @@ func Test_httpPollDiscarder_BeforeSave(t *testing.T) {
 				locPoll(locPollOptions{id: "3", done: true}),
 				locPoll(locPollOptions{id: "2", done: true}),
 				locPoll(locPollOptions{id: "1", done: true}),
-			),
-			out: build(
+			},
+			out: []cassette.Interaction{
 				locStart("1"),
 				locStart("2"),
 				locStart("3"),
 				locPoll(locPollOptions{id: "3", done: true}),
 				locPoll(locPollOptions{id: "2", done: true}),
 				locPoll(locPollOptions{id: "1", done: true}),
-			),
+			},
 		},
 		{
-			name: "KeepsNonPollingInteractions",
-			in: build(
+			name: "keeps non-polling interactions",
+			in: []cassette.Interaction{
+				other(),
+				other(),
 				locStart("1"),
 				locPoll(locPollOptions{id: "1"}),
 				other(),
 				locPoll(locPollOptions{id: "1", done: true}),
-			),
-			out: build(
+				other(),
+			},
+			out: []cassette.Interaction{
+				other(),
+				other(),
 				locStart("1"),
 				other(),
 				locPoll(locPollOptions{id: "1", done: true}),
-			),
+				other(),
+			},
 		},
 	}
 	for _, tt := range tests {
@@ -100,29 +108,7 @@ func other() cassette.Interaction {
 	}
 }
 
-func repl(count int, i cassette.Interaction) []cassette.Interaction {
-	cst := make([]cassette.Interaction, 0, count)
-	for j := 0; j < count; j++ {
-		cst = append(cst, i)
-	}
-	return cst
-}
-
-func build(i ...interface{}) []cassette.Interaction {
-	cst := make([]cassette.Interaction, 0, len(i))
-	for _, i := range i {
-		switch i := i.(type) {
-		case cassette.Interaction:
-			cst = append(cst, i)
-		case []cassette.Interaction:
-			cst = append(cst, i...)
-		default:
-			panic("expected cassette.Interaction or []cassette.Interaction")
-		}
-	}
-	return cst
-}
-
+// A location polling start interaction
 func locStart(id string) cassette.Interaction {
 	if id == "" {
 		id = "default"
@@ -149,6 +135,7 @@ type locPollOptions struct {
 	done     bool
 }
 
+// A location polling interaction
 func locPoll(opt locPollOptions) cassette.Interaction {
 	if opt.id == "" {
 		opt.id = "default"

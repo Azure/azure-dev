@@ -28,12 +28,8 @@ func (d *httpPollDiscarder) BeforeSave(i *cassette.Interaction) error {
 			// Polling is done, remove
 			d.pollsInProgress = append(
 				d.pollsInProgress[:idx], d.pollsInProgress[idx+1:]...)
+			return nil
 		}
-	}
-
-	// Discard awaiting-done polling interactions if any polling operation is in progress.
-	if len(d.pollsInProgress) > 0 {
-		i.DiscardOnSave = true
 	}
 
 	// Check if the interaction starts a new polling operation.
@@ -43,15 +39,16 @@ func (d *httpPollDiscarder) BeforeSave(i *cassette.Interaction) error {
 		return err
 	}
 	if op == nil { // not a polling operation
-		return nil
-	}
-
-	if op.Done(i) { // a polling operation, but it's already done.
+		// discard if any polling operation is in progress
+		if len(d.pollsInProgress) > 0 {
+			i.DiscardOnSave = true
+		}
 		return nil
 	}
 
 	for _, poll := range d.pollsInProgress {
 		if poll.Same(op) { // poll is already captured
+			i.DiscardOnSave = true
 			return nil
 		}
 	}
@@ -192,7 +189,7 @@ func (o *opPoller) Same(p poller) bool {
 // In cases where the Azure-specific provisioning state is present in the body, that is used instead
 type locPoller struct {
 	location      url.URL
-	locationsSeen []url.URL
+	locationsSeen map[string]struct{}
 }
 
 // isLocationPoll verifies the response must have status code 202 with Location header set
@@ -206,8 +203,10 @@ func newLocationPoll(i *cassette.Interaction) (*locPoller, error) {
 		return nil, err
 	}
 	return &locPoller{
-		location:      *loc,
-		locationsSeen: []url.URL{*loc},
+		location: *loc,
+		locationsSeen: map[string]struct{}{
+			loc.String(): {},
+		},
 	}, nil
 }
 
@@ -218,13 +217,13 @@ func (l *locPoller) Done(i *cassette.Interaction) bool {
 
 	// location polling can return an updated polling URL
 	if h := i.Response.Headers.Get("Location"); h != "" {
-		url, err := url.Parse(i.Response.Headers.Get("Location"))
+		url, err := parseLocationUrl(i.Response.Headers.Get("Location"))
 		if err != nil {
 			panic(err)
 		}
 
 		l.location = *url
-		l.locationsSeen = append(l.locationsSeen, *url)
+		l.locationsSeen[url.String()] = struct{}{}
 	}
 
 	// if provisioning state is available, use that. this is only
@@ -243,10 +242,8 @@ func (l *locPoller) Same(p poller) bool {
 		// returns a location that isn't the recent one,
 		// but one from previous history.
 		// However, we still check all to be safe.
-		for _, loc := range l.locationsSeen {
-			if loc.String() == lp.location.String() {
-				return true
-			}
+		if _, ok := l.locationsSeen[lp.location.String()]; ok {
+			return true
 		}
 	}
 
@@ -395,6 +392,8 @@ func parseLocationUrl(loc string) (*url.URL, error) {
 		return nil, errors.New("location must be an absolute URL")
 	}
 
+	// remove port from host
+	u.Host = trimPort(u.Host)
 	return u, nil
 }
 

@@ -140,19 +140,24 @@ func Start(t *testing.T, opts ...Options) *Session {
 	}
 
 	session := &Session{}
-	variables, err := loadOrInitVariables(name + ".yaml")
-	if err != nil {
-		t.Fatalf("failed to load variables: %v", err)
-	}
-	session.Variables = variables
-	if session.Variables == nil { // prefer empty map over nil
-		session.Variables = map[string]string{}
-	}
-
 	if opt.mode == recorder.ModeReplayOnly {
 		session.Playback = true
 	} else if opt.mode == recorder.ModeRecordOnce && !vcr.IsNewCassette() {
 		session.Playback = true
+	}
+
+	if session.Playback {
+		variables, err := loadVariables(name + ".yaml")
+		if err != nil {
+			t.Fatalf("failed to load variables: %v", err)
+		}
+		session.Variables = variables
+		if session.Variables == nil { // prefer empty map over nil
+			session.Variables = map[string]string{}
+		}
+	} else {
+		session.Variables = map[string]string{}
+		session.Variables[TimeKey] = fmt.Sprintf("%d", time.Now().Unix())
 	}
 
 	transport := http.DefaultTransport.(*http.Transport).Clone()
@@ -280,14 +285,12 @@ func displayMode(vcr *recorder.Recorder) string {
 	return modeStrMap[mode]
 }
 
-// Loads variables from disk, or by initializing default variables if not available.
+// Loads variables from disk.
 // When loading from disk, the variables are expected to be the second document in the provided yaml file.
-func loadOrInitVariables(name string) (map[string]string, error) {
+func loadVariables(name string) (map[string]string, error) {
 	f, err := os.Open(name)
 	if errors.Is(err, os.ErrNotExist) {
-		initVars := map[string]string{}
-		initVars[TimeKey] = fmt.Sprintf("%d", time.Now().Unix())
-		return initVars, nil
+		return nil, nil
 	}
 
 	if err != nil {

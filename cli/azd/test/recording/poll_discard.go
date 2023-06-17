@@ -22,14 +22,29 @@ type httpPollDiscarder struct {
 }
 
 func (d *httpPollDiscarder) BeforeSave(i *cassette.Interaction) error {
+	isPollWaitInteraction := false
 	// Remove any polling interactions that are done.
 	for idx := range d.pollsInProgress {
-		if d.pollsInProgress[idx].Done(i) {
+		done, err := d.pollsInProgress[idx].Done(i)
+		if errors.Is(err, errPollInteractionUnmatched) {
+			continue
+		} else if err != nil {
+			panic(err)
+		}
+
+		isPollWaitInteraction = !done
+		if done {
 			// Polling is done, remove
 			d.pollsInProgress = append(
 				d.pollsInProgress[:idx], d.pollsInProgress[idx+1:]...)
 			return nil
 		}
+	}
+
+	if isPollWaitInteraction {
+		// discard the in-progress polling operation
+		i.DiscardOnSave = true
+		return nil
 	}
 
 	// Check if the interaction starts a new polling operation.
@@ -39,10 +54,6 @@ func (d *httpPollDiscarder) BeforeSave(i *cassette.Interaction) error {
 		return err
 	}
 	if op == nil { // not a polling operation
-		// discard if any polling operation is in progress
-		if len(d.pollsInProgress) > 0 {
-			i.DiscardOnSave = true
-		}
 		return nil
 	}
 
@@ -91,9 +102,12 @@ func NewPoller(i *cassette.Interaction) (poller, error) {
 	return nil, nil
 }
 
+var errPollInteractionUnmatched = errors.New("interaction does not match the current polling operation")
+
 type poller interface {
 	// Done returns true if the given interaction indicates the polling operation is done.
-	Done(i *cassette.Interaction) bool
+	// An error errPollInteractionUnmatched is returned if the interaction does not match the current polling operation.
+	Done(i *cassette.Interaction) (bool, error)
 
 	// Same returns true if the poller is for the same operation as the given poller.
 	Same(p poller) bool
@@ -114,9 +128,9 @@ func newAsyncPoll(i *cassette.Interaction) (*asyncPoller, error) {
 	}, nil
 }
 
-func (a *asyncPoller) Done(i *cassette.Interaction) bool {
+func (a *asyncPoller) Done(i *cassette.Interaction) (bool, error) {
 	if !urlMatch(i.Request.URL, a.location) {
-		return false
+		return false, errPollInteractionUnmatched
 	}
 
 	status, err := GetStatus(i.Response.Body)
@@ -128,7 +142,7 @@ func (a *asyncPoller) Done(i *cassette.Interaction) bool {
 		panic("asyncPoller: the response did not contain a status")
 	}
 
-	return isTerminalState(status)
+	return isTerminalState(status), nil
 }
 
 func (a *asyncPoller) Same(p poller) bool {
@@ -158,9 +172,9 @@ func newOpPoll(i *cassette.Interaction) (*opPoller, error) {
 	}, nil
 }
 
-func (o *opPoller) Done(i *cassette.Interaction) bool {
+func (o *opPoller) Done(i *cassette.Interaction) (bool, error) {
 	if !urlMatch(i.Request.URL, o.location) {
-		return false
+		return false, errPollInteractionUnmatched
 	}
 
 	status, err := GetStatus(i.Response.Body)
@@ -172,7 +186,7 @@ func (o *opPoller) Done(i *cassette.Interaction) bool {
 		panic("opPoller: the response did not contain a status")
 	}
 
-	return isTerminalState(status)
+	return isTerminalState(status), nil
 }
 
 func (o *opPoller) Same(p poller) bool {
@@ -210,9 +224,9 @@ func newLocationPoll(i *cassette.Interaction) (*locPoller, error) {
 	}, nil
 }
 
-func (l *locPoller) Done(i *cassette.Interaction) bool {
+func (l *locPoller) Done(i *cassette.Interaction) (bool, error) {
 	if !urlMatch(i.Request.URL, l.location) {
-		return false
+		return false, errPollInteractionUnmatched
 	}
 
 	// location polling can return an updated polling URL
@@ -230,10 +244,10 @@ func (l *locPoller) Done(i *cassette.Interaction) bool {
 	// for some ARM LRO scenarios (e.g. DELETE with a Location header)
 	provState, _ := GetProvisioningState(i.Response.Body)
 	if provState != "" {
-		return isTerminalState(provState)
+		return isTerminalState(provState), nil
 	}
 
-	return i.Response.Code != http.StatusAccepted
+	return i.Response.Code != http.StatusAccepted, nil
 }
 
 func (l *locPoller) Same(p poller) bool {
@@ -283,9 +297,9 @@ func newBodyPoll(i *cassette.Interaction) (*bodyPoller, error) {
 	}, nil
 }
 
-func (b *bodyPoller) Done(i *cassette.Interaction) bool {
+func (b *bodyPoller) Done(i *cassette.Interaction) (bool, error) {
 	if !urlMatch(i.Request.URL, b.location) {
-		return false
+		return false, errPollInteractionUnmatched
 	}
 
 	state, err := GetProvisioningState(i.Response.Body)
@@ -295,14 +309,14 @@ func (b *bodyPoller) Done(i *cassette.Interaction) bool {
 
 	if i.Response.Code == http.StatusCreated && state != "" {
 		// absence of provisioning state is ok for a 201, means the operation is in progress
-		return false
+		return false, nil
 	} else if i.Response.Code == http.StatusOK && state == "" {
-		return true
+		return true, nil
 	} else if i.Response.Code == http.StatusNoContent {
-		return true
+		return true, nil
 	}
 
-	return isTerminalState(state)
+	return isTerminalState(state), nil
 }
 
 func (b *bodyPoller) Same(p poller) bool {

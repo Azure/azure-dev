@@ -52,6 +52,20 @@ func Test_httpPollDiscarder_BeforeSave(t *testing.T) {
 				locPoll(locPollOptions{id: "1", done: true}),
 			),
 		},
+		{
+			name: "KeepsNonPollingInteractions",
+			in: build(
+				locStart("1"),
+				locPoll(locPollOptions{id: "1"}),
+				other(),
+				locPoll(locPollOptions{id: "1", done: true}),
+			),
+			out: build(
+				locStart("1"),
+				other(),
+				locPoll(locPollOptions{id: "1", done: true}),
+			),
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -70,6 +84,19 @@ func Test_httpPollDiscarder_BeforeSave(t *testing.T) {
 
 			require.Equal(t, tt.out, recorded)
 		})
+	}
+}
+
+// a non-polling interaction
+func other() cassette.Interaction {
+	return cassette.Interaction{
+		Request: cassette.Request{
+			Method: "GET",
+			URL:    "http://localhost:8080/other",
+		},
+		Response: cassette.Response{
+			Code: http.StatusOK,
+		},
 	}
 }
 

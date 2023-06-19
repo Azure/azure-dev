@@ -1,12 +1,12 @@
 terraform {
   required_providers {
     azurerm = {
-      version = "~>3.18.0"
+      version = "~>3.47.0"
       source  = "hashicorp/azurerm"
     }
     azurecaf = {
       source  = "aztfmod/azurecaf"
-      version = "~>1.2.15"
+      version = "~>1.2.24"
     }
   }
 }
@@ -29,9 +29,10 @@ resource "azurerm_linux_web_app" "web" {
   tags                = var.tags
 
   site_config {
-    always_on        = true
-    ftps_state       = "FtpsOnly"
-    app_command_line = var.app_command_line
+    always_on         = var.always_on
+    use_32_bit_worker = var.use_32_bit_worker
+    ftps_state        = "FtpsOnly"
+    app_command_line  = var.app_command_line
     application_stack {
       node_version = var.node_version
     }

@@ -7,7 +7,10 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
+	"os"
 	"regexp"
+	"runtime"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -30,6 +33,8 @@ type GitCli interface {
 	SetCredentialStore(ctx context.Context, repositoryPath string) error
 	ListStagedFiles(ctx context.Context, repositoryPath string) (string, error)
 	AddFileExecPermission(ctx context.Context, repositoryPath string, file string) error
+	// make current repo to use gh-cli as credential helper.
+	SetGitHubAuthForRepo(ctx context.Context, repositoryPath, credential, ghPath string) error
 }
 
 type gitCli struct {
@@ -55,24 +60,25 @@ func (cli *gitCli) versionInfo() tools.VersionInfo {
 	}
 }
 
-func (cli *gitCli) CheckInstalled(ctx context.Context) (bool, error) {
-	found, err := tools.ToolInPath("git")
-	if !found {
-		return false, err
+func (cli *gitCli) CheckInstalled(ctx context.Context) error {
+	err := tools.ToolInPath("git")
+	if err != nil {
+		return err
 	}
 	gitRes, err := tools.ExecuteCommand(ctx, cli.commandRunner, "git", "--version")
 	if err != nil {
-		return false, fmt.Errorf("checking %s version: %w", cli.Name(), err)
+		return fmt.Errorf("checking %s version: %w", cli.Name(), err)
 	}
+	log.Printf("git version: %s", gitRes)
 	gitSemver, err := tools.ExtractVersion(gitRes)
 	if err != nil {
-		return false, fmt.Errorf("converting to semver version fails: %w", err)
+		return fmt.Errorf("converting to semver version fails: %w", err)
 	}
 	updateDetail := cli.versionInfo()
 	if gitSemver.LT(updateDetail.MinimumVersion) {
-		return false, &tools.ErrSemver{ToolName: cli.Name(), VersionInfo: updateDetail}
+		return &tools.ErrSemver{ToolName: cli.Name(), VersionInfo: updateDetail}
 	}
-	return true, nil
+	return nil
 }
 
 func (cli *gitCli) InstallUrl() string {
@@ -90,10 +96,10 @@ func (cli *gitCli) ShallowClone(ctx context.Context, repositoryPath string, bran
 	}
 	args = append(args, target)
 
-	runArgs := exec.NewRunArgs("git", args...)
-	res, err := cli.commandRunner.Run(ctx, runArgs)
+	runArgs := newRunArgs(args...)
+	_, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
-		return fmt.Errorf("failed to clone repository %s, %s: %w", repositoryPath, res.String(), err)
+		return fmt.Errorf("failed to clone repository %s: %w", repositoryPath, err)
 	}
 
 	return nil
@@ -106,137 +112,136 @@ var ErrNotRepository = errors.New("not a git repository")
 var gitUntrackedFileRegex = regexp.MustCompile("untracked files present|new file")
 
 func (cli *gitCli) GetRemoteUrl(ctx context.Context, repositoryPath string, remoteName string) (string, error) {
-	runArgs := exec.NewRunArgs("git", "-C", repositoryPath, "remote", "get-url", remoteName)
+	runArgs := newRunArgs("-C", repositoryPath, "remote", "get-url", remoteName)
 	res, err := cli.commandRunner.Run(ctx, runArgs)
 	if noSuchRemoteRegex.MatchString(res.Stderr) {
 		return "", ErrNoSuchRemote
 	} else if notGitRepositoryRegex.MatchString(res.Stderr) {
 		return "", ErrNotRepository
 	} else if err != nil {
-		return "", fmt.Errorf("failed to get remote url: %s: %w", res.String(), err)
+		return "", fmt.Errorf("failed to get remote url: %w", err)
 	}
 
 	return strings.TrimSpace(res.Stdout), nil
 }
 
 func (cli *gitCli) GetCurrentBranch(ctx context.Context, repositoryPath string) (string, error) {
-	runArgs := exec.NewRunArgs("git", "-C", repositoryPath, "branch", "--show-current")
+	runArgs := newRunArgs("-C", repositoryPath, "branch", "--show-current")
 	res, err := cli.commandRunner.Run(ctx, runArgs)
 	if notGitRepositoryRegex.MatchString(res.Stderr) {
 		return "", ErrNotRepository
 	} else if err != nil {
-		return "", fmt.Errorf("failed to get current branch: %s: %w", res.String(), err)
+		return "", fmt.Errorf("failed to get current branch: %w", err)
 	}
 
 	return strings.TrimSpace(res.Stdout), nil
 }
 
 func (cli *gitCli) InitRepo(ctx context.Context, repositoryPath string) error {
-	runArgs := exec.NewRunArgs("git", "-C", repositoryPath, "init")
-	res, err := cli.commandRunner.Run(ctx, runArgs)
+	runArgs := newRunArgs("-C", repositoryPath, "init")
+	_, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
-		return fmt.Errorf("failed to init repository: %s: %w", res.String(), err)
+		return fmt.Errorf("failed to init repository: %w", err)
 	}
 
 	// Set initial branch to main
-	runArgs = exec.NewRunArgs("git", "-C", repositoryPath, "checkout", "-b", "main")
-	res, err = cli.commandRunner.Run(ctx, runArgs)
+	runArgs = newRunArgs("-C", repositoryPath, "checkout", "-b", "main")
+	_, err = cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
-		return fmt.Errorf("failed to create main branch: %s: %w", res.String(), err)
+		return fmt.Errorf("failed to create main branch: %w", err)
 	}
 
 	return nil
 }
 
 func (cli *gitCli) SetCredentialStore(ctx context.Context, repositoryPath string) error {
-	runArgs := exec.NewRunArgs("git", "-C", repositoryPath, "config", "credential.helper", "store")
-	res, err := cli.commandRunner.Run(ctx, runArgs)
+	runArgs := newRunArgs("-C", repositoryPath, "config", "credential.helper", "store")
+	_, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
-		return fmt.Errorf("failed to set credential store repository: %s: %w", res.String(), err)
+		return fmt.Errorf("failed to set credential store repository: %w", err)
 	}
 
 	return nil
 }
 
 func (cli *gitCli) AddRemote(ctx context.Context, repositoryPath string, remoteName string, remoteUrl string) error {
-	runArgs := exec.NewRunArgs("git", "-C", repositoryPath, "remote", "add", remoteName, remoteUrl)
-	res, err := cli.commandRunner.Run(ctx, runArgs)
+	runArgs := newRunArgs("-C", repositoryPath, "remote", "add", remoteName, remoteUrl)
+	_, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
-		return fmt.Errorf("failed to add remote: %s: %w", res.String(), err)
+		return fmt.Errorf("failed to add remote: %w", err)
 	}
 
 	return nil
 }
 
 func (cli *gitCli) UpdateRemote(ctx context.Context, repositoryPath string, remoteName string, remoteUrl string) error {
-	runArgs := exec.NewRunArgs("git", "-C", repositoryPath, "remote", "set-url", remoteName, remoteUrl)
-	res, err := cli.commandRunner.Run(ctx, runArgs)
+	runArgs := newRunArgs("-C", repositoryPath, "remote", "set-url", remoteName, remoteUrl)
+	_, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
-		return fmt.Errorf("failed to add remote: %s: %w", res.String(), err)
+		return fmt.Errorf("failed to add remote: %w", err)
 	}
 
 	return nil
 }
 
 func (cli *gitCli) AddFile(ctx context.Context, repositoryPath string, filespec string) error {
-	runArgs := exec.NewRunArgs("git", "-C", repositoryPath, "add", filespec)
-	res, err := cli.commandRunner.Run(ctx, runArgs)
+	runArgs := newRunArgs("-C", repositoryPath, "add", filespec)
+	_, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
-		return fmt.Errorf("failed to add files: %s: %w", res.String(), err)
+		return fmt.Errorf("failed to add files: %w", err)
 	}
 
 	return nil
 }
 
 func (cli *gitCli) Commit(ctx context.Context, repositoryPath string, message string) error {
-	runArgs := exec.NewRunArgs("git", "-C", repositoryPath, "commit", "--allow-empty", "-m", message)
-	res, err := cli.commandRunner.Run(ctx, runArgs)
+	runArgs := newRunArgs("-C", repositoryPath, "commit", "--allow-empty", "-m", message)
+	_, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
-		return fmt.Errorf("failed to commit: %s: %w", res.String(), err)
+		return fmt.Errorf("failed to commit: %w", err)
 	}
 
 	return nil
 }
 
 func (cli *gitCli) PushUpstream(ctx context.Context, repositoryPath string, origin string, branch string) error {
-	runArgs := exec.
-		NewRunArgs("git", "-C", repositoryPath, "push", "--set-upstream", "--quiet", origin, branch).
+	runArgs := newRunArgs("-C", repositoryPath, "push", "--set-upstream", "--quiet", origin, branch).
 		WithInteractive(true)
 
-	res, err := cli.commandRunner.Run(ctx, runArgs)
+	_, err := cli.commandRunner.Run(ctx, runArgs)
 
 	if err != nil {
-		return fmt.Errorf("failed to push: %s: %w", res.String(), err)
+		return fmt.Errorf("failed to push: %w", err)
 	}
 
 	return nil
 }
 
 func (cli *gitCli) ListStagedFiles(ctx context.Context, repositoryPath string) (string, error) {
-	runArgs := exec.NewRunArgs("git", "-C", repositoryPath, "ls-files", "--stage")
+	runArgs := newRunArgs("-C", repositoryPath, "ls-files", "--stage")
 	res, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
-		return "", fmt.Errorf("failed to list files: %s: %w", res.String(), err)
+		return "", fmt.Errorf("failed to list files: %w", err)
 	}
 
 	return res.Stdout, nil
 }
 
 func (cli *gitCli) AddFileExecPermission(ctx context.Context, repositoryPath string, file string) error {
-	runArgs := exec.NewRunArgs("git", "-C", repositoryPath, "update-index", "--add", "--chmod=+x", file)
-	res, err := cli.commandRunner.Run(ctx, runArgs)
+	runArgs := newRunArgs("-C", repositoryPath, "update-index", "--add", "--chmod=+x", file)
+	_, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
-		return fmt.Errorf("failed to add file exec permission: %s: %w", res.String(), err)
+		return fmt.Errorf("failed to add file exec permission: %w", err)
 	}
 
 	return nil
 }
 
 func (cli *gitCli) IsUntrackedFile(ctx context.Context, repositoryPath string, filePath string) (bool, error) {
-	runArgs := exec.NewRunArgs("git", "-C", repositoryPath, "status", filePath)
+	runArgs := newRunArgs("-C", repositoryPath, "status", filePath)
 	res, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
-		return false, fmt.Errorf("failed to check status file: %s: %w", res.String(), err)
+		return false, fmt.Errorf("failed to check status file: %w", err)
 	}
 
 	if gitUntrackedFileRegex.MatchString(res.Stdout) {
@@ -244,4 +249,59 @@ func (cli *gitCli) IsUntrackedFile(ctx context.Context, repositoryPath string, f
 	}
 
 	return false, nil
+}
+
+// SetGitHubAuthForRepo creates git config for the repositoryPath like
+//
+// [credential "https://github.com"]  (when credential is equal to "https://github.com")
+// helper =
+// helper = !ghPath auth git-credential
+//
+// This way, git commands run from repositoryPath will use gh as auth credential.
+// Note: Removes any previous configuration for the credential.
+// Note: `helper = ` is intentional to break the chain of previously configured global helpers.
+// See: https://github.com/cli/cli/issues/3796 for more about this strategy.
+func (cli *gitCli) SetGitHubAuthForRepo(ctx context.Context, repositoryPath, credential, ghPath string) error {
+
+	if err := setAuthCredentialHelper(
+		ctx, cli.commandRunner, repositoryPath, credential, "", "replace-all"); err != nil {
+		return err
+	}
+	// path needs to be quoted on windows
+	if runtime.GOOS == "windows" {
+		ghPath = fmt.Sprintf("'%s'", ghPath)
+	}
+	ghCredentialValue := fmt.Sprintf("!%s auth git-credential", ghPath)
+	if err := setAuthCredentialHelper(
+		ctx, cli.commandRunner, repositoryPath, credential, ghCredentialValue, "add"); err != nil {
+		return err
+	}
+
+	return nil
+}
+
+func setAuthCredentialHelper(
+	ctx context.Context, runner exec.CommandRunner, repositoryPath, credential, value, flag string) error {
+	runArgs := newRunArgs(
+		"-C", repositoryPath,
+		"config", "--local", fmt.Sprintf("--%s", flag),
+		fmt.Sprintf("credential.%s.helper", credential),
+		value)
+
+	if _, err := runner.Run(ctx, runArgs); err != nil {
+		return fmt.Errorf("failed to set credential helper: %s='%s': %w", credential, value, err)
+	}
+	return nil
+}
+
+func newRunArgs(args ...string) exec.RunArgs {
+
+	runArgs := exec.NewRunArgs("git", args...)
+	if os.Getenv("CODESPACES") == "true" {
+		// azd running git in codespaces should not use the Codespaces token.
+		// As azd needs bigger access across repos. And the token in codespaces is mono-repo by default
+		runArgs = runArgs.WithEnv([]string{"GITHUB_TOKEN=", "GH_TOKEN="})
+	}
+
+	return runArgs
 }

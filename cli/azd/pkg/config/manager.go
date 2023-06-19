@@ -1,7 +1,6 @@
 package config
 
 import (
-	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -9,11 +8,12 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"runtime"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
 
-const configDir = ".azd"
+const cConfigDir = ".azd"
 
 // Config Manager provides the ability to load, parse and save azd configuration files
 type manager struct {
@@ -29,29 +29,16 @@ func NewManager() Manager {
 	return &manager{}
 }
 
-type contextKey string
-
-const (
-	configManagerContextKey contextKey = "configManagerContextKey"
-)
-
-func WithConfigManager(ctx context.Context, manager Manager) context.Context {
-	return context.WithValue(ctx, configManagerContextKey, manager)
-}
-
-func GetConfigManager(ctx context.Context) Manager {
-	configManager, ok := ctx.Value(configManagerContextKey).(Manager)
-	if ok {
-		return configManager
-	}
-	return NewManager()
-}
-
 // Saves the azd configuration to the specified file path
 func (c *manager) Save(config Config, filePath string) error {
 	configJson, err := json.MarshalIndent(config.Raw(), "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed marshalling config JSON: %w", err)
+	}
+
+	folderPath := filepath.Dir(filePath)
+	if err := os.MkdirAll(folderPath, osutil.PermissionDirectory); err != nil {
+		return fmt.Errorf("failed creating config directory: %w", err)
 	}
 
 	err = os.WriteFile(filePath, configJson, osutil.PermissionFile)
@@ -101,10 +88,31 @@ func GetUserConfigDir() (string, error) {
 			return "", fmt.Errorf("could not determine current home directory: %w", err)
 		}
 
-		configDirPath = filepath.Join(homeDir, configDir)
+		configDirPath = filepath.Join(homeDir, cConfigDir)
 	}
 
-	err := os.MkdirAll(configDirPath, osutil.PermissionDirectory)
+	err := os.MkdirAll(configDirPath, osutil.PermissionDirectoryOwnerOnly)
+	if err != nil {
+		return configDirPath, err
+	}
+
+	// Ensure that the "x" permission is set on the folder for the current
+	// user. In cases where the config directory is ~/.azd, OS upgrades and
+	// other processes can remove the "x" permission
+	if runtime.GOOS == "linux" || runtime.GOOS == "darwin" {
+		info, err := os.Stat(configDirPath)
+		if err != nil {
+			return configDirPath, err
+		}
+
+		permissions := info.Mode().Perm()
+		if permissions&osutil.PermissionMaskDirectoryExecute == 0 {
+			// Ensure user execute permissions
+			err := os.Chmod(configDirPath, permissions|osutil.PermissionMaskDirectoryExecute)
+			return configDirPath, err
+		}
+	}
+
 	return configDirPath, err
 }
 

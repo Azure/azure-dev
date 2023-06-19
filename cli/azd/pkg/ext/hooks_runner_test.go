@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -18,10 +19,13 @@ func Test_Hooks_Execute(t *testing.T) {
 	cwd := t.TempDir()
 	ostest.Chdir(t, cwd)
 
-	env := []string{
-		"a=apple",
-		"b=banana",
-	}
+	env := environment.EphemeralWithValues(
+		"test",
+		map[string]string{
+			"a": "apple",
+			"b": "banana",
+		},
+	)
 
 	hooks := map[string]*HookConfig{
 		"preinline": {
@@ -56,7 +60,7 @@ func Test_Hooks_Execute(t *testing.T) {
 			ranPreHook = true
 			require.Equal(t, "scripts/precommand.sh", args.Args[0])
 			require.Equal(t, cwd, args.Cwd)
-			require.Equal(t, env, args.Env)
+			require.ElementsMatch(t, env.Environ(), args.Env)
 			require.Equal(t, false, args.Interactive)
 
 			return exec.NewRunResult(0, "", ""), nil
@@ -82,7 +86,7 @@ func Test_Hooks_Execute(t *testing.T) {
 			ranPostHook = true
 			require.Equal(t, "scripts/postcommand.sh", args.Args[0])
 			require.Equal(t, cwd, args.Cwd)
-			require.Equal(t, env, args.Env)
+			require.ElementsMatch(t, env.Environ(), args.Env)
 			require.Equal(t, false, args.Interactive)
 
 			return exec.NewRunResult(0, "", ""), nil
@@ -108,7 +112,7 @@ func Test_Hooks_Execute(t *testing.T) {
 			ranPostHook = true
 			require.Equal(t, "scripts/preinteractive.sh", args.Args[0])
 			require.Equal(t, cwd, args.Cwd)
-			require.Equal(t, env, args.Env)
+			require.ElementsMatch(t, env.Environ(), args.Env)
 			require.Equal(t, true, args.Interactive)
 
 			return exec.NewRunResult(0, "", ""), nil
@@ -200,10 +204,13 @@ func Test_Hooks_GetScript(t *testing.T) {
 	cwd := t.TempDir()
 	ostest.Chdir(t, cwd)
 
-	env := []string{
-		"a=apple",
-		"b=banana",
-	}
+	env := environment.EphemeralWithValues(
+		"test",
+		map[string]string{
+			"a": "apple",
+			"b": "banana",
+		},
+	)
 
 	hooks := map[string]*HookConfig{
 		"bash": {
@@ -215,6 +222,10 @@ func Test_Hooks_GetScript(t *testing.T) {
 		"inline": {
 			Shell: ShellTypeBash,
 			Run:   "echo 'hello'",
+		},
+		"inlineWithUrl": {
+			Shell: ShellTypePowershell,
+			Run:   "Invoke-WebRequest -Uri \"https://sample.com/sample.json\" -OutFile \"out.json\"",
 		},
 	}
 
@@ -270,6 +281,31 @@ func Test_Hooks_GetScript(t *testing.T) {
 		require.NotNil(t, fileInfo)
 		require.NoError(t, err)
 	})
+
+	t.Run("Inline With Url", func(t *testing.T) {
+		tempDir := t.TempDir()
+		ostest.Chdir(t, tempDir)
+
+		hookConfig := hooks["inlineWithUrl"]
+		mockContext := mocks.NewMockContext(context.Background())
+		hooksManager := NewHooksManager(cwd)
+		runner := NewHooksRunner(hooksManager, mockContext.CommandRunner, mockContext.Console, cwd, hooks, env)
+
+		script, err := runner.GetScript(hookConfig)
+		require.NotNil(t, script)
+		require.Equal(t, "*powershell.powershellScript", reflect.TypeOf(script).String())
+		require.Equal(t, ScriptLocationInline, hookConfig.location)
+		require.Equal(t, ShellTypePowershell, hookConfig.Shell)
+		require.Contains(t, hookConfig.script, "Invoke-WebRequest -Uri \"https://sample.com/sample.json\" -OutFile \"out.json\"")
+		require.Contains(t, hookConfig.path, os.TempDir())
+		require.Contains(t, hookConfig.path, ".ps1")
+		require.NoError(t, err)
+
+		fileInfo, err := os.Stat(hookConfig.path)
+		require.NotNil(t, fileInfo)
+		require.NoError(t, err)
+	})
+
 }
 
 type scriptValidationTest struct {
@@ -286,7 +322,7 @@ func Test_GetScript_Validation(t *testing.T) {
 	err := os.WriteFile("my-script.ps1", nil, osutil.PermissionFile)
 	require.NoError(t, err)
 
-	env := []string{}
+	env := environment.Ephemeral()
 
 	mockContext := mocks.NewMockContext(context.Background())
 	hooksManager := NewHooksManager(tempDir)

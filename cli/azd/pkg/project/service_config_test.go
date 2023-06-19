@@ -3,8 +3,11 @@ package project
 import (
 	"context"
 	"errors"
+	"path/filepath"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/ext"
+	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
 
@@ -20,10 +23,6 @@ func TestServiceConfigAddHandler(t *testing.T) {
 
 	err := service.AddHandler(ServiceEventDeploy, handler)
 	require.Nil(t, err)
-
-	// Expected error if attempting to register the same handler more than 1 time
-	err = service.AddHandler(ServiceEventDeploy, handler)
-	require.NotNil(t, err)
 
 	err = service.RaiseEvent(ctx, ServiceEventDeploy, ServiceLifecycleEventArgs{Service: service})
 	require.Nil(t, err)
@@ -161,10 +160,10 @@ services:
     project: src/api
     language: js
     host: containerapp
-    module: ./api/api
 `
 
-	projectConfig, _ := ParseProjectConfig(testProj)
+	mockContext := mocks.NewMockContext(context.Background())
+	projectConfig, _ := Parse(*mockContext.Context, testProj)
 
 	return projectConfig.Services["api"]
 }
@@ -182,10 +181,6 @@ func TestServiceConfigRaiseEventWithoutArgs(t *testing.T) {
 
 	err := service.AddHandler(ServiceEventDeploy, handler)
 	require.Nil(t, err)
-
-	// Expected error if attempting to register the same handler more than 1 time
-	err = service.AddHandler(ServiceEventDeploy, handler)
-	require.NotNil(t, err)
 
 	err = service.RaiseEvent(ctx, ServiceEventDeploy, ServiceLifecycleEventArgs{Service: service})
 	require.Nil(t, err)
@@ -210,11 +205,21 @@ func TestServiceConfigRaiseEventWithArgs(t *testing.T) {
 	err := service.AddHandler(ServiceEventDeploy, handler)
 	require.Nil(t, err)
 
-	// Expected error if attempting to register the same handler more than 1 time
-	err = service.AddHandler(ServiceEventDeploy, handler)
-	require.NotNil(t, err)
-
 	err = service.RaiseEvent(ctx, ServiceEventDeploy, eventArgs)
 	require.Nil(t, err)
 	require.True(t, handlerCalled)
+}
+
+func createTestServiceConfig(path string, host ServiceTargetKind, language ServiceLanguageKind) *ServiceConfig {
+	return &ServiceConfig{
+		Name:         "api",
+		Host:         host,
+		Language:     language,
+		RelativePath: filepath.Join(path),
+		Project: &ProjectConfig{
+			Name: "Test-App",
+			Path: ".",
+		},
+		EventDispatcher: ext.NewEventDispatcher[ServiceLifecycleEventArgs](),
+	}
 }

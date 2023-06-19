@@ -55,6 +55,18 @@ module web '../../../../../common/infra/bicep/app/web-appservice.bicep' = {
   }
 }
 
+module webAppSettings '../../../../../../common/infra/bicep/core/host/appservice-appsettings.bicep' = {
+  name: 'web-appsettings'
+  scope: rg
+  params: {
+    name: web.outputs.SERVICE_WEB_NAME
+    appSettings: {
+      REACT_APP_API_BASE_URL: useAPIM ? apimApi.outputs.SERVICE_API_URI : api.outputs.SERVICE_API_URI
+      REACT_APP_APPLICATIONINSIGHTS_CONNECTION_STRING: monitoring.outputs.applicationInsightsConnectionString
+    }
+  }
+}
+
 // The application backend
 module api '../../../../../common/infra/bicep/app/api-appservice-node.bicep' = {
   name: 'api'
@@ -71,6 +83,7 @@ module api '../../../../../common/infra/bicep/app/api-appservice-node.bicep' = {
       AZURE_COSMOS_CONNECTION_STRING_KEY: cosmos.outputs.connectionStringKey
       AZURE_COSMOS_DATABASE_NAME: cosmos.outputs.databaseName
       AZURE_COSMOS_ENDPOINT: cosmos.outputs.endpoint
+      API_ALLOW_ORIGINS: web.outputs.SERVICE_WEB_URI
     }
   }
 }

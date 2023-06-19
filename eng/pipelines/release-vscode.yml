@@ -3,7 +3,7 @@ resources:
     - repository: azure-sdk-build-tools
       type: git
       name: internal/azure-sdk-build-tools
-      ref: refs/tags/azure-sdk-build-tools_20230301.1
+      ref: refs/tags/azure-sdk-build-tools_20230613.1
 
 # Continuous deployment trigger
 trigger:
@@ -37,6 +37,9 @@ stages:
               Pool: azsdk-pool-mms-ubuntu-2004-general
               OSVmImage: MMSUbuntu20.04
               UploadArtifact: true
+              Codeql.Enabled: true
+              Codeql.SkipTaskAutoInjection: false
+              Codeql.BuildIdentifier: vscode_linux
             Mac:
               Pool: Azure Pipelines
               OSVmImage: macOS-11
@@ -46,7 +49,7 @@ stages:
           vmImage: $(OSVmImage)
 
         variables:
-          NodeVersion: 16.x
+          NodeVersion: 18.x
 
         steps:
           - checkout: self

@@ -6,12 +6,16 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
+	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/stretchr/testify/require"
 )
 
@@ -218,7 +222,7 @@ func TestPromptForParameterAllowedValues(t *testing.T) {
 
 	mockContext := mocks.NewMockContext(context.Background())
 
-	preparePlanningMocks(mockContext)
+	prepareBicepMocks(mockContext)
 
 	p := createBicepProvider(t, mockContext)
 
@@ -259,40 +263,36 @@ func TestPromptForParametersLocation(t *testing.T) {
 		Stderr: "",
 	})
 
-	locations := []azcli.AzCliLocation{
-		{
-			Name:                "eastus",
-			DisplayName:         "East US",
-			RegionalDisplayName: "(US) East US",
+	env := environment.Ephemeral()
+	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
+	accountManager := &mockaccount.MockAccountManager{
+		Subscriptions: []account.Subscription{
+			{
+				Id:   "00000000-0000-0000-0000-000000000000",
+				Name: "test",
+			},
 		},
-		{
-			Name:                "eastus2",
-			DisplayName:         "East US 2",
-			RegionalDisplayName: "(US) East US 2",
-		},
-		{
-			Name:                "westus",
-			DisplayName:         "West US",
-			RegionalDisplayName: "(US) West US",
+		Locations: []account.Location{
+			{
+				Name:                "eastus",
+				DisplayName:         "East US",
+				RegionalDisplayName: "(US) East US",
+			},
+			{
+				Name:                "eastus2",
+				DisplayName:         "East US 2",
+				RegionalDisplayName: "(US) East US 2",
+			},
+			{
+				Name:                "westus",
+				DisplayName:         "West US",
+				RegionalDisplayName: "(US) West US",
+			},
 		},
 	}
 
 	p := createBicepProvider(t, mockContext)
-	p.prompters.Location = func(msg string, shouldDisplay func(loc azcli.AzCliLocation) bool) (location string, err error) {
-		displayLocations := []string{}
-		for _, location := range locations {
-			if shouldDisplay(location) {
-				displayLocations = append(displayLocations, location.Name)
-			}
-		}
-
-		index, err := mockContext.Console.Select(*mockContext.Context, input.ConsoleOptions{
-			Message: msg,
-			Options: displayLocations,
-		})
-		require.NoError(t, err)
-		return displayLocations[index], nil
-	}
+	p.prompters = prompt.NewDefaultPrompter(env, mockContext.Console, accountManager, azCli)
 
 	mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool {
 		return strings.Contains(options.Message, "'unfilteredLocation")
@@ -328,4 +328,10 @@ func TestPromptForParametersLocation(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, "westus", value)
+}
+
+type mockCurrentPrincipal struct{}
+
+func (m *mockCurrentPrincipal) CurrentPrincipalId(_ context.Context) (string, error) {
+	return "11111111-1111-1111-1111-111111111111", nil
 }

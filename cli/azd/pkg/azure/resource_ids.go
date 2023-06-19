@@ -6,9 +6,23 @@ package azure
 import (
 	"fmt"
 	"regexp"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 )
+
+// SubscriptionFromRID returns the subscription id component of a resource or panics if the resource id does not
+// contain a subscription.
+func SubscriptionFromRID(rid string) string {
+	parts := strings.Split(rid, "/")
+	for idx, part := range parts {
+		if part == "subscriptions" && idx+1 < len(parts) {
+			return parts[idx+1]
+		}
+	}
+
+	panic(fmt.Sprintf("no subscription id component in in %s", rid))
+}
 
 // Creates Azure subscription resource ID
 func SubscriptionRID(subscriptionId string) string {
@@ -56,6 +70,15 @@ func ContainerAppRID(subscriptionId, resourceGroupName, containerAppName string)
 		"%s/providers/Microsoft.App/containerApps/%s",
 		ResourceGroupRID(subscriptionId, resourceGroupName),
 		containerAppName,
+	)
+	return returnValue
+}
+
+func SpringAppRID(subscriptionId, resourceGroupName, springAppName string) string {
+	returnValue := fmt.Sprintf(
+		"%s/providers/Microsoft.AppPlatform/Spring/%s",
+		ResourceGroupRID(subscriptionId, resourceGroupName),
+		springAppName,
 	)
 	return returnValue
 }

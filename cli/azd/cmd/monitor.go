@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"os/exec"
@@ -12,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
@@ -54,7 +56,7 @@ func newMonitorFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) 
 func newMonitorCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "monitor",
-		Short: "Monitor a deployed application.",
+		Short: fmt.Sprintf("Monitor a deployed application. %s", output.WithWarningFormat("(Beta)")),
 	}
 }
 
@@ -90,8 +92,15 @@ func (m *monitorAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		m.flags.monitorOverview = true
 	}
 
+	if m.env.GetSubscriptionId() == "" {
+		return nil, errors.New(
+			"infrastructure has not been provisioned. Run `azd provision`",
+		)
+	}
+
 	resourceManager := infra.NewAzureResourceManager(m.azCli)
-	resourceGroups, err := resourceManager.GetResourceGroupsForEnvironment(ctx, m.env)
+	resourceGroups, err := resourceManager.GetResourceGroupsForEnvironment(
+		ctx, m.env.GetSubscriptionId(), m.env.GetEnvName())
 	if err != nil {
 		return nil, fmt.Errorf("discovering resource groups from deployment: %w", err)
 	}
@@ -100,7 +109,8 @@ func (m *monitorAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	var portalResources []azcli.AzCliResource
 
 	for _, resourceGroup := range resourceGroups {
-		resources, err := m.azCli.ListResourceGroupResources(ctx, m.env.GetSubscriptionId(), resourceGroup.Name, nil)
+		resources, err := m.azCli.ListResourceGroupResources(
+			ctx, azure.SubscriptionFromRID(resourceGroup.Id), resourceGroup.Name, nil)
 		if err != nil {
 			return nil, fmt.Errorf("listing resources: %w", err)
 		}
@@ -178,8 +188,10 @@ func (m *monitorAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 }
 
 func getCmdMonitorHelpDescription(*cobra.Command) string {
-	return generateCmdHelpDescription(fmt.Sprintf("Monitor a deployed application. For more information, go to: %s.",
-		output.WithLinkFormat("https://aka.ms/azure-dev/monitor")), nil)
+	return generateCmdHelpDescription(
+		fmt.Sprintf("Monitor a deployed application %s. For more information, go to: %s.",
+			output.WithWarningFormat("(Beta)"),
+			output.WithLinkFormat("https://aka.ms/azure-dev/monitor")), nil)
 }
 
 func getCmdMonitorHelpFooter(c *cobra.Command) string {

@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package terraform
 
 import (
@@ -9,44 +12,27 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
+	terraformTools "github.com/azure/azure-dev/cli/azd/pkg/tools/terraform"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockexec"
 	"github.com/stretchr/testify/require"
 )
 
 func TestTerraformPlan(t *testing.T) {
-	progressLog := []string{}
-	interactiveLog := []bool{}
-	progressDone := make(chan bool)
-
 	mockContext := mocks.NewMockContext(context.Background())
 	prepareGenericMocks(mockContext.CommandRunner)
 	preparePlanningMocks(mockContext.CommandRunner)
 
-	infraProvider := createTerraformProvider(mockContext)
-	planningTask := infraProvider.Plan(*mockContext.Context)
-
-	go func() {
-		for progressReport := range planningTask.Progress() {
-			progressLog = append(progressLog, progressReport.Message)
-		}
-		progressDone <- true
-	}()
-
-	go func() {
-		for planningInteractive := range planningTask.Interactive() {
-			interactiveLog = append(interactiveLog, planningInteractive)
-		}
-	}()
-
-	deploymentPlan, err := planningTask.Await()
-	<-progressDone
+	infraProvider := createTerraformProvider(t, mockContext)
+	deploymentPlan, err := infraProvider.Plan(*mockContext.Context)
 
 	require.Nil(t, err)
 	require.NotNil(t, deploymentPlan.Deployment)
@@ -55,10 +41,10 @@ func TestTerraformPlan(t *testing.T) {
 
 	require.Len(t, consoleLog, 0)
 
-	require.Equal(t, infraProvider.env.Values["AZURE_LOCATION"], deploymentPlan.Deployment.Parameters["location"].Value)
+	require.Equal(t, infraProvider.env.Dotenv()["AZURE_LOCATION"], deploymentPlan.Deployment.Parameters["location"].Value)
 	require.Equal(
 		t,
-		infraProvider.env.Values["AZURE_ENV_NAME"],
+		infraProvider.env.Dotenv()["AZURE_ENV_NAME"],
 		deploymentPlan.Deployment.Parameters["environment_name"].Value,
 	)
 
@@ -73,19 +59,14 @@ func TestTerraformPlan(t *testing.T) {
 }
 
 func TestTerraformDeploy(t *testing.T) {
-	progressLog := []string{}
-	interactiveLog := []bool{}
-	progressDone := make(chan bool)
-
 	mockContext := mocks.NewMockContext(context.Background())
 	prepareGenericMocks(mockContext.CommandRunner)
 	preparePlanningMocks(mockContext.CommandRunner)
 	prepareDeployMocks(mockContext.CommandRunner)
-	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 
-	infraProvider := createTerraformProvider(mockContext)
+	infraProvider := createTerraformProvider(t, mockContext)
 
-	envPath := path.Join(infraProvider.projectPath, ".azure", infraProvider.env.Values["AZURE_ENV_NAME"])
+	envPath := path.Join(infraProvider.projectPath, ".azure", infraProvider.env.Dotenv()["AZURE_ENV_NAME"])
 
 	deploymentPlan := DeploymentPlan{
 		Details: TerraformDeploymentDetails{
@@ -95,34 +76,11 @@ func TestTerraformDeploy(t *testing.T) {
 		},
 	}
 
-	scope := infra.NewSubscriptionScope(
-		azCli,
-		infraProvider.env.Values["AZURE_LOCATION"],
-		infraProvider.env.GetSubscriptionId(),
-		infraProvider.env.GetEnvName(),
-	)
-	deployTask := infraProvider.Deploy(*mockContext.Context, &deploymentPlan, scope)
-
-	go func() {
-		for deployProgress := range deployTask.Progress() {
-			progressLog = append(progressLog, deployProgress.Message)
-		}
-		progressDone <- true
-	}()
-
-	go func() {
-		for deployInteractive := range deployTask.Interactive() {
-			interactiveLog = append(interactiveLog, deployInteractive)
-		}
-	}()
-
-	deployResult, err := deployTask.Await()
-	<-progressDone
-
+	deployResult, err := infraProvider.Deploy(*mockContext.Context, &deploymentPlan)
 	require.Nil(t, err)
 	require.NotNil(t, deployResult)
 
-	require.Equal(t, deployResult.Deployment.Outputs["AZURE_LOCATION"].Value, infraProvider.env.Values["AZURE_LOCATION"])
+	require.Equal(t, deployResult.Deployment.Outputs["AZURE_LOCATION"].Value, infraProvider.env.Dotenv()["AZURE_LOCATION"])
 	require.Equal(t, deployResult.Deployment.Outputs["RG_NAME"].Value, fmt.Sprintf("rg-%s", infraProvider.env.GetEnvName()))
 }
 
@@ -132,78 +90,29 @@ func TestTerraformDestroy(t *testing.T) {
 	preparePlanningMocks(mockContext.CommandRunner)
 	prepareDestroyMocks(mockContext.CommandRunner)
 
-	progressLog := []string{}
-	interactiveLog := []bool{}
-	progressDone := make(chan bool)
-
-	infraProvider := createTerraformProvider(mockContext)
-	deployment := Deployment{}
-
+	infraProvider := createTerraformProvider(t, mockContext)
 	destroyOptions := NewDestroyOptions(false, false)
-	destroyTask := infraProvider.Destroy(*mockContext.Context, &deployment, destroyOptions)
-
-	go func() {
-		for destroyProgress := range destroyTask.Progress() {
-			progressLog = append(progressLog, destroyProgress.Message)
-		}
-		progressDone <- true
-	}()
-
-	go func() {
-		for destroyInteractive := range destroyTask.Interactive() {
-			interactiveLog = append(interactiveLog, destroyInteractive)
-		}
-	}()
-
-	destroyResult, err := destroyTask.Await()
-	<-progressDone
+	destroyResult, err := infraProvider.Destroy(*mockContext.Context, destroyOptions)
 
 	require.Nil(t, err)
 	require.NotNil(t, destroyResult)
 
-	require.Equal(t, destroyResult.Outputs["AZURE_LOCATION"].Value, infraProvider.env.Values["AZURE_LOCATION"])
-	require.Equal(t, destroyResult.Outputs["RG_NAME"].Value, fmt.Sprintf("rg-%s", infraProvider.env.GetEnvName()))
+	require.Contains(t, destroyResult.InvalidatedEnvKeys, "AZURE_LOCATION")
+	require.Contains(t, destroyResult.InvalidatedEnvKeys, "RG_NAME")
 }
 
 func TestTerraformState(t *testing.T) {
-	progressLog := []string{}
-	interactiveLog := []bool{}
-	progressDone := make(chan bool)
-
 	mockContext := mocks.NewMockContext(context.Background())
 	prepareGenericMocks(mockContext.CommandRunner)
 	prepareShowMocks(mockContext.CommandRunner)
-	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 
-	infraProvider := createTerraformProvider(mockContext)
-	scope := infra.NewSubscriptionScope(
-		azCli,
-		infraProvider.env.Values["AZURE_LOCATION"],
-		infraProvider.env.GetSubscriptionId(),
-		infraProvider.env.GetEnvName(),
-	)
-	getStateTask := infraProvider.State(*mockContext.Context, scope)
-
-	go func() {
-		for progressReport := range getStateTask.Progress() {
-			progressLog = append(progressLog, progressReport.Message)
-		}
-		progressDone <- true
-	}()
-
-	go func() {
-		for deploymentInteractive := range getStateTask.Interactive() {
-			interactiveLog = append(interactiveLog, deploymentInteractive)
-		}
-	}()
-
-	getStateResult, err := getStateTask.Await()
-	<-progressDone
+	infraProvider := createTerraformProvider(t, mockContext)
+	getStateResult, err := infraProvider.State(*mockContext.Context)
 
 	require.Nil(t, err)
 	require.NotNil(t, getStateResult.State)
 
-	require.Equal(t, infraProvider.env.Values["AZURE_LOCATION"], getStateResult.State.Outputs["AZURE_LOCATION"].Value)
+	require.Equal(t, infraProvider.env.Dotenv()["AZURE_LOCATION"], getStateResult.State.Outputs["AZURE_LOCATION"].Value)
 	require.Equal(t, fmt.Sprintf("rg-%s", infraProvider.env.GetEnvName()), getStateResult.State.Outputs["RG_NAME"].Value)
 	require.Len(t, getStateResult.State.Resources, 1)
 	require.Regexp(
@@ -213,19 +122,46 @@ func TestTerraformState(t *testing.T) {
 	)
 }
 
-func createTerraformProvider(mockContext *mocks.MockContext) *TerraformProvider {
+func createTerraformProvider(t *testing.T, mockContext *mocks.MockContext) *TerraformProvider {
 	projectDir := "../../../../test/functional/testdata/samples/resourcegroupterraform"
 	options := Options{
 		Module: "main",
 	}
 
 	env := environment.EphemeralWithValues("test-env", map[string]string{
-		"AZURE_LOCATION": "westus2",
+		"AZURE_LOCATION":        "westus2",
+		"AZURE_SUBSCRIPTION_ID": "00000000-0000-0000-0000-000000000000",
 	})
 
-	return NewTerraformProvider(
-		*mockContext.Context, env, projectDir, options, mockContext.Console, mockContext.CommandRunner,
+	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
+	accountManager := &mockaccount.MockAccountManager{
+		Subscriptions: []account.Subscription{
+			{
+				Id:   "00000000-0000-0000-0000-000000000000",
+				Name: "test",
+			},
+		},
+		Locations: []account.Location{
+			{
+				Name:                "location",
+				DisplayName:         "Test Location",
+				RegionalDisplayName: "(US) Test Location",
+			},
+		},
+	}
+
+	provider := NewTerraformProvider(
+		terraformTools.NewTerraformCli(mockContext.CommandRunner),
+		env,
+		mockContext.Console,
+		&mockCurrentPrincipal{},
+		prompt.NewDefaultPrompter(env, mockContext.Console, accountManager, azCli),
 	)
+
+	err := provider.Initialize(*mockContext.Context, projectDir, options)
+	require.NoError(t, err)
+
+	return provider.(*TerraformProvider)
 }
 
 func prepareGenericMocks(commandRunner *mockexec.MockCommandRunner) {
@@ -321,4 +257,10 @@ func prepareDestroyMocks(commandRunner *mockexec.MockCommandRunner) {
 		Stdout: "",
 		Stderr: "",
 	})
+}
+
+type mockCurrentPrincipal struct{}
+
+func (m *mockCurrentPrincipal) CurrentPrincipalId(_ context.Context) (string, error) {
+	return "11111111-1111-1111-1111-111111111111", nil
 }

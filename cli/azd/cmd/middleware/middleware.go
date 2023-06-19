@@ -7,6 +7,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/spf13/pflag"
 )
 
 // Registration function that returns a constructed middleware
@@ -32,6 +33,8 @@ type Options struct {
 	CommandPath   string
 	Name          string
 	Aliases       []string
+	Flags         *pflag.FlagSet
+	Args          []string
 	isChildAction bool
 }
 
@@ -45,15 +48,17 @@ type NextFn func(ctx context.Context) (*actions.ActionResult, error)
 // Middleware runner stores middleware registrations and orchestrates the
 // invocation of middleware components and actions.
 type MiddlewareRunner struct {
-	chain     []string
-	container *ioc.NestedContainer
+	chain       []string
+	container   *ioc.NestedContainer
+	actionCache map[actions.Action]*actions.ActionResult
 }
 
 // Creates a new middleware runner
 func NewMiddlewareRunner(container *ioc.NestedContainer) *MiddlewareRunner {
 	return &MiddlewareRunner{
-		container: container,
-		chain:     []string{},
+		container:   container,
+		chain:       []string{},
+		actionCache: map[actions.Action]*actions.ActionResult{},
 	}
 }
 
@@ -63,8 +68,21 @@ func (r *MiddlewareRunner) RunChildAction(
 	runOptions *Options,
 	action actions.Action,
 ) (*actions.ActionResult, error) {
+	// If we have previously run this action then return the cached result
+	if cachedActionResult, has := r.actionCache[action]; has {
+		return cachedActionResult, nil
+	}
+
+	// If we have not previously run this action then execute it
 	runOptions.isChildAction = true
-	return r.RunAction(ctx, runOptions, action)
+	result, err := r.RunAction(ctx, runOptions, action)
+
+	// Cache the result on action success
+	if err == nil {
+		r.actionCache[action] = result
+	}
+
+	return result, err
 }
 
 // Executes the middleware chain for the specified action
@@ -110,12 +128,7 @@ func (r *MiddlewareRunner) RunAction(
 		}
 	}
 
-	result, err := nextFn(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return result, nil
+	return nextFn(ctx)
 }
 
 // Registers middleware components that will be run for all actions

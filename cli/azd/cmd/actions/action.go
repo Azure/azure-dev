@@ -3,8 +3,6 @@ package actions
 
 import (
 	"context"
-
-	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 )
 
 // ActionFunc is an Action implementation for regular functions.
@@ -24,43 +22,18 @@ type ResultMessage struct {
 // Define the Action outputs.
 type ActionResult struct {
 	Message *ResultMessage
+
+	// TraceID is a unique identifier of the end-to-end CLI command execution, that can be used to correlate events in logs.
+	TraceID string
 }
 
 // Action is the representation of the application logic of a CLI command.
 type Action interface {
 	// Run executes the CLI command.
+	//
+	// It is currently valid to both return an error and a non-nil ActionResult.
 	Run(ctx context.Context) (*ActionResult, error)
 }
 
 // A function that lazily returns the specified action type T
 type ActionInitializer[T Action] func() (T, error)
-
-func ToUxItem(actionResult *ActionResult, err error) ux.UxItem {
-	if err != nil {
-		return &ux.ActionResult{
-			SuccessMessage: "",
-			FollowUp:       "",
-			Err:            err,
-		}
-	}
-
-	if actionResult == nil {
-		return &ux.ActionResult{
-			SuccessMessage: "",
-			FollowUp:       "",
-			Err:            nil,
-		}
-	}
-	if actionResult.Message == nil {
-		return &ux.ActionResult{
-			SuccessMessage: "",
-			FollowUp:       "",
-			Err:            nil,
-		}
-	}
-	return &ux.ActionResult{
-		SuccessMessage: actionResult.Message.Header,
-		FollowUp:       actionResult.Message.FollowUp,
-		Err:            nil,
-	}
-}

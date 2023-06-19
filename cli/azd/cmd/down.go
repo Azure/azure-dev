@@ -3,18 +3,42 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 type downFlags struct {
-	infraDeleteFlags
+	forceDelete bool
+	purgeDelete bool
+	global      *internal.GlobalCommandOptions
+	envFlag
 }
 
-func newDownFlags(cmd *cobra.Command, infraDeleteFlags *infraDeleteFlags, global *internal.GlobalCommandOptions) *downFlags {
+func (i *downFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+	local.BoolVar(&i.forceDelete, "force", false, "Does not require confirmation before it deletes resources.")
+	local.BoolVar(
+		&i.purgeDelete,
+		"purge",
+		false,
+		//nolint:lll
+		"Does not require confirmation before it permanently deletes resources that are soft-deleted by default (for example, key vaults).",
+	)
+	i.envFlag.Bind(local, global)
+	i.global = global
+}
+
+func newDownFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *downFlags {
 	flags := &downFlags{}
 	flags.Bind(cmd.Flags(), global)
 
@@ -23,30 +47,59 @@ func newDownFlags(cmd *cobra.Command, infraDeleteFlags *infraDeleteFlags, global
 
 func newDownCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:     "down",
-		Short:   "Delete Azure resources for an application.",
-		Aliases: []string{"infra delete"},
+		Use:   "down",
+		Short: "Delete Azure resources for an application.",
 	}
 }
 
 type downAction struct {
-	infraDelete *infraDeleteAction
+	flags            *downFlags
+	provisionManager *provisioning.Manager
+	env              *environment.Environment
+	console          input.Console
+	projectConfig    *project.ProjectConfig
 }
 
 func newDownAction(
-	downFlags *downFlags,
-	infraDelete *infraDeleteAction,
+	flags *downFlags,
+	provisionManager *provisioning.Manager,
+	env *environment.Environment,
+	projectConfig *project.ProjectConfig,
+	console input.Console,
+	alphaFeatureManager *alpha.FeatureManager,
 ) actions.Action {
-	// Required to ensure the sub action flags are bound correctly to the actions
-	infraDelete.flags = &downFlags.infraDeleteFlags
-
 	return &downAction{
-		infraDelete: infraDelete,
+		flags:            flags,
+		provisionManager: provisionManager,
+		env:              env,
+		console:          console,
+		projectConfig:    projectConfig,
 	}
 }
 
 func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	return a.infraDelete.Run(ctx)
+	// Command title
+	a.console.MessageUxItem(ctx, &ux.MessageTitle{
+		Title:     "Deleting all resources and deployed code on Azure (azd down)",
+		TitleNote: "Local application code is not deleted when running 'azd down'.",
+	})
+
+	startTime := time.Now()
+
+	if err := a.provisionManager.Initialize(ctx, a.projectConfig.Path, a.projectConfig.Infra); err != nil {
+		return nil, fmt.Errorf("initializing provisioning manager: %w", err)
+	}
+
+	destroyOptions := provisioning.NewDestroyOptions(a.flags.forceDelete, a.flags.purgeDelete)
+	if _, err := a.provisionManager.Destroy(ctx, destroyOptions); err != nil {
+		return nil, fmt.Errorf("deleting infrastructure: %w", err)
+	}
+
+	return &actions.ActionResult{
+		Message: &actions.ResultMessage{
+			Header: fmt.Sprintf("Your application was removed from Azure in %s.", ux.DurationAsText(since(startTime))),
+		},
+	}, nil
 }
 
 func getCmdDownHelpDescription(*cobra.Command) string {

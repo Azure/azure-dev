@@ -14,8 +14,13 @@ import (
 
 type NpmCli interface {
 	tools.ExternalTool
-	Install(ctx context.Context, project string, onlyProduction bool) error
-	Build(ctx context.Context, project string, env []string) error
+	Install(ctx context.Context, project string) error
+
+	// RunScript runs the given npm script (if it exists) in the project.
+	//
+	// Returns an error only if the script execution fails. If the script doesn't exist, no error is returned.
+	RunScript(ctx context.Context, projectPath string, scriptName string) error
+	Prune(ctx context.Context, projectPath string, production bool) error
 }
 
 type npmCli struct {
@@ -38,27 +43,27 @@ func (cli *npmCli) versionInfoNode() tools.VersionInfo {
 	}
 }
 
-func (cli *npmCli) CheckInstalled(ctx context.Context) (bool, error) {
-	found, err := tools.ToolInPath("npm")
-	if !found {
-		return false, err
+func (cli *npmCli) CheckInstalled(ctx context.Context) error {
+	err := tools.ToolInPath("npm")
+	if err != nil {
+		return err
 	}
 
 	//check node version
 	nodeRes, err := tools.ExecuteCommand(ctx, cli.commandRunner, "node", "--version")
 	if err != nil {
-		return false, fmt.Errorf("checking %s version: %w", cli.Name(), err)
+		return fmt.Errorf("checking %s version: %w", cli.Name(), err)
 	}
 	nodeSemver, err := tools.ExtractVersion(nodeRes)
 	if err != nil {
-		return false, fmt.Errorf("converting to semver version fails: %w", err)
+		return fmt.Errorf("converting to semver version fails: %w", err)
 	}
 	updateDetailNode := cli.versionInfoNode()
 	if nodeSemver.Compare(updateDetailNode.MinimumVersion) == -1 {
-		return false, &tools.ErrSemver{ToolName: "Node.js", VersionInfo: updateDetailNode}
+		return &tools.ErrSemver{ToolName: "Node.js", VersionInfo: updateDetailNode}
 	}
 
-	return true, nil
+	return nil
 }
 
 func (cli *npmCli) InstallUrl() string {
@@ -69,29 +74,46 @@ func (cli *npmCli) Name() string {
 	return "npm CLI"
 }
 
-func (cli *npmCli) Install(ctx context.Context, project string, onlyProduction bool) error {
+func (cli *npmCli) Install(ctx context.Context, project string) error {
 	runArgs := exec.
-		NewRunArgs("npm", "install", "--production", fmt.Sprintf("%t", onlyProduction)).
+		NewRunArgs("npm", "install").
 		WithCwd(project)
 
-	res, err := cli.commandRunner.Run(ctx, runArgs)
+	_, err := cli.commandRunner.Run(ctx, runArgs)
 
 	if err != nil {
-		return fmt.Errorf("failed to install project %s, %s: %w", project, res.String(), err)
+		return fmt.Errorf("failed to install project %s: %w", project, err)
 	}
 	return nil
 }
 
-func (cli *npmCli) Build(ctx context.Context, project string, env []string) error {
+func (cli *npmCli) RunScript(ctx context.Context, projectPath string, scriptName string) error {
 	runArgs := exec.
-		NewRunArgs("npm", "run", "build", "--if-present", "--production", "true").
-		WithCwd(project).
-		WithEnv(env)
+		NewRunArgs("npm", "run", scriptName, "--if-present").
+		WithCwd(projectPath)
 
-	res, err := cli.commandRunner.Run(ctx, runArgs)
+	_, err := cli.commandRunner.Run(ctx, runArgs)
 
 	if err != nil {
-		return fmt.Errorf("failed to build project %s, %s: %w", project, res.String(), err)
+		return fmt.Errorf("failed to run NPM script %s, %w", scriptName, err)
 	}
+
+	return nil
+}
+
+func (cli *npmCli) Prune(ctx context.Context, projectPath string, production bool) error {
+	runArgs := exec.
+		NewRunArgs("npm", "prune").
+		WithCwd(projectPath)
+
+	if production {
+		runArgs = runArgs.AppendParams("--production")
+	}
+
+	_, err := cli.commandRunner.Run(ctx, runArgs)
+	if err != nil {
+		return fmt.Errorf("failed pruning NPM packages, %w", err)
+	}
+
 	return nil
 }

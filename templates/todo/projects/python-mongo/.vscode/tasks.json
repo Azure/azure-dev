@@ -13,7 +13,7 @@
         {
             "label": "Restore Web",
             "type": "shell",
-            "command": "azd restore --service web",
+            "command": "azd restore web",
             "presentation": {
                 "reveal": "silent"
             },
@@ -49,7 +49,7 @@
         {
             "label": "Restore API",
             "type": "shell",
-            "command": "azd restore --service api",
+            "command": "azd restore api",
             "presentation": {
                 "reveal": "silent"
             },
@@ -61,7 +61,10 @@
             "type": "shell",
             "command": "${workspaceFolder}/src/api/api_env/bin/uvicorn todo.app:app --port 3100 --reload",
             "options": {
-                "cwd": "${workspaceFolder}/src/api/"
+                "cwd": "${workspaceFolder}/src/api/",
+                "env": {
+                    "API_ENVIRONMENT": "develop"
+                }
             },
             "windows": {
                 "command": "${workspaceFolder}/src/api/api_env/scripts/uvicorn todo.app:app --port 3100 --reload"

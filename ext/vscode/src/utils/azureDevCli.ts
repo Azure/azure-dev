@@ -2,29 +2,34 @@
 // Licensed under the MIT License.
 
 import * as path from 'path';
+import * as semver from 'semver';
 import * as vscode from 'vscode';
 import { CommonOptions } from "child_process";
 import { CommandLineBuilder } from "./commandLineBuilder";
 import ext from "../ext";
 import { execAsync } from './process';
 import { AsyncLazy } from './lazy';
-import { localize } from "../localize";
 import { AzExtErrorButton, IActionContext } from '@microsoft/vscode-azext-utils';
 import { isWindows } from './osUtils';
 import { setVsCodeContext } from './setVsCodeContext';
 
 // Twenty seconds: generous, but not infinite
 export const DefaultAzCliInvocationTimeout: number = 20 * 1000;
-const AzdInstallationUrl: string = 'https://aka.ms/azd-install';
 const AzdLoginCheckCacheLifetime = 15 * 60 * 1000; // 15 minutes
 
-let userWarnedAzdMissing: boolean = false;
 let azdInstallAttempted: boolean = false;
 const azdLoginChecker = new AsyncLazy<LoginStatus | undefined>(getAzdLoginStatus, AzdLoginCheckCacheLifetime);
 
 interface LoginStatus {
-    status: 'success' | 'unauthenticated' | string;
-    expiresOn?: string;
+    readonly status: 'success' | 'unauthenticated' | string;
+    readonly expiresOn?: string;
+}
+
+interface VersionInfo {
+    readonly azd: {
+        readonly version: string;
+        readonly commit: string;
+    };
 }
 
 export type Environment = { [key: string]: string };
@@ -39,11 +44,44 @@ export async function createAzureDevCli(context: IActionContext): Promise<AzureD
     if (!loginStatus) {
         context.errorHandling.suppressReportIssue = true;
         context.errorHandling.buttons = azdNotInstalledUserChoices();
-        userWarnedAzdMissing = true;
         throw new Error(azdNotInstalledMsg());
     }
 
     return createCli();
+}
+
+export function scheduleAzdVersionCheck(): void {
+    const oneSecond = 1 * 1000;
+    // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
+    const minimumSupportedVersion = semver.coerce('0.8.0')!;
+    
+    setTimeout(async () => {
+        const versionResult = await getAzdVersion();
+
+        if (versionResult && !semver.gte(versionResult, minimumSupportedVersion)) {
+            // We won't show a warning if AZD is not installed, but if it is installed and less than 0.8.0, we will warn
+
+            const install: vscode.MessageItem = {
+                title: vscode.l10n.t('Update'),
+            };
+
+            const later: vscode.MessageItem = {
+                title: vscode.l10n.t('Later'),
+            };
+
+            const title = vscode.l10n.t(
+                'The minimum version of the Azure Developer CLI supported by the extension is {0}, but you have {1}. Would you like to update?',
+                minimumSupportedVersion.version,
+                versionResult.version
+            );
+
+            void vscode.window.showWarningMessage(title, { modal: false }, install, later).then(async (result) => {
+                if (result === install) {
+                    await vscode.commands.executeCommand('azure-dev.commands.cli.install', /* shouldPrompt: */ false);
+                }
+            });
+        }
+    }, oneSecond);
 }
 
 export function scheduleAzdSignInCheck(): void {
@@ -52,10 +90,14 @@ export function scheduleAzdSignInCheck(): void {
     setTimeout(async () => {
         const result = await azdLoginChecker.getValue();
 
-        if (!result && !userWarnedAzdMissing && !azdInstallAttempted) {
-            userWarnedAzdMissing = true;
-            const response = await vscode.window.showWarningMessage(azdNotInstalledMsg(), {}, ...azdNotInstalledUserChoices());
-            await response?.callback();
+        if (result !== undefined) {
+            // If we've reached this point, AZD is installed. We can set the VSCode context that the walk-through uses
+            await setVsCodeContext('hideAzdInstallStep', true);
+
+            // If the user is logged in, we can also set the login context
+            if (result.status === 'success') {
+                await setVsCodeContext('hideAzdLoginStep', true);
+            }
         }
     }, oneSecond);
 }
@@ -77,7 +119,12 @@ export function scheduleAzdYamlCheck(): void {
 export function onAzdInstallAttempted(): void {
     azdInstallAttempted = true;
 
-    // Clear the install state so we'll check again at the next command
+    // Clear the install+login state so we'll check again at the next command
+    azdLoginChecker.clear();
+}
+
+export function onAzdLoginAttempted(): void {
+    // Clear the install+login state so we'll check again at the next command
     azdLoginChecker.clear();
 }
 
@@ -136,20 +183,26 @@ function getAzDevInvocation(): string[] {
     }
 }
 
+async function getAzdVersion(): Promise<semver.SemVer | undefined> {
+    const cli = createCli();
+    const command = cli.commandBuilder.withArgs(['version', '--output', 'json']).build();
+    try {
+        const stdout = (await execAsync(command, cli.spawnOptions())).stdout;
+        const result = JSON.parse(stdout) as VersionInfo;
+
+        return semver.coerce(result?.azd.version) ?? undefined;
+    } catch {
+        // If AZD is not installed, return `undefined`
+        return undefined;
+    }
+}
+
 async function getAzdLoginStatus(): Promise<LoginStatus | undefined> {
     const cli = createCli();
-    const command = cli.commandBuilder.withArgs(['login', '--check-status', '--output', 'json']).build();
+    const command = cli.commandBuilder.withArgs(['auth', 'login', '--check-status', '--output', 'json']).build();
     try {
         const stdout = (await execAsync(command, cli.spawnOptions())).stdout;
         const result = JSON.parse(stdout) as LoginStatus;
-
-        // If we've reached this point, AZD is installed. We can set the VSCode context that the walk-through uses
-        await setVsCodeContext('hideAzdInstallStep', true);
-
-        // If the user is logged in, we can also set the login context
-        if (result?.status === 'success') {
-            await setVsCodeContext('hideAzdLoginStep', true);
-        }
 
         return result;
     } catch {
@@ -171,26 +224,20 @@ function normalize(env: NodeJS.ProcessEnv): Environment {
 }
 
 function azdNotInstalledMsg(): string {
-    return localize("azure-dev.utils.azd.notInstalled", "Azure Developer CLI is not installed. Would you like to install it?.");
+    return vscode.l10n.t("Azure Developer CLI is not installed. Would you like to install it? [Learn More](https://aka.ms/azd-install)");
 }
 
 function azdNotInstalledUserChoices(): AzExtErrorButton[] {
     const choices: AzExtErrorButton[] = [
         {
-            "title": localize("azure-dev.utils.azd.installNow", "Install"),
-            "callback": async () => {
+            title: vscode.l10n.t("Install"),
+            callback: async () => {
                 await vscode.commands.executeCommand("azure-dev.commands.cli.install", /* shouldPrompt: */ false);
             }
         },
         {
-            "title": localize("azure-dev.utils.azd.goToInstallUrl", "Learn More"),
-            "callback": async () => {
-                await vscode.env.openExternal(vscode.Uri.parse(AzdInstallationUrl));
-            }
-        },
-        {
-            "title": localize("azure-dev.utils.azd.later", "Later"),
-            "callback": () => { return Promise.resolve(); /* no-op */ }
+            title: vscode.l10n.t("Later"),
+            callback: () => { return Promise.resolve(); /* no-op */ }
         }
     ];
     return choices;

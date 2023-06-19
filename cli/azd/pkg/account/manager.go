@@ -8,7 +8,6 @@ import (
 	"os"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"golang.org/x/exp/slices"
 )
 
@@ -20,23 +19,21 @@ const (
 
 // The default location to use in AZD when not previously set to any value
 var defaultLocation Location = Location{
-	Name:        "eastus2",
-	DisplayName: "(US) East US 2",
+	Name:                "eastus2",
+	DisplayName:         "East US 2",
+	RegionalDisplayName: "(US) East US 2",
 }
 
-type SubscriptionsListing interface {
-	GetSubscriptionsWithDefaultSet(ctx context.Context) ([]Subscription, error)
-	GetLocations(ctx context.Context, subscriptionId string) ([]azcli.AzCliLocation, error)
-}
 type Manager interface {
 	Clear(ctx context.Context) error
-	HasDefaults() bool
+	HasDefaultSubscription() bool
+	HasDefaultLocation() bool
 	GetAccountDefaults(ctx context.Context) (*Account, error)
 	GetDefaultLocationName(ctx context.Context) string
 	GetDefaultSubscriptionID(ctx context.Context) string
 	GetSubscriptions(ctx context.Context) ([]Subscription, error)
 	GetSubscriptionsWithDefaultSet(ctx context.Context) ([]Subscription, error)
-	GetLocations(ctx context.Context, subscriptionId string) ([]azcli.AzCliLocation, error)
+	GetLocations(ctx context.Context, subscriptionId string) ([]Location, error)
 	SetDefaultSubscription(ctx context.Context, subscriptionId string) (*Subscription, error)
 	SetDefaultLocation(ctx context.Context, subscriptionId string, location string) (*Location, error)
 }
@@ -63,7 +60,7 @@ func NewManager(
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
 			log.Printf("configuration file '%s' does not exist. Creating new empty config.", filePath)
-			azdConfig = config.NewConfig(nil)
+			azdConfig = config.NewEmptyConfig()
 		} else {
 			return nil, err
 		}
@@ -141,7 +138,7 @@ func (m *manager) GetSubscriptions(ctx context.Context) ([]Subscription, error) 
 }
 
 // Gets the available Azure locations for the specified Azure subscription.
-func (m *manager) GetLocations(ctx context.Context, subscriptionId string) ([]azcli.AzCliLocation, error) {
+func (m *manager) GetLocations(ctx context.Context, subscriptionId string) ([]Location, error) {
 	locations, err := m.subManager.ListLocations(ctx, subscriptionId)
 	if err != nil {
 		return nil, fmt.Errorf("failed retrieving Azure location for account '%s': %w", subscriptionId, err)
@@ -181,7 +178,7 @@ func (m *manager) SetDefaultLocation(ctx context.Context, subscriptionId string,
 		return nil, fmt.Errorf("failed retrieving locations: %w", err)
 	}
 
-	index := slices.IndexFunc(locations, func(l azcli.AzCliLocation) bool {
+	index := slices.IndexFunc(locations, func(l Location) bool {
 		return l.Name == location
 	})
 
@@ -201,18 +198,21 @@ func (m *manager) SetDefaultLocation(ctx context.Context, subscriptionId string,
 		return nil, fmt.Errorf("failed saving AZD configuration: %w", err)
 	}
 
-	return &Location{
-		Name:        matchingLocation.Name,
-		DisplayName: matchingLocation.RegionalDisplayName,
-	}, nil
+	return &matchingLocation, nil
 }
 
-// Checks whether account related defaults of subscription and location have previously been set
-func (m *manager) HasDefaults() bool {
+// HasDefaultSubscription returns true if a default subscription has been configured (i.e defaults.subscription is set)
+func (m *manager) HasDefaultSubscription() bool {
 	_, hasDefaultSubscription := m.config.Get(defaultSubscriptionKeyPath)
+
+	return hasDefaultSubscription
+}
+
+// HasDefaultLocation returns true if a default location has been configured (i.e defaults.location is set)
+func (m *manager) HasDefaultLocation() bool {
 	_, hasDefaultLocation := m.config.Get(defaultLocationKeyPath)
 
-	return hasDefaultSubscription && hasDefaultLocation
+	return hasDefaultLocation
 }
 
 // Clears any persisted defaults in the AZD config
@@ -306,7 +306,7 @@ func (m *manager) getDefaultLocation(ctx context.Context, subscriptionId string)
 		return nil, fmt.Errorf("failed retrieving account locations: %w", err)
 	}
 
-	index := slices.IndexFunc(allLocations, func(l azcli.AzCliLocation) bool {
+	index := slices.IndexFunc(allLocations, func(l Location) bool {
 		return l.Name == locationName
 	})
 
@@ -314,8 +314,5 @@ func (m *manager) getDefaultLocation(ctx context.Context, subscriptionId string)
 		return nil, fmt.Errorf("the location '%s' is invalid. Check your configuration with `azd config list`", locationName)
 	}
 
-	return &Location{
-		Name:        allLocations[index].Name,
-		DisplayName: allLocations[index].RegionalDisplayName,
-	}, nil
+	return &allLocations[index], nil
 }

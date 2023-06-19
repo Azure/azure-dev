@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"strconv"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"golang.org/x/exp/slices"
 
 	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
@@ -20,7 +20,7 @@ func (p *BicepProvider) promptForParameter(
 	key string,
 	param azure.ArmTemplateParameterDefinition,
 ) (any, error) {
-	msg := fmt.Sprintf("Please enter a value for the '%s' infrastructure parameter:", key)
+	msg := fmt.Sprintf("Enter a value for the '%s' infrastructure parameter:", key)
 	help, _ := param.Description()
 	azdMetadata, _ := param.AzdMetadata()
 	paramType := p.mapBicepTypeToInterfaceType(param.Type)
@@ -28,7 +28,7 @@ func (p *BicepProvider) promptForParameter(
 	var value any
 
 	if paramType == ParameterTypeString && azdMetadata.Type != nil && *azdMetadata.Type == "location" {
-		location, err := p.prompters.Location(msg, func(loc azcli.AzCliLocation) bool {
+		location, err := p.prompters.PromptLocation(ctx, p.env.GetSubscriptionId(), msg, func(loc account.Location) bool {
 			if param.AllowedValues == nil {
 				return true
 			}
@@ -48,6 +48,11 @@ func (p *BicepProvider) promptForParameter(
 		for _, option := range *param.AllowedValues {
 			options = append(options, fmt.Sprintf("%v", option))
 		}
+
+		if len(options) == 0 {
+			return nil, fmt.Errorf("parameter '%s' has no allowed values defined", key)
+		}
+
 		choice, err := p.console.Select(ctx, input.ConsoleOptions{
 			Message: msg,
 			Help:    help,

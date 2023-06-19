@@ -26,8 +26,8 @@ jobs:
       - name: golangci-lint
         uses: golangci/golangci-lint-action@v3
         with:
-          version: v1.51
-          args: -v --timeout 5m0s
+          version: v1.51.2
+          args: -v --timeout 10m0s
           working-directory: cli/azd
 
   cspell-lint:
@@ -36,7 +36,7 @@ jobs:
       - uses: actions/checkout@v3
       - uses: actions/setup-node@v3
         with:
-          node-version: "16"
+          node-version: "18"
       - run: npm install -g cspell
       - name: Spell check for CLI source code
         run: cspell lint '**/*.go' --config ./cli/azd/.vscode/cspell.yaml --root ./cli/azd --no-progress

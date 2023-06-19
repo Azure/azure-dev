@@ -43,3 +43,13 @@ func (c *MockMultiTenantCredentialProvider) GetTokenCredential(
 		},
 	}, nil
 }
+
+type MockSubscriptionCredentialProvider struct {
+}
+
+func (scp *MockSubscriptionCredentialProvider) CredentialForSubscription(
+	ctx context.Context,
+	subscriptionId string,
+) (azcore.TokenCredential, error) {
+	return &MockCredentials{}, nil
+}

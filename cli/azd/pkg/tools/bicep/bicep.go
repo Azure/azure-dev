@@ -15,8 +15,8 @@ import (
 	"runtime"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
-	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
-	"github.com/azure/azure-dev/cli/azd/internal/telemetry/events"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -27,7 +27,7 @@ import (
 
 // cBicepVersion is the minimum version of bicep that we require (and the one we fetch when we fetch bicep on behalf of a
 // user).
-var cBicepVersion semver.Version = semver.MustParse("0.14.46")
+var cBicepVersion semver.Version = semver.MustParse("0.17.1")
 
 type BicepCli interface {
 	Build(ctx context.Context, file string) (string, error)
@@ -92,6 +92,8 @@ func newBicepCliWithTransporter(
 	if err != nil {
 		return nil, fmt.Errorf("checking bicep version: %w", err)
 	}
+
+	log.Printf("bicep version: %s", ver)
 
 	if ver.LT(cBicepVersion) {
 		log.Printf("installed bicep version %s is older than %s; updating.", ver.String(), cBicepVersion.String())
@@ -180,7 +182,7 @@ func downloadBicep(ctx context.Context, transporter policy.Transporter, bicepVer
 	log.Printf("downloading bicep release %s -> %s", bicepReleaseUrl, name)
 
 	var err error
-	spanCtx, span := telemetry.GetTracer().Start(ctx, events.BicepInstallEvent)
+	spanCtx, span := tracing.Start(ctx, events.BicepInstallEvent)
 	defer span.EndWithStatus(err)
 
 	req, err := http.NewRequestWithContext(spanCtx, "GET", bicepReleaseUrl, nil)
@@ -218,7 +220,7 @@ func downloadBicep(ctx context.Context, transporter policy.Transporter, bicepVer
 		return err
 	}
 
-	if err := os.Rename(f.Name(), name); err != nil {
+	if err := osutil.Rename(ctx, f.Name(), name); err != nil {
 		return err
 	}
 
@@ -246,8 +248,7 @@ func (cli *bicepCli) Build(ctx context.Context, file string) (string, error) {
 
 	if err != nil {
 		return "", fmt.Errorf(
-			"failed running bicep build: %s (%w)",
-			buildRes.String(),
+			"failed running bicep build: %w",
 			err,
 		)
 	}

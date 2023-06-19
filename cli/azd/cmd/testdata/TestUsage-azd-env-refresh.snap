@@ -2,12 +2,11 @@
 Refresh environment settings by using information from a previous infrastructure provision.
 
 Usage
-  azd env refresh [flags]
+  azd env refresh <environment> [flags]
 
 Flags
     -e, --environment string 	: The name of the environment to use.
     -h, --help               	: Gets help for refresh.
-    -o, --output string      	: The output format (the supported formats are json, none).
 
 Global Flags
     -C, --cwd string 	: Sets the current working directory.

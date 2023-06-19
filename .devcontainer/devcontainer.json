@@ -6,16 +6,6 @@
             "VARIANT": "bullseye"
         }
     },
-    "features": {
-        // Prerequisites for running azd
-        // https://github.com/Azure/azure-dev/wiki/Install
-        "ghcr.io/devcontainers/features/github-cli:1": {
-            "version": "2.3"
-        },
-        "ghcr.io/devcontainers/features/azure-cli:1": {
-            "version": "2.38"
-        }
-    },
     "customizations": {
         "vscode": {
             "extensions": [

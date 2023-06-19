@@ -13,6 +13,8 @@ words:
     - opentelemetry
     - bson
     - azdo
+    - choco
+    - winget
 ignoreWords:
     - AADSTS
     - afwp
@@ -41,11 +43,13 @@ ignoreWords:
     - armcontainerregistry
     - azidentity
     - azsecrets
+    - beginswith
     - Bfor
     - bicepcli
     - cdne
     - cdnp
     - chooks
+    - cloudshell
     - commandrunner
     - configlist
     - conjunction
@@ -102,7 +106,10 @@ ignoreWords:
     - PLACEHOLDERIACTOOLS
     - postcommand
     - postinit
+    - postbuild
+    - postpublish
     - preinline
+    - prebuild
     - precommand
     - predeploy
     - preinteractive
@@ -127,6 +134,7 @@ ignoreWords:
     - ssimp
     - stapp
     - startswith
+    - stringutil
     - stvm
     - syndp
     - synsp
@@ -162,6 +170,7 @@ ignoreWords:
     - menuid
     - PLACEHOLDERIACTOOLS
     - LOGANALYTICS
+    - venv
     - webapprouting
     - zipdeploy
     - appinsights

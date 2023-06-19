@@ -1,21 +1,270 @@
 # Release History
 
-## 0.6.0-beta.3 (Unreleased)
+## vNext (unreleased)
+
+### Bugs Fixed
+
+- [[2402]](https://github.com/Azure/azure-dev/pull/2279) Support for workload profiles in Azure Container Apps
+
+## 1.0.2 (2023-06-14)
+
+### Features Added
+
+- [[2266]](https://github.com/Azure/azure-dev/pull/2266) Support for buildArgs on Docker builds.
+- [[2322]](https://github.com/Azure/azure-dev/pull/2322) Support Azure Spring Apps consumption dedicated plan.
+
+### Bugs Fixed
+
+- [[2348]](https://github.com/Azure/azure-dev/pull/2279) Support purging Managed HSMs.
+- [[2362]](https://github.com/Azure/azure-dev/pull/2362) Prevent more errors from interrupting console progress.
+- [[2366]](https://github.com/Azure/azure-dev/pull/2366) Fixes issue where hooks inline script slashes are replaced.
+- [[2375]](https://github.com/Azure/azure-dev/pull/2375) Store numeric values with leading zeros in .env correctly.
+- [[2401]](https://github.com/Azure/azure-dev/pull/2401) Fix the application url fetched from ASA consumption plan.
+- [[2426]](https://github.com/Azure/azure-dev/pull/2426) Fix saving of subscription and location defaults.
+
+### Other Changes
+
+- [[2337]](https://github.com/Azure/azure-dev/pull/2337) Update device-code auth flow.
+
+## 1.0.1 (2023-05-25)
+
+### Bugs Fixed
+
+- [[2300]](https://github.com/Azure/azure-dev/pull/2300) Fix `azd auth login` failing with error "reauthentication required: run `azd auth login` to log in" due to stale cache data.
+
+## 1.0.0 (2023-05-22)
+
+### Bugs Fixed
+
+- [[2279]](https://github.com/Azure/azure-dev/pull/2279) Fetch k8s GPG key from alternate location.
+- [[2278]](https://github.com/Azure/azure-dev/pull/2278) Remove infrastructure outputs from .env on azd down.
+- [[2274]](https://github.com/Azure/azure-dev/pull/2274) Change AKS service spec 'targetPort' from int to string.
+
+## 0.9.0-beta.3 (2023-05-19)
+
+### Features Added
+ 
+- [[2245]](https://github.com/Azure/azure-dev/pull/2245) Add support to login to Azure Container Registry with current identity.
+- [[2228]](https://github.com/Azure/azure-dev/pull/2228) Add error classification and reporting for external errors to `azd`.
+- [[2219]](https://github.com/Azure/azure-dev/pull/2219) Support environment name as explicit argument for `azd env refresh`.
+- [[2164]](https://github.com/Azure/azure-dev/pull/2164) Add timing information on `up`,`package`,`build`, `provision`,`deploy`, `down` and `restore` commands.
+
+#### Template Feature
+
+- [[2157]](https://github.com/Azure/azure-dev/pull/2157) Add `Dapr` and container configuration properties to Azure Container Apps modules.
+
+### Bugs Fixed
+
+- [[2257]](https://github.com/Azure/azure-dev/pull/2257) Add purge option of cognitive accounts for `azd down`.
+- [[2243]](https://github.com/Azure/azure-dev/pull/2243) Return error when login fails.
+- [[2251]](https://github.com/Azure/azure-dev/pull/2251) Create an `alpha` version of azure.yaml schema with `terraform`.
+- [[2028]](https://github.com/Azure/azure-dev/pull/2028) Add check on required role assignments for `azd pipeline config`.
+
+### Other Changes
+
+- [[2218]](https://github.com/Azure/azure-dev/pull/2218) Update `azd pipeline config` default roles to include `User Access Administrator`.
+- [[2185]](https://github.com/Azure/azure-dev/pull/2185) Improve error messages on `auth` command.
+
+## 0.9.0-beta.2 (2023-05-11)
+
+### Bugs Fixed
+
+- [[2177]](https://github.com/Azure/azure-dev/issues/2177) Use information in `.installed-by.txt` to advise the user on how to upgrade azd.
+- [[2183]](https://github.com/Azure/azure-dev/pull/2182) Statically link CRT in MSI custom action.
+
+## 0.9.0-beta.1 (2023-05-11)
+
+### Features Added
+
+- [[1808]](https://github.com/Azure/azure-dev/pull/1808) Support for Azure Spring Apps(alpha feature).
+- [[2083]](https://github.com/Azure/azure-dev/pull/2083) Allow resource group scope deployments(alpha feature).
+
+### Breaking Changes
+
+- [[2066]](https://github.com/Azure/azure-dev/pull/2066) `azd` no longer assumes `dotnet` by default when `services.language` is not set, or empty in `azure.yaml`. If you receive an error message 'language property must not be empty', specify `language: dotnet` explicitly in `azure.yaml`.
+- [[2100]](https://github.com/Azure/azure-dev/pull/2100) As a follow up from the change for [azd up ordering](#azd-up-ordering), automatic `.env` file injection when building `staticwebapp` services have been removed. For more details, read more about [Static Web App Dynamic Configuration](#static-web-app-dynamic-configuration) below.
+- [[2126]](https://github.com/Azure/azure-dev/pull/2126) During `azd pipeline config` commands `azd` will no longer store non-secret configuration values in [GitHub secrets](https://docs.github.com/actions/automating-your-workflow-with-github-actions/creating-and-using-encrypted-secrets) and instead will be stored in [GitHub variables](https://docs.github.com/actions/learn-github-actions/variables). Non-secret variables should be referenced using the `vars` context instead of the `secrets` context within your GitHub actions.
+- [[1989]](https://github.com/Azure/azure-dev/pull/1989) Refactor Container App service target. Deploy will fail if you are using Azure Container Apps that are not deploying the Azure Container Apps resources as part of the initial `provision` step.
+
+### Bugs Fixed
+
+- [[2071]](https://github.com/Azure/azure-dev/pull/2071) Fix `azd config reset` causing a logout to occur.
+- [[2048]](https://github.com/Azure/azure-dev/pull/2048) Fix `azd down` deletion on an empty resource group environment.
+- [[2088]](https://github.com/Azure/azure-dev/pull/2088) Fix error when running `azd pipeline config --provider azdo` on Codespaces.
+- [[2094]](https://github.com/Azure/azure-dev/pull/2094) Add error check for pipeline yml file and ssh interaction when running `azd pipeline config`.
+
+#### Template Fix
+- [[2013]](https://github.com/Azure/azure-dev/pull/2013) Fix `load template missing` error in `azd env list`.
+- [[2001]](https://github.com/Azure/azure-dev/pull/2001) Fix Azure Container Apps CORS strategy for Java, NodeJs and Python.
+
+### Other Changes
+
+- [[2026]](https://github.com/Azure/azure-dev/pull/2026) Improve provisioning performance for `dotnet` services by batching `dotnet user-secret` updates.
+- [[2004]](https://github.com/Azure/azure-dev/pull/2004) Improve error message when no subscriptions are found.
+- [[1792]](https://github.com/Azure/azure-dev/pull/1792) Add `java postgresql terraform` template.
+- [[2055]](https://github.com/Azure/azure-dev/pull/2055) Add new starter templates for bicep and terraform.
+- [[2090]](https://github.com/Azure/azure-dev/pull/2090) Update todo templates names and descriptions.
+
+#### Static Web App Dynamic Configuration
+
+This change affects `staticwebapp` services that are currently relying on azd provided `.env` file variables during `azd deploy`. If you have an application initialized from an older `azd` provided Static Web App template (before April 10, 2023), we recommend uptaking the latest changes if you're relying on `.env` variables being present. A way to check whether this affects you is by looking at contents in `azure.yaml`:
+
+Old, uptake needed:
+
+```yaml
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+
+name: <your project>
+metadata:
+  template: todo-nodejs-mongo-swa-func@0.0.1-beta
+services:
+  web:
+    project: ./src/web
+    dist: build
+    language: js
+    host: staticwebapp
+  api:
+    project: ./src/api
+    language: js
+    host: function
+```
+
+New, no changes necessary:
+
+```yaml
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+
+name: <your project>
+metadata:
+  template: todo-python-mongo-swa-func@0.0.1-beta
+services:
+  web:
+    project: ./src/web
+    dist: build
+    language: js
+    host: staticwebapp
+    hooks:
+      predeploy:
+        posix:
+          shell: sh
+          run: node entrypoint.js -o ./build/env-config.js
+          continueOnError: false
+          interactive: false
+        windows:
+          shell: pwsh
+          run: node entrypoint.js -o ./build/env-config.js
+          continueOnError: false
+          interactive: false
+  api:
+    project: ./src/api
+    language: py
+    host: function
+```
+
+From the example above, dynamic configuration can still be generated from azd `.env` files by creating a `predeploy` hook that embeds the configuration into web assets. See an example change [here](https://github.com/Azure-Samples/todo-nodejs-mongo-swa-func/commit/50f9268881717a796167c371cb60525f83be8a59#diff-fa5d677aeff171483fa03a69284506672cb9afafa0a7139e03a336e4fb7b773f).
+
+## 0.8.0-beta.2 (2023-04-20)
+
+### Features Added
+
+- [[#1931]](https://github.com/Azure/azure-dev/pull/1931) Support *.war and *.ear java archive files, and specify a specific archive file if multiple archives are present.
+- [[#1704]](https://github.com/Azure/azure-dev/pull/1704) Add `requiredVersions` to `azure.yaml`.
+- [[#1924]](https://github.com/Azure/azure-dev/pull/1924) Improve UX on `azd down`.
+- [[#1807]](https://github.com/Azure/azure-dev/pull/1807) Retrieves credentials using the token endpoint on `CloudShell`.
+
+### Bugs Fixed
+
+- [[#1923]](https://github.com/Azure/azure-dev/pull/1923) Fix `Python CLI not installed` error when Python is installed.
+- [[#1963]](https://github.com/Azure/azure-dev/pull/1963) Update GitHub federated auth token provider to allow for fetching of tokens when tokens expire.
+- [[#1967]](https://github.com/Azure/azure-dev/pull/1967) Display provisioning resources in `Failed` state.
+- [[#1940]](https://github.com/Azure/azure-dev/pull/1940) Detect and update environment changes before and after hook executions.
+- [[#1970]](https://github.com/Azure/azure-dev/pull/1970) Fix `pipeline config` issues on Codespaces for `ghcli` and `gitcli` auth.
+- [[#1982]](https://github.com/Azure/azure-dev/pull/1982) Ensure directory has user "execute" permissions.
+
+## 0.8.0-beta.1 (2023-04-10)
+
+### Features Added
+
+- [[#1715]](https://github.com/Azure/azure-dev/pull/1715) Adding feature alpha toggle:
+  - Moving terraform provider as alpha feature. Use `azd config set alpha.terraform on` to have it enabled.
+- [[#1833]](https://github.com/Azure/azure-dev/pull/1833) Deploy from existing package using `--from-package` flag.
+
+### Breaking Changes
+
+- [[#1715]](https://github.com/Azure/azure-dev/pull/1715) Using `terraform` as provisioning provider will fail and require user to enable terraform running `azd config set alpha.terraform on`.
+- [[#1801]](https://github.com/Azure/azure-dev/pull/1801) Restructuring specific command flags.
+  - `azd up` no longer runs `azd init`. As a result, the following flags have been removed from `azd up`:
+    - `--template` / `-t`
+    - `--location` / `-l`
+    - `--branch` / `-b`
+    - `--subscription`
+  - Use of `--service` and `--no-progress` in `azd up` is being deprecated.
+  - `azd deploy` now accepts a positional argument. Use `azd deploy <web>` instead of `azd deploy --service <web>`
+  - Deprecate `--no-progress` flag as it currently does nothing. A warning message is shown when used.
+  - Hide `--output` flag in the usage printout to correctly reflect the current it's current alpha-preview status. The output contract for structured schema such as JSON has yet been finalized.
+- [[#1804]](https://github.com/Azure/azure-dev/pull/1804) Adjust command aliases.
+  - `azd login` and `azd logout` are now available as `azd auth login` and `azd auth logout` respectively. `azd login` and `azd logout` are still available for use, but will be removed in a future release.
+  - `azd infra create` and `azd infra delete`, which have always been aliases for `azd provision` and `azd down`, are now deprecated. The commands are still available for use, but will be removed in a future release.
+- [[#1824]](https://github.com/Azure/azure-dev/pull/1824) Add working directory sensitivity for `restore` and `deploy`.
+  - `azd deploy` will now deploy the current service, when the current working directory is set to a service directory.
+  - `azd deploy` will deploy all services, when the current working directory is set to the project directory containing `azure.yaml`
+  - In other directories, `azd deploy` will not attempt a deployment and instead error out with suggestions. `azd deploy --all` can be used to deploy all services, or `azd deploy <service>` to deploy a given service always.
+- [[#1752]](https://github.com/Azure/azure-dev/pull/1752) Ask fewer questions during `init`.
+  - `azd init` will now only prompt for the environment name. Azure subscription and location values are prompted only when infrastructure provisioning is needed, when running `azd provision`, and consequently when running `azd up`.
+
+### Bugs Fixed
+
+- [[#1734]](https://github.com/Azure/azure-dev/pull/1734) Fix setting `AZURE_PRINCIPAL_ID` on multi-tenant directory.
+- [[#1738]](https://github.com/Azure/azure-dev/pull/1738) Fix generating auth token on multi-tenant directory.
+- [[#1762]](https://github.com/Azure/azure-dev/pull/1762) Allow local files to be kept when running `init`.
+- [[#1764]](https://github.com/Azure/azure-dev/pull/1764) Enhance zip-deploy during build for:
+  - Python: Do not include virtual environments for python.
+  - Node: Update node modules detection to exclude it from build.
+- [[#1857]](https://github.com/Azure/azure-dev/pull/1857) Adds `package` command hooks to azd schema.
+- [[#1878]](https://github.com/Azure/azure-dev/pull/1878) Ensure default generated docker repo/tags are all lowercase.
+- [[#1875]](https://github.com/Azure/azure-dev/pull/1875) Fixes panic for `postpackage` hook errors.
+
+### Other Changes
+
+#### `azd up` no longer runs `azd init`
+
+The behavior of `azd up -t <template>` can be reproduced with:
+
+```bash
+cd <empty dir>
+azd init -t <template>
+azd up
+```
+
+#### `azd deploy` no longer deploys all services when ran in any directory
+
+The new behavior is as follows:
+
+1. `azd deploy` will now deploy the current service, when the current working directory is set to a service directory.
+2. `azd deploy` will deploy all services, when the current working directory is set to the project directory containing `azure.yaml`.
+3. In other directories, `azd deploy` will not attempt a deployment and error out with suggestions. `azd deploy --all` can be used to deploy all services, or `azd deploy <service>` to deploy a given service always.
+
+#### `azd up` ordering
+
+`azd up` now packages artifacts prior to running `azd provision` and `azd deploy`. This should not affect most users, with the exception of users that may be taking advantage of `azd`'s environment values in packaging `staticwebapp` services. If `azd up` no longer works as expected, and you are currently taking advantage of `azd`'s provided environment values to package your application, a `predeploy` hook may be used to generate configuration files from `azd` environment values. See the working example in our ToDo templates that leverage `staticwebapp`, example [here](https://github.com/Azure-Samples/todo-python-mongo-swa-func/blob/main/azure.yaml). Note that script `hooks` automatically have `azd` environment values loaded in the shell environment.
+
+## 0.7.0-beta.1 (2023-03-09)
 
 ### Features Added
 
 - [[#1515]](https://github.com/Azure/azure-dev/pull/1515) Remove gh-cli as external dependency for `azd pipeline config`.
 - [[#1558]](https://github.com/Azure/azure-dev/pull/1558) Upgrade bicep version to 0.14.46 and fetch ARM specific version on ARM platforms.
 - [[#1611]](https://github.com/Azure/azure-dev/pull/1611) Updated formatting for displaying command's help.
-
-### Breaking Changes
+- [[#1629]](https://github.com/Azure/azure-dev/pull/1629) Add support for Azure Kubernetes Service (AKS) target.
 
 ### Bugs Fixed
 
 - [[#1631]](https://github.com/Azure/azure-dev/pull/1631) Fail fast during `azd init` when `git` is not installed.
 - [[#1559]](https://github.com/Azure/azure-dev/pull/1559) No feedback output during provisioning some templates.
+- [[#1683]](https://github.com/Azure/azure-dev/pull/1683) Fix `azd pipeline config` to honor provider from `azure.yaml`.
+- [[#1578]](https://github.com/Azure/azure-dev/pull/1578) Fix crash while running `azd login`, due to a tenant `DisplayName` being nil.
 
-### Other Changes
+Thanks to community members: @pamelafox, @tonybaloney, @cobey for their contributions in this release.
 
 ## 0.6.0-beta.2 (2023-02-10)
 

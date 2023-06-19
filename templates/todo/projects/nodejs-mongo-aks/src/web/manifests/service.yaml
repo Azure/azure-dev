@@ -1,0 +1,10 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: todo-web
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+  selector:
+    app: todo-web

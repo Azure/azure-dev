@@ -15,9 +15,9 @@ parameters:
 
 - name: TemplateList
   displayName: |
-    Comma-delimited list of templates to test against (by default, results of azd template list). Example: 'Azure-Samples/todo-csharp-sql, Azure-Samples/todo-nodejs-mongo'
+    Comma-delimited list of templates to test against (by default, 'all' to run all). Example: 'Azure-Samples/todo-csharp-sql, Azure-Samples/todo-nodejs-mongo'
   type: string
-  default: '(azd template list)'
+  default: 'all'
 
 - name: TemplateListFilter
   displayName: | 
@@ -35,7 +35,7 @@ parameters:
     Comma-delimited list of environment variables in the format of (KEY=VALUE) to set for the template test run.
     Example: USE_APIM=true,ENV_SUFFIX=MYSUFFIX
   type: string
-  default: ''
+  default: ' '
 
 - name: AzureLocation
   displayName: Azure location for templates to be deployed to
@@ -50,7 +50,7 @@ parameters:
 variables:
   - template: /eng/pipelines/templates/variables/globals.yml
   - name: NodeVersion
-    value: 16
+    value: 18
 
 jobs:
 - template: /eng/pipelines/templates/jobs/run-template-tests.yml

@@ -18,6 +18,8 @@ parameters:
   SyndicatedAcrPassword: $(azdev-acr-syndicated-password)
   PublishBrewFormula: false
   PublishArm64Binaries: false
+  AllowPrerelease: false
+  CliVersion: $(CLI_VERSION)
 
 steps:
   - ${{ if eq('true', parameters.CreateGitHubRelease) }}:
@@ -58,6 +60,12 @@ steps:
       artifact: signed-mac
       path: signed/mac
 
+  - task: DownloadPipelineArtifact@2
+    displayName: Download signed Linux packages
+    inputs:
+      artifact: signed-linux
+      path: signed/linux
+
   # Linux binary is not signed today so download from output artifacts
   - task: DownloadPipelineArtifact@2
     inputs:
@@ -93,19 +101,27 @@ steps:
 
   - ${{ if eq('true', parameters.PublishArm64Binaries) }}: 
     - pwsh: |
+        Move-Item release-staging/azd-linux-arm64 release-staging/azd-linux-arm64-beta 
+        Move-Item signed/mac/azd-darwin-arm64 signed/mac/azd-darwin-arm64-beta
+
         New-Item -ItemType Directory -Path release -Force
-        zip release/azd-darwin-arm64.zip -j signed/mac/azd-darwin-arm64 NOTICE.txt
+        zip release/azd-darwin-arm64-beta.zip -j signed/mac/azd-darwin-arm64-beta NOTICE.txt
 
         # Must place NOTICE.txt in file tree for tar to pick it up and place it in
         # the same place in the directory structure
         Copy-Item NOTICE.txt ./release-staging/
-        tar -C ./release-staging/ -cvzf release/azd-linux-arm64.tar.gz azd-linux-arm64 NOTICE.txt
+        tar -C ./release-staging/ -cvzf release/azd-linux-arm64-beta.tar.gz azd-linux-arm64-beta NOTICE.txt
       displayName: Compress standalone binary for release (ARM64)
 
 
   - ${{ if eq('true', parameters.UploadMsi) }}: 
     - pwsh: Copy-Item signed/win/azd-windows-amd64.msi release/
       displayName: Copy MSI to release
+
+  - pwsh: |
+      Copy-Item signed/linux/*.deb release/
+      Copy-Item signed/linux/*.rpm release/
+    displayName: Copy signed Linux packages to release
 
   - ${{ if eq('true', parameters.UploadInstaller) }}:
     - pwsh: |
@@ -215,10 +231,23 @@ steps:
       displayName: Push container tags (syndicated release)
 
   - ${{ if eq('true', parameters.PublishBrewFormula) }}:
+    - pwsh: |
+        $submitPackage = eng/scripts/Test-ShouldReleasePackageVersion.ps1 `
+          -CliVersion '${{ parameters.CliVersion }}'
+          -AllowPrerelease:$${{ parameters.AllowPrerelease }}
+
+        if ('$(Skip.ReleaseBrew)' -eq 'true') {
+          $submitPackage = 'false'
+        }
+        Write-Host "Setting SubmitBrewFormula to $submitPackage"
+        Write-Host "##vso[task.setvariable variable=SubmitBrewFormula]$submitPackage"
+      displayName: Set SubmitBrewFormula
+
     - pwsh: git clone https://github.com/Azure/homebrew-azd
       displayName: Clone Azure/homebrew-azd
 
     - task: PowerShell@2
+      condition: eq(variables['SubmitBrewFormula'], 'true')
       displayName: Update brew formula
       inputs:
         targetType: filePath

@@ -69,8 +69,13 @@ func (cli *azCli) createAppConfigClient(
 	ctx context.Context,
 	subscriptionId string,
 ) (*armappconfiguration.ConfigurationStoresClient, error) {
-	options := cli.createDefaultClientOptionsBuilder(ctx).BuildArmClientOptions()
-	appConfigStoresClient, err := armappconfiguration.NewConfigurationStoresClient(subscriptionId, cli.credential, options)
+	credential, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	options := cli.clientOptionsBuilder(ctx).BuildArmClientOptions()
+	appConfigStoresClient, err := armappconfiguration.NewConfigurationStoresClient(subscriptionId, credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating Resource client: %w", err)
 	}

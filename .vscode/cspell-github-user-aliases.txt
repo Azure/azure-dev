@@ -4,9 +4,11 @@ benbjohnson
 blang
 bradleyjkemp
 briandowns
+cobey
 ellismg
 envsubst
 fatih
+fiscaletti
 gofrs
 isatty
 joho
@@ -20,3 +22,4 @@ sethvargo
 stretchr
 theckman
 bmatcuk
+tonybaloney

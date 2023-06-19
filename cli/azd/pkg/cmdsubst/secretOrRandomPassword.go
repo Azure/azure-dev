@@ -17,12 +17,14 @@ import (
 const SecretOrRandomPasswordCommandName string = "secretOrRandomPassword"
 
 type SecretOrRandomPasswordCommandExecutor struct {
-	azCli azcli.AzCli
+	azCli          azcli.AzCli
+	subscriptionId string
 }
 
-func NewSecretOrRandomPasswordExecutor(azCli azcli.AzCli) *SecretOrRandomPasswordCommandExecutor {
+func NewSecretOrRandomPasswordExecutor(azCli azcli.AzCli, subscriptionId string) *SecretOrRandomPasswordCommandExecutor {
 	return &SecretOrRandomPasswordCommandExecutor{
-		azCli: azCli,
+		azCli:          azCli,
+		subscriptionId: subscriptionId,
 	}
 }
 
@@ -53,7 +55,7 @@ func (e *SecretOrRandomPasswordCommandExecutor) Run(
 		return false, "", fmt.Errorf("missing context information for %s command", SecretOrRandomPasswordCommandName)
 	}
 
-	secret, err := e.azCli.GetKeyVaultSecret(ctx, keyVaultName, secretName)
+	secret, err := e.azCli.GetKeyVaultSecret(ctx, e.subscriptionId, keyVaultName, secretName)
 	if err != nil {
 		if errors.Is(err, azcli.ErrAzCliSecretNotFound) {
 			log.Printf(

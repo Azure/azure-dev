@@ -15,9 +15,11 @@ const (
 	AzureResourceTypeCDNProfile              AzureResourceType = "Microsoft.Cdn/profiles"
 	AzureResourceTypeCosmosDb                AzureResourceType = "Microsoft.DocumentDB/databaseAccounts"
 	AzureResourceTypeContainerApp            AzureResourceType = "Microsoft.App/containerApps"
+	AzureResourceTypeSpringApp               AzureResourceType = "Microsoft.AppPlatform/Spring"
 	AzureResourceTypeContainerAppEnvironment AzureResourceType = "Microsoft.App/managedEnvironments"
 	AzureResourceTypeDeployment              AzureResourceType = "Microsoft.Resources/deployments"
 	AzureResourceTypeKeyVault                AzureResourceType = "Microsoft.KeyVault/vaults"
+	AzureResourceTypeManagedHSM              AzureResourceType = "Microsoft.KeyVault/managedHSMs"
 	AzureResourceTypeLoadTest                AzureResourceType = "Microsoft.LoadTestService/loadTests"
 	AzureResourceTypeLogAnalyticsWorkspace   AzureResourceType = "Microsoft.OperationalInsights/workspaces"
 	AzureResourceTypePortalDashboard         AzureResourceType = "Microsoft.Portal/dashboards"
@@ -32,6 +34,8 @@ const (
 	AzureResourceTypeContainerRegistry       AzureResourceType = "Microsoft.ContainerRegistry/registries"
 	AzureResourceTypeManagedCluster          AzureResourceType = "Microsoft.ContainerService/managedClusters"
 	AzureResourceTypeAgentPool               AzureResourceType = "Microsoft.ContainerService/managedClusters/agentPools"
+	AzureResourceTypeCognitiveServiceAccount AzureResourceType = "Microsoft.CognitiveServices/accounts"
+	AzureResourceTypeSearchService           AzureResourceType = "Microsoft.Search/searchServices"
 )
 
 const resourceLevelSeparator = "/"
@@ -48,7 +52,9 @@ func GetResourceTypeDisplayName(resourceType AzureResourceType) string {
 	case AzureResourceTypeStorageAccount:
 		return "Storage account"
 	case AzureResourceTypeKeyVault:
-		return "Key vault"
+		return "Key Vault"
+	case AzureResourceTypeManagedHSM:
+		return "Managed HSM"
 	case AzureResourceTypePortalDashboard:
 		return "Portal dashboard"
 	case AzureResourceTypeAppInsightComponent:
@@ -87,6 +93,12 @@ func GetResourceTypeDisplayName(resourceType AzureResourceType) string {
 		return "AKS Managed Cluster"
 	case AzureResourceTypeAgentPool:
 		return "AKS Agent Pool"
+	case AzureResourceTypeCognitiveServiceAccount:
+		return "Cognitive Service"
+	case AzureResourceTypeSearchService:
+		return "Search service"
+	case AzureResourceTypeSpringApp:
+		return "Azure Spring Apps"
 	}
 
 	return ""

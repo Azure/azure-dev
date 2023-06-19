@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -27,7 +28,12 @@ func Test_CommandsAndActions_Initialize(t *testing.T) {
 	ostest.Chdir(t, tempDir)
 
 	// Create a empty azure.yaml to ensure AzdContext can be constructed
-	err := os.WriteFile("azure.yaml", nil, osutil.PermissionFile)
+	err := os.WriteFile("azure.yaml", []byte("name: test"), osutil.PermissionFile)
+	require.NoError(t, err)
+
+	// Create a empty .github/workflows directory to ensure CI provider can be constructed
+	ciProviderPath := filepath.Join(".github", "workflows")
+	err = os.MkdirAll(ciProviderPath, osutil.PermissionDirectory)
 	require.NoError(t, err)
 
 	chain := []*actions.MiddlewareRegistration{
@@ -46,12 +52,12 @@ func Test_CommandsAndActions_Initialize(t *testing.T) {
 	require.NoError(t, err)
 
 	env, _ := environment.GetEnvironment(azdCtx, envName)
-	env.SetSubscriptionId(testSubscriptionId)
-	env.SetLocation(defaultLocation)
+	env.SetSubscriptionId(cfg.SubscriptionID)
+	env.SetLocation(cfg.Location)
 	err = env.Save()
 	require.NoError(t, err)
 
-	// Also requires that the user is logged in. This is automatically done in CI. Locally, `azd login` is required.
+	// Also requires that the user is logged in. This is automatically done in CI. Locally, `azd auth login` is required.
 
 	// Creates the azd root command with a "Skip" middleware that will skip the invocation
 	// of the underlying command / actions
@@ -68,7 +74,13 @@ func testCommand(
 	// Run the command when we find a leaf command
 	if testCmd.Runnable() {
 		t.Run(testCmd.CommandPath(), func(t *testing.T) {
-			fullCmd := fmt.Sprintf("%s %s", testCmd.Parent().CommandPath(), testCmd.Use)
+			use := testCmd.Use
+
+			if v, has := testCmd.Annotations["azdtest.use"]; has {
+				use = v
+			}
+
+			fullCmd := fmt.Sprintf("%s %s", testCmd.Parent().CommandPath(), use)
 			args := strings.Split(fullCmd, " ")[1:]
 			args = append(args, "--cwd", cwd)
 			childCmd := cmd.NewRootCmd(true, chain)

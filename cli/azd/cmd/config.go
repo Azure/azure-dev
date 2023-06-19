@@ -6,11 +6,14 @@ import (
 	"io"
 	"path/filepath"
 	"runtime"
+	"strings"
 
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/spf13/cobra"
 )
@@ -88,7 +91,7 @@ func configActions(root *actions.ActionDescriptor, rootOptions *internal.GlobalC
 
 	group.Add("list", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
-			Short: "Lists all configuration values",
+			Short: "Lists all configuration values.",
 			Long:  `Lists all configuration values in ` + userConfigPath + `.`,
 		},
 		ActionResolver: newConfigListAction,
@@ -99,7 +102,7 @@ func configActions(root *actions.ActionDescriptor, rootOptions *internal.GlobalC
 	group.Add("get", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
 			Use:   "get <path>",
-			Short: "Gets a configuration",
+			Short: "Gets a configuration.",
 			Long:  `Gets a configuration in ` + userConfigPath + `.`,
 			Args:  cobra.ExactArgs(1),
 		},
@@ -111,7 +114,7 @@ func configActions(root *actions.ActionDescriptor, rootOptions *internal.GlobalC
 	group.Add("set", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
 			Use:   "set <path> <value>",
-			Short: "Sets a configuration",
+			Short: "Sets a configuration.",
 			Long:  `Sets a configuration in ` + userConfigPath + `.`,
 			Args:  cobra.ExactArgs(2),
 			Example: `$ azd config set defaults.subscription <yourSubscriptionID>
@@ -123,7 +126,7 @@ $ azd config set defaults.location eastus`,
 	group.Add("unset", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
 			Use:     "unset <path>",
-			Short:   "Unsets a configuration",
+			Short:   "Unsets a configuration.",
 			Long:    `Removes a configuration in ` + userConfigPath + `.`,
 			Example: `$ azd config unset defaults.location`,
 			Args:    cobra.ExactArgs(1),
@@ -133,10 +136,20 @@ $ azd config set defaults.location eastus`,
 
 	group.Add("reset", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
-			Short: "Resets configuration to default",
+			Short: "Resets configuration to default.",
 			Long:  `Resets all configuration in ` + userConfigPath + ` to the default.`,
 		},
 		ActionResolver: newConfigResetAction,
+	})
+
+	group.Add("list-alpha", &actions.ActionDescriptorOptions{
+		Command: &cobra.Command{
+			Short: "Display the list of available features in alpha stage.",
+		},
+		HelpOptions: actions.ActionHelpOptions{
+			Footer: getCmdListAlphaHelpFooter,
+		},
+		ActionResolver: newConfigListAlphaAction,
 	})
 
 	return group
@@ -305,7 +318,7 @@ func newConfigResetAction(configManager config.UserConfigManager, args []string)
 
 // Executes the `azd config reset` action
 func (a *configResetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	emptyConfig := config.NewConfig(nil)
+	emptyConfig := config.NewEmptyConfig()
 	return nil, a.configManager.Save(emptyConfig)
 }
 
@@ -313,7 +326,7 @@ func getCmdConfigHelpDescription(*cobra.Command) string {
 	return generateCmdHelpDescription(
 		"Manage the Azure Developer CLI user configuration, which includes your default Azure subscription and location.",
 		[]string{
-			formatHelpNote(fmt.Sprintf("Applications are initially configures when you run %s.",
+			formatHelpNote(fmt.Sprintf("Applications are initially configured when you run %s.",
 				output.WithHighLightFormat("azd init"),
 			)),
 			formatHelpNote(fmt.Sprintf("The subscription and location you select will be stored at: %s.",
@@ -333,5 +346,65 @@ func getCmdConfigHelpFooter(c *cobra.Command) string {
 		"Set the default Azure deployment location.": fmt.Sprintf("%s %s",
 			output.WithHighLightFormat("azd config set defaults.location"),
 			output.WithWarningFormat("<location>")),
+	})
+}
+
+type configListAlphaAction struct {
+	alphaFeaturesManager *alpha.FeatureManager
+	console              input.Console
+	args                 []string
+}
+
+func (a *configListAlphaAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	features, err := a.alphaFeaturesManager.ListFeatures()
+	if err != nil {
+		return nil, err
+	}
+	var alphaOutput []string
+	for _, alphaFeature := range features {
+		alphaOutput = append(alphaOutput,
+			strings.Join(
+				[]string{
+					fmt.Sprintf("Name: %s", alphaFeature.Id),
+					fmt.Sprintf("Description: %s", alphaFeature.Description),
+					fmt.Sprintf("Status: %s", alphaFeature.Status),
+				},
+				"\n",
+			))
+	}
+	a.console.Message(ctx, strings.Join(alphaOutput, "\n\n"))
+
+	// No UX output
+	return nil, nil
+}
+
+func newConfigListAlphaAction(
+	alphaFeaturesManager *alpha.FeatureManager,
+	console input.Console,
+	args []string) actions.Action {
+	return &configListAlphaAction{
+		alphaFeaturesManager: alphaFeaturesManager,
+		console:              console,
+		args:                 args,
+	}
+}
+
+func getCmdListAlphaHelpFooter(*cobra.Command) string {
+	return generateCmdHelpSamplesBlock(map[string]string{
+		"Displays a list of all available features in the alpha stage": output.WithHighLightFormat(
+			"azd config list-alpha",
+		),
+		"Turn on a specific alpha feature": output.WithHighLightFormat(
+			"azd config set alpha.<feature-name> on",
+		),
+		"Turn off a specific alpha feature": output.WithHighLightFormat(
+			"azd config set alpha.<feature-name> off",
+		),
+		"Turn on all alpha features": output.WithHighLightFormat(
+			"azd config set alpha.all on",
+		),
+		"Turn off all alpha features": output.WithHighLightFormat(
+			"azd config set alpha.all off",
+		),
 	})
 }

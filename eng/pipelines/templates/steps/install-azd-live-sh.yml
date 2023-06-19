@@ -11,7 +11,7 @@ parameters:
 steps:
 - pwsh: |
     if ('${{ parameters.Version }}'.StartsWith('pr/')) {
-      $InstallArgs = "--base-url https://${{ parameters.StorageAccountName }}.blob.core.windows.net/azd/standalone/${{ parameters.Version }} --version ''"
+      $InstallArgs = "--base-url https://${{ parameters.StorageAccountName }}.blob.core.windows.net/azd/standalone/${{ parameters.Version }} --skip-verify --version ''"
       $ContainerImageTag = '${{ parameters.Version }}' -replace '/', '-'
     } else {
       $InstallArgs = "--version '${{ parameters.Version }}'"

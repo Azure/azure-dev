@@ -12,25 +12,19 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/spf13/cobra"
-	"golang.org/x/exp/maps"
-	"golang.org/x/exp/slices"
 )
 
 func templateNameCompletion(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	templateManager := templates.NewTemplateManager()
-	templateSet, err := templateManager.ListTemplates()
+	templates, err := templateManager.ListTemplates()
 
 	if err != nil {
 		cobra.CompError(fmt.Sprintf("Error listing templates: %s", err))
 		return []string{}, cobra.ShellCompDirectiveError
 	}
 
-	templateList := maps.Values(templateSet)
-	slices.SortFunc(templateList, func(a, b templates.Template) bool {
-		return a.Name < b.Name
-	})
-	templateNames := make([]string, len(templateList))
-	for i, v := range templateList {
+	templateNames := make([]string, len(templates))
+	for i, v := range templates {
 		templateNames[i] = v.Name
 	}
 	return templateNames, cobra.ShellCompDirectiveDefault
@@ -39,7 +33,7 @@ func templateNameCompletion(cmd *cobra.Command, args []string, toComplete string
 func templatesActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 	group := root.Add("template", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
-			Short: "Find and view template details.",
+			Short: fmt.Sprintf("Find and view template details. %s", output.WithWarningFormat("(Beta)")),
 		},
 		HelpOptions: actions.ActionHelpOptions{
 			Description: getCmdTemplateHelpDescription,
@@ -59,8 +53,8 @@ func templatesActions(root *actions.ActionDescriptor) *actions.ActionDescriptor 
 	group.Add("show", &actions.ActionDescriptorOptions{
 		Command:        newTemplateShowCmd(),
 		ActionResolver: newTemplatesShowAction,
-		OutputFormats:  []output.Format{output.JsonFormat, output.TableFormat},
-		DefaultFormat:  output.TableFormat,
+		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
+		DefaultFormat:  output.NoneFormat,
 	})
 
 	return group
@@ -69,7 +63,7 @@ func templatesActions(root *actions.ActionDescriptor) *actions.ActionDescriptor 
 func newTemplateListCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:     "list",
-		Short:   "Show list of sample azd templates.",
+		Short:   fmt.Sprintf("Show list of sample azd templates. %s", output.WithWarningFormat("(Beta)")),
 		Aliases: []string{"ls"},
 	}
 }
@@ -93,25 +87,38 @@ func newTemplatesListAction(
 }
 
 func (tl *templatesListAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	templateSet, err := tl.templateManager.ListTemplates()
-
+	listedTemplates, err := tl.templateManager.ListTemplates()
 	if err != nil {
 		return nil, err
 	}
 
-	templateList := maps.Values(templateSet)
-	slices.SortFunc(templateList, func(a, b templates.Template) bool {
-		return a.Name < b.Name
-	})
+	if tl.formatter.Kind() == output.TableFormat {
+		columns := []output.Column{
+			{
+				Heading:       "RepositoryPath",
+				ValueTemplate: "{{.RepositoryPath}}",
+			},
+			{
+				Heading:       "Name",
+				ValueTemplate: "{{.Name}}",
+			},
+		}
 
-	return nil, formatTemplates(ctx, tl.formatter, tl.writer, templateList...)
+		err = tl.formatter.Format(listedTemplates, tl.writer, output.TableFormatterOptions{
+			Columns: columns,
+		})
+	} else {
+		err = tl.formatter.Format(listedTemplates, tl.writer, nil)
+	}
+
+	return nil, err
 }
 
 type templatesShowAction struct {
 	formatter       output.Formatter
 	writer          io.Writer
 	templateManager *templates.TemplateManager
-	templateName    string
+	path            string
 }
 
 func newTemplatesShowAction(
@@ -124,72 +131,47 @@ func newTemplatesShowAction(
 		formatter:       formatter,
 		writer:          writer,
 		templateManager: templateManager,
-		templateName:    args[0],
+		path:            args[0],
 	}
 }
 
 func (a *templatesShowAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	matchingTemplate, err := a.templateManager.GetTemplate(a.templateName)
+	matchingTemplate, err := a.templateManager.GetTemplate(a.path)
 
 	if err != nil {
 		return nil, err
 	}
 
-	return nil, formatTemplates(ctx, a.formatter, a.writer, matchingTemplate)
+	if a.formatter.Kind() == output.NoneFormat {
+		err = matchingTemplate.Display(a.writer)
+	} else {
+		err = a.formatter.Format(matchingTemplate, a.writer, nil)
+	}
+
+	return nil, err
 }
 
 func newTemplateShowCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "show <template>",
-		Short: "Show details for a given template.",
+		Short: fmt.Sprintf("Show details for a given template. %s", output.WithWarningFormat("(Beta)")),
 		Args:  cobra.ExactArgs(1),
 	}
 }
 
-func formatTemplates(
-	ctx context.Context,
-	formatter output.Formatter,
-	writer io.Writer,
-	templates ...templates.Template,
-) error {
-	var err error
-	if formatter.Kind() == output.TableFormat {
-		columns := []output.Column{
-			{
-				Heading:       "Name",
-				ValueTemplate: "{{.Name}}",
-			},
-			{
-				Heading:       "Description",
-				ValueTemplate: "{{.Description}}",
-			},
-		}
-
-		err = formatter.Format(templates, writer, output.TableFormatterOptions{
-			Columns: columns,
-		})
-	} else {
-		err = formatter.Format(templates, writer, nil)
-	}
-
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
 func getCmdTemplateHelpDescription(*cobra.Command) string {
-	return generateCmdHelpDescription("View details of your current template or browse a list of curated sample templates.",
+	return generateCmdHelpDescription(
+		fmt.Sprintf(
+			"View details of your current template or browse a list of curated sample templates. %s",
+			output.WithWarningFormat("(Beta)")),
 		[]string{
 			formatHelpNote(fmt.Sprintf("The azd CLI includes a curated list of sample templates viewable by running %s.",
 				output.WithHighLightFormat("azd template list"))),
 			formatHelpNote(fmt.Sprintf("To view all available sample templates, including those submitted by the azd"+
 				" community visit: %s.",
 				output.WithLinkFormat("https://azure.github.io/awesome-azd"))),
-			formatHelpNote(fmt.Sprintf("Running %s or %s without a template will prompt you to start with an empty"+
+			formatHelpNote(fmt.Sprintf("Running %s without a template will prompt you to start with a minimal"+
 				" template or select from our curated list of samples.",
-				output.WithHighLightFormat("azd up"),
 				output.WithHighLightFormat("azd init"))),
 		})
 }

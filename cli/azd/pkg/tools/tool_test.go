@@ -5,19 +5,18 @@ package tools
 
 import (
 	"context"
+	osexec "os/exec"
 	"regexp"
 	"testing"
 
 	"github.com/blang/semver/v4"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 func Test_toolInPath(t *testing.T) {
 	t.Run("Missing", func(t *testing.T) {
-		has, err := ToolInPath("somethingThatNeverExists")
-		require.NoError(t, err)
-		require.False(t, has)
+		err := ToolInPath("somethingThatNeverExists")
+		assert.Equal(t, err, osexec.ErrNotFound)
 	})
 }
 
@@ -25,12 +24,12 @@ func Test_Unique(t *testing.T) {
 	toolOne := &mockTool{
 		name:             "Installed One",
 		installUrl:       "https://example.com/tools/installed1",
-		checkInstalledFn: func(_ context.Context) (bool, error) { return true, nil },
+		checkInstalledFn: func(_ context.Context) error { return nil },
 	}
 	toolTwo := &mockTool{
 		name:             "Installed Two",
 		installUrl:       "https://example.com/tools/installed2",
-		checkInstalledFn: func(_ context.Context) (bool, error) { return true, nil },
+		checkInstalledFn: func(_ context.Context) error { return nil },
 	}
 
 	uniqueTools := Unique([]ExternalTool{toolOne, toolTwo, toolOne})
@@ -43,25 +42,25 @@ func Test_EnsureInstalled(t *testing.T) {
 	installedToolOne := &mockTool{
 		name:             "Installed One",
 		installUrl:       "https://example.com/tools/installed1",
-		checkInstalledFn: func(_ context.Context) (bool, error) { return true, nil },
+		checkInstalledFn: func(_ context.Context) error { return nil },
 	}
 
 	installedToolTwo := &mockTool{
 		name:             "Installed Two",
 		installUrl:       "https://example.com/tools/installed2",
-		checkInstalledFn: func(_ context.Context) (bool, error) { return true, nil },
+		checkInstalledFn: func(_ context.Context) error { return nil },
 	}
 
 	missingToolOne := &mockTool{
 		name:             "Missing One",
 		installUrl:       "https://example.com/tools/missing1",
-		checkInstalledFn: func(_ context.Context) (bool, error) { return false, nil },
+		checkInstalledFn: func(_ context.Context) error { return osexec.ErrNotFound },
 	}
 
 	missingToolTwo := &mockTool{
 		name:             "Missing Two",
 		installUrl:       "https://example.com/tools/missing2",
-		checkInstalledFn: func(_ context.Context) (bool, error) { return false, nil },
+		checkInstalledFn: func(_ context.Context) error { return osexec.ErrNotFound },
 	}
 
 	t.Run("HaveAll", func(t *testing.T) {
@@ -87,14 +86,14 @@ func Test_EnsureInstalled(t *testing.T) {
 }
 
 type mockTool struct {
-	checkInstalledFn func(context.Context) (bool, error)
+	checkInstalledFn func(context.Context) error
 	installUrl       string
 	name             string
 }
 
 var _ ExternalTool = &mockTool{}
 
-func (m *mockTool) CheckInstalled(ctx context.Context) (bool, error) {
+func (m *mockTool) CheckInstalled(ctx context.Context) error {
 	return m.checkInstalledFn(ctx)
 }
 

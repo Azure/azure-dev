@@ -3,7 +3,6 @@
 
 import * as vscode from 'vscode';
 import { AzureDevCliModel } from './AzureDevCliModel';
-import { localize } from '../../localize';
 import { AzureDevCliEnvironmentsModelContext } from './AzureDevCliEnvironments';
 
 export class AzureDevCliEnvironment implements AzureDevCliModel {
@@ -26,7 +25,7 @@ export class AzureDevCliEnvironment implements AzureDevCliModel {
 
         if (this.isDefault) {
             treeItem.contextValue += ';default';
-            treeItem.description = localize('views.workspace.AzureDevCliEnvironment.defaultLabel', '(default)');
+            treeItem.description = vscode.l10n.t('(default)');
         }
 
         return treeItem;

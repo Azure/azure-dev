@@ -55,7 +55,7 @@ func (m *HooksMiddleware) Run(ctx context.Context, next NextFn) (*actions.Action
 	}
 
 	projectConfig, err := m.lazyProjectConfig.GetValue()
-	if err != nil {
+	if err != nil || projectConfig == nil {
 		log.Println("azd project is not available, skipping all hook registrations.")
 		return next(ctx)
 	}
@@ -90,7 +90,7 @@ func (m *HooksMiddleware) registerCommandHooks(
 		m.console,
 		projectConfig.Path,
 		projectConfig.Hooks,
-		env.Environ(),
+		env,
 	)
 
 	var actionResult *actions.ActionResult
@@ -142,7 +142,7 @@ func (m *HooksMiddleware) registerServiceHooks(
 			m.console,
 			service.Path(),
 			service.Hooks,
-			env.Environ(),
+			env,
 		)
 
 		for hookName, hookConfig := range service.Hooks {

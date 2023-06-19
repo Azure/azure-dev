@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -19,12 +18,17 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/public"
-	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
-	"github.com/azure/azure-dev/cli/azd/internal/telemetry/fields"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/github"
+	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
+	"github.com/cli/browser"
 )
 
 // TODO(azure/azure-dev#710): Right now, we re-use the App Id of the `az` CLI, until we have our own.
@@ -40,14 +44,23 @@ const cCurrentUserKey = "auth.account.currentUser"
 // it ourselves. The value should be a string as specified by [strconv.ParseBool].
 const cUseAzCliAuthKey = "auth.useAzCliAuth"
 
+// cAuthConfigFileName is the name of the file we store in the user configuration directory which is used to persist
+// auth related configuration information (e.g. the home account id of the current user). This information is not secret.
+const cAuthConfigFileName = "auth.json"
+
 // cDefaultAuthority is the default authority to use when a specific tenant is not presented. We use "organizations" to
 // allow both work/school accounts and personal accounts (this matches the default authority the `az` CLI uses when logging
 // in).
 const cDefaultAuthority = "https://login.microsoftonline.com/organizations"
 
+const cUseCloudShellAuthEnvVar = "AZD_IN_CLOUDSHELL"
+
 // The scopes to request when acquiring our token during the login flow or when requesting a token to validate if the client
 // is logged in.
-var cLoginScopes = []string{azure.ManagementScope}
+var LoginScopes = []string{azure.ManagementScope}
+var loginScopesMap = map[string]struct{}{
+	azure.ManagementScope: {},
+}
 
 // Manager manages the authentication system of azd. It allows a user to log in, either as a user principal or service
 // principal. Manager stores information so that the user can stay logged in across invocations of the CLI. When logged in
@@ -67,12 +80,21 @@ var cLoginScopes = []string{azure.ManagementScope}
 type Manager struct {
 	publicClient        publicClient
 	publicClientOptions []public.Option
-	configManager       config.UserConfigManager
+	configManager       config.Manager
+	userConfigManager   config.UserConfigManager
 	credentialCache     Cache
 	ghClient            *github.FederatedTokenClient
+	httpClient          httputil.HttpClient
+	launchBrowserFn     func(url string) error
+	console             input.Console
 }
 
-func NewManager(configManager config.UserConfigManager) (*Manager, error) {
+func NewManager(
+	configManager config.Manager,
+	userConfigManager config.UserConfigManager,
+	httpClient httputil.HttpClient,
+	console input.Console,
+) (*Manager, error) {
 	cfgRoot, err := config.GetUserConfigDir()
 	if err != nil {
 		return nil, fmt.Errorf("getting config dir: %w", err)
@@ -104,26 +126,23 @@ func NewManager(configManager config.UserConfigManager) (*Manager, error) {
 		publicClient:        &msalPublicClientAdapter{client: &publicClientApp},
 		publicClientOptions: options,
 		configManager:       configManager,
+		userConfigManager:   userConfigManager,
 		credentialCache:     newCredentialCache(authRoot),
 		ghClient:            ghClient,
+		httpClient:          httpClient,
+		launchBrowserFn:     browser.OpenURL,
+		console:             console,
 	}, nil
 }
 
-var ErrNoCurrentUser = errors.New("not logged in, run `azd login` to login")
-
-// EnsureLoggedInCredential uses the credential's GetToken method to ensure an access token can be fetched. If this fails,
-// nil, ErrNoCurrentUser is returned. On success, the token we fetched is returned.
+// EnsureLoggedInCredential uses the credential's GetToken method to ensure an access token can be fetched.
+// On success, the token we fetched is returned.
 func EnsureLoggedInCredential(ctx context.Context, credential azcore.TokenCredential) (*azcore.AccessToken, error) {
 	token, err := credential.GetToken(ctx, policy.TokenRequestOptions{
-		Scopes: cLoginScopes,
+		Scopes: LoginScopes,
 	})
 	if err != nil {
-		// It is important that we dump the failure which contains error code, correlation IDs from AAD to log
-		// An improvement to make here is to classify 'unhandled' vs 'handled' errors
-		// where handled errors would be fixed with rerunning login (i.e. token expiry), vs.
-		// unhandled errors where it indicates a setup issue.
-		log.Printf("failed fetching access token: %s", err.Error())
-		return &azcore.AccessToken{}, ErrNoCurrentUser
+		return &azcore.AccessToken{}, err
 	}
 
 	return &token, nil
@@ -141,12 +160,12 @@ func (m *Manager) CredentialForCurrentUser(
 		options = &CredentialForCurrentUserOptions{}
 	}
 
-	cfg, err := m.configManager.Load()
+	userConfig, err := m.userConfigManager.Load()
 	if err != nil {
 		return nil, fmt.Errorf("fetching current user: %w", err)
 	}
 
-	if shouldUseLegacyAuth(cfg) {
+	if shouldUseLegacyAuth(userConfig) {
 		log.Printf("delegating auth to az since %s is set to true", cUseAzCliAuthKey)
 		cred, err := azidentity.NewAzureCLICredential(&azidentity.AzureCLICredentialOptions{
 			TenantID: options.TenantID,
@@ -157,16 +176,33 @@ func (m *Manager) CredentialForCurrentUser(
 		return cred, nil
 	}
 
-	currentUser, err := readUserProperties(cfg)
+	authConfig, err := m.readAuthConfig()
 	if err != nil {
+		return nil, fmt.Errorf("reading auth config: %w", err)
+	}
+
+	currentUser, err := readUserProperties(authConfig)
+	if errors.Is(err, ErrNoCurrentUser) {
+		// User is not logged in, not using az credentials, try CloudShell if possible
+		if shouldUseCloudShellAuth() {
+			cloudShellCredential, err := m.newCredentialFromCloudShell()
+			if err != nil {
+				return nil, err
+			}
+			return cloudShellCredential, nil
+		}
 		return nil, ErrNoCurrentUser
 	}
 
 	if currentUser.HomeAccountID != nil {
-		for _, account := range m.publicClient.Accounts() {
+		accounts, err := m.publicClient.Accounts(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for i, account := range accounts {
 			if account.HomeAccountID == *currentUser.HomeAccountID {
 				if options.TenantID == "" {
-					return newAzdCredential(m.publicClient, &account), nil
+					return newAzdCredential(m.publicClient, &accounts[i]), nil
 				} else {
 					newAuthority := "https://login.microsoftonline.com/" + options.TenantID
 
@@ -182,7 +218,7 @@ func (m *Manager) CredentialForCurrentUser(
 						return nil, err
 					}
 
-					return newAzdCredential(&msalPublicClientAdapter{client: &clientWithNewTenant}, &account), nil
+					return newAzdCredential(&msalPublicClientAdapter{client: &clientWithNewTenant}, &accounts[i]), nil
 				}
 			}
 		}
@@ -193,7 +229,7 @@ func (m *Manager) CredentialForCurrentUser(
 		}
 
 		// by default we used the stored tenant (i.e. the one provided with the tenant id parameter when a user ran
-		// `azd login`), but we allow an override using the options bag, when
+		// `azd auth login`), but we allow an override using the options bag, when
 		// TenantID is non-empty and PreferFallbackTenant is not true.
 		tenantID := *currentUser.TenantID
 
@@ -205,8 +241,9 @@ func (m *Manager) CredentialForCurrentUser(
 			return newCredentialFromClientSecret(tenantID, *currentUser.ClientID, *ps.ClientSecret)
 		} else if ps.ClientCertificate != nil {
 			return newCredentialFromClientCertificate(tenantID, *currentUser.ClientID, *ps.ClientCertificate)
-		} else if ps.FederatedToken != nil {
-			return newCredentialFromClientAssertion(tenantID, *currentUser.ClientID, *ps.FederatedToken)
+		} else if ps.FederatedAuth != nil && ps.FederatedAuth.TokenProvider != nil {
+			return m.newCredentialFromFederatedTokenProvider(
+				tenantID, *currentUser.ClientID, *ps.FederatedAuth.TokenProvider)
 		}
 	}
 
@@ -223,34 +260,73 @@ func shouldUseLegacyAuth(cfg config.Config) bool {
 	return false
 }
 
+func shouldUseCloudShellAuth() bool {
+	if useCloudShellAuth, has := os.LookupEnv(cUseCloudShellAuthEnvVar); has {
+		if use, err := strconv.ParseBool(useCloudShellAuth); err == nil && use {
+			log.Printf("using CloudShell auth")
+			return true
+		}
+	}
+
+	return false
+}
+
 // GetLoggedInServicePrincipalTenantID returns the stored service principal's tenant ID.
 //
 // Service principals are fixed to a particular tenant.
+//
 // This can be used to determine if the tenant is fixed, and if so short circuit performance intensive tenant-switching
 // for service principals.
-func (m *Manager) GetLoggedInServicePrincipalTenantID() (*string, error) {
-	cfg, err := m.configManager.Load()
+func (m *Manager) GetLoggedInServicePrincipalTenantID(ctx context.Context) (*string, error) {
+	cfg, err := m.userConfigManager.Load()
 	if err != nil {
 		return nil, fmt.Errorf("fetching current user: %w", err)
 	}
 
 	if shouldUseLegacyAuth(cfg) {
 		// When delegating to az, we have no way to determine what principal was used
-		return nil, err
+		return nil, nil
 	}
 
-	currentUser, err := readUserProperties(cfg)
+	authCfg, err := m.readAuthConfig()
 	if err != nil {
+		return nil, fmt.Errorf("fetching auth config: %w", err)
+	}
+
+	currentUser, err := readUserProperties(authCfg)
+	if err != nil {
+		// No user is logged in, if running in CloudShell use tenant id from
+		// CloudShell session (single tenant)
+		if shouldUseCloudShellAuth() {
+			// Tenant ID is not required when requesting a token from CloudShell
+			credential, err := m.CredentialForCurrentUser(ctx, nil)
+			if err != nil {
+				return nil, err
+			}
+
+			token, err := EnsureLoggedInCredential(ctx, credential)
+			if err != nil {
+				return nil, err
+			}
+
+			tenantId, err := GetTenantIdFromToken(token.Token)
+			if err != nil {
+				return nil, err
+			}
+
+			return &tenantId, nil
+		}
+
 		return nil, ErrNoCurrentUser
 	}
 
 	// Record type of account found
 	if currentUser.TenantID != nil {
-		telemetry.SetGlobalAttributes(fields.AccountTypeKey.String(fields.AccountTypeServicePrincipal))
+		tracing.SetGlobalAttributes(fields.AccountTypeKey.String(fields.AccountTypeServicePrincipal))
 	}
 
 	if currentUser.HomeAccountID != nil {
-		telemetry.SetGlobalAttributes(fields.AccountTypeKey.String(fields.AccountTypeUser))
+		tracing.SetGlobalAttributes(fields.AccountTypeKey.String(fields.AccountTypeUser))
 	}
 
 	return currentUser.TenantID, nil
@@ -291,28 +367,43 @@ func newCredentialFromClientCertificate(
 	return cred, nil
 }
 
-func newCredentialFromClientAssertion(
+func (m *Manager) newCredentialFromFederatedTokenProvider(
 	tenantID string,
 	clientID string,
-	clientAssertion string,
+	provider federatedTokenProvider,
 ) (azcore.TokenCredential, error) {
+	if provider != gitHubFederatedAuth {
+		return nil, fmt.Errorf("unsupported federated token provider: '%s'", string(provider))
+	}
+
 	cred, err := azidentity.NewClientAssertionCredential(
 		tenantID,
 		clientID,
-		func(_ context.Context) (string, error) {
-			return clientAssertion, nil
-		},
-		nil,
-	)
+		func(ctx context.Context) (string, error) {
+			federatedToken, err := m.ghClient.TokenForAudience(ctx, "api://AzureADTokenExchange")
+			if err != nil {
+				return "", fmt.Errorf("fetching federated token: %w", err)
+			}
 
+			return federatedToken, nil
+		},
+		nil)
 	if err != nil {
-		return nil, fmt.Errorf("creating credential: %w: %w", err, ErrNoCurrentUser)
+		return nil, fmt.Errorf("creating credential: %w", err)
 	}
 
 	return cred, nil
 }
 
-func (m *Manager) LoginInteractive(ctx context.Context, redirectPort int, tenantID string) (azcore.TokenCredential, error) {
+func (m *Manager) newCredentialFromCloudShell() (azcore.TokenCredential, error) {
+	return NewCloudShellCredential(m.httpClient), nil
+}
+
+func (m *Manager) LoginInteractive(
+	ctx context.Context, redirectPort int, tenantID string, scopes []string) (azcore.TokenCredential, error) {
+	if scopes == nil {
+		scopes = LoginScopes
+	}
 	options := []public.AcquireInteractiveOption{}
 	if redirectPort > 0 {
 		options = append(options, public.WithRedirectURI(fmt.Sprintf("http://localhost:%d", redirectPort)))
@@ -322,7 +413,7 @@ func (m *Manager) LoginInteractive(ctx context.Context, redirectPort int, tenant
 		options = append(options, public.WithTenantID(tenantID))
 	}
 
-	res, err := m.publicClient.AcquireTokenInteractive(ctx, cLoginScopes, options...)
+	res, err := m.publicClient.AcquireTokenInteractive(ctx, scopes, options...)
 	if err != nil {
 		return nil, err
 	}
@@ -335,25 +426,39 @@ func (m *Manager) LoginInteractive(ctx context.Context, redirectPort int, tenant
 }
 
 func (m *Manager) LoginWithDeviceCode(
-	ctx context.Context, deviceCodeWriter io.Writer, tenantID string) (azcore.TokenCredential, error) {
+	ctx context.Context, tenantID string, scopes []string) (azcore.TokenCredential, error) {
+	if scopes == nil {
+		scopes = LoginScopes
+	}
 	options := []public.AcquireByDeviceCodeOption{}
 	if tenantID != "" {
 		options = append(options, public.WithTenantID(tenantID))
 	}
 
-	code, err := m.publicClient.AcquireTokenByDeviceCode(ctx, cLoginScopes, options...)
+	code, err := m.publicClient.AcquireTokenByDeviceCode(ctx, scopes, options...)
 	if err != nil {
 		return nil, err
 	}
 
-	// Display the message to the end user as to what to do next, then block waiting for them to complete
-	// the flow.
-	fmt.Fprintln(deviceCodeWriter, code.Message())
+	m.console.MessageUxItem(ctx, &ux.MultilineMessage{
+		Lines: []string{
+			fmt.Sprintf("Start by copying the next code: %s", output.WithBold(code.UserCode())),
+			"Then press enter and continue to log in from your browser...",
+		},
+	})
+	m.console.WaitForEnter()
 
+	url := "https://microsoft.com/devicelogin"
+	if err := m.launchBrowserFn(url); err != nil {
+		log.Println("error launching browser: ", err.Error())
+		m.console.Message(ctx, fmt.Sprintf("Error launching browser. Manually go to: %s", url))
+	}
+	m.console.Message(ctx, "Waiting for you to complete authentication in the browser...")
 	res, err := code.AuthenticationResult(ctx)
 	if err != nil {
 		return nil, err
 	}
+	m.console.Message(ctx, "Device code authentication completed.")
 
 	if err := m.saveLoginForPublicClient(res); err != nil {
 		return nil, err
@@ -412,62 +517,21 @@ func (m *Manager) LoginWithServicePrincipalCertificate(
 	return cred, nil
 }
 
-func (m *Manager) LoginWithServicePrincipalFederatedToken(
-	ctx context.Context, tenantId, clientId, federatedToken string,
+func (m *Manager) LoginWithServicePrincipalFederatedTokenProvider(
+	ctx context.Context, tenantId, clientId, provider string,
 ) (azcore.TokenCredential, error) {
-	cred, err := azidentity.NewClientAssertionCredential(
-		tenantId,
-		clientId,
-		func(_ context.Context) (string, error) {
-			return federatedToken, nil
-		},
-		nil)
+	cred, err := m.newCredentialFromFederatedTokenProvider(tenantId, clientId, federatedTokenProvider(provider))
 	if err != nil {
-		return nil, fmt.Errorf("creating credential: %w", err)
-	}
-
-	if err := m.saveLoginForServicePrincipal(
-		tenantId,
-		clientId,
-		&persistedSecret{
-			FederatedToken: &federatedToken,
-		},
-	); err != nil {
 		return nil, err
 	}
 
-	return cred, nil
-}
-
-func (m *Manager) LoginWithServicePrincipalFederatedTokenProvider(
-	ctx context.Context, tenantId, clientId, federatedTokenProvider string,
-) (azcore.TokenCredential, error) {
-
-	if federatedTokenProvider != "github" {
-		return nil, fmt.Errorf("unsupported federated token provider: '%s'", federatedTokenProvider)
-	}
-
-	federatedToken, err := m.ghClient.TokenForAudience(ctx, "api://AzureADTokenExchange")
-	if err != nil {
-		return nil, fmt.Errorf("fetching federated token: %w", err)
-	}
-
-	cred, err := azidentity.NewClientAssertionCredential(
-		tenantId,
-		clientId,
-		func(_ context.Context) (string, error) {
-			return federatedToken, nil
-		},
-		nil)
-	if err != nil {
-		return nil, fmt.Errorf("creating credential: %w", err)
-	}
-
 	if err := m.saveLoginForServicePrincipal(
 		tenantId,
 		clientId,
 		&persistedSecret{
-			FederatedToken: &federatedToken,
+			FederatedAuth: &federatedAuth{
+				TokenProvider: &gitHubFederatedAuth,
+			},
 		},
 	); err != nil {
 		return nil, err
@@ -484,12 +548,12 @@ func (m *Manager) Logout(ctx context.Context) error {
 	}
 
 	if act != nil {
-		if err := m.publicClient.RemoveAccount(*act); err != nil {
+		if err := m.publicClient.RemoveAccount(ctx, *act); err != nil {
 			return fmt.Errorf("removing account from msal cache: %w", err)
 		}
 	}
 
-	cfg, err := m.configManager.Load()
+	cfg, err := m.readAuthConfig()
 	if err != nil {
 		return fmt.Errorf("loading config: %w", err)
 	}
@@ -510,7 +574,7 @@ func (m *Manager) Logout(ctx context.Context) error {
 		return fmt.Errorf("un-setting current user: %w", err)
 	}
 
-	if err := m.configManager.Save(cfg); err != nil {
+	if err := m.saveAuthConfig(cfg); err != nil {
 		return fmt.Errorf("saving config: %w", err)
 	}
 
@@ -540,7 +604,7 @@ func (m *Manager) saveLoginForServicePrincipal(tenantId, clientId string, secret
 // getSignedInAccount fetches the public.Account for the signed in user, or nil if one does not exist
 // (e.g when logged in with a service principal).
 func (m *Manager) getSignedInAccount(ctx context.Context) (*public.Account, error) {
-	cfg, err := m.configManager.Load()
+	cfg, err := m.readAuthConfig()
 	if err != nil {
 		return nil, fmt.Errorf("fetching current user: %w", err)
 	}
@@ -551,7 +615,11 @@ func (m *Manager) getSignedInAccount(ctx context.Context) (*public.Account, erro
 	}
 
 	if currentUser.HomeAccountID != nil {
-		for _, account := range m.publicClient.Accounts() {
+		accounts, err := m.publicClient.Accounts(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for _, account := range accounts {
 			if account.HomeAccountID == *currentUser.HomeAccountID {
 				return &account, nil
 			}
@@ -563,7 +631,7 @@ func (m *Manager) getSignedInAccount(ctx context.Context) (*public.Account, erro
 
 // saveUserProperties writes the properties under [cCurrentUserKey], overwriting any existing value.
 func (m *Manager) saveUserProperties(user *userProperties) error {
-	cfg, err := m.configManager.Load()
+	cfg, err := m.readAuthConfig()
 	if err != nil {
 		return fmt.Errorf("fetching current user: %w", err)
 	}
@@ -572,7 +640,68 @@ func (m *Manager) saveUserProperties(user *userProperties) error {
 		return fmt.Errorf("setting account id in config: %w", err)
 	}
 
-	return m.configManager.Save(cfg)
+	return m.saveAuthConfig(cfg)
+}
+
+// readAuthConfig loads the configuration from [cAuthConfigFileName] and returns a parsed version of it. If the config
+// file does not exist, an empty [config.Config] is returned, with no error.
+func (m *Manager) readAuthConfig() (config.Config, error) {
+	cfgPath, err := config.GetUserConfigDir()
+	if err != nil {
+		return nil, fmt.Errorf("getting user config dir: %w", err)
+	}
+
+	authCfgFile := filepath.Join(cfgPath, cAuthConfigFileName)
+
+	authCfg, err := m.configManager.Load(authCfgFile)
+	if err == nil {
+		return authCfg, nil
+	} else if !errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf("reading auth config: %w", err)
+	}
+
+	// We used to store auth related configuration in the user configuration file directly. If above file did not exist,
+	// see if there is the data in the old location, and if so migrate it to the new location. This upgrades the old
+	// format to the new format.
+	userCfg, err := m.userConfigManager.Load()
+	if err != nil {
+		return nil, fmt.Errorf("reading user config: %w", err)
+	}
+
+	curUserData, has := userCfg.Get(cCurrentUserKey)
+	if !has {
+		return config.NewEmptyConfig(), nil
+	}
+
+	authCfg = config.NewEmptyConfig()
+	if err := authCfg.Set(cCurrentUserKey, curUserData); err != nil {
+		return nil, err
+	}
+
+	if err := m.saveAuthConfig(authCfg); err != nil {
+		return nil, err
+	}
+
+	if err := userCfg.Unset(cCurrentUserKey); err != nil {
+		return nil, err
+	}
+
+	if err := m.userConfigManager.Save(userCfg); err != nil {
+		return nil, err
+	}
+
+	return authCfg, nil
+}
+
+func (m *Manager) saveAuthConfig(c config.Config) error {
+	cfgPath, err := config.GetUserConfigDir()
+	if err != nil {
+		return fmt.Errorf("getting user config dir: %w", err)
+	}
+
+	authCfgFile := filepath.Join(cfgPath, cAuthConfigFileName)
+
+	return m.configManager.Save(c, authCfgFile)
 }
 
 // persistedSecretLookupKey returns the cache key we use for a given tenantId, clientId pair.
@@ -612,7 +741,7 @@ type CredentialForCurrentUserOptions struct {
 }
 
 // persistedSecret is the model type for the value we store in the credential cache. It is logically a discriminated union
-// of a client secret and certificate.
+// of the different supported authentication modes
 type persistedSecret struct {
 	// The client secret.
 	ClientSecret *string `json:"clientSecret,omitempty"`
@@ -621,8 +750,22 @@ type persistedSecret struct {
 	// base64 string.
 	ClientCertificate *string `json:"clientCertificate,omitempty"`
 
-	// The federated client credential.
-	FederatedToken *string `json:"federatedToken,omitempty"`
+	// The federated auth credential.
+	FederatedAuth *federatedAuth `json:"federatedAuth,omitempty"`
+}
+
+// federated auth token providers
+var (
+	gitHubFederatedAuth federatedTokenProvider = "github"
+)
+
+// token provider for federated auth
+type federatedTokenProvider string
+
+// federatedAuth stores federated authentication information.
+type federatedAuth struct {
+	// The auth token provider. Tokens are obtained by calling the provider as needed.
+	TokenProvider *federatedTokenProvider `json:"tokenProvider,omitempty"`
 }
 
 // userProperties is the model type for the value we store in the user's config. It is logically a discriminated union of

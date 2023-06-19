@@ -2,7 +2,9 @@ package kubectl
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -84,8 +86,40 @@ func NewKubectl(commandRunner exec.CommandRunner) KubectlCli {
 }
 
 // Checks whether or not the K8s CLI is installed and available within the PATH
-func (cli *kubectlCli) CheckInstalled(ctx context.Context) (bool, error) {
-	return tools.ToolInPath("kubectl")
+func (cli *kubectlCli) CheckInstalled(ctx context.Context) error {
+	if err := tools.ToolInPath("kubectl"); err != nil {
+		return err
+	}
+
+	// We don't have a minimum required version of kubectl today, but
+	// for diagnostics purposes, let's fetch and log the version of kubectl
+	// we're using.
+	if ver, err := cli.getClientVersion(ctx); err != nil {
+		log.Printf("error fetching kubectl version: %s", err)
+	} else {
+		log.Printf("kubectl version: %s", ver)
+	}
+
+	return nil
+}
+
+func (cli *kubectlCli) getClientVersion(ctx context.Context) (string, error) {
+	versionRes, err := cli.Exec(ctx, &KubeCliFlags{Output: "json"}, "version", "--client=true")
+	if err != nil {
+		return "", fmt.Errorf("fetching kubectl version: %w", err)
+	}
+
+	var versionObj struct {
+		ClientVersion struct {
+			GitVersion string `json:"gitVersion"`
+		} `json:"clientVersion"`
+	}
+
+	if err := json.Unmarshal([]byte(versionRes.Stdout), &versionObj); err != nil {
+		return "", fmt.Errorf("parsing kubectl version output: %w", err)
+	}
+
+	return versionObj.ClientVersion.GitVersion, nil
 }
 
 // Returns the installation URL to install the K8s CLI
@@ -289,7 +323,6 @@ func (cli *kubectlCli) executeCommandWithArgs(
 	args exec.RunArgs,
 	flags *KubeCliFlags,
 ) (exec.RunResult, error) {
-	args = args.WithEnrichError(true)
 	if cli.cwd != "" {
 		args = args.WithCwd(cli.cwd)
 	}

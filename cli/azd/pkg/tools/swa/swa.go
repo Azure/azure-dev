@@ -12,6 +12,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
 
+// cSwaCliPackage is the npm package (including the version version) we execute with npx to run the SWA CLI.
+const cSwaCliPackage = "@azure/static-web-apps-cli@1.0.6"
+
 func NewSwaCli(commandRunner exec.CommandRunner) SwaCli {
 	return &swaCli{
 		commandRunner: commandRunner,
@@ -42,13 +45,13 @@ type swaCli struct {
 }
 
 func (cli *swaCli) Build(ctx context.Context, cwd string, appFolderPath string, outputRelativeFolderPath string) error {
-	res, err := cli.executeCommand(ctx,
+	_, err := cli.executeCommand(ctx,
 		cwd, "build",
 		"--app-location", appFolderPath,
 		"--output-location", outputRelativeFolderPath)
 
 	if err != nil {
-		return fmt.Errorf("swa build: %s: %w", res.String(), err)
+		return fmt.Errorf("swa build: %w", err)
 	}
 
 	return nil
@@ -88,13 +91,13 @@ func (cli *swaCli) Deploy(
 		"--deployment-token", deploymentToken)
 
 	if err != nil {
-		return "", fmt.Errorf("swa deploy: %s: %w", res.String(), err)
+		return "", fmt.Errorf("swa deploy: %w", err)
 	}
 
 	return res.Stdout + res.Stderr, nil
 }
 
-func (cli *swaCli) CheckInstalled(_ context.Context) (bool, error) {
+func (cli *swaCli) CheckInstalled(_ context.Context) error {
 
 	return tools.ToolInPath("npx")
 }
@@ -109,10 +112,9 @@ func (cli *swaCli) InstallUrl() string {
 
 func (cli *swaCli) executeCommand(ctx context.Context, cwd string, args ...string) (exec.RunResult, error) {
 	runArgs := exec.
-		NewRunArgs("npx", "-y", "@azure/static-web-apps-cli@1.0.0").
+		NewRunArgs("npx", "-y", cSwaCliPackage).
 		AppendParams(args...).
-		WithCwd(cwd).
-		WithEnrichError(true)
+		WithCwd(cwd)
 
 	return cli.commandRunner.Run(ctx, runArgs)
 }

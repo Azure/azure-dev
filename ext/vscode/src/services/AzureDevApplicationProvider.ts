@@ -16,7 +16,8 @@ export interface AzureDevApplicationProvider {
 const azureYamlFilePattern = '**/azure.{yml,yaml}';
 
 async function getApplications(): Promise<AzureDevApplication[]> {
-    const files = await vscode.workspace.findFiles(azureYamlFilePattern, '**/node_modules/**');
+    const maxResults = vscode.workspace.getConfiguration('azure-dev').get<number>('maximumAppsToDisplay', 5);
+    const files = await vscode.workspace.findFiles(azureYamlFilePattern, '**/node_modules/**', maxResults);
     
     const applications: AzureDevApplication[] = [];
 

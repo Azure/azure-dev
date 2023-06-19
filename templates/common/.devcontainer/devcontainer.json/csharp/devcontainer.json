@@ -3,18 +3,11 @@
     "build": {
         "dockerfile": "Dockerfile",
         "args": {
-            "VARIANT": "bullseye"
+            "IMAGE": "dotnet:6.0"
         }
     },
     "features": {
-        "ghcr.io/devcontainers/features/docker-from-docker:1": {
-            "version": "20.10"
-        },
-        "ghcr.io/devcontainers/features/dotnet:1": {
-            "version": "6.0"
-        },
-        "ghcr.io/devcontainers/features/github-cli:1": {
-            "version": "2"
+        "ghcr.io/devcontainers/features/docker-in-docker:2": {
         },
         "ghcr.io/devcontainers/features/node:1": {
             "version": "16",
@@ -24,13 +17,14 @@
     "customizations": {
         "vscode": {
             "extensions": [
+                "GitHub.vscode-github-actions",
                 "ms-azuretools.azure-dev",
+                "ms-azuretools.vscode-azurefunctions",
                 "ms-azuretools.vscode-bicep",
                 "ms-azuretools.vscode-docker",
-                "ms-vscode.vscode-node-azure-pack",
                 "ms-dotnettools.csharp",
                 "ms-dotnettools.vscode-dotnet-runtime",
-                "ms-azuretools.vscode-azurefunctions"
+                "ms-vscode.vscode-node-azure-pack"
             ]
         }
     },

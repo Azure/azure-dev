@@ -10,6 +10,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/spf13/cobra"
@@ -57,8 +58,13 @@ func (v *versionAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	case output.NoneFormat:
 		fmt.Fprintf(v.console.Handles().Stdout, "azd version %s\n", internal.Version)
 	case output.JsonFormat:
-		versionSpec := internal.GetVersionSpec()
-		err := v.formatter.Format(versionSpec, v.writer, nil)
+		var result contracts.VersionResult
+		versionSpec := internal.VersionInfo()
+
+		result.Azd.Commit = versionSpec.Commit
+		result.Azd.Version = versionSpec.Version.String()
+
+		err := v.formatter.Format(result, v.writer, nil)
 		if err != nil {
 			return nil, err
 		}

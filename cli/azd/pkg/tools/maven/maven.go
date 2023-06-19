@@ -7,6 +7,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sync"
 
 	osexec "os/exec"
@@ -17,8 +18,10 @@ import (
 
 type MavenCli interface {
 	tools.ExternalTool
-	Package(ctx context.Context, projectPath string) error
+	SetPath(projectPath string, rootProjectPath string)
 	ResolveDependencies(ctx context.Context, projectPath string) error
+	Compile(ctx context.Context, projectPath string) error
+	Package(ctx context.Context, projectPath string) error
 }
 
 type mavenCli struct {
@@ -40,13 +43,22 @@ func (m *mavenCli) InstallUrl() string {
 	return "https://maven.apache.org"
 }
 
-func (m *mavenCli) CheckInstalled(ctx context.Context) (bool, error) {
+func (m *mavenCli) CheckInstalled(ctx context.Context) error {
 	_, err := m.mvnCmd()
 	if err != nil {
-		return false, err
+		return err
 	}
 
-	return true, nil
+	if ver, err := m.extractVersion(ctx); err == nil {
+		log.Printf("maven version: %s", ver)
+	}
+
+	return nil
+}
+
+func (m *mavenCli) SetPath(projectPath string, rootProjectPath string) {
+	m.projectPath = projectPath
+	m.rootProjectPath = rootProjectPath
 }
 
 func (m *mavenCli) mvnCmd() (string, error) {
@@ -131,6 +143,51 @@ func getMavenWrapperPath(projectPath string, rootProjectPath string) (string, er
 	}
 }
 
+// cMavenVersionRegexp captures the version number of maven from the output of "mvn --version"
+//
+// the output of mvn --version looks something like this:
+// Apache Maven 3.9.1 (2e178502fcdbffc201671fb2537d0cb4b4cc58f8)
+// Maven home: C:\Tools\apache-maven-3.9.1
+// Java version: 17.0.6, vendor: Microsoft, runtime: C:\Program Files\Microsoft\jdk-17.0.6.10-hotspot
+// Default locale: en_US, platform encoding: Cp1252
+// OS name: "windows 11", version: "10.0", arch: "amd64", family: "windows"
+var cMavenVersionRegexp = regexp.MustCompile(`Apache Maven (.*) \(`)
+
+func (cli *mavenCli) extractVersion(ctx context.Context) (string, error) {
+	mvnCmd, err := cli.mvnCmd()
+	if err != nil {
+		return "", err
+	}
+
+	runArgs := exec.NewRunArgs(mvnCmd, "--version")
+	res, err := cli.commandRunner.Run(ctx, runArgs)
+	if err != nil {
+		return "", fmt.Errorf("failed to run %s --version: %w", mvnCmd, err)
+	}
+
+	parts := cMavenVersionRegexp.FindStringSubmatch(res.Stdout)
+	if len(parts) != 2 {
+		return "", fmt.Errorf("could not parse %s --version output, did not match expected format", mvnCmd)
+	}
+
+	return parts[1], nil
+}
+
+func (cli *mavenCli) Compile(ctx context.Context, projectPath string) error {
+	mvnCmd, err := cli.mvnCmd()
+	if err != nil {
+		return err
+	}
+
+	runArgs := exec.NewRunArgs(mvnCmd, "compile").WithCwd(projectPath)
+	_, err = cli.commandRunner.Run(ctx, runArgs)
+	if err != nil {
+		return fmt.Errorf("mvn compile on project '%s' failed: %w", projectPath, err)
+	}
+
+	return nil
+}
+
 func (cli *mavenCli) Package(ctx context.Context, projectPath string) error {
 	mvnCmd, err := cli.mvnCmd()
 	if err != nil {
@@ -139,10 +196,11 @@ func (cli *mavenCli) Package(ctx context.Context, projectPath string) error {
 
 	// Maven's package phase includes tests by default. Skip it explicitly.
 	runArgs := exec.NewRunArgs(mvnCmd, "package", "-DskipTests").WithCwd(projectPath)
-	res, err := cli.commandRunner.Run(ctx, runArgs)
+	_, err = cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
-		return fmt.Errorf("mvn package on project '%s' failed: %s: %w", projectPath, res.String(), err)
+		return fmt.Errorf("mvn package on project '%s' failed: %w", projectPath, err)
 	}
+
 	return nil
 }
 
@@ -152,17 +210,16 @@ func (cli *mavenCli) ResolveDependencies(ctx context.Context, projectPath string
 		return err
 	}
 	runArgs := exec.NewRunArgs(mvnCmd, "dependency:resolve").WithCwd(projectPath)
-	res, err := cli.commandRunner.Run(ctx, runArgs)
+	_, err = cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
-		return fmt.Errorf("mvn dependency:resolve on project '%s' failed: %s: %w", projectPath, res.String(), err)
+		return fmt.Errorf("mvn dependency:resolve on project '%s' failed: %w", projectPath, err)
 	}
+
 	return nil
 }
 
-func NewMavenCli(commandRunner exec.CommandRunner, projectPath string, rootProjectPath string) MavenCli {
+func NewMavenCli(commandRunner exec.CommandRunner) MavenCli {
 	return &mavenCli{
-		commandRunner:   commandRunner,
-		projectPath:     projectPath,
-		rootProjectPath: rootProjectPath,
+		commandRunner: commandRunner,
 	}
 }

@@ -30,9 +30,9 @@ func (cli *azCli) CreateOrUpdateServicePrincipal(
 	ctx context.Context,
 	subscriptionId string,
 	applicationName string,
-	roleName string,
+	roleNames []string,
 ) (json.RawMessage, error) {
-	graphClient, err := cli.createGraphClient(ctx)
+	graphClient, err := cli.createGraphClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
 	}
@@ -55,8 +55,8 @@ func (cli *azCli) CreateOrUpdateServicePrincipal(
 		return nil, fmt.Errorf("failed resetting application credentials: %w", err)
 	}
 
-	// Apply specified role assignment
-	err = cli.ensureRoleAssignments(ctx, subscriptionId, roleName, servicePrincipal)
+	// Apply specified role assignments
+	err = cli.ensureRoleAssignments(ctx, subscriptionId, roleNames, servicePrincipal)
 	if err != nil {
 		return nil, fmt.Errorf("failed applying role assignment: %w", err)
 	}
@@ -94,7 +94,7 @@ func ensureApplication(
 		Get(ctx)
 
 	if err != nil {
-		return nil, fmt.Errorf("failed retrieving application list, %w", err)
+		return nil, fmt.Errorf("failed retrieving application list: %w", err)
 	}
 
 	if len(matchingItems.Value) > 1 {
@@ -132,7 +132,7 @@ func ensureServicePrincipal(
 		Get(ctx)
 
 	if err != nil {
-		return nil, fmt.Errorf("failed retrieving application list, %w", err)
+		return nil, fmt.Errorf("failed retrieving application list: %w", err)
 	}
 
 	if len(matchingItems.Value) > 1 {
@@ -194,12 +194,29 @@ func resetCredentials(
 func (cli *azCli) ensureRoleAssignments(
 	ctx context.Context,
 	subscriptionId string,
+	roleNames []string,
+	servicePrincipal *graphsdk.ServicePrincipal,
+) error {
+	for _, roleName := range roleNames {
+		err := cli.ensureRoleAssignment(ctx, subscriptionId, roleName, servicePrincipal)
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// Applies the Azure selected RBAC role assignments to the specified service principal
+func (cli *azCli) ensureRoleAssignment(
+	ctx context.Context,
+	subscriptionId string,
 	roleName string,
 	servicePrincipal *graphsdk.ServicePrincipal,
 ) error {
 	// Find the specified role in the subscription scope
 	scope := azure.SubscriptionRID(subscriptionId)
-	roleDefinition, err := cli.getRoleDefinition(ctx, scope, roleName)
+	roleDefinition, err := cli.getRoleDefinition(ctx, subscriptionId, scope, roleName)
 	if err != nil {
 		return err
 	}
@@ -263,10 +280,11 @@ func (cli *azCli) applyRoleAssignmentWithRetry(
 // Find the Azure role definition for the specified scope and role name
 func (cli *azCli) getRoleDefinition(
 	ctx context.Context,
+	subscriptionId string,
 	scope string,
 	roleName string,
 ) (*armauthorization.RoleDefinition, error) {
-	roleDefinitionsClient, err := cli.createRoleDefinitionsClient(ctx)
+	roleDefinitionsClient, err := cli.createRoleDefinitionsClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
 	}
@@ -294,9 +312,17 @@ func (cli *azCli) getRoleDefinition(
 }
 
 // Creates a graph users client using credentials from the Go context.
-func (cli *azCli) createGraphClient(ctx context.Context) (*graphsdk.GraphClient, error) {
-	options := cli.createDefaultClientOptionsBuilder(ctx).BuildCoreClientOptions()
-	client, err := graphsdk.NewGraphClient(cli.credential, options)
+func (cli *azCli) createGraphClient(
+	ctx context.Context,
+	subscriptionId string,
+) (*graphsdk.GraphClient, error) {
+	credential, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	options := cli.clientOptionsBuilder(ctx).BuildCoreClientOptions()
+	client, err := graphsdk.NewGraphClient(credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating Graph Users client: %w", err)
 	}
@@ -305,9 +331,17 @@ func (cli *azCli) createGraphClient(ctx context.Context) (*graphsdk.GraphClient,
 }
 
 // Creates a graph users client using credentials from the Go context.
-func (cli *azCli) createRoleDefinitionsClient(ctx context.Context) (*armauthorization.RoleDefinitionsClient, error) {
-	options := cli.createDefaultClientOptionsBuilder(ctx).BuildArmClientOptions()
-	client, err := armauthorization.NewRoleDefinitionsClient(cli.credential, options)
+func (cli *azCli) createRoleDefinitionsClient(
+	ctx context.Context,
+	subscriptionId string,
+) (*armauthorization.RoleDefinitionsClient, error) {
+	credential, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	options := cli.clientOptionsBuilder(ctx).BuildArmClientOptions()
+	client, err := armauthorization.NewRoleDefinitionsClient(credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating ARM Role Definitions client: %w", err)
 	}
@@ -320,8 +354,13 @@ func (cli *azCli) createRoleAssignmentsClient(
 	ctx context.Context,
 	subscriptionId string,
 ) (*armauthorization.RoleAssignmentsClient, error) {
-	options := cli.createDefaultClientOptionsBuilder(ctx).BuildArmClientOptions()
-	client, err := armauthorization.NewRoleAssignmentsClient(subscriptionId, cli.credential, options)
+	credential, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	options := cli.clientOptionsBuilder(ctx).BuildArmClientOptions()
+	client, err := armauthorization.NewRoleAssignmentsClient(subscriptionId, credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating ARM Role Assignments client: %w", err)
 	}

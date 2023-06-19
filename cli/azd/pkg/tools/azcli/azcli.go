@@ -10,17 +10,18 @@ import (
 	"io"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
 
 var (
-	ErrAzCliNotLoggedIn         = errors.New("cli is not logged in. Try running \"azd login\" to fix")
-	ErrAzCliRefreshTokenExpired = errors.New("refresh token has expired. Try running \"azd login\" to fix")
+	ErrAzCliNotLoggedIn         = errors.New("cli is not logged in. Try running \"az login\" to fix")
+	ErrAzCliRefreshTokenExpired = errors.New("refresh token has expired. Try running \"az login\" to fix")
 	ErrClientAssertionExpired   = errors.New("client assertion expired")
 	ErrDeploymentNotFound       = errors.New("deployment not found")
 	ErrNoConfigurationValue     = errors.New("no value configured")
@@ -58,14 +59,33 @@ type AzCli interface {
 		resourceGroupName string,
 		vaultName string,
 	) (*AzCliKeyVault, error)
-	GetKeyVaultSecret(ctx context.Context, vaultName string, secretName string) (*AzCliKeyVaultSecret, error)
-	PurgeKeyVault(ctx context.Context, subscriptionId string, vaultName string, location string) error
+	GetManagedHSM(
+		ctx context.Context,
+		subscriptionId string,
+		resourceGroupName string,
+		hsmName string,
+	) (*AzCliManagedHSM, error)
+	GetCognitiveAccount(
+		ctx context.Context,
+		subscriptionId string,
+		resourceGroupName string,
+		accountName string,
+	) (armcognitiveservices.Account, error)
+	GetKeyVaultSecret(
+		ctx context.Context,
+		subscriptionId string,
+		vaultName string,
+		secretName string,
+	) (*AzCliKeyVaultSecret, error)
 	GetAppConfig(
 		ctx context.Context, subscriptionId string, resourceGroupName string, configName string) (*AzCliAppConfig, error)
+	PurgeApim(ctx context.Context, subscriptionId string, apimName string, location string) error
 	PurgeAppConfig(ctx context.Context, subscriptionId string, configName string, location string) error
+	PurgeKeyVault(ctx context.Context, subscriptionId string, vaultName string, location string) error
+	PurgeManagedHSM(ctx context.Context, subscriptionId string, hsmName string, location string) error
+	PurgeCognitiveAccount(ctx context.Context, subscriptionId, location, resourceGroup, accountName string) error
 	GetApim(
 		ctx context.Context, subscriptionId string, resourceGroupName string, apimName string) (*AzCliApim, error)
-	PurgeApim(ctx context.Context, subscriptionId string, apimName string, location string) error
 	DeployAppServiceZip(
 		ctx context.Context,
 		subscriptionId string,
@@ -87,11 +107,14 @@ type AzCli interface {
 		funcName string,
 	) (*AzCliFunctionAppProperties, error)
 	DeployToSubscription(
-		ctx context.Context, subscriptionId, deploymentName string,
+		ctx context.Context,
+		subscriptionId string,
+		location string,
+		deploymentName string,
 		armTemplate azure.RawArmTemplate,
 		parameters azure.ArmParameters,
-		location string) (
-		AzCliDeploymentResult, error)
+		tags map[string]*string,
+	) (*armresources.DeploymentExtended, error)
 	DeployToResourceGroup(
 		ctx context.Context,
 		subscriptionId,
@@ -99,20 +122,37 @@ type AzCli interface {
 		deploymentName string,
 		armTemplate azure.RawArmTemplate,
 		parameters azure.ArmParameters,
-	) (AzCliDeploymentResult, error)
+		tags map[string]*string,
+	) (*armresources.DeploymentExtended, error)
 	DeleteSubscriptionDeployment(ctx context.Context, subscriptionId string, deploymentName string) error
 	DeleteResourceGroup(ctx context.Context, subscriptionId string, resourceGroupName string) error
+	CreateOrUpdateResourceGroup(
+		ctx context.Context,
+		subscriptionId string,
+		resourceGroupName string,
+		location string,
+		tags map[string]*string,
+	) error
 	ListResourceGroup(
 		ctx context.Context,
 		subscriptionId string,
 		listOptions *ListResourceGroupOptions,
 	) ([]AzCliResource, error)
+	ListResourceGroupDeployments(
+		ctx context.Context,
+		subscriptionId string,
+		resourceGroupName string,
+	) ([]*armresources.DeploymentExtended, error)
 	ListResourceGroupResources(
 		ctx context.Context,
 		subscriptionId string,
 		resourceGroupName string,
 		listOptions *ListResourceGroupResourcesOptions,
 	) ([]AzCliResource, error)
+	ListSubscriptionDeployments(
+		ctx context.Context,
+		subscriptionId string,
+	) ([]*armresources.DeploymentExtended, error)
 	ListSubscriptionDeploymentOperations(
 		ctx context.Context,
 		subscriptionId string,
@@ -132,7 +172,7 @@ type AzCli interface {
 		ctx context.Context,
 		subscriptionId string,
 		applicationName string,
-		roleToAssign string,
+		rolesToAssign []string,
 	) (json.RawMessage, error)
 	GetAppServiceProperties(
 		ctx context.Context,
@@ -140,12 +180,6 @@ type AzCli interface {
 		resourceGroupName string,
 		applicationName string,
 	) (*AzCliAppServiceProperties, error)
-	GetContainerAppProperties(
-		ctx context.Context,
-		subscriptionId string,
-		resourceGroupName string,
-		applicationName string,
-	) (*AzCliContainerAppProperties, error)
 	GetStaticWebAppProperties(
 		ctx context.Context,
 		subscriptionID string,
@@ -160,7 +194,6 @@ type AzCli interface {
 		appName string,
 		environmentName string,
 	) (*AzCliStaticWebAppEnvironmentProperties, error)
-	GetAccessToken(ctx context.Context) (*AzCliAccessToken, error)
 }
 
 type AzCliDeployment struct {
@@ -295,16 +328,19 @@ type Filter struct {
 type NewAzCliArgs struct {
 	EnableDebug     bool
 	EnableTelemetry bool
-	HttpClient      httputil.HttpClient
 }
 
-func NewAzCli(credential azcore.TokenCredential, args NewAzCliArgs) AzCli {
+func NewAzCli(
+	credentialProvider account.SubscriptionCredentialProvider,
+	httpClient httputil.HttpClient,
+	args NewAzCliArgs,
+) AzCli {
 	return &azCli{
-		userAgent:       azdinternal.MakeUserAgentString(""),
-		enableDebug:     args.EnableDebug,
-		enableTelemetry: args.EnableTelemetry,
-		httpClient:      args.HttpClient,
-		credential:      credential,
+		credentialProvider: credentialProvider,
+		enableDebug:        args.EnableDebug,
+		enableTelemetry:    args.EnableTelemetry,
+		httpClient:         httpClient,
+		userAgent:          azdinternal.UserAgent(),
 	}
 }
 
@@ -316,7 +352,7 @@ type azCli struct {
 	// Allows us to mock the Http Requests from the go modules
 	httpClient httputil.HttpClient
 
-	credential azcore.TokenCredential
+	credentialProvider account.SubscriptionCredentialProvider
 }
 
 // SetUserAgent sets the user agent that's sent with each call to the Azure
@@ -329,14 +365,19 @@ func (cli *azCli) UserAgent() string {
 	return cli.userAgent
 }
 
-func (cli *azCli) createDefaultClientOptionsBuilder(ctx context.Context) *azsdk.ClientOptionsBuilder {
+func (cli *azCli) clientOptionsBuilder(ctx context.Context) *azsdk.ClientOptionsBuilder {
 	return azsdk.NewClientOptionsBuilder().
-		WithTransport(httputil.GetHttpClient(ctx)).
-		WithPerCallPolicy(azsdk.NewUserAgentPolicy(cli.UserAgent()))
+		WithTransport(cli.httpClient).
+		WithPerCallPolicy(azsdk.NewUserAgentPolicy(cli.UserAgent())).
+		WithPerCallPolicy(azsdk.NewMsCorrelationPolicy(ctx))
 }
 
-func clientOptionsBuilder(httpClient httputil.HttpClient, userAgent string) *azsdk.ClientOptionsBuilder {
+func clientOptionsBuilder(
+	ctx context.Context,
+	httpClient httputil.HttpClient,
+	userAgent string) *azsdk.ClientOptionsBuilder {
 	return azsdk.NewClientOptionsBuilder().
 		WithTransport(httpClient).
-		WithPerCallPolicy(azsdk.NewUserAgentPolicy(userAgent))
+		WithPerCallPolicy(azsdk.NewUserAgentPolicy(userAgent)).
+		WithPerCallPolicy(azsdk.NewMsCorrelationPolicy(ctx))
 }

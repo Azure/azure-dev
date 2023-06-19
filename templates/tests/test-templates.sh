@@ -110,14 +110,26 @@ function deployTemplate {
 # $2 - The branch name
 # $3 - The environment name
 function testTemplate {
+    if [[ "$1" == "azd-starter"* || "$1" == "Azure-Samples/azd-starter"* ]]; then
+        echo "Skipped smoke tests for azd-starter templates"
+        return
+    fi
+
     echo "Running template smoke tests for $3..."
     if [ $DEVCONTAINER == false ]; then
         cd "$FOLDER_PATH/$3/tests"
     else
         cd "tests"
     fi
+
     npm i && npx playwright install
     npx -y playwright test --retries="$PLAYWRIGHT_RETRIES" --reporter="$PLAYWRIGHT_REPORTER"
+
+    if [ $DEVCONTAINER == false ]; then
+        cd "$FOLDER_PATH/$3"
+    else
+        cd ".."
+    fi
 }
 
 # Cleans the specified template
@@ -126,11 +138,6 @@ function testTemplate {
 # $3 - The environment name
 function cleanupTemplate {
     echo "Deprovisioning infrastructure for $3..."
-    if [ $DEVCONTAINER == false ]; then
-        cd "$FOLDER_PATH/$3"
-    else
-        cd ..
-    fi
     azd down -e "$3" --force --purge
 
     echo "Cleaning up local project @ '$FOLDER_PATH/$3'..."
@@ -149,7 +156,7 @@ if [[ -z $TEMPLATE_NAME ]]; then
     while read -r TEMPLATE; do
         ENV_NAME="${ENV_NAME_PREFIX}-${TEMPLATE:14}-$ENV_SUFFIX"
         ENV_TEMPLATE_MAP[$TEMPLATE]=$ENV_NAME
-    done < <(echo "$TEMPLATES_JSON" | jq -r '.[].name' | sed 's/\\n/\n/g')
+    done < <(echo "$TEMPLATES_JSON" | jq -r '.[].repositoryPath' | sed 's/\\n/\n/g')
 
     if [ $TEST_ONLY == false ]; then
         # Deploy the templates in parallel

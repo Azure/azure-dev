@@ -11,12 +11,12 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
-	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
-	"github.com/azure/azure-dev/cli/azd/internal/telemetry/events"
-	"github.com/azure/azure-dev/cli/azd/internal/telemetry/fields"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
+	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"go.uber.org/multierr"
 )
 
@@ -28,7 +28,7 @@ type SubscriptionTenantResolver interface {
 }
 
 type principalInfoProvider interface {
-	GetLoggedInServicePrincipalTenantID() (*string, error)
+	GetLoggedInServicePrincipalTenantID(ctx context.Context) (*string, error)
 }
 
 type subCache interface {
@@ -43,14 +43,14 @@ type subCache interface {
 // To lookup access to a given subscription, LookupTenant can be used to lookup the
 // current account's required tenantID to access a given subscription.
 type SubscriptionsManager struct {
-	service       *azcli.SubscriptionsService
+	service       *SubscriptionsService
 	principalInfo principalInfoProvider
 	cache         subCache
 	msg           input.Messaging
 }
 
 func NewSubscriptionsManager(
-	service *azcli.SubscriptionsService,
+	service *SubscriptionsService,
 	auth *auth.Manager,
 	msg input.Messaging) (*SubscriptionsManager, error) {
 	cache, err := NewSubscriptionsCache()
@@ -100,7 +100,7 @@ func (m *SubscriptionsManager) RefreshSubscriptions(ctx context.Context) error {
 //     See SubscriptionCache for details about caching. On cache miss, all tenants and subscriptions are queried from
 //     azure management services for the current account to build the mapping and populate the cache.
 func (m *SubscriptionsManager) LookupTenant(ctx context.Context, subscriptionId string) (tenantId string, err error) {
-	principalTenantId, err := m.principalInfo.GetLoggedInServicePrincipalTenantID()
+	principalTenantId, err := m.principalInfo.GetLoggedInServicePrincipalTenantID(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -122,9 +122,9 @@ func (m *SubscriptionsManager) LookupTenant(ctx context.Context, subscriptionId 
 
 	return "", fmt.Errorf(
 		"failed to resolve user access to subscription with ID '%s'. "+
-			"If you recently gained access to this subscription, run `azd login` again to reload subscriptions.\n"+
+			"If you recently gained access to this subscription, run `azd auth login` again to reload subscriptions.\n"+
 			"Otherwise, visit this subscription in Azure Portal using the browser, "+
-			"then run `azd login` ",
+			"then run `azd auth login` ",
 		subscriptionId)
 }
 
@@ -157,13 +157,13 @@ type tenantSubsResult struct {
 // ListSubscription lists subscriptions accessible by the current account by calling azure management services.
 func (m *SubscriptionsManager) ListSubscriptions(ctx context.Context) ([]Subscription, error) {
 	var err error
-	ctx, span := telemetry.GetTracer().Start(ctx, events.AccountSubscriptionsListEvent)
+	ctx, span := tracing.Start(ctx, events.AccountSubscriptionsListEvent)
 	defer span.EndWithStatus(err)
 
 	stop := m.msg.ShowProgress(ctx, "Retrieving subscriptions...")
 	defer stop()
 
-	principalTenantId, err := m.principalInfo.GetLoggedInServicePrincipalTenantID()
+	principalTenantId, err := m.principalInfo.GetLoggedInServicePrincipalTenantID(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -178,7 +178,7 @@ func (m *SubscriptionsManager) ListSubscriptions(ctx context.Context) ([]Subscri
 
 		tenantSubscriptions := []Subscription{}
 		for _, subscription := range subscriptions {
-			tenantSubscriptions = append(tenantSubscriptions, toSubscription(subscription, *principalTenantId))
+			tenantSubscriptions = append(tenantSubscriptions, toSubscription(*subscription, *principalTenantId))
 		}
 
 		return tenantSubscriptions, nil
@@ -194,7 +194,7 @@ func (m *SubscriptionsManager) ListSubscriptions(ctx context.Context) ([]Subscri
 	listForTenant := func(
 		jobs <-chan armsubscriptions.TenantIDDescription,
 		results chan<- tenantSubsResult,
-		service *azcli.SubscriptionsService) {
+		service *SubscriptionsService) {
 		for tenant := range jobs {
 			azSubs, err := service.ListSubscriptions(ctx, *tenant.TenantID)
 			if err != nil {
@@ -212,7 +212,7 @@ func (m *SubscriptionsManager) ListSubscriptions(ctx context.Context) ([]Subscri
 
 					err = fmt.Errorf(
 						"%s requires Multi-Factor Authentication (MFA). "+
-							"To authenticate, login with `azd login --tenant-id %s`",
+							"To authenticate, login with `azd auth login --tenant-id %s`",
 						name,
 						idOrDomain)
 				} else {
@@ -277,7 +277,10 @@ func (m *SubscriptionsManager) ListSubscriptions(ctx context.Context) ([]Subscri
 	return allSubscriptions, nil
 }
 
-func (m *SubscriptionsManager) ListLocations(ctx context.Context, subscriptionId string) ([]azcli.AzCliLocation, error) {
+func (m *SubscriptionsManager) ListLocations(
+	ctx context.Context,
+	subscriptionId string,
+) ([]Location, error) {
 	stop := m.msg.ShowProgress(ctx, "Retrieving locations...")
 	defer stop()
 
@@ -303,23 +306,23 @@ func (m *SubscriptionsManager) GetSubscription(ctx context.Context, subscription
 	return &sub, nil
 }
 
-func toSubscriptions(azSubs []azcli.AzCliSubscriptionInfo, userAccessTenantId string) []Subscription {
+func toSubscriptions(azSubs []*armsubscriptions.Subscription, userAccessTenantId string) []Subscription {
 	if azSubs == nil {
 		return nil
 	}
 
 	subs := make([]Subscription, 0, len(azSubs))
 	for _, azSub := range azSubs {
-		subs = append(subs, toSubscription(azSub, userAccessTenantId))
+		subs = append(subs, toSubscription(*azSub, userAccessTenantId))
 	}
 	return subs
 }
 
-func toSubscription(subscription azcli.AzCliSubscriptionInfo, userAccessTenantId string) Subscription {
+func toSubscription(subscription armsubscriptions.Subscription, userAccessTenantId string) Subscription {
 	return Subscription{
-		Id:                 subscription.Id,
-		Name:               subscription.Name,
-		TenantId:           subscription.TenantId,
+		Id:                 *subscription.SubscriptionID,
+		Name:               convert.ToValueWithDefault(subscription.DisplayName, *subscription.SubscriptionID),
+		TenantId:           *subscription.TenantID,
 		UserAccessTenantId: userAccessTenantId,
 	}
 }

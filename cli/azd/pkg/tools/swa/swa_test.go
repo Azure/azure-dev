@@ -28,7 +28,7 @@ func Test_SwaBuild(t *testing.T) {
 
 			require.Equal(t, "./projectPath", args.Cwd)
 			require.Equal(t, []string{
-				"-y", "@azure/static-web-apps-cli@1.0.0",
+				"-y", "@azure/static-web-apps-cli@1.0.6",
 				"build",
 				"--app-location", "service/path",
 				"--output-location", "build",
@@ -60,7 +60,7 @@ func Test_SwaBuild(t *testing.T) {
 
 			require.Equal(t, "./projectPath", args.Cwd)
 			require.Equal(t, []string{
-				"-y", "@azure/static-web-apps-cli@1.0.0",
+				"-y", "@azure/static-web-apps-cli@1.0.6",
 				"build",
 				"--app-location", "service/path",
 				"--output-location", "build",
@@ -70,7 +70,7 @@ func Test_SwaBuild(t *testing.T) {
 				Stdout:   "stdout text",
 				Stderr:   "stderr text",
 				ExitCode: 1,
-			}, errors.New("example error message")
+			}, errors.New("exit code: 1")
 		})
 
 		err := swacli.Build(context.Background(), "./projectPath", "service/path", "build")
@@ -78,7 +78,7 @@ func Test_SwaBuild(t *testing.T) {
 		require.EqualError(
 			t,
 			err,
-			"swa build: exit code: 1, stdout: stdout text, stderr: stderr text: example error message",
+			"swa build: exit code: 1",
 		)
 	})
 }
@@ -97,7 +97,7 @@ func Test_SwaDeploy(t *testing.T) {
 
 			require.Equal(t, "./projectPath", args.Cwd)
 			require.Equal(t, []string{
-				"-y", "@azure/static-web-apps-cli@1.0.0",
+				"-y", "@azure/static-web-apps-cli@1.0.6",
 				"deploy",
 				"--tenant-id", "tenantID",
 				"--subscription-id", "subscriptionID",
@@ -147,7 +147,7 @@ func Test_SwaDeploy(t *testing.T) {
 
 			require.Equal(t, "./projectPath", args.Cwd)
 			require.Equal(t, []string{
-				"-y", "@azure/static-web-apps-cli@1.0.0",
+				"-y", "@azure/static-web-apps-cli@1.0.6",
 				"deploy",
 				"--tenant-id", "tenantID",
 				"--subscription-id", "subscriptionID",
@@ -164,7 +164,7 @@ func Test_SwaDeploy(t *testing.T) {
 				Stdout:   "stdout text",
 				Stderr:   "stderr text",
 				ExitCode: 1,
-			}, errors.New("example error message")
+			}, errors.New("exit code: 1")
 		})
 
 		_, err := swacli.Deploy(
@@ -183,7 +183,7 @@ func Test_SwaDeploy(t *testing.T) {
 		require.EqualError(
 			t,
 			err,
-			"swa deploy: exit code: 1, stdout: stdout text, stderr: stderr text: example error message",
+			"swa deploy: exit code: 1",
 		)
 	})
 }

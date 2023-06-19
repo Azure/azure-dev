@@ -1,12 +1,11 @@
 
-Show details for a given template.
+Show details for a given template. (Beta)
 
 Usage
   azd template show <template> [flags]
 
 Flags
-    -h, --help          	: Gets help for show.
-    -o, --output string 	: The output format (the supported formats are json, table).
+    -h, --help 	: Gets help for show.
 
 Global Flags
     -C, --cwd string 	: Sets the current working directory.

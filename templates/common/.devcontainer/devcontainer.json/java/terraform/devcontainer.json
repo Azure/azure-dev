@@ -3,7 +3,7 @@
     "build": {
         "dockerfile": "Dockerfile",
         "args": {
-            "VARIANT": "bullseye"
+            "IMAGE": "bullseye"
         }
     },
     "features": {

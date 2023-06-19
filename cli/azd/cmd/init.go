@@ -13,7 +13,6 @@ import (
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
 	"github.com/azure/azure-dev/cli/azd/internal/repository"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -26,8 +25,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
-	"golang.org/x/exp/maps"
-	"golang.org/x/exp/slices"
 )
 
 func newInitFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *initFlags {
@@ -146,6 +143,8 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			if err != nil {
 				return nil, err
 			}
+		}
+	}
 
 	if i.flags.templatePath != "" {
 		gitUri, err := templates.Absolute(i.flags.templatePath)
@@ -162,8 +161,6 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		if err != nil {
 			return nil, fmt.Errorf("init empty repository: %w", err)
 		}
-	} else if err != nil {
-		return nil, err
 	}
 
 	envName, err := azdCtx.GetDefaultEnvironmentName()

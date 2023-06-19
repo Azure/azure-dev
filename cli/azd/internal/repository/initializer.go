@@ -150,12 +150,12 @@ func (i *Initializer) ScaffoldProject(
 		prj.Services[serviceName] = &project.ServiceConfig{
 			RelativePath: rel,
 			OutputPath:   spec.OutputPath,
-			Host:         spec.Host,
-			Language:     spec.Language,
+			Host:         project.ServiceTargetKind(spec.Host),
+			Language:     project.ServiceLanguageKind(spec.Language),
 		}
 	}
 
-	err := project.Save(filepath.Join(azdCtx.ProjectDirectory(), name), prj)
+	err := project.Save(ctx, &prj, filepath.Join(azdCtx.ProjectDirectory(), name))
 	if err != nil {
 		return fmt.Errorf("creating %s: %w", name, err)
 	}
@@ -185,7 +185,7 @@ func (i *Initializer) InitializeInfra(ctx context.Context,
 	}
 	i.console.StopSpinner(ctx, stepMessage, input.GetStepResultFormat(err))
 
-	err = i.writeAzdAssets(ctx, azdCtx)
+	err = i.writeCoreAssets(ctx, azdCtx)
 	if err != nil {
 		return err
 	}

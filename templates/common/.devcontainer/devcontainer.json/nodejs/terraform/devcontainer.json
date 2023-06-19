@@ -11,6 +11,7 @@
             "version": "2.38"
         },
         "ghcr.io/devcontainers/features/docker-in-docker:2": {
+            "version": "2.1.0"
         },
         "ghcr.io/devcontainers/features/terraform:1": {
             "version": "latest"

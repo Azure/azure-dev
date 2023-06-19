@@ -11,7 +11,6 @@
         // terraform and az (required for auth) are installed by default
         // See https://containers.dev/features for list of features
         "ghcr.io/devcontainers/features/azure-cli:1": {
-            "version": "2.38"
         },
         "ghcr.io/devcontainers/features/terraform:1": {
             "version": "latest"

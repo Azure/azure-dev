@@ -3,16 +3,13 @@
     "build": {
         "dockerfile": "Dockerfile",
         "args": {
-            "IMAGE": "bullseye"
+            "IMAGE": "java:17-bullseye"
         }
     },
     "features": {
         "ghcr.io/devcontainers/features/azure-cli:1": {
         },
         "ghcr.io/devcontainers/features/docker-in-docker:2": {
-        },
-        "ghcr.io/devcontainers/features/java:1": {
-            "version": "17.0"
         },
         "ghcr.io/devcontainers/features/node:1": {
             "version": "16",

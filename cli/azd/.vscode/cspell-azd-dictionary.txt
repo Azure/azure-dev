@@ -1,5 +1,6 @@
 # hyphen is optional, "re-authentication" and "reauthentication" are equivalent.
 AADSTS
+ABRT
 alphafeatures
 apimanagement
 apims

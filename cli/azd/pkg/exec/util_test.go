@@ -75,7 +75,7 @@ func TestKillCommand(t *testing.T) {
 		// on Windows terminating the process doesn't register as an error
 		require.NoError(t, err)
 	} else {
-		require.EqualValues(t, "signal: killed", err.Error())
+		require.ErrorContains(t, err, "signal: killed")
 	}
 	// should be pretty much instant since our context was already cancelled
 	// but we'll give a little wiggle room (as long as it's < 10000 seconds, which is
@@ -144,7 +144,7 @@ func TestError(t *testing.T) {
 
 	var exitErr *ExitError
 	require.ErrorAs(t, err, &exitErr)
-	require.Contains(t, exitErr.Error(), "exit code: 2, stdout:")
+	require.ErrorContains(t, exitErr, "exit code: 2, stdout:")
 }
 
 func TestError_Interactive(t *testing.T) {

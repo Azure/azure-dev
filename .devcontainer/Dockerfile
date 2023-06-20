@@ -1,4 +1,4 @@
-ARG VARIANT=bullseye
+ARG IMAGE=bullseye
 FROM mcr.microsoft.com/devcontainers/go
 
 RUN export DEBIAN_FRONTEND=noninteractive \

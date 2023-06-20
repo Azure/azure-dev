@@ -12,6 +12,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -95,6 +96,12 @@ func NewCLI(t *testing.T) *CLI {
 	buildOnce.Do(func() {
 		cmd := exec.Command("go", "build")
 		cmd.Dir = filepath.Dir(cliPath)
+
+		// Build with coverage if GOCOVERDIR is specified.
+		if os.Getenv("GOCOVERDIR") != "" {
+			cmd.Args = append(cmd.Args, "-cover")
+		}
+
 		output, err := cmd.CombinedOutput()
 		if err != nil {
 			panic(fmt.Errorf(
@@ -137,22 +144,22 @@ func (cli *CLI) RunCommandWithStdIn(ctx context.Context, stdin string, args ...s
 		done <- struct{}{}
 	}()
 
+	stdOutLogger := &logWriter{t: cli.T, prefix: "[stdout] "}
+	stdErrLogger := &logWriter{t: cli.T, prefix: "[stderr] "}
+
 	var stderr, stdout bytes.Buffer
-	cmd.Stderr = &stderr
-	cmd.Stdout = &stdout
-	err := cmd.Run()
-
-	result := &CliResult{}
-	result.Stdout = stdout.String()
-	result.Stderr = stderr.String()
-	result.ExitCode = cmd.ProcessState.ExitCode()
-
-	for _, line := range strings.Split(result.Stdout, "\n") {
-		cli.T.Logf("[stdout] %s", line)
+	cmd.Stderr = io.MultiWriter(&stderr, stdErrLogger)
+	cmd.Stdout = io.MultiWriter(&stdout, stdOutLogger)
+	err := cmd.Start()
+	if err != nil {
+		return nil, fmt.Errorf("failed to start command '%s': %w", description, err)
 	}
 
-	for _, line := range strings.Split(result.Stderr, "\n") {
-		cli.T.Logf("[stderr] %s", line)
+	err = cmd.Wait()
+	result := &CliResult{
+		ExitCode: cmd.ProcessState.ExitCode(),
+		Stdout:   stdout.String(),
+		Stderr:   stderr.String(),
 	}
 
 	if errors.Is(ctx.Err(), context.DeadlineExceeded) {
@@ -186,6 +193,27 @@ func (cli *CLI) heartbeat(description string, done <-chan struct{}) {
 			return
 		}
 	}
+}
+
+type logWriter struct {
+	t      *testing.T
+	sb     strings.Builder
+	prefix string
+}
+
+func (l *logWriter) Write(bytes []byte) (n int, err error) {
+	for i, b := range bytes {
+		err = l.sb.WriteByte(b)
+		if err != nil {
+			return i, err
+		}
+
+		if b == '\n' {
+			l.t.Logf("%s%s", l.prefix, l.sb.String())
+			l.sb.Reset()
+		}
+	}
+	return len(bytes), nil
 }
 
 func GetSourcePath() string {

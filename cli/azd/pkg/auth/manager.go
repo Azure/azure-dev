@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -19,13 +18,17 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/public"
-	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
-	"github.com/azure/azure-dev/cli/azd/internal/telemetry/fields"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/github"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
+	"github.com/cli/browser"
 )
 
 // TODO(azure/azure-dev#710): Right now, we re-use the App Id of the `az` CLI, until we have our own.
@@ -54,7 +57,10 @@ const cUseCloudShellAuthEnvVar = "AZD_IN_CLOUDSHELL"
 
 // The scopes to request when acquiring our token during the login flow or when requesting a token to validate if the client
 // is logged in.
-var cLoginScopes = []string{azure.ManagementScope}
+var LoginScopes = []string{azure.ManagementScope}
+var loginScopesMap = map[string]struct{}{
+	azure.ManagementScope: {},
+}
 
 // Manager manages the authentication system of azd. It allows a user to log in, either as a user principal or service
 // principal. Manager stores information so that the user can stay logged in across invocations of the CLI. When logged in
@@ -79,12 +85,15 @@ type Manager struct {
 	credentialCache     Cache
 	ghClient            *github.FederatedTokenClient
 	httpClient          httputil.HttpClient
+	launchBrowserFn     func(url string) error
+	console             input.Console
 }
 
 func NewManager(
 	configManager config.Manager,
 	userConfigManager config.UserConfigManager,
 	httpClient httputil.HttpClient,
+	console input.Console,
 ) (*Manager, error) {
 	cfgRoot, err := config.GetUserConfigDir()
 	if err != nil {
@@ -121,24 +130,19 @@ func NewManager(
 		credentialCache:     newCredentialCache(authRoot),
 		ghClient:            ghClient,
 		httpClient:          httpClient,
+		launchBrowserFn:     browser.OpenURL,
+		console:             console,
 	}, nil
 }
 
-var ErrNoCurrentUser = errors.New("not logged in, run `azd auth login` to login")
-
-// EnsureLoggedInCredential uses the credential's GetToken method to ensure an access token can be fetched. If this fails,
-// nil, ErrNoCurrentUser is returned. On success, the token we fetched is returned.
+// EnsureLoggedInCredential uses the credential's GetToken method to ensure an access token can be fetched.
+// On success, the token we fetched is returned.
 func EnsureLoggedInCredential(ctx context.Context, credential azcore.TokenCredential) (*azcore.AccessToken, error) {
 	token, err := credential.GetToken(ctx, policy.TokenRequestOptions{
-		Scopes: cLoginScopes,
+		Scopes: LoginScopes,
 	})
 	if err != nil {
-		// It is important that we dump the failure which contains error code, correlation IDs from AAD to log
-		// An improvement to make here is to classify 'unhandled' vs 'handled' errors
-		// where handled errors would be fixed with rerunning login (i.e. token expiry), vs.
-		// unhandled errors where it indicates a setup issue.
-		log.Printf("failed fetching access token: %s", err.Error())
-		return &azcore.AccessToken{}, ErrNoCurrentUser
+		return &azcore.AccessToken{}, err
 	}
 
 	return &token, nil
@@ -191,7 +195,10 @@ func (m *Manager) CredentialForCurrentUser(
 	}
 
 	if currentUser.HomeAccountID != nil {
-		accounts := m.publicClient.Accounts()
+		accounts, err := m.publicClient.Accounts(ctx)
+		if err != nil {
+			return nil, err
+		}
 		for i, account := range accounts {
 			if account.HomeAccountID == *currentUser.HomeAccountID {
 				if options.TenantID == "" {
@@ -315,11 +322,11 @@ func (m *Manager) GetLoggedInServicePrincipalTenantID(ctx context.Context) (*str
 
 	// Record type of account found
 	if currentUser.TenantID != nil {
-		telemetry.SetGlobalAttributes(fields.AccountTypeKey.String(fields.AccountTypeServicePrincipal))
+		tracing.SetGlobalAttributes(fields.AccountTypeKey.String(fields.AccountTypeServicePrincipal))
 	}
 
 	if currentUser.HomeAccountID != nil {
-		telemetry.SetGlobalAttributes(fields.AccountTypeKey.String(fields.AccountTypeUser))
+		tracing.SetGlobalAttributes(fields.AccountTypeKey.String(fields.AccountTypeUser))
 	}
 
 	return currentUser.TenantID, nil
@@ -392,7 +399,11 @@ func (m *Manager) newCredentialFromCloudShell() (azcore.TokenCredential, error) 
 	return NewCloudShellCredential(m.httpClient), nil
 }
 
-func (m *Manager) LoginInteractive(ctx context.Context, redirectPort int, tenantID string) (azcore.TokenCredential, error) {
+func (m *Manager) LoginInteractive(
+	ctx context.Context, redirectPort int, tenantID string, scopes []string) (azcore.TokenCredential, error) {
+	if scopes == nil {
+		scopes = LoginScopes
+	}
 	options := []public.AcquireInteractiveOption{}
 	if redirectPort > 0 {
 		options = append(options, public.WithRedirectURI(fmt.Sprintf("http://localhost:%d", redirectPort)))
@@ -402,7 +413,7 @@ func (m *Manager) LoginInteractive(ctx context.Context, redirectPort int, tenant
 		options = append(options, public.WithTenantID(tenantID))
 	}
 
-	res, err := m.publicClient.AcquireTokenInteractive(ctx, cLoginScopes, options...)
+	res, err := m.publicClient.AcquireTokenInteractive(ctx, scopes, options...)
 	if err != nil {
 		return nil, err
 	}
@@ -415,25 +426,39 @@ func (m *Manager) LoginInteractive(ctx context.Context, redirectPort int, tenant
 }
 
 func (m *Manager) LoginWithDeviceCode(
-	ctx context.Context, deviceCodeWriter io.Writer, tenantID string) (azcore.TokenCredential, error) {
+	ctx context.Context, tenantID string, scopes []string) (azcore.TokenCredential, error) {
+	if scopes == nil {
+		scopes = LoginScopes
+	}
 	options := []public.AcquireByDeviceCodeOption{}
 	if tenantID != "" {
 		options = append(options, public.WithTenantID(tenantID))
 	}
 
-	code, err := m.publicClient.AcquireTokenByDeviceCode(ctx, cLoginScopes, options...)
+	code, err := m.publicClient.AcquireTokenByDeviceCode(ctx, scopes, options...)
 	if err != nil {
 		return nil, err
 	}
 
-	// Display the message to the end user as to what to do next, then block waiting for them to complete
-	// the flow.
-	fmt.Fprintln(deviceCodeWriter, code.Message())
+	m.console.MessageUxItem(ctx, &ux.MultilineMessage{
+		Lines: []string{
+			fmt.Sprintf("Start by copying the next code: %s", output.WithBold(code.UserCode())),
+			"Then press enter and continue to log in from your browser...",
+		},
+	})
+	m.console.WaitForEnter()
 
+	url := "https://microsoft.com/devicelogin"
+	if err := m.launchBrowserFn(url); err != nil {
+		log.Println("error launching browser: ", err.Error())
+		m.console.Message(ctx, fmt.Sprintf("Error launching browser. Manually go to: %s", url))
+	}
+	m.console.Message(ctx, "Waiting for you to complete authentication in the browser...")
 	res, err := code.AuthenticationResult(ctx)
 	if err != nil {
 		return nil, err
 	}
+	m.console.Message(ctx, "Device code authentication completed.")
 
 	if err := m.saveLoginForPublicClient(res); err != nil {
 		return nil, err
@@ -523,7 +548,7 @@ func (m *Manager) Logout(ctx context.Context) error {
 	}
 
 	if act != nil {
-		if err := m.publicClient.RemoveAccount(*act); err != nil {
+		if err := m.publicClient.RemoveAccount(ctx, *act); err != nil {
 			return fmt.Errorf("removing account from msal cache: %w", err)
 		}
 	}
@@ -579,7 +604,7 @@ func (m *Manager) saveLoginForServicePrincipal(tenantId, clientId string, secret
 // getSignedInAccount fetches the public.Account for the signed in user, or nil if one does not exist
 // (e.g when logged in with a service principal).
 func (m *Manager) getSignedInAccount(ctx context.Context) (*public.Account, error) {
-	cfg, err := m.userConfigManager.Load()
+	cfg, err := m.readAuthConfig()
 	if err != nil {
 		return nil, fmt.Errorf("fetching current user: %w", err)
 	}
@@ -590,7 +615,11 @@ func (m *Manager) getSignedInAccount(ctx context.Context) (*public.Account, erro
 	}
 
 	if currentUser.HomeAccountID != nil {
-		for _, account := range m.publicClient.Accounts() {
+		accounts, err := m.publicClient.Accounts(ctx)
+		if err != nil {
+			return nil, err
+		}
+		for _, account := range accounts {
 			if account.HomeAccountID == *currentUser.HomeAccountID {
 				return &account, nil
 			}

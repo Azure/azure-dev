@@ -8,7 +8,7 @@ import (
 	"os"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appplatform/armappplatform"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appplatform/armappplatform/v2"
 	"github.com/Azure/azure-storage-file-go/azfile"
 	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
@@ -69,12 +69,12 @@ func NewSpringService(
 	return &springService{
 		credentialProvider: credentialProvider,
 		httpClient:         httpClient,
-		userAgent:          azdinternal.MakeUserAgentString(""),
+		userAgent:          azdinternal.UserAgent(),
 	}
 }
 
 type SpringAppProperties struct {
-	Fqdn []string
+	Url []string
 }
 
 func (ss *springService) GetSpringAppProperties(
@@ -91,16 +91,17 @@ func (ss *springService) GetSpringAppProperties(
 		return nil, fmt.Errorf("failed retrieving spring app properties: %w", err)
 	}
 
-	var fqdn []string
+	var url []string
 	if springApp.Properties != nil &&
-		springApp.Properties.Fqdn != nil {
-		fqdn = []string{*springApp.Properties.Fqdn}
+		springApp.Properties.URL != nil &&
+		*springApp.Properties.Public {
+		url = []string{*springApp.Properties.URL}
 	} else {
-		fqdn = []string{}
+		url = []string{}
 	}
 
 	return &SpringAppProperties{
-		Fqdn: fqdn,
+		Url: url,
 	}, nil
 }
 

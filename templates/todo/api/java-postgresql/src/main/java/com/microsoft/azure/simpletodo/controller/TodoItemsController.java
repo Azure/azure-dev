@@ -21,7 +21,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.util.CollectionUtils;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.servlet.support.ServletUriComponentsBuilder;
-import javax.transaction.Transactional;
+import jakarta.transaction.Transactional;
 
 @RestController
 @Transactional

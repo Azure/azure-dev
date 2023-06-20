@@ -213,7 +213,7 @@ func (rm *AzureResourceManager) FindResourceGroupForEnvironment(
 	}
 
 	return "", fmt.Errorf(
-		"%s please explicitly specify your resource group in azure.yaml or the AZURE_RESOURCE_GROUP environment variable",
+		"%s explicitly specify your resource group in azure.yaml or the AZURE_RESOURCE_GROUP environment variable",
 		msg,
 	)
 }

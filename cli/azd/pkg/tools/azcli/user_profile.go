@@ -24,7 +24,7 @@ func NewUserProfileService(
 	credentialProvider auth.MultiTenantCredentialProvider,
 	httpClient httputil.HttpClient) *UserProfileService {
 	return &UserProfileService{
-		userAgent:          azdinternal.MakeUserAgentString(""),
+		userAgent:          azdinternal.UserAgent(),
 		httpClient:         httpClient,
 		credentialProvider: credentialProvider,
 	}

@@ -238,12 +238,12 @@ func findProjectFile(serviceName string, projectPath string) (string, error) {
 	}
 	if len(files) == 0 {
 		return "", fmt.Errorf(
-			"could not locate a dotnet project file for service %s in %s. Please update the project setting of "+
+			"could not locate a dotnet project file for service %s in %s. Update the project setting of "+
 				"azure.yaml for service %s to be the path to the dotnet project for this service",
 			serviceName, projectPath, serviceName)
 	} else if len(files) > 1 {
 		return "", fmt.Errorf(
-			"could not locate a dotnet project file for service %s in %s. Multiple project files exist. Please update "+
+			"could not locate a dotnet project file for service %s in %s. Multiple project files exist. Update "+
 				"the \"project\" setting of azure.yaml for service %s to be the path to the dotnet project to use for this "+
 				"service",
 			serviceName, projectPath, serviceName)

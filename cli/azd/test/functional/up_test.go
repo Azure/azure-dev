@@ -15,6 +15,9 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
+	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
@@ -88,7 +91,7 @@ func Test_CLI_Up_Down_WebApp(t *testing.T) {
 	err = probeServiceHealth(t, ctx, url, expectedTestAppResponse)
 	require.NoError(t, err)
 
-	commandRunner := exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
+	commandRunner := exec.NewCommandRunner(nil)
 	runArgs := newRunArgs("dotnet", "user-secrets", "list", "--project", filepath.Join(dir, "/src/dotnet/webapp.csproj"))
 	secrets, err := commandRunner.Run(ctx, runArgs)
 	require.NoError(t, err)
@@ -107,7 +110,7 @@ func Test_CLI_Up_Down_WebApp(t *testing.T) {
 	secrets, err = commandRunner.Run(ctx, runArgs)
 	require.NoError(t, err)
 
-	_, err = cli.RunCommand(ctx, "env", "refresh")
+	_, err = cli.RunCommand(ctx, "env", "refresh", envName)
 	require.NoError(t, err)
 
 	env, err = godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
@@ -254,6 +257,74 @@ func Test_CLI_Up_Down_ContainerApp(t *testing.T) {
 
 	err = probeServiceHealth(t, ctx, url, expectedTestAppResponse)
 	require.NoError(t, err)
+
+	_, err = cli.RunCommand(ctx, "infra", "delete", "--force", "--purge")
+	require.NoError(t, err)
+
+	// As part of deleting the infrastructure, outputs of the infrastructure such as "WEBSITE_URL" should
+	// have been removed from the environment.
+	env, err = godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
+	require.NoError(t, err)
+
+	_, has = env["WEBSITE_URL"]
+	require.False(t, has, "WEBSITE_URL should have been removed from the environment as part of infrastructure removal")
+}
+
+func Test_CLI_Up_ResourceGroupScope(t *testing.T) {
+	t.Setenv("AZD_ALPHA_ENABLE_RESOURCEGROUPDEPLOYMENTS", "true")
+
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
+	t.Logf("DIR: %s", dir)
+
+	envName := randomEnvName()
+	t.Logf("AZURE_ENV_NAME: %s", envName)
+
+	resourceGroupName := fmt.Sprintf("rg-%s", envName)
+
+	cred, err := azidentity.NewAzureCLICredential(nil)
+	require.NoError(t, err)
+
+	rgClient, err := armresources.NewResourceGroupsClient(cfg.SubscriptionID, cred, nil)
+	require.NoError(t, err)
+
+	_, err = rgClient.CreateOrUpdate(context.Background(), resourceGroupName, armresources.ResourceGroup{
+		Name:     to.Ptr(resourceGroupName),
+		Location: to.Ptr("eastus2"),
+		Tags: map[string]*string{
+			"DeleteAfter": to.Ptr(time.Now().Add(60 * time.Minute).UTC().Format(time.RFC3339)),
+		},
+	}, nil)
+
+	require.NoError(t, err)
+
+	cli := azdcli.NewCLI(t)
+	cli.WorkingDirectory = dir
+	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
+
+	err = copySample(dir, "storage-rg")
+	require.NoError(t, err, "failed expanding sample")
+
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
+	require.NoError(t, err)
+
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "env", "set", "AZURE_RESOURCE_GROUP", resourceGroupName)
+	require.NoError(t, err)
+
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "infra", "create")
+	require.NoError(t, err)
+
+	// The sample outputs the ID of the storage account it created, let's make sure that resource is in the resource
+	// group we created (by looking at the resourceGroup component in the id)
+	env, err := godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
+	require.NoError(t, err)
+
+	storageAccountId, has := env["STORAGE_ACCOUNT_ID"]
+	require.True(t, has)
+
+	require.Contains(t, strings.ToLower(storageAccountId), fmt.Sprintf("/resourcegroups/%s/", resourceGroupName))
 
 	_, err = cli.RunCommand(ctx, "infra", "delete", "--force", "--purge")
 	require.NoError(t, err)

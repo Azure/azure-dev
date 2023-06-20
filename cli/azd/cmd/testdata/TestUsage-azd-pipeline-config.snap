@@ -1,19 +1,21 @@
 
-Create and configure your deployment pipeline by using GitHub or Azure Pipelines.
+Configure your deployment pipeline to connect securely to Azure
 
-  • By default, pipeline config will configure and set deployment pipeline variables using the current environment. To configure for a new or a different existing environment, use the '-e' flag.
+  • Supports GitHub Actions and Azure Pipelines. To configure using a specific pipeline provider, provide a value for the '--provider' flag.
+  • pipeline config creates or uses a service principal on the Azure subscription to create a secure connection between your deployment pipeline and Azure.
+  • By default, pipeline config will set deployment pipeline variables and secrets using the current environment. To configure for a new or an existing environment, provide a value for the '-e' flag.
 
 Usage
   azd pipeline config [flags]
 
 Flags
-        --auth-type string      	: The authentication type used between the pipeline provider and Azure for deployment (Only valid for GitHub provider). Valid values: federated, client-credentials.
-    -e, --environment string    	: The name of the environment to use.
-    -h, --help                  	: Gets help for config.
-        --principal-name string 	: The name of the service principal to use to grant access to Azure resources as part of the pipeline.
-        --principal-role string 	: The role to assign to the service principal.
-        --provider string       	: The pipeline provider to use (github for Github Actions and azdo for Azure Pipelines).
-        --remote-name string    	: The name of the git remote to configure the pipeline to run on.
+        --auth-type string           	: The authentication type used between the pipeline provider and Azure for deployment (Only valid for GitHub provider). Valid values: federated, client-credentials.
+    -e, --environment string         	: The name of the environment to use.
+    -h, --help                       	: Gets help for config.
+        --principal-name string      	: The name of the service principal to use to grant access to Azure resources as part of the pipeline.
+        --principal-role stringArray 	: The roles to assign to the service principal. By default the service principal will be granted the Contributor and User Access Administrator roles.
+        --provider string            	: The pipeline provider to use (github for Github Actions and azdo for Azure Pipelines).
+        --remote-name string         	: The name of the git remote to configure the pipeline to run on.
 
 Global Flags
     -C, --cwd string 	: Sets the current working directory.
@@ -21,10 +23,13 @@ Global Flags
         --no-prompt  	: Accepts the default value instead of prompting, or it fails if there is no default.
 
 Examples
-  Set up a deployment pipeline for 'app-test' environment
+  Configure a deployment pipeline for 'app-test' environment
     azd pipeline config -e app-test
 
-  Set up a deployment pipeline for 'app-test' environment on Azure Pipelines.
+  Configure a deployment pipeline for 'app-test' environment on Azure Pipelines.
     azd pipeline config -e app-test --provider azdo
+
+  Configure a deployment pipeline using an existing service principal
+    azd pipeline config --principal-name [Principal name]
 
 

@@ -41,7 +41,7 @@ func Test_Initializer_Initialize(t *testing.T) {
 			ctx := context.Background()
 			azdCtx := azdcontext.NewAzdContextWithDirectory(projectDir)
 			console := mockinput.NewMockConsole()
-			realRunner := exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
+			realRunner := exec.NewCommandRunner(nil)
 			mockRunner := mockexec.NewMockCommandRunner()
 			mockRunner.When(func(args exec.RunArgs, command string) bool { return true }).
 				RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
@@ -50,7 +50,7 @@ func Test_Initializer_Initialize(t *testing.T) {
 						stagingDir := args.Args[len(args.Args)-1]
 						copyTemplate(t, testDataPath(tt.templateDir), stagingDir)
 
-						gitArgs := exec.NewRunArgs("git", "-C", stagingDir).WithEnrichError(true)
+						gitArgs := exec.NewRunArgs("git", "-C", stagingDir)
 
 						// Mock clone by creating a git repository locally
 						_, err := realRunner.Run(ctx, gitArgs.AppendParams("init"))
@@ -128,7 +128,7 @@ func Test_Initializer_InitializeWithOverwritePrompt(t *testing.T) {
 				return strings.Contains(options.Message, "What would you like to do with these files?")
 			}).Respond(tt.selection)
 
-			realRunner := exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
+			realRunner := exec.NewCommandRunner(nil)
 			mockRunner := mockexec.NewMockCommandRunner()
 			mockRunner.When(func(args exec.RunArgs, command string) bool { return true }).
 				RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
@@ -341,7 +341,7 @@ func Test_Initializer_WriteCoreAssets(t *testing.T) {
 			}
 
 			console := mockinput.NewMockConsole()
-			realRunner := exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
+			realRunner := exec.NewCommandRunner(nil)
 			i := NewInitializer(console, git.NewGitCli(realRunner))
 			err := i.writeCoreAssets(context.Background(), azdCtx)
 			require.NoError(t, err)

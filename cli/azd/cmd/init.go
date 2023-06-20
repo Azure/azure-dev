@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -171,10 +172,16 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, environment.NewEnvironmentInitError(envName)
 	}
 
+	suggest := environment.CleanName(filepath.Base(wd) + "-dev")
+	if len(suggest) > environment.EnvironmentNameMaxLength {
+		suggest = suggest[len(suggest)-environment.EnvironmentNameMaxLength:]
+	}
+
 	envSpec := environmentSpec{
 		environmentName: i.flags.environmentName,
 		subscription:    i.flags.subscription,
 		location:        i.flags.location,
+		suggest:         suggest,
 	}
 
 	env, err := createEnvironment(ctx, envSpec, azdCtx, i.console)
@@ -186,9 +193,6 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, fmt.Errorf("saving default environment: %w", err)
 	}
 
-	//nolint:lll
-	azdTrustNotice := "https://learn.microsoft.com/azure/developer/azure-developer-cli/azd-templates#guidelines-for-using-azd-templates"
-
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
 			Header: "New project initialized!",
@@ -196,14 +200,23 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			You can view the template code in your directory: %s
 			Learn more about running 3rd party code on our DevHub: %s`,
 				output.WithLinkFormat("%s", wd),
-				output.WithLinkFormat("%s", azdTrustNotice)),
+				output.WithLinkFormat("%s", "https://aka.ms/azd-third-party-code-notice")),
 		},
 	}, nil
 }
 
-func getCmdInitHelpDescription(c *cobra.Command) string {
+func getCmdInitHelpDescription(*cobra.Command) string {
 	return generateCmdHelpDescription("Initialize a new application in your current directory.",
-		getCmdHelpDescriptionNoteForInit(c))
+		[]string{
+			formatHelpNote(
+				fmt.Sprintf("Running %s without a template will prompt "+
+					"you to start with a minimal template or select from a curated list of presets.",
+					output.WithHighLightFormat("init"),
+				)),
+			formatHelpNote(
+				"To view all available sample templates, including those submitted by the azd community, visit: " +
+					output.WithLinkFormat("https://azure.github.io/awesome-azd") + "."),
+		})
 }
 
 func getCmdInitHelpFooter(*cobra.Command) string {

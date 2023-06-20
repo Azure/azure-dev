@@ -27,6 +27,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -43,10 +44,52 @@ import (
 	"golang.org/x/exp/slices"
 )
 
-const (
-	testSubscriptionId = "2cd617ea-1866-46b1-90e3-fffb087ebf9b"
-	defaultLocation    = "eastus2"
-)
+// The current running configuration for the test suite.
+var cfg = config{}
+
+func init() {
+	cfg.init()
+}
+
+// Configuration for the test suite.
+type config struct {
+	// If true, the test is running in CI.
+	// This can be used to ensure tests that are skipped locally (due to complex setup), always strictly run in CI.
+	CI bool
+
+	// The client ID to use for live Azure tests.
+	ClientID string
+	// The client secret to use for live Azure tests.
+	ClientSecret string
+	// The tenant ID to use for live Azure tests.
+	TenantID string
+	// The Azure subscription ID to use for live Azure tests.
+	SubscriptionID string
+	// The Azure location to use for live Azure tests.
+	Location string
+}
+
+func (c *config) init() {
+	c.CI = os.Getenv("CI") != ""
+	c.ClientID = os.Getenv("AZD_TEST_CLIENT_ID")
+	c.ClientSecret = os.Getenv("AZD_TEST_CLIENT_SECRET")
+	c.TenantID = os.Getenv("AZD_TEST_TENANT_ID")
+	c.SubscriptionID = os.Getenv("AZD_TEST_AZURE_SUBSCRIPTION_ID")
+	c.Location = os.Getenv("AZD_TEST_AZURE_LOCATION")
+}
+
+func TestMain(m *testing.M) {
+	flag.Parse()
+
+	shortFlag := flag.Lookup("test.short")
+	if shortFlag != nil && shortFlag.Value.String() == "true" {
+		log.Println("Skipping tests in short mode")
+		os.Exit(0)
+	}
+
+	exitVal := m.Run()
+	os.Exit(exitVal)
+}
 
 func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 	// running this test in parallel is ok as it uses a t.TempDir()
@@ -79,7 +122,7 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 
 	// AZURE_STORAGE_ACCOUNT_NAME is an output of the template, make sure it was added to the .env file.
 	// the name should start with 'st'
-	accountName, ok := env.Values["AZURE_STORAGE_ACCOUNT_NAME"]
+	accountName, ok := env.Dotenv()["AZURE_STORAGE_ACCOUNT_NAME"]
 	require.True(t, ok)
 	require.Regexp(t, `st\S*`, accountName)
 
@@ -140,7 +183,7 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 
 	// AZURE_STORAGE_ACCOUNT_NAME is an output of the template, make sure it was added to the .env file.
 	// the name should start with 'st'
-	accountName, ok := env.Values["AZURE_STORAGE_ACCOUNT_NAME"]
+	accountName, ok := env.Dotenv()["AZURE_STORAGE_ACCOUNT_NAME"]
 	require.True(t, ok)
 	require.Regexp(t, `st\S*`, accountName)
 
@@ -268,8 +311,12 @@ func Test_CLI_ProvisionIsNeeded(t *testing.T) {
 	}
 }
 
+// Test_CLI_NoDebugSpewWhenHelpPassedWithoutDebug ensures that no debug spew is written to stderr when --help is passed
 func Test_CLI_NoDebugSpewWhenHelpPassedWithoutDebug(t *testing.T) {
 	cli := azdcli.NewCLI(t)
+	// Update checks are one of the things that can write to stderr. Disable it since it's not relevant to this test.
+	cli.Env = append(cli.Env, os.Environ()...)
+	cli.Env = append(cli.Env, "AZD_SKIP_UPDATE_CHECK=true")
 	ctx := context.Background()
 	result, err := cli.RunCommand(ctx, "--help")
 	require.NoError(t, err)
@@ -422,14 +469,14 @@ func Test_CLI_InfraCreateAndDeleteResourceTerraformRemote(t *testing.T) {
 	require.NoError(t, err, "failed expanding sample")
 
 	//Create remote state resources
-	commandRunner := exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
+	commandRunner := exec.NewCommandRunner(nil)
 	runArgs := newRunArgs("az", "group", "create", "--name", backendResourceGroupName, "--location", location)
 
 	_, err = commandRunner.Run(ctx, runArgs)
 	require.NoError(t, err)
 
 	defer func() {
-		commandRunner := exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
+		commandRunner := exec.NewCommandRunner(nil)
 		runArgs := newRunArgs("az", "group", "delete", "--name", backendResourceGroupName, "--yes")
 		_, err = commandRunner.Run(ctx, runArgs)
 		require.NoError(t, err)
@@ -452,6 +499,7 @@ func Test_CLI_InfraCreateAndDeleteResourceTerraformRemote(t *testing.T) {
 	// Create storage container
 	runArgs = newRunArgs("az", "storage", "container", "create", "--name", backendContainerName,
 		"--account-name", backendStorageAccountName, "--account-key", storageAccountKey)
+	runArgs.SensitiveData = append(runArgs.SensitiveData, storageAccountKey)
 	result, err := commandRunner.Run(ctx, runArgs)
 	_ = result
 	require.NoError(t, err)
@@ -485,20 +533,7 @@ func Test_CLI_InfraCreateAndDeleteResourceTerraformRemote(t *testing.T) {
 }
 
 func newRunArgs(cmd string, args ...string) exec.RunArgs {
-	runArgs := exec.NewRunArgs(cmd, args...)
-	return runArgs.WithEnrichError(true)
-}
-
-func TestMain(m *testing.M) {
-	flag.Parse()
-	shortFlag := flag.Lookup("test.short")
-	if shortFlag != nil && shortFlag.Value.String() == "true" {
-		log.Println("Skipping tests in short mode")
-		os.Exit(0)
-	}
-
-	exitVal := m.Run()
-	os.Exit(exitVal)
+	return exec.NewRunArgs(cmd, args...)
 }
 
 // TempDirWithDiagnostics creates a temp directory with cleanup that also provides additional
@@ -533,7 +568,7 @@ func logHandles(t *testing.T, path string) {
 	}
 
 	args := exec.NewRunArgs(handle, path, "-nobanner")
-	cmd := exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
+	cmd := exec.NewCommandRunner(nil)
 	rr, err := cmd.Run(context.Background(), args)
 	if err != nil {
 		t.Logf("handle.exe failed. stdout: %s, stderr: %s\n", rr.Stdout, rr.Stderr)
@@ -546,8 +581,7 @@ func logHandles(t *testing.T, path string) {
 	_ = telemetry.GetTelemetrySystem()
 
 	// Log this to telemetry for ease of correlation
-	tracer := telemetry.GetTracer()
-	_, span := tracer.Start(context.Background(), "test.file_cleanup_failure")
+	_, span := tracing.Start(context.Background(), "test.file_cleanup_failure")
 	span.SetAttributes(attribute.String("handle.stdout", rr.Stdout))
 	span.SetAttributes(attribute.String("ci.build.number", os.Getenv("BUILD_BUILDNUMBER")))
 	span.End()
@@ -585,8 +619,8 @@ func assertEnvValuesStored(t *testing.T, env *environment.Environment) {
 	primitives := []string{"STRING", "BOOL", "INT"}
 
 	for k, v := range expectedEnv {
-		assert.Contains(t, env.Values, k)
-		actual := env.Values[k]
+		actual, has := env.Dotenv()[k]
+		assert.True(t, has)
 
 		if slices.Contains(primitives, k) {
 			assert.Equal(t, v, actual)

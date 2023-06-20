@@ -1,15 +1,6 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-// Package bicep contains an implementation of provider.Provider for Bicep. This
-// provider is registered for use when this package is imported, and can be imported for
-// side effects only to register the provider, e.g.:
-//
-// require(
-//
-//	_ "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
-//
-// )
 package bicep
 
 import (
@@ -28,17 +19,18 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
-	"github.com/azure/azure-dev/cli/azd/pkg/async"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/cmdsubst"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
+	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
@@ -64,15 +56,22 @@ type BicepDeploymentDetails struct {
 
 // BicepProvider exposes infrastructure provisioning using Azure Bicep templates
 type BicepProvider struct {
-	env          *environment.Environment
-	projectPath  string
-	options      Options
-	console      input.Console
-	bicepCli     bicep.BicepCli
-	azCli        azcli.AzCli
-	prompters    Prompters
-	curPrincipal CurrentPrincipalIdProvider
+	env                 *environment.Environment
+	projectPath         string
+	options             Options
+	console             input.Console
+	bicepCli            bicep.BicepCli
+	azCli               azcli.AzCli
+	prompters           prompt.Prompter
+	curPrincipal        CurrentPrincipalIdProvider
+	alphaFeatureManager *alpha.FeatureManager
+	clock               clock.Clock
 }
+
+var ErrResourceGroupScopeNotSupported = fmt.Errorf(
+	"resource group scoped deployments are currently under alpha support and need to be explicitly enabled."+
+		" Run `%s` to enable this feature.", alpha.GetEnableCommand(ResourceGroupDeploymentFeature),
+)
 
 // Name gets the name of the infra provider
 func (p *BicepProvider) Name() string {
@@ -83,115 +82,158 @@ func (p *BicepProvider) RequiredExternalTools() []tools.ExternalTool {
 	return []tools.ExternalTool{}
 }
 
-func (p *BicepProvider) EnsureConfigured(ctx context.Context) error {
-	return p.prompters.EnsureSubscriptionLocation(ctx, p.env)
+func (p *BicepProvider) Initialize(ctx context.Context, projectPath string, options Options) error {
+	if strings.TrimSpace(options.Module) == "" {
+		options.Module = DefaultModule
+	}
+
+	p.projectPath = projectPath
+	p.options = options
+
+	requiredTools := p.RequiredExternalTools()
+	if err := tools.EnsureInstalled(ctx, requiredTools...); err != nil {
+		return err
+	}
+
+	return p.prompters.EnsureEnv(ctx)
 }
 
-func (p *BicepProvider) State(
-	ctx context.Context,
-) *async.InteractiveTaskWithProgress[*StateResult, *StateProgress] {
-	return async.RunInteractiveTaskWithProgress(
-		func(asyncContext *async.InteractiveTaskContextWithProgress[*StateResult, *StateProgress]) {
-			scope := infra.NewSubscriptionScope(
-				p.azCli,
-				p.env.GetSubscriptionId(),
-			)
+func (p *BicepProvider) State(ctx context.Context) (*StateResult, error) {
+	var err error
+	spinnerMessage := "Loading Bicep template"
+	// TODO: Report progress, "Loading Bicep template"
+	p.console.ShowSpinner(ctx, spinnerMessage, input.Step)
+	defer func() {
+		// Make sure we stop the spinner if an error occurs with the last message.
+		if err != nil {
+			p.console.StopSpinner(ctx, spinnerMessage, input.StepFailed)
+		}
+	}()
 
-			asyncContext.SetProgress(&StateProgress{Message: "Loading Bicep template", Timestamp: time.Now()})
-			modulePath := p.modulePath()
-			_, template, err := p.compileBicep(ctx, modulePath)
-			if err != nil {
-				asyncContext.SetError(fmt.Errorf("compiling bicep template: %w", err))
-				return
-			}
+	modulePath := p.modulePath()
+	_, template, err := p.compileBicep(ctx, modulePath)
+	if err != nil {
+		return nil, fmt.Errorf("compiling bicep template: %w", err)
+	}
 
-			asyncContext.SetProgress(&StateProgress{Message: "Retrieving Azure deployment", Timestamp: time.Now()})
-			armDeployment, err := latestCompletedDeployment(ctx, p.env.GetEnvName(), scope)
-			if err != nil {
-				asyncContext.SetError(fmt.Errorf("retrieving deployment: %w", err))
-				return
-			}
+	scope, err := p.scopeForTemplate(ctx, template)
+	if err != nil {
+		return nil, fmt.Errorf("computing deployment scope: %w", err)
+	}
 
-			state := State{}
-			state.Resources = make([]Resource, len(armDeployment.Properties.OutputResources))
+	// TODO: Report progress, "Retrieving Azure deployment"
+	spinnerMessage = "Retrieving Azure deployment"
+	p.console.ShowSpinner(ctx, spinnerMessage, input.Step)
 
-			for idx, res := range armDeployment.Properties.OutputResources {
-				state.Resources[idx] = Resource{
-					Id: *res.ID,
-				}
-			}
+	armDeployment, err := latestCompletedDeployment(ctx, p.env.GetEnvName(), scope)
+	if err != nil {
+		return nil, fmt.Errorf("retrieving deployment: %w", err)
+	}
 
-			asyncContext.SetProgress(&StateProgress{Message: "Normalizing output parameters", Timestamp: time.Now()})
-			state.Outputs = p.createOutputParameters(
-				template.Outputs,
-				azcli.CreateDeploymentOutput(armDeployment.Properties.Outputs),
-			)
+	state := State{}
+	state.Resources = make([]Resource, len(armDeployment.Properties.OutputResources))
 
-			result := StateResult{
-				State: &state,
-			}
+	for idx, res := range armDeployment.Properties.OutputResources {
+		state.Resources[idx] = Resource{
+			Id: *res.ID,
+		}
+	}
 
-			asyncContext.SetResult(&result)
-		})
+	// TODO: Report progress, "Normalizing output parameters"
+	spinnerMessage = "Normalizing output parameters"
+	p.console.ShowSpinner(ctx, spinnerMessage, input.Step)
+
+	state.Outputs = p.createOutputParameters(
+		template.Outputs,
+		azcli.CreateDeploymentOutput(armDeployment.Properties.Outputs),
+	)
+
+	return &StateResult{
+		State: &state,
+	}, nil
 }
+
+var ResourceGroupDeploymentFeature = alpha.MustFeatureKey("resourceGroupDeployments")
 
 // Plans the infrastructure provisioning
-func (p *BicepProvider) Plan(
-	ctx context.Context,
-) *async.InteractiveTaskWithProgress[*DeploymentPlan, *DeploymentPlanningProgress] {
-	return async.RunInteractiveTaskWithProgress(
-		func(asyncContext *async.InteractiveTaskContextWithProgress[*DeploymentPlan, *DeploymentPlanningProgress]) {
-			p.console.ShowSpinner(ctx, "Creating a deployment plan", input.Step)
-			asyncContext.SetProgress(
-				&DeploymentPlanningProgress{Message: "Generating Bicep parameters file", Timestamp: time.Now()},
-			)
+func (p *BicepProvider) Plan(ctx context.Context) (*DeploymentPlan, error) {
+	p.console.ShowSpinner(ctx, "Creating a deployment plan", input.Step)
+	// TODO: Report progress, "Generating Bicep parameters file"
 
-			parameters, err := p.loadParameters(ctx, asyncContext)
+	parameters, err := p.loadParameters(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("creating parameters file: %w", err)
+	}
+
+	modulePath := p.modulePath()
+	// TODO: Report progress, "Compiling Bicep template"
+	rawTemplate, template, err := p.compileBicep(ctx, modulePath)
+	if err != nil {
+		return nil, fmt.Errorf("creating template: %w", err)
+	}
+
+	configuredParameters, err := p.ensureParameters(ctx, template, parameters)
+	if err != nil {
+		return nil, err
+	}
+
+	deployment, err := p.convertToDeployment(template)
+	if err != nil {
+		return nil, err
+	}
+
+	deploymentScope, err := template.TargetScope()
+	if err != nil {
+		return nil, err
+	}
+
+	var target infra.Deployment
+
+	if deploymentScope == azure.DeploymentScopeSubscription {
+		target = infra.NewSubscriptionDeployment(
+			p.azCli,
+			p.env.GetLocation(),
+			p.env.GetSubscriptionId(),
+			deploymentNameForEnv(p.env.GetEnvName(), p.clock),
+		)
+	} else if deploymentScope == azure.DeploymentScopeResourceGroup {
+		if !p.alphaFeatureManager.IsEnabled(ResourceGroupDeploymentFeature) {
+			return nil, ErrResourceGroupScopeNotSupported
+		}
+
+		p.console.WarnForFeature(ctx, ResourceGroupDeploymentFeature)
+
+		if p.env.Getenv(environment.ResourceGroupEnvVarName) == "" {
+			rgName, err := p.prompters.PromptResourceGroup(ctx)
 			if err != nil {
-				asyncContext.SetError(fmt.Errorf("creating parameters file: %w", err))
-				return
+				return nil, err
 			}
 
-			modulePath := p.modulePath()
-			asyncContext.SetProgress(&DeploymentPlanningProgress{Message: "Compiling Bicep template", Timestamp: time.Now()})
-			rawTemplate, template, err := p.compileBicep(ctx, modulePath)
-			if err != nil {
-				asyncContext.SetError(fmt.Errorf("creating template: %w", err))
-				return
+			p.env.DotenvSet(environment.ResourceGroupEnvVarName, rgName)
+			if err := p.env.Save(); err != nil {
+				return nil, fmt.Errorf("saving environment: %w", err)
 			}
+		}
 
-			configuredParameters, err := p.ensureParameters(ctx, asyncContext, template, parameters)
-			if err != nil {
-				asyncContext.SetError(err)
-				return
-			}
+		target = infra.NewResourceGroupDeployment(
+			p.azCli,
+			p.env.GetSubscriptionId(),
+			p.env.Getenv(environment.ResourceGroupEnvVarName),
+			deploymentNameForEnv(p.env.GetEnvName(), p.clock),
+		)
+	} else {
+		return nil, fmt.Errorf("unsupported scope: %s", deploymentScope)
+	}
 
-			deployment, err := p.convertToDeployment(template)
-			if err != nil {
-				asyncContext.SetError(err)
-				return
-			}
-
-			target := infra.NewSubscriptionDeployment(
-				p.azCli,
-				p.env.GetLocation(),
-				p.env.GetSubscriptionId(),
-				deploymentNameForEnv(p.env.GetEnvName(), clock.New()),
-			)
-
-			result := DeploymentPlan{
-				Deployment: *deployment,
-				Details: BicepDeploymentDetails{
-					Template:        rawTemplate,
-					TemplateOutputs: template.Outputs,
-					Parameters:      configuredParameters,
-					Target:          target,
-				},
-			}
-			// remove the spinner with no message as no message is expected
-			p.console.StopSpinner(ctx, "", input.StepDone)
-			asyncContext.SetResult(&result)
-		})
+	return &DeploymentPlan{
+		Deployment: *deployment,
+		Details: BicepDeploymentDetails{
+			Template:        rawTemplate,
+			TemplateOutputs: template.Outputs,
+			Parameters:      configuredParameters,
+			Target:          target,
+		},
+	}, nil
 }
 
 // cArmDeploymentNameLengthMax is the maximum length of the name of a deployment in ARM.
@@ -210,181 +252,283 @@ func deploymentNameForEnv(envName string, clock clock.Clock) string {
 }
 
 // Provisioning the infrastructure within the specified template
-func (p *BicepProvider) Deploy(
-	ctx context.Context,
-	pd *DeploymentPlan,
-) *async.InteractiveTaskWithProgress[*DeployResult, *DeployProgress] {
-	return async.RunInteractiveTaskWithProgress(
-		func(asyncContext *async.InteractiveTaskContextWithProgress[*DeployResult, *DeployProgress]) {
-			done := make(chan bool)
+func (p *BicepProvider) Deploy(ctx context.Context, pd *DeploymentPlan) (*DeployResult, error) {
+	done := make(chan bool)
 
-			// Ensure the done marker channel is sent in all conditions
-			defer func() {
-				done <- true
-			}()
+	// Ensure the done marker channel is sent in all conditions
+	defer func() {
+		done <- true
+	}()
 
-			bicepDeploymentData := pd.Details.(BicepDeploymentDetails)
+	bicepDeploymentData := pd.Details.(BicepDeploymentDetails)
 
-			// Report incremental progress
-			go func() {
-				resourceManager := infra.NewAzureResourceManager(p.azCli)
-				progressDisplay := NewProvisioningProgressDisplay(resourceManager, p.console, bicepDeploymentData.Target)
-				// Make initial delay shorter to be more responsive in displaying initial progress
-				initialDelay := 3 * time.Second
-				regularDelay := 10 * time.Second
-				timer := time.NewTimer(initialDelay)
-				queryStartTime := time.Now()
+	// Report incremental progress
+	go func() {
+		resourceManager := infra.NewAzureResourceManager(p.azCli)
+		progressDisplay := NewProvisioningProgressDisplay(resourceManager, p.console, bicepDeploymentData.Target)
+		// Make initial delay shorter to be more responsive in displaying initial progress
+		initialDelay := 3 * time.Second
+		regularDelay := 10 * time.Second
+		timer := time.NewTimer(initialDelay)
+		queryStartTime := time.Now()
 
-				for {
-					select {
-					case <-done:
-						timer.Stop()
-						return
-					case <-timer.C:
-						if progressReport, err := progressDisplay.ReportProgress(ctx, &queryStartTime); err == nil {
-							asyncContext.SetProgress(progressReport)
-						} else {
-							// We don't want to fail the whole deployment if a progress reporting error occurs
-							log.Printf("error while reporting progress: %s", err.Error())
-						}
-
-						timer.Reset(regularDelay)
-					}
-				}
-			}()
-
-			// Start the deployment
-			p.console.ShowSpinner(ctx, "Creating/Updating resources", input.Step)
-
-			deployResult, err := p.deployModule(
-				ctx,
-				bicepDeploymentData.Target,
-				bicepDeploymentData.Template,
-				bicepDeploymentData.Parameters,
-				map[string]*string{
-					azure.TagKeyAzdEnvName: to.Ptr(p.env.GetEnvName()),
-				},
-			)
-			if err != nil {
-				asyncContext.SetError(err)
+		for {
+			select {
+			case <-done:
+				timer.Stop()
 				return
+			case <-timer.C:
+				if err := progressDisplay.ReportProgress(ctx, &queryStartTime); err != nil {
+					// We don't want to fail the whole deployment if a progress reporting error occurs
+					log.Printf("error while reporting progress: %s", err.Error())
+				}
+
+				timer.Reset(regularDelay)
 			}
+		}
+	}()
 
-			deployment := pd.Deployment
-			deployment.Outputs = p.createOutputParameters(
-				bicepDeploymentData.TemplateOutputs,
-				azcli.CreateDeploymentOutput(deployResult.Properties.Outputs),
-			)
+	// Start the deployment
+	p.console.ShowSpinner(ctx, "Creating/Updating resources", input.Step)
 
-			result := &DeployResult{
-				Deployment: &deployment,
-			}
+	deployResult, err := p.deployModule(
+		ctx,
+		bicepDeploymentData.Target,
+		bicepDeploymentData.Template,
+		bicepDeploymentData.Parameters,
+		map[string]*string{
+			azure.TagKeyAzdEnvName: to.Ptr(p.env.GetEnvName()),
+		},
+	)
+	if err != nil {
+		return nil, err
+	}
 
-			asyncContext.SetResult(result)
-		})
+	deployment := pd.Deployment
+	deployment.Outputs = p.createOutputParameters(
+		bicepDeploymentData.TemplateOutputs,
+		azcli.CreateDeploymentOutput(deployResult.Properties.Outputs),
+	)
+
+	return &DeployResult{
+		Deployment: &deployment,
+	}, nil
 }
 
 type itemToPurge struct {
-	resourceType string
-	count        int
-	purge        func(skipPurge bool) error
+	resourceType      string
+	count             int
+	purge             func(skipPurge bool, self *itemToPurge) error
+	cognitiveAccounts []cognitiveAccount
+}
+
+func (p *BicepProvider) scopeForTemplate(ctx context.Context, t azure.ArmTemplate) (infra.Scope, error) {
+	deploymentScope, err := t.TargetScope()
+	if err != nil {
+		return nil, err
+	}
+
+	if deploymentScope == azure.DeploymentScopeSubscription {
+		return infra.NewSubscriptionScope(p.azCli, p.env.GetSubscriptionId()), nil
+	} else if deploymentScope == azure.DeploymentScopeResourceGroup {
+		if !p.alphaFeatureManager.IsEnabled(ResourceGroupDeploymentFeature) {
+			return nil, ErrResourceGroupScopeNotSupported
+		}
+
+		p.console.WarnForFeature(ctx, ResourceGroupDeploymentFeature)
+
+		if p.env.Getenv(environment.ResourceGroupEnvVarName) == "" {
+			rgName, err := p.prompters.PromptResourceGroup(ctx)
+			if err != nil {
+				return nil, err
+			}
+
+			p.env.DotenvSet(environment.ResourceGroupEnvVarName, rgName)
+			if err := p.env.Save(); err != nil {
+				return nil, fmt.Errorf("saving resource group name: %w", err)
+			}
+		}
+
+		return infra.NewResourceGroupScope(
+			p.azCli,
+			p.env.GetSubscriptionId(),
+			p.env.Getenv(environment.ResourceGroupEnvVarName),
+		), nil
+
+	} else {
+		return nil, fmt.Errorf("unsupported deployment scope: %s", deploymentScope)
+	}
+
 }
 
 // Destroys the specified deployment by deleting all azure resources, resource groups & deployments that are referenced.
-func (p *BicepProvider) Destroy(
-	ctx context.Context,
-	deployment *Deployment,
-	options DestroyOptions,
-) *async.InteractiveTaskWithProgress[*DestroyResult, *DestroyProgress] {
-	return async.RunInteractiveTaskWithProgress(
-		func(asyncContext *async.InteractiveTaskContextWithProgress[*DestroyResult, *DestroyProgress]) {
-			asyncContext.SetProgress(&DestroyProgress{Message: "Fetching resource groups", Timestamp: time.Now()})
-			rgsFromDeployment, err := p.getResourceGroupsFromLatestDeployment(ctx)
-			if err != nil {
-				asyncContext.SetError(err)
-				return
-			}
+func (p *BicepProvider) Destroy(ctx context.Context, options DestroyOptions) (*DestroyResult, error) {
+	modulePath := p.modulePath()
+	// TODO: Report progress, "Compiling Bicep template"
+	_, template, err := p.compileBicep(ctx, modulePath)
+	if err != nil {
+		return nil, fmt.Errorf("creating template: %w", err)
+	}
 
-			asyncContext.SetProgress(&DestroyProgress{Message: "Fetching resources", Timestamp: time.Now()})
-			groupedResources, err := p.getAllResourcesToDelete(ctx, rgsFromDeployment)
-			if err != nil {
-				asyncContext.SetError(fmt.Errorf("getting resources to delete: %w", err))
-				return
-			}
+	scope, err := p.scopeForTemplate(ctx, template)
+	if err != nil {
+		return nil, fmt.Errorf("computing deployment scope: %w", err)
+	}
 
-			allResources := []azcli.AzCliResource{}
-			for _, groupResources := range groupedResources {
-				allResources = append(allResources, groupResources...)
-			}
+	// TODO: Report progress, "Fetching resource groups"
+	deployment, err := latestCompletedDeployment(ctx, p.env.GetEnvName(), scope)
+	if err != nil {
+		return nil, err
+	}
 
-			asyncContext.SetProgress(&DestroyProgress{Message: "Getting Key Vaults to purge", Timestamp: time.Now()})
-			keyVaults, err := p.getKeyVaultsToPurge(ctx, groupedResources)
-			if err != nil {
-				asyncContext.SetError(fmt.Errorf("getting key vaults to purge: %w", err))
-				return
-			}
+	rgsFromDeployment := resourceGroupsFromDeployment(deployment)
 
-			asyncContext.SetProgress(&DestroyProgress{Message: "Getting App Configurations to purge", Timestamp: time.Now()})
-			appConfigs, err := p.getAppConfigsToPurge(ctx, groupedResources)
-			if err != nil {
-				asyncContext.SetError(fmt.Errorf("getting app configurations to purge: %w", err))
-				return
-			}
+	// TODO: Report progress, "Fetching resources"
+	groupedResources, err := p.getAllResourcesToDelete(ctx, rgsFromDeployment)
+	if err != nil {
+		return nil, fmt.Errorf("getting resources to delete: %w", err)
+	}
 
-			asyncContext.SetProgress(
-				&DestroyProgress{Message: "Getting API Management Services to purge", Timestamp: time.Now()},
-			)
-			apiManagements, err := p.getApiManagementsToPurge(ctx, groupedResources)
-			if err != nil {
-				asyncContext.SetError(fmt.Errorf("getting API managements to purge: %w", err))
-				return
-			}
+	allResources := []azcli.AzCliResource{}
+	for _, groupResources := range groupedResources {
+		allResources = append(allResources, groupResources...)
+	}
 
-			if err := p.destroyResourceGroups(ctx, options, groupedResources, len(allResources)); err != nil {
-				asyncContext.SetError(fmt.Errorf("deleting resource groups: %w", err))
-				return
-			}
+	// TODO: Report progress, "Getting Key Vaults to purge"
+	keyVaults, err := p.getKeyVaultsToPurge(ctx, groupedResources)
+	if err != nil {
+		return nil, fmt.Errorf("getting key vaults to purge: %w", err)
+	}
 
-			keyVaultsPurge := itemToPurge{
-				resourceType: "Key Vault(s)",
-				count:        len(keyVaults),
-				purge: func(skipPurge bool) error {
-					return p.purgeKeyVaults(ctx, keyVaults, options, skipPurge)
-				},
-			}
-			appConfigsPurge := itemToPurge{
-				resourceType: "App Configuration(s)",
-				count:        len(appConfigs),
-				purge: func(skipPurge bool) error {
-					return p.purgeAppConfigs(ctx, appConfigs, options, skipPurge)
-				},
-			}
-			aPIManagement := itemToPurge{
-				resourceType: "API Management(s)",
-				count:        len(apiManagements),
-				purge: func(skipPurge bool) error {
-					return p.purgeAPIManagement(ctx, apiManagements, options, skipPurge)
-				},
-			}
-			var purgeItem []itemToPurge
-			for _, item := range []itemToPurge{keyVaultsPurge, appConfigsPurge, aPIManagement} {
-				if item.count > 0 {
-					purgeItem = append(purgeItem, item)
-				}
-			}
+	// TODO: Report progress, "Getting Managed HSMs to purge"
+	managedHSMs, err := p.getManagedHSMsToPurge(ctx, groupedResources)
+	if err != nil {
+		return nil, fmt.Errorf("getting managed hsms to purge: %w", err)
+	}
 
-			if err := p.purgeItems(ctx, purgeItem, options); err != nil {
-				asyncContext.SetError(fmt.Errorf("purging resources: %w", err))
-				return
-			}
+	// TODO: Report progress, "Getting App Configurations to purge"
+	appConfigs, err := p.getAppConfigsToPurge(ctx, groupedResources)
+	if err != nil {
+		return nil, fmt.Errorf("getting app configurations to purge: %w", err)
+	}
 
-			destroyResult := DestroyResult{
-				Resources: allResources,
-				Outputs:   deployment.Outputs,
-			}
+	// TODO: Report progress, "Getting API Management Services to purge"
+	apiManagements, err := p.getApiManagementsToPurge(ctx, groupedResources)
+	if err != nil {
+		return nil, fmt.Errorf("getting API managements to purge: %w", err)
+	}
 
-			asyncContext.SetResult(&destroyResult)
-		})
+	// TODO: Report progress, "Getting Cognitive Accounts to purge"
+	cognitiveAccounts, err := p.getCognitiveAccountsToPurge(ctx, groupedResources)
+	if err != nil {
+		return nil, fmt.Errorf("getting cognitive accounts to purge: %w", err)
+	}
+
+	if err := p.destroyResourceGroups(ctx, options, groupedResources, len(allResources)); err != nil {
+		return nil, fmt.Errorf("deleting resource groups: %w", err)
+	}
+
+	keyVaultsPurge := itemToPurge{
+		resourceType: "Key Vault",
+		count:        len(keyVaults),
+		purge: func(skipPurge bool, self *itemToPurge) error {
+			return p.purgeKeyVaults(ctx, keyVaults, options, skipPurge)
+		},
+	}
+	managedHSMsPurge := itemToPurge{
+		resourceType: "Managed HSM",
+		count:        len(managedHSMs),
+		purge: func(skipPurge bool, self *itemToPurge) error {
+			return p.purgeManagedHSMs(ctx, managedHSMs, options, skipPurge)
+		},
+	}
+	appConfigsPurge := itemToPurge{
+		resourceType: "App Configuration",
+		count:        len(appConfigs),
+		purge: func(skipPurge bool, self *itemToPurge) error {
+			return p.purgeAppConfigs(ctx, appConfigs, options, skipPurge)
+		},
+	}
+	aPIManagement := itemToPurge{
+		resourceType: "API Management",
+		count:        len(apiManagements),
+		purge: func(skipPurge bool, self *itemToPurge) error {
+			return p.purgeAPIManagement(ctx, apiManagements, options, skipPurge)
+		},
+	}
+
+	var purgeItem []itemToPurge
+	for _, item := range []itemToPurge{keyVaultsPurge, managedHSMsPurge, appConfigsPurge, aPIManagement} {
+		if item.count > 0 {
+			purgeItem = append(purgeItem, item)
+		}
+	}
+
+	// cognitive services are grouped by resource group because the name of the resource group is required to purge
+	groupByKind := cognitiveAccountsByKind(cognitiveAccounts)
+	for name, cogAccounts := range groupByKind {
+		addPurgeItem := itemToPurge{
+			resourceType: name,
+			count:        len(cogAccounts),
+			purge: func(skipPurge bool, self *itemToPurge) error {
+				return p.purgeCognitiveAccounts(ctx, self.cognitiveAccounts, options, skipPurge)
+			},
+			cognitiveAccounts: groupByKind[name],
+		}
+		purgeItem = append(purgeItem, addPurgeItem)
+	}
+
+	if err := p.purgeItems(ctx, purgeItem, options); err != nil {
+		return nil, fmt.Errorf("purging resources: %w", err)
+	}
+
+	destroyResult := &DestroyResult{
+		InvalidatedEnvKeys: maps.Keys(p.createOutputParameters(
+			template.Outputs,
+			azcli.CreateDeploymentOutput(deployment.Properties.Outputs),
+		)),
+	}
+
+	// Since we have deleted the resource group, add AZURE_RESOURCE_GROUP to the list of invalidated env vars
+	// so it will be removed from the .env file.
+	if _, ok := scope.(*infra.ResourceGroupScope); ok {
+		destroyResult.InvalidatedEnvKeys = append(
+			destroyResult.InvalidatedEnvKeys, environment.ResourceGroupEnvVarName,
+		)
+	}
+
+	return destroyResult, nil
+}
+
+// A local type for adding the resource group to a cognitive account as it is required for purging
+type cognitiveAccount struct {
+	account       armcognitiveservices.Account
+	resourceGroup string
+}
+
+// transform a map of resourceGroup and accounts to group by kind in all resource groups but keeping the resource group
+// on each account
+func cognitiveAccountsByKind(
+	accountsByResourceGroup map[string][]armcognitiveservices.Account) map[string][]cognitiveAccount {
+	result := make(map[string][]cognitiveAccount)
+	for resourceGroup, cogAccounts := range accountsByResourceGroup {
+		for _, cogAccount := range cogAccounts {
+			kindName := *cogAccount.Kind
+			_, exists := result[kindName]
+			if exists {
+				result[kindName] = append(result[kindName], cognitiveAccount{
+					account:       cogAccount,
+					resourceGroup: resourceGroup,
+				})
+			} else {
+				result[kindName] = []cognitiveAccount{{
+					account:       cogAccount,
+					resourceGroup: resourceGroup,
+				}}
+			}
+		}
+	}
+	return result
 }
 
 // latestCompletedDeployment finds the most recent deployment the given environment in the provided scope,
@@ -433,12 +577,10 @@ func latestCompletedDeployment(
 	return nil, fmt.Errorf("no deployments found for environment %s", envName)
 }
 
-func (p *BicepProvider) getResourceGroupsFromLatestDeployment(ctx context.Context) ([]string, error) {
-	scope := infra.NewSubscriptionScope(p.azCli, p.env.GetSubscriptionId())
-	deployment, err := latestCompletedDeployment(ctx, p.env.GetEnvName(), scope)
-	if err != nil {
-		return []string{}, err
-	}
+// resourceGroupsFromDeployment returns the names of all the unique set of resource group name names resource groups from
+//
+//	the OutputResources section of a ARM deployment.
+func resourceGroupsFromDeployment(deployment *armresources.DeploymentExtended) []string {
 
 	// NOTE: it's possible for a deployment to list a resource group more than once. We're only interested in the
 	// unique set.
@@ -459,7 +601,7 @@ func (p *BicepProvider) getResourceGroupsFromLatestDeployment(ctx context.Contex
 		resourceGroupNames = append(resourceGroupNames, k)
 	}
 
-	return resourceGroupNames, nil
+	return resourceGroupNames
 }
 
 func (p *BicepProvider) getAllResourcesToDelete(
@@ -611,8 +753,8 @@ func (p *BicepProvider) purgeItems(
 			return err
 		}
 	}
-	for _, item := range items {
-		if err := item.purge(skipPurge); err != nil {
+	for index, item := range items {
+		if err := item.purge(skipPurge, &items[index]); err != nil {
 			return fmt.Errorf("failed to purge %s: %w", item.resourceType, err)
 		}
 	}
@@ -660,6 +802,72 @@ func (p *BicepProvider) getKeyVaultsToPurge(
 	return vaultsToPurge, nil
 }
 
+func (p *BicepProvider) getManagedHSMs(
+	ctx context.Context,
+	groupedResources map[string][]azcli.AzCliResource,
+) ([]*azcli.AzCliManagedHSM, error) {
+	managedHSMs := []*azcli.AzCliManagedHSM{}
+
+	for resourceGroup, groupResources := range groupedResources {
+		for _, resource := range groupResources {
+			if resource.Type == string(infra.AzureResourceTypeManagedHSM) {
+				managedHSM, err := p.azCli.GetManagedHSM(ctx, azure.SubscriptionFromRID(resource.Id), resourceGroup, resource.Name)
+				if err != nil {
+					return nil, fmt.Errorf("listing managed hsm %s properties: %w", resource.Name, err)
+				}
+				managedHSMs = append(managedHSMs, managedHSM)
+			}
+		}
+	}
+
+	return managedHSMs, nil
+}
+
+func (p *BicepProvider) getManagedHSMsToPurge(
+	ctx context.Context,
+	groupedResources map[string][]azcli.AzCliResource,
+) ([]*azcli.AzCliManagedHSM, error) {
+	managedHSMs, err := p.getManagedHSMs(ctx, groupedResources)
+	if err != nil {
+		return nil, err
+	}
+
+	managedHSMsToPurge := []*azcli.AzCliManagedHSM{}
+	for _, v := range managedHSMs {
+		if v.Properties.EnableSoftDelete && !v.Properties.EnablePurgeProtection {
+			managedHSMsToPurge = append(managedHSMsToPurge, v)
+		}
+	}
+
+	return managedHSMsToPurge, nil
+}
+
+func (p *BicepProvider) getCognitiveAccountsToPurge(
+	ctx context.Context,
+	groupedResources map[string][]azcli.AzCliResource,
+) (map[string][]armcognitiveservices.Account, error) {
+	result := make(map[string][]armcognitiveservices.Account)
+
+	for resourceGroup, groupResources := range groupedResources {
+		cognitiveAccounts := []armcognitiveservices.Account{}
+		for _, resource := range groupResources {
+			if resource.Type == string(infra.AzureResourceTypeCognitiveServiceAccount) {
+				account, err := p.azCli.GetCognitiveAccount(
+					ctx, azure.SubscriptionFromRID(resource.Id), resourceGroup, resource.Name)
+				if err != nil {
+					return nil, fmt.Errorf("getting cognitive account %s: %w", resource.Name, err)
+				}
+				cognitiveAccounts = append(cognitiveAccounts, account)
+			}
+			if len(cognitiveAccounts) > 0 {
+				result[resourceGroup] = cognitiveAccounts
+			}
+		}
+	}
+
+	return result, nil
+}
+
 // Azure KeyVaults have a "soft delete" functionality (now enabled by default) where a vault may be marked
 // such that when it is deleted it can be recovered for a period of time. During that time, the name may
 // not be reused.
@@ -682,12 +890,61 @@ func (p *BicepProvider) purgeKeyVaults(
 	skip bool,
 ) error {
 	for _, keyVault := range keyVaults {
-		err := p.runPurgeAsStep(ctx, "key vault", keyVault.Name, func() error {
+		err := p.runPurgeAsStep(ctx, "Key Vault", keyVault.Name, func() error {
 			return p.azCli.PurgeKeyVault(
 				ctx, azure.SubscriptionFromRID(keyVault.Id), keyVault.Name, keyVault.Location)
 		}, skip)
 		if err != nil {
 			return fmt.Errorf("purging key vault %s: %w", keyVault.Name, err)
+		}
+	}
+	return nil
+}
+
+func (p *BicepProvider) purgeManagedHSMs(
+	ctx context.Context,
+	managedHSMs []*azcli.AzCliManagedHSM,
+	options DestroyOptions,
+	skip bool,
+) error {
+	for _, managedHSM := range managedHSMs {
+		err := p.runPurgeAsStep(ctx, "Managed HSM", managedHSM.Name, func() error {
+			return p.azCli.PurgeManagedHSM(
+				ctx, azure.SubscriptionFromRID(managedHSM.Id), managedHSM.Name, managedHSM.Location)
+		}, skip)
+		if err != nil {
+			return fmt.Errorf("purging managed hsm %s: %w", managedHSM.Name, err)
+		}
+	}
+	return nil
+}
+
+func (p *BicepProvider) purgeCognitiveAccounts(
+	ctx context.Context,
+	cognitiveAccounts []cognitiveAccount,
+	options DestroyOptions,
+	skip bool,
+) error {
+	for _, cogAccount := range cognitiveAccounts {
+		accountName := cogAccount.account.Name
+		if accountName == nil {
+			return fmt.Errorf("Cognitive account without a name")
+		}
+		accountId := cogAccount.account.ID
+		if accountId == nil {
+			return fmt.Errorf("Cognitive account without an id")
+		}
+		location := cogAccount.account.Location
+		if location == nil {
+			return fmt.Errorf("Cognitive account without a location")
+		}
+
+		err := p.runPurgeAsStep(ctx, "Cognitive Account", *accountName, func() error {
+			return p.azCli.PurgeCognitiveAccount(
+				ctx, azure.SubscriptionFromRID(*accountId), *location, cogAccount.resourceGroup, *accountName)
+		}, skip)
+		if err != nil {
+			return fmt.Errorf("purging cognitive account %s: %w", *accountName, err)
 		}
 	}
 	return nil
@@ -861,10 +1118,7 @@ func (p *BicepProvider) createOutputParameters(
 
 // loadParameters reads the parameters file template for environment/module specified by Options,
 // doing environment and command substitutions, and returns the values.
-func (p *BicepProvider) loadParameters(
-	ctx context.Context,
-	asyncContext *async.InteractiveTaskContextWithProgress[*DeploymentPlan, *DeploymentPlanningProgress],
-) (map[string]azure.ArmParameterValue, error) {
+func (p *BicepProvider) loadParameters(ctx context.Context) (map[string]azure.ArmParameterValue, error) {
 	parametersTemplateFilePath := p.parametersTemplateFilePath()
 	log.Printf("Reading parameters template file from: %s", parametersTemplateFilePath)
 	parametersBytes, err := os.ReadFile(parametersTemplateFilePath)
@@ -978,7 +1232,6 @@ func (p *BicepProvider) modulePath() string {
 // Ensures the provisioning parameters are valid and prompts the user for input as needed
 func (p *BicepProvider) ensureParameters(
 	ctx context.Context,
-	asyncContext *async.InteractiveTaskContextWithProgress[*DeploymentPlan, *DeploymentPlanningProgress],
 	template azure.ArmTemplate,
 	parameters azure.ArmParameters,
 ) (azure.ArmParameters, error) {
@@ -1123,57 +1376,23 @@ func isValueAssignableToParameterType(paramType ParameterType, value any) bool {
 
 // NewBicepProvider creates a new instance of a Bicep Infra provider
 func NewBicepProvider(
-	ctx context.Context,
+	bicepCli bicep.BicepCli,
 	azCli azcli.AzCli,
 	env *environment.Environment,
-	projectPath string,
-	infraOptions Options,
-	commandRunner exec.CommandRunner,
 	console input.Console,
-	prompters Prompters,
+	prompters prompt.Prompter,
 	curPrincipal CurrentPrincipalIdProvider,
-) (*BicepProvider, error) {
-	bicepCli, err := bicep.NewBicepCli(ctx, console, commandRunner)
-	if err != nil {
-		return nil, err
-	}
-
-	// Default module if not specified.
-	if strings.TrimSpace(infraOptions.Module) == "" {
-		infraOptions.Module = DefaultModule
-	}
-
+	alphaFeatureManager *alpha.FeatureManager,
+	clock clock.Clock,
+) Provider {
 	return &BicepProvider{
-		env:          env,
-		projectPath:  projectPath,
-		options:      infraOptions,
-		console:      console,
-		bicepCli:     bicepCli,
-		azCli:        azCli,
-		prompters:    prompters,
-		curPrincipal: curPrincipal,
-	}, nil
-}
-
-func init() {
-	err := RegisterProvider(
-		Bicep,
-		func(
-			ctx context.Context,
-			env *environment.Environment,
-			projectPath string,
-			options Options,
-			console input.Console,
-			azCli azcli.AzCli,
-			commandRunner exec.CommandRunner,
-			prompters Prompters,
-			curPrincipal CurrentPrincipalIdProvider,
-		) (Provider, error) {
-			return NewBicepProvider(ctx, azCli, env, projectPath, options, commandRunner, console, prompters, curPrincipal)
-		},
-	)
-
-	if err != nil {
-		panic(err)
+		env:                 env,
+		console:             console,
+		bicepCli:            bicepCli,
+		azCli:               azCli,
+		prompters:           prompters,
+		curPrincipal:        curPrincipal,
+		alphaFeatureManager: alphaFeatureManager,
+		clock:               clock,
 	}
 }

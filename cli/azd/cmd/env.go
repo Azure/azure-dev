@@ -5,21 +5,18 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/account"
-	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -131,7 +128,7 @@ func newEnvSetAction(
 }
 
 func (e *envSetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	e.env.Values[e.args[0]] = e.args[1]
+	e.env.DotenvSet(e.args[0], e.args[1])
 
 	if err := e.env.Save(); err != nil {
 		return nil, fmt.Errorf("saving environment: %w", err)
@@ -320,60 +317,71 @@ func newEnvRefreshFlags(cmd *cobra.Command, global *internal.GlobalCommandOption
 }
 
 func newEnvRefreshCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "refresh",
+	cmd := &cobra.Command{
+		Use:   "refresh <environment>",
 		Short: "Refresh environment settings by using information from a previous infrastructure provision.",
+
+		// We want to support the usual -e / --environment arguments as all our commands which take environments do, but for
+		// ergonomics, we'd also like you to be able to run `azd env refresh some-environment-name` to behave the same way as
+		// `azd env refresh -e some-environment-name` would have.
+		Args: func(cmd *cobra.Command, args []string) error {
+			if err := cobra.MaximumNArgs(1)(cmd, args); err != nil {
+				return err
+			}
+
+			if len(args) == 0 {
+				return nil
+			}
+
+			if flagValue, err := cmd.Flags().GetString(environmentNameFlag); err == nil {
+				if flagValue != "" && args[0] != flagValue {
+					return errors.New(
+						"the --environment flag and an explicit environment name as an argument may not be used together")
+				}
+			}
+
+			return cmd.Flags().Set(environmentNameFlag, args[0])
+		},
+		Annotations: map[string]string{},
 	}
+
+	// This is like the Use property above, but does not include the hint to show an environment name is supported. This
+	// is used by some tests which need to construct a valid command line to run `azd` and here using `<environment>` would
+	// be invalid, since it is an invalid name.
+	cmd.Annotations["azdtest.use"] = "refresh"
+	return cmd
 }
 
 type envRefreshAction struct {
-	azdCtx                     *azdcontext.AzdContext
-	projectConfig              *project.ProjectConfig
-	projectManager             project.ProjectManager
-	accountManager             account.Manager
-	azCli                      azcli.AzCli
-	env                        *environment.Environment
-	flags                      *envRefreshFlags
-	console                    input.Console
-	formatter                  output.Formatter
-	writer                     io.Writer
-	commandRunner              exec.CommandRunner
-	alphaFeatureManager        *alpha.FeatureManager
-	userProfileService         *azcli.UserProfileService
-	subscriptionTenantResolver account.SubscriptionTenantResolver
+	provisionManager *provisioning.Manager
+	projectConfig    *project.ProjectConfig
+	projectManager   project.ProjectManager
+	env              *environment.Environment
+	flags            *envRefreshFlags
+	console          input.Console
+	formatter        output.Formatter
+	writer           io.Writer
 }
 
 func newEnvRefreshAction(
-	azdCtx *azdcontext.AzdContext,
+	provisionManager *provisioning.Manager,
 	projectConfig *project.ProjectConfig,
-	azCli azcli.AzCli,
-	accountManager account.Manager,
 	projectManager project.ProjectManager,
 	env *environment.Environment,
-	commandRunner exec.CommandRunner,
 	flags *envRefreshFlags,
 	console input.Console,
 	formatter output.Formatter,
 	writer io.Writer,
-	alphaFeatureManager *alpha.FeatureManager,
-	userProfileService *azcli.UserProfileService,
-	subscriptionTenantResolver account.SubscriptionTenantResolver,
 ) actions.Action {
 	return &envRefreshAction{
-		azdCtx:                     azdCtx,
-		azCli:                      azCli,
-		accountManager:             accountManager,
-		projectManager:             projectManager,
-		env:                        env,
-		flags:                      flags,
-		console:                    console,
-		formatter:                  formatter,
-		projectConfig:              projectConfig,
-		writer:                     writer,
-		commandRunner:              commandRunner,
-		userProfileService:         userProfileService,
-		subscriptionTenantResolver: subscriptionTenantResolver,
-		alphaFeatureManager:        alphaFeatureManager,
+		provisionManager: provisionManager,
+		projectManager:   projectManager,
+		env:              env,
+		console:          console,
+		flags:            flags,
+		formatter:        formatter,
+		projectConfig:    projectConfig,
+		writer:           writer,
 	}
 }
 
@@ -382,25 +390,11 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 		return nil, err
 	}
 
-	infraManager, err := provisioning.NewManager(
-		ctx,
-		ef.env,
-		ef.projectConfig.Path,
-		ef.projectConfig.Infra,
-		!ef.flags.global.NoPrompt,
-		ef.azCli,
-		ef.console,
-		ef.commandRunner,
-		ef.accountManager,
-		ef.userProfileService,
-		ef.subscriptionTenantResolver,
-		ef.alphaFeatureManager,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("creating provisioning manager: %w", err)
+	if err := ef.provisionManager.Initialize(ctx, ef.projectConfig.Path, ef.projectConfig.Infra); err != nil {
+		return nil, fmt.Errorf("initializing provisioning manager: %w", err)
 	}
 
-	getStateResult, err := infraManager.State(ctx)
+	getStateResult, err := ef.provisionManager.State(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("getting deployment: %w", err)
 	}
@@ -487,7 +481,7 @@ func newEnvGetValuesAction(
 }
 
 func (eg *envGetValuesAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	err := eg.formatter.Format(eg.env.Values, eg.writer, nil)
+	err := eg.formatter.Format(eg.env.Dotenv(), eg.writer, nil)
 	if err != nil {
 		return nil, err
 	}

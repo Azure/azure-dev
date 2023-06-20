@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v2"
 	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
@@ -41,7 +41,7 @@ func NewContainerAppService(
 	return &containerAppService{
 		credentialProvider: credentialProvider,
 		httpClient:         httpClient,
-		userAgent:          azdinternal.MakeUserAgentString(""),
+		userAgent:          azdinternal.UserAgent(),
 		clock:              clock,
 	}
 }
@@ -111,7 +111,7 @@ func (cas *containerAppService) AddRevision(
 
 	// Update the revision with the new image name and suffix
 	revision := revisionResponse.Revision
-	revision.Properties.Template.RevisionSuffix = convert.RefOf(fmt.Sprintf("azd-deploy-%d", cas.clock.Now().Unix()))
+	revision.Properties.Template.RevisionSuffix = convert.RefOf(fmt.Sprintf("azd-%d", cas.clock.Now().Unix()))
 	revision.Properties.Template.Containers[0].Image = convert.RefOf(imageName)
 
 	// Update the container app with the new revision

@@ -1,41 +1,17 @@
 #!/usr/bin/env pwsh
 param(
-    [string] $InstallFolder = ""
+    [string] $InstallFolder = "",
+    [string] $UninstallShScriptUrl = 'https://aka.ms/uninstall-azd.sh'
 )
 
-function isLinuxOrMac {
-    return $IsLinux -or $IsMacOS
-}
-
-if (!$InstallFolder) {
-    $InstallFolder = "$($env:LocalAppData)\Programs\Azure Dev CLI"
-    if (isLinuxOrMac) {
-        $InstallFolder = "/usr/local/bin"
-    }
-}
-
-if (isLinuxOrMac) {
-    $installLocation = "$InstallFolder/azd"
-
-    if (!(Test-Path $installLocation)) {
-        Write-Host "azd is not installed at $installLocation. To install run:"
-        Write-Host "pwsh -c `"Invoke-RestMethod 'https://aka.ms/install-azd.ps1' | Invoke-Expression`""
-        exit 0
-    }
-
-    Write-Host "Removing install: $installLocation"
-    test -w $installLocation
-    if ($LASTEXITCODE) {
-        Write-Host "Writing to $InstallFolder/ requires elevated permission. You may be promtped to enter credentials."
-        sudo rm $installLocation
-        if ($LASTEXITCODE) {
-            Write-Error "Could not remove azd from $installLocation"
-            exit 1
-        }
-    } else {
-        Remove-Item $installLocation
-    }
+if ($IsLinux -or $IsMacOS) {
+    Write-Verbose "Running: curl -fsSL $UninstallShScriptUrl | bash "
+    curl -fsSL $UninstallShScriptUrl | bash 
 } else {
+    # Uninstall azd from Windows for versions of azd which predate 0.5.0-beta.1
+    if (!$InstallFolder) {
+        $InstallFolder = "$($env:LocalAppData)\Programs\Azure Dev CLI"
+    }   
     if (Test-Path $InstallFolder) {
         Write-Host "Remove Install folder: $InstallFolder"
         Remove-Item $InstallFolder -Recurse -Force

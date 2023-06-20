@@ -10,17 +10,13 @@ import (
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
-	"github.com/azure/azure-dev/cli/azd/pkg/commands/pipeline"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
+	"github.com/azure/azure-dev/cli/azd/pkg/pipeline"
+	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -51,7 +47,13 @@ func (pc *pipelineConfigFlags) Bind(local *pflag.FlagSet, global *internal.Globa
 		"",
 		"The authentication type used between the pipeline provider and Azure for deployment (Only valid for GitHub provider). Valid values: federated, client-credentials.",
 	)
-	local.StringVar(&pc.PipelineRoleName, "principal-role", "contributor", "The role to assign to the service principal.")
+	//nolint:lll
+	local.StringArrayVar(
+		&pc.PipelineRoleNames,
+		"principal-role",
+		pipeline.DefaultRoleNames,
+		"The roles to assign to the service principal. By default the service principal will be granted the Contributor and User Access Administrator roles.",
+	)
 	// default provider is empty because it can be set from azure.yaml. By letting default here be empty, we know that
 	// there no customer input using --provider
 	local.StringVar(&pc.PipelineProvider, "provider", "",
@@ -64,7 +66,7 @@ func pipelineActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 	group := root.Add("pipeline", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
 			Use:   "pipeline",
-			Short: "Manage and configure your deployment pipelines.",
+			Short: fmt.Sprintf("Manage and configure your deployment pipelines. %s", output.WithWarningFormat("(Beta)")),
 		},
 		HelpOptions: actions.ActionHelpOptions{
 			Description: getCmdPipelineHelpDescription,
@@ -97,47 +99,36 @@ func newPipelineConfigFlags(cmd *cobra.Command, global *internal.GlobalCommandOp
 
 func newPipelineConfigCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "config",
-		Short: "Create and configure your deployment pipeline by using GitHub or Azure Pipelines.",
+		Use: "config",
+		Short: fmt.Sprintf(
+			"Configure your deployment pipeline to connect securely to Azure. %s",
+			output.WithWarningFormat("(Beta)")),
 	}
 }
 
 // pipelineConfigAction defines the action for pipeline config command
 type pipelineConfigAction struct {
-	flags              *pipelineConfigFlags
-	manager            *pipeline.PipelineManager
-	accountManager     account.Manager
-	azCli              azcli.AzCli
-	azdCtx             *azdcontext.AzdContext
-	env                *environment.Environment
-	console            input.Console
-	commandRunner      exec.CommandRunner
-	credentialProvider account.SubscriptionCredentialProvider
+	flags     *pipelineConfigFlags
+	manager   *pipeline.PipelineManager
+	env       *environment.Environment
+	console   input.Console
+	prompters prompt.Prompter
 }
 
 func newPipelineConfigAction(
-	azCli azcli.AzCli,
-	credentialProvider account.SubscriptionCredentialProvider,
-	azdCtx *azdcontext.AzdContext,
 	env *environment.Environment,
-	accountManager account.Manager,
 	_ auth.LoggedInGuard,
 	console input.Console,
 	flags *pipelineConfigFlags,
-	commandRunner exec.CommandRunner,
+	prompters prompt.Prompter,
+	manager *pipeline.PipelineManager,
 ) actions.Action {
 	pca := &pipelineConfigAction{
-		flags:              flags,
-		azCli:              azCli,
-		credentialProvider: credentialProvider,
-		manager: pipeline.NewPipelineManager(
-			azCli, azdCtx, env, flags.global, commandRunner, console, flags.PipelineManagerArgs,
-		),
-		azdCtx:         azdCtx,
-		accountManager: accountManager,
-		env:            env,
-		console:        console,
-		commandRunner:  commandRunner,
+		flags:     flags,
+		manager:   manager,
+		env:       env,
+		console:   console,
+		prompters: prompters,
 	}
 
 	return pca
@@ -145,30 +136,17 @@ func newPipelineConfigAction(
 
 // Run implements action interface
 func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	err := provisioning.EnsureEnv(ctx, p.console, p.env, p.accountManager)
+	err := p.prompters.EnsureEnv(ctx)
 	if err != nil {
 		return nil, err
 	}
+
+	pipelineProviderName := p.manager.CiProviderName()
 
 	// Command title
 	p.console.MessageUxItem(ctx, &ux.MessageTitle{
-		Title: "Configure your azd pipeline",
+		Title: fmt.Sprintf("Configure your %s pipeline", pipelineProviderName),
 	})
-
-	credential, err := p.credentialProvider.CredentialForSubscription(ctx, p.env.GetSubscriptionId())
-	if err != nil {
-		return nil, err
-	}
-
-	// Detect the SCM and CI providers based on the project directory
-	p.manager.ScmProvider,
-		p.manager.CiProvider,
-		err = pipeline.DetectProviders(
-		ctx, p.azdCtx, p.env, p.manager.PipelineProvider, p.console, credential, p.commandRunner,
-	)
-	if err != nil {
-		return nil, err
-	}
 
 	pipelineResult, err := p.manager.Configure(ctx)
 	if err != nil {
@@ -177,7 +155,7 @@ func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, 
 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			Header: "Your azd pipeline has been configured!",
+			Header: fmt.Sprintf("Your %s pipeline has been configured!", pipelineProviderName),
 			FollowUp: heredoc.Docf(`
 			Link to view your new repo: %s
 			Link to view your pipeline status: %s`,
@@ -189,12 +167,19 @@ func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, 
 
 func getCmdPipelineHelpDescription(*cobra.Command) string {
 	return generateCmdHelpDescription(
-		"Manage integrating your application with build pipelines.",
+		fmt.Sprintf("Manage integrating your application with deployment pipelines. %s", output.WithWarningFormat("(Beta)")),
 		[]string{
-			formatHelpNote(fmt.Sprintf("The Azure Developer CLI template includes a GitHub Actions pipeline"+
-				" configuration file (in the %s folder) that deploys your application whenever code is pushed"+
-				" to the main branch.", output.WithLinkFormat(".github/workflows"))),
-			formatHelpNote(fmt.Sprintf("For more information, go to: %s.",
+			formatHelpNote(
+				"azd commands (e.g. " +
+					output.WithHighLightFormat("provision") + ", " +
+					output.WithHighLightFormat("deploy") + ") " +
+					"can be used within GitHub Actions and Azure Pipelines to test your code against real Azure resources " +
+					"and facilitate deployments."),
+			formatHelpNote(
+				"After creating a pipeline definition file, running " +
+					output.WithHighLightFormat("pipeline config") +
+					" will help configure your deployment pipeline to connect securely to Azure."),
+			formatHelpNote(fmt.Sprintf("For more information on how to use azd in your pipeline, go to: %s.",
 				output.WithLinkFormat("https://aka.ms/azure-dev/pipeline"))),
 		})
 }
@@ -208,22 +193,33 @@ func getCmdPipelineHelpFooter(c *cobra.Command) string {
 
 func getCmdPipelineConfigHelpDescription(*cobra.Command) string {
 	return generateCmdHelpDescription(
-		"Create and configure your deployment pipeline by using GitHub or Azure Pipelines.",
+		"Configure your deployment pipeline to connect securely to Azure",
 		[]string{
+			formatHelpNote(
+				"Supports GitHub Actions and Azure Pipelines. To configure using a specific pipeline provider, " +
+					"provide a value for the '--provider' flag."),
+			formatHelpNote(
+				output.WithHighLightFormat("pipeline config") +
+					" creates or uses a service principal on the Azure subscription to create a secure connection between" +
+					" your deployment pipeline and Azure."),
 			formatHelpNote("By default, " +
 				output.WithHighLightFormat("pipeline config") +
-				" will configure and set deployment pipeline variables using the current environment. " +
-				"To configure for a new or a different existing environment, use the '-e' flag."),
+				" will set deployment pipeline variables and secrets using the current environment. " +
+				"To configure for a new or an existing environment, provide a value for the '-e' flag."),
 		})
 }
 
 func getCmdPipelineConfigHelpFooter(c *cobra.Command) string {
 	return generateCmdHelpSamplesBlock(map[string]string{
-		"Set up a deployment pipeline for 'app-test' environment": fmt.Sprintf("%s %s",
+		"Configure a deployment pipeline using an existing service principal": fmt.Sprintf("%s %s",
+			output.WithHighLightFormat("azd pipeline config --principal-name"),
+			output.WithWarningFormat("[Principal name]"),
+		),
+		"Configure a deployment pipeline for 'app-test' environment": fmt.Sprintf("%s %s",
 			output.WithHighLightFormat("azd pipeline config -e"),
 			output.WithWarningFormat("app-test"),
 		),
-		"Set up a deployment pipeline for 'app-test' environment on Azure Pipelines.": fmt.Sprintf("%s %s %s",
+		"Configure a deployment pipeline for 'app-test' environment on Azure Pipelines.": fmt.Sprintf("%s %s %s",
 			output.WithHighLightFormat("azd pipeline config -e"),
 			output.WithWarningFormat("app-test"),
 			output.WithHighLightFormat("--provider azdo"),

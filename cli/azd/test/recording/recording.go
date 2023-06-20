@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 // recording implements a proxy server that records and plays back HTTP interactions.
 // The implementation largely reuses [go-vcr], but adds support for:
 //   - Saving and loading of variables in the recording session

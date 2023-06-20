@@ -111,10 +111,31 @@ func (r *commandRunner) Run(ctx context.Context, args RunArgs) (RunResult, error
 
 	cmd.Env = appendEnv(args.Env)
 
+	debugLogEnabled := r.debugLogging
+	if args.DebugLogging != nil {
+		debugLogEnabled = *args.DebugLogging
+	}
+
 	if args.Interactive {
 		cmd.Stdin = r.stdin
 		cmd.Stdout = r.stdout
 		cmd.Stderr = r.stderr
+	} else if debugLogEnabled {
+		cmd.Stdin = stdin
+
+		sanitizingStdout := &sanitizingLogWriter{
+			w: r.stdout,
+		}
+		cmd.Stdout = io.MultiWriter(&stdout, sanitizingStdout)
+
+		sanitizingStderr := &sanitizingLogWriter{
+			w: r.stderr,
+		}
+		cmd.Stderr = io.MultiWriter(&stderr, sanitizingStderr)
+
+		if args.Stderr != nil {
+			cmd.Stderr = io.MultiWriter(args.Stderr, &stderr, sanitizingStderr)
+		}
 	} else {
 		cmd.Stdin = stdin
 		cmd.Stdout = &stdout
@@ -136,11 +157,6 @@ func (r *commandRunner) Run(ctx context.Context, args RunArgs) (RunResult, error
 		args.Cmd,
 		RedactSensitiveData(
 			strings.Join(RedactSensitiveArgs(args.Args, args.SensitiveData), " "))))
-
-	debugLogEnabled := r.debugLogging
-	if args.DebugLogging != nil {
-		debugLogEnabled = *args.DebugLogging
-	}
 
 	if debugLogEnabled && len(args.Env) > 0 {
 		logBody.WriteString("Additional env:\n")
@@ -172,22 +188,6 @@ func (r *commandRunner) Run(ctx context.Context, args RunArgs) (RunResult, error
 			Stderr:   "",
 		}
 	} else {
-		if debugLogEnabled {
-			logStdOut := strings.TrimSuffix(RedactSensitiveData(stdout.String()), "\n")
-			if len(logStdOut) > 0 {
-				logBody.WriteString(fmt.Sprintf(
-					"-------------------------------------stdout-------------------------------------------\n%s\n",
-					logStdOut))
-			}
-			logStdErr := strings.TrimSuffix(RedactSensitiveData(stderr.String()), "\n")
-			if len(logStdErr) > 0 {
-				logBody.WriteString(fmt.Sprintf(
-					"-------------------------------------stderr-------------------------------------------\n%s\n",
-					logStdErr))
-			}
-
-		}
-
 		result = RunResult{
 			ExitCode: cmd.ProcessState.ExitCode(),
 			Stdout:   stdout.String(),

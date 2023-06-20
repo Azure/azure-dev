@@ -45,3 +45,4 @@ test-results/
 **/.terraform
 *.tfstate*
 *.terraform*
+.fake

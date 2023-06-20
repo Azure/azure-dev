@@ -259,18 +259,17 @@ func (p *BicepProvider) Deploy(ctx context.Context, pd *DeploymentPlan) (*Deploy
 	defer func() { cancelProgress <- true }()
 	go func() {
 		// Disable reporting progress if needed
-		if v, has := os.LookupEnv("AZD_DEBUG_PROVISION_PROGRESS_DISABLE"); has {
-			if use, err := strconv.ParseBool(v); err == nil && use {
-				<-cancelProgress
-				return
-			}
+		if use, err := strconv.ParseBool(os.Getenv("AZD_DEBUG_PROVISION_PROGRESS_DISABLE")); err == nil && use {
+			log.Println("Disabling progress reporting since AZD_DEBUG_PROVISION_PROGRESS_DISABLE was set")
+			<-cancelProgress
+			return
 		}
 
 		// Report incremental progress
 		resourceManager := infra.NewAzureResourceManager(p.azCli)
 		progressDisplay := NewProvisioningProgressDisplay(resourceManager, p.console, bicepDeploymentData.Target)
 		// Make initial delay shorter to be more responsive in displaying initial progress
-		initialDelay := 5 * time.Second
+		initialDelay := 3 * time.Second
 		regularDelay := 10 * time.Second
 		timer := time.NewTimer(initialDelay)
 		queryStartTime := time.Now()

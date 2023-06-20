@@ -36,7 +36,7 @@ func TestNewBicepCli(t *testing.T) {
 		return strings.Contains(args.Cmd, "bicep") && len(args.Args) == 1 && args.Args[0] == "--version"
 	}).Respond(exec.NewRunResult(
 		0,
-		fmt.Sprintf("Bicep CLI version %s (abcdef0123)", cBicepVersion.String()),
+		fmt.Sprintf("Bicep CLI version %s (abcdef0123)", BicepVersion.String()),
 		"",
 	))
 
@@ -106,7 +106,7 @@ func TestNewBicepCliWillUpgrade(t *testing.T) {
 		case OLD_FILE_CONTENTS:
 			return exec.NewRunResult(0, "Bicep CLI version 0.0.1 (badbadbad1)", ""), nil
 		case NEW_FILE_CONTENTS:
-			return exec.NewRunResult(0, fmt.Sprintf("Bicep CLI version %s (abcdef0123)", cBicepVersion.String()), ""), nil
+			return exec.NewRunResult(0, fmt.Sprintf("Bicep CLI version %s (abcdef0123)", BicepVersion.String()), ""), nil
 		}
 
 		return exec.NewRunResult(-1, "", "unexpected bicep file contents"), err

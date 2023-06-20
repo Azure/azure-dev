@@ -104,7 +104,7 @@ func main() {
 			} else if runtime.GOOS == "darwin" {
 				switch installedBy {
 				case installer.InstallTypeBrew:
-					upgradeText = "run:\nbrew upgrade azd"
+					upgradeText = "run:\nbrew update && brew upgrade azd"
 				case installer.InstallTypeSh:
 					//nolint:lll
 					upgradeText = "run:\ncurl -fsSL https://aka.ms/install-azd.sh | bash\n\nIf the install script was run with custom parameters, ensure that the same parameters are used for the upgrade. For advanced install instructions, see: https://aka.ms/azd/upgrade/mac"

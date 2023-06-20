@@ -46,7 +46,7 @@ export class AzureYamlDiagnosticProvider extends vscode.Disposable {
 
                 const diagnostic = new vscode.Diagnostic(
                     project.projectValueNodeRange,
-                    vscode.l10n.t('The project path must be an existing folder path relative to the azure.yaml file.'),
+                    vscode.l10n.t('The project path must be an existing folder or file path relative to the azure.yaml file.'),
                     vscode.DiagnosticSeverity.Error
                 );
 

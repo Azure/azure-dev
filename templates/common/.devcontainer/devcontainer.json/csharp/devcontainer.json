@@ -3,7 +3,7 @@
     "build": {
         "dockerfile": "Dockerfile",
         "args": {
-            "IMAGE": "dotnet:6.0"
+            "IMAGE": "dotnet:6.0-bullseye"
         }
     },
     "features": {

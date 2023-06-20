@@ -3,16 +3,13 @@
     "build": {
         "dockerfile": "Dockerfile",
         "args": {
-            "IMAGE": "java:17"
+            "IMAGE": "javascript-node:16-bullseye"
         }
     },
     "features": {
         "ghcr.io/devcontainers/features/docker-in-docker:2": {
         },
-        "ghcr.io/devcontainers/features/node:1": {
-            "version": "16",
-            "nodeGypDependencies": false
-        }
+        "ghcr.io/devcontainers/features/java:1": {}
     },
     "customizations": {
         "vscode": {
@@ -32,7 +29,7 @@
         3100
     ],
     "postCreateCommand": "",
-    "remoteUser": "vscode",
+    "remoteUser": "node",
     "hostRequirements": {
         "memory": "8gb"
     }

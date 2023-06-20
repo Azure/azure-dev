@@ -3,12 +3,11 @@
     "build": {
         "dockerfile": "Dockerfile",
         "args": {
-            "IMAGE": "javascript-node:16"
+            "IMAGE": "javascript-node:16-bullseye"
         }
     },
     "features": {
         "ghcr.io/devcontainers/features/azure-cli:1": {
-            "version": "2.38"
         },
         "ghcr.io/devcontainers/features/docker-in-docker:2": {
         },

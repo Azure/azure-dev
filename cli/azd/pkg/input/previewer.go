@@ -89,14 +89,14 @@ func (p *progressLog) Start() {
 
 	// header
 	if p.header != "" {
-		tm.ResetLine("")
+		tm.Print(tm.ResetLine(""))
 		tm.Println(p.header)
 		// margin after title
 		tm.Println("")
 	}
 
 	// title
-	tm.ResetLine("")
+	tm.Print(tm.ResetLine(""))
 	tm.Println(p.displayTitle)
 	tm.Println("")
 
@@ -117,12 +117,12 @@ func (p *progressLog) Stop() {
 
 	// title
 	tm.MoveCursorUp(2)
-	clearLine(p.displayTitle)
+	clearLine()
 
 	// header
 	if p.header != "" {
 		tm.MoveCursorUp(2)
-		clearLine(p.header)
+		clearLine()
 	}
 
 	tm.Flush()
@@ -179,7 +179,7 @@ func (p *progressLog) Header(header string) {
 	p.clearContentAndFlush()
 	if p.header != "" {
 		tm.MoveCursorUp(4)
-		clearLine(p.header)
+		clearLine()
 		tm.Println(p.header)
 		tm.MoveCursorDown(3)
 	}
@@ -189,21 +189,8 @@ func (p *progressLog) Header(header string) {
 /****************** Not exported method ****************/
 
 // clearLine override text with empty spaces.
-func clearLine(text string) {
-	sizeLog := len(text)
-	if sizeLog == 0 {
-		return
-	}
-	maxWidth := tm.Width()
-	if sizeLog > maxWidth {
-		sizeLog = maxWidth
-	}
-	eraseWith := ""
-	if sizeLog > 0 {
-		eraseWith = strings.Repeat(" ", sizeLog)
-	}
-	tm.Printf(eraseWith)
-	tm.MoveCursorBackward(sizeLog)
+func clearLine() {
+	tm.Print(tm.ResetLine(""))
 }
 
 // clearContentAndFlush removes the current logs from the screen.
@@ -213,15 +200,13 @@ func (p *progressLog) clearContentAndFlush() {
 	}
 
 	// footer
-	tm.MoveCursorBackward(len(p.footerLine))
-	clearLine(p.footerLine)
+	clearLine()
 	tm.MoveCursorUp(1)
 
 	// output
-	size := len(p.output) - 1
-	for index := range p.output {
+	for range p.output {
 		tm.MoveCursorUp(1)
-		clearLine(p.output[size-index])
+		clearLine()
 	}
 
 	tm.Flush()
@@ -230,7 +215,7 @@ func (p *progressLog) clearContentAndFlush() {
 // printLogs write the content from the buffer as logs.
 func (p *progressLog) printLogs() {
 	for index := range p.output {
-		tm.ResetLine("")
+		tm.Print(tm.ResetLine(""))
 		tm.Println(p.output[index])
 	}
 

@@ -26,7 +26,9 @@
         "url": "https://github.com/azure/azure-dev"
     },
     "activationEvents": [
-        "onTaskType:dotenv"
+        "onTaskType:dotenv",
+        "workspaceContains:azure.yml",
+        "workspaceContains:azure.yaml"
     ],
     "main": "./main.js",
     "contributes": {
@@ -503,6 +505,7 @@
         "dayjs": "~1.11",
         "dotenv": "~16.0",
         "rxjs": "~7.6",
-        "semver": "~7"
+        "semver": "~7",
+        "yaml": "~2"
     }
 }

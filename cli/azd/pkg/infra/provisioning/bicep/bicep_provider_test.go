@@ -229,7 +229,7 @@ func TestPlanForResourceGroup(t *testing.T) {
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(args.Cmd, "bicep") && strings.Contains(command, "--version")
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-		return exec.NewRunResult(0, "Bicep CLI version 0.17.1 (d423d61882)", ""), nil
+		return exec.NewRunResult(0, fmt.Sprintf("Bicep CLI version %s (abcdef0123)", bicep.BicepVersion), ""), nil
 	})
 
 	// Have `bicep build` return a ARM template that targets a resource group.

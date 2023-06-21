@@ -147,16 +147,18 @@ func (pa *packageAction) Run(ctx context.Context) (*actions.ActionResult, error)
 		}
 
 		packageTask := pa.serviceManager.Package(ctx, svc, nil)
+		done := make(chan struct{})
 		go func() {
 			for packageProgress := range packageTask.Progress() {
 				progressMessage := fmt.Sprintf("Packaging service %s (%s)", svc.Name, packageProgress.Message)
 				pa.console.ShowSpinner(ctx, progressMessage, input.Step)
 			}
+			close(done)
 		}()
 
 		packageResult, err := packageTask.Await()
 		// adding a few seconds to wait for all async ops to be flush
-		time.Sleep(2 * time.Second)
+		_ = <-done
 		pa.console.StopSpinner(ctx, stepMessage, input.GetStepResultFormat(err))
 
 		if err != nil {

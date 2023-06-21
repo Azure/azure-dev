@@ -242,16 +242,18 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		} else {
 			//  --from-package not set, package the application
 			packageTask := da.serviceManager.Package(ctx, svc, nil)
+			done := make(chan struct{})
 			go func() {
 				for packageProgress := range packageTask.Progress() {
 					progressMessage := fmt.Sprintf("Deploying service %s (%s)", svc.Name, packageProgress.Message)
 					da.console.ShowSpinner(ctx, progressMessage, input.Step)
 				}
+				close(done)
 			}()
 
 			packageResult, err = packageTask.Await()
-			// adding a few seconds to wait for all async ops to be flush
-			time.Sleep(2 * time.Second)
+			// wait for console updates to complete
+			_ = <-done
 			// do not stop progress here as next step is to deploy
 			if err != nil {
 				da.console.StopSpinner(ctx, stepMessage, input.StepFailed)
@@ -260,16 +262,18 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		}
 
 		deployTask := da.serviceManager.Deploy(ctx, svc, packageResult)
+		done := make(chan struct{})
 		go func() {
 			for deployProgress := range deployTask.Progress() {
 				progressMessage := fmt.Sprintf("Deploying service %s (%s)", svc.Name, deployProgress.Message)
 				da.console.ShowSpinner(ctx, progressMessage, input.Step)
 			}
+			close(done)
 		}()
 
 		deployResult, err := deployTask.Await()
-		// adding a few seconds to wait for all async ops to be flush
-		time.Sleep(2 * time.Second)
+		// wait for console updates to complete
+		_ = <-done
 		da.console.StopSpinner(ctx, stepMessage, input.GetStepResultFormat(err))
 		if err != nil {
 			return nil, err

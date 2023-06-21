@@ -18,7 +18,8 @@
         "vscode": {
             "extensions": [
               "ms-azuretools.vscode-bicep",
-              "ms-vscode.vscode-node-azure-pack"
+              "ms-vscode.vscode-node-azure-pack",
+              "ms-azuretools.azure-dev"
             ]
         }
     }

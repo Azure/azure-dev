@@ -20,6 +20,6 @@ echo "(*) Ensuring dependencies are installed"
 
 check_packages apt-transport-https curl ca-certificates gnupg2 dirmngr
 
-echo "(*) Installing Azure Dev CLI"
+echo "(*) Installing Azure Developer CLI"
 
 curl -fsSL https://aka.ms/install-azd.sh | bash -s -- --version $AZ_VERSION

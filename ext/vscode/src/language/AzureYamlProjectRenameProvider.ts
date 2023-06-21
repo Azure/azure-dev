@@ -15,14 +15,14 @@ export class AzureYamlProjectRenameProvider extends vscode.Disposable {
         });
     }
 
-    public async provideWorkspaceEdits(oldUri: vscode.Uri, newUri: vscode.Uri): Promise<vscode.WorkspaceEdit | undefined> {
+    public async provideWorkspaceEdits(oldUri: vscode.Uri, newUri: vscode.Uri, token: vscode.CancellationToken): Promise<vscode.WorkspaceEdit | undefined> {
         // When a folder is renamed, only the folder is passed in as the old URI
         // At the time this is called, the rename has not happened yet
         if (!await AzExtFsExtra.isDirectory(oldUri)) {
             return undefined;
         }
 
-        const azureYamlUris = await vscode.workspace.findFiles('**/azure.{yml,yaml}');
+        const azureYamlUris = await vscode.workspace.findFiles('**/azure.{yml,yaml}', undefined, 1, token);
         if (azureYamlUris.length === 0) {
             return undefined;
         }
@@ -46,6 +46,6 @@ export class AzureYamlProjectRenameProvider extends vscode.Disposable {
         const oldUri = evt.files[0].oldUri;
         const newUri = evt.files[0].newUri;
 
-        evt.waitUntil(this.provideWorkspaceEdits(oldUri, newUri));
+        evt.waitUntil(this.provideWorkspaceEdits(oldUri, newUri, evt.token));
     }
 }

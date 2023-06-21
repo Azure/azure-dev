@@ -16,7 +16,9 @@ export class AzureYamlDocumentDropEditProvider implements vscode.DocumentDropEdi
             const basename = path.basename(maybeFolderUri.fsPath);
             const newRelativePath = getProjectRelativePath(document.uri, maybeFolderUri);
 
-            const snippet = new vscode.SnippetString('\t')
+            const initialWhitespace = position.character === 0 ? '\n\t' : '\n';
+
+            const snippet = new vscode.SnippetString(initialWhitespace)
                 .appendPlaceholder(basename).appendText(':\n')
                 .appendText(`\t\tproject: ${newRelativePath}\n`)
                 .appendText('\t\tlanguage: ')

@@ -253,17 +253,19 @@ func deploymentNameForEnv(envName string, clock clock.Clock) string {
 
 // Provisioning the infrastructure within the specified template
 func (p *BicepProvider) Deploy(ctx context.Context, pd *DeploymentPlan) (*DeployResult, error) {
-	done := make(chan bool)
-
-	// Ensure the done marker channel is sent in all conditions
-	defer func() {
-		done <- true
-	}()
-
 	bicepDeploymentData := pd.Details.(BicepDeploymentDetails)
 
-	// Report incremental progress
+	cancelProgress := make(chan bool)
+	defer func() { cancelProgress <- true }()
 	go func() {
+		// Disable reporting progress if needed
+		if use, err := strconv.ParseBool(os.Getenv("AZD_DEBUG_PROVISION_PROGRESS_DISABLE")); err == nil && use {
+			log.Println("Disabling progress reporting since AZD_DEBUG_PROVISION_PROGRESS_DISABLE was set")
+			<-cancelProgress
+			return
+		}
+
+		// Report incremental progress
 		resourceManager := infra.NewAzureResourceManager(p.azCli)
 		progressDisplay := NewProvisioningProgressDisplay(resourceManager, p.console, bicepDeploymentData.Target)
 		// Make initial delay shorter to be more responsive in displaying initial progress
@@ -274,7 +276,7 @@ func (p *BicepProvider) Deploy(ctx context.Context, pd *DeploymentPlan) (*Deploy
 
 		for {
 			select {
-			case <-done:
+			case <-cancelProgress:
 				timer.Stop()
 				return
 			case <-timer.C:

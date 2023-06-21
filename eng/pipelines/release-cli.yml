@@ -88,13 +88,22 @@ stages:
             inputs:
               pwsh: true
               targetType: filePath
+              filePath: eng/scripts/Set-CliBuildVariables.ps1
+              arguments: -BuildReason $(Build.Reason)
+            displayName: Set CLI build run variables
+
+          - task: PowerShell@2
+            inputs:
+              pwsh: true
+              targetType: filePath
               filePath: cli/azd/ci-build.ps1
               arguments: >-
                 -Version $(CLI_VERSION)
                 -SourceVersion $(Build.SourceVersion)
                 -CodeCoverageEnabled
+                -BuildRecordMode
               workingDirectory: cli/azd
-            displayName: Build Go Binary (Coverage enabled)
+            displayName: Build Go Binary (For tests)
 
           - template: /eng/pipelines/templates/steps/build-msi.yml
             parameters:
@@ -147,6 +156,7 @@ stages:
               AZD_TEST_TENANT_ID: $(arm-tenant-id)
               AZD_TEST_AZURE_SUBSCRIPTION_ID: $(SubscriptionId)
               AZD_TEST_AZURE_LOCATION: eastus2
+              AZURE_RECORD_MODE: $(AZURE_RECORD_MODE)
               # AZD Live Test: Terraform service principal authentication
               ARM_CLIENT_ID: $(arm-client-id)
               ARM_CLIENT_SECRET: $(arm-client-secret)

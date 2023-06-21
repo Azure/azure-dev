@@ -26,6 +26,7 @@ azdtempl
 azdtempl
 azdtest
 azfile
+azureedge
 azruntime
 azsdk
 AZURECLI
@@ -52,6 +53,7 @@ csharpapptest
 cupaloy
 deletedservices
 devel
+discarder
 docf
 dockerproject
 dskip
@@ -70,6 +72,7 @@ GOARCH
 GOCOVERDIR
 godotenv
 golangci
+gosec
 hotspot
 ineffassign
 javac
@@ -78,6 +81,7 @@ keychain
 LASTEXITCODE
 ldflags
 lechnerc77
+microsoftonline
 mgmt
 mgutz
 mockarmresources
@@ -100,6 +104,7 @@ otlptrace
 otlptracehttp
 pflag
 preinit
+proxying
 pulumi
 pyapp
 pyvenv
@@ -140,3 +145,4 @@ utsname
 westus2
 wireinject
 yacspin
+zerr

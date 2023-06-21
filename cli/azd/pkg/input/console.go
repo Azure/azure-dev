@@ -248,9 +248,6 @@ func (c *AskerConsole) ShowPreviewer(ctx context.Context, options *ShowPreviewer
 }
 
 func (c *AskerConsole) StopPreviewer(ctx context.Context) {
-	c.spinnerMutex.Lock()
-	defer c.spinnerMutex.Unlock()
-
 	c.previewer.Stop()
 	c.previewer = nil
 	c.writer = c.initialWriter
@@ -391,9 +388,6 @@ func (c *AskerConsole) getIndent(format SpinnerUxType) string {
 }
 
 func (c *AskerConsole) StopSpinner(ctx context.Context, lastMessage string, format SpinnerUxType) {
-	c.spinnerMutex.Lock()
-	defer c.spinnerMutex.Unlock()
-
 	c.currentSpinnerMessage = ""
 	if c.formatter != nil && c.formatter.Kind() == output.JsonFormat {
 		// Spinner is disabled when using json format.

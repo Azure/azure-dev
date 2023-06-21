@@ -162,7 +162,7 @@ func (m *SubscriptionsManager) ListSubscriptions(ctx context.Context) ([]Subscri
 
 	msg := "Retrieving subscriptions..."
 	m.console.ShowSpinner(ctx, msg, input.Step)
-	defer m.console.StopSpinner(ctx, msg, input.GetStepResultFormat(err))
+	defer m.console.StopSpinner(ctx, "", input.StepDone)
 
 	principalTenantId, err := m.principalInfo.GetLoggedInServicePrincipalTenantID(ctx)
 	if err != nil {

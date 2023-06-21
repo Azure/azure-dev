@@ -125,31 +125,21 @@ func (r *commandRunner) Run(ctx context.Context, args RunArgs) (RunResult, error
 		}
 	}
 
-	logTitle := strings.Builder{}
-	logBody := strings.Builder{}
+	debugLogging := r.debugLogging
+	if args.DebugLogging != nil {
+		debugLogging = *args.DebugLogging
+	}
+
+	logMsg := logBuilder{
+		args: append([]string{args.Cmd}, args.Args...),
+		env:  args.Env,
+	}
 	defer func() {
-		logTitle.WriteString(logBody.String())
-		log.Print(logTitle.String())
+		logMsg.Write(debugLogging, args.SensitiveData)
 	}()
 
-	logTitle.WriteString(fmt.Sprintf("Run exec: '%s %s' ",
-		args.Cmd,
-		RedactSensitiveData(
-			strings.Join(RedactSensitiveArgs(args.Args, args.SensitiveData), " "))))
-
-	debugLogEnabled := r.debugLogging
-	if args.DebugLogging != nil {
-		debugLogEnabled = *args.DebugLogging
-	}
-
-	if debugLogEnabled && len(args.Env) > 0 {
-		logBody.WriteString("Additional env:\n")
-		for _, kv := range args.Env {
-			logBody.WriteString(fmt.Sprintf("   %s\n", kv))
-		}
-	}
-
 	if err := cmd.Start(); err != nil {
+		logMsg.err = err
 		return RunResult{}, err
 	}
 
@@ -172,29 +162,14 @@ func (r *commandRunner) Run(ctx context.Context, args RunArgs) (RunResult, error
 			Stderr:   "",
 		}
 	} else {
-		if debugLogEnabled {
-			logStdOut := strings.TrimSuffix(RedactSensitiveData(stdout.String()), "\n")
-			if len(logStdOut) > 0 {
-				logBody.WriteString(fmt.Sprintf(
-					"-------------------------------------stdout-------------------------------------------\n%s\n",
-					logStdOut))
-			}
-			logStdErr := strings.TrimSuffix(RedactSensitiveData(stderr.String()), "\n")
-			if len(logStdErr) > 0 {
-				logBody.WriteString(fmt.Sprintf(
-					"-------------------------------------stderr-------------------------------------------\n%s\n",
-					logStdErr))
-			}
-
-		}
-
 		result = RunResult{
 			ExitCode: cmd.ProcessState.ExitCode(),
 			Stdout:   stdout.String(),
 			Stderr:   stderr.String(),
 		}
 	}
-	logTitle.WriteString(fmt.Sprintf(", exit code: %d\n", result.ExitCode))
+
+	logMsg.result = &result
 
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
@@ -230,18 +205,45 @@ func (r *commandRunner) RunList(ctx context.Context, commands []string, args Run
 		process.Stderr = &stdErrBuf
 	}
 
+	debugLogging := r.debugLogging
+	if args.DebugLogging != nil {
+		debugLogging = *args.DebugLogging
+	}
+
+	logMsg := logBuilder{
+		// use the actual shell command invoked in the log message
+		args: process.Cmd.Args,
+		env:  args.Env,
+	}
+	defer func() {
+		logMsg.Write(debugLogging, args.SensitiveData)
+	}()
+
 	if err := process.Start(); err != nil {
+		logMsg.err = err
 		return NewRunResult(-1, "", ""), fmt.Errorf("error starting process: %w", err)
 	}
 	defer process.Kill()
 
 	err = process.Wait()
-
-	return NewRunResult(
+	result := NewRunResult(
 		process.ProcessState.ExitCode(),
 		stdOutBuf.String(),
 		stdErrBuf.String(),
-	), err
+	)
+	logMsg.result = &result
+
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		err = NewExitError(
+			*exitErr,
+			args.Cmd,
+			result.Stdout,
+			result.Stderr,
+			true)
+	}
+
+	return result, err
 }
 
 func appendEnv(env []string) []string {
@@ -250,6 +252,55 @@ func appendEnv(env []string) []string {
 	}
 
 	return nil
+}
+
+// logBuilder builds messages for running of commands.
+type logBuilder struct {
+	args []string
+	env  []string
+
+	// Either result or err is expected to be set, but not both.
+	result *RunResult
+	err    error
+}
+
+// Write writes the log message to the log file. debug enables debug logging.
+func (l *logBuilder) Write(debug bool, sensitiveArgsData []string) {
+	msg := strings.Builder{}
+	insensitiveArgs := RedactSensitiveArgs(l.args, sensitiveArgsData)
+	msg.WriteString(fmt.Sprintf("Run exec: '%s' ", RedactSensitiveData(strings.Join(insensitiveArgs, " "))))
+	if l.result != nil {
+		msg.WriteString(fmt.Sprintf(", exit code: %d\n", l.result.ExitCode))
+	} else if l.err != nil {
+		msg.WriteString(fmt.Sprintf(", err: %v\n", l.err))
+	}
+
+	if debug && len(l.env) > 0 {
+		msg.WriteString("Additional env:\n")
+		for _, kv := range l.env {
+			msg.WriteString(fmt.Sprintf("   %s\n", RedactSensitiveData(kv)))
+		}
+	}
+
+	if debug && l.result != nil && len(l.result.Stdout) > 0 {
+		logStdOut := strings.TrimSuffix(RedactSensitiveData(l.result.Stdout), "\n")
+		if len(logStdOut) > 0 {
+			msg.WriteString(fmt.Sprintf(
+				"-------------------------------------stdout-------------------------------------------\n%s\n",
+				logStdOut))
+		}
+	}
+
+	if debug && l.result != nil && len(l.result.Stderr) > 0 {
+		logStdErr := strings.TrimSuffix(RedactSensitiveData(l.result.Stderr), "\n")
+		if len(logStdErr) > 0 {
+			msg.WriteString(fmt.Sprintf(
+				"-------------------------------------stderr-------------------------------------------\n%s\n",
+				logStdErr))
+		}
+	}
+
+	log.Print(msg.String())
 }
 
 // newCmdTree creates a `CmdTree`, optionally using a shell appropriate for windows

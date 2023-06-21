@@ -19,7 +19,7 @@ export class AzureYamlDiagnosticProvider extends vscode.Disposable {
 
         const diagnosticCollection = vscode.languages.createDiagnosticCollection('azure.yaml');
         disposables.push(diagnosticCollection);
-    
+
         disposables.push(vscode.workspace.onDidChangeTextDocument((e: vscode.TextDocumentChangeEvent) => this.updateDiagnosticsFor(e.document)));
         disposables.push(vscode.workspace.onDidRenameFiles(() => this.updateDiagnosticsForOpenTabs()));
         disposables.push(vscode.workspace.onDidCreateFiles(() => this.updateDiagnosticsForOpenTabs()));
@@ -70,12 +70,11 @@ export class AzureYamlDiagnosticProvider extends vscode.Disposable {
             this.diagnosticCollection.set(document.uri, await this.provideDiagnostics(document));
         };
 
-        if (delay) { 
+        if (delay) {
             documentDebounce(DiagnosticDelay, { uri: document.uri, callId: 'updateDiagnosticsFor' }, method, this);
         } else {
             await method();
         }
-        
     }
 
     private async updateDiagnosticsForOpenTabs(): Promise<void> {

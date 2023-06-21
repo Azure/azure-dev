@@ -64,6 +64,6 @@ export function getProjectRelativePath(azureYamlUri: vscode.Uri, projectUri: vsc
     const normalizedPosixRelativePath = path.posix.normalize(relativePath)
         .replace(/\\/g, '/') // Replace backslashes with forward slashes
         .replace(/^\.?\/?/, './'); // Make sure it starts with `./`
-    
+
     return normalizedPosixRelativePath;
 }

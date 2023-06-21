@@ -6,6 +6,7 @@ bradleyjkemp
 briandowns
 buger
 cobey
+dnaeon
 ellismg
 envsubst
 fatih

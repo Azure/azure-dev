@@ -84,6 +84,17 @@ func NewCLI(t *testing.T, opts ...Options) *CLI {
 		return cli
 	}
 
+	// Set AzdPath to the appropriate binary path
+	sourceDir := GetSourcePath()
+	name := "azd"
+	if opt.Session != nil {
+		name = "azd-record"
+	}
+	if runtime.GOOS == "windows" {
+		name = name + ".exe"
+	}
+	cli.AzdPath = filepath.Join(sourceDir, name)
+
 	// Manual override for skipping automatic build
 	skip, err := strconv.ParseBool(os.Getenv("CLI_TEST_SKIP_BUILD"))
 	if err == nil && skip {
@@ -97,30 +108,14 @@ func NewCLI(t *testing.T, opts ...Options) *CLI {
 		return cli
 	}
 
-	// Set AzdPath to the appropriate binary path
-	sourceDir := GetSourcePath()
 	if opt.Session != nil {
-		output := "azd-record"
-		if runtime.GOOS == "windows" {
-			output = output + ".exe"
-		}
-
 		buildRecordOnce.Do(func() {
-			build(t, sourceDir, "-tags=record", "-o="+output)
+			build(t, sourceDir, "-tags=record", "-o="+name)
 		})
-
-		cli.AzdPath = filepath.Join(sourceDir, output)
 	} else {
-		output := "azd"
-		if runtime.GOOS == "windows" {
-			output = output + ".exe"
-		}
-
 		buildOnce.Do(func() {
 			build(t, sourceDir)
 		})
-
-		cli.AzdPath = filepath.Join(sourceDir, output)
 	}
 
 	return cli

@@ -101,7 +101,7 @@ stages:
                 -Version $(CLI_VERSION)
                 -SourceVersion $(Build.SourceVersion)
                 -CodeCoverageEnabled
-                -RecordEnabled
+                -BuildRecordMode
               workingDirectory: cli/azd
             displayName: Build Go Binary (For tests)
 

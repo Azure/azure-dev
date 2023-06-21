@@ -130,12 +130,13 @@ func (r *commandRunner) Run(ctx context.Context, args RunArgs) (RunResult, error
 		debugLogging = *args.DebugLogging
 	}
 
-	logMsg := logBuilder{}
+	logMsg := logBuilder{
+		args: append([]string{args.Cmd}, args.Args...),
+		env:  args.Env,
+	}
 	defer func() {
 		logMsg.Write(debugLogging, args.SensitiveData)
 	}()
-	logMsg.args = append([]string{args.Cmd}, args.Args...)
-	logMsg.env = args.Env
 
 	if err := cmd.Start(); err != nil {
 		logMsg.err = err
@@ -209,13 +210,14 @@ func (r *commandRunner) RunList(ctx context.Context, commands []string, args Run
 		debugLogging = *args.DebugLogging
 	}
 
-	logMsg := logBuilder{}
+	logMsg := logBuilder{
+		// use the actual shell command invoked in the log message
+		args: process.Cmd.Args,
+		env:  args.Env,
+	}
 	defer func() {
 		logMsg.Write(debugLogging, args.SensitiveData)
 	}()
-	// use the actual shell command invoked in the log message
-	logMsg.args = process.Cmd.Args
-	logMsg.env = args.Env
 
 	if err := process.Start(); err != nil {
 		logMsg.err = err

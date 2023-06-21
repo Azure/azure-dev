@@ -4,7 +4,7 @@
 # Licensed under the MIT License. See https://go.microsoft.com/fwlink/?linkid=2090316 for license information.
 #-------------------------------------------------------------------------------------------------------------
 
-AZ_VERSION=${VERSION:-"latest"}
+AZD_VERSION=${VERSION:-"latest"}
 
 check_packages() {
     if ! dpkg -s "$@" > /dev/null 2>&1; then

@@ -1,4 +1,4 @@
-# Azure Developer CLI (azure-dev-cli)
+# Azure Developer CLI (azd)
 
 Installs the [Azure Developer CLI](https://github.com/Azure/azure-dev) along with needed dependencies.
 

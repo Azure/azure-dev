@@ -253,7 +253,7 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 
 			packageResult, err = packageTask.Await()
 			// wait for console updates to complete
-			_ = <-done
+			<-done
 			// do not stop progress here as next step is to deploy
 			if err != nil {
 				da.console.StopSpinner(ctx, stepMessage, input.StepFailed)
@@ -273,7 +273,7 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 
 		deployResult, err := deployTask.Await()
 		// wait for console updates to complete
-		_ = <-done
+		<-done
 		da.console.StopSpinner(ctx, stepMessage, input.GetStepResultFormat(err))
 		if err != nil {
 			return nil, err

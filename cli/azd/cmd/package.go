@@ -158,7 +158,7 @@ func (pa *packageAction) Run(ctx context.Context) (*actions.ActionResult, error)
 
 		packageResult, err := packageTask.Await()
 		// adding a few seconds to wait for all async ops to be flush
-		_ = <-done
+		<-done
 		pa.console.StopSpinner(ctx, stepMessage, input.GetStepResultFormat(err))
 
 		if err != nil {

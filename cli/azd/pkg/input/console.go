@@ -127,6 +127,7 @@ type AskerConsole struct {
 	previewer             *progressLog
 	initialWriter         io.Writer
 	currentSpinnerMessage string
+	spinnerMutex          sync.Mutex
 }
 
 type ConsoleOptions struct {
@@ -226,6 +227,9 @@ func defaultShowPreviewerOptions() *ShowPreviewerOptions {
 }
 
 func (c *AskerConsole) ShowPreviewer(ctx context.Context, options *ShowPreviewerOptions) *ConsolePreviewer {
+	c.spinnerMutex.Lock()
+	defer c.spinnerMutex.Unlock()
+
 	// auto-stop any spinner
 	currentMsg := c.currentSpinnerMessage
 	c.StopSpinner(ctx, "", Step)
@@ -244,6 +248,9 @@ func (c *AskerConsole) ShowPreviewer(ctx context.Context, options *ShowPreviewer
 }
 
 func (c *AskerConsole) StopPreviewer(ctx context.Context) {
+	c.spinnerMutex.Lock()
+	defer c.spinnerMutex.Unlock()
+
 	c.previewer.Stop()
 	c.previewer = nil
 	c.writer = c.initialWriter
@@ -262,6 +269,9 @@ func (c *AskerConsole) spinnerText(title, charset string) string {
 }
 
 func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format SpinnerUxType) {
+	c.spinnerMutex.Lock()
+	defer c.spinnerMutex.Unlock()
+
 	if c.formatter != nil && c.formatter.Kind() == output.JsonFormat {
 		// Spinner is disabled when using json format.
 		return
@@ -381,6 +391,9 @@ func (c *AskerConsole) getIndent(format SpinnerUxType) string {
 }
 
 func (c *AskerConsole) StopSpinner(ctx context.Context, lastMessage string, format SpinnerUxType) {
+	c.spinnerMutex.Lock()
+	defer c.spinnerMutex.Unlock()
+
 	c.currentSpinnerMessage = ""
 	if c.formatter != nil && c.formatter.Kind() == output.JsonFormat {
 		// Spinner is disabled when using json format.

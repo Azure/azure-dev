@@ -3,13 +3,13 @@ package docker
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
 	"regexp"
 	"strconv"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/blang/semver/v4"
 )
@@ -27,21 +27,20 @@ type Docker interface {
 		buildContext string,
 		name string,
 		buildArgs []string,
+		stdOut io.Writer,
 	) (string, error)
 	Tag(ctx context.Context, cwd string, imageName string, tag string) error
 	Push(ctx context.Context, cwd string, tag string) error
 }
 
-func NewDocker(commandRunner exec.CommandRunner, console input.Console) Docker {
+func NewDocker(commandRunner exec.CommandRunner) Docker {
 	return &docker{
 		commandRunner: commandRunner,
-		console:       console,
 	}
 }
 
 type docker struct {
 	commandRunner exec.CommandRunner
-	console       input.Console
 }
 
 func (d *docker) Login(ctx context.Context, loginServer string, username string, password string) error {
@@ -60,10 +59,9 @@ func (d *docker) Login(ctx context.Context, loginServer string, username string,
 	return nil
 }
 
-// Runs a Docker build for a given Dockerfile. If the platform is not specified (empty),
-// it defaults to amd64. If the build
-// is successful, the function
-// returns the image id of the built image.
+// Runs a Docker build for a given Dockerfile, writing the output of docker build to [stdOut] when it is
+// not nil. If the platform is not specified (empty) it defaults to amd64. If the build is successful,
+// the function returns the image id of the built image.
 func (d *docker) Build(
 	ctx context.Context,
 	cwd string,
@@ -72,6 +70,7 @@ func (d *docker) Build(
 	buildContext string,
 	tagName string,
 	buildArgs []string,
+	stdOut io.Writer,
 ) (string, error) {
 	if strings.TrimSpace(platform) == "" {
 		platform = DefaultPlatform
@@ -94,16 +93,13 @@ func (d *docker) Build(
 	args = append(args, buildContext)
 
 	// Build and produce output
-	previewer := d.console.ShowPreviewer(ctx,
-		&input.ShowPreviewerOptions{
-			Prefix:       "  ",
-			MaxLineCount: 8,
-			Title:        "Docker Output",
-		})
-	runArgs := exec.NewRunArgs("docker", args...).WithCwd(cwd).WithStdOut(previewer)
+	runArgs := exec.NewRunArgs("docker", args...).WithCwd(cwd)
+
+	if stdOut != nil {
+		runArgs = runArgs.WithStdOut(stdOut)
+	}
 
 	_, err := d.commandRunner.Run(ctx, runArgs)
-	previewer.Stop(ctx)
 	if err != nil {
 		return "", fmt.Errorf("building image: %w", err)
 	}

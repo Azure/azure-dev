@@ -21,7 +21,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazsdk"
-	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/azure/azure-dev/cli/azd/test/ostest"
 	"github.com/benbjohnson/clock"
 	"github.com/stretchr/testify/require"
@@ -124,7 +123,7 @@ func createContainerAppServiceTarget(
 	serviceConfig *ServiceConfig,
 	env *environment.Environment,
 ) ServiceTarget {
-	dockerCli := docker.NewDocker(mockContext.CommandRunner, mockinput.NewMockConsole())
+	dockerCli := docker.NewDocker(mockContext.CommandRunner)
 	credentialProvider := mockaccount.SubscriptionCredentialProviderFunc(
 		func(_ context.Context, _ string) (azcore.TokenCredential, error) {
 			return mockContext.Credentials, nil

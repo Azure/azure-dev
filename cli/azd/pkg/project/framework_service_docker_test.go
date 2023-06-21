@@ -99,14 +99,14 @@ services:
 	service := projectConfig.Services["web"]
 
 	npmCli := npm.NewNpmCli(mockContext.CommandRunner)
-	docker := docker.NewDocker(mockContext.CommandRunner, mockinput.NewMockConsole())
+	docker := docker.NewDocker(mockContext.CommandRunner)
 
 	done := make(chan bool)
 
 	internalFramework := NewNpmProject(npmCli, env)
 	progressMessages := []string{}
 
-	framework := NewDockerProject(env, docker, NewContainerHelper(env, clock.NewMock(), nil, docker))
+	framework := NewDockerProject(env, docker, NewContainerHelper(env, clock.NewMock(), nil, docker), mockinput.NewMockConsole())
 	framework.SetSource(internalFramework)
 
 	buildTask := framework.Build(*mockContext.Context, service, nil)
@@ -203,7 +203,7 @@ services:
 	})
 
 	npmCli := npm.NewNpmCli(mockContext.CommandRunner)
-	docker := docker.NewDocker(mockContext.CommandRunner, mockinput.NewMockConsole())
+	docker := docker.NewDocker(mockContext.CommandRunner)
 
 	projectConfig, err := Parse(*mockContext.Context, testProj)
 	require.NoError(t, err)
@@ -215,7 +215,7 @@ services:
 	internalFramework := NewNpmProject(npmCli, env)
 	status := ""
 
-	framework := NewDockerProject(env, docker, NewContainerHelper(env, clock.NewMock(), nil, docker))
+	framework := NewDockerProject(env, docker, NewContainerHelper(env, clock.NewMock(), nil, docker), mockinput.NewMockConsole())
 	framework.SetSource(internalFramework)
 
 	buildTask := framework.Build(*mockContext.Context, service, nil)
@@ -249,10 +249,10 @@ func Test_DockerProject_Build(t *testing.T) {
 		})
 
 	env := environment.Ephemeral()
-	dockerCli := docker.NewDocker(mockContext.CommandRunner, mockinput.NewMockConsole())
+	dockerCli := docker.NewDocker(mockContext.CommandRunner)
 	serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
 
-	dockerProject := NewDockerProject(env, dockerCli, NewContainerHelper(env, clock.NewMock(), nil, dockerCli))
+	dockerProject := NewDockerProject(env, dockerCli, NewContainerHelper(env, clock.NewMock(), nil, dockerCli), mockinput.NewMockConsole())
 	buildTask := dockerProject.Build(*mockContext.Context, serviceConfig, nil)
 	logProgress(buildTask)
 
@@ -294,10 +294,10 @@ func Test_DockerProject_Package(t *testing.T) {
 		})
 
 	env := environment.EphemeralWithValues("test", map[string]string{})
-	dockerCli := docker.NewDocker(mockContext.CommandRunner, mockinput.NewMockConsole())
+	dockerCli := docker.NewDocker(mockContext.CommandRunner)
 	serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
 
-	dockerProject := NewDockerProject(env, dockerCli, NewContainerHelper(env, clock.NewMock(), nil, dockerCli))
+	dockerProject := NewDockerProject(env, dockerCli, NewContainerHelper(env, clock.NewMock(), nil, dockerCli), mockinput.NewMockConsole())
 	packageTask := dockerProject.Package(
 		*mockContext.Context,
 		serviceConfig,

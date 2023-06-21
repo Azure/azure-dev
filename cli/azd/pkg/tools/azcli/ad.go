@@ -27,6 +27,15 @@ type AzureCredentials struct {
 	ResourceManagerEndpointUrl string `json:"resourceManagerEndpointUrl"`
 }
 
+type ErrorWithSuggestion struct {
+	Suggestion string
+	Err        error
+}
+
+func (es *ErrorWithSuggestion) Error() string {
+	return es.Err.Error()
+}
+
 func (cli *azCli) CreateOrUpdateServicePrincipal(
 	ctx context.Context,
 	subscriptionId string,

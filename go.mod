@@ -52,7 +52,8 @@ require (
 	gopkg.in/yaml.v3 v3.0.1
 )
 
-require github.com/buger/goterm v1.0.4 // indirect
+require github.com/buger/goterm v1.0.4
+
 require github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v2 v2.0.0-beta.3
 
 require (

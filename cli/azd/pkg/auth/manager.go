@@ -184,7 +184,7 @@ func (m *Manager) CredentialForCurrentUser(
 	currentUser, err := readUserProperties(authConfig)
 	if errors.Is(err, ErrNoCurrentUser) {
 		// User is not logged in, not using az credentials, try CloudShell if possible
-		if shouldUseCloudShellAuth() {
+		if ShouldUseCloudShellAuth() {
 			cloudShellCredential, err := m.newCredentialFromCloudShell()
 			if err != nil {
 				return nil, err
@@ -260,7 +260,7 @@ func shouldUseLegacyAuth(cfg config.Config) bool {
 	return false
 }
 
-func shouldUseCloudShellAuth() bool {
+func ShouldUseCloudShellAuth() bool {
 	if useCloudShellAuth, has := os.LookupEnv(cUseCloudShellAuthEnvVar); has {
 		if use, err := strconv.ParseBool(useCloudShellAuth); err == nil && use {
 			log.Printf("using CloudShell auth")
@@ -297,7 +297,7 @@ func (m *Manager) GetLoggedInServicePrincipalTenantID(ctx context.Context) (*str
 	if err != nil {
 		// No user is logged in, if running in CloudShell use tenant id from
 		// CloudShell session (single tenant)
-		if shouldUseCloudShellAuth() {
+		if ShouldUseCloudShellAuth() {
 			// Tenant ID is not required when requesting a token from CloudShell
 			credential, err := m.CredentialForCurrentUser(ctx, nil)
 			if err != nil {
@@ -440,20 +440,33 @@ func (m *Manager) LoginWithDeviceCode(
 		return nil, err
 	}
 
-	m.console.MessageUxItem(ctx, &ux.MultilineMessage{
-		Lines: []string{
-			fmt.Sprintf("Start by copying the next code: %s", output.WithBold(code.UserCode())),
-			"Then press enter and continue to log in from your browser...",
-		},
-	})
-	m.console.WaitForEnter()
-
 	url := "https://microsoft.com/devicelogin"
-	if err := m.launchBrowserFn(url); err != nil {
-		log.Println("error launching browser: ", err.Error())
-		m.console.Message(ctx, fmt.Sprintf("Error launching browser. Manually go to: %s", url))
+
+	if ShouldUseCloudShellAuth() {
+		m.console.MessageUxItem(ctx, &ux.MultilineMessage{
+			Lines: []string{
+				// nolint:lll
+				"Cloud Shell is automatically authenticated under the initial account used to sign in. Run 'azd auth login' only if you need to use a different account.",
+				// nolint:lll
+				fmt.Sprintf("To sign in, use a web browser to open the page %s and enter the code %s to authenticate.", output.WithUnderline(url), output.WithBold(code.UserCode())),
+			},
+		})
+	} else {
+		m.console.MessageUxItem(ctx, &ux.MultilineMessage{
+			Lines: []string{
+				fmt.Sprintf("Start by copying the next code: %s", output.WithBold(code.UserCode())),
+				"Then press enter and continue to log in from your browser...",
+			},
+		})
+		m.console.WaitForEnter()
+
+		if err := m.launchBrowserFn(url); err != nil {
+			log.Println("error launching browser: ", err.Error())
+			m.console.Message(ctx, fmt.Sprintf("Error launching browser. Manually go to: %s", url))
+		}
+		m.console.Message(ctx, "Waiting for you to complete authentication in the browser...")
 	}
-	m.console.Message(ctx, "Waiting for you to complete authentication in the browser...")
+
 	res, err := code.AuthenticationResult(ctx)
 	if err != nil {
 		return nil, err

@@ -1,5 +1,11 @@
 # Release History
 
+## vNext (unreleased)
+
+### Bugs Fixed
+
+- [[2402]](https://github.com/Azure/azure-dev/pull/2279) Support for workload profiles in Azure Container Apps
+
 ## 1.0.2 (2023-06-14)
 
 ### Features Added

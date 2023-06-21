@@ -509,7 +509,7 @@ func (t *aksTarget) getIngressEndpoints(
 
 	var endpoints []string
 	var protocol string
-	if ingress.Spec.Tls == nil {
+	if len(ingress.Spec.Tls) == 0 {
 		protocol = "http"
 	} else {
 		protocol = "https"

@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -27,7 +29,7 @@ type Docker interface {
 		buildContext string,
 		name string,
 		buildArgs []string,
-		stdOut io.Writer,
+		buildProgress io.Writer,
 	) (string, error)
 	Tag(ctx context.Context, cwd string, imageName string, tag string) error
 	Push(ctx context.Context, cwd string, tag string) error
@@ -70,16 +72,29 @@ func (d *docker) Build(
 	buildContext string,
 	tagName string,
 	buildArgs []string,
-	stdOut io.Writer,
+	buildProgress io.Writer,
 ) (string, error) {
 	if strings.TrimSpace(platform) == "" {
 		platform = DefaultPlatform
 	}
 
+	tmpFolder, err := os.MkdirTemp(os.TempDir(), "azd-docker-build")
+	defer func() {
+		// fail to remove tmp files is not so bad as the OS will delete it
+		// eventually
+		_ = os.RemoveAll(tmpFolder)
+	}()
+
+	if err != nil {
+		return "", fmt.Errorf("building image: %w", err)
+	}
+	imgIdFile := filepath.Join(tmpFolder, "imgId")
+
 	args := []string{
 		"build",
 		"-f", dockerFilePath,
 		"--platform", platform,
+		"--iidfile", imgIdFile,
 	}
 
 	if tagName != "" {
@@ -95,21 +110,27 @@ func (d *docker) Build(
 	// Build and produce output
 	runArgs := exec.NewRunArgs("docker", args...).WithCwd(cwd)
 
-	if stdOut != nil {
-		runArgs = runArgs.WithStdOut(stdOut)
+	if buildProgress != nil {
+		// setting stderr and stdout both, as it's been noticed
+		// that docker log goes to stderr on macOS, but stdout on Ubuntu.
+		runArgs = runArgs.WithStdOut(buildProgress).WithStdErr(buildProgress)
 	}
 
-	_, err := d.commandRunner.Run(ctx, runArgs)
+	_, err = d.commandRunner.Run(ctx, runArgs)
 	if err != nil {
 		return "", fmt.Errorf("building image: %w", err)
 	}
 
-	// Build should just return cached img id
-	res, err := d.executeCommand(ctx, cwd, append(args, "-q")...)
+	// // Build should just return cached img id
+	// res, err := d.executeCommand(ctx, cwd, append(args, "-q")...)
+	// if err != nil {
+	// 	return "", fmt.Errorf("building image: %w", err)
+	// }
+	imgId, err := os.ReadFile(imgIdFile)
 	if err != nil {
 		return "", fmt.Errorf("building image: %w", err)
 	}
-	return strings.TrimSpace(res.Stdout), nil
+	return strings.TrimSpace(string(imgId)), nil
 }
 
 func (d *docker) Tag(ctx context.Context, cwd string, imageName string, tag string) error {

@@ -100,3 +100,9 @@ func (b RunArgs) WithStdOut(stdOut io.Writer) RunArgs {
 	b.StdOut = stdOut
 	return b
 }
+
+// Updates the stderr writer that will be used while invoking the command
+func (b RunArgs) WithStdErr(stdErr io.Writer) RunArgs {
+	b.Stderr = stdErr
+	return b
+}

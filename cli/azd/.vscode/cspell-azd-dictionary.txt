@@ -75,6 +75,7 @@ golangci
 gosec
 goterm
 hotspot
+iidfile
 ineffassign
 javac
 jmes

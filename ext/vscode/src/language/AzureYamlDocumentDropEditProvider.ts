@@ -11,7 +11,6 @@ export class AzureYamlDocumentDropEditProvider implements vscode.DocumentDropEdi
         const maybeFolder = dataTransfer.get('text/uri-list')?.value;
         const maybeFolderUri = vscode.Uri.parse(maybeFolder);
 
-
         if (await AzExtFsExtra.pathExists(maybeFolderUri) && await AzExtFsExtra.isDirectory(maybeFolderUri)) {
             const basename = path.basename(maybeFolderUri.fsPath);
             const newRelativePath = getProjectRelativePath(document.uri, maybeFolderUri);

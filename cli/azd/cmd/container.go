@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -43,7 +42,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/python"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/swa"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/terraform"
-	"github.com/benbjohnson/clock"
 	"github.com/mattn/go-colorable"
 	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
@@ -127,7 +125,9 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	})
 	container.RegisterSingleton(input.NewConsoleMessaging)
 
-	container.RegisterSingleton(func() httputil.HttpClient { return &http.Client{} })
+	client := createHttpClient()
+	container.RegisterSingleton(func() httputil.HttpClient { return client })
+	container.RegisterSingleton(func() auth.HttpClient { return client })
 
 	// Auth
 	container.RegisterSingleton(auth.NewLoggedInGuard)
@@ -330,7 +330,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	}
 
 	// Other
-	container.RegisterSingleton(clock.New)
+	container.RegisterSingleton(createClock)
 
 	// Service Targets
 	serviceTargetMap := map[project.ServiceTargetKind]any{

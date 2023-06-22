@@ -62,6 +62,14 @@ var loginScopesMap = map[string]struct{}{
 	azure.ManagementScope: {},
 }
 
+// HttpClient interface as required by MSAL library.
+type HttpClient interface {
+	httputil.HttpClient
+
+	// CloseIdleConnections closes any idle connections in a "keep-alive" state.
+	CloseIdleConnections()
+}
+
 // Manager manages the authentication system of azd. It allows a user to log in, either as a user principal or service
 // principal. Manager stores information so that the user can stay logged in across invocations of the CLI. When logged in
 // as a user (either interactively or via a device code flow), we provide a durable cache to MSAL which is used to cache
@@ -84,7 +92,7 @@ type Manager struct {
 	userConfigManager   config.UserConfigManager
 	credentialCache     Cache
 	ghClient            *github.FederatedTokenClient
-	httpClient          httputil.HttpClient
+	httpClient          HttpClient
 	launchBrowserFn     func(url string) error
 	console             input.Console
 }
@@ -92,7 +100,7 @@ type Manager struct {
 func NewManager(
 	configManager config.Manager,
 	userConfigManager config.UserConfigManager,
-	httpClient httputil.HttpClient,
+	httpClient HttpClient,
 	console input.Console,
 ) (*Manager, error) {
 	cfgRoot, err := config.GetUserConfigDir()
@@ -113,6 +121,7 @@ func NewManager(
 	options := []public.Option{
 		public.WithCache(newCache(cacheRoot)),
 		public.WithAuthority(cDefaultAuthority),
+		public.WithHTTPClient(httpClient),
 	}
 
 	publicClientApp, err := public.New(cAZD_CLIENT_ID, options...)
@@ -238,9 +247,9 @@ func (m *Manager) CredentialForCurrentUser(
 		}
 
 		if ps.ClientSecret != nil {
-			return newCredentialFromClientSecret(tenantID, *currentUser.ClientID, *ps.ClientSecret)
+			return m.newCredentialFromClientSecret(tenantID, *currentUser.ClientID, *ps.ClientSecret)
 		} else if ps.ClientCertificate != nil {
-			return newCredentialFromClientCertificate(tenantID, *currentUser.ClientID, *ps.ClientCertificate)
+			return m.newCredentialFromClientCertificate(tenantID, *currentUser.ClientID, *ps.ClientCertificate)
 		} else if ps.FederatedAuth != nil && ps.FederatedAuth.TokenProvider != nil {
 			return m.newCredentialFromFederatedTokenProvider(
 				tenantID, *currentUser.ClientID, *ps.FederatedAuth.TokenProvider)
@@ -332,8 +341,16 @@ func (m *Manager) GetLoggedInServicePrincipalTenantID(ctx context.Context) (*str
 	return currentUser.TenantID, nil
 }
 
-func newCredentialFromClientSecret(tenantID string, clientID string, clientSecret string) (azcore.TokenCredential, error) {
-	cred, err := azidentity.NewClientSecretCredential(tenantID, clientID, clientSecret, nil)
+func (m *Manager) newCredentialFromClientSecret(
+	tenantID string,
+	clientID string,
+	clientSecret string) (azcore.TokenCredential, error) {
+	options := &azidentity.ClientSecretCredentialOptions{
+		ClientOptions: policy.ClientOptions{
+			Transport: m.httpClient,
+		},
+	}
+	cred, err := azidentity.NewClientSecretCredential(tenantID, clientID, clientSecret, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating credential: %w: %w", err, ErrNoCurrentUser)
 	}
@@ -341,7 +358,7 @@ func newCredentialFromClientSecret(tenantID string, clientID string, clientSecre
 	return cred, nil
 }
 
-func newCredentialFromClientCertificate(
+func (m *Manager) newCredentialFromClientCertificate(
 	tenantID string,
 	clientID string,
 	clientCertificate string,
@@ -356,9 +373,13 @@ func newCredentialFromClientCertificate(
 		return nil, fmt.Errorf("parsing certificate: %w: %w", err, ErrNoCurrentUser)
 	}
 
+	options := &azidentity.ClientCertificateCredentialOptions{
+		ClientOptions: policy.ClientOptions{
+			Transport: m.httpClient,
+		},
+	}
 	cred, err := azidentity.NewClientCertificateCredential(
-		tenantID, clientID, certs, key, nil,
-	)
+		tenantID, clientID, certs, key, options)
 
 	if err != nil {
 		return nil, fmt.Errorf("creating credential: %w: %w", err, ErrNoCurrentUser)
@@ -375,7 +396,11 @@ func (m *Manager) newCredentialFromFederatedTokenProvider(
 	if provider != gitHubFederatedAuth {
 		return nil, fmt.Errorf("unsupported federated token provider: '%s'", string(provider))
 	}
-
+	options := &azidentity.ClientAssertionCredentialOptions{
+		ClientOptions: policy.ClientOptions{
+			Transport: m.httpClient,
+		},
+	}
 	cred, err := azidentity.NewClientAssertionCredential(
 		tenantID,
 		clientID,
@@ -387,7 +412,7 @@ func (m *Manager) newCredentialFromFederatedTokenProvider(
 
 			return federatedToken, nil
 		},
-		nil)
+		options)
 	if err != nil {
 		return nil, fmt.Errorf("creating credential: %w", err)
 	}

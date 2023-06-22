@@ -36,6 +36,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
+	"github.com/azure/azure-dev/cli/azd/test/recording"
 	"github.com/joho/godotenv"
 	"github.com/sethvargo/go-retry"
 	"github.com/stretchr/testify/assert"
@@ -100,12 +101,15 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 	dir := tempDirWithDiagnostics(t)
 	t.Logf("DIR: %s", dir)
 
-	envName := randomEnvName()
+	session := recording.Start(t)
+
+	envName := randomOrStoredEnvName(session)
 	t.Logf("AZURE_ENV_NAME: %s", envName)
 
-	cli := azdcli.NewCLI(t)
+	cli := azdcli.NewCLI(t, azdcli.WithSession(session))
 	cli.WorkingDirectory = dir
-	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
+	cli.Env = append(cli.Env, os.Environ()...)
+	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
 
 	err := copySample(dir, "storage")
 	require.NoError(t, err, "failed expanding sample")
@@ -128,17 +132,35 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 
 	assertEnvValuesStored(t, env)
 
+	if session != nil {
+		if session.Playback {
+			// This is currently required because azd doesn't store
+			// AZURE_SUBSCRIPTION_ID in the .env file
+			// See #2423
+			env.SetSubscriptionId(session.Variables[recording.SubscriptionIdKey])
+		} else {
+			session.Variables[recording.SubscriptionIdKey] = env.GetSubscriptionId()
+		}
+	}
+
 	// GetResourceGroupsForEnvironment requires a credential since it is using the SDK now
 	cred, err := azidentity.NewAzureCLICredential(nil)
 	if err != nil {
 		t.Fatal("could not create credential")
 	}
 
+	var client *http.Client
+	if session != nil {
+		client = session.ProxyClient
+	} else {
+		client = http.DefaultClient
+	}
+
 	azCli := azcli.NewAzCli(mockaccount.SubscriptionCredentialProviderFunc(
 		func(_ context.Context, _ string) (azcore.TokenCredential, error) {
 			return cred, nil
 		}),
-		http.DefaultClient,
+		client,
 		azcli.NewAzCliArgs{})
 
 	// Verify that resource groups are created with tag
@@ -160,12 +182,25 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 	dir := tempDirWithDiagnostics(t)
 	t.Logf("DIR: %s", dir)
 
+	session := recording.Start(t)
+
 	envName := "UpperCase" + randomEnvName()
+	if session != nil {
+		if session.Playback {
+			if _, ok := session.Variables[recording.EnvNameKey]; ok {
+				envName = session.Variables[recording.EnvNameKey]
+			}
+		} else {
+			session.Variables[recording.EnvNameKey] = envName
+		}
+	}
+
 	t.Logf("AZURE_ENV_NAME: %s", envName)
 
-	cli := azdcli.NewCLI(t)
+	cli := azdcli.NewCLI(t, azdcli.WithSession(session))
 	cli.WorkingDirectory = dir
-	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
+	cli.Env = append(cli.Env, os.Environ()...)
+	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
 
 	err := copySample(dir, "storage")
 	require.NoError(t, err, "failed expanding sample")
@@ -189,7 +224,24 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 
 	assertEnvValuesStored(t, env)
 
+	if session != nil {
+		if session.Playback {
+			// This is currently required because azd doesn't store
+			// AZURE_SUBSCRIPTION_ID in the .env file
+			// See #2423
+			env.SetSubscriptionId(session.Variables[recording.SubscriptionIdKey])
+		} else {
+			session.Variables[recording.SubscriptionIdKey] = env.GetSubscriptionId()
+		}
+	}
+
 	// GetResourceGroupsForEnvironment requires a credential since it is using the SDK now
+	var client *http.Client
+	if session != nil {
+		client = session.ProxyClient
+	} else {
+		client = http.DefaultClient
+	}
 	cred, err := azidentity.NewAzureCLICredential(nil)
 	if err != nil {
 		t.Fatal("could not create credential")
@@ -199,7 +251,7 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 		func(_ context.Context, _ string) (azcore.TokenCredential, error) {
 			return cred, nil
 		}),
-		http.DefaultClient,
+		client,
 		azcli.NewAzCliArgs{})
 
 	// Verify that resource groups are created with tag
@@ -355,6 +407,21 @@ func copySample(targetRoot string, sampleName string) error {
 		}
 		return os.WriteFile(targetPath, contents, osutil.PermissionFile)
 	})
+}
+
+func randomOrStoredEnvName(session *recording.Session) string {
+	if session != nil && session.Playback {
+		if _, ok := session.Variables[recording.EnvNameKey]; ok {
+			return session.Variables[recording.EnvNameKey]
+		}
+	}
+
+	randName := randomEnvName()
+	if session != nil {
+		session.Variables[recording.EnvNameKey] = randName
+	}
+
+	return randName
 }
 
 func randomEnvName() string {

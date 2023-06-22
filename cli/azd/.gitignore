@@ -1,5 +1,7 @@
 azd
 azd.exe
+azd-record
+azd-record.exe
 build
 resource.syso
 versioninfo.json

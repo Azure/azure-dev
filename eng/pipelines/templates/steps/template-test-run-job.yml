@@ -119,6 +119,9 @@ steps:
                 -p "$(arm-client-secret)" \
                 --tenant "$(arm-tenant-id)"
 
+              # set default sub for az to be the same used by azd
+              az account set --subscription "$(SubscriptionId)" 
+
               # enable alpha features
               azd config set alpha.all on
 

@@ -32,7 +32,7 @@ func Test_DockerBuild(t *testing.T) {
 			ran = true
 
 			// extract img id file arg
-			argsNoFile, _, value := removeArg("--iidfile", args.Args)
+			argsNoFile, _, value := mocks.RemoveArg("--iidfile", args.Args)
 
 			require.Equal(t, "docker", args.Cmd)
 			require.Equal(t, cwd, args.Cwd)
@@ -79,7 +79,7 @@ func Test_DockerBuild(t *testing.T) {
 			ran = true
 
 			// extract img id file arg
-			argsNoFile, _, value := removeArg("--iidfile", args.Args)
+			argsNoFile, _, value := mocks.RemoveArg("--iidfile", args.Args)
 
 			require.Equal(t, "docker", args.Cmd)
 			require.Equal(t, cwd, args.Cwd)
@@ -134,7 +134,7 @@ func Test_DockerBuildEmptyPlatform(t *testing.T) {
 		ran = true
 
 		// extract img id file arg
-		argsNoFile, _, value := removeArg("--iidfile", args.Args)
+		argsNoFile, _, value := mocks.RemoveArg("--iidfile", args.Args)
 
 		require.Equal(t, "docker", args.Cmd)
 		require.Equal(t, cwd, args.Cwd)
@@ -183,7 +183,7 @@ func Test_DockerBuildArgsEmpty(t *testing.T) {
 		ran = true
 
 		// extract img id file arg
-		argsNoFile, _, value := removeArg("--iidfile", args.Args)
+		argsNoFile, _, value := mocks.RemoveArg("--iidfile", args.Args)
 
 		require.Equal(t, "docker", args.Cmd)
 		require.Equal(t, cwd, args.Cwd)
@@ -213,25 +213,6 @@ func Test_DockerBuildArgsEmpty(t *testing.T) {
 	require.Equal(t, "Docker build output", result)
 }
 
-func removeArg(arg string, args []string) ([]string, string, string) {
-	result := make([]string, len(args)-2)
-	var insertIndex int
-	var extractArg, value string
-	for index := range args {
-		if args[index] == arg {
-			extractArg = args[index]
-			continue
-		}
-		if index > 0 && args[index-1] == arg {
-			value = args[index]
-			continue
-		}
-		result[insertIndex] = args[index]
-		insertIndex++
-	}
-	return result, extractArg, value
-}
-
 func Test_DockerBuildArgsMultiple(t *testing.T) {
 	ran := false
 	cwd := "."
@@ -250,7 +231,7 @@ func Test_DockerBuildArgsMultiple(t *testing.T) {
 		ran = true
 
 		// extract img id file arg
-		argsNoFile, _, value := removeArg("--iidfile", args.Args)
+		argsNoFile, _, value := mocks.RemoveArg("--iidfile", args.Args)
 
 		require.Equal(t, "docker", args.Cmd)
 		require.Equal(t, cwd, args.Cwd)

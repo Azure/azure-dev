@@ -5,6 +5,7 @@ package project
 
 import (
 	"context"
+	"os"
 	"strings"
 	"testing"
 
@@ -59,13 +60,20 @@ services:
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		ran = true
 
+		// extract img id file arg
+		argsNoFile, _, value := mocks.RemoveArg("--iidfile", args.Args)
+
 		require.Equal(t, []string{
 			"build",
 			"-f", "./Dockerfile",
 			"--platform", docker.DefaultPlatform,
 			"-t", "test-proj-web",
 			".",
-		}, args.Args)
+		}, argsNoFile)
+
+		// create the file as expected
+		err := os.WriteFile(value, []byte("imageId"), 0600)
+		require.NoError(t, err)
 
 		return exec.RunResult{
 			Stdout:   "imageId",
@@ -148,13 +156,20 @@ services:
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		ran = true
 
+		// extract img id file arg
+		argsNoFile, _, value := mocks.RemoveArg("--iidfile", args.Args)
+
 		require.Equal(t, []string{
 			"build",
 			"-f", "./Dockerfile.dev",
 			"--platform", docker.DefaultPlatform,
 			"-t", "test-proj-web",
 			"../",
-		}, args.Args)
+		}, argsNoFile)
+
+		// create the file as expected
+		err := os.WriteFile(value, []byte("imageId"), 0600)
+		require.NoError(t, err)
 
 		return exec.RunResult{
 			Stdout:   "imageId",
@@ -206,7 +221,13 @@ func Test_DockerProject_Build(t *testing.T) {
 			return strings.Contains(command, "docker build")
 		}).
 		RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+			// extract img id file arg
+			withExtract, _, value := mocks.RemoveArg("--iidfile", args.Args)
 			runArgs = args
+			runArgs.Args = withExtract
+			// create the file as expected
+			err := os.WriteFile(value, []byte("IMAGE_ID"), 0600)
+			require.NoError(t, err)
 			return exec.NewRunResult(0, "IMAGE_ID", ""), nil
 		})
 
@@ -231,7 +252,7 @@ func Test_DockerProject_Build(t *testing.T) {
 			"-f", "./Dockerfile",
 			"--platform", docker.DefaultPlatform,
 			"-t", "test-app-api",
-			".", "-q",
+			".",
 		},
 		runArgs.Args,
 	)

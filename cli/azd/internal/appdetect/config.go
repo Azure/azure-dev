@@ -74,6 +74,7 @@ type detectConfig struct {
 
 	// Include patterns for directories scanned. If unset, all directories are scanned by default.
 	IncludePatterns []string
+
 	// Exclude patterns for directories scanned.
 	// By default, build and package cache directories like **/dist, **/bin, **/node_modules are automatically excluded.
 	// Any hidden directories (directories starting with '.') are also excluded.

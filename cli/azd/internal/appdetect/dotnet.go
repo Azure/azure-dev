@@ -23,6 +23,10 @@ func (dd *DotNetDetector) DetectProject(path string, entries []fs.DirEntry) (*Pr
 	for _, entry := range entries {
 		name := entry.Name()
 		ext := filepath.Ext(name)
+
+		// This detection logic doesn't work if Program.cs has been renamed, or move into a different directory.
+		// The actual detection of an "Application" is much harder since ASP .NET applications are just libraries
+		// that are ran with "dotnet run".
 		if name == "Program.cs" || name == "Program.vb" || name == "Program.fs" {
 			hasStartupFile = true
 			projFileName = name

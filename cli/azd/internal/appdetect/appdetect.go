@@ -115,6 +115,8 @@ var allDetectors = []ProjectDetector{
 func Detect(repoRoot string, options ...DetectOption) ([]Project, error) {
 	config := newConfig(options...)
 	allProjects := []Project{}
+
+	// Prioritize src directory if it exists
 	sourceDir := filepath.Join(repoRoot, "src")
 	if ent, err := os.Stat(sourceDir); err == nil && ent.IsDir() {
 		projects, err := detectUnder(sourceDir, config)
@@ -122,7 +124,7 @@ func Detect(repoRoot string, options ...DetectOption) ([]Project, error) {
 			return nil, err
 		}
 
-		if projects != nil {
+		if len(projects) > 0 {
 			allProjects = append(allProjects, projects...)
 		}
 	}
@@ -134,7 +136,7 @@ func Detect(repoRoot string, options ...DetectOption) ([]Project, error) {
 			return nil, err
 		}
 
-		if projects != nil {
+		if len(projects) > 0 {
 			allProjects = append(allProjects, projects...)
 		}
 	}
@@ -242,10 +244,8 @@ func detectAny(detectors []ProjectDetector, path string, entries []fs.DirEntry) 
 // path is the directory being visited. entries are the file entries (including directories) in that directory.
 type WalkDirFunc func(path string, entries []fs.DirEntry) error
 
-// WalkDirectories is like filepath.Walk, except it only visits directories.
-//
-// Unlike filepath.Walk, it also bubbles up errors by default, unless the error is SkipDir, in which the directory is skipped
-// for any further walking.
+// WalkDirectories walks the file tree rooted at root, calling fn for each directory in the tree, including root.
+// The directories are walked in lexical order.
 func WalkDirectories(root string, fn WalkDirFunc) error {
 	info, err := os.Lstat(root)
 	if err != nil {
@@ -262,19 +262,18 @@ func walkDirRecursive(path string, d fs.DirEntry, fn WalkDirFunc) error {
 	}
 
 	err = fn(path, entries)
+	if errors.Is(err, filepath.SkipDir) {
+		// skip the directory
+		return nil
+	}
 	if err != nil {
-		// do not bubble up error, and simply do not expand the directory further.
-		if errors.Is(err, filepath.SkipDir) {
-			return nil
-		}
-
 		return err
 	}
 
 	for _, entry := range entries {
 		if entry.IsDir() {
-			newPath := filepath.Join(path, entry.Name())
-			err = walkDirRecursive(newPath, entry, fn)
+			dir := filepath.Join(path, entry.Name())
+			err = walkDirRecursive(dir, entry, fn)
 			if err != nil {
 				return err
 			}

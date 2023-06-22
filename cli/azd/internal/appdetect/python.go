@@ -13,7 +13,8 @@ func (pd *PythonDetector) Type() ProjectType {
 
 func (pd *PythonDetector) DetectProject(path string, entries []fs.DirEntry) (*Project, error) {
 	for _, entry := range entries {
-		if entry.Name() == "pyproject.toml" || entry.Name() == "requirements.txt" {
+		// entry.Name() == "pyproject.toml" when azd supports pyproject files
+		if entry.Name() == "requirements.txt" {
 			return &Project{
 				Language:      Python,
 				Path:          path,

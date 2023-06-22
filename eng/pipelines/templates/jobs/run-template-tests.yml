@@ -101,6 +101,7 @@ jobs:
           CleanupHoursDelay: ${{ parameters.CleanupHoursDelay }}
 
   - job: TemplateTest_RunTest
+    timeoutInMinutes: 180
     dependsOn: TemplateTest_CreateMatrix
 
     strategy:

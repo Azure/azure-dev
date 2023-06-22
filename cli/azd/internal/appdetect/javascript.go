@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"golang.org/x/exp/maps"
+	"golang.org/x/exp/slices"
 )
 
 type PackagesJson struct {
@@ -56,8 +57,13 @@ func (nd *JavaScriptDetector) DetectProject(path string, entries []fs.DirEntry) 
 				}
 			}
 
-			project.Frameworks = maps.Keys(frameworks)
-			log.Printf("Frameworks found: %v\n", project.Frameworks)
+			if len(frameworks) > 0 {
+				project.Frameworks = maps.Keys(frameworks)
+				slices.SortFunc(project.Frameworks, func(a, b Framework) bool {
+					return string(a) < string(b)
+				})
+				log.Printf("Frameworks found: %v\n", project.Frameworks)
+			}
 
 			tsFiles := 0
 			jsFiles := 0

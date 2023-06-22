@@ -1,0 +1,14 @@
+{
+  "name": "js-frameworks",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "react": ">=18.2.0",
+    "vue": ">=3.3.4",
+    "jquery": ">=3.7.0",
+    "@angular/core": ">=16.1.2"
+  }
+}

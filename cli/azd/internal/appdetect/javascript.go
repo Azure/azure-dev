@@ -26,7 +26,7 @@ func (nd *JavaScriptDetector) Type() ProjectType {
 
 func (nd *JavaScriptDetector) DetectProject(path string, entries []fs.DirEntry) (*Project, error) {
 	for _, entry := range entries {
-		if entry.Name() == "package.json" {
+		if strings.ToLower(entry.Name()) == "package.json" {
 			project := &Project{
 				Language:      JavaScript,
 				Path:          path,

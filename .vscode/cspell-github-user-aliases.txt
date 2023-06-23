@@ -5,7 +5,6 @@ blang
 bradleyjkemp
 briandowns
 cobey
-dnaeon
 ellismg
 envsubst
 fatih
@@ -22,4 +21,5 @@ pbnj
 sethvargo
 stretchr
 theckman
+bmatcuk
 tonybaloney

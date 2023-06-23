@@ -1,10 +1,10 @@
 # hyphen is optional, "re-authentication" and "reauthentication" are equivalent.
 AADSTS
-ABRT
 alphafeatures
 apimanagement
 apims
 appconfiguration
+appdetect
 appinsights
 appinsightsexporter
 appinsightsstorage
@@ -26,11 +26,12 @@ azdtempl
 azdtempl
 azdtest
 azfile
-azureedge
 azruntime
 azsdk
 AZURECLI
+azuredb
 azurestaticapps
+azuresql
 azuretools
 azureutil
 azureyaml
@@ -53,9 +54,9 @@ csharpapptest
 cupaloy
 deletedservices
 devel
-discarder
 docf
 dockerproject
+doublestar
 dskip
 eastus
 endregion
@@ -72,16 +73,15 @@ GOARCH
 GOCOVERDIR
 godotenv
 golangci
-gosec
 hotspot
 ineffassign
 javac
+jquery
 jmes
 keychain
 LASTEXITCODE
 ldflags
 lechnerc77
-microsoftonline
 mgmt
 mgutz
 mockarmresources
@@ -102,11 +102,12 @@ otlp
 otlpconfig
 otlptrace
 otlptracehttp
+missingkey
 pflag
 preinit
-proxying
 pulumi
 pyapp
+pyproject
 pyvenv
 reauthentication
 relogin
@@ -142,7 +143,7 @@ unmarshalling
 unsetenvs
 unsets
 utsname
+vuejs
 westus2
 wireinject
 yacspin
-zerr

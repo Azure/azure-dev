@@ -19,6 +19,10 @@ import (
 )
 
 func TestGenerateProject_Live(t *testing.T) {
+	if os.Getenv("AZD_TEST_APP_GENERATE_LIVE") == "" {
+		t.Skip("skip live test")
+	}
+
 	root := "testdata/live"
 	newTemplates := Discover(t, root)
 
@@ -30,7 +34,8 @@ func TestGenerateProject_Live(t *testing.T) {
 		{Name: "azure-samples-app-service-javascript-sap-cloud-sdk-quickstart"},
 		{Name: "azure-samples-apptemplate-wordpress-on-aca"},
 		{Name: "azure-samples-asa-samples-event-driven-application"},
-		{Name: "azure-samples-azure-django-postgres-aca"},
+		{Name: "azure-samples-azure-django-postgres-aca", Suppressed: true},
+		// repository error: azure.yaml is invalid
 		{Name: "azure-samples-azure-health-data-services-toolkit-fhir-function-quickstart"},
 		{Name: "azure-samples-azure-search-openai-demo", Suppressed: true},
 		// false positive

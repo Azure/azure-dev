@@ -105,10 +105,10 @@ type ProjectDetector interface {
 var allDetectors = []ProjectDetector{
 	// Order here determines precedence when two projects are in the same directory.
 	// This is unlikely to occur in practice, but reordering could help to break the tie in these cases.
-	&PythonDetector{},
-	&JavaScriptDetector{},
 	&JavaDetector{},
 	&DotNetDetector{},
+	&PythonDetector{},
+	&JavaScriptDetector{},
 }
 
 // Detects projects located under an application repository.

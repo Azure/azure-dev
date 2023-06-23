@@ -18,68 +18,30 @@ import (
 	"golang.org/x/exp/slices"
 )
 
-var sourceRegex = regexp.MustCompile(`source:\s+'(.+?)'`)
-
-func TestSetup(t *testing.T) {
-	resp, err := http.Get("https://raw.githubusercontent.com/Azure/awesome-azd/main/website/src/data/users.tsx")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer resp.Body.Close()
-
-	if resp.StatusCode != http.StatusOK {
-		t.Fatalf("GitHub API returned non-200 status code: %s", resp.Status)
-	}
-
-	bytes, err := io.ReadAll(resp.Body)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	matches := sourceRegex.FindAllStringSubmatch(string(bytes), -1)
-	if matches == nil {
-		t.Fatal("found no matches")
-	}
-
-	repos := make([]string, 0, len(matches))
-	for _, match := range matches {
-		if len(match) != 2 {
-			panic("invalid match")
-		}
-		repos = append(repos, match[1])
-	}
-
-	slices.Sort(repos)
-	cloneRepositories(t, repos, "testdata/live")
-
-	root := "testdata/live"
-	entries, err := os.ReadDir(root)
-	require.NoError(t, err)
-
-	for _, ent := range entries {
-		t.Logf("{\"%s\"},", ent.Name())
-	}
-}
-
 func TestGenerateProject_Live(t *testing.T) {
 	root := "testdata/live"
-	tests := []struct{ Name string }{
-		{"azure-reliable-web-app-pattern-dotnet"},
-		{"azure-samples-app-service-javascript-sap-cloud-sdk-quickstart"},
-		{"azure-samples-apptemplate-wordpress-on-aca"},
-		{"azure-samples-asa-samples-event-driven-application"},
-		{"azure-samples-azure-django-postgres-aca"},
-		{"azure-samples-azure-health-data-services-toolkit-fhir-function-quickstart"},
-		//{"azure-samples-azure-search-openai-demo"},
-		// false positive:
+	newTemplates := Discover(t, root)
+
+	tests := []struct {
+		Name       string
+		Suppressed bool
+	}{
+		{Name: "azure-reliable-web-app-pattern-dotnet"},
+		{Name: "azure-samples-app-service-javascript-sap-cloud-sdk-quickstart"},
+		{Name: "azure-samples-apptemplate-wordpress-on-aca"},
+		{Name: "azure-samples-asa-samples-event-driven-application"},
+		{Name: "azure-samples-azure-django-postgres-aca"},
+		{Name: "azure-samples-azure-health-data-services-toolkit-fhir-function-quickstart"},
+		{Name: "azure-samples-azure-search-openai-demo", Suppressed: true},
+		// false positive
 		// expected: []repository.service{repository.service{language:"python", path:"app/backend"}}
 		// actual  : []repository.service{
 		// repository.service{language:"python", path:"app/backend"},
 		// repository.service{language:"ts", path:"app/frontend"},
 		// repository.service{language:"python", path:"notebooks"}, repository.service{language:"python", path:"scripts"}}
 
-		// {"azure-samples-azure-search-openai-demo-csharp"},
-		// false positive:
+		{Name: "azure-samples-azure-search-openai-demo-csharp", Suppressed: true},
+		// false positive
 		// expected: []repository.service{repository.service{language:"dotnet", path:"app/backend"}}
 		// actual  : []repository.service{
 		// repository.service{language:"dotnet", path:"app/backend"},
@@ -87,63 +49,76 @@ func TestGenerateProject_Live(t *testing.T) {
 		// repository.service{language:"dotnet", path:"app/prepdocs/PrepareDocs"},
 		// repository.service{language:"python", path:"notebooks"}}
 
-		//{"azure-samples-bindings-dapr-csharp-cron-postgres"},
-		// repository has error: language should be csharp
-		{"azure-samples-bindings-dapr-nodejs-cron-postgres"},
-		{"azure-samples-bindings-dapr-python-cron-postgres"},
-		{"azure-samples-chatgpt-quickstart"},
-		// {"azure-samples-contoso-real-estate"},
+		{Name: "azure-samples-bindings-dapr-csharp-cron-postgres", Suppressed: true},
+		// repository error: language should be csharp
+		{Name: "azure-samples-bindings-dapr-nodejs-cron-postgres"},
+		{Name: "azure-samples-bindings-dapr-python-cron-postgres"},
+		{Name: "azure-samples-chatgpt-quickstart"},
+		{Name: "azure-samples-contoso-real-estate", Suppressed: true},
 		// detection incorrect: repository has multiple packages.json
-		{"azure-samples-fastapi-on-azure-functions"},
-		{"azure-samples-function-csharp-ai-textsummarize"},
-		{"azure-samples-function-python-ai-textsummarize"},
-		{"azure-samples-msdocs-django-postgresql-sample-app"},
-		{"azure-samples-msdocs-flask-postgresql-sample-app"},
-		{"azure-samples-openai-plugin-fastapi"},
-		{"azure-samples-pubsub-dapr-csharp-servicebus"},
-		{"azure-samples-pubsub-dapr-nodejs-servicebus"},
-		{"azure-samples-pubsub-dapr-python-servicebus"},
-		{"azure-samples-react-component-toolkit-openai-demo"},
-		{"azure-samples-spring-petclinic-java-mysql"},
-		{"azure-samples-svc-invoke-dapr-csharp"},
-		{"azure-samples-svc-invoke-dapr-nodejs"},
-		{"azure-samples-svc-invoke-dapr-python"},
+		{Name: "azure-samples-fastapi-on-azure-functions"},
+		{Name: "azure-samples-function-csharp-ai-textsummarize"},
+		{Name: "azure-samples-function-python-ai-textsummarize"},
+		{Name: "azure-samples-msdocs-django-postgresql-sample-app"},
+		{Name: "azure-samples-msdocs-flask-postgresql-sample-app"},
+		{Name: "azure-samples-openai-plugin-fastapi"},
+		{Name: "azure-samples-pubsub-dapr-csharp-servicebus"},
+		{Name: "azure-samples-pubsub-dapr-nodejs-servicebus"},
+		{Name: "azure-samples-pubsub-dapr-python-servicebus"},
+		{Name: "azure-samples-react-component-toolkit-openai-demo"},
+		{Name: "azure-samples-spring-petclinic-java-mysql"},
+		{Name: "azure-samples-svc-invoke-dapr-csharp"},
+		{Name: "azure-samples-svc-invoke-dapr-nodejs"},
+		{Name: "azure-samples-svc-invoke-dapr-python"},
 		// todo apps have src/web specified as "js" instead of "ts"
 		// this is fixed using custom logic in the comparison below
-		{"azure-samples-todo-csharp-cosmos-sql"},
-		{"azure-samples-todo-csharp-sql"},
-		{"azure-samples-todo-csharp-sql-swa-func"},
-		{"azure-samples-todo-java-mongo"},
+		{Name: "azure-samples-todo-csharp-cosmos-sql"},
+		{Name: "azure-samples-todo-csharp-sql"},
+		{Name: "azure-samples-todo-csharp-sql-swa-func"},
+		{Name: "azure-samples-todo-java-mongo"},
 		// api has both "packages.json" and "pom.xml". should be java, we break the tie giving precedence to pom.xml
-		{"azure-samples-todo-java-mongo-aca"},
-		{"azure-samples-todo-nodejs-mongo"},
-		{"azure-samples-todo-nodejs-mongo-aca"},
-		{"azure-samples-todo-nodejs-mongo-aks"},
-		{"azure-samples-todo-nodejs-mongo-swa-func"},
-		{"azure-samples-todo-nodejs-mongo-terraform"},
-		{"azure-samples-todo-python-mongo"},
-		{"azure-samples-todo-python-mongo-aca"},
-		{"azure-samples-todo-python-mongo-swa-func"},
-		{"azure-samples-todo-python-mongo-terraform"},
-		{"bradygaster-rockpaperorleans"},
-		{"pamelafox-django-quiz-app"},
-		{"pamelafox-fastapi-azure-function-apim"},
-		{"pamelafox-flask-charts-api-container-app"},
-		{"pamelafox-flask-db-quiz-example"},
-		{"pamelafox-flask-gallery-container-app"},
-		{"pamelafox-flask-surveys-container-app"},
-		{"pamelafox-simple-fastapi-container"},
-		{"pamelafox-simple-flask-api-container"},
-		{"pamelafox-staticmaps-function"},
-		//{"rpothin-servicebus-csharp-function-dataverse"},
-		// incorrect detection:
-		{"sabbour-aks-app-template"},
-		{"savannahostrowski-jupyter-mercury-aca"},
-		{"tonybaloney-django-on-azure"},
-		{"tonybaloney-simple-flask-azd"},
+		{Name: "azure-samples-todo-java-mongo-aca"},
+		{Name: "azure-samples-todo-nodejs-mongo"},
+		{Name: "azure-samples-todo-nodejs-mongo-aca"},
+		{Name: "azure-samples-todo-nodejs-mongo-aks"},
+		{Name: "azure-samples-todo-nodejs-mongo-swa-func"},
+		{Name: "azure-samples-todo-nodejs-mongo-terraform"},
+		{Name: "azure-samples-todo-python-mongo"},
+		{Name: "azure-samples-todo-python-mongo-aca"},
+		{Name: "azure-samples-todo-python-mongo-swa-func"},
+		{Name: "azure-samples-todo-python-mongo-terraform"},
+		{Name: "bradygaster-rockpaperorleans"},
+		{Name: "pamelafox-django-quiz-app"},
+		{Name: "pamelafox-fastapi-azure-function-apim"},
+		{Name: "pamelafox-flask-charts-api-container-app"},
+		{Name: "pamelafox-flask-db-quiz-example"},
+		{Name: "pamelafox-flask-gallery-container-app"},
+		{Name: "pamelafox-flask-surveys-container-app"},
+		{Name: "pamelafox-simple-fastapi-container"},
+		{Name: "pamelafox-simple-flask-api-container"},
+		{Name: "pamelafox-staticmaps-function"},
+		{Name: "rpothin-servicebus-csharp-function-dataverse", Suppressed: true},
+		// incorrect detection: doesn't handle functionapp
+		{Name: "sabbour-aks-app-template", Suppressed: true},
+		// false positive: sabbour-aks-app-template has placeholder app
+		{Name: "savannahostrowski-jupyter-mercury-aca"},
+		{Name: "tonybaloney-django-on-azure"},
+		{Name: "tonybaloney-simple-flask-azd"},
 	}
+
+	existingTests := make(map[string]struct{}, len(tests))
 	for _, tt := range tests {
-		if strings.Contains(tt.Name, "sabbour-aks-app-template") {
+		existingTests[tt.Name] = struct{}{}
+	}
+
+	for _, template := range newTemplates {
+		if _, ok := existingTests[template]; !ok {
+			t.Errorf("new template: %s", template)
+		}
+	}
+
+	for _, tt := range tests {
+		if tt.Suppressed {
 			continue
 		}
 
@@ -199,6 +174,53 @@ func TestGenerateProject_Live(t *testing.T) {
 			assert.Equal(t, expected, actual)
 		})
 	}
+}
+
+var sourceRegex = regexp.MustCompile(`source:\s+'(.+?)'`)
+
+// Discovers templates to use for testing, cloning each template repository under root.
+// Currently, this uses the current list of awesome-azd templates.
+func Discover(t *testing.T, root string) []string {
+	resp, err := http.Get("https://raw.githubusercontent.com/Azure/awesome-azd/main/website/src/data/users.tsx")
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		t.Fatalf("GitHub API returned non-200 status code: %s", resp.Status)
+	}
+
+	bytes, err := io.ReadAll(resp.Body)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	matches := sourceRegex.FindAllStringSubmatch(string(bytes), -1)
+	if matches == nil {
+		t.Fatal("found no matches")
+	}
+
+	repos := make([]string, 0, len(matches))
+	for _, match := range matches {
+		if len(match) != 2 {
+			panic("invalid match")
+		}
+		repos = append(repos, match[1])
+	}
+
+	slices.Sort(repos)
+	cloneRepositories(t, repos, root)
+
+	entries, err := os.ReadDir(root)
+	require.NoError(t, err)
+
+	names := make([]string, 0, len(entries))
+	for _, ent := range entries {
+		names = append(names, ent.Name())
+	}
+
+	return names
 }
 
 type CloneJob struct {

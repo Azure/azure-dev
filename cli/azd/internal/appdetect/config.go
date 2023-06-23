@@ -1,23 +1,33 @@
 package appdetect
 
+var defaultExcludePatterns = []string{
+	"**/node_modules",
+	"**/[Oo]ut",
+	"**/[Dd]ist",
+	"**/[Bb]in",
+	"**/[oO]bj",
+	"**/.?*",
+}
+
+type DetectOption interface {
+	apply(detectConfig) detectConfig
+}
+
+type DetectDirectoryOption interface {
+	applyType(projectTypeConfig) projectTypeConfig
+}
+
 func newConfig(options ...DetectOption) detectConfig {
 	c := detectConfig{
-		defaultExcludePatterns: []string{
-			"**/node_modules",
-			"**/[Oo]ut",
-			"**/[Dd]ist",
-			"**/[Bb]in",
-			"**/[oO]bj",
-			"*/.*",
-		},
+		ExcludePatterns: defaultExcludePatterns,
 	}
 
 	for _, opt := range options {
 		c = opt.apply(c)
 	}
 
-	if c.defaultExcludePatterns != nil {
-		c.ExcludePatterns = append(c.defaultExcludePatterns, c.ExcludePatterns...)
+	if c.noExcludeDefaults {
+		c.ExcludePatterns = c.ExcludePatterns[len(defaultExcludePatterns):]
 	}
 
 	setDetectors(&c.projectTypeConfig)
@@ -28,7 +38,7 @@ func newDirectoryConfig(options ...DetectDirectoryOption) projectTypeConfig {
 	c := projectTypeConfig{}
 
 	for _, opt := range options {
-		c = opt.apply(c)
+		c = opt.applyType(c)
 	}
 
 	setDetectors(&c)
@@ -61,164 +71,98 @@ func setDetectors(c *projectTypeConfig) {
 	}
 }
 
-type DetectOption interface {
-	apply(detectConfig) detectConfig
-}
-
-type DetectDirectoryOption interface {
-	apply(projectTypeConfig) projectTypeConfig
-}
-
+// detectConfig holds configuration for detection.
 type detectConfig struct {
 	projectTypeConfig
 
-	// Include patterns for directories scanned. If unset, all directories are scanned by default.
 	IncludePatterns []string
-
-	// Exclude patterns for directories scanned.
-	// By default, build and package cache directories like **/dist, **/bin, **/node_modules are automatically excluded.
-	// Any hidden directories (directories starting with '.') are also excluded.
-	// Set overrideDefaults in WithExcludePatterns(patterns, overrideDefaults) to choose whether to override defaults.
 	ExcludePatterns []string
 
 	// Internal usage fields
-	defaultExcludePatterns []string
+	noExcludeDefaults bool
 }
 
-// Config that relates to project types
+// projectTypeConfig holds detection configuration for project types.
 type projectTypeConfig struct {
-	// Project types to be detected. If unset, all known project types are included.
 	IncludeProjectTypes []ProjectType
-	// Project types to be excluded from detection.
 	ExcludeProjectTypes []ProjectType
 
 	// Internal usage fields
 	detectors []ProjectDetector
 }
 
-type IncludePatternsOption struct {
+type includePatternsOption struct {
 	patterns []string
 }
 
-func (o *IncludePatternsOption) apply(c detectConfig) detectConfig {
+func (o includePatternsOption) apply(c detectConfig) detectConfig {
 	c.IncludePatterns = o.patterns
 	return c
 }
 
-func WithIncludePatterns(patterns []string) IncludePatternsOption {
-	return IncludePatternsOption{patterns}
+// Include patterns for directories scanned. The default include pattern is '**'.
+// The glob pattern syntax is documented at https://pkg.go.dev/github.com/bmatcuk/doublestar/v4#Match
+func WithIncludePatterns(patterns []string) includePatternsOption {
+	return includePatternsOption{patterns}
 }
 
-type ExcludePatternsOption struct {
+type excludePatternsOption struct {
 	patterns         []string
 	overrideDefaults bool
 }
 
-func (o *ExcludePatternsOption) apply(c detectConfig) detectConfig {
-	if o.overrideDefaults {
-		c.defaultExcludePatterns = nil
-	}
-
+func (o excludePatternsOption) apply(c detectConfig) detectConfig {
+	c.noExcludeDefaults = o.overrideDefaults
 	c.ExcludePatterns = append(c.ExcludePatterns, o.patterns...)
 	return c
 }
 
-func WithExcludePatterns(patterns []string, overrideDefaults bool) ExcludePatternsOption {
-	return ExcludePatternsOption{patterns, overrideDefaults}
+// Exclude patterns for directories scanned. The default exclude patterns is documented by defaultExcludePatterns,
+// which loosely excludes build (**/bin), packaging (**/node_modules), and hidden directories (**/.?*).
+// The directory and its subdirectories are excluded if any of the exclude patterns match.
+//
+// Set noDefaults to true to not have defaultExcludePatterns appended.
+// The glob pattern syntax is documented at https://pkg.go.dev/github.com/bmatcuk/doublestar/v4#Match
+func WithExcludePatterns(patterns []string, noDefaults bool) excludePatternsOption {
+	return excludePatternsOption{patterns, noDefaults}
 }
 
-type IncludePython struct {
+type includeProjectTypeOption struct {
+	include ProjectType
 }
 
-func (o *IncludePython) apply(c detectConfig) detectConfig {
-	c.IncludeProjectTypes = append(c.IncludeProjectTypes, Python)
+func (o includeProjectTypeOption) applyType(c projectTypeConfig) projectTypeConfig {
+	c.IncludeProjectTypes = append(c.IncludeProjectTypes, o.include)
 	return c
 }
 
-func WithPython() IncludePython {
-	return IncludePython{}
-}
-
-type ExcludePython struct {
-}
-
-func (o *ExcludePython) apply(c detectConfig) detectConfig {
-	c.ExcludeProjectTypes = append(c.IncludeProjectTypes, Python)
+func (o includeProjectTypeOption) apply(c detectConfig) detectConfig {
+	c.IncludeProjectTypes = append(c.IncludeProjectTypes, o.include)
 	return c
 }
 
-func WithoutPython() ExcludePython {
-	return ExcludePython{}
+// WithProjectType specifies a project type to be detected. While using WithProjectType,
+// only the specified project type(s) will be detected.
+func WithProjectType(include ProjectType) includeProjectTypeOption {
+	return includeProjectTypeOption{include}
 }
 
-type IncludeDotNet struct {
+type excludeProjectTypeOption struct {
+	exclude ProjectType
 }
 
-func (o *IncludeDotNet) apply(c detectConfig) detectConfig {
-	c.IncludeProjectTypes = append(c.IncludeProjectTypes, DotNet)
+func (o excludeProjectTypeOption) applyType(c projectTypeConfig) projectTypeConfig {
+	c.ExcludeProjectTypes = append(c.ExcludeProjectTypes, o.exclude)
 	return c
 }
 
-func WithDotNet() IncludeDotNet {
-	return IncludeDotNet{}
-}
-
-type ExcludeDotNet struct {
-}
-
-func (o *ExcludeDotNet) apply(c detectConfig) detectConfig {
-	c.ExcludeProjectTypes = append(c.IncludeProjectTypes, DotNet)
+func (o excludeProjectTypeOption) apply(c detectConfig) detectConfig {
+	c.ExcludeProjectTypes = append(c.ExcludeProjectTypes, o.exclude)
 	return c
 }
 
-func WithoutDotNet() ExcludeDotNet {
-	return ExcludeDotNet{}
-}
-
-type IncludeJava struct {
-}
-
-func (o *IncludeJava) apply(c detectConfig) detectConfig {
-	c.IncludeProjectTypes = append(c.IncludeProjectTypes, Java)
-	return c
-}
-
-func WithJava() IncludeJava {
-	return IncludeJava{}
-}
-
-type ExcludeJava struct {
-}
-
-func (o *ExcludeJava) apply(c detectConfig) detectConfig {
-	c.ExcludeProjectTypes = append(c.IncludeProjectTypes, Java)
-	return c
-}
-
-func WithoutJava() ExcludeJava {
-	return ExcludeJava{}
-}
-
-type IncludeJavaScript struct {
-}
-
-func (o *IncludeJavaScript) apply(c detectConfig) detectConfig {
-	c.IncludeProjectTypes = append(c.IncludeProjectTypes, JavaScript)
-	return c
-}
-
-func WithNodeJs() IncludeJavaScript {
-	return IncludeJavaScript{}
-}
-
-type ExcludeJavaScript struct {
-}
-
-func (o *ExcludeJavaScript) apply(c detectConfig) detectConfig {
-	c.ExcludeProjectTypes = append(c.IncludeProjectTypes, JavaScript)
-	return c
-}
-
-func WithoutNodeJs() ExcludeJavaScript {
-	return ExcludeJavaScript{}
+// WithoutProjectType specifies a project type to be excluded from detection. This can be used to filter out
+// project types from the default project types provided.
+func WithoutProjectType(exclude ProjectType) excludeProjectTypeOption {
+	return excludeProjectTypeOption{exclude}
 }

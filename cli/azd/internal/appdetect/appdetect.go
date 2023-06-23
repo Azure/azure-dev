@@ -170,15 +170,23 @@ func detectUnder(root string, config detectConfig) ([]Project, error) {
 			return err
 		}
 
+		included := false
+		if len(config.IncludePatterns) == 0 {
+			included = true
+		}
+
 		for _, p := range config.IncludePatterns {
 			match, err := doublestar.Match(p, relativePath)
 			if err != nil {
 				return err
 			}
 
-			if !match {
-				return filepath.SkipDir
-			}
+			included = included || match
+		}
+
+		if !included {
+			log.Printf("Skipping directory: %s", path)
+			return nil
 		}
 
 		for _, p := range config.ExcludePatterns {
@@ -186,6 +194,8 @@ func detectUnder(root string, config detectConfig) ([]Project, error) {
 			if err != nil {
 				return err
 			}
+
+			// For exclude patterns, we also skip its subdirectories.
 			if match {
 				return filepath.SkipDir
 			}

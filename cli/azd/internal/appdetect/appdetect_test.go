@@ -15,6 +15,12 @@ import (
 var testDataFs embed.FS
 
 func TestDetect(t *testing.T) {
+	dotnetProj := Project{
+		Language:      DotNet,
+		Path:          "dotnet",
+		DetectionRule: "Inferred by presence of: Program.cs, dotnettestapp.csproj",
+	}
+
 	tests := []struct {
 		name    string
 		options []DetectOption
@@ -24,11 +30,7 @@ func TestDetect(t *testing.T) {
 			"Full",
 			nil,
 			[]Project{
-				{
-					Language:      DotNet,
-					Path:          "dotnet",
-					DetectionRule: "Inferred by presence of: Program.cs, dotnettestapp.csproj",
-				},
+				dotnetProj,
 				{
 					Language:      Java,
 					Path:          "java",
@@ -61,6 +63,32 @@ func TestDetect(t *testing.T) {
 					DetectionRule: "Inferred by presence of: package.json",
 				},
 			},
+		},
+		{
+			"WithProjectType",
+			[]DetectOption{WithProjectType(DotNet)},
+			[]Project{dotnetProj},
+		},
+		{
+			"WithoutProjectTypes",
+			[]DetectOption{
+				WithProjectType(DotNet),
+				WithProjectType(Java),
+				WithoutProjectType(Java)},
+			[]Project{dotnetProj},
+		},
+		{
+			"WithIncludePatterns",
+			[]DetectOption{WithIncludePatterns([]string{"**/dotnet"})},
+			[]Project{dotnetProj},
+		},
+		{
+			"WithExcludePatterns",
+			[]DetectOption{
+				WithIncludePatterns([]string{"**/dotnet", "**/java"}),
+				WithExcludePatterns([]string{"**/java"}, true),
+			},
+			[]Project{dotnetProj},
 		},
 	}
 	for _, tt := range tests {

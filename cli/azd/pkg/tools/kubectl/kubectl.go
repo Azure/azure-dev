@@ -277,7 +277,8 @@ func (cli *kubectlCli) applyTemplate(ctx context.Context, filePath string, flags
 	})
 
 	if err != nil {
-		return fmt.Errorf("failed replacing env vars, %w", err)
+		replaced = yaml
+		log.Printf("failed replacing env vars in file '%s', %v", filePath, err)
 	}
 
 	_, err = cli.ApplyWithInput(ctx, replaced, flags)

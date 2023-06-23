@@ -214,3 +214,25 @@ func TestGetClientVersion(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "v1.25.4", ver)
 }
+
+func Test_Apply_Template(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "kubectl apply")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		return exec.NewRunResult(0, "", ""), nil
+	})
+
+	cli := NewKubectl(mockContext.CommandRunner)
+	flags := &KubeCliFlags{
+		Namespace: "test",
+	}
+
+	err := cli.Apply(
+		*mockContext.Context,
+		"../../../test/testdata/k8s",
+		flags,
+	)
+
+	require.NoError(t, err)
+}

@@ -118,7 +118,7 @@ func (o excludePatternsOption) apply(c detectConfig) detectConfig {
 }
 
 // Exclude patterns for directories scanned. The default exclude patterns is documented by defaultExcludePatterns,
-// which loosely excludes build (**/bin), packaging (**/node_modules), and hidden directories (**/.?*).
+// which loosely excludes build (e.g., **/bin), packaging (e.g., **/node_modules), and hidden directories (**/.?*).
 // The directory and its subdirectories are excluded if any of the exclude patterns match.
 //
 // Set noDefaults to true to not have defaultExcludePatterns appended.

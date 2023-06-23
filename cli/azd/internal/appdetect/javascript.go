@@ -14,7 +14,6 @@ import (
 
 type PackagesJson struct {
 	Dependencies map[string]string `json:"dependencies"`
-	//DevDependencies map[string]string `json:"devDependencies"`
 }
 
 type JavaScriptDetector struct {

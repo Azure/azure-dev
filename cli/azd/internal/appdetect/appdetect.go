@@ -111,7 +111,11 @@ var allDetectors = []ProjectDetector{
 	&JavaScriptDetector{},
 }
 
-// Detects projects located under an application repository.
+// Detect finds projects located under an application repository.
+// Detect is a wrapper around DetectUnder, with application repository heuristics applied:
+//   - If a directory named 'src' exists, the search is performed under src/. If projects are found under src/,
+//     the search will stop and return results.
+//   - Otherwise, the search is performed  under the root directory.
 func Detect(repoRoot string, options ...DetectOption) ([]Project, error) {
 	config := newConfig(options...)
 	allProjects := []Project{}
@@ -129,8 +133,9 @@ func Detect(repoRoot string, options ...DetectOption) ([]Project, error) {
 		}
 	}
 
+	// If no projects are found under src, search the root directory
 	if len(allProjects) == 0 {
-		config.ExcludePatterns = append(config.ExcludePatterns, "*/src/")
+		config.ExcludePatterns = append(config.ExcludePatterns, "src")
 		projects, err := detectUnder(repoRoot, config)
 		if err != nil {
 			return nil, err
@@ -144,13 +149,13 @@ func Detect(repoRoot string, options ...DetectOption) ([]Project, error) {
 	return allProjects, nil
 }
 
-// DetectUnder detects projects located under a directory.
+// DetectUnder detects projects located under a root directory.
 func DetectUnder(root string, options ...DetectOption) ([]Project, error) {
 	config := newConfig(options...)
 	return detectUnder(root, config)
 }
 
-// DetectDirectory detects the project located in a directory.
+// DetectDirectory detects the single project located in a directory.
 func DetectDirectory(directory string, options ...DetectDirectoryOption) (*Project, error) {
 	config := newDirectoryConfig(options...)
 	entries, err := os.ReadDir(directory)

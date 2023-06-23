@@ -109,6 +109,7 @@ func TestGenerateProject_Live(t *testing.T) {
 		{"azure-samples-svc-invoke-dapr-nodejs"},
 		{"azure-samples-svc-invoke-dapr-python"},
 		// todo apps have src/web specified as "js" instead of "ts"
+		// this is fixed using custom logic in the comparison below
 		{"azure-samples-todo-csharp-cosmos-sql"},
 		{"azure-samples-todo-csharp-sql"},
 		{"azure-samples-todo-csharp-sql-swa-func"},

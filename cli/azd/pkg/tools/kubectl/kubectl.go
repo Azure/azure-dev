@@ -8,10 +8,10 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"text/template"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/drone/envsubst"
 )
 
 // Executes commands against the Kubernetes CLI
@@ -24,7 +24,9 @@ type KubectlCli interface {
 	// Applies one or more files from the specified path
 	Apply(ctx context.Context, path string, flags *KubeCliFlags) error
 	// Applies manifests from the specified input
-	ApplyWithInput(ctx context.Context, input string, flags *KubeCliFlags) (*exec.RunResult, error)
+	ApplyWithStdIn(ctx context.Context, input string, flags *KubeCliFlags) (*exec.RunResult, error)
+	// Applies manifests from the specified file path
+	ApplyWithFile(ctx context.Context, filePath string, flags *KubeCliFlags) (*exec.RunResult, error)
 	// Views the current k8s configuration including available clusters, contexts & users
 	ConfigView(ctx context.Context, merge bool, flatten bool, flags *KubeCliFlags) (*exec.RunResult, error)
 	// Sets the k8s context to use for future CLI commands
@@ -69,6 +71,13 @@ type KubeCliFlags struct {
 	DryRun DryRunType
 	// The expected output, typically JSON or YAML
 	Output OutputType
+}
+
+// templateRoot is the structure of the template available within the test templates that can be used within k8s manifests.
+// We have the option to include additional nodes within the template in the future for things like config, etc
+type templateRoot struct {
+	// The Azd environment variables
+	Env map[string]string
 }
 
 type kubectlCli struct {
@@ -184,11 +193,24 @@ func (cli *kubectlCli) ConfigView(
 	return &res, nil
 }
 
-func (cli *kubectlCli) ApplyWithInput(ctx context.Context, input string, flags *KubeCliFlags) (*exec.RunResult, error) {
+func (cli *kubectlCli) ApplyWithStdIn(ctx context.Context, input string, flags *KubeCliFlags) (*exec.RunResult, error) {
 	runArgs := exec.
 		NewRunArgs("kubectl", "apply", "-f", "-").
 		WithEnv(environ(cli.env)).
 		WithStdIn(strings.NewReader(input))
+
+	res, err := cli.executeCommandWithArgs(ctx, runArgs, flags)
+	if err != nil {
+		return nil, fmt.Errorf("kubectl apply -f: %w", err)
+	}
+
+	return &res, nil
+}
+
+func (cli *kubectlCli) ApplyWithFile(ctx context.Context, filePath string, flags *KubeCliFlags) (*exec.RunResult, error) {
+	runArgs := exec.
+		NewRunArgs("kubectl", "apply", "-f", filePath).
+		WithEnv(environ(cli.env))
 
 	res, err := cli.executeCommandWithArgs(ctx, runArgs, flags)
 	if err != nil {
@@ -262,33 +284,29 @@ func (cli *kubectlCli) Exec(ctx context.Context, flags *KubeCliFlags, args ...st
 	return cli.executeCommandWithArgs(ctx, runArgs, flags)
 }
 
-func (cli *kubectlCli) applyTemplate(ctx context.Context, filePath string, flags *KubeCliFlags) error {
-	fileBytes, err := os.ReadFile(filePath)
+func (cli *kubectlCli) applyTemplate(ctx context.Context, filePath string, flags *KubeCliFlags) (*exec.RunResult, error) {
+	k8sTemplate, err := template.ParseFiles(filePath)
 	if err != nil {
-		return fmt.Errorf("failed reading manifest file '%s', %w", filePath, err)
+		return nil, fmt.Errorf("failed parsing template file '%s', %w", filePath, err)
 	}
 
-	yaml := string(fileBytes)
-	replaced, err := envsubst.Eval(yaml, func(name string) string {
-		if val, has := cli.env[name]; has {
-			return val
-		}
-		return os.Getenv(name)
-	})
-
+	builder := strings.Builder{}
+	err = k8sTemplate.Execute(&builder, templateRoot{Env: cli.env})
 	if err != nil {
-		replaced = yaml
-		log.Printf("failed replacing env vars in file '%s', %v", filePath, err)
+		return nil, fmt.Errorf("failed executing template file '%s', %w", filePath, err)
 	}
 
-	_, err = cli.ApplyWithInput(ctx, replaced, flags)
+	result, err := cli.ApplyWithStdIn(ctx, builder.String(), flags)
 	if err != nil {
-		return fmt.Errorf("failed applying file '%s', %w", filePath, err)
+		return nil, fmt.Errorf("failed applying file '%s', %w", filePath, err)
 	}
 
-	return nil
+	return result, nil
 }
 
+// Recursively loops through the specified directory and applies all k8s manifests
+// If the file is a *.tmpl file, it will be parsed as a template to support environment injection.
+// Otherwise the actual file contents will be applied.
 func (cli *kubectlCli) applyTemplates(ctx context.Context, directoryPath string, flags *KubeCliFlags) error {
 	entries, err := os.ReadDir(directoryPath)
 	if err != nil {
@@ -307,12 +325,19 @@ func (cli *kubectlCli) applyTemplates(ctx context.Context, directoryPath string,
 		}
 
 		ext := filepath.Ext(entry.Name())
-		if !(ext == ".yaml" || ext == ".yml") {
+		var err error
+
+		switch ext {
+		case ".tmpl":
+			_, err = cli.applyTemplate(ctx, entryPath, flags)
+		case ".yaml", ".yml":
+			_, err = cli.ApplyWithFile(ctx, entryPath, flags)
+		default:
 			continue
 		}
 
-		if err := cli.applyTemplate(ctx, entryPath, flags); err != nil {
-			return fmt.Errorf("failed applying template '%s', %w", entryPath, err)
+		if err != nil {
+			return fmt.Errorf("failed applying file '%s', %w", entryPath, err)
 		}
 	}
 

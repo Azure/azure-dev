@@ -104,7 +104,6 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 
 			return opts
 		},
-		// ActionResolver: newAzdRootAction,
 	})
 
 	configActions(root, opts)

@@ -83,7 +83,7 @@ func getCmdHelpDefaultDescription(cmd *cobra.Command) string {
 func getCmdHelpDefaultUsage(cmd *cobra.Command) string {
 	return fmt.Sprintf("%s\n  %s\n\n",
 		output.WithBold(output.WithUnderline("Usage")),
-		"{{if .Runnable}}{{.UseLine}}{{end}}{{if .HasAvailableSubCommands}}{{.CommandPath}} [command]{{end}}",
+		"{{if .HasAvailableSubCommands}}{{.CommandPath}} [command]{{else}}{{if .Runnable}}{{.UseLine}}{{end}}{{end}}",
 	)
 }
 

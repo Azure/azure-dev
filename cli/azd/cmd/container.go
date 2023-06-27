@@ -43,7 +43,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/swa"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/terraform"
 	"github.com/mattn/go-colorable"
-	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
 )
 
@@ -89,30 +88,7 @@ func resolveAction[T actions.Action](container *ioc.NestedContainer, actionName 
 func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(output.GetCommandFormatter)
 
-	container.RegisterSingleton(func(
-		rootOptions *internal.GlobalCommandOptions,
-		formatter output.Formatter,
-		cmd *cobra.Command) input.Console {
-		writer := cmd.OutOrStdout()
-		// When using JSON formatting, we want to ensure we always write messages from the console to stderr.
-		if formatter != nil && formatter.Kind() == output.JsonFormat {
-			writer = cmd.ErrOrStderr()
-		}
-
-		if os.Getenv("NO_COLOR") != "" {
-			writer = colorable.NewNonColorable(writer)
-		}
-
-		isTerminal := cmd.OutOrStdout() == os.Stdout &&
-			cmd.InOrStdin() == os.Stdin && isatty.IsTerminal(os.Stdin.Fd()) &&
-			isatty.IsTerminal(os.Stdout.Fd())
-
-		return input.NewConsole(rootOptions.NoPrompt, isTerminal, writer, input.ConsoleHandles{
-			Stdin:  cmd.InOrStdin(),
-			Stdout: cmd.OutOrStdout(),
-			Stderr: cmd.ErrOrStderr(),
-		}, formatter)
-	})
+	container.RegisterSingleton(newConsoleFromCmd)
 
 	container.RegisterSingleton(func(console input.Console, rootOptions *internal.GlobalCommandOptions) exec.CommandRunner {
 		return exec.NewCommandRunner(

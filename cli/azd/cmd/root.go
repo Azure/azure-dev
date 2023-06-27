@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -13,13 +14,32 @@ import (
 
 	// Importing for infrastructure provider plugin registrations
 
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/spf13/cobra"
 )
+
+type azdRootAction struct {
+	console input.Console
+}
+
+func newAzdRootAction(
+	console input.Console,
+) actions.Action {
+	return &azdRootAction{
+		console: console,
+	}
+}
+
+func (azdAction *azdRootAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	fmt.Println("fff")
+	return nil, nil
+}
 
 // Creates the root Cobra command for AZD.
 // staticHelp - False, except for running for doc generation
@@ -37,6 +57,22 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 	rootCmd := &cobra.Command{
 		Use:   "azd",
 		Short: fmt.Sprintf("%s is an open-source tool that helps onboard and manage your application on Azure", productName),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if opts.Documentation {
+				ctx := cmd.Context()
+				ctx = tools.WithInstalledCheckCache(ctx)
+
+				formatter, err := output.GetCommandFormatter(cmd)
+				if err != nil {
+					return err
+				}
+				console := newConsoleFromCmd(opts, formatter, cmd)
+
+				OpenWithDefaultBrowser(ctx, console, documentationHostName)
+				return nil
+			}
+			return cmd.Help()
+		},
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			if opts.Cwd != "" {
 				current, err := os.Getwd()
@@ -82,6 +118,12 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 					"no-prompt",
 					false,
 					"Accepts the default value instead of prompting, or it fails if there is no default.")
+			rootCmd.PersistentFlags().
+				BoolVar(
+					&opts.Documentation,
+					"docs",
+					false,
+					"Go to the official documentation for the executed command.")
 
 			// The telemetry system is responsible for reading these flags value and using it to configure the telemetry
 			// system, but we still need to add it to our flag set so that when we parse the command line with Cobra we
@@ -98,6 +140,7 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 
 			return opts
 		},
+		// ActionResolver: newAzdRootAction,
 	})
 
 	configActions(root, opts)

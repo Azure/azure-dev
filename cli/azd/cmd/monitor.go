@@ -7,8 +7,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"os/exec"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -20,7 +18,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
-	"github.com/cli/browser"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -133,32 +130,6 @@ func (m *monitorAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		return nil, fmt.Errorf("application does not contain an Application Insights dashboard")
 	}
 
-	openWithDefaultBrowser := func(url string) {
-		fmt.Fprintf(m.console.Handles().Stdout, "Opening %s in the default browser...\n", url)
-
-		// In Codespaces and devcontainers a $BROWSER environment variable is
-		// present whose value is an executable that launches the browser when
-		// called with the form:
-		// $BROWSER <url>
-
-		const BrowserEnvVarName = "BROWSER"
-
-		if envBrowser := os.Getenv(BrowserEnvVarName); len(envBrowser) > 0 {
-			if err := exec.Command(envBrowser, url).Run(); err != nil {
-				fmt.Fprintf(
-					m.console.Handles().Stderr,
-					"warning: failed to open browser configured by $BROWSER: %s\n",
-					err.Error(),
-				)
-			}
-			return
-		}
-
-		if err := browser.OpenURL(url); err != nil {
-			fmt.Fprintf(m.console.Handles().Stderr, "warning: failed to open default browser: %s\n", err.Error())
-		}
-	}
-
 	tenantId, err := m.subResolver.LookupTenant(ctx, m.env.GetSubscriptionId())
 	if err != nil {
 		return nil, err
@@ -166,19 +137,20 @@ func (m *monitorAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 
 	for _, insightsResource := range insightsResources {
 		if m.flags.monitorLive {
-			openWithDefaultBrowser(
+			OpenWithDefaultBrowser(ctx, m.console,
 				fmt.Sprintf("https://app.azure.com/%s%s/quickPulse", tenantId, insightsResource.Id),
 			)
 		}
 
 		if m.flags.monitorLogs {
-			openWithDefaultBrowser(fmt.Sprintf("https://app.azure.com/%s%s/logs", tenantId, insightsResource.Id))
+			OpenWithDefaultBrowser(ctx, m.console,
+				fmt.Sprintf("https://app.azure.com/%s%s/logs", tenantId, insightsResource.Id))
 		}
 	}
 
 	for _, portalResource := range portalResources {
 		if m.flags.monitorOverview {
-			openWithDefaultBrowser(
+			OpenWithDefaultBrowser(ctx, m.console,
 				fmt.Sprintf("https://portal.azure.com/#@%s/dashboard/arm%s", tenantId, portalResource.Id),
 			)
 		}

@@ -79,7 +79,14 @@ func handleDocsFlag(
 			return false, err
 		}
 
-		commandDocsUrl := documentationHostName
+		parent := cmd.Parent()
+		commandPath := cmd.Use
+		for parent != nil {
+			commandPath = parent.Use + "-" + commandPath
+			parent = parent.Parent()
+		}
+
+		commandDocsUrl := documentationHostName + "/reference#" + commandPath
 		OpenWithDefaultBrowser(ctx, console, commandDocsUrl)
 		return true, nil
 	}

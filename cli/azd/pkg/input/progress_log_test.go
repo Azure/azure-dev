@@ -37,6 +37,8 @@ func decodeScreenString(encoded string) string {
 	decodedResult := strings.ReplaceAll(encoded, tm.RESET_LINE, "<RL>")
 	decodedResult = strings.ReplaceAll(decodedResult, "\033[1A", "<M1U>")
 	decodedResult = strings.ReplaceAll(decodedResult, "\033[2A", "<M2U>")
+	decodedResult = strings.ReplaceAll(decodedResult, "\033[4A", "<M4U>")
+	decodedResult = strings.ReplaceAll(decodedResult, "\033[3B", "<M3D>")
 	return decodedResult
 }
 
@@ -175,6 +177,37 @@ func Test_progressLogManyLines(t *testing.T) {
 
 	// Duplicating the lines to display to see log progress displaying only the last `linesToDisplay`
 	for index := range make([]int, linesToDisplay*2) {
+		_, err := pg.Write([]byte(fmt.Sprintf("line: %x\n", index)))
+		require.NoError(t, err)
+	}
+
+	snConfig.SnapshotT(t, decodeScreenString(stdout.String()))
+	pg.Stop()
+}
+
+func Test_progressChangeHeader(t *testing.T) {
+	screenWidth := 40
+	sizeFn := func() int {
+		return screenWidth
+	}
+	var stdout bytes.Buffer
+	linesToDisplay := 5
+	pg := NewProgressLogWithSizeFn(linesToDisplay, prefix, "title", "header", sizeFn)
+
+	snConfig := snapshot.NewDefaultConfig()
+
+	tm.Screen = &stdout
+	pg.Start()
+
+	// Duplicating the lines to display to see log progress displaying only the last `linesToDisplay`
+	for index := range make([]int, linesToDisplay) {
+		_, err := pg.Write([]byte(fmt.Sprintf("line: %x\n", index)))
+		require.NoError(t, err)
+	}
+
+	pg.Header("Updated Header Here")
+
+	for index := range make([]int, linesToDisplay) {
 		_, err := pg.Write([]byte(fmt.Sprintf("line: %x\n", index)))
 		require.NoError(t, err)
 	}

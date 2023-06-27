@@ -9,6 +9,7 @@ import (
 	"strings"
 	"sync"
 
+	"github.com/adam-lavrik/go-imath/ix"
 	tm "github.com/buger/goterm"
 )
 
@@ -54,6 +55,9 @@ type progressLog struct {
 	output []string
 	// The mutex is used to coordinate updating the header, stopping the component and printing logs.
 	outputMutex sync.Mutex
+	// This function is used to find out what's the terminal width. The log progress is disabled if this function
+	// returns a number <= 0.
+	terminalWidthFn TerminalWidthFn
 }
 
 /****************** Exported method ****************
@@ -66,11 +70,20 @@ type progressLog struct {
 
 // NewProgressLog returns a new instance of a progressLog.
 func NewProgressLog(lines int, prefix, title, header string) *progressLog {
+	return NewProgressLogWithSizeFn(lines, prefix, title, header, tm.Width)
+}
+
+type TerminalWidthFn func() int
+
+// NewProgressLog is a constructor which can inject the implementation for getting the terminal's width.
+// This is useful to set and control the progress log width manually.
+func NewProgressLogWithSizeFn(lines int, prefix, title, header string, sizeFn TerminalWidthFn) *progressLog {
 	return &progressLog{
-		lines:  lines,
-		prefix: prefix,
-		title:  title,
-		header: header,
+		lines:           lines,
+		prefix:          prefix,
+		title:           title,
+		header:          header,
+		terminalWidthFn: sizeFn,
 	}
 }
 
@@ -135,31 +148,65 @@ func (p *progressLog) Write(logBytes []byte) (int, error) {
 	if p.output == nil {
 		return len(logBytes), nil
 	}
-	logsScanner := bufio.NewScanner(strings.NewReader(string(logBytes)))
-	maxWidth := tm.Width()
+	maxWidth := p.terminalWidthFn()
 	if maxWidth <= 0 {
-		// tm.Width <= 0 means there's no terminal to write and the stdout pipe is mostly connected to a file or a buffer
+		// maxWidth <= 0 means there's no terminal to write and the stdout pipe is mostly connected to a file or a buffer
 		// while azd is been called by another process, like go-test in CI
 		return len(logBytes), nil
 	}
 
+	logsScanner := bufio.NewScanner(strings.NewReader(string(logBytes)))
 	p.outputMutex.Lock()
 	defer p.outputMutex.Unlock()
 
+	var afterFirstLine bool
 	for logsScanner.Scan() {
 		log := logsScanner.Text()
-		fullLog := p.prefix + log
-		if len(fullLog) > maxWidth {
-			fullLog = fullLog[:maxWidth-(len(cPostfix)+1)] + cPostfix
+
+		// after the list .Scan(), we need to add new line for each new line
+		// as .Scan() splits content by new lines, and only the first one can be
+		// a continuation to current line
+		if afterFirstLine {
+			p.output = append(p.output[1:], p.prefix)
+		} else {
+			afterFirstLine = true
 		}
 
+		fullLog := log
+		if p.output[len(p.output)-1] == "" {
+			fullLog = p.prefix + log
+		}
+		fullLogLen := len(fullLog)
+
+		for fullLogLen > 0 {
+			// Get whatever is the empty space on current line
+			currentLineRemaining := maxWidth - len(p.output[len(p.output)-1])
+			if currentLineRemaining == 0 {
+				// line is full, use next line. Add prefix first
+				p.output = append(p.output[1:], p.prefix)
+				currentLineRemaining = maxWidth - len(p.prefix)
+			}
+
+			// Choose between writing fullLog (if it is less than currentLineRemaining)
+			// or writing only currentLineRemaining
+			writeLen := ix.Min(fullLogLen, currentLineRemaining)
+			p.output[len(p.output)-1] += fullLog[:writeLen]
+			fullLog = fullLog[writeLen:]
+			fullLogLen = len(fullLog)
+		}
 		p.clearContentAndFlush()
-		p.output = append(p.output[1:], fullLog)
 		p.printLogs()
 	}
 
 	if err := logsScanner.Err(); err != nil {
 		log.Printf("error while reading logs for previewer: %v", err)
+	}
+
+	// .Scan() won't add a line break for a line which ends in `\n`
+	// This is because the next Scan() after \n will find EOF.
+	// Adding a line break for such case.
+	if logBytes[len(logBytes)-1] == '\n' {
+		p.output = append(p.output[1:], p.prefix)
 	}
 
 	return len(logBytes), nil
@@ -228,12 +275,12 @@ func (p *progressLog) printLogs() {
 
 // buildTopBottom creates the display title and frames during initialization.
 func (p *progressLog) buildTopBottom() {
-	consoleLen := tm.Width()
+	consoleLen := p.terminalWidthFn()
 	withPrefixTitle := p.prefix + p.title
 	titleLen := len(withPrefixTitle)
 
 	if consoleLen <= 0 {
-		// tm.Width <= 0 means a CI terminal, where logs can be just written
+		// consoleLen <= 0 means a CI terminal, where logs can be just written
 		// no lines required.
 		p.displayTitle = withPrefixTitle
 		// no need for end line

@@ -58,6 +58,8 @@ require gopkg.in/dnaeon/go-vcr.v3 v3.1.2
 
 require github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v2 v2.0.0-beta.3
 
+require github.com/adam-lavrik/go-imath v0.0.0-20210910152346-265a42a96f0b
+
 require (
 	github.com/Azure/azure-pipeline-go v0.2.1 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.3.0 // indirect

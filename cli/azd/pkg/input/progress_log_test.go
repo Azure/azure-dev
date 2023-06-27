@@ -28,9 +28,12 @@ func Test_progressLogStartStop(t *testing.T) {
 
 	tm.Screen = &stdout
 	pg.Start()
-	snConfig.SnapshotMulti("start", decodeScreenString(stdout.String()))
+	err := snConfig.SnapshotMulti("start", decodeScreenString(stdout.String()))
+	require.NoError(t, err)
 	pg.Stop()
-	snConfig.SnapshotMulti("stop", decodeScreenString(stdout.String()))
+	err = snConfig.SnapshotMulti("stop", decodeScreenString(stdout.String()))
+	require.NoError(t, err)
+
 }
 
 func decodeScreenString(encoded string) string {
@@ -54,14 +57,17 @@ func Test_progressLogLine(t *testing.T) {
 
 	tm.Screen = &stdout
 	pg.Start()
-	snConfig.SnapshotMulti("start", decodeScreenString(stdout.String()))
+	err := snConfig.SnapshotMulti("start", decodeScreenString(stdout.String()))
+	require.NoError(t, err)
 	writeThis := "Hello progress line"
 	w, err := pg.Write([]byte(writeThis))
 	require.NoError(t, err)
 	require.Equal(t, len(writeThis), w)
-	snConfig.SnapshotMulti("log", decodeScreenString(stdout.String()))
+	err = snConfig.SnapshotMulti("log", decodeScreenString(stdout.String()))
+	require.NoError(t, err)
 	pg.Stop()
-	snConfig.SnapshotMulti("stop", decodeScreenString(stdout.String()))
+	err = snConfig.SnapshotMulti("stop", decodeScreenString(stdout.String()))
+	require.NoError(t, err)
 }
 func Test_progressLogMultiWrite(t *testing.T) {
 

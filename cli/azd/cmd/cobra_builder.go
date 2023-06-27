@@ -68,7 +68,7 @@ func (cb *CobraBuilder) BuildCommand(descriptor *actions.ActionDescriptor) (*cob
 }
 
 func handleDocsFlag(
-	ctx context.Context, cmd *cobra.Command, container *ioc.NestedContainer, docsUrl string) (bool, error) {
+	ctx context.Context, cmd *cobra.Command, container *ioc.NestedContainer) (bool, error) {
 	// Handle --docs flags for all commands
 	// Each command can use the description.options.DocumentationUrl to set what url to browse.
 	// By default, azd will use documentationHostName
@@ -78,10 +78,8 @@ func handleDocsFlag(
 		if err != nil {
 			return false, err
 		}
-		commandDocsUrl := docsUrl
-		if commandDocsUrl == "" {
-			commandDocsUrl = documentationHostName
-		}
+
+		commandDocsUrl := documentationHostName
 		OpenWithDefaultBrowser(ctx, console, commandDocsUrl)
 		return true, nil
 	}
@@ -91,7 +89,7 @@ func handleDocsFlag(
 func (cb *CobraBuilder) defaultCommandNoAction(
 	ctx context.Context, cmd *cobra.Command, descriptor *actions.ActionDescriptor) error {
 
-	flagHandled, err := handleDocsFlag(ctx, cmd, cb.container, descriptor.Options.DocumentationUrl)
+	flagHandled, err := handleDocsFlag(ctx, cmd, cb.container)
 	if err != nil {
 		return err
 	}
@@ -136,7 +134,7 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 		ctx := cmd.Context()
 		ctx = tools.WithInstalledCheckCache(ctx)
 
-		flagHandled, err := handleDocsFlag(ctx, cmd, cb.container, descriptor.Options.DocumentationUrl)
+		flagHandled, err := handleDocsFlag(ctx, cmd, cb.container)
 		if err != nil {
 			return nil
 		}

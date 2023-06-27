@@ -87,7 +87,6 @@ func configActions(root *actions.ActionDescriptor, rootOptions *internal.GlobalC
 		GroupingOptions: actions.CommandGroupOptions{
 			RootLevelHelp: actions.CmdGroupConfig,
 		},
-		DocumentationUrl: documentationHostName + "/reference#azd-config",
 	})
 
 	group.Add("list", &actions.ActionDescriptorOptions{
@@ -95,10 +94,9 @@ func configActions(root *actions.ActionDescriptor, rootOptions *internal.GlobalC
 			Short: "Lists all configuration values.",
 			Long:  `Lists all configuration values in ` + userConfigPath + `.`,
 		},
-		ActionResolver:   newConfigListAction,
-		OutputFormats:    []output.Format{output.JsonFormat},
-		DefaultFormat:    output.JsonFormat,
-		DocumentationUrl: documentationHostName + "/reference#azd-config-list",
+		ActionResolver: newConfigListAction,
+		OutputFormats:  []output.Format{output.JsonFormat},
+		DefaultFormat:  output.JsonFormat,
 	})
 
 	group.Add("get", &actions.ActionDescriptorOptions{
@@ -108,10 +106,9 @@ func configActions(root *actions.ActionDescriptor, rootOptions *internal.GlobalC
 			Long:  `Gets a configuration in ` + userConfigPath + `.`,
 			Args:  cobra.ExactArgs(1),
 		},
-		ActionResolver:   newConfigGetAction,
-		OutputFormats:    []output.Format{output.JsonFormat},
-		DefaultFormat:    output.JsonFormat,
-		DocumentationUrl: documentationHostName + "/reference#azd-config-get",
+		ActionResolver: newConfigGetAction,
+		OutputFormats:  []output.Format{output.JsonFormat},
+		DefaultFormat:  output.JsonFormat,
 	})
 
 	group.Add("set", &actions.ActionDescriptorOptions{
@@ -123,8 +120,7 @@ func configActions(root *actions.ActionDescriptor, rootOptions *internal.GlobalC
 			Example: `$ azd config set defaults.subscription <yourSubscriptionID>
 $ azd config set defaults.location eastus`,
 		},
-		ActionResolver:   newConfigSetAction,
-		DocumentationUrl: documentationHostName + "/reference#azd-config-set",
+		ActionResolver: newConfigSetAction,
 	})
 
 	group.Add("unset", &actions.ActionDescriptorOptions{
@@ -135,8 +131,7 @@ $ azd config set defaults.location eastus`,
 			Example: `$ azd config unset defaults.location`,
 			Args:    cobra.ExactArgs(1),
 		},
-		ActionResolver:   newConfigUnsetAction,
-		DocumentationUrl: documentationHostName + "/reference#azd-config-unset",
+		ActionResolver: newConfigUnsetAction,
 	})
 
 	group.Add("reset", &actions.ActionDescriptorOptions{
@@ -144,8 +139,7 @@ $ azd config set defaults.location eastus`,
 			Short: "Resets configuration to default.",
 			Long:  `Resets all configuration in ` + userConfigPath + ` to the default.`,
 		},
-		ActionResolver:   newConfigResetAction,
-		DocumentationUrl: documentationHostName + "/reference#azd-config-reset",
+		ActionResolver: newConfigResetAction,
 	})
 
 	group.Add("list-alpha", &actions.ActionDescriptorOptions{
@@ -155,8 +149,7 @@ $ azd config set defaults.location eastus`,
 		HelpOptions: actions.ActionHelpOptions{
 			Footer: getCmdListAlphaHelpFooter,
 		},
-		ActionResolver:   newConfigListAlphaAction,
-		DocumentationUrl: documentationHostName + "/reference#azd-config-list-alpha",
+		ActionResolver: newConfigListAlphaAction,
 	})
 
 	return group

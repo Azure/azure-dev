@@ -16,7 +16,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
@@ -57,22 +56,6 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 	rootCmd := &cobra.Command{
 		Use:   "azd",
 		Short: fmt.Sprintf("%s is an open-source tool that helps onboard and manage your application on Azure", productName),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			if opts.Documentation {
-				ctx := cmd.Context()
-				ctx = tools.WithInstalledCheckCache(ctx)
-
-				formatter, err := output.GetCommandFormatter(cmd)
-				if err != nil {
-					return err
-				}
-				console := newConsoleFromCmd(opts, formatter, cmd)
-
-				OpenWithDefaultBrowser(ctx, console, documentationHostName)
-				return nil
-			}
-			return cmd.Help()
-		},
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 			if opts.Cwd != "" {
 				current, err := os.Getwd()

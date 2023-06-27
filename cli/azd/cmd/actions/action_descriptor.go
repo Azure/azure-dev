@@ -186,6 +186,8 @@ type ActionDescriptorOptions struct {
 	HelpOptions ActionHelpOptions
 	// Defines grouping options for the command
 	GroupingOptions CommandGroupOptions
+	// Official documentation for the command
+	DocumentationUrl string
 }
 
 // Completion function used for cobra command flag completion

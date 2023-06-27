@@ -87,6 +87,7 @@ func configActions(root *actions.ActionDescriptor, rootOptions *internal.GlobalC
 		GroupingOptions: actions.CommandGroupOptions{
 			RootLevelHelp: actions.CmdGroupConfig,
 		},
+		DocumentationUrl: documentationHostName + "/reference#azd-config",
 	})
 
 	group.Add("list", &actions.ActionDescriptorOptions{

@@ -4,7 +4,6 @@
 package cmd
 
 import (
-	"context"
 	"fmt"
 	"os"
 	"strings"
@@ -14,7 +13,6 @@ import (
 
 	// Importing for infrastructure provider plugin registrations
 
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -22,23 +20,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/spf13/cobra"
 )
-
-type azdRootAction struct {
-	console input.Console
-}
-
-func newAzdRootAction(
-	console input.Console,
-) actions.Action {
-	return &azdRootAction{
-		console: console,
-	}
-}
-
-func (azdAction *azdRootAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	fmt.Println("fff")
-	return nil, nil
-}
 
 // Creates the root Cobra command for AZD.
 // staticHelp - False, except for running for doc generation

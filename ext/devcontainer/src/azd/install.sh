@@ -22,4 +22,4 @@ check_packages apt-transport-https curl ca-certificates gnupg2 dirmngr
 
 echo "(*) Installing Azure Developer CLI"
 
-curl -fsSL https://aka.ms/install-azd.sh | bash -s -- --version $AZ_VERSION
+curl -fsSL https://aka.ms/install-azd.sh | bash -s -- --version $AZD_VERSION -a $(dpkg --print-architecture)

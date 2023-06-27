@@ -328,11 +328,16 @@ func (cli *kubectlCli) applyTemplates(ctx context.Context, directoryPath string,
 		var err error
 
 		switch ext {
-		case ".tmpl":
-			_, err = cli.applyTemplate(ctx, entryPath, flags)
-		case ".yaml", ".yml":
-			_, err = cli.ApplyWithFile(ctx, entryPath, flags)
-		default:
+		case ".yaml", ".yml": // Only include yaml files
+			fileNameWithoutExtension := strings.TrimSuffix(entry.Name(), ext)
+			isTemplateFile := strings.HasSuffix(fileNameWithoutExtension, ".tmpl")
+
+			if isTemplateFile {
+				_, err = cli.applyTemplate(ctx, entryPath, flags)
+			} else {
+				_, err = cli.ApplyWithFile(ctx, entryPath, flags)
+			}
+		default: // Ignore all other files
 			continue
 		}
 

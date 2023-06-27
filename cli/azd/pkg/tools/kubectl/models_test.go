@@ -62,7 +62,7 @@ func Test_Ingress_UnMarshalling(t *testing.T) {
 
 	t.Run("yaml", func(t *testing.T) {
 		var ingressResources List[Ingress]
-		ingressBytes, err := os.ReadFile("../../../test/testdata/k8s/ingress.yaml")
+		ingressBytes, err := os.ReadFile("../../../test/testdata/k8s/parse/ingress.yaml")
 		require.NoError(t, err)
 
 		err = yaml.Unmarshal(ingressBytes, &ingressResources)

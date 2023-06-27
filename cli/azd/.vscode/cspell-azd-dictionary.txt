@@ -68,6 +68,7 @@ executil
 funcapp
 functestapp
 functionapp
+go-imath
 GOARCH
 GOCOVERDIR
 godotenv

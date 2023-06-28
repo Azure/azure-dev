@@ -21,9 +21,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/cli/browser"
-	"github.com/mattn/go-colorable"
-	"github.com/mattn/go-isatty"
-	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
 
@@ -309,7 +306,7 @@ func since(t time.Time) time.Duration {
 	return time.Since(t) - time.Duration(userInteractTime)*time.Millisecond
 }
 
-func OpenWithDefaultBrowser(ctx context.Context, console input.Console, url string) {
+func openWithDefaultBrowser(ctx context.Context, console input.Console, url string) {
 	console.Message(ctx, fmt.Sprintf("Opening %s in the default browser...\n", url))
 	// In Codespaces and devcontainers a $BROWSER environment variable is
 	// present whose value is an executable that launches the browser when
@@ -343,29 +340,4 @@ func OpenWithDefaultBrowser(ctx context.Context, console input.Console, url stri
 	console.Message(ctx, fmt.Sprintf("Azd was unable to open the next url. Please try it manually: %s", url))
 }
 
-const documentationHostName = "https://learn.microsoft.com/azure/developer/azure-developer-cli"
-
-func newConsoleFromCmd(
-	rootOptions *internal.GlobalCommandOptions,
-	formatter output.Formatter,
-	cmd *cobra.Command) input.Console {
-	writer := cmd.OutOrStdout()
-	// When using JSON formatting, we want to ensure we always write messages from the console to stderr.
-	if formatter != nil && formatter.Kind() == output.JsonFormat {
-		writer = cmd.ErrOrStderr()
-	}
-
-	if os.Getenv("NO_COLOR") != "" {
-		writer = colorable.NewNonColorable(writer)
-	}
-
-	isTerminal := cmd.OutOrStdout() == os.Stdout &&
-		cmd.InOrStdin() == os.Stdin && isatty.IsTerminal(os.Stdin.Fd()) &&
-		isatty.IsTerminal(os.Stdout.Fd())
-
-	return input.NewConsole(rootOptions.NoPrompt, isTerminal, writer, input.ConsoleHandles{
-		Stdin:  cmd.InOrStdin(),
-		Stdout: cmd.OutOrStdout(),
-		Stderr: cmd.ErrOrStderr(),
-	}, formatter)
-}
+const cReferenceDocumentationUrl = "https://learn.microsoft.com/azure/developer/azure-developer-cli/reference#"

@@ -137,20 +137,20 @@ func (m *monitorAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 
 	for _, insightsResource := range insightsResources {
 		if m.flags.monitorLive {
-			OpenWithDefaultBrowser(ctx, m.console,
+			openWithDefaultBrowser(ctx, m.console,
 				fmt.Sprintf("https://app.azure.com/%s%s/quickPulse", tenantId, insightsResource.Id),
 			)
 		}
 
 		if m.flags.monitorLogs {
-			OpenWithDefaultBrowser(ctx, m.console,
+			openWithDefaultBrowser(ctx, m.console,
 				fmt.Sprintf("https://app.azure.com/%s%s/logs", tenantId, insightsResource.Id))
 		}
 	}
 
 	for _, portalResource := range portalResources {
 		if m.flags.monitorOverview {
-			OpenWithDefaultBrowser(ctx, m.console,
+			openWithDefaultBrowser(ctx, m.console,
 				fmt.Sprintf("https://portal.azure.com/#@%s/dashboard/arm%s", tenantId, portalResource.Id),
 			)
 		}

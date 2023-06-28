@@ -20,6 +20,8 @@ import (
 	"github.com/spf13/cobra"
 )
 
+const cDocsFlagName = "docs"
+
 // CobraBuilder manages the construction of the cobra command tree from nested ActionDescriptors
 type CobraBuilder struct {
 	container *ioc.NestedContainer
@@ -67,12 +69,12 @@ func (cb *CobraBuilder) BuildCommand(descriptor *actions.ActionDescriptor) (*cob
 	return cmd, nil
 }
 
+// handleDocsFlag checks if the --docs flag was set to true and react to it by launching the browser
+// to the commands' documentation url.
+// When the flag is found and handled, this function returns true. Otherwise it returns false or error.
 func handleDocsFlag(
 	ctx context.Context, cmd *cobra.Command, container *ioc.NestedContainer) (bool, error) {
-	// Handle --docs flags for all commands
-	// Each command can use the description.options.DocumentationUrl to set what url to browse.
-	// By default, azd will use documentationHostName
-	if openDocs, _ := cmd.Flags().GetBool("docs"); openDocs {
+	if openDocs, _ := cmd.Flags().GetBool(cDocsFlagName); openDocs {
 		var console input.Console
 		err := container.Resolve(&console)
 		if err != nil {
@@ -80,13 +82,17 @@ func handleDocsFlag(
 		}
 
 		commandPath := strings.ReplaceAll(cmd.CommandPath(), " ", "-")
-		commandDocsUrl := documentationHostName + "/reference#" + commandPath
-		OpenWithDefaultBrowser(ctx, console, commandDocsUrl)
+		commandDocsUrl := cReferenceDocumentationUrl + commandPath
+		openWithDefaultBrowser(ctx, console, commandDocsUrl)
 		return true, nil
 	}
 	return false, nil
 }
 
+// defaultCommandNoAction is the default no-action implementation for all command which doesn't
+// have either run, runE or an Action descriptor.
+// By using this strategy, azd commands can perform actions at cmd-layer, for example, handle
+// the --docs argument for all commands.
 func (cb *CobraBuilder) defaultCommandNoAction(
 	ctx context.Context, cmd *cobra.Command, descriptor *actions.ActionDescriptor) error {
 
@@ -241,7 +247,7 @@ func (cb *CobraBuilder) bindCommand(cmd *cobra.Command, descriptor *actions.Acti
 	cmd.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", cmd.Name()))
 	// docs flags for all commands
 	cmd.Flags().BoolP(
-		"docs", "", false, fmt.Sprintf("Opens the documentation for %s in your web browser.", cmd.CommandPath()))
+		cDocsFlagName, "", false, fmt.Sprintf("Opens the documentation for %s in your web browser.", cmd.CommandPath()))
 
 	// Consistently registers output formats for the descriptor
 	if len(descriptor.Options.OutputFormats) > 0 {

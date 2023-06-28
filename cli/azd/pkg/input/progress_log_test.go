@@ -220,6 +220,20 @@ func (h *testBufferHandler) snap() string {
 	return strings.Join(h.pages, "\n\n## Next state \n\n")
 }
 
+func offset(src, regex string) int {
+	r := regexp.MustCompile(regex)
+	match := r.FindSubmatch([]byte(src))
+	if len(match) == 2 {
+		var qty int
+		qty, err := strconv.Atoi(string(match[1]))
+		if err != nil {
+			log.Panic("converting string to int: %w", err)
+		}
+		return qty
+	}
+	return 0
+}
+
 // uses the current buffer state to update the last page and produce a new page.
 func (h *testBufferHandler) page() {
 	var updatePage bool
@@ -248,29 +262,15 @@ func (h *testBufferHandler) page() {
 		}
 
 		// moving up
-		r := regexp.MustCompile(`\x1b\[(\d+)A`)
-		match := r.FindSubmatch([]byte(pentaCode))
-		if match != nil && len(match) == 2 {
-			var qty int
-			qty, err := strconv.Atoi(string(match[1]))
-			if err != nil {
-				log.Panic("converting string to int: %w", err)
-			}
-			h.currentLine -= qty
+		if offsetUp := offset(pentaCode, `\x1b\[(\d+)A`); offsetUp > 0 {
+			h.currentLine -= offsetUp
 			bufferText = bufferText[4:]
 			continue
 		}
 
 		// moving down
-		r = regexp.MustCompile(`\x1b\[(\d+)B`)
-		match = r.FindSubmatch([]byte(pentaCode))
-		if match != nil && len(match) == 2 {
-			var qty int
-			qty, err := strconv.Atoi(string(match[1]))
-			if err != nil {
-				log.Panic("converting string to int: %w", err)
-			}
-			h.currentLine += qty
+		if offsetDown := offset(pentaCode, `\x1b\[(\d+)B`); offsetDown > 0 {
+			h.currentLine += offsetDown
 			bufferText = bufferText[4:]
 			continue
 		}

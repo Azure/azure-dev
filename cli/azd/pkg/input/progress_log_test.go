@@ -6,43 +6,43 @@ package input
 import (
 	"bytes"
 	"fmt"
+	"log"
+	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/test/snapshot"
+	"github.com/bradleyjkemp/cupaloy/v2"
 	tm "github.com/buger/goterm"
 	"github.com/stretchr/testify/require"
 )
 
-const prefix = "<prefix>"
+const prefix = "`prefix`"
+const title = "title"
+const header = "*header*"
 
 func Test_progressLogStartStop(t *testing.T) {
 
 	sizeFn := func() int {
 		return 40
 	}
-	var stdout bytes.Buffer
-	pg := NewProgressLogWithSizeFn(5, prefix, "title", "header", sizeFn)
+	pg := NewProgressLogWithSizeFn(5, prefix, title, header, sizeFn)
 
-	snConfig := snapshot.NewDefaultConfig()
+	snConfig := snapshot.NewDefaultConfig().WithOptions(cupaloy.SnapshotFileExtension(".md"))
 
-	tm.Screen = &stdout
+	var bufHandler testBufferHandler
+	tm.Screen = &bufHandler.Buffer
 	pg.Start()
-	err := snConfig.SnapshotMulti("start", decodeScreenString(stdout.String()))
+	bufHandler.page()
+
+	err := snConfig.SnapshotMulti("start", bufHandler.snap())
 	require.NoError(t, err)
 	pg.Stop()
-	err = snConfig.SnapshotMulti("stop", decodeScreenString(stdout.String()))
+	bufHandler.page()
+	err = snConfig.SnapshotMulti("stop", bufHandler.snap())
 	require.NoError(t, err)
 
-}
-
-func decodeScreenString(encoded string) string {
-	decodedResult := strings.ReplaceAll(encoded, tm.RESET_LINE, "<RL>")
-	decodedResult = strings.ReplaceAll(decodedResult, "\033[1A", "<M1U>")
-	decodedResult = strings.ReplaceAll(decodedResult, "\033[2A", "<M2U>")
-	decodedResult = strings.ReplaceAll(decodedResult, "\033[4A", "<M4U>")
-	decodedResult = strings.ReplaceAll(decodedResult, "\033[3B", "<M3D>")
-	return decodedResult
 }
 
 func Test_progressLogLine(t *testing.T) {
@@ -50,23 +50,28 @@ func Test_progressLogLine(t *testing.T) {
 	sizeFn := func() int {
 		return 40
 	}
-	var stdout bytes.Buffer
-	pg := NewProgressLogWithSizeFn(5, prefix, "title", "header", sizeFn)
+	pg := NewProgressLogWithSizeFn(5, prefix, title, header, sizeFn)
 
-	snConfig := snapshot.NewDefaultConfig()
+	snConfig := snapshot.NewDefaultConfig().WithOptions(cupaloy.SnapshotFileExtension(".md"))
 
-	tm.Screen = &stdout
+	var bufHandler testBufferHandler
+	tm.Screen = &bufHandler.Buffer
 	pg.Start()
-	err := snConfig.SnapshotMulti("start", decodeScreenString(stdout.String()))
+	bufHandler.page()
+
+	err := snConfig.SnapshotMulti("start", bufHandler.snap())
 	require.NoError(t, err)
 	writeThis := "Hello progress line"
 	w, err := pg.Write([]byte(writeThis))
 	require.NoError(t, err)
 	require.Equal(t, len(writeThis), w)
-	err = snConfig.SnapshotMulti("log", decodeScreenString(stdout.String()))
+	bufHandler.page()
+
+	err = snConfig.SnapshotMulti("log", bufHandler.snap())
 	require.NoError(t, err)
 	pg.Stop()
-	err = snConfig.SnapshotMulti("stop", decodeScreenString(stdout.String()))
+	bufHandler.page()
+	err = snConfig.SnapshotMulti("stop", bufHandler.snap())
 	require.NoError(t, err)
 }
 func Test_progressLogMultiWrite(t *testing.T) {
@@ -74,26 +79,29 @@ func Test_progressLogMultiWrite(t *testing.T) {
 	sizeFn := func() int {
 		return 40
 	}
-	var stdout bytes.Buffer
-	pg := NewProgressLogWithSizeFn(5, prefix, "title", "header", sizeFn)
+	pg := NewProgressLogWithSizeFn(5, prefix, title, header, sizeFn)
 
-	snConfig := snapshot.NewDefaultConfig()
+	snConfig := snapshot.NewDefaultConfig().WithOptions(cupaloy.SnapshotFileExtension(".md"))
 
-	tm.Screen = &stdout
+	var bufHandler testBufferHandler
+	tm.Screen = &bufHandler.Buffer
 	pg.Start()
+	bufHandler.page()
 
 	writeThis := "line: "
 	w, err := pg.Write([]byte(writeThis))
 	require.NoError(t, err)
 	require.Equal(t, len(writeThis), w)
+	bufHandler.page()
 
 	for index := range make([]int, 3) {
 		w, err := pg.Write([]byte(fmt.Sprintf(", %x", index)))
 		require.NoError(t, err)
 		require.Equal(t, 3, w)
+		bufHandler.page()
 	}
 
-	snConfig.SnapshotT(t, decodeScreenString(stdout.String()))
+	snConfig.SnapshotT(t, bufHandler.snap())
 	pg.Stop()
 }
 
@@ -101,20 +109,22 @@ func Test_progressLogWithBreak(t *testing.T) {
 	sizeFn := func() int {
 		return 40
 	}
-	var stdout bytes.Buffer
-	pg := NewProgressLogWithSizeFn(5, prefix, "title", "header", sizeFn)
+	pg := NewProgressLogWithSizeFn(5, prefix, title, header, sizeFn)
 
-	snConfig := snapshot.NewDefaultConfig()
+	snConfig := snapshot.NewDefaultConfig().WithOptions(cupaloy.SnapshotFileExtension(".md"))
 
-	tm.Screen = &stdout
+	var bufHandler testBufferHandler
+	tm.Screen = &bufHandler.Buffer
 	pg.Start()
+	bufHandler.page()
 
 	writeThis := "line one\nline two\n\nlast line"
 	w, err := pg.Write([]byte(writeThis))
 	require.NoError(t, err)
 	require.Equal(t, len(writeThis), w)
+	bufHandler.page()
 
-	snConfig.SnapshotT(t, decodeScreenString(stdout.String()))
+	snConfig.SnapshotT(t, bufHandler.snap())
 	pg.Stop()
 }
 
@@ -122,25 +132,28 @@ func Test_progressLogStartWithBreak(t *testing.T) {
 	sizeFn := func() int {
 		return 40
 	}
-	var stdout bytes.Buffer
-	pg := NewProgressLogWithSizeFn(5, prefix, "title", "header", sizeFn)
+	pg := NewProgressLogWithSizeFn(5, prefix, title, header, sizeFn)
 
-	snConfig := snapshot.NewDefaultConfig()
+	snConfig := snapshot.NewDefaultConfig().WithOptions(cupaloy.SnapshotFileExtension(".md"))
 
-	tm.Screen = &stdout
+	var bufHandler testBufferHandler
+	tm.Screen = &bufHandler.Buffer
 	pg.Start()
+	bufHandler.page()
 
 	writeThis := "\nhello,"
 	w, err := pg.Write([]byte(writeThis))
 	require.NoError(t, err)
 	require.Equal(t, len(writeThis), w)
+	bufHandler.page()
 
 	writeThis = " azd"
 	w, err = pg.Write([]byte(writeThis))
 	require.NoError(t, err)
 	require.Equal(t, len(writeThis), w)
+	bufHandler.page()
 
-	snConfig.SnapshotT(t, decodeScreenString(stdout.String()))
+	snConfig.SnapshotT(t, bufHandler.snap())
 	pg.Stop()
 }
 
@@ -149,21 +162,23 @@ func Test_progressLogLongLine(t *testing.T) {
 	sizeFn := func() int {
 		return screenWidth
 	}
-	var stdout bytes.Buffer
-	pg := NewProgressLogWithSizeFn(5, prefix, "title", "header", sizeFn)
+	pg := NewProgressLogWithSizeFn(5, prefix, title, header, sizeFn)
 
-	snConfig := snapshot.NewDefaultConfig()
+	snConfig := snapshot.NewDefaultConfig().WithOptions(cupaloy.SnapshotFileExtension(".md"))
 
-	tm.Screen = &stdout
+	var bufHandler testBufferHandler
+	tm.Screen = &bufHandler.Buffer
 	pg.Start()
+	bufHandler.page()
 
 	// Should use 3 lines, b/c of the prefix
 	writeThis := strings.Repeat("x", screenWidth*2)
 	w, err := pg.Write([]byte(writeThis))
 	require.NoError(t, err)
 	require.Equal(t, len(writeThis), w)
+	bufHandler.page()
 
-	snConfig.SnapshotT(t, decodeScreenString(stdout.String()))
+	snConfig.SnapshotT(t, bufHandler.snap())
 	pg.Stop()
 }
 
@@ -172,23 +187,111 @@ func Test_progressLogManyLines(t *testing.T) {
 	sizeFn := func() int {
 		return screenWidth
 	}
-	var stdout bytes.Buffer
 	linesToDisplay := 5
-	pg := NewProgressLogWithSizeFn(linesToDisplay, prefix, "title", "header", sizeFn)
+	pg := NewProgressLogWithSizeFn(linesToDisplay, prefix, title, header, sizeFn)
 
-	snConfig := snapshot.NewDefaultConfig()
+	snConfig := snapshot.NewDefaultConfig().WithOptions(cupaloy.SnapshotFileExtension(".md"))
 
-	tm.Screen = &stdout
+	var bufHandler testBufferHandler
+	tm.Screen = &bufHandler.Buffer
 	pg.Start()
+	bufHandler.page()
 
 	// Duplicating the lines to display to see log progress displaying only the last `linesToDisplay`
 	for index := range make([]int, linesToDisplay*2) {
 		_, err := pg.Write([]byte(fmt.Sprintf("line: %x\n", index)))
 		require.NoError(t, err)
+		bufHandler.page()
 	}
 
-	snConfig.SnapshotT(t, decodeScreenString(stdout.String()))
+	snConfig.SnapshotT(t, bufHandler.snap())
 	pg.Stop()
+}
+
+// test structure that generates screen-time-travel snap
+type testBufferHandler struct {
+	bytes.Buffer
+	pages       []string
+	currentLine int
+}
+
+// produces the final snap from all pages
+func (h *testBufferHandler) snap() string {
+	return strings.Join(h.pages, "\n\n## Next state \n\n")
+}
+
+// uses the current buffer state to update the last page and produce a new page.
+func (h *testBufferHandler) page() {
+	var updatePage bool
+	if len(h.pages) == 0 {
+		screenLines := len(strings.Split(h.String(), "\n"))
+		emptyScreen := strings.Join(make([]string, screenLines), "\n")
+		h.pages = append(h.pages, emptyScreen)
+		updatePage = true
+	}
+	lastPage := h.pages[len(h.pages)-1]
+	lines := strings.Split(lastPage, "\n")
+
+	bufferText := h.String()
+	for len(bufferText) > 0 {
+		if len(bufferText) < 4 {
+			lines[h.currentLine] += bufferText[0:]
+			bufferText = ""
+			continue
+		}
+
+		pentaCode := bufferText[0:4]
+		if pentaCode == tm.RESET_LINE {
+			lines[h.currentLine] = ""
+			bufferText = bufferText[4:]
+			continue
+		}
+
+		// moving up
+		r := regexp.MustCompile(`\x1b\[(\d+)A`)
+		match := r.FindSubmatch([]byte(pentaCode))
+		if match != nil && len(match) == 2 {
+			var qty int
+			qty, err := strconv.Atoi(string(match[1]))
+			if err != nil {
+				log.Panic("converting string to int: %w", err)
+			}
+			h.currentLine -= qty
+			bufferText = bufferText[4:]
+			continue
+		}
+
+		// moving down
+		r = regexp.MustCompile(`\x1b\[(\d+)B`)
+		match = r.FindSubmatch([]byte(pentaCode))
+		if match != nil && len(match) == 2 {
+			var qty int
+			qty, err := strconv.Atoi(string(match[1]))
+			if err != nil {
+				log.Panic("converting string to int: %w", err)
+			}
+			h.currentLine += qty
+			bufferText = bufferText[4:]
+			continue
+		}
+
+		nextByte := bufferText[0]
+		if nextByte == '\n' {
+			h.currentLine++
+			bufferText = bufferText[1:]
+			continue
+		}
+
+		lines[h.currentLine] += bufferText[0:1]
+		bufferText = bufferText[1:]
+	}
+
+	if updatePage {
+		h.pages[len(h.pages)-1] = strings.Join(lines, "\n")
+	} else {
+		h.pages = append(h.pages, strings.Join(lines, "\n"))
+	}
+	h.Buffer = bytes.Buffer{}
 }
 
 func Test_progressChangeHeader(t *testing.T) {
@@ -196,28 +299,33 @@ func Test_progressChangeHeader(t *testing.T) {
 	sizeFn := func() int {
 		return screenWidth
 	}
-	var stdout bytes.Buffer
+
 	linesToDisplay := 5
-	pg := NewProgressLogWithSizeFn(linesToDisplay, prefix, "title", "header", sizeFn)
+	pg := NewProgressLogWithSizeFn(linesToDisplay, prefix, title, header, sizeFn)
 
-	snConfig := snapshot.NewDefaultConfig()
+	snConfig := snapshot.NewDefaultConfig().WithOptions(cupaloy.SnapshotFileExtension(".md"))
 
-	tm.Screen = &stdout
+	var bufHandler testBufferHandler
+	tm.Screen = &bufHandler.Buffer
 	pg.Start()
+	bufHandler.page()
 
 	// Duplicating the lines to display to see log progress displaying only the last `linesToDisplay`
 	for index := range make([]int, linesToDisplay) {
 		_, err := pg.Write([]byte(fmt.Sprintf("line: %x\n", index)))
 		require.NoError(t, err)
+		bufHandler.page()
 	}
 
-	pg.Header("Updated Header Here")
+	pg.Header("*Updated Header Here*")
+	bufHandler.page()
 
 	for index := range make([]int, linesToDisplay) {
 		_, err := pg.Write([]byte(fmt.Sprintf("line: %x\n", index)))
 		require.NoError(t, err)
+		bufHandler.page()
 	}
 
-	snConfig.SnapshotT(t, decodeScreenString(stdout.String()))
+	snConfig.SnapshotT(t, bufHandler.snap())
 	pg.Stop()
 }

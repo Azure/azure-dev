@@ -5,6 +5,7 @@ Usage
   azd monitor [flags]
 
 Flags
+        --docs               	: Opens the documentation for azd monitor in your web browser.
     -e, --environment string 	: The name of the environment to use.
     -h, --help               	: Gets help for monitor.
         --live               	: Open a browser to Application Insights Live Metrics. Live Metrics is currently not supported for Python apps.
@@ -14,7 +15,6 @@ Flags
 Global Flags
     -C, --cwd string 	: Sets the current working directory.
         --debug      	: Enables debugging and diagnostics logging.
-        --docs       	: Go to the official documentation for the executed command.
         --no-prompt  	: Accepts the default value instead of prompting, or it fails if there is no default.
 
 Examples

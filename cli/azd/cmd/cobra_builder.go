@@ -79,13 +79,7 @@ func handleDocsFlag(
 			return false, err
 		}
 
-		parent := cmd.Parent()
-		commandPath := cmd.Use
-		for parent != nil {
-			commandPath = parent.Use + "-" + commandPath
-			parent = parent.Parent()
-		}
-
+		commandPath := strings.ReplaceAll(cmd.CommandPath(), " ", "-")
 		commandDocsUrl := documentationHostName + "/reference#" + commandPath
 		OpenWithDefaultBrowser(ctx, console, commandDocsUrl)
 		return true, nil
@@ -245,6 +239,9 @@ func (cb *CobraBuilder) bindCommand(cmd *cobra.Command, descriptor *actions.Acti
 
 	// Automatically adds a consistent help flag
 	cmd.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", cmd.Name()))
+	// docs flags for all commands
+	cmd.Flags().BoolP(
+		"docs", "", false, fmt.Sprintf("Opens the documentation for %s in your web browser.", cmd.CommandPath()))
 
 	// Consistently registers output formats for the descriptor
 	if len(descriptor.Options.OutputFormats) > 0 {

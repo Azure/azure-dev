@@ -25,7 +25,4 @@ type GlobalCommandOptions struct {
 	// like learn.microsoft.com. This is set directly when calling NewRootCmd
 	// and not bound to any command flags.
 	GenerateStaticHelp bool
-
-	// Makes azd to open a browser and go to the official documentation of the executed command.
-	Documentation bool
 }

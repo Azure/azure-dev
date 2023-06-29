@@ -46,25 +46,11 @@ type ConsoleShim interface {
 	GetFormatter() output.Formatter
 }
 
-type PromptValidator func(response string) error
-
+// ShowPreviewerOptions provide the settings to start a console previewer.
 type ShowPreviewerOptions struct {
 	Prefix       string
 	MaxLineCount int
 	Title        string
-}
-
-type ConsolePreviewer struct {
-	Console   Console
-	Previewer *progressLog
-}
-
-func (cp *ConsolePreviewer) Write(logBytes []byte) (int, error) {
-	return cp.Previewer.Write(logBytes)
-}
-
-func (cp *ConsolePreviewer) Stop(ctx context.Context) {
-	cp.Console.StopPreviewer(ctx)
 }
 
 type Console interface {
@@ -82,7 +68,8 @@ type Console interface {
 	StopSpinner(ctx context.Context, lastMessage string, format SpinnerUxType)
 	// Preview mode brings an embedded console within the current session.
 	// Use nil for options to use defaults.
-	ShowPreviewer(ctx context.Context, options *ShowPreviewerOptions) *ConsolePreviewer
+	// Use the returned oi.Writer to produce the output within the previewer
+	ShowPreviewer(ctx context.Context, options *ShowPreviewerOptions) io.Writer
 	// Finalize the preview mode from console.
 	StopPreviewer(ctx context.Context)
 	// Determines if there is a current spinner running.
@@ -226,7 +213,7 @@ func defaultShowPreviewerOptions() *ShowPreviewerOptions {
 	}
 }
 
-func (c *AskerConsole) ShowPreviewer(ctx context.Context, options *ShowPreviewerOptions) *ConsolePreviewer {
+func (c *AskerConsole) ShowPreviewer(ctx context.Context, options *ShowPreviewerOptions) io.Writer {
 	c.spinnerMutex.Lock()
 	defer c.spinnerMutex.Unlock()
 
@@ -241,9 +228,8 @@ func (c *AskerConsole) ShowPreviewer(ctx context.Context, options *ShowPreviewer
 	c.previewer = NewProgressLog(options.MaxLineCount, options.Prefix, options.Title, c.currentIndent+currentMsg)
 	c.previewer.Start()
 	c.writer = c.previewer
-	return &ConsolePreviewer{
-		Console:   c,
-		Previewer: c.previewer,
+	return &consolePreviewerWriter{
+		previewer: &c.previewer,
 	}
 }
 

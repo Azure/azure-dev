@@ -156,7 +156,7 @@ func (p *dockerProject) Build(
 			// Build the container
 			task.SetProgress(NewServiceProgress("Building Docker image"))
 
-			previewer := p.console.ShowPreviewer(ctx,
+			previewerWriter := p.console.ShowPreviewer(ctx,
 				&input.ShowPreviewerOptions{
 					Prefix:       "  ",
 					MaxLineCount: 8,
@@ -170,9 +170,9 @@ func (p *dockerProject) Build(
 				dockerOptions.Context,
 				imageName,
 				dockerOptions.BuildArgs,
-				previewer,
+				previewerWriter,
 			)
-			previewer.Stop(ctx)
+			p.console.StopPreviewer(ctx)
 			if err != nil {
 				task.SetError(fmt.Errorf("building container: %s at %s: %w", serviceConfig.Name, dockerOptions.Context, err))
 				return

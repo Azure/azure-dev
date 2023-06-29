@@ -357,6 +357,16 @@ func startBackgroundUploadProcess() error {
 	}
 
 	cmd := exec.Command(execPath, cmd.TelemetryCommandFlag, cmd.TelemetryUploadCommandFlag)
+
+	// Use the location of azd as the cwd for the background uploading process.  On windows, when a process is running
+	// the current working directory is considered in use and can not be deleted. If a user runs `azd` in a directory, we
+	// do want that directory to be considered in use and locked while the telemetry upload is happening. One example of
+	// where we see this problem often is in our CI for end to end tests where we run a copy of `azd` that we built in an
+	// ephemeral directory created by (*testing.T).TempDir().  When the test completes, the testing package attempts to
+	// clean up the temporary directory, but if the telemetry upload process is still running, the directory can not be
+	// deleted.
+	cmd.Dir = filepath.Dir(execPath)
+
 	err = cmd.Start()
 	return err
 }

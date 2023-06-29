@@ -10,7 +10,7 @@
         "proposals": [
           "latest"
         ],
-        "default": "latest",
+        "default": "stable",
         "description": "Select or enter an Azure Developer CLI version. (Available versions may vary by Linux distribution.)"
       }
     },

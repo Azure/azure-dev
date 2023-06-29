@@ -7,7 +7,7 @@ Installs the [Azure Developer CLI](https://github.com/Azure/azure-dev) along wit
 ```json
 "features": {
     "ghcr.io/azure/azure-dev/azd:1": {
-        "version": "latest"
+        "version": "stable"
     }
 }
 ```

@@ -16,7 +16,7 @@ Installs the [Azure Developer CLI](https://github.com/Azure/azure-dev) along wit
 
 | Options Id | Description | Type | Default Value |
 |-----|-----|-----|-----|
-| version | Select or enter an Azure Developer CLI version. (Available versions may vary by Linux distribution.) | string | latest |
+| version | Select or enter an Azure Developer CLI version. (Available versions may vary by Linux distribution.) | string | stable |
 
 ## Customizations
 

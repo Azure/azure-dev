@@ -299,6 +299,11 @@ func (pm *PipelineManager) ensureRemote(
 		return nil, fmt.Errorf("failed to get remote url: %w", err)
 	}
 
+	currentBranch, err := pm.gitCli.GetCurrentBranch(ctx, repositoryPath)
+	if err != nil {
+		return nil, fmt.Errorf("getting current branch: %w", err)
+	}
+
 	// each provider knows how to extract the Owner and repo name from a remoteUrl
 	gitRepoDetails, err := pm.scmProvider.gitRepoDetails(ctx, remoteUrl)
 
@@ -306,6 +311,7 @@ func (pm *PipelineManager) ensureRemote(
 		return nil, err
 	}
 	gitRepoDetails.gitProjectPath = pm.azdCtx.ProjectDirectory()
+	gitRepoDetails.branch = currentBranch
 	return gitRepoDetails, nil
 }
 
@@ -409,7 +415,6 @@ func (pm *PipelineManager) pushGitRepo(ctx context.Context, gitRepoInfo *gitRepo
 	return retry.Do(ctx, retry.WithMaxRetries(3, retry.NewConstant(100*time.Millisecond)), func(ctx context.Context) error {
 		if err := pm.scmProvider.GitPush(
 			ctx,
-			pm.gitCli,
 			gitRepoInfo,
 			pm.args.PipelineRemoteName,
 			currentBranch); err != nil {

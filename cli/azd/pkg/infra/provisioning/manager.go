@@ -7,10 +7,12 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 )
 
 // Manages the orchestration of infrastructure provisioning
@@ -18,6 +20,7 @@ type Manager struct {
 	serviceLocator      ioc.ServiceLocator
 	env                 *environment.Environment
 	console             input.Console
+	prompter            prompt.Prompter
 	provider            Provider
 	alphaFeatureManager *alpha.FeatureManager
 	projectPath         string
@@ -96,18 +99,57 @@ func (m *Manager) Destroy(ctx context.Context, options DestroyOptions) (*Destroy
 	return destroyResult, nil
 }
 
+// EnsureSubscriptionAndLocation ensures that that that subscription (AZURE_SUBSCRIPTION_ID) and location (AZURE_LOCATION)
+// variables are set in the environment, prompting the user for the values if they do not exist.
+func EnsureSubscriptionAndLocation(ctx context.Context, env *environment.Environment, prompter prompt.Prompter) error {
+	if env.GetSubscriptionId() == "" {
+		subscriptionId, err := prompter.PromptSubscription(ctx, "Select an Azure Subscription to use:")
+		if err != nil {
+			return err
+		}
+
+		env.SetSubscriptionId(subscriptionId)
+
+		if err := env.Save(); err != nil {
+			return err
+		}
+	}
+
+	if env.GetLocation() == "" {
+		location, err := prompter.PromptLocation(
+			ctx,
+			env.GetSubscriptionId(),
+			"Select an Azure location to use:",
+			func(_ account.Location) bool { return true },
+		)
+		if err != nil {
+			return err
+		}
+
+		env.SetLocation(location)
+
+		if err := env.Save(); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
 // Creates a new instance of the Provisioning Manager
 func NewManager(
 	serviceLocator ioc.ServiceLocator,
 	env *environment.Environment,
 	console input.Console,
 	alphaFeatureManager *alpha.FeatureManager,
+	prompter prompt.Prompter,
 ) *Manager {
 	return &Manager{
 		serviceLocator:      serviceLocator,
 		env:                 env,
 		console:             console,
 		alphaFeatureManager: alphaFeatureManager,
+		prompter:            prompter,
 	}
 }
 

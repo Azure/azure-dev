@@ -72,7 +72,7 @@ func testCommand(
 	chain []*actions.MiddlewareRegistration,
 	cwd string) {
 	// Run the command when we find a leaf command
-	if testCmd.Runnable() && testCmd.Name() != "azd" {
+	if testCmd.Runnable() {
 		t.Run(testCmd.CommandPath(), func(t *testing.T) {
 			use := testCmd.Use
 
@@ -80,11 +80,7 @@ func testCommand(
 				use = v
 			}
 
-			cmdPath := testCmd.CommandPath()
-			if testCmd.Parent() != nil {
-				cmdPath = testCmd.Parent().CommandPath()
-			}
-			fullCmd := fmt.Sprintf("%s %s", cmdPath, use)
+			fullCmd := fmt.Sprintf("%s %s", testCmd.Parent().CommandPath(), use)
 			args := strings.Split(fullCmd, " ")[1:]
 			args = append(args, "--cwd", cwd)
 			childCmd := cmd.NewRootCmd(true, chain)

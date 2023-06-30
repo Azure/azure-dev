@@ -1,10 +1,10 @@
 package cmd
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -18,6 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
+	"golang.org/x/exp/slices"
 )
 
 const cDocsFlagName = "docs"
@@ -61,56 +62,28 @@ func (cb *CobraBuilder) BuildCommand(descriptor *actions.ActionDescriptor) (*cob
 		}
 	}
 
-	// Configure action resolver for all commands
-	if err := cb.configureActionResolver(cmd, descriptor); err != nil {
-		return nil, err
+	// Configure action resolver for leaf commands
+	if !cmd.HasSubCommands() {
+		if err := cb.configureActionResolver(cmd, descriptor); err != nil {
+			return nil, err
+		}
 	}
 
 	return cmd, nil
 }
 
-// handleDocsFlag checks if the --docs flag was set to true and react to it by launching the browser
-// to the commands' documentation url.
-// When the flag is found and handled, this function returns true. Otherwise it returns false or error.
-func handleDocsFlag(
-	ctx context.Context, cmd *cobra.Command, container *ioc.NestedContainer) (bool, error) {
-	if openDocs, _ := cmd.Flags().GetBool(cDocsFlagName); openDocs {
-		var console input.Console
-		err := container.Resolve(&console)
-		if err != nil {
-			return false, err
-		}
-
-		commandPath := strings.ReplaceAll(cmd.CommandPath(), " ", "-")
-		commandDocsUrl := cReferenceDocumentationUrl + commandPath
-		openWithDefaultBrowser(ctx, console, commandDocsUrl)
-		return true, nil
-	}
-	return false, nil
-}
-
-// defaultCommandNoAction is the default no-action implementation for all command which doesn't
-// have either run, runE or an Action descriptor.
-// By using this strategy, azd commands can perform actions at cmd-layer, for example, handle
-// the --docs argument for all commands.
-func (cb *CobraBuilder) defaultCommandNoAction(
-	ctx context.Context, cmd *cobra.Command, descriptor *actions.ActionDescriptor) error {
-
-	flagHandled, err := handleDocsFlag(ctx, cmd, cb.container)
-	if err != nil {
-		return err
-	}
-	if flagHandled {
-		return nil
-	}
-
-	// when no --docs arg, display command's help
-	return cmd.Help()
-}
-
 // Configures the cobra command 'RunE' function to running the composed middleware and action for the
 // current action descriptor
 func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *actions.ActionDescriptor) error {
+	// Dev Error: Either an action resolver or RunE must be set
+	if descriptor.Options.ActionResolver == nil && cmd.RunE == nil {
+		return fmt.Errorf(
+			//nolint:lll
+			"action descriptor for '%s' must be configured with either an ActionResolver or a Cobra RunE command",
+			cmd.CommandPath(),
+		)
+	}
+
 	// Dev Error: Both action resolver and RunE have been defined
 	if descriptor.Options.ActionResolver != nil && cmd.RunE != nil {
 		return fmt.Errorf(
@@ -122,32 +95,13 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 
 	// Only bind command to action if an action resolver had been defined
 	// and when a RunE hasn't already been set
-	if cmd.RunE != nil {
-		return nil
-	}
-
-	// Neither cmd.RunE or descriptor.Options.ActionResolver set.
-	// Set default behavior to either --docs or help
-	if descriptor.Options.ActionResolver == nil {
-		cmd.RunE = func(cmd *cobra.Command, args []string) error {
-			ctx := cmd.Context()
-			ctx = tools.WithInstalledCheckCache(ctx)
-			return cb.defaultCommandNoAction(ctx, cmd, descriptor)
-		}
+	if descriptor.Options.ActionResolver == nil || cmd.RunE != nil {
 		return nil
 	}
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
 		ctx := cmd.Context()
 		ctx = tools.WithInstalledCheckCache(ctx)
-
-		flagHandled, err := handleDocsFlag(ctx, cmd, cb.container)
-		if err != nil {
-			return nil
-		}
-		if flagHandled {
-			return nil
-		}
 
 		// Registers the following to enable injection into actions that require them
 		ioc.RegisterInstance(cb.container, cb.runner)
@@ -239,6 +193,66 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 	return nil
 }
 
+// docsFlag is a flag with a custom parsing implementation which changes the default behavior for printing help
+// for all commands, when it is set as true.
+// docsFlag keeps a reference to the cobra command where it belongs so it can update it.
+// docsFlag also contains a callbacks to pull dependencies for the docs routine.
+type docsFlag struct {
+	// reference to the command where the flag was added.
+	command   *cobra.Command
+	consoleFn func() input.Console
+	value     bool
+}
+
+// returns the flag value
+func (df *docsFlag) String() string {
+	return fmt.Sprintf("%t", df.value)
+}
+
+// define flag type
+func (df *docsFlag) Type() string {
+	return "bool"
+}
+
+// Set not only initialize the flag value, but it also turns the help flag true and defines the HelpFunc for the command.
+// This wiring forces cobra to react as it the --help flag was provided and stop the command early to run the HelpFunc.
+func (df *docsFlag) Set(value string) error {
+	v, err := strconv.ParseBool(value)
+	if err != nil {
+		return fmt.Errorf("invalid value for boolean --docs parameter")
+	}
+	df.value = v
+	if !df.value {
+		return nil
+	}
+
+	// Setting help to true will make cobra to stop and call the HelpFunc
+	if err = df.command.Flag("help").Value.Set("true"); err != nil {
+		// dev-issue: help flag should be already been added when
+		log.Panic("tried to set help after docs parameter: %w", err)
+	}
+
+	// set help func for doing docs
+	df.command.SetHelpFunc(func(c *cobra.Command, args []string) {
+		console := df.consoleFn()
+		ctx := c.Context()
+		ctx = tools.WithInstalledCheckCache(ctx)
+
+		if slices.Contains(args, "help") {
+			if err := c.Help(); err != nil {
+				log.Panic("showing command help: %w", err)
+			}
+			return
+		}
+
+		commandPath := strings.ReplaceAll(c.CommandPath(), " ", "-")
+		commandDocsUrl := cReferenceDocumentationUrl + commandPath
+		openWithDefaultBrowser(ctx, console, commandDocsUrl)
+	})
+
+	return nil
+}
+
 // Binds the intersection of cobra command options and action descriptor options
 func (cb *CobraBuilder) bindCommand(cmd *cobra.Command, descriptor *actions.ActionDescriptor) error {
 	actionName := createActionName(cmd)
@@ -246,8 +260,19 @@ func (cb *CobraBuilder) bindCommand(cmd *cobra.Command, descriptor *actions.Acti
 	// Automatically adds a consistent help flag
 	cmd.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", cmd.Name()))
 	// docs flags for all commands
-	cmd.Flags().BoolP(
-		cDocsFlagName, "", false, fmt.Sprintf("Opens the documentation for %s in your web browser.", cmd.CommandPath()))
+	docsFlag := &docsFlag{
+		command: cmd,
+		consoleFn: func() input.Console {
+			var console input.Console
+			if err := cb.container.Resolve(&console); err != nil {
+				log.Panic("creating docs flag: %w", err)
+			}
+			return console
+		},
+	}
+	flag := cmd.Flags().VarPF(
+		docsFlag, cDocsFlagName, "", fmt.Sprintf("Opens the documentation for %s in your web browser.", cmd.CommandPath()))
+	flag.NoOptDefVal = "true"
 
 	// Consistently registers output formats for the descriptor
 	if len(descriptor.Options.OutputFormats) > 0 {

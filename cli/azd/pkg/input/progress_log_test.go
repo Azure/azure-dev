@@ -217,7 +217,8 @@ type testBufferHandler struct {
 
 // produces the final snap from all pages
 func (h *testBufferHandler) snap() string {
-	return strings.Join(h.pages, "\n\n## Next state \n\n")
+
+	return strings.Join(h.pages, "\n\n## Next state\n\n")
 }
 
 func offset(src, regex string) int {

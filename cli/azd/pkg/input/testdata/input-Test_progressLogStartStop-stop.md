@@ -10,7 +10,7 @@
 
 `prefix`────────────────────────────────
 
-## Next state 
+## Next state
 
 
 

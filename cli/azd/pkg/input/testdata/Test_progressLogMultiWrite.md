@@ -10,7 +10,7 @@
 
 `prefix`────────────────────────────────
 
-## Next state 
+## Next state
 
 *header*
 
@@ -24,7 +24,7 @@
 
 `prefix`────────────────────────────────
 
-## Next state 
+## Next state
 
 *header*
 
@@ -38,7 +38,7 @@
 
 `prefix`────────────────────────────────
 
-## Next state 
+## Next state
 
 *header*
 
@@ -52,7 +52,7 @@
 
 `prefix`────────────────────────────────
 
-## Next state 
+## Next state
 
 *header*
 

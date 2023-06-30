@@ -1,3 +1,4 @@
 *.go text eol=lf
-**/testdata/**/*.(md|snap) text eol=lf
+**/testdata/**/*.snap text eol=lf
+**/testdata/**/*.md text eol=lf
 *.txt text eol=lf

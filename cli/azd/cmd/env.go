@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -158,6 +159,14 @@ func newEnvSelectAction(azdCtx *azdcontext.AzdContext, args []string) actions.Ac
 }
 
 func (e *envSelectAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	_, err := environment.GetEnvironment(e.azdCtx, e.args[0])
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf(`environment '%s' does not exist. You can create it with "azd env init %s"`,
+			e.args[0], e.args[0])
+	} else if err != nil {
+		return nil, fmt.Errorf("ensuring environment exists: %w", err)
+	}
+
 	if err := e.azdCtx.SetDefaultEnvironmentName(e.args[0]); err != nil {
 		return nil, fmt.Errorf("setting default environment: %w", err)
 	}
@@ -247,7 +256,7 @@ func newEnvNewFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *
 func newEnvNewCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "new <environment>",
-		Short: "Create a new environment.",
+		Short: "Create a new environment and set it as the default.",
 	}
 	cmd.Args = cobra.MaximumNArgs(1)
 

@@ -7,6 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -45,31 +46,32 @@ func (cli *dotNetCli) versionInfo() tools.VersionInfo {
 	}
 }
 
-func (cli *dotNetCli) CheckInstalled(ctx context.Context) (bool, error) {
-	found, err := tools.ToolInPath("dotnet")
-	if !found {
-		return false, err
+func (cli *dotNetCli) CheckInstalled(ctx context.Context) error {
+	err := tools.ToolInPath("dotnet")
+	if err != nil {
+		return err
 	}
 	dotnetRes, err := tools.ExecuteCommand(ctx, cli.commandRunner, "dotnet", "--version")
 	if err != nil {
-		return false, fmt.Errorf("checking %s version: %w", cli.Name(), err)
+		return fmt.Errorf("checking %s version: %w", cli.Name(), err)
 	}
+	log.Printf("dotnet version: %s", dotnetRes)
 	dotnetSemver, err := tools.ExtractVersion(dotnetRes)
 	if err != nil {
-		return false, fmt.Errorf("converting to semver version fails: %w", err)
+		return fmt.Errorf("converting to semver version fails: %w", err)
 	}
 	updateDetail := cli.versionInfo()
 	if dotnetSemver.LT(updateDetail.MinimumVersion) {
-		return false, &tools.ErrSemver{ToolName: cli.Name(), VersionInfo: updateDetail}
+		return &tools.ErrSemver{ToolName: cli.Name(), VersionInfo: updateDetail}
 	}
-	return true, nil
+	return nil
 }
 
 func (cli *dotNetCli) Restore(ctx context.Context, project string) error {
 	runArgs := exec.NewRunArgs("dotnet", "restore", project)
-	res, err := cli.commandRunner.Run(ctx, runArgs)
+	_, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
-		return fmt.Errorf("dotnet restore on project '%s' failed: %s: %w", project, res.String(), err)
+		return fmt.Errorf("dotnet restore on project '%s' failed: %w", project, err)
 	}
 	return nil
 }
@@ -84,9 +86,9 @@ func (cli *dotNetCli) Build(ctx context.Context, project string, configuration s
 		runArgs = runArgs.AppendParams("--output", output)
 	}
 
-	res, err := cli.commandRunner.Run(ctx, runArgs)
+	_, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
-		return fmt.Errorf("dotnet build on project '%s' failed: %s: %w", project, res.String(), err)
+		return fmt.Errorf("dotnet build on project '%s' failed: %w", project, err)
 	}
 	return nil
 }
@@ -101,18 +103,18 @@ func (cli *dotNetCli) Publish(ctx context.Context, project string, configuration
 		runArgs = runArgs.AppendParams("--output", output)
 	}
 
-	res, err := cli.commandRunner.Run(ctx, runArgs)
+	_, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
-		return fmt.Errorf("dotnet publish on project '%s' failed: %s: %w", project, res.String(), err)
+		return fmt.Errorf("dotnet publish on project '%s' failed: %w", project, err)
 	}
 	return nil
 }
 
 func (cli *dotNetCli) InitializeSecret(ctx context.Context, project string) error {
 	runArgs := exec.NewRunArgs("dotnet", "user-secrets", "init", "--project", project)
-	res, err := cli.commandRunner.Run(ctx, runArgs)
+	_, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
-		return fmt.Errorf("failed to initialize secrets at project '%s': %w (%s)", project, err, res.String())
+		return fmt.Errorf("failed to initialize secrets at project '%s': %w", project, err)
 	}
 	return nil
 }
@@ -129,9 +131,9 @@ func (cli *dotNetCli) SetSecrets(ctx context.Context, secrets map[string]string,
 		NewRunArgs("dotnet", "user-secrets", "set", "--project", project).
 		WithStdIn(strings.NewReader(string(secretsJson)))
 
-	res, err := cli.commandRunner.Run(ctx, runArgs)
+	_, err = cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
-		return fmt.Errorf("failed running %s secret set %s: %w", cli.Name(), res.String(), err)
+		return fmt.Errorf("failed running %s secret set: %w", cli.Name(), err)
 	}
 	return nil
 }

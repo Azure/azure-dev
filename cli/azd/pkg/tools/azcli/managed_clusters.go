@@ -35,7 +35,7 @@ func NewManagedClustersService(
 	return &managedClustersService{
 		credentialProvider: credentialProvider,
 		httpClient:         httpClient,
-		userAgent:          azdinternal.MakeUserAgentString(""),
+		userAgent:          azdinternal.UserAgent(),
 	}
 }
 
@@ -68,7 +68,7 @@ func (cs *managedClustersService) createManagedClusterClient(
 		return nil, err
 	}
 
-	options := clientOptionsBuilder(cs.httpClient, cs.userAgent).BuildArmClientOptions()
+	options := clientOptionsBuilder(ctx, cs.httpClient, cs.userAgent).BuildArmClientOptions()
 
 	client, err := armcontainerservice.NewManagedClustersClient(subscriptionId, credential, options)
 	if err != nil {

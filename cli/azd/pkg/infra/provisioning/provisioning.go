@@ -20,9 +20,9 @@ func UpdateEnvironment(env *environment.Environment, outputs map[string]OutputPa
 				if err != nil {
 					return fmt.Errorf("invalid value for output parameter '%s' (%s): %w", key, string(param.Type), err)
 				}
-				env.Values[key] = string(bytes)
+				env.DotenvSet(key, string(bytes))
 			} else {
-				env.Values[key] = fmt.Sprintf("%v", param.Value)
+				env.DotenvSet(key, fmt.Sprintf("%v", param.Value))
 			}
 		}
 
@@ -73,4 +73,19 @@ func NewEnvRefreshResultFromState(state *State) contracts.EnvRefreshResult {
 	}
 
 	return result
+}
+
+// Parses the specified IaC Provider to ensure whether it is valid or not
+// Defaults to `Bicep` if no provider is specified
+func ParseProvider(kind ProviderKind) (ProviderKind, error) {
+	switch kind {
+	case "":
+		return Bicep, nil
+	// For the time being we need to include `Test` here for the unit tests to work as expected
+	// App builds will pass this test but fail resolving the provider since `Test` won't be registered in the container
+	case Bicep, Terraform, Test:
+		return kind, nil
+	}
+
+	return ProviderKind(""), fmt.Errorf("unsupported IaC provider '%s'", kind)
 }

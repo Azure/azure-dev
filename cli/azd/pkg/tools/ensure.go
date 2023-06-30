@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	osexec "os/exec"
 )
 
 // missingToolErrors wraps a set of errors discovered when
@@ -47,7 +48,7 @@ func EnsureInstalled(ctx context.Context, tools ...ExternalTool) error {
 			continue
 		}
 
-		has, err := tool.CheckInstalled(ctx)
+		err := tool.CheckInstalled(ctx)
 		var errSem *ErrSemver
 		if errors.As(err, &errSem) {
 			errorMsg := err.Error()
@@ -55,15 +56,16 @@ func EnsureInstalled(ctx context.Context, tools ...ExternalTool) error {
 				allErrors = append(allErrors, err)
 				errorsEncountered[errorMsg] = struct{}{}
 			}
+		} else if errors.Is(err, osexec.ErrNotFound) {
+			allErrors = append(
+				allErrors, fmt.Errorf("%s is not installed, see %s to install", tool.Name(), tool.InstallUrl()))
+
 		} else if err != nil {
 			errorMsg := err.Error()
 			if _, hasV := errorsEncountered[errorMsg]; !hasV {
 				allErrors = append(allErrors, fmt.Errorf("error checking for external tool %s: %w", tool.Name(), err))
 				errorsEncountered[errorMsg] = struct{}{}
 			}
-		} else if !has {
-			allErrors = append(
-				allErrors, fmt.Errorf("%s is not installed, please see %s to install", tool.Name(), tool.InstallUrl()))
 		}
 
 		// Mark the current tool as confirmed

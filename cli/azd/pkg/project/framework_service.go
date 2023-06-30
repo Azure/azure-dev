@@ -26,6 +26,10 @@ const (
 )
 
 func parseServiceLanguage(kind ServiceLanguageKind) (ServiceLanguageKind, error) {
+	if string(kind) == "" {
+		return ServiceLanguageKind(""), fmt.Errorf("language property must not be empty")
+	}
+
 	// aliases
 	if string(kind) == "py" {
 		return ServiceLanguagePython, nil

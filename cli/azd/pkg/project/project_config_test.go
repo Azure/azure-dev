@@ -161,10 +161,6 @@ func TestProjectConfigAddHandler(t *testing.T) {
 	err := project.AddHandler(ServiceEventDeploy, handler)
 	require.Nil(t, err)
 
-	// Expected error if attempting to register the same handler more than 1 time
-	err = project.AddHandler(ServiceEventDeploy, handler)
-	require.NotNil(t, err)
-
 	err = project.RaiseEvent(*mockContext.Context, ServiceEventDeploy, ProjectLifecycleEventArgs{Project: project})
 	require.Nil(t, err)
 	require.True(t, handlerCalled)
@@ -318,10 +314,6 @@ func TestProjectConfigRaiseEventWithoutArgs(t *testing.T) {
 	err := project.AddHandler(ProjectEventDeploy, handler)
 	require.Nil(t, err)
 
-	// Expected error if attempting to register the same handler more than 1 time
-	err = project.AddHandler(ProjectEventDeploy, handler)
-	require.NotNil(t, err)
-
 	err = project.RaiseEvent(ctx, ProjectEventDeploy, ProjectLifecycleEventArgs{Project: project})
 	require.Nil(t, err)
 	require.True(t, handlerCalled)
@@ -344,10 +336,6 @@ func TestProjectConfigRaiseEventWithArgs(t *testing.T) {
 
 	err := project.AddHandler(ProjectEventDeploy, handler)
 	require.Nil(t, err)
-
-	// Expected error if attempting to register the same handler more than 1 time
-	err = project.AddHandler(ProjectEventDeploy, handler)
-	require.NotNil(t, err)
 
 	err = project.RaiseEvent(*mockContext.Context, ProjectEventDeploy, eventArgs)
 	require.Nil(t, err)

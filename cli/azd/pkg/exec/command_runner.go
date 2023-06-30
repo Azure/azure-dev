@@ -10,7 +10,6 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"strings"
 )
@@ -26,15 +25,47 @@ type CommandRunner interface {
 	RunList(ctx context.Context, commands []string, args RunArgs) (RunResult, error)
 }
 
-// Creates a new default instance of the CommandRunner
-// stdin, stdout & stderr will be used by default during interactive commands
+type RunnerOptions struct {
+	// Stdin is the input stream. If nil, os.Stdin is used.
+	Stdin io.Reader
+	// Stdout is the output stream. If nil, os.Stdout is used.
+	Stdout io.Writer
+	// Stderr is the error stream. If nil, os.Stderr is used.
+	Stderr io.Writer
+	// Whether debug logging is enabled. False by default.
+	DebugLogging bool
+}
+
+// Creates a new default instance of the CommandRunner.
+// Passing nil will use the default values for RunnerOptions.
+//
+// These options will be used by default during interactive commands
 // unless specifically overridden within the command run arguments.
-func NewCommandRunner(stdin io.Reader, stdout io.Writer, stderr io.Writer) CommandRunner {
-	return &commandRunner{
-		stdin:  stdin,
-		stdout: stdout,
-		stderr: stderr,
+func NewCommandRunner(opt *RunnerOptions) CommandRunner {
+	if opt == nil {
+		opt = &RunnerOptions{}
 	}
+
+	runner := &commandRunner{
+		stdin:        opt.Stdin,
+		stdout:       opt.Stdout,
+		stderr:       opt.Stderr,
+		debugLogging: opt.DebugLogging,
+	}
+
+	if runner.stdin == nil {
+		runner.stdin = os.Stdin
+	}
+
+	if runner.stdout == nil {
+		runner.stdout = os.Stdout
+	}
+
+	if runner.stdout == nil {
+		runner.stderr = os.Stderr
+	}
+
+	return runner
 }
 
 // commandRunner is the default private implementation of the CommandRunner interface
@@ -43,14 +74,17 @@ type commandRunner struct {
 	stdin  io.Reader
 	stdout io.Writer
 	stderr io.Writer
+	// Whether debugLogging logging is enabled
+	debugLogging bool
 }
 
 // Run runs the command specified in 'args'.
 //
-// If the underlying command exits with a non-zero exit code you will get an error _and_ a RunResult.
-// If you would like to automatically include the stdout/stderr of the process in the returned error you can
-// set RunArgs.EnrichError to 'true', which means your code can just check and return 'error' without having
-// to inspect the RunResult.
+// Returns a RunResult that is the result of the command.
+//   - If interactive is true, standard input/error is not captured in the returned result.
+//     Instead, standard output/error is simply redirected to the os standard output/error.
+//   - If the underlying command exits unsuccessfully, *ExitError is returned. Other possible errors would likely be I/O
+//     errors or context cancellation.
 //
 // NOTE: on Windows the command will automatically be run within a shell. This means .bat/.cmd
 // file based commands should just work.
@@ -91,16 +125,21 @@ func (r *commandRunner) Run(ctx context.Context, args RunArgs) (RunResult, error
 		}
 	}
 
-	log.Printf("Run exec: '%s %s'", args.Cmd, redactSensitiveData(strings.Join(args.Args, " ")))
-
-	if args.Debug && len(args.Env) > 0 {
-		log.Println("Additional env:")
-		for _, kv := range args.Env {
-			log.Printf("  %s", kv)
-		}
+	debugLogging := r.debugLogging
+	if args.DebugLogging != nil {
+		debugLogging = *args.DebugLogging
 	}
 
+	logMsg := logBuilder{
+		args: append([]string{args.Cmd}, args.Args...),
+		env:  args.Env,
+	}
+	defer func() {
+		logMsg.Write(debugLogging, args.SensitiveData)
+	}()
+
 	if err := cmd.Start(); err != nil {
+		logMsg.err = err
 		return RunResult{}, err
 	}
 
@@ -123,14 +162,6 @@ func (r *commandRunner) Run(ctx context.Context, args RunArgs) (RunResult, error
 			Stderr:   "",
 		}
 	} else {
-		if args.Debug {
-			log.Printf(
-				"Exit Code:%d\nOut:%s\nErr:%s\n",
-				cmd.ProcessState.ExitCode(),
-				redactSensitiveData(stdout.String()),
-				redactSensitiveData(stderr.String()))
-		}
-
 		result = RunResult{
 			ExitCode: cmd.ProcessState.ExitCode(),
 			Stdout:   stdout.String(),
@@ -138,8 +169,17 @@ func (r *commandRunner) Run(ctx context.Context, args RunArgs) (RunResult, error
 		}
 	}
 
-	if err != nil && args.EnrichError {
-		err = fmt.Errorf("%s: %w", result, err)
+	logMsg.result = &result
+
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		outputAvailable := !args.Interactive
+		err = NewExitError(
+			*exitErr,
+			args.Cmd,
+			result.Stdout,
+			result.Stderr,
+			outputAvailable)
 	}
 
 	return result, err
@@ -165,18 +205,45 @@ func (r *commandRunner) RunList(ctx context.Context, commands []string, args Run
 		process.Stderr = &stdErrBuf
 	}
 
+	debugLogging := r.debugLogging
+	if args.DebugLogging != nil {
+		debugLogging = *args.DebugLogging
+	}
+
+	logMsg := logBuilder{
+		// use the actual shell command invoked in the log message
+		args: process.Cmd.Args,
+		env:  args.Env,
+	}
+	defer func() {
+		logMsg.Write(debugLogging, args.SensitiveData)
+	}()
+
 	if err := process.Start(); err != nil {
+		logMsg.err = err
 		return NewRunResult(-1, "", ""), fmt.Errorf("error starting process: %w", err)
 	}
 	defer process.Kill()
 
 	err = process.Wait()
-
-	return NewRunResult(
+	result := NewRunResult(
 		process.ProcessState.ExitCode(),
 		stdOutBuf.String(),
 		stdErrBuf.String(),
-	), err
+	)
+	logMsg.result = &result
+
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) {
+		err = NewExitError(
+			*exitErr,
+			args.Cmd,
+			result.Stdout,
+			result.Stderr,
+			true)
+	}
+
+	return result, err
 }
 
 func appendEnv(env []string) []string {
@@ -185,6 +252,55 @@ func appendEnv(env []string) []string {
 	}
 
 	return nil
+}
+
+// logBuilder builds messages for running of commands.
+type logBuilder struct {
+	args []string
+	env  []string
+
+	// Either result or err is expected to be set, but not both.
+	result *RunResult
+	err    error
+}
+
+// Write writes the log message to the log file. debug enables debug logging.
+func (l *logBuilder) Write(debug bool, sensitiveArgsData []string) {
+	msg := strings.Builder{}
+	insensitiveArgs := RedactSensitiveArgs(l.args, sensitiveArgsData)
+	msg.WriteString(fmt.Sprintf("Run exec: '%s' ", RedactSensitiveData(strings.Join(insensitiveArgs, " "))))
+	if l.result != nil {
+		msg.WriteString(fmt.Sprintf(", exit code: %d\n", l.result.ExitCode))
+	} else if l.err != nil {
+		msg.WriteString(fmt.Sprintf(", err: %v\n", l.err))
+	}
+
+	if debug && len(l.env) > 0 {
+		msg.WriteString("Additional env:\n")
+		for _, kv := range l.env {
+			msg.WriteString(fmt.Sprintf("   %s\n", RedactSensitiveData(kv)))
+		}
+	}
+
+	if debug && l.result != nil && len(l.result.Stdout) > 0 {
+		logStdOut := strings.TrimSuffix(RedactSensitiveData(l.result.Stdout), "\n")
+		if len(logStdOut) > 0 {
+			msg.WriteString(fmt.Sprintf(
+				"-------------------------------------stdout-------------------------------------------\n%s\n",
+				logStdOut))
+		}
+	}
+
+	if debug && l.result != nil && len(l.result.Stderr) > 0 {
+		logStdErr := strings.TrimSuffix(RedactSensitiveData(l.result.Stderr), "\n")
+		if len(logStdErr) > 0 {
+			msg.WriteString(fmt.Sprintf(
+				"-------------------------------------stderr-------------------------------------------\n%s\n",
+				logStdErr))
+		}
+	}
+
+	log.Print(msg.String())
 }
 
 // newCmdTree creates a `CmdTree`, optionally using a shell appropriate for windows
@@ -250,40 +366,4 @@ func newCmdTree(ctx context.Context, cmd string, args []string, useShell bool, i
 		CmdTreeOptions: options,
 		Cmd:            exec.Command(shellName, allArgs...),
 	}, nil
-}
-
-type redactData struct {
-	matchString   *regexp.Regexp
-	replaceString string
-}
-
-func redactSensitiveData(msg string) string {
-	var regexpRedactRules = map[string]redactData{
-		"access token": {
-			regexp.MustCompile("\"accessToken\": \".*\""),
-			"\"accessToken\": \"<redacted>\"",
-		},
-		"deployment token": {
-			regexp.MustCompile(`--deployment-token \S+`),
-			"--deployment-token <redacted>",
-		},
-		"username": {
-			regexp.MustCompile(`--username \S+`),
-			"--username <redacted>",
-		},
-		"password": {
-			regexp.MustCompile(`--password \S+`),
-			"--password <redacted>",
-		},
-		"kubectl-from-literal": {
-			regexp.MustCompile(`--from-literal=([^=]+)=(\S+)`),
-			"--from-literal=$1=<redacted>",
-		},
-	}
-
-	for _, redactRule := range regexpRedactRules {
-		regMatchString := redactRule.matchString
-		msg = regMatchString.ReplaceAllString(msg, redactRule.replaceString)
-	}
-	return msg
 }

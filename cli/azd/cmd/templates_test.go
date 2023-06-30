@@ -4,14 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"sort"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/exp/maps"
 )
 
 func TestTemplateList(t *testing.T) {
@@ -26,22 +24,17 @@ func TestTemplateList(t *testing.T) {
 	_, err := templateList.Run(context.Background())
 	require.NoError(t, err)
 
-	// Should be parsable JSON and non-empty
-	templates := make([]templates.Template, 0)
-	err = json.Unmarshal(result.Bytes(), &templates)
+	// The result should be parsable JSON and non-empty
+	storedTemplates := make([]templates.Template, 0)
+	err = json.Unmarshal(result.Bytes(), &storedTemplates)
 	require.NoError(t, err)
-	assert.NotEmpty(t, templates)
-
-	// Should be sorted
-	names := make([]string, 0, len(templates))
-	for _, template := range templates {
-		names = append(names, template.Name)
-	}
-	sorted := sort.StringsAreSorted(names)
-	assert.True(t, sorted, "Templates are not sorted")
+	assert.NotEmpty(t, storedTemplates)
 
 	// Should match what template manager shows
-	templatesSet, err := templatesManager.ListTemplates()
+	templates, err := templatesManager.ListTemplates()
 	assert.NoError(t, err)
-	assert.ElementsMatch(t, names, maps.Keys(templatesSet))
+	assert.Len(t, templates, len(storedTemplates))
+	for i, template := range templates {
+		assert.Equal(t, template.Name, storedTemplates[i].Name)
+	}
 }

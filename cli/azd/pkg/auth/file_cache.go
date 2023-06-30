@@ -4,6 +4,7 @@
 package auth
 
 import (
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -15,6 +16,8 @@ import (
 
 // fileCache implements Cache by storing the data to disk. The cache key is used as part of the
 // filename for the stored object. Files are stored in [root] and are named [prefix][key].[ext].
+//
+// [root] is the root directory for the cache, and must be created beforehand.
 type fileCache struct {
 	prefix string
 	root   string
@@ -36,7 +39,12 @@ func (c *fileCache) Read(key string) ([]byte, error) {
 		}
 	}()
 
-	return os.ReadFile(cachePath)
+	contents, err := os.ReadFile(cachePath)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, errCacheKeyNotFound
+	}
+
+	return contents, err
 }
 
 func (c *fileCache) Set(key string, value []byte) error {

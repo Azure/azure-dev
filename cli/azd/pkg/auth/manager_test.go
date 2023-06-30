@@ -9,6 +9,7 @@ import (
 	"errors"
 	"io"
 	"net/http"
+	"os"
 	"testing"
 
 	_ "embed"
@@ -17,14 +18,16 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/public"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/github"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/stretchr/testify/require"
 )
 
 func TestReadUserProperties(t *testing.T) {
 	t.Run("homeID", func(t *testing.T) {
-		cfg := config.NewConfig(nil)
+		cfg := config.NewEmptyConfig()
 		require.NoError(t, cfg.Set("auth.account.currentUser.homeAccountId", "testAccountId"))
 
 		props, err := readUserProperties(cfg)
@@ -36,7 +39,7 @@ func TestReadUserProperties(t *testing.T) {
 	})
 
 	t.Run("clientID", func(t *testing.T) {
-		cfg := config.NewConfig(nil)
+		cfg := config.NewEmptyConfig()
 		require.NoError(t, cfg.Set("auth.account.currentUser.clientId", "testClientId"))
 		require.NoError(t, cfg.Set("auth.account.currentUser.tenantId", "testTenantId"))
 
@@ -55,8 +58,9 @@ func TestServicePrincipalLoginClientSecret(t *testing.T) {
 	}
 
 	m := Manager{
-		configManager:   newMemoryConfigManager(),
-		credentialCache: credentialCache,
+		configManager:     newMemoryConfigManager(),
+		userConfigManager: newMemoryUserConfigManager(),
+		credentialCache:   credentialCache,
 	}
 
 	cred, err := m.LoginWithServicePrincipalSecret(
@@ -89,8 +93,9 @@ func TestServicePrincipalLoginClientCertificate(t *testing.T) {
 	}
 
 	m := Manager{
-		configManager:   newMemoryConfigManager(),
-		credentialCache: credentialCache,
+		configManager:     newMemoryConfigManager(),
+		userConfigManager: newMemoryUserConfigManager(),
+		credentialCache:   credentialCache,
 	}
 
 	cred, err := m.LoginWithServicePrincipalCertificate(
@@ -131,8 +136,9 @@ func TestServicePrincipalLoginFederatedTokenProvider(t *testing.T) {
 	})
 
 	m := Manager{
-		configManager:   newMemoryConfigManager(),
-		credentialCache: credentialCache,
+		configManager:     newMemoryConfigManager(),
+		userConfigManager: newMemoryUserConfigManager(),
+		credentialCache:   credentialCache,
 		ghClient: github.NewFederatedTokenClient(&policy.ClientOptions{
 			Transport: mockContext.HttpClient,
 		}),
@@ -160,7 +166,7 @@ func TestServicePrincipalLoginFederatedTokenProvider(t *testing.T) {
 }
 
 func TestLegacyAzCliCredentialSupport(t *testing.T) {
-	mgr := newMemoryConfigManager()
+	mgr := newMemoryUserConfigManager()
 
 	cfg, err := mgr.Load()
 	require.NoError(t, err)
@@ -172,7 +178,7 @@ func TestLegacyAzCliCredentialSupport(t *testing.T) {
 	require.NoError(t, err)
 
 	m := Manager{
-		configManager: mgr,
+		userConfigManager: mgr,
 	}
 
 	cred, err := m.CredentialForCurrentUser(context.Background(), nil)
@@ -184,7 +190,8 @@ func TestLegacyAzCliCredentialSupport(t *testing.T) {
 func TestCloudShellCredentialSupport(t *testing.T) {
 	t.Setenv("AZD_IN_CLOUDSHELL", "1")
 	m := Manager{
-		configManager: newMemoryConfigManager(),
+		configManager:     newMemoryConfigManager(),
+		userConfigManager: newMemoryUserConfigManager(),
 	}
 
 	cred, err := m.CredentialForCurrentUser(context.Background(), nil)
@@ -194,11 +201,12 @@ func TestCloudShellCredentialSupport(t *testing.T) {
 
 func TestLoginInteractive(t *testing.T) {
 	m := &Manager{
-		configManager: newMemoryConfigManager(),
-		publicClient:  &mockPublicClient{},
+		configManager:     newMemoryConfigManager(),
+		userConfigManager: newMemoryUserConfigManager(),
+		publicClient:      &mockPublicClient{},
 	}
 
-	cred, err := m.LoginInteractive(context.Background(), 0, "")
+	cred, err := m.LoginInteractive(context.Background(), 0, "", nil)
 
 	require.NoError(t, err)
 	require.IsType(t, new(azdCredential), cred)
@@ -218,16 +226,18 @@ func TestLoginInteractive(t *testing.T) {
 }
 
 func TestLoginDeviceCode(t *testing.T) {
+	console := mockinput.NewMockConsole()
 	m := &Manager{
-		configManager: newMemoryConfigManager(),
-		publicClient:  &mockPublicClient{},
+		configManager:     newMemoryConfigManager(),
+		userConfigManager: newMemoryUserConfigManager(),
+		publicClient:      &mockPublicClient{},
+		launchBrowserFn:   func(url string) error { return nil },
+		console:           console,
 	}
 
-	buf := bytes.Buffer{}
+	cred, err := m.LoginWithDeviceCode(context.Background(), "", nil)
 
-	cred, err := m.LoginWithDeviceCode(context.Background(), &buf, "")
-
-	require.Regexp(t, "using the code 123-456", buf.String())
+	require.Regexp(t, "Start by copying the next code: 123-456", console.Output())
 
 	require.NoError(t, err)
 	require.IsType(t, new(azdCredential), cred)
@@ -246,37 +256,93 @@ func TestLoginDeviceCode(t *testing.T) {
 	require.True(t, errors.Is(err, ErrNoCurrentUser))
 }
 
-func newMemoryConfigManager() config.UserConfigManager {
+func TestAuthFileConfigUpgrade(t *testing.T) {
+	cfgMgr := newMemoryConfigManager()
+	userCfg := config.NewEmptyConfig()
+	userCfgMgr := newMemoryUserConfigManager()
+
+	err := userCfg.Set(cCurrentUserKey, &userProperties{
+		HomeAccountID: convert.RefOf("homeAccountID"),
+	})
+	require.NoError(t, err)
+
+	err = userCfgMgr.Save(userCfg)
+	require.NoError(t, err)
+
+	m := &Manager{
+		configManager:     cfgMgr,
+		userConfigManager: userCfgMgr,
+		publicClient:      &mockPublicClient{},
+	}
+
+	cfg, err := m.readAuthConfig()
+	require.NoError(t, err)
+
+	properties, err := readUserProperties(cfg)
+	require.NoError(t, err)
+	require.NotNil(t, properties.HomeAccountID)
+	require.Equal(t, "homeAccountID", *properties.HomeAccountID)
+
+	// as part of running readAuthConfig, we migrated the setting from the user config to the auth config
+	// so the current user key should no longer be set in the user configuration.
+	_, has := userCfgMgr.config.Get(cCurrentUserKey)
+	require.False(t, has)
+}
+
+func newMemoryUserConfigManager() *memoryUserConfigManager {
+	return &memoryUserConfigManager{
+		config: config.NewEmptyConfig(),
+	}
+}
+
+type memoryUserConfigManager struct {
+	config config.Config
+}
+
+func (m *memoryUserConfigManager) Load() (config.Config, error) {
+	return m.config, nil
+}
+
+func (m *memoryUserConfigManager) Save(cfg config.Config) error {
+	m.config = cfg
+	return nil
+}
+
+func newMemoryConfigManager() *memoryConfigManager {
 	return &memoryConfigManager{
-		config: config.NewConfig(nil),
+		configs: map[string]config.Config{},
 	}
 }
 
 type memoryConfigManager struct {
-	config config.Config
+	configs map[string]config.Config
 }
 
-func (m *memoryConfigManager) Load() (config.Config, error) {
-	return m.config, nil
+func (m *memoryConfigManager) Load(path string) (config.Config, error) {
+	c, has := m.configs[path]
+	if !has {
+		return nil, os.ErrNotExist
+	}
+	return c, nil
 }
 
-func (m *memoryConfigManager) Save(cfg config.Config) error {
-	m.config = cfg
+func (m *memoryConfigManager) Save(cfg config.Config, path string) error {
+	m.configs[path] = cfg
 	return nil
 }
 
 type mockPublicClient struct {
 }
 
-func (m *mockPublicClient) Accounts() []public.Account {
+func (m *mockPublicClient) Accounts(ctx context.Context) ([]public.Account, error) {
 	return []public.Account{
 		{
 			HomeAccountID: "test.id",
 		},
-	}
+	}, nil
 }
 
-func (m *mockPublicClient) RemoveAccount(account public.Account) error {
+func (m *mockPublicClient) RemoveAccount(ctx context.Context, account public.Account) error {
 	return nil
 }
 
@@ -310,6 +376,10 @@ type mockDeviceCode struct {
 
 func (m *mockDeviceCode) Message() string {
 	return "Complete the device code flow on your second device using the code 123-456"
+}
+
+func (m *mockDeviceCode) UserCode() string {
+	return "123-456"
 }
 
 func (m *mockDeviceCode) AuthenticationResult(ctx context.Context) (public.AuthResult, error) {

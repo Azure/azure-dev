@@ -1,0 +1,3 @@
+name: storage-rg
+metadata: 
+  template: azd-test/storage-rg@v1

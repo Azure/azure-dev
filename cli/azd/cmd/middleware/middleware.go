@@ -128,12 +128,7 @@ func (r *MiddlewareRunner) RunAction(
 		}
 	}
 
-	result, err := nextFn(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	return result, nil
+	return nextFn(ctx)
 }
 
 // Registers middleware components that will be run for all actions

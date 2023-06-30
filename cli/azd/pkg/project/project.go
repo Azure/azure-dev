@@ -10,9 +10,10 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
-	"github.com/azure/azure-dev/cli/azd/internal/telemetry/fields"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/blang/semver/v4"
 	"golang.org/x/exp/slices"
@@ -22,6 +23,8 @@ import (
 const (
 	//nolint:lll
 	projectSchemaAnnotation = "# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json"
+
+	cInfraDirectory = "infra"
 )
 
 func New(ctx context.Context, projectFilePath string, projectName string) (*ProjectConfig, error) {
@@ -41,9 +44,13 @@ func New(ctx context.Context, projectFilePath string, projectName string) (*Proj
 func Parse(ctx context.Context, yamlContent string) (*ProjectConfig, error) {
 	var projectConfig ProjectConfig
 
+	if strings.TrimSpace(yamlContent) == "" {
+		return nil, fmt.Errorf("unable to parse azure.yaml file. File is empty.")
+	}
+
 	if err := yaml.Unmarshal([]byte(yamlContent), &projectConfig); err != nil {
 		return nil, fmt.Errorf(
-			"unable to parse azure.yaml file. Please check the format of the file, "+
+			"unable to parse azure.yaml file. Check the format of the file, "+
 				"and also verify you have the latest version of the CLI: %w",
 			err,
 		)
@@ -66,14 +73,16 @@ func Parse(ctx context.Context, yamlContent string) (*ProjectConfig, error) {
 		}
 	}
 
+	var err error
+	projectConfig.Infra.Provider, err = provisioning.ParseProvider(projectConfig.Infra.Provider)
+	if err != nil {
+		return nil, fmt.Errorf("parsing project %s: %w", projectConfig.Name, err)
+	}
+
 	for key, svc := range projectConfig.Services {
 		svc.Name = key
 		svc.Project = &projectConfig
 		svc.EventDispatcher = ext.NewEventDispatcher[ServiceLifecycleEventArgs]()
-
-		if svc.Language == "" {
-			svc.Language = "dotnet"
-		}
 
 		var err error
 		svc.Language, err = parseServiceLanguage(svc.Language)
@@ -85,6 +94,15 @@ func Parse(ctx context.Context, yamlContent string) (*ProjectConfig, error) {
 		if err != nil {
 			return nil, fmt.Errorf("parsing service %s: %w", svc.Name, err)
 		}
+
+		svc.Infra.Provider, err = provisioning.ParseProvider(svc.Infra.Provider)
+		if err != nil {
+			return nil, fmt.Errorf("parsing service %s: %w", svc.Name, err)
+		}
+	}
+
+	if projectConfig.Infra.Path == "" {
+		projectConfig.Infra.Path = cInfraDirectory
 	}
 
 	return &projectConfig, nil
@@ -109,17 +127,17 @@ func Load(ctx context.Context, projectFilePath string) (*ProjectConfig, error) {
 	if projectConfig.Metadata != nil && projectConfig.Metadata.Template != "" {
 		template := strings.Split(projectConfig.Metadata.Template, "@")
 		if len(template) == 1 { // no version specifier, just the template ID
-			telemetry.SetUsageAttributes(fields.StringHashed(fields.ProjectTemplateIdKey, template[0]))
+			tracing.SetUsageAttributes(fields.StringHashed(fields.ProjectTemplateIdKey, template[0]))
 		} else if len(template) == 2 { // templateID@version
-			telemetry.SetUsageAttributes(fields.StringHashed(fields.ProjectTemplateIdKey, template[0]))
-			telemetry.SetUsageAttributes(fields.StringHashed(fields.ProjectTemplateVersionKey, template[1]))
+			tracing.SetUsageAttributes(fields.StringHashed(fields.ProjectTemplateIdKey, template[0]))
+			tracing.SetUsageAttributes(fields.StringHashed(fields.ProjectTemplateVersionKey, template[1]))
 		} else { // unknown format, just send the whole thing
-			telemetry.SetUsageAttributes(fields.StringHashed(fields.ProjectTemplateIdKey, projectConfig.Metadata.Template))
+			tracing.SetUsageAttributes(fields.StringHashed(fields.ProjectTemplateIdKey, projectConfig.Metadata.Template))
 		}
 	}
 
 	if projectConfig.Name != "" {
-		telemetry.SetUsageAttributes(fields.StringHashed(fields.ProjectNameKey, projectConfig.Name))
+		tracing.SetUsageAttributes(fields.StringHashed(fields.ProjectNameKey, projectConfig.Name))
 	}
 
 	if projectConfig.Services != nil {
@@ -135,8 +153,8 @@ func Load(ctx context.Context, projectFilePath string) (*ProjectConfig, error) {
 		slices.Sort(hosts)
 		slices.Sort(languages)
 
-		telemetry.SetUsageAttributes(fields.ProjectServiceLanguagesKey.StringSlice(languages))
-		telemetry.SetUsageAttributes(fields.ProjectServiceHostsKey.StringSlice(hosts))
+		tracing.SetUsageAttributes(fields.ProjectServiceLanguagesKey.StringSlice(languages))
+		tracing.SetUsageAttributes(fields.ProjectServiceHostsKey.StringSlice(hosts))
 	}
 
 	projectConfig.Path = filepath.Dir(projectFilePath)

@@ -39,6 +39,8 @@ func Test_BuildAndRunSimpleCommand(t *testing.T) {
 	require.NotNil(t, cmd)
 	require.NoError(t, err)
 
+	// Disable args processing from os:args
+	cmd.SetArgs([]string{})
 	err = cmd.ExecuteContext(context.Background())
 
 	require.NoError(t, err)

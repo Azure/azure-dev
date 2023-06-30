@@ -29,7 +29,7 @@ type mockResourceManager struct {
 
 func (mock *mockResourceManager) GetDeploymentResourceOperations(
 	ctx context.Context,
-	scope infra.Scope,
+	target infra.Deployment,
 	startTime *time.Time,
 ) ([]*armresources.DeploymentOperation, error) {
 	return mock.operations, nil
@@ -103,21 +103,22 @@ func TestReportProgress(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 
-	scope := infra.NewSubscriptionScope(azCli, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
+	scope := infra.NewSubscriptionDeployment(azCli, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
 	mockAzDeploymentShow(t, *mockContext)
 
 	startTime := time.Now()
 	outputLength := 0
 	mockResourceManager := mockResourceManager{}
 	progressDisplay := NewProvisioningProgressDisplay(&mockResourceManager, mockContext.Console, scope)
-	progressReport, _ := progressDisplay.ReportProgress(*mockContext.Context, &startTime)
+	err := progressDisplay.ReportProgress(*mockContext.Context, &startTime)
+	require.NoError(t, err)
+
 	outputLength++
 	assert.Len(t, mockContext.Console.Output(), outputLength)
 	assert.Contains(t, mockContext.Console.Output()[0], "You can view detailed progress in the Azure Portal:")
-	assert.Equal(t, defaultProgressTitle, progressReport.Message)
 
 	mockResourceManager.AddInProgressOperation()
-	progressReport, _ = progressDisplay.ReportProgress(*mockContext.Context, &startTime)
+	err = progressDisplay.ReportProgress(*mockContext.Context, &startTime)
+	require.NoError(t, err)
 	assert.Len(t, mockContext.Console.Output(), outputLength)
-	assert.Equal(t, "Provisioning Azure resources", progressReport.Message)
 }

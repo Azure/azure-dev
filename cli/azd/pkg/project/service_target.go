@@ -22,6 +22,7 @@ const (
 	ContainerAppTarget  ServiceTargetKind = "containerapp"
 	AzureFunctionTarget ServiceTargetKind = "function"
 	StaticWebAppTarget  ServiceTargetKind = "staticwebapp"
+	SpringAppTarget     ServiceTargetKind = "springapp"
 	AksTarget           ServiceTargetKind = "aks"
 )
 
@@ -31,6 +32,7 @@ func parseServiceHost(kind ServiceTargetKind) (ServiceTargetKind, error) {
 		ContainerAppTarget,
 		AzureFunctionTarget,
 		StaticWebAppTarget,
+		SpringAppTarget,
 		AksTarget:
 		return kind, nil
 	}

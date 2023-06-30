@@ -1,6 +1,6 @@
 # Release History
 
-## 0.6.0-alpha.1 (Unreleased)
+## 0.7.0-alpha.1 (Unreleased)
 
 ### Features Added
 
@@ -9,6 +9,16 @@
 ### Bugs Fixed
 
 ### Other Changes
+
+## 0.6.0 (2023-05-17)
+
+### Features Added
+
+- [[#2122]](https://github.com/Azure/azure-dev/pull/2122) The appropriate schema for `azure.yaml` has been associated for use by the optional [YAML extension](https://marketplace.visualstudio.com/items?itemName=redhat.vscode-yaml). The YAML extension can offer syntax and schema validation, completions, hover tooltips, and more.
+
+### Other Changes
+
+- [[#2190]](https://github.com/Azure/azure-dev/pull/2190) Command names have been altered to appear more consistent with VS Code conventions. Commands have been grouped into submenus.
 
 ## 0.5.0 (2023-04-05)
 

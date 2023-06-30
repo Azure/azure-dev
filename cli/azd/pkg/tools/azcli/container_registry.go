@@ -12,7 +12,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	azruntime "github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
-	"github.com/azure/azure-dev/cli/azd/internal"
 	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
@@ -228,7 +227,7 @@ func (crs *containerRegistryService) getAcrToken(
 
 	// Implementation based on docs @ https://azure.github.io/acr/AAD-OAuth.html
 	options := clientOptionsBuilder(ctx, crs.httpClient, crs.userAgent).BuildCoreClientOptions()
-	pipeline := azruntime.NewPipeline("azd-acr", internal.Version, azruntime.PipelineOptions{}, options)
+	pipeline := azruntime.NewPipeline("azd-acr", azdinternal.Version, azruntime.PipelineOptions{}, options)
 
 	formData := url.Values{}
 	formData.Set("grant_type", "access_token")

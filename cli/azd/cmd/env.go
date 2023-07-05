@@ -161,7 +161,7 @@ func newEnvSelectAction(azdCtx *azdcontext.AzdContext, args []string) actions.Ac
 func (e *envSelectAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	_, err := environment.GetEnvironment(e.azdCtx, e.args[0])
 	if errors.Is(err, os.ErrNotExist) {
-		return nil, fmt.Errorf(`environment '%s' does not exist. You can create it with "azd env init %s"`,
+		return nil, fmt.Errorf(`environment '%s' does not exist. You can create it with "azd env new %s"`,
 			e.args[0], e.args[0])
 	} else if err != nil {
 		return nil, fmt.Errorf("ensuring environment exists: %w", err)

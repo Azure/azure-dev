@@ -80,7 +80,7 @@ func (t *TerraformProvider) Initialize(ctx context.Context, projectPath string, 
 		return err
 	}
 
-	if err := t.prompters.EnsureEnv(ctx); err != nil {
+	if err := t.EnsureEnv(ctx); err != nil {
 		return err
 	}
 
@@ -103,6 +103,15 @@ func (t *TerraformProvider) Initialize(ctx context.Context, projectPath string, 
 
 	t.cli.SetEnv(envVars)
 	return nil
+}
+
+// EnsureEnv ensures that the environment is in a provision-ready state with required values set, prompting the user if
+// values are unset.
+//
+// An environment is considered to be in a provision-ready state if it contains both an AZURE_SUBSCRIPTION_ID and
+// AZURE_LOCATION value.
+func (t *TerraformProvider) EnsureEnv(ctx context.Context) error {
+	return EnsureSubscriptionAndLocation(ctx, t.env, t.prompters)
 }
 
 // Previews the infrastructure through terraform plan

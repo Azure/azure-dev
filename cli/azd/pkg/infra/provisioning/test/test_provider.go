@@ -38,7 +38,16 @@ func (p *TestProvider) Initialize(ctx context.Context, projectPath string, optio
 	p.projectPath = projectPath
 	p.options = options
 
-	return p.prompters.EnsureEnv(ctx)
+	return p.EnsureEnv(ctx)
+}
+
+// EnsureEnv ensures that the environment is in a provision-ready state with required values set, prompting the user if
+// values are unset.
+//
+// An environment is considered to be in a provision-ready state if it contains both an AZURE_SUBSCRIPTION_ID and
+// AZURE_LOCATION value.
+func (t *TestProvider) EnsureEnv(ctx context.Context) error {
+	return EnsureSubscriptionAndLocation(ctx, t.env, t.prompters)
 }
 
 func (p *TestProvider) Plan(ctx context.Context) (*DeploymentPlan, error) {

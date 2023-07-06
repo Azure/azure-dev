@@ -95,7 +95,16 @@ func (p *BicepProvider) Initialize(ctx context.Context, projectPath string, opti
 		return err
 	}
 
-	return p.prompters.EnsureEnv(ctx)
+	return p.EnsureEnv(ctx)
+}
+
+// EnsureEnv ensures that the environment is in a provision-ready state with required values set, prompting the user if
+// values are unset.
+//
+// An environment is considered to be in a provision-ready state if it contains both an AZURE_SUBSCRIPTION_ID and
+// AZURE_LOCATION value.
+func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
+	return EnsureSubscriptionAndLocation(ctx, p.env, p.prompters)
 }
 
 func (p *BicepProvider) State(ctx context.Context) (*StateResult, error) {

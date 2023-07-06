@@ -103,6 +103,12 @@ func (c *MockConsole) StopSpinner(ctx context.Context, lastMessage string, forma
 	})
 }
 
+func (c *MockConsole) ShowPreviewer(ctx context.Context, options *input.ShowPreviewerOptions) io.Writer {
+	return io.Discard
+}
+
+func (c *MockConsole) StopPreviewer(ctx context.Context) {}
+
 func (c *MockConsole) IsSpinnerRunning(ctx context.Context) bool {
 	if len(c.spinnerOps) > 0 && c.spinnerOps[len(c.spinnerOps)-1].Op == SpinnerOpShow {
 		return true

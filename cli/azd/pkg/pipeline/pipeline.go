@@ -12,7 +12,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 )
 
 // subareaProvider defines the base behavior from any pipeline provider
@@ -47,6 +46,8 @@ type gitRepositoryDetails struct {
 	pushStatus bool
 	// remote
 	remote string
+	// branch
+	branch string
 
 	details interface{}
 }
@@ -70,7 +71,6 @@ type ScmProvider interface {
 		branchName string) (bool, error)
 	//Hook function to allow SCM providers to handle scenarios after the git push is complete
 	GitPush(ctx context.Context,
-		gitCli git.GitCli,
 		gitRepo *gitRepositoryDetails,
 		remoteName string,
 		branchName string) error

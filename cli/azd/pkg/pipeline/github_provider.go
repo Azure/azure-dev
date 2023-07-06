@@ -30,6 +30,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
+	"golang.org/x/exp/slices"
 )
 
 // GitHubScmProvider implements ScmProvider using GitHub as the provider
@@ -181,11 +182,10 @@ func (p *GitHubScmProvider) preventGitPush(
 
 func (p *GitHubScmProvider) GitPush(
 	ctx context.Context,
-	gitCli git.GitCli,
 	gitRepo *gitRepositoryDetails,
 	remoteName string,
 	branchName string) error {
-	return gitCli.PushUpstream(ctx, gitRepo.gitProjectPath, remoteName, branchName)
+	return p.gitCli.PushUpstream(ctx, gitRepo.gitProjectPath, remoteName, branchName)
 }
 
 // enum type for taking a choice after finding GitHub actions disabled.
@@ -395,6 +395,12 @@ func (p *GitHubCiProvider) configureConnection(
 
 	repoSlug := repoDetails.owner + "/" + repoDetails.repoName
 
+	// Configure federated auth for both main branch and current branch
+	branches := []string{repoDetails.branch}
+	if !slices.Contains(branches, "main") {
+		branches = append(branches, "main")
+	}
+
 	// Default auth type to client-credentials for terraform
 	if infraOptions.Provider == provisioning.Terraform && authType == "" {
 		authType = AuthTypeClientCredentials
@@ -406,7 +412,7 @@ func (p *GitHubCiProvider) configureConnection(
 	case AuthTypeClientCredentials:
 		authErr = p.configureClientCredentialsAuth(ctx, infraOptions, repoSlug, credentials)
 	default:
-		authErr = p.configureFederatedAuth(ctx, infraOptions, repoSlug, credentials)
+		authErr = p.configureFederatedAuth(ctx, infraOptions, repoSlug, branches, credentials)
 	}
 
 	if authErr != nil {
@@ -536,6 +542,7 @@ func (p *GitHubCiProvider) configureFederatedAuth(
 	ctx context.Context,
 	infraOptions provisioning.Options,
 	repoSlug string,
+	branches []string,
 	credentials json.RawMessage,
 ) error {
 	var azureCredentials azcli.AzureCredentials
@@ -548,7 +555,7 @@ func (p *GitHubCiProvider) configureFederatedAuth(
 		return err
 	}
 
-	err = applyFederatedCredentials(ctx, repoSlug, &azureCredentials, p.console, p.httpClient, credential)
+	err = applyFederatedCredentials(ctx, repoSlug, branches, &azureCredentials, p.console, p.httpClient, credential)
 	if err != nil {
 		return err
 	}
@@ -582,6 +589,7 @@ const (
 func applyFederatedCredentials(
 	ctx context.Context,
 	repoSlug string,
+	branches []string,
 	azureCredentials *azcli.AzureCredentials,
 	console input.Console,
 	httpClient httputil.HttpClient,
@@ -616,19 +624,24 @@ func applyFederatedCredentials(
 	// List of desired federated credentials
 	federatedCredentials := []graphsdk.FederatedIdentityCredential{
 		{
-			Name:        fmt.Sprintf("%s-main", credentialSafeName),
-			Issuer:      federatedIdentityIssuer,
-			Subject:     fmt.Sprintf("repo:%s:ref:refs/heads/main", repoSlug),
-			Description: convert.RefOf("Created by Azure Developer CLI"),
-			Audiences:   []string{federatedIdentityAudience},
-		},
-		{
 			Name:        fmt.Sprintf("%s-pull_request", credentialSafeName),
 			Issuer:      federatedIdentityIssuer,
 			Subject:     fmt.Sprintf("repo:%s:pull_request", repoSlug),
 			Description: convert.RefOf("Created by Azure Developer CLI"),
 			Audiences:   []string{federatedIdentityAudience},
 		},
+	}
+
+	for _, branch := range branches {
+		branchCredentials := graphsdk.FederatedIdentityCredential{
+			Name:        fmt.Sprintf("%s-%s", credentialSafeName, branch),
+			Issuer:      federatedIdentityIssuer,
+			Subject:     fmt.Sprintf("repo:%s:ref:refs/heads/%s", repoSlug, branch),
+			Description: convert.RefOf("Created by Azure Developer CLI"),
+			Audiences:   []string{federatedIdentityAudience},
+		}
+
+		federatedCredentials = append(federatedCredentials, branchCredentials)
 	}
 
 	// Ensure the credential exists otherwise create a new one.

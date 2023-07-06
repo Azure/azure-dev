@@ -568,7 +568,6 @@ func gitInsteadOfConfig(
 // Push code and queue pipeline
 func (p *AzdoScmProvider) GitPush(
 	ctx context.Context,
-	gitCli git.GitCli,
 	gitRepo *gitRepositoryDetails,
 	remoteName string,
 	branchName string) error {

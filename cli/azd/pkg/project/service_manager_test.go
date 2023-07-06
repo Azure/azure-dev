@@ -2,14 +2,19 @@ package project
 
 import (
 	"context"
+	"errors"
 	"strings"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
+	"github.com/azure/azure-dev/cli/azd/pkg/azure"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -37,7 +42,14 @@ func createServiceManager(mockContext *mocks.MockContext, env *environment.Envir
 	resourceManager := NewResourceManager(env, azCli)
 	serviceLocator := ioc.NewServiceLocator(mockContext.Container)
 
-	return NewServiceManager(env, resourceManager, serviceLocator)
+	alphaManager := alpha.NewFeaturesManagerWithConfig(config.NewConfig(
+		map[string]any{
+			"alpha": map[string]any{
+				"all": "on",
+			},
+		}))
+
+	return NewServiceManager(env, resourceManager, serviceLocator, alphaManager)
 }
 
 func Test_ServiceManager_GetRequiredTools(t *testing.T) {
@@ -258,6 +270,76 @@ func Test_ServiceManager_CacheResults(t *testing.T) {
 	require.Same(t, buildResult1, buildResult2)
 }
 
+func Test_ServiceManager_Events_With_Errors(t *testing.T) {
+	tests := []struct {
+		name      string
+		eventName string
+		run       func(ctx context.Context, serviceManager ServiceManager, serviceConfig *ServiceConfig) (any, error)
+	}{
+		{
+			name: "restore",
+			run: func(ctx context.Context, serviceManager ServiceManager, serviceConfig *ServiceConfig) (any, error) {
+				restoreTask := serviceManager.Restore(ctx, serviceConfig)
+				logProgress(restoreTask)
+				return restoreTask.Await()
+			},
+		},
+		{
+			name: "build",
+			run: func(ctx context.Context, serviceManager ServiceManager, serviceConfig *ServiceConfig) (any, error) {
+				buildTask := serviceManager.Build(ctx, serviceConfig, nil)
+				logProgress(buildTask)
+				return buildTask.Await()
+			},
+		},
+		{
+			name: "package",
+			run: func(ctx context.Context, serviceManager ServiceManager, serviceConfig *ServiceConfig) (any, error) {
+				packageTask := serviceManager.Package(ctx, serviceConfig, nil)
+				logProgress(packageTask)
+				return packageTask.Await()
+			},
+		},
+		{
+			name: "deploy",
+			run: func(ctx context.Context, serviceManager ServiceManager, serviceConfig *ServiceConfig) (any, error) {
+				deployTask := serviceManager.Deploy(ctx, serviceConfig, nil)
+				logProgress(deployTask)
+				return deployTask.Await()
+			},
+		},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			mockContext := mocks.NewMockContext(context.Background())
+			setupMocksForServiceManager(mockContext)
+			env := environment.EphemeralWithValues("test", map[string]string{
+				environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
+			})
+			sm := createServiceManager(mockContext, env)
+			serviceConfig := createTestServiceConfig("./src/api", ServiceTargetFake, ServiceLanguageFake)
+
+			eventTypes := []string{"pre", "post"}
+			for _, eventType := range eventTypes {
+				t.Run(test.eventName, func(t *testing.T) {
+					test.eventName = eventType + test.name
+					_ = serviceConfig.AddHandler(
+						ext.Event(test.eventName),
+						func(ctx context.Context, args ServiceLifecycleEventArgs) error {
+							return errors.New("error")
+						},
+					)
+
+					result, err := test.run(*mockContext.Context, sm, serviceConfig)
+					require.Error(t, err)
+					require.Nil(t, result)
+				})
+			}
+		})
+	}
+}
+
 func setupMocksForServiceManager(mockContext *mocks.MockContext) {
 	_ = mockContext.Container.RegisterNamedSingleton(string(ServiceLanguageFake), newFakeFramework)
 	_ = mockContext.Container.RegisterNamedSingleton(string(ServiceTargetFake), newFakeServiceTarget)
@@ -311,7 +393,7 @@ func setupMocksForServiceManager(mockContext *mocks.MockContext) {
 				Location: convert.RefOf("eastus2"),
 				Type:     convert.RefOf(string(infra.AzureResourceTypeWebSite)),
 				Tags: map[string]*string{
-					"azd-service-name": convert.RefOf("api"),
+					azure.TagKeyAzdServiceName: convert.RefOf("api"),
 				},
 			},
 		},
@@ -500,8 +582,8 @@ func (st *fakeServiceTarget) Endpoints(
 type fakeTool struct {
 }
 
-func (t *fakeTool) CheckInstalled(ctx context.Context) (bool, error) {
-	return true, nil
+func (t *fakeTool) CheckInstalled(ctx context.Context) error {
+	return nil
 }
 func (t *fakeTool) InstallUrl() string {
 	return "https://aka.ms"

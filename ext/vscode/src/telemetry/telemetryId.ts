@@ -40,6 +40,9 @@ export enum TelemetryId {
     // Reported when 'restore' CLI command is invoked.
     RestoreCli = 'azure-dev.commands.cli.restore.task',
 
+    // Reported when 'package' CLI command is invoked.
+    PackageCli = 'azure-dev.commands.cli.package.task',
+
     // Reported when 'up' CLI command is invoked.
     UpCli = 'azure-dev.commands.cli.up.task',
 
@@ -51,6 +54,9 @@ export enum TelemetryId {
 
     // Reported when 'env new' CLI command is invoked.
     EnvNewCli = 'azure-dev.commands.cli.env-new.task',
+
+    // Reported when 'env refresh' CLI command is invoked.
+    EnvRefreshCli = 'azure-dev.commands.cli.env-refresh.task',
     
     // Reported when the product evaluates whether to prompt the user for a survey.
     // We capture 

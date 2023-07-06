@@ -11,9 +11,9 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
-	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
-	"github.com/azure/azure-dev/cli/azd/internal/telemetry/events"
-	"github.com/azure/azure-dev/cli/azd/internal/telemetry/fields"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -28,7 +28,7 @@ type SubscriptionTenantResolver interface {
 }
 
 type principalInfoProvider interface {
-	GetLoggedInServicePrincipalTenantID() (*string, error)
+	GetLoggedInServicePrincipalTenantID(ctx context.Context) (*string, error)
 }
 
 type subCache interface {
@@ -46,13 +46,13 @@ type SubscriptionsManager struct {
 	service       *SubscriptionsService
 	principalInfo principalInfoProvider
 	cache         subCache
-	msg           input.Messaging
+	console       input.Console
 }
 
 func NewSubscriptionsManager(
 	service *SubscriptionsService,
 	auth *auth.Manager,
-	msg input.Messaging) (*SubscriptionsManager, error) {
+	console input.Console) (*SubscriptionsManager, error) {
 	cache, err := NewSubscriptionsCache()
 	if err != nil {
 		return nil, err
@@ -62,7 +62,7 @@ func NewSubscriptionsManager(
 		service:       service,
 		cache:         cache,
 		principalInfo: auth,
-		msg:           msg,
+		console:       console,
 	}, nil
 }
 
@@ -100,7 +100,7 @@ func (m *SubscriptionsManager) RefreshSubscriptions(ctx context.Context) error {
 //     See SubscriptionCache for details about caching. On cache miss, all tenants and subscriptions are queried from
 //     azure management services for the current account to build the mapping and populate the cache.
 func (m *SubscriptionsManager) LookupTenant(ctx context.Context, subscriptionId string) (tenantId string, err error) {
-	principalTenantId, err := m.principalInfo.GetLoggedInServicePrincipalTenantID()
+	principalTenantId, err := m.principalInfo.GetLoggedInServicePrincipalTenantID(ctx)
 	if err != nil {
 		return "", err
 	}
@@ -157,13 +157,14 @@ type tenantSubsResult struct {
 // ListSubscription lists subscriptions accessible by the current account by calling azure management services.
 func (m *SubscriptionsManager) ListSubscriptions(ctx context.Context) ([]Subscription, error) {
 	var err error
-	ctx, span := telemetry.GetTracer().Start(ctx, events.AccountSubscriptionsListEvent)
+	ctx, span := tracing.Start(ctx, events.AccountSubscriptionsListEvent)
 	defer span.EndWithStatus(err)
 
-	stop := m.msg.ShowProgress(ctx, "Retrieving subscriptions...")
-	defer stop()
+	msg := "Retrieving subscriptions..."
+	m.console.ShowSpinner(ctx, msg, input.Step)
+	defer m.console.StopSpinner(ctx, "", input.StepDone)
 
-	principalTenantId, err := m.principalInfo.GetLoggedInServicePrincipalTenantID()
+	principalTenantId, err := m.principalInfo.GetLoggedInServicePrincipalTenantID(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -281,8 +282,10 @@ func (m *SubscriptionsManager) ListLocations(
 	ctx context.Context,
 	subscriptionId string,
 ) ([]Location, error) {
-	stop := m.msg.ShowProgress(ctx, "Retrieving locations...")
-	defer stop()
+	var err error
+	msg := "Retrieving locations..."
+	m.console.ShowSpinner(ctx, msg, input.Step)
+	defer m.console.StopSpinner(ctx, msg, input.GetStepResultFormat(err))
 
 	tenantId, err := m.LookupTenant(ctx, subscriptionId)
 	if err != nil {

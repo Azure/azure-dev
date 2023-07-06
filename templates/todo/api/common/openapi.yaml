@@ -4,7 +4,7 @@ info:
   version: 3.0.0
   title: Simple Todo API
   contact:
-    email: wabrez@microsoft.com
+    email: azdevteam@microsoft.com
 
 components:
   schemas:

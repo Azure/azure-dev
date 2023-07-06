@@ -10,14 +10,9 @@ say() {
 }
 
 echo "Test install with invalid install folder"
-install_folder_error=$(cat install-azd.sh | "$1" -s -- --no-telemetry --verbose --base-url "$2" --version "$3" --install-folder "/install/folder/does/not/exist" 2>&1)
+install_folder_error=$(cat install-azd.sh | "$1" -s -- --no-telemetry --verbose --base-url "$2" --version "$3" --symlink-folder "/symlink/folder/does/not/exist" 2>&1)
 
-if [ ! $? ]; then
-    say_error "Install should have failed on folder not existing"
-    exit 1
-fi
-
-if [[ "$install_folder_error" != *"Install folder does not exist"* ]]; then
+if [[ "$install_folder_error" != *"Symlink folder does not exist"* ]]; then
     say_error "Install should have notified the user that the folder does not exist"
     exit 1
 fi

@@ -8,6 +8,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
+	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
@@ -23,14 +24,16 @@ func NewUserProfileService(
 	credentialProvider auth.MultiTenantCredentialProvider,
 	httpClient httputil.HttpClient) *UserProfileService {
 	return &UserProfileService{
-		userAgent:          azdinternal.MakeUserAgentString(""),
+		userAgent:          azdinternal.UserAgent(),
 		httpClient:         httpClient,
 		credentialProvider: credentialProvider,
 	}
 }
 
 func (u *UserProfileService) createGraphClient(ctx context.Context, tenantId string) (*graphsdk.GraphClient, error) {
-	options := clientOptionsBuilder(u.httpClient, u.userAgent).BuildCoreClientOptions()
+	options := clientOptionsBuilder(ctx, u.httpClient, u.userAgent).
+		WithPerCallPolicy(azsdk.NewMsGraphCorrelationPolicy(ctx)).
+		BuildCoreClientOptions()
 	cred, err := u.credentialProvider.GetTokenCredential(ctx, tenantId)
 	if err != nil {
 		return nil, err

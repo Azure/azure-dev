@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"path/filepath"
 	"runtime"
 	"strings"
 	"testing"
@@ -109,6 +110,8 @@ func Test_PythonProject_Package(t *testing.T) {
 	pythonCli := python.NewPythonCli(mockContext.CommandRunner)
 	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguagePython)
 	err := os.MkdirAll(serviceConfig.Path(), osutil.PermissionDirectory)
+	require.NoError(t, err)
+	err = os.WriteFile(filepath.Join(serviceConfig.Path(), "requirements.txt"), nil, osutil.PermissionFile)
 	require.NoError(t, err)
 
 	pythonProject := NewPythonProject(pythonCli, env)

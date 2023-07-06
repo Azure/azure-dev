@@ -3,7 +3,7 @@ resources:
     - repository: azure-sdk-build-tools
       type: git
       name: internal/azure-sdk-build-tools
-      ref: refs/tags/azure-sdk-build-tools_20230307.1
+      ref: refs/tags/azure-sdk-build-tools_20230613.1
 
 # Continuous deployment trigger
 trigger:
@@ -22,6 +22,7 @@ pr:
       - go.mod
       - cli/
       - eng/pipelines/release-cli.yml
+      - eng/pipelines/templates/steps/publish-cli.yml
 
 variables:
   - template: /eng/pipelines/templates/variables/globals.yml
@@ -39,6 +40,9 @@ stages:
               BuildOutputName: azd.exe
               BuildTestMsi: true
               AZURE_DEV_CI_OS: win
+              Codeql.Enabled: true
+              Codeql.SkipTaskAutoInjection: false
+              Codeql.BuildIdentifier: cli_windows
             Linux:
               Pool: azsdk-pool-mms-ubuntu-2004-general
               OSVmImage:  MMSUbuntu20.04
@@ -46,9 +50,11 @@ stages:
               BuildOutputName: azd
               SetExecutableBit: true
               SetShieldInfo: true
-              GenerateCoverage: true
               BuildLinuxPackages: true
               AZURE_DEV_CI_OS: lin
+              Codeql.Enabled: true
+              Codeql.SkipTaskAutoInjection: false
+              Codeql.BuildIdentifier: cli_linux
             Mac:
               Pool: Azure Pipelines
               OSVmImage: macOS-11
@@ -57,6 +63,8 @@ stages:
               MacLocalSign: false
               SetExecutableBit: true
               AZURE_DEV_CI_OS: mac
+              # CodeQL on macOS not supported by the Azure DevOps task as-of current.
+              # Codeql.BuildIdentifier: cli_darwin
         pool:
             name: $(Pool)
             vmImage: $(OSVmImage)
@@ -80,12 +88,22 @@ stages:
             inputs:
               pwsh: true
               targetType: filePath
+              filePath: eng/scripts/Set-CliBuildVariables.ps1
+              arguments: -BuildReason $(Build.Reason)
+            displayName: Set CLI build run variables
+
+          - task: PowerShell@2
+            inputs:
+              pwsh: true
+              targetType: filePath
               filePath: cli/azd/ci-build.ps1
               arguments: >-
                 -Version $(CLI_VERSION)
                 -SourceVersion $(Build.SourceVersion)
+                -CodeCoverageEnabled
+                -BuildRecordMode
               workingDirectory: cli/azd
-            displayName: Build Go Binary
+            displayName: Build Go Binary (For tests)
 
           - template: /eng/pipelines/templates/steps/build-msi.yml
             parameters:
@@ -124,18 +142,27 @@ stages:
               pwsh: true
               targetType: filePath
               filePath: cli/azd/ci-test.ps1
+              arguments: >-
+                -UnitTestCoverageDir './cover-$(AZURE_DEV_CI_OS)/unit'
+                -IntegrationTestCoverageDir './cover-$(AZURE_DEV_CI_OS)/int'
               workingDirectory: cli/azd
             displayName: Test Go Binary
             env:
-              # Set GITHUB_RUN_NUMBER because cli_test.go is coupled to that
-              # environment variable.
-              GITHUB_RUN_NUMBER: $(Build.BuildId)
-              # Generate junit report to publish results
-              GOTESTSUM_JUNITFILE: junitTestReport.xml
-              # Required for Terraform service principal authentication
+              # AZD live test setup variables
+              CI: true
+              AZD_TEST_CLI_VERSION: $(CLI_VERSION)
+              AZD_TEST_CLIENT_ID: $(arm-client-id)
+              AZD_TEST_CLIENT_SECRET: $(arm-client-secret)
+              AZD_TEST_TENANT_ID: $(arm-tenant-id)
+              AZD_TEST_AZURE_SUBSCRIPTION_ID: $(SubscriptionId)
+              AZD_TEST_AZURE_LOCATION: eastus2
+              AZURE_RECORD_MODE: $(AZURE_RECORD_MODE)
+              # AZD Live Test: Terraform service principal authentication
               ARM_CLIENT_ID: $(arm-client-id)
               ARM_CLIENT_SECRET: $(arm-client-secret)
               ARM_TENANT_ID: $(arm-tenant-id)
+              # Code Coverage: Generate junit report to publish results
+              GOTESTSUM_JUNITFILE: junitTestReport.xml
 
           - task: PublishTestResults@2
             inputs:
@@ -147,32 +174,16 @@ stages:
             displayName: Publish test results
             condition: succeededOrFailed()
 
-          - pwsh: |
-              go install github.com/axw/gocov/gocov@latest
-              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-              go install github.com/AlekSi/gocov-xml@latest
-              if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-              ~/go/bin/gocov convert cover.out | ~/go/bin/gocov-xml > coverage.xml
-            workingDirectory: cli/azd
-            condition: >-
-              and(
-                succeeded(),
-                eq(variables['GenerateCoverage'], 'true'),
-                ne(variables['Skip.LiveTest'], 'true')
-              )
-            displayName: Generate coverage
-
-          - task: PublishCodeCoverageResults@1
-            condition: >-
-              and(
-                succeeded(),
-                eq(variables['GenerateCoverage'], 'true'),
-                ne(variables['Skip.LiveTest'], 'true')
-              )
+          - task: PowerShell@2
             inputs:
-              codeCoverageTool: Cobertura
-              summaryFileLocation: '$(Build.SourcesDirectory)/**/coverage.xml'
-            displayName: Publish Code Coverage to DevOps
+              pwsh: true
+              targetType: filePath
+              filePath: cli/azd/ci-build.ps1
+              arguments: >-
+                -Version $(CLI_VERSION)
+                -SourceVersion $(Build.SourceVersion)
+              workingDirectory: cli/azd
+            displayName: Build Go Binary
 
           - pwsh: Move-Item $(BuildOutputName) $(BuildTarget)
             workingDirectory: cli/azd
@@ -197,6 +208,10 @@ stages:
                 -TemplatePath eng/shields/standalone.json
                 -Version "$(CLI_VERSION)"
             displayName: Set shield info
+
+          - publish: cli/azd/cover-$(AZURE_DEV_CI_OS)
+            artifact: cover-$(AZURE_DEV_CI_OS)
+            displayName: Upload code coverage
 
           - publish: eng/shields/standalone.json
             condition: and(succeeded(), eq(variables['SetShieldInfo'], 'true'))
@@ -361,6 +376,68 @@ stages:
           - publish: $(Pipeline.Workspace)/docs/
             artifact: docs
             displayName: Upload generated documentation
+
+  - stage: CodeCoverage_Upload
+    dependsOn: BuildAndTest
+    jobs:
+    - job: Upload
+      pool:
+        name: azsdk-pool-mms-ubuntu-2004-general
+        vmImage: MMSUbuntu20.04
+      steps:
+        - template: /eng/pipelines/templates/steps/setup-go.yml
+        - template: /eng/pipelines/templates/steps/download-artifacts.yml
+          parameters:
+            Artifacts:
+            - cover-win
+            - cover-lin
+            - cover-mac
+        - pwsh: |
+            New-Item -ItemType Directory -Force -Path cover
+            New-Item -ItemType Directory -Force -Path cover-int
+            New-Item -ItemType Directory -Force -Path cover-unit
+
+            $unitCoverage = (Get-ChildItem cover-*/unit).FullName -join ","
+            $integrationCoverage = (Get-ChildItem cover-*/int).FullName -join ","
+
+            # Merge unit test coverage across platforms
+            go tool covdata merge -i="$unitCoverage" -o cover-unit
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+            # Merge integration test coverage across platforms
+            go tool covdata merge -i="$integrationCoverage" -o cover-int
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+            # Merge unit and integration code coverage
+            go tool covdata merge -i="cover-unit,cover-int" -o cover
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+            # Convert to text format
+            go tool covdata textfmt -i=cover -o cover.out
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+
+            go install github.com/axw/gocov/gocov@latest
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            go install github.com/AlekSi/gocov-xml@latest
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+            
+            ~/go/bin/gocov convert cover.out | ~/go/bin/gocov-xml > coverage.xml
+            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          displayName: Merge code coverage files
+
+        - publish: cover-unit
+          artifact: cover-unit
+          displayName: Upload unit test code coverage
+
+        - publish: cover-int
+          artifact: cover-int
+          displayName: Upload integration test code coverage
+
+        - task: PublishCodeCoverageResults@1
+          inputs:
+            codeCoverageTool: Cobertura
+            summaryFileLocation: '$(Build.SourcesDirectory)/**/coverage.xml'
+          displayName: Publish Code Coverage to DevOps
 
   - stage: Sign
     dependsOn: BuildAndTest
@@ -565,6 +642,8 @@ stages:
           vmImage: MMSUbuntu20.04
 
         steps:
+          - checkout: self
+
           - task: DownloadPipelineArtifact@2
             inputs:
               artifact: azd-windows-amd64.exe
@@ -599,6 +678,8 @@ stages:
               tar -C azd-linux-amd64 -cvzf hosting/azd-linux-amd64.tar.gz azd-linux-amd64
 
               Copy-Item msi/azd-windows-amd64.msi hosting/
+
+              Copy-Item cli/installer/*stall-azd.* hosting/
 
               Get-ChildItem hosting/ -Recurse | Select-Object -Property Name,Size
             displayName: Move folders to hosting location
@@ -688,7 +769,11 @@ stages:
               OSVmImage:  MMSUbuntu20.04
               TestShell: pwsh
               TestInstallCommand: >
-                ./test-pwsh-xplat-install.ps1 -BaseUrl $env:BASEURL -Version '';
+                ./test-pwsh-xplat-install.ps1 
+                -BaseUrl $env:BASEURL 
+                -Version '' 
+                -InstallShScriptUrl "$($env:BASEURL)/install-azd.sh"
+                -UninstallShScriptUrl "$($env:BASEURL)/uninstall-azd.sh";
                 ./test-telemetry-functions.ps1 -NonInteractive -Shell pwsh -ExpectedFieldMap telemetry/linux.telemetry.json
 
             Mac11Sh:
@@ -716,7 +801,11 @@ stages:
               # macs. Disabled for now.
               #  ./test-telemetry-functions.ps1 -Shell pwsh -ExpectedFieldMap telemetry/macos.telemetry.json
               TestInstallCommand: >
-                ./test-pwsh-xplat-install.ps1 -BaseUrl $env:BASEURL -Version ''
+                ./test-pwsh-xplat-install.ps1 
+                -BaseUrl $env:BASEURL 
+                -Version '' 
+                -InstallShScriptUrl "$($env:BASEURL)/install-azd.sh"
+                -UninstallShScriptUrl "$($env:BASEURL)/uninstall-azd.sh"
             Mac11Pwsh:
               Pool: Azure Pipelines
               OSVmImage: macOS-11
@@ -726,8 +815,11 @@ stages:
               # macs. Disabled for now.
               #  ./test-telemetry-functions.ps1 -Shell pwsh -ExpectedFieldMap telemetry/macos.telemetry.json
               TestInstallCommand: >
-                ./test-pwsh-xplat-install.ps1 -BaseUrl $env:BASEURL -Version ''
-
+                ./test-pwsh-xplat-install.ps1 
+                -BaseUrl $env:BASEURL 
+                -Version '' 
+                -InstallShScriptUrl "$($env:BASEURL)/install-azd.sh"
+                -UninstallShScriptUrl "$($env:BASEURL)/uninstall-azd.sh"
             WindowsCmd:
               Pool: azsdk-pool-mms-win-2022-general
               OSVmImage: MMS2022
@@ -738,6 +830,7 @@ stages:
               OSVmImage: MMS2022
               TestShell: pwsh
               TestInstallCommand: >
+                $ErrorActionPreference = 'Stop';
                 ./test-win-install.ps1 -BaseUrl $env:BASEURL -Version '';
                 ./test-telemetry-functions.ps1 -Shell pwsh -ExpectedFieldMap telemetry/windows.pwsh.telemetry.json
             WindowsPowerShell:
@@ -745,6 +838,7 @@ stages:
               OSVmImage: MMS2022
               TestShell: powershell
               TestInstallCommand: >
+                $ErrorActionPreference = 'Stop';
                 ./test-win-install.ps1 -BaseUrl $env:BASEURL -Version '';
                 ./test-telemetry-functions.ps1 -Shell powershell -ExpectedFieldMap telemetry/windows.powershell.telemetry.json
 
@@ -766,6 +860,38 @@ stages:
               path: hosting
 
           - bash: ls
+            workingDirectory: hosting
+
+          - bash: |
+              unzip ./azd-darwin-amd64.zip -d ./tmp
+
+              # Ad-hoc signing with "-" identity
+              codesign -s - tmp/azd-darwin-amd64
+
+              zip azd-darwin-amd64.zip -j tmp/azd-darwin-amd64
+            displayName: Self-sign (Darwin)
+            condition: and(succeeded(), contains(variables['Agent.OS'], 'Darwin'))
+            workingDirectory: hosting
+
+          - pwsh: |
+              $ErrorActionPreference = 'Stop'
+
+              # Generate self-sign cert
+              $cert = New-SelfSignedCertificate -CertStoreLocation Cert:\LocalMachine\My -Type CodeSigningCert -Subject "azd installer tests code signing"
+              
+              # Add as temporary trusted root CA
+              try {
+                Export-Certificate -Cert $cert -FilePath code_signing.crt
+                Import-Certificate -FilePath .\code_signing.crt -Cert Cert:\LocalMachine\Root
+              }
+              finally {
+                Remove-Item -Force .\code_signing.crt -ErrorAction SilentlyContinue
+              }
+
+              # Sign the windows binary
+              Set-AuthenticodeSignature .\azd-windows-amd64.msi -Certificate $cert
+            displayName: Self-sign (Windows)
+            condition: and(succeeded(), contains(variables['Agent.OS'], 'Windows'))
             workingDirectory: hosting
 
           - bash: nohup npx -y http-server &
@@ -845,6 +971,24 @@ stages:
               workingDirectory: cli/installer/
             displayName: Test install script (cmd)
 
+          - pwsh: |
+              Get-ChildItem Cert:\LocalMachine\My | ForEach-Object {
+                if ($_.Subject -match "azd installer tests code signing") {
+                  Write-Host "Deleting $($_.PSPath) - $($_.Subject)"
+                  Remove-Item -Force $_.PSPath
+                }
+              }
+
+              Get-ChildItem Cert:\LocalMachine\Root | ForEach-Object {
+                if ($_.Subject -match "azd installer tests code signing") {
+                  Write-Host "Deleting $($_.PSPath) - $($_.Subject)"
+                  Remove-Item -Force $_.PSPath
+                }
+              }
+            displayName: Clean up self-signed certificates (Windows)
+            condition: contains(variables['Agent.OS'], 'Windows')
+            workingDirectory: hosting
+
       - job: Verify_LinuxPackages
 
         pool:
@@ -905,16 +1049,47 @@ stages:
                     filePath: eng/scripts/Set-CliVersionVariable.ps1
                   displayName: Set CLI_VERSION
 
+                - pwsh: |
+                    # Initial upload locations
+                    $publishUploadLocations = 'release/$(CLI_VERSION);release/latest'
+
+                    $isPublishingGa = eng/scripts/Test-ShouldReleasePackageVersion.ps1 `
+                      -CliVersion '$(CLI_VERSION)'
+
+                    if ($isPublishingGa) {
+                      $publishUploadLocations += ";release/stable"
+                    }
+
+                    Write-Host "Setting StorageUploadLocations to $publishUploadLocations"
+                    Write-Host "###vso[task.setvariable variable=StorageUploadLocations]$publishUploadLocations"
+                  displayName: Set StorageUploadLocations
+
+                - pwsh: |
+                    # Initial tag
+                    $dockerTags = '$(CLI_VERSION)'
+
+                    $isPublishingGa = eng/scripts/Test-ShouldReleasePackageVersion.ps1 `
+                      -CliVersion '$(CLI_VERSION)'
+
+                    if ($isPublishingGa) {
+                      $dockerTags += ";latest"
+                    }
+
+                    Write-Host "Setting DockerImageTags to $dockerTags"
+                    Write-Host "###vso[task.setvariable variable=DockerImageTags]$dockerTags"
+                  displayName: Set DockerImageTags
+
                 - template: /eng/pipelines/templates/steps/publish-cli.yml
                   parameters:
                     CreateGitHubRelease: true
-                    PublishUploadLocations: release/$(CLI_VERSION);release/latest
+                    PublishUploadLocations: $(StorageUploadLocations)
                     PublishShield: true
-                    DockerImageTags: $(CLI_VERSION);latest
+                    DockerImageTags: $(DockerImageTags)
                     ReleaseSyndicatedDockerContainer: true
                     PublishUpdatedDocs: true
                     UploadMsi: true
                     PublishBrewFormula: true
+                    PublishArm64Binaries: true
 
       - deployment: Publish_Choco
         dependsOn: Publish_Release
@@ -942,8 +1117,6 @@ stages:
 
                 - template: /eng/pipelines/templates/steps/publish-cli-choco.yml
                   parameters:
-                    # Set to false after GA (https://github.com/Azure/azure-dev/issues/1485)
-                    AllowPrerelease: true
                     CliVersion: $(CLI_VERSION)
 
       - deployment: Publish_WinGet
@@ -972,8 +1145,6 @@ stages:
 
                 - template: /eng/pipelines/templates/steps/publish-cli-winget.yml
                   parameters:
-                    # Set to false after GA (https://github.com/Azure/azure-dev/issues/1485)
-                    AllowPrerelease: true
                     CliVersion: $(CLI_VERSION)
 
       - deployment: Increment_Version
@@ -1008,7 +1179,7 @@ stages:
                     CommitMsg: Increment CLI version after release
                     PRTitle: Increment CLI version after release
 
-  - stage: PublishIntegration
+  - stage: Publish_Integration
     dependsOn: Sign
     jobs:
       - job: Publish_Continuous_Deployment
@@ -1046,6 +1217,7 @@ stages:
               PublishShield: false
               DockerImageTags: daily;$(CLI_VERSION)
               UploadMsi: true
+              PublishArm64Binaries: true
 
       - job: Publish_For_PR
         condition: >-
@@ -1105,9 +1277,9 @@ stages:
           - pwsh: |
               $urlBase = "$(GenerateUrlBase.UrlBase)"
               $linuxReleaseUrl = "$urlBase/azd-linux-amd64.tar.gz"
-              $linuxReleaseUrlArm64 = "$urlBase/azd-linux-arm64.tar.gz"
+              $linuxReleaseUrlArm64 = "$urlBase/azd-linux-arm64-beta.tar.gz"
               $macosReleaseUrl = "$urlBase/azd-darwin-amd64.zip"
-              $macosReleaseUrlArm64 = "$urlBase/azd-darwin-arm64.zip"
+              $macosReleaseUrlArm64 = "$urlBase/azd-darwin-arm64-beta.zip"
               $windowsReleaseUrl = "$urlBase/azd-windows-amd64.zip"
               $msiReleaseUrl = "$urlBase/azd-windows-amd64.msi"
 
@@ -1126,13 +1298,13 @@ stages:
               bash:
               ``````
               curl -fsSL $urlBase/uninstall-azd.sh | bash;
-              curl -fsSL $urlBase/install-azd.sh | bash -s -- --base-url $urlBase --version '' --verbose
+              curl -fsSL $urlBase/install-azd.sh | bash -s -- --base-url $urlBase --version '' --verbose --skip-verify
               ``````
 
               pwsh:
               ``````
               Invoke-RestMethod '$urlBase/uninstall-azd.ps1' -OutFile uninstall-azd.ps1; ./uninstall-azd.ps1
-              Invoke-RestMethod '$urlBase/install-azd.ps1' -OutFile install-azd.ps1; ./install-azd.ps1 -BaseUrl '$urlBase' -Version '' -Verbose
+              Invoke-RestMethod '$urlBase/install-azd.ps1' -OutFile install-azd.ps1; ./install-azd.ps1 -BaseUrl '$urlBase' -Version '' -SkipVerify -Verbose
               ``````
 
 
@@ -1142,7 +1314,7 @@ stages:
 
               ``````
               powershell -c "Set-ExecutionPolicy Bypass Process; irm '$urlBase/uninstall-azd.ps1' > uninstall-azd.ps1; ./uninstall-azd.ps1;"
-              powershell -c "Set-ExecutionPolicy Bypass Process; irm '$urlBase/install-azd.ps1' > install-azd.ps1; ./install-azd.ps1 -BaseUrl '$urlBase' -Version '' -Verbose;"
+              powershell -c "Set-ExecutionPolicy Bypass Process; irm '$urlBase/install-azd.ps1' > install-azd.ps1; ./install-azd.ps1 -BaseUrl '$urlBase' -Version '' -SkipVerify -Verbose;"
               ``````
 
               MSI install

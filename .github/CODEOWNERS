@@ -1,13 +1,13 @@
 # https://docs.github.com/en/repositories/managing-your-repositorys-settings-and-features/customizing-your-repository/about-code-owners#codeowners-syntax
 
-/**               @jongio @ellismg
+/**               @ellismg @wbreza
 
-/cli/             @ellismg @wbreza @vhvb1989 @hemarina @jongio @weikanglim
+/cli/             @ellismg @wbreza @vhvb1989 @hemarina @weikanglim
 /cli/installer/   @ellismg @danieljurek
 
-/ext/             @karolz-ms @ellismg @jongio
+/ext/             @karolz-ms @ellismg
 
-/generators/repo/ @wbreza @ellismg @danieljurek
+/generators/repo/ @wbreza @ellismg @danieljurek @jongio
 
 /.github/         @danieljurek @ellismg
 

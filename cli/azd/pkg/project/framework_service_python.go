@@ -125,7 +125,7 @@ func (pp *pythonProject) Package(
 ) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
-			packageRoot, err := os.MkdirTemp("", "azd")
+			packageDest, err := os.MkdirTemp("", "azd")
 			if err != nil {
 				task.SetError(fmt.Errorf("creating package directory for %s: %w", serviceConfig.Name, err))
 				return
@@ -136,10 +136,15 @@ func (pp *pythonProject) Package(
 				packageSource = filepath.Join(serviceConfig.Path(), serviceConfig.OutputPath)
 			}
 
+			if entries, err := os.ReadDir(packageSource); err != nil || len(entries) == 0 {
+				task.SetError(fmt.Errorf("package source '%s' is empty or does not exist", packageSource))
+				return
+			}
+
 			task.SetProgress(NewServiceProgress("Copying deployment package"))
 			if err := buildForZip(
 				packageSource,
-				packageRoot,
+				packageDest,
 				buildForZipOptions{
 					excludeConditions: []excludeDirEntryCondition{
 						excludeVirtualEnv,
@@ -150,9 +155,14 @@ func (pp *pythonProject) Package(
 				return
 			}
 
+			if err := validatePackageOutput(packageDest); err != nil {
+				task.SetError(err)
+				return
+			}
+
 			task.SetResult(&ServicePackageResult{
 				Build:       buildOutput,
-				PackagePath: packageRoot,
+				PackagePath: packageDest,
 			})
 		},
 	)

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
@@ -78,6 +79,10 @@ func (c *MockConsole) Message(ctx context.Context, message string) {
 	c.log = append(c.log, message)
 }
 
+func (c *MockConsole) WarnForFeature(ctx context.Context, id alpha.FeatureId) {
+	c.Message(ctx, fmt.Sprintf("warning: alpha feature %s is enabled", id))
+}
+
 func (c *MockConsole) MessageUxItem(ctx context.Context, item ux.UxItem) {
 	c.Message(ctx, item.ToString(""))
 }
@@ -98,6 +103,12 @@ func (c *MockConsole) StopSpinner(ctx context.Context, lastMessage string, forma
 	})
 }
 
+func (c *MockConsole) ShowPreviewer(ctx context.Context, options *input.ShowPreviewerOptions) io.Writer {
+	return io.Discard
+}
+
+func (c *MockConsole) StopPreviewer(ctx context.Context) {}
+
 func (c *MockConsole) IsSpinnerRunning(ctx context.Context) bool {
 	if len(c.spinnerOps) > 0 && c.spinnerOps[len(c.spinnerOps)-1].Op == SpinnerOpShow {
 		return true
@@ -106,11 +117,19 @@ func (c *MockConsole) IsSpinnerRunning(ctx context.Context) bool {
 	return false
 }
 
+func (c *MockConsole) IsSpinnerInteractive() bool {
+	return false
+}
+
 // Prints a confirmation message to the console for the user to confirm
 func (c *MockConsole) Confirm(ctx context.Context, options input.ConsoleOptions) (bool, error) {
 	c.log = append(c.log, options.Message)
 	value, err := c.respond("Confirm", options)
 	return value.(bool), err
+}
+
+// no-op for mock-console when calling WaitForEnter()
+func (c *MockConsole) WaitForEnter() {
 }
 
 // Writes a single answer prompt to the console for the user to complete

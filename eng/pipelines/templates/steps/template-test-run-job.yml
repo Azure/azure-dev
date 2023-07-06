@@ -22,8 +22,14 @@ steps:
     - template: /eng/pipelines/templates/steps/set-git-credentials.yml
 
     - pwsh: |
-          # Remove 'Azure-Samples/'
-          $templateName = '$(TemplateName)'.Substring(14)
+          # Get the name without any path
+          $template = '$(TemplateName)'
+          $lastSlash = $template.LastIndexOf('/')
+          if ($lastSlash -ne -1) {
+            $templateName = $template.Substring($lastSlash + 1)
+          } else {
+            $templateName = $template
+          }
           $scenario = "$env:TEST_SCENARIO"
           $envPrefixName = "azd-template-test"
           if($scenario -ne '') {
@@ -64,6 +70,7 @@ steps:
       inputs:
           env: |
               # Required secrets for Terraform service principal authentication
+              # $(arm-*) secrets are set by azd-login.yml
               ARM_CLIENT_ID=$(arm-client-id)
               ARM_CLIENT_SECRET=$(arm-client-secret)
               ARM_TENANT_ID=$(arm-tenant-id)
@@ -92,18 +99,28 @@ steps:
               # Install azd build
               if [[ $(AzdVersion) == pr/* ]];
               then
-                curl -fsSL https://aka.ms/install-azd.sh | sudo bash -s -- --base-url "https://$(azdev-storage-account-name).blob.core.windows.net/azd/standalone/$(AzdVersion)" --version ''
+                curl -fsSL https://aka.ms/install-azd.sh | sudo bash -s -- --base-url "https://$(azdev-storage-account-name).blob.core.windows.net/azd/standalone/$(AzdVersion)" --skip-verify --version ''
               else
                 curl -fsSL https://aka.ms/install-azd.sh | sudo bash -s -- --version $(AzdVersion) --verbose
               fi
 
               azd version
 
-              # Login
+              # Login azd
               azd auth login \
                 --client-id "$(arm-client-id)" \
                 --client-secret "$(arm-client-secret)" \
                 --tenant-id "$(arm-tenant-id)"
+
+              # Login az CLI (required for scenarios where az is invoked)
+              az login \
+                --service-principal \
+                -u "$(arm-client-id)" \
+                -p "$(arm-client-secret)" \
+                --tenant "$(arm-tenant-id)"
+
+              # set default sub for az to be the same used by azd
+              az account set --subscription "$(SubscriptionId)" 
 
               # enable alpha features
               azd config set alpha.all on

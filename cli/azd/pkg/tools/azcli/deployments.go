@@ -13,8 +13,31 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/internal"
 )
+
+func (cli *azCli) ListSubscriptionDeployments(
+	ctx context.Context,
+	subscriptionId string,
+) ([]*armresources.DeploymentExtended, error) {
+	deploymentClient, err := cli.createDeploymentsClient(ctx, subscriptionId)
+	if err != nil {
+		return nil, fmt.Errorf("creating deployments client: %w", err)
+	}
+
+	results := []*armresources.DeploymentExtended{}
+
+	pager := deploymentClient.NewListAtSubscriptionScopePager(nil)
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		results = append(results, page.Value...)
+	}
+
+	return results, nil
+}
 
 func (cli *azCli) GetSubscriptionDeployment(
 	ctx context.Context,
@@ -36,6 +59,31 @@ func (cli *azCli) GetSubscriptionDeployment(
 	}
 
 	return &deployment.DeploymentExtended, nil
+}
+
+func (cli *azCli) ListResourceGroupDeployments(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroupName string,
+) ([]*armresources.DeploymentExtended, error) {
+	deploymentClient, err := cli.createDeploymentsClient(ctx, subscriptionId)
+	if err != nil {
+		return nil, fmt.Errorf("creating deployments client: %w", err)
+	}
+
+	results := []*armresources.DeploymentExtended{}
+
+	pager := deploymentClient.NewListByResourceGroupPager(resourceGroupName, nil)
+	for pager.More() {
+		page, err := pager.NextPage(ctx)
+		if err != nil {
+			return nil, err
+		}
+
+		results = append(results, page.Value...)
+	}
+
+	return results, nil
 }
 
 func (cli *azCli) GetResourceGroupDeployment(
@@ -70,7 +118,7 @@ func (cli *azCli) createDeploymentsClient(
 		return nil, err
 	}
 
-	options := cli.createDefaultClientOptionsBuilder(ctx).BuildArmClientOptions()
+	options := cli.clientOptionsBuilder(ctx).BuildArmClientOptions()
 	client, err := armresources.NewDeploymentsClient(subscriptionId, credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating deployments client: %w", err)
@@ -81,14 +129,16 @@ func (cli *azCli) createDeploymentsClient(
 
 func (cli *azCli) DeployToSubscription(
 	ctx context.Context,
-	subscriptionId, deploymentName string,
+	subscriptionId string,
+	location string,
+	deploymentName string,
 	armTemplate azure.RawArmTemplate,
 	parameters azure.ArmParameters,
-	location string,
-) (AzCliDeploymentResult, error) {
+	tags map[string]*string,
+) (*armresources.DeploymentExtended, error) {
 	deploymentClient, err := cli.createDeploymentsClient(ctx, subscriptionId)
 	if err != nil {
-		return AzCliDeploymentResult{}, fmt.Errorf("creating deployments client: %w", err)
+		return nil, fmt.Errorf("creating deployments client: %w", err)
 	}
 
 	createFromTemplateOperation, err := deploymentClient.BeginCreateOrUpdateAtSubscriptionScope(
@@ -100,26 +150,23 @@ func (cli *azCli) DeployToSubscription(
 				Mode:       to.Ptr(armresources.DeploymentModeIncremental),
 			},
 			Location: to.Ptr(location),
+			Tags:     tags,
 		}, nil)
 	if err != nil {
-		return AzCliDeploymentResult{}, fmt.Errorf("starting deployment to subscription: %w", err)
+		return nil, fmt.Errorf("starting deployment to subscription: %w", err)
 	}
 
 	// wait for deployment creation
 	deployResult, err := createFromTemplateOperation.PollUntilDone(ctx, nil)
 	if err != nil {
 		deploymentError := createDeploymentError(err)
-		return AzCliDeploymentResult{}, fmt.Errorf(
+		return nil, fmt.Errorf(
 			"deploying to subscription:\n\nDeployment Error Details:\n%w",
 			deploymentError,
 		)
 	}
 
-	return AzCliDeploymentResult{
-		Properties: AzCliDeploymentResultProperties{
-			Outputs: CreateDeploymentOutput(deployResult.Properties.Outputs),
-		},
-	}, nil
+	return &deployResult.DeploymentExtended, nil
 }
 
 func (cli *azCli) DeployToResourceGroup(
@@ -127,10 +174,11 @@ func (cli *azCli) DeployToResourceGroup(
 	subscriptionId, resourceGroup, deploymentName string,
 	armTemplate azure.RawArmTemplate,
 	parameters azure.ArmParameters,
-) (AzCliDeploymentResult, error) {
+	tags map[string]*string,
+) (*armresources.DeploymentExtended, error) {
 	deploymentClient, err := cli.createDeploymentsClient(ctx, subscriptionId)
 	if err != nil {
-		return AzCliDeploymentResult{}, fmt.Errorf("creating deployments client: %w", err)
+		return nil, fmt.Errorf("creating deployments client: %w", err)
 	}
 
 	createFromTemplateOperation, err := deploymentClient.BeginCreateOrUpdate(
@@ -141,26 +189,23 @@ func (cli *azCli) DeployToResourceGroup(
 				Parameters: parameters,
 				Mode:       to.Ptr(armresources.DeploymentModeIncremental),
 			},
+			Tags: tags,
 		}, nil)
 	if err != nil {
-		return AzCliDeploymentResult{}, fmt.Errorf("starting deployment to resource group: %w", err)
+		return nil, fmt.Errorf("starting deployment to resource group: %w", err)
 	}
 
 	// wait for deployment creation
 	deployResult, err := createFromTemplateOperation.PollUntilDone(ctx, nil)
 	if err != nil {
 		deploymentError := createDeploymentError(err)
-		return AzCliDeploymentResult{}, fmt.Errorf(
+		return nil, fmt.Errorf(
 			"deploying to resource group:\n\nDeployment Error Details:\n%w",
 			deploymentError,
 		)
 	}
 
-	return AzCliDeploymentResult{
-		Properties: AzCliDeploymentResultProperties{
-			Outputs: CreateDeploymentOutput(deployResult.Properties.Outputs),
-		},
-	}, nil
+	return &deployResult.DeploymentExtended, nil
 }
 
 func (cli *azCli) DeleteSubscriptionDeployment(ctx context.Context, subscriptionId string, deploymentName string) error {
@@ -214,7 +259,7 @@ func createDeploymentError(err error) error {
 		} else {
 			errorText = string(rawBody)
 		}
-		return internal.NewAzureDeploymentError(errorText)
+		return NewAzureDeploymentError(errorText)
 	}
 
 	return err

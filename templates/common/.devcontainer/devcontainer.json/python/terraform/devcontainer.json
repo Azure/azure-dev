@@ -3,15 +3,13 @@
     "build": {
         "dockerfile": "Dockerfile",
         "args": {
-            "IMAGE": "python:3.10"
+            "IMAGE": "python:3.10-bullseye"
         }
     },
     "features": {
         "ghcr.io/devcontainers/features/azure-cli:1": {
-            "version": "2.38"
         },
-        "ghcr.io/devcontainers/features/docker-from-docker:1": {
-            "version": "20.10"
+        "ghcr.io/devcontainers/features/docker-in-docker:2": {
         },
         "ghcr.io/devcontainers/features/node:1": {
             "version": "16",
@@ -24,12 +22,13 @@
     "customizations": {
         "vscode": {
             "extensions": [
+                "GitHub.vscode-github-actions",
+                "hashicorp.terraform",
                 "ms-azuretools.azure-dev",
-                "ms-azuretools.vscode-bicep",
+                "ms-azuretools.vscode-azurefunctions",
                 "ms-azuretools.vscode-docker",
-                "ms-vscode.vscode-node-azure-pack",
                 "ms-python.python",
-                "ms-azuretools.vscode-azurefunctions"
+                "ms-vscode.vscode-node-azure-pack"
             ]
         }
     },

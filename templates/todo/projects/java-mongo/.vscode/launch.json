@@ -9,7 +9,9 @@
             "mainClass": "com.microsoft.azure.simpletodo.SimpleTodoApplication",
             "args": [],
             "cwd": "${workspaceFolder}/src/api",
-            "env": {},
+            "env": {
+                "API_ENVIRONMENT":"develop"
+            },
             "envFile": "${input:dotEnvFilePath}"
         },
         {

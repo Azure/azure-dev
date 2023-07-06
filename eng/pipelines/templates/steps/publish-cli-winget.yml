@@ -25,7 +25,7 @@ steps:
 
   - pwsh: |
       $submitPackage = eng/scripts/Test-ShouldReleasePackageVersion.ps1 `
-        -Version '$(MSI_VERSION)' `
+        -CliVersion '${{ parameters.CliVersion }}' `
         -AllowPrerelease:$${{ parameters.AllowPrerelease }}
 
       if ('$(Skip.ReleaseWinGet)' -eq 'true') {

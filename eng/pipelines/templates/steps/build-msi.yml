@@ -4,6 +4,11 @@ parameters:
   Condition: succeeded()
 
 steps:
+  - task: NuGetCommand@2
+    displayName: Restore NuGet packages
+    inputs:
+      restoreSolution: cli/installer/windows.sln
+
   - task: PowerShell@2
     displayName: Get MSI version from CLI version
     condition: ${{ parameters.Condition }}
@@ -14,12 +19,12 @@ steps:
       arguments: >-
         -CliVersion "${{ parameters.CliVersion }}"
         -DevOpsOutput
-      
+
   - task: MSBuild@1
     displayName: ${{ parameters.Title }}
     condition: ${{ parameters.Condition }}
     inputs:
-      solution: cli/installer/windows/azd.wixproj
+      solution: cli/installer/windows.sln
       msbuildArguments: >-
         /p:RunWixToolsOutOfProc=true
         /p:Configuration=Release

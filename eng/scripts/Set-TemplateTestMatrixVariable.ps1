@@ -3,7 +3,7 @@
 Generates a matrix of template test jobs.
 
 .PARAMETER TemplateList
-List of templates to run. By default, uses `azd template list` to run all templates.
+List of templates to run. By default, uses `all` to run all templates.
 
 .PARAMETER TemplateListFilter
 Regex filter expression to filter templates. Examples: 'csharp', 'terraform', 'python-mongo'.
@@ -22,7 +22,7 @@ The matrix job definition will contain:
 #>
 param (
     # This is a string and not a string[] to avoid issues with parameter passing in CI yaml.
-    [string]$TemplateList = '(azd template list)',
+    [string]$TemplateList = 'all',
     [string]$TemplateListFilter = '.*',
     [string]$OutputMatrixVariable = 'Matrix',
     [string]$JobVariablesDefinition = ''
@@ -71,18 +71,32 @@ function Copy-RandomJob([System.Collections.Hashtable]$JobMatrix) {
     return $copyJob
 }
 
+$JobVariablesDefinition = $JobVariablesDefinition.Trim()
 $jobVariables = Get-JobVariables -JobVariablesDefinition $JobVariablesDefinition
 
 $templateNames = @()
 
-if ($TemplateList -eq '(azd template list)') {
-    Write-Host "Using results of (azd template list --output json)"
+if ($TemplateList -eq 'all') {
+    Write-Host "Running all templates "
     
-    $templateNames += (azd template list --output json | ConvertFrom-Json).name
+    $officialTemplates = (azd template list --output json | ConvertFrom-Json).repositoryPath | ForEach-Object {
+        if (!$_.StartsWith("Azure-Samples/")) {
+            "Azure-Samples/" + $_
+        } else {
+            $_
+        }
+    }
     if ($LASTEXITCODE -ne 0) {
         Write-Error "azd template list failed"
         exit 1
     }
+
+    # Other templates outside of `azd template list` can be added here.
+    # To add a template, add the repository path {owner}/{repo} to the list below.
+    $otherTemplates = @()
+
+    $templateNames += $officialTemplates
+    $templateNames += $otherTemplates
 } else {
     Write-Host "Using provided TemplateList value: $TemplateList"
 

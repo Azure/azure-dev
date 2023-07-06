@@ -4,10 +4,10 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"os"
 	"sync"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/theckman/yacspin"
 )
 
@@ -102,9 +102,7 @@ func NewSpinner(writer io.Writer, title string) *Spinner {
 		// The current LogMessage functionality depends on the StopMessage being empty.
 	}
 
-	if os.Getenv("AZD_DEBUG_FORCE_NO_TTY") == "1" {
-		config.TerminalMode = yacspin.ForceNoTTYMode | yacspin.ForceDumbTerminalMode
-	}
+	config.TerminalMode = input.GetSpinnerTerminalMode(nil)
 
 	spinner, _ := yacspin.New(config)
 

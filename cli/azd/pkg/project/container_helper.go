@@ -37,7 +37,7 @@ func NewContainerHelper(
 }
 
 func (ch *ContainerHelper) RegistryName(ctx context.Context) (string, error) {
-	loginServer, has := ch.env.Values[environment.ContainerRegistryEndpointEnvVarName]
+	loginServer, has := ch.env.LookupEnv(environment.ContainerRegistryEndpointEnvVarName)
 	if !has {
 		return "", fmt.Errorf(
 			"could not determine container registry endpoint, ensure %s is set as an output of your infrastructure",
@@ -129,7 +129,7 @@ func (ch *ContainerHelper) Deploy(
 
 			log.Printf("logging into container registry '%s'\n", loginServer)
 			task.SetProgress(NewServiceProgress("Logging into container registry"))
-			err = ch.containerRegistryService.LoginAcr(ctx, targetResource.SubscriptionId(), loginServer)
+			err = ch.containerRegistryService.Login(ctx, targetResource.SubscriptionId(), loginServer)
 			if err != nil {
 				task.SetError(err)
 				return
@@ -151,5 +151,9 @@ func (ch *ContainerHelper) Deploy(
 				task.SetError(fmt.Errorf("saving image name to environment: %w", err))
 				return
 			}
+
+			task.SetResult(&ServiceDeployResult{
+				Package: packageOutput,
+			})
 		})
 }

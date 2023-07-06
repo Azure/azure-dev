@@ -1,13 +1,17 @@
+adam-lavrik
 AlecAivazis
 alexandair
 benbjohnson
 blang
 bradleyjkemp
 briandowns
+buger
 cobey
+dnaeon
 ellismg
 envsubst
 fatih
+fiscaletti
 gofrs
 isatty
 joho

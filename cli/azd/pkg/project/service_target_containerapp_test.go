@@ -5,12 +5,24 @@ package project
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v2"
+	"github.com/azure/azure-dev/cli/azd/pkg/containerapps"
+	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazsdk"
+	"github.com/azure/azure-dev/cli/azd/test/ostest"
+	"github.com/benbjohnson/clock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -56,4 +68,150 @@ func TestNewContainerAppTargetTypeValidation(t *testing.T) {
 			}
 		})
 	}
+}
+
+func Test_ContainerApp_Deploy(t *testing.T) {
+	tempDir := t.TempDir()
+	ostest.Chdir(t, tempDir)
+
+	mockContext := mocks.NewMockContext(context.Background())
+	setupMocksForContainerAppTarget(mockContext)
+
+	serviceConfig := createTestServiceConfig(tempDir, ContainerAppTarget, ServiceLanguageTypeScript)
+	env := createEnv()
+
+	serviceTarget := createContainerAppServiceTarget(mockContext, serviceConfig, env)
+
+	packageTask := serviceTarget.Package(
+		*mockContext.Context,
+		serviceConfig,
+		&ServicePackageResult{
+			PackagePath: "test-app/api-test:azd-deploy-0",
+			Details: &dockerPackageResult{
+				ImageHash: "IMAGE_HASH",
+				ImageTag:  "test-app/api-test:azd-deploy-0",
+			},
+		},
+	)
+	logProgress(packageTask)
+	packageResult, err := packageTask.Await()
+
+	require.NoError(t, err)
+	require.NotNil(t, packageResult)
+	require.IsType(t, new(dockerPackageResult), packageResult.Details)
+
+	scope := environment.NewTargetResource(
+		"SUBSCRIPTION_ID",
+		"RESOURCE_GROUP",
+		"CONTAINER_APP",
+		string(infra.AzureResourceTypeContainerApp),
+	)
+	deployTask := serviceTarget.Deploy(*mockContext.Context, serviceConfig, packageResult, scope)
+	logProgress(deployTask)
+	deployResult, err := deployTask.Await()
+
+	require.NoError(t, err)
+	require.NotNil(t, deployResult)
+	require.Equal(t, ContainerAppTarget, deployResult.Kind)
+	require.Greater(t, len(deployResult.Endpoints), 0)
+	// New env variable is created
+	require.Equal(t, "REGISTRY.azurecr.io/test-app/api-test:azd-deploy-0", env.Dotenv()["SERVICE_API_IMAGE_NAME"])
+}
+
+func createContainerAppServiceTarget(
+	mockContext *mocks.MockContext,
+	serviceConfig *ServiceConfig,
+	env *environment.Environment,
+) ServiceTarget {
+	dockerCli := docker.NewDocker(mockContext.CommandRunner)
+	credentialProvider := mockaccount.SubscriptionCredentialProviderFunc(
+		func(_ context.Context, _ string) (azcore.TokenCredential, error) {
+			return mockContext.Credentials, nil
+		})
+
+	containerAppService := containerapps.NewContainerAppService(credentialProvider, mockContext.HttpClient, clock.NewMock())
+	containerRegistryService := azcli.NewContainerRegistryService(credentialProvider, mockContext.HttpClient, dockerCli)
+	containerHelper := NewContainerHelper(env, clock.NewMock(), containerRegistryService, dockerCli)
+	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
+	resourceManager := NewResourceManager(env, azCli)
+
+	return NewContainerAppTarget(
+		env,
+		containerHelper,
+		containerAppService,
+		resourceManager,
+	)
+}
+
+func setupMocksForContainerAppTarget(mockContext *mocks.MockContext) {
+	setupMocksForDocker(mockContext)
+	setupMocksForAcr(mockContext)
+	setupMocksForContainerApps(mockContext)
+}
+
+func setupMocksForContainerApps(mockContext *mocks.MockContext) {
+	subscriptionId := "SUBSCRIPTION_ID"
+	location := "eastus2"
+	resourceGroup := "RESOURCE_GROUP"
+	appName := "CONTAINER_APP"
+	originalImageName := "ORIGINAL_IMAGE_NAME"
+	originalRevisionName := "ORIGINAL_REVISION_NAME"
+	updatedRevisionName := "UPDATED_REVISION_NAME"
+	hostName := fmt.Sprintf("%s.%s.azurecontainerapps.io", appName, location)
+
+	containerApp := &armappcontainers.ContainerApp{
+		Location: &location,
+		Name:     &appName,
+		Properties: &armappcontainers.ContainerAppProperties{
+			LatestRevisionName: &originalRevisionName,
+			Configuration: &armappcontainers.Configuration{
+				ActiveRevisionsMode: convert.RefOf(armappcontainers.ActiveRevisionsModeSingle),
+				Secrets: []*armappcontainers.Secret{
+					{
+						Name:  convert.RefOf("secret"),
+						Value: nil,
+					},
+				},
+				Ingress: &armappcontainers.Ingress{
+					Fqdn: &hostName,
+				},
+			},
+			Template: &armappcontainers.Template{
+				Containers: []*armappcontainers.Container{
+					{
+						Image: &originalImageName,
+					},
+				},
+			},
+		},
+	}
+
+	revision := &armappcontainers.Revision{
+		Properties: &armappcontainers.RevisionProperties{
+			Template: &armappcontainers.Template{
+				Containers: []*armappcontainers.Container{
+					{
+						Image: &updatedRevisionName,
+					},
+				},
+			},
+		},
+	}
+
+	secrets := &armappcontainers.SecretsCollection{
+		Value: []*armappcontainers.ContainerAppSecret{},
+	}
+
+	mockazsdk.MockContainerAppGet(mockContext, subscriptionId, resourceGroup, appName, containerApp)
+	mockazsdk.MockContainerAppRevisionGet(
+		mockContext,
+		subscriptionId,
+		resourceGroup,
+		appName,
+		originalRevisionName,
+		revision,
+	)
+	mockazsdk.MockContainerAppSecretsList(mockContext, subscriptionId, resourceGroup, appName, secrets)
+	mockazsdk.MockContainerAppUpdate(mockContext, subscriptionId, resourceGroup, appName, containerApp)
+	mockazsdk.MockContainerRegistryTokenExchange(mockContext, subscriptionId, subscriptionId, "REFRESH_TOKEN")
 }

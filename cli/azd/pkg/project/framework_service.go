@@ -6,6 +6,7 @@ package project
 import (
 	"context"
 	"fmt"
+	"os"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -25,6 +26,10 @@ const (
 )
 
 func parseServiceLanguage(kind ServiceLanguageKind) (ServiceLanguageKind, error) {
+	if string(kind) == "" {
+		return ServiceLanguageKind(""), fmt.Errorf("language property must not be empty")
+	}
+
 	// aliases
 	if string(kind) == "py" {
 		return ServiceLanguagePython, nil
@@ -99,4 +104,17 @@ type FrameworkService interface {
 type CompositeFrameworkService interface {
 	FrameworkService
 	SetSource(inner FrameworkService)
+}
+
+func validatePackageOutput(packagePath string) error {
+	entries, err := os.ReadDir(packagePath)
+	if err != nil && os.IsNotExist(err) {
+		return fmt.Errorf("package output '%s' does not exist, %w", packagePath, err)
+	} else if err != nil {
+		return fmt.Errorf("failed to read package output '%s', %w", packagePath, err)
+	} else if err == nil && len(entries) == 0 {
+		return fmt.Errorf("package output '%s' is empty", packagePath)
+	}
+
+	return nil
 }

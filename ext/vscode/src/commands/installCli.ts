@@ -3,7 +3,7 @@
 
 import { DialogResponses, IActionContext } from '@microsoft/vscode-azext-utils';
 import * as os from 'os';
-import { localize } from '../localize';
+import * as vscode from 'vscode';
 import { onAzdInstallAttempted } from '../utils/azureDevCli';
 import { executeInTerminal } from '../utils/executeInTerminal';
 import { isLinux, isMac, isWindows } from '../utils/osUtils';
@@ -15,7 +15,7 @@ const MacTerminalCommand = LinuxTerminalCommand; // Same as Linux
 
 export async function installCli(context: IActionContext, shouldPrompt: boolean = true): Promise<void> {
     if (shouldPrompt) {
-        const message = localize('azure-dev.commands.cli.install.prompt', 'This will install or update the Azure Developer CLI. Do you want to continue?');
+        const message = vscode.l10n.t('This will install or update the Azure Developer CLI. Do you want to continue?');
         // Don't need to check the result, if the user chooses cancel a UserCancelledError will be thrown
         await context.ui.showWarningMessage(message, { modal: true }, DialogResponses.yes, DialogResponses.cancel);
     }
@@ -30,7 +30,7 @@ export async function installCli(context: IActionContext, shouldPrompt: boolean 
         terminalCommand = MacTerminalCommand;
     } else {
         context.errorHandling.suppressReportIssue = true;
-        throw new Error(localize('azure-dev.commands.cli.install.unsupportedPlatform', 'Unsupported platform: {0}', os.platform()));
+        throw new Error(vscode.l10n.t('Unsupported platform: {0}', os.platform()));
     }
 
     onAzdInstallAttempted();

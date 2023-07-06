@@ -70,8 +70,8 @@ func (c *NestedContainer) RegisterNamedSingleton(name string, resolveFn any) err
 
 // Registers a resolver with a transient lifetime (instance per resolution)
 // Returns an error if the resolver is not valid
-func (c *NestedContainer) RegisterTransient(resolveFn any) error {
-	return c.inner.TransientLazy(resolveFn)
+func (c *NestedContainer) RegisterTransient(resolveFn any) {
+	container.MustTransientLazy(c.inner, resolveFn)
 }
 
 // Registers a named resolver with a transient lifetime (instance per resolution)

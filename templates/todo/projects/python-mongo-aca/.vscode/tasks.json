@@ -61,7 +61,10 @@
             "type": "shell",
             "command": "api_env/bin/uvicorn todo.app:app --port 3100 --reload",
             "options": {
-                "cwd": "${workspaceFolder}/src/api/"
+                "cwd": "${workspaceFolder}/src/api/",
+                "env": {
+                    "API_ENVIRONMENT": "develop"
+                }
             },
             "windows": {
                 "command": "api_env/scripts/uvicorn todo.app:app --port 3100 --reload"

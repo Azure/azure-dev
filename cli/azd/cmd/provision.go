@@ -4,21 +4,16 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/account"
-	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"go.uber.org/multierr"
@@ -62,69 +57,42 @@ func newProvisionCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "provision",
 		Short: "Provision the Azure resources for an application.",
-		//nolint:lll
-		Long: `Provision the Azure resources for an application.
-
-The command prompts you for the following values:
-- Environment name: The name of your environment.
-- Azure location: The Azure location where your resources will be deployed.
-- Azure subscription: The Azure subscription where your resources will be deployed.
-
-Depending on what Azure resources are created, running this command might take a while. To view progress, go to the Azure portal and search for the resource group that contains your environment name.`,
 	}
 }
 
 type provisionAction struct {
-	flags               *provisionFlags
-	accountManager      account.Manager
-	projectManager      project.ProjectManager
-	resourceManager     project.ResourceManager
-	azdCtx              *azdcontext.AzdContext
-	azCli               azcli.AzCli
-	env                 *environment.Environment
-	formatter           output.Formatter
-	projectConfig       *project.ProjectConfig
-	writer              io.Writer
-	console             input.Console
-	commandRunner       exec.CommandRunner
-	userProfileService  *azcli.UserProfileService
-	subResolver         account.SubscriptionTenantResolver
-	alphaFeatureManager *alpha.FeatureManager
+	flags            *provisionFlags
+	provisionManager *provisioning.Manager
+	projectManager   project.ProjectManager
+	resourceManager  project.ResourceManager
+	env              *environment.Environment
+	formatter        output.Formatter
+	projectConfig    *project.ProjectConfig
+	writer           io.Writer
+	console          input.Console
 }
 
 func newProvisionAction(
 	flags *provisionFlags,
-	accountManager account.Manager,
+	provisionManager *provisioning.Manager,
 	projectManager project.ProjectManager,
 	resourceManager project.ResourceManager,
-	azdCtx *azdcontext.AzdContext,
 	projectConfig *project.ProjectConfig,
-	azCli azcli.AzCli,
 	env *environment.Environment,
 	console input.Console,
 	formatter output.Formatter,
 	writer io.Writer,
-	commandRunner exec.CommandRunner,
-	userProfileService *azcli.UserProfileService,
-	subResolver account.SubscriptionTenantResolver,
-	alphaFeatureManager *alpha.FeatureManager,
 ) actions.Action {
 	return &provisionAction{
-		flags:               flags,
-		accountManager:      accountManager,
-		projectManager:      projectManager,
-		resourceManager:     resourceManager,
-		azdCtx:              azdCtx,
-		azCli:               azCli,
-		env:                 env,
-		formatter:           formatter,
-		projectConfig:       projectConfig,
-		writer:              writer,
-		console:             console,
-		commandRunner:       commandRunner,
-		userProfileService:  userProfileService,
-		subResolver:         subResolver,
-		alphaFeatureManager: alphaFeatureManager,
+		flags:            flags,
+		provisionManager: provisionManager,
+		projectManager:   projectManager,
+		resourceManager:  resourceManager,
+		env:              env,
+		formatter:        formatter,
+		projectConfig:    projectConfig,
+		writer:           writer,
+		console:          console,
 	}
 }
 
@@ -145,41 +113,36 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		TitleNote: "Provisioning Azure resources can take some time"},
 	)
 
+	startTime := time.Now()
+
 	if err := p.projectManager.Initialize(ctx, p.projectConfig); err != nil {
 		return nil, err
 	}
 
-	infraManager, err := provisioning.NewManager(
-		ctx,
-		p.env,
-		p.projectConfig.Path,
-		p.projectConfig.Infra,
-		p.console.IsUnformatted(),
-		p.azCli,
-		p.console,
-		p.commandRunner,
-		p.accountManager,
-		p.userProfileService,
-		p.subResolver,
-		p.alphaFeatureManager,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("creating provisioning manager: %w", err)
+	if err := p.provisionManager.Initialize(ctx, p.projectConfig.Path, p.projectConfig.Infra); err != nil {
+		return nil, fmt.Errorf("initializing provisioning manager: %w", err)
 	}
 
-	deploymentPlan, err := infraManager.Plan(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("planning deployment: %w", err)
+	var deployResult *provisioning.DeployResult
+
+	projectEventArgs := project.ProjectLifecycleEventArgs{
+		Project: p.projectConfig,
 	}
 
-	provisioningScope := infra.NewSubscriptionScope(
-		p.azCli, p.env.GetLocation(), p.env.GetSubscriptionId(), p.env.GetEnvName(),
-	)
-	deployResult, err := infraManager.Deploy(ctx, deploymentPlan, provisioningScope)
+	err := p.projectConfig.Invoke(ctx, project.ProjectEventProvision, projectEventArgs, func() error {
+		deploymentPlan, err := p.provisionManager.Plan(ctx)
+		if err != nil {
+			return fmt.Errorf("planning deployment: %w", err)
+		}
+
+		deployResult, err = p.provisionManager.Deploy(ctx, deploymentPlan)
+
+		return err
+	})
 
 	if err != nil {
 		if p.formatter.Kind() == output.JsonFormat {
-			stateResult, err := infraManager.State(ctx, provisioningScope)
+			stateResult, err := p.provisionManager.State(ctx)
 			if err != nil {
 				return nil, fmt.Errorf(
 					"deployment failed and the deployment result is unavailable: %w",
@@ -214,7 +177,7 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 	}
 
 	if p.formatter.Kind() == output.JsonFormat {
-		stateResult, err := infraManager.State(ctx, provisioningScope)
+		stateResult, err := p.provisionManager.State(ctx)
 		if err != nil {
 			return nil, fmt.Errorf(
 				"deployment succeeded but the deployment result is unavailable: %w",
@@ -233,8 +196,10 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			Header:   "Your project has been provisioned!",
-			FollowUp: getResourceGroupFollowUp(ctx, p.formatter, p.projectConfig, p.resourceManager, p.env),
+			Header: fmt.Sprintf(
+				"Your application was provisioned in Azure in %s.", ux.DurationAsText(since(startTime))),
+			FollowUp: getResourceGroupFollowUp(
+				ctx, p.formatter, p.projectConfig, p.resourceManager, p.env),
 		},
 	}, nil
 }
@@ -246,7 +211,6 @@ func getCmdProvisionHelpDescription(c *cobra.Command) string {
 			" You should run %s any time you update your Bicep or Terraform file."+
 			"\n\nThis command prompts you to input the following:",
 		output.WithHighLightFormat(c.CommandPath())), []string{
-		formatHelpNote("Environment name: The name of your environment (ex: dev, test, prod)."),
 		formatHelpNote("Azure location: The Azure location where your resources will be deployed."),
 		formatHelpNote("Azure subscription: The Azure subscription where your resources will be deployed."),
 	})

@@ -112,7 +112,7 @@ func CreateServiceConnection(
 		if err != nil {
 			return fmt.Errorf("updating service connection: %w", err)
 		}
-		console.MessageUxItem(ctx, &ux.CreatedResource{
+		console.MessageUxItem(ctx, &ux.DisplayedResource{
 			Type: "Azure DevOps",
 			Name: "Updated service connection",
 		})
@@ -124,7 +124,7 @@ func CreateServiceConnection(
 	if err != nil {
 		return fmt.Errorf("Creating new service connection: %w", err)
 	}
-	console.MessageUxItem(ctx, &ux.CreatedResource{
+	console.MessageUxItem(ctx, &ux.DisplayedResource{
 		Type: "Azure DevOps",
 		Name: "Service connection",
 	})

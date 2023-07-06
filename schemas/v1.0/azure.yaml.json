@@ -3,8 +3,7 @@
     "$id": "https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json",
     "type": "object",
     "required": [
-        "name",
-        "services"
+        "name"
     ],
     "additionalProperties": false,
     "properties": {
@@ -66,7 +65,8 @@
                 "type": "object",
                 "additionalProperties": false,
                 "required": [
-                    "project"
+                    "project",
+                    "language"
                 ],
                 "properties": {
                     "resourceName": {
@@ -94,9 +94,7 @@
                     "language": {
                         "type": "string",
                         "title": "Service implementation language",
-                        "description": "If omitted, .NET will be assumed.",
                         "enum": [
-                            "",
                             "dotnet",
                             "csharp",
                             "fsharp",
@@ -109,8 +107,8 @@
                     },
                     "module": {
                         "type": "string",
-                        "title": "Path of the infrastructure module used to deploy the service relative to the root infra folder",
-                        "description": "If omitted, the CLI will assume the module name is the same as the service name."
+                        "title": "(DEPRECATED) Path of the infrastructure module used to deploy the service relative to the root infra folder",
+                        "description": "If omitted, the CLI will assume the module name is the same as the service name. This property will be deprecated in a future release."
                     },
                     "dist": {
                         "type": "string",
@@ -211,7 +209,7 @@
                             "properties": {
                                 "dist": {
                                     "type": "string",
-                                    "description": "The CLI will use the JAR file in this directory to create the deployment artifact (ZIP file). If omitted, the CLI will detect the output directory based on the build system in-use."
+                                    "description": "Optional. The path to the directory containing a single Java archive file (.jar/.ear/.war), or the path to the specific Java archive file to be included in the deployment artifact. If omitted, the CLI will detect the output directory based on the build system in-use. For maven, the default output directory 'target' is assumed."
                                 }
                             }
                         }
@@ -220,7 +218,7 @@
                         "properties": {
                             "dist": {
                                 "type": "string",
-                                "description": "The CLI will use files under this path to create the deployment artifact (ZIP file). If omitted, all files under service project directory will be included."
+                                "description": "Optional. The CLI will use files under this path to create the deployment artifact (ZIP file). If omitted, all files under service project directory will be included."
                             }
                         }
                     }
@@ -329,25 +327,35 @@
                     "$ref": "#/definitions/hook"
                 }
             }
+        },
+        "requiredVersions": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+                "azd": {
+                    "type": "string",
+                    "title": "A range of supported versions of `azd` for this project",
+                    "description": "A range of supported versions of `azd` for this project. If the version of `azd` is outside this range, the project will fail to load. Optional (allows all versions if absent).",
+                    "examples": [
+                        ">= 0.6.0-beta.3"
+                    ]
+                }
+            }
         }
     },
     "definitions": {
         "hook": {
             "type": "object",
             "additionalProperties": false,
-            "required": [
-                "run"
-            ],
             "properties": {
                 "shell": {
                     "type": "string",
                     "title": "Type of shell to execute scripts",
-                    "description": "Optional. The type of shell to use for the hook. (Default: sh)",
+                    "description": "Required for inline scripts. The type of shell to use for the hook.",
                     "enum": [
                         "sh",
                         "pwsh"
-                    ],
-                    "default": "sh"
+                    ]
                 },
                 "run": {
                     "type": "string",
@@ -378,6 +386,27 @@
                     "default": null,
                     "$ref": "#/definitions/hook"
                 }
+            },
+            "if": {
+                "not": {
+                    "anyOf": [
+                        {
+                            "required": [
+                                "windows"
+                            ]
+                        },
+                        {
+                            "required": [
+                                "posix"
+                            ]
+                        }
+                    ]
+                }
+            },
+            "then": {
+                "required": [
+                    "run"
+                ]
             }
         },
         "docker": {

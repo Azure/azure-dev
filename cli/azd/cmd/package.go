@@ -98,8 +98,10 @@ type PackageResult struct {
 func (pa *packageAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	// Command title
 	pa.console.MessageUxItem(ctx, &ux.MessageTitle{
-		Title: fmt.Sprintf("Packaging services (azd package) %s", output.WithWarningFormat("(Beta)")),
+		Title: "Packaging services (azd package)",
 	})
+
+	startTime := time.Now()
 
 	targetServiceName := ""
 	if len(pa.args) == 1 {
@@ -130,7 +132,9 @@ func (pa *packageAction) Run(ctx context.Context) (*actions.ActionResult, error)
 
 	packageResults := map[string]*project.ServicePackageResult{}
 
-	for _, svc := range pa.projectConfig.GetServicesStable() {
+	serviceTable := pa.projectConfig.GetServicesStable()
+	serviceCount := len(serviceTable)
+	for index, svc := range serviceTable {
 		stepMessage := fmt.Sprintf("Packaging service %s", svc.Name)
 		pa.console.ShowSpinner(ctx, stepMessage, input.Step)
 
@@ -143,24 +147,30 @@ func (pa *packageAction) Run(ctx context.Context) (*actions.ActionResult, error)
 		}
 
 		packageTask := pa.serviceManager.Package(ctx, svc, nil)
+		done := make(chan struct{})
 		go func() {
 			for packageProgress := range packageTask.Progress() {
 				progressMessage := fmt.Sprintf("Packaging service %s (%s)", svc.Name, packageProgress.Message)
 				pa.console.ShowSpinner(ctx, progressMessage, input.Step)
 			}
+			close(done)
 		}()
 
 		packageResult, err := packageTask.Await()
+		// adding a few seconds to wait for all async ops to be flush
+		<-done
+		pa.console.StopSpinner(ctx, stepMessage, input.GetStepResultFormat(err))
+
 		if err != nil {
-			pa.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 			return nil, err
 		}
-
-		pa.console.StopSpinner(ctx, stepMessage, input.StepDone)
 		packageResults[svc.Name] = packageResult
 
 		// report package output
 		pa.console.MessageUxItem(ctx, packageResult)
+		if index < serviceCount-1 {
+			pa.console.Message(ctx, "")
+		}
 	}
 
 	if pa.formatter.Kind() == output.JsonFormat {
@@ -176,7 +186,7 @@ func (pa *packageAction) Run(ctx context.Context) (*actions.ActionResult, error)
 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			Header: "Your Azure app has been packaged!",
+			Header: fmt.Sprintf("Your application was packaged for Azure in %s.", ux.DurationAsText(since(startTime))),
 		},
 	}, nil
 }

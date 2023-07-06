@@ -5,6 +5,7 @@ Usage
   azd config set <path> <value> [flags]
 
 Flags
+        --docs 	: Opens the documentation for azd config set in your web browser.
     -h, --help 	: Gets help for set.
 
 Global Flags

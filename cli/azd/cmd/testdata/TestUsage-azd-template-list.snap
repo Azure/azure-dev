@@ -5,6 +5,7 @@ Usage
   azd template list [flags]
 
 Flags
+        --docs 	: Opens the documentation for azd template list in your web browser.
     -h, --help 	: Gets help for list.
 
 Global Flags

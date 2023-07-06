@@ -5,6 +5,7 @@ Usage
   azd version [flags]
 
 Flags
+        --docs 	: Opens the documentation for azd version in your web browser.
     -h, --help 	: Gets help for version.
 
 Global Flags

@@ -18,6 +18,7 @@ Available Commands
   set       	: Manage your environment settings.
 
 Flags
+        --docs 	: Opens the documentation for azd env in your web browser.
     -h, --help 	: Gets help for env.
 
 Global Flags

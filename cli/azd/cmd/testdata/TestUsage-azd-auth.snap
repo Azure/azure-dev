@@ -9,6 +9,7 @@ Available Commands
   logout	: Log out of Azure.
 
 Flags
+        --docs 	: Opens the documentation for azd auth in your web browser.
     -h, --help 	: Gets help for auth.
 
 Global Flags

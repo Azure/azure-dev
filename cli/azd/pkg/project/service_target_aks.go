@@ -309,7 +309,7 @@ func (t *aksTarget) ensureClusterContext(
 	}
 
 	log.Printf("getting AKS credentials for cluster '%s'\n", clusterName)
-	clusterCreds, err := t.managedClustersService.GetAdminCredentials(
+	clusterCreds, err := t.managedClustersService.GetUserCredentials(
 		ctx,
 		targetResource.SubscriptionId(),
 		targetResource.ResourceGroupName(),

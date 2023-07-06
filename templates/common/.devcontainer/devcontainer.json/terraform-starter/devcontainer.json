@@ -16,6 +16,9 @@
         },
         "ghcr.io/devcontainers/features/terraform:1": {
             "version": "latest"
+        },
+        "ghcr.io/azure/azure-dev/azd:1": {
+            "version": "stable"
         }
     },
     "customizations": {

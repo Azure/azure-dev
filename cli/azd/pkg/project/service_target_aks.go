@@ -202,7 +202,7 @@ func (t *aksTarget) Deploy(
 			// It is not a requirement for a AZD deploy to contain a deployment object
 			// If we don't find any deployment within the namespace we will continue
 			task.SetProgress(NewServiceProgress("Verifying deployment"))
-			deployment, err := t.waitForDeployment(ctx, defaultNamespace, deploymentName)
+			deployment, err := t.waitForDeployment(ctx, deploymentName)
 			if err != nil && !errors.Is(err, kubectl.ErrResourceNotFound) {
 				task.SetError(err)
 				return
@@ -247,8 +247,6 @@ func (t *aksTarget) Endpoints(
 	serviceConfig *ServiceConfig,
 	targetResource *environment.TargetResource,
 ) ([]string, error) {
-	namespace := t.getK8sNamespace(serviceConfig)
-
 	serviceName := serviceConfig.K8s.Service.Name
 	if serviceName == "" {
 		serviceName = serviceConfig.Name
@@ -261,14 +259,14 @@ func (t *aksTarget) Endpoints(
 
 	// Find endpoints for any matching services
 	// These endpoints would typically be internal cluster accessible endpoints
-	serviceEndpoints, err := t.getServiceEndpoints(ctx, serviceConfig, namespace, serviceName)
+	serviceEndpoints, err := t.getServiceEndpoints(ctx, serviceConfig, serviceName)
 	if err != nil && !errors.Is(err, kubectl.ErrResourceNotFound) {
 		return nil, fmt.Errorf("failed retrieving service endpoints, %w", err)
 	}
 
 	// Find endpoints for any matching ingress controllers
 	// These endpoints would typically be publicly accessible endpoints
-	ingressEndpoints, err := t.getIngressEndpoints(ctx, serviceConfig, namespace, ingressName)
+	ingressEndpoints, err := t.getIngressEndpoints(ctx, serviceConfig, ingressName)
 	if err != nil && !errors.Is(err, kubectl.ErrResourceNotFound) {
 		return nil, fmt.Errorf("failed retrieving ingress endpoints, %w", err)
 	}
@@ -366,7 +364,7 @@ func (t *aksTarget) ensureNamespace(ctx context.Context, namespace string) error
 func (t *aksTarget) configureK8sContext(
 	ctx context.Context,
 	clusterName string,
-	defaultNamespace string,
+	namespace string,
 	credentialResult *armcontainerservice.CredentialResult,
 ) error {
 	kubeConfigManager, err := kubectl.NewKubeConfigManager(t.kubectl)
@@ -382,8 +380,9 @@ func (t *aksTarget) configureK8sContext(
 		)
 	}
 
-	// Set default namespace
-	kubeConfig.Contexts[0].Context.Namespace = defaultNamespace
+	// Set default namespace for the context
+	// This avoids having to specify the namespace for every kubectl command
+	kubeConfig.Contexts[0].Context.Namespace = namespace
 	if err := kubeConfigManager.SaveKubeConfig(ctx, clusterName, kubeConfig); err != nil {
 		return fmt.Errorf(
 			"failed saving kube config. Ensure write permissions to your local ~/.kube directory. %w",
@@ -413,13 +412,12 @@ func (t *aksTarget) configureK8sContext(
 // Additionally confirms rollout is complete by checking the rollout status
 func (t *aksTarget) waitForDeployment(
 	ctx context.Context,
-	namespace string,
 	deploymentNameFilter string,
 ) (*kubectl.Deployment, error) {
 	// The deployment can appear like it has succeeded when a previous deployment
 	// was already in place.
 	deployment, err := kubectl.WaitForResource(
-		ctx, t.kubectl, namespace, kubectl.ResourceTypeDeployment,
+		ctx, t.kubectl, kubectl.ResourceTypeDeployment,
 		func(deployment *kubectl.Deployment) bool {
 			return strings.Contains(deployment.Metadata.Name, deploymentNameFilter)
 		},
@@ -434,9 +432,7 @@ func (t *aksTarget) waitForDeployment(
 
 	// Check the rollout status
 	// This can be a long operation when the deployment is in a failed state such as an ImagePullBackOff loop
-	_, err = t.kubectl.RolloutStatus(ctx, deployment.Metadata.Name, &kubectl.KubeCliFlags{
-		Namespace: namespace,
-	})
+	_, err = t.kubectl.RolloutStatus(ctx, deployment.Metadata.Name, nil)
 	if err != nil {
 		return nil, err
 	}
@@ -448,11 +444,10 @@ func (t *aksTarget) waitForDeployment(
 // Waits until the ingress LoadBalancer has assigned a valid IP address
 func (t *aksTarget) waitForIngress(
 	ctx context.Context,
-	namespace string,
 	ingressNameFilter string,
 ) (*kubectl.Ingress, error) {
 	return kubectl.WaitForResource(
-		ctx, t.kubectl, namespace, kubectl.ResourceTypeIngress,
+		ctx, t.kubectl, kubectl.ResourceTypeIngress,
 		func(ingress *kubectl.Ingress) bool {
 			return strings.Contains(ingress.Metadata.Name, ingressNameFilter)
 		},
@@ -472,11 +467,10 @@ func (t *aksTarget) waitForIngress(
 // Waits until the service is available
 func (t *aksTarget) waitForService(
 	ctx context.Context,
-	namespace string,
 	serviceNameFilter string,
 ) (*kubectl.Service, error) {
 	return kubectl.WaitForResource(
-		ctx, t.kubectl, namespace, kubectl.ResourceTypeService,
+		ctx, t.kubectl, kubectl.ResourceTypeService,
 		func(service *kubectl.Service) bool {
 			return strings.Contains(service.Metadata.Name, serviceNameFilter)
 		},
@@ -500,15 +494,14 @@ func (t *aksTarget) waitForService(
 	)
 }
 
-// Retrieve any service endpoints for the specified namespace and serviceNameFilter
+// Retrieve any service endpoints for the specified serviceNameFilter
 // Supports service types for LoadBalancer and ClusterIP
 func (t *aksTarget) getServiceEndpoints(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	namespace string,
 	serviceNameFilter string,
 ) ([]string, error) {
-	service, err := t.waitForService(ctx, namespace, serviceNameFilter)
+	service, err := t.waitForService(ctx, serviceNameFilter)
 	if err != nil {
 		return nil, err
 	}
@@ -527,15 +520,14 @@ func (t *aksTarget) getServiceEndpoints(
 	return endpoints, nil
 }
 
-// Retrieve any ingress endpoints for the specified namespace and serviceNameFilter
+// Retrieve any ingress endpoints for the specified serviceNameFilter
 // Supports service types for LoadBalancer, supports Hosts and/or IP address
 func (t *aksTarget) getIngressEndpoints(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	namespace string,
 	resourceFilter string,
 ) ([]string, error) {
-	ingress, err := t.waitForIngress(ctx, namespace, resourceFilter)
+	ingress, err := t.waitForIngress(ctx, resourceFilter)
 	if err != nil {
 		return nil, err
 	}

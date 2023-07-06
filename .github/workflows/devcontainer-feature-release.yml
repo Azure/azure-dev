@@ -18,6 +18,7 @@ jobs:
     permissions:
       contents: write
       packages: write
+      pull-requests: write
     environment:
       name: deploy-devcontainer-feature
     steps:
@@ -29,3 +30,6 @@ jobs:
           publish-features: "true"
           base-path-to-features: "./ext/devcontainer"
           generate-docs: "false"
+          
+        env:
+          GITHUB_TOKEN: ${{ secrets.PAT }}

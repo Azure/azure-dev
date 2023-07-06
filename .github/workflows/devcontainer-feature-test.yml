@@ -6,6 +6,7 @@ on:
       - "ext/devcontainer/**"
       - ".github/workflows/devcontainer-feature-test.yml"
     branches: [main]
+  workflow_call:
 
 jobs:
   test:

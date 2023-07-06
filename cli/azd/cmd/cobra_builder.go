@@ -199,9 +199,10 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 // docsFlag also contains a callbacks to pull dependencies for the docs routine.
 type docsFlag struct {
 	// reference to the command where the flag was added.
-	command   *cobra.Command
-	consoleFn func() input.Console
-	value     bool
+	command       *cobra.Command
+	consoleFn     func() input.Console
+	value         bool
+	defaultHelpFn func(*cobra.Command, []string)
 }
 
 // returns the flag value
@@ -232,16 +233,18 @@ func (df *docsFlag) Set(value string) error {
 		log.Panic("tried to set help after docs parameter: %w", err)
 	}
 
+	// keeping the default help function allows to set --help with higher priority and use it
+	// in case of finding --docs and --help
+	df.defaultHelpFn = df.command.HelpFunc()
+
 	// set help func for doing docs
 	df.command.SetHelpFunc(func(c *cobra.Command, args []string) {
 		console := df.consoleFn()
 		ctx := c.Context()
 		ctx = tools.WithInstalledCheckCache(ctx)
 
-		if slices.Contains(args, "help") {
-			if err := c.Help(); err != nil {
-				log.Panic("showing command help: %w", err)
-			}
+		if slices.Contains(args, "--help") {
+			df.defaultHelpFn(c, args)
 			return
 		}
 

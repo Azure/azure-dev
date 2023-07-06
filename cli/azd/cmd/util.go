@@ -306,7 +306,18 @@ func since(t time.Time) time.Duration {
 	return time.Since(t) - time.Duration(userInteractTime)*time.Millisecond
 }
 
+// BrowseUrl allow users to override the default browser from the cmd package with some external implementation.
+type browseUrl func(ctx context.Context, console input.Console, url string)
+
+// OverrideBrowser allows users to set their own implementation for browsing urls.
+var overrideBrowser browseUrl
+
 func openWithDefaultBrowser(ctx context.Context, console input.Console, url string) {
+	if overrideBrowser != nil {
+		overrideBrowser(ctx, console, url)
+		return
+	}
+
 	console.Message(ctx, fmt.Sprintf("Opening %s in the default browser...\n", url))
 	// In Codespaces and devcontainers a $BROWSER environment variable is
 	// present whose value is an executable that launches the browser when

@@ -27,7 +27,7 @@ func Test_progressLogStartStop(t *testing.T) {
 	sizeFn := func() int {
 		return 40
 	}
-	pg := NewProgressLogWithSizeFn(5, prefix, title, header, sizeFn)
+	pg := newProgressLogWithWidthFn(5, prefix, title, header, sizeFn)
 
 	snConfig := snapshot.NewDefaultConfig().WithOptions(cupaloy.SnapshotFileExtension(".md"))
 
@@ -50,7 +50,7 @@ func Test_progressLogLine(t *testing.T) {
 	sizeFn := func() int {
 		return 40
 	}
-	pg := NewProgressLogWithSizeFn(5, prefix, title, header, sizeFn)
+	pg := newProgressLogWithWidthFn(5, prefix, title, header, sizeFn)
 
 	snConfig := snapshot.NewDefaultConfig().WithOptions(cupaloy.SnapshotFileExtension(".md"))
 
@@ -79,7 +79,7 @@ func Test_progressLogMultiWrite(t *testing.T) {
 	sizeFn := func() int {
 		return 40
 	}
-	pg := NewProgressLogWithSizeFn(5, prefix, title, header, sizeFn)
+	pg := newProgressLogWithWidthFn(5, prefix, title, header, sizeFn)
 
 	snConfig := snapshot.NewDefaultConfig().WithOptions(cupaloy.SnapshotFileExtension(".md"))
 
@@ -109,7 +109,7 @@ func Test_progressLogWithBreak(t *testing.T) {
 	sizeFn := func() int {
 		return 40
 	}
-	pg := NewProgressLogWithSizeFn(5, prefix, title, header, sizeFn)
+	pg := newProgressLogWithWidthFn(5, prefix, title, header, sizeFn)
 
 	snConfig := snapshot.NewDefaultConfig().WithOptions(cupaloy.SnapshotFileExtension(".md"))
 
@@ -132,7 +132,7 @@ func Test_progressLogStartWithBreak(t *testing.T) {
 	sizeFn := func() int {
 		return 40
 	}
-	pg := NewProgressLogWithSizeFn(5, prefix, title, header, sizeFn)
+	pg := newProgressLogWithWidthFn(5, prefix, title, header, sizeFn)
 
 	snConfig := snapshot.NewDefaultConfig().WithOptions(cupaloy.SnapshotFileExtension(".md"))
 
@@ -162,7 +162,7 @@ func Test_progressLogLongLine(t *testing.T) {
 	sizeFn := func() int {
 		return screenWidth
 	}
-	pg := NewProgressLogWithSizeFn(5, prefix, title, header, sizeFn)
+	pg := newProgressLogWithWidthFn(5, prefix, title, header, sizeFn)
 
 	snConfig := snapshot.NewDefaultConfig().WithOptions(cupaloy.SnapshotFileExtension(".md"))
 
@@ -188,7 +188,7 @@ func Test_progressLogManyLines(t *testing.T) {
 		return screenWidth
 	}
 	linesToDisplay := 5
-	pg := NewProgressLogWithSizeFn(linesToDisplay, prefix, title, header, sizeFn)
+	pg := newProgressLogWithWidthFn(linesToDisplay, prefix, title, header, sizeFn)
 
 	snConfig := snapshot.NewDefaultConfig().WithOptions(cupaloy.SnapshotFileExtension(".md"))
 
@@ -302,7 +302,7 @@ func Test_progressChangeHeader(t *testing.T) {
 	}
 
 	linesToDisplay := 5
-	pg := NewProgressLogWithSizeFn(linesToDisplay, prefix, title, header, sizeFn)
+	pg := newProgressLogWithWidthFn(linesToDisplay, prefix, title, header, sizeFn)
 
 	snConfig := snapshot.NewDefaultConfig().WithOptions(cupaloy.SnapshotFileExtension(".md"))
 

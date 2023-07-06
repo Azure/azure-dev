@@ -104,7 +104,7 @@ func (c *MockConsole) StopSpinner(ctx context.Context, lastMessage string, forma
 }
 
 func (c *MockConsole) ShowPreviewer(ctx context.Context, options *input.ShowPreviewerOptions) io.Writer {
-	return &bytes.Buffer{}
+	return io.Discard
 }
 
 func (c *MockConsole) StopPreviewer(ctx context.Context) {}

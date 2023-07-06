@@ -31,22 +31,3 @@ func CreateEmptyHttpResponse(request *http.Request, statusCode int) (*http.Respo
 		Body:       http.NoBody,
 	}, nil
 }
-
-func RemoveArg(arg string, args []string) ([]string, string, string) {
-	result := make([]string, len(args)-2)
-	var insertIndex int
-	var extractArg, value string
-	for index := range args {
-		if args[index] == arg {
-			extractArg = args[index]
-			continue
-		}
-		if index > 0 && args[index-1] == arg {
-			value = args[index]
-			continue
-		}
-		result[insertIndex] = args[index]
-		insertIndex++
-	}
-	return result, extractArg, value
-}

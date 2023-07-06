@@ -94,7 +94,6 @@ func (d *docker) Build(
 		"build",
 		"-f", dockerFilePath,
 		"--platform", platform,
-		"--iidfile", imgIdFile,
 	}
 
 	if tagName != "" {
@@ -104,8 +103,10 @@ func (d *docker) Build(
 	for _, arg := range buildArgs {
 		args = append(args, "--build-arg", arg)
 	}
-
 	args = append(args, buildContext)
+
+	// create a file with the docker img id
+	args = append(args, "--iidfile", imgIdFile)
 
 	// Build and produce output
 	runArgs := exec.NewRunArgs("docker", args...).WithCwd(cwd)
@@ -121,11 +122,6 @@ func (d *docker) Build(
 		return "", fmt.Errorf("building image: %w", err)
 	}
 
-	// // Build should just return cached img id
-	// res, err := d.executeCommand(ctx, cwd, append(args, "-q")...)
-	// if err != nil {
-	// 	return "", fmt.Errorf("building image: %w", err)
-	// }
 	imgId, err := os.ReadFile(imgIdFile)
 	if err != nil {
 		return "", fmt.Errorf("building image: %w", err)

@@ -70,20 +70,20 @@ type progressLog struct {
 
 // NewProgressLog returns a new instance of a progressLog.
 func NewProgressLog(lines int, prefix, title, header string) *progressLog {
-	return NewProgressLogWithSizeFn(lines, prefix, title, header, tm.Width)
+	return newProgressLogWithWidthFn(lines, prefix, title, header, tm.Width)
 }
 
 type TerminalWidthFn func() int
 
-// NewProgressLog is a constructor which can inject the implementation for getting the terminal's width.
+// newProgressLogWithWidthFn is a constructor which can inject the implementation for getting the terminal's width.
 // This is useful to set and control the progress log width manually.
-func NewProgressLogWithSizeFn(lines int, prefix, title, header string, sizeFn TerminalWidthFn) *progressLog {
+func newProgressLogWithWidthFn(lines int, prefix, title, header string, widthFn TerminalWidthFn) *progressLog {
 	return &progressLog{
 		lines:           lines,
 		prefix:          prefix,
 		title:           title,
 		header:          header,
-		terminalWidthFn: sizeFn,
+		terminalWidthFn: widthFn,
 	}
 }
 

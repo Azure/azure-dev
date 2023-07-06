@@ -56,12 +56,12 @@ services:
 		})
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "docker build") && !strings.Contains(command, "-q")
+		return strings.Contains(command, "docker build")
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		ran = true
 
-		// extract img id file arg
-		argsNoFile, _, value := mocks.RemoveArg("--iidfile", args.Args)
+		// extract img id file arg. "--iidfile" and path args are expected always at the end
+		argsNoFile, value := args.Args[:len(args.Args)-2], args.Args[len(args.Args)-1]
 
 		require.Equal(t, []string{
 			"build",
@@ -152,12 +152,12 @@ services:
 	ran := false
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(command, "docker build") && !strings.Contains(command, "-q")
+		return strings.Contains(command, "docker build")
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		ran = true
 
-		// extract img id file arg
-		argsNoFile, _, value := mocks.RemoveArg("--iidfile", args.Args)
+		// extract img id file arg. "--iidfile" and path args are expected always at the end
+		argsNoFile, value := args.Args[:len(args.Args)-2], args.Args[len(args.Args)-1]
 
 		require.Equal(t, []string{
 			"build",
@@ -221,10 +221,10 @@ func Test_DockerProject_Build(t *testing.T) {
 			return strings.Contains(command, "docker build")
 		}).
 		RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-			// extract img id file arg
-			withExtract, _, value := mocks.RemoveArg("--iidfile", args.Args)
+			// extract img id file arg. "--iidfile" and path args are expected always at the end
+			argsNoFile, value := args.Args[:len(args.Args)-2], args.Args[len(args.Args)-1]
 			runArgs = args
-			runArgs.Args = withExtract
+			runArgs.Args = argsNoFile
 			// create the file as expected
 			err := os.WriteFile(value, []byte("IMAGE_ID"), 0600)
 			require.NoError(t, err)

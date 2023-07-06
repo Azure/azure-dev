@@ -68,7 +68,7 @@ type Console interface {
 	StopSpinner(ctx context.Context, lastMessage string, format SpinnerUxType)
 	// Preview mode brings an embedded console within the current session.
 	// Use nil for options to use defaults.
-	// Use the returned oi.Writer to produce the output within the previewer
+	// Use the returned io.Writer to produce the output within the previewer
 	ShowPreviewer(ctx context.Context, options *ShowPreviewerOptions) io.Writer
 	// Finalize the preview mode from console.
 	StopPreviewer(ctx context.Context)
@@ -114,7 +114,10 @@ type AskerConsole struct {
 	previewer             *progressLog
 	initialWriter         io.Writer
 	currentSpinnerMessage string
-	spinnerMutex          sync.Mutex
+	// writeControlMutex ensures no race conditions happen while methods are writing to the terminal.
+	// AskerConsole can be used as a singleton, hence, more than one component can invoke its methods at the same time.
+	// A method should lock this mutex if no other writing to he terminal should occur at the same time.
+	writeControlMutex sync.Mutex
 }
 
 type ConsoleOptions struct {
@@ -214,8 +217,8 @@ func defaultShowPreviewerOptions() *ShowPreviewerOptions {
 }
 
 func (c *AskerConsole) ShowPreviewer(ctx context.Context, options *ShowPreviewerOptions) io.Writer {
-	c.spinnerMutex.Lock()
-	defer c.spinnerMutex.Unlock()
+	c.writeControlMutex.Lock()
+	defer c.writeControlMutex.Unlock()
 
 	// auto-stop any spinner
 	currentMsg := c.currentSpinnerMessage
@@ -252,8 +255,8 @@ func (c *AskerConsole) spinnerText(title, charset string) string {
 }
 
 func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format SpinnerUxType) {
-	c.spinnerMutex.Lock()
-	defer c.spinnerMutex.Unlock()
+	c.writeControlMutex.Lock()
+	defer c.writeControlMutex.Unlock()
 
 	if c.formatter != nil && c.formatter.Kind() == output.JsonFormat {
 		// Spinner is disabled when using json format.

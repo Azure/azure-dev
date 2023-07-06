@@ -189,11 +189,6 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 		return result, fmt.Errorf("prompting to push: %w", err)
 	}
 
-	currentBranch, err := pm.gitCli.GetCurrentBranch(ctx, pm.azdCtx.ProjectDirectory())
-	if err != nil {
-		return result, fmt.Errorf("getting current branch: %w", err)
-	}
-
 	// scm provider can prevent from pushing changes and/or use the
 	// interactive console for setting up any missing details.
 	// For example, GitHub provider would check if GH-actions are disabled.
@@ -202,7 +197,7 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 			ctx,
 			gitRepoInfo,
 			pm.args.PipelineRemoteName,
-			currentBranch)
+			gitRepoInfo.branch)
 		if err != nil {
 			return result, fmt.Errorf("check git push prevent: %w", err)
 		}
@@ -211,7 +206,7 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 	}
 
 	if doPush {
-		err = pm.pushGitRepo(ctx, gitRepoInfo, currentBranch)
+		err = pm.pushGitRepo(ctx, gitRepoInfo, gitRepoInfo.branch)
 		if err != nil {
 			return result, fmt.Errorf("git push: %w", err)
 		}
@@ -231,7 +226,7 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 			fmt.Sprintf(
 				"To fully enable pipeline you need to push this repo to the upstream using 'git push --set-upstream %s %s'.\n",
 				pm.args.PipelineRemoteName,
-				currentBranch))
+				gitRepoInfo.branch))
 	}
 
 	return &PipelineConfigResult{
@@ -299,6 +294,11 @@ func (pm *PipelineManager) ensureRemote(
 		return nil, fmt.Errorf("failed to get remote url: %w", err)
 	}
 
+	currentBranch, err := pm.gitCli.GetCurrentBranch(ctx, repositoryPath)
+	if err != nil {
+		return nil, fmt.Errorf("getting current branch: %w", err)
+	}
+
 	// each provider knows how to extract the Owner and repo name from a remoteUrl
 	gitRepoDetails, err := pm.scmProvider.gitRepoDetails(ctx, remoteUrl)
 
@@ -306,6 +306,7 @@ func (pm *PipelineManager) ensureRemote(
 		return nil, err
 	}
 	gitRepoDetails.gitProjectPath = pm.azdCtx.ProjectDirectory()
+	gitRepoDetails.branch = currentBranch
 	return gitRepoDetails, nil
 }
 
@@ -409,7 +410,6 @@ func (pm *PipelineManager) pushGitRepo(ctx context.Context, gitRepoInfo *gitRepo
 	return retry.Do(ctx, retry.WithMaxRetries(3, retry.NewConstant(100*time.Millisecond)), func(ctx context.Context) error {
 		if err := pm.scmProvider.GitPush(
 			ctx,
-			pm.gitCli,
 			gitRepoInfo,
 			pm.args.PipelineRemoteName,
 			currentBranch); err != nil {

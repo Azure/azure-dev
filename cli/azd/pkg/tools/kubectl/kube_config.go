@@ -81,10 +81,9 @@ func (kcm *KubeConfigManager) MergeConfigs(ctx context.Context, newConfigName st
 		fullConfigPaths = append(fullConfigPaths, filepath.Join(kcm.configPath, kubeConfigName))
 	}
 
-	envValues := map[string]string{
-		"KUBECONFIG": strings.Join(fullConfigPaths, string(os.PathListSeparator)),
-	}
-	kcm.cli.SetEnv(envValues)
+	kubeConfig := strings.Join(fullConfigPaths, string(os.PathListSeparator))
+	kcm.cli.SetKubeConfig(kubeConfig)
+
 	res, err := kcm.cli.ConfigView(ctx, true, true, nil)
 	if err != nil {
 		return fmt.Errorf("kubectl config view failed: %w", err)

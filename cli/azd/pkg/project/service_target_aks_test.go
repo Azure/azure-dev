@@ -25,6 +25,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/kubectl"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazsdk"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
 	"github.com/azure/azure-dev/cli/azd/test/ostest"
@@ -484,6 +485,9 @@ func createAksServiceTarget(
 	envManager := &mockenv.MockEnvManager{}
 	envManager.On("Save", *mockContext.Context, env).Return(nil)
 
+	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
+	resourceManager := NewResourceManager(env, azCli)
+
 	managedClustersService := azcli.NewManagedClustersService(credentialProvider, mockContext.HttpClient)
 	containerRegistryService := azcli.NewContainerRegistryService(credentialProvider, mockContext.HttpClient, dockerCli)
 	containerHelper := NewContainerHelper(env, envManager, clock.NewMock(), containerRegistryService, dockerCli)
@@ -492,6 +496,8 @@ func createAksServiceTarget(
 		env,
 		envManager,
 		managedClustersService,
+		resourceManager,
+		resourceManager,
 		kubeCtl,
 		containerHelper,
 	)

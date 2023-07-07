@@ -143,7 +143,7 @@ func Test_Deploy_No_Cluster_Name(t *testing.T) {
 	require.Nil(t, deployResult)
 }
 
-func Test_Deploy_No_Admin_Credentials(t *testing.T) {
+func Test_Deploy_No_Credentials(t *testing.T) {
 	tempDir := t.TempDir()
 	ostest.Chdir(t, tempDir)
 
@@ -153,7 +153,7 @@ func Test_Deploy_No_Admin_Credentials(t *testing.T) {
 
 	// Simulate list credentials fail.
 	// For more secure clusters getting admin credentials can fail
-	err = setupListClusterAdminCredentialsMock(mockContext, http.StatusUnauthorized)
+	err = setupListClusterUserCredentialsMock(mockContext, http.StatusUnauthorized)
 	require.NoError(t, err)
 
 	serviceConfig := createTestServiceConfig(tempDir, AksTarget, ServiceLanguageTypeScript)
@@ -198,6 +198,11 @@ func setupMocksForAksTarget(mockContext *mocks.MockContext) error {
 		return err
 	}
 
+	err = setupListClusterUserCredentialsMock(mockContext, http.StatusOK)
+	if err != nil {
+		return err
+	}
+
 	setupMocksForAcr(mockContext)
 	setupMocksForKubectl(mockContext)
 	setupMocksForDocker(mockContext)
@@ -215,6 +220,36 @@ func setupListClusterAdminCredentialsMock(mockContext *mocks.MockContext, status
 	// Get Admin cluster credentials
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodPost && strings.Contains(request.URL.Path, "listClusterAdminCredential")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		creds := armcontainerservice.CredentialResults{
+			Kubeconfigs: []*armcontainerservice.CredentialResult{
+				{
+					Name:  convert.RefOf("context"),
+					Value: kubeConfigBytes,
+				},
+			},
+		}
+
+		if statusCode == http.StatusOK {
+			return mocks.CreateHttpResponseWithBody(request, statusCode, creds)
+		} else {
+			return mocks.CreateEmptyHttpResponse(request, statusCode)
+		}
+	})
+
+	return nil
+}
+
+func setupListClusterUserCredentialsMock(mockContext *mocks.MockContext, statusCode int) error {
+	kubeConfig := createTestCluster("cluster1", "user1")
+	kubeConfigBytes, err := yaml.Marshal(kubeConfig)
+	if err != nil {
+		return err
+	}
+
+	// Get Admin cluster credentials
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodPost && strings.Contains(request.URL.Path, "listClusterUserCredential")
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		creds := armcontainerservice.CredentialResults{
 			Kubeconfigs: []*armcontainerservice.CredentialResult{

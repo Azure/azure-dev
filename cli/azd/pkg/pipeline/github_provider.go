@@ -419,6 +419,10 @@ func (p *GitHubCiProvider) configureConnection(
 		return fmt.Errorf("failed configuring authentication: %w", authErr)
 	}
 
+	if err := p.setPipelineVariables(ctx, repoSlug, infraOptions); err != nil {
+		return fmt.Errorf("failed setting pipeline variables: %w", err)
+	}
+
 	p.console.MessageUxItem(ctx, &ux.MultilineMessage{
 		Lines: []string{
 			"",
@@ -426,6 +430,72 @@ func (p *GitHubCiProvider) configureConnection(
 			output.WithLinkFormat("https://github.com/%s/settings/secrets/actions", repoSlug),
 			""},
 	})
+
+	return nil
+}
+
+// setPipelineVariables sets all the pipeline variables required for the pipeline to run.  This includes the environment
+// variables that the core of AZD uses (AZURE_ENV_NAME) as well as the variables that the provisioning system needs to run
+// (AZURE_SUBSCRIPTION_ID, AZURE_LOCATION) as well as scenario specific variables (AZURE_RESOURCE_GROUP for resource group
+// scoped deployments, a series of RS_ variables for terraform remote state)
+func (p *GitHubCiProvider) setPipelineVariables(
+	ctx context.Context,
+	repoSlug string,
+	infraOptions provisioning.Options,
+) error {
+	for name, value := range map[string]string{
+		environment.EnvNameEnvVarName:        p.env.GetEnvName(),
+		environment.LocationEnvVarName:       p.env.GetLocation(),
+		environment.SubscriptionIdEnvVarName: p.env.GetSubscriptionId(),
+	} {
+		if err := p.ghCli.SetVariable(ctx, repoSlug, name, value); err != nil {
+			return fmt.Errorf("failed setting %s variable: %w", name, err)
+		}
+		p.console.MessageUxItem(ctx, &ux.CreatedRepoValue{
+			Name: name,
+			Kind: ux.GitHubVariable,
+		})
+	}
+
+	if infraOptions.Provider == provisioning.Terraform {
+		remoteStateKeys := []string{"RS_RESOURCE_GROUP", "RS_STORAGE_ACCOUNT", "RS_CONTAINER_NAME"}
+		for _, key := range remoteStateKeys {
+			value, ok := p.env.LookupEnv(key)
+			if !ok || strings.TrimSpace(value) == "" {
+				p.console.StopSpinner(ctx, "Configuring terraform", input.StepWarning)
+				p.console.MessageUxItem(ctx, &ux.WarningMessage{
+					Description: "Terraform Remote State configuration is invalid",
+					HidePrefix:  true,
+				})
+				p.console.Message(
+					ctx,
+					fmt.Sprintf(
+						"Visit %s for more information on configuring Terraform remote state",
+						output.WithLinkFormat("https://aka.ms/azure-dev/terraform"),
+					),
+				)
+				p.console.Message(ctx, "")
+				return errors.New("terraform remote state is not correctly configured")
+			}
+
+			// env var was found
+			if err := p.ghCli.SetVariable(ctx, repoSlug, key, value); err != nil {
+				return fmt.Errorf("setting terraform remote state variables: %w", err)
+			}
+			p.console.MessageUxItem(ctx, &ux.CreatedRepoValue{
+				Name: key,
+				Kind: ux.GitHubVariable,
+			})
+		}
+	}
+
+	if infraOptions.Provider == provisioning.Bicep {
+		if rgName, has := p.env.LookupEnv(environment.ResourceGroupEnvVarName); has {
+			if err := p.ghCli.SetVariable(ctx, repoSlug, environment.ResourceGroupEnvVarName, rgName); err != nil {
+				return fmt.Errorf("failed setting %s variable: %w", environment.ResourceGroupEnvVarName, err)
+			}
+		}
+	}
 
 	return nil
 }
@@ -459,79 +529,32 @@ func (p *GitHubCiProvider) configureClientCredentialsAuth(
 			return fmt.Errorf("setting terraform env var credentials: %w", e)
 		}
 
-		/* #nosec G101 - Potential hardcoded credentials - false positive */
-		secretName = "ARM_TENANT_ID"
-		if err := p.ghCli.SetVariable(ctx, repoSlug, secretName, values.Tenant); err != nil {
-			return fmt.Errorf("setting terraform %s:: %w", secretName, err)
-		}
-		p.console.MessageUxItem(ctx, &ux.CreatedRepoValue{
-			Name: secretName,
-			Kind: ux.GitHubVariable,
-		})
-
-		/* #nosec G101 - Potential hardcoded credentials - false positive */
-		secretName = "ARM_CLIENT_ID"
-		if err := p.ghCli.SetVariable(ctx, repoSlug, secretName, values.ClientId); err != nil {
-			return fmt.Errorf("setting terraform %s:: %w", secretName, err)
-		}
-		p.console.MessageUxItem(ctx, &ux.CreatedRepoValue{
-			Name: secretName,
-			Kind: ux.GitHubVariable,
-		})
-
-		/* #nosec G101 - Potential hardcoded credentials - false positive */
-		secretName = "ARM_CLIENT_SECRET"
-		if err := p.ghCli.SetSecret(ctx, repoSlug, secretName, values.ClientSecret); err != nil {
-			return fmt.Errorf("setting terraform %s:: %w", secretName, err)
-		}
-		p.console.MessageUxItem(ctx, &ux.CreatedRepoValue{
-			Name: secretName,
-			Kind: ux.GitHubSecret,
-		})
-
-		// Sets the terraform remote state environment variables in github
-		remoteStateKeys := []string{"RS_RESOURCE_GROUP", "RS_STORAGE_ACCOUNT", "RS_CONTAINER_NAME"}
-		for _, key := range remoteStateKeys {
-			value, ok := p.env.LookupEnv(key)
-			if !ok || strings.TrimSpace(value) == "" {
-				p.console.StopSpinner(ctx, "Configuring terraform", input.StepWarning)
-				p.console.MessageUxItem(ctx, &ux.WarningMessage{
-					Description: "Terraform Remote State configuration is invalid",
-					HidePrefix:  true,
+		for key, info := range map[string]struct {
+			value  string
+			secret bool
+		}{
+			"ARM_TENANT_ID":     {values.Tenant, false},
+			"ARM_CLIENT_ID":     {values.ClientId, false},
+			"ARM_CLIENT_SECRET": {values.ClientSecret, true},
+		} {
+			if !info.secret {
+				if err := p.ghCli.SetVariable(ctx, repoSlug, key, info.value); err != nil {
+					return fmt.Errorf("setting github variable %s:: %w", key, err)
+				}
+				p.console.MessageUxItem(ctx, &ux.CreatedRepoValue{
+					Name: key,
+					Kind: ux.GitHubVariable,
 				})
-				p.console.Message(
-					ctx,
-					fmt.Sprintf(
-						"Visit %s for more information on configuring Terraform remote state",
-						output.WithLinkFormat("https://aka.ms/azure-dev/terraform"),
-					),
-				)
-				p.console.Message(ctx, "")
-				return errors.New("terraform remote state is not correctly configured")
+			} else {
+				if err := p.ghCli.SetSecret(ctx, repoSlug, key, info.value); err != nil {
+					return fmt.Errorf("setting github secret %s:: %w", key, err)
+				}
+				p.console.MessageUxItem(ctx, &ux.CreatedRepoValue{
+					Name: key,
+					Kind: ux.GitHubSecret,
+				})
 			}
-			// env var was found
-			if err := p.ghCli.SetVariable(ctx, repoSlug, key, value); err != nil {
-				return fmt.Errorf("setting terraform remote state variables: %w", err)
-			}
-			p.console.MessageUxItem(ctx, &ux.CreatedRepoValue{
-				Name: key,
-				Kind: ux.GitHubVariable,
-			})
 		}
-	}
-
-	for _, envName := range []string{
-		environment.EnvNameEnvVarName,
-		environment.LocationEnvVarName,
-		environment.SubscriptionIdEnvVarName} {
-
-		if err := p.ghCli.SetVariable(ctx, repoSlug, envName, p.env.Getenv(envName)); err != nil {
-			return fmt.Errorf("failed setting %s variable: %w", envName, err)
-		}
-		p.console.MessageUxItem(ctx, &ux.CreatedRepoValue{
-			Name: envName,
-			Kind: ux.GitHubVariable,
-		})
 	}
 
 	return nil
@@ -560,15 +583,10 @@ func (p *GitHubCiProvider) configureFederatedAuth(
 		return err
 	}
 
-	githubVariables := map[string]string{
-		environment.EnvNameEnvVarName:        p.env.GetEnvName(),
-		environment.LocationEnvVarName:       p.env.GetLocation(),
-		environment.TenantIdEnvVarName:       azureCredentials.TenantId,
-		environment.SubscriptionIdEnvVarName: azureCredentials.SubscriptionId,
-		"AZURE_CLIENT_ID":                    azureCredentials.ClientId,
-	}
-
-	for key, value := range githubVariables {
+	for key, value := range map[string]string{
+		environment.TenantIdEnvVarName: azureCredentials.TenantId,
+		"AZURE_CLIENT_ID":              azureCredentials.ClientId,
+	} {
 		if err := p.ghCli.SetVariable(ctx, repoSlug, key, value); err != nil {
 			return fmt.Errorf("failed setting github variable '%s':  %w", key, err)
 		}

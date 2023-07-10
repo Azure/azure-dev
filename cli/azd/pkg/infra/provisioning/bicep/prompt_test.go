@@ -10,7 +10,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -45,13 +44,7 @@ func TestPromptForParameter(t *testing.T) {
 			t.Parallel()
 
 			mockContext := mocks.NewMockContext(context.Background())
-
-			mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-				return strings.Contains(args.Cmd, "bicep") && args.Args[0] == "--version"
-			}).Respond(exec.RunResult{
-				Stdout: "Bicep CLI version 0.12.40 (41892bd0fb)",
-				Stderr: "",
-			})
+			prepareBicepMocks(mockContext)
 
 			p := createBicepProvider(t, mockContext)
 
@@ -183,13 +176,9 @@ func TestPromptForParameterValidation(t *testing.T) {
 
 		t.Run(tc.name, func(t *testing.T) {
 			mockContext := mocks.NewMockContext(context.Background())
+			prepareBicepMocks(mockContext)
 
-			mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-				return strings.Contains(args.Cmd, "bicep") && args.Args[0] == "--version"
-			}).Respond(exec.RunResult{
-				Stdout: "Bicep CLI version 0.12.40 (41892bd0fb)",
-				Stderr: "",
-			})
+			p := createBicepProvider(t, mockContext)
 
 			mockContext.Console.WhenPrompt(func(options input.ConsoleOptions) bool {
 				return strings.Contains(options.Message, "for the 'testParam' infrastructure parameter")
@@ -198,8 +187,6 @@ func TestPromptForParameterValidation(t *testing.T) {
 				tc.provided = tc.provided[1:]
 				return ret, nil
 			})
-
-			p := createBicepProvider(t, mockContext)
 
 			value, err := p.promptForParameter(*mockContext.Context, "testParam", tc.param)
 			require.NoError(t, err)
@@ -255,13 +242,7 @@ func TestPromptForParametersLocation(t *testing.T) {
 	t.Parallel()
 
 	mockContext := mocks.NewMockContext(context.Background())
-
-	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.Contains(args.Cmd, "bicep") && args.Args[0] == "--version"
-	}).Respond(exec.RunResult{
-		Stdout: "Bicep CLI version 0.12.40 (41892bd0fb)",
-		Stderr: "",
-	})
+	prepareBicepMocks(mockContext)
 
 	env := environment.Ephemeral()
 	azCli := mockazcli.NewAzCliFromMockContext(mockContext)

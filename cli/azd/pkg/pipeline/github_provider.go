@@ -484,8 +484,8 @@ func (p *GitHubCiProvider) setPipelineVariables(
 	}
 
 	if infraOptions.Provider == provisioning.Bicep {
-		if v, has := p.env.LookupEnv(environment.ResourceGroupEnvVarName); has {
-			if err := p.ghCli.SetVariable(ctx, repoSlug, environment.ResourceGroupEnvVarName, v); err != nil {
+		if rgName, has := p.env.LookupEnv(environment.ResourceGroupEnvVarName); has {
+			if err := p.ghCli.SetVariable(ctx, repoSlug, environment.ResourceGroupEnvVarName, rgName); err != nil {
 				return fmt.Errorf("failed setting %s variable: %w", environment.ResourceGroupEnvVarName, err)
 			}
 		}

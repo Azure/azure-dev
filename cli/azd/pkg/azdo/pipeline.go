@@ -155,8 +155,8 @@ func getDefinitionVariables(
 	}
 
 	if provisioningProvider.Provider == provisioning.Bicep {
-		if v, has := env.LookupEnv(environment.ResourceGroupEnvVarName); has {
-			variables[environment.ResourceGroupEnvVarName] = createBuildDefinitionVariable(v, false, false)
+		if rgName, has := env.LookupEnv(environment.ResourceGroupEnvVarName); has {
+			variables[environment.ResourceGroupEnvVarName] = createBuildDefinitionVariable(rgName, false, false)
 		}
 	}
 

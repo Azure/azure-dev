@@ -1,6 +1,11 @@
 # Release History
 
-## vNext (unreleased)
+## 1.0.3-beta.1 (unreleased)
+
+### Features Added
+
+- [[2364]](https://github.com/Azure/azure-dev/pull/2364) Display docker output during `package` and `deploy`.
+- [[2463]](https://github.com/Azure/azure-dev/pull/2463) Support `--docs` flag for all azd commands to show official documentation website.
 
 ### Bugs Fixed
 

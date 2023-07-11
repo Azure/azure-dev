@@ -14,9 +14,7 @@
             "helm": "latest",
             "minikube": "none"
         },
-        "ghcr.io/azure/azure-dev/azd:1": {
-            "version": "stable"
-        }
+        "ghcr.io/azure/azure-dev/azd:latest": {}
     },
     "customizations": {
         "vscode": {

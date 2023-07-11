@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io/fs"
 	"log"
+	"net/url"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -642,7 +643,7 @@ func applyFederatedCredentials(
 	// List of desired federated credentials
 	federatedCredentials := []graphsdk.FederatedIdentityCredential{
 		{
-			Name:        fmt.Sprintf("%s-pull_request", credentialSafeName),
+			Name:        url.PathEscape(fmt.Sprintf("%s-pull_request", credentialSafeName)),
 			Issuer:      federatedIdentityIssuer,
 			Subject:     fmt.Sprintf("repo:%s:pull_request", repoSlug),
 			Description: convert.RefOf("Created by Azure Developer CLI"),
@@ -652,7 +653,7 @@ func applyFederatedCredentials(
 
 	for _, branch := range branches {
 		branchCredentials := graphsdk.FederatedIdentityCredential{
-			Name:        fmt.Sprintf("%s-%s", credentialSafeName, branch),
+			Name:        url.PathEscape(fmt.Sprintf("%s-%s", credentialSafeName, branch)),
 			Issuer:      federatedIdentityIssuer,
 			Subject:     fmt.Sprintf("repo:%s:ref:refs/heads/%s", repoSlug, branch),
 			Description: convert.RefOf("Created by Azure Developer CLI"),

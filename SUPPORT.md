@@ -14,6 +14,8 @@ For help and questions about using this project, please look at our [wiki][wiki]
 
 ## Microsoft Support Policy  
 
+Microsoft will assist with supported open-source technologies. Customers who request support for design guidance or development assistance may be directed to forums or community support. Customers may also have to work with our Linux partners or software vendors directly for scenarios that aren't supported by Microsoft. For more information see [Open-source technology support scope](https://learn.microsoft.com/troubleshoot/azure/cloud-services/support-linux-open-source-technology#open-source-technology-support-matrix)
+
 Support for Azure Developer CLI is limited to the resources listed above.
 
 [gh-issue]: https://github.com/Azure/azure-dev/issues/new/choose
@@ -23,3 +25,7 @@ Support for Azure Developer CLI is limited to the resources listed above.
 [azd-link]: https://aka.ms/azure-dev
 [learn-doc]: https://learn.microsoft.com/en-us/azure/developer/azure-developer-cli/overview
 [gh-template]: https://aka.ms/azure-dev/templates
+
+## Troubleshoot Azure Developer CLI
+
+If you an encounter an unexpected issue while working with azd, rerun the command with the `--debug` switch to enable additional debugging and diagnostic output. For more information see [Troubleshoot Azure Developer CLI | Microsoft Learn](https://learn.microsoft.com/azure/developer/azure-developer-cli/troubleshoot?tabs=Browser)

@@ -12,6 +12,10 @@
 - [[2402]](https://github.com/Azure/azure-dev/pull/2279) Support for workload profiles in Azure Container Apps
 - [[2428, 2040]](https://github.com/Azure/azure-dev/pull/2468) Include current git branch in GitHub federated credentials
 
+### Other Changes
+
+- [[1118]](https://github.com/Azure/azure-dev/pull/1118) Adding `setup-azd`, a devcontainer feature.
+
 ## 1.0.2 (2023-06-14)
 
 ### Features Added

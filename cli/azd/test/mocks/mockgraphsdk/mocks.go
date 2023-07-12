@@ -48,7 +48,8 @@ func RegisterApplicationGetItemByAppIdMock(
 	application *graphsdk.Application,
 ) {
 	mockContext.HttpClient.When(func(request *http.Request) bool {
-		return request.Method == http.MethodGet && strings.Contains(request.URL.Path, fmt.Sprintf("/applications(appId='%s')", appId))
+		return request.Method == http.MethodGet &&
+			strings.Contains(request.URL.Path, fmt.Sprintf("/applications(appId='%s')", appId))
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		if application == nil {
 			return mocks.CreateEmptyHttpResponse(request, statusCode)

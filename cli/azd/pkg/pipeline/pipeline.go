@@ -44,10 +44,10 @@ type gitRepositoryDetails struct {
 	gitProjectPath string
 	//Indicates if the repo was successfully pushed a remote
 	pushStatus bool
-	// remote
+	// remote is the git-remote, which can be in ssh or https format
 	remote string
-	// remoteUrl holds the remote url regardless if the remote is an ssh or https string
-	remoteUrl string
+	// url holds the remote url regardless if the remote is an ssh or https string
+	url string
 	// branch
 	branch string
 
@@ -78,9 +78,13 @@ type ScmProvider interface {
 		branchName string) error
 }
 
+// CiPipeline provides the functional contract for a CI/CD provider to define getting the pipeline name and the url to
+// access the pipeline.
 type CiPipeline interface {
+	// name returns a string label that represents the pipeline identifier.
 	name() string
-	remote() string
+	// url provides the web address to access the pipeline.
+	url() string
 }
 
 // CiProvider defines the base behavior for a continuous integration provider.

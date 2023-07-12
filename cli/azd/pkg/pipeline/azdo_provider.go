@@ -530,11 +530,11 @@ func (p *AzdoScmProvider) gitRepoDetails(ctx context.Context, remoteUrl string) 
 	}
 
 	return &gitRepositoryDetails{
-		owner:     p.repoDetails.orgName,
-		repoName:  p.repoDetails.repoName,
-		details:   repoDetails,
-		remote:    repoDetails.repoWebUrl,
-		remoteUrl: repoDetails.repoWebUrl,
+		owner:    p.repoDetails.orgName,
+		repoName: p.repoDetails.repoName,
+		details:  repoDetails,
+		remote:   repoDetails.remoteUrl,
+		url:      repoDetails.repoWebUrl,
 	}, nil
 }
 
@@ -788,7 +788,7 @@ type pipeline struct {
 func (p *pipeline) name() string {
 	return *p.repoDetails.buildDefinition.Name
 }
-func (p *pipeline) remote() string {
+func (p *pipeline) url() string {
 	repoUrl := p.repoDetails.repoWebUrl
 	repoPrefix := strings.Split(repoUrl, "_git")[0]
 	return fmt.Sprintf("%s_build?definitionId=%d", repoPrefix, *p.repoDetails.buildDefinition.Id)

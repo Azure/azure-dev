@@ -230,8 +230,8 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 	}
 
 	return &PipelineConfigResult{
-		RepositoryLink: gitRepoInfo.remoteUrl,
-		PipelineLink:   ciPipeline.remote(),
+		RepositoryLink: gitRepoInfo.url,
+		PipelineLink:   ciPipeline.url(),
 	}, nil
 }
 

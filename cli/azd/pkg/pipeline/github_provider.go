@@ -163,7 +163,7 @@ func (p *GitHubScmProvider) gitRepoDetails(ctx context.Context, remoteUrl string
 		repoName: slugParts[1],
 		remote:   remoteUrl,
 	}
-	repoDetails.remoteUrl = fmt.Sprintf(
+	repoDetails.url = fmt.Sprintf(
 		"https://github.com/%s/%s",
 		repoDetails.owner,
 		repoDetails.repoName)
@@ -701,8 +701,8 @@ type workflow struct {
 func (w *workflow) name() string {
 	return "actions"
 }
-func (w *workflow) remote() string {
-	return w.repoDetails.remoteUrl + "/actions"
+func (w *workflow) url() string {
+	return w.repoDetails.url + "/actions"
 }
 
 // ensureGitHubLogin ensures the user is logged into the GitHub CLI. If not, it prompt the user

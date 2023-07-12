@@ -30,10 +30,16 @@ import (
 
 type PipelineAuthType string
 
+// servicePrincipalLookupKind is the type of lookup to use when resolving the service principal.
+type servicePrincipalLookupKind string
+
 const (
-	AuthTypeFederated               PipelineAuthType = "federated"
-	AuthTypeClientCredentials       PipelineAuthType = "client-credentials"
-	AzurePipelineClientIdEnvVarName string           = "AZURE_PIPELINE_CLIENT_ID"
+	AuthTypeFederated               PipelineAuthType           = "federated"
+	AuthTypeClientCredentials       PipelineAuthType           = "client-credentials"
+	lookupKindPrincipalId           servicePrincipalLookupKind = "principal-id"
+	lookupKindPrincipleName         servicePrincipalLookupKind = "principal-name"
+	lookupKindEnvironmentVariable   servicePrincipalLookupKind = "environment-variable"
+	AzurePipelineClientIdEnvVarName string                     = "AZURE_PIPELINE_CLIENT_ID"
 )
 
 var (
@@ -145,13 +151,21 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 	// 1. --principal-id
 	// 2. --principal-name
 	// 3. AZURE_PIPELINE_CLIENT_ID environment variable
-	appIdOrName := pm.args.PipelineServicePrincipalId
-	if appIdOrName == "" {
-		appIdOrName = pm.args.PipelineServicePrincipalName
+	// 4. Create new service principal with default naming convention
+	envClientId := pm.env.Getenv(AzurePipelineClientIdEnvVarName)
+	var appIdOrName string
+	var lookupKind servicePrincipalLookupKind
+	if pm.args.PipelineServicePrincipalId != "" {
+		appIdOrName = pm.args.PipelineServicePrincipalId
+		lookupKind = lookupKindPrincipalId
 	}
-
-	if appIdOrName == "" {
-		appIdOrName = pm.env.Getenv(AzurePipelineClientIdEnvVarName)
+	if appIdOrName == "" && pm.args.PipelineServicePrincipalName != "" {
+		appIdOrName = pm.args.PipelineServicePrincipalName
+		lookupKind = lookupKindPrincipleName
+	}
+	if appIdOrName == "" && envClientId != "" {
+		appIdOrName = envClientId
+		lookupKind = lookupKindEnvironmentVariable
 	}
 
 	var application *graphsdk.Application
@@ -168,11 +182,24 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 	} else {
 		// Fall back to convention based naming
 		applicationName = fmt.Sprintf("az-dev-%s", time.Now().UTC().Format("01-02-2006-15-04-05"))
+		appIdOrName = applicationName
 	}
 
 	// If an explicit client id was specified but not found then fail
-	if application == nil && pm.args.PipelineServicePrincipalId != "" {
-		return nil, fmt.Errorf("service principal with client id '%s' was not found", pm.args.PipelineServicePrincipalId)
+	if application == nil && lookupKind == lookupKindPrincipalId {
+		return nil, fmt.Errorf(
+			"service principal with client id '%s' specified in '--principal-id' parameter was not found",
+			pm.args.PipelineServicePrincipalId,
+		)
+	}
+
+	// If an explicit client id was specified but not found then fail
+	if application == nil && lookupKind == lookupKindEnvironmentVariable {
+		return nil, fmt.Errorf(
+			"service principal with client id '%s' specified in environment variable '%s' was not found",
+			envClientId,
+			AzurePipelineClientIdEnvVarName,
+		)
 	}
 
 	if application == nil {

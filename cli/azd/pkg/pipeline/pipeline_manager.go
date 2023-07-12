@@ -230,8 +230,8 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 	}
 
 	return &PipelineConfigResult{
-		RepositoryLink: strings.TrimSuffix(gitRepoInfo.remote, ".git"),
-		PipelineLink:   strings.TrimSuffix(ciPipeline.remote, ".git"),
+		RepositoryLink: gitRepoInfo.remoteUrl,
+		PipelineLink:   ciPipeline.remote(),
 	}, nil
 }
 

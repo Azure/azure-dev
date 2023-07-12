@@ -46,6 +46,8 @@ type gitRepositoryDetails struct {
 	pushStatus bool
 	// remote
 	remote string
+	// remoteUrl holds the remote url regardless if the remote is an ssh or https string
+	remoteUrl string
 	// branch
 	branch string
 
@@ -76,9 +78,9 @@ type ScmProvider interface {
 		branchName string) error
 }
 
-type CiPipeline struct {
-	name   string
-	remote string
+type CiPipeline interface {
+	name() string
+	remote() string
 }
 
 // CiProvider defines the base behavior for a continuous integration provider.
@@ -90,7 +92,7 @@ type CiProvider interface {
 		ctx context.Context,
 		repoDetails *gitRepositoryDetails,
 		provisioningProvider provisioning.Options,
-	) (*CiPipeline, error)
+	) (CiPipeline, error)
 	// configureConnection use the credential to set up the connection from the pipeline
 	// to Azure
 	configureConnection(

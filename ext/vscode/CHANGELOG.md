@@ -6,7 +6,7 @@
 
 - [[#2396]](https://github.com/Azure/azure-dev/pull/2396) Diagnostics have been added for `azure.yaml` files for when a path referenced as a project does not exist.
 - [[#2447]](https://github.com/Azure/azure-dev/pull/2447) An experience has been added to easily rename project paths referenced in `azure.yaml`.
-- [[#2448]](https://github.com/Azure/azure-dev/pull/2448) Services can be added to `azure.yaml` by dragging a folder and then holding `Shift` dropping it into `azure.yaml`.
+- [[#2448]](https://github.com/Azure/azure-dev/pull/2448) Services can be added to `azure.yaml` by dragging a folder and then holding `Shift` and dropping it into `azure.yaml`.
 
 ### Bugs Fixed
 

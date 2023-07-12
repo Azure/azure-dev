@@ -14,6 +14,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
@@ -30,8 +31,9 @@ import (
 type PipelineAuthType string
 
 const (
-	AuthTypeFederated         PipelineAuthType = "federated"
-	AuthTypeClientCredentials PipelineAuthType = "client-credentials"
+	AuthTypeFederated               PipelineAuthType = "federated"
+	AuthTypeClientCredentials       PipelineAuthType = "client-credentials"
+	AzurePipelineClientIdEnvVarName string           = "AZURE_PIPELINE_CLIENT_ID"
 )
 
 var (
@@ -60,7 +62,7 @@ type PipelineManager struct {
 	args           *PipelineManagerArgs
 	azdCtx         *azdcontext.AzdContext
 	env            *environment.Environment
-	azCli          azcli.AzCli
+	adService      azcli.AdService
 	gitCli         git.GitCli
 	console        input.Console
 	serviceLocator ioc.ServiceLocator
@@ -68,7 +70,7 @@ type PipelineManager struct {
 
 func NewPipelineManager(
 	ctx context.Context,
-	azCli azcli.AzCli,
+	adService azcli.AdService,
 	gitCli git.GitCli,
 	azdCtx *azdcontext.AzdContext,
 	env *environment.Environment,
@@ -80,7 +82,7 @@ func NewPipelineManager(
 		azdCtx:         azdCtx,
 		env:            env,
 		args:           args,
-		azCli:          azCli,
+		adService:      adService,
 		gitCli:         gitCli,
 		console:        console,
 		serviceLocator: serviceLocator,
@@ -138,28 +140,56 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 		return result, fmt.Errorf("ensuring git remote: %w", err)
 	}
 
-	// *********** Create or update Azure Principal ***********
+	var application *graphsdk.Application
+	var appId string
+	applicationName := pm.args.PipelineServicePrincipalName
+
+	// Lookup previous application id if principal name has not been set
 	if pm.args.PipelineServicePrincipalName == "" {
-		// This format matches what the `az` cli uses when a name is not provided, with the prefix
-		// changed from "az-cli" to "az-dev"
-		pm.args.PipelineServicePrincipalName = fmt.Sprintf("az-dev-%s", time.Now().UTC().Format("01-02-2006-15-04-05"))
+		appId = pm.env.Getenv(AzurePipelineClientIdEnvVarName)
+		if appId != "" {
+			application, _ = pm.adService.GetServicePrincipal(ctx, pm.env.GetSubscriptionId(), appId)
+		}
 	}
 
-	displayMsg := fmt.Sprintf("Creating or updating service principal %s", pm.args.PipelineServicePrincipalName)
+	// Default to CLI parameter
+
+	// If we have specified an application id
+	if application != nil {
+		appId = *application.AppId
+		applicationName = application.DisplayName
+	} else if application == nil && pm.args.PipelineServicePrincipalName == "" {
+		// Fall back to convention based naming
+		applicationName = fmt.Sprintf("az-dev-%s", time.Now().UTC().Format("01-02-2006-15-04-05"))
+	}
+
+	appIdOrName := appId
+	if appIdOrName == "" {
+		appIdOrName = applicationName
+	}
+
+	displayMsg := fmt.Sprintf("Creating or updating service principal %s", applicationName)
 	pm.console.ShowSpinner(ctx, displayMsg, input.Step)
-	credentials, err := pm.azCli.CreateOrUpdateServicePrincipal(
+	clientId, credentials, err := pm.adService.CreateOrUpdateServicePrincipal(
 		ctx,
 		pm.env.GetSubscriptionId(),
-		pm.args.PipelineServicePrincipalName,
+		appIdOrName,
 		pm.args.PipelineRoleNames)
 	pm.console.StopSpinner(ctx, displayMsg, input.GetStepResultFormat(err))
 	if err != nil {
 		return result, fmt.Errorf("failed to create or update service principal: %w", err)
 	}
 
+	// Set in .env to be retrieved for any additional runs
+	if clientId != nil {
+		pm.env.DotenvSet(AzurePipelineClientIdEnvVarName, *clientId)
+		if err := pm.env.Save(); err != nil {
+			return result, fmt.Errorf("failed to save environment: %w", err)
+		}
+	}
+
 	repoSlug := gitRepoInfo.owner + "/" + gitRepoInfo.repoName
-	displayMsg = fmt.Sprintf(
-		"Configuring repository %s to use credentials for %s", repoSlug, pm.args.PipelineServicePrincipalName)
+	displayMsg = fmt.Sprintf("Configuring repository %s to use credentials for %s", repoSlug, applicationName)
 	pm.console.ShowSpinner(ctx, displayMsg, input.Step)
 
 	err = pm.ciProvider.configureConnection(

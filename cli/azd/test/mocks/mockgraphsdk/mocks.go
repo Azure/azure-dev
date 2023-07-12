@@ -41,6 +41,23 @@ func RegisterApplicationListMock(mockContext *mocks.MockContext, statusCode int,
 	})
 }
 
+func RegisterApplicationGetItemByAppIdMock(
+	mockContext *mocks.MockContext,
+	statusCode int,
+	appId string,
+	application *graphsdk.Application,
+) {
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet && strings.Contains(request.URL.Path, fmt.Sprintf("/applications(appId='%s')", appId))
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		if application == nil {
+			return mocks.CreateEmptyHttpResponse(request, statusCode)
+		}
+
+		return mocks.CreateHttpResponseWithBody(request, statusCode, application)
+	})
+}
+
 func RegisterApplicationGetItemMock(
 	mockContext *mocks.MockContext,
 	statusCode int,

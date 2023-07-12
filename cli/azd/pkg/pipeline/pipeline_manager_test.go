@@ -14,10 +14,10 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
-	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/stretchr/testify/assert"
 )
 
@@ -424,7 +424,7 @@ func createPipelineManager(
 
 	return NewPipelineManager(
 		*mockContext.Context,
-		mockazcli.NewAzCliFromMockContext(mockContext),
+		azcli.NewAdService(mockContext.SubscriptionCredentialProvider, mockContext.HttpClient),
 		git.NewGitCli(mockContext.CommandRunner),
 		azdContext,
 		env,

@@ -591,8 +591,8 @@ func (p *GitHubCiProvider) configureFederatedAuth(
 	}
 
 	for key, value := range map[string]string{
-		environment.TenantIdEnvVarName:  azureCredentials.TenantId,
-		AzurePipelineClientIdEnvVarName: azureCredentials.ClientId,
+		environment.TenantIdEnvVarName: azureCredentials.TenantId,
+		"AZURE_CLIENT_ID":              azureCredentials.ClientId,
 	} {
 		if err := p.ghCli.SetVariable(ctx, repoSlug, key, value); err != nil {
 			return fmt.Errorf("failed setting github variable '%s':  %w", key, err)

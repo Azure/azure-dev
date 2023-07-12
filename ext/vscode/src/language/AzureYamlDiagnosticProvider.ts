@@ -1,10 +1,11 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-import { AzExtFsExtra } from '@microsoft/vscode-azext-utils';
+import { AzExtFsExtra, IActionContext, callWithTelemetryAndErrorHandling } from '@microsoft/vscode-azext-utils';
 import * as vscode from 'vscode';
 import { documentDebounce } from './documentDebounce';
 import { getAzureYamlProjectInformation } from './azureYamlUtils';
+import { TelemetryId } from '../telemetry/telemetryId';
 
 // Time between when the user stops typing and when we send diagnostics
 const DiagnosticDelay = 1000;
@@ -33,31 +34,33 @@ export class AzureYamlDiagnosticProvider extends vscode.Disposable {
         this.diagnosticCollection = diagnosticCollection;
     }
 
-    public async provideDiagnostics(document: vscode.TextDocument, token?: vscode.CancellationToken): Promise<vscode.Diagnostic[] | undefined> {
-        const results: vscode.Diagnostic[] = [];
+    public provideDiagnostics(document: vscode.TextDocument, token?: vscode.CancellationToken): Promise<vscode.Diagnostic[] | undefined> {
+        return callWithTelemetryAndErrorHandling(TelemetryId.AzureYamlProvideDiagnostics, async (context: IActionContext) => {
+            const results: vscode.Diagnostic[] = [];
 
-        try {
-            const projectInformation = await getAzureYamlProjectInformation(document);
+            try {
+                const projectInformation = await getAzureYamlProjectInformation(document);
 
-            for (const project of projectInformation) {
-                if (await AzExtFsExtra.pathExists(project.projectUri)) {
-                    continue;
+                for (const project of projectInformation) {
+                    if (await AzExtFsExtra.pathExists(project.projectUri)) {
+                        continue;
+                    }
+
+                    const diagnostic = new vscode.Diagnostic(
+                        project.projectValueNodeRange,
+                        vscode.l10n.t('The project path must be an existing folder or file path relative to the azure.yaml file.'),
+                        vscode.DiagnosticSeverity.Error
+                    );
+
+                    results.push(diagnostic);
                 }
-
-                const diagnostic = new vscode.Diagnostic(
-                    project.projectValueNodeRange,
-                    vscode.l10n.t('The project path must be an existing folder or file path relative to the azure.yaml file.'),
-                    vscode.DiagnosticSeverity.Error
-                );
-
-                results.push(diagnostic);
+            } catch {
+                // Best effort--the YAML extension will show parsing errors for us if it is present
             }
-        } catch {
-            // Best effort--the YAML extension will show parsing errors for us if it is present
-            return results;
-        }
 
-        return results;
+            context.telemetry.measurements.diagnosticCount = results.length;
+            return results;
+        });
     }
 
     private async updateDiagnosticsFor(document: vscode.TextDocument, delay: boolean = true): Promise<void> {

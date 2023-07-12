@@ -154,6 +154,12 @@ func getDefinitionVariables(
 		"AZURE_SUBSCRIPTION_ID":    createBuildDefinitionVariable(credentials.SubscriptionId, false, false),
 	}
 
+	if provisioningProvider.Provider == provisioning.Bicep {
+		if rgName, has := env.LookupEnv(environment.ResourceGroupEnvVarName); has {
+			variables[environment.ResourceGroupEnvVarName] = createBuildDefinitionVariable(rgName, false, false)
+		}
+	}
+
 	if provisioningProvider.Provider == provisioning.Terraform {
 		variables["ARM_TENANT_ID"] = createBuildDefinitionVariable(credentials.TenantId, false, false)
 		variables["ARM_CLIENT_ID"] = createBuildDefinitionVariable(credentials.ClientId, true, false)

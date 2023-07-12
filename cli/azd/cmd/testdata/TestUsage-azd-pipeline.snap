@@ -12,6 +12,7 @@ Available Commands
   config	: Configure your deployment pipeline to connect securely to Azure. (Beta)
 
 Flags
+        --docs 	: Opens the documentation for azd pipeline in your web browser.
     -h, --help 	: Gets help for pipeline.
 
 Global Flags

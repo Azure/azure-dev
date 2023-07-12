@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -17,7 +18,10 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
+	"golang.org/x/exp/slices"
 )
+
+const cDocsFlagName = "docs"
 
 // CobraBuilder manages the construction of the cobra command tree from nested ActionDescriptors
 type CobraBuilder struct {
@@ -189,12 +193,89 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 	return nil
 }
 
+// docsFlag is a flag with a custom parsing implementation which changes the default behavior for printing help
+// for all commands, when it is set as true.
+// docsFlag keeps a reference to the cobra command where it belongs so it can update it.
+// docsFlag also contains a callbacks to pull dependencies for the docs routine.
+type docsFlag struct {
+	// reference to the command where the flag was added.
+	command       *cobra.Command
+	consoleFn     func() input.Console
+	value         bool
+	defaultHelpFn func(*cobra.Command, []string)
+}
+
+// returns the flag value
+func (df *docsFlag) String() string {
+	return fmt.Sprintf("%t", df.value)
+}
+
+// define flag type
+func (df *docsFlag) Type() string {
+	return "bool"
+}
+
+// Set not only initialize the flag value, but it also turns the help flag true and defines the HelpFunc for the command.
+// This wiring forces cobra to react as it the --help flag was provided and stop the command early to run the HelpFunc.
+func (df *docsFlag) Set(value string) error {
+	v, err := strconv.ParseBool(value)
+	if err != nil {
+		return fmt.Errorf("invalid value for boolean --docs parameter")
+	}
+	df.value = v
+	if !df.value {
+		return nil
+	}
+
+	// Setting help to true will make cobra to stop and call the HelpFunc
+	if err = df.command.Flag("help").Value.Set("true"); err != nil {
+		// dev-issue: help flag should be already been added when
+		log.Panic("tried to set help after docs parameter: %w", err)
+	}
+
+	// keeping the default help function allows to set --help with higher priority and use it
+	// in case of finding --docs and --help
+	df.defaultHelpFn = df.command.HelpFunc()
+
+	// set help func for doing docs
+	df.command.SetHelpFunc(func(c *cobra.Command, args []string) {
+		console := df.consoleFn()
+		ctx := c.Context()
+		ctx = tools.WithInstalledCheckCache(ctx)
+
+		if slices.Contains(args, "--help") {
+			df.defaultHelpFn(c, args)
+			return
+		}
+
+		commandPath := strings.ReplaceAll(c.CommandPath(), " ", "-")
+		commandDocsUrl := cReferenceDocumentationUrl + commandPath
+		openWithDefaultBrowser(ctx, console, commandDocsUrl)
+	})
+
+	return nil
+}
+
 // Binds the intersection of cobra command options and action descriptor options
 func (cb *CobraBuilder) bindCommand(cmd *cobra.Command, descriptor *actions.ActionDescriptor) error {
 	actionName := createActionName(cmd)
 
 	// Automatically adds a consistent help flag
 	cmd.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", cmd.Name()))
+	// docs flags for all commands
+	docsFlag := &docsFlag{
+		command: cmd,
+		consoleFn: func() input.Console {
+			var console input.Console
+			if err := cb.container.Resolve(&console); err != nil {
+				log.Panic("creating docs flag: %w", err)
+			}
+			return console
+		},
+	}
+	flag := cmd.Flags().VarPF(
+		docsFlag, cDocsFlagName, "", fmt.Sprintf("Opens the documentation for %s in your web browser.", cmd.CommandPath()))
+	flag.NoOptDefVal = "true"
 
 	// Consistently registers output formats for the descriptor
 	if len(descriptor.Options.OutputFormats) > 0 {

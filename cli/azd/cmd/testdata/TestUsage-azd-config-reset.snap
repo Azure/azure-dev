@@ -5,6 +5,7 @@ Usage
   azd config reset [flags]
 
 Flags
+        --docs 	: Opens the documentation for azd config reset in your web browser.
     -h, --help 	: Gets help for reset.
 
 Global Flags

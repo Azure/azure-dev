@@ -5,6 +5,7 @@ Usage
   azd config list-alpha [flags]
 
 Flags
+        --docs 	: Opens the documentation for azd config list-alpha in your web browser.
     -h, --help 	: Gets help for list-alpha.
 
 Global Flags

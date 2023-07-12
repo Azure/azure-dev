@@ -15,6 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockarmresources"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockhttp"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/stretchr/testify/require"
 )
 
@@ -162,7 +163,7 @@ func TestSubscriptionsManager_ListSubscriptions(t *testing.T) {
 				),
 				cache:         NewBypassSubscriptionsCache(),
 				principalInfo: principalInfo,
-				msg:           &mockMessaging{},
+				console:       mockinput.NewMockConsole(),
 			}
 
 			got, err := subManager.ListSubscriptions(ctx)

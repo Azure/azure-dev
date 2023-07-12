@@ -81,7 +81,7 @@ func TestBicepPlanPrompt(t *testing.T) {
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(args.Cmd, "bicep") && args.Args[0] == "--version"
 	}).Respond(exec.RunResult{
-		Stdout: "Bicep CLI version 0.12.40 (41892bd0fb)",
+		Stdout: fmt.Sprintf("Bicep CLI version %s (abcdef0123)", bicep.BicepVersion.String()),
 		Stderr: "",
 	})
 
@@ -435,7 +435,7 @@ func prepareBicepMocks(
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(args.Cmd, "bicep") && args.Args[0] == "--version"
 	}).Respond(exec.RunResult{
-		Stdout: "Bicep CLI version 0.12.40 (41892bd0fb)",
+		Stdout: fmt.Sprintf("Bicep CLI version %s (abcdef0123)", bicep.BicepVersion.String()),
 		Stderr: "",
 	})
 

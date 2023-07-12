@@ -5,6 +5,7 @@ Usage
   azd env get-values [flags]
 
 Flags
+        --docs               	: Opens the documentation for azd env get-values in your web browser.
     -e, --environment string 	: The name of the environment to use.
     -h, --help               	: Gets help for get-values.
 

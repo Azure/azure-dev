@@ -123,7 +123,6 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 				DebugLogging: rootOptions.EnableDebugLogging,
 			})
 	})
-	container.RegisterSingleton(input.NewConsoleMessaging)
 
 	client := createHttpClient()
 	container.RegisterSingleton(func() httputil.HttpClient { return client })

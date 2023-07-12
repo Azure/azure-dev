@@ -5,6 +5,7 @@ Usage
   azd env new <environment> [flags]
 
 Flags
+        --docs                	: Opens the documentation for azd env new in your web browser.
     -h, --help                	: Gets help for new.
     -l, --location string     	: Azure location for the new environment
         --subscription string 	: Name or ID of an Azure subscription to use for the new environment

@@ -31,6 +31,12 @@ type pipelineConfigFlags struct {
 
 func (pc *pipelineConfigFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	local.StringVar(
+		&pc.PipelineServicePrincipalId,
+		"principal-id",
+		"",
+		"The client id of the service principal to use to grant access to Azure resources as part of the pipeline.",
+	)
+	local.StringVar(
 		&pc.PipelineServicePrincipalName,
 		"principal-name",
 		"",

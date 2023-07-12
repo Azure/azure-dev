@@ -42,6 +42,7 @@ var (
 )
 
 type PipelineManagerArgs struct {
+	PipelineServicePrincipalId   string
 	PipelineServicePrincipalName string
 	PipelineRemoteName           string
 	PipelineRoleNames            []string
@@ -140,41 +141,57 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 		return result, fmt.Errorf("ensuring git remote: %w", err)
 	}
 
-	var application *graphsdk.Application
-	var appId string
-	applicationName := pm.args.PipelineServicePrincipalName
-
-	// Lookup previous application id if principal name has not been set
-	if pm.args.PipelineServicePrincipalName == "" {
-		appId = pm.env.Getenv(AzurePipelineClientIdEnvVarName)
-		if appId != "" {
-			application, _ = pm.adService.GetServicePrincipal(ctx, pm.env.GetSubscriptionId(), appId)
-		}
+	// Existing Service Principal Lookup strategy
+	// 1. --principal-id
+	// 2. --principal-name
+	// 3. AZURE_PIPELINE_CLIENT_ID environment variable
+	appIdOrName := pm.args.PipelineServicePrincipalId
+	if appIdOrName == "" {
+		appIdOrName = pm.args.PipelineServicePrincipalName
 	}
 
-	// Default to CLI parameter
+	if appIdOrName == "" {
+		appIdOrName = pm.env.Getenv(AzurePipelineClientIdEnvVarName)
+	}
 
-	// If we have specified an application id
-	if application != nil {
-		appId = *application.AppId
-		applicationName = application.DisplayName
-	} else if application == nil && pm.args.PipelineServicePrincipalName == "" {
+	var application *graphsdk.Application
+	var displayMsg, applicationName string
+
+	if appIdOrName != "" {
+		application, _ = pm.adService.GetServicePrincipal(ctx, pm.env.GetSubscriptionId(), appIdOrName)
+		if application != nil {
+			appIdOrName = *application.AppId
+			applicationName = application.DisplayName
+		} else {
+			applicationName = pm.args.PipelineServicePrincipalName
+		}
+	} else {
 		// Fall back to convention based naming
 		applicationName = fmt.Sprintf("az-dev-%s", time.Now().UTC().Format("01-02-2006-15-04-05"))
 	}
 
-	appIdOrName := appId
-	if appIdOrName == "" {
-		appIdOrName = applicationName
+	// If an explicit client id was specified but not found then fail
+	if application == nil && pm.args.PipelineServicePrincipalId != "" {
+		return nil, fmt.Errorf("service principal with client id '%s' was not found", pm.args.PipelineServicePrincipalId)
 	}
 
-	displayMsg := fmt.Sprintf("Creating or updating service principal %s", applicationName)
+	if application == nil {
+		displayMsg = fmt.Sprintf("Creating service principal %s", applicationName)
+	} else {
+		displayMsg = fmt.Sprintf("Updating service principal %s (%s)", application.DisplayName, *application.AppId)
+	}
+
 	pm.console.ShowSpinner(ctx, displayMsg, input.Step)
 	clientId, credentials, err := pm.adService.CreateOrUpdateServicePrincipal(
 		ctx,
 		pm.env.GetSubscriptionId(),
 		appIdOrName,
 		pm.args.PipelineRoleNames)
+
+	// Update new service principal to include client id
+	if application == nil && clientId != nil {
+		displayMsg += fmt.Sprintf(" (%s)", *clientId)
+	}
 	pm.console.StopSpinner(ctx, displayMsg, input.GetStepResultFormat(err))
 	if err != nil {
 		return result, fmt.Errorf("failed to create or update service principal: %w", err)

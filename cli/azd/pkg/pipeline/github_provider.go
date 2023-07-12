@@ -702,7 +702,7 @@ func (w *workflow) name() string {
 	return "actions"
 }
 func (w *workflow) remote() string {
-	return strings.TrimSuffix(w.repoDetails.remote, ".git")
+	return w.repoDetails.remoteUrl + "/actions"
 }
 
 // ensureGitHubLogin ensures the user is logged into the GitHub CLI. If not, it prompt the user

@@ -13,6 +13,7 @@ Flags
         --docs                       	: Opens the documentation for azd pipeline config in your web browser.
     -e, --environment string         	: The name of the environment to use.
     -h, --help                       	: Gets help for config.
+        --principal-id string        	: The client id of the service principal to use to grant access to Azure resources as part of the pipeline.
         --principal-name string      	: The name of the service principal to use to grant access to Azure resources as part of the pipeline.
         --principal-role stringArray 	: The roles to assign to the service principal. By default the service principal will be granted the Contributor and User Access Administrator roles.
         --provider string            	: The pipeline provider to use (github for Github Actions and azdo for Azure Pipelines).

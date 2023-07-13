@@ -132,7 +132,8 @@ func TestBicepDeploy(t *testing.T) {
 	prepareBicepMocks(mockContext)
 	prepareStateMocks(mockContext)
 	prepareDeployMocks(mockContext)
-	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
+	depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
+	depService := mockazcli.NewDeploymentsServiceFromMockContext(mockContext)
 
 	infraProvider := createBicepProvider(t, mockContext)
 
@@ -142,7 +143,8 @@ func TestBicepDeploy(t *testing.T) {
 			Template:   azure.RawArmTemplate("{}"),
 			Parameters: testArmParameters,
 			Target: infra.NewSubscriptionDeployment(
-				azCli,
+				depService,
+				depOpService,
 				infraProvider.env.GetLocation(),
 				infraProvider.env.GetSubscriptionId(),
 				infraProvider.env.GetEnvName(),
@@ -382,6 +384,8 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 	bicepCli, err := bicep.NewBicepCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
 	require.NoError(t, err)
 	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
+	depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
+	depService := mockazcli.NewDeploymentsServiceFromMockContext(mockContext)
 	accountManager := &mockaccount.MockAccountManager{
 		Subscriptions: []account.Subscription{
 			{
@@ -401,6 +405,8 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 	provider := NewBicepProvider(
 		bicepCli,
 		azCli,
+		depService,
+		depOpService,
 		env,
 		mockContext.Console,
 		prompt.NewDefaultPrompter(env, mockContext.Console, accountManager, azCli),

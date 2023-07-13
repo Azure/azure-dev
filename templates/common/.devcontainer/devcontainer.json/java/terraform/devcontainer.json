@@ -14,7 +14,8 @@
         "ghcr.io/devcontainers/features/terraform:1": {
             "version": "latest"
         },
-        "ghcr.io/devcontainers/features/java:1": {}
+        "ghcr.io/devcontainers/features/java:1": {},
+        "ghcr.io/azure/azure-dev/azd:latest": {}
     },
     "customizations": {
         "vscode": {

@@ -12,6 +12,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
+	"github.com/azure/azure-dev/cli/azd/pkg/deploymentservice"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
@@ -51,13 +52,14 @@ func newShowCmd() *cobra.Command {
 }
 
 type showAction struct {
-	projectConfig *project.ProjectConfig
-	console       input.Console
-	formatter     output.Formatter
-	writer        io.Writer
-	azCli         azcli.AzCli
-	azdCtx        *azdcontext.AzdContext
-	flags         *showFlags
+	projectConfig               *project.ProjectConfig
+	console                     input.Console
+	formatter                   output.Formatter
+	writer                      io.Writer
+	azCli                       azcli.AzCli
+	deploymentOperationsService deploymentservice.DeploymentOperationsService
+	azdCtx                      *azdcontext.AzdContext
+	flags                       *showFlags
 }
 
 func newShowAction(
@@ -65,18 +67,20 @@ func newShowAction(
 	formatter output.Formatter,
 	writer io.Writer,
 	azCli azcli.AzCli,
+	deploymentOperationsService deploymentservice.DeploymentOperationsService,
 	projectConfig *project.ProjectConfig,
 	azdCtx *azdcontext.AzdContext,
 	flags *showFlags,
 ) actions.Action {
 	return &showAction{
-		projectConfig: projectConfig,
-		console:       console,
-		formatter:     formatter,
-		writer:        writer,
-		azCli:         azCli,
-		azdCtx:        azdCtx,
-		flags:         flags,
+		projectConfig:               projectConfig,
+		console:                     console,
+		formatter:                   formatter,
+		writer:                      writer,
+		azCli:                       azCli,
+		deploymentOperationsService: deploymentOperationsService,
+		azdCtx:                      azdCtx,
+		flags:                       flags,
 	}
 }
 
@@ -126,8 +130,8 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		if subId := env.GetSubscriptionId(); subId == "" {
 			log.Printf("provision has not been run, resource ids will not be available")
 		} else {
-			azureResourceManager := infra.NewAzureResourceManager(s.azCli)
-			resourceManager := project.NewResourceManager(env, s.azCli)
+			azureResourceManager := infra.NewAzureResourceManager(s.azCli, s.deploymentOperationsService)
+			resourceManager := project.NewResourceManager(env, s.azCli, s.deploymentOperationsService)
 			envName := env.GetEnvName()
 
 			rgName, err := azureResourceManager.FindResourceGroupForEnvironment(ctx, subId, envName)

@@ -12,6 +12,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
+	"github.com/azure/azure-dev/cli/azd/pkg/deploymentservice"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
@@ -58,12 +59,13 @@ func newMonitorCmd() *cobra.Command {
 }
 
 type monitorAction struct {
-	azdCtx      *azdcontext.AzdContext
-	env         *environment.Environment
-	subResolver account.SubscriptionTenantResolver
-	azCli       azcli.AzCli
-	console     input.Console
-	flags       *monitorFlags
+	azdCtx                      *azdcontext.AzdContext
+	env                         *environment.Environment
+	subResolver                 account.SubscriptionTenantResolver
+	azCli                       azcli.AzCli
+	deploymentOperationsService deploymentservice.DeploymentOperationsService
+	console                     input.Console
+	flags                       *monitorFlags
 }
 
 func newMonitorAction(
@@ -71,16 +73,18 @@ func newMonitorAction(
 	env *environment.Environment,
 	subResolver account.SubscriptionTenantResolver,
 	azCli azcli.AzCli,
+	deploymentOperationsService deploymentservice.DeploymentOperationsService,
 	console input.Console,
 	flags *monitorFlags,
 ) actions.Action {
 	return &monitorAction{
-		azdCtx:      azdCtx,
-		env:         env,
-		azCli:       azCli,
-		console:     console,
-		flags:       flags,
-		subResolver: subResolver,
+		azdCtx:                      azdCtx,
+		env:                         env,
+		azCli:                       azCli,
+		deploymentOperationsService: deploymentOperationsService,
+		console:                     console,
+		flags:                       flags,
+		subResolver:                 subResolver,
 	}
 }
 
@@ -95,7 +99,7 @@ func (m *monitorAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		)
 	}
 
-	resourceManager := infra.NewAzureResourceManager(m.azCli)
+	resourceManager := infra.NewAzureResourceManager(m.azCli, m.deploymentOperationsService)
 	resourceGroups, err := resourceManager.GetResourceGroupsForEnvironment(
 		ctx, m.env.GetSubscriptionId(), m.env.GetEnvName())
 	if err != nil {

@@ -14,11 +14,13 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/compare"
+	"github.com/azure/azure-dev/cli/azd/pkg/deploymentservice"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
 type AzureResourceManager struct {
-	azCli azcli.AzCli
+	azCli                       azcli.AzCli
+	deploymentOperationsService deploymentservice.DeploymentOperationsService
 }
 
 type ResourceManager interface {
@@ -32,9 +34,11 @@ type ResourceManager interface {
 	) (string, error)
 }
 
-func NewAzureResourceManager(azCli azcli.AzCli) *AzureResourceManager {
+func NewAzureResourceManager(
+	azCli azcli.AzCli, deploymentOperationsService deploymentservice.DeploymentOperationsService) *AzureResourceManager {
 	return &AzureResourceManager{
-		azCli: azCli,
+		azCli:                       azCli,
+		deploymentOperationsService: deploymentOperationsService,
 	}
 }
 
@@ -303,7 +307,7 @@ func (rm *AzureResourceManager) appendDeploymentResourcesRecursive(
 	resourceOperations *map[string]*armresources.DeploymentOperation,
 	queryStart *time.Time,
 ) error {
-	operations, err := rm.azCli.ListResourceGroupDeploymentOperations(
+	operations, err := rm.deploymentOperationsService.ListResourceGroupDeploymentOperations(
 		ctx, subscriptionId, resourceGroupName, deploymentName)
 	if err != nil {
 		return fmt.Errorf("getting subscription deployment operations: %w", err)

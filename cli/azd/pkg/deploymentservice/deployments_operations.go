@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package azcli
+package deploymentservice
 
 import (
 	"context"
@@ -10,18 +10,53 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
+	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
 
-func (cli *azCli) createDeploymentsOperationsClient(
+type DeploymentOperationsService interface {
+	ListSubscriptionDeploymentOperations(
+		ctx context.Context,
+		subscriptionId string,
+		deploymentName string,
+	) ([]*armresources.DeploymentOperation, error)
+	ListResourceGroupDeploymentOperations(
+		ctx context.Context,
+		subscriptionId string,
+		resourceGroupName string,
+		deploymentName string,
+	) ([]*armresources.DeploymentOperation, error)
+}
+
+func NewDeploymentOperationsService(
+	credentialProvider account.SubscriptionCredentialProvider,
+	httpClient httputil.HttpClient,
+) DeploymentOperationsService {
+	return &deploymentOperationsService{
+		credentialProvider: credentialProvider,
+		httpClient:         httpClient,
+		userAgent:          azdinternal.UserAgent(),
+	}
+}
+
+type deploymentOperationsService struct {
+	credentialProvider account.SubscriptionCredentialProvider
+	httpClient         httputil.HttpClient
+	userAgent          string
+}
+
+func (dp *deploymentOperationsService) createDeploymentsOperationsClient(
 	ctx context.Context,
 	subscriptionId string,
 ) (*armresources.DeploymentOperationsClient, error) {
-	credential, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+	credential, err := dp.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
 	}
 
-	options := cli.clientOptionsBuilder(ctx).BuildArmClientOptions()
+	options := dp.clientOptionsBuilder(ctx).BuildArmClientOptions()
 	client, err := armresources.NewDeploymentOperationsClient(subscriptionId, credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating deployments client: %w", err)
@@ -30,13 +65,13 @@ func (cli *azCli) createDeploymentsOperationsClient(
 	return client, nil
 }
 
-func (cli *azCli) ListSubscriptionDeploymentOperations(
+func (dp *deploymentOperationsService) ListSubscriptionDeploymentOperations(
 	ctx context.Context,
 	subscriptionId string,
 	deploymentName string,
 ) ([]*armresources.DeploymentOperation, error) {
 	result := []*armresources.DeploymentOperation{}
-	deploymentOperationsClient, err := cli.createDeploymentsOperationsClient(ctx, subscriptionId)
+	deploymentOperationsClient, err := dp.createDeploymentsOperationsClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, fmt.Errorf("creating deployments client: %w", err)
 	}
@@ -59,14 +94,14 @@ func (cli *azCli) ListSubscriptionDeploymentOperations(
 	return result, nil
 }
 
-func (cli *azCli) ListResourceGroupDeploymentOperations(
+func (dp *deploymentOperationsService) ListResourceGroupDeploymentOperations(
 	ctx context.Context,
 	subscriptionId string,
 	resourceGroupName string,
 	deploymentName string,
 ) ([]*armresources.DeploymentOperation, error) {
 	result := []*armresources.DeploymentOperation{}
-	deploymentOperationsClient, err := cli.createDeploymentsOperationsClient(ctx, subscriptionId)
+	deploymentOperationsClient, err := dp.createDeploymentsOperationsClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, fmt.Errorf("creating deployments client: %w", err)
 	}
@@ -87,4 +122,11 @@ func (cli *azCli) ListResourceGroupDeploymentOperations(
 	}
 
 	return result, nil
+}
+
+func (dp *deploymentOperationsService) clientOptionsBuilder(ctx context.Context) *azsdk.ClientOptionsBuilder {
+	return azsdk.NewClientOptionsBuilder().
+		WithTransport(dp.httpClient).
+		WithPerCallPolicy(azsdk.NewUserAgentPolicy(dp.userAgent)).
+		WithPerCallPolicy(azsdk.NewMsCorrelationPolicy(ctx))
 }

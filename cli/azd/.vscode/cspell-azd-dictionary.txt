@@ -52,6 +52,7 @@ csharpapp
 csharpapptest
 cupaloy
 deletedservices
+deploymentservice
 devel
 discarder
 docf

@@ -432,7 +432,7 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 
 	for key := range getStateResult.State.Outputs {
 		ef.console.MessageUxItem(ctx, &ux.DoneMessage{
-			Message: fmt.Sprintf("Setting environment value %s", key),
+			Message: fmt.Sprintf("Setting %s environment variable", key),
 		})
 	}
 

@@ -156,6 +156,10 @@ func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
 }
 
 func (p *BicepProvider) State(ctx context.Context, options *StateOptions) (*StateResult, error) {
+	if options == nil {
+		options = &StateOptions{}
+	}
+
 	var err error
 	spinnerMessage := "Loading Bicep template"
 	// TODO: Report progress, "Loading Bicep template"

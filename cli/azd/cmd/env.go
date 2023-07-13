@@ -412,8 +412,9 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 		return nil, fmt.Errorf("initializing provisioning manager: %w", err)
 	}
 
-	// If resource group is defined within the project but not in the environment then add it to the environment
-	// to support BYOI lookup scenarios like ADE
+	// If resource group is defined within the project but not in the environment then
+	// add it to the environment to support BYOI lookup scenarios like ADE
+	// Infra providers do not currently have access to project configuration
 	projectResourceGroup, _ := ef.projectConfig.ResourceGroupName.Envsubst(ef.env.Getenv)
 	if _, has := ef.env.LookupEnv(environment.ResourceGroupEnvVarName); !has && projectResourceGroup != "" {
 		ef.env.DotenvSet(environment.ResourceGroupEnvVarName, projectResourceGroup)

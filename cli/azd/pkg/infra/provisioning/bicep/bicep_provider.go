@@ -155,7 +155,7 @@ func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
 	return nil
 }
 
-func (p *BicepProvider) State(ctx context.Context) (*StateResult, error) {
+func (p *BicepProvider) State(ctx context.Context, options *StateOptions) (*StateResult, error) {
 	var err error
 	spinnerMessage := "Loading Bicep template"
 	// TODO: Report progress, "Loading Bicep template"
@@ -167,25 +167,46 @@ func (p *BicepProvider) State(ctx context.Context) (*StateResult, error) {
 		}
 	}()
 
-	modulePath := p.modulePath()
-	_, template, err := p.compileBicep(ctx, modulePath)
-	if err != nil {
-		return nil, fmt.Errorf("compiling bicep template: %w", err)
-	}
+	var scope infra.Scope
+	var outputs azure.ArmTemplateOutputs
+	var scopeErr error
 
-	scope, err := p.scopeForTemplate(ctx, template)
-	if err != nil {
-		return nil, fmt.Errorf("computing deployment scope: %w", err)
+	modulePath := p.modulePath()
+	if _, err := os.Stat(modulePath); err == nil {
+		_, template, err := p.compileBicep(ctx, modulePath)
+		if err != nil {
+			return nil, fmt.Errorf("compiling bicep template: %w", err)
+		}
+
+		scope, err = p.scopeForTemplate(ctx, template)
+		if err != nil {
+			return nil, fmt.Errorf("computing deployment scope: %w", err)
+		}
+
+		outputs = template.Outputs
+	} else {
+		// To support BYOI (bring your own infrastructure), we need to support the case where there template
+		// that exists within the project
+		scope, scopeErr = p.inferScopeFromEnv(ctx)
+		if scopeErr != nil {
+			return nil, fmt.Errorf("computing deployment scope: %w", err)
+		}
+
+		outputs = azure.ArmTemplateOutputs{}
 	}
 
 	// TODO: Report progress, "Retrieving Azure deployment"
 	spinnerMessage = "Retrieving Azure deployment"
 	p.console.ShowSpinner(ctx, spinnerMessage, input.Step)
 
-	armDeployment, err := latestCompletedDeployment(ctx, p.env.GetEnvName(), scope)
+	armDeployment, err := latestCompletedDeployment(ctx, p.env.GetEnvName(), scope, options.Hint())
 	if err != nil {
+		p.console.StopSpinner(ctx, spinnerMessage, input.StepFailed)
 		return nil, fmt.Errorf("retrieving deployment: %w", err)
 	}
+
+	spinnerMessage += fmt.Sprintf(" (%s)", *armDeployment.Name)
+	p.console.StopSpinner(ctx, spinnerMessage, input.StepDone)
 
 	state := State{}
 	state.Resources = make([]Resource, len(armDeployment.Properties.OutputResources))
@@ -199,9 +220,10 @@ func (p *BicepProvider) State(ctx context.Context) (*StateResult, error) {
 	// TODO: Report progress, "Normalizing output parameters"
 	spinnerMessage = "Normalizing output parameters"
 	p.console.ShowSpinner(ctx, spinnerMessage, input.Step)
+	defer p.console.StopSpinner(ctx, spinnerMessage, input.StepDone)
 
 	state.Outputs = p.createOutputParameters(
-		template.Outputs,
+		outputs,
 		azapi.CreateDeploymentOutput(armDeployment.Properties.Outputs),
 	)
 
@@ -426,7 +448,14 @@ func (p *BicepProvider) scopeForTemplate(ctx context.Context, t azure.ArmTemplat
 	} else {
 		return nil, fmt.Errorf("unsupported deployment scope: %s", deploymentScope)
 	}
+}
 
+func (p *BicepProvider) inferScopeFromEnv(ctx context.Context) (infra.Scope, error) {
+	if resourceGroup, has := p.env.LookupEnv(environment.ResourceGroupEnvVarName); has {
+		return infra.NewResourceGroupScope(p.azCli, p.env.GetSubscriptionId(), resourceGroup), nil
+	} else {
+		return infra.NewSubscriptionScope(p.azCli, p.env.GetSubscriptionId()), nil
+	}
 }
 
 // Destroys the specified deployment by deleting all azure resources, resource groups & deployments that are referenced.
@@ -444,7 +473,7 @@ func (p *BicepProvider) Destroy(ctx context.Context, options DestroyOptions) (*D
 	}
 
 	// TODO: Report progress, "Fetching resource groups"
-	deployment, err := latestCompletedDeployment(ctx, p.env.GetEnvName(), scope)
+	deployment, err := latestCompletedDeployment(ctx, p.env.GetEnvName(), scope, "")
 	if err != nil {
 		return nil, err
 	}
@@ -602,7 +631,7 @@ func cognitiveAccountsByKind(
 // latestCompletedDeployment finds the most recent deployment the given environment in the provided scope,
 // considering only deployments which have completed (either successfully or unsuccessfully).
 func latestCompletedDeployment(
-	ctx context.Context, envName string, scope infra.Scope,
+	ctx context.Context, envName string, scope infra.Scope, hint string,
 ) (*armresources.DeploymentExtended, error) {
 
 	deployments, err := scope.ListDeployments(ctx)
@@ -634,6 +663,10 @@ func latestCompletedDeployment(
 		}
 
 		if *deployment.Name == envName {
+			matchingBareDeployment = deployment
+		}
+
+		if hint != "" && strings.Contains(*deployment.Name, hint) {
 			matchingBareDeployment = deployment
 		}
 	}
@@ -1188,7 +1221,10 @@ func (p *BicepProvider) createOutputParameters(
 		if found {
 			paramName = canonicalCasing
 		} else {
-			paramName = key
+			// To support BYOI (bring your own infrastructure) scenarios we will default to UPPER when canonical casing
+			// is not found in the parameters file to workaround strange azure behavior with OUTPUT values that look
+			// like `azurE_RESOURCE_GROUP`
+			paramName = strings.ToUpper(key)
 		}
 
 		outputParams[paramName] = OutputParameter{

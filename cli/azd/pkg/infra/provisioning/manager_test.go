@@ -82,7 +82,7 @@ func TestManagerGetState(t *testing.T) {
 	err := mgr.Initialize(*mockContext.Context, "", Options{Provider: "test"})
 	require.NoError(t, err)
 
-	getResult, err := mgr.State(*mockContext.Context)
+	getResult, err := mgr.State(*mockContext.Context, nil)
 
 	require.NotNil(t, getResult)
 	require.Nil(t, err)

@@ -17,6 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -309,11 +310,14 @@ func (en *envNewAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 }
 
 type envRefreshFlags struct {
+	hint   string
 	global *internal.GlobalCommandOptions
 	envFlag
 }
 
 func (er *envRefreshFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+	local.StringVarP(&er.hint, "hint", "", "", "Hint to help identify the environment to refresh")
+
 	er.envFlag.Bind(local, global)
 	er.global = global
 }
@@ -395,6 +399,11 @@ func newEnvRefreshAction(
 }
 
 func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	// Command title
+	ef.console.MessageUxItem(ctx, &ux.MessageTitle{
+		Title: fmt.Sprintf("Refreshing environment %s (azd env refresh)", ef.env.GetEnvName()),
+	})
+
 	if err := ef.projectManager.Initialize(ctx, ef.projectConfig); err != nil {
 		return nil, err
 	}
@@ -403,7 +412,15 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 		return nil, fmt.Errorf("initializing provisioning manager: %w", err)
 	}
 
-	getStateResult, err := ef.provisionManager.State(ctx)
+	// If resource group is defined within the project but not in the environment then add it to the environment
+	// to support BYOI lookup scenarios like ADE
+	projectResourceGroup, _ := ef.projectConfig.ResourceGroupName.Envsubst(ef.env.Getenv)
+	if _, has := ef.env.LookupEnv(environment.ResourceGroupEnvVarName); !has && projectResourceGroup != "" {
+		ef.env.DotenvSet(environment.ResourceGroupEnvVarName, projectResourceGroup)
+	}
+
+	stateOptions := provisioning.NewStateOptions(ef.flags.hint)
+	getStateResult, err := ef.provisionManager.State(ctx, stateOptions)
 	if err != nil {
 		return nil, fmt.Errorf("getting deployment: %w", err)
 	}
@@ -412,7 +429,11 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 		return nil, err
 	}
 
-	ef.console.Message(ctx, "Environments setting refresh completed")
+	for key := range getStateResult.State.Outputs {
+		ef.console.MessageUxItem(ctx, &ux.DoneMessage{
+			Message: fmt.Sprintf("Setting environment value %s", key),
+		})
+	}
 
 	if ef.formatter.Kind() == output.JsonFormat {
 		err = ef.formatter.Format(provisioning.NewEnvRefreshResultFromState(getStateResult.State), ef.writer, nil)
@@ -435,7 +456,12 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 		}
 	}
 
-	return nil, nil
+	return &actions.ActionResult{
+		Message: &actions.ResultMessage{
+			Header:   "Environment refresh completed",
+			FollowUp: fmt.Sprintf("View environment variables at %s", output.WithLinkFormat(ef.env.Path())),
+		},
+	}, nil
 }
 
 func newEnvGetValuesFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *envGetValuesFlags {

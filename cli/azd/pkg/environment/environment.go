@@ -278,7 +278,7 @@ func (e *Environment) Save() error {
 
 	marshalled = fixupUnquotedDotenv(e.dotenv, marshalled)
 
-	envFile, err := os.Create(filepath.Join(e.Root, azdcontext.DotEnvFileName))
+	envFile, err := os.Create(e.Path())
 	if err != nil {
 		return fmt.Errorf("saving .env: %w", err)
 	}
@@ -295,6 +295,10 @@ func (e *Environment) Save() error {
 
 	tracing.SetUsageAttributes(fields.StringHashed(fields.EnvNameKey, e.GetEnvName()))
 	return nil
+}
+
+func (e *Environment) Path() string {
+	return filepath.Join(e.Root, azdcontext.DotEnvFileName)
 }
 
 // GetEnvName is shorthand for Getenv(EnvNameEnvVarName)

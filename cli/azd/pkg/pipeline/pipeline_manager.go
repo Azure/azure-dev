@@ -147,6 +147,11 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 		return result, fmt.Errorf("ensuring git remote: %w", err)
 	}
 
+	if pm.args.PipelineServicePrincipalName != "" && pm.args.PipelineServicePrincipalId != "" {
+		//nolint:lll
+		return result, fmt.Errorf("you have specified both --principal-id and --principal-name, but only one of these parameters should be used at a time.")
+	}
+
 	// Existing Service Principal Lookup strategy
 	// 1. --principal-id
 	// 2. --principal-name

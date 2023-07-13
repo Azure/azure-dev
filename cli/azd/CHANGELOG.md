@@ -2,16 +2,15 @@
 
 ## 1.1.1 (Unreleased)
 
-### Bugs Fixed
-
-- [[2569]](https://github.com/Azure/azure-dev/pull/2569) Fix `azd down` so it works after a failed `azd provision`
-
 ### Features Added
 
 - [[2550]](https://github.com/Azure/azure-dev/pull/2550) Add `--preview` to `azd provision` to get the changes
+- [[2521]](https://github.com/Azure/azure-dev/pull/2521) Support `--principal-id` param for azd pipeline config to reuse existing service principal
+- [[2455]](https://github.com/Azure/azure-dev/pull/2455) Adds optional support for text templates in AKS k8s manifests
 
 ### Bugs Fixed
 
+- [[2569]](https://github.com/Azure/azure-dev/pull/2569) Fix `azd down` so it works after a failed `azd provision`
 - [[2367]](https://github.com/Azure/azure-dev/pull/2367) Don't fail AKS deployment for failed environment substitution
 
 ## 1.1.0 (2023-07-12)

@@ -58,7 +58,16 @@ func Test_DockerBuild(t *testing.T) {
 			}, nil
 		})
 
-		result, err := docker.Build(context.Background(), cwd, dockerFile, platform, dockerContext, imageName, buildArgs, nil)
+		result, err := docker.Build(
+			context.Background(),
+			cwd,
+			dockerFile,
+			platform,
+			dockerContext,
+			imageName,
+			buildArgs,
+			nil,
+		)
 
 		require.Equal(t, true, ran)
 		require.Nil(t, err)
@@ -105,7 +114,16 @@ func Test_DockerBuild(t *testing.T) {
 			}, errors.New(customErrorMessage)
 		})
 
-		result, err := docker.Build(context.Background(), cwd, dockerFile, platform, dockerContext, imageName, buildArgs, nil)
+		result, err := docker.Build(
+			context.Background(),
+			cwd,
+			dockerFile,
+			platform,
+			dockerContext,
+			imageName,
+			buildArgs,
+			nil,
+		)
 
 		require.Equal(t, true, ran)
 		require.NotNil(t, err)

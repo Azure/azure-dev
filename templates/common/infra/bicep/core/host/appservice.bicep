@@ -1,3 +1,4 @@
+metadata description = 'Creates an App Service based on an existing App Service Plan.'
 param name string
 param location string = resourceGroup().location
 param tags object = {}

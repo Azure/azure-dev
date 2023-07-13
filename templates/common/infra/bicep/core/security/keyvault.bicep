@@ -1,3 +1,4 @@
+metadata description = 'Creates a Key Vault.'
 param name string
 param location string = resourceGroup().location
 param tags object = {}

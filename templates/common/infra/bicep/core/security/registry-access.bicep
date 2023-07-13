@@ -1,3 +1,4 @@
+metadata description = 'Assigns AcrPull permissions to access Container Registry.'
 param containerRegistryName string
 param principalId string
 

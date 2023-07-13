@@ -1,3 +1,4 @@
+metadata description = 'Creates an API Management Service.'
 param name string
 param location string = resourceGroup().location
 param tags object = {}

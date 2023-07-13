@@ -1,3 +1,4 @@
+metadata description = 'Assigns a Key Vault access policy.'
 param name string = 'add'
 
 param keyVaultName string

@@ -1,3 +1,4 @@
+metadata description = 'Creates a Container App.'
 param name string
 param location string = resourceGroup().location
 param tags object = {}

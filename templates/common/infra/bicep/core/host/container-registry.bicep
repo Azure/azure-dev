@@ -1,3 +1,4 @@
+metadata description = 'Creates a Container Registry.'
 param name string
 param location string = resourceGroup().location
 param tags object = {}

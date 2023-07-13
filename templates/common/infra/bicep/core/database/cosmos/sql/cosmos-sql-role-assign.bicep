@@ -1,3 +1,4 @@
+metadata description = 'Creates a sql role assignment under a Cosmos Account.'
 param accountName string
 
 param roleDefinitionId string

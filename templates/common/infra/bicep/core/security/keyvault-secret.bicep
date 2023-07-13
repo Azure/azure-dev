@@ -1,3 +1,4 @@
+metadata description = 'Creates a secret or update a secret in a Key Vault.'
 param name string
 param tags object = {}
 param keyVaultName string

@@ -1,3 +1,4 @@
+metadata description = 'Creates a Log Analytics Workspace.'
 param name string
 param location string = resourceGroup().location
 param tags object = {}

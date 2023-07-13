@@ -1,3 +1,4 @@
+metadata description = 'Creates a Cosmos for Nosql Account with a Database.'
 param accountName string
 param databaseName string
 param location string = resourceGroup().location

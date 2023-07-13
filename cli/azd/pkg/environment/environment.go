@@ -269,8 +269,27 @@ func (e *Environment) Save() error {
 		return fmt.Errorf("failed to create a directory: %w", err)
 	}
 
-	err = godotenv.Write(e.dotenv, filepath.Join(e.Root, azdcontext.DotEnvFileName))
+	// Instead of calling `godotenv.Write` directly, we need to save the file ourselves, so we can fixup any numeric values
+	// that were incorrectly unquoted.
+	marshalled, err := godotenv.Marshal(e.dotenv)
 	if err != nil {
+		return fmt.Errorf("saving .env: %w", err)
+	}
+
+	marshalled = fixupUnquotedDotenv(e.dotenv, marshalled)
+
+	envFile, err := os.Create(filepath.Join(e.Root, azdcontext.DotEnvFileName))
+	if err != nil {
+		return fmt.Errorf("saving .env: %w", err)
+	}
+	defer envFile.Close()
+
+	// Write the contents (with a trailing newline), and sync the file, as godotenv.Write would have.
+	if _, err := envFile.WriteString(marshalled + "\n"); err != nil {
+		return fmt.Errorf("saving .env: %w", err)
+	}
+
+	if err := envFile.Sync(); err != nil {
 		return fmt.Errorf("saving .env: %w", err)
 	}
 
@@ -336,4 +355,39 @@ func (e *Environment) Environ() []string {
 	}
 
 	return envVars
+}
+
+// fixupUnquotedDotenv is a workaround for behavior in how godotenv.Marshal handles numeric like values.  Marshaling
+// a map[string]string to a dotenv file, if a value can be successfully parsed with strconv.Atoi, it will be written in
+// the dotenv file without quotes and the value written will be the value returned by strconv.Atoi. This can lead to dropping
+// leading zeros from the value that we persist.
+//
+// For example, given a map with the key value pair ("FOO", "01"), the value returned by godotenv.Marshal will have a line
+// that looks like FOO=1 instead of FOO=01 or FOO="01".
+//
+// This function takes the value returned by godotenv.Marshal and for any unquoted value replaces it with the value from
+// the values map if they differ.  This means that a key value pair ("FOO", "1") remains as FOO=1.
+//
+// When replacing a key in this manner, we ensure the value is wrapped in quotes, on the assumption that the leading zero
+// is of significance to the value and wrapping it quotes means it is more likely to be treated as a string instead of a
+// number by any downstream systems. We do not need to worry about escaping quotes in the value, because we know that
+// godotenv.Marshal only did this translation for numeric values and so we know the original value did not contain quotes.
+func fixupUnquotedDotenv(values map[string]string, dotenv string) string {
+	entries := strings.Split(dotenv, "\n")
+	for idx, line := range entries {
+		parts := strings.SplitN(line, "=", 2)
+		if len(parts) != 2 {
+			continue
+		}
+		envKey := parts[0]
+		envValue := parts[1]
+
+		if len(envValue) > 0 && envValue[0] != '"' {
+			if values[envKey] != envValue {
+				entries[idx] = fmt.Sprintf("%s=\"%s\"", envKey, values[envKey])
+			}
+		}
+	}
+
+	return strings.Join(entries, "\n")
 }

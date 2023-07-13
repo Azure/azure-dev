@@ -223,6 +223,10 @@ func Test_Hooks_GetScript(t *testing.T) {
 			Shell: ShellTypeBash,
 			Run:   "echo 'hello'",
 		},
+		"inlineWithUrl": {
+			Shell: ShellTypePowershell,
+			Run:   "Invoke-WebRequest -Uri \"https://sample.com/sample.json\" -OutFile \"out.json\"",
+		},
 	}
 
 	ensureScriptsExist(t, hooks)
@@ -277,6 +281,31 @@ func Test_Hooks_GetScript(t *testing.T) {
 		require.NotNil(t, fileInfo)
 		require.NoError(t, err)
 	})
+
+	t.Run("Inline With Url", func(t *testing.T) {
+		tempDir := t.TempDir()
+		ostest.Chdir(t, tempDir)
+
+		hookConfig := hooks["inlineWithUrl"]
+		mockContext := mocks.NewMockContext(context.Background())
+		hooksManager := NewHooksManager(cwd)
+		runner := NewHooksRunner(hooksManager, mockContext.CommandRunner, mockContext.Console, cwd, hooks, env)
+
+		script, err := runner.GetScript(hookConfig)
+		require.NotNil(t, script)
+		require.Equal(t, "*powershell.powershellScript", reflect.TypeOf(script).String())
+		require.Equal(t, ScriptLocationInline, hookConfig.location)
+		require.Equal(t, ShellTypePowershell, hookConfig.Shell)
+		require.Contains(t, hookConfig.script, "Invoke-WebRequest -Uri \"https://sample.com/sample.json\" -OutFile \"out.json\"")
+		require.Contains(t, hookConfig.path, os.TempDir())
+		require.Contains(t, hookConfig.path, ".ps1")
+		require.NoError(t, err)
+
+		fileInfo, err := os.Stat(hookConfig.path)
+		require.NotNil(t, fileInfo)
+		require.NoError(t, err)
+	})
+
 }
 
 type scriptValidationTest struct {

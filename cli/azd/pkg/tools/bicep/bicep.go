@@ -25,9 +25,9 @@ import (
 	"github.com/blang/semver/v4"
 )
 
-// cBicepVersion is the minimum version of bicep that we require (and the one we fetch when we fetch bicep on behalf of a
+// BicepVersion is the minimum version of bicep that we require (and the one we fetch when we fetch bicep on behalf of a
 // user).
-var cBicepVersion semver.Version = semver.MustParse("0.17.1")
+var BicepVersion semver.Version = semver.MustParse("0.18.4")
 
 type BicepCli interface {
 	Build(ctx context.Context, file string) (string, error)
@@ -76,7 +76,7 @@ func newBicepCliWithTransporter(
 
 		if err := runStep(
 			ctx, console, "Downloading Bicep", func() error {
-				return downloadBicep(ctx, transporter, cBicepVersion, bicepPath)
+				return downloadBicep(ctx, transporter, BicepVersion, bicepPath)
 			},
 		); err != nil {
 			return nil, fmt.Errorf("downloading bicep: %w", err)
@@ -95,12 +95,12 @@ func newBicepCliWithTransporter(
 
 	log.Printf("bicep version: %s", ver)
 
-	if ver.LT(cBicepVersion) {
-		log.Printf("installed bicep version %s is older than %s; updating.", ver.String(), cBicepVersion.String())
+	if ver.LT(BicepVersion) {
+		log.Printf("installed bicep version %s is older than %s; updating.", ver.String(), BicepVersion.String())
 
 		if err := runStep(
 			ctx, console, "Upgrading Bicep", func() error {
-				return downloadBicep(ctx, transporter, cBicepVersion, bicepPath)
+				return downloadBicep(ctx, transporter, BicepVersion, bicepPath)
 			},
 		); err != nil {
 			return nil, fmt.Errorf("upgrading bicep: %w", err)

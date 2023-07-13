@@ -31,7 +31,3 @@ repo:
     - from: ../../common/.devcontainer/devcontainer.json/terraform-starter/devcontainer.json
       to: ./.devcontainer/devcontainer.json
 
-    # .devcontainer common (Dockerfile)
-    - from: ../../common/.devcontainer/Dockerfile/base
-      to: ./.devcontainer
-

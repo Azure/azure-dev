@@ -29,7 +29,10 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/benbjohnson/clock"
 	"github.com/stretchr/testify/assert"
@@ -37,37 +40,14 @@ import (
 )
 
 func TestBicepPlan(t *testing.T) {
-	progressLog := []string{}
-	interactiveLog := []bool{}
-	progressDone := make(chan bool)
-
 	mockContext := mocks.NewMockContext(context.Background())
 	prepareBicepMocks(mockContext)
 	infraProvider := createBicepProvider(t, mockContext)
-	planningTask := infraProvider.Plan(*mockContext.Context)
 
-	go func() {
-		for progressReport := range planningTask.Progress() {
-			progressLog = append(progressLog, progressReport.Message)
-		}
-		progressDone <- true
-	}()
-
-	go func() {
-		for planningInteractive := range planningTask.Interactive() {
-			interactiveLog = append(interactiveLog, planningInteractive)
-		}
-	}()
-
-	deploymentPlan, err := planningTask.Await()
-	<-progressDone
+	deploymentPlan, err := infraProvider.Plan(*mockContext.Context)
 
 	require.Nil(t, err)
 	require.NotNil(t, deploymentPlan.Deployment)
-
-	require.Len(t, progressLog, 2)
-	require.Contains(t, progressLog[0], "Generating Bicep parameters file")
-	require.Contains(t, progressLog[1], "Compiling Bicep template")
 
 	require.IsType(t, BicepDeploymentDetails{}, deploymentPlan.Details)
 	configuredParameters := deploymentPlan.Details.(BicepDeploymentDetails).Parameters
@@ -96,16 +76,12 @@ const paramsArmJson = `{
   }`
 
 func TestBicepPlanPrompt(t *testing.T) {
-	progressLog := []string{}
-	interactiveLog := []bool{}
-	progressDone := make(chan bool)
-
 	mockContext := mocks.NewMockContext(context.Background())
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(args.Cmd, "bicep") && args.Args[0] == "--version"
 	}).Respond(exec.RunResult{
-		Stdout: "Bicep CLI version 0.12.40 (41892bd0fb)",
+		Stdout: fmt.Sprintf("Bicep CLI version %s (abcdef0123)", bicep.BicepVersion.String()),
 		Stderr: "",
 	})
 
@@ -125,23 +101,7 @@ func TestBicepPlanPrompt(t *testing.T) {
 	}).Respond(false)
 
 	infraProvider := createBicepProvider(t, mockContext)
-	planningTask := infraProvider.Plan(*mockContext.Context)
-
-	go func() {
-		for progressReport := range planningTask.Progress() {
-			progressLog = append(progressLog, progressReport.Message)
-		}
-		progressDone <- true
-	}()
-
-	go func() {
-		for planningInteractive := range planningTask.Interactive() {
-			interactiveLog = append(interactiveLog, planningInteractive)
-		}
-	}()
-
-	plan, err := planningTask.Await()
-	<-progressDone
+	plan, err := infraProvider.Plan(*mockContext.Context)
 
 	require.NoError(t, err)
 
@@ -151,9 +111,6 @@ func TestBicepPlanPrompt(t *testing.T) {
 }
 
 func TestBicepState(t *testing.T) {
-	progressLog := []string{}
-	interactiveLog := []bool{}
-	progressDone := make(chan bool)
 	expectedWebsiteUrl := "http://myapp.azurewebsites.net"
 
 	mockContext := mocks.NewMockContext(context.Background())
@@ -161,40 +118,16 @@ func TestBicepState(t *testing.T) {
 	prepareStateMocks(mockContext)
 
 	infraProvider := createBicepProvider(t, mockContext)
-	getDeploymentTask := infraProvider.State(*mockContext.Context)
 
-	go func() {
-		for progressReport := range getDeploymentTask.Progress() {
-			progressLog = append(progressLog, progressReport.Message)
-		}
-		progressDone <- true
-	}()
-
-	go func() {
-		for deploymentInteractive := range getDeploymentTask.Interactive() {
-			interactiveLog = append(interactiveLog, deploymentInteractive)
-		}
-	}()
-
-	getDeploymentResult, err := getDeploymentTask.Await()
-	<-progressDone
+	getDeploymentResult, err := infraProvider.State(*mockContext.Context)
 
 	require.Nil(t, err)
 	require.NotNil(t, getDeploymentResult.State)
 	require.Equal(t, getDeploymentResult.State.Outputs["WEBSITE_URL"].Value, expectedWebsiteUrl)
-
-	require.Len(t, progressLog, 3)
-	require.Contains(t, progressLog[0], "Loading Bicep template")
-	require.Contains(t, progressLog[1], "Retrieving Azure deployment")
-	require.Contains(t, progressLog[2], "Normalizing output parameters")
 }
 
 func TestBicepDeploy(t *testing.T) {
 	expectedWebsiteUrl := "http://myapp.azurewebsites.net"
-	progressLog := []string{}
-	interactiveLog := []bool{}
-	progressDone := make(chan bool)
-
 	mockContext := mocks.NewMockContext(context.Background())
 	prepareBicepMocks(mockContext)
 	prepareStateMocks(mockContext)
@@ -217,23 +150,7 @@ func TestBicepDeploy(t *testing.T) {
 		},
 	}
 
-	deployTask := infraProvider.Deploy(*mockContext.Context, &deploymentPlan)
-
-	go func() {
-		for deployProgress := range deployTask.Progress() {
-			progressLog = append(progressLog, deployProgress.Message)
-		}
-		progressDone <- true
-	}()
-
-	go func() {
-		for deployInteractive := range deployTask.Interactive() {
-			interactiveLog = append(interactiveLog, deployInteractive)
-		}
-	}()
-
-	deployResult, err := deployTask.Await()
-	<-progressDone
+	deployResult, err := infraProvider.Deploy(*mockContext.Context, &deploymentPlan)
 
 	require.Nil(t, err)
 	require.NotNil(t, deployResult)
@@ -246,10 +163,6 @@ func TestBicepDestroy(t *testing.T) {
 		prepareBicepMocks(mockContext)
 		prepareStateMocks(mockContext)
 		prepareDestroyMocks(mockContext)
-
-		progressLog := []string{}
-		interactiveLog := []bool{}
-		progressDone := make(chan bool)
 
 		// Setup console mocks
 		mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
@@ -266,23 +179,7 @@ func TestBicepDestroy(t *testing.T) {
 		infraProvider := createBicepProvider(t, mockContext)
 
 		destroyOptions := NewDestroyOptions(false, false)
-		destroyTask := infraProvider.Destroy(*mockContext.Context, destroyOptions)
-
-		go func() {
-			for destroyProgress := range destroyTask.Progress() {
-				progressLog = append(progressLog, destroyProgress.Message)
-			}
-			progressDone <- true
-		}()
-
-		go func() {
-			for destroyInteractive := range destroyTask.Interactive() {
-				interactiveLog = append(interactiveLog, destroyInteractive)
-			}
-		}()
-
-		destroyResult, err := destroyTask.Await()
-		<-progressDone
+		destroyResult, err := infraProvider.Destroy(*mockContext.Context, destroyOptions)
 
 		require.Nil(t, err)
 		require.NotNil(t, destroyResult)
@@ -298,16 +195,6 @@ func TestBicepDestroy(t *testing.T) {
 		require.Contains(t, consoleOutput[5], "These resources have soft delete enabled allowing")
 		require.Contains(t, consoleOutput[6], "Would you like to permanently delete these resources instead")
 		require.Contains(t, consoleOutput[7], "")
-
-		// Verify progress output
-		require.Len(t, progressLog, 7)
-		require.Contains(t, progressLog[0], "Compiling Bicep template")
-		require.Contains(t, progressLog[1], "Fetching resource groups")
-		require.Contains(t, progressLog[2], "Fetching resources")
-		require.Contains(t, progressLog[3], "Getting Key Vaults to purge")
-		require.Contains(t, progressLog[4], "Getting App Configurations to purge")
-		require.Contains(t, progressLog[5], "Getting API Management Services to purge")
-		require.Contains(t, progressLog[6], "Getting Cognitive Accounts to purge")
 	})
 
 	t.Run("InteractiveForceAndPurge", func(t *testing.T) {
@@ -316,30 +203,10 @@ func TestBicepDestroy(t *testing.T) {
 		prepareStateMocks(mockContext)
 		prepareDestroyMocks(mockContext)
 
-		progressLog := []string{}
-		interactiveLog := []bool{}
-		progressDone := make(chan bool)
-
 		infraProvider := createBicepProvider(t, mockContext)
 
 		destroyOptions := NewDestroyOptions(true, true)
-		destroyTask := infraProvider.Destroy(*mockContext.Context, destroyOptions)
-
-		go func() {
-			for destroyProgress := range destroyTask.Progress() {
-				progressLog = append(progressLog, destroyProgress.Message)
-			}
-			progressDone <- true
-		}()
-
-		go func() {
-			for destroyInteractive := range destroyTask.Interactive() {
-				interactiveLog = append(interactiveLog, destroyInteractive)
-			}
-		}()
-
-		destroyResult, err := destroyTask.Await()
-		<-progressDone
+		destroyResult, err := infraProvider.Destroy(*mockContext.Context, destroyOptions)
 
 		require.Nil(t, err)
 		require.NotNil(t, destroyResult)
@@ -349,16 +216,6 @@ func TestBicepDestroy(t *testing.T) {
 		require.Len(t, consoleOutput, 2)
 		require.Contains(t, consoleOutput[0], "Deleting your resources can take some time")
 		require.Contains(t, consoleOutput[1], "")
-
-		// Verify progress output
-		require.Len(t, progressLog, 7)
-		require.Contains(t, progressLog[0], "Compiling Bicep template")
-		require.Contains(t, progressLog[1], "Fetching resource groups")
-		require.Contains(t, progressLog[2], "Fetching resources")
-		require.Contains(t, progressLog[3], "Getting Key Vaults to purge")
-		require.Contains(t, progressLog[4], "Getting App Configurations to purge")
-		require.Contains(t, progressLog[5], "Getting API Management Services to purge")
-		require.Contains(t, progressLog[6], "Getting Cognitive Accounts to purge")
 	})
 }
 
@@ -368,6 +225,12 @@ func TestPlanForResourceGroup(t *testing.T) {
 	// Enable the feature
 	err := mockContext.Config.Set("alpha.resourceGroupDeployments", "on")
 	require.NoError(t, err)
+
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(args.Cmd, "bicep") && strings.Contains(command, "--version")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		return exec.NewRunResult(0, fmt.Sprintf("Bicep CLI version %s (abcdef0123)", bicep.BicepVersion), ""), nil
+	})
 
 	// Have `bicep build` return a ARM template that targets a resource group.
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -466,31 +329,11 @@ func TestPlanForResourceGroup(t *testing.T) {
 		return options.DefaultValue, nil
 	})
 
-	progressLog := []string{}
-	interactiveLog := []bool{}
-	progressDone := make(chan bool)
-
 	infraProvider := createBicepProvider(t, mockContext)
-
-	planTask := infraProvider.Plan(*mockContext.Context)
-
-	go func() {
-		for planProgress := range planTask.Progress() {
-			progressLog = append(progressLog, planProgress.Message)
-		}
-		progressDone <- true
-	}()
-
-	go func() {
-		for planInteractive := range planTask.Interactive() {
-			interactiveLog = append(interactiveLog, planInteractive)
-		}
-	}()
-
-	planResult, err := planTask.Await()
-	<-progressDone
-
+	require.NoError(t, err)
 	// The computed plan should target the resource group we picked.
+
+	planResult, err := infraProvider.Plan(*mockContext.Context)
 	require.Nil(t, err)
 	require.NotNil(t, planResult)
 	require.Equal(t, "rg-test-env",
@@ -524,18 +367,6 @@ func TestIsValueAssignableToParameterType(t *testing.T) {
 	assert.False(t, isValueAssignableToParameterType(ParameterTypeNumber, json.Number("1.5")))
 }
 
-type testBicep struct {
-	commandRunner exec.CommandRunner
-}
-
-func (b *testBicep) Build(ctx context.Context, file string) (string, error) {
-	result, err := b.commandRunner.Run(ctx, exec.NewRunArgs("bicep", ([]string{"build", file, "--stdout"})...))
-	if err != nil {
-		return "", err
-	}
-	return result.Stdout, nil
-}
-
 func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepProvider {
 	projectDir := "../../../../test/functional/testdata/samples/webapp"
 	options := Options{
@@ -548,35 +379,40 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
 	})
 
+	bicepCli, err := bicep.NewBicepCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
+	require.NoError(t, err)
 	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
-
-	provider := &BicepProvider{
-		env:         env,
-		projectPath: projectDir,
-		options:     options,
-		console:     mockContext.Console,
-		bicepCli: &testBicep{
-			commandRunner: mockContext.CommandRunner,
-		},
-		azCli: azCli,
-		prompters: Prompters{
-			Location: func(_ context.Context, _ string, _ string, _ func(loc account.Location) bool) (string, error) {
-				return "westus2", nil
-			},
-			Subscription: func(_ context.Context, _ string) (subscriptionId string, err error) {
-				return "SUBSCRIPTION_ID", nil
-			},
-			EnsureSubscriptionLocation: func(ctx context.Context, env *environment.Environment) error {
-				env.SetSubscriptionId("SUBSCRIPTION_ID")
-				env.SetLocation("westus2")
-				return nil
+	accountManager := &mockaccount.MockAccountManager{
+		Subscriptions: []account.Subscription{
+			{
+				Id:   "00000000-0000-0000-0000-000000000000",
+				Name: "test",
 			},
 		},
-		curPrincipal:        &mockCurrentPrincipal{},
-		alphaFeatureManager: mockContext.AlphaFeaturesManager,
+		Locations: []account.Location{
+			{
+				Name:                "location",
+				DisplayName:         "Test Location",
+				RegionalDisplayName: "(US) Test Location",
+			},
+		},
 	}
 
-	return provider
+	provider := NewBicepProvider(
+		bicepCli,
+		azCli,
+		env,
+		mockContext.Console,
+		prompt.NewDefaultPrompter(env, mockContext.Console, accountManager, azCli),
+		&mockCurrentPrincipal{},
+		mockContext.AlphaFeaturesManager,
+		clock.NewMock(),
+	)
+
+	err = provider.Initialize(*mockContext.Context, projectDir, options)
+	require.NoError(t, err)
+
+	return provider.(*BicepProvider)
 }
 
 func prepareBicepMocks(
@@ -599,7 +435,7 @@ func prepareBicepMocks(
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(args.Cmd, "bicep") && args.Args[0] == "--version"
 	}).Respond(exec.RunResult{
-		Stdout: "Bicep CLI version 0.12.40 (41892bd0fb)",
+		Stdout: fmt.Sprintf("Bicep CLI version %s (abcdef0123)", bicep.BicepVersion.String()),
 		Stderr: "",
 	})
 
@@ -723,6 +559,8 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 			makeItem(infra.AzureResourceTypeWebSite, "app-123"),
 			makeItem(infra.AzureResourceTypeKeyVault, "kv-123"),
 			makeItem(infra.AzureResourceTypeKeyVault, "kv2-123"),
+			makeItem(infra.AzureResourceTypeManagedHSM, "hsm-123"),
+			makeItem(infra.AzureResourceTypeManagedHSM, "hsm2-123"),
 			makeItem(infra.AzureResourceTypeAppConfig, "ac-123"),
 			makeItem(infra.AzureResourceTypeAppConfig, "ac2-123"),
 			makeItem(infra.AzureResourceTypeApim, "apim-123"),
@@ -746,6 +584,10 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 	getKeyVaultMock(mockContext, "/vaults/kv-123", "kv-123", "eastus2")
 	getKeyVaultMock(mockContext, "/vaults/kv2-123", "kv2-123", "eastus2")
 
+	// Get Managed HSM
+	getManagedHSMMock(mockContext, "/managedHSMs/hsm-123", "hsm-123", "eastus2")
+	getManagedHSMMock(mockContext, "/managedHSMs/hsm2-123", "hsm2-123", "eastus2")
+
 	// Get App Configuration
 	getAppConfigMock(mockContext, "/configurationStores/ac-123", "ac-123", "eastus2")
 	getAppConfigMock(mockContext, "/configurationStores/ac2-123", "ac2-123", "eastus2")
@@ -760,12 +602,33 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 			strings.HasSuffix(request.URL.Path, "subscriptions/SUBSCRIPTION_ID/resourcegroups/RESOURCE_GROUP")
 	}).RespondFn(httpRespondFn)
 
-	// Purge Key vault
+	// Purge Key Vault
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodPost &&
 			(strings.HasSuffix(request.URL.Path, "deletedVaults/kv-123/purge") ||
 				strings.HasSuffix(request.URL.Path, "deletedVaults/kv2-123/purge"))
 	}).RespondFn(httpRespondFn)
+
+	// Set up the end of any LRO with a 204 response since we are using the Location header.
+	mockPollingUrl := "https://url-to-poll.net/keep-deleting"
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet &&
+			strings.Contains(
+				request.URL.String(), mockPollingUrl)
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		return mocks.CreateEmptyHttpResponse(request, 204)
+	})
+
+	// Purge Managed HSM
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodPost &&
+			(strings.HasSuffix(request.URL.Path, "deletedManagedHSMs/hsm-123/purge") ||
+				strings.HasSuffix(request.URL.Path, "deletedManagedHSMs/hsm2-123/purge"))
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		response, err := mocks.CreateEmptyHttpResponse(request, http.StatusAccepted)
+		response.Header.Add("location", mockPollingUrl)
+		return response, err
+	})
 
 	// Purge App configuration
 	mockContext.HttpClient.When(func(request *http.Request) bool {
@@ -782,7 +645,6 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 	}).RespondFn(httpRespondFn)
 
 	// Delete deployment
-	mockPollingUrl := "https://url-to-poll.net/keep-deleting"
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodDelete &&
 			strings.HasSuffix(
@@ -791,14 +653,6 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 		response, err := mocks.CreateEmptyHttpResponse(request, 202)
 		response.Header.Add("location", mockPollingUrl)
 		return response, err
-	})
-	mockContext.HttpClient.When(func(request *http.Request) bool {
-		return request.Method == http.MethodGet &&
-			strings.Contains(
-				request.URL.String(), mockPollingUrl)
-	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		// set the end of LRO with 204 response (since we are using location header)
-		return mocks.CreateEmptyHttpResponse(request, 204)
 	})
 }
 
@@ -831,6 +685,33 @@ func getKeyVaultMock(mockContext *mocks.MockContext, keyVaultString string, name
 		return &http.Response{
 			StatusCode: http.StatusOK,
 			Body:       io.NopCloser(bytes.NewBuffer(keyVaultBytes)),
+		}, nil
+	})
+}
+
+func getManagedHSMMock(mockContext *mocks.MockContext, managedHSMString string, name string, location string) {
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet && strings.HasSuffix(request.URL.Path, managedHSMString)
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		managedHSMResponse := armkeyvault.ManagedHsmsClientGetResponse{
+			ManagedHsm: armkeyvault.ManagedHsm{
+				ID: convert.RefOf(
+					fmt.Sprintf("/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/%s/%s",
+						string(infra.AzureResourceTypeManagedHSM), name)),
+				Name:     convert.RefOf(name),
+				Location: convert.RefOf(location),
+				Properties: &armkeyvault.ManagedHsmProperties{
+					EnableSoftDelete:      convert.RefOf(true),
+					EnablePurgeProtection: convert.RefOf(false),
+				},
+			},
+		}
+
+		managedHSMBytes, _ := json.Marshal(managedHSMResponse)
+
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(bytes.NewBuffer(managedHSMBytes)),
 		}, nil
 	})
 }
@@ -907,7 +788,9 @@ func TestResourceGroupsFromDeployment(t *testing.T) {
 						ID: convert.RefOf("/subscriptions/sub-id/resourceGroups/groupA"),
 					},
 					{
-						ID: convert.RefOf("/subscriptions/sub-id/resourceGroups/groupA/Microsoft.Storage/storageAccounts/storageAccount"),
+						ID: convert.RefOf(
+							"/subscriptions/sub-id/resourceGroups/groupA/Microsoft.Storage/storageAccounts/storageAccount",
+						),
 					},
 					{
 						ID: convert.RefOf("/subscriptions/sub-id/resourceGroups/groupB"),

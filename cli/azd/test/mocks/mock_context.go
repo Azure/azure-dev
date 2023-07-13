@@ -35,8 +35,6 @@ func NewMockContext(ctx context.Context) *MockContext {
 	configManager := mockconfig.NewMockConfigManager()
 	config := config.NewEmptyConfig()
 
-	ctx = httputil.WithHttpClient(ctx, httpClient)
-
 	mockContext := &MockContext{
 		Credentials:                    &MockCredentials{},
 		Context:                        &ctx,

@@ -12,4 +12,7 @@
     "cSpell.import": ["./.vscode/cspell.yaml"],
     // Block committing directly to main branch
     "git.branchProtection": ["main"],
+    // Keep files nice
+    "files.trimTrailingWhitespace": true,
+    "files.insertFinalNewline": true,
 }

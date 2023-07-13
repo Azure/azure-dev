@@ -146,7 +146,7 @@ repo:
       to: ./infra
 
     # .devcontainer common (devcontainer.json)
-    - from: ../../../../../common/.devcontainer/devcontainer.json/python/devcontainer.json
+    - from: ../../../../../common/.devcontainer/devcontainer.json/python/func/devcontainer.json
       to: ./.devcontainer/devcontainer.json
 
     # .devcontainer common (Dockerfile)

@@ -9,7 +9,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"log"
 	"os"
 	"path/filepath"
@@ -25,7 +24,11 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/github"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
+	"github.com/cli/browser"
 )
 
 // TODO(azure/azure-dev#710): Right now, we re-use the App Id of the `az` CLI, until we have our own.
@@ -59,6 +62,14 @@ var loginScopesMap = map[string]struct{}{
 	azure.ManagementScope: {},
 }
 
+// HttpClient interface as required by MSAL library.
+type HttpClient interface {
+	httputil.HttpClient
+
+	// CloseIdleConnections closes any idle connections in a "keep-alive" state.
+	CloseIdleConnections()
+}
+
 // Manager manages the authentication system of azd. It allows a user to log in, either as a user principal or service
 // principal. Manager stores information so that the user can stay logged in across invocations of the CLI. When logged in
 // as a user (either interactively or via a device code flow), we provide a durable cache to MSAL which is used to cache
@@ -81,13 +92,16 @@ type Manager struct {
 	userConfigManager   config.UserConfigManager
 	credentialCache     Cache
 	ghClient            *github.FederatedTokenClient
-	httpClient          httputil.HttpClient
+	httpClient          HttpClient
+	launchBrowserFn     func(url string) error
+	console             input.Console
 }
 
 func NewManager(
 	configManager config.Manager,
 	userConfigManager config.UserConfigManager,
-	httpClient httputil.HttpClient,
+	httpClient HttpClient,
+	console input.Console,
 ) (*Manager, error) {
 	cfgRoot, err := config.GetUserConfigDir()
 	if err != nil {
@@ -107,6 +121,7 @@ func NewManager(
 	options := []public.Option{
 		public.WithCache(newCache(cacheRoot)),
 		public.WithAuthority(cDefaultAuthority),
+		public.WithHTTPClient(httpClient),
 	}
 
 	publicClientApp, err := public.New(cAZD_CLIENT_ID, options...)
@@ -124,6 +139,8 @@ func NewManager(
 		credentialCache:     newCredentialCache(authRoot),
 		ghClient:            ghClient,
 		httpClient:          httpClient,
+		launchBrowserFn:     browser.OpenURL,
+		console:             console,
 	}, nil
 }
 
@@ -176,7 +193,7 @@ func (m *Manager) CredentialForCurrentUser(
 	currentUser, err := readUserProperties(authConfig)
 	if errors.Is(err, ErrNoCurrentUser) {
 		// User is not logged in, not using az credentials, try CloudShell if possible
-		if shouldUseCloudShellAuth() {
+		if ShouldUseCloudShellAuth() {
 			cloudShellCredential, err := m.newCredentialFromCloudShell()
 			if err != nil {
 				return nil, err
@@ -230,9 +247,9 @@ func (m *Manager) CredentialForCurrentUser(
 		}
 
 		if ps.ClientSecret != nil {
-			return newCredentialFromClientSecret(tenantID, *currentUser.ClientID, *ps.ClientSecret)
+			return m.newCredentialFromClientSecret(tenantID, *currentUser.ClientID, *ps.ClientSecret)
 		} else if ps.ClientCertificate != nil {
-			return newCredentialFromClientCertificate(tenantID, *currentUser.ClientID, *ps.ClientCertificate)
+			return m.newCredentialFromClientCertificate(tenantID, *currentUser.ClientID, *ps.ClientCertificate)
 		} else if ps.FederatedAuth != nil && ps.FederatedAuth.TokenProvider != nil {
 			return m.newCredentialFromFederatedTokenProvider(
 				tenantID, *currentUser.ClientID, *ps.FederatedAuth.TokenProvider)
@@ -252,7 +269,7 @@ func shouldUseLegacyAuth(cfg config.Config) bool {
 	return false
 }
 
-func shouldUseCloudShellAuth() bool {
+func ShouldUseCloudShellAuth() bool {
 	if useCloudShellAuth, has := os.LookupEnv(cUseCloudShellAuthEnvVar); has {
 		if use, err := strconv.ParseBool(useCloudShellAuth); err == nil && use {
 			log.Printf("using CloudShell auth")
@@ -289,7 +306,7 @@ func (m *Manager) GetLoggedInServicePrincipalTenantID(ctx context.Context) (*str
 	if err != nil {
 		// No user is logged in, if running in CloudShell use tenant id from
 		// CloudShell session (single tenant)
-		if shouldUseCloudShellAuth() {
+		if ShouldUseCloudShellAuth() {
 			// Tenant ID is not required when requesting a token from CloudShell
 			credential, err := m.CredentialForCurrentUser(ctx, nil)
 			if err != nil {
@@ -324,8 +341,16 @@ func (m *Manager) GetLoggedInServicePrincipalTenantID(ctx context.Context) (*str
 	return currentUser.TenantID, nil
 }
 
-func newCredentialFromClientSecret(tenantID string, clientID string, clientSecret string) (azcore.TokenCredential, error) {
-	cred, err := azidentity.NewClientSecretCredential(tenantID, clientID, clientSecret, nil)
+func (m *Manager) newCredentialFromClientSecret(
+	tenantID string,
+	clientID string,
+	clientSecret string) (azcore.TokenCredential, error) {
+	options := &azidentity.ClientSecretCredentialOptions{
+		ClientOptions: policy.ClientOptions{
+			Transport: m.httpClient,
+		},
+	}
+	cred, err := azidentity.NewClientSecretCredential(tenantID, clientID, clientSecret, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating credential: %w: %w", err, ErrNoCurrentUser)
 	}
@@ -333,7 +358,7 @@ func newCredentialFromClientSecret(tenantID string, clientID string, clientSecre
 	return cred, nil
 }
 
-func newCredentialFromClientCertificate(
+func (m *Manager) newCredentialFromClientCertificate(
 	tenantID string,
 	clientID string,
 	clientCertificate string,
@@ -348,9 +373,13 @@ func newCredentialFromClientCertificate(
 		return nil, fmt.Errorf("parsing certificate: %w: %w", err, ErrNoCurrentUser)
 	}
 
+	options := &azidentity.ClientCertificateCredentialOptions{
+		ClientOptions: policy.ClientOptions{
+			Transport: m.httpClient,
+		},
+	}
 	cred, err := azidentity.NewClientCertificateCredential(
-		tenantID, clientID, certs, key, nil,
-	)
+		tenantID, clientID, certs, key, options)
 
 	if err != nil {
 		return nil, fmt.Errorf("creating credential: %w: %w", err, ErrNoCurrentUser)
@@ -367,7 +396,11 @@ func (m *Manager) newCredentialFromFederatedTokenProvider(
 	if provider != gitHubFederatedAuth {
 		return nil, fmt.Errorf("unsupported federated token provider: '%s'", string(provider))
 	}
-
+	options := &azidentity.ClientAssertionCredentialOptions{
+		ClientOptions: policy.ClientOptions{
+			Transport: m.httpClient,
+		},
+	}
 	cred, err := azidentity.NewClientAssertionCredential(
 		tenantID,
 		clientID,
@@ -379,7 +412,7 @@ func (m *Manager) newCredentialFromFederatedTokenProvider(
 
 			return federatedToken, nil
 		},
-		nil)
+		options)
 	if err != nil {
 		return nil, fmt.Errorf("creating credential: %w", err)
 	}
@@ -418,7 +451,7 @@ func (m *Manager) LoginInteractive(
 }
 
 func (m *Manager) LoginWithDeviceCode(
-	ctx context.Context, deviceCodeWriter io.Writer, tenantID string, scopes []string) (azcore.TokenCredential, error) {
+	ctx context.Context, tenantID string, scopes []string) (azcore.TokenCredential, error) {
 	if scopes == nil {
 		scopes = LoginScopes
 	}
@@ -432,14 +465,38 @@ func (m *Manager) LoginWithDeviceCode(
 		return nil, err
 	}
 
-	// Display the message to the end user as to what to do next, then block waiting for them to complete
-	// the flow.
-	fmt.Fprintln(deviceCodeWriter, code.Message())
+	url := "https://microsoft.com/devicelogin"
+
+	if ShouldUseCloudShellAuth() {
+		m.console.MessageUxItem(ctx, &ux.MultilineMessage{
+			Lines: []string{
+				// nolint:lll
+				"Cloud Shell is automatically authenticated under the initial account used to sign in. Run 'azd auth login' only if you need to use a different account.",
+				// nolint:lll
+				fmt.Sprintf("To sign in, use a web browser to open the page %s and enter the code %s to authenticate.", output.WithUnderline(url), output.WithBold(code.UserCode())),
+			},
+		})
+	} else {
+		m.console.MessageUxItem(ctx, &ux.MultilineMessage{
+			Lines: []string{
+				fmt.Sprintf("Start by copying the next code: %s", output.WithBold(code.UserCode())),
+				"Then press enter and continue to log in from your browser...",
+			},
+		})
+		m.console.WaitForEnter()
+
+		if err := m.launchBrowserFn(url); err != nil {
+			log.Println("error launching browser: ", err.Error())
+			m.console.Message(ctx, fmt.Sprintf("Error launching browser. Manually go to: %s", url))
+		}
+		m.console.Message(ctx, "Waiting for you to complete authentication in the browser...")
+	}
 
 	res, err := code.AuthenticationResult(ctx)
 	if err != nil {
 		return nil, err
 	}
+	m.console.Message(ctx, "Device code authentication completed.")
 
 	if err := m.saveLoginForPublicClient(res); err != nil {
 		return nil, err

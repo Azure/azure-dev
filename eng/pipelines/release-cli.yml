@@ -3,7 +3,7 @@ resources:
     - repository: azure-sdk-build-tools
       type: git
       name: internal/azure-sdk-build-tools
-      ref: refs/tags/azure-sdk-build-tools_20230530.2
+      ref: refs/tags/azure-sdk-build-tools_20230613.1
 
 # Continuous deployment trigger
 trigger:
@@ -88,13 +88,22 @@ stages:
             inputs:
               pwsh: true
               targetType: filePath
+              filePath: eng/scripts/Set-CliBuildVariables.ps1
+              arguments: -BuildReason $(Build.Reason)
+            displayName: Set CLI build run variables
+
+          - task: PowerShell@2
+            inputs:
+              pwsh: true
+              targetType: filePath
               filePath: cli/azd/ci-build.ps1
               arguments: >-
                 -Version $(CLI_VERSION)
                 -SourceVersion $(Build.SourceVersion)
                 -CodeCoverageEnabled
+                -BuildRecordMode
               workingDirectory: cli/azd
-            displayName: Build Go Binary (Coverage enabled)
+            displayName: Build Go Binary (For tests)
 
           - template: /eng/pipelines/templates/steps/build-msi.yml
             parameters:
@@ -147,6 +156,7 @@ stages:
               AZD_TEST_TENANT_ID: $(arm-tenant-id)
               AZD_TEST_AZURE_SUBSCRIPTION_ID: $(SubscriptionId)
               AZD_TEST_AZURE_LOCATION: eastus2
+              AZURE_RECORD_MODE: $(AZURE_RECORD_MODE)
               # AZD Live Test: Terraform service principal authentication
               ARM_CLIENT_ID: $(arm-client-id)
               ARM_CLIENT_SECRET: $(arm-client-secret)
@@ -1039,12 +1049,42 @@ stages:
                     filePath: eng/scripts/Set-CliVersionVariable.ps1
                   displayName: Set CLI_VERSION
 
+                - pwsh: |
+                    # Initial upload locations
+                    $publishUploadLocations = 'release/$(CLI_VERSION);release/latest'
+
+                    $isPublishingGa = eng/scripts/Test-ShouldReleasePackageVersion.ps1 `
+                      -CliVersion '$(CLI_VERSION)'
+
+                    if ($isPublishingGa) {
+                      $publishUploadLocations += ";release/stable"
+                    }
+
+                    Write-Host "Setting StorageUploadLocations to $publishUploadLocations"
+                    Write-Host "###vso[task.setvariable variable=StorageUploadLocations]$publishUploadLocations"
+                  displayName: Set StorageUploadLocations
+
+                - pwsh: |
+                    # Initial tag
+                    $dockerTags = '$(CLI_VERSION)'
+
+                    $isPublishingGa = eng/scripts/Test-ShouldReleasePackageVersion.ps1 `
+                      -CliVersion '$(CLI_VERSION)'
+
+                    if ($isPublishingGa) {
+                      $dockerTags += ";latest"
+                    }
+
+                    Write-Host "Setting DockerImageTags to $dockerTags"
+                    Write-Host "###vso[task.setvariable variable=DockerImageTags]$dockerTags"
+                  displayName: Set DockerImageTags
+
                 - template: /eng/pipelines/templates/steps/publish-cli.yml
                   parameters:
                     CreateGitHubRelease: true
-                    PublishUploadLocations: release/$(CLI_VERSION);release/latest
+                    PublishUploadLocations: $(StorageUploadLocations)
                     PublishShield: true
-                    DockerImageTags: $(CLI_VERSION);latest
+                    DockerImageTags: $(DockerImageTags)
                     ReleaseSyndicatedDockerContainer: true
                     PublishUpdatedDocs: true
                     UploadMsi: true
@@ -1077,8 +1117,6 @@ stages:
 
                 - template: /eng/pipelines/templates/steps/publish-cli-choco.yml
                   parameters:
-                    # Set to false after GA (https://github.com/Azure/azure-dev/issues/1485)
-                    AllowPrerelease: true
                     CliVersion: $(CLI_VERSION)
 
       - deployment: Publish_WinGet
@@ -1107,8 +1145,6 @@ stages:
 
                 - template: /eng/pipelines/templates/steps/publish-cli-winget.yml
                   parameters:
-                    # Set to false after GA (https://github.com/Azure/azure-dev/issues/1485)
-                    AllowPrerelease: true
                     CliVersion: $(CLI_VERSION)
 
       - deployment: Increment_Version
@@ -1143,7 +1179,7 @@ stages:
                     CommitMsg: Increment CLI version after release
                     PRTitle: Increment CLI version after release
 
-  - stage: PublishIntegration
+  - stage: Publish_Integration
     dependsOn: Sign
     jobs:
       - job: Publish_Continuous_Deployment

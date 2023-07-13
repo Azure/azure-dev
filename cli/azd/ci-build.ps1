@@ -1,7 +1,8 @@
 param(
     [string] $Version = (Get-Content "$PSScriptRoot/../version.txt"),
     [string] $SourceVersion = (git rev-parse HEAD),
-    [switch] $CodeCoverageEnabled
+    [switch] $CodeCoverageEnabled,
+    [switch] $BuildRecordMode
 )
 
 # Remove any previously built binaries
@@ -105,29 +106,59 @@ elseif ($IsMacOS) {
     )
 }
 
-Write-Host "Running: go build ``"
+function PrintFlags() {
+    param(
+        [string] $flags
+    )
 
-# Attempt to format flags so that they are easily copy-pastable to be ran inside pwsh
-$i = 0
-foreach ($buildFlag in $buildFlags) {
-    # If the flag has a value, wrap it in quotes. This is not required when invoking directly below,
-    # but when repasted into a shell for execution, the quotes can help escape special characters such as ','.
-    $argWithValue = $buildFlag -split "="
-    if ($argWithValue.Length -eq 2 -and !$argWithValue[1].StartsWith("`"")) {
-        $buildFlag = "$($argWithValue[0])=`"$($argWithValue[1])`""
-    }
+    # Attempt to format flags so that they are easily copy-pastable to be ran inside pwsh
+    $i = 0
+    foreach ($buildFlag in $buildFlags) {
+        # If the flag has a value, wrap it in quotes. This is not required when invoking directly below,
+        # but when repasted into a shell for execution, the quotes can help escape special characters such as ','.
+        $argWithValue = $buildFlag -split "="
+        if ($argWithValue.Length -eq 2 -and !$argWithValue[1].StartsWith("`"")) {
+            $buildFlag = "$($argWithValue[0])=`"$($argWithValue[1])`""
+        }
 
-    # Write each flag on a newline with '`' acting as the multiline separator
-    if ($i -eq $buildFlags.Length - 1) {
-        Write-Host "  $buildFlag"
+        # Write each flag on a newline with '`' acting as the multiline separator
+        if ($i -eq $buildFlags.Length - 1) {
+            Write-Host "  $buildFlag"
+        }
+        else {
+            Write-Host "  $buildFlag ``"
+        }
+        $i++
     }
-    else {
-        Write-Host "  $buildFlag ``"
-    }
-    $i++
 }
 
+Write-Host "Running: go build ``"
+PrintFlags -flags $buildFlags
 go build @buildFlags
+
+if ($BuildRecordMode) {
+    $recordFlagPresent = $false
+    for ($i = 0; $i -lt $buildFlags.Length; $i++) {
+        if ($buildFlags[$i].StartsWith("-tags=")) {
+            $recordFlagPresent = $true
+            $buildFlags[$i] += ",record"
+        }
+    }
+
+    if (-not $recordFlagPresent) {
+        $buildFlags[$i] += "-tags=record"
+    }
+
+    $outputFlag = "-o=azd-record"
+    if ($IsWindows) {
+        $outputFlag += ".exe"
+    }
+    $buildFlags += $outputFlag
+
+    Write-Host "Running: go build (record) ``"
+    PrintFlags -flags $buildFlags
+    go build @buildFlags
+}
 
 if ($LASTEXITCODE) {
     Write-Host "Error running go build"

@@ -13,16 +13,19 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 )
 
 type DockerProjectOptions struct {
-	Path     string           `json:"path"`
-	Context  string           `json:"context"`
-	Platform string           `json:"platform"`
-	Tag      ExpandableString `json:"tag"`
+	Path      string           `json:"path"`
+	Context   string           `json:"context"`
+	Platform  string           `json:"platform"`
+	Tag       ExpandableString `json:"tag"`
+	BuildArgs []string         `json:"buildArgs"`
 }
 
 type dockerBuildResult struct {
@@ -66,6 +69,7 @@ type dockerProject struct {
 	docker          docker.Docker
 	framework       FrameworkService
 	containerHelper *ContainerHelper
+	console         input.Console
 }
 
 // NewDockerProject creates a new instance of a Azd project that
@@ -74,11 +78,13 @@ func NewDockerProject(
 	env *environment.Environment,
 	docker docker.Docker,
 	containerHelper *ContainerHelper,
+	console input.Console,
 ) CompositeFrameworkService {
 	return &dockerProject{
 		env:             env,
 		docker:          docker,
 		containerHelper: containerHelper,
+		console:         console,
 	}
 }
 
@@ -127,12 +133,18 @@ func (p *dockerProject) Build(
 		func(task *async.TaskContextWithProgress[*ServiceBuildResult, ServiceProgress]) {
 			dockerOptions := getDockerOptionsWithDefaults(serviceConfig.Docker)
 
+			buildArgs := []string{}
+			for _, arg := range dockerOptions.BuildArgs {
+				buildArgs = append(buildArgs, exec.RedactSensitiveData(arg))
+			}
+
 			log.Printf(
-				"building image for service %s, cwd: %s, path: %s, context: %s)",
+				"building image for service %s, cwd: %s, path: %s, context: %s, buildArgs: %s)",
 				serviceConfig.Name,
 				serviceConfig.Path(),
 				dockerOptions.Path,
 				dockerOptions.Context,
+				buildArgs,
 			)
 
 			imageName := fmt.Sprintf(
@@ -143,6 +155,13 @@ func (p *dockerProject) Build(
 
 			// Build the container
 			task.SetProgress(NewServiceProgress("Building Docker image"))
+
+			previewerWriter := p.console.ShowPreviewer(ctx,
+				&input.ShowPreviewerOptions{
+					Prefix:       "  ",
+					MaxLineCount: 8,
+					Title:        "Docker Output",
+				})
 			imageId, err := p.docker.Build(
 				ctx,
 				serviceConfig.Path(),
@@ -150,7 +169,10 @@ func (p *dockerProject) Build(
 				dockerOptions.Platform,
 				dockerOptions.Context,
 				imageName,
+				dockerOptions.BuildArgs,
+				previewerWriter,
 			)
+			p.console.StopPreviewer(ctx)
 			if err != nil {
 				task.SetError(fmt.Errorf("building container: %s at %s: %w", serviceConfig.Name, dockerOptions.Context, err))
 				return

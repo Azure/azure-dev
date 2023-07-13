@@ -106,3 +106,6 @@ func GetUsageAttributes() []attribute.KeyValue {
 func AppendUsageAttribute(attr attribute.KeyValue) {
 	appendTo(&usageVal, attr)
 }
+
+// InteractTimeMs is the time spent waiting on user interaction in milliseconds.
+var InteractTimeMs = atomic.NewInt64(0)

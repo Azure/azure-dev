@@ -67,6 +67,7 @@ func (m *TelemetryMiddleware) Run(ctx context.Context, next NextFn) (*actions.Ac
 	defer func() {
 		// Include any usage attributes set
 		span.SetAttributes(tracing.GetUsageAttributes()...)
+		span.SetAttributes(fields.PerfInteractTime.Int64(tracing.InteractTimeMs.Load()))
 		span.End()
 	}()
 

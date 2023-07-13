@@ -2,7 +2,7 @@
     "name": "azure-dev",
     "displayName": "Azure Developer CLI",
     "description": "Makes it easy to run, provision, and deploy Azure applications using the Azure Developer CLI",
-    "version": "0.7.0-alpha.1",
+    "version": "0.8.0-alpha.1",
     "license": "MIT",
     "icon": "resources/icon.png",
     "preview": true,
@@ -26,7 +26,9 @@
         "url": "https://github.com/azure/azure-dev"
     },
     "activationEvents": [
-        "onTaskType:dotenv"
+        "onTaskType:dotenv",
+        "workspaceContains:azure.yml",
+        "workspaceContains:azure.yaml"
     ],
     "main": "./main.js",
     "contributes": {
@@ -476,33 +478,34 @@
         "ci-package": "npm run ci-build && vsce package"
     },
     "devDependencies": {
-        "@types/chai": "~4.3",
+        "@types/chai": "~4",
         "@types/glob": "~7",
-        "@types/mocha": "~9",
+        "@types/mocha": "~10",
         "@types/node": "~16",
         "@types/semver": "~7",
         "@types/vscode": "~1.76",
-        "@typescript-eslint/eslint-plugin": "~5",
-        "@typescript-eslint/parser": "~5",
-        "@vscode/test-electron": "~2.3",
+        "@typescript-eslint/eslint-plugin": "~6",
+        "@typescript-eslint/parser": "~6",
+        "@vscode/test-electron": "~2",
         "@vscode/vsce": "~2",
-        "chai": "~4.3",
-        "eslint": "~8.23",
-        "glob": "~8.0",
-        "mocha": "~9.2",
-        "node-loader": "~2.0",
-        "ts-loader": "~9.3",
-        "typescript": "~4.8",
-        "webpack": "~5.76",
-        "webpack-bundle-analyzer": "~4.6",
-        "webpack-cli": "~4.10"
+        "chai": "~4",
+        "eslint": "~8",
+        "glob": "~8",
+        "mocha": "~10",
+        "node-loader": "~2",
+        "ts-loader": "~9",
+        "typescript": "~5.1",
+        "webpack": "~5",
+        "webpack-bundle-analyzer": "~4",
+        "webpack-cli": "~5"
     },
     "dependencies": {
-        "@microsoft/vscode-azext-utils": "~1",
+        "@microsoft/vscode-azext-utils": "~2",
         "@microsoft/vscode-azureresources-api": "~2",
-        "dayjs": "~1.11",
-        "dotenv": "~16.0",
-        "rxjs": "~7.6",
-        "semver": "~7"
+        "dayjs": "~1",
+        "dotenv": "~16",
+        "rxjs": "~7",
+        "semver": "~7",
+        "yaml": "~2"
     }
 }

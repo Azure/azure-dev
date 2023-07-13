@@ -42,7 +42,7 @@ func (cli *azCli) GetKeyVault(
 
 	vault, err := client.Get(ctx, resourceGroupName, vaultName, nil)
 	if err != nil {
-		return nil, fmt.Errorf("getting keyvault: %w", err)
+		return nil, fmt.Errorf("getting key vault: %w", err)
 	}
 
 	return &AzCliKeyVault{
@@ -117,7 +117,7 @@ func (cli *azCli) createKeyVaultClient(ctx context.Context, subscriptionId strin
 		return nil, err
 	}
 
-	options := cli.createDefaultClientOptionsBuilder(ctx).BuildArmClientOptions()
+	options := cli.clientOptionsBuilder(ctx).BuildArmClientOptions()
 	client, err := armkeyvault.NewVaultsClient(subscriptionId, credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating Resource client: %w", err)
@@ -138,7 +138,7 @@ func (cli *azCli) createSecretsDataClient(
 		return nil, err
 	}
 
-	coreOptions := cli.createDefaultClientOptionsBuilder(ctx).BuildCoreClientOptions()
+	coreOptions := cli.clientOptionsBuilder(ctx).BuildCoreClientOptions()
 	options := &azsecrets.ClientOptions{
 		ClientOptions:                        *coreOptions,
 		DisableChallengeResourceVerification: false,

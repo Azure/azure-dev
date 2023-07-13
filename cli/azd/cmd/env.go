@@ -8,19 +8,16 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/account"
-	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -162,6 +159,14 @@ func newEnvSelectAction(azdCtx *azdcontext.AzdContext, args []string) actions.Ac
 }
 
 func (e *envSelectAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	_, err := environment.GetEnvironment(e.azdCtx, e.args[0])
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf(`environment '%s' does not exist. You can create it with "azd env new %s"`,
+			e.args[0], e.args[0])
+	} else if err != nil {
+		return nil, fmt.Errorf("ensuring environment exists: %w", err)
+	}
+
 	if err := e.azdCtx.SetDefaultEnvironmentName(e.args[0]); err != nil {
 		return nil, fmt.Errorf("setting default environment: %w", err)
 	}
@@ -251,7 +256,7 @@ func newEnvNewFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *
 func newEnvNewCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "new <environment>",
-		Short: "Create a new environment.",
+		Short: "Create a new environment and set it as the default.",
 	}
 	cmd.Args = cobra.MaximumNArgs(1)
 
@@ -357,53 +362,35 @@ func newEnvRefreshCmd() *cobra.Command {
 }
 
 type envRefreshAction struct {
-	azdCtx                     *azdcontext.AzdContext
-	projectConfig              *project.ProjectConfig
-	projectManager             project.ProjectManager
-	accountManager             account.Manager
-	azCli                      azcli.AzCli
-	env                        *environment.Environment
-	flags                      *envRefreshFlags
-	console                    input.Console
-	formatter                  output.Formatter
-	writer                     io.Writer
-	commandRunner              exec.CommandRunner
-	alphaFeatureManager        *alpha.FeatureManager
-	userProfileService         *azcli.UserProfileService
-	subscriptionTenantResolver account.SubscriptionTenantResolver
+	provisionManager *provisioning.Manager
+	projectConfig    *project.ProjectConfig
+	projectManager   project.ProjectManager
+	env              *environment.Environment
+	flags            *envRefreshFlags
+	console          input.Console
+	formatter        output.Formatter
+	writer           io.Writer
 }
 
 func newEnvRefreshAction(
-	azdCtx *azdcontext.AzdContext,
+	provisionManager *provisioning.Manager,
 	projectConfig *project.ProjectConfig,
-	azCli azcli.AzCli,
-	accountManager account.Manager,
 	projectManager project.ProjectManager,
 	env *environment.Environment,
-	commandRunner exec.CommandRunner,
 	flags *envRefreshFlags,
 	console input.Console,
 	formatter output.Formatter,
 	writer io.Writer,
-	alphaFeatureManager *alpha.FeatureManager,
-	userProfileService *azcli.UserProfileService,
-	subscriptionTenantResolver account.SubscriptionTenantResolver,
 ) actions.Action {
 	return &envRefreshAction{
-		azdCtx:                     azdCtx,
-		azCli:                      azCli,
-		accountManager:             accountManager,
-		projectManager:             projectManager,
-		env:                        env,
-		flags:                      flags,
-		console:                    console,
-		formatter:                  formatter,
-		projectConfig:              projectConfig,
-		writer:                     writer,
-		commandRunner:              commandRunner,
-		userProfileService:         userProfileService,
-		subscriptionTenantResolver: subscriptionTenantResolver,
-		alphaFeatureManager:        alphaFeatureManager,
+		provisionManager: provisionManager,
+		projectManager:   projectManager,
+		env:              env,
+		console:          console,
+		flags:            flags,
+		formatter:        formatter,
+		projectConfig:    projectConfig,
+		writer:           writer,
 	}
 }
 
@@ -412,25 +399,11 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 		return nil, err
 	}
 
-	infraManager, err := provisioning.NewManager(
-		ctx,
-		ef.env,
-		ef.projectConfig.Path,
-		ef.projectConfig.Infra,
-		!ef.flags.global.NoPrompt,
-		ef.azCli,
-		ef.console,
-		ef.commandRunner,
-		ef.accountManager,
-		ef.userProfileService,
-		ef.subscriptionTenantResolver,
-		ef.alphaFeatureManager,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("creating provisioning manager: %w", err)
+	if err := ef.provisionManager.Initialize(ctx, ef.projectConfig.Path, ef.projectConfig.Infra); err != nil {
+		return nil, fmt.Errorf("initializing provisioning manager: %w", err)
 	}
 
-	getStateResult, err := infraManager.State(ctx)
+	getStateResult, err := ef.provisionManager.State(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("getting deployment: %w", err)
 	}

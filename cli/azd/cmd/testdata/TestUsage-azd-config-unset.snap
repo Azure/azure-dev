@@ -5,6 +5,7 @@ Usage
   azd config unset <path> [flags]
 
 Flags
+        --docs 	: Opens the documentation for azd config unset in your web browser.
     -h, --help 	: Gets help for unset.
 
 Global Flags

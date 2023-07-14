@@ -139,7 +139,7 @@ repo:
 
     # Github workflows for bicep
     - from: ../../../../../common/.github/workflows/func/azure-dev.yml
-      to: ./.github/workflows
+      to: ./.github/workflows/azure-dev.yml
 
     # azd core modules
     - from: ../../../../../common/infra/bicep

@@ -20,6 +20,11 @@ jobs:
       - name: Install azd
         uses: Azure/setup-azd@v0.1.0
 
+      - name: Install Nodejs
+        uses: actions/setup-node@v3
+        with:
+          node-version: 16
+
       - name: Install Azure Function Core Tools
         run: |
           sudo apt-get update

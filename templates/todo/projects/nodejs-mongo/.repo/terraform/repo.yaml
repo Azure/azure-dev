@@ -140,10 +140,6 @@ repo:
     - from: ../../../../../common/.devcontainer/devcontainer.json/nodejs/terraform
       to: ./.devcontainer
 
-    # .devcontainer common (Dockerfile)
-    - from: ../../../../../common/.devcontainer/Dockerfile/base
-      to: ./.devcontainer
-
     # Assets common
     - from: ../../../../common/assets
       to: ./assets

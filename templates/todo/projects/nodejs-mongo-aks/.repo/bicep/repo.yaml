@@ -129,10 +129,6 @@ repo:
     - from: ../../../../../common/.devcontainer/devcontainer.json/aks/nodejs/devcontainer.json
       to: ./.devcontainer/devcontainer.json
 
-    # .devcontainer common (Dockerfile)
-    - from: ../../../../../common/.devcontainer/Dockerfile/base
-      to: ./.devcontainer
-
     # Assets common
     - from: ../../../../common/assets
       to: ./assets

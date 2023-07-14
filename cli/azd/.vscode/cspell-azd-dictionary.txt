@@ -28,6 +28,7 @@ azdtest
 azfile
 azruntime
 azsdk
+azureapis
 AZURECLI
 azureedge
 azurestaticapps
@@ -52,7 +53,6 @@ csharpapp
 csharpapptest
 cupaloy
 deletedservices
-deploymentservice
 devel
 discarder
 docf

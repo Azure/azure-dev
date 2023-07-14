@@ -28,7 +28,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
-	"github.com/azure/azure-dev/cli/azd/pkg/deploymentservice"
+	"github.com/azure/azure-dev/cli/azd/pkg/azureapis"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -163,7 +163,7 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 		}),
 		client,
 		azcli.NewAzCliArgs{})
-	deploymentOperationsService := deploymentservice.NewDeploymentOperationsService(
+	deploymentOperationsService := azureapis.NewDeploymentOperations(
 		mockaccount.SubscriptionCredentialProviderFunc(
 			func(_ context.Context, _ string) (azcore.TokenCredential, error) {
 				return cred, nil
@@ -260,7 +260,7 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 		}),
 		client,
 		azcli.NewAzCliArgs{})
-	deploymentOperationsService := deploymentservice.NewDeploymentOperationsService(
+	deploymentOperationsService := azureapis.NewDeploymentOperations(
 		mockaccount.SubscriptionCredentialProviderFunc(
 			func(_ context.Context, _ string) (azcore.TokenCredential, error) {
 				return cred, nil

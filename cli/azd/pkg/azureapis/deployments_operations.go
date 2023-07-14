@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package deploymentservice
+package azureapis
 
 import (
 	"context"
@@ -16,7 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
 
-type DeploymentOperationsService interface {
+type DeploymentOperations interface {
 	ListSubscriptionDeploymentOperations(
 		ctx context.Context,
 		subscriptionId string,
@@ -30,24 +30,24 @@ type DeploymentOperationsService interface {
 	) ([]*armresources.DeploymentOperation, error)
 }
 
-func NewDeploymentOperationsService(
+func NewDeploymentOperations(
 	credentialProvider account.SubscriptionCredentialProvider,
 	httpClient httputil.HttpClient,
-) DeploymentOperationsService {
-	return &deploymentOperationsService{
+) DeploymentOperations {
+	return &deploymentOperations{
 		credentialProvider: credentialProvider,
 		httpClient:         httpClient,
 		userAgent:          azdinternal.UserAgent(),
 	}
 }
 
-type deploymentOperationsService struct {
+type deploymentOperations struct {
 	credentialProvider account.SubscriptionCredentialProvider
 	httpClient         httputil.HttpClient
 	userAgent          string
 }
 
-func (dp *deploymentOperationsService) createDeploymentsOperationsClient(
+func (dp *deploymentOperations) createDeploymentsOperationsClient(
 	ctx context.Context,
 	subscriptionId string,
 ) (*armresources.DeploymentOperationsClient, error) {
@@ -65,7 +65,7 @@ func (dp *deploymentOperationsService) createDeploymentsOperationsClient(
 	return client, nil
 }
 
-func (dp *deploymentOperationsService) ListSubscriptionDeploymentOperations(
+func (dp *deploymentOperations) ListSubscriptionDeploymentOperations(
 	ctx context.Context,
 	subscriptionId string,
 	deploymentName string,
@@ -94,7 +94,7 @@ func (dp *deploymentOperationsService) ListSubscriptionDeploymentOperations(
 	return result, nil
 }
 
-func (dp *deploymentOperationsService) ListResourceGroupDeploymentOperations(
+func (dp *deploymentOperations) ListResourceGroupDeploymentOperations(
 	ctx context.Context,
 	subscriptionId string,
 	resourceGroupName string,
@@ -124,7 +124,7 @@ func (dp *deploymentOperationsService) ListResourceGroupDeploymentOperations(
 	return result, nil
 }
 
-func (dp *deploymentOperationsService) clientOptionsBuilder(ctx context.Context) *azsdk.ClientOptionsBuilder {
+func (dp *deploymentOperations) clientOptionsBuilder(ctx context.Context) *azsdk.ClientOptionsBuilder {
 	return azsdk.NewClientOptionsBuilder().
 		WithTransport(dp.httpClient).
 		WithPerCallPolicy(azsdk.NewUserAgentPolicy(dp.userAgent)).

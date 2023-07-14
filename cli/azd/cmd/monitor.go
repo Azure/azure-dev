@@ -12,7 +12,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
-	"github.com/azure/azure-dev/cli/azd/pkg/deploymentservice"
+	"github.com/azure/azure-dev/cli/azd/pkg/azureapis"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
@@ -63,7 +63,7 @@ type monitorAction struct {
 	env                         *environment.Environment
 	subResolver                 account.SubscriptionTenantResolver
 	azCli                       azcli.AzCli
-	deploymentOperationsService deploymentservice.DeploymentOperationsService
+	deploymentOperationsService azureapis.DeploymentOperations
 	console                     input.Console
 	flags                       *monitorFlags
 }
@@ -73,7 +73,7 @@ func newMonitorAction(
 	env *environment.Environment,
 	subResolver account.SubscriptionTenantResolver,
 	azCli azcli.AzCli,
-	deploymentOperationsService deploymentservice.DeploymentOperationsService,
+	deploymentOperationsService azureapis.DeploymentOperations,
 	console input.Console,
 	flags *monitorFlags,
 ) actions.Action {

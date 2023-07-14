@@ -10,7 +10,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
-	"github.com/azure/azure-dev/cli/azd/pkg/deploymentservice"
+	"github.com/azure/azure-dev/cli/azd/pkg/azureapis"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
@@ -164,7 +164,7 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 
 			if err != nil {
 				var respErr *azcore.ResponseError
-				var azureErr *deploymentservice.AzureDeploymentError
+				var azureErr *azureapis.AzureDeploymentError
 				var toolExitErr *exec.ExitError
 
 				// We only want to show trace ID for server-related errors,

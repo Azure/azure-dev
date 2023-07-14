@@ -12,9 +12,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
+	"github.com/azure/azure-dev/cli/azd/pkg/azureapis"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/containerapps"
-	"github.com/azure/azure-dev/cli/azd/pkg/deploymentservice"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -299,8 +299,8 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			EnableTelemetry: rootOptions.EnableTelemetry,
 		})
 	})
-	container.RegisterSingleton(deploymentservice.NewDeploymentsService)
-	container.RegisterSingleton(deploymentservice.NewDeploymentOperationsService)
+	container.RegisterSingleton(azureapis.NewDeployments)
+	container.RegisterSingleton(azureapis.NewDeploymentOperations)
 	container.RegisterSingleton(bicep.NewBicepCli)
 	container.RegisterSingleton(docker.NewDocker)
 	container.RegisterSingleton(dotnet.NewDotNetCli)

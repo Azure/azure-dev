@@ -4,7 +4,7 @@ import (
 	"context"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/azure/azure-dev/cli/azd/pkg/deploymentservice"
+	"github.com/azure/azure-dev/cli/azd/pkg/azureapis"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
@@ -23,8 +23,8 @@ func NewAzCliFromMockContext(mockContext *mocks.MockContext) azcli.AzCli {
 }
 
 func NewDeploymentOperationsServiceFromMockContext(
-	mockContext *mocks.MockContext) deploymentservice.DeploymentOperationsService {
-	return deploymentservice.NewDeploymentOperationsService(
+	mockContext *mocks.MockContext) azureapis.DeploymentOperations {
+	return azureapis.NewDeploymentOperations(
 		mockaccount.SubscriptionCredentialProviderFunc(func(_ context.Context, _ string) (azcore.TokenCredential, error) {
 			return mockContext.Credentials, nil
 		}),
@@ -32,8 +32,8 @@ func NewDeploymentOperationsServiceFromMockContext(
 }
 
 func NewDeploymentsServiceFromMockContext(
-	mockContext *mocks.MockContext) deploymentservice.DeploymentsService {
-	return deploymentservice.NewDeploymentsService(
+	mockContext *mocks.MockContext) azureapis.Deployments {
+	return azureapis.NewDeployments(
 		mockaccount.SubscriptionCredentialProviderFunc(func(_ context.Context, _ string) (azcore.TokenCredential, error) {
 			return mockContext.Credentials, nil
 		}),

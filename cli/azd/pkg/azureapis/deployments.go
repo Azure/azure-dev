@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-package deploymentservice
+package azureapis
 
 import (
 	"context"
@@ -20,7 +20,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
 
-type DeploymentsService interface {
+type Deployments interface {
 	ListSubscriptionDeployments(
 		ctx context.Context,
 		subscriptionId string,
@@ -66,24 +66,24 @@ var (
 	ErrDeploymentNotFound = errors.New("deployment not found")
 )
 
-type deploymentsService struct {
+type deployments struct {
 	credentialProvider account.SubscriptionCredentialProvider
 	httpClient         httputil.HttpClient
 	userAgent          string
 }
 
-func NewDeploymentsService(
+func NewDeployments(
 	credentialProvider account.SubscriptionCredentialProvider,
 	httpClient httputil.HttpClient,
-) DeploymentsService {
-	return &deploymentsService{
+) Deployments {
+	return &deployments{
 		credentialProvider: credentialProvider,
 		httpClient:         httpClient,
 		userAgent:          azdinternal.UserAgent(),
 	}
 }
 
-func (ds *deploymentsService) ListSubscriptionDeployments(
+func (ds *deployments) ListSubscriptionDeployments(
 	ctx context.Context,
 	subscriptionId string,
 ) ([]*armresources.DeploymentExtended, error) {
@@ -107,7 +107,7 @@ func (ds *deploymentsService) ListSubscriptionDeployments(
 	return results, nil
 }
 
-func (ds *deploymentsService) GetSubscriptionDeployment(
+func (ds *deployments) GetSubscriptionDeployment(
 	ctx context.Context,
 	subscriptionId string,
 	deploymentName string,
@@ -129,7 +129,7 @@ func (ds *deploymentsService) GetSubscriptionDeployment(
 	return &deployment.DeploymentExtended, nil
 }
 
-func (ds *deploymentsService) ListResourceGroupDeployments(
+func (ds *deployments) ListResourceGroupDeployments(
 	ctx context.Context,
 	subscriptionId string,
 	resourceGroupName string,
@@ -154,7 +154,7 @@ func (ds *deploymentsService) ListResourceGroupDeployments(
 	return results, nil
 }
 
-func (ds *deploymentsService) GetResourceGroupDeployment(
+func (ds *deployments) GetResourceGroupDeployment(
 	ctx context.Context,
 	subscriptionId string,
 	resourceGroupName string,
@@ -177,7 +177,7 @@ func (ds *deploymentsService) GetResourceGroupDeployment(
 	return &deployment.DeploymentExtended, nil
 }
 
-func (ds *deploymentsService) createDeploymentsClient(
+func (ds *deployments) createDeploymentsClient(
 	ctx context.Context,
 	subscriptionId string,
 ) (*armresources.DeploymentsClient, error) {
@@ -195,7 +195,7 @@ func (ds *deploymentsService) createDeploymentsClient(
 	return client, nil
 }
 
-func (ds *deploymentsService) DeployToSubscription(
+func (ds *deployments) DeployToSubscription(
 	ctx context.Context,
 	subscriptionId string,
 	location string,
@@ -237,7 +237,7 @@ func (ds *deploymentsService) DeployToSubscription(
 	return &deployResult.DeploymentExtended, nil
 }
 
-func (ds *deploymentsService) DeployToResourceGroup(
+func (ds *deployments) DeployToResourceGroup(
 	ctx context.Context,
 	subscriptionId, resourceGroup, deploymentName string,
 	armTemplate azure.RawArmTemplate,
@@ -276,7 +276,7 @@ func (ds *deploymentsService) DeployToResourceGroup(
 	return &deployResult.DeploymentExtended, nil
 }
 
-func (ds *deploymentsService) DeleteSubscriptionDeployment(
+func (ds *deployments) DeleteSubscriptionDeployment(
 	ctx context.Context, subscriptionId string, deploymentName string) error {
 	deploymentClient, err := ds.createDeploymentsClient(ctx, subscriptionId)
 	if err != nil {
@@ -381,7 +381,7 @@ type AzCliDeploymentStatusMessage struct {
 	Status string                       `json:"status"`
 }
 
-// convert from: sdk client outputs: interface{} to map[string]deploymentservice.AzCliDeploymentOutput
+// convert from: sdk client outputs: interface{} to map[string]azureapis.AzCliDeploymentOutput
 // sdk client parses http response from network as an interface{}
 // this function keeps the compatibility with the previous AzCliDeploymentOutput model
 func CreateDeploymentOutput(rawOutputs interface{}) (result map[string]AzCliDeploymentOutput) {
@@ -418,7 +418,7 @@ func createDeploymentError(err error) error {
 	return err
 }
 
-func (ds *deploymentsService) clientOptionsBuilder(ctx context.Context) *azsdk.ClientOptionsBuilder {
+func (ds *deployments) clientOptionsBuilder(ctx context.Context) *azsdk.ClientOptionsBuilder {
 	return azsdk.NewClientOptionsBuilder().
 		WithTransport(ds.httpClient).
 		WithPerCallPolicy(azsdk.NewUserAgentPolicy(ds.userAgent)).

@@ -10,7 +10,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
-	"github.com/azure/azure-dev/cli/azd/pkg/deploymentservice"
+	"github.com/azure/azure-dev/cli/azd/pkg/azureapis"
 )
 
 type Scope interface {
@@ -84,8 +84,8 @@ func (s *ResourceGroupDeployment) PortalUrl() string {
 }
 
 func NewResourceGroupDeployment(
-	deploymentsService deploymentservice.DeploymentsService,
-	deploymentOperationsService deploymentservice.DeploymentOperationsService,
+	deploymentsService azureapis.Deployments,
+	deploymentOperationsService azureapis.DeploymentOperations,
 	subscriptionId string, resourceGroupName string, deploymentName string,
 ) Deployment {
 	return &ResourceGroupDeployment{
@@ -98,15 +98,15 @@ func NewResourceGroupDeployment(
 }
 
 type ResourceGroupScope struct {
-	deploymentsService          deploymentservice.DeploymentsService
-	deploymentOperationsService deploymentservice.DeploymentOperationsService
+	deploymentsService          azureapis.Deployments
+	deploymentOperationsService azureapis.DeploymentOperations
 	subscriptionId              string
 	resourceGroupName           string
 }
 
 func NewResourceGroupScope(
-	deploymentsService deploymentservice.DeploymentsService,
-	deploymentOperationsService deploymentservice.DeploymentOperationsService,
+	deploymentsService azureapis.Deployments,
+	deploymentOperationsService azureapis.DeploymentOperations,
 	subscriptionId string, resourceGroupName string) *ResourceGroupScope {
 	return &ResourceGroupScope{
 		deploymentsService:          deploymentsService,
@@ -178,8 +178,8 @@ func (s *SubscriptionDeployment) Operations(ctx context.Context) ([]*armresource
 }
 
 func NewSubscriptionDeployment(
-	deploymentsService deploymentservice.DeploymentsService,
-	deploymentOperationsService deploymentservice.DeploymentOperationsService,
+	deploymentsService azureapis.Deployments,
+	deploymentOperationsService azureapis.DeploymentOperations,
 	location string, subscriptionId string, deploymentName string,
 ) *SubscriptionDeployment {
 	return &SubscriptionDeployment{
@@ -193,8 +193,8 @@ func NewSubscriptionDeployment(
 }
 
 type SubscriptionScope struct {
-	deploymentsService          deploymentservice.DeploymentsService
-	deploymentOperationsService deploymentservice.DeploymentOperationsService
+	deploymentsService          azureapis.Deployments
+	deploymentOperationsService azureapis.DeploymentOperations
 	subscriptionId              string
 }
 
@@ -209,8 +209,8 @@ func (s *SubscriptionScope) ListDeployments(ctx context.Context) ([]*armresource
 }
 
 func NewSubscriptionScope(
-	deploymentsService deploymentservice.DeploymentsService,
-	deploymentOperationsService deploymentservice.DeploymentOperationsService,
+	deploymentsService azureapis.Deployments,
+	deploymentOperationsService azureapis.DeploymentOperations,
 	subscriptionId string) *SubscriptionScope {
 	return &SubscriptionScope{
 		deploymentsService:          deploymentsService,

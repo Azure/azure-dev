@@ -11,8 +11,8 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/azureapis"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
-	"github.com/azure/azure-dev/cli/azd/pkg/deploymentservice"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
@@ -57,7 +57,7 @@ type showAction struct {
 	formatter                   output.Formatter
 	writer                      io.Writer
 	azCli                       azcli.AzCli
-	deploymentOperationsService deploymentservice.DeploymentOperationsService
+	deploymentOperationsService azureapis.DeploymentOperations
 	azdCtx                      *azdcontext.AzdContext
 	flags                       *showFlags
 }
@@ -67,7 +67,7 @@ func newShowAction(
 	formatter output.Formatter,
 	writer io.Writer,
 	azCli azcli.AzCli,
-	deploymentOperationsService deploymentservice.DeploymentOperationsService,
+	deploymentOperationsService azureapis.DeploymentOperations,
 	projectConfig *project.ProjectConfig,
 	azdCtx *azdcontext.AzdContext,
 	flags *showFlags,

@@ -11,7 +11,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
-	"github.com/azure/azure-dev/cli/azd/pkg/deploymentservice"
+	"github.com/azure/azure-dev/cli/azd/pkg/azureapis"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mocktracing"
@@ -114,27 +114,27 @@ func Test_mapError(t *testing.T) {
 		},
 		{
 			name: "WithArmDeploymentError",
-			err: &deploymentservice.AzureDeploymentError{
-				Details: &deploymentservice.DeploymentErrorLine{
+			err: &azureapis.AzureDeploymentError{
+				Details: &azureapis.DeploymentErrorLine{
 					Code: "",
-					Inner: []*deploymentservice.DeploymentErrorLine{
+					Inner: []*azureapis.DeploymentErrorLine{
 						{
 							Code: "Conflict",
-							Inner: []*deploymentservice.DeploymentErrorLine{
+							Inner: []*azureapis.DeploymentErrorLine{
 								{Code: "OutOfCapacity"},
 								{Code: "RegionOutOfCapacity"},
 							},
 						},
 						{
 							Code:  "PreconditionFailed",
-							Inner: []*deploymentservice.DeploymentErrorLine{},
+							Inner: []*azureapis.DeploymentErrorLine{},
 						},
 						{
 							Code: "",
-							Inner: []*deploymentservice.DeploymentErrorLine{
+							Inner: []*azureapis.DeploymentErrorLine{
 								{
 									Code: "ServiceUnavailable",
-									Inner: []*deploymentservice.DeploymentErrorLine{
+									Inner: []*azureapis.DeploymentErrorLine{
 										{Code: "UnknownError"},
 									},
 								},

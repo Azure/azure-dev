@@ -104,6 +104,11 @@ func (p *TestProvider) Deploy(ctx context.Context, pd *DeploymentPlan) (*DeployR
 	}, nil
 }
 
+// Provisioning the infrastructure within the specified template
+func (p *TestProvider) WhatIfDeploy(ctx context.Context, pd *DeploymentPlan) (*DeployPreviewResult, error) {
+	return &DeployPreviewResult{}, nil
+}
+
 func (p *TestProvider) Destroy(ctx context.Context, options DestroyOptions) (*DestroyResult, error) {
 	// TODO: progress, "Starting destroy"
 

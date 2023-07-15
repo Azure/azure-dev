@@ -78,6 +78,20 @@ func (m *Manager) Deploy(ctx context.Context, plan *DeploymentPlan) (*DeployResu
 	return deployResult, nil
 }
 
+// Deploys the Azure infrastructure for the specified project
+func (m *Manager) WhatIfDeploy(ctx context.Context, plan *DeploymentPlan) (*DeployPreviewResult, error) {
+	// Apply the infrastructure deployment
+	deployResult, err := m.provider.WhatIfDeploy(ctx, plan)
+	if err != nil {
+		return nil, fmt.Errorf("error deploying infrastructure: %w", err)
+	}
+
+	// make sure any spinner is stopped
+	m.console.StopSpinner(ctx, "", input.StepDone)
+
+	return deployResult, nil
+}
+
 // Destroys the Azure infrastructure for the specified project
 func (m *Manager) Destroy(ctx context.Context, options DestroyOptions) (*DestroyResult, error) {
 	destroyResult, err := m.provider.Destroy(ctx, options)

@@ -59,6 +59,22 @@ type Deployments interface {
 		parameters azure.ArmParameters,
 		tags map[string]*string,
 	) (*armresources.DeploymentExtended, error)
+	WhatIfDeployToSubscription(
+		ctx context.Context,
+		subscriptionId string,
+		location string,
+		deploymentName string,
+		armTemplate azure.RawArmTemplate,
+		parameters azure.ArmParameters,
+	) (*armresources.WhatIfOperationResult, error)
+	WhatIfDeployToResourceGroup(
+		ctx context.Context,
+		subscriptionId,
+		resourceGroup,
+		deploymentName string,
+		armTemplate azure.RawArmTemplate,
+		parameters azure.ArmParameters,
+	) (*armresources.WhatIfOperationResult, error)
 	DeleteSubscriptionDeployment(ctx context.Context, subscriptionId string, deploymentName string) error
 }
 
@@ -274,6 +290,84 @@ func (ds *deployments) DeployToResourceGroup(
 	}
 
 	return &deployResult.DeploymentExtended, nil
+}
+
+func (ds *deployments) WhatIfDeployToSubscription(
+	ctx context.Context,
+	subscriptionId string,
+	location string,
+	deploymentName string,
+	armTemplate azure.RawArmTemplate,
+	parameters azure.ArmParameters,
+) (*armresources.WhatIfOperationResult, error) {
+	deploymentClient, err := ds.createDeploymentsClient(ctx, subscriptionId)
+	if err != nil {
+		return nil, fmt.Errorf("creating deployments client: %w", err)
+	}
+
+	createFromTemplateOperation, err := deploymentClient.BeginWhatIfAtSubscriptionScope(
+		ctx, deploymentName,
+		armresources.DeploymentWhatIf{
+			Properties: &armresources.DeploymentWhatIfProperties{
+				Template:       armTemplate,
+				Parameters:     parameters,
+				Mode:           to.Ptr(armresources.DeploymentModeIncremental),
+				WhatIfSettings: &armresources.DeploymentWhatIfSettings{},
+			},
+			Location: to.Ptr(location),
+		}, nil)
+	if err != nil {
+		return nil, fmt.Errorf("starting deployment to subscription: %w", err)
+	}
+
+	// wait for deployment creation
+	deployResult, err := createFromTemplateOperation.PollUntilDone(ctx, nil)
+	if err != nil {
+		deploymentError := createDeploymentError(err)
+		return nil, fmt.Errorf(
+			"deploying to subscription:\n\nDeployment Error Details:\n%w",
+			deploymentError,
+		)
+	}
+
+	return &deployResult.WhatIfOperationResult, nil
+}
+
+func (ds *deployments) WhatIfDeployToResourceGroup(
+	ctx context.Context,
+	subscriptionId, resourceGroup, deploymentName string,
+	armTemplate azure.RawArmTemplate,
+	parameters azure.ArmParameters,
+) (*armresources.WhatIfOperationResult, error) {
+	deploymentClient, err := ds.createDeploymentsClient(ctx, subscriptionId)
+	if err != nil {
+		return nil, fmt.Errorf("creating deployments client: %w", err)
+	}
+
+	createFromTemplateOperation, err := deploymentClient.BeginWhatIf(
+		ctx, resourceGroup, deploymentName,
+		armresources.DeploymentWhatIf{
+			Properties: &armresources.DeploymentWhatIfProperties{
+				Template:   armTemplate,
+				Parameters: parameters,
+				Mode:       to.Ptr(armresources.DeploymentModeIncremental),
+			},
+		}, nil)
+	if err != nil {
+		return nil, fmt.Errorf("starting deployment to resource group: %w", err)
+	}
+
+	// wait for deployment creation
+	deployResult, err := createFromTemplateOperation.PollUntilDone(ctx, nil)
+	if err != nil {
+		deploymentError := createDeploymentError(err)
+		return nil, fmt.Errorf(
+			"deploying to resource group:\n\nDeployment Error Details:\n%w",
+			deploymentError,
+		)
+	}
+
+	return &deployResult.WhatIfOperationResult, nil
 }
 
 func (ds *deployments) DeleteSubscriptionDeployment(

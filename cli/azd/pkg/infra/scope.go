@@ -33,6 +33,12 @@ type Deployment interface {
 		parameters azure.ArmParameters,
 		tags map[string]*string,
 	) (*armresources.DeploymentExtended, error)
+	// Deploy a given template with a set of parameters.
+	DeployPreview(
+		ctx context.Context,
+		template azure.RawArmTemplate,
+		parameters azure.ArmParameters,
+	) (*armresources.WhatIfOperationResult, error)
 	// Deployment fetches information about this deployment.
 	Deployment(ctx context.Context) (*armresources.DeploymentExtended, error)
 	// Operations returns all the operations for this deployment.
@@ -63,6 +69,14 @@ func (s *ResourceGroupDeployment) Deploy(
 ) (*armresources.DeploymentExtended, error) {
 	return s.deploymentsService.DeployToResourceGroup(
 		ctx, s.subscriptionId, s.resourceGroupName, s.name, template, parameters, tags)
+}
+
+func (s *ResourceGroupDeployment) DeployPreview(
+	ctx context.Context,
+	template azure.RawArmTemplate,
+	parameters azure.ArmParameters) (*armresources.WhatIfOperationResult, error) {
+	return s.deploymentsService.WhatIfDeployToResourceGroup(
+		ctx, s.subscriptionId, s.resourceGroupName, s.name, template, parameters)
 }
 
 // GetDeployment fetches the result of the most recent deployment.
@@ -165,6 +179,15 @@ func (s *SubscriptionDeployment) Deploy(
 	ctx context.Context, template azure.RawArmTemplate, parameters azure.ArmParameters, tags map[string]*string,
 ) (*armresources.DeploymentExtended, error) {
 	return s.deploymentsService.DeployToSubscription(ctx, s.subscriptionId, s.location, s.name, template, parameters, tags)
+}
+
+// Deploy a given template with a set of parameters.
+func (s *SubscriptionDeployment) DeployPreview(
+	ctx context.Context,
+	template azure.RawArmTemplate,
+	parameters azure.ArmParameters) (*armresources.WhatIfOperationResult, error) {
+	return s.deploymentsService.WhatIfDeployToSubscription(
+		ctx, s.subscriptionId, s.location, s.name, template, parameters)
 }
 
 // GetDeployment fetches the result of the most recent deployment.

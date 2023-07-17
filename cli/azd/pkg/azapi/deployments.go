@@ -381,7 +381,7 @@ type AzCliDeploymentStatusMessage struct {
 	Status string                       `json:"status"`
 }
 
-// convert from: sdk client outputs: interface{} to map[string]azureapis.AzCliDeploymentOutput
+// convert from: sdk client outputs: interface{} to map[string]azapi.AzCliDeploymentOutput
 // sdk client parses http response from network as an interface{}
 // this function keeps the compatibility with the previous AzCliDeploymentOutput model
 func CreateDeploymentOutput(rawOutputs interface{}) (result map[string]AzCliDeploymentOutput) {

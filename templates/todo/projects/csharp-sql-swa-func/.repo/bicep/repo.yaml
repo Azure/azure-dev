@@ -146,7 +146,7 @@ repo:
       to: ./infra
 
     # .devcontainer common (devcontainer.json)
-    - from: ../../../../../common/.devcontainer/devcontainer.json/csharp
+    - from: ../../../../../common/.devcontainer/devcontainer.json/csharp/func
       to: ./.devcontainer
 
     # .devcontainer common (Dockerfile)

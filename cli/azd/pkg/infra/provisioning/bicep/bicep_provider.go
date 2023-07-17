@@ -22,8 +22,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
-	"github.com/azure/azure-dev/cli/azd/pkg/azureapis"
 	"github.com/azure/azure-dev/cli/azd/pkg/cmdsubst"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
@@ -63,8 +63,8 @@ type BicepProvider struct {
 	console                     input.Console
 	bicepCli                    bicep.BicepCli
 	azCli                       azcli.AzCli
-	deploymentsService          azureapis.Deployments
-	deploymentOperationsService azureapis.DeploymentOperations
+	deploymentsService          azapi.Deployments
+	deploymentOperationsService azapi.DeploymentOperations
 	prompters                   prompt.Prompter
 	curPrincipal                CurrentPrincipalIdProvider
 	alphaFeatureManager         *alpha.FeatureManager
@@ -202,7 +202,7 @@ func (p *BicepProvider) State(ctx context.Context) (*StateResult, error) {
 
 	state.Outputs = p.createOutputParameters(
 		template.Outputs,
-		azureapis.CreateDeploymentOutput(armDeployment.Properties.Outputs),
+		azapi.CreateDeploymentOutput(armDeployment.Properties.Outputs),
 	)
 
 	return &StateResult{
@@ -350,7 +350,7 @@ func (p *BicepProvider) Deploy(ctx context.Context, pd *DeploymentPlan) (*Deploy
 	deployment := pd.Deployment
 	deployment.Outputs = p.createOutputParameters(
 		bicepDeploymentData.TemplateOutputs,
-		azureapis.CreateDeploymentOutput(deployResult.Properties.Outputs),
+		azapi.CreateDeploymentOutput(deployResult.Properties.Outputs),
 	)
 
 	return &DeployResult{
@@ -511,7 +511,7 @@ func (p *BicepProvider) Destroy(ctx context.Context, options DestroyOptions) (*D
 	destroyResult := &DestroyResult{
 		InvalidatedEnvKeys: maps.Keys(p.createOutputParameters(
 			template.Outputs,
-			azureapis.CreateDeploymentOutput(deployment.Properties.Outputs),
+			azapi.CreateDeploymentOutput(deployment.Properties.Outputs),
 		)),
 	}
 
@@ -1114,7 +1114,7 @@ func (p *BicepProvider) mapBicepTypeToInterfaceType(s string) ParameterType {
 // casings.
 func (p *BicepProvider) createOutputParameters(
 	templateOutputs azure.ArmTemplateOutputs,
-	azureOutputParams map[string]azureapis.AzCliDeploymentOutput,
+	azureOutputParams map[string]azapi.AzCliDeploymentOutput,
 ) map[string]OutputParameter {
 	canonicalOutputCasings := make(map[string]string, len(templateOutputs))
 
@@ -1403,8 +1403,8 @@ func isValueAssignableToParameterType(paramType ParameterType, value any) bool {
 func NewBicepProvider(
 	bicepCli bicep.BicepCli,
 	azCli azcli.AzCli,
-	deploymentsService azureapis.Deployments,
-	deploymentOperationsService azureapis.DeploymentOperations,
+	deploymentsService azapi.Deployments,
+	deploymentOperationsService azapi.DeploymentOperations,
 	env *environment.Environment,
 	console input.Console,
 	prompters prompt.Prompter,

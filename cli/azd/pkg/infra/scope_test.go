@@ -11,16 +11,16 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
-	"github.com/azure/azure-dev/cli/azd/pkg/azureapis"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/stretchr/testify/require"
 )
 
 func TestScopeGetDeployment(t *testing.T) {
-	outputs := make(map[string]azureapis.AzCliDeploymentOutput)
-	outputs["APP_URL"] = azureapis.AzCliDeploymentOutput{
+	outputs := make(map[string]azapi.AzCliDeploymentOutput)
+	outputs["APP_URL"] = azapi.AzCliDeploymentOutput{
 		Type:  "string",
 		Value: "https://www.myapp.com",
 	}

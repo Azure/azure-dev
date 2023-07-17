@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
-	"github.com/azure/azure-dev/cli/azd/pkg/azureapis"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/compare"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
@@ -20,7 +20,7 @@ import (
 
 type AzureResourceManager struct {
 	azCli                       azcli.AzCli
-	deploymentOperationsService azureapis.DeploymentOperations
+	deploymentOperationsService azapi.DeploymentOperations
 }
 
 type ResourceManager interface {
@@ -35,7 +35,7 @@ type ResourceManager interface {
 }
 
 func NewAzureResourceManager(
-	azCli azcli.AzCli, deploymentOperationsService azureapis.DeploymentOperations) *AzureResourceManager {
+	azCli azcli.AzCli, deploymentOperationsService azapi.DeploymentOperations) *AzureResourceManager {
 	return &AzureResourceManager{
 		azCli:                       azCli,
 		deploymentOperationsService: deploymentOperationsService,

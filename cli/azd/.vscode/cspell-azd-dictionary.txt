@@ -14,6 +14,7 @@ armapimanagement
 armappconfiguration
 armappplatform
 armcognitiveservices
+azapi
 AZCLI
 azcorelog
 azdcli
@@ -28,7 +29,6 @@ azdtest
 azfile
 azruntime
 azsdk
-azureapis
 AZURECLI
 azureedge
 azurestaticapps

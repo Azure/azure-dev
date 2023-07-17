@@ -6,8 +6,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
-	"github.com/azure/azure-dev/cli/azd/pkg/azureapis"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
@@ -42,14 +42,14 @@ type ResourceManager interface {
 type resourceManager struct {
 	env                         *environment.Environment
 	azCli                       azcli.AzCli
-	deploymentOperationsService azureapis.DeploymentOperations
+	deploymentOperationsService azapi.DeploymentOperations
 }
 
 // NewResourceManager creates a new instance of the project resource manager
 func NewResourceManager(
 	env *environment.Environment,
 	azCli azcli.AzCli,
-	deploymentOperationsService azureapis.DeploymentOperations) ResourceManager {
+	deploymentOperationsService azapi.DeploymentOperations) ResourceManager {
 	return &resourceManager{
 		env:                         env,
 		azCli:                       azCli,

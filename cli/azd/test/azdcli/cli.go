@@ -22,6 +22,8 @@ import (
 	"sync"
 	"testing"
 	"time"
+
+	"github.com/azure/azure-dev/cli/azd/test/recording"
 )
 
 const (
@@ -30,6 +32,9 @@ const (
 
 // sync.Once for one-time build for the process invocation
 var buildOnce sync.Once
+
+// sync.Once for one-time build for the process invocation (record mode)
+var buildRecordOnce sync.Once
 
 // The result of calling an azd CLI command
 type CliResult struct {
@@ -58,27 +63,37 @@ type CLI struct {
 //
 // When CI is detected, no automatic build is performed. To disable automatic build behavior, CLI_TEST_SKIP_BUILD
 // can be set to a truthy value.
-func NewCLI(t *testing.T) *CLI {
+func NewCLI(t *testing.T, opts ...Options) *CLI {
+	cli := &CLI{T: t}
+	opt := option{}
+	for _, o := range opts {
+		o.Apply(&opt)
+	}
+
+	if opt.Session != nil {
+		env := append(
+			environ(opt.Session),
+			"HTTPS_PROXY="+opt.Session.ProxyUrl,
+			"AZD_DEBUG_PROVISION_PROGRESS_DISABLE=true")
+		cli.Env = append(cli.Env, env...)
+	}
+
 	// Allow a override for custom build
 	if os.Getenv("CLI_TEST_AZD_PATH") != "" {
-		return &CLI{
-			T:       t,
-			AzdPath: os.Getenv("CLI_TEST_AZD_PATH"),
-		}
+		cli.AzdPath = os.Getenv("CLI_TEST_AZD_PATH")
+		return cli
 	}
 
-	// Reference the binary that is built in the same folder as source
-	cliPath := GetSourcePath()
+	// Set AzdPath to the appropriate binary path
+	sourceDir := GetSourcePath()
+	name := "azd"
+	if opt.Session != nil {
+		name = "azd-record"
+	}
 	if runtime.GOOS == "windows" {
-		cliPath = filepath.Join(cliPath, "azd.exe")
-	} else {
-		cliPath = filepath.Join(cliPath, "azd")
+		name = name + ".exe"
 	}
-
-	cli := &CLI{
-		T:       t,
-		AzdPath: cliPath,
-	}
+	cli.AzdPath = filepath.Join(sourceDir, name)
 
 	// Manual override for skipping automatic build
 	skip, err := strconv.ParseBool(os.Getenv("CLI_TEST_SKIP_BUILD"))
@@ -93,30 +108,17 @@ func NewCLI(t *testing.T) *CLI {
 		return cli
 	}
 
-	buildOnce.Do(func() {
-		cmd := exec.Command("go", "build")
-		cmd.Dir = filepath.Dir(cliPath)
-
-		// Build with coverage if GOCOVERDIR is specified.
-		if os.Getenv("GOCOVERDIR") != "" {
-			cmd.Args = append(cmd.Args, "-cover")
-		}
-
-		output, err := cmd.CombinedOutput()
-		if err != nil {
-			panic(fmt.Errorf(
-				"failed to build azd (ran %s in %s): %w:\n%s",
-				strings.Join(cmd.Args, " "),
-				cmd.Dir,
-				err,
-				output))
-		}
-	})
-
-	return &CLI{
-		T:       t,
-		AzdPath: cliPath,
+	if opt.Session != nil {
+		buildRecordOnce.Do(func() {
+			build(t, sourceDir, "-tags=record", "-o="+name)
+		})
+	} else {
+		buildOnce.Do(func() {
+			build(t, sourceDir)
+		})
 	}
+
+	return cli
 }
 
 func (cli *CLI) RunCommandWithStdIn(ctx context.Context, stdin string, args ...string) (*CliResult, error) {
@@ -130,6 +132,8 @@ func (cli *CLI) RunCommandWithStdIn(ctx context.Context, stdin string, args ...s
 
 	if stdin != "" {
 		cmd.Stdin = strings.NewReader(stdin)
+	} else {
+		cmd.Stdin = os.Stdin
 	}
 
 	cmd.Env = cli.Env
@@ -144,8 +148,9 @@ func (cli *CLI) RunCommandWithStdIn(ctx context.Context, stdin string, args ...s
 		done <- struct{}{}
 	}()
 
-	stdOutLogger := &logWriter{t: cli.T, prefix: "[stdout] "}
-	stdErrLogger := &logWriter{t: cli.T, prefix: "[stderr] "}
+	now := time.Now()
+	stdOutLogger := &logWriter{t: cli.T, prefix: "[stdout] ", initialTime: now}
+	stdErrLogger := &logWriter{t: cli.T, prefix: "[stderr] ", initialTime: now}
 
 	var stderr, stdout bytes.Buffer
 	cmd.Stderr = io.MultiWriter(&stderr, stdErrLogger)
@@ -196,9 +201,10 @@ func (cli *CLI) heartbeat(description string, done <-chan struct{}) {
 }
 
 type logWriter struct {
-	t      *testing.T
-	sb     strings.Builder
-	prefix string
+	t           *testing.T
+	sb          strings.Builder
+	prefix      string
+	initialTime time.Time
 }
 
 func (l *logWriter) Write(bytes []byte) (n int, err error) {
@@ -209,7 +215,7 @@ func (l *logWriter) Write(bytes []byte) (n int, err error) {
 		}
 
 		if b == '\n' {
-			l.t.Logf("%s%s", l.prefix, l.sb.String())
+			l.t.Logf("%s %s%s", time.Since(l.initialTime).Round(1*time.Millisecond), l.prefix, l.sb.String())
 			l.sb.Reset()
 		}
 	}
@@ -219,4 +225,50 @@ func (l *logWriter) Write(bytes []byte) (n int, err error) {
 func GetSourcePath() string {
 	_, b, _, _ := runtime.Caller(0)
 	return filepath.Join(filepath.Dir(b), "..", "..")
+}
+
+func build(t *testing.T, pkgPath string, args ...string) {
+	startTime := time.Now()
+	cmd := exec.Command("go", "build")
+	cmd.Dir = pkgPath
+	cmd.Args = append(cmd.Args, args...)
+
+	// Build with coverage if GOCOVERDIR is specified.
+	if os.Getenv("GOCOVERDIR") != "" {
+		cmd.Args = append(cmd.Args, "-cover")
+	}
+
+	output, err := cmd.CombinedOutput()
+	if err != nil {
+		panic(fmt.Errorf(
+			"failed to build azd (ran %s in %s): %w:\n%s",
+			strings.Join(cmd.Args, " "),
+			cmd.Dir,
+			err,
+			output))
+	}
+
+	t.Logf("built azd in %s (%s)", time.Since(startTime), strings.Join(cmd.Args, " "))
+}
+
+// Recording variables that are mapped to environment variables.
+var recordingVarToEnvVar = map[string]string{
+	// Fixed time for the CLI. See deps_record.go
+	recording.TimeKey: "AZD_TEST_FIXED_CLOCK_UNIX_TIME",
+	// Set the default subscription used in the test
+	recording.SubscriptionIdKey: "AZURE_SUBSCRIPTION_ID",
+}
+
+func environ(session *recording.Session) []string {
+	if session == nil {
+		return nil
+	}
+
+	env := []string{}
+	for recordKey, envKey := range recordingVarToEnvVar {
+		if _, ok := session.Variables[recordKey]; ok {
+			env = append(env, fmt.Sprintf("%s=%s", envKey, session.Variables[recordKey]))
+		}
+	}
+	return env
 }

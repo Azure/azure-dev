@@ -1,10 +1,22 @@
 # Release History
 
-## vNext (unreleased)
+## 1.1.1 (Unreleased)
+
+## 1.1.0 (2023-07-12)
+
+### Features Added
+
+- [[2364]](https://github.com/Azure/azure-dev/pull/2364) Display docker output during `package` and `deploy`.
+- [[2463]](https://github.com/Azure/azure-dev/pull/2463) Support `--docs` flag for all azd commands to show official documentation website.
 
 ### Bugs Fixed
 
 - [[2402]](https://github.com/Azure/azure-dev/pull/2279) Support for workload profiles in Azure Container Apps
+- [[2428, 2040]](https://github.com/Azure/azure-dev/pull/2468) Include current git branch in GitHub federated credentials
+
+### Other Changes
+
+- [[1118]](https://github.com/Azure/azure-dev/pull/1118) Add `azd` as a devcontainer feature. Thanks [aaronpowell](https://github.com/aaronpowell) for their contributions to this feature and for updating our templates to use this new feature!
 
 ## 1.0.2 (2023-06-14)
 

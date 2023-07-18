@@ -10,6 +10,7 @@ Usage
 
 Flags
         --auth-type string           	: The authentication type used between the pipeline provider and Azure for deployment (Only valid for GitHub provider). Valid values: federated, client-credentials.
+        --docs                       	: Opens the documentation for azd pipeline config in your web browser.
     -e, --environment string         	: The name of the environment to use.
     -h, --help                       	: Gets help for config.
         --principal-name string      	: The name of the service principal to use to grant access to Azure resources as part of the pipeline.

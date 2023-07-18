@@ -9,6 +9,7 @@ Usage
 
 Flags
         --all                	: Restores all services that are listed in azure.yaml
+        --docs               	: Opens the documentation for azd restore in your web browser.
     -e, --environment string 	: The name of the environment to use.
     -h, --help               	: Gets help for restore.
 

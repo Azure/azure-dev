@@ -5,6 +5,7 @@ Usage
   azd config get <path> [flags]
 
 Flags
+        --docs 	: Opens the documentation for azd config get in your web browser.
     -h, --help 	: Gets help for get.
 
 Global Flags

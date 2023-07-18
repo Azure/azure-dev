@@ -21,7 +21,6 @@ import (
 type LocationFilterPredicate func(loc account.Location) bool
 
 type Prompter interface {
-	EnsureEnv(ctx context.Context) error
 	PromptSubscription(ctx context.Context, msg string) (subscriptionId string, err error)
 	PromptLocation(ctx context.Context, subId string, msg string, filter LocationFilterPredicate) (string, error)
 	PromptResourceGroup(ctx context.Context) (string, error)
@@ -46,45 +45,6 @@ func NewDefaultPrompter(
 		accountManager: accountManager,
 		azCli:          azCli,
 	}
-}
-
-// EnsureEnv ensures that the environment is in a provision-ready state with required values set, prompting the user if
-// values are unset.
-//
-// This currently means that subscription (AZURE_SUBSCRIPTION_ID) and location (AZURE_LOCATION) variables are set.
-func (p *DefaultPrompter) EnsureEnv(ctx context.Context) error {
-	if p.env.GetSubscriptionId() == "" {
-		subscriptionId, err := p.PromptSubscription(ctx, "Select an Azure Subscription to use:")
-		if err != nil {
-			return err
-		}
-
-		p.env.SetSubscriptionId(subscriptionId)
-
-		if err := p.env.Save(); err != nil {
-			return err
-		}
-	}
-
-	if p.env.GetLocation() == "" {
-		location, err := p.PromptLocation(
-			ctx,
-			p.env.GetSubscriptionId(),
-			"Select an Azure location to use:",
-			func(_ account.Location) bool { return true },
-		)
-		if err != nil {
-			return err
-		}
-
-		p.env.SetLocation(location)
-
-		if err := p.env.Save(); err != nil {
-			return err
-		}
-	}
-
-	return nil
 }
 
 func (p *DefaultPrompter) PromptSubscription(ctx context.Context, msg string) (subscriptionId string, err error) {

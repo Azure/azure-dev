@@ -22,3 +22,12 @@ var MinimalBicep []byte
 
 //go:embed minimal/main.parameters.json
 var MinimalBicepParameters []byte
+
+//go:embed scaffold/templates/api.bicept
+var ApiBicepTempl []byte
+
+//go:embed scaffold/templates/main.bicept
+var MainBicepTempl []byte
+
+//go:embed scaffold/base/*
+var ScaffoldBase embed.FS

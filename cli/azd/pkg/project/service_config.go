@@ -11,7 +11,7 @@ type ServiceConfig struct {
 	// Reference to the parent project configuration
 	Project *ProjectConfig `yaml:"projectConfig,omitempty"`
 	// The friendly name/key of the project from the azure.yaml file
-	Name string `yaml:",omitempty"`
+	Name string `yaml:"-,omitempty"`
 	// The name used to override the default azure resource name
 	ResourceName ExpandableString `yaml:"resourceName,omitempty"`
 	// The relative path to the project folder from the project root
@@ -25,9 +25,9 @@ type ServiceConfig struct {
 	// The optional docker options
 	Docker DockerProjectOptions `yaml:"docker,omitempty"`
 	// The optional K8S / AKS options
-	K8s AksOptions `yaml:"k8s"`
+	K8s AksOptions `yaml:"k8s,omitempty"`
 	// The optional Azure Spring Apps options
-	Spring SpringOptions `yaml:"spring"`
+	Spring SpringOptions `yaml:"spring,omitempty"`
 	// The infrastructure provisioning configuration
 	Infra provisioning.Options `yaml:"infra,omitempty"`
 	// Hook configuration for service

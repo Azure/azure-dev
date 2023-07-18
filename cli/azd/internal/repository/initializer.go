@@ -162,37 +162,6 @@ func (i *Initializer) ScaffoldProject(
 	return nil
 }
 
-func (i *Initializer) InitializeInfra(ctx context.Context,
-	azdCtx *azdcontext.AzdContext,
-	templateUrl string,
-	templateBranch string,
-	useOptions InfraUseOptions) error {
-	var err error
-	stepMessage := fmt.Sprintf(
-		"Generating infrastructure-as-code (IaC) files under the %s folder",
-		output.WithLinkFormat("infra"))
-	i.console.ShowSpinner(ctx, stepMessage, input.Step)
-	defer i.console.StopSpinner(ctx, "", input.GetStepResultFormat(err))
-
-	err = copyTemplateFS(resources.AppTypes, useOptions, templateUrl, azdCtx.ProjectDirectory())
-	if err != nil {
-		return fmt.Errorf("copying from template : %w", err)
-	}
-
-	err = copyCoreFS(resources.AppTypes, useOptions, azdCtx.ProjectDirectory())
-	if err != nil {
-		return fmt.Errorf("copying core lib : %w", err)
-	}
-	i.console.StopSpinner(ctx, stepMessage, input.GetStepResultFormat(err))
-
-	err = i.writeCoreAssets(ctx, azdCtx)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
 // copyTemplate copies the given infrastructure template.
 func copyTemplateFS(templateFs embed.FS, useOptions InfraUseOptions, appType string, target string) error {
 	root := path.Join("app-types", appType)

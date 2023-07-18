@@ -148,10 +148,6 @@ repo:
     - from: ../../../../../common/.devcontainer/devcontainer.json/python/terraform
       to: ./.devcontainer
 
-    # .devcontainer common (Dockerfile)
-    - from: ../../../../../common/.devcontainer/Dockerfile/base
-      to: ./.devcontainer
-
     # Assets common
     - from: ../../../../common/assets
       to: ./assets

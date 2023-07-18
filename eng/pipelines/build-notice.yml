@@ -97,7 +97,7 @@ jobs:
       vmImage: $(OSVmImage)
 
     variables:
-      NodeVersion: 14.x
+      NodeVersion: 18.x
 
     steps:
       - task: NodeTool@0

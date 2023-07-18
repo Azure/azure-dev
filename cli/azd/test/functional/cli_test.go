@@ -163,7 +163,7 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 		}),
 		client,
 		azcli.NewAzCliArgs{})
-	deploymentOperationsService := azapi.NewDeploymentOperations(
+	deploymentOperations := azapi.NewDeploymentOperations(
 		mockaccount.SubscriptionCredentialProviderFunc(
 			func(_ context.Context, _ string) (azcore.TokenCredential, error) {
 				return cred, nil
@@ -171,7 +171,7 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 		client)
 
 	// Verify that resource groups are created with tag
-	resourceManager := infra.NewAzureResourceManager(azCli, deploymentOperationsService)
+	resourceManager := infra.NewAzureResourceManager(azCli, deploymentOperations)
 	rgs, err := resourceManager.GetResourceGroupsForEnvironment(ctx, env.GetSubscriptionId(), env.GetEnvName())
 	require.NoError(t, err)
 	require.NotNil(t, rgs)
@@ -260,7 +260,7 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 		}),
 		client,
 		azcli.NewAzCliArgs{})
-	deploymentOperationsService := azapi.NewDeploymentOperations(
+	deploymentOperations := azapi.NewDeploymentOperations(
 		mockaccount.SubscriptionCredentialProviderFunc(
 			func(_ context.Context, _ string) (azcore.TokenCredential, error) {
 				return cred, nil
@@ -268,7 +268,7 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 		client)
 
 	// Verify that resource groups are created with tag
-	resourceManager := infra.NewAzureResourceManager(azCli, deploymentOperationsService)
+	resourceManager := infra.NewAzureResourceManager(azCli, deploymentOperations)
 	rgs, err := resourceManager.GetResourceGroupsForEnvironment(ctx, env.GetSubscriptionId(), env.GetEnvName())
 	require.NoError(t, err)
 	require.NotNil(t, rgs)

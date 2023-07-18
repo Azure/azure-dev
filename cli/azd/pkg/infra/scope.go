@@ -72,7 +72,7 @@ func (s *ResourceGroupDeployment) Deployment(ctx context.Context) (*armresources
 
 // Gets the resource deployment operations for the current scope
 func (s *ResourceGroupDeployment) Operations(ctx context.Context) ([]*armresources.DeploymentOperation, error) {
-	return s.deploymentOperationsService.ListResourceGroupDeploymentOperations(
+	return s.deploymentOperations.ListResourceGroupDeploymentOperations(
 		ctx, s.subscriptionId, s.resourceGroupName, s.name)
 }
 
@@ -85,34 +85,34 @@ func (s *ResourceGroupDeployment) PortalUrl() string {
 
 func NewResourceGroupDeployment(
 	deploymentsService azapi.Deployments,
-	deploymentOperationsService azapi.DeploymentOperations,
+	deploymentOperations azapi.DeploymentOperations,
 	subscriptionId string, resourceGroupName string, deploymentName string,
 ) Deployment {
 	return &ResourceGroupDeployment{
 		ResourceGroupScope: NewResourceGroupScope(
 			deploymentsService,
-			deploymentOperationsService,
+			deploymentOperations,
 			subscriptionId, resourceGroupName),
 		name: deploymentName,
 	}
 }
 
 type ResourceGroupScope struct {
-	deploymentsService          azapi.Deployments
-	deploymentOperationsService azapi.DeploymentOperations
-	subscriptionId              string
-	resourceGroupName           string
+	deploymentsService   azapi.Deployments
+	deploymentOperations azapi.DeploymentOperations
+	subscriptionId       string
+	resourceGroupName    string
 }
 
 func NewResourceGroupScope(
 	deploymentsService azapi.Deployments,
-	deploymentOperationsService azapi.DeploymentOperations,
+	deploymentOperations azapi.DeploymentOperations,
 	subscriptionId string, resourceGroupName string) *ResourceGroupScope {
 	return &ResourceGroupScope{
-		deploymentsService:          deploymentsService,
-		deploymentOperationsService: deploymentOperationsService,
-		subscriptionId:              subscriptionId,
-		resourceGroupName:           resourceGroupName,
+		deploymentsService:   deploymentsService,
+		deploymentOperations: deploymentOperations,
+		subscriptionId:       subscriptionId,
+		resourceGroupName:    resourceGroupName,
 	}
 }
 
@@ -174,18 +174,18 @@ func (s *SubscriptionDeployment) Deployment(ctx context.Context) (*armresources.
 
 // Gets the resource deployment operations for the current scope
 func (s *SubscriptionDeployment) Operations(ctx context.Context) ([]*armresources.DeploymentOperation, error) {
-	return s.deploymentOperationsService.ListSubscriptionDeploymentOperations(ctx, s.subscriptionId, s.name)
+	return s.deploymentOperations.ListSubscriptionDeploymentOperations(ctx, s.subscriptionId, s.name)
 }
 
 func NewSubscriptionDeployment(
 	deploymentsService azapi.Deployments,
-	deploymentOperationsService azapi.DeploymentOperations,
+	deploymentOperations azapi.DeploymentOperations,
 	location string, subscriptionId string, deploymentName string,
 ) *SubscriptionDeployment {
 	return &SubscriptionDeployment{
 		SubscriptionScope: NewSubscriptionScope(
 			deploymentsService,
-			deploymentOperationsService,
+			deploymentOperations,
 			subscriptionId),
 		name:     deploymentName,
 		location: location,
@@ -193,9 +193,9 @@ func NewSubscriptionDeployment(
 }
 
 type SubscriptionScope struct {
-	deploymentsService          azapi.Deployments
-	deploymentOperationsService azapi.DeploymentOperations
-	subscriptionId              string
+	deploymentsService   azapi.Deployments
+	deploymentOperations azapi.DeploymentOperations
+	subscriptionId       string
 }
 
 // Gets the Azure subscription id
@@ -210,11 +210,11 @@ func (s *SubscriptionScope) ListDeployments(ctx context.Context) ([]*armresource
 
 func NewSubscriptionScope(
 	deploymentsService azapi.Deployments,
-	deploymentOperationsService azapi.DeploymentOperations,
+	deploymentOperations azapi.DeploymentOperations,
 	subscriptionId string) *SubscriptionScope {
 	return &SubscriptionScope{
-		deploymentsService:          deploymentsService,
-		deploymentOperationsService: deploymentOperationsService,
-		subscriptionId:              subscriptionId,
+		deploymentsService:   deploymentsService,
+		deploymentOperations: deploymentOperations,
+		subscriptionId:       subscriptionId,
 	}
 }

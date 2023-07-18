@@ -19,8 +19,8 @@ import (
 )
 
 type AzureResourceManager struct {
-	azCli                       azcli.AzCli
-	deploymentOperationsService azapi.DeploymentOperations
+	azCli                azcli.AzCli
+	deploymentOperations azapi.DeploymentOperations
 }
 
 type ResourceManager interface {
@@ -35,10 +35,10 @@ type ResourceManager interface {
 }
 
 func NewAzureResourceManager(
-	azCli azcli.AzCli, deploymentOperationsService azapi.DeploymentOperations) *AzureResourceManager {
+	azCli azcli.AzCli, deploymentOperations azapi.DeploymentOperations) *AzureResourceManager {
 	return &AzureResourceManager{
-		azCli:                       azCli,
-		deploymentOperationsService: deploymentOperationsService,
+		azCli:                azCli,
+		deploymentOperations: deploymentOperations,
 	}
 }
 
@@ -307,7 +307,7 @@ func (rm *AzureResourceManager) appendDeploymentResourcesRecursive(
 	resourceOperations *map[string]*armresources.DeploymentOperation,
 	queryStart *time.Time,
 ) error {
-	operations, err := rm.deploymentOperationsService.ListResourceGroupDeploymentOperations(
+	operations, err := rm.deploymentOperations.ListResourceGroupDeploymentOperations(
 		ctx, subscriptionId, resourceGroupName, deploymentName)
 	if err != nil {
 		return fmt.Errorf("getting subscription deployment operations: %w", err)

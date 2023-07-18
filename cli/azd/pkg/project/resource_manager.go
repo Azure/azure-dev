@@ -40,20 +40,20 @@ type ResourceManager interface {
 }
 
 type resourceManager struct {
-	env                         *environment.Environment
-	azCli                       azcli.AzCli
-	deploymentOperationsService azapi.DeploymentOperations
+	env                  *environment.Environment
+	azCli                azcli.AzCli
+	deploymentOperations azapi.DeploymentOperations
 }
 
 // NewResourceManager creates a new instance of the project resource manager
 func NewResourceManager(
 	env *environment.Environment,
 	azCli azcli.AzCli,
-	deploymentOperationsService azapi.DeploymentOperations) ResourceManager {
+	deploymentOperations azapi.DeploymentOperations) ResourceManager {
 	return &resourceManager{
-		env:                         env,
-		azCli:                       azCli,
-		deploymentOperationsService: deploymentOperationsService,
+		env:                  env,
+		azCli:                azCli,
+		deploymentOperations: deploymentOperations,
 	}
 }
 
@@ -85,7 +85,7 @@ func (rm *resourceManager) GetResourceGroupName(
 		return envResourceGroupName, nil
 	}
 
-	resourceManager := infra.NewAzureResourceManager(rm.azCli, rm.deploymentOperationsService)
+	resourceManager := infra.NewAzureResourceManager(rm.azCli, rm.deploymentOperations)
 	resourceGroupName, err := resourceManager.FindResourceGroupForEnvironment(ctx, subscriptionId, rm.env.GetEnvName())
 	if err != nil {
 		return "", err

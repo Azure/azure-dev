@@ -59,13 +59,13 @@ func newMonitorCmd() *cobra.Command {
 }
 
 type monitorAction struct {
-	azdCtx                      *azdcontext.AzdContext
-	env                         *environment.Environment
-	subResolver                 account.SubscriptionTenantResolver
-	azCli                       azcli.AzCli
-	deploymentOperationsService azapi.DeploymentOperations
-	console                     input.Console
-	flags                       *monitorFlags
+	azdCtx               *azdcontext.AzdContext
+	env                  *environment.Environment
+	subResolver          account.SubscriptionTenantResolver
+	azCli                azcli.AzCli
+	deploymentOperations azapi.DeploymentOperations
+	console              input.Console
+	flags                *monitorFlags
 }
 
 func newMonitorAction(
@@ -73,18 +73,18 @@ func newMonitorAction(
 	env *environment.Environment,
 	subResolver account.SubscriptionTenantResolver,
 	azCli azcli.AzCli,
-	deploymentOperationsService azapi.DeploymentOperations,
+	deploymentOperations azapi.DeploymentOperations,
 	console input.Console,
 	flags *monitorFlags,
 ) actions.Action {
 	return &monitorAction{
-		azdCtx:                      azdCtx,
-		env:                         env,
-		azCli:                       azCli,
-		deploymentOperationsService: deploymentOperationsService,
-		console:                     console,
-		flags:                       flags,
-		subResolver:                 subResolver,
+		azdCtx:               azdCtx,
+		env:                  env,
+		azCli:                azCli,
+		deploymentOperations: deploymentOperations,
+		console:              console,
+		flags:                flags,
+		subResolver:          subResolver,
 	}
 }
 
@@ -99,7 +99,7 @@ func (m *monitorAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		)
 	}
 
-	resourceManager := infra.NewAzureResourceManager(m.azCli, m.deploymentOperationsService)
+	resourceManager := infra.NewAzureResourceManager(m.azCli, m.deploymentOperations)
 	resourceGroups, err := resourceManager.GetResourceGroupsForEnvironment(
 		ctx, m.env.GetSubscriptionId(), m.env.GetEnvName())
 	if err != nil {

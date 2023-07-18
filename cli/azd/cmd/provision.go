@@ -21,6 +21,7 @@ import (
 
 type provisionFlags struct {
 	noProgress bool
+	whatIf     bool
 	global     *internal.GlobalCommandOptions
 	*envFlag
 }
@@ -38,6 +39,7 @@ func (i *provisionFlags) bindNonCommon(local *pflag.FlagSet, global *internal.Gl
 }
 
 func (i *provisionFlags) bindCommon(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+	local.BoolVar(&i.whatIf, "what-if", false, "Show the expected changes for the infrastructure without provisioning.")
 	i.envFlag = &envFlag{}
 	i.envFlag.Bind(local, global)
 }
@@ -106,11 +108,19 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 			),
 		)
 	}
+	whatIfMode := p.flags.whatIf
 
 	// Command title
+	defaultTitle := "Provisioning Azure resources (azd provision)"
+	defaultTitleNote := "Provisioning Azure resources can take some time"
+	if whatIfMode {
+		defaultTitle = "Preview Azure resources changes (azd provision --what-if)"
+		defaultTitleNote = "No changes will be persisted to your Azure subscription"
+	}
+
 	p.console.MessageUxItem(ctx, &ux.MessageTitle{
-		Title:     "Provisioning Azure resources (azd provision)",
-		TitleNote: "Provisioning Azure resources can take some time"},
+		Title:     defaultTitle,
+		TitleNote: defaultTitleNote},
 	)
 
 	startTime := time.Now()
@@ -124,6 +134,7 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 	}
 
 	var deployResult *provisioning.DeployResult
+	var deployPreviewResult *provisioning.DeployPreviewResult
 
 	projectEventArgs := project.ProjectLifecycleEventArgs{
 		Project: p.projectConfig,
@@ -135,7 +146,11 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 			return fmt.Errorf("planning deployment: %w", err)
 		}
 
-		deployResult, err = p.provisionManager.Deploy(ctx, deploymentPlan)
+		if p.flags.whatIf {
+			deployPreviewResult, err = p.provisionManager.WhatIfDeploy(ctx, deploymentPlan)
+		} else {
+			deployResult, err = p.provisionManager.Deploy(ctx, deploymentPlan)
+		}
 
 		return err
 	})
@@ -160,6 +175,20 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		}
 
 		return nil, fmt.Errorf("deployment failed: %w", err)
+	}
+
+	if p.flags.whatIf {
+
+		p.console.MessageUxItem(ctx, deployResultToUx(deployPreviewResult))
+
+		return &actions.ActionResult{
+			Message: &actions.ResultMessage{
+				Header: fmt.Sprintf(
+					"Generated provisioning preview in %s.", ux.DurationAsText(since(startTime))),
+				FollowUp: getResourceGroupFollowUp(
+					ctx, p.formatter, p.projectConfig, p.resourceManager, p.env),
+			},
+		}, nil
 	}
 
 	for _, svc := range p.projectConfig.Services {
@@ -202,6 +231,20 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 				ctx, p.formatter, p.projectConfig, p.resourceManager, p.env),
 		},
 	}, nil
+}
+
+func deployResultToUx(previewResult *provisioning.DeployPreviewResult) ux.UxItem {
+	var operations []*ux.Resource
+	for _, change := range previewResult.Preview.Properties.Changes {
+		operations = append(operations, &ux.Resource{
+			Operation: ux.OperationType(change.ChangeType),
+			Type:      change.ResourceType,
+			Name:      change.Name,
+		})
+	}
+	return &ux.PreviewProvision{
+		Operations: operations,
+	}
 }
 
 func getCmdProvisionHelpDescription(c *cobra.Command) string {

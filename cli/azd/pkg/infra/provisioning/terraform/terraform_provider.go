@@ -202,6 +202,11 @@ func (t *TerraformProvider) Deploy(ctx context.Context, deployment *DeploymentPl
 	}, nil
 }
 
+// Deploy the infrastructure within the specified template through terraform apply
+func (t *TerraformProvider) WhatIfDeploy(ctx context.Context, deployment *DeploymentPlan) (*DeployPreviewResult, error) {
+	return &DeployPreviewResult{}, nil
+}
+
 // Destroys the specified deployment through terraform destroy
 func (t *TerraformProvider) Destroy(ctx context.Context, options DestroyOptions) (*DestroyResult, error) {
 	isRemoteBackendConfig, err := t.isRemoteBackendConfig()

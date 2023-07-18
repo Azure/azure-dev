@@ -358,6 +358,55 @@ func (p *BicepProvider) Deploy(ctx context.Context, pd *DeploymentPlan) (*Deploy
 	}, nil
 }
 
+// Provisioning the infrastructure within the specified template
+func (p *BicepProvider) WhatIfDeploy(ctx context.Context, pd *DeploymentPlan) (*DeployPreviewResult, error) {
+	bicepDeploymentData := pd.Details.(BicepDeploymentDetails)
+
+	p.console.ShowSpinner(ctx, "Generating infrastructure preview", input.Step)
+
+	targetScope := bicepDeploymentData.Target
+	deployPreviewResult, err := targetScope.DeployPreview(
+		ctx,
+		bicepDeploymentData.Template,
+		bicepDeploymentData.Parameters,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	var changes []*DeploymentPreviewChange
+	for _, change := range deployPreviewResult.Properties.Changes {
+		if ChangeType(*change.ChangeType) == ChangeTypeIgnore {
+			continue
+		}
+
+		resourceAfter := change.After.(map[string]interface{})
+		resourceTypeName := resourceAfter["type"].(string)
+		if azdResourceName := infra.
+			GetResourceTypeDisplayName(infra.AzureResourceType(resourceTypeName)); azdResourceName != "" {
+			resourceTypeName = azdResourceName
+		}
+
+		changes = append(changes, &DeploymentPreviewChange{
+			ChangeType: ChangeType(*change.ChangeType),
+			ResourceId: Resource{
+				Id: *change.ResourceID,
+			},
+			ResourceType: resourceTypeName,
+			Name:         resourceAfter["name"].(string),
+		})
+	}
+
+	return &DeployPreviewResult{
+		Preview: &DeploymentPreview{
+			Status: *deployPreviewResult.Status,
+			Properties: &DeploymentPreviewProperties{
+				Changes: changes,
+			},
+		},
+	}, nil
+}
+
 type itemToPurge struct {
 	resourceType      string
 	count             int

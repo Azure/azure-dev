@@ -472,8 +472,11 @@ func (m *Manager) LoginWithDeviceCode(
 			Lines: []string{
 				// nolint:lll
 				"Cloud Shell is automatically authenticated under the initial account used to sign in. Run 'azd auth login' only if you need to use a different account.",
-				// nolint:lll
-				fmt.Sprintf("To sign in, use a web browser to open the page %s and enter the code %s to authenticate.", output.WithUnderline(url), output.WithBold(code.UserCode())),
+				fmt.Sprintf(
+					"To sign in, use a web browser to open the page %s and enter the code %s to authenticate.",
+					output.WithUnderline(url),
+					output.WithBold(code.UserCode()),
+				),
 			},
 		})
 	} else {

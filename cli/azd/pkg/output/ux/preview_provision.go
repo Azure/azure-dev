@@ -35,9 +35,7 @@ type Resource struct {
 }
 
 func colorType(opType OperationType) func(string, ...interface{}) string {
-	final := func(format string, a ...interface{}) string {
-		return format
-	}
+	var final func(format string, a ...interface{}) string
 	switch opType {
 	case OperationTypeCreate,
 		OperationTypeNoChange:

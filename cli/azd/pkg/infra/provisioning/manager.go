@@ -10,6 +10,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
@@ -82,14 +83,34 @@ func (m *Manager) Deploy(ctx context.Context, plan *DeploymentPlan) (*DeployResu
 func (m *Manager) WhatIfDeploy(ctx context.Context, plan *DeploymentPlan) (*DeployPreviewResult, error) {
 	// Apply the infrastructure deployment
 	deployResult, err := m.provider.WhatIfDeploy(ctx, plan)
+
 	if err != nil {
 		return nil, fmt.Errorf("error deploying infrastructure: %w", err)
+	}
+
+	// apply resource mapping
+	filteredResult := DeployPreviewResult{
+		Preview: &DeploymentPreview{
+			Status:     deployResult.Preview.Status,
+			Properties: &DeploymentPreviewProperties{},
+		},
+	}
+
+	for index, result := range deployResult.Preview.Properties.Changes {
+		mappingName := infra.GetResourceTypeDisplayName(infra.AzureResourceType(result.ResourceType))
+		if mappingName == "" {
+			// ignore
+			continue
+		}
+		deployResult.Preview.Properties.Changes[index].ResourceType = mappingName
+		filteredResult.Preview.Properties.Changes = append(
+			filteredResult.Preview.Properties.Changes, deployResult.Preview.Properties.Changes[index])
 	}
 
 	// make sure any spinner is stopped
 	m.console.StopSpinner(ctx, "", input.StepDone)
 
-	return deployResult, nil
+	return &filteredResult, nil
 }
 
 // Destroys the Azure infrastructure for the specified project

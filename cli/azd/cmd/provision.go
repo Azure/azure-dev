@@ -186,7 +186,7 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 				Header: fmt.Sprintf(
 					"Generated provisioning preview in %s.", ux.DurationAsText(since(startTime))),
 				FollowUp: getResourceGroupFollowUp(
-					ctx, p.formatter, p.projectConfig, p.resourceManager, p.env),
+					ctx, p.formatter, p.projectConfig, p.resourceManager, p.env, true),
 			},
 		}, nil
 	}
@@ -228,7 +228,7 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 			Header: fmt.Sprintf(
 				"Your application was provisioned in Azure in %s.", ux.DurationAsText(since(startTime))),
 			FollowUp: getResourceGroupFollowUp(
-				ctx, p.formatter, p.projectConfig, p.resourceManager, p.env),
+				ctx, p.formatter, p.projectConfig, p.resourceManager, p.env, false),
 		},
 	}, nil
 }

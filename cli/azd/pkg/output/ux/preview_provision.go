@@ -34,31 +34,61 @@ type Resource struct {
 	Type      string
 }
 
-func colorType(opType OperationType) string {
-	final := string(opType)
-	switch opType {
-	case OperationTypeCreate:
-		final = color.GreenString(final)
-	case OperationTypeDelete:
-		final = color.RedString(final)
-	case OperationTypeModify:
-		final = color.YellowString(final)
-	default:
-		final = color.YellowString(final)
+func colorType(opType OperationType) func(string, ...interface{}) string {
+	final := func(format string, a ...interface{}) string {
+		return format
 	}
-	return output.WithBold(final)
+	switch opType {
+	case OperationTypeCreate,
+		OperationTypeNoChange:
+		final = color.GreenString
+	case OperationTypeDelete:
+		final = color.RedString
+	case OperationTypeModify:
+		final = color.YellowString
+	default:
+		final = color.YellowString
+	}
+	return final
 }
 
 func (pp *PreviewProvision) ToString(currentIndentation string) string {
-	title := currentIndentation + "List of changes:"
-	separator := currentIndentation + "\n" + strings.Repeat("─", 10) + "\n"
+	title := currentIndentation + "Resources:"
 
 	changes := make([]string, len(pp.Operations))
-	for index, op := range pp.Operations {
-		changes[index] = fmt.Sprintf("%s\n%s (%s)", colorType(op.Operation), op.Name, op.Type)
+	actions := make([]string, len(pp.Operations))
+	resources := make([]string, len(pp.Operations))
+
+	var maxActionLen int
+	var maxResourceLen int
+	// get max
+	for _, op := range pp.Operations {
+		if actionLen := len(op.Operation); actionLen > maxActionLen {
+			maxActionLen = actionLen
+		}
+		if resourceLen := len(op.Type); resourceLen > maxResourceLen {
+			maxResourceLen = resourceLen
+		}
 	}
 
-	return fmt.Sprintf("%s\n\n%s", title, strings.Join(changes, separator))
+	// Align
+	for index, op := range pp.Operations {
+		opGapToFill := strings.Repeat(" ", maxActionLen-len(op.Operation))
+		typeGapToFill := strings.Repeat(" ", maxResourceLen-len(op.Type))
+		actions[index] = string(op.Operation) + opGapToFill + " :"
+		resources[index] = op.Type + typeGapToFill + " :"
+	}
+
+	for index, op := range pp.Operations {
+		changes[index] = fmt.Sprintf("%s%s %s %s",
+			currentIndentation,
+			colorType(op.Operation)(actions[index]),
+			resources[index],
+			op.Name,
+		)
+	}
+
+	return fmt.Sprintf("%s\n\n%s", title, strings.Join(changes, "\n"))
 }
 
 func (pp *PreviewProvision) MarshalJSON() ([]byte, error) {

@@ -381,18 +381,13 @@ func (p *BicepProvider) WhatIfDeploy(ctx context.Context, pd *DeploymentPlan) (*
 		}
 
 		resourceAfter := change.After.(map[string]interface{})
-		resourceTypeName := resourceAfter["type"].(string)
-		if azdResourceName := infra.
-			GetResourceTypeDisplayName(infra.AzureResourceType(resourceTypeName)); azdResourceName != "" {
-			resourceTypeName = azdResourceName
-		}
 
 		changes = append(changes, &DeploymentPreviewChange{
 			ChangeType: ChangeType(*change.ChangeType),
 			ResourceId: Resource{
 				Id: *change.ResourceID,
 			},
-			ResourceType: resourceTypeName,
+			ResourceType: resourceAfter["type"].(string),
 			Name:         resourceAfter["name"].(string),
 		})
 	}

@@ -53,6 +53,11 @@ func colorType(opType OperationType) func(string, ...interface{}) string {
 }
 
 func (pp *PreviewProvision) ToString(currentIndentation string) string {
+	if len(pp.Operations) == 0 {
+		// no output when there are no operations
+		return ""
+	}
+
 	title := currentIndentation + "Resources:"
 
 	changes := make([]string, len(pp.Operations))

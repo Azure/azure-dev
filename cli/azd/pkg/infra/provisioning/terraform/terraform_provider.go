@@ -202,9 +202,15 @@ func (t *TerraformProvider) Deploy(ctx context.Context, deployment *DeploymentPl
 	}, nil
 }
 
-// Deploy the infrastructure within the specified template through terraform apply
 func (t *TerraformProvider) WhatIfDeploy(ctx context.Context, deployment *DeploymentPlan) (*DeployPreviewResult, error) {
-	return &DeployPreviewResult{}, nil
+	// terraform uses plan() to display the what-if output
+	// no changes are added to the properties
+	return &DeployPreviewResult{
+		Preview: &DeploymentPreview{
+			Status:     "done",
+			Properties: &DeploymentPreviewProperties{},
+		},
+	}, nil
 }
 
 // Destroys the specified deployment through terraform destroy

@@ -291,6 +291,7 @@ func (ds *deployments) DeployToResourceGroup(
 
 	return &deployResult.DeploymentExtended, nil
 }
+ss
 
 func (ds *deployments) WhatIfDeployToSubscription(
 	ctx context.Context,

@@ -1,4 +1,4 @@
-metadata description = 'Create an App Service Plan.'
+metadata description = 'Creates an App Service Plan.'
 param name string
 param location string = resourceGroup().location
 param tags object = {}

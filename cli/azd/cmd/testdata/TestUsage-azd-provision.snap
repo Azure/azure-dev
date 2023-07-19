@@ -13,7 +13,7 @@ Flags
         --docs               	: Opens the documentation for azd provision in your web browser.
     -e, --environment string 	: The name of the environment to use.
     -h, --help               	: Gets help for provision.
-        --what-if            	: Show the expected changes for the infrastructure without provisioning.
+        --what-if            	: Preview changes to Azure resources.
 
 Global Flags
     -C, --cwd string 	: Sets the current working directory.

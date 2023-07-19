@@ -39,7 +39,7 @@ func (i *provisionFlags) bindNonCommon(local *pflag.FlagSet, global *internal.Gl
 }
 
 func (i *provisionFlags) bindCommon(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
-	local.BoolVar(&i.whatIf, "what-if", false, "Show the expected changes for the infrastructure without provisioning.")
+	local.BoolVar(&i.whatIf, "what-if", false, "Preview changes to Azure resources.")
 	i.envFlag = &envFlag{}
 	i.envFlag.Bind(local, global)
 }

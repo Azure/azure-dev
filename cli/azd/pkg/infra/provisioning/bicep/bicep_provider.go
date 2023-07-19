@@ -881,7 +881,12 @@ func (p *BicepProvider) getManagedHSMs(
 	for resourceGroup, groupResources := range groupedResources {
 		for _, resource := range groupResources {
 			if resource.Type == string(infra.AzureResourceTypeManagedHSM) {
-				managedHSM, err := p.azCli.GetManagedHSM(ctx, azure.SubscriptionFromRID(resource.Id), resourceGroup, resource.Name)
+				managedHSM, err := p.azCli.GetManagedHSM(
+					ctx,
+					azure.SubscriptionFromRID(resource.Id),
+					resourceGroup,
+					resource.Name,
+				)
 				if err != nil {
 					return nil, fmt.Errorf("listing managed hsm %s properties: %w", resource.Name, err)
 				}

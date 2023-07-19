@@ -114,8 +114,8 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 	defaultTitle := "Provisioning Azure resources (azd provision)"
 	defaultTitleNote := "Provisioning Azure resources can take some time"
 	if whatIfMode {
-		defaultTitle = "Preview Azure resources changes (azd provision --what-if)"
-		defaultTitleNote = "No changes will be persisted to your Azure subscription"
+		defaultTitle = "Previewing Azure resource changes (azd provision --what-if)"
+		defaultTitleNote = "This is a preview. No changes will be applied to your Azure resources."
 	}
 
 	p.console.MessageUxItem(ctx, &ux.MessageTitle{

@@ -146,7 +146,7 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 			return fmt.Errorf("planning deployment: %w", err)
 		}
 
-		if p.flags.whatIf {
+		if whatIfMode {
 			deployPreviewResult, err = p.provisionManager.WhatIfDeploy(ctx, deploymentPlan)
 		} else {
 			deployResult, err = p.provisionManager.Deploy(ctx, deploymentPlan)
@@ -177,8 +177,7 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		return nil, fmt.Errorf("deployment failed: %w", err)
 	}
 
-	if p.flags.whatIf {
-
+	if whatIfMode {
 		p.console.MessageUxItem(ctx, deployResultToUx(deployPreviewResult))
 
 		return &actions.ActionResult{
@@ -233,6 +232,7 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 	}, nil
 }
 
+// deployResultToUx creates the ux element to display from a provision preview
 func deployResultToUx(previewResult *provisioning.DeployPreviewResult) ux.UxItem {
 	var operations []*ux.Resource
 	for _, change := range previewResult.Preview.Properties.Changes {

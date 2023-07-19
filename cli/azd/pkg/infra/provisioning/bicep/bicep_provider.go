@@ -358,7 +358,7 @@ func (p *BicepProvider) Deploy(ctx context.Context, pd *DeploymentPlan) (*Deploy
 	}, nil
 }
 
-// Provisioning the infrastructure within the specified template
+// WhatIfDeploy runs deploy using the what-if argument
 func (p *BicepProvider) WhatIfDeploy(ctx context.Context, pd *DeploymentPlan) (*DeployPreviewResult, error) {
 	bicepDeploymentData := pd.Details.(BicepDeploymentDetails)
 

@@ -79,7 +79,7 @@ func (m *Manager) Deploy(ctx context.Context, plan *DeploymentPlan) (*DeployResu
 	return deployResult, nil
 }
 
-// Deploys the Azure infrastructure for the specified project
+// WhatIfDeploy generates a deployment preview.
 func (m *Manager) WhatIfDeploy(ctx context.Context, plan *DeploymentPlan) (*DeployPreviewResult, error) {
 	// Apply the infrastructure deployment
 	deployResult, err := m.provider.WhatIfDeploy(ctx, plan)

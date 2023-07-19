@@ -12,10 +12,12 @@ import (
 	"github.com/fatih/color"
 )
 
+// PreviewProvision defines a ux item for displaying a provision preview.
 type PreviewProvision struct {
 	Operations []*Resource
 }
 
+// OperationType defines the valid options for a resource change.
 type OperationType string
 
 const (
@@ -28,6 +30,7 @@ const (
 	OperationTypeUnsupported OperationType = "Unsupported"
 )
 
+// Resource provides a basic structure for an Azure resource.
 type Resource struct {
 	Operation OperationType
 	Name      string

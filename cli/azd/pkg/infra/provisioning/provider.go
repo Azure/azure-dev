@@ -34,6 +34,8 @@ type DeployResult struct {
 	Deployment *Deployment
 }
 
+// DeployPreviewResult defines one deployment in preview mode, displaying what changes would it be performed, without
+// applying the changes.
 type DeployPreviewResult struct {
 	Preview *DeploymentPreview
 }

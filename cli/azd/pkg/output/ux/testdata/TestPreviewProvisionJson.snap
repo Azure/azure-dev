@@ -1,0 +1,1 @@
+{"type":"consoleMessage","timestamp":"2023-07-20T21:39:10.354499063Z","data":[{"Operation":"Create","Name":"resource name","Type":"some Azure resource"},{"Operation":"Ignore","Name":"resource name 2","Type":"Key Vault"},{"Operation":"Modify","Name":"resource name 3","Type":"Other"},{"Operation":"Delete","Name":"resource name 3","Type":"Other"}]}

@@ -7,7 +7,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"time"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/fatih/color"
 )
@@ -91,9 +93,10 @@ func (pp *PreviewProvision) ToString(currentIndentation string) string {
 
 	// Align
 	for index, op := range pp.Operations {
-		opGapToFill := strings.Repeat(" ", maxActionLen-len(op.Operation))
+		displayNameOp := op.Operation.String()
+		opGapToFill := strings.Repeat(" ", maxActionLen-len(displayNameOp))
 		typeGapToFill := strings.Repeat(" ", maxResourceLen-len(op.Type))
-		actions[index] = fmt.Sprintf("%s%s :", op.Operation, opGapToFill)
+		actions[index] = displayNameOp + opGapToFill + " :"
 		resources[index] = op.Type + typeGapToFill + " :"
 	}
 
@@ -110,6 +113,9 @@ func (pp *PreviewProvision) ToString(currentIndentation string) string {
 }
 
 func (pp *PreviewProvision) MarshalJSON() ([]byte, error) {
-	// reusing the same envelope from console messages
-	return json.Marshal(output.EventForMessage("provisioning preview"))
+	return json.Marshal(contracts.EventEnvelope{
+		Type:      contracts.ConsoleMessageEventDataType,
+		Timestamp: time.Now(),
+		Data:      pp.Operations,
+	})
 }

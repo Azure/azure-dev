@@ -1,4 +1,4 @@
-metadata description = 'Creates a Cosmos Account.'
+metadata description = 'Creates an Azure Cosmos DB account.'
 param name string
 param location string = resourceGroup().location
 param tags object = {}

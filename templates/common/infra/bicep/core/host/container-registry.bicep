@@ -1,4 +1,4 @@
-metadata description = 'Creates a Container Registry.'
+metadata description = 'Creates an Azure Container Registry.'
 param name string
 param location string = resourceGroup().location
 param tags object = {}

@@ -1,4 +1,4 @@
-metadata description = 'Creates an AKS Cluster with a system agent pool.'
+metadata description = 'Creates an Azure Kubernetes Service (AKS) cluster with a system agent pool.'
 @description('The name for the AKS managed cluster')
 param name string
 

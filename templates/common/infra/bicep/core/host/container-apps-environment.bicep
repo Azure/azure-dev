@@ -1,4 +1,4 @@
-metadata description = 'Creates a Container Apps Environment.'
+metadata description = 'Creates an Azure Container Apps environment.'
 param name string
 param location string = resourceGroup().location
 param tags object = {}

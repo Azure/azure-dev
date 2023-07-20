@@ -1,4 +1,4 @@
-metadata description = 'Creates an endpoint to connect to a CDN.'
+metadata description = 'Adds an endpoint to an Azure CDN profile.'
 param name string
 param location string = resourceGroup().location
 param tags object = {}

@@ -1,4 +1,4 @@
-metadata description = 'Creates a SQL Server with a Database.'
+metadata description = 'Creates an Azure SQL Server instance.'
 param name string
 param location string = resourceGroup().location
 param tags object = {}

@@ -1,4 +1,4 @@
-metadata description = 'Updates app settings for an App Service.'
+metadata description = 'Updates app settings for an Azure App Service.'
 @description('The name of the app service resource within the current resource group scope')
 param name string
 

@@ -1,4 +1,4 @@
-metadata description = 'Creates an App Service based on an existing App Service Plan.'
+metadata description = 'Creates an Azure App Service in an existing Azure App Service plan.'
 param name string
 param location string = resourceGroup().location
 param tags object = {}

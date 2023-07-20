@@ -1,4 +1,4 @@
-metadata description = 'Creates a Cosmos for MongoDB Account.'
+metadata description = 'Creates an Azure Cosmos DB for MongoDB account.'
 param name string
 param location string = resourceGroup().location
 param tags object = {}

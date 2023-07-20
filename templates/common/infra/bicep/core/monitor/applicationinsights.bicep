@@ -1,4 +1,4 @@
-metadata description = 'Creates an Application Insights based on an existing Log Analytics Workspace.'
+metadata description = 'Creates an Application Insights instance based on an existing Log Analytics workspace.'
 param name string
 param dashboardName string
 param location string = resourceGroup().location

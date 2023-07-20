@@ -1,4 +1,4 @@
-metadata description = 'Assigns a Key Vault access policy.'
+metadata description = 'Assigns an Azure Key Vault access policy.'
 param name string = 'add'
 
 param keyVaultName string

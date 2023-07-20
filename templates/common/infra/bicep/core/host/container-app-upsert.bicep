@@ -1,4 +1,4 @@
-metadata description = 'Creates a Container App or updates an existing Container App.'
+metadata description = 'Creates or updates an existing Azure Container App.'
 param name string
 param location string = resourceGroup().location
 param tags object = {}

@@ -1,4 +1,4 @@
-metadata description = 'Creates a Storage Account.'
+metadata description = 'Creates an Azure storage account.'
 param name string
 param location string = resourceGroup().location
 param tags object = {}

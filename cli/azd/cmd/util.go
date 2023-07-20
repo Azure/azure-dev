@@ -238,24 +238,26 @@ func getResourceGroupFollowUp(
 	env *environment.Environment,
 	whatIf bool,
 ) (followUp string) {
-	if formatter.Kind() != output.JsonFormat {
-		subscriptionId := env.GetSubscriptionId()
-
-		if resourceGroupName, err := resourceManager.GetResourceGroupName(ctx, subscriptionId, projectConfig); err == nil {
-			defaultFollowUpText := fmt.Sprintf(
-				"You can view the resources created under the resource group %s in Azure Portal:", resourceGroupName)
-			if whatIf {
-				defaultFollowUpText = fmt.Sprintf(
-					"You can view the current resources under the resource group %s in Azure Portal:", resourceGroupName)
-			}
-			followUp = fmt.Sprintf("%s\n%s",
-				defaultFollowUpText,
-				output.WithLinkFormat(fmt.Sprintf(
-					"https://portal.azure.com/#@/resource/subscriptions/%s/resourceGroups/%s/overview",
-					subscriptionId,
-					resourceGroupName)))
-		}
+	if formatter.Kind() == output.JsonFormat {
+		return followUp
 	}
+
+	subscriptionId := env.GetSubscriptionId()
+	if resourceGroupName, err := resourceManager.GetResourceGroupName(ctx, subscriptionId, projectConfig); err == nil {
+		defaultFollowUpText := fmt.Sprintf(
+			"You can view the resources created under the resource group %s in Azure Portal:", resourceGroupName)
+		if whatIf {
+			defaultFollowUpText = fmt.Sprintf(
+				"You can view the current resources under the resource group %s in Azure Portal:", resourceGroupName)
+		}
+		followUp = fmt.Sprintf("%s\n%s",
+			defaultFollowUpText,
+			output.WithLinkFormat(fmt.Sprintf(
+				"https://portal.azure.com/#@/resource/subscriptions/%s/resourceGroups/%s/overview",
+				subscriptionId,
+				resourceGroupName)))
+	}
+
 	return followUp
 }
 

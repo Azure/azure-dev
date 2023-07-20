@@ -21,7 +21,7 @@ import (
 
 type provisionFlags struct {
 	noProgress bool
-	whatIf     bool
+	preview    bool
 	global     *internal.GlobalCommandOptions
 	*envFlag
 }
@@ -39,7 +39,7 @@ func (i *provisionFlags) bindNonCommon(local *pflag.FlagSet, global *internal.Gl
 }
 
 func (i *provisionFlags) bindCommon(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
-	local.BoolVar(&i.whatIf, "what-if", false, "Preview changes to Azure resources.")
+	local.BoolVar(&i.preview, "preview", false, "Preview changes to Azure resources.")
 	i.envFlag = &envFlag{}
 	i.envFlag.Bind(local, global)
 }
@@ -108,12 +108,12 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 			),
 		)
 	}
-	whatIfMode := p.flags.whatIf
+	previewMode := p.flags.preview
 
 	// Command title
 	defaultTitle := "Provisioning Azure resources (azd provision)"
 	defaultTitleNote := "Provisioning Azure resources can take some time"
-	if whatIfMode {
+	if previewMode {
 		defaultTitle = "Previewing Azure resource changes (azd provision --what-if)"
 		defaultTitleNote = "This is a preview. No changes will be applied to your Azure resources."
 	}
@@ -146,7 +146,7 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 			return fmt.Errorf("planning deployment: %w", err)
 		}
 
-		if whatIfMode {
+		if previewMode {
 			deployPreviewResult, err = p.provisionManager.WhatIfDeploy(ctx, deploymentPlan)
 		} else {
 			deployResult, err = p.provisionManager.Deploy(ctx, deploymentPlan)
@@ -177,7 +177,7 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		return nil, fmt.Errorf("deployment failed: %w", err)
 	}
 
-	if whatIfMode {
+	if previewMode {
 		p.console.MessageUxItem(ctx, deployResultToUx(deployPreviewResult))
 
 		return &actions.ActionResult{

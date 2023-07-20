@@ -376,10 +376,6 @@ func (p *BicepProvider) WhatIfDeploy(ctx context.Context, pd *DeploymentPlan) (*
 
 	var changes []*DeploymentPreviewChange
 	for _, change := range deployPreviewResult.Properties.Changes {
-		if ChangeType(*change.ChangeType) == ChangeTypeIgnore {
-			continue
-		}
-
 		resourceAfter := change.After.(map[string]interface{})
 
 		changes = append(changes, &DeploymentPreviewChange{

@@ -30,6 +30,18 @@ const (
 	OperationTypeUnsupported OperationType = "Unsupported"
 )
 
+func (op OperationType) String() (displayName string) {
+	switch op {
+	case OperationTypeIgnore,
+		OperationTypeNoChange:
+		displayName = "Skip"
+	default:
+		displayName = string(op)
+	}
+
+	return displayName
+}
+
 // Resource provides a basic structure for an Azure resource.
 type Resource struct {
 	Operation OperationType
@@ -42,7 +54,7 @@ func colorType(opType OperationType) func(string, ...interface{}) string {
 	switch opType {
 	case OperationTypeCreate,
 		OperationTypeNoChange:
-		final = color.GreenString
+		final = output.WithGrayFormat
 	case OperationTypeDelete:
 		final = color.RedString
 	case OperationTypeModify:
@@ -81,7 +93,7 @@ func (pp *PreviewProvision) ToString(currentIndentation string) string {
 	for index, op := range pp.Operations {
 		opGapToFill := strings.Repeat(" ", maxActionLen-len(op.Operation))
 		typeGapToFill := strings.Repeat(" ", maxResourceLen-len(op.Type))
-		actions[index] = string(op.Operation) + opGapToFill + " :"
+		actions[index] = fmt.Sprintf("%s%s :", op.Operation, opGapToFill)
 		resources[index] = op.Type + typeGapToFill + " :"
 	}
 

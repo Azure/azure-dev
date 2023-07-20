@@ -221,7 +221,7 @@ public interface ListsApi {
         @Parameter(name = "listId", description = "The Todo list unique identifier", required = true) @PathVariable(
             "listId"
         ) String listId,
-        @Parameter(name = "TodoList", description = "The Todo List") @Valid @RequestBody(required = false) TodoList todoList
+        @Parameter(name = "TodoList", description = "The Todo List") @NotNull @RequestBody(required = false) TodoList todoList
     ) {
         getRequest()
             .ifPresent(request -> {

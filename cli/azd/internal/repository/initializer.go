@@ -31,16 +31,16 @@ import (
 type DatabaseOption string
 
 const (
-	DatabaseNone       DatabaseOption = "none"
-	DatabaseCosmos     DatabaseOption = "cosmos"
+	DatabaseNone DatabaseOption = "none"
+	//DatabaseCosmos     DatabaseOption = "cosmos"
 	DatabaseSql        DatabaseOption = "sql"
 	DatabasePostgreSql DatabaseOption = "postgresql"
 )
 
 func DatabaseDisplayOptions(recommendOption DatabaseOption) map[string]DatabaseOption {
 	prompts := map[string]DatabaseOption{
-		"Azure Cosmos DB (MongoDB API)":                    DatabaseCosmos,
-		"Azure SQL DB":                                     DatabaseSql,
+		//"Azure Cosmos DB (MongoDB API)":                    DatabaseCosmos,
+		"Azure SQL DB": DatabaseSql,
 		"Azure Database for PostgreSQL (Flexible servers)": DatabasePostgreSql,
 		"No, I would not like a database":                  DatabaseNone,
 	}

@@ -7,6 +7,14 @@
       },
       "location": {
         "value": "${AZURE_LOCATION}"
+      },
+      {{- range .Parameters}}
+      "{{.Name}}": {
+        "value": "{{.Value}}"
+      },
+      {{- end}}
+      "principalId": {
+        "value": "${AZURE_PRINCIPAL_ID}"
       }
     }
 }

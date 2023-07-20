@@ -9,6 +9,13 @@ param environmentName string
 @description('Primary location for all resources')
 param location string
 
+{{range .Parameters}}
+{{- if .Secret}}
+@secure()
+{{- end}}
+param {{.Name}} string
+{{- end}}
+
 // Tags that should be applied to all resources.
 // 
 // Note that 'azd-service-name' tags should be applied separately to service host resources.
@@ -59,6 +66,16 @@ module registry './shared/registry.bicep' = {
   scope: rg
 }
 
+module keyVault './shared/keyvault.bicep' = {
+  name: 'keyvault'
+  params: {
+    location: location
+    tags: tags
+    name: '${abbrs.keyVaultVaults}${resourceToken}'
+  }
+  scope: rg
+}
+
 module appsEnv './shared/apps-env.bicep' = {
   name: 'apps-env'
   params: {
@@ -71,8 +88,39 @@ module appsEnv './shared/apps-env.bicep' = {
   scope: rg
 }
 
+resource vault 'Microsoft.KeyVault/vaults@2022-07-01' existing = {
+  name: keyVault.outputs.name
+  scope: rg
+}
+{{- if .DbCosmos}}
+module cosmosDb './app/db-cosmos.bicep' = {
+  name: 'cosmosDb'
+  params: {
+    accountName: '${abbrs.documentDBDatabaseAccounts}${resourceToken}'
+    location: location
+    tags: tags
+    keyVaultName: keyVault.outputs.name
+  }
+  scope: rg
+}
+{{- end}}
+{{- if .DbPostgres}}
+module postgresDb './app/db-postgres.bicep' = {
+  name: 'postgresDb'
+  params: {
+    serverName: '${abbrs.dBforPostgreSQLServers}${resourceToken}'
+    location: location
+    tags: tags
+    sqlAdminPassword: sqlAdminPassword
+    appUserPassword: appUserPassword
+    keyVaultName: keyVault.outputs.name
+  }
+  scope: rg
+}
+{{- end}}
+
 {{range .Services}}
-module {{.Name}} './app/{{.Name}}.bicep' = {
+module {{bicepName .Name}} './app/{{.Name}}.bicep' = {
   name: '{{.Name}}'
   params: {
     name: '${abbrs.appContainerApps}{{.Name}}-${resourceToken}'
@@ -82,9 +130,18 @@ module {{.Name}} './app/{{.Name}}.bicep' = {
     applicationInsightsName: monitoring.outputs.applicationInsightsName
     containerAppsEnvironmentName: appsEnv.outputs.name
     containerRegistryName: registry.outputs.name
+    {{- if .DbCosmos}}
+    cosmosDbConnectionString: vault.getSecret(cosmosDb.outputs.connectionStringKey)
+    {{- end}}
+    {{- if .DbPostgres}}
+    databaseName: postgresDb.outputs.databaseName
+    databaseHost: postgresDb.outputs.databaseHost
+    databaseUser: postgresDb.outputs.databaseUser
+    databasePassword: vault.getSecret(postgresDb.outputs.databaseConnectionKey)
+    {{- end}}
   }
   scope: rg
 }
-{{end}}
+{{- end}}
 
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = registry.outputs.loginServer

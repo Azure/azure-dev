@@ -48,6 +48,12 @@ const (
 	Angular Framework = "angular"
 	VueJs   Framework = "vuejs"
 	JQuery  Framework = "jquery"
+
+	// Database drivers
+	DbPostgres  Framework = "postgres"
+	DbMongo     Framework = "mongo"
+	DbMySql     Framework = "mysql"
+	DbSqlServer Framework = "sqlserver"
 )
 
 func (f Framework) Display() string {
@@ -60,9 +66,26 @@ func (f Framework) Display() string {
 		return "Vue.js"
 	case JQuery:
 		return "JQuery"
+	case DbPostgres:
+		return "PostgreSQL"
+	case DbMongo:
+		return "MongoDB"
+	case DbMySql:
+		return "MySQL"
+	case DbSqlServer:
+		return "SQL Server"
 	}
 
 	return ""
+}
+
+func (f Framework) IsDatabaseDriver() bool {
+	switch f {
+	case DbPostgres, DbMongo, DbMySql, DbSqlServer:
+		return true
+	}
+
+	return false
 }
 
 func (f Framework) IsWebUIFramework() bool {

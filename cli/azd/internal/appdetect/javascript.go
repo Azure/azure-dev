@@ -3,12 +3,10 @@ package appdetect
 import (
 	"encoding/json"
 	"io/fs"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
 
-	"golang.org/x/exp/maps"
 	"golang.org/x/exp/slices"
 )
 
@@ -44,26 +42,32 @@ func (nd *JavaScriptDetector) DetectProject(path string, entries []fs.DirEntry) 
 				return nil, err
 			}
 
-			frameworks := map[Framework]struct{}{}
 			for dep := range packagesJson.Dependencies {
-				if dep == "react" {
-					frameworks[React] = struct{}{}
-				} else if dep == "jquery" {
-					frameworks[JQuery] = struct{}{}
-				} else if strings.HasPrefix(dep, "@angular") {
-					frameworks[Angular] = struct{}{}
-				} else if dep == "vue" {
-					frameworks[VueJs] = struct{}{}
+				switch dep {
+				case "react":
+					project.Frameworks = append(project.Frameworks, React)
+				case "jquery":
+					project.Frameworks = append(project.Frameworks, JQuery)
+				case "vue":
+					project.Frameworks = append(project.Frameworks, VueJs)
+				case "mysql":
+					project.Frameworks = append(project.Frameworks, DbMySql)
+				case "mongodb":
+					project.Frameworks = append(project.Frameworks, DbMongo)
+				case "pg-promise":
+					project.Frameworks = append(project.Frameworks, DbPostgres)
+				case "tedious":
+					project.Frameworks = append(project.Frameworks, DbSqlServer)
+				default:
+					if strings.HasPrefix(dep, "@angular") {
+						project.Frameworks = append(project.Frameworks, Angular)
+					}
 				}
 			}
 
-			if len(frameworks) > 0 {
-				project.Frameworks = maps.Keys(frameworks)
-				slices.SortFunc(project.Frameworks, func(a, b Framework) bool {
-					return string(a) < string(b)
-				})
-				log.Printf("Frameworks found: %v\n", project.Frameworks)
-			}
+			slices.SortFunc(project.Frameworks, func(a, b Framework) bool {
+				return string(a) < string(b)
+			})
 
 			tsFiles := 0
 			jsFiles := 0

@@ -1,3 +1,7 @@
+locals {
+  psqlUserName = "psqluser"
+}
+
 terraform {
   required_providers {
     azurerm = {
@@ -20,16 +24,8 @@ resource "azurecaf_name" "psql_name" {
   clean_input   = true
 }
 
-data "azurerm_client_config" "current" {}
-
-locals {
-  tenant_id      = var.tenant_id == "" ? data.azurerm_client_config.current.tenant_id : var.tenant_id
-  object_id      = var.object_id == "" ? data.azurerm_client_config.current.object_id : var.object_id
-  principal_name = var.principal_name == "" ? data.azurerm_client_config.current.object_id : var.principal_name
-  principal_type = var.client_id == "" ? "User" : "ServicePrincipal"
-}
-
 resource "random_password" "password" {
+  count            = 2
   length           = 32
   special          = true
   override_special = "_%@"
@@ -42,18 +38,12 @@ resource "azurerm_postgresql_flexible_server" "psql_server" {
   tags                   = var.tags
   version                = "12"
   administrator_login    = var.administrator_login
-  administrator_password = random_password.password.result
+  administrator_password = random_password.password[0].result
   zone                   = "1"
 
   storage_mb = 32768
 
   sku_name = "GP_Standard_D4s_v3"
-
-  authentication {
-    active_directory_auth_enabled = true
-    password_auth_enabled         = true
-    tenant_id                     = data.azurerm_client_config.current.tenant_id
-  }
 }
 
 
@@ -71,11 +61,51 @@ resource "azurerm_postgresql_flexible_server_database" "database" {
   charset   = "utf8"
 }
 
-resource "azurerm_postgresql_flexible_server_active_directory_administrator" "aad_admin" {
-  server_name         = azurerm_postgresql_flexible_server.psql_server.name
+resource "azurerm_resource_deployment_script_azure_cli" "psql-script" {
+  name                = "psql-script-${var.resource_token}"
   resource_group_name = var.rg_name
-  tenant_id           = local.tenant_id
-  object_id           = local.object_id
-  principal_name      = local.principal_name
-  principal_type      = local.principal_type
+  location            = var.location
+  version             = "2.40.0"
+  retention_interval  = "PT1H"
+  cleanup_preference  = "OnSuccess"
+  timeout             = "PT5M"
+
+  environment_variable {
+    name              = "PSQLADMINNAME"
+    value             = azurerm_postgresql_flexible_server.psql_server.administrator_login
+  }
+  environment_variable {
+    name              = "PSQLADMINPASSWORD"
+    value             = random_password.password[0].result
+  }
+  environment_variable {
+    name              = "PSQLUSERNAME"
+    value             = local.psqlUserName
+  }
+  environment_variable {
+    name              = "PSQLUSERPASSWORD"
+    value             = random_password.password[1].result
+  }
+  environment_variable {
+    name              = "DBNAME"
+    value             = var.database_name
+  }
+  environment_variable {
+    name              = "DBSERVER"
+    value             = azurerm_postgresql_flexible_server.psql_server.name
+  }
+
+  script_content = <<-EOT
+
+      apk add postgresql-client
+
+      cat << EOF > create_user.sql
+      CREATE ROLE "$PSQLUSERNAME" WITH LOGIN PASSWORD '$PSQLUSERPASSWORD';
+      GRANT ALL PRIVILEGES ON DATABASE $DBNAME TO "$PSQLUSERNAME";
+      EOF
+
+      psql "host=$DBSERVER.postgres.database.azure.com user=$PSQLADMINNAME dbname=$DBNAME port=5432 password=$PSQLADMINPASSWORD sslmode=require" < create_user.sql
+  EOT
+
+  depends_on = [ azurerm_postgresql_flexible_server_database.database ]
 }

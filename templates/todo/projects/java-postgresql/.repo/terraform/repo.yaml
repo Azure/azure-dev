@@ -46,8 +46,8 @@ repo:
         patterns:
           - "**/*.tf"
 
-      - from: ../../../../../../common/infra/terraform/core/security/passwordless/postgresql
-        to: ./modules/passwordless
+      - from: ../../../../../../common/infra/terraform/core/security/keyvault
+        to: ./modules/keyvault
         patterns:
           - "**/*.tf"
 
@@ -112,8 +112,8 @@ repo:
       to: ./.azdo/pipelines/azure-dev.yml
 
     # Github workflows for terraform
-    - from: ../../githubworkflow/azure-dev.yml
-      to: ./.github/workflows/azure-dev.yml
+    - from: ../../../../../common/.github/workflows/terraform
+      to: ./.github/workflows
 
     - from: ../../../../../common/infra/terraform/core/monitor/applicationinsights
       to: ./infra/modules/applicationinsights
@@ -133,8 +133,8 @@ repo:
     - from: ../../../../../common/infra/terraform/core/host/appservice/appservicejava
       to: ./infra/modules/appservicejava
 
-    - from: ../../../../../common/infra/terraform/core/security/passwordless/postgresql
-      to: ./infra/modules/passwordless
+    - from: ../../../../../common/infra/terraform/core/security/keyvault
+      to: ./infra/modules/keyvault
 
     - from: ../../../../../common/infra/shared/gateway/apim
       to: ./infra/modules/apim-api

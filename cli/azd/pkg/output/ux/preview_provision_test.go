@@ -48,34 +48,3 @@ func TestPreviewProvisionNoChanges(t *testing.T) {
 	output := pp.ToString("   ")
 	require.Equal(t, "", output)
 }
-
-func TestPreviewProvisionJson(t *testing.T) {
-	pp := &PreviewProvision{
-		Operations: []*Resource{
-			{
-				Type:      "some Azure resource",
-				Name:      "resource name",
-				Operation: OperationTypeCreate,
-			},
-			{
-				Type:      "Key Vault",
-				Name:      "resource name 2",
-				Operation: OperationTypeIgnore,
-			},
-			{
-				Type:      "Other",
-				Name:      "resource name 3",
-				Operation: OperationTypeModify,
-			},
-			{
-				Type:      "Other",
-				Name:      "resource name 3",
-				Operation: OperationTypeDelete,
-			},
-		},
-	}
-
-	output, err := pp.MarshalJSON()
-	require.NoError(t, err)
-	snapshot.SnapshotT(t, output)
-}

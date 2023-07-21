@@ -291,11 +291,10 @@ func deploymentNameForEnv(envName string, clock clock.Clock) string {
 
 // Provisioning the infrastructure within the specified template
 func (p *BicepProvider) Deploy(ctx context.Context) (*DeployResult, error) {
-	deployment, plan, err := p.plan(ctx)
+	deployment, bicepDeploymentData, err := p.plan(ctx)
 	if err != nil {
 		return nil, err
 	}
-	bicepDeploymentData := plan
 
 	cancelProgress := make(chan bool)
 	defer func() { cancelProgress <- true }()

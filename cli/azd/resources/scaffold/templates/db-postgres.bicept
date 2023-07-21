@@ -6,6 +6,7 @@ param keyVaultName string
 param databaseUser string = 'appuser'
 param databaseName string = '{{.DatabaseName}}'
 param databaseConnectionKey string = 'databasePassword'
+param allowAllIPsFirewall bool = false
 
 @secure()
 param sqlAdminPassword string
@@ -39,6 +40,14 @@ resource postgreServer'Microsoft.DBforPostgreSQL/flexibleServers@2022-01-20-prev
       dayOfWeek: 0
       startHour: 0
       startMinute: 0
+    }
+  }
+
+  resource firewall_all 'firewallRules' = if (allowAllIPsFirewall) {
+    name: 'allow-all-IPs'
+    properties: {
+      startIpAddress: '0.0.0.0'
+      endIpAddress: '255.255.255.255'
     }
   }
 }

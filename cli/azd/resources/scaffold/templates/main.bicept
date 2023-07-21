@@ -140,6 +140,13 @@ module {{bicepName .Name}} './app/{{.Name}}.bicep' = {
     databasePassword: vault.getSecret(postgresDb.outputs.databaseConnectionKey)
     allowAllIPsFirewall: true
     {{- end}}
+    {{- if .Frontend}}
+    apiUrls: [
+      {{- range .Frontend.Servers}}
+      {{bicepName .Name}}.outputs.uri
+      {{- end}}
+    ]
+    {{- end}}
   }
   scope: rg
 }

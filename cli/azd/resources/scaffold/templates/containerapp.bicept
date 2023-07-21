@@ -17,6 +17,9 @@ param databaseName string
 @secure()
 param databasePassword string
 {{- end}}
+{{- if .Frontend}}
+param apiUrls array
+{{- end}}
 
 resource identity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
   name: identityName
@@ -106,11 +109,13 @@ resource app 'Microsoft.App/containerApps@2023-04-01-preview' = {
   properties: {
     managedEnvironmentId: containerAppsEnvironment.id
     configuration: {
+      {{- if ne .Port 0}}
       ingress:  {
         external: true
         targetPort: {{.Port}}
         transport: 'auto'
       }
+      {{- end}}
       registries: [
         {
           server: '${containerRegistryName}.azurecr.io'
@@ -169,6 +174,14 @@ resource app 'Microsoft.App/containerApps@2023-04-01-preview' = {
               name: 'DB_PORT'
               value: '5432'
             }
+            {{- end}}
+            {{- if .Frontend}}
+            {{- range $i, $e := .Frontend.Servers}}
+            {
+              name: '{{upper .Name}}_BASE_URL'
+              value: apiUrls[{{$i}}]
+            }
+            {{- end}}
             {{- end}}
           ]
           resources: {

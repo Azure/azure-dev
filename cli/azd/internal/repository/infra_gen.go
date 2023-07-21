@@ -47,9 +47,16 @@ type InfraSpec struct {
 	DbCosmos   *DatabaseCosmos
 }
 
+type Frontend struct {
+	Servers []ServiceSpec
+}
+
 type ServiceSpec struct {
 	Name string
 	Port int
+
+	// Front-end properties.
+	Frontend *Frontend
 
 	// Connection to a database. Only one should be set.
 	DbPostgres *DatabasePostgres
@@ -163,12 +170,13 @@ func (i *Initializer) InitializeInfra(
 			}
 		}
 
+		backends := []ServiceSpec{}
 		for _, project := range projects {
 			name := filepath.Base(project.Path)
 			var port int
 			for {
 				val, err := i.console.Prompt(ctx, input.ConsoleOptions{
-					Message: "What port does '" + name + "' listen on? (-1 means no ports)",
+					Message: "What port does '" + name + "' listen on? (0 means no exposed ports)",
 				})
 				if err != nil {
 					return err
@@ -195,9 +203,24 @@ func (i *Initializer) InitializeInfra(
 						serviceSpec.DbPostgres = spec.DbPostgres
 					}
 				}
+
+				if framework.IsWebUIFramework() {
+					serviceSpec.Frontend = &Frontend{}
+				}
+			}
+
+			if serviceSpec.Frontend == nil && serviceSpec.Port > 0 {
+				backends = append(backends, serviceSpec)
 			}
 
 			spec.Services = append(spec.Services, serviceSpec)
+		}
+
+		// Link front-ends to back-ends
+		for _, service := range spec.Services {
+			if service.Frontend != nil {
+				service.Frontend.Servers = backends
+			}
 		}
 
 		confirm, err := i.console.Select(ctx, input.ConsoleOptions{
@@ -259,6 +282,7 @@ func (i *Initializer) InitializeInfra(
 
 			funcMap := template.FuncMap{
 				"bicepName": bicepName,
+				"upper":     strings.ToUpper,
 			}
 
 			if spec.DbCosmos != nil {
@@ -307,7 +331,7 @@ func (i *Initializer) InitializeInfra(
 				t, err := template.New(svc.Name).
 					//Option("missingkey=error").
 					Funcs(funcMap).
-					Parse(string(resources.ApiBicepTempl))
+					Parse(string(resources.ContainerAppBicepTempl))
 				if err != nil {
 					return fmt.Errorf("parsing template: %w", err)
 				}

@@ -112,7 +112,7 @@ repo:
       to: ./.azdo/pipelines/azure-dev.yml
 
     # Github workflows for terraform
-    - from: ../../../../../common/.github/workflows/terraform
+    - from: ../../../../../common/.github/workflows/java/terraform
       to: ./.github/workflows
 
     - from: ../../../../../common/infra/terraform/core/monitor/applicationinsights

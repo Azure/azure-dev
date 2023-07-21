@@ -92,7 +92,12 @@ func (p *TestProvider) Deploy(ctx context.Context) (*DeployResult, error) {
 
 // Provisioning the infrastructure within the specified template
 func (p *TestProvider) Preview(ctx context.Context) (*DeployPreviewResult, error) {
-	return &DeployPreviewResult{}, nil
+	return &DeployPreviewResult{
+		Preview: &DeploymentPreview{
+			Status:     "Completed",
+			Properties: &DeploymentPreviewProperties{},
+		},
+	}, nil
 }
 
 func (p *TestProvider) Destroy(ctx context.Context, options DestroyOptions) (*DestroyResult, error) {

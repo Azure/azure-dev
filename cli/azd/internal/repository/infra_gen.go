@@ -11,7 +11,6 @@ import (
 	"strconv"
 	"strings"
 	"text/template"
-	"time"
 	"unicode"
 
 	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
@@ -19,7 +18,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/resources"
 	"github.com/otiai10/copy"
@@ -106,7 +104,7 @@ func (i *Initializer) InitializeInfra(
 			}
 
 			i.console.Message(ctx, "    "+"Recommended service: "+"Azure Container Apps")
-
+			i.console.Message(ctx, "")
 		}
 
 		// handle databases
@@ -123,11 +121,10 @@ func (i *Initializer) InitializeInfra(
 					case appdetect.DbPostgres:
 						recommended = "Azure Database for PostgreSQL flexible server"
 					}
-					i.console.MessageUxItem(ctx, &ux.MultilineMessage{
-						Lines: []string{
-							"  " + output.WithBold(framework.Display()),
-							"    " + "Recommended service: " + recommended,
-						}})
+					i.console.Message(ctx, "  "+output.WithBold(framework.Display()))
+					i.console.Message(ctx, "    "+"Recommended service: "+recommended)
+					i.console.Message(ctx, "")
+
 					databases[framework] = struct{}{}
 				}
 			}
@@ -216,27 +213,35 @@ func (i *Initializer) InitializeInfra(
 
 		switch confirm {
 		case 0:
-			title := "Generating " + output.WithBold(azdcontext.ProjectFileName) +
-				" in " + output.WithHighLightFormat(azdCtx.ProjectDirectory())
+			generateProject := func() error {
+				title := "Generating " + output.WithBold(azdcontext.ProjectFileName) +
+					" in " + output.WithHighLightFormat(azdCtx.ProjectDirectory())
+				i.console.ShowSpinner(ctx, title, input.Step)
+				defer i.console.StopSpinner(ctx, title, input.GetStepResultFormat(err))
+				config, err := DetectionToConfig(wd, projects)
+				if err != nil {
+					return fmt.Errorf("converting config: %w", err)
+				}
+				err = project.Save(
+					context.Background(),
+					&config,
+					filepath.Join(wd, azdcontext.ProjectFileName))
+				if err != nil {
+					return fmt.Errorf("generating azure.yaml: %w", err)
+				}
+				return nil
+			}
+
+			err := generateProject()
+			if err != nil {
+				return err
+			}
+
+			target := filepath.Join(azdCtx.ProjectDirectory(), "infra")
+			title := "Generating Infrastructure as Code files in " + output.WithHighLightFormat(target)
 			i.console.ShowSpinner(ctx, title, input.Step)
 			defer i.console.StopSpinner(ctx, title, input.GetStepResultFormat(err))
-			config, err := DetectionToConfig(wd, projects)
-			if err != nil {
-				return fmt.Errorf("converting config: %w", err)
-			}
-			err = project.Save(
-				context.Background(),
-				&config,
-				filepath.Join(wd, azdcontext.ProjectFileName))
-			if err != nil {
-				return fmt.Errorf("generating azure.yaml: %w", err)
-			}
-			i.console.StopSpinner(ctx, title, input.StepDone)
-			i.console.StopSpinner(ctx, "", input.StepDone)
 
-			time.Sleep(1 * time.Second)
-			title = "Generating Infrastructure as Code files in " + output.WithHighLightFormat(azdCtx.ProjectDirectory())
-			i.console.ShowSpinner(ctx, title, input.Step)
 			staging, err := os.MkdirTemp("", "azd-infra")
 			if err != nil {
 				return fmt.Errorf("mkdir temp: %w", err)
@@ -357,7 +362,6 @@ func (i *Initializer) InitializeInfra(
 				return fmt.Errorf("writing main file: %w", err)
 			}
 
-			target := filepath.Join(azdCtx.ProjectDirectory(), "infra")
 			if err := os.MkdirAll(target, osutil.PermissionDirectory); err != nil {
 				return err
 			}

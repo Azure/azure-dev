@@ -213,35 +213,35 @@ func (p *BicepProvider) State(ctx context.Context) (*StateResult, error) {
 var ResourceGroupDeploymentFeature = alpha.MustFeatureKey("resourceGroupDeployments")
 
 // Plans the infrastructure provisioning
-func (p *BicepProvider) Plan(ctx context.Context) (*DeploymentPlan, error) {
+func (p *BicepProvider) plan(ctx context.Context) (*Deployment, *BicepDeploymentDetails, error) {
 	p.console.ShowSpinner(ctx, "Creating a deployment plan", input.Step)
 	// TODO: Report progress, "Generating Bicep parameters file"
 
 	parameters, err := p.loadParameters(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("creating parameters file: %w", err)
+		return nil, nil, fmt.Errorf("creating parameters file: %w", err)
 	}
 
 	modulePath := p.modulePath()
 	// TODO: Report progress, "Compiling Bicep template"
 	rawTemplate, template, err := p.compileBicep(ctx, modulePath)
 	if err != nil {
-		return nil, fmt.Errorf("creating template: %w", err)
+		return nil, nil, fmt.Errorf("creating template: %w", err)
 	}
 
 	configuredParameters, err := p.ensureParameters(ctx, template, parameters)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	deployment, err := p.convertToDeployment(template)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	deploymentScope, err := template.TargetScope()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	var target infra.Deployment
@@ -263,17 +263,14 @@ func (p *BicepProvider) Plan(ctx context.Context) (*DeploymentPlan, error) {
 			deploymentNameForEnv(p.env.GetEnvName(), p.clock),
 		)
 	} else {
-		return nil, fmt.Errorf("unsupported scope: %s", deploymentScope)
+		return nil, nil, fmt.Errorf("unsupported scope: %s", deploymentScope)
 	}
 
-	return &DeploymentPlan{
-		Deployment: *deployment,
-		Details: BicepDeploymentDetails{
-			Template:        rawTemplate,
-			TemplateOutputs: template.Outputs,
-			Parameters:      configuredParameters,
-			Target:          target,
-		},
+	return deployment, &BicepDeploymentDetails{
+		Template:        rawTemplate,
+		TemplateOutputs: template.Outputs,
+		Parameters:      configuredParameters,
+		Target:          target,
 	}, nil
 }
 
@@ -293,8 +290,12 @@ func deploymentNameForEnv(envName string, clock clock.Clock) string {
 }
 
 // Provisioning the infrastructure within the specified template
-func (p *BicepProvider) Deploy(ctx context.Context, pd *DeploymentPlan) (*DeployResult, error) {
-	bicepDeploymentData := pd.Details.(BicepDeploymentDetails)
+func (p *BicepProvider) Deploy(ctx context.Context) (*DeployResult, error) {
+	deployment, plan, err := p.plan(ctx)
+	if err != nil {
+		return nil, err
+	}
+	bicepDeploymentData := plan
 
 	cancelProgress := make(chan bool)
 	defer func() { cancelProgress <- true }()
@@ -347,20 +348,22 @@ func (p *BicepProvider) Deploy(ctx context.Context, pd *DeploymentPlan) (*Deploy
 		return nil, err
 	}
 
-	deployment := pd.Deployment
 	deployment.Outputs = p.createOutputParameters(
 		bicepDeploymentData.TemplateOutputs,
 		azapi.CreateDeploymentOutput(deployResult.Properties.Outputs),
 	)
 
 	return &DeployResult{
-		Deployment: &deployment,
+		Deployment: deployment,
 	}, nil
 }
 
-// WhatIfDeploy runs deploy using the what-if argument
-func (p *BicepProvider) WhatIfDeploy(ctx context.Context, pd *DeploymentPlan) (*DeployPreviewResult, error) {
-	bicepDeploymentData := pd.Details.(BicepDeploymentDetails)
+// Preview runs deploy using the what-if argument
+func (p *BicepProvider) Preview(ctx context.Context) (*DeployPreviewResult, error) {
+	_, bicepDeploymentData, err := p.plan(ctx)
+	if err != nil {
+		return nil, err
+	}
 
 	p.console.ShowSpinner(ctx, "Generating infrastructure preview", input.Step)
 

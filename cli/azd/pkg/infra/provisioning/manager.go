@@ -41,16 +41,6 @@ func (m *Manager) Initialize(ctx context.Context, projectPath string, options Op
 	return m.provider.Initialize(ctx, projectPath, options)
 }
 
-// Prepares for an infrastructure provision operation
-func (m *Manager) Plan(ctx context.Context) (*DeploymentPlan, error) {
-	deploymentPlan, err := m.provider.Plan(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("planning infrastructure provisioning: %w", err)
-	}
-
-	return deploymentPlan, nil
-}
-
 // Gets the latest deployment details for the specified scope
 func (m *Manager) State(ctx context.Context) (*StateResult, error) {
 	result, err := m.provider.State(ctx)
@@ -62,9 +52,9 @@ func (m *Manager) State(ctx context.Context) (*StateResult, error) {
 }
 
 // Deploys the Azure infrastructure for the specified project
-func (m *Manager) Deploy(ctx context.Context, plan *DeploymentPlan) (*DeployResult, error) {
+func (m *Manager) Deploy(ctx context.Context) (*DeployResult, error) {
 	// Apply the infrastructure deployment
-	deployResult, err := m.provider.Deploy(ctx, plan)
+	deployResult, err := m.provider.Deploy(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("error deploying infrastructure: %w", err)
 	}
@@ -79,10 +69,10 @@ func (m *Manager) Deploy(ctx context.Context, plan *DeploymentPlan) (*DeployResu
 	return deployResult, nil
 }
 
-// WhatIfDeploy generates a deployment preview.
-func (m *Manager) WhatIfDeploy(ctx context.Context, plan *DeploymentPlan) (*DeployPreviewResult, error) {
+// Preview generates the list of changes to be applied as part of the provisioning.
+func (m *Manager) Preview(ctx context.Context) (*DeployPreviewResult, error) {
 	// Apply the infrastructure deployment
-	deployResult, err := m.provider.WhatIfDeploy(ctx, plan)
+	deployResult, err := m.provider.Preview(ctx)
 
 	if err != nil {
 		return nil, fmt.Errorf("error deploying infrastructure: %w", err)

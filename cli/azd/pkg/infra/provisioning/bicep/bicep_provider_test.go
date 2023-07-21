@@ -49,7 +49,7 @@ func TestBicepPlan(t *testing.T) {
 	require.Nil(t, err)
 	require.NotNil(t, deployment)
 
-	require.IsType(t, &BicepDeploymentDetails{}, deploymentPlan)
+	require.IsType(t, &bicepDeploymentDetails{}, deploymentPlan)
 	configuredParameters := deploymentPlan.Parameters
 
 	require.Equal(t, infraProvider.env.GetLocation(), configuredParameters["location"].Value)

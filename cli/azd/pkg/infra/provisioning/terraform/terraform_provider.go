@@ -33,7 +33,7 @@ type TerraformProvider struct {
 	options      Options
 }
 
-type TerraformDeploymentDetails struct {
+type terraformDeploymentDetails struct {
 	ParameterFilePath  string
 	PlanFilePath       string
 	localStateFilePath string
@@ -115,7 +115,7 @@ func (t *TerraformProvider) EnsureEnv(ctx context.Context) error {
 }
 
 // Previews the infrastructure through terraform plan
-func (t *TerraformProvider) plan(ctx context.Context) (*Deployment, *TerraformDeploymentDetails, error) {
+func (t *TerraformProvider) plan(ctx context.Context) (*Deployment, *terraformDeploymentDetails, error) {
 	isRemoteBackendConfig, err := t.isRemoteBackendConfig()
 	if err != nil {
 		return nil, nil, fmt.Errorf("reading backend config: %w", err)
@@ -154,7 +154,7 @@ func (t *TerraformProvider) plan(ctx context.Context) (*Deployment, *TerraformDe
 		return nil, nil, fmt.Errorf("create terraform template failed: %w", err)
 	}
 
-	deploymentDetails := TerraformDeploymentDetails{
+	deploymentDetails := terraformDeploymentDetails{
 		ParameterFilePath: t.parametersFilePath(),
 		PlanFilePath:      t.planFilePath(),
 	}
@@ -291,7 +291,7 @@ func (t *TerraformProvider) createPlanArgs(isRemoteBackendConfig bool) []string 
 
 // Creates the terraform apply CLI arguments
 func (t *TerraformProvider) createApplyArgs(
-	isRemoteBackendConfig bool, data TerraformDeploymentDetails) ([]string, error) {
+	isRemoteBackendConfig bool, data terraformDeploymentDetails) ([]string, error) {
 	args := []string{}
 	if !isRemoteBackendConfig {
 		args = append(args, fmt.Sprintf("-state=%s", data.localStateFilePath))

@@ -43,7 +43,7 @@ import (
 
 const DefaultModule = "main"
 
-type BicepDeploymentDetails struct {
+type bicepDeploymentDetails struct {
 	// Template is the template to deploy during the deployment operation.
 	Template azure.RawArmTemplate
 	// Parameters are the values to provide to the template during the deployment operation.
@@ -213,7 +213,7 @@ func (p *BicepProvider) State(ctx context.Context) (*StateResult, error) {
 var ResourceGroupDeploymentFeature = alpha.MustFeatureKey("resourceGroupDeployments")
 
 // Plans the infrastructure provisioning
-func (p *BicepProvider) plan(ctx context.Context) (*Deployment, *BicepDeploymentDetails, error) {
+func (p *BicepProvider) plan(ctx context.Context) (*Deployment, *bicepDeploymentDetails, error) {
 	p.console.ShowSpinner(ctx, "Creating a deployment plan", input.Step)
 	// TODO: Report progress, "Generating Bicep parameters file"
 
@@ -266,7 +266,7 @@ func (p *BicepProvider) plan(ctx context.Context) (*Deployment, *BicepDeployment
 		return nil, nil, fmt.Errorf("unsupported scope: %s", deploymentScope)
 	}
 
-	return deployment, &BicepDeploymentDetails{
+	return deployment, &bicepDeploymentDetails{
 		Template:        rawTemplate,
 		TemplateOutputs: template.Outputs,
 		Parameters:      configuredParameters,

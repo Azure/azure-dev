@@ -44,13 +44,13 @@ func TestBicepPlan(t *testing.T) {
 	prepareBicepMocks(mockContext)
 	infraProvider := createBicepProvider(t, mockContext)
 
-	deploymentPlan, err := infraProvider.Plan(*mockContext.Context)
+	deployment, deploymentPlan, err := infraProvider.plan(*mockContext.Context)
 
 	require.Nil(t, err)
-	require.NotNil(t, deploymentPlan.Deployment)
+	require.NotNil(t, deployment)
 
-	require.IsType(t, BicepDeploymentDetails{}, deploymentPlan.Details)
-	configuredParameters := deploymentPlan.Details.(BicepDeploymentDetails).Parameters
+	require.IsType(t, &BicepDeploymentDetails{}, deploymentPlan)
+	configuredParameters := deploymentPlan.Parameters
 
 	require.Equal(t, infraProvider.env.GetLocation(), configuredParameters["location"].Value)
 	require.Equal(
@@ -101,13 +101,11 @@ func TestBicepPlanPrompt(t *testing.T) {
 	}).Respond(false)
 
 	infraProvider := createBicepProvider(t, mockContext)
-	plan, err := infraProvider.Plan(*mockContext.Context)
+	_, plan, err := infraProvider.plan(*mockContext.Context)
 
 	require.NoError(t, err)
 
-	bicepDetails := plan.Details.(BicepDeploymentDetails)
-
-	require.Equal(t, "value", bicepDetails.Parameters["stringParam"].Value)
+	require.Equal(t, "value", plan.Parameters["stringParam"].Value)
 }
 
 func TestBicepState(t *testing.T) {
@@ -124,39 +122,6 @@ func TestBicepState(t *testing.T) {
 	require.Nil(t, err)
 	require.NotNil(t, getDeploymentResult.State)
 	require.Equal(t, getDeploymentResult.State.Outputs["WEBSITE_URL"].Value, expectedWebsiteUrl)
-}
-
-func TestBicepDeploy(t *testing.T) {
-	expectedWebsiteUrl := "http://myapp.azurewebsites.net"
-	mockContext := mocks.NewMockContext(context.Background())
-	prepareBicepMocks(mockContext)
-	prepareStateMocks(mockContext)
-	prepareDeployMocks(mockContext)
-	depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
-	depService := mockazcli.NewDeploymentsServiceFromMockContext(mockContext)
-
-	infraProvider := createBicepProvider(t, mockContext)
-
-	deploymentPlan := DeploymentPlan{
-		Deployment: Deployment{},
-		Details: BicepDeploymentDetails{
-			Template:   azure.RawArmTemplate("{}"),
-			Parameters: testArmParameters,
-			Target: infra.NewSubscriptionDeployment(
-				depService,
-				depOpService,
-				infraProvider.env.GetLocation(),
-				infraProvider.env.GetSubscriptionId(),
-				infraProvider.env.GetEnvName(),
-			),
-		},
-	}
-
-	deployResult, err := infraProvider.Deploy(*mockContext.Context, &deploymentPlan)
-
-	require.Nil(t, err)
-	require.NotNil(t, deployResult)
-	require.Equal(t, deployResult.Deployment.Outputs["WEBSITE_URL"].Value, expectedWebsiteUrl)
 }
 
 func TestBicepDestroy(t *testing.T) {
@@ -335,11 +300,11 @@ func TestPlanForResourceGroup(t *testing.T) {
 	require.NoError(t, err)
 	// The computed plan should target the resource group we picked.
 
-	planResult, err := infraProvider.Plan(*mockContext.Context)
+	_, planResult, err := infraProvider.plan(*mockContext.Context)
 	require.Nil(t, err)
 	require.NotNil(t, planResult)
 	require.Equal(t, "rg-test-env",
-		planResult.Details.(BicepDeploymentDetails).Target.(*infra.ResourceGroupDeployment).ResourceGroupName())
+		planResult.Target.(*infra.ResourceGroupDeployment).ResourceGroupName())
 }
 
 func TestIsValueAssignableToParameterType(t *testing.T) {
@@ -468,46 +433,6 @@ var cTestEnvDeployment armresources.DeploymentExtended = armresources.Deployment
 		ProvisioningState: to.Ptr(armresources.ProvisioningStateSucceeded),
 		Timestamp:         to.Ptr(time.Now()),
 	},
-}
-
-func prepareDeployMocks(mockContext *mocks.MockContext) {
-	deployResultBytes, _ := json.Marshal(cTestEnvDeployment)
-
-	// Create deployment at subscription scope
-	mockContext.HttpClient.When(func(request *http.Request) bool {
-		return request.Method == http.MethodPut && strings.HasSuffix(
-			request.URL.Path,
-			"/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/test-env",
-		)
-	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		return &http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(bytes.NewBuffer(deployResultBytes)),
-			Request: &http.Request{
-				Method: http.MethodGet,
-			},
-		}, nil
-	})
-
-	deploymentsPage := &armresources.DeploymentListResult{
-		Value: []*armresources.DeploymentExtended{
-			&cTestEnvDeployment,
-		},
-	}
-
-	deploymentsPageResultBytes, _ := json.Marshal(deploymentsPage)
-
-	mockContext.HttpClient.When(func(request *http.Request) bool {
-		return request.Method == http.MethodGet && strings.HasSuffix(
-			request.URL.Path,
-			"/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/",
-		)
-	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		return &http.Response{
-			StatusCode: http.StatusOK,
-			Body:       io.NopCloser(bytes.NewBuffer(deploymentsPageResultBytes)),
-		}, nil
-	})
 }
 
 func prepareStateMocks(mockContext *mocks.MockContext) {
@@ -660,12 +585,6 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 		response.Header.Add("location", mockPollingUrl)
 		return response, err
 	})
-}
-
-var testArmParameters = azure.ArmParameters{
-	"location": {
-		Value: "West US",
-	},
 }
 
 func getKeyVaultMock(mockContext *mocks.MockContext, keyVaultString string, name string, location string) {

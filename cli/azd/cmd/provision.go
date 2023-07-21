@@ -114,7 +114,7 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 	defaultTitle := "Provisioning Azure resources (azd provision)"
 	defaultTitleNote := "Provisioning Azure resources can take some time"
 	if previewMode {
-		defaultTitle = "Previewing Azure resource changes (azd provision --what-if)"
+		defaultTitle = "Previewing Azure resource changes (azd provision --preview)"
 		defaultTitleNote = "This is a preview. No changes will be applied to your Azure resources."
 	}
 
@@ -141,17 +141,12 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 	}
 
 	err := p.projectConfig.Invoke(ctx, project.ProjectEventProvision, projectEventArgs, func() error {
-		deploymentPlan, err := p.provisionManager.Plan(ctx)
-		if err != nil {
-			return fmt.Errorf("planning deployment: %w", err)
-		}
-
+		var err error
 		if previewMode {
-			deployPreviewResult, err = p.provisionManager.WhatIfDeploy(ctx, deploymentPlan)
+			deployPreviewResult, err = p.provisionManager.Preview(ctx)
 		} else {
-			deployResult, err = p.provisionManager.Deploy(ctx, deploymentPlan)
+			deployResult, err = p.provisionManager.Deploy(ctx)
 		}
-
 		return err
 	})
 

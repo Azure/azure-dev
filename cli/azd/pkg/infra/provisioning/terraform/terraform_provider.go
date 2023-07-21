@@ -202,6 +202,17 @@ func (t *TerraformProvider) Deploy(ctx context.Context, deployment *DeploymentPl
 	}, nil
 }
 
+func (t *TerraformProvider) WhatIfDeploy(ctx context.Context, deployment *DeploymentPlan) (*DeployPreviewResult, error) {
+	// terraform uses plan() to display the what-if output
+	// no changes are added to the properties
+	return &DeployPreviewResult{
+		Preview: &DeploymentPreview{
+			Status:     "done",
+			Properties: &DeploymentPreviewProperties{},
+		},
+	}, nil
+}
+
 // Destroys the specified deployment through terraform destroy
 func (t *TerraformProvider) Destroy(ctx context.Context, options DestroyOptions) (*DestroyResult, error) {
 	isRemoteBackendConfig, err := t.isRemoteBackendConfig()

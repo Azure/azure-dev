@@ -358,6 +358,46 @@ func (p *BicepProvider) Deploy(ctx context.Context, pd *DeploymentPlan) (*Deploy
 	}, nil
 }
 
+// WhatIfDeploy runs deploy using the what-if argument
+func (p *BicepProvider) WhatIfDeploy(ctx context.Context, pd *DeploymentPlan) (*DeployPreviewResult, error) {
+	bicepDeploymentData := pd.Details.(BicepDeploymentDetails)
+
+	p.console.ShowSpinner(ctx, "Generating infrastructure preview", input.Step)
+
+	targetScope := bicepDeploymentData.Target
+	deployPreviewResult, err := targetScope.DeployPreview(
+		ctx,
+		bicepDeploymentData.Template,
+		bicepDeploymentData.Parameters,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	var changes []*DeploymentPreviewChange
+	for _, change := range deployPreviewResult.Properties.Changes {
+		resourceAfter := change.After.(map[string]interface{})
+
+		changes = append(changes, &DeploymentPreviewChange{
+			ChangeType: ChangeType(*change.ChangeType),
+			ResourceId: Resource{
+				Id: *change.ResourceID,
+			},
+			ResourceType: resourceAfter["type"].(string),
+			Name:         resourceAfter["name"].(string),
+		})
+	}
+
+	return &DeployPreviewResult{
+		Preview: &DeploymentPreview{
+			Status: *deployPreviewResult.Status,
+			Properties: &DeploymentPreviewProperties{
+				Changes: changes,
+			},
+		},
+	}, nil
+}
+
 type itemToPurge struct {
 	resourceType      string
 	count             int

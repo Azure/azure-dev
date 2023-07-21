@@ -2,6 +2,10 @@
 
 ## 1.1.1 (Unreleased)
 
+### Features Added
+
+- [[2550]](https://github.com/Azure/azure-dev/pull/2550) Add `--preview` to `azd provision` to get the changes 
+
 ## 1.1.0 (2023-07-12)
 
 ### Features Added

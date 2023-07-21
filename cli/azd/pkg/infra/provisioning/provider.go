@@ -34,6 +34,12 @@ type DeployResult struct {
 	Deployment *Deployment
 }
 
+// DeployPreviewResult defines one deployment in preview mode, displaying what changes would it be performed, without
+// applying the changes.
+type DeployPreviewResult struct {
+	Preview *DeploymentPreview
+}
+
 type DestroyResult struct {
 	// InvalidatedEnvKeys is a list of keys that should be removed from the environment after the destroy is complete.
 	InvalidatedEnvKeys []string
@@ -49,6 +55,7 @@ type Provider interface {
 	State(ctx context.Context) (*StateResult, error)
 	Plan(ctx context.Context) (*DeploymentPlan, error)
 	Deploy(ctx context.Context, plan *DeploymentPlan) (*DeployResult, error)
+	WhatIfDeploy(ctx context.Context, plan *DeploymentPlan) (*DeployPreviewResult, error)
 	Destroy(ctx context.Context, options DestroyOptions) (*DestroyResult, error)
 	EnsureEnv(ctx context.Context) error
 }

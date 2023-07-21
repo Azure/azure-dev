@@ -48,7 +48,11 @@ type InfraSpec struct {
 }
 
 type Frontend struct {
-	Servers []ServiceSpec
+	Backends []ServiceSpec
+}
+
+type Backend struct {
+	Frontends []ServiceSpec
 }
 
 type ServiceSpec struct {
@@ -57,6 +61,9 @@ type ServiceSpec struct {
 
 	// Front-end properties.
 	Frontend *Frontend
+
+	// Back-end properties
+	Backend *Backend
 
 	// Connection to a database. Only one should be set.
 	DbPostgres *DatabasePostgres
@@ -171,6 +178,7 @@ func (i *Initializer) InitializeInfra(
 		}
 
 		backends := []ServiceSpec{}
+		frontends := []ServiceSpec{}
 		for _, project := range projects {
 			name := filepath.Base(project.Path)
 			var port int
@@ -211,15 +219,22 @@ func (i *Initializer) InitializeInfra(
 
 			if serviceSpec.Frontend == nil && serviceSpec.Port > 0 {
 				backends = append(backends, serviceSpec)
+				serviceSpec.Backend = &Backend{}
+			} else {
+				frontends = append(frontends, serviceSpec)
 			}
 
 			spec.Services = append(spec.Services, serviceSpec)
 		}
 
-		// Link front-ends to back-ends
+		// Link services together
 		for _, service := range spec.Services {
 			if service.Frontend != nil {
-				service.Frontend.Servers = backends
+				service.Frontend.Backends = backends
+			}
+
+			if service.Backend != nil {
+				service.Backend.Frontends = frontends
 			}
 		}
 

@@ -20,6 +20,9 @@ param databasePassword string
 {{- if .Frontend}}
 param apiUrls array
 {{- end}}
+{{- if .Backend}}
+param allowedOrigins array
+{{- end}}
 
 resource identity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
   name: identityName
@@ -114,6 +117,13 @@ resource app 'Microsoft.App/containerApps@2023-04-01-preview' = {
         external: true
         targetPort: {{.Port}}
         transport: 'auto'
+        {{- if .Backend}}
+        corsPolicy: {
+          allowedOrigins: union(allowedOrigins, [
+            // define additional allowed origins here
+          ])
+        }
+        {{- end}}
       }
       {{- end}}
       registries: [
@@ -176,7 +186,7 @@ resource app 'Microsoft.App/containerApps@2023-04-01-preview' = {
             }
             {{- end}}
             {{- if .Frontend}}
-            {{- range $i, $e := .Frontend.Servers}}
+            {{- range $i, $e := .Frontend.Backends}}
             {
               name: '{{upper .Name}}_BASE_URL'
               value: apiUrls[{{$i}}]
@@ -201,3 +211,4 @@ resource app 'Microsoft.App/containerApps@2023-04-01-preview' = {
 output defaultDomain string = containerAppsEnvironment.properties.defaultDomain
 output name string = app.name
 output uri string = 'https://${app.properties.configuration.ingress.fqdn}'
+output id string = app.id

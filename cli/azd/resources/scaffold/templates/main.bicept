@@ -142,8 +142,15 @@ module {{bicepName .Name}} './app/{{.Name}}.bicep' = {
     {{- end}}
     {{- if .Frontend}}
     apiUrls: [
-      {{- range .Frontend.Servers}}
+      {{- range .Frontend.Backends}}
       {{bicepName .Name}}.outputs.uri
+      {{- end}}
+    ]
+    {{- end}}
+    {{- if .Backend}}
+    allowedOrigins: [
+      {{- range .Backend.Frontends}}
+      'https://${abbrs.appContainerApps}{{.Name}}-${resourceToken}.${appsEnv.outputs.domain}'
       {{- end}}
     ]
     {{- end}}

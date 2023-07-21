@@ -30,3 +30,4 @@ resource applicationInsights 'Microsoft.Insights/components@2020-02-02' existing
 }
 
 output name string = containerAppsEnvironment.name
+output domain string = containerAppsEnvironment.properties.defaultDomain

@@ -1,3 +1,0 @@
-      {{.ConnectionStringKey}}: '@Microsoft.KeyVault(VaultName=${keyVault.outputs.name};SecretName=${cosmos.outputs.connectionStringKey})'
-      AZURE_COSMOS_DATABASE_NAME: cosmos.outputs.databaseName
-      AZURE_COSMOS_ENDPOINT: cosmos.outputs.endpoint

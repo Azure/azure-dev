@@ -1,1 +1,0 @@
-       {{.ConnectionStringKey}}: sqlServer.outputs.connectionStringKey

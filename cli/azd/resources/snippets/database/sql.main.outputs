@@ -1,3 +1,0 @@
-// Database outputs
-// The key of the secret stored in KeyVault that stores the connection string
-output AZURE_SQL_CONNECTION_STRING_KEY string = sqlServer.outputs.connectionStringKey

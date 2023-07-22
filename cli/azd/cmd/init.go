@@ -128,6 +128,8 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, err
 	}
 
+	followUp := "You can provision and deploy your app to Azure by running the " + output.WithBold("azd up") +
+		" command in this directory. Services may incur usage charges when provisioned or deployed."
 	switch initializeOpt {
 	case 0:
 		err := i.repoInitializer.InitializeInfra(ctx, azdCtx)
@@ -135,6 +137,11 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			return nil, err
 		}
 	case 1:
+		followUp = heredoc.Docf(`
+			You can view the template code in your directory: %s
+			Learn more about running 3rd party code on our DevHub: %s`,
+			output.WithLinkFormat("%s", wd),
+			output.WithLinkFormat("%s", "https://aka.ms/azd-third-party-code-notice"))
 		err := i.InitializeTemplate(ctx, azdCtx)
 		if err != nil {
 			return nil, err
@@ -175,12 +182,8 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			Header: "New project initialized!",
-			FollowUp: heredoc.Docf(`
-			You can view the template code in your directory: %s
-			Learn more about running 3rd party code on our DevHub: %s`,
-				output.WithLinkFormat("%s", wd),
-				output.WithLinkFormat("%s", "https://aka.ms/azd-third-party-code-notice")),
+			Header:   "New project initialized!",
+			FollowUp: followUp,
 		},
 	}, nil
 }

@@ -13,7 +13,7 @@ param location string
 {{- if .Secret}}
 @secure()
 {{- end}}
-param {{.Name}} string
+param {{.Name}} {{.Type}}
 {{- end}}
 
 // Tags that should be applied to all resources.
@@ -130,6 +130,7 @@ module {{bicepName .Name}} './app/{{.Name}}.bicep' = {
     applicationInsightsName: monitoring.outputs.applicationInsightsName
     containerAppsEnvironmentName: appsEnv.outputs.name
     containerRegistryName: registry.outputs.name
+    exists: {{bicepName .Name}}Exists
     {{- if .DbCosmos}}
     cosmosDbConnectionString: vault.getSecret(cosmosDb.outputs.connectionStringKey)
     {{- end}}

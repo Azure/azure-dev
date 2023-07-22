@@ -35,6 +35,7 @@ type DatabaseCosmos struct {
 type Parameter struct {
 	Name   string
 	Value  string
+	Type   string
 	Secret bool
 }
 
@@ -167,11 +168,13 @@ func (i *Initializer) InitializeInfra(
 					Parameter{
 						Name:   "sqlAdminPassword",
 						Value:  "$(secretOrRandomPassword)",
+						Type:   "string",
 						Secret: true,
 					},
 					Parameter{
 						Name:   "appUserPassword",
 						Value:  "$(secretOrRandomPassword)",
+						Type:   "string",
 						Secret: true,
 					})
 			}
@@ -236,6 +239,12 @@ func (i *Initializer) InitializeInfra(
 			if service.Backend != nil {
 				service.Backend.Frontends = frontends
 			}
+
+			spec.Parameters = append(spec.Parameters, Parameter{
+				Name:  bicepName(service.Name) + "Exists",
+				Value: fmt.Sprintf("${SERVICE_%s_RESOURCE_EXISTS=false}", strings.ToUpper(service.Name)),
+				Type:  "bool",
+			})
 		}
 
 		confirm, err := i.console.Select(ctx, input.ConsoleOptions{
@@ -416,7 +425,7 @@ func (i *Initializer) InitializeInfra(
 	return nil
 }
 
-func bicepName(name string) (string, error) {
+func bicepName(name string) string {
 	sb := strings.Builder{}
 	separatorStart := -1
 	for pos, char := range name {
@@ -430,12 +439,12 @@ func bicepName(name string) (string, error) {
 			separatorStart = -1
 
 			if _, err := sb.WriteRune(char); err != nil {
-				return "", err
+				panic(err)
 			}
 		}
 	}
 
-	return sb.String(), nil
+	return sb.String()
 }
 
 func copyFS(embedFs embed.FS, root string, target string) error {

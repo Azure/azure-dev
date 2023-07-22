@@ -23,6 +23,7 @@ param apiUrls array
 {{- if .Backend}}
 param allowedOrigins array
 {{- end}}
+param exists bool
 
 resource identity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
   name: identityName
@@ -52,51 +53,11 @@ resource acrPullRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   }
 }
 
-resource listGroupResourcesRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  scope: resourceGroup()
-  name: guid(subscription().id, resourceGroup().id, identity.id, 'listResources')
-  properties: {
-    roleDefinitionId: subscriptionResourceId(
-      'Microsoft.Authorization/roleDefinitions', 'acdd72a7-3385-48ef-bd42-f606fba81ae7')
-    principalType: 'ServicePrincipal'
-    principalId: identity.properties.principalId
-  }
-
-}
-
-param forceUpdateTag string = newGuid()
-
-resource fetchLatestImages 'Microsoft.Resources/deploymentScripts@2020-10-01' = {
-  kind: 'AzurePowerShell'
-  name: guid(subscription().id, resourceGroup().id, 'fetchLatestImages')
-  location: location
-  identity: {
-    type: 'UserAssigned'
-    userAssignedIdentities: { '${identity.id}': {} }
-  }
-  dependsOn: [ listGroupResourcesRole ]
-  properties: {
-    azPowerShellVersion: '10.1.0'
-    retentionInterval: 'PT1H'
-    timeout: 'PT5M'
-    cleanupPreference: 'OnSuccess'
-    forceUpdateTag: forceUpdateTag
-    arguments: '-containerAppName "${name}" -resourceGroupName "${resourceGroup().name}"'
-    scriptContent: '''
-    param(
-      [string]$containerAppName,
-      [string]$resourceGroupName)
-    $ErrorActionPreference = 'Stop'
-    Install-Module -Name Az.App -Repository PSGallery -Force
-    $container = Get-AzContainerApp -ResourceGroupName $resourceGroupName -Name $containerAppName
-    if (-not $container) {
-      return
-    }
-    $DeploymentScriptOutputs = @{}
-    $container.TemplateContainer | ForEach-Object {
-      $DeploymentScriptOutputs[$_.Name] = $_.Image
-    }
-    '''
+module fetchLatestImage '../modules/fetch-container-image.bicep' = {
+  name: '${name}-fetch-image'
+  params: {
+    exists: exists
+    name: name
   }
 }
 
@@ -150,7 +111,7 @@ resource app 'Microsoft.App/containerApps@2023-04-01-preview' = {
     template: {
       containers: [
         {
-          image: fetchLatestImages.properties.?outputs.?main ?? 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
+          image: fetchLatestImage.outputs.?containers[0].?image ?? 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
           name: 'main'
           env: [
             {

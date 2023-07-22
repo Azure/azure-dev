@@ -1,3 +1,4 @@
+{{define "host-containerapp.bicep"}}
 param name string
 param location string = resourceGroup().location
 param tags object = {}
@@ -173,3 +174,4 @@ output defaultDomain string = containerAppsEnvironment.properties.defaultDomain
 output name string = app.name
 output uri string = 'https://${app.properties.configuration.ingress.fqdn}'
 output id string = app.id
+{{end}}

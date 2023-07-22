@@ -1,3 +1,4 @@
+{{define "main.bicep"}}
 targetScope = 'subscription'
 
 @minLength(1)
@@ -105,7 +106,7 @@ module cosmosDb './app/db-cosmos.bicep' = {
 }
 {{- end}}
 {{- if .DbPostgres}}
-module postgresDb './app/db-postgres.bicep' = {
+module postgresDb './app/db-postgre.bicep' = {
   name: 'postgresDb'
   params: {
     serverName: '${abbrs.dBforPostgreSQLServers}${resourceToken}'
@@ -161,3 +162,4 @@ module {{bicepName .Name}} './app/{{.Name}}.bicep' = {
 {{- end}}
 
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = registry.outputs.loginServer
+{{end}}

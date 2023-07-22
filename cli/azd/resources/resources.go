@@ -23,20 +23,8 @@ var MinimalBicep []byte
 //go:embed minimal/main.parameters.json
 var MinimalBicepParameters []byte
 
-//go:embed scaffold/templates/containerapp.bicept
-var ContainerAppBicepTempl []byte
-
-//go:embed scaffold/templates/main.bicept
-var MainBicepTempl []byte
-
-//go:embed scaffold/templates/main.parameters.jsont
-var MainParametersTempl []byte
-
 //go:embed scaffold/base/*
 var ScaffoldBase embed.FS
 
-//go:embed scaffold/templates/db-cosmos.bicept
-var DbCosmosTempl []byte
-
-//go:embed scaffold/templates/db-postgres.bicept
-var DbPostgresTempl []byte
+//go:embed scaffold/templates/*
+var ScaffoldTemplates embed.FS

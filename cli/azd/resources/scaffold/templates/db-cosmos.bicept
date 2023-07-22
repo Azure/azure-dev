@@ -1,3 +1,4 @@
+{{define "db-cosmos.bicep"}}
 param accountName string
 param location string = resourceGroup().location
 param tags object = {}
@@ -71,3 +72,4 @@ resource cosmosConnectionString 'Microsoft.KeyVault/vaults/secrets@2022-07-01' =
 
 output accountName string = account.name
 output connectionStringKey string = 'cosmosConnectionString'
+{{end}}

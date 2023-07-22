@@ -1,0 +1,33 @@
+{{define "host-staticwebapp.bicep"}}
+param name string
+param location string = resourceGroup().location
+param tags object = {}
+
+param backendResourceId string
+param backendName string
+
+resource web 'Microsoft.Web/staticSites@2022-03-01' = {
+  name: name
+  location: location
+  tags: tags
+  sku: {
+    name: 'Standard'
+    tier: 'Standard'
+  }
+  properties: {
+    provider: 'Custom'
+  }
+}
+
+resource backend 'Microsoft.Web/staticSites/linkedBackends@2022-03-01' = {
+  name: backendName
+  parent: web
+  properties: {
+    backendResourceId: backendResourceId
+    region: location
+  }
+}
+
+output name string = web.name
+output uri string = 'https://${web.properties.defaultHostname}'
+{{end}}

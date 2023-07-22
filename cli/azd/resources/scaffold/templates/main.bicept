@@ -115,6 +115,7 @@ module postgresDb './app/db-postgre.bicep' = {
     sqlAdminPassword: sqlAdminPassword
     appUserPassword: appUserPassword
     keyVaultName: keyVault.outputs.name
+    allowAllIPsFirewall: true
   }
   scope: rg
 }
@@ -140,7 +141,6 @@ module {{bicepName .Name}} './app/{{.Name}}.bicep' = {
     databaseHost: postgresDb.outputs.databaseHost
     databaseUser: postgresDb.outputs.databaseUser
     databasePassword: vault.getSecret(postgresDb.outputs.databaseConnectionKey)
-    allowAllIPsFirewall: true
     {{- end}}
     {{- if .Frontend}}
     apiUrls: [

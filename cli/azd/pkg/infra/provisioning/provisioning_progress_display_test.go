@@ -101,9 +101,10 @@ func mockAzDeploymentShow(t *testing.T, m mocks.MockContext) {
 
 func TestReportProgress(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
-	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
+	depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
+	depService := mockazcli.NewDeploymentsServiceFromMockContext(mockContext)
 
-	scope := infra.NewSubscriptionDeployment(azCli, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
+	scope := infra.NewSubscriptionDeployment(depService, depOpService, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
 	mockAzDeploymentShow(t, *mockContext)
 
 	startTime := time.Now()

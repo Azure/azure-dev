@@ -22,6 +22,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/cmdsubst"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -42,7 +43,7 @@ import (
 
 const DefaultModule = "main"
 
-type BicepDeploymentDetails struct {
+type bicepDeploymentDetails struct {
 	// Template is the template to deploy during the deployment operation.
 	Template azure.RawArmTemplate
 	// Parameters are the values to provide to the template during the deployment operation.
@@ -56,16 +57,18 @@ type BicepDeploymentDetails struct {
 
 // BicepProvider exposes infrastructure provisioning using Azure Bicep templates
 type BicepProvider struct {
-	env                 *environment.Environment
-	projectPath         string
-	options             Options
-	console             input.Console
-	bicepCli            bicep.BicepCli
-	azCli               azcli.AzCli
-	prompters           prompt.Prompter
-	curPrincipal        CurrentPrincipalIdProvider
-	alphaFeatureManager *alpha.FeatureManager
-	clock               clock.Clock
+	env                  *environment.Environment
+	projectPath          string
+	options              Options
+	console              input.Console
+	bicepCli             bicep.BicepCli
+	azCli                azcli.AzCli
+	deploymentsService   azapi.Deployments
+	deploymentOperations azapi.DeploymentOperations
+	prompters            prompt.Prompter
+	curPrincipal         CurrentPrincipalIdProvider
+	alphaFeatureManager  *alpha.FeatureManager
+	clock                clock.Clock
 }
 
 var ErrResourceGroupScopeNotSupported = fmt.Errorf(
@@ -199,7 +202,7 @@ func (p *BicepProvider) State(ctx context.Context) (*StateResult, error) {
 
 	state.Outputs = p.createOutputParameters(
 		template.Outputs,
-		azcli.CreateDeploymentOutput(armDeployment.Properties.Outputs),
+		azapi.CreateDeploymentOutput(armDeployment.Properties.Outputs),
 	)
 
 	return &StateResult{
@@ -210,65 +213,64 @@ func (p *BicepProvider) State(ctx context.Context) (*StateResult, error) {
 var ResourceGroupDeploymentFeature = alpha.MustFeatureKey("resourceGroupDeployments")
 
 // Plans the infrastructure provisioning
-func (p *BicepProvider) Plan(ctx context.Context) (*DeploymentPlan, error) {
+func (p *BicepProvider) plan(ctx context.Context) (*Deployment, *bicepDeploymentDetails, error) {
 	p.console.ShowSpinner(ctx, "Creating a deployment plan", input.Step)
 	// TODO: Report progress, "Generating Bicep parameters file"
 
 	parameters, err := p.loadParameters(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("creating parameters file: %w", err)
+		return nil, nil, fmt.Errorf("creating parameters file: %w", err)
 	}
 
 	modulePath := p.modulePath()
 	// TODO: Report progress, "Compiling Bicep template"
 	rawTemplate, template, err := p.compileBicep(ctx, modulePath)
 	if err != nil {
-		return nil, fmt.Errorf("creating template: %w", err)
+		return nil, nil, fmt.Errorf("creating template: %w", err)
 	}
 
 	configuredParameters, err := p.ensureParameters(ctx, template, parameters)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	deployment, err := p.convertToDeployment(template)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	deploymentScope, err := template.TargetScope()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	var target infra.Deployment
 
 	if deploymentScope == azure.DeploymentScopeSubscription {
 		target = infra.NewSubscriptionDeployment(
-			p.azCli,
+			p.deploymentsService,
+			p.deploymentOperations,
 			p.env.GetLocation(),
 			p.env.GetSubscriptionId(),
 			deploymentNameForEnv(p.env.GetEnvName(), p.clock),
 		)
 	} else if deploymentScope == azure.DeploymentScopeResourceGroup {
 		target = infra.NewResourceGroupDeployment(
-			p.azCli,
+			p.deploymentsService,
+			p.deploymentOperations,
 			p.env.GetSubscriptionId(),
 			p.env.Getenv(environment.ResourceGroupEnvVarName),
 			deploymentNameForEnv(p.env.GetEnvName(), p.clock),
 		)
 	} else {
-		return nil, fmt.Errorf("unsupported scope: %s", deploymentScope)
+		return nil, nil, fmt.Errorf("unsupported scope: %s", deploymentScope)
 	}
 
-	return &DeploymentPlan{
-		Deployment: *deployment,
-		Details: BicepDeploymentDetails{
-			Template:        rawTemplate,
-			TemplateOutputs: template.Outputs,
-			Parameters:      configuredParameters,
-			Target:          target,
-		},
+	return deployment, &bicepDeploymentDetails{
+		Template:        rawTemplate,
+		TemplateOutputs: template.Outputs,
+		Parameters:      configuredParameters,
+		Target:          target,
 	}, nil
 }
 
@@ -288,8 +290,11 @@ func deploymentNameForEnv(envName string, clock clock.Clock) string {
 }
 
 // Provisioning the infrastructure within the specified template
-func (p *BicepProvider) Deploy(ctx context.Context, pd *DeploymentPlan) (*DeployResult, error) {
-	bicepDeploymentData := pd.Details.(BicepDeploymentDetails)
+func (p *BicepProvider) Deploy(ctx context.Context) (*DeployResult, error) {
+	deployment, bicepDeploymentData, err := p.plan(ctx)
+	if err != nil {
+		return nil, err
+	}
 
 	cancelProgress := make(chan bool)
 	defer func() { cancelProgress <- true }()
@@ -302,7 +307,7 @@ func (p *BicepProvider) Deploy(ctx context.Context, pd *DeploymentPlan) (*Deploy
 		}
 
 		// Report incremental progress
-		resourceManager := infra.NewAzureResourceManager(p.azCli)
+		resourceManager := infra.NewAzureResourceManager(p.azCli, p.deploymentOperations)
 		progressDisplay := NewProvisioningProgressDisplay(resourceManager, p.console, bicepDeploymentData.Target)
 		// Make initial delay shorter to be more responsive in displaying initial progress
 		initialDelay := 3 * time.Second
@@ -342,14 +347,56 @@ func (p *BicepProvider) Deploy(ctx context.Context, pd *DeploymentPlan) (*Deploy
 		return nil, err
 	}
 
-	deployment := pd.Deployment
 	deployment.Outputs = p.createOutputParameters(
 		bicepDeploymentData.TemplateOutputs,
-		azcli.CreateDeploymentOutput(deployResult.Properties.Outputs),
+		azapi.CreateDeploymentOutput(deployResult.Properties.Outputs),
 	)
 
 	return &DeployResult{
-		Deployment: &deployment,
+		Deployment: deployment,
+	}, nil
+}
+
+// Preview runs deploy using the what-if argument
+func (p *BicepProvider) Preview(ctx context.Context) (*DeployPreviewResult, error) {
+	_, bicepDeploymentData, err := p.plan(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	p.console.ShowSpinner(ctx, "Generating infrastructure preview", input.Step)
+
+	targetScope := bicepDeploymentData.Target
+	deployPreviewResult, err := targetScope.DeployPreview(
+		ctx,
+		bicepDeploymentData.Template,
+		bicepDeploymentData.Parameters,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	var changes []*DeploymentPreviewChange
+	for _, change := range deployPreviewResult.Properties.Changes {
+		resourceAfter := change.After.(map[string]interface{})
+
+		changes = append(changes, &DeploymentPreviewChange{
+			ChangeType: ChangeType(*change.ChangeType),
+			ResourceId: Resource{
+				Id: *change.ResourceID,
+			},
+			ResourceType: resourceAfter["type"].(string),
+			Name:         resourceAfter["name"].(string),
+		})
+	}
+
+	return &DeployPreviewResult{
+		Preview: &DeploymentPreview{
+			Status: *deployPreviewResult.Status,
+			Properties: &DeploymentPreviewProperties{
+				Changes: changes,
+			},
+		},
 	}, nil
 }
 
@@ -367,10 +414,12 @@ func (p *BicepProvider) scopeForTemplate(ctx context.Context, t azure.ArmTemplat
 	}
 
 	if deploymentScope == azure.DeploymentScopeSubscription {
-		return infra.NewSubscriptionScope(p.azCli, p.env.GetSubscriptionId()), nil
+		return infra.NewSubscriptionScope(
+			p.deploymentsService, p.deploymentOperations, p.env.GetSubscriptionId()), nil
 	} else if deploymentScope == azure.DeploymentScopeResourceGroup {
 		return infra.NewResourceGroupScope(
-			p.azCli,
+			p.deploymentsService,
+			p.deploymentOperations,
 			p.env.GetSubscriptionId(),
 			p.env.Getenv(environment.ResourceGroupEnvVarName),
 		), nil
@@ -504,7 +553,7 @@ func (p *BicepProvider) Destroy(ctx context.Context, options DestroyOptions) (*D
 	destroyResult := &DestroyResult{
 		InvalidatedEnvKeys: maps.Keys(p.createOutputParameters(
 			template.Outputs,
-			azcli.CreateDeploymentOutput(deployment.Properties.Outputs),
+			azapi.CreateDeploymentOutput(deployment.Properties.Outputs),
 		)),
 	}
 
@@ -830,7 +879,12 @@ func (p *BicepProvider) getManagedHSMs(
 	for resourceGroup, groupResources := range groupedResources {
 		for _, resource := range groupResources {
 			if resource.Type == string(infra.AzureResourceTypeManagedHSM) {
-				managedHSM, err := p.azCli.GetManagedHSM(ctx, azure.SubscriptionFromRID(resource.Id), resourceGroup, resource.Name)
+				managedHSM, err := p.azCli.GetManagedHSM(
+					ctx,
+					azure.SubscriptionFromRID(resource.Id),
+					resourceGroup,
+					resource.Name,
+				)
 				if err != nil {
 					return nil, fmt.Errorf("listing managed hsm %s properties: %w", resource.Name, err)
 				}
@@ -1107,7 +1161,7 @@ func (p *BicepProvider) mapBicepTypeToInterfaceType(s string) ParameterType {
 // casings.
 func (p *BicepProvider) createOutputParameters(
 	templateOutputs azure.ArmTemplateOutputs,
-	azureOutputParams map[string]azcli.AzCliDeploymentOutput,
+	azureOutputParams map[string]azapi.AzCliDeploymentOutput,
 ) map[string]OutputParameter {
 	canonicalOutputCasings := make(map[string]string, len(templateOutputs))
 
@@ -1396,6 +1450,8 @@ func isValueAssignableToParameterType(paramType ParameterType, value any) bool {
 func NewBicepProvider(
 	bicepCli bicep.BicepCli,
 	azCli azcli.AzCli,
+	deploymentsService azapi.Deployments,
+	deploymentOperations azapi.DeploymentOperations,
 	env *environment.Environment,
 	console input.Console,
 	prompters prompt.Prompter,
@@ -1404,13 +1460,15 @@ func NewBicepProvider(
 	clock clock.Clock,
 ) Provider {
 	return &BicepProvider{
-		env:                 env,
-		console:             console,
-		bicepCli:            bicepCli,
-		azCli:               azCli,
-		prompters:           prompters,
-		curPrincipal:        curPrincipal,
-		alphaFeatureManager: alphaFeatureManager,
-		clock:               clock,
+		env:                  env,
+		console:              console,
+		bicepCli:             bicepCli,
+		azCli:                azCli,
+		deploymentsService:   deploymentsService,
+		deploymentOperations: deploymentOperations,
+		prompters:            prompters,
+		curPrincipal:         curPrincipal,
+		alphaFeatureManager:  alphaFeatureManager,
+		clock:                clock,
 	}
 }

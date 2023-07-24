@@ -50,7 +50,7 @@ func TestProvisionInitializesEnvironment(t *testing.T) {
 	require.Equal(t, "location", env.GetLocation())
 }
 
-func TestManagerPlan(t *testing.T) {
+func TestManagerPreview(t *testing.T) {
 	env := environment.EphemeralWithValues("test-env", map[string]string{
 		"AZURE_SUBSCRIPTION_ID": "SUBSCRIPTION_ID",
 		"AZURE_LOCATION":        "eastus2",
@@ -63,11 +63,10 @@ func TestManagerPlan(t *testing.T) {
 	err := mgr.Initialize(*mockContext.Context, "", Options{Provider: "test"})
 	require.NoError(t, err)
 
-	deploymentPlan, err := mgr.Plan(*mockContext.Context)
+	deploymentPlan, err := mgr.Preview(*mockContext.Context)
 
 	require.NotNil(t, deploymentPlan)
 	require.Nil(t, err)
-	require.Equal(t, deploymentPlan.Deployment.Parameters["location"].Value, env.Dotenv()["AZURE_LOCATION"])
 }
 
 func TestManagerGetState(t *testing.T) {
@@ -102,8 +101,7 @@ func TestManagerDeploy(t *testing.T) {
 	err := mgr.Initialize(*mockContext.Context, "", Options{Provider: "test"})
 	require.NoError(t, err)
 
-	deploymentPlan, _ := mgr.Plan(*mockContext.Context)
-	deployResult, err := mgr.Deploy(*mockContext.Context, deploymentPlan)
+	deployResult, err := mgr.Deploy(*mockContext.Context)
 
 	require.NotNil(t, deployResult)
 	require.Nil(t, err)

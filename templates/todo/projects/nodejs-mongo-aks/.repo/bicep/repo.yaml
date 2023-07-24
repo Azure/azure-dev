@@ -118,7 +118,7 @@ repo:
       to: ./.azdo/pipelines/azure-dev.yml
 
     # Github workflows for bicep
-    - from: ../../../../../common/.github/workflows/bicep
+    - from: ../../../../../common/.github/workflows/nodejs/bicep
       to: ./.github/workflows
 
     # azd core modules

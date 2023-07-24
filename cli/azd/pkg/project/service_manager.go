@@ -13,7 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
 
-// LogProgressFunc the type of the function called to log progress updates for long-running operations.
+// LogProgressFunc is the type of the function called to log progress updates for long-running operations.
 type LogProgressFunc func(s string)
 
 const (

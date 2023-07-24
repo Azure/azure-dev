@@ -5,6 +5,7 @@ package project
 
 import (
 	"context"
+	"os"
 	"strings"
 	"testing"
 
@@ -17,6 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/npm"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockarmresources"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/benbjohnson/clock"
 	"github.com/stretchr/testify/require"
 )
@@ -64,13 +66,20 @@ services:
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		ran = true
 
+		// extract img id file arg. "--iidfile" and path args are expected always at the end
+		argsNoFile, value := args.Args[:len(args.Args)-2], args.Args[len(args.Args)-1]
+
 		require.Equal(t, []string{
-			"build", "-q",
+			"build",
 			"-f", "./Dockerfile",
 			"--platform", docker.DefaultPlatform,
 			"-t", "test-proj-web",
 			".",
-		}, args.Args)
+		}, argsNoFile)
+
+		// create the file as expected
+		err := os.WriteFile(value, []byte("imageId"), 0600)
+		require.NoError(t, err)
 
 		return exec.RunResult{
 			Stdout:   "imageId",
@@ -88,7 +97,8 @@ services:
 
 	internalFramework := NewNpmProject(npmCli, env)
 
-	framework := NewDockerProject(env, docker, NewContainerHelper(env, clock.NewMock(), nil, docker))
+	framework := NewDockerProject(
+		env, docker, NewContainerHelper(env, clock.NewMock(), nil, docker), mockinput.NewMockConsole())
 	framework.SetSource(internalFramework)
 
 	progressMessages := []string{}
@@ -142,13 +152,20 @@ services:
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		ran = true
 
+		// extract img id file arg. "--iidfile" and path args are expected always at the end
+		argsNoFile, value := args.Args[:len(args.Args)-2], args.Args[len(args.Args)-1]
+
 		require.Equal(t, []string{
-			"build", "-q",
+			"build",
 			"-f", "./Dockerfile.dev",
 			"--platform", docker.DefaultPlatform,
 			"-t", "test-proj-web",
 			"../",
-		}, args.Args)
+		}, argsNoFile)
+
+		// create the file as expected
+		err := os.WriteFile(value, []byte("imageId"), 0600)
+		require.NoError(t, err)
 
 		return exec.RunResult{
 			Stdout:   "imageId",
@@ -165,7 +182,8 @@ services:
 
 	service := projectConfig.Services["web"]
 	internalFramework := NewNpmProject(npmCli, env)
-	framework := NewDockerProject(env, docker, NewContainerHelper(env, clock.NewMock(), nil, docker))
+	framework := NewDockerProject(
+		env, docker, NewContainerHelper(env, clock.NewMock(), nil, docker), mockinput.NewMockConsole())
 	framework.SetSource(internalFramework)
 
 	messages := []string{}
@@ -188,7 +206,13 @@ func Test_DockerProject_Build(t *testing.T) {
 			return strings.Contains(command, "docker build")
 		}).
 		RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+			// extract img id file arg. "--iidfile" and path args are expected always at the end
+			argsNoFile, value := args.Args[:len(args.Args)-2], args.Args[len(args.Args)-1]
 			runArgs = args
+			runArgs.Args = argsNoFile
+			// create the file as expected
+			err := os.WriteFile(value, []byte("IMAGE_ID"), 0600)
+			require.NoError(t, err)
 			return exec.NewRunResult(0, "IMAGE_ID", ""), nil
 		})
 
@@ -196,7 +220,8 @@ func Test_DockerProject_Build(t *testing.T) {
 	dockerCli := docker.NewDocker(mockContext.CommandRunner)
 	serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
 
-	dockerProject := NewDockerProject(env, dockerCli, NewContainerHelper(env, clock.NewMock(), nil, dockerCli))
+	dockerProject := NewDockerProject(
+		env, dockerCli, NewContainerHelper(env, clock.NewMock(), nil, dockerCli), mockinput.NewMockConsole())
 
 	messages := []string{}
 	showProgress := saveMessages(&messages)
@@ -208,7 +233,7 @@ func Test_DockerProject_Build(t *testing.T) {
 	require.Equal(t, serviceConfig.RelativePath, runArgs.Cwd)
 	require.Equal(t,
 		[]string{
-			"build", "-q",
+			"build",
 			"-f", "./Dockerfile",
 			"--platform", docker.DefaultPlatform,
 			"-t", "test-app-api",
@@ -241,7 +266,8 @@ func Test_DockerProject_Package(t *testing.T) {
 	dockerCli := docker.NewDocker(mockContext.CommandRunner)
 	serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
 
-	dockerProject := NewDockerProject(env, dockerCli, NewContainerHelper(env, clock.NewMock(), nil, dockerCli))
+	dockerProject := NewDockerProject(
+		env, dockerCli, NewContainerHelper(env, clock.NewMock(), nil, dockerCli), mockinput.NewMockConsole())
 	messages := []string{}
 	showProgress := saveMessages(&messages)
 	res, err := dockerProject.Package(

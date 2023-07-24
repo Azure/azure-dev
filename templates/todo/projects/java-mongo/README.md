@@ -21,8 +21,8 @@ description: A complete ToDo app with Java API and Azure Cosmos for MongoDB for 
 
 # React Web App with Java API and MongoDB on Azure
 
-[![Open in GitHub Codespaces](https://img.shields.io/static/v1?style=for-the-badge&label=GitHub+Codespaces&message=Open&color=brightgreen&logo=github)](https://github.com/codespaces/new?hide_repo_select=true&ref=main&repo=452042919&machine=standardLinux32gb&devcontainer_path=.devcontainer%2Fdevcontainer.json&location=WestUs2)
-[![Open in Remote - Containers](https://img.shields.io/static/v1?style=for-the-badge&label=Remote%20-%20Containers&message=Open&color=blue&logo=visualstudiocode)](https://vscode.dev/redirect?url=vscode://ms-vscode-remote.remote-containers/cloneInVolume?url=https://github.com/azure-samples/todo-java-mongo)
+[![Open in GitHub Codespaces](https://img.shields.io/static/v1?style=for-the-badge&label=GitHub+Codespaces&message=Open&color=brightgreen&logo=github)](https://codespaces.new/azure-samples/todo-java-mongo)
+[![Open in Dev Container](https://img.shields.io/static/v1?style=for-the-badge&label=Dev+Containers&message=Open&color=blue&logo=visualstudiocode)](https://vscode.dev/redirect?url=vscode://ms-vscode-remote.remote-containers/cloneInVolume?url=https://github.com/azure-samples/todo-java-mongo)
 
 A blueprint for getting a React web app with a Java API and a MongoDB database running on Azure. The blueprint includes sample application code (a ToDo web app) which can be removed and replaced with your own application code. Add your own source code and leverage the Infrastructure as Code assets (written in Bicep) to get up and running quickly.
 
@@ -51,7 +51,7 @@ This quickstart will show you how to authenticate on Azure, initialize using a t
 azd auth login
 
 # First-time project setup. Initialize a project in the current directory, using this template. 
-azd init --template Azure-Samples/todo-csharp-cosmos-sql
+azd init --template Azure-Samples/todo-java-mongo
 
 # Provision and deploy to Azure
 azd up

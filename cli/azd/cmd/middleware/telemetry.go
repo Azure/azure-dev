@@ -15,8 +15,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/pflag"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -89,7 +89,7 @@ func mapError(err error, span tracing.Span) {
 	var errDetails []attribute.KeyValue
 
 	var respErr *azcore.ResponseError
-	var armDeployErr *azcli.AzureDeploymentError
+	var armDeployErr *azapi.AzureDeploymentError
 	var toolExecErr *exec.ExitError
 	var authFailedErr *auth.AuthFailedError
 	if errors.As(err, &respErr) {
@@ -116,8 +116,8 @@ func mapError(err error, span tracing.Span) {
 	} else if errors.As(err, &armDeployErr) {
 		errDetails = append(errDetails, fields.ServiceName.String("arm"))
 		codes := []*deploymentErrorCode{}
-		var collect func(details []*azcli.DeploymentErrorLine, frame int)
-		collect = func(details []*azcli.DeploymentErrorLine, frame int) {
+		var collect func(details []*azapi.DeploymentErrorLine, frame int)
+		collect = func(details []*azapi.DeploymentErrorLine, frame int) {
 			code := collectCode(details, frame)
 			if code != nil {
 				codes = append(codes, code)
@@ -131,7 +131,7 @@ func mapError(err error, span tracing.Span) {
 			}
 		}
 
-		collect([]*azcli.DeploymentErrorLine{armDeployErr.Details}, 0)
+		collect([]*azapi.DeploymentErrorLine{armDeployErr.Details}, 0)
 		if len(codes) > 0 {
 			if codesJson, err := json.Marshal(codes); err != nil {
 				log.Println("telemetry: failed to marshal arm error codes", err)
@@ -185,7 +185,7 @@ type deploymentErrorCode struct {
 	Frame int    `json:"error.frame"`
 }
 
-func collectCode(lines []*azcli.DeploymentErrorLine, frame int) *deploymentErrorCode {
+func collectCode(lines []*azapi.DeploymentErrorLine, frame int) *deploymentErrorCode {
 	if len(lines) == 0 {
 		return nil
 	}

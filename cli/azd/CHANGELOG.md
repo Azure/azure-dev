@@ -1,19 +1,52 @@
 # Release History
 
-## 1.1.0 (Unreleased)
+## 1.1.1 (Unreleased)
 
 ### Features Added
 
-### Breaking Changes
+- [[2550]](https://github.com/Azure/azure-dev/pull/2550) Add `--preview` to `azd provision` to get the changes 
+
+## 1.1.0 (2023-07-12)
+
+### Features Added
+
+- [[2364]](https://github.com/Azure/azure-dev/pull/2364) Display docker output during `package` and `deploy`.
+- [[2463]](https://github.com/Azure/azure-dev/pull/2463) Support `--docs` flag for all azd commands to show official documentation website.
+
+### Bugs Fixed
+
+- [[2402]](https://github.com/Azure/azure-dev/pull/2279) Support for workload profiles in Azure Container Apps
+- [[2428, 2040]](https://github.com/Azure/azure-dev/pull/2468) Include current git branch in GitHub federated credentials
+
+### Other Changes
+
+- [[1118]](https://github.com/Azure/azure-dev/pull/1118) Add `azd` as a devcontainer feature. Thanks [aaronpowell](https://github.com/aaronpowell) for their contributions to this feature and for updating our templates to use this new feature!
+
+## 1.0.2 (2023-06-14)
+
+### Features Added
+
+- [[2266]](https://github.com/Azure/azure-dev/pull/2266) Support for buildArgs on Docker builds.
+- [[2322]](https://github.com/Azure/azure-dev/pull/2322) Support Azure Spring Apps consumption dedicated plan.
 
 ### Bugs Fixed
 
 - [[2348]](https://github.com/Azure/azure-dev/pull/2279) Support purging Managed HSMs.
 - [[2362]](https://github.com/Azure/azure-dev/pull/2362) Prevent more errors from interrupting console progress.
+- [[2366]](https://github.com/Azure/azure-dev/pull/2366) Fixes issue where hooks inline script slashes are replaced.
+- [[2375]](https://github.com/Azure/azure-dev/pull/2375) Store numeric values with leading zeros in .env correctly.
+- [[2401]](https://github.com/Azure/azure-dev/pull/2401) Fix the application url fetched from ASA consumption plan.
+- [[2426]](https://github.com/Azure/azure-dev/pull/2426) Fix saving of subscription and location defaults.
 
 ### Other Changes
 
 - [[2337]](https://github.com/Azure/azure-dev/pull/2337) Update device-code auth flow.
+
+## 1.0.1 (2023-05-25)
+
+### Bugs Fixed
+
+- [[2300]](https://github.com/Azure/azure-dev/pull/2300) Fix `azd auth login` failing with error "reauthentication required: run `azd auth login` to log in" due to stale cache data.
 
 ## 1.0.0 (2023-05-22)
 

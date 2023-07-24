@@ -38,21 +38,16 @@ func (p *TestProvider) Initialize(ctx context.Context, projectPath string, optio
 	p.projectPath = projectPath
 	p.options = options
 
-	return p.prompters.EnsureEnv(ctx)
+	return p.EnsureEnv(ctx)
 }
 
-func (p *TestProvider) Plan(ctx context.Context) (*DeploymentPlan, error) {
-	// TODO: progress "Planning deployment"
-
-	params := make(map[string]InputParameter)
-	params["location"] = InputParameter{Value: p.env.GetLocation()}
-
-	return &DeploymentPlan{
-		Deployment: Deployment{
-			Parameters: params,
-			Outputs:    make(map[string]OutputParameter),
-		},
-	}, nil
+// EnsureEnv ensures that the environment is in a provision-ready state with required values set, prompting the user if
+// values are unset.
+//
+// An environment is considered to be in a provision-ready state if it contains both an AZURE_SUBSCRIPTION_ID and
+// AZURE_LOCATION value.
+func (t *TestProvider) EnsureEnv(ctx context.Context) error {
+	return EnsureSubscriptionAndLocation(ctx, t.env, t.prompters)
 }
 
 func (p *TestProvider) State(ctx context.Context) (*StateResult, error) {
@@ -82,7 +77,7 @@ func (p *TestProvider) GetDeployment(ctx context.Context) (*DeployResult, error)
 }
 
 // Provisioning the infrastructure within the specified template
-func (p *TestProvider) Deploy(ctx context.Context, pd *DeploymentPlan) (*DeployResult, error) {
+func (p *TestProvider) Deploy(ctx context.Context) (*DeployResult, error) {
 	// TODO: progress, "Deploying azure resources"
 
 	deployment := Deployment{
@@ -92,6 +87,16 @@ func (p *TestProvider) Deploy(ctx context.Context, pd *DeploymentPlan) (*DeployR
 
 	return &DeployResult{
 		Deployment: &deployment,
+	}, nil
+}
+
+// Provisioning the infrastructure within the specified template
+func (p *TestProvider) Preview(ctx context.Context) (*DeployPreviewResult, error) {
+	return &DeployPreviewResult{
+		Preview: &DeploymentPreview{
+			Status:     "Completed",
+			Properties: &DeploymentPreviewProperties{},
+		},
 	}, nil
 }
 

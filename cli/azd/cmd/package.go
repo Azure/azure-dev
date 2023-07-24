@@ -132,7 +132,9 @@ func (pa *packageAction) Run(ctx context.Context) (*actions.ActionResult, error)
 
 	packageResults := map[string]project.ServicePackageResult{}
 
-	for _, svc := range pa.projectConfig.GetServicesStable() {
+	serviceTable := pa.projectConfig.GetServicesStable()
+	serviceCount := len(serviceTable)
+	for index, svc := range serviceTable {
 		stepMessage := fmt.Sprintf("Packaging service %s", svc.Name)
 		pa.console.ShowSpinner(ctx, stepMessage, input.Step)
 
@@ -149,15 +151,15 @@ func (pa *packageAction) Run(ctx context.Context) (*actions.ActionResult, error)
 		})
 		packageResult, err := pa.serviceManager.Package(ctx, svc, nil)
 		if err != nil {
-			pa.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 			return nil, err
 		}
-
-		pa.console.StopSpinner(ctx, stepMessage, input.StepDone)
 		packageResults[svc.Name] = packageResult
 
 		// report package output
 		pa.console.MessageUxItem(ctx, &packageResult)
+		if index < serviceCount-1 {
+			pa.console.Message(ctx, "")
+		}
 	}
 
 	if pa.formatter.Kind() == output.JsonFormat {

@@ -232,9 +232,9 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 			da.console.WarnForFeature(ctx, alphaFeatureId)
 		}
 
-		da.console.ShowSpinner(ctx, stepMessage, input.Step)
 		da.serviceManager.SetProgressDisplay(func(msg string) {
-			da.console.ShowSpinner(ctx, fmt.Sprintf("Deploying service %s (%s)", svc.Name, msg), input.Step)
+			stepMessage = fmt.Sprintf("Deploying service %s (%s)", svc.Name, msg)
+			da.console.ShowSpinner(ctx, stepMessage, input.Step)
 		})
 
 		var packageResult project.ServicePackageResult
@@ -258,7 +258,6 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 			return nil, err
 		}
 
-		da.console.StopSpinner(ctx, stepMessage, input.StepDone)
 		deployResults[svc.Name] = deployResult
 
 		// report deploy outputs
@@ -279,7 +278,7 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
 			Header:   fmt.Sprintf("Your application was deployed to Azure in %s.", ux.DurationAsText(since(startTime))),
-			FollowUp: getResourceGroupFollowUp(ctx, da.formatter, da.projectConfig, da.resourceManager, da.env),
+			FollowUp: getResourceGroupFollowUp(ctx, da.formatter, da.projectConfig, da.resourceManager, da.env, false),
 		},
 	}, nil
 }

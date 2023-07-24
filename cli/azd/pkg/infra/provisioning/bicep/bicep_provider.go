@@ -22,6 +22,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/cmdsubst"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -42,7 +43,7 @@ import (
 
 const DefaultModule = "main"
 
-type BicepDeploymentDetails struct {
+type bicepDeploymentDetails struct {
 	// Template is the template to deploy during the deployment operation.
 	Template azure.RawArmTemplate
 	// Parameters are the values to provide to the template during the deployment operation.
@@ -56,16 +57,18 @@ type BicepDeploymentDetails struct {
 
 // BicepProvider exposes infrastructure provisioning using Azure Bicep templates
 type BicepProvider struct {
-	env                 *environment.Environment
-	projectPath         string
-	options             Options
-	console             input.Console
-	bicepCli            bicep.BicepCli
-	azCli               azcli.AzCli
-	prompters           prompt.Prompter
-	curPrincipal        CurrentPrincipalIdProvider
-	alphaFeatureManager *alpha.FeatureManager
-	clock               clock.Clock
+	env                  *environment.Environment
+	projectPath          string
+	options              Options
+	console              input.Console
+	bicepCli             bicep.BicepCli
+	azCli                azcli.AzCli
+	deploymentsService   azapi.Deployments
+	deploymentOperations azapi.DeploymentOperations
+	prompters            prompt.Prompter
+	curPrincipal         CurrentPrincipalIdProvider
+	alphaFeatureManager  *alpha.FeatureManager
+	clock                clock.Clock
 }
 
 var ErrResourceGroupScopeNotSupported = fmt.Errorf(
@@ -95,7 +98,61 @@ func (p *BicepProvider) Initialize(ctx context.Context, projectPath string, opti
 		return err
 	}
 
-	return p.prompters.EnsureEnv(ctx)
+	return p.EnsureEnv(ctx)
+}
+
+// EnsureEnv ensures that the environment is in a provision-ready state with required values set, prompting the user if
+// values are unset.
+//
+// An environment is considered to be in a provision-ready state if it contains both an AZURE_SUBSCRIPTION_ID and
+// AZURE_LOCATION value. Additionally, for resource group scoped deployments, an AZURE_RESOURCE_GROUP value is required.
+func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
+	if err := EnsureSubscriptionAndLocation(ctx, p.env, p.prompters); err != nil {
+		return err
+	}
+
+	modulePath := p.modulePath()
+	if _, err := os.Stat(modulePath); errors.Is(err, os.ErrNotExist) {
+		// If there's not template, just behave as if we are in a subscription scope (and don't ask about
+		// AZURE_RESOURCE_GROUP). Future operations which try to use the infrastructure may fail, but that's ok. These
+		// failures will have reasonable error messages.
+		//
+		// We want to handle the case where the provider can `Initialize` even without a template, because we do this
+		// in a few of our end to end telemetry tests to speed things up.
+		return nil
+	}
+
+	_, template, err := p.compileBicep(ctx, modulePath)
+	if err != nil {
+		return fmt.Errorf("compiling bicep template: %w", err)
+	}
+
+	scope, err := template.TargetScope()
+	if err != nil {
+		return err
+	}
+
+	if scope == azure.DeploymentScopeResourceGroup {
+		if !p.alphaFeatureManager.IsEnabled(ResourceGroupDeploymentFeature) {
+			return ErrResourceGroupScopeNotSupported
+		}
+
+		p.console.WarnForFeature(ctx, ResourceGroupDeploymentFeature)
+
+		if p.env.Getenv(environment.ResourceGroupEnvVarName) == "" {
+			rgName, err := p.prompters.PromptResourceGroup(ctx)
+			if err != nil {
+				return err
+			}
+
+			p.env.DotenvSet(environment.ResourceGroupEnvVarName, rgName)
+			if err := p.env.Save(); err != nil {
+				return fmt.Errorf("saving resource group name: %w", err)
+			}
+		}
+	}
+
+	return nil
 }
 
 func (p *BicepProvider) State(ctx context.Context) (*StateResult, error) {
@@ -145,7 +202,7 @@ func (p *BicepProvider) State(ctx context.Context) (*StateResult, error) {
 
 	state.Outputs = p.createOutputParameters(
 		template.Outputs,
-		azcli.CreateDeploymentOutput(armDeployment.Properties.Outputs),
+		azapi.CreateDeploymentOutput(armDeployment.Properties.Outputs),
 	)
 
 	return &StateResult{
@@ -156,83 +213,64 @@ func (p *BicepProvider) State(ctx context.Context) (*StateResult, error) {
 var ResourceGroupDeploymentFeature = alpha.MustFeatureKey("resourceGroupDeployments")
 
 // Plans the infrastructure provisioning
-func (p *BicepProvider) Plan(ctx context.Context) (*DeploymentPlan, error) {
+func (p *BicepProvider) plan(ctx context.Context) (*Deployment, *bicepDeploymentDetails, error) {
 	p.console.ShowSpinner(ctx, "Creating a deployment plan", input.Step)
 	// TODO: Report progress, "Generating Bicep parameters file"
 
 	parameters, err := p.loadParameters(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("creating parameters file: %w", err)
+		return nil, nil, fmt.Errorf("creating parameters file: %w", err)
 	}
 
 	modulePath := p.modulePath()
 	// TODO: Report progress, "Compiling Bicep template"
 	rawTemplate, template, err := p.compileBicep(ctx, modulePath)
 	if err != nil {
-		return nil, fmt.Errorf("creating template: %w", err)
+		return nil, nil, fmt.Errorf("creating template: %w", err)
 	}
 
 	configuredParameters, err := p.ensureParameters(ctx, template, parameters)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	deployment, err := p.convertToDeployment(template)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	deploymentScope, err := template.TargetScope()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	var target infra.Deployment
 
 	if deploymentScope == azure.DeploymentScopeSubscription {
 		target = infra.NewSubscriptionDeployment(
-			p.azCli,
+			p.deploymentsService,
+			p.deploymentOperations,
 			p.env.GetLocation(),
 			p.env.GetSubscriptionId(),
 			deploymentNameForEnv(p.env.GetEnvName(), p.clock),
 		)
 	} else if deploymentScope == azure.DeploymentScopeResourceGroup {
-		if !p.alphaFeatureManager.IsEnabled(ResourceGroupDeploymentFeature) {
-			return nil, ErrResourceGroupScopeNotSupported
-		}
-
-		p.console.WarnForFeature(ctx, ResourceGroupDeploymentFeature)
-
-		if p.env.Getenv(environment.ResourceGroupEnvVarName) == "" {
-			rgName, err := p.prompters.PromptResourceGroup(ctx)
-			if err != nil {
-				return nil, err
-			}
-
-			p.env.DotenvSet(environment.ResourceGroupEnvVarName, rgName)
-			if err := p.env.Save(); err != nil {
-				return nil, fmt.Errorf("saving environment: %w", err)
-			}
-		}
-
 		target = infra.NewResourceGroupDeployment(
-			p.azCli,
+			p.deploymentsService,
+			p.deploymentOperations,
 			p.env.GetSubscriptionId(),
 			p.env.Getenv(environment.ResourceGroupEnvVarName),
 			deploymentNameForEnv(p.env.GetEnvName(), p.clock),
 		)
 	} else {
-		return nil, fmt.Errorf("unsupported scope: %s", deploymentScope)
+		return nil, nil, fmt.Errorf("unsupported scope: %s", deploymentScope)
 	}
 
-	return &DeploymentPlan{
-		Deployment: *deployment,
-		Details: BicepDeploymentDetails{
-			Template:        rawTemplate,
-			TemplateOutputs: template.Outputs,
-			Parameters:      configuredParameters,
-			Target:          target,
-		},
+	return deployment, &bicepDeploymentDetails{
+		Template:        rawTemplate,
+		TemplateOutputs: template.Outputs,
+		Parameters:      configuredParameters,
+		Target:          target,
 	}, nil
 }
 
@@ -252,19 +290,24 @@ func deploymentNameForEnv(envName string, clock clock.Clock) string {
 }
 
 // Provisioning the infrastructure within the specified template
-func (p *BicepProvider) Deploy(ctx context.Context, pd *DeploymentPlan) (*DeployResult, error) {
-	done := make(chan bool)
+func (p *BicepProvider) Deploy(ctx context.Context) (*DeployResult, error) {
+	deployment, bicepDeploymentData, err := p.plan(ctx)
+	if err != nil {
+		return nil, err
+	}
 
-	// Ensure the done marker channel is sent in all conditions
-	defer func() {
-		done <- true
-	}()
-
-	bicepDeploymentData := pd.Details.(BicepDeploymentDetails)
-
-	// Report incremental progress
+	cancelProgress := make(chan bool)
+	defer func() { cancelProgress <- true }()
 	go func() {
-		resourceManager := infra.NewAzureResourceManager(p.azCli)
+		// Disable reporting progress if needed
+		if use, err := strconv.ParseBool(os.Getenv("AZD_DEBUG_PROVISION_PROGRESS_DISABLE")); err == nil && use {
+			log.Println("Disabling progress reporting since AZD_DEBUG_PROVISION_PROGRESS_DISABLE was set")
+			<-cancelProgress
+			return
+		}
+
+		// Report incremental progress
+		resourceManager := infra.NewAzureResourceManager(p.azCli, p.deploymentOperations)
 		progressDisplay := NewProvisioningProgressDisplay(resourceManager, p.console, bicepDeploymentData.Target)
 		// Make initial delay shorter to be more responsive in displaying initial progress
 		initialDelay := 3 * time.Second
@@ -274,7 +317,7 @@ func (p *BicepProvider) Deploy(ctx context.Context, pd *DeploymentPlan) (*Deploy
 
 		for {
 			select {
-			case <-done:
+			case <-cancelProgress:
 				timer.Stop()
 				return
 			case <-timer.C:
@@ -304,14 +347,56 @@ func (p *BicepProvider) Deploy(ctx context.Context, pd *DeploymentPlan) (*Deploy
 		return nil, err
 	}
 
-	deployment := pd.Deployment
 	deployment.Outputs = p.createOutputParameters(
 		bicepDeploymentData.TemplateOutputs,
-		azcli.CreateDeploymentOutput(deployResult.Properties.Outputs),
+		azapi.CreateDeploymentOutput(deployResult.Properties.Outputs),
 	)
 
 	return &DeployResult{
-		Deployment: &deployment,
+		Deployment: deployment,
+	}, nil
+}
+
+// Preview runs deploy using the what-if argument
+func (p *BicepProvider) Preview(ctx context.Context) (*DeployPreviewResult, error) {
+	_, bicepDeploymentData, err := p.plan(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	p.console.ShowSpinner(ctx, "Generating infrastructure preview", input.Step)
+
+	targetScope := bicepDeploymentData.Target
+	deployPreviewResult, err := targetScope.DeployPreview(
+		ctx,
+		bicepDeploymentData.Template,
+		bicepDeploymentData.Parameters,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	var changes []*DeploymentPreviewChange
+	for _, change := range deployPreviewResult.Properties.Changes {
+		resourceAfter := change.After.(map[string]interface{})
+
+		changes = append(changes, &DeploymentPreviewChange{
+			ChangeType: ChangeType(*change.ChangeType),
+			ResourceId: Resource{
+				Id: *change.ResourceID,
+			},
+			ResourceType: resourceAfter["type"].(string),
+			Name:         resourceAfter["name"].(string),
+		})
+	}
+
+	return &DeployPreviewResult{
+		Preview: &DeploymentPreview{
+			Status: *deployPreviewResult.Status,
+			Properties: &DeploymentPreviewProperties{
+				Changes: changes,
+			},
+		},
 	}, nil
 }
 
@@ -329,32 +414,15 @@ func (p *BicepProvider) scopeForTemplate(ctx context.Context, t azure.ArmTemplat
 	}
 
 	if deploymentScope == azure.DeploymentScopeSubscription {
-		return infra.NewSubscriptionScope(p.azCli, p.env.GetSubscriptionId()), nil
+		return infra.NewSubscriptionScope(
+			p.deploymentsService, p.deploymentOperations, p.env.GetSubscriptionId()), nil
 	} else if deploymentScope == azure.DeploymentScopeResourceGroup {
-		if !p.alphaFeatureManager.IsEnabled(ResourceGroupDeploymentFeature) {
-			return nil, ErrResourceGroupScopeNotSupported
-		}
-
-		p.console.WarnForFeature(ctx, ResourceGroupDeploymentFeature)
-
-		if p.env.Getenv(environment.ResourceGroupEnvVarName) == "" {
-			rgName, err := p.prompters.PromptResourceGroup(ctx)
-			if err != nil {
-				return nil, err
-			}
-
-			p.env.DotenvSet(environment.ResourceGroupEnvVarName, rgName)
-			if err := p.env.Save(); err != nil {
-				return nil, fmt.Errorf("saving resource group name: %w", err)
-			}
-		}
-
 		return infra.NewResourceGroupScope(
-			p.azCli,
+			p.deploymentsService,
+			p.deploymentOperations,
 			p.env.GetSubscriptionId(),
 			p.env.Getenv(environment.ResourceGroupEnvVarName),
 		), nil
-
 	} else {
 		return nil, fmt.Errorf("unsupported deployment scope: %s", deploymentScope)
 	}
@@ -485,7 +553,7 @@ func (p *BicepProvider) Destroy(ctx context.Context, options DestroyOptions) (*D
 	destroyResult := &DestroyResult{
 		InvalidatedEnvKeys: maps.Keys(p.createOutputParameters(
 			template.Outputs,
-			azcli.CreateDeploymentOutput(deployment.Properties.Outputs),
+			azapi.CreateDeploymentOutput(deployment.Properties.Outputs),
 		)),
 	}
 
@@ -811,7 +879,12 @@ func (p *BicepProvider) getManagedHSMs(
 	for resourceGroup, groupResources := range groupedResources {
 		for _, resource := range groupResources {
 			if resource.Type == string(infra.AzureResourceTypeManagedHSM) {
-				managedHSM, err := p.azCli.GetManagedHSM(ctx, azure.SubscriptionFromRID(resource.Id), resourceGroup, resource.Name)
+				managedHSM, err := p.azCli.GetManagedHSM(
+					ctx,
+					azure.SubscriptionFromRID(resource.Id),
+					resourceGroup,
+					resource.Name,
+				)
 				if err != nil {
 					return nil, fmt.Errorf("listing managed hsm %s properties: %w", resource.Name, err)
 				}
@@ -1088,7 +1161,7 @@ func (p *BicepProvider) mapBicepTypeToInterfaceType(s string) ParameterType {
 // casings.
 func (p *BicepProvider) createOutputParameters(
 	templateOutputs azure.ArmTemplateOutputs,
-	azureOutputParams map[string]azcli.AzCliDeploymentOutput,
+	azureOutputParams map[string]azapi.AzCliDeploymentOutput,
 ) map[string]OutputParameter {
 	canonicalOutputCasings := make(map[string]string, len(templateOutputs))
 
@@ -1161,7 +1234,6 @@ func (p *BicepProvider) loadParameters(ctx context.Context) (map[string]azure.Ar
 func (p *BicepProvider) compileBicep(
 	ctx context.Context, modulePath string,
 ) (azure.RawArmTemplate, azure.ArmTemplate, error) {
-
 	compiled, err := p.bicepCli.Build(ctx, modulePath)
 	if err != nil {
 		return nil, azure.ArmTemplate{}, fmt.Errorf("failed to compile bicep template: %w", err)
@@ -1378,6 +1450,8 @@ func isValueAssignableToParameterType(paramType ParameterType, value any) bool {
 func NewBicepProvider(
 	bicepCli bicep.BicepCli,
 	azCli azcli.AzCli,
+	deploymentsService azapi.Deployments,
+	deploymentOperations azapi.DeploymentOperations,
 	env *environment.Environment,
 	console input.Console,
 	prompters prompt.Prompter,
@@ -1386,13 +1460,15 @@ func NewBicepProvider(
 	clock clock.Clock,
 ) Provider {
 	return &BicepProvider{
-		env:                 env,
-		console:             console,
-		bicepCli:            bicepCli,
-		azCli:               azCli,
-		prompters:           prompters,
-		curPrincipal:        curPrincipal,
-		alphaFeatureManager: alphaFeatureManager,
-		clock:               clock,
+		env:                  env,
+		console:              console,
+		bicepCli:             bicepCli,
+		azCli:                azCli,
+		deploymentsService:   deploymentsService,
+		deploymentOperations: deploymentOperations,
+		prompters:            prompters,
+		curPrincipal:         curPrincipal,
+		alphaFeatureManager:  alphaFeatureManager,
+		clock:                clock,
 	}
 }

@@ -5,6 +5,7 @@ Usage
   azd env select <environment> [flags]
 
 Flags
+        --docs 	: Opens the documentation for azd env select in your web browser.
     -h, --help 	: Gets help for select.
 
 Global Flags

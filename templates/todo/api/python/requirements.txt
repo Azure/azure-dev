@@ -4,7 +4,7 @@ beanie == 1.11.*
 python-dotenv == 0.20.*
 # 1.13.0b4 has a update supporting configurable timeouts on AzureDeveloperCredential
 # https://github.com/Azure/azure-sdk-for-python/blob/main/sdk/identity/azure-identity/CHANGELOG.md#1130b4-2023-04-11
-azure-identity == 1.13.0b4
+azure-identity == 1.13.0
 azure-keyvault-secrets == 4.4.*
 opentelemetry-instrumentation-fastapi == 0.30b1
 azure-monitor-opentelemetry-exporter == 1.0.0b5

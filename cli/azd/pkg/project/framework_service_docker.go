@@ -13,6 +13,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
@@ -67,6 +68,7 @@ type dockerProject struct {
 	docker          docker.Docker
 	framework       FrameworkService
 	containerHelper *ContainerHelper
+	console         input.Console
 }
 
 // NewDockerProject creates a new instance of a Azd project that
@@ -75,11 +77,13 @@ func NewDockerProject(
 	env *environment.Environment,
 	docker docker.Docker,
 	containerHelper *ContainerHelper,
+	console input.Console,
 ) CompositeFrameworkService {
 	return &dockerProject{
 		env:             env,
 		docker:          docker,
 		containerHelper: containerHelper,
+		console:         console,
 	}
 }
 
@@ -150,6 +154,13 @@ func (p *dockerProject) Build(
 
 	// Build the container
 	showProgress("Building Docker image")
+
+	previewerWriter := p.console.ShowPreviewer(ctx,
+		&input.ShowPreviewerOptions{
+			Prefix:       "  ",
+			MaxLineCount: 8,
+			Title:        "Docker Output",
+		})
 	imageId, err := p.docker.Build(
 		ctx,
 		serviceConfig.Path(),
@@ -158,13 +169,12 @@ func (p *dockerProject) Build(
 		dockerOptions.Context,
 		imageName,
 		dockerOptions.BuildArgs,
+		previewerWriter,
 	)
+	p.console.StopPreviewer(ctx)
 	if err != nil {
 		return ServiceBuildResult{}, fmt.Errorf(
-			"building container: %s at %s: %w",
-			serviceConfig.Name,
-			dockerOptions.Context,
-			err)
+			"building container: %s at %s: %w", serviceConfig.Name, dockerOptions.Context, err)
 	}
 
 	log.Printf("built image %s for %s", imageId, serviceConfig.Name)

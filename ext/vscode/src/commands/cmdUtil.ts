@@ -91,7 +91,7 @@ export async function selectApplicationTemplate(context: IActionContext): Promis
         .withArg('template').withArg('list')
         .withArg('--output').withArg('json')
         .build();
-    const result = await execAsync(command);
+    const result = await execAsync(command, azureCli.spawnOptions());
     const templates = JSON.parse(result.stdout) as { name: string, description: string, repositoryPath: string }[];
     const choices = templates.map(t => { return { label: t.name, detail: t.description, data: t.repositoryPath } as IAzureQuickPickItem<string>; });
     choices.unshift({ label: vscode.l10n.t('Use another template...'), data: '', id: UseCustomTemplate });

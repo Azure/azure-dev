@@ -21,6 +21,7 @@ import (
 
 type provisionFlags struct {
 	noProgress bool
+	preview    bool
 	global     *internal.GlobalCommandOptions
 	*envFlag
 }
@@ -38,6 +39,7 @@ func (i *provisionFlags) bindNonCommon(local *pflag.FlagSet, global *internal.Gl
 }
 
 func (i *provisionFlags) bindCommon(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+	local.BoolVar(&i.preview, "preview", false, "Preview changes to Azure resources.")
 	i.envFlag = &envFlag{}
 	i.envFlag.Bind(local, global)
 }
@@ -106,11 +108,19 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 			),
 		)
 	}
+	previewMode := p.flags.preview
 
 	// Command title
+	defaultTitle := "Provisioning Azure resources (azd provision)"
+	defaultTitleNote := "Provisioning Azure resources can take some time"
+	if previewMode {
+		defaultTitle = "Previewing Azure resource changes (azd provision --preview)"
+		defaultTitleNote = "This is a preview. No changes will be applied to your Azure resources."
+	}
+
 	p.console.MessageUxItem(ctx, &ux.MessageTitle{
-		Title:     "Provisioning Azure resources (azd provision)",
-		TitleNote: "Provisioning Azure resources can take some time"},
+		Title:     defaultTitle,
+		TitleNote: defaultTitleNote},
 	)
 
 	startTime := time.Now()
@@ -124,19 +134,19 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 	}
 
 	var deployResult *provisioning.DeployResult
+	var deployPreviewResult *provisioning.DeployPreviewResult
 
 	projectEventArgs := project.ProjectLifecycleEventArgs{
 		Project: p.projectConfig,
 	}
 
 	err := p.projectConfig.Invoke(ctx, project.ProjectEventProvision, projectEventArgs, func() error {
-		deploymentPlan, err := p.provisionManager.Plan(ctx)
-		if err != nil {
-			return fmt.Errorf("planning deployment: %w", err)
+		var err error
+		if previewMode {
+			deployPreviewResult, err = p.provisionManager.Preview(ctx)
+		} else {
+			deployResult, err = p.provisionManager.Deploy(ctx)
 		}
-
-		deployResult, err = p.provisionManager.Deploy(ctx, deploymentPlan)
-
 		return err
 	})
 
@@ -160,6 +170,19 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		}
 
 		return nil, fmt.Errorf("deployment failed: %w", err)
+	}
+
+	if previewMode {
+		p.console.MessageUxItem(ctx, deployResultToUx(deployPreviewResult))
+
+		return &actions.ActionResult{
+			Message: &actions.ResultMessage{
+				Header: fmt.Sprintf(
+					"Generated provisioning preview in %s.", ux.DurationAsText(since(startTime))),
+				FollowUp: getResourceGroupFollowUp(
+					ctx, p.formatter, p.projectConfig, p.resourceManager, p.env, true),
+			},
+		}, nil
 	}
 
 	for _, svc := range p.projectConfig.Services {
@@ -199,9 +222,24 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 			Header: fmt.Sprintf(
 				"Your application was provisioned in Azure in %s.", ux.DurationAsText(since(startTime))),
 			FollowUp: getResourceGroupFollowUp(
-				ctx, p.formatter, p.projectConfig, p.resourceManager, p.env),
+				ctx, p.formatter, p.projectConfig, p.resourceManager, p.env, false),
 		},
 	}, nil
+}
+
+// deployResultToUx creates the ux element to display from a provision preview
+func deployResultToUx(previewResult *provisioning.DeployPreviewResult) ux.UxItem {
+	var operations []*ux.Resource
+	for _, change := range previewResult.Preview.Properties.Changes {
+		operations = append(operations, &ux.Resource{
+			Operation: ux.OperationType(change.ChangeType),
+			Type:      change.ResourceType,
+			Name:      change.Name,
+		})
+	}
+	return &ux.PreviewProvision{
+		Operations: operations,
+	}
 }
 
 func getCmdProvisionHelpDescription(c *cobra.Command) string {

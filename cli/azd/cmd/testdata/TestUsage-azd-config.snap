@@ -17,6 +17,7 @@ Available Commands
   unset     	: Unsets a configuration.
 
 Flags
+        --docs 	: Opens the documentation for azd config in your web browser.
     -h, --help 	: Gets help for config.
 
 Global Flags

@@ -13,6 +13,7 @@ Available Commands
   show	: Show details for a given template. (Beta)
 
 Flags
+        --docs 	: Opens the documentation for azd template in your web browser.
     -h, --help 	: Gets help for template.
 
 Global Flags

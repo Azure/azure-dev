@@ -33,7 +33,7 @@ type TerraformProvider struct {
 	options      Options
 }
 
-type TerraformDeploymentDetails struct {
+type terraformDeploymentDetails struct {
 	ParameterFilePath  string
 	PlanFilePath       string
 	localStateFilePath string
@@ -80,7 +80,7 @@ func (t *TerraformProvider) Initialize(ctx context.Context, projectPath string, 
 		return err
 	}
 
-	if err := t.prompters.EnsureEnv(ctx); err != nil {
+	if err := t.EnsureEnv(ctx); err != nil {
 		return err
 	}
 
@@ -105,47 +105,56 @@ func (t *TerraformProvider) Initialize(ctx context.Context, projectPath string, 
 	return nil
 }
 
+// EnsureEnv ensures that the environment is in a provision-ready state with required values set, prompting the user if
+// values are unset.
+//
+// An environment is considered to be in a provision-ready state if it contains both an AZURE_SUBSCRIPTION_ID and
+// AZURE_LOCATION value.
+func (t *TerraformProvider) EnsureEnv(ctx context.Context) error {
+	return EnsureSubscriptionAndLocation(ctx, t.env, t.prompters)
+}
+
 // Previews the infrastructure through terraform plan
-func (t *TerraformProvider) Plan(ctx context.Context) (*DeploymentPlan, error) {
+func (t *TerraformProvider) plan(ctx context.Context) (*Deployment, *terraformDeploymentDetails, error) {
 	isRemoteBackendConfig, err := t.isRemoteBackendConfig()
 	if err != nil {
-		return nil, fmt.Errorf("reading backend config: %w", err)
+		return nil, nil, fmt.Errorf("reading backend config: %w", err)
 	}
 
 	modulePath := t.modulePath()
 
 	initRes, err := t.init(ctx, isRemoteBackendConfig)
 	if err != nil {
-		return nil, fmt.Errorf("terraform init failed: %s , err: %w", initRes, err)
+		return nil, nil, fmt.Errorf("terraform init failed: %s , err: %w", initRes, err)
 	}
 
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	err = t.createInputParametersFile(ctx, t.parametersTemplateFilePath(), t.parametersFilePath())
 	if err != nil {
-		return nil, fmt.Errorf("creating parameters file: %w", err)
+		return nil, nil, fmt.Errorf("creating parameters file: %w", err)
 	}
 
 	validated, err := t.cli.Validate(ctx, modulePath)
 	if err != nil {
-		return nil, fmt.Errorf("terraform validate failed: %s, err %w", validated, err)
+		return nil, nil, fmt.Errorf("terraform validate failed: %s, err %w", validated, err)
 	}
 
 	planArgs := t.createPlanArgs(isRemoteBackendConfig)
 	runResult, err := t.cli.Plan(ctx, modulePath, t.planFilePath(), planArgs...)
 	if err != nil {
-		return nil, fmt.Errorf("terraform plan failed:%s err %w", runResult, err)
+		return nil, nil, fmt.Errorf("terraform plan failed:%s err %w", runResult, err)
 	}
 
 	//create deployment plan
 	deployment, err := t.createDeployment(ctx, modulePath)
 	if err != nil {
-		return nil, fmt.Errorf("create terraform template failed: %w", err)
+		return nil, nil, fmt.Errorf("create terraform template failed: %w", err)
 	}
 
-	deploymentDetails := TerraformDeploymentDetails{
+	deploymentDetails := terraformDeploymentDetails{
 		ParameterFilePath: t.parametersFilePath(),
 		PlanFilePath:      t.planFilePath(),
 	}
@@ -153,24 +162,25 @@ func (t *TerraformProvider) Plan(ctx context.Context) (*DeploymentPlan, error) {
 		deploymentDetails.localStateFilePath = t.localStateFilePath()
 	}
 
-	return &DeploymentPlan{
-		Deployment: *deployment,
-		Details:    deploymentDetails,
-	}, nil
+	return deployment, &deploymentDetails, nil
 }
 
 // Deploy the infrastructure within the specified template through terraform apply
-func (t *TerraformProvider) Deploy(ctx context.Context, deployment *DeploymentPlan) (*DeployResult, error) {
+func (t *TerraformProvider) Deploy(ctx context.Context) (*DeployResult, error) {
 	t.console.Message(ctx, "Locating plan file...")
 
 	modulePath := t.modulePath()
-	terraformDeploymentData := deployment.Details.(TerraformDeploymentDetails)
+	deployment, terraformDeploymentData, err := t.plan(ctx)
+	if err != nil {
+		return nil, err
+	}
+
 	isRemoteBackendConfig, err := t.isRemoteBackendConfig()
 	if err != nil {
 		return nil, fmt.Errorf("reading backend config: %w", err)
 	}
 
-	applyArgs, err := t.createApplyArgs(isRemoteBackendConfig, terraformDeploymentData)
+	applyArgs, err := t.createApplyArgs(isRemoteBackendConfig, *terraformDeploymentData)
 	if err != nil {
 		return nil, err
 	}
@@ -186,10 +196,25 @@ func (t *TerraformProvider) Deploy(ctx context.Context, deployment *DeploymentPl
 		return nil, fmt.Errorf("create terraform template failed: %w", err)
 	}
 
-	currentDeployment := deployment.Deployment
-	currentDeployment.Outputs = outputs
+	deployment.Outputs = outputs
 	return &DeployResult{
-		Deployment: &currentDeployment,
+		Deployment: deployment,
+	}, nil
+}
+
+func (t *TerraformProvider) Preview(ctx context.Context) (*DeployPreviewResult, error) {
+	// terraform uses plan() to display the what-if output
+	// no changes are added to the properties
+	_, _, err := t.plan(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return &DeployPreviewResult{
+		Preview: &DeploymentPreview{
+			Status:     "done",
+			Properties: &DeploymentPreviewProperties{},
+		},
 	}, nil
 }
 
@@ -266,7 +291,7 @@ func (t *TerraformProvider) createPlanArgs(isRemoteBackendConfig bool) []string 
 
 // Creates the terraform apply CLI arguments
 func (t *TerraformProvider) createApplyArgs(
-	isRemoteBackendConfig bool, data TerraformDeploymentDetails) ([]string, error) {
+	isRemoteBackendConfig bool, data terraformDeploymentDetails) ([]string, error) {
 	args := []string{}
 	if !isRemoteBackendConfig {
 		args = append(args, fmt.Sprintf("-state=%s", data.localStateFilePath))

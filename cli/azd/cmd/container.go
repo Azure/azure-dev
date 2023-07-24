@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -13,6 +12,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/containerapps"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -43,7 +43,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/python"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/swa"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/terraform"
-	"github.com/benbjohnson/clock"
 	"github.com/mattn/go-colorable"
 	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
@@ -125,9 +124,10 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 				DebugLogging: rootOptions.EnableDebugLogging,
 			})
 	})
-	container.RegisterSingleton(input.NewConsoleMessaging)
 
-	container.RegisterSingleton(func() httputil.HttpClient { return &http.Client{} })
+	client := createHttpClient()
+	container.RegisterSingleton(func() httputil.HttpClient { return client })
+	container.RegisterSingleton(func() auth.HttpClient { return client })
 
 	// Auth
 	container.RegisterSingleton(auth.NewLoggedInGuard)
@@ -299,6 +299,8 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			EnableTelemetry: rootOptions.EnableTelemetry,
 		})
 	})
+	container.RegisterSingleton(azapi.NewDeployments)
+	container.RegisterSingleton(azapi.NewDeploymentOperations)
 	container.RegisterSingleton(bicep.NewBicepCli)
 	container.RegisterSingleton(docker.NewDocker)
 	container.RegisterSingleton(dotnet.NewDotNetCli)
@@ -330,7 +332,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	}
 
 	// Other
-	container.RegisterSingleton(clock.New)
+	container.RegisterSingleton(createClock)
 
 	// Service Targets
 	serviceTargetMap := map[project.ServiceTargetKind]any{

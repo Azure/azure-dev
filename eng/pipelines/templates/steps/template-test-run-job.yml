@@ -70,6 +70,7 @@ steps:
       inputs:
           env: |
               # Required secrets for Terraform service principal authentication
+              # $(arm-*) secrets are set by azd-login.yml
               ARM_CLIENT_ID=$(arm-client-id)
               ARM_CLIENT_SECRET=$(arm-client-secret)
               ARM_TENANT_ID=$(arm-tenant-id)
@@ -105,11 +106,21 @@ steps:
 
               azd version
 
-              # Login
+              # Login azd
               azd auth login \
                 --client-id "$(arm-client-id)" \
                 --client-secret "$(arm-client-secret)" \
                 --tenant-id "$(arm-tenant-id)"
+
+              # Login az CLI (required for scenarios where az is invoked)
+              az login \
+                --service-principal \
+                -u "$(arm-client-id)" \
+                -p "$(arm-client-secret)" \
+                --tenant "$(arm-tenant-id)"
+
+              # set default sub for az to be the same used by azd
+              az account set --subscription "$(SubscriptionId)" 
 
               # enable alpha features
               azd config set alpha.all on

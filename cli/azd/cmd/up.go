@@ -10,6 +10,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
@@ -60,6 +61,7 @@ type upAction struct {
 	console                    input.Console
 	runner                     middleware.MiddlewareContext
 	prompters                  prompt.Prompter
+	provisioningManager        *provisioning.Manager
 }
 
 func newUpAction(
@@ -73,6 +75,7 @@ func newUpAction(
 	console input.Console,
 	runner middleware.MiddlewareContext,
 	prompters prompt.Prompter,
+	provisioningManager *provisioning.Manager,
 ) actions.Action {
 	return &upAction{
 		flags:                      flags,
@@ -84,6 +87,7 @@ func newUpAction(
 		console:                    console,
 		runner:                     runner,
 		prompters:                  prompters,
+		provisioningManager:        provisioningManager,
 	}
 }
 
@@ -107,7 +111,7 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			output.WithWarningFormat("WARNING: The '--service' flag is deprecated and will be removed in a future release."))
 	}
 
-	err := u.prompters.EnsureEnv(ctx)
+	err := u.provisioningManager.Initialize(ctx, u.projectConfig.Path, u.projectConfig.Infra)
 	if err != nil {
 		return nil, err
 	}

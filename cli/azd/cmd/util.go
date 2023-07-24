@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"time"
 
 	"github.com/AlecAivazis/survey/v2"
@@ -19,6 +20,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/cli/browser"
 	"github.com/spf13/pflag"
 )
 
@@ -234,18 +236,28 @@ func getResourceGroupFollowUp(
 	projectConfig *project.ProjectConfig,
 	resourceManager project.ResourceManager,
 	env *environment.Environment,
+	whatIf bool,
 ) (followUp string) {
-	if formatter.Kind() != output.JsonFormat {
-		subscriptionId := env.GetSubscriptionId()
-
-		if resourceGroupName, err := resourceManager.GetResourceGroupName(ctx, subscriptionId, projectConfig); err == nil {
-			followUp = fmt.Sprintf("You can view the resources created under the resource group %s in Azure Portal:\n%s",
-				resourceGroupName, output.WithLinkFormat(fmt.Sprintf(
-					"https://portal.azure.com/#@/resource/subscriptions/%s/resourceGroups/%s/overview",
-					subscriptionId,
-					resourceGroupName)))
-		}
+	if formatter.Kind() == output.JsonFormat {
+		return followUp
 	}
+
+	subscriptionId := env.GetSubscriptionId()
+	if resourceGroupName, err := resourceManager.GetResourceGroupName(ctx, subscriptionId, projectConfig); err == nil {
+		defaultFollowUpText := fmt.Sprintf(
+			"You can view the resources created under the resource group %s in Azure Portal:", resourceGroupName)
+		if whatIf {
+			defaultFollowUpText = fmt.Sprintf(
+				"You can view the current resources under the resource group %s in Azure Portal:", resourceGroupName)
+		}
+		followUp = fmt.Sprintf("%s\n%s",
+			defaultFollowUpText,
+			output.WithLinkFormat(fmt.Sprintf(
+				"https://portal.azure.com/#@/resource/subscriptions/%s/resourceGroups/%s/overview",
+				subscriptionId,
+				resourceGroupName)))
+	}
+
 	return followUp
 }
 
@@ -303,3 +315,50 @@ func since(t time.Time) time.Duration {
 	userInteractTime := tracing.InteractTimeMs.Load()
 	return time.Since(t) - time.Duration(userInteractTime)*time.Millisecond
 }
+
+// BrowseUrl allow users to override the default browser from the cmd package with some external implementation.
+type browseUrl func(ctx context.Context, console input.Console, url string)
+
+// OverrideBrowser allows users to set their own implementation for browsing urls.
+var overrideBrowser browseUrl
+
+func openWithDefaultBrowser(ctx context.Context, console input.Console, url string) {
+	if overrideBrowser != nil {
+		overrideBrowser(ctx, console, url)
+		return
+	}
+
+	console.Message(ctx, fmt.Sprintf("Opening %s in the default browser...\n", url))
+	// In Codespaces and devcontainers a $BROWSER environment variable is
+	// present whose value is an executable that launches the browser when
+	// called with the form:
+	// $BROWSER <url>
+
+	const BrowserEnvVarName = "BROWSER"
+
+	if envBrowser := os.Getenv(BrowserEnvVarName); len(envBrowser) > 0 {
+		err := exec.Command(envBrowser, url).Run()
+		if err == nil {
+			return
+		}
+		fmt.Fprintf(
+			console.Handles().Stderr,
+			"warning: failed to open browser configured by $BROWSER: %s\n. Trying with default browser.",
+			err.Error(),
+		)
+	}
+
+	err := browser.OpenURL(url)
+	if err == nil {
+		return
+	}
+
+	fmt.Fprintf(
+		console.Handles().Stderr,
+		"warning: failed to open default browser: %s\n", err.Error(),
+	)
+
+	console.Message(ctx, fmt.Sprintf("Azd was unable to open the next url. Please try it manually: %s", url))
+}
+
+const cReferenceDocumentationUrl = "https://learn.microsoft.com/azure/developer/azure-developer-cli/reference#"

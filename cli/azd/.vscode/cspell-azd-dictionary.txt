@@ -1,5 +1,6 @@
 # hyphen is optional, "re-authentication" and "reauthentication" are equivalent.
 AADSTS
+ABRT
 alphafeatures
 apimanagement
 apims
@@ -13,6 +14,7 @@ armapimanagement
 armappconfiguration
 armappplatform
 armcognitiveservices
+azapi
 AZCLI
 azcorelog
 azdcli
@@ -28,6 +30,7 @@ azfile
 azruntime
 azsdk
 AZURECLI
+azureedge
 azurestaticapps
 azuretools
 azureutil
@@ -51,6 +54,7 @@ csharpapptest
 cupaloy
 deletedservices
 devel
+discarder
 docf
 dockerproject
 dskip
@@ -65,11 +69,15 @@ executil
 funcapp
 functestapp
 functionapp
+go-imath
 GOARCH
 GOCOVERDIR
 godotenv
 golangci
+gosec
+goterm
 hotspot
+iidfile
 ineffassign
 javac
 jmes
@@ -79,6 +87,7 @@ ldflags
 lechnerc77
 mgmt
 mgutz
+microsoftonline
 mockarmresources
 mockazcli
 mvnw
@@ -99,6 +108,7 @@ otlptrace
 otlptracehttp
 pflag
 preinit
+proxying
 pulumi
 pyapp
 pyvenv
@@ -111,8 +121,8 @@ secureobject
 securestring
 semconv
 serverfarms
-setenvs
 servicebus
+setenvs
 snapshotter
 springapp
 sstore
@@ -139,3 +149,4 @@ utsname
 westus2
 wireinject
 yacspin
+zerr

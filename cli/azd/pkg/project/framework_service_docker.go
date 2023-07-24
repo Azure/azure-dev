@@ -116,11 +116,11 @@ func (p *dockerProject) SetSource(inner FrameworkService) {
 func (p *dockerProject) Restore(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	showProgress ShowProgress,
+	logProgress LogProgressFunc,
 ) (ServiceRestoreResult, error) {
 	// When the program runs the restore actions for the underlying project (containerapp),
 	// the dependencies are installed locally
-	return p.framework.Restore(ctx, serviceConfig, showProgress)
+	return p.framework.Restore(ctx, serviceConfig, logProgress)
 }
 
 // Builds the docker project based on the docker options specified within the Service configuration
@@ -128,7 +128,7 @@ func (p *dockerProject) Build(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	restoreOutput *ServiceRestoreResult,
-	showProgress ShowProgress,
+	logProgress LogProgressFunc,
 ) (ServiceBuildResult, error) {
 	dockerOptions := getDockerOptionsWithDefaults(serviceConfig.Docker)
 
@@ -153,7 +153,7 @@ func (p *dockerProject) Build(
 	)
 
 	// Build the container
-	showProgress("Building Docker image")
+	logProgress("Building Docker image")
 
 	previewerWriter := p.console.ShowPreviewer(ctx,
 		&input.ShowPreviewerOptions{
@@ -192,7 +192,7 @@ func (p *dockerProject) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	buildOutput *ServiceBuildResult,
-	showProgress ShowProgress,
+	logProgress LogProgressFunc,
 ) (ServicePackageResult, error) {
 	imageId := buildOutput.BuildOutputPath
 	if imageId == "" {
@@ -206,7 +206,7 @@ func (p *dockerProject) Package(
 
 	// Tag image.
 	log.Printf("tagging image %s as %s", imageId, localTag)
-	showProgress("Tagging Docker image")
+	logProgress("Tagging Docker image")
 	if err := p.docker.Tag(ctx, serviceConfig.Path(), imageId, localTag); err != nil {
 		return ServicePackageResult{}, fmt.Errorf("tagging image: %w", err)
 	}

@@ -102,8 +102,8 @@ services:
 	framework.SetSource(internalFramework)
 
 	progressMessages := []string{}
-	showProgress := saveMessages(&progressMessages)
-	res, err := framework.Build(*mockContext.Context, service, nil, showProgress)
+	logProgress := saveMessages(&progressMessages)
+	res, err := framework.Build(*mockContext.Context, service, nil, logProgress)
 
 	require.Equal(t, "imageId", res.BuildOutputPath)
 	require.Nil(t, err)
@@ -187,8 +187,8 @@ services:
 	framework.SetSource(internalFramework)
 
 	messages := []string{}
-	showProgress := saveMessages(&messages)
-	res, err := framework.Build(*mockContext.Context, service, nil, showProgress)
+	logProgress := saveMessages(&messages)
+	res, err := framework.Build(*mockContext.Context, service, nil, logProgress)
 
 	require.Equal(t, "imageId", res.BuildOutputPath)
 	require.Nil(t, err)
@@ -224,8 +224,8 @@ func Test_DockerProject_Build(t *testing.T) {
 		env, dockerCli, NewContainerHelper(env, clock.NewMock(), nil, dockerCli), mockinput.NewMockConsole())
 
 	messages := []string{}
-	showProgress := saveMessages(&messages)
-	res, err := dockerProject.Build(*mockContext.Context, serviceConfig, nil, showProgress)
+	logProgress := saveMessages(&messages)
+	res, err := dockerProject.Build(*mockContext.Context, serviceConfig, nil, logProgress)
 	require.NoError(t, err)
 	require.NotNil(t, res)
 	require.Equal(t, "IMAGE_ID", res.BuildOutputPath)
@@ -269,14 +269,14 @@ func Test_DockerProject_Package(t *testing.T) {
 	dockerProject := NewDockerProject(
 		env, dockerCli, NewContainerHelper(env, clock.NewMock(), nil, dockerCli), mockinput.NewMockConsole())
 	messages := []string{}
-	showProgress := saveMessages(&messages)
+	logProgress := saveMessages(&messages)
 	res, err := dockerProject.Package(
 		*mockContext.Context,
 		serviceConfig,
 		&ServiceBuildResult{
 			BuildOutputPath: "IMAGE_ID",
 		},
-		showProgress,
+		logProgress,
 	)
 	require.NoError(t, err)
 	require.NotNil(t, res)

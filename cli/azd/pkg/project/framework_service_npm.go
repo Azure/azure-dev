@@ -51,10 +51,10 @@ func (np *npmProject) Initialize(ctx context.Context, serviceConfig *ServiceConf
 func (np *npmProject) Restore(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	showProgress ShowProgress,
+	logProgress LogProgressFunc,
 ) (ServiceRestoreResult, error) {
 
-	showProgress("Installing NPM dependencies")
+	logProgress("Installing NPM dependencies")
 	if err := np.cli.Install(ctx, serviceConfig.Path()); err != nil {
 		return ServiceRestoreResult{}, err
 	}
@@ -67,11 +67,11 @@ func (np *npmProject) Build(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	restoreOutput *ServiceRestoreResult,
-	showProgress ShowProgress,
+	logProgress LogProgressFunc,
 ) (ServiceBuildResult, error) {
 	// Exec custom `build` script if available
 	// If `build`` script is not defined in the package.json the NPM script will NOT fail
-	showProgress("Running NPM build script")
+	logProgress("Running NPM build script")
 	if err := np.cli.RunScript(ctx, serviceConfig.Path(), "build"); err != nil {
 		return ServiceBuildResult{}, err
 	}
@@ -92,14 +92,14 @@ func (np *npmProject) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	buildOutput *ServiceBuildResult,
-	showProgress ShowProgress,
+	logProgress LogProgressFunc,
 ) (ServicePackageResult, error) {
 	packageDest, err := os.MkdirTemp("", "azd")
 	if err != nil {
 		return ServicePackageResult{}, fmt.Errorf("creating package directory for %s: %w", serviceConfig.Name, err)
 	}
 
-	showProgress("Running NPM package script")
+	logProgress("Running NPM package script")
 
 	// Long term this script we call should better align with our inner-loop scenarios
 	// Keeping this defaulted to `build` will create confusion for users when we start to support
@@ -123,7 +123,7 @@ func (np *npmProject) Package(
 		)
 	}
 
-	showProgress("Copying deployment package")
+	logProgress("Copying deployment package")
 
 	if err := buildForZip(
 		packageSource,

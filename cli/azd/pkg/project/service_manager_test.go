@@ -18,7 +18,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockarmresources"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
-	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/stretchr/testify/require"
 )
 
@@ -48,8 +47,7 @@ func createServiceManager(mockContext *mocks.MockContext, env *environment.Envir
 			},
 		}))
 
-	console := mockinput.NewMockConsole()
-	return NewServiceManager(env, resourceManager, serviceLocator, alphaManager, console)
+	return NewServiceManager(env, resourceManager, serviceLocator, alphaManager)
 }
 
 func Test_ServiceManager_GetRequiredTools(t *testing.T) {
@@ -431,7 +429,7 @@ func (f *fakeFramework) Initialize(ctx context.Context, serviceConfig *ServiceCo
 func (f *fakeFramework) Restore(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	showProgress ShowProgress,
+	logProgress LogProgressFunc,
 ) (ServiceRestoreResult, error) {
 	restoreCalled, ok := ctx.Value(frameworkRestoreCalled).(*bool)
 	if ok {
@@ -453,7 +451,7 @@ func (f *fakeFramework) Build(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	restoreOutput *ServiceRestoreResult,
-	showProgress ShowProgress,
+	logProgress LogProgressFunc,
 ) (ServiceBuildResult, error) {
 	buildCalled, ok := ctx.Value(frameworkBuildCalled).(*bool)
 	if ok {
@@ -476,7 +474,7 @@ func (f *fakeFramework) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	buildOutput *ServiceBuildResult,
-	showProgress ShowProgress,
+	logProgress LogProgressFunc,
 ) (ServicePackageResult, error) {
 	packageCalled, ok := ctx.Value(frameworkPackageCalled).(*bool)
 	if ok {
@@ -518,7 +516,7 @@ func (st *fakeServiceTarget) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
-	showProgress ShowProgress,
+	logProgress LogProgressFunc,
 ) (ServicePackageResult, error) {
 	packageCalled, ok := ctx.Value(serviceTargetPackageCalled).(*bool)
 	if ok {
@@ -542,7 +540,7 @@ func (st *fakeServiceTarget) Deploy(
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
 	targetResource *environment.TargetResource,
-	showProgress ShowProgress,
+	logProgress LogProgressFunc,
 ) (ServiceDeployResult, error) {
 	deployCalled, ok := ctx.Value(serviceTargetDeployCalled).(*bool)
 	if ok {

@@ -60,7 +60,7 @@ func (st *springAppTarget) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
-	showProgress ShowProgress,
+	logProgress LogProgressFunc,
 ) (ServicePackageResult, error) {
 	return *packageOutput, nil
 }
@@ -71,7 +71,7 @@ func (st *springAppTarget) Deploy(
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
 	targetResource *environment.TargetResource,
-	showProgress ShowProgress,
+	logProgress LogProgressFunc,
 ) (ServiceDeployResult, error) {
 	if err := st.validateTargetResource(ctx, serviceConfig, targetResource); err != nil {
 		return ServiceDeployResult{}, fmt.Errorf("validating target resource: %w", err)
@@ -110,7 +110,7 @@ func (st *springAppTarget) Deploy(
 		return ServiceDeployResult{}, fmt.Errorf("reading artifact file %s: %w", artifactPath, err)
 	}
 
-	showProgress("Uploading spring artifact")
+	logProgress("Uploading spring artifact")
 
 	relativePath, err := st.springService.UploadSpringArtifact(
 		ctx,
@@ -125,7 +125,7 @@ func (st *springAppTarget) Deploy(
 		return ServiceDeployResult{}, fmt.Errorf("failed to upload spring artifact: %w", err)
 	}
 
-	showProgress("Deploying spring artifact")
+	logProgress("Deploying spring artifact")
 
 	res, err := st.springService.DeploySpringAppArtifact(
 		ctx,
@@ -147,7 +147,7 @@ func (st *springAppTarget) Deploy(
 		return ServiceDeployResult{}, fmt.Errorf("failed updating environment with relative path, %w", err)
 	}
 
-	showProgress("Fetching endpoints for spring app service")
+	logProgress("Fetching endpoints for spring app service")
 	endpoints, err := st.Endpoints(ctx, serviceConfig, targetResource)
 	if err != nil {
 		return ServiceDeployResult{}, err

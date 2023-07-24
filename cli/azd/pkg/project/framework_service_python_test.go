@@ -60,8 +60,8 @@ func Test_PythonProject_Restore(t *testing.T) {
 
 	pythonProject := NewPythonProject(pythonCli, env)
 	messages := []string{}
-	showProgress := saveMessages(&messages)
-	result, err := pythonProject.Restore(*mockContext.Context, serviceConfig, showProgress)
+	logProgress := saveMessages(&messages)
+	result, err := pythonProject.Restore(*mockContext.Context, serviceConfig, logProgress)
 	require.NoError(t, err)
 	require.NotNil(t, result)
 
@@ -93,8 +93,8 @@ func Test_PythonProject_Build(t *testing.T) {
 
 	pythonProject := NewPythonProject(pythonCli, env)
 	messages := []string{}
-	showProgress := saveMessages(&messages)
-	result, err := pythonProject.Build(*mockContext.Context, serviceConfig, nil, showProgress)
+	logProgress := saveMessages(&messages)
+	result, err := pythonProject.Build(*mockContext.Context, serviceConfig, nil, logProgress)
 	require.NoError(t, err)
 	require.NotNil(t, result)
 }
@@ -114,14 +114,14 @@ func Test_PythonProject_Package(t *testing.T) {
 
 	pythonProject := NewPythonProject(pythonCli, env)
 	messages := []string{}
-	showProgress := saveMessages(&messages)
+	logProgress := saveMessages(&messages)
 	result, err := pythonProject.Package(
 		*mockContext.Context,
 		serviceConfig,
 		&ServiceBuildResult{
 			BuildOutputPath: serviceConfig.Path(),
 		},
-		showProgress,
+		logProgress,
 	)
 	require.NoError(t, err)
 	require.NotNil(t, result)

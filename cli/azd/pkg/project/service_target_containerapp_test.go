@@ -83,7 +83,7 @@ func Test_ContainerApp_Deploy(t *testing.T) {
 	serviceTarget := createContainerAppServiceTarget(mockContext, serviceConfig, env)
 
 	messages := []string{}
-	showProgress := saveMessages(&messages)
+	logProgress := saveMessages(&messages)
 	res, err := serviceTarget.Package(
 		*mockContext.Context,
 		serviceConfig,
@@ -94,7 +94,7 @@ func Test_ContainerApp_Deploy(t *testing.T) {
 				ImageTag:  "test-app/api-test:azd-deploy-0",
 			},
 		},
-		showProgress,
+		logProgress,
 	)
 	require.NoError(t, err)
 	require.NotNil(t, res)
@@ -106,7 +106,7 @@ func Test_ContainerApp_Deploy(t *testing.T) {
 		"CONTAINER_APP",
 		string(infra.AzureResourceTypeContainerApp),
 	)
-	deployRes, err := serviceTarget.Deploy(*mockContext.Context, serviceConfig, &res, scope, showProgress)
+	deployRes, err := serviceTarget.Deploy(*mockContext.Context, serviceConfig, &res, scope, logProgress)
 
 	require.NoError(t, err)
 	require.NotNil(t, deployRes)

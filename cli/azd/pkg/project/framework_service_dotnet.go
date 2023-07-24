@@ -75,9 +75,9 @@ func (dp *dotnetProject) Initialize(ctx context.Context, serviceConfig *ServiceC
 func (dp *dotnetProject) Restore(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	showProgress ShowProgress,
+	logProgress LogProgressFunc,
 ) (ServiceRestoreResult, error) {
-	showProgress("Restoring .NET project dependencies")
+	logProgress("Restoring .NET project dependencies")
 	projFile, err := findProjectFile(serviceConfig.Name, serviceConfig.Path())
 	if err != nil {
 		return ServiceRestoreResult{}, err
@@ -94,9 +94,9 @@ func (dp *dotnetProject) Build(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	restoreOutput *ServiceRestoreResult,
-	showProgress ShowProgress,
+	logProgress LogProgressFunc,
 ) (ServiceBuildResult, error) {
-	showProgress("Building .NET project")
+	logProgress("Building .NET project")
 	projFile, err := findProjectFile(serviceConfig.Name, serviceConfig.Path())
 	if err != nil {
 		return ServiceBuildResult{}, err
@@ -133,14 +133,14 @@ func (dp *dotnetProject) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	buildOutput *ServiceBuildResult,
-	showProgress ShowProgress,
+	logProgress LogProgressFunc,
 ) (ServicePackageResult, error) {
 	packageDest, err := os.MkdirTemp("", "azd")
 	if err != nil {
 		return ServicePackageResult{}, fmt.Errorf("creating package directory for %s: %w", serviceConfig.Name, err)
 	}
 
-	showProgress("Publishing .NET project")
+	logProgress("Publishing .NET project")
 	projFile, err := findProjectFile(serviceConfig.Name, serviceConfig.Path())
 	if err != nil {
 		return ServicePackageResult{}, err

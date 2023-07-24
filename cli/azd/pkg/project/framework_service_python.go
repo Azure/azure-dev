@@ -53,16 +53,16 @@ func (pp *pythonProject) Initialize(ctx context.Context, serviceConfig *ServiceC
 func (pp *pythonProject) Restore(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	showProgress ShowProgress,
+	logProgress LogProgressFunc,
 ) (ServiceRestoreResult, error) {
-	showProgress("Checking for Python virtual environment")
+	logProgress("Checking for Python virtual environment")
 	vEnvName := pp.getVenvName(serviceConfig)
 	vEnvPath := path.Join(serviceConfig.Path(), vEnvName)
 
 	_, err := os.Stat(vEnvPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			showProgress("Creating Python virtual environment")
+			logProgress("Creating Python virtual environment")
 			err = pp.cli.CreateVirtualEnv(ctx, serviceConfig.Path(), vEnvName)
 			if err != nil {
 				return ServiceRestoreResult{}, fmt.Errorf(
@@ -77,7 +77,7 @@ func (pp *pythonProject) Restore(
 		}
 	}
 
-	showProgress("Installing Python PIP dependencies")
+	logProgress("Installing Python PIP dependencies")
 	err = pp.cli.InstallRequirements(ctx, serviceConfig.Path(), vEnvName, "requirements.txt")
 	if err != nil {
 		return ServiceRestoreResult{}, fmt.Errorf(
@@ -93,7 +93,7 @@ func (pp *pythonProject) Build(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	restoreOutput *ServiceRestoreResult,
-	showProgress ShowProgress,
+	logProgress LogProgressFunc,
 ) (ServiceBuildResult, error) {
 	buildSource := serviceConfig.Path()
 
@@ -111,7 +111,7 @@ func (pp *pythonProject) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	buildOutput *ServiceBuildResult,
-	showProgress ShowProgress,
+	logProgress LogProgressFunc,
 ) (ServicePackageResult, error) {
 	packageDest, err := os.MkdirTemp("", "azd")
 	if err != nil {
@@ -127,7 +127,7 @@ func (pp *pythonProject) Package(
 		return ServicePackageResult{}, fmt.Errorf("package source '%s' is empty or does not exist", packageSource)
 	}
 
-	showProgress("Copying deployment package")
+	logProgress("Copying deployment package")
 	if err := buildForZip(
 		packageSource,
 		packageDest,

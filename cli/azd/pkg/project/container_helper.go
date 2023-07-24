@@ -91,7 +91,7 @@ func (ch *ContainerHelper) Deploy(
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
 	targetResource *environment.TargetResource,
-	showProgress ShowProgress,
+	logProgress LogProgressFunc,
 ) (ServiceDeployResult, error) {
 	// Get ACR Login Server
 	loginServer, err := ch.RegistryName(ctx)
@@ -116,13 +116,13 @@ func (ch *ContainerHelper) Deploy(
 		return ServiceDeployResult{}, fmt.Errorf("getting remote image tag: %w", err)
 	}
 
-	showProgress("Tagging container image")
+	logProgress("Tagging container image")
 	if err := ch.docker.Tag(ctx, serviceConfig.Path(), localImageTag, remoteTag); err != nil {
 		return ServiceDeployResult{}, err
 	}
 
 	log.Printf("logging into container registry '%s'\n", loginServer)
-	showProgress("Logging into container registry")
+	logProgress("Logging into container registry")
 	err = ch.containerRegistryService.Login(ctx, targetResource.SubscriptionId(), loginServer)
 	if err != nil {
 		return ServiceDeployResult{}, err
@@ -130,7 +130,7 @@ func (ch *ContainerHelper) Deploy(
 
 	// Push image.
 	log.Printf("pushing %s to registry", remoteTag)
-	showProgress("Pushing container image")
+	logProgress("Pushing container image")
 	if err := ch.docker.Push(ctx, serviceConfig.Path(), remoteTag); err != nil {
 		return ServiceDeployResult{}, err
 	}

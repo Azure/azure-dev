@@ -50,8 +50,8 @@ func Test_MavenProject(t *testing.T) {
 		require.NoError(t, err)
 
 		messages := []string{}
-		showProgress := saveMessages(&messages)
-		result, err := mavenProject.Restore(*mockContext.Context, serviceConfig, showProgress)
+		logProgress := saveMessages(&messages)
+		result, err := mavenProject.Restore(*mockContext.Context, serviceConfig, logProgress)
 		require.NoError(t, err)
 		require.NotNil(t, result)
 		require.Contains(t, runArgs.Cmd, getMvnwCmd())
@@ -85,8 +85,8 @@ func Test_MavenProject(t *testing.T) {
 		require.NoError(t, err)
 
 		messages := []string{}
-		showProgress := saveMessages(&messages)
-		result, err := mavenProject.Build(*mockContext.Context, serviceConfig, nil, showProgress)
+		logProgress := saveMessages(&messages)
+		result, err := mavenProject.Build(*mockContext.Context, serviceConfig, nil, logProgress)
 		require.NoError(t, err)
 		require.NotNil(t, result)
 		require.Contains(t, runArgs.Cmd, getMvnwCmd())
@@ -126,14 +126,14 @@ func Test_MavenProject(t *testing.T) {
 		require.NoError(t, err)
 
 		messages := []string{}
-		showProgress := saveMessages(&messages)
+		logProgress := saveMessages(&messages)
 		result, err := mavenProject.Package(
 			*mockContext.Context,
 			serviceConfig,
 			&ServiceBuildResult{
 				BuildOutputPath: serviceConfig.Path(),
 			},
-			showProgress,
+			logProgress,
 		)
 		require.NoError(t, err)
 		require.NotNil(t, result)
@@ -287,12 +287,12 @@ func Test_MavenProject_Package(t *testing.T) {
 			require.NoError(t, err)
 
 			messages := []string{}
-			showProgress := saveMessages(&messages)
+			logProgress := saveMessages(&messages)
 			result, err := mavenProject.Package(
 				*mockContext.Context,
 				tt.args.svc,
 				&ServiceBuildResult{},
-				showProgress,
+				logProgress,
 			)
 			if tt.wantErr {
 				require.Error(t, err)

@@ -59,7 +59,7 @@ func (at *containerAppTarget) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
-	showProgress ShowProgress,
+	logProgress LogProgressFunc,
 ) (ServicePackageResult, error) {
 	return *packageOutput, nil
 }
@@ -70,7 +70,7 @@ func (at *containerAppTarget) Deploy(
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
 	targetResource *environment.TargetResource,
-	showProgress ShowProgress,
+	logProgress LogProgressFunc,
 ) (ServiceDeployResult, error) {
 	if err := at.validateTargetResource(ctx, serviceConfig, targetResource); err != nil {
 		return ServiceDeployResult{}, fmt.Errorf("validating target resource: %w", err)
@@ -78,13 +78,13 @@ func (at *containerAppTarget) Deploy(
 
 	// Login, tag & push container image to ACR
 	_, err := at.containerHelper.Deploy(
-		ctx, serviceConfig, packageOutput, targetResource, showProgress)
+		ctx, serviceConfig, packageOutput, targetResource, logProgress)
 	if err != nil {
 		return ServiceDeployResult{}, err
 	}
 
 	imageName := at.env.GetServiceProperty(serviceConfig.Name, "IMAGE_NAME")
-	showProgress("Updating container app revision")
+	logProgress("Updating container app revision")
 	err = at.containerAppService.AddRevision(
 		ctx,
 		targetResource.SubscriptionId(),
@@ -96,7 +96,7 @@ func (at *containerAppTarget) Deploy(
 		return ServiceDeployResult{}, fmt.Errorf("updating container app service: %w", err)
 	}
 
-	showProgress("Fetching endpoints for container app service")
+	logProgress("Fetching endpoints for container app service")
 	endpoints, err := at.Endpoints(ctx, serviceConfig, targetResource)
 	if err != nil {
 		return ServiceDeployResult{}, err

@@ -53,7 +53,7 @@ type ServiceTarget interface {
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
 		frameworkPackageOutput *ServicePackageResult,
-		showProgress ShowProgress,
+		logProgress LogProgressFunc,
 	) (ServicePackageResult, error)
 
 	// Deploys the given deployment artifact to the target resource
@@ -62,7 +62,7 @@ type ServiceTarget interface {
 		serviceConfig *ServiceConfig,
 		servicePackage *ServicePackageResult,
 		targetResource *environment.TargetResource,
-		showProgress ShowProgress,
+		logProgress LogProgressFunc,
 	) (ServiceDeployResult, error)
 
 	// Endpoints gets the endpoints a service exposes.

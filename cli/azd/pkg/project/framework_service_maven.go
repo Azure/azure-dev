@@ -60,9 +60,9 @@ func (m *mavenProject) Initialize(ctx context.Context, serviceConfig *ServiceCon
 func (m *mavenProject) Restore(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
-	showProgress ShowProgress,
+	logProgress LogProgressFunc,
 ) (ServiceRestoreResult, error) {
-	showProgress("Resolving maven dependencies")
+	logProgress("Resolving maven dependencies")
 	if err := m.mavenCli.ResolveDependencies(ctx, serviceConfig.Path()); err != nil {
 		return ServiceRestoreResult{}, fmt.Errorf("resolving maven dependencies: %w", err)
 	}
@@ -75,9 +75,9 @@ func (m *mavenProject) Build(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	restoreOutput *ServiceRestoreResult,
-	showProgress ShowProgress,
+	logProgress LogProgressFunc,
 ) (ServiceBuildResult, error) {
-	showProgress("Compiling maven project")
+	logProgress("Compiling maven project")
 	if err := m.mavenCli.Compile(ctx, serviceConfig.Path()); err != nil {
 		return ServiceBuildResult{}, err
 	}
@@ -92,14 +92,14 @@ func (m *mavenProject) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	buildOutput *ServiceBuildResult,
-	showProgress ShowProgress,
+	logProgress LogProgressFunc,
 ) (ServicePackageResult, error) {
 	packageDest, err := os.MkdirTemp("", "azd")
 	if err != nil {
 		return ServicePackageResult{}, fmt.Errorf("creating staging directory: %w", err)
 	}
 
-	showProgress("Packaging maven project")
+	logProgress("Packaging maven project")
 	if err := m.mavenCli.Package(ctx, serviceConfig.Path()); err != nil {
 		return ServicePackageResult{}, err
 	}
@@ -140,7 +140,7 @@ func (m *mavenProject) Package(
 		}
 	}
 
-	showProgress("Copying deployment package")
+	logProgress("Copying deployment package")
 	ext := strings.ToLower(filepath.Ext(archive))
 	err = copy.Copy(archive, filepath.Join(packageDest, AppServiceJavaPackageName+ext))
 	if err != nil {

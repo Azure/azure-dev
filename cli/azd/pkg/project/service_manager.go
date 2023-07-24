@@ -9,16 +9,12 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
 
-// ShowProgress shows a progress message on the running spinner,
-// by updating the title of the spinner.
-// For example, "Deploying (<progress message>)".
-// The message should be a single line.
-type ShowProgress func(s string)
+// LogProgressFunc the type of the function called to log progress updates for long-running operations.
+type LogProgressFunc func(s string)
 
 const (
 	ServiceEventEnvUpdated ext.Event = "environment updated"
@@ -50,13 +46,11 @@ type ServiceManager interface {
 	// This allows frameworks & service targets to hook into a services lifecycle events
 	Initialize(ctx context.Context, serviceConfig *ServiceConfig) error
 
-	// Sets the progress display function for the service manager
-	SetProgressDisplay(progressDisplay ShowProgress)
-
 	// Restores the code dependencies for the specified service config
 	Restore(
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
+		logProgress LogProgressFunc,
 	) (ServiceRestoreResult, error)
 
 	// Builds the code for the specified service config
@@ -66,6 +60,7 @@ type ServiceManager interface {
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
 		restoreOutput *ServiceRestoreResult,
+		logProgress LogProgressFunc,
 	) (ServiceBuildResult, error)
 
 	// Packages the code for the specified service config
@@ -77,6 +72,7 @@ type ServiceManager interface {
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
 		buildOutput *ServiceBuildResult,
+		logProgress LogProgressFunc,
 	) (ServicePackageResult, error)
 
 	// Deploys the generated artifacts to the Azure resource that will
@@ -87,6 +83,7 @@ type ServiceManager interface {
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
 		packageOutput *ServicePackageResult,
+		logProgress LogProgressFunc,
 	) (ServiceDeployResult, error)
 
 	// Gets the framework service for the specified service config
@@ -105,7 +102,6 @@ type serviceManager struct {
 	serviceLocator      ioc.ServiceLocator
 	operationCache      map[string]any
 	alphaFeatureManager *alpha.FeatureManager
-	progressDisplay     ShowProgress
 }
 
 // NewServiceManager creates a new instance of the ServiceManager component
@@ -114,7 +110,6 @@ func NewServiceManager(
 	resourceManager ResourceManager,
 	serviceLocator ioc.ServiceLocator,
 	alphaFeatureManager *alpha.FeatureManager,
-	console input.Console,
 ) ServiceManager {
 	return &serviceManager{
 		env:                 env,
@@ -122,17 +117,7 @@ func NewServiceManager(
 		serviceLocator:      serviceLocator,
 		operationCache:      map[string]any{},
 		alphaFeatureManager: alphaFeatureManager,
-		progressDisplay: func(msg string) { // default progress display
-			console.ShowSpinner(
-				context.Background(),
-				msg,
-				input.Step)
-		},
 	}
-}
-
-func (sm *serviceManager) SetProgressDisplay(progressDisplay ShowProgress) {
-	sm.progressDisplay = progressDisplay
 }
 
 // Gets all of the required framework/service target tools for the specified service config
@@ -211,6 +196,7 @@ func (sm *serviceManager) post(
 func (sm *serviceManager) Restore(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
+	logProgress LogProgressFunc,
 ) (ServiceRestoreResult, error) {
 	cachedResult, ok := sm.getOperationResult(ctx, serviceConfig, string(ServiceEventRestore))
 	if ok && cachedResult != nil {
@@ -225,7 +211,7 @@ func (sm *serviceManager) Restore(
 	if err := sm.pre(ctx, serviceConfig, ServiceEventRestore); err != nil {
 		return ServiceRestoreResult{}, err
 	}
-	restoreResult, err := frameworkService.Restore(ctx, serviceConfig, sm.progressDisplay)
+	restoreResult, err := frameworkService.Restore(ctx, serviceConfig, logProgress)
 	if err != nil {
 		return ServiceRestoreResult{}, fmt.Errorf("failed restoring service '%s': %w", serviceConfig.Name, err)
 	}
@@ -243,6 +229,7 @@ func (sm *serviceManager) Build(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	restoreOutput *ServiceRestoreResult,
+	logProgress LogProgressFunc,
 ) (ServiceBuildResult, error) {
 	cachedResult, ok := sm.getOperationResult(ctx, serviceConfig, string(ServiceEventBuild))
 	if ok && cachedResult != nil {
@@ -264,7 +251,7 @@ func (sm *serviceManager) Build(
 	if err := sm.pre(ctx, serviceConfig, ServiceEventBuild); err != nil {
 		return ServiceBuildResult{}, err
 	}
-	res, err := frameworkService.Build(ctx, serviceConfig, restoreOutput, sm.progressDisplay)
+	res, err := frameworkService.Build(ctx, serviceConfig, restoreOutput, logProgress)
 	if err != nil {
 		return ServiceBuildResult{}, fmt.Errorf("failed building service '%s': %w", serviceConfig.Name, err)
 	}
@@ -283,6 +270,7 @@ func (sm *serviceManager) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	buildOutput *ServiceBuildResult,
+	logProgress LogProgressFunc,
 ) (ServicePackageResult, error) {
 	cachedResult, ok := sm.getOperationResult(ctx, serviceConfig, string(ServiceEventPackage))
 	if ok && cachedResult != nil {
@@ -316,7 +304,7 @@ func (sm *serviceManager) Package(
 	// When a previous restore result was not provided, and we require it
 	// Then we need to restore the dependencies
 	if frameworkRequirements.Package.RequireRestore && (!hasBuildOutput || buildOutput.Restore == nil) {
-		res, err := sm.Restore(ctx, serviceConfig)
+		res, err := sm.Restore(ctx, serviceConfig, logProgress)
 		if err != nil {
 			return ServicePackageResult{}, err
 		}
@@ -328,7 +316,7 @@ func (sm *serviceManager) Package(
 	// When a previous build result was not provided, and we require it
 	// Then we need to build the project
 	if frameworkRequirements.Package.RequireBuild && !hasBuildOutput {
-		res, err := sm.Build(ctx, serviceConfig, &restoreResult)
+		res, err := sm.Build(ctx, serviceConfig, &restoreResult, logProgress)
 		if err != nil {
 			return ServicePackageResult{}, err
 		}
@@ -344,12 +332,16 @@ func (sm *serviceManager) Package(
 	if err := sm.pre(ctx, serviceConfig, ServiceEventPackage); err != nil {
 		return ServicePackageResult{}, err
 	}
-	pkg, err := frameworkService.Package(ctx, serviceConfig, buildOutput, sm.progressDisplay)
+	pkg, err := frameworkService.Package(ctx, serviceConfig, buildOutput, logProgress)
 	if err != nil {
 		return ServicePackageResult{}, err
 	}
 
-	pkg, err = serviceTarget.Package(ctx, serviceConfig, &pkg, sm.progressDisplay)
+	pkg, err = serviceTarget.Package(ctx, serviceConfig, &pkg, logProgress)
+	if err != nil {
+		return ServicePackageResult{}, err
+	}
+
 	sm.setOperationResult(ctx, serviceConfig, string(ServiceEventPackage), pkg)
 
 	if err := sm.post(ctx, serviceConfig, ServiceEventPackage); err != nil {
@@ -370,6 +362,7 @@ func (sm *serviceManager) Deploy(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	packageResult *ServicePackageResult,
+	logProgress LogProgressFunc,
 ) (ServiceDeployResult, error) {
 	cachedResult, ok := sm.getOperationResult(ctx, serviceConfig, string(ServiceEventDeploy))
 	if ok && cachedResult != nil {
@@ -396,7 +389,7 @@ func (sm *serviceManager) Deploy(
 	if err := sm.pre(ctx, serviceConfig, ServiceEventDeploy); err != nil {
 		return ServiceDeployResult{}, err
 	}
-	deployResult, err := serviceTarget.Deploy(ctx, serviceConfig, packageResult, targetResource, sm.progressDisplay)
+	deployResult, err := serviceTarget.Deploy(ctx, serviceConfig, packageResult, targetResource, logProgress)
 	if err != nil {
 		return ServiceDeployResult{}, fmt.Errorf("failed deploying service '%s': %w", serviceConfig.Name, err)
 	}

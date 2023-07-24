@@ -56,7 +56,7 @@ func (at *staticWebAppTarget) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
-	showProgress ShowProgress,
+	logProgress LogProgressFunc,
 ) (ServicePackageResult, error) {
 	packagePath := serviceConfig.OutputPath
 	if strings.TrimSpace(packagePath) == "" {
@@ -75,14 +75,14 @@ func (at *staticWebAppTarget) Deploy(
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
 	targetResource *environment.TargetResource,
-	showProgress ShowProgress,
+	logProgress LogProgressFunc,
 ) (ServiceDeployResult, error) {
 	if err := at.validateTargetResource(ctx, serviceConfig, targetResource); err != nil {
 		return ServiceDeployResult{}, fmt.Errorf("validating target resource: %w", err)
 	}
 
 	// Get the static webapp deployment token
-	showProgress("Retrieving deployment token")
+	logProgress("Retrieving deployment token")
 	deploymentToken, err := at.cli.GetStaticWebAppApiKey(
 		ctx,
 		targetResource.SubscriptionId(),
@@ -94,7 +94,7 @@ func (at *staticWebAppTarget) Deploy(
 	}
 
 	// SWA performs a zip & deploy of the specified output folder and deploys it to the configured environment
-	showProgress("Uploading deployment artifacts")
+	logProgress("Uploading deployment artifacts")
 	res, err := at.swa.Deploy(ctx,
 		serviceConfig.Project.Path,
 		at.env.GetTenantId(),
@@ -112,12 +112,12 @@ func (at *staticWebAppTarget) Deploy(
 		return ServiceDeployResult{}, fmt.Errorf("failed deploying static web app: %w", err)
 	}
 
-	showProgress("Verifying deployment")
+	logProgress("Verifying deployment")
 	if err := at.verifyDeployment(ctx, targetResource); err != nil {
 		return ServiceDeployResult{}, err
 	}
 
-	showProgress("Fetching endpoints for static web app")
+	logProgress("Fetching endpoints for static web app")
 	endpoints, err := at.Endpoints(ctx, serviceConfig, targetResource)
 	if err != nil {
 		return ServiceDeployResult{}, err

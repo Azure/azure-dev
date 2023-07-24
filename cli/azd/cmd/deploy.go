@@ -218,7 +218,6 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 
 	for _, svc := range da.projectConfig.GetServicesStable() {
 		stepMessage := fmt.Sprintf("Deploying service %s", svc.Name)
-
 		// Skip this service if both cases are true:
 		// 1. The user specified a service name
 		// 2. This service is not the one the user specified
@@ -232,11 +231,9 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 			da.console.WarnForFeature(ctx, alphaFeatureId)
 		}
 
-		da.serviceManager.SetProgressDisplay(func(msg string) {
-			stepMessage = fmt.Sprintf("Deploying service %s (%s)", svc.Name, msg)
-			da.console.ShowSpinner(ctx, stepMessage, input.Step)
-		})
-
+		showProgress := func(msg string) {
+			da.console.ShowSpinner(ctx, fmt.Sprintf("Deploying service %s (%s)", svc.Name, msg), input.Step)
+		}
 		var packageResult project.ServicePackageResult
 		if da.flags.fromPackage != "" {
 			// --from-package set, skip packaging
@@ -245,19 +242,20 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 			}
 		} else {
 			//  --from-package not set, package the application
-			packageResult, err = da.serviceManager.Package(ctx, svc, nil)
+			packageResult, err = da.serviceManager.Package(ctx, svc, nil, showProgress)
 			if err != nil {
 				da.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 				return nil, err
 			}
 		}
 
-		deployResult, err := da.serviceManager.Deploy(ctx, svc, &packageResult)
+		deployResult, err := da.serviceManager.Deploy(ctx, svc, &packageResult, showProgress)
 		if err != nil {
 			da.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 			return nil, err
 		}
 
+		da.console.StopSpinner(ctx, stepMessage, input.GetStepResultFormat(err))
 		deployResults[svc.Name] = deployResult
 
 		// report deploy outputs

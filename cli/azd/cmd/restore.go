@@ -163,10 +163,10 @@ func (ra *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error)
 			continue
 		}
 
-		ra.serviceManager.SetProgressDisplay(func(msg string) {
+		showProgress := func(msg string) {
 			ra.console.ShowSpinner(ctx, fmt.Sprintf("Restoring service %s (%s)", svc.Name, msg), input.Step)
-		})
-		restoreResult, err := ra.serviceManager.Restore(ctx, svc)
+		}
+		restoreResult, err := ra.serviceManager.Restore(ctx, svc, showProgress)
 		if err != nil {
 			ra.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 			return nil, err

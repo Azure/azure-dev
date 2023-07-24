@@ -76,7 +76,7 @@ func Test_Package_Deploy_HappyPath(t *testing.T) {
 	require.NoError(t, err)
 
 	messages := []string{}
-	showProgress := saveMessages(&messages)
+	logProgress := saveMessages(&messages)
 
 	res, err := serviceTarget.Package(
 		*mockContext.Context,
@@ -88,7 +88,7 @@ func Test_Package_Deploy_HappyPath(t *testing.T) {
 				ImageTag:  "test-app/api-test:azd-deploy-0",
 			},
 		},
-		showProgress,
+		logProgress,
 	)
 
 	require.NoError(t, err)
@@ -96,7 +96,7 @@ func Test_Package_Deploy_HappyPath(t *testing.T) {
 	require.IsType(t, new(dockerPackageResult), res.Details)
 
 	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "CLUSTER_NAME", string(infra.AzureResourceTypeManagedCluster))
-	deployRes, err := serviceTarget.Deploy(*mockContext.Context, serviceConfig, &res, scope, showProgress)
+	deployRes, err := serviceTarget.Deploy(*mockContext.Context, serviceConfig, &res, scope, logProgress)
 
 	require.NoError(t, err)
 	require.NotNil(t, deployRes)
@@ -131,8 +131,8 @@ func Test_Deploy_No_Cluster_Name(t *testing.T) {
 	}
 
 	messages := []string{}
-	showProgress := saveMessages(&messages)
-	deployRes, err := serviceTarget.Deploy(*mockContext.Context, serviceConfig, packageOutput, scope, showProgress)
+	logProgress := saveMessages(&messages)
+	deployRes, err := serviceTarget.Deploy(*mockContext.Context, serviceConfig, packageOutput, scope, logProgress)
 	require.Error(t, err)
 	require.ErrorContains(t, err, "could not determine AKS cluster")
 	require.Empty(t, deployRes.TargetResourceId)
@@ -164,8 +164,8 @@ func Test_Deploy_No_Admin_Credentials(t *testing.T) {
 	}
 
 	messages := []string{}
-	showProgress := saveMessages(&messages)
-	deployRes, err := serviceTarget.Deploy(*mockContext.Context, serviceConfig, packageOutput, scope, showProgress)
+	logProgress := saveMessages(&messages)
+	deployRes, err := serviceTarget.Deploy(*mockContext.Context, serviceConfig, packageOutput, scope, logProgress)
 
 	require.Error(t, err)
 	require.ErrorContains(t, err, "failed retrieving cluster admin credentials")

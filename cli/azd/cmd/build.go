@@ -167,13 +167,13 @@ func (ba *buildAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 
 		var err error
-		ba.serviceManager.SetProgressDisplay(func(msg string) {
+		showProgress := func(msg string) {
 			ba.console.ShowSpinner(
 				ctx,
 				fmt.Sprintf("Building service %s (%s)", svc.Name, msg),
 				input.Step)
-		})
-		buildResult, err := ba.serviceManager.Build(ctx, svc, nil)
+		}
+		buildResult, err := ba.serviceManager.Build(ctx, svc, nil, showProgress)
 		if err != nil {
 			ba.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 			return nil, err

@@ -48,9 +48,9 @@ func (st *appServiceTarget) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
-	showProgress ShowProgress,
+	logProgress LogProgressFunc,
 ) (ServicePackageResult, error) {
-	showProgress("Compressing deployment artifacts")
+	logProgress("Compressing deployment artifacts")
 	zipFilePath, err := createDeployableZip(serviceConfig.Name, packageOutput.PackagePath)
 	if err != nil {
 		return ServicePackageResult{}, err
@@ -68,7 +68,7 @@ func (st *appServiceTarget) Deploy(
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
 	targetResource *environment.TargetResource,
-	showProgress ShowProgress,
+	logProgress LogProgressFunc,
 ) (ServiceDeployResult, error) {
 	if err := st.validateTargetResource(ctx, serviceConfig, targetResource); err != nil {
 		return ServiceDeployResult{}, fmt.Errorf("validating target resource: %w", err)
@@ -82,7 +82,7 @@ func (st *appServiceTarget) Deploy(
 	defer os.Remove(packageOutput.PackagePath)
 	defer zipFile.Close()
 
-	showProgress("Uploading deployment package")
+	logProgress("Uploading deployment package")
 	res, err := st.cli.DeployAppServiceZip(
 		ctx,
 		targetResource.SubscriptionId(),
@@ -94,7 +94,7 @@ func (st *appServiceTarget) Deploy(
 		return ServiceDeployResult{}, fmt.Errorf("deploying service %s: %w", serviceConfig.Name, err)
 	}
 
-	showProgress("Fetching endpoints for app service")
+	logProgress("Fetching endpoints for app service")
 	endpoints, err := st.Endpoints(ctx, serviceConfig, targetResource)
 	if err != nil {
 		return ServiceDeployResult{}, err

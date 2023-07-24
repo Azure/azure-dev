@@ -78,7 +78,7 @@ type FrameworkService interface {
 	Restore(
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
-		showProgress ShowProgress,
+		logProgress LogProgressFunc,
 	) (ServiceRestoreResult, error)
 
 	// Builds the source for the framework service
@@ -86,7 +86,7 @@ type FrameworkService interface {
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
 		restoreOutput *ServiceRestoreResult,
-		showProgress ShowProgress,
+		logProgress LogProgressFunc,
 	) (ServiceBuildResult, error)
 
 	// Packages the source suitable for deployment
@@ -95,7 +95,7 @@ type FrameworkService interface {
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
 		buildOutput *ServiceBuildResult,
-		showProgress ShowProgress,
+		logProgress LogProgressFunc,
 	) (ServicePackageResult, error)
 }
 

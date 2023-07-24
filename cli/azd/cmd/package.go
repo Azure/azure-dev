@@ -146,13 +146,16 @@ func (pa *packageAction) Run(ctx context.Context) (*actions.ActionResult, error)
 			continue
 		}
 
-		pa.serviceManager.SetProgressDisplay(func(msg string) {
+		showProgress := func(msg string) {
 			pa.console.ShowSpinner(ctx, fmt.Sprintf("Packaging service %s (%s)", svc.Name, msg), input.Step)
-		})
-		packageResult, err := pa.serviceManager.Package(ctx, svc, nil)
+		}
+		packageResult, err := pa.serviceManager.Package(ctx, svc, nil, showProgress)
 		if err != nil {
+			pa.console.ShowSpinner(ctx, stepMessage, input.Step)
 			return nil, err
 		}
+
+		pa.console.StopSpinner(ctx, stepMessage, input.StepDone)
 		packageResults[svc.Name] = packageResult
 
 		// report package output

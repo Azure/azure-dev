@@ -35,8 +35,8 @@ func Test_NpmProject_Restore(t *testing.T) {
 
 	npmProject := NewNpmProject(npmCli, env)
 	messages := []string{}
-	showProgress := saveMessages(&messages)
-	result, err := npmProject.Restore(*mockContext.Context, serviceConfig, showProgress)
+	logProgress := saveMessages(&messages)
+	result, err := npmProject.Restore(*mockContext.Context, serviceConfig, logProgress)
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, "npm", runArgs.Cmd)
@@ -66,8 +66,8 @@ func Test_NpmProject_Build(t *testing.T) {
 
 	npmProject := NewNpmProject(npmCli, env)
 	messages := []string{}
-	showProgress := saveMessages(&messages)
-	result, err := npmProject.Build(*mockContext.Context, serviceConfig, nil, showProgress)
+	logProgress := saveMessages(&messages)
+	result, err := npmProject.Build(*mockContext.Context, serviceConfig, nil, logProgress)
 	require.NoError(t, err)
 	require.NotNil(t, result)
 	require.Equal(t, "npm", runArgs.Cmd)
@@ -103,14 +103,14 @@ func Test_NpmProject_Package(t *testing.T) {
 
 	npmProject := NewNpmProject(npmCli, env)
 	messages := []string{}
-	showProgress := saveMessages(&messages)
+	logProgress := saveMessages(&messages)
 	result, err := npmProject.Package(
 		*mockContext.Context,
 		serviceConfig,
 		&ServiceBuildResult{
 			BuildOutputPath: serviceConfig.Path(),
 		},
-		showProgress,
+		logProgress,
 	)
 	require.NoError(t, err)
 	require.NotNil(t, result)

@@ -13,7 +13,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
-	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/google/uuid"
 	"github.com/sethvargo/go-retry"
 )
@@ -275,14 +274,13 @@ func (cli *azCli) applyRoleAssignmentWithRetry(
 
 			// If the response is a 403 then the required role is missing.
 			if errors.As(err, &responseError) && responseError.StatusCode == http.StatusForbidden {
-				return fmt.Errorf(
-					"failed assigning role assignment '%s' to service principal '%s' : %w \n%s",
-					*roleDefinition.Name,
-					servicePrincipal.DisplayName,
-					err,
-					output.WithHighLightFormat("Suggested Action: Ensure you have either the `User Access Administrator`, `Owner` or custom azure roles assigned"+
+
+				return &ErrorWithSuggestion{
+					Suggestion: fmt.Sprintf("\nSuggested Action: Ensure you have either the `User Access Administrator`, `Owner` or custom azure roles assigned" +
 						" to your subscription to perform action 'Microsoft.Authorization/roleAssignments/write', in order to manage role assignments\n"),
-				)
+					Err: err,
+				}
+
 			}
 
 			return retry.RetryableError(

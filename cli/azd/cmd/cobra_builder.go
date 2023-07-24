@@ -166,6 +166,7 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 				var respErr *azcore.ResponseError
 				var azureErr *azcli.AzureDeploymentError
 				var toolExitErr *exec.ExitError
+				var suggestionErr *azcli.ErrorWithSuggestion
 
 				// We only want to show trace ID for server-related errors,
 				// where we have full server logs to troubleshoot from.
@@ -178,6 +179,17 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 						console.Message(
 							ctx,
 							output.WithErrorFormat(fmt.Sprintf("TraceID: %s", actionResult.TraceID)))
+					}
+				}
+
+				if errors.As(err, &suggestionErr) {
+					if actionResult != nil && actionResult.TraceID != "" {
+						console.Message(
+							ctx,
+							output.WithErrorFormat(fmt.Sprintf("TraceID: %s", actionResult.TraceID)))
+						console.Message(
+							ctx,
+							output.WithHighLightFormat(suggestionErr.Suggestion))
 					}
 				}
 			}

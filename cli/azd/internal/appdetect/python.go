@@ -50,6 +50,10 @@ func (pd *PythonDetector) DetectProject(path string, entries []fs.DirEntry) (*Pr
 				}
 			}
 
+			if err := file.Close(); err != nil {
+				return nil, err
+			}
+
 			slices.SortFunc(project.Frameworks, func(a, b Framework) bool {
 				return string(a) < string(b)
 			})

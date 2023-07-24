@@ -276,8 +276,9 @@ func (cli *azCli) applyRoleAssignmentWithRetry(
 			if errors.As(err, &responseError) && responseError.StatusCode == http.StatusForbidden {
 
 				return &ErrorWithSuggestion{
-					Suggestion: fmt.Sprintf("\nSuggested Action: Ensure you have either the `User Access Administrator`, `Owner` or custom azure roles assigned" +
-						" to your subscription to perform action 'Microsoft.Authorization/roleAssignments/write', in order to manage role assignments\n"),
+					Suggestion: fmt.Sprintf("\nSuggested Action: Ensure you have either the `User Access Administrator`, " +
+						"Owner` or custom azure roles assigned to your subscription to perform action " +
+						"'Microsoft.Authorization/roleAssignments/write', in order to manage role assignments\n"),
 					Err: err,
 				}
 

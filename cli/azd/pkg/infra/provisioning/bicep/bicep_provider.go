@@ -188,9 +188,9 @@ func (p *BicepProvider) State(ctx context.Context, options *StateOptions) (*Stat
 		}
 
 		outputs = template.Outputs
-	} else {
-		// To support BYOI (bring your own infrastructure), we need to support the case where there template
-		// that exists within the project
+	} else if errors.Is(err, os.ErrNotExist) {
+		// To support BYOI (bring your own infrastructure)
+		// We need to support the case where there template does not contain an `infra` folder.
 		scope, scopeErr = p.inferScopeFromEnv(ctx)
 		if scopeErr != nil {
 			return nil, fmt.Errorf("computing deployment scope: %w", err)

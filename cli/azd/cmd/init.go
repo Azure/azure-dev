@@ -117,26 +117,42 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		Title: "Initializing a new project (azd init)",
 	})
 
-	initializeOpt, err := i.console.Select(ctx, input.ConsoleOptions{
-		Message: "How do you want to initialize your app?",
-		Options: []string{
-			"Use my existing code (local or on GitHub)",
-			"Select a template",
-		},
-	})
-	if err != nil {
-		return nil, err
+	var existingProject bool
+	if _, err := os.Stat(azdCtx.ProjectPath()); err == nil {
+		existingProject = true
+	} else if errors.Is(err, os.ErrNotExist) {
+		existingProject = false
+	} else {
+		return nil, fmt.Errorf("checking if project exists: %w", err)
+	}
+
+	var initTypeSelect initType
+	if i.flags.templatePath != "" {
+		// an explicit --template passed, always initialize from app template
+		initTypeSelect = initAppTemplate
+	}
+
+	if i.flags.templatePath == "" && existingProject {
+		// no explicit --template, and azure.yaml exists, only initialize environment
+		initTypeSelect = initEnvironment
+	}
+
+	if initTypeSelect == initUnknown {
+		initTypeSelect, err = promptInitType(i.console, ctx)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	followUp := "You can provision and deploy your app to Azure by running the " + output.WithBold("azd up") +
 		" command in this directory. Services may incur usage charges when provisioned or deployed."
-	switch initializeOpt {
-	case 0:
+	switch initTypeSelect {
+	case initInfra:
 		err := i.repoInitializer.InitializeInfra(ctx, azdCtx)
 		if err != nil {
 			return nil, err
 		}
-	case 1:
+	case initAppTemplate:
 		followUp = heredoc.Docf(`
 			You can view the template code in your directory: %s
 			Learn more about running 3rd party code on our DevHub: %s`,
@@ -146,8 +162,10 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		if err != nil {
 			return nil, err
 		}
+	case initEnvironment:
+	// no-opt
 	default:
-		panic("unhandled selection")
+		panic("unhandled init type")
 	}
 
 	envName, err := azdCtx.GetDefaultEnvironmentName()
@@ -188,35 +206,51 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}, nil
 }
 
+type initType int
+
+const (
+	initUnknown = iota
+	initInfra
+	initAppTemplate
+	initEnvironment
+)
+
+func promptInitType(console input.Console, ctx context.Context) (initType, error) {
+	selection, err := console.Select(ctx, input.ConsoleOptions{
+		Message: "How do you want to initialize your app?",
+		Options: []string{
+			"Use my existing code (local or on GitHub)",
+			"Select a template",
+		},
+	})
+	if err != nil {
+		return initUnknown, err
+	}
+
+	switch selection {
+	case 0:
+		return initInfra, nil
+	case 1:
+		return initAppTemplate, nil
+	default:
+		panic("unhandled selection")
+	}
+}
+
 func (i *initAction) InitializeTemplate(
 	ctx context.Context,
 	azdCtx *azdcontext.AzdContext) error {
-	// If azure.yaml project already exists, we should do the following:
-	//   - Not prompt for template selection (user can specify --template if needed to refresh from an existing template)
-	//   - Not overwrite azure.yaml (unless --template is explicitly specified)
-	//   - Allow for environment initialization
-	var existingProject bool
-	if _, err := os.Stat(azdCtx.ProjectPath()); err == nil {
-		existingProject = true
-	} else if errors.Is(err, os.ErrNotExist) {
-		existingProject = false
-	} else {
-		return fmt.Errorf("checking if project exists: %w", err)
+	err := i.repoInitializer.PromptIfNonEmpty(ctx, azdCtx)
+	if err != nil {
+		return err
 	}
 
-	if !existingProject {
-		err := i.repoInitializer.PromptIfNonEmpty(ctx, azdCtx)
+	if i.flags.templatePath == "" {
+		template, err := templates.PromptTemplate(ctx, "Select a project template:", i.console)
+		i.flags.templatePath = template.RepositoryPath
+
 		if err != nil {
 			return err
-		}
-
-		if i.flags.templatePath == "" {
-			template, err := templates.PromptTemplate(ctx, "Select a project template:", i.console)
-			i.flags.templatePath = template.RepositoryPath
-
-			if err != nil {
-				return err
-			}
 		}
 	}
 
@@ -230,7 +264,7 @@ func (i *initAction) InitializeTemplate(
 		if err != nil {
 			return fmt.Errorf("init from template repository: %w", err)
 		}
-	} else if !existingProject { // do not initialize for empty if azure.yaml is present
+	} else {
 		err := i.repoInitializer.InitializeMinimal(ctx, azdCtx)
 		if err != nil {
 			return fmt.Errorf("init empty repository: %w", err)

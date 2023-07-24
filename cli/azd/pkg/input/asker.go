@@ -80,16 +80,16 @@ func askOnePrompt(p survey.Prompt, response interface{}, isTerminal bool, stdout
 		readBuf := make([]byte, 1)
 		for {
 			bytesRead, err := r.Read(readBuf)
-			if err != nil && !errors.Is(err, io.EOF) {
-				return strBuf.String(), err
-			}
-
 			if bytesRead > 0 {
 				// discard err, per documentation, WriteByte always succeeds.
 				_ = strBuf.WriteByte(readBuf[0])
 			}
 
-			if readBuf[0] == delim || errors.Is(err, io.EOF) {
+			if err != nil {
+				return strBuf.String(), err
+			}
+
+			if readBuf[0] == delim {
 				return strBuf.String(), nil
 			}
 		}

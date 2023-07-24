@@ -3,18 +3,14 @@ package repository
 
 import (
 	"bufio"
-	"bytes"
 	"context"
-	"embed"
 	"errors"
 	"fmt"
 	"io/fs"
 	"log"
 	"os"
-	"path"
 	"path/filepath"
 	"strings"
-	"text/template"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
@@ -27,38 +23,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/resources"
 	"github.com/otiai10/copy"
 )
-
-type DatabaseOption string
-
-const (
-	DatabaseNone DatabaseOption = "none"
-	//DatabaseCosmos     DatabaseOption = "cosmos"
-	DatabaseSql        DatabaseOption = "sql"
-	DatabasePostgreSql DatabaseOption = "postgresql"
-)
-
-func DatabaseDisplayOptions(recommendOption DatabaseOption) map[string]DatabaseOption {
-	prompts := map[string]DatabaseOption{
-		//"Azure Cosmos DB (MongoDB API)":                    DatabaseCosmos,
-		"Azure SQL DB": DatabaseSql,
-		"Azure Database for PostgreSQL (Flexible servers)": DatabasePostgreSql,
-		"No, I would not like a database":                  DatabaseNone,
-	}
-
-	for k, v := range prompts {
-		if v == recommendOption {
-			delete(prompts, k)
-			prompts[output.WithBold(k+" (Recommended)")] = v
-		}
-	}
-
-	return prompts
-}
-
-type ScaffoldContext struct {
-	DatabaseName string
-	Database     map[string]string
-}
 
 // Initializer handles the initialization of a local repository.
 type Initializer struct {
@@ -73,229 +37,6 @@ func NewInitializer(
 		console: console,
 		gitCli:  gitCli,
 	}
-}
-
-type ProjectSpec struct {
-	Language   string
-	Host       string
-	Path       string
-	OutputPath string
-	HackIsWeb  bool
-}
-
-type InfraUseOptions struct {
-	Language            string
-	DatabaseName        string
-	ConnectionStringKey string
-	Database            DatabaseOption
-	Projects            []ProjectSpec
-}
-
-func LanguageDisplayOptions() map[string]string {
-	return map[string]string{
-		".NET / C# / F#": "dotnet",
-		"Python":         "python",
-		"NodeJS":         "node",
-		"Java":           "java",
-	}
-}
-
-type TemplateRules struct {
-	Includes []string
-	Excludes []string
-	Rewrites map[string]string
-}
-
-func getRules(appType string, useOptions InfraUseOptions) TemplateRules {
-	switch appType {
-	case "api", "api-web":
-		return TemplateRules{
-			Includes: []string{
-				fmt.Sprintf("app/api-%s.bicep", mapLanguage(useOptions.Language)),
-				fmt.Sprintf("app/db-%s.bicep.template", string(useOptions.Database)),
-			},
-			Excludes: []string{
-				"app/api-*.bicep",
-				"app/db-*.bicep.template",
-			},
-			Rewrites: map[string]string{
-				fmt.Sprintf("app/api-%s.bicep", mapLanguage(useOptions.Language)):    "app/api.bicep",
-				fmt.Sprintf("app/db-%s.bicep.template", string(useOptions.Database)): "app/db.bicep",
-			},
-		}
-	}
-
-	return TemplateRules{}
-}
-
-func (i *Initializer) ScaffoldProject(
-	ctx context.Context,
-	name string,
-	azdCtx *azdcontext.AzdContext,
-	projects []ProjectSpec) error {
-	prj := project.ProjectConfig{}
-	prj.Name = azdCtx.GetDefaultProjectName()
-	prj.Services = map[string]*project.ServiceConfig{}
-	for _, spec := range projects {
-		// TODO: This is a hack while prompts are not yet supported.
-		serviceName := "api"
-		if spec.HackIsWeb {
-			serviceName = "web"
-		}
-		rel, err := filepath.Rel(azdCtx.ProjectDirectory(), spec.Path)
-		if err != nil {
-			return fmt.Errorf("creating %s: %w", name, err)
-		}
-
-		prj.Services[serviceName] = &project.ServiceConfig{
-			RelativePath: rel,
-			OutputPath:   spec.OutputPath,
-			Host:         project.ServiceTargetKind(spec.Host),
-			Language:     project.ServiceLanguageKind(spec.Language),
-		}
-	}
-
-	err := project.Save(ctx, &prj, filepath.Join(azdCtx.ProjectDirectory(), name))
-	if err != nil {
-		return fmt.Errorf("creating %s: %w", name, err)
-	}
-	return nil
-}
-
-// copyTemplate copies the given infrastructure template.
-func copyTemplateFS(templateFs embed.FS, useOptions InfraUseOptions, appType string, target string) error {
-	root := path.Join("app-types", appType)
-	infraRoot := path.Join(root, "infra")
-	target = path.Join(target, "infra")
-	rules := getRules(appType, useOptions)
-
-	scaffoldCtx := ScaffoldContext{
-		DatabaseName: useOptions.DatabaseName,
-		Database:     map[string]string{},
-	}
-
-	if useOptions.Database != DatabaseNone {
-		directory := path.Join("snippets", "database")
-		snippets, err := resources.Snippets.ReadDir(directory)
-		if err != nil {
-			return fmt.Errorf("reading database snippets: %w", err)
-		}
-
-		for _, snippet := range snippets {
-			prefix := string(useOptions.Database) + ".main."
-			if strings.HasPrefix(snippet.Name(), prefix) {
-				contents, err := resources.Snippets.ReadFile(path.Join(directory, snippet.Name()))
-				if err != nil {
-					return fmt.Errorf("reading file snippet: %w", err)
-				}
-				resource := strings.TrimPrefix(snippet.Name(), prefix)
-				scaffoldCtx.Database[resource] = string(contents)
-			}
-		}
-	}
-
-	return fs.WalkDir(templateFs, infraRoot, func(name string, d fs.DirEntry, err error) error {
-		// If there was some error that was preventing is from walking into the directory, just fail now,
-		// not much we can do to recover.
-		if err != nil {
-			return err
-		}
-		rel := strings.TrimPrefix(name[len(infraRoot):], "/")
-		targetPath := filepath.Join(target, rel)
-
-		if d.IsDir() {
-			return os.MkdirAll(targetPath, osutil.PermissionDirectory)
-		}
-
-		// A text template. Trim template from the resulting name.
-		if filepath.Ext(name) == ".template" {
-			targetPath = filepath.Join(target, strings.TrimSuffix(rel, ".template"))
-		}
-
-		alwaysInclude := false
-		for _, pattern := range rules.Includes {
-			if matched, err := filepath.Match(pattern, rel); err != nil {
-				return err
-			} else if matched {
-				alwaysInclude = true
-			}
-		}
-
-		if !alwaysInclude {
-			for _, pattern := range rules.Excludes {
-				if matched, err := filepath.Match(pattern, rel); err != nil {
-					return err
-				} else if matched {
-					// An exclude pattern was matched. Exclude the file from copy.
-					return nil
-				}
-			}
-		}
-
-		for pattern, rewrite := range rules.Rewrites {
-			if matched, err := filepath.Match(pattern, rel); err != nil {
-				return err
-			} else if matched {
-				targetPath = filepath.Join(target, rewrite)
-			}
-		}
-
-		contents, err := fs.ReadFile(templateFs, name)
-		if err != nil {
-			return fmt.Errorf("reading sample file: %w", err)
-		}
-
-		if filepath.Ext(name) == ".template" {
-			t, err := template.New(rel).Option("missingkey=zero").Parse(string(contents))
-			if err != nil {
-				return fmt.Errorf("parsing template: %w", err)
-			}
-
-			buf := bytes.NewBufferString("")
-			err = t.Execute(buf, scaffoldCtx)
-			if err != nil {
-				return fmt.Errorf("executing template: %w", err)
-			}
-
-			contents = buf.Bytes()
-		}
-
-		return os.WriteFile(targetPath, contents, osutil.PermissionFile)
-	})
-}
-
-func copyCoreFS(templateFs embed.FS, useOptions InfraUseOptions, target string) error {
-	root := path.Join("app-types", "core")
-	return fs.WalkDir(templateFs, root, func(name string, d fs.DirEntry, err error) error {
-		if err != nil {
-			return err
-		}
-		targetPath := filepath.Join(target, "infra", "core", name[len(root):])
-
-		if d.IsDir() {
-			return os.MkdirAll(targetPath, osutil.PermissionDirectory)
-		}
-
-		contents, err := fs.ReadFile(templateFs, name)
-		if err != nil {
-			return fmt.Errorf("reading sample file: %w", err)
-		}
-		return os.WriteFile(targetPath, contents, osutil.PermissionFile)
-	})
-}
-func mapLanguage(lang string) string {
-	switch lang {
-	case "dotnet", "csharp", "fsharp", "":
-		return "dotnet"
-	case "py", "python":
-		return "python"
-	case "js", "ts":
-		return "node"
-	case "java":
-		return "java"
-	}
-
-	return ""
 }
 
 // Initializes a local repository in the project directory from a remote repository.

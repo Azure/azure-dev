@@ -203,7 +203,7 @@ func (p *BicepProvider) State(ctx context.Context, options *StateOptions) (*Stat
 	spinnerMessage = "Retrieving Azure deployment"
 	p.console.ShowSpinner(ctx, spinnerMessage, input.Step)
 
-	armDeployment, err := latestCompletedDeployment(ctx, p.env.GetEnvName(), scope, options.Hint())
+	armDeployment, err := p.latestCompletedDeployment(ctx, p.env.GetEnvName(), scope, options.Hint())
 	if err != nil {
 		p.console.StopSpinner(ctx, spinnerMessage, input.StepFailed)
 		return nil, fmt.Errorf("retrieving deployment: %w", err)
@@ -486,7 +486,7 @@ func (p *BicepProvider) Destroy(ctx context.Context, options DestroyOptions) (*D
 	}
 
 	// TODO: Report progress, "Fetching resource groups"
-	deployment, err := latestCompletedDeployment(ctx, p.env.GetEnvName(), scope, "")
+	deployment, err := p.latestCompletedDeployment(ctx, p.env.GetEnvName(), scope, "")
 	if err != nil {
 		return nil, err
 	}
@@ -643,7 +643,7 @@ func cognitiveAccountsByKind(
 
 // latestCompletedDeployment finds the most recent deployment the given environment in the provided scope,
 // considering only deployments which have completed (either successfully or unsuccessfully).
-func latestCompletedDeployment(
+func (p *BicepProvider) latestCompletedDeployment(
 	ctx context.Context, envName string, scope infra.Scope, hint string,
 ) (*armresources.DeploymentExtended, error) {
 
@@ -656,39 +656,69 @@ func latestCompletedDeployment(
 		return x.Properties.Timestamp.After(*y.Properties.Timestamp)
 	})
 
-	// Earlier versions of `azd` did not use unique deployment names per deployment and also did not tag the deployment
-	// with an `azd` specific tag. Instead, the name of the deployment simply matched the environment name.
-	//
-	// As we walk the list of deployments, we note if we find a deployment matching this older strategy and will return
-	// it if we can't find a deployment that matches the newer one.
-	var matchingBareDeployment *armresources.DeploymentExtended
+	// Environment matching strategy
+	// 1. Deployment with azd tagged env name
+	// 2. Exact match on environment name to deployment name (old azd strategy)
+	// 3. Multiple matching names based on specified hint (show user prompt)
+	matchingDeployments := []*armresources.DeploymentExtended{}
 
 	for _, deployment := range deployments {
-
 		// We only want to consider deployments that are in a terminal state, not any which may be ongoing.
 		if *deployment.Properties.ProvisioningState != armresources.ProvisioningStateSucceeded &&
 			*deployment.Properties.ProvisioningState != armresources.ProvisioningStateFailed {
 			continue
 		}
 
-		if v, has := deployment.Tags[azure.TagKeyAzdEnvName]; has && *v == envName {
+		// Match on current azd strategy (tags) or old azd strategy (deployment name)
+		if v, has := deployment.Tags[azure.TagKeyAzdEnvName]; has && *v == envName || *deployment.Name == envName {
 			return deployment, nil
 		}
 
-		if *deployment.Name == envName {
-			matchingBareDeployment = deployment
-		}
-
+		// Fallback: Match on hint
 		if hint != "" && strings.Contains(*deployment.Name, hint) {
-			matchingBareDeployment = deployment
+			matchingDeployments = append(matchingDeployments, deployment)
 		}
 	}
 
-	if matchingBareDeployment != nil {
-		return matchingBareDeployment, nil
+	if len(matchingDeployments) == 1 {
+		return matchingDeployments[0], nil
+	}
+
+	if len(matchingDeployments) > 0 {
+		deploymentOptions := getDeploymentOptions(ctx, matchingDeployments)
+
+		p.console.StopSpinner(ctx, "", input.StepDone)
+		p.console.Message(ctx, output.WithWarningFormat("WARNING: Multiple matching deployments were found"))
+		p.console.Message(ctx, "Select a deployment to continue:\n")
+
+		promptConfig := input.ConsoleOptions{
+			Message: "Matching Deployments",
+			Options: deploymentOptions,
+		}
+
+		selectedDeployment, err := p.console.Select(ctx, promptConfig)
+		if err != nil {
+			return nil, err
+		}
+
+		return matchingDeployments[selectedDeployment], nil
 	}
 
 	return nil, fmt.Errorf("no deployments found for environment %s", envName)
+}
+
+func getDeploymentOptions(ctx context.Context, deployments []*armresources.DeploymentExtended) []string {
+	promptValues := []string{}
+	for index, deployment := range deployments {
+		optionTitle := fmt.Sprintf("%d. %s (%s)",
+			index+1,
+			*deployment.Name,
+			deployment.Properties.Timestamp.Local().Format("1/2/2006, 3:04 PM"),
+		)
+		promptValues = append(promptValues, optionTitle)
+	}
+
+	return promptValues
 }
 
 // resourceGroupsToDelete collects the resource groups from an existing deployment which should be removed as part of a

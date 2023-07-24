@@ -456,9 +456,18 @@ func (p *BicepProvider) scopeForTemplate(ctx context.Context, t azure.ArmTemplat
 
 func (p *BicepProvider) inferScopeFromEnv(ctx context.Context) (infra.Scope, error) {
 	if resourceGroup, has := p.env.LookupEnv(environment.ResourceGroupEnvVarName); has {
-		return infra.NewResourceGroupScope(p.azCli, p.env.GetSubscriptionId(), resourceGroup), nil
+		return infra.NewResourceGroupScope(
+			p.deploymentsService,
+			p.deploymentOperations,
+			p.env.GetSubscriptionId(),
+			resourceGroup,
+		), nil
 	} else {
-		return infra.NewSubscriptionScope(p.azCli, p.env.GetSubscriptionId()), nil
+		return infra.NewSubscriptionScope(
+			p.deploymentsService,
+			p.deploymentOperations,
+			p.env.GetSubscriptionId(),
+		), nil
 	}
 }
 

@@ -203,32 +203,55 @@ func (p *BicepProvider) State(ctx context.Context, options *StateOptions) (*Stat
 	spinnerMessage = "Retrieving Azure deployment"
 	p.console.ShowSpinner(ctx, spinnerMessage, input.Step)
 
-	armDeployment, err := p.latestCompletedDeployment(ctx, p.env.GetEnvName(), scope, options.Hint())
+	var deployment *armresources.DeploymentExtended
+
+	deployments, err := p.findCompletedDeployments(ctx, p.env.GetEnvName(), scope, options.Hint())
+	p.console.StopSpinner(ctx, "", input.StepDone)
+
 	if err != nil {
 		p.console.StopSpinner(ctx, spinnerMessage, input.StepFailed)
 		return nil, fmt.Errorf("retrieving deployment: %w", err)
+	} else {
+		p.console.StopSpinner(ctx, "", input.StepDone)
 	}
 
-	spinnerMessage += fmt.Sprintf(" (%s)", *armDeployment.Name)
-	p.console.StopSpinner(ctx, spinnerMessage, input.StepDone)
+	if len(deployments) > 1 {
+		deploymentOptions := getDeploymentOptions(ctx, deployments)
+
+		p.console.Message(ctx, output.WithWarningFormat("WARNING: Multiple matching deployments were found"))
+		p.console.Message(ctx, "Select a deployment to continue:\n")
+
+		promptConfig := input.ConsoleOptions{
+			Message: "Matching Deployments",
+			Options: deploymentOptions,
+		}
+
+		selectedDeployment, err := p.console.Select(ctx, promptConfig)
+		if err != nil {
+			return nil, err
+		}
+
+		deployment = deployments[selectedDeployment]
+	} else {
+		deployment = deployments[0]
+	}
+
+	p.console.MessageUxItem(ctx, &ux.DoneMessage{
+		Message: fmt.Sprintf("%s (%s)", spinnerMessage, output.WithHighLightFormat(*deployment.Name)),
+	})
 
 	state := State{}
-	state.Resources = make([]Resource, len(armDeployment.Properties.OutputResources))
+	state.Resources = make([]Resource, len(deployment.Properties.OutputResources))
 
-	for idx, res := range armDeployment.Properties.OutputResources {
+	for idx, res := range deployment.Properties.OutputResources {
 		state.Resources[idx] = Resource{
 			Id: *res.ID,
 		}
 	}
 
-	// TODO: Report progress, "Normalizing output parameters"
-	spinnerMessage = "Normalizing output parameters"
-	p.console.ShowSpinner(ctx, spinnerMessage, input.Step)
-	defer p.console.StopSpinner(ctx, spinnerMessage, input.StepDone)
-
 	state.Outputs = p.createOutputParameters(
 		outputs,
-		azapi.CreateDeploymentOutput(armDeployment.Properties.Outputs),
+		azapi.CreateDeploymentOutput(deployment.Properties.Outputs),
 	)
 
 	return &StateResult{
@@ -486,12 +509,12 @@ func (p *BicepProvider) Destroy(ctx context.Context, options DestroyOptions) (*D
 	}
 
 	// TODO: Report progress, "Fetching resource groups"
-	deployment, err := p.latestCompletedDeployment(ctx, p.env.GetEnvName(), scope, "")
+	deployments, err := p.findCompletedDeployments(ctx, p.env.GetEnvName(), scope, "")
 	if err != nil {
 		return nil, err
 	}
 
-	rgsFromDeployment := resourceGroupsToDelete(deployment)
+	rgsFromDeployment := resourceGroupsToDelete(deployments[0])
 
 	// TODO: Report progress, "Fetching resources"
 	groupedResources, err := p.getAllResourcesToDelete(ctx, rgsFromDeployment)
@@ -595,7 +618,7 @@ func (p *BicepProvider) Destroy(ctx context.Context, options DestroyOptions) (*D
 	destroyResult := &DestroyResult{
 		InvalidatedEnvKeys: maps.Keys(p.createOutputParameters(
 			template.Outputs,
-			azapi.CreateDeploymentOutput(deployment.Properties.Outputs),
+			azapi.CreateDeploymentOutput(deployments[0].Properties.Outputs),
 		)),
 	}
 
@@ -641,11 +664,11 @@ func cognitiveAccountsByKind(
 	return result
 }
 
-// latestCompletedDeployment finds the most recent deployment the given environment in the provided scope,
+// findCompletedDeployments finds the most recent deployment the given environment in the provided scope,
 // considering only deployments which have completed (either successfully or unsuccessfully).
-func (p *BicepProvider) latestCompletedDeployment(
+func (p *BicepProvider) findCompletedDeployments(
 	ctx context.Context, envName string, scope infra.Scope, hint string,
-) (*armresources.DeploymentExtended, error) {
+) ([]*armresources.DeploymentExtended, error) {
 
 	deployments, err := scope.ListDeployments(ctx)
 	if err != nil {
@@ -671,7 +694,7 @@ func (p *BicepProvider) latestCompletedDeployment(
 
 		// Match on current azd strategy (tags) or old azd strategy (deployment name)
 		if v, has := deployment.Tags[azure.TagKeyAzdEnvName]; has && *v == envName || *deployment.Name == envName {
-			return deployment, nil
+			return []*armresources.DeploymentExtended{deployment}, nil
 		}
 
 		// Fallback: Match on hint
@@ -680,31 +703,11 @@ func (p *BicepProvider) latestCompletedDeployment(
 		}
 	}
 
-	if len(matchingDeployments) == 1 {
-		return matchingDeployments[0], nil
+	if len(matchingDeployments) == 0 {
+		return nil, fmt.Errorf("no deployments found for environment %s", envName)
 	}
 
-	if len(matchingDeployments) > 0 {
-		deploymentOptions := getDeploymentOptions(ctx, matchingDeployments)
-
-		p.console.StopSpinner(ctx, "", input.StepDone)
-		p.console.Message(ctx, output.WithWarningFormat("WARNING: Multiple matching deployments were found"))
-		p.console.Message(ctx, "Select a deployment to continue:\n")
-
-		promptConfig := input.ConsoleOptions{
-			Message: "Matching Deployments",
-			Options: deploymentOptions,
-		}
-
-		selectedDeployment, err := p.console.Select(ctx, promptConfig)
-		if err != nil {
-			return nil, err
-		}
-
-		return matchingDeployments[selectedDeployment], nil
-	}
-
-	return nil, fmt.Errorf("no deployments found for environment %s", envName)
+	return matchingDeployments, nil
 }
 
 func getDeploymentOptions(ctx context.Context, deployments []*armresources.DeploymentExtended) []string {

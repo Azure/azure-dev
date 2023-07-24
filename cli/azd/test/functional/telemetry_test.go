@@ -242,7 +242,7 @@ func Test_CLI_Telemetry_NestedCommands(t *testing.T) {
 	_, err := cli.RunCommandWithStdIn(
 		ctx,
 		// Choose the default minimal template
-		"\n"+stdinForInit(envName),
+		"Select a template\n\n"+stdinForInit(envName),
 		"init")
 	require.NoError(t, err)
 

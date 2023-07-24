@@ -124,7 +124,7 @@ func Test_CLI_Init_CanUseTemplate(t *testing.T) {
 
 	_, err := cli.RunCommandWithStdIn(
 		ctx,
-		"Select a template\nTESTENV\n",
+		"\nTESTENV\n",
 		"init",
 		"--template",
 		"cosmos-dotnet-core-todo-app",

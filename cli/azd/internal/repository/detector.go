@@ -39,16 +39,16 @@ func DetectionToConfig(path string, projects []appdetect.Project) (project.Proje
 			panic(fmt.Sprintf("unhandled language: %s", string(prj.Language)))
 		}
 
-		if prj.Docker != nil {
-			relDocker, err := filepath.Rel(prj.Path, prj.Docker.Path)
-			if err != nil {
-				return project.ProjectConfig{}, err
-			}
+		// if prj.Docker != nil {
+		// 	relDocker, err := filepath.Rel(prj.Path, prj.Docker.Path)
+		// 	if err != nil {
+		// 		return project.ProjectConfig{}, err
+		// 	}
 
-			svc.Docker = project.DockerProjectOptions{
-				Path: relDocker,
-			}
-		}
+		// 	svc.Docker = project.DockerProjectOptions{
+		// 		Path: relDocker,
+		// 	}
+		// }
 
 		name := filepath.Base(rel)
 		if name == "." {

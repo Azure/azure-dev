@@ -19,6 +19,10 @@ import (
 )
 
 func TestGenerateProject_Live(t *testing.T) {
+	if os.Getenv("AZD_TEST_APP_GENERATE_LIVE") == "" {
+		t.Skip("skip live test")
+	}
+
 	root := "testdata/live"
 	newTemplates := Discover(t, root)
 
@@ -289,7 +293,7 @@ func cloneRepository(cloneURL, targetDir string) error {
 
 	output, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("failed to clone repository: %s\nOutput: %s", err, output)
+		return fmt.Errorf("failed to clone repository: %w\nOutput: %s", err, output)
 	}
 
 	return nil

@@ -38,6 +38,7 @@ azuretools
 azureutil
 azureyaml
 Backticks
+bicept
 BOOLSLICE
 BUILDID
 BUILDNUMBER
@@ -72,6 +73,7 @@ executil
 funcapp
 functestapp
 functionapp
+frontends
 go-imath
 GOARCH
 GOCOVERDIR
@@ -83,6 +85,7 @@ hotspot
 iidfile
 ineffassign
 javac
+jsont
 jquery
 jmes
 keychain
@@ -95,6 +98,8 @@ microsoftonline
 mockarmresources
 mockazcli
 mvnw
+mysqldb
+mysqlclient
 nobanner
 nodeapp
 nolint
@@ -112,8 +117,10 @@ otlptrace
 otlptracehttp
 missingkey
 pflag
+postgre
 preinit
 proxying
+psycopg
 pulumi
 pyapp
 pyproject
@@ -132,6 +139,7 @@ setenvs
 snapshotter
 springapp
 sstore
+sqlserver
 staticcheck
 staticwebapp
 stdouttrace

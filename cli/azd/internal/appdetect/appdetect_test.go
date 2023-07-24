@@ -27,7 +27,7 @@ func TestDetect(t *testing.T) {
 				{
 					Language:      DotNet,
 					Path:          "dotnet",
-					DetectionRule: "Inferred by presence of: Program.cs, dotnettestapp.csproj",
+					DetectionRule: "Inferred by presence of: program.cs, dotnettestapp.csproj",
 				},
 				{
 					Language:      Java,

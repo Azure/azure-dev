@@ -32,7 +32,7 @@ func Test_CLI_Init_Minimal(t *testing.T) {
 
 	_, err := cli.RunCommandWithStdIn(
 		ctx,
-		"Minimal\nTESTENV\n",
+		"Select a template\nMinimal\nTESTENV\n",
 		"init",
 	)
 	require.NoError(t, err)
@@ -79,7 +79,8 @@ func Test_CLI_Init_Minimal_With_Existing_Infra(t *testing.T) {
 
 	_, err = cli.RunCommandWithStdIn(
 		ctx,
-		"y\n"+ // Say yes to initialize in existing folder
+		"Select a template\n"+
+			"y\n"+ // Say yes to initialize in existing folder
 			"Minimal\n"+ // Choose minimal
 			"TESTENV\n", // Provide environment name
 		"init",
@@ -123,7 +124,7 @@ func Test_CLI_Init_CanUseTemplate(t *testing.T) {
 
 	_, err := cli.RunCommandWithStdIn(
 		ctx,
-		"TESTENV\n",
+		"Select a template\nTESTENV\n",
 		"init",
 		"--template",
 		"cosmos-dotnet-core-todo-app",

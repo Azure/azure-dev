@@ -680,19 +680,6 @@ func resourceGroupsToDelete(deployment *armresources.DeploymentExtended) []strin
 		}
 	}
 
-	if deployment.Properties.OutputResources != nil {
-	} else {
-		// We have seen
-
-		for _, dependency := range deployment.Properties.Dependencies {
-			for _, dependent := range dependency.DependsOn {
-				if *dependent.ResourceType == arm.ResourceGroupResourceType.String() {
-					resourceGroups[*dependent.ResourceName] = struct{}{}
-				}
-			}
-		}
-	}
-
 	return maps.Keys(resourceGroups)
 }
 

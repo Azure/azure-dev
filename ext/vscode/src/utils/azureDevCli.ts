@@ -245,5 +245,5 @@ function azdNotInstalledUserChoices(): AzExtErrorButton[] {
 
 // isAzdCommand returns true if this is the command to run azd.
 export function isAzdCommand(command: string): boolean {
-    return command === getAzDevInvocation()[0];
+    return command === getAzDevInvocation()[0] || command.startsWith(`${getAzDevInvocation()[0]} `);
 }

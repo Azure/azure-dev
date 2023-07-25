@@ -641,6 +641,13 @@ func (m *Manager) Logout(ctx context.Context) error {
 	return nil
 }
 
+func (m *Manager) UseExternalAuth() bool {
+	_, hasEndpoint := os.LookupEnv(cExternalAuthEndpointEnvVarName)
+	_, hasKey := os.LookupEnv(cExternalAuthKeyEnvVarName)
+
+	return hasEndpoint && hasKey
+}
+
 func (m *Manager) saveLoginForPublicClient(res public.AuthResult) error {
 	if err := m.saveUserProperties(&userProperties{HomeAccountID: &res.Account.HomeAccountID}); err != nil {
 		return err

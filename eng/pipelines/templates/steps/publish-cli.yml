@@ -233,7 +233,7 @@ steps:
   - ${{ if eq('true', parameters.PublishBrewFormula) }}:
     - pwsh: |
         $submitPackage = eng/scripts/Test-ShouldReleasePackageVersion.ps1 `
-          -CliVersion '${{ parameters.CliVersion }}'
+          -CliVersion '${{ parameters.CliVersion }}' `
           -AllowPrerelease:$${{ parameters.AllowPrerelease }}
 
         if ('$(Skip.ReleaseBrew)' -eq 'true') {

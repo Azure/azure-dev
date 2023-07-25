@@ -4,7 +4,7 @@
 
 ### Bugs Fixed
 
-- [[????]](https://github.com/Azure/azure-dev/pull/????) Fix `azd down` so it works after a failed `azd provision`
+- [[2569]](https://github.com/Azure/azure-dev/pull/2569) Fix `azd down` so it works after a failed `azd provision`
 
 ### Features Added
 

@@ -26,6 +26,15 @@ type AzureCredentials struct {
 	ResourceManagerEndpointUrl string `json:"resourceManagerEndpointUrl"`
 }
 
+type ErrorWithSuggestion struct {
+	Suggestion string
+	Err        error
+}
+
+func (es *ErrorWithSuggestion) Error() string {
+	return es.Err.Error()
+}
+
 func (cli *azCli) CreateOrUpdateServicePrincipal(
 	ctx context.Context,
 	subscriptionId string,
@@ -257,10 +266,22 @@ func (cli *azCli) applyRoleAssignmentWithRetry(
 		}, nil)
 
 		if err != nil {
-			// If the response is a 409 conflict then the role has already been assigned.
 			var responseError *azcore.ResponseError
+			// If the response is a 409 conflict then the role has already been assigned.
 			if errors.As(err, &responseError) && responseError.StatusCode == http.StatusConflict {
 				return nil
+			}
+
+			// If the response is a 403 then the required role is missing.
+			if errors.As(err, &responseError) && responseError.StatusCode == http.StatusForbidden {
+
+				return &ErrorWithSuggestion{
+					Suggestion: fmt.Sprintf("\nSuggested Action: Ensure you have either the `User Access Administrator`, " +
+						"Owner` or custom azure roles assigned to your subscription to perform action " +
+						"'Microsoft.Authorization/roleAssignments/write', in order to manage role assignments\n"),
+					Err: err,
+				}
+
 			}
 
 			return retry.RetryableError(

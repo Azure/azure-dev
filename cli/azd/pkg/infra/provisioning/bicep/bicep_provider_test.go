@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"sort"
 	"strings"
 	"testing"
@@ -702,6 +703,20 @@ func httpRespondFn(request *http.Request) (*http.Response, error) {
 }
 
 func TestResourceGroupsFromDeployment(t *testing.T) {
+	t.Parallel()
+
+	t.Run("references used when no output resources", func(t *testing.T) {
+		var deployment armresources.DeploymentExtended
+
+		f, err := os.ReadFile("testdata/failed-subscription-deployment.json")
+		require.NoError(t, err)
+
+		err = json.Unmarshal(f, &deployment)
+		require.NoError(t, err)
+
+		require.Equal(t, []string{"matell-2508-rg"}, resourceGroupsToDelete(&deployment))
+	})
+
 	t.Run("duplicate resource groups ignored", func(t *testing.T) {
 
 		mockDeployment := armresources.DeploymentExtended{
@@ -732,7 +747,7 @@ func TestResourceGroupsFromDeployment(t *testing.T) {
 			},
 		}
 
-		groups := resourceGroupsFromDeployment(&mockDeployment)
+		groups := resourceGroupsToDelete(&mockDeployment)
 
 		sort.Strings(groups)
 		require.Equal(t, []string{"groupA", "groupB", "groupC"}, groups)

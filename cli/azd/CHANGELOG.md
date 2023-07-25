@@ -2,6 +2,10 @@
 
 ## 1.1.1 (Unreleased)
 
+### Bugs Fixed
+
+- [[????]](https://github.com/Azure/azure-dev/pull/????) Fix `azd down` so it works after a failed `azd provision`
+
 ### Features Added
 
 - [[2550]](https://github.com/Azure/azure-dev/pull/2550) Add `--preview` to `azd provision` to get the changes 

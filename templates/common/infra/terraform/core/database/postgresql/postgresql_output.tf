@@ -16,5 +16,6 @@ output "AZURE_POSTGRESQL_USERNAME" {
 }
 
 output "AZURE_POSTGRESQL_PASSWORD" {
-  value = random_password.password[1].result
+  value     = random_password.password[1].result
+  sensitive = true
 }

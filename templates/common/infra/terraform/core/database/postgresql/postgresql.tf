@@ -92,7 +92,7 @@ resource "azurerm_resource_deployment_script_azure_cli" "psql-script" {
   }
   environment_variable {
     name              = "DBSERVER"
-    value             = azurerm_postgresql_flexible_server.psql_server.name
+    value             = azurerm_postgresql_flexible_server.psql_server.fqdn
   }
 
   script_content = <<-EOT
@@ -104,7 +104,7 @@ resource "azurerm_resource_deployment_script_azure_cli" "psql-script" {
       GRANT ALL PRIVILEGES ON DATABASE $DBNAME TO "$PSQLUSERNAME";
       EOF
 
-      psql "host=$DBSERVER.postgres.database.azure.com user=$PSQLADMINNAME dbname=$DBNAME port=5432 password=$PSQLADMINPASSWORD sslmode=require" < create_user.sql
+      psql "host=$DBSERVER user=$PSQLADMINNAME dbname=$DBNAME port=5432 password=$PSQLADMINPASSWORD sslmode=require" < create_user.sql
   EOT
 
   depends_on = [ azurerm_postgresql_flexible_server_database.database ]

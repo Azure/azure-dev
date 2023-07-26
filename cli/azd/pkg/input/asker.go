@@ -73,17 +73,21 @@ func withShowCursor(o *survey.AskOptions) error {
 
 func askOnePrompt(p survey.Prompt, response interface{}, isTerminal bool, stdout io.Writer, stdin io.Reader) error {
 	// Like (*bufio.Reader).ReadString(byte) except that it does not buffer input from the input stream.
-	// instead, it reads a byte at a time until a delimiter is found, without consuming any extra characters.
+	// Instead, it reads a byte at a time until a delimiter is found or EOF is encountered,
+	// returning bytes read with no extra characters consumed.
 	readStringNoBuffer := func(r io.Reader, delim byte) (string, error) {
 		strBuf := bytes.Buffer{}
 		readBuf := make([]byte, 1)
 		for {
-			if _, err := r.Read(readBuf); err != nil {
-				return strBuf.String(), err
+			bytesRead, err := r.Read(readBuf)
+			if bytesRead > 0 {
+				// discard err, per documentation, WriteByte always succeeds.
+				_ = strBuf.WriteByte(readBuf[0])
 			}
 
-			// discard err, per documentation, WriteByte always succeeds.
-			_ = strBuf.WriteByte(readBuf[0])
+			if err != nil {
+				return strBuf.String(), err
+			}
 
 			if readBuf[0] == delim {
 				return strBuf.String(), nil
@@ -127,36 +131,34 @@ func askOnePrompt(p survey.Prompt, response interface{}, isTerminal bool, stdout
 		*pResponse = result
 		return nil
 	case *survey.Select:
-		for {
-			fmt.Fprintf(stdout, "%s", v.Message[0:len(v.Message)-1])
-			if v.Default != nil {
-				fmt.Fprintf(stdout, " (or hit enter to use the default %v)", v.Default)
-			}
-			fmt.Fprintf(stdout, "%s ", v.Message[len(v.Message)-1:])
-			result, err := readStringNoBuffer(stdin, '\n')
-			if err != nil && !errors.Is(err, io.EOF) {
-				return fmt.Errorf("reading response: %w", err)
-			}
-			result = strings.TrimSpace(result)
-			if result == "" && v.Default != nil {
-				result = v.Default.(string)
-			}
-			for idx, val := range v.Options {
-				if val == result {
-					switch ptr := response.(type) {
-					case *string:
-						*ptr = val
-					case *int:
-						*ptr = idx
-					default:
-						return fmt.Errorf("bad type %T for result, should be (*int or *string)", response)
-					}
-
-					return nil
-				}
-			}
-			fmt.Fprintf(stdout, "error: %s is not an allowed choice\n", result)
+		fmt.Fprintf(stdout, "%s", v.Message[0:len(v.Message)-1])
+		if v.Default != nil {
+			fmt.Fprintf(stdout, " (or hit enter to use the default %v)", v.Default)
 		}
+		fmt.Fprintf(stdout, "%s ", v.Message[len(v.Message)-1:])
+		result, err := readStringNoBuffer(stdin, '\n')
+		if err != nil && !errors.Is(err, io.EOF) {
+			return fmt.Errorf("reading response: %w", err)
+		}
+		result = strings.TrimSpace(result)
+		if result == "" && v.Default != nil {
+			result = v.Default.(string)
+		}
+		for idx, val := range v.Options {
+			if val == result {
+				switch ptr := response.(type) {
+				case *string:
+					*ptr = val
+				case *int:
+					*ptr = idx
+				default:
+					return fmt.Errorf("bad type %T for result, should be (*int or *string)", response)
+				}
+
+				return nil
+			}
+		}
+		return fmt.Errorf("'%s' is not an allowed choice", result)
 	case *survey.Confirm:
 		var pResponse = response.(*bool)
 

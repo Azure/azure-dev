@@ -4,7 +4,11 @@
 
 ### Features Added
 
-- [[2550]](https://github.com/Azure/azure-dev/pull/2550) Add `--preview` to `azd provision` to get the changes 
+- [[2550]](https://github.com/Azure/azure-dev/pull/2550) Add `--preview` to `azd provision` to get the changes
+
+### Bugs Fixed
+
+- [[2367]](https://github.com/Azure/azure-dev/pull/2367) Don't fail AKS deployment for failed environment substitution
 
 ## 1.1.0 (2023-07-12)
 
@@ -15,6 +19,7 @@
 
 ### Bugs Fixed
 
+- [[2390]](https://github.com/Azure/azure-dev/pull/2367) Fixes unmarshalling of k8s ingress resources with TLS hosts
 - [[2402]](https://github.com/Azure/azure-dev/pull/2279) Support for workload profiles in Azure Container Apps
 - [[2428, 2040]](https://github.com/Azure/azure-dev/pull/2468) Include current git branch in GitHub federated credentials
 

@@ -79,6 +79,9 @@ overrides:
       - keychain
       - crusername
       - azurecr
+  - filename: pkg/tools/kubectl/kubectl.go
+    words:
+      - tmpl
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

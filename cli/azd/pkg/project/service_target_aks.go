@@ -192,7 +192,7 @@ func (t *aksTarget) Deploy(
 				return
 			}
 
-			_, err = t.kubectl.ApplyWithInput(ctx, namespaceResult.Stdout, nil)
+			_, err = t.kubectl.ApplyWithStdIn(ctx, namespaceResult.Stdout, nil)
 			if err != nil {
 				task.SetError(fmt.Errorf("failed applying kube namespace: %w", err))
 				return
@@ -214,7 +214,7 @@ func (t *aksTarget) Deploy(
 				return
 			}
 
-			_, err = t.kubectl.ApplyWithInput(ctx, secretResult.Stdout, nil)
+			_, err = t.kubectl.ApplyWithStdIn(ctx, secretResult.Stdout, nil)
 			if err != nil {
 				task.SetError(fmt.Errorf("failed applying kube secrets: %w", err))
 				return

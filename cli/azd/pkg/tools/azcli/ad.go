@@ -32,16 +32,15 @@ type AzureCredentials struct {
 type ErrorWithSuggestion struct {
 	Suggestion string
 	Err        error
-
-// AdService provides actions on top of Azure Active Directory (AD)
-type AdService interface {
-	GetServicePrincipal(
 }
 
 func (es *ErrorWithSuggestion) Error() string {
 	return es.Err.Error()
 }
 
+// AdService provides actions on top of Azure Active Directory (AD)
+type AdService interface {
+	GetServicePrincipal(
 		ctx context.Context,
 		subscriptionId string,
 		applicationId string,
@@ -371,14 +370,12 @@ func (ad *adService) applyRoleAssignmentWithRetry(
 
 			// If the response is a 403 then the required role is missing.
 			if errors.As(err, &responseError) && responseError.StatusCode == http.StatusForbidden {
-
 				return &ErrorWithSuggestion{
 					Suggestion: fmt.Sprintf("\nSuggested Action: Ensure you have either the `User Access Administrator`, " +
 						"Owner` or custom azure roles assigned to your subscription to perform action " +
 						"'Microsoft.Authorization/roleAssignments/write', in order to manage role assignments\n"),
 					Err: err,
 				}
-
 			}
 
 			return retry.RetryableError(

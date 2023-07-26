@@ -24,6 +24,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/test/recording/cmdrecord"
 	"golang.org/x/exp/slog"
 	"gopkg.in/dnaeon/go-vcr.v3/cassette"
 	"gopkg.in/dnaeon/go-vcr.v3/recorder"
@@ -58,6 +59,9 @@ const SubscriptionIdKey = "subscription_id"
 type Session struct {
 	// ProxyUrl is the URL of the proxy server that will be recording or replaying interactions.
 	ProxyUrl string
+
+	// CmdProxyPath is the path that should be appended to PATH to proxy any cmd invocations.
+	CmdProxyPath string
 
 	// If true, playing back from recording.
 	Playback bool
@@ -218,6 +222,17 @@ func Start(t *testing.T, opts ...Options) *Session {
 			Recorder: vcr,
 		},
 	}
+
+	cmdRecorder := cmdrecord.NewWithOptions(cmdrecord.Options{
+		CmdName:      "git",
+		CassettePath: name,
+		RecordMode:   opt.mode,
+	})
+	path, err := cmdRecorder.Start()
+	if err != nil {
+		t.Fatalf("failed to start cmd recorder: %v", err)
+	}
+	session.CmdProxyPath = path
 
 	server := httptest.NewTLSServer(proxy)
 	proxy.TLS = server.TLS

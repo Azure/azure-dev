@@ -2,13 +2,13 @@
 
 ## 1.1.1 (Unreleased)
 
-### Bugs Fixed
-
-- [[2367]](https://github.com/Azure/azure-dev/pull/2367) Don't fail deployment for failed environment substitution
-
 ### Features Added
 
-- [[2550]](https://github.com/Azure/azure-dev/pull/2550) Add `--preview` to `azd provision` to get the changes 
+- [[2550]](https://github.com/Azure/azure-dev/pull/2550) Add `--preview` to `azd provision` to get the changes
+
+### Bugs Fixed
+
+- [[2367]](https://github.com/Azure/azure-dev/pull/2367) Don't fail AKS deployment for failed environment substitution
 
 ## 1.1.0 (2023-07-12)
 

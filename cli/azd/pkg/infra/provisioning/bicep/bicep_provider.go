@@ -449,7 +449,7 @@ func (p *BicepProvider) Destroy(ctx context.Context, options DestroyOptions) (*D
 		return nil, err
 	}
 
-	rgsFromDeployment := resourceGroupsFromDeployment(deployment)
+	rgsFromDeployment := resourceGroupsToDelete(deployment)
 
 	// TODO: Report progress, "Fetching resources"
 	groupedResources, err := p.getAllResourcesToDelete(ctx, rgsFromDeployment)
@@ -645,31 +645,42 @@ func latestCompletedDeployment(
 	return nil, fmt.Errorf("no deployments found for environment %s", envName)
 }
 
-// resourceGroupsFromDeployment returns the names of all the unique set of resource group name names resource groups from
-//
-//	the OutputResources section of a ARM deployment.
-func resourceGroupsFromDeployment(deployment *armresources.DeploymentExtended) []string {
-
+// resourceGroupsToDelete collects the resource groups from an existing deployment which should be removed as part of a
+// destroy operation.
+func resourceGroupsToDelete(deployment *armresources.DeploymentExtended) []string {
 	// NOTE: it's possible for a deployment to list a resource group more than once. We're only interested in the
 	// unique set.
 	resourceGroups := map[string]struct{}{}
 
-	for _, resourceId := range deployment.Properties.OutputResources {
-		if resourceId != nil && resourceId.ID != nil {
-			resId, err := arm.ParseResourceID(*resourceId.ID)
-			if err == nil && resId.ResourceGroupName != "" {
-				resourceGroups[resId.ResourceGroupName] = struct{}{}
+	if *deployment.Properties.ProvisioningState == armresources.ProvisioningStateSucceeded {
+		// For a successful deployment, we can use the output resources property to see the resource groups that were
+		// provisioned from this.
+		for _, resourceId := range deployment.Properties.OutputResources {
+			if resourceId != nil && resourceId.ID != nil {
+				resId, err := arm.ParseResourceID(*resourceId.ID)
+				if err == nil && resId.ResourceGroupName != "" {
+					resourceGroups[resId.ResourceGroupName] = struct{}{}
+				}
 			}
+		}
+	} else {
+		// For a failed deployment, the `outputResources` field is not populated. Instead, we assume that any resource
+		// groups which this deployment itself deployed into should be deleted. This matches what a deployment likes
+		// for the common pattern of having a subscription level deployment which allocates a set of resource groups
+		// and then does nested deployments into them.
+		for _, dependency := range deployment.Properties.Dependencies {
+			if *dependency.ResourceType == string(infra.AzureResourceTypeDeployment) {
+				for _, dependent := range dependency.DependsOn {
+					if *dependent.ResourceType == arm.ResourceGroupResourceType.String() {
+						resourceGroups[*dependent.ResourceName] = struct{}{}
+					}
+				}
+			}
+
 		}
 	}
 
-	var resourceGroupNames []string
-
-	for k := range resourceGroups {
-		resourceGroupNames = append(resourceGroupNames, k)
-	}
-
-	return resourceGroupNames
+	return maps.Keys(resourceGroups)
 }
 
 func (p *BicepProvider) getAllResourcesToDelete(

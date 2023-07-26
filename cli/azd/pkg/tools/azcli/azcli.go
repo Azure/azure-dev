@@ -5,7 +5,6 @@ package azcli
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
 
@@ -115,12 +114,6 @@ type AzCli interface {
 	// may be used by tools which understand the `AZURE_CREDENTIALS` format (i.e. the `sdk-auth` format). The service
 	// principal is assigned a given role. If an existing principal exists with the given name,
 	// it is updated in place and its credentials are reset.
-	CreateOrUpdateServicePrincipal(
-		ctx context.Context,
-		subscriptionId string,
-		applicationName string,
-		rolesToAssign []string,
-	) (json.RawMessage, error)
 	GetAppServiceProperties(
 		ctx context.Context,
 		subscriptionId string,

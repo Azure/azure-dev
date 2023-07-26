@@ -44,7 +44,7 @@ func Test_CreateOrUpdateServicePrincipal(t *testing.T) {
 	existingApplication := graphsdk.Application{
 		Id:          convert.RefOf("UNIQUE_ID"),
 		AppId:       &expectedServicePrincipalCredential.ClientId,
-		DisplayName: "MY_APP",
+		DisplayName: "APPLICATION_NAME",
 		PasswordCredentials: []*graphsdk.ApplicationPasswordCredential{
 			credential,
 		},
@@ -61,6 +61,8 @@ func Test_CreateOrUpdateServicePrincipal(t *testing.T) {
 	t.Run("NewServicePrincipal", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		mockgraphsdk.RegisterApplicationListMock(mockContext, http.StatusOK, []graphsdk.Application{})
+		mockgraphsdk.RegisterApplicationGetItemByAppIdMock(mockContext, http.StatusNotFound, "APPLICATION_NAME", nil)
+		mockgraphsdk.RegisterApplicationGetItemMock(mockContext, http.StatusNotFound, "APPLICATION_NAME", nil)
 		mockgraphsdk.RegisterServicePrincipalListMock(mockContext, http.StatusOK, []graphsdk.ServicePrincipal{})
 		mockgraphsdk.RegisterApplicationCreateItemMock(mockContext, http.StatusCreated, &newApplication)
 		mockgraphsdk.RegisterServicePrincipalCreateItemMock(mockContext, http.StatusCreated, &servicePrincipal)
@@ -68,14 +70,15 @@ func Test_CreateOrUpdateServicePrincipal(t *testing.T) {
 		mockgraphsdk.RegisterRoleDefinitionListMock(mockContext, http.StatusOK, roleDefinitions)
 		mockgraphsdk.RegisterRoleAssignmentPutMock(mockContext, http.StatusCreated)
 
-		azCli := newAzCliFromMockContext(mockContext)
-		rawMessage, err := azCli.CreateOrUpdateServicePrincipal(
+		adService := NewAdService(mockContext.SubscriptionCredentialProvider, mockContext.HttpClient)
+		clientId, rawMessage, err := adService.CreateOrUpdateServicePrincipal(
 			*mockContext.Context,
 			expectedServicePrincipalCredential.SubscriptionId,
 			"APPLICATION_NAME",
 			defaultRoleNames,
 		)
 		require.NoError(t, err)
+		require.NotEmpty(t, clientId)
 		require.NotNil(t, rawMessage)
 
 		assertAzureCredentials(t, rawMessage)
@@ -84,7 +87,23 @@ func Test_CreateOrUpdateServicePrincipal(t *testing.T) {
 	// Tests the use case for updating an existing service principal
 	t.Run("ExistingServicePrincipal", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		mockgraphsdk.RegisterApplicationListMock(mockContext, http.StatusOK, []graphsdk.Application{existingApplication})
+		mockgraphsdk.RegisterApplicationListMock(
+			mockContext,
+			http.StatusOK,
+			[]graphsdk.Application{existingApplication},
+		)
+		mockgraphsdk.RegisterApplicationGetItemByAppIdMock(
+			mockContext,
+			http.StatusOK,
+			existingApplication.DisplayName,
+			&existingApplication,
+		)
+		mockgraphsdk.RegisterApplicationGetItemMock(
+			mockContext,
+			http.StatusOK,
+			existingApplication.DisplayName,
+			&existingApplication,
+		)
 		mockgraphsdk.RegisterServicePrincipalListMock(
 			mockContext,
 			http.StatusOK,
@@ -95,14 +114,15 @@ func Test_CreateOrUpdateServicePrincipal(t *testing.T) {
 		mockgraphsdk.RegisterRoleDefinitionListMock(mockContext, http.StatusOK, roleDefinitions)
 		mockgraphsdk.RegisterRoleAssignmentPutMock(mockContext, http.StatusCreated)
 
-		azCli := newAzCliFromMockContext(mockContext)
-		rawMessage, err := azCli.CreateOrUpdateServicePrincipal(
+		adService := NewAdService(mockContext.SubscriptionCredentialProvider, mockContext.HttpClient)
+		clientId, rawMessage, err := adService.CreateOrUpdateServicePrincipal(
 			*mockContext.Context,
 			expectedServicePrincipalCredential.SubscriptionId,
 			"APPLICATION_NAME",
 			defaultRoleNames,
 		)
 		require.NoError(t, err)
+		require.NotEmpty(t, clientId)
 		require.NotNil(t, rawMessage)
 
 		assertAzureCredentials(t, rawMessage)
@@ -112,6 +132,18 @@ func Test_CreateOrUpdateServicePrincipal(t *testing.T) {
 	t.Run("RoleAssignmentExists", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		mockgraphsdk.RegisterApplicationListMock(mockContext, http.StatusOK, []graphsdk.Application{existingApplication})
+		mockgraphsdk.RegisterApplicationGetItemByAppIdMock(
+			mockContext,
+			http.StatusOK,
+			existingApplication.DisplayName,
+			&existingApplication,
+		)
+		mockgraphsdk.RegisterApplicationGetItemMock(
+			mockContext,
+			http.StatusOK,
+			existingApplication.DisplayName,
+			&existingApplication,
+		)
 		mockgraphsdk.RegisterServicePrincipalListMock(
 			mockContext,
 			http.StatusOK,
@@ -123,14 +155,15 @@ func Test_CreateOrUpdateServicePrincipal(t *testing.T) {
 		// Note how role assignment returns a 409 conflict
 		mockgraphsdk.RegisterRoleAssignmentPutMock(mockContext, http.StatusConflict)
 
-		azCli := newAzCliFromMockContext(mockContext)
-		rawMessage, err := azCli.CreateOrUpdateServicePrincipal(
+		adService := NewAdService(mockContext.SubscriptionCredentialProvider, mockContext.HttpClient)
+		clientId, rawMessage, err := adService.CreateOrUpdateServicePrincipal(
 			*mockContext.Context,
 			expectedServicePrincipalCredential.SubscriptionId,
 			"APPLICATION_NAME",
 			defaultRoleNames,
 		)
 		require.NoError(t, err)
+		require.NotEmpty(t, clientId)
 		require.NotNil(t, rawMessage)
 
 		assertAzureCredentials(t, rawMessage)
@@ -139,6 +172,18 @@ func Test_CreateOrUpdateServicePrincipal(t *testing.T) {
 	t.Run("InvalidRole", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		mockgraphsdk.RegisterApplicationListMock(mockContext, http.StatusOK, []graphsdk.Application{})
+		mockgraphsdk.RegisterApplicationGetItemByAppIdMock(
+			mockContext,
+			http.StatusOK,
+			existingApplication.DisplayName,
+			&existingApplication,
+		)
+		mockgraphsdk.RegisterApplicationGetItemMock(
+			mockContext,
+			http.StatusOK,
+			existingApplication.DisplayName,
+			&existingApplication,
+		)
 		mockgraphsdk.RegisterServicePrincipalListMock(mockContext, http.StatusOK, []graphsdk.ServicePrincipal{})
 		mockgraphsdk.RegisterApplicationCreateItemMock(mockContext, http.StatusCreated, &newApplication)
 		mockgraphsdk.RegisterServicePrincipalCreateItemMock(mockContext, http.StatusCreated, &servicePrincipal)
@@ -146,32 +191,36 @@ func Test_CreateOrUpdateServicePrincipal(t *testing.T) {
 		// Note how retrieval of matching role assignments is empty
 		mockgraphsdk.RegisterRoleDefinitionListMock(mockContext, http.StatusOK, []*armauthorization.RoleDefinition{})
 
-		azCli := newAzCliFromMockContext(mockContext)
-		rawMessage, err := azCli.CreateOrUpdateServicePrincipal(
+		adService := NewAdService(mockContext.SubscriptionCredentialProvider, mockContext.HttpClient)
+		clientId, rawMessage, err := adService.CreateOrUpdateServicePrincipal(
 			*mockContext.Context,
 			expectedServicePrincipalCredential.SubscriptionId,
 			"APPLICATION_NAME",
 			defaultRoleNames,
 		)
 		require.Error(t, err)
+		require.Empty(t, clientId)
 		require.Nil(t, rawMessage)
 	})
 
 	t.Run("ErrorCreatingApplication", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		mockgraphsdk.RegisterApplicationListMock(mockContext, http.StatusOK, []graphsdk.Application{})
+		mockgraphsdk.RegisterApplicationGetItemByAppIdMock(mockContext, http.StatusNotFound, "APPLICATION_NAME", nil)
+		mockgraphsdk.RegisterApplicationGetItemMock(mockContext, http.StatusNotFound, "APPLICATION_NAME", nil)
 		mockgraphsdk.RegisterServicePrincipalListMock(mockContext, http.StatusOK, []graphsdk.ServicePrincipal{})
 		// Note that the application creation returns an unauthorized error
 		mockgraphsdk.RegisterApplicationCreateItemMock(mockContext, http.StatusUnauthorized, nil)
 
-		azCli := newAzCliFromMockContext(mockContext)
-		rawMessage, err := azCli.CreateOrUpdateServicePrincipal(
+		adService := NewAdService(mockContext.SubscriptionCredentialProvider, mockContext.HttpClient)
+		clientId, rawMessage, err := adService.CreateOrUpdateServicePrincipal(
 			*mockContext.Context,
 			expectedServicePrincipalCredential.SubscriptionId,
 			"APPLICATION_NAME",
 			defaultRoleNames,
 		)
 		require.Error(t, err)
+		require.Empty(t, clientId)
 		require.Nil(t, rawMessage)
 	})
 }

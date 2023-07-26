@@ -430,12 +430,6 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 		return nil, err
 	}
 
-	for key := range getStateResult.State.Outputs {
-		ef.console.MessageUxItem(ctx, &ux.DoneMessage{
-			Message: fmt.Sprintf("Setting %s environment variable", key),
-		})
-	}
-
 	if ef.formatter.Kind() == output.JsonFormat {
 		err = ef.formatter.Format(provisioning.NewEnvRefreshResultFromState(getStateResult.State), ef.writer, nil)
 		if err != nil {
@@ -460,7 +454,7 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
 			Header:   "Environment refresh completed",
-			FollowUp: fmt.Sprintf("View environment variables at %s", output.WithLinkFormat(ef.env.Path())),
+			FollowUp: fmt.Sprintf("View environment variables at %s", output.WithHyperlink(ef.env.Path(), ef.env.Path())),
 		},
 	}, nil
 }

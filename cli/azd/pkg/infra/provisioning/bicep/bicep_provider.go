@@ -218,11 +218,10 @@ func (p *BicepProvider) State(ctx context.Context, options *StateOptions) (*Stat
 	if len(deployments) > 1 {
 		deploymentOptions := getDeploymentOptions(ctx, deployments)
 
-		p.console.Message(ctx, output.WithWarningFormat("WARNING: Multiple matching deployments were found"))
-		p.console.Message(ctx, "Select a deployment to continue:\n")
+		p.console.Message(ctx, output.WithWarningFormat("WARNING: Multiple matching deployments were found\n"))
 
 		promptConfig := input.ConsoleOptions{
-			Message: "Matching Deployments",
+			Message: "Select a deployment to continue:",
 			Options: deploymentOptions,
 		}
 
@@ -232,12 +231,18 @@ func (p *BicepProvider) State(ctx context.Context, options *StateOptions) (*Stat
 		}
 
 		deployment = deployments[selectedDeployment]
+		p.console.Message(ctx, "")
 	} else {
 		deployment = deployments[0]
 	}
 
+	azdDeployment, err := p.createDeploymentFromArmDeployment(scope, *deployment.Name)
+	if err != nil {
+		return nil, err
+	}
+
 	p.console.MessageUxItem(ctx, &ux.DoneMessage{
-		Message: fmt.Sprintf("%s (%s)", spinnerMessage, output.WithHighLightFormat(*deployment.Name)),
+		Message: fmt.Sprintf("Retrieving Azure deployment (%s)", output.WithHighLightFormat(*deployment.Name)),
 	})
 
 	state := State{}
@@ -254,9 +259,44 @@ func (p *BicepProvider) State(ctx context.Context, options *StateOptions) (*Stat
 		azapi.CreateDeploymentOutput(deployment.Properties.Outputs),
 	)
 
+	p.console.MessageUxItem(ctx, &ux.DoneMessage{
+		Message: fmt.Sprintf("Updated %d environment variables", len(state.Outputs)),
+	})
+
+	p.console.Message(ctx, fmt.Sprintf(
+		"\nPopulated environment from Azure infrastructure deployment: %s",
+		output.WithHyperlink(azdDeployment.OutputsUrl(), *deployment.Name),
+	))
+
 	return &StateResult{
 		State: &state,
 	}, nil
+}
+
+func (p *BicepProvider) createDeploymentFromArmDeployment(
+	scope infra.Scope,
+	deploymentName string,
+) (infra.Deployment, error) {
+	switch scope.(type) {
+	case *infra.ResourceGroupScope:
+		return infra.NewResourceGroupDeployment(
+			p.deploymentsService,
+			p.deploymentOperations,
+			p.env.GetSubscriptionId(),
+			p.env.Getenv(environment.ResourceGroupEnvVarName),
+			deploymentName,
+		), nil
+	case *infra.SubscriptionScope:
+		return infra.NewSubscriptionDeployment(
+			p.deploymentsService,
+			p.deploymentOperations,
+			p.env.GetLocation(),
+			p.env.GetSubscriptionId(),
+			deploymentName,
+		), nil
+	default:
+		return nil, errors.New("unsupported deployment scope")
+	}
 }
 
 var ResourceGroupDeploymentFeature = alpha.MustFeatureKey("resourceGroupDeployments")
@@ -678,6 +718,11 @@ func (p *BicepProvider) findCompletedDeployments(
 	slices.SortFunc(deployments, func(x, y *armresources.DeploymentExtended) bool {
 		return x.Properties.Timestamp.After(*y.Properties.Timestamp)
 	})
+
+	// If hint is not provided, use the environment name as the hint
+	if hint == "" {
+		hint = envName
+	}
 
 	// Environment matching strategy
 	// 1. Deployment with azd tagged env name

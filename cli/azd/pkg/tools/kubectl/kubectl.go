@@ -33,13 +33,6 @@ type KubectlCli interface {
 	ConfigUseContext(ctx context.Context, name string, flags *KubeCliFlags) (*exec.RunResult, error)
 	// Creates a new k8s namespace with the specified name
 	CreateNamespace(ctx context.Context, name string, flags *KubeCliFlags) (*exec.RunResult, error)
-	// Creates a new generic secret from the specified secret pairs
-	CreateSecretGenericFromLiterals(
-		ctx context.Context,
-		name string,
-		secrets []string,
-		flags *KubeCliFlags,
-	) (*exec.RunResult, error)
 	// Executes a k8s CLI command from the specified arguments and flags
 	Exec(ctx context.Context, flags *KubeCliFlags, args ...string) (exec.RunResult, error)
 	// Gets the deployment rollout status
@@ -227,26 +220,6 @@ func (cli *kubectlCli) Apply(ctx context.Context, path string, flags *KubeCliFla
 	}
 
 	return nil
-}
-
-// Creates a new generic secret from the specified secret pairs
-func (cli *kubectlCli) CreateSecretGenericFromLiterals(
-	ctx context.Context,
-	name string,
-	secrets []string,
-	flags *KubeCliFlags,
-) (*exec.RunResult, error) {
-	args := []string{"create", "secret", "generic", name}
-	for _, secret := range secrets {
-		args = append(args, fmt.Sprintf("--from-literal=%s", secret))
-	}
-
-	res, err := cli.Exec(ctx, flags, args...)
-	if err != nil {
-		return nil, fmt.Errorf("kubectl create secret generic --from-literal: %w", err)
-	}
-
-	return &res, nil
 }
 
 // Creates a new k8s namespace with the specified name

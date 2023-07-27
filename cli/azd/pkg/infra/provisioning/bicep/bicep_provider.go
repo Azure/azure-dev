@@ -43,7 +43,7 @@ import (
 
 const DefaultModule = "main"
 
-type BicepDeploymentDetails struct {
+type bicepDeploymentDetails struct {
 	// Template is the template to deploy during the deployment operation.
 	Template azure.RawArmTemplate
 	// Parameters are the values to provide to the template during the deployment operation.
@@ -213,35 +213,35 @@ func (p *BicepProvider) State(ctx context.Context) (*StateResult, error) {
 var ResourceGroupDeploymentFeature = alpha.MustFeatureKey("resourceGroupDeployments")
 
 // Plans the infrastructure provisioning
-func (p *BicepProvider) Plan(ctx context.Context) (*DeploymentPlan, error) {
+func (p *BicepProvider) plan(ctx context.Context) (*Deployment, *bicepDeploymentDetails, error) {
 	p.console.ShowSpinner(ctx, "Creating a deployment plan", input.Step)
 	// TODO: Report progress, "Generating Bicep parameters file"
 
 	parameters, err := p.loadParameters(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("creating parameters file: %w", err)
+		return nil, nil, fmt.Errorf("creating parameters file: %w", err)
 	}
 
 	modulePath := p.modulePath()
 	// TODO: Report progress, "Compiling Bicep template"
 	rawTemplate, template, err := p.compileBicep(ctx, modulePath)
 	if err != nil {
-		return nil, fmt.Errorf("creating template: %w", err)
+		return nil, nil, fmt.Errorf("creating template: %w", err)
 	}
 
 	configuredParameters, err := p.ensureParameters(ctx, template, parameters)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	deployment, err := p.convertToDeployment(template)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	deploymentScope, err := template.TargetScope()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 
 	var target infra.Deployment
@@ -263,17 +263,14 @@ func (p *BicepProvider) Plan(ctx context.Context) (*DeploymentPlan, error) {
 			deploymentNameForEnv(p.env.GetEnvName(), p.clock),
 		)
 	} else {
-		return nil, fmt.Errorf("unsupported scope: %s", deploymentScope)
+		return nil, nil, fmt.Errorf("unsupported scope: %s", deploymentScope)
 	}
 
-	return &DeploymentPlan{
-		Deployment: *deployment,
-		Details: BicepDeploymentDetails{
-			Template:        rawTemplate,
-			TemplateOutputs: template.Outputs,
-			Parameters:      configuredParameters,
-			Target:          target,
-		},
+	return deployment, &bicepDeploymentDetails{
+		Template:        rawTemplate,
+		TemplateOutputs: template.Outputs,
+		Parameters:      configuredParameters,
+		Target:          target,
 	}, nil
 }
 
@@ -293,8 +290,11 @@ func deploymentNameForEnv(envName string, clock clock.Clock) string {
 }
 
 // Provisioning the infrastructure within the specified template
-func (p *BicepProvider) Deploy(ctx context.Context, pd *DeploymentPlan) (*DeployResult, error) {
-	bicepDeploymentData := pd.Details.(BicepDeploymentDetails)
+func (p *BicepProvider) Deploy(ctx context.Context) (*DeployResult, error) {
+	deployment, bicepDeploymentData, err := p.plan(ctx)
+	if err != nil {
+		return nil, err
+	}
 
 	cancelProgress := make(chan bool)
 	defer func() { cancelProgress <- true }()
@@ -347,14 +347,56 @@ func (p *BicepProvider) Deploy(ctx context.Context, pd *DeploymentPlan) (*Deploy
 		return nil, err
 	}
 
-	deployment := pd.Deployment
 	deployment.Outputs = p.createOutputParameters(
 		bicepDeploymentData.TemplateOutputs,
 		azapi.CreateDeploymentOutput(deployResult.Properties.Outputs),
 	)
 
 	return &DeployResult{
-		Deployment: &deployment,
+		Deployment: deployment,
+	}, nil
+}
+
+// Preview runs deploy using the what-if argument
+func (p *BicepProvider) Preview(ctx context.Context) (*DeployPreviewResult, error) {
+	_, bicepDeploymentData, err := p.plan(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	p.console.ShowSpinner(ctx, "Generating infrastructure preview", input.Step)
+
+	targetScope := bicepDeploymentData.Target
+	deployPreviewResult, err := targetScope.DeployPreview(
+		ctx,
+		bicepDeploymentData.Template,
+		bicepDeploymentData.Parameters,
+	)
+	if err != nil {
+		return nil, err
+	}
+
+	var changes []*DeploymentPreviewChange
+	for _, change := range deployPreviewResult.Properties.Changes {
+		resourceAfter := change.After.(map[string]interface{})
+
+		changes = append(changes, &DeploymentPreviewChange{
+			ChangeType: ChangeType(*change.ChangeType),
+			ResourceId: Resource{
+				Id: *change.ResourceID,
+			},
+			ResourceType: resourceAfter["type"].(string),
+			Name:         resourceAfter["name"].(string),
+		})
+	}
+
+	return &DeployPreviewResult{
+		Preview: &DeploymentPreview{
+			Status: *deployPreviewResult.Status,
+			Properties: &DeploymentPreviewProperties{
+				Changes: changes,
+			},
+		},
 	}, nil
 }
 
@@ -407,7 +449,7 @@ func (p *BicepProvider) Destroy(ctx context.Context, options DestroyOptions) (*D
 		return nil, err
 	}
 
-	rgsFromDeployment := resourceGroupsFromDeployment(deployment)
+	rgsFromDeployment := resourceGroupsToDelete(deployment)
 
 	// TODO: Report progress, "Fetching resources"
 	groupedResources, err := p.getAllResourcesToDelete(ctx, rgsFromDeployment)
@@ -603,31 +645,42 @@ func latestCompletedDeployment(
 	return nil, fmt.Errorf("no deployments found for environment %s", envName)
 }
 
-// resourceGroupsFromDeployment returns the names of all the unique set of resource group name names resource groups from
-//
-//	the OutputResources section of a ARM deployment.
-func resourceGroupsFromDeployment(deployment *armresources.DeploymentExtended) []string {
-
+// resourceGroupsToDelete collects the resource groups from an existing deployment which should be removed as part of a
+// destroy operation.
+func resourceGroupsToDelete(deployment *armresources.DeploymentExtended) []string {
 	// NOTE: it's possible for a deployment to list a resource group more than once. We're only interested in the
 	// unique set.
 	resourceGroups := map[string]struct{}{}
 
-	for _, resourceId := range deployment.Properties.OutputResources {
-		if resourceId != nil && resourceId.ID != nil {
-			resId, err := arm.ParseResourceID(*resourceId.ID)
-			if err == nil && resId.ResourceGroupName != "" {
-				resourceGroups[resId.ResourceGroupName] = struct{}{}
+	if *deployment.Properties.ProvisioningState == armresources.ProvisioningStateSucceeded {
+		// For a successful deployment, we can use the output resources property to see the resource groups that were
+		// provisioned from this.
+		for _, resourceId := range deployment.Properties.OutputResources {
+			if resourceId != nil && resourceId.ID != nil {
+				resId, err := arm.ParseResourceID(*resourceId.ID)
+				if err == nil && resId.ResourceGroupName != "" {
+					resourceGroups[resId.ResourceGroupName] = struct{}{}
+				}
 			}
+		}
+	} else {
+		// For a failed deployment, the `outputResources` field is not populated. Instead, we assume that any resource
+		// groups which this deployment itself deployed into should be deleted. This matches what a deployment likes
+		// for the common pattern of having a subscription level deployment which allocates a set of resource groups
+		// and then does nested deployments into them.
+		for _, dependency := range deployment.Properties.Dependencies {
+			if *dependency.ResourceType == string(infra.AzureResourceTypeDeployment) {
+				for _, dependent := range dependency.DependsOn {
+					if *dependent.ResourceType == arm.ResourceGroupResourceType.String() {
+						resourceGroups[*dependent.ResourceName] = struct{}{}
+					}
+				}
+			}
+
 		}
 	}
 
-	var resourceGroupNames []string
-
-	for k := range resourceGroups {
-		resourceGroupNames = append(resourceGroupNames, k)
-	}
-
-	return resourceGroupNames
+	return maps.Keys(resourceGroups)
 }
 
 func (p *BicepProvider) getAllResourcesToDelete(
@@ -837,7 +890,12 @@ func (p *BicepProvider) getManagedHSMs(
 	for resourceGroup, groupResources := range groupedResources {
 		for _, resource := range groupResources {
 			if resource.Type == string(infra.AzureResourceTypeManagedHSM) {
-				managedHSM, err := p.azCli.GetManagedHSM(ctx, azure.SubscriptionFromRID(resource.Id), resourceGroup, resource.Name)
+				managedHSM, err := p.azCli.GetManagedHSM(
+					ctx,
+					azure.SubscriptionFromRID(resource.Id),
+					resourceGroup,
+					resource.Name,
+				)
 				if err != nil {
 					return nil, fmt.Errorf("listing managed hsm %s properties: %w", resource.Name, err)
 				}

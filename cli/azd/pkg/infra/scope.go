@@ -33,6 +33,12 @@ type Deployment interface {
 		parameters azure.ArmParameters,
 		tags map[string]*string,
 	) (*armresources.DeploymentExtended, error)
+	// Deploy a given template with a set of parameters.
+	DeployPreview(
+		ctx context.Context,
+		template azure.RawArmTemplate,
+		parameters azure.ArmParameters,
+	) (*armresources.WhatIfOperationResult, error)
 	// Deployment fetches information about this deployment.
 	Deployment(ctx context.Context) (*armresources.DeploymentExtended, error)
 	// Operations returns all the operations for this deployment.
@@ -61,13 +67,21 @@ func (s *ResourceGroupDeployment) ResourceGroupName() string {
 func (s *ResourceGroupDeployment) Deploy(
 	ctx context.Context, template azure.RawArmTemplate, parameters azure.ArmParameters, tags map[string]*string,
 ) (*armresources.DeploymentExtended, error) {
-	return s.deploymentsService.DeployToResourceGroup(
+	return s.deployments.DeployToResourceGroup(
 		ctx, s.subscriptionId, s.resourceGroupName, s.name, template, parameters, tags)
+}
+
+func (s *ResourceGroupDeployment) DeployPreview(
+	ctx context.Context,
+	template azure.RawArmTemplate,
+	parameters azure.ArmParameters) (*armresources.WhatIfOperationResult, error) {
+	return s.deployments.WhatIfDeployToResourceGroup(
+		ctx, s.subscriptionId, s.resourceGroupName, s.name, template, parameters)
 }
 
 // GetDeployment fetches the result of the most recent deployment.
 func (s *ResourceGroupDeployment) Deployment(ctx context.Context) (*armresources.DeploymentExtended, error) {
-	return s.deploymentsService.GetResourceGroupDeployment(ctx, s.subscriptionId, s.resourceGroupName, s.name)
+	return s.deployments.GetResourceGroupDeployment(ctx, s.subscriptionId, s.resourceGroupName, s.name)
 }
 
 // Gets the resource deployment operations for the current scope
@@ -98,7 +112,7 @@ func NewResourceGroupDeployment(
 }
 
 type ResourceGroupScope struct {
-	deploymentsService   azapi.Deployments
+	deployments          azapi.Deployments
 	deploymentOperations azapi.DeploymentOperations
 	subscriptionId       string
 	resourceGroupName    string
@@ -109,7 +123,7 @@ func NewResourceGroupScope(
 	deploymentOperations azapi.DeploymentOperations,
 	subscriptionId string, resourceGroupName string) *ResourceGroupScope {
 	return &ResourceGroupScope{
-		deploymentsService:   deploymentsService,
+		deployments:          deploymentsService,
 		deploymentOperations: deploymentOperations,
 		subscriptionId:       subscriptionId,
 		resourceGroupName:    resourceGroupName,
@@ -126,7 +140,7 @@ func (s *ResourceGroupScope) ResourceGroupName() string {
 
 // ListDeployments returns all the deployments in this resource group.
 func (s *ResourceGroupScope) ListDeployments(ctx context.Context) ([]*armresources.DeploymentExtended, error) {
-	return s.deploymentsService.ListResourceGroupDeployments(ctx, s.subscriptionId, s.resourceGroupName)
+	return s.deployments.ListResourceGroupDeployments(ctx, s.subscriptionId, s.resourceGroupName)
 }
 
 // cPortalUrlPrefix is the prefix which can be combined with the RID of a deployment to produce a URL into the Azure Portal
@@ -165,6 +179,15 @@ func (s *SubscriptionDeployment) Deploy(
 	ctx context.Context, template azure.RawArmTemplate, parameters azure.ArmParameters, tags map[string]*string,
 ) (*armresources.DeploymentExtended, error) {
 	return s.deploymentsService.DeployToSubscription(ctx, s.subscriptionId, s.location, s.name, template, parameters, tags)
+}
+
+// Deploy a given template with a set of parameters.
+func (s *SubscriptionDeployment) DeployPreview(
+	ctx context.Context,
+	template azure.RawArmTemplate,
+	parameters azure.ArmParameters) (*armresources.WhatIfOperationResult, error) {
+	return s.deploymentsService.WhatIfDeployToSubscription(
+		ctx, s.subscriptionId, s.location, s.name, template, parameters)
 }
 
 // GetDeployment fetches the result of the most recent deployment.

@@ -2,6 +2,17 @@
 
 ## 1.1.1 (Unreleased)
 
+### Features Added
+
+- [[2550]](https://github.com/Azure/azure-dev/pull/2550) Add `--preview` to `azd provision` to get the changes
+- [[2521]](https://github.com/Azure/azure-dev/pull/2521) Support `--principal-id` param for azd pipeline config to reuse existing service principal
+- [[2455]](https://github.com/Azure/azure-dev/pull/2455) Adds optional support for text templates in AKS k8s manifests
+
+### Bugs Fixed
+
+- [[2569]](https://github.com/Azure/azure-dev/pull/2569) Fix `azd down` so it works after a failed `azd provision`
+- [[2367]](https://github.com/Azure/azure-dev/pull/2367) Don't fail AKS deployment for failed environment substitution
+
 ### Other changes
 
 - [[2572]](https://github.com/Azure/azure-dev/pull/2572) Decrease expiration time of service principal secret from default (24 months) to 180 days
@@ -15,6 +26,7 @@
 
 ### Bugs Fixed
 
+- [[2390]](https://github.com/Azure/azure-dev/pull/2367) Fixes unmarshalling of k8s ingress resources with TLS hosts
 - [[2402]](https://github.com/Azure/azure-dev/pull/2279) Support for workload profiles in Azure Container Apps
 - [[2428, 2040]](https://github.com/Azure/azure-dev/pull/2468) Include current git branch in GitHub federated credentials
 

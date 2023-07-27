@@ -2,7 +2,6 @@ package templates
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"log"
 
@@ -11,58 +10,58 @@ import (
 )
 
 type TemplateManager struct {
+	sources []TemplateSource
 }
 
 // ListTemplates retrieves the list of templates in a deterministic order.
-func (tm *TemplateManager) ListTemplates() ([]Template, error) {
-	var templates []Template
-	err := json.Unmarshal(resources.TemplatesJson, &templates)
-	if err != nil {
-		return nil, fmt.Errorf("unable to unmarshal templates JSON %w", err)
+func (tm *TemplateManager) ListTemplates() ([]*Template, error) {
+	allTemplates := []*Template{}
+
+	for _, source := range tm.sources {
+		templates, err := source.ListTemplates()
+		if err != nil {
+			return nil, fmt.Errorf("unable to list templates: %w", err)
+		}
+
+		allTemplates = append(allTemplates, templates...)
 	}
 
-	return templates, nil
+	return allTemplates, nil
 }
 
-func (tm *TemplateManager) GetTemplate(path string) (Template, error) {
-	abs, err := Absolute(path)
-	if err != nil {
-		return Template{}, err
-	}
+func (tm *TemplateManager) GetTemplate(name string) (*Template, error) {
+	errors := []error{}
 
-	templates, err := tm.ListTemplates()
-
-	if err != nil {
-		return Template{}, fmt.Errorf("unable to list templates: %w", err)
-	}
-
-	for _, template := range templates {
-		absPath, err := Absolute(template.RepositoryPath)
+	for _, source := range tm.sources {
+		template, err := source.GetTemplate(name)
 		if err != nil {
-			panic(err)
+			errors = append(errors, err)
+			continue
 		}
 
-		if absPath == abs {
-			return template, nil
-		}
+		return template, nil
 	}
 
-	return Template{}, fmt.Errorf("template with name '%s' was not found", path)
+	return nil, fmt.Errorf("unable to find template '%s': %w", name, errors[0])
 }
 
 func NewTemplateManager() *TemplateManager {
-	return &TemplateManager{}
+	internalTemplateSource, _ := NewJsonTemplateSource(string(resources.TemplatesJson))
+
+	return &TemplateManager{
+		sources: []TemplateSource{internalTemplateSource},
+	}
 }
 
 // PromptTemplate asks the user to select a template.
 // An empty Template can be returned if the user selects the minimal template. This corresponds to the minimal azd template.
 // See
-func PromptTemplate(ctx context.Context, message string, console input.Console) (Template, error) {
+func PromptTemplate(ctx context.Context, message string, console input.Console) (*Template, error) {
 	templateManager := NewTemplateManager()
 	templates, err := templateManager.ListTemplates()
 
 	if err != nil {
-		return Template{}, fmt.Errorf("prompting for template: %w", err)
+		return nil, fmt.Errorf("prompting for template: %w", err)
 	}
 
 	choices := make([]string, 0, len(templates)+1)
@@ -83,11 +82,11 @@ func PromptTemplate(ctx context.Context, message string, console input.Console) 
 	console.Message(ctx, "")
 
 	if err != nil {
-		return Template{}, fmt.Errorf("prompting for template: %w", err)
+		return nil, fmt.Errorf("prompting for template: %w", err)
 	}
 
 	if selected == 0 {
-		return Template{}, nil
+		return nil, nil
 	}
 
 	template := templates[selected-1]

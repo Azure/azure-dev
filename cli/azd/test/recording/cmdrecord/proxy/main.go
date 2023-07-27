@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/test/recording/cmdrecord"
 	"gopkg.in/dnaeon/go-vcr.v3/recorder"
@@ -26,12 +27,14 @@ func (e ErrExitCode) Error() string {
 
 type App struct {
 	config cmdrecord.Options
+
+	execDir string
 }
 
 func (a *App) Handle() error {
 	switch a.config.RecordMode {
 	case recorder.ModeRecordOnly:
-		interaction, err := getInteractionNumber()
+		interaction, err := a.loadIncrementInteractionNumber()
 		if err != nil {
 			return fmt.Errorf("getting interaction number: %w", err)
 		}
@@ -46,7 +49,28 @@ func (a *App) Handle() error {
 			return err
 		}
 
+		pathList := filepath.SplitList(os.Getenv("PATH"))
+		for i, dir := range pathList {
+			if dir == a.execDir {
+				pathList = append(pathList[:i], pathList[i+1:]...)
+			}
+		}
+
+		err = os.Setenv("PATH", strings.Join(pathList, string(os.PathListSeparator)))
+		if err != nil {
+			return fmt.Errorf("setting new PATH: %w", err)
+		}
+
 		path, err := exec.LookPath(a.config.CmdName)
+		if err != nil {
+			return err
+		}
+
+		if filepath.Dir(path) == a.execDir {
+			panic("infinite recursion detected")
+		}
+
+		dir, err := os.Getwd()
 		if err != nil {
 			return err
 		}
@@ -57,6 +81,7 @@ func (a *App) Handle() error {
 			Stdin:  os.Stdin,
 			Stdout: io.MultiWriter(os.Stdout, stdOut),
 			Stderr: io.MultiWriter(os.Stderr, stdErr),
+			Dir:    dir,
 		}
 
 		err = cmd.Run()
@@ -81,7 +106,7 @@ func (a *App) Handle() error {
 
 		return nil
 	case recorder.ModeReplayOnly:
-		interaction, err := getInteractionNumber()
+		interaction, err := a.loadIncrementInteractionNumber()
 		if err != nil {
 			return fmt.Errorf("getting interaction number: %w", err)
 		}
@@ -139,7 +164,11 @@ func (a *App) Handle() error {
 			return fmt.Errorf("getting exit code as int: %w", err)
 		}
 
-		return ErrExitCode{res}
+		if res != 0 {
+			return ErrExitCode{res}
+		}
+
+		return nil
 	case recorder.ModePassthrough:
 		cmd := exec.Cmd{
 			Path:   a.config.CmdName,
@@ -179,12 +208,13 @@ func (a *App) exitCodeFile(interaction int) string {
 		fmt.Sprintf("%s.%d.exit", a.config.CmdName, interaction))
 }
 
-func getInteractionNumber() (int, error) {
+func (a *App) loadIncrementInteractionNumber() (int, error) {
 	const name = "int-number.txt"
-	contents, err := os.ReadFile(name)
+	contents, err := os.ReadFile(filepath.Join(a.execDir, name))
 	if errors.Is(err, os.ErrNotExist) {
-		return 0, nil
+		return 0, os.WriteFile(name, []byte(fmt.Sprint(1)), 0644)
 	}
+
 	if err != nil {
 		return -1, err
 	}
@@ -204,7 +234,8 @@ func runMain() error {
 		return fmt.Errorf("getting current exec: %w", err)
 	}
 
-	contents, err := os.ReadFile(filepath.Join(filepath.Dir(exec), cmdrecord.ProxyConfigName))
+	execDir := filepath.Dir(exec)
+	contents, err := os.ReadFile(filepath.Join(execDir, cmdrecord.ProxyConfigName))
 	if err != nil {
 		return fmt.Errorf("reading %s: %w", cmdrecord.ProxyConfigName, err)
 	}
@@ -215,21 +246,20 @@ func runMain() error {
 		return fmt.Errorf("unmarshaling %s: %w", cmdrecord.ProxyConfigName, err)
 	}
 
-	app := App{config: config}
+	app := App{config: config, execDir: execDir}
 	return app.Handle()
 }
 
 func main() {
 	err := runMain()
-	if err != nil {
-		fmt.Fprintln(os.Stderr, err.Error())
-	}
 
 	var exitCodeErr *ErrExitCode
 	if errors.Is(err, exitCodeErr) {
 		os.Exit(exitCodeErr.ExitCode)
 	}
 	if err != nil {
+		fmt.Fprintln(os.Stderr, err.Error())
+
 		os.Exit(1)
 	}
 }

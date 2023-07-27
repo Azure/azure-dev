@@ -2,6 +2,10 @@
 
 ## 1.1.1 (Unreleased)
 
+### Bugs Fixed
+
+- [[2572]](https://github.com/Azure/azure-dev/pull/2572) Decrease expiration time of service principal secret from default (24 months) to 180 days
+
 ## 1.1.0 (2023-07-12)
 
 ### Features Added

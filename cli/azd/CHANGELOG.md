@@ -13,6 +13,10 @@
 - [[2569]](https://github.com/Azure/azure-dev/pull/2569) Fix `azd down` so it works after a failed `azd provision`
 - [[2367]](https://github.com/Azure/azure-dev/pull/2367) Don't fail AKS deployment for failed environment substitution
 
+### Other changes
+
+- [[2572]](https://github.com/Azure/azure-dev/pull/2572) Decrease expiration time of service principal secret from default (24 months) to 180 days
+
 ## 1.1.0 (2023-07-12)
 
 ### Features Added

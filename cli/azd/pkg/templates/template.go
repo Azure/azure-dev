@@ -12,6 +12,9 @@ type Template struct {
 	// Name is the friendly short name of the template.
 	Name string `json:"name"`
 
+	// The source of the template
+	Source string `json:"source,omitempty"`
+
 	// Description is a long description of the template.
 	Description string `json:"description"`
 
@@ -19,6 +22,15 @@ type Template struct {
 	// "{owner}/{repo}" for GitHub repositories,
 	// or "{repo}" for GitHub repositories under Azure-Samples (default organization).
 	RepositoryPath string `json:"repositoryPath"`
+}
+
+func (t *Template) ClonePath() string {
+	clonePath, err := Absolute(t.RepositoryPath)
+	if err != nil {
+		return t.RepositoryPath
+	}
+
+	return clonePath
 }
 
 // Display writes a string representation of the template suitable for display.
@@ -33,6 +45,7 @@ func (t *Template) Display(writer io.Writer) error {
 	text := [][]string{
 		{"RepositoryPath", ":", t.RepositoryPath},
 		{"Name", ":", t.Name},
+		{"Source", ":", t.Source},
 		{"Description", ":", t.Description},
 	}
 

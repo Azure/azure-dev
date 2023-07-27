@@ -2,281 +2,281 @@
     {
         "name": "WordPress with Azure Container Apps",
         "description": "A blueprint to easily and quickly create and deploy your first scalable and secure WordPress site to Azure, leveraging Azure Container Apps with Azure Database for MariaDb.",
-        "repositoryPath": "https://github.com/Azure-Samples/apptemplate-wordpress-on-ACA"
+        "repositoryPath": "apptemplate-wordpress-on-ACA"
     },
     {
         "name": "React Web App with C# API and MongoDB",
         "description": "A blueprint for getting a React web app with a C# API and a MongoDB database on Azure. The blueprint includes sample application code (a ToDo web app) which can be removed and replaced with your own application code. Add your own source code and leverage the Infrastructure as Code assets (written in Bicep) to get up and running quickly.",
-        "repositoryPath": "https://github.com/Azure-Samples/todo-csharp-cosmos-sql"
+        "repositoryPath": "todo-csharp-cosmos-sql"
     },
     {
         "name": "Rock, Paper, Orleans (RPO) - Distributed .NET",
         "description": "Rock, Paper, Orleans (RPO) is a game built using dotnet, Orleans, and runs in Azure.The idea behind RPO is that you write a \"player bot\" in which you implement your player logic.",
-        "repositoryPath": "https://github.com/bradygaster/RockPaperOrleans"
+        "repositoryPath": "bradygaster/RockPaperOrleans"
     },
     {
         "name": "Scalable Django on Azure App Service",
         "description": "Deploy your Django web application with Microsoft Azure, for scale, using a cloud architecture with integrated monitoring and load testing.",
-        "repositoryPath": "https://github.com/tonybaloney/django-on-azure"
+        "repositoryPath": "tonybaloney/django-on-azure"
     },
     {
         "name": "React Web App with Node.js API and MongoDB",
         "description": "A blueprint for getting a React web app with a Node.js API and a MongoDB database on Azure. The blueprint includes sample application code (a ToDo web app) which can be removed and replaced with your own application code. Add your own source code and leverage the Infrastructure as Code assets (written in Bicep) to get up and running quickly. This architecture is for hosting web apps and APIs without worrying about the infrastructure.",
-        "repositoryPath": "https://github.com/Azure-Samples/todo-nodejs-mongo"
+        "repositoryPath": "todo-nodejs-mongo"
     },
     {
         "name": "Static React Web App + Functions with Node.js API and MongoDB",
         "description": "A blueprint for getting a React web app with a Node.js API and a MongoDB database on Azure. The blueprint includes sample application code (a ToDo web app) which can be removed and replaced with your own application code. Add your own source code and leverage the Infrastructure as Code assets (written in Bicep) to get up and running quickly. This architecture is for hosting static web apps with serverless logic and functionality.",
-        "repositoryPath": "https://github.com/Azure-Samples/todo-nodejs-mongo-swa-func"
+        "repositoryPath": "todo-nodejs-mongo-swa-func"
     },
     {
         "name": "Static React Web App + Functions with Python API and MongoDB",
         "description": "A blueprint for getting a React.js web app with Python (FastAPI) API and a MongoDB API in Cosmos database onto Azure. The frontend, currently a ToDo application, is designed as a placeholder that can easily be removed and replaced with your own frontend code. This architecture is for hosting static web apps with serverless logic and functionality.",
-        "repositoryPath": "https://github.com/Azure-Samples/todo-python-mongo-swa-func"
+        "repositoryPath": "todo-python-mongo-swa-func"
     },
     {
         "name": "React Web App with Python API and MongoDB",
         "description": "A blueprint for getting a React.js web app with Python (FastAPI) API and a MongoDB API in Cosmos database onto Azure. The blueprint includes sample application code (a ToDo web app) which can be removed and replaced with your own application code. Add your own source code and leverage the Infrastructure as Code assets (written in Terraform) to get up and running quickly. This architecture is for hosting web apps and APIs without worrying about the infrastructure.",
-        "repositoryPath": "https://github.com/Azure-Samples/todo-python-mongo-terraform"
+        "repositoryPath": "todo-python-mongo-terraform"
     },
     {
         "name": "React Web App with Node.js API and MongoDB",
         "description": "A blueprint for getting a React web app with a Node.js API and a MongoDB database on Azure. The blueprint includes sample application code (a ToDo web app) which can be removed and replaced with your own application code. Add your own source code and leverage the Infrastructure as Code assets (written in Terraform) to get up and running quickly. This architecture is for hosting web apps and APIs without worrying about the infrastructure.",
-        "repositoryPath": "https://github.com/Azure-Samples/todo-nodejs-mongo-terraform"
+        "repositoryPath": "todo-nodejs-mongo-terraform"
     },
     {
         "name": "React Web App with Python API and MongoDB",
         "description": "A blueprint for getting a React.js web app with Python (FastAPI) API and a MongoDB API in Cosmos database onto Azure. The blueprint includes sample application code (a ToDo web app) which can be removed and replaced with your own application code. Add your own source code and leverage the Infrastructure as Code assets (written in Bicep) to get up and running quickly. This architecture is for hosting web apps and APIs without worrying about the infrastructure.",
-        "repositoryPath": "https://github.com/Azure-Samples/todo-python-mongo"
+        "repositoryPath": "todo-python-mongo"
     },
     {
         "name": "Containerized React Web App with Node.js API and MongoDB",
         "description": "A blueprint for getting a React web app with a Node.js API and a MongoDB database onto Azure. The blueprint includes sample application code (a ToDo web app) which can be removed and replaced with your own application code. Add your own source code and leverage the Infrastructure as Code assets (written in Bicep) to get up and running quickly. This architecture is for running containerized apps or microservices on a serverless platform   This architecture is for running containerized microservices without managing the servers.",
-        "repositoryPath": "https://github.com/Azure-Samples/todo-nodejs-mongo-aca"
+        "repositoryPath": "todo-nodejs-mongo-aca"
     },
     {
         "name": "Containerized React Web App with Python API and MongoDB",
         "description": "A blueprint for getting a React.js web app with Python (FastAPI) API and a MongoDB API in Cosmos database onto Azure. The frontend, currently a ToDo application, is designed as a placeholder that can easily be removed and replaced with your own frontend code. This architecture is for running containerized apps or microservices on a serverless platform.",
-        "repositoryPath": "https://github.com/Azure-Samples/todo-python-mongo-aca"
+        "repositoryPath": "todo-python-mongo-aca"
     },
     {
         "name": "React Web App with C# API and SQL Database ",
         "description": "A blueprint for getting a React web app with a C# API and a SQL database on Azure. The blueprint includes sample application code (a ToDo web app) which can be removed and replaced with your own application code. Add your own source code and leverage the Infrastructure as Code assets (written in Bicep) to get up and running quickly.",
-        "repositoryPath": "https://github.com/Azure-Samples/todo-csharp-sql"
+        "repositoryPath": "todo-csharp-sql"
     },
     {
         "name": "React Web App with Java API and MongoDB ",
         "description": "A blueprint for getting a React.js web app with a Java API and a MongoDB database on Azure. The blueprint includes sample application code (a ToDo web app) which can be removed and replaced with your own application code. Add your own source code and leverage the Infrastructure as Code assets (written in Bicep) to get up and running quickly. This architecture is for hosting web apps and APIs without worrying about the infrastructure.",
-        "repositoryPath": "https://github.com/Azure-Samples/todo-java-mongo"
+        "repositoryPath": "todo-java-mongo"
     },
     {
         "name": "Containerized React Web App with Java API and MongoDB",
         "description": "A blueprint for getting a React web app with a Java API and a MongoDB database on Azure. The blueprint includes sample application code (a ToDo web app) which can be removed and replaced with your own application code. Add your own source code and leverage the Infrastructure as Code assets (written in Bicep) to get up and running quickly. This architecture is for running containerized apps or microservices on a serverless platform.",
-        "repositoryPath": "https://github.com/Azure-Samples/todo-java-mongo-aca"
+        "repositoryPath": "todo-java-mongo-aca"
     },
     {
         "name": "Static React Web App + Functions with C# API and SQL Database",
         "description": "A blueprint for getting a React web app with a C# API and a SQL database on Azure. The blueprint includes sample application code (a ToDo web app) which can be removed and replaced with your own application code. Add your own source code and leverage the Infrastructure as Code assets (written in Bicep) to get up and running quickly. This architecture is for hosting static web apps with serverless logic and functionality.",
-        "repositoryPath": "https://github.com/Azure-Samples/todo-csharp-sql-swa-func"
+        "repositoryPath": "todo-csharp-sql-swa-func"
     },
     {
         "name": "Kubernetes React Web App with Node.js API and MongoDB",
         "description": "A blueprint for getting a React.js web app with a Node.js API and a MongoDB database on Azure. The blueprint includes sample application code (a ToDo web app) which can be removed and replaced with your own application code. Add your own source code and leverage the Infrastructure as Code assets (written in Bicep) to get up and running quickly. This architecture is for running Kubernetes clusters without setting up the control plane.",
-        "repositoryPath": "https://github.com/Azure-Samples/todo-nodejs-mongo-aks"
+        "repositoryPath": "todo-nodejs-mongo-aks"
     },
     {
         "name": "ChatGPT Plugin using Python (FastAPI)",
         "description": "This is a quickstart for creating a ChatGPT Plugin using Python and Azure.",
-        "repositoryPath": "https://github.com/Azure-Samples/openai-plugin-fastapi"
+        "repositoryPath": "openai-plugin-fastapi"
     },
     {
         "name": "ChatGPT + Enterprise Data with Azure OpenAI and Cognitive Search",
         "description": "A sample app for the Retrieval-Augmented Generation pattern running in Azure, using Azure Cognitive Search for retrieval and Azure OpenAI large language models to power ChatGPT-style and Q&A experiences.",
-        "repositoryPath": "https://github.com/Azure-Samples/azure-search-openai-demo-csharp/"
+        "repositoryPath": "azure-search-openai-demo-csharp/"
     },
     {
         "name": "Simple Chat Application using Azure OpenAI",
         "description": "A sample chat app that uses Python and the Flask framework to stream ChatGPT completions as server-sent events to a simple frontend.",
-        "repositoryPath": "https://github.com/Azure-Samples/chatgpt-quickstart"
+        "repositoryPath": "chatgpt-quickstart"
     },
     {
         "name": "Azure Health Data Services Toolkit Azure Function Quickstart",
         "description": "This quickstart will walk you through creating a simple custom operation on top of the FHIR Service using Azure Functions. We will cover everything from deploying infrastructure, debugging locally, and deploying to Azure.",
-        "repositoryPath": "https://github.com/Azure-Samples/azure-health-data-services-toolkit-fhir-function-quickstart"
+        "repositoryPath": "azure-health-data-services-toolkit-fhir-function-quickstart"
     },
     {
         "name": "Enterprise-Grade Reference Architecture for JavaScript",
         "description": "A reference architecture and components for building enterprise-grade modern composable frontends (or micro-frontends) and cloud-native applications. It is a collection of best practices, architecture patterns, and functional components that can be used to build and deploy modern JavaScript applications to Azure.",
-        "repositoryPath": "https://github.com/Azure-Samples/contoso-real-estate"
+        "repositoryPath": "contoso-real-estate"
     },
     {
         "name": "Python (Django) Web App with PostgreSQL in VNet",
         "description": "A restaurants review web app that uses whitenoise for static assets and PostgreSQL for the database. Ready for deployment on App Service with a PostgreSQL Flexible Server inside a VNet.",
-        "repositoryPath": "https://github.com/Azure-Samples/msdocs-django-postgresql-sample-app"
+        "repositoryPath": "msdocs-django-postgresql-sample-app"
     },
     {
         "name": "Python (Django) Web App with PostgreSQL via Azure Container Apps",
         "description": "A space tourism web app that uses PostgreSQL for the database. The web app is containerize and deploy with Azure Container Apps with secrets managed by Azure Key Vault",
-        "repositoryPath": "https://github.com/Azure-Samples/azure-django-postgres-aca"
+        "repositoryPath": "azure-django-postgres-aca"
     },
     {
         "name": "Python (Flask) Web App with PostgreSQL in VNet",
         "description": "A restaurants review web app with a PostgreSQL database, written in the Python Flask framework plus SQL-Alchemy plus Alembic for database interactions. Ready for deployment on App Service with a PostgreSQL Flexible Server inside a VNet.",
-        "repositoryPath": "https://github.com/Azure-Samples/msdocs-flask-postgresql-sample-app"
+        "repositoryPath": "msdocs-flask-postgresql-sample-app"
     },
     {
         "name": "Microservices App - Dapr PubSub C# ACA ServiceBus",
         "description": "A complete microservice application featuring Dapr Pub-Sub, deployed to Azure Container Apps and Azure Service Bus Topics with dead-lettering support.",
-        "repositoryPath": "https://github.com/Azure-Samples/pubsub-dapr-csharp-servicebus"
+        "repositoryPath": "pubsub-dapr-csharp-servicebus"
     },
     {
         "name": "Microservices App - Dapr PubSub Python ACA ServiceBus",
         "description": "A complete microservice application featuring Dapr Pub-Sub, deployed to Azure Container Apps and Azure Service Bus Topics with dead-lettering support.",
-        "repositoryPath": "https://github.com/Azure-Samples/pubsub-dapr-python-servicebus"
+        "repositoryPath": "pubsub-dapr-python-servicebus"
     },
     {
         "name": "Microservices App - Dapr PubSub Node.js ACA ServiceBus",
         "description": "A complete microservice application featuring Dapr Pub-Sub, deployed to Azure Container Apps and Azure Service Bus Topics with dead-lettering support.",
-        "repositoryPath": "https://github.com/Azure-Samples/pubsub-dapr-nodejs-servicebus"
+        "repositoryPath": "pubsub-dapr-nodejs-servicebus"
     },
     {
         "name": "Microservices App - Dapr Bindings Cron C# ACA PostgreSQL",
         "description": "Create microservice to demonstrate Dapr\"s bindings API to work with external systems as inputs and outputs. The service listens to input binding events from a system CRON and then outputs the contents of local data to a PostgreSQL output binding.",
-        "repositoryPath": "https://github.com/Azure-Samples/bindings-dapr-csharp-cron-postgres"
+        "repositoryPath": "bindings-dapr-csharp-cron-postgres"
     },
     {
         "name": "Microservices App - Dapr Bindings Cron Python ACA PostgreSQL",
         "description": "Create a microservice app to demonstrate Dapr\"s bindings API to work with external systems as inputs and outputs. The service listens to input binding events from a system CRON and then outputs the contents of local data to a postgreSQL output binding.",
-        "repositoryPath": "https://github.com/Azure-Samples/bindings-dapr-python-cron-postgres"
+        "repositoryPath": "bindings-dapr-python-cron-postgres"
     },
     {
         "name": "Microservices App - Dapr Bindings Cron Node.js ACA PostgreSQL",
         "description": "Create a microservice app to demonstrate Dapr\"s bindings API to work with external systems as inputs and outputs. The service listens to input binding events from a system CRON and then outputs the contents of local data to a postgreSQL output binding.",
-        "repositoryPath": "https://github.com/Azure-Samples/bindings-dapr-nodejs-cron-postgres"
+        "repositoryPath": "bindings-dapr-nodejs-cron-postgres"
     },
     {
         "name": "Microservices App - Dapr Service Invoke Node.js ACA",
         "description": "Create two microservices that communicate using Dapr\"s Service Invocation API. The Service Invocation API enables your applications to communicate reliably and securely by leveraging auto-mTLS and built-in retries.",
-        "repositoryPath": "https://github.com/Azure-Samples/svc-invoke-dapr-nodejs"
+        "repositoryPath": "svc-invoke-dapr-nodejs"
     },
     {
         "name": "Microservices App - Dapr Service Invoke Python ACA",
         "description": "Create two microservices that communicate using Dapr\"s Service Invocation API. The Service Invocation API enables your applications to communicate reliably and securely by leveraging auto-mTLS and built-in retries.",
-        "repositoryPath": "https://github.com/Azure-Samples/svc-invoke-dapr-python"
+        "repositoryPath": "svc-invoke-dapr-python"
     },
     {
         "name": "Microservices App - Dapr Service Invoke C# ACA",
         "description": "Create two microservices that communicate using Dapr\"s Service Invocation API. The Service Invocation API enables your applications to communicate reliably and securely by leveraging auto-mTLS and built-in retries.",
-        "repositoryPath": "https://github.com/Azure-Samples/svc-invoke-dapr-csharp"
+        "repositoryPath": "svc-invoke-dapr-csharp"
     },
     {
         "name": "ChatGPT and Enterprise data with Azure OpenAI and Cognitive Search",
         "description": "Demonstration of how to leverage Azure OpenAI and Cognitive Search to enable Information Search and Discovery over organizational content.",
-        "repositoryPath": "https://github.com/Azure-Samples/azure-search-openai-demo"
+        "repositoryPath": "azure-search-openai-demo"
     },
     {
         "name": "FastAPI on Azure Functions",
         "description": "A simple FastAPI app deployed to Azure Functions. Can also be run and debugged locally with the Azure Functions Core Tool emulator.",
-        "repositoryPath": "https://github.com/Azure-Samples/fastapi-on-azure-functions"
+        "repositoryPath": "fastapi-on-azure-functions"
     },
     {
         "name": "Spring PetClinic - Java Spring MySQL",
         "description": "Spring PetClinic application using a set of Azure solutions. Azure App Service for app hosting, Azure Database for MySQL for storage, Azure Key Vault for securing secret and Azure Application Insights for monitoring and logging.",
-        "repositoryPath": "https://github.com/Azure-Samples/spring-petclinic-java-mysql"
+        "repositoryPath": "spring-petclinic-java-mysql"
     },
     {
         "name": "Event Driven Java Application with Azure Service Bus on Azure Spring Apps",
         "description": "A complete event-driven application that includes everything you need to build, deploy, and monitor an Azure solution. ",
-        "repositoryPath": "https://github.com/Azure-Samples/ASA-Samples-Event-Driven-Application"
+        "repositoryPath": "ASA-Samples-Event-Driven-Application"
     },
     {
         "name": "SAP Cloud SDK on Azure App Service Quickstart (TypeScript)",
         "description": "This repos serves as quick-start project showcasing SAP Cloud SDK for JavaScript OData consumption running on Azure App Services. Its primary purpose is to set you up for success for your SAP extension project on Azure and reduce the lead time to your first successful deployment as much as possible with developer friendly commands.",
-        "repositoryPath": "https://github.com/Azure-Samples/app-service-javascript-sap-cloud-sdk-quickstart"
+        "repositoryPath": "app-service-javascript-sap-cloud-sdk-quickstart"
     },
     {
         "name": "Service Bus messages processing to Dataverse",
         "description": "Starter solution to process Service Bus messages to Dataverse, C# for the Azure Functions app processing the messages, Azure Service Bus for the reception of the messages, and Azure Monitor for monitoring and logging.",
-        "repositoryPath": "https://github.com/rpothin/servicebus-csharp-function-dataverse"
+        "repositoryPath": "rpothin/servicebus-csharp-function-dataverse"
     },
     {
         "name": "Simple Flask AZD",
         "description": "A tiny, no-frills, template to deploy Python\"s Flask web framework to Azure App Service in the free tier.",
-        "repositoryPath": "https://github.com/tonybaloney/simple-flask-azd"
+        "repositoryPath": "tonybaloney/simple-flask-azd"
     },
     {
         "name": "Function App - C# AI Text Summarize",
         "description": "This sample shows how to take text documents as a input via BlobTrigger, does Text Summarization processing using the AI Congnitive Language service, and then outputs to another text document using BlobOutput binding.",
-        "repositoryPath": "https://github.com/Azure-Samples/function-csharp-ai-textsummarize"
+        "repositoryPath": "function-csharp-ai-textsummarize"
     },
     {
         "name": "Function App - Python AI Text Summarize",
         "description": "This sample shows how to take text documents as a input via BlobTrigger, does Text Summarization processing using the AI Congnitive Language service, and then outputs to another text document using BlobOutput binding. Uses Azure Functions Python v2 programming model.",
-        "repositoryPath": "https://github.com/Azure-Samples/function-python-ai-textsummarize"
+        "repositoryPath": "function-python-ai-textsummarize"
     },
     {
         "name": "Flask Container with CDN",
         "description": "A simple photos website written with Python Flask and Bootstrap. Can be run locally with Docker and then deployed to Azure Container Apps with an Azure CDN in front.",
-        "repositoryPath": "https://github.com/pamelafox/flask-gallery-container-app"
+        "repositoryPath": "pamelafox/flask-gallery-container-app"
     },
     {
         "name": "Flask Surveys Container App",
         "description": "A survey app written with the Python Flask framework which uses Flask-SQLAlchemy with a PostgreSQL database. Can be developed locally with Docker Compose and then deployed to Azure Container Apps (using KeyVault SDK for Flask secrets).",
-        "repositoryPath": "https://github.com/pamelafox/flask-surveys-container-app"
+        "repositoryPath": "pamelafox/flask-surveys-container-app"
     },
     {
         "name": "Flask API on Azure Container Apps",
         "description": "A simple JSON API using the Python Flask framework, designed for deployment on Azure Container Apps.",
-        "repositoryPath": "https://github.com/pamelafox/simple-flask-api-container"
+        "repositoryPath": "pamelafox/simple-flask-api-container"
     },
     {
         "name": "FastAPI with API Management",
         "description": "A FastAPI app deployed as a secured Azure Function with an API Management Policy in front, set up such that API calls",
-        "repositoryPath": "https://github.com/pamelafox/fastapi-azure-function-apim"
+        "repositoryPath": "pamelafox/fastapi-azure-function-apim"
     },
     {
         "name": "Flask Chart API on ACA and CDN",
         "description": "A Charts API that renders PNGs of bar and pie charts, built with Python Flask, APIFlask, and matplotlib. Can be run locally with Docker and then deployed to Azure Container Apps with an Azure CDN in front.",
-        "repositoryPath": "https://github.com/pamelafox/flask-charts-api-container-app"
+        "repositoryPath": "pamelafox/flask-charts-api-container-app"
     },
     {
         "name": "Static Maps API Function and CDN",
         "description": "A FastAPI app that renders map images for the given location. Deployed as a secured Azure function with an Azure CDN in front for caching.",
-        "repositoryPath": "https://github.com/pamelafox/staticmaps-function"
+        "repositoryPath": "pamelafox/staticmaps-function"
     },
     {
         "name": "Jupyter Notebooks Web App on Azure Container Apps",
         "description": "A web application used for hosting, sharing, and interacting with Jupyter Notebooks via Mercury, hosted on Azure Container Apps.",
-        "repositoryPath": "https://github.com/savannahostrowski/jupyter-mercury-aca"
+        "repositoryPath": "savannahostrowski/jupyter-mercury-aca"
     },
     {
         "name": "Python (Django) Web App with PostgreSQL and Key Vault",
         "description": "A Python Django app on App Service with a PostgreSQL flexible server database. Database access is restricted to Azure IPs, and all administrative secrets are stored in Key Vault.",
-        "repositoryPath": "https://github.com/pamelafox/django-quiz-app"
+        "repositoryPath": "pamelafox/django-quiz-app"
     },
     {
         "name": "Reliable Web App Pattern for .NET",
         "description": "A multi-region enterprise web app with a 99.9% SLO and a focus on 12-factor apps and the well-architected framework. The sample app creates a concert booking application.",
-        "repositoryPath": "https://github.com/Azure/reliable-web-app-pattern-dotnet"
+        "repositoryPath": "Azure/reliable-web-app-pattern-dotnet"
     },
     {
         "name": "FastAPI on Azure Container Apps",
         "description": "A simple JSON API using the Python FastAPI app framework, designed for deployment on Azure Container Apps. Includes auto-configuration of gunicorn with uvicorn worker count based on CPUs available.",
-        "repositoryPath": "https://github.com/pamelafox/simple-fastapi-container"
+        "repositoryPath": "pamelafox/simple-fastapi-container"
     },
     {
         "name": "Containerized Apps on Azure Kubernetes Service",
         "description": "A base Azure Kubernetes Service template with placeholders to include the application source code (no application source code included) and Kubernetes manifest files.",
-        "repositoryPath": "https://github.com/sabbour/aks-app-template"
+        "repositoryPath": "sabbour/aks-app-template"
     },
     {
         "name": "React Component Toolkit with ChatGPT and OpenAI ",
         "description": "A sample demo for building and testing react components and includes a set of unique features including AI component generation and automatic conversion to Azure APIM Widgets",
-        "repositoryPath": "https://github.com/Azure-Samples/react-component-toolkit-openai-demo"
+        "repositoryPath": "react-component-toolkit-openai-demo"
     },
     {
         "name": "Python (Flask) Web App with PostgreSQL",
         "description": "A Python Flask app on App Service with a PostgreSQL flexible server database. Database access is restricted to Azure IPs, and admin password is generated randomly",
-        "repositoryPath": "https://github.com/pamelafox/flask-db-quiz-example"
+        "repositoryPath": "pamelafox/flask-db-quiz-example"
     }
 ]

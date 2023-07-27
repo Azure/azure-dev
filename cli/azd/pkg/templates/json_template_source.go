@@ -1,6 +1,7 @@
 package templates
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -8,11 +9,12 @@ import (
 )
 
 type jsonTemplateSource struct {
+	name      string
 	templates []*Template
 }
 
 // NewJsonTemplateSource creates a new template source from a JSON string.
-func NewJsonTemplateSource(jsonTemplates string) (TemplateSource, error) {
+func NewJsonTemplateSource(name string, jsonTemplates string) (Source, error) {
 	var templates []*Template
 	err := json.Unmarshal([]byte(jsonTemplates), &templates)
 	if err != nil {
@@ -20,15 +22,20 @@ func NewJsonTemplateSource(jsonTemplates string) (TemplateSource, error) {
 	}
 
 	return &jsonTemplateSource{
+		name:      name,
 		templates: templates,
 	}, nil
 }
 
-func (jts *jsonTemplateSource) ListTemplates() ([]*Template, error) {
+func (jts *jsonTemplateSource) Name() string {
+	return jts.name
+}
+
+func (jts *jsonTemplateSource) ListTemplates(ctx context.Context) ([]*Template, error) {
 	return jts.templates, nil
 }
 
-func (jts *jsonTemplateSource) GetTemplate(name string) (*Template, error) {
+func (jts *jsonTemplateSource) GetTemplate(ctx context.Context, name string) (*Template, error) {
 	index := slices.IndexFunc(jts.templates, func(t *Template) bool {
 		return t.Name == name
 	})

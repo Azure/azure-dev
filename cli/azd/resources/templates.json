@@ -2,81 +2,81 @@
   {
     "name": "Starter - Bicep",
     "description": "A starter template with Bicep as infrastructure provider",
-    "repositoryPath": "https://github.com/Azure-Samples/azd-starter-bicep"
+    "repositoryPath": "azd-starter-bicep"
   },
   {
     "name": "Starter - Terraform",
     "description": "A starter template with Terraform as infrastructure provider",
-    "repositoryPath": "https://github.com/Azure-Samples/azd-starter-terraform"
+    "repositoryPath": "azd-starter-terraform"
   },
   {
     "name": "React Web App with C# API and MongoDB",
     "description": "A blueprint for getting a React web app with a C# API and a MongoDB database on Azure. The blueprint includes sample application code (a ToDo web app) which can be removed and replaced with your own application code. Add your own source code and leverage the Infrastructure as Code assets (written in Bicep) to get up and running quickly.",
-    "repositoryPath": "https://github.com/Azure-Samples/todo-csharp-cosmos-sql"
+    "repositoryPath": "todo-csharp-cosmos-sql"
   },
   {
     "name": "React Web App with C# API and SQL Database",
     "description": "A blueprint for getting a React web app with a C# API and a SQL database on Azure. The blueprint includes sample application code (a ToDo web app) which can be removed and replaced with your own application code. Add your own source code and leverage the Infrastructure as Code assets (written in Bicep) to get up and running quickly.",
-    "repositoryPath": "https://github.com/Azure-Samples/todo-csharp-sql"
+    "repositoryPath": "todo-csharp-sql"
   },
   {
     "name": "React Web App with Java API and MongoDB",
     "description": "A blueprint for getting a React.js web app with a Java API and a MongoDB database on Azure. The blueprint includes sample application code (a ToDo web app) which can be removed and replaced with your own application code. Add your own source code and leverage the Infrastructure as Code assets (written in Bicep) to get up and running quickly. This architecture is for hosting web apps and APIs without worrying about the infrastructure.",
-    "repositoryPath": "https://github.com/Azure-Samples/todo-java-mongo"
+    "repositoryPath": "todo-java-mongo"
   },
   {
     "name": "React Web App with Node.js API and MongoDB",
     "description": "A blueprint for getting a React web app with a Node.js API and a MongoDB database on Azure. The blueprint includes sample application code (a ToDo web app) which can be removed and replaced with your own application code. Add your own source code and leverage the Infrastructure as Code assets (written in Bicep) to get up and running quickly. This architecture is for hosting web apps and APIs without worrying about the infrastructure.",
-    "repositoryPath": "https://github.com/Azure-Samples/todo-nodejs-mongo"
+    "repositoryPath": "todo-nodejs-mongo"
   },
   {
     "name": "React Web App with Node.js API and MongoDB - Terraform",
     "description": "A blueprint for getting a React web app with a Node.js API and a MongoDB database on Azure. The blueprint includes sample application code (a ToDo web app) which can be removed and replaced with your own application code. Add your own source code and leverage the Infrastructure as Code assets (written in Terraform) to get up and running quickly. This architecture is for hosting web apps and APIs without worrying about the infrastructure.",
-    "repositoryPath": "https://github.com/Azure-Samples/todo-nodejs-mongo-terraform"
+    "repositoryPath": "todo-nodejs-mongo-terraform"
   },
   {
     "name": "React Web App with Python API and MongoDB",
     "description": "A blueprint for getting a React.js web app with Python (FastAPI) API and a MongoDB API in Cosmos database onto Azure. The blueprint includes sample application code (a ToDo web app) which can be removed and replaced with your own application code. Add your own source code and leverage the Infrastructure as Code assets (written in Bicep) to get up and running quickly. This architecture is for hosting web apps and APIs without worrying about the infrastructure.",
-    "repositoryPath": "https://github.com/Azure-Samples/todo-python-mongo"
+    "repositoryPath": "todo-python-mongo"
   },
   {
     "name": "React Web App with Python API and MongoDB - Terraform",
     "description": "A blueprint for getting a React.js web app with Python (FastAPI) API and a MongoDB API in Cosmos database onto Azure. The blueprint includes sample application code (a ToDo web app) which can be removed and replaced with your own application code. Add your own source code and leverage the Infrastructure as Code assets (written in Terraform) to get up and running quickly. This architecture is for hosting web apps and APIs without worrying about the infrastructure.",
-    "repositoryPath": "https://github.com/Azure-Samples/todo-python-mongo-terraform"
+    "repositoryPath": "todo-python-mongo-terraform"
   },
   {
     "name": "Containerized React Web App with Java API and MongoDB",
     "description": "A blueprint for getting a React web app with a Java API and a MongoDB database on Azure. The blueprint includes sample application code (a ToDo web app) which can be removed and replaced with your own application code. Add your own source code and leverage the Infrastructure as Code assets (written in Bicep) to get up and running quickly. This architecture is for running containerized apps or microservices on a serverless platform.",
-    "repositoryPath": "https://github.com/Azure-Samples/todo-java-mongo-aca"
+    "repositoryPath": "todo-java-mongo-aca"
   },
   {
     "name": "Containerized React Web App with Node.js API and MongoDB",
     "description": "A blueprint for getting a React web app with a Node.js API and a MongoDB database onto Azure. The blueprint includes sample application code (a ToDo web app) which can be removed and replaced with your own application code. Add your own source code and leverage the Infrastructure as Code assets (written in Bicep) to get up and running quickly. This architecture is for running containerized apps or microservices on a serverless platform. This architecture is for running containerized microservices without managing the servers.",
-    "repositoryPath": "https://github.com/Azure-Samples/todo-nodejs-mongo-aca"
+    "repositoryPath": "todo-nodejs-mongo-aca"
   },
   {
     "name": "Containerized React Web App with Python API and MongoDB",
     "description": "A blueprint for getting a React.js web app with Python (FastAPI) API and a MongoDB API in Cosmos database onto Azure. The frontend, currently a ToDo application, is designed as a placeholder that can easily be removed and replaced with your own frontend code. This architecture is for running containerized apps or microservices on a serverless platform.",
-    "repositoryPath": "https://github.com/Azure-Samples/todo-python-mongo-aca"
+    "repositoryPath": "todo-python-mongo-aca"
   },
   {
     "name": "Static React Web App + Functions with C# API and SQL Database",
     "description": "A blueprint for getting a React web app with a C# API and a SQL database on Azure. The blueprint includes sample application code (a ToDo web app) which can be removed and replaced with your own application code. Add your own source code and leverage the Infrastructure as Code assets (written in Bicep) to get up and running quickly. This architecture is for hosting static web apps with serverless logic and functionality.",
-    "repositoryPath": "https://github.com/Azure-Samples/todo-csharp-sql-swa-func"
+    "repositoryPath": "todo-csharp-sql-swa-func"
   },
   {
     "name": "Static React Web App + Functions with Node.js API and MongoDB",
     "description": "A blueprint for getting a React web app with a Node.js API and a MongoDB database on Azure. The blueprint includes sample application code (a ToDo web app) which can be removed and replaced with your own application code. Add your own source code and leverage the Infrastructure as Code assets (written in Bicep) to get up and running quickly. This architecture is for hosting static web apps with serverless logic and functionality.",
-    "repositoryPath": "https://github.com/Azure-Samples/todo-nodejs-mongo-swa-func"
+    "repositoryPath": "todo-nodejs-mongo-swa-func"
   },
   {
     "name": "Static React Web App + Functions with Python API and MongoDB",
     "description": "A blueprint for getting a React.js web app with Python (FastAPI) API and a MongoDB API in Cosmos database onto Azure. The frontend, currently a ToDo application, is designed as a placeholder that can easily be removed and replaced with your own frontend code. This architecture is for hosting static web apps with serverless logic and functionality.",
-    "repositoryPath": "https://github.com/Azure-Samples/todo-python-mongo-swa-func"
+    "repositoryPath": "todo-python-mongo-swa-func"
   },
   {
     "name": "Kubernetes React Web App with Node.js API and MongoDB",
     "description": "A blueprint for getting a React.js web app with a Node.js API and a MongoDB database on Azure. The blueprint includes sample application code (a ToDo web app) which can be removed and replaced with your own application code. Add your own source code and leverage the Infrastructure as Code assets (written in Bicep) to get up and running quickly. This architecture is for running Kubernetes clusters without setting up the control plane.",
-    "repositoryPath": "https://github.com/Azure-Samples/todo-nodejs-mongo-aks"
+    "repositoryPath": "todo-nodejs-mongo-aks"
   }
 ]

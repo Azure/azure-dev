@@ -10,7 +10,7 @@ import (
 )
 
 // NewUrlTemplateSource creates a new template source from a URL.
-func NewUrlTemplateSource(ctx context.Context, url string) (TemplateSource, error) {
+func NewUrlTemplateSource(ctx context.Context, name string, url string) (Source, error) {
 	pipeline := runtime.NewPipeline("azd-templates", "version", runtime.PipelineOptions{}, nil)
 
 	req, err := runtime.NewRequest(ctx, http.MethodGet, url)
@@ -32,5 +32,5 @@ func NewUrlTemplateSource(ctx context.Context, url string) (TemplateSource, erro
 		return nil, fmt.Errorf("failed reading response body for template source '%s', %w", url, err)
 	}
 
-	return NewJsonTemplateSource(string(json))
+	return NewJsonTemplateSource(name, string(json))
 }

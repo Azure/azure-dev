@@ -9,15 +9,20 @@ import (
 	"io"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/spf13/cobra"
 )
 
 func templateNameCompletion(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-	templateManager := templates.NewTemplateManager()
-	templates, err := templateManager.ListTemplates()
+	templateManager, err := templates.NewTemplateManager(config.NewUserConfigManager())
+	if err != nil {
+		cobra.CompError(fmt.Sprintf("Error creating template manager: %w", err))
+		return []string{}, cobra.ShellCompDirectiveError
+	}
 
+	templates, err := templateManager.ListTemplates(cmd.Context())
 	if err != nil {
 		cobra.CompError(fmt.Sprintf("Error listing templates: %s", err))
 		return []string{}, cobra.ShellCompDirectiveError
@@ -87,7 +92,7 @@ func newTemplatesListAction(
 }
 
 func (tl *templatesListAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	listedTemplates, err := tl.templateManager.ListTemplates()
+	listedTemplates, err := tl.templateManager.ListTemplates(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -95,8 +100,12 @@ func (tl *templatesListAction) Run(ctx context.Context) (*actions.ActionResult, 
 	if tl.formatter.Kind() == output.TableFormat {
 		columns := []output.Column{
 			{
-				Heading:       "RepositoryPath",
-				ValueTemplate: "{{.RepositoryPath}}",
+				Heading:       "Repository Path",
+				ValueTemplate: "{{.ClonePath}}",
+			},
+			{
+				Heading:       "Source",
+				ValueTemplate: "{{.Source}}",
 			},
 			{
 				Heading:       "Name",
@@ -136,7 +145,7 @@ func newTemplatesShowAction(
 }
 
 func (a *templatesShowAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	matchingTemplate, err := a.templateManager.GetTemplate(a.path)
+	matchingTemplate, err := a.templateManager.GetTemplate(ctx, a.path)
 
 	if err != nil {
 		return nil, err

@@ -160,13 +160,11 @@ func (c *ApplicationItemRequestBuilder) AddPassword(ctx context.Context) (*Appli
 		return nil, fmt.Errorf("failed creating request: %w", err)
 	}
 
-	startDateTime := time.Now()
 	endDateTime := time.Now().Add(time.Hour * 24 * 180)
 	addPasswordRequest := ApplicationAddPasswordRequest{
 		PasswordCredential: ApplicationPasswordCredential{
-			DisplayName:   convert.RefOf("Azure Developer CLI"),
-			StartDateTime: &startDateTime,
-			EndDateTime:   &endDateTime,
+			DisplayName: convert.RefOf("Azure Developer CLI"),
+			EndDateTime: &endDateTime,
 		},
 	}
 

@@ -9,10 +9,12 @@ import (
 	"io"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/spf13/cobra"
+	"github.com/spf13/pflag"
 )
 
 func templateNameCompletion(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
@@ -22,7 +24,7 @@ func templateNameCompletion(cmd *cobra.Command, args []string, toComplete string
 		return []string{}, cobra.ShellCompDirectiveError
 	}
 
-	templates, err := templateManager.ListTemplates(cmd.Context())
+	templates, err := templateManager.ListTemplates(cmd.Context(), nil)
 	if err != nil {
 		cobra.CompError(fmt.Sprintf("Error listing templates: %s", err))
 		return []string{}, cobra.ShellCompDirectiveError
@@ -51,6 +53,7 @@ func templatesActions(root *actions.ActionDescriptor) *actions.ActionDescriptor 
 	group.Add("list", &actions.ActionDescriptorOptions{
 		Command:        newTemplateListCmd(),
 		ActionResolver: newTemplatesListAction,
+		FlagsResolver:  newTemplateListFlags,
 		OutputFormats:  []output.Format{output.JsonFormat, output.TableFormat},
 		DefaultFormat:  output.TableFormat,
 	})
@@ -65,6 +68,21 @@ func templatesActions(root *actions.ActionDescriptor) *actions.ActionDescriptor 
 	return group
 }
 
+type templateListFlags struct {
+	source string
+}
+
+func newTemplateListFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *templateListFlags {
+	flags := &templateListFlags{}
+	flags.Bind(cmd.Flags(), global)
+
+	return flags
+}
+
+func (f *templateListFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+	local.StringVarP(&f.source, "source", "s", "", "Filter templates by source")
+}
+
 func newTemplateListCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:     "list",
@@ -74,17 +92,20 @@ func newTemplateListCmd() *cobra.Command {
 }
 
 type templatesListAction struct {
+	flags           *templateListFlags
 	formatter       output.Formatter
 	writer          io.Writer
 	templateManager *templates.TemplateManager
 }
 
 func newTemplatesListAction(
+	flags *templateListFlags,
 	formatter output.Formatter,
 	writer io.Writer,
 	templateManager *templates.TemplateManager,
 ) actions.Action {
 	return &templatesListAction{
+		flags:           flags,
 		formatter:       formatter,
 		writer:          writer,
 		templateManager: templateManager,
@@ -92,7 +113,8 @@ func newTemplatesListAction(
 }
 
 func (tl *templatesListAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	listedTemplates, err := tl.templateManager.ListTemplates(ctx)
+	options := &templates.ListOptions{Source: tl.flags.source}
+	listedTemplates, err := tl.templateManager.ListTemplates(ctx, options)
 	if err != nil {
 		return nil, err
 	}
@@ -101,7 +123,7 @@ func (tl *templatesListAction) Run(ctx context.Context) (*actions.ActionResult, 
 		columns := []output.Column{
 			{
 				Heading:       "Repository Path",
-				ValueTemplate: "{{.ClonePath}}",
+				ValueTemplate: "{{.RepositoryPath}}",
 			},
 			{
 				Heading:       "Source",

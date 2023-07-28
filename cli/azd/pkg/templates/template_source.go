@@ -8,8 +8,8 @@ type Source interface {
 	Name() string
 	// ListTemplates returns a list of AZD compatible templates.
 	ListTemplates(ctx context.Context) ([]*Template, error)
-	// GetTemplate returns a template by name.
-	GetTemplate(ctx context.Context, name string) (*Template, error)
+	// GetTemplate returns a template by path.
+	GetTemplate(ctx context.Context, path string) (*Template, error)
 }
 
 type SourceKind string
@@ -21,6 +21,7 @@ const (
 )
 
 type SourceConfig struct {
+	Key      string     `json:"key,omitempty"`
 	Name     string     `json:"name"`
 	Type     SourceKind `json:"type"`
 	Location string     `json:"location"`

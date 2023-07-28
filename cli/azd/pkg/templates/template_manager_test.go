@@ -1,24 +1,27 @@
 package templates
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/resources"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestNewTemplateManager(t *testing.T) {
-	templateManager := NewTemplateManager()
-
+	templateManager, err := NewTemplateManager(config.NewUserConfigManager())
+	require.NoError(t, err)
 	require.NotNil(t, templateManager)
 }
 
 func TestListTemplates(t *testing.T) {
-	templateManager := NewTemplateManager()
-	templates, err := templateManager.ListTemplates()
+	templateManager, err := NewTemplateManager(config.NewUserConfigManager())
+	require.NoError(t, err)
+	templates, err := templateManager.ListTemplates(context.Background(), nil)
 
 	require.Greater(t, len(templates), 0)
 	require.Nil(t, err)
@@ -41,7 +44,7 @@ func TestListTemplates(t *testing.T) {
 
 	// Try listing multiple times to naively verify that the list is in a deterministic order
 	for i := 0; i < 10; i++ {
-		templates, err = templateManager.ListTemplates()
+		templates, err = templateManager.ListTemplates(context.Background(), nil)
 		assert.NoError(t, err)
 		assert.Len(t, templates, len(storedTemplates))
 		for i, template := range templates {
@@ -53,20 +56,22 @@ func TestListTemplates(t *testing.T) {
 func TestGetTemplateWithValidPath(t *testing.T) {
 	rel := "todo-nodejs-mongo"
 	full := "Azure-Samples/" + rel
-	templateManager := NewTemplateManager()
-	template, err := templateManager.GetTemplate(rel)
+	templateManager, err := NewTemplateManager(config.NewUserConfigManager())
+	require.NoError(t, err)
+	template, err := templateManager.GetTemplate(context.Background(), rel)
 	assert.NoError(t, err)
 	assert.Equal(t, rel, template.RepositoryPath)
 
-	template, err = templateManager.GetTemplate(full)
+	template, err = templateManager.GetTemplate(context.Background(), full)
 	assert.NoError(t, err)
 	require.Equal(t, rel, template.RepositoryPath)
 }
 
 func TestGetTemplateWithInvalidPath(t *testing.T) {
 	templateName := "not-a-valid-template-name"
-	templateManager := NewTemplateManager()
-	template, err := templateManager.GetTemplate(templateName)
+	templateManager, err := NewTemplateManager(config.NewUserConfigManager())
+	require.NoError(t, err)
+	template, err := templateManager.GetTemplate(context.Background(), templateName)
 
 	require.Equal(t, template, Template{})
 	require.NotNil(t, err)

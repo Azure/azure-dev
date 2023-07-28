@@ -4,8 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-
-	"golang.org/x/exp/slices"
 )
 
 type jsonTemplateSource struct {
@@ -32,17 +30,24 @@ func (jts *jsonTemplateSource) Name() string {
 }
 
 func (jts *jsonTemplateSource) ListTemplates(ctx context.Context) ([]*Template, error) {
+	for _, template := range jts.templates {
+		template.Source = jts.name
+	}
+
 	return jts.templates, nil
 }
 
-func (jts *jsonTemplateSource) GetTemplate(ctx context.Context, name string) (*Template, error) {
-	index := slices.IndexFunc(jts.templates, func(t *Template) bool {
-		return t.Name == name
-	})
-
-	if index < 0 {
-		return nil, fmt.Errorf("template with name '%s' was not found", name)
+func (jts *jsonTemplateSource) GetTemplate(ctx context.Context, path string) (*Template, error) {
+	templates, err := jts.ListTemplates(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("unable to list templates: %w", err)
 	}
 
-	return jts.templates[index], nil
+	for _, template := range templates {
+		if template.RepositoryPath == path {
+			return template, nil
+		}
+	}
+
+	return nil, fmt.Errorf("template with name '%s' was not found", path)
 }

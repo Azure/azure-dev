@@ -5,10 +5,12 @@ import (
 	"fmt"
 	"log"
 	"strconv"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/resources"
+	"golang.org/x/exp/slices"
 )
 
 type TemplateManager struct {
@@ -22,11 +24,24 @@ func NewTemplateManager(configManager config.UserConfigManager) (*TemplateManage
 	}, nil
 }
 
+type ListOptions struct {
+	Source string
+}
+
+type sourceFilterPredicate func(config *SourceConfig) bool
+
 // ListTemplates retrieves the list of templates in a deterministic order.
-func (tm *TemplateManager) ListTemplates(ctx context.Context) ([]*Template, error) {
+func (tm *TemplateManager) ListTemplates(ctx context.Context, options *ListOptions) ([]*Template, error) {
 	allTemplates := []*Template{}
 
-	sources, err := tm.getSources(ctx)
+	var filterPredicate sourceFilterPredicate
+	if options != nil && options.Source != "" {
+		filterPredicate = func(config *SourceConfig) bool {
+			return strings.ToLower(config.Key) == strings.ToLower(options.Source)
+		}
+	}
+
+	sources, err := tm.getSources(ctx, filterPredicate)
 	if err != nil {
 		return nil, fmt.Errorf("failed listing templates: %w", err)
 	}
@@ -37,9 +52,9 @@ func (tm *TemplateManager) ListTemplates(ctx context.Context) ([]*Template, erro
 			return nil, fmt.Errorf("unable to list templates: %w", err)
 		}
 
-		for _, template := range templates {
-			template.Source = source.Name()
-		}
+		slices.SortFunc(templates, func(a *Template, b *Template) bool {
+			return a.RepositoryPath < b.RepositoryPath
+		})
 
 		allTemplates = append(allTemplates, templates...)
 	}
@@ -50,7 +65,12 @@ func (tm *TemplateManager) ListTemplates(ctx context.Context) ([]*Template, erro
 func (tm *TemplateManager) GetTemplate(ctx context.Context, name string) (*Template, error) {
 	errors := []error{}
 
-	for _, source := range tm.sources {
+	sources, err := tm.getSources(ctx, nil)
+	if err != nil {
+		return nil, fmt.Errorf("failed listing templates: %w", err)
+	}
+
+	for _, source := range sources {
 		template, err := source.GetTemplate(ctx, name)
 		if err != nil {
 			errors = append(errors, err)
@@ -63,7 +83,7 @@ func (tm *TemplateManager) GetTemplate(ctx context.Context, name string) (*Templ
 	return nil, fmt.Errorf("unable to find template '%s': %w", name, errors[0])
 }
 
-func (tm *TemplateManager) getSources(ctx context.Context) ([]Source, error) {
+func (tm *TemplateManager) getSources(ctx context.Context, filter sourceFilterPredicate) ([]Source, error) {
 	if tm.sources != nil {
 		return tm.sources, nil
 	}
@@ -73,7 +93,7 @@ func (tm *TemplateManager) getSources(ctx context.Context) ([]Source, error) {
 		return nil, fmt.Errorf("failed parsing template sources: %w", err)
 	}
 
-	sources, err := tm.createSourcesFromConfig(ctx, configs)
+	sources, err := tm.createSourcesFromConfig(ctx, configs, filter)
 	if err != nil {
 		return nil, fmt.Errorf("failed initializing template sources: %w", err)
 	}
@@ -114,7 +134,8 @@ func (tm *TemplateManager) getSourceConfigs() (map[string]*SourceConfig, error) 
 				return nil, fmt.Errorf("unable to parse source location for '%s'", key)
 			}
 
-			sourceConfigs[name] = &SourceConfig{
+			sourceConfigs[key] = &SourceConfig{
+				Key:      key,
 				Type:     SourceKind(sourceType),
 				Name:     name,
 				Location: location,
@@ -126,7 +147,8 @@ func (tm *TemplateManager) getSourceConfigs() (map[string]*SourceConfig, error) 
 	if ok {
 		boolValue, err := strconv.ParseBool(rawAwesome.(string))
 		if err == nil && boolValue {
-			sourceConfigs["awesome"] = &SourceConfig{
+			sourceConfigs["awesome-azd"] = &SourceConfig{
+				Key:      "awesome-azd",
 				Name:     "Awesome AZD",
 				Type:     SourceUrl,
 				Location: "https://raw.githubusercontent.com/wbreza/azure-dev/template-source/cli/azd/resources/awesome-templates.json",
@@ -134,6 +156,7 @@ func (tm *TemplateManager) getSourceConfigs() (map[string]*SourceConfig, error) 
 		}
 	} else {
 		sourceConfigs["default"] = &SourceConfig{
+			Key:  "default",
 			Name: "Default",
 			Type: SourceResource,
 		}
@@ -142,10 +165,18 @@ func (tm *TemplateManager) getSourceConfigs() (map[string]*SourceConfig, error) 
 	return sourceConfigs, nil
 }
 
-func (tm *TemplateManager) createSourcesFromConfig(ctx context.Context, configs map[string]*SourceConfig) ([]Source, error) {
+func (tm *TemplateManager) createSourcesFromConfig(
+	ctx context.Context,
+	configs map[string]*SourceConfig,
+	filter sourceFilterPredicate,
+) ([]Source, error) {
 	sources := []Source{}
 
 	for name, config := range configs {
+		if filter != nil && !filter(config) {
+			continue
+		}
+
 		var source Source
 		var err error
 
@@ -177,7 +208,7 @@ func PromptTemplate(ctx context.Context, message string, console input.Console) 
 		return nil, fmt.Errorf("prompting for template: %w", err)
 	}
 
-	templates, err := templateManager.ListTemplates(ctx)
+	templates, err := templateManager.ListTemplates(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("prompting for template: %w", err)
 	}
@@ -187,7 +218,7 @@ func PromptTemplate(ctx context.Context, message string, console input.Console) 
 	// prepend the minimal template option to guarantee first selection
 	choices = append(choices, "Minimal")
 	for _, template := range templates {
-		choices = append(choices, template.Name)
+		choices = append(choices, fmt.Sprintf("%s (%s)", template.Name, template.RepositoryPath))
 	}
 
 	selected, err := console.Select(ctx, input.ConsoleOptions{

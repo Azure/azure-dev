@@ -4,23 +4,21 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"strconv"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/resources"
 	"golang.org/x/exp/slices"
 )
 
 type TemplateManager struct {
-	configManager config.UserConfigManager
+	sourceManager SourceManager
 	sources       []Source
 }
 
-func NewTemplateManager(configManager config.UserConfigManager) (*TemplateManager, error) {
+func NewTemplateManager(sourceManager SourceManager) (*TemplateManager, error) {
 	return &TemplateManager{
-		configManager: configManager,
+		sourceManager: sourceManager,
 	}, nil
 }
 
@@ -88,7 +86,7 @@ func (tm *TemplateManager) getSources(ctx context.Context, filter sourceFilterPr
 		return tm.sources, nil
 	}
 
-	configs, err := tm.getSourceConfigs()
+	configs, err := tm.sourceManager.List(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed parsing template sources: %w", err)
 	}
@@ -103,94 +101,21 @@ func (tm *TemplateManager) getSources(ctx context.Context, filter sourceFilterPr
 	return tm.sources, nil
 }
 
-func (tm *TemplateManager) getSourceConfigs() (map[string]*SourceConfig, error) {
-	config, err := tm.configManager.Load()
-	if err != nil {
-		return nil, fmt.Errorf("unable to load user configuration: %w", err)
-	}
-
-	sourceConfigs := map[string]*SourceConfig{}
-	rawSources, ok := config.Get("templates.sources")
-	if ok {
-		sourceMap := rawSources.(map[string]interface{})
-		for key, rawSource := range sourceMap {
-			propMap, ok := rawSource.(map[string]interface{})
-			if !ok {
-				continue
-			}
-
-			sourceType, ok := propMap["type"].(string)
-			if !ok {
-				return nil, fmt.Errorf("unable to parse source type for '%s'", key)
-			}
-
-			name, ok := propMap["name"].(string)
-			if !ok {
-				name = key
-			}
-
-			location, ok := propMap["location"].(string)
-			if !ok {
-				return nil, fmt.Errorf("unable to parse source location for '%s'", key)
-			}
-
-			sourceConfigs[key] = &SourceConfig{
-				Key:      key,
-				Type:     SourceKind(sourceType),
-				Name:     name,
-				Location: location,
-			}
-		}
-	}
-
-	rawAwesome, ok := config.Get("templates.awesome")
-	if ok {
-		boolValue, err := strconv.ParseBool(rawAwesome.(string))
-		if err == nil && boolValue {
-			sourceConfigs["awesome-azd"] = &SourceConfig{
-				Key:      "awesome-azd",
-				Name:     "Awesome AZD",
-				Type:     SourceUrl,
-				Location: "https://raw.githubusercontent.com/wbreza/azure-dev/template-source/cli/azd/resources/awesome-templates.json",
-			}
-		}
-	} else {
-		sourceConfigs["default"] = &SourceConfig{
-			Key:  "default",
-			Name: "Default",
-			Type: SourceResource,
-		}
-	}
-
-	return sourceConfigs, nil
-}
-
 func (tm *TemplateManager) createSourcesFromConfig(
 	ctx context.Context,
-	configs map[string]*SourceConfig,
+	configs []*SourceConfig,
 	filter sourceFilterPredicate,
 ) ([]Source, error) {
 	sources := []Source{}
 
-	for name, config := range configs {
+	for _, config := range configs {
 		if filter != nil && !filter(config) {
 			continue
 		}
 
-		var source Source
-		var err error
-
-		switch config.Type {
-		case SourceFile:
-			source, err = NewFileTemplateSource(config.Name, config.Location)
-		case SourceUrl:
-			source, err = NewUrlTemplateSource(ctx, config.Name, config.Location)
-		case SourceResource:
-			source, err = NewJsonTemplateSource(config.Name, string(resources.TemplatesJson))
-		}
-
+		source, err := config.Source(ctx)
 		if err != nil {
-			return nil, fmt.Errorf("unable to create template source '%s': %w", name, err)
+			return nil, err
 		}
 
 		sources = append(sources, source)
@@ -203,7 +128,7 @@ func (tm *TemplateManager) createSourcesFromConfig(
 // An empty Template can be returned if the user selects the minimal template. This corresponds to the minimal azd template.
 // See
 func PromptTemplate(ctx context.Context, message string, console input.Console) (*Template, error) {
-	templateManager, err := NewTemplateManager(config.NewUserConfigManager())
+	templateManager, err := NewTemplateManager(NewSourceManager(config.NewUserConfigManager()))
 	if err != nil {
 		return nil, fmt.Errorf("prompting for template: %w", err)
 	}

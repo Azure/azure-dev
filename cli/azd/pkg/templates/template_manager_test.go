@@ -13,13 +13,13 @@ import (
 )
 
 func TestNewTemplateManager(t *testing.T) {
-	templateManager, err := NewTemplateManager(config.NewUserConfigManager())
+	templateManager, err := NewTemplateManager(NewSourceManager(config.NewUserConfigManager()))
 	require.NoError(t, err)
 	require.NotNil(t, templateManager)
 }
 
 func TestListTemplates(t *testing.T) {
-	templateManager, err := NewTemplateManager(config.NewUserConfigManager())
+	templateManager, err := NewTemplateManager(NewSourceManager(config.NewUserConfigManager()))
 	require.NoError(t, err)
 	templates, err := templateManager.ListTemplates(context.Background(), nil)
 
@@ -56,7 +56,7 @@ func TestListTemplates(t *testing.T) {
 func TestGetTemplateWithValidPath(t *testing.T) {
 	rel := "todo-nodejs-mongo"
 	full := "Azure-Samples/" + rel
-	templateManager, err := NewTemplateManager(config.NewUserConfigManager())
+	templateManager, err := NewTemplateManager(NewSourceManager(config.NewUserConfigManager()))
 	require.NoError(t, err)
 	template, err := templateManager.GetTemplate(context.Background(), rel)
 	assert.NoError(t, err)
@@ -69,7 +69,7 @@ func TestGetTemplateWithValidPath(t *testing.T) {
 
 func TestGetTemplateWithInvalidPath(t *testing.T) {
 	templateName := "not-a-valid-template-name"
-	templateManager, err := NewTemplateManager(config.NewUserConfigManager())
+	templateManager, err := NewTemplateManager(NewSourceManager(config.NewUserConfigManager()))
 	require.NoError(t, err)
 	template, err := templateManager.GetTemplate(context.Background(), templateName)
 

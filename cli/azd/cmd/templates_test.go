@@ -15,10 +15,10 @@ import (
 
 func TestTemplateList(t *testing.T) {
 	var result bytes.Buffer
-	templatesManager, err := templates.NewTemplateManager(config.NewUserConfigManager())
+	templatesManager, err := templates.NewTemplateManager(templates.NewSourceManager(config.NewUserConfigManager()))
 	require.NoError(t, err)
 
-	templateList := newTemplatesListAction(
+	templateList := newTemplateListAction(
 		&templateListFlags{},
 		&output.JsonFormatter{},
 		&result,

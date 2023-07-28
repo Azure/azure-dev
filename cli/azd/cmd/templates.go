@@ -9,18 +9,18 @@ import (
 	"io"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
-	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/spf13/cobra"
-	"github.com/spf13/pflag"
 )
 
 func templateNameCompletion(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-	templateManager, err := templates.NewTemplateManager(config.NewUserConfigManager())
+	templateManager, err := templates.NewTemplateManager(templates.NewSourceManager(config.NewUserConfigManager()))
 	if err != nil {
-		cobra.CompError(fmt.Sprintf("Error creating template manager: %w", err))
+		cobra.CompError(fmt.Sprintf("Error creating template manager: %s", err.Error()))
 		return []string{}, cobra.ShellCompDirectiveError
 	}
 
@@ -44,6 +44,7 @@ func templatesActions(root *actions.ActionDescriptor) *actions.ActionDescriptor 
 		},
 		HelpOptions: actions.ActionHelpOptions{
 			Description: getCmdTemplateHelpDescription,
+			Footer:      getCmdTemplateHelpFooter,
 		},
 		GroupingOptions: actions.CommandGroupOptions{
 			RootLevelHelp: actions.CmdGroupConfig,
@@ -52,7 +53,7 @@ func templatesActions(root *actions.ActionDescriptor) *actions.ActionDescriptor 
 
 	group.Add("list", &actions.ActionDescriptorOptions{
 		Command:        newTemplateListCmd(),
-		ActionResolver: newTemplatesListAction,
+		ActionResolver: newTemplateListAction,
 		FlagsResolver:  newTemplateListFlags,
 		OutputFormats:  []output.Format{output.JsonFormat, output.TableFormat},
 		DefaultFormat:  output.TableFormat,
@@ -60,10 +61,12 @@ func templatesActions(root *actions.ActionDescriptor) *actions.ActionDescriptor 
 
 	group.Add("show", &actions.ActionDescriptorOptions{
 		Command:        newTemplateShowCmd(),
-		ActionResolver: newTemplatesShowAction,
+		ActionResolver: newTemplateShowAction,
 		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 		DefaultFormat:  output.NoneFormat,
 	})
+
+	_ = templateSourceActions(group)
 
 	return group
 }
@@ -72,15 +75,11 @@ type templateListFlags struct {
 	source string
 }
 
-func newTemplateListFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *templateListFlags {
+func newTemplateListFlags(cmd *cobra.Command) *templateListFlags {
 	flags := &templateListFlags{}
-	flags.Bind(cmd.Flags(), global)
+	cmd.Flags().StringVarP(&flags.source, "source", "s", "", "Filter templates by source")
 
 	return flags
-}
-
-func (f *templateListFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
-	local.StringVarP(&f.source, "source", "s", "", "Filter templates by source")
 }
 
 func newTemplateListCmd() *cobra.Command {
@@ -91,20 +90,20 @@ func newTemplateListCmd() *cobra.Command {
 	}
 }
 
-type templatesListAction struct {
+type templateListAction struct {
 	flags           *templateListFlags
 	formatter       output.Formatter
 	writer          io.Writer
 	templateManager *templates.TemplateManager
 }
 
-func newTemplatesListAction(
+func newTemplateListAction(
 	flags *templateListFlags,
 	formatter output.Formatter,
 	writer io.Writer,
 	templateManager *templates.TemplateManager,
 ) actions.Action {
-	return &templatesListAction{
+	return &templateListAction{
 		flags:           flags,
 		formatter:       formatter,
 		writer:          writer,
@@ -112,7 +111,7 @@ func newTemplatesListAction(
 	}
 }
 
-func (tl *templatesListAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+func (tl *templateListAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	options := &templates.ListOptions{Source: tl.flags.source}
 	listedTemplates, err := tl.templateManager.ListTemplates(ctx, options)
 	if err != nil {
@@ -145,20 +144,20 @@ func (tl *templatesListAction) Run(ctx context.Context) (*actions.ActionResult, 
 	return nil, err
 }
 
-type templatesShowAction struct {
+type templateShowAction struct {
 	formatter       output.Formatter
 	writer          io.Writer
 	templateManager *templates.TemplateManager
 	path            string
 }
 
-func newTemplatesShowAction(
+func newTemplateShowAction(
 	formatter output.Formatter,
 	writer io.Writer,
 	templateManager *templates.TemplateManager,
 	args []string,
 ) actions.Action {
-	return &templatesShowAction{
+	return &templateShowAction{
 		formatter:       formatter,
 		writer:          writer,
 		templateManager: templateManager,
@@ -166,7 +165,7 @@ func newTemplatesShowAction(
 	}
 }
 
-func (a *templatesShowAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+func (a *templateShowAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	matchingTemplate, err := a.templateManager.GetTemplate(ctx, a.path)
 
 	if err != nil {
@@ -205,4 +204,291 @@ func getCmdTemplateHelpDescription(*cobra.Command) string {
 				" template or select from our curated list of samples.",
 				output.WithHighLightFormat("azd init"))),
 		})
+}
+
+func getCmdTemplateSourceHelpDescription(*cobra.Command) string {
+	return generateCmdHelpDescription(
+		fmt.Sprintf(
+			"View and manage azd template sources used within %s and %s experiences. %s",
+			output.WithHighLightFormat("azd template list"),
+			output.WithHighLightFormat("azd init"),
+			output.WithWarningFormat("(Beta)")),
+		[]string{
+			formatHelpNote("Template sources allow customizing the list of available templates to include additional" +
+				" local or remote files and urls."),
+			formatHelpNote(fmt.Sprintf("Running %s without a template will prompt you to start with a minimal"+
+				" template or select from a template from your registered template sources.",
+				output.WithHighLightFormat("azd init"))),
+		})
+}
+
+// templateSourceActions creates the 'source' command group with child actions
+func templateSourceActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
+	group := root.Add("source", &actions.ActionDescriptorOptions{
+		Command: &cobra.Command{
+			Short: fmt.Sprintf("View and manage template sources %s", output.WithWarningFormat("(Beta)")),
+		},
+		HelpOptions: actions.ActionHelpOptions{
+			Description: getCmdTemplateSourceHelpDescription,
+			Footer:      getCmdTemplateSourceHelpFooter,
+		},
+	})
+
+	group.Add("list", &actions.ActionDescriptorOptions{
+		Command:        newTemplateSourceListCmd(),
+		ActionResolver: newTemplateSourceListAction,
+		OutputFormats:  []output.Format{output.JsonFormat, output.TableFormat},
+		DefaultFormat:  output.TableFormat,
+	})
+
+	group.Add("add", &actions.ActionDescriptorOptions{
+		Command:        newTemplateSourceAddCmd(),
+		ActionResolver: newTemplateSourceAddAction,
+		FlagsResolver:  newTemplateSourceAddFlags,
+		OutputFormats:  []output.Format{output.NoneFormat},
+		DefaultFormat:  output.NoneFormat,
+	})
+
+	group.Add("remove", &actions.ActionDescriptorOptions{
+		Command:        newTemplateSourceRemoveCmd(),
+		ActionResolver: newTemplateSourceRemoveAction,
+		OutputFormats:  []output.Format{output.NoneFormat},
+		DefaultFormat:  output.NoneFormat,
+	})
+
+	return group
+}
+
+func newTemplateSourceListCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:     "list",
+		Short:   fmt.Sprintf("Lists the configured azd template sources. %s", output.WithWarningFormat("(Beta)")),
+		Aliases: []string{"ls"},
+	}
+}
+
+type templateSourceListAction struct {
+	formatter     output.Formatter
+	writer        io.Writer
+	sourceManager templates.SourceManager
+}
+
+func newTemplateSourceListAction(
+	formatter output.Formatter,
+	writer io.Writer,
+	sourceManager templates.SourceManager,
+) actions.Action {
+	return &templateSourceListAction{
+		formatter:     formatter,
+		writer:        writer,
+		sourceManager: sourceManager,
+	}
+}
+
+func (a *templateSourceListAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	sourceConfigs, err := a.sourceManager.List(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list template sources: %w", err)
+	}
+
+	if a.formatter.Kind() == output.TableFormat {
+		columns := []output.Column{
+			{
+				Heading:       "Key",
+				ValueTemplate: "{{.Key}}",
+			},
+			{
+				Heading:       "Name",
+				ValueTemplate: "{{.Name}}",
+			},
+			{
+				Heading:       "Type",
+				ValueTemplate: "{{.Type}}",
+			},
+			{
+				Heading:       "Location",
+				ValueTemplate: "{{.Location}}",
+			},
+		}
+
+		err = a.formatter.Format(sourceConfigs, a.writer, output.TableFormatterOptions{
+			Columns: columns,
+		})
+	} else {
+		err = a.formatter.Format(sourceConfigs, a.writer, nil)
+	}
+
+	return nil, err
+}
+
+func newTemplateSourceAddCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "add <key>",
+		Short: fmt.Sprintf("Adds an azd template source at the specified key %s", output.WithWarningFormat("(Beta)")),
+		Args:  cobra.ExactArgs(1),
+	}
+}
+
+type templateSourceAddFlags struct {
+	name     string
+	location string
+	kind     string
+}
+
+func newTemplateSourceAddFlags(cmd *cobra.Command) *templateSourceAddFlags {
+	flags := &templateSourceAddFlags{}
+
+	cmd.Flags().StringVarP(&flags.kind, "type", "t", "", "Kind of the template source")
+	cmd.Flags().StringVarP(&flags.location, "location", "l", "", "Location of the template source")
+	cmd.Flags().StringVarP(&flags.name, "name", "n", "", "Name of the template source")
+
+	return flags
+}
+
+type templateSourceAddAction struct {
+	flags         *templateSourceAddFlags
+	console       input.Console
+	sourceManager templates.SourceManager
+	args          []string
+}
+
+func newTemplateSourceAddAction(
+	flags *templateSourceAddFlags,
+	console input.Console,
+	sourceManager templates.SourceManager,
+	args []string,
+) actions.Action {
+	return &templateSourceAddAction{
+		flags:         flags,
+		console:       console,
+		sourceManager: sourceManager,
+		args:          args,
+	}
+}
+
+func (a *templateSourceAddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	a.console.MessageUxItem(ctx, &ux.MessageTitle{
+		Title: "Add azd template source (azd template source add)",
+	})
+
+	var key = a.args[0]
+	sourceConfig := &templates.SourceConfig{}
+
+	if _, ok := templates.WellKnownSources[key]; !ok {
+		sourceConfig = &templates.SourceConfig{
+			Key:      key,
+			Type:     templates.SourceKind(a.flags.kind),
+			Location: a.flags.location,
+			Name:     a.flags.name,
+		}
+
+		// Validate the custom source config
+		spinnerMessage := "Validating template source"
+		a.console.ShowSpinner(ctx, spinnerMessage, input.Step)
+		_, err := sourceConfig.Source(ctx)
+		if err != nil {
+			a.console.StopSpinner(ctx, spinnerMessage, input.StepFailed)
+			return nil, fmt.Errorf("template source validation failed: %w", err)
+		}
+
+		a.console.StopSpinner(ctx, spinnerMessage, input.StepDone)
+	}
+
+	spinnerMessage := "Saving template source"
+	a.console.ShowSpinner(ctx, spinnerMessage, input.Step)
+	if err := a.sourceManager.Add(ctx, key, sourceConfig); err != nil {
+		a.console.StopSpinner(ctx, spinnerMessage, input.StepFailed)
+		return nil, fmt.Errorf("failed adding template source: %w", err)
+	}
+
+	a.console.StopSpinner(ctx, spinnerMessage, input.StepDone)
+
+	return &actions.ActionResult{
+		Message: &actions.ResultMessage{
+			Header:   fmt.Sprintf("Added azd template source %s", key),
+			FollowUp: "Run `azd template list` to see the available set of azd templates.",
+		},
+	}, nil
+}
+
+func newTemplateSourceRemoveCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "remove <key>",
+		Short: fmt.Sprintf("Removes the specified azd template source %s", output.WithWarningFormat("(Beta)")),
+		Args:  cobra.ExactArgs(1),
+	}
+}
+
+type templateSourceRemoveAction struct {
+	sourceManager templates.SourceManager
+	console       input.Console
+	args          []string
+}
+
+func newTemplateSourceRemoveAction(
+	sourceManager templates.SourceManager,
+	console input.Console,
+	args []string,
+) actions.Action {
+	return &templateSourceRemoveAction{
+		sourceManager: sourceManager,
+		console:       console,
+		args:          args,
+	}
+}
+
+func (a *templateSourceRemoveAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	a.console.MessageUxItem(ctx, &ux.MessageTitle{
+		Title: "Remove azd template source (azd template source remove)",
+	})
+
+	var key = a.args[0]
+	spinnerMessage := "Removing template source"
+	a.console.ShowSpinner(ctx, spinnerMessage, input.Step)
+	if err := a.sourceManager.Remove(ctx, key); err != nil {
+		a.console.StopSpinner(ctx, spinnerMessage, input.StepFailed)
+		return nil, fmt.Errorf("failed removing template source: %w", err)
+	}
+
+	a.console.StopSpinner(ctx, spinnerMessage, input.StepDone)
+
+	return &actions.ActionResult{
+		Message: &actions.ResultMessage{
+			Header: fmt.Sprintf("Removed azd template source %s", key),
+		},
+	}, nil
+}
+
+func getCmdTemplateHelpFooter(*cobra.Command) string {
+	return generateCmdHelpSamplesBlock(map[string]string{
+		"View a list of all azd templates across template sources.": output.WithHighLightFormat(
+			"azd template list",
+		),
+		"View a list of azd templates for a specific template source.": output.WithHighLightFormat(
+			"azd template list --source <key>",
+		),
+		"View the details of an azd template.": output.WithHighLightFormat(
+			"azd template show <template-name>",
+		),
+	})
+}
+
+func getCmdTemplateSourceHelpFooter(*cobra.Command) string {
+	return generateCmdHelpSamplesBlock(map[string]string{
+		"View a list of registered azd template sources.": output.WithHighLightFormat(
+			"azd template source list",
+		),
+		"Enable the Awesome Azd template source.": output.WithHighLightFormat(
+			"azd template source add awesome-azd",
+		),
+		"Add a new file template source.": output.WithHighLightFormat(
+			"azd template source add <key> --type file --location <path>",
+		),
+		"Add a new url template source.": output.WithHighLightFormat(
+			"azd template source add <key> --type url --location <url>",
+		),
+		"Remove a previously registered template source.": output.WithHighLightFormat(
+			"azd template source remove <key>",
+		),
+	})
 }

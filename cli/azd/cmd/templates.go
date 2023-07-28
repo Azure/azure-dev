@@ -7,6 +7,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net/http"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
@@ -18,7 +19,7 @@ import (
 )
 
 func templateNameCompletion(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-	templateManager, err := templates.NewTemplateManager(templates.NewSourceManager(config.NewUserConfigManager()))
+	templateManager, err := templates.NewTemplateManager(templates.NewSourceManager(config.NewUserConfigManager(), http.DefaultClient))
 	if err != nil {
 		cobra.CompError(fmt.Sprintf("Error creating template manager: %s", err.Error()))
 		return []string{}, cobra.ShellCompDirectiveError
@@ -385,7 +386,7 @@ func (a *templateSourceAddAction) Run(ctx context.Context) (*actions.ActionResul
 		// Validate the custom source config
 		spinnerMessage := "Validating template source"
 		a.console.ShowSpinner(ctx, spinnerMessage, input.Step)
-		_, err := sourceConfig.Source(ctx)
+		_, err := a.sourceManager.CreateSource(ctx, sourceConfig)
 		if err != nil {
 			a.console.StopSpinner(ctx, spinnerMessage, input.StepFailed)
 			return nil, fmt.Errorf("template source validation failed: %w", err)

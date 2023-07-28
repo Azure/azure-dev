@@ -9,13 +9,17 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
+	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestTemplateList(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
 	var result bytes.Buffer
-	templatesManager, err := templates.NewTemplateManager(templates.NewSourceManager(config.NewUserConfigManager()))
+	templatesManager, err := templates.NewTemplateManager(
+		templates.NewSourceManager(config.NewUserConfigManager(), mockContext.HttpClient),
+	)
 	require.NoError(t, err)
 
 	templateList := newTemplateListAction(

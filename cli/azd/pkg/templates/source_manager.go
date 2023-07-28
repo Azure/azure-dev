@@ -7,6 +7,8 @@ import (
 	"fmt"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
+	"github.com/azure/azure-dev/cli/azd/resources"
 )
 
 const baseConfigKey string = "template.sources"
@@ -44,16 +46,20 @@ type SourceManager interface {
 	Add(ctx context.Context, key string, source *SourceConfig) error
 	// Remove removes a template source.
 	Remove(ctx context.Context, name string) error
+	// CreateSource creates a new template source from a source configuration
+	CreateSource(ctx context.Context, source *SourceConfig) (Source, error)
 }
 
 type sourceManager struct {
 	configManager config.UserConfigManager
+	httpClient    httputil.HttpClient
 }
 
 // NewSourceManager creates a new SourceManager.
-func NewSourceManager(configManager config.UserConfigManager) SourceManager {
+func NewSourceManager(configManager config.UserConfigManager, httpClient httputil.HttpClient) SourceManager {
 	return &sourceManager{
 		configManager: configManager,
+		httpClient:    httpClient,
 	}
 }
 
@@ -169,4 +175,27 @@ func (sm *sourceManager) Remove(ctx context.Context, key string) error {
 	}
 
 	return nil
+}
+
+// Source returns a hydrated template source for the current config.
+func (sm *sourceManager) CreateSource(ctx context.Context, config *SourceConfig) (Source, error) {
+	var source Source
+	var err error
+
+	switch config.Type {
+	case SourceFile:
+		source, err = NewFileTemplateSource(config.Name, config.Location)
+	case SourceUrl:
+		source, err = NewUrlTemplateSource(ctx, config.Name, config.Location, sm.httpClient)
+	case SourceResource:
+		source, err = NewJsonTemplateSource(config.Name, string(resources.TemplatesJson))
+	default:
+		err = fmt.Errorf("unknown template source type '%s'", config.Type)
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("unable to create template source '%s': %w", config.Key, err)
+	}
+
+	return source, nil
 }

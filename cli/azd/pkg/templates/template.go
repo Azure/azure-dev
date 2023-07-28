@@ -16,7 +16,7 @@ type Template struct {
 	Source string `json:"source,omitempty"`
 
 	// Description is a long description of the template.
-	Description string `json:"description"`
+	Description string `json:"description,omitempty"`
 
 	// RepositoryPath is a fully qualified URI to a git repository,
 	// "{owner}/{repo}" for GitHub repositories,

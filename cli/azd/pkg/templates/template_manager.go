@@ -4,11 +4,16 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"net/http"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"golang.org/x/exp/slices"
+)
+
+var (
+	ErrTemplateNotFound = fmt.Errorf("template not found")
 )
 
 type TemplateManager struct {
@@ -113,7 +118,7 @@ func (tm *TemplateManager) createSourcesFromConfig(
 			continue
 		}
 
-		source, err := config.Source(ctx)
+		source, err := tm.sourceManager.CreateSource(ctx, config)
 		if err != nil {
 			return nil, err
 		}
@@ -128,7 +133,7 @@ func (tm *TemplateManager) createSourcesFromConfig(
 // An empty Template can be returned if the user selects the minimal template. This corresponds to the minimal azd template.
 // See
 func PromptTemplate(ctx context.Context, message string, console input.Console) (*Template, error) {
-	templateManager, err := NewTemplateManager(NewSourceManager(config.NewUserConfigManager()))
+	templateManager, err := NewTemplateManager(NewSourceManager(config.NewUserConfigManager(), http.DefaultClient))
 	if err != nil {
 		return nil, fmt.Errorf("prompting for template: %w", err)
 	}

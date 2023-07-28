@@ -49,5 +49,5 @@ func (jts *jsonTemplateSource) GetTemplate(ctx context.Context, path string) (*T
 		}
 	}
 
-	return nil, fmt.Errorf("template with name '%s' was not found", path)
+	return nil, fmt.Errorf("template with name '%s' was not found, %w", path, ErrTemplateNotFound)
 }

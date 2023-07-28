@@ -3,23 +3,25 @@ package templates
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/resources"
+	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
 
 func TestNewTemplateManager(t *testing.T) {
-	templateManager, err := NewTemplateManager(NewSourceManager(config.NewUserConfigManager()))
+	mockContext := mocks.NewMockContext(context.Background())
+	templateManager, err := NewTemplateManager(NewSourceManager(config.NewUserConfigManager(), mockContext.HttpClient))
 	require.NoError(t, err)
 	require.NotNil(t, templateManager)
 }
 
 func TestListTemplates(t *testing.T) {
-	templateManager, err := NewTemplateManager(NewSourceManager(config.NewUserConfigManager()))
+	mockContext := mocks.NewMockContext(context.Background())
+	templateManager, err := NewTemplateManager(NewSourceManager(config.NewUserConfigManager(), mockContext.HttpClient))
 	require.NoError(t, err)
 	templates, err := templateManager.ListTemplates(context.Background(), nil)
 
@@ -54,26 +56,29 @@ func TestListTemplates(t *testing.T) {
 }
 
 func TestGetTemplateWithValidPath(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+
 	rel := "todo-nodejs-mongo"
 	full := "Azure-Samples/" + rel
-	templateManager, err := NewTemplateManager(NewSourceManager(config.NewUserConfigManager()))
+	templateManager, err := NewTemplateManager(NewSourceManager(config.NewUserConfigManager(), mockContext.HttpClient))
 	require.NoError(t, err)
-	template, err := templateManager.GetTemplate(context.Background(), rel)
+	template, err := templateManager.GetTemplate(*mockContext.Context, rel)
 	assert.NoError(t, err)
 	assert.Equal(t, rel, template.RepositoryPath)
 
-	template, err = templateManager.GetTemplate(context.Background(), full)
+	template, err = templateManager.GetTemplate(*mockContext.Context, full)
 	assert.NoError(t, err)
 	require.Equal(t, rel, template.RepositoryPath)
 }
 
 func TestGetTemplateWithInvalidPath(t *testing.T) {
-	templateName := "not-a-valid-template-name"
-	templateManager, err := NewTemplateManager(NewSourceManager(config.NewUserConfigManager()))
-	require.NoError(t, err)
-	template, err := templateManager.GetTemplate(context.Background(), templateName)
+	mockContext := mocks.NewMockContext(context.Background())
 
-	require.Equal(t, template, Template{})
+	templateName := "not-a-valid-template-name"
+	templateManager, err := NewTemplateManager(NewSourceManager(config.NewUserConfigManager(), mockContext.HttpClient))
+	require.NoError(t, err)
+	template, err := templateManager.GetTemplate(*mockContext.Context, templateName)
+
 	require.NotNil(t, err)
-	require.Equal(t, err.Error(), fmt.Sprintf("template with name '%s' was not found", templateName))
+	require.Nil(t, template)
 }

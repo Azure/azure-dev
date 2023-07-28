@@ -37,16 +37,16 @@ func getAbsolutePath(filePath string) (string, error) {
 		return "", err
 	}
 
-	roots = append(roots, cwd)
-
 	azdConfigPath, err := config.GetUserConfigDir()
 	if err != nil {
 		return "", err
 	}
 
+	roots = append(roots, cwd)
 	roots = append(roots, azdConfigPath)
+
 	for _, root := range roots {
-		// Join the current working directory with the relative path
+		// Join the root directory with the relative path
 		absolutePath := filepath.Join(root, filePath)
 
 		// Normalize the path to handle any ".." or "." segments

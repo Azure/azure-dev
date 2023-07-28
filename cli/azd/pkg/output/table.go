@@ -60,7 +60,7 @@ func (f *TableFormatter) Format(obj interface{}, writer io.Writer, opts interfac
 	transformers := []func(string) string{}
 
 	for _, c := range options.Columns {
-		headings = append(headings, WithBold(c.Heading))
+		headings = append(headings, c.Heading)
 
 		t, err := template.New(c.Heading).Parse(c.ValueTemplate)
 		if err != nil {

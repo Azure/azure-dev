@@ -1,13 +1,12 @@
 
-Show list of sample azd templates. (Beta)
+Lists the configured azd template sources. (Beta)
 
 Usage
-  azd template list [flags]
+  azd template source list [flags]
 
 Flags
-        --docs          	: Opens the documentation for azd template list in your web browser.
-    -h, --help          	: Gets help for list.
-    -s, --source string 	: Filter templates by source
+        --docs 	: Opens the documentation for azd template source list in your web browser.
+    -h, --help 	: Gets help for list.
 
 Global Flags
     -C, --cwd string 	: Sets the current working directory.

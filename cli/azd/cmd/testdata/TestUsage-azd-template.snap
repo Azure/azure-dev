@@ -9,8 +9,9 @@ Usage
   azd template [command]
 
 Available Commands
-  list	: Show list of sample azd templates. (Beta)
-  show	: Show details for a given template. (Beta)
+  list  	: Show list of sample azd templates. (Beta)
+  show  	: Show details for a given template. (Beta)
+  source	: View and manage template sources (Beta)
 
 Flags
         --docs 	: Opens the documentation for azd template in your web browser.
@@ -23,6 +24,14 @@ Global Flags
 
 Use azd template [command] --help to view examples and more information about a specific command.
 
-Find a bug? Want to let us know how we're doing? Fill out this brief survey: https://aka.ms/azure-dev/hats.
+Examples
+  View a list of all azd templates across template sources.
+    azd template list
+
+  View a list of azd templates for a specific template source.
+    azd template list --source <key>
+
+  View the details of an azd template.
+    azd template show <template-name>
 
 

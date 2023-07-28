@@ -35,7 +35,7 @@ func (tm *TemplateManager) ListTemplates(ctx context.Context, options *ListOptio
 	var filterPredicate sourceFilterPredicate
 	if options != nil && options.Source != "" {
 		filterPredicate = func(config *SourceConfig) bool {
-			return strings.ToLower(config.Key) == strings.ToLower(options.Source)
+			return strings.EqualFold(config.Key, options.Source)
 		}
 	}
 

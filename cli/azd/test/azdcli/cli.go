@@ -74,7 +74,8 @@ func NewCLI(t *testing.T, opts ...Options) *CLI {
 		env := append(
 			environ(opt.Session),
 			"HTTPS_PROXY="+opt.Session.ProxyUrl,
-			"AZD_DEBUG_PROVISION_PROGRESS_DISABLE=true")
+			"AZD_DEBUG_PROVISION_PROGRESS_DISABLE=true",
+			"PATH="+opt.Session.CmdProxyPath)
 		cli.Env = append(cli.Env, env...)
 	}
 
@@ -137,6 +138,15 @@ func (cli *CLI) RunCommandWithStdIn(ctx context.Context, stdin string, args ...s
 	}
 
 	cmd.Env = cli.Env
+
+	// Collect all PATH variables, appending in the order it was added, to form a single PATH variable
+	pathStrings := []string{}
+	for _, env := range cmd.Env {
+		if strings.HasPrefix(env, "PATH=") {
+			pathStrings = append(pathStrings, env[5:])
+		}
+	}
+	cmd.Env = append(cmd.Env, "PATH="+strings.Join(pathStrings, string(os.PathListSeparator)))
 
 	// we run a background goroutine to report a heartbeat in the logs while the command
 	// is still running. This makes it easy to see what's still in progress if we hit a timeout.

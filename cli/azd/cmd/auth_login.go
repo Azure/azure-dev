@@ -467,7 +467,11 @@ func (la *loginAction) login(ctx context.Context) error {
 			return fmt.Errorf("logging in: %w", err)
 		}
 	} else {
-		_, err := la.authManager.LoginInteractive(ctx, la.flags.redirectPort, la.flags.tenantID, la.flags.scopes)
+		_, err := la.authManager.LoginInteractive(
+			ctx, la.flags.redirectPort, la.flags.tenantID, la.flags.scopes, func(url string) error {
+				openWithDefaultBrowser(ctx, la.console, url)
+				return nil
+			})
 		if err != nil {
 			return fmt.Errorf("logging in: %w", err)
 		}

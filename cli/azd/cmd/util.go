@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"os"
 	"os/exec"
 	"time"
@@ -328,7 +329,7 @@ func openWithDefaultBrowser(ctx context.Context, console input.Console, url stri
 		return
 	}
 
-	console.Message(ctx, fmt.Sprintf("Opening %s in the default browser...\n", url))
+	// console.Message(ctx, fmt.Sprintf("Opening %s in the default browser...\n", url))
 	// In Codespaces and devcontainers a $BROWSER environment variable is
 	// present whose value is an executable that launches the browser when
 	// called with the form:
@@ -341,10 +342,10 @@ func openWithDefaultBrowser(ctx context.Context, console input.Console, url stri
 		if err == nil {
 			return
 		}
-		fmt.Fprintf(
-			console.Handles().Stderr,
-			"warning: failed to open browser configured by $BROWSER: %s\n. Trying with default browser.",
-			err.Error(),
+		log.Println(
+			fmt.Sprintf(
+				"warning: failed to open browser configured by $BROWSER: %s\nTrying with default browser.\n",
+				err.Error()),
 		)
 	}
 
@@ -353,11 +354,17 @@ func openWithDefaultBrowser(ctx context.Context, console input.Console, url stri
 		return
 	}
 
-	fmt.Fprintf(
-		console.Handles().Stderr,
-		"warning: failed to open default browser: %s\n", err.Error(),
+	log.Println(
+		fmt.Sprintf("warning: failed to open default browser: %s\nTrying manual launch.", err.Error()),
 	)
 
+	// wsl manual launch
+	err = exec.Command("powershell.exe", "-NoProfile", "-Command", fmt.Sprintf("Start-Process \"%s\"", url)).Run()
+	if err == nil {
+		return
+	}
+
+	log.Println(fmt.Sprintf("warning: failed to use manual launch: %s\n", err.Error()))
 	console.Message(ctx, fmt.Sprintf("Azd was unable to open the next url. Please try it manually: %s", url))
 }
 

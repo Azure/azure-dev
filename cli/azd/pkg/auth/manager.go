@@ -425,7 +425,11 @@ func (m *Manager) newCredentialFromCloudShell() (azcore.TokenCredential, error) 
 }
 
 func (m *Manager) LoginInteractive(
-	ctx context.Context, redirectPort int, tenantID string, scopes []string) (azcore.TokenCredential, error) {
+	ctx context.Context,
+	redirectPort int,
+	tenantID string,
+	scopes []string,
+	withOpenUrl func(url string) error) (azcore.TokenCredential, error) {
 	if scopes == nil {
 		scopes = LoginScopes
 	}
@@ -438,10 +442,9 @@ func (m *Manager) LoginInteractive(
 		options = append(options, public.WithTenantID(tenantID))
 	}
 
-	options = append(options, public.WithOpenURL(func(url string) error {
-		browser.OpenURL(url)
-		return nil
-	}))
+	if withOpenUrl != nil {
+		options = append(options, public.WithOpenURL(withOpenUrl))
+	}
 
 	res, err := m.publicClient.AcquireTokenInteractive(ctx, scopes, options...)
 	if err != nil {

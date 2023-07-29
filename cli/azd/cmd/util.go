@@ -329,12 +329,10 @@ func openWithDefaultBrowser(ctx context.Context, console input.Console, url stri
 		return
 	}
 
-	// console.Message(ctx, fmt.Sprintf("Opening %s in the default browser...\n", url))
 	// In Codespaces and devcontainers a $BROWSER environment variable is
 	// present whose value is an executable that launches the browser when
 	// called with the form:
 	// $BROWSER <url>
-
 	const BrowserEnvVarName = "BROWSER"
 
 	if envBrowser := os.Getenv(BrowserEnvVarName); len(envBrowser) > 0 {

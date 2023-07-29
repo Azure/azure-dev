@@ -438,6 +438,11 @@ func (m *Manager) LoginInteractive(
 		options = append(options, public.WithTenantID(tenantID))
 	}
 
+	options = append(options, public.WithOpenURL(func(url string) error {
+		browser.OpenURL(url)
+		return nil
+	}))
+
 	res, err := m.publicClient.AcquireTokenInteractive(ctx, scopes, options...)
 	if err != nil {
 		return nil, err

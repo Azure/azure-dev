@@ -145,10 +145,12 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 		if i.flags.templatePath == "" {
 			template, err := templates.PromptTemplate(ctx, "Select a project template:", i.console)
-			i.flags.templatePath = template.RepositoryPath
-
 			if err != nil {
 				return nil, err
+			}
+
+			if template != nil {
+				i.flags.templatePath = template.RepositoryPath
 			}
 		}
 	}

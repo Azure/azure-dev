@@ -59,7 +59,12 @@ func (i *initFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOpt
 		//nolint:lll
 		"The template to use when you initialize the project. You can use Full URI, <owner>/<repository>, or <repository> if it's part of the azure-samples organization.",
 	)
-	local.StringVarP(&i.templateBranch, "branch", "b", "", "The template branch to initialize from.")
+	local.StringVarP(
+		&i.templateBranch,
+		"branch",
+		"b",
+		"",
+		"The template branch to initialize from. Must be used with a template argument (--template or -t).")
 	local.StringVar(
 		&i.subscription,
 		"subscription",
@@ -104,7 +109,9 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	azdCtx := azdcontext.NewAzdContextWithDirectory(wd)
 
 	if i.flags.templateBranch != "" && i.flags.templatePath == "" {
-		return nil, errors.New("template required when specifying a branch name")
+		return nil,
+			errors.New(
+				"Using branch argument (-b or --branch) requires a template argument (--template or -t) to be specified.")
 	}
 
 	// ensure that git is available

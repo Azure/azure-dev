@@ -65,25 +65,29 @@ func (tm *TemplateManager) ListTemplates(ctx context.Context, options *ListOptio
 	return allTemplates, nil
 }
 
-func (tm *TemplateManager) GetTemplate(ctx context.Context, name string) (*Template, error) {
-	errors := []error{}
+func (tm *TemplateManager) GetTemplate(ctx context.Context, path string) (*Template, error) {
+	absTemplatePath, err := Absolute(path)
+	if err != nil {
+		return nil, err
+	}
 
-	sources, err := tm.getSources(ctx, nil)
+	allTemplates, err := tm.ListTemplates(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed listing templates: %w", err)
 	}
 
-	for _, source := range sources {
-		template, err := source.GetTemplate(ctx, name)
+	for _, template := range allTemplates {
+		absPath, err := Absolute(template.RepositoryPath)
 		if err != nil {
-			errors = append(errors, err)
-			continue
+			panic(err)
 		}
 
-		return template, nil
+		if absPath == absTemplatePath {
+			return template, nil
+		}
 	}
 
-	return nil, fmt.Errorf("unable to find template '%s': %w", name, errors[0])
+	return nil, fmt.Errorf("template with name '%s' was not found, %w", path, ErrTemplateNotFound)
 }
 
 func (tm *TemplateManager) getSources(ctx context.Context, filter sourceFilterPredicate) ([]Source, error) {
@@ -120,7 +124,8 @@ func (tm *TemplateManager) createSourcesFromConfig(
 
 		source, err := tm.sourceManager.CreateSource(ctx, config)
 		if err != nil {
-			return nil, err
+			log.Printf("failed to create source: %s", err.Error())
+			continue
 		}
 
 		sources = append(sources, source)

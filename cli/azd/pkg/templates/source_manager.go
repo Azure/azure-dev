@@ -71,7 +71,7 @@ func (sm *sourceManager) List(ctx context.Context) ([]*SourceConfig, error) {
 	}
 
 	sourceConfigs := []*SourceConfig{}
-	rawSources, ok := config.Get("template.sources")
+	rawSources, ok := config.Get(baseConfigKey)
 	if ok {
 		sourceMap := rawSources.(map[string]interface{})
 		for key, rawSource := range sourceMap {

@@ -2,9 +2,13 @@ package templates
 
 import (
 	"context"
+	"net/http"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -24,11 +28,29 @@ func Test_sourceManager_List(t *testing.T) {
 	})
 	configManager.On("Load").Return(config, nil)
 
-	sources, err := sm.List(context.Background())
+	sources, err := sm.List(*mockContext.Context)
 	require.Nil(t, err)
 
 	require.Len(t, sources, 1)
 	require.Equal(t, "test", sources[0].Key)
+}
+
+func Test_sourceManager_List_EmptySources(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	configManager := &mockUserConfigManager{}
+	sm := NewSourceManager(configManager, mockContext.HttpClient)
+
+	config := config.NewConfig(nil)
+	config.Set("template.sources", map[string]interface{}{})
+	configManager.On("Load").Return(config, nil)
+
+	// Empty source list should still return default azd template source
+	sources, err := sm.List(*mockContext.Context)
+	require.Nil(t, err)
+
+	require.Len(t, sources, 1)
+	require.Equal(t, SourceDefault.Key, sources[0].Key)
+	require.Equal(t, SourceDefault.Type, sources[0].Type)
 }
 
 func Test_sourceManager_Get(t *testing.T) {
@@ -45,7 +67,7 @@ func Test_sourceManager_Get(t *testing.T) {
 	})
 	configManager.On("Load").Return(config, nil)
 
-	source, err := sm.Get(context.Background(), "test")
+	source, err := sm.Get(*mockContext.Context, "test")
 	require.Nil(t, err)
 	require.NotNil(t, source)
 
@@ -58,7 +80,6 @@ func Test_sourceManager_Add(t *testing.T) {
 	sm := NewSourceManager(configManager, mockContext.HttpClient)
 
 	config := config.NewConfig(nil)
-	config.Set("template.sources", map[string]interface{}{})
 	configManager.On("Load").Return(config, nil)
 	configManager.On("Save", mock.Anything).Return(nil)
 
@@ -67,8 +88,27 @@ func Test_sourceManager_Add(t *testing.T) {
 		Type:     SourceFile,
 		Location: "testdata/templates.json",
 	}
-	err := sm.Add(context.Background(), key, source)
+	err := sm.Add(*mockContext.Context, key, source)
 	require.Nil(t, err)
+}
+
+func Test_sourceManager_Add_DuplicateKey(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	configManager := &mockUserConfigManager{}
+	sm := NewSourceManager(configManager, mockContext.HttpClient)
+
+	key := "test"
+	config := config.NewConfig(nil)
+	config.Set("template.sources.test", map[string]interface{}{})
+	configManager.On("Load").Return(config, nil)
+
+	source := &SourceConfig{
+		Type:     SourceFile,
+		Location: "testdata/templates.json",
+	}
+	err := sm.Add(*mockContext.Context, key, source)
+	require.NotNil(t, err)
+	require.ErrorIs(t, err, ErrSourceExists)
 }
 
 func Test_sourceManager_Remove(t *testing.T) {
@@ -82,88 +122,78 @@ func Test_sourceManager_Remove(t *testing.T) {
 	configManager.On("Load").Return(config, nil)
 	configManager.On("Save", mock.Anything).Return(nil)
 
-	err := sm.Remove(context.Background(), key)
+	err := sm.Remove(*mockContext.Context, key)
 	require.Nil(t, err)
 }
 
-func Test_sourceManager_CreateSource_InvalidType(t *testing.T) {
-	config := &SourceConfig{
-		Name: "test",
-		Type: "invalid",
-	}
-
+func Test_sourceManager_Remove_SourceNotFound(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	configManager := &mockUserConfigManager{}
 	sm := NewSourceManager(configManager, mockContext.HttpClient)
 
-	_, err := sm.CreateSource(context.Background(), config)
+	key := "invalid"
+	config := config.NewConfig(nil)
+	configManager.On("Load").Return(config, nil)
+
+	err := sm.Remove(*mockContext.Context, key)
 	require.NotNil(t, err)
+	require.ErrorIs(t, err, ErrSourceNotFound)
 }
 
-func Test_sourceManager_CreateSource_InvalidLocation(t *testing.T) {
-	config := &SourceConfig{
-		Name:     "test",
-		Type:     SourceFile,
-		Location: "invalid",
-	}
-
+func Test_sourceManager_CreateSource(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	configManager := &mockUserConfigManager{}
 	sm := NewSourceManager(configManager, mockContext.HttpClient)
 
-	_, err := sm.CreateSource(context.Background(), config)
-	require.NotNil(t, err)
-}
+	configDir, err := config.GetUserConfigDir()
+	require.NoError(t, err)
 
-func Test_sourceManager_CreateSource_File(t *testing.T) {
-	config := &SourceConfig{
-		Name:     "test",
-		Type:     SourceFile,
-		Location: "testdata/templates.json",
-	}
-
-	mockContext := mocks.NewMockContext(context.Background())
-	configManager := &mockUserConfigManager{}
-	sm := NewSourceManager(configManager, mockContext.HttpClient)
-
-	source, err := sm.CreateSource(context.Background(), config)
+	path := filepath.Join(configDir, "test-templates.json")
+	err = os.WriteFile(path, []byte(jsonTemplates()), osutil.PermissionFile)
 	require.Nil(t, err)
 
-	require.Equal(t, config.Name, source.Name())
-}
+	sourceUrl := "https://example.com/valid.json"
+	mockContext.HttpClient.When(func(req *http.Request) bool {
+		return req.Method == http.MethodGet && req.URL.String() == sourceUrl
+	}).RespondFn(func(req *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(req, http.StatusOK, testTemplates)
+	})
 
-func Test_sourceManager_CreateSource_Url(t *testing.T) {
-	config := &SourceConfig{
-		Name:     "test",
-		Type:     SourceUrl,
-		Location: "https://raw.githubusercontent.com/github/gitignore/master/Python.gitignore",
+	configs := []*SourceConfig{
+		{
+			Key:      "file",
+			Type:     SourceFile,
+			Name:     "test-file",
+			Location: "./test-templates.json",
+		},
+		{
+			Key:      "url",
+			Type:     SourceUrl,
+			Name:     "test-url",
+			Location: sourceUrl,
+		},
+		{
+			Key:  "resource",
+			Type: SourceResource,
+			Name: "test-resource",
+		},
+		{
+			Key:  "invalid",
+			Type: "invalid",
+			Name: "test",
+		},
 	}
 
-	mockContext := mocks.NewMockContext(context.Background())
-	configManager := &mockUserConfigManager{}
-	sm := NewSourceManager(configManager, mockContext.HttpClient)
-
-	source, err := sm.CreateSource(context.Background(), config)
-	require.Nil(t, err)
-
-	require.Equal(t, config.Name, source.Name())
-}
-
-func Test_sourceManager_CreateSource_Resource(t *testing.T) {
-	config := &SourceConfig{
-		Name:     "test",
-		Type:     SourceResource,
-		Location: "",
+	for _, config := range configs {
+		source, err := sm.CreateSource(*mockContext.Context, config)
+		if config.Type == "invalid" {
+			require.NotNil(t, err)
+			require.Nil(t, source)
+		} else {
+			require.Nil(t, err)
+			require.NotNil(t, source)
+		}
 	}
-
-	mockContext := mocks.NewMockContext(context.Background())
-	configManager := &mockUserConfigManager{}
-	sm := NewSourceManager(configManager, mockContext.HttpClient)
-
-	source, err := sm.CreateSource(context.Background(), config)
-	require.Nil(t, err)
-
-	require.Equal(t, config.Name, source.Name())
 }
 
 type mockUserConfigManager struct {

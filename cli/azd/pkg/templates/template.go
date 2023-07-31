@@ -24,15 +24,6 @@ type Template struct {
 	RepositoryPath string `json:"repositoryPath"`
 }
 
-func (t *Template) ClonePath() string {
-	clonePath, err := Absolute(t.RepositoryPath)
-	if err != nil {
-		return t.RepositoryPath
-	}
-
-	return clonePath
-}
-
 // Display writes a string representation of the template suitable for display.
 func (t *Template) Display(writer io.Writer) error {
 	tabs := tabwriter.NewWriter(

@@ -16,8 +16,7 @@ func Test_NewFileTemplateSource_FileExists(t *testing.T) {
 	require.NoError(t, err)
 
 	path := filepath.Join(configDir, "test-templates.json")
-	jsonTemplates := `[{"name": "template1", "repositoryPath": "path/to/template1"}, {"name": "template2", "repositoryPath": "path/to/template2"}]`
-	err = os.WriteFile(path, []byte(jsonTemplates), osutil.PermissionFile)
+	err = os.WriteFile(path, []byte(jsonTemplates()), osutil.PermissionFile)
 	require.Nil(t, err)
 
 	source, err := NewFileTemplateSource(name, path)

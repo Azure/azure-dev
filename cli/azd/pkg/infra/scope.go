@@ -24,8 +24,10 @@ type Deployment interface {
 	Scope
 	// Name is the name of this deployment.
 	Name() string
-	// PortalUrl is the URL that may be used to view this deployment in Azure Portal.
+	// PortalUrl is the URL that may be used to view this deployment in the Azure Portal.
 	PortalUrl() string
+	// OutputsUrl is the URL that may be used to view this deployment outputs the in Azure Portal.
+	OutputsUrl() string
 	// Deploy a given template with a set of parameters.
 	Deploy(
 		ctx context.Context,
@@ -97,6 +99,13 @@ func (s *ResourceGroupDeployment) PortalUrl() string {
 		url.PathEscape(azure.ResourceGroupDeploymentRID(s.subscriptionId, s.resourceGroupName, s.name)))
 }
 
+// Gets the url to view deployment outputs
+func (s *ResourceGroupDeployment) OutputsUrl() string {
+	return fmt.Sprintf("%s/%s",
+		cOutputsUrlPrefix,
+		url.PathEscape(azure.ResourceGroupDeploymentRID(s.subscriptionId, s.resourceGroupName, s.name)))
+}
+
 func NewResourceGroupDeployment(
 	deploymentsService azapi.Deployments,
 	deploymentOperations azapi.DeploymentOperations,
@@ -145,7 +154,8 @@ func (s *ResourceGroupScope) ListDeployments(ctx context.Context) ([]*armresourc
 
 // cPortalUrlPrefix is the prefix which can be combined with the RID of a deployment to produce a URL into the Azure Portal
 // that shows information about the deployment.
-const cPortalUrlPrefix = "https://portal.azure.com/#blade/HubsExtension/DeploymentDetailsBlade/overview/id"
+const cPortalUrlPrefix = "https://portal.azure.com/#view/HubsExtension/DeploymentDetailsBlade/~/overview/id"
+const cOutputsUrlPrefix = "https://portal.azure.com/#view/HubsExtension/DeploymentDetailsBlade/~/outputs/id"
 
 type SubscriptionDeployment struct {
 	*SubscriptionScope
@@ -166,6 +176,13 @@ func (s *SubscriptionDeployment) SubscriptionId() string {
 func (s *SubscriptionDeployment) PortalUrl() string {
 	return fmt.Sprintf("%s/%s",
 		cPortalUrlPrefix,
+		url.PathEscape(azure.SubscriptionDeploymentRID(s.subscriptionId, s.name)))
+}
+
+// Gets the url to view deployment outputs
+func (s *SubscriptionDeployment) OutputsUrl() string {
+	return fmt.Sprintf("%s/%s",
+		cOutputsUrlPrefix,
 		url.PathEscape(azure.SubscriptionDeploymentRID(s.subscriptionId, s.name)))
 }
 

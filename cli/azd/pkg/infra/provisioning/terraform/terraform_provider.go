@@ -254,7 +254,7 @@ func (t *TerraformProvider) Destroy(ctx context.Context, options DestroyOptions)
 	}, nil
 }
 
-func (t *TerraformProvider) State(ctx context.Context) (*StateResult, error) {
+func (t *TerraformProvider) State(ctx context.Context, options *StateOptions) (*StateResult, error) {
 	isRemoteBackendConfig, err := t.isRemoteBackendConfig()
 	if err != nil {
 		return nil, fmt.Errorf("reading backend config: %w", err)

@@ -118,7 +118,7 @@ func TestBicepState(t *testing.T) {
 
 	infraProvider := createBicepProvider(t, mockContext)
 
-	getDeploymentResult, err := infraProvider.State(*mockContext.Context)
+	getDeploymentResult, err := infraProvider.State(*mockContext.Context, nil)
 
 	require.Nil(t, err)
 	require.NotNil(t, getDeploymentResult.State)

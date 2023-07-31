@@ -125,7 +125,11 @@ type ConsoleOptions struct {
 	Help         string
 	Options      []string
 	DefaultValue any
-	IsPassword   bool
+
+	// Prompt-only options
+
+	IsPassword bool
+	Suggest    func(input string) (completions []string)
 }
 
 type ConsoleHandles struct {
@@ -444,6 +448,7 @@ func promptFromOptions(options ConsoleOptions) survey.Prompt {
 		Message: options.Message,
 		Default: defaultValue,
 		Help:    options.Help,
+		Suggest: options.Suggest,
 	}
 }
 

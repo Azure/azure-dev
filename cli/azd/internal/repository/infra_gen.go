@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"log"
 	"os"
 	"path"
 	"path/filepath"
@@ -26,11 +27,10 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/resources"
 	"github.com/otiai10/copy"
-	"golang.org/x/exp/maps"
 )
 
 // A regex that matches against "likely" well-formed database names
-var wellFormedDbNameRegex = regexp.MustCompile(`^[a-zA-Z-_0-9]$`)
+var wellFormedDbNameRegex = regexp.MustCompile(`^[a-zA-Z\-_0-9]+$`)
 
 type DatabasePostgres struct {
 	DatabaseUser string
@@ -116,40 +116,11 @@ func supportedFrameworks() []appdetect.Framework {
 	}
 }
 
-type DatabaseKind string
-
-const (
-	DbPostgre     DatabaseKind = "postgres"
-	DbCosmosMongo DatabaseKind = "cosmos-mongo"
-)
-
-func mapDatabase(d appdetect.Framework) DatabaseKind {
-	switch d {
-	case appdetect.DbMongo:
-		return DbCosmosMongo
-	case appdetect.DbPostgres:
-		return DbPostgre
-	default:
-		return ""
+func supportedDatabases() []appdetect.Framework {
+	return []appdetect.Framework{
+		appdetect.DbMongo,
+		appdetect.DbPostgres,
 	}
-}
-
-func supportedDatabases() []DatabaseKind {
-	return []DatabaseKind{
-		DbPostgre,
-		DbCosmosMongo,
-	}
-}
-
-func (f DatabaseKind) Display() string {
-	switch f {
-	case DbPostgre:
-		return "PostgreSQL"
-	case DbCosmosMongo:
-		return "MongoDB"
-	}
-
-	return ""
 }
 
 func projectDisplayName(p appdetect.Project) string {
@@ -162,6 +133,29 @@ func projectDisplayName(p appdetect.Project) string {
 
 	return name
 }
+
+func tabify(selections []string, padding int) ([]string, error) {
+	tabbed := strings.Builder{}
+	tabW := tabwriter.NewWriter(&tabbed, 0, 0, padding, ' ', 0)
+	_, err := tabW.Write([]byte(strings.Join(selections, "\n")))
+	if err != nil {
+		return nil, err
+	}
+	err = tabW.Flush()
+	if err != nil {
+		return nil, err
+	}
+
+	return strings.Split(tabbed.String(), "\n"), nil
+}
+
+type EntryKind string
+
+const (
+	EntryKindDetected EntryKind = "detection"
+	EntryKindManual   EntryKind = "manual"
+	EntryKindModified EntryKind = "modified"
+)
 
 func (i *Initializer) InitializeInfra(
 	ctx context.Context,
@@ -176,38 +170,36 @@ func (i *Initializer) InitializeInfra(
 		return err
 	}
 
-	detectedDbs := make(map[appdetect.Framework]struct{})
+	detectedDbs := make(map[appdetect.Framework]EntryKind)
 	for _, project := range projects {
 		for _, framework := range project.Frameworks {
 			if framework.IsDatabaseDriver() {
-				if _, recorded := detectedDbs[framework]; recorded {
-					continue
-				}
+				detectedDbs[framework] = EntryKindDetected
 			}
-
-			detectedDbs[framework] = struct{}{}
 		}
 	}
 
-	firstConfirmation := true
+	revision := false
+	i.console.MessageUxItem(ctx, &ux.DoneMessage{Message: "Generating recommended Azure services"})
 
 confirmDetection:
 	for {
-		if firstConfirmation {
-			i.console.MessageUxItem(ctx, &ux.DoneMessage{Message: "Generating recommended Azure services"})
-			i.console.Message(ctx, "\n"+output.WithBold("App detection summary:")+"\n")
-		} else {
+		if revision {
 			i.console.MessageUxItem(ctx, &ux.DoneMessage{Message: "Revising app detection summary"})
 			i.console.Message(ctx, "\n"+output.WithBold("Revised app detection summary:")+"\n")
+
+		} else {
+			i.console.Message(ctx, "\n"+output.WithBold("App detection summary:")+"\n")
 		}
-		firstConfirmation = false
+		// assume changes will be made by default
+		revision = true
 
 		for _, project := range projects {
 			status := ""
-			if project.DetectionRule == "Updated" {
-				status = " [Updated]"
-			} else if project.DetectionRule == "Manual" {
-				status = " [Added]"
+			if project.DetectionRule == string(EntryKindModified) {
+				status = " " + output.WithSuccessFormat("[Updated]")
+			} else if project.DetectionRule == string(EntryKindManual) {
+				status = " " + output.WithSuccessFormat("[Added]")
 			}
 
 			i.console.Message(ctx, "  "+output.WithBold(projectDisplayName(project))+status)
@@ -224,7 +216,7 @@ confirmDetection:
 		}
 
 		// handle detectedDbs
-		for _, db := range maps.Keys(detectedDbs) {
+		for db, entry := range detectedDbs {
 			recommended := ""
 			switch db {
 			case appdetect.DbPostgres:
@@ -233,7 +225,14 @@ confirmDetection:
 				recommended = "CosmosDB API for MongoDB"
 			}
 			if recommended != "" {
-				i.console.Message(ctx, "  "+output.WithBold(db.Display()))
+				status := ""
+				if entry == EntryKindModified {
+					status = " " + output.WithSuccessFormat("[Updated]")
+				} else if entry == EntryKindManual {
+					status = " " + output.WithSuccessFormat("[Added]")
+				}
+
+				i.console.Message(ctx, "  "+output.WithBold(db.Display())+status)
 				i.console.Message(ctx, "  "+"Recommended: "+recommended)
 				i.console.Message(ctx, "")
 			}
@@ -260,7 +259,13 @@ confirmDetection:
 		case 1:
 			languages := supportedLanguages()
 			frameworks := supportedFrameworks()
-			databases := supportedDatabases()
+			allDbs := supportedDatabases()
+			databases := make([]appdetect.Framework, 0, len(allDbs))
+			for _, db := range allDbs {
+				if _, ok := detectedDbs[db]; !ok {
+					databases = append(databases, db)
+				}
+			}
 			selections := make([]string, 0, len(languages)+len(databases))
 			entries := make([]any, 0, len(languages)+len(databases))
 
@@ -270,7 +275,7 @@ confirmDetection:
 			}
 
 			for _, framework := range frameworks {
-				selections = append(selections, fmt.Sprintf("%s\t%s", framework.Display(), "[Language]"))
+				selections = append(selections, fmt.Sprintf("%s\t%s", framework.Display(), "[Framework]"))
 				entries = append(entries, framework)
 			}
 
@@ -279,18 +284,10 @@ confirmDetection:
 				entries = append(entries, db)
 			}
 
-			tabbed := strings.Builder{}
-			tabW := tabwriter.NewWriter(&tabbed, 0, 0, 3, ' ', 0)
-			_, err = tabW.Write([]byte(strings.Join(selections, "\n")))
+			selections, err = tabify(selections, 3)
 			if err != nil {
 				return err
 			}
-			err = tabW.Flush()
-			if err != nil {
-				return err
-			}
-
-			selections = strings.Split(tabbed.String(), "\n")
 
 			entIdx, err := i.console.Select(ctx, input.ConsoleOptions{
 				Message: "Select a language or database to add",
@@ -306,8 +303,38 @@ confirmDetection:
 				s.Language = entries[entIdx].(appdetect.ProjectType)
 			case appdetect.Framework:
 				framework := entries[entIdx].(appdetect.Framework)
-				s.Frameworks = []appdetect.Framework{framework}
-				s.Language = appdetect.JavaScript
+				if framework.IsDatabaseDriver() {
+					detectedDbs[framework] = EntryKindManual
+
+					selection := make([]string, 0, len(projects))
+
+					for _, prj := range projects {
+						selection = append(selection,
+							fmt.Sprintf("%s\t[%s]", projectDisplayName(prj), filepath.Base(prj.Path)))
+					}
+
+					selection, err = tabify(selection, 3)
+					if err != nil {
+						return err
+					}
+
+					idx, err := i.console.Select(ctx, input.ConsoleOptions{
+						Message: "Select the project that uses this database",
+						Options: selection,
+					})
+					if err != nil {
+						return err
+					}
+
+					s = projects[idx]
+					s.Frameworks = append(s.Frameworks, framework)
+					continue confirmDetection
+				} else if framework.IsWebUIFramework() {
+					s.Frameworks = []appdetect.Framework{framework}
+					s.Language = appdetect.JavaScript
+				}
+			default:
+				log.Panic("unhandled entry type")
 			}
 
 			for {
@@ -361,7 +388,9 @@ confirmDetection:
 						if confirm {
 							projects[idx].Language = s.Language
 							projects[idx].Frameworks = s.Frameworks
-							projects[idx].DetectionRule = "Updated"
+							projects[idx].DetectionRule = string(EntryKindManual)
+						} else {
+							revision = false
 						}
 
 						continue confirmDetection
@@ -369,9 +398,9 @@ confirmDetection:
 				}
 
 				s.Path = filepath.Clean(path)
-				s.DetectionRule = "Manual"
+				s.DetectionRule = string(EntryKindModified)
 				projects = append(projects, s)
-				break
+				continue confirmDetection
 			}
 		}
 	}
@@ -381,7 +410,7 @@ confirmDetection:
 	dbPrompt:
 		for {
 			dbName, err := i.console.Prompt(ctx, input.ConsoleOptions{
-				Message: "Input a name for the app database",
+				Message: fmt.Sprintf("Input a name for the app database (%s)", database.Display()),
 			})
 			if err != nil {
 				return err
@@ -394,31 +423,25 @@ confirmDetection:
 			if strings.ContainsAny(dbName, " ") {
 				confirm, err := i.console.Confirm(ctx, input.ConsoleOptions{
 					Message: "Database name contains whitespace. " +
-						"This may not be allowed by the database server. Continue?",
+						"This might not be allowed by the database server. Continue?",
 				})
 				if err != nil {
 					return err
 				}
 
-				if confirm {
-					break dbPrompt
-				} else {
+				if !confirm {
 					continue dbPrompt
 				}
-			}
-
-			if !wellFormedDbNameRegex.MatchString(dbName) {
+			} else if !wellFormedDbNameRegex.MatchString(dbName) {
 				confirm, err := i.console.Confirm(ctx, input.ConsoleOptions{
 					Message: "Database name contains special characters. " +
-						"This may not be allowed by the database server. Continue?",
+						"This might not be allowed by the database server. Continue?",
 				})
 				if err != nil {
 					return err
 				}
 
-				if confirm {
-					break dbPrompt
-				} else {
+				if !confirm {
 					continue dbPrompt
 				}
 			}
@@ -460,17 +483,24 @@ confirmDetection:
 		var port int
 		for {
 			val, err := i.console.Prompt(ctx, input.ConsoleOptions{
-				Message: "What port does '" + name + "' listen on? (0 means no exposed ports)",
+				Message: "What port does '" + name + "' listen on?",
 			})
 			if err != nil {
 				return err
 			}
 
 			port, err = strconv.Atoi(val)
-			if err == nil {
-				break
+			if err != nil {
+				i.console.Message(ctx, "Port must be an integer. Try again or press Ctrl+C to cancel")
+				continue
 			}
-			i.console.Message(ctx, "Must be an integer. Try again or press Ctrl+C to cancel")
+
+			if port < 1 || port > 65535 {
+				i.console.Message(ctx, "Port must be a value between 1 and 65535. Try again or press Ctrl+C to cancel")
+				continue
+			}
+
+			break
 		}
 
 		serviceSpec := ServiceSpec{

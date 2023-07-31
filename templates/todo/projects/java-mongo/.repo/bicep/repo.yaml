@@ -135,7 +135,7 @@ repo:
       to: ./.azdo/pipelines/azure-dev.yml
 
     # Github workflows for bicep
-    - from: ../../../../../common/.github/workflows/bicep
+    - from: ../../../../../common/.github/workflows/java
       to: ./.github/workflows
 
     # azd core modules
@@ -144,10 +144,6 @@ repo:
 
     # .devcontainer common (devcontainer.json)
     - from: ../../../../../common/.devcontainer/devcontainer.json/java
-      to: ./.devcontainer
-
-    # .devcontainer common (Dockerfile)
-    - from: ../../../../../common/.devcontainer/Dockerfile/base
       to: ./.devcontainer
 
     # Assets common

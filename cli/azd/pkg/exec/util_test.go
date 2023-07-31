@@ -6,7 +6,6 @@ package exec
 import (
 	"bytes"
 	"context"
-	"fmt"
 	"os"
 	"regexp"
 	"runtime"
@@ -44,33 +43,45 @@ func TestRunCommand(t *testing.T) {
 }
 
 func TestKillCommand(t *testing.T) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 
 	s := time.Now()
 
 	runner := NewCommandRunner(nil)
-	_, err := runner.Run(ctx, RunArgs{
-		Cmd: "pwsh",
-		Args: []string{
-			"-c",
-			"sleep",
-			"10000",
-		},
-	})
+	var args RunArgs
+	if runtime.GOOS == "windows" {
+		args = RunArgs{
+			Cmd: "pwsh",
+			Args: []string{
+				"-c",
+				"sleep",
+				"10000",
+			},
+		}
+	} else {
+		args = RunArgs{
+			Cmd: "sh",
+			Args: []string{
+				"-c",
+				"sleep 10",
+			},
+		}
+	}
+
+	_, err := runner.Run(ctx, args)
 
 	if runtime.GOOS == "windows" {
 		// on Windows terminating the process doesn't register as an error
 		require.NoError(t, err)
 	} else {
-		require.EqualValues(t, "signal: killed", err.Error())
+		require.ErrorContains(t, err, "signal: killed")
 	}
 	// should be pretty much instant since our context was already cancelled
 	// but we'll give a little wiggle room (as long as it's < 10000 seconds, which is
 	// what we're sleeping on in the powershell)
 	since := time.Since(s)
 	require.LessOrEqual(t, since, 10*time.Second)
-	require.GreaterOrEqual(t, since, 1*time.Second)
 }
 
 func TestAppendEnv(t *testing.T) {
@@ -124,27 +135,30 @@ func TestRunCapturingStderr(t *testing.T) {
 	require.Equal(t, res.Stderr, myStderr.String())
 }
 
-func TestRunEnrichError(t *testing.T) {
+func TestError(t *testing.T) {
 	runner := NewCommandRunner(nil)
 	_, err := runner.Run(context.Background(), RunArgs{
 		Cmd:  "go",
 		Args: []string{"--help"},
 	})
 
-	// the non-enriched error is the standard error message that comes from (most likely)
-	// an ExitError
-	require.EqualError(t, err, "exit status 2")
+	var exitErr *ExitError
+	require.ErrorAs(t, err, &exitErr)
+	require.ErrorContains(t, exitErr, "exit code: 2, stdout:")
+}
 
-	res, err := runner.Run(context.Background(), RunArgs{
+func TestError_Interactive(t *testing.T) {
+	runner := NewCommandRunner(nil)
+	_, err := runner.Run(context.Background(), RunArgs{
 		Cmd:         "go",
 		Args:        []string{"--help"},
-		EnrichError: true,
+		Interactive: true,
 	})
 
-	// 'enriched' errors contain the contents of the Res() as well. This makes it a bit
-	// easier for callers since they can just check that 'err ! nil', and not involve
-	// themselves in checking the ExitCode.
-	require.EqualError(t, err, fmt.Sprintf("%s: exit status 2", res.String()))
+	var exitErr *ExitError
+	require.ErrorAs(t, err, &exitErr)
+	// when interactive, no output is captured in the error
+	require.Equal(t, exitErr.Error(), "exit code: 2")
 }
 
 func TestRedactSensitiveData(t *testing.T) {
@@ -206,7 +220,7 @@ func TestRedactSensitiveData(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.scenario, func(t *testing.T) {
-			actual := redactSensitiveData(test.input)
+			actual := RedactSensitiveData(test.input)
 			require.Equal(t, test.expected, actual)
 		})
 	}

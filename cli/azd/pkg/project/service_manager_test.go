@@ -39,7 +39,8 @@ const (
 
 func createServiceManager(mockContext *mocks.MockContext, env *environment.Environment) ServiceManager {
 	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
-	resourceManager := NewResourceManager(env, azCli)
+	depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
+	resourceManager := NewResourceManager(env, azCli, depOpService)
 	serviceLocator := ioc.NewServiceLocator(mockContext.Container)
 
 	alphaManager := alpha.NewFeaturesManagerWithConfig(config.NewConfig(

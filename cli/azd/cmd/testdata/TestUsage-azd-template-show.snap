@@ -1,10 +1,11 @@
 
-Show details for a given template.
+Show details for a given template. (Beta)
 
 Usage
   azd template show <template> [flags]
 
 Flags
+        --docs 	: Opens the documentation for azd template show in your web browser.
     -h, --help 	: Gets help for show.
 
 Global Flags

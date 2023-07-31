@@ -21,11 +21,6 @@ type RunArgs struct {
 	// Enables debug logging.
 	DebugLogging *bool
 
-	// EnrichError will include any command output if there is a failure
-	// and output is available.
-	// This is off by default.
-	EnrichError bool
-
 	// When set will run the command within a shell
 	UseShell bool
 
@@ -34,6 +29,9 @@ type RunArgs struct {
 
 	// When set will call the command with the specified StdIn
 	StdIn io.Reader
+
+	// When set will call the command with the specified StdOut
+	StdOut io.Writer
 }
 
 // NewRunArgs creates a new instance with the specified cmd and args
@@ -85,12 +83,6 @@ func (b RunArgs) WithShell(useShell bool) RunArgs {
 	return b
 }
 
-// Updates whether or not errors will be enriched
-func (b RunArgs) WithEnrichError(enrichError bool) RunArgs {
-	b.EnrichError = enrichError
-	return b
-}
-
 // Updates whether or not debug output will be written to default logger
 func (b RunArgs) WithDebugLogging(debug bool) RunArgs {
 	b.DebugLogging = &debug
@@ -100,5 +92,17 @@ func (b RunArgs) WithDebugLogging(debug bool) RunArgs {
 // Updates the stdin reader that will be used while invoking the command
 func (b RunArgs) WithStdIn(stdIn io.Reader) RunArgs {
 	b.StdIn = stdIn
+	return b
+}
+
+// Updates the stdout writer that will be used while invoking the command
+func (b RunArgs) WithStdOut(stdOut io.Writer) RunArgs {
+	b.StdOut = stdOut
+	return b
+}
+
+// Updates the stderr writer that will be used while invoking the command
+func (b RunArgs) WithStdErr(stdErr io.Writer) RunArgs {
+	b.Stderr = stdErr
 	return b
 }

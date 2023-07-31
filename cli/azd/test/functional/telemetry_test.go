@@ -14,7 +14,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/azure/azure-dev/cli/azd/internal/telemetry/fields"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -150,7 +150,7 @@ func Test_CLI_Telemetry_UsageData_EnvProjectLoad(t *testing.T) {
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
 	require.NoError(t, err)
 
-	_, err = cli.RunCommand(ctx, "env", "set", "AZURE_SUBSCRIPTION_ID", testSubscriptionId)
+	_, err = cli.RunCommand(ctx, "env", "set", "AZURE_SUBSCRIPTION_ID", cfg.SubscriptionID)
 	require.NoError(t, err)
 
 	_, err = cli.RunCommand(ctx, "restore", "csharpapptest", "--trace-log-file", traceFilePath)

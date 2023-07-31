@@ -1,14 +1,15 @@
 
 Initialize a new application in your current directory.
 
-  • Running azd init without a template will prompt you to start with a minimal template or select from a curated list of presets.
-  • To view all currently available sample templates visit: azd init.
+  • Running init without a template will prompt you to start with a minimal template or select from a curated list of presets.
+  • To view all available sample templates, including those submitted by the azd community, visit: https://azure.github.io/awesome-azd.
 
 Usage
   azd init [flags]
 
 Flags
     -b, --branch string       	: The template branch to initialize from.
+        --docs                	: Opens the documentation for azd init in your web browser.
     -e, --environment string  	: The name of the environment to use.
     -h, --help                	: Gets help for init.
     -l, --location string     	: Azure location for the new environment

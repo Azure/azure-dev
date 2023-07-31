@@ -1,7 +1,7 @@
 
 Manage the Azure Developer CLI user configuration, which includes your default Azure subscription and location.
 
-  • Applications are initially configures when you run azd init.
+  • Applications are initially configured when you run azd init.
   • The subscription and location you select will be stored at: %HOME/.azd/config.json.
   • The default configuration path is: %HOME/.azd.
 
@@ -17,6 +17,7 @@ Available Commands
   unset     	: Unsets a configuration.
 
 Flags
+        --docs 	: Opens the documentation for azd config in your web browser.
     -h, --help 	: Gets help for config.
 
 Global Flags

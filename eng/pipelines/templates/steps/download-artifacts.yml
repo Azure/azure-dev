@@ -1,0 +1,10 @@
+parameters:
+- name: Artifacts
+  type: object
+
+steps:
+  - ${{ each artifact in parameters.Artifacts }}:
+    - task: DownloadPipelineArtifact@2
+      inputs:
+        artifact: ${{ artifact }}
+        path: ${{ artifact }}

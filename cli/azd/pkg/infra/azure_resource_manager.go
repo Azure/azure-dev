@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/compare"
@@ -18,7 +19,8 @@ import (
 )
 
 type AzureResourceManager struct {
-	azCli azcli.AzCli
+	azCli                azcli.AzCli
+	deploymentOperations azapi.DeploymentOperations
 }
 
 type ResourceManager interface {
@@ -32,9 +34,11 @@ type ResourceManager interface {
 	) (string, error)
 }
 
-func NewAzureResourceManager(azCli azcli.AzCli) *AzureResourceManager {
+func NewAzureResourceManager(
+	azCli azcli.AzCli, deploymentOperations azapi.DeploymentOperations) *AzureResourceManager {
 	return &AzureResourceManager{
-		azCli: azCli,
+		azCli:                azCli,
+		deploymentOperations: deploymentOperations,
 	}
 }
 
@@ -213,7 +217,7 @@ func (rm *AzureResourceManager) FindResourceGroupForEnvironment(
 	}
 
 	return "", fmt.Errorf(
-		"%s please explicitly specify your resource group in azure.yaml or the AZURE_RESOURCE_GROUP environment variable",
+		"%s explicitly specify your resource group in azure.yaml or the AZURE_RESOURCE_GROUP environment variable",
 		msg,
 	)
 }
@@ -303,7 +307,7 @@ func (rm *AzureResourceManager) appendDeploymentResourcesRecursive(
 	resourceOperations *map[string]*armresources.DeploymentOperation,
 	queryStart *time.Time,
 ) error {
-	operations, err := rm.azCli.ListResourceGroupDeploymentOperations(
+	operations, err := rm.deploymentOperations.ListResourceGroupDeploymentOperations(
 		ctx, subscriptionId, resourceGroupName, deploymentName)
 	if err != nil {
 		return fmt.Errorf("getting subscription deployment operations: %w", err)

@@ -17,8 +17,12 @@
 # GoLand temp files
 .idea 
 
-# Output of the go coverage tool, specifically when used with LiteIDE
+# go code coverage outputs
+# text format
 *.out
+# binary formats
+covcounters.*
+covmeta.*
 
 # Dependency directories (remove the comment below to include it)
 # vendor/

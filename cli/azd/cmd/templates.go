@@ -33,7 +33,7 @@ func templateNameCompletion(cmd *cobra.Command, args []string, toComplete string
 func templatesActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 	group := root.Add("template", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
-			Short: "Find and view template details.",
+			Short: fmt.Sprintf("Find and view template details. %s", output.WithWarningFormat("(Beta)")),
 		},
 		HelpOptions: actions.ActionHelpOptions{
 			Description: getCmdTemplateHelpDescription,
@@ -53,8 +53,8 @@ func templatesActions(root *actions.ActionDescriptor) *actions.ActionDescriptor 
 	group.Add("show", &actions.ActionDescriptorOptions{
 		Command:        newTemplateShowCmd(),
 		ActionResolver: newTemplatesShowAction,
-		OutputFormats:  []output.Format{output.JsonFormat, output.TableFormat},
-		DefaultFormat:  output.TableFormat,
+		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
+		DefaultFormat:  output.NoneFormat,
 	})
 
 	return group
@@ -63,7 +63,7 @@ func templatesActions(root *actions.ActionDescriptor) *actions.ActionDescriptor 
 func newTemplateListCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:     "list",
-		Short:   "Show list of sample azd templates.",
+		Short:   fmt.Sprintf("Show list of sample azd templates. %s", output.WithWarningFormat("(Beta)")),
 		Aliases: []string{"ls"},
 	}
 }
@@ -92,7 +92,26 @@ func (tl *templatesListAction) Run(ctx context.Context) (*actions.ActionResult, 
 		return nil, err
 	}
 
-	return nil, formatTemplates(ctx, tl.formatter, tl.writer, listedTemplates...)
+	if tl.formatter.Kind() == output.TableFormat {
+		columns := []output.Column{
+			{
+				Heading:       "RepositoryPath",
+				ValueTemplate: "{{.RepositoryPath}}",
+			},
+			{
+				Heading:       "Name",
+				ValueTemplate: "{{.Name}}",
+			},
+		}
+
+		err = tl.formatter.Format(listedTemplates, tl.writer, output.TableFormatterOptions{
+			Columns: columns,
+		})
+	} else {
+		err = tl.formatter.Format(listedTemplates, tl.writer, nil)
+	}
+
+	return nil, err
 }
 
 type templatesShowAction struct {
@@ -123,56 +142,28 @@ func (a *templatesShowAction) Run(ctx context.Context) (*actions.ActionResult, e
 		return nil, err
 	}
 
-	return nil, formatTemplates(ctx, a.formatter, a.writer, matchingTemplate)
+	if a.formatter.Kind() == output.NoneFormat {
+		err = matchingTemplate.Display(a.writer)
+	} else {
+		err = a.formatter.Format(matchingTemplate, a.writer, nil)
+	}
+
+	return nil, err
 }
 
 func newTemplateShowCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "show <template>",
-		Short: "Show details for a given template.",
+		Short: fmt.Sprintf("Show details for a given template. %s", output.WithWarningFormat("(Beta)")),
 		Args:  cobra.ExactArgs(1),
 	}
 }
 
-func formatTemplates(
-	ctx context.Context,
-	formatter output.Formatter,
-	writer io.Writer,
-	templates ...templates.Template,
-) error {
-	var err error
-	if formatter.Kind() == output.TableFormat {
-		columns := []output.Column{
-			{
-				Heading:       "RepositoryPath",
-				ValueTemplate: "{{.RepositoryPath}}",
-			},
-			{
-				Heading:       "Name",
-				ValueTemplate: "{{.Name}}",
-			},
-			{
-				Heading:       "Description",
-				ValueTemplate: "{{.Description}}",
-			},
-		}
-
-		err = formatter.Format(templates, writer, output.TableFormatterOptions{
-			Columns: columns,
-		})
-	} else {
-		err = formatter.Format(templates, writer, nil)
-	}
-
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
 func getCmdTemplateHelpDescription(*cobra.Command) string {
-	return generateCmdHelpDescription("View details of your current template or browse a list of curated sample templates.",
+	return generateCmdHelpDescription(
+		fmt.Sprintf(
+			"View details of your current template or browse a list of curated sample templates. %s",
+			output.WithWarningFormat("(Beta)")),
 		[]string{
 			formatHelpNote(fmt.Sprintf("The azd CLI includes a curated list of sample templates viewable by running %s.",
 				output.WithHighLightFormat("azd template list"))),

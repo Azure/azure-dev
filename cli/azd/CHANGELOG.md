@@ -1,14 +1,104 @@
 # Release History
 
-## 0.9.0-beta.2 (Unreleased)
+## 1.1.1 (Unreleased)
 
 ### Features Added
 
-### Breaking Changes
+- [[2550]](https://github.com/Azure/azure-dev/pull/2550) Add `--preview` to `azd provision` to get the changes
+- [[2521]](https://github.com/Azure/azure-dev/pull/2521) Support `--principal-id` param for azd pipeline config to reuse existing service principal
+- [[2455]](https://github.com/Azure/azure-dev/pull/2455) Adds optional support for text templates in AKS k8s manifests
 
 ### Bugs Fixed
 
+- [[2569]](https://github.com/Azure/azure-dev/pull/2569) Fix `azd down` so it works after a failed `azd provision`
+- [[2367]](https://github.com/Azure/azure-dev/pull/2367) Don't fail AKS deployment for failed environment substitution
+
+### Other changes
+
+- [[2572]](https://github.com/Azure/azure-dev/pull/2572) Decrease expiration time of service principal secret from default (24 months) to 180 days
+
+## 1.1.0 (2023-07-12)
+
+### Features Added
+
+- [[2364]](https://github.com/Azure/azure-dev/pull/2364) Display docker output during `package` and `deploy`.
+- [[2463]](https://github.com/Azure/azure-dev/pull/2463) Support `--docs` flag for all azd commands to show official documentation website.
+
+### Bugs Fixed
+
+- [[2390]](https://github.com/Azure/azure-dev/pull/2367) Fixes unmarshalling of k8s ingress resources with TLS hosts
+- [[2402]](https://github.com/Azure/azure-dev/pull/2279) Support for workload profiles in Azure Container Apps
+- [[2428, 2040]](https://github.com/Azure/azure-dev/pull/2468) Include current git branch in GitHub federated credentials
+
 ### Other Changes
+
+- [[1118]](https://github.com/Azure/azure-dev/pull/1118) Add `azd` as a devcontainer feature. Thanks [aaronpowell](https://github.com/aaronpowell) for their contributions to this feature and for updating our templates to use this new feature!
+
+## 1.0.2 (2023-06-14)
+
+### Features Added
+
+- [[2266]](https://github.com/Azure/azure-dev/pull/2266) Support for buildArgs on Docker builds.
+- [[2322]](https://github.com/Azure/azure-dev/pull/2322) Support Azure Spring Apps consumption dedicated plan.
+
+### Bugs Fixed
+
+- [[2348]](https://github.com/Azure/azure-dev/pull/2279) Support purging Managed HSMs.
+- [[2362]](https://github.com/Azure/azure-dev/pull/2362) Prevent more errors from interrupting console progress.
+- [[2366]](https://github.com/Azure/azure-dev/pull/2366) Fixes issue where hooks inline script slashes are replaced.
+- [[2375]](https://github.com/Azure/azure-dev/pull/2375) Store numeric values with leading zeros in .env correctly.
+- [[2401]](https://github.com/Azure/azure-dev/pull/2401) Fix the application url fetched from ASA consumption plan.
+- [[2426]](https://github.com/Azure/azure-dev/pull/2426) Fix saving of subscription and location defaults.
+
+### Other Changes
+
+- [[2337]](https://github.com/Azure/azure-dev/pull/2337) Update device-code auth flow.
+
+## 1.0.1 (2023-05-25)
+
+### Bugs Fixed
+
+- [[2300]](https://github.com/Azure/azure-dev/pull/2300) Fix `azd auth login` failing with error "reauthentication required: run `azd auth login` to log in" due to stale cache data.
+
+## 1.0.0 (2023-05-22)
+
+### Bugs Fixed
+
+- [[2279]](https://github.com/Azure/azure-dev/pull/2279) Fetch k8s GPG key from alternate location.
+- [[2278]](https://github.com/Azure/azure-dev/pull/2278) Remove infrastructure outputs from .env on azd down.
+- [[2274]](https://github.com/Azure/azure-dev/pull/2274) Change AKS service spec 'targetPort' from int to string.
+
+## 0.9.0-beta.3 (2023-05-19)
+
+### Features Added
+ 
+- [[2245]](https://github.com/Azure/azure-dev/pull/2245) Add support to login to Azure Container Registry with current identity.
+- [[2228]](https://github.com/Azure/azure-dev/pull/2228) Add error classification and reporting for external errors to `azd`.
+- [[2219]](https://github.com/Azure/azure-dev/pull/2219) Support environment name as explicit argument for `azd env refresh`.
+- [[2164]](https://github.com/Azure/azure-dev/pull/2164) Add timing information on `up`,`package`,`build`, `provision`,`deploy`, `down` and `restore` commands.
+
+#### Template Feature
+
+- [[2157]](https://github.com/Azure/azure-dev/pull/2157) Add `Dapr` and container configuration properties to Azure Container Apps modules.
+
+### Bugs Fixed
+
+- [[2257]](https://github.com/Azure/azure-dev/pull/2257) Add purge option of cognitive accounts for `azd down`.
+- [[2243]](https://github.com/Azure/azure-dev/pull/2243) Return error when login fails.
+- [[2251]](https://github.com/Azure/azure-dev/pull/2251) Create an `alpha` version of azure.yaml schema with `terraform`.
+- [[2028]](https://github.com/Azure/azure-dev/pull/2028) Add check on required role assignments for `azd pipeline config`.
+
+### Other Changes
+
+- [[2218]](https://github.com/Azure/azure-dev/pull/2218) Update `azd pipeline config` default roles to include `User Access Administrator`.
+- [[2185]](https://github.com/Azure/azure-dev/pull/2185) Improve error messages on `auth` command.
+
+## 0.9.0-beta.2 (2023-05-11)
+
+### Bugs Fixed
+
+- [[2177]](https://github.com/Azure/azure-dev/issues/2177) Use information in `.installed-by.txt` to advise the user on how to upgrade azd.
+- [[2183]](https://github.com/Azure/azure-dev/pull/2182) Statically link CRT in MSI custom action.
 
 ## 0.9.0-beta.1 (2023-05-11)
 

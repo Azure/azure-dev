@@ -1,5 +1,5 @@
 
-View details of your current template or browse a list of curated sample templates.
+View details of your current template or browse a list of curated sample templates. (Beta)
 
   • The azd CLI includes a curated list of sample templates viewable by running azd template list.
   • To view all available sample templates, including those submitted by the azd community visit: https://azure.github.io/awesome-azd.
@@ -9,10 +9,11 @@ Usage
   azd template [command]
 
 Available Commands
-  list	: Show list of sample azd templates.
-  show	: Show details for a given template.
+  list	: Show list of sample azd templates. (Beta)
+  show	: Show details for a given template. (Beta)
 
 Flags
+        --docs 	: Opens the documentation for azd template in your web browser.
     -h, --help 	: Gets help for template.
 
 Global Flags

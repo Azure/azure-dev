@@ -25,6 +25,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/kubectl"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazsdk"
 	"github.com/azure/azure-dev/cli/azd/test/ostest"
 	"github.com/benbjohnson/clock"
 	"github.com/stretchr/testify/require"
@@ -105,7 +106,7 @@ func Test_Package_Deploy_HappyPath(t *testing.T) {
 	require.IsType(t, new(kubectl.Deployment), deployResult.Details)
 	require.Greater(t, len(deployResult.Endpoints), 0)
 	// New env variable is created
-	require.Equal(t, "REGISTRY.azurecr.io/test-app/api-test:azd-deploy-0", env.Values["SERVICE_API_IMAGE_NAME"])
+	require.Equal(t, "REGISTRY.azurecr.io/test-app/api-test:azd-deploy-0", env.Dotenv()["SERVICE_API_IMAGE_NAME"])
 }
 
 func Test_Deploy_No_Cluster_Name(t *testing.T) {
@@ -120,7 +121,7 @@ func Test_Deploy_No_Cluster_Name(t *testing.T) {
 	env := createEnv()
 
 	// Simulate AKS cluster name not found in env file
-	delete(env.Values, environment.AksClusterEnvVarName)
+	env.DotenvDelete(environment.AksClusterEnvVarName)
 
 	serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env)
 	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "CLUSTER_NAME", string(infra.AzureResourceTypeManagedCluster))
@@ -233,47 +234,31 @@ func setupListClusterAdminCredentialsMock(mockContext *mocks.MockContext, status
 }
 
 func setupMocksForAcr(mockContext *mocks.MockContext) {
-	// List container registries
-	mockContext.HttpClient.When(func(request *http.Request) bool {
-		return request.Method == http.MethodGet &&
-			strings.Contains(request.URL.Path, "Microsoft.ContainerRegistry/registries")
-	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		result := armcontainerregistry.RegistryListResult{
-			NextLink: nil,
-			Value: []*armcontainerregistry.Registry{
-				{
-					ID: convert.RefOf(
-						//nolint:lll
-						"/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/providers/Microsoft.ContainerRegistry/registries/REGISTRY",
-					),
-					Location: convert.RefOf("eastus2"),
-					Name:     convert.RefOf("REGISTRY"),
-					Properties: &armcontainerregistry.RegistryProperties{
-						LoginServer: convert.RefOf("REGISTRY.azurecr.io"),
-					},
-				},
+	mockazsdk.MockContainerRegistryList(mockContext, []*armcontainerregistry.Registry{
+		{
+			ID: convert.RefOf(
+				//nolint:lll
+				"/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP/providers/Microsoft.ContainerRegistry/registries/REGISTRY",
+			),
+			Location: convert.RefOf("eastus2"),
+			Name:     convert.RefOf("REGISTRY"),
+			Properties: &armcontainerregistry.RegistryProperties{
+				LoginServer: convert.RefOf("REGISTRY.azurecr.io"),
 			},
-		}
-
-		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, result)
+		},
 	})
 
-	// List container credentials
-	mockContext.HttpClient.When(func(request *http.Request) bool {
-		return request.Method == http.MethodPost && strings.Contains(request.URL.Path, "listCredentials")
-	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		result := armcontainerregistry.RegistryListCredentialsResult{
-			Username: convert.RefOf("admin"),
-			Passwords: []*armcontainerregistry.RegistryPassword{
-				{
-					Name:  convert.RefOf(armcontainerregistry.PasswordName("admin")),
-					Value: convert.RefOf("password"),
-				},
+	mockazsdk.MockContainerRegistryCredentials(mockContext, &armcontainerregistry.RegistryListCredentialsResult{
+		Username: convert.RefOf("admin"),
+		Passwords: []*armcontainerregistry.RegistryPassword{
+			{
+				Name:  convert.RefOf(armcontainerregistry.PasswordName("admin")),
+				Value: convert.RefOf("password"),
 			},
-		}
-
-		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, result)
+		},
 	})
+
+	mockazsdk.MockContainerRegistryTokenExchange(mockContext, "SUBSCRIPTION_ID", "LOGIN_SERVER", "REFRESH_TOKEN")
 }
 
 func setupMocksForKubectl(mockContext *mocks.MockContext) {
@@ -298,9 +283,16 @@ func setupMocksForKubectl(mockContext *mocks.MockContext) {
 		return exec.NewRunResult(0, "", ""), nil
 	})
 
-	// Apply Pipe
+	// Apply With StdIn
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "kubectl apply -f -")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		return exec.NewRunResult(0, "", ""), nil
+	})
+
+	// Apply With File
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "kubectl apply -f")
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		return exec.NewRunResult(0, "", ""), nil
 	})

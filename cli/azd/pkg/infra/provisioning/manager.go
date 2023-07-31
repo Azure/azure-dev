@@ -6,107 +6,114 @@ package provisioning
 import (
 	"context"
 	"fmt"
-	"io"
-	"log"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
-	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/spin"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 )
 
 // Manages the orchestration of infrastructure provisioning
 type Manager struct {
-	azCli              azcli.AzCli
-	env                *environment.Environment
-	provider           Provider
-	writer             io.Writer
-	console            input.Console
-	accountManager     account.Manager
-	userProfileService *azcli.UserProfileService
-	subResolver        account.SubscriptionTenantResolver
-	interactive        bool
+	serviceLocator      ioc.ServiceLocator
+	env                 *environment.Environment
+	console             input.Console
+	prompter            prompt.Prompter
+	provider            Provider
+	alphaFeatureManager *alpha.FeatureManager
+	projectPath         string
+	options             *Options
 }
 
-// Prepares for an infrastructure provision operation
-func (m *Manager) Plan(ctx context.Context) (*DeploymentPlan, error) {
-	deploymentPlan, err := m.plan(ctx)
+func (m *Manager) Initialize(ctx context.Context, projectPath string, options Options) error {
+	m.projectPath = projectPath
+	m.options = &options
+
+	provider, err := m.newProvider(ctx)
 	if err != nil {
-		return nil, err
+		return fmt.Errorf("initializing infrastructure provider: %w", err)
 	}
 
-	return deploymentPlan, nil
+	m.provider = provider
+	return m.provider.Initialize(ctx, projectPath, options)
 }
 
 // Gets the latest deployment details for the specified scope
-func (m *Manager) State(ctx context.Context) (*StateResult, error) {
-	var stateResult *StateResult
-
-	err := m.runAction(
-		ctx,
-		"Retrieving Infrastructure State",
-		m.interactive,
-		func(ctx context.Context, spinner *spin.Spinner) error {
-			queryTask := m.provider.State(ctx)
-
-			go func() {
-				for progress := range queryTask.Progress() {
-					m.updateSpinnerTitle(spinner, progress.Message)
-				}
-			}()
-
-			go m.monitorInteraction(spinner, queryTask.Interactive())
-
-			result, err := queryTask.Await()
-			if err != nil {
-				return err
-			}
-
-			stateResult = result
-
-			return nil
-		},
-	)
-
+func (m *Manager) State(ctx context.Context, options *StateOptions) (*StateResult, error) {
+	result, err := m.provider.State(ctx, options)
 	if err != nil {
 		return nil, fmt.Errorf("error retrieving state: %w", err)
 	}
 
-	return stateResult, nil
+	return result, nil
 }
 
 // Deploys the Azure infrastructure for the specified project
-func (m *Manager) Deploy(ctx context.Context, plan *DeploymentPlan) (*DeployResult, error) {
+func (m *Manager) Deploy(ctx context.Context) (*DeployResult, error) {
 	// Apply the infrastructure deployment
-	deployResult, err := m.deploy(ctx, plan)
+	deployResult, err := m.provider.Deploy(ctx)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error deploying infrastructure: %w", err)
 	}
 
 	if err := UpdateEnvironment(m.env, deployResult.Deployment.Outputs); err != nil {
 		return nil, fmt.Errorf("updating environment with deployment outputs: %w", err)
 	}
 
+	// make sure any spinner is stopped
+	m.console.StopSpinner(ctx, "", input.StepDone)
+
 	return deployResult, nil
+}
+
+// Preview generates the list of changes to be applied as part of the provisioning.
+func (m *Manager) Preview(ctx context.Context) (*DeployPreviewResult, error) {
+	// Apply the infrastructure deployment
+	deployResult, err := m.provider.Preview(ctx)
+
+	if err != nil {
+		return nil, fmt.Errorf("error deploying infrastructure: %w", err)
+	}
+
+	// apply resource mapping
+	filteredResult := DeployPreviewResult{
+		Preview: &DeploymentPreview{
+			Status:     deployResult.Preview.Status,
+			Properties: &DeploymentPreviewProperties{},
+		},
+	}
+
+	for index, result := range deployResult.Preview.Properties.Changes {
+		mappingName := infra.GetResourceTypeDisplayName(infra.AzureResourceType(result.ResourceType))
+		if mappingName == "" {
+			// ignore
+			continue
+		}
+		deployResult.Preview.Properties.Changes[index].ResourceType = mappingName
+		filteredResult.Preview.Properties.Changes = append(
+			filteredResult.Preview.Properties.Changes, deployResult.Preview.Properties.Changes[index])
+	}
+
+	// make sure any spinner is stopped
+	m.console.StopSpinner(ctx, "", input.StepDone)
+
+	return &filteredResult, nil
 }
 
 // Destroys the Azure infrastructure for the specified project
 func (m *Manager) Destroy(ctx context.Context, options DestroyOptions) (*DestroyResult, error) {
-	// Call provisioning provider to destroy the infrastructure
-	destroyResult, err := m.destroy(ctx, options)
+	destroyResult, err := m.provider.Destroy(ctx, options)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("error deleting Azure resources: %w", err)
 	}
 
 	// Remove any outputs from the template from the environment since destroying the infrastructure
 	// invalidated them all.
-	for outputName := range destroyResult.Outputs {
-		delete(m.env.Values, outputName)
+	for _, key := range destroyResult.InvalidatedEnvKeys {
+		m.env.DotenvDelete(key)
 	}
 
 	// Update environment files to remove invalid infrastructure parameters
@@ -117,219 +124,83 @@ func (m *Manager) Destroy(ctx context.Context, options DestroyOptions) (*Destroy
 	return destroyResult, nil
 }
 
-// Plans the infrastructure provisioning and orchestrates interactive terminal operations
-func (m *Manager) plan(ctx context.Context) (*DeploymentPlan, error) {
-	planningTask := m.provider.Plan(ctx)
-	go func() {
-		for progress := range planningTask.Progress() {
-			log.Println(progress.Message)
-		}
-	}()
-
-	deploymentPlan, err := planningTask.Await()
-	if err != nil {
-		return nil, fmt.Errorf("planning infrastructure provisioning: %w", err)
-	}
-
-	return deploymentPlan, nil
-}
-
-// Applies the specified infrastructure provisioning and orchestrates the interactive terminal operations
-func (m *Manager) deploy(
-	ctx context.Context,
-	plan *DeploymentPlan,
-) (*DeployResult, error) {
-	deployTask := m.provider.Deploy(ctx, plan)
-
-	go func() {
-		for progress := range deployTask.Progress() {
-			log.Println(progress.Message)
-		}
-	}()
-
-	deployResult, err := deployTask.Await()
-	if err != nil {
-		return nil, fmt.Errorf("error deploying infrastructure: %w", err)
-	}
-
-	// make sure any spinner is stopped
-	m.console.StopSpinner(ctx, "", input.StepDone)
-
-	return deployResult, nil
-}
-
-// Destroys the specified infrastructure provisioning and orchestrates the interactive terminal operations
-func (m *Manager) destroy(ctx context.Context, options DestroyOptions) (*DestroyResult, error) {
-	var destroyResult *DestroyResult
-
-	destroyTask := m.provider.Destroy(ctx, options)
-
-	go func() {
-		for progress := range destroyTask.Progress() {
-			log.Println(progress.Message)
-		}
-	}()
-
-	result, err := destroyTask.Await()
-	if err != nil {
-		return nil, fmt.Errorf("error deleting Azure resources: %w", err)
-	}
-
-	destroyResult = result
-	return destroyResult, nil
-}
-
-func (m *Manager) runAction(
-	ctx context.Context,
-	title string,
-	interactive bool,
-	action func(ctx context.Context, spinner *spin.Spinner) error,
-) error {
-	var spinner *spin.Spinner
-
-	if interactive {
-		spinner, ctx = spin.GetOrCreateSpinner(ctx, m.console.Handles().Stdout, title)
-		defer spinner.Stop()
-		defer m.console.SetWriter(nil)
-
-		spinner.Start()
-		m.console.SetWriter(spinner)
-	}
-
-	return action(ctx, spinner)
-}
-
-// Updates the spinner title during interactive console session
-func (m *Manager) updateSpinnerTitle(spinner *spin.Spinner, message string) {
-	if spinner == nil {
-		return
-	}
-
-	spinner.Title(fmt.Sprintf("%s...", message))
-}
-
-// Monitors the interactive channel and starts/stops the terminal spinner as needed
-func (m *Manager) monitorInteraction(spinner *spin.Spinner, interactiveChannel <-chan bool) {
-	for isInteractive := range interactiveChannel {
-		if spinner == nil {
-			continue
+// EnsureSubscriptionAndLocation ensures that that that subscription (AZURE_SUBSCRIPTION_ID) and location (AZURE_LOCATION)
+// variables are set in the environment, prompting the user for the values if they do not exist.
+func EnsureSubscriptionAndLocation(ctx context.Context, env *environment.Environment, prompter prompt.Prompter) error {
+	if env.GetSubscriptionId() == "" {
+		subscriptionId, err := prompter.PromptSubscription(ctx, "Select an Azure Subscription to use:")
+		if err != nil {
+			return err
 		}
 
-		if isInteractive {
-			spinner.Stop()
-		} else {
-			spinner.Start()
+		env.SetSubscriptionId(subscriptionId)
+
+		if err := env.Save(); err != nil {
+			return err
 		}
 	}
+
+	if env.GetLocation() == "" {
+		location, err := prompter.PromptLocation(
+			ctx,
+			env.GetSubscriptionId(),
+			"Select an Azure location to use:",
+			func(_ account.Location) bool { return true },
+		)
+		if err != nil {
+			return err
+		}
+
+		env.SetLocation(location)
+
+		if err := env.Save(); err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // Creates a new instance of the Provisioning Manager
 func NewManager(
-	ctx context.Context,
+	serviceLocator ioc.ServiceLocator,
 	env *environment.Environment,
-	projectPath string,
-	infraOptions Options,
-	interactive bool,
-	azCli azcli.AzCli,
 	console input.Console,
-	commandRunner exec.CommandRunner,
-	accountManager account.Manager,
-	userProfileService *azcli.UserProfileService,
-	subResolver account.SubscriptionTenantResolver,
 	alphaFeatureManager *alpha.FeatureManager,
-) (*Manager, error) {
-
-	principalProvider := &principalIDProvider{
-		env:                env,
-		userProfileService: userProfileService,
-		subResolver:        subResolver,
+	prompter prompt.Prompter,
+) *Manager {
+	return &Manager{
+		serviceLocator:      serviceLocator,
+		env:                 env,
+		console:             console,
+		alphaFeatureManager: alphaFeatureManager,
+		prompter:            prompter,
 	}
+}
 
-	m := &Manager{
-		azCli:              azCli,
-		env:                env,
-		writer:             console.GetWriter(),
-		console:            console,
-		interactive:        interactive,
-		accountManager:     accountManager,
-		userProfileService: userProfileService,
-		subResolver:        subResolver,
-	}
-
-	prompters := Prompters{
-		Location:                   m.promptLocation,
-		Subscription:               m.promptSubscription,
-		EnsureSubscriptionLocation: m.ensureSubscriptionLocation,
-	}
-
-	infraProvider, err := NewProvider(
-		ctx,
-		console,
-		azCli,
-		commandRunner,
-		env,
-		projectPath,
-		infraOptions,
-		prompters,
-		principalProvider,
-		alphaFeatureManager,
-	)
+func (m *Manager) newProvider(ctx context.Context) (Provider, error) {
+	var err error
+	m.options.Provider, err = ParseProvider(m.options.Provider)
 	if err != nil {
-		return nil, fmt.Errorf("error creating infra provider: %w", err)
-	}
-
-	requiredTools := infraProvider.RequiredExternalTools()
-	if err := tools.EnsureInstalled(ctx, requiredTools...); err != nil {
 		return nil, err
 	}
 
-	m.provider = infraProvider
-	if err := m.provider.EnsureConfigured(ctx); err != nil {
-		return nil, err
+	if alphaFeatureId, isAlphaFeature := alpha.IsFeatureKey(string(m.options.Provider)); isAlphaFeature {
+		if !m.alphaFeatureManager.IsEnabled(alphaFeatureId) {
+			return nil, fmt.Errorf("provider '%s' is alpha feature and it is not enabled. Run `%s` to enable it.",
+				m.options.Provider,
+				alpha.GetEnableCommand(alphaFeatureId),
+			)
+		}
+
+		m.console.WarnForFeature(ctx, alphaFeatureId)
 	}
 
-	return m, nil
-}
-
-func (m *Manager) promptSubscription(ctx context.Context, msg string) (subscriptionId string, err error) {
-	return promptSubscription(ctx, msg, m.console, m.env, m.accountManager)
-}
-
-func (m *Manager) promptLocation(
-	ctx context.Context,
-	subId string,
-	msg string,
-	filter func(loc account.Location) bool,
-) (string, error) {
-	return promptLocation(ctx, subId, msg, filter, m.console, m.env, m.accountManager)
-}
-
-func (m *Manager) ensureSubscriptionLocation(ctx context.Context, env *environment.Environment) error {
-	return EnsureEnv(ctx, m.console, m.env, m.accountManager)
-}
-
-type CurrentPrincipalIdProvider interface {
-	// CurrentPrincipalId returns the object id of the current logged in principal, or an error if it can not be
-	// determined.
-	CurrentPrincipalId(ctx context.Context) (string, error)
-}
-
-type principalIDProvider struct {
-	env                *environment.Environment
-	userProfileService *azcli.UserProfileService
-	subResolver        account.SubscriptionTenantResolver
-}
-
-func (p *principalIDProvider) CurrentPrincipalId(ctx context.Context) (string, error) {
-	tenantId, err := p.subResolver.LookupTenant(ctx, p.env.GetSubscriptionId())
+	var provider Provider
+	err = m.serviceLocator.ResolveNamed(string(m.options.Provider), &provider)
 	if err != nil {
-		return "", fmt.Errorf("getting tenant id for subscription %s. Error: %w", p.env.GetSubscriptionId(), err)
+		return nil, fmt.Errorf("failed resolving IaC provider '%s': %w", m.options.Provider, err)
 	}
 
-	principalId, err := azureutil.GetCurrentPrincipalId(ctx, p.userProfileService, tenantId)
-	if err != nil {
-		return "", fmt.Errorf("fetching current user information: %w", err)
-	}
-
-	return principalId, nil
+	return provider, nil
 }

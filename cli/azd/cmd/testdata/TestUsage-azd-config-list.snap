@@ -5,6 +5,7 @@ Usage
   azd config list [flags]
 
 Flags
+        --docs 	: Opens the documentation for azd config list in your web browser.
     -h, --help 	: Gets help for list.
 
 Global Flags

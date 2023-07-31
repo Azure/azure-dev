@@ -117,6 +117,26 @@ func (cli *azCli) ListResourceGroup(
 	return groups, nil
 }
 
+func (cli *azCli) CreateOrUpdateResourceGroup(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroupName string,
+	location string,
+	tags map[string]*string,
+) error {
+	client, err := cli.createResourceGroupClient(ctx, subscriptionId)
+	if err != nil {
+		return err
+	}
+
+	_, err = client.CreateOrUpdate(ctx, resourceGroupName, armresources.ResourceGroup{
+		Location: &location,
+		Tags:     tags,
+	}, nil)
+
+	return err
+}
+
 func (cli *azCli) DeleteResourceGroup(ctx context.Context, subscriptionId string, resourceGroupName string) error {
 	client, err := cli.createResourceGroupClient(ctx, subscriptionId)
 	if err != nil {
@@ -142,7 +162,7 @@ func (cli *azCli) createResourcesClient(ctx context.Context, subscriptionId stri
 		return nil, err
 	}
 
-	options := cli.createDefaultClientOptionsBuilder(ctx).BuildArmClientOptions()
+	options := cli.clientOptionsBuilder(ctx).BuildArmClientOptions()
 	client, err := armresources.NewClient(subscriptionId, credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating Resource client: %w", err)
@@ -160,7 +180,7 @@ func (cli *azCli) createResourceGroupClient(
 		return nil, err
 	}
 
-	options := cli.createDefaultClientOptionsBuilder(ctx).BuildArmClientOptions()
+	options := cli.clientOptionsBuilder(ctx).BuildArmClientOptions()
 	client, err := armresources.NewResourceGroupsClient(subscriptionId, credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating ResourceGroup client: %w", err)

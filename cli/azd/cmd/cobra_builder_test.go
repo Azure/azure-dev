@@ -8,8 +8,10 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/spf13/cobra"
 	"github.com/stretchr/testify/require"
 )
@@ -39,6 +41,8 @@ func Test_BuildAndRunSimpleCommand(t *testing.T) {
 	require.NotNil(t, cmd)
 	require.NoError(t, err)
 
+	// Disable args processing from os:args
+	cmd.SetArgs([]string{})
 	err = cmd.ExecuteContext(context.Background())
 
 	require.NoError(t, err)
@@ -195,16 +199,91 @@ func Test_BuildCommandsWithAutomaticHelpAndOutputFlags(t *testing.T) {
 
 	helpFlag := cmd.Flag("help")
 	outputFlag := cmd.Flag("output")
+	docsFlag := cmd.Flag("docs")
 
 	require.NotNil(t, helpFlag)
 	require.Equal(t, "help", helpFlag.Name)
 	require.Equal(t, "h", helpFlag.Shorthand)
 	require.Equal(t, "Gets help for root.", helpFlag.Usage)
 
+	require.NotNil(t, docsFlag)
+	require.Equal(t, "docs", docsFlag.Name)
+	require.Equal(t, "", docsFlag.Shorthand)
+	require.Equal(t, "Opens the documentation for root in your web browser.", docsFlag.Usage)
+
 	require.NotNil(t, outputFlag)
 	require.Equal(t, "output", outputFlag.Name)
 	require.Equal(t, "o", outputFlag.Shorthand)
 	require.Equal(t, "The output format (the supported formats are json, table).", outputFlag.Usage)
+}
+
+func Test_RunDocsFlow(t *testing.T) {
+	container := ioc.NewNestedContainer(nil)
+	testCtx := mocks.NewMockContext(context.Background())
+	container.RegisterSingleton(func() input.Console {
+		return testCtx.Console
+	})
+
+	root := actions.NewActionDescriptor("root", &actions.ActionDescriptorOptions{
+		OutputFormats: []output.Format{output.JsonFormat, output.TableFormat},
+		DefaultFormat: output.TableFormat,
+		Command: &cobra.Command{
+			RunE: func(cmd *cobra.Command, args []string) error {
+				return nil
+			},
+		},
+	})
+
+	var calledUrl string
+	overrideBrowser = func(ctx context.Context, console input.Console, url string) {
+		calledUrl = url
+	}
+
+	cobraBuilder := NewCobraBuilder(container)
+	cmd, err := cobraBuilder.BuildCommand(root)
+
+	require.NoError(t, err)
+	require.NotNil(t, cmd)
+
+	cmd.SetArgs([]string{"--docs"})
+	err = cmd.ExecuteContext(*testCtx.Context)
+	require.NoError(t, err)
+	require.Equal(t, cReferenceDocumentationUrl+"root", calledUrl)
+}
+
+func Test_RunDocsAndHelpFlow(t *testing.T) {
+	container := ioc.NewNestedContainer(nil)
+	testCtx := mocks.NewMockContext(context.Background())
+	container.RegisterSingleton(func() input.Console {
+		return testCtx.Console
+	})
+
+	root := actions.NewActionDescriptor("root", &actions.ActionDescriptorOptions{
+		OutputFormats: []output.Format{output.JsonFormat, output.TableFormat},
+		DefaultFormat: output.TableFormat,
+		Command: &cobra.Command{
+			RunE: func(cmd *cobra.Command, args []string) error {
+				return nil
+			},
+		},
+	})
+
+	var calledUrl string
+	overrideBrowser = func(ctx context.Context, console input.Console, url string) {
+		calledUrl = url
+	}
+
+	cobraBuilder := NewCobraBuilder(container)
+	cmd, err := cobraBuilder.BuildCommand(root)
+
+	require.NoError(t, err)
+	require.NotNil(t, cmd)
+
+	// having both args should honor help
+	cmd.SetArgs([]string{"--docs", "--help"})
+	err = cmd.ExecuteContext(*testCtx.Context)
+	require.NoError(t, err)
+	require.Equal(t, "", calledUrl)
 }
 
 func setup(container *ioc.NestedContainer) {

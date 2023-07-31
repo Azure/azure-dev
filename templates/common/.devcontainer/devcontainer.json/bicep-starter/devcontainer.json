@@ -1,14 +1,11 @@
 {
     "name": "Azure Developer CLI",
-    "build": {
-        "dockerfile": "Dockerfile",
-        "args": {
-            // List of images: https://github.com/devcontainers/images/tree/main/src
-            "IMAGE": "python:3.10"
-        }
-    },
+    "image": "mcr.microsoft.com/devcontainers/python:3.10-bullseye",
     "features": {
         // See https://containers.dev/features for list of features
+        "ghcr.io/devcontainers/features/docker-in-docker:2": {
+        },
+        "ghcr.io/azure/azure-dev/azd:latest": {}
     },
     "customizations": {
         "vscode": {

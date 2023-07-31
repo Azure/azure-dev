@@ -21,6 +21,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/github"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/stretchr/testify/require"
 )
 
@@ -225,17 +226,18 @@ func TestLoginInteractive(t *testing.T) {
 }
 
 func TestLoginDeviceCode(t *testing.T) {
+	console := mockinput.NewMockConsole()
 	m := &Manager{
 		configManager:     newMemoryConfigManager(),
 		userConfigManager: newMemoryUserConfigManager(),
 		publicClient:      &mockPublicClient{},
+		launchBrowserFn:   func(url string) error { return nil },
+		console:           console,
 	}
 
-	buf := bytes.Buffer{}
+	cred, err := m.LoginWithDeviceCode(context.Background(), "", nil)
 
-	cred, err := m.LoginWithDeviceCode(context.Background(), &buf, "", nil)
-
-	require.Regexp(t, "using the code 123-456", buf.String())
+	require.Regexp(t, "Start by copying the next code: 123-456", console.Output())
 
 	require.NoError(t, err)
 	require.IsType(t, new(azdCredential), cred)
@@ -332,15 +334,15 @@ func (m *memoryConfigManager) Save(cfg config.Config, path string) error {
 type mockPublicClient struct {
 }
 
-func (m *mockPublicClient) Accounts() []public.Account {
+func (m *mockPublicClient) Accounts(ctx context.Context) ([]public.Account, error) {
 	return []public.Account{
 		{
 			HomeAccountID: "test.id",
 		},
-	}
+	}, nil
 }
 
-func (m *mockPublicClient) RemoveAccount(account public.Account) error {
+func (m *mockPublicClient) RemoveAccount(ctx context.Context, account public.Account) error {
 	return nil
 }
 
@@ -374,6 +376,10 @@ type mockDeviceCode struct {
 
 func (m *mockDeviceCode) Message() string {
 	return "Complete the device code flow on your second device using the code 123-456"
+}
+
+func (m *mockDeviceCode) UserCode() string {
+	return "123-456"
 }
 
 func (m *mockDeviceCode) AuthenticationResult(ctx context.Context) (public.AuthResult, error) {

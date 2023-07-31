@@ -8,13 +8,14 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -53,34 +54,40 @@ func newUpCmd() *cobra.Command {
 type upAction struct {
 	flags                      *upFlags
 	env                        *environment.Environment
-	accountManager             account.Manager
+	projectConfig              *project.ProjectConfig
 	packageActionInitializer   actions.ActionInitializer[*packageAction]
 	provisionActionInitializer actions.ActionInitializer[*provisionAction]
 	deployActionInitializer    actions.ActionInitializer[*deployAction]
 	console                    input.Console
 	runner                     middleware.MiddlewareContext
+	prompters                  prompt.Prompter
+	provisioningManager        *provisioning.Manager
 }
 
 func newUpAction(
 	flags *upFlags,
 	env *environment.Environment,
 	_ auth.LoggedInGuard,
-	accountManager account.Manager,
+	projectConfig *project.ProjectConfig,
 	packageActionInitializer actions.ActionInitializer[*packageAction],
 	provisionActionInitializer actions.ActionInitializer[*provisionAction],
 	deployActionInitializer actions.ActionInitializer[*deployAction],
 	console input.Console,
 	runner middleware.MiddlewareContext,
+	prompters prompt.Prompter,
+	provisioningManager *provisioning.Manager,
 ) actions.Action {
 	return &upAction{
 		flags:                      flags,
 		env:                        env,
-		accountManager:             accountManager,
+		projectConfig:              projectConfig,
 		packageActionInitializer:   packageActionInitializer,
 		provisionActionInitializer: provisionActionInitializer,
 		deployActionInitializer:    deployActionInitializer,
 		console:                    console,
 		runner:                     runner,
+		prompters:                  prompters,
+		provisioningManager:        provisioningManager,
 	}
 }
 
@@ -104,7 +111,7 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			output.WithWarningFormat("WARNING: The '--service' flag is deprecated and will be removed in a future release."))
 	}
 
-	err := provisioning.EnsureEnv(ctx, u.console, u.env, u.accountManager)
+	err := u.provisioningManager.Initialize(ctx, u.projectConfig.Path, u.projectConfig.Infra)
 	if err != nil {
 		return nil, err
 	}
@@ -156,7 +163,7 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
 			Header: fmt.Sprintf("Your application was provisioned and deployed to Azure in %s.",
-				ux.DurationAsText(time.Since(startTime))),
+				ux.DurationAsText(since(startTime))),
 		},
 	}, nil
 }

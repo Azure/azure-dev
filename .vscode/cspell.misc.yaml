@@ -28,11 +28,12 @@ overrides:
     - filename: generators/repo/tsconfig.json
       words:
           - tsbuildinfo
-    - filename: schemas/v1.0/azure.yaml.json
+    - filename: schemas/**/azure.yaml.json
       words:
           - prodapi
           - appservice
           - containerapp
+          - springapp
           - staticwebapp
           - myapp
           - azdev

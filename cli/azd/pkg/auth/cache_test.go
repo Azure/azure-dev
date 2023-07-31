@@ -4,50 +4,70 @@
 package auth
 
 import (
+	"context"
+	"math/rand"
 	"testing"
 
+	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
 	"github.com/stretchr/testify/require"
 )
 
+var letters = []rune("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ")
+
+func randSeq(n int, rng rand.Rand) string {
+	b := make([]rune, n)
+	for i := range b {
+		b[i] = letters[rng.Intn(len(letters))]
+	}
+	return string(b)
+}
+
 func TestCache(t *testing.T) {
 	root := t.TempDir()
-
+	ctx := context.Background()
 	c := newCache(root)
+	// weak rng is fine for testing
+	//nolint:gosec
+	rng := rand.New(rand.NewSource(0))
 
-	d1 := fixedMarshaller{
+	key := func() string {
+		return randSeq(10, *rng)
+	}
+
+	data := fixedMarshaller{
 		val: []byte("some data"),
 	}
 
-	d2 := fixedMarshaller{
-		val: []byte("some different data"),
-	}
-
 	// write some data.
-	c.Export(&d1, "d1")
-	c.Export(&d2, "d2")
-
-	var r1 fixedMarshaller
-	var r2 fixedMarshaller
+	err := c.Export(ctx, &data, cache.ExportHints{PartitionKey: key()})
+	require.NoError(t, err)
 
 	// read back that data we wrote.
-	c.Replace(&r1, "d1")
-	c.Replace(&r2, "d2")
-
-	require.NotNil(t, r1.val)
-	require.NotNil(t, r2.val)
-	require.Equal(t, d1.val, r1.val)
-	require.Equal(t, d2.val, r2.val)
+	var reader fixedMarshaller
+	err = c.Replace(ctx, &reader, cache.ReplaceHints{PartitionKey: key()})
+	require.NoError(t, err)
+	require.NotNil(t, reader.val)
+	require.Equal(t, data.val, reader.val)
 
 	// the data should be shared across instances.
 	c = newCache(root)
+	reader = fixedMarshaller{}
+	err = c.Replace(ctx, &reader, cache.ReplaceHints{PartitionKey: key()})
+	require.NoError(t, err)
+	require.Equal(t, data.val, reader.val)
 
-	c.Replace(&r1, "d1")
-	c.Replace(&r2, "d2")
+	// update existing data
+	otherData := fixedMarshaller{
+		val: []byte("other data"),
+	}
+	err = c.Export(ctx, &otherData, cache.ExportHints{PartitionKey: key()})
+	require.NoError(t, err)
 
-	require.NotNil(t, r1.val)
-	require.NotNil(t, r2.val)
-	require.Equal(t, d1.val, r1.val)
-	require.Equal(t, d2.val, r2.val)
+	// read back data
+	err = c.Replace(ctx, &reader, cache.ReplaceHints{PartitionKey: key()})
+	require.NoError(t, err)
+	require.NotNil(t, reader.val)
+	require.Equal(t, otherData.val, reader.val)
 }
 
 func TestCredentialCache(t *testing.T) {
@@ -88,4 +108,8 @@ func TestCredentialCache(t *testing.T) {
 	require.NotNil(t, r2)
 	require.Equal(t, d1, r1)
 	require.Equal(t, d2, r2)
+
+	// read some non-existing data, ensure errCacheKeyNotFound is returned.
+	_, err = c.Read("nonExist")
+	require.ErrorIs(t, err, errCacheKeyNotFound)
 }

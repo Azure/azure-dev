@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -239,6 +240,8 @@ func newLoginAction(
 	}
 }
 
+const cLoginSuccessMessage = "Logged in to Azure."
+
 func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if len(la.flags.scopes) == 0 {
 		la.flags.scopes = auth.LoginScopes
@@ -254,81 +257,109 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			"Next time use `azd auth login`.")
 	}
 
-	if !la.flags.onlyCheckStatus {
-		if err := la.accountSubManager.ClearSubscriptions(ctx); err != nil {
-			log.Printf("failed clearing subscriptions: %v", err)
+	if la.flags.onlyCheckStatus {
+		// In check status mode, we always print the final status to stdout.
+		// We print any non-setup related errors to stderr.
+		// We always return a zero exit code.
+		token, err := la.verifyLoggedIn(ctx)
+		var loginExpiryError *auth.ReLoginRequiredError
+		if err != nil &&
+			!errors.Is(err, auth.ErrNoCurrentUser) &&
+			!errors.As(err, &loginExpiryError) {
+			fmt.Fprintln(la.console.Handles().Stderr, err.Error())
 		}
 
-		if err := la.login(ctx); err != nil {
-			return nil, err
-		}
-	}
-
-	res := contracts.LoginResult{}
-
-	credOptions := auth.CredentialForCurrentUserOptions{
-		TenantID: la.flags.tenantID,
-	}
-
-	if cred, err := la.authManager.CredentialForCurrentUser(ctx, &credOptions); errors.Is(err, auth.ErrNoCurrentUser) {
-		res.Status = contracts.LoginStatusUnauthenticated
-	} else if err != nil {
-		return nil, fmt.Errorf("checking auth status: %w", err)
-	} else {
-		// Ensure ID token is valid, and can be exchanged for an access token
-		token, err := cred.GetToken(ctx, policy.TokenRequestOptions{
-			Scopes: la.flags.scopes,
-		})
-
+		res := contracts.LoginResult{}
 		if err != nil {
-			log.Printf("failed to check auth status: %s", err.Error())
 			res.Status = contracts.LoginStatusUnauthenticated
 		} else {
 			res.Status = contracts.LoginStatusSuccess
 			res.ExpiresOn = &token.ExpiresOn
 		}
-	}
 
-	if !la.flags.onlyCheckStatus && res.Status == contracts.LoginStatusSuccess {
-		// Rehydrate or clear the account's subscriptions cache.
-		// The caching is done here to increase responsiveness of listing subscriptions (during azd init).
-		// It also allows an implicit command for the user to refresh cached subscriptions.
-		if la.flags.clientID == "" {
-			// Deleting subscriptions on file is very unlikely to fail, unless there are serious filesystem issues.
-			// If this does fail, we want the user to be aware of this. Like other stored azd account data,
-			// stored subscriptions are currently tied to the OS user, and not the individual account being logged in,
-			// this means cross-contamination is possible.
-			if err := la.accountSubManager.ClearSubscriptions(ctx); err != nil {
-				return nil, err
-			}
-
-			err := la.accountSubManager.RefreshSubscriptions(ctx)
-			if err != nil {
-				// If this fails, the subscriptions will still be loaded on-demand.
-				// erroring out when the user interacts with subscriptions is much more user-friendly.
-				log.Printf("failed retrieving subscriptions: %v", err)
-			}
+		if la.formatter.Kind() != output.NoneFormat {
+			return nil, la.formatter.Format(res, la.writer, nil)
 		} else {
-			// Service principals do not typically require subscription caching (running in CI scenarios)
-			// We simply clear the cache, which is much faster than rehydrating.
-			err := la.accountSubManager.ClearSubscriptions(ctx)
-			if err != nil {
-				log.Printf("failed clearing subscriptions: %v", err)
+			var msg string
+			switch res.Status {
+			case contracts.LoginStatusSuccess:
+				msg = cLoginSuccessMessage
+			case contracts.LoginStatusUnauthenticated:
+				msg = "Not logged in, run `azd auth login` to login to Azure."
+			default:
+				panic("Unhandled login status")
 			}
+
+			fmt.Fprintln(la.console.Handles().Stdout, msg)
+			return nil, nil
 		}
 	}
 
-	if la.formatter.Kind() == output.NoneFormat {
-		if res.Status == contracts.LoginStatusSuccess {
-			fmt.Fprintln(la.console.Handles().Stdout, "Logged in to Azure.")
-		} else {
-			fmt.Fprintln(la.console.Handles().Stdout, "Not logged in, run `azd auth login` to login to Azure.")
-		}
-
-		return nil, nil
+	if err := la.accountSubManager.ClearSubscriptions(ctx); err != nil {
+		log.Printf("failed clearing subscriptions: %v", err)
 	}
 
-	return nil, la.formatter.Format(res, la.writer, nil)
+	if err := la.login(ctx); err != nil {
+		return nil, err
+	}
+
+	if _, err := la.verifyLoggedIn(ctx); err != nil {
+		return nil, err
+	}
+
+	// Rehydrate or clear the account's subscriptions cache.
+	// The caching is done here to increase responsiveness of listing subscriptions (during azd init).
+	// It also allows an implicit command for the user to refresh cached subscriptions.
+	if la.flags.clientID == "" {
+		// Deleting subscriptions on file is very unlikely to fail, unless there are serious filesystem issues.
+		// If this does fail, we want the user to be aware of this. Like other stored azd account data,
+		// stored subscriptions are currently tied to the OS user, and not the individual account being logged in,
+		// this means cross-contamination is possible.
+		if err := la.accountSubManager.ClearSubscriptions(ctx); err != nil {
+			return nil, err
+		}
+
+		err := la.accountSubManager.RefreshSubscriptions(ctx)
+		if err != nil {
+			// If this fails, the subscriptions will still be loaded on-demand.
+			// erroring out when the user interacts with subscriptions is much more user-friendly.
+			log.Printf("failed retrieving subscriptions: %v", err)
+		}
+	} else {
+		// Service principals do not typically require subscription caching (running in CI scenarios)
+		// We simply clear the cache, which is much faster than rehydrating.
+		err := la.accountSubManager.ClearSubscriptions(ctx)
+		if err != nil {
+			log.Printf("failed clearing subscriptions: %v", err)
+		}
+	}
+
+	la.console.Message(ctx, cLoginSuccessMessage)
+	return nil, nil
+}
+
+// Verifies that the user has credentials stored,
+// and that the credentials stored is accepted by the identity server (can be exchanged for access token).
+func (la *loginAction) verifyLoggedIn(ctx context.Context) (*azcore.AccessToken, error) {
+	credOptions := auth.CredentialForCurrentUserOptions{
+		TenantID: la.flags.tenantID,
+	}
+
+	cred, err := la.authManager.CredentialForCurrentUser(ctx, &credOptions)
+	if err != nil {
+		return nil, err
+	}
+
+	// Ensure credential is valid, and can be exchanged for an access token
+	token, err := cred.GetToken(ctx, policy.TokenRequestOptions{
+		Scopes: la.flags.scopes,
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &token, nil
 }
 
 func countTrue(elms ...bool) int {
@@ -425,20 +456,30 @@ func (la *loginAction) login(ctx context.Context) error {
 		return nil
 	}
 
-	useDevCode, err := parseUseDeviceCode(ctx, la.flags.useDeviceCode, la.commandRunner)
-	if err != nil {
-		return err
-	}
-
-	if useDevCode {
-		_, err := la.authManager.LoginWithDeviceCode(ctx, la.writer, la.flags.tenantID, la.flags.scopes)
-		if err != nil {
-			return fmt.Errorf("logging in: %w", err)
+	if la.authManager.UseExternalAuth() {
+		// Request a token and assume the external auth system will prompt the user to log in.
+		//
+		// TODO(ellismg): We may want instead to call some explicit `/login` endpoint on the external auth system instead
+		// of abusing the token request in this manner. This would allow the other end to provide a more tailored experience.
+		if _, err := la.verifyLoggedIn(ctx); err != nil {
+			return err
 		}
 	} else {
-		_, err := la.authManager.LoginInteractive(ctx, la.flags.redirectPort, la.flags.tenantID, la.flags.scopes)
+		useDevCode, err := parseUseDeviceCode(ctx, la.flags.useDeviceCode, la.commandRunner)
 		if err != nil {
-			return fmt.Errorf("logging in: %w", err)
+			return err
+		}
+
+		if useDevCode {
+			_, err := la.authManager.LoginWithDeviceCode(ctx, la.flags.tenantID, la.flags.scopes)
+			if err != nil {
+				return fmt.Errorf("logging in: %w", err)
+			}
+		} else {
+			_, err := la.authManager.LoginInteractive(ctx, la.flags.redirectPort, la.flags.tenantID, la.flags.scopes)
+			if err != nil {
+				return fmt.Errorf("logging in: %w", err)
+			}
 		}
 	}
 
@@ -467,6 +508,13 @@ func parseUseDeviceCode(ctx context.Context, flag boolPtr, commandRunner exec.Co
 		// (since azd launches a localhost server running remotely and the login response is accepted locally).
 		// Hence, we override login to device-code. See https://github.com/Azure/azure-dev/issues/1006
 		useDevCode = runningOnCodespacesBrowser(ctx, commandRunner)
+	}
+
+	if auth.ShouldUseCloudShellAuth() {
+		// Following az CLI behavior in Cloud Shell, use device code authentication when the user is trying to
+		// authenticate. The normal interactive authentication flow will not work in Cloud Shell because the browser
+		// cannot be opened or (if it could) cannot be redirected back to a port on the Cloud Shell instance.
+		return true, nil
 	}
 
 	return useDevCode, nil

@@ -9,8 +9,8 @@ Commands
     auth     	: Authenticate with Azure.
     config   	: Manage azd configurations (ex: default Azure subscription, location).
     init     	: Initialize a new application.
-    restore  	: Restores the application's dependencies.
-    template 	: Find and view template details.
+    restore  	: Restores the application's dependencies. (Beta)
+    template 	: Find and view template details. (Beta)
 
   Manage Azure resources and app deployments
     deploy   	: Deploy the application's code to Azure.
@@ -21,8 +21,8 @@ Commands
     up       	: Provision Azure resources, and deploy your project with a single command.
 
   Monitor, test and release your app
-    monitor  	: Monitor a deployed application.
-    pipeline 	: Manage and configure your deployment pipelines.
+    monitor  	: Monitor a deployed application. (Beta)
+    pipeline 	: Manage and configure your deployment pipelines. (Beta)
 
   About, help and upgrade
     version  	: Print the version number of Azure Developer CLI.
@@ -30,6 +30,7 @@ Commands
 Flags
     -C, --cwd string 	: Sets the current working directory.
         --debug      	: Enables debugging and diagnostics logging.
+        --docs       	: Opens the documentation for azd in your web browser.
     -h, --help       	: Gets help for azd.
         --no-prompt  	: Accepts the default value instead of prompting, or it fails if there is no default.
 
@@ -39,7 +40,8 @@ Deploying a sample application
 Initialize from a sample application by running the azd init --template [template name] command in an empty directory.
 Then, run azd up to get the application up-and-running in Azure.
 
-To view available templates run `azd template list` or visit: https://azure.github.io/awesome-azd
+To view a curated list of sample templates, run azd template list.
+To view all available sample templates, including those submitted by the azd community, visit: https://azure.github.io/awesome-azd.
 
 Find a bug? Want to let us know how we're doing? Fill out this brief survey: https://aka.ms/azure-dev/hats.
 

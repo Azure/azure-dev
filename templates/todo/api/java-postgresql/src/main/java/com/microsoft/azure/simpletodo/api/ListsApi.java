@@ -18,9 +18,9 @@ import java.math.BigDecimal;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import javax.annotation.Generated;
-import javax.validation.Valid;
-import javax.validation.constraints.*;
+import jakarta.annotation.Generated;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.*;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
@@ -221,7 +221,7 @@ public interface ListsApi {
         @Parameter(name = "listId", description = "The Todo list unique identifier", required = true) @PathVariable(
             "listId"
         ) String listId,
-        @Parameter(name = "TodoList", description = "The Todo List") @Valid @RequestBody(required = false) TodoList todoList
+        @Parameter(name = "TodoList", description = "The Todo List") @NotNull @RequestBody(required = false) TodoList todoList
     ) {
         getRequest()
             .ifPresent(request -> {

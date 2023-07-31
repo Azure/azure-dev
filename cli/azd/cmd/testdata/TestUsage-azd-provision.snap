@@ -3,7 +3,6 @@ Provision the Azure resources for an application. This step may take a while dep
 
 This command prompts you to input the following:
 
-  • Environment name: The name of your environment (ex: dev, test, prod).
   • Azure location: The Azure location where your resources will be deployed.
   • Azure subscription: The Azure subscription where your resources will be deployed.
 
@@ -11,8 +10,10 @@ Usage
   azd provision [flags]
 
 Flags
+        --docs               	: Opens the documentation for azd provision in your web browser.
     -e, --environment string 	: The name of the environment to use.
     -h, --help               	: Gets help for provision.
+        --preview            	: Preview changes to Azure resources.
 
 Global Flags
     -C, --cwd string 	: Sets the current working directory.

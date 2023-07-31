@@ -1,0 +1,34 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: todo-api
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: todo-api
+  template:
+    metadata:
+      labels:
+        app: todo-api
+    spec:
+      containers:
+        - name: todo-api
+          image: {{.Env.SERVICE_API_IMAGE_NAME}}
+          ports:
+            - containerPort: 3100
+          env:
+            - name: AZURE_CLIENT_ID
+              value: {{.Env.AZURE_AKS_IDENTITY_CLIENT_ID}}
+            - name: AZURE_KEY_VAULT_ENDPOINT
+              valueFrom:
+                configMapKeyRef:
+                  name: todo-api-config
+                  key: AZURE_KEY_VAULT_ENDPOINT
+                  optional: false
+            - name: APPLICATIONINSIGHTS_CONNECTION_STRING
+              valueFrom:
+                configMapKeyRef:
+                  name: todo-api-config
+                  key: APPLICATIONINSIGHTS_CONNECTION_STRING
+                  optional: false

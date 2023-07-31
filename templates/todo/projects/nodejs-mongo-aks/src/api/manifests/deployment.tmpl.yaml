@@ -22,13 +22,13 @@ spec:
               value: {{.Env.AZURE_AKS_IDENTITY_CLIENT_ID}}
             - name: AZURE_KEY_VAULT_ENDPOINT
               valueFrom:
-                secretKeyRef:
-                  name: azd
+                configMapKeyRef:
+                  name: todo-api-config
                   key: AZURE_KEY_VAULT_ENDPOINT
                   optional: false
             - name: APPLICATIONINSIGHTS_CONNECTION_STRING
               valueFrom:
-                secretKeyRef:
-                  name: azd
+                configMapKeyRef:
+                  name: todo-api-config
                   key: APPLICATIONINSIGHTS_CONNECTION_STRING
                   optional: false

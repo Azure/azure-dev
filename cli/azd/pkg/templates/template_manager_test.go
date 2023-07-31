@@ -52,7 +52,7 @@ func Test_Templates_ListTemplates_SourceError(t *testing.T) {
 
 	configManager := &mockUserConfigManager{}
 	config := config.NewConfig(nil)
-	config.Set(baseConfigKey, map[string]interface{}{
+	_ = config.Set(baseConfigKey, map[string]interface{}{
 		"default": map[string]interface{}{},
 		"invalid": map[string]interface{}{
 			"type":     "url",

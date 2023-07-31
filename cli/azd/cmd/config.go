@@ -146,6 +146,9 @@ $ azd config set defaults.location eastus`,
 		Command: &cobra.Command{
 			Short: "Display the list of available features in alpha stage.",
 		},
+		HelpOptions: actions.ActionHelpOptions{
+			Footer: getCmdListAlphaHelpFooter,
+		},
 		ActionResolver: newConfigListAlphaAction,
 	})
 
@@ -315,7 +318,7 @@ func newConfigResetAction(configManager config.UserConfigManager, args []string)
 
 // Executes the `azd config reset` action
 func (a *configResetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	emptyConfig := config.NewConfig(nil)
+	emptyConfig := config.NewEmptyConfig()
 	return nil, a.configManager.Save(emptyConfig)
 }
 
@@ -323,7 +326,7 @@ func getCmdConfigHelpDescription(*cobra.Command) string {
 	return generateCmdHelpDescription(
 		"Manage the Azure Developer CLI user configuration, which includes your default Azure subscription and location.",
 		[]string{
-			formatHelpNote(fmt.Sprintf("Applications are initially configures when you run %s.",
+			formatHelpNote(fmt.Sprintf("Applications are initially configured when you run %s.",
 				output.WithHighLightFormat("azd init"),
 			)),
 			formatHelpNote(fmt.Sprintf("The subscription and location you select will be stored at: %s.",
@@ -384,4 +387,24 @@ func newConfigListAlphaAction(
 		console:              console,
 		args:                 args,
 	}
+}
+
+func getCmdListAlphaHelpFooter(*cobra.Command) string {
+	return generateCmdHelpSamplesBlock(map[string]string{
+		"Displays a list of all available features in the alpha stage": output.WithHighLightFormat(
+			"azd config list-alpha",
+		),
+		"Turn on a specific alpha feature": output.WithHighLightFormat(
+			"azd config set alpha.<feature-name> on",
+		),
+		"Turn off a specific alpha feature": output.WithHighLightFormat(
+			"azd config set alpha.<feature-name> off",
+		),
+		"Turn on all alpha features": output.WithHighLightFormat(
+			"azd config set alpha.all on",
+		),
+		"Turn off all alpha features": output.WithHighLightFormat(
+			"azd config set alpha.all off",
+		),
+	})
 }

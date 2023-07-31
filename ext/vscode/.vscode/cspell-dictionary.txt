@@ -1,4 +1,5 @@
 azuretools
+azureauth
 pseudoterminal
 randomizer
 hostapi
@@ -6,3 +7,7 @@ azureresourcegroups
 azureresources
 walkthrough
 walkthroughs
+DEBUGTELEMETRY
+appservice
+containerapp
+staticwebapp

@@ -1,10 +1,11 @@
 {
-    "go.testTimeout": "10m",
-    "go.lintTool": "golangci-lint",
-    "go.lintFlags": ["--fast"],
-    "go.lintOnSave": "package",
-    "editor.rulers": [ 125 ],
     "cSpell.import": [
         "${workspaceFolder}/.vscode/cspell.yaml"
-    ]
+    ],
+    "editor.rulers": [ 125 ],
+    "git.openRepositoryInParentFolders": "always",
+    "go.lintFlags": ["--fast"],
+    "go.lintOnSave": "package",
+    "go.lintTool": "golangci-lint",
+    "go.testTimeout": "10m"
 }

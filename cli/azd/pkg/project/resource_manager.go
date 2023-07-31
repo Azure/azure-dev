@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
+	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
@@ -38,15 +40,20 @@ type ResourceManager interface {
 }
 
 type resourceManager struct {
-	env   *environment.Environment
-	azCli azcli.AzCli
+	env                  *environment.Environment
+	azCli                azcli.AzCli
+	deploymentOperations azapi.DeploymentOperations
 }
 
 // NewResourceManager creates a new instance of the project resource manager
-func NewResourceManager(env *environment.Environment, azCli azcli.AzCli) ResourceManager {
+func NewResourceManager(
+	env *environment.Environment,
+	azCli azcli.AzCli,
+	deploymentOperations azapi.DeploymentOperations) ResourceManager {
 	return &resourceManager{
-		env:   env,
-		azCli: azCli,
+		env:                  env,
+		azCli:                azCli,
+		deploymentOperations: deploymentOperations,
 	}
 }
 
@@ -73,12 +80,12 @@ func (rm *resourceManager) GetResourceGroupName(
 		return name, nil
 	}
 
-	envResourceGroupName := environment.GetResourceGroupNameFromEnvVar(rm.env)
+	envResourceGroupName := rm.env.Getenv(environment.ResourceGroupEnvVarName)
 	if envResourceGroupName != "" {
 		return envResourceGroupName, nil
 	}
 
-	resourceManager := infra.NewAzureResourceManager(rm.azCli)
+	resourceManager := infra.NewAzureResourceManager(rm.azCli, rm.deploymentOperations)
 	resourceGroupName, err := resourceManager.FindResourceGroupForEnvironment(ctx, subscriptionId, rm.env.GetEnvName())
 	if err != nil {
 		return "", err
@@ -90,14 +97,14 @@ func (rm *resourceManager) GetResourceGroupName(
 // GetServiceResources finds azure service resources targeted by the service.
 //
 // If an explicit `ResourceName` is specified in `azure.yaml`, a resource with that name is searched for.
-// Otherwise, searches for resources with 'azd-service-name' tag set to the service key.
+// Otherwise, searches for resources with a [azure.TagKeyAzdServiceName] tag set to the service key.
 func (rm *resourceManager) GetServiceResources(
 	ctx context.Context,
 	subscriptionId string,
 	resourceGroupName string,
 	serviceConfig *ServiceConfig,
 ) ([]azcli.AzCliResource, error) {
-	filter := fmt.Sprintf("tagName eq '%s' and tagValue eq '%s'", defaultServiceTag, serviceConfig.Name)
+	filter := fmt.Sprintf("tagName eq '%s' and tagValue eq '%s'", azure.TagKeyAzdServiceName, serviceConfig.Name)
 
 	subst, err := serviceConfig.ResourceName.Envsubst(rm.env.Getenv)
 	if err != nil {
@@ -144,7 +151,7 @@ func (rm *resourceManager) GetServiceResource(
 			err := fmt.Errorf(
 				//nolint:lll
 				"unable to find a resource tagged with '%s: %s'. Ensure the service resource is correctly tagged in your infrastructure configuration, and rerun %s",
-				defaultServiceTag,
+				azure.TagKeyAzdServiceName,
 				serviceConfig.Name,
 				rerunCommand,
 			)
@@ -155,7 +162,7 @@ func (rm *resourceManager) GetServiceResource(
 			return azcli.AzCliResource{}, fmt.Errorf(
 				//nolint:lll
 				"expecting only '1' resource tagged with '%s: %s', but found '%d'. Ensure a unique service resource is correctly tagged in your infrastructure configuration, and rerun %s",
-				defaultServiceTag,
+				azure.TagKeyAzdServiceName,
 				serviceConfig.Name,
 				len(resources),
 				rerunCommand,

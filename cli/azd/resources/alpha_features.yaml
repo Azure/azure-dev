@@ -1,2 +1,4 @@
 - id: terraform
   description: "Provision Azure resources from terraform files."
+- id: resourceGroupDeployments
+  description: "Support infrastructure deployments at resource group scope."

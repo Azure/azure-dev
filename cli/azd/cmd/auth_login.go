@@ -10,14 +10,18 @@ import (
 	"io"
 	"log"
 	"os"
+	"strconv"
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/spf13/cobra"
@@ -40,13 +44,13 @@ func newAuthLoginFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions
 
 type loginFlags struct {
 	onlyCheckStatus        bool
-	useDeviceCode          bool
+	useDeviceCode          boolPtr
 	tenantID               string
 	clientID               string
 	clientSecret           stringPtr
 	clientCertificate      string
-	federatedToken         stringPtr
 	federatedTokenProvider string
+	scopes                 []string
 	redirectPort           int
 	global                 *internal.GlobalCommandOptions
 }
@@ -74,24 +78,45 @@ func (p *stringPtr) Type() string {
 	return "string"
 }
 
+// boolPtr implements a pflag.Value and allows us to distinguish between a flag value being explicitly set to
+// bool vs not being present.
+type boolPtr struct {
+	ptr *string
+}
+
+func (p *boolPtr) Set(s string) error {
+	p.ptr = &s
+	return nil
+}
+
+func (p *boolPtr) String() string {
+	if p.ptr != nil {
+		return *p.ptr
+	}
+
+	return "false"
+}
+
+func (p *boolPtr) Type() string {
+	return ""
+}
+
 const (
 	cClientSecretFlagName                = "client-secret"
 	cClientCertificateFlagName           = "client-certificate"
-	cFederatedCredentialFlagName         = "federated-credential"
 	cFederatedCredentialProviderFlagName = "federated-credential-provider"
 )
 
 func (lf *loginFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	local.BoolVar(&lf.onlyCheckStatus, "check-status", false, "Checks the log-in status instead of logging in.")
-	local.BoolVar(
+	f := local.VarPF(
 		&lf.useDeviceCode,
 		"use-device-code",
-		// For Codespaces in VSCode Browser, interactive browser login will 404 when attempting to redirect to localhost
-		// (since azd cannot launch a localhost server when running remotely).
-		// Hence, we default to device-code. See https://github.com/Azure/azure-dev/issues/1006
-		os.Getenv("CODESPACES") == "true",
+		"",
 		"When true, log in by using a device code instead of a browser.",
 	)
+	// ensure the flag behaves as a common boolean flag which is set to true when used without any other arg
+	f.NoOptDefVal = "true"
 	local.StringVar(&lf.clientID, "client-id", "", "The client id for the service principal to authenticate with.")
 	local.Var(
 		&lf.clientSecret,
@@ -103,11 +128,6 @@ func (lf *loginFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 		cClientCertificateFlagName,
 		"",
 		"The path to the client certificate for the service principal to authenticate with.")
-	local.Var(
-		&lf.federatedToken,
-		cFederatedCredentialFlagName,
-		"The federated token for the service principal to authenticate with. "+
-			"Set to the empty string to read the value from the console.")
 	local.StringVar(
 		&lf.federatedTokenProvider,
 		cFederatedCredentialProviderFlagName,
@@ -118,6 +138,12 @@ func (lf *loginFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 		"tenant-id",
 		"",
 		"The tenant id or domain name to authenticate with.")
+	local.StringArrayVar(
+		&lf.scopes,
+		"scope",
+		nil,
+		"The scope to acquire during login")
+	_ = local.MarkHidden("scope")
 	local.IntVar(
 		&lf.redirectPort,
 		"redirect-port",
@@ -145,7 +171,7 @@ func newLoginCmd(parent string) *cobra.Command {
 		--use-device-code.
 		
 		To log in as a service principal, pass --client-id and --tenant-id as well as one of: --client-secret, 
-		--client-certificate, --federated-credential, or --federated-credential-provider.
+		--client-certificate, or --federated-credential-provider.
 		`),
 		Annotations: map[string]string{
 			loginCmdParentAnnotation: parent,
@@ -161,8 +187,12 @@ type loginAction struct {
 	accountSubManager *account.SubscriptionsManager
 	flags             *loginFlags
 	annotations       CmdAnnotations
+	commandRunner     exec.CommandRunner
 }
 
+// it is important to update both newAuthLoginAction and newLoginAction at the same time
+// newAuthLoginAction is the action that is bound to `azd auth login`,
+// and newLoginAction is the action that is bound to `azd login`
 func newAuthLoginAction(
 	formatter output.Formatter,
 	writer io.Writer,
@@ -171,6 +201,7 @@ func newAuthLoginAction(
 	flags *authLoginFlags,
 	console input.Console,
 	annotations CmdAnnotations,
+	commandRunner exec.CommandRunner,
 ) actions.Action {
 	return &loginAction{
 		formatter:         formatter,
@@ -180,9 +211,13 @@ func newAuthLoginAction(
 		accountSubManager: accountSubManager,
 		flags:             &flags.loginFlags,
 		annotations:       annotations,
+		commandRunner:     commandRunner,
 	}
 }
 
+// it is important to update both newAuthLoginAction and newLoginAction at the same time
+// newAuthLoginAction is the action that is bound to `azd auth login`,
+// and newLoginAction is the action that is bound to `azd login`
 func newLoginAction(
 	formatter output.Formatter,
 	writer io.Writer,
@@ -191,6 +226,7 @@ func newLoginAction(
 	flags *loginFlags,
 	console input.Console,
 	annotations CmdAnnotations,
+	commandRunner exec.CommandRunner,
 ) actions.Action {
 	return &loginAction{
 		formatter:         formatter,
@@ -200,10 +236,17 @@ func newLoginAction(
 		accountSubManager: accountSubManager,
 		flags:             flags,
 		annotations:       annotations,
+		commandRunner:     commandRunner,
 	}
 }
 
+const cLoginSuccessMessage = "Logged in to Azure."
+
 func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	if len(la.flags.scopes) == 0 {
+		la.flags.scopes = auth.LoginScopes
+	}
+
 	if la.annotations[loginCmdParentAnnotation] == "" {
 		fmt.Fprintln(
 			la.console.Handles().Stderr,
@@ -214,77 +257,109 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			"Next time use `azd auth login`.")
 	}
 
-	if !la.flags.onlyCheckStatus {
-		if err := la.accountSubManager.ClearSubscriptions(ctx); err != nil {
-			log.Printf("failed clearing subscriptions: %v", err)
+	if la.flags.onlyCheckStatus {
+		// In check status mode, we always print the final status to stdout.
+		// We print any non-setup related errors to stderr.
+		// We always return a zero exit code.
+		token, err := la.verifyLoggedIn(ctx)
+		var loginExpiryError *auth.ReLoginRequiredError
+		if err != nil &&
+			!errors.Is(err, auth.ErrNoCurrentUser) &&
+			!errors.As(err, &loginExpiryError) {
+			fmt.Fprintln(la.console.Handles().Stderr, err.Error())
 		}
 
-		if err := la.login(ctx); err != nil {
-			return nil, err
-		}
-	}
-
-	res := contracts.LoginResult{}
-
-	credOptions := auth.CredentialForCurrentUserOptions{
-		TenantID: la.flags.tenantID,
-	}
-
-	if cred, err := la.authManager.CredentialForCurrentUser(ctx, &credOptions); errors.Is(err, auth.ErrNoCurrentUser) {
-		res.Status = contracts.LoginStatusUnauthenticated
-	} else if err != nil {
-		return nil, fmt.Errorf("checking auth status: %w", err)
-	} else {
-		if token, err := auth.EnsureLoggedInCredential(ctx, cred); errors.Is(err, auth.ErrNoCurrentUser) {
+		res := contracts.LoginResult{}
+		if err != nil {
 			res.Status = contracts.LoginStatusUnauthenticated
-		} else if err != nil {
-			return nil, fmt.Errorf("checking auth status: %w", err)
 		} else {
 			res.Status = contracts.LoginStatusSuccess
 			res.ExpiresOn = &token.ExpiresOn
 		}
-	}
 
-	if !la.flags.onlyCheckStatus && res.Status == contracts.LoginStatusSuccess {
-		// Rehydrate or clear the account's subscriptions cache.
-		// The caching is done here to increase responsiveness of listing subscriptions (during azd init).
-		// It also allows an implicit command for the user to refresh cached subscriptions.
-		if la.flags.clientID == "" {
-			// Deleting subscriptions on file is very unlikely to fail, unless there are serious filesystem issues.
-			// If this does fail, we want the user to be aware of this. Like other stored azd account data,
-			// stored subscriptions are currently tied to the OS user, and not the individual account being logged in,
-			// this means cross-contamination is possible.
-			if err := la.accountSubManager.ClearSubscriptions(ctx); err != nil {
-				return nil, err
-			}
-
-			err := la.accountSubManager.RefreshSubscriptions(ctx)
-			if err != nil {
-				// If this fails, the subscriptions will still be loaded on-demand.
-				// erroring out when the user interacts with subscriptions is much more user-friendly.
-				log.Printf("failed retrieving subscriptions: %v", err)
-			}
+		if la.formatter.Kind() != output.NoneFormat {
+			return nil, la.formatter.Format(res, la.writer, nil)
 		} else {
-			// Service principals do not typically require subscription caching (running in CI scenarios)
-			// We simply clear the cache, which is much faster than rehydrating.
-			err := la.accountSubManager.ClearSubscriptions(ctx)
-			if err != nil {
-				log.Printf("failed clearing subscriptions: %v", err)
+			var msg string
+			switch res.Status {
+			case contracts.LoginStatusSuccess:
+				msg = cLoginSuccessMessage
+			case contracts.LoginStatusUnauthenticated:
+				msg = "Not logged in, run `azd auth login` to login to Azure."
+			default:
+				panic("Unhandled login status")
 			}
+
+			fmt.Fprintln(la.console.Handles().Stdout, msg)
+			return nil, nil
 		}
 	}
 
-	if la.formatter.Kind() == output.NoneFormat {
-		if res.Status == contracts.LoginStatusSuccess {
-			fmt.Fprintln(la.console.Handles().Stdout, "Logged in to Azure.")
-		} else {
-			fmt.Fprintln(la.console.Handles().Stdout, "Not logged in, run `azd auth login` to login to Azure.")
-		}
-
-		return nil, nil
+	if err := la.accountSubManager.ClearSubscriptions(ctx); err != nil {
+		log.Printf("failed clearing subscriptions: %v", err)
 	}
 
-	return nil, la.formatter.Format(res, la.writer, nil)
+	if err := la.login(ctx); err != nil {
+		return nil, err
+	}
+
+	if _, err := la.verifyLoggedIn(ctx); err != nil {
+		return nil, err
+	}
+
+	// Rehydrate or clear the account's subscriptions cache.
+	// The caching is done here to increase responsiveness of listing subscriptions (during azd init).
+	// It also allows an implicit command for the user to refresh cached subscriptions.
+	if la.flags.clientID == "" {
+		// Deleting subscriptions on file is very unlikely to fail, unless there are serious filesystem issues.
+		// If this does fail, we want the user to be aware of this. Like other stored azd account data,
+		// stored subscriptions are currently tied to the OS user, and not the individual account being logged in,
+		// this means cross-contamination is possible.
+		if err := la.accountSubManager.ClearSubscriptions(ctx); err != nil {
+			return nil, err
+		}
+
+		err := la.accountSubManager.RefreshSubscriptions(ctx)
+		if err != nil {
+			// If this fails, the subscriptions will still be loaded on-demand.
+			// erroring out when the user interacts with subscriptions is much more user-friendly.
+			log.Printf("failed retrieving subscriptions: %v", err)
+		}
+	} else {
+		// Service principals do not typically require subscription caching (running in CI scenarios)
+		// We simply clear the cache, which is much faster than rehydrating.
+		err := la.accountSubManager.ClearSubscriptions(ctx)
+		if err != nil {
+			log.Printf("failed clearing subscriptions: %v", err)
+		}
+	}
+
+	la.console.Message(ctx, cLoginSuccessMessage)
+	return nil, nil
+}
+
+// Verifies that the user has credentials stored,
+// and that the credentials stored is accepted by the identity server (can be exchanged for access token).
+func (la *loginAction) verifyLoggedIn(ctx context.Context) (*azcore.AccessToken, error) {
+	credOptions := auth.CredentialForCurrentUserOptions{
+		TenantID: la.flags.tenantID,
+	}
+
+	cred, err := la.authManager.CredentialForCurrentUser(ctx, &credOptions)
+	if err != nil {
+		return nil, err
+	}
+
+	// Ensure credential is valid, and can be exchanged for an access token
+	token, err := cred.GetToken(ctx, policy.TokenRequestOptions{
+		Scopes: la.flags.scopes,
+	})
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &token, nil
 }
 
 func countTrue(elms ...bool) int {
@@ -299,6 +374,24 @@ func countTrue(elms ...bool) int {
 	return i
 }
 
+// runningOnCodespacesBrowser use `code --status` which returns:
+//
+//	> The --status argument is not yet supported in browsers.
+//
+// to detect when vscode is within a WebBrowser environment.
+func runningOnCodespacesBrowser(ctx context.Context, commandRunner exec.CommandRunner) bool {
+	runArgs := exec.NewRunArgs("code", "--status")
+	result, err := commandRunner.Run(ctx, runArgs)
+	if err != nil {
+		// An error here means VSCode is not installed or found, or something else.
+		// At any case, we know VSCode is not within a webBrowser
+		log.Printf("error running code --status: %s", err.Error())
+		return false
+	}
+
+	return strings.Contains(result.Stdout, "The --status argument is not yet supported in browsers")
+}
+
 func (la *loginAction) login(ctx context.Context) error {
 	if la.flags.clientID != "" {
 		if la.flags.tenantID == "" {
@@ -308,14 +401,12 @@ func (la *loginAction) login(ctx context.Context) error {
 		if countTrue(
 			la.flags.clientSecret.ptr != nil,
 			la.flags.clientCertificate != "",
-			la.flags.federatedToken.ptr != nil,
 			la.flags.federatedTokenProvider != "",
 		) != 1 {
 			return fmt.Errorf(
 				"must set exactly one of %s for service principal", strings.Join([]string{
 					cClientSecretFlagName,
 					cClientCertificateFlagName,
-					cFederatedCredentialFlagName,
 					cFederatedCredentialProviderFlagName,
 				}, ", "))
 		}
@@ -354,22 +445,6 @@ func (la *loginAction) login(ctx context.Context) error {
 			); err != nil {
 				return fmt.Errorf("logging in: %w", err)
 			}
-		case la.flags.federatedToken.ptr != nil:
-			if *la.flags.federatedToken.ptr == "" {
-				v, err := la.console.Prompt(ctx, input.ConsoleOptions{
-					Message: "Enter your federated token",
-				})
-				if err != nil {
-					return fmt.Errorf("prompting for federated token: %w", err)
-				}
-				la.flags.federatedToken.ptr = &v
-			}
-
-			if _, err := la.authManager.LoginWithServicePrincipalFederatedToken(
-				ctx, la.flags.tenantID, la.flags.clientID, *la.flags.federatedToken.ptr,
-			); err != nil {
-				return fmt.Errorf("logging in: %w", err)
-			}
 		case la.flags.federatedTokenProvider != "":
 			if _, err := la.authManager.LoginWithServicePrincipalFederatedTokenProvider(
 				ctx, la.flags.tenantID, la.flags.clientID, la.flags.federatedTokenProvider,
@@ -381,15 +456,66 @@ func (la *loginAction) login(ctx context.Context) error {
 		return nil
 	}
 
-	if la.flags.useDeviceCode {
-		if _, err := la.authManager.LoginWithDeviceCode(ctx, la.writer, la.flags.tenantID); err != nil {
-			return fmt.Errorf("logging in: %w", err)
+	if la.authManager.UseExternalAuth() {
+		// Request a token and assume the external auth system will prompt the user to log in.
+		//
+		// TODO(ellismg): We may want instead to call some explicit `/login` endpoint on the external auth system instead
+		// of abusing the token request in this manner. This would allow the other end to provide a more tailored experience.
+		if _, err := la.verifyLoggedIn(ctx); err != nil {
+			return err
 		}
 	} else {
-		if _, err := la.authManager.LoginInteractive(ctx, la.flags.redirectPort, la.flags.tenantID); err != nil {
-			return fmt.Errorf("logging in: %w", err)
+		useDevCode, err := parseUseDeviceCode(ctx, la.flags.useDeviceCode, la.commandRunner)
+		if err != nil {
+			return err
+		}
+
+		if useDevCode {
+			_, err := la.authManager.LoginWithDeviceCode(ctx, la.flags.tenantID, la.flags.scopes)
+			if err != nil {
+				return fmt.Errorf("logging in: %w", err)
+			}
+		} else {
+			_, err := la.authManager.LoginInteractive(ctx, la.flags.redirectPort, la.flags.tenantID, la.flags.scopes)
+			if err != nil {
+				return fmt.Errorf("logging in: %w", err)
+			}
 		}
 	}
 
 	return nil
+}
+
+func parseUseDeviceCode(ctx context.Context, flag boolPtr, commandRunner exec.CommandRunner) (bool, error) {
+	var useDevCode bool
+
+	useDevCodeFlag := flag.ptr != nil
+	if useDevCodeFlag {
+		userInput, err := strconv.ParseBool(*flag.ptr)
+		if err != nil {
+			return false, fmt.Errorf("unexpected boolean input for '--use-device-code': %w", err)
+		}
+		// honor the value from the user input. No override.
+		return userInput, err
+	}
+
+	// Detect cases where the browser isn't available for interactive auth, and we instead want to set `useDeviceCode`
+	// to be true by default
+	inCodespacesEnv := os.Getenv("CODESPACES") == "true"
+	if inCodespacesEnv {
+		// For VSCode online (in web Browser), like GitHub Codespaces or VSCode online attached to any server,
+		// interactive browser login will 404 when attempting to redirect to localhost
+		// (since azd launches a localhost server running remotely and the login response is accepted locally).
+		// Hence, we override login to device-code. See https://github.com/Azure/azure-dev/issues/1006
+		useDevCode = runningOnCodespacesBrowser(ctx, commandRunner)
+	}
+
+	if auth.ShouldUseCloudShellAuth() {
+		// Following az CLI behavior in Cloud Shell, use device code authentication when the user is trying to
+		// authenticate. The normal interactive authentication flow will not work in Cloud Shell because the browser
+		// cannot be opened or (if it could) cannot be redirected back to a port on the Cloud Shell instance.
+		return true, nil
+	}
+
+	return useDevCode, nil
 }

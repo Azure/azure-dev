@@ -72,6 +72,22 @@ resource appService 'Microsoft.Web/sites@2022-03-01' = {
       httpLogs: { fileSystem: { enabled: true, retentionInDays: 1, retentionInMb: 35 } }
     }
   }
+
+  resource basicPublishingCredentialsPoliciesFtp 'basicPublishingCredentialsPolicies' = {
+    name: 'ftp'
+    location: location
+    properties: {
+      allow: false
+    }
+  }
+
+  resource basicPublishingCredentialsPoliciesScm 'basicPublishingCredentialsPolicies' = {
+    name: 'scm'
+    location: location
+    properties: {
+      allow: false
+    }
+  }
 }
 
 module config 'appservice-appsettings.bicep' = if (!empty(appSettings)) {
@@ -83,6 +99,7 @@ module config 'appservice-appsettings.bicep' = if (!empty(appSettings)) {
         SCM_DO_BUILD_DURING_DEPLOYMENT: string(scmDoBuildDuringDeployment)
         ENABLE_ORYX_BUILD: string(enableOryxBuild)
       },
+      runtimeName == 'python' && appCommandLine == '' ? { PYTHON_ENABLE_GUNICORN_MULTIWORKERS: 'true'} : {},
       !empty(applicationInsightsName) ? { APPLICATIONINSIGHTS_CONNECTION_STRING: applicationInsights.properties.ConnectionString } : {},
       !empty(keyVaultName) ? { AZURE_KEY_VAULT_ENDPOINT: keyVault.properties.vaultUri } : {})
   }

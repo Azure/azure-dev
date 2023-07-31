@@ -4,16 +4,25 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strconv"
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
+	"golang.org/x/exp/slices"
 )
+
+const cDocsFlagName = "docs"
 
 // CobraBuilder manages the construction of the cobra command tree from nested ActionDescriptors
 type CobraBuilder struct {
@@ -138,10 +147,52 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 
 		// TODO: Consider refactoring to move the UX writing to a middleware
 		invokeErr := cb.container.Invoke(func(console input.Console) {
-			// It is valid for a command to return a nil action result and error.
-			// If we have a result or an error, display it, otherwise don't print anything.
-			if actionResult != nil || err != nil {
-				console.MessageUxItem(ctx, actions.ToUxItem(actionResult, err))
+			var displayResult *ux.ActionResult
+			if actionResult != nil && actionResult.Message != nil {
+				displayResult = &ux.ActionResult{
+					SuccessMessage: actionResult.Message.Header,
+					FollowUp:       actionResult.Message.FollowUp,
+				}
+			} else if err != nil {
+				displayResult = &ux.ActionResult{
+					Err: err,
+				}
+			}
+
+			if displayResult != nil {
+				console.MessageUxItem(ctx, displayResult)
+			}
+
+			if err != nil {
+				var respErr *azcore.ResponseError
+				var azureErr *azapi.AzureDeploymentError
+				var toolExitErr *exec.ExitError
+				var suggestionErr *azcli.ErrorWithSuggestion
+
+				// We only want to show trace ID for server-related errors,
+				// where we have full server logs to troubleshoot from.
+				//
+				// For client errors, we don't want to show the trace ID, as it is not useful to the user currently.
+				if errors.As(err, &respErr) ||
+					errors.As(err, &azureErr) ||
+					(errors.As(err, &toolExitErr) && toolExitErr.Cmd == "terraform") {
+					if actionResult != nil && actionResult.TraceID != "" {
+						console.Message(
+							ctx,
+							output.WithErrorFormat(fmt.Sprintf("TraceID: %s", actionResult.TraceID)))
+					}
+				}
+
+				if errors.As(err, &suggestionErr) {
+					if actionResult != nil && actionResult.TraceID != "" {
+						console.Message(
+							ctx,
+							output.WithErrorFormat(fmt.Sprintf("TraceID: %s", actionResult.TraceID)))
+						console.Message(
+							ctx,
+							output.WithHighLightFormat(suggestionErr.Suggestion))
+					}
+				}
 			}
 		})
 
@@ -155,12 +206,89 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 	return nil
 }
 
+// docsFlag is a flag with a custom parsing implementation which changes the default behavior for printing help
+// for all commands, when it is set as true.
+// docsFlag keeps a reference to the cobra command where it belongs so it can update it.
+// docsFlag also contains a callbacks to pull dependencies for the docs routine.
+type docsFlag struct {
+	// reference to the command where the flag was added.
+	command       *cobra.Command
+	consoleFn     func() input.Console
+	value         bool
+	defaultHelpFn func(*cobra.Command, []string)
+}
+
+// returns the flag value
+func (df *docsFlag) String() string {
+	return fmt.Sprintf("%t", df.value)
+}
+
+// define flag type
+func (df *docsFlag) Type() string {
+	return "bool"
+}
+
+// Set not only initialize the flag value, but it also turns the help flag true and defines the HelpFunc for the command.
+// This wiring forces cobra to react as it the --help flag was provided and stop the command early to run the HelpFunc.
+func (df *docsFlag) Set(value string) error {
+	v, err := strconv.ParseBool(value)
+	if err != nil {
+		return fmt.Errorf("invalid value for boolean --docs parameter")
+	}
+	df.value = v
+	if !df.value {
+		return nil
+	}
+
+	// Setting help to true will make cobra to stop and call the HelpFunc
+	if err = df.command.Flag("help").Value.Set("true"); err != nil {
+		// dev-issue: help flag should be already been added when
+		log.Panic("tried to set help after docs parameter: %w", err)
+	}
+
+	// keeping the default help function allows to set --help with higher priority and use it
+	// in case of finding --docs and --help
+	df.defaultHelpFn = df.command.HelpFunc()
+
+	// set help func for doing docs
+	df.command.SetHelpFunc(func(c *cobra.Command, args []string) {
+		console := df.consoleFn()
+		ctx := c.Context()
+		ctx = tools.WithInstalledCheckCache(ctx)
+
+		if slices.Contains(args, "--help") {
+			df.defaultHelpFn(c, args)
+			return
+		}
+
+		commandPath := strings.ReplaceAll(c.CommandPath(), " ", "-")
+		commandDocsUrl := cReferenceDocumentationUrl + commandPath
+		openWithDefaultBrowser(ctx, console, commandDocsUrl)
+	})
+
+	return nil
+}
+
 // Binds the intersection of cobra command options and action descriptor options
 func (cb *CobraBuilder) bindCommand(cmd *cobra.Command, descriptor *actions.ActionDescriptor) error {
 	actionName := createActionName(cmd)
 
 	// Automatically adds a consistent help flag
 	cmd.Flags().BoolP("help", "h", false, fmt.Sprintf("Gets help for %s.", cmd.Name()))
+	// docs flags for all commands
+	docsFlag := &docsFlag{
+		command: cmd,
+		consoleFn: func() input.Console {
+			var console input.Console
+			if err := cb.container.Resolve(&console); err != nil {
+				log.Panic("creating docs flag: %w", err)
+			}
+			return console
+		},
+	}
+	flag := cmd.Flags().VarPF(
+		docsFlag, cDocsFlagName, "", fmt.Sprintf("Opens the documentation for %s in your web browser.", cmd.CommandPath()))
+	flag.NoOptDefVal = "true"
 
 	// Consistently registers output formats for the descriptor
 	if len(descriptor.Options.OutputFormats) > 0 {
@@ -169,7 +297,6 @@ func (cb *CobraBuilder) bindCommand(cmd *cobra.Command, descriptor *actions.Acti
 
 	// Create, register and bind flags when required
 	if descriptor.Options.FlagsResolver != nil {
-		log.Printf("registering flags for action '%s'\n", actionName)
 		ioc.RegisterInstance(cb.container, cmd)
 
 		// The flags resolver is constructed and bound to the cobra command via dependency injection
@@ -189,7 +316,6 @@ func (cb *CobraBuilder) bindCommand(cmd *cobra.Command, descriptor *actions.Acti
 	// These functions are typically the constructor function for the action. ex) newDeployAction(...)
 	// Action resolvers can take any number of dependencies and instantiated via the IoC container
 	if descriptor.Options.ActionResolver != nil {
-		log.Printf("registering resolver for action '%s'\n", actionName)
 		if err := cb.container.RegisterNamedSingleton(actionName, descriptor.Options.ActionResolver); err != nil {
 			return fmt.Errorf(
 				//nolint:lll

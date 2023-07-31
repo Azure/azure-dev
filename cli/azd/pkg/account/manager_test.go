@@ -9,11 +9,11 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockarmresources"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockconfig"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockhttp"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/exp/slices"
 )
@@ -57,7 +57,7 @@ func Test_GetAccountDefaults(t *testing.T) {
 	})
 
 	t.Run("FromCodeDefaults", func(t *testing.T) {
-		emptyConfig := config.NewConfig(nil)
+		emptyConfig := config.NewEmptyConfig()
 
 		mockConfig := mockconfig.NewMockConfigManager()
 		mockHttp := mockhttp.NewMockHttpUtil()
@@ -508,7 +508,7 @@ func Test_HasDefaults(t *testing.T) {
 	})
 
 	t.Run("DefaultsNotSet", func(t *testing.T) {
-		azdConfig := config.NewConfig(nil)
+		azdConfig := config.NewEmptyConfig()
 
 		manager, err := NewManager(
 			mockConfig.WithConfig(azdConfig),
@@ -688,17 +688,17 @@ func NewSubscriptionsManagerWithCache(
 		service:       service,
 		cache:         cache,
 		principalInfo: &principalInfoProviderMock{},
-		msg:           &mockMessaging{},
+		console:       mockinput.NewMockConsole(),
 	}
 }
 
 type principalInfoProviderMock struct {
-	GetLoggedInServicePrincipalTenantIDFunc func() (*string, error)
+	GetLoggedInServicePrincipalTenantIDFunc func(context.Context) (*string, error)
 }
 
-func (p *principalInfoProviderMock) GetLoggedInServicePrincipalTenantID() (*string, error) {
+func (p *principalInfoProviderMock) GetLoggedInServicePrincipalTenantID(ctx context.Context) (*string, error) {
 	if p.GetLoggedInServicePrincipalTenantIDFunc != nil {
-		return p.GetLoggedInServicePrincipalTenantIDFunc()
+		return p.GetLoggedInServicePrincipalTenantIDFunc(ctx)
 	}
 
 	return nil, nil
@@ -721,15 +721,4 @@ func (b *BypassSubscriptionsCache) Clear() error {
 
 func NewBypassSubscriptionsCache() *BypassSubscriptionsCache {
 	return &BypassSubscriptionsCache{}
-}
-
-type mockMessaging struct {
-}
-
-func (m *mockMessaging) Message(ctx context.Context, message string) {
-}
-
-func (m *mockMessaging) ShowProgress(ctx context.Context, message string) input.ProgressStopper {
-	return func() {
-	}
 }

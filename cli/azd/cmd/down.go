@@ -3,19 +3,17 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -55,89 +53,53 @@ func newDownCmd() *cobra.Command {
 }
 
 type downAction struct {
-	flags               *downFlags
-	accountManager      account.Manager
-	azCli               azcli.AzCli
-	azdCtx              *azdcontext.AzdContext
-	env                 *environment.Environment
-	console             input.Console
-	commandRunner       exec.CommandRunner
-	projectConfig       *project.ProjectConfig
-	userProfileService  *azcli.UserProfileService
-	subResolver         account.SubscriptionTenantResolver
-	alphaFeatureManager *alpha.FeatureManager
+	flags            *downFlags
+	provisionManager *provisioning.Manager
+	env              *environment.Environment
+	console          input.Console
+	projectConfig    *project.ProjectConfig
 }
 
 func newDownAction(
 	flags *downFlags,
-	accountManager account.Manager,
-	azCli azcli.AzCli,
-	azdCtx *azdcontext.AzdContext,
+	provisionManager *provisioning.Manager,
 	env *environment.Environment,
 	projectConfig *project.ProjectConfig,
 	console input.Console,
-	commandRunner exec.CommandRunner,
-	userProfileService *azcli.UserProfileService,
-	subResolver account.SubscriptionTenantResolver,
 	alphaFeatureManager *alpha.FeatureManager,
 ) actions.Action {
 	return &downAction{
-		flags:               flags,
-		accountManager:      accountManager,
-		azCli:               azCli,
-		azdCtx:              azdCtx,
-		env:                 env,
-		console:             console,
-		commandRunner:       commandRunner,
-		projectConfig:       projectConfig,
-		userProfileService:  userProfileService,
-		subResolver:         subResolver,
-		alphaFeatureManager: alphaFeatureManager,
+		flags:            flags,
+		provisionManager: provisionManager,
+		env:              env,
+		console:          console,
+		projectConfig:    projectConfig,
 	}
 }
 
 func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	infraManager, err := provisioning.NewManager(
-		ctx,
-		a.env,
-		a.projectConfig.Path,
-		a.projectConfig.Infra,
-		a.console.IsUnformatted(),
-		a.azCli,
-		a.console,
-		a.commandRunner,
-		a.accountManager,
-		a.userProfileService,
-		a.subResolver,
-		a.alphaFeatureManager,
-	)
+	// Command title
+	a.console.MessageUxItem(ctx, &ux.MessageTitle{
+		Title:     "Deleting all resources and deployed code on Azure (azd down)",
+		TitleNote: "Local application code is not deleted when running 'azd down'.",
+	})
 
-	if err != nil {
-		return nil, fmt.Errorf("creating provisioning manager: %w", err)
-	}
+	startTime := time.Now()
 
-	deploymentPlan, err := infraManager.Plan(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("planning destroy: %w", err)
+	if err := a.provisionManager.Initialize(ctx, a.projectConfig.Path, a.projectConfig.Infra); err != nil {
+		return nil, fmt.Errorf("initializing provisioning manager: %w", err)
 	}
 
 	destroyOptions := provisioning.NewDestroyOptions(a.flags.forceDelete, a.flags.purgeDelete)
-	destroyResult, err := infraManager.Destroy(ctx, &deploymentPlan.Deployment, destroyOptions)
-	if err != nil {
-		return nil, fmt.Errorf("destroying infrastructure: %w", err)
+	if _, err := a.provisionManager.Destroy(ctx, destroyOptions); err != nil {
+		return nil, fmt.Errorf("deleting infrastructure: %w", err)
 	}
 
-	// Remove any outputs from the template from the environment since destroying the infrastructure
-	// invalidated them all.
-	for outputName := range destroyResult.Outputs {
-		delete(a.env.Values, outputName)
-	}
-
-	if err := a.env.Save(); err != nil {
-		return nil, fmt.Errorf("saving environment: %w", err)
-	}
-
-	return nil, nil
+	return &actions.ActionResult{
+		Message: &actions.ResultMessage{
+			Header: fmt.Sprintf("Your application was removed from Azure in %s.", ux.DurationAsText(since(startTime))),
+		},
+	}, nil
 }
 
 func getCmdDownHelpDescription(*cobra.Command) string {

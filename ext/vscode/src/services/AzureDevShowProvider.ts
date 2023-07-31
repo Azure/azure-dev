@@ -25,7 +25,7 @@ interface AzureDevResource {
 
 export interface AzDevShowResults {
     readonly name: string;
-    readonly services: { readonly [name: string]: AzureDevService };
+    readonly services?: { readonly [name: string]: AzureDevService };
     readonly environmentName?: string; // Available in version 0.6.0+
     readonly resources?: AzureDevResource[];
 }
@@ -42,6 +42,7 @@ export class WorkspaceAzureDevShowProvider implements AzureDevShowProvider {
 
         const command = azureCli.commandBuilder
             .withArg('show')
+            .withArg('--no-prompt')
             .withNamedArg('--cwd', configurationFileDirectory)
             .withNamedArg('--environment', environmentName)
             .withNamedArg('--output', 'json')

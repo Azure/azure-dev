@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"strings"
 	"testing"
 
@@ -12,13 +13,15 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func Test_DockerBuild(t *testing.T) {
+const mockedDockerImgId = "fake-docker-image-id"
 
+func Test_DockerBuild(t *testing.T) {
 	cwd := "."
 	dockerFile := "./Dockerfile"
 	dockerContext := "../"
-	platform := "amd64"
+	platform := DefaultPlatform
 	imageName := "IMAGE_NAME"
+	buildArgs := []string{"foo=bar"}
 
 	t.Run("NoError", func(t *testing.T) {
 		ran := false
@@ -30,29 +33,45 @@ func Test_DockerBuild(t *testing.T) {
 		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 			ran = true
 
+			// extract img id file arg. "--iidfile" and path args are expected always at the end
+			argsNoFile, value := args.Args[:len(args.Args)-2], args.Args[len(args.Args)-1]
+
 			require.Equal(t, "docker", args.Cmd)
 			require.Equal(t, cwd, args.Cwd)
 			require.Equal(t, []string{
 				"build",
-				"-q",
 				"-f", dockerFile,
 				"--platform", platform,
 				"-t", imageName,
+				"--build-arg", buildArgs[0],
 				dockerContext,
-			}, args.Args)
+			}, argsNoFile)
+
+			// create the file as expected
+			err := os.WriteFile(value, []byte(mockedDockerImgId), 0600)
+			require.NoError(t, err)
 
 			return exec.RunResult{
-				Stdout:   "Docker build output",
+				Stdout:   mockedDockerImgId,
 				Stderr:   "",
 				ExitCode: 0,
 			}, nil
 		})
 
-		result, err := docker.Build(context.Background(), cwd, dockerFile, platform, dockerContext, imageName)
+		result, err := docker.Build(
+			context.Background(),
+			cwd,
+			dockerFile,
+			platform,
+			dockerContext,
+			imageName,
+			buildArgs,
+			nil,
+		)
 
 		require.Equal(t, true, ran)
 		require.Nil(t, err)
-		require.Equal(t, "Docker build output", result)
+		require.Equal(t, mockedDockerImgId, result)
 	})
 
 	t.Run("WithError", func(t *testing.T) {
@@ -60,24 +79,33 @@ func Test_DockerBuild(t *testing.T) {
 		stdErr := "Error tagging DockerFile"
 		customErrorMessage := "example error message"
 		imageName := "IMAGE_NAME"
+		buildArgs := []string{"foo=bar"}
 
 		mockContext := mocks.NewMockContext(context.Background())
 		docker := NewDocker(mockContext.CommandRunner)
+
 		mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "docker build")
 		}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 			ran = true
 
+			// extract img id file arg. "--iidfile" and path args are expected always at the end
+			argsNoFile, value := args.Args[:len(args.Args)-2], args.Args[len(args.Args)-1]
+
 			require.Equal(t, "docker", args.Cmd)
 			require.Equal(t, cwd, args.Cwd)
 			require.Equal(t, []string{
 				"build",
-				"-q",
 				"-f", dockerFile,
 				"--platform", platform,
 				"-t", imageName,
+				"--build-arg", buildArgs[0],
 				dockerContext,
-			}, args.Args)
+			}, argsNoFile)
+
+			// create the file as expected
+			err := os.WriteFile(value, []byte(""), 0600)
+			require.NoError(t, err)
 
 			return exec.RunResult{
 				Stdout:   "",
@@ -86,13 +114,22 @@ func Test_DockerBuild(t *testing.T) {
 			}, errors.New(customErrorMessage)
 		})
 
-		result, err := docker.Build(context.Background(), cwd, dockerFile, platform, dockerContext, imageName)
+		result, err := docker.Build(
+			context.Background(),
+			cwd,
+			dockerFile,
+			platform,
+			dockerContext,
+			imageName,
+			buildArgs,
+			nil,
+		)
 
 		require.Equal(t, true, ran)
 		require.NotNil(t, err)
 		require.Equal(
 			t,
-			fmt.Sprintf("building image: exit code: 1, stdout: , stderr: %s: %s", stdErr, customErrorMessage),
+			fmt.Sprintf("building image: %s", customErrorMessage),
 			err.Error(),
 		)
 		require.Equal(t, "", result)
@@ -104,8 +141,9 @@ func Test_DockerBuildEmptyPlatform(t *testing.T) {
 	cwd := "."
 	dockerFile := "./Dockerfile"
 	dockerContext := "../"
-	platform := "amd64"
+	platform := DefaultPlatform
 	imageName := "IMAGE_NAME"
+	buildArgs := []string{"foo=bar"}
 
 	mockContext := mocks.NewMockContext(context.Background())
 	docker := NewDocker(mockContext.CommandRunner)
@@ -115,29 +153,134 @@ func Test_DockerBuildEmptyPlatform(t *testing.T) {
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		ran = true
 
+		// extract img id file arg. "--iidfile" and path args are expected always at the end
+		argsNoFile, value := args.Args[:len(args.Args)-2], args.Args[len(args.Args)-1]
+
 		require.Equal(t, "docker", args.Cmd)
 		require.Equal(t, cwd, args.Cwd)
 		require.Equal(t, []string{
 			"build",
-			"-q",
 			"-f", dockerFile,
 			"--platform", platform,
 			"-t", imageName,
+			"--build-arg", buildArgs[0],
 			dockerContext,
-		}, args.Args)
+		}, argsNoFile)
+
+		// create the file as expected
+		err := os.WriteFile(value, []byte(mockedDockerImgId), 0600)
+		require.NoError(t, err)
 
 		return exec.RunResult{
-			Stdout:   "Docker build output",
+			Stdout:   mockedDockerImgId,
 			Stderr:   "",
 			ExitCode: 0,
 		}, nil
 	})
 
-	result, err := docker.Build(context.Background(), cwd, dockerFile, "", dockerContext, imageName)
+	result, err := docker.Build(context.Background(), cwd, dockerFile, "", dockerContext, imageName, buildArgs, nil)
 
 	require.Equal(t, true, ran)
 	require.Nil(t, err)
-	require.Equal(t, "Docker build output", result)
+	require.Equal(t, mockedDockerImgId, result)
+}
+
+func Test_DockerBuildArgsEmpty(t *testing.T) {
+	ran := false
+	cwd := "."
+	dockerFile := "./Dockerfile"
+	dockerContext := "../"
+	platform := DefaultPlatform
+	imageName := "IMAGE_NAME"
+	buildArgs := []string{}
+
+	mockContext := mocks.NewMockContext(context.Background())
+	docker := NewDocker(mockContext.CommandRunner)
+
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "docker build")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		ran = true
+
+		// extract img id file arg. "--iidfile" and path args are expected always at the end
+		argsNoFile, value := args.Args[:len(args.Args)-2], args.Args[len(args.Args)-1]
+
+		require.Equal(t, "docker", args.Cmd)
+		require.Equal(t, cwd, args.Cwd)
+		require.Equal(t, []string{
+			"build",
+			"-f", dockerFile,
+			"--platform", platform,
+			"-t", imageName,
+			dockerContext,
+		}, argsNoFile)
+
+		// create the file as expected
+		err := os.WriteFile(value, []byte(mockedDockerImgId), 0600)
+		require.NoError(t, err)
+
+		return exec.RunResult{
+			Stdout:   mockedDockerImgId,
+			Stderr:   "",
+			ExitCode: 0,
+		}, nil
+	})
+
+	result, err := docker.Build(context.Background(), cwd, dockerFile, "", dockerContext, imageName, buildArgs, nil)
+
+	require.Equal(t, true, ran)
+	require.Nil(t, err)
+	require.Equal(t, mockedDockerImgId, result)
+}
+
+func Test_DockerBuildArgsMultiple(t *testing.T) {
+	ran := false
+	cwd := "."
+	dockerFile := "./Dockerfile"
+	dockerContext := "../"
+	platform := DefaultPlatform
+	imageName := "IMAGE_NAME"
+	buildArgs := []string{"foo=bar", "bar=baz"}
+
+	mockContext := mocks.NewMockContext(context.Background())
+	docker := NewDocker(mockContext.CommandRunner)
+
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "docker build")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		ran = true
+
+		// extract img id file arg. "--iidfile" and path args are expected always at the end
+		argsNoFile, value := args.Args[:len(args.Args)-2], args.Args[len(args.Args)-1]
+
+		require.Equal(t, "docker", args.Cmd)
+		require.Equal(t, cwd, args.Cwd)
+		require.Equal(t, []string{
+			"build",
+			"-f", dockerFile,
+			"--platform", platform,
+			"-t", imageName,
+			"--build-arg", buildArgs[0],
+			"--build-arg", buildArgs[1],
+			dockerContext,
+		}, argsNoFile)
+
+		// create the file as expected
+		err := os.WriteFile(value, []byte(mockedDockerImgId), 0600)
+		require.NoError(t, err)
+
+		return exec.RunResult{
+			Stdout:   mockedDockerImgId,
+			Stderr:   "",
+			ExitCode: 0,
+		}, nil
+	})
+
+	result, err := docker.Build(context.Background(), cwd, dockerFile, "", dockerContext, imageName, buildArgs, nil)
+
+	require.Equal(t, true, ran)
+	require.Nil(t, err)
+	require.Equal(t, mockedDockerImgId, result)
 }
 
 func Test_DockerTag(t *testing.T) {
@@ -165,7 +308,7 @@ func Test_DockerTag(t *testing.T) {
 			}, args.Args)
 
 			return exec.RunResult{
-				Stdout:   "Docker build output",
+				Stdout:   mockedDockerImgId,
 				Stderr:   "",
 				ExitCode: 0,
 			}, nil
@@ -211,7 +354,7 @@ func Test_DockerTag(t *testing.T) {
 		require.NotNil(t, err)
 		require.Equal(
 			t,
-			fmt.Sprintf("tagging image: exit code: 1, stdout: , stderr: %s: %s", stdErr, customErrorMessage),
+			fmt.Sprintf("tagging image: %s", customErrorMessage),
 			err.Error(),
 		)
 	})
@@ -240,7 +383,7 @@ func Test_DockerPush(t *testing.T) {
 			}, args.Args)
 
 			return exec.RunResult{
-				Stdout:   "Docker build output",
+				Stdout:   mockedDockerImgId,
 				Stderr:   "",
 				ExitCode: 0,
 			}, nil
@@ -285,15 +428,13 @@ func Test_DockerPush(t *testing.T) {
 		require.NotNil(t, err)
 		require.Equal(
 			t,
-			fmt.Sprintf("pushing image: exit code: 1, stdout: , stderr: %s: %s", stdErr, customErrorMessage),
+			fmt.Sprintf("pushing image: %s", customErrorMessage),
 			err.Error(),
 		)
 	})
 }
 
 func Test_DockerLogin(t *testing.T) {
-	cwd := "."
-
 	t.Run("NoError", func(t *testing.T) {
 		ran := false
 
@@ -306,16 +447,15 @@ func Test_DockerLogin(t *testing.T) {
 			ran = true
 
 			require.Equal(t, "docker", args.Cmd)
-			require.Equal(t, cwd, args.Cwd)
 			require.Equal(t, []string{
 				"login",
 				"--username", "USERNAME",
-				"--password", "PASSWORD",
+				"--password-stdin",
 				"LOGIN_SERVER",
 			}, args.Args)
 
 			return exec.RunResult{
-				Stdout:   "Docker build output",
+				Stdout:   mockedDockerImgId,
 				Stderr:   "",
 				ExitCode: 0,
 			}, nil
@@ -329,7 +469,7 @@ func Test_DockerLogin(t *testing.T) {
 
 	t.Run("WithError", func(t *testing.T) {
 		ran := false
-		stdErr := "failed logging into docker"
+		stdErr := "Error logging into docker"
 		customErrorMessage := "example error message"
 
 		mockContext := mocks.NewMockContext(context.Background())
@@ -341,11 +481,10 @@ func Test_DockerLogin(t *testing.T) {
 			ran = true
 
 			require.Equal(t, "docker", args.Cmd)
-			require.Equal(t, cwd, args.Cwd)
 			require.Equal(t, []string{
 				"login",
 				"--username", "USERNAME",
-				"--password", "PASSWORD",
+				"--password-stdin",
 				"LOGIN_SERVER",
 			}, args.Args)
 
@@ -360,7 +499,7 @@ func Test_DockerLogin(t *testing.T) {
 
 		require.Equal(t, true, ran)
 		require.NotNil(t, err)
-		require.Equal(t, fmt.Sprintf("%s: %s", stdErr, customErrorMessage), err.Error())
+		require.Equal(t, fmt.Sprintf("failed logging into docker: %s", customErrorMessage), err.Error())
 	})
 }
 

@@ -1,6 +1,5 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
-
 import { IActionContext } from '@microsoft/vscode-azext-utils';
 import { TelemetryId } from '../telemetry/telemetryId';
 import { createAzureDevCli, onAzdLoginAttempted } from '../utils/azureDevCli';

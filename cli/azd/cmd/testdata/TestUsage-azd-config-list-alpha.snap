@@ -5,6 +5,7 @@ Usage
   azd config list-alpha [flags]
 
 Flags
+        --docs 	: Opens the documentation for azd config list-alpha in your web browser.
     -h, --help 	: Gets help for list-alpha.
 
 Global Flags
@@ -12,6 +13,20 @@ Global Flags
         --debug      	: Enables debugging and diagnostics logging.
         --no-prompt  	: Accepts the default value instead of prompting, or it fails if there is no default.
 
-Find a bug? Want to let us know how we're doing? Fill out this brief survey: https://aka.ms/azure-dev/hats.
+Examples
+  Displays a list of all available features in the alpha stage
+    azd config list-alpha
+
+  Turn off a specific alpha feature
+    azd config set alpha.<feature-name> off
+
+  Turn off all alpha features
+    azd config set alpha.all off
+
+  Turn on a specific alpha feature
+    azd config set alpha.<feature-name> on
+
+  Turn on all alpha features
+    azd config set alpha.all on
 
 

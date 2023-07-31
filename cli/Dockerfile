@@ -20,7 +20,7 @@ RUN export DEBIAN_FRONTEND=noninteractive \
      && curl -fsSL https://deb.nodesource.com/setup_16.x | bash - \
      && apt-get install -y nodejs \
      # python
-     && apt-get install -y --no-install-recommends python3-pip python-dev \
+     && apt-get install -y --no-install-recommends python3-pip python-dev python3-venv \
      && python3 -m pip install --upgrade pip \
      && echo 'alias python=python3' >> ~/.bashrc \
      && echo 'alias pip=pip3' >> ~/.bashrc \
@@ -38,7 +38,7 @@ RUN export DEBIAN_FRONTEND=noninteractive \
      # kubectl CLI
      && apt-get update \
      && mkdir -p /etc/apt/keyrings \
-     && curl -fsSLo /etc/apt/keyrings/kubernetes-archive-keyring.gpg https://packages.cloud.google.com/apt/doc/apt-key.gpg \
+     && curl -fsSLo /etc/apt/keyrings/kubernetes-archive-keyring.gpg https://dl.k8s.io/apt/doc/apt-key.gpg \
      && echo "deb [signed-by=/etc/apt/keyrings/kubernetes-archive-keyring.gpg] https://apt.kubernetes.io/ kubernetes-xenial main" | tee /etc/apt/sources.list.d/kubernetes.list \
      && apt-get update \
      && apt-get install -y kubectl \

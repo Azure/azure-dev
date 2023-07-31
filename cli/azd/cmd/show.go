@@ -11,6 +11,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -51,15 +52,14 @@ func newShowCmd() *cobra.Command {
 }
 
 type showAction struct {
-	projectConfig   *project.ProjectConfig
-	resourceManager project.ResourceManager
-	console         input.Console
-	formatter       output.Formatter
-	writer          io.Writer
-	azCli           azcli.AzCli
-	azdCtx          *azdcontext.AzdContext
-	env             *environment.Environment
-	flags           *showFlags
+	projectConfig        *project.ProjectConfig
+	console              input.Console
+	formatter            output.Formatter
+	writer               io.Writer
+	azCli                azcli.AzCli
+	deploymentOperations azapi.DeploymentOperations
+	azdCtx               *azdcontext.AzdContext
+	flags                *showFlags
 }
 
 func newShowAction(
@@ -67,22 +67,20 @@ func newShowAction(
 	formatter output.Formatter,
 	writer io.Writer,
 	azCli azcli.AzCli,
+	deploymentOperations azapi.DeploymentOperations,
 	projectConfig *project.ProjectConfig,
-	resourceManager project.ResourceManager,
 	azdCtx *azdcontext.AzdContext,
-	env *environment.Environment,
 	flags *showFlags,
 ) actions.Action {
 	return &showAction{
-		projectConfig:   projectConfig,
-		resourceManager: resourceManager,
-		console:         console,
-		formatter:       formatter,
-		writer:          writer,
-		azCli:           azCli,
-		azdCtx:          azdCtx,
-		env:             env,
-		flags:           flags,
+		projectConfig:        projectConfig,
+		console:              console,
+		formatter:            formatter,
+		writer:               writer,
+		azCli:                azCli,
+		deploymentOperations: deploymentOperations,
+		azdCtx:               azdCtx,
+		flags:                flags,
 	}
 }
 
@@ -110,36 +108,58 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	// Add information about the target of each service, if we can determine it (if the infrastructure has
 	// not been deployed, for example, we'll just not include target information)
-	if subId := s.env.GetSubscriptionId(); subId != "" {
-		resourceManager := infra.NewAzureResourceManager(s.azCli)
-		envName := s.env.GetEnvName()
+	//
+	// Before we can discover resources, we need to load the current environment.  We do this ourselves instead of
+	// having an environment injected into us so we can handle cases where the current environment doesn't exist (if we
+	// injected an environment, we'd prompt the user to see if they want to created one and we'd prefer not to have show
+	// interact with the user).
+	environmentName := s.flags.environmentName
 
-		rgName, err := resourceManager.FindResourceGroupForEnvironment(ctx, subId, envName)
-		if err == nil {
-			for svcName, serviceConfig := range s.projectConfig.Services {
-				if resources, err := s.resourceManager.GetServiceResources(ctx, subId, rgName, serviceConfig); err == nil {
-					resourceIds := make([]string, len(resources))
-					for idx, res := range resources {
-						resourceIds[idx] = res.Id
-					}
-
-					resSvc := res.Services[svcName]
-					resSvc.Target = &contracts.ShowTargetArm{
-						ResourceIds: resourceIds,
-					}
-					res.Services[svcName] = resSvc
-				} else {
-					log.Printf("ignoring error determining resource id for service %s: %v", svcName, err)
-				}
-			}
-		} else {
-			log.Printf(
-				"ignoring error determining resource group for environment %s, resource ids will not be available: %v",
-				s.env.GetEnvName(),
-				err)
+	if environmentName == "" {
+		var err error
+		environmentName, err = s.azdCtx.GetDefaultEnvironmentName()
+		if err != nil {
+			log.Printf("could not determine current environment: %s, resource ids will not be available", err)
 		}
+
+	}
+
+	if env, err := environment.GetEnvironment(s.azdCtx, environmentName); err != nil {
+		log.Printf("could not load environment: %s, resource ids will not be available", err)
 	} else {
-		log.Printf("provision has not been run, resource ids will not be available")
+		if subId := env.GetSubscriptionId(); subId == "" {
+			log.Printf("provision has not been run, resource ids will not be available")
+		} else {
+			azureResourceManager := infra.NewAzureResourceManager(s.azCli, s.deploymentOperations)
+			resourceManager := project.NewResourceManager(env, s.azCli, s.deploymentOperations)
+			envName := env.GetEnvName()
+
+			rgName, err := azureResourceManager.FindResourceGroupForEnvironment(ctx, subId, envName)
+			if err == nil {
+				for svcName, serviceConfig := range s.projectConfig.Services {
+					resources, err := resourceManager.GetServiceResources(ctx, subId, rgName, serviceConfig)
+					if err == nil {
+						resourceIds := make([]string, len(resources))
+						for idx, res := range resources {
+							resourceIds[idx] = res.Id
+						}
+
+						resSvc := res.Services[svcName]
+						resSvc.Target = &contracts.ShowTargetArm{
+							ResourceIds: resourceIds,
+						}
+						res.Services[svcName] = resSvc
+					} else {
+						log.Printf("ignoring error determining resource id for service %s: %v", svcName, err)
+					}
+				}
+			} else {
+				log.Printf(
+					"ignoring error determining resource group for environment %s, resource ids will not be available: %v",
+					env.GetEnvName(),
+					err)
+			}
+		}
 	}
 
 	return nil, s.formatter.Format(res, s.writer, nil)
@@ -186,7 +206,7 @@ func getFullPathToProjectForService(svc *project.ServiceConfig) (string, error) 
 					// corresponds to the service.
 					return "", fmt.Errorf(
 						"multiple .NET project files detected in %s for service %s, "+
-							"please include the name of the .NET project file in 'project' "+
+							"include the name of the .NET project file in 'project' "+
 							"setting in %s for this service",
 						svc.Path(),
 						svc.Name,
@@ -199,7 +219,7 @@ func getFullPathToProjectForService(svc *project.ServiceConfig) (string, error) 
 		if projectFile == "" {
 			return "", fmt.Errorf(
 				"could not determine the .NET project file for service %s,"+
-					" please include the name of the .NET project file in project setting in %s for"+
+					" include the name of the .NET project file in project setting in %s for"+
 					" this service",
 				svc.Name,
 				azdcontext.ProjectFileName)

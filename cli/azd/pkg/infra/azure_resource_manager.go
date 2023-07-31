@@ -11,18 +11,21 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
+	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/compare"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
 type AzureResourceManager struct {
-	azCli azcli.AzCli
+	azCli                azcli.AzCli
+	deploymentOperations azapi.DeploymentOperations
 }
 
 type ResourceManager interface {
 	GetDeploymentResourceOperations(
-		ctx context.Context, scope Scope, queryStart *time.Time) ([]*armresources.DeploymentOperation, error)
+		ctx context.Context, deployment Deployment, queryStart *time.Time) ([]*armresources.DeploymentOperation, error)
 	GetResourceTypeDisplayName(
 		ctx context.Context,
 		subscriptionId string,
@@ -31,30 +34,32 @@ type ResourceManager interface {
 	) (string, error)
 }
 
-func NewAzureResourceManager(azCli azcli.AzCli) *AzureResourceManager {
+func NewAzureResourceManager(
+	azCli azcli.AzCli, deploymentOperations azapi.DeploymentOperations) *AzureResourceManager {
 	return &AzureResourceManager{
-		azCli: azCli,
+		azCli:                azCli,
+		deploymentOperations: deploymentOperations,
 	}
 }
 
 func (rm *AzureResourceManager) GetDeploymentResourceOperations(
 	ctx context.Context,
-	scope Scope,
+	deployment Deployment,
 	queryStart *time.Time,
 ) ([]*armresources.DeploymentOperation, error) {
 	// Gets all the scope level resource operations
-	topLevelDeploymentOperations, err := scope.GetResourceOperations(ctx)
+	topLevelDeploymentOperations, err := deployment.Operations(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("getting subscription deployment: %w", err)
 	}
 
-	subscriptionId := scope.SubscriptionId()
+	subscriptionId := deployment.SubscriptionId()
 	var resourceGroupName string
-	resourceGroupScope, ok := scope.(*ResourceGroupScope)
+	resourceGroupDeployment, ok := deployment.(*ResourceGroupDeployment)
 
 	if ok {
 		// If the scope is a resource group scope get the resource group directly
-		resourceGroupName = resourceGroupScope.ResourceGroup()
+		resourceGroupName = resourceGroupDeployment.ResourceGroupName()
 	} else {
 		// Otherwise find the resource group within the deployment operations
 		for _, operation := range topLevelDeploymentOperations {
@@ -114,38 +119,6 @@ func (rm *AzureResourceManager) GetDeploymentResourceOperations(
 	return allLevelsDeploymentOperations, nil
 }
 
-// GetResourceGroupsForDeployment returns the names of all the resource groups from a subscription level deployment.
-func (rm *AzureResourceManager) GetResourceGroupsForDeployment(
-	ctx context.Context,
-	subscriptionId string,
-	deploymentName string,
-) ([]string, error) {
-	deployment, err := rm.azCli.GetSubscriptionDeployment(ctx, subscriptionId, deploymentName)
-	if err != nil {
-		return nil, fmt.Errorf("fetching current deployment: %w", err)
-	}
-
-	// NOTE: it's possible for a deployment to list a resource group more than once. We're only interested in the
-	// unique set.
-	resourceGroups := map[string]struct{}{}
-
-	for _, dependency := range deployment.Properties.Dependencies {
-		for _, dependent := range dependency.DependsOn {
-			if *dependent.ResourceType == string(AzureResourceTypeResourceGroup) {
-				resourceGroups[*dependent.ResourceName] = struct{}{}
-			}
-		}
-	}
-
-	var keys []string
-
-	for k := range resourceGroups {
-		keys = append(keys, k)
-	}
-
-	return keys, nil
-}
-
 // GetResourceGroupsForEnvironment gets all resources groups for a given environment
 func (rm *AzureResourceManager) GetResourceGroupsForEnvironment(
 	ctx context.Context,
@@ -153,7 +126,7 @@ func (rm *AzureResourceManager) GetResourceGroupsForEnvironment(
 	envName string,
 ) ([]azcli.AzCliResource, error) {
 	res, err := rm.azCli.ListResourceGroup(ctx, subscriptionId, &azcli.ListResourceGroupOptions{
-		TagFilter: &azcli.Filter{Key: "azd-env-name", Value: envName},
+		TagFilter: &azcli.Filter{Key: azure.TagKeyAzdEnvName, Value: envName},
 	})
 
 	if err != nil {
@@ -162,7 +135,7 @@ func (rm *AzureResourceManager) GetResourceGroupsForEnvironment(
 
 	if len(res) == 0 {
 		return nil, azureutil.ResourceNotFound(
-			fmt.Errorf("0 resource groups with azd-env-name with value: '%s'", envName),
+			fmt.Errorf("0 resource groups with tag '%s' with value: '%s'", azure.TagKeyAzdEnvName, envName),
 		)
 	}
 
@@ -244,7 +217,7 @@ func (rm *AzureResourceManager) FindResourceGroupForEnvironment(
 	}
 
 	return "", fmt.Errorf(
-		"%s please explicitly specify your resource group in azure.yaml or the AZURE_RESOURCE_GROUP environment variable",
+		"%s explicitly specify your resource group in azure.yaml or the AZURE_RESOURCE_GROUP environment variable",
 		msg,
 	)
 }
@@ -334,7 +307,7 @@ func (rm *AzureResourceManager) appendDeploymentResourcesRecursive(
 	resourceOperations *map[string]*armresources.DeploymentOperation,
 	queryStart *time.Time,
 ) error {
-	operations, err := rm.azCli.ListResourceGroupDeploymentOperations(
+	operations, err := rm.deploymentOperations.ListResourceGroupDeploymentOperations(
 		ctx, subscriptionId, resourceGroupName, deploymentName)
 	if err != nil {
 		return fmt.Errorf("getting subscription deployment operations: %w", err)

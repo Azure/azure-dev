@@ -1,24 +1,22 @@
 package cmd
 
 import (
-	"bytes"
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"os"
 	"path/filepath"
-	"sort"
 	"strings"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/stretchr/testify/require"
@@ -33,7 +31,7 @@ func Test_promptEnvironmentName(t *testing.T) {
 
 		environmentName := "hello"
 
-		err := ensureValidEnvironmentName(*mockContext.Context, &environmentName, mockContext.Console)
+		err := ensureValidEnvironmentName(*mockContext.Context, &environmentName, "", mockContext.Console)
 
 		require.NoError(t, err)
 	})
@@ -46,76 +44,10 @@ func Test_promptEnvironmentName(t *testing.T) {
 			return true
 		}).Respond("someEnv")
 
-		err := ensureValidEnvironmentName(*mockContext.Context, &environmentName, mockContext.Console)
+		err := ensureValidEnvironmentName(*mockContext.Context, &environmentName, "", mockContext.Console)
 
 		require.NoError(t, err)
 		require.Equal(t, "someEnv", environmentName)
-	})
-
-	t.Run("duplicate resource groups ignored", func(t *testing.T) {
-		mockDeployment := armresources.DeploymentExtended{
-			Properties: &armresources.DeploymentPropertiesExtended{
-				Dependencies: []*armresources.Dependency{
-					{
-						DependsOn: []*armresources.BasicDependency{
-							{
-								ResourceName: convert.RefOf("groupA"),
-								ResourceType: convert.RefOf(string(infra.AzureResourceTypeResourceGroup)),
-							},
-							{
-								ResourceName: convert.RefOf("groupB"),
-								ResourceType: convert.RefOf(string(infra.AzureResourceTypeResourceGroup)),
-							},
-							{
-								ResourceName: convert.RefOf("ignoredForWrongType"),
-								ResourceType: convert.RefOf(string(infra.AzureResourceTypeStorageAccount)),
-							},
-						},
-					},
-					{
-						DependsOn: []*armresources.BasicDependency{
-							{
-								ResourceName: convert.RefOf("groupA"),
-								ResourceType: convert.RefOf(string(infra.AzureResourceTypeResourceGroup)),
-							},
-							{
-								ResourceName: convert.RefOf("groupB"),
-								ResourceType: convert.RefOf(string(infra.AzureResourceTypeResourceGroup)),
-							},
-							{
-								ResourceName: convert.RefOf("groupC"),
-								ResourceType: convert.RefOf(string(infra.AzureResourceTypeResourceGroup)),
-							},
-						},
-					},
-				},
-			},
-		}
-
-		mockContext := mocks.NewMockContext(context.Background())
-
-		mockContext.HttpClient.When(func(request *http.Request) bool {
-			return request.Method == http.MethodGet && strings.Contains(
-				request.URL.Path,
-				"/subscriptions/sub-id/providers/Microsoft.Resources/deployments",
-			)
-		}).RespondFn(func(request *http.Request) (*http.Response, error) {
-			subscriptionsListBytes, _ := json.Marshal(mockDeployment)
-
-			return &http.Response{
-				StatusCode: http.StatusOK,
-				Body:       io.NopCloser(bytes.NewBuffer(subscriptionsListBytes)),
-			}, nil
-		})
-
-		azCli := mockazcli.NewAzCliFromMockContext(mockContext)
-
-		resourceManager := infra.NewAzureResourceManager(azCli)
-		groups, err := resourceManager.GetResourceGroupsForDeployment(*mockContext.Context, "sub-id", "deployment-name")
-		require.NoError(t, err)
-
-		sort.Strings(groups)
-		require.Equal(t, []string{"groupA", "groupB", "groupC"}, groups)
 	})
 }
 
@@ -162,4 +94,74 @@ func Test_createAndInitEnvironment(t *testing.T) {
 			fmt.Sprintf("environment '%s' already exists",
 				validName))
 	})
+}
+
+func Test_getResourceGroupFollowUp(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
+	depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
+	env := environment.EphemeralWithValues("envA", map[string]string{
+		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
+	})
+
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet && strings.Contains(request.URL.Path, "subscriptions/SUBSCRIPTION_ID/")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		resp := &armresources.ResourceGroupListResult{
+			Value: []*armresources.ResourceGroup{
+				{
+					Location: to.Ptr("location"),
+					ID:       to.Ptr("id"),
+					Name:     to.Ptr("Name"),
+					Type:     to.Ptr("Type"),
+				},
+			},
+		}
+		return mocks.CreateHttpResponseWithBody(request, 200, resp)
+	})
+
+	followUp := getResourceGroupFollowUp(
+		*mockContext.Context,
+		&output.NoneFormatter{},
+		&project.ProjectConfig{},
+		project.NewResourceManager(env, azCli, depOpService),
+		env,
+		false)
+
+	require.Contains(t, followUp, "You can view the resources created under the resource group Name in Azure Portal:")
+}
+
+func Test_getResourceGroupFollowUpPreview(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
+	depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
+	env := environment.EphemeralWithValues("envA", map[string]string{
+		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
+	})
+
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet && strings.Contains(request.URL.Path, "subscriptions/SUBSCRIPTION_ID/")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		resp := &armresources.ResourceGroupListResult{
+			Value: []*armresources.ResourceGroup{
+				{
+					Location: to.Ptr("location"),
+					ID:       to.Ptr("id"),
+					Name:     to.Ptr("Name"),
+					Type:     to.Ptr("Type"),
+				},
+			},
+		}
+		return mocks.CreateHttpResponseWithBody(request, 200, resp)
+	})
+
+	followUp := getResourceGroupFollowUp(
+		*mockContext.Context,
+		&output.NoneFormatter{},
+		&project.ProjectConfig{},
+		project.NewResourceManager(env, azCli, depOpService),
+		env,
+		true)
+
+	require.Contains(t, followUp, "You can view the current resources under the resource group Name in Azure Portal:")
 }

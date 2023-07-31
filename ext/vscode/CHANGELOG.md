@@ -1,6 +1,6 @@
 # Release History
 
-## 0.6.0-alpha.1 (Unreleased)
+## 0.8.0-alpha.1 (Unreleased)
 
 ### Features Added
 
@@ -9,6 +9,28 @@
 ### Bugs Fixed
 
 ### Other Changes
+
+## 0.7.0 (2023-07-12)
+
+### Features Added
+
+- [[#2396]](https://github.com/Azure/azure-dev/pull/2396) Diagnostics have been added for `azure.yaml` files for when a path referenced as a project does not exist.
+- [[#2447]](https://github.com/Azure/azure-dev/pull/2447) An experience has been added to easily rename project paths referenced in `azure.yaml`.
+- [[#2448]](https://github.com/Azure/azure-dev/pull/2448) Services can be added to `azure.yaml` by dragging a folder and then holding `Shift` and dropping it into `azure.yaml`.
+
+### Bugs Fixed
+
+- [[#2504]](https://github.com/Azure/azure-dev/pull/2504) Fixed an issue where the "Azure Developer CLI (azd): Initialize App (init)" command would fail on Windows when executed immediately after installing AZD.
+
+## 0.6.0 (2023-05-17)
+
+### Features Added
+
+- [[#2122]](https://github.com/Azure/azure-dev/pull/2122) The appropriate schema for `azure.yaml` has been associated for use by the optional [YAML extension](https://marketplace.visualstudio.com/items?itemName=redhat.vscode-yaml). The YAML extension can offer syntax and schema validation, completions, hover tooltips, and more.
+
+### Other Changes
+
+- [[#2190]](https://github.com/Azure/azure-dev/pull/2190) Command names have been altered to appear more consistent with VS Code conventions. Commands have been grouped into submenus.
 
 ## 0.5.0 (2023-04-05)
 

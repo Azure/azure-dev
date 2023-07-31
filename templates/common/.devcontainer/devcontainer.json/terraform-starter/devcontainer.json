@@ -1,0 +1,37 @@
+{
+    "name": "Azure Developer CLI",
+    "image": "mcr.microsoft.com/devcontainers/python:3.10-bullseye",
+    "features": {
+        // terraform and az (required for auth) are installed by default
+        // See https://containers.dev/features for list of features
+        "ghcr.io/devcontainers/features/azure-cli:1": {
+        },
+        "ghcr.io/devcontainers/features/docker-in-docker:2": {
+        },
+        "ghcr.io/devcontainers/features/terraform:1": {
+            "version": "latest"
+        },
+        "ghcr.io/azure/azure-dev/azd:latest": {}
+    },
+    "customizations": {
+        "vscode": {
+            "extensions": [
+                "GitHub.vscode-github-actions",
+                "hashicorp.terraform",
+                "ms-azuretools.azure-dev",
+                "ms-azuretools.vscode-azurefunctions",
+                "ms-azuretools.vscode-docker"
+                // Include other VSCode extensions if needed
+                // Right click on an extension inside VSCode to add directly to devcontainer.json, or copy the extension ID
+            ]
+        }
+    },
+    "forwardPorts": [
+        // Forward ports if needed for local development
+    ],
+    "postCreateCommand": "",
+    "remoteUser": "vscode",
+    "hostRequirements": {
+        "memory": "8gb"
+    }
+}

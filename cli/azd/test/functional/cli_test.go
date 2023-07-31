@@ -19,7 +19,6 @@ import (
 	osexec "os/exec"
 	"path"
 	"path/filepath"
-	"regexp"
 	"runtime"
 	"strings"
 	"testing"
@@ -28,15 +27,17 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
-	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
+	"github.com/azure/azure-dev/cli/azd/test/recording"
 	"github.com/joho/godotenv"
 	"github.com/sethvargo/go-retry"
 	"github.com/stretchr/testify/assert"
@@ -45,70 +46,51 @@ import (
 	"golang.org/x/exp/slices"
 )
 
-const (
-	testSubscriptionId = "2cd617ea-1866-46b1-90e3-fffb087ebf9b"
-	defaultLocation    = "eastus2"
-)
+// The current running configuration for the test suite.
+var cfg = config{}
 
-func Test_CLI_Init_CreatesEnvAndProjectFile(t *testing.T) {
-	ctx, cancel := newTestContext(t)
-	defer cancel()
-
-	dir := tempDirWithDiagnostics(t)
-
-	cli := azdcli.NewCLI(t)
-	cli.WorkingDirectory = dir
-	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
-
-	_, err := cli.RunCommandWithStdIn(
-		ctx,
-		"Empty Template\nTESTENV\n",
-		"init",
-	)
-	require.NoError(t, err)
-
-	file, err := os.ReadFile(getTestEnvPath(dir, "TESTENV"))
-
-	require.NoError(t, err)
-
-	require.Regexp(t, regexp.MustCompile(`AZURE_ENV_NAME="TESTENV"`+"\n"), string(file))
-
-	proj, err := project.Load(ctx, filepath.Join(dir, azdcontext.ProjectFileName))
-	require.NoError(t, err)
-
-	require.Equal(t, filepath.Base(dir), proj.Name)
+func init() {
+	cfg.init()
 }
 
-func Test_CLI_Init_CanUseTemplate(t *testing.T) {
-	// running this test in parallel is ok as it uses a t.TempDir()
-	t.Parallel()
-	ctx, cancel := newTestContext(t)
-	defer cancel()
+// Configuration for the test suite.
+type config struct {
+	// If true, the test is running in CI.
+	// This can be used to ensure tests that are skipped locally (due to complex setup), always strictly run in CI.
+	CI bool
 
-	dir := tempDirWithDiagnostics(t)
+	// The client ID to use for live Azure tests.
+	ClientID string
+	// The client secret to use for live Azure tests.
+	ClientSecret string
+	// The tenant ID to use for live Azure tests.
+	TenantID string
+	// The Azure subscription ID to use for live Azure tests.
+	SubscriptionID string
+	// The Azure location to use for live Azure tests.
+	Location string
+}
 
-	cli := azdcli.NewCLI(t)
-	cli.WorkingDirectory = dir
-	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
+func (c *config) init() {
+	c.CI = os.Getenv("CI") != ""
+	c.ClientID = os.Getenv("AZD_TEST_CLIENT_ID")
+	c.ClientSecret = os.Getenv("AZD_TEST_CLIENT_SECRET")
+	c.TenantID = os.Getenv("AZD_TEST_TENANT_ID")
+	c.SubscriptionID = os.Getenv("AZD_TEST_AZURE_SUBSCRIPTION_ID")
+	c.Location = os.Getenv("AZD_TEST_AZURE_LOCATION")
+}
 
-	_, err := cli.RunCommandWithStdIn(
-		ctx,
-		"TESTENV\n",
-		"init",
-		"--template",
-		"cosmos-dotnet-core-todo-app",
-	)
-	require.NoError(t, err)
+func TestMain(m *testing.M) {
+	flag.Parse()
 
-	// While `init` uses git behind the scenes to pull a template, we don't want to bring the history over in the new git
-	// repository.
-	cmdRun := exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
-	cmdRes, err := cmdRun.Run(ctx, exec.NewRunArgs("git", "-C", dir, "log", "--oneline", "-n", "1").WithEnrichError(true))
-	require.Error(t, err)
-	require.Contains(t, cmdRes.Stderr, "does not have any commits yet")
+	shortFlag := flag.Lookup("test.short")
+	if shortFlag != nil && shortFlag.Value.String() == "true" {
+		log.Println("Skipping tests in short mode")
+		os.Exit(0)
+	}
 
-	// Ensure the project was initialized from the template by checking that a file from the template is present.
-	require.FileExists(t, filepath.Join(dir, "README.md"))
+	exitVal := m.Run()
+	os.Exit(exitVal)
 }
 
 func Test_CLI_InfraCreateAndDelete(t *testing.T) {
@@ -120,12 +102,15 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 	dir := tempDirWithDiagnostics(t)
 	t.Logf("DIR: %s", dir)
 
-	envName := randomEnvName()
+	session := recording.Start(t)
+
+	envName := randomOrStoredEnvName(session)
 	t.Logf("AZURE_ENV_NAME: %s", envName)
 
-	cli := azdcli.NewCLI(t)
+	cli := azdcli.NewCLI(t, azdcli.WithSession(session))
 	cli.WorkingDirectory = dir
-	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
+	cli.Env = append(cli.Env, os.Environ()...)
+	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
 
 	err := copySample(dir, "storage")
 	require.NoError(t, err, "failed expanding sample")
@@ -142,11 +127,22 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 
 	// AZURE_STORAGE_ACCOUNT_NAME is an output of the template, make sure it was added to the .env file.
 	// the name should start with 'st'
-	accountName, ok := env.Values["AZURE_STORAGE_ACCOUNT_NAME"]
+	accountName, ok := env.Dotenv()["AZURE_STORAGE_ACCOUNT_NAME"]
 	require.True(t, ok)
 	require.Regexp(t, `st\S*`, accountName)
 
 	assertEnvValuesStored(t, env)
+
+	if session != nil {
+		if session.Playback {
+			// This is currently required because azd doesn't store
+			// AZURE_SUBSCRIPTION_ID in the .env file
+			// See #2423
+			env.SetSubscriptionId(session.Variables[recording.SubscriptionIdKey])
+		} else {
+			session.Variables[recording.SubscriptionIdKey] = env.GetSubscriptionId()
+		}
+	}
 
 	// GetResourceGroupsForEnvironment requires a credential since it is using the SDK now
 	cred, err := azidentity.NewAzureCLICredential(nil)
@@ -154,15 +150,28 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 		t.Fatal("could not create credential")
 	}
 
+	var client *http.Client
+	if session != nil {
+		client = session.ProxyClient
+	} else {
+		client = http.DefaultClient
+	}
+
 	azCli := azcli.NewAzCli(mockaccount.SubscriptionCredentialProviderFunc(
 		func(_ context.Context, _ string) (azcore.TokenCredential, error) {
 			return cred, nil
 		}),
-		http.DefaultClient,
+		client,
 		azcli.NewAzCliArgs{})
+	deploymentOperations := azapi.NewDeploymentOperations(
+		mockaccount.SubscriptionCredentialProviderFunc(
+			func(_ context.Context, _ string) (azcore.TokenCredential, error) {
+				return cred, nil
+			}),
+		client)
 
 	// Verify that resource groups are created with tag
-	resourceManager := infra.NewAzureResourceManager(azCli)
+	resourceManager := infra.NewAzureResourceManager(azCli, deploymentOperations)
 	rgs, err := resourceManager.GetResourceGroupsForEnvironment(ctx, env.GetSubscriptionId(), env.GetEnvName())
 	require.NoError(t, err)
 	require.NotNil(t, rgs)
@@ -180,12 +189,25 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 	dir := tempDirWithDiagnostics(t)
 	t.Logf("DIR: %s", dir)
 
+	session := recording.Start(t)
+
 	envName := "UpperCase" + randomEnvName()
+	if session != nil {
+		if session.Playback {
+			if _, ok := session.Variables[recording.EnvNameKey]; ok {
+				envName = session.Variables[recording.EnvNameKey]
+			}
+		} else {
+			session.Variables[recording.EnvNameKey] = envName
+		}
+	}
+
 	t.Logf("AZURE_ENV_NAME: %s", envName)
 
-	cli := azdcli.NewCLI(t)
+	cli := azdcli.NewCLI(t, azdcli.WithSession(session))
 	cli.WorkingDirectory = dir
-	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
+	cli.Env = append(cli.Env, os.Environ()...)
+	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
 
 	err := copySample(dir, "storage")
 	require.NoError(t, err, "failed expanding sample")
@@ -203,13 +225,30 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 
 	// AZURE_STORAGE_ACCOUNT_NAME is an output of the template, make sure it was added to the .env file.
 	// the name should start with 'st'
-	accountName, ok := env.Values["AZURE_STORAGE_ACCOUNT_NAME"]
+	accountName, ok := env.Dotenv()["AZURE_STORAGE_ACCOUNT_NAME"]
 	require.True(t, ok)
 	require.Regexp(t, `st\S*`, accountName)
 
 	assertEnvValuesStored(t, env)
 
+	if session != nil {
+		if session.Playback {
+			// This is currently required because azd doesn't store
+			// AZURE_SUBSCRIPTION_ID in the .env file
+			// See #2423
+			env.SetSubscriptionId(session.Variables[recording.SubscriptionIdKey])
+		} else {
+			session.Variables[recording.SubscriptionIdKey] = env.GetSubscriptionId()
+		}
+	}
+
 	// GetResourceGroupsForEnvironment requires a credential since it is using the SDK now
+	var client *http.Client
+	if session != nil {
+		client = session.ProxyClient
+	} else {
+		client = http.DefaultClient
+	}
 	cred, err := azidentity.NewAzureCLICredential(nil)
 	if err != nil {
 		t.Fatal("could not create credential")
@@ -219,11 +258,17 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 		func(_ context.Context, _ string) (azcore.TokenCredential, error) {
 			return cred, nil
 		}),
-		http.DefaultClient,
+		client,
 		azcli.NewAzCliArgs{})
+	deploymentOperations := azapi.NewDeploymentOperations(
+		mockaccount.SubscriptionCredentialProviderFunc(
+			func(_ context.Context, _ string) (azcore.TokenCredential, error) {
+				return cred, nil
+			}),
+		client)
 
 	// Verify that resource groups are created with tag
-	resourceManager := infra.NewAzureResourceManager(azCli)
+	resourceManager := infra.NewAzureResourceManager(azCli, deploymentOperations)
 	rgs, err := resourceManager.GetResourceGroupsForEnvironment(ctx, env.GetSubscriptionId(), env.GetEnvName())
 	require.NoError(t, err)
 	require.NotNil(t, rgs)
@@ -313,7 +358,6 @@ func Test_CLI_ProvisionIsNeeded(t *testing.T) {
 	}{
 		{command: "deploy"},
 		{command: "monitor"},
-		{command: "pipeline config"},
 	}
 
 	for _, tt := range tests {
@@ -332,8 +376,12 @@ func Test_CLI_ProvisionIsNeeded(t *testing.T) {
 	}
 }
 
+// Test_CLI_NoDebugSpewWhenHelpPassedWithoutDebug ensures that no debug spew is written to stderr when --help is passed
 func Test_CLI_NoDebugSpewWhenHelpPassedWithoutDebug(t *testing.T) {
 	cli := azdcli.NewCLI(t)
+	// Update checks are one of the things that can write to stderr. Disable it since it's not relevant to this test.
+	cli.Env = append(cli.Env, os.Environ()...)
+	cli.Env = append(cli.Env, "AZD_SKIP_UPDATE_CHECK=true")
 	ctx := context.Background()
 	result, err := cli.RunCommand(ctx, "--help")
 	require.NoError(t, err)
@@ -372,6 +420,21 @@ func copySample(targetRoot string, sampleName string) error {
 		}
 		return os.WriteFile(targetPath, contents, osutil.PermissionFile)
 	})
+}
+
+func randomOrStoredEnvName(session *recording.Session) string {
+	if session != nil && session.Playback {
+		if _, ok := session.Variables[recording.EnvNameKey]; ok {
+			return session.Variables[recording.EnvNameKey]
+		}
+	}
+
+	randName := randomEnvName()
+	if session != nil {
+		session.Variables[recording.EnvNameKey] = randName
+	}
+
+	return randName
 }
 
 func randomEnvName() string {
@@ -486,14 +549,14 @@ func Test_CLI_InfraCreateAndDeleteResourceTerraformRemote(t *testing.T) {
 	require.NoError(t, err, "failed expanding sample")
 
 	//Create remote state resources
-	commandRunner := exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
+	commandRunner := exec.NewCommandRunner(nil)
 	runArgs := newRunArgs("az", "group", "create", "--name", backendResourceGroupName, "--location", location)
 
 	_, err = commandRunner.Run(ctx, runArgs)
 	require.NoError(t, err)
 
 	defer func() {
-		commandRunner := exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
+		commandRunner := exec.NewCommandRunner(nil)
 		runArgs := newRunArgs("az", "group", "delete", "--name", backendResourceGroupName, "--yes")
 		_, err = commandRunner.Run(ctx, runArgs)
 		require.NoError(t, err)
@@ -516,6 +579,7 @@ func Test_CLI_InfraCreateAndDeleteResourceTerraformRemote(t *testing.T) {
 	// Create storage container
 	runArgs = newRunArgs("az", "storage", "container", "create", "--name", backendContainerName,
 		"--account-name", backendStorageAccountName, "--account-key", storageAccountKey)
+	runArgs.SensitiveData = append(runArgs.SensitiveData, storageAccountKey)
 	result, err := commandRunner.Run(ctx, runArgs)
 	_ = result
 	require.NoError(t, err)
@@ -549,20 +613,7 @@ func Test_CLI_InfraCreateAndDeleteResourceTerraformRemote(t *testing.T) {
 }
 
 func newRunArgs(cmd string, args ...string) exec.RunArgs {
-	runArgs := exec.NewRunArgs(cmd, args...)
-	return runArgs.WithEnrichError(true)
-}
-
-func TestMain(m *testing.M) {
-	flag.Parse()
-	shortFlag := flag.Lookup("test.short")
-	if shortFlag != nil && shortFlag.Value.String() == "true" {
-		log.Println("Skipping tests in short mode")
-		os.Exit(0)
-	}
-
-	exitVal := m.Run()
-	os.Exit(exitVal)
+	return exec.NewRunArgs(cmd, args...)
 }
 
 // TempDirWithDiagnostics creates a temp directory with cleanup that also provides additional
@@ -597,7 +648,7 @@ func logHandles(t *testing.T, path string) {
 	}
 
 	args := exec.NewRunArgs(handle, path, "-nobanner")
-	cmd := exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
+	cmd := exec.NewCommandRunner(nil)
 	rr, err := cmd.Run(context.Background(), args)
 	if err != nil {
 		t.Logf("handle.exe failed. stdout: %s, stderr: %s\n", rr.Stdout, rr.Stderr)
@@ -610,8 +661,7 @@ func logHandles(t *testing.T, path string) {
 	_ = telemetry.GetTelemetrySystem()
 
 	// Log this to telemetry for ease of correlation
-	tracer := telemetry.GetTracer()
-	_, span := tracer.Start(context.Background(), "test.file_cleanup_failure")
+	_, span := tracing.Start(context.Background(), "test.file_cleanup_failure")
 	span.SetAttributes(attribute.String("handle.stdout", rr.Stdout))
 	span.SetAttributes(attribute.String("ci.build.number", os.Getenv("BUILD_BUILDNUMBER")))
 	span.End()
@@ -649,8 +699,8 @@ func assertEnvValuesStored(t *testing.T, env *environment.Environment) {
 	primitives := []string{"STRING", "BOOL", "INT"}
 
 	for k, v := range expectedEnv {
-		assert.Contains(t, env.Values, k)
-		actual := env.Values[k]
+		actual, has := env.Dotenv()[k]
+		assert.True(t, has)
 
 		if slices.Contains(primitives, k) {
 			assert.Equal(t, v, actual)

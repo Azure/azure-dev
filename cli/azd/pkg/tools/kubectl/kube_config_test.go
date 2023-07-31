@@ -3,7 +3,6 @@ package kubectl
 import (
 	"context"
 	"fmt"
-	"os"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -13,7 +12,7 @@ import (
 
 func Test_MergeKubeConfig(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
-	commandRunner := exec.NewCommandRunner(os.Stdin, os.Stdout, os.Stderr)
+	commandRunner := exec.NewCommandRunner(nil)
 	cli := NewKubectl(commandRunner)
 	kubeConfigManager, err := NewKubeConfigManager(cli)
 	require.NoError(t, err)

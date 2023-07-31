@@ -26,6 +26,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
+	"github.com/azure/azure-dev/cli/azd/pkg/installer"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/blang/semver/v4"
@@ -49,6 +50,8 @@ func main() {
 		log.SetOutput(io.Discard)
 	}
 
+	log.Printf("azd version: %s", internal.Version)
+
 	ts := telemetry.GetTelemetrySystem()
 
 	latest := make(chan semver.Version)
@@ -65,30 +68,64 @@ func main() {
 	// Don't write this message when JSON output is enabled, since in that case we use stderr to return structured
 	// information about command progress.
 	if !isJsonOutput() && ok {
-		curVersion, err := semver.Parse(internal.GetVersionNumber())
-		if err != nil {
-			log.Printf("failed to parse %s as a semver", internal.GetVersionNumber())
-		} else if curVersion.Equals(semver.MustParse("0.0.0-dev.0")) {
+		if internal.IsDevVersion() {
 			// This is a dev build (i.e. built using `go install without setting a version`) - don't print a warning in this
 			// case
 			log.Printf("eliding update message for dev build")
-		} else if latestVersion.GT(curVersion) {
+		} else if latestVersion.GT(internal.VersionInfo().Version) {
+			var upgradeText string
+
+			installedBy := installer.InstalledBy()
+			if runtime.GOOS == "windows" {
+				switch installedBy {
+				case installer.InstallTypePs:
+					//nolint:lll
+					upgradeText = "run:\npowershell -ex AllSigned -c \"Invoke-RestMethod 'https://aka.ms/install-azd.ps1' | Invoke-Expression\"\n\nIf the install script was run with custom parameters, ensure that the same parameters are used for the upgrade. For advanced install instructions, see: https://aka.ms/azd/upgrade/windows"
+				case installer.InstallTypeWinget:
+					upgradeText = "run:\nwinget upgrade Microsoft.Azd"
+				case installer.InstallTypeChoco:
+					upgradeText = "run:\nchoco upgrade azd"
+				default:
+					// Also covers "msi" case where the user installed directly
+					// via MSI
+					upgradeText = "visit https://aka.ms/azd/upgrade/windows"
+				}
+			} else if runtime.GOOS == "linux" {
+				switch installedBy {
+				case installer.InstallTypeSh:
+					//nolint:lll
+					upgradeText = "run:\ncurl -fsSL https://aka.ms/install-azd.sh | bash\n\nIf the install script was run with custom parameters, ensure that the same parameters are used for the upgrade. For advanced install instructions, see: https://aka.ms/azd/upgrade/linux"
+				default:
+					// Also covers "deb" and "rpm" cases which are currently
+					// documented. When package manager distribution support is
+					// added, this will need to be updated.
+					upgradeText = "visit https://aka.ms/azd/upgrade/linux"
+				}
+			} else if runtime.GOOS == "darwin" {
+				switch installedBy {
+				case installer.InstallTypeBrew:
+					upgradeText = "run:\nbrew update && brew upgrade azd"
+				case installer.InstallTypeSh:
+					//nolint:lll
+					upgradeText = "run:\ncurl -fsSL https://aka.ms/install-azd.sh | bash\n\nIf the install script was run with custom parameters, ensure that the same parameters are used for the upgrade. For advanced install instructions, see: https://aka.ms/azd/upgrade/mac"
+				default:
+					upgradeText = "visit https://aka.ms/azd/upgrade/mac"
+				}
+			} else {
+				// Platform is not recognized, use the generic install link
+				upgradeText = "visit https://aka.ms/azd/upgrade"
+			}
+
 			fmt.Fprintln(
 				os.Stderr,
 				output.WithWarningFormat(
-					"warning: your version of azd is out of date, you have %s and the latest version is %s",
-					curVersion.String(), latestVersion.String()))
+					"WARNING: your version of azd is out of date, you have %s and the latest version is %s",
+					internal.VersionInfo().Version.String(), latestVersion.String()))
 			fmt.Fprintln(os.Stderr)
-			fmt.Fprintln(os.Stderr, output.WithWarningFormat(`To update to the latest version, run:`))
-
-			if runtime.GOOS == "windows" {
-				fmt.Fprintln(
-					os.Stderr,
-					output.WithWarningFormat(
-						`powershell -ex AllSigned -c "Invoke-RestMethod 'https://aka.ms/install-azd.ps1' | Invoke-Expression"`))
-			} else {
-				fmt.Fprintln(os.Stderr, output.WithWarningFormat(`curl -fsSL https://aka.ms/install-azd.sh | bash`))
-			}
+			fmt.Fprintln(
+				os.Stderr,
+				output.WithWarningFormat(`To update to the latest version, %s`,
+					upgradeText))
 		}
 	}
 
@@ -194,7 +231,7 @@ func fetchLatestVersion(version chan<- semver.Version) {
 			log.Printf("failed to create request object: %v, skipping update check", err)
 		}
 
-		req.Header.Set("User-Agent", internal.MakeUserAgentString(""))
+		req.Header.Set("User-Agent", internal.UserAgent())
 
 		res, err := http.DefaultClient.Do(req)
 		if err != nil {
@@ -320,6 +357,16 @@ func startBackgroundUploadProcess() error {
 	}
 
 	cmd := exec.Command(execPath, cmd.TelemetryCommandFlag, cmd.TelemetryUploadCommandFlag)
+
+	// Use the location of azd as the cwd for the background uploading process.  On windows, when a process is running
+	// the current working directory is considered in use and can not be deleted. If a user runs `azd` in a directory, we
+	// do want that directory to be considered in use and locked while the telemetry upload is happening. One example of
+	// where we see this problem often is in our CI for end to end tests where we run a copy of `azd` that we built in an
+	// ephemeral directory created by (*testing.T).TempDir().  When the test completes, the testing package attempts to
+	// clean up the temporary directory, but if the telemetry upload process is still running, the directory can not be
+	// deleted.
+	cmd.Dir = filepath.Dir(execPath)
+
 	err = cmd.Start()
 	return err
 }

@@ -30,8 +30,19 @@ dictionaryDefinitions:
 dictionaries:
   - azdProjectDictionary
 overrides:
+  - filename: internal/tracing/fields/domains.go
+    words:
+      - azmk
+      - azurecontainerapps
+      - azureedge
+      - azurefd
+      - cloudapp
+      - mediaservices
+      - msecnd
   - filename: docs/docgen.go
     words:
+      - alexwolf
+      - alexwolfmsft
       - pname
       - puichan
       - devx
@@ -68,6 +79,9 @@ overrides:
       - keychain
       - crusername
       - azurecr
+  - filename: pkg/tools/kubectl/kubectl.go
+    words:
+      - tmpl
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

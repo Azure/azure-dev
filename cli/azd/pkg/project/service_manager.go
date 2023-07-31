@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
@@ -14,8 +15,6 @@ import (
 )
 
 const (
-	defaultServiceTag = "azd-service-name"
-
 	ServiceEventEnvUpdated ext.Event = "environment updated"
 	ServiceEventRestore    ext.Event = "restore"
 	ServiceEventBuild      ext.Event = "build"
@@ -64,7 +63,7 @@ type ServiceManager interface {
 	// Depending on the service configuration this will generate an artifact
 	// that can be consumed by the hosting Azure service.
 	// Common examples could be a zip archive for app service or
-	// docker images for container apps and AKS
+	// Docker images for container apps and AKS
 	Package(
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
@@ -92,10 +91,11 @@ type ServiceManager interface {
 }
 
 type serviceManager struct {
-	env             *environment.Environment
-	resourceManager ResourceManager
-	serviceLocator  ioc.ServiceLocator
-	operationCache  map[string]any
+	env                 *environment.Environment
+	resourceManager     ResourceManager
+	serviceLocator      ioc.ServiceLocator
+	operationCache      map[string]any
+	alphaFeatureManager *alpha.FeatureManager
 }
 
 // NewServiceManager creates a new instance of the ServiceManager component
@@ -103,12 +103,14 @@ func NewServiceManager(
 	env *environment.Environment,
 	resourceManager ResourceManager,
 	serviceLocator ioc.ServiceLocator,
+	alphaFeatureManager *alpha.FeatureManager,
 ) ServiceManager {
 	return &serviceManager{
-		env:             env,
-		resourceManager: resourceManager,
-		serviceLocator:  serviceLocator,
-		operationCache:  map[string]any{},
+		env:                 env,
+		resourceManager:     resourceManager,
+		serviceLocator:      serviceLocator,
+		operationCache:      map[string]any{},
+		alphaFeatureManager: alphaFeatureManager,
 	}
 }
 
@@ -249,7 +251,7 @@ func (sm *serviceManager) Build(
 
 // Packages the code for the specified service config
 // Depending on the service configuration this will generate an artifact that can be consumed by the hosting Azure service.
-// Common examples could be a zip archive for app service or docker images for container apps and AKS
+// Common examples could be a zip archive for app service or Docker images for container apps and AKS
 func (sm *serviceManager) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
@@ -427,8 +429,20 @@ func (sm *serviceManager) Deploy(
 // GetServiceTarget constructs a ServiceTarget from the underlying service configuration
 func (sm *serviceManager) GetServiceTarget(ctx context.Context, serviceConfig *ServiceConfig) (ServiceTarget, error) {
 	var target ServiceTarget
+	host := string(serviceConfig.Host)
 
-	if err := sm.serviceLocator.ResolveNamed(string(serviceConfig.Host), &target); err != nil {
+	if alphaFeatureId, isAlphaFeature := alpha.IsFeatureKey(host); isAlphaFeature {
+		if !sm.alphaFeatureManager.IsEnabled(alphaFeatureId) {
+			return nil, fmt.Errorf(
+				"service host '%s' is currently in alpha and needs to be enabled explicitly."+
+					" Run `%s` to enable the feature.",
+				host,
+				alpha.GetEnableCommand(alphaFeatureId),
+			)
+		}
+	}
+
+	if err := sm.serviceLocator.ResolveNamed(host, &target); err != nil {
 		panic(fmt.Errorf(
 			"failed to resolve service host '%s' for service '%s', %w",
 			serviceConfig.Host,

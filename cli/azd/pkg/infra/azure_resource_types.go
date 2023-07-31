@@ -15,9 +15,11 @@ const (
 	AzureResourceTypeCDNProfile              AzureResourceType = "Microsoft.Cdn/profiles"
 	AzureResourceTypeCosmosDb                AzureResourceType = "Microsoft.DocumentDB/databaseAccounts"
 	AzureResourceTypeContainerApp            AzureResourceType = "Microsoft.App/containerApps"
+	AzureResourceTypeSpringApp               AzureResourceType = "Microsoft.AppPlatform/Spring"
 	AzureResourceTypeContainerAppEnvironment AzureResourceType = "Microsoft.App/managedEnvironments"
 	AzureResourceTypeDeployment              AzureResourceType = "Microsoft.Resources/deployments"
 	AzureResourceTypeKeyVault                AzureResourceType = "Microsoft.KeyVault/vaults"
+	AzureResourceTypeManagedHSM              AzureResourceType = "Microsoft.KeyVault/managedHSMs"
 	AzureResourceTypeLoadTest                AzureResourceType = "Microsoft.LoadTestService/loadTests"
 	AzureResourceTypeLogAnalyticsWorkspace   AzureResourceType = "Microsoft.OperationalInsights/workspaces"
 	AzureResourceTypePortalDashboard         AzureResourceType = "Microsoft.Portal/dashboards"
@@ -50,7 +52,9 @@ func GetResourceTypeDisplayName(resourceType AzureResourceType) string {
 	case AzureResourceTypeStorageAccount:
 		return "Storage account"
 	case AzureResourceTypeKeyVault:
-		return "Key vault"
+		return "Key Vault"
+	case AzureResourceTypeManagedHSM:
+		return "Managed HSM"
 	case AzureResourceTypePortalDashboard:
 		return "Portal dashboard"
 	case AzureResourceTypeAppInsightComponent:
@@ -93,6 +97,8 @@ func GetResourceTypeDisplayName(resourceType AzureResourceType) string {
 		return "Cognitive Service"
 	case AzureResourceTypeSearchService:
 		return "Search service"
+	case AzureResourceTypeSpringApp:
+		return "Azure Spring Apps"
 	}
 
 	return ""

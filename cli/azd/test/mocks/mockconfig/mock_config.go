@@ -8,7 +8,7 @@ type MockConfigManager struct {
 
 func NewMockConfigManager() *MockConfigManager {
 	return &MockConfigManager{
-		config: config.NewConfig(nil),
+		config: config.NewEmptyConfig(),
 	}
 }
 

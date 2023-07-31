@@ -2,9 +2,13 @@
 // Licensed under the MIT License.
 
 import * as cp from 'child_process';
+import * as http from 'http';
 import * as vscode from 'vscode';
 import { UserCancelledError } from '@microsoft/vscode-azext-utils';
+import { startAuthServer } from './authServer';
+import { isAzdCommand } from './azureDevCli';
 import { isMac } from './osUtils';
+import { VsCodeAuthenticationCredential } from './VsCodeAuthenticationCredential';
 
 const DEFAULT_BUFFER_SIZE = 1024 * 1024;
 
@@ -21,6 +25,25 @@ export async function spawnAsync(
     onStderr?: Progress,
     stderrBuffer?: Buffer,
     token?: vscode.CancellationToken): Promise<void> {
+
+    let useIntegratedAuth = vscode.workspace.getConfiguration('azure-dev').get<boolean>('auth.useIntegratedAuth', false);
+
+    if (!isAzdCommand(command)) {
+        useIntegratedAuth = false;
+    }
+
+    let authServer: http.Server | undefined;
+
+
+    if (useIntegratedAuth) {
+        const { server, endpoint, key } = await startAuthServer(new VsCodeAuthenticationCredential());
+
+        options ??= {};
+        options.env ??= {};
+        options.env['AZD_AUTH_ENDPOINT'] = endpoint;
+        options.env['AZD_AUTH_KEY'] = key;
+        authServer = server;
+    }
 
     return await new Promise((resolve, reject) => {
         let cancellationListener: vscode.Disposable | undefined;
@@ -41,6 +64,8 @@ export async function spawnAsync(
                 cancellationListener = undefined;
             }
 
+            authServer?.close();
+
             return reject(err);
         });
 
@@ -49,6 +74,8 @@ export async function spawnAsync(
                 cancellationListener.dispose();
                 cancellationListener = undefined;
             }
+
+            authServer?.close();
 
             if (token && token.isCancellationRequested) {
                 // If cancellation is requested we'll assume that's why it exited
@@ -120,6 +147,24 @@ export async function spawnStreamAsync(
     onStderr?: (chunk: Buffer | string) => void,
     token?: vscode.CancellationToken): Promise<void> {
 
+    let useIntegratedAuth = vscode.workspace.getConfiguration('azure-dev').get<boolean>('auth.useIntegratedAuth', false);
+
+    if (!isAzdCommand(command)) {
+        useIntegratedAuth = false;
+    }
+
+    let authServer: http.Server | undefined;
+
+    if (useIntegratedAuth) {
+        const { server, endpoint, key } = await startAuthServer(new VsCodeAuthenticationCredential());
+
+        options ??= {};
+        options.env ??= {};
+        options.env['AZD_AUTH_ENDPOINT'] = endpoint;
+        options.env['AZD_AUTH_KEY'] = key;
+        authServer = server;
+    }
+
     return await new Promise((resolve, reject) => {
         let cancellationListener: vscode.Disposable | undefined;
 
@@ -137,6 +182,8 @@ export async function spawnStreamAsync(
                 cancellationListener = undefined;
             }
 
+            authServer?.close();
+
             return reject(err);
         });
 
@@ -145,6 +192,8 @@ export async function spawnStreamAsync(
                 cancellationListener.dispose();
                 cancellationListener = undefined;
             }
+
+            authServer?.close();
 
             if (token && token.isCancellationRequested) {
                 // If cancellation is requested we'll assume that's why it exited

@@ -2,14 +2,16 @@ package kubectl
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
+	"text/template"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/drone/envsubst"
 )
 
 // Executes commands against the Kubernetes CLI
@@ -22,20 +24,15 @@ type KubectlCli interface {
 	// Applies one or more files from the specified path
 	Apply(ctx context.Context, path string, flags *KubeCliFlags) error
 	// Applies manifests from the specified input
-	ApplyWithInput(ctx context.Context, input string, flags *KubeCliFlags) (*exec.RunResult, error)
+	ApplyWithStdIn(ctx context.Context, input string, flags *KubeCliFlags) (*exec.RunResult, error)
+	// Applies manifests from the specified file path
+	ApplyWithFile(ctx context.Context, filePath string, flags *KubeCliFlags) (*exec.RunResult, error)
 	// Views the current k8s configuration including available clusters, contexts & users
 	ConfigView(ctx context.Context, merge bool, flatten bool, flags *KubeCliFlags) (*exec.RunResult, error)
 	// Sets the k8s context to use for future CLI commands
 	ConfigUseContext(ctx context.Context, name string, flags *KubeCliFlags) (*exec.RunResult, error)
 	// Creates a new k8s namespace with the specified name
 	CreateNamespace(ctx context.Context, name string, flags *KubeCliFlags) (*exec.RunResult, error)
-	// Creates a new generic secret from the specified secret pairs
-	CreateSecretGenericFromLiterals(
-		ctx context.Context,
-		name string,
-		secrets []string,
-		flags *KubeCliFlags,
-	) (*exec.RunResult, error)
 	// Executes a k8s CLI command from the specified arguments and flags
 	Exec(ctx context.Context, flags *KubeCliFlags, args ...string) (exec.RunResult, error)
 	// Gets the deployment rollout status
@@ -69,6 +66,13 @@ type KubeCliFlags struct {
 	Output OutputType
 }
 
+// templateRoot is the structure of the template available within the test templates that can be used within k8s manifests.
+// We have the option to include additional nodes within the template in the future for things like config, etc
+type templateRoot struct {
+	// The Azd environment variables
+	Env map[string]string
+}
+
 type kubectlCli struct {
 	tools.ExternalTool
 	commandRunner exec.CommandRunner
@@ -84,8 +88,40 @@ func NewKubectl(commandRunner exec.CommandRunner) KubectlCli {
 }
 
 // Checks whether or not the K8s CLI is installed and available within the PATH
-func (cli *kubectlCli) CheckInstalled(ctx context.Context) (bool, error) {
-	return tools.ToolInPath("kubectl")
+func (cli *kubectlCli) CheckInstalled(ctx context.Context) error {
+	if err := tools.ToolInPath("kubectl"); err != nil {
+		return err
+	}
+
+	// We don't have a minimum required version of kubectl today, but
+	// for diagnostics purposes, let's fetch and log the version of kubectl
+	// we're using.
+	if ver, err := cli.getClientVersion(ctx); err != nil {
+		log.Printf("error fetching kubectl version: %s", err)
+	} else {
+		log.Printf("kubectl version: %s", ver)
+	}
+
+	return nil
+}
+
+func (cli *kubectlCli) getClientVersion(ctx context.Context) (string, error) {
+	versionRes, err := cli.Exec(ctx, &KubeCliFlags{Output: "json"}, "version", "--client=true")
+	if err != nil {
+		return "", fmt.Errorf("fetching kubectl version: %w", err)
+	}
+
+	var versionObj struct {
+		ClientVersion struct {
+			GitVersion string `json:"gitVersion"`
+		} `json:"clientVersion"`
+	}
+
+	if err := json.Unmarshal([]byte(versionRes.Stdout), &versionObj); err != nil {
+		return "", fmt.Errorf("parsing kubectl version output: %w", err)
+	}
+
+	return versionObj.ClientVersion.GitVersion, nil
 }
 
 // Returns the installation URL to install the K8s CLI
@@ -150,11 +186,24 @@ func (cli *kubectlCli) ConfigView(
 	return &res, nil
 }
 
-func (cli *kubectlCli) ApplyWithInput(ctx context.Context, input string, flags *KubeCliFlags) (*exec.RunResult, error) {
+func (cli *kubectlCli) ApplyWithStdIn(ctx context.Context, input string, flags *KubeCliFlags) (*exec.RunResult, error) {
 	runArgs := exec.
 		NewRunArgs("kubectl", "apply", "-f", "-").
 		WithEnv(environ(cli.env)).
 		WithStdIn(strings.NewReader(input))
+
+	res, err := cli.executeCommandWithArgs(ctx, runArgs, flags)
+	if err != nil {
+		return nil, fmt.Errorf("kubectl apply -f: %w", err)
+	}
+
+	return &res, nil
+}
+
+func (cli *kubectlCli) ApplyWithFile(ctx context.Context, filePath string, flags *KubeCliFlags) (*exec.RunResult, error) {
+	runArgs := exec.
+		NewRunArgs("kubectl", "apply", "-f", filePath).
+		WithEnv(environ(cli.env))
 
 	res, err := cli.executeCommandWithArgs(ctx, runArgs, flags)
 	if err != nil {
@@ -171,26 +220,6 @@ func (cli *kubectlCli) Apply(ctx context.Context, path string, flags *KubeCliFla
 	}
 
 	return nil
-}
-
-// Creates a new generic secret from the specified secret pairs
-func (cli *kubectlCli) CreateSecretGenericFromLiterals(
-	ctx context.Context,
-	name string,
-	secrets []string,
-	flags *KubeCliFlags,
-) (*exec.RunResult, error) {
-	args := []string{"create", "secret", "generic", name}
-	for _, secret := range secrets {
-		args = append(args, fmt.Sprintf("--from-literal=%s", secret))
-	}
-
-	res, err := cli.Exec(ctx, flags, args...)
-	if err != nil {
-		return nil, fmt.Errorf("kubectl create secret generic --from-literal: %w", err)
-	}
-
-	return &res, nil
 }
 
 // Creates a new k8s namespace with the specified name
@@ -228,32 +257,29 @@ func (cli *kubectlCli) Exec(ctx context.Context, flags *KubeCliFlags, args ...st
 	return cli.executeCommandWithArgs(ctx, runArgs, flags)
 }
 
-func (cli *kubectlCli) applyTemplate(ctx context.Context, filePath string, flags *KubeCliFlags) error {
-	fileBytes, err := os.ReadFile(filePath)
+func (cli *kubectlCli) applyTemplate(ctx context.Context, filePath string, flags *KubeCliFlags) (*exec.RunResult, error) {
+	k8sTemplate, err := template.ParseFiles(filePath)
 	if err != nil {
-		return fmt.Errorf("failed reading manifest file '%s', %w", filePath, err)
+		return nil, fmt.Errorf("failed parsing template file '%s', %w", filePath, err)
 	}
 
-	yaml := string(fileBytes)
-	replaced, err := envsubst.Eval(yaml, func(name string) string {
-		if val, has := cli.env[name]; has {
-			return val
-		}
-		return os.Getenv(name)
-	})
-
+	builder := strings.Builder{}
+	err = k8sTemplate.Execute(&builder, templateRoot{Env: cli.env})
 	if err != nil {
-		return fmt.Errorf("failed replacing env vars, %w", err)
+		return nil, fmt.Errorf("failed executing template file '%s', %w", filePath, err)
 	}
 
-	_, err = cli.ApplyWithInput(ctx, replaced, flags)
+	result, err := cli.ApplyWithStdIn(ctx, builder.String(), flags)
 	if err != nil {
-		return fmt.Errorf("failed applying file '%s', %w", filePath, err)
+		return nil, fmt.Errorf("failed applying file '%s', %w", filePath, err)
 	}
 
-	return nil
+	return result, nil
 }
 
+// Recursively loops through the specified directory and applies all k8s manifests
+// If the file is a *.tmpl file, it will be parsed as a template to support environment injection.
+// Otherwise the actual file contents will be applied.
 func (cli *kubectlCli) applyTemplates(ctx context.Context, directoryPath string, flags *KubeCliFlags) error {
 	entries, err := os.ReadDir(directoryPath)
 	if err != nil {
@@ -272,12 +298,24 @@ func (cli *kubectlCli) applyTemplates(ctx context.Context, directoryPath string,
 		}
 
 		ext := filepath.Ext(entry.Name())
-		if !(ext == ".yaml" || ext == ".yml") {
+		var err error
+
+		switch ext {
+		case ".yaml", ".yml": // Only include yaml files
+			fileNameWithoutExtension := strings.TrimSuffix(entry.Name(), ext)
+			isTemplateFile := strings.HasSuffix(fileNameWithoutExtension, ".tmpl")
+
+			if isTemplateFile {
+				_, err = cli.applyTemplate(ctx, entryPath, flags)
+			} else {
+				_, err = cli.ApplyWithFile(ctx, entryPath, flags)
+			}
+		default: // Ignore all other files
 			continue
 		}
 
-		if err := cli.applyTemplate(ctx, entryPath, flags); err != nil {
-			return fmt.Errorf("failed applying template '%s', %w", entryPath, err)
+		if err != nil {
+			return fmt.Errorf("failed applying file '%s', %w", entryPath, err)
 		}
 	}
 
@@ -289,7 +327,6 @@ func (cli *kubectlCli) executeCommandWithArgs(
 	args exec.RunArgs,
 	flags *KubeCliFlags,
 ) (exec.RunResult, error) {
-	args = args.WithEnrichError(true)
 	if cli.cwd != "" {
 		args = args.WithCwd(cli.cwd)
 	}

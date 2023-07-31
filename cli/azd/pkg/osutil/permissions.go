@@ -9,4 +9,6 @@ const (
 
 	PermissionDirectoryOwnerOnly os.FileMode = 0700
 	PermissionFileOwnerOnly      os.FileMode = 0600
+
+	PermissionMaskDirectoryExecute os.FileMode = 0100
 )

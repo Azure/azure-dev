@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
@@ -44,6 +45,7 @@ services:
 			},
 		})
 	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
+	depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
 
 	env := environment.EphemeralWithValues("envA", map[string]string{
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
@@ -52,7 +54,7 @@ services:
 	projectConfig, err := Parse(*mockContext.Context, testProj)
 	require.NoError(t, err)
 
-	resourceManager := NewResourceManager(env, azCli)
+	resourceManager := NewResourceManager(env, azCli, depOpService)
 	targetResource, err := resourceManager.GetTargetResource(
 		*mockContext.Context, env.GetSubscriptionId(), projectConfig.Services["api"])
 	require.NoError(t, err)
@@ -85,12 +87,13 @@ services:
 				Type:     convert.RefOf(string(infra.AzureResourceTypeWebSite)),
 				Location: convert.RefOf("eastus2"),
 				Tags: map[string]*string{
-					defaultServiceTag: convert.RefOf("api"),
+					azure.TagKeyAzdServiceName: convert.RefOf("api"),
 				},
 			},
 		},
 	)
 	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
+	depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
 
 	env := environment.EphemeralWithValues("envA", map[string]string{
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
@@ -98,7 +101,7 @@ services:
 	projectConfig, err := Parse(*mockContext.Context, testProj)
 	require.NoError(t, err)
 
-	resourceManager := NewResourceManager(env, azCli)
+	resourceManager := NewResourceManager(env, azCli, depOpService)
 	targetResource, err := resourceManager.GetTargetResource(
 		*mockContext.Context, env.GetSubscriptionId(), projectConfig.Services["api"])
 	require.NoError(t, err)
@@ -141,11 +144,12 @@ services:
 				Type:     convert.RefOf(string(infra.AzureResourceTypeWebSite)),
 				Location: convert.RefOf("eastus2"),
 				Tags: map[string]*string{
-					defaultServiceTag: convert.RefOf("web"),
+					azure.TagKeyAzdServiceName: convert.RefOf("web"),
 				},
 			},
 		})
 	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
+	depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
 
 	env := environment.EphemeralWithValues("envA", map[string]string{
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
@@ -154,7 +158,7 @@ services:
 	projectConfig, err := Parse(*mockContext.Context, testProj)
 	require.NoError(t, err)
 
-	resourceManager := NewResourceManager(env, azCli)
+	resourceManager := NewResourceManager(env, azCli, depOpService)
 
 	for _, svc := range projectConfig.Services {
 		targetResource, err := resourceManager.GetTargetResource(*mockContext.Context, env.GetSubscriptionId(), svc)
@@ -200,11 +204,12 @@ services:
 				Type:     convert.RefOf(string(infra.AzureResourceTypeWebSite)),
 				Location: convert.RefOf("eastus2"),
 				Tags: map[string]*string{
-					defaultServiceTag: convert.RefOf("web"),
+					azure.TagKeyAzdServiceName: convert.RefOf("web"),
 				},
 			},
 		})
 	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
+	depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
 
 	env := environment.EphemeralWithValues("envA", map[string]string{
 		environment.ResourceGroupEnvVarName:  expectedResourceGroupName,
@@ -214,7 +219,7 @@ services:
 	projectConfig, err := Parse(*mockContext.Context, testProj)
 	require.NoError(t, err)
 
-	resourceManager := NewResourceManager(env, azCli)
+	resourceManager := NewResourceManager(env, azCli, depOpService)
 	targetResource, err := resourceManager.GetTargetResource(
 		*mockContext.Context, env.GetSubscriptionId(), projectConfig.Services["api"])
 	require.NoError(t, err)
@@ -225,5 +230,29 @@ services:
 		require.NoError(t, err)
 		require.NotNil(t, targetResource)
 		require.Equal(t, expectedResourceGroupName, targetResource.ResourceGroupName())
+	}
+}
+
+func Test_Invalid_Project_File(t *testing.T) {
+	tests := map[string]string{
+		"Empty":      "",
+		"Spaces":     "  ",
+		"Lines":      "\n\n\n",
+		"Tabs":       "\t\t\t",
+		"Whitespace": " \t \n \t \n \t \n",
+		"InvalidYaml": `
+			name: test-proj
+			metadata:
+				template: test-proj-template
+			services:
+		`,
+	}
+
+	for name, test := range tests {
+		t.Run(name, func(t *testing.T) {
+			projectConfig, err := Parse(context.Background(), test)
+			require.Nil(t, projectConfig)
+			require.Error(t, err)
+		})
 	}
 }

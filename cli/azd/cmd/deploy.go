@@ -169,7 +169,7 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 
 	if da.env.GetSubscriptionId() == "" {
 		return nil, errors.New(
-			"infrastructure has not been provisioned. Please run `azd provision`",
+			"infrastructure has not been provisioned. Run `azd provision`",
 		)
 	}
 
@@ -193,7 +193,8 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	if targetServiceName == "" && da.flags.fromPackage != "" {
 		return nil, errors.New(
 			//nolint:lll
-			"'--from-package' cannot be specified when deploying all services. Specify a specific service by passing a <service>")
+			"'--from-package' cannot be specified when deploying all services. Specify a specific service by passing a <service>",
+		)
 	}
 
 	if err := da.projectManager.Initialize(ctx, da.projectConfig); err != nil {
@@ -211,20 +212,27 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		Title: "Deploying services (azd deploy)",
 	})
 
+	startTime := time.Now()
+
 	deployResults := map[string]*project.ServiceDeployResult{}
 
 	for _, svc := range da.projectConfig.GetServicesStable() {
 		stepMessage := fmt.Sprintf("Deploying service %s", svc.Name)
-		da.console.ShowSpinner(ctx, stepMessage, input.Step)
 
 		// Skip this service if both cases are true:
 		// 1. The user specified a service name
 		// 2. This service is not the one the user specified
 		if targetServiceName != "" && targetServiceName != svc.Name {
-			da.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
 			continue
 		}
 
+		if alphaFeatureId, isAlphaFeature := alpha.IsFeatureKey(string(svc.Host)); isAlphaFeature {
+			// alpha feature on/off detection for host is done during initialization.
+			// This is just for displaying the warning during deployment.
+			da.console.WarnForFeature(ctx, alphaFeatureId)
+		}
+
+		da.console.ShowSpinner(ctx, stepMessage, input.Step)
 		var packageResult *project.ServicePackageResult
 		if da.flags.fromPackage != "" {
 			// --from-package set, skip packaging
@@ -234,14 +242,19 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		} else {
 			//  --from-package not set, package the application
 			packageTask := da.serviceManager.Package(ctx, svc, nil)
+			done := make(chan struct{})
 			go func() {
 				for packageProgress := range packageTask.Progress() {
 					progressMessage := fmt.Sprintf("Deploying service %s (%s)", svc.Name, packageProgress.Message)
 					da.console.ShowSpinner(ctx, progressMessage, input.Step)
 				}
+				close(done)
 			}()
 
 			packageResult, err = packageTask.Await()
+			// wait for console updates to complete
+			<-done
+			// do not stop progress here as next step is to deploy
 			if err != nil {
 				da.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 				return nil, err
@@ -249,20 +262,23 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		}
 
 		deployTask := da.serviceManager.Deploy(ctx, svc, packageResult)
+		done := make(chan struct{})
 		go func() {
 			for deployProgress := range deployTask.Progress() {
 				progressMessage := fmt.Sprintf("Deploying service %s (%s)", svc.Name, deployProgress.Message)
 				da.console.ShowSpinner(ctx, progressMessage, input.Step)
 			}
+			close(done)
 		}()
 
 		deployResult, err := deployTask.Await()
+		// wait for console updates to complete
+		<-done
+		da.console.StopSpinner(ctx, stepMessage, input.GetStepResultFormat(err))
 		if err != nil {
-			da.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 			return nil, err
 		}
 
-		da.console.StopSpinner(ctx, stepMessage, input.StepDone)
 		deployResults[svc.Name] = deployResult
 
 		// report deploy outputs
@@ -282,8 +298,8 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			Header:   "Your Azure app has been deployed!",
-			FollowUp: getResourceGroupFollowUp(ctx, da.formatter, da.projectConfig, da.resourceManager, da.env),
+			Header:   fmt.Sprintf("Your application was deployed to Azure in %s.", ux.DurationAsText(since(startTime))),
+			FollowUp: getResourceGroupFollowUp(ctx, da.formatter, da.projectConfig, da.resourceManager, da.env, false),
 		},
 	}, nil
 }

@@ -62,6 +62,8 @@ require github.com/adam-lavrik/go-imath v0.0.0-20210910152346-265a42a96f0b
 
 require github.com/golang-jwt/jwt/v5 v5.0.0 // indirect
 
+require github.com/stretchr/objx v0.5.0 // indirect
+
 require (
 	github.com/Azure/azure-pipeline-go v0.2.1 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/internal v1.3.0 // indirect

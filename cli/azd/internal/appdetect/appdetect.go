@@ -56,6 +56,15 @@ const (
 	DbSqlServer Framework = "sqlserver"
 )
 
+func (f Framework) Language() ProjectType {
+	switch f {
+	case React, Angular, VueJs, JQuery:
+		return JavaScript
+	}
+
+	return ""
+}
+
 func (f Framework) Display() string {
 	switch f {
 	case React:

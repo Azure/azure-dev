@@ -27,6 +27,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/resources"
 	"github.com/otiai10/copy"
+	"golang.org/x/exp/maps"
 )
 
 // A regex that matches against "likely" well-formed database names
@@ -134,6 +135,17 @@ func projectDisplayName(p appdetect.Project) string {
 	return name
 }
 
+func dirSuggestions(input string) []string {
+	completions := []string{}
+	matches, _ := filepath.Glob(input + "*")
+	for _, match := range matches {
+		if fs, err := os.Stat(match); err == nil && fs.IsDir() {
+			completions = append(completions, match)
+		}
+	}
+	return completions
+}
+
 func tabify(selections []string, padding int) ([]string, error) {
 	tabbed := strings.Builder{}
 	tabW := tabwriter.NewWriter(&tabbed, 0, 0, padding, ' ', 0)
@@ -147,6 +159,38 @@ func tabify(selections []string, padding int) ([]string, error) {
 	}
 
 	return strings.Split(tabbed.String(), "\n"), nil
+}
+
+func promptDir(
+	ctx context.Context,
+	console input.Console,
+	message string) (string, error) {
+	for {
+		path, err := console.Prompt(ctx, input.ConsoleOptions{
+			Message: message,
+			Suggest: dirSuggestions,
+		})
+		if err != nil {
+			return "", err
+		}
+
+		fs, err := os.Stat(path)
+		if errors.Is(err, os.ErrNotExist) || fs != nil && !fs.IsDir() {
+			console.Message(ctx, fmt.Sprintf("'%s' is not a valid directory", path))
+			continue
+		}
+
+		if err != nil {
+			return "", err
+		}
+
+		path, err = filepath.Abs(path)
+		if err != nil {
+			return "", err
+		}
+
+		return path, err
+	}
 }
 
 type EntryKind string
@@ -329,9 +373,9 @@ confirmDetection:
 					s = projects[idx]
 					s.Frameworks = append(s.Frameworks, framework)
 					continue confirmDetection
-				} else if framework.IsWebUIFramework() {
+				} else if framework.Language() != "" {
 					s.Frameworks = []appdetect.Framework{framework}
-					s.Language = appdetect.JavaScript
+					s.Language = framework.Language()
 				}
 			default:
 				log.Panic("unhandled entry type")
@@ -341,16 +385,7 @@ confirmDetection:
 				path, err := i.console.Prompt(ctx, input.ConsoleOptions{
 					Message: fmt.Sprintf("Enter file path of the directory that uses '%s'", projectDisplayName(s)),
 					Options: selections,
-					Suggest: func(input string) (completions []string) {
-						matches, _ := filepath.Glob(input + "*")
-						for _, match := range matches {
-							if fs, err := os.Stat(match); err == nil && fs.IsDir() {
-								completions = append(completions, match)
-							}
-						}
-
-						return completions
-					},
+					Suggest: dirSuggestions,
 				})
 				if err != nil {
 					return err
@@ -401,6 +436,151 @@ confirmDetection:
 				s.DetectionRule = string(EntryKindModified)
 				projects = append(projects, s)
 				continue confirmDetection
+			}
+		case 2:
+			modifyOptions := make([]string, 0, len(projects)+len(detectedDbs))
+			for _, project := range projects {
+				rel, err := filepath.Rel(wd, project.Path)
+				if err != nil {
+					return err
+				}
+
+				relWithDot := "./" + rel
+				modifyOptions = append(
+					modifyOptions, fmt.Sprintf("%s in %s", projectDisplayName(project), relWithDot))
+			}
+
+			displayDbs := maps.Keys(detectedDbs)
+			for _, db := range displayDbs {
+				modifyOptions = append(modifyOptions, db.Display())
+			}
+
+		modifyRemove:
+			for {
+				modifyIdx, err := i.console.Select(ctx, input.ConsoleOptions{
+					Message: "Select the language or database you want to modify or remove",
+					Options: modifyOptions,
+				})
+				if err != nil {
+					return err
+				}
+
+				if modifyIdx < len(projects) {
+					actionIdx, err := i.console.Select(ctx, input.ConsoleOptions{
+						Message: "Select an action",
+						Options: []string{"Modify the file path", "Modify the detected language", "Remove detected language"},
+					})
+					if err != nil {
+						return err
+					}
+
+					prj := projects[modifyIdx]
+					switch actionIdx {
+					case 0:
+						for {
+							path, err := i.console.Prompt(ctx, input.ConsoleOptions{
+								Message: fmt.Sprintf(
+									"Enter file path of the directory that uses '%s'", projectDisplayName(prj)),
+								Suggest: dirSuggestions,
+							})
+							if err != nil {
+								return err
+							}
+
+							fs, err := os.Stat(path)
+							if errors.Is(err, os.ErrNotExist) || fs != nil && !fs.IsDir() {
+								i.console.Message(ctx, fmt.Sprintf("'%s' is not a valid directory", path))
+								continue
+							}
+
+							if err != nil {
+								return err
+							}
+
+							path, err = filepath.Abs(path)
+							if err != nil {
+								return err
+							}
+
+							projects[modifyIdx].Path = path
+							projects[modifyIdx].DetectionRule = string(EntryKindModified)
+
+							break modifyRemove
+						}
+					case 1:
+						languages := supportedLanguages()
+						frameworks := supportedFrameworks()
+						selections := make([]string, 0, len(languages))
+						entries := make([]any, 0, len(languages))
+
+						for _, lang := range languages {
+							selections = append(selections, fmt.Sprintf("%s\t%s", lang.Display(), "[Language]"))
+							entries = append(entries, lang)
+						}
+
+						for _, framework := range frameworks {
+							selections = append(selections, fmt.Sprintf("%s\t%s", framework.Display(), "[Framework]"))
+							entries = append(entries, framework)
+						}
+
+						selections, err = tabify(selections, 3)
+						if err != nil {
+							return err
+						}
+
+						entIdx, err := i.console.Select(ctx, input.ConsoleOptions{
+							Message: "Select a new language or framework",
+							Options: selections,
+						})
+						if err != nil {
+							return err
+						}
+
+						switch entries[entIdx].(type) {
+						case appdetect.ProjectType:
+							projects[modifyIdx].Language = entries[entIdx].(appdetect.ProjectType)
+							projects[modifyIdx].Frameworks = nil
+						case appdetect.Framework:
+							framework := entries[entIdx].(appdetect.Framework)
+							projects[modifyIdx].Frameworks = []appdetect.Framework{framework}
+							projects[modifyIdx].Language = framework.Language()
+						}
+
+						projects[modifyIdx].DetectionRule = string(EntryKindModified)
+						break modifyRemove
+					case 2:
+						confirm, err := i.console.Confirm(ctx, input.ConsoleOptions{
+							Message: fmt.Sprintf(
+								"Remove %s in %s?", projectDisplayName(prj), prj.Path),
+						})
+						if err != nil {
+							return err
+						}
+
+						if !confirm {
+							continue modifyRemove
+						}
+
+						projects = append(projects[:modifyIdx], projects[modifyIdx+1:]...)
+						break modifyRemove
+					}
+				} else if modifyIdx < len(projects)+len(detectedDbs) {
+					db := displayDbs[modifyIdx-len(projects)]
+
+					confirm, err := i.console.Confirm(ctx, input.ConsoleOptions{
+						Message: fmt.Sprintf(
+							"Remove %s?", db.Display()),
+					})
+					if err != nil {
+						return err
+					}
+
+					if confirm {
+						delete(detectedDbs, db)
+					}
+
+					break modifyRemove
+				}
 			}
 		}
 	}

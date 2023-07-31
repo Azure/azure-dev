@@ -219,7 +219,7 @@ func promptInitType(console input.Console, ctx context.Context) (initType, error
 	selection, err := console.Select(ctx, input.ConsoleOptions{
 		Message: "How do you want to initialize your app?",
 		Options: []string{
-			"Use my existing code (local or on GitHub)",
+			"Use code in the current directory",
 			"Select a template",
 		},
 	})

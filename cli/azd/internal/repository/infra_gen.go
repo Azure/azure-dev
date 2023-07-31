@@ -4,13 +4,16 @@ import (
 	"bytes"
 	"context"
 	"embed"
+	"errors"
 	"fmt"
 	"io/fs"
 	"os"
 	"path"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
+	"text/tabwriter"
 	"text/template"
 	"unicode"
 
@@ -19,10 +22,15 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/resources"
 	"github.com/otiai10/copy"
+	"golang.org/x/exp/maps"
 )
+
+// A regex that matches against "likely" well-formed database names
+var wellFormedDbNameRegex = regexp.MustCompile(`^[a-zA-Z-_0-9]$`)
 
 type DatabasePostgres struct {
 	DatabaseUser string
@@ -72,27 +80,94 @@ type ServiceSpec struct {
 	DbCosmos   *DatabaseCosmos
 }
 
+func supportedLanguages() []appdetect.ProjectType {
+	return []appdetect.ProjectType{
+		appdetect.DotNet,
+		appdetect.Java,
+		appdetect.JavaScript,
+		appdetect.TypeScript,
+		appdetect.Python,
+	}
+}
+
+func mapLanguage(l appdetect.ProjectType) project.ServiceLanguageKind {
+	switch l {
+	case appdetect.Python:
+		return project.ServiceLanguagePython
+	case appdetect.DotNet:
+		return project.ServiceLanguageDotNet
+	case appdetect.JavaScript:
+		return project.ServiceLanguageJavaScript
+	case appdetect.TypeScript:
+		return project.ServiceLanguageTypeScript
+	case appdetect.Java:
+		return project.ServiceLanguageJava
+	default:
+		return ""
+	}
+}
+
+func supportedFrameworks() []appdetect.Framework {
+	return []appdetect.Framework{
+		appdetect.Angular,
+		appdetect.JQuery,
+		appdetect.VueJs,
+		appdetect.React,
+	}
+}
+
+type DatabaseKind string
+
+const (
+	DbPostgre     DatabaseKind = "postgres"
+	DbCosmosMongo DatabaseKind = "cosmos-mongo"
+)
+
+func mapDatabase(d appdetect.Framework) DatabaseKind {
+	switch d {
+	case appdetect.DbMongo:
+		return DbCosmosMongo
+	case appdetect.DbPostgres:
+		return DbPostgre
+	default:
+		return ""
+	}
+}
+
+func supportedDatabases() []DatabaseKind {
+	return []DatabaseKind{
+		DbPostgre,
+		DbCosmosMongo,
+	}
+}
+
+func (f DatabaseKind) Display() string {
+	switch f {
+	case DbPostgre:
+		return "PostgreSQL"
+	case DbCosmosMongo:
+		return "MongoDB"
+	}
+
+	return ""
+}
+
+func projectDisplayName(p appdetect.Project) string {
+	name := p.Language.Display()
+	for _, framework := range p.Frameworks {
+		if framework.IsWebUIFramework() {
+			name = framework.Display()
+		}
+	}
+
+	return name
+}
+
 func (i *Initializer) InitializeInfra(
 	ctx context.Context,
 	azdCtx *azdcontext.AzdContext) error {
-	selection, err := i.console.Select(ctx, input.ConsoleOptions{
-		Message: "Where is your app code located?",
-		Options: []string{
-			"In my current directory (local)",
-			"In a GitHub repository (remote)",
-		},
-	})
-	if err != nil {
-		return err
-	}
-
-	if selection == 1 {
-		//clone locally
-		panic("clone unimplemented")
-	}
-
 	wd := azdCtx.ProjectDirectory()
-	title := "Detecting languages and databases in " + output.WithHighLightFormat(wd)
+	title := "Scanning app code in " + output.WithHighLightFormat(wd)
 	i.console.ShowSpinner(ctx, title, input.Step)
 	projects, err := appdetect.Detect(wd)
 	i.console.StopSpinner(ctx, title, input.GetStepResultFormat(err))
@@ -101,85 +176,280 @@ func (i *Initializer) InitializeInfra(
 		return err
 	}
 
-	i.console.Message(ctx, "\nApp detection summary:\n")
-	projectsByLanguage := make(map[string][]appdetect.Project, 0)
-	for _, project := range projects {
-		name := project.Language.Display()
-		for _, framework := range project.Frameworks {
-			if framework.IsWebUIFramework() {
-				name = framework.Display()
-			}
-		}
-
-		projectsByLanguage[name] = append(projectsByLanguage[name], project)
-	}
-
-	for key, projects := range projectsByLanguage {
-		i.console.Message(ctx, "  "+output.WithBold(key))
-		i.console.Message(ctx, "    "+"Detected in:")
-		for _, project := range projects {
-			i.console.Message(ctx, "    "+"- "+output.WithHighLightFormat(project.Path))
-		}
-
-		i.console.Message(ctx, "    "+"Recommended service: "+"Azure Container Apps")
-		i.console.Message(ctx, "")
-	}
-
-	// handle databases
-	databases := make(map[appdetect.Framework]struct{})
+	detectedDbs := make(map[appdetect.Framework]struct{})
 	for _, project := range projects {
 		for _, framework := range project.Frameworks {
 			if framework.IsDatabaseDriver() {
-				if _, recorded := databases[framework]; recorded {
+				if _, recorded := detectedDbs[framework]; recorded {
 					continue
 				}
-
-				recommended := "CosmosDB API for MongoDB"
-				switch framework {
-				case appdetect.DbPostgres:
-					recommended = "Azure Database for PostgreSQL flexible server"
-				}
-				i.console.Message(ctx, "  "+output.WithBold(framework.Display()))
-				i.console.Message(ctx, "    "+"Recommended service: "+recommended)
-				i.console.Message(ctx, "")
-
-				databases[framework] = struct{}{}
 			}
+
+			detectedDbs[framework] = struct{}{}
 		}
 	}
 
-	spec := InfraSpec{}
-	for database := range databases {
-		dbName, err := i.console.Prompt(ctx, input.ConsoleOptions{
-			Message: "What is the name of the database to be created? (Empty skips database creation)",
+	firstConfirmation := true
+
+confirmDetection:
+	for {
+		if firstConfirmation {
+			i.console.MessageUxItem(ctx, &ux.DoneMessage{Message: "Generating recommended Azure services"})
+			i.console.Message(ctx, "\n"+output.WithBold("App detection summary:")+"\n")
+		} else {
+			i.console.MessageUxItem(ctx, &ux.DoneMessage{Message: "Revising app detection summary"})
+			i.console.Message(ctx, "\n"+output.WithBold("Revised app detection summary:")+"\n")
+		}
+		firstConfirmation = false
+
+		for _, project := range projects {
+			status := ""
+			if project.DetectionRule == "Updated" {
+				status = " [Updated]"
+			} else if project.DetectionRule == "Manual" {
+				status = " [Added]"
+			}
+
+			i.console.Message(ctx, "  "+output.WithBold(projectDisplayName(project))+status)
+
+			rel, err := filepath.Rel(wd, project.Path)
+			if err != nil {
+				return err
+			}
+
+			relWithDot := "./" + rel
+			i.console.Message(ctx, "  "+"Detected in: "+output.WithHighLightFormat(relWithDot))
+			i.console.Message(ctx, "  "+"Recommended: "+"Azure Container Apps")
+			i.console.Message(ctx, "")
+		}
+
+		// handle detectedDbs
+		for _, db := range maps.Keys(detectedDbs) {
+			recommended := ""
+			switch db {
+			case appdetect.DbPostgres:
+				recommended = "Azure Database for PostgreSQL flexible server"
+			case appdetect.DbMongo:
+				recommended = "CosmosDB API for MongoDB"
+			}
+			if recommended != "" {
+				i.console.Message(ctx, "  "+output.WithBold(db.Display()))
+				i.console.Message(ctx, "  "+"Recommended: "+recommended)
+				i.console.Message(ctx, "")
+			}
+		}
+
+		i.console.Message(ctx,
+			"azd will generate the files necessary to host your app on Azure using the recommended services.")
+
+		continueOption, err := i.console.Select(ctx, input.ConsoleOptions{
+			Message: "Select an option",
+			Options: []string{
+				"Configure my app to run on Azure using the recommended services",
+				"Add a language or database azd failed to detect",
+				"Modify or remove a detected language or database",
+			},
 		})
 		if err != nil {
 			return err
 		}
 
-		switch database {
-		case appdetect.DbMongo:
-			spec.DbCosmos = &DatabaseCosmos{
-				DatabaseName: dbName,
-			}
-		case appdetect.DbPostgres:
-			spec.DbPostgres = &DatabasePostgres{
-				DatabaseName: dbName,
+		switch continueOption {
+		case 0:
+			break confirmDetection
+		case 1:
+			languages := supportedLanguages()
+			frameworks := supportedFrameworks()
+			databases := supportedDatabases()
+			selections := make([]string, 0, len(languages)+len(databases))
+			entries := make([]any, 0, len(languages)+len(databases))
+
+			for _, lang := range languages {
+				selections = append(selections, fmt.Sprintf("%s\t%s", lang.Display(), "[Language]"))
+				entries = append(entries, lang)
 			}
 
-			spec.Parameters = append(spec.Parameters,
-				Parameter{
-					Name:   "sqlAdminPassword",
-					Value:  "$(secretOrRandomPassword)",
-					Type:   "string",
-					Secret: true,
-				},
-				Parameter{
-					Name:   "appUserPassword",
-					Value:  "$(secretOrRandomPassword)",
-					Type:   "string",
-					Secret: true,
+			for _, framework := range frameworks {
+				selections = append(selections, fmt.Sprintf("%s\t%s", framework.Display(), "[Language]"))
+				entries = append(entries, framework)
+			}
+
+			for _, db := range databases {
+				selections = append(selections, fmt.Sprintf("%s\t%s", db.Display(), "[Database]"))
+				entries = append(entries, db)
+			}
+
+			tabbed := strings.Builder{}
+			tabW := tabwriter.NewWriter(&tabbed, 0, 0, 3, ' ', 0)
+			_, err = tabW.Write([]byte(strings.Join(selections, "\n")))
+			if err != nil {
+				return err
+			}
+			err = tabW.Flush()
+			if err != nil {
+				return err
+			}
+
+			selections = strings.Split(tabbed.String(), "\n")
+
+			entIdx, err := i.console.Select(ctx, input.ConsoleOptions{
+				Message: "Select a language or database to add",
+				Options: selections,
+			})
+			if err != nil {
+				return err
+			}
+
+			s := appdetect.Project{}
+			switch entries[entIdx].(type) {
+			case appdetect.ProjectType:
+				s.Language = entries[entIdx].(appdetect.ProjectType)
+			case appdetect.Framework:
+				framework := entries[entIdx].(appdetect.Framework)
+				s.Frameworks = []appdetect.Framework{framework}
+				s.Language = appdetect.JavaScript
+			}
+
+			for {
+				path, err := i.console.Prompt(ctx, input.ConsoleOptions{
+					Message: fmt.Sprintf("Enter file path of the directory that uses '%s'", projectDisplayName(s)),
+					Options: selections,
+					Suggest: func(input string) (completions []string) {
+						matches, _ := filepath.Glob(input + "*")
+						for _, match := range matches {
+							if fs, err := os.Stat(match); err == nil && fs.IsDir() {
+								completions = append(completions, match)
+							}
+						}
+
+						return completions
+					},
 				})
+				if err != nil {
+					return err
+				}
+
+				fs, err := os.Stat(path)
+				if errors.Is(err, os.ErrNotExist) || fs != nil && !fs.IsDir() {
+					i.console.Message(ctx, fmt.Sprintf("'%s' is not a valid directory", path))
+					continue
+				}
+
+				if err != nil {
+					return err
+				}
+
+				path, err = filepath.Abs(path)
+				if err != nil {
+					return err
+				}
+
+				for idx, project := range projects {
+					if project.Path == path {
+						i.console.Message(
+							ctx,
+							fmt.Sprintf(
+								"\nazd previously detected '%s' at %s.\n", projectDisplayName(project), project.Path))
+
+						confirm, err := i.console.Confirm(ctx, input.ConsoleOptions{
+							Message: fmt.Sprintf(
+								"Do you want to change the detected service to '%s'", projectDisplayName(s)),
+						})
+						if err != nil {
+							return err
+						}
+						if confirm {
+							projects[idx].Language = s.Language
+							projects[idx].Frameworks = s.Frameworks
+							projects[idx].DetectionRule = "Updated"
+						}
+
+						continue confirmDetection
+					}
+				}
+
+				s.Path = filepath.Clean(path)
+				s.DetectionRule = "Manual"
+				projects = append(projects, s)
+				break
+			}
+		}
+	}
+
+	spec := InfraSpec{}
+	for database := range detectedDbs {
+	dbPrompt:
+		for {
+			dbName, err := i.console.Prompt(ctx, input.ConsoleOptions{
+				Message: "Input a name for the app database",
+			})
+			if err != nil {
+				return err
+			}
+
+			if dbName == "" {
+				continue dbPrompt
+			}
+
+			if strings.ContainsAny(dbName, " ") {
+				confirm, err := i.console.Confirm(ctx, input.ConsoleOptions{
+					Message: "Database name contains whitespace. " +
+						"This may not be allowed by the database server. Continue?",
+				})
+				if err != nil {
+					return err
+				}
+
+				if confirm {
+					break dbPrompt
+				} else {
+					continue dbPrompt
+				}
+			}
+
+			if !wellFormedDbNameRegex.MatchString(dbName) {
+				confirm, err := i.console.Confirm(ctx, input.ConsoleOptions{
+					Message: "Database name contains special characters. " +
+						"This may not be allowed by the database server. Continue?",
+				})
+				if err != nil {
+					return err
+				}
+
+				if confirm {
+					break dbPrompt
+				} else {
+					continue dbPrompt
+				}
+			}
+
+			switch database {
+			case appdetect.DbMongo:
+				spec.DbCosmos = &DatabaseCosmos{
+					DatabaseName: dbName,
+				}
+
+				break dbPrompt
+			case appdetect.DbPostgres:
+				spec.DbPostgres = &DatabasePostgres{
+					DatabaseName: dbName,
+				}
+
+				spec.Parameters = append(spec.Parameters,
+					Parameter{
+						Name:   "sqlAdminPassword",
+						Value:  "$(secretOrRandomPassword)",
+						Type:   "string",
+						Secret: true,
+					},
+					Parameter{
+						Name:   "appUserPassword",
+						Value:  "$(secretOrRandomPassword)",
+						Type:   "string",
+						Secret: true,
+					})
+				break dbPrompt
+			}
 		}
 	}
 

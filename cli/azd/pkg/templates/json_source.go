@@ -5,11 +5,6 @@ import (
 	"fmt"
 )
 
-type jsonTemplateSource struct {
-	name      string
-	templates []*Template
-}
-
 // NewJsonTemplateSource creates a new template source from a JSON string.
 func NewJsonTemplateSource(name string, jsonTemplates string) (Source, error) {
 	var templates []*Template

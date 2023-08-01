@@ -144,20 +144,24 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 	}
 
-	followUp := "You can provision and deploy your app to Azure by running the " + output.WithBold("azd up") +
-		" command in this directory. Services may incur usage charges when provisioned or deployed."
+	header := "New project initialized!"
+	followUp := heredoc.Docf(`
+	You can view the template code in your directory: %s
+	Learn more about running 3rd party code on our DevHub: %s`,
+		output.WithLinkFormat("%s", wd),
+		output.WithLinkFormat("%s", "https://aka.ms/azd-third-party-code-notice"))
 	switch initTypeSelect {
 	case initInfra:
+		header = "Your app is now ready for the cloud!"
+		followUp = "You can provision and deploy your app to Azure by running the " + output.WithBlueFormat("azd up") +
+			" command in this directory. Services may incur usage charges when provisioned or deployed." +
+			" For more information on what was added and how to proceed, see " + output.WithBlueFormat("init-summary.md") +
+			" created."
 		err := i.repoInitializer.InitializeInfra(ctx, azdCtx)
 		if err != nil {
 			return nil, err
 		}
 	case initAppTemplate:
-		followUp = heredoc.Docf(`
-			You can view the template code in your directory: %s
-			Learn more about running 3rd party code on our DevHub: %s`,
-			output.WithLinkFormat("%s", wd),
-			output.WithLinkFormat("%s", "https://aka.ms/azd-third-party-code-notice"))
 		err := i.InitializeTemplate(ctx, azdCtx)
 		if err != nil {
 			return nil, err
@@ -200,7 +204,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			Header:   "New project initialized!",
+			Header:   header,
 			FollowUp: followUp,
 		},
 	}, nil

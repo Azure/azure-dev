@@ -246,7 +246,7 @@ confirmDetection:
 				status = " " + output.WithSuccessFormat("[Added]")
 			}
 
-			i.console.Message(ctx, "  "+output.WithBold(projectDisplayName(project))+status)
+			i.console.Message(ctx, "  "+output.WithBlueFormat(projectDisplayName(project))+status)
 
 			rel, err := filepath.Rel(wd, project.Path)
 			if err != nil {
@@ -276,14 +276,14 @@ confirmDetection:
 					status = " " + output.WithSuccessFormat("[Added]")
 				}
 
-				i.console.Message(ctx, "  "+output.WithBold(db.Display())+status)
+				i.console.Message(ctx, "  "+output.WithBlueFormat(db.Display())+status)
 				i.console.Message(ctx, "  "+"Recommended: "+recommended)
 				i.console.Message(ctx, "")
 			}
 		}
 
 		i.console.Message(ctx,
-			"azd will generate the files necessary to host your app on Azure using the recommended services.")
+			output.WithGrayFormat("azd will generate the files necessary to host your app on Azure using the recommended services.")+"\n")
 
 		continueOption, err := i.console.Select(ctx, input.ConsoleOptions{
 			Message: "Select an option",
@@ -447,7 +447,8 @@ confirmDetection:
 				if modifyIdx < len(projects) {
 					actionIdx, err := i.console.Select(ctx, input.ConsoleOptions{
 						Message: "Select an action",
-						Options: []string{"Modify the file path", "Modify the detected language", "Remove detected language"},
+						Options: []string{
+							"Modify the file path", "Modify the detected language", "Remove detected language"},
 					})
 					if err != nil {
 						return err
@@ -706,7 +707,7 @@ confirmDetection:
 	}
 
 	generateProject := func() error {
-		title := "Generating " + output.WithBold(azdcontext.ProjectFileName) +
+		title := "Generating " + output.WithBlueFormat(azdcontext.ProjectFileName) +
 			" in " + output.WithHighLightFormat(azdCtx.ProjectDirectory())
 		i.console.ShowSpinner(ctx, title, input.Step)
 		defer i.console.StopSpinner(ctx, title, input.GetStepResultFormat(err))
@@ -761,8 +762,7 @@ confirmDetection:
 		Option("missingkey=error").
 		Funcs(funcMap).
 		ParseFS(resources.ScaffoldTemplates,
-			path.Join(root, "*.bicept"),
-			path.Join(root, "*.jsont"))
+			path.Join(root, "*"))
 	if err != nil {
 		return fmt.Errorf("parsing templates: %w", err)
 	}
@@ -792,6 +792,18 @@ confirmDetection:
 	if err != nil {
 		return err
 	}
+
+	err = execute(t, "init-summary.mdt", spec, filepath.Join(staging, "init-summary.md"))
+	if err != nil {
+		return err
+	}
+
+	defer func() {
+		i.console.MessageUxItem(ctx, &ux.DoneMessage{
+			Message: "Generating " + output.WithBlueFormat("init-summary.md") + " in " +
+				output.WithHighLightFormat(azdCtx.ProjectDirectory()),
+		})
+	}()
 
 	err = execute(t, "main.parameters.json", spec, filepath.Join(staging, "main.parameters.json"))
 	if err != nil {

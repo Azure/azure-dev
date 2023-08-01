@@ -30,6 +30,10 @@ func WithGrayFormat(text string, a ...interface{}) string {
 	return color.HiBlackString(text, a...)
 }
 
+func WithBlueFormat(text string, a ...interface{}) string {
+	return color.BlueString(text, a...)
+}
+
 func WithBold(text string, a ...interface{}) string {
 	format := color.New(color.Bold)
 	return format.Sprintf(text, a...)

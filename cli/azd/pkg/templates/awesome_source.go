@@ -1,0 +1,80 @@
+package templates
+
+import (
+	"context"
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"strings"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
+	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
+)
+
+type awesomeAzdTemplate struct {
+	Title       string `json:"title"`
+	Description string `json:"description"`
+	Source      string `json:"source"`
+}
+
+// NewAwesomeAzdTemplateSource creates a new template source from the awesome-azd templates json file.
+func NewAwesomeAzdTemplateSource(
+	ctx context.Context,
+	name string,
+	url string,
+	httpClient httputil.HttpClient,
+) (Source, error) {
+	pipeline := runtime.NewPipeline("azd-templates", "1.0.0", runtime.PipelineOptions{}, &policy.ClientOptions{
+		Transport: httpClient,
+	})
+
+	req, err := runtime.NewRequest(ctx, http.MethodGet, url)
+	if err != nil {
+		return nil, err
+	}
+
+	resp, err := pipeline.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("request failed for template source '%s', %w", url, err)
+	}
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, runtime.NewResponseError(resp)
+	}
+
+	templatesJson, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("failed reading response body for template source '%s', %w", url, err)
+	}
+
+	var rawAwesomeAzdTemplates []*awesomeAzdTemplate
+	if err := json.Unmarshal(templatesJson, &rawAwesomeAzdTemplates); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal templates json: %w", err)
+	}
+
+	awesomeAzdTemplates := []*Template{}
+	for _, template := range rawAwesomeAzdTemplates {
+		if template.Title == "" {
+			return nil, fmt.Errorf("template title is empty")
+		}
+
+		if template.Source == "" {
+			return nil, fmt.Errorf("template source is empty")
+		}
+
+		// Trim out Azure-Samples & Github from the repo path since this is the default.
+		repoPath := template.Source
+		repoPath = strings.Replace(repoPath, "https://github.com/Azure-Samples/", "", 1)
+		repoPath = strings.Replace(repoPath, "https://github.com/", "", 1)
+
+		awesomeAzdTemplates = append(awesomeAzdTemplates, &Template{
+			Name:           template.Title,
+			Description:    template.Description,
+			RepositoryPath: repoPath,
+		})
+	}
+
+	return NewTemplateSource(name, awesomeAzdTemplates)
+}

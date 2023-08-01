@@ -17,14 +17,14 @@ var (
 	SourceDefault = &SourceConfig{
 		Key:  "default",
 		Name: "Default",
-		Type: SourceResource,
+		Type: SourceKindResource,
 	}
 
 	SourceAwesomeAzd = &SourceConfig{
 		Key:      "awesome-azd",
 		Name:     "Awesome AZD",
-		Type:     SourceUrl,
-		Location: "https://raw.githubusercontent.com/wbreza/azure-dev/template-source/cli/azd/resources/awesome-templates.json",
+		Type:     SourceKindAwesomeAzd,
+		Location: "https://aka.ms/awesome-azd/templates.json",
 	}
 
 	WellKnownSources = map[string]*SourceConfig{
@@ -127,6 +127,10 @@ func (sm *sourceManager) Add(ctx context.Context, key string, source *SourceConf
 		return fmt.Errorf("template source '%s' already exists, %w", key, ErrSourceExists)
 	}
 
+	if source.Name == "" {
+		source.Name = key
+	}
+
 	config, err := sm.configManager.Load()
 	if err != nil {
 		return fmt.Errorf("unable to load user configuration: %w", err)
@@ -183,12 +187,14 @@ func (sm *sourceManager) CreateSource(ctx context.Context, config *SourceConfig)
 	var err error
 
 	switch config.Type {
-	case SourceFile:
+	case SourceKindFile:
 		source, err = NewFileTemplateSource(config.Name, config.Location)
-	case SourceUrl:
+	case SourceKindUrl:
 		source, err = NewUrlTemplateSource(ctx, config.Name, config.Location, sm.httpClient)
-	case SourceResource:
-		source, err = NewJsonTemplateSource(config.Name, string(resources.TemplatesJson))
+	case SourceKindAwesomeAzd:
+		source, err = NewAwesomeAzdTemplateSource(ctx, SourceAwesomeAzd.Name, SourceAwesomeAzd.Location, sm.httpClient)
+	case SourceKindResource:
+		source, err = NewJsonTemplateSource(SourceDefault.Name, string(resources.TemplatesJson))
 	default:
 		err = fmt.Errorf("unknown template source type '%s'", config.Type)
 	}

@@ -85,7 +85,7 @@ func Test_sourceManager_Add(t *testing.T) {
 
 	key := "test"
 	source := &SourceConfig{
-		Type:     SourceFile,
+		Type:     SourceKindFile,
 		Location: "testdata/templates.json",
 	}
 	err := sm.Add(*mockContext.Context, key, source)
@@ -103,7 +103,7 @@ func Test_sourceManager_Add_DuplicateKey(t *testing.T) {
 	configManager.On("Load").Return(config, nil)
 
 	source := &SourceConfig{
-		Type:     SourceFile,
+		Type:     SourceKindFile,
 		Location: "testdata/templates.json",
 	}
 	err := sm.Add(*mockContext.Context, key, source)
@@ -159,40 +159,54 @@ func Test_sourceManager_CreateSource(t *testing.T) {
 		return mocks.CreateHttpResponseWithBody(req, http.StatusOK, testTemplates)
 	})
 
+	sourceAwesomeAzdUrl := "https://aka.ms/awesome-azd/templates.json"
+	mockContext.HttpClient.When(func(req *http.Request) bool {
+		return req.Method == http.MethodGet && req.URL.String() == sourceAwesomeAzdUrl
+	}).RespondFn(func(req *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(req, http.StatusOK, testAwesomeAzdTemplates)
+	})
+
 	configs := []*SourceConfig{
 		{
-			Key:      "file",
-			Type:     SourceFile,
-			Name:     "test-file",
+			Key:      "test-file",
+			Type:     SourceKindFile,
+			Name:     "file",
 			Location: "./test-templates.json",
 		},
 		{
-			Key:      "url",
-			Type:     SourceUrl,
-			Name:     "test-url",
+			Key:      "test-url",
+			Type:     SourceKindUrl,
+			Name:     "url",
 			Location: sourceUrl,
 		},
 		{
-			Key:  "resource",
-			Type: SourceResource,
-			Name: "test-resource",
+			Key:  "default",
+			Type: SourceKindResource,
+			Name: "default",
+		},
+		{
+			Key:  "awesome-azd",
+			Type: SourceKindAwesomeAzd,
+			Name: "awesome-azd",
 		},
 		{
 			Key:  "invalid",
 			Type: "invalid",
-			Name: "test",
+			Name: "invalid",
 		},
 	}
 
 	for _, config := range configs {
-		source, err := sm.CreateSource(*mockContext.Context, config)
-		if config.Type == "invalid" {
-			require.NotNil(t, err)
-			require.Nil(t, source)
-		} else {
-			require.Nil(t, err)
-			require.NotNil(t, source)
-		}
+		t.Run(config.Name, func(t *testing.T) {
+			source, err := sm.CreateSource(*mockContext.Context, config)
+			if config.Type == "invalid" {
+				require.NotNil(t, err)
+				require.Nil(t, source)
+			} else {
+				require.Nil(t, err)
+				require.NotNil(t, source)
+			}
+		})
 	}
 }
 

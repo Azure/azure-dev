@@ -24,20 +24,11 @@ func DetectionToConfig(path string, projects []appdetect.Project) (project.Proje
 		svc.Host = "containerapp"
 		svc.RelativePath = rel
 
-		switch prj.Language {
-		case appdetect.Python:
-			svc.Language = project.ServiceLanguagePython
-		case appdetect.DotNet:
-			svc.Language = project.ServiceLanguageDotNet
-		case appdetect.JavaScript:
-			svc.Language = project.ServiceLanguageJavaScript
-		case appdetect.TypeScript:
-			svc.Language = project.ServiceLanguageTypeScript
-		case appdetect.Java:
-			svc.Language = project.ServiceLanguageJava
-		default:
-			panic(fmt.Sprintf("unhandled language: %s", string(prj.Language)))
+		language := mapLanguage(prj.Language)
+		if language == "" {
+			continue
 		}
+		svc.Language = language
 
 		// if prj.Docker != nil {
 		// 	relDocker, err := filepath.Rel(prj.Path, prj.Docker.Path)

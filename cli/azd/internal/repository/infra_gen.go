@@ -146,7 +146,7 @@ func dirSuggestions(input string) []string {
 	return completions
 }
 
-func tabify(selections []string, padding int) ([]string, error) {
+func tabWrite(selections []string, padding int) ([]string, error) {
 	tabbed := strings.Builder{}
 	tabW := tabwriter.NewWriter(&tabbed, 0, 0, padding, ' ', 0)
 	_, err := tabW.Write([]byte(strings.Join(selections, "\n")))
@@ -328,7 +328,7 @@ confirmDetection:
 				entries = append(entries, db)
 			}
 
-			selections, err = tabify(selections, 3)
+			selections, err = tabWrite(selections, 3)
 			if err != nil {
 				return err
 			}
@@ -351,13 +351,12 @@ confirmDetection:
 					detectedDbs[framework] = EntryKindManual
 
 					selection := make([]string, 0, len(projects))
-
 					for _, prj := range projects {
 						selection = append(selection,
 							fmt.Sprintf("%s\t[%s]", projectDisplayName(prj), filepath.Base(prj.Path)))
 					}
 
-					selection, err = tabify(selection, 3)
+					selection, err = tabWrite(selection, 3)
 					if err != nil {
 						return err
 					}
@@ -381,62 +380,42 @@ confirmDetection:
 				log.Panic("unhandled entry type")
 			}
 
-			for {
-				path, err := i.console.Prompt(ctx, input.ConsoleOptions{
-					Message: fmt.Sprintf("Enter file path of the directory that uses '%s'", projectDisplayName(s)),
-					Options: selections,
-					Suggest: dirSuggestions,
-				})
-				if err != nil {
-					return err
-				}
-
-				fs, err := os.Stat(path)
-				if errors.Is(err, os.ErrNotExist) || fs != nil && !fs.IsDir() {
-					i.console.Message(ctx, fmt.Sprintf("'%s' is not a valid directory", path))
-					continue
-				}
-
-				if err != nil {
-					return err
-				}
-
-				path, err = filepath.Abs(path)
-				if err != nil {
-					return err
-				}
-
-				for idx, project := range projects {
-					if project.Path == path {
-						i.console.Message(
-							ctx,
-							fmt.Sprintf(
-								"\nazd previously detected '%s' at %s.\n", projectDisplayName(project), project.Path))
-
-						confirm, err := i.console.Confirm(ctx, input.ConsoleOptions{
-							Message: fmt.Sprintf(
-								"Do you want to change the detected service to '%s'", projectDisplayName(s)),
-						})
-						if err != nil {
-							return err
-						}
-						if confirm {
-							projects[idx].Language = s.Language
-							projects[idx].Frameworks = s.Frameworks
-							projects[idx].DetectionRule = string(EntryKindManual)
-						} else {
-							revision = false
-						}
-
-						continue confirmDetection
-					}
-				}
-
-				s.Path = filepath.Clean(path)
-				s.DetectionRule = string(EntryKindModified)
-				projects = append(projects, s)
-				continue confirmDetection
+			msg := fmt.Sprintf("Enter file path of the directory that uses '%s'", projectDisplayName(s))
+			path, err := promptDir(ctx, i.console, msg)
+			if err != nil {
+				return err
 			}
+
+			for idx, project := range projects {
+				if project.Path == path {
+					i.console.Message(
+						ctx,
+						fmt.Sprintf(
+							"\nazd previously detected '%s' at %s.\n", projectDisplayName(project), project.Path))
+
+					confirm, err := i.console.Confirm(ctx, input.ConsoleOptions{
+						Message: fmt.Sprintf(
+							"Do you want to change the detected service to '%s'", projectDisplayName(s)),
+					})
+					if err != nil {
+						return err
+					}
+					if confirm {
+						projects[idx].Language = s.Language
+						projects[idx].Frameworks = s.Frameworks
+						projects[idx].DetectionRule = string(EntryKindManual)
+					} else {
+						revision = false
+					}
+
+					continue confirmDetection
+				}
+			}
+
+			s.Path = filepath.Clean(path)
+			s.DetectionRule = string(EntryKindModified)
+			projects = append(projects, s)
+			continue confirmDetection
 		case 2:
 			modifyOptions := make([]string, 0, len(projects)+len(detectedDbs))
 			for _, project := range projects {
@@ -477,36 +456,16 @@ confirmDetection:
 					prj := projects[modifyIdx]
 					switch actionIdx {
 					case 0:
-						for {
-							path, err := i.console.Prompt(ctx, input.ConsoleOptions{
-								Message: fmt.Sprintf(
-									"Enter file path of the directory that uses '%s'", projectDisplayName(prj)),
-								Suggest: dirSuggestions,
-							})
-							if err != nil {
-								return err
-							}
-
-							fs, err := os.Stat(path)
-							if errors.Is(err, os.ErrNotExist) || fs != nil && !fs.IsDir() {
-								i.console.Message(ctx, fmt.Sprintf("'%s' is not a valid directory", path))
-								continue
-							}
-
-							if err != nil {
-								return err
-							}
-
-							path, err = filepath.Abs(path)
-							if err != nil {
-								return err
-							}
-
-							projects[modifyIdx].Path = path
-							projects[modifyIdx].DetectionRule = string(EntryKindModified)
-
-							break modifyRemove
+						msg := fmt.Sprintf("Enter file path of the directory that uses '%s'", projectDisplayName(prj))
+						path, err := promptDir(ctx, i.console, msg)
+						if err != nil {
+							return err
 						}
+
+						projects[modifyIdx].Path = path
+						projects[modifyIdx].DetectionRule = string(EntryKindModified)
+
+						break modifyRemove
 					case 1:
 						languages := supportedLanguages()
 						frameworks := supportedFrameworks()
@@ -523,7 +482,7 @@ confirmDetection:
 							entries = append(entries, framework)
 						}
 
-						selections, err = tabify(selections, 3)
+						selections, err = tabWrite(selections, 3)
 						if err != nil {
 							return err
 						}

@@ -361,10 +361,11 @@ func openWithDefaultBrowser(ctx context.Context, console input.Console, url stri
 	)
 
 	// wsl manual launch. Trying cmd first, and pwsh second
+	quotedUrlArg := fmt.Sprintf("\"%s\"", url)
 	_, err = cmdRunner.Run(ctx, azdExec.RunArgs{
 		Cmd: "cmd.exe",
 		Args: []string{
-			"/s", "/c", "start", fmt.Sprintf("\"%s\"", url),
+			"/s", "/c", "start", quotedUrlArg,
 		},
 	})
 	if err == nil {
@@ -374,7 +375,7 @@ func openWithDefaultBrowser(ctx context.Context, console input.Console, url stri
 	_, err = cmdRunner.Run(ctx, azdExec.RunArgs{
 		Cmd: "powershell.exe",
 		Args: []string{
-			"-NoProfile", "-Command", fmt.Sprintf("Start-Process \"%s\"", url),
+			"-NoProfile", "-Command", "Start-Process", quotedUrlArg,
 		},
 	})
 	if err == nil {

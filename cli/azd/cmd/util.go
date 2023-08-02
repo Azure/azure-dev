@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"log"
 	"os"
-	"os/exec"
 	"time"
 
 	"github.com/AlecAivazis/survey/v2"
@@ -18,6 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	azdExec "github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -329,6 +329,8 @@ func openWithDefaultBrowser(ctx context.Context, console input.Console, url stri
 		return
 	}
 
+	cmdRunner := azdExec.NewCommandRunner(nil)
+
 	// In Codespaces and devcontainers a $BROWSER environment variable is
 	// present whose value is an executable that launches the browser when
 	// called with the form:
@@ -336,7 +338,10 @@ func openWithDefaultBrowser(ctx context.Context, console input.Console, url stri
 	const BrowserEnvVarName = "BROWSER"
 
 	if envBrowser := os.Getenv(BrowserEnvVarName); len(envBrowser) > 0 {
-		err := exec.Command(envBrowser, url).Run()
+		_, err := cmdRunner.Run(ctx, azdExec.RunArgs{
+			Cmd:  envBrowser,
+			Args: []string{url},
+		})
 		if err == nil {
 			return
 		}
@@ -355,11 +360,23 @@ func openWithDefaultBrowser(ctx context.Context, console input.Console, url stri
 		"warning: failed to open default browser: %s\nTrying manual launch.", err.Error(),
 	)
 
-	// wsl manual launch
-	args := []string{
-		"-NoProfile", "-Command", fmt.Sprintf("Start-Process \"%s\"", url),
+	// wsl manual launch. Trying cmd first, and pwsh second
+	_, err = cmdRunner.Run(ctx, azdExec.RunArgs{
+		Cmd: "cmd.exe",
+		Args: []string{
+			"/s", "/c", "start", fmt.Sprintf("\"%s\"", url),
+		},
+	})
+	if err == nil {
+		return
 	}
-	err = exec.Command("powershell.exe", args...).Run()
+
+	_, err = cmdRunner.Run(ctx, azdExec.RunArgs{
+		Cmd: "powershell.exe",
+		Args: []string{
+			"-NoProfile", "-Command", fmt.Sprintf("Start-Process \"%s\"", url),
+		},
+	})
 	if err == nil {
 		return
 	}

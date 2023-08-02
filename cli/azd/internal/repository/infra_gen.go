@@ -285,7 +285,8 @@ confirmDetection:
 		}
 
 		i.console.Message(ctx,
-			output.WithGrayFormat("azd will generate the files necessary to host your app on Azure using the recommended services.")+"\n")
+			output.WithGrayFormat(
+				"azd will generate the files necessary to host your app on Azure using the recommended services.")+"\n")
 
 		continueOption, err := i.console.Select(ctx, input.ConsoleOptions{
 			Message: "Select an option",

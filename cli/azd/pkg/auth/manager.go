@@ -443,21 +443,43 @@ func (m *Manager) newCredentialFromCloudShell() (azcore.TokenCredential, error) 
 	return NewCloudShellCredential(m.httpClient), nil
 }
 
+// WithOpenUrl defines a custom strategy for browsing to the url.
+type WithOpenUrl func(url string) error
+
+// LoginInteractiveOptions holds the optional inputs for interactive login.
+type LoginInteractiveOptions struct {
+	TenantID     string
+	RedirectPort int
+	WithOpenUrl  WithOpenUrl
+}
+
+// LoginInteractive opens a browser for authenticate the user.
 func (m *Manager) LoginInteractive(
-	ctx context.Context, redirectPort int, tenantID string, scopes []string) (azcore.TokenCredential, error) {
+	ctx context.Context,
+	scopes []string,
+	options *LoginInteractiveOptions) (azcore.TokenCredential, error) {
 	if scopes == nil {
 		scopes = LoginScopes
 	}
-	options := []public.AcquireInteractiveOption{}
-	if redirectPort > 0 {
-		options = append(options, public.WithRedirectURI(fmt.Sprintf("http://localhost:%d", redirectPort)))
+	acquireTokenOptions := []public.AcquireInteractiveOption{}
+	if options == nil {
+		options = &LoginInteractiveOptions{}
 	}
 
-	if tenantID != "" {
-		options = append(options, public.WithTenantID(tenantID))
+	if options.RedirectPort > 0 {
+		acquireTokenOptions = append(
+			acquireTokenOptions, public.WithRedirectURI(fmt.Sprintf("http://localhost:%d", options.RedirectPort)))
 	}
 
-	res, err := m.publicClient.AcquireTokenInteractive(ctx, scopes, options...)
+	if options.TenantID != "" {
+		acquireTokenOptions = append(acquireTokenOptions, public.WithTenantID(options.TenantID))
+	}
+
+	if options.WithOpenUrl != nil {
+		acquireTokenOptions = append(acquireTokenOptions, public.WithOpenURL(options.WithOpenUrl))
+	}
+
+	res, err := m.publicClient.AcquireTokenInteractive(ctx, scopes, acquireTokenOptions...)
 	if err != nil {
 		return nil, err
 	}

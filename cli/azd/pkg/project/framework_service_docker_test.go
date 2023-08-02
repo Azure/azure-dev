@@ -6,6 +6,7 @@ package project
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -14,8 +15,10 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/npm"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/pack"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockarmresources"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
@@ -86,8 +89,16 @@ services:
 	require.NoError(t, err)
 	service := projectConfig.Services["web"]
 
+	temp := t.TempDir()
+	service.Project.Path = temp
+	service.RelativePath = ""
+	err = os.WriteFile(filepath.Join(temp, "Dockerfile"), []byte("FROM node:14"), 0600)
+	require.NoError(t, err)
+
 	npmCli := npm.NewNpmCli(mockContext.CommandRunner)
 	docker := docker.NewDocker(mockContext.CommandRunner)
+	pack := pack.NewPackCliWithPath(mockContext.CommandRunner, "")
+	mockClock := clock.NewMock()
 
 	done := make(chan bool)
 
@@ -95,7 +106,7 @@ services:
 	progressMessages := []string{}
 
 	framework := NewDockerProject(
-		env, docker, NewContainerHelper(env, clock.NewMock(), nil, docker), mockinput.NewMockConsole())
+		env, docker, pack, NewContainerHelper(env, mockClock, nil, docker), mockinput.NewMockConsole(), mockClock)
 	framework.SetSource(internalFramework)
 
 	buildTask := framework.Build(*mockContext.Context, service, nil)
@@ -180,11 +191,18 @@ services:
 
 	npmCli := npm.NewNpmCli(mockContext.CommandRunner)
 	docker := docker.NewDocker(mockContext.CommandRunner)
+	pack := pack.NewPackCliWithPath(mockContext.CommandRunner, "")
+	mockClock := clock.NewMock()
 
 	projectConfig, err := Parse(*mockContext.Context, testProj)
 	require.NoError(t, err)
 
 	service := projectConfig.Services["web"]
+	temp := t.TempDir()
+	service.Project.Path = temp
+	service.RelativePath = ""
+	err = os.WriteFile(filepath.Join(temp, "./Dockerfile.dev"), []byte("FROM node:14"), 0600)
+	require.NoError(t, err)
 
 	done := make(chan bool)
 
@@ -192,7 +210,7 @@ services:
 	status := ""
 
 	framework := NewDockerProject(
-		env, docker, NewContainerHelper(env, clock.NewMock(), nil, docker), mockinput.NewMockConsole())
+		env, docker, pack, NewContainerHelper(env, mockClock, nil, docker), mockinput.NewMockConsole(), mockClock)
 	framework.SetSource(internalFramework)
 
 	buildTask := framework.Build(*mockContext.Context, service, nil)
@@ -233,10 +251,18 @@ func Test_DockerProject_Build(t *testing.T) {
 
 	env := environment.Ephemeral()
 	dockerCli := docker.NewDocker(mockContext.CommandRunner)
+	pack := pack.NewPackCliWithPath(mockContext.CommandRunner, "")
+	mockClock := clock.NewMock()
 	serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
 
+	temp := t.TempDir()
+	serviceConfig.Project.Path = temp
+	serviceConfig.RelativePath = ""
+	err := os.WriteFile(filepath.Join(temp, "./Dockerfile"), []byte("FROM node:14"), osutil.PermissionFile)
+	require.NoError(t, err)
+
 	dockerProject := NewDockerProject(
-		env, dockerCli, NewContainerHelper(env, clock.NewMock(), nil, dockerCli), mockinput.NewMockConsole())
+		env, dockerCli, pack, NewContainerHelper(env, mockClock, nil, dockerCli), mockinput.NewMockConsole(), mockClock)
 	buildTask := dockerProject.Build(*mockContext.Context, serviceConfig, nil)
 	logProgress(buildTask)
 
@@ -245,7 +271,7 @@ func Test_DockerProject_Build(t *testing.T) {
 	require.NotNil(t, result)
 	require.Equal(t, "IMAGE_ID", result.BuildOutputPath)
 	require.Equal(t, "docker", runArgs.Cmd)
-	require.Equal(t, serviceConfig.RelativePath, runArgs.Cwd)
+	require.Equal(t, serviceConfig.Path(), runArgs.Cwd)
 	require.Equal(t,
 		[]string{
 			"build",
@@ -279,10 +305,12 @@ func Test_DockerProject_Package(t *testing.T) {
 
 	env := environment.EphemeralWithValues("test", map[string]string{})
 	dockerCli := docker.NewDocker(mockContext.CommandRunner)
+	pack := pack.NewPackCliWithPath(mockContext.CommandRunner, "")
+	mockClock := clock.NewMock()
 	serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
 
 	dockerProject := NewDockerProject(
-		env, dockerCli, NewContainerHelper(env, clock.NewMock(), nil, dockerCli), mockinput.NewMockConsole())
+		env, dockerCli, pack, NewContainerHelper(env, mockClock, nil, dockerCli), mockinput.NewMockConsole(), mockClock)
 	packageTask := dockerProject.Package(
 		*mockContext.Context,
 		serviceConfig,

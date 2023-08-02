@@ -252,8 +252,10 @@ confirmDetection:
 			if err != nil {
 				return err
 			}
-
-			relWithDot := "./" + rel
+			relWithDot := "."
+			if rel != "." {
+				relWithDot = "./" + rel
+			}
 			i.console.Message(ctx, "  "+"Detected in: "+output.WithHighLightFormat(relWithDot))
 			i.console.Message(ctx, "  "+"Recommended: "+"Azure Container Apps")
 			i.console.Message(ctx, "")

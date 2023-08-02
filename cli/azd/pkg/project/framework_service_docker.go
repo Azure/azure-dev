@@ -9,6 +9,8 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
@@ -18,14 +20,18 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/pack"
+	"github.com/benbjohnson/clock"
 )
 
+const BuilderImage = "mcr.microsoft.com/oryx/builder:cbl-mariner-2.0"
+
 type DockerProjectOptions struct {
-	Path      string           `json:"path"`
-	Context   string           `json:"context"`
-	Platform  string           `json:"platform"`
-	Tag       ExpandableString `json:"tag"`
-	BuildArgs []string         `json:"buildArgs"`
+	Path      string           `json:"path,omitempty"`
+	Context   string           `json:"context,omitempty"`
+	Platform  string           `json:"platform,omitempty"`
+	Tag       ExpandableString `json:"tag,omitempty"`
+	BuildArgs []string         `json:"buildArgs,omitempty"`
 }
 
 type dockerBuildResult struct {
@@ -67,9 +73,11 @@ func (dpr *dockerPackageResult) MarshalJSON() ([]byte, error) {
 type dockerProject struct {
 	env             *environment.Environment
 	docker          docker.Docker
+	pack            pack.PackCli
 	framework       FrameworkService
 	containerHelper *ContainerHelper
 	console         input.Console
+	clock           clock.Clock
 }
 
 // NewDockerProject creates a new instance of a Azd project that
@@ -77,14 +85,18 @@ type dockerProject struct {
 func NewDockerProject(
 	env *environment.Environment,
 	docker docker.Docker,
+	pack pack.PackCli,
 	containerHelper *ContainerHelper,
 	console input.Console,
+	clock clock.Clock,
 ) CompositeFrameworkService {
 	return &dockerProject{
 		env:             env,
 		docker:          docker,
+		pack:            pack,
 		containerHelper: containerHelper,
 		console:         console,
+		clock:           clock,
 	}
 }
 
@@ -154,7 +166,13 @@ func (p *dockerProject) Build(
 			)
 
 			// Build the container
-			task.SetProgress(NewServiceProgress("Building Docker image"))
+
+			path := filepath.Join(serviceConfig.Path(), dockerOptions.Path)
+			_, err := os.Stat(path)
+			if err != nil && !errors.Is(err, os.ErrNotExist) {
+				task.SetError(fmt.Errorf("reading dockerfile: %w", err))
+				return
+			}
 
 			previewerWriter := p.console.ShowPreviewer(ctx,
 				&input.ShowPreviewerOptions{
@@ -162,6 +180,43 @@ func (p *dockerProject) Build(
 					MaxLineCount: 8,
 					Title:        "Docker Output",
 				})
+
+			if errors.Is(err, os.ErrNotExist) {
+				imageName = fmt.Sprintf(
+					"%s-%s-%d",
+					strings.ToLower(serviceConfig.Project.Name),
+					strings.ToLower(serviceConfig.Name),
+					p.clock.Now().Unix(),
+				)
+				task.SetProgress(NewServiceProgress("Building Docker image from source"))
+				err = p.pack.Build(ctx, dockerOptions.Context, BuilderImage, imageName, previewerWriter)
+				p.console.StopPreviewer(ctx)
+				if err != nil {
+					task.SetError(
+						fmt.Errorf(
+							"building container from source: %s at %s: %w", serviceConfig.Name, dockerOptions.Context, err))
+					return
+				}
+
+				imageId, err := p.docker.Inspect(ctx, imageName, "{{.Id}}")
+				if err != nil {
+					task.SetError(err)
+					return
+				}
+				imageId = strings.TrimSpace(imageId)
+
+				task.SetResult(&ServiceBuildResult{
+					Restore:         restoreOutput,
+					BuildOutputPath: imageId,
+					Details: &dockerBuildResult{
+						ImageId:   imageId,
+						ImageName: imageName,
+					},
+				})
+				return
+			}
+			task.SetProgress(NewServiceProgress("Building Docker image"))
+
 			imageId, err := p.docker.Build(
 				ctx,
 				serviceConfig.Path(),
@@ -214,7 +269,7 @@ func (p *dockerProject) Package(
 			log.Printf("tagging image %s as %s", imageId, localTag)
 			task.SetProgress(NewServiceProgress("Tagging Docker image"))
 			if err := p.docker.Tag(ctx, serviceConfig.Path(), imageId, localTag); err != nil {
-				task.SetError(fmt.Errorf("tagging image: %w", err))
+				task.SetError(err)
 				return
 			}
 

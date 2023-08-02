@@ -369,12 +369,15 @@ func openWithDefaultBrowser(ctx context.Context, console input.Console, url stri
 		// /s -> quoted string, use the text within the quotes as it is
 		// Replace `&` for `^&` -> cmd require to scape the & to avoid using it as a command concat
 		Args: []string{
-			"/s", "/c", fmt.Sprintf("\"start %s\"", strings.ReplaceAll(url, "&", "^&")),
+			"/s", "/c", fmt.Sprintf("start %s", strings.ReplaceAll(url, "&", "^&")),
 		},
 	})
 	if err == nil {
 		return
 	}
+	log.Printf(
+		"warning: failed to open browser with cmd: %s\nTrying powershell.", err.Error(),
+	)
 
 	_, err = cmdRunner.Run(ctx, azdExec.RunArgs{
 		Cmd: "powershell.exe",

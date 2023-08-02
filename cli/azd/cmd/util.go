@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/AlecAivazis/survey/v2"
@@ -361,11 +362,14 @@ func openWithDefaultBrowser(ctx context.Context, console input.Console, url stri
 	)
 
 	// wsl manual launch. Trying cmd first, and pwsh second
-	quotedUrlArg := fmt.Sprintf("\"%s\"", url)
 	_, err = cmdRunner.Run(ctx, azdExec.RunArgs{
 		Cmd: "cmd.exe",
+		// cmd notes:
+		// /c -> run command
+		// /s -> quoted string, use the text within the quotes as it is
+		// Replace `&` for `^&` -> cmd require to scape the & to avoid using it as a command concat
 		Args: []string{
-			"/s", "/c", "start", quotedUrlArg,
+			"/s", "/c", fmt.Sprintf("\"start %s\"", strings.ReplaceAll(url, "&", "^&")),
 		},
 	})
 	if err == nil {
@@ -375,7 +379,7 @@ func openWithDefaultBrowser(ctx context.Context, console input.Console, url stri
 	_, err = cmdRunner.Run(ctx, azdExec.RunArgs{
 		Cmd: "powershell.exe",
 		Args: []string{
-			"-NoProfile", "-Command", "Start-Process", quotedUrlArg,
+			"-NoProfile", "-Command", "Start-Process", fmt.Sprintf("\"%s\"", url),
 		},
 	})
 	if err == nil {

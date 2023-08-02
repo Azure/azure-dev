@@ -62,6 +62,7 @@ func main() {
 	cmdErr := cmd.NewRootCmd(false, nil).ExecuteContext(ctx)
 
 	if !isJsonOutput() && runcontext.IsFirstRun() && runcontext.IsRunningInCloudShell() {
+		//nolint:lll
 		fmt.Fprintln(os.Stderr, output.WithWarningFormat(heredoc.Doc(`
 			The Azure Developer CLI collects usage data and sends that usage data to Microsoft in order to help us improve your experience.
 			You can opt-out of telemetry by setting the AZURE_DEV_COLLECT_TELEMETRY environment variable to 'no' in the shell you use.

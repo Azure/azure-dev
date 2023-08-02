@@ -50,7 +50,7 @@ func (t *TestProvider) EnsureEnv(ctx context.Context) error {
 	return EnsureSubscriptionAndLocation(ctx, t.env, t.prompters)
 }
 
-func (p *TestProvider) State(ctx context.Context) (*StateResult, error) {
+func (p *TestProvider) State(ctx context.Context, options *StateOptions) (*StateResult, error) {
 	// TODO: progress, "Looking up deployment"
 
 	state := State{

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/runcontext"
 	appinsightsexporter "github.com/azure/azure-dev/cli/azd/internal/telemetry/appinsights-exporter"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
@@ -65,6 +66,10 @@ func getTelemetryDirectory() (string, error) {
 }
 
 func IsTelemetryEnabled() bool {
+	if runcontext.IsFirstRun() && runcontext.IsRunningInCloudShell() {
+		return false
+	}
+
 	return os.Getenv(collectTelemetryEnvVar) != "no"
 }
 

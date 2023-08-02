@@ -23,8 +23,10 @@ import (
 	"time"
 
 	azcorelog "github.com/Azure/azure-sdk-for-go/sdk/azcore/log"
+	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/runcontext"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/installer"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
@@ -58,6 +60,20 @@ func main() {
 	go fetchLatestVersion(latest)
 
 	cmdErr := cmd.NewRootCmd(false, nil).ExecuteContext(ctx)
+
+	if !isJsonOutput() && runcontext.IsFirstRun() && runcontext.IsRunningInCloudShell() {
+		fmt.Fprintln(os.Stderr, output.WithWarningFormat(heredoc.Doc(`
+			The Azure Developer CLI collects usage data and sends that usage data to Microsoft in order to help us improve your experience.
+			You can opt-out of telemetry by setting the AZURE_DEV_COLLECT_TELEMETRY environment variable to 'no' in the shell you use.
+			
+			Read more about Azure Developer CLI telemetry: https://github.com/Azure/azure-dev#data-collection`)))
+
+		firstRunErr := runcontext.SetupFirstRun()
+		if firstRunErr != nil {
+			log.Printf("failed to setup first run: %v", firstRunErr)
+		}
+	}
+
 	latestVersion, ok := <-latest
 
 	// If we were able to fetch a latest version, check to see if we are up to date and

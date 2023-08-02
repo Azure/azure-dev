@@ -174,49 +174,26 @@ func (p *dockerProject) Build(
 				return
 			}
 
+			if errors.Is(err, os.ErrNotExist) {
+				task.SetProgress(NewServiceProgress("Building Docker image from source"))
+				buildResult, err := p.packBuild(ctx, serviceConfig, dockerOptions, imageName)
+				if err != nil {
+					task.SetError(err)
+					return
+				}
+
+				buildResult.Restore = restoreOutput
+				task.SetResult(buildResult)
+				return
+			}
+
+			task.SetProgress(NewServiceProgress("Building Docker image"))
 			previewerWriter := p.console.ShowPreviewer(ctx,
 				&input.ShowPreviewerOptions{
 					Prefix:       "  ",
 					MaxLineCount: 8,
 					Title:        "Docker Output",
 				})
-
-			if errors.Is(err, os.ErrNotExist) {
-				imageName = fmt.Sprintf(
-					"%s-%s-%d",
-					strings.ToLower(serviceConfig.Project.Name),
-					strings.ToLower(serviceConfig.Name),
-					p.clock.Now().Unix(),
-				)
-				task.SetProgress(NewServiceProgress("Building Docker image from source"))
-				err = p.pack.Build(ctx, dockerOptions.Context, BuilderImage, imageName, previewerWriter)
-				p.console.StopPreviewer(ctx)
-				if err != nil {
-					task.SetError(
-						fmt.Errorf(
-							"building container from source: %s at %s: %w", serviceConfig.Name, dockerOptions.Context, err))
-					return
-				}
-
-				imageId, err := p.docker.Inspect(ctx, imageName, "{{.Id}}")
-				if err != nil {
-					task.SetError(err)
-					return
-				}
-				imageId = strings.TrimSpace(imageId)
-
-				task.SetResult(&ServiceBuildResult{
-					Restore:         restoreOutput,
-					BuildOutputPath: imageId,
-					Details: &dockerBuildResult{
-						ImageId:   imageId,
-						ImageName: imageName,
-					},
-				})
-				return
-			}
-			task.SetProgress(NewServiceProgress("Building Docker image"))
-
 			imageId, err := p.docker.Build(
 				ctx,
 				serviceConfig.Path(),
@@ -244,6 +221,38 @@ func (p *dockerProject) Build(
 			})
 		},
 	)
+}
+
+func (p *dockerProject) packBuild(
+	ctx context.Context,
+	svc *ServiceConfig,
+	dockerOptions DockerProjectOptions,
+	imageName string) (*ServiceBuildResult, error) {
+	previewer := p.console.ShowPreviewer(ctx,
+		&input.ShowPreviewerOptions{
+			Prefix:       "  ",
+			MaxLineCount: 8,
+			Title:        "Docker (pack) Output",
+		})
+	err := p.pack.Build(ctx, dockerOptions.Context, BuilderImage, imageName, previewer)
+	p.console.StopPreviewer(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	imageId, err := p.docker.Inspect(ctx, imageName, "{{.Id}}")
+	if err != nil {
+		return nil, err
+	}
+	imageId = strings.TrimSpace(imageId)
+
+	return &ServiceBuildResult{
+		BuildOutputPath: imageId,
+		Details: &dockerBuildResult{
+			ImageId:   imageId,
+			ImageName: imageName,
+		},
+	}, nil
 }
 
 func (p *dockerProject) Package(

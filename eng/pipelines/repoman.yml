@@ -4,6 +4,7 @@ trigger:
       - generators/
       - templates/
       - eng/pipelines/repoman.yml
+      - gha/
   branches: 
     include:
       - main
@@ -14,6 +15,7 @@ pr:
       - generators/
       - templates/
       - eng/pipelines/repoman.yml
+      - gha/
 
 variables:
   - template: /eng/pipelines/templates/variables/globals.yml

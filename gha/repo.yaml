@@ -1,0 +1,19 @@
+templateApi: 1.0.0
+metadata:
+  type: repo
+  name: gha
+  description: GitHub Action that installs the Azure Developer CLI.
+
+repo:
+  includeProjectAssets: true
+
+  remotes:
+    - name: setup-azd-main
+      url: git@github.com:Azure/setup-azd.git
+    - name: setup-azd-staging
+      url: git@github.com:Azure/setup-azd.git
+      branch: staging
+
+  assets:
+    - from: ./main.ts
+      to: ./src/main.ts

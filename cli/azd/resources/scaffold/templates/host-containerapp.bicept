@@ -112,7 +112,7 @@ resource app 'Microsoft.App/containerApps@2023-04-01-preview' = {
     template: {
       containers: [
         {
-          image: fetchLatestImage.outputs.?containers[0].?image ?? 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
+          image: fetchLatestImage.outputs.?containers[?0].?image ?? 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
           name: 'main'
           env: [
             {

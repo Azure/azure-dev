@@ -7,9 +7,9 @@ Usage
 Flags
         --docs            	: Opens the documentation for azd template source add in your web browser.
     -h, --help            	: Gets help for add.
-    -l, --location string 	: Location of the template source
-    -n, --name string     	: Name of the template source
-    -t, --type string     	: Kind of the template source
+    -l, --location string 	: Location of the template source.
+    -n, --name string     	: Display name of the template source.
+    -t, --type string     	: Kind of the template source.
 
 Global Flags
     -C, --cwd string 	: Sets the current working directory.

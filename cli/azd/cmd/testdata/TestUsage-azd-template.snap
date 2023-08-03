@@ -11,7 +11,7 @@ Usage
 Available Commands
   list  	: Show list of sample azd templates. (Beta)
   show  	: Show details for a given template. (Beta)
-  source	: View and manage template sources (Beta)
+  source	: View and manage template sources. (Beta)
 
 Flags
         --docs 	: Opens the documentation for azd template in your web browser.

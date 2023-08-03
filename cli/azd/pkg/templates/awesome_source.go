@@ -6,10 +6,10 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
+	"github.com/azure/azure-dev/cli/azd/pkg/github"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
 
@@ -64,10 +64,10 @@ func NewAwesomeAzdTemplateSource(
 			return nil, fmt.Errorf("template source is empty")
 		}
 
-		// Trim out Azure-Samples & Github from the repo path since this is the default.
-		repoPath := template.Source
-		repoPath = strings.Replace(repoPath, "https://github.com/Azure-Samples/", "", 1)
-		repoPath = strings.Replace(repoPath, "https://github.com/", "", 1)
+		repoPath, err := github.GetSlugForRemote(template.Source)
+		if err != nil {
+			repoPath = template.Source
+		}
 
 		awesomeAzdTemplates = append(awesomeAzdTemplates, &Template{
 			Name:           template.Title,

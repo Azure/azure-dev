@@ -80,7 +80,7 @@ type templateListFlags struct {
 
 func newTemplateListFlags(cmd *cobra.Command) *templateListFlags {
 	flags := &templateListFlags{}
-	cmd.Flags().StringVarP(&flags.source, "source", "s", "", "Filter templates by source")
+	cmd.Flags().StringVarP(&flags.source, "source", "s", "", "Filters templates by source.")
 
 	return flags
 }
@@ -229,7 +229,7 @@ func getCmdTemplateSourceHelpDescription(*cobra.Command) string {
 func templateSourceActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 	group := root.Add("source", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
-			Short: fmt.Sprintf("View and manage template sources %s", output.WithWarningFormat("(Beta)")),
+			Short: fmt.Sprintf("View and manage template sources. %s", output.WithWarningFormat("(Beta)")),
 		},
 		HelpOptions: actions.ActionHelpOptions{
 			Description: getCmdTemplateSourceHelpDescription,
@@ -341,9 +341,9 @@ type templateSourceAddFlags struct {
 func newTemplateSourceAddFlags(cmd *cobra.Command) *templateSourceAddFlags {
 	flags := &templateSourceAddFlags{}
 
-	cmd.Flags().StringVarP(&flags.kind, "type", "t", "", "Kind of the template source")
-	cmd.Flags().StringVarP(&flags.location, "location", "l", "", "Location of the template source")
-	cmd.Flags().StringVarP(&flags.name, "name", "n", "", "Name of the template source")
+	cmd.Flags().StringVarP(&flags.kind, "type", "t", "", "Kind of the template source.")
+	cmd.Flags().StringVarP(&flags.location, "location", "l", "", "Location of the template source.")
+	cmd.Flags().StringVarP(&flags.name, "name", "n", "", "Display name of the template source.")
 
 	return flags
 }

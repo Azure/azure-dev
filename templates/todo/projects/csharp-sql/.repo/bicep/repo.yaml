@@ -147,8 +147,8 @@ repo:
       to: ./infra
 
     # .devcontainer common (devcontainer.json)
-    - from: ../../../../../common/.devcontainer/devcontainer.json/csharp/azure-dev.yml
-      to: ./.devcontainer/azure-dev.yml
+    - from: ../../../../../common/.devcontainer/devcontainer.json/csharp/devcontainer.json
+      to: ./.devcontainer/devcontainer.json
 
     # Assets common
     - from: ../../../../common/assets

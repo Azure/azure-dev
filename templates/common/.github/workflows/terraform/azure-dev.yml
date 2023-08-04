@@ -34,9 +34,7 @@ jobs:
         uses: azure/CLI@v1
         with:
           inlineScript: |
-            az account show
             az account set --subscription ${{vars.AZURE_SUBSCRIPTION_ID}}
-            az account show
 
       - name: Log in with Azure
         run: |

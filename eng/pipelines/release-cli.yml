@@ -210,6 +210,7 @@ stages:
             displayName: Set shield info
 
           - publish: cli/azd/cover-$(AZURE_DEV_CI_OS)
+            condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true')
             artifact: cover-$(AZURE_DEV_CI_OS)
             displayName: Upload code coverage
 
@@ -415,6 +416,7 @@ stages:
             displayName: Upload generated documentation
 
   - stage: CodeCoverage_Upload
+    condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
     dependsOn: BuildAndTest
     jobs:
     - job: Upload

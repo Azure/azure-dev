@@ -1030,15 +1030,27 @@ stages:
 
       - job: Verify_LinuxPackages
 
+        strategy:
+          matrix:
+            LinuxAMD64: 
+              Pool: azsdk-pool-mms-ubuntu-2004-general
+              OSVmImage:  MMSUbuntu20.04
+              Architecture: amd64
+            LinuxARM64:
+              Pool: azsdk-pool-mms-ubuntu-2004-arm
+              OSVmImage: MMSUbuntu20.04ARM64
+              Architecture: arm64
+            
         pool:
-          name: azsdk-pool-mms-ubuntu-2004-general
+          name: $(Pool)
+          vmImage: $(OSVmImage)
 
         steps: 
           - checkout: self
 
           - task: DownloadPipelineArtifact@2
             inputs:
-              artifact: linux-packages
+              artifact: linux-packages-$(Architecture)
               path: cli/installer/fpm
 
           - task: PowerShell@2

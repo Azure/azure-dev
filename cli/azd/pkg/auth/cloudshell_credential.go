@@ -72,7 +72,10 @@ func (t CloudShellCredential) GetToken(ctx context.Context, options policy.Token
 	}
 
 	if resp.StatusCode != 200 {
-		return azcore.AccessToken{}, fmt.Errorf("invalid CloudShell token API response code: %d, content: %s", resp.StatusCode, responseBytes)
+		return azcore.AccessToken{}, fmt.Errorf(
+			"invalid CloudShell token API response code: %d, content: %s",
+			resp.StatusCode,
+			responseBytes)
 	}
 
 	var tokenObject TokenFromCloudShell

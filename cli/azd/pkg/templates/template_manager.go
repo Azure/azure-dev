@@ -9,6 +9,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"golang.org/x/exp/slices"
 )
 
@@ -76,18 +77,21 @@ func (tm *TemplateManager) GetTemplate(ctx context.Context, path string) (*Templ
 		return nil, fmt.Errorf("failed listing templates: %w", err)
 	}
 
-	for _, template := range allTemplates {
+	matchingIndex := slices.IndexFunc(allTemplates, func(template *Template) bool {
 		absPath, err := Absolute(template.RepositoryPath)
 		if err != nil {
-			panic(err)
+			log.Printf("failed to get absolute path for template '%s': %s", template.RepositoryPath, err.Error())
+			return false
 		}
 
-		if absPath == absTemplatePath {
-			return template, nil
-		}
+		return absPath == absTemplatePath
+	})
+
+	if matchingIndex == -1 {
+		return nil, fmt.Errorf("template with name '%s' was not found, %w", path, ErrTemplateNotFound)
 	}
 
-	return nil, fmt.Errorf("template with name '%s' was not found, %w", path, ErrTemplateNotFound)
+	return allTemplates[matchingIndex], nil
 }
 
 func (tm *TemplateManager) getSources(ctx context.Context, filter sourceFilterPredicate) ([]Source, error) {
@@ -151,9 +155,10 @@ func PromptTemplate(ctx context.Context, message string, console input.Console) 
 	choices := make([]string, 0, len(templates)+1)
 
 	// prepend the minimal template option to guarantee first selection
-	choices = append(choices, "Minimal")
+	choices = append(choices, "Minimal\n")
 	for _, template := range templates {
-		choices = append(choices, fmt.Sprintf("%s (%s)", template.Name, template.RepositoryPath))
+		repoPath := output.WithGrayFormat("(%s)", template.RepositoryPath)
+		choices = append(choices, fmt.Sprintf("%s\n  %s\n", template.Name, repoPath))
 	}
 
 	selected, err := console.Select(ctx, input.ConsoleOptions{

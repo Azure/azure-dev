@@ -146,12 +146,8 @@ repo:
       to: ./infra/modules/apim-api
 
     # .devcontainer common (devcontainer.json)
-    - from: ../../../../../common/.devcontainer/devcontainer.json/java/terraform
-      to: ./.devcontainer
-
-    # .devcontainer common (Dockerfile)
-    - from: ../../../../../common/.devcontainer/Dockerfile/java
-      to: ./.devcontainer
+    - from: ../../../../../common/.devcontainer/devcontainer.json/java/terraform/azure-dev.yml
+      to: ./.devcontainer/azure-dev.yml
 
     # Assets common
     - from: ../../../../common/assets

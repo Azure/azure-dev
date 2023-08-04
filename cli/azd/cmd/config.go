@@ -365,12 +365,11 @@ func (a *configResetAction) Run(ctx context.Context) (*actions.ActionResult, err
 		}
 	}
 
-	if err := a.configManager.Save(config.NewEmptyConfig()); err != nil {
-		a.console.StopSpinner(ctx, spinnerMessage, input.StepFailed)
+	err := a.configManager.Save(config.NewEmptyConfig())
+	a.console.StopSpinner(ctx, spinnerMessage, input.GetStepResultFormat(err))
+	if err != nil {
 		return nil, err
 	}
-
-	a.console.StopSpinner(ctx, spinnerMessage, input.StepDone)
 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{

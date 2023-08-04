@@ -4,10 +4,8 @@ import (
 	"context"
 	"fmt"
 	"log"
-	"net/http"
 	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"golang.org/x/exp/slices"
@@ -141,12 +139,12 @@ func (tm *TemplateManager) createSourcesFromConfig(
 // PromptTemplate asks the user to select a template.
 // An empty Template can be returned if the user selects the minimal template. This corresponds to the minimal azd template.
 // See
-func PromptTemplate(ctx context.Context, message string, console input.Console) (*Template, error) {
-	templateManager, err := NewTemplateManager(NewSourceManager(config.NewUserConfigManager(), http.DefaultClient))
-	if err != nil {
-		return nil, fmt.Errorf("prompting for template: %w", err)
-	}
-
+func PromptTemplate(
+	ctx context.Context,
+	message string,
+	templateManager *TemplateManager,
+	console input.Console,
+) (*Template, error) {
 	templates, err := templateManager.ListTemplates(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("prompting for template: %w", err)

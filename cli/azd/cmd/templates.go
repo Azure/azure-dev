@@ -389,22 +389,20 @@ func (a *templateSourceAddAction) Run(ctx context.Context) (*actions.ActionResul
 		spinnerMessage := "Validating template source"
 		a.console.ShowSpinner(ctx, spinnerMessage, input.Step)
 		_, err := a.sourceManager.CreateSource(ctx, sourceConfig)
+		a.console.StopSpinner(ctx, spinnerMessage, input.GetStepResultFormat(err))
 		if err != nil {
-			a.console.StopSpinner(ctx, spinnerMessage, input.StepFailed)
 			return nil, fmt.Errorf("template source validation failed: %w", err)
 		}
 
-		a.console.StopSpinner(ctx, spinnerMessage, input.StepDone)
 	}
 
 	spinnerMessage := "Saving template source"
 	a.console.ShowSpinner(ctx, spinnerMessage, input.Step)
-	if err := a.sourceManager.Add(ctx, key, sourceConfig); err != nil {
-		a.console.StopSpinner(ctx, spinnerMessage, input.StepFailed)
+	err := a.sourceManager.Add(ctx, key, sourceConfig)
+	a.console.StopSpinner(ctx, spinnerMessage, input.GetStepResultFormat(err))
+	if err != nil {
 		return nil, fmt.Errorf("failed adding template source: %w", err)
 	}
-
-	a.console.StopSpinner(ctx, spinnerMessage, input.StepDone)
 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
@@ -448,12 +446,11 @@ func (a *templateSourceRemoveAction) Run(ctx context.Context) (*actions.ActionRe
 	var key = a.args[0]
 	spinnerMessage := "Removing template source"
 	a.console.ShowSpinner(ctx, spinnerMessage, input.Step)
-	if err := a.sourceManager.Remove(ctx, key); err != nil {
-		a.console.StopSpinner(ctx, spinnerMessage, input.StepFailed)
+	err := a.sourceManager.Remove(ctx, key)
+	a.console.StopSpinner(ctx, spinnerMessage, input.GetStepResultFormat(err))
+	if err != nil {
 		return nil, fmt.Errorf("failed removing template source: %w", err)
 	}
-
-	a.console.StopSpinner(ctx, spinnerMessage, input.StepDone)
 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{

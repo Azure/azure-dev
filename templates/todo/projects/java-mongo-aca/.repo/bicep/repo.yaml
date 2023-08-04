@@ -152,6 +152,8 @@ repo:
     # .devcontainer common (devcontainer.json)
     - from: ../../../../../common/.devcontainer/devcontainer.json/java
       to: ./.devcontainer
+      ignore:
+       - terraform/**/*
 
     # Assets common
     - from: ../../../../common/assets

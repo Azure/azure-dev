@@ -143,10 +143,8 @@ repo:
       to: ./infra
 
     # .devcontainer common (devcontainer.json)
-    - from: ../../../../../common/.devcontainer/devcontainer.json/java
-      to: ./.devcontainer
-      ignore:
-       - terraform/**/*
+    - from: ../../../../../common/.devcontainer/devcontainer.json/java/azure-dev.yml
+      to: ./.devcontainer/devcontainer.json
 
     # Assets common
     - from: ../../../../common/assets

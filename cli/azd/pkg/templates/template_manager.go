@@ -8,6 +8,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/theckman/yacspin"
 	"golang.org/x/exp/slices"
 )
 
@@ -150,13 +151,27 @@ func PromptTemplate(
 		return nil, fmt.Errorf("prompting for template: %w", err)
 	}
 
+	// To support non-interactive unit tests scenarios we only add the line breaks and repo path in interactive TTY sessions.
+	terminalMode := input.GetSpinnerTerminalMode(nil)
+	nonInteractiveMode := yacspin.ForceNoTTYMode | yacspin.ForceDumbTerminalMode
+	isInteractive := terminalMode != nonInteractiveMode
+
 	choices := make([]string, 0, len(templates)+1)
 
 	// prepend the minimal template option to guarantee first selection
-	choices = append(choices, "Minimal\n")
+	minimalChoice := "Minimal"
+	if isInteractive {
+		minimalChoice += "\n"
+	}
+
+	choices = append(choices, minimalChoice)
 	for _, template := range templates {
-		repoPath := output.WithGrayFormat("(%s)", template.RepositoryPath)
-		choices = append(choices, fmt.Sprintf("%s\n  %s\n", template.Name, repoPath))
+		templateChoice := template.Name
+		if isInteractive {
+			repoPath := output.WithGrayFormat("(%s)", template.RepositoryPath)
+			templateChoice += fmt.Sprintf("\n  %s\n", repoPath)
+		}
+		choices = append(choices, templateChoice)
 	}
 
 	selected, err := console.Select(ctx, input.ConsoleOptions{

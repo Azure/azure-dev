@@ -16,6 +16,7 @@ import (
 	"strings"
 	"text/tabwriter"
 	"text/template"
+	"time"
 	"unicode"
 
 	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
@@ -203,11 +204,14 @@ const (
 
 func (i *Initializer) InitializeInfra(
 	ctx context.Context,
-	azdCtx *azdcontext.AzdContext) error {
+	azdCtx *azdcontext.AzdContext,
+	initializeEnv func() error) error {
 	wd := azdCtx.ProjectDirectory()
 	title := "Scanning app code in " + output.WithHighLightFormat(wd)
 	i.console.ShowSpinner(ctx, title, input.Step)
 	projects, err := appdetect.Detect(wd)
+	time.Sleep(300 * time.Millisecond)
+
 	i.console.StopSpinner(ctx, title, input.GetStepResultFormat(err))
 
 	if err != nil {
@@ -229,9 +233,10 @@ func (i *Initializer) InitializeInfra(
 confirmDetection:
 	for {
 		if revision {
-			i.console.MessageUxItem(ctx, &ux.DoneMessage{Message: "Revising app detection summary"})
+			i.console.ShowSpinner(ctx, "Revising app detection summary", input.Step)
+			time.Sleep(300 * time.Millisecond)
+			i.console.StopSpinner(ctx, "Revising app detection summary", input.StepDone)
 			i.console.Message(ctx, "\n"+output.WithBold("Revised app detection summary:")+"\n")
-
 		} else {
 			i.console.Message(ctx, "\n"+output.WithBold("App detection summary:")+"\n")
 		}
@@ -291,9 +296,9 @@ confirmDetection:
 		continueOption, err := i.console.Select(ctx, input.ConsoleOptions{
 			Message: "Select an option",
 			Options: []string{
-				"Configure my app to run on Azure using the recommended services",
-				"Add a language or database azd failed to detect",
-				"Modify or remove a detected language or database",
+				"Continue initializing my app",
+				"Add a language or database",
+				"Modify or remove a language or database",
 			},
 		})
 		if err != nil {
@@ -406,7 +411,7 @@ confirmDetection:
 					if confirm {
 						projects[idx].Language = s.Language
 						projects[idx].Frameworks = s.Frameworks
-						projects[idx].DetectionRule = string(EntryKindManual)
+						projects[idx].DetectionRule = string(EntryKindModified)
 					} else {
 						revision = false
 					}
@@ -416,7 +421,7 @@ confirmDetection:
 			}
 
 			s.Path = filepath.Clean(path)
-			s.DetectionRule = string(EntryKindModified)
+			s.DetectionRule = string(EntryKindManual)
 			projects = append(projects, s)
 			continue confirmDetection
 		case 2:
@@ -553,7 +558,18 @@ confirmDetection:
 	dbPrompt:
 		for {
 			dbName, err := i.console.Prompt(ctx, input.ConsoleOptions{
-				Message: fmt.Sprintf("Input a name for the app database (%s)", database.Display()),
+				Message: fmt.Sprintf("Input the name of the database (%s)", database.Display()),
+				Help: ux.InputHint{
+					Title: "Database name",
+					Text: "Input a name for the database. This database will be created after running " +
+						output.WithBlueFormat("azd provision") + " or " + output.WithBlueFormat("azd up") + "." +
+						"\nYou may skip this step by hitting " + output.WithBold("enter") +
+						", in which case the database will not be created.",
+					Examples: []string{
+						"app-db",
+						"app_db_1",
+					},
+				}.ToString(),
 			})
 			if err != nil {
 				return err
@@ -564,9 +580,11 @@ confirmDetection:
 			}
 
 			if strings.ContainsAny(dbName, " ") {
+				i.console.MessageUxItem(ctx, &ux.WarningMessage{
+					Description: "Database name contains whitespace. This might not be allowed by the database server.",
+				})
 				confirm, err := i.console.Confirm(ctx, input.ConsoleOptions{
-					Message: "Database name contains whitespace. " +
-						"This might not be allowed by the database server. Continue?",
+					Message: fmt.Sprintf("Continue with name '%s'?", dbName),
 				})
 				if err != nil {
 					return err
@@ -576,9 +594,11 @@ confirmDetection:
 					continue dbPrompt
 				}
 			} else if !wellFormedDbNameRegex.MatchString(dbName) {
+				i.console.MessageUxItem(ctx, &ux.WarningMessage{
+					Description: "Database name contains special characters. This might not be allowed by the database server.",
+				})
 				confirm, err := i.console.Confirm(ctx, input.ConsoleOptions{
-					Message: "Database name contains special characters. " +
-						"This might not be allowed by the database server. Continue?",
+					Message: fmt.Sprintf("Continue with name '%s'?", dbName),
 				})
 				if err != nil {
 					return err
@@ -623,32 +643,19 @@ confirmDetection:
 	frontends := []ServiceSpec{}
 	for _, project := range projects {
 		name := filepath.Base(project.Path)
-		var port int
-		for {
-			val, err := i.console.Prompt(ctx, input.ConsoleOptions{
-				Message: "What port does '" + name + "' listen on?",
-			})
-			if err != nil {
-				return err
-			}
-
-			port, err = strconv.Atoi(val)
-			if err != nil {
-				i.console.Message(ctx, "Port must be an integer. Try again or press Ctrl+C to cancel")
-				continue
-			}
-
-			if port < 1 || port > 65535 {
-				i.console.Message(ctx, "Port must be a value between 1 and 65535. Try again or press Ctrl+C to cancel")
-				continue
-			}
-
-			break
-		}
-
 		serviceSpec := ServiceSpec{
 			Name: name,
-			Port: port,
+			Port: -1,
+		}
+
+		if project.Docker == nil {
+			// default buildpack ports:
+			// - python: 80
+			// - other: 8080
+			serviceSpec.Port = 8080
+			if project.Language == appdetect.Python {
+				serviceSpec.Port = 80
+			}
 		}
 
 		for _, framework := range project.Frameworks {
@@ -665,15 +672,42 @@ confirmDetection:
 				serviceSpec.Frontend = &Frontend{}
 			}
 		}
+		spec.Services = append(spec.Services, serviceSpec)
+	}
 
-		if serviceSpec.Frontend == nil && serviceSpec.Port > 0 {
-			backends = append(backends, serviceSpec)
-			serviceSpec.Backend = &Backend{}
-		} else {
-			frontends = append(frontends, serviceSpec)
+	for _, svc := range spec.Services {
+		if svc.Port == -1 {
+			var port int
+			for {
+				val, err := i.console.Prompt(ctx, input.ConsoleOptions{
+					Message: "What port does '" + svc.Name + "' listen on?",
+				})
+				if err != nil {
+					return err
+				}
+
+				port, err = strconv.Atoi(val)
+				if err != nil {
+					i.console.Message(ctx, "Port must be an integer. Try again or press Ctrl+C to cancel")
+					continue
+				}
+
+				if port < 1 || port > 65535 {
+					i.console.Message(ctx, "Port must be a value between 1 and 65535. Try again or press Ctrl+C to cancel")
+					continue
+				}
+
+				break
+			}
+			svc.Port = port
 		}
 
-		spec.Services = append(spec.Services, serviceSpec)
+		if svc.Frontend == nil && svc.Port > 0 {
+			backends = append(backends, svc)
+			svc.Backend = &Backend{}
+		} else {
+			frontends = append(frontends, svc)
+		}
 	}
 
 	// Link services together
@@ -687,31 +721,20 @@ confirmDetection:
 		}
 
 		spec.Parameters = append(spec.Parameters, Parameter{
-			Name:  bicepName(service.Name) + "Exists",
-			Value: fmt.Sprintf("${SERVICE_%s_RESOURCE_EXISTS=false}", strings.ToUpper(service.Name)),
-			Type:  "bool",
+			Name: bicepName(service.Name) + "Exists",
+			Value: fmt.Sprintf("${SERVICE_%s_RESOURCE_EXISTS=false}",
+				strings.ReplaceAll(strings.ToUpper(service.Name), "-", "_")),
+			Type: "bool",
 		})
 	}
 
-	confirm, err := i.console.Select(ctx, input.ConsoleOptions{
-		Message: "Do you want to continue?",
-		Options: []string{
-			"Yes - Generate files to host my app on Azure using the recommended services",
-			"No - Modify detected languages or databases",
-		},
-	})
+	err = initializeEnv()
 	if err != nil {
 		return err
 	}
 
-	if confirm == 1 {
-		// modify
-		panic("modify unimplemented")
-	}
-
 	generateProject := func() error {
-		title := "Generating " + output.WithBlueFormat(azdcontext.ProjectFileName) +
-			" in " + output.WithHighLightFormat(azdCtx.ProjectDirectory())
+		title := "Generating " + output.WithBlueFormat("./"+azdcontext.ProjectFileName)
 		i.console.ShowSpinner(ctx, title, input.Step)
 		defer i.console.StopSpinner(ctx, title, input.GetStepResultFormat(err))
 		config, err := DetectionToConfig(wd, projects)
@@ -734,7 +757,7 @@ confirmDetection:
 	}
 
 	target := filepath.Join(azdCtx.ProjectDirectory(), "infra")
-	title = "Generating Infrastructure as Code files in " + output.WithHighLightFormat(target)
+	title = "Generating Infrastructure as Code files in " + output.WithHighLightFormat("./infra")
 	i.console.ShowSpinner(ctx, title, input.Step)
 	defer i.console.StopSpinner(ctx, title, input.GetStepResultFormat(err))
 
@@ -803,8 +826,7 @@ confirmDetection:
 
 	defer func() {
 		i.console.MessageUxItem(ctx, &ux.DoneMessage{
-			Message: "Generating " + output.WithBlueFormat("init-summary.md") + " in " +
-				output.WithHighLightFormat(azdCtx.ProjectDirectory()),
+			Message: "Generating " + output.WithBlueFormat("./init-summary.md"),
 		})
 	}()
 

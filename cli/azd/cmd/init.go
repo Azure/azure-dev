@@ -144,6 +144,40 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 	}
 
+	initializeEnv := func() (*actions.ActionResult, error) {
+		envName, err := azdCtx.GetDefaultEnvironmentName()
+		if err != nil {
+			return nil, fmt.Errorf("retrieving default environment name: %w", err)
+		}
+
+		if envName != "" {
+			return nil, environment.NewEnvironmentInitError(envName)
+		}
+
+		suggest := environment.CleanName(filepath.Base(wd) + "-dev")
+		if len(suggest) > environment.EnvironmentNameMaxLength {
+			suggest = suggest[len(suggest)-environment.EnvironmentNameMaxLength:]
+		}
+
+		envSpec := environmentSpec{
+			environmentName: i.flags.environmentName,
+			subscription:    i.flags.subscription,
+			location:        i.flags.location,
+			suggest:         suggest,
+		}
+
+		env, err := createEnvironment(ctx, envSpec, azdCtx, i.console)
+		if err != nil {
+			return nil, fmt.Errorf("loading environment: %w", err)
+		}
+
+		if err := azdCtx.SetDefaultEnvironmentName(env.GetEnvName()); err != nil {
+			return nil, fmt.Errorf("saving default environment: %w", err)
+		}
+
+		return nil, nil
+	}
+
 	header := "New project initialized!"
 	followUp := heredoc.Docf(`
 	You can view the template code in your directory: %s
@@ -152,12 +186,15 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		output.WithLinkFormat("%s", "https://aka.ms/azd-third-party-code-notice"))
 	switch initTypeSelect {
 	case initInfra:
-		header = "Your app is now ready for the cloud!"
+		header = "Your app is ready for the cloud!"
 		followUp = "You can provision and deploy your app to Azure by running the " + output.WithBlueFormat("azd up") +
 			" command in this directory. Services may incur usage charges when provisioned or deployed." +
-			" For more information on what was added and how to proceed, see " + output.WithBlueFormat("init-summary.md") +
+			" For more information on what was added and how to proceed, see " + output.WithBlueFormat("./init-summary.md") +
 			" created."
-		err := i.repoInitializer.InitializeInfra(ctx, azdCtx)
+		err := i.repoInitializer.InitializeInfra(ctx, azdCtx, func() error {
+			_, err := initializeEnv()
+			return err
+		})
 		if err != nil {
 			return nil, err
 		}
@@ -166,40 +203,19 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		if err != nil {
 			return nil, err
 		}
+
+		_, err = initializeEnv()
+		if err != nil {
+			return nil, err
+		}
 	case initEnvironment:
+		_, err = initializeEnv()
+		if err != nil {
+			return nil, err
+		}
 	// no-opt
 	default:
 		panic("unhandled init type")
-	}
-
-	envName, err := azdCtx.GetDefaultEnvironmentName()
-	if err != nil {
-		return nil, fmt.Errorf("retrieving default environment name: %w", err)
-	}
-
-	if envName != "" {
-		return nil, environment.NewEnvironmentInitError(envName)
-	}
-
-	suggest := environment.CleanName(filepath.Base(wd) + "-dev")
-	if len(suggest) > environment.EnvironmentNameMaxLength {
-		suggest = suggest[len(suggest)-environment.EnvironmentNameMaxLength:]
-	}
-
-	envSpec := environmentSpec{
-		environmentName: i.flags.environmentName,
-		subscription:    i.flags.subscription,
-		location:        i.flags.location,
-		suggest:         suggest,
-	}
-
-	env, err := createEnvironment(ctx, envSpec, azdCtx, i.console)
-	if err != nil {
-		return nil, fmt.Errorf("loading environment: %w", err)
-	}
-
-	if err := azdCtx.SetDefaultEnvironmentName(env.GetEnvName()); err != nil {
-		return nil, fmt.Errorf("saving default environment: %w", err)
 	}
 
 	return &actions.ActionResult{

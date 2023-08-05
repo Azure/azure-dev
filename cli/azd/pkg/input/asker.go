@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/AlecAivazis/survey/v2"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
 type Asker func(p survey.Prompt, response interface{}) error
@@ -107,6 +108,8 @@ func askOnePrompt(p survey.Prompt, response interface{}, isTerminal bool, stdout
 		// use blue question mark for all questions
 		opts = append(opts, survey.WithIcons(func(icons *survey.IconSet) {
 			icons.Question.Format = "blue"
+			icons.Help.Format = "reset"
+			icons.Help.Text = "\n" + output.WithBold("Hint:")
 		}))
 
 		return survey.AskOne(p, response, opts...)

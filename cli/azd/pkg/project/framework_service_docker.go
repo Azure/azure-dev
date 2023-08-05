@@ -24,7 +24,7 @@ import (
 	"github.com/benbjohnson/clock"
 )
 
-const BuilderImage = "mcr.microsoft.com/oryx/builder:cbl-mariner-2.0"
+const BuilderImage = "weilimtest.azurecr.io/capps/builder:cbl-mariner-2.0"
 
 type DockerProjectOptions struct {
 	Path      string           `json:"path,omitempty"`

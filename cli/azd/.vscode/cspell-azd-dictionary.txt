@@ -42,6 +42,7 @@ bicept
 BOOLSLICE
 BUILDID
 BUILDNUMBER
+buildpack
 buildpacks
 cflags
 circleci
@@ -165,3 +166,5 @@ westus2
 wireinject
 yacspin
 zerr
+weilimtest
+capps

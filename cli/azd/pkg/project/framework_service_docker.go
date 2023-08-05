@@ -234,7 +234,7 @@ func (p *dockerProject) packBuild(
 			MaxLineCount: 8,
 			Title:        "Docker (pack) Output",
 		})
-	err := p.pack.Build(ctx, dockerOptions.Context, BuilderImage, imageName, previewer)
+	err := p.pack.Build(ctx, filepath.Join(svc.Path(), dockerOptions.Context), BuilderImage, imageName, previewer)
 	p.console.StopPreviewer(ctx)
 	if err != nil {
 		return nil, err

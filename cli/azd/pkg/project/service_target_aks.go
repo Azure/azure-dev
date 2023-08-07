@@ -545,7 +545,7 @@ func (t *aksTarget) getIngressEndpoints(
 		if ingress.Spec.Rules[index].Host == nil {
 			baseUrl = fmt.Sprintf("%s://%s", protocol, resource.Ip)
 		} else {
-			baseUrl = fmt.Sprintf("%s://%s", *ingress.Spec.Rules[index].Host, resource.Ip)
+			baseUrl = fmt.Sprintf("%s://%s", protocol, *ingress.Spec.Rules[index].Host)
 		}
 
 		endpointUrl, err := url.JoinPath(baseUrl, serviceConfig.K8s.Ingress.RelativePath)

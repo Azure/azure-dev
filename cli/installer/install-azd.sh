@@ -113,9 +113,8 @@ get_architecture() {
     if [ "$architecture_raw" = "x86_64" ]; then
         echo 'amd64';
         return;
-    elif [ "$architecture_raw" = "arm64" ] && [ "$platform" = 'darwin' ]; then
-        # In the case of Apple Silicon use the existing ARM64 environment
-        echo 'amd64';
+    elif [ "$architecture_raw" = "arm64" ]; then
+        echo "$architecture_raw";
         return;
     else
         say_error "Architecture not supported: $architecture_raw on platform: $platform"

@@ -104,6 +104,7 @@ type AskerConsole struct {
 	writer     io.Writer
 	formatter  output.Formatter
 	isTerminal bool
+	noPrompt   bool
 
 	spinner                 *yacspin.Spinner
 	spinnerTerminalMode     yacspin.TerminalMode
@@ -509,6 +510,10 @@ func (c *AskerConsole) Confirm(ctx context.Context, options ConsoleOptions) (boo
 
 // wait until the next enter
 func (c *AskerConsole) WaitForEnter() {
+	if c.noPrompt {
+		return
+	}
+
 	inputScanner := bufio.NewScanner(c.handles.Stdin)
 	if scan := inputScanner.Scan(); !scan {
 		if err := inputScanner.Err(); err != nil {
@@ -549,6 +554,7 @@ func NewConsole(noPrompt bool, isTerminal bool, w io.Writer, handles ConsoleHand
 		isTerminal:    isTerminal,
 		consoleWidth:  getConsoleWidth(),
 		initialWriter: w,
+		noPrompt:      noPrompt,
 	}
 }
 

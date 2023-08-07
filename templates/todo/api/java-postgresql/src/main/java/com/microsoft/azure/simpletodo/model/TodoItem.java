@@ -95,8 +95,7 @@ public class TodoItem {
      * Get description
      * @return description
      */
-    @NotNull
-    @Schema(name = "description", required = true)
+    @Schema(name = "description", required = false)
     public String getDescription() {
         return description;
     }

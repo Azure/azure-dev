@@ -5,6 +5,7 @@ Usage
   azd auth logout [flags]
 
 Flags
+        --docs 	: Opens the documentation for azd auth logout in your web browser.
     -h, --help 	: Gets help for logout.
 
 Global Flags

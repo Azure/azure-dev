@@ -12,6 +12,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/containerapps"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -123,7 +124,6 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 				DebugLogging: rootOptions.EnableDebugLogging,
 			})
 	})
-	container.RegisterSingleton(input.NewConsoleMessaging)
 
 	client := createHttpClient()
 	container.RegisterSingleton(func() httputil.HttpClient { return client })
@@ -276,6 +276,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(account.NewSubscriptionsManager)
 	container.RegisterSingleton(account.NewSubscriptionCredentialProvider)
 	container.RegisterSingleton(azcli.NewManagedClustersService)
+	container.RegisterSingleton(azcli.NewAdService)
 	container.RegisterSingleton(azcli.NewContainerRegistryService)
 	container.RegisterSingleton(containerapps.NewContainerAppService)
 	container.RegisterSingleton(project.NewContainerHelper)
@@ -299,6 +300,8 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			EnableTelemetry: rootOptions.EnableTelemetry,
 		})
 	})
+	container.RegisterSingleton(azapi.NewDeployments)
+	container.RegisterSingleton(azapi.NewDeploymentOperations)
 	container.RegisterSingleton(bicep.NewBicepCli)
 	container.RegisterSingleton(docker.NewDocker)
 	container.RegisterSingleton(dotnet.NewDotNetCli)

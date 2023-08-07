@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -16,6 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -158,6 +160,14 @@ func newEnvSelectAction(azdCtx *azdcontext.AzdContext, args []string) actions.Ac
 }
 
 func (e *envSelectAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	_, err := environment.GetEnvironment(e.azdCtx, e.args[0])
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, fmt.Errorf(`environment '%s' does not exist. You can create it with "azd env new %s"`,
+			e.args[0], e.args[0])
+	} else if err != nil {
+		return nil, fmt.Errorf("ensuring environment exists: %w", err)
+	}
+
 	if err := e.azdCtx.SetDefaultEnvironmentName(e.args[0]); err != nil {
 		return nil, fmt.Errorf("setting default environment: %w", err)
 	}
@@ -247,7 +257,7 @@ func newEnvNewFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *
 func newEnvNewCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "new <environment>",
-		Short: "Create a new environment.",
+		Short: "Create a new environment and set it as the default.",
 	}
 	cmd.Args = cobra.MaximumNArgs(1)
 
@@ -300,11 +310,14 @@ func (en *envNewAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 }
 
 type envRefreshFlags struct {
+	hint   string
 	global *internal.GlobalCommandOptions
 	envFlag
 }
 
 func (er *envRefreshFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+	local.StringVarP(&er.hint, "hint", "", "", "Hint to help identify the environment to refresh")
+
 	er.envFlag.Bind(local, global)
 	er.global = global
 }
@@ -386,6 +399,11 @@ func newEnvRefreshAction(
 }
 
 func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	// Command title
+	ef.console.MessageUxItem(ctx, &ux.MessageTitle{
+		Title: fmt.Sprintf("Refreshing environment %s (azd env refresh)", ef.env.GetEnvName()),
+	})
+
 	if err := ef.projectManager.Initialize(ctx, ef.projectConfig); err != nil {
 		return nil, err
 	}
@@ -394,7 +412,16 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 		return nil, fmt.Errorf("initializing provisioning manager: %w", err)
 	}
 
-	getStateResult, err := ef.provisionManager.State(ctx)
+	// If resource group is defined within the project but not in the environment then
+	// add it to the environment to support BYOI lookup scenarios like ADE
+	// Infra providers do not currently have access to project configuration
+	projectResourceGroup, _ := ef.projectConfig.ResourceGroupName.Envsubst(ef.env.Getenv)
+	if _, has := ef.env.LookupEnv(environment.ResourceGroupEnvVarName); !has && projectResourceGroup != "" {
+		ef.env.DotenvSet(environment.ResourceGroupEnvVarName, projectResourceGroup)
+	}
+
+	stateOptions := provisioning.NewStateOptions(ef.flags.hint)
+	getStateResult, err := ef.provisionManager.State(ctx, stateOptions)
 	if err != nil {
 		return nil, fmt.Errorf("getting deployment: %w", err)
 	}
@@ -402,8 +429,6 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 	if err := provisioning.UpdateEnvironment(ef.env, getStateResult.State.Outputs); err != nil {
 		return nil, err
 	}
-
-	ef.console.Message(ctx, "Environments setting refresh completed")
 
 	if ef.formatter.Kind() == output.JsonFormat {
 		err = ef.formatter.Format(provisioning.NewEnvRefreshResultFromState(getStateResult.State), ef.writer, nil)
@@ -426,7 +451,12 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 		}
 	}
 
-	return nil, nil
+	return &actions.ActionResult{
+		Message: &actions.ResultMessage{
+			Header:   "Environment refresh completed",
+			FollowUp: fmt.Sprintf("View environment variables at %s", output.WithHyperlink(ef.env.Path(), ef.env.Path())),
+		},
+	}, nil
 }
 
 func newEnvGetValuesFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *envGetValuesFlags {

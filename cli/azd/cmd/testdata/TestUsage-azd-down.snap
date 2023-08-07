@@ -5,6 +5,7 @@ Usage
   azd down [flags]
 
 Flags
+        --docs               	: Opens the documentation for azd down in your web browser.
     -e, --environment string 	: The name of the environment to use.
         --force              	: Does not require confirmation before it deletes resources.
     -h, --help               	: Gets help for down.

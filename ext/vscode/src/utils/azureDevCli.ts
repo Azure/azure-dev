@@ -54,7 +54,7 @@ export function scheduleAzdVersionCheck(): void {
     const oneSecond = 1 * 1000;
     // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
     const minimumSupportedVersion = semver.coerce('0.8.0')!;
-    
+
     setTimeout(async () => {
         const versionResult = await getAzdVersion();
 
@@ -241,4 +241,9 @@ function azdNotInstalledUserChoices(): AzExtErrorButton[] {
         }
     ];
     return choices;
+}
+
+// isAzdCommand returns true if this is the command to run azd.
+export function isAzdCommand(command: string): boolean {
+    return command === getAzDevInvocation()[0] || command.startsWith(`${getAzDevInvocation()[0]} `);
 }

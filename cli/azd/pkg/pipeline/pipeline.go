@@ -12,7 +12,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 )
 
 // subareaProvider defines the base behavior from any pipeline provider
@@ -45,8 +44,12 @@ type gitRepositoryDetails struct {
 	gitProjectPath string
 	//Indicates if the repo was successfully pushed a remote
 	pushStatus bool
-	// remote
+	// remote is the git-remote, which can be in ssh or https format
 	remote string
+	// url holds the remote url regardless if the remote is an ssh or https string
+	url string
+	// branch
+	branch string
 
 	details interface{}
 }
@@ -70,15 +73,18 @@ type ScmProvider interface {
 		branchName string) (bool, error)
 	//Hook function to allow SCM providers to handle scenarios after the git push is complete
 	GitPush(ctx context.Context,
-		gitCli git.GitCli,
 		gitRepo *gitRepositoryDetails,
 		remoteName string,
 		branchName string) error
 }
 
-type CiPipeline struct {
-	name   string
-	remote string
+// CiPipeline provides the functional contract for a CI/CD provider to define getting the pipeline name and the url to
+// access the pipeline.
+type CiPipeline interface {
+	// name returns a string label that represents the pipeline identifier.
+	name() string
+	// url provides the web address to access the pipeline.
+	url() string
 }
 
 // CiProvider defines the base behavior for a continuous integration provider.
@@ -90,7 +96,7 @@ type CiProvider interface {
 		ctx context.Context,
 		repoDetails *gitRepositoryDetails,
 		provisioningProvider provisioning.Options,
-	) (*CiPipeline, error)
+	) (CiPipeline, error)
 	// configureConnection use the credential to set up the connection from the pipeline
 	// to Azure
 	configureConnection(

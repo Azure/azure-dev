@@ -12,12 +12,13 @@ Usage
 Available Commands
   get-values	: Get all environment values.
   list      	: List environments.
-  new       	: Create a new environment.
+  new       	: Create a new environment and set it as the default.
   refresh   	: Refresh environment settings by using information from a previous infrastructure provision.
   select    	: Set the default environment.
   set       	: Manage your environment settings.
 
 Flags
+        --docs 	: Opens the documentation for azd env in your web browser.
     -h, --help 	: Gets help for env.
 
 Global Flags

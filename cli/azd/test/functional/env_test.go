@@ -100,6 +100,11 @@ func Test_CLI_Env_Management(t *testing.T) {
 	require.Len(t, environmentList, 2)
 	requireIsDefault(t, environmentList, envName)
 
+	// Verify that trying to select an environment which does not exist fails.
+	res, err := cli.RunCommand(ctx, "env", "select", "does-not-exist")
+	require.Error(t, err)
+	require.Contains(t, res.Stdout, "environment 'does-not-exist' does not exist")
+
 	// Verify that running refresh with an explicit env name from an argument and from a flag leads to an error.
 	_, err = cli.RunCommand(context.Background(), "env", "refresh", "-e", "from-flag", "from-arg")
 	require.Error(t, err)

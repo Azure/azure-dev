@@ -120,6 +120,10 @@ func (r *commandRunner) Run(ctx context.Context, args RunArgs) (RunResult, error
 		cmd.Stdout = &stdout
 		cmd.Stderr = &stderr
 
+		if args.StdOut != nil {
+			cmd.Stdout = io.MultiWriter(args.StdOut, &stdout)
+		}
+
 		if args.Stderr != nil {
 			cmd.Stderr = io.MultiWriter(args.Stderr, &stderr)
 		}

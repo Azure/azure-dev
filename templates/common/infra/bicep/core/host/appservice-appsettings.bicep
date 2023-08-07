@@ -2,6 +2,7 @@
 param name string
 
 @description('The app settings to be applied to the app service')
+@secure()
 param appSettings object
 
 resource appService 'Microsoft.Web/sites@2022-03-01' existing = {

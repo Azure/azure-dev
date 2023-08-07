@@ -1,9 +1,10 @@
 package kubectl
 
 import (
-	"bytes"
 	"context"
+	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -41,15 +42,10 @@ func Test_ApplyFiles(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	buf := new(bytes.Buffer)
-	_, err = buf.ReadFrom(runArgs.StdIn)
-	require.NoError(t, err)
-
 	require.NoError(t, err)
 	require.True(t, ran)
 	require.Equal(t, "kubectl", runArgs.Cmd)
-	require.Equal(t, "yaml", buf.String())
-	require.Equal(t, []string{"apply", "-f", "-", "-n", "test-namespace"}, runArgs.Args)
+	require.Equal(t, []string{"apply", "-f", filepath.Join(tempDir, "test.yaml"), "-n", "test-namespace"}, runArgs.Args)
 }
 
 func Test_Command_Args(t *testing.T) {
@@ -60,12 +56,24 @@ func Test_Command_Args(t *testing.T) {
 	cli := NewKubectl(mockContext.CommandRunner)
 
 	tests := map[string]*kubeCliTestConfig{
-		"apply-with-input": {
+		"apply-with-stdin": {
 			mockCommandPredicate: "kubectl apply -f -",
 			expectedCmd:          "kubectl",
 			expectedArgs:         []string{"apply", "-f", "-", "-n", "test-namespace"},
 			testFn: func() error {
-				_, err := cli.ApplyWithInput(*mockContext.Context, "input", &KubeCliFlags{
+				_, err := cli.ApplyWithStdIn(*mockContext.Context, "input", &KubeCliFlags{
+					Namespace: "test-namespace",
+				})
+
+				return err
+			},
+		},
+		"apply-with-file": {
+			mockCommandPredicate: "kubectl apply -f",
+			expectedCmd:          "kubectl",
+			expectedArgs:         []string{"apply", "-f", "file.yaml", "-n", "test-namespace"},
+			testFn: func() error {
+				_, err := cli.ApplyWithFile(*mockContext.Context, "file.yaml", &KubeCliFlags{
 					Namespace: "test-namespace",
 				})
 
@@ -101,31 +109,6 @@ func Test_Command_Args(t *testing.T) {
 					DryRun: DryRunTypeClient,
 					Output: OutputTypeYaml,
 				})
-
-				return err
-			},
-		},
-		"create-secret": {
-			mockCommandPredicate: "kubectl create secret generic",
-			expectedCmd:          "kubectl",
-			expectedArgs: []string{
-				"create",
-				"secret",
-				"generic",
-				"secret-name",
-				"--from-literal=foo=bar",
-				"-n",
-				"test-namespace",
-			},
-			testFn: func() error {
-				_, err := cli.CreateSecretGenericFromLiterals(
-					*mockContext.Context,
-					"secret-name",
-					[]string{"foo=bar"},
-					&KubeCliFlags{
-						Namespace: "test-namespace",
-					},
-				)
 
 				return err
 			},
@@ -213,4 +196,60 @@ func TestGetClientVersion(t *testing.T) {
 	ver, err := (cli.(*kubectlCli)).getClientVersion(context.Background())
 	require.NoError(t, err)
 	require.Equal(t, "v1.25.4", ver)
+}
+
+func Test_Apply_Template(t *testing.T) {
+	var runArgs exec.RunArgs
+
+	mockContext := mocks.NewMockContext(context.Background())
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "kubectl apply")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		runArgs = args
+		return exec.NewRunResult(0, "", ""), nil
+	})
+
+	t.Run("RawYaml", func(t *testing.T) {
+		cli := NewKubectl(mockContext.CommandRunner)
+		flags := &KubeCliFlags{
+			Namespace: "test",
+		}
+
+		err := cli.Apply(
+			*mockContext.Context,
+			"../../../test/testdata/k8s/apply/raw",
+			flags,
+		)
+
+		require.NoError(t, err)
+	})
+
+	t.Run("TemplateYaml", func(t *testing.T) {
+		cli := NewKubectl(mockContext.CommandRunner)
+		env := map[string]string{
+			"SERVICE_API_IMAGE_NAME":       "test.azureacr.io/repo/service:latest",
+			"AZURE_AKS_IDENTITY_CLIENT_ID": "EXAMPLE_CLIENT_ID",
+		}
+		cli.SetEnv(env)
+
+		flags := &KubeCliFlags{
+			Namespace: "test",
+		}
+
+		err := cli.Apply(
+			*mockContext.Context,
+			"../../../test/testdata/k8s/apply/templates",
+			flags,
+		)
+
+		require.NoError(t, err)
+
+		builder := strings.Builder{}
+		_, err = io.Copy(&builder, runArgs.StdIn)
+		require.NoError(t, err)
+
+		yaml := builder.String()
+		require.Contains(t, yaml, "test.azureacr.io/repo/service:latest")
+		require.Contains(t, yaml, "EXAMPLE_CLIENT_ID")
+	})
 }

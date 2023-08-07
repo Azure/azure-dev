@@ -6,6 +6,7 @@ param allowedOrigins array = []
 param appCommandLine string = ''
 param applicationInsightsName string = ''
 param appServicePlanId string
+@secure()
 param appSettings object = {}
 param keyVaultName string
 param serviceName string = 'api'

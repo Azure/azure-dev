@@ -648,7 +648,7 @@ confirmDetection:
 			Port: -1,
 		}
 
-		if project.Docker == nil {
+		if project.Docker == nil || project.Docker.Path == "" {
 			// default buildpack ports:
 			// - python: 80
 			// - other: 8080
@@ -675,12 +675,12 @@ confirmDetection:
 		spec.Services = append(spec.Services, serviceSpec)
 	}
 
-	for _, svc := range spec.Services {
-		if svc.Port == -1 {
+	for idx := range spec.Services {
+		if spec.Services[idx].Port == -1 {
 			var port int
 			for {
 				val, err := i.console.Prompt(ctx, input.ConsoleOptions{
-					Message: "What port does '" + svc.Name + "' listen on?",
+					Message: "What port does '" + spec.Services[idx].Name + "' listen on?",
 				})
 				if err != nil {
 					return err
@@ -699,14 +699,14 @@ confirmDetection:
 
 				break
 			}
-			svc.Port = port
+			spec.Services[idx].Port = port
 		}
 
-		if svc.Frontend == nil && svc.Port > 0 {
-			backends = append(backends, svc)
-			svc.Backend = &Backend{}
+		if spec.Services[idx].Frontend == nil && spec.Services[idx].Port != 0 {
+			backends = append(backends, spec.Services[idx])
+			spec.Services[idx].Backend = &Backend{}
 		} else {
-			frontends = append(frontends, svc)
+			frontends = append(frontends, spec.Services[idx])
 		}
 	}
 

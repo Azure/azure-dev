@@ -1,4 +1,4 @@
-package runcontext
+package telemetry
 
 import (
 	"errors"
@@ -15,7 +15,7 @@ import (
 // if this is the first run of the CLI.
 const cFirstRunFileName = "first-run"
 
-func IsFirstRun() bool {
+func isFirstRun() bool {
 	firstRunFilePath, err := getFirstRunFilePath()
 	if err != nil {
 		log.Printf("failed to get first run file path: %v", err)

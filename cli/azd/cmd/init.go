@@ -189,7 +189,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		header = "Your app is ready for the cloud!"
 		followUp = "You can provision and deploy your app to Azure by running the " + output.WithBlueFormat("azd up") +
 			" command in this directory. Services may incur usage charges when provisioned or deployed." +
-			" For more information on what was added and how to proceed, see " + output.WithBlueFormat("./init-summary.md") +
+			" For more information on what was added and how to proceed, see " + output.WithBlueFormat("./next-steps.md") +
 			" created."
 		err := i.repoInitializer.InitializeInfra(ctx, azdCtx, func() error {
 			_, err := initializeEnv()

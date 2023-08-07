@@ -27,11 +27,11 @@ import (
 const BuilderImage = "weilimtest.azurecr.io/capps/builder:cbl-mariner-2.0"
 
 type DockerProjectOptions struct {
-	Path      string           `json:"path,omitempty"`
-	Context   string           `json:"context,omitempty"`
-	Platform  string           `json:"platform,omitempty"`
-	Tag       ExpandableString `json:"tag,omitempty"`
-	BuildArgs []string         `json:"buildArgs,omitempty"`
+	Path      string           `yaml:"path,omitempty" json:"path,omitempty"`
+	Context   string           `yaml:"context,omitempty" json:"context,omitempty"`
+	Platform  string           `yaml:"platform,omitempty" json:"platform,omitempty"`
+	Tag       ExpandableString `yaml:"tag,omitempty" json:"tag,omitempty"`
+	BuildArgs []string         `yaml:"buildArgs,omitempty" json:"buildArgs,omitempty"`
 }
 
 type dockerBuildResult struct {

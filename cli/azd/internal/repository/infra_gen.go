@@ -819,17 +819,6 @@ confirmDetection:
 		return err
 	}
 
-	err = execute(t, "init-summary.mdt", spec, filepath.Join(staging, "init-summary.md"))
-	if err != nil {
-		return err
-	}
-
-	defer func() {
-		i.console.MessageUxItem(ctx, &ux.DoneMessage{
-			Message: "Generating " + output.WithBlueFormat("./init-summary.md"),
-		})
-	}()
-
 	err = execute(t, "main.parameters.json", spec, filepath.Join(staging, "main.parameters.json"))
 	if err != nil {
 		return err
@@ -842,6 +831,15 @@ confirmDetection:
 	if err := copy.Copy(staging, target); err != nil {
 		return fmt.Errorf("copying contents from temp staging directory: %w", err)
 	}
+
+	err = execute(t, "init-summary.mdt", spec, filepath.Join(azdCtx.ProjectDirectory(), "next-steps.md"))
+	if err != nil {
+		return err
+	}
+
+	i.console.MessageUxItem(ctx, &ux.DoneMessage{
+		Message: "Generating " + output.WithBlueFormat("./next-steps.md"),
+	})
 
 	return nil
 }

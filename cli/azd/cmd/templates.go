@@ -371,7 +371,7 @@ func newTemplateSourceAddAction(
 
 func (a *templateSourceAddAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	a.console.MessageUxItem(ctx, &ux.MessageTitle{
-		Title: "Add azd template source (azd template source add)",
+		Title: "Add template source (azd template source add)",
 	})
 
 	var key = a.args[0]
@@ -440,7 +440,7 @@ func newTemplateSourceRemoveAction(
 
 func (a *templateSourceRemoveAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	a.console.MessageUxItem(ctx, &ux.MessageTitle{
-		Title: "Remove azd template source (azd template source remove)",
+		Title: "Remove template source (azd template source remove)",
 	})
 
 	var key = a.args[0]

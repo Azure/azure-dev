@@ -340,7 +340,7 @@ func newConfigResetAction(
 // Executes the `azd config reset` action
 func (a *configResetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	a.console.MessageUxItem(ctx, &ux.MessageTitle{
-		Title: "Reset azd configuration (azd config reset)",
+		Title: "Reset configuration (azd config reset)",
 	})
 
 	spinnerMessage := "Resetting azd configuration"

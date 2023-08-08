@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
@@ -56,12 +57,9 @@ func NewAwesomeAzdTemplateSource(
 
 	awesomeAzdTemplates := []*Template{}
 	for _, template := range rawAwesomeAzdTemplates {
-		if template.Title == "" {
-			return nil, fmt.Errorf("template title is empty")
-		}
-
-		if template.Source == "" {
-			return nil, fmt.Errorf("template source is empty")
+		if template.Title == "" || template.Source == "" {
+			log.Println("skipping template. missing required attributes")
+			continue
 		}
 
 		repoPath, err := github.GetSlugForRemote(template.Source)

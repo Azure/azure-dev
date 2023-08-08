@@ -117,7 +117,7 @@ func (sm *sourceManager) Get(ctx context.Context, key string) (*SourceConfig, er
 		}
 	}
 
-	return nil, fmt.Errorf("template source '%s' not found, %w", key, ErrSourceNotFound)
+	return nil, fmt.Errorf("%w, '%s'", ErrSourceNotFound, key)
 }
 
 // Add adds a new template source at the specified key and configuration

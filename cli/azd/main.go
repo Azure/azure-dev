@@ -23,7 +23,6 @@ import (
 	"time"
 
 	azcorelog "github.com/Azure/azure-sdk-for-go/sdk/azcore/log"
-	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
@@ -60,18 +59,9 @@ func main() {
 
 	cmdErr := cmd.NewRootCmd(false, nil).ExecuteContext(ctx)
 
-	if !isJsonOutput() && telemetry.ShouldDisplayTelemetryNotification() {
-		//nolint:lll
-		fmt.Fprintln(os.Stderr, output.WithWarningFormat(heredoc.Doc(`
-			The Azure Developer CLI collects usage data and sends that usage data to Microsoft in order to help us improve your experience.
-			You can opt-out of telemetry by setting the AZURE_DEV_COLLECT_TELEMETRY environment variable to 'no' in the shell you use.
-			
-			Read more about Azure Developer CLI telemetry: https://github.com/Azure/azure-dev#data-collection
-			`)))
-
-		firstRunErr := telemetry.SetupFirstRun()
-		if firstRunErr != nil {
-			log.Printf("failed to setup first run: %v", firstRunErr)
+	if !isJsonOutput() {
+		if firstNotice := telemetry.FirstNotice(); firstNotice != "" {
+			fmt.Fprintln(os.Stderr, output.WithWarningFormat(firstNotice))
 		}
 	}
 

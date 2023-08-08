@@ -11,7 +11,6 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
-	"strconv"
 	"sync"
 	"time"
 
@@ -66,51 +65,14 @@ func getTelemetryDirectory() (string, error) {
 	return telemetryDir, nil
 }
 
-// The user can opt into telemetry by specifying "yes" for the
-// AZURE_CORE_COLLECT_TELEMETRY environment variable.
-func isOptedInEnv() bool {
-	if val, has := os.LookupEnv(collectTelemetryEnvVar); has {
-		if optIn, err := strconv.ParseBool(val); err == nil && optIn {
-			log.Printf("user has opted into telemetry")
-			return true
-		}
-	}
-
-	return false
-}
-
-func isOptedOutInEnv() bool {
-	return os.Getenv(collectTelemetryEnvVar) != "no"
-}
-
-func ShouldDisplayTelemetryNotification() bool {
-	// If the user has explicitly opted into or out of telemetry by setting the
-	// AZURE_CORE_COLLECT_TELEMETRY environment variable, don't display the
-	// notification.
-	if isOptedInEnv() || isOptedOutInEnv() {
-		return false
-	}
-
-	if runcontext.IsRunningInCloudShell() && isFirstRun() {
-		return true
-	}
-
-	return false
-}
-
 func IsTelemetryEnabled() bool {
 	// If the user has opted out of telemetry directly, don't collect telemetry.
-	if isOptedOutInEnv() {
+	if os.Getenv(collectTelemetryEnvVar) == "no" {
 		return false
-	}
-
-	// Perf: If the user is already opted in don't check for first run file.
-	if isOptedInEnv() {
-		return true
 	}
 
 	// If it's the first run and we're in cloud shell, don't collect telemetry.
-	if isFirstRun() && runcontext.IsRunningInCloudShell() {
+	if noticeShown() && runcontext.IsRunningInCloudShell() {
 		return false
 	}
 

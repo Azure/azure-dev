@@ -15,6 +15,7 @@ armapimanagement
 armappconfiguration
 armappplatform
 armcognitiveservices
+azapi
 AZCLI
 azcorelog
 azdcli
@@ -44,6 +45,7 @@ BUILDID
 BUILDNUMBER
 buildpack
 buildpacks
+byoi
 cflags
 circleci
 cmdsubst

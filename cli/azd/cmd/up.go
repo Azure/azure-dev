@@ -135,7 +135,7 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	provision.flags = &u.flags.provisionFlags
 	provisionOptions := &middleware.Options{CommandPath: "provision"}
-	provisionRes, err := u.runner.RunChildAction(ctx, provisionOptions, provision)
+	provisionResult, err := u.runner.RunChildAction(ctx, provisionOptions, provision)
 	if err != nil {
 		return nil, err
 	}
@@ -164,7 +164,7 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		Message: &actions.ResultMessage{
 			Header: fmt.Sprintf("Your application was provisioned and deployed to Azure in %s.",
 				ux.DurationAsText(since(startTime))),
-			FollowUp: provisionRes.Message.FollowUp,
+			FollowUp: provisionResult.Message.FollowUp,
 		},
 	}, nil
 }

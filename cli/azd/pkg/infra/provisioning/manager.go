@@ -10,6 +10,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
@@ -40,19 +41,9 @@ func (m *Manager) Initialize(ctx context.Context, projectPath string, options Op
 	return m.provider.Initialize(ctx, projectPath, options)
 }
 
-// Prepares for an infrastructure provision operation
-func (m *Manager) Plan(ctx context.Context) (*DeploymentPlan, error) {
-	deploymentPlan, err := m.provider.Plan(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("planning infrastructure provisioning: %w", err)
-	}
-
-	return deploymentPlan, nil
-}
-
 // Gets the latest deployment details for the specified scope
-func (m *Manager) State(ctx context.Context) (*StateResult, error) {
-	result, err := m.provider.State(ctx)
+func (m *Manager) State(ctx context.Context, options *StateOptions) (*StateResult, error) {
+	result, err := m.provider.State(ctx, options)
 	if err != nil {
 		return nil, fmt.Errorf("error retrieving state: %w", err)
 	}
@@ -61,9 +52,9 @@ func (m *Manager) State(ctx context.Context) (*StateResult, error) {
 }
 
 // Deploys the Azure infrastructure for the specified project
-func (m *Manager) Deploy(ctx context.Context, plan *DeploymentPlan) (*DeployResult, error) {
+func (m *Manager) Deploy(ctx context.Context) (*DeployResult, error) {
 	// Apply the infrastructure deployment
-	deployResult, err := m.provider.Deploy(ctx, plan)
+	deployResult, err := m.provider.Deploy(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("error deploying infrastructure: %w", err)
 	}
@@ -76,6 +67,40 @@ func (m *Manager) Deploy(ctx context.Context, plan *DeploymentPlan) (*DeployResu
 	m.console.StopSpinner(ctx, "", input.StepDone)
 
 	return deployResult, nil
+}
+
+// Preview generates the list of changes to be applied as part of the provisioning.
+func (m *Manager) Preview(ctx context.Context) (*DeployPreviewResult, error) {
+	// Apply the infrastructure deployment
+	deployResult, err := m.provider.Preview(ctx)
+
+	if err != nil {
+		return nil, fmt.Errorf("error deploying infrastructure: %w", err)
+	}
+
+	// apply resource mapping
+	filteredResult := DeployPreviewResult{
+		Preview: &DeploymentPreview{
+			Status:     deployResult.Preview.Status,
+			Properties: &DeploymentPreviewProperties{},
+		},
+	}
+
+	for index, result := range deployResult.Preview.Properties.Changes {
+		mappingName := infra.GetResourceTypeDisplayName(infra.AzureResourceType(result.ResourceType))
+		if mappingName == "" {
+			// ignore
+			continue
+		}
+		deployResult.Preview.Properties.Changes[index].ResourceType = mappingName
+		filteredResult.Preview.Properties.Changes = append(
+			filteredResult.Preview.Properties.Changes, deployResult.Preview.Properties.Changes[index])
+	}
+
+	// make sure any spinner is stopped
+	m.console.StopSpinner(ctx, "", input.StepDone)
+
+	return &filteredResult, nil
 }
 
 // Destroys the Azure infrastructure for the specified project

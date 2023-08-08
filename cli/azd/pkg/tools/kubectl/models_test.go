@@ -50,7 +50,7 @@ func Test_Port_TargetPort_Unmarshalling(t *testing.T) {
 func Test_Ingress_UnMarshalling(t *testing.T) {
 	t.Run("json", func(t *testing.T) {
 		var ingressResources List[Ingress]
-		ingressBytes, err := os.ReadFile("../../../test/testdata/k8s/ingress.json")
+		ingressBytes, err := os.ReadFile("../../../test/testdata/k8s/parse/ingress.json")
 		require.NoError(t, err)
 
 		err = json.Unmarshal(ingressBytes, &ingressResources)
@@ -62,7 +62,7 @@ func Test_Ingress_UnMarshalling(t *testing.T) {
 
 	t.Run("yaml", func(t *testing.T) {
 		var ingressResources List[Ingress]
-		ingressBytes, err := os.ReadFile("../../../test/testdata/k8s/ingress.yaml")
+		ingressBytes, err := os.ReadFile("../../../test/testdata/k8s/parse/ingress.yaml")
 		require.NoError(t, err)
 
 		err = yaml.Unmarshal(ingressBytes, &ingressResources)

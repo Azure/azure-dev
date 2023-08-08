@@ -48,7 +48,7 @@ This quickstart will show you how to authenticate on Azure, initialize using a t
 azd auth login
 
 # First-time project setup. Initialize a project in the current directory, using this template. 
-azd init --template Azure-Samples/todo-csharp-cosmos-sql
+azd init --template Azure-Samples/todo-nodejs-mongo
 
 # Provision and deploy to Azure
 azd up

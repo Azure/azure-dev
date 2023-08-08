@@ -260,3 +260,10 @@ curl -fsSL https://aka.ms/uninstall-azd.sh | bash
 ```
 
 If installed to a custom location, remove `azd` by deleting the `azd` executable at the custom install location.
+
+
+## Installer Troubleshooting
+
+### Apt installer removes empty `/usr/local/bin` folder
+
+The `/usr/local/bin` folder where the symlink `azd` is created may be removed on uninstall if the `azd` symlink is the only file in that folder. In this case, later installers or other programs that assume the presence of `/usr/local/bin` will fail. To mitigate, re-create the folder using `mkdir -p /usr/local/bin` (`sudo` may be required).

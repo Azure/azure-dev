@@ -10,6 +10,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
@@ -164,8 +165,9 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 
 			if err != nil {
 				var respErr *azcore.ResponseError
-				var azureErr *azcli.AzureDeploymentError
+				var azureErr *azapi.AzureDeploymentError
 				var toolExitErr *exec.ExitError
+				var suggestionErr *azcli.ErrorWithSuggestion
 
 				// We only want to show trace ID for server-related errors,
 				// where we have full server logs to troubleshoot from.
@@ -178,6 +180,17 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 						console.Message(
 							ctx,
 							output.WithErrorFormat(fmt.Sprintf("TraceID: %s", actionResult.TraceID)))
+					}
+				}
+
+				if errors.As(err, &suggestionErr) {
+					if actionResult != nil && actionResult.TraceID != "" {
+						console.Message(
+							ctx,
+							output.WithErrorFormat(fmt.Sprintf("TraceID: %s", actionResult.TraceID)))
+						console.Message(
+							ctx,
+							output.WithHighLightFormat(suggestionErr.Suggestion))
 					}
 				}
 			}

@@ -140,6 +140,11 @@
                     "type": "number",
                     "default": 5,
                     "description": "%azure-dev.maximumAppsToDisplay.description%"
+                },
+                "azure-dev.auth.useIntegratedAuth": {
+                    "type": "boolean",
+                    "default": false,
+                    "description": "%azure-dev.auth.useIntegratedAuth.description%"
                 }
             }
         },
@@ -478,6 +483,7 @@
         "ci-package": "npm run ci-build && vsce package"
     },
     "devDependencies": {
+        "@azure/core-auth": "^1.4",
         "@types/chai": "~4",
         "@types/glob": "~7",
         "@types/mocha": "~10",

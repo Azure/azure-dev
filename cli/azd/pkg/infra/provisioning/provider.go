@@ -23,15 +23,14 @@ type Options struct {
 	Module   string       `yaml:"module"`
 }
 
-type DeploymentPlan struct {
-	Deployment Deployment
-
-	// Additional information about deployment, provider-specific.
-	Details interface{}
-}
-
 type DeployResult struct {
 	Deployment *Deployment
+}
+
+// DeployPreviewResult defines one deployment in preview mode, displaying what changes would it be performed, without
+// applying the changes.
+type DeployPreviewResult struct {
+	Preview *DeploymentPreview
 }
 
 type DestroyResult struct {
@@ -46,9 +45,9 @@ type StateResult struct {
 type Provider interface {
 	Name() string
 	Initialize(ctx context.Context, projectPath string, options Options) error
-	State(ctx context.Context) (*StateResult, error)
-	Plan(ctx context.Context) (*DeploymentPlan, error)
-	Deploy(ctx context.Context, plan *DeploymentPlan) (*DeployResult, error)
+	State(ctx context.Context, options *StateOptions) (*StateResult, error)
+	Deploy(ctx context.Context) (*DeployResult, error)
+	Preview(ctx context.Context) (*DeployPreviewResult, error)
 	Destroy(ctx context.Context, options DestroyOptions) (*DestroyResult, error)
 	EnsureEnv(ctx context.Context) error
 }

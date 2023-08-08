@@ -192,31 +192,9 @@ func (t *aksTarget) Deploy(
 				return
 			}
 
-			_, err = t.kubectl.ApplyWithInput(ctx, namespaceResult.Stdout, nil)
+			_, err = t.kubectl.ApplyWithStdIn(ctx, namespaceResult.Stdout, nil)
 			if err != nil {
 				task.SetError(fmt.Errorf("failed applying kube namespace: %w", err))
-				return
-			}
-
-			task.SetProgress(NewServiceProgress("Creating k8s secrets"))
-			secretResult, err := t.kubectl.CreateSecretGenericFromLiterals(
-				ctx,
-				"azd",
-				t.env.Environ(),
-				&kubectl.KubeCliFlags{
-					Namespace: namespace,
-					DryRun:    kubectl.DryRunTypeClient,
-					Output:    kubectl.OutputTypeYaml,
-				},
-			)
-			if err != nil {
-				task.SetError(fmt.Errorf("failed setting kube secrets: %w", err))
-				return
-			}
-
-			_, err = t.kubectl.ApplyWithInput(ctx, secretResult.Stdout, nil)
-			if err != nil {
-				task.SetError(fmt.Errorf("failed applying kube secrets: %w", err))
 				return
 			}
 

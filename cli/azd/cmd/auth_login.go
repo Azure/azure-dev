@@ -456,20 +456,38 @@ func (la *loginAction) login(ctx context.Context) error {
 		return nil
 	}
 
-	useDevCode, err := parseUseDeviceCode(ctx, la.flags.useDeviceCode, la.commandRunner)
-	if err != nil {
-		return err
-	}
-
-	if useDevCode {
-		_, err := la.authManager.LoginWithDeviceCode(ctx, la.flags.tenantID, la.flags.scopes)
-		if err != nil {
-			return fmt.Errorf("logging in: %w", err)
+	if la.authManager.UseExternalAuth() {
+		// Request a token and assume the external auth system will prompt the user to log in.
+		//
+		// TODO(ellismg): We may want instead to call some explicit `/login` endpoint on the external auth system instead
+		// of abusing the token request in this manner. This would allow the other end to provide a more tailored experience.
+		if _, err := la.verifyLoggedIn(ctx); err != nil {
+			return err
 		}
 	} else {
-		_, err := la.authManager.LoginInteractive(ctx, la.flags.redirectPort, la.flags.tenantID, la.flags.scopes)
+		useDevCode, err := parseUseDeviceCode(ctx, la.flags.useDeviceCode, la.commandRunner)
 		if err != nil {
-			return fmt.Errorf("logging in: %w", err)
+			return err
+		}
+
+		if useDevCode {
+			_, err := la.authManager.LoginWithDeviceCode(ctx, la.flags.tenantID, la.flags.scopes)
+			if err != nil {
+				return fmt.Errorf("logging in: %w", err)
+			}
+		} else {
+			_, err := la.authManager.LoginInteractive(ctx, la.flags.scopes,
+				&auth.LoginInteractiveOptions{
+					TenantID:     la.flags.tenantID,
+					RedirectPort: la.flags.redirectPort,
+					WithOpenUrl: func(url string) error {
+						openWithDefaultBrowser(ctx, la.console, url)
+						return nil
+					},
+				})
+			if err != nil {
+				return fmt.Errorf("logging in: %w", err)
+			}
 		}
 	}
 

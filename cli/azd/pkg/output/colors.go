@@ -1,6 +1,8 @@
 package output
 
 import (
+	"fmt"
+
 	"github.com/fatih/color"
 )
 
@@ -47,4 +49,9 @@ func WithUnderline(text string, a ...interface{}) string {
 // WithBackticks wraps text with the backtick (`) character.
 func WithBackticks(text string) string {
 	return "`" + text + "`"
+}
+
+// WithHyperlink wraps text with the colored hyperlink format escape sequence.
+func WithHyperlink(url string, text string) string {
+	return WithLinkFormat(fmt.Sprintf("\033]8;;%s\007%s\033]8;;\007", url, text))
 }

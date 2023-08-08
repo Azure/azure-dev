@@ -158,11 +158,17 @@ func (p *GitHubScmProvider) gitRepoDetails(ctx context.Context, remoteUrl string
 		return nil, ErrRemoteHostIsNotGitHub
 	}
 	slugParts := strings.Split(slug, "/")
-	return &gitRepositoryDetails{
+	repoDetails := &gitRepositoryDetails{
 		owner:    slugParts[0],
 		repoName: slugParts[1],
 		remote:   remoteUrl,
-	}, nil
+	}
+	repoDetails.url = fmt.Sprintf(
+		"https://github.com/%s/%s",
+		repoDetails.owner,
+		repoDetails.repoName)
+
+	return repoDetails, nil
 }
 
 // preventGitPush validate if GitHub actions are disabled and won't work before pushing
@@ -681,11 +687,22 @@ func (p *GitHubCiProvider) configurePipeline(
 	ctx context.Context,
 	repoDetails *gitRepositoryDetails,
 	provisioningProvider provisioning.Options,
-) (*CiPipeline, error) {
-	return &CiPipeline{
-		name:   "actions",
-		remote: fmt.Sprintf("%s/actions", repoDetails.remote),
+) (CiPipeline, error) {
+	return &workflow{
+		repoDetails: repoDetails,
 	}, nil
+}
+
+// workflow is the implementation for a CiPipeline for GitHub
+type workflow struct {
+	repoDetails *gitRepositoryDetails
+}
+
+func (w *workflow) name() string {
+	return "actions"
+}
+func (w *workflow) url() string {
+	return w.repoDetails.url + "/actions"
 }
 
 // ensureGitHubLogin ensures the user is logged into the GitHub CLI. If not, it prompt the user

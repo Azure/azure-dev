@@ -7,8 +7,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"os"
-	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/AlecAivazis/survey/v2"
@@ -17,6 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	azdExec "github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -236,18 +238,28 @@ func getResourceGroupFollowUp(
 	projectConfig *project.ProjectConfig,
 	resourceManager project.ResourceManager,
 	env *environment.Environment,
+	whatIf bool,
 ) (followUp string) {
-	if formatter.Kind() != output.JsonFormat {
-		subscriptionId := env.GetSubscriptionId()
-
-		if resourceGroupName, err := resourceManager.GetResourceGroupName(ctx, subscriptionId, projectConfig); err == nil {
-			followUp = fmt.Sprintf("You can view the resources created under the resource group %s in Azure Portal:\n%s",
-				resourceGroupName, output.WithLinkFormat(fmt.Sprintf(
-					"https://portal.azure.com/#@/resource/subscriptions/%s/resourceGroups/%s/overview",
-					subscriptionId,
-					resourceGroupName)))
-		}
+	if formatter.Kind() == output.JsonFormat {
+		return followUp
 	}
+
+	subscriptionId := env.GetSubscriptionId()
+	if resourceGroupName, err := resourceManager.GetResourceGroupName(ctx, subscriptionId, projectConfig); err == nil {
+		defaultFollowUpText := fmt.Sprintf(
+			"You can view the resources created under the resource group %s in Azure Portal:", resourceGroupName)
+		if whatIf {
+			defaultFollowUpText = fmt.Sprintf(
+				"You can view the current resources under the resource group %s in Azure Portal:", resourceGroupName)
+		}
+		followUp = fmt.Sprintf("%s\n%s",
+			defaultFollowUpText,
+			output.WithLinkFormat(fmt.Sprintf(
+				"https://portal.azure.com/#@/resource/subscriptions/%s/resourceGroups/%s/overview",
+				subscriptionId,
+				resourceGroupName)))
+	}
+
 	return followUp
 }
 
@@ -318,22 +330,24 @@ func openWithDefaultBrowser(ctx context.Context, console input.Console, url stri
 		return
 	}
 
-	console.Message(ctx, fmt.Sprintf("Opening %s in the default browser...\n", url))
+	cmdRunner := azdExec.NewCommandRunner(nil)
+
 	// In Codespaces and devcontainers a $BROWSER environment variable is
 	// present whose value is an executable that launches the browser when
 	// called with the form:
 	// $BROWSER <url>
-
 	const BrowserEnvVarName = "BROWSER"
 
 	if envBrowser := os.Getenv(BrowserEnvVarName); len(envBrowser) > 0 {
-		err := exec.Command(envBrowser, url).Run()
+		_, err := cmdRunner.Run(ctx, azdExec.RunArgs{
+			Cmd:  envBrowser,
+			Args: []string{url},
+		})
 		if err == nil {
 			return
 		}
-		fmt.Fprintf(
-			console.Handles().Stderr,
-			"warning: failed to open browser configured by $BROWSER: %s\n. Trying with default browser.",
+		log.Printf(
+			"warning: failed to open browser configured by $BROWSER: %s\nTrying with default browser.\n",
 			err.Error(),
 		)
 	}
@@ -343,11 +357,39 @@ func openWithDefaultBrowser(ctx context.Context, console input.Console, url stri
 		return
 	}
 
-	fmt.Fprintf(
-		console.Handles().Stderr,
-		"warning: failed to open default browser: %s\n", err.Error(),
+	log.Printf(
+		"warning: failed to open default browser: %s\nTrying manual launch.", err.Error(),
 	)
 
+	// wsl manual launch. Trying cmd first, and pwsh second
+	_, err = cmdRunner.Run(ctx, azdExec.RunArgs{
+		Cmd: "cmd.exe",
+		// cmd notes:
+		// /c -> run command
+		// /s -> quoted string, use the text within the quotes as it is
+		// Replace `&` for `^&` -> cmd require to scape the & to avoid using it as a command concat
+		Args: []string{
+			"/s", "/c", fmt.Sprintf("start %s", strings.ReplaceAll(url, "&", "^&")),
+		},
+	})
+	if err == nil {
+		return
+	}
+	log.Printf(
+		"warning: failed to open browser with cmd: %s\nTrying powershell.", err.Error(),
+	)
+
+	_, err = cmdRunner.Run(ctx, azdExec.RunArgs{
+		Cmd: "powershell.exe",
+		Args: []string{
+			"-NoProfile", "-Command", "Start-Process", fmt.Sprintf("\"%s\"", url),
+		},
+	})
+	if err == nil {
+		return
+	}
+
+	log.Printf("warning: failed to use manual launch: %s\n", err.Error())
 	console.Message(ctx, fmt.Sprintf("Azd was unable to open the next url. Please try it manually: %s", url))
 }
 

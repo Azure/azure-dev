@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"math/rand"
+	"slices"
 	"strconv"
 	"testing"
 	"time"
@@ -11,7 +12,6 @@ import (
 	appinsightsexporter "github.com/azure/azure-dev/cli/azd/internal/telemetry/appinsights-exporter"
 	"github.com/benbjohnson/clock"
 	"github.com/stretchr/testify/assert"
-	"golang.org/x/exp/slices"
 )
 
 type InMemoryItem struct {

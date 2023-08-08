@@ -1038,6 +1038,7 @@ stages:
               Architecture: amd64
             # TODO: When Docker can be installed and run properly on the ARM 
             # host this can be used to validate the ARM64 Linux packages.
+            # https://github.com/Azure/azure-dev/issues/2617
             # LinuxARM64:
             #   Pool: azsdk-pool-mms-ubuntu-2004-arm
             #   OSVmImage: MMSUbuntu20.04ARM64

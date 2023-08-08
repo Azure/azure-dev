@@ -733,6 +733,8 @@ confirmDetection:
 		return err
 	}
 
+	i.console.Message(ctx, "\n"+output.WithBold("Generating files to run your app on Azure:")+"\n")
+
 	generateProject := func() error {
 		title := "Generating " + output.WithBlueFormat("./"+azdcontext.ProjectFileName)
 		i.console.ShowSpinner(ctx, title, input.Step)

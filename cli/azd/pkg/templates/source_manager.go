@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
@@ -123,7 +124,9 @@ func (sm *sourceManager) Get(ctx context.Context, key string) (*SourceConfig, er
 
 // Add adds a new template source at the specified key and configuration
 func (sm *sourceManager) Add(ctx context.Context, key string, source *SourceConfig) error {
-	existing, err := sm.Get(ctx, key)
+	newKey := normalizeKey(key)
+
+	existing, err := sm.Get(ctx, newKey)
 	if existing != nil && err == nil {
 		return fmt.Errorf("template source '%s' already exists, %w", key, ErrSourceExists)
 	}
@@ -132,12 +135,14 @@ func (sm *sourceManager) Add(ctx context.Context, key string, source *SourceConf
 		source.Name = key
 	}
 
+	source.Key = newKey
+
 	config, err := sm.configManager.Load()
 	if err != nil {
 		return fmt.Errorf("unable to load user configuration: %w", err)
 	}
 
-	path := fmt.Sprintf("%s.%s", baseConfigKey, key)
+	path := fmt.Sprintf("%s.%s", baseConfigKey, source.Key)
 	err = config.Set(path, source)
 	if err != nil {
 		return fmt.Errorf("unable to add template source '%s': %w", source.Key, err)
@@ -153,6 +158,8 @@ func (sm *sourceManager) Add(ctx context.Context, key string, source *SourceConf
 
 // Remove removes a template source by the specified key.
 func (sm *sourceManager) Remove(ctx context.Context, key string) error {
+	key = normalizeKey(key)
+
 	_, err := sm.Get(ctx, key)
 	if err != nil && errors.Is(err, ErrSourceNotFound) {
 		return fmt.Errorf("template source '%s' not found, %w", key, err)
@@ -205,4 +212,11 @@ func (sm *sourceManager) CreateSource(ctx context.Context, config *SourceConfig)
 	}
 
 	return source, nil
+}
+
+func normalizeKey(key string) string {
+	key = strings.ToLower(key)
+	key = strings.ReplaceAll(key, " ", "-")
+
+	return key
 }

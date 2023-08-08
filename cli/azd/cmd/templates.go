@@ -378,7 +378,7 @@ func (a *templateSourceAddAction) Run(ctx context.Context) (*actions.ActionResul
 	var key = a.args[0]
 	sourceConfig := &templates.SourceConfig{}
 
-	spinnerMessage := "Saving template source"
+	spinnerMessage := "Validating template source"
 	a.console.ShowSpinner(ctx, spinnerMessage, input.Step)
 
 	// Don't allow source type since they can only be added with known key like 'default' or 'awesome-azd'
@@ -401,8 +401,6 @@ func (a *templateSourceAddAction) Run(ctx context.Context) (*actions.ActionResul
 		}
 
 		// Validate the custom source config
-		spinnerMessage := "Validating template source"
-		a.console.ShowSpinner(ctx, spinnerMessage, input.Step)
 		_, err := a.sourceManager.CreateSource(ctx, sourceConfig)
 		a.console.StopSpinner(ctx, spinnerMessage, input.GetStepResultFormat(err))
 		if err != nil {
@@ -413,6 +411,9 @@ func (a *templateSourceAddAction) Run(ctx context.Context) (*actions.ActionResul
 			return nil, fmt.Errorf("template source validation failed: %w", err)
 		}
 	}
+
+	spinnerMessage = "Saving template source"
+	a.console.ShowSpinner(ctx, spinnerMessage, input.Step)
 
 	err := a.sourceManager.Add(ctx, key, sourceConfig)
 	a.console.StopSpinner(ctx, spinnerMessage, input.GetStepResultFormat(err))

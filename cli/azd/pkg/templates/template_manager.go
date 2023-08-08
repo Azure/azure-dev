@@ -55,8 +55,17 @@ func (tm *TemplateManager) ListTemplates(ctx context.Context, options *ListOptio
 			return nil, fmt.Errorf("unable to list templates: %w", err)
 		}
 
+		// Sort by source, then repository path and finally name
 		slices.SortFunc(templates, func(a *Template, b *Template) bool {
-			return a.RepositoryPath < b.RepositoryPath
+			if a.Source != b.Source {
+				return a.Source < b.Source
+			}
+
+			if a.RepositoryPath != b.RepositoryPath {
+				return a.RepositoryPath < b.RepositoryPath
+			}
+
+			return a.Name < b.Name
 		})
 
 		allTemplates = append(allTemplates, templates...)

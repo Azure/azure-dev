@@ -201,6 +201,7 @@ func Test_sourceManager_CreateSource(t *testing.T) {
 			source, err := sm.CreateSource(*mockContext.Context, config)
 			if config.Type == "invalid" {
 				require.NotNil(t, err)
+				require.ErrorIs(t, err, ErrSourceTypeInvalid)
 				require.Nil(t, source)
 			} else {
 				require.Nil(t, err)

@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -377,6 +378,20 @@ func (a *templateSourceAddAction) Run(ctx context.Context) (*actions.ActionResul
 	var key = a.args[0]
 	sourceConfig := &templates.SourceConfig{}
 
+	spinnerMessage := "Saving template source"
+	a.console.ShowSpinner(ctx, spinnerMessage, input.Step)
+
+	// Don't allow source type since they can only be added with known key like 'default' or 'awesome-azd'
+	for _, wellKnownSource := range templates.WellKnownSources {
+		if wellKnownSource.Type == templates.SourceKind(a.flags.kind) {
+			a.console.StopSpinner(ctx, spinnerMessage, input.StepFailed)
+			return nil, fmt.Errorf(
+				"template source type '%s' is not supported. Supported types are 'file' and 'url'",
+				a.flags.kind,
+			)
+		}
+	}
+
 	if _, ok := templates.WellKnownSources[key]; !ok {
 		sourceConfig = &templates.SourceConfig{
 			Key:      key,
@@ -391,13 +406,14 @@ func (a *templateSourceAddAction) Run(ctx context.Context) (*actions.ActionResul
 		_, err := a.sourceManager.CreateSource(ctx, sourceConfig)
 		a.console.StopSpinner(ctx, spinnerMessage, input.GetStepResultFormat(err))
 		if err != nil {
+			if errors.Is(err, templates.ErrSourceTypeInvalid) {
+				return nil, fmt.Errorf("template source type '%s' is not supported. Supported types are 'file' and 'url'", a.flags.kind)
+			}
+
 			return nil, fmt.Errorf("template source validation failed: %w", err)
 		}
-
 	}
 
-	spinnerMessage := "Saving template source"
-	a.console.ShowSpinner(ctx, spinnerMessage, input.Step)
 	err := a.sourceManager.Add(ctx, key, sourceConfig)
 	a.console.StopSpinner(ctx, spinnerMessage, input.GetStepResultFormat(err))
 	if err != nil {

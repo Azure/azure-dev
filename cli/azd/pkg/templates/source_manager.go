@@ -32,8 +32,9 @@ var (
 		SourceAwesomeAzd.Key: SourceAwesomeAzd,
 	}
 
-	ErrSourceNotFound = errors.New("template source not found")
-	ErrSourceExists   = errors.New("template source already exists")
+	ErrSourceNotFound    = errors.New("template source not found")
+	ErrSourceExists      = errors.New("template source already exists")
+	ErrSourceTypeInvalid = errors.New("invalid template source type")
 )
 
 // SourceManager manages template sources used in azd template list and azd init experiences.
@@ -196,7 +197,7 @@ func (sm *sourceManager) CreateSource(ctx context.Context, config *SourceConfig)
 	case SourceKindResource:
 		source, err = NewJsonTemplateSource(SourceDefault.Name, string(resources.TemplatesJson))
 	default:
-		err = fmt.Errorf("unknown template source type '%s'", config.Type)
+		err = fmt.Errorf("%w, '%s'", ErrSourceTypeInvalid, config.Type)
 	}
 
 	if err != nil {

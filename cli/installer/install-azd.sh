@@ -116,6 +116,9 @@ get_architecture() {
     elif [ "$architecture_raw" = "arm64" ]; then
         echo "$architecture_raw";
         return;
+    elif [ "$architecture_raw" = "aarch64" ]; then
+        echo 'arm64';
+        return;
     else
         say_error "Architecture not supported: $architecture_raw on platform: $platform"
         exit 1;

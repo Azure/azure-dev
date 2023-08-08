@@ -1036,10 +1036,12 @@ stages:
               Pool: azsdk-pool-mms-ubuntu-2004-general
               OSVmImage:  MMSUbuntu20.04
               Architecture: amd64
-            LinuxARM64:
-              Pool: azsdk-pool-mms-ubuntu-2004-arm
-              OSVmImage: MMSUbuntu20.04ARM64
-              Architecture: arm64
+            # TODO: When Docker can be installed and run properly on the ARM 
+            # host this can be used to validate the ARM64 Linux packages.
+            # LinuxARM64:
+            #   Pool: azsdk-pool-mms-ubuntu-2004-arm
+            #   OSVmImage: MMSUbuntu20.04ARM64
+            #   Architecture: arm64
             
         pool:
           name: $(Pool)
@@ -1052,36 +1054,6 @@ stages:
             inputs:
               artifact: linux-packages-$(Architecture)
               path: cli/installer/fpm
-
-          - bash: |
-              # Install PowerShell
-              # https://learn.microsoft.com/en-us/powershell/scripting/install/install-other-linux?view=powershell-7.3#binary-archives
-              sudo apt update
-              sudo apt install -y curl
-              temp_dir=$(mktemp -d /tmp/tool-preinstall-XXXXXXXX)
-              curl -L -o "$temp_dir/powershell.tar.gz" https://github.com/PowerShell/PowerShell/releases/download/v7.3.6/powershell-7.3.6-linux-arm64.tar.gz
-              sudo mkdir -p /opt/microsoft/powershell/7
-              sudo tar zxf "$temp_dir/powershell.tar.gz" -C /opt/microsoft/powershell/7
-              sudo chmod +x /opt/microsoft/powershell/7/pwsh
-              sudo ln -s /opt/microsoft/powershell/7/pwsh /usr/bin/pwsh
-
-              echo "PowerShell install complete:"
-              pwsh --version
-
-              # Install docker
-              sudo apt-get update
-              sudo apt-get install ca-certificates curl gnupg
-              sudo install -m 0755 -d /etc/apt/keyrings
-              curl -fsSL https://download.docker.com/linux/ubuntu/gpg | sudo gpg --dearmor -o /etc/apt/keyrings/docker.gpg
-              sudo chmod a+r /etc/apt/keyrings/docker.gpg
-              echo \
-                "deb [arch="$(dpkg --print-architecture)" signed-by=/etc/apt/keyrings/docker.gpg] https://download.docker.com/linux/ubuntu \
-                "$(. /etc/os-release && echo "$VERSION_CODENAME")" stable" | \
-                sudo tee /etc/apt/sources.list.d/docker.list > /dev/null
-              sudo apt-get update
-              sudo apt-get install -y docker-ce docker-ce-cli containerd.io docker-buildx-plugin docker-compose-plugin
-            condition: eq('arm64', variables['Architecture'])
-            displayName: Install dependencies on arm64 agent
 
           - task: PowerShell@2
             displayName: Verify Linux Packages

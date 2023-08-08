@@ -121,7 +121,7 @@ resource app 'Microsoft.App/containerApps@2023-04-01-preview' = {
             }
             {{- if .DbCosmos}}
             {
-              name: 'AZURE_COSMOS_CONNECTION_STRING'
+              name: 'AZURE_COSMOS_MONGODB_CONNECTION_STRING'
               secretRef: 'azure-cosmos-connection-string'
             }
             {{- end}}

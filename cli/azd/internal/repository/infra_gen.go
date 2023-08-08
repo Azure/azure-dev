@@ -32,7 +32,7 @@ import (
 )
 
 // A regex that matches against "likely" well-formed database names
-var wellFormedDbNameRegex = regexp.MustCompile(`^[a-zA-Z\-_0-9]+$`)
+var wellFormedDbNameRegex = regexp.MustCompile(`^[a-zA-Z\-_0-9]*$`)
 
 type DatabasePostgres struct {
 	DatabaseUser string
@@ -573,10 +573,6 @@ confirmDetection:
 			})
 			if err != nil {
 				return err
-			}
-
-			if dbName == "" {
-				continue dbPrompt
 			}
 
 			if strings.ContainsAny(dbName, " ") {

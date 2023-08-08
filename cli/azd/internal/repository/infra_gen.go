@@ -744,13 +744,14 @@ confirmDetection:
 			return fmt.Errorf("converting config: %w", err)
 		}
 		err = project.Save(
-			context.Background(),
+			ctx,
 			&config,
 			filepath.Join(wd, azdcontext.ProjectFileName))
 		if err != nil {
 			return fmt.Errorf("generating azure.yaml: %w", err)
 		}
-		return nil
+
+		return i.writeCoreAssets(ctx, azdCtx)
 	}
 
 	err = generateProject()

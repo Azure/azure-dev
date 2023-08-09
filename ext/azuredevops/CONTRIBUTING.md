@@ -22,8 +22,11 @@ behalf.
 
 ## Build
 
-- Run `npm install` from `setupAzd` folder.
-- Run `tsc` from `setupAzd` folder to generate `index.js`.
+- From `setupAzd` folder:
+  - Run `npm install` 
+  - Run `tsc`
 - Run `tfx extension create --manifest-globs vss-extension.json` to create the extension.
 
 ## Testing
+
+From `setupAzd` folder, run `npm test`

@@ -161,16 +161,22 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			return nil, environment.NewEnvironmentInitError(envName)
 		}
 
-		suggest := environment.CleanName(filepath.Base(wd) + "-dev")
-		if len(suggest) > environment.EnvironmentNameMaxLength {
-			suggest = suggest[len(suggest)-environment.EnvironmentNameMaxLength:]
+		base := filepath.Base(wd)
+		examples := []string{}
+		for _, c := range []string{"dev", "test", "prod"} {
+			suggest := environment.CleanName(base + "-" + c)
+			if len(suggest) > environment.EnvironmentNameMaxLength {
+				suggest = suggest[len(suggest)-environment.EnvironmentNameMaxLength:]
+			}
+
+			examples = append(examples, suggest)
 		}
 
 		envSpec := environmentSpec{
 			environmentName: i.flags.environmentName,
 			subscription:    i.flags.subscription,
 			location:        i.flags.location,
-			suggest:         suggest,
+			examples:        examples,
 		}
 
 		env, err := createEnvironment(ctx, envSpec, azdCtx, i.console)
@@ -195,9 +201,8 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	case initInfra:
 		header = "Your app is ready for the cloud!"
 		followUp = "You can provision and deploy your app to Azure by running the " + output.WithBlueFormat("azd up") +
-			" command in this directory. Services may incur usage charges when provisioned or deployed." +
-			" For more information on what was added and how to proceed, see " + output.WithBlueFormat("./next-steps.md") +
-			" created."
+			" command in this directory. For more information on configuring your app, see " +
+			output.WithBlueFormat("./next-steps.md") + " created."
 		err := i.repoInitializer.InitializeInfra(ctx, azdCtx, func() error {
 			_, err := initializeEnv()
 			return err

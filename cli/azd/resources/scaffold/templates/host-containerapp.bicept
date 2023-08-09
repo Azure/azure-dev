@@ -21,7 +21,7 @@ param databasePassword string
 {{- if .Frontend}}
 param apiUrls array
 {{- end}}
-{{- if .Backend}}
+{{- if (and .Backend .Backend.Frontends)}}
 param allowedOrigins array
 {{- end}}
 param exists bool
@@ -79,7 +79,7 @@ resource app 'Microsoft.App/containerApps@2023-04-01-preview' = {
         external: true
         targetPort: {{.Port}}
         transport: 'auto'
-        {{- if .Backend}}
+        {{- if (and .Backend .Backend.Frontends)}}
         corsPolicy: {
           allowedOrigins: union(allowedOrigins, [
             // define additional allowed origins here

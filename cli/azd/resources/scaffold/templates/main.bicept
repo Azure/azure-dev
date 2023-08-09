@@ -149,7 +149,7 @@ module {{bicepName .Name}} './app/{{.Name}}.bicep' = {
       {{- end}}
     ]
     {{- end}}
-    {{- if .Backend}}
+    {{- if (and .Backend .Backend.Frontends)}}
     allowedOrigins: [
       {{- range .Backend.Frontends}}
       'https://${abbrs.appContainerApps}{{.Name}}-${resourceToken}.${appsEnv.outputs.domain}'

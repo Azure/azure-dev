@@ -40,7 +40,11 @@ func invalidEnvironmentNameMsg(environmentName string) string {
 
 // ensureValidEnvironmentName ensures the environment name is valid, if it is not, an error is printed
 // and the user is prompted for a new name.
-func ensureValidEnvironmentName(ctx context.Context, environmentName *string, examples []string, console input.Console) error {
+func ensureValidEnvironmentName(
+	ctx context.Context,
+	environmentName *string,
+	examples []string,
+	console input.Console) error {
 	exampleText := ""
 	if len(examples) > 0 {
 		exampleText = "\n\nExamples:"

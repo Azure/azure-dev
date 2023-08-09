@@ -12,13 +12,13 @@ trigger:
       - main
   paths:
     include:
-      - ext/
+      - ext/vscode
       - eng/pipelines/release-vscode.yml
 
 pr:
   paths:
     include:
-      - ext/
+      - ext/vscode
       - eng/pipelines/release-vscode.yml
 
 variables:

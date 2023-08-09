@@ -458,7 +458,7 @@ confirmDetection:
 					actionIdx, err := i.console.Select(ctx, input.ConsoleOptions{
 						Message: "Select an action",
 						Options: []string{
-							"Modify the file path", "Modify the detected language", "Remove detected language"},
+							"Modify the detected language", "Remove detected language"},
 					})
 					if err != nil {
 						return err
@@ -467,17 +467,6 @@ confirmDetection:
 					prj := projects[modifyIdx]
 					switch actionIdx {
 					case 0:
-						msg := fmt.Sprintf("Enter file path of the directory that uses '%s'", projectDisplayName(prj))
-						path, err := promptDir(ctx, i.console, msg)
-						if err != nil {
-							return err
-						}
-
-						projects[modifyIdx].Path = path
-						projects[modifyIdx].DetectionRule = string(EntryKindModified)
-
-						break modifyRemove
-					case 1:
 						languages := supportedLanguages()
 						frameworks := supportedFrameworks()
 						selections := make([]string, 0, len(languages))
@@ -518,7 +507,7 @@ confirmDetection:
 
 						projects[modifyIdx].DetectionRule = string(EntryKindModified)
 						break modifyRemove
-					case 2:
+					case 1:
 						confirm, err := i.console.Confirm(ctx, input.ConsoleOptions{
 							Message: fmt.Sprintf(
 								"Remove %s in %s?", projectDisplayName(prj), prj.Path),
@@ -567,6 +556,7 @@ confirmDetection:
 						"or azd up." + "\nYou may skip this step by hitting enter, " +
 						"in which case the database will not be created.",
 					Examples: []string{
+						"appdb",
 						"app-db",
 						"app_db_1",
 					},

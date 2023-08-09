@@ -1,2 +1,5 @@
 index.js
 node_modules
+.taskid
+index.js
+tests/*.js

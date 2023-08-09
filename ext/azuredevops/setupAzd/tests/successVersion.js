@@ -13,5 +13,5 @@ tmr.setAnswers({
             stdout: "mocked run"
         } }
 });
-tmr.setInput('version', '');
+tmr.setInput('version', '1.0.0');
 tmr.run();

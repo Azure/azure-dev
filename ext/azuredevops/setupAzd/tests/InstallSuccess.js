@@ -26,23 +26,31 @@ Object.defineProperty(exports, "__esModule", { value: true });
 const path = __importStar(require("path"));
 const assert = __importStar(require("assert"));
 const ttm = __importStar(require("azure-pipelines-task-lib/mock-test"));
+const fs = __importStar(require("fs"));
 describe('setup azd tests', function () {
     before(function () { });
-    after(() => { });
+    afterEach(() => {
+        fs.rmSync('path', { recursive: true, force: true });
+    });
+    setTimeout(() => { }, 9900);
     it('should succeed with empty version', function (done) {
         let tp = path.join(__dirname, 'success.js');
         let tr = new ttm.MockTestRunner(tp);
         tr.run();
-        console.log(tr.succeeded);
-        console.log(tr.stdout);
         assert.equal(tr.succeeded, true, 'should have succeeded');
         assert.equal(tr.warningIssues.length, 0, "should have no warnings");
         assert.equal(tr.errorIssues.length, 0, "should have no errors");
-        console.log(tr.stdout);
-        //assert.equal(tr.stdout.indexOf('using version') >= 0, true, "should display version");
+        assert.equal(tr.stdout.indexOf('using version: latest') >= 0, true, "should display version");
         done();
     });
-    // it('it should fail if tool returns 1', function(done: Mocha.Done) {
-    //     // Add failure test here
-    // });    
+    it('should succeed with version', function (done) {
+        let tp = path.join(__dirname, 'successVersion.js');
+        let tr = new ttm.MockTestRunner(tp);
+        tr.run();
+        assert.equal(tr.succeeded, true, 'should have succeeded');
+        assert.equal(tr.warningIssues.length, 0, "should have no warnings");
+        assert.equal(tr.errorIssues.length, 0, "should have no errors");
+        assert.equal(tr.stdout.indexOf('using version: 1.0.0') >= 0, true, "should display version");
+        done();
+    });
 });

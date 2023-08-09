@@ -5,6 +5,7 @@ alphafeatures
 apimanagement
 apims
 appconfiguration
+appdb
 appdetect
 appinsights
 appinsightsexporter

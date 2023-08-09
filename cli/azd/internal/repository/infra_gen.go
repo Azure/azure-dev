@@ -210,7 +210,7 @@ func (i *Initializer) InitializeInfra(
 	title := "Scanning app code in " + output.WithHighLightFormat(wd)
 	i.console.ShowSpinner(ctx, title, input.Step)
 	projects, err := appdetect.Detect(wd)
-	time.Sleep(300 * time.Millisecond)
+	time.Sleep(1 * time.Second)
 
 	i.console.StopSpinner(ctx, title, input.GetStepResultFormat(err))
 
@@ -228,13 +228,15 @@ func (i *Initializer) InitializeInfra(
 	}
 
 	revision := false
-	i.console.MessageUxItem(ctx, &ux.DoneMessage{Message: "Generating recommended Azure services"})
+	i.console.ShowSpinner(ctx, "Generating recommended Azure services", input.Step)
+	time.Sleep(1 * time.Second)
+	i.console.StopSpinner(ctx, "Generating recommended Azure services", input.StepDone)
 
 confirmDetection:
 	for {
 		if revision {
 			i.console.ShowSpinner(ctx, "Revising app detection summary", input.Step)
-			time.Sleep(300 * time.Millisecond)
+			time.Sleep(1 * time.Second)
 			i.console.StopSpinner(ctx, "Revising app detection summary", input.StepDone)
 			i.console.Message(ctx, "\n"+output.WithBold("Revised app detection summary:")+"\n")
 		} else {

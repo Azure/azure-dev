@@ -563,10 +563,9 @@ confirmDetection:
 				Message: fmt.Sprintf("Input the name of the database (%s)", database.Display()),
 				Help: ux.InputHint{
 					Title: "Database name",
-					Text: "Input a name for the database. This database will be created after running " +
-						output.WithBlueFormat("azd provision") + " or " + output.WithBlueFormat("azd up") + "." +
-						"\nYou may skip this step by hitting " + output.WithBold("enter") +
-						", in which case the database will not be created.",
+					Text: "Input a name for the database. This database will be created after running azd provision " +
+						"or azd up." + "\nYou may skip this step by hitting enter, " +
+						"in which case the database will not be created.",
 					Examples: []string{
 						"app-db",
 						"app_db_1",

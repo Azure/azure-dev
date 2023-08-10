@@ -5,16 +5,16 @@ import * as fs from 'fs'
 
 describe('setup azd tests', function () {
 
-    before( function() {});
+    before(function () { });
     afterEach(() => {
-        fs.rmSync('path', { recursive: true, force: true})
+        fs.rmSync('path', { recursive: true, force: true })
     });
 
-    it('should succeed with empty version', function(done: Mocha.Done) {
+    it('should succeed with empty version', function (done: Mocha.Done) {
         let tp = path.join(__dirname, 'success.js');
         let tr: ttm.MockTestRunner = new ttm.MockTestRunner(tp);
-    
-        setTimeout(() => {}, 10000);
+
+        setTimeout(() => { }, 10000);
         tr.run();
         assert.equal(tr.succeeded, true, 'should have succeeded');
         assert.equal(tr.warningIssues.length, 0, "should have no warnings");
@@ -23,11 +23,11 @@ describe('setup azd tests', function () {
         done();
     });
 
-    it('should succeed with version', function(done: Mocha.Done) {
+    it('should succeed with version', function (done: Mocha.Done) {
         let tp = path.join(__dirname, 'successVersion.js');
         let tr: ttm.MockTestRunner = new ttm.MockTestRunner(tp);
-        setTimeout(() => {}, 10000);
-    
+        setTimeout(() => { }, 10000);
+
         tr.run();
         assert.equal(tr.succeeded, true, 'should have succeeded');
         assert.equal(tr.warningIssues.length, 0, "should have no warnings");

@@ -76,7 +76,7 @@ Read more about Azure Developer CLI telemetry: https://github.com/Azure/azure-de
         )
         task.prependPath(extractedTo)
         console.log(`azd installed to ${extractedTo}`)
-        
+
         task.exec(binPath, 'version')
     } catch (err: any) {
         task.setResult(task.TaskResult.Failed, err.message);

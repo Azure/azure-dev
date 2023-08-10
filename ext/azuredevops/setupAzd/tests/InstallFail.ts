@@ -6,18 +6,18 @@ import { log } from 'console';
 
 describe('setup azd tests - fails', function () {
 
-    before( function() {});
+    before(function () { });
     afterEach(() => {
-        fs.rmSync('path', { recursive: true, force: true})
+        fs.rmSync('path', { recursive: true, force: true })
     });
 
-    setTimeout(()=>{}, 9900)
+    setTimeout(() => { }, 9900)
 
-    it('should fail with invalid version', function(done: Mocha.Done) {
+    it('should fail with invalid version', function (done: Mocha.Done) {
         let tp = path.join(__dirname, 'invalidVersion.js');
         let tr: ttm.MockTestRunner = new ttm.MockTestRunner(tp);
-        setTimeout(() => {}, 10000);
-    
+        setTimeout(() => { }, 10000);
+
         tr.run();
         assert.equal(tr.succeeded, false, 'should have failed');
         assert.equal(tr.warningIssues.length, 0, "should have no warnings");

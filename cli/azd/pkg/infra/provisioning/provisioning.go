@@ -4,6 +4,7 @@
 package provisioning
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 
@@ -11,7 +12,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 )
 
-func UpdateEnvironment(env *environment.Environment, outputs map[string]OutputParameter) error {
+func UpdateEnvironment(ctx context.Context, envManager environment.Manager, env *environment.Environment, outputs map[string]OutputParameter) error {
 	if len(outputs) > 0 {
 		for key, param := range outputs {
 			// Complex types marshalled as JSON strings, simple types marshalled as simple strings
@@ -26,7 +27,7 @@ func UpdateEnvironment(env *environment.Environment, outputs map[string]OutputPa
 			}
 		}
 
-		if err := env.Save(); err != nil {
+		if err := envManager.Save(ctx, env); err != nil {
 			return fmt.Errorf("writing environment: %w", err)
 		}
 	}

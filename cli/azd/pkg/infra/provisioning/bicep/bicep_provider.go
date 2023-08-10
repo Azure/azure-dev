@@ -59,6 +59,7 @@ type bicepDeploymentDetails struct {
 // BicepProvider exposes infrastructure provisioning using Azure Bicep templates
 type BicepProvider struct {
 	env                  *environment.Environment
+	envManager           environment.Manager
 	projectPath          string
 	options              Options
 	console              input.Console
@@ -108,7 +109,7 @@ func (p *BicepProvider) Initialize(ctx context.Context, projectPath string, opti
 // An environment is considered to be in a provision-ready state if it contains both an AZURE_SUBSCRIPTION_ID and
 // AZURE_LOCATION value. Additionally, for resource group scoped deployments, an AZURE_RESOURCE_GROUP value is required.
 func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
-	if err := EnsureSubscriptionAndLocation(ctx, p.env, p.prompters); err != nil {
+	if err := EnsureSubscriptionAndLocation(ctx, p.envManager, p.env, p.prompters); err != nil {
 		return err
 	}
 
@@ -147,7 +148,7 @@ func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
 			}
 
 			p.env.DotenvSet(environment.ResourceGroupEnvVarName, rgName)
-			if err := p.env.Save(); err != nil {
+			if err := p.envManager.Save(ctx, p.env); err != nil {
 				return fmt.Errorf("saving resource group name: %w", err)
 			}
 		}
@@ -1544,7 +1545,7 @@ func (p *BicepProvider) ensureParameters(
 	}
 
 	if configModified {
-		if err := p.env.Save(); err != nil {
+		if err := p.envManager.Save(ctx, p.env); err != nil {
 			p.console.Message(ctx, fmt.Sprintf("warning: failed to save configured values: %v", err))
 		}
 	}
@@ -1614,6 +1615,7 @@ func NewBicepProvider(
 	azCli azcli.AzCli,
 	deploymentsService azapi.Deployments,
 	deploymentOperations azapi.DeploymentOperations,
+	envManager environment.Manager,
 	env *environment.Environment,
 	console input.Console,
 	prompters prompt.Prompter,
@@ -1622,6 +1624,7 @@ func NewBicepProvider(
 	clock clock.Clock,
 ) Provider {
 	return &BicepProvider{
+		envManager:           envManager,
 		env:                  env,
 		console:              console,
 		bicepCli:             bicepCli,

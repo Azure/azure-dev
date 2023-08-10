@@ -118,12 +118,6 @@ func (c *AzdContext) SetDefaultEnvironmentName(name string) error {
 	return writeConfig(path, config)
 }
 
-var ErrEnvironmentExists = errors.New("environment already exists")
-
-func (c *AzdContext) NewEnvironment(name string) error {
-	return createEnvironment(c.EnvironmentDirectory(), name)
-}
-
 // Creates context with project directory set to the desired directory.
 func NewAzdContextWithDirectory(projectDirectory string) *AzdContext {
 	return &AzdContext{
@@ -178,22 +172,6 @@ func NewAzdContext() (*AzdContext, error) {
 type configFile struct {
 	Version            int    `json:"version"`
 	DefaultEnvironment string `json:"defaultEnvironment"`
-}
-
-func createEnvironment(dir string, name string) error {
-	if err := os.MkdirAll(dir, osutil.PermissionDirectory); err != nil {
-		return fmt.Errorf("creating environment root: %w", err)
-	}
-
-	if err := os.Mkdir(filepath.Join(dir, name), osutil.PermissionDirectory); err != nil {
-		if errors.Is(err, os.ErrExist) {
-			return ErrEnvironmentExists
-		}
-
-		return fmt.Errorf("creating environment directory: %w", err)
-	}
-
-	return nil
 }
 
 func writeConfig(path string, config configFile) error {

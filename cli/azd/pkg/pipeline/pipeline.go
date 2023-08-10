@@ -136,9 +136,9 @@ var (
 	azdoYml      string = filepath.Join(azdoFolder, "azure-dev.yml")
 )
 
-func savePipelineProviderToEnv(provider string, env *environment.Environment) error {
+func savePipelineProviderToEnv(ctx context.Context, provider string, envManager environment.Manager, env *environment.Environment) error {
 	env.DotenvSet(envPersistedKey, provider)
-	err := env.Save()
+	err := envManager.Save(ctx, env)
 	if err != nil {
 		return err
 	}

@@ -17,6 +17,7 @@ import (
 
 type ContainerHelper struct {
 	env                      *environment.Environment
+	envManager               environment.Manager
 	containerRegistryService azcli.ContainerRegistryService
 	docker                   docker.Docker
 	clock                    clock.Clock
@@ -24,6 +25,7 @@ type ContainerHelper struct {
 
 func NewContainerHelper(
 	env *environment.Environment,
+	envManager environment.Manager,
 	clock clock.Clock,
 	containerRegistryService azcli.ContainerRegistryService,
 	docker docker.Docker,
@@ -147,7 +149,7 @@ func (ch *ContainerHelper) Deploy(
 			log.Printf("writing image name to environment")
 			ch.env.SetServiceProperty(serviceConfig.Name, "IMAGE_NAME", remoteTag)
 
-			if err := ch.env.Save(); err != nil {
+			if err := ch.envManager.Save(ctx, ch.env); err != nil {
 				task.SetError(fmt.Errorf("saving image name to environment: %w", err))
 				return
 			}

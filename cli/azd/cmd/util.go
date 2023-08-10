@@ -81,6 +81,7 @@ func createEnvironment(
 	ctx context.Context,
 	envSpec environmentSpec,
 	azdCtx *azdcontext.AzdContext,
+	envManager environment.Manager,
 	console input.Console,
 ) (*environment.Environment, error) {
 	if envSpec.environmentName != "" && !environment.IsValidEnvironmentName(envSpec.environmentName) {
@@ -94,7 +95,7 @@ func createEnvironment(
 	}
 
 	// Ensure the environment does not already exist:
-	env, err := environment.GetEnvironment(azdCtx, envSpec.environmentName)
+	env, err := envManager.Get(ctx, envSpec.environmentName)
 	switch {
 	case errors.Is(err, os.ErrNotExist):
 	case err != nil:
@@ -113,28 +114,17 @@ func createEnvironment(
 		env.SetLocation(envSpec.location)
 	}
 
-	if err := env.Save(); err != nil {
+	if err := envManager.Save(ctx, env); err != nil {
 		return nil, err
 	}
 
 	return env, nil
 }
 
-func loadEnvironmentIfAvailable() (*environment.Environment, error) {
-	azdCtx, err := azdcontext.NewAzdContext()
-	if err != nil {
-		return nil, err
-	}
-	defaultEnv, err := azdCtx.GetDefaultEnvironmentName()
-	if err != nil {
-		return nil, err
-	}
-	return environment.GetEnvironment(azdCtx, defaultEnv)
-}
-
 func loadOrCreateEnvironment(
 	ctx context.Context,
 	environmentName string,
+	envManager environment.Manager,
 	azdCtx *azdcontext.AzdContext,
 	console input.Console,
 ) (*environment.Environment, error) {
@@ -149,7 +139,7 @@ func loadOrCreateEnvironment(
 		}
 
 		if environmentName != "" {
-			env, err := environment.GetEnvironment(azdCtx, environmentName)
+			env, err := envManager.Get(ctx, environmentName)
 			switch {
 			case errors.Is(err, os.ErrNotExist):
 				msg := fmt.Sprintf("Environment '%s' does not exist, would you like to create it?", environmentName)
@@ -188,7 +178,7 @@ func loadOrCreateEnvironment(
 			return nil, false, err
 		}
 
-		return environment.EmptyWithRoot(azdCtx.EnvironmentRoot(environmentName)), true, nil
+		return environment.Empty(environmentName), true, nil
 	}
 
 	env, isNew, err := loadOrCreateEnvironment()
@@ -204,7 +194,7 @@ func loadOrCreateEnvironment(
 			env.SetEnvName(environmentName)
 		}
 
-		if err := env.Save(); err != nil {
+		if err := envManager.Save(ctx, env); err != nil {
 			return nil, err
 		}
 

@@ -19,6 +19,7 @@ import (
 // Manages the orchestration of infrastructure provisioning
 type Manager struct {
 	serviceLocator      ioc.ServiceLocator
+	envManager          environment.Manager
 	env                 *environment.Environment
 	console             input.Console
 	prompter            prompt.Prompter
@@ -59,7 +60,7 @@ func (m *Manager) Deploy(ctx context.Context) (*DeployResult, error) {
 		return nil, fmt.Errorf("error deploying infrastructure: %w", err)
 	}
 
-	if err := UpdateEnvironment(m.env, deployResult.Deployment.Outputs); err != nil {
+	if err := UpdateEnvironment(ctx, m.envManager, m.env, deployResult.Deployment.Outputs); err != nil {
 		return nil, fmt.Errorf("updating environment with deployment outputs: %w", err)
 	}
 
@@ -117,7 +118,7 @@ func (m *Manager) Destroy(ctx context.Context, options DestroyOptions) (*Destroy
 	}
 
 	// Update environment files to remove invalid infrastructure parameters
-	if err := m.env.Save(); err != nil {
+	if err := m.envManager.Save(ctx, m.env); err != nil {
 		return nil, fmt.Errorf("saving environment: %w", err)
 	}
 
@@ -126,7 +127,7 @@ func (m *Manager) Destroy(ctx context.Context, options DestroyOptions) (*Destroy
 
 // EnsureSubscriptionAndLocation ensures that that that subscription (AZURE_SUBSCRIPTION_ID) and location (AZURE_LOCATION)
 // variables are set in the environment, prompting the user for the values if they do not exist.
-func EnsureSubscriptionAndLocation(ctx context.Context, env *environment.Environment, prompter prompt.Prompter) error {
+func EnsureSubscriptionAndLocation(ctx context.Context, envManager environment.Manager, env *environment.Environment, prompter prompt.Prompter) error {
 	if env.GetSubscriptionId() == "" {
 		subscriptionId, err := prompter.PromptSubscription(ctx, "Select an Azure Subscription to use:")
 		if err != nil {
@@ -135,7 +136,7 @@ func EnsureSubscriptionAndLocation(ctx context.Context, env *environment.Environ
 
 		env.SetSubscriptionId(subscriptionId)
 
-		if err := env.Save(); err != nil {
+		if err := envManager.Save(ctx, env); err != nil {
 			return err
 		}
 	}
@@ -153,7 +154,7 @@ func EnsureSubscriptionAndLocation(ctx context.Context, env *environment.Environ
 
 		env.SetLocation(location)
 
-		if err := env.Save(); err != nil {
+		if err := envManager.Save(ctx, env); err != nil {
 			return err
 		}
 	}
@@ -164,6 +165,7 @@ func EnsureSubscriptionAndLocation(ctx context.Context, env *environment.Environ
 // Creates a new instance of the Provisioning Manager
 func NewManager(
 	serviceLocator ioc.ServiceLocator,
+	envManager environment.Manager,
 	env *environment.Environment,
 	console input.Console,
 	alphaFeatureManager *alpha.FeatureManager,
@@ -171,6 +173,7 @@ func NewManager(
 ) *Manager {
 	return &Manager{
 		serviceLocator:      serviceLocator,
+		envManager:          envManager,
 		env:                 env,
 		console:             console,
 		alphaFeatureManager: alphaFeatureManager,

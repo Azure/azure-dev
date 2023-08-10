@@ -18,6 +18,7 @@ import (
 
 type containerAppTarget struct {
 	env                 *environment.Environment
+	envManager          environment.Manager
 	containerHelper     *ContainerHelper
 	containerAppService containerapps.ContainerAppService
 	resourceManager     ResourceManager
@@ -29,12 +30,14 @@ type containerAppTarget struct {
 // can be provisioned during deployment.
 func NewContainerAppTarget(
 	env *environment.Environment,
+	envManager environment.Manager,
 	containerHelper *ContainerHelper,
 	containerAppService containerapps.ContainerAppService,
 	resourceManager ResourceManager,
 ) ServiceTarget {
 	return &containerAppTarget{
 		env:                 env,
+		envManager:          envManager,
 		containerHelper:     containerHelper,
 		containerAppService: containerAppService,
 		resourceManager:     resourceManager,
@@ -182,6 +185,6 @@ func (at *containerAppTarget) addPreProvisionChecks(ctx context.Context, service
 		}
 
 		at.env.SetServiceProperty(serviceConfig.Name, "RESOURCE_EXISTS", strconv.FormatBool(exists))
-		return at.env.Save()
+		return at.envManager.Save(ctx, at.env)
 	})
 }

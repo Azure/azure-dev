@@ -175,6 +175,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(
 		func(ctx context.Context,
 			azdContext *azdcontext.AzdContext,
+			envManager environment.Manager,
 			lazyEnv *lazy.Lazy[*environment.Environment],
 			envFlags envFlag,
 			console input.Console,
@@ -186,7 +187,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			environmentName := envFlags.environmentName
 			var err error
 
-			env, err := loadOrCreateEnvironment(ctx, environmentName, azdContext, console)
+			env, err := loadOrCreateEnvironment(ctx, environmentName, envManager, azdContext, console)
 			if err != nil {
 				return nil, fmt.Errorf("loading environment: %w", err)
 			}
@@ -199,13 +200,26 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		},
 	)
 	container.RegisterSingleton(func() environment.EnvironmentResolver {
-		return func() (*environment.Environment, error) { return loadEnvironmentIfAvailable() }
+		return func(ctx context.Context, envManager environment.Manager) (*environment.Environment, error) {
+			azdCtx, err := azdcontext.NewAzdContext()
+			if err != nil {
+				return nil, err
+			}
+			defaultEnv, err := azdCtx.GetDefaultEnvironmentName()
+			if err != nil {
+				return nil, err
+			}
+			return envManager.Get(ctx, defaultEnv)
+		}
 	})
+
+	container.RegisterSingleton(environment.NewLocalFileDataStore)
+	container.RegisterSingleton(environment.NewManager)
 
 	// Lazy loads an existing environment, erroring out if not available
 	// One can repeatedly call GetValue to wait until the environment is available.
 	container.RegisterSingleton(
-		func(lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext], envFlags envFlag) *lazy.Lazy[*environment.Environment] {
+		func(ctx context.Context, envManager environment.Manager, lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext], envFlags envFlag) *lazy.Lazy[*environment.Environment] {
 			return lazy.NewLazy(func() (*environment.Environment, error) {
 				azdCtx, err := lazyAzdContext.GetValue()
 				if err != nil {
@@ -220,7 +234,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 					}
 				}
 
-				env, err := environment.GetEnvironment(azdCtx, environmentName)
+				env, err := envManager.Get(ctx, environmentName)
 				if err != nil {
 					return nil, err
 				}

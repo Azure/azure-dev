@@ -78,6 +78,7 @@ func (i *initFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOpt
 }
 
 type initAction struct {
+	envManager      environment.Manager
 	console         input.Console
 	cmdRun          exec.CommandRunner
 	gitCli          git.GitCli
@@ -87,6 +88,7 @@ type initAction struct {
 }
 
 func newInitAction(
+	envManager environment.Manager,
 	cmdRun exec.CommandRunner,
 	console input.Console,
 	gitCli git.GitCli,
@@ -94,6 +96,7 @@ func newInitAction(
 	repoInitializer *repository.Initializer,
 	templateManager *templates.TemplateManager) actions.Action {
 	return &initAction{
+		envManager:      envManager,
 		console:         console,
 		cmdRun:          cmdRun,
 		gitCli:          gitCli,
@@ -196,7 +199,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		suggest:         suggest,
 	}
 
-	env, err := createEnvironment(ctx, envSpec, azdCtx, i.console)
+	env, err := createEnvironment(ctx, envSpec, azdCtx, i.envManager, i.console)
 	if err != nil {
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}

@@ -64,6 +64,7 @@ type PipelineConfigResult struct {
 // PipelineManager takes care of setting up the scm and pipeline.
 // The manager allows to use and test scm providers without a cobra command.
 type PipelineManager struct {
+	envManager     environment.Manager
 	scmProvider    ScmProvider
 	ciProvider     CiProvider
 	args           *PipelineManagerArgs
@@ -77,6 +78,7 @@ type PipelineManager struct {
 
 func NewPipelineManager(
 	ctx context.Context,
+	envManager environment.Manager,
 	adService azcli.AdService,
 	gitCli git.GitCli,
 	azdCtx *azdcontext.AzdContext,
@@ -87,6 +89,7 @@ func NewPipelineManager(
 ) (*PipelineManager, error) {
 	pipelineProvider := &PipelineManager{
 		azdCtx:         azdCtx,
+		envManager:     envManager,
 		env:            env,
 		args:           args,
 		adService:      adService,
@@ -234,7 +237,7 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 	// Set in .env to be retrieved for any additional runs
 	if clientId != nil {
 		pm.env.DotenvSet(AzurePipelineClientIdEnvVarName, *clientId)
-		if err := pm.env.Save(); err != nil {
+		if err := pm.envManager.Save(ctx, pm.env); err != nil {
 			return result, fmt.Errorf("failed to save environment: %w", err)
 		}
 	}
@@ -603,7 +606,7 @@ func (pm *PipelineManager) initialize(ctx context.Context, override string) erro
 		ciProviderName = gitHubLabel
 	}
 
-	_ = savePipelineProviderToEnv(scmProviderName, pm.env)
+	_ = savePipelineProviderToEnv(ctx, scmProviderName, pm.envManager, pm.env)
 
 	var scmProvider ScmProvider
 	if err := pm.serviceLocator.ResolveNamed(scmProviderName+"-scm", &scmProvider); err != nil {

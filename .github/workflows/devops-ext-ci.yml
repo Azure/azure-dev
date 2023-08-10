@@ -23,6 +23,7 @@ jobs:
       - name: Install dependencies
         run: |
           npm install -g npm
+          npm install
         working-directory: ./ext/azuredevops/setupAzd
 
       - name: Test

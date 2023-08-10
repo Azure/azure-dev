@@ -13,17 +13,6 @@ permissions:
   id-token: write
 
 jobs:
-  cspell-lint:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v3
-      - uses: actions/setup-node@v3
-        with:
-          node-version: "18"
-      - run: npm install -g cspell
-      - name: Spell check for vscode extension
-        run: cspell lint '**/*.ts' --config ./ext/vscode/.vscode/cspell.yaml --root ./ext/vscode --no-progress
-
   build-test:
     runs-on: ubuntu-latest
     steps:
@@ -34,9 +23,8 @@ jobs:
       - name: Install dependencies
         run: |
           npm install -g npm
-          npm ci --no-optional
         working-directory: ./ext/azuredevops
 
       - name: Test
-        run: npm install && npm test
+        run: npm test
         working-directory: ./ext/azuredevops/setupAzd

@@ -769,8 +769,10 @@ confirmDetection:
 	}
 
 	funcMap := template.FuncMap{
-		"bicepName": bicepName,
-		"upper":     strings.ToUpper,
+		"bicepName":        bicepName,
+		"containerAppName": containerAppName,
+		"upper":            strings.ToUpper,
+		"lower":            strings.ToLower,
 	}
 
 	root := "scaffold/templates"
@@ -868,6 +870,22 @@ func bicepName(name string) string {
 	}
 
 	return sb.String()
+}
+
+const resourceTokenLen = 13
+
+// abbreviations.json: appContainerApps
+const containerAppPrefixLen = 2
+
+// containerAppName returns a name that is valid to be used as an infix for a container app resource.
+func containerAppName(name string) string {
+	maxLen := resourceTokenLen + containerAppPrefixLen + 1 // 1 for the separator length
+	name = strings.ToLower(name)
+	if len(name) > maxLen {
+		name = name[:maxLen]
+	}
+
+	return name
 }
 
 func copyFS(embedFs embed.FS, root string, target string) error {

@@ -1,0 +1,42 @@
+
+View and manage azd template sources used within azd template list and azd init experiences. (Beta)
+
+  • Template sources allow customizing the list of available templates to include additional local or remote files and urls.
+  • Running azd init without a template will prompt you to start with a minimal template or select from a template from your registered template sources.
+
+Usage
+  azd template source [command]
+
+Available Commands
+  add   	: Adds an azd template source at the specified key (Beta)
+  list  	: Lists the configured azd template sources. (Beta)
+  remove	: Removes the specified azd template source (Beta)
+
+Flags
+        --docs 	: Opens the documentation for azd template source in your web browser.
+    -h, --help 	: Gets help for source.
+
+Global Flags
+    -C, --cwd string 	: Sets the current working directory.
+        --debug      	: Enables debugging and diagnostics logging.
+        --no-prompt  	: Accepts the default value instead of prompting, or it fails if there is no default.
+
+Use azd template source [command] --help to view examples and more information about a specific command.
+
+Examples
+  Add a new file template source.
+    azd template source add <key> --type file --location <path>
+
+  Add a new url template source.
+    azd template source add <key> --type url --location <url>
+
+  Enable the Awesome Azd template source.
+    azd template source add awesome-azd
+
+  Remove a previously registered template source.
+    azd template source remove <key>
+
+  View a list of registered azd template sources.
+    azd template source list
+
+

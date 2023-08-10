@@ -1,13 +1,12 @@
 
-Resets configuration to default.
+Lists the configured azd template sources. (Beta)
 
 Usage
-  azd config reset [flags]
+  azd template source list [flags]
 
 Flags
-        --docs  	: Opens the documentation for azd config reset in your web browser.
-    -f, --force 	: Force reset without confirmation.
-    -h, --help  	: Gets help for reset.
+        --docs 	: Opens the documentation for azd template source list in your web browser.
+    -h, --help 	: Gets help for list.
 
 Global Flags
     -C, --cwd string 	: Sets the current working directory.

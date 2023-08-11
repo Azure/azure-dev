@@ -640,9 +640,9 @@ confirmDetection:
 			// - python: 80
 			// - other: 8080
 			serviceSpec.Port = 8080
-			if project.Language == appdetect.Python {
-				serviceSpec.Port = 80
-			}
+			// if project.Language == appdetect.Python {
+			// 	serviceSpec.Port = 80
+			// }
 		}
 
 		for _, framework := range project.Frameworks {

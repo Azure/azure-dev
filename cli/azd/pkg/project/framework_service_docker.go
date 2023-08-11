@@ -24,7 +24,7 @@ import (
 	"github.com/benbjohnson/clock"
 )
 
-const BuilderImage = "paketobuildpacks/builder:base"
+const BuilderImage = "paketobuildpacks/builder-jammy-base"
 
 type DockerProjectOptions struct {
 	Path      string           `yaml:"path,omitempty" json:"path,omitempty"`
@@ -234,7 +234,23 @@ func (p *dockerProject) packBuild(
 			MaxLineCount: 8,
 			Title:        "Docker (pack) Output",
 		})
-	err := p.pack.Build(ctx, filepath.Join(svc.Path(), dockerOptions.Context), BuilderImage, imageName, previewer)
+
+	builder := BuilderImage
+	args := []string{}
+	environ := []string{}
+	if svc.OutputPath != "" {
+		args = append(args, "--buildpack", "paketo-buildpacks/nginx")
+		environ = append(environ,
+			"BP_WEB_SERVER=nginx",
+			"BP_WEB_SERVER_ROOT="+svc.OutputPath,
+			"BP_WEB_SERVER_ENABLE_PUSH_STATE=true",
+			"NODE_ENV")
+	}
+
+	if os.Getenv("AZD_BUILDER_IMAGE") != "" {
+		builder = os.Getenv("AZD_BUILDER_IMAGE")
+	}
+	err := p.pack.Build(ctx, filepath.Join(svc.Path(), dockerOptions.Context), builder, imageName, environ, args, previewer)
 	p.console.StopPreviewer(ctx)
 	if err != nil {
 		return nil, err

@@ -36,6 +36,8 @@ type PackCli interface {
 		cwd string,
 		builder string,
 		imageName string,
+		environ []string,
+		args []string,
 		buildProgress io.Writer,
 	) error
 }
@@ -180,6 +182,8 @@ func (cli *packCli) Build(
 	cwd string,
 	builder string,
 	imageName string,
+	environ []string,
+	args []string,
 	buildProgress io.Writer,
 ) error {
 	err := cli.enableExperimental(ctx)
@@ -187,7 +191,17 @@ func (cli *packCli) Build(
 		return err
 	}
 
-	runArgs := exec.NewRunArgs(cli.path, "build", imageName, "--builder", builder, "--path", cwd)
+	envArgs := make([]string, 0, 2*len(environ))
+	for _, e := range environ {
+		envArgs = append(envArgs, "--env", e)
+	}
+
+	runArgs := exec.NewRunArgs(
+		cli.path, "build", imageName, "--builder", builder, "--path", cwd)
+	runArgs.Args = append(runArgs.Args, envArgs...)
+	if len(args) > 0 {
+		runArgs.Args = append(runArgs.Args, args...)
+	}
 	if buildProgress != nil {
 		runArgs = runArgs.WithStdOut(buildProgress).WithStdErr(buildProgress)
 	}

@@ -13,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
+	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/containerapps"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -187,7 +188,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			environmentName := envFlags.environmentName
 			var err error
 
-			env, err := loadOrCreateEnvironment(ctx, environmentName, envManager, azdContext, console)
+			env, err := envManager.LoadOrCreateInteractive(ctx, environmentName)
 			if err != nil {
 				return nil, fmt.Errorf("loading environment: %w", err)
 			}
@@ -213,8 +214,18 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		}
 	})
 
+	container.RegisterSingleton(storage.NewBlobClient)
 	container.RegisterSingleton(environment.NewLocalFileDataStore)
+	container.RegisterSingleton(environment.NewStorageBlobDataStore)
 	container.RegisterSingleton(environment.NewManager)
+
+	container.RegisterSingleton(func(projectConfig *project.ProjectConfig) storage.AccountConfig {
+		return storage.AccountConfig{
+			ResourceGroup: "rg-wabrez-azd-remote-state",
+			AccountName:   "saazdremotestate",
+			ContainerName: projectConfig.Name,
+		}
+	})
 
 	// Lazy loads an existing environment, erroring out if not available
 	// One can repeatedly call GetValue to wait until the environment is available.

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
@@ -15,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/joho/godotenv"
+	"golang.org/x/exp/slices"
 )
 
 type LocalFileDataStore struct {
@@ -37,7 +37,7 @@ func (fs *LocalFileDataStore) ConfigPath(env *Environment) string {
 	return filepath.Join(fs.azdContext.EnvironmentRoot(env.name), ConfigFileName)
 }
 
-func (fs *LocalFileDataStore) List(ctx context.Context) ([]contracts.EnvListEnvironment, error) {
+func (fs *LocalFileDataStore) List(ctx context.Context) ([]*contracts.EnvListEnvironment, error) {
 	defaultEnv, err := fs.azdContext.GetDefaultEnvironmentName()
 	if err != nil {
 		return nil, err
@@ -45,7 +45,7 @@ func (fs *LocalFileDataStore) List(ctx context.Context) ([]contracts.EnvListEnvi
 
 	environments, err := os.ReadDir(fs.azdContext.EnvironmentDirectory())
 	if errors.Is(err, os.ErrNotExist) {
-		return []contracts.EnvListEnvironment{}, nil
+		return []*contracts.EnvListEnvironment{}, nil
 	}
 	if err != nil {
 		return nil, fmt.Errorf("listing entries: %w", err)
@@ -53,10 +53,10 @@ func (fs *LocalFileDataStore) List(ctx context.Context) ([]contracts.EnvListEnvi
 
 	// prefer empty array over `nil` since this is a contracted return value,
 	// where empty array is preferred for "NotFound" semantics.
-	envs := []contracts.EnvListEnvironment{}
+	envs := []*contracts.EnvListEnvironment{}
 	for _, ent := range environments {
 		if ent.IsDir() {
-			ev := contracts.EnvListEnvironment{
+			ev := &contracts.EnvListEnvironment{
 				Name:       ent.Name(),
 				IsDefault:  ent.Name() == defaultEnv,
 				DotEnvPath: fs.azdContext.EnvironmentDotEnvPath(ent.Name()),
@@ -65,9 +65,10 @@ func (fs *LocalFileDataStore) List(ctx context.Context) ([]contracts.EnvListEnvi
 		}
 	}
 
-	sort.Slice(envs, func(i, j int) bool {
-		return envs[i].Name < envs[j].Name
+	slices.SortFunc(envs, func(a, b *contracts.EnvListEnvironment) bool {
+		return a.Name < b.Name
 	})
+
 	return envs, nil
 }
 
@@ -78,7 +79,9 @@ func (fs *LocalFileDataStore) Get(ctx context.Context, name string) (*Environmen
 	}
 
 	env := &Environment{
-		name: name,
+		name:       name,
+		dotEnvPath: filepath.Join(fs.azdContext.EnvironmentRoot(name), DotEnvFileName),
+		configPath: filepath.Join(fs.azdContext.EnvironmentRoot(name), ConfigFileName),
 	}
 
 	if err := fs.Reload(ctx, env); err != nil {
@@ -86,7 +89,6 @@ func (fs *LocalFileDataStore) Get(ctx context.Context, name string) (*Environmen
 	}
 
 	return env, nil
-
 }
 
 // Reloads environment variables and configuration

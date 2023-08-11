@@ -42,7 +42,9 @@ const ResourceGroupEnvVarName = "AZURE_RESOURCE_GROUP"
 // The zero value of an Environment is not valid. Use [FromRoot] or [EmptyWithRoot] to create one. When writing tests,
 // [Ephemeral] and [EphemeralWithValues] are useful to create environments which are not persisted to disk.
 type Environment struct {
-	name string
+	name       string
+	dotEnvPath string
+	configPath string
 
 	// dotenv is a map of keys to values, persisted to the `.env` file stored in this environment's [Root].
 	dotenv map[string]string

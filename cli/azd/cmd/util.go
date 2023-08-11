@@ -13,11 +13,9 @@ import (
 	"time"
 
 	"github.com/AlecAivazis/survey/v2"
-	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	azdExec "github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -31,180 +29,90 @@ type CmdAnnotations map[string]string
 
 type Asker func(p survey.Prompt, response interface{}) error
 
-func invalidEnvironmentNameMsg(environmentName string) string {
-	return fmt.Sprintf(
-		"environment name '%s' is invalid (it should contain only alphanumeric characters and hyphens)\n",
-		environmentName,
-	)
-}
+// func loadOrCreateEnvironment(
+// 	ctx context.Context,
+// 	environmentName string,
+// 	envManager environment.Manager,
+// 	azdCtx *azdcontext.AzdContext,
+// 	console input.Console,
+// ) (*environment.Environment, error) {
+// 	loadOrCreateEnvironment := func() (*environment.Environment, bool, error) {
+// 		// If there's a default environment, use that
+// 		if environmentName == "" {
+// 			var err error
+// 			environmentName, err = azdCtx.GetDefaultEnvironmentName()
+// 			if err != nil {
+// 				return nil, false, fmt.Errorf("getting default environment: %w", err)
+// 			}
+// 		}
 
-// ensureValidEnvironmentName ensures the environment name is valid, if it is not, an error is printed
-// and the user is prompted for a new name.
-func ensureValidEnvironmentName(ctx context.Context, environmentName *string, suggest string, console input.Console) error {
-	for !environment.IsValidEnvironmentName(*environmentName) {
-		userInput, err := console.Prompt(ctx, input.ConsoleOptions{
-			Message: "Enter a new environment name:",
-			Help: heredoc.Doc(`
-			A unique string that can be used to differentiate copies of your application in Azure. 
-			
-			This value is typically used by the infrastructure as code templates to name the resource group that contains
-			the infrastructure for your application and to generate a unique suffix that is applied to resources to prevent
-			naming collisions.`),
-			DefaultValue: suggest,
-		})
+// 		if environmentName != "" {
+// 			env, err := envManager.Get(ctx, environmentName)
+// 			switch {
+// 			case errors.Is(err, os.ErrNotExist):
+// 				msg := fmt.Sprintf("Environment '%s' does not exist, would you like to create it?", environmentName)
+// 				shouldCreate, promptErr := console.Confirm(ctx, input.ConsoleOptions{
+// 					Message:      msg,
+// 					DefaultValue: true,
+// 				})
+// 				if promptErr != nil {
+// 					return nil, false, fmt.Errorf("prompting to create environment '%s': %w", environmentName, promptErr)
+// 				}
+// 				if !shouldCreate {
+// 					return nil, false, fmt.Errorf("environment '%s' not found: %w", environmentName, err)
+// 				}
+// 			case err != nil:
+// 				return nil, false, fmt.Errorf("loading environment '%s': %w", environmentName, err)
+// 			case err == nil:
+// 				return env, false, nil
+// 			}
+// 		}
 
-		if err != nil {
-			return fmt.Errorf("reading environment name: %w", err)
-		}
+// 		// Two cases if we get to here:
+// 		// - The user has not specified an environment name (and there was no default environment set)
+// 		// - The user has specified an environment name, but the named environment didn't exist and they told us they would
+// 		//   like us to create it.
+// 		if environmentName != "" && !environment.IsValidEnvironmentName(environmentName) {
+// 			fmt.Fprintf(
+// 				console.Handles().Stdout,
+// 				"environment name '%s' is invalid (it should contain only alphanumeric characters and hyphens)\n",
+// 				environmentName)
+// 			return nil, false, fmt.Errorf(
+// 				"environment name '%s' is invalid (it should contain only alphanumeric characters and hyphens)",
+// 				environmentName)
+// 		}
 
-		*environmentName = userInput
+// 		if err := ensureValidEnvironmentName(ctx, &environmentName, "", console); err != nil {
+// 			return nil, false, err
+// 		}
 
-		if !environment.IsValidEnvironmentName(*environmentName) {
-			fmt.Fprint(console.Handles().Stdout, invalidEnvironmentNameMsg(*environmentName))
-		}
-	}
+// 		return environment.Empty(environmentName), true, nil
+// 	}
 
-	return nil
-}
+// 	env, isNew, err := loadOrCreateEnvironment()
+// 	switch {
+// 	case errors.Is(err, os.ErrNotExist):
+// 		return nil, fmt.Errorf("environment %s does not exist", environmentName)
+// 	case err != nil:
+// 		return nil, err
+// 	}
 
-type environmentSpec struct {
-	environmentName string
-	subscription    string
-	location        string
-	// suggest is the name that is offered as a suggestion if we need to prompt the user for an environment name.
-	suggest string
-}
+// 	if isNew {
+// 		if env.GetEnvName() == "" {
+// 			env.SetEnvName(environmentName)
+// 		}
 
-// createEnvironment creates a new named environment. If an environment with this name already
-// exists, and error is returned.
-func createEnvironment(
-	ctx context.Context,
-	envSpec environmentSpec,
-	azdCtx *azdcontext.AzdContext,
-	envManager environment.Manager,
-	console input.Console,
-) (*environment.Environment, error) {
-	if envSpec.environmentName != "" && !environment.IsValidEnvironmentName(envSpec.environmentName) {
-		errMsg := invalidEnvironmentNameMsg(envSpec.environmentName)
-		fmt.Fprint(console.Handles().Stdout, errMsg)
-		return nil, fmt.Errorf(errMsg)
-	}
+// 		if err := envManager.Save(ctx, env); err != nil {
+// 			return nil, err
+// 		}
 
-	if err := ensureValidEnvironmentName(ctx, &envSpec.environmentName, envSpec.suggest, console); err != nil {
-		return nil, err
-	}
+// 		if err := azdCtx.SetDefaultEnvironmentName(env.GetEnvName()); err != nil {
+// 			return nil, fmt.Errorf("saving default environment: %w", err)
+// 		}
+// 	}
 
-	// Ensure the environment does not already exist:
-	env, err := envManager.Get(ctx, envSpec.environmentName)
-	switch {
-	case errors.Is(err, os.ErrNotExist):
-	case err != nil:
-		return nil, fmt.Errorf("checking for existing environment: %w", err)
-	case err == nil:
-		return nil, fmt.Errorf("environment '%s' already exists", envSpec.environmentName)
-	}
-
-	env.SetEnvName(envSpec.environmentName)
-
-	if envSpec.subscription != "" {
-		env.SetSubscriptionId(envSpec.subscription)
-	}
-
-	if envSpec.location != "" {
-		env.SetLocation(envSpec.location)
-	}
-
-	if err := envManager.Save(ctx, env); err != nil {
-		return nil, err
-	}
-
-	return env, nil
-}
-
-func loadOrCreateEnvironment(
-	ctx context.Context,
-	environmentName string,
-	envManager environment.Manager,
-	azdCtx *azdcontext.AzdContext,
-	console input.Console,
-) (*environment.Environment, error) {
-	loadOrCreateEnvironment := func() (*environment.Environment, bool, error) {
-		// If there's a default environment, use that
-		if environmentName == "" {
-			var err error
-			environmentName, err = azdCtx.GetDefaultEnvironmentName()
-			if err != nil {
-				return nil, false, fmt.Errorf("getting default environment: %w", err)
-			}
-		}
-
-		if environmentName != "" {
-			env, err := envManager.Get(ctx, environmentName)
-			switch {
-			case errors.Is(err, os.ErrNotExist):
-				msg := fmt.Sprintf("Environment '%s' does not exist, would you like to create it?", environmentName)
-				shouldCreate, promptErr := console.Confirm(ctx, input.ConsoleOptions{
-					Message:      msg,
-					DefaultValue: true,
-				})
-				if promptErr != nil {
-					return nil, false, fmt.Errorf("prompting to create environment '%s': %w", environmentName, promptErr)
-				}
-				if !shouldCreate {
-					return nil, false, fmt.Errorf("environment '%s' not found: %w", environmentName, err)
-				}
-			case err != nil:
-				return nil, false, fmt.Errorf("loading environment '%s': %w", environmentName, err)
-			case err == nil:
-				return env, false, nil
-			}
-		}
-
-		// Two cases if we get to here:
-		// - The user has not specified an environment name (and there was no default environment set)
-		// - The user has specified an environment name, but the named environment didn't exist and they told us they would
-		//   like us to create it.
-		if environmentName != "" && !environment.IsValidEnvironmentName(environmentName) {
-			fmt.Fprintf(
-				console.Handles().Stdout,
-				"environment name '%s' is invalid (it should contain only alphanumeric characters and hyphens)\n",
-				environmentName)
-			return nil, false, fmt.Errorf(
-				"environment name '%s' is invalid (it should contain only alphanumeric characters and hyphens)",
-				environmentName)
-		}
-
-		if err := ensureValidEnvironmentName(ctx, &environmentName, "", console); err != nil {
-			return nil, false, err
-		}
-
-		return environment.Empty(environmentName), true, nil
-	}
-
-	env, isNew, err := loadOrCreateEnvironment()
-	switch {
-	case errors.Is(err, os.ErrNotExist):
-		return nil, fmt.Errorf("environment %s does not exist", environmentName)
-	case err != nil:
-		return nil, err
-	}
-
-	if isNew {
-		if env.GetEnvName() == "" {
-			env.SetEnvName(environmentName)
-		}
-
-		if err := envManager.Save(ctx, env); err != nil {
-			return nil, err
-		}
-
-		if err := azdCtx.SetDefaultEnvironmentName(env.GetEnvName()); err != nil {
-			return nil, fmt.Errorf("saving default environment: %w", err)
-		}
-	}
-
-	return env, nil
-}
+// 	return env, nil
+// }
 
 const environmentNameFlag string = "environment"
 

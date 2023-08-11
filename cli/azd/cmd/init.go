@@ -192,14 +192,14 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		suggest = suggest[len(suggest)-environment.EnvironmentNameMaxLength:]
 	}
 
-	envSpec := environmentSpec{
-		environmentName: i.flags.environmentName,
-		subscription:    i.flags.subscription,
-		location:        i.flags.location,
-		suggest:         suggest,
+	envSpec := environment.Spec{
+		Name:         i.flags.environmentName,
+		Subscription: i.flags.subscription,
+		Location:     i.flags.location,
+		Suggest:      suggest,
 	}
 
-	env, err := createEnvironment(ctx, envSpec, azdCtx, i.envManager, i.console)
+	env, err := i.envManager.CreateInteractive(ctx, envSpec)
 	if err != nil {
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}

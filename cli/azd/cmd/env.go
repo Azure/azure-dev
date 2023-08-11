@@ -167,8 +167,11 @@ func newEnvSelectAction(azdCtx *azdcontext.AzdContext, envManager environment.Ma
 func (e *envSelectAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	_, err := e.envManager.Get(ctx, e.args[0])
 	if errors.Is(err, os.ErrNotExist) {
-		return nil, fmt.Errorf(`environment '%s' does not exist. You can create it with "azd env new %s"`,
-			e.args[0], e.args[0])
+		return nil, fmt.Errorf(
+			`environment '%s' does not exist. You can create it with "azd env new %s"`,
+			e.args[0],
+			e.args[0],
+		)
 	} else if err != nil {
 		return nil, fmt.Errorf("ensuring environment exists: %w", err)
 	}
@@ -309,13 +312,13 @@ func (en *envNewAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		environmentName = en.args[0]
 	}
 
-	envSpec := environmentSpec{
-		environmentName: environmentName,
-		subscription:    en.flags.subscription,
-		location:        en.flags.location,
+	envSpec := environment.Spec{
+		Name:         environmentName,
+		Subscription: en.flags.subscription,
+		Location:     en.flags.location,
 	}
 
-	env, err := createEnvironment(ctx, envSpec, en.azdCtx, en.envManager, en.console)
+	env, err := en.envManager.CreateInteractive(ctx, envSpec)
 	if err != nil {
 		return nil, fmt.Errorf("creating new environment: %w", err)
 	}

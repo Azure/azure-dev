@@ -7,18 +7,15 @@ import (
 )
 
 type LocalDataStore interface {
-	Path(env *Environment) string
-	ConfigPath(env *Environment) string
-	Reload(ctx context.Context, env *Environment) error
 	RemoteDataStore
 }
 
 type RemoteDataStore interface {
-	List(ctx context.Context) ([]contracts.EnvListEnvironment, error)
+	Path(env *Environment) string
+	ConfigPath(env *Environment) string
+	List(ctx context.Context) ([]*contracts.EnvListEnvironment, error)
 	Get(ctx context.Context, name string) (*Environment, error)
 	Create(ctx context.Context, name string) (*Environment, error)
-	Delete(ctx context.Context, name string) error
-	Values(ctx context.Context) (map[string]string, error)
-	Refresh(ctx context.Context) error
+	Reload(ctx context.Context, env *Environment) error
 	Save(ctx context.Context, env *Environment) error
 }

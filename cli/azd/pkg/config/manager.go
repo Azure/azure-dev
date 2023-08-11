@@ -21,7 +21,9 @@ type manager struct {
 
 type Manager interface {
 	Save(config Config, filePath string) error
+	SaveTo(config Config, writer io.Writer) error
 	Load(filePath string) (Config, error)
+	LoadFrom(reader io.Reader) (Config, error)
 }
 
 // Creates a new Configuration Manager
@@ -49,6 +51,20 @@ func (c *manager) Save(config Config, filePath string) error {
 	return nil
 }
 
+func (c *manager) SaveTo(config Config, writer io.Writer) error {
+	configJson, err := json.MarshalIndent(config.Raw(), "", "  ")
+	if err != nil {
+		return fmt.Errorf("failed marshalling config JSON: %w", err)
+	}
+
+	_, err = writer.Write(configJson)
+	if err != nil {
+		return fmt.Errorf("failed writing configuration data: %w", err)
+	}
+
+	return nil
+}
+
 // Loads azd configuration from the specified file path
 func (c *manager) Load(filePath string) (Config, error) {
 	file, err := os.Open(filePath)
@@ -58,7 +74,11 @@ func (c *manager) Load(filePath string) (Config, error) {
 
 	defer file.Close()
 
-	jsonBytes, err := io.ReadAll(file)
+	return c.LoadFrom(file)
+}
+
+func (c *manager) LoadFrom(reader io.Reader) (Config, error) {
+	jsonBytes, err := io.ReadAll(reader)
 	if err != nil {
 		return nil, fmt.Errorf("failed reading azd configuration file")
 	}

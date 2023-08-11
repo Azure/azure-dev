@@ -110,7 +110,7 @@ type Project struct {
 	Language            ProjectType
 	LanguageToolVersion string
 	Frameworks          []Framework
-	RawFrameworks []string
+	RawFrameworks       []string
 	Path                string
 	DetectionRule       string
 	Docker              *Docker

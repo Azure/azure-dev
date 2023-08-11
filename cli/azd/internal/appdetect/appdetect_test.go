@@ -54,6 +54,7 @@ func TestDetect(t *testing.T) {
 					Language:      Python,
 					Path:          "python",
 					DetectionRule: "Inferred by presence of: requirements.txt",
+					RawFrameworks: []string{"leftpad"},
 				},
 				{
 					Language:      TypeScript,

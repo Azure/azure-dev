@@ -171,3 +171,10 @@ yacspin
 zerr
 weilimtest
 capps
+wsgi
+gunicorn
+logfile
+Procfile
+frwk
+paketo
+paketobuildpacks

@@ -281,11 +281,11 @@ func (i *initAction) InitializeTemplate(
 	}
 
 	if i.flags.templatePath == "" {
-		template, err := templates.PromptTemplate(ctx, "Select a project template:", i.console)
+		template, err := templates.PromptTemplate(ctx, "Select a project template:", i.templateManager, i.console)
 		if template != nil {
 			i.flags.templatePath = template.RepositoryPath
 		}
-		
+
 		if err != nil {
 			return err
 		}

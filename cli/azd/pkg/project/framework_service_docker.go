@@ -241,6 +241,7 @@ func (p *dockerProject) packBuild(
 	if svc.OutputPath != "" {
 		args = append(args, "--buildpack", "paketo-buildpacks/nginx")
 		environ = append(environ,
+			"BP_NODE_RUN_SCRIPTS=build",
 			"BP_WEB_SERVER=nginx",
 			"BP_WEB_SERVER_ROOT="+svc.OutputPath,
 			"BP_WEB_SERVER_ENABLE_PUSH_STATE=true",

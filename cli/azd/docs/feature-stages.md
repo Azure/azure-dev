@@ -26,6 +26,7 @@ As of `0.8.0-beta.1`, each Azure Developer CLI feature has been evaluated and as
 | Client       | Visual Studio Code       | Beta      |
 | Client       | Visual Studio            | Alpha     |
 | Client       | Codespaces               | Beta      |
+| Client       | CloudShell               | Beta      |
 | CI/CD        | GitHub Actions           | Stable    |
 | CI/CD        | Azure Pipelines          | Stable    |
 | IaC          | Bicep                    | Stable    |
@@ -36,4 +37,4 @@ As of `0.8.0-beta.1`, each Azure Developer CLI feature has been evaluated and as
 | Host         | Azure Container Apps     | Beta      |
 | Host         | Azure Functions          | Stable    |
 | Host         | Azure Kubernetes Service | Beta      |
-| Host         | Azure Spring Apps        | Alpha     |
+| Host         | Azure Spring Apps        | Beta      |

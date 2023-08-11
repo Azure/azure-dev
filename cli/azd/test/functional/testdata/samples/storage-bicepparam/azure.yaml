@@ -1,0 +1,8 @@
+name: webapp
+metadata: 
+  template: azd-test/webapptest@v1
+services:
+  web:
+    project: src/dotnet/
+    host: appservice
+    language: csharp

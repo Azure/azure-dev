@@ -36,6 +36,7 @@ azuretools
 azureutil
 azureyaml
 Backticks
+bicepparam
 BOOLSLICE
 BUILDID
 BUILDNUMBER

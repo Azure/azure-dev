@@ -123,12 +123,12 @@ func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
 		return nil
 	}
 
-	_, template, err := p.compileBicep(ctx, modulePath)
+	compileResult, err := p.compileBicep(ctx, modulePath)
 	if err != nil {
 		return fmt.Errorf("compiling bicep template: %w", err)
 	}
 
-	scope, err := template.TargetScope()
+	scope, err := compileResult.Template.TargetScope()
 	if err != nil {
 		return err
 	}
@@ -178,17 +178,17 @@ func (p *BicepProvider) State(ctx context.Context, options *StateOptions) (*Stat
 
 	modulePath := p.modulePath()
 	if _, err := os.Stat(modulePath); err == nil {
-		_, template, err := p.compileBicep(ctx, modulePath)
+		compileResult, err := p.compileBicep(ctx, modulePath)
 		if err != nil {
 			return nil, fmt.Errorf("compiling bicep template: %w", err)
 		}
 
-		scope, err = p.scopeForTemplate(ctx, template)
+		scope, err = p.scopeForTemplate(ctx, compileResult.Template)
 		if err != nil {
 			return nil, fmt.Errorf("computing deployment scope: %w", err)
 		}
 
-		outputs = template.Outputs
+		outputs = compileResult.Template.Outputs
 	} else if errors.Is(err, os.ErrNotExist) {
 		// To support BYOI (bring your own infrastructure)
 		// We need to support the case where there template does not contain an `infra` folder.
@@ -305,31 +305,29 @@ var ResourceGroupDeploymentFeature = alpha.MustFeatureKey("resourceGroupDeployme
 // Plans the infrastructure provisioning
 func (p *BicepProvider) plan(ctx context.Context) (*Deployment, *bicepDeploymentDetails, error) {
 	p.console.ShowSpinner(ctx, "Creating a deployment plan", input.Step)
-	// TODO: Report progress, "Generating Bicep parameters file"
-
 	parameters, err := p.loadParameters(ctx)
 	if err != nil {
-		return nil, nil, fmt.Errorf("creating parameters file: %w", err)
+		return nil, nil, fmt.Errorf("resolving bicep parameters file: %w", err)
 	}
 
 	modulePath := p.modulePath()
 	// TODO: Report progress, "Compiling Bicep template"
-	rawTemplate, template, err := p.compileBicep(ctx, modulePath)
+	compileResult, err := p.compileBicep(ctx, modulePath)
 	if err != nil {
 		return nil, nil, fmt.Errorf("creating template: %w", err)
 	}
 
-	configuredParameters, err := p.ensureParameters(ctx, template, parameters)
+	configuredParameters, err := p.ensureParameters(ctx, compileResult, parameters)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	deployment, err := p.convertToDeployment(template)
+	deployment, err := p.convertToDeployment(compileResult.Template)
 	if err != nil {
 		return nil, nil, err
 	}
 
-	deploymentScope, err := template.TargetScope()
+	deploymentScope, err := compileResult.Template.TargetScope()
 	if err != nil {
 		return nil, nil, err
 	}
@@ -357,8 +355,8 @@ func (p *BicepProvider) plan(ctx context.Context) (*Deployment, *bicepDeployment
 	}
 
 	return deployment, &bicepDeploymentDetails{
-		Template:        rawTemplate,
-		TemplateOutputs: template.Outputs,
+		Template:        compileResult.RawArmTemplate,
+		TemplateOutputs: compileResult.Template.Outputs,
 		Parameters:      configuredParameters,
 		Target:          target,
 	}, nil
@@ -562,12 +560,12 @@ func (p *BicepProvider) inferScopeFromEnv(ctx context.Context) (infra.Scope, err
 func (p *BicepProvider) Destroy(ctx context.Context, options DestroyOptions) (*DestroyResult, error) {
 	modulePath := p.modulePath()
 	// TODO: Report progress, "Compiling Bicep template"
-	_, template, err := p.compileBicep(ctx, modulePath)
+	compileResult, err := p.compileBicep(ctx, modulePath)
 	if err != nil {
 		return nil, fmt.Errorf("creating template: %w", err)
 	}
 
-	scope, err := p.scopeForTemplate(ctx, template)
+	scope, err := p.scopeForTemplate(ctx, compileResult.Template)
 	if err != nil {
 		return nil, fmt.Errorf("computing deployment scope: %w", err)
 	}
@@ -681,7 +679,7 @@ func (p *BicepProvider) Destroy(ctx context.Context, options DestroyOptions) (*D
 
 	destroyResult := &DestroyResult{
 		InvalidatedEnvKeys: maps.Keys(p.createOutputParameters(
-			template.Outputs,
+			compileResult.Template.Outputs,
 			azapi.CreateDeploymentOutput(deployments[0].Properties.Outputs),
 		)),
 	}
@@ -1351,16 +1349,44 @@ func (p *BicepProvider) createOutputParameters(
 	return outputParams
 }
 
+type parameterFileContent struct {
+	fileType bicepParameterType
+	content  []byte
+	filePath string
+}
+
+// parameterFile finds the type of parameter used by the module.
+func (p *BicepProvider) parameterFile(ctx context.Context) (*parameterFileContent, error) {
+	possibleFiles := p.parametersTemplateFilePath()
+	for pType, file := range possibleFiles {
+		log.Printf("Checking for parameters template file from: %s", file)
+		if bytes, err := os.ReadFile(file); err == nil {
+			return &parameterFileContent{
+				fileType: pType,
+				content:  bytes,
+				filePath: file,
+			}, nil
+		} else {
+			log.Printf("%s", err.Error())
+		}
+	}
+	return nil, fmt.Errorf("neither json or bicepparam was found.")
+}
+
 // loadParameters reads the parameters file template for environment/module specified by Options,
 // doing environment and command substitutions, and returns the values.
 func (p *BicepProvider) loadParameters(ctx context.Context) (map[string]azure.ArmParameterValue, error) {
-	parametersTemplateFilePath := p.parametersTemplateFilePath()
-	log.Printf("Reading parameters template file from: %s", parametersTemplateFilePath)
-	parametersBytes, err := os.ReadFile(parametersTemplateFilePath)
+	paramFile, err := p.parameterFile(ctx)
 	if err != nil {
-		return nil, fmt.Errorf("reading parameter file template: %w", err)
+		return nil, err
+	}
+	if paramFile.fileType == bicepparam {
+		// parameters are loaded during compilation for bicepparam
+		// There's no need to load nothing more.
+		return make(map[string]azure.ArmParameterValue), nil
 	}
 
+	parametersBytes := paramFile.content
 	principalId, err := p.curPrincipal.CurrentPrincipalId(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("fetching current principal id: %w", err)
@@ -1393,12 +1419,61 @@ func (p *BicepProvider) loadParameters(ctx context.Context) (map[string]azure.Ar
 	return armParameters.Parameters, nil
 }
 
+type compiledBicepParamResult struct {
+	TemplateJson   string `json:"templateJson"`
+	ParametersJson string `json:"parametersJson"`
+}
+
+type compileBicepResult struct {
+	RawArmTemplate azure.RawArmTemplate
+	Template       azure.ArmTemplate
+	Parameters     azure.ArmParameters
+}
+
 func (p *BicepProvider) compileBicep(
 	ctx context.Context, modulePath string,
-) (azure.RawArmTemplate, azure.ArmTemplate, error) {
-	compiled, err := p.bicepCli.Build(ctx, modulePath)
+) (*compileBicepResult, error) {
+	var err error
+	paramsType, err := p.parameterFile(ctx)
 	if err != nil {
-		return nil, azure.ArmTemplate{}, fmt.Errorf("failed to compile bicep template: %w", err)
+		return nil, err
+	}
+
+	var compiled string
+	var parameters azure.ArmParameters
+	if paramsType.fileType == bicepparam {
+		azdEnv := p.env.Environ()
+		// append principalID (not stored to .env by default). For non-bicepparam, principalId is resolved
+		// without looking at .env
+		if _, exists := p.env.LookupEnv(environment.PrincipalIdEnvVarName); !exists {
+			currentPrincipalId, err := p.curPrincipal.CurrentPrincipalId(ctx)
+			if err != nil {
+				return nil, fmt.Errorf("fetching current principal id for bicepparam compilation: %w", err)
+			}
+			azdEnv = append(azdEnv, fmt.Sprintf("%s=%s", environment.PrincipalIdEnvVarName, currentPrincipalId))
+		}
+		compiled, err = p.bicepCli.BuildBicepParam(ctx, paramsType.filePath, azdEnv)
+		if err != nil {
+			return nil, fmt.Errorf("failed to compile bicepparam template: %w", err)
+		}
+
+		var bicepParamOutput compiledBicepParamResult
+		if err := json.Unmarshal([]byte(compiled), &bicepParamOutput); err != nil {
+			log.Printf("failed unmarshalling compiled bicepparam (err: %v), template contents:\n%s", err, compiled)
+			return nil, fmt.Errorf("failed unmarshalling arm template from json: %w", err)
+		}
+		compiled = bicepParamOutput.TemplateJson
+		var params azure.ArmParameterFile
+		if err := json.Unmarshal([]byte(bicepParamOutput.ParametersJson), &params); err != nil {
+			log.Printf("failed unmarshalling compiled bicepparam parameters(err: %v), template contents:\n%s", err, compiled)
+			return nil, fmt.Errorf("failed unmarshalling arm parameters template from json: %w", err)
+		}
+		parameters = params.Parameters
+	} else {
+		compiled, err = p.bicepCli.Build(ctx, modulePath)
+		if err != nil {
+			return nil, fmt.Errorf("failed to compile bicep template: %w", err)
+		}
 	}
 
 	rawTemplate := azure.RawArmTemplate(compiled)
@@ -1406,10 +1481,14 @@ func (p *BicepProvider) compileBicep(
 	var template azure.ArmTemplate
 	if err := json.Unmarshal(rawTemplate, &template); err != nil {
 		log.Printf("failed unmarshalling compiled arm template to JSON (err: %v), template contents:\n%s", err, compiled)
-		return nil, azure.ArmTemplate{}, fmt.Errorf("failed unmarshalling arm template from json: %w", err)
+		return nil, fmt.Errorf("failed unmarshalling arm template from json: %w", err)
 	}
 
-	return rawTemplate, template, nil
+	return &compileBicepResult{
+		RawArmTemplate: rawTemplate,
+		Template:       template,
+		Parameters:     parameters,
+	}, nil
 }
 
 // Converts a Bicep parameters file to a generic provisioning template
@@ -1449,11 +1528,22 @@ func (p *BicepProvider) deployModule(
 	return target.Deploy(ctx, armTemplate, armParameters, tags)
 }
 
-// Gets the path to the project parameters file path
-func (p *BicepProvider) parametersTemplateFilePath() string {
+type bicepParameterType string
+
+const (
+	bicepparam bicepParameterType = "bicepparam"
+	jsonParam  bicepParameterType = "jsonParam"
+)
+
+// Gets the path to the possible project parameters file path (either json or bicepparam)
+func (p *BicepProvider) parametersTemplateFilePath() map[bicepParameterType]string {
 	infraPath := p.options.Path
 	parametersFilename := fmt.Sprintf("%s.parameters.json", p.options.Module)
-	return filepath.Join(p.projectPath, infraPath, parametersFilename)
+	bicepparamFilename := fmt.Sprintf("%s.bicepparam", p.options.Module)
+	return map[bicepParameterType]string{
+		bicepparam: filepath.Join(p.projectPath, infraPath, bicepparamFilename),
+		jsonParam:  filepath.Join(p.projectPath, infraPath, parametersFilename),
+	}
 }
 
 // Gets the folder path to the specified module
@@ -1466,13 +1556,18 @@ func (p *BicepProvider) modulePath() string {
 // Ensures the provisioning parameters are valid and prompts the user for input as needed
 func (p *BicepProvider) ensureParameters(
 	ctx context.Context,
-	template azure.ArmTemplate,
+	compileResult *compileBicepResult,
 	parameters azure.ArmParameters,
 ) (azure.ArmParameters, error) {
-	if len(template.Parameters) == 0 {
+	if len(compileResult.Template.Parameters) == 0 {
+		return azure.ArmParameters{}, nil
+	}
+	if compileResult.Parameters != nil {
+		// used the parameters generated by bicepparam
 		return azure.ArmParameters{}, nil
 	}
 
+	template := compileResult.Template
 	configuredParameters := make(azure.ArmParameters, len(template.Parameters))
 
 	sortedKeys := maps.Keys(template.Parameters)

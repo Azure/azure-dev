@@ -155,6 +155,12 @@ resource app 'Microsoft.App/containerApps@2023-04-01-preview' = {
             }
             {{- end}}
             {{- end}}
+            {{- if ne .Port 0}}
+            {
+              name: 'PORT'
+              value: '{{ .Port }}'
+            }
+            {{- end}}
           ]
           resources: {
             cpu: json('1.0')

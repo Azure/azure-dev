@@ -48,6 +48,8 @@ func (pd *PythonDetector) DetectProject(path string, entries []fs.DirEntry) (*Pr
 				case "pymongo", "beanie":
 					project.Frameworks = append(project.Frameworks, DbMongo)
 				}
+
+				project.RawFrameworks = append(project.RawFrameworks, module)
 			}
 
 			if err := file.Close(); err != nil {

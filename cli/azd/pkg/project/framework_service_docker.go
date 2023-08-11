@@ -24,7 +24,7 @@ import (
 	"github.com/benbjohnson/clock"
 )
 
-const BuilderImage = "weilimtest.azurecr.io/capps/builder:cbl-mariner-2.0"
+const BuilderImage = "paketobuildpacks/builder:base"
 
 type DockerProjectOptions struct {
 	Path      string           `yaml:"path,omitempty" json:"path,omitempty"`

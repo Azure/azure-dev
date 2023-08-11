@@ -45,7 +45,9 @@ func TestAuthToken(t *testing.T) {
 		&output.JsonFormatter{},
 		buf,
 		&authTokenFlags{},
-		func() (*environment.Environment, error) { return nil, fmt.Errorf("not an azd env directory") },
+		func(ctx context.Context) (*environment.Environment, error) {
+			return nil, fmt.Errorf("not an azd env directory")
+		},
 		&mockSubscriptionTenantResolver{},
 	)
 
@@ -83,7 +85,9 @@ func TestAuthTokenSysEnv(t *testing.T) {
 		&output.JsonFormatter{},
 		buf,
 		&authTokenFlags{},
-		func() (*environment.Environment, error) { return nil, fmt.Errorf("not an azd env directory") },
+		func(ctx context.Context) (*environment.Environment, error) {
+			return nil, fmt.Errorf("not an azd env directory")
+		},
 		&mockSubscriptionTenantResolver{
 			TenantId: expectedTenant,
 		},
@@ -128,7 +132,9 @@ func TestAuthTokenSysEnvError(t *testing.T) {
 				EnableDebugLogging: true,
 			},
 		},
-		func() (*environment.Environment, error) { return nil, fmt.Errorf("not an azd env directory") },
+		func(ctx context.Context) (*environment.Environment, error) {
+			return nil, fmt.Errorf("not an azd env directory")
+		},
 		&mockSubscriptionTenantResolver{
 			Err: fmt.Errorf(expectedError),
 		},
@@ -167,7 +173,7 @@ func TestAuthTokenAzdEnvError(t *testing.T) {
 		&output.JsonFormatter{},
 		buf,
 		&authTokenFlags{},
-		func() (*environment.Environment, error) {
+		func(ctx context.Context) (*environment.Environment, error) {
 			return environment.EphemeralWithValues(expectedEnvName, map[string]string{
 				environment.SubscriptionIdEnvVarName: expectedSubId,
 			}), nil
@@ -207,7 +213,7 @@ func TestAuthTokenAzdEnv(t *testing.T) {
 		&output.JsonFormatter{},
 		buf,
 		&authTokenFlags{},
-		func() (*environment.Environment, error) {
+		func(ctx context.Context) (*environment.Environment, error) {
 			return environment.EphemeralWithValues("env", map[string]string{
 				environment.SubscriptionIdEnvVarName: "sub-id",
 			}), nil
@@ -247,7 +253,7 @@ func TestAuthTokenAzdEnvWithEmpty(t *testing.T) {
 		&output.JsonFormatter{},
 		buf,
 		&authTokenFlags{},
-		func() (*environment.Environment, error) {
+		func(ctx context.Context) (*environment.Environment, error) {
 			return environment.EphemeralWithValues("env", map[string]string{
 				environment.SubscriptionIdEnvVarName: "",
 			}), nil
@@ -287,7 +293,9 @@ func TestAuthTokenCustomScopes(t *testing.T) {
 		&authTokenFlags{
 			scopes: scopes,
 		},
-		func() (*environment.Environment, error) { return nil, fmt.Errorf("not an azd env directory") },
+		func(ctx context.Context) (*environment.Environment, error) {
+			return nil, fmt.Errorf("not an azd env directory")
+		},
 		&mockSubscriptionTenantResolver{},
 	)
 
@@ -306,7 +314,9 @@ func TestAuthTokenFailure(t *testing.T) {
 		&output.JsonFormatter{},
 		io.Discard,
 		&authTokenFlags{},
-		func() (*environment.Environment, error) { return nil, fmt.Errorf("not an azd env directory") },
+		func(ctx context.Context) (*environment.Environment, error) {
+			return nil, fmt.Errorf("not an azd env directory")
+		},
 		&mockSubscriptionTenantResolver{},
 	)
 

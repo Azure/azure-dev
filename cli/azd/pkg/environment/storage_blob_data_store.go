@@ -86,7 +86,7 @@ func (sbd *StorageBlobDataStore) Get(ctx context.Context, name string) (*Environ
 	})
 
 	if matchingIndex < 0 {
-		return nil, fmt.Errorf("%s %w", name, ErrEnvironmentNotFound)
+		return nil, fmt.Errorf("%s %w", name, ErrNotFound)
 	}
 
 	matchingEnv := envs[matchingIndex]
@@ -101,26 +101,6 @@ func (sbd *StorageBlobDataStore) Get(ctx context.Context, name string) (*Environ
 	}
 
 	return env, nil
-}
-
-func (sbd *StorageBlobDataStore) Create(ctx context.Context, name string) (*Environment, error) {
-	// TODO: Implement Create function
-	return nil, nil
-}
-
-func (sbd *StorageBlobDataStore) Delete(ctx context.Context, name string) error {
-	// TODO: Implement Delete function
-	return nil
-}
-
-func (sbd *StorageBlobDataStore) Values(ctx context.Context) (map[string]string, error) {
-	// TODO: Implement Values function
-	return nil, nil
-}
-
-func (sbd *StorageBlobDataStore) Refresh(ctx context.Context) error {
-	// TODO: Implement Refresh function
-	return nil
 }
 
 func (sbd *StorageBlobDataStore) Save(ctx context.Context, env *Environment) error {
@@ -157,6 +137,7 @@ func (sbd *StorageBlobDataStore) Save(ctx context.Context, env *Environment) err
 }
 
 func (sbd *StorageBlobDataStore) Reload(ctx context.Context, env *Environment) error {
+	// Reload .env file
 	dotEnvBuffer, err := sbd.blobClient.Download(ctx, sbd.Path(env))
 	if err != nil {
 		return err
@@ -173,7 +154,7 @@ func (sbd *StorageBlobDataStore) Reload(ctx context.Context, env *Environment) e
 		env.deletedKeys = make(map[string]struct{})
 	}
 
-	// Reload env config
+	// Reload config file
 	configBuffer, err := sbd.blobClient.Download(ctx, sbd.ConfigPath(env))
 	if err != nil {
 		return err

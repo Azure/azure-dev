@@ -15,7 +15,6 @@ type RemoteDataStore interface {
 	ConfigPath(env *Environment) string
 	List(ctx context.Context) ([]*contracts.EnvListEnvironment, error)
 	Get(ctx context.Context, name string) (*Environment, error)
-	Create(ctx context.Context, name string) (*Environment, error)
 	Reload(ctx context.Context, env *Environment) error
 	Save(ctx context.Context, env *Environment) error
 }

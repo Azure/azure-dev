@@ -57,7 +57,7 @@ type Environment struct {
 	Config config.Config
 }
 
-type EnvironmentResolver func(ctx context.Context, envManager Manager) (*Environment, error)
+type EnvironmentResolver func(ctx context.Context) (*Environment, error)
 
 // Same restrictions as a deployment name (ref:
 // https://docs.microsoft.com/azure/azure-resource-manager/management/resource-name-rules#microsoftresources)

@@ -90,11 +90,11 @@ func (m *HooksMiddleware) registerCommandHooks(
 	hooksRunner := ext.NewHooksRunner(
 		hooksManager,
 		m.commandRunner,
+		m.envManager,
 		m.console,
 		projectConfig.Path,
 		projectConfig.Hooks,
 		env,
-		m.envManager,
 	)
 
 	var actionResult *actions.ActionResult
@@ -143,11 +143,11 @@ func (m *HooksMiddleware) registerServiceHooks(
 		serviceHooksRunner := ext.NewHooksRunner(
 			serviceHooksManager,
 			m.commandRunner,
+			m.envManager,
 			m.console,
 			service.Path(),
 			service.Hooks,
 			env,
-			m.envManager,
 		)
 
 		for hookName, hookConfig := range service.Hooks {

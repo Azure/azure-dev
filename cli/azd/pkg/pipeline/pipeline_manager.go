@@ -606,7 +606,7 @@ func (pm *PipelineManager) initialize(ctx context.Context, override string) erro
 		ciProviderName = gitHubLabel
 	}
 
-	_ = savePipelineProviderToEnv(ctx, scmProviderName, pm.envManager, pm.env)
+	_ = pm.savePipelineProviderToEnv(ctx, scmProviderName, pm.env)
 
 	var scmProvider ScmProvider
 	if err := pm.serviceLocator.ResolveNamed(scmProviderName+"-scm", &scmProvider); err != nil {
@@ -621,5 +621,18 @@ func (pm *PipelineManager) initialize(ctx context.Context, override string) erro
 	pm.scmProvider = scmProvider
 	pm.ciProvider = ciProvider
 
+	return nil
+}
+
+func (pm *PipelineManager) savePipelineProviderToEnv(
+	ctx context.Context,
+	provider string,
+	env *environment.Environment,
+) error {
+	env.DotenvSet(envPersistedKey, provider)
+	err := pm.envManager.Save(ctx, env)
+	if err != nil {
+		return err
+	}
 	return nil
 }

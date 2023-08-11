@@ -51,7 +51,12 @@ func EnsurePatExists(ctx context.Context, env *environment.Environment, console 
 }
 
 // helper method to ensure an Azure DevOps organization name exists either in .env or system environment variables
-func EnsureOrgNameExists(ctx context.Context, envManager environment.Manager, env *environment.Environment, console input.Console) (
+func EnsureOrgNameExists(
+	ctx context.Context,
+	envManager environment.Manager,
+	env *environment.Environment,
+	console input.Console,
+) (
 	string, bool, error) {
 	value, err := ensureConfigExists(ctx, env, AzDoEnvironmentOrgName, "azure devops organization name")
 	if err != nil {
@@ -74,7 +79,13 @@ func EnsureOrgNameExists(ctx context.Context, envManager environment.Manager, en
 }
 
 // helper function to save configuration values to .env file
-func saveEnvironmentConfig(ctx context.Context, key string, value string, envManager environment.Manager, env *environment.Environment) error {
+func saveEnvironmentConfig(
+	ctx context.Context,
+	key string,
+	value string,
+	envManager environment.Manager,
+	env *environment.Environment,
+) error {
 	env.DotenvSet(key, value)
 	err := envManager.Save(ctx, env)
 

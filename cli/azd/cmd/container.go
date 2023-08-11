@@ -179,7 +179,6 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			envManager environment.Manager,
 			lazyEnv *lazy.Lazy[*environment.Environment],
 			envFlags envFlag,
-			console input.Console,
 		) (*environment.Environment, error) {
 			if azdContext == nil {
 				return nil, azdcontext.ErrNoProject
@@ -200,8 +199,8 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			return env, nil
 		},
 	)
-	container.RegisterSingleton(func() environment.EnvironmentResolver {
-		return func(ctx context.Context, envManager environment.Manager) (*environment.Environment, error) {
+	container.RegisterSingleton(func(envManager environment.Manager) environment.EnvironmentResolver {
+		return func(ctx context.Context) (*environment.Environment, error) {
 			azdCtx, err := azdcontext.NewAzdContext()
 			if err != nil {
 				return nil, err

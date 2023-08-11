@@ -6,6 +6,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -23,6 +25,7 @@ type MockContext struct {
 	HttpClient                     *mockhttp.MockHttpClient
 	CommandRunner                  *mockexec.MockCommandRunner
 	ConfigManager                  *mockconfig.MockConfigManager
+	EnvManager                     environment.Manager
 	Container                      *ioc.NestedContainer
 	AlphaFeaturesManager           *alpha.FeatureManager
 	SubscriptionCredentialProvider *MockSubscriptionCredentialProvider
@@ -31,17 +34,22 @@ type MockContext struct {
 }
 
 func NewMockContext(ctx context.Context) *MockContext {
+	azdContext, _ := azdcontext.NewAzdContext()
 	httpClient := mockhttp.NewMockHttpUtil()
 	configManager := mockconfig.NewMockConfigManager()
 	config := config.NewEmptyConfig()
+	console := mockinput.NewMockConsole()
+	localDataStore := environment.NewLocalFileDataStore(azdContext)
+	envManager := environment.NewManager(azdContext, console, localDataStore, nil)
 
 	mockContext := &MockContext{
 		Credentials:                    &MockCredentials{},
 		Context:                        &ctx,
-		Console:                        mockinput.NewMockConsole(),
+		Console:                        console,
 		CommandRunner:                  mockexec.NewMockCommandRunner(),
 		HttpClient:                     httpClient,
 		ConfigManager:                  configManager,
+		EnvManager:                     envManager,
 		SubscriptionCredentialProvider: &MockSubscriptionCredentialProvider{},
 		MultiTenantCredentialProvider:  &MockMultiTenantCredentialProvider{},
 		Container:                      ioc.NewNestedContainer(nil),

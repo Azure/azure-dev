@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -166,7 +165,7 @@ func newEnvSelectAction(azdCtx *azdcontext.AzdContext, envManager environment.Ma
 
 func (e *envSelectAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	_, err := e.envManager.Get(ctx, e.args[0])
-	if errors.Is(err, os.ErrNotExist) {
+	if errors.Is(err, environment.ErrExists) {
 		return nil, fmt.Errorf(
 			`environment '%s' does not exist. You can create it with "azd env new %s"`,
 			e.args[0],
@@ -198,7 +197,12 @@ type envListAction struct {
 	writer     io.Writer
 }
 
-func newEnvListAction(envManager environment.Manager, azdCtx *azdcontext.AzdContext, formatter output.Formatter, writer io.Writer) actions.Action {
+func newEnvListAction(
+	envManager environment.Manager,
+	azdCtx *azdcontext.AzdContext,
+	formatter output.Formatter,
+	writer io.Writer,
+) actions.Action {
 	return &envListAction{
 		envManager: envManager,
 		azdCtx:     azdCtx,
@@ -450,7 +454,7 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 		return nil, fmt.Errorf("getting deployment: %w", err)
 	}
 
-	if err := provisioning.UpdateEnvironment(ctx, ef.envManager, ef.env, getStateResult.State.Outputs); err != nil {
+	if err := ef.provisionManager.UpdateEnvironment(ctx, ef.env, getStateResult.State.Outputs); err != nil {
 		return nil, err
 	}
 

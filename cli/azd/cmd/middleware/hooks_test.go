@@ -330,6 +330,7 @@ func runMiddleware(
 	})
 
 	middleware := NewHooksMiddleware(
+		mockContext.EnvManager,
 		lazyEnv,
 		lazyProjectConfig,
 		mockContext.CommandRunner,
@@ -362,16 +363,11 @@ func ensureAzdValid(
 	return nil
 }
 
-func ensureAzdEnv(azdContext *azdcontext.AzdContext, envName string) error {
-	err := azdContext.NewEnvironment(envName)
-	if err != nil {
-		return err
-	}
-
-	env := environment.EmptyWithRoot(azdContext.EnvironmentRoot(envName))
+func ensureAzdEnv(ctx context.Context, envManager environment.Manager, envName string) error {
+	env := environment.Empty(envName)
 	env.SetEnvName(envName)
 
-	err = env.Save()
+	err := envManager.Save(ctx, env)
 	if err != nil {
 		return err
 	}

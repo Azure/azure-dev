@@ -29,8 +29,8 @@ const DotEnvFileName = ".env"
 const ConfigFileName = "config.json"
 
 var (
-	ErrEnvironmentExists   = errors.New("environment already exists")
-	ErrEnvironmentNotFound = errors.New("environment not found")
+	ErrExists   = errors.New("environment already exists")
+	ErrNotFound = errors.New("environment not found")
 )
 
 type Manager interface {
@@ -69,15 +69,15 @@ func NewManager(
 func (m *manager) LoadOrCreateInteractive(ctx context.Context, name string) (*Environment, error) {
 	// If there's a default environment, use that
 	if name == "" {
-		var err error
-		name, err = m.azdContext.GetDefaultEnvironmentName()
-		if err != nil {
+		if defaultName, err := m.azdContext.GetDefaultEnvironmentName(); err != nil {
 			return nil, fmt.Errorf("getting default environment: %w", err)
+		} else {
+			name = defaultName
 		}
 	}
 
 	env, err := m.Get(ctx, name)
-	if err != nil && errors.Is(err, ErrEnvironmentNotFound) {
+	if err != nil && errors.Is(err, ErrNotFound) {
 		env, err = m.CreateInteractive(ctx, Spec{
 			Name: name,
 		})
@@ -91,7 +91,19 @@ func (m *manager) LoadOrCreateInteractive(ctx context.Context, name string) (*En
 }
 
 func (m *manager) CreateInteractive(ctx context.Context, spec Spec) (*Environment, error) {
-	if err := m.ensureValidEnvironmentName(ctx, spec); err != nil {
+	msg := fmt.Sprintf("Environment '%s' does not exist, would you like to create it?", spec.Name)
+	shouldCreate, promptErr := m.console.Confirm(ctx, input.ConsoleOptions{
+		Message:      msg,
+		DefaultValue: true,
+	})
+	if promptErr != nil {
+		return nil, fmt.Errorf("prompting to create environment '%s': %w", spec.Name, promptErr)
+	}
+	if !shouldCreate {
+		return nil, fmt.Errorf("%w '%s'", ErrNotFound, spec.Name)
+	}
+
+	if err := m.ensureValidEnvironmentName(ctx, &spec); err != nil {
 		errMsg := invalidEnvironmentNameMsg(spec.Name)
 		m.console.Message(ctx, errMsg)
 		return nil, fmt.Errorf(errMsg)
@@ -125,8 +137,8 @@ func (m *manager) Create(ctx context.Context, name string) (*Environment, error)
 
 	// Ensure the environment does not already exist:
 	env, err := m.Get(ctx, name)
-	if err != nil && errors.Is(err, ErrEnvironmentExists) {
-		return nil, fmt.Errorf("%w '%s'", ErrEnvironmentExists, name)
+	if err != nil && errors.Is(err, ErrExists) {
+		return nil, fmt.Errorf("%w '%s'", ErrExists, name)
 	}
 
 	env = Empty(name)
@@ -240,7 +252,7 @@ func (m *manager) Reload(ctx context.Context, env *Environment) error {
 
 // ensureValidEnvironmentName ensures the environment name is valid, if it is not, an error is printed
 // and the user is prompted for a new name.
-func (m *manager) ensureValidEnvironmentName(ctx context.Context, spec Spec) error {
+func (m *manager) ensureValidEnvironmentName(ctx context.Context, spec *Spec) error {
 	for !IsValidEnvironmentName(spec.Name) {
 		userInput, err := m.console.Prompt(ctx, input.ConsoleOptions{
 			Message: "Enter a new environment name:",
@@ -257,10 +269,10 @@ func (m *manager) ensureValidEnvironmentName(ctx context.Context, spec Spec) err
 			return fmt.Errorf("reading environment name: %w", err)
 		}
 
-		environmentName := userInput
+		spec.Name = userInput
 
-		if !IsValidEnvironmentName(environmentName) {
-			m.console.Message(ctx, invalidEnvironmentNameMsg(environmentName))
+		if !IsValidEnvironmentName(spec.Name) {
+			m.console.Message(ctx, invalidEnvironmentNameMsg(spec.Name))
 		}
 	}
 

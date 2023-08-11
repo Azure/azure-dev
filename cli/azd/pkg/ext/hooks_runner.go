@@ -33,11 +33,11 @@ type HooksRunner struct {
 func NewHooksRunner(
 	hooksManager *HooksManager,
 	commandRunner exec.CommandRunner,
+	envManager environment.Manager,
 	console input.Console,
 	cwd string,
 	hooks map[string]*HookConfig,
 	env *environment.Environment,
-	envManager environment.Manager,
 ) *HooksRunner {
 	if cwd == "" {
 		osWd, err := os.Getwd()

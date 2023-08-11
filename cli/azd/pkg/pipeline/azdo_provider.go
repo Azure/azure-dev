@@ -529,7 +529,9 @@ func (p *AzdoScmProvider) gitRepoDetails(ctx context.Context, remoteUrl string) 
 		repoDetails.projectId = proj.Id.String()
 		p.Env.DotenvSet(azdo.AzDoEnvironmentProjectIdName, repoDetails.projectId)
 
-		_ = p.envManager.Save(ctx, p.Env) // best effort to persist in the env
+		if err := p.envManager.Save(ctx, p.Env); err != nil {
+			return nil, fmt.Errorf("saving environment: %w", err)
+		}
 	}
 
 	return &gitRepositoryDetails{

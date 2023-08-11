@@ -75,7 +75,7 @@ func (fs *LocalFileDataStore) List(ctx context.Context) ([]*contracts.EnvListEnv
 func (fs *LocalFileDataStore) Get(ctx context.Context, name string) (*Environment, error) {
 	root := fs.azdContext.EnvironmentRoot(name)
 	if _, err := os.Stat(root); err != nil {
-		return nil, fmt.Errorf("'%s' %w, %w", name, ErrEnvironmentNotFound, err)
+		return nil, fmt.Errorf("'%s' %w, %w", name, ErrNotFound, err)
 	}
 
 	env := &Environment{
@@ -193,7 +193,7 @@ func (fs *LocalFileDataStore) Create(ctx context.Context, name string) (*Environ
 
 	if err := os.Mkdir(fs.azdContext.EnvironmentRoot(name), osutil.PermissionDirectory); err != nil {
 		if errors.Is(err, os.ErrExist) {
-			return nil, ErrEnvironmentExists
+			return nil, ErrExists
 		}
 
 		return nil, fmt.Errorf("creating environment directory: %w", err)

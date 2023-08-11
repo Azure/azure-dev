@@ -51,7 +51,6 @@ func (f *authTokenFlags) Bind(local *pflag.FlagSet, global *internal.GlobalComma
 type CredentialProviderFn func(context.Context, *auth.CredentialForCurrentUserOptions) (azcore.TokenCredential, error)
 
 type authTokenAction struct {
-	envManager         environment.Manager
 	credentialProvider CredentialProviderFn
 	formatter          output.Formatter
 	writer             io.Writer
@@ -61,7 +60,6 @@ type authTokenAction struct {
 }
 
 func newAuthTokenAction(
-	envManager environment.Manager,
 	credentialProvider CredentialProviderFn,
 	formatter output.Formatter,
 	writer io.Writer,
@@ -70,7 +68,6 @@ func newAuthTokenAction(
 	subResolver account.SubscriptionTenantResolver,
 ) actions.Action {
 	return &authTokenAction{
-		envManager:         envManager,
 		credentialProvider: credentialProvider,
 		envResolver:        envResolver,
 		subResolver:        subResolver,
@@ -82,10 +79,9 @@ func newAuthTokenAction(
 
 func getTenantIdFromAzdEnv(
 	ctx context.Context,
-	envManager environment.Manager,
 	envResolver environment.EnvironmentResolver,
 	subResolver account.SubscriptionTenantResolver) (tenantId string, err error) {
-	azdEnv, err := envResolver(ctx, envManager)
+	azdEnv, err := envResolver(ctx)
 	if err != nil {
 		// No azd env, return empty tenantId
 		return tenantId, nil
@@ -138,7 +134,7 @@ func (a *authTokenAction) Run(ctx context.Context) (*actions.ActionResult, error
 	tenantId := a.flags.tenantID
 	// 2) From azd env
 	if tenantId == "" {
-		tenantIdFromAzdEnv, err := getTenantIdFromAzdEnv(ctx, a.envManager, a.envResolver, a.subResolver)
+		tenantIdFromAzdEnv, err := getTenantIdFromAzdEnv(ctx, a.envResolver, a.subResolver)
 		if err != nil {
 			return nil, err
 		}

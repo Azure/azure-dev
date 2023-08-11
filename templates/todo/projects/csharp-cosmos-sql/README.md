@@ -15,12 +15,12 @@ products:
 - azure-pipelines
 - aspnet-core
 urlFragment: todo-csharp-cosmos-sql
-name: React Web App with C# API and MongoDB on Azure
-description: A complete ToDo app with C# API and Azure Cosmos DB SQL API for storage. Uses Azure Developer CLI (azd) to build, deploy, and monitor
+name: React Web App with C# API and Cosmos DB for NoSQL on Azure
+description: A complete ToDo app with C# API and Azure Cosmos DB (NoSQL) for storage. Uses Azure Developer CLI (azd) to build, deploy, and monitor
 ---
 <!-- YAML front-matter schema: https://review.learn.microsoft.com/en-us/help/contribute/samples/process/onboarding?branch=main#supported-metadata-fields-for-readmemd -->
 
-# React Web App with C# API and MongoDB on Azure
+# React Web App with C# API and Cosmos DB for NoSQL on Azure
 
 [![Open in GitHub Codespaces](https://img.shields.io/static/v1?style=for-the-badge&label=GitHub+Codespaces&message=Open&color=brightgreen&logo=github)](https://codespaces.new/azure-samples/todo-csharp-cosmos-sql)
 [![Open in Dev Container](https://img.shields.io/static/v1?style=for-the-badge&label=Dev+Containers&message=Open&color=blue&logo=visualstudiocode)](https://vscode.dev/redirect?url=vscode://ms-vscode-remote.remote-containers/cloneInVolume?url=https://github.com/azure-samples/todo-csharp-cosmos-sql)
@@ -64,7 +64,7 @@ azd up
 This application utilizes the following Azure resources:
 
 - [**Azure App Services**](https://docs.microsoft.com/azure/app-service/) to host the Web frontend and API backend
-- [**Azure Cosmos DB SQL API**](https://docs.microsoft.com/learn/modules/intro-to-azure-cosmos-db-core-api/) for storage
+- [**Azure Cosmos DB for NoSQL**](https://docs.microsoft.com/learn/modules/intro-to-azure-cosmos-db-core-api/) for storage
 - [**Azure Monitor**](https://docs.microsoft.com/azure/azure-monitor/) for monitoring and logging
 - [**Azure Key Vault**](https://docs.microsoft.com/azure/key-vault/) for securing secrets
 

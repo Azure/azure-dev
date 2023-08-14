@@ -24,7 +24,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/azure/azure-dev/cli/azd/test/recording/cmdrecord"
+	"github.com/azure/azure-dev/cli/azd/test/cmdrecord"
 	"golang.org/x/exp/slog"
 	"gopkg.in/dnaeon/go-vcr.v3/cassette"
 	"gopkg.in/dnaeon/go-vcr.v3/recorder"

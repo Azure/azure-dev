@@ -113,31 +113,6 @@ func Test_Command_Args(t *testing.T) {
 				return err
 			},
 		},
-		"create-secret": {
-			mockCommandPredicate: "kubectl create secret generic",
-			expectedCmd:          "kubectl",
-			expectedArgs: []string{
-				"create",
-				"secret",
-				"generic",
-				"secret-name",
-				"--from-literal=foo=bar",
-				"-n",
-				"test-namespace",
-			},
-			testFn: func() error {
-				_, err := cli.CreateSecretGenericFromLiterals(
-					*mockContext.Context,
-					"secret-name",
-					[]string{"foo=bar"},
-					&KubeCliFlags{
-						Namespace: "test-namespace",
-					},
-				)
-
-				return err
-			},
-		},
 		"rollout-status": {
 			mockCommandPredicate: "kubectl rollout status",
 			expectedCmd:          "kubectl",

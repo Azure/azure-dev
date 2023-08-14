@@ -480,14 +480,16 @@ func (i *Initializer) PromptIfNonEmpty(ctx context.Context, azdCtx *azdcontext.A
 			return fmt.Errorf("determining current git repository state: %w", err)
 		}
 
+		warningMessage := output.WithWarningFormat("WARNING: The current directory is not empty.")
+		i.console.Message(ctx, warningMessage)
+		i.console.Message(ctx, "Initializing an app in this directory may overwrite existing files.\n")
+
 		message := fmt.Sprintf(
-			"The current directory is not empty. Would you like to initialize a project here in '%s'?",
+			"Continue initializing an app in '%s'?",
 			dir)
 		if err != nil {
 			message = fmt.Sprintf(
-				"The current directory is not empty. "+
-					"Would you like to initialize a project here? "+
-					"Doing so will also initialize a new git repository in '%s'.",
+				"Continue initializing an app here? This will also initialize a new git repository in '%s'.",
 				dir)
 		}
 

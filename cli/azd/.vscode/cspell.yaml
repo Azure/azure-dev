@@ -17,6 +17,7 @@ words:
   - devcontainers
   - goversioninfo
   - nosec
+  - runcontext
 languageSettings:
   - languageId: go
     ignoreRegExpList:

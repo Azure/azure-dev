@@ -58,6 +58,13 @@ func main() {
 	go fetchLatestVersion(latest)
 
 	cmdErr := cmd.NewRootCmd(false, nil).ExecuteContext(ctx)
+
+	if !isJsonOutput() {
+		if firstNotice := telemetry.FirstNotice(); firstNotice != "" {
+			fmt.Fprintln(os.Stderr, output.WithWarningFormat(firstNotice))
+		}
+	}
+
 	latestVersion, ok := <-latest
 
 	// If we were able to fetch a latest version, check to see if we are up to date and

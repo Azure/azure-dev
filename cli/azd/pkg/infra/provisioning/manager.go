@@ -42,8 +42,8 @@ func (m *Manager) Initialize(ctx context.Context, projectPath string, options Op
 }
 
 // Gets the latest deployment details for the specified scope
-func (m *Manager) State(ctx context.Context) (*StateResult, error) {
-	result, err := m.provider.State(ctx)
+func (m *Manager) State(ctx context.Context, options *StateOptions) (*StateResult, error) {
+	result, err := m.provider.State(ctx, options)
 	if err != nil {
 		return nil, fmt.Errorf("error retrieving state: %w", err)
 	}

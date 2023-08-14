@@ -79,7 +79,7 @@ func TestTerraformState(t *testing.T) {
 	prepareShowMocks(mockContext.CommandRunner)
 
 	infraProvider := createTerraformProvider(t, mockContext)
-	getStateResult, err := infraProvider.State(*mockContext.Context)
+	getStateResult, err := infraProvider.State(*mockContext.Context, nil)
 
 	require.Nil(t, err)
 	require.NotNil(t, getStateResult.State)

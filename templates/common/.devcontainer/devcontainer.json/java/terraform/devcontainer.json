@@ -1,11 +1,6 @@
 {
     "name": "Azure Developer CLI",
-    "build": {
-        "dockerfile": "Dockerfile",
-        "args": {
-            "IMAGE": "javascript-node:16-bullseye"
-        }
-    },
+    "image": "mcr.microsoft.com/devcontainers/javascript-node:16-bullseye",
     "features": {
         "ghcr.io/devcontainers/features/azure-cli:1": {
         },

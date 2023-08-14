@@ -13,6 +13,7 @@
             "processId": "${command:pickGoProcess}"
         },
         // This will launch azd (starting from main.go), under the debugger.
+
         {
             "name": "Debug azd cli",
             "type": "go",

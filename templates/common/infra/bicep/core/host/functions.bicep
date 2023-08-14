@@ -1,3 +1,4 @@
+metadata description = 'Creates an Azure Function in an existing Azure App Service plan.'
 param name string
 param location string = resourceGroup().location
 param tags object = {}

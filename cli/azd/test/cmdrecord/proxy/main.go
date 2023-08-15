@@ -14,6 +14,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/test/cmdrecord"
 	"gopkg.in/dnaeon/go-vcr.v3/recorder"
+	"gopkg.in/yaml.v3"
 )
 
 type ErrExitCode struct {
@@ -42,7 +43,7 @@ func (a *App) Handle() error {
 			case recorder.ModeRecordOnly:
 				return a.record()
 			case recorder.ModeReplayOnly:
-				return a.replay()
+				return a.replay(intercept.ArgsMatch)
 			case recorder.ModePassthrough:
 				return a.passthrough()
 			default:
@@ -56,7 +57,7 @@ func (a *App) Handle() error {
 }
 
 func (a *App) record() error {
-	interaction, err := a.loadIncrementInteractionNumber()
+	interaction, err := a.getInteractionId()
 	if err != nil {
 		return fmt.Errorf("getting interaction number: %w", err)
 	}
@@ -91,9 +92,16 @@ func (a *App) record() error {
 		return errSignalTerm
 	}
 
+	recorded := cmdrecord.Interaction{Id: interaction}
+	recorded.Args = os.Args[1:]
+	recorded.ExitCode = cmd.ProcessState.ExitCode()
+	contents, err := yaml.Marshal(recorded)
+	if err != nil {
+		return err
+	}
 	err = os.WriteFile(
-		a.exitCodeFile(interaction),
-		[]byte(fmt.Sprint(cmd.ProcessState.ExitCode())),
+		a.metaFile(interaction),
+		contents,
 		0644)
 	if err != nil {
 		return err
@@ -105,10 +113,32 @@ func (a *App) record() error {
 	return nil
 }
 
-func (a *App) replay() error {
-	interaction, err := a.loadIncrementInteractionNumber()
+func (a *App) replay(argsMatch string) error {
+	argsMatchRegexp := regexp.MustCompile(argsMatch)
+	interaction, err := a.getInteractionId()
 	if err != nil {
 		return fmt.Errorf("getting interaction number: %w", err)
+	}
+
+	content, err := os.ReadFile(a.metaFile(interaction))
+	if errors.Is(err, os.ErrNotExist) {
+		return fmt.Errorf("interaction not found for '%s'", strings.Join(os.Args[1:], " "))
+	}
+	if err != nil {
+		return fmt.Errorf("getting exit code: %w", err)
+	}
+
+	recorded := cmdrecord.Interaction{}
+	err = yaml.Unmarshal(content, &recorded)
+	if err != nil {
+		return fmt.Errorf("unmarshaling interaction: %w", err)
+	}
+
+	if !argsMatchRegexp.MatchString(strings.Join(recorded.Args, " ")) {
+		return fmt.Errorf(
+			"interaction mismatch: ArgsMatch '%s' does not match recorded args '%s'",
+			argsMatch,
+			strings.Join(recorded.Args, " "))
 	}
 
 	var stdOutCopyErr, stdErrCopyErr error
@@ -154,18 +184,8 @@ func (a *App) replay() error {
 		return stdErrCopyErr
 	}
 
-	content, err := os.ReadFile(a.exitCodeFile(interaction))
-	if err != nil {
-		return fmt.Errorf("getting exit code: %w", err)
-	}
-
-	res, err := strconv.Atoi(string(content))
-	if err != nil {
-		return fmt.Errorf("getting exit code as int: %w", err)
-	}
-
-	if res != 0 {
-		return ErrExitCode{res}
+	if recorded.ExitCode != 0 {
+		return ErrExitCode{recorded.ExitCode}
 	}
 
 	return nil
@@ -251,30 +271,36 @@ func (a *App) stderrFile(interaction int) string {
 		fmt.Sprintf("%s.%d.err", a.config.CmdName, interaction))
 }
 
-func (a *App) exitCodeFile(interaction int) string {
+func (a *App) metaFile(interaction int) string {
 	return filepath.Join(
 		a.config.CassettePath,
-		fmt.Sprintf("%s.%d.exit", a.config.CmdName, interaction))
+		fmt.Sprintf("%s.%d.meta", a.config.CmdName, interaction))
 }
 
-func (a *App) loadIncrementInteractionNumber() (int, error) {
-	const name = "int-number.txt"
-	contents, err := os.ReadFile(filepath.Join(a.execDir, name))
+func (a *App) getInteractionId() (int, error) {
+	err := os.MkdirAll(a.config.CassettePath, 0755)
+	if err != nil {
+		return -1, err
+	}
+
+	name := filepath.Join(a.config.CassettePath, cmdrecord.InteractionIdFile)
+	contents, err := os.ReadFile(name)
 	if errors.Is(err, os.ErrNotExist) {
-		return 0, os.WriteFile(name, []byte(fmt.Sprint(1)), 0644)
+		return 0, os.WriteFile(name, []byte(fmt.Sprint(0)), 0644)
 	}
 
 	if err != nil {
 		return -1, err
 	}
 
-	res, err := strconv.Atoi(string(contents))
+	currentId, err := strconv.Atoi(string(contents))
 	if err != nil {
 		return -1, err
 	}
 
-	err = os.WriteFile(name, []byte(fmt.Sprint(res+1)), 0644)
-	return res, err
+	newId := currentId + 1
+	err = os.WriteFile(name, []byte(fmt.Sprint(newId)), 0644)
+	return newId, err
 }
 
 func runMain() error {

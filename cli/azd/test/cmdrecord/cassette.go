@@ -1,15 +1,16 @@
 package cmdrecord
 
 import (
+	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
+	"strconv"
 
 	"gopkg.in/yaml.v3"
 )
 
-var expandedFileNameRegex = regexp.MustCompile(`^(\w+)\.(\d+)\.(\w+)$`)
+const InteractionIdFile = "int-id.txt"
 
 type Cassette struct {
 	Version  string `yaml:"version"`
@@ -21,7 +22,7 @@ type Cassette struct {
 type Interaction struct {
 	Id       int      `yaml:"id"`
 	Args     []string `yaml:"args"`
-	ExitCode []string `yaml:"exitCode"`
+	ExitCode int      `yaml:"exitCode"`
 	Stdout   string   `yaml:"stdout"`
 	Stderr   string   `yaml:"stderr"`
 }
@@ -71,33 +72,58 @@ func expand(cassette string, dir string) error {
 }
 
 func zip(cassette string, tool string, dir string) error {
-	entries, err := os.ReadDir(dir)
+	cst := Cassette{Version: "1.0", ToolName: tool}
+	maxIntIdContent, err := os.ReadFile(filepath.Join(dir, InteractionIdFile))
+	if errors.Is(err, os.ErrNotExist) {
+		return save(cst, cassette)
+	} else if err != nil {
+		return err
+	}
+
+	maxId, err := strconv.Atoi(string(maxIntIdContent))
 	if err != nil {
 		return err
 	}
 
-	for _, ent := range entries {
-		if ent.IsDir() {
-			continue
-		}
-
-		matches := expandedFileNameRegex.FindStringSubmatch(ent.Name())
-		if len(matches) != 4 {
-			continue
-		}
-
-		contents, err := os.ReadFile(filepath.Join(dir, ent.Name()))
+	for id := 0; id <= maxId; id++ {
+		interaction := Interaction{Id: id}
+		meta, err := os.ReadFile(expandedName(dir, tool, id, ".meta"))
 		if err != nil {
 			return err
 		}
 
-		err = os.WriteFile(expandedName(cassette, tool, 0, ".out"), contents, 0644)
+		err = yaml.Unmarshal(meta, &interaction)
+		if err != nil {
+			return fmt.Errorf("reading .meta: %w", err)
+		}
+
+		interaction.Id = id
+		stdout, err := os.ReadFile(expandedName(dir, tool, id, ".out"))
 		if err != nil {
 			return err
 		}
+
+		interaction.Stdout = string(stdout)
+
+		stderr, err := os.ReadFile(expandedName(dir, tool, id, ".err"))
+		if err != nil {
+			return err
+		}
+
+		interaction.Stderr = string(stderr)
+		cst.Interactions = append(cst.Interactions, interaction)
 	}
 
-	return nil
+	return save(cst, cassette)
+}
+
+func save(cst Cassette, cassette string) error {
+	cstYml, err := yaml.Marshal(cst)
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(cassette, cstYml, 0644)
 }
 
 func expandedName(root string, tool string, interaction int, ext string) string {

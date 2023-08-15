@@ -9,7 +9,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-var expandedFileNameRegex = regexp.MustCompile(`(?P<tool>[^\.]+)\.(?P<interaction>\d+)\.(?P<ext>\w+)`)
+var expandedFileNameRegex = regexp.MustCompile(`^(\w+)\.(\d+)\.(\w+)$`)
 
 type Cassette struct {
 	Version  string `yaml:"version"`
@@ -81,7 +81,8 @@ func zip(cassette string, tool string, dir string) error {
 			continue
 		}
 
-		if ent.Name() == "meta" {
+		matches := expandedFileNameRegex.FindStringSubmatch(ent.Name())
+		if len(matches) != 4 {
 			continue
 		}
 

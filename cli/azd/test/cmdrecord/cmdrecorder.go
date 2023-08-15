@@ -1,3 +1,8 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+// cmdrecord simplifies testing by implementing recording/playing back functionality for interacting with
+// command line tools.
 package cmdrecord
 
 import (
@@ -43,7 +48,11 @@ func NewWithOptions(opt Options) *Recorder {
 	}
 }
 
-func (r *Recorder) Start() (string, error) {
+// Start sets up the proxy tool and returns the directory where the proxy is located.
+//
+// The proxy tool is named exactly the same as the CmdName set. proxyDir can either be prepended directly to PATH or
+// invoked directly by joining the proxyDir with the specified CmdName.
+func (r *Recorder) Start() (proxyDir string, err error) {
 	proxyBinaryName := "proxy"
 	cmdPath := getCmdPath()
 	var buildErr error
@@ -58,7 +67,7 @@ func (r *Recorder) Start() (string, error) {
 		return "", buildErr
 	}
 
-	proxyDir, err := os.MkdirTemp("", "cmdr")
+	proxyDir, err = os.MkdirTemp("", "cmdr")
 	if err != nil {
 		return "", fmt.Errorf("creating temp dir for proxy: %w", err)
 	}
@@ -66,7 +75,11 @@ func (r *Recorder) Start() (string, error) {
 
 	// rename to the proxy name
 	src := filepath.Join(cmdPath, proxyBinaryName)
-	dest := filepath.Join(proxyDir, r.opt.CmdName)
+	destFile := r.opt.CmdName
+	if runtime.GOOS == "windows" {
+		destFile = destFile + ".exe"
+	}
+	dest := filepath.Join(proxyDir, destFile)
 	err = os.Link(src, dest)
 	if err != nil {
 		srcFile, err := os.Open(src)
@@ -74,7 +87,7 @@ func (r *Recorder) Start() (string, error) {
 			return "", fmt.Errorf("opening src: %w", err)
 		}
 
-		destFile, err := os.OpenFile(dest, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 755)
+		destFile, err := os.OpenFile(dest, os.O_RDWR|os.O_CREATE|os.O_TRUNC, 0755)
 		if err != nil {
 			return "", fmt.Errorf("creating dest: %w", err)
 		}

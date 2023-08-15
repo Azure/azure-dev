@@ -1,0 +1,39 @@
+version: "1.0"
+tool: docker
+interactions:
+    - id: 0
+      args:
+        - login
+        - --username
+        - 00000000-0000-0000-0000-000000000000
+        - --password-stdin
+        - cr3bxwtqjom2oto.azurecr.io
+      exitCode: 0
+      stdout: |
+        Login Succeeded
+      stderr: "\nLogging in with your password grants your terminal complete access to your account. \nFor better security, log in with a limited-privilege personal access token. Learn more at https://docs.docker.com/go/access-tokens/\n"
+    - id: 1
+      args:
+        - push
+        - cr3bxwtqjom2oto.azurecr.io/containerapp/web-azdtest-la2a1f5:azd-deploy-1692137456
+      exitCode: 0
+      stdout: |
+        The push refers to repository [cr3bxwtqjom2oto.azurecr.io/containerapp/web-azdtest-la2a1f5]
+        431dd42bd075: Preparing
+        f2a8869c48bc: Preparing
+        a3884885f268: Preparing
+        9420ab5f560b: Preparing
+        b0a4e3e23649: Preparing
+        f6c4eaf2bdb1: Preparing
+        8ce178ff9f34: Preparing
+        f6c4eaf2bdb1: Waiting
+        8ce178ff9f34: Waiting
+        431dd42bd075: Pushed
+        f2a8869c48bc: Pushed
+        9420ab5f560b: Pushed
+        a3884885f268: Pushed
+        f6c4eaf2bdb1: Pushed
+        b0a4e3e23649: Pushed
+        8ce178ff9f34: Pushed
+        azd-deploy-1692137456: digest: sha256:13de7ab9577f5025fc58485eb9520917b601d0c838cdc5a727e0bcb271b38fc6 size: 1786
+      stderr: ""

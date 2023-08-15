@@ -120,7 +120,6 @@ func Start(t *testing.T, opts ...Options) *Session {
 
 	dir := callingDir(1)
 	name := filepath.Join(dir, "testdata", "recordings", t.Name())
-
 	writer := &logWriter{t: t}
 	level := slog.LevelInfo
 	if os.Getenv("RECORDER_PROXY_DEBUG") != "" {
@@ -170,6 +169,23 @@ func Start(t *testing.T, opts ...Options) *Session {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	vcr.SetRealTransport(&gzip2HttpRoundTripper{
 		transport: transport,
+	})
+
+	vcr.SetMatcher(func(r *http.Request, i cassette.Request) bool {
+		// Ignore query parameter 's=...' in containerappOperationResults
+		if strings.Contains(r.URL.Path, "/providers/Microsoft.App/") && strings.Contains(r.URL.Path, "/containerappOperationResults") {
+			recorded, err := url.Parse(i.URL)
+			if err != nil {
+				panic(err)
+			}
+
+			recorded.RawQuery = ""
+			r.URL.RawQuery = ""
+			log.Info("recorderProxy: ignoring query parameters in containerappOperationResults", "url", r.URL)
+			return r.Method == i.Method && r.URL.String() == recorded.String()
+		}
+
+		return cassette.DefaultMatcher(r, i)
 	})
 
 	vcr.AddHook(func(i *cassette.Interaction) error {
@@ -224,9 +240,13 @@ func Start(t *testing.T, opts ...Options) *Session {
 	}
 
 	cmdRecorder := cmdrecord.NewWithOptions(cmdrecord.Options{
-		CmdName:      "git",
-		CassettePath: name,
+		CmdName:      "docker",
+		CassetteName: name,
 		RecordMode:   opt.mode,
+		Intercepts: []cmdrecord.Intercept{
+			{ArgsMatch: "^login"},
+			{ArgsMatch: "^push"},
+		},
 	})
 	path, err := cmdRecorder.Start()
 	if err != nil {
@@ -259,6 +279,11 @@ func Start(t *testing.T, opts ...Options) *Session {
 				if err != nil {
 					t.Fatalf("failed to save variables: %v", err)
 				}
+			}
+
+			err = cmdRecorder.Stop()
+			if err != nil {
+				t.Fatalf("failed to save cmd recording: %v", err)
 			}
 		}
 	})

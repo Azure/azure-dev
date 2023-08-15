@@ -17,7 +17,6 @@ import (
 	"text/tabwriter"
 	"text/template"
 	"time"
-	"unicode"
 
 	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -853,39 +852,91 @@ func execute(t *template.Template, name string, data any, writePath string) erro
 func bicepName(name string) string {
 	sb := strings.Builder{}
 	separatorStart := -1
-	for pos, char := range name {
-		switch char {
+	for i := range name {
+		switch name[i] {
 		case '-', '_':
-			separatorStart = pos
+			if separatorStart == -1 {
+				separatorStart = i
+			}
 		default:
+			if !isAsciiAlphaNumeric(name[i]) {
+				continue
+			}
+			char := name[i]
 			if separatorStart != -1 {
-				char = unicode.ToUpper(char)
+				if separatorStart == 0 {
+					char = lowerCase(name[i])
+				} else {
+					char = upperCase(name[i])
+				}
+				separatorStart = -1
 			}
-			separatorStart = -1
 
-			if _, err := sb.WriteRune(char); err != nil {
-				panic(err)
+			if i == 0 {
+				char = lowerCase(name[i])
 			}
+
+			sb.WriteByte(char)
 		}
 	}
 
 	return sb.String()
 }
 
-const resourceTokenLen = 13
+func isAsciiAlphaNumeric(c byte) bool {
+	return ('0' <= c && c <= '9') || ('A' <= c && c <= 'Z') || ('a' <= c && c <= 'z')
+}
 
-// abbreviations.json: appContainerApps
-const containerAppPrefixLen = 2
+func upperCase(r byte) byte {
+	if 'a' <= r && r <= 'z' {
+		r -= 'a' - 'A'
+	}
+	return r
+}
+
+func lowerCase(r byte) byte {
+	if 'A' <= r && r <= 'Z' {
+		r += 'a' - 'A'
+	}
+	return r
+}
+
+// Provide a reasonable limit to avoid name length issues
+const containerAppNameMaxLen = 12
 
 // containerAppName returns a name that is valid to be used as an infix for a container app resource.
 func containerAppName(name string) string {
-	maxLen := resourceTokenLen + containerAppPrefixLen + 1 // 1 for the separator length
-	name = strings.ToLower(name)
-	if len(name) > maxLen {
-		name = name[:maxLen]
+	if len(name) > containerAppNameMaxLen {
+		name = name[:containerAppNameMaxLen]
 	}
 
-	return name
+	// trim to allowed characters:
+	// - only alphanumeric and '-'
+	// - no repeated '-'
+	// - no '-' as the first or last character
+	sb := strings.Builder{}
+	i := 0
+	for i < len(name) {
+		if isAsciiAlphaNumeric(name[i]) {
+			sb.WriteByte(lowerCase(name[i]))
+		} else if name[i] == '-' || name[i] == '_' {
+			j := i + 1
+			for j < len(name) && (name[j] == '-' || name[i] == '_') { // find consecutive matches
+				j++
+			}
+
+			if i != 0 && j != len(name) { // only write '-' if not first or last character
+				sb.WriteByte('-')
+			}
+
+			i = j
+			continue
+		}
+
+		i++
+	}
+
+	return sb.String()
 }
 
 func copyFS(embedFs embed.FS, root string, target string) error {

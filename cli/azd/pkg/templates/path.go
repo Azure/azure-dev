@@ -15,6 +15,8 @@ func Absolute(path string) (string, error) {
 		return path, nil
 	}
 
+	path = strings.TrimRight(path, "/")
+
 	switch strings.Count(path, "/") {
 	case 0:
 		return fmt.Sprintf("https://github.com/Azure-Samples/%s", path), nil

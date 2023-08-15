@@ -77,14 +77,30 @@
                 <RegistryValue Root="HKLM" Key="SOFTWARE\Microsoft\$(var.ProductFolder)" Name="InstallDir" Type="string" Value="[INSTALLDIR]"/>
                 <Environment Id="SystemPath" Action="set" Name="PATH" Part="last" System="yes" Value="[INSTALLDIR]"/>
             </Component>
+
+            <!-- Override ARP to display full UI during uninstall. -->
+            <Component Directory="INSTALLDIR">
+                <RegistryKey Root="HKCU" Key="SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\[ProductName]">
+                    <RegistryValue Name="DisplayName" Value="[ProductName]" Type="string" />
+                    <RegistryValue Name="DisplayVersion" Value="[ProductVersion]" Type="string" />
+                    <RegistryValue Name="HelpLink" Value="https://aka.ms/azd/support" Type="string" />
+                    <RegistryValue Name="InstallLocation" Value="[INSTALLDIR]" Type="string" />
+                    <RegistryValue Name="NoModify" Value="1" Type="integer" />
+                    <RegistryValue Name="Publisher" Value="[Manufacturer]" Type="string" />
+                    <RegistryValue Name="UninstallString" Value="msiexec.exe /X[ProductCode] /qf" Type="string" />
+                </RegistryKey>
+            </Component>
         </Feature>
+
+        <!-- Override ARP to display full UI during uninstall. -->
+        <Property Id="ARPSYSTEMCOMPONENT" Value="1" />
 
         <!-- Broadcast environment variable changes even if a reboot is pending -->
         <CustomActionRef Id="WixBroadcastEnvironmentChange" />
 
         <!-- Use customized WixUI_InstallDir that changes the license agreement to just a notice -->
         <Property Id="WIXUI_INSTALLDIR" Value="INSTALLDIR"/>
-        <UIRef Id="AzureDevCLI_InstallDir"/>
+        <UIRef Id="AzdInstallDir"/>
 
         <!-- Set the BinFolder property to use for cleaning up downloaded files -->
         <SetProperty Id="BinFolder" Value="[%USERPROFILE]\.azd\bin" After="CostFinalize" Sequence="execute"/>

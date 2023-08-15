@@ -1,21 +1,35 @@
 # Release History
 
-## 1.1.1 (Unreleased)
+## 1.3.0-beta.1 (Unreleased)
 
 ### Features Added
 
-- [[2550]](https://github.com/Azure/azure-dev/pull/2550) Add `--preview` to `azd provision` to get the changes
-- [[2521]](https://github.com/Azure/azure-dev/pull/2521) Support `--principal-id` param for azd pipeline config to reuse existing service principal
-- [[2455]](https://github.com/Azure/azure-dev/pull/2455) Adds optional support for text templates in AKS k8s manifests
+- [[2573]](https://github.com/Azure/azure-dev/pull/2573) Adds support for custom template sources
+
+### Breaking Changes
 
 ### Bugs Fixed
 
-- [[2569]](https://github.com/Azure/azure-dev/pull/2569) Fix `azd down` so it works after a failed `azd provision`
-- [[2367]](https://github.com/Azure/azure-dev/pull/2367) Don't fail AKS deployment for failed environment substitution
+### Other Changes
+
+## 1.2.0 (2023-08-09)
+
+### Features Added
+
+- [[2550]](https://github.com/Azure/azure-dev/pull/2550) Add `--preview` to `azd provision` to get the changes.
+- [[2521]](https://github.com/Azure/azure-dev/pull/2521) Support `--principal-id` param for azd pipeline config to reuse existing service principal.
+- [[2455]](https://github.com/Azure/azure-dev/pull/2455) Adds optional support for text templates in AKS k8s manifests.
+
+### Bugs Fixed
+
+- [[2569]](https://github.com/Azure/azure-dev/pull/2569) Fix `azd down` so it works after a failed `azd provision`.
+- [[2367]](https://github.com/Azure/azure-dev/pull/2367) Don't fail AKS deployment for failed environment substitution.
+- [[2576]](https://github.com/Azure/azure-dev/pull/2576) Fix `azd auth login` unable to launch browser on WSL.
 
 ### Other changes
 
-- [[2572]](https://github.com/Azure/azure-dev/pull/2572) Decrease expiration time of service principal secret from default (24 months) to 180 days
+- [[2572]](https://github.com/Azure/azure-dev/pull/2572) Decrease expiration time of service principal secret from default (24 months) to 180 days.
+- [[2500]](https://github.com/Azure/azure-dev/pull/2500) Promoted Azure Spring Apps from `alpha` to `beta`.
 
 ## 1.1.0 (2023-07-12)
 

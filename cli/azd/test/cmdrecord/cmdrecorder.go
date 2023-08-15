@@ -22,12 +22,13 @@ var buildOnce sync.Once
 type Recorder struct {
 	opt Options
 
-	proxyDir string
+	cassetteFile string
+	proxyDir     string
 }
 
 type Options struct {
 	CmdName      string        `json:"cmdName"`
-	CassettePath string        `json:"cassettePath"`
+	CassetteName string        `json:"cassettePath"`
 	Intercepts   []Intercept   `json:"intercepts"`
 	RecordMode   recorder.Mode `json:"recordMode"`
 }
@@ -91,15 +92,18 @@ func (r *Recorder) Start() (string, error) {
 		}
 	}
 
+	cassetteFile := fmt.Sprintf("%s.%s.yaml", r.opt.CassetteName, r.opt.CmdName)
 	cassetteDir := filepath.Join(proxyDir, "cassette")
-	err = expand(r.opt.CassettePath, cassetteDir)
+	r.cassetteFile = cassetteFile
+
+	err = expand(cassetteFile, cassetteDir)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return "", fmt.Errorf("expanding cassette: %w", err)
 	}
 
 	// Create a config file for the proxy
 	cmdOptions := r.opt
-	cmdOptions.CassettePath = cassetteDir
+	cmdOptions.CassetteName = cassetteDir
 	content, err := json.Marshal(cmdOptions)
 	if err != nil {
 		panic(err)
@@ -124,7 +128,7 @@ func (r *Recorder) Stop() error {
 	}
 
 	return zip(
-		r.opt.CassettePath,
+		r.cassetteFile,
 		r.opt.CmdName,
 		filepath.Join(r.proxyDir, "cassette"))
 }

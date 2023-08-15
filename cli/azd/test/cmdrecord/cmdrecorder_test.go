@@ -1,6 +1,7 @@
 package cmdrecord
 
 import (
+	"fmt"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -12,12 +13,12 @@ import (
 )
 
 // Verify that record + playback work together.
-func TestRecorder_RecordPlayback(t *testing.T) {
+func TestRecordPlayback(t *testing.T) {
 	dir := t.TempDir()
 	r := &Recorder{
 		opt: Options{
 			CmdName:      "go",
-			CassettePath: filepath.Join(dir, "go.yaml"),
+			CassetteName: filepath.Join(dir, "go"),
 			Intercepts: []Intercept{
 				{"^version"},
 				{"^help version"},
@@ -47,8 +48,8 @@ func TestRecorder_RecordPlayback(t *testing.T) {
 	err = r.Stop()
 	require.NoError(t, err)
 
-	require.FileExists(t, r.opt.CassettePath)
-	cstContent, err := os.ReadFile(r.opt.CassettePath)
+	require.FileExists(t, r.cassetteFile)
+	cstContent, err := os.ReadFile(r.cassetteFile)
 	require.NoError(t, err)
 
 	err = os.WriteFile(filepath.Join("testdata", "go.yaml"), cstContent, 0644)
@@ -81,11 +82,11 @@ func TestRecorder_RecordPlayback(t *testing.T) {
 }
 
 // Verify schema compatibility -- does playback succeed from a known "frozen" cassette?
-func TestRecorder_PlaybackFromKnownFile(t *testing.T) {
+func TestPlaybackFromKnownFile(t *testing.T) {
 	r := &Recorder{
 		opt: Options{
 			CmdName:      "go",
-			CassettePath: filepath.Join("testdata", "go.yaml"),
+			CassetteName: filepath.Join("testdata", t.Name()),
 			Intercepts: []Intercept{
 				{"^version"},
 				{"^help version"},
@@ -95,7 +96,7 @@ func TestRecorder_PlaybackFromKnownFile(t *testing.T) {
 		},
 	}
 
-	content, err := os.ReadFile(r.opt.CassettePath)
+	content, err := os.ReadFile(filepath.Join("testdata", fmt.Sprintf("%s.go.yaml", t.Name())))
 	require.NoError(t, err)
 
 	proxyDir, err := r.Start()
@@ -117,12 +118,12 @@ func TestRecorder_PlaybackFromKnownFile(t *testing.T) {
 	err = r.Stop()
 	require.NoError(t, err)
 
-	afterContent, err := os.ReadFile(r.opt.CassettePath)
+	afterContent, err := os.ReadFile(r.cassetteFile)
 	require.NoError(t, err)
 	require.Equal(t, string(content), string(afterContent), "cassette should remain unaltered")
 }
 
-func TestRecorder_Passthrough(t *testing.T) {
+func TestPassthrough(t *testing.T) {
 	r := &Recorder{
 		opt: Options{
 			CmdName: "go",
@@ -154,7 +155,7 @@ func TestRecorder_Passthrough(t *testing.T) {
 	err = r.Stop()
 	require.NoError(t, err)
 
-	require.NoFileExists(t, r.opt.CassettePath)
+	require.NoFileExists(t, r.opt.CassetteName)
 }
 
 func runCmd(name string, args ...string) (string, error) {

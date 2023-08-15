@@ -261,29 +261,29 @@ func removeEnvPathEntry(entry string) error {
 
 func (a *App) stdoutFile(interaction int) string {
 	return filepath.Join(
-		a.config.CassettePath,
+		a.config.CassetteName,
 		fmt.Sprintf("%s.%d.out", a.config.CmdName, interaction))
 }
 
 func (a *App) stderrFile(interaction int) string {
 	return filepath.Join(
-		a.config.CassettePath,
+		a.config.CassetteName,
 		fmt.Sprintf("%s.%d.err", a.config.CmdName, interaction))
 }
 
 func (a *App) metaFile(interaction int) string {
 	return filepath.Join(
-		a.config.CassettePath,
+		a.config.CassetteName,
 		fmt.Sprintf("%s.%d.meta", a.config.CmdName, interaction))
 }
 
 func (a *App) getInteractionId() (int, error) {
-	err := os.MkdirAll(a.config.CassettePath, 0755)
+	err := os.MkdirAll(a.config.CassetteName, 0755)
 	if err != nil {
 		return -1, err
 	}
 
-	name := filepath.Join(a.config.CassettePath, cmdrecord.InteractionIdFile)
+	name := filepath.Join(a.config.CassetteName, cmdrecord.InteractionIdFile)
 	contents, err := os.ReadFile(name)
 	if errors.Is(err, os.ErrNotExist) {
 		return 0, os.WriteFile(name, []byte(fmt.Sprint(0)), 0644)

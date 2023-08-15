@@ -96,14 +96,25 @@ func (r *Recorder) Start() (string, error) {
 	cassetteDir := filepath.Join(proxyDir, "cassette")
 	r.cassetteFile = cassetteFile
 
-	err = expand(cassetteFile, cassetteDir)
-	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return "", fmt.Errorf("expanding cassette: %w", err)
+	loadErr := expand(cassetteFile, cassetteDir)
+	if loadErr != nil && !errors.Is(loadErr, os.ErrNotExist) {
+		return "", fmt.Errorf("expanding cassette: %w", loadErr)
+	}
+
+	mode := r.opt.RecordMode
+	// determine actual record mode for RecordOnce
+	if mode == recorder.ModeRecordOnce {
+		if errors.Is(loadErr, os.ErrNotExist) {
+			mode = recorder.ModeRecordOnly
+		} else {
+			mode = recorder.ModeReplayOnly
+		}
 	}
 
 	// Create a config file for the proxy
 	cmdOptions := r.opt
 	cmdOptions.CassetteName = cassetteDir
+	cmdOptions.RecordMode = mode
 	content, err := json.Marshal(cmdOptions)
 	if err != nil {
 		panic(err)

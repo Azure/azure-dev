@@ -47,7 +47,7 @@ func (a *App) Handle() error {
 			case recorder.ModePassthrough:
 				return a.passthrough()
 			default:
-				panic("unsupported mode")
+				panic(fmt.Sprintf("unsupported mode: %d", a.config.RecordMode))
 			}
 		}
 	}

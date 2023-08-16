@@ -20,7 +20,7 @@ func sanitizeContainerAppTokenExchange(i *cassette.Interaction) error {
 		body := map[string]any{}
 		err := json.Unmarshal([]byte(i.Response.Body), &body)
 		if err != nil {
-			return fmt.Errorf("unmarshaling oauth2/exchange: %w", err)
+			return fmt.Errorf("unmarshalling oauth2/exchange: %w", err)
 		}
 
 		body["refresh_token"] = "SANITIZED"
@@ -43,7 +43,7 @@ func sanitizeContainerAppListSecrets(i *cassette.Interaction) error {
 		body := armappcontainers.ContainerAppsClientListSecretsResponse{}
 		err := json.Unmarshal([]byte(i.Response.Body), &body)
 		if err != nil {
-			return fmt.Errorf("unmarshaling Microsoft.App/containerApps listSecrets: %w", err)
+			return fmt.Errorf("unmarshalling Microsoft.App/containerApps listSecrets: %w", err)
 		}
 
 		for i := range body.Value {
@@ -76,7 +76,7 @@ func sanitizeContainerAppUpdate(i *cassette.Interaction) error {
 		ca := armappcontainers.ContainerApp{}
 		err := json.Unmarshal([]byte(i.Request.Body), &ca)
 		if err != nil {
-			return fmt.Errorf("unmarshaling Microsoft.App/containerApps request: %w", err)
+			return fmt.Errorf("unmarshalling Microsoft.App/containerApps request: %w", err)
 		}
 
 		if ca.Properties != nil &&

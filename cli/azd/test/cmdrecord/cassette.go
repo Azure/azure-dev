@@ -48,12 +48,12 @@ func expand(cassette string, dir string) error {
 	}
 
 	for _, i := range c.Interactions {
-		err = os.WriteFile(expandedName(dir, c.ToolName, i.Id, ".out"), []byte(i.Stdout), 0644)
+		err = os.WriteFile(expandedName(dir, c.ToolName, i.Id, ".out"), []byte(i.Stdout), 0600)
 		if err != nil {
 			return err
 		}
 
-		err = os.WriteFile(expandedName(dir, c.ToolName, i.Id, ".err"), []byte(i.Stderr), 0644)
+		err = os.WriteFile(expandedName(dir, c.ToolName, i.Id, ".err"), []byte(i.Stderr), 0600)
 		if err != nil {
 			return err
 		}
@@ -65,7 +65,7 @@ func expand(cassette string, dir string) error {
 			return err
 		}
 
-		err = os.WriteFile(expandedName(dir, c.ToolName, i.Id, ".meta"), metadata, 0644)
+		err = os.WriteFile(expandedName(dir, c.ToolName, i.Id, ".meta"), metadata, 0600)
 		if err != nil {
 			return err
 		}
@@ -126,7 +126,7 @@ func save(cst Cassette, cassette string) error {
 		return err
 	}
 
-	return os.WriteFile(cassette, cstYml, 0644)
+	return os.WriteFile(cassette, cstYml, 0600)
 }
 
 func expandedName(root string, tool string, interaction int, ext string) string {

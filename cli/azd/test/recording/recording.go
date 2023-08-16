@@ -173,7 +173,8 @@ func Start(t *testing.T, opts ...Options) *Session {
 
 	vcr.SetMatcher(func(r *http.Request, i cassette.Request) bool {
 		// Ignore query parameter 's=...' in containerappOperationResults
-		if strings.Contains(r.URL.Path, "/providers/Microsoft.App/") && strings.Contains(r.URL.Path, "/containerappOperationResults") {
+		if strings.Contains(r.URL.Path, "/providers/Microsoft.App/") &&
+			strings.Contains(r.URL.Path, "/containerappOperationResults") {
 			recorded, err := url.Parse(i.URL)
 			if err != nil {
 				panic(err)

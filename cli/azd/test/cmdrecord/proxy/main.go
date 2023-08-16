@@ -117,7 +117,7 @@ func (a *App) record(id int) error {
 	err = os.WriteFile(
 		a.metaFile(id),
 		contents,
-		0644)
+		0600)
 	if err != nil {
 		return err
 	}
@@ -147,7 +147,7 @@ func (a *App) loadInteraction(argsMatch string) (cmdrecord.Interaction, error) {
 
 	err = yaml.Unmarshal(content, &recorded)
 	if err != nil {
-		return recorded, fmt.Errorf("unmarshaling interaction: %w", err)
+		return recorded, fmt.Errorf("unmarshalling interaction: %w", err)
 	}
 
 	if !argsMatchRegexp.MatchString(strings.Join(recorded.Args, " ")) {
@@ -307,7 +307,7 @@ func (a *App) nextInteractionId() (int, error) {
 	name := filepath.Join(a.config.CassetteName, cmdrecord.InteractionIdFile)
 	contents, err := os.ReadFile(name)
 	if errors.Is(err, os.ErrNotExist) {
-		return 0, os.WriteFile(name, []byte(fmt.Sprint(0)), 0644)
+		return 0, os.WriteFile(name, []byte(fmt.Sprint(0)), 0600)
 	}
 
 	if err != nil {
@@ -320,7 +320,7 @@ func (a *App) nextInteractionId() (int, error) {
 	}
 
 	newId := currentId + 1
-	err = os.WriteFile(name, []byte(fmt.Sprint(newId)), 0644)
+	err = os.WriteFile(name, []byte(fmt.Sprint(newId)), 0600)
 	return newId, err
 }
 
@@ -339,7 +339,7 @@ func runMain() error {
 	config := cmdrecord.Options{}
 	err = json.Unmarshal(contents, &config)
 	if err != nil {
-		return fmt.Errorf("unmarshaling %s: %w", cmdrecord.ProxyConfigName, err)
+		return fmt.Errorf("unmarshalling %s: %w", cmdrecord.ProxyConfigName, err)
 	}
 
 	app := App{config: config, execDir: execDir}

@@ -133,7 +133,7 @@ func (r *Recorder) Start() (proxyDir string, err error) {
 		panic(err)
 	}
 
-	err = os.WriteFile(filepath.Join(proxyDir, ProxyConfigName), content, 0644)
+	err = os.WriteFile(filepath.Join(proxyDir, ProxyConfigName), content, 0600)
 	if err != nil {
 		return "", fmt.Errorf("writing %s: %w", ProxyConfigName, err)
 	}
@@ -147,7 +147,8 @@ func (r *Recorder) Start() (proxyDir string, err error) {
 }
 
 func (r *Recorder) Stop() error {
-	if r.opt.RecordMode == recorder.ModePassthrough {
+	if r.opt.RecordMode == recorder.ModePassthrough ||
+		r.opt.RecordMode == recorder.ModeReplayOnly {
 		return nil
 	}
 

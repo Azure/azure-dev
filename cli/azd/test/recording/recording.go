@@ -188,11 +188,6 @@ func Start(t *testing.T, opts ...Options) *Session {
 		return cassette.DefaultMatcher(r, i)
 	})
 
-	vcr.AddHook(func(i *cassette.Interaction) error {
-		i.Request.Headers.Set("Authorization", "SANITIZED")
-		return nil
-	}, recorder.BeforeSaveHook)
-
 	// Fast-forward polling operations
 	discarder := httpPollDiscarder{}
 	vcr.AddHook(discarder.BeforeSave, recorder.BeforeSaveHook)
@@ -200,6 +195,28 @@ func Start(t *testing.T, opts ...Options) *Session {
 	// Trim GET subscriptions-level deployment responses
 	vcr.AddHook(func(i *cassette.Interaction) error {
 		return TrimSubscriptionsDeployment(i, session.Variables)
+	}, recorder.BeforeSaveHook)
+
+	// Sanitize
+	vcr.AddHook(func(i *cassette.Interaction) error {
+		i.Request.Headers.Set("Authorization", "SANITIZED")
+
+		err := sanitizeContainerAppTokenExchange(i)
+		if err != nil {
+			log.Error("failed to sanitize container app token exchange", "error", err)
+		}
+
+		err = sanitizeContainerAppListSecrets(i)
+		if err != nil {
+			log.Error("failed to sanitize container app list secrets", "error", err)
+		}
+
+		err = sanitizeContainerAppUpdate(i)
+		if err != nil {
+			log.Error("failed to sanitize container app update", "error", err)
+		}
+
+		return nil
 	}, recorder.BeforeSaveHook)
 
 	vcr.AddHook(func(i *cassette.Interaction) error {

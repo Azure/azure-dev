@@ -7,7 +7,7 @@ interactions:
         - --username
         - 00000000-0000-0000-0000-000000000000
         - --password-stdin
-        - cr3bxwtqjom2oto.azurecr.io
+        - crtn5xf6exmkoym.azurecr.io
       exitCode: 0
       stdout: |
         Login Succeeded
@@ -15,25 +15,25 @@ interactions:
     - id: 1
       args:
         - push
-        - cr3bxwtqjom2oto.azurecr.io/containerapp/web-azdtest-la2a1f5:azd-deploy-1692137456
+        - crtn5xf6exmkoym.azurecr.io/containerapp/web-azdtest-l9bb10f:azd-deploy-1692208280
       exitCode: 0
       stdout: |
-        The push refers to repository [cr3bxwtqjom2oto.azurecr.io/containerapp/web-azdtest-la2a1f5]
-        431dd42bd075: Preparing
-        f2a8869c48bc: Preparing
-        a3884885f268: Preparing
-        9420ab5f560b: Preparing
-        b0a4e3e23649: Preparing
-        f6c4eaf2bdb1: Preparing
-        8ce178ff9f34: Preparing
-        f6c4eaf2bdb1: Waiting
-        8ce178ff9f34: Waiting
-        431dd42bd075: Pushed
-        f2a8869c48bc: Pushed
-        9420ab5f560b: Pushed
-        a3884885f268: Pushed
-        f6c4eaf2bdb1: Pushed
-        b0a4e3e23649: Pushed
-        8ce178ff9f34: Pushed
-        azd-deploy-1692137456: digest: sha256:13de7ab9577f5025fc58485eb9520917b601d0c838cdc5a727e0bcb271b38fc6 size: 1786
+        The push refers to repository [crtn5xf6exmkoym.azurecr.io/containerapp/web-azdtest-l9bb10f]
+        b51aa84885f0: Preparing
+        5618852fc4f7: Preparing
+        83bb7265137c: Preparing
+        5342c39ff7fc: Preparing
+        5bd70f0c0235: Preparing
+        a5511d7cb706: Preparing
+        63290f9c9e52: Preparing
+        a5511d7cb706: Waiting
+        63290f9c9e52: Waiting
+        b51aa84885f0: Pushed
+        5618852fc4f7: Pushed
+        5342c39ff7fc: Pushed
+        83bb7265137c: Pushed
+        a5511d7cb706: Pushed
+        5bd70f0c0235: Pushed
+        63290f9c9e52: Pushed
+        azd-deploy-1692208280: digest: sha256:4a6b2013ac3696dcffdbc59b6167d3b66d4698a7e5c1204251b92e23384a5c3a size: 1786
       stderr: ""

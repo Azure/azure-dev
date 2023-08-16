@@ -34,8 +34,8 @@ func TestRecordPlayback(t *testing.T) {
 	// Record interactions
 	proxyDir, err := r.Start()
 	require.NoError(t, err)
-
 	goProxy := filepath.Join(proxyDir, "go")
+
 	output, err := runCmd(goProxy, "version")
 	require.NoError(t, err, output)
 
@@ -55,9 +55,6 @@ func TestRecordPlayback(t *testing.T) {
 	cstContent, err := os.ReadFile(r.cassetteFile)
 	require.NoError(t, err)
 
-	err = os.WriteFile(filepath.Join("testdata", "go.yaml"), cstContent, 0644)
-	require.NoError(t, err)
-
 	cst := Cassette{}
 	err = yaml.Unmarshal(cstContent, &cst)
 	require.NoError(t, err)
@@ -67,6 +64,9 @@ func TestRecordPlayback(t *testing.T) {
 
 	// Playback interactions
 	r.opt.RecordMode = recorder.ModeReplayOnly
+	proxyDir, err = r.Start()
+	require.NoError(t, err)
+	goProxy = filepath.Join(proxyDir, "go")
 
 	output, err = runCmd(goProxy, "version")
 	require.NoError(t, err, output)
@@ -82,6 +82,40 @@ func TestRecordPlayback(t *testing.T) {
 
 	err = r.Stop()
 	require.NoError(t, err)
+
+	// Playback with append interactions
+	r.opt.RecordMode = recorder.ModeReplayWithNewEpisodes
+	proxyDir, err = r.Start()
+	require.NoError(t, err)
+	goProxy = filepath.Join(proxyDir, "go")
+
+	output, err = runCmd(goProxy, "version")
+	require.NoError(t, err, output)
+
+	output, err = runCmd(goProxy, "help")
+	require.NoError(t, err, output)
+
+	output, err = runCmd(goProxy, "help", "version")
+	require.NoError(t, err, output)
+
+	output, err = runCmd(goProxy, "unknown", "command")
+	require.Error(t, err, output)
+
+	output, err = runCmd(goProxy, "version")
+	require.NoError(t, err, output)
+
+	err = r.Stop()
+	require.NoError(t, err)
+
+	require.FileExists(t, r.cassetteFile)
+	cstContent, err = os.ReadFile(r.cassetteFile)
+	require.NoError(t, err)
+
+	err = yaml.Unmarshal(cstContent, &cst)
+	require.NoError(t, err)
+
+	require.Equal(t, "go", cst.ToolName)
+	require.Equal(t, 4, len(cst.Interactions))
 }
 
 // Verify schema compatibility -- does playback succeed from a known "frozen" cassette?

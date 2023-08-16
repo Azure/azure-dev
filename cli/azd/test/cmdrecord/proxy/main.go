@@ -29,6 +29,8 @@ func (e ErrExitCode) Error() string {
 // In this case, the proxy command will also self-terminate using SIGKILL to be as close to observed behavior as possible.
 var errSignalTerm = errors.New("terminated by signal")
 
+var errInteractionNotFound = errors.New("interaction not found")
+
 type App struct {
 	config cmdrecord.Options
 
@@ -41,9 +43,27 @@ func (a *App) Handle() error {
 		if r.MatchString(strings.Join(os.Args[1:], " ")) {
 			switch a.config.RecordMode {
 			case recorder.ModeRecordOnly:
-				return a.record()
+				id, err := a.nextInteractionId()
+				if err != nil {
+					return fmt.Errorf("getting interaction number: %w", err)
+				}
+
+				return a.record(id)
 			case recorder.ModeReplayOnly:
-				return a.replay(intercept.ArgsMatch)
+				interaction, err := a.loadInteraction(intercept.ArgsMatch)
+				if err != nil {
+					return err
+				}
+				return a.replay(interaction)
+			case recorder.ModeReplayWithNewEpisodes:
+				interaction, err := a.loadInteraction(intercept.ArgsMatch)
+				if errors.Is(err, errInteractionNotFound) {
+					return a.record(interaction.Id)
+				} else if err != nil {
+					return err
+				}
+
+				return a.replay(interaction)
 			case recorder.ModePassthrough:
 				return a.passthrough()
 			default:
@@ -56,18 +76,13 @@ func (a *App) Handle() error {
 	return a.passthrough()
 }
 
-func (a *App) record() error {
-	interaction, err := a.getInteractionId()
-	if err != nil {
-		return fmt.Errorf("getting interaction number: %w", err)
-	}
-
-	stdOut, err := os.Create(a.stdoutFile(interaction))
+func (a *App) record(id int) error {
+	stdOut, err := os.Create(a.stdoutFile(id))
 	if err != nil {
 		return err
 	}
 
-	stdErr, err := os.Create(a.stderrFile(interaction))
+	stdErr, err := os.Create(a.stderrFile(id))
 	if err != nil {
 		return err
 	}
@@ -92,7 +107,7 @@ func (a *App) record() error {
 		return errSignalTerm
 	}
 
-	recorded := cmdrecord.Interaction{Id: interaction}
+	recorded := cmdrecord.Interaction{Id: id}
 	recorded.Args = os.Args[1:]
 	recorded.ExitCode = cmd.ProcessState.ExitCode()
 	contents, err := yaml.Marshal(recorded)
@@ -100,7 +115,7 @@ func (a *App) record() error {
 		return err
 	}
 	err = os.WriteFile(
-		a.metaFile(interaction),
+		a.metaFile(id),
 		contents,
 		0644)
 	if err != nil {
@@ -113,39 +128,45 @@ func (a *App) record() error {
 	return nil
 }
 
-func (a *App) replay(argsMatch string) error {
-	argsMatchRegexp := regexp.MustCompile(argsMatch)
-	interaction, err := a.getInteractionId()
-	if err != nil {
-		return fmt.Errorf("getting interaction number: %w", err)
-	}
-
-	content, err := os.ReadFile(a.metaFile(interaction))
-	if errors.Is(err, os.ErrNotExist) {
-		return fmt.Errorf("interaction not found for '%s'", strings.Join(os.Args[1:], " "))
-	}
-	if err != nil {
-		return fmt.Errorf("getting exit code: %w", err)
-	}
-
+func (a *App) loadInteraction(argsMatch string) (cmdrecord.Interaction, error) {
 	recorded := cmdrecord.Interaction{}
+	argsMatchRegexp := regexp.MustCompile(argsMatch)
+	id, err := a.nextInteractionId()
+	if err != nil {
+		return cmdrecord.Interaction{}, fmt.Errorf("getting interaction number: %w", err)
+	}
+
+	recorded.Id = id
+	content, err := os.ReadFile(a.metaFile(id))
+	if errors.Is(err, os.ErrNotExist) {
+		return recorded, fmt.Errorf("%w: args '%s'", errInteractionNotFound, strings.Join(os.Args[1:], " "))
+	}
+	if err != nil {
+		return recorded, fmt.Errorf("getting meta file: %w", err)
+	}
+
 	err = yaml.Unmarshal(content, &recorded)
 	if err != nil {
-		return fmt.Errorf("unmarshaling interaction: %w", err)
+		return recorded, fmt.Errorf("unmarshaling interaction: %w", err)
 	}
 
 	if !argsMatchRegexp.MatchString(strings.Join(recorded.Args, " ")) {
-		return fmt.Errorf(
-			"interaction mismatch: ArgsMatch '%s' does not match recorded args '%s'",
+		return recorded, fmt.Errorf(
+			"%w: ArgsMatch '%s' does not match recorded args '%s'",
+			errInteractionNotFound,
 			argsMatch,
 			strings.Join(recorded.Args, " "))
 	}
 
+	return recorded, nil
+}
+
+func (a *App) replay(interaction cmdrecord.Interaction) error {
 	var stdOutCopyErr, stdErrCopyErr error
 	stdOutCopyDone := make(chan (bool), 1)
 	stdErrCopyDone := make(chan (bool), 1)
 	go func() {
-		file, err := os.Open(a.stdoutFile(interaction))
+		file, err := os.Open(a.stdoutFile(interaction.Id))
 		if err != nil {
 			stdOutCopyErr = err
 			return
@@ -160,7 +181,7 @@ func (a *App) replay(argsMatch string) error {
 	}()
 
 	go func() {
-		file, err := os.Open(a.stderrFile(interaction))
+		file, err := os.Open(a.stderrFile(interaction.Id))
 		if err != nil {
 			stdErrCopyErr = err
 			return
@@ -184,8 +205,8 @@ func (a *App) replay(argsMatch string) error {
 		return stdErrCopyErr
 	}
 
-	if recorded.ExitCode != 0 {
-		return ErrExitCode{recorded.ExitCode}
+	if interaction.ExitCode != 0 {
+		return ErrExitCode{interaction.ExitCode}
 	}
 
 	return nil
@@ -277,7 +298,7 @@ func (a *App) metaFile(interaction int) string {
 		fmt.Sprintf("%s.%d.meta", a.config.CmdName, interaction))
 }
 
-func (a *App) getInteractionId() (int, error) {
+func (a *App) nextInteractionId() (int, error) {
 	err := os.MkdirAll(a.config.CassetteName, 0755)
 	if err != nil {
 		return -1, err

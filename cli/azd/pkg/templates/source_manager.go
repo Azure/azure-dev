@@ -96,11 +96,13 @@ func (sm *sourceManager) List(ctx context.Context) ([]*SourceConfig, error) {
 			sourceConfig.Key = key
 			sourceConfigs = append(sourceConfigs, sourceConfig)
 		}
-	}
-
-	// If not sources have been registered, add the default source.
-	if len(sourceConfigs) == 0 {
-		sourceConfigs = append(sourceConfigs, SourceDefault)
+	} else {
+		// In the use case where template sources have never been configured,
+		// add Awesome-Azd as the default template source.
+		if err := sm.addInternal(ctx, SourceAwesomeAzd.Key, SourceAwesomeAzd); err != nil {
+			return nil, fmt.Errorf("unable to default template source '%s': %w", SourceAwesomeAzd.Key, err)
+		}
+		sourceConfigs = append(sourceConfigs, SourceAwesomeAzd)
 	}
 
 	return sourceConfigs, nil
@@ -137,23 +139,7 @@ func (sm *sourceManager) Add(ctx context.Context, key string, source *SourceConf
 
 	source.Key = newKey
 
-	config, err := sm.configManager.Load()
-	if err != nil {
-		return fmt.Errorf("unable to load user configuration: %w", err)
-	}
-
-	path := fmt.Sprintf("%s.%s", baseConfigKey, source.Key)
-	err = config.Set(path, source)
-	if err != nil {
-		return fmt.Errorf("unable to add template source '%s': %w", source.Key, err)
-	}
-
-	err = sm.configManager.Save(config)
-	if err != nil {
-		return fmt.Errorf("updating user configuration: %w", err)
-	}
-
-	return nil
+	return sm.addInternal(ctx, source.Key, source)
 }
 
 // Remove removes a template source by the specified key.
@@ -212,6 +198,26 @@ func (sm *sourceManager) CreateSource(ctx context.Context, config *SourceConfig)
 	}
 
 	return source, nil
+}
+
+func (sm *sourceManager) addInternal(ctx context.Context, key string, source *SourceConfig) error {
+	config, err := sm.configManager.Load()
+	if err != nil {
+		return fmt.Errorf("unable to load user configuration: %w", err)
+	}
+
+	path := fmt.Sprintf("%s.%s", baseConfigKey, source.Key)
+	err = config.Set(path, source)
+	if err != nil {
+		return fmt.Errorf("unable to add template source '%s': %w", source.Key, err)
+	}
+
+	err = sm.configManager.Save(config)
+	if err != nil {
+		return fmt.Errorf("updating user configuration: %w", err)
+	}
+
+	return nil
 }
 
 func normalizeKey(key string) string {

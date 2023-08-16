@@ -461,7 +461,7 @@ func (a *templateSourceRemoveAction) Run(ctx context.Context) (*actions.ActionRe
 	})
 
 	var key = a.args[0]
-	spinnerMessage := "Removing template source"
+	spinnerMessage := fmt.Sprintf("Removing template source (%s)", key)
 	a.console.ShowSpinner(ctx, spinnerMessage, input.Step)
 	err := a.sourceManager.Remove(ctx, key)
 	a.console.StopSpinner(ctx, spinnerMessage, input.GetStepResultFormat(err))
@@ -472,6 +472,10 @@ func (a *templateSourceRemoveAction) Run(ctx context.Context) (*actions.ActionRe
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
 			Header: fmt.Sprintf("Removed azd template source %s", key),
+			FollowUp: fmt.Sprintf(
+				"Add more template sources by running %s",
+				output.WithHighLightFormat("azd template source add <key>"),
+			),
 		},
 	}, nil
 }

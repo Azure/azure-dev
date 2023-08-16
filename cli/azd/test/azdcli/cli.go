@@ -146,7 +146,10 @@ func (cli *CLI) RunCommandWithStdIn(ctx context.Context, stdin string, args ...s
 			pathStrings = append(pathStrings, env[5:])
 		}
 	}
-	cmd.Env = append(cmd.Env, "PATH="+strings.Join(pathStrings, string(os.PathListSeparator)))
+
+	if len(pathStrings) > 0 {
+		cmd.Env = append(cmd.Env, "PATH="+strings.Join(pathStrings, string(os.PathListSeparator)))
+	}
 
 	// we run a background goroutine to report a heartbeat in the logs while the command
 	// is still running. This makes it easy to see what's still in progress if we hit a timeout.

@@ -10,7 +10,6 @@ import (
 	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
-	"log"
 	"net/url"
 	"os"
 	"strings"
@@ -356,59 +355,6 @@ func (ss *springService) GetSpringAppDeployment(
 	appName string,
 	deploymentName string,
 ) (*string, error) {
-
-	client5, _ := ss.createBuildServiceClient(ctx, subscriptionId)
-	pager5 := client5.NewListBuildServicesPager(resourceGroupName, instanceName, nil)
-
-	for pager5.More() {
-		page, err := pager5.NextPage(ctx)
-		if err != nil {
-			log.Fatalf("failed to advance page: %v", err)
-		}
-		for _, v := range page.Value {
-			// You could use page here. We use blank identifier for just demo purposes.
-			fmt.Println("builder service item ------: " + *v.ID)
-		}
-	}
-
-	client2, _ := ss.createBuildServiceBuilderClient(ctx, subscriptionId)
-	pager := client2.NewListPager(resourceGroupName, instanceName, "default", nil)
-	for pager.More() {
-		page, err := pager.NextPage(ctx)
-		if err != nil {
-			log.Fatalf("failed to advance page: %v", err)
-		}
-		for _, v := range page.Value {
-			// You could use page here. We use blank identifier for just demo purposes.
-			fmt.Println("builder item ------: " + *v.ID)
-			for _, vv := range v.Properties.BuildpackGroups {
-				for _, vvv := range vv.Buildpacks {
-					fmt.Println("buildpacks item ------: " + *vvv.ID)
-				}
-			}
-		}
-	}
-
-	client3, _ := ss.createBuildServiceAgentPoolClient(ctx, subscriptionId)
-	pager2 := client3.NewListPager(resourceGroupName, instanceName, "default", nil)
-	for pager2.More() {
-		page, err := pager2.NextPage(ctx)
-		if err != nil {
-			log.Fatalf("failed to advance page: %v", err)
-		}
-		for _, v := range page.Value {
-			// You could use page here. We use blank identifier for just demo purposes.
-			fmt.Println("build agent pool item ------: " + *v.ID)
-			fmt.Println("build agent pool item ------: " + *v.Properties.PoolSize.CPU)
-			fmt.Println("build agent pool item ------: " + *v.Properties.PoolSize.Memory)
-			//v.Properties.ProvisioningState
-		}
-	}
-
-	//client4, _ := ss.createBuildServiceClient(ctx, subscriptionId)
-	//resp1, _ := client4.GetBuildResultLog(ctx, resourceGroupName, instanceName, "default", "jimmybuild", "1", nil)
-	//fmt.Println("storage blob url: " + *resp1.BuildResultLog.BlobURL)
-
 	client, err := ss.createSpringAppDeploymentClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, err

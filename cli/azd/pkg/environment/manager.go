@@ -47,7 +47,7 @@ type Manager interface {
 
 type manager struct {
 	local      LocalDataStore
-	remote     RemoteDataStore
+	remote     DataStore
 	azdContext *azdcontext.AzdContext
 	console    input.Console
 }
@@ -56,7 +56,7 @@ func NewManager(
 	azdContext *azdcontext.AzdContext,
 	console input.Console,
 	local LocalDataStore,
-	remote RemoteDataStore,
+	remote DataStore,
 ) Manager {
 	return &manager{
 		azdContext: azdContext,

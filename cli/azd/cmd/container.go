@@ -220,7 +220,6 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 	container.RegisterSingleton(func(projectConfig *project.ProjectConfig) storage.AccountConfig {
 		return storage.AccountConfig{
-			ResourceGroup: "rg-wabrez-azd-remote-state",
 			AccountName:   "saazdremotestate",
 			ContainerName: projectConfig.Name,
 		}

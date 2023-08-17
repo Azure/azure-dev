@@ -19,7 +19,6 @@ import (
 
 // AccountConfig contains the configuration for connecting to a storage account
 type AccountConfig struct {
-	ResourceGroup string
 	AccountName   string
 	ContainerName string
 	Endpoint      string
@@ -34,16 +33,20 @@ var (
 )
 
 type BlobClient interface {
-	// Download downloads a blob from the configured storage account container
+	// Download downloads a blob from the configured storage account container.
 	Download(ctx context.Context, blobPath string) (io.ReadCloser, error)
 
-	// Upload uploads a blob to the configured storage account container
+	// Upload uploads a blob to the configured storage account container.
 	Upload(ctx context.Context, blobPath string, reader io.Reader) error
 
-	// Items returns a list of blobs in the configured storage account container
+	// Delete deletes a blob from the configured storage account container.
+	Delete(ctx context.Context, blobPath string) error
+
+	// Items returns a list of blobs in the configured storage account container.
 	Items(ctx context.Context) ([]*Blob, error)
 }
 
+// NewBlobClient creates a new BlobClient instance to manage blobs within a container.
 func NewBlobClient(
 	config AccountConfig,
 	authManager *auth.Manager,
@@ -142,6 +145,24 @@ func (bc *blobClient) Upload(ctx context.Context, blobPath string, reader io.Rea
 	return nil
 }
 
+func (bc *blobClient) Delete(ctx context.Context, blobPath string) error {
+	client, err := bc.createClient(ctx)
+	if err != nil {
+		return err
+	}
+
+	if err := bc.ensureContainerExists(ctx); err != nil {
+		return err
+	}
+
+	_, err = client.DeleteBlob(ctx, bc.config.ContainerName, blobPath, nil)
+	if err != nil {
+		return fmt.Errorf("failed to delete blob '%s', %w", blobPath, err)
+	}
+
+	return nil
+}
+
 // Check if the specified container exists
 // If it doesn't already exist then create it
 func (bc *blobClient) ensureContainerExists(ctx context.Context) error {
@@ -181,6 +202,7 @@ func (bc *blobClient) ensureContainerExists(ctx context.Context) error {
 	return nil
 }
 
+// createClient creates a new blob client and caches it for future use
 func (bc *blobClient) createClient(ctx context.Context) (*azblob.Client, error) {
 	if bc.client != nil {
 		return bc.client, nil

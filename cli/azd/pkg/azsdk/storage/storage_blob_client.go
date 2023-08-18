@@ -49,7 +49,7 @@ type BlobClient interface {
 // NewBlobClient creates a new BlobClient instance to manage blobs within a container.
 func NewBlobClient(
 	config AccountConfig,
-	authManager auth.CurrentUserAuthManager,
+	authManager auth.Manager,
 	httpClient httputil.HttpClient,
 ) BlobClient {
 	return &blobClient{
@@ -62,7 +62,7 @@ func NewBlobClient(
 
 type blobClient struct {
 	config             AccountConfig
-	authManager        auth.CurrentUserAuthManager
+	authManager        auth.Manager
 	credentialProvider account.SubscriptionCredentialProvider
 	httpClient         httputil.HttpClient
 	userAgent          string

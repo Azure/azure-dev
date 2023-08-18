@@ -67,7 +67,7 @@ func registerCommonMocks(mockContext *MockContext) {
 	mockContext.Container.RegisterSingleton(func() input.Console {
 		return mockContext.Console
 	})
-	mockContext.Container.RegisterSingleton(func() config.Manager {
+	mockContext.Container.RegisterSingleton(func() config.FileConfigManager {
 		return mockContext.ConfigManager
 	})
 	mockContext.Container.RegisterSingleton(func() *alpha.FeatureManager {

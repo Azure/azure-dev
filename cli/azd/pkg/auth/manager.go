@@ -91,7 +91,7 @@ type HttpClient interface {
 type Manager struct {
 	publicClient        publicClient
 	publicClientOptions []public.Option
-	configManager       config.Manager
+	configManager       config.FileConfigManager
 	userConfigManager   config.UserConfigManager
 	credentialCache     Cache
 	ghClient            *github.FederatedTokenClient
@@ -101,7 +101,7 @@ type Manager struct {
 }
 
 func NewManager(
-	configManager config.Manager,
+	configManager config.FileConfigManager,
 	userConfigManager config.UserConfigManager,
 	httpClient HttpClient,
 	console input.Console,

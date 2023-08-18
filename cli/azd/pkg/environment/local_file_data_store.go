@@ -18,12 +18,14 @@ import (
 )
 
 type LocalFileDataStore struct {
-	azdContext *azdcontext.AzdContext
+	azdContext    *azdcontext.AzdContext
+	configManager config.FileConfigManager
 }
 
-func NewLocalFileDataStore(azdContext *azdcontext.AzdContext) LocalDataStore {
+func NewLocalFileDataStore(azdContext *azdcontext.AzdContext, configManager config.FileConfigManager) DataStore {
 	return &LocalFileDataStore{
-		azdContext: azdContext,
+		azdContext:    azdContext,
+		configManager: configManager,
 	}
 }
 
@@ -78,12 +80,7 @@ func (fs *LocalFileDataStore) Get(ctx context.Context, name string) (*Environmen
 		return nil, fmt.Errorf("'%s' %w, %w", name, ErrNotFound, err)
 	}
 
-	env := &Environment{
-		name:       name,
-		dotEnvPath: filepath.Join(fs.azdContext.EnvironmentRoot(name), DotEnvFileName),
-		configPath: filepath.Join(fs.azdContext.EnvironmentRoot(name), ConfigFileName),
-	}
-
+	env := New(name, fs.azdContext.EnvironmentRoot(name))
 	if err := fs.Reload(ctx, env); err != nil {
 		return nil, err
 	}
@@ -105,8 +102,7 @@ func (fs *LocalFileDataStore) Reload(ctx context.Context, env *Environment) erro
 	}
 
 	// Reload env config
-	cfgMgr := config.NewManager()
-	if cfg, err := cfgMgr.Load(fs.ConfigPath(env)); errors.Is(err, os.ErrNotExist) {
+	if cfg, err := fs.configManager.Load(fs.ConfigPath(env)); errors.Is(err, os.ErrNotExist) {
 		env.Config = config.NewEmptyConfig()
 	} else if err != nil {
 		return fmt.Errorf("loading config: %w", err)
@@ -129,8 +125,7 @@ func (fs *LocalFileDataStore) Reload(ctx context.Context, env *Environment) erro
 // the given directory, creating it and any intermediate directories as needed.
 func (fs *LocalFileDataStore) Save(ctx context.Context, env *Environment) error {
 	// Update configuration
-	cfgMgr := config.NewManager()
-	if err := cfgMgr.Save(env.Config, fs.ConfigPath(env)); err != nil {
+	if err := fs.configManager.Save(env.Config, fs.ConfigPath(env)); err != nil {
 		return fmt.Errorf("saving config: %w", err)
 	}
 
@@ -149,12 +144,6 @@ func (fs *LocalFileDataStore) Save(ctx context.Context, env *Environment) error 
 	// Replay deletion
 	for key := range deletedValues {
 		delete(env.dotenv, key)
-	}
-
-	root := fs.azdContext.EnvironmentRoot(env.name)
-	err := os.MkdirAll(root, osutil.PermissionDirectory)
-	if err != nil {
-		return fmt.Errorf("failed to create a directory: %w", err)
 	}
 
 	// Instead of calling `godotenv.Write` directly, we need to save the file ourselves, so we can fixup any numeric values

@@ -46,7 +46,7 @@ type Manager interface {
 }
 
 type manager struct {
-	local      LocalDataStore
+	local      DataStore
 	remote     DataStore
 	azdContext *azdcontext.AzdContext
 	console    input.Console
@@ -55,7 +55,7 @@ type manager struct {
 func NewManager(
 	azdContext *azdcontext.AzdContext,
 	console input.Console,
-	local LocalDataStore,
+	local DataStore,
 	remote DataStore,
 ) Manager {
 	return &manager{
@@ -141,7 +141,7 @@ func (m *manager) Create(ctx context.Context, name string) (*Environment, error)
 		return nil, fmt.Errorf("%w '%s'", ErrExists, name)
 	}
 
-	env = Empty(name)
+	env = New(name, m.azdContext.EnvironmentRoot(name))
 	env.SetEnvName(name)
 
 	if err := m.Save(ctx, env); err != nil {

@@ -49,6 +49,12 @@ const ResourceGroupEnvVarName = "AZURE_RESOURCE_GROUP"
 // The zero value of an Environment is not valid. Use [FromRoot] or [EmptyWithRoot] to create one. When writing tests,
 // [Ephemeral] and [EphemeralWithValues] are useful to create environments which are not persisted to disk.
 type Environment struct {
+	name string
+
+	dotEnvPath string
+
+	configPath string
+
 	// dotenv is a map of keys to values, persisted to the `.env` file stored in this environment's [Root].
 	dotenv map[string]string
 
@@ -63,6 +69,14 @@ type Environment struct {
 	// will not be persisted when `Save` is called. This allows the zero value to be used
 	// for testing.
 	Root string
+}
+
+// New returns a new environment with the specified name.
+func New(name string, root string) *Environment {
+	env := EmptyWithRoot(root)
+	env.name = name
+
+	return env
 }
 
 type EnvironmentResolver func() (*Environment, error)
@@ -213,8 +227,13 @@ func (e *Environment) Reload() error {
 	}
 
 	// Reload env config
+	configFile, err := os.Open(e.ConfigPath())
+	if err != nil {
+		return fmt.Errorf("failed reading .env file, %w", err)
+	}
+
 	cfgMgr := config.NewManager()
-	if cfg, err := cfgMgr.Load(e.ConfigPath()); errors.Is(err, os.ErrNotExist) {
+	if cfg, err := cfgMgr.Load(configFile); errors.Is(err, os.ErrNotExist) {
 		e.Config = config.NewEmptyConfig()
 	} else if err != nil {
 		return fmt.Errorf("loading config: %w", err)
@@ -241,8 +260,18 @@ func (e *Environment) Save() error {
 	}
 
 	// Update configuration
+	configDir := filepath.Dir(e.Root)
+	if err := os.MkdirAll(configDir, osutil.PermissionDirectory); err != nil {
+		return fmt.Errorf("failed creating environment directory: %w", err)
+	}
+
+	configFile, err := os.OpenFile(e.ConfigPath(), os.O_RDWR, osutil.PermissionFile)
+	if err != nil {
+		return fmt.Errorf("failed creating .env file, %w", err)
+	}
+
 	cfgMgr := config.NewManager()
-	if err := cfgMgr.Save(e.Config, e.ConfigPath()); err != nil {
+	if err := cfgMgr.Save(e.Config, configFile); err != nil {
 		return fmt.Errorf("saving config: %w", err)
 	}
 
@@ -261,11 +290,6 @@ func (e *Environment) Save() error {
 	// Replay deletion
 	for key := range deletedValues {
 		delete(e.dotenv, key)
-	}
-
-	err := os.MkdirAll(e.Root, osutil.PermissionDirectory)
-	if err != nil {
-		return fmt.Errorf("failed to create a directory: %w", err)
 	}
 
 	// Instead of calling `godotenv.Write` directly, we need to save the file ourselves, so we can fixup any numeric values

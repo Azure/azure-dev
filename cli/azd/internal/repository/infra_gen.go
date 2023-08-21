@@ -26,6 +26,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/resources"
+	"github.com/fatih/color"
 	"github.com/otiai10/copy"
 	"golang.org/x/exp/maps"
 )
@@ -206,7 +207,8 @@ func (i *Initializer) InitializeInfra(
 	azdCtx *azdcontext.AzdContext,
 	initializeEnv func() error) error {
 	wd := azdCtx.ProjectDirectory()
-	title := "Scanning app code in " + output.WithHighLightFormat(wd)
+	i.console.Message(ctx, "")
+	title := "Scanning app code in current directory"
 	i.console.ShowSpinner(ctx, title, input.Step)
 	projects, err := appdetect.Detect(wd)
 	time.Sleep(1 * time.Second)
@@ -227,23 +229,21 @@ func (i *Initializer) InitializeInfra(
 	}
 
 	revision := false
-	i.console.ShowSpinner(ctx, "Generating recommended Azure services", input.Step)
-	time.Sleep(1 * time.Second)
-	i.console.StopSpinner(ctx, "Generating recommended Azure services", input.StepDone)
 
 confirmDetection:
 	for {
 		if revision {
-			i.console.ShowSpinner(ctx, "Revising app detection summary", input.Step)
+			i.console.ShowSpinner(ctx, "Revising detected services", input.Step)
 			time.Sleep(1 * time.Second)
-			i.console.StopSpinner(ctx, "Revising app detection summary", input.StepDone)
-			i.console.Message(ctx, "\n"+output.WithBold("Revised app detection summary:")+"\n")
+			i.console.StopSpinner(ctx, "Revising detected services", input.StepDone)
+			i.console.Message(ctx, "\n"+output.WithBold("Detected services:")+"\n")
 		} else {
-			i.console.Message(ctx, "\n"+output.WithBold("App detection summary:")+"\n")
+			i.console.Message(ctx, "\n"+output.WithBold("Detected services:")+"\n")
 		}
 		// assume changes will be made by default
 		revision = true
 
+		recommendedServices := []string{}
 		for _, project := range projects {
 			status := ""
 			if project.DetectionRule == string(EntryKindModified) {
@@ -263,36 +263,42 @@ confirmDetection:
 				relWithDot = "./" + rel
 			}
 			i.console.Message(ctx, "  "+"Detected in: "+output.WithHighLightFormat(relWithDot))
-			i.console.Message(ctx, "  "+"Recommended: "+"Azure Container Apps")
 			i.console.Message(ctx, "")
+
+			if len(recommendedServices) == 0 {
+				recommendedServices = append(recommendedServices, "Azure Container Apps")
+			}
 		}
 
 		// handle detectedDbs
 		for db, entry := range detectedDbs {
-			recommended := ""
 			switch db {
 			case appdetect.DbPostgres:
-				recommended = "Azure Database for PostgreSQL flexible server"
+				recommendedServices = append(recommendedServices, "Azure Database for PostgreSQL flexible server")
 			case appdetect.DbMongo:
-				recommended = "CosmosDB API for MongoDB"
+				recommendedServices = append(recommendedServices, "Azure CosmosDB API for MongoDB")
 			}
-			if recommended != "" {
-				status := ""
-				if entry == EntryKindModified {
-					status = " " + output.WithSuccessFormat("[Updated]")
-				} else if entry == EntryKindManual {
-					status = " " + output.WithSuccessFormat("[Added]")
-				}
+			status := ""
+			if entry == EntryKindModified {
+				status = " " + output.WithSuccessFormat("[Updated]")
+			} else if entry == EntryKindManual {
+				status = " " + output.WithSuccessFormat("[Added]")
+			}
 
-				i.console.Message(ctx, "  "+output.WithBlueFormat(db.Display())+status)
-				i.console.Message(ctx, "  "+"Recommended: "+recommended)
-				i.console.Message(ctx, "")
-			}
+			i.console.Message(ctx, "  "+output.WithBlueFormat(db.Display())+status)
+			i.console.Message(ctx, "")
 		}
 
-		i.console.Message(ctx,
-			output.WithGrayFormat(
-				"azd will generate the files necessary to host your app on Azure using the recommended services.")+"\n")
+		displayedServices := make([]string, 0, len(recommendedServices))
+		for _, svc := range recommendedServices {
+			displayedServices = append(displayedServices, color.MagentaString(svc))
+		}
+
+		if len(displayedServices) > 0 {
+			i.console.Message(ctx,
+				"azd will generate the files necessary to host your app on Azure using "+
+					ux.ListAsText(displayedServices)+".\n")
+		}
 
 		continueOption, err := i.console.Select(ctx, input.ConsoleOptions{
 			Message: "Select an option",
@@ -722,7 +728,7 @@ confirmDetection:
 	i.console.Message(ctx, "\n"+output.WithBold("Generating files to run your app on Azure:")+"\n")
 
 	generateProject := func() error {
-		title := "Generating " + output.WithBlueFormat("./"+azdcontext.ProjectFileName)
+		title := "Generating " + output.WithHighLightFormat("./"+azdcontext.ProjectFileName)
 		i.console.ShowSpinner(ctx, title, input.Step)
 		defer i.console.StopSpinner(ctx, title, input.GetStepResultFormat(err))
 		config, err := DetectionToConfig(wd, projects)
@@ -829,7 +835,7 @@ confirmDetection:
 	}
 
 	i.console.MessageUxItem(ctx, &ux.DoneMessage{
-		Message: "Generating " + output.WithBlueFormat("./next-steps.md"),
+		Message: "Generating " + output.WithHighLightFormat("./next-steps.md"),
 	})
 
 	return nil

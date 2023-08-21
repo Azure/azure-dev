@@ -124,7 +124,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	// Command title
 	i.console.MessageUxItem(ctx, &ux.MessageTitle{
-		Title: "Initializing a new project (azd init)",
+		Title: "Initializing an app to run on Azure",
 	})
 
 	var existingProject bool
@@ -205,7 +205,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		header = "Your app is ready for the cloud!"
 		followUp = "You can provision and deploy your app to Azure by running the " + output.WithBlueFormat("azd up") +
 			" command in this directory. For more information on configuring your app, see " +
-			output.WithBlueFormat("./next-steps.md")
+			output.WithHighLightFormat("./next-steps.md")
 		err := i.repoInitializer.InitializeInfra(ctx, azdCtx, func() error {
 			_, err := initializeEnv()
 			return err

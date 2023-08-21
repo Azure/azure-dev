@@ -236,7 +236,7 @@ confirmDetection:
 			i.console.ShowSpinner(ctx, "Revising detected services", input.Step)
 			time.Sleep(1 * time.Second)
 			i.console.StopSpinner(ctx, "Revising detected services", input.StepDone)
-			i.console.Message(ctx, "\n"+output.WithBold("Detected services:")+"\n")
+			i.console.Message(ctx, "\n"+output.WithBold("Detected services (Revised):")+"\n")
 		} else {
 			i.console.Message(ctx, "\n"+output.WithBold("Detected services:")+"\n")
 		}
@@ -303,9 +303,8 @@ confirmDetection:
 		continueOption, err := i.console.Select(ctx, input.ConsoleOptions{
 			Message: "Select an option",
 			Options: []string{
-				"Continue initializing my app",
-				"Add a language or database",
-				"Modify or remove a language or database",
+				"Confirm and continue initializing my app",
+				"Add or remove a service",
 			},
 		})
 		if err != nil {
@@ -316,203 +315,163 @@ confirmDetection:
 		case 0:
 			break confirmDetection
 		case 1:
-			languages := supportedLanguages()
-			frameworks := supportedFrameworks()
-			allDbs := supportedDatabases()
-			databases := make([]appdetect.Framework, 0, len(allDbs))
-			for _, db := range allDbs {
-				if _, ok := detectedDbs[db]; !ok {
-					databases = append(databases, db)
-				}
-			}
-			selections := make([]string, 0, len(languages)+len(databases))
-			entries := make([]any, 0, len(languages)+len(databases))
-
-			for _, lang := range languages {
-				selections = append(selections, fmt.Sprintf("%s\t%s", lang.Display(), "[Language]"))
-				entries = append(entries, lang)
-			}
-
-			for _, framework := range frameworks {
-				selections = append(selections, fmt.Sprintf("%s\t%s", framework.Display(), "[Framework]"))
-				entries = append(entries, framework)
-			}
-
-			for _, db := range databases {
-				selections = append(selections, fmt.Sprintf("%s\t%s", db.Display(), "[Database]"))
-				entries = append(entries, db)
-			}
-
-			selections, err = tabWrite(selections, 3)
-			if err != nil {
-				return err
-			}
-
-			entIdx, err := i.console.Select(ctx, input.ConsoleOptions{
-				Message: "Select a language or database to add",
-				Options: selections,
+			modifyIdx, err := i.console.Select(ctx, input.ConsoleOptions{
+				Message: "Add or remove a service",
+				Options: []string{
+					"Add a service",
+					"Remove a service",
+				},
 			})
 			if err != nil {
 				return err
 			}
 
-			s := appdetect.Project{}
-			switch entries[entIdx].(type) {
-			case appdetect.ProjectType:
-				s.Language = entries[entIdx].(appdetect.ProjectType)
-			case appdetect.Framework:
-				framework := entries[entIdx].(appdetect.Framework)
-				if framework.IsDatabaseDriver() {
-					detectedDbs[framework] = EntryKindManual
-
-					selection := make([]string, 0, len(projects))
-					for _, prj := range projects {
-						selection = append(selection,
-							fmt.Sprintf("%s\t[%s]", projectDisplayName(prj), filepath.Base(prj.Path)))
+			switch modifyIdx {
+			case 0:
+				languages := supportedLanguages()
+				frameworks := supportedFrameworks()
+				allDbs := supportedDatabases()
+				databases := make([]appdetect.Framework, 0, len(allDbs))
+				for _, db := range allDbs {
+					if _, ok := detectedDbs[db]; !ok {
+						databases = append(databases, db)
 					}
-
-					selection, err = tabWrite(selection, 3)
-					if err != nil {
-						return err
-					}
-
-					idx, err := i.console.Select(ctx, input.ConsoleOptions{
-						Message: "Select the project that uses this database",
-						Options: selection,
-					})
-					if err != nil {
-						return err
-					}
-
-					s = projects[idx]
-					s.Frameworks = append(s.Frameworks, framework)
-					continue confirmDetection
-				} else if framework.Language() != "" {
-					s.Frameworks = []appdetect.Framework{framework}
-					s.Language = framework.Language()
 				}
-			default:
-				log.Panic("unhandled entry type")
-			}
+				selections := make([]string, 0, len(languages)+len(databases))
+				entries := make([]any, 0, len(languages)+len(databases))
 
-			msg := fmt.Sprintf("Enter file path of the directory that uses '%s'", projectDisplayName(s))
-			path, err := promptDir(ctx, i.console, msg)
-			if err != nil {
-				return err
-			}
-
-			for idx, project := range projects {
-				if project.Path == path {
-					i.console.Message(
-						ctx,
-						fmt.Sprintf(
-							"\nazd previously detected '%s' at %s.\n", projectDisplayName(project), project.Path))
-
-					confirm, err := i.console.Confirm(ctx, input.ConsoleOptions{
-						Message: fmt.Sprintf(
-							"Do you want to change the detected service to '%s'", projectDisplayName(s)),
-					})
-					if err != nil {
-						return err
-					}
-					if confirm {
-						projects[idx].Language = s.Language
-						projects[idx].Frameworks = s.Frameworks
-						projects[idx].DetectionRule = string(EntryKindModified)
-					} else {
-						revision = false
-					}
-
-					continue confirmDetection
+				for _, lang := range languages {
+					selections = append(selections, fmt.Sprintf("%s\t%s", lang.Display(), "[Language]"))
+					entries = append(entries, lang)
 				}
-			}
 
-			s.Path = filepath.Clean(path)
-			s.DetectionRule = string(EntryKindManual)
-			projects = append(projects, s)
-			continue confirmDetection
-		case 2:
-			modifyOptions := make([]string, 0, len(projects)+len(detectedDbs))
-			for _, project := range projects {
-				rel, err := filepath.Rel(wd, project.Path)
+				for _, framework := range frameworks {
+					selections = append(selections, fmt.Sprintf("%s\t%s", framework.Display(), "[Framework]"))
+					entries = append(entries, framework)
+				}
+
+				for _, db := range databases {
+					selections = append(selections, fmt.Sprintf("%s\t%s", db.Display(), "[Database]"))
+					entries = append(entries, db)
+				}
+
+				selections, err = tabWrite(selections, 3)
 				if err != nil {
 					return err
 				}
 
-				relWithDot := "./" + rel
-				modifyOptions = append(
-					modifyOptions, fmt.Sprintf("%s in %s", projectDisplayName(project), relWithDot))
-			}
-
-			displayDbs := maps.Keys(detectedDbs)
-			for _, db := range displayDbs {
-				modifyOptions = append(modifyOptions, db.Display())
-			}
-
-		modifyRemove:
-			for {
-				modifyIdx, err := i.console.Select(ctx, input.ConsoleOptions{
-					Message: "Select the language or database you want to modify or remove",
-					Options: modifyOptions,
+				entIdx, err := i.console.Select(ctx, input.ConsoleOptions{
+					Message: "Select a language or database to add",
+					Options: selections,
 				})
 				if err != nil {
 					return err
 				}
 
-				if modifyIdx < len(projects) {
-					actionIdx, err := i.console.Select(ctx, input.ConsoleOptions{
-						Message: "Select an action",
-						Options: []string{
-							"Modify the detected language", "Remove detected language"},
-					})
-					if err != nil {
-						return err
-					}
+				s := appdetect.Project{}
+				switch entries[entIdx].(type) {
+				case appdetect.ProjectType:
+					s.Language = entries[entIdx].(appdetect.ProjectType)
+				case appdetect.Framework:
+					framework := entries[entIdx].(appdetect.Framework)
+					if framework.IsDatabaseDriver() {
+						detectedDbs[framework] = EntryKindManual
 
-					prj := projects[modifyIdx]
-					switch actionIdx {
-					case 0:
-						languages := supportedLanguages()
-						frameworks := supportedFrameworks()
-						selections := make([]string, 0, len(languages))
-						entries := make([]any, 0, len(languages))
-
-						for _, lang := range languages {
-							selections = append(selections, fmt.Sprintf("%s\t%s", lang.Display(), "[Language]"))
-							entries = append(entries, lang)
+						selection := make([]string, 0, len(projects))
+						for _, prj := range projects {
+							selection = append(selection,
+								fmt.Sprintf("%s\t[%s]", projectDisplayName(prj), filepath.Base(prj.Path)))
 						}
 
-						for _, framework := range frameworks {
-							selections = append(selections, fmt.Sprintf("%s\t%s", framework.Display(), "[Framework]"))
-							entries = append(entries, framework)
-						}
-
-						selections, err = tabWrite(selections, 3)
+						selection, err = tabWrite(selection, 3)
 						if err != nil {
 							return err
 						}
 
-						entIdx, err := i.console.Select(ctx, input.ConsoleOptions{
-							Message: "Select a new language or framework",
-							Options: selections,
+						idx, err := i.console.Select(ctx, input.ConsoleOptions{
+							Message: "Select the service that uses this database",
+							Options: selection,
 						})
 						if err != nil {
 							return err
 						}
 
-						switch entries[entIdx].(type) {
-						case appdetect.ProjectType:
-							projects[modifyIdx].Language = entries[entIdx].(appdetect.ProjectType)
-							projects[modifyIdx].Frameworks = nil
-						case appdetect.Framework:
-							framework := entries[entIdx].(appdetect.Framework)
-							projects[modifyIdx].Frameworks = []appdetect.Framework{framework}
-							projects[modifyIdx].Language = framework.Language()
+						projects[idx].Frameworks = append(projects[idx].Frameworks, framework)
+						continue confirmDetection
+					} else if framework.Language() != "" {
+						s.Frameworks = []appdetect.Framework{framework}
+						s.Language = framework.Language()
+					}
+				default:
+					log.Panic("unhandled entry type")
+				}
+
+				msg := fmt.Sprintf("Enter file path of the directory that uses '%s'", projectDisplayName(s))
+				path, err := promptDir(ctx, i.console, msg)
+				if err != nil {
+					return err
+				}
+
+				for idx, project := range projects {
+					if project.Path == path {
+						i.console.Message(
+							ctx,
+							fmt.Sprintf(
+								"\nazd previously detected '%s' at %s.\n", projectDisplayName(project), project.Path))
+
+						confirm, err := i.console.Confirm(ctx, input.ConsoleOptions{
+							Message: fmt.Sprintf(
+								"Do you want to change the detected service to '%s'", projectDisplayName(s)),
+						})
+						if err != nil {
+							return err
+						}
+						if confirm {
+							projects[idx].Language = s.Language
+							projects[idx].Frameworks = s.Frameworks
+							projects[idx].DetectionRule = string(EntryKindModified)
+						} else {
+							revision = false
 						}
 
-						projects[modifyIdx].DetectionRule = string(EntryKindModified)
-						break modifyRemove
-					case 1:
+						continue confirmDetection
+					}
+				}
+
+				s.Path = filepath.Clean(path)
+				s.DetectionRule = string(EntryKindManual)
+				projects = append(projects, s)
+				continue confirmDetection
+			case 1:
+				modifyOptions := make([]string, 0, len(projects)+len(detectedDbs))
+				for _, project := range projects {
+					rel, err := filepath.Rel(wd, project.Path)
+					if err != nil {
+						return err
+					}
+
+					relWithDot := "./" + rel
+					modifyOptions = append(
+						modifyOptions, fmt.Sprintf("%s in %s", projectDisplayName(project), relWithDot))
+				}
+
+				displayDbs := maps.Keys(detectedDbs)
+				for _, db := range displayDbs {
+					modifyOptions = append(modifyOptions, db.Display())
+				}
+
+			modifyRemove:
+				for {
+					modifyIdx, err := i.console.Select(ctx, input.ConsoleOptions{
+						Message: "Select the service you want to remove",
+						Options: modifyOptions,
+					})
+					if err != nil {
+						return err
+					}
+
+					if modifyIdx < len(projects) {
+						prj := projects[modifyIdx]
 						confirm, err := i.console.Confirm(ctx, input.ConsoleOptions{
 							Message: fmt.Sprintf(
 								"Remove %s in %s?", projectDisplayName(prj), prj.Path),
@@ -527,24 +486,25 @@ confirmDetection:
 
 						projects = append(projects[:modifyIdx], projects[modifyIdx+1:]...)
 						break modifyRemove
-					}
-				} else if modifyIdx < len(projects)+len(detectedDbs) {
-					db := displayDbs[modifyIdx-len(projects)]
+					} else if modifyIdx < len(projects)+len(detectedDbs) {
+						db := displayDbs[modifyIdx-len(projects)]
 
-					confirm, err := i.console.Confirm(ctx, input.ConsoleOptions{
-						Message: fmt.Sprintf(
-							"Remove %s?", db.Display()),
-					})
-					if err != nil {
-						return err
-					}
+						confirm, err := i.console.Confirm(ctx, input.ConsoleOptions{
+							Message: fmt.Sprintf(
+								"Remove %s?", db.Display()),
+						})
+						if err != nil {
+							return err
+						}
 
-					if confirm {
-						delete(detectedDbs, db)
-					}
+						if confirm {
+							delete(detectedDbs, db)
+						}
 
-					break modifyRemove
+						break modifyRemove
+					}
 				}
+
 			}
 		}
 	}

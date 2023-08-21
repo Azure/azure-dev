@@ -215,7 +215,7 @@ func (ss *springService) GetBuildResult(
 
 	buildResultName := buildResult[strings.LastIndex(buildResult, "/")+1:]
 	retries := 0
-	const maxRetries = 30
+	const maxRetries = 50
 	for {
 		resp, err := client.GetBuildResult(ctx, resourceGroupName, instanceName, buildServiceName, buildName, buildResultName, nil)
 		if err != nil {

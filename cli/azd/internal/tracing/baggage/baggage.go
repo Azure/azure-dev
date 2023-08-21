@@ -4,8 +4,9 @@
 package baggage
 
 import (
-	"go.opentelemetry.io/otel/attribute"
 	"golang.org/x/exp/maps"
+
+	"go.opentelemetry.io/otel/attribute"
 )
 
 // An immutable object safe for concurrent use.

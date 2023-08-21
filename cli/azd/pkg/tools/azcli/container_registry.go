@@ -7,6 +7,7 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
@@ -17,7 +18,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
-	"golang.org/x/exp/slices"
 )
 
 type dockerCredentials struct {

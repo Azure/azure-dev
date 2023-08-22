@@ -11,6 +11,7 @@ appinsightsexporter
 appinsightsstorage
 appplatform
 appservice
+arget
 armapimanagement
 armappconfiguration
 armappplatform
@@ -95,6 +96,8 @@ microsoftonline
 mockarmresources
 mockazcli
 mvnw
+mysqldb
+mysqlclient
 nobanner
 nodeapp
 nolint
@@ -113,6 +116,7 @@ otlptracehttp
 pflag
 preinit
 proxying
+psycopg
 pulumi
 pyapp
 pyproject
@@ -130,6 +134,7 @@ servicebus
 setenvs
 snapshotter
 springapp
+sqlserver
 sstore
 staticcheck
 staticwebapp

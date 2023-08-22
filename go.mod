@@ -59,6 +59,7 @@ require gopkg.in/dnaeon/go-vcr.v3 v3.1.2
 require github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v2 v2.0.0-beta.3
 
 require github.com/bmatcuk/doublestar/v4 v4.6.0
+
 require github.com/adam-lavrik/go-imath v0.0.0-20210910152346-265a42a96f0b
 
 require github.com/golang-jwt/jwt/v5 v5.0.0 // indirect

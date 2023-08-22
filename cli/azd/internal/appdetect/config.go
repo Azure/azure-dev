@@ -1,12 +1,65 @@
 package appdetect
 
-var defaultExcludePatterns = []string{
-	"**/node_modules",
-	"**/[Oo]ut",
-	"**/[Dd]ist",
-	"**/[Bb]in",
-	"**/[oO]bj",
-	"**/.?*",
+func newConfig(options ...DetectOption) detectConfig {
+	c := detectConfig{
+		defaultExcludePatterns: []string{
+			"**/node_modules",
+			"**/[Tt]arget",
+			"**/[Oo]ut",
+			"**/[Dd]ist",
+			"**/[Bb]in",
+			"**/[oO]bj",
+			"*/.*",
+		},
+	}
+
+	for _, opt := range options {
+		c = opt.apply(c)
+	}
+
+	if c.defaultExcludePatterns != nil {
+		c.ExcludePatterns = append(c.defaultExcludePatterns, c.ExcludePatterns...)
+	}
+
+	setDetectors(&c.languageConfig)
+	return c
+}
+
+func newDirectoryConfig(options ...DetectDirectoryOption) languageConfig {
+	c := languageConfig{}
+
+	for _, opt := range options {
+		c = opt.applyLang(c)
+	}
+
+	setDetectors(&c)
+	return c
+}
+
+func setDetectors(c *languageConfig) {
+	languages := map[Language]bool{}
+	if c.IncludeLanguages != nil {
+		for _, include := range c.IncludeLanguages {
+			languages[include] = true
+		}
+	} else {
+		for _, d := range allDetectors {
+			languages[d.Language()] = true
+		}
+	}
+
+	if c.ExcludeLanguages != nil {
+		for _, exclude := range c.ExcludeLanguages {
+			languages[exclude] = false
+		}
+	}
+
+	c.detectors = []ProjectDetector{}
+	for _, d := range allDetectors {
+		if languages[d.Language()] {
+			c.detectors = append(c.detectors, d)
+		}
+	}
 }
 
 type DetectOption interface {
@@ -14,78 +67,36 @@ type DetectOption interface {
 }
 
 type DetectDirectoryOption interface {
-	applyType(projectTypeConfig) projectTypeConfig
+	applyLang(languageConfig) languageConfig
 }
 
-func newConfig(options ...DetectOption) detectConfig {
-	c := detectConfig{
-		ExcludePatterns: defaultExcludePatterns,
-	}
-
-	for _, opt := range options {
-		c = opt.apply(c)
-	}
-
-	if c.noExcludeDefaults {
-		c.ExcludePatterns = c.ExcludePatterns[len(defaultExcludePatterns):]
-	}
-
-	setDetectors(&c.projectTypeConfig)
-	return c
+type LanguageOption interface {
+	DetectOption
+	DetectDirectoryOption
 }
 
-func newDirectoryConfig(options ...DetectDirectoryOption) projectTypeConfig {
-	c := projectTypeConfig{}
-
-	for _, opt := range options {
-		c = opt.applyType(c)
-	}
-
-	setDetectors(&c)
-	return c
-}
-
-func setDetectors(c *projectTypeConfig) {
-	types := map[ProjectType]bool{}
-	if c.IncludeProjectTypes != nil {
-		for _, include := range c.IncludeProjectTypes {
-			types[include] = true
-		}
-	} else {
-		for _, d := range allDetectors {
-			types[d.Type()] = true
-		}
-	}
-
-	if c.ExcludeProjectTypes != nil {
-		for _, exclude := range c.ExcludeProjectTypes {
-			types[exclude] = false
-		}
-	}
-
-	c.detectors = []ProjectDetector{}
-	for _, d := range allDetectors {
-		if types[d.Type()] {
-			c.detectors = append(c.detectors, d)
-		}
-	}
-}
-
-// detectConfig holds configuration for detection.
 type detectConfig struct {
-	projectTypeConfig
+	languageConfig
 
+	// Include patterns for directories scanned. If unset, all directories are scanned by default.
 	IncludePatterns []string
+
+	// Exclude patterns for directories scanned.
+	// By default, build and package cache directories like **/dist, **/bin, **/node_modules are automatically excluded.
+	// Any hidden directories (directories starting with '.') are also excluded.
+	// Set overrideDefaults in WithExcludePatterns(patterns, overrideDefaults) to choose whether to override defaults.
 	ExcludePatterns []string
 
 	// Internal usage fields
-	noExcludeDefaults bool
+	defaultExcludePatterns []string
 }
 
-// projectTypeConfig holds detection configuration for project types.
-type projectTypeConfig struct {
-	IncludeProjectTypes []ProjectType
-	ExcludeProjectTypes []ProjectType
+// Config that relates to project languages
+type languageConfig struct {
+	// Project languages to be detected. If unset, all known project languages are included.
+	IncludeLanguages []Language
+	// Project languages to be excluded from detection.
+	ExcludeLanguages []Language
 
 	// Internal usage fields
 	detectors []ProjectDetector
@@ -95,74 +106,165 @@ type includePatternsOption struct {
 	patterns []string
 }
 
-func (o includePatternsOption) apply(c detectConfig) detectConfig {
+func (o *includePatternsOption) apply(c detectConfig) detectConfig {
 	c.IncludePatterns = o.patterns
 	return c
 }
 
-// Include patterns for directories scanned. The default include pattern is '**'.
-// The glob pattern syntax is documented at https://pkg.go.dev/github.com/bmatcuk/doublestar/v4#Match
-func WithIncludePatterns(patterns []string) includePatternsOption {
-	return includePatternsOption{patterns}
+func WithIncludePatterns(patterns []string) DetectOption {
+	return &includePatternsOption{patterns}
 }
 
-type excludePatternsOption struct {
+type excludePatternsOptions struct {
 	patterns         []string
 	overrideDefaults bool
 }
 
-func (o excludePatternsOption) apply(c detectConfig) detectConfig {
-	c.noExcludeDefaults = o.overrideDefaults
+func (o *excludePatternsOptions) apply(c detectConfig) detectConfig {
+	if o.overrideDefaults {
+		c.defaultExcludePatterns = nil
+	}
+
 	c.ExcludePatterns = append(c.ExcludePatterns, o.patterns...)
 	return c
 }
 
-// Exclude patterns for directories scanned. The default exclude patterns is documented by defaultExcludePatterns,
-// which loosely excludes build (e.g., **/bin), packaging (e.g., **/node_modules), and hidden directories (**/.?*).
-// The directory and its subdirectories are excluded if any of the exclude patterns match.
-//
-// Set noDefaults to true to not have defaultExcludePatterns appended.
-// The glob pattern syntax is documented at https://pkg.go.dev/github.com/bmatcuk/doublestar/v4#Match
-func WithExcludePatterns(patterns []string, noDefaults bool) excludePatternsOption {
-	return excludePatternsOption{patterns, noDefaults}
+func WithExcludePatterns(patterns []string, overrideDefaults bool) DetectOption {
+	return &excludePatternsOptions{patterns, overrideDefaults}
 }
 
-type includeProjectTypeOption struct {
-	include ProjectType
+type includePython struct {
 }
 
-func (o includeProjectTypeOption) applyType(c projectTypeConfig) projectTypeConfig {
-	c.IncludeProjectTypes = append(c.IncludeProjectTypes, o.include)
+func (o *includePython) apply(c detectConfig) detectConfig {
+	c.IncludeLanguages = append(c.IncludeLanguages, Python)
 	return c
 }
 
-func (o includeProjectTypeOption) apply(c detectConfig) detectConfig {
-	c.IncludeProjectTypes = append(c.IncludeProjectTypes, o.include)
+func (o *includePython) applyLang(c languageConfig) languageConfig {
+	c.IncludeLanguages = append(c.IncludeLanguages, Python)
 	return c
 }
 
-// WithProjectType specifies a project type to be detected. While using WithProjectType,
-// only the specified project type(s) will be detected.
-func WithProjectType(include ProjectType) includeProjectTypeOption {
-	return includeProjectTypeOption{include}
+func WithPython() LanguageOption {
+	return &includePython{}
 }
 
-type excludeProjectTypeOption struct {
-	exclude ProjectType
+type excludePython struct {
 }
 
-func (o excludeProjectTypeOption) applyType(c projectTypeConfig) projectTypeConfig {
-	c.ExcludeProjectTypes = append(c.ExcludeProjectTypes, o.exclude)
+func (o *excludePython) apply(c detectConfig) detectConfig {
+	c.ExcludeLanguages = append(c.ExcludeLanguages, Python)
 	return c
 }
 
-func (o excludeProjectTypeOption) apply(c detectConfig) detectConfig {
-	c.ExcludeProjectTypes = append(c.ExcludeProjectTypes, o.exclude)
+func (o *excludePython) applyLang(c languageConfig) languageConfig {
+	c.ExcludeLanguages = append(c.ExcludeLanguages, Python)
 	return c
 }
 
-// WithoutProjectType specifies a project type to be excluded from detection. This can be used to filter out
-// project types from the default project types provided.
-func WithoutProjectType(exclude ProjectType) excludeProjectTypeOption {
-	return excludeProjectTypeOption{exclude}
+func WithoutPython() LanguageOption {
+	return &excludePython{}
+}
+
+type includeDotNet struct {
+}
+
+func (o *includeDotNet) apply(c detectConfig) detectConfig {
+	c.IncludeLanguages = append(c.IncludeLanguages, DotNet)
+	return c
+}
+
+func (o *includeDotNet) applyLang(c languageConfig) languageConfig {
+	c.IncludeLanguages = append(c.IncludeLanguages, DotNet)
+	return c
+}
+
+func WithDotNet() LanguageOption {
+	return &includeDotNet{}
+}
+
+type excludeDotNet struct {
+}
+
+func (o *excludeDotNet) apply(c detectConfig) detectConfig {
+	c.ExcludeLanguages = append(c.ExcludeLanguages, DotNet)
+	return c
+}
+
+func (o *excludeDotNet) applyLang(c languageConfig) languageConfig {
+	c.ExcludeLanguages = append(c.ExcludeLanguages, DotNet)
+	return c
+}
+
+func WithoutDotNet() LanguageOption {
+	return &excludeDotNet{}
+}
+
+type includeJava struct {
+}
+
+func (o *includeJava) apply(c detectConfig) detectConfig {
+	c.IncludeLanguages = append(c.IncludeLanguages, Java)
+	return c
+}
+
+func (o *includeJava) applyLang(c languageConfig) languageConfig {
+	c.IncludeLanguages = append(c.IncludeLanguages, Java)
+	return c
+}
+
+func WithJava() LanguageOption {
+	return &includeJava{}
+}
+
+type excludeJava struct {
+}
+
+func (o *excludeJava) apply(c detectConfig) detectConfig {
+	c.ExcludeLanguages = append(c.ExcludeLanguages, Java)
+	return c
+}
+
+func (o *excludeJava) applyLang(c languageConfig) languageConfig {
+	c.ExcludeLanguages = append(c.ExcludeLanguages, Java)
+	return c
+}
+
+func WithoutJava() LanguageOption {
+	return &excludeJava{}
+}
+
+type includeJavaScript struct {
+}
+
+func (o *includeJavaScript) apply(c detectConfig) detectConfig {
+	c.IncludeLanguages = append(c.IncludeLanguages, JavaScript)
+	return c
+}
+
+func (o *includeJavaScript) applyLang(c languageConfig) languageConfig {
+	c.IncludeLanguages = append(c.IncludeLanguages, JavaScript)
+	return c
+}
+
+func WithJavaScript() LanguageOption {
+	return &includeJavaScript{}
+}
+
+type excludeJavaScript struct {
+}
+
+func (o *excludeJavaScript) apply(c detectConfig) detectConfig {
+	c.ExcludeLanguages = append(c.ExcludeLanguages, JavaScript)
+	return c
+}
+
+func (o *excludeJavaScript) applyLang(c languageConfig) languageConfig {
+	c.ExcludeLanguages = append(c.ExcludeLanguages, JavaScript)
+	return c
+}
+
+func WithoutJavaScript() LanguageOption {
+	return &excludeJavaScript{}
 }

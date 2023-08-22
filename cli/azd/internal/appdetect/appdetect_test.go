@@ -15,12 +15,6 @@ import (
 var testDataFs embed.FS
 
 func TestDetect(t *testing.T) {
-	dotnetProj := Project{
-		Language:      DotNet,
-		Path:          "dotnet",
-		DetectionRule: "Inferred by presence of: Program.cs, dotnettestapp.csproj",
-	}
-
 	tests := []struct {
 		name    string
 		options []DetectOption
@@ -30,7 +24,11 @@ func TestDetect(t *testing.T) {
 			"Full",
 			nil,
 			[]Project{
-				dotnetProj,
+				{
+					Language:      DotNet,
+					Path:          "dotnet",
+					DetectionRule: "Inferred by presence of: program.cs, dotnettestapp.csproj",
+				},
 				{
 					Language:      Java,
 					Path:          "java",
@@ -43,19 +41,40 @@ func TestDetect(t *testing.T) {
 				},
 				{
 					Language:      JavaScript,
-					Path:          "javascript-frameworks",
+					Path:          "javascript-full",
 					DetectionRule: "Inferred by presence of: package.json",
-					Frameworks: []Framework{
-						Angular,
-						JQuery,
-						React,
-						VueJs,
+					Dependencies: []Dependency{
+						JsAngular,
+						JsJQuery,
+						JsReact,
+						JsVue,
+					},
+					DatabaseDeps: []DatabaseDep{
+						DbMongo,
+						DbMySql,
+						DbPostgres,
+						DbSqlServer,
 					},
 				},
 				{
 					Language:      Python,
 					Path:          "python",
 					DetectionRule: "Inferred by presence of: requirements.txt",
+				},
+				{
+					Language:      Python,
+					Path:          "python-full",
+					DetectionRule: "Inferred by presence of: requirements.txt",
+					Dependencies: []Dependency{
+						PyDjango,
+						PyFastApi,
+						PyFlask,
+					},
+					DatabaseDeps: []DatabaseDep{
+						DbMongo,
+						DbMySql,
+						DbPostgres,
+					},
 				},
 				{
 					Language:      TypeScript,
@@ -65,30 +84,72 @@ func TestDetect(t *testing.T) {
 			},
 		},
 		{
-			"WithProjectType",
-			[]DetectOption{WithProjectType(DotNet)},
-			[]Project{dotnetProj},
-		},
-		{
-			"WithoutProjectTypes",
+			"IncludeExcludeLanguages",
 			[]DetectOption{
-				WithProjectType(DotNet),
-				WithProjectType(Java),
-				WithoutProjectType(Java)},
-			[]Project{dotnetProj},
-		},
-		{
-			"WithIncludePatterns",
-			[]DetectOption{WithIncludePatterns([]string{"**/dotnet"})},
-			[]Project{dotnetProj},
-		},
-		{
-			"WithExcludePatterns",
-			[]DetectOption{
-				WithIncludePatterns([]string{"**/dotnet", "**/java"}),
-				WithExcludePatterns([]string{"**/java"}, true),
+				WithDotNet(),
+				WithJava(),
+				WithJavaScript(),
+				WithoutJavaScript(),
 			},
-			[]Project{dotnetProj},
+			[]Project{
+				{
+					Language:      DotNet,
+					Path:          "dotnet",
+					DetectionRule: "Inferred by presence of: program.cs, dotnettestapp.csproj",
+				},
+				{
+					Language:      Java,
+					Path:          "java",
+					DetectionRule: "Inferred by presence of: pom.xml",
+				},
+			},
+		},
+		{
+			"ExcludeLanguages",
+			[]DetectOption{
+				WithoutJavaScript(),
+				WithoutPython(),
+			},
+			[]Project{
+				{
+					Language:      DotNet,
+					Path:          "dotnet",
+					DetectionRule: "Inferred by presence of: program.cs, dotnettestapp.csproj",
+				},
+				{
+					Language:      Java,
+					Path:          "java",
+					DetectionRule: "Inferred by presence of: pom.xml",
+				},
+			},
+		},
+		{
+			"ExcludePatterns",
+			[]DetectOption{
+				WithExcludePatterns([]string{
+					"**/*-full",
+					"**/javascript",
+					"typescript",
+				}, false),
+			},
+			[]Project{
+
+				{
+					Language:      DotNet,
+					Path:          "dotnet",
+					DetectionRule: "Inferred by presence of: program.cs, dotnettestapp.csproj",
+				},
+				{
+					Language:      Java,
+					Path:          "java",
+					DetectionRule: "Inferred by presence of: pom.xml",
+				},
+				{
+					Language:      Python,
+					Path:          "python",
+					DetectionRule: "Inferred by presence of: requirements.txt",
+				},
+			},
 		},
 	}
 	for _, tt := range tests {
@@ -96,6 +157,7 @@ func TestDetect(t *testing.T) {
 			dir := t.TempDir()
 			err := copyTestDataDir(t, "**", dir)
 			require.NoError(t, err)
+
 			projects, err := Detect(dir, tt.options...)
 			require.NoError(t, err)
 

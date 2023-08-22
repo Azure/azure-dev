@@ -14,17 +14,17 @@ import (
 	"github.com/bmatcuk/doublestar/v4"
 )
 
-type ProjectType string
+type Language string
 
 const (
-	DotNet     ProjectType = "dotnet"
-	Java       ProjectType = "java"
-	JavaScript ProjectType = "js"
-	TypeScript ProjectType = "ts"
-	Python     ProjectType = "python"
+	DotNet     Language = "dotnet"
+	Java       Language = "java"
+	JavaScript Language = "js"
+	TypeScript Language = "ts"
+	Python     Language = "python"
 )
 
-func (pt ProjectType) Display() string {
+func (pt Language) Display() string {
 	switch pt {
 	case DotNet:
 		return ".NET"
@@ -41,50 +41,100 @@ func (pt ProjectType) Display() string {
 	return ""
 }
 
-type Framework string
+type Dependency string
 
 const (
-	React   Framework = "react"
-	Angular Framework = "angular"
-	VueJs   Framework = "vuejs"
-	JQuery  Framework = "jquery"
+	JsReact   Dependency = "react"
+	JsAngular Dependency = "angular"
+	JsVue     Dependency = "vuejs"
+	JsJQuery  Dependency = "jquery"
+
+	PyFlask   Dependency = "flask"
+	PyDjango  Dependency = "django"
+	PyFastApi Dependency = "fastapi"
 )
 
-func (f Framework) Display() string {
+func (f Dependency) Language() Language {
 	switch f {
-	case React:
+	case JsReact, JsAngular, JsVue, JsJQuery:
+		return JavaScript
+	}
+
+	return ""
+}
+
+func (f Dependency) Display() string {
+	switch f {
+	case JsReact:
 		return "React"
-	case Angular:
+	case JsAngular:
 		return "Angular"
-	case VueJs:
+	case JsVue:
 		return "Vue.js"
-	case JQuery:
+	case JsJQuery:
 		return "JQuery"
 	}
 
 	return ""
 }
 
-func (f Framework) IsWebUIFramework() bool {
+func (f Dependency) IsWebUIFramework() bool {
 	switch f {
-	case React, Angular, VueJs, JQuery:
+	case JsReact, JsAngular, JsVue, JsJQuery:
 		return true
 	}
 
 	return false
 }
 
+// A type of database that is inferred through heuristics while scanning project information.
+type DatabaseDep string
+
+const (
+	// Database dependencies
+	DbPostgres  DatabaseDep = "postgres"
+	DbMongo     DatabaseDep = "mongo"
+	DbMySql     DatabaseDep = "mysql"
+	DbSqlServer DatabaseDep = "sqlserver"
+)
+
+func (db DatabaseDep) Display() string {
+	switch db {
+	case DbPostgres:
+		return "PostgreSQL"
+	case DbMongo:
+		return "MongoDB"
+	case DbMySql:
+		return "MySQL"
+	case DbSqlServer:
+		return "SQL Server"
+	}
+
+	return ""
+}
+
 type Project struct {
-	Language            ProjectType
-	LanguageToolVersion string
-	Frameworks          []Framework
-	Path                string
-	DetectionRule       string
-	Docker              *Docker
+	// The language associated with the project.
+	Language Language
+
+	// Dependencies scanned in the project.
+	Dependencies []Dependency
+
+	// Experimental: Database dependencies inferred through heuristics while scanning dependencies in the project.
+	DatabaseDeps []DatabaseDep
+
+	// The path to the project directory.
+	Path string
+
+	// A short description of the detection rule applied.
+	DetectionRule string
+
+	// If true, the project uses Docker for packaging. This is inferred through the presence of a Dockerfile.
+	Docker *Docker
 }
 
 func (p *Project) HasWebUIFramework() bool {
-	for _, f := range p.Frameworks {
+	for _, f := range p.Dependencies {
 		if f.IsWebUIFramework() {
 			return true
 		}
@@ -98,7 +148,7 @@ type Docker struct {
 }
 
 type ProjectDetector interface {
-	Type() ProjectType
+	Language() Language
 	DetectProject(path string, entries []fs.DirEntry) (*Project, error)
 }
 
@@ -111,11 +161,7 @@ var allDetectors = []ProjectDetector{
 	&JavaScriptDetector{},
 }
 
-// Detect finds projects located under an application repository.
-// Detect is a wrapper around DetectUnder, with application repository heuristics applied:
-//   - If a directory named 'src' exists, the search is performed under src/. If projects are found under src/,
-//     the search will stop and return results.
-//   - Otherwise, the search is performed  under the root directory.
+// Detects projects located under an application repository.
 func Detect(repoRoot string, options ...DetectOption) ([]Project, error) {
 	config := newConfig(options...)
 	allProjects := []Project{}
@@ -133,9 +179,8 @@ func Detect(repoRoot string, options ...DetectOption) ([]Project, error) {
 		}
 	}
 
-	// If no projects are found under src, search the root directory
 	if len(allProjects) == 0 {
-		config.ExcludePatterns = append(config.ExcludePatterns, "src")
+		config.ExcludePatterns = append(config.ExcludePatterns, "*/src/")
 		projects, err := detectUnder(repoRoot, config)
 		if err != nil {
 			return nil, err
@@ -149,13 +194,13 @@ func Detect(repoRoot string, options ...DetectOption) ([]Project, error) {
 	return allProjects, nil
 }
 
-// DetectUnder detects projects located under a root directory.
+// DetectUnder detects projects located under a directory.
 func DetectUnder(root string, options ...DetectOption) ([]Project, error) {
 	config := newConfig(options...)
 	return detectUnder(root, config)
 }
 
-// DetectDirectory detects the single project located in a directory.
+// DetectDirectory detects the project located in a directory.
 func DetectDirectory(directory string, options ...DetectDirectoryOption) (*Project, error) {
 	config := newDirectoryConfig(options...)
 	entries, err := os.ReadDir(directory)
@@ -175,9 +220,9 @@ func detectUnder(root string, config detectConfig) ([]Project, error) {
 			return err
 		}
 
-		included := false
-		if len(config.IncludePatterns) == 0 {
-			included = true
+		included := true
+		if len(config.IncludePatterns) > 0 {
+			included = false
 		}
 
 		for _, p := range config.IncludePatterns {
@@ -187,11 +232,13 @@ func detectUnder(root string, config detectConfig) ([]Project, error) {
 			}
 
 			included = included || match
+			if included {
+				break
+			}
 		}
 
 		if !included {
-			log.Printf("Skipping directory: %s", path)
-			return nil
+			return filepath.SkipDir
 		}
 
 		for _, p := range config.ExcludePatterns {
@@ -199,8 +246,6 @@ func detectUnder(root string, config detectConfig) ([]Project, error) {
 			if err != nil {
 				return err
 			}
-
-			// For exclude patterns, we also skip its subdirectories.
 			if match {
 				return filepath.SkipDir
 			}
@@ -220,7 +265,7 @@ func detectUnder(root string, config detectConfig) ([]Project, error) {
 		return nil
 	}
 
-	err := WalkDirectories(root, walkFunc)
+	err := walkDirectories(root, walkFunc)
 	if err != nil {
 		return nil, fmt.Errorf("scanning directories: %w", err)
 	}
@@ -234,7 +279,7 @@ func detectAny(detectors []ProjectDetector, path string, entries []fs.DirEntry) 
 	for _, detector := range detectors {
 		project, err := detector.DetectProject(path, entries)
 		if err != nil {
-			return nil, fmt.Errorf("detecting %s project: %w", string(detector.Type()), err)
+			return nil, fmt.Errorf("detecting %s project: %w", string(detector.Language()), err)
 		}
 
 		if project != nil {
@@ -254,14 +299,14 @@ func detectAny(detectors []ProjectDetector, path string, entries []fs.DirEntry) 
 	return nil, nil
 }
 
-// WalkDirFunc is the type of function that is called whenever a directory is visited by WalkDirectories.
+// walkDirFunc is the type of function that is called whenever a directory is visited by WalkDirectories.
 //
 // path is the directory being visited. entries are the file entries (including directories) in that directory.
-type WalkDirFunc func(path string, entries []fs.DirEntry) error
+type walkDirFunc func(path string, entries []fs.DirEntry) error
 
-// WalkDirectories walks the file tree rooted at root, calling fn for each directory in the tree, including root.
+// walkDirectories walks the file tree rooted at root, calling fn for each directory in the tree, including root.
 // The directories are walked in lexical order.
-func WalkDirectories(root string, fn WalkDirFunc) error {
+func walkDirectories(root string, fn walkDirFunc) error {
 	info, err := os.Lstat(root)
 	if err != nil {
 		return err
@@ -270,7 +315,7 @@ func WalkDirectories(root string, fn WalkDirFunc) error {
 	return walkDirRecursive(root, fs.FileInfoToDirEntry(info), fn)
 }
 
-func walkDirRecursive(path string, d fs.DirEntry, fn WalkDirFunc) error {
+func walkDirRecursive(path string, d fs.DirEntry, fn walkDirFunc) error {
 	entries, err := os.ReadDir(path)
 	if err != nil {
 		return fmt.Errorf("reading directory: %w", err)

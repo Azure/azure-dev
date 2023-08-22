@@ -3,7 +3,6 @@ package appdetect
 import (
 	"encoding/json"
 	"io/fs"
-	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,12 +13,13 @@ import (
 
 type PackagesJson struct {
 	Dependencies map[string]string `json:"dependencies"`
+	//DevDependencies map[string]string `json:"devDependencies"`
 }
 
 type JavaScriptDetector struct {
 }
 
-func (nd *JavaScriptDetector) Type() ProjectType {
+func (nd *JavaScriptDetector) Language() Language {
 	return JavaScript
 }
 
@@ -43,26 +43,46 @@ func (nd *JavaScriptDetector) DetectProject(path string, entries []fs.DirEntry) 
 				return nil, err
 			}
 
-			frameworks := map[Framework]struct{}{}
+			angularAdded := false
+			databaseDepMap := map[DatabaseDep]struct{}{}
+
 			for dep := range packagesJson.Dependencies {
-				if dep == "react" {
-					frameworks[React] = struct{}{}
-				} else if dep == "jquery" {
-					frameworks[JQuery] = struct{}{}
-				} else if strings.HasPrefix(dep, "@angular") {
-					frameworks[Angular] = struct{}{}
-				} else if dep == "vue" {
-					frameworks[VueJs] = struct{}{}
+				switch dep {
+				case "react":
+					project.Dependencies = append(project.Dependencies, JsReact)
+				case "jquery":
+					project.Dependencies = append(project.Dependencies, JsJQuery)
+				case "vue":
+					project.Dependencies = append(project.Dependencies, JsVue)
+				default:
+					if strings.HasPrefix(dep, "@angular") && !angularAdded {
+						project.Dependencies = append(project.Dependencies, JsAngular)
+						angularAdded = true
+					}
+				}
+
+				switch dep {
+				case "mysql":
+					databaseDepMap[DbMySql] = struct{}{}
+				case "mongodb":
+					databaseDepMap[DbMongo] = struct{}{}
+				case "pg-promise":
+					databaseDepMap[DbPostgres] = struct{}{}
+				case "tedious":
+					databaseDepMap[DbSqlServer] = struct{}{}
 				}
 			}
 
-			if len(frameworks) > 0 {
-				project.Frameworks = maps.Keys(frameworks)
-				slices.SortFunc(project.Frameworks, func(a, b Framework) bool {
+			if len(databaseDepMap) > 0 {
+				project.DatabaseDeps = maps.Keys(databaseDepMap)
+				slices.SortFunc(project.DatabaseDeps, func(a, b DatabaseDep) bool {
 					return string(a) < string(b)
 				})
-				log.Printf("Frameworks found: %v\n", project.Frameworks)
 			}
+
+			slices.SortFunc(project.Dependencies, func(a, b Dependency) bool {
+				return string(a) < string(b)
+			})
 
 			tsFiles := 0
 			jsFiles := 0

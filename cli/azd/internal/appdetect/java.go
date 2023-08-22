@@ -8,7 +8,7 @@ import (
 type JavaDetector struct {
 }
 
-func (jd *JavaDetector) Type() ProjectType {
+func (jd *JavaDetector) Language() Language {
 	return Java
 }
 

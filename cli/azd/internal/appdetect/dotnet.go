@@ -10,7 +10,7 @@ import (
 type DotNetDetector struct {
 }
 
-func (dd *DotNetDetector) Type() ProjectType {
+func (dd *DotNetDetector) Language() Language {
 	return DotNet
 }
 
@@ -24,16 +24,17 @@ func (dd *DotNetDetector) DetectProject(path string, entries []fs.DirEntry) (*Pr
 		name := entry.Name()
 		ext := filepath.Ext(name)
 
-		// This detection logic doesn't work if Program.cs has been renamed, or moved into a different directory.
-		// The actual detection of an "Application" is much harder since ASP .NET applications are compiled libraries
-		// that are executed with "dotnet run".
-		switch strings.ToLower(name) {
+		// This detection logic doesn't work if Program.cs has been renamed, or move into a different directory.
+		// The actual detection of an "Application" is much harder since ASP .NET applications are just libraries
+		// that are ran with "dotnet run".
+		name = strings.ToLower(name)
+		switch name {
 		case "program.cs", "program.fs", "program.vb":
 			hasStartupFile = true
 			projFileName = name
 		}
 
-		switch strings.ToLower(ext) {
+		switch ext {
 		case ".csproj", ".fsproj", ".vbproj":
 			hasProjectFile = true
 			startUpFileName = name

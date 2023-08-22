@@ -29,6 +29,9 @@ type RunArgs struct {
 
 	// When set will call the command with the specified StdIn
 	StdIn io.Reader
+
+	// When set will call the command with the specified StdOut
+	StdOut io.Writer
 }
 
 // NewRunArgs creates a new instance with the specified cmd and args
@@ -89,5 +92,17 @@ func (b RunArgs) WithDebugLogging(debug bool) RunArgs {
 // Updates the stdin reader that will be used while invoking the command
 func (b RunArgs) WithStdIn(stdIn io.Reader) RunArgs {
 	b.StdIn = stdIn
+	return b
+}
+
+// Updates the stdout writer that will be used while invoking the command
+func (b RunArgs) WithStdOut(stdOut io.Writer) RunArgs {
+	b.StdOut = stdOut
+	return b
+}
+
+// Updates the stderr writer that will be used while invoking the command
+func (b RunArgs) WithStdErr(stdErr io.Writer) RunArgs {
+	b.Stderr = stdErr
 	return b
 }

@@ -202,3 +202,19 @@ func Test_fixupUnquotedDotenv(t *testing.T) {
 	fixed := fixupUnquotedDotenv(test, dotenv)
 	require.Equal(t, "TEST_SHOULD_NOT_QUOTE=1\nTEST_SHOULD_QUOTE=\"01\"", fixed)
 }
+
+func Test_Environment_Path(t *testing.T) {
+	root := t.TempDir()
+	env := EmptyWithRoot(root)
+
+	path := env.Path()
+	require.Equal(t, filepath.Join(root, azdcontext.DotEnvFileName), path)
+}
+
+func Test_Environment_ConfigPath(t *testing.T) {
+	root := t.TempDir()
+	env := EmptyWithRoot(root)
+
+	path := env.ConfigPath()
+	require.Equal(t, filepath.Join(root, azdcontext.ConfigFileName), path)
+}

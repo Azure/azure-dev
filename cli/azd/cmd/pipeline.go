@@ -12,10 +12,12 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/pipeline"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -28,6 +30,12 @@ type pipelineConfigFlags struct {
 }
 
 func (pc *pipelineConfigFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+	local.StringVar(
+		&pc.PipelineServicePrincipalId,
+		"principal-id",
+		"",
+		"The client id of the service principal to use to grant access to Azure resources as part of the pipeline.",
+	)
 	local.StringVar(
 		&pc.PipelineServicePrincipalName,
 		"principal-name",
@@ -108,11 +116,13 @@ func newPipelineConfigCmd() *cobra.Command {
 
 // pipelineConfigAction defines the action for pipeline config command
 type pipelineConfigAction struct {
-	flags     *pipelineConfigFlags
-	manager   *pipeline.PipelineManager
-	env       *environment.Environment
-	console   input.Console
-	prompters prompt.Prompter
+	flags               *pipelineConfigFlags
+	manager             *pipeline.PipelineManager
+	provisioningManager *provisioning.Manager
+	env                 *environment.Environment
+	console             input.Console
+	prompters           prompt.Prompter
+	projectConfig       *project.ProjectConfig
 }
 
 func newPipelineConfigAction(
@@ -122,13 +132,17 @@ func newPipelineConfigAction(
 	flags *pipelineConfigFlags,
 	prompters prompt.Prompter,
 	manager *pipeline.PipelineManager,
+	provisioningManager *provisioning.Manager,
+	projectConfig *project.ProjectConfig,
 ) actions.Action {
 	pca := &pipelineConfigAction{
-		flags:     flags,
-		manager:   manager,
-		env:       env,
-		console:   console,
-		prompters: prompters,
+		flags:               flags,
+		manager:             manager,
+		env:                 env,
+		console:             console,
+		prompters:           prompters,
+		provisioningManager: provisioningManager,
+		projectConfig:       projectConfig,
 	}
 
 	return pca
@@ -136,7 +150,7 @@ func newPipelineConfigAction(
 
 // Run implements action interface
 func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	err := p.prompters.EnsureEnv(ctx)
+	err := p.provisioningManager.Initialize(ctx, p.projectConfig.Path, p.projectConfig.Infra)
 	if err != nil {
 		return nil, err
 	}

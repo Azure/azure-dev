@@ -20,6 +20,7 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -28,6 +29,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -42,7 +44,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/attribute"
-	"golang.org/x/exp/slices"
 )
 
 // The current running configuration for the test suite.
@@ -162,9 +163,15 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 		}),
 		client,
 		azcli.NewAzCliArgs{})
+	deploymentOperations := azapi.NewDeploymentOperations(
+		mockaccount.SubscriptionCredentialProviderFunc(
+			func(_ context.Context, _ string) (azcore.TokenCredential, error) {
+				return cred, nil
+			}),
+		client)
 
 	// Verify that resource groups are created with tag
-	resourceManager := infra.NewAzureResourceManager(azCli)
+	resourceManager := infra.NewAzureResourceManager(azCli, deploymentOperations)
 	rgs, err := resourceManager.GetResourceGroupsForEnvironment(ctx, env.GetSubscriptionId(), env.GetEnvName())
 	require.NoError(t, err)
 	require.NotNil(t, rgs)
@@ -253,9 +260,15 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 		}),
 		client,
 		azcli.NewAzCliArgs{})
+	deploymentOperations := azapi.NewDeploymentOperations(
+		mockaccount.SubscriptionCredentialProviderFunc(
+			func(_ context.Context, _ string) (azcore.TokenCredential, error) {
+				return cred, nil
+			}),
+		client)
 
 	// Verify that resource groups are created with tag
-	resourceManager := infra.NewAzureResourceManager(azCli)
+	resourceManager := infra.NewAzureResourceManager(azCli, deploymentOperations)
 	rgs, err := resourceManager.GetResourceGroupsForEnvironment(ctx, env.GetSubscriptionId(), env.GetEnvName())
 	require.NoError(t, err)
 	require.NotNil(t, rgs)

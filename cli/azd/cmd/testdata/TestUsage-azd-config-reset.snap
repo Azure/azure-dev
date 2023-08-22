@@ -5,7 +5,9 @@ Usage
   azd config reset [flags]
 
 Flags
-    -h, --help 	: Gets help for reset.
+        --docs  	: Opens the documentation for azd config reset in your web browser.
+    -f, --force 	: Force reset without confirmation.
+    -h, --help  	: Gets help for reset.
 
 Global Flags
     -C, --cwd string 	: Sets the current working directory.

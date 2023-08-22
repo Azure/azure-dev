@@ -1,6 +1,4 @@
 - id: terraform
   description: "Provision Azure resources from terraform files."
-- id: springapp
-  description: "Support Azure Spring Apps as service target."
 - id: resourceGroupDeployments
   description: "Support infrastructure deployments at resource group scope."

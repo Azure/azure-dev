@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
@@ -15,13 +16,11 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
-	"golang.org/x/exp/slices"
 )
 
 type LocationFilterPredicate func(loc account.Location) bool
 
 type Prompter interface {
-	EnsureEnv(ctx context.Context) error
 	PromptSubscription(ctx context.Context, msg string) (subscriptionId string, err error)
 	PromptLocation(ctx context.Context, subId string, msg string, filter LocationFilterPredicate) (string, error)
 	PromptResourceGroup(ctx context.Context) (string, error)
@@ -46,45 +45,6 @@ func NewDefaultPrompter(
 		accountManager: accountManager,
 		azCli:          azCli,
 	}
-}
-
-// EnsureEnv ensures that the environment is in a provision-ready state with required values set, prompting the user if
-// values are unset.
-//
-// This currently means that subscription (AZURE_SUBSCRIPTION_ID) and location (AZURE_LOCATION) variables are set.
-func (p *DefaultPrompter) EnsureEnv(ctx context.Context) error {
-	if p.env.GetSubscriptionId() == "" {
-		subscriptionId, err := p.PromptSubscription(ctx, "Select an Azure Subscription to use:")
-		if err != nil {
-			return err
-		}
-
-		p.env.SetSubscriptionId(subscriptionId)
-
-		if err := p.env.Save(); err != nil {
-			return err
-		}
-	}
-
-	if p.env.GetLocation() == "" {
-		location, err := p.PromptLocation(
-			ctx,
-			p.env.GetSubscriptionId(),
-			"Select an Azure location to use:",
-			func(_ account.Location) bool { return true },
-		)
-		if err != nil {
-			return err
-		}
-
-		p.env.SetLocation(location)
-
-		if err := p.env.Save(); err != nil {
-			return err
-		}
-	}
-
-	return nil
 }
 
 func (p *DefaultPrompter) PromptSubscription(ctx context.Context, msg string) (subscriptionId string, err error) {
@@ -152,8 +112,8 @@ func (p *DefaultPrompter) PromptResourceGroup(ctx context.Context) (string, erro
 		return "", fmt.Errorf("listing resource groups: %w", err)
 	}
 
-	slices.SortFunc(groups, func(a, b azcli.AzCliResource) bool {
-		return strings.Compare(a.Name, b.Name) < 0
+	slices.SortFunc(groups, func(a, b azcli.AzCliResource) int {
+		return strings.Compare(a.Name, b.Name)
 	})
 
 	choices := make([]string, len(groups)+1)

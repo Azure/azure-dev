@@ -15,6 +15,7 @@ armapimanagement
 armappconfiguration
 armappplatform
 armcognitiveservices
+azapi
 AZCLI
 azcorelog
 azdcli
@@ -27,10 +28,10 @@ azdtempl
 azdtempl
 azdtest
 azfile
-azureedge
 azruntime
 azsdk
 AZURECLI
+azureedge
 azurestaticapps
 azuretools
 azureutil
@@ -40,6 +41,7 @@ BOOLSLICE
 BUILDID
 BUILDNUMBER
 buildpacks
+byoi
 cflags
 circleci
 cmdsubst
@@ -70,12 +72,15 @@ executil
 funcapp
 functestapp
 functionapp
+go-imath
 GOARCH
 GOCOVERDIR
 godotenv
 golangci
 gosec
+goterm
 hotspot
+iidfile
 ineffassign
 javac
 jquery
@@ -84,9 +89,9 @@ keychain
 LASTEXITCODE
 ldflags
 lechnerc77
-microsoftonline
 mgmt
 mgutz
+microsoftonline
 mockarmresources
 mockazcli
 mvnw
@@ -121,8 +126,8 @@ secureobject
 securestring
 semconv
 serverfarms
-setenvs
 servicebus
+setenvs
 snapshotter
 springapp
 sstore

@@ -11,13 +11,14 @@ import (
 	"regexp"
 	"strings"
 
+	"maps"
+
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/joho/godotenv"
-	"golang.org/x/exp/maps"
 )
 
 // EnvNameEnvVarName is the name of the key used to store the envname property in the environment.
@@ -201,8 +202,7 @@ func (e *Environment) DotenvSet(key string, value string) {
 // Reloads environment variables and configuration
 func (e *Environment) Reload() error {
 	// Reload env values
-	envPath := filepath.Join(e.Root, azdcontext.DotEnvFileName)
-	if envMap, err := godotenv.Read(envPath); errors.Is(err, os.ErrNotExist) {
+	if envMap, err := godotenv.Read(e.Path()); errors.Is(err, os.ErrNotExist) {
 		e.dotenv = make(map[string]string)
 		e.deletedKeys = make(map[string]struct{})
 	} else if err != nil {
@@ -213,9 +213,8 @@ func (e *Environment) Reload() error {
 	}
 
 	// Reload env config
-	cfgPath := filepath.Join(e.Root, azdcontext.ConfigFileName)
 	cfgMgr := config.NewManager()
-	if cfg, err := cfgMgr.Load(cfgPath); errors.Is(err, os.ErrNotExist) {
+	if cfg, err := cfgMgr.Load(e.ConfigPath()); errors.Is(err, os.ErrNotExist) {
 		e.Config = config.NewEmptyConfig()
 	} else if err != nil {
 		return fmt.Errorf("loading config: %w", err)
@@ -243,7 +242,7 @@ func (e *Environment) Save() error {
 
 	// Update configuration
 	cfgMgr := config.NewManager()
-	if err := cfgMgr.Save(e.Config, filepath.Join(e.Root, azdcontext.ConfigFileName)); err != nil {
+	if err := cfgMgr.Save(e.Config, e.ConfigPath()); err != nil {
 		return fmt.Errorf("saving config: %w", err)
 	}
 
@@ -278,7 +277,7 @@ func (e *Environment) Save() error {
 
 	marshalled = fixupUnquotedDotenv(e.dotenv, marshalled)
 
-	envFile, err := os.Create(filepath.Join(e.Root, azdcontext.DotEnvFileName))
+	envFile, err := os.Create(e.Path())
 	if err != nil {
 		return fmt.Errorf("saving .env: %w", err)
 	}
@@ -295,6 +294,14 @@ func (e *Environment) Save() error {
 
 	tracing.SetUsageAttributes(fields.StringHashed(fields.EnvNameKey, e.GetEnvName()))
 	return nil
+}
+
+func (e *Environment) Path() string {
+	return filepath.Join(e.Root, azdcontext.DotEnvFileName)
+}
+
+func (e *Environment) ConfigPath() string {
+	return filepath.Join(e.Root, azdcontext.ConfigFileName)
 }
 
 // GetEnvName is shorthand for Getenv(EnvNameEnvVarName)

@@ -9,11 +9,13 @@ import (
 	"fmt"
 	"log"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
@@ -24,14 +26,20 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/sethvargo/go-retry"
-	"golang.org/x/exp/slices"
 )
 
 type PipelineAuthType string
 
+// servicePrincipalLookupKind is the type of lookup to use when resolving the service principal.
+type servicePrincipalLookupKind string
+
 const (
-	AuthTypeFederated         PipelineAuthType = "federated"
-	AuthTypeClientCredentials PipelineAuthType = "client-credentials"
+	AuthTypeFederated               PipelineAuthType           = "federated"
+	AuthTypeClientCredentials       PipelineAuthType           = "client-credentials"
+	lookupKindPrincipalId           servicePrincipalLookupKind = "principal-id"
+	lookupKindPrincipleName         servicePrincipalLookupKind = "principal-name"
+	lookupKindEnvironmentVariable   servicePrincipalLookupKind = "environment-variable"
+	AzurePipelineClientIdEnvVarName string                     = "AZURE_PIPELINE_CLIENT_ID"
 )
 
 var (
@@ -40,6 +48,7 @@ var (
 )
 
 type PipelineManagerArgs struct {
+	PipelineServicePrincipalId   string
 	PipelineServicePrincipalName string
 	PipelineRemoteName           string
 	PipelineRoleNames            []string
@@ -60,7 +69,7 @@ type PipelineManager struct {
 	args           *PipelineManagerArgs
 	azdCtx         *azdcontext.AzdContext
 	env            *environment.Environment
-	azCli          azcli.AzCli
+	adService      azcli.AdService
 	gitCli         git.GitCli
 	console        input.Console
 	serviceLocator ioc.ServiceLocator
@@ -68,7 +77,7 @@ type PipelineManager struct {
 
 func NewPipelineManager(
 	ctx context.Context,
-	azCli azcli.AzCli,
+	adService azcli.AdService,
 	gitCli git.GitCli,
 	azdCtx *azdcontext.AzdContext,
 	env *environment.Environment,
@@ -80,7 +89,7 @@ func NewPipelineManager(
 		azdCtx:         azdCtx,
 		env:            env,
 		args:           args,
-		azCli:          azCli,
+		adService:      adService,
 		gitCli:         gitCli,
 		console:        console,
 		serviceLocator: serviceLocator,
@@ -138,28 +147,100 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 		return result, fmt.Errorf("ensuring git remote: %w", err)
 	}
 
-	// *********** Create or update Azure Principal ***********
-	if pm.args.PipelineServicePrincipalName == "" {
-		// This format matches what the `az` cli uses when a name is not provided, with the prefix
-		// changed from "az-cli" to "az-dev"
-		pm.args.PipelineServicePrincipalName = fmt.Sprintf("az-dev-%s", time.Now().UTC().Format("01-02-2006-15-04-05"))
+	if pm.args.PipelineServicePrincipalName != "" && pm.args.PipelineServicePrincipalId != "" {
+		//nolint:lll
+		return result, fmt.Errorf(
+			"you have specified both --principal-id and --principal-name, but only one of these parameters should be used at a time.",
+		)
 	}
 
-	displayMsg := fmt.Sprintf("Creating or updating service principal %s", pm.args.PipelineServicePrincipalName)
+	// Existing Service Principal Lookup strategy
+	// 1. --principal-id
+	// 2. --principal-name
+	// 3. AZURE_PIPELINE_CLIENT_ID environment variable
+	// 4. Create new service principal with default naming convention
+	envClientId := pm.env.Getenv(AzurePipelineClientIdEnvVarName)
+	var appIdOrName string
+	var lookupKind servicePrincipalLookupKind
+	if pm.args.PipelineServicePrincipalId != "" {
+		appIdOrName = pm.args.PipelineServicePrincipalId
+		lookupKind = lookupKindPrincipalId
+	}
+	if appIdOrName == "" && pm.args.PipelineServicePrincipalName != "" {
+		appIdOrName = pm.args.PipelineServicePrincipalName
+		lookupKind = lookupKindPrincipleName
+	}
+	if appIdOrName == "" && envClientId != "" {
+		appIdOrName = envClientId
+		lookupKind = lookupKindEnvironmentVariable
+	}
+
+	var application *graphsdk.Application
+	var displayMsg, applicationName string
+
+	if appIdOrName != "" {
+		application, _ = pm.adService.GetServicePrincipal(ctx, pm.env.GetSubscriptionId(), appIdOrName)
+		if application != nil {
+			appIdOrName = *application.AppId
+			applicationName = application.DisplayName
+		} else {
+			applicationName = pm.args.PipelineServicePrincipalName
+		}
+	} else {
+		// Fall back to convention based naming
+		applicationName = fmt.Sprintf("az-dev-%s", time.Now().UTC().Format("01-02-2006-15-04-05"))
+		appIdOrName = applicationName
+	}
+
+	// If an explicit client id was specified but not found then fail
+	if application == nil && lookupKind == lookupKindPrincipalId {
+		return nil, fmt.Errorf(
+			"service principal with client id '%s' specified in '--principal-id' parameter was not found",
+			pm.args.PipelineServicePrincipalId,
+		)
+	}
+
+	// If an explicit client id was specified but not found then fail
+	if application == nil && lookupKind == lookupKindEnvironmentVariable {
+		return nil, fmt.Errorf(
+			"service principal with client id '%s' specified in environment variable '%s' was not found",
+			envClientId,
+			AzurePipelineClientIdEnvVarName,
+		)
+	}
+
+	if application == nil {
+		displayMsg = fmt.Sprintf("Creating service principal %s", applicationName)
+	} else {
+		displayMsg = fmt.Sprintf("Updating service principal %s (%s)", application.DisplayName, *application.AppId)
+	}
+
 	pm.console.ShowSpinner(ctx, displayMsg, input.Step)
-	credentials, err := pm.azCli.CreateOrUpdateServicePrincipal(
+	clientId, credentials, err := pm.adService.CreateOrUpdateServicePrincipal(
 		ctx,
 		pm.env.GetSubscriptionId(),
-		pm.args.PipelineServicePrincipalName,
+		appIdOrName,
 		pm.args.PipelineRoleNames)
+
+	// Update new service principal to include client id
+	if application == nil && clientId != nil {
+		displayMsg += fmt.Sprintf(" (%s)", *clientId)
+	}
 	pm.console.StopSpinner(ctx, displayMsg, input.GetStepResultFormat(err))
 	if err != nil {
 		return result, fmt.Errorf("failed to create or update service principal: %w", err)
 	}
 
+	// Set in .env to be retrieved for any additional runs
+	if clientId != nil {
+		pm.env.DotenvSet(AzurePipelineClientIdEnvVarName, *clientId)
+		if err := pm.env.Save(); err != nil {
+			return result, fmt.Errorf("failed to save environment: %w", err)
+		}
+	}
+
 	repoSlug := gitRepoInfo.owner + "/" + gitRepoInfo.repoName
-	displayMsg = fmt.Sprintf(
-		"Configuring repository %s to use credentials for %s", repoSlug, pm.args.PipelineServicePrincipalName)
+	displayMsg = fmt.Sprintf("Configuring repository %s to use credentials for %s", repoSlug, applicationName)
 	pm.console.ShowSpinner(ctx, displayMsg, input.Step)
 
 	err = pm.ciProvider.configureConnection(
@@ -189,11 +270,6 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 		return result, fmt.Errorf("prompting to push: %w", err)
 	}
 
-	currentBranch, err := pm.gitCli.GetCurrentBranch(ctx, pm.azdCtx.ProjectDirectory())
-	if err != nil {
-		return result, fmt.Errorf("getting current branch: %w", err)
-	}
-
 	// scm provider can prevent from pushing changes and/or use the
 	// interactive console for setting up any missing details.
 	// For example, GitHub provider would check if GH-actions are disabled.
@@ -202,7 +278,7 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 			ctx,
 			gitRepoInfo,
 			pm.args.PipelineRemoteName,
-			currentBranch)
+			gitRepoInfo.branch)
 		if err != nil {
 			return result, fmt.Errorf("check git push prevent: %w", err)
 		}
@@ -211,7 +287,7 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 	}
 
 	if doPush {
-		err = pm.pushGitRepo(ctx, gitRepoInfo, currentBranch)
+		err = pm.pushGitRepo(ctx, gitRepoInfo, gitRepoInfo.branch)
 		if err != nil {
 			return result, fmt.Errorf("git push: %w", err)
 		}
@@ -231,12 +307,12 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 			fmt.Sprintf(
 				"To fully enable pipeline you need to push this repo to the upstream using 'git push --set-upstream %s %s'.\n",
 				pm.args.PipelineRemoteName,
-				currentBranch))
+				gitRepoInfo.branch))
 	}
 
 	return &PipelineConfigResult{
-		RepositoryLink: strings.TrimSuffix(gitRepoInfo.remote, ".git"),
-		PipelineLink:   strings.TrimSuffix(ciPipeline.remote, ".git"),
+		RepositoryLink: gitRepoInfo.url,
+		PipelineLink:   ciPipeline.url(),
 	}, nil
 }
 
@@ -299,6 +375,11 @@ func (pm *PipelineManager) ensureRemote(
 		return nil, fmt.Errorf("failed to get remote url: %w", err)
 	}
 
+	currentBranch, err := pm.gitCli.GetCurrentBranch(ctx, repositoryPath)
+	if err != nil {
+		return nil, fmt.Errorf("getting current branch: %w", err)
+	}
+
 	// each provider knows how to extract the Owner and repo name from a remoteUrl
 	gitRepoDetails, err := pm.scmProvider.gitRepoDetails(ctx, remoteUrl)
 
@@ -306,6 +387,7 @@ func (pm *PipelineManager) ensureRemote(
 		return nil, err
 	}
 	gitRepoDetails.gitProjectPath = pm.azdCtx.ProjectDirectory()
+	gitRepoDetails.branch = currentBranch
 	return gitRepoDetails, nil
 }
 
@@ -409,7 +491,6 @@ func (pm *PipelineManager) pushGitRepo(ctx context.Context, gitRepoInfo *gitRepo
 	return retry.Do(ctx, retry.WithMaxRetries(3, retry.NewConstant(100*time.Millisecond)), func(ctx context.Context) error {
 		if err := pm.scmProvider.GitPush(
 			ctx,
-			pm.gitCli,
 			gitRepoInfo,
 			pm.args.PipelineRemoteName,
 			currentBranch); err != nil {

@@ -98,8 +98,14 @@ function deployTemplate {
         azd env new "$3" --subscription "$4" --location "$5" --no-prompt
     fi
 
+    echo "Create provision preview for $3..."
+    azd provision -e "$3" --preview
+
     echo "Provisioning infrastructure for $3..."
     azd provision -e "$3"
+
+    echo "Create (delta) provision preview after provision..."
+    azd provision -e "$3" --preview
 
     echo "Deploying apps for $3..."
     azd deploy -e "$3"

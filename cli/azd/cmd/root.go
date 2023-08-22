@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"fmt"
+	"log"
 	"os"
 	"strings"
 
@@ -204,7 +205,13 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 				RootLevelHelp: actions.CmdGroupManage,
 			},
 		}).
-		UseMiddleware("hooks", middleware.NewHooksMiddleware)
+		UseMiddlewareWhen("hooks", middleware.NewHooksMiddleware, func(descriptor *actions.ActionDescriptor) bool {
+			if onPreview, _ := descriptor.Options.Command.Flags().GetBool("preview"); onPreview {
+				log.Println("Skipping provision hooks due to preview flag.")
+				return false
+			}
+			return true
+		})
 
 	root.
 		Add("package", &actions.ActionDescriptorOptions{

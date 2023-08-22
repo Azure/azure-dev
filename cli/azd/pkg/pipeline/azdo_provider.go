@@ -533,7 +533,8 @@ func (p *AzdoScmProvider) gitRepoDetails(ctx context.Context, remoteUrl string) 
 		owner:    p.repoDetails.orgName,
 		repoName: p.repoDetails.repoName,
 		details:  repoDetails,
-		remote:   repoDetails.repoWebUrl,
+		remote:   repoDetails.remoteUrl,
+		url:      repoDetails.repoWebUrl,
 	}, nil
 }
 
@@ -568,7 +569,6 @@ func gitInsteadOfConfig(
 // Push code and queue pipeline
 func (p *AzdoScmProvider) GitPush(
 	ctx context.Context,
-	gitCli git.GitCli,
 	gitRepo *gitRepositoryDetails,
 	remoteName string,
 	branchName string) error {
@@ -744,7 +744,7 @@ func (p *AzdoCiProvider) configurePipeline(
 	ctx context.Context,
 	repoDetails *gitRepositoryDetails,
 	provisioningProvider provisioning.Options,
-) (*CiPipeline, error) {
+) (CiPipeline, error) {
 	details := repoDetails.details.(*AzdoRepositoryDetails)
 
 	org, _, err := azdo.EnsureOrgNameExists(ctx, p.Env, p.console)
@@ -775,11 +775,21 @@ func (p *AzdoCiProvider) configurePipeline(
 	}
 	details.buildDefinition = buildDefinition
 
-	repoUrl := details.repoWebUrl
-	repoPrefix := strings.Split(repoUrl, "_git")[0]
-	pipelineUrl := fmt.Sprintf("%s_build?definitionId=%d", repoPrefix, *buildDefinition.Id)
-	return &CiPipeline{
-		name:   *buildDefinition.Name,
-		remote: pipelineUrl,
+	return &pipeline{
+		repoDetails: details,
 	}, nil
+}
+
+// pipeline is the implementation for a CiPipeline for Azure DevOps
+type pipeline struct {
+	repoDetails *AzdoRepositoryDetails
+}
+
+func (p *pipeline) name() string {
+	return *p.repoDetails.buildDefinition.Name
+}
+func (p *pipeline) url() string {
+	repoUrl := p.repoDetails.repoWebUrl
+	repoPrefix := strings.Split(repoUrl, "_git")[0]
+	return fmt.Sprintf("%s_build?definitionId=%d", repoPrefix, *p.repoDetails.buildDefinition.Id)
 }

@@ -7,18 +7,17 @@ import (
 	"log"
 	"net/http"
 	"net/url"
+	"slices"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	azruntime "github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
 	"github.com/azure/azure-dev/cli/azd/internal"
-	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
-	"golang.org/x/exp/slices"
 )
 
 type dockerCredentials struct {
@@ -56,7 +55,7 @@ func NewContainerRegistryService(
 		credentialProvider: credentialProvider,
 		docker:             docker,
 		httpClient:         httpClient,
-		userAgent:          azdinternal.UserAgent(),
+		userAgent:          internal.UserAgent(),
 	}
 }
 

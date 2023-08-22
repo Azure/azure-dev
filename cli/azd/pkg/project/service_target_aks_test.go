@@ -283,9 +283,16 @@ func setupMocksForKubectl(mockContext *mocks.MockContext) {
 		return exec.NewRunResult(0, "", ""), nil
 	})
 
-	// Apply Pipe
+	// Apply With StdIn
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "kubectl apply -f -")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		return exec.NewRunResult(0, "", ""), nil
+	})
+
+	// Apply With File
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "kubectl apply -f")
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		return exec.NewRunResult(0, "", ""), nil
 	})

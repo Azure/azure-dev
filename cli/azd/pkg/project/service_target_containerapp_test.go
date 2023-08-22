@@ -133,7 +133,8 @@ func createContainerAppServiceTarget(
 	containerRegistryService := azcli.NewContainerRegistryService(credentialProvider, mockContext.HttpClient, dockerCli)
 	containerHelper := NewContainerHelper(env, clock.NewMock(), containerRegistryService, dockerCli)
 	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
-	resourceManager := NewResourceManager(env, azCli)
+	depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
+	resourceManager := NewResourceManager(env, azCli, depOpService)
 
 	return NewContainerAppTarget(
 		env,

@@ -36,6 +36,21 @@ type DestroyOptions struct {
 	purge bool
 }
 
+type StateOptions struct {
+	// A value used to lookup the state of a specific deployment
+	hint string
+}
+
+func NewStateOptions(hint string) *StateOptions {
+	return &StateOptions{
+		hint: hint,
+	}
+}
+
+func (o *StateOptions) Hint() string {
+	return o.hint
+}
+
 func (o *DestroyOptions) Purge() bool {
 	return o.purge
 }

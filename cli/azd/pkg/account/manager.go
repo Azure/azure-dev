@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"slices"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
-	"golang.org/x/exp/slices"
 )
 
 // JSON document path locations for default subscription & location

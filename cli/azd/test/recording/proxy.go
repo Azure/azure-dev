@@ -11,12 +11,12 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"log/slog"
 	"net"
 	"net/http"
 	"net/url"
 	"strings"
 
-	"golang.org/x/exp/slog"
 	"gopkg.in/dnaeon/go-vcr.v3/recorder"
 )
 

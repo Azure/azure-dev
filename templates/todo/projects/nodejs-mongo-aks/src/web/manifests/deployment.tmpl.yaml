@@ -1,0 +1,28 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: todo-web
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: todo-web
+  template:
+    metadata:
+      labels:
+        app: todo-web
+    spec:
+      containers:
+        - name: todo-web
+          image: {{.Env.SERVICE_WEB_IMAGE_NAME}}
+          ports:
+            - containerPort: 3000
+          env:
+            - name: REACT_APP_API_BASE_URL
+              value: /api
+            - name: REACT_APP_APPLICATIONINSIGHTS_CONNECTION_STRING
+              valueFrom:
+                configMapKeyRef:
+                  name: todo-web-config
+                  key: REACT_APP_APPLICATIONINSIGHTS_CONNECTION_STRING
+                  optional: false

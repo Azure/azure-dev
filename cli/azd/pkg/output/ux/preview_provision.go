@@ -55,7 +55,8 @@ func colorType(opType OperationType) func(string, ...interface{}) string {
 	var final func(format string, a ...interface{}) string
 	switch opType {
 	case OperationTypeCreate,
-		OperationTypeNoChange:
+		OperationTypeNoChange,
+		OperationTypeIgnore:
 		final = output.WithGrayFormat
 	case OperationTypeDelete:
 		final = color.RedString

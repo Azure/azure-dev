@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -25,7 +26,6 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/test/cmdrecord"
-	"golang.org/x/exp/slog"
 	"gopkg.in/dnaeon/go-vcr.v3/cassette"
 	"gopkg.in/dnaeon/go-vcr.v3/recorder"
 	"gopkg.in/yaml.v3"

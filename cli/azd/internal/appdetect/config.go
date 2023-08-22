@@ -78,9 +78,6 @@ type LanguageOption interface {
 type detectConfig struct {
 	languageConfig
 
-	// Include patterns for directories scanned. If unset, all directories are scanned by default.
-	IncludePatterns []string
-
 	// Exclude patterns for directories scanned.
 	// By default, build and package cache directories like **/dist, **/bin, **/node_modules are automatically excluded.
 	// Any hidden directories (directories starting with '.') are also excluded.
@@ -100,19 +97,6 @@ type languageConfig struct {
 
 	// Internal usage fields
 	detectors []ProjectDetector
-}
-
-type includePatternsOption struct {
-	patterns []string
-}
-
-func (o *includePatternsOption) apply(c detectConfig) detectConfig {
-	c.IncludePatterns = o.patterns
-	return c
-}
-
-func WithIncludePatterns(patterns []string) DetectOption {
-	return &includePatternsOption{patterns}
 }
 
 type excludePatternsOptions struct {

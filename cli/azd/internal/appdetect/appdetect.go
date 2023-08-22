@@ -220,27 +220,6 @@ func detectUnder(root string, config detectConfig) ([]Project, error) {
 			return err
 		}
 
-		included := true
-		if len(config.IncludePatterns) > 0 {
-			included = false
-		}
-
-		for _, p := range config.IncludePatterns {
-			match, err := doublestar.Match(p, relativePath)
-			if err != nil {
-				return err
-			}
-
-			included = included || match
-			if included {
-				break
-			}
-		}
-
-		if !included {
-			return filepath.SkipDir
-		}
-
 		for _, p := range config.ExcludePatterns {
 			match, err := doublestar.Match(p, relativePath)
 			if err != nil {

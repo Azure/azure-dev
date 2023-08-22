@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"flag"
 	"fmt"
 	"os"
@@ -8,34 +9,27 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
 )
 
-var repoDirectory string
 var directory string
 var projectDirectory string
 
 func init() {
-	flag.StringVar(&repoDirectory, "repo", "", "Path to repository to detect")
 	flag.StringVar(&directory, "dir", "", "Directory containing projects to detect")
 	flag.StringVar(&projectDirectory, "proj", "", "Specific project directory to detect")
-
 }
 
 func main() {
 	flag.Parse()
 
-	if repoDirectory == "" && directory == "" && projectDirectory == "" {
-		fmt.Println("must set one of 'repo', 'proj', or 'dir'")
+	if directory == "" && projectDirectory == "" {
+		fmt.Println("must set one of 'proj', or 'dir'")
 		os.Exit(1)
 	}
 
 	var projects []appdetect.Project
 	var err error
 
-	if repoDirectory != "" {
-		projects, err = appdetect.Detect(repoDirectory)
-	}
-
 	if directory != "" {
-		projects, err = appdetect.DetectUnder(directory)
+		projects, err = appdetect.Detect(directory)
 	}
 
 	if projectDirectory != "" {
@@ -53,5 +47,9 @@ func main() {
 	}
 
 	fmt.Println("Projects detected:")
-	fmt.Printf("%v\n", projects)
+	content, err := json.Marshal(projects)
+	if err != nil {
+		panic(err)
+	}
+	fmt.Printf("%v\n", string(content))
 }

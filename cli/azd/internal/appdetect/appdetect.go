@@ -161,41 +161,8 @@ var allDetectors = []ProjectDetector{
 	&JavaScriptDetector{},
 }
 
-// Detects projects located under an application repository.
-func Detect(repoRoot string, options ...DetectOption) ([]Project, error) {
-	config := newConfig(options...)
-	allProjects := []Project{}
-
-	// Prioritize src directory if it exists
-	sourceDir := filepath.Join(repoRoot, "src")
-	if ent, err := os.Stat(sourceDir); err == nil && ent.IsDir() {
-		projects, err := detectUnder(sourceDir, config)
-		if err != nil {
-			return nil, err
-		}
-
-		if len(projects) > 0 {
-			allProjects = append(allProjects, projects...)
-		}
-	}
-
-	if len(allProjects) == 0 {
-		config.ExcludePatterns = append(config.ExcludePatterns, "*/src/")
-		projects, err := detectUnder(repoRoot, config)
-		if err != nil {
-			return nil, err
-		}
-
-		if len(projects) > 0 {
-			allProjects = append(allProjects, projects...)
-		}
-	}
-
-	return allProjects, nil
-}
-
-// DetectUnder detects projects located under a directory.
-func DetectUnder(root string, options ...DetectOption) ([]Project, error) {
+// Detect detects projects located under a directory.
+func Detect(root string, options ...DetectOption) ([]Project, error) {
 	config := newConfig(options...)
 	return detectUnder(root, config)
 }
@@ -220,8 +187,11 @@ func detectUnder(root string, config detectConfig) ([]Project, error) {
 			return err
 		}
 
+		// Normalize all paths to use forward slash '/' for glob matching
+		relativePathForMatch := filepath.ToSlash(relativePath)
+
 		for _, p := range config.ExcludePatterns {
-			match, err := doublestar.Match(p, relativePath)
+			match, err := doublestar.Match(p, relativePathForMatch)
 			if err != nil {
 				return err
 			}

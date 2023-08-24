@@ -28,7 +28,7 @@ func TestExecInfra(t *testing.T) {
 			"API only",
 			InfraSpec{
 				Services: []ServiceSpec{
-					ServiceSpec{
+					{
 						Name: "api",
 						Port: 3100,
 					},
@@ -39,7 +39,7 @@ func TestExecInfra(t *testing.T) {
 			"API and web",
 			InfraSpec{
 				Services: []ServiceSpec{
-					ServiceSpec{
+					{
 						Name: "api",
 						Port: 3100,
 						Backend: &Backend{
@@ -50,7 +50,7 @@ func TestExecInfra(t *testing.T) {
 							},
 						},
 					},
-					ServiceSpec{
+					{
 						Name: "web",
 						Port: 3101,
 						Frontend: &Frontend{
@@ -72,7 +72,7 @@ func TestExecInfra(t *testing.T) {
 					DatabaseUser: "appuser",
 				},
 				Services: []ServiceSpec{
-					ServiceSpec{
+					{
 						Name: "api",
 						Port: 3100,
 						DbPostgres: &DatabaseReference{
@@ -89,7 +89,7 @@ func TestExecInfra(t *testing.T) {
 					DatabaseName: "appdb",
 				},
 				Services: []ServiceSpec{
-					ServiceSpec{
+					{
 						Name: "api",
 						Port: 3100,
 						DbCosmosMongo: &DatabaseReference{

@@ -129,4 +129,4 @@ output databaseHost string = postgreServer.properties.fullyQualifiedDomainName
 output databaseName string = databaseName
 output databaseUser string = databaseUser
 output databaseConnectionKey string = databaseConnectionKey
-{{end}}
+{{- end}}

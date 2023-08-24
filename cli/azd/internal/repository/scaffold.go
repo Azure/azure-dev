@@ -5,8 +5,8 @@ type InfraSpec struct {
 	Services   []ServiceSpec
 
 	// Databases to create
-	DbPostgres *DatabasePostgres
-	DbCosmos   *DatabaseCosmos
+	DbPostgres    *DatabasePostgres
+	DbCosmosMongo *DatabaseCosmos
 }
 
 type Parameter struct {
@@ -36,8 +36,8 @@ type ServiceSpec struct {
 	Backend *Backend
 
 	// Connection to a database. Only one should be set.
-	DbPostgres *DatabasePostgres
-	DbCosmos   *DatabaseCosmos
+	DbPostgres    *DatabasePostgres
+	DbCosmosMongo *DatabaseCosmos
 }
 
 type Frontend struct {

@@ -9,7 +9,6 @@ param environmentName string
 @minLength(1)
 @description('Primary location for all resources')
 param location string
-
 {{range .Parameters}}
 {{- if .Secret}}
 @secure()
@@ -88,15 +87,16 @@ module appsEnv './shared/apps-env.bicep' = {
   }
   scope: rg
 }
+{{- if (or .DbCosmosMongo .DbPostgres)}}
 
-{{- if (or .DbCosmos .DbPostgres)}}
 resource vault 'Microsoft.KeyVault/vaults@2022-07-01' existing = {
   name: keyVault.outputs.name
   scope: rg
 }
 {{- end}}
-{{- if .DbCosmos}}
-module cosmosDb './app/db-cosmos.bicep' = {
+{{- if .DbCosmosMongo}}
+
+module cosmosDb './app/db-cosmos-mongo.bicep' = {
   name: 'cosmosDb'
   params: {
     accountName: '${abbrs.documentDBDatabaseAccounts}${resourceToken}'
@@ -108,6 +108,7 @@ module cosmosDb './app/db-cosmos.bicep' = {
 }
 {{- end}}
 {{- if .DbPostgres}}
+
 module postgresDb './app/db-postgre.bicep' = {
   name: 'postgresDb'
   params: {
@@ -122,8 +123,8 @@ module postgresDb './app/db-postgre.bicep' = {
   scope: rg
 }
 {{- end}}
+{{- range .Services}}
 
-{{range .Services}}
 module {{bicepName .Name}} './app/{{.Name}}.bicep' = {
   name: '{{.Name}}'
   params: {
@@ -135,7 +136,7 @@ module {{bicepName .Name}} './app/{{.Name}}.bicep' = {
     containerAppsEnvironmentName: appsEnv.outputs.name
     containerRegistryName: registry.outputs.name
     exists: {{bicepName .Name}}Exists
-    {{- if .DbCosmos}}
+    {{- if .DbCosmosMongo}}
     cosmosDbConnectionString: vault.getSecret(cosmosDb.outputs.connectionStringKey)
     {{- end}}
     {{- if .DbPostgres}}
@@ -164,4 +165,4 @@ module {{bicepName .Name}} './app/{{.Name}}.bicep' = {
 {{- end}}
 
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = registry.outputs.loginServer
-{{end}}
+{{- end}}

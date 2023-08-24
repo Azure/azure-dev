@@ -7,7 +7,7 @@ param identityName string
 param containerRegistryName string
 param containerAppsEnvironmentName string
 param applicationInsightsName string
-{{- if .DbCosmos}}
+{{- if .DbCosmosMongo}}
 @secure()
 param cosmosDbConnectionString string
 {{- end}}
@@ -95,7 +95,7 @@ resource app 'Microsoft.App/containerApps@2023-04-01-preview' = {
         }
       ]
       secrets: [
-        {{- if .DbCosmos}}
+        {{- if .DbCosmosMongo}}
         {
           name: 'azure-cosmos-connection-string'
           value: cosmosDbConnectionString
@@ -119,7 +119,7 @@ resource app 'Microsoft.App/containerApps@2023-04-01-preview' = {
               name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
               value: applicationInsights.properties.ConnectionString
             }
-            {{- if .DbCosmos}}
+            {{- if .DbCosmosMongo}}
             {
               name: 'AZURE_COSMOS_MONGODB_CONNECTION_STRING'
               secretRef: 'azure-cosmos-connection-string'
@@ -180,4 +180,4 @@ output defaultDomain string = containerAppsEnvironment.properties.defaultDomain
 output name string = app.name
 output uri string = 'https://${app.properties.configuration.ingress.fqdn}'
 output id string = app.id
-{{end}}
+{{- end}}

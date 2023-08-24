@@ -2,12 +2,14 @@ package scaffold
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
+	"github.com/azure/azure-dev/cli/azd/test/snapshot"
 	"github.com/stretchr/testify/require"
 )
 
@@ -103,7 +105,7 @@ func TestExecInfra(t *testing.T) {
 		{
 			"API with MongoDB",
 			InfraSpec{
-				DbCosmos: &DatabaseCosmos{
+				DbCosmosMongo: &DatabaseCosmosMongo{
 					DatabaseName: "appdb",
 				},
 				Parameters: []Parameter{
@@ -113,7 +115,7 @@ func TestExecInfra(t *testing.T) {
 					ServiceSpec{
 						Name: "api",
 						Port: 3100,
-						DbCosmos: &DatabaseCosmos{
+						DbCosmosMongo: &DatabaseCosmosMongo{
 							DatabaseName: "appdb",
 						},
 					},
@@ -130,6 +132,12 @@ func TestExecInfra(t *testing.T) {
 				dir)
 			require.NoError(t, err)
 
+			content, err := os.ReadFile(filepath.Join(dir, "main.bicep"))
+			require.NoError(t, err)
+
+			c := snapshot.NewConfig(".bicep")
+			c.SnapshotT(t, string(content))
+
 			if testing.Short() {
 				return
 			}
@@ -140,7 +148,6 @@ func TestExecInfra(t *testing.T) {
 
 			res, err := cli.Build(ctx, filepath.Join(dir, "main.bicep"))
 			require.NoError(t, err)
-
 			require.Empty(t, res.LintErr, "lint errors occurred")
 		})
 	}

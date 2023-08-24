@@ -2,7 +2,6 @@ package resources
 
 import (
 	"embed"
-	_ "embed"
 )
 
 //go:embed templates.json

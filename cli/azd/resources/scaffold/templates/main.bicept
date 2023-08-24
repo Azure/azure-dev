@@ -109,7 +109,7 @@ module cosmosDb './app/db-cosmos-mongo.bicep' = {
 {{- end}}
 {{- if .DbPostgres}}
 
-module postgresDb './app/db-postgre.bicep' = {
+module postgresDb './app/db-postgres.bicep' = {
   name: 'postgresDb'
   params: {
     serverName: '${abbrs.dBforPostgreSQLServers}${resourceToken}'
@@ -165,4 +165,4 @@ module {{bicepName .Name}} './app/{{.Name}}.bicep' = {
 {{- end}}
 
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = registry.outputs.loginServer
-{{- end}}
+{{ end}}

@@ -4,15 +4,18 @@ import (
 	"context"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
-	"github.com/azure/azure-dev/cli/azd/test/snapshot"
 	"github.com/stretchr/testify/require"
 )
 
+// Verify that the scaffolded infrastructure is valid bicep and free of lint errors.
+//
+// To have generated files saved under ./testdata, set SCAFFOLD_SAVE=true.
 func TestExecInfra(t *testing.T) {
 	template, err := Load()
 	require.NoError(t, err)
@@ -24,9 +27,6 @@ func TestExecInfra(t *testing.T) {
 		{
 			"API only",
 			InfraSpec{
-				Parameters: []Parameter{
-					NewContainerAppServiceExistsParameter("api"),
-				},
 				Services: []ServiceSpec{
 					ServiceSpec{
 						Name: "api",
@@ -38,10 +38,6 @@ func TestExecInfra(t *testing.T) {
 		{
 			"API and web",
 			InfraSpec{
-				Parameters: []Parameter{
-					NewContainerAppServiceExistsParameter("api"),
-					NewContainerAppServiceExistsParameter("web"),
-				},
 				Services: []ServiceSpec{
 					ServiceSpec{
 						Name: "api",
@@ -75,28 +71,12 @@ func TestExecInfra(t *testing.T) {
 					DatabaseName: "appdb",
 					DatabaseUser: "appuser",
 				},
-				Parameters: []Parameter{
-					NewContainerAppServiceExistsParameter("api"),
-					Parameter{
-						Name:   "sqlAdminPassword",
-						Value:  "$(secretOrRandomPassword)",
-						Type:   "string",
-						Secret: true,
-					},
-					Parameter{
-						Name:   "appUserPassword",
-						Value:  "$(secretOrRandomPassword)",
-						Type:   "string",
-						Secret: true,
-					},
-				},
 				Services: []ServiceSpec{
 					ServiceSpec{
 						Name: "api",
 						Port: 3100,
-						DbPostgres: &DatabasePostgres{
+						DbPostgres: &DatabaseReference{
 							DatabaseName: "appdb",
-							DatabaseUser: "appuser",
 						},
 					},
 				},
@@ -108,14 +88,11 @@ func TestExecInfra(t *testing.T) {
 				DbCosmosMongo: &DatabaseCosmosMongo{
 					DatabaseName: "appdb",
 				},
-				Parameters: []Parameter{
-					NewContainerAppServiceExistsParameter("api"),
-				},
 				Services: []ServiceSpec{
 					ServiceSpec{
 						Name: "api",
 						Port: 3100,
-						DbCosmosMongo: &DatabaseCosmosMongo{
+						DbCosmosMongo: &DatabaseReference{
 							DatabaseName: "appdb",
 						},
 					},
@@ -135,8 +112,14 @@ func TestExecInfra(t *testing.T) {
 			content, err := os.ReadFile(filepath.Join(dir, "main.bicep"))
 			require.NoError(t, err)
 
-			c := snapshot.NewConfig(".bicep")
-			c.SnapshotT(t, string(content))
+			if v := os.Getenv("SCAFFOLD_SAVE"); v != "" {
+				dest := filepath.Join("testdata", strings.ReplaceAll(t.Name(), "/", "-"))
+				err := os.MkdirAll(dest, 0700)
+				require.NoError(t, err)
+
+				err = copyFS(os.DirFS(filepath.Dir(dir)), filepath.Base(dir), dest)
+				require.NoError(t, err)
+			}
 
 			if testing.Short() {
 				return

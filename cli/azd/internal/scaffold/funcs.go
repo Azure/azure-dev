@@ -2,6 +2,10 @@ package scaffold
 
 import "strings"
 
+// BicepName returns a name suitable for use as a bicep variable name.
+//
+// The name is converted to camel case, with treatment for underscore or dash separators,
+// and all non-alphanumeric characters are removed.
 func BicepName(name string) string {
 	sb := strings.Builder{}
 	separatorStart := -1
@@ -58,6 +62,9 @@ func lowerCase(r byte) byte {
 const containerAppNameMaxLen = 12
 
 // ContainerAppName returns a name that is valid to be used as an infix for a container app resource.
+//
+// The name is treated to only contain alphanumeric and dash characters, with no repeated dashes, and no dashes
+// as the first or last character.
 func ContainerAppName(name string) string {
 	if len(name) > containerAppNameMaxLen {
 		name = name[:containerAppNameMaxLen]

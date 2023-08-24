@@ -41,8 +41,8 @@ type ServiceSpec struct {
 	Backend *Backend
 
 	// Connection to a database. Only one should be set.
-	DbPostgres    *DatabasePostgres
-	DbCosmosMongo *DatabaseCosmosMongo
+	DbPostgres    *DatabaseReference
+	DbCosmosMongo *DatabaseReference
 }
 
 type Frontend struct {
@@ -57,7 +57,11 @@ type ServiceReference struct {
 	Name string
 }
 
-func NewContainerAppServiceExistsParameter(serviceName string) Parameter {
+type DatabaseReference struct {
+	DatabaseName string
+}
+
+func containerAppExistsParameter(serviceName string) Parameter {
 	return Parameter{
 		Name: BicepName(serviceName) + "Exists",
 		Value: fmt.Sprintf("${SERVICE_%s_RESOURCE_EXISTS=false}",

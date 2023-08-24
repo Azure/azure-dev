@@ -2,7 +2,6 @@ package scaffold
 
 import (
 	"bytes"
-	"embed"
 	"fmt"
 	"io/fs"
 	"os"
@@ -15,14 +14,14 @@ import (
 	"github.com/azure/azure-dev/cli/azd/resources"
 )
 
-const BaseRoot = "scaffold/base"
-const TemplateRoot = "scaffold/templates"
+const baseRoot = "scaffold/base"
+const templateRoot = "scaffold/templates"
 
 // Copy base assets to the target directory.
 func CopyBase(targetDir string) error {
 	err := copyFS(
 		resources.ScaffoldBase,
-		BaseRoot,
+		baseRoot,
 		targetDir)
 	if err != nil {
 		return fmt.Errorf("copying base assets: %w", err)
@@ -31,7 +30,7 @@ func CopyBase(targetDir string) error {
 	return nil
 }
 
-func copyFS(embedFs embed.FS, root string, target string) error {
+func copyFS(embedFs fs.FS, root string, target string) error {
 	return fs.WalkDir(embedFs, root, func(name string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -50,7 +49,7 @@ func copyFS(embedFs embed.FS, root string, target string) error {
 	})
 }
 
-// Load loads all templates under a single template.Template.
+// Load loads all templates as a template.Template.
 //
 // To execute a named template, call Execute with the defined name.
 func Load() (*template.Template, error) {
@@ -65,7 +64,7 @@ func Load() (*template.Template, error) {
 		Option("missingkey=error").
 		Funcs(funcMap).
 		ParseFS(resources.ScaffoldTemplates,
-			path.Join(TemplateRoot, "*"))
+			path.Join(templateRoot, "*"))
 	if err != nil {
 		return nil, fmt.Errorf("parsing templates: %w", err)
 	}
@@ -94,12 +93,18 @@ func Execute(
 	return nil
 }
 
+// ExecInfra scaffolds infrastructure files for the given spec, using the loaded templates in t. The resulting files
+// are written to the target directory.
 func ExecInfra(
 	t *template.Template,
 	spec InfraSpec,
 	target string) error {
 	infraRoot := target
 	infraApp := filepath.Join(infraRoot, "app")
+
+	// Pre-execution expansion. Additional parameters are added, derived from the initial spec.
+	preExecExpand(&spec)
+
 	err := CopyBase(infraRoot)
 	if err != nil {
 		return err
@@ -110,19 +115,22 @@ func ExecInfra(
 	}
 
 	if spec.DbCosmosMongo != nil {
-		if err := Execute(t, "db-cosmos-mongo.bicep", spec.DbCosmosMongo, filepath.Join(infraApp, "db-cosmos-mongo.bicep")); err != nil {
+		err = Execute(t, "db-cosmos-mongo.bicep", spec.DbCosmosMongo, filepath.Join(infraApp, "db-cosmos-mongo.bicep"))
+		if err != nil {
 			return fmt.Errorf("scaffolding cosmos mongodb: %w", err)
 		}
 	}
 
 	if spec.DbPostgres != nil {
-		if err := Execute(t, "db-postgre.bicep", spec.DbPostgres, filepath.Join(infraApp, "db-postgre.bicep")); err != nil {
+		err = Execute(t, "db-postgres.bicep", spec.DbPostgres, filepath.Join(infraApp, "db-postgres.bicep"))
+		if err != nil {
 			return fmt.Errorf("scaffolding postgres: %w", err)
 		}
 	}
 
 	for _, svc := range spec.Services {
-		if err := Execute(t, "host-containerapp.bicep", svc, filepath.Join(infraApp, svc.Name+".bicep")); err != nil {
+		err = Execute(t, "host-containerapp.bicep", svc, filepath.Join(infraApp, svc.Name+".bicep"))
+		if err != nil {
 			return fmt.Errorf("scaffolding containerapp: %w", err)
 		}
 	}
@@ -138,4 +146,29 @@ func ExecInfra(
 	}
 
 	return nil
+}
+
+func preExecExpand(spec *InfraSpec) {
+	// postgres requires specific password seeding parameters
+	if spec.DbPostgres != nil {
+		spec.Parameters = append(spec.Parameters,
+			Parameter{
+				Name:   "sqlAdminPassword",
+				Value:  "$(secretOrRandomPassword)",
+				Type:   "string",
+				Secret: true,
+			},
+			Parameter{
+				Name:   "appUserPassword",
+				Value:  "$(secretOrRandomPassword)",
+				Type:   "string",
+				Secret: true,
+			})
+	}
+
+	for _, svc := range spec.Services {
+		// containerapp requires a global '_exist' parameter for each service
+		spec.Parameters = append(spec.Parameters,
+			containerAppExistsParameter(svc.Name))
+	}
 }

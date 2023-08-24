@@ -1,4 +1,4 @@
-{{define "db-postgre.bicep"}}
+{{define "db-postgres.bicep"}}
 param serverName string
 param location string = resourceGroup().location
 param tags object = {}
@@ -129,4 +129,4 @@ output databaseHost string = postgreServer.properties.fullyQualifiedDomainName
 output databaseName string = databaseName
 output databaseUser string = databaseUser
 output databaseConnectionKey string = databaseConnectionKey
-{{- end}}
+{{ end}}

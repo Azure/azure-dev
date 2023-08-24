@@ -109,9 +109,6 @@ func TestExecInfra(t *testing.T) {
 				dir)
 			require.NoError(t, err)
 
-			content, err := os.ReadFile(filepath.Join(dir, "main.bicep"))
-			require.NoError(t, err)
-
 			if v := os.Getenv("SCAFFOLD_SAVE"); v != "" {
 				dest := filepath.Join("testdata", strings.ReplaceAll(t.Name(), "/", "-"))
 				err := os.MkdirAll(dest, 0700)

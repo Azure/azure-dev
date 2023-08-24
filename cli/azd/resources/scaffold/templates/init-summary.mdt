@@ -12,7 +12,8 @@ To define a secret as an environment variable, the secret can first be stored in
 
 ## 2. Provision infrastructure and deploy application code
 
-Run `azd up` to run the end-to-end infrastructure provisioning (`azd provision`) and code deployment (`azd deploy`) flow. Visit the service endpoints listed to see your application up-and-running!
+Run `azd up` to get your app running in Azure. `azd up` will perform both infrastructure provisioning (`azd provision`) and code deployment (`azd deploy`) in a single command.
+Visit the service endpoints listed to see your application up-and-running!
 
 To troubleshoot any issues, see [troubleshooting](#troubleshooting).
 
@@ -28,7 +29,7 @@ To describe the infrastructure and application, `azure.yaml` along with Infrastr
   - main.bicep   # main deployment module
   - app/         # Application resource modules
   - shared/      # Shared resource modules
-  - modules/     # Library modules
+  - lib/     # Library modules
 ```
 
 Each bicep file declares resources to be provisioned. The resources are provisioned when running `azd up` or `azd provision`.

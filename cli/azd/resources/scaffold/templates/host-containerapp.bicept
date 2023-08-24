@@ -54,7 +54,7 @@ resource acrPullRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   }
 }
 
-module fetchLatestImage '../modules/fetch-container-image.bicep' = {
+module fetchLatestImage '../lib/fetch-container-image.bicep' = {
   name: '${name}-fetch-image'
   params: {
     exists: exists

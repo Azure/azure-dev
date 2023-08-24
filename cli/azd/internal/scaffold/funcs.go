@@ -12,7 +12,7 @@ func BicepName(name string) string {
 	for i := range name {
 		switch name[i] {
 		case '-', '_':
-			if separatorStart == -1 {
+			if separatorStart == -1 { // track first occurrence of consecutive separators
 				separatorStart = i
 			}
 		default:
@@ -21,7 +21,7 @@ func BicepName(name string) string {
 			}
 			char := name[i]
 			if separatorStart != -1 {
-				if separatorStart == 0 {
+				if separatorStart == 0 { // first character should be lowerCase
 					char = lowerCase(name[i])
 				} else {
 					char = upperCase(name[i])

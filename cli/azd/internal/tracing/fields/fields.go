@@ -55,6 +55,12 @@ const (
 	InstalledByKey = attribute.Key("service.installer")
 )
 
+// Fields related to the experimentation platform
+const (
+	// The assignment context as returned by the experimentation platform.
+	ExpAssignmentContextKey = attribute.Key("exp.assignmentContext")
+)
+
 // Context level fields. Availability depends on the command running.
 const (
 	// Object ID of the principal.

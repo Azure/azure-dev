@@ -83,6 +83,13 @@ overrides:
   - filename: pkg/tools/kubectl/kubectl.go
     words:
       - tmpl
+  - filename: pkg/experimentation/assignment.go
+    words:
+      - assignmentcache
+      - machineid
+  - filename: pkg/experimentation/client.go
+    words:
+      - variantassignment
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

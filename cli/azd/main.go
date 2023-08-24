@@ -26,6 +26,10 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/experimentation"
 	"github.com/azure/azure-dev/cli/azd/pkg/installer"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -53,6 +57,25 @@ func main() {
 	log.Printf("azd version: %s", internal.Version)
 
 	ts := telemetry.GetTelemetrySystem()
+
+	// TODO(ellismg): Once we have our production service stood up, we will use the value here
+	// if AZD_DEBUG_EXPERIMENTATION_TAS_ENDPOINT is not set (we'll continue to allow
+	// AZD_DEBUG_EXPERIMENTATION_TAS_ENDPOINT to override the value, for testing).
+	if endpoint := os.Getenv("AZD_DEBUG_EXPERIMENTATION_TAS_ENDPOINT"); endpoint != "" {
+		if assignmentManager, err := experimentation.NewAssignmentsManager(
+			endpoint,
+			http.DefaultClient,
+		); err == nil {
+			if assignment, err := assignmentManager.Assignment(ctx); err != nil {
+				log.Printf("failed to get variant assignments: %v", err)
+			} else {
+				log.Printf("assignment context: %v", assignment.AssignmentContext)
+				tracing.SetGlobalAttributes(fields.ExpAssignmentContextKey.String(assignment.AssignmentContext))
+			}
+		} else {
+			log.Printf("failed to create assignment manager: %v", err)
+		}
+	}
 
 	latest := make(chan semver.Version)
 	go fetchLatestVersion(latest)
@@ -182,13 +205,13 @@ func fetchLatestVersion(version chan<- semver.Version) {
 
 	// To avoid fetching the latest version of the CLI on every invocation, we cache the result for a period
 	// of time, in the user's home directory.
-	homeDir, err := os.UserHomeDir()
+	configDir, err := config.GetUserConfigDir()
 	if err != nil {
-		log.Printf("could not determine current home directory: %v, skipping update check", err)
+		log.Printf("could not config directory: %v, skipping update check", err)
 		return
 	}
 
-	cacheFilePath := filepath.Join(homeDir, azdConfigDir, updateCheckCacheFileName)
+	cacheFilePath := filepath.Join(configDir, updateCheckCacheFileName)
 	cacheFile, err := os.ReadFile(cacheFilePath)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		log.Printf("error reading update cache file: %v, skipping update check", err)

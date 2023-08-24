@@ -28,7 +28,7 @@ func New() *resource.Resource {
 			fields.HostArchKey.String(runtime.GOARCH),
 			fields.ProcessRuntimeVersionKey.String(runtime.Version()),
 			fields.ExecutionEnvironmentKey.String(getExecutionEnvironment()),
-			fields.MachineIdKey.String(getMachineId()),
+			fields.MachineIdKey.String(MachineId()),
 			fields.InstalledByKey.String(getInstalledBy()),
 		),
 	)

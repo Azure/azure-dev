@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
-	"fmt"
 	"io"
 	"net/http"
 	"testing"
@@ -67,32 +66,81 @@ func TestGetVariantAssignments(t *testing.T) {
 }
 
 func TestGetEscapedParameterStrings(t *testing.T) {
-	parameterValues := map[string]string{
-		"key1": "value1",
-		"key2": "value2",
+	tests := []struct {
+		name            string
+		parameterValues map[string]string
+		expectedEscaped []string
+	}{
+		{
+			name: "valid parameters",
+			parameterValues: map[string]string{
+				"key1": "value1",
+				"key2": "value2",
+			},
+			expectedEscaped: []string{"key1=value1", "key2=value2"},
+		},
+		{
+			name: "escaped parameters",
+			parameterValues: map[string]string{
+				"ke&y1": "val&ue1",
+				"ke&y2": "val&ue2",
+			},
+			expectedEscaped: []string{"ke%26y1=val%26ue1", "ke%26y2=val%26ue2"},
+		},
+		{
+			name:            "nil parameters",
+			parameterValues: nil,
+			expectedEscaped: nil,
+		},
 	}
-	escapedValues := escapeParameterStrings(parameterValues)
-	if len(escapedValues) != 2 {
-		t.Errorf("Expected 2 escaped values, got %d", len(escapedValues))
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			escapedValues := escapeParameterStrings(tt.parameterValues)
+			require.Equal(t, tt.expectedEscaped, escapedValues)
+		})
 	}
-	// Try with null value
-	escapedValues = escapeParameterStrings(nil)
-	if escapedValues != nil {
-		t.Errorf("Expected 0 escaped values, got %d", len(escapedValues))
-	}
-	fmt.Println("get escaped parameter strings test passed")
 }
 
 func TestGetEscapedDataStrings(t *testing.T) {
-	inputValues := []string{"value1", "value2"}
-	escapedValues := escapeDataStrings(inputValues)
-	if len(escapedValues) != 2 {
-		t.Errorf("Expected 2 escaped values, got %d", len(escapedValues))
+	tests := []struct {
+		name            string
+		inputValues     []string
+		expectedEscaped []string
+	}{
+		{
+			name: "valid data",
+			inputValues: []string{
+				"value1",
+				"value2",
+			},
+			expectedEscaped: []string{
+				"value1",
+				"value2",
+			},
+		},
+		{
+			name: "escaped data",
+			inputValues: []string{
+				"val&ue1",
+				"val&ue2",
+			},
+			expectedEscaped: []string{
+				"val%26ue1",
+				"val%26ue2",
+			},
+		},
+		{
+			name:            "nil data",
+			inputValues:     nil,
+			expectedEscaped: nil,
+		},
 	}
-	// Try with null value
-	escapedValues = escapeDataStrings(nil)
-	if escapedValues != nil {
-		t.Errorf("Expected 0 escaped values, got %d", len(escapedValues))
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			escapedValues := escapeDataStrings(tt.inputValues)
+			require.Equal(t, tt.expectedEscaped, escapedValues)
+		})
 	}
-	fmt.Println("get escaped data strings test passed")
 }

@@ -41,7 +41,7 @@ type treatmentAssignmentResponse struct {
 // newTasClient creates a new instance of the treatment assignments client.
 func newTasClient(tasEndpoint string, options *azcore.ClientOptions) (*tasClient, error) {
 	if tasEndpoint == "" {
-		return nil, fmt.Errorf("invalid argument, tasEndpoint and pipeline cannot be nil")
+		return nil, fmt.Errorf("tasEndpoint must be set")
 	}
 
 	if options == nil {

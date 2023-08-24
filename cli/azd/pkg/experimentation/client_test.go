@@ -97,7 +97,7 @@ func TestGetEscapedParameterStrings(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			escapedValues := escapeParameterStrings(tt.parameterValues)
-			require.Equal(t, tt.expectedEscaped, escapedValues)
+			require.ElementsMatch(t, tt.expectedEscaped, escapedValues)
 		})
 	}
 }
@@ -140,7 +140,7 @@ func TestGetEscapedDataStrings(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			escapedValues := escapeDataStrings(tt.inputValues)
-			require.Equal(t, tt.expectedEscaped, escapedValues)
+			require.ElementsMatch(t, tt.expectedEscaped, escapedValues)
 		})
 	}
 }

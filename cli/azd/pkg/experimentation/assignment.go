@@ -4,27 +4,31 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"log"
 	"os"
 	"path/filepath"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
 
-// cCacheFileNamePattern is the pattern used to generate the cache file name. It is formatted
-// using the machine ID, which is the cache key.
-const cCacheFileNamePattern string = "mid-%s.cache"
+// cCacheFileName is the name of the file used to cache assignment information.
+const cCacheFileName string = "assign.cache"
 
+// cCacheDirectoryName is the name of the directory created under the user config directory that contains the cache.
 const cCacheDirectoryName string = "experimentation"
 
 // MachineIdParameterName is the name of the parameter used to identify the machine ID in the assignment
 // request.
 const MachineIdParameterName string = "machineid"
+
+// MachineIdParameterName is the name of the parameter used to identify the version of azd in the assignment
+// request.
+const AzdVersionParameterName string = "azdversion"
 
 // AssignmentsManager manages interaction with the Assignments service, caching the results for 24 hours.
 type AssignmentsManager struct {
@@ -78,9 +82,7 @@ type AssignmentConfig struct {
 //
 // When making a request, the current machine ID is passed as a parameter, named "machineid".
 func (am *AssignmentsManager) Assignment(ctx context.Context) (*Assignment, error) {
-	machineId := resource.MachineId()
-
-	cachedAssignment, err := am.readResponseFromCache(machineId)
+	cachedAssignment, err := am.readResponseFromCache()
 	if err != nil {
 		log.Printf("could not read assignment from cache: %v", err)
 	}
@@ -88,7 +90,8 @@ func (am *AssignmentsManager) Assignment(ctx context.Context) (*Assignment, erro
 	if cachedAssignment == nil {
 		req := &variantAssignmentRequest{
 			Parameters: map[string]string{
-				MachineIdParameterName: resource.MachineId(),
+				MachineIdParameterName:  resource.MachineId(),
+				AzdVersionParameterName: internal.VersionInfo().Version.String(),
 			},
 		}
 
@@ -96,7 +99,7 @@ func (am *AssignmentsManager) Assignment(ctx context.Context) (*Assignment, erro
 		if err != nil {
 			return nil, err
 		}
-		if err := am.cacheResponse(machineId, assignment); err != nil {
+		if err := am.cacheResponse(assignment); err != nil {
 			log.Printf("failed to cache assignment response: %v", err)
 		}
 
@@ -132,7 +135,7 @@ var errCacheExpired = errors.New("cache expired")
 var errUnsupportedCacheVersion = errors.New("unsupported cache version")
 
 // cacheResponse caches the response from the TAS service for 24 hours, using the machineId as the cache key.
-func (am *AssignmentsManager) cacheResponse(machineId string, response *treatmentAssignmentResponse) error {
+func (am *AssignmentsManager) cacheResponse(response *treatmentAssignmentResponse) error {
 	responseJson, err := json.Marshal(response)
 	if err != nil {
 		return err
@@ -149,13 +152,13 @@ func (am *AssignmentsManager) cacheResponse(machineId string, response *treatmen
 		return err
 	}
 
-	cacheFilePath := filepath.Join(am.cacheRoot, fmt.Sprintf(cCacheFileNamePattern, machineId))
+	cacheFilePath := filepath.Join(am.cacheRoot, cCacheFileName)
 	return os.WriteFile(cacheFilePath, cacheJson, osutil.PermissionFile)
 }
 
 // readResponseFromCache reads the cached response from the TAS service for the given machineId.
-func (am *AssignmentsManager) readResponseFromCache(machineId string) (*treatmentAssignmentResponse, error) {
-	cache, err := os.ReadFile(filepath.Join(am.cacheRoot, fmt.Sprintf(cCacheFileNamePattern, machineId)))
+func (am *AssignmentsManager) readResponseFromCache() (*treatmentAssignmentResponse, error) {
+	cache, err := os.ReadFile(filepath.Join(am.cacheRoot, cCacheFileName))
 	if err != nil {
 		return nil, err
 	}

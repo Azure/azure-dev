@@ -12,19 +12,28 @@ import (
 	"testing"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockhttp"
 	"github.com/stretchr/testify/require"
 )
 
-func TestMachineIdIsSent(t *testing.T) {
+func TestParametersAreSent(t *testing.T) {
+	configRoot := t.TempDir()
+	t.Setenv("AZD_CONFIG_DIR", configRoot)
+
 	mockEndpoint := "https://test-exp-s2s.msedge.net/ab"
 	mockHttp := mockhttp.NewMockHttpUtil()
 	mockHttp.When(func(request *http.Request) bool {
 		return request.Method == http.MethodGet && request.URL.String() == mockEndpoint
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		// nolint: staticcheck
-		require.Equal(t, request.Header["X-ExP-Parameters"], []string{fmt.Sprintf("machineid=%s", resource.MachineId())})
+		require.Equal(t, request.Header["X-ExP-Parameters"],
+			[]string{
+				fmt.Sprintf("machineid=%s", resource.MachineId()),
+				fmt.Sprintf("azdversion=%s", internal.VersionInfo().Version.String()),
+			},
+		)
 
 		res := treatmentAssignmentResponse{
 			FlightingVersion:  1,
@@ -44,7 +53,7 @@ func TestMachineIdIsSent(t *testing.T) {
 	mgr, err := NewAssignmentsManager(mockEndpoint, mockHttp)
 	require.NoError(t, err)
 
-	// The mock validates that the machineid is passed as a parameter
+	// The mock validates that the required parameters are passed parameter
 	// to the request. No need for us to validate the return value.
 	_, err = mgr.Assignment(context.Background())
 	require.NoError(t, err)

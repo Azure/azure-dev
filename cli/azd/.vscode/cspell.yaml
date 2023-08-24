@@ -87,6 +87,7 @@ overrides:
     words:
       - assignmentcache
       - machineid
+      - azdversion
   - filename: pkg/experimentation/client.go
     words:
       - variantassignment

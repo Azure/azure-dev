@@ -6,7 +6,7 @@ import (
 	"strings"
 )
 
-func DetectDockerProject(path string, entries []fs.DirEntry) (*Docker, error) {
+func detectDocker(path string, entries []fs.DirEntry) (*Docker, error) {
 	for _, entry := range entries {
 		if strings.ToLower(entry.Name()) == "dockerfile" {
 			return &Docker{

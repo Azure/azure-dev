@@ -11,14 +11,14 @@ import (
 	"golang.org/x/exp/slices"
 )
 
-type PythonDetector struct {
+type pythonDetector struct {
 }
 
-func (pd *PythonDetector) Language() Language {
+func (pd *pythonDetector) Language() Language {
 	return Python
 }
 
-func (pd *PythonDetector) DetectProject(path string, entries []fs.DirEntry) (*Project, error) {
+func (pd *pythonDetector) DetectProject(path string, entries []fs.DirEntry) (*Project, error) {
 	for _, entry := range entries {
 		// entry.Name() == "pyproject.toml" when azd supports pyproject files
 		if strings.ToLower(entry.Name()) == "requirements.txt" {

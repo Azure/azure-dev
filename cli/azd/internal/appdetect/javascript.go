@@ -15,14 +15,14 @@ type PackagesJson struct {
 	Dependencies map[string]string `json:"dependencies"`
 }
 
-type JavaScriptDetector struct {
+type javaScriptDetector struct {
 }
 
-func (nd *JavaScriptDetector) Language() Language {
+func (nd *javaScriptDetector) Language() Language {
 	return JavaScript
 }
 
-func (nd *JavaScriptDetector) DetectProject(path string, entries []fs.DirEntry) (*Project, error) {
+func (nd *javaScriptDetector) DetectProject(path string, entries []fs.DirEntry) (*Project, error) {
 	for _, entry := range entries {
 		if strings.ToLower(entry.Name()) == "package.json" {
 			project := &Project{

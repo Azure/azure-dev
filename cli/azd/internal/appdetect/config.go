@@ -54,7 +54,7 @@ func setDetectors(c *languageConfig) {
 		}
 	}
 
-	c.detectors = []ProjectDetector{}
+	c.detectors = []projectDetector{}
 	for _, d := range allDetectors {
 		if languages[d.Language()] {
 			c.detectors = append(c.detectors, d)
@@ -96,7 +96,7 @@ type languageConfig struct {
 	ExcludeLanguages []Language
 
 	// Internal usage fields
-	detectors []ProjectDetector
+	detectors []projectDetector
 }
 
 type excludePatternsOptions struct {

@@ -147,18 +147,18 @@ type Docker struct {
 	Path string
 }
 
-type ProjectDetector interface {
+type projectDetector interface {
 	Language() Language
 	DetectProject(path string, entries []fs.DirEntry) (*Project, error)
 }
 
-var allDetectors = []ProjectDetector{
+var allDetectors = []projectDetector{
 	// Order here determines precedence when two projects are in the same directory.
 	// This is unlikely to occur in practice, but reordering could help to break the tie in these cases.
-	&JavaDetector{},
-	&DotNetDetector{},
-	&PythonDetector{},
-	&JavaScriptDetector{},
+	&javaDetector{},
+	&dotNetDetector{},
+	&pythonDetector{},
+	&javaScriptDetector{},
 }
 
 // Detect detects projects located under a directory.
@@ -223,7 +223,7 @@ func detectUnder(root string, config detectConfig) ([]Project, error) {
 }
 
 // Detects if a directory belongs to any projects.
-func detectAny(detectors []ProjectDetector, path string, entries []fs.DirEntry) (*Project, error) {
+func detectAny(detectors []projectDetector, path string, entries []fs.DirEntry) (*Project, error) {
 	log.Printf("Detecting projects in directory: %s", path)
 	for _, detector := range detectors {
 		project, err := detector.DetectProject(path, entries)
@@ -235,7 +235,7 @@ func detectAny(detectors []ProjectDetector, path string, entries []fs.DirEntry) 
 			log.Printf("Found project %s at %s", project.Language, path)
 
 			// docker is an optional property of a project, and thus is different than other detectors
-			docker, err := DetectDockerProject(path, entries)
+			docker, err := detectDocker(path, entries)
 			if err != nil {
 				return nil, fmt.Errorf("detecting docker project: %w", err)
 			}

@@ -5,14 +5,14 @@ import (
 	"strings"
 )
 
-type JavaDetector struct {
+type javaDetector struct {
 }
 
-func (jd *JavaDetector) Language() Language {
+func (jd *javaDetector) Language() Language {
 	return Java
 }
 
-func (jd *JavaDetector) DetectProject(path string, entries []fs.DirEntry) (*Project, error) {
+func (jd *javaDetector) DetectProject(path string, entries []fs.DirEntry) (*Project, error) {
 	for _, entry := range entries {
 		if strings.ToLower(entry.Name()) == "pom.xml" {
 			return &Project{

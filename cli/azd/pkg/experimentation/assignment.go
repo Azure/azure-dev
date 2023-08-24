@@ -17,12 +17,14 @@ import (
 )
 
 // cCacheFileNamePattern is the pattern used to generate the cache file name. It is formatted
-// using the machine ID.
-const cCacheFileNamePattern = "mid-%s.cache"
+// using the machine ID, which is the cache key.
+const cCacheFileNamePattern string = "mid-%s.cache"
+
+const cCacheDirectoryName string = "experimentation"
 
 // MachineIdParameterName is the name of the parameter used to identify the machine ID in the assignment
 // request.
-const MachineIdParameterName = "machineid"
+const MachineIdParameterName string = "machineid"
 
 // AssignmentsManager manages interaction with the Assignments service, caching the results for 24 hours.
 type AssignmentsManager struct {
@@ -31,15 +33,15 @@ type AssignmentsManager struct {
 }
 
 // NewAssignmentsManager creates a new AssignmentManager, which will communicate with the TAS service. The
-// AssignmentManager caches the assignment information for 24 hours.
-
+// AssignmentManager caches the assignment information for 24 hours in files in the user's config directory
+// under the "experimentation" subdirectory.
 func NewAssignmentsManager(endpoint string, transport policy.Transporter) (*AssignmentsManager, error) {
 	configRoot, err := config.GetUserConfigDir()
 	if err != nil {
 		return nil, err
 	}
 
-	cacheRoot := filepath.Join(configRoot, "experiments")
+	cacheRoot := filepath.Join(configRoot, cCacheDirectoryName)
 	if err := os.MkdirAll(cacheRoot, osutil.PermissionDirectory); err != nil {
 		return nil, err
 	}
@@ -73,6 +75,8 @@ type AssignmentConfig struct {
 }
 
 // Assignment gets a the assignment information for this given machine.
+//
+// When making a request, the current machine ID is passed as a parameter, named "machineid".
 func (am *AssignmentsManager) Assignment(ctx context.Context) (*Assignment, error) {
 	machineId := resource.MachineId()
 
@@ -82,11 +86,13 @@ func (am *AssignmentsManager) Assignment(ctx context.Context) (*Assignment, erro
 	}
 
 	if cachedAssignment == nil {
-		assignment, err := am.client.GetVariantAssignments(ctx, &variantAssignmentRequest{
+		req := &variantAssignmentRequest{
 			Parameters: map[string]string{
 				MachineIdParameterName: resource.MachineId(),
 			},
-		})
+		}
+
+		assignment, err := am.client.GetVariantAssignments(ctx, req)
 		if err != nil {
 			return nil, err
 		}

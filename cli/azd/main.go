@@ -58,23 +58,27 @@ func main() {
 
 	ts := telemetry.GetTelemetrySystem()
 
-	// TODO(ellismg): Once we have our production service stood up, we will use the value here
-	// if AZD_DEBUG_EXPERIMENTATION_TAS_ENDPOINT is not set (we'll continue to allow
-	// AZD_DEBUG_EXPERIMENTATION_TAS_ENDPOINT to override the value, for testing).
-	if endpoint := os.Getenv("AZD_DEBUG_EXPERIMENTATION_TAS_ENDPOINT"); endpoint != "" {
-		if assignmentManager, err := experimentation.NewAssignmentsManager(
-			endpoint,
-			http.DefaultClient,
-		); err == nil {
-			if assignment, err := assignmentManager.Assignment(ctx); err != nil {
-				log.Printf("failed to get variant assignments: %v", err)
-			} else {
-				log.Printf("assignment context: %v", assignment.AssignmentContext)
-				tracing.SetGlobalAttributes(fields.ExpAssignmentContextKey.String(assignment.AssignmentContext))
-			}
+	assignmentEndpoint := "https://default.exp-tas.com/exptas49/b80dfe81-554e-48ec-a7bc-1dd773cd6a54-azdexpws/api/v1/tas"
+
+	// Allow overriding the assignment endpoint, either for local development (where you want to hit a private instance)
+	// or testing (we use this in our end to end tests to control assignment behavior for the CLI under test)/
+	if override := os.Getenv("AZD_DEBUG_EXPERIMENTATION_TAS_ENDPOINT"); override != "" {
+		log.Printf("using override assignment endpoint: %s, from AZD_DEBUG_EXPERIMENTATION_TAS_ENDPOINT", override)
+		assignmentEndpoint = override
+	}
+
+	if assignmentManager, err := experimentation.NewAssignmentsManager(
+		assignmentEndpoint,
+		http.DefaultClient,
+	); err == nil {
+		if assignment, err := assignmentManager.Assignment(ctx); err != nil {
+			log.Printf("failed to get variant assignments: %v", err)
 		} else {
-			log.Printf("failed to create assignment manager: %v", err)
+			log.Printf("assignment context: %v", assignment.AssignmentContext)
+			tracing.SetGlobalAttributes(fields.ExpAssignmentContextKey.String(assignment.AssignmentContext))
 		}
+	} else {
+		log.Printf("failed to create assignment manager: %v", err)
 	}
 
 	latest := make(chan semver.Version)

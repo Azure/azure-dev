@@ -207,7 +207,7 @@ func fetchLatestVersion(version chan<- semver.Version) {
 	// of time, in the user's home directory.
 	configDir, err := config.GetUserConfigDir()
 	if err != nil {
-		log.Printf("could not config directory: %v, skipping update check", err)
+		log.Printf("could not determine config directory: %v, skipping update check", err)
 		return
 	}
 

@@ -33,12 +33,11 @@ func Test_CLI_Experiment_AssignmentContextInTelemetry(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method == http.MethodGet && r.URL.Path == "/api/v1/tas" {
 			w.WriteHeader(http.StatusOK)
-			w.Write([]byte(`{"assignmentContext":"context:393182;"}`))
+			_, _ = w.Write([]byte(`{"assignmentContext":"context:393182;"}`))
 			return
 		}
 
-		w.WriteHeader(http.StatusNotFound)
-		return
+		w.WriteHeader(http.StatusInternalServerError)
 	}))
 	defer server.Close()
 

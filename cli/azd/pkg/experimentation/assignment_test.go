@@ -23,6 +23,7 @@ func TestMachineIdIsSent(t *testing.T) {
 	mockHttp.When(func(request *http.Request) bool {
 		return request.Method == http.MethodGet && request.URL.String() == mockEndpoint
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		// nolint: staticcheck
 		require.Equal(t, request.Header["X-ExP-Parameters"], []string{fmt.Sprintf("machineid=%s", resource.MachineId())})
 
 		res := treatmentAssignmentResponse{
@@ -128,11 +129,13 @@ func TestCache(t *testing.T) {
 	var cacheFile assignmentCacheFile
 	cacheData, err := os.ReadFile(filepath.Join(cacheRoot, cacheEntries[0].Name()))
 	require.NoError(t, err)
-	json.Unmarshal(cacheData, &cacheFile)
+	err = json.Unmarshal(cacheData, &cacheFile)
+	require.NoError(t, err)
 	cacheFile.ExpiresOn = time.Now().UTC().Add(-1 * time.Hour)
 	cacheData, err = json.Marshal(cacheFile)
 	require.NoError(t, err)
-	os.WriteFile(filepath.Join(cacheRoot, cacheEntries[0].Name()), cacheData, os.ModePerm)
+	err = os.WriteFile(filepath.Join(cacheRoot, cacheEntries[0].Name()), cacheData, os.ModePerm)
+	require.NoError(t, err)
 
 	// We'll return a new assigment context from the mock HTTP server, to simulate the
 	// user being assigned to a new experiment.

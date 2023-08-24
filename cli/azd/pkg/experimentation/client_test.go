@@ -22,9 +22,13 @@ func TestGetVariantAssignments(t *testing.T) {
 		return request.Method == http.MethodGet && request.URL.String() == endpoint
 	}).RespondFn(
 		func(request *http.Request) (*http.Response, error) {
+			// nolint: staticcheck
 			require.ElementsMatch(t, request.Header["X-ExP-Parameters"], []string{"key1=value1", "key2=value2"})
+			// nolint: staticcheck
 			require.Equal(t, request.Header["X-ExP-RequiredVariants"], []string{"variant1", "variant2"})
+			// nolint: staticcheck
 			require.Equal(t, request.Header["X-ExP-BlockedVariants"], []string{"variant3", "variant4"})
+			// nolint: staticcheck
 			require.Equal(t, request.Header["X-ExP-AssignmentScopes"], []string(nil))
 
 			res := treatmentAssignmentResponse{

@@ -178,9 +178,6 @@ func main() {
 	}
 }
 
-// azdConfigDir is the name of the folder where `azd` writes user wide configuration data.
-const azdConfigDir = ".azd"
-
 // updateCheckCacheFileName is the name of the file created in the azd configuration directory
 // which is used to cache version information for our up to date check.
 const updateCheckCacheFileName = "update-check.json"

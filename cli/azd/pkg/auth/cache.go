@@ -5,10 +5,22 @@ package auth
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"log"
+	"strings"
+	"unicode"
 
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
 )
+
+var contractFields = []string{
+	"AccessToken",
+	"RefreshToken",
+	"IdToken",
+	"Account",
+	"AppMetadata",
+}
 
 // The MSAL cache key for the current user. The stored MSAL cached data contains
 // all accounts with stored credentials, across all tenants.
@@ -36,6 +48,35 @@ func (a *msalCacheAdapter) Replace(ctx context.Context, cache cache.Unmarshaler,
 		return err
 	}
 
+	// In msal v1.0, keys were stored with mixed casing; in v1.1., it was changed to lower case.
+	// This handles upgrades where we have a v1.0 cache, and we need to convert it to v1.1,
+	// by normalizing the appropriate key entries.
+	c := map[string]json.RawMessage{}
+	if err = json.Unmarshal(val, &c); err == nil {
+		for _, contractKey := range contractFields {
+			if _, ok := c[contractKey]; ok {
+				msg := []byte(c[contractKey])
+				inner := map[string]json.RawMessage{}
+
+				if err := json.Unmarshal(msg, &inner); err == nil {
+					normalizeKeys(inner)
+					newMsg, err := json.Marshal(inner)
+					if err == nil {
+						c[contractKey] = json.RawMessage(newMsg)
+					}
+				}
+			}
+		}
+
+		if newVal, err := json.Marshal(c); err == nil {
+			val = newVal
+		} else {
+			log.Printf("failed to remarshal msal cache: %v", err)
+		}
+	} else {
+		log.Printf("failed to unmarshal msal cache: %v", err)
+	}
+
 	// Replace the msal cache contents with the new value retrieved.
 	if err := cache.Unmarshal(val); err != nil {
 		return err
@@ -50,6 +91,34 @@ func (a *msalCacheAdapter) Export(ctx context.Context, cache cache.Marshaler, _ 
 	}
 
 	return a.cache.Set(cCurrentUserCacheKey, val)
+}
+
+// Normalize keys by removing upper-case keys and replacing them with lower-case keys.
+// In the case where a lower-case key and upper-case key exists, the lower-case key entry
+// takes precedence.
+func normalizeKeys(m map[string]json.RawMessage) {
+	for k, v := range m {
+		if hasUpper(k) {
+			// An upper-case key entry exists. Delete it as it is no longer allowed.
+			delete(m, k)
+
+			// If a lower-case key entry exists, that supersedes it and we are done.
+			// Otherwise, we can safely upgrade the cache entry by re-adding it with lower case.
+			lower := strings.ToLower(k)
+			if _, isLower := m[lower]; !isLower {
+				m[lower] = v
+			}
+		}
+	}
+}
+
+func hasUpper(s string) bool {
+	for _, r := range s {
+		if unicode.IsUpper(r) && unicode.IsLetter(r) {
+			return true
+		}
+	}
+	return false
 }
 
 type Cache interface {

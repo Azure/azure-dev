@@ -115,6 +115,7 @@ pyapp
 pyvenv
 reauthentication
 relogin
+remarshal
 restoreapp
 retriable
 rzip

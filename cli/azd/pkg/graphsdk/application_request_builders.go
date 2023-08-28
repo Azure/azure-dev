@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
@@ -30,7 +31,7 @@ func (c *ApplicationListRequestBuilder) Get(ctx context.Context) (*ApplicationLi
 
 	res, err := c.client.pipeline.Do(req)
 	if err != nil {
-		return nil, httputil.HandleRequestError(res, err)
+		return nil, err
 	}
 
 	if !runtime.HasStatusCode(res, http.StatusOK) {
@@ -53,7 +54,7 @@ func (c *ApplicationListRequestBuilder) Post(ctx context.Context, application *A
 
 	res, err := c.client.pipeline.Do(req)
 	if err != nil {
-		return nil, httputil.HandleRequestError(res, err)
+		return nil, err
 	}
 
 	if !runtime.HasStatusCode(res, http.StatusCreated) {
@@ -84,6 +85,24 @@ func (c *ApplicationItemRequestBuilder) FederatedIdentityCredentialById(
 	return NewFederatedIdentityCredentialItemRequestBuilder(c.client, c.id, id)
 }
 
+func (c *ApplicationItemRequestBuilder) GetByAppId(ctx context.Context) (*Application, error) {
+	req, err := runtime.NewRequest(ctx, http.MethodGet, fmt.Sprintf("%s/applications(appId='%s')", c.client.host, c.id))
+	if err != nil {
+		return nil, fmt.Errorf("failed creating request: %w", err)
+	}
+
+	res, err := c.client.pipeline.Do(req)
+	if err != nil {
+		return nil, err
+	}
+
+	if !runtime.HasStatusCode(res, http.StatusOK) {
+		return nil, runtime.NewResponseError(res)
+	}
+
+	return httputil.ReadRawResponse[Application](res)
+}
+
 // Gets a Microsoft Graph Application for the specified application identifier
 func (c *ApplicationItemRequestBuilder) Get(ctx context.Context) (*Application, error) {
 	req, err := runtime.NewRequest(ctx, http.MethodGet, fmt.Sprintf("%s/applications/%s", c.client.host, c.id))
@@ -93,7 +112,7 @@ func (c *ApplicationItemRequestBuilder) Get(ctx context.Context) (*Application, 
 
 	res, err := c.client.pipeline.Do(req)
 	if err != nil {
-		return nil, httputil.HandleRequestError(res, err)
+		return nil, err
 	}
 
 	if !runtime.HasStatusCode(res, http.StatusOK) {
@@ -112,7 +131,7 @@ func (c *ApplicationItemRequestBuilder) Delete(ctx context.Context) error {
 
 	res, err := c.client.pipeline.Do(req)
 	if err != nil {
-		return httputil.HandleRequestError(res, err)
+		return err
 	}
 
 	if !runtime.HasStatusCode(res, http.StatusNoContent) {
@@ -143,7 +162,7 @@ func (c *ApplicationItemRequestBuilder) RemovePassword(ctx context.Context, keyI
 
 	res, err := c.client.pipeline.Do(req)
 	if err != nil {
-		return httputil.HandleRequestError(res, err)
+		return err
 	}
 
 	if !runtime.HasStatusCode(res, http.StatusNoContent) {
@@ -159,9 +178,11 @@ func (c *ApplicationItemRequestBuilder) AddPassword(ctx context.Context) (*Appli
 		return nil, fmt.Errorf("failed creating request: %w", err)
 	}
 
+	endDateTime := time.Now().Add(time.Hour * 24 * 180)
 	addPasswordRequest := ApplicationAddPasswordRequest{
 		PasswordCredential: ApplicationPasswordCredential{
 			DisplayName: convert.RefOf("Azure Developer CLI"),
+			EndDateTime: &endDateTime,
 		},
 	}
 
@@ -172,7 +193,7 @@ func (c *ApplicationItemRequestBuilder) AddPassword(ctx context.Context) (*Appli
 
 	res, err := c.client.pipeline.Do(req)
 	if err != nil {
-		return nil, httputil.HandleRequestError(res, err)
+		return nil, err
 	}
 
 	if !runtime.HasStatusCode(res, http.StatusOK) {

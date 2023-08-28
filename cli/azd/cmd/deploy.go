@@ -169,7 +169,7 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 
 	if da.env.GetSubscriptionId() == "" {
 		return nil, errors.New(
-			"infrastructure has not been provisioned. Please run `azd provision`",
+			"infrastructure has not been provisioned. Run `azd provision`",
 		)
 	}
 
@@ -242,14 +242,19 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		} else {
 			//  --from-package not set, package the application
 			packageTask := da.serviceManager.Package(ctx, svc, nil)
+			done := make(chan struct{})
 			go func() {
 				for packageProgress := range packageTask.Progress() {
 					progressMessage := fmt.Sprintf("Deploying service %s (%s)", svc.Name, packageProgress.Message)
 					da.console.ShowSpinner(ctx, progressMessage, input.Step)
 				}
+				close(done)
 			}()
 
 			packageResult, err = packageTask.Await()
+			// wait for console updates to complete
+			<-done
+			// do not stop progress here as next step is to deploy
 			if err != nil {
 				da.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 				return nil, err
@@ -257,20 +262,23 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		}
 
 		deployTask := da.serviceManager.Deploy(ctx, svc, packageResult)
+		done := make(chan struct{})
 		go func() {
 			for deployProgress := range deployTask.Progress() {
 				progressMessage := fmt.Sprintf("Deploying service %s (%s)", svc.Name, deployProgress.Message)
 				da.console.ShowSpinner(ctx, progressMessage, input.Step)
 			}
+			close(done)
 		}()
 
 		deployResult, err := deployTask.Await()
+		// wait for console updates to complete
+		<-done
+		da.console.StopSpinner(ctx, stepMessage, input.GetStepResultFormat(err))
 		if err != nil {
-			da.console.StopSpinner(ctx, stepMessage, input.StepFailed)
 			return nil, err
 		}
 
-		da.console.StopSpinner(ctx, stepMessage, input.StepDone)
 		deployResults[svc.Name] = deployResult
 
 		// report deploy outputs
@@ -290,8 +298,8 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			Header:   fmt.Sprintf("Your application was deployed to Azure in %s.", ux.DurationAsText(time.Since(startTime))),
-			FollowUp: getResourceGroupFollowUp(ctx, da.formatter, da.projectConfig, da.resourceManager, da.env),
+			Header:   fmt.Sprintf("Your application was deployed to Azure in %s.", ux.DurationAsText(since(startTime))),
+			FollowUp: getResourceGroupFollowUp(ctx, da.formatter, da.projectConfig, da.resourceManager, da.env, false),
 		},
 	}, nil
 }

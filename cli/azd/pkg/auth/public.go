@@ -11,8 +11,8 @@ import (
 
 // publicClient looks like a subset of the public.Client surface area, with small tweaks, to aid testing.
 type publicClient interface {
-	Accounts() []public.Account
-	RemoveAccount(public.Account) error
+	Accounts(ctx context.Context) ([]public.Account, error)
+	RemoveAccount(ctx context.Context, account public.Account) error
 	AcquireTokenInteractive(context.Context, []string, ...public.AcquireInteractiveOption) (public.AuthResult, error)
 	AcquireTokenByDeviceCode(context.Context, []string, ...public.AcquireByDeviceCodeOption) (deviceCodeResult, error)
 	AcquireTokenSilent(context.Context, []string, ...public.AcquireSilentOption) (public.AuthResult, error)
@@ -20,6 +20,7 @@ type publicClient interface {
 
 type deviceCodeResult interface {
 	Message() string
+	UserCode() string
 	AuthenticationResult(context.Context) (public.AuthResult, error)
 }
 
@@ -27,12 +28,12 @@ type msalPublicClientAdapter struct {
 	client *public.Client
 }
 
-func (m *msalPublicClientAdapter) Accounts() []public.Account {
-	return m.client.Accounts()
+func (m *msalPublicClientAdapter) Accounts(ctx context.Context) ([]public.Account, error) {
+	return m.client.Accounts(ctx)
 }
 
-func (m *msalPublicClientAdapter) RemoveAccount(account public.Account) error {
-	return m.client.RemoveAccount(account)
+func (m *msalPublicClientAdapter) RemoveAccount(ctx context.Context, account public.Account) error {
+	return m.client.RemoveAccount(ctx, account)
 }
 
 func (m *msalPublicClientAdapter) AcquireTokenInteractive(
@@ -73,6 +74,10 @@ type msalDeviceCodeAdapter struct {
 
 func (m *msalDeviceCodeAdapter) Message() string {
 	return m.code.Result.Message
+}
+
+func (m *msalDeviceCodeAdapter) UserCode() string {
+	return m.code.Result.UserCode
 }
 
 func (m *msalDeviceCodeAdapter) AuthenticationResult(ctx context.Context) (public.AuthResult, error) {

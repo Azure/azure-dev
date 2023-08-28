@@ -38,7 +38,7 @@ func getExecutionEnvironment() string {
 }
 
 func execEnvFromCaller() string {
-	userAgent := internal.GetCallerUserAgent()
+	userAgent := os.Getenv(internal.AzdUserAgentEnvVar)
 
 	if strings.Contains(userAgent, internal.VsCodeAgentPrefix) {
 		return fields.EnvVisualStudioCode
@@ -63,7 +63,7 @@ func execEnvForHosts() string {
 
 func execEnvModifiers() []string {
 	modifiers := []string{}
-	userAgent := internal.GetCallerUserAgent()
+	userAgent := os.Getenv(internal.AzdUserAgentEnvVar)
 
 	if strings.Contains(userAgent, "azure_app_space_portal") {
 		modifiers = append(modifiers, fields.EnvModifierAzureSpace)

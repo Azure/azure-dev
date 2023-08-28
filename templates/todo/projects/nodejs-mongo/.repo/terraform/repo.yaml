@@ -106,7 +106,7 @@ repo:
       to: ./.azdo/pipelines/azure-dev.yml
 
     # Github workflows for terraform
-    - from: ../../../../../common/.github/workflows/terraform
+    - from: ../../../../../common/.github/workflows/nodejs/terraform
       to: ./.github/workflows
 
     - from: ../../../../../common/infra/terraform/core/monitor/applicationinsights
@@ -137,12 +137,8 @@ repo:
       to: ./infra/modules/apim-api
       
     # .devcontainer common (devcontainer.json)
-    - from: ../../../../../common/.devcontainer/devcontainer.json/nodejs/terraform
-      to: ./.devcontainer
-
-    # .devcontainer common (Dockerfile)
-    - from: ../../../../../common/.devcontainer/Dockerfile/base
-      to: ./.devcontainer
+    - from: ../../../../../common/.devcontainer/devcontainer.json/nodejs/terraform/devcontainer.json
+      to: ./.devcontainer/devcontainer.json
 
     # Assets common
     - from: ../../../../common/assets

@@ -58,6 +58,7 @@ virtuals
 VSIX
 webapprouting
 webfonts
+webmvc
 webui
 wwwroot
 passwordless
@@ -66,6 +67,7 @@ datasource
 DATASOURCE
 rdbms
 RDBMS
+snakeyaml
 sslmode
 pgaadauth
 pqsl
@@ -74,3 +76,9 @@ PGPASSWORD
 pathexpand
 dbname
 psqladmin
+psqluser
+PSQLADMINNAME
+PSQLADMINPASSWORD
+PSQLUSERNAME
+PSQLUSERPASSWORD
+DBSERVER

@@ -124,7 +124,7 @@ func (t *aksTarget) Deploy(
 			}
 
 			// Login to AKS cluster
-			clusterName, has := t.env.Values[environment.AksClusterEnvVarName]
+			clusterName, has := t.env.LookupEnv(environment.AksClusterEnvVarName)
 			if !has {
 				task.SetError(fmt.Errorf(
 					"could not determine AKS cluster, ensure %s is set as an output of your infrastructure",
@@ -192,36 +192,14 @@ func (t *aksTarget) Deploy(
 				return
 			}
 
-			_, err = t.kubectl.ApplyWithInput(ctx, namespaceResult.Stdout, nil)
+			_, err = t.kubectl.ApplyWithStdIn(ctx, namespaceResult.Stdout, nil)
 			if err != nil {
 				task.SetError(fmt.Errorf("failed applying kube namespace: %w", err))
 				return
 			}
 
-			task.SetProgress(NewServiceProgress("Creating k8s secrets"))
-			secretResult, err := t.kubectl.CreateSecretGenericFromLiterals(
-				ctx,
-				"azd",
-				t.env.Environ(),
-				&kubectl.KubeCliFlags{
-					Namespace: namespace,
-					DryRun:    kubectl.DryRunTypeClient,
-					Output:    kubectl.OutputTypeYaml,
-				},
-			)
-			if err != nil {
-				task.SetError(fmt.Errorf("failed setting kube secrets: %w", err))
-				return
-			}
-
-			_, err = t.kubectl.ApplyWithInput(ctx, secretResult.Stdout, nil)
-			if err != nil {
-				task.SetError(fmt.Errorf("failed applying kube secrets: %w", err))
-				return
-			}
-
 			task.SetProgress(NewServiceProgress("Applying k8s manifests"))
-			t.kubectl.SetEnv(t.env.Values)
+			t.kubectl.SetEnv(t.env.Dotenv())
 			deploymentPath := serviceConfig.K8s.DeploymentPath
 			if deploymentPath == "" {
 				deploymentPath = defaultDeploymentPath
@@ -509,7 +487,7 @@ func (t *aksTarget) getIngressEndpoints(
 
 	var endpoints []string
 	var protocol string
-	if ingress.Spec.Tls == nil {
+	if len(ingress.Spec.Tls) == 0 {
 		protocol = "http"
 	} else {
 		protocol = "https"

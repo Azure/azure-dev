@@ -25,6 +25,8 @@ func NewRunResult(code int, stdout, stderr string) RunResult {
 
 // ExitError is the error returned when a command unsuccessfully exits.
 type ExitError struct {
+	// The path or name of the command being invoked.
+	Cmd string
 	// The exit code of the command.
 	ExitCode int
 
@@ -39,10 +41,13 @@ type ExitError struct {
 
 func NewExitError(
 	exitErr exec.ExitError,
+	cmd string,
 	stdOut string,
 	stdErr string,
 	outputAvailable bool) error {
 	return &ExitError{
+		ExitCode:        exitErr.ExitCode(),
+		Cmd:             cmd,
 		err:             exitErr,
 		stdOut:          stdOut,
 		stdErr:          stdErr,
@@ -50,19 +55,21 @@ func NewExitError(
 	}
 }
 
+// Error augments the underlying exec.ExitError's Error with the stdout and stderr output of the command, if available.
 func (e *ExitError) Error() string {
-	if e.err.Exited() {
-		if !e.outputAvailable {
-			return fmt.Sprintf("exit code: %d", e.err.ExitCode())
-		}
+	var errorPrefix string
 
-		return fmt.Sprintf(
-			"exit code: %d, stdout: %s, stderr: %s",
-			e.err.ExitCode(),
-			e.stdOut,
-			e.stdErr)
+	// Handle the case where the underlying error represents an exit code error. In this case we'd rather use "exit code"
+	// and not "exit status" as the error message, to make it easier to find in logs.
+	if e.err.Exited() {
+		errorPrefix = fmt.Sprintf("exit code: %d", e.err.ExitCode())
+	} else {
+		errorPrefix = e.err.Error()
 	}
 
-	// for a non-exit-code error (such as a signal), just return the underlying exec.ExitError message
-	return e.err.Error()
+	if !e.outputAvailable {
+		return errorPrefix
+	}
+
+	return fmt.Sprintf("%s, stdout: %s, stderr: %s", errorPrefix, e.stdOut, e.stdErr)
 }

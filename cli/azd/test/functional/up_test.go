@@ -110,7 +110,7 @@ func Test_CLI_Up_Down_WebApp(t *testing.T) {
 	secrets, err = commandRunner.Run(ctx, runArgs)
 	require.NoError(t, err)
 
-	_, err = cli.RunCommand(ctx, "env", "refresh")
+	_, err = cli.RunCommand(ctx, "env", "refresh", envName)
 	require.NoError(t, err)
 
 	env, err = godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
@@ -260,6 +260,14 @@ func Test_CLI_Up_Down_ContainerApp(t *testing.T) {
 
 	_, err = cli.RunCommand(ctx, "infra", "delete", "--force", "--purge")
 	require.NoError(t, err)
+
+	// As part of deleting the infrastructure, outputs of the infrastructure such as "WEBSITE_URL" should
+	// have been removed from the environment.
+	env, err = godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
+	require.NoError(t, err)
+
+	_, has = env["WEBSITE_URL"]
+	require.False(t, has, "WEBSITE_URL should have been removed from the environment as part of infrastructure removal")
 }
 
 func Test_CLI_Up_ResourceGroupScope(t *testing.T) {
@@ -279,7 +287,7 @@ func Test_CLI_Up_ResourceGroupScope(t *testing.T) {
 	cred, err := azidentity.NewAzureCLICredential(nil)
 	require.NoError(t, err)
 
-	rgClient, err := armresources.NewResourceGroupsClient(testSubscriptionId, cred, nil)
+	rgClient, err := armresources.NewResourceGroupsClient(cfg.SubscriptionID, cred, nil)
 	require.NoError(t, err)
 
 	_, err = rgClient.CreateOrUpdate(context.Background(), resourceGroupName, armresources.ResourceGroup{

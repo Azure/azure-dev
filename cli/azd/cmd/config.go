@@ -15,6 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/spf13/cobra"
 )
 
@@ -140,11 +141,15 @@ $ azd config set defaults.location eastus`,
 			Long:  `Resets all configuration in ` + userConfigPath + ` to the default.`,
 		},
 		ActionResolver: newConfigResetAction,
+		FlagsResolver:  newConfigResetFlags,
 	})
 
 	group.Add("list-alpha", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
 			Short: "Display the list of available features in alpha stage.",
+		},
+		HelpOptions: actions.ActionHelpOptions{
+			Footer: getCmdListAlphaHelpFooter,
 		},
 		ActionResolver: newConfigListAlphaAction,
 	})
@@ -301,29 +306,83 @@ func (a *configUnsetAction) Run(ctx context.Context) (*actions.ActionResult, err
 
 // azd config reset
 
+type configResetActionFlags struct {
+	force bool
+}
+
+func newConfigResetFlags(cmd *cobra.Command) *configResetActionFlags {
+	flags := &configResetActionFlags{}
+	cmd.Flags().BoolVarP(&flags.force, "force", "f", false, "Force reset without confirmation.")
+
+	return flags
+}
+
 type configResetAction struct {
+	console       input.Console
 	configManager config.UserConfigManager
+	flags         *configResetActionFlags
 	args          []string
 }
 
-func newConfigResetAction(configManager config.UserConfigManager, args []string) actions.Action {
+func newConfigResetAction(
+	console input.Console,
+	configManager config.UserConfigManager,
+	flags *configResetActionFlags, args []string,
+) actions.Action {
 	return &configResetAction{
+		console:       console,
 		configManager: configManager,
+		flags:         flags,
 		args:          args,
 	}
 }
 
 // Executes the `azd config reset` action
 func (a *configResetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	emptyConfig := config.NewEmptyConfig()
-	return nil, a.configManager.Save(emptyConfig)
+	a.console.MessageUxItem(ctx, &ux.MessageTitle{
+		Title: "Reset configuration (azd config reset)",
+	})
+
+	spinnerMessage := "Resetting azd configuration"
+	a.console.ShowSpinner(ctx, spinnerMessage, input.Step)
+
+	if !a.flags.force {
+		// nolint:lll
+		warningMessage := "WARNING: Resetting azd configuration will remove all stored values including defaults, feature flags and custom template sources.\n\n"
+		a.console.Message(ctx, output.WithWarningFormat(warningMessage))
+
+		confirm, err := a.console.Confirm(ctx, input.ConsoleOptions{
+			Message:      "Continue with reset?",
+			DefaultValue: false,
+		})
+
+		if !confirm || err != nil {
+			a.console.StopSpinner(ctx, spinnerMessage, input.StepSkipped)
+			if err != nil {
+				return nil, fmt.Errorf("user cancelled reset confirmation, %w", err)
+			}
+			return nil, nil
+		}
+	}
+
+	err := a.configManager.Save(config.NewEmptyConfig())
+	a.console.StopSpinner(ctx, spinnerMessage, input.GetStepResultFormat(err))
+	if err != nil {
+		return nil, err
+	}
+
+	return &actions.ActionResult{
+		Message: &actions.ResultMessage{
+			Header: "Configuration reset",
+		},
+	}, nil
 }
 
 func getCmdConfigHelpDescription(*cobra.Command) string {
 	return generateCmdHelpDescription(
 		"Manage the Azure Developer CLI user configuration, which includes your default Azure subscription and location.",
 		[]string{
-			formatHelpNote(fmt.Sprintf("Applications are initially configures when you run %s.",
+			formatHelpNote(fmt.Sprintf("Applications are initially configured when you run %s.",
 				output.WithHighLightFormat("azd init"),
 			)),
 			formatHelpNote(fmt.Sprintf("The subscription and location you select will be stored at: %s.",
@@ -384,4 +443,24 @@ func newConfigListAlphaAction(
 		console:              console,
 		args:                 args,
 	}
+}
+
+func getCmdListAlphaHelpFooter(*cobra.Command) string {
+	return generateCmdHelpSamplesBlock(map[string]string{
+		"Displays a list of all available features in the alpha stage": output.WithHighLightFormat(
+			"azd config list-alpha",
+		),
+		"Turn on a specific alpha feature": output.WithHighLightFormat(
+			"azd config set alpha.<feature-name> on",
+		),
+		"Turn off a specific alpha feature": output.WithHighLightFormat(
+			"azd config set alpha.<feature-name> off",
+		),
+		"Turn on all alpha features": output.WithHighLightFormat(
+			"azd config set alpha.all on",
+		),
+		"Turn off all alpha features": output.WithHighLightFormat(
+			"azd config set alpha.all off",
+		),
+	})
 }

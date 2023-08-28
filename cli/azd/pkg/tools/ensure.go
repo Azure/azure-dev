@@ -58,7 +58,7 @@ func EnsureInstalled(ctx context.Context, tools ...ExternalTool) error {
 			}
 		} else if errors.Is(err, osexec.ErrNotFound) {
 			allErrors = append(
-				allErrors, fmt.Errorf("%s is not installed, please see %s to install", tool.Name(), tool.InstallUrl()))
+				allErrors, fmt.Errorf("%s is not installed, see %s to install", tool.Name(), tool.InstallUrl()))
 
 		} else if err != nil {
 			errorMsg := err.Error()

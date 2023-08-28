@@ -4,18 +4,18 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"slices"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockarmresources"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockconfig"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockhttp"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/exp/slices"
 )
 
 func Test_GetAccountDefaults(t *testing.T) {
@@ -688,7 +688,7 @@ func NewSubscriptionsManagerWithCache(
 		service:       service,
 		cache:         cache,
 		principalInfo: &principalInfoProviderMock{},
-		msg:           &mockMessaging{},
+		console:       mockinput.NewMockConsole(),
 	}
 }
 
@@ -721,15 +721,4 @@ func (b *BypassSubscriptionsCache) Clear() error {
 
 func NewBypassSubscriptionsCache() *BypassSubscriptionsCache {
 	return &BypassSubscriptionsCache{}
-}
-
-type mockMessaging struct {
-}
-
-func (m *mockMessaging) Message(ctx context.Context, message string) {
-}
-
-func (m *mockMessaging) ShowProgress(ctx context.Context, message string) input.ProgressStopper {
-	return func() {
-	}
 }

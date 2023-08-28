@@ -4,6 +4,7 @@
 package input
 
 import (
+	"bufio"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -15,6 +16,7 @@ import (
 	"time"
 
 	"github.com/AlecAivazis/survey/v2"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -44,7 +46,12 @@ type ConsoleShim interface {
 	GetFormatter() output.Formatter
 }
 
-type PromptValidator func(response string) error
+// ShowPreviewerOptions provide the settings to start a console previewer.
+type ShowPreviewerOptions struct {
+	Prefix       string
+	MaxLineCount int
+	Title        string
+}
 
 type Console interface {
 	// Prints out a message to the underlying console write
@@ -59,6 +66,12 @@ type Console interface {
 	// Set lastMessage to empty string to clear the spinner message instead of a displaying a last message
 	// If there is no spinner running, this is a no-op function
 	StopSpinner(ctx context.Context, lastMessage string, format SpinnerUxType)
+	// Preview mode brings an embedded console within the current session.
+	// Use nil for options to use defaults.
+	// Use the returned io.Writer to produce the output within the previewer
+	ShowPreviewer(ctx context.Context, options *ShowPreviewerOptions) io.Writer
+	// Finalize the preview mode from console.
+	StopPreviewer(ctx context.Context)
 	// Determines if there is a current spinner running.
 	IsSpinnerRunning(ctx context.Context) bool
 	// Determines if the current spinner is an interactive spinner, where messages are updated periodically.
@@ -71,6 +84,8 @@ type Console interface {
 	Select(ctx context.Context, options ConsoleOptions) (int, error)
 	// Prompts the user to confirm an operation
 	Confirm(ctx context.Context, options ConsoleOptions) (bool, error)
+	// block terminal until the next enter
+	WaitForEnter()
 	// Sets the underlying writer for the console
 	SetWriter(writer io.Writer)
 	// Gets the underlying writer for the console
@@ -89,13 +104,21 @@ type AskerConsole struct {
 	writer     io.Writer
 	formatter  output.Formatter
 	isTerminal bool
+	noPrompt   bool
 
 	spinner                 *yacspin.Spinner
 	spinnerTerminalMode     yacspin.TerminalMode
 	spinnerTerminalModeOnce sync.Once
 
-	currentIndent string
-	consoleWidth  int
+	currentIndent         string
+	consoleWidth          int
+	previewer             *progressLog
+	initialWriter         io.Writer
+	currentSpinnerMessage string
+	// writeControlMutex ensures no race conditions happen while methods are writing to the terminal.
+	// AskerConsole can be used as a singleton, hence, more than one component can invoke its methods at the same time.
+	// A method should lock this mutex if no other writing to he terminal should occur at the same time.
+	writeControlMutex sync.Mutex
 }
 
 type ConsoleOptions struct {
@@ -152,6 +175,7 @@ func (c *AskerConsole) WarnForFeature(ctx context.Context, key alpha.FeatureId) 
 	if shouldWarn(key) {
 		c.MessageUxItem(ctx, &ux.MultilineMessage{
 			Lines: []string{
+				"",
 				output.WithWarningFormat("WARNING: Feature '%s' is in alpha stage.", string(key)),
 				fmt.Sprintf("To learn more about alpha features and their support, visit %s.",
 					output.WithLinkFormat("https://aka.ms/azd-feature-stages")),
@@ -187,6 +211,38 @@ func (c *AskerConsole) MessageUxItem(ctx context.Context, item ux.UxItem) {
 	}
 }
 
+func defaultShowPreviewerOptions() *ShowPreviewerOptions {
+	return &ShowPreviewerOptions{
+		MaxLineCount: 5,
+	}
+}
+
+func (c *AskerConsole) ShowPreviewer(ctx context.Context, options *ShowPreviewerOptions) io.Writer {
+	c.writeControlMutex.Lock()
+	defer c.writeControlMutex.Unlock()
+
+	// auto-stop any spinner
+	currentMsg := c.currentSpinnerMessage
+	c.StopSpinner(ctx, "", Step)
+
+	if options == nil {
+		options = defaultShowPreviewerOptions()
+	}
+
+	c.previewer = NewProgressLog(options.MaxLineCount, options.Prefix, options.Title, c.currentIndent+currentMsg)
+	c.previewer.Start()
+	c.writer = c.previewer
+	return &consolePreviewerWriter{
+		previewer: &c.previewer,
+	}
+}
+
+func (c *AskerConsole) StopPreviewer(ctx context.Context) {
+	c.previewer.Stop()
+	c.previewer = nil
+	c.writer = c.initialWriter
+}
+
 const cPostfix = "..."
 
 func (c *AskerConsole) spinnerText(title, charset string) string {
@@ -200,6 +256,9 @@ func (c *AskerConsole) spinnerText(title, charset string) string {
 }
 
 func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format SpinnerUxType) {
+	c.writeControlMutex.Lock()
+	defer c.writeControlMutex.Unlock()
+
 	if c.formatter != nil && c.formatter.Kind() == output.JsonFormat {
 		// Spinner is disabled when using json format.
 		return
@@ -211,6 +270,12 @@ func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format Spi
 		return
 	}
 
+	if c.previewer != nil {
+		// spinner is not compatible with previewer.
+		c.previewer.Header(c.currentIndent + title)
+		return
+	}
+
 	// mutating an existing spinner brings issues on how the messages are formatted
 	// so, instead of mutating, we stop any current spinner and replaced it for a new one
 	if c.spinner != nil {
@@ -218,6 +283,7 @@ func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format Spi
 	}
 
 	charSet := c.getCharset(format)
+	c.currentSpinnerMessage = title
 
 	// determine the terminal mode once
 	c.spinnerTerminalModeOnce.Do(func() {
@@ -312,6 +378,7 @@ func (c *AskerConsole) getIndent(format SpinnerUxType) string {
 }
 
 func (c *AskerConsole) StopSpinner(ctx context.Context, lastMessage string, format SpinnerUxType) {
+	c.currentSpinnerMessage = ""
 	if c.formatter != nil && c.formatter.Kind() == output.JsonFormat {
 		// Spinner is disabled when using json format.
 		return
@@ -333,6 +400,7 @@ func (c *AskerConsole) StopSpinner(ctx context.Context, lastMessage string, form
 		c.spinner.StopCharacter(c.getStopChar(format))
 	}
 
+	_ = c.spinner.Pause()
 	c.spinner.StopMessage(lastMessage)
 	_ = c.spinner.Stop()
 }
@@ -440,6 +508,20 @@ func (c *AskerConsole) Confirm(ctx context.Context, options ConsoleOptions) (boo
 	return response, nil
 }
 
+// wait until the next enter
+func (c *AskerConsole) WaitForEnter() {
+	if c.noPrompt {
+		return
+	}
+
+	inputScanner := bufio.NewScanner(c.handles.Stdin)
+	if scan := inputScanner.Scan(); !scan {
+		if err := inputScanner.Err(); err != nil {
+			log.Printf("error while waiting for enter: %v", err)
+		}
+	}
+}
+
 // Gets the underlying writer for the console
 func (c *AskerConsole) GetWriter() io.Writer {
 	return c.writer
@@ -471,6 +553,8 @@ func NewConsole(noPrompt bool, isTerminal bool, w io.Writer, handles ConsoleHand
 		formatter:     formatter,
 		isTerminal:    isTerminal,
 		consoleWidth:  getConsoleWidth(),
+		initialWriter: w,
+		noPrompt:      noPrompt,
 	}
 }
 
@@ -482,67 +566,25 @@ func GetStepResultFormat(result error) SpinnerUxType {
 	return formatResult
 }
 
-// Handle doing interactive calls. It check if there's a spinner running to pause it before doing interactive actions.
-func (c *AskerConsole) doInteraction(fn func(c *AskerConsole) error) error {
-
+// Handle doing interactive calls. It checks if there's a spinner running to pause it before doing interactive actions.
+func (c *AskerConsole) doInteraction(promptFn func(c *AskerConsole) error) error {
 	if c.spinner != nil && c.spinner.Status() == yacspin.SpinnerRunning {
 		_ = c.spinner.Pause()
 
-		// calling fn might return an error. This defer make sure to recover the spinner
-		// status.
+		// Ensure the spinner is always resumed
 		defer func() {
 			_ = c.spinner.Unpause()
 		}()
 	}
 
-	if err := fn(c); err != nil {
-		return err
-	}
-	return nil
-}
+	// Track total time for promptFn.
+	// It includes the time spent in rendering the prompt (likely <1ms)
+	// before the user has a chance to interact with the prompt.
+	start := time.Now()
+	defer func() {
+		tracing.InteractTimeMs.Add(time.Since(start).Milliseconds())
+	}()
 
-type ProgressStopper func()
-
-// A messaging system that displays messages. Use this for application logic components that shouldn't be interactive
-// or require any formatting, but needs simple messages to be displayed.
-//
-// Currently, this outputs to console.
-// For ShowProgress which renders a spinner, priority is given to higher-level components
-// that have a spinner already running.
-type Messaging interface {
-	// Prints out a message to the underlying console write
-	Message(ctx context.Context, message string)
-	// Displays a progress message. Returns a closer() func that stops the progress message display.
-	ShowProgress(ctx context.Context, message string) ProgressStopper
-}
-
-// A messaging system that displays messages to console.
-type consoleMessaging struct {
-	console Console
-}
-
-func NewConsoleMessaging(console Console) Messaging {
-	return &consoleMessaging{
-		console: console,
-	}
-}
-
-func (m *consoleMessaging) Message(ctx context.Context, message string) {
-	m.console.Message(ctx, message)
-}
-
-// ShowProgress displays a spinner on console, if one isn't already running.
-//
-// Note that it is still possible to override existing spinners in multi-thread or multi-goroutine scenarios.
-func (m *consoleMessaging) ShowProgress(ctx context.Context, message string) ProgressStopper {
-	// This should be lower priority than any running console spinners
-	if m.console.IsSpinnerRunning(ctx) {
-		log.Println(message)
-		return func() {}
-	}
-
-	m.console.ShowSpinner(ctx, message, Step)
-	return func() {
-		m.console.StopSpinner(ctx, "", StepDone)
-	}
+	// Execute the interactive prompt
+	return promptFn(c)
 }

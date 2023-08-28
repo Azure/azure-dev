@@ -7,15 +7,16 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/blang/semver/v4"
-	"golang.org/x/exp/slices"
 	"gopkg.in/yaml.v3"
 )
 
@@ -49,7 +50,7 @@ func Parse(ctx context.Context, yamlContent string) (*ProjectConfig, error) {
 
 	if err := yaml.Unmarshal([]byte(yamlContent), &projectConfig); err != nil {
 		return nil, fmt.Errorf(
-			"unable to parse azure.yaml file. Please check the format of the file, "+
+			"unable to parse azure.yaml file. Check the format of the file, "+
 				"and also verify you have the latest version of the CLI: %w",
 			err,
 		)
@@ -72,6 +73,12 @@ func Parse(ctx context.Context, yamlContent string) (*ProjectConfig, error) {
 		}
 	}
 
+	var err error
+	projectConfig.Infra.Provider, err = provisioning.ParseProvider(projectConfig.Infra.Provider)
+	if err != nil {
+		return nil, fmt.Errorf("parsing project %s: %w", projectConfig.Name, err)
+	}
+
 	for key, svc := range projectConfig.Services {
 		svc.Name = key
 		svc.Project = &projectConfig
@@ -84,6 +91,11 @@ func Parse(ctx context.Context, yamlContent string) (*ProjectConfig, error) {
 		}
 
 		svc.Host, err = parseServiceHost(svc.Host)
+		if err != nil {
+			return nil, fmt.Errorf("parsing service %s: %w", svc.Name, err)
+		}
+
+		svc.Infra.Provider, err = provisioning.ParseProvider(svc.Infra.Provider)
 		if err != nil {
 			return nil, fmt.Errorf("parsing service %s: %w", svc.Name, err)
 		}

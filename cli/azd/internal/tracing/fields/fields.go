@@ -55,6 +55,12 @@ const (
 	InstalledByKey = attribute.Key("service.installer")
 )
 
+// Fields related to the experimentation platform
+const (
+	// The assignment context as returned by the experimentation platform.
+	ExpAssignmentContextKey = attribute.Key("exp.assignmentContext")
+)
+
 // Context level fields. Availability depends on the command running.
 const (
 	// Object ID of the principal.
@@ -157,4 +163,56 @@ const (
 	AccountSubscriptionsListTenantsFound = attribute.Key("tenants.found")
 	// Number of tenants where listing of subscriptions failed
 	AccountSubscriptionsListTenantsFailed = attribute.Key("tenants.failed")
+)
+
+// Error related fields
+const (
+	// Error code that describes an error.
+	ErrCode = attribute.Key("error.code")
+
+	// Inner error.
+	ErrInner = attribute.Key("error.inner")
+
+	// The frame of the error.
+	ErrFrame = attribute.Key("error.frame")
+)
+
+// Service related fields.
+const (
+	// Hostname of the service.
+	// The list of allowed values can be found in [Domains].
+	ServiceHost = attribute.Key("service.host")
+
+	// Name of the service.
+	ServiceName = attribute.Key("service.name")
+
+	// Status code of a response returned by the service.
+	// For HTTP, this corresponds to the HTTP status code.
+	ServiceStatusCode = attribute.Key("service.statusCode")
+
+	// Method of a request to the service.
+	// For HTTP, this corresponds to the HTTP method of the request made.
+	ServiceMethod = attribute.Key("service.method")
+
+	// An error code returned by the service in a response.
+	// For HTTP, the error code can be found in the response header or body.
+	ServiceErrorCode = attribute.Key("service.errorCode")
+
+	// Correlation ID for a request to the service.
+	ServiceCorrelationId = attribute.Key("service.correlationId")
+)
+
+// Tool related fields
+const (
+	// The name of the tool.
+	ToolName = attribute.Key("tool.name")
+
+	// The exit code of the tool after invocation.
+	ToolExitCode = attribute.Key("tool.exitCode")
+)
+
+// Performance related fields
+const (
+	// The time spent waiting on user interaction in milliseconds.
+	PerfInteractTime = attribute.Key("perf.interact_time")
 )

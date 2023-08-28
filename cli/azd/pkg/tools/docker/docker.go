@@ -3,7 +3,10 @@ package docker
 import (
 	"context"
 	"fmt"
+	"io"
 	"log"
+	"os"
+	"path/filepath"
 	"regexp"
 	"strconv"
 	"strings"
@@ -25,6 +28,8 @@ type Docker interface {
 		platform string,
 		buildContext string,
 		name string,
+		buildArgs []string,
+		buildProgress io.Writer,
 	) (string, error)
 	Tag(ctx context.Context, cwd string, imageName string, tag string) error
 	Push(ctx context.Context, cwd string, tag string) error
@@ -41,11 +46,14 @@ type docker struct {
 }
 
 func (d *docker) Login(ctx context.Context, loginServer string, username string, password string) error {
-	_, err := d.executeCommand(ctx, ".", "login",
+	runArgs := exec.NewRunArgs(
+		"docker", "login",
 		"--username", username,
-		"--password", password,
-		loginServer)
+		"--password-stdin",
+		loginServer,
+	).WithStdIn(strings.NewReader(password))
 
+	_, err := d.commandRunner.Run(ctx, runArgs)
 	if err != nil {
 		return fmt.Errorf("failed logging into docker: %w", err)
 	}
@@ -53,10 +61,9 @@ func (d *docker) Login(ctx context.Context, loginServer string, username string,
 	return nil
 }
 
-// Runs a Docker build for a given Dockerfile. If the platform is not specified (empty),
-// it defaults to amd64. If the build
-// is successful, the function
-// returns the image id of the built image.
+// Runs a Docker build for a given Dockerfile, writing the output of docker build to [stdOut] when it is
+// not nil. If the platform is not specified (empty) it defaults to amd64. If the build is successful,
+// the function returns the image id of the built image.
 func (d *docker) Build(
 	ctx context.Context,
 	cwd string,
@@ -64,13 +71,27 @@ func (d *docker) Build(
 	platform string,
 	buildContext string,
 	tagName string,
+	buildArgs []string,
+	buildProgress io.Writer,
 ) (string, error) {
 	if strings.TrimSpace(platform) == "" {
 		platform = DefaultPlatform
 	}
 
+	tmpFolder, err := os.MkdirTemp(os.TempDir(), "azd-docker-build")
+	defer func() {
+		// fail to remove tmp files is not so bad as the OS will delete it
+		// eventually
+		_ = os.RemoveAll(tmpFolder)
+	}()
+
+	if err != nil {
+		return "", fmt.Errorf("building image: %w", err)
+	}
+	imgIdFile := filepath.Join(tmpFolder, "imgId")
+
 	args := []string{
-		"build", "-q",
+		"build",
 		"-f", dockerFilePath,
 		"--platform", platform,
 	}
@@ -79,14 +100,33 @@ func (d *docker) Build(
 		args = append(args, "-t", tagName)
 	}
 
+	for _, arg := range buildArgs {
+		args = append(args, "--build-arg", arg)
+	}
 	args = append(args, buildContext)
 
-	res, err := d.executeCommand(ctx, cwd, args...)
+	// create a file with the docker img id
+	args = append(args, "--iidfile", imgIdFile)
+
+	// Build and produce output
+	runArgs := exec.NewRunArgs("docker", args...).WithCwd(cwd)
+
+	if buildProgress != nil {
+		// setting stderr and stdout both, as it's been noticed
+		// that docker log goes to stderr on macOS, but stdout on Ubuntu.
+		runArgs = runArgs.WithStdOut(buildProgress).WithStdErr(buildProgress)
+	}
+
+	_, err = d.commandRunner.Run(ctx, runArgs)
 	if err != nil {
 		return "", fmt.Errorf("building image: %w", err)
 	}
 
-	return strings.TrimSpace(res.Stdout), nil
+	imgId, err := os.ReadFile(imgIdFile)
+	if err != nil {
+		return "", fmt.Errorf("building image: %w", err)
+	}
+	return strings.TrimSpace(string(imgId)), nil
 }
 
 func (d *docker) Tag(ctx context.Context, cwd string, imageName string, tag string) error {

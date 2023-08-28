@@ -5,12 +5,12 @@ package cmd
 
 import (
 	"fmt"
+	"slices"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
-	"golang.org/x/exp/slices"
 )
 
 const (
@@ -139,20 +139,6 @@ func getCmdHelpGroupedCommands(commands string) string {
 // getCmdHelpAvailableCommands generates {{ commands - description }} for all sub-commands.
 func getCmdHelpAvailableCommands(commands string) string {
 	return getCmdHelpCommands("Available Commands", commands)
-}
-
-// getCmdHelpDescriptionNoteForInit produces help - description - notes for commands which initialize azd (i.e. up, init)
-func getCmdHelpDescriptionNoteForInit(c *cobra.Command) (notes []string) {
-	notes = append(notes, formatHelpNote(
-		fmt.Sprintf("Running %s without a template will prompt "+
-			"you to start with a minimal template or select from a curated list of presets.",
-			output.WithHighLightFormat(c.CommandPath()),
-		)))
-	notes = append(notes, formatHelpNote(
-		fmt.Sprintf("To view all currently available sample templates visit: %s.",
-			output.WithHighLightFormat(c.CommandPath()),
-		)))
-	return notes
 }
 
 // getFlagsDetails produces the command - flags - details in the form of `-F, --flag [type] : description`

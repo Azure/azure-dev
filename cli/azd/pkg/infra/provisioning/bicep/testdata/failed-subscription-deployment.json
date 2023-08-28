@@ -1,0 +1,109 @@
+{
+  "id": "/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/providers/Microsoft.Resources/deployments/matell-2508-1689982746",
+  "location": "eastus2",
+  "name": "matell-2508-1689982746",
+  "properties": {
+    "correlationId": "84c13af8bdb9709a44dda61f93cce798",
+    "debugSetting": null,
+    "dependencies": [
+      {
+        "dependsOn": [
+          {
+            "id": "/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/matell-2508-rg",
+            "resourceName": "matell-2508-rg",
+            "resourceType": "Microsoft.Resources/resourceGroups"
+          }
+        ],
+        "id": "/subscriptions/faa080af-c1d8-40ad-9cce-e1a450ca5b57/resourceGroups/matell-2508-rg/providers/Microsoft.Resources/deployments/resources",
+        "resourceGroup": "matell-2508-rg",
+        "resourceName": "resources",
+        "resourceType": "Microsoft.Resources/deployments"
+      }
+    ],
+    "duration": "PT1M39.7689131S",
+    "error": {
+      "additionalInfo": null,
+      "code": "DeploymentFailed",
+      "details": [
+        {
+          "additionalInfo": null,
+          "code": "DeploymentFailed",
+          "details": null,
+          "message": "At least one resource deployment operation failed. Please list deployment operations for details. Please see https://aka.ms/arm-deployment-operations for usage details.",
+          "target": null
+        }
+      ],
+      "message": "At least one resource deployment operation failed. Please list deployment operations for details. Please see https://aka.ms/arm-deployment-operations for usage details.",
+      "target": null
+    },
+    "mode": "Incremental",
+    "onErrorDeployment": null,
+    "outputResources": null,
+    "outputs": null,
+    "parameters": {
+      "databasePassword": {
+        "type": "SecureString"
+      },
+      "location": {
+        "type": "String",
+        "value": "eastus2"
+      },
+      "name": {
+        "type": "String",
+        "value": "matell-2508"
+      },
+      "secretKey": {
+        "type": "SecureString"
+      }
+    },
+    "parametersLink": null,
+    "providers": [
+      {
+        "id": null,
+        "namespace": "Microsoft.Resources",
+        "providerAuthorizationConsentState": null,
+        "registrationPolicy": null,
+        "registrationState": null,
+        "resourceTypes": [
+          {
+            "aliases": null,
+            "apiProfiles": null,
+            "apiVersions": null,
+            "capabilities": null,
+            "defaultApiVersion": null,
+            "locationMappings": null,
+            "locations": [
+              "eastus2"
+            ],
+            "properties": null,
+            "resourceType": "resourceGroups",
+            "zoneMappings": null
+          },
+          {
+            "aliases": null,
+            "apiProfiles": null,
+            "apiVersions": null,
+            "capabilities": null,
+            "defaultApiVersion": null,
+            "locationMappings": null,
+            "locations": [
+              null
+            ],
+            "properties": null,
+            "resourceType": "deployments",
+            "zoneMappings": null
+          }
+        ]
+      }
+    ],
+    "provisioningState": "Failed",
+    "templateHash": "11208209120649888667",
+    "templateLink": null,
+    "timestamp": "2023-07-21T23:40:49.234299+00:00",
+    "validatedResources": null
+  },
+  "tags": {
+    "azd-env-name": "matell-2508"
+  },
+  "type": "Microsoft.Resources/deployments"
+}

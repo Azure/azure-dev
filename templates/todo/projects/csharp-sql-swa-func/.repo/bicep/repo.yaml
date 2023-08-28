@@ -138,7 +138,7 @@ repo:
       to: ./.azdo/pipelines/azure-dev.yml
 
     # Github workflows for bicep
-    - from: ../../../../../common/.github/workflows/bicep
+    - from: ../../../../../common/.github/workflows/func
       to: ./.github/workflows
 
     # azd core modules
@@ -146,8 +146,8 @@ repo:
       to: ./infra
 
     # .devcontainer common (devcontainer.json)
-    - from: ../../../../../common/.devcontainer/devcontainer.json/csharp
-      to: ./.devcontainer
+    - from: ../../../../../common/.devcontainer/devcontainer.json/csharp/func/devcontainer.json
+      to: ./.devcontainer/devcontainer.json
 
     # .devcontainer common (Dockerfile)
     - from: ../../../../../common/.devcontainer/Dockerfile/func

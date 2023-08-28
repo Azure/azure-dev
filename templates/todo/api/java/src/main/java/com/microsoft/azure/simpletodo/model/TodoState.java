@@ -2,7 +2,7 @@ package com.microsoft.azure.simpletodo.model;
 
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
-import javax.annotation.Generated;
+import jakarta.annotation.Generated;
 
 /**
  * Gets or Sets TodoState

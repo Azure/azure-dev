@@ -2,7 +2,7 @@ locals {
   tags                 = { azd-env-name : var.environment_name, spring-cloud-azure : true }
   sha                  = base64encode(sha256("${var.environment_name}${var.location}${data.azurerm_client_config.current.subscription_id}"))
   resource_token       = substr(replace(lower(local.sha), "[^A-Za-z0-9_]", ""), 0, 13)
-  psql_custom_username = "CUSTOM_ROLE"
+  psql_connection_string_key = "AZURE-POSTGRESQL-URL"
 }
 # ------------------------------------------------------------------------------------------------------
 # Deploy resource Group
@@ -54,7 +54,6 @@ module "postgresql" {
   rg_name        = azurerm_resource_group.rg.name
   tags           = azurerm_resource_group.rg.tags
   resource_token = local.resource_token
-  client_id      = var.client_id
 }
 
 # ------------------------------------------------------------------------------------------------------
@@ -105,8 +104,7 @@ module "api" {
   app_settings = {
     "SCM_DO_BUILD_DURING_DEPLOYMENT"        = "true"
     "APPLICATIONINSIGHTS_CONNECTION_STRING" = module.applicationinsights.APPLICATIONINSIGHTS_CONNECTION_STRING
-    "AZURE_POSTGRESQL_URL"                  = "jdbc:postgresql://${module.postgresql.AZURE_POSTGRESQL_FQDN}:5432/${module.postgresql.AZURE_POSTGRESQL_DATABASE_NAME}?sslmode=require"
-    "AZURE_POSTGRESQL_USERNAME"             = local.psql_custom_username
+    "AZURE_KEY_VAULT_ENDPOINT"              = module.keyvault.AZURE_KEY_VAULT_ENDPOINT
     "JAVA_OPTS"                             = "-Djdk.attach.allowAttachSelf=true"
   }
 
@@ -118,16 +116,30 @@ module "api" {
 }
 
 # ------------------------------------------------------------------------------------------------------
-# Passwordless setting
+# Deploy key vault
 # ------------------------------------------------------------------------------------------------------
-module "psql-passwordless" {
-  source = "../../../../../../common/infra/terraform/core/security/passwordless/postgresql"
-
-  pg_custom_role_name_with_aad_identity = local.psql_custom_username
-  pg_aad_admin_user                     = module.postgresql.AZURE_POSTGRESQL_ADMIN_USERNAME
-  pg_database_name                      = module.postgresql.AZURE_POSTGRESQL_DATABASE_NAME
-  pg_server_fqdn                        = module.postgresql.AZURE_POSTGRESQL_FQDN
-  hosting_service_aad_identity          = module.api.IDENTITY_PRINCIPAL_ID
+module "keyvault" {
+  source                   = "./modules/keyvault"
+  location                 = var.location
+  principal_id             = var.principal_id
+  rg_name                  = azurerm_resource_group.rg.name
+  tags                     = local.tags
+  resource_token           = local.resource_token
+  access_policy_object_ids = [module.api.IDENTITY_PRINCIPAL_ID]
+  secrets = [
+    {
+      name  = local.psql_connection_string_key
+      value = module.postgresql.AZURE_POSTGRESQL_SPRING_DATASOURCE_URL
+    },
+    {
+      name  = "AZURE-POSTGRESQL-USERNAME"
+      value = module.postgresql.AZURE_POSTGRESQL_USERNAME
+    },
+    {
+      name  = "AZURE-POSTGRESQL-PASSWORD"
+      value = module.postgresql.AZURE_POSTGRESQL_PASSWORD
+    }
+  ]
 }
 
 # ------------------------------------------------------------------------------------------------------

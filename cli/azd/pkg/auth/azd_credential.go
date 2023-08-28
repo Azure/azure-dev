@@ -30,7 +30,7 @@ func (c *azdCredential) GetToken(ctx context.Context, options policy.TokenReques
 	if err != nil {
 		var authFailed *AuthFailedError
 		if errors.As(err, &authFailed) {
-			if loginErr, ok := newReLoginRequiredError(authFailed.parsed, options.Scopes); ok {
+			if loginErr, ok := newReLoginRequiredError(authFailed.Parsed, options.Scopes); ok {
 				log.Println(authFailed.httpErrorDetails())
 				return azcore.AccessToken{}, loginErr
 			}

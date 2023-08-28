@@ -351,12 +351,11 @@
                 "shell": {
                     "type": "string",
                     "title": "Type of shell to execute scripts",
-                    "description": "Optional. The type of shell to use for the hook. (Default: sh)",
+                    "description": "Required for inline scripts. The type of shell to use for the hook.",
                     "enum": [
                         "sh",
                         "pwsh"
-                    ],
-                    "default": "sh"
+                    ]
                 },
                 "run": {
                     "type": "string",

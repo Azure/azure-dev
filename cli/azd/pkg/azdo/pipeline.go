@@ -154,6 +154,12 @@ func getDefinitionVariables(
 		"AZURE_SUBSCRIPTION_ID":    createBuildDefinitionVariable(credentials.SubscriptionId, false, false),
 	}
 
+	if provisioningProvider.Provider == provisioning.Bicep {
+		if rgName, has := env.LookupEnv(environment.ResourceGroupEnvVarName); has {
+			variables[environment.ResourceGroupEnvVarName] = createBuildDefinitionVariable(rgName, false, false)
+		}
+	}
+
 	if provisioningProvider.Provider == provisioning.Terraform {
 		variables["ARM_TENANT_ID"] = createBuildDefinitionVariable(credentials.TenantId, false, false)
 		variables["ARM_CLIENT_ID"] = createBuildDefinitionVariable(credentials.ClientId, true, false)
@@ -162,7 +168,7 @@ func getDefinitionVariables(
 		// Sets the terraform remote state environment variables in azure devops
 		remoteStateKeys := []string{"RS_RESOURCE_GROUP", "RS_STORAGE_ACCOUNT", "RS_CONTAINER_NAME"}
 		for _, key := range remoteStateKeys {
-			value, ok := env.Values[key]
+			value, ok := env.LookupEnv(key)
 			if !ok || strings.TrimSpace(value) == "" {
 				return nil, fmt.Errorf(fmt.Sprintf(`terraform remote state is not correctly configured,
 Visit %s for more information on configuring Terraform remote state`,

@@ -10,7 +10,7 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/containerapps"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -115,7 +115,7 @@ func Test_ContainerApp_Deploy(t *testing.T) {
 	require.Equal(t, ContainerAppTarget, deployResult.Kind)
 	require.Greater(t, len(deployResult.Endpoints), 0)
 	// New env variable is created
-	require.Equal(t, "REGISTRY.azurecr.io/test-app/api-test:azd-deploy-0", env.Values["SERVICE_API_IMAGE_NAME"])
+	require.Equal(t, "REGISTRY.azurecr.io/test-app/api-test:azd-deploy-0", env.Dotenv()["SERVICE_API_IMAGE_NAME"])
 }
 
 func createContainerAppServiceTarget(
@@ -133,7 +133,8 @@ func createContainerAppServiceTarget(
 	containerRegistryService := azcli.NewContainerRegistryService(credentialProvider, mockContext.HttpClient, dockerCli)
 	containerHelper := NewContainerHelper(env, clock.NewMock(), containerRegistryService, dockerCli)
 	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
-	resourceManager := NewResourceManager(env, azCli)
+	depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
+	resourceManager := NewResourceManager(env, azCli, depOpService)
 
 	return NewContainerAppTarget(
 		env,
@@ -213,4 +214,5 @@ func setupMocksForContainerApps(mockContext *mocks.MockContext) {
 	)
 	mockazsdk.MockContainerAppSecretsList(mockContext, subscriptionId, resourceGroup, appName, secrets)
 	mockazsdk.MockContainerAppUpdate(mockContext, subscriptionId, resourceGroup, appName, containerApp)
+	mockazsdk.MockContainerRegistryTokenExchange(mockContext, subscriptionId, subscriptionId, "REFRESH_TOKEN")
 }

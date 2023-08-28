@@ -5,16 +5,13 @@ package azcli
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"io"
-	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
-	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
 
@@ -22,7 +19,6 @@ var (
 	ErrAzCliNotLoggedIn         = errors.New("cli is not logged in. Try running \"az login\" to fix")
 	ErrAzCliRefreshTokenExpired = errors.New("refresh token has expired. Try running \"az login\" to fix")
 	ErrClientAssertionExpired   = errors.New("client assertion expired")
-	ErrDeploymentNotFound       = errors.New("deployment not found")
 	ErrNoConfigurationValue     = errors.New("no value configured")
 	ErrAzCliSecretNotFound      = errors.New("secret not found")
 )
@@ -35,17 +31,6 @@ type AzCli interface {
 	// UserAgent gets the currently configured user agent
 	UserAgent() string
 
-	GetSubscriptionDeployment(
-		ctx context.Context,
-		subscriptionId string,
-		deploymentName string,
-	) (*armresources.DeploymentExtended, error)
-	GetResourceGroupDeployment(
-		ctx context.Context,
-		subscriptionId string,
-		resourceGroupName string,
-		deploymentName string,
-	) (*armresources.DeploymentExtended, error)
 	GetResource(
 		ctx context.Context,
 		subscriptionId string,
@@ -58,6 +43,18 @@ type AzCli interface {
 		resourceGroupName string,
 		vaultName string,
 	) (*AzCliKeyVault, error)
+	GetManagedHSM(
+		ctx context.Context,
+		subscriptionId string,
+		resourceGroupName string,
+		hsmName string,
+	) (*AzCliManagedHSM, error)
+	GetCognitiveAccount(
+		ctx context.Context,
+		subscriptionId string,
+		resourceGroupName string,
+		accountName string,
+	) (armcognitiveservices.Account, error)
 	GetKeyVaultSecret(
 		ctx context.Context,
 		subscriptionId string,
@@ -69,6 +66,8 @@ type AzCli interface {
 	PurgeApim(ctx context.Context, subscriptionId string, apimName string, location string) error
 	PurgeAppConfig(ctx context.Context, subscriptionId string, configName string, location string) error
 	PurgeKeyVault(ctx context.Context, subscriptionId string, vaultName string, location string) error
+	PurgeManagedHSM(ctx context.Context, subscriptionId string, hsmName string, location string) error
+	PurgeCognitiveAccount(ctx context.Context, subscriptionId, location, resourceGroup, accountName string) error
 	GetApim(
 		ctx context.Context, subscriptionId string, resourceGroupName string, apimName string) (*AzCliApim, error)
 	DeployAppServiceZip(
@@ -91,67 +90,30 @@ type AzCli interface {
 		resourceGroup string,
 		funcName string,
 	) (*AzCliFunctionAppProperties, error)
-	DeployToSubscription(
+
+	DeleteResourceGroup(ctx context.Context, subscriptionId string, resourceGroupName string) error
+	CreateOrUpdateResourceGroup(
 		ctx context.Context,
 		subscriptionId string,
+		resourceGroupName string,
 		location string,
-		deploymentName string,
-		armTemplate azure.RawArmTemplate,
-		parameters azure.ArmParameters,
 		tags map[string]*string,
-	) (*armresources.DeploymentExtended, error)
-	DeployToResourceGroup(
-		ctx context.Context,
-		subscriptionId,
-		resourceGroup,
-		deploymentName string,
-		armTemplate azure.RawArmTemplate,
-		parameters azure.ArmParameters,
-		tags map[string]*string,
-	) (*armresources.DeploymentExtended, error)
-	DeleteSubscriptionDeployment(ctx context.Context, subscriptionId string, deploymentName string) error
-	DeleteResourceGroup(ctx context.Context, subscriptionId string, resourceGroupName string) error
+	) error
 	ListResourceGroup(
 		ctx context.Context,
 		subscriptionId string,
 		listOptions *ListResourceGroupOptions,
 	) ([]AzCliResource, error)
-	ListResourceGroupDeployments(
-		ctx context.Context,
-		subscriptionId string,
-		resourceGroupName string,
-	) ([]*armresources.DeploymentExtended, error)
 	ListResourceGroupResources(
 		ctx context.Context,
 		subscriptionId string,
 		resourceGroupName string,
 		listOptions *ListResourceGroupResourcesOptions,
 	) ([]AzCliResource, error)
-	ListSubscriptionDeployments(
-		ctx context.Context,
-		subscriptionId string,
-	) ([]*armresources.DeploymentExtended, error)
-	ListSubscriptionDeploymentOperations(
-		ctx context.Context,
-		subscriptionId string,
-		deploymentName string,
-	) ([]*armresources.DeploymentOperation, error)
-	ListResourceGroupDeploymentOperations(
-		ctx context.Context,
-		subscriptionId string,
-		resourceGroupName string,
-		deploymentName string,
-	) ([]*armresources.DeploymentOperation, error)
 	// CreateOrUpdateServicePrincipal creates a service principal using a given name and returns a JSON object which
 	// may be used by tools which understand the `AZURE_CREDENTIALS` format (i.e. the `sdk-auth` format). The service
 	// principal is assigned a given role. If an existing principal exists with the given name,
 	// it is updated in place and its credentials are reset.
-	CreateOrUpdateServicePrincipal(
-		ctx context.Context,
-		subscriptionId string,
-		applicationName string,
-		roleToAssign string,
-	) (json.RawMessage, error)
 	GetAppServiceProperties(
 		ctx context.Context,
 		subscriptionId string,
@@ -174,57 +136,6 @@ type AzCli interface {
 	) (*AzCliStaticWebAppEnvironmentProperties, error)
 }
 
-type AzCliDeployment struct {
-	Id         string                    `json:"id"`
-	Name       string                    `json:"name"`
-	Properties AzCliDeploymentProperties `json:"properties"`
-}
-
-type AzCliDeploymentProperties struct {
-	CorrelationId   string                                `json:"correlationId"`
-	Error           AzCliDeploymentErrorResponse          `json:"error"`
-	Dependencies    []AzCliDeploymentPropertiesDependency `json:"dependencies"`
-	OutputResources []AzCliDeploymentResourceReference    `json:"outputResources"`
-	Outputs         map[string]AzCliDeploymentOutput      `json:"outputs"`
-}
-
-type AzCliDeploymentPropertiesDependency struct {
-	AzCliDeploymentPropertiesBasicDependency
-	DependsOn []AzCliDeploymentPropertiesBasicDependency `json:"dependsOn"`
-}
-
-type AzCliDeploymentPropertiesBasicDependency struct {
-	Id           string `json:"id"`
-	ResourceName string `json:"resourceName"`
-	ResourceType string `json:"resourceType"`
-}
-
-type AzCliDeploymentResult struct {
-	Properties AzCliDeploymentResultProperties `json:"properties"`
-}
-
-type AzCliDeploymentResultProperties struct {
-	Outputs map[string]AzCliDeploymentOutput `json:"outputs"`
-}
-
-type AzCliDeploymentErrorResponse struct {
-	Code           string                         `json:"code"`
-	Message        string                         `json:"message"`
-	Target         string                         `json:"target"`
-	Details        []AzCliDeploymentErrorResponse `json:"details"`
-	AdditionalInfo AzCliDeploymentAdditionalInfo  `json:"additionalInfo"`
-}
-
-type AzCliDeploymentAdditionalInfo struct {
-	Type string      `json:"type"`
-	Info interface{} `json:"info"`
-}
-
-type AzCliDeploymentOutput struct {
-	Type  string      `json:"type"`
-	Value interface{} `json:"value"`
-}
-
 type AzCliResource struct {
 	Id       string `json:"id"`
 	Name     string `json:"name"`
@@ -235,39 +146,6 @@ type AzCliResource struct {
 type AzCliResourceExtended struct {
 	AzCliResource
 	Kind string `json:"kind"`
-}
-
-type AzCliDeploymentResourceReference struct {
-	Id string `json:"id"`
-}
-
-type AzCliResourceOperation struct {
-	Id          string                           `json:"id"`
-	OperationId string                           `json:"operationId"`
-	Properties  AzCliResourceOperationProperties `json:"properties"`
-}
-
-type AzCliResourceOperationProperties struct {
-	ProvisioningOperation string                               `json:"provisioningOperation"`
-	ProvisioningState     string                               `json:"provisioningState"`
-	TargetResource        AzCliResourceOperationTargetResource `json:"targetResource"`
-	StatusCode            string                               `json:"statusCode"`
-	StatusMessage         AzCliDeploymentStatusMessage         `json:"statusMessage"`
-	// While the operation is in progress, this timestamp effectively represents "InProgressTimestamp".
-	// When the operation ends, this timestamp effectively represents "EndTimestamp".
-	Timestamp time.Time `json:"timestamp"`
-}
-
-type AzCliDeploymentStatusMessage struct {
-	Err    AzCliDeploymentErrorResponse `json:"error"`
-	Status string                       `json:"status"`
-}
-
-type AzCliResourceOperationTargetResource struct {
-	Id            string `json:"id"`
-	ResourceType  string `json:"resourceType"`
-	ResourceName  string `json:"resourceName"`
-	ResourceGroup string `json:"resourceGroup"`
 }
 
 // AzCliConfigValue represents the value returned by `az config get`.
@@ -318,7 +196,7 @@ func NewAzCli(
 		enableDebug:        args.EnableDebug,
 		enableTelemetry:    args.EnableTelemetry,
 		httpClient:         httpClient,
-		userAgent:          azdinternal.MakeUserAgentString(""),
+		userAgent:          azdinternal.UserAgent(),
 	}
 }
 
@@ -343,9 +221,9 @@ func (cli *azCli) UserAgent() string {
 	return cli.userAgent
 }
 
-func (cli *azCli) createDefaultClientOptionsBuilder(ctx context.Context) *azsdk.ClientOptionsBuilder {
+func (cli *azCli) clientOptionsBuilder(ctx context.Context) *azsdk.ClientOptionsBuilder {
 	return azsdk.NewClientOptionsBuilder().
-		WithTransport(httputil.GetHttpClient(ctx)).
+		WithTransport(cli.httpClient).
 		WithPerCallPolicy(azsdk.NewUserAgentPolicy(cli.UserAgent())).
 		WithPerCallPolicy(azsdk.NewMsCorrelationPolicy(ctx))
 }

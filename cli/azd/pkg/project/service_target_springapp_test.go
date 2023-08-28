@@ -5,7 +5,6 @@ package project
 
 import (
 	"context"
-	"github.com/stretchr/testify/assert"
 	"strings"
 	"testing"
 
@@ -57,14 +56,4 @@ func TestNewSpringAppTargetTypeValidation(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestExtractEndpoint(t *testing.T) {
-	serviceTarget := &springAppTarget{}
-
-	assert.Equal(t, "https://mock-appname.azuremicroservices.io",
-		serviceTarget.extractEndpoint("https://mock.azuremicroservices.io", "appname"))
-
-	assert.NotEqual(t, "https://mock.azuremicroservices.io",
-		serviceTarget.extractEndpoint("https://mock.azuremicroservices.io", "appname"))
 }

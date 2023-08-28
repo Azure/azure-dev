@@ -7,12 +7,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
-	"os/exec"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -20,7 +19,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
-	"github.com/cli/browser"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -61,12 +59,13 @@ func newMonitorCmd() *cobra.Command {
 }
 
 type monitorAction struct {
-	azdCtx      *azdcontext.AzdContext
-	env         *environment.Environment
-	subResolver account.SubscriptionTenantResolver
-	azCli       azcli.AzCli
-	console     input.Console
-	flags       *monitorFlags
+	azdCtx               *azdcontext.AzdContext
+	env                  *environment.Environment
+	subResolver          account.SubscriptionTenantResolver
+	azCli                azcli.AzCli
+	deploymentOperations azapi.DeploymentOperations
+	console              input.Console
+	flags                *monitorFlags
 }
 
 func newMonitorAction(
@@ -74,16 +73,18 @@ func newMonitorAction(
 	env *environment.Environment,
 	subResolver account.SubscriptionTenantResolver,
 	azCli azcli.AzCli,
+	deploymentOperations azapi.DeploymentOperations,
 	console input.Console,
 	flags *monitorFlags,
 ) actions.Action {
 	return &monitorAction{
-		azdCtx:      azdCtx,
-		env:         env,
-		azCli:       azCli,
-		console:     console,
-		flags:       flags,
-		subResolver: subResolver,
+		azdCtx:               azdCtx,
+		env:                  env,
+		azCli:                azCli,
+		deploymentOperations: deploymentOperations,
+		console:              console,
+		flags:                flags,
+		subResolver:          subResolver,
 	}
 }
 
@@ -94,11 +95,11 @@ func (m *monitorAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 
 	if m.env.GetSubscriptionId() == "" {
 		return nil, errors.New(
-			"infrastructure has not been provisioned. Please run `azd provision`",
+			"infrastructure has not been provisioned. Run `azd provision`",
 		)
 	}
 
-	resourceManager := infra.NewAzureResourceManager(m.azCli)
+	resourceManager := infra.NewAzureResourceManager(m.azCli, m.deploymentOperations)
 	resourceGroups, err := resourceManager.GetResourceGroupsForEnvironment(
 		ctx, m.env.GetSubscriptionId(), m.env.GetEnvName())
 	if err != nil {
@@ -133,32 +134,6 @@ func (m *monitorAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		return nil, fmt.Errorf("application does not contain an Application Insights dashboard")
 	}
 
-	openWithDefaultBrowser := func(url string) {
-		fmt.Fprintf(m.console.Handles().Stdout, "Opening %s in the default browser...\n", url)
-
-		// In Codespaces and devcontainers a $BROWSER environment variable is
-		// present whose value is an executable that launches the browser when
-		// called with the form:
-		// $BROWSER <url>
-
-		const BrowserEnvVarName = "BROWSER"
-
-		if envBrowser := os.Getenv(BrowserEnvVarName); len(envBrowser) > 0 {
-			if err := exec.Command(envBrowser, url).Run(); err != nil {
-				fmt.Fprintf(
-					m.console.Handles().Stderr,
-					"warning: failed to open browser configured by $BROWSER: %s\n",
-					err.Error(),
-				)
-			}
-			return
-		}
-
-		if err := browser.OpenURL(url); err != nil {
-			fmt.Fprintf(m.console.Handles().Stderr, "warning: failed to open default browser: %s\n", err.Error())
-		}
-	}
-
 	tenantId, err := m.subResolver.LookupTenant(ctx, m.env.GetSubscriptionId())
 	if err != nil {
 		return nil, err
@@ -166,19 +141,20 @@ func (m *monitorAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 
 	for _, insightsResource := range insightsResources {
 		if m.flags.monitorLive {
-			openWithDefaultBrowser(
+			openWithDefaultBrowser(ctx, m.console,
 				fmt.Sprintf("https://app.azure.com/%s%s/quickPulse", tenantId, insightsResource.Id),
 			)
 		}
 
 		if m.flags.monitorLogs {
-			openWithDefaultBrowser(fmt.Sprintf("https://app.azure.com/%s%s/logs", tenantId, insightsResource.Id))
+			openWithDefaultBrowser(ctx, m.console,
+				fmt.Sprintf("https://app.azure.com/%s%s/logs", tenantId, insightsResource.Id))
 		}
 	}
 
 	for _, portalResource := range portalResources {
 		if m.flags.monitorOverview {
-			openWithDefaultBrowser(
+			openWithDefaultBrowser(ctx, m.console,
 				fmt.Sprintf("https://portal.azure.com/#@%s/dashboard/arm%s", tenantId, portalResource.Id),
 			)
 		}

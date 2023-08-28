@@ -59,7 +59,12 @@ func (i *initFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOpt
 		//nolint:lll
 		"The template to use when you initialize the project. You can use Full URI, <owner>/<repository>, or <repository> if it's part of the azure-samples organization.",
 	)
-	local.StringVarP(&i.templateBranch, "branch", "b", "", "The template branch to initialize from.")
+	local.StringVarP(
+		&i.templateBranch,
+		"branch",
+		"b",
+		"",
+		"The template branch to initialize from. Must be used with a template argument (--template or -t).")
 	local.StringVar(
 		&i.subscription,
 		"subscription",
@@ -78,6 +83,7 @@ type initAction struct {
 	gitCli          git.GitCli
 	flags           *initFlags
 	repoInitializer *repository.Initializer
+	templateManager *templates.TemplateManager
 }
 
 func newInitAction(
@@ -85,13 +91,15 @@ func newInitAction(
 	console input.Console,
 	gitCli git.GitCli,
 	flags *initFlags,
-	repoInitializer *repository.Initializer) actions.Action {
+	repoInitializer *repository.Initializer,
+	templateManager *templates.TemplateManager) actions.Action {
 	return &initAction{
 		console:         console,
 		cmdRun:          cmdRun,
 		gitCli:          gitCli,
 		flags:           flags,
 		repoInitializer: repoInitializer,
+		templateManager: templateManager,
 	}
 }
 
@@ -104,7 +112,9 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	azdCtx := azdcontext.NewAzdContextWithDirectory(wd)
 
 	if i.flags.templateBranch != "" && i.flags.templatePath == "" {
-		return nil, errors.New("template required when specifying a branch name")
+		return nil,
+			errors.New(
+				"Using branch argument (-b or --branch) requires a template argument (--template or -t) to be specified.")
 	}
 
 	// ensure that git is available
@@ -137,11 +147,13 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 
 		if i.flags.templatePath == "" {
-			template, err := templates.PromptTemplate(ctx, "Select a project template:", i.console)
-			i.flags.templatePath = template.RepositoryPath
-
+			template, err := templates.PromptTemplate(ctx, "Select a project template:", i.templateManager, i.console)
 			if err != nil {
 				return nil, err
+			}
+
+			if template != nil {
+				i.flags.templatePath = template.RepositoryPath
 			}
 		}
 	}
@@ -205,9 +217,18 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}, nil
 }
 
-func getCmdInitHelpDescription(c *cobra.Command) string {
+func getCmdInitHelpDescription(*cobra.Command) string {
 	return generateCmdHelpDescription("Initialize a new application in your current directory.",
-		getCmdHelpDescriptionNoteForInit(c))
+		[]string{
+			formatHelpNote(
+				fmt.Sprintf("Running %s without a template will prompt "+
+					"you to start with a minimal template or select from a curated list of presets.",
+					output.WithHighLightFormat("init"),
+				)),
+			formatHelpNote(
+				"To view all available sample templates, including those submitted by the azd community, visit: " +
+					output.WithLinkFormat("https://azure.github.io/awesome-azd") + "."),
+		})
 }
 
 func getCmdInitHelpFooter(*cobra.Command) string {

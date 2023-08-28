@@ -7,10 +7,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/compare"
@@ -18,7 +20,8 @@ import (
 )
 
 type AzureResourceManager struct {
-	azCli azcli.AzCli
+	azCli                azcli.AzCli
+	deploymentOperations azapi.DeploymentOperations
 }
 
 type ResourceManager interface {
@@ -32,12 +35,18 @@ type ResourceManager interface {
 	) (string, error)
 }
 
-func NewAzureResourceManager(azCli azcli.AzCli) *AzureResourceManager {
+func NewAzureResourceManager(
+	azCli azcli.AzCli, deploymentOperations azapi.DeploymentOperations) *AzureResourceManager {
 	return &AzureResourceManager{
-		azCli: azCli,
+		azCli:                azCli,
+		deploymentOperations: deploymentOperations,
 	}
 }
 
+// GetDeploymentResourceOperations gets the list of all the resources created as part of the provided deployment.
+// Each DeploymentOperation on the list holds a resource and the result of its deployment.
+// One deployment operation can trigger new deployment operations, GetDeploymentResourceOperations traverses all
+// operations recursively to find the leaf operations.
 func (rm *AzureResourceManager) GetDeploymentResourceOperations(
 	ctx context.Context,
 	deployment Deployment,
@@ -213,7 +222,7 @@ func (rm *AzureResourceManager) FindResourceGroupForEnvironment(
 	}
 
 	return "", fmt.Errorf(
-		"%s please explicitly specify your resource group in azure.yaml or the AZURE_RESOURCE_GROUP environment variable",
+		"%s explicitly specify your resource group in azure.yaml or the AZURE_RESOURCE_GROUP environment variable",
 		msg,
 	)
 }
@@ -295,6 +304,8 @@ func (rm *AzureResourceManager) getCognitiveServiceResourceTypeDisplayName(
 	}
 }
 
+// appendDeploymentResourcesRecursive gets the leaf deployment operations and adds them to resourceOperations
+// if they are not already in the list.
 func (rm *AzureResourceManager) appendDeploymentResourcesRecursive(
 	ctx context.Context,
 	subscriptionId string,
@@ -303,10 +314,16 @@ func (rm *AzureResourceManager) appendDeploymentResourcesRecursive(
 	resourceOperations *map[string]*armresources.DeploymentOperation,
 	queryStart *time.Time,
 ) error {
-	operations, err := rm.azCli.ListResourceGroupDeploymentOperations(
+	operations, err := rm.deploymentOperations.ListResourceGroupDeploymentOperations(
 		ctx, subscriptionId, resourceGroupName, deploymentName)
 	if err != nil {
-		return fmt.Errorf("getting subscription deployment operations: %w", err)
+		// Don't return an error upon getting the deployment operations from deploymentName.
+		// That's because returning an error would stop traversing the entire deployments graph and prevent
+		// the caller function from getting any deployment operation at all.
+		// So, instead of returning error, ignore the problematic deployment node and log an error about it.
+		// This will allow the caller to get as much information about the deployments operations as possible.
+		log.Printf("getting subscription deployment operations: %s", err.Error())
+		return nil
 	}
 
 	for _, operation := range operations {

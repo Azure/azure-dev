@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -39,15 +40,20 @@ type ResourceManager interface {
 }
 
 type resourceManager struct {
-	env   *environment.Environment
-	azCli azcli.AzCli
+	env                  *environment.Environment
+	azCli                azcli.AzCli
+	deploymentOperations azapi.DeploymentOperations
 }
 
 // NewResourceManager creates a new instance of the project resource manager
-func NewResourceManager(env *environment.Environment, azCli azcli.AzCli) ResourceManager {
+func NewResourceManager(
+	env *environment.Environment,
+	azCli azcli.AzCli,
+	deploymentOperations azapi.DeploymentOperations) ResourceManager {
 	return &resourceManager{
-		env:   env,
-		azCli: azCli,
+		env:                  env,
+		azCli:                azCli,
+		deploymentOperations: deploymentOperations,
 	}
 }
 
@@ -79,7 +85,7 @@ func (rm *resourceManager) GetResourceGroupName(
 		return envResourceGroupName, nil
 	}
 
-	resourceManager := infra.NewAzureResourceManager(rm.azCli)
+	resourceManager := infra.NewAzureResourceManager(rm.azCli, rm.deploymentOperations)
 	resourceGroupName, err := resourceManager.FindResourceGroupForEnvironment(ctx, subscriptionId, rm.env.GetEnvName())
 	if err != nil {
 		return "", err

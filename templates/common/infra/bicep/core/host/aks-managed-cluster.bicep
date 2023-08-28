@@ -1,3 +1,4 @@
+metadata description = 'Creates an Azure Kubernetes Service (AKS) cluster with a system agent pool.'
 @description('The name for the AKS managed cluster')
 param name string
 
@@ -61,7 +62,7 @@ param systemPoolConfig object
 @description('The DNS prefix to associate with the AKS cluster')
 param dnsPrefix string = ''
 
-resource aks 'Microsoft.ContainerService/managedClusters@2023-02-01' = {
+resource aks 'Microsoft.ContainerService/managedClusters@2023-03-02-preview' = {
   name: name
   location: location
   tags: tags

@@ -31,13 +31,13 @@ func (dd *dotNetDetector) DetectProject(path string, entries []fs.DirEntry) (*Pr
 		switch name {
 		case "program.cs", "program.fs", "program.vb":
 			hasStartupFile = true
-			projFileName = name
+			startUpFileName = name
 		}
 
 		switch ext {
 		case ".csproj", ".fsproj", ".vbproj":
 			hasProjectFile = true
-			startUpFileName = name
+			projFileName = name
 		}
 	}
 

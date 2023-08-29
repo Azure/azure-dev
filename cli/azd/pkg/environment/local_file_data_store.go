@@ -190,23 +190,3 @@ func (fs *LocalFileDataStore) Create(ctx context.Context, name string) (*Environ
 
 	return fs.Get(ctx, name)
 }
-
-func (fs *LocalFileDataStore) Delete(ctx context.Context, name string) error {
-	// TODO: Implement Delete function
-	return nil
-}
-
-func (fs *LocalFileDataStore) Values(ctx context.Context) (map[string]string, error) {
-	// TODO: Implement Values function
-	return nil, nil
-}
-
-func (fs *LocalFileDataStore) Refresh(ctx context.Context) error {
-	// TODO: Implement Refresh function
-	return nil
-}
-
-func (fs *LocalFileDataStore) Select(name string) error {
-	// TODO: Implement Select function
-	return nil
-}

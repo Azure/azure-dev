@@ -30,9 +30,31 @@ func Test_LocalFileDataStore_List(t *testing.T) {
 		require.NotNil(t, envList)
 		require.Equal(t, 2, len(envList))
 	})
+
 	t.Run("Empty", func(t *testing.T) {
 		envList, err := dataStore.List(*mockContext.Context)
 		require.NoError(t, err)
 		require.NotNil(t, envList)
+	})
+}
+
+func Test_LocalFileDataStore_Save(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	azdContext := azdcontext.NewAzdContextWithDirectory(t.TempDir())
+	fileConfigManager := config.NewFileConfigManager(config.NewManager())
+	dataStore := NewLocalFileDataStore(azdContext, fileConfigManager)
+
+	t.Run("Success", func(t *testing.T) {
+		env1 := New("env1", azdContext.EnvironmentRoot("env1"))
+		env1.DotenvSet("key1", "value1")
+		err := dataStore.Save(*mockContext.Context, env1)
+		require.NoError(t, err)
+
+		env, err := dataStore.Get(*mockContext.Context, "env1")
+		require.NoError(t, err)
+		require.NotNil(t, env)
+		require.Equal(t, "env1", env.name)
+		actual := env1.Getenv("key1")
+		require.Equal(t, "value1", actual)
 	})
 }

@@ -18,12 +18,14 @@ import (
 )
 
 type StorageBlobDataStore struct {
-	blobClient storage.BlobClient
+	configManager config.Manager
+	blobClient    storage.BlobClient
 }
 
-func NewStorageBlobDataStore(blobClient storage.BlobClient) DataStore {
+func NewStorageBlobDataStore(configManager config.Manager, blobClient storage.BlobClient) DataStore {
 	return &StorageBlobDataStore{
-		blobClient: blobClient,
+		configManager: configManager,
+		blobClient:    blobClient,
 	}
 }
 
@@ -106,9 +108,8 @@ func (sbd *StorageBlobDataStore) Get(ctx context.Context, name string) (*Environ
 func (sbd *StorageBlobDataStore) Save(ctx context.Context, env *Environment) error {
 	// Update configuration
 	cfgWriter := new(bytes.Buffer)
-	cfgMgr := config.NewManager()
 
-	if err := cfgMgr.Save(env.Config, cfgWriter); err != nil {
+	if err := sbd.configManager.Save(env.Config, cfgWriter); err != nil {
 		return fmt.Errorf("saving config: %w", err)
 	}
 
@@ -162,8 +163,7 @@ func (sbd *StorageBlobDataStore) Reload(ctx context.Context, env *Environment) e
 
 	defer configBuffer.Close()
 
-	cfgMgr := config.NewManager()
-	if cfg, err := cfgMgr.Load(configBuffer); errors.Is(err, os.ErrNotExist) {
+	if cfg, err := sbd.configManager.Load(configBuffer); errors.Is(err, os.ErrNotExist) {
 		env.Config = config.NewEmptyConfig()
 	} else if err != nil {
 		return fmt.Errorf("loading config: %w", err)

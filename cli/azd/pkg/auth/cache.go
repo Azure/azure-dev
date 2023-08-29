@@ -14,6 +14,7 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/cache"
 )
 
+// Known entries from msal cache contract. This is not an exhaustive list.
 var contractFields = []string{
 	"AccessToken",
 	"RefreshToken",
@@ -54,27 +55,38 @@ func (a *msalCacheAdapter) Replace(ctx context.Context, cache cache.Unmarshaler,
 	c := map[string]json.RawMessage{}
 	if err = json.Unmarshal(val, &c); err == nil {
 		for _, contractKey := range contractFields {
-			if _, ok := c[contractKey]; ok {
+			if _, found := c[contractKey]; found {
 				msg := []byte(c[contractKey])
 				inner := map[string]json.RawMessage{}
 
-				if err := json.Unmarshal(msg, &inner); err == nil {
-					normalizeKeys(inner)
-					newMsg, err := json.Marshal(inner)
-					if err == nil {
-						c[contractKey] = json.RawMessage(newMsg)
-					}
+				err := json.Unmarshal(msg, &inner)
+				if err != nil {
+					log.Printf("msal-upgrade: failed to unmarshal inner: %v", err)
+					continue
 				}
+
+				updated := normalizeKeys(inner)
+				if !updated {
+					continue
+				}
+
+				newMsg, err := json.Marshal(inner)
+				if err != nil {
+					log.Printf("msal-upgrade: failed to remarshal inner: %v", err)
+					continue
+				}
+
+				c[contractKey] = json.RawMessage(newMsg)
 			}
 		}
 
 		if newVal, err := json.Marshal(c); err == nil {
 			val = newVal
 		} else {
-			log.Printf("failed to remarshal msal cache: %v", err)
+			log.Printf("msal-upgrade: failed to remarshal msal cache: %v", err)
 		}
 	} else {
-		log.Printf("failed to unmarshal msal cache: %v", err)
+		log.Printf("msal-upgrade: failed to unmarshal msal cache: %v", err)
 	}
 
 	// Replace the msal cache contents with the new value retrieved.
@@ -96,7 +108,7 @@ func (a *msalCacheAdapter) Export(ctx context.Context, cache cache.Marshaler, _ 
 // Normalize keys by removing upper-case keys and replacing them with lower-case keys.
 // In the case where a lower-case key and upper-case key exists, the lower-case key entry
 // takes precedence.
-func normalizeKeys(m map[string]json.RawMessage) {
+func normalizeKeys(m map[string]json.RawMessage) (normalized bool) {
 	for k, v := range m {
 		if hasUpper(k) {
 			// An upper-case key entry exists. Delete it as it is no longer allowed.
@@ -108,8 +120,12 @@ func normalizeKeys(m map[string]json.RawMessage) {
 			if _, isLower := m[lower]; !isLower {
 				m[lower] = v
 			}
+
+			normalized = true
 		}
 	}
+
+	return normalized
 }
 
 func hasUpper(s string) bool {

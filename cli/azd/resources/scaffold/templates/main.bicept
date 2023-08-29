@@ -1,4 +1,4 @@
-{{define "main.bicep"}}
+{{define "main.bicep" -}}
 targetScope = 'subscription'
 
 @minLength(1)

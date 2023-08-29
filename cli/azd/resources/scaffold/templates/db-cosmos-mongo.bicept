@@ -1,4 +1,4 @@
-{{define "db-cosmos-mongo.bicep"}}
+{{define "db-cosmos-mongo.bicep" -}}
 param accountName string
 param location string = resourceGroup().location
 param tags object = {}

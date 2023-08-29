@@ -1,4 +1,4 @@
-{{define "host-containerapp.bicep"}}
+{{define "host-containerapp.bicep" -}}
 param name string
 param location string = resourceGroup().location
 param tags object = {}

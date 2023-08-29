@@ -1,4 +1,4 @@
-{{define "db-postgres.bicep"}}
+{{define "db-postgres.bicep" -}}
 param serverName string
 param location string = resourceGroup().location
 param tags object = {}

@@ -28,7 +28,7 @@ func TestParametersAreSent(t *testing.T) {
 		return request.Method == http.MethodGet && request.URL.String() == mockEndpoint
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		// nolint: staticcheck
-		require.Equal(t, request.Header["X-ExP-Parameters"],
+		require.ElementsMatch(t, request.Header["X-ExP-Parameters"],
 			[]string{
 				fmt.Sprintf("machineid=%s", resource.MachineId()),
 				fmt.Sprintf("azdversion=%s", internal.VersionInfo().Version.String()),

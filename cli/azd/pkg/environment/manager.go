@@ -136,12 +136,12 @@ func (m *manager) Create(ctx context.Context, name string) (*Environment, error)
 	}
 
 	// Ensure the environment does not already exist:
-	env, err := m.Get(ctx, name)
+	_, err := m.Get(ctx, name)
 	if err != nil && errors.Is(err, ErrExists) {
 		return nil, fmt.Errorf("%w '%s'", ErrExists, name)
 	}
 
-	env = New(name, m.azdContext.EnvironmentRoot(name))
+	env := New(name, m.azdContext.EnvironmentRoot(name))
 	env.SetEnvName(name)
 
 	if err := m.Save(ctx, env); err != nil {

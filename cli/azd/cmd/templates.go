@@ -21,7 +21,10 @@ import (
 
 func templateNameCompletion(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	templateManager, err := templates.NewTemplateManager(
-		templates.NewSourceManager(config.NewUserConfigManager(), http.DefaultClient),
+		templates.NewSourceManager(
+			config.NewUserConfigManager(config.NewFileConfigManager(config.NewManager())),
+			http.DefaultClient,
+		),
 	)
 	if err != nil {
 		cobra.CompError(fmt.Sprintf("Error creating template manager: %s", err.Error()))

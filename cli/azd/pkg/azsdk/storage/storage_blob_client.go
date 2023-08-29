@@ -11,7 +11,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
@@ -61,12 +60,11 @@ func NewBlobClient(
 }
 
 type blobClient struct {
-	config             AccountConfig
-	authManager        auth.Manager
-	credentialProvider account.SubscriptionCredentialProvider
-	httpClient         httputil.HttpClient
-	userAgent          string
-	client             *azblob.Client
+	config      AccountConfig
+	authManager auth.Manager
+	httpClient  httputil.HttpClient
+	userAgent   string
+	client      *azblob.Client
 }
 
 type Blob struct {

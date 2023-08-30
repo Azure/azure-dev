@@ -1,3 +1,4 @@
+metadata description = 'Adds an agent pool to an Azure Kubernetes Service (AKS) cluster.'
 param clusterName string
 
 @description('The agent pool name')

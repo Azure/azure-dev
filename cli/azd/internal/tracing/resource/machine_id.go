@@ -23,8 +23,8 @@ var invalidMacAddresses = map[string]struct{}{
 	"ac:de:48:00:11:22": {},
 }
 
-// getMachineId returns a unique ID for the machine.
-func getMachineId() string {
+// MachineId returns a unique ID for the machine.
+func MachineId() string {
 	// We store the machine ID on the filesystem not due to performance,
 	// but to increase the stability of the ID to be constant across factors like changing mac addresses, NICs.
 	return loadOrCalculate(calculateMachineId, machineIdCacheFileName)

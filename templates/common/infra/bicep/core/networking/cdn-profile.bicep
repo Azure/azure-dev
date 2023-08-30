@@ -1,3 +1,4 @@
+metadata description = 'Creates an Azure CDN profile.'
 param name string
 param location string = resourceGroup().location
 param tags object = {}

@@ -35,6 +35,7 @@ func Test_sourceManager_List(t *testing.T) {
 	require.Equal(t, "test", sources[0].Key)
 }
 
+// Test simulates an experience where user has explicitly removed all azd template sources
 func Test_sourceManager_List_EmptySources(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	configManager := &mockUserConfigManager{}
@@ -48,9 +49,25 @@ func Test_sourceManager_List_EmptySources(t *testing.T) {
 	sources, err := sm.List(*mockContext.Context)
 	require.Nil(t, err)
 
+	require.Len(t, sources, 0)
+}
+
+// Test simulates a first run experience where `template.sources` is not defined in the azd config
+func Test_sourceManager_List_UndefinedSources(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	configManager := &mockUserConfigManager{}
+	sm := NewSourceManager(configManager, mockContext.HttpClient)
+
+	config := config.NewConfig(nil)
+	configManager.On("Load").Return(config, nil)
+	configManager.On("Save", mock.Anything).Return(nil)
+
+	// Undefined source list should still return awesome azd template source
+	sources, err := sm.List(*mockContext.Context)
+	require.Nil(t, err)
+
 	require.Len(t, sources, 1)
-	require.Equal(t, SourceDefault.Key, sources[0].Key)
-	require.Equal(t, SourceDefault.Type, sources[0].Type)
+	require.Equal(t, SourceAwesomeAzd.Key, sources[0].Key)
 }
 
 func Test_sourceManager_Get(t *testing.T) {
@@ -79,7 +96,7 @@ func Test_sourceManager_Add(t *testing.T) {
 	configManager := &mockUserConfigManager{}
 	sm := NewSourceManager(configManager, mockContext.HttpClient)
 
-	config := config.NewConfig(nil)
+	config := config.NewConfig(defaultTemplateSourceData)
 	configManager.On("Load").Return(config, nil)
 	configManager.On("Save", mock.Anything).Return(nil)
 
@@ -117,7 +134,7 @@ func Test_sourceManager_Remove(t *testing.T) {
 	sm := NewSourceManager(configManager, mockContext.HttpClient)
 
 	key := "test"
-	config := config.NewConfig(nil)
+	config := config.NewConfig(defaultTemplateSourceData)
 	_ = config.Set("template.sources.test", map[string]interface{}{})
 	configManager.On("Load").Return(config, nil)
 	configManager.On("Save", mock.Anything).Return(nil)
@@ -132,7 +149,7 @@ func Test_sourceManager_Remove_SourceNotFound(t *testing.T) {
 	sm := NewSourceManager(configManager, mockContext.HttpClient)
 
 	key := "invalid"
-	config := config.NewConfig(nil)
+	config := config.NewConfig(defaultTemplateSourceData)
 	configManager.On("Load").Return(config, nil)
 
 	err := sm.Remove(*mockContext.Context, key)
@@ -142,6 +159,8 @@ func Test_sourceManager_Remove_SourceNotFound(t *testing.T) {
 
 func Test_sourceManager_CreateSource(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
+	mockAwesomeAzdTemplateSource(mockContext)
+
 	configManager := &mockUserConfigManager{}
 	sm := NewSourceManager(configManager, mockContext.HttpClient)
 
@@ -157,13 +176,6 @@ func Test_sourceManager_CreateSource(t *testing.T) {
 		return req.Method == http.MethodGet && req.URL.String() == sourceUrl
 	}).RespondFn(func(req *http.Request) (*http.Response, error) {
 		return mocks.CreateHttpResponseWithBody(req, http.StatusOK, testTemplates)
-	})
-
-	sourceAwesomeAzdUrl := "https://aka.ms/awesome-azd/templates.json"
-	mockContext.HttpClient.When(func(req *http.Request) bool {
-		return req.Method == http.MethodGet && req.URL.String() == sourceAwesomeAzdUrl
-	}).RespondFn(func(req *http.Request) (*http.Response, error) {
-		return mocks.CreateHttpResponseWithBody(req, http.StatusOK, testAwesomeAzdTemplates)
 	})
 
 	configs := []*SourceConfig{

@@ -1,3 +1,4 @@
+metadata description = 'Creates an Azure Database for PostgreSQL - Flexible Server.'
 param name string
 param location string = resourceGroup().location
 param tags object = {}

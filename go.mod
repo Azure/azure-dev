@@ -1,6 +1,6 @@
 module github.com/azure/azure-dev
 
-go 1.20
+go 1.21
 
 require (
 	github.com/AlecAivazis/survey/v2 v2.3.2
@@ -57,6 +57,8 @@ require github.com/buger/goterm v1.0.4
 require gopkg.in/dnaeon/go-vcr.v3 v3.1.2
 
 require github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v2 v2.0.0-beta.3
+
+require github.com/bmatcuk/doublestar/v4 v4.6.0
 
 require github.com/adam-lavrik/go-imath v0.0.0-20210910152346-265a42a96f0b
 

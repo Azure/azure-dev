@@ -1,3 +1,4 @@
+metadata description = 'Creates an Azure Cosmos DB for NoSQL account with a database.'
 param accountName string
 param databaseName string
 param location string = resourceGroup().location

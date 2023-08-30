@@ -11,13 +11,14 @@ import (
 	"regexp"
 	"strings"
 
+	"maps"
+
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/joho/godotenv"
-	"golang.org/x/exp/maps"
 )
 
 // EnvNameEnvVarName is the name of the key used to store the envname property in the environment.

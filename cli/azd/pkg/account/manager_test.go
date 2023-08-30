@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"slices"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
@@ -15,7 +16,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockhttp"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/exp/slices"
 )
 
 func Test_GetAccountDefaults(t *testing.T) {

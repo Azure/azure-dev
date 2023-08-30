@@ -38,7 +38,7 @@ func Test_LocalFileDataStore_List(t *testing.T) {
 	})
 }
 
-func Test_LocalFileDataStore_Save(t *testing.T) {
+func Test_LocalFileDataStore_SaveAndGet(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	azdContext := azdcontext.NewAzdContextWithDirectory(t.TempDir())
 	fileConfigManager := config.NewFileConfigManager(config.NewManager())

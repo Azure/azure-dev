@@ -1422,13 +1422,13 @@ type compileBicepResult struct {
 }
 
 func (p *BicepProvider) compileBicep(
-	ctx context.Context, modulePath *bicepModule,
+	ctx context.Context, bicepModule *bicepModule,
 ) (*compileBicepResult, error) {
 	var err error
 	var compiled string
 	var parameters azure.ArmParameters
 
-	if modulePath.fileType == bicepparam {
+	if bicepModule.fileType == bicepparam {
 		azdEnv := p.env.Environ()
 		// append principalID (not stored to .env by default). For non-bicepparam, principalId is resolved
 		// without looking at .env
@@ -1439,7 +1439,7 @@ func (p *BicepProvider) compileBicep(
 			}
 			azdEnv = append(azdEnv, fmt.Sprintf("%s=%s", environment.PrincipalIdEnvVarName, currentPrincipalId))
 		}
-		compiled, err = p.bicepCli.BuildBicepParam(ctx, modulePath.filePath, azdEnv)
+		compiled, err = p.bicepCli.BuildBicepParam(ctx, bicepModule.filePath, azdEnv)
 		if err != nil {
 			return nil, fmt.Errorf("failed to compile bicepparam template: %w", err)
 		}
@@ -1457,7 +1457,7 @@ func (p *BicepProvider) compileBicep(
 		}
 		parameters = params.Parameters
 	} else {
-		compiled, err = p.bicepCli.Build(ctx, modulePath.filePath)
+		compiled, err = p.bicepCli.Build(ctx, bicepModule.filePath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to compile bicep template: %w", err)
 		}

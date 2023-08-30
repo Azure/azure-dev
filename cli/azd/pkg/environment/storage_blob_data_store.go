@@ -74,6 +74,10 @@ func (sbd *StorageBlobDataStore) List(ctx context.Context) ([]*contracts.EnvList
 		envs = append(envs, env)
 	}
 
+	slices.SortFunc(envs, func(a, b *contracts.EnvListEnvironment) bool {
+		return a.Name < b.Name
+	})
+
 	return envs, nil
 }
 

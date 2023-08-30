@@ -62,7 +62,7 @@ func Test_StorageBlobDataStore_List(t *testing.T) {
 	})
 }
 
-func Test_StorageBlobDataStore_Save(t *testing.T) {
+func Test_StorageBlobDataStore_SaveAndGet(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	azdContext := azdcontext.NewAzdContextWithDirectory(t.TempDir())
 	configManager := config.NewManager()

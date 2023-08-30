@@ -63,7 +63,7 @@ func Test_extractZip(t *testing.T) {
 			require.NoError(t, err)
 
 			file := filepath.Join(dir, "pack.zip")
-			err = os.WriteFile(file, zip.Bytes(), 0644)
+			err = os.WriteFile(file, zip.Bytes(), 0600)
 			require.NoError(t, err)
 
 			packCli, err := extractCli(file, dir)
@@ -125,7 +125,7 @@ func Test_extractTgz(t *testing.T) {
 			require.NoError(t, err)
 
 			file := filepath.Join(dir, "pack.tgz")
-			err = os.WriteFile(file, zip.Bytes(), 0644)
+			err = os.WriteFile(file, zip.Bytes(), 0600)
 			require.NoError(t, err)
 
 			packCli, err := extractCli(file, dir)

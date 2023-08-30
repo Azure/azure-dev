@@ -166,7 +166,13 @@ func (p *dockerProject) Build(
 			path := filepath.Join(serviceConfig.Path(), dockerOptions.Path)
 			_, err := os.Stat(path)
 			packBuildEnabled := p.alphaFeatureManager.IsEnabled(alpha.Buildpacks)
-			if err != nil || !packBuildEnabled && errors.Is(err, os.ErrNotExist) {
+			if packBuildEnabled {
+				if err != nil && !errors.Is(err, os.ErrNotExist) {
+					task.SetError(fmt.Errorf("reading dockerfile: %w", err))
+					return
+				}
+			}
+			if !packBuildEnabled && err != nil {
 				task.SetError(fmt.Errorf("reading dockerfile: %w", err))
 				return
 			}

@@ -9,8 +9,11 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -18,6 +21,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/pack"
 )
 
 type DockerProjectOptions struct {
@@ -65,11 +69,13 @@ func (dpr *dockerPackageResult) MarshalJSON() ([]byte, error) {
 }
 
 type dockerProject struct {
-	env             *environment.Environment
-	docker          docker.Docker
-	framework       FrameworkService
-	containerHelper *ContainerHelper
-	console         input.Console
+	env                 *environment.Environment
+	docker              docker.Docker
+	framework           FrameworkService
+	containerHelper     *ContainerHelper
+	console             input.Console
+	alphaFeatureManager *alpha.FeatureManager
+	commandRunner       exec.CommandRunner
 }
 
 // NewDockerProject creates a new instance of a Azd project that
@@ -79,12 +85,16 @@ func NewDockerProject(
 	docker docker.Docker,
 	containerHelper *ContainerHelper,
 	console input.Console,
+	alphaFeatureManager *alpha.FeatureManager,
+	commandRunner exec.CommandRunner,
 ) CompositeFrameworkService {
 	return &dockerProject{
-		env:             env,
-		docker:          docker,
-		containerHelper: containerHelper,
-		console:         console,
+		env:                 env,
+		docker:              docker,
+		containerHelper:     containerHelper,
+		console:             console,
+		alphaFeatureManager: alphaFeatureManager,
+		commandRunner:       commandRunner,
 	}
 }
 
@@ -153,9 +163,30 @@ func (p *dockerProject) Build(
 				strings.ToLower(serviceConfig.Name),
 			)
 
+			path := filepath.Join(serviceConfig.Path(), dockerOptions.Path)
+			_, err := os.Stat(path)
+			packBuildEnabled := p.alphaFeatureManager.IsEnabled(alpha.Buildpacks)
+			if err != nil || !packBuildEnabled && errors.Is(err, os.ErrNotExist) {
+				task.SetError(fmt.Errorf("reading dockerfile: %w", err))
+				return
+			}
+
+			if packBuildEnabled && errors.Is(err, os.ErrNotExist) {
+				// Build the container from source
+				task.SetProgress(NewServiceProgress("Building Docker image from source"))
+				res, err := p.packBuild(ctx, serviceConfig, dockerOptions, imageName)
+				if err != nil {
+					task.SetError(err)
+					return
+				}
+
+				res.Restore = restoreOutput
+				task.SetResult(res)
+				return
+			}
+
 			// Build the container
 			task.SetProgress(NewServiceProgress("Building Docker image"))
-
 			previewerWriter := p.console.ShowPreviewer(ctx,
 				&input.ShowPreviewerOptions{
 					Prefix:       "  ",
@@ -228,6 +259,73 @@ func (p *dockerProject) Package(
 			})
 		},
 	)
+}
+
+// Default builder image to produce container images from source
+const BuilderImage = "paketobuildpacks/builder-jammy-base"
+
+func (p *dockerProject) packBuild(
+	ctx context.Context,
+	svc *ServiceConfig,
+	dockerOptions DockerProjectOptions,
+	imageName string) (*ServiceBuildResult, error) {
+	pack, err := pack.NewPackCli(ctx, p.console, p.commandRunner)
+	if err != nil {
+		return nil, err
+	}
+	previewer := p.console.ShowPreviewer(ctx,
+		&input.ShowPreviewerOptions{
+			Prefix:       "  ",
+			MaxLineCount: 8,
+			Title:        "Docker (pack) Output",
+		})
+
+	builder := BuilderImage
+	args := []string{}
+	environ := []string{}
+
+	if svc.OutputPath != "" &&
+		(svc.Language == ServiceLanguageTypeScript ||
+			svc.Language == ServiceLanguageJavaScript) {
+		// A dist folder has been set.
+		// We assume that the service is a front-end service.
+		// We need to set the BP_WEB_SERVER_ROOT to the dist folder.
+		environ = append(environ,
+			"BP_NODE_RUN_SCRIPTS=build",
+			"BP_WEB_SERVER=nginx",
+			"BP_WEB_SERVER_ROOT="+svc.OutputPath,
+			"BP_WEB_SERVER_ENABLE_PUSH_STATE=true")
+	}
+
+	if os.Getenv("AZD_BUILDER_IMAGE") != "" {
+		builder = os.Getenv("AZD_BUILDER_IMAGE")
+	}
+	err = pack.Build(
+		ctx,
+		svc.Path(),
+		builder,
+		imageName,
+		environ,
+		args,
+		previewer)
+	p.console.StopPreviewer(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	imageId, err := p.docker.Inspect(ctx, imageName, "{{.Id}}")
+	if err != nil {
+		return nil, err
+	}
+	imageId = strings.TrimSpace(imageId)
+
+	return &ServiceBuildResult{
+		BuildOutputPath: imageId,
+		Details: &dockerBuildResult{
+			ImageId:   imageId,
+			ImageName: imageName,
+		},
+	}, nil
 }
 
 func getDockerOptionsWithDefaults(options DockerProjectOptions) DockerProjectOptions {

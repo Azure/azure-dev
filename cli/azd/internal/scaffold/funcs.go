@@ -60,9 +60,10 @@ func lowerCase(r byte) byte {
 
 // Provide a reasonable limit for the container app infix to avoid name length issues
 // This is calculated as follows:
-// 1. Start with max initial length of 32 characters from the Container App name (https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/resource-name-rules#microsoftapp)
-// 2. Prefix abbreviation of 'ca-' from abbreviations.json (4 characters)
-// 3. Bicep resource token (13 characters) + separator '-' (1 character) -- total of 14 characters
+//  1. Start with max initial length of 32 characters from the Container App name
+//     https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/resource-name-rules#microsoftapp
+//  2. Prefix abbreviation of 'ca-' from abbreviations.json (4 characters)
+//  3. Bicep resource token (13 characters) + separator '-' (1 character) -- total of 14 characters
 //
 // Which leaves us with: 32 - 4 - 14 = 14 characters.
 // We allow 2 additional characters for wiggle-room. We've seen failures when container app name is exactly at 32.

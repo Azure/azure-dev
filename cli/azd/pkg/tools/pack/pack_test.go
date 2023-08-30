@@ -157,7 +157,7 @@ func TestNewPackCliInstall(t *testing.T) {
 	})
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.HasSuffix(args.Cmd, "pack") && args.Args[0] == "--version" && len(args.Args) == 1
+		return strings.HasSuffix(args.Cmd, packName()) && args.Args[0] == "--version" && len(args.Args) == 1
 	}).Respond(exec.NewRunResult(
 		0,
 		fmt.Sprintf("%s+git-c38f7da.build-4952", PackVersion.String()),
@@ -211,7 +211,7 @@ func TestNewPackCliUpgrade(t *testing.T) {
 	})
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
-		return strings.HasSuffix(args.Cmd, "pack") && args.Args[0] == "--version" && len(args.Args) == 1
+		return strings.HasSuffix(args.Cmd, packName()) && args.Args[0] == "--version" && len(args.Args) == 1
 	}).Respond(exec.NewRunResult(
 		0,
 		fmt.Sprintf("%s+git-c38f7da.build-4952", semver.MustParse("0.0.1").String()),

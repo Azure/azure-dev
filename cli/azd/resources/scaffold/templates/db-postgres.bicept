@@ -108,7 +108,7 @@ GRANT CONNECT ON DATABASE ${DBNAME} TO ${APPUSERNAME};
 GRANT ALL PRIVILEGES ON DATABASE ${DBNAME} TO ${APPUSERNAME};
 SCRIPT_END
 
-./psql --host=${DBSERVER} --dbname=${DBNAME} --username=${SQLADMIN} --file=./initDb.sql
+psql --host=${DBSERVER} --dbname=${DBNAME} --username=${SQLADMIN} --file=./initDb.sql
 '''
   }
 }

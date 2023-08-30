@@ -87,6 +87,7 @@
                             "appservice",
                             "containerapp",
                             "function",
+                            "springapp",
                             "staticwebapp",
                             "aks"
                         ]

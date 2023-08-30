@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -31,7 +32,7 @@ func Test_extractZip(t *testing.T) {
 			"found",
 			[]mockzip.File{
 				{
-					Name:    filepath.Join("bin", packName()),
+					Name:    path.Join("bin", packName()),
 					Content: contentZipped,
 				},
 				{
@@ -93,7 +94,7 @@ func Test_extractTgz(t *testing.T) {
 			"found",
 			[]mockzip.File{
 				{
-					Name:    filepath.Join("bin", packName()),
+					Name:    "bin/pack",
 					Content: contentZipped,
 				},
 				{

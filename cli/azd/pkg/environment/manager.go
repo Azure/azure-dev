@@ -10,6 +10,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 )
 
+// Description is a metadata description of an environment returned for the `azd env list` command
 type Description struct {
 	Name      string
 	HasLocal  bool
@@ -17,6 +18,7 @@ type Description struct {
 	IsDefault bool
 }
 
+// Spec is the specification for creating a new environment
 type Spec struct {
 	Name         string
 	Subscription string
@@ -33,10 +35,10 @@ var (
 	ErrNotFound = errors.New("environment not found")
 )
 
+// Manager is the interface used for managing instances of environments
 type Manager interface {
 	CreateInteractive(ctx context.Context, spec Spec) (*Environment, error)
 	LoadOrCreateInteractive(ctx context.Context, name string) (*Environment, error)
-	Create(ctx context.Context, name string) (*Environment, error)
 	List(ctx context.Context) ([]*Description, error)
 	Get(ctx context.Context, name string) (*Environment, error)
 	Save(ctx context.Context, env *Environment) error
@@ -52,6 +54,7 @@ type manager struct {
 	console    input.Console
 }
 
+// NewManager creates a new Manager instance
 func NewManager(
 	azdContext *azdcontext.AzdContext,
 	console input.Console,
@@ -109,7 +112,8 @@ func (m *manager) CreateInteractive(ctx context.Context, spec Spec) (*Environmen
 		return nil, fmt.Errorf(errMsg)
 	}
 
-	env, err := m.Create(ctx, spec.Name)
+	env := New(spec.Name, m.azdContext.EnvironmentRoot(spec.Name))
+	err := m.Save(ctx, env)
 	if err != nil {
 		return nil, err
 	}
@@ -129,36 +133,17 @@ func (m *manager) CreateInteractive(ctx context.Context, spec Spec) (*Environmen
 	return env, nil
 }
 
-func (m *manager) Create(ctx context.Context, name string) (*Environment, error) {
-	if !IsValidEnvironmentName(name) {
-		errMsg := invalidEnvironmentNameMsg(name)
-		return nil, errors.New(errMsg)
-	}
-
-	// Ensure the environment does not already exist:
-	_, err := m.Get(ctx, name)
-	if err != nil && errors.Is(err, ErrExists) {
-		return nil, fmt.Errorf("%w '%s'", ErrExists, name)
-	}
-
-	env := New(name, m.azdContext.EnvironmentRoot(name))
-	env.SetEnvName(name)
-
-	if err := m.Save(ctx, env); err != nil {
-		return nil, err
-	}
-
-	return env, nil
-}
-
+// ConfigPath returns the path to the environment config file
 func (m *manager) ConfigPath(env *Environment) string {
 	return m.local.ConfigPath(env)
 }
 
+// Path returns the path to the environment .env file
 func (m *manager) Path(env *Environment) string {
 	return m.local.Path(env)
 }
 
+// List returns a list of all environments within the data store
 func (m *manager) List(ctx context.Context) ([]*Description, error) {
 	envMap := map[string]*Description{}
 	defaultEnvName, err := m.azdContext.GetDefaultEnvironmentName()
@@ -208,6 +193,7 @@ func (m *manager) List(ctx context.Context) ([]*Description, error) {
 	return allEnvs, nil
 }
 
+// Get returns the environment instance for the specified environment name
 func (m *manager) Get(ctx context.Context, name string) (*Environment, error) {
 	localEnv, err := m.local.Get(ctx, name)
 	if err != nil {
@@ -230,6 +216,7 @@ func (m *manager) Get(ctx context.Context, name string) (*Environment, error) {
 	return localEnv, nil
 }
 
+// Save saves the environment to the persistent data store
 func (m *manager) Save(ctx context.Context, env *Environment) error {
 	if err := m.local.Save(ctx, env); err != nil {
 		return fmt.Errorf("saving local environment, %w", err)
@@ -246,6 +233,7 @@ func (m *manager) Save(ctx context.Context, env *Environment) error {
 	return nil
 }
 
+// Reload reloads the environment from the persistent data store
 func (m *manager) Reload(ctx context.Context, env *Environment) error {
 	return m.local.Reload(ctx, env)
 }

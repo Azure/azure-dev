@@ -227,13 +227,8 @@ func (e *Environment) Reload() error {
 	}
 
 	// Reload env config
-	configFile, err := os.Open(e.ConfigPath())
-	if err != nil {
-		return fmt.Errorf("failed reading .env file, %w", err)
-	}
-
-	cfgMgr := config.NewManager()
-	if cfg, err := cfgMgr.Load(configFile); errors.Is(err, os.ErrNotExist) {
+	cfgMgr := config.NewFileConfigManager(config.NewManager())
+	if cfg, err := cfgMgr.Load(e.ConfigPath()); errors.Is(err, os.ErrNotExist) {
 		e.Config = config.NewEmptyConfig()
 	} else if err != nil {
 		return fmt.Errorf("loading config: %w", err)
@@ -260,18 +255,8 @@ func (e *Environment) Save() error {
 	}
 
 	// Update configuration
-	configDir := filepath.Dir(e.Root)
-	if err := os.MkdirAll(configDir, osutil.PermissionDirectory); err != nil {
-		return fmt.Errorf("failed creating environment directory: %w", err)
-	}
-
-	configFile, err := os.OpenFile(e.ConfigPath(), os.O_RDWR, osutil.PermissionFile)
-	if err != nil {
-		return fmt.Errorf("failed creating .env file, %w", err)
-	}
-
-	cfgMgr := config.NewManager()
-	if err := cfgMgr.Save(e.Config, configFile); err != nil {
+	cfgMgr := config.NewFileConfigManager(config.NewManager())
+	if err := cfgMgr.Save(e.Config, e.ConfigPath()); err != nil {
 		return fmt.Errorf("saving config: %w", err)
 	}
 
@@ -290,6 +275,11 @@ func (e *Environment) Save() error {
 	// Replay deletion
 	for key := range deletedValues {
 		delete(e.dotenv, key)
+	}
+
+	err := os.MkdirAll(e.Root, osutil.PermissionDirectory)
+	if err != nil {
+		return fmt.Errorf("failed to create a directory: %w", err)
 	}
 
 	// Instead of calling `godotenv.Write` directly, we need to save the file ourselves, so we can fixup any numeric values

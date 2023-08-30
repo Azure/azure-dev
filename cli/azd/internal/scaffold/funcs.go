@@ -58,16 +58,23 @@ func lowerCase(r byte) byte {
 	return r
 }
 
-// Provide a reasonable limit to avoid name length issues
-const containerAppNameMaxLen = 12
+// Provide a reasonable limit for the container app infix to avoid name length issues
+// This is calculated as follows:
+// 1. Start with max initial length of 32 characters from the Container App name (https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/resource-name-rules#microsoftapp)
+// 2. Prefix abbreviation of 'ca-' from abbreviations.json (4 characters)
+// 3. Bicep resource token (13 characters) + separator '-' (1 character) -- total of 14 characters
+//
+// Which leaves us with: 32 - 4 - 14 = 14 characters.
+// We allow 2 additional characters for wiggle-room. We've seen failures when container app name is exactly at 32.
+const containerAppNameInfixMaxLen = 12
 
 // ContainerAppName returns a name that is valid to be used as an infix for a container app resource.
 //
 // The name is treated to only contain alphanumeric and dash characters, with no repeated dashes, and no dashes
 // as the first or last character.
 func ContainerAppName(name string) string {
-	if len(name) > containerAppNameMaxLen {
-		name = name[:containerAppNameMaxLen]
+	if len(name) > containerAppNameInfixMaxLen {
+		name = name[:containerAppNameInfixMaxLen]
 	}
 
 	// trim to allowed characters:

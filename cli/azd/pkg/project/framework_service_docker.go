@@ -25,7 +25,7 @@ type DockerProjectOptions struct {
 	Context   string           `json:"context"`
 	Platform  string           `json:"platform"`
 	Tag       ExpandableString `json:"tag"`
-	BuildArgs []string         `json:"buildArgs"`
+	BuildArgs []string         `json:"buildArgs" yaml:"buildArgs"`
 }
 
 type dockerBuildResult struct {

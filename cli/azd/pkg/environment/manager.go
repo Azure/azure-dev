@@ -8,6 +8,7 @@ import (
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"golang.org/x/exp/slices"
 )
 
 // Description is a metadata description of an environment returned for the `azd env list` command
@@ -189,6 +190,10 @@ func (m *manager) List(ctx context.Context) ([]*Description, error) {
 		env.IsDefault = env.Name == defaultEnvName
 		allEnvs = append(allEnvs, env)
 	}
+
+	slices.SortFunc(allEnvs, func(a, b *Description) bool {
+		return a.Name < b.Name
+	})
 
 	return allEnvs, nil
 }

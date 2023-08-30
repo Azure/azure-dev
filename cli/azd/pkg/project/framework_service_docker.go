@@ -171,10 +171,11 @@ func (p *dockerProject) Build(
 					task.SetError(fmt.Errorf("reading dockerfile: %w", err))
 					return
 				}
-			}
-			if !packBuildEnabled && err != nil {
-				task.SetError(fmt.Errorf("reading dockerfile: %w", err))
-				return
+			} else {
+				if err != nil {
+					task.SetError(fmt.Errorf("reading dockerfile: %w", err))
+					return
+				}
 			}
 
 			if packBuildEnabled && errors.Is(err, os.ErrNotExist) {
@@ -268,7 +269,7 @@ func (p *dockerProject) Package(
 }
 
 // Default builder image to produce container images from source
-const BuilderImage = "paketobuildpacks/builder-jammy-base"
+const DefaultBuilderImage = "paketobuildpacks/builder-jammy-base"
 
 func (p *dockerProject) packBuild(
 	ctx context.Context,
@@ -286,26 +287,28 @@ func (p *dockerProject) packBuild(
 			Title:        "Docker (pack) Output",
 		})
 
-	builder := BuilderImage
+	builder := DefaultBuilderImage
 	args := []string{}
 	environ := []string{}
 
-	if svc.OutputPath != "" &&
+	if os.Getenv("AZD_BUILDER_IMAGE") != "" {
+		builder = os.Getenv("AZD_BUILDER_IMAGE")
+	}
+
+	if builder == DefaultBuilderImage && svc.OutputPath != "" &&
 		(svc.Language == ServiceLanguageTypeScript ||
 			svc.Language == ServiceLanguageJavaScript) {
 		// A dist folder has been set.
-		// We assume that the service is a front-end service.
-		// We need to set the BP_WEB_SERVER_ROOT to the dist folder.
+		// We assume that the service is a front-end service, setting additional configuration to trigger a front-end
+		// build, with a nginx web server to serve in the run image.
 		environ = append(environ,
+			// This is currently not-customizable. We assume the build script is 'build'.
 			"BP_NODE_RUN_SCRIPTS=build",
 			"BP_WEB_SERVER=nginx",
 			"BP_WEB_SERVER_ROOT="+svc.OutputPath,
 			"BP_WEB_SERVER_ENABLE_PUSH_STATE=true")
 	}
 
-	if os.Getenv("AZD_BUILDER_IMAGE") != "" {
-		builder = os.Getenv("AZD_BUILDER_IMAGE")
-	}
 	err = pack.Build(
 		ctx,
 		svc.Path(),

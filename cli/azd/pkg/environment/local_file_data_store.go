@@ -12,16 +12,17 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
-	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/joho/godotenv"
 	"golang.org/x/exp/slices"
 )
 
+// LocalFileDataStore is a DataStore implementation that stores environment data in the local file system.
 type LocalFileDataStore struct {
 	azdContext    *azdcontext.AzdContext
 	configManager config.FileConfigManager
 }
 
+// NewLocalFileDataStore creates a new LocalFileDataStore instance
 func NewLocalFileDataStore(azdContext *azdcontext.AzdContext, configManager config.FileConfigManager) DataStore {
 	return &LocalFileDataStore{
 		azdContext:    azdContext,
@@ -39,6 +40,7 @@ func (fs *LocalFileDataStore) ConfigPath(env *Environment) string {
 	return filepath.Join(fs.azdContext.EnvironmentRoot(env.name), ConfigFileName)
 }
 
+// List returns a list of all environments within the data store
 func (fs *LocalFileDataStore) List(ctx context.Context) ([]*contracts.EnvListEnvironment, error) {
 	defaultEnv, err := fs.azdContext.GetDefaultEnvironmentName()
 	if err != nil {
@@ -74,6 +76,7 @@ func (fs *LocalFileDataStore) List(ctx context.Context) ([]*contracts.EnvListEnv
 	return envs, nil
 }
 
+// Get returns the environment instance for the specified environment name
 func (fs *LocalFileDataStore) Get(ctx context.Context, name string) (*Environment, error) {
 	root := fs.azdContext.EnvironmentRoot(name)
 	if _, err := os.Stat(root); err != nil {
@@ -88,7 +91,7 @@ func (fs *LocalFileDataStore) Get(ctx context.Context, name string) (*Environmen
 	return env, nil
 }
 
-// Reloads environment variables and configuration
+// Reload reloads the environment from the persistent data store
 func (fs *LocalFileDataStore) Reload(ctx context.Context, env *Environment) error {
 	// Reload env values
 	if envMap, err := godotenv.Read(fs.Path(env)); errors.Is(err, os.ErrNotExist) {
@@ -121,8 +124,7 @@ func (fs *LocalFileDataStore) Reload(ctx context.Context, env *Environment) erro
 	return nil
 }
 
-// If `Root` is set, Save writes the current contents of the environment to
-// the given directory, creating it and any intermediate directories as needed.
+// Save saves the environment to the persistent data store
 func (fs *LocalFileDataStore) Save(ctx context.Context, env *Environment) error {
 	// Update configuration
 	if err := fs.configManager.Save(env.Config, fs.ConfigPath(env)); err != nil {
@@ -172,21 +174,4 @@ func (fs *LocalFileDataStore) Save(ctx context.Context, env *Environment) error 
 
 	tracing.SetUsageAttributes(fields.StringHashed(fields.EnvNameKey, env.GetEnvName()))
 	return nil
-}
-
-func (fs *LocalFileDataStore) Create(ctx context.Context, name string) (*Environment, error) {
-	dir := fs.azdContext.EnvironmentDirectory()
-	if err := os.MkdirAll(dir, osutil.PermissionDirectory); err != nil {
-		return nil, fmt.Errorf("creating environment root: %w", err)
-	}
-
-	if err := os.Mkdir(fs.azdContext.EnvironmentRoot(name), osutil.PermissionDirectory); err != nil {
-		if errors.Is(err, os.ErrExist) {
-			return nil, ErrExists
-		}
-
-		return nil, fmt.Errorf("creating environment directory: %w", err)
-	}
-
-	return fs.Get(ctx, name)
 }

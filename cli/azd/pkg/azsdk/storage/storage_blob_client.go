@@ -67,6 +67,7 @@ type blobClient struct {
 	client      *azblob.Client
 }
 
+// Blob represents a blob within a storage account container.
 type Blob struct {
 	Name         string
 	Path         string
@@ -74,6 +75,7 @@ type Blob struct {
 	LastModified time.Time
 }
 
+// Items returns a list of blobs in the configured storage account container.
 func (bc *blobClient) Items(ctx context.Context) ([]*Blob, error) {
 	client, err := bc.createClient(ctx)
 	if err != nil {
@@ -107,6 +109,7 @@ func (bc *blobClient) Items(ctx context.Context) ([]*Blob, error) {
 	return blobs, nil
 }
 
+// Download downloads a blob from the configured storage account container.
 func (bc *blobClient) Download(ctx context.Context, blobPath string) (io.ReadCloser, error) {
 	client, err := bc.createClient(ctx)
 	if err != nil {
@@ -125,6 +128,7 @@ func (bc *blobClient) Download(ctx context.Context, blobPath string) (io.ReadClo
 	return resp.Body, nil
 }
 
+// Upload uploads a blob to the configured storage account container.
 func (bc *blobClient) Upload(ctx context.Context, blobPath string, reader io.Reader) error {
 	client, err := bc.createClient(ctx)
 	if err != nil {
@@ -143,6 +147,7 @@ func (bc *blobClient) Upload(ctx context.Context, blobPath string, reader io.Rea
 	return nil
 }
 
+// Delete deletes a blob from the configured storage account container.
 func (bc *blobClient) Delete(ctx context.Context, blobPath string) error {
 	client, err := bc.createClient(ctx)
 	if err != nil {

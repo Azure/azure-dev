@@ -37,8 +37,7 @@ type PackCli interface {
 		builder string,
 		imageName string,
 		environ []string,
-		args []string,
-		buildProgress io.Writer,
+		progressWriter io.Writer,
 	) error
 }
 
@@ -166,47 +165,26 @@ func (cli *packCli) version(ctx context.Context) (semver.Version, error) {
 	return version, nil
 }
 
-func (cli *packCli) enableExperimental(ctx context.Context) error {
-	runArgs := exec.NewRunArgs(cli.path, "config", "experimental", "true")
-	runArgs.Interactive = false
-	_, err := cli.runner.Run(ctx, runArgs)
-	if err != nil {
-		return err
-	}
-
-	return nil
-}
-
 func (cli *packCli) Build(
 	ctx context.Context,
 	cwd string,
 	builder string,
 	imageName string,
 	environ []string,
-	args []string,
-	buildProgress io.Writer,
+	progressWriter io.Writer,
 ) error {
-	err := cli.enableExperimental(ctx)
-	if err != nil {
-		return err
-	}
-
 	envArgs := make([]string, 0, 2*len(environ))
 	for _, e := range environ {
 		envArgs = append(envArgs, "--env", e)
 	}
 
-	runArgs := exec.NewRunArgs(
-		cli.path, "build", imageName, "--builder", builder, "--path", cwd)
+	runArgs := exec.NewRunArgs(cli.path, "build", imageName, "--builder", builder, "--path", cwd)
 	runArgs.Args = append(runArgs.Args, envArgs...)
-	if len(args) > 0 {
-		runArgs.Args = append(runArgs.Args, args...)
-	}
-	if buildProgress != nil {
-		runArgs = runArgs.WithStdOut(buildProgress).WithStdErr(buildProgress)
+	if progressWriter != nil {
+		runArgs = runArgs.WithStdOut(progressWriter).WithStdErr(progressWriter)
 	}
 
-	_, err = cli.runner.Run(ctx, runArgs)
+	_, err := cli.runner.Run(ctx, runArgs)
 	if err != nil {
 		return err
 	}

@@ -288,7 +288,6 @@ func (p *dockerProject) packBuild(
 		})
 
 	builder := DefaultBuilderImage
-	args := []string{}
 	environ := []string{}
 
 	if os.Getenv("AZD_BUILDER_IMAGE") != "" {
@@ -315,7 +314,6 @@ func (p *dockerProject) packBuild(
 		builder,
 		imageName,
 		environ,
-		args,
 		previewer)
 	p.console.StopPreviewer(ctx)
 	if err != nil {

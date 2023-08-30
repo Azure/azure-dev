@@ -280,13 +280,6 @@ func (p *dockerProject) packBuild(
 	if err != nil {
 		return nil, err
 	}
-	previewer := p.console.ShowPreviewer(ctx,
-		&input.ShowPreviewerOptions{
-			Prefix:       "  ",
-			MaxLineCount: 8,
-			Title:        "Docker (pack) Output",
-		})
-
 	builder := DefaultBuilderImage
 	environ := []string{}
 
@@ -308,6 +301,12 @@ func (p *dockerProject) packBuild(
 			"BP_WEB_SERVER_ENABLE_PUSH_STATE=true")
 	}
 
+	previewer := p.console.ShowPreviewer(ctx,
+		&input.ShowPreviewerOptions{
+			Prefix:       "  ",
+			MaxLineCount: 8,
+			Title:        "Docker (pack) Output",
+		})
 	err = pack.Build(
 		ctx,
 		svc.Path(),

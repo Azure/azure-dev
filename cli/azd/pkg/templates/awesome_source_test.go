@@ -24,15 +24,10 @@ var testAwesomeAzdTemplates []*awesomeAzdTemplate = []*awesomeAzdTemplate{
 
 func Test_NewAwesomeAzdTemplateSource_ValidUrl(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
+	mockAwesomeAzdTemplateSource(mockContext)
 
 	name := "test"
 	url := "https://aka.ms/awesome-azd/templates.json"
-
-	mockContext.HttpClient.When(func(req *http.Request) bool {
-		return req.Method == http.MethodGet && req.URL.String() == url
-	}).RespondFn(func(req *http.Request) (*http.Response, error) {
-		return mocks.CreateHttpResponseWithBody(req, http.StatusOK, testAwesomeAzdTemplates)
-	})
 
 	source, err := NewAwesomeAzdTemplateSource(context.Background(), name, url, mockContext.HttpClient)
 	require.Nil(t, err)
@@ -72,4 +67,14 @@ func Test_NewAwesomeAzdTemplateSource_InvalidUrl(t *testing.T) {
 	source, err := NewAwesomeAzdTemplateSource(context.Background(), name, url, mockContext.HttpClient)
 	require.Nil(t, source)
 	require.Error(t, err)
+}
+
+func mockAwesomeAzdTemplateSource(mockContext *mocks.MockContext) {
+	const url = "https://aka.ms/awesome-azd/templates.json"
+
+	mockContext.HttpClient.When(func(req *http.Request) bool {
+		return req.Method == http.MethodGet && req.URL.String() == url
+	}).RespondFn(func(req *http.Request) (*http.Response, error) {
+		return mocks.CreateHttpResponseWithBody(req, http.StatusOK, testAwesomeAzdTemplates)
+	})
 }

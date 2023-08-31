@@ -25,6 +25,7 @@ const (
 	defaultAgentPoolName    = "default"
 	enterpriseTierName      = "Enterprise"
 	buildNameSuffix         = "-azd-build"
+	defaultJvmVersion       = "17"
 )
 
 // The Azure Spring Apps configuration options
@@ -34,6 +35,7 @@ type SpringOptions struct {
 	BuildServiceName string `yaml:"buildServiceName"`
 	BuilderName      string `yaml:"builderName"`
 	AgentPoolName    string `yaml:"agentPoolName"`
+	JvmVersion       string `yaml:"jvmVersion"`
 }
 
 type springAppTarget struct {
@@ -106,6 +108,10 @@ func (st *springAppTarget) Deploy(
 			if agentPoolName == "" {
 				agentPoolName = defaultAgentPoolName
 			}
+			jvmVersion := serviceConfig.Spring.JvmVersion
+			if jvmVersion == "" {
+				jvmVersion = defaultJvmVersion
+			}
 
 			_, err := st.springService.GetSpringAppDeployment(
 				ctx,
@@ -122,8 +128,8 @@ func (st *springAppTarget) Deploy(
 				return
 			}
 
-			// TODO: Consider support container image and buildpacks deployment in the future
-			// For now, Azure Spring Apps only support jar deployment
+			// Azure Spring Apps supports jar deployment for all of its tiers, thus we currently
+			// choose jar as the unified solution.
 			ext := ".jar"
 			artifactPath := filepath.Join(packageOutput.PackagePath, AppServiceJavaPackageName+ext)
 
@@ -173,6 +179,7 @@ func (st *springAppTarget) Deploy(
 					agentPoolName,
 					builderName,
 					serviceConfig.Name+buildNameSuffix,
+					jvmVersion,
 					*relativePath)
 
 				if err != nil {
@@ -211,6 +218,9 @@ func (st *springAppTarget) Deploy(
 				}
 
 				result = *buildResult
+				// save the build result id, otherwise the it will be overwritten
+				// in the deployment from Bicep/Terraform
+				st.storeDeploymentEnvironment(task, serviceConfig.Name, "BUILD_RESULT_ID", *buildResultId)
 			} else {
 				// for non-Enterprise tier
 				task.SetProgress(NewServiceProgress("Deploying spring artifact"))
@@ -229,14 +239,9 @@ func (st *springAppTarget) Deploy(
 				}
 
 				result = *deployResult
-			}
-
-			// save the storage relative, otherwise the relative path will be overwritten
-			// in the deployment from Bicep/Terraform
-			st.env.SetServiceProperty(serviceConfig.Name, "RELATIVE_PATH", *relativePath)
-			if err := st.env.Save(); err != nil {
-				task.SetError(fmt.Errorf("failed updating environment with relative path, %w", err))
-				return
+				// save the storage relative, otherwise the relative path will be overwritten
+				// in the deployment from Bicep/Terraform
+				st.storeDeploymentEnvironment(task, serviceConfig.Name, "RELATIVE_PATH", *relativePath)
 			}
 
 			task.SetProgress(NewServiceProgress("Fetching endpoints for spring app service"))
@@ -300,4 +305,17 @@ func (st *springAppTarget) validateTargetResource(
 	}
 
 	return nil
+}
+
+func (st *springAppTarget) storeDeploymentEnvironment(
+	task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress],
+	serviceName string,
+	propertyName string,
+	value string,
+) {
+	st.env.SetServiceProperty(serviceName, propertyName, value)
+	if err := st.env.Save(); err != nil {
+		task.SetError(fmt.Errorf("failed updating environment with %s, %w", propertyName, err))
+		return
+	}
 }

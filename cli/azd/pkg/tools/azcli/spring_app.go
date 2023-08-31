@@ -4,16 +4,17 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/url"
+	"os"
+	"strings"
+	"time"
+
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appplatform/armappplatform/v2"
 	"github.com/Azure/azure-storage-file-go/azfile"
 	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
-	"net/url"
-	"os"
-	"strings"
-	"time"
 )
 
 // SpringService provides artifacts upload/deploy and query to Azure Spring Apps (ASA)
@@ -71,6 +72,7 @@ type SpringService interface {
 		agentPoolName string,
 		builderName string,
 		buildName string,
+		jvmVersion string,
 		relativePath string,
 	) (*string, error)
 	// Get build result from BuildService
@@ -171,6 +173,7 @@ func (ss *springService) CreateBuild(
 	agentPoolName string,
 	builderName string,
 	buildName string,
+	jvmVersion string,
 	relativePath string,
 ) (*string, error) {
 	client, err := ss.createBuildServiceClient(ctx, subscriptionId)
@@ -186,8 +189,7 @@ func (ss *springService) CreateBuild(
 			AgentPool: to.Ptr(agentPoolId),
 			Builder:   to.Ptr(builderId),
 			Env: map[string]*string{
-				"environmentVariable": to.Ptr("test"),
-				"BP_JVM_VERSION":      to.Ptr("17"), // hard code for JDK version
+				"BP_JVM_VERSION": to.Ptr(jvmVersion),
 			},
 			RelativePath: to.Ptr(relativePath),
 		},

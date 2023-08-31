@@ -33,6 +33,7 @@ type Docker interface {
 	) (string, error)
 	Tag(ctx context.Context, cwd string, imageName string, tag string) error
 	Push(ctx context.Context, cwd string, tag string) error
+	Inspect(ctx context.Context, imageName string, format string) (string, error)
 }
 
 func NewDocker(commandRunner exec.CommandRunner) Docker {
@@ -145,6 +146,15 @@ func (d *docker) Push(ctx context.Context, cwd string, tag string) error {
 	}
 
 	return nil
+}
+
+func (d *docker) Inspect(ctx context.Context, imageName string, format string) (string, error) {
+	out, err := d.executeCommand(ctx, "", "image", "inspect", "--format", format, imageName)
+	if err != nil {
+		return "", fmt.Errorf("inspecting image: %w", err)
+	}
+
+	return out.Stdout, nil
 }
 
 func (d *docker) versionInfo() tools.VersionInfo {

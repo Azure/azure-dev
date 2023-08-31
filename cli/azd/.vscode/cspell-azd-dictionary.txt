@@ -71,6 +71,7 @@ errcheck
 errorinfo
 errorlint
 executil
+Frontends
 funcapp
 functestapp
 functionapp
@@ -94,6 +95,7 @@ lechnerc77
 mgmt
 mgutz
 microsoftonline
+missingkey
 mockarmresources
 mockazcli
 mvnw

@@ -25,11 +25,11 @@ import (
 )
 
 type DockerProjectOptions struct {
-	Path      string           `json:"path"`
-	Context   string           `json:"context"`
-	Platform  string           `json:"platform"`
-	Tag       ExpandableString `json:"tag"`
-	BuildArgs []string         `json:"buildArgs" yaml:"buildArgs"`
+	Path      string           `yaml:"path,omitempty" json:"path,omitempty"`
+	Context   string           `yaml:"context,omitempty" json:"context,omitempty"`
+	Platform  string           `yaml:"platform,omitempty" json:"platform,omitempty"`
+	Tag       ExpandableString `yaml:"tag,omitempty" json:"tag,omitempty"`
+	BuildArgs []string         `yaml:"buildArgs,omitempty" json:"buildArgs,omitempty"`
 }
 
 type dockerBuildResult struct {

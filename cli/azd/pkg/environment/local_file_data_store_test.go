@@ -2,6 +2,7 @@ package environment
 
 import (
 	"context"
+	"path/filepath"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
@@ -17,11 +18,11 @@ func Test_LocalFileDataStore_List(t *testing.T) {
 	dataStore := NewLocalFileDataStore(azdContext, fileConfigManager)
 
 	t.Run("List", func(t *testing.T) {
-		env1 := New("env1", azdContext.EnvironmentRoot("env1"))
+		env1 := New("env1")
 		err := dataStore.Save(*mockContext.Context, env1)
 		require.NoError(t, err)
 
-		env2 := New("env2", azdContext.EnvironmentRoot("env2"))
+		env2 := New("env2")
 		err = dataStore.Save(*mockContext.Context, env2)
 		require.NoError(t, err)
 
@@ -45,7 +46,7 @@ func Test_LocalFileDataStore_SaveAndGet(t *testing.T) {
 	dataStore := NewLocalFileDataStore(azdContext, fileConfigManager)
 
 	t.Run("Success", func(t *testing.T) {
-		env1 := New("env1", azdContext.EnvironmentRoot("env1"))
+		env1 := New("env1")
 		env1.DotenvSet("key1", "value1")
 		err := dataStore.Save(*mockContext.Context, env1)
 		require.NoError(t, err)
@@ -57,4 +58,28 @@ func Test_LocalFileDataStore_SaveAndGet(t *testing.T) {
 		actual := env1.Getenv("key1")
 		require.Equal(t, "value1", actual)
 	})
+}
+
+func Test_LocalFileDataStore_Path(t *testing.T) {
+	azdContext := azdcontext.NewAzdContextWithDirectory(t.TempDir())
+	fileConfigManager := config.NewFileConfigManager(config.NewManager())
+	dataStore := NewLocalFileDataStore(azdContext, fileConfigManager)
+
+	env := New("env1")
+	expected := filepath.Join(azdContext.EnvironmentRoot("env1"), DotEnvFileName)
+	actual := dataStore.Path(env)
+
+	require.Equal(t, expected, actual)
+}
+
+func Test_LocalFileDataStore_ConfigPath(t *testing.T) {
+	azdContext := azdcontext.NewAzdContextWithDirectory(t.TempDir())
+	fileConfigManager := config.NewFileConfigManager(config.NewManager())
+	dataStore := NewLocalFileDataStore(azdContext, fileConfigManager)
+
+	env := New("env1")
+	expected := filepath.Join(azdContext.EnvironmentRoot("env1"), ConfigFileName)
+	actual := dataStore.ConfigPath(env)
+
+	require.Equal(t, expected, actual)
 }

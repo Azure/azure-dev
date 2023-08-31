@@ -9,9 +9,9 @@ import (
 
 type ServiceConfig struct {
 	// Reference to the parent project configuration
-	Project *ProjectConfig `yaml:"-,omitempty"`
+	Project *ProjectConfig `yaml:"-"`
 	// The friendly name/key of the project from the azure.yaml file
-	Name string `yaml:",omitempty"`
+	Name string `yaml:"-"`
 	// The name used to override the default azure resource name
 	ResourceName ExpandableString `yaml:"resourceName,omitempty"`
 	// The relative path to the project folder from the project root
@@ -33,7 +33,7 @@ type ServiceConfig struct {
 	// Hook configuration for service
 	Hooks map[string]*ext.HookConfig `yaml:"hooks,omitempty"`
 
-	*ext.EventDispatcher[ServiceLifecycleEventArgs] `yaml:",omitempty"`
+	*ext.EventDispatcher[ServiceLifecycleEventArgs] `yaml:"-"`
 
 	initialized bool
 }

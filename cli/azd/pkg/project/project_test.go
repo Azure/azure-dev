@@ -277,27 +277,29 @@ func TestMinimalYaml(t *testing.T) {
 		serviceConfig ServiceConfig
 	}{
 		{
-			"minimal service",
+			"minimal-service",
 			ServiceConfig{
-				Name:     "any",
-				Language: ServiceLanguagePython,
-				Host:     AppServiceTarget,
+				Name:         "ignored",
+				Language:     ServiceLanguagePython,
+				Host:         AppServiceTarget,
+				RelativePath: "./src",
 			},
 		},
 		{
-			"docker",
+			"minimal-docker",
 			ServiceConfig{
-				Name:     "any",
+				Name:     "ignored",
 				Language: ServiceLanguageDotNet,
 				Host:     ContainerAppTarget,
 				Docker: DockerProjectOptions{
-					Path: "Dockerfile",
+					Path: "./Dockerfile",
 				},
+				RelativePath: "./src",
 			},
 		},
 	}
 	for _, tt := range tests {
-		t.Run("with service", func(t *testing.T) {
+		t.Run(tt.name, func(t *testing.T) {
 			prj.Services = map[string]*ServiceConfig{
 				tt.name: &tt.serviceConfig,
 			}

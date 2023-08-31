@@ -104,9 +104,12 @@ func askOnePrompt(p survey.Prompt, response interface{}, isTerminal bool, stdout
 			opts = append(opts, withShowCursor)
 		}
 
-		// use blue question mark for all questions
 		opts = append(opts, survey.WithIcons(func(icons *survey.IconSet) {
+			// use blue question mark for all questions
 			icons.Question.Format = "blue"
+
+			icons.Help.Format = "black+h"
+			icons.Help.Text = "Hint:"
 		}))
 
 		return survey.AskOne(p, response, opts...)

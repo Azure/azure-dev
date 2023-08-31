@@ -322,7 +322,7 @@ func (en *envNewAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		Location:     en.flags.location,
 	}
 
-	env, err := en.envManager.CreateInteractive(ctx, envSpec)
+	env, err := en.envManager.Create(ctx, envSpec)
 	if err != nil {
 		return nil, fmt.Errorf("creating new environment: %w", err)
 	}

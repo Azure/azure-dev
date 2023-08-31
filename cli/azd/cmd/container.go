@@ -228,7 +228,12 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	// Lazy loads an existing environment, erroring out if not available
 	// One can repeatedly call GetValue to wait until the environment is available.
 	container.RegisterSingleton(
-		func(ctx context.Context, envManager environment.Manager, lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext], envFlags envFlag) *lazy.Lazy[*environment.Environment] {
+		func(
+			ctx context.Context,
+			envManager environment.Manager,
+			lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext],
+			envFlags envFlag,
+		) *lazy.Lazy[*environment.Environment] {
 			return lazy.NewLazy(func() (*environment.Environment, error) {
 				azdCtx, err := lazyAzdContext.GetValue()
 				if err != nil {

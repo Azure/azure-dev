@@ -63,7 +63,7 @@ func (c *MockHttpClient) Reset() {
 }
 
 func (c *MockHttpClient) CloseIdleConnections() {
-	return
+	// No-op
 }
 
 func (e *HttpExpression) Respond(response *http.Response) *MockHttpClient {

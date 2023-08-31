@@ -16,6 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
 	"github.com/azure/azure-dev/cli/azd/test/ostest"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -321,7 +322,11 @@ func runMiddleware(
 	nextFn NextFn,
 ) (*actions.ActionResult, error) {
 	env := environment.NewWithValues(envName, nil)
+
+	// Setup environment mocks for save & reload
 	envManager := &mockenv.MockEnvManager{}
+	envManager.On("Save", mock.Anything, mock.Anything).Return(nil)
+	envManager.On("Reload", mock.Anything, mock.Anything).Return(nil)
 
 	lazyEnv := lazy.NewLazy(func() (*environment.Environment, error) {
 		return env, nil
@@ -354,6 +359,9 @@ func ensureAzdValid(
 	projectConfig *project.ProjectConfig,
 ) error {
 	envManager := &mockenv.MockEnvManager{}
+	envManager.On("Save", mock.Anything, mock.Anything).Return(nil)
+	envManager.On("Reload", mock.Anything, mock.Anything).Return(nil)
+
 	err := ensureAzdEnv(*mockContext.Context, envManager, envName)
 	if err != nil {
 		return err

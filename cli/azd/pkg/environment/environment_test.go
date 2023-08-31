@@ -68,7 +68,7 @@ func TestFromRoot(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 
 	t.Run("EmptyRoot", func(t *testing.T) {
-		//t.Parallel()
+		t.Parallel()
 
 		env := New("test")
 		require.NotNil(t, env)
@@ -77,11 +77,11 @@ func TestFromRoot(t *testing.T) {
 		require.NotNil(t, env.dotenv)
 
 		require.NotNil(t, env.Config.IsEmpty())
-		require.Equal(t, 0, len(env.dotenv))
+		require.Equal(t, 1, len(env.dotenv))
 	})
 
 	t.Run("EmptyWhenMissing", func(t *testing.T) {
-		//t.Parallel()
+		t.Parallel()
 
 		envManager, _ := createEnvManager(t, mockContext, t.TempDir())
 		env, err := envManager.Get(*mockContext.Context, "test")
@@ -93,7 +93,7 @@ func TestFromRoot(t *testing.T) {
 	// still be able to load the environment without error, and the Config object should be valid but empty. Any existing
 	// entries in the .env file should be present when we load the existing environment.
 	t.Run("Upgrade", func(t *testing.T) {
-		//t.Parallel()
+		t.Parallel()
 
 		envManager, azdCtx := createEnvManager(t, mockContext, t.TempDir())
 		envRoot := azdCtx.EnvironmentRoot("testEnv")

@@ -18,6 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
@@ -78,7 +79,7 @@ func (i *initFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOpt
 }
 
 type initAction struct {
-	envManager      environment.Manager
+	serviceLocator  ioc.ServiceLocator
 	console         input.Console
 	cmdRun          exec.CommandRunner
 	gitCli          git.GitCli
@@ -88,7 +89,7 @@ type initAction struct {
 }
 
 func newInitAction(
-	envManager environment.Manager,
+	serviceLocator ioc.ServiceLocator,
 	cmdRun exec.CommandRunner,
 	console input.Console,
 	gitCli git.GitCli,
@@ -96,7 +97,7 @@ func newInitAction(
 	repoInitializer *repository.Initializer,
 	templateManager *templates.TemplateManager) actions.Action {
 	return &initAction{
-		envManager:      envManager,
+		serviceLocator:  serviceLocator,
 		console:         console,
 		cmdRun:          cmdRun,
 		gitCli:          gitCli,
@@ -199,7 +200,15 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		Suggest:      suggest,
 	}
 
-	env, err := i.envManager.CreateInteractive(ctx, envSpec)
+	// Environment manager requires azd context
+	// Azd context isn't available in init so lazy instantiating
+	// it here after the template is hydrated and the context is available
+	var envManager environment.Manager
+	if err := i.serviceLocator.Resolve(&envManager); err != nil {
+		return nil, err
+	}
+
+	env, err := envManager.Create(ctx, envSpec)
 	if err != nil {
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}

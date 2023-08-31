@@ -185,6 +185,16 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		}, nil
 	}
 
+	if deployResult.LocalCacheSkipped {
+		p.console.Message(ctx, "skipped due to cache")
+
+		return &actions.ActionResult{
+			Message: &actions.ResultMessage{
+				Header: "Cache...",
+			},
+		}, nil
+	}
+
 	for _, svc := range p.projectConfig.Services {
 		eventArgs := project.ServiceLifecycleEventArgs{
 			Project: p.projectConfig,

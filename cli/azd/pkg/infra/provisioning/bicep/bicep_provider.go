@@ -70,6 +70,7 @@ type BicepProvider struct {
 	curPrincipal         CurrentPrincipalIdProvider
 	alphaFeatureManager  *alpha.FeatureManager
 	clock                clock.Clock
+	cacheManager         CacheManager
 }
 
 var ErrResourceGroupScopeNotSupported = fmt.Errorf(
@@ -97,6 +98,10 @@ func (p *BicepProvider) Initialize(ctx context.Context, projectPath string, opti
 	requiredTools := p.RequiredExternalTools()
 	if err := tools.EnsureInstalled(ctx, requiredTools...); err != nil {
 		return err
+	}
+
+	if p.alphaFeatureManager.IsEnabled(alpha.BicepCache) {
+		p.console.WarnForFeature(ctx, alpha.BicepCache)
 	}
 
 	return p.EnsureEnv(ctx)
@@ -386,6 +391,18 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*DeployResult, error) {
 		return nil, err
 	}
 
+	if p.alphaFeatureManager.IsEnabled(alpha.BicepCache) {
+		newCache := &BicepCache{
+			Template:   bicepDeploymentData.Template,
+			Parameters: bicepDeploymentData.Parameters,
+		}
+		if p.cacheManager.Equal(ctx, newCache) {
+			return &DeployResult{
+				LocalCacheSkipped: true,
+			}, nil
+		}
+	}
+
 	cancelProgress := make(chan bool)
 	defer func() { cancelProgress <- true }()
 	go func() {
@@ -441,6 +458,14 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*DeployResult, error) {
 		bicepDeploymentData.TemplateOutputs,
 		azapi.CreateDeploymentOutput(deployResult.Properties.Outputs),
 	)
+
+	// save local cache
+	if p.alphaFeatureManager.IsEnabled(alpha.BicepCache) {
+		_ = p.cacheManager.Cache(ctx, &BicepCache{
+			Template:   bicepDeploymentData.Template,
+			Parameters: bicepDeploymentData.Parameters,
+		})
+	}
 
 	return &DeployResult{
 		Deployment: deployment,
@@ -1620,6 +1645,7 @@ func NewBicepProvider(
 	curPrincipal CurrentPrincipalIdProvider,
 	alphaFeatureManager *alpha.FeatureManager,
 	clock clock.Clock,
+	cacheManager CacheManager,
 ) Provider {
 	return &BicepProvider{
 		env:                  env,
@@ -1632,5 +1658,6 @@ func NewBicepProvider(
 		curPrincipal:         curPrincipal,
 		alphaFeatureManager:  alphaFeatureManager,
 		clock:                clock,
+		cacheManager:         cacheManager,
 	}
 }

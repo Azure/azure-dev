@@ -2,3 +2,5 @@
   description: "Provision Azure resources from terraform files."
 - id: resourceGroupDeployments
   description: "Support infrastructure deployments at resource group scope."
+- id: bicep.local.cache
+  description: "Cache provision result and skip provisioning if there's no changes locally."

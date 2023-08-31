@@ -59,6 +59,10 @@ func (m *Manager) Deploy(ctx context.Context) (*DeployResult, error) {
 		return nil, fmt.Errorf("error deploying infrastructure: %w", err)
 	}
 
+	if deployResult.LocalCacheSkipped {
+		return deployResult, nil
+	}
+
 	if err := UpdateEnvironment(m.env, deployResult.Deployment.Outputs); err != nil {
 		return nil, fmt.Errorf("updating environment with deployment outputs: %w", err)
 	}

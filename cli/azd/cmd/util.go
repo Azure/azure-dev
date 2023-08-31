@@ -40,20 +40,7 @@ func invalidEnvironmentNameMsg(environmentName string) string {
 
 // ensureValidEnvironmentName ensures the environment name is valid, if it is not, an error is printed
 // and the user is prompted for a new name.
-func ensureValidEnvironmentName(
-	ctx context.Context,
-	environmentName *string,
-	examples []string,
-	console input.Console) error {
-	exampleText := ""
-	if len(examples) > 0 {
-		exampleText = "\n\nExamples:"
-	}
-
-	for _, example := range examples {
-		exampleText += fmt.Sprintf("\n  %s", example)
-	}
-
+func ensureValidEnvironmentName(ctx context.Context, environmentName *string, suggest string, console input.Console) error {
 	for !environment.IsValidEnvironmentName(*environmentName) {
 		userInput, err := console.Prompt(ctx, input.ConsoleOptions{
 			Message: "Enter a new environment name:",
@@ -62,7 +49,8 @@ func ensureValidEnvironmentName(
 			
 			This value is typically used by the infrastructure as code templates to name the resource group that contains
 			the infrastructure for your application and to generate a unique suffix that is applied to resources to prevent
-			naming collisions.`) + exampleText,
+			naming collisions.`),
+			DefaultValue: suggest,
 		})
 
 		if err != nil {
@@ -83,8 +71,8 @@ type environmentSpec struct {
 	environmentName string
 	subscription    string
 	location        string
-	// examples of environment names to prompt.
-	examples []string
+	// suggest is the name that is offered as a suggestion if we need to prompt the user for an environment name.
+	suggest string
 }
 
 // createEnvironment creates a new named environment. If an environment with this name already
@@ -101,7 +89,7 @@ func createEnvironment(
 		return nil, fmt.Errorf(errMsg)
 	}
 
-	if err := ensureValidEnvironmentName(ctx, &envSpec.environmentName, envSpec.examples, console); err != nil {
+	if err := ensureValidEnvironmentName(ctx, &envSpec.environmentName, envSpec.suggest, console); err != nil {
 		return nil, err
 	}
 
@@ -196,7 +184,7 @@ func loadOrCreateEnvironment(
 				environmentName)
 		}
 
-		if err := ensureValidEnvironmentName(ctx, &environmentName, nil, console); err != nil {
+		if err := ensureValidEnvironmentName(ctx, &environmentName, "", console); err != nil {
 			return nil, false, err
 		}
 

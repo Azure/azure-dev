@@ -23,7 +23,7 @@ type LocalFileDataStore struct {
 }
 
 // NewLocalFileDataStore creates a new LocalFileDataStore instance
-func NewLocalFileDataStore(azdContext *azdcontext.AzdContext, configManager config.FileConfigManager) DataStore {
+func NewLocalFileDataStore(azdContext *azdcontext.AzdContext, configManager config.FileConfigManager) LocalDataStore {
 	return &LocalFileDataStore{
 		azdContext:    azdContext,
 		configManager: configManager,
@@ -63,7 +63,8 @@ func (fs *LocalFileDataStore) List(ctx context.Context) ([]*contracts.EnvListEnv
 			ev := &contracts.EnvListEnvironment{
 				Name:       ent.Name(),
 				IsDefault:  ent.Name() == defaultEnv,
-				DotEnvPath: fs.azdContext.EnvironmentDotEnvPath(ent.Name()),
+				DotEnvPath: filepath.Join(fs.azdContext.EnvironmentRoot(ent.Name()), DotEnvFileName),
+				ConfigPath: filepath.Join(fs.azdContext.EnvironmentRoot(ent.Name()), ConfigFileName),
 			}
 			envs = append(envs, ev)
 		}
@@ -83,7 +84,7 @@ func (fs *LocalFileDataStore) Get(ctx context.Context, name string) (*Environmen
 		return nil, fmt.Errorf("'%s' %w, %w", name, ErrNotFound, err)
 	}
 
-	env := New(name, fs.azdContext.EnvironmentRoot(name))
+	env := New(name)
 	if err := fs.Reload(ctx, env); err != nil {
 		return nil, err
 	}

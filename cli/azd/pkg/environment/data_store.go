@@ -26,3 +26,6 @@ type DataStore interface {
 	// Saves the environment to the persistent data store
 	Save(ctx context.Context, env *Environment) error
 }
+
+type LocalDataStore DataStore
+type RemoteDataStore DataStore

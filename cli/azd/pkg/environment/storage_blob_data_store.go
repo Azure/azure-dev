@@ -22,7 +22,7 @@ type StorageBlobDataStore struct {
 	blobClient    storage.BlobClient
 }
 
-func NewStorageBlobDataStore(configManager config.Manager, blobClient storage.BlobClient) DataStore {
+func NewStorageBlobDataStore(configManager config.Manager, blobClient storage.BlobClient) RemoteDataStore {
 	return &StorageBlobDataStore{
 		configManager: configManager,
 		blobClient:    blobClient,

@@ -3,12 +3,12 @@ package environment
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
@@ -64,7 +64,6 @@ func Test_StorageBlobDataStore_List(t *testing.T) {
 
 func Test_StorageBlobDataStore_SaveAndGet(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
-	azdContext := azdcontext.NewAzdContextWithDirectory(t.TempDir())
 	configManager := config.NewManager()
 	blobClient := &MockBlobClient{}
 	dataStore := NewStorageBlobDataStore(configManager, blobClient)
@@ -77,7 +76,7 @@ func Test_StorageBlobDataStore_SaveAndGet(t *testing.T) {
 		blobClient.On("Download", *mockContext.Context, "env1/config.json").Return(configReader, nil)
 		blobClient.On("Upload", *mockContext.Context, mock.AnythingOfType("string"), mock.Anything).Return(nil)
 
-		env1 := New("env1", azdContext.EnvironmentRoot("env1"))
+		env1 := New("env1")
 		env1.DotenvSet("key1", "value1")
 		err := dataStore.Save(*mockContext.Context, env1)
 		require.NoError(t, err)
@@ -89,6 +88,30 @@ func Test_StorageBlobDataStore_SaveAndGet(t *testing.T) {
 		actual := env1.Getenv("key1")
 		require.Equal(t, "value1", actual)
 	})
+}
+
+func Test_StorageBlobDataStore_Path(t *testing.T) {
+	configManager := config.NewManager()
+	blobClient := &MockBlobClient{}
+	dataStore := NewStorageBlobDataStore(configManager, blobClient)
+
+	env := New("env1")
+	expected := fmt.Sprintf("%s/%s", env.name, DotEnvFileName)
+	actual := dataStore.Path(env)
+
+	require.Equal(t, expected, actual)
+}
+
+func Test_StorageBlobDataStore_ConfigPath(t *testing.T) {
+	configManager := config.NewManager()
+	blobClient := &MockBlobClient{}
+	dataStore := NewStorageBlobDataStore(configManager, blobClient)
+
+	env := New("env1")
+	expected := fmt.Sprintf("%s/%s", env.name, ConfigFileName)
+	actual := dataStore.ConfigPath(env)
+
+	require.Equal(t, expected, actual)
 }
 
 type MockBlobClient struct {

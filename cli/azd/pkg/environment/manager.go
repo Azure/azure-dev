@@ -38,6 +38,7 @@ var (
 
 // Manager is the interface used for managing instances of environments
 type Manager interface {
+	Create(ctx context.Context, spec Spec) (*Environment, error)
 	CreateInteractive(ctx context.Context, spec Spec) (*Environment, error)
 	LoadOrCreateInteractive(ctx context.Context, name string) (*Environment, error)
 	List(ctx context.Context) ([]*Description, error)
@@ -59,8 +60,8 @@ type manager struct {
 func NewManager(
 	azdContext *azdcontext.AzdContext,
 	console input.Console,
-	local DataStore,
-	remote DataStore,
+	local LocalDataStore,
+	remote RemoteDataStore,
 ) Manager {
 	return &manager{
 		azdContext: azdContext,
@@ -70,24 +71,38 @@ func NewManager(
 	}
 }
 
-func (m *manager) LoadOrCreateInteractive(ctx context.Context, name string) (*Environment, error) {
-	// If there's a default environment, use that
-	if name == "" {
-		if defaultName, err := m.azdContext.GetDefaultEnvironmentName(); err != nil {
-			return nil, fmt.Errorf("getting default environment: %w", err)
-		} else {
-			name = defaultName
-		}
+func (m *manager) Create(ctx context.Context, spec Spec) (*Environment, error) {
+	if spec.Name != "" && !IsValidEnvironmentName(spec.Name) {
+		errMsg := invalidEnvironmentNameMsg(spec.Name)
+		m.console.Message(ctx, errMsg)
+		return nil, fmt.Errorf(errMsg)
 	}
 
-	env, err := m.Get(ctx, name)
-	if err != nil && errors.Is(err, ErrNotFound) {
-		env, err = m.CreateInteractive(ctx, Spec{
-			Name: name,
-		})
+	if err := m.ensureValidEnvironmentName(ctx, &spec); err != nil {
+		return nil, err
 	}
 
-	if err != nil {
+	// Ensure the environment does not already exist:
+	_, err := m.Get(ctx, spec.Name)
+	switch {
+	case errors.Is(err, ErrNotFound):
+	case err != nil:
+		return nil, fmt.Errorf("checking for existing environment: %w", err)
+	case err == nil:
+		return nil, fmt.Errorf("environment '%s' already exists", spec.Name)
+	}
+
+	env := New(spec.Name)
+
+	if spec.Subscription != "" {
+		env.SetSubscriptionId(spec.Subscription)
+	}
+
+	if spec.Location != "" {
+		env.SetLocation(spec.Location)
+	}
+
+	if err := m.Save(ctx, env); err != nil {
 		return nil, err
 	}
 
@@ -113,21 +128,27 @@ func (m *manager) CreateInteractive(ctx context.Context, spec Spec) (*Environmen
 		return nil, fmt.Errorf(errMsg)
 	}
 
-	env := New(spec.Name, m.azdContext.EnvironmentRoot(spec.Name))
-	err := m.Save(ctx, env)
+	return m.Create(ctx, spec)
+}
+
+func (m *manager) LoadOrCreateInteractive(ctx context.Context, name string) (*Environment, error) {
+	// If there's a default environment, use that
+	if name == "" {
+		if defaultName, err := m.azdContext.GetDefaultEnvironmentName(); err != nil {
+			return nil, fmt.Errorf("getting default environment: %w", err)
+		} else {
+			name = defaultName
+		}
+	}
+
+	env, err := m.Get(ctx, name)
+	if err != nil && errors.Is(err, ErrNotFound) {
+		env, err = m.CreateInteractive(ctx, Spec{
+			Name: name,
+		})
+	}
+
 	if err != nil {
-		return nil, err
-	}
-
-	if spec.Subscription != "" {
-		env.SetSubscriptionId(spec.Subscription)
-	}
-
-	if spec.Location != "" {
-		env.SetLocation(spec.Location)
-	}
-
-	if err := m.Save(ctx, env); err != nil {
 		return nil, err
 	}
 

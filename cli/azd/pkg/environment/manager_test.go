@@ -39,7 +39,7 @@ var (
 		},
 	}
 
-	getEnv *Environment = EphemeralWithValues("env1", map[string]string{
+	getEnv *Environment = NewWithValues("env1", map[string]string{
 		"key1": "value1",
 	})
 )
@@ -157,7 +157,7 @@ func Test_EnvManager_Save(t *testing.T) {
 		localDataStore := &MockDataStore{}
 		remoteDataStore := &MockDataStore{}
 
-		env := EphemeralWithValues("env1", map[string]string{
+		env := NewWithValues("env1", map[string]string{
 			"key1": "value1",
 		})
 
@@ -176,7 +176,7 @@ func Test_EnvManager_Save(t *testing.T) {
 		localDataStore := &MockDataStore{}
 		remoteDataStore := &MockDataStore{}
 
-		env := EphemeralWithValues("env1", map[string]string{
+		env := NewWithValues("env1", map[string]string{
 			"key1": "value1",
 		})
 

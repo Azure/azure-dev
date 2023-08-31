@@ -72,9 +72,28 @@ type Environment struct {
 }
 
 // New returns a new environment with the specified name.
-func New(name string, root string) *Environment {
-	env := EmptyWithRoot(root)
-	env.name = name
+func New(name string) *Environment {
+	env := &Environment{
+		name:        name,
+		dotenv:      make(map[string]string),
+		deletedKeys: make(map[string]struct{}),
+		Config:      config.NewEmptyConfig(),
+	}
+
+	env.SetEnvName(name)
+	return env
+}
+
+// NewWithValues returns an ephemeral environment (i.e. not backed by a data store) with a set
+// of values. Useful for testing. The name parameter is added to the environment with the
+// AZURE_ENV_NAME key, replacing an existing value in the provided values map. A nil values is
+// treated the same way as an empty map.
+func NewWithValues(name string, values map[string]string) *Environment {
+	env := New(name)
+
+	if values != nil {
+		env.dotenv = values
+	}
 
 	return env
 }

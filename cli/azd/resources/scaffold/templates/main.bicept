@@ -16,6 +16,9 @@ param location string
 param {{.Name}} {{.Type}}
 {{- end}}
 
+@description('Id of the user or app to assign application roles')
+param principalId string
+
 // Tags that should be applied to all resources.
 // 
 // Note that 'azd-service-name' tags should be applied separately to service host resources.
@@ -72,6 +75,7 @@ module keyVault './shared/keyvault.bicep' = {
     location: location
     tags: tags
     name: '${abbrs.keyVaultVaults}${resourceToken}'
+    principalId: principalId
   }
   scope: rg
 }
@@ -116,7 +120,7 @@ module postgresDb './app/db-postgres.bicep' = {
     location: location
     tags: tags
     sqlAdminPassword: sqlAdminPassword
-    appUserPassword: appUserPassword
+    databasePassword: databasePassword
     keyVaultName: keyVault.outputs.name
     allowAllIPsFirewall: true
   }
@@ -165,4 +169,6 @@ module {{bicepName .Name}} './app/{{.Name}}.bicep' = {
 {{- end}}
 
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = registry.outputs.loginServer
+output AZURE_KEY_VAULT_NAME string = keyVault.outputs.name
+output AZURE_KEY_VAULT_ENDPOINT string = keyVault.outputs.endpoint
 {{ end}}

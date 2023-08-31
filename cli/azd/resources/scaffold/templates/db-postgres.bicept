@@ -4,15 +4,15 @@ param location string = resourceGroup().location
 param tags object = {}
 
 param keyVaultName string
+
 param databaseUser string = 'appuser'
 param databaseName string = '{{.DatabaseName}}'
-param databaseConnectionKey string = 'databasePassword'
 param allowAllIPsFirewall bool = false
 
 @secure()
 param sqlAdminPassword string
 @secure()
-param appUserPassword string
+param databasePassword string
 
 resource postgreServer'Microsoft.DBforPostgreSQL/flexibleServers@2022-01-20-preview' = {
   location: location
@@ -24,7 +24,7 @@ resource postgreServer'Microsoft.DBforPostgreSQL/flexibleServers@2022-01-20-prev
   }
   properties: {
     version: '13'
-    administratorLogin: 'django'
+    administratorLogin: 'psqladmin'
     administratorLoginPassword: sqlAdminPassword
     storage: {
       storageSizeGB: 128
@@ -82,7 +82,7 @@ resource seedDb 'Microsoft.Resources/deploymentScripts@2020-10-01' = {
       }
       {
         name: 'PGPASSWORD'
-        value: sqlAdminPassword
+        secureValue: sqlAdminPassword
       }
       {
         name: 'DBNAME'
@@ -94,7 +94,7 @@ resource seedDb 'Microsoft.Resources/deploymentScripts@2020-10-01' = {
       }
       {
         name: 'APPUSERPASSWORD'
-        value: appUserPassword
+        secureValue: databasePassword
       }
     ]
     cleanupPreference: 'OnSuccess'
@@ -102,7 +102,8 @@ resource seedDb 'Microsoft.Resources/deploymentScripts@2020-10-01' = {
 apk add --no-cache postgresql-client 
 
 cat <<SCRIPT_END > ./initDb.sql
-CREATE USER ${APPUSERNAME} PASSWORD '${APPUSERPASSWORD}';
+CREATE USER ${APPUSERNAME};
+ALTER USER ${APPUSERNAME} WITH PASSWORD '${APPUSERPASSWORD}';
 
 GRANT CONNECT ON DATABASE ${DBNAME} TO ${APPUSERNAME};
 GRANT ALL PRIVILEGES ON DATABASE ${DBNAME} TO ${APPUSERNAME};
@@ -117,16 +118,24 @@ resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' existing = {
   name: keyVaultName
 }
 
-resource dbPassword 'Microsoft.KeyVault/vaults/secrets@2022-07-01' = {
+resource dbPasswordKey 'Microsoft.KeyVault/vaults/secrets@2022-07-01' = {
   parent: keyVault
-  name: databaseConnectionKey
+  name: 'databasePassword'
   properties: {
-    value: appUserPassword
+    value: databasePassword
+  }
+}
+
+resource sqlAdminPasswordKey 'Microsoft.KeyVault/vaults/secrets@2022-07-01' = {
+  parent: keyVault
+  name: 'sqlAdminPassword'
+  properties: {
+    value: sqlAdminPassword
   }
 }
 
 output databaseHost string = postgreServer.properties.fullyQualifiedDomainName
 output databaseName string = databaseName
 output databaseUser string = databaseUser
-output databaseConnectionKey string = databaseConnectionKey
+output databaseConnectionKey string = 'databasePassword'
 {{ end}}

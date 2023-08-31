@@ -154,13 +154,13 @@ func preExecExpand(spec *InfraSpec) {
 		spec.Parameters = append(spec.Parameters,
 			Parameter{
 				Name:   "sqlAdminPassword",
-				Value:  "$(secretOrRandomPassword)",
+				Value:  "$(secretOrRandomPassword ${AZURE_KEY_VAULT_NAME} sqlAdminPassword)",
 				Type:   "string",
 				Secret: true,
 			},
 			Parameter{
-				Name:   "appUserPassword",
-				Value:  "$(secretOrRandomPassword)",
+				Name:   "databasePassword",
+				Value:  "$(secretOrRandomPassword ${AZURE_KEY_VAULT_NAME} databasePassword)",
 				Type:   "string",
 				Secret: true,
 			})

@@ -46,6 +46,7 @@ byoi
 cflags
 circleci
 cmdsubst
+cmdrecord
 cognitiveservices
 consolesize
 containerapp

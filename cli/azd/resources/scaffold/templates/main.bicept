@@ -119,7 +119,6 @@ module postgresDb './app/db-postgres.bicep' = {
     serverName: '${abbrs.dBforPostgreSQLServers}${resourceToken}'
     location: location
     tags: tags
-    sqlAdminPassword: sqlAdminPassword
     databasePassword: databasePassword
     keyVaultName: keyVault.outputs.name
     allowAllIPsFirewall: true

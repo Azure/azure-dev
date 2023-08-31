@@ -5,14 +5,12 @@ param tags object = {}
 
 param keyVaultName string
 
-param databaseUser string = 'appuser'
+param databaseUser string = 'psqladmin'
 param databaseName string = '{{.DatabaseName}}'
-param allowAllIPsFirewall bool = false
-
-@secure()
-param sqlAdminPassword string
 @secure()
 param databasePassword string
+
+param allowAllIPsFirewall bool = false
 
 resource postgreServer'Microsoft.DBforPostgreSQL/flexibleServers@2022-01-20-preview' = {
   location: location
@@ -24,8 +22,8 @@ resource postgreServer'Microsoft.DBforPostgreSQL/flexibleServers@2022-01-20-prev
   }
   properties: {
     version: '13'
-    administratorLogin: 'psqladmin'
-    administratorLoginPassword: sqlAdminPassword
+    administratorLogin: databaseUser
+    administratorLoginPassword: databasePassword
     storage: {
       storageSizeGB: 128
     }
@@ -63,57 +61,6 @@ resource database 'Microsoft.DBforPostgreSQL/flexibleServers/databases@2022-01-2
   }
 }
 
-resource seedDb 'Microsoft.Resources/deploymentScripts@2020-10-01' = {
-  name: 'seedDb'
-  location: location
-  kind: 'AzureCLI'
-  properties: {
-    azCliVersion: '2.9.0'
-    retentionInterval: 'PT1H'
-    timeout: 'PT5M'
-    environmentVariables: [
-      {
-        name: 'DBSERVER'
-        value: postgreServer.properties.fullyQualifiedDomainName
-      }
-      {
-        name: 'SQLADMIN'
-        value: postgreServer.properties.administratorLogin
-      }
-      {
-        name: 'PGPASSWORD'
-        secureValue: sqlAdminPassword
-      }
-      {
-        name: 'DBNAME'
-        value: database.name
-      }
-      {
-        name: 'APPUSERNAME'
-        value: databaseUser
-      }
-      {
-        name: 'APPUSERPASSWORD'
-        secureValue: databasePassword
-      }
-    ]
-    cleanupPreference: 'OnSuccess'
-    scriptContent: '''
-apk add --no-cache postgresql-client 
-
-cat <<SCRIPT_END > ./initDb.sql
-CREATE USER ${APPUSERNAME};
-ALTER USER ${APPUSERNAME} WITH PASSWORD '${APPUSERPASSWORD}';
-
-GRANT CONNECT ON DATABASE ${DBNAME} TO ${APPUSERNAME};
-GRANT ALL PRIVILEGES ON DATABASE ${DBNAME} TO ${APPUSERNAME};
-SCRIPT_END
-
-psql --host=${DBSERVER} --dbname=${DBNAME} --username=${SQLADMIN} --file=./initDb.sql
-'''
-  }
-}
-
 resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' existing = {
   name: keyVaultName
 }
@@ -123,14 +70,6 @@ resource dbPasswordKey 'Microsoft.KeyVault/vaults/secrets@2022-07-01' = {
   name: 'databasePassword'
   properties: {
     value: databasePassword
-  }
-}
-
-resource sqlAdminPasswordKey 'Microsoft.KeyVault/vaults/secrets@2022-07-01' = {
-  parent: keyVault
-  name: 'sqlAdminPassword'
-  properties: {
-    value: sqlAdminPassword
   }
 }
 

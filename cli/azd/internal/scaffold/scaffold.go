@@ -153,12 +153,6 @@ func preExecExpand(spec *InfraSpec) {
 	if spec.DbPostgres != nil {
 		spec.Parameters = append(spec.Parameters,
 			Parameter{
-				Name:   "sqlAdminPassword",
-				Value:  "$(secretOrRandomPassword ${AZURE_KEY_VAULT_NAME} sqlAdminPassword)",
-				Type:   "string",
-				Secret: true,
-			},
-			Parameter{
 				Name:   "databasePassword",
 				Value:  "$(secretOrRandomPassword ${AZURE_KEY_VAULT_NAME} databasePassword)",
 				Type:   "string",

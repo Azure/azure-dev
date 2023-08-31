@@ -40,7 +40,7 @@ func Test_MavenProject(t *testing.T) {
 				return exec.NewRunResult(0, "", ""), nil
 			})
 
-		env := environment.Ephemeral()
+		env := environment.New("test")
 		serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageJava)
 		mavenCli := maven.NewMavenCli(mockContext.CommandRunner)
 		javaCli := javac.NewCli(mockContext.CommandRunner)
@@ -76,7 +76,7 @@ func Test_MavenProject(t *testing.T) {
 				return exec.NewRunResult(0, "", ""), nil
 			})
 
-		env := environment.Ephemeral()
+		env := environment.New("test")
 		serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageJava)
 		mavenCli := maven.NewMavenCli(mockContext.CommandRunner)
 		javaCli := javac.NewCli(mockContext.CommandRunner)
@@ -111,7 +111,7 @@ func Test_MavenProject(t *testing.T) {
 				return exec.NewRunResult(0, "", ""), nil
 			})
 
-		env := environment.Ephemeral()
+		env := environment.New("test")
 		serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageJava)
 		mavenCli := maven.NewMavenCli(mockContext.CommandRunner)
 		javaCli := javac.NewCli(mockContext.CommandRunner)
@@ -281,7 +281,7 @@ func Test_MavenProject_Package(t *testing.T) {
 					return exec.NewRunResult(0, "", ""), nil
 				})
 
-			env := environment.Ephemeral()
+			env := environment.New("test")
 			mavenCli := maven.NewMavenCli(mockContext.CommandRunner)
 			javaCli := javac.NewCli(mockContext.CommandRunner)
 			mavenProject := NewMavenProject(env, mavenCli, javaCli)

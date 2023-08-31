@@ -14,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
 	"github.com/azure/azure-dev/cli/azd/test/ostest"
 	"github.com/stretchr/testify/require"
 )
@@ -35,7 +36,7 @@ func Test_CommandHooks_Middleware_WithValidProjectAndMatchingCommand(t *testing.
 		},
 	}
 
-	err := ensureAzdValid(*mockContext.Context, azdContext, envName, &projectConfig)
+	err := ensureAzdValid(mockContext, azdContext, envName, &projectConfig)
 	require.NoError(t, err)
 
 	nextFn, actionRan := createNextFn()
@@ -67,7 +68,7 @@ func Test_CommandHooks_Middleware_ValidProjectWithDifferentCommand(t *testing.T)
 		},
 	}
 
-	err := ensureAzdValid(*mockContext.Context, azdContext, envName, &projectConfig)
+	err := ensureAzdValid(mockContext, azdContext, envName, &projectConfig)
 	require.NoError(t, err)
 
 	nextFn, actionRan := createNextFn()
@@ -93,7 +94,7 @@ func Test_CommandHooks_Middleware_ValidProjectWithNoHooks(t *testing.T) {
 		Name: envName,
 	}
 
-	err := ensureAzdValid(*mockContext.Context, azdContext, envName, &projectConfig)
+	err := ensureAzdValid(mockContext, azdContext, envName, &projectConfig)
 	require.NoError(t, err)
 
 	nextFn, actionRan := createNextFn()
@@ -125,7 +126,7 @@ func Test_CommandHooks_Middleware_PreHookWithError(t *testing.T) {
 		},
 	}
 
-	err := ensureAzdValid(*mockContext.Context, azdContext, envName, &projectConfig)
+	err := ensureAzdValid(mockContext, azdContext, envName, &projectConfig)
 	require.NoError(t, err)
 
 	nextFn, actionRan := createNextFn()
@@ -161,7 +162,7 @@ func Test_CommandHooks_Middleware_PreHookWithErrorAndContinue(t *testing.T) {
 		},
 	}
 
-	err := ensureAzdValid(*mockContext.Context, azdContext, envName, &projectConfig)
+	err := ensureAzdValid(mockContext, azdContext, envName, &projectConfig)
 	require.NoError(t, err)
 
 	nextFn, actionRan := createNextFn()
@@ -196,7 +197,7 @@ func Test_CommandHooks_Middleware_WithCmdAlias(t *testing.T) {
 		},
 	}
 
-	err := ensureAzdValid(*mockContext.Context, azdContext, envName, &projectConfig)
+	err := ensureAzdValid(mockContext, azdContext, envName, &projectConfig)
 	require.NoError(t, err)
 
 	nextFn, actionRan := createNextFn()
@@ -247,7 +248,7 @@ func Test_ServiceHooks_Registered(t *testing.T) {
 		return exec.NewRunResult(0, "", ""), nil
 	})
 
-	err := ensureAzdValid(*mockContext.Context, azdContext, envName, &projectConfig)
+	err := ensureAzdValid(mockContext, azdContext, envName, &projectConfig)
 	require.NoError(t, err)
 
 	projectConfig.Services["api"].Project = &projectConfig
@@ -319,7 +320,8 @@ func runMiddleware(
 	runOptions *Options,
 	nextFn NextFn,
 ) (*actions.ActionResult, error) {
-	env := environment.EphemeralWithValues(envName, nil)
+	env := environment.NewWithValues(envName, nil)
+	envManager := &mockenv.MockEnvManager{}
 
 	lazyEnv := lazy.NewLazy(func() (*environment.Environment, error) {
 		return env, nil
@@ -330,6 +332,7 @@ func runMiddleware(
 	})
 
 	middleware := NewHooksMiddleware(
+		envManager,
 		lazyEnv,
 		lazyProjectConfig,
 		mockContext.CommandRunner,
@@ -345,33 +348,27 @@ func runMiddleware(
 // Helper functions below
 
 func ensureAzdValid(
-	ctx context.Context,
+	mockContext *mocks.MockContext,
 	azdContext *azdcontext.AzdContext,
 	envName string,
 	projectConfig *project.ProjectConfig,
 ) error {
-	err := ensureAzdEnv(azdContext, envName)
+	envManager := &mockenv.MockEnvManager{}
+	err := ensureAzdEnv(*mockContext.Context, envManager, envName)
 	if err != nil {
 		return err
 	}
 
-	if err := ensureAzdProject(ctx, azdContext, projectConfig); err != nil {
+	if err := ensureAzdProject(*mockContext.Context, azdContext, projectConfig); err != nil {
 		return err
 	}
 
 	return nil
 }
 
-func ensureAzdEnv(azdContext *azdcontext.AzdContext, envName string) error {
-	err := azdContext.NewEnvironment(envName)
-	if err != nil {
-		return err
-	}
-
-	env := environment.EmptyWithRoot(azdContext.EnvironmentRoot(envName))
-	env.SetEnvName(envName)
-
-	err = env.Save()
+func ensureAzdEnv(ctx context.Context, envManager environment.Manager, envName string) error {
+	env := environment.New(envName)
+	err := envManager.Save(ctx, env)
 	if err != nil {
 		return err
 	}

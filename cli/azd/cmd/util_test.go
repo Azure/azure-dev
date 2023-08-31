@@ -5,13 +5,12 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"os"
-	"path/filepath"
 	"strings"
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -20,79 +19,92 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/exp/slices"
 )
+
+func createEnvManager(t *testing.T, mockContext *mocks.MockContext) environment.Manager {
+	azdCtx := azdcontext.NewAzdContextWithDirectory(t.TempDir())
+	localDataStore := environment.NewLocalFileDataStore(azdCtx, config.NewFileConfigManager(config.NewManager()))
+
+	return environment.NewManager(azdCtx, mockContext.Console, localDataStore, nil)
+}
 
 func Test_promptEnvironmentName(t *testing.T) {
 	t.Run("valid name", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
+		mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
+			return strings.Contains(options.Message, "would you like to create it?")
+		}).Respond(true)
+
 		mockContext.Console.WhenPrompt(func(options input.ConsoleOptions) bool {
 			return true
 		}).SetError(errors.New("prompt should not be called for valid environment name"))
 
-		environmentName := "hello"
-
-		err := ensureValidEnvironmentName(*mockContext.Context, &environmentName, "", mockContext.Console)
-
+		expected := "hello"
+		envManager := createEnvManager(t, mockContext)
+		env, err := envManager.CreateInteractive(*mockContext.Context, environment.Spec{Name: expected})
 		require.NoError(t, err)
+		require.NotNil(t, env)
+		require.Equal(t, expected, env.GetEnvName())
 	})
 
 	t.Run("empty name gets prompted", func(t *testing.T) {
-		environmentName := ""
+		expected := "someEnv"
 
 		mockContext := mocks.NewMockContext(context.Background())
+		mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
+			return strings.Contains(options.Message, "would you like to create it?")
+		}).Respond(true)
+
 		mockContext.Console.WhenPrompt(func(options input.ConsoleOptions) bool {
 			return true
-		}).Respond("someEnv")
+		}).Respond(expected)
 
-		err := ensureValidEnvironmentName(*mockContext.Context, &environmentName, "", mockContext.Console)
+		envManager := createEnvManager(t, mockContext)
+		env, err := envManager.CreateInteractive(*mockContext.Context, environment.Spec{Name: ""})
 
 		require.NoError(t, err)
-		require.Equal(t, "someEnv", environmentName)
+		require.NotNil(t, env)
+		require.Equal(t, expected, env.GetEnvName())
 	})
 }
 
 func Test_createAndInitEnvironment(t *testing.T) {
 	t.Run("invalid name", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
-		tempDir := t.TempDir()
-		azdContext := azdcontext.NewAzdContextWithDirectory(tempDir)
+		validEnvName := "validEnvName"
 		invalidEnvName := "*!33"
-		_, err := createEnvironment(
-			*mockContext.Context,
-			environmentSpec{
-				environmentName: invalidEnvName,
-			},
-			azdContext,
-			mockContext.Console,
-		)
-		require.ErrorContains(
-			t,
-			err,
-			fmt.Sprintf("environment name '%s' is invalid (it should contain only alphanumeric characters and hyphens)\n",
-				invalidEnvName))
-	})
+		calls := 0
 
-	t.Run("env already exists", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		tempDir := t.TempDir()
-		validName := "azdEnv"
-		err := os.MkdirAll(filepath.Join(tempDir, ".azure", validName), 0755)
-		require.NoError(t, err)
-		azdContext := azdcontext.NewAzdContextWithDirectory(tempDir)
+		mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
+			return strings.Contains(options.Message, "would you like to create it?")
+		}).Respond(true)
 
-		_, err = createEnvironment(
-			*mockContext.Context,
-			environmentSpec{
-				environmentName: validName,
-			},
-			azdContext,
-			mockContext.Console,
-		)
-		require.ErrorContains(
-			t,
-			err,
-			fmt.Sprintf("environment '%s' already exists",
-				validName))
+		// Validate that the intial value is invalide
+		// Follow-up with another attempt passing a valid name
+		mockContext.Console.WhenPrompt(func(options input.ConsoleOptions) bool {
+			return strings.Contains(options.Message, "Enter a new environment name")
+		}).RespondFn(func(options input.ConsoleOptions) (any, error) {
+			calls++
+			if calls == 1 {
+				return invalidEnvName, nil
+			}
+
+			return validEnvName, nil
+		})
+
+		// Environment creation should succeed but include a console message with the warning message
+		envManager := createEnvManager(t, mockContext)
+		env, err := envManager.CreateInteractive(*mockContext.Context, environment.Spec{Name: invalidEnvName})
+		require.NoError(t, err)
+		require.NotNil(t, env)
+		require.Equal(t, validEnvName, env.GetEnvName())
+
+		hasInvalidMessage := slices.ContainsFunc(mockContext.Console.Output(), func(message string) bool {
+			return strings.Contains(message, fmt.Sprintf("environment name '%s' is invalid", invalidEnvName))
+		})
+
+		require.True(t, hasInvalidMessage)
 	})
 }
 
@@ -100,7 +112,7 @@ func Test_getResourceGroupFollowUp(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 	depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
-	env := environment.EphemeralWithValues("envA", map[string]string{
+	env := environment.NewWithValues("envA", map[string]string{
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
 	})
 
@@ -135,7 +147,7 @@ func Test_getResourceGroupFollowUpPreview(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 	depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
-	env := environment.EphemeralWithValues("envA", map[string]string{
+	env := environment.NewWithValues("envA", map[string]string{
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
 	})
 

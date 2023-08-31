@@ -18,7 +18,7 @@ import (
 func Test_getSubscriptionOptions(t *testing.T) {
 	t.Run("no default config set", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		env := environment.Ephemeral()
+		env := environment.New("test")
 		azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 		mockAccount := &mockaccount.MockAccountManager{
 			Subscriptions: []account.Subscription{
@@ -44,7 +44,7 @@ func Test_getSubscriptionOptions(t *testing.T) {
 		// mocked config
 		defaultSubId := "SUBSCRIPTION_DEFAULT"
 		mockContext := mocks.NewMockContext(context.Background())
-		env := environment.Ephemeral()
+		env := environment.New("test")
 		azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 		mockAccount := &mockaccount.MockAccountManager{
 			DefaultLocation:     "location",

@@ -26,6 +26,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazsdk"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
 	"github.com/azure/azure-dev/cli/azd/test/ostest"
 	"github.com/benbjohnson/clock"
 	"github.com/stretchr/testify/require"
@@ -458,7 +459,7 @@ func createK8sResourceList[T any](resource T) *kubectl.List[T] {
 }
 
 func createEnv() *environment.Environment {
-	return environment.EphemeralWithValues("test", map[string]string{
+	return environment.NewWithValues("test", map[string]string{
 		environment.TenantIdEnvVarName:                  "TENANT_ID",
 		environment.SubscriptionIdEnvVarName:            "SUBSCRIPTION_ID",
 		environment.LocationEnvVarName:                  "LOCATION",
@@ -480,12 +481,16 @@ func createAksServiceTarget(
 			return mockContext.Credentials, nil
 		})
 
+	envManager := &mockenv.MockEnvManager{}
+	envManager.On("Save", *mockContext.Context, env).Return(nil)
+
 	managedClustersService := azcli.NewManagedClustersService(credentialProvider, mockContext.HttpClient)
 	containerRegistryService := azcli.NewContainerRegistryService(credentialProvider, mockContext.HttpClient, dockerCli)
-	containerHelper := NewContainerHelper(env, clock.NewMock(), containerRegistryService, dockerCli)
+	containerHelper := NewContainerHelper(env, envManager, clock.NewMock(), containerRegistryService, dockerCli)
 
 	return NewAksTarget(
 		env,
+		envManager,
 		managedClustersService,
 		kubeCtl,
 		containerHelper,

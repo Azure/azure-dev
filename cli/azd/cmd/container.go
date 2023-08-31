@@ -13,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
+	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/containerapps"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -175,9 +176,9 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(
 		func(ctx context.Context,
 			azdContext *azdcontext.AzdContext,
+			envManager environment.Manager,
 			lazyEnv *lazy.Lazy[*environment.Environment],
 			envFlags envFlag,
-			console input.Console,
 		) (*environment.Environment, error) {
 			if azdContext == nil {
 				return nil, azdcontext.ErrNoProject
@@ -186,7 +187,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			environmentName := envFlags.environmentName
 			var err error
 
-			env, err := loadOrCreateEnvironment(ctx, environmentName, azdContext, console)
+			env, err := envManager.LoadOrCreateInteractive(ctx, environmentName)
 			if err != nil {
 				return nil, fmt.Errorf("loading environment: %w", err)
 			}
@@ -198,14 +199,36 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			return env, nil
 		},
 	)
-	container.RegisterSingleton(func() environment.EnvironmentResolver {
-		return func() (*environment.Environment, error) { return loadEnvironmentIfAvailable() }
+	container.RegisterSingleton(func(envManager environment.Manager) environment.EnvironmentResolver {
+		return func(ctx context.Context) (*environment.Environment, error) {
+			azdCtx, err := azdcontext.NewAzdContext()
+			if err != nil {
+				return nil, err
+			}
+			defaultEnv, err := azdCtx.GetDefaultEnvironmentName()
+			if err != nil {
+				return nil, err
+			}
+			return envManager.Get(ctx, defaultEnv)
+		}
+	})
+
+	container.RegisterSingleton(storage.NewBlobClient)
+	container.RegisterSingleton(environment.NewLocalFileDataStore)
+	container.RegisterSingleton(environment.NewStorageBlobDataStore)
+	container.RegisterSingleton(environment.NewManager)
+
+	container.RegisterSingleton(func(projectConfig *project.ProjectConfig) storage.AccountConfig {
+		return storage.AccountConfig{
+			AccountName:   "saazdremotestate",
+			ContainerName: projectConfig.Name,
+		}
 	})
 
 	// Lazy loads an existing environment, erroring out if not available
 	// One can repeatedly call GetValue to wait until the environment is available.
 	container.RegisterSingleton(
-		func(lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext], envFlags envFlag) *lazy.Lazy[*environment.Environment] {
+		func(ctx context.Context, envManager environment.Manager, lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext], envFlags envFlag) *lazy.Lazy[*environment.Environment] {
 			return lazy.NewLazy(func() (*environment.Environment, error) {
 				azdCtx, err := lazyAzdContext.GetValue()
 				if err != nil {
@@ -220,7 +243,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 					}
 				}
 
-				env, err := environment.GetEnvironment(azdCtx, environmentName)
+				env, err := envManager.Get(ctx, environmentName)
 				if err != nil {
 					return nil, err
 				}
@@ -265,8 +288,8 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(project.NewProjectManager)
 	container.RegisterSingleton(project.NewServiceManager)
 	container.RegisterSingleton(repository.NewInitializer)
-	container.RegisterSingleton(config.NewUserConfigManager)
 	container.RegisterSingleton(alpha.NewFeaturesManager)
+	container.RegisterSingleton(config.NewUserConfigManager)
 	container.RegisterSingleton(config.NewManager)
 	container.RegisterSingleton(config.NewFileConfigManager)
 	container.RegisterSingleton(templates.NewTemplateManager)

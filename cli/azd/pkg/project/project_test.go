@@ -47,7 +47,7 @@ services:
 	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 	depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
 
-	env := environment.EphemeralWithValues("envA", map[string]string{
+	env := environment.NewWithValues("envA", map[string]string{
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
 	})
 
@@ -95,7 +95,7 @@ services:
 	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 	depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
 
-	env := environment.EphemeralWithValues("envA", map[string]string{
+	env := environment.NewWithValues("envA", map[string]string{
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
 	})
 	projectConfig, err := Parse(*mockContext.Context, testProj)
@@ -151,7 +151,7 @@ services:
 	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 	depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
 
-	env := environment.EphemeralWithValues("envA", map[string]string{
+	env := environment.NewWithValues("envA", map[string]string{
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
 	})
 
@@ -211,7 +211,7 @@ services:
 	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 	depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
 
-	env := environment.EphemeralWithValues("envA", map[string]string{
+	env := environment.NewWithValues("envA", map[string]string{
 		environment.ResourceGroupEnvVarName:  expectedResourceGroupName,
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
 	})

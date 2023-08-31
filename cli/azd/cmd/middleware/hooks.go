@@ -20,6 +20,7 @@ type contextKey string
 var serviceHooksRegisteredContextKey contextKey = "service-hooks-registered"
 
 type HooksMiddleware struct {
+	envManager        environment.Manager
 	lazyEnv           *lazy.Lazy[*environment.Environment]
 	lazyProjectConfig *lazy.Lazy[*project.ProjectConfig]
 	commandRunner     exec.CommandRunner
@@ -29,6 +30,7 @@ type HooksMiddleware struct {
 
 // Creates a new instance of the Hooks middleware
 func NewHooksMiddleware(
+	envManager environment.Manager,
 	env *lazy.Lazy[*environment.Environment],
 	projectConfig *lazy.Lazy[*project.ProjectConfig],
 	commandRunner exec.CommandRunner,
@@ -36,6 +38,7 @@ func NewHooksMiddleware(
 	options *Options,
 ) Middleware {
 	return &HooksMiddleware{
+		envManager:        envManager,
 		lazyEnv:           env,
 		lazyProjectConfig: projectConfig,
 		commandRunner:     commandRunner,
@@ -87,6 +90,7 @@ func (m *HooksMiddleware) registerCommandHooks(
 	hooksRunner := ext.NewHooksRunner(
 		hooksManager,
 		m.commandRunner,
+		m.envManager,
 		m.console,
 		projectConfig.Path,
 		projectConfig.Hooks,
@@ -139,6 +143,7 @@ func (m *HooksMiddleware) registerServiceHooks(
 		serviceHooksRunner := ext.NewHooksRunner(
 			serviceHooksManager,
 			m.commandRunner,
+			m.envManager,
 			m.console,
 			service.Path(),
 			service.Hooks,

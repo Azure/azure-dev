@@ -47,14 +47,14 @@ import (
 )
 
 // The current running configuration for the test suite.
-var cfg = config{}
+var cfg = cliConfig{}
 
 func init() {
 	cfg.init()
 }
 
 // Configuration for the test suite.
-type config struct {
+type cliConfig struct {
 	// If true, the test is running in CI.
 	// This can be used to ensure tests that are skipped locally (due to complex setup), always strictly run in CI.
 	CI bool
@@ -71,7 +71,7 @@ type config struct {
 	Location string
 }
 
-func (c *config) init() {
+func (c *cliConfig) init() {
 	c.CI = os.Getenv("CI") != ""
 	c.ClientID = os.Getenv("AZD_TEST_CLIENT_ID")
 	c.ClientSecret = os.Getenv("AZD_TEST_CLIENT_SECRET")
@@ -121,9 +121,7 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
 	require.NoError(t, err)
 
-	envPath := filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName)
-	env, err := environment.FromRoot(envPath)
-	require.NoError(t, err)
+	env := environment.New(envName)
 
 	// AZURE_STORAGE_ACCOUNT_NAME is an output of the template, make sure it was added to the .env file.
 	// the name should start with 'st'
@@ -219,9 +217,7 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "infra", "create", "--output", "json")
 	require.NoError(t, err)
 
-	envPath := filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName)
-	env, err := environment.FromRoot(envPath)
-	require.NoError(t, err)
+	env := environment.New(envName)
 
 	// AZURE_STORAGE_ACCOUNT_NAME is an output of the template, make sure it was added to the .env file.
 	// the name should start with 'st'
@@ -514,9 +510,7 @@ func Test_CLI_InfraCreateAndDeleteResourceTerraform(t *testing.T) {
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision", "--cwd", dir)
 	require.NoError(t, err)
 
-	envPath := filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName)
-	env, err := environment.FromRoot(envPath)
-	require.NoError(t, err)
+	env := environment.New(envName)
 	assertEnvValuesStored(t, env)
 
 	t.Logf("Starting down\n")

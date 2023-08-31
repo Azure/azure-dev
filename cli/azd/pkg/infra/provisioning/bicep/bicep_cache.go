@@ -7,11 +7,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"log"
 	"os"
 	"path/filepath"
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -46,12 +48,10 @@ type CacheManager interface {
 //
 // `args` depends on the type as follows:
 //
-// **azureBlob args: `containerUrl,sas`,
+// **azureBlob args: `containerName,connectionString`,
 // example:
 //
-//	   AZURE_BICEP_CACHE_CONFIG=azureBlob,https://<storagename>.blob.core.windows.net/<containername>,sv=2019-12-12&ss...
-//
-//	The Shared Access Signature (sas) enables the authentication to the Azure Storage Container
+//	AZURE_BICEP_CACHE_CONFIG=azureBlob,cache,DefaultEndpointsProtocol=https;Ac....
 //
 // If the manager fails to parse or connect to the remote config, it will fallback automatically to use local file cache.
 type bicepCache struct {
@@ -68,7 +68,20 @@ type readCache func(context context.Context, arg any) ([]byte, error)
 type writeCache func(context context.Context, arg any, cache []byte) error
 
 func cacheFromAzureBlob(context context.Context, arg any) ([]byte, error) {
-	return nil, nil
+	azBlobData, goodCast := arg.(*azBlobSource)
+	if !goodCast {
+		return nil, fmt.Errorf("unexpected data for pulling cache from Azure Blob.")
+	}
+	client, err := azblob.NewClientFromConnectionString(azBlobData.azStorageConnectionString, nil)
+	if err != nil {
+		return nil, fmt.Errorf("creating client from connection string: %w", err)
+	}
+
+	blobDownloadResponse, err := client.DownloadStream(context, azBlobData.azContainerName, c_cacheFileName, nil)
+	if err != nil {
+		return nil, fmt.Errorf("downloading blob from azure: %w", err)
+	}
+	return io.ReadAll(blobDownloadResponse.Body)
 }
 
 func cacheFromLocalFile(context context.Context, arg any) ([]byte, error) {
@@ -90,6 +103,22 @@ func cacheFromLocalFile(context context.Context, arg any) ([]byte, error) {
 }
 
 func cacheToAzureBlob(context context.Context, arg any, cache []byte) error {
+	azBlobData, goodCast := arg.(*azBlobSource)
+	if !goodCast {
+		return fmt.Errorf("unexpected data for pushing cache to Azure Blob.")
+	}
+	client, err := azblob.NewClientFromConnectionString(azBlobData.azStorageConnectionString, nil)
+	if err != nil {
+		return fmt.Errorf("creating client from connection string: %w", err)
+	}
+	// Blob might not exists, it's ok if there's an error.
+	_, _ = client.DeleteBlob(context, azBlobData.azContainerName, c_cacheFileName, nil)
+	// Container might already exists, it's fine to ignore error.
+	_, _ = client.CreateContainer(context, azBlobData.azContainerName, nil)
+	_, err = client.UploadBuffer(context, azBlobData.azContainerName, c_cacheFileName, cache, &azblob.UploadBufferOptions{})
+	if err != nil {
+		return fmt.Errorf("uploading blob from azure: %w", err)
+	}
 	return nil
 }
 
@@ -212,8 +241,8 @@ const c_cacheTypeAzContainer = "azureBlob"
 const c_cacheRemoteConfigEnvName = "AZURE_BICEP_CACHE_CONFIG"
 
 type azBlobSource struct {
-	azContainerUrl string
-	azContainerSas string
+	azContainerName           string
+	azStorageConnectionString string
 }
 
 type cacheSources struct {
@@ -245,10 +274,10 @@ func (b *bicepCache) cacheSources() (*cacheSources, error) {
 		} else {
 			if remoteType == c_cacheTypeAzContainer {
 				if azBlobConfig, err := parseAzContainerArgs(args); err != nil {
+					log.Printf("Couldn't add remote cache: %s. error: %v.", remoteType, err)
+				} else {
 					availableSources.AzBlob = azBlobConfig
 					log.Printf("Remote type: %s added to sources.", remoteType)
-				} else {
-					log.Printf("Couldn't add remote cache: %s. error: %v.", remoteType, err)
 				}
 			} else {
 				log.Printf("Unsupported remote cache: %s.", remoteType)
@@ -285,13 +314,16 @@ func parseAzContainerArgs(args []string) (*azBlobSource, error) {
 		log.Printf("more than two arguments found for Azure blob remote config. Extra arguments will be ignored.")
 	}
 	return &azBlobSource{
-		azContainerUrl: args[0],
-		azContainerSas: args[1],
+		azContainerName:           args[0],
+		azStorageConnectionString: args[1],
 	}, nil
 }
 
-func NewCacheManager(lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext]) CacheManager {
+func NewCacheManager(
+	lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext],
+	lazyEnv *lazy.Lazy[*environment.Environment]) CacheManager {
 	return &bicepCache{
 		lazyAzdContext: lazyAzdContext,
+		lazyAzdEnv:     lazyEnv,
 	}
 }

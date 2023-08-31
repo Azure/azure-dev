@@ -17,6 +17,7 @@ armappconfiguration
 armappplatform
 armcognitiveservices
 azapi
+azblob
 AZCLI
 azcorelog
 azdcli
@@ -84,8 +85,8 @@ hotspot
 iidfile
 ineffassign
 javac
-jquery
 jmes
+jquery
 keychain
 LASTEXITCODE
 ldflags
@@ -96,8 +97,8 @@ microsoftonline
 mockarmresources
 mockazcli
 mvnw
-mysqldb
 mysqlclient
+mysqldb
 nobanner
 nodeapp
 nolint

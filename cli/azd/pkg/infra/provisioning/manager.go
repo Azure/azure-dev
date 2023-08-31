@@ -60,6 +60,7 @@ func (m *Manager) Deploy(ctx context.Context) (*DeployResult, error) {
 	}
 
 	if deployResult.LocalCacheSkipped {
+		m.console.StopSpinner(ctx, "Didn't find new changes.", input.StepSkipped)
 		return deployResult, nil
 	}
 

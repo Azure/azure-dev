@@ -392,6 +392,7 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*DeployResult, error) {
 	}
 
 	if p.alphaFeatureManager.IsEnabled(alpha.BicepCache) {
+		p.console.ShowSpinner(ctx, "Looking for existing local cache.", input.Step)
 		newCache := &BicepCache{
 			Template:   bicepDeploymentData.Template,
 			Parameters: bicepDeploymentData.Parameters,

@@ -186,11 +186,9 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 	}
 
 	if deployResult.LocalCacheSkipped {
-		p.console.Message(ctx, "skipped due to cache")
-
 		return &actions.ActionResult{
 			Message: &actions.ResultMessage{
-				Header: "Cache...",
+				Header: "There are no changes to provision for your application.",
 			},
 		}, nil
 	}

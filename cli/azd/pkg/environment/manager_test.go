@@ -17,7 +17,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
-	"golang.org/x/exp/slices"
 )
 
 var (
@@ -79,7 +78,7 @@ func Test_EnvManager_PromptEnvironmentName(t *testing.T) {
 
 		expected := "hello"
 		envManager := createEnvManagerForManagerTest(t, mockContext)
-		env, err := envManager.CreateInteractive(*mockContext.Context, Spec{Name: expected})
+		env, err := envManager.LoadOrCreateInteractive(*mockContext.Context, expected)
 		require.NoError(t, err)
 		require.NotNil(t, env)
 		require.Equal(t, expected, env.GetEnvName())
@@ -98,7 +97,7 @@ func Test_EnvManager_PromptEnvironmentName(t *testing.T) {
 		}).Respond(expected)
 
 		envManager := createEnvManagerForManagerTest(t, mockContext)
-		env, err := envManager.CreateInteractive(*mockContext.Context, Spec{Name: ""})
+		env, err := envManager.LoadOrCreateInteractive(*mockContext.Context, "")
 
 		require.NoError(t, err)
 		require.NotNil(t, env)
@@ -115,40 +114,18 @@ func createEnvManagerForManagerTest(t *testing.T, mockContext *mocks.MockContext
 
 func Test_EnvManager_CreateAndInitEnvironment(t *testing.T) {
 	t.Run("invalid name", func(t *testing.T) {
-		validEnvName := "validEnvName"
 		invalidEnvName := "*!33"
-		calls := 0
 
 		mockContext := mocks.NewMockContext(context.Background())
 		mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
 			return strings.Contains(options.Message, "would you like to create it?")
 		}).Respond(true)
 
-		// Validate that the intial value is invalide
-		// Follow-up with another attempt passing a valid name
-		mockContext.Console.WhenPrompt(func(options input.ConsoleOptions) bool {
-			return strings.Contains(options.Message, "Enter a new environment name")
-		}).RespondFn(func(options input.ConsoleOptions) (any, error) {
-			calls++
-			if calls == 1 {
-				return invalidEnvName, nil
-			}
-
-			return validEnvName, nil
-		})
-
-		// Environment creation should succeed but include a console message with the warning message
 		envManager := createEnvManagerForManagerTest(t, mockContext)
-		env, err := envManager.CreateInteractive(*mockContext.Context, Spec{Name: invalidEnvName})
-		require.NoError(t, err)
-		require.NotNil(t, env)
-		require.Equal(t, validEnvName, env.GetEnvName())
-
-		hasInvalidMessage := slices.ContainsFunc(mockContext.Console.Output(), func(message string) bool {
-			return strings.Contains(message, fmt.Sprintf("environment name '%s' is invalid", invalidEnvName))
-		})
-
-		require.True(t, hasInvalidMessage)
+		env, err := envManager.LoadOrCreateInteractive(*mockContext.Context, invalidEnvName)
+		require.Error(t, err)
+		require.Nil(t, env)
+		require.ErrorContains(t, err, fmt.Sprintf("environment name '%s' is invalid", invalidEnvName))
 	})
 }
 

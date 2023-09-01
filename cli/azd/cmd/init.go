@@ -14,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/repository"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -22,7 +23,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
+	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -84,6 +87,7 @@ type initAction struct {
 	flags           *initFlags
 	repoInitializer *repository.Initializer
 	templateManager *templates.TemplateManager
+	featuresManager *alpha.FeatureManager
 }
 
 func newInitAction(
@@ -92,7 +96,8 @@ func newInitAction(
 	gitCli git.GitCli,
 	flags *initFlags,
 	repoInitializer *repository.Initializer,
-	templateManager *templates.TemplateManager) actions.Action {
+	templateManager *templates.TemplateManager,
+	featuresManager *alpha.FeatureManager) actions.Action {
 	return &initAction{
 		console:         console,
 		cmdRun:          cmdRun,
@@ -100,6 +105,7 @@ func newInitAction(
 		flags:           flags,
 		repoInitializer: repoInitializer,
 		templateManager: templateManager,
+		featuresManager: featuresManager,
 	}
 }
 
@@ -148,7 +154,14 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	if initTypeSelect == initUnknown {
-		initTypeSelect = initAppTemplate
+		if i.featuresManager.IsEnabled(alpha.InitFromApp) {
+			initTypeSelect, err = promptInitType(i.console, ctx)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			initTypeSelect = initAppTemplate
+		}
 	}
 
 	header := "New project initialized!"
@@ -166,6 +179,27 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 
 		err = i.initializeEnv(ctx, azdCtx)
+		if err != nil {
+			return nil, err
+		}
+	case initFromApp:
+		header = "Your app is ready for the cloud!"
+		followUp = "You can provision and deploy your app to Azure by running the " + color.BlueString("azd up") +
+			" command in this directory. For more information on configuring your app, see " +
+			output.WithHighLightFormat("./next-steps.md")
+		err := i.repoInitializer.InitializeInfra(ctx, azdCtx, func() error {
+			return i.initializeEnv(ctx, azdCtx)
+		})
+		if errors.Is(err, repository.NoServicesDetectedError) {
+			return nil, &azcli.ErrorWithSuggestion{
+				Err: errors.New("no files or services detected in the current directory"),
+				Suggestion: "Ensure you're in the directory where your app code is located and try again." +
+					" If you do not have code and would like to start with an app template, run '" +
+					color.BlueString("azd init") + "' in an empty directory and select the option to " +
+					color.MagentaString("Use a template") + ".",
+			}
+		}
+
 		if err != nil {
 			return nil, err
 		}
@@ -190,9 +224,32 @@ type initType int
 
 const (
 	initUnknown = iota
+	initFromApp
 	initAppTemplate
 	initEnvironment
 )
+
+func promptInitType(console input.Console, ctx context.Context) (initType, error) {
+	selection, err := console.Select(ctx, input.ConsoleOptions{
+		Message: "How do you want to initialize your app?",
+		Options: []string{
+			"Use code in the current directory",
+			"Select a template",
+		},
+	})
+	if err != nil {
+		return initUnknown, err
+	}
+
+	switch selection {
+	case 0:
+		return initFromApp, nil
+	case 1:
+		return initAppTemplate, nil
+	default:
+		panic("unhandled selection")
+	}
+}
 
 func (i *initAction) initializeTemplate(
 	ctx context.Context,

@@ -31,7 +31,7 @@ var BicepVersion semver.Version = semver.MustParse("0.18.4")
 
 type BicepCli interface {
 	Build(ctx context.Context, file string) (BuildResult, error)
-	BuildBicepParam(ctx context.Context, file string, env []string) (string, error)
+	BuildBicepParam(ctx context.Context, file string, env []string) (BuildResult, error)
 }
 
 // NewBicepCli creates a new BicepCli. Azd manages its own copy of the bicep CLI, stored in `$AZD_CONFIG_DIR/bin`. If
@@ -268,18 +268,21 @@ func (cli *bicepCli) Build(ctx context.Context, file string) (BuildResult, error
 	}, nil
 }
 
-func (cli *bicepCli) BuildBicepParam(ctx context.Context, file string, env []string) (string, error) {
+func (cli *bicepCli) BuildBicepParam(ctx context.Context, file string, env []string) (BuildResult, error) {
 	args := []string{"build-params", file, "--stdout"}
 	buildRes, err := cli.runCommand(ctx, env, args...)
 
 	if err != nil {
-		return "", fmt.Errorf(
+		return BuildResult{}, fmt.Errorf(
 			"failed running bicep build: %w",
 			err,
 		)
 	}
 
-	return buildRes.Stdout, nil
+	return BuildResult{
+		Compiled: buildRes.Stdout,
+		LintErr:  buildRes.Stderr,
+	}, nil
 }
 
 func (cli *bicepCli) runCommand(ctx context.Context, env []string, args ...string) (exec.RunResult, error) {

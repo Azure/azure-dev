@@ -1423,7 +1423,6 @@ type compileBicepResult struct {
 func (p *BicepProvider) compileBicep(
 	ctx context.Context, modulePath string,
 ) (*compileBicepResult, error) {
-	var err error
 	var compiled string
 	var parameters azure.ArmParameters
 
@@ -1438,10 +1437,11 @@ func (p *BicepProvider) compileBicep(
 			}
 			azdEnv = append(azdEnv, fmt.Sprintf("%s=%s", environment.PrincipalIdEnvVarName, currentPrincipalId))
 		}
-		compiled, err = p.bicepCli.BuildBicepParam(ctx, modulePath, azdEnv)
+		compiledResult, err := p.bicepCli.BuildBicepParam(ctx, modulePath, azdEnv)
 		if err != nil {
 			return nil, fmt.Errorf("failed to compile bicepparam template: %w", err)
 		}
+		compiled = compiledResult.Compiled
 
 		var bicepParamOutput compiledBicepParamResult
 		if err := json.Unmarshal([]byte(compiled), &bicepParamOutput); err != nil {

@@ -25,6 +25,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/test/cmdrecord"
 	"gopkg.in/dnaeon/go-vcr.v3/cassette"
 	"gopkg.in/dnaeon/go-vcr.v3/recorder"
 	"gopkg.in/yaml.v3"
@@ -58,6 +59,9 @@ const SubscriptionIdKey = "subscription_id"
 type Session struct {
 	// ProxyUrl is the URL of the proxy server that will be recording or replaying interactions.
 	ProxyUrl string
+
+	// CmdProxyPath is the path that should be appended to PATH to proxy any cmd invocations.
+	CmdProxyPath string
 
 	// If true, playing back from recording.
 	Playback bool
@@ -116,7 +120,6 @@ func Start(t *testing.T, opts ...Options) *Session {
 
 	dir := callingDir(1)
 	name := filepath.Join(dir, "testdata", "recordings", t.Name())
-
 	writer := &logWriter{t: t}
 	level := slog.LevelInfo
 	if os.Getenv("RECORDER_PROXY_DEBUG") != "" {
@@ -168,10 +171,23 @@ func Start(t *testing.T, opts ...Options) *Session {
 		transport: transport,
 	})
 
-	vcr.AddHook(func(i *cassette.Interaction) error {
-		i.Request.Headers.Set("Authorization", "SANITIZED")
-		return nil
-	}, recorder.BeforeSaveHook)
+	vcr.SetMatcher(func(r *http.Request, i cassette.Request) bool {
+		// Ignore query parameter 's=...' in containerappOperationResults
+		if strings.Contains(r.URL.Path, "/providers/Microsoft.App/") &&
+			strings.Contains(r.URL.Path, "/containerappOperationResults") {
+			recorded, err := url.Parse(i.URL)
+			if err != nil {
+				panic(err)
+			}
+
+			recorded.RawQuery = ""
+			r.URL.RawQuery = ""
+			log.Info("recorderProxy: ignoring query parameters in containerappOperationResults", "url", r.URL)
+			return r.Method == i.Method && r.URL.String() == recorded.String()
+		}
+
+		return cassette.DefaultMatcher(r, i)
+	})
 
 	// Fast-forward polling operations
 	discarder := httpPollDiscarder{}
@@ -180,6 +196,28 @@ func Start(t *testing.T, opts ...Options) *Session {
 	// Trim GET subscriptions-level deployment responses
 	vcr.AddHook(func(i *cassette.Interaction) error {
 		return TrimSubscriptionsDeployment(i, session.Variables)
+	}, recorder.BeforeSaveHook)
+
+	// Sanitize
+	vcr.AddHook(func(i *cassette.Interaction) error {
+		i.Request.Headers.Set("Authorization", "SANITIZED")
+
+		err := sanitizeContainerAppTokenExchange(i)
+		if err != nil {
+			log.Error("failed to sanitize container app token exchange", "error", err)
+		}
+
+		err = sanitizeContainerAppListSecrets(i)
+		if err != nil {
+			log.Error("failed to sanitize container app list secrets", "error", err)
+		}
+
+		err = sanitizeContainerAppUpdate(i)
+		if err != nil {
+			log.Error("failed to sanitize container app update", "error", err)
+		}
+
+		return nil
 	}, recorder.BeforeSaveHook)
 
 	vcr.AddHook(func(i *cassette.Interaction) error {
@@ -219,6 +257,21 @@ func Start(t *testing.T, opts ...Options) *Session {
 		},
 	}
 
+	cmdRecorder := cmdrecord.NewWithOptions(cmdrecord.Options{
+		CmdName:      "docker",
+		CassetteName: name,
+		RecordMode:   opt.mode,
+		Intercepts: []cmdrecord.Intercept{
+			{ArgsMatch: "^login"},
+			{ArgsMatch: "^push"},
+		},
+	})
+	path, err := cmdRecorder.Start()
+	if err != nil {
+		t.Fatalf("failed to start cmd recorder: %v", err)
+	}
+	session.CmdProxyPath = path
+
 	server := httptest.NewTLSServer(proxy)
 	proxy.TLS = server.TLS
 	t.Logf("recorderProxy started with mode %v at %s", displayMode(vcr), server.URL)
@@ -244,6 +297,11 @@ func Start(t *testing.T, opts ...Options) *Session {
 				if err != nil {
 					t.Fatalf("failed to save variables: %v", err)
 				}
+			}
+
+			err = cmdRecorder.Stop()
+			if err != nil {
+				t.Fatalf("failed to save cmd recording: %v", err)
 			}
 		}
 	})

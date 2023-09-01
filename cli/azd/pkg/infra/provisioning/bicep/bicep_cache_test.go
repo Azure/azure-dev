@@ -25,12 +25,12 @@ func TestBicepLocalCache(t *testing.T) {
 	var sample azure.ArmTemplate
 	sampleTemplate, err := json.Marshal(sample)
 	require.NoError(t, err)
-	expectedResult := &BicepCache{
+	expectedResult := &cache{
 		Parameters: azure.ArmParameters{},
 		Template:   sampleTemplate,
 	}
 
-	manager := &bicepCache{
+	manager := &cacheClient{
 		lazyAzdContext: &lazyAzdContext,
 		lazyAzdEnv:     &lazyEnv,
 		overrideReadFunc: func(context context.Context, arg any) ([]byte, error) {
@@ -58,12 +58,12 @@ func TestBicepEqual(t *testing.T) {
 	var sample azure.ArmTemplate
 	sampleTemplate, err := json.Marshal(sample)
 	require.NoError(t, err)
-	expectedResult := &BicepCache{
+	expectedResult := &cache{
 		Parameters: azure.ArmParameters{},
 		Template:   sampleTemplate,
 	}
 
-	manager := &bicepCache{
+	manager := &cacheClient{
 		lazyAzdContext: &lazyAzdContext,
 		lazyAzdEnv:     &lazyEnv,
 		overrideReadFunc: func(context context.Context, arg any) ([]byte, error) {
@@ -77,7 +77,7 @@ func TestBicepEqual(t *testing.T) {
 
 	ctx := context.Background()
 	require.True(t, manager.Equal(ctx, expectedResult))
-	require.False(t, manager.Equal(ctx, &BicepCache{
+	require.False(t, manager.Equal(ctx, &cache{
 		Parameters: azure.ArmParameters{
 			"foo": azure.ArmParameterValue{
 				Value: "bar",
@@ -97,20 +97,20 @@ func TestBicepCacheWriteLocal(t *testing.T) {
 	var sample azure.ArmTemplate
 	sampleTemplate, err := json.Marshal(sample)
 	require.NoError(t, err)
-	expectedResult := &BicepCache{
+	expectedResult := &cache{
 		Parameters: azure.ArmParameters{},
 		Template:   sampleTemplate,
 	}
 
-	manager := &bicepCache{
+	manager := &cacheClient{
 		lazyAzdContext: &lazyAzdContext,
 		lazyAzdEnv:     &lazyEnv,
-		overrideWriteFunc: func(context context.Context, arg any, cache []byte) error {
+		overrideWriteFunc: func(context context.Context, arg any, c []byte) error {
 			path, goodCast := arg.(string)
 			require.True(t, goodCast)
 			require.Equal(t, "foo/.azure/bicep.cache", path)
-			var reconstruct BicepCache
-			err = json.Unmarshal(cache, &reconstruct)
+			var reconstruct cache
+			err = json.Unmarshal(c, &reconstruct)
 			require.NoError(t, err)
 			require.Equal(t, expectedResult, &reconstruct)
 			return nil
@@ -134,12 +134,12 @@ func TestBicepRemoteAzure(t *testing.T) {
 	var sample azure.ArmTemplate
 	sampleTemplate, err := json.Marshal(sample)
 	require.NoError(t, err)
-	expectedResult := &BicepCache{
+	expectedResult := &cache{
 		Parameters: azure.ArmParameters{},
 		Template:   sampleTemplate,
 	}
 
-	manager := &bicepCache{
+	manager := &cacheClient{
 		lazyAzdContext: &lazyAzdContext,
 		lazyAzdEnv:     &lazyEnv,
 		overrideReadFunc: func(context context.Context, arg any) ([]byte, error) {
@@ -170,22 +170,22 @@ func TestBicepCacheWriteRemote(t *testing.T) {
 	var sample azure.ArmTemplate
 	sampleTemplate, err := json.Marshal(sample)
 	require.NoError(t, err)
-	expectedResult := &BicepCache{
+	expectedResult := &cache{
 		Parameters: azure.ArmParameters{},
 		Template:   sampleTemplate,
 	}
 
-	manager := &bicepCache{
+	manager := &cacheClient{
 		lazyAzdContext: &lazyAzdContext,
 		lazyAzdEnv:     &lazyEnv,
-		overrideWriteFunc: func(context context.Context, arg any, cache []byte) error {
+		overrideWriteFunc: func(context context.Context, arg any, c []byte) error {
 			azureStorageConfig, goodCast := arg.(*azBlobSource)
 			require.True(t, goodCast)
 			require.Equal(t, "container", azureStorageConfig.azContainerName)
 			require.Equal(t, "connectionString", azureStorageConfig.azStorageConnectionString)
 
-			var reconstruct BicepCache
-			err = json.Unmarshal(cache, &reconstruct)
+			var reconstruct cache
+			err = json.Unmarshal(c, &reconstruct)
 			require.NoError(t, err)
 			require.Equal(t, expectedResult, &reconstruct)
 			return nil
@@ -209,12 +209,12 @@ func TestBicepCacheWriteRemoteFallbackLocal(t *testing.T) {
 	var sample azure.ArmTemplate
 	sampleTemplate, err := json.Marshal(sample)
 	require.NoError(t, err)
-	expectedResult := &BicepCache{
+	expectedResult := &cache{
 		Parameters: azure.ArmParameters{},
 		Template:   sampleTemplate,
 	}
 
-	manager := &bicepCache{
+	manager := &cacheClient{
 		lazyAzdContext: &lazyAzdContext,
 		lazyAzdEnv:     &lazyEnv,
 		overrideReadFunc: func(context context.Context, arg any) ([]byte, error) {

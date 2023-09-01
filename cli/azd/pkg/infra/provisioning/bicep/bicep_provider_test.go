@@ -379,7 +379,7 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 		&mockCurrentPrincipal{},
 		mockContext.AlphaFeaturesManager,
 		clock.NewMock(),
-		&bicepCache{},
+		&cacheClient{},
 	)
 
 	err = provider.Initialize(*mockContext.Context, projectDir, options)

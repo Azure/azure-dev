@@ -22,8 +22,8 @@ import (
 	"golang.org/x/exp/slices"
 )
 
-// BicepCache is serialized into json and represents the local provisioning cache for bicep.
-type BicepCache struct {
+// cache is serialized into json and represents the local provisioning cache for bicep.
+type cache struct {
 	Template   json.RawMessage
 	Parameters azure.ArmParameters
 }
@@ -31,11 +31,11 @@ type BicepCache struct {
 // CacheManager provides the functionality for using bicep cache.
 type CacheManager interface {
 	// Current returns existing cache or nil when there's no cache.
-	Current(context context.Context) *BicepCache
+	Current(context context.Context) *cache
 	// Cache persist cache. Use Cache(nil) to clear cache.
-	Cache(context context.Context, cache *BicepCache) error
+	Cache(context context.Context, cache *cache) error
 	// Equal compares cache against current and return false when they are different.
-	Equal(context context.Context, cache *BicepCache) bool
+	Equal(context context.Context, cache *cache) bool
 }
 
 // bicepCache writes a cache file inside the current azd environment.
@@ -54,7 +54,7 @@ type CacheManager interface {
 //	AZURE_BICEP_CACHE_CONFIG=azureBlob,cache,DefaultEndpointsProtocol=https;Ac....
 //
 // If the manager fails to parse or connect to the remote config, it will fallback automatically to use local file cache.
-type bicepCache struct {
+type cacheClient struct {
 	lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext]
 	lazyAzdEnv     *lazy.Lazy[*environment.Environment]
 	// for testing purposes, allows to mock the implementation for reading/writing cache.
@@ -137,21 +137,21 @@ func cacheToLocalFile(context context.Context, arg any, cache []byte) error {
 	return nil
 }
 
-func (b *bicepCache) checkReadOverride(impl readCache) readCache {
+func (b *cacheClient) checkReadOverride(impl readCache) readCache {
 	if b.overrideReadFunc != nil {
 		return b.overrideReadFunc
 	}
 	return impl
 }
 
-func (b *bicepCache) checkWriteOverride(impl writeCache) writeCache {
+func (b *cacheClient) checkWriteOverride(impl writeCache) writeCache {
 	if b.overrideWriteFunc != nil {
 		return b.overrideWriteFunc
 	}
 	return impl
 }
 
-func (b *bicepCache) Current(context context.Context) *BicepCache {
+func (b *cacheClient) Current(context context.Context) *cache {
 	cacheSources, err := b.cacheSources()
 	if err != nil {
 		log.Printf("couldn't get cache sources: %v. Ignoring cache.", err)
@@ -183,7 +183,7 @@ func (b *bicepCache) Current(context context.Context) *BicepCache {
 		}
 	}
 
-	var cache BicepCache
+	var cache cache
 	if err := json.Unmarshal(cacheContent, &cache); err != nil {
 		log.Printf("couldn't parse cache: %v. Ignoring cache.", err)
 		return nil
@@ -192,7 +192,7 @@ func (b *bicepCache) Current(context context.Context) *BicepCache {
 	return &cache
 }
 
-func (b *bicepCache) Cache(context context.Context, cache *BicepCache) error {
+func (b *cacheClient) Cache(context context.Context, cache *cache) error {
 	cacheSources, err := b.cacheSources()
 	if err != nil {
 		log.Printf("couldn't get cache sources: %v", err)
@@ -226,7 +226,7 @@ func (b *bicepCache) Cache(context context.Context, cache *BicepCache) error {
 	return nil
 }
 
-func (b *bicepCache) Equal(context context.Context, cache *BicepCache) bool {
+func (b *cacheClient) Equal(context context.Context, cache *cache) bool {
 	// cache is saved w/o format, hence, the comparison needs to be the same way
 	currentCache, _ := json.Marshal(b.Current(context))
 	rawCache, _ := json.Marshal(cache)
@@ -252,7 +252,7 @@ type cacheSources struct {
 
 // cacheSources finds all the available sources for bicep cache.
 // Local file source is always added
-func (b *bicepCache) cacheSources() (*cacheSources, error) {
+func (b *cacheClient) cacheSources() (*cacheSources, error) {
 	azdcontext, err := b.lazyAzdContext.GetValue()
 	if err != nil {
 		log.Printf("could't get azd context: %v", err)
@@ -322,7 +322,7 @@ func parseAzContainerArgs(args []string) (*azBlobSource, error) {
 func NewCacheManager(
 	lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext],
 	lazyEnv *lazy.Lazy[*environment.Environment]) CacheManager {
-	return &bicepCache{
+	return &cacheClient{
 		lazyAzdContext: lazyAzdContext,
 		lazyAzdEnv:     lazyEnv,
 	}

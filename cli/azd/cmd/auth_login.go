@@ -471,7 +471,10 @@ func (la *loginAction) login(ctx context.Context) error {
 		}
 
 		if useDevCode {
-			_, err := la.authManager.LoginWithDeviceCode(ctx, la.flags.tenantID, la.flags.scopes)
+			_, err := la.authManager.LoginWithDeviceCode(ctx, la.flags.tenantID, la.flags.scopes, func(url string) error {
+				openWithDefaultBrowser(ctx, la.console, url)
+				return nil
+			})
 			if err != nil {
 				return fmt.Errorf("logging in: %w", err)
 			}

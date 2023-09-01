@@ -1422,16 +1422,16 @@ func (p *BicepProvider) loadParameters(ctx context.Context) (map[string]azure.Ar
 func (p *BicepProvider) compileBicep(
 	ctx context.Context, modulePath string,
 ) (azure.RawArmTemplate, azure.ArmTemplate, error) {
-	compiled, err := p.bicepCli.Build(ctx, modulePath)
+	res, err := p.bicepCli.Build(ctx, modulePath)
 	if err != nil {
 		return nil, azure.ArmTemplate{}, fmt.Errorf("failed to compile bicep template: %w", err)
 	}
 
-	rawTemplate := azure.RawArmTemplate(compiled)
+	rawTemplate := azure.RawArmTemplate(res.Compiled)
 
 	var template azure.ArmTemplate
 	if err := json.Unmarshal(rawTemplate, &template); err != nil {
-		log.Printf("failed unmarshalling compiled arm template to JSON (err: %v), template contents:\n%s", err, compiled)
+		log.Printf("failed unmarshalling compiled arm template to JSON (err: %v), template contents:\n%s", err, res.Compiled)
 		return nil, azure.ArmTemplate{}, fmt.Errorf("failed unmarshalling arm template from json: %w", err)
 	}
 

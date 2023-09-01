@@ -125,19 +125,17 @@ func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
 		return fmt.Errorf("compiling bicep template: %w", err)
 	}
 
-	locationFilterFn := func(_ account.Location) bool { return true }
-	if locationParam, defined := template.Parameters["location"]; defined {
-		if locationParam.AllowedValues != nil {
-			locationFilterFn = func(loc account.Location) bool {
-				return slices.IndexFunc(*locationParam.AllowedValues, func(v any) bool {
-					s, ok := v.(string)
-					return ok && loc.Name == s
+	if err := EnsureSubscriptionAndLocation(ctx, p.env, p.prompters, func(loc account.Location) bool {
+		if locationParam, defined := template.Parameters["location"]; defined {
+			if locationParam.AllowedValues != nil {
+				return slices.IndexFunc(*locationParam.AllowedValues, func(allowedValue any) bool {
+					allowedValueString, goodCast := allowedValue.(string)
+					return goodCast && loc.Name == allowedValueString
 				}) != -1
 			}
 		}
-	}
-
-	if err := EnsureSubscriptionAndLocation(ctx, p.env, p.prompters, locationFilterFn); err != nil {
+		return true
+	}); err != nil {
 		return err
 	}
 

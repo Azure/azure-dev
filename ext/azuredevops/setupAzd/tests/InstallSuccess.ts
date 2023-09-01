@@ -4,7 +4,7 @@ import * as ttm from 'azure-pipelines-task-lib/mock-test';
 import * as fs from 'fs'
 
 describe('setup azd tests', function () {
-
+    setTimeout(() => {}, 10000);
     before(function () { });
     afterEach(() => {
         fs.rmSync('path', { recursive: true, force: true })

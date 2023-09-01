@@ -2,37 +2,19 @@ package repository
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log"
-	"os"
 	"path/filepath"
-	"strings"
-	"text/tabwriter"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
-	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/fatih/color"
 	"golang.org/x/exp/maps"
 	"golang.org/x/exp/slices"
 )
-
-var languageMap = map[appdetect.Language]project.ServiceLanguageKind{
-	appdetect.DotNet:     project.ServiceLanguageDotNet,
-	appdetect.Java:       project.ServiceLanguageJava,
-	appdetect.JavaScript: project.ServiceLanguageJavaScript,
-	appdetect.TypeScript: project.ServiceLanguageTypeScript,
-	appdetect.Python:     project.ServiceLanguagePython,
-}
-
-var dbMap = map[appdetect.DatabaseDep]struct{}{
-	appdetect.DbMongo:    {},
-	appdetect.DbPostgres: {},
-}
 
 func projectDisplayName(p appdetect.Project) string {
 	name := p.Language.Display()
@@ -45,73 +27,6 @@ func projectDisplayName(p appdetect.Project) string {
 	return name
 }
 
-func dirSuggestions(input string) []string {
-	completions := []string{}
-	matches, _ := filepath.Glob(input + "*")
-	for _, match := range matches {
-		if fs, err := os.Stat(match); err == nil && fs.IsDir() {
-			completions = append(completions, match)
-		}
-	}
-	return completions
-}
-
-func tabWrite(selections []string, padding int) ([]string, error) {
-	tabbed := strings.Builder{}
-	tabW := tabwriter.NewWriter(&tabbed, 0, 0, padding, ' ', 0)
-	_, err := tabW.Write([]byte(strings.Join(selections, "\n")))
-	if err != nil {
-		return nil, err
-	}
-	err = tabW.Flush()
-	if err != nil {
-		return nil, err
-	}
-
-	return strings.Split(tabbed.String(), "\n"), nil
-}
-
-func promptDir(
-	ctx context.Context,
-	console input.Console,
-	message string) (string, error) {
-	for {
-		path, err := console.Prompt(ctx, input.ConsoleOptions{
-			Message: message,
-			Suggest: dirSuggestions,
-		})
-		if err != nil {
-			return "", err
-		}
-
-		fs, err := os.Stat(path)
-		if errors.Is(err, os.ErrNotExist) || fs != nil && !fs.IsDir() {
-			console.Message(ctx, fmt.Sprintf("'%s' is not a valid directory", path))
-			continue
-		}
-
-		if err != nil {
-			return "", err
-		}
-
-		path, err = filepath.Abs(path)
-		if err != nil {
-			return "", err
-		}
-
-		return path, err
-	}
-}
-
-func relSafe(root string, path string) string {
-	rel, err := filepath.Rel(root, path)
-	if err != nil {
-		return path
-	}
-
-	return rel
-}
-
 type EntryKind string
 
 const (
@@ -120,28 +35,35 @@ const (
 	EntryKindModified EntryKind = "modified"
 )
 
+// detectConfirm handles prompting for confirming the detected services and databases
 type detectConfirm struct {
-	services  []appdetect.Project
-	databases map[appdetect.DatabaseDep]EntryKind
-	modified  bool
+	// detected services and databases
+	Services  []appdetect.Project
+	Databases map[appdetect.DatabaseDep]EntryKind
 
-	console input.Console
-	root    string
+	// the root directory of the project
+	root string
+
+	// internal state and components
+	modified bool
+	console  input.Console
 }
 
-func (d *detectConfirm) init(projects []appdetect.Project) {
-	d.databases = make(map[appdetect.DatabaseDep]EntryKind)
-	d.services = make([]appdetect.Project, 0, len(projects))
+// Init initializes state from initial detection output
+func (d *detectConfirm) Init(projects []appdetect.Project, root string) {
+	d.Databases = make(map[appdetect.DatabaseDep]EntryKind)
+	d.Services = make([]appdetect.Project, 0, len(projects))
 	d.modified = false
+	d.root = root
 
 	for _, project := range projects {
 		if _, supported := languageMap[project.Language]; supported {
-			d.services = append(d.services, project)
+			d.Services = append(d.Services, project)
 		}
 
 		for _, dbType := range project.DatabaseDeps {
 			if _, supported := dbMap[dbType]; supported {
-				d.databases[dbType] = EntryKindDetected
+				d.Databases[dbType] = EntryKindDetected
 			}
 		}
 	}
@@ -151,6 +73,7 @@ func (d *detectConfirm) render(ctx context.Context) error {
 	if d.modified {
 		d.console.ShowSpinner(ctx, "Revising detected services", input.Step)
 		if d.console.IsSpinnerInteractive() {
+			// Slow down the spinner if it's interactive to make it more visible
 			time.Sleep(1 * time.Second)
 		}
 		d.console.StopSpinner(ctx, "Revising detected services", input.StepDone)
@@ -160,7 +83,7 @@ func (d *detectConfirm) render(ctx context.Context) error {
 	}
 
 	recommendedServices := []string{}
-	for _, svc := range d.services {
+	for _, svc := range d.Services {
 		status := ""
 		if svc.DetectionRule == string(EntryKindModified) {
 			status = " " + output.WithSuccessFormat("[Updated]")
@@ -177,7 +100,7 @@ func (d *detectConfirm) render(ctx context.Context) error {
 		}
 	}
 
-	for db, entry := range d.databases {
+	for db, entry := range d.Databases {
 		switch db {
 		case appdetect.DbPostgres:
 			recommendedServices = append(recommendedServices, "Azure Database for PostgreSQL flexible server")
@@ -210,7 +133,9 @@ func (d *detectConfirm) render(ctx context.Context) error {
 	return nil
 }
 
-func (d *detectConfirm) confirm(ctx context.Context) error {
+// Confirm prompts the user to confirm the detected services and databases,
+// providing modifications to the detected services and databases.
+func (d *detectConfirm) Confirm(ctx context.Context) error {
 confirm:
 	for {
 		if err := d.render(ctx); err != nil {
@@ -247,13 +172,13 @@ confirm:
 }
 
 func (d *detectConfirm) remove(ctx context.Context) error {
-	modifyOptions := make([]string, 0, len(d.services)+len(d.databases))
-	for _, svc := range d.services {
+	modifyOptions := make([]string, 0, len(d.Services)+len(d.Databases))
+	for _, svc := range d.Services {
 		modifyOptions = append(
 			modifyOptions, fmt.Sprintf("%s in %s", projectDisplayName(svc), relSafe(d.root, svc.Path)))
 	}
 
-	displayDbs := maps.Keys(d.databases)
+	displayDbs := maps.Keys(d.Databases)
 	for _, db := range displayDbs {
 		modifyOptions = append(modifyOptions, db.Display())
 	}
@@ -266,8 +191,8 @@ func (d *detectConfirm) remove(ctx context.Context) error {
 		return err
 	}
 
-	if i < len(d.services) {
-		svc := d.services[i]
+	if i < len(d.Services) {
+		svc := d.Services[i]
 		confirm, err := d.console.Confirm(ctx, input.ConsoleOptions{
 			Message: fmt.Sprintf(
 				"Remove %s in %s?", projectDisplayName(svc), relSafe(d.root, svc.Path)),
@@ -280,10 +205,10 @@ func (d *detectConfirm) remove(ctx context.Context) error {
 			return nil
 		}
 
-		d.services = append(d.services[:i], d.services[i+1:]...)
+		d.Services = append(d.Services[:i], d.Services[i+1:]...)
 		d.modified = true
-	} else if i < len(d.services)+len(d.databases) {
-		db := displayDbs[i-len(d.services)]
+	} else if i < len(d.Services)+len(d.Databases) {
+		db := displayDbs[i-len(d.Services)]
 
 		confirm, err := d.console.Confirm(ctx, input.ConsoleOptions{
 			Message: fmt.Sprintf(
@@ -297,7 +222,18 @@ func (d *detectConfirm) remove(ctx context.Context) error {
 			return nil
 		}
 
-		delete(d.databases, db)
+		delete(d.Databases, db)
+
+		for i := range d.Services {
+			for j, dependency := range d.Services[i].DatabaseDeps {
+				if dependency == db {
+					d.Services[i].DatabaseDeps = append(
+						d.Services[i].DatabaseDeps[:j],
+						d.Services[i].DatabaseDeps[j+1:]...)
+					d.Services[i].DetectionRule = string(EntryKindModified)
+				}
+			}
+		}
 		d.modified = true
 	}
 
@@ -318,8 +254,8 @@ func (d *detectConfirm) add(ctx context.Context) error {
 	// only include databases not already added
 	allDbs := maps.Keys(dbMap)
 	databases := make([]appdetect.DatabaseDep, 0, len(allDbs))
-	for _, db := range databases {
-		if _, ok := d.databases[db]; !ok {
+	for _, db := range allDbs {
+		if _, ok := d.Databases[db]; !ok {
 			databases = append(databases, db)
 		}
 	}
@@ -345,9 +281,13 @@ func (d *detectConfirm) add(ctx context.Context) error {
 		entries = append(entries, db)
 	}
 
-	selections, err := tabWrite(selections, 3)
-	if err != nil {
-		return fmt.Errorf("formatting selections: %w", err)
+	if d.console.IsSpinnerInteractive() {
+		formatted, err := tabWrite(selections, 3)
+		if err != nil {
+			return fmt.Errorf("formatting selections: %w", err)
+		}
+
+		selections = formatted
 	}
 
 	i, err := d.console.Select(ctx, input.ConsoleOptions{
@@ -370,12 +310,12 @@ func (d *detectConfirm) add(ctx context.Context) error {
 		}
 	case appdetect.DatabaseDep:
 		dbDep := entries[i].(appdetect.DatabaseDep)
-		d.databases[dbDep] = EntryKindManual
+		d.Databases[dbDep] = EntryKindManual
 
-		svcSelect := make([]string, 0, len(d.services))
-		for _, svc := range d.services {
+		svcSelect := make([]string, 0, len(d.Services))
+		for _, svc := range d.Services {
 			svcSelect = append(svcSelect,
-				fmt.Sprintf("%s\t[%s]", projectDisplayName(svc), filepath.Base(svc.Path)))
+				fmt.Sprintf("%s in %s", projectDisplayName(svc), filepath.Base(svc.Path)))
 		}
 
 		svcSelect, err = tabWrite(svcSelect, 3)
@@ -391,7 +331,8 @@ func (d *detectConfirm) add(ctx context.Context) error {
 			return err
 		}
 
-		d.services[idx].DatabaseDeps = append(d.services[idx].DatabaseDeps, dbDep)
+		d.Services[idx].DatabaseDeps = append(d.Services[idx].DatabaseDeps, dbDep)
+		d.Services[idx].DetectionRule = string(EntryKindModified)
 		d.modified = true
 		return nil
 	default:
@@ -405,7 +346,7 @@ func (d *detectConfirm) add(ctx context.Context) error {
 	}
 
 	// deduplicate the path against existing services
-	for idx, svc := range d.services {
+	for idx, svc := range d.Services {
 		if svc.Path == path {
 			d.console.Message(
 				ctx,
@@ -421,9 +362,9 @@ func (d *detectConfirm) add(ctx context.Context) error {
 			}
 			if confirm {
 				d.modified = true
-				d.services[idx].Language = s.Language
-				d.services[idx].Dependencies = s.Dependencies
-				d.services[idx].DetectionRule = string(EntryKindModified)
+				d.Services[idx].Language = s.Language
+				d.Services[idx].Dependencies = s.Dependencies
+				d.Services[idx].DetectionRule = string(EntryKindModified)
 			}
 
 			return nil
@@ -432,48 +373,7 @@ func (d *detectConfirm) add(ctx context.Context) error {
 
 	s.Path = filepath.Clean(path)
 	s.DetectionRule = string(EntryKindManual)
-	d.services = append(d.services, s)
+	d.Services = append(d.Services, s)
+	d.modified = true
 	return nil
-}
-
-func prjConfigFromDetect(root string, detect detectConfirm) (project.ProjectConfig, error) {
-	config := project.ProjectConfig{
-		Name:     filepath.Base(root),
-		Services: map[string]*project.ServiceConfig{},
-	}
-	for _, prj := range detect.services {
-		rel, err := filepath.Rel(root, prj.Path)
-		if err != nil {
-			return project.ProjectConfig{}, err
-		}
-
-		svc := project.ServiceConfig{}
-		svc.Host = project.ContainerAppTarget
-		svc.RelativePath = rel
-
-		language, supported := languageMap[prj.Language]
-		if !supported {
-			continue
-		}
-		svc.Language = language
-
-		if prj.Docker != nil {
-			relDocker, err := filepath.Rel(prj.Path, prj.Docker.Path)
-			if err != nil {
-				return project.ProjectConfig{}, err
-			}
-
-			svc.Docker = project.DockerProjectOptions{
-				Path: relDocker,
-			}
-		}
-
-		name := filepath.Base(rel)
-		if name == "." {
-			name = config.Name
-		}
-		config.Services[name] = &svc
-	}
-
-	return config, nil
 }

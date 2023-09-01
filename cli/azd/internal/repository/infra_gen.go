@@ -6,9 +6,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
@@ -22,10 +19,20 @@ import (
 	"github.com/otiai10/copy"
 )
 
-// A regex that matches against "likely" well-formed database names
-var wellFormedDbNameRegex = regexp.MustCompile(`^[a-zA-Z\-_0-9]*$`)
+var languageMap = map[appdetect.Language]project.ServiceLanguageKind{
+	appdetect.DotNet:     project.ServiceLanguageDotNet,
+	appdetect.Java:       project.ServiceLanguageJava,
+	appdetect.JavaScript: project.ServiceLanguageJavaScript,
+	appdetect.TypeScript: project.ServiceLanguageTypeScript,
+	appdetect.Python:     project.ServiceLanguagePython,
+}
 
-var NoServicesDetectedError = errors.New("no services detected")
+var dbMap = map[appdetect.DatabaseDep]struct{}{
+	appdetect.DbMongo:    {},
+	appdetect.DbPostgres: {},
+}
+
+var ErrNoServicesDetected = errors.New("no services detected")
 
 func (i *Initializer) InitializeInfra(
 	ctx context.Context,
@@ -36,9 +43,10 @@ func (i *Initializer) InitializeInfra(
 	i.console.ShowSpinner(ctx, title, input.Step)
 	wd := azdCtx.ProjectDirectory()
 
-	// Prioritize src directory if it exists
-	sourceDir := filepath.Join(wd, "src")
 	projects := []appdetect.Project{}
+	start := time.Now()
+	sourceDir := filepath.Join(wd, "src")
+	// Prioritize src directory if it exists
 	if ent, err := os.Stat(sourceDir); err == nil && ent.IsDir() {
 		prj, err := appdetect.Detect(sourceDir)
 		if err == nil && len(prj) > 0 {
@@ -47,7 +55,11 @@ func (i *Initializer) InitializeInfra(
 	}
 
 	if len(projects) == 0 {
-		prj, err := appdetect.Detect(wd)
+		prj, err := appdetect.Detect(wd, appdetect.WithExcludePatterns([]string{
+			"**/eng",
+			"**/tool",
+			"**/tools"},
+			false))
 		if err != nil {
 			i.console.StopSpinner(ctx, title, input.GetStepResultFormat(err))
 			return err
@@ -56,32 +68,39 @@ func (i *Initializer) InitializeInfra(
 		projects = prj
 	}
 
-	time.Sleep(1 * time.Second)
+	end := time.Since(start)
+	if i.console.IsSpinnerInteractive() {
+		// If the spinner is interactive, we want to show it for at least 1 second
+		time.Sleep((1 * time.Second) - end)
+	}
 	i.console.StopSpinner(ctx, title, input.StepDone)
 
-	detect := detectConfirm{console: i.console, root: wd}
-	detect.init(projects)
-	if len(detect.services) == 0 {
-		return NoServicesDetectedError
+	detect := detectConfirm{console: i.console}
+	detect.Init(projects, wd)
+	if len(detect.Services) == 0 {
+		return ErrNoServicesDetected
 	}
 
-	err := detect.confirm(ctx)
+	// Confirm selection of services and databases
+	err := detect.Confirm(ctx)
 	if err != nil {
 		return err
 	}
 
+	// Create the infra spec
 	spec, err := i.infraSpecFromDetect(ctx, detect)
 	if err != nil {
 		return err
 	}
 
+	// Prompt for environment before proceeding with generation
 	err = initializeEnv()
 	if err != nil {
 		return err
 	}
 
 	i.console.Message(ctx, "\n"+output.WithBold("Generating files to run your app on Azure:")+"\n")
-	err = i.initProject(ctx, azdCtx, detect)
+	err = i.genProjectFile(ctx, azdCtx, detect)
 	if err != nil {
 		return err
 	}
@@ -127,7 +146,7 @@ func (i *Initializer) InitializeInfra(
 	return nil
 }
 
-func (i *Initializer) initProject(
+func (i *Initializer) genProjectFile(
 	ctx context.Context,
 	azdCtx *azdcontext.AzdContext,
 	detect detectConfirm) error {
@@ -152,157 +171,46 @@ func (i *Initializer) initProject(
 	return i.writeCoreAssets(ctx, azdCtx)
 }
 
-func (i *Initializer) infraSpecFromDetect(ctx context.Context, detect detectConfirm) (scaffold.InfraSpec, error) {
-	spec := scaffold.InfraSpec{}
-	for database := range detect.databases {
-	dbPrompt:
-		for {
-			dbName, err := i.console.Prompt(ctx, input.ConsoleOptions{
-				Message: fmt.Sprintf("Input the name of the database (%s)", database.Display()),
-				Help: "Hint: Database name\n\n" +
-					"Input a name for the database. This database will be created after running azd provision or azd up." +
-					"\nYou may skip this step by hitting enter, in which case the database will not be created." +
-					"\n\nExamples:\n" + strings.Join([]string{"appdb", "appdb-1"}, "\n"),
-			})
+func prjConfigFromDetect(
+	root string,
+	detect detectConfirm) (project.ProjectConfig, error) {
+	config := project.ProjectConfig{
+		Name:     filepath.Base(root),
+		Services: map[string]*project.ServiceConfig{},
+	}
+	for _, prj := range detect.Services {
+		rel, err := filepath.Rel(root, prj.Path)
+		if err != nil {
+			return project.ProjectConfig{}, err
+		}
+
+		svc := project.ServiceConfig{}
+		svc.Host = project.ContainerAppTarget
+		svc.RelativePath = rel
+
+		language, supported := languageMap[prj.Language]
+		if !supported {
+			continue
+		}
+		svc.Language = language
+
+		if prj.Docker != nil {
+			relDocker, err := filepath.Rel(prj.Path, prj.Docker.Path)
 			if err != nil {
-				return scaffold.InfraSpec{}, err
+				return project.ProjectConfig{}, err
 			}
 
-			if strings.ContainsAny(dbName, " ") {
-				i.console.MessageUxItem(ctx, &ux.WarningMessage{
-					Description: "Database name contains whitespace. This might not be allowed by the database server.",
-				})
-				confirm, err := i.console.Confirm(ctx, input.ConsoleOptions{
-					Message: fmt.Sprintf("Continue with name '%s'?", dbName),
-				})
-				if err != nil {
-					return scaffold.InfraSpec{}, err
-				}
-
-				if !confirm {
-					continue dbPrompt
-				}
-			} else if !wellFormedDbNameRegex.MatchString(dbName) {
-				i.console.MessageUxItem(ctx, &ux.WarningMessage{
-					Description: "Database name contains special characters. This might not be allowed by the database server.",
-				})
-				confirm, err := i.console.Confirm(ctx, input.ConsoleOptions{
-					Message: fmt.Sprintf("Continue with name '%s'?", dbName),
-				})
-				if err != nil {
-					return scaffold.InfraSpec{}, err
-				}
-
-				if !confirm {
-					continue dbPrompt
-				}
-			}
-
-			switch database {
-			case appdetect.DbMongo:
-				spec.DbCosmosMongo = &scaffold.DatabaseCosmosMongo{
-					DatabaseName: dbName,
-				}
-
-				break dbPrompt
-			case appdetect.DbPostgres:
-				spec.DbPostgres = &scaffold.DatabasePostgres{
-					DatabaseName: dbName,
-				}
+			svc.Docker = project.DockerProjectOptions{
+				Path: relDocker,
 			}
 		}
+
+		name := filepath.Base(rel)
+		if name == "." {
+			name = config.Name
+		}
+		config.Services[name] = &svc
 	}
 
-	backends := []scaffold.ServiceReference{}
-	frontends := []scaffold.ServiceReference{}
-	for _, project := range detect.services {
-		name := filepath.Base(project.Path)
-		serviceSpec := scaffold.ServiceSpec{
-			Name: name,
-			Port: -1,
-		}
-
-		if project.Docker == nil || project.Docker.Path == "" {
-			// default buildpack ports:
-			// - python: 80
-			// - other: 8080
-			serviceSpec.Port = 8080
-			// if project.Language == appdetect.Python {
-			// 	serviceSpec.Port = 80
-			// }
-		}
-
-		for _, framework := range project.Dependencies {
-			if framework.IsWebUIFramework() {
-				serviceSpec.Frontend = &scaffold.Frontend{}
-			}
-		}
-
-		for _, db := range project.DatabaseDeps {
-			switch db {
-			case appdetect.DbMongo:
-				serviceSpec.DbCosmosMongo = &scaffold.DatabaseReference{
-					DatabaseName: spec.DbCosmosMongo.DatabaseName,
-				}
-			case appdetect.DbPostgres:
-				serviceSpec.DbPostgres = &scaffold.DatabaseReference{
-					DatabaseName: spec.DbPostgres.DatabaseName,
-				}
-			}
-		}
-		spec.Services = append(spec.Services, serviceSpec)
-	}
-
-	for idx := range spec.Services {
-		if spec.Services[idx].Port == -1 {
-			var port int
-			for {
-				val, err := i.console.Prompt(ctx, input.ConsoleOptions{
-					Message: "What port does '" + spec.Services[idx].Name + "' listen on?",
-				})
-				if err != nil {
-					return scaffold.InfraSpec{}, err
-				}
-
-				port, err = strconv.Atoi(val)
-				if err != nil {
-					i.console.Message(ctx, "Port must be an integer. Try again or press Ctrl+C to cancel")
-					continue
-				}
-
-				if port < 1 || port > 65535 {
-					i.console.Message(ctx, "Port must be a value between 1 and 65535. Try again or press Ctrl+C to cancel")
-					continue
-				}
-
-				break
-			}
-			spec.Services[idx].Port = port
-		}
-
-		if spec.Services[idx].Frontend == nil && spec.Services[idx].Port != 0 {
-			backends = append(backends, scaffold.ServiceReference{
-				Name: spec.Services[idx].Name,
-			})
-
-			spec.Services[idx].Backend = &scaffold.Backend{}
-		} else {
-			frontends = append(frontends, scaffold.ServiceReference{
-				Name: spec.Services[idx].Name,
-			})
-		}
-	}
-
-	// Link services together
-	for _, service := range spec.Services {
-		if service.Frontend != nil {
-			service.Frontend.Backends = backends
-		}
-
-		if service.Backend != nil {
-			service.Backend.Frontends = frontends
-		}
-	}
-
-	return spec, nil
+	return config, nil
 }

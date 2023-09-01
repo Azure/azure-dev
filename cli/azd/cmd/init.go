@@ -190,7 +190,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		err := i.repoInitializer.InitializeInfra(ctx, azdCtx, func() error {
 			return i.initializeEnv(ctx, azdCtx)
 		})
-		if errors.Is(err, repository.NoServicesDetectedError) {
+		if errors.Is(err, repository.ErrNoServicesDetected) {
 			return nil, &azcli.ErrorWithSuggestion{
 				Err: errors.New("no files or services detected in the current directory"),
 				Suggestion: "Ensure you're in the directory where your app code is located and try again." +

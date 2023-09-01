@@ -7,6 +7,13 @@ import (
 )
 
 // DataStore is the interface for the interacting with the persistent storage of environments.
+
+type RemoteKind string
+
+const (
+	RemoteKindAzureStorage RemoteKind = "AzureStorage"
+)
+
 type DataStore interface {
 	// Gets the path to the environment .env file
 	Path(env *Environment) string

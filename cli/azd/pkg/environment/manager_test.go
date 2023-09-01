@@ -3,13 +3,21 @@ package environment
 import (
 	"context"
 	"errors"
+	"fmt"
+	"strings"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/auth"
+	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/state"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
+	"golang.org/x/exp/slices"
 )
 
 var (
@@ -44,6 +52,106 @@ var (
 	})
 )
 
+func newManagerForTest(
+	azdContext *azdcontext.AzdContext,
+	console input.Console,
+	localDataStore LocalDataStore,
+	remoteDataStore RemoteDataStore,
+) Manager {
+	return &manager{
+		azdContext: azdContext,
+		console:    console,
+		local:      localDataStore,
+		remote:     remoteDataStore,
+	}
+}
+
+func Test_EnvManager_PromptEnvironmentName(t *testing.T) {
+	t.Run("valid name", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
+			return strings.Contains(options.Message, "would you like to create it?")
+		}).Respond(true)
+
+		mockContext.Console.WhenPrompt(func(options input.ConsoleOptions) bool {
+			return true
+		}).SetError(errors.New("prompt should not be called for valid environment name"))
+
+		expected := "hello"
+		envManager := createEnvManagerForManagerTest(t, mockContext)
+		env, err := envManager.CreateInteractive(*mockContext.Context, Spec{Name: expected})
+		require.NoError(t, err)
+		require.NotNil(t, env)
+		require.Equal(t, expected, env.GetEnvName())
+	})
+
+	t.Run("empty name gets prompted", func(t *testing.T) {
+		expected := "someEnv"
+
+		mockContext := mocks.NewMockContext(context.Background())
+		mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
+			return strings.Contains(options.Message, "would you like to create it?")
+		}).Respond(true)
+
+		mockContext.Console.WhenPrompt(func(options input.ConsoleOptions) bool {
+			return true
+		}).Respond(expected)
+
+		envManager := createEnvManagerForManagerTest(t, mockContext)
+		env, err := envManager.CreateInteractive(*mockContext.Context, Spec{Name: ""})
+
+		require.NoError(t, err)
+		require.NotNil(t, env)
+		require.Equal(t, expected, env.GetEnvName())
+	})
+}
+
+func createEnvManagerForManagerTest(t *testing.T, mockContext *mocks.MockContext) Manager {
+	azdCtx := azdcontext.NewAzdContextWithDirectory(t.TempDir())
+	localDataStore := NewLocalFileDataStore(azdCtx, config.NewFileConfigManager(config.NewManager()))
+
+	return newManagerForTest(azdCtx, mockContext.Console, localDataStore, nil)
+}
+
+func Test_EnvManager_CreateAndInitEnvironment(t *testing.T) {
+	t.Run("invalid name", func(t *testing.T) {
+		validEnvName := "validEnvName"
+		invalidEnvName := "*!33"
+		calls := 0
+
+		mockContext := mocks.NewMockContext(context.Background())
+		mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
+			return strings.Contains(options.Message, "would you like to create it?")
+		}).Respond(true)
+
+		// Validate that the intial value is invalide
+		// Follow-up with another attempt passing a valid name
+		mockContext.Console.WhenPrompt(func(options input.ConsoleOptions) bool {
+			return strings.Contains(options.Message, "Enter a new environment name")
+		}).RespondFn(func(options input.ConsoleOptions) (any, error) {
+			calls++
+			if calls == 1 {
+				return invalidEnvName, nil
+			}
+
+			return validEnvName, nil
+		})
+
+		// Environment creation should succeed but include a console message with the warning message
+		envManager := createEnvManagerForManagerTest(t, mockContext)
+		env, err := envManager.CreateInteractive(*mockContext.Context, Spec{Name: invalidEnvName})
+		require.NoError(t, err)
+		require.NotNil(t, env)
+		require.Equal(t, validEnvName, env.GetEnvName())
+
+		hasInvalidMessage := slices.ContainsFunc(mockContext.Console.Output(), func(message string) bool {
+			return strings.Contains(message, fmt.Sprintf("environment name '%s' is invalid", invalidEnvName))
+		})
+
+		require.True(t, hasInvalidMessage)
+	})
+}
+
 func Test_EnvManager_List(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	azdContext := azdcontext.NewAzdContextWithDirectory(t.TempDir())
@@ -55,7 +163,7 @@ func Test_EnvManager_List(t *testing.T) {
 		localDataStore.On("List", *mockContext.Context).Return(localEnvList, nil)
 		remoteDataStore.On("List", *mockContext.Context).Return(emptyEnvList, nil)
 
-		manager := NewManager(azdContext, mockContext.Console, localDataStore, remoteDataStore)
+		manager := newManagerForTest(azdContext, mockContext.Console, localDataStore, remoteDataStore)
 		envList, err := manager.List(*mockContext.Context)
 		require.NoError(t, err)
 		require.NotNil(t, envList)
@@ -73,7 +181,7 @@ func Test_EnvManager_List(t *testing.T) {
 		localDataStore.On("List", *mockContext.Context).Return(emptyEnvList, nil)
 		remoteDataStore.On("List", *mockContext.Context).Return(remoteEnvList, nil)
 
-		manager := NewManager(azdContext, mockContext.Console, localDataStore, remoteDataStore)
+		manager := newManagerForTest(azdContext, mockContext.Console, localDataStore, remoteDataStore)
 		envList, err := manager.List(*mockContext.Context)
 		require.NoError(t, err)
 		require.NotNil(t, envList)
@@ -91,7 +199,7 @@ func Test_EnvManager_List(t *testing.T) {
 		localDataStore.On("List", *mockContext.Context).Return(localEnvList, nil)
 		remoteDataStore.On("List", *mockContext.Context).Return(remoteEnvList, nil)
 
-		manager := NewManager(azdContext, mockContext.Console, localDataStore, remoteDataStore)
+		manager := newManagerForTest(azdContext, mockContext.Console, localDataStore, remoteDataStore)
 		envList, err := manager.List(*mockContext.Context)
 		require.NoError(t, err)
 		require.NotNil(t, envList)
@@ -113,7 +221,7 @@ func Test_EnvManager_Get(t *testing.T) {
 
 		localDataStore.On("Get", *mockContext.Context, "env1").Return(getEnv, nil)
 
-		manager := NewManager(azdContext, mockContext.Console, localDataStore, remoteDataStore)
+		manager := newManagerForTest(azdContext, mockContext.Console, localDataStore, remoteDataStore)
 		env, err := manager.Get(*mockContext.Context, "env1")
 		require.NoError(t, err)
 		require.NotNil(t, env)
@@ -128,7 +236,7 @@ func Test_EnvManager_Get(t *testing.T) {
 		remoteDataStore.On("Get", *mockContext.Context, "env1").Return(getEnv, nil)
 		localDataStore.On("Save", *mockContext.Context, getEnv).Return(nil)
 
-		manager := NewManager(azdContext, mockContext.Console, localDataStore, remoteDataStore)
+		manager := newManagerForTest(azdContext, mockContext.Console, localDataStore, remoteDataStore)
 		env, err := manager.Get(*mockContext.Context, "env1")
 		require.NoError(t, err)
 		require.NotNil(t, env)
@@ -142,7 +250,7 @@ func Test_EnvManager_Get(t *testing.T) {
 		localDataStore.On("Get", *mockContext.Context, "env1").Return(nil, ErrNotFound)
 		remoteDataStore.On("Get", *mockContext.Context, "env1").Return(nil, ErrNotFound)
 
-		manager := NewManager(azdContext, mockContext.Console, localDataStore, remoteDataStore)
+		manager := newManagerForTest(azdContext, mockContext.Console, localDataStore, remoteDataStore)
 		env, err := manager.Get(*mockContext.Context, "env1")
 		require.ErrorIs(t, err, ErrNotFound)
 		require.Nil(t, env)
@@ -164,7 +272,7 @@ func Test_EnvManager_Save(t *testing.T) {
 		localDataStore.On("Save", *mockContext.Context, env).Return(nil)
 		remoteDataStore.On("Save", *mockContext.Context, env).Return(nil)
 
-		manager := NewManager(azdContext, mockContext.Console, localDataStore, remoteDataStore)
+		manager := newManagerForTest(azdContext, mockContext.Console, localDataStore, remoteDataStore)
 		err := manager.Save(*mockContext.Context, env)
 		require.NoError(t, err)
 
@@ -182,13 +290,99 @@ func Test_EnvManager_Save(t *testing.T) {
 
 		localDataStore.On("Save", *mockContext.Context, env).Return(errors.New("error"))
 
-		manager := NewManager(azdContext, mockContext.Console, localDataStore, remoteDataStore)
+		manager := newManagerForTest(azdContext, mockContext.Console, localDataStore, remoteDataStore)
 		err := manager.Save(*mockContext.Context, env)
 		require.Error(t, err)
 
 		localDataStore.AssertCalled(t, "Save", *mockContext.Context, env)
 		remoteDataStore.AssertNotCalled(t, "Save", *mockContext.Context, env)
 	})
+}
+
+func Test_EnvManager_CreateFromContainer(t *testing.T) {
+	t.Run("WithRemoteConfig", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		registerContainerComponents(t, mockContext)
+
+		mockContext.Container.RegisterSingleton(func() *state.RemoteConfig {
+			return &state.RemoteConfig{
+				Backend: "AzureStorage",
+				Config:  map[string]interface{}{},
+			}
+		})
+
+		var envManager Manager
+		err := mockContext.Container.Resolve(&envManager)
+		require.NoError(t, err)
+
+		manager := envManager.(*manager)
+		require.NotNil(t, manager.local)
+		require.NotNil(t, manager.remote)
+		require.IsType(t, new(StorageBlobDataStore), manager.remote)
+	})
+
+	t.Run("WithoutRemoteConfig", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		registerContainerComponents(t, mockContext)
+
+		mockContext.Container.RegisterSingleton(func() *state.RemoteConfig {
+			return nil
+		})
+
+		var envManager Manager
+		err := mockContext.Container.Resolve(&envManager)
+		require.NoError(t, err)
+
+		manager := envManager.(*manager)
+		require.NotNil(t, manager.local)
+		require.Nil(t, manager.remote)
+	})
+}
+
+func registerContainerComponents(t *testing.T, mockContext *mocks.MockContext) {
+	mockContext.Container.RegisterSingleton(NewManager)
+	mockContext.Container.RegisterSingleton(NewLocalFileDataStore)
+	_ = mockContext.Container.RegisterNamedSingleton(string(RemoteKindAzureStorage), NewStorageBlobDataStore)
+	//mockContext.Container.RegisterNamedSingleton(string(RemoteKindNone), NewEmptyDataSource)
+
+	mockContext.Container.RegisterSingleton(config.NewManager)
+	mockContext.Container.RegisterSingleton(config.NewFileConfigManager)
+	mockContext.Container.RegisterSingleton(config.NewUserConfigManager)
+	mockContext.Container.RegisterSingleton(storage.NewBlobClient)
+	mockContext.Container.RegisterSingleton(auth.NewManager)
+
+	azdContext := azdcontext.NewAzdContextWithDirectory(t.TempDir())
+	mockContext.Container.RegisterSingleton(func() *azdcontext.AzdContext {
+		return azdContext
+	})
+	mockContext.Container.RegisterSingleton(func() auth.HttpClient {
+		return mockContext.HttpClient
+	})
+
+	storageAccountConfig := &storage.AccountConfig{
+		AccountName:   "test",
+		ContainerName: "test",
+	}
+	mockContext.Container.RegisterSingleton(func() *storage.AccountConfig {
+		return storageAccountConfig
+	})
+
+	// mockContext.Container.RegisterSingleton(func(remoteStateConfig *state.RemoteConfig) (RemoteDataStore, error) {
+	// 	var remoteKind string
+
+	// 	if remoteStateConfig == nil {
+	// 		remoteKind = string(RemoteKindNone)
+	// 	} else {
+	// 		remoteKind = remoteStateConfig.Backend
+	// 	}
+
+	// 	var dataStore RemoteDataStore
+	// 	if err := mockContext.Container.ResolveNamed(remoteKind, &dataStore); err != nil {
+	// 		return nil, fmt.Errorf("resolving remote data store: %w", err)
+	// 	}
+
+	// 	return dataStore, nil
+	// })
 }
 
 type MockDataStore struct {

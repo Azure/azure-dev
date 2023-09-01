@@ -46,7 +46,7 @@ const AksClusterEnvVarName = "AZURE_AKS_CLUSTER_NAME"
 // ResourceGroupEnvVarName is the name of the azure resource group that should be used for deployments
 const ResourceGroupEnvVarName = "AZURE_RESOURCE_GROUP"
 
-// The zero value of an Environment is not valid. Use [FromRoot] or [EmptyWithRoot] to create one. When writing tests,
+// The zero value of an Environment is not valid. Use [New] to create one. When writing tests,
 // [Ephemeral] and [EphemeralWithValues] are useful to create environments which are not persisted to disk.
 type Environment struct {
 	name string

@@ -8,6 +8,8 @@ import (
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/state"
 	"golang.org/x/exp/slices"
 )
 
@@ -58,17 +60,29 @@ type manager struct {
 
 // NewManager creates a new Manager instance
 func NewManager(
+	serviceLocator ioc.ServiceLocator,
 	azdContext *azdcontext.AzdContext,
 	console input.Console,
 	local LocalDataStore,
-	remote RemoteDataStore,
-) Manager {
+	remoteConfig *state.RemoteConfig,
+) (Manager, error) {
+	var remote RemoteDataStore
+
+	// Ideally we would have liked to inject the remote data store directly into the manager,
+	// via the container but we can't do that because the remote data store is optional and the IoC
+	// container doesn't support optional interface based dependencies.
+	if remoteConfig != nil {
+		if err := serviceLocator.ResolveNamed(remoteConfig.Backend, &remote); err != nil {
+			return nil, fmt.Errorf("resolving remote data store: %w", err)
+		}
+	}
+
 	return &manager{
 		azdContext: azdContext,
 		local:      local,
 		remote:     remote,
 		console:    console,
-	}
+	}, nil
 }
 
 func (m *manager) Create(ctx context.Context, spec Spec) (*Environment, error) {

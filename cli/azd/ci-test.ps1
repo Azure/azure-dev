@@ -50,11 +50,22 @@ if ($ShortMode) {
 Write-Host "Running integration tests..."
 $intCoverDir = New-EmptyDirectory -Path $IntegrationTestCoverageDir
 
+$oldGOCOVERDIR = $env:GOCOVERDIR
+$oldGOEXPERIMENT = $env:GOEXPERIMENT
+
 # GOCOVERDIR enables any binaries (in this case, azd.exe) built with '-cover',
 # to write out coverage output to the specific directory.
 $env:GOCOVERDIR = $intCoverDir.FullName
+# Enable the loopvar experiment, which makes the loop variaible for go loops like `range` behave as most folks would expect.
+# the go team is exploring making this default in the future, and we'd like to opt into the behavior now.
+$env:GOEXPERIMENT="loopvar"
 
-& $gotestsum -- ./test/... -v -timeout $IntegrationTestTimeout
-if ($LASTEXITCODE) {
-    exit $LASTEXITCODE
+try {
+    & $gotestsum -- ./test/... -v -timeout $IntegrationTestTimeout
+    if ($LASTEXITCODE) {
+        exit $LASTEXITCODE
+    }    
+} finally {
+    $env:GOCOVERDIR = $oldGOCOVERDIR
+    $env:GOEXPERIMENT = $oldGOEXPERIMENT
 }

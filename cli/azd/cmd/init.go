@@ -83,6 +83,7 @@ type initAction struct {
 	gitCli          git.GitCli
 	flags           *initFlags
 	repoInitializer *repository.Initializer
+	templateManager *templates.TemplateManager
 }
 
 func newInitAction(
@@ -90,13 +91,15 @@ func newInitAction(
 	console input.Console,
 	gitCli git.GitCli,
 	flags *initFlags,
-	repoInitializer *repository.Initializer) actions.Action {
+	repoInitializer *repository.Initializer,
+	templateManager *templates.TemplateManager) actions.Action {
 	return &initAction{
 		console:         console,
 		cmdRun:          cmdRun,
 		gitCli:          gitCli,
 		flags:           flags,
 		repoInitializer: repoInitializer,
+		templateManager: templateManager,
 	}
 }
 
@@ -144,11 +147,13 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 
 		if i.flags.templatePath == "" {
-			template, err := templates.PromptTemplate(ctx, "Select a project template:", i.console)
-			i.flags.templatePath = template.RepositoryPath
-
+			template, err := templates.PromptTemplate(ctx, "Select a project template:", i.templateManager, i.console)
 			if err != nil {
 				return nil, err
+			}
+
+			if template != nil {
+				i.flags.templatePath = template.RepositoryPath
 			}
 		}
 	}

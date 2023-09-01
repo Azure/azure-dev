@@ -12,6 +12,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -39,7 +40,6 @@ import (
 	"github.com/benbjohnson/clock"
 	"github.com/drone/envsubst"
 	"golang.org/x/exp/maps"
-	"golang.org/x/exp/slices"
 )
 
 const DefaultModule = "main"
@@ -739,8 +739,8 @@ func (p *BicepProvider) findCompletedDeployments(
 		return nil, err
 	}
 
-	slices.SortFunc(deployments, func(x, y *armresources.DeploymentExtended) bool {
-		return x.Properties.Timestamp.After(*y.Properties.Timestamp)
+	slices.SortFunc(deployments, func(x, y *armresources.DeploymentExtended) int {
+		return x.Properties.Timestamp.Compare(*y.Properties.Timestamp)
 	})
 
 	// If hint is not provided, use the environment name as the hint
@@ -1396,16 +1396,16 @@ func (p *BicepProvider) loadParameters(ctx context.Context) (map[string]azure.Ar
 func (p *BicepProvider) compileBicep(
 	ctx context.Context, modulePath string,
 ) (azure.RawArmTemplate, azure.ArmTemplate, error) {
-	compiled, err := p.bicepCli.Build(ctx, modulePath)
+	res, err := p.bicepCli.Build(ctx, modulePath)
 	if err != nil {
 		return nil, azure.ArmTemplate{}, fmt.Errorf("failed to compile bicep template: %w", err)
 	}
 
-	rawTemplate := azure.RawArmTemplate(compiled)
+	rawTemplate := azure.RawArmTemplate(res.Compiled)
 
 	var template azure.ArmTemplate
 	if err := json.Unmarshal(rawTemplate, &template); err != nil {
-		log.Printf("failed unmarshalling compiled arm template to JSON (err: %v), template contents:\n%s", err, compiled)
+		log.Printf("failed unmarshalling compiled arm template to JSON (err: %v), template contents:\n%s", err, res.Compiled)
 		return nil, azure.ArmTemplate{}, fmt.Errorf("failed unmarshalling arm template from json: %w", err)
 	}
 

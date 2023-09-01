@@ -6,6 +6,7 @@ package project
 import (
 	"context"
 	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -86,6 +87,12 @@ services:
 	require.NoError(t, err)
 	service := projectConfig.Services["web"]
 
+	temp := t.TempDir()
+	service.Project.Path = temp
+	service.RelativePath = ""
+	err = os.WriteFile(filepath.Join(temp, "Dockerfile"), []byte("FROM node:14"), 0600)
+	require.NoError(t, err)
+
 	npmCli := npm.NewNpmCli(mockContext.CommandRunner)
 	docker := docker.NewDocker(mockContext.CommandRunner)
 
@@ -95,7 +102,12 @@ services:
 	progressMessages := []string{}
 
 	framework := NewDockerProject(
-		env, docker, NewContainerHelper(env, clock.NewMock(), nil, docker), mockinput.NewMockConsole())
+		env,
+		docker,
+		NewContainerHelper(env, clock.NewMock(), nil, docker),
+		mockinput.NewMockConsole(),
+		mockContext.AlphaFeaturesManager,
+		mockContext.CommandRunner)
 	framework.SetSource(internalFramework)
 
 	buildTask := framework.Build(*mockContext.Context, service, nil)
@@ -185,6 +197,11 @@ services:
 	require.NoError(t, err)
 
 	service := projectConfig.Services["web"]
+	temp := t.TempDir()
+	service.Project.Path = temp
+	service.RelativePath = ""
+	err = os.WriteFile(filepath.Join(temp, "Dockerfile.dev"), []byte("FROM node:14"), 0600)
+	require.NoError(t, err)
 
 	done := make(chan bool)
 
@@ -192,7 +209,12 @@ services:
 	status := ""
 
 	framework := NewDockerProject(
-		env, docker, NewContainerHelper(env, clock.NewMock(), nil, docker), mockinput.NewMockConsole())
+		env,
+		docker,
+		NewContainerHelper(env, clock.NewMock(), nil, docker),
+		mockinput.NewMockConsole(),
+		mockContext.AlphaFeaturesManager,
+		mockContext.CommandRunner)
 	framework.SetSource(internalFramework)
 
 	buildTask := framework.Build(*mockContext.Context, service, nil)
@@ -234,9 +256,19 @@ func Test_DockerProject_Build(t *testing.T) {
 	env := environment.Ephemeral()
 	dockerCli := docker.NewDocker(mockContext.CommandRunner)
 	serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
+	temp := t.TempDir()
+	serviceConfig.Project.Path = temp
+	serviceConfig.RelativePath = ""
+	err := os.WriteFile(filepath.Join(temp, "Dockerfile"), []byte("FROM node:14"), 0600)
+	require.NoError(t, err)
 
 	dockerProject := NewDockerProject(
-		env, dockerCli, NewContainerHelper(env, clock.NewMock(), nil, dockerCli), mockinput.NewMockConsole())
+		env,
+		dockerCli,
+		NewContainerHelper(env, clock.NewMock(), nil, dockerCli),
+		mockinput.NewMockConsole(),
+		mockContext.AlphaFeaturesManager,
+		mockContext.CommandRunner)
 	buildTask := dockerProject.Build(*mockContext.Context, serviceConfig, nil)
 	logProgress(buildTask)
 
@@ -245,7 +277,7 @@ func Test_DockerProject_Build(t *testing.T) {
 	require.NotNil(t, result)
 	require.Equal(t, "IMAGE_ID", result.BuildOutputPath)
 	require.Equal(t, "docker", runArgs.Cmd)
-	require.Equal(t, serviceConfig.RelativePath, runArgs.Cwd)
+	require.Equal(t, serviceConfig.Path(), runArgs.Cwd)
 	require.Equal(t,
 		[]string{
 			"build",
@@ -282,7 +314,12 @@ func Test_DockerProject_Package(t *testing.T) {
 	serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
 
 	dockerProject := NewDockerProject(
-		env, dockerCli, NewContainerHelper(env, clock.NewMock(), nil, dockerCli), mockinput.NewMockConsole())
+		env,
+		dockerCli,
+		NewContainerHelper(env, clock.NewMock(), nil, dockerCli),
+		mockinput.NewMockConsole(),
+		mockContext.AlphaFeaturesManager,
+		mockContext.CommandRunner)
 	packageTask := dockerProject.Package(
 		*mockContext.Context,
 		serviceConfig,

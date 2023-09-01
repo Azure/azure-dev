@@ -42,3 +42,6 @@ repo:
     - from: ../../common/.devcontainer/devcontainer.json/bicep-starter/devcontainer.json
       to: ./.devcontainer/devcontainer.json
 
+    # core bicep files
+    - from: ../../common/infra/bicep/core
+      to: ./infra/core

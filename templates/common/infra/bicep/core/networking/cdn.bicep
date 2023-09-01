@@ -1,4 +1,4 @@
-// Module to create a CDN profile with a single endpoint
+metadata description = 'Creates an Azure CDN profile with a single endpoint.'
 param location string = resourceGroup().location
 param tags object = {}
 

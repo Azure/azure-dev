@@ -5,11 +5,13 @@ alphafeatures
 apimanagement
 apims
 appconfiguration
+appdetect
 appinsights
 appinsightsexporter
 appinsightsstorage
 appplatform
 appservice
+arget
 armapimanagement
 armappconfiguration
 armappplatform
@@ -44,6 +46,7 @@ byoi
 cflags
 circleci
 cmdsubst
+cmdrecord
 cognitiveservices
 consolesize
 containerapp
@@ -58,6 +61,7 @@ devel
 discarder
 docf
 dockerproject
+doublestar
 dskip
 eastus
 endregion
@@ -67,6 +71,7 @@ errcheck
 errorinfo
 errorlint
 executil
+Frontends
 funcapp
 functestapp
 functionapp
@@ -81,6 +86,7 @@ hotspot
 iidfile
 ineffassign
 javac
+jquery
 jmes
 keychain
 LASTEXITCODE
@@ -89,9 +95,12 @@ lechnerc77
 mgmt
 mgutz
 microsoftonline
+missingkey
 mockarmresources
 mockazcli
 mvnw
+mysqldb
+mysqlclient
 nobanner
 nodeapp
 nolint
@@ -107,14 +116,18 @@ otlp
 otlpconfig
 otlptrace
 otlptracehttp
+paketobuildpacks
 pflag
 preinit
 proxying
+psycopg
 pulumi
 pyapp
+pyproject
 pyvenv
 reauthentication
 relogin
+remarshal
 restoreapp
 retriable
 rzip
@@ -126,6 +139,7 @@ servicebus
 setenvs
 snapshotter
 springapp
+sqlserver
 sstore
 staticcheck
 staticwebapp
@@ -147,6 +161,7 @@ unmarshalling
 unsetenvs
 unsets
 utsname
+vuejs
 westus2
 wireinject
 yacspin

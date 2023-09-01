@@ -9,11 +9,11 @@ import (
 
 type ServiceConfig struct {
 	// Reference to the parent project configuration
-	Project *ProjectConfig `yaml:"omitempty"`
+	Project *ProjectConfig `yaml:"-"`
 	// The friendly name/key of the project from the azure.yaml file
-	Name string
+	Name string `yaml:"-"`
 	// The name used to override the default azure resource name
-	ResourceName ExpandableString `yaml:"resourceName"`
+	ResourceName ExpandableString `yaml:"resourceName,omitempty"`
 	// The relative path to the project folder from the project root
 	RelativePath string `yaml:"project"`
 	// The azure hosting model to use, ex) appservice, function, containerapp
@@ -21,19 +21,19 @@ type ServiceConfig struct {
 	// The programming language of the project
 	Language ServiceLanguageKind `yaml:"language"`
 	// The output path for build artifacts
-	OutputPath string `yaml:"dist"`
+	OutputPath string `yaml:"dist,omitempty"`
 	// The optional docker options
-	Docker DockerProjectOptions `yaml:"docker"`
+	Docker DockerProjectOptions `yaml:"docker,omitempty"`
 	// The optional K8S / AKS options
-	K8s AksOptions `yaml:"k8s"`
+	K8s AksOptions `yaml:"k8s,omitempty"`
 	// The optional Azure Spring Apps options
-	Spring SpringOptions `yaml:"spring"`
+	Spring SpringOptions `yaml:"spring,omitempty"`
 	// The infrastructure provisioning configuration
-	Infra provisioning.Options `yaml:"infra"`
+	Infra provisioning.Options `yaml:"infra,omitempty"`
 	// Hook configuration for service
 	Hooks map[string]*ext.HookConfig `yaml:"hooks,omitempty"`
 
-	*ext.EventDispatcher[ServiceLifecycleEventArgs] `yaml:",omitempty"`
+	*ext.EventDispatcher[ServiceLifecycleEventArgs] `yaml:"-"`
 
 	initialized bool
 }

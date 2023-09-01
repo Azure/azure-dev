@@ -26,6 +26,10 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/experimentation"
 	"github.com/azure/azure-dev/cli/azd/pkg/installer"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -53,6 +57,29 @@ func main() {
 	log.Printf("azd version: %s", internal.Version)
 
 	ts := telemetry.GetTelemetrySystem()
+
+	assignmentEndpoint := "https://default.exp-tas.com/exptas49/b80dfe81-554e-48ec-a7bc-1dd773cd6a54-azdexpws/api/v1/tas"
+
+	// Allow overriding the assignment endpoint, either for local development (where you want to hit a private instance)
+	// or testing (we use this in our end to end tests to control assignment behavior for the CLI under test)/
+	if override := os.Getenv("AZD_DEBUG_EXPERIMENTATION_TAS_ENDPOINT"); override != "" {
+		log.Printf("using override assignment endpoint: %s, from AZD_DEBUG_EXPERIMENTATION_TAS_ENDPOINT", override)
+		assignmentEndpoint = override
+	}
+
+	if assignmentManager, err := experimentation.NewAssignmentsManager(
+		assignmentEndpoint,
+		http.DefaultClient,
+	); err == nil {
+		if assignment, err := assignmentManager.Assignment(ctx); err != nil {
+			log.Printf("failed to get variant assignments: %v", err)
+		} else {
+			log.Printf("assignment context: %v", assignment.AssignmentContext)
+			tracing.SetGlobalAttributes(fields.ExpAssignmentContextKey.String(assignment.AssignmentContext))
+		}
+	} else {
+		log.Printf("failed to create assignment manager: %v", err)
+	}
 
 	latest := make(chan semver.Version)
 	go fetchLatestVersion(latest)
@@ -155,9 +182,6 @@ func main() {
 	}
 }
 
-// azdConfigDir is the name of the folder where `azd` writes user wide configuration data.
-const azdConfigDir = ".azd"
-
 // updateCheckCacheFileName is the name of the file created in the azd configuration directory
 // which is used to cache version information for our up to date check.
 const updateCheckCacheFileName = "update-check.json"
@@ -182,13 +206,13 @@ func fetchLatestVersion(version chan<- semver.Version) {
 
 	// To avoid fetching the latest version of the CLI on every invocation, we cache the result for a period
 	// of time, in the user's home directory.
-	homeDir, err := os.UserHomeDir()
+	configDir, err := config.GetUserConfigDir()
 	if err != nil {
-		log.Printf("could not determine current home directory: %v, skipping update check", err)
+		log.Printf("could not determine config directory: %v, skipping update check", err)
 		return
 	}
 
-	cacheFilePath := filepath.Join(homeDir, azdConfigDir, updateCheckCacheFileName)
+	cacheFilePath := filepath.Join(configDir, updateCheckCacheFileName)
 	cacheFile, err := os.ReadFile(cacheFilePath)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		log.Printf("error reading update cache file: %v, skipping update check", err)

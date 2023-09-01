@@ -77,7 +77,6 @@ resource appService 'Microsoft.Web/sites@2022-03-01' = {
 
   resource basicPublishingCredentialsPoliciesFtp 'basicPublishingCredentialsPolicies' = {
     name: 'ftp'
-    location: location
     properties: {
       allow: false
     }
@@ -85,7 +84,6 @@ resource appService 'Microsoft.Web/sites@2022-03-01' = {
 
   resource basicPublishingCredentialsPoliciesScm 'basicPublishingCredentialsPolicies' = {
     name: 'scm'
-    location: location
     properties: {
       allow: false
     }

@@ -22,6 +22,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
@@ -108,10 +109,6 @@ func (p *BicepProvider) Initialize(ctx context.Context, projectPath string, opti
 // An environment is considered to be in a provision-ready state if it contains both an AZURE_SUBSCRIPTION_ID and
 // AZURE_LOCATION value. Additionally, for resource group scoped deployments, an AZURE_RESOURCE_GROUP value is required.
 func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
-	if err := EnsureSubscriptionAndLocation(ctx, p.env, p.prompters); err != nil {
-		return err
-	}
-
 	modulePath := p.modulePath()
 	if _, err := os.Stat(modulePath); errors.Is(err, os.ErrNotExist) {
 		// If there's not template, just behave as if we are in a subscription scope (and don't ask about
@@ -126,6 +123,22 @@ func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
 	_, template, err := p.compileBicep(ctx, modulePath)
 	if err != nil {
 		return fmt.Errorf("compiling bicep template: %w", err)
+	}
+
+	locationFilterFn := func(_ account.Location) bool { return true }
+	if locationParam, defined := template.Parameters["location"]; defined {
+		if locationParam.AllowedValues != nil {
+			locationFilterFn = func(loc account.Location) bool {
+				return slices.IndexFunc(*locationParam.AllowedValues, func(v any) bool {
+					s, ok := v.(string)
+					return ok && loc.Name == s
+				}) != -1
+			}
+		}
+	}
+
+	if err := EnsureSubscriptionAndLocation(ctx, p.env, p.prompters, locationFilterFn); err != nil {
+		return err
 	}
 
 	scope, err := template.TargetScope()

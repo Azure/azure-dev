@@ -180,17 +180,15 @@ func Test_detectConfirm_confirm(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			capture := &LogCapture{t: t}
-
 			d := &detectConfirm{
 				console: input.NewConsole(
 					false,
 					false,
-					capture,
+					os.Stdout,
 					input.ConsoleHandles{
 						Stderr: os.Stderr,
 						Stdin:  strings.NewReader(strings.Join(tt.interactions, "\n") + "\n"),
-						Stdout: capture,
+						Stdout: os.Stdout,
 					},
 					nil),
 			}
@@ -202,27 +200,4 @@ func Test_detectConfirm_confirm(t *testing.T) {
 			require.Equal(t, tt.want, d.Services)
 		})
 	}
-}
-
-type LogCapture struct {
-	t      *testing.T
-	sb     strings.Builder
-	logged []string
-}
-
-func (l *LogCapture) Write(bytes []byte) (n int, err error) {
-	for i, b := range bytes {
-		err = l.sb.WriteByte(b)
-		if err != nil {
-			return i, err
-		}
-
-		if b == '\n' {
-			l.logged = append(l.logged, l.sb.String())
-			fmt.Println(l.sb.String())
-
-			l.sb.Reset()
-		}
-	}
-	return len(bytes), nil
 }

@@ -1456,10 +1456,11 @@ func (p *BicepProvider) compileBicep(
 		}
 		parameters = params.Parameters
 	} else {
-		compiled, err = p.bicepCli.Build(ctx, modulePath)
+		res, err := p.bicepCli.Build(ctx, modulePath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to compile bicep template: %w", err)
 		}
+		compiled = res.Compiled
 	}
 
 	rawTemplate := azure.RawArmTemplate(compiled)

@@ -30,7 +30,7 @@ import (
 var BicepVersion semver.Version = semver.MustParse("0.18.4")
 
 type BicepCli interface {
-	Build(ctx context.Context, file string) (string, error)
+	Build(ctx context.Context, file string) (BuildResult, error)
 	BuildBicepParam(ctx context.Context, file string, env []string) (string, error)
 }
 
@@ -243,18 +243,29 @@ func (cli *bicepCli) version(ctx context.Context) (semver.Version, error) {
 
 }
 
-func (cli *bicepCli) Build(ctx context.Context, file string) (string, error) {
+type BuildResult struct {
+	// The compiled ARM template
+	Compiled string
+
+	// Lint error message, if any
+	LintErr string
+}
+
+func (cli *bicepCli) Build(ctx context.Context, file string) (BuildResult, error) {
 	args := []string{"build", file, "--stdout"}
 	buildRes, err := cli.runCommand(ctx, nil, args...)
 
 	if err != nil {
-		return "", fmt.Errorf(
+		return BuildResult{}, fmt.Errorf(
 			"failed running bicep build: %w",
 			err,
 		)
 	}
 
-	return buildRes.Stdout, nil
+	return BuildResult{
+		Compiled: buildRes.Stdout,
+		LintErr:  buildRes.Stderr,
+	}, nil
 }
 
 func (cli *bicepCli) BuildBicepParam(ctx context.Context, file string, env []string) (string, error) {

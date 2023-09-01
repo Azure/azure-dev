@@ -18,9 +18,11 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
+	"github.com/azure/azure-dev/cli/azd/test/recording"
 	"github.com/joho/godotenv"
 	"github.com/sethvargo/go-retry"
 	"github.com/stretchr/testify/assert"
@@ -88,7 +90,7 @@ func Test_CLI_Up_Down_WebApp(t *testing.T) {
 	url, has := env["WEBSITE_URL"]
 	require.True(t, has, "WEBSITE_URL should be in environment after infra create")
 
-	err = probeServiceHealth(t, ctx, url, expectedTestAppResponse)
+	err = probeServiceHealth(t, ctx, http.DefaultClient, retry.NewConstant(5*time.Second), url, expectedTestAppResponse)
 	require.NoError(t, err)
 
 	commandRunner := exec.NewCommandRunner(nil)
@@ -228,12 +230,15 @@ func Test_CLI_Up_Down_ContainerApp(t *testing.T) {
 	dir := tempDirWithDiagnostics(t)
 	t.Logf("DIR: %s", dir)
 
-	envName := randomEnvName()
+	session := recording.Start(t)
+
+	envName := randomOrStoredEnvName(session)
 	t.Logf("AZURE_ENV_NAME: %s", envName)
 
-	cli := azdcli.NewCLI(t)
+	cli := azdcli.NewCLI(t, azdcli.WithSession(session))
 	cli.WorkingDirectory = dir
-	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
+	cli.Env = append(cli.Env, os.Environ()...)
+	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
 
 	err := copySample(dir, "containerapp")
 	require.NoError(t, err, "failed expanding sample")
@@ -255,8 +260,17 @@ func Test_CLI_Up_Down_ContainerApp(t *testing.T) {
 	url, has := env["WEBSITE_URL"]
 	require.True(t, has, "WEBSITE_URL should be in environment after deploy")
 
-	err = probeServiceHealth(t, ctx, url, expectedTestAppResponse)
-	require.NoError(t, err)
+	if session == nil {
+		err = probeServiceHealth(
+			t, ctx, http.DefaultClient, retry.NewConstant(5*time.Second), url, expectedTestAppResponse)
+		require.NoError(t, err)
+	} else {
+		session.Variables[recording.SubscriptionIdKey] = env[environment.SubscriptionIdEnvVarName]
+
+		err = probeServiceHealth(
+			t, ctx, session.ProxyClient, retry.NewConstant(1*time.Millisecond), url, expectedTestAppResponse)
+		require.NoError(t, err)
+	}
 
 	_, err = cli.RunCommand(ctx, "infra", "delete", "--force", "--purge")
 	require.NoError(t, err)
@@ -330,14 +344,24 @@ func Test_CLI_Up_ResourceGroupScope(t *testing.T) {
 	require.NoError(t, err)
 }
 
+type httpClient interface {
+	Get(url string) (*http.Response, error)
+}
+
 // Validates that the service is up-and-running, by issuing a GET request
 // and expecting a 2XX status code, with a matching response body.
-func probeServiceHealth(t *testing.T, ctx context.Context, url string, expectedBody string) error {
-	return retry.Do(ctx, retry.WithMaxRetries(10, retry.NewConstant(5*time.Second)), func(ctx context.Context) error {
+func probeServiceHealth(
+	t *testing.T,
+	ctx context.Context,
+	client httpClient,
+	backOff retry.Backoff,
+	url string,
+	expectedBody string) error {
+	return retry.Do(ctx, retry.WithMaxRetries(10, backOff), func(ctx context.Context) error {
 		t.Logf("Attempting to Get URL: %s", url)
 
 		/* #nosec G107 - Potential HTTP request made with variable url false positive */
-		res, err := http.Get(url)
+		res, err := client.Get(url)
 		if err != nil {
 			return retry.RetryableError(err)
 		}

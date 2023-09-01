@@ -120,8 +120,12 @@ func Test_CLI_Init_CanUseTemplate(t *testing.T) {
 	cli := azdcli.NewCLI(t)
 	cli.WorkingDirectory = dir
 	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
+	cli.Env = append(cli.Env, "AZD_CONFIG_DIR="+dir)
 
-	_, err := cli.RunCommandWithStdIn(
+	_, err := cli.RunCommand(ctx, "config", "set", "alpha.initFromApp", "on")
+	require.NoError(t, err)
+
+	_, err = cli.RunCommandWithStdIn(
 		ctx,
 		"TESTENV\n",
 		"init",
@@ -139,4 +143,43 @@ func Test_CLI_Init_CanUseTemplate(t *testing.T) {
 
 	// Ensure the project was initialized from the template by checking that a file from the template is present.
 	require.FileExists(t, filepath.Join(dir, "README.md"))
+}
+
+func Test_CLI_Init_From_App(t *testing.T) {
+	// running this test in parallel is ok as it uses a t.TempDir()
+	t.Parallel()
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
+	appDir := filepath.Join(dir, "app")
+	err := os.MkdirAll(appDir, osutil.PermissionDirectory)
+	require.NoError(t, err)
+
+	cli := azdcli.NewCLI(t)
+	cli.WorkingDirectory = dir
+	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
+	cli.Env = append(cli.Env, "AZD_CONFIG_DIR="+dir)
+	cli.Env = append(cli.Env, "AZURE_DEV_COLLECT_TELEMETRY=no")
+
+	_, err = cli.RunCommand(ctx, "config", "set", "alpha.initFromApp", "on")
+	require.NoError(t, err)
+
+	err = copySample(appDir, "py-postgres")
+	require.NoError(t, err, "failed expanding sample")
+
+	_, err = cli.RunCommandWithStdIn(
+		ctx,
+		"Use code in the current directory\n"+
+			"Confirm and continue initializing my app\n"+
+			"appdb\n"+
+			"TESTENV\n",
+		"init",
+	)
+	require.NoError(t, err)
+
+	require.FileExists(t, filepath.Join(dir, "infra", "main.bicep"))
+	require.FileExists(t, filepath.Join(dir, "azure.yaml"))
+	require.FileExists(t, filepath.Join(dir, "infra", "app", "app.bicep"))
+	require.FileExists(t, filepath.Join(dir, "infra", "app", "db-postgres.bicep"))
 }

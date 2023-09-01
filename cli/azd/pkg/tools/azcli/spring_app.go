@@ -429,44 +429,6 @@ func (ss *springService) createBuildServiceClient(
 	return client, nil
 }
 
-func (ss *springService) createBuildServiceBuilderClient(
-	ctx context.Context,
-	subscriptionId string,
-) (*armappplatform.BuildServiceBuilderClient, error) {
-	credential, err := ss.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
-	if err != nil {
-		return nil, err
-	}
-
-	options := clientOptionsBuilder(ctx, ss.httpClient, ss.userAgent).BuildArmClientOptions()
-	client, err := armappplatform.NewBuildServiceBuilderClient(subscriptionId, credential, options)
-
-	if err != nil {
-		return nil, fmt.Errorf("creating SpringApp client: %w", err)
-	}
-
-	return client, nil
-}
-
-func (ss *springService) createBuildServiceAgentPoolClient(
-	ctx context.Context,
-	subscriptionId string,
-) (*armappplatform.BuildServiceAgentPoolClient, error) {
-	credential, err := ss.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
-	if err != nil {
-		return nil, err
-	}
-
-	options := clientOptionsBuilder(ctx, ss.httpClient, ss.userAgent).BuildArmClientOptions()
-	client, err := armappplatform.NewBuildServiceAgentPoolClient(subscriptionId, credential, options)
-
-	if err != nil {
-		return nil, fmt.Errorf("creating SpringApp client: %w", err)
-	}
-
-	return client, nil
-}
-
 func (ss *springService) createSpringAppDeploymentClient(
 	ctx context.Context,
 	subscriptionId string,

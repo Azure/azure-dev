@@ -181,19 +181,28 @@ func (ss *springService) CreateBuild(
 		return nil, err
 	}
 
-	agentPoolId := "/subscriptions/" + subscriptionId + "/resourceGroups/" + resourceGroupName + "/providers/Microsoft.AppPlatform/Spring/" + instanceName + "/buildServices/" + buildServiceName + "/agentPools/" + agentPoolName
-	builderId := "/subscriptions/" + subscriptionId + "/resourceGroups/" + resourceGroupName + "/providers/Microsoft.AppPlatform/Spring/" + instanceName + "/buildServices/" + buildServiceName + "/builders/" + builderName
+	agentPoolId := "/subscriptions/" + subscriptionId +
+		"/resourceGroups/" + resourceGroupName +
+		"/providers/Microsoft.AppPlatform/Spring/" + instanceName +
+		"/buildServices/" + buildServiceName +
+		"/agentPools/" + agentPoolName
+	builderId := "/subscriptions/" + subscriptionId +
+		"/resourceGroups/" + resourceGroupName +
+		"/providers/Microsoft.AppPlatform/Spring/" + instanceName +
+		"/buildServices/" + buildServiceName +
+		"/builders/" + builderName
 
-	resp, err := client.CreateOrUpdateBuild(ctx, resourceGroupName, instanceName, buildServiceName, buildName, armappplatform.Build{
-		Properties: &armappplatform.BuildProperties{
-			AgentPool: to.Ptr(agentPoolId),
-			Builder:   to.Ptr(builderId),
-			Env: map[string]*string{
-				"BP_JVM_VERSION": to.Ptr(jvmVersion),
+	resp, err := client.CreateOrUpdateBuild(ctx, resourceGroupName, instanceName, buildServiceName, buildName,
+		armappplatform.Build{
+			Properties: &armappplatform.BuildProperties{
+				AgentPool: to.Ptr(agentPoolId),
+				Builder:   to.Ptr(builderId),
+				Env: map[string]*string{
+					"BP_JVM_VERSION": to.Ptr(jvmVersion),
+				},
+				RelativePath: to.Ptr(relativePath),
 			},
-			RelativePath: to.Ptr(relativePath),
-		},
-	}, nil)
+		}, nil)
 
 	if err != nil {
 		return nil, err
@@ -238,8 +247,6 @@ func (ss *springService) GetBuildResult(
 
 		time.Sleep(20 * time.Second)
 	}
-
-	return nil, errors.New("unexpected error")
 }
 
 func (ss *springService) UploadSpringArtifact(

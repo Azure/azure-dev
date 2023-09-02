@@ -120,12 +120,8 @@ func Test_CLI_Init_CanUseTemplate(t *testing.T) {
 	cli := azdcli.NewCLI(t)
 	cli.WorkingDirectory = dir
 	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
-	cli.Env = append(cli.Env, "AZD_CONFIG_DIR="+dir)
 
-	_, err := cli.RunCommand(ctx, "config", "set", "alpha.initFromApp", "on")
-	require.NoError(t, err)
-
-	_, err = cli.RunCommandWithStdIn(
+	_, err := cli.RunCommandWithStdIn(
 		ctx,
 		"TESTENV\n",
 		"init",

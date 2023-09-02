@@ -4,7 +4,8 @@
 
 ### Features Added
 
-- [[2573]](https://github.com/Azure/azure-dev/pull/2573) Adds support for custom template sources
+- [[2573]](https://github.com/Azure/azure-dev/pull/2573) Adds support for custom template sources.
+- [[2628]](https://github.com/Azure/azure-dev/pull/2628) Support for `.bicepparam`.
 
 ### Breaking Changes
 

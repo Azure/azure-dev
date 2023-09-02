@@ -298,11 +298,10 @@ func TestMinimalYaml(t *testing.T) {
 			},
 		},
 	}
-	for _, tt := range tests {
+	for i, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			config := tt.serviceConfig
 			prj.Services = map[string]*ServiceConfig{
-				tt.name: &config,
+				tt.name: &tests[i].serviceConfig,
 			}
 
 			contents, err := yaml.Marshal(prj)

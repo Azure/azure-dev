@@ -31,6 +31,7 @@ var BicepVersion semver.Version = semver.MustParse("0.18.4")
 
 type BicepCli interface {
 	Build(ctx context.Context, file string) (BuildResult, error)
+	BuildBicepParam(ctx context.Context, file string, env []string) (BuildResult, error)
 }
 
 // NewBicepCli creates a new BicepCli. Azd manages its own copy of the bicep CLI, stored in `$AZD_CONFIG_DIR/bin`. If
@@ -228,7 +229,7 @@ func downloadBicep(ctx context.Context, transporter policy.Transporter, bicepVer
 }
 
 func (cli *bicepCli) version(ctx context.Context) (semver.Version, error) {
-	bicepRes, err := cli.runCommand(ctx, "--version")
+	bicepRes, err := cli.runCommand(ctx, nil, "--version")
 	if err != nil {
 		return semver.Version{}, err
 	}
@@ -252,7 +253,7 @@ type BuildResult struct {
 
 func (cli *bicepCli) Build(ctx context.Context, file string) (BuildResult, error) {
 	args := []string{"build", file, "--stdout"}
-	buildRes, err := cli.runCommand(ctx, args...)
+	buildRes, err := cli.runCommand(ctx, nil, args...)
 
 	if err != nil {
 		return BuildResult{}, fmt.Errorf(
@@ -267,7 +268,27 @@ func (cli *bicepCli) Build(ctx context.Context, file string) (BuildResult, error
 	}, nil
 }
 
-func (cli *bicepCli) runCommand(ctx context.Context, args ...string) (exec.RunResult, error) {
+func (cli *bicepCli) BuildBicepParam(ctx context.Context, file string, env []string) (BuildResult, error) {
+	args := []string{"build-params", file, "--stdout"}
+	buildRes, err := cli.runCommand(ctx, env, args...)
+
+	if err != nil {
+		return BuildResult{}, fmt.Errorf(
+			"failed running bicep build: %w",
+			err,
+		)
+	}
+
+	return BuildResult{
+		Compiled: buildRes.Stdout,
+		LintErr:  buildRes.Stderr,
+	}, nil
+}
+
+func (cli *bicepCli) runCommand(ctx context.Context, env []string, args ...string) (exec.RunResult, error) {
 	runArgs := exec.NewRunArgs(cli.path, args...)
+	if env != nil {
+		runArgs = runArgs.WithEnv(env)
+	}
 	return cli.runner.Run(ctx, runArgs)
 }

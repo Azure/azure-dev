@@ -6,6 +6,7 @@ package bicep
 import (
 	"context"
 	"encoding/json"
+	"path/filepath"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
@@ -37,7 +38,7 @@ func TestBicepLocalCache(t *testing.T) {
 			// should call file impl
 			path, goodCast := arg.(string)
 			require.True(t, goodCast)
-			require.Equal(t, "foo/.azure/bicep.cache", path)
+			require.Equal(t, filepath.Join("foo", ".azure", "bicep.cache"), path)
 			return json.Marshal(expectedResult)
 		},
 	}
@@ -70,7 +71,7 @@ func TestBicepEqual(t *testing.T) {
 			// should call file impl
 			path, goodCast := arg.(string)
 			require.True(t, goodCast)
-			require.Equal(t, "foo/.azure/bicep.cache", path)
+			require.Equal(t, filepath.Join("foo", ".azure", "bicep.cache"), path)
 			return json.Marshal(expectedResult)
 		},
 	}
@@ -108,7 +109,7 @@ func TestBicepCacheWriteLocal(t *testing.T) {
 		overrideWriteFunc: func(context context.Context, arg any, c []byte) error {
 			path, goodCast := arg.(string)
 			require.True(t, goodCast)
-			require.Equal(t, "foo/.azure/bicep.cache", path)
+			require.Equal(t, filepath.Join("foo", ".azure", "bicep.cache"), path)
 			var reconstruct cache
 			err = json.Unmarshal(c, &reconstruct)
 			require.NoError(t, err)
@@ -221,7 +222,7 @@ func TestBicepCacheWriteRemoteFallbackLocal(t *testing.T) {
 			// should call file impl
 			path, goodCast := arg.(string)
 			require.True(t, goodCast)
-			require.Equal(t, "foo/.azure/bicep.cache", path)
+			require.Equal(t, filepath.Join("foo", ".azure", "bicep.cache"), path)
 			return json.Marshal(expectedResult)
 		},
 	}

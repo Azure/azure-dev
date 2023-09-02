@@ -187,7 +187,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		followUp = "You can provision and deploy your app to Azure by running the " + color.BlueString("azd up") +
 			" command in this directory. For more information on configuring your app, see " +
 			output.WithHighLightFormat("./next-steps.md")
-		err := i.repoInitializer.InitializeInfra(ctx, azdCtx, func() error {
+		err := i.repoInitializer.InitFromApp(ctx, azdCtx, func() error {
 			return i.initializeEnv(ctx, azdCtx)
 		})
 		if errors.Is(err, repository.ErrNoServicesDetected) {

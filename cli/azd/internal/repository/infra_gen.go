@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
 	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -34,7 +35,8 @@ var dbMap = map[appdetect.DatabaseDep]struct{}{
 
 var ErrNoServicesDetected = errors.New("no services detected")
 
-func (i *Initializer) InitializeInfra(
+// InitFromApp initializes the infra directory and project file from the current existing app.
+func (i *Initializer) InitFromApp(
 	ctx context.Context,
 	azdCtx *azdcontext.AzdContext,
 	initializeEnv func() error) error {
@@ -130,7 +132,20 @@ func (i *Initializer) InitializeInfra(
 		return err
 	}
 
-	if err := copy.Copy(staging, infra); err != nil {
+	skipStagingFiles, err := i.promptForDuplicates(ctx, staging, infra)
+	if err != nil {
+		return err
+	}
+
+	options := copy.Options{}
+	if skipStagingFiles != nil {
+		options.Skip = func(fileInfo os.FileInfo, src, dest string) (bool, error) {
+			_, skip := skipStagingFiles[src]
+			return skip, nil
+		}
+	}
+
+	if err := copy.Copy(staging, infra, options); err != nil {
 		return fmt.Errorf("copying contents from temp staging directory: %w", err)
 	}
 
@@ -171,11 +186,16 @@ func (i *Initializer) genProjectFile(
 	return i.writeCoreAssets(ctx, azdCtx)
 }
 
+const InitGenTemplateId = "azd-init"
+
 func prjConfigFromDetect(
 	root string,
 	detect detectConfirm) (project.ProjectConfig, error) {
 	config := project.ProjectConfig{
-		Name:     filepath.Base(root),
+		Name: filepath.Base(root),
+		Metadata: &project.ProjectMetadata{
+			Template: fmt.Sprintf("%s@%s", InitGenTemplateId, internal.VersionInfo().Version),
+		},
 		Services: map[string]*project.ServiceConfig{},
 	}
 	for _, prj := range detect.Services {

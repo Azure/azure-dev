@@ -69,6 +69,42 @@ func (d *detectConfirm) Init(projects []appdetect.Project, root string) {
 	}
 }
 
+// Confirm prompts the user to confirm the detected services and databases,
+// providing modifications to the detected services and databases.
+func (d *detectConfirm) Confirm(ctx context.Context) error {
+	for {
+		if err := d.render(ctx); err != nil {
+			return err
+		}
+		d.modified = false
+
+		continueOption, err := d.console.Select(ctx, input.ConsoleOptions{
+			Message: "Select an option",
+			Options: []string{
+				"Confirm and continue initializing my app",
+				"Remove a detected service",
+				"Add an undetected service",
+			},
+		})
+		if err != nil {
+			return err
+		}
+
+		switch continueOption {
+		case 0:
+			return nil
+		case 1:
+			if err := d.remove(ctx); err != nil {
+				return err
+			}
+		case 2:
+			if err := d.add(ctx); err != nil {
+				return err
+			}
+		}
+	}
+}
+
 func (d *detectConfirm) render(ctx context.Context) error {
 	if d.modified {
 		d.console.ShowSpinner(ctx, "Revising detected services", input.Step)
@@ -131,44 +167,6 @@ func (d *detectConfirm) render(ctx context.Context) error {
 	}
 
 	return nil
-}
-
-// Confirm prompts the user to confirm the detected services and databases,
-// providing modifications to the detected services and databases.
-func (d *detectConfirm) Confirm(ctx context.Context) error {
-confirm:
-	for {
-		if err := d.render(ctx); err != nil {
-			return err
-		}
-		d.modified = false
-
-		continueOption, err := d.console.Select(ctx, input.ConsoleOptions{
-			Message: "Select an option",
-			Options: []string{
-				"Confirm and continue initializing my app",
-				"Remove a detected service",
-				"Add an undetected service",
-			},
-		})
-		if err != nil {
-			return err
-		}
-
-		switch continueOption {
-		case 0:
-			return nil
-		case 1:
-			if err := d.remove(ctx); err != nil {
-				return err
-			}
-		case 2:
-			if err := d.add(ctx); err != nil {
-				return err
-			}
-			continue confirm
-		}
-	}
 }
 
 func (d *detectConfirm) remove(ctx context.Context) error {
@@ -281,6 +279,7 @@ func (d *detectConfirm) add(ctx context.Context) error {
 		entries = append(entries, db)
 	}
 
+	// only apply tab-align if interactive
 	if d.console.IsSpinnerInteractive() {
 		formatted, err := tabWrite(selections, 3)
 		if err != nil {

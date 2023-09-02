@@ -32,7 +32,7 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 			interactions: []string{},
 			want: scaffold.InfraSpec{
 				Services: []scaffold.ServiceSpec{
-					scaffold.ServiceSpec{
+					{
 						Name:    "dotnet",
 						Port:    8080,
 						Backend: &scaffold.Backend{},
@@ -56,7 +56,7 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 			interactions: []string{},
 			want: scaffold.InfraSpec{
 				Services: []scaffold.ServiceSpec{
-					scaffold.ServiceSpec{
+					{
 						Name:     "js",
 						Port:     8080,
 						Frontend: &scaffold.Frontend{},
@@ -84,7 +84,7 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 			},
 			want: scaffold.InfraSpec{
 				Services: []scaffold.ServiceSpec{
-					scaffold.ServiceSpec{
+					{
 						Name:    "dotnet",
 						Port:    1234,
 						Backend: &scaffold.Backend{},
@@ -112,7 +112,7 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 			interactions: []string{},
 			want: scaffold.InfraSpec{
 				Services: []scaffold.ServiceSpec{
-					scaffold.ServiceSpec{
+					{
 						Name: "py",
 						Port: 80,
 						Backend: &scaffold.Backend{
@@ -123,7 +123,7 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 							},
 						},
 					},
-					scaffold.ServiceSpec{
+					{
 						Name: "js",
 						Port: 8080,
 						Frontend: &scaffold.Frontend{
@@ -168,7 +168,7 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 					DatabaseName: "myappdb",
 				},
 				Services: []scaffold.ServiceSpec{
-					scaffold.ServiceSpec{
+					{
 						Name: "py",
 						Port: 80,
 						Backend: &scaffold.Backend{
@@ -182,7 +182,7 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 							DatabaseName: "myappdb",
 						},
 					},
-					scaffold.ServiceSpec{
+					{
 						Name: "js",
 						Port: 8080,
 						Frontend: &scaffold.Frontend{

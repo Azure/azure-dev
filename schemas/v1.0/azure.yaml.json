@@ -87,6 +87,7 @@
                             "appservice",
                             "containerapp",
                             "function",
+                            "springapp",
                             "staticwebapp",
                             "aks"
                         ]
@@ -351,11 +352,12 @@
                 "shell": {
                     "type": "string",
                     "title": "Type of shell to execute scripts",
-                    "description": "Required for inline scripts. The type of shell to use for the hook.",
+                    "description": "Optional. The type of shell to use for the hook. (Default: sh)",
                     "enum": [
                         "sh",
                         "pwsh"
-                    ]
+                    ],
+                    "default": "sh"
                 },
                 "run": {
                     "type": "string",

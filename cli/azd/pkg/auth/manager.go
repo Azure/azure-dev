@@ -28,6 +28,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
+	"github.com/cli/browser"
 )
 
 // TODO(azure/azure-dev#710): Right now, we re-use the App Id of the `az` CLI, until we have our own.
@@ -496,6 +497,10 @@ func (m *Manager) LoginWithDeviceCode(
 	options := []public.AcquireByDeviceCodeOption{}
 	if tenantID != "" {
 		options = append(options, public.WithTenantID(tenantID))
+	}
+
+	if withOpenUrl == nil {
+		withOpenUrl = browser.OpenURL
 	}
 
 	code, err := m.publicClient.AcquireTokenByDeviceCode(ctx, scopes, options...)

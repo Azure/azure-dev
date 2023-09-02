@@ -16,12 +16,22 @@ import (
 
 func Test_detectConfirm_confirm(t *testing.T) {
 	dir := t.TempDir()
-	dotNetDir := filepath.Join(dir, "dotnet-dir")
-	err := os.MkdirAll(dotNetDir, 0700)
+	// avoid symlinked paths as this may result in the final path returned
+	// to be a valid, but aliased path to the absolute entries in the test,
+	// which fails the test's path equality assertions.
+	//
+	// This issue occurs on macOS where TempDir returned is symlinked to /private/var.
+	dir, err := filepath.EvalSymlinks(dir)
 	require.NoError(t, err)
+
+	dotNetDir := filepath.Join(dir, "dotnet-dir")
+	err = os.MkdirAll(dotNetDir, 0700)
+	require.NoError(t, err)
+
 	javaDir := filepath.Join(dir, "java-dir")
 	err = os.MkdirAll(javaDir, 0700)
 	require.NoError(t, err)
+
 	ostest.Chdir(t, dir)
 
 	tests := []struct {

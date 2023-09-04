@@ -181,15 +181,13 @@ func (ss *springService) CreateBuild(
 		return nil, err
 	}
 
-	agentPoolId := "/subscriptions/" + subscriptionId +
+      basePath := "/subscriptions/" + subscriptionId +
 		"/resourceGroups/" + resourceGroupName +
 		"/providers/Microsoft.AppPlatform/Spring/" + instanceName +
-		"/buildServices/" + buildServiceName +
+		"/buildServices/" + buildServiceName
+	agentPoolId := basePath  +
 		"/agentPools/" + agentPoolName
-	builderId := "/subscriptions/" + subscriptionId +
-		"/resourceGroups/" + resourceGroupName +
-		"/providers/Microsoft.AppPlatform/Spring/" + instanceName +
-		"/buildServices/" + buildServiceName +
+	builderId := basePath  +
 		"/builders/" + builderName
 
 	resp, err := client.CreateOrUpdateBuild(ctx, resourceGroupName, instanceName, buildServiceName, buildName,

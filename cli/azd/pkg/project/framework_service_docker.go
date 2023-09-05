@@ -13,6 +13,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -287,9 +290,10 @@ func (p *dockerProject) packBuild(
 	}
 
 	environ := []string{}
-
+	userDefinedImage := false
 	if os.Getenv("AZD_BUILDER_IMAGE") != "" {
 		builder = os.Getenv("AZD_BUILDER_IMAGE")
+		userDefinedImage = true
 	}
 
 	previewer := p.console.ShowPreviewer(ctx,
@@ -298,6 +302,23 @@ func (p *dockerProject) packBuild(
 			MaxLineCount: 8,
 			Title:        "Docker (pack) Output",
 		})
+
+	ctx, span := tracing.Start(ctx, events.PackBuildEvent)
+	img, tag := docker.SplitDockerImage(builder)
+	if userDefinedImage {
+		span.SetAttributes(
+			fields.StringHashed(fields.PackBuilderImage, img),
+			fields.StringHashed(fields.PackBuilderTag, tag),
+		)
+	} else {
+		span.SetAttributes(
+			fields.PackBuilderImage.String(img),
+			fields.PackBuilderTag.String(tag),
+		)
+	}
+
+	defer span.EndWithStatus(err)
+
 	err = pack.Build(
 		ctx,
 		svc.Path(),

@@ -216,3 +216,12 @@ const (
 	// The time spent waiting on user interaction in milliseconds.
 	PerfInteractTime = attribute.Key("perf.interact_time")
 )
+
+// Pack related fields
+const (
+	// The builder image used. Hashed when a user-defined image is used.
+	PackBuilderImage = attribute.Key("pack.builder.image")
+
+	// The tag of the builder image used. Hashed when a user-defined image is used.
+	PackBuilderTag = attribute.Key("pack.builder.tag")
+)

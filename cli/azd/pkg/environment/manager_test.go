@@ -320,7 +320,6 @@ func registerContainerComponents(t *testing.T, mockContext *mocks.MockContext) {
 	mockContext.Container.RegisterSingleton(NewManager)
 	mockContext.Container.RegisterSingleton(NewLocalFileDataStore)
 	_ = mockContext.Container.RegisterNamedSingleton(string(RemoteKindAzureStorage), NewStorageBlobDataStore)
-	//mockContext.Container.RegisterNamedSingleton(string(RemoteKindNone), NewEmptyDataSource)
 
 	mockContext.Container.RegisterSingleton(config.NewManager)
 	mockContext.Container.RegisterSingleton(config.NewFileConfigManager)
@@ -336,30 +335,13 @@ func registerContainerComponents(t *testing.T, mockContext *mocks.MockContext) {
 		return mockContext.HttpClient
 	})
 
-	storageAccountConfig := &storage.AccountConfig{
+	storageAccountConfig := storage.AccountConfig{
 		AccountName:   "test",
 		ContainerName: "test",
 	}
-	mockContext.Container.RegisterSingleton(func() *storage.AccountConfig {
+	mockContext.Container.RegisterSingleton(func() storage.AccountConfig {
 		return storageAccountConfig
 	})
-
-	// mockContext.Container.RegisterSingleton(func(remoteStateConfig *state.RemoteConfig) (RemoteDataStore, error) {
-	// 	var remoteKind string
-
-	// 	if remoteStateConfig == nil {
-	// 		remoteKind = string(RemoteKindNone)
-	// 	} else {
-	// 		remoteKind = remoteStateConfig.Backend
-	// 	}
-
-	// 	var dataStore RemoteDataStore
-	// 	if err := mockContext.Container.ResolveNamed(remoteKind, &dataStore); err != nil {
-	// 		return nil, fmt.Errorf("resolving remote data store: %w", err)
-	// 	}
-
-	// 	return dataStore, nil
-	// })
 }
 
 type MockDataStore struct {

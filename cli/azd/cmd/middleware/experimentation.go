@@ -2,7 +2,6 @@ package middleware
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"net/http"
 	"os"
@@ -49,23 +48,8 @@ func (m *ExperimentationMiddleware) Run(ctx context.Context, next NextFn) (*acti
 					if strings.HasPrefix(parameter, "alpha_") {
 						featureId := parameter[len("alpha_"):]
 						if enablement, ok := value.(bool); ok {
-							if enablement {
-								// set default enablement for the feature
-								alpha.SetDefaultEnablement(featureId, true)
-							} else {
-								// setting a 'false' value acts as a kill switch,
-								// explicitly override the configuration here
-								err = os.Setenv(
-									fmt.Sprintf("AZD_ALPHA_ENABLE_%s", strings.ToUpper(featureId)),
-									"false")
-
-								if err != nil {
-									log.Printf(
-										"failed to set environment variable for disabling alpha feature '%s': %v",
-										featureId,
-										err)
-								}
-							}
+							// set default enablement for the feature
+							alpha.SetDefaultEnablement(featureId, enablement)
 						} else {
 							log.Printf("could not parse value for alpha feature '%s' as a bool, ignoring", featureId)
 						}

@@ -54,6 +54,13 @@ const (
 	PyFastApi Dependency = "fastapi"
 )
 
+var WebUIFrameworks = map[Dependency]struct{}{
+	JsReact:   {},
+	JsAngular: {},
+	JsVue:     {},
+	JsJQuery:  {},
+}
+
 func (f Dependency) Language() Language {
 	switch f {
 	case JsReact, JsAngular, JsVue, JsJQuery:
@@ -79,8 +86,7 @@ func (f Dependency) Display() string {
 }
 
 func (f Dependency) IsWebUIFramework() bool {
-	switch f {
-	case JsReact, JsAngular, JsVue, JsJQuery:
+	if _, ok := WebUIFrameworks[f]; ok {
 		return true
 	}
 

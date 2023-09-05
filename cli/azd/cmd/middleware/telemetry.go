@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/AlecAivazis/survey/v2/terminal"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
@@ -168,8 +167,6 @@ func mapError(err error, span tracing.Span) {
 				fields.ServiceCorrelationId.String(authFailedErr.Parsed.CorrelationId))
 		}
 		errCode = "service.aad.failed"
-	} else if errors.Is(err, terminal.InterruptErr) {
-		errCode = "user.cancel"
 	}
 
 	if len(errDetails) > 0 {

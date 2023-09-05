@@ -158,7 +158,7 @@ func Test_CLI_Init_From_App(t *testing.T) {
 	cli.Env = append(cli.Env, "AZD_CONFIG_DIR="+dir)
 	cli.Env = append(cli.Env, "AZURE_DEV_COLLECT_TELEMETRY=no")
 
-	_, err = cli.RunCommand(ctx, "config", "set", "alpha.initFromApp", "on")
+	_, err = cli.RunCommand(ctx, "config", "set", "alpha.easyInit", "on")
 	require.NoError(t, err)
 
 	err = copySample(appDir, "py-postgres")

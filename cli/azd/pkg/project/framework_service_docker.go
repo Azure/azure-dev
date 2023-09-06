@@ -317,8 +317,6 @@ func (p *dockerProject) packBuild(
 		)
 	}
 
-	defer span.EndWithStatus(err)
-
 	err = pack.Build(
 		ctx,
 		svc.Path(),
@@ -328,8 +326,11 @@ func (p *dockerProject) packBuild(
 		previewer)
 	p.console.StopPreviewer(ctx)
 	if err != nil {
+		span.EndWithStatus(err)
 		return nil, err
 	}
+
+	span.End()
 
 	imageId, err := p.docker.Inspect(ctx, imageName, "{{.Id}}")
 	if err != nil {

@@ -361,7 +361,6 @@ func (d *detectConfirm) add(ctx context.Context) error {
 		d.Services[idx].DatabaseDeps = append(d.Services[idx].DatabaseDeps, dbDep)
 		d.Services[idx].DetectionRule = string(EntryKindModified)
 		d.modified = true
-
 		return nil
 	default:
 		log.Panic("unhandled entry type")

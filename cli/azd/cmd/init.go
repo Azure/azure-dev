@@ -70,9 +70,10 @@ func (i *initFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOpt
 		"b",
 		"",
 		"The template branch to initialize from. Must be used with a template argument (--template or -t).")
-	local.StringVar(
+	local.StringVarP(
 		&i.subscription,
 		"subscription",
+		"s",
 		"",
 		"Name or ID of an Azure subscription to use for the new environment",
 	)

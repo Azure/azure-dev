@@ -60,9 +60,10 @@ func (i *initFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOpt
 		"The template to use when you initialize the project. You can use Full URI, <owner>/<repository>, or <repository> if it's part of the azure-samples organization.",
 	)
 	local.StringVarP(&i.templateBranch, "branch", "b", "", "The template branch to initialize from.")
-	local.StringVar(
+	local.StringVarP(
 		&i.subscription,
 		"subscription",
+		"s",
 		"",
 		"Name or ID of an Azure subscription to use for the new environment",
 	)

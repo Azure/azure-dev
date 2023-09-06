@@ -55,6 +55,9 @@ const cDefaultAuthority = "https://login.microsoftonline.com/organizations"
 
 const cUseCloudShellAuthEnvVar = "AZD_IN_CLOUDSHELL"
 
+const cExternalAuthEndpointEnvVarName = "AZD_AUTH_ENDPOINT"
+const cExternalAuthKeyEnvVarName = "AZD_AUTH_KEY"
+
 // The scopes to request when acquiring our token during the login flow or when requesting a token to validate if the client
 // is logged in.
 var LoginScopes = []string{azure.ManagementScope}
@@ -93,7 +96,6 @@ type Manager struct {
 	credentialCache     Cache
 	ghClient            *github.FederatedTokenClient
 	httpClient          HttpClient
-	launchBrowserFn     func(url string) error
 	console             input.Console
 }
 
@@ -139,7 +141,6 @@ func NewManager(
 		credentialCache:     newCredentialCache(authRoot),
 		ghClient:            ghClient,
 		httpClient:          httpClient,
-		launchBrowserFn:     browser.OpenURL,
 		console:             console,
 	}, nil
 }
@@ -167,6 +168,14 @@ func (m *Manager) CredentialForCurrentUser(
 
 	if options == nil {
 		options = &CredentialForCurrentUserOptions{}
+	}
+
+	if endpoint, hasEndpoint := os.LookupEnv(cExternalAuthEndpointEnvVarName); hasEndpoint {
+		if key, hasKey := os.LookupEnv(cExternalAuthKeyEnvVarName); hasKey {
+			log.Printf("delegating auth to external process since %s and %s are set",
+				cExternalAuthEndpointEnvVarName, cExternalAuthKeyEnvVarName)
+			return newRemoteCredential(endpoint, key, options.TenantID, m.httpClient), nil
+		}
 	}
 
 	userConfig, err := m.userConfigManager.Load()
@@ -287,6 +296,14 @@ func ShouldUseCloudShellAuth() bool {
 // This can be used to determine if the tenant is fixed, and if so short circuit performance intensive tenant-switching
 // for service principals.
 func (m *Manager) GetLoggedInServicePrincipalTenantID(ctx context.Context) (*string, error) {
+
+	if _, hasEndpoint := os.LookupEnv(cExternalAuthEndpointEnvVarName); hasEndpoint {
+		if _, hasKey := os.LookupEnv(cExternalAuthKeyEnvVarName); hasKey {
+			// When delegating to an external system, we have no way to determine what principal was used
+			return nil, nil
+		}
+	}
+
 	cfg, err := m.userConfigManager.Load()
 	if err != nil {
 		return nil, fmt.Errorf("fetching current user: %w", err)
@@ -424,21 +441,43 @@ func (m *Manager) newCredentialFromCloudShell() (azcore.TokenCredential, error) 
 	return NewCloudShellCredential(m.httpClient), nil
 }
 
+// WithOpenUrl defines a custom strategy for browsing to the url.
+type WithOpenUrl func(url string) error
+
+// LoginInteractiveOptions holds the optional inputs for interactive login.
+type LoginInteractiveOptions struct {
+	TenantID     string
+	RedirectPort int
+	WithOpenUrl  WithOpenUrl
+}
+
+// LoginInteractive opens a browser for authenticate the user.
 func (m *Manager) LoginInteractive(
-	ctx context.Context, redirectPort int, tenantID string, scopes []string) (azcore.TokenCredential, error) {
+	ctx context.Context,
+	scopes []string,
+	options *LoginInteractiveOptions) (azcore.TokenCredential, error) {
 	if scopes == nil {
 		scopes = LoginScopes
 	}
-	options := []public.AcquireInteractiveOption{}
-	if redirectPort > 0 {
-		options = append(options, public.WithRedirectURI(fmt.Sprintf("http://localhost:%d", redirectPort)))
+	acquireTokenOptions := []public.AcquireInteractiveOption{}
+	if options == nil {
+		options = &LoginInteractiveOptions{}
 	}
 
-	if tenantID != "" {
-		options = append(options, public.WithTenantID(tenantID))
+	if options.RedirectPort > 0 {
+		acquireTokenOptions = append(
+			acquireTokenOptions, public.WithRedirectURI(fmt.Sprintf("http://localhost:%d", options.RedirectPort)))
 	}
 
-	res, err := m.publicClient.AcquireTokenInteractive(ctx, scopes, options...)
+	if options.TenantID != "" {
+		acquireTokenOptions = append(acquireTokenOptions, public.WithTenantID(options.TenantID))
+	}
+
+	if options.WithOpenUrl != nil {
+		acquireTokenOptions = append(acquireTokenOptions, public.WithOpenURL(options.WithOpenUrl))
+	}
+
+	res, err := m.publicClient.AcquireTokenInteractive(ctx, scopes, acquireTokenOptions...)
 	if err != nil {
 		return nil, err
 	}
@@ -451,13 +490,17 @@ func (m *Manager) LoginInteractive(
 }
 
 func (m *Manager) LoginWithDeviceCode(
-	ctx context.Context, tenantID string, scopes []string) (azcore.TokenCredential, error) {
+	ctx context.Context, tenantID string, scopes []string, withOpenUrl WithOpenUrl) (azcore.TokenCredential, error) {
 	if scopes == nil {
 		scopes = LoginScopes
 	}
 	options := []public.AcquireByDeviceCodeOption{}
 	if tenantID != "" {
 		options = append(options, public.WithTenantID(tenantID))
+	}
+
+	if withOpenUrl == nil {
+		withOpenUrl = browser.OpenURL
 	}
 
 	code, err := m.publicClient.AcquireTokenByDeviceCode(ctx, scopes, options...)
@@ -488,7 +531,7 @@ func (m *Manager) LoginWithDeviceCode(
 		})
 		m.console.WaitForEnter()
 
-		if err := m.launchBrowserFn(url); err != nil {
+		if err := withOpenUrl(url); err != nil {
 			log.Println("error launching browser: ", err.Error())
 			m.console.Message(ctx, fmt.Sprintf("Error launching browser. Manually go to: %s", url))
 		}
@@ -620,6 +663,13 @@ func (m *Manager) Logout(ctx context.Context) error {
 	}
 
 	return nil
+}
+
+func (m *Manager) UseExternalAuth() bool {
+	_, hasEndpoint := os.LookupEnv(cExternalAuthEndpointEnvVarName)
+	_, hasKey := os.LookupEnv(cExternalAuthKeyEnvVarName)
+
+	return hasEndpoint && hasKey
 }
 
 func (m *Manager) saveLoginForPublicClient(res public.AuthResult) error {

@@ -13,27 +13,23 @@
             "processId": "${command:pickGoProcess}"
         },
         // This will launch azd (starting from main.go), under the debugger.
-        {
-            "name": "Launch `azd`",
-            "type": "go",
-            "request": "launch",
-            "program": "${workspaceFolder}",
 
-            // Uncomment these settings to control how `azd` is launched.
-            // "cwd": "${workspaceFolder}",
-            // "args": ["provision"]
-        },
         {
-            "name": "dev-azd (launch)",
+            "name": "Debug azd cli",
             "type": "go",
             "request": "launch",
             "mode": "debug",
             "program": "${workspaceFolder}",
-            "args": [
-                "auth", "login"
-            ],
-            "cwd": "${workspaceFolder}",
+            "args": "${input:cliArgs}",
             "console": "integratedTerminal",
+        }
+    ],
+    "inputs": [
+        {
+            "id": "cliArgs",
+            "type": "promptString",
+            "description": "Args for launching azd cli. Use --cwd to set the working directory.",
+            "default": "auth login --use-device-code"
         }
     ]
 }

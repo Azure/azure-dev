@@ -137,8 +137,8 @@ repo:
       to: ./infra/modules/apim-api
       
     # .devcontainer common (devcontainer.json)
-    - from: ../../../../../common/.devcontainer/devcontainer.json/nodejs/terraform
-      to: ./.devcontainer
+    - from: ../../../../../common/.devcontainer/devcontainer.json/nodejs/terraform/devcontainer.json
+      to: ./.devcontainer/devcontainer.json
 
     # Assets common
     - from: ../../../../common/assets

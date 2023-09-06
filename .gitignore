@@ -45,3 +45,6 @@ test-results/
 **/.terraform
 *.tfstate*
 *.terraform*
+
+# Finder state files
+.DS_Store

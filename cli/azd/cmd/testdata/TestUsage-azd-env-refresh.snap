@@ -8,6 +8,7 @@ Flags
         --docs               	: Opens the documentation for azd env refresh in your web browser.
     -e, --environment string 	: The name of the environment to use.
     -h, --help               	: Gets help for refresh.
+        --hint string        	: Hint to help identify the environment to refresh
 
 Global Flags
     -C, --cwd string 	: Sets the current working directory.

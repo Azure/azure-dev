@@ -31,3 +31,6 @@ repo:
     - from: ../../common/.devcontainer/devcontainer.json/terraform-starter/devcontainer.json
       to: ./.devcontainer/devcontainer.json
 
+    # core bicep files
+    - from: ../../common/infra/terraform/core
+      to: ./infra/core

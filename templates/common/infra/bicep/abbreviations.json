@@ -55,6 +55,7 @@
     "kubernetesConnectedClusters": "arck",
     "kustoClusters": "dec",
     "kustoClustersDatabases": "dedb",
+    "loadTesting": "lt-",
     "logicIntegrationAccounts": "ia-",
     "logicWorkflows": "logic-",
     "machineLearningServicesWorkspaces": "mlw-",

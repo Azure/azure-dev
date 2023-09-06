@@ -7,8 +7,9 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"os"
-	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/AlecAivazis/survey/v2"
@@ -17,6 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	azdExec "github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -38,7 +40,20 @@ func invalidEnvironmentNameMsg(environmentName string) string {
 
 // ensureValidEnvironmentName ensures the environment name is valid, if it is not, an error is printed
 // and the user is prompted for a new name.
-func ensureValidEnvironmentName(ctx context.Context, environmentName *string, suggest string, console input.Console) error {
+func ensureValidEnvironmentName(
+	ctx context.Context,
+	environmentName *string,
+	examples []string,
+	console input.Console) error {
+	exampleText := ""
+	if len(examples) > 0 {
+		exampleText = "\n\nExamples:"
+	}
+
+	for _, example := range examples {
+		exampleText += fmt.Sprintf("\n  %s", example)
+	}
+
 	for !environment.IsValidEnvironmentName(*environmentName) {
 		userInput, err := console.Prompt(ctx, input.ConsoleOptions{
 			Message: "Enter a new environment name:",
@@ -47,8 +62,7 @@ func ensureValidEnvironmentName(ctx context.Context, environmentName *string, su
 			
 			This value is typically used by the infrastructure as code templates to name the resource group that contains
 			the infrastructure for your application and to generate a unique suffix that is applied to resources to prevent
-			naming collisions.`),
-			DefaultValue: suggest,
+			naming collisions.`) + exampleText,
 		})
 
 		if err != nil {
@@ -69,8 +83,8 @@ type environmentSpec struct {
 	environmentName string
 	subscription    string
 	location        string
-	// suggest is the name that is offered as a suggestion if we need to prompt the user for an environment name.
-	suggest string
+	// examples of environment names to prompt.
+	examples []string
 }
 
 // createEnvironment creates a new named environment. If an environment with this name already
@@ -87,7 +101,7 @@ func createEnvironment(
 		return nil, fmt.Errorf(errMsg)
 	}
 
-	if err := ensureValidEnvironmentName(ctx, &envSpec.environmentName, envSpec.suggest, console); err != nil {
+	if err := ensureValidEnvironmentName(ctx, &envSpec.environmentName, envSpec.examples, console); err != nil {
 		return nil, err
 	}
 
@@ -182,7 +196,7 @@ func loadOrCreateEnvironment(
 				environmentName)
 		}
 
-		if err := ensureValidEnvironmentName(ctx, &environmentName, "", console); err != nil {
+		if err := ensureValidEnvironmentName(ctx, &environmentName, nil, console); err != nil {
 			return nil, false, err
 		}
 
@@ -328,22 +342,24 @@ func openWithDefaultBrowser(ctx context.Context, console input.Console, url stri
 		return
 	}
 
-	console.Message(ctx, fmt.Sprintf("Opening %s in the default browser...\n", url))
+	cmdRunner := azdExec.NewCommandRunner(nil)
+
 	// In Codespaces and devcontainers a $BROWSER environment variable is
 	// present whose value is an executable that launches the browser when
 	// called with the form:
 	// $BROWSER <url>
-
 	const BrowserEnvVarName = "BROWSER"
 
 	if envBrowser := os.Getenv(BrowserEnvVarName); len(envBrowser) > 0 {
-		err := exec.Command(envBrowser, url).Run()
+		_, err := cmdRunner.Run(ctx, azdExec.RunArgs{
+			Cmd:  envBrowser,
+			Args: []string{url},
+		})
 		if err == nil {
 			return
 		}
-		fmt.Fprintf(
-			console.Handles().Stderr,
-			"warning: failed to open browser configured by $BROWSER: %s\n. Trying with default browser.",
+		log.Printf(
+			"warning: failed to open browser configured by $BROWSER: %s\nTrying with default browser.\n",
 			err.Error(),
 		)
 	}
@@ -353,11 +369,39 @@ func openWithDefaultBrowser(ctx context.Context, console input.Console, url stri
 		return
 	}
 
-	fmt.Fprintf(
-		console.Handles().Stderr,
-		"warning: failed to open default browser: %s\n", err.Error(),
+	log.Printf(
+		"warning: failed to open default browser: %s\nTrying manual launch.", err.Error(),
 	)
 
+	// wsl manual launch. Trying cmd first, and pwsh second
+	_, err = cmdRunner.Run(ctx, azdExec.RunArgs{
+		Cmd: "cmd.exe",
+		// cmd notes:
+		// /c -> run command
+		// /s -> quoted string, use the text within the quotes as it is
+		// Replace `&` for `^&` -> cmd require to scape the & to avoid using it as a command concat
+		Args: []string{
+			"/s", "/c", fmt.Sprintf("start %s", strings.ReplaceAll(url, "&", "^&")),
+		},
+	})
+	if err == nil {
+		return
+	}
+	log.Printf(
+		"warning: failed to open browser with cmd: %s\nTrying powershell.", err.Error(),
+	)
+
+	_, err = cmdRunner.Run(ctx, azdExec.RunArgs{
+		Cmd: "powershell.exe",
+		Args: []string{
+			"-NoProfile", "-Command", "Start-Process", fmt.Sprintf("\"%s\"", url),
+		},
+	})
+	if err == nil {
+		return
+	}
+
+	log.Printf("warning: failed to use manual launch: %s\n", err.Error())
 	console.Message(ctx, fmt.Sprintf("Azd was unable to open the next url. Please try it manually: %s", url))
 }
 

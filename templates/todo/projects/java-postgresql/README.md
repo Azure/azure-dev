@@ -20,7 +20,6 @@ The following prerequisites are required to use this application. Please ensure 
 - [Node.js with npm (16.13.1+)](https://nodejs.org/) - for Web frontend
 - [Terraform](https://www.terraform.io/)
     - Requires the [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli)
-- [PostgreSQL 12 or later](https://www.postgresql.org/) - for PostgreSQL initialization (make sure `psql` command is available in your terminal)
 
 > Note: Terraform is in **alpha mode**. You need to enable it by running `azd config set alpha.terraform on`. Read more about [alpha features](https://github.com/Azure/azure-dev/tree/main/cli/azd/docs).
 
@@ -52,7 +51,8 @@ Here's a high level architecture diagram that illustrates these components. Noti
 
 <img src="assets/resources.png" width="60%" alt="Application architecture diagram"/>
 
-> This template provisions resources to an Azure subscription that you will select upon provisioning them. Please refer to the [Pricing calculator for Microsoft Azure](https://azure.microsoft.com/pricing/calculator/) and, if needed, update the included Azure resource definitions found in `infra/main.bicep` to suit your needs.
+### Cost of provisioning and deploying this template
+This template provisions resources to an Azure subscription that you will select upon provisioning them. Refer to the [Pricing calculator for Microsoft Azure](https://azure.microsoft.com/pricing/calculator/) to estimate the cost you might incur when this template is running on Azure and, if needed, update the included Azure resource definitions found in `infra/main.bicep` to suit your needs.
 
 ### Application Code
 

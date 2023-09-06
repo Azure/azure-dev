@@ -8,10 +8,13 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/fatih/color"
+	"go.opentelemetry.io/otel/attribute"
 	"golang.org/x/exp/maps"
 	"golang.org/x/exp/slices"
 )
@@ -67,6 +70,29 @@ func (d *detectConfirm) Init(projects []appdetect.Project, root string) {
 			}
 		}
 	}
+
+	d.captureUsage(
+		fields.AppInitDetectedDatabase,
+		fields.AppInitDetectedServices)
+}
+
+func (d *detectConfirm) captureUsage(
+	databases attribute.Key,
+	services attribute.Key) {
+	names := make([]string, 0, len(d.Services))
+	for _, svc := range d.Services {
+		names = append(names, string(svc.Language))
+	}
+
+	dbNames := make([]string, 0, len(d.Databases))
+	for db := range d.Databases {
+		dbNames = append(dbNames, string(db))
+	}
+
+	tracing.SetUsageAttributes(
+		databases.StringSlice(dbNames),
+		services.StringSlice(names),
+	)
 }
 
 // Confirm prompts the user to confirm the detected services and databases,
@@ -92,15 +118,22 @@ func (d *detectConfirm) Confirm(ctx context.Context) error {
 
 		switch continueOption {
 		case 0:
+			d.captureUsage(
+				fields.AppInitConfirmedDatabases,
+				fields.AppInitConfirmedServices)
 			return nil
 		case 1:
 			if err := d.remove(ctx); err != nil {
 				return err
 			}
+
+			tracing.IncrementUsageAttribute(fields.AppInitModifyRemoveCount.Int(1))
 		case 2:
 			if err := d.add(ctx); err != nil {
 				return err
 			}
+
+			tracing.IncrementUsageAttribute(fields.AppInitModifyAddCount.Int(1))
 		}
 	}
 }
@@ -315,11 +348,6 @@ func (d *detectConfirm) add(ctx context.Context) error {
 		for _, svc := range d.Services {
 			svcSelect = append(svcSelect,
 				fmt.Sprintf("%s in %s", projectDisplayName(svc), filepath.Base(svc.Path)))
-		}
-
-		svcSelect, err = tabWrite(svcSelect, 3)
-		if err != nil {
-			return err
 		}
 
 		idx, err := d.console.Select(ctx, input.ConsoleOptions{

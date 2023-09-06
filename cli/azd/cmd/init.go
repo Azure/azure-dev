@@ -14,6 +14,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/repository"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -173,6 +175,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	switch initTypeSelect {
 	case initAppTemplate:
+		tracing.SetUsageAttributes(fields.InitMethod.String("template"))
 		err := i.initializeTemplate(ctx, azdCtx)
 		if err != nil {
 			return nil, err
@@ -183,23 +186,30 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			return nil, err
 		}
 	case initFromApp:
+		tracing.SetUsageAttributes(fields.InitMethod.String("app"))
+
 		header = "Your app is ready for the cloud!"
 		followUp = "You can provision and deploy your app to Azure by running the " + color.BlueString("azd up") +
 			" command in this directory. For more information on configuring your app, see " +
 			output.WithHighLightFormat("./next-steps.md")
-		err := i.repoInitializer.InitFromApp(ctx, azdCtx, func() error {
-			return i.initializeEnv(ctx, azdCtx)
-		})
-		if errors.Is(err, repository.ErrNoServicesDetected) {
+		entries, err := os.ReadDir(azdCtx.ProjectDirectory())
+		if err != nil {
+			return nil, fmt.Errorf("reading current directory: %w", err)
+		}
+
+		if len(entries) == 0 {
 			return nil, &azcli.ErrorWithSuggestion{
-				Err: errors.New("no files or services detected in the current directory"),
+				Err: errors.New("no files found in the current directory"),
 				Suggestion: "Ensure you're in the directory where your app code is located and try again." +
 					" If you do not have code and would like to start with an app template, run '" +
-					color.BlueString("azd init") + "' in an empty directory and select the option to " +
+					color.BlueString("azd init") + "' and select the option to " +
 					color.MagentaString("Use a template") + ".",
 			}
 		}
 
+		err = i.repoInitializer.InitFromApp(ctx, azdCtx, func() error {
+			return i.initializeEnv(ctx, azdCtx)
+		})
 		if err != nil {
 			return nil, err
 		}

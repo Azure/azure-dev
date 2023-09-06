@@ -85,6 +85,8 @@ const (
 	ProjectServiceHostsKey = attribute.Key("project.service.hosts")
 	// The collection of hashed service languages in the project.
 	ProjectServiceLanguagesKey = attribute.Key("project.service.languages")
+	// The service language being executed.
+	ProjectServiceLanguageKey = attribute.Key("project.service.language")
 )
 
 // Environment related attributes

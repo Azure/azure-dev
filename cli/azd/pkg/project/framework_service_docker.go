@@ -25,6 +25,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/pack"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type DockerProjectOptions struct {
@@ -303,7 +304,11 @@ func (p *dockerProject) packBuild(
 			Title:        "Docker (pack) Output",
 		})
 
-	ctx, span := tracing.Start(ctx, events.PackBuildEvent)
+	ctx, span := tracing.Start(
+		ctx,
+		events.PackBuildEvent,
+		trace.WithAttributes(fields.ProjectServiceLanguageKey.String(string(svc.Language))))
+
 	img, tag := docker.SplitDockerImage(builder)
 	if userDefinedImage {
 		span.SetAttributes(

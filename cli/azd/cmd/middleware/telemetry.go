@@ -169,7 +169,7 @@ func mapError(err error, span tracing.Span) {
 		}
 		errCode = "service.aad.failed"
 	} else if errors.Is(err, terminal.InterruptErr) {
-		errCode = "user.cancel"
+		errCode = "user.canceled"
 	}
 
 	if len(errDetails) > 0 {

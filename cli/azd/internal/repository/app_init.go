@@ -11,6 +11,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
 	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
@@ -33,7 +35,7 @@ var dbMap = map[appdetect.DatabaseDep]struct{}{
 	appdetect.DbPostgres: {},
 }
 
-var ErrNoServicesDetected = errors.New("no services detected")
+var ErrNoServicesDetected = errors.New("no services detected in the current directory")
 
 // InitFromApp initializes the infra directory and project file from the current existing app.
 func (i *Initializer) InitFromApp(
@@ -48,6 +50,7 @@ func (i *Initializer) InitFromApp(
 	projects := []appdetect.Project{}
 	start := time.Now()
 	sourceDir := filepath.Join(wd, "src")
+	tracing.SetUsageAttributes(fields.AppInitLastStep.String("detect"))
 	// Prioritize src directory if it exists
 	if ent, err := os.Stat(sourceDir); err == nil && ent.IsDir() {
 		prj, err := appdetect.Detect(sourceDir)
@@ -83,11 +86,15 @@ func (i *Initializer) InitFromApp(
 		return ErrNoServicesDetected
 	}
 
+	tracing.SetUsageAttributes(fields.AppInitLastStep.String("modify"))
+
 	// Confirm selection of services and databases
 	err := detect.Confirm(ctx)
 	if err != nil {
 		return err
 	}
+
+	tracing.SetUsageAttributes(fields.AppInitLastStep.String("config"))
 
 	// Create the infra spec
 	spec, err := i.infraSpecFromDetect(ctx, detect)
@@ -100,6 +107,8 @@ func (i *Initializer) InitFromApp(
 	if err != nil {
 		return err
 	}
+
+	tracing.SetUsageAttributes(fields.AppInitLastStep.String("generate"))
 
 	i.console.Message(ctx, "\n"+output.WithBold("Generating files to run your app on Azure:")+"\n")
 	err = i.genProjectFile(ctx, azdCtx, detect)

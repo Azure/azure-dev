@@ -78,6 +78,27 @@ func appendTo(v *valSynced, attr attribute.KeyValue) {
 	v.val.Store(newBaggage)
 }
 
+func increment(v *valSynced, attr attribute.KeyValue) {
+	v.mu.Lock()
+	defer v.mu.Unlock()
+
+	baggage := v.val.Load().(baggage.Baggage)
+	val, ok := baggage.Lookup(attr.Key)
+	if ok && val.Type() == attr.Value.Type() {
+		switch attr.Value.Type() {
+		case attribute.INT64:
+			attr = attr.Key.Int64(val.AsInt64() + attr.Value.AsInt64())
+		case attribute.FLOAT64:
+			attr = attr.Key.Float64(val.AsFloat64() + attr.Value.AsFloat64())
+		case attribute.STRING:
+			attr = attr.Key.String(val.AsString() + attr.Value.AsString())
+		}
+	}
+
+	newBaggage := baggage.Set(attr)
+	v.val.Store(newBaggage)
+}
+
 // Sets global attributes that are included with all telemetry events emitted.
 // If the attribute already exists, the value is replaced.
 func SetGlobalAttributes(attributes ...attribute.KeyValue) {
@@ -105,6 +126,14 @@ func GetUsageAttributes() []attribute.KeyValue {
 // Otherwise, a strict replacement is performed.
 func AppendUsageAttribute(attr attribute.KeyValue) {
 	appendTo(&usageVal, attr)
+}
+
+// Sets or increments a possibly stored usage attribute.
+// The attribute is expected to be a numeric-type or string-type value, and matches the existing type
+// of a previously stored usage attribute.
+// Otherwise, a strict replacement is performed.
+func IncrementUsageAttribute(attr attribute.KeyValue) {
+	increment(&usageVal, attr)
 }
 
 // InteractTimeMs is the time spent waiting on user interaction in milliseconds.

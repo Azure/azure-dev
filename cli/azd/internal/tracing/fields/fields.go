@@ -225,3 +225,20 @@ const (
 	// The tag of the builder image used. Hashed when a user-defined image is used.
 	PackBuilderTag = attribute.Key("pack.builder.tag")
 )
+
+// Initialization from app related fields
+const (
+	InitMethod = attribute.Key("init.method")
+
+	AppInitDetectedDatabase = attribute.Key("appinit.detected.databases")
+	AppInitDetectedServices = attribute.Key("appinit.detected.services")
+
+	AppInitConfirmedDatabases = attribute.Key("appinit.confirmed.databases")
+	AppInitConfirmedServices  = attribute.Key("appinit.confirmed.services")
+
+	AppInitModifyAddCount    = attribute.Key("appinit.modify_add.count")
+	AppInitModifyRemoveCount = attribute.Key("appinit.modify_remove.count")
+
+	// The last step recorded during the app init process.
+	AppInitLastStep = attribute.Key("appinit.lastStep")
+)

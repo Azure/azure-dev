@@ -165,6 +165,17 @@ func (cli *packCli) version(ctx context.Context) (semver.Version, error) {
 	return version, nil
 }
 
+func (cli *packCli) enableExperimental(ctx context.Context) error {
+	runArgs := exec.NewRunArgs(cli.path, "config", "experimental", "true")
+	runArgs.Interactive = false
+	_, err := cli.runner.Run(ctx, runArgs)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func (cli *packCli) Build(
 	ctx context.Context,
 	cwd string,
@@ -173,6 +184,11 @@ func (cli *packCli) Build(
 	environ []string,
 	progressWriter io.Writer,
 ) error {
+	err := cli.enableExperimental(ctx)
+	if err != nil {
+		return err
+	}
+
 	envArgs := make([]string, 0, 2*len(environ))
 	for _, e := range environ {
 		envArgs = append(envArgs, "--env", e)
@@ -184,7 +200,7 @@ func (cli *packCli) Build(
 		runArgs = runArgs.WithStdOut(progressWriter).WithStdErr(progressWriter)
 	}
 
-	_, err := cli.runner.Run(ctx, runArgs)
+	_, err = cli.runner.Run(ctx, runArgs)
 	if err != nil {
 		return err
 	}

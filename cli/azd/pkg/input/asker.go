@@ -161,7 +161,10 @@ func askOnePrompt(p survey.Prompt, response interface{}, isTerminal bool, stdout
 				return nil
 			}
 		}
-		return fmt.Errorf("'%s' is not an allowed choice", result)
+		return fmt.Errorf(
+			"'%s' is not an allowed choice. allowed choices: %v",
+			result,
+			strings.Join(v.Options, ","))
 	case *survey.Confirm:
 		var pResponse = response.(*bool)
 

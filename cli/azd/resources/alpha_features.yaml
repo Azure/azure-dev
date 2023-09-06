@@ -5,4 +5,6 @@
 - id: bicep.local.cache
   description: "Cache provision result and skip provisioning if there's no changes locally."
 - id: buildpacks
-  description: "Enables Cloud Native Buildpacks that can transform your source code into container images."
+  description: "Enables Cloud Native Buildpacks that can help transform your source code into container images."
+- id: easyInit
+  description: "Simplified init experience that allows initializing your application from existing code."

@@ -7,11 +7,13 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/state"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -317,10 +319,17 @@ func Test_EnvManager_CreateFromContainer(t *testing.T) {
 }
 
 func registerContainerComponents(t *testing.T, mockContext *mocks.MockContext) {
+	mockContext.Container.RegisterSingleton(func() context.Context {
+		return *mockContext.Context
+	})
+	mockContext.Container.RegisterSingleton(func() httputil.UserAgent {
+		return httputil.UserAgent(internal.UserAgent())
+	})
 	mockContext.Container.RegisterSingleton(NewManager)
 	mockContext.Container.RegisterSingleton(NewLocalFileDataStore)
 	_ = mockContext.Container.RegisterNamedSingleton(string(RemoteKindAzureStorage), NewStorageBlobDataStore)
 
+	mockContext.Container.RegisterSingleton(storage.NewBlobSdkClient)
 	mockContext.Container.RegisterSingleton(config.NewManager)
 	mockContext.Container.RegisterSingleton(config.NewFileConfigManager)
 	mockContext.Container.RegisterSingleton(config.NewUserConfigManager)
@@ -335,11 +344,11 @@ func registerContainerComponents(t *testing.T, mockContext *mocks.MockContext) {
 		return mockContext.HttpClient
 	})
 
-	storageAccountConfig := storage.AccountConfig{
+	storageAccountConfig := &storage.AccountConfig{
 		AccountName:   "test",
 		ContainerName: "test",
 	}
-	mockContext.Container.RegisterSingleton(func() storage.AccountConfig {
+	mockContext.Container.RegisterSingleton(func() *storage.AccountConfig {
 		return storageAccountConfig
 	})
 }

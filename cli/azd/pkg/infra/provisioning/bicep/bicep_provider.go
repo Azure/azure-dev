@@ -755,7 +755,7 @@ func (p *BicepProvider) findCompletedDeployments(
 	}
 
 	slices.SortFunc(deployments, func(x, y *armresources.DeploymentExtended) int {
-		return x.Properties.Timestamp.Compare(*y.Properties.Timestamp)
+		return y.Properties.Timestamp.Compare(*x.Properties.Timestamp)
 	})
 
 	// If hint is not provided, use the environment name as the hint

@@ -276,3 +276,28 @@ func (d *docker) executeCommand(ctx context.Context, cwd string, args ...string)
 
 	return d.commandRunner.Run(ctx, runArgs)
 }
+
+// SplitDockerImage splits the image into the name and tag.
+// If the image does not have a tag or is invalid, the full string is returned as name, and tag will be empty.
+func SplitDockerImage(fullImg string) (name string, tag string) {
+	split := -1
+	// the colon separator can appear in two places:
+	// 1. between the image and the tag, image:tag
+	// 2. between the host and the port, in which case, it would be host:port/image:tag to be valid.
+	for i, r := range fullImg {
+		switch r {
+		case ':':
+			split = i
+		case '/':
+			// if we see a path separator, we know that the previously found
+			// colon is not the image:tag separator, since a tag cannot have a path separator
+			split = -1
+		}
+	}
+
+	if split == -1 || split == len(fullImg)-1 {
+		return fullImg, ""
+	}
+
+	return fullImg[:split], fullImg[split+1:]
+}

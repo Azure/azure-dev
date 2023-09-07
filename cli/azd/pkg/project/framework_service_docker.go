@@ -13,6 +13,9 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -22,6 +25,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/pack"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type DockerProjectOptions struct {
@@ -287,9 +291,10 @@ func (p *dockerProject) packBuild(
 	}
 
 	environ := []string{}
-
+	userDefinedImage := false
 	if os.Getenv("AZD_BUILDER_IMAGE") != "" {
 		builder = os.Getenv("AZD_BUILDER_IMAGE")
+		userDefinedImage = true
 	}
 
 	previewer := p.console.ShowPreviewer(ctx,
@@ -298,6 +303,25 @@ func (p *dockerProject) packBuild(
 			MaxLineCount: 8,
 			Title:        "Docker (pack) Output",
 		})
+
+	ctx, span := tracing.Start(
+		ctx,
+		events.PackBuildEvent,
+		trace.WithAttributes(fields.ProjectServiceLanguageKey.String(string(svc.Language))))
+
+	img, tag := docker.SplitDockerImage(builder)
+	if userDefinedImage {
+		span.SetAttributes(
+			fields.StringHashed(fields.PackBuilderImage, img),
+			fields.StringHashed(fields.PackBuilderTag, tag),
+		)
+	} else {
+		span.SetAttributes(
+			fields.PackBuilderImage.String(img),
+			fields.PackBuilderTag.String(tag),
+		)
+	}
+
 	err = pack.Build(
 		ctx,
 		svc.Path(),
@@ -307,8 +331,11 @@ func (p *dockerProject) packBuild(
 		previewer)
 	p.console.StopPreviewer(ctx)
 	if err != nil {
+		span.EndWithStatus(err)
 		return nil, err
 	}
+
+	span.End()
 
 	imageId, err := p.docker.Inspect(ctx, imageName, "{{.Id}}")
 	if err != nil {

@@ -303,6 +303,7 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 	// Global middleware registration
 	root.
 		UseMiddleware("debug", middleware.NewDebugMiddleware).
+		UseMiddleware("experimentation", middleware.NewExperimentationMiddleware).
 		UseMiddlewareWhen("telemetry", middleware.NewTelemetryMiddleware, func(descriptor *actions.ActionDescriptor) bool {
 			return !descriptor.Options.DisableTelemetry
 		})

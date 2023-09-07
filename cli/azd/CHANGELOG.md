@@ -1,17 +1,28 @@
 # Release History
 
-## 1.3.0-beta.1 (Unreleased)
+## 1.3.0 (2023-09-06)
 
 ### Features Added
 
 - [[2573]](https://github.com/Azure/azure-dev/pull/2573) Adds support for custom template sources.
+- [[2637]](https://github.com/Azure/azure-dev/pull/2637) Awesome azd templates are now shown by default in `azd init` template listing.
 - [[2628]](https://github.com/Azure/azure-dev/pull/2628) Support for `.bicepparam`.
+- [[2700]](https://github.com/Azure/azure-dev/pull/2700) New simplified `azd init` to initialize your existing application for Azure (alpha feature)
+- [[2678]](https://github.com/Azure/azure-dev/pull/2678) Support for Cloud Native Buildpacks (alpha feature)
 
 ### Breaking Changes
 
 ### Bugs Fixed
 
+- [[2624]](https://github.com/Azure/azure-dev/pull/2624) Fix provisioning deployment display not showing progress when certain errors occur.
+- [[2676]](https://github.com/Azure/azure-dev/pull/2676) Fix `buildArgs` support for docker build.
+- [[2698]](https://github.com/Azure/azure-dev/pull/2698) Fix `azd auth login` default browser prompt in Codespaces environments.
+- [[2664]](https://github.com/Azure/azure-dev/pull/2664) Fix `azd auth login` login loop after upgrading to 1.2.0.
+- [[2630]](https://github.com/Azure/azure-dev/pull/2630) Fix coloring for ignored operations in `azd provision --preview`
+
 ### Other Changes
+
+- [[2660]](https://github.com/Azure/azure-dev/pull/2660) Starter templates now include `core` libraries by default.
 
 ## 1.2.0 (2023-08-09)
 

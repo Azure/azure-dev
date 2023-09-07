@@ -59,9 +59,8 @@ func (m *Manager) Deploy(ctx context.Context) (*DeployResult, error) {
 		return nil, fmt.Errorf("error deploying infrastructure: %w", err)
 	}
 
-	if deployResult.LocalCacheSkipped {
+	if deployResult.SameAsLastDeploymentSkipped {
 		m.console.StopSpinner(ctx, "Didn't find new changes.", input.StepSkipped)
-		return deployResult, nil
 	}
 
 	if err := UpdateEnvironment(m.env, deployResult.Deployment.Outputs); err != nil {

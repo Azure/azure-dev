@@ -185,7 +185,7 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		}, nil
 	}
 
-	if deployResult.LocalCacheSkipped {
+	if deployResult.SameAsLastDeploymentSkipped {
 		return &actions.ActionResult{
 			Message: &actions.ResultMessage{
 				Header: "There are no changes to provision for your application.",

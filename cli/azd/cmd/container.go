@@ -267,7 +267,6 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(repository.NewInitializer)
 	container.RegisterSingleton(config.NewUserConfigManager)
 	container.RegisterSingleton(alpha.NewFeaturesManager)
-	container.RegisterSingleton(infraBicep.NewCacheManager)
 	container.RegisterSingleton(config.NewManager)
 	container.RegisterSingleton(templates.NewTemplateManager)
 	container.RegisterSingleton(templates.NewSourceManager)

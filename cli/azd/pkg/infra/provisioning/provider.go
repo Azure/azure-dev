@@ -24,8 +24,8 @@ type Options struct {
 }
 
 type DeployResult struct {
-	Deployment        *Deployment
-	LocalCacheSkipped bool
+	Deployment                  *Deployment
+	SameAsLastDeploymentSkipped bool
 }
 
 // DeployPreviewResult defines one deployment in preview mode, displaying what changes would it be performed, without

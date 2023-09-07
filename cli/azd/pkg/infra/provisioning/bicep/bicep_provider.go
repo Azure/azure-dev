@@ -971,7 +971,7 @@ func (p *BicepProvider) purgeItems(
 		})
 		p.console.Message(ctx, fmt.Sprintf(
 			"These resources have soft delete enabled allowing them to be recovered for a period or time "+
-				"after deletion. During this period, their names may not be reused. In the future, you cant use "+
+				"after deletion. During this period, their names may not be reused. In the future, you can use "+
 				"the argument %s to skip this confirmation.\n", output.WithHighLightFormat("--purge")))
 
 		purgeItems, err := p.console.Confirm(ctx, input.ConsoleOptions{

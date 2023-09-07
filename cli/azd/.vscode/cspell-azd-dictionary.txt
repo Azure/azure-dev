@@ -90,6 +90,7 @@ keychain
 LASTEXITCODE
 ldflags
 lechnerc77
+libc
 mgmt
 mgutz
 microsoftonline

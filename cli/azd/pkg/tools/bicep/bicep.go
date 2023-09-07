@@ -164,11 +164,11 @@ func downloadBicep(ctx context.Context, transporter policy.Transporter, bicepVer
 	case "darwin":
 		releaseName = fmt.Sprintf("bicep-osx-%s", arch)
 	case "linux":
-		if _, err := os.Stat("/lib/ld-musl-x86_64.so.1"); err == nil {
-			// As of 0.14.46, there is no version of for AM64 on musl based systems.
-			if arch == "arm64" {
+		if preferMuslBicep(os.Stat) {
+			if runtime.GOARCH != "arm64" {
 				return fmt.Errorf("unsupported architecture: %s", runtime.GOARCH)
 			}
+
 			releaseName = "bicep-linux-musl-x64"
 		} else {
 			releaseName = fmt.Sprintf("bicep-linux-%s", arch)
@@ -225,6 +225,23 @@ func downloadBicep(ctx context.Context, transporter policy.Transporter, bicepVer
 	}
 
 	return nil
+}
+
+type stater func(name string) (os.FileInfo, error)
+
+// preferMuslBicep determines if we should install the version of bicep that used musl instead of glibc. We prefer
+// musl bicep on linux systems that have musl installed and do not have glibc installed. If both musl and glibc are
+// installed, we prefer the glibc based version.  This behavior matches the `az` CLI (see: Azure/azure-cli#23040)
+func preferMuslBicep(stat stater) bool {
+	if _, err := stat("/lib/ld-musl-x86_64.so.1"); err == nil {
+		if _, err := stat("/lib/x86_64-linux-gnu/libc.so.6"); err == nil {
+			return false
+		}
+
+		return true
+	}
+
+	return false
 }
 
 func (cli *bicepCli) version(ctx context.Context) (semver.Version, error) {

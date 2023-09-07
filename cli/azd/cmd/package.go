@@ -218,12 +218,10 @@ func getCmdPackageHelpFooter(*cobra.Command) string {
 		"Packages all services in the current project to Azure.": output.WithHighLightFormat("azd package --all"),
 		"Packages the service named 'api' to Azure.":             output.WithHighLightFormat("azd package api"),
 		"Packages the service named 'web' to Azure.":             output.WithHighLightFormat("azd package web"),
-		//nolint:lll
 		"Packages all services to the specified output path.": output.WithHighLightFormat(
 			"azd package --output-path ./dist",
 		),
-		//nolint:lll
-		"Packages the service name 'api' to the specified output path.": output.WithHighLightFormat(
+		"Packages the service named 'api' to the specified output path.": output.WithHighLightFormat(
 			"azd package api --output-path ./dist/api.zip",
 		),
 	})

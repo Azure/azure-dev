@@ -55,6 +55,9 @@ func NewMockContext(ctx context.Context) *MockContext {
 }
 
 func registerCommonMocks(mockContext *MockContext) {
+	mockContext.Container.RegisterSingleton(func() ioc.ServiceLocator {
+		return mockContext.Container
+	})
 	mockContext.Container.RegisterSingleton(func() azcore.TokenCredential {
 		return mockContext.Credentials
 	})
@@ -67,7 +70,7 @@ func registerCommonMocks(mockContext *MockContext) {
 	mockContext.Container.RegisterSingleton(func() input.Console {
 		return mockContext.Console
 	})
-	mockContext.Container.RegisterSingleton(func() config.Manager {
+	mockContext.Container.RegisterSingleton(func() config.FileConfigManager {
 		return mockContext.ConfigManager
 	})
 	mockContext.Container.RegisterSingleton(func() *alpha.FeatureManager {

@@ -22,6 +22,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
@@ -108,24 +109,41 @@ func (p *BicepProvider) Initialize(ctx context.Context, projectPath string, opti
 // An environment is considered to be in a provision-ready state if it contains both an AZURE_SUBSCRIPTION_ID and
 // AZURE_LOCATION value. Additionally, for resource group scoped deployments, an AZURE_RESOURCE_GROUP value is required.
 func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
-	if err := EnsureSubscriptionAndLocation(ctx, p.env, p.prompters); err != nil {
+	modulePath := p.modulePath()
+	compileResult, compileErr := p.compileBicep(ctx, modulePath)
+	if compileErr != nil {
+		log.Printf("Unable to compile bicep module for initializing environment. error: %v", compileErr)
+		log.Printf("Initializing environment w/o arm template info.")
+	}
+
+	if err := EnsureSubscriptionAndLocation(ctx, p.env, p.prompters, func(loc account.Location) bool {
+		// compileResult can be nil if the infra folder is missing and azd couldn't get a template information.
+		// A template information can be used to apply filters to the initial values (like location).
+		// But if there's not template, azd will continue with azd env init.
+		if compileResult == nil {
+			return true
+		}
+		if locationParam, defined := compileResult.Template.Parameters["location"]; defined {
+			if locationParam.AllowedValues != nil {
+				return slices.IndexFunc(*locationParam.AllowedValues, func(allowedValue any) bool {
+					allowedValueString, goodCast := allowedValue.(string)
+					return goodCast && loc.Name == allowedValueString
+				}) != -1
+			}
+		}
+		return true
+	}); err != nil {
 		return err
 	}
 
-	modulePath := p.modulePath()
-	if _, err := os.Stat(modulePath); errors.Is(err, os.ErrNotExist) {
-		// If there's not template, just behave as if we are in a subscription scope (and don't ask about
-		// AZURE_RESOURCE_GROUP). Future operations which try to use the infrastructure may fail, but that's ok. These
-		// failures will have reasonable error messages.
-		//
-		// We want to handle the case where the provider can `Initialize` even without a template, because we do this
-		// in a few of our end to end telemetry tests to speed things up.
+	// If there's not template, just behave as if we are in a subscription scope (and don't ask about
+	// AZURE_RESOURCE_GROUP). Future operations which try to use the infrastructure may fail, but that's ok. These
+	// failures will have reasonable error messages.
+	//
+	// We want to handle the case where the provider can `Initialize` even without a template, because we do this
+	// in a few of our end to end telemetry tests to speed things up.
+	if compileErr != nil {
 		return nil
-	}
-
-	compileResult, err := p.compileBicep(ctx, modulePath)
-	if err != nil {
-		return fmt.Errorf("compiling bicep template: %w", err)
 	}
 
 	scope, err := compileResult.Template.TargetScope()

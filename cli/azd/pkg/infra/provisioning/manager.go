@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
@@ -126,7 +125,11 @@ func (m *Manager) Destroy(ctx context.Context, options DestroyOptions) (*Destroy
 
 // EnsureSubscriptionAndLocation ensures that that that subscription (AZURE_SUBSCRIPTION_ID) and location (AZURE_LOCATION)
 // variables are set in the environment, prompting the user for the values if they do not exist.
-func EnsureSubscriptionAndLocation(ctx context.Context, env *environment.Environment, prompter prompt.Prompter) error {
+func EnsureSubscriptionAndLocation(
+	ctx context.Context,
+	env *environment.Environment,
+	prompter prompt.Prompter,
+	locationFiler prompt.LocationFilterPredicate) error {
 	if env.GetSubscriptionId() == "" {
 		subscriptionId, err := prompter.PromptSubscription(ctx, "Select an Azure Subscription to use:")
 		if err != nil {
@@ -145,7 +148,7 @@ func EnsureSubscriptionAndLocation(ctx context.Context, env *environment.Environ
 			ctx,
 			env.GetSubscriptionId(),
 			"Select an Azure location to use:",
-			func(_ account.Location) bool { return true },
+			locationFiler,
 		)
 		if err != nil {
 			return err

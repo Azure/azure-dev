@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -111,7 +112,7 @@ func (t *TerraformProvider) Initialize(ctx context.Context, projectPath string, 
 // An environment is considered to be in a provision-ready state if it contains both an AZURE_SUBSCRIPTION_ID and
 // AZURE_LOCATION value.
 func (t *TerraformProvider) EnsureEnv(ctx context.Context) error {
-	return EnsureSubscriptionAndLocation(ctx, t.env, t.prompters)
+	return EnsureSubscriptionAndLocation(ctx, t.env, t.prompters, func(_ account.Location) bool { return true })
 }
 
 // Previews the infrastructure through terraform plan

@@ -779,7 +779,7 @@ func TestDeploymentNameForEnv(t *testing.T) {
 	}
 }
 
-// From a mocked list of deployments where there are multiple deployments witht the matching tag, expect to pick the most
+// From a mocked list of deployments where there are multiple deployments with the matching tag, expect to pick the most
 // recent one.
 func TestFindCompletedDeployments(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())

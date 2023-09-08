@@ -331,10 +331,7 @@ func registerContainerComponents(t *testing.T, mockContext *mocks.MockContext) {
 
 	mockContext.Container.RegisterSingleton(storage.NewBlobSdkClient)
 	mockContext.Container.RegisterSingleton(config.NewManager)
-	mockContext.Container.RegisterSingleton(config.NewFileConfigManager)
-	mockContext.Container.RegisterSingleton(config.NewUserConfigManager)
 	mockContext.Container.RegisterSingleton(storage.NewBlobClient)
-	mockContext.Container.RegisterSingleton(auth.NewManager)
 
 	azdContext := azdcontext.NewAzdContextWithDirectory(t.TempDir())
 	mockContext.Container.RegisterSingleton(func() *azdcontext.AzdContext {
@@ -357,7 +354,7 @@ type MockDataStore struct {
 	mock.Mock
 }
 
-func (m *MockDataStore) Path(env *Environment) string {
+func (m *MockDataStore) EnvPath(env *Environment) string {
 	args := m.Called(env)
 	return args.String(0)
 }

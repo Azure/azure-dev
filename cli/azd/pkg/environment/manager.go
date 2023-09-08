@@ -212,7 +212,7 @@ func (m *manager) ConfigPath(env *Environment) string {
 
 // Path returns the path to the environment .env file
 func (m *manager) Path(env *Environment) string {
-	return m.local.Path(env)
+	return m.local.EnvPath(env)
 }
 
 // List returns a list of all environments within the data store

@@ -10,7 +10,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
-	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
@@ -70,18 +69,17 @@ type Blob struct {
 
 // Items returns a list of blobs in the configured storage account container.
 func (bc *blobClient) Items(ctx context.Context) ([]*Blob, error) {
+	if err := bc.ensureContainerExists(ctx); err != nil {
+		return nil, err
+	}
+
 	blobs := []*Blob{}
 
 	pager := bc.client.NewListBlobsFlatPager(bc.config.ContainerName, nil)
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
-			err = fmt.Errorf("failed to get next page of blobs, %w", err)
-			var responseErr *azcore.ResponseError
-			if errors.As(err, &responseErr) {
-				return nil, fmt.Errorf("%w, %w", err, ErrContainerNotFound)
-			}
-			return nil, err
+			return nil, fmt.Errorf("failed to get next page of blobs, %w", err)
 		}
 
 		for _, blob := range page.Segment.BlobItems {
@@ -146,10 +144,6 @@ func (bc *blobClient) ensureContainerExists(ctx context.Context) error {
 
 	pager := bc.client.NewListContainersPager(nil)
 	for pager.More() {
-		if exists {
-			break
-		}
-
 		page, err := pager.NextPage(ctx)
 		if err != nil {
 			return fmt.Errorf("failed getting next page of containers: %w", err)
@@ -176,16 +170,11 @@ func (bc *blobClient) ensureContainerExists(ctx context.Context) error {
 // createClient creates a new blob client and caches it for future use
 func NewBlobSdkClient(
 	ctx context.Context,
-	authManager *auth.Manager,
+	credential azcore.TokenCredential,
 	accountConfig *AccountConfig,
 	httpClient httputil.HttpClient,
 	userAgent httputil.UserAgent,
 ) (*azblob.Client, error) {
-	credential, err := authManager.CredentialForCurrentUser(ctx, nil)
-	if err != nil {
-		return nil, err
-	}
-
 	coreOptions := azsdk.
 		DefaultClientOptionsBuilder(ctx, httpClient, string(userAgent)).
 		BuildCoreClientOptions()

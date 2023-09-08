@@ -97,7 +97,7 @@ func Test_StorageBlobDataStore_Path(t *testing.T) {
 
 	env := New("env1")
 	expected := fmt.Sprintf("%s/%s", env.name, DotEnvFileName)
-	actual := dataStore.Path(env)
+	actual := dataStore.EnvPath(env)
 
 	require.Equal(t, expected, actual)
 }

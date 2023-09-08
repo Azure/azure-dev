@@ -30,8 +30,8 @@ func NewLocalFileDataStore(azdContext *azdcontext.AzdContext, configManager conf
 	}
 }
 
-// Path returns the path to the .env file for the given environment
-func (fs *LocalFileDataStore) Path(env *Environment) string {
+// EnvPath returns the path to the .env file for the given environment
+func (fs *LocalFileDataStore) EnvPath(env *Environment) string {
 	return filepath.Join(fs.azdContext.EnvironmentRoot(env.name), DotEnvFileName)
 }
 
@@ -95,7 +95,7 @@ func (fs *LocalFileDataStore) Get(ctx context.Context, name string) (*Environmen
 // Reload reloads the environment from the persistent data store
 func (fs *LocalFileDataStore) Reload(ctx context.Context, env *Environment) error {
 	// Reload env values
-	if envMap, err := godotenv.Read(fs.Path(env)); errors.Is(err, os.ErrNotExist) {
+	if envMap, err := godotenv.Read(fs.EnvPath(env)); errors.Is(err, os.ErrNotExist) {
 		env.dotenv = make(map[string]string)
 		env.deletedKeys = make(map[string]struct{})
 	} else if err != nil {
@@ -158,7 +158,7 @@ func (fs *LocalFileDataStore) Save(ctx context.Context, env *Environment) error 
 
 	marshalled = fixupUnquotedDotenv(env.dotenv, marshalled)
 
-	envFile, err := os.Create(fs.Path(env))
+	envFile, err := os.Create(fs.EnvPath(env))
 	if err != nil {
 		return fmt.Errorf("saving .env: %w", err)
 	}

@@ -59,10 +59,12 @@ func createBlobClient(t *testing.T, mockContext *mocks.MockContext, httpClient a
 		config.NewUserConfigManager(fileConfigManager),
 		httpClient, mockContext.Console,
 	)
-
 	require.NoError(t, err)
 
-	sdkClient, err := NewBlobSdkClient(*mockContext.Context, authManager, storageConfig, httpClient, "azd")
+	credentials, err := authManager.CredentialForCurrentUser(*mockContext.Context, nil)
+	require.NoError(t, err)
+
+	sdkClient, err := NewBlobSdkClient(*mockContext.Context, credentials, storageConfig, httpClient, "azd")
 	require.NoError(t, err)
 	require.NotNil(t, sdkClient)
 

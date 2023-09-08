@@ -16,7 +16,7 @@ const (
 
 type DataStore interface {
 	// Gets the path to the environment .env file
-	Path(env *Environment) string
+	EnvPath(env *Environment) string
 
 	// Gets the path to the environment JSON config file
 	ConfigPath(env *Environment) string

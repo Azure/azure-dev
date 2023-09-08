@@ -29,8 +29,8 @@ func NewStorageBlobDataStore(configManager config.Manager, blobClient storage.Bl
 	}
 }
 
-// Path returns the path to the .env file for the given environment
-func (fs *StorageBlobDataStore) Path(env *Environment) string {
+// EnvPath returns the path to the .env file for the given environment
+func (fs *StorageBlobDataStore) EnvPath(env *Environment) string {
 	return fmt.Sprintf("%s/%s", env.name, DotEnvFileName)
 }
 
@@ -133,7 +133,7 @@ func (sbd *StorageBlobDataStore) Save(ctx context.Context, env *Environment) err
 
 	buffer := bytes.NewBuffer([]byte(marshalled))
 
-	if err := sbd.blobClient.Upload(ctx, sbd.Path(env), buffer); err != nil {
+	if err := sbd.blobClient.Upload(ctx, sbd.EnvPath(env), buffer); err != nil {
 		return fmt.Errorf("uploading .env: %w", err)
 	}
 
@@ -143,7 +143,7 @@ func (sbd *StorageBlobDataStore) Save(ctx context.Context, env *Environment) err
 
 func (sbd *StorageBlobDataStore) Reload(ctx context.Context, env *Environment) error {
 	// Reload .env file
-	dotEnvBuffer, err := sbd.blobClient.Download(ctx, sbd.Path(env))
+	dotEnvBuffer, err := sbd.blobClient.Download(ctx, sbd.EnvPath(env))
 	if err != nil {
 		return err
 	}

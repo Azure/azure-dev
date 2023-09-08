@@ -392,7 +392,7 @@ func getCmdConfigHelpDescription(*cobra.Command) string {
 				output.WithBackticks(defaultConfigPath),
 			)),
 		},
-		`The configuration directory can be overridden by specifying a path in the AZD_CONFIG_DIR environment variable.`,
+		"The configuration directory can be overridden by specifying a path in the AZD_CONFIG_DIR environment variable.",
 	)
 }
 

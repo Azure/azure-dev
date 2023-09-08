@@ -49,7 +49,7 @@ type Manager interface {
 	Get(ctx context.Context, name string) (*Environment, error)
 	Save(ctx context.Context, env *Environment) error
 	Reload(ctx context.Context, env *Environment) error
-	Path(env *Environment) string
+	EnvPath(env *Environment) string
 	ConfigPath(env *Environment) string
 }
 
@@ -213,8 +213,8 @@ func (m *manager) ConfigPath(env *Environment) string {
 	return m.local.ConfigPath(env)
 }
 
-// Path returns the path to the environment .env file
-func (m *manager) Path(env *Environment) string {
+// EnvPath returns the path to the environment .env file
+func (m *manager) EnvPath(env *Environment) string {
 	return m.local.EnvPath(env)
 }
 

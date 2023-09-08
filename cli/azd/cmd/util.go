@@ -13,7 +13,6 @@ import (
 	"time"
 
 	"github.com/AlecAivazis/survey/v2"
-	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -29,62 +28,6 @@ import (
 type CmdAnnotations map[string]string
 
 type Asker func(p survey.Prompt, response interface{}) error
-
-func invalidEnvironmentNameMsg(environmentName string) string {
-	return fmt.Sprintf(
-		"environment name '%s' is invalid (it should contain only alphanumeric characters and hyphens)\n",
-		environmentName,
-	)
-}
-
-// ensureValidEnvironmentName ensures the environment name is valid, if it is not, an error is printed
-// and the user is prompted for a new name.
-func ensureValidEnvironmentName(
-	ctx context.Context,
-	environmentName *string,
-	examples []string,
-	console input.Console) error {
-	exampleText := ""
-	if len(examples) > 0 {
-		exampleText = "\n\nExamples:"
-	}
-
-	for _, example := range examples {
-		exampleText += fmt.Sprintf("\n  %s", example)
-	}
-
-	for !environment.IsValidEnvironmentName(*environmentName) {
-		userInput, err := console.Prompt(ctx, input.ConsoleOptions{
-			Message: "Enter a new environment name:",
-			Help: heredoc.Doc(`
-			A unique string that can be used to differentiate copies of your application in Azure.
-
-			This value is typically used by the infrastructure as code templates to name the resource group that contains
-			the infrastructure for your application and to generate a unique suffix that is applied to resources to prevent
-			naming collisions.`) + exampleText,
-		})
-
-		if err != nil {
-			return fmt.Errorf("reading environment name: %w", err)
-		}
-
-		*environmentName = userInput
-
-		if !environment.IsValidEnvironmentName(*environmentName) {
-			fmt.Fprint(console.Handles().Stdout, invalidEnvironmentNameMsg(*environmentName))
-		}
-	}
-
-	return nil
-}
-
-type environmentSpec struct {
-	environmentName string
-	subscription    string
-	location        string
-	// examples of environment names to prompt.
-	examples []string
-}
 
 const environmentNameFlag string = "environment"
 

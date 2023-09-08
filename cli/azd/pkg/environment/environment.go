@@ -46,10 +46,6 @@ const ResourceGroupEnvVarName = "AZURE_RESOURCE_GROUP"
 type Environment struct {
 	name string
 
-	dotEnvPath string
-
-	configPath string
-
 	// dotenv is a map of keys to values, persisted to the `.env` file stored in this environment's [Root].
 	dotenv map[string]string
 
@@ -85,6 +81,7 @@ func NewWithValues(name string, values map[string]string) *Environment {
 		env.dotenv = values
 	}
 
+	env.SetEnvName(name)
 	return env
 }
 

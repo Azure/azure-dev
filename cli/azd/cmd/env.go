@@ -479,7 +479,7 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 		}
 	}
 
-	localEnvPath := ef.envManager.Path(ef.env)
+	localEnvPath := ef.envManager.EnvPath(ef.env)
 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{

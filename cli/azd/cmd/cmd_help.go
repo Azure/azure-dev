@@ -258,10 +258,17 @@ func getPreFooter(c *cobra.Command) string {
 }
 
 // generateCmdHelpDescription construct a help text block from a title and description notes.
-func generateCmdHelpDescription(title string, notes []string) string {
+func generateCmdHelpDescription(title string, notes []string, options ...string) string {
 	var note string
 	if len(notes) > 0 {
 		note = fmt.Sprintf("%s\n\n", strings.Join(notes, "\n"))
+	}
+	if len(options) > 0 {
+		var item string
+		for _, opt := range options {
+			item = opt
+		}
+		return fmt.Sprintf("%s\n\n%s%s\n\n", title, note, item)
 	}
 	return fmt.Sprintf("%s\n\n%s", title, note)
 }

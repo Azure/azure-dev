@@ -241,7 +241,7 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 			}
 		} else {
 			//  --from-package not set, package the application
-			packageTask := da.serviceManager.Package(ctx, svc, nil)
+			packageTask := da.serviceManager.Package(ctx, svc, nil, nil)
 			done := make(chan struct{})
 			go func() {
 				for packageProgress := range packageTask.Progress() {

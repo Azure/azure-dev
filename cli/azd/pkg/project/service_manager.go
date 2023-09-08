@@ -3,14 +3,19 @@ package project
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"log"
+	"os"
+	"path/filepath"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
 
@@ -68,6 +73,7 @@ type ServiceManager interface {
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
 		buildOutput *ServiceBuildResult,
+		options *PackageOptions,
 	) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress]
 
 	// Deploys the generated artifacts to the Azure resource that will
@@ -256,8 +262,13 @@ func (sm *serviceManager) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	buildOutput *ServiceBuildResult,
+	options *PackageOptions,
 ) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
 	return async.RunTaskWithProgress(func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
+		if options == nil {
+			options = &PackageOptions{}
+		}
+
 		cachedResult, ok := sm.getOperationResult(ctx, serviceConfig, string(ServiceEventPackage))
 		if ok && cachedResult != nil {
 			task.SetResult(cachedResult.(*ServicePackageResult))
@@ -359,6 +370,45 @@ func (sm *serviceManager) Package(
 		if err != nil {
 			task.SetError(fmt.Errorf("failed packaging service '%s': %w", serviceConfig.Name, err))
 			return
+		}
+
+		// Package path can be a file path or a container image name
+		// We only move to desired output path for file based packages
+		_, err = os.Stat(packageResult.PackagePath)
+		hasPackageFile := err == nil
+
+		if hasPackageFile && options.OutputPath != "" {
+			var destFilePath string
+			var destDirectory string
+
+			isFilePath := filepath.Ext(options.OutputPath) != ""
+			if isFilePath {
+				destFilePath = options.OutputPath
+				destDirectory = filepath.Dir(options.OutputPath)
+			} else {
+				destFilePath = filepath.Join(options.OutputPath, filepath.Base(packageResult.PackagePath))
+				destDirectory = options.OutputPath
+			}
+
+			_, err := os.Stat(destDirectory)
+			if errors.Is(err, os.ErrNotExist) {
+				// Create the desired output directory if it does not already exist
+				if err := os.MkdirAll(destDirectory, osutil.PermissionDirectory); err != nil {
+					task.SetError(fmt.Errorf("failed creating output directory '%s': %w", destDirectory, err))
+					return
+				}
+			}
+
+			// Move the package file to the desired path
+			// We can't use os.Rename here since that does not work across disks
+			if err := moveFile(packageResult.PackagePath, destFilePath); err != nil {
+				task.SetError(
+					fmt.Errorf("failed moving package file '%s' to '%s': %w", packageResult.PackagePath, destFilePath, err),
+				)
+				return
+			}
+
+			packageResult.PackagePath = destFilePath
 		}
 
 		task.SetResult(packageResult)
@@ -568,4 +618,32 @@ func syncProgress[T comparable, P comparable](task *async.TaskContextWithProgres
 	for progress := range progressChannel {
 		task.SetProgress(progress)
 	}
+}
+
+// Copies a file from the source path to the destination path
+// Deletes the source file after the copy is complete
+func moveFile(sourcePath string, destinationPath string) error {
+	sourceFile, err := os.Open(sourcePath)
+	if err != nil {
+		return fmt.Errorf("opening source file: %w", err)
+	}
+	defer sourceFile.Close()
+
+	// Create or truncate the destination file
+	destinationFile, err := os.Create(destinationPath)
+	if err != nil {
+		return fmt.Errorf("creating destination file: %w", err)
+	}
+	defer destinationFile.Close()
+
+	// Copy the contents of the source file to the destination file
+	_, err = io.Copy(destinationFile, sourceFile)
+	if err != nil {
+		return fmt.Errorf("copying file: %w", err)
+	}
+
+	// Remove the source file (optional)
+	defer os.Remove(sourcePath)
+
+	return nil
 }

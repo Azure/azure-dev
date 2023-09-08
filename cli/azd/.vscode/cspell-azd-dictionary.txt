@@ -6,6 +6,7 @@ apimanagement
 apims
 appconfiguration
 appdetect
+appinit
 appinsights
 appinsightsexporter
 appinsightsstorage

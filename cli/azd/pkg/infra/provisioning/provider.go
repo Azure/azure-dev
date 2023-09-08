@@ -21,6 +21,7 @@ type Options struct {
 	Provider ProviderKind `yaml:"provider"`
 	Path     string       `yaml:"path"`
 	Module   string       `yaml:"module"`
+	BicepADS bool
 }
 
 type DeployResult struct {

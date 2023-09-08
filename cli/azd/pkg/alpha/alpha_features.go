@@ -2,7 +2,7 @@ package alpha
 
 const (
 	TerraformId FeatureId = "terraform"
-	BicepCache  FeatureId = "bicep.local.cache"
+	BicepADS    FeatureId = "bicep.ads"
 	Buildpacks  FeatureId = "buildpacks"
 	EasyInit    FeatureId = "easyInit"
 )

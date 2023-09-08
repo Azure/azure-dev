@@ -61,10 +61,15 @@ func (m *Manager) Deploy(ctx context.Context) (*DeployResult, error) {
 
 	if deployResult.SameAsLastDeploymentSkipped {
 		m.console.StopSpinner(ctx, "Didn't find new changes.", input.StepSkipped)
+		m.console.ShowSpinner(ctx, "Restore Azure Deployment State.", input.Step)
 	}
 
 	if err := UpdateEnvironment(m.env, deployResult.Deployment.Outputs); err != nil {
 		return nil, fmt.Errorf("updating environment with deployment outputs: %w", err)
+	}
+
+	if deployResult.SameAsLastDeploymentSkipped {
+		m.console.StopSpinner(ctx, "Restore Azure Deployment State.", input.GetStepResultFormat(err))
 	}
 
 	// make sure any spinner is stopped

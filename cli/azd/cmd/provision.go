@@ -8,6 +8,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -20,10 +21,12 @@ import (
 )
 
 type provisionFlags struct {
-	noProgress bool
-	preview    bool
-	global     *internal.GlobalCommandOptions
+	noProgress     bool
+	preview        bool
+	ignoreBicepAds bool
+	global         *internal.GlobalCommandOptions
 	*envFlag
+	alphaFeatureManager *alpha.FeatureManager
 }
 
 func (i *provisionFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
@@ -40,6 +43,10 @@ func (i *provisionFlags) bindNonCommon(local *pflag.FlagSet, global *internal.Gl
 
 func (i *provisionFlags) bindCommon(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	local.BoolVar(&i.preview, "preview", false, "Preview changes to Azure resources.")
+	if i.alphaFeatureManager.IsEnabled(alpha.BicepADS) {
+		local.BoolVar(&i.ignoreBicepAds, "ignore-ads", false, "Ignore Azure Deployment State (bicep only).")
+	}
+
 	i.envFlag = &envFlag{}
 	i.envFlag.Bind(local, global)
 }
@@ -48,8 +55,13 @@ func (i *provisionFlags) setCommon(envFlag *envFlag) {
 	i.envFlag = envFlag
 }
 
-func newProvisionFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *provisionFlags {
-	flags := &provisionFlags{}
+func newProvisionFlags(
+	cmd *cobra.Command,
+	global *internal.GlobalCommandOptions,
+	alphaFeatureManager *alpha.FeatureManager) *provisionFlags {
+	flags := &provisionFlags{
+		alphaFeatureManager: alphaFeatureManager,
+	}
 	flags.Bind(cmd.Flags(), global)
 
 	return flags
@@ -129,6 +141,7 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		return nil, err
 	}
 
+	p.projectConfig.Infra.BicepADS = p.flags.ignoreBicepAds
 	if err := p.provisionManager.Initialize(ctx, p.projectConfig.Path, p.projectConfig.Infra); err != nil {
 		return nil, fmt.Errorf("initializing provisioning manager: %w", err)
 	}

@@ -6,7 +6,6 @@ apimanagement
 apims
 appconfiguration
 appdetect
-appinit
 appinsights
 appinsightsexporter
 appinsightsstorage
@@ -18,7 +17,6 @@ armappconfiguration
 armappplatform
 armcognitiveservices
 azapi
-azblob
 AZCLI
 azcorelog
 azdcli
@@ -89,8 +87,8 @@ hotspot
 iidfile
 ineffassign
 javac
-jmes
 jquery
+jmes
 keychain
 LASTEXITCODE
 ldflags
@@ -102,8 +100,8 @@ missingkey
 mockarmresources
 mockazcli
 mvnw
-mysqlclient
 mysqldb
+mysqlclient
 nobanner
 nodeapp
 nolint

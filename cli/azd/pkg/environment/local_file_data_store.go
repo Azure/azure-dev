@@ -30,7 +30,7 @@ func NewLocalFileDataStore(azdContext *azdcontext.AzdContext, configManager conf
 	}
 }
 
-// EnvPath returns the path to the .env file for the given environment
+// Path returns the path to the .env file for the given environment
 func (fs *LocalFileDataStore) EnvPath(env *Environment) string {
 	return filepath.Join(fs.azdContext.EnvironmentRoot(env.name), DotEnvFileName)
 }
@@ -149,14 +149,10 @@ func (fs *LocalFileDataStore) Save(ctx context.Context, env *Environment) error 
 		delete(env.dotenv, key)
 	}
 
-	// Instead of calling `godotenv.Write` directly, we need to save the file ourselves, so we can fixup any numeric values
-	// that were incorrectly unquoted.
-	marshalled, err := godotenv.Marshal(env.dotenv)
+	marshalled, err := marshallDotEnv(env)
 	if err != nil {
-		return fmt.Errorf("saving .env: %w", err)
+		return fmt.Errorf("marshalling .env: %w", err)
 	}
-
-	marshalled = fixupUnquotedDotenv(env.dotenv, marshalled)
 
 	envFile, err := os.Create(fs.EnvPath(env))
 	if err != nil {

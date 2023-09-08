@@ -431,3 +431,15 @@ func fixupUnquotedDotenv(values map[string]string, dotenv string) string {
 
 	return strings.Join(entries, "\n")
 }
+
+// Prepare dotenv for saving and returns a marshalled string that can be save to the underlying data store
+// Instead of calling `godotenv.Write` directly, we need to save the file ourselves, so we can fixup any numeric values
+// that were incorrectly unquoted.
+func marshallDotEnv(env *Environment) (string, error) {
+	marshalled, err := godotenv.Marshal(env.dotenv)
+	if err != nil {
+		return "", fmt.Errorf("marshalling .env: %w", err)
+	}
+
+	return fixupUnquotedDotenv(env.dotenv, marshalled), nil
+}

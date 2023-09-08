@@ -121,15 +121,10 @@ func (sbd *StorageBlobDataStore) Save(ctx context.Context, env *Environment) err
 		return fmt.Errorf("uploading config: %w", err)
 	}
 
-	// Instead of calling `godotenv.Write` directly, we need to save the file ourselves, so we can fixup any numeric values
-	// that were incorrectly unquoted.
-	marshalled, err := godotenv.Marshal(env.dotenv)
+	marshalled, err := marshallDotEnv(env)
 	if err != nil {
-		return fmt.Errorf("saving .env: %w", err)
+		return fmt.Errorf("marshalling .env: %w", err)
 	}
-
-	marshalled = fixupUnquotedDotenv(env.dotenv, marshalled)
-	marshalled += "\n"
 
 	buffer := bytes.NewBuffer([]byte(marshalled))
 

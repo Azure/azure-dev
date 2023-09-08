@@ -778,3 +778,103 @@ func TestDeploymentNameForEnv(t *testing.T) {
 		assert.LessOrEqual(t, len(deploymentName), 64)
 	}
 }
+
+// From a mocked list of deployments where there are multiple deployments with the matching tag, expect to pick the most
+// recent one.
+func TestFindCompletedDeployments(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(args.Cmd, "bicep") && strings.Contains(command, "--version")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		return exec.NewRunResult(0, fmt.Sprintf("Bicep CLI version %s (abcdef0123)", bicep.BicepVersion), ""), nil
+	})
+	// Have `bicep build` return a ARM template that targets a resource group.
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(args.Cmd, "bicep") && args.Args[0] == "build"
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		armTemplate := azure.ArmTemplate{
+			Schema:         "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+			ContentVersion: "1.0.0.0",
+			Parameters: azure.ArmTemplateParameterDefinitions{
+				"environmentName": {Type: "string"},
+				"location":        {Type: "string"},
+			},
+			Outputs: azure.ArmTemplateOutputs{
+				"WEBSITE_URL": {Type: "string"},
+			},
+		}
+
+		bicepBytes, _ := json.Marshal(armTemplate)
+
+		return exec.RunResult{
+			Stdout: string(bicepBytes),
+		}, nil
+	})
+
+	bicepProvider := createBicepProvider(t, mockContext)
+
+	baseDate := "1989-10-31"
+	envTag := "env-tag"
+
+	deployments, err := bicepProvider.findCompletedDeployments(
+		*mockContext.Context, envTag, &mockedScope{
+			baseDate: baseDate,
+			envTag:   envTag,
+		}, "")
+	require.NoError(t, err)
+	require.Equal(t, 1, len(deployments))
+	// should take the base date + 2 years
+	expectedDate, err := time.Parse(time.DateOnly, baseDate)
+	require.NoError(t, err)
+	expectedDate = expectedDate.Add(time.Hour * 24 * 365 * 2)
+
+	deploymentDate := *deployments[0].Properties.Timestamp
+	require.Equal(t, expectedDate, deploymentDate)
+}
+
+type mockedScope struct {
+	envTag   string
+	baseDate string
+}
+
+func (m *mockedScope) SubscriptionId() string {
+	return "sub-id"
+}
+
+// Return 3 deployments with the expected tag with one year difference each
+func (m *mockedScope) ListDeployments(ctx context.Context) ([]*armresources.DeploymentExtended, error) {
+	tags := map[string]*string{
+		azure.TagKeyAzdEnvName: &m.envTag,
+	}
+	baseDate, err := time.Parse(time.DateOnly, m.baseDate)
+	if err != nil {
+		return nil, err
+	}
+	// add one year
+	secondDate := baseDate.Add(time.Hour * 24 * 365)
+	thirdDate := secondDate.Add(time.Hour * 24 * 365)
+
+	return []*armresources.DeploymentExtended{
+		{
+			Tags: tags,
+			Properties: &armresources.DeploymentPropertiesExtended{
+				ProvisioningState: to.Ptr(armresources.ProvisioningStateSucceeded),
+				Timestamp:         to.Ptr(baseDate),
+			},
+		},
+		{
+			Tags: tags,
+			Properties: &armresources.DeploymentPropertiesExtended{
+				ProvisioningState: to.Ptr(armresources.ProvisioningStateSucceeded),
+				Timestamp:         to.Ptr(secondDate),
+			},
+		},
+		{
+			Tags: tags,
+			Properties: &armresources.DeploymentPropertiesExtended{
+				ProvisioningState: to.Ptr(armresources.ProvisioningStateSucceeded),
+				Timestamp:         to.Ptr(thirdDate),
+			},
+		},
+	}, nil
+}

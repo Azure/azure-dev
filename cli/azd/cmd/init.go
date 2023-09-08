@@ -21,6 +21,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
@@ -84,6 +85,7 @@ func (i *initFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOpt
 }
 
 type initAction struct {
+	lazyEnvManager  *lazy.Lazy[environment.Manager]
 	console         input.Console
 	cmdRun          exec.CommandRunner
 	gitCli          git.GitCli
@@ -94,6 +96,7 @@ type initAction struct {
 }
 
 func newInitAction(
+	lazyEnvManager *lazy.Lazy[environment.Manager],
 	cmdRun exec.CommandRunner,
 	console input.Console,
 	gitCli git.GitCli,
@@ -102,6 +105,7 @@ func newInitAction(
 	templateManager *templates.TemplateManager,
 	featuresManager *alpha.FeatureManager) actions.Action {
 	return &initAction{
+		lazyEnvManager:  lazyEnvManager,
 		console:         console,
 		cmdRun:          cmdRun,
 		gitCli:          gitCli,
@@ -324,14 +328,22 @@ func (i *initAction) initializeEnv(
 		examples = append(examples, suggest)
 	}
 
-	envSpec := environmentSpec{
-		environmentName: i.flags.environmentName,
-		subscription:    i.flags.subscription,
-		location:        i.flags.location,
-		examples:        examples,
+	// Environment manager requires azd context
+	// Azd context isn't available in init so lazy instantiating
+	// it here after the template is hydrated and the context is available
+	envManager, err := i.lazyEnvManager.GetValue()
+	if err != nil {
+		return err
 	}
 
-	env, err := createEnvironment(ctx, envSpec, azdCtx, i.console)
+	envSpec := environment.Spec{
+		Name:         i.flags.environmentName,
+		Subscription: i.flags.subscription,
+		Location:     i.flags.location,
+		Examples:     examples,
+	}
+
+	env, err := envManager.Create(ctx, envSpec)
 	if err != nil {
 		return fmt.Errorf("loading environment: %w", err)
 	}

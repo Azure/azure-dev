@@ -268,6 +268,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(config.NewUserConfigManager)
 	container.RegisterSingleton(alpha.NewFeaturesManager)
 	container.RegisterSingleton(config.NewManager)
+	container.RegisterSingleton(config.NewFileConfigManager)
 	container.RegisterSingleton(templates.NewTemplateManager)
 	container.RegisterSingleton(templates.NewSourceManager)
 	container.RegisterSingleton(auth.NewManager)

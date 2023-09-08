@@ -47,9 +47,15 @@ const AksClusterEnvVarName = "AZURE_AKS_CLUSTER_NAME"
 // ResourceGroupEnvVarName is the name of the azure resource group that should be used for deployments
 const ResourceGroupEnvVarName = "AZURE_RESOURCE_GROUP"
 
-// The zero value of an Environment is not valid. Use [FromRoot] or [EmptyWithRoot] to create one. When writing tests,
+// The zero value of an Environment is not valid. Use [New] to create one. When writing tests,
 // [Ephemeral] and [EphemeralWithValues] are useful to create environments which are not persisted to disk.
 type Environment struct {
+	name string
+
+	dotEnvPath string
+
+	configPath string
+
 	// dotenv is a map of keys to values, persisted to the `.env` file stored in this environment's [Root].
 	dotenv map[string]string
 
@@ -64,6 +70,33 @@ type Environment struct {
 	// will not be persisted when `Save` is called. This allows the zero value to be used
 	// for testing.
 	Root string
+}
+
+// New returns a new environment with the specified name.
+func New(name string) *Environment {
+	env := &Environment{
+		name:        name,
+		dotenv:      make(map[string]string),
+		deletedKeys: make(map[string]struct{}),
+		Config:      config.NewEmptyConfig(),
+	}
+
+	env.SetEnvName(name)
+	return env
+}
+
+// NewWithValues returns an ephemeral environment (i.e. not backed by a data store) with a set
+// of values. Useful for testing. The name parameter is added to the environment with the
+// AZURE_ENV_NAME key, replacing an existing value in the provided values map. A nil values is
+// treated the same way as an empty map.
+func NewWithValues(name string, values map[string]string) *Environment {
+	env := New(name)
+
+	if values != nil {
+		env.dotenv = values
+	}
+
+	return env
 }
 
 type EnvironmentResolver func() (*Environment, error)
@@ -214,7 +247,7 @@ func (e *Environment) Reload() error {
 	}
 
 	// Reload env config
-	cfgMgr := config.NewManager()
+	cfgMgr := config.NewFileConfigManager(config.NewManager())
 	if cfg, err := cfgMgr.Load(e.ConfigPath()); errors.Is(err, os.ErrNotExist) {
 		e.Config = config.NewEmptyConfig()
 	} else if err != nil {
@@ -246,7 +279,7 @@ func (e *Environment) Save() error {
 	}
 
 	// Update configuration
-	cfgMgr := config.NewManager()
+	cfgMgr := config.NewFileConfigManager(config.NewManager())
 	if err := cfgMgr.Save(e.Config, e.ConfigPath()); err != nil {
 		return fmt.Errorf("saving config: %w", err)
 	}
@@ -402,4 +435,16 @@ func fixupUnquotedDotenv(values map[string]string, dotenv string) string {
 	}
 
 	return strings.Join(entries, "\n")
+}
+
+// Prepare dotenv for saving and returns a marshalled string that can be save to the underlying data store
+// Instead of calling `godotenv.Write` directly, we need to save the file ourselves, so we can fixup any numeric values
+// that were incorrectly unquoted.
+func marshallDotEnv(env *Environment) (string, error) {
+	marshalled, err := godotenv.Marshal(env.dotenv)
+	if err != nil {
+		return "", fmt.Errorf("marshalling .env: %w", err)
+	}
+
+	return fixupUnquotedDotenv(env.dotenv, marshalled), nil
 }

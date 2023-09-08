@@ -7,6 +7,7 @@ import (
 	"io"
 	"os"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/repository"
@@ -415,6 +416,10 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 	container.RegisterSingleton(func(subManager *account.SubscriptionsManager) account.SubscriptionTenantResolver {
 		return subManager
+	})
+
+	container.RegisterSingleton(func(ctx context.Context, authManager *auth.Manager) (azcore.TokenCredential, error) {
+		return authManager.CredentialForCurrentUser(ctx, nil)
 	})
 
 	// Tools

@@ -49,7 +49,13 @@ func (p *TestProvider) Initialize(ctx context.Context, projectPath string, optio
 // An environment is considered to be in a provision-ready state if it contains both an AZURE_SUBSCRIPTION_ID and
 // AZURE_LOCATION value.
 func (t *TestProvider) EnsureEnv(ctx context.Context) error {
-	return EnsureSubscriptionAndLocation(ctx, t.envManager, t.env, t.prompters, func(_ account.Location) bool { return true })
+	return EnsureSubscriptionAndLocation(
+		ctx,
+		t.envManager,
+		t.env,
+		t.prompters,
+		func(_ account.Location) bool { return true },
+	)
 }
 
 func (p *TestProvider) State(ctx context.Context, options *StateOptions) (*StateResult, error) {

@@ -159,7 +159,7 @@ func EnsureSubscriptionAndLocation(
 	envManager environment.Manager,
 	env *environment.Environment,
 	prompter prompt.Prompter,
-	locationFiler prompt.LocationFilterPredicate) error {
+	locationFiler prompt.LocationFilterPredicate,
 ) error {
 	if env.GetSubscriptionId() == "" {
 		subscriptionId, err := prompter.PromptSubscription(ctx, "Select an Azure Subscription to use:")

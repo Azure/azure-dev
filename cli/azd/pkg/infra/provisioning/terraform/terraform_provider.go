@@ -115,7 +115,13 @@ func (t *TerraformProvider) Initialize(ctx context.Context, projectPath string, 
 // An environment is considered to be in a provision-ready state if it contains both an AZURE_SUBSCRIPTION_ID and
 // AZURE_LOCATION value.
 func (t *TerraformProvider) EnsureEnv(ctx context.Context) error {
-	return EnsureSubscriptionAndLocation(ctx, t.envManager, t.env, t.prompters, func(_ account.Location) bool { return true })
+	return EnsureSubscriptionAndLocation(
+		ctx,
+		t.envManager,
+		t.env,
+		t.prompters,
+		func(_ account.Location) bool { return true },
+	)
 }
 
 // Previews the infrastructure through terraform plan

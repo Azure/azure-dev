@@ -12,6 +12,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -40,7 +41,6 @@ import (
 	"github.com/benbjohnson/clock"
 	"github.com/drone/envsubst"
 	"golang.org/x/exp/maps"
-	"golang.org/x/exp/slices"
 )
 
 const DefaultModule = "main"
@@ -773,7 +773,7 @@ func (p *BicepProvider) findCompletedDeployments(
 		return nil, err
 	}
 
-	slices.SortFunc(deployments, func(x, y *armresources.DeploymentExtended) bool {
+	slices.SortFunc(deployments, func(x, y *armresources.DeploymentExtended) int {
 		return y.Properties.Timestamp.Compare(*x.Properties.Timestamp)
 	})
 

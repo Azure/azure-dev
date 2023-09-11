@@ -13,6 +13,7 @@ appinsightsstorage
 appplatform
 appservice
 arget
+argprint
 armapimanagement
 armappconfiguration
 armappplatform

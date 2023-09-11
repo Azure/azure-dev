@@ -7,9 +7,63 @@
 package exec
 
 import (
+	"context"
+	"errors"
+	"fmt"
 	"os/exec"
+	"path/filepath"
+	"strings"
 	"syscall"
 )
+
+// newCmdTree creates a `CmdTree`, optionally using a shell appropriate for windows
+// or POSIX environments.
+// An empty cmd parameter indicates "command list mode", which means that args are combined into a single command list,
+// joined with && operator.
+func newCmdTree(ctx context.Context, cmd string, args []string, useShell bool, interactive bool) (CmdTree, error) {
+	options := CmdTreeOptions{Interactive: interactive}
+
+	if !useShell {
+		if cmd == "" {
+			return CmdTree{}, errors.New("command must be provided if shell is not used")
+		} else {
+			return CmdTree{
+				CmdTreeOptions: options,
+				Cmd:            exec.CommandContext(ctx, cmd, args...),
+			}, nil
+		}
+	}
+
+	var shellName string
+	var shellCommandPrefix []string
+
+	shellName = filepath.Join("/", "bin", "sh")
+	shellCommandPrefix = []string{"-c"}
+
+	if cmd == "" {
+		args = []string{strings.Join(args, " && ")}
+	} else {
+		var cmdBuilder strings.Builder
+		cmdBuilder.WriteString(cmd)
+
+		for i := range args {
+			cmdBuilder.WriteString(" \"$")
+			fmt.Fprintf(&cmdBuilder, "%d", i)
+			cmdBuilder.WriteString("\"")
+		}
+
+		args = append([]string{cmdBuilder.String()}, args...)
+	}
+
+	var allArgs []string
+	allArgs = append(allArgs, shellCommandPrefix...)
+	allArgs = append(allArgs, args...)
+
+	return CmdTree{
+		CmdTreeOptions: options,
+		Cmd:            exec.Command(shellName, allArgs...),
+	}, nil
+}
 
 // CmdTree represents an `exec.Cmd` run inside a process group. When
 // `Kill` is called, SIGKILL is sent to the process group, which will
@@ -26,9 +80,11 @@ func (o *CmdTree) Start() error {
 	// wit a new process group (not as a child process) as it won't
 	// require stdin to interact with the user
 	if !o.Interactive {
-		o.Cmd.SysProcAttr = &syscall.SysProcAttr{
-			Setpgid: true,
+		if o.Cmd.SysProcAttr == nil {
+			o.Cmd.SysProcAttr = &syscall.SysProcAttr{}
 		}
+
+		o.Cmd.SysProcAttr.Setpgid = true
 	}
 
 	return o.Cmd.Start()

@@ -7,9 +7,14 @@
 package exec
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"log"
+	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 	"syscall"
 	"unsafe"
 
@@ -30,10 +35,51 @@ type winProcess struct {
 	hndl windows.Handle
 }
 
-func (o *CmdTree) Start() error {
-	o.SysProcAttr = &syscall.SysProcAttr{
-		CreationFlags: syscall.CREATE_NEW_PROCESS_GROUP,
+// newCmdTree creates a `CmdTree`, optionally using a shell appropriate for windows
+// or POSIX environments.
+// An empty cmd parameter indicates "command list mode", which means that args are combined into a single command list,
+// joined with && operator.
+func newCmdTree(ctx context.Context, cmd string, args []string, useShell bool, interactive bool) (CmdTree, error) {
+	options := CmdTreeOptions{Interactive: interactive}
+
+	if !useShell {
+		if cmd == "" {
+			return CmdTree{}, errors.New("command must be provided if shell is not used")
+		} else {
+			return CmdTree{
+				CmdTreeOptions: options,
+				Cmd:            exec.CommandContext(ctx, cmd, args...),
+			}, nil
+		}
 	}
+
+	var shellName string
+
+	dir := os.Getenv("SYSTEMROOT")
+	if dir == "" {
+		return CmdTree{}, errors.New("environment variable 'SYSTEMROOT' has no value")
+	}
+
+	shellName = filepath.Join(dir, "System32", "cmd.exe")
+
+	execCmd := exec.CommandContext(ctx, shellName)
+
+	execCmd.SysProcAttr = &syscall.SysProcAttr{
+		CmdLine: buildCmdCmdLine(cmd, args),
+	}
+
+	return CmdTree{
+		CmdTreeOptions: options,
+		Cmd:            execCmd,
+	}, nil
+}
+
+func (o *CmdTree) Start() error {
+	if o.SysProcAttr == nil {
+		o.SysProcAttr = &syscall.SysProcAttr{}
+	}
+
+	o.SysProcAttr.CreationFlags = syscall.CREATE_NEW_PROCESS_GROUP
 
 	err := o.Cmd.Start()
 	if err != nil {
@@ -78,4 +124,36 @@ func (o *CmdTree) Kill() {
 	if err != nil {
 		log.Printf("failed to terminate job object %d: %s\n", o.jobObject, err)
 	}
+}
+
+// buildCmdCmdLine builds the command line for`cmd.exe` to have it run command or list of commands. When cmd is non empty
+// it is treated as the command to run and args is the array of arguments for cmd. Otherwise, each arg is treated as an
+// individual command, and joined with &&.  Each individual command is quoted.
+func buildCmdCmdLine(cmd string, args []string) string {
+	var cmdLine strings.Builder
+	cmdLine.WriteString("/c ")
+	cmdLine.WriteString(`"`)
+	if cmd == "" {
+		for idx, arg := range args {
+			if idx != 0 {
+				cmdLine.WriteString("  &&  ")
+			}
+			cmdLine.WriteString(`"`)
+			cmdLine.WriteString(arg)
+			cmdLine.WriteString(`"`)
+		}
+	} else {
+		cmdLine.WriteString(`"`)
+		cmdLine.WriteString(cmd)
+		cmdLine.WriteString(`"`)
+		for _, arg := range args {
+			cmdLine.WriteString(" ")
+			cmdLine.WriteString(`"`)
+			cmdLine.WriteString(arg)
+			cmdLine.WriteString(`"`)
+		}
+	}
+	cmdLine.WriteString(`"`)
+
+	return cmdLine.String()
 }

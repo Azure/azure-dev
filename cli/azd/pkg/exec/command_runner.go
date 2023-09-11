@@ -9,7 +9,6 @@ import (
 	"log"
 	"os"
 	"os/exec"
-	"path/filepath"
 	"runtime"
 	"strings"
 )
@@ -305,69 +304,4 @@ func (l *logBuilder) Write(debug bool, sensitiveArgsData []string) {
 	}
 
 	log.Print(msg.String())
-}
-
-// newCmdTree creates a `CmdTree`, optionally using a shell appropriate for windows
-// or POSIX environments.
-// An empty cmd parameter indicates "command list mode", which means that args are combined into a single command list,
-// joined with && operator.
-func newCmdTree(ctx context.Context, cmd string, args []string, useShell bool, interactive bool) (CmdTree, error) {
-	options := CmdTreeOptions{Interactive: interactive}
-
-	if !useShell {
-		if cmd == "" {
-			return CmdTree{}, errors.New("command must be provided if shell is not used")
-		} else {
-			return CmdTree{
-				CmdTreeOptions: options,
-				Cmd:            exec.CommandContext(ctx, cmd, args...),
-			}, nil
-		}
-	}
-
-	var shellName string
-	var shellCommandPrefix string
-
-	if runtime.GOOS == "windows" {
-		dir := os.Getenv("SYSTEMROOT")
-		if dir == "" {
-			return CmdTree{}, errors.New("environment variable 'SYSTEMROOT' has no value")
-		}
-
-		shellName = filepath.Join(dir, "System32", "cmd.exe")
-		shellCommandPrefix = "/c"
-
-		if cmd == "" {
-			args = []string{strings.Join(args, " && ")}
-		} else {
-			args = append([]string{cmd}, args...)
-		}
-	} else {
-		shellName = filepath.Join("/", "bin", "sh")
-		shellCommandPrefix = "-c"
-
-		if cmd == "" {
-			args = []string{strings.Join(args, " && ")}
-		} else {
-			var cmdBuilder strings.Builder
-			cmdBuilder.WriteString(cmd)
-
-			for i := range args {
-				cmdBuilder.WriteString(" \"$")
-				fmt.Fprintf(&cmdBuilder, "%d", i)
-				cmdBuilder.WriteString("\"")
-			}
-
-			args = append([]string{cmdBuilder.String()}, args...)
-		}
-	}
-
-	var allArgs []string
-	allArgs = append(allArgs, shellCommandPrefix)
-	allArgs = append(allArgs, args...)
-
-	return CmdTree{
-		CmdTreeOptions: options,
-		Cmd:            exec.Command(shellName, allArgs...),
-	}, nil
 }

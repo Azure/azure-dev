@@ -6,6 +6,7 @@ trigger:
 
 # Azure Pipelines workflow to deploy to Azure using azd
 # To configure required secrets for connecting to Azure, simply run `azd pipeline config --provider azdo`
+# Task "Install azd" needs to install setup-azd extension for azdo - https://marketplace.visualstudio.com/items?itemName=ms-azuretools.azd
 
 pool:
   vmImage: ubuntu-latest

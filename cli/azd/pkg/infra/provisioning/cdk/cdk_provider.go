@@ -75,19 +75,20 @@ func (p *CdkProvider) generate(ctx context.Context, project appdetect.Project) e
 func (p *CdkProvider) Initialize(ctx context.Context, projectPath string, options Options) error {
 	infraPath := filepath.Join(projectPath, options.Path)
 
-	var cdkProjects []appdetect.Project
-	if !options.HideOutput {
-		msg := "Detecting cdk language"
-		p.console.ShowSpinner(ctx, msg, input.Step)
-		projects, err := appdetect.Detect(infraPath)
-		if err == nil && len(cdkProjects) == 1 {
-			msg = fmt.Sprintf("%s (%s)", msg, cdkProjects[0].Language)
-		}
-		p.console.StopSpinner(ctx, msg, input.GetStepResultFormat(err))
-		if err != nil {
-			return fmt.Errorf("detecting cdk language: %w", err)
-		}
-		cdkProjects = projects
+	if options.HideOutput {
+		return nil
+	}
+
+	msg := "Detecting cdk language"
+	p.console.ShowSpinner(ctx, msg, input.Step)
+
+	cdkProjects, err := appdetect.Detect(infraPath)
+	if err == nil && len(cdkProjects) == 1 {
+		msg = fmt.Sprintf("%s (%s)", msg, cdkProjects[0].Language)
+	}
+	p.console.StopSpinner(ctx, msg, input.GetStepResultFormat(err))
+	if err != nil {
+		return fmt.Errorf("detecting cdk language: %w", err)
 	}
 
 	if len(cdkProjects) > 1 {
@@ -101,10 +102,6 @@ func (p *CdkProvider) Initialize(ctx context.Context, projectPath string, option
 
 	if err := tools.EnsureInstalled(ctx, p.externalTools(cdkProject)...); err != nil {
 		return err
-	}
-
-	if options.HideOutput {
-		return nil
 	}
 
 	if err := p.generate(ctx, cdkProject); err != nil {

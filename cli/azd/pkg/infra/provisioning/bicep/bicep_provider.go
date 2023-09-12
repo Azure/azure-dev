@@ -1391,7 +1391,8 @@ func (p *BicepProvider) loadParameters(ctx context.Context) (map[string]azure.Ar
 	paramFilePath := filepath.Join(p.projectPath, p.options.Path, parametersFilename)
 	parametersBytes, err := os.ReadFile(paramFilePath)
 	if err != nil {
-		return nil, fmt.Errorf("reading parameters.json: %w", err)
+		log.Printf("no parameters file '%s' found. error: %v. Ignoring parameters", paramFilePath, err)
+		return map[string]azure.ArmParameterValue{}, nil
 	}
 
 	principalId, err := p.curPrincipal.CurrentPrincipalId(ctx)

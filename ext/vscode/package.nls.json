@@ -20,6 +20,8 @@
     "azure-dev.commands.cli.login.title": "Sign in with Azure Developer CLI",
     "azure-dev.commands.azureWorkspace.revealAzureResource.title": "Show Azure Resource",
     "azure-dev.commands.azureWorkspace.revealAzureResourceGroup.title": "Show Azure Resource Group",
+    "azure-dev.commands.enableDevCenterMode.title": "Enable Dev Center Mode (config set devCenterMode true)",
+    "azure-dev.commands.disableDevCenterMode.title": "Disable Dev Center Mode (config set devCenterMode false)",
     "azure-dev.commands.getDotEnvFilePath.title": "Get Azure developer environment's .env file path",
 
     "azure-dev.maximumAppsToDisplay.description": "Maximum number of Azure Developer CLI apps to display in the Workspace Resource view",

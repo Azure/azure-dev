@@ -3,6 +3,7 @@
 
 import { IActionContext, CommandCallback, registerCommand as registerCommandAzUI } from '@microsoft/vscode-azext-utils';
 
+import ext from '../ext';
 import { init } from './init';
 import { provision } from './provision';
 import { deploy } from './deploy';
@@ -17,7 +18,7 @@ import { installCli } from './installCli';
 import { loginCli } from './loginCli';
 import { getDotEnvFilePath } from './getDotEnvFilePath';
 import { revealAzureResource, revealAzureResourceGroup } from './azureWorkspace/reveal';
-import ext from '../ext';
+import { disableDevCenterMode, enableDevCenterMode } from './devCenterMode';
 
 export function registerCommands(): void {
     registerActivityCommand('azure-dev.commands.cli.init', init);
@@ -40,6 +41,9 @@ export function registerCommands(): void {
 
     registerActivityCommand('azure-dev.commands.azureWorkspace.revealAzureResource', revealAzureResource);
     registerActivityCommand('azure-dev.commands.azureWorkspace.revealAzureResourceGroup', revealAzureResourceGroup);
+
+    registerActivityCommand('azure-dev.commands.enableDevCenterMode', enableDevCenterMode);
+    registerActivityCommand('azure-dev.commands.disableDevCenterMode', disableDevCenterMode);
 
     // getDotEnvFilePath() is a utility command that does not deserve "user activity" designation.
     registerCommandAzUI('azure-dev.commands.getDotEnvFilePath', getDotEnvFilePath);

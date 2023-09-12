@@ -1,0 +1,138 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
+package cdk
+
+import (
+	"context"
+	"fmt"
+	"path/filepath"
+
+	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
+	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	bicepProvider "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
+	"github.com/benbjohnson/clock"
+	"golang.org/x/exp/slices"
+)
+
+type CdkProvider struct {
+	console       input.Console
+	dotNetCli     dotnet.DotNetCli
+	bicepProvider Provider
+}
+
+func (p *CdkProvider) Name() string {
+	return "Cdk"
+}
+
+func isSupported(project appdetect.Project) bool {
+	return slices.Contains([]appdetect.Language{
+		appdetect.DotNet,
+	}, project.Language)
+}
+
+func (p *CdkProvider) externalTools(project appdetect.Project) (tools []tools.ExternalTool) {
+	switch project.Language {
+	case appdetect.DotNet:
+		tools = append(tools, p.dotNetCli)
+	default:
+	}
+	return tools
+}
+
+func (p *CdkProvider) generate(ctx context.Context, project appdetect.Project) error {
+	cdkOutput := filepath.Join(project.Path, "out")
+
+	switch project.Language {
+	case appdetect.DotNet:
+		return p.dotNetCli.Run(ctx, project.Path, []string{cdkOutput})
+	default:
+	}
+	return fmt.Errorf("cdk - not implemented.")
+}
+
+func (p *CdkProvider) Initialize(ctx context.Context, projectPath string, options Options) error {
+	infraPath := filepath.Join(projectPath, options.Path)
+
+	msg := "Detecting cdk language"
+	p.console.ShowSpinner(ctx, msg, input.Step)
+	cdkProjects, err := appdetect.Detect(infraPath)
+	if err == nil && len(cdkProjects) == 1 {
+		msg = fmt.Sprintf("%s (%s)", msg, cdkProjects[0].Language)
+	}
+	p.console.StopSpinner(ctx, msg, input.GetStepResultFormat(err))
+
+	if err != nil {
+		return fmt.Errorf("detecting cdk language: %w", err)
+	}
+	if len(cdkProjects) > 1 {
+		return fmt.Errorf("detecting cdk language: found more than one project")
+	}
+
+	cdkProject := cdkProjects[0]
+	if !isSupported(cdkProject) {
+		return fmt.Errorf("cdk provider: language is not supported")
+	}
+
+	if err := tools.EnsureInstalled(ctx, p.externalTools(cdkProject)...); err != nil {
+		return err
+	}
+
+	if err := p.generate(ctx, cdkProject); err != nil {
+		return fmt.Errorf("generating infrastructure as code from cdk: %w", err)
+	}
+	options.Path = filepath.Join(options.Path, "out")
+	return p.bicepProvider.Initialize(ctx, projectPath, options)
+}
+
+func (p *CdkProvider) State(ctx context.Context, options *StateOptions) (*StateResult, error) {
+	return p.bicepProvider.State(ctx, options)
+}
+
+func (p *CdkProvider) Deploy(ctx context.Context) (*DeployResult, error) {
+	return p.bicepProvider.Deploy(ctx)
+}
+
+func (p *CdkProvider) Preview(ctx context.Context) (*DeployPreviewResult, error) {
+	return p.bicepProvider.Preview(ctx)
+}
+
+func (p *CdkProvider) Destroy(ctx context.Context, options DestroyOptions) (*DestroyResult, error) {
+	return p.bicepProvider.Destroy(ctx, options)
+}
+
+func (p *CdkProvider) EnsureEnv(ctx context.Context) error {
+	return p.bicepProvider.EnsureEnv(ctx)
+}
+
+func NewCdkProvider(bicepCli bicep.BicepCli,
+	azCli azcli.AzCli,
+	deploymentsService azapi.Deployments,
+	deploymentOperations azapi.DeploymentOperations,
+	env *environment.Environment,
+	console input.Console,
+	prompters prompt.Prompter,
+	curPrincipal CurrentPrincipalIdProvider,
+	alphaFeatureManager *alpha.FeatureManager,
+	clock clock.Clock,
+	dotNetCli dotnet.DotNetCli) Provider {
+	return &CdkProvider{
+		bicepProvider: bicepProvider.NewBicepProvider(
+			bicepCli,
+			azCli,
+			deploymentsService,
+			deploymentOperations, env, console, prompters, curPrincipal, alphaFeatureManager, clock,
+		),
+		console:   console,
+		dotNetCli: dotNetCli,
+	}
+}

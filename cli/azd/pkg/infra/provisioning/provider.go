@@ -15,6 +15,7 @@ const (
 	Terraform ProviderKind = "terraform"
 	Pulumi    ProviderKind = "pulumi"
 	Test      ProviderKind = "test"
+	Cdk       ProviderKind = "cdk"
 )
 
 type Options struct {

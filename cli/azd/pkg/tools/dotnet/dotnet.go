@@ -18,6 +18,7 @@ import (
 type DotNetCli interface {
 	tools.ExternalTool
 	Restore(ctx context.Context, project string) error
+	Run(ctx context.Context, project string, args []string) error
 	Build(ctx context.Context, project string, configuration string, output string) error
 	Publish(ctx context.Context, project string, configuration string, output string) error
 	InitializeSecret(ctx context.Context, project string) error
@@ -72,6 +73,18 @@ func (cli *dotNetCli) Restore(ctx context.Context, project string) error {
 	_, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
 		return fmt.Errorf("dotnet restore on project '%s' failed: %w", project, err)
+	}
+	return nil
+}
+
+func (cli *dotNetCli) Run(ctx context.Context, project string, args []string) error {
+	runArgs := exec.NewRunArgs("dotnet", "run", "--project", project)
+	if args != nil {
+		runArgs.Args = append(runArgs.Args, args...)
+	}
+	_, err := cli.commandRunner.Run(ctx, runArgs)
+	if err != nil {
+		return fmt.Errorf("dotnet run on project '%s' failed: %w", project, err)
 	}
 	return nil
 }

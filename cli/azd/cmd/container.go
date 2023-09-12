@@ -21,6 +21,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	infraBicep "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/cdk"
 	infraTerraform "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/terraform"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
@@ -325,6 +326,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	provisionProviderMap := map[provisioning.ProviderKind]any{
 		provisioning.Bicep:     infraBicep.NewBicepProvider,
 		provisioning.Terraform: infraTerraform.NewTerraformProvider,
+		provisioning.Cdk:       cdk.NewCdkProvider,
 	}
 
 	for provider, constructor := range provisionProviderMap {

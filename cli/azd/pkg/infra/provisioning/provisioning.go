@@ -81,6 +81,8 @@ func ParseProvider(kind ProviderKind) (ProviderKind, error) {
 	switch kind {
 	case "":
 		return Bicep, nil
+	case "cdk":
+		return Cdk, nil
 	// For the time being we need to include `Test` here for the unit tests to work as expected
 	// App builds will pass this test but fail resolving the provider since `Test` won't be registered in the container
 	case Bicep, Terraform, Test:

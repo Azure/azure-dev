@@ -111,6 +111,7 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			output.WithWarningFormat("WARNING: The '--service' flag is deprecated and will be removed in a future release."))
 	}
 
+	u.projectConfig.Infra.HideOutput = true
 	err := u.provisioningManager.Initialize(ctx, u.projectConfig.Path, u.projectConfig.Infra)
 	if err != nil {
 		return nil, err

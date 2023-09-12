@@ -18,7 +18,7 @@ import (
 type DotNetCli interface {
 	tools.ExternalTool
 	Restore(ctx context.Context, project string) error
-	Run(ctx context.Context, project string, args []string) error
+	Run(ctx context.Context, project string, args []string, env []string) error
 	Build(ctx context.Context, project string, configuration string, output string) error
 	Publish(ctx context.Context, project string, configuration string, output string) error
 	InitializeSecret(ctx context.Context, project string) error
@@ -77,8 +77,8 @@ func (cli *dotNetCli) Restore(ctx context.Context, project string) error {
 	return nil
 }
 
-func (cli *dotNetCli) Run(ctx context.Context, project string, args []string) error {
-	runArgs := exec.NewRunArgs("dotnet", "run", "--project", project)
+func (cli *dotNetCli) Run(ctx context.Context, project string, args []string, env []string) error {
+	runArgs := exec.NewRunArgs("dotnet", "run", "--project", project).WithEnv(env)
 	if args != nil {
 		runArgs.Args = append(runArgs.Args, args...)
 	}

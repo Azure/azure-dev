@@ -28,6 +28,8 @@ type CdkProvider struct {
 	console       input.Console
 	dotNetCli     dotnet.DotNetCli
 	bicepProvider Provider
+	env           *environment.Environment
+	curPrincipal  CurrentPrincipalIdProvider
 }
 
 func (p *CdkProvider) Name() string {
@@ -51,10 +53,20 @@ func (p *CdkProvider) externalTools(project appdetect.Project) (tools []tools.Ex
 
 func (p *CdkProvider) generate(ctx context.Context, project appdetect.Project) error {
 	cdkOutput := filepath.Join(project.Path, "out")
+	azdEnv := p.env.Environ()
+
+	// append principalID (not stored to .env by default)
+	if _, exists := p.env.LookupEnv(environment.PrincipalIdEnvVarName); !exists {
+		currentPrincipalId, err := p.curPrincipal.CurrentPrincipalId(ctx)
+		if err != nil {
+			return fmt.Errorf("fetching current principal id for cdk: %w", err)
+		}
+		azdEnv = append(azdEnv, fmt.Sprintf("%s=%s", environment.PrincipalIdEnvVarName, currentPrincipalId))
+	}
 
 	switch project.Language {
 	case appdetect.DotNet:
-		return p.dotNetCli.Run(ctx, project.Path, []string{cdkOutput})
+		return p.dotNetCli.Run(ctx, project.Path, []string{cdkOutput}, azdEnv)
 	default:
 	}
 	return fmt.Errorf("cdk - not implemented.")
@@ -63,17 +75,21 @@ func (p *CdkProvider) generate(ctx context.Context, project appdetect.Project) e
 func (p *CdkProvider) Initialize(ctx context.Context, projectPath string, options Options) error {
 	infraPath := filepath.Join(projectPath, options.Path)
 
-	msg := "Detecting cdk language"
-	p.console.ShowSpinner(ctx, msg, input.Step)
-	cdkProjects, err := appdetect.Detect(infraPath)
-	if err == nil && len(cdkProjects) == 1 {
-		msg = fmt.Sprintf("%s (%s)", msg, cdkProjects[0].Language)
+	var cdkProjects []appdetect.Project
+	if !options.HideOutput {
+		msg := "Detecting cdk language"
+		p.console.ShowSpinner(ctx, msg, input.Step)
+		projects, err := appdetect.Detect(infraPath)
+		if err == nil && len(cdkProjects) == 1 {
+			msg = fmt.Sprintf("%s (%s)", msg, cdkProjects[0].Language)
+		}
+		p.console.StopSpinner(ctx, msg, input.GetStepResultFormat(err))
+		if err != nil {
+			return fmt.Errorf("detecting cdk language: %w", err)
+		}
+		cdkProjects = projects
 	}
-	p.console.StopSpinner(ctx, msg, input.GetStepResultFormat(err))
 
-	if err != nil {
-		return fmt.Errorf("detecting cdk language: %w", err)
-	}
 	if len(cdkProjects) > 1 {
 		return fmt.Errorf("detecting cdk language: found more than one project")
 	}
@@ -85,6 +101,10 @@ func (p *CdkProvider) Initialize(ctx context.Context, projectPath string, option
 
 	if err := tools.EnsureInstalled(ctx, p.externalTools(cdkProject)...); err != nil {
 		return err
+	}
+
+	if options.HideOutput {
+		return nil
 	}
 
 	if err := p.generate(ctx, cdkProject); err != nil {
@@ -132,7 +152,9 @@ func NewCdkProvider(bicepCli bicep.BicepCli,
 			deploymentsService,
 			deploymentOperations, env, console, prompters, curPrincipal, alphaFeatureManager, clock,
 		),
-		console:   console,
-		dotNetCli: dotNetCli,
+		console:      console,
+		dotNetCli:    dotNetCli,
+		env:          env,
+		curPrincipal: curPrincipal,
 	}
 }

@@ -19,9 +19,10 @@ const (
 )
 
 type Options struct {
-	Provider ProviderKind `yaml:"provider"`
-	Path     string       `yaml:"path"`
-	Module   string       `yaml:"module"`
+	Provider   ProviderKind `yaml:"provider"`
+	Path       string       `yaml:"path"`
+	Module     string       `yaml:"module"`
+	HideOutput bool         `yaml:"-"`
 }
 
 type DeployResult struct {

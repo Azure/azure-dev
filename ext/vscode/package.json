@@ -104,6 +104,11 @@
             },
             {
                 "category": "%azure-dev.commands_category%",
+                "command": "azure-dev.commands.cli.env-list",
+                "title": "%azure-dev.commands.cli.env-list.title%"
+            },
+            {
+                "category": "%azure-dev.commands_category%",
                 "command": "azure-dev.commands.cli.pipeline-config",
                 "title": "%azure-dev.commands.cli.pipeline-config.title%"
             },
@@ -209,6 +214,11 @@
                     "when": "resourceFilename =~ /azure.yaml/i",
                     "command": "azure-dev.commands.cli.env-refresh",
                     "group": "20env@30"
+                },
+                {
+                    "when": "resourceFilename =~ /azure.yaml/i",
+                    "command": "azure-dev.commands.cli.env-list",
+                    "group": "20env@40"
                 },
                 {
                     "when": "resourceFilename =~ /azure.yaml/i",

@@ -1,5 +1,5 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
-// Licensed under the MIT License. 
+// Licensed under the MIT License.
 
 import { IActionContext, CommandCallback, registerCommand as registerCommandAzUI } from '@microsoft/vscode-azext-utils';
 
@@ -11,7 +11,7 @@ import { packageCli } from './packageCli';
 import { up } from './up';
 import { down } from './down';
 import { monitor } from './monitor';
-import { selectEnvironment, newEnvironment, refreshEnvironment, editEnvironment, deleteEnvironment } from './env';
+import { selectEnvironment, newEnvironment, refreshEnvironment, editEnvironment, deleteEnvironment, listEnvironments } from './env';
 import { pipelineConfig } from './pipeline';
 import { installCli } from './installCli';
 import { loginCli } from './loginCli';
@@ -33,6 +33,7 @@ export function registerCommands(): void {
     registerActivityCommand('azure-dev.commands.cli.env-select', selectEnvironment);
     registerActivityCommand('azure-dev.commands.cli.env-new', newEnvironment);
     registerActivityCommand('azure-dev.commands.cli.env-refresh', refreshEnvironment);
+    registerActivityCommand('azure-dev.commands.cli.env-list', listEnvironments);
     registerActivityCommand('azure-dev.commands.cli.pipeline-config', pipelineConfig);
     registerActivityCommand('azure-dev.commands.cli.install', installCli);
     registerActivityCommand('azure-dev.commands.cli.login', loginCli);

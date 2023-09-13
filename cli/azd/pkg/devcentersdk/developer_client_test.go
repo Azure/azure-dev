@@ -16,9 +16,10 @@ import (
 
 func Test_DevCenter_Client(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
+	fileConfigManager := config.NewFileConfigManager(config.NewManager())
 	authManager, err := auth.NewManager(
-		config.NewManager(),
-		config.NewUserConfigManager(),
+		fileConfigManager,
+		config.NewUserConfigManager(fileConfigManager),
 		http.DefaultClient,
 		mockContext.Console,
 	)
@@ -120,6 +121,7 @@ func Test_DevCenter_Client(t *testing.T) {
 	require.NotEmpty(t, environmentList)
 
 	// Get environments by user
+
 	userEnvironmentList, err := projectClient.
 		EnvironmentsByMe().
 		Get(*mockContext.Context)
@@ -135,6 +137,19 @@ func Test_DevCenter_Client(t *testing.T) {
 	}
 
 	envName := fmt.Sprintf("env-%d", time.Now().Unix())
+
+	err = projectClient.
+		EnvironmentByName(envName).
+		Put(*mockContext.Context, envSpec)
+
+	require.NoError(t, err)
+
+	// Delete environment
+	err = projectClient.
+		EnvironmentByName(envName).
+		Delete(*mockContext.Context)
+
+	require.NoError(t, err)
 
 	err = projectClient.
 		EnvironmentByName(envName).

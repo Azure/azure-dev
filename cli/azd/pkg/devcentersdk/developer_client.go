@@ -27,6 +27,7 @@ type devCenterClient struct {
 	options    *azcore.ClientOptions
 	pipeline   runtime.Pipeline
 	cache      map[string]interface{}
+	endpoint   string
 }
 
 func NewDevCenterClient(

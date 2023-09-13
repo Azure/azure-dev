@@ -12,19 +12,17 @@ import (
 // Projects
 type ProjectListRequestBuilder struct {
 	*EntityListRequestBuilder[ProjectListRequestBuilder]
-	endpoint string
 }
 
-func NewProjectListRequestBuilder(c *devCenterClient, endpoint string) *ProjectListRequestBuilder {
+func NewProjectListRequestBuilder(c *devCenterClient) *ProjectListRequestBuilder {
 	builder := &ProjectListRequestBuilder{}
 	builder.EntityListRequestBuilder = newEntityListRequestBuilder(builder, c)
-	builder.endpoint = endpoint
 
 	return builder
 }
 
 func (c *ProjectListRequestBuilder) Get(ctx context.Context) (*ProjectListResponse, error) {
-	req, err := c.createRequest(ctx, http.MethodGet, fmt.Sprintf("%s/projects", c.endpoint))
+	req, err := c.createRequest(ctx, http.MethodGet, "projects")
 	if err != nil {
 		return nil, fmt.Errorf("failed creating request: %w", err)
 	}
@@ -43,35 +41,48 @@ func (c *ProjectListRequestBuilder) Get(ctx context.Context) (*ProjectListRespon
 
 type ProjectItemRequestBuilder struct {
 	*EntityItemRequestBuilder[ProjectItemRequestBuilder]
-	endpoint string
 }
 
-func NewProjectItemRequestBuilder(c *devCenterClient, endpoint string, projectName string) *ProjectItemRequestBuilder {
+func NewProjectItemRequestBuilder(c *devCenterClient, projectName string) *ProjectItemRequestBuilder {
 	builder := &ProjectItemRequestBuilder{}
 	builder.EntityItemRequestBuilder = newEntityItemRequestBuilder(builder, c, projectName)
-	builder.endpoint = endpoint
 
 	return builder
 }
 
 func (c *ProjectItemRequestBuilder) Catalogs() *CatalogListRequestBuilder {
-	return NewCatalogListRequestBuilder(c.client, c.endpoint, c.id)
+	return NewCatalogListRequestBuilder(c.client, c.id)
 }
 
-func (c *ProjectItemRequestBuilder) CatalogByName(name string) *CatalogItemRequestBuilder {
-	return NewCatalogItemRequestBuilder(c.client, c.endpoint, c.id, name)
+func (c *ProjectItemRequestBuilder) CatalogByName(catalogName string) *CatalogItemRequestBuilder {
+	return NewCatalogItemRequestBuilder(c.client, c.id, catalogName)
 }
 
 func (c *ProjectItemRequestBuilder) EnvironmentTypes() *EnvironmentTypeListRequestBuilder {
-	return NewEnvironmentTypeListRequestBuilder(c.client, c.endpoint, c.id)
+	return NewEnvironmentTypeListRequestBuilder(c.client, c.id)
 }
 
 func (c *ProjectItemRequestBuilder) EnvironmentDefinitions() *EnvironmentDefinitionListRequestBuilder {
-	return NewEnvironmentDefinitionListRequestBuilder(c.client, c.endpoint, c.id)
+	return NewEnvironmentDefinitionListRequestBuilder(c.client, c.id)
+}
+
+func (c *ProjectItemRequestBuilder) Environments() *EnvironmentListRequestBuilder {
+	return NewEnvironmentListRequestBuilder(c.client, c.id)
+}
+
+func (c *ProjectItemRequestBuilder) EnvironmentsByUser(userId string) *EnvironmentListRequestBuilder {
+	builder := NewEnvironmentListRequestBuilder(c.client, c.id)
+	builder.userId = userId
+
+	return builder
+}
+
+func (c *ProjectItemRequestBuilder) EnvironmentByName(environmentName string) *EnvironmentItemRequestBuilder {
+	return NewEnvironmentItemRequestBuilder(c.client, c.id, environmentName)
 }
 
 func (c *ProjectItemRequestBuilder) Get(ctx context.Context) (*Project, error) {
-	req, err := runtime.NewRequest(ctx, http.MethodGet, fmt.Sprintf("%s/projects/%s", c.endpoint, c.id))
+	req, err := c.client.createRequest(ctx, http.MethodGet, fmt.Sprintf("projects/%s", c.id))
 	if err != nil {
 		return nil, fmt.Errorf("failed creating request: %w", err)
 	}

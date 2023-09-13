@@ -2,13 +2,15 @@ package devcentersdk
 
 import (
 	"context"
+	"fmt"
 	"net/http"
-	"slices"
 	"testing"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
@@ -21,6 +23,7 @@ func Test_DevCenter_Client(t *testing.T) {
 		http.DefaultClient,
 		mockContext.Console,
 	)
+	require.NoError(t, err)
 
 	credentials, err := authManager.CredentialForCurrentUser(*mockContext.Context, nil)
 	require.NoError(t, err)
@@ -40,33 +43,29 @@ func Test_DevCenter_Client(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, devCenterList)
 
-	index := slices.IndexFunc(devCenterList.Value, func(devCenter *DevCenter) bool {
-		return devCenter.Name == "wabrez-devcenter"
-	})
-	matchingDevCenter := devCenterList.Value[index]
+	devCenterName := "wabrez-devcenter"
+	devCenterClient := client.DevCenterByName(devCenterName)
 
 	// Get project list
-	projectList, err := client.
-		DevCenterByEndpoint(matchingDevCenter.ServiceUri).
+	projectList, err := devCenterClient.
 		Projects().
 		Get(*mockContext.Context)
 
 	require.NoError(t, err)
 	require.NotEmpty(t, projectList)
 
+	projectName := "Project1"
+	projectClient := devCenterClient.ProjectByName(projectName)
+
 	// Get project by name
-	project, err := client.
-		DevCenterByEndpoint(devCenterList.Value[0].Id).
-		ProjectByName(projectList.Value[0].Name).
+	project, err := projectClient.
 		Get(*mockContext.Context)
 
 	require.NoError(t, err)
 	require.NotNil(t, project)
 
 	// Get Catalog List
-	catalogList, err := client.
-		DevCenterByEndpoint(devCenterList.Value[0].Id).
-		ProjectByName(projectList.Value[0].Name).
+	catalogList, err := projectClient.
 		Catalogs().
 		Get(*mockContext.Context)
 
@@ -74,19 +73,15 @@ func Test_DevCenter_Client(t *testing.T) {
 	require.NotEmpty(t, catalogList)
 
 	// Get Catalog by name
-	catalog, err := client.
-		DevCenterByEndpoint(devCenterList.Value[0].Id).
-		ProjectByName(projectList.Value[0].Name).
-		CatalogByName(catalogList.Value[0].Name).
+	catalog, err := projectClient.
+		CatalogByName("SampleCatalog").
 		Get(*mockContext.Context)
 
 	require.NoError(t, err)
 	require.NotNil(t, catalog)
 
 	// Get Environment Type List
-	environmentTypeList, err := client.
-		DevCenterByEndpoint(devCenterList.Value[0].Id).
-		ProjectByName(projectList.Value[0].Name).
+	environmentTypeList, err := projectClient.
 		EnvironmentTypes().
 		Get(*mockContext.Context)
 
@@ -94,12 +89,61 @@ func Test_DevCenter_Client(t *testing.T) {
 	require.NotEmpty(t, environmentTypeList)
 
 	// Get Environment Definition List
-	environmentDefinitionList, err := client.
-		DevCenterByEndpoint(devCenterList.Value[0].Id).
-		ProjectByName(projectList.Value[0].Name).
+	environmentDefinitionList, err := projectClient.
 		EnvironmentDefinitions().
 		Get(*mockContext.Context)
 
 	require.NoError(t, err)
 	require.NotEmpty(t, environmentDefinitionList)
+
+	// Get environment list
+	environmentList, err := projectClient.
+		Environments().
+		Get(*mockContext.Context)
+
+	require.NoError(t, err)
+	require.NotEmpty(t, environmentList)
+
+	// Get environments by user
+	graphOptions := azsdk.
+		DefaultClientOptionsBuilder(*mockContext.Context, http.DefaultClient, "azd").
+		BuildCoreClientOptions()
+
+	// Get current user profile
+	graphClient, err := graphsdk.NewGraphClient(credentials, graphOptions)
+	require.NoError(t, err)
+
+	userProfile, err := graphClient.Me().Get(*mockContext.Context)
+	require.NoError(t, err)
+	require.NotNil(t, userProfile)
+
+	// Get environments by user
+	userEnvironmentList, err := projectClient.
+		EnvironmentsByUser(userProfile.Id).
+		Get(*mockContext.Context)
+
+	require.NoError(t, err)
+	require.NotEmpty(t, userEnvironmentList)
+
+	// Create environment
+	envSpec := EnvironmentSpec{
+		CatalogName:               "SampleCatalog",
+		EnvironmentDefinitionName: "Sandbox",
+		EnvironmentType:           "Dev",
+	}
+
+	envName := fmt.Sprintf("env-%d", time.Now().Unix())
+
+	err = projectClient.
+		EnvironmentByName(envName).
+		Put(*mockContext.Context, envSpec)
+
+	require.NoError(t, err)
+
+	// Delete environment
+	err = projectClient.
+		EnvironmentByName(envName).
+		Delete(*mockContext.Context)
+
+	require.NoError(t, err)
 }

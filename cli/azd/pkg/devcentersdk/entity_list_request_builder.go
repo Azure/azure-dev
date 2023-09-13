@@ -5,7 +5,6 @@ import (
 	"fmt"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 )
 
 type entityListRequestInfo struct {
@@ -17,7 +16,6 @@ type EntityListRequestBuilder[T any] struct {
 	builder     *T
 	client      *devCenterClient
 	requestInfo *entityListRequestInfo
-	baseUrl     string
 }
 
 // Creates a new EntityListRequestBuilder that provides common functionality for list operations
@@ -34,9 +32,9 @@ func newEntityListRequestBuilder[T any](builder *T, client *devCenterClient) *En
 func (b *EntityListRequestBuilder[T]) createRequest(
 	ctx context.Context,
 	method string,
-	rawUrl string,
+	path string,
 ) (*policy.Request, error) {
-	req, err := runtime.NewRequest(ctx, method, rawUrl)
+	req, err := b.client.createRequest(ctx, method, path)
 	if err != nil {
 		return nil, err
 	}

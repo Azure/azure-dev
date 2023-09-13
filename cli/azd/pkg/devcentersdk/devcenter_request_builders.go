@@ -16,11 +16,10 @@ import (
 // DevCenters
 type DevCenterListRequestBuilder struct {
 	*EntityListRequestBuilder[DevCenterListRequestBuilder]
-	endpoint string
 }
 
 func (c *DevCenterListRequestBuilder) Projects() *ProjectListRequestBuilder {
-	return NewProjectListRequestBuilder(c.client, c.endpoint)
+	return NewProjectListRequestBuilder(c.client)
 }
 
 func NewDevCenterListRequestBuilder(c *devCenterClient) *DevCenterListRequestBuilder {
@@ -80,11 +79,7 @@ func (c *DevCenterListRequestBuilder) Get(ctx context.Context) (*DevCenterListRe
 		uri = strings.TrimSuffix(uri, "/")
 
 		exists := slices.ContainsFunc(devCenters, func(devCenter *DevCenter) bool {
-			if devCenter.ServiceUri == uri {
-				return true
-			}
-
-			return false
+			return devCenter.ServiceUri == uri
 		})
 
 		if !exists {
@@ -108,19 +103,20 @@ type DevCenterItemRequestBuilder struct {
 	*EntityItemRequestBuilder[DevCenterItemRequestBuilder]
 }
 
-func NewDevCenterItemRequestBuilder(c *devCenterClient, id string) *DevCenterItemRequestBuilder {
+func NewDevCenterItemRequestBuilder(c *devCenterClient, devCenter *DevCenter) *DevCenterItemRequestBuilder {
 	builder := &DevCenterItemRequestBuilder{}
-	builder.EntityItemRequestBuilder = newEntityItemRequestBuilder(builder, c, id)
+	builder.EntityItemRequestBuilder = newEntityItemRequestBuilder(builder, c, "")
+	c.devCenter = devCenter
 
 	return builder
 }
 
 func (c *DevCenterItemRequestBuilder) Projects() *ProjectListRequestBuilder {
-	return NewProjectListRequestBuilder(c.client, c.id)
+	return NewProjectListRequestBuilder(c.client)
 }
 
-func (c *DevCenterItemRequestBuilder) ProjectByName(id string) *ProjectItemRequestBuilder {
-	builder := NewProjectItemRequestBuilder(c.client, c.id, id)
+func (c *DevCenterItemRequestBuilder) ProjectByName(projectName string) *ProjectItemRequestBuilder {
+	builder := NewProjectItemRequestBuilder(c.client, projectName)
 
 	return builder
 }

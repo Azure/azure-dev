@@ -12,21 +12,19 @@ import (
 // Catalogs
 type CatalogListRequestBuilder struct {
 	*EntityListRequestBuilder[CatalogListRequestBuilder]
-	endpoint    string
 	projectName string
 }
 
-func NewCatalogListRequestBuilder(c *devCenterClient, endpoint string, projectName string) *CatalogListRequestBuilder {
+func NewCatalogListRequestBuilder(c *devCenterClient, projectName string) *CatalogListRequestBuilder {
 	builder := &CatalogListRequestBuilder{}
 	builder.EntityListRequestBuilder = newEntityListRequestBuilder(builder, c)
-	builder.endpoint = endpoint
 	builder.projectName = projectName
 
 	return builder
 }
 
 func (c *CatalogListRequestBuilder) Get(ctx context.Context) (*CatalogListResponse, error) {
-	req, err := c.createRequest(ctx, http.MethodGet, fmt.Sprintf("%s/projects/%s/catalogs", c.endpoint, c.projectName))
+	req, err := c.createRequest(ctx, http.MethodGet, fmt.Sprintf("projects/%s/catalogs", c.projectName))
 	if err != nil {
 		return nil, fmt.Errorf("failed creating request: %w", err)
 	}
@@ -45,29 +43,23 @@ func (c *CatalogListRequestBuilder) Get(ctx context.Context) (*CatalogListRespon
 
 type CatalogItemRequestBuilder struct {
 	*EntityItemRequestBuilder[CatalogItemRequestBuilder]
-	endpoint    string
 	projectName string
 }
 
 func NewCatalogItemRequestBuilder(
 	c *devCenterClient,
-	endpoint string,
 	projectName string,
 	catalogName string,
 ) *CatalogItemRequestBuilder {
 	builder := &CatalogItemRequestBuilder{}
 	builder.EntityItemRequestBuilder = newEntityItemRequestBuilder(builder, c, catalogName)
-	builder.endpoint = endpoint
+	builder.projectName = projectName
 
 	return builder
 }
 
 func (c *CatalogItemRequestBuilder) Get(ctx context.Context) (*Catalog, error) {
-	req, err := runtime.NewRequest(
-		ctx,
-		http.MethodGet,
-		fmt.Sprintf("%s/projects/%s/catalogs/%s", c.endpoint, c.projectName, c.id),
-	)
+	req, err := c.client.createRequest(ctx, http.MethodGet, fmt.Sprintf("projects/%s/catalogs/%s", c.projectName, c.id))
 	if err != nil {
 		return nil, fmt.Errorf("failed creating request: %w", err)
 	}

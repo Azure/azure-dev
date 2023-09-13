@@ -12,18 +12,15 @@ import (
 // EnvironmentTypes
 type EnvironmentTypeListRequestBuilder struct {
 	*EntityListRequestBuilder[EnvironmentTypeListRequestBuilder]
-	endpoint    string
 	projectName string
 }
 
 func NewEnvironmentTypeListRequestBuilder(
 	c *devCenterClient,
-	endpoint string,
 	projectName string,
 ) *EnvironmentTypeListRequestBuilder {
 	builder := &EnvironmentTypeListRequestBuilder{}
 	builder.EntityListRequestBuilder = newEntityListRequestBuilder(builder, c)
-	builder.endpoint = endpoint
 	builder.projectName = projectName
 
 	return builder
@@ -33,7 +30,7 @@ func (c *EnvironmentTypeListRequestBuilder) Get(ctx context.Context) (*Environme
 	req, err := c.createRequest(
 		ctx,
 		http.MethodGet,
-		fmt.Sprintf("%s/projects/%s/environmentTypes", c.endpoint, c.projectName),
+		fmt.Sprintf("projects/%s/environmentTypes", c.projectName),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed creating request: %w", err)
@@ -53,32 +50,26 @@ func (c *EnvironmentTypeListRequestBuilder) Get(ctx context.Context) (*Environme
 
 type EnvironmentTypeItemRequestBuilder struct {
 	*EntityItemRequestBuilder[EnvironmentTypeItemRequestBuilder]
-	endpoint    string
 	projectName string
 }
 
 func NewEnvironmentTypeItemRequestBuilder(
 	c *devCenterClient,
-	endpoint string,
 	projectName string,
 	environmentTypeName string,
 ) *EnvironmentTypeItemRequestBuilder {
 	builder := &EnvironmentTypeItemRequestBuilder{}
 	builder.EntityItemRequestBuilder = newEntityItemRequestBuilder(builder, c, environmentTypeName)
-	builder.endpoint = endpoint
 
 	return builder
 }
 
 func (c *EnvironmentTypeItemRequestBuilder) Get(ctx context.Context) (*EnvironmentType, error) {
-	req, err := runtime.NewRequest(
+	req, err := c.client.createRequest(
 		ctx,
 		http.MethodGet,
-		fmt.Sprintf("%s/projects/%s/environmentTypes/%s",
-			c.endpoint,
-			c.projectName,
-			c.id,
-		))
+		fmt.Sprintf("projects/%s/environmentTypes/%s", c.projectName, c.id),
+	)
 	if err != nil {
 		return nil, fmt.Errorf("failed creating request: %w", err)
 	}

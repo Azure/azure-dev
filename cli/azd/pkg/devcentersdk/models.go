@@ -1,5 +1,7 @@
 package devcentersdk
 
+import "time"
+
 type DevCenter struct {
 	Id         string `json:"id"`
 	Name       string `json:"name"`
@@ -72,6 +74,8 @@ type ProvisioningState string
 
 const (
 	ProvisioningStateSucceeded ProvisioningState = "Succeeded"
+	ProvisioningStateCreating  ProvisioningState = "Creating"
+	ProvisioningStateDeleting  ProvisioningState = "Deleting"
 )
 
 type Environment struct {
@@ -87,4 +91,23 @@ type Environment struct {
 
 type EnvironmentListResponse struct {
 	Value []*Environment `json:"value"`
+}
+
+type EnvironmentSpec struct {
+	CatalogName               string         `json:"catalogName"`
+	EnvironmentDefinitionName string         `json:"environmentDefinitionName"`
+	EnvironmentType           string         `json:"environmentType"`
+	Parameters                map[string]any `json:"parameters"`
+}
+
+type EnvironmentPutResponse struct {
+	*Environment
+}
+
+type OperationStatus struct {
+	Id        string    `json:"id"`
+	Name      string    `json:"name"`
+	Status    string    `json:"status"`
+	StartTime time.Time `json:"startTime"`
+	EndTime   time.Time `json:"endTime"`
 }

@@ -12,29 +12,22 @@ import (
 // EnvironmentDefinitions
 type EnvironmentDefinitionListRequestBuilder struct {
 	*EntityListRequestBuilder[EnvironmentDefinitionListRequestBuilder]
-	endpoint    string
 	projectName string
 }
 
 func NewEnvironmentDefinitionListRequestBuilder(
 	c *devCenterClient,
-	endpoint string,
 	projectName string,
 ) *EnvironmentDefinitionListRequestBuilder {
 	builder := &EnvironmentDefinitionListRequestBuilder{}
 	builder.EntityListRequestBuilder = newEntityListRequestBuilder(builder, c)
-	builder.endpoint = endpoint
 	builder.projectName = projectName
 
 	return builder
 }
 
 func (c *EnvironmentDefinitionListRequestBuilder) Get(ctx context.Context) (*EnvironmentDefinitionListResponse, error) {
-	req, err := c.createRequest(
-		ctx,
-		http.MethodGet,
-		fmt.Sprintf("%s/projects/%s/environmentDefinitions", c.endpoint, c.projectName),
-	)
+	req, err := c.createRequest(ctx, http.MethodGet, fmt.Sprintf("projects/%s/environmentDefinitions", c.projectName))
 	if err != nil {
 		return nil, fmt.Errorf("failed creating request: %w", err)
 	}
@@ -53,28 +46,25 @@ func (c *EnvironmentDefinitionListRequestBuilder) Get(ctx context.Context) (*Env
 
 type EnvironmentDefinitionItemRequestBuilder struct {
 	*EntityItemRequestBuilder[EnvironmentDefinitionItemRequestBuilder]
-	endpoint    string
 	projectName string
 }
 
 func NewEnvironmentDefinitionItemRequestBuilder(
 	c *devCenterClient,
-	endpoint string,
 	projectName string,
 	environmentDefinitionName string,
 ) *EnvironmentDefinitionItemRequestBuilder {
 	builder := &EnvironmentDefinitionItemRequestBuilder{}
 	builder.EntityItemRequestBuilder = newEntityItemRequestBuilder(builder, c, environmentDefinitionName)
-	builder.endpoint = endpoint
 
 	return builder
 }
 
 func (c *EnvironmentDefinitionItemRequestBuilder) Get(ctx context.Context) (*EnvironmentDefinition, error) {
-	req, err := runtime.NewRequest(
+	req, err := c.client.createRequest(
 		ctx,
 		http.MethodGet,
-		fmt.Sprintf("%s/projects/%s/environmentDefinitions/%s", c.endpoint, c.projectName, c.id),
+		fmt.Sprintf("projects/%s/environmentDefinitions/%s", c.projectName, c.id),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed creating request: %w", err)

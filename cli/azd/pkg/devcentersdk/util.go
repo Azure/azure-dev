@@ -19,10 +19,11 @@ func NewPipeline(
 	clientOptions *azcore.ClientOptions,
 ) runtime.Pipeline {
 	scopes := []string{
-		"user_impersonation",
+		"https://devcenter.azure.com/.default",
 	}
 
-	authPolicy := runtime.NewBearerTokenPolicy(credential, scopes, nil)
+	bearerOptions := &policy.BearerTokenOptions{}
+	authPolicy := runtime.NewBearerTokenPolicy(credential, scopes, bearerOptions)
 	pipelineOptions := runtime.PipelineOptions{
 		PerRetry: []policy.Policy{authPolicy},
 	}

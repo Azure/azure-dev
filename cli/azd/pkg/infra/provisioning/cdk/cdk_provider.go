@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 
 	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -30,6 +31,7 @@ type CdkProvider struct {
 	bicepProvider Provider
 	env           *environment.Environment
 	curPrincipal  CurrentPrincipalIdProvider
+	subResolver   account.SubscriptionTenantResolver
 }
 
 func (p *CdkProvider) Name() string {
@@ -62,6 +64,14 @@ func (p *CdkProvider) generate(ctx context.Context, project appdetect.Project) e
 			return fmt.Errorf("fetching current principal id for cdk: %w", err)
 		}
 		azdEnv = append(azdEnv, fmt.Sprintf("%s=%s", environment.PrincipalIdEnvVarName, currentPrincipalId))
+	}
+	// append TenantId (not stored to .env by default)
+	if _, exists := p.env.LookupEnv(environment.TenantIdEnvVarName); !exists {
+		tenantId, err := p.subResolver.LookupTenant(ctx, p.env.GetSubscriptionId())
+		if err != nil {
+			return fmt.Errorf("fetching tenant id for cdk: %w", err)
+		}
+		azdEnv = append(azdEnv, fmt.Sprintf("%s=%s", environment.TenantIdEnvVarName, tenantId))
 	}
 
 	switch project.Language {
@@ -104,9 +114,13 @@ func (p *CdkProvider) Initialize(ctx context.Context, projectPath string, option
 		return err
 	}
 
+	msg = "Running cdk"
+	p.console.ShowSpinner(ctx, msg, input.Step)
 	if err := p.generate(ctx, cdkProject); err != nil {
 		return fmt.Errorf("generating infrastructure as code from cdk: %w", err)
 	}
+	p.console.StopSpinner(ctx, msg, input.GetStepResultFormat(err))
+
 	options.Path = filepath.Join(options.Path, "out")
 	return p.bicepProvider.Initialize(ctx, projectPath, options)
 }
@@ -141,7 +155,8 @@ func NewCdkProvider(bicepCli bicep.BicepCli,
 	curPrincipal CurrentPrincipalIdProvider,
 	alphaFeatureManager *alpha.FeatureManager,
 	clock clock.Clock,
-	dotNetCli dotnet.DotNetCli) Provider {
+	dotNetCli dotnet.DotNetCli,
+	subResolver account.SubscriptionTenantResolver) Provider {
 	return &CdkProvider{
 		bicepProvider: bicepProvider.NewBicepProvider(
 			bicepCli,
@@ -153,5 +168,6 @@ func NewCdkProvider(bicepCli bicep.BicepCli,
 		dotNetCli:    dotNetCli,
 		env:          env,
 		curPrincipal: curPrincipal,
+		subResolver:  subResolver,
 	}
 }

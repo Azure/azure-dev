@@ -78,7 +78,7 @@ func zip(cassette string, tool string, dir string) error {
 	cst := Cassette{Version: "1.0", ToolName: tool}
 	maxIntIdContent, err := os.ReadFile(filepath.Join(dir, InteractionIdFile))
 	if errors.Is(err, os.ErrNotExist) {
-		return save(cst, cassette)
+		return nil
 	} else if err != nil {
 		return err
 	}
@@ -115,6 +115,10 @@ func zip(cassette string, tool string, dir string) error {
 
 		interaction.Stderr = string(stderr)
 		cst.Interactions = append(cst.Interactions, interaction)
+	}
+
+	if len(cst.Interactions) == 0 { // avoid saving empty cassettes
+		return nil
 	}
 
 	return save(cst, cassette)

@@ -150,7 +150,12 @@ func newPipelineConfigAction(
 
 // Run implements action interface
 func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	err := p.provisioningManager.Initialize(ctx, p.projectConfig.Path, p.projectConfig.Infra)
+	err := p.provisioningManager.Initialize(ctx, p.projectConfig.Path, provisioning.Options{
+		Provider:   p.projectConfig.Infra.Provider,
+		Path:       p.projectConfig.Infra.Path,
+		Module:     p.projectConfig.Infra.Path,
+		HideOutput: true,
+	})
 	if err != nil {
 		return nil, err
 	}

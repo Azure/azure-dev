@@ -32,6 +32,7 @@ type CdkProvider struct {
 	env           *environment.Environment
 	curPrincipal  CurrentPrincipalIdProvider
 	subResolver   account.SubscriptionTenantResolver
+	prompters     prompt.Prompter
 }
 
 func (p *CdkProvider) Name() string {
@@ -114,6 +115,12 @@ func (p *CdkProvider) Initialize(ctx context.Context, projectPath string, option
 		return err
 	}
 
+	if err := EnsureSubscriptionAndLocation(ctx, p.env, p.prompters, func(loc account.Location) bool {
+		return true
+	}); err != nil {
+		return err
+	}
+
 	msg = "Running cdk"
 	p.console.ShowSpinner(ctx, msg, input.Step)
 	if err := p.generate(ctx, cdkProject); err != nil {
@@ -169,5 +176,6 @@ func NewCdkProvider(bicepCli bicep.BicepCli,
 		env:          env,
 		curPrincipal: curPrincipal,
 		subResolver:  subResolver,
+		prompters:    prompters,
 	}
 }

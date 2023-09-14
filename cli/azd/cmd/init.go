@@ -85,6 +85,7 @@ func (i *initFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOpt
 }
 
 type initAction struct {
+	lazyAzdCtx      *lazy.Lazy[*azdcontext.AzdContext]
 	lazyEnvManager  *lazy.Lazy[environment.Manager]
 	console         input.Console
 	cmdRun          exec.CommandRunner
@@ -96,6 +97,7 @@ type initAction struct {
 }
 
 func newInitAction(
+	lazyAzdCtx *lazy.Lazy[*azdcontext.AzdContext],
 	lazyEnvManager *lazy.Lazy[environment.Manager],
 	cmdRun exec.CommandRunner,
 	console input.Console,
@@ -105,6 +107,7 @@ func newInitAction(
 	templateManager *templates.TemplateManager,
 	featuresManager *alpha.FeatureManager) actions.Action {
 	return &initAction{
+		lazyAzdCtx:      lazyAzdCtx,
 		lazyEnvManager:  lazyEnvManager,
 		console:         console,
 		cmdRun:          cmdRun,
@@ -122,7 +125,11 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, fmt.Errorf("getting cwd: %w", err)
 	}
 
-	azdCtx := azdcontext.NewAzdContextWithDirectory(wd)
+	azdCtx, err := i.lazyAzdCtx.GetValue()
+	if err != nil {
+		azdCtx = azdcontext.NewAzdContextWithDirectory(wd)
+		i.lazyAzdCtx.SetValue(azdCtx)
+	}
 
 	if i.flags.templateBranch != "" && i.flags.templatePath == "" {
 		return nil,

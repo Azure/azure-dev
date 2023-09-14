@@ -234,12 +234,16 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	// Environment manager depends on azd context
 	container.RegisterSingleton(func(azdContext *lazy.Lazy[*azdcontext.AzdContext]) *lazy.Lazy[environment.Manager] {
 		return lazy.NewLazy(func() (environment.Manager, error) {
-			if _, err := azdContext.GetValue(); err != nil {
+			azdCtx, err := azdContext.GetValue()
+			if err != nil {
 				return nil, err
 			}
 
+			// Register the Azd context instance as a singleton in the container if now available
+			ioc.RegisterInstance(container, azdCtx)
+
 			var envManager environment.Manager
-			err := container.Resolve(&envManager)
+			err = container.Resolve(&envManager)
 			if err != nil {
 				return nil, err
 			}
@@ -260,15 +264,19 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	}
 
 	container.RegisterSingleton(func(
-		projectConfig *project.ProjectConfig,
+		lazyProjectConfig *lazy.Lazy[*project.ProjectConfig],
 		userConfigManager config.UserConfigManager,
 	) (*state.RemoteConfig, error) {
 		var remoteStateConfig *state.RemoteConfig
 
+		// The project config may not be available yet
+		// Ex) Within init phase of fingerprinting
+		projectConfig, _ := lazyProjectConfig.GetValue()
+
 		// Lookup remote state config in the following precedence:
 		// 1. Project azure.yaml
 		// 2. User configuration
-		if projectConfig.State != nil && projectConfig.State.Remote != nil {
+		if projectConfig != nil && projectConfig.State != nil && projectConfig.State.Remote != nil {
 			remoteStateConfig = projectConfig.State.Remote
 		} else {
 			userConfig, err := userConfigManager.Load()

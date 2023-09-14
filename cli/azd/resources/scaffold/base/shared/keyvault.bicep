@@ -21,6 +21,13 @@ resource keyVault 'Microsoft.KeyVault/vaults@2022-07-01' = {
     tenantId: subscription().tenantId
     sku: { family: 'A', name: 'standard' }
     enabledForTemplateDeployment: true
+  }
+}
+
+resource accessPolicies 'Microsoft.KeyVault/vaults/accessPolicies@2022-07-01' = {
+  parent: keyVault
+  name: 'add'
+  properties: {
     accessPolicies: union(defaultAccessPolicies, [
       // define access policies here
     ])

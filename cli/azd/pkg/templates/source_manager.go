@@ -9,6 +9,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/resources"
 )
 
@@ -26,6 +27,12 @@ var (
 		Name:     "Awesome AZD",
 		Type:     SourceKindAwesomeAzd,
 		Location: "https://aka.ms/awesome-azd/templates.json",
+	}
+
+	SourceDevCenter = &SourceConfig{
+		Key:  "devcenter",
+		Name: "Dev Center",
+		Type: SourceKindDevCenter,
 	}
 
 	WellKnownSources = map[string]*SourceConfig{
@@ -53,15 +60,21 @@ type SourceManager interface {
 }
 
 type sourceManager struct {
-	configManager config.UserConfigManager
-	httpClient    httputil.HttpClient
+	serviceLocator ioc.ServiceLocator
+	configManager  config.UserConfigManager
+	httpClient     httputil.HttpClient
 }
 
 // NewSourceManager creates a new SourceManager.
-func NewSourceManager(configManager config.UserConfigManager, httpClient httputil.HttpClient) SourceManager {
+func NewSourceManager(
+	serviceLocator ioc.ServiceLocator,
+	configManager config.UserConfigManager,
+	httpClient httputil.HttpClient,
+) SourceManager {
 	return &sourceManager{
-		configManager: configManager,
-		httpClient:    httpClient,
+		serviceLocator: serviceLocator,
+		configManager:  configManager,
+		httpClient:     httpClient,
 	}
 }
 
@@ -73,6 +86,11 @@ func (sm *sourceManager) List(ctx context.Context) ([]*SourceConfig, error) {
 	}
 
 	sourceConfigs := []*SourceConfig{}
+
+	if sm.isDevCenterEnabled(config) {
+		sourceConfigs = append(sourceConfigs, SourceDevCenter)
+	}
+
 	rawSources, ok := config.Get(baseConfigKey)
 	if ok {
 		sourceMap := rawSources.(map[string]interface{})
@@ -189,6 +207,12 @@ func (sm *sourceManager) CreateSource(ctx context.Context, config *SourceConfig)
 		source, err = NewAwesomeAzdTemplateSource(ctx, SourceAwesomeAzd.Name, SourceAwesomeAzd.Location, sm.httpClient)
 	case SourceKindResource:
 		source, err = NewJsonTemplateSource(SourceDefault.Name, string(resources.TemplatesJson))
+	case SourceKindDevCenter:
+		var devCenterSource *DevCenterSource
+		err = sm.serviceLocator.Resolve(&devCenterSource)
+		if err == nil {
+			source = devCenterSource
+		}
 	default:
 		err = fmt.Errorf("%w, '%s'", ErrSourceTypeInvalid, config.Type)
 	}
@@ -218,6 +242,20 @@ func (sm *sourceManager) addInternal(ctx context.Context, key string, source *So
 	}
 
 	return nil
+}
+
+func (sm *sourceManager) isDevCenterEnabled(config config.Config) bool {
+	devCenterNode, ok := config.Get("devcenter")
+	if !ok {
+		return false
+	}
+
+	devCenterValue, ok := devCenterNode.(string)
+	if !ok {
+		return false
+	}
+
+	return devCenterValue == "on"
 }
 
 func normalizeKey(key string) string {

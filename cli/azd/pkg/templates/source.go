@@ -22,6 +22,7 @@ const (
 	SourceKindUrl        SourceKind = "url"
 	SourceKindResource   SourceKind = "resource"
 	SourceKindAwesomeAzd SourceKind = "awesome-azd"
+	SourceKindDevCenter  SourceKind = "devcenter"
 )
 
 type SourceConfig struct {
@@ -68,5 +69,5 @@ func (ts *templateSource) GetTemplate(ctx context.Context, path string) (*Templa
 		}
 	}
 
-	return nil, fmt.Errorf("template with name '%s' was not found, %w", path, ErrTemplateNotFound)
+	return nil, fmt.Errorf("template with path '%s' was not found, %w", path, ErrTemplateNotFound)
 }

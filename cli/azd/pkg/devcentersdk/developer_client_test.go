@@ -10,7 +10,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
-	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
@@ -88,6 +87,15 @@ func Test_DevCenter_Client(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, environmentTypeList)
 
+	// Get Environment type list by catalog
+	environmentTypeListByCatalog, err := projectClient.
+		CatalogByName("SampleCatalog").
+		EnvironmentDefinitions().
+		Get(*mockContext.Context)
+
+	require.NoError(t, err)
+	require.NotEmpty(t, environmentTypeListByCatalog)
+
 	// Get Environment Definition List
 	environmentDefinitionList, err := projectClient.
 		EnvironmentDefinitions().
@@ -105,21 +113,8 @@ func Test_DevCenter_Client(t *testing.T) {
 	require.NotEmpty(t, environmentList)
 
 	// Get environments by user
-	graphOptions := azsdk.
-		DefaultClientOptionsBuilder(*mockContext.Context, http.DefaultClient, "azd").
-		BuildCoreClientOptions()
-
-	// Get current user profile
-	graphClient, err := graphsdk.NewGraphClient(credentials, graphOptions)
-	require.NoError(t, err)
-
-	userProfile, err := graphClient.Me().Get(*mockContext.Context)
-	require.NoError(t, err)
-	require.NotNil(t, userProfile)
-
-	// Get environments by user
 	userEnvironmentList, err := projectClient.
-		EnvironmentsByUser(userProfile.Id).
+		EnvironmentsByMe().
 		Get(*mockContext.Context)
 
 	require.NoError(t, err)

@@ -63,7 +63,7 @@ func (c *ProjectItemRequestBuilder) EnvironmentTypes() *EnvironmentTypeListReque
 }
 
 func (c *ProjectItemRequestBuilder) EnvironmentDefinitions() *EnvironmentDefinitionListRequestBuilder {
-	return NewEnvironmentDefinitionListRequestBuilder(c.client, c.id)
+	return NewEnvironmentDefinitionListRequestBuilder(c.client, c.id, "")
 }
 
 func (c *ProjectItemRequestBuilder) Environments() *EnvironmentListRequestBuilder {
@@ -73,6 +73,13 @@ func (c *ProjectItemRequestBuilder) Environments() *EnvironmentListRequestBuilde
 func (c *ProjectItemRequestBuilder) EnvironmentsByUser(userId string) *EnvironmentListRequestBuilder {
 	builder := NewEnvironmentListRequestBuilder(c.client, c.id)
 	builder.userId = userId
+
+	return builder
+}
+
+func (c *ProjectItemRequestBuilder) EnvironmentsByMe() *EnvironmentListRequestBuilder {
+	builder := NewEnvironmentListRequestBuilder(c.client, c.id)
+	builder.userId = "me"
 
 	return builder
 }

@@ -16,8 +16,10 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
+	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/containerapps"
+	"github.com/azure/azure-dev/cli/azd/pkg/devcentersdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -396,6 +398,18 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		})
 	})
 
+	container.RegisterSingleton(func(
+		ctx context.Context,
+		credential azcore.TokenCredential,
+		httpClient httputil.HttpClient,
+	) (devcentersdk.DevCenterClient, error) {
+		options := azsdk.
+			DefaultClientOptionsBuilder(ctx, httpClient, "azd").
+			BuildCoreClientOptions()
+
+		return devcentersdk.NewDevCenterClient(credential, options)
+	})
+
 	container.RegisterSingleton(project.NewResourceManager)
 	container.RegisterSingleton(project.NewProjectManager)
 	container.RegisterSingleton(project.NewServiceManager)
@@ -406,6 +420,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(config.NewFileConfigManager)
 	container.RegisterSingleton(templates.NewTemplateManager)
 	container.RegisterSingleton(templates.NewSourceManager)
+	container.RegisterSingleton(templates.NewDevCenterSource)
 	container.RegisterSingleton(auth.NewManager)
 	container.RegisterSingleton(azcli.NewUserProfileService)
 	container.RegisterSingleton(account.NewSubscriptionsService)

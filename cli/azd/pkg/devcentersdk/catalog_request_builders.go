@@ -58,6 +58,10 @@ func NewCatalogItemRequestBuilder(
 	return builder
 }
 
+func (c *CatalogItemRequestBuilder) EnvironmentDefinitions() *EnvironmentDefinitionListRequestBuilder {
+	return NewEnvironmentDefinitionListRequestBuilder(c.client, c.projectName, c.id)
+}
+
 func (c *CatalogItemRequestBuilder) Get(ctx context.Context) (*Catalog, error) {
 	req, err := c.client.createRequest(ctx, http.MethodGet, fmt.Sprintf("projects/%s/catalogs/%s", c.projectName, c.id))
 	if err != nil {

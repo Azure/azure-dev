@@ -13,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
@@ -22,6 +23,7 @@ import (
 func templateNameCompletion(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
 	templateManager, err := templates.NewTemplateManager(
 		templates.NewSourceManager(
+			ioc.Global,
 			config.NewUserConfigManager(config.NewFileConfigManager(config.NewManager())),
 			http.DefaultClient,
 		),

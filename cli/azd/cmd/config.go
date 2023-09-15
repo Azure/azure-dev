@@ -20,7 +20,6 @@ import (
 )
 
 var userConfigPath string
-var defaultConfigPath string
 
 // Setup account command category
 func configActions(root *actions.ActionDescriptor, rootOptions *internal.GlobalCommandOptions) *actions.ActionDescriptor {
@@ -39,6 +38,7 @@ func configActions(root *actions.ActionDescriptor, rootOptions *internal.GlobalC
 		userConfigPath = output.WithBackticks(filepath.Join(userConfigDir, "config.json"))
 	}
 
+	var defaultConfigPath string
 	if runtime.GOOS == "windows" {
 		defaultConfigPath = filepath.Join("%USERPROFILE%", ".azd")
 	} else {
@@ -386,10 +386,10 @@ func getCmdConfigHelpDescription(*cobra.Command) string {
 				output.WithHighLightFormat("azd init"),
 			)),
 			formatHelpNote(fmt.Sprintf("The subscription and location you select will be stored at: %s.",
-				userConfigPath,
+				output.WithLinkFormat("%HOME/.azd/config.json"),
 			)),
 			formatHelpNote(fmt.Sprintf("The default configuration path is: %s.",
-				output.WithBackticks(defaultConfigPath),
+				output.WithLinkFormat("%HOME/.azd"),
 			)),
 			formatHelpNote(fmt.Sprintf("The configuration directory can be overridden by specifying a path" +
 				" in the AZD_CONFIG_DIR environment variable.",

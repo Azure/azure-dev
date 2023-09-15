@@ -121,7 +121,6 @@ func Test_DevCenter_Client(t *testing.T) {
 	require.NotEmpty(t, environmentList)
 
 	// Get environments by user
-
 	userEnvironmentList, err := projectClient.
 		EnvironmentsByMe().
 		Get(*mockContext.Context)

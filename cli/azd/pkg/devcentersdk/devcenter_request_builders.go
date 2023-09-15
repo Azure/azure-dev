@@ -37,6 +37,9 @@ type DevCenterItemRequestBuilder struct {
 }
 
 func NewDevCenterItemRequestBuilder(c *devCenterClient, devCenter *DevCenter) *DevCenterItemRequestBuilder {
+	// Reset endpoint
+	c.endpoint = ""
+
 	builder := &DevCenterItemRequestBuilder{}
 	builder.EntityItemRequestBuilder = newEntityItemRequestBuilder(builder, c, devCenter, "")
 	builder.devCenter = devCenter

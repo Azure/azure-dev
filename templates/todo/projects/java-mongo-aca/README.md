@@ -40,7 +40,7 @@ The following prerequisites are required to use this application. Please ensure 
 
 - [Azure Developer CLI](https://aka.ms/azd-install)
 - [Java 17 or later](https://learn.microsoft.com/en-us/java/openjdk/install) - for API backend
-- [Node.js with npm (16.13.1+)](https://nodejs.org/) - for the Web frontend
+- [Node.js with npm (18.17.1+)](https://nodejs.org/) - for the Web frontend
 - [Docker](https://docs.docker.com/get-docker/)
 
 ### Quickstart

@@ -38,7 +38,7 @@ The following prerequisites are required to use this application. Please ensure 
 
 - [Azure Developer CLI](https://aka.ms/azd-install)
 - [Python (3.10+)](https://www.python.org/downloads/) - for the API backend
-- [Node.js with npm (16.13.1+)](https://nodejs.org/) - for the Web frontend
+- [Node.js with npm (18.17.1+)](https://nodejs.org/) - for the Web frontend
 
 ### Quickstart
 To learn how to get started with any template, follow the steps in [this quickstart](https://learn.microsoft.com/azure/developer/azure-developer-cli/get-started?tabs=localinstall&pivots=programming-language-python) with this template(`Azure-Samples/todo-python-mongo`).

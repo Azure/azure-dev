@@ -36,7 +36,7 @@ Let's jump in and get this up and running in Azure. When you are finished, you w
 The following prerequisites are required to use this application. Please ensure that you have them all installed locally.
 
 - [Azure Developer CLI](https://aka.ms/azd-install)
-- [Node.js with npm (16.13.1+)](https://nodejs.org/) - for API backend and Web frontend
+- [Node.js with npm (18.17.1+)](https://nodejs.org/) - for API backend and Web frontend
 
 ### Quickstart
 To learn how to get started with any template, follow the steps in [this quickstart](https://learn.microsoft.com/azure/developer/azure-developer-cli/get-started?tabs=localinstall&pivots=programming-language-nodejs) with this template(`Azure-Samples/todo-nodejs-mongo`).

@@ -22,7 +22,11 @@ type EntityListRequestBuilder[T any] struct {
 
 // Creates a new EntityListRequestBuilder that provides common functionality for list operations
 // include $filter, $top and $skip
-func newEntityListRequestBuilder[T any](builder *T, client *devCenterClient, devCenter *DevCenter) *EntityListRequestBuilder[T] {
+func newEntityListRequestBuilder[T any](
+	builder *T,
+	client *devCenterClient,
+	devCenter *DevCenter,
+) *EntityListRequestBuilder[T] {
 	return &EntityListRequestBuilder[T]{
 		builder:     builder,
 		client:      client,
@@ -39,7 +43,7 @@ func (b *EntityListRequestBuilder[T]) createRequest(
 ) (*policy.Request, error) {
 	host, err := b.client.host(ctx, b.devCenter)
 	if err != nil {
-		return nil, fmt.Errorf("devcenter is not set, %e", err)
+		return nil, fmt.Errorf("devcenter is not set, %w", err)
 	}
 
 	req, err := runtime.NewRequest(ctx, method, fmt.Sprintf("%s/%s", host, path))

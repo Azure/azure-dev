@@ -16,7 +16,11 @@ type PermissionListRequestBuilder struct {
 	projectName string
 }
 
-func NewPermissionListRequestBuilder(c *devCenterClient, devCenter *DevCenter, projectName string) *PermissionListRequestBuilder {
+func NewPermissionListRequestBuilder(
+	c *devCenterClient,
+	devCenter *DevCenter,
+	projectName string,
+) *PermissionListRequestBuilder {
 	builder := &PermissionListRequestBuilder{}
 	builder.EntityListRequestBuilder = newEntityListRequestBuilder(builder, c, devCenter)
 	builder.projectName = projectName

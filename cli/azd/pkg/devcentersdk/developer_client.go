@@ -128,7 +128,10 @@ func (c *devCenterClient) projectList(ctx context.Context) ([]*Project, error) {
 				SubscriptionId: devCenterId.SubscriptionId,
 				ResourceGroup:  devCenterId.ResourceGroup,
 				Name:           devCenterId.ResourceName,
-				ServiceUri:     strings.TrimSuffix(convert.ToStringWithDefault(resource.Properties["devCenterUri"], ""), "/"),
+				ServiceUri: strings.TrimSuffix(
+					convert.ToStringWithDefault(resource.Properties["devCenterUri"], ""),
+					"/",
+				),
 			},
 		}
 
@@ -158,7 +161,11 @@ func (c *devCenterClient) projectListByDevCenter(ctx context.Context, devCenter 
 	return filteredProjects, nil
 }
 
-func (c *devCenterClient) projectByDevCenter(ctx context.Context, devCenter *DevCenter, projectName string) (*Project, error) {
+func (c *devCenterClient) projectByDevCenter(
+	ctx context.Context,
+	devCenter *DevCenter,
+	projectName string,
+) (*Project, error) {
 	projects, err := c.projectListByDevCenter(ctx, devCenter)
 	if err != nil {
 		return nil, err

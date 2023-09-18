@@ -22,7 +22,11 @@ type EnvironmentListRequestBuilder struct {
 	userId      string
 }
 
-func NewEnvironmentListRequestBuilder(c *devCenterClient, devCenter *DevCenter, projectName string) *EnvironmentListRequestBuilder {
+func NewEnvironmentListRequestBuilder(
+	c *devCenterClient,
+	devCenter *DevCenter,
+	projectName string,
+) *EnvironmentListRequestBuilder {
 	builder := &EnvironmentListRequestBuilder{}
 	builder.EntityListRequestBuilder = newEntityListRequestBuilder(builder, c, devCenter)
 	builder.projectName = projectName

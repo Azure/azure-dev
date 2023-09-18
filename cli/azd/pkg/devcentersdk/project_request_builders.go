@@ -109,8 +109,11 @@ func (c *ProjectItemRequestBuilder) Get(ctx context.Context) (*Project, error) {
 	return project, nil
 }
 
+//
 //nolint:lll
-var resourceIdRegex = regexp.MustCompile(`\/subscriptions\/(?P<subscriptionId>.+?)\/resourceGroups\/(?P<resourceGroup>.+?)\/providers\/(?P<resourceProvider>.+?)\/(?P<resourcePath>.+?)\/(?P<resourceName>.+)`)
+var resourceIdRegex = regexp.MustCompile(
+	`\/subscriptions\/(?P<subscriptionId>.+?)\/resourceGroups\/(?P<resourceGroup>.+?)\/providers\/(?P<resourceProvider>.+?)\/(?P<resourcePath>.+?)\/(?P<resourceName>.+)`,
+)
 
 func resourceFromId(resourceId string) (*ResourceId, error) {
 	// Find matches and extract named values

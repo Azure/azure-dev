@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/devcentersdk"
+	"go.uber.org/multierr"
 	"golang.org/x/exp/slices"
 )
 
@@ -31,23 +32,9 @@ func (s *DevCenterSource) ListTemplates(ctx context.Context) ([]*Template, error
 	}
 
 	templatesChan := make(chan *Template)
-	defer close(templatesChan)
-	templates := []*Template{}
-	go func() {
-		for template := range templatesChan {
-			templates = append(templates, template)
-		}
-	}()
-
 	errorsChan := make(chan error)
-	defer close(errorsChan)
-	errors := []error{}
-	go func() {
-		for err := range errorsChan {
-			errors = append(errors, err)
-		}
-	}()
 
+	// Perform the lookup and checking for projects in parallel to speed up the process
 	var wg sync.WaitGroup
 
 	for _, project := range projects {
@@ -94,39 +81,41 @@ func (s *DevCenterSource) ListTemplates(ctx context.Context) ([]*Template, error
 		}(project)
 	}
 
-	wg.Wait()
+	go func() {
+		wg.Wait()
+		close(templatesChan)
+		close(errorsChan)
+	}()
 
-	if len(errors) > 0 {
-		return nil, errors[0]
+	templates := []*Template{}
+	for template := range templatesChan {
+		templates = append(templates, template)
+	}
+
+	var allErrors error
+	for err := range errorsChan {
+		allErrors = multierr.Append(allErrors, err)
+	}
+
+	if allErrors != nil {
+		return nil, allErrors
 	}
 
 	return templates, nil
 }
 
+// Gets a list of ADE projects that a user has write permissions
+// Write permissions of a project allow the user to create new environment in the project
 func (s *DevCenterSource) getWritableProjects(ctx context.Context) ([]*devcentersdk.Project, error) {
 	devCenterList, err := s.devCenterClient.DevCenters().Get(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed getting dev centers: %w", err)
 	}
 
-	errorsChan := make(chan error)
-	defer close(errorsChan)
-	errors := []error{}
-	go func() {
-		for err := range errorsChan {
-			errors = append(errors, err)
-		}
-	}()
-
 	projectsChan := make(chan *devcentersdk.Project)
-	writeableProjects := []*devcentersdk.Project{}
-	defer close(projectsChan)
-	go func() {
-		for project := range projectsChan {
-			writeableProjects = append(writeableProjects, project)
-		}
-	}()
+	errorsChan := make(chan error)
 
+	// Perform the lookup and checking for projects in parallel to speed up the process
 	var wg sync.WaitGroup
 
 	for _, devCenter := range devCenterList.Value {
@@ -165,10 +154,24 @@ func (s *DevCenterSource) getWritableProjects(ctx context.Context) ([]*devcenter
 		}(devCenter)
 	}
 
-	wg.Wait()
+	go func() {
+		wg.Wait()
+		close(projectsChan)
+		close(errorsChan)
+	}()
 
-	if len(errorsChan) > 0 {
-		return nil, errors[0]
+	writeableProjects := []*devcentersdk.Project{}
+	for project := range projectsChan {
+		writeableProjects = append(writeableProjects, project)
+	}
+
+	var allErrors error
+	for err := range errorsChan {
+		allErrors = multierr.Append(allErrors, err)
+	}
+
+	if allErrors != nil {
+		return nil, allErrors
 	}
 
 	return writeableProjects, nil

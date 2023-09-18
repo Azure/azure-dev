@@ -23,7 +23,12 @@ type EntityItemRequestBuilder[T any] struct {
 
 // Creates a new EntityItemRequestBuilder
 // builder - The parent entity builder
-func newEntityItemRequestBuilder[T any](builder *T, client *devCenterClient, devCenter *DevCenter, id string) *EntityItemRequestBuilder[T] {
+func newEntityItemRequestBuilder[T any](
+	builder *T,
+	client *devCenterClient,
+	devCenter *DevCenter,
+	id string,
+) *EntityItemRequestBuilder[T] {
 	return &EntityItemRequestBuilder[T]{
 		client:      client,
 		devCenter:   devCenter,
@@ -41,7 +46,7 @@ func (b *EntityItemRequestBuilder[T]) createRequest(
 ) (*policy.Request, error) {
 	host, err := b.client.host(ctx, b.devCenter)
 	if err != nil {
-		return nil, fmt.Errorf("devcenter is not set, %e", err)
+		return nil, fmt.Errorf("devcenter is not set, %w", err)
 	}
 
 	req, err := runtime.NewRequest(ctx, method, fmt.Sprintf("%s/%s", host, path))

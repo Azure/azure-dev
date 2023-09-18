@@ -68,6 +68,7 @@ require (
 require github.com/golang-jwt/jwt/v5 v5.0.0 // indirect
 
 require (
+	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2 v2.1.1 // indirect
 	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph v0.8.1 // indirect
 	github.com/stretchr/objx v0.5.0 // indirect
 )

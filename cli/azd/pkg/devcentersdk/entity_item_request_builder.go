@@ -2,9 +2,11 @@ package devcentersdk
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 )
 
 type entityItemRequestInfo struct {
@@ -16,13 +18,15 @@ type EntityItemRequestBuilder[T any] struct {
 	client      *devCenterClient
 	builder     *T
 	requestInfo *entityItemRequestInfo
+	devCenter   *DevCenter
 }
 
 // Creates a new EntityItemRequestBuilder
 // builder - The parent entity builder
-func newEntityItemRequestBuilder[T any](builder *T, client *devCenterClient, id string) *EntityItemRequestBuilder[T] {
+func newEntityItemRequestBuilder[T any](builder *T, client *devCenterClient, devCenter *DevCenter, id string) *EntityItemRequestBuilder[T] {
 	return &EntityItemRequestBuilder[T]{
 		client:      client,
+		devCenter:   devCenter,
 		builder:     builder,
 		id:          id,
 		requestInfo: &entityItemRequestInfo{},
@@ -35,7 +39,16 @@ func (b *EntityItemRequestBuilder[T]) createRequest(
 	method string,
 	path string,
 ) (*policy.Request, error) {
-	req, err := b.client.createRequest(ctx, method, path)
+	host, err := b.client.host(ctx, b.devCenter)
+	if err != nil {
+		return nil, fmt.Errorf("devcenter is not set, %e", err)
+	}
+
+	req, err := runtime.NewRequest(ctx, method, fmt.Sprintf("%s/%s", host, path))
+	if err != nil {
+		return nil, fmt.Errorf("failed creating request: %w", err)
+	}
+
 	if err != nil {
 		return nil, err
 	}

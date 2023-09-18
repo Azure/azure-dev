@@ -63,6 +63,13 @@ func Test_DevCenter_Client(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, project)
 
+	permissions, err := projectClient.
+		Permissions().
+		Get(*mockContext.Context)
+
+	require.NoError(t, err)
+	require.NotEmpty(t, permissions)
+
 	// Get Catalog List
 	catalogList, err := projectClient.
 		Catalogs().

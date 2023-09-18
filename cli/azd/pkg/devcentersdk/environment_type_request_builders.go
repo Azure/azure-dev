@@ -17,10 +17,11 @@ type EnvironmentTypeListRequestBuilder struct {
 
 func NewEnvironmentTypeListRequestBuilder(
 	c *devCenterClient,
+	devCenter *DevCenter,
 	projectName string,
 ) *EnvironmentTypeListRequestBuilder {
 	builder := &EnvironmentTypeListRequestBuilder{}
-	builder.EntityListRequestBuilder = newEntityListRequestBuilder(builder, c)
+	builder.EntityListRequestBuilder = newEntityListRequestBuilder(builder, c, devCenter)
 	builder.projectName = projectName
 
 	return builder
@@ -55,17 +56,18 @@ type EnvironmentTypeItemRequestBuilder struct {
 
 func NewEnvironmentTypeItemRequestBuilder(
 	c *devCenterClient,
+	devCenter *DevCenter,
 	projectName string,
 	environmentTypeName string,
 ) *EnvironmentTypeItemRequestBuilder {
 	builder := &EnvironmentTypeItemRequestBuilder{}
-	builder.EntityItemRequestBuilder = newEntityItemRequestBuilder(builder, c, environmentTypeName)
+	builder.EntityItemRequestBuilder = newEntityItemRequestBuilder(builder, c, devCenter, environmentTypeName)
 
 	return builder
 }
 
 func (c *EnvironmentTypeItemRequestBuilder) Get(ctx context.Context) (*EnvironmentType, error) {
-	req, err := c.client.createRequest(
+	req, err := c.createRequest(
 		ctx,
 		http.MethodGet,
 		fmt.Sprintf("projects/%s/environmentTypes/%s", c.projectName, c.id),

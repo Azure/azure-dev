@@ -22,9 +22,9 @@ type EnvironmentListRequestBuilder struct {
 	userId      string
 }
 
-func NewEnvironmentListRequestBuilder(c *devCenterClient, projectName string) *EnvironmentListRequestBuilder {
+func NewEnvironmentListRequestBuilder(c *devCenterClient, devCenter *DevCenter, projectName string) *EnvironmentListRequestBuilder {
 	builder := &EnvironmentListRequestBuilder{}
-	builder.EntityListRequestBuilder = newEntityListRequestBuilder(builder, c)
+	builder.EntityListRequestBuilder = newEntityListRequestBuilder(builder, c, devCenter)
 	builder.projectName = projectName
 
 	return builder
@@ -63,11 +63,12 @@ type EnvironmentItemRequestBuilder struct {
 
 func NewEnvironmentItemRequestBuilder(
 	c *devCenterClient,
+	devCenter *DevCenter,
 	projectName string,
 	environmentName string,
 ) *EnvironmentItemRequestBuilder {
 	builder := &EnvironmentItemRequestBuilder{}
-	builder.EntityItemRequestBuilder = newEntityItemRequestBuilder(builder, c, environmentName)
+	builder.EntityItemRequestBuilder = newEntityItemRequestBuilder(builder, c, devCenter, environmentName)
 	builder.projectName = projectName
 
 	return builder

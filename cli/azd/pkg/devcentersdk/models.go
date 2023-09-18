@@ -3,9 +3,11 @@ package devcentersdk
 import "time"
 
 type DevCenter struct {
-	Id         string `json:"id"`
-	Name       string `json:"name"`
-	ServiceUri string `json:"serviceUri"`
+	Id             string
+	SubscriptionId string
+	ResourceGroup  string
+	Name           string
+	ServiceUri     string
 }
 
 type DevCenterListResponse struct {
@@ -13,8 +15,30 @@ type DevCenterListResponse struct {
 }
 
 type Project struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
+	Id             string
+	SubscriptionId string
+	ResourceGroup  string
+	Name           string
+	Description    string
+	DevCenter      *DevCenter
+}
+
+type GenericResource struct {
+	Id         string                 `json:"id"`
+	Location   string                 `json:"location"`
+	TenantId   string                 `json:"tenantId"`
+	Name       string                 `json:"name"`
+	Type       string                 `json:"type"`
+	Properties map[string]interface{} `json:"properties"`
+}
+
+type ResourceId struct {
+	Id             string
+	SubscriptionId string
+	ResourceGroup  string
+	Provider       string
+	ResourcePath   string
+	ResourceName   string
 }
 
 type ProjectListResponse struct {

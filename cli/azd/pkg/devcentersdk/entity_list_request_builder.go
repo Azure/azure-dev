@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 )
 
 type entityListRequestInfo struct {
@@ -16,15 +17,17 @@ type EntityListRequestBuilder[T any] struct {
 	builder     *T
 	client      *devCenterClient
 	requestInfo *entityListRequestInfo
+	devCenter   *DevCenter
 }
 
 // Creates a new EntityListRequestBuilder that provides common functionality for list operations
 // include $filter, $top and $skip
-func newEntityListRequestBuilder[T any](builder *T, client *devCenterClient) *EntityListRequestBuilder[T] {
+func newEntityListRequestBuilder[T any](builder *T, client *devCenterClient, devCenter *DevCenter) *EntityListRequestBuilder[T] {
 	return &EntityListRequestBuilder[T]{
 		builder:     builder,
 		client:      client,
 		requestInfo: &entityListRequestInfo{},
+		devCenter:   devCenter,
 	}
 }
 
@@ -34,9 +37,14 @@ func (b *EntityListRequestBuilder[T]) createRequest(
 	method string,
 	path string,
 ) (*policy.Request, error) {
-	req, err := b.client.createRequest(ctx, method, path)
+	host, err := b.client.host(ctx, b.devCenter)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("devcenter is not set, %e", err)
+	}
+
+	req, err := runtime.NewRequest(ctx, method, fmt.Sprintf("%s/%s", host, path))
+	if err != nil {
+		return nil, fmt.Errorf("failed creating request: %w", err)
 	}
 
 	raw := req.Raw()

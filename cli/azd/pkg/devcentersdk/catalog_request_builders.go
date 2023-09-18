@@ -15,9 +15,9 @@ type CatalogListRequestBuilder struct {
 	projectName string
 }
 
-func NewCatalogListRequestBuilder(c *devCenterClient, projectName string) *CatalogListRequestBuilder {
+func NewCatalogListRequestBuilder(c *devCenterClient, devCenter *DevCenter, projectName string) *CatalogListRequestBuilder {
 	builder := &CatalogListRequestBuilder{}
-	builder.EntityListRequestBuilder = newEntityListRequestBuilder(builder, c)
+	builder.EntityListRequestBuilder = newEntityListRequestBuilder(builder, c, devCenter)
 	builder.projectName = projectName
 
 	return builder
@@ -48,22 +48,23 @@ type CatalogItemRequestBuilder struct {
 
 func NewCatalogItemRequestBuilder(
 	c *devCenterClient,
+	devCenter *DevCenter,
 	projectName string,
 	catalogName string,
 ) *CatalogItemRequestBuilder {
 	builder := &CatalogItemRequestBuilder{}
-	builder.EntityItemRequestBuilder = newEntityItemRequestBuilder(builder, c, catalogName)
+	builder.EntityItemRequestBuilder = newEntityItemRequestBuilder(builder, c, devCenter, catalogName)
 	builder.projectName = projectName
 
 	return builder
 }
 
 func (c *CatalogItemRequestBuilder) EnvironmentDefinitions() *EnvironmentDefinitionListRequestBuilder {
-	return NewEnvironmentDefinitionListRequestBuilder(c.client, c.projectName, c.id)
+	return NewEnvironmentDefinitionListRequestBuilder(c.client, c.devCenter, c.projectName, c.id)
 }
 
 func (c *CatalogItemRequestBuilder) Get(ctx context.Context) (*Catalog, error) {
-	req, err := c.client.createRequest(ctx, http.MethodGet, fmt.Sprintf("projects/%s/catalogs/%s", c.projectName, c.id))
+	req, err := c.createRequest(ctx, http.MethodGet, fmt.Sprintf("projects/%s/catalogs/%s", c.projectName, c.id))
 	if err != nil {
 		return nil, fmt.Errorf("failed creating request: %w", err)
 	}

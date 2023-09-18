@@ -148,7 +148,7 @@ module {{bicepName .Name}} './app/{{.Name}}.bicep' = {
     databaseUser: postgresDb.outputs.databaseUser
     databasePassword: vault.getSecret(postgresDb.outputs.databaseConnectionKey)
     {{- end}}
-    {{- if .Frontend}}
+    {{- if (and .Frontend .Frontend.Backends)}}
     apiUrls: [
       {{- range .Frontend.Backends}}
       {{bicepName .Name}}.outputs.uri

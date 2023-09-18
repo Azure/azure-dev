@@ -21,6 +21,7 @@ type packageFlags struct {
 	all    bool
 	global *internal.GlobalCommandOptions
 	*envFlag
+	outputPath string
 }
 
 func newPackageFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *packageFlags {
@@ -42,6 +43,12 @@ func (pf *packageFlags) Bind(local *pflag.FlagSet, global *internal.GlobalComman
 		"all",
 		false,
 		"Deploys all services that are listed in "+azdcontext.ProjectFileName,
+	)
+	local.StringVar(
+		&pf.outputPath,
+		"output-path",
+		"",
+		"File or folder path where the generated packages will be saved.",
 	)
 }
 
@@ -146,7 +153,8 @@ func (pa *packageAction) Run(ctx context.Context) (*actions.ActionResult, error)
 			continue
 		}
 
-		packageTask := pa.serviceManager.Package(ctx, svc, nil)
+		options := &project.PackageOptions{OutputPath: pa.flags.outputPath}
+		packageTask := pa.serviceManager.Package(ctx, svc, nil, options)
 		done := make(chan struct{})
 		go func() {
 			for packageProgress := range packageTask.Progress() {
@@ -210,5 +218,11 @@ func getCmdPackageHelpFooter(*cobra.Command) string {
 		"Packages all services in the current project to Azure.": output.WithHighLightFormat("azd package --all"),
 		"Packages the service named 'api' to Azure.":             output.WithHighLightFormat("azd package api"),
 		"Packages the service named 'web' to Azure.":             output.WithHighLightFormat("azd package web"),
+		"Packages all services to the specified output path.": output.WithHighLightFormat(
+			"azd package --output-path ./dist",
+		),
+		"Packages the service named 'api' to the specified output path.": output.WithHighLightFormat(
+			"azd package api --output-path ./dist/api.zip",
+		),
 	})
 }

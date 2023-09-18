@@ -1,9 +1,9 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-// Package custom contains a custom implementation of provider.Provider that no-ops the provisioning behavior allowing people to use the hooks to implement custom behavior. This
-// provider is registered for use when this package is imported, and can be imported for
-// side effects only to register the provider, e.g.:
+// Package custom contains a custom implementation of provider.Provider that no-ops the provisioning behavior 
+// allowing people to use the hooks to implement custom behavior. This provider is registered for use when 
+// this package is imported, and can be imported for side effects only to register the provider, e.g.:
 package custom
 
 import (

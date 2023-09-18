@@ -85,11 +85,6 @@ overrides:
   - filename: pkg/azsdk/storage/storage_blob_client.go
     words:
       - azblob
-  - filename: pkg/devcentersdk/devcenter_request_builders.go
-    words:
-      - resourcegraph
-      - armresourcegraph
-      - devcenter
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

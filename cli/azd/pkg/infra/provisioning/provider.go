@@ -21,7 +21,8 @@ type Options struct {
 	Provider ProviderKind `yaml:"provider"`
 	Path     string       `yaml:"path"`
 	Module   string       `yaml:"module"`
-	BicepADS bool
+	// Not expected to be defined at azure.yaml
+	BicepADS bool `yaml:"-"`
 }
 
 type DeployResult struct {

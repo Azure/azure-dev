@@ -97,9 +97,8 @@ func (p *BicepProvider) Initialize(ctx context.Context, projectPath string, opti
 	if err := tools.EnsureInstalled(ctx, requiredTools...); err != nil {
 		return err
 	}
-	if options.BicepADS {
-		p.ignoreADS = options.BicepADS
-	}
+	p.ignoreADS = options.BicepADS
+
 	p.console.ShowSpinner(ctx, "Initialize bicep provider", input.Step)
 	err := p.EnsureEnv(ctx)
 	p.console.StopSpinner(ctx, "", input.Step)
@@ -415,7 +414,7 @@ func deploymentNameForEnv(envName string, clock clock.Clock) string {
 }
 
 // prevDeploymentResult looks and finds a previous deployment for the current azd project.
-func (p *BicepProvider) prevDeploymentResult(
+func (p *BicepProvider) latestDeploymentResult(
 	ctx context.Context,
 	scope infra.Scope,
 ) (*armresources.DeploymentExtended, error) {
@@ -512,7 +511,7 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*DeployResult, error) {
 
 	if !p.ignoreADS {
 		p.console.ShowSpinner(ctx, "Looking for last deployment state.", input.Step)
-		prevDeploymentResult, err := p.prevDeploymentResult(ctx, bicepDeploymentData.Target)
+		prevDeploymentResult, err := p.latestDeploymentResult(ctx, bicepDeploymentData.Target)
 		if err != nil {
 			logADS(": error: unable to get previous deployment. Ignoring any previous deployment.")
 		}

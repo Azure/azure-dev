@@ -391,6 +391,9 @@ func getCmdConfigHelpDescription(*cobra.Command) string {
 			formatHelpNote(fmt.Sprintf("The default configuration path is: %s.",
 				output.WithLinkFormat("%HOME/.azd"),
 			)),
+			formatHelpNote(fmt.Sprintf("The configuration directory can be overridden by specifying a path" +
+				" in the AZD_CONFIG_DIR environment variable.",
+			)),
 		})
 }
 

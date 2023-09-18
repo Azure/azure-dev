@@ -495,16 +495,14 @@ func (p *BicepProvider) prevDeploymentEqualToCurrent(
 }
 
 func logADS(msg string, v ...any) {
-	log.Printf("%s : %s", alpha.BicepADS, fmt.Sprintf(msg, v...))
+	log.Printf("%s : %s", "deployment-state: ", fmt.Sprintf(msg, v...))
 }
 
 // Provisioning the infrastructure within the specified template
 func (p *BicepProvider) Deploy(ctx context.Context) (*DeployResult, error) {
-	if p.alphaFeatureManager.IsEnabled(alpha.BicepADS) {
-		p.console.WarnForFeature(ctx, alpha.BicepADS)
-		if p.ignoreADS {
-			logADS("Azure Deployment State is disabled by --ignore-ads arg.")
-		}
+
+	if p.ignoreADS {
+		logADS("Azure Deployment State is disabled by --ignore-ads arg.")
 	}
 
 	deployment, bicepDeploymentData, err := p.plan(ctx)
@@ -512,7 +510,7 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*DeployResult, error) {
 		return nil, err
 	}
 
-	if p.alphaFeatureManager.IsEnabled(alpha.BicepADS) && !p.ignoreADS {
+	if !p.ignoreADS {
 		p.console.ShowSpinner(ctx, "Looking for last deployment state.", input.Step)
 		prevDeploymentResult, err := p.prevDeploymentResult(ctx, bicepDeploymentData.Target)
 		if err != nil {
@@ -526,8 +524,8 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*DeployResult, error) {
 			)
 
 			return &DeployResult{
-				Deployment:                  deployment,
-				SameAsLastDeploymentSkipped: true,
+				Deployment:    deployment,
+				SkippedReason: "ads",
 			}, nil
 		}
 	}

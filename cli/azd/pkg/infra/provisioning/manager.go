@@ -58,7 +58,9 @@ func (m *Manager) Deploy(ctx context.Context) (*DeployResult, error) {
 		return nil, fmt.Errorf("error deploying infrastructure: %w", err)
 	}
 
-	if deployResult.SameAsLastDeploymentSkipped {
+	skippedDueToDeploymentState := deployResult.SkippedReason == "ads"
+
+	if skippedDueToDeploymentState {
 		m.console.StopSpinner(ctx, "Didn't find new changes.", input.StepSkipped)
 		m.console.ShowSpinner(ctx, "Restore Azure Deployment State.", input.Step)
 	}
@@ -67,7 +69,7 @@ func (m *Manager) Deploy(ctx context.Context) (*DeployResult, error) {
 		return nil, fmt.Errorf("updating environment with deployment outputs: %w", err)
 	}
 
-	if deployResult.SameAsLastDeploymentSkipped {
+	if skippedDueToDeploymentState {
 		m.console.StopSpinner(ctx, "Restore Azure Deployment State.", input.GetStepResultFormat(err))
 	}
 

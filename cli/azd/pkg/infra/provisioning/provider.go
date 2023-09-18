@@ -25,8 +25,8 @@ type Options struct {
 }
 
 type DeployResult struct {
-	Deployment                  *Deployment
-	SameAsLastDeploymentSkipped bool
+	Deployment    *Deployment
+	SkippedReason string
 }
 
 // DeployPreviewResult defines one deployment in preview mode, displaying what changes would it be performed, without

@@ -8,7 +8,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -26,7 +25,6 @@ type provisionFlags struct {
 	ignoreBicepAds bool
 	global         *internal.GlobalCommandOptions
 	*envFlag
-	alphaFeatureManager *alpha.FeatureManager
 }
 
 func (i *provisionFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
@@ -43,9 +41,7 @@ func (i *provisionFlags) bindNonCommon(local *pflag.FlagSet, global *internal.Gl
 
 func (i *provisionFlags) bindCommon(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	local.BoolVar(&i.preview, "preview", false, "Preview changes to Azure resources.")
-	if i.alphaFeatureManager.IsEnabled(alpha.BicepADS) {
-		local.BoolVar(&i.ignoreBicepAds, "ignore-ads", false, "Ignore Azure Deployment State (bicep only).")
-	}
+	local.BoolVar(&i.ignoreBicepAds, "ignore-ads", false, "Ignore Azure Deployment State (bicep only).")
 
 	i.envFlag = &envFlag{}
 	i.envFlag.Bind(local, global)
@@ -55,13 +51,8 @@ func (i *provisionFlags) setCommon(envFlag *envFlag) {
 	i.envFlag = envFlag
 }
 
-func newProvisionFlags(
-	cmd *cobra.Command,
-	global *internal.GlobalCommandOptions,
-	alphaFeatureManager *alpha.FeatureManager) *provisionFlags {
-	flags := &provisionFlags{
-		alphaFeatureManager: alphaFeatureManager,
-	}
+func newProvisionFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *provisionFlags {
+	flags := &provisionFlags{}
 	flags.Bind(cmd.Flags(), global)
 
 	return flags
@@ -198,7 +189,7 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		}, nil
 	}
 
-	if deployResult.SameAsLastDeploymentSkipped {
+	if deployResult.SkippedReason != "ads" {
 		return &actions.ActionResult{
 			Message: &actions.ResultMessage{
 				Header: "There are no changes to provision for your application.",

@@ -21,9 +21,7 @@ func newInfraCreateFlags(
 	global *internal.GlobalCommandOptions,
 	alphaFeatureManager *alpha.FeatureManager) *infraCreateFlags {
 	flags := &infraCreateFlags{
-		provisionFlags: provisionFlags{
-			alphaFeatureManager: alphaFeatureManager,
-		},
+		provisionFlags: provisionFlags{},
 	}
 	flags.Bind(cmd.Flags(), global)
 

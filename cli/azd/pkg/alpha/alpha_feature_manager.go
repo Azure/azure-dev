@@ -85,9 +85,6 @@ func (m *FeatureManager) IsEnabled(featureId FeatureId) bool {
 			log.Printf("could not parse %s as a bool when considering %s", v, envName)
 		}
 	}
-	if m.userConfigCache == nil {
-		return false
-	}
 
 	//check if all features is ON
 	if allOn := isEnabled(m.userConfigCache, AllId); allOn {

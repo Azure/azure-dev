@@ -1,6 +1,7 @@
-# hyphen is optional, "re-authentication" and "reauthentication" are equivalent.
 AADSTS
 ABRT
+aiomysql
+aiopg
 alphafeatures
 apimanagement
 apims
@@ -17,6 +18,8 @@ armapimanagement
 armappconfiguration
 armappplatform
 armcognitiveservices
+asyncmy
+asyncpg
 azapi
 AZCLI
 azcorelog
@@ -101,6 +104,7 @@ microsoftonline
 missingkey
 mockarmresources
 mockazcli
+mongojs
 mvnw
 mysqldb
 mysqlclient
@@ -124,6 +128,7 @@ pflag
 preinit
 proxying
 psycopg
+psycopgbinary
 pulumi
 pyapp
 pyproject

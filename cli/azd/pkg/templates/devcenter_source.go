@@ -58,7 +58,7 @@ func (s *DevCenterSource) ListTemplates(ctx context.Context) ([]*Template, error
 				// We only want to consider environment definitions that have
 				// a repo url parameter as valid templates for azd
 				containsRepoUrl := slices.ContainsFunc(envDefinition.Parameters, func(p devcentersdk.Parameter) bool {
-					return strings.ToLower(p.Name) == "repourl"
+					return strings.EqualFold(p.Name, "repourl")
 				})
 
 				if containsRepoUrl {
@@ -75,6 +75,13 @@ func (s *DevCenterSource) ListTemplates(ctx context.Context) ([]*Template, error
 						Source:         envDefinition.CatalogName,
 						Description:    envDefinition.Description,
 						RepositoryPath: definitionPath,
+
+						// Metadata will be used when creating any azd environments that are based on this template
+						Metadata: map[string]interface{}{
+							"AZURE_DEVCENTER_NAME":                project.DevCenter.Name,
+							"AZURE_DEVCENTER_PROJECT_NAME":        project.Name,
+							"AZURE_DEVCENTER_ENV_DEFINITION_NAME": envDefinition.Name,
+						},
 					}
 				}
 			}

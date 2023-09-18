@@ -22,6 +22,9 @@ type Template struct {
 	// "{owner}/{repo}" for GitHub repositories,
 	// or "{repo}" for GitHub repositories under Azure-Samples (default organization).
 	RepositoryPath string `json:"repositoryPath"`
+
+	// Additional metadata about the template
+	Metadata map[string]interface{} `json:"metadata,omitempty"`
 }
 
 // Display writes a string representation of the template suitable for display.

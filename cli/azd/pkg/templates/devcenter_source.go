@@ -26,7 +26,7 @@ func (s *DevCenterSource) Name() string {
 }
 
 func (s *DevCenterSource) ListTemplates(ctx context.Context) ([]*Template, error) {
-	projects, err := s.getWritableProjects(ctx)
+	projects, err := s.devCenterClient.WritableProjects(ctx)
 	if err != nil {
 		return nil, fmt.Errorf("failed getting writable projects: %w", err)
 	}
@@ -127,79 +127,6 @@ func (s *DevCenterSource) ListTemplates(ctx context.Context) ([]*Template, error
 	}
 
 	return templates, nil
-}
-
-// Gets a list of ADE projects that a user has write permissions
-// Write permissions of a project allow the user to create new environment in the project
-func (s *DevCenterSource) getWritableProjects(ctx context.Context) ([]*devcentersdk.Project, error) {
-	devCenterList, err := s.devCenterClient.DevCenters().Get(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("failed getting dev centers: %w", err)
-	}
-
-	projectsChan := make(chan *devcentersdk.Project)
-	errorsChan := make(chan error)
-
-	// Perform the lookup and checking for projects in parallel to speed up the process
-	var wg sync.WaitGroup
-
-	for _, devCenter := range devCenterList.Value {
-		wg.Add(1)
-
-		go func(dc *devcentersdk.DevCenter) {
-			defer wg.Done()
-
-			projects, err := s.devCenterClient.
-				DevCenterByEndpoint(dc.ServiceUri).
-				Projects().
-				Get(ctx)
-
-			if err != nil {
-				errorsChan <- err
-				return
-			}
-
-			for _, project := range projects.Value {
-				wg.Add(1)
-
-				go func(p *devcentersdk.Project) {
-					defer wg.Done()
-
-					hasWriteAccess := s.devCenterClient.
-						DevCenterByEndpoint(p.DevCenter.ServiceUri).
-						ProjectByName(p.Name).
-						Permissions().
-						HasWriteAccess(ctx)
-
-					if hasWriteAccess {
-						projectsChan <- p
-					}
-				}(project)
-			}
-		}(devCenter)
-	}
-
-	go func() {
-		wg.Wait()
-		close(projectsChan)
-		close(errorsChan)
-	}()
-
-	writeableProjects := []*devcentersdk.Project{}
-	for project := range projectsChan {
-		writeableProjects = append(writeableProjects, project)
-	}
-
-	var allErrors error
-	for err := range errorsChan {
-		allErrors = multierr.Append(allErrors, err)
-	}
-
-	if allErrors != nil {
-		return nil, allErrors
-	}
-
-	return writeableProjects, nil
 }
 
 func (s *DevCenterSource) GetTemplate(ctx context.Context, path string) (*Template, error) {

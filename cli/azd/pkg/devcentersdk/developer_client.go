@@ -8,18 +8,21 @@ import (
 	"net/http"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
+	"go.uber.org/multierr"
 )
 
 type DevCenterClient interface {
 	DevCenters() *DevCenterListRequestBuilder
 	DevCenterByEndpoint(endpoint string) *DevCenterItemRequestBuilder
 	DevCenterByName(name string) *DevCenterItemRequestBuilder
+	WritableProjects(ctx context.Context) ([]*Project, error)
 }
 
 type devCenterClient struct {
@@ -59,6 +62,79 @@ func (c *devCenterClient) DevCenterByEndpoint(endpoint string) *DevCenterItemReq
 
 func (c *devCenterClient) DevCenterByName(name string) *DevCenterItemRequestBuilder {
 	return NewDevCenterItemRequestBuilder(c, &DevCenter{Name: name})
+}
+
+// Gets a list of ADE projects that a user has write permissions
+// Write permissions of a project allow the user to create new environment in the project
+func (c *devCenterClient) WritableProjects(ctx context.Context) ([]*Project, error) {
+	devCenterList, err := c.DevCenters().Get(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed getting dev centers: %w", err)
+	}
+
+	projectsChan := make(chan *Project)
+	errorsChan := make(chan error)
+
+	// Perform the lookup and checking for projects in parallel to speed up the process
+	var wg sync.WaitGroup
+
+	for _, devCenter := range devCenterList.Value {
+		wg.Add(1)
+
+		go func(dc *DevCenter) {
+			defer wg.Done()
+
+			projects, err := c.
+				DevCenterByEndpoint(dc.ServiceUri).
+				Projects().
+				Get(ctx)
+
+			if err != nil {
+				errorsChan <- err
+				return
+			}
+
+			for _, project := range projects.Value {
+				wg.Add(1)
+
+				go func(p *Project) {
+					defer wg.Done()
+
+					hasWriteAccess := c.
+						DevCenterByEndpoint(p.DevCenter.ServiceUri).
+						ProjectByName(p.Name).
+						Permissions().
+						HasWriteAccess(ctx)
+
+					if hasWriteAccess {
+						projectsChan <- p
+					}
+				}(project)
+			}
+		}(devCenter)
+	}
+
+	go func() {
+		wg.Wait()
+		close(projectsChan)
+		close(errorsChan)
+	}()
+
+	writeableProjects := []*Project{}
+	for project := range projectsChan {
+		writeableProjects = append(writeableProjects, project)
+	}
+
+	var allErrors error
+	for err := range errorsChan {
+		allErrors = multierr.Append(allErrors, err)
+	}
+
+	if allErrors != nil {
+		return nil, allErrors
+	}
+
+	return writeableProjects, nil
 }
 
 func (c *devCenterClient) projectList(ctx context.Context) ([]*Project, error) {

@@ -8,6 +8,12 @@ import (
 	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 )
 
+const (
+	DevCenterEnvName              = "AZURE_DEVCENTER_NAME"
+	DevCenterProjectName          = "AZURE_DEVCENTER_PROJECT_NAME"
+	DevCenterEnvDefinitionEnvName = "AZURE_DEVCENTER_ENV_DEFINITION_NAME"
+)
+
 type DevCenterProvider struct {
 	env             *environment.Environment
 	devCenterClient devcentersdk.DevCenterClient

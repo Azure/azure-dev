@@ -9,10 +9,6 @@ type DevCenterListRequestBuilder struct {
 	*EntityListRequestBuilder[DevCenterListRequestBuilder]
 }
 
-func (c *DevCenterListRequestBuilder) Projects() *ProjectListRequestBuilder {
-	return NewProjectListRequestBuilder(c.client, c.devCenter)
-}
-
 func NewDevCenterListRequestBuilder(c *devCenterClient) *DevCenterListRequestBuilder {
 	builder := &DevCenterListRequestBuilder{}
 	builder.EntityListRequestBuilder = newEntityListRequestBuilder(builder, c, nil)

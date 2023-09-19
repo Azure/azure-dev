@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
@@ -87,7 +88,7 @@ func (sm *sourceManager) List(ctx context.Context) ([]*SourceConfig, error) {
 
 	sourceConfigs := []*SourceConfig{}
 
-	if sm.isDevCenterEnabled(config) {
+	if internal.IsDevCenterEnabled(config) {
 		sourceConfigs = append(sourceConfigs, SourceDevCenter)
 	}
 
@@ -242,20 +243,6 @@ func (sm *sourceManager) addInternal(ctx context.Context, key string, source *So
 	}
 
 	return nil
-}
-
-func (sm *sourceManager) isDevCenterEnabled(config config.Config) bool {
-	devCenterNode, ok := config.Get("devcenter")
-	if !ok {
-		return false
-	}
-
-	devCenterValue, ok := devCenterNode.(string)
-	if !ok {
-		return false
-	}
-
-	return devCenterValue == "on"
 }
 
 func normalizeKey(key string) string {

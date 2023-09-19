@@ -8,7 +8,9 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -24,6 +26,7 @@ type Manager struct {
 	console             input.Console
 	prompter            prompt.Prompter
 	provider            Provider
+	configManager       config.UserConfigManager
 	alphaFeatureManager *alpha.FeatureManager
 	projectPath         string
 	options             *Options
@@ -202,6 +205,7 @@ func NewManager(
 	env *environment.Environment,
 	console input.Console,
 	alphaFeatureManager *alpha.FeatureManager,
+	configManager config.UserConfigManager,
 	prompter prompt.Prompter,
 ) *Manager {
 	return &Manager{
@@ -210,6 +214,7 @@ func NewManager(
 		env:                 env,
 		console:             console,
 		alphaFeatureManager: alphaFeatureManager,
+		configManager:       configManager,
 		prompter:            prompter,
 	}
 }
@@ -232,11 +237,37 @@ func (m *Manager) newProvider(ctx context.Context) (Provider, error) {
 		m.console.WarnForFeature(ctx, alphaFeatureId)
 	}
 
+	providerKey := m.options.Provider
+	if providerKey == NotSpecified {
+		defaultProvider, err := m.getDefaultProvider()
+		if err != nil {
+			return nil, err
+		}
+
+		providerKey = defaultProvider
+	}
+
 	var provider Provider
-	err = m.serviceLocator.ResolveNamed(string(m.options.Provider), &provider)
+	err = m.serviceLocator.ResolveNamed(string(providerKey), &provider)
 	if err != nil {
-		return nil, fmt.Errorf("failed resolving IaC provider '%s': %w", m.options.Provider, err)
+		return nil, fmt.Errorf("failed resolving IaC provider '%s': %w", providerKey, err)
 	}
 
 	return provider, nil
+}
+
+// When in DevCenter mode we default to using the DevCenter provider
+// Otherwise we default to using the Bicep provider
+func (m *Manager) getDefaultProvider() (ProviderKind, error) {
+	config, err := m.configManager.Load()
+	if err != nil {
+		return NotSpecified, nil
+	}
+
+	devCenterEnabled := internal.IsDevCenterEnabled(config)
+	if devCenterEnabled {
+		return DevCenter, nil
+	}
+
+	return Bicep, nil
 }

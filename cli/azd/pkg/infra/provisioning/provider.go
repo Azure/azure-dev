@@ -10,11 +10,13 @@ import (
 type ProviderKind string
 
 const (
-	Bicep     ProviderKind = "bicep"
-	Arm       ProviderKind = "arm"
-	Terraform ProviderKind = "terraform"
-	Pulumi    ProviderKind = "pulumi"
-	Test      ProviderKind = "test"
+	NotSpecified ProviderKind = ""
+	Bicep        ProviderKind = "bicep"
+	Arm          ProviderKind = "arm"
+	Terraform    ProviderKind = "terraform"
+	Pulumi       ProviderKind = "pulumi"
+	DevCenter    ProviderKind = "devcenter"
+	Test         ProviderKind = "test"
 )
 
 type Options struct {

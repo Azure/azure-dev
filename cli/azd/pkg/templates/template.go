@@ -9,6 +9,8 @@ import (
 )
 
 type Template struct {
+	Id string `json:"id"`
+
 	// Name is the friendly short name of the template.
 	Name string `json:"name"`
 

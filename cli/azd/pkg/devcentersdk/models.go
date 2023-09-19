@@ -92,6 +92,7 @@ type Parameter struct {
 	ReadOnly    bool          `json:"readOnly"`
 	Required    bool          `json:"required"`
 	Allowed     []string      `json:"allowed"`
+	Default     any           `json:"default"`
 }
 
 type ProvisioningState string

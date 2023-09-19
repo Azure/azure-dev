@@ -57,8 +57,21 @@ func (s *DevCenterSource) ListTemplates(ctx context.Context) ([]*Template, error
 			for _, envDefinition := range envDefinitions.Value {
 				// We only want to consider environment definitions that have
 				// a repo url parameter as valid templates for azd
+				var repoUrls []string
 				containsRepoUrl := slices.ContainsFunc(envDefinition.Parameters, func(p devcentersdk.Parameter) bool {
-					return strings.EqualFold(p.Name, "repourl")
+					if strings.EqualFold(p.Name, "repourl") {
+
+						// Repo url parameter can support multiple values
+						// Values can either have a default or multiple allowed values but not both
+						if p.Default != nil {
+							repoUrls = append(repoUrls, p.Default.(string))
+						} else {
+							repoUrls = append(repoUrls, p.Allowed...)
+						}
+						return true
+					}
+
+					return false
 				})
 
 				if containsRepoUrl {
@@ -70,18 +83,23 @@ func (s *DevCenterSource) ListTemplates(ctx context.Context) ([]*Template, error
 					}
 					definitionPath := strings.Join(definitionParts, "/")
 
-					templatesChan <- &Template{
-						Name:           envDefinition.Name,
-						Source:         envDefinition.CatalogName,
-						Description:    envDefinition.Description,
-						RepositoryPath: definitionPath,
+					// List an available AZD template for each repo url that is referenced in the template
+					for _, url := range repoUrls {
+						templatesChan <- &Template{
+							Id:             definitionPath,
+							Name:           fmt.Sprintf("%s (%s)", envDefinition.Name, project.Name),
+							Source:         fmt.Sprintf("%s/%s/%s", project.DevCenter.Name, project.Name, envDefinition.CatalogName),
+							Description:    envDefinition.Description,
+							RepositoryPath: url,
 
-						// Metadata will be used when creating any azd environments that are based on this template
-						Metadata: map[string]interface{}{
-							"AZURE_DEVCENTER_NAME":                project.DevCenter.Name,
-							"AZURE_DEVCENTER_PROJECT_NAME":        project.Name,
-							"AZURE_DEVCENTER_ENV_DEFINITION_NAME": envDefinition.Name,
-						},
+							// Metadata will be used when creating any azd environments that are based on this template
+							Metadata: map[string]interface{}{
+								"AZURE_DEVCENTER_NAME":                project.DevCenter.Name,
+								"AZURE_DEVCENTER_PROJECT_NAME":        project.Name,
+								"AZURE_DEVCENTER_ENV_DEFINITION_NAME": envDefinition.Name,
+								"AZURE_DEVCENTER_REPO_URL":            url,
+							},
+						}
 					}
 				}
 			}
@@ -191,6 +209,10 @@ func (s *DevCenterSource) GetTemplate(ctx context.Context, path string) (*Templa
 	}
 
 	for _, template := range templates {
+		if template.Id == path {
+			return template, nil
+		}
+
 		if template.RepositoryPath == path {
 			return template, nil
 		}

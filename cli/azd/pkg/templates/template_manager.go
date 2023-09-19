@@ -86,6 +86,12 @@ func (tm *TemplateManager) GetTemplate(ctx context.Context, path string) (*Templ
 	}
 
 	matchingIndex := slices.IndexFunc(allTemplates, func(template *Template) bool {
+		// Template ID match is used for more precise matching
+		// for template sources like DevCenter
+		if template.Id != "" && template.Id == path {
+			return true
+		}
+
 		absPath, err := Absolute(template.RepositoryPath)
 		if err != nil {
 			log.Printf("failed to get absolute path for template '%s': %s", template.RepositoryPath, err.Error())

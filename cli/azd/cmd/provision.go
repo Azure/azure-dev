@@ -20,10 +20,10 @@ import (
 )
 
 type provisionFlags struct {
-	noProgress     bool
-	preview        bool
-	ignoreBicepAds bool
-	global         *internal.GlobalCommandOptions
+	noProgress            bool
+	preview               bool
+	ignoreDeploymentState bool
+	global                *internal.GlobalCommandOptions
 	*envFlag
 }
 
@@ -41,7 +41,11 @@ func (i *provisionFlags) bindNonCommon(local *pflag.FlagSet, global *internal.Gl
 
 func (i *provisionFlags) bindCommon(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	local.BoolVar(&i.preview, "preview", false, "Preview changes to Azure resources.")
-	local.BoolVar(&i.ignoreBicepAds, "ignore-ads", false, "Ignore Azure Deployment State (bicep only).")
+	local.BoolVar(
+		&i.ignoreDeploymentState,
+		"disable-deployment-state",
+		false,
+		"Do not use latest Deployment State (bicep only).")
 
 	i.envFlag = &envFlag{}
 	i.envFlag.Bind(local, global)
@@ -132,7 +136,7 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		return nil, err
 	}
 
-	p.projectConfig.Infra.BicepADS = p.flags.ignoreBicepAds
+	p.projectConfig.Infra.IgnoreDeploymentState = p.flags.ignoreDeploymentState
 	if err := p.provisionManager.Initialize(ctx, p.projectConfig.Path, p.projectConfig.Infra); err != nil {
 		return nil, fmt.Errorf("initializing provisioning manager: %w", err)
 	}

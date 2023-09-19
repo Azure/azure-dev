@@ -10,10 +10,11 @@ Usage
   azd provision [flags]
 
 Flags
-        --docs               	: Opens the documentation for azd provision in your web browser.
-    -e, --environment string 	: The name of the environment to use.
-    -h, --help               	: Gets help for provision.
-        --preview            	: Preview changes to Azure resources.
+        --disable-deployment-state 	: Do not use latest Deployment State (bicep only).
+        --docs                     	: Opens the documentation for azd provision in your web browser.
+    -e, --environment string       	: The name of the environment to use.
+    -h, --help                     	: Gets help for provision.
+        --preview                  	: Preview changes to Azure resources.
 
 Global Flags
     -C, --cwd string 	: Sets the current working directory.

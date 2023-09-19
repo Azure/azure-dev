@@ -58,7 +58,7 @@ func (m *Manager) Deploy(ctx context.Context) (*DeployResult, error) {
 		return nil, fmt.Errorf("error deploying infrastructure: %w", err)
 	}
 
-	skippedDueToDeploymentState := deployResult.SkippedReason == "ads"
+	skippedDueToDeploymentState := deployResult.SkippedReason == DeploymentStateSkipped
 
 	if skippedDueToDeploymentState {
 		m.console.StopSpinner(ctx, "Didn't find new changes.", input.StepSkipped)

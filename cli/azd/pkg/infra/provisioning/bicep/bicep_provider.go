@@ -5,6 +5,7 @@ package bicep
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -56,19 +57,19 @@ type bicepDeploymentDetails struct {
 
 // BicepProvider exposes infrastructure provisioning using Azure Bicep templates
 type BicepProvider struct {
-	env                  *environment.Environment
-	projectPath          string
-	options              Options
-	console              input.Console
-	bicepCli             bicep.BicepCli
-	azCli                azcli.AzCli
-	deploymentsService   azapi.Deployments
-	deploymentOperations azapi.DeploymentOperations
-	prompters            prompt.Prompter
-	curPrincipal         CurrentPrincipalIdProvider
-	alphaFeatureManager  *alpha.FeatureManager
-	clock                clock.Clock
-	ignoreADS            bool
+	env                   *environment.Environment
+	projectPath           string
+	options               Options
+	console               input.Console
+	bicepCli              bicep.BicepCli
+	azCli                 azcli.AzCli
+	deploymentsService    azapi.Deployments
+	deploymentOperations  azapi.DeploymentOperations
+	prompters             prompt.Prompter
+	curPrincipal          CurrentPrincipalIdProvider
+	alphaFeatureManager   *alpha.FeatureManager
+	clock                 clock.Clock
+	ignoreDeploymentState bool
 }
 
 var ErrResourceGroupScopeNotSupported = fmt.Errorf(
@@ -97,7 +98,7 @@ func (p *BicepProvider) Initialize(ctx context.Context, projectPath string, opti
 	if err := tools.EnsureInstalled(ctx, requiredTools...); err != nil {
 		return err
 	}
-	p.ignoreADS = options.BicepADS
+	p.ignoreDeploymentState = options.IgnoreDeploymentState
 
 	p.console.ShowSpinner(ctx, "Initialize bicep provider", input.Step)
 	err := p.EnsureEnv(ctx)
@@ -433,75 +434,104 @@ func (p *BicepProvider) latestDeploymentResult(
 	return deployments[0], nil
 }
 
-// applyParameters returns parameters in the same form as returned by a previous deployment, where parameters values have
-// been applied to the template's parameters.
-func applyParameters(
-	templateParameters azure.ArmTemplateParameterDefinitions, params azure.ArmParameters) map[string]interface{} {
-	result := make(map[string]interface{}, len(templateParameters))
-	for paramName, paramDefinition := range templateParameters {
-		data := make(map[string]interface{}, 2)
-		data["type"] = paramDefinition.Type
-		data["value"] = paramDefinition.DefaultValue
-		if param, exists := params[paramName]; exists {
-			data["value"] = param.Value
-		}
-		result[paramName] = data
+const c_canNotHash string = "can't hash this"
+
+// parametersHash generates a hash from each parameter as [name-type-value]
+func parametersHash(templateParameters azure.ArmTemplateParameterDefinitions, params azure.ArmParameters) string {
+	hash256 := sha256.New()
+
+	// the order of the parameters is important for creating a hash out of them
+	var orderedParamKeys []string
+	for key := range templateParameters {
+		orderedParamKeys = append(orderedParamKeys, key)
 	}
-	return result
+	slices.Sort(orderedParamKeys)
+
+	for _, paramName := range orderedParamKeys {
+		paramDefinition := templateParameters[paramName]
+		hash256.Write([]byte(paramName))
+		hash256.Write([]byte(paramDefinition.Type))
+		pValue := paramDefinition.DefaultValue
+		if param, exists := params[paramName]; exists {
+			pValue = param.Value
+		}
+
+		var pValueString string
+		var goodCast bool
+		// supported types: https://learn.microsoft.com/en-us/azure/azure-resource-manager/bicep/data-types#supported-types
+		switch paramDefinition.Type {
+		case "string", "securestring":
+			pValueString, goodCast = pValue.(string)
+		case "bool":
+			pValueBool, cast := pValue.(bool)
+			if !cast {
+				logDS("can't hash value from parameter %s", paramName)
+				return c_canNotHash
+			}
+			pValueString = strconv.FormatBool(pValueBool)
+			goodCast = cast
+		default:
+			logDS("can't hash value from parameter %s", paramName)
+			return c_canNotHash
+		}
+
+		if !goodCast {
+			logDS("can't hash value from parameter %s", paramName)
+			return c_canNotHash
+		}
+
+		hash256.Write([]byte(pValueString))
+	}
+	return fmt.Sprintf("%x", hash256.Sum(nil))
 }
 
 // prevDeploymentEqualToCurrent compares the template hash from a previous deployment against a current template.
-// It also compares the set of parameters and values
 func (p *BicepProvider) prevDeploymentEqualToCurrent(
-	ctx context.Context, prev *armresources.DeploymentExtended, current *bicepDeploymentDetails) bool {
+	ctx context.Context, prev *armresources.DeploymentExtended, templateHash, paramsHash string) bool {
+	if prev == nil {
+		logDS("No previous deployment.")
+		return false
+	}
+
+	if prev.Tags == nil {
+		logDS("No previous deployment params tags")
+		return false
+	}
+
+	if paramsHash == c_canNotHash {
+		return false
+	}
+
 	prevTemplateHash := convert.ToValueWithDefault(prev.Properties.TemplateHash, "")
-
-	createHashResult, err := p.deploymentsService.CalculateTemplateHash(
-		ctx, p.env.GetSubscriptionId(), current.CompiledBicep.RawArmTemplate)
-	if err != nil {
-		logADS("can't get hash from current template: %v", err)
-		return false
-	}
-	if prevTemplateHash != *createHashResult.TemplateHash {
-		logADS("template hash is different from previous deployment")
+	if prevTemplateHash != templateHash {
+		logDS("template hash is different from previous deployment")
 		return false
 	}
 
-	currentParams := applyParameters(current.CompiledBicep.Template.Parameters, current.Parameters)
-	prevParams, goodCast := prev.Properties.Parameters.(map[string]interface{})
-	if !goodCast {
-		logADS("unexpected type found on previous deployment parameters. Ignoring deployment")
+	prevParamHash, hasTag := prev.Tags[azure.TagKeyAzdDeploymentStateParamHashName]
+	if !hasTag {
+		logDS("no param hash tag on last deployment.")
 		return false
 	}
 
-	for prevParamKey, prevParamData := range prevParams {
-		prevParamInfo, goodCast := prevParamData.(map[string]interface{})
-		if !goodCast {
-			logADS("unexpected type found on previous deployment parameters. Ignoring deployment")
-			return false
-		}
-		// No need to check cast. currentParams is generated by applyParameters() with the expected type
-		currentParamInfo, _ := currentParams[prevParamKey].(map[string]interface{})
-		// No need to compare the type b/c a change in a type would break the template hash
-		if prevParamInfo["value"] != currentParamInfo["value"] {
-			logADS("parameter %s has a new value", prevParamKey)
-			return false
-		}
+	if *prevParamHash != paramsHash {
+		logDS("template parameters are different from previous deployment")
+		return false
 	}
 
-	logADS("Previous deployment state is equal to current deployment. Deployment can be skipped.")
+	logDS("Previous deployment state is equal to current deployment. Deployment can be skipped.")
 	return true
 }
 
-func logADS(msg string, v ...any) {
+func logDS(msg string, v ...any) {
 	log.Printf("%s : %s", "deployment-state: ", fmt.Sprintf(msg, v...))
 }
 
 // Provisioning the infrastructure within the specified template
 func (p *BicepProvider) Deploy(ctx context.Context) (*DeployResult, error) {
 
-	if p.ignoreADS {
-		logADS("Azure Deployment State is disabled by --ignore-ads arg.")
+	if p.ignoreDeploymentState {
+		logDS("Azure Deployment State is disabled by --ignore-ads arg.")
 	}
 
 	deployment, bicepDeploymentData, err := p.plan(ctx)
@@ -509,14 +539,27 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*DeployResult, error) {
 		return nil, err
 	}
 
-	if !p.ignoreADS {
+	var currentParamsHash string
+	if !p.ignoreDeploymentState {
 		p.console.ShowSpinner(ctx, "Looking for last deployment state.", input.Step)
 		prevDeploymentResult, err := p.latestDeploymentResult(ctx, bicepDeploymentData.Target)
 		if err != nil {
-			logADS(": error: unable to get previous deployment. Ignoring any previous deployment.")
+			logDS(": error: unable to get previous deployment. Ignoring any previous deployment.")
 		}
 
-		if p.prevDeploymentEqualToCurrent(ctx, prevDeploymentResult, bicepDeploymentData) {
+		var templateHash string
+		createHashResult, err := p.deploymentsService.CalculateTemplateHash(
+			ctx, p.env.GetSubscriptionId(), bicepDeploymentData.CompiledBicep.RawArmTemplate)
+		if err != nil {
+			logDS("can't get hash from current template: %v", err)
+		}
+		if createHashResult.TemplateHash != nil {
+			templateHash = *createHashResult.TemplateHash
+		}
+		currentParamsHash = parametersHash(
+			bicepDeploymentData.CompiledBicep.Template.Parameters, bicepDeploymentData.Parameters)
+
+		if p.prevDeploymentEqualToCurrent(ctx, prevDeploymentResult, templateHash, currentParamsHash) {
 			deployment.Outputs = p.createOutputParameters(
 				bicepDeploymentData.CompiledBicep.Template.Outputs,
 				azapi.CreateDeploymentOutput(prevDeploymentResult.Properties.Outputs),
@@ -524,7 +567,7 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*DeployResult, error) {
 
 			return &DeployResult{
 				Deployment:    deployment,
-				SkippedReason: "ads",
+				SkippedReason: DeploymentStateSkipped,
 			}, nil
 		}
 	}
@@ -567,14 +610,18 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*DeployResult, error) {
 	// Start the deployment
 	p.console.ShowSpinner(ctx, "Creating/Updating resources", input.Step)
 
+	deploymentTags := map[string]*string{
+		azure.TagKeyAzdEnvName: to.Ptr(p.env.GetEnvName()),
+	}
+	if currentParamsHash != c_canNotHash {
+		deploymentTags[azure.TagKeyAzdDeploymentStateParamHashName] = to.Ptr(currentParamsHash)
+	}
 	deployResult, err := p.deployModule(
 		ctx,
 		bicepDeploymentData.Target,
 		bicepDeploymentData.CompiledBicep.RawArmTemplate,
 		bicepDeploymentData.Parameters,
-		map[string]*string{
-			azure.TagKeyAzdEnvName: to.Ptr(p.env.GetEnvName()),
-		},
+		deploymentTags,
 	)
 	if err != nil {
 		return nil, err

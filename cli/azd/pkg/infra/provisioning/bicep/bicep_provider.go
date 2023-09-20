@@ -4,8 +4,10 @@
 package bicep
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/gob"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -455,32 +457,13 @@ func parametersHash(templateParameters azure.ArmTemplateParameterDefinitions, pa
 		if param, exists := params[paramName]; exists {
 			pValue = param.Value
 		}
-
-		var pValueString string
-		var goodCast bool
-		// supported types: https://learn.microsoft.com/en-us/azure/azure-resource-manager/bicep/data-types#supported-types
-		switch paramDefinition.Type {
-		case "string", "securestring":
-			pValueString, goodCast = pValue.(string)
-		case "bool":
-			pValueBool, cast := pValue.(bool)
-			if !cast {
-				logDS("can't hash value from parameter %s", paramName)
-				return c_canNotHash
-			}
-			pValueString = strconv.FormatBool(pValueBool)
-			goodCast = cast
-		default:
-			logDS("can't hash value from parameter %s", paramName)
+		// since the value is type `any`, we can use the gob encoder to pull a []byte out of it.
+		var buffer bytes.Buffer
+		err := gob.NewEncoder(&buffer).Encode(pValue)
+		if err != nil {
 			return c_canNotHash
 		}
-
-		if !goodCast {
-			logDS("can't hash value from parameter %s", paramName)
-			return c_canNotHash
-		}
-
-		hash256.Write([]byte(pValueString))
+		hash256.Write(buffer.Bytes())
 	}
 	return fmt.Sprintf("%x", hash256.Sum(nil))
 }

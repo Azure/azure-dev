@@ -188,12 +188,12 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	switch initTypeSelect {
 	case initAppTemplate:
 		tracing.SetUsageAttributes(fields.InitMethod.String("template"))
-		err := i.initializeTemplate(ctx, azdCtx)
+		template, err := i.initializeTemplate(ctx, azdCtx)
 		if err != nil {
 			return nil, err
 		}
 
-		err = i.initializeEnv(ctx, azdCtx)
+		err = i.initializeEnv(ctx, azdCtx, template.Metadata)
 		if err != nil {
 			return nil, err
 		}
@@ -220,13 +220,13 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 
 		err = i.repoInitializer.InitFromApp(ctx, azdCtx, func() error {
-			return i.initializeEnv(ctx, azdCtx)
+			return i.initializeEnv(ctx, azdCtx, nil)
 		})
 		if err != nil {
 			return nil, err
 		}
 	case initEnvironment:
-		err = i.initializeEnv(ctx, azdCtx)
+		err = i.initializeEnv(ctx, azdCtx, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -275,16 +275,18 @@ func promptInitType(console input.Console, ctx context.Context) (initType, error
 
 func (i *initAction) initializeTemplate(
 	ctx context.Context,
-	azdCtx *azdcontext.AzdContext) error {
+	azdCtx *azdcontext.AzdContext) (*templates.Template, error) {
 	err := i.repoInitializer.PromptIfNonEmpty(ctx, azdCtx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
+	var template *templates.Template
+
 	if i.flags.templatePath == "" {
-		template, err := templates.PromptTemplate(ctx, "Select a project template:", i.templateManager, i.console)
+		template, err = templates.PromptTemplate(ctx, "Select a project template:", i.templateManager, i.console)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		if template != nil {
@@ -293,28 +295,35 @@ func (i *initAction) initializeTemplate(
 	}
 
 	if i.flags.templatePath != "" {
+		if template == nil {
+			template = &templates.Template{
+				RepositoryPath: i.flags.templatePath,
+			}
+		}
+
 		gitUri, err := templates.Absolute(i.flags.templatePath)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		err = i.repoInitializer.Initialize(ctx, azdCtx, gitUri, i.flags.templateBranch)
 		if err != nil {
-			return fmt.Errorf("init from template repository: %w", err)
+			return nil, fmt.Errorf("init from template repository: %w", err)
 		}
 	} else {
 		err := i.repoInitializer.InitializeMinimal(ctx, azdCtx)
 		if err != nil {
-			return fmt.Errorf("init empty repository: %w", err)
+			return nil, fmt.Errorf("init empty repository: %w", err)
 		}
 	}
 
-	return nil
+	return template, nil
 }
 
 func (i *initAction) initializeEnv(
 	ctx context.Context,
-	azdCtx *azdcontext.AzdContext) error {
+	azdCtx *azdcontext.AzdContext,
+	values map[string]string) error {
 	envName, err := azdCtx.GetDefaultEnvironmentName()
 	if err != nil {
 		return fmt.Errorf("retrieving default environment name: %w", err)
@@ -357,6 +366,17 @@ func (i *initAction) initializeEnv(
 
 	if err := azdCtx.SetDefaultEnvironmentName(env.GetEnvName()); err != nil {
 		return fmt.Errorf("saving default environment: %w", err)
+	}
+
+	// If the template includes any metadata values, set them in the environment
+	if values != nil {
+		for key, value := range values {
+			env.DotenvSet(key, value)
+		}
+	}
+
+	if err := envManager.Save(ctx, env); err != nil {
+		return fmt.Errorf("saving environment: %w", err)
 	}
 
 	return nil

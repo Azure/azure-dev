@@ -58,16 +58,20 @@ func (c *EnvironmentDefinitionListRequestBuilder) Get(ctx context.Context) (*Env
 type EnvironmentDefinitionItemRequestBuilder struct {
 	*EntityItemRequestBuilder[EnvironmentDefinitionItemRequestBuilder]
 	projectName string
+	catalogName string
 }
 
 func NewEnvironmentDefinitionItemRequestBuilder(
 	c *devCenterClient,
 	devCenter *DevCenter,
 	projectName string,
+	catalogName string,
 	environmentDefinitionName string,
 ) *EnvironmentDefinitionItemRequestBuilder {
 	builder := &EnvironmentDefinitionItemRequestBuilder{}
 	builder.EntityItemRequestBuilder = newEntityItemRequestBuilder(builder, c, devCenter, environmentDefinitionName)
+	builder.projectName = projectName
+	builder.catalogName = catalogName
 
 	return builder
 }
@@ -76,7 +80,7 @@ func (c *EnvironmentDefinitionItemRequestBuilder) Get(ctx context.Context) (*Env
 	req, err := c.createRequest(
 		ctx,
 		http.MethodGet,
-		fmt.Sprintf("projects/%s/environmentDefinitions/%s", c.projectName, c.id),
+		fmt.Sprintf("projects/%s/catalogs/%s/environmentDefinitions/%s", c.projectName, c.catalogName, c.id),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed creating request: %w", err)

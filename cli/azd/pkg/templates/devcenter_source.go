@@ -93,9 +93,10 @@ func (s *DevCenterSource) ListTemplates(ctx context.Context) ([]*Template, error
 							RepositoryPath: url,
 
 							// Metadata will be used when creating any azd environments that are based on this template
-							Metadata: map[string]interface{}{
+							Metadata: map[string]string{
 								"AZURE_DEVCENTER_NAME":                project.DevCenter.Name,
 								"AZURE_DEVCENTER_PROJECT_NAME":        project.Name,
+								"AZURE_DEVCENTER_CATALOG_NAME":        envDefinition.CatalogName,
 								"AZURE_DEVCENTER_ENV_DEFINITION_NAME": envDefinition.Name,
 								"AZURE_DEVCENTER_REPO_URL":            url,
 							},

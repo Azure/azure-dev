@@ -63,6 +63,10 @@ func (c *CatalogItemRequestBuilder) EnvironmentDefinitions() *EnvironmentDefinit
 	return NewEnvironmentDefinitionListRequestBuilder(c.client, c.devCenter, c.projectName, c.id)
 }
 
+func (c *CatalogItemRequestBuilder) EnvironmentDefinitionByName(name string) *EnvironmentDefinitionItemRequestBuilder {
+	return NewEnvironmentDefinitionItemRequestBuilder(c.client, c.devCenter, c.projectName, c.id, name)
+}
+
 func (c *CatalogItemRequestBuilder) Get(ctx context.Context) (*Catalog, error) {
 	req, err := c.createRequest(ctx, http.MethodGet, fmt.Sprintf("projects/%s/catalogs/%s", c.projectName, c.id))
 	if err != nil {

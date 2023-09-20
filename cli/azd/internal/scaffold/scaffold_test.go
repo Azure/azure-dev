@@ -36,6 +36,18 @@ func TestExecInfra(t *testing.T) {
 			},
 		},
 		{
+			"Web only",
+			InfraSpec{
+				Services: []ServiceSpec{
+					{
+						Name:     "web",
+						Port:     3100,
+						Frontend: &Frontend{},
+					},
+				},
+			},
+		},
+		{
 			"API and web",
 			InfraSpec{
 				Services: []ServiceSpec{

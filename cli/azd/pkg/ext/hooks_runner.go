@@ -25,6 +25,7 @@ type HooksRunner struct {
 	cwd           string
 	hooks         map[string]*HookConfig
 	env           *environment.Environment
+	envManager    environment.Manager
 }
 
 // NewHooks creates a new instance of CommandHooks
@@ -32,6 +33,7 @@ type HooksRunner struct {
 func NewHooksRunner(
 	hooksManager *HooksManager,
 	commandRunner exec.CommandRunner,
+	envManager environment.Manager,
 	console input.Console,
 	cwd string,
 	hooks map[string]*HookConfig,
@@ -49,6 +51,7 @@ func NewHooksRunner(
 	return &HooksRunner{
 		hooksManager:  hooksManager,
 		commandRunner: commandRunner,
+		envManager:    envManager,
 		console:       console,
 		cwd:           cwd,
 		hooks:         hooks,
@@ -89,7 +92,7 @@ func (h *HooksRunner) RunHooks(
 	}
 
 	for _, hookConfig := range hooks {
-		if err := h.env.Reload(); err != nil {
+		if err := h.envManager.Reload(ctx, h.env); err != nil {
 			return fmt.Errorf("reloading environment before running hook: %w", err)
 		}
 
@@ -98,7 +101,7 @@ func (h *HooksRunner) RunHooks(
 			return err
 		}
 
-		if err := h.env.Reload(); err != nil {
+		if err := h.envManager.Reload(ctx, h.env); err != nil {
 			return fmt.Errorf("reloading environment after running hook: %w", err)
 		}
 	}

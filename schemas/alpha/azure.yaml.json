@@ -343,6 +343,59 @@
                     ]
                 }
             }
+        },
+        "state": {
+            "type": "object",
+            "title": "The state configuration used for the project.",
+            "description": "Optional. Provides additional configuration for state management.",
+            "additionalProperties": false,
+            "properties": {
+                "remote": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "title": "The remote state configuration.",
+                    "description": "Optional. Provides additional configuration for remote state management such as Azure Blob Storage.",
+                    "required": [
+                        "backend"
+                    ],
+                    "properties": {
+                        "backend": {
+                            "type": "string",
+                            "title": "The remote state backend type.",
+                            "description": "Optional. The remote state backend type. (Default: AzureStorage)",
+                            "default": "AzureStorage",
+                            "enum": [
+                                "AzureStorage"
+                            ]
+                        },
+                        "config": {
+                            "type": "object",
+                            "additionalProperties": true
+                        }
+                    },
+                    "allOf": [
+                        {
+                            "if": {
+                                "properties": {
+                                    "backend": {
+                                        "const": "AzureStorage"
+                                    }
+                                }
+                            },
+                            "then": {
+                                "required": [
+                                    "config"
+                                ],
+                                "properties": {
+                                    "config": {
+                                        "$ref": "#/definitions/azureStorageConfig"
+                                    }
+                                }
+                            }
+                        }
+                    ]
+                }
+            }
         }
     },
     "definitions": {
@@ -505,6 +558,32 @@
                             "description": "When set will be appended to the root of your ingress resource path."
                         }
                     }
+                }
+            }
+        },
+        "azureStorageConfig": {
+            "type": "object",
+            "title": "The remote state backend configuration.",
+            "description": "Optional. Provides additional configuration for remote state management such as Azure Blob Storage.",
+            "additionalProperties": false,
+            "required": [
+                "accountName"
+            ],
+            "properties": {
+                "accountName": {
+                    "type": "string",
+                    "title": "The Azure Storage account name.",
+                    "description": "Required. The Azure Storage account name."
+                },
+                "containerName": {
+                    "type": "string",
+                    "title": "The Azure Storage container name.",
+                    "description": "Optional. The Azure Storage container name. Defaults to project name if not specified."
+                },
+                "endpoint": {
+                    "type": "string",
+                    "title": "The Azure Storage endpoint.",
+                    "description": "Optional. The Azure Storage endpoint. (Default: blob.core.windows.net)"
                 }
             }
         }

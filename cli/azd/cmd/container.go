@@ -2,10 +2,12 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/repository"
@@ -13,6 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
+	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/containerapps"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -29,6 +32,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/pipeline"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
+	"github.com/azure/azure-dev/cli/azd/pkg/state"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
@@ -128,6 +132,9 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	client := createHttpClient()
 	container.RegisterSingleton(func() httputil.HttpClient { return client })
 	container.RegisterSingleton(func() auth.HttpClient { return client })
+	container.RegisterSingleton(func() httputil.UserAgent {
+		return httputil.UserAgent(internal.UserAgent())
+	})
 
 	// Auth
 	container.RegisterSingleton(auth.NewLoggedInGuard)
@@ -175,9 +182,9 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(
 		func(ctx context.Context,
 			azdContext *azdcontext.AzdContext,
+			envManager environment.Manager,
 			lazyEnv *lazy.Lazy[*environment.Environment],
 			envFlags envFlag,
-			console input.Console,
 		) (*environment.Environment, error) {
 			if azdContext == nil {
 				return nil, azdcontext.ErrNoProject
@@ -186,7 +193,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			environmentName := envFlags.environmentName
 			var err error
 
-			env, err := loadOrCreateEnvironment(ctx, environmentName, azdContext, console)
+			env, err := envManager.LoadOrCreateInteractive(ctx, environmentName)
 			if err != nil {
 				return nil, fmt.Errorf("loading environment: %w", err)
 			}
@@ -198,14 +205,137 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			return env, nil
 		},
 	)
-	container.RegisterSingleton(func() environment.EnvironmentResolver {
-		return func() (*environment.Environment, error) { return loadEnvironmentIfAvailable() }
+	container.RegisterSingleton(func(lazyEnvManager *lazy.Lazy[environment.Manager]) environment.EnvironmentResolver {
+		return func(ctx context.Context) (*environment.Environment, error) {
+			azdCtx, err := azdcontext.NewAzdContext()
+			if err != nil {
+				return nil, err
+			}
+			defaultEnv, err := azdCtx.GetDefaultEnvironmentName()
+			if err != nil {
+				return nil, err
+			}
+
+			// We need to lazy load the environment manager since it depends on azd context
+			envManager, err := lazyEnvManager.GetValue()
+			if err != nil {
+				return nil, err
+			}
+
+			return envManager.Get(ctx, defaultEnv)
+		}
+	})
+
+	container.RegisterSingleton(storage.NewBlobClient)
+	container.RegisterSingleton(storage.NewBlobSdkClient)
+	container.RegisterSingleton(environment.NewLocalFileDataStore)
+	container.RegisterSingleton(environment.NewManager)
+
+	// Environment manager depends on azd context
+	container.RegisterSingleton(func(azdContext *lazy.Lazy[*azdcontext.AzdContext]) *lazy.Lazy[environment.Manager] {
+		return lazy.NewLazy(func() (environment.Manager, error) {
+			azdCtx, err := azdContext.GetValue()
+			if err != nil {
+				return nil, err
+			}
+
+			// Register the Azd context instance as a singleton in the container if now available
+			ioc.RegisterInstance(container, azdCtx)
+
+			var envManager environment.Manager
+			err = container.Resolve(&envManager)
+			if err != nil {
+				return nil, err
+			}
+
+			return envManager, nil
+		})
+	})
+
+	// Remote Environment State Providers
+	remoteStateProviderMap := map[environment.RemoteKind]any{
+		environment.RemoteKindAzureStorage: environment.NewStorageBlobDataStore,
+	}
+
+	for remoteKind, constructor := range remoteStateProviderMap {
+		if err := container.RegisterNamedSingleton(string(remoteKind), constructor); err != nil {
+			panic(fmt.Errorf("registering remote state provider %s: %w", remoteKind, err))
+		}
+	}
+
+	container.RegisterSingleton(func(
+		lazyProjectConfig *lazy.Lazy[*project.ProjectConfig],
+		userConfigManager config.UserConfigManager,
+	) (*state.RemoteConfig, error) {
+		var remoteStateConfig *state.RemoteConfig
+
+		// The project config may not be available yet
+		// Ex) Within init phase of fingerprinting
+		projectConfig, _ := lazyProjectConfig.GetValue()
+
+		// Lookup remote state config in the following precedence:
+		// 1. Project azure.yaml
+		// 2. User configuration
+		if projectConfig != nil && projectConfig.State != nil && projectConfig.State.Remote != nil {
+			remoteStateConfig = projectConfig.State.Remote
+		} else {
+			userConfig, err := userConfigManager.Load()
+			if err != nil {
+				return nil, fmt.Errorf("loading user config: %w", err)
+			}
+
+			remoteState, ok := userConfig.Get("state.remote")
+			if ok {
+				jsonBytes, err := json.Marshal(remoteState)
+				if err != nil {
+					return nil, fmt.Errorf("marshalling remote state: %w", err)
+				}
+
+				if err := json.Unmarshal(jsonBytes, &remoteStateConfig); err != nil {
+					return nil, fmt.Errorf("unmarshalling remote state: %w", err)
+				}
+			}
+		}
+
+		return remoteStateConfig, nil
+	})
+
+	container.RegisterSingleton(func(
+		remoteStateConfig *state.RemoteConfig,
+		projectConfig *project.ProjectConfig,
+	) (*storage.AccountConfig, error) {
+		if remoteStateConfig == nil {
+			return nil, nil
+		}
+
+		var storageAccountConfig *storage.AccountConfig
+		jsonBytes, err := json.Marshal(remoteStateConfig.Config)
+		if err != nil {
+			return nil, fmt.Errorf("marshalling remote state config: %w", err)
+		}
+
+		if err := json.Unmarshal(jsonBytes, &storageAccountConfig); err != nil {
+			return nil, fmt.Errorf("unmarshalling remote state config: %w", err)
+		}
+
+		// If a container name has not been explicitly configured
+		// Default to use the project name as the container name
+		if storageAccountConfig.ContainerName == "" {
+			storageAccountConfig.ContainerName = projectConfig.Name
+		}
+
+		return storageAccountConfig, nil
 	})
 
 	// Lazy loads an existing environment, erroring out if not available
 	// One can repeatedly call GetValue to wait until the environment is available.
 	container.RegisterSingleton(
-		func(lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext], envFlags envFlag) *lazy.Lazy[*environment.Environment] {
+		func(
+			ctx context.Context,
+			lazyEnvManager *lazy.Lazy[environment.Manager],
+			lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext],
+			envFlags envFlag,
+		) *lazy.Lazy[*environment.Environment] {
 			return lazy.NewLazy(func() (*environment.Environment, error) {
 				azdCtx, err := lazyAzdContext.GetValue()
 				if err != nil {
@@ -220,7 +350,12 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 					}
 				}
 
-				env, err := environment.GetEnvironment(azdCtx, environmentName)
+				envManager, err := lazyEnvManager.GetValue()
+				if err != nil {
+					return nil, err
+				}
+
+				env, err := envManager.Get(ctx, environmentName)
 				if err != nil {
 					return nil, err
 				}
@@ -265,8 +400,8 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(project.NewProjectManager)
 	container.RegisterSingleton(project.NewServiceManager)
 	container.RegisterSingleton(repository.NewInitializer)
-	container.RegisterSingleton(config.NewUserConfigManager)
 	container.RegisterSingleton(alpha.NewFeaturesManager)
+	container.RegisterSingleton(config.NewUserConfigManager)
 	container.RegisterSingleton(config.NewManager)
 	container.RegisterSingleton(config.NewFileConfigManager)
 	container.RegisterSingleton(templates.NewTemplateManager)
@@ -289,6 +424,10 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 	container.RegisterSingleton(func(subManager *account.SubscriptionsManager) account.SubscriptionTenantResolver {
 		return subManager
+	})
+
+	container.RegisterSingleton(func(ctx context.Context, authManager *auth.Manager) (azcore.TokenCredential, error) {
+		return authManager.CredentialForCurrentUser(ctx, nil)
 	})
 
 	// Tools

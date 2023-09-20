@@ -30,6 +30,7 @@ type SpringOptions struct {
 
 type springAppTarget struct {
 	env           *environment.Environment
+	envManager    environment.Manager
 	springService azcli.SpringService
 }
 
@@ -39,10 +40,12 @@ type springAppTarget struct {
 // can be provisioned during deployment.
 func NewSpringAppTarget(
 	env *environment.Environment,
+	envManager environment.Manager,
 	springService azcli.SpringService,
 ) ServiceTarget {
 	return &springAppTarget{
 		env:           env,
+		envManager:    envManager,
 		springService: springService,
 	}
 }
@@ -152,7 +155,7 @@ func (st *springAppTarget) Deploy(
 			// save the storage relative, otherwise the relative path will be overwritten
 			// in the deployment from Bicep/Terraform
 			st.env.SetServiceProperty(serviceConfig.Name, "RELATIVE_PATH", *relativePath)
-			if err := st.env.Save(); err != nil {
+			if err := st.envManager.Save(ctx, st.env); err != nil {
 				task.SetError(fmt.Errorf("failed updating environment with relative path, %w", err))
 				return
 			}

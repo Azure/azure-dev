@@ -35,8 +35,10 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
 	"github.com/benbjohnson/clock"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -341,10 +343,13 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 		Module: "main",
 	}
 
-	env := environment.EphemeralWithValues("test-env", map[string]string{
+	env := environment.NewWithValues("test-env", map[string]string{
 		environment.LocationEnvVarName:       "westus2",
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
 	})
+
+	envManager := &mockenv.MockEnvManager{}
+	envManager.On("Save", mock.Anything, mock.Anything).Return(nil)
 
 	bicepCli, err := bicep.NewBicepCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
 	require.NoError(t, err)
@@ -372,6 +377,7 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 		azCli,
 		depService,
 		depOpService,
+		envManager,
 		env,
 		mockContext.Console,
 		prompt.NewDefaultPrompter(env, mockContext.Console, accountManager, azCli),

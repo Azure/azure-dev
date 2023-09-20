@@ -8,7 +8,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -106,33 +105,36 @@ func (f *envSetFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 }
 
 type envSetAction struct {
-	console input.Console
-	azdCtx  *azdcontext.AzdContext
-	env     *environment.Environment
-	flags   *envSetFlags
-	args    []string
+	console    input.Console
+	azdCtx     *azdcontext.AzdContext
+	env        *environment.Environment
+	envManager environment.Manager
+	flags      *envSetFlags
+	args       []string
 }
 
 func newEnvSetAction(
 	azdCtx *azdcontext.AzdContext,
 	env *environment.Environment,
+	envManager environment.Manager,
 	console input.Console,
 	flags *envSetFlags,
 	args []string,
 ) actions.Action {
 	return &envSetAction{
-		console: console,
-		azdCtx:  azdCtx,
-		env:     env,
-		flags:   flags,
-		args:    args,
+		console:    console,
+		azdCtx:     azdCtx,
+		env:        env,
+		envManager: envManager,
+		flags:      flags,
+		args:       args,
 	}
 }
 
 func (e *envSetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	e.env.DotenvSet(e.args[0], e.args[1])
 
-	if err := e.env.Save(); err != nil {
+	if err := e.envManager.Save(ctx, e.env); err != nil {
 		return nil, fmt.Errorf("saving environment: %w", err)
 	}
 
@@ -148,22 +150,27 @@ func newEnvSelectCmd() *cobra.Command {
 }
 
 type envSelectAction struct {
-	azdCtx *azdcontext.AzdContext
-	args   []string
+	azdCtx     *azdcontext.AzdContext
+	envManager environment.Manager
+	args       []string
 }
 
-func newEnvSelectAction(azdCtx *azdcontext.AzdContext, args []string) actions.Action {
+func newEnvSelectAction(azdCtx *azdcontext.AzdContext, envManager environment.Manager, args []string) actions.Action {
 	return &envSelectAction{
-		azdCtx: azdCtx,
-		args:   args,
+		azdCtx:     azdCtx,
+		envManager: envManager,
+		args:       args,
 	}
 }
 
 func (e *envSelectAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	_, err := environment.GetEnvironment(e.azdCtx, e.args[0])
-	if errors.Is(err, os.ErrNotExist) {
-		return nil, fmt.Errorf(`environment '%s' does not exist. You can create it with "azd env new %s"`,
-			e.args[0], e.args[0])
+	_, err := e.envManager.Get(ctx, e.args[0])
+	if errors.Is(err, environment.ErrNotFound) {
+		return nil, fmt.Errorf(
+			`environment '%s' does not exist. You can create it with "azd env new %s"`,
+			e.args[0],
+			e.args[0],
+		)
 	} else if err != nil {
 		return nil, fmt.Errorf("ensuring environment exists: %w", err)
 	}
@@ -184,21 +191,28 @@ func newEnvListCmd() *cobra.Command {
 }
 
 type envListAction struct {
-	azdCtx    *azdcontext.AzdContext
-	formatter output.Formatter
-	writer    io.Writer
+	envManager environment.Manager
+	azdCtx     *azdcontext.AzdContext
+	formatter  output.Formatter
+	writer     io.Writer
 }
 
-func newEnvListAction(azdCtx *azdcontext.AzdContext, formatter output.Formatter, writer io.Writer) actions.Action {
+func newEnvListAction(
+	envManager environment.Manager,
+	azdCtx *azdcontext.AzdContext,
+	formatter output.Formatter,
+	writer io.Writer,
+) actions.Action {
 	return &envListAction{
-		azdCtx:    azdCtx,
-		formatter: formatter,
-		writer:    writer,
+		envManager: envManager,
+		azdCtx:     azdCtx,
+		formatter:  formatter,
+		writer:     writer,
 	}
 }
 
 func (e *envListAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	envs, err := e.azdCtx.ListEnvironments()
+	envs, err := e.envManager.List(ctx)
 
 	if err != nil {
 		return nil, fmt.Errorf("listing environments: %w", err)
@@ -213,6 +227,14 @@ func (e *envListAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 			{
 				Heading:       "DEFAULT",
 				ValueTemplate: "{{.IsDefault}}",
+			},
+			{
+				Heading:       "LOCAL",
+				ValueTemplate: "{{.HasLocal}}",
+			},
+			{
+				Heading:       "REMOTE",
+				ValueTemplate: "{{.HasRemote}}",
 			},
 		}
 
@@ -265,23 +287,26 @@ func newEnvNewCmd() *cobra.Command {
 }
 
 type envNewAction struct {
-	azdCtx  *azdcontext.AzdContext
-	flags   *envNewFlags
-	args    []string
-	console input.Console
+	azdCtx     *azdcontext.AzdContext
+	envManager environment.Manager
+	flags      *envNewFlags
+	args       []string
+	console    input.Console
 }
 
 func newEnvNewAction(
 	azdCtx *azdcontext.AzdContext,
+	envManager environment.Manager,
 	flags *envNewFlags,
 	args []string,
 	console input.Console,
 ) actions.Action {
 	return &envNewAction{
-		azdCtx:  azdCtx,
-		flags:   flags,
-		args:    args,
-		console: console,
+		azdCtx:     azdCtx,
+		envManager: envManager,
+		flags:      flags,
+		args:       args,
+		console:    console,
 	}
 }
 
@@ -291,13 +316,13 @@ func (en *envNewAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		environmentName = en.args[0]
 	}
 
-	envSpec := environmentSpec{
-		environmentName: environmentName,
-		subscription:    en.flags.subscription,
-		location:        en.flags.location,
+	envSpec := environment.Spec{
+		Name:         environmentName,
+		Subscription: en.flags.subscription,
+		Location:     en.flags.location,
 	}
 
-	env, err := createEnvironment(ctx, envSpec, en.azdCtx, en.console)
+	env, err := en.envManager.Create(ctx, envSpec)
 	if err != nil {
 		return nil, fmt.Errorf("creating new environment: %w", err)
 	}
@@ -370,6 +395,7 @@ type envRefreshAction struct {
 	projectConfig    *project.ProjectConfig
 	projectManager   project.ProjectManager
 	env              *environment.Environment
+	envManager       environment.Manager
 	flags            *envRefreshFlags
 	console          input.Console
 	formatter        output.Formatter
@@ -381,6 +407,7 @@ func newEnvRefreshAction(
 	projectConfig *project.ProjectConfig,
 	projectManager project.ProjectManager,
 	env *environment.Environment,
+	envManager environment.Manager,
 	flags *envRefreshFlags,
 	console input.Console,
 	formatter output.Formatter,
@@ -390,6 +417,7 @@ func newEnvRefreshAction(
 		provisionManager: provisionManager,
 		projectManager:   projectManager,
 		env:              env,
+		envManager:       envManager,
 		console:          console,
 		flags:            flags,
 		formatter:        formatter,
@@ -426,7 +454,7 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 		return nil, fmt.Errorf("getting deployment: %w", err)
 	}
 
-	if err := provisioning.UpdateEnvironment(ef.env, getStateResult.State.Outputs); err != nil {
+	if err := ef.provisionManager.UpdateEnvironment(ctx, ef.env, getStateResult.State.Outputs); err != nil {
 		return nil, err
 	}
 
@@ -451,10 +479,12 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 		}
 	}
 
+	localEnvPath := ef.envManager.EnvPath(ef.env)
+
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
 			Header:   "Environment refresh completed",
-			FollowUp: fmt.Sprintf("View environment variables at %s", output.WithHyperlink(ef.env.Path(), ef.env.Path())),
+			FollowUp: fmt.Sprintf("View environment variables at %s", output.WithHyperlink(localEnvPath, localEnvPath)),
 		},
 	}, nil
 }

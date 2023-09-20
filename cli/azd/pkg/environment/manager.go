@@ -27,14 +27,17 @@ type Spec struct {
 	Subscription string
 	Location     string
 	// suggest is the name that is offered as a suggestion if we need to prompt the user for an environment name.
-	Suggest string
+	Examples []string
 }
 
 const DotEnvFileName = ".env"
 const ConfigFileName = "config.json"
 
 var (
-	ErrExists   = errors.New("environment already exists")
+	// Error returned when an environment with the specified name already exists
+	ErrExists = errors.New("environment already exists")
+
+	// Error returned when an environment with a specified name cannot be found
 	ErrNotFound = errors.New("environment not found")
 )
 
@@ -46,7 +49,7 @@ type Manager interface {
 	Get(ctx context.Context, name string) (*Environment, error)
 	Save(ctx context.Context, env *Environment) error
 	Reload(ctx context.Context, env *Environment) error
-	Path(env *Environment) string
+	EnvPath(env *Environment) string
 	ConfigPath(env *Environment) string
 }
 
@@ -210,8 +213,8 @@ func (m *manager) ConfigPath(env *Environment) string {
 	return m.local.ConfigPath(env)
 }
 
-// Path returns the path to the environment .env file
-func (m *manager) Path(env *Environment) string {
+// EnvPath returns the path to the environment .env file
+func (m *manager) EnvPath(env *Environment) string {
 	return m.local.EnvPath(env)
 }
 
@@ -317,6 +320,15 @@ func (m *manager) Reload(ctx context.Context, env *Environment) error {
 // ensureValidEnvironmentName ensures the environment name is valid, if it is not, an error is printed
 // and the user is prompted for a new name.
 func (m *manager) ensureValidEnvironmentName(ctx context.Context, spec *Spec) error {
+	exampleText := ""
+	if len(spec.Examples) > 0 {
+		exampleText = "\n\nExamples:"
+	}
+
+	for _, example := range spec.Examples {
+		exampleText += fmt.Sprintf("\n  %s", example)
+	}
+
 	for !IsValidEnvironmentName(spec.Name) {
 		userInput, err := m.console.Prompt(ctx, input.ConsoleOptions{
 			Message: "Enter a new environment name:",
@@ -325,8 +337,7 @@ func (m *manager) ensureValidEnvironmentName(ctx context.Context, spec *Spec) er
 
 			This value is typically used by the infrastructure as code templates to name the resource group that contains
 			the infrastructure for your application and to generate a unique suffix that is applied to resources to prevent
-			naming collisions.`),
-			DefaultValue: spec.Suggest,
+			naming collisions.`) + exampleText,
 		})
 
 		if err != nil {

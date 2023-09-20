@@ -6,6 +6,7 @@ package cli_test
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -15,6 +16,7 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -350,9 +352,11 @@ func attributesMap(attributes []Attribute) map[attribute.Key]interface{} {
 }
 
 func getEnvSubscriptionId(t *testing.T, dir string, envName string) string {
-	envPath := filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName)
-	env, err := environment.FromRoot(envPath)
+	azdCtx := azdcontext.NewAzdContextWithDirectory(dir)
+	localDataStore := environment.NewLocalFileDataStore(azdCtx, config.NewFileConfigManager(config.NewManager()))
+	env, err := localDataStore.Get(context.Background(), envName)
 	require.NoError(t, err)
+
 	return env.GetSubscriptionId()
 }
 

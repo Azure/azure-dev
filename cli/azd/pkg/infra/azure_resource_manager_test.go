@@ -461,7 +461,7 @@ func TestFindResourceGroupForEnvironment(t *testing.T) {
 				return responseForGroups(tt.rgsFromNoFilter), nil
 			})
 
-			env := environment.EphemeralWithValues("test-env", map[string]string{
+			env := environment.NewWithValues("test-env", map[string]string{
 				"AZURE_SUBSCRIPTION_ID": SUBSCRIPTION_ID,
 			})
 

@@ -12,6 +12,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 	"golang.org/x/exp/slices"
 )
@@ -118,8 +119,10 @@ func (fs *LocalFileDataStore) Reload(ctx context.Context, env *Environment) erro
 		tracing.SetUsageAttributes(fields.StringHashed(fields.EnvNameKey, env.GetEnvName()))
 	}
 
-	if env.GetSubscriptionId() != "" {
+	if _, err := uuid.Parse(env.GetSubscriptionId()); err == nil {
 		tracing.SetGlobalAttributes(fields.SubscriptionIdKey.String(env.GetSubscriptionId()))
+	} else {
+		tracing.SetGlobalAttributes(fields.StringHashed(fields.SubscriptionIdKey, env.GetSubscriptionId()))
 	}
 
 	return nil

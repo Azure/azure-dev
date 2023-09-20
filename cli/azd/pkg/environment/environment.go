@@ -13,7 +13,6 @@ import (
 	"maps"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
-	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 )
 
@@ -161,11 +160,6 @@ func (e *Environment) DotenvSet(key string, value string) {
 	delete(e.deletedKeys, key)
 }
 
-		if _, err := uuid.Parse(e.GetSubscriptionId()); err == nil {
-			tracing.SetGlobalAttributes(fields.SubscriptionIdKey.String(e.GetSubscriptionId()))
-		} else {
-			tracing.SetGlobalAttributes(fields.StringHashed(fields.SubscriptionIdKey, e.GetSubscriptionId()))
-		}
 // GetEnvName is shorthand for Getenv(EnvNameEnvVarName)
 func (e *Environment) GetEnvName() string {
 	return e.Getenv(EnvNameEnvVarName)

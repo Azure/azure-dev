@@ -7,7 +7,7 @@ interactions:
         - --username
         - 00000000-0000-0000-0000-000000000000
         - --password-stdin
-        - crakcmkgrz7mjns.azurecr.io
+        - cr4xh6wvpmojqtm.azurecr.io
       exitCode: 0
       stdout: |
         Login Succeeded
@@ -15,25 +15,25 @@ interactions:
     - id: 1
       args:
         - push
-        - crakcmkgrz7mjns.azurecr.io/containerapp/web-azdtest-l158b11:azd-deploy-1695173323
+        - cr4xh6wvpmojqtm.azurecr.io/containerapp/web-azdtest-l69f915:azd-deploy-1695231925
       exitCode: 0
       stdout: |
-        The push refers to repository [crakcmkgrz7mjns.azurecr.io/containerapp/web-azdtest-l158b11]
-        c80c49293c9d: Preparing
+        The push refers to repository [cr4xh6wvpmojqtm.azurecr.io/containerapp/web-azdtest-l69f915]
+        a68c023dcc66: Preparing
         01206a546ccb: Preparing
         0b06ef9e62c7: Preparing
         de65fc897446: Preparing
         cfa45b411d67: Preparing
         4170e926e0d8: Preparing
         6e3b92711bf1: Preparing
-        4170e926e0d8: Waiting
         6e3b92711bf1: Waiting
-        c80c49293c9d: Pushed
-        de65fc897446: Pushed
+        4170e926e0d8: Waiting
         01206a546ccb: Pushed
+        de65fc897446: Pushed
         0b06ef9e62c7: Pushed
         4170e926e0d8: Pushed
         cfa45b411d67: Pushed
+        a68c023dcc66: Pushed
         6e3b92711bf1: Pushed
-        azd-deploy-1695173323: digest: sha256:f296f23e2d88666374629a379bf422c82a9ec4f51c1174a73386af24d7ddda8c size: 1786
+        azd-deploy-1695231925: digest: sha256:e9576300f036ad9837705f546167b43cf7a6a16a325b94dfe43628b0d190effc size: 1786
       stderr: ""

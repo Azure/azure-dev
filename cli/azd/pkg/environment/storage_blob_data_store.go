@@ -97,9 +97,7 @@ func (sbd *StorageBlobDataStore) Get(ctx context.Context, name string) (*Environ
 
 	matchingEnv := envs[matchingIndex]
 	env := &Environment{
-		name:       matchingEnv.Name,
-		dotEnvPath: matchingEnv.DotEnvPath,
-		configPath: matchingEnv.ConfigPath,
+		name: matchingEnv.Name,
 	}
 
 	if err := sbd.Reload(ctx, env); err != nil {

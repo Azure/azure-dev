@@ -54,7 +54,7 @@ func Test_PythonProject_Restore(t *testing.T) {
 			return exec.NewRunResult(0, "", ""), nil
 		})
 
-	env := environment.Ephemeral()
+	env := environment.New("test")
 	pythonCli := python.NewPythonCli(mockContext.CommandRunner)
 	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguagePython)
 
@@ -88,7 +88,7 @@ func Test_PythonProject_Restore(t *testing.T) {
 func Test_PythonProject_Build(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 
-	env := environment.Ephemeral()
+	env := environment.New("test")
 	pythonCli := python.NewPythonCli(mockContext.CommandRunner)
 	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguagePython)
 
@@ -106,7 +106,7 @@ func Test_PythonProject_Package(t *testing.T) {
 	ostest.Chdir(t, tempDir)
 	mockContext := mocks.NewMockContext(context.Background())
 
-	env := environment.Ephemeral()
+	env := environment.New("test")
 	pythonCli := python.NewPythonCli(mockContext.CommandRunner)
 	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguagePython)
 	err := os.MkdirAll(serviceConfig.Path(), osutil.PermissionDirectory)

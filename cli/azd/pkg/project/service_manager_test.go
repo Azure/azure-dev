@@ -56,7 +56,7 @@ func createServiceManager(mockContext *mocks.MockContext, env *environment.Envir
 func Test_ServiceManager_GetRequiredTools(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	setupMocksForServiceManager(mockContext)
-	env := environment.Ephemeral()
+	env := environment.New("test")
 	sm := createServiceManager(mockContext, env)
 	serviceConfig := createTestServiceConfig("./src/api", ServiceTargetFake, ServiceLanguageFake)
 
@@ -69,7 +69,7 @@ func Test_ServiceManager_GetRequiredTools(t *testing.T) {
 func Test_ServiceManager_Initialize(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	setupMocksForServiceManager(mockContext)
-	env := environment.Ephemeral()
+	env := environment.New("test")
 	sm := createServiceManager(mockContext, env)
 	serviceConfig := createTestServiceConfig("./src/api", ServiceTargetFake, ServiceLanguageFake)
 
@@ -80,7 +80,7 @@ func Test_ServiceManager_Initialize(t *testing.T) {
 func Test_ServiceManager_Restore(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	setupMocksForServiceManager(mockContext)
-	env := environment.Ephemeral()
+	env := environment.New("test")
 	sm := createServiceManager(mockContext, env)
 	serviceConfig := createTestServiceConfig("./src/api", ServiceTargetFake, ServiceLanguageFake)
 
@@ -114,7 +114,7 @@ func Test_ServiceManager_Restore(t *testing.T) {
 func Test_ServiceManager_Build(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	setupMocksForServiceManager(mockContext)
-	env := environment.Ephemeral()
+	env := environment.New("test")
 	sm := createServiceManager(mockContext, env)
 	serviceConfig := createTestServiceConfig("./src/api", ServiceTargetFake, ServiceLanguageFake)
 
@@ -148,7 +148,7 @@ func Test_ServiceManager_Build(t *testing.T) {
 func Test_ServiceManager_Package(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	setupMocksForServiceManager(mockContext)
-	env := environment.Ephemeral()
+	env := environment.New("test")
 	sm := createServiceManager(mockContext, env)
 	serviceConfig := createTestServiceConfig("./src/api", ServiceTargetFake, ServiceLanguageFake)
 
@@ -185,7 +185,7 @@ func Test_ServiceManager_Package(t *testing.T) {
 func Test_ServiceManager_Deploy(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	setupMocksForServiceManager(mockContext)
-	env := environment.EphemeralWithValues("test", map[string]string{
+	env := environment.NewWithValues("test", map[string]string{
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
 	})
 	sm := createServiceManager(mockContext, env)
@@ -221,7 +221,7 @@ func Test_ServiceManager_Deploy(t *testing.T) {
 func Test_ServiceManager_GetFrameworkService(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	setupMocksForServiceManager(mockContext)
-	env := environment.Ephemeral()
+	env := environment.New("test")
 	sm := createServiceManager(mockContext, env)
 	serviceConfig := createTestServiceConfig("./src/api", ServiceTargetFake, ServiceLanguageFake)
 
@@ -234,7 +234,7 @@ func Test_ServiceManager_GetFrameworkService(t *testing.T) {
 func Test_ServiceManager_GetServiceTarget(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	setupMocksForServiceManager(mockContext)
-	env := environment.Ephemeral()
+	env := environment.New("test")
 	sm := createServiceManager(mockContext, env)
 	serviceConfig := createTestServiceConfig("./src/api", ServiceTargetFake, ServiceLanguageFake)
 
@@ -247,7 +247,7 @@ func Test_ServiceManager_GetServiceTarget(t *testing.T) {
 func Test_ServiceManager_CacheResults(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	setupMocksForServiceManager(mockContext)
-	env := environment.Ephemeral()
+	env := environment.New("test")
 	sm := createServiceManager(mockContext, env)
 	serviceConfig := createTestServiceConfig("./src/api", ServiceTargetFake, ServiceLanguageFake)
 
@@ -315,7 +315,7 @@ func Test_ServiceManager_Events_With_Errors(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			mockContext := mocks.NewMockContext(context.Background())
 			setupMocksForServiceManager(mockContext)
-			env := environment.EphemeralWithValues("test", map[string]string{
+			env := environment.NewWithValues("test", map[string]string{
 				environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
 			})
 			sm := createServiceManager(mockContext, env)

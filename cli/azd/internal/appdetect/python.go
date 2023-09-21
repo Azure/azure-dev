@@ -55,11 +55,21 @@ func (pd *pythonDetector) DetectProject(path string, entries []fs.DirEntry) (*Pr
 				}
 
 				switch module {
-				case "flask_mysqldb", "mysqlclient":
+				case "flask_mysqldb",
+					"mysqlclient",
+					"aiomysql",
+					"asyncmy":
 					databaseDepMap[DbMySql] = struct{}{}
-				case "psycopg2", "psycopg2-binary":
+				case "psycopg2",
+					"psycopg2-binary",
+					"psycopg",
+					"psycopgbinary",
+					"asyncpg",
+					"aiopg":
 					databaseDepMap[DbPostgres] = struct{}{}
-				case "pymongo", "beanie":
+				case "pymongo",
+					"beanie",
+					"motor":
 					databaseDepMap[DbMongo] = struct{}{}
 				}
 			}

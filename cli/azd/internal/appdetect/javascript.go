@@ -63,9 +63,9 @@ func (nd *javaScriptDetector) DetectProject(path string, entries []fs.DirEntry) 
 				switch dep {
 				case "mysql":
 					databaseDepMap[DbMySql] = struct{}{}
-				case "mongodb":
+				case "mongodb", "mongojs", "mongoose":
 					databaseDepMap[DbMongo] = struct{}{}
-				case "pg-promise":
+				case "pg", "pg-promise":
 					databaseDepMap[DbPostgres] = struct{}{}
 				case "tedious":
 					databaseDepMap[DbSqlServer] = struct{}{}

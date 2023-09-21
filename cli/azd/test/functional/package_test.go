@@ -62,8 +62,6 @@ func Test_CLI_Package_FromServiceDirectory(t *testing.T) {
 
 func Test_CLI_Package_WithOutputPath(t *testing.T) {
 	t.Run("AllServices", func(t *testing.T) {
-		// running this test in parallel is ok as it uses a t.TempDir()
-		t.Parallel()
 		ctx, cancel := newTestContext(t)
 		defer cancel()
 
@@ -95,8 +93,6 @@ func Test_CLI_Package_WithOutputPath(t *testing.T) {
 	})
 
 	t.Run("SingleService", func(t *testing.T) {
-		// running this test in parallel is ok as it uses a t.TempDir()
-		t.Parallel()
 		ctx, cancel := newTestContext(t)
 		defer cancel()
 

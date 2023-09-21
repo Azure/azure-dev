@@ -18,7 +18,7 @@ param databaseName string
 @secure()
 param databasePassword string
 {{- end}}
-{{- if .Frontend}}
+{{- if (and .Frontend .Frontend.Backends)}}
 param apiUrls array
 {{- end}}
 {{- if (and .Backend .Backend.Frontends)}}
@@ -54,7 +54,7 @@ resource acrPullRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   }
 }
 
-module fetchLatestImage '../lib/fetch-container-image.bicep' = {
+module fetchLatestImage '../modules/fetch-container-image.bicep' = {
   name: '${name}-fetch-image'
   params: {
     exists: exists

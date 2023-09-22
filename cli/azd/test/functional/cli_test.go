@@ -180,6 +180,56 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func Test_CLI_ProvisionCache(t *testing.T) {
+	// running this test in parallel is ok as it uses a t.TempDir()
+	t.Parallel()
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
+	t.Logf("DIR: %s", dir)
+
+	session := recording.Start(t)
+
+	envName := randomOrStoredEnvName(session)
+	t.Logf("AZURE_ENV_NAME: %s", envName)
+
+	cli := azdcli.NewCLI(t, azdcli.WithSession(session))
+	cli.WorkingDirectory = dir
+	cli.Env = append(cli.Env, os.Environ()...)
+	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
+
+	err := copySample(dir, "storage")
+	require.NoError(t, err, "failed expanding sample")
+
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
+	require.NoError(t, err)
+
+	// confirm sub/securedInput/notSave
+	_, err = cli.RunCommandWithStdIn(ctx, "\n\n\n", "provision")
+	require.NoError(t, err)
+
+	expectedOutputContains := "There are no changes to provision for your application."
+
+	// Second provision should use cache
+	secondProvisionOutput, err := cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
+	require.NoError(t, err)
+	require.Contains(t, secondProvisionOutput.Stdout, expectedOutputContains)
+
+	cli.Env = append(cli.Env, "INT_TAG_VALUE=1989")
+	thirdProvisionOutput, err := cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
+	require.NoError(t, err)
+	require.NotContains(t, thirdProvisionOutput.Stdout, expectedOutputContains)
+
+	// Using same secure input should use same cache
+	forthProvisionOutput, err := cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
+	require.NoError(t, err)
+	require.Contains(t, forthProvisionOutput.Stdout, expectedOutputContains)
+
+	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
+	require.NoError(t, err)
+}
+
 func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 	// running this test in parallel is ok as it uses a t.TempDir()
 	t.Parallel()

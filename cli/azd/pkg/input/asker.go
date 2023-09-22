@@ -104,12 +104,15 @@ func askOnePrompt(p survey.Prompt, response interface{}, isTerminal bool, stdout
 			opts = append(opts, withShowCursor)
 		}
 
+		survey.InputQuestionTemplate = c_inputQuestionTemplate
+
 		opts = append(opts, survey.WithIcons(func(icons *survey.IconSet) {
 			// use blue question mark for all questions
-			icons.Question.Format = "blue"
+			icons.Question.Format = "blue+b"
 
 			icons.Help.Format = "black+h"
 			icons.Help.Text = "Hint:"
+			icons.MarkedOption.Format = "red"
 		}))
 
 		return survey.AskOne(p, response, opts...)
@@ -194,3 +197,30 @@ func askOnePrompt(p survey.Prompt, response interface{}, isTerminal bool, stdout
 		panic(fmt.Sprintf("don't know how to prompt for type %T", p))
 	}
 }
+
+// Asker uses this template instead of the default one from survey.InputQuestionTemplate
+// Differences:
+// - Use color blue instead of cyan
+//
+//nolint:lll
+const c_inputQuestionTemplate = `
+{{- if .ShowHelp }}{{- color .Config.Icons.Help.Format }}{{ .Config.Icons.Help.Text }} {{ .Help }}{{color "reset"}}{{"\n"}}{{end}}
+{{- color .Config.Icons.Question.Format }}{{ .Config.Icons.Question.Text }} {{color "reset"}}
+{{- color "default+hb"}}{{ .Message }} {{color "reset"}}
+{{- if .ShowAnswer}}
+  {{- color "blue"}}{{.Answer}}{{color "reset"}}{{"\n"}}
+{{- else if .PageEntries -}}
+  {{- .Answer}} [Use arrows to move, enter to select, type to continue]
+  {{- "\n"}}
+  {{- range $ix, $choice := .PageEntries}}
+	{{- if eq $ix $.SelectedIndex }}{{color $.Config.Icons.SelectFocus.Format }}{{ $.Config.Icons.SelectFocus.Text }} {{else}}{{color "default"}}  {{end}}
+	{{- $choice.Value}}
+	{{- color "reset"}}{{"\n"}}
+  {{- end}}
+{{- else }}
+  {{- if or (and .Help (not .ShowHelp)) .Suggest }}{{color "cyan"}}[
+	{{- if and .Help (not .ShowHelp)}}{{ print .Config.HelpInput }} for help {{- if and .Suggest}}, {{end}}{{end -}}
+	{{- if and .Suggest }}{{color "cyan"}}{{ print .Config.SuggestInput }} for suggestions{{end -}}
+  ]{{color "reset"}} {{end}}
+  {{- if .Default}}{{color "white"}}({{.Default}}) {{color "reset"}}{{end}}
+{{- end}}`

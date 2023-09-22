@@ -48,7 +48,7 @@ import (
 
 const DefaultModule = "main"
 
-type bicepDeploymentDetails struct {
+type deploymentDetails struct {
 	CompiledBicep *compileBicepResult
 	// Target is the unique resource in azure that represents the deployment that will happen. A target can be scoped to
 	// either subscriptions, or resource groups.
@@ -335,7 +335,7 @@ func isBicepParamFile(modulePath string) bool {
 }
 
 // Plans the infrastructure provisioning
-func (p *BicepProvider) plan(ctx context.Context) (*bicepDeploymentDetails, error) {
+func (p *BicepProvider) plan(ctx context.Context) (*deploymentDetails, error) {
 	p.console.ShowSpinner(ctx, "Creating a deployment plan", input.Step)
 
 	modulePath := p.modulePath()
@@ -386,7 +386,7 @@ func (p *BicepProvider) plan(ctx context.Context) (*bicepDeploymentDetails, erro
 		return nil, fmt.Errorf("unsupported scope: %s", deploymentScope)
 	}
 
-	return &bicepDeploymentDetails{
+	return &deploymentDetails{
 		CompiledBicep: compileResult,
 		Target:        target,
 	}, nil
@@ -405,6 +405,37 @@ func deploymentNameForEnv(envName string, clock clock.Clock) string {
 	}
 
 	return name[len(name)-cArmDeploymentNameLengthMax:]
+}
+
+// deploymentState returns the latests deployment if it is the same as the deployment within deploymentData or an error
+// otherwise.
+func (p *BicepProvider) deploymentState(
+	ctx context.Context,
+	deploymentData *deploymentDetails,
+	currentParamsHash string) (*armresources.DeploymentExtended, error) {
+
+	p.console.ShowSpinner(ctx, "Comparing deployment state", input.Step)
+	prevDeploymentResult, err := p.latestDeploymentResult(ctx, deploymentData.Target)
+	if err != nil {
+		return nil, fmt.Errorf("deployment state error: %w", err)
+	}
+
+	var templateHash string
+	createHashResult, err := p.deploymentsService.CalculateTemplateHash(
+		ctx, p.env.GetSubscriptionId(), deploymentData.CompiledBicep.RawArmTemplate)
+	if err != nil {
+		return nil, fmt.Errorf("can't get hash from current template: %w", err)
+	}
+
+	if createHashResult.TemplateHash != nil {
+		templateHash = *createHashResult.TemplateHash
+	}
+
+	if !prevDeploymentEqualToCurrent(ctx, prevDeploymentResult, templateHash, currentParamsHash) {
+		return nil, fmt.Errorf("deployment state has changed")
+	}
+
+	return prevDeploymentResult, nil
 }
 
 // prevDeploymentResult looks and finds a previous deployment for the current azd project.
@@ -427,10 +458,8 @@ func (p *BicepProvider) latestDeploymentResult(
 	return deployments[0], nil
 }
 
-const c_canNotHash string = "can't hash this"
-
 // parametersHash generates a hash from each parameter as [name-type-value]
-func parametersHash(templateParameters azure.ArmTemplateParameterDefinitions, params azure.ArmParameters) string {
+func parametersHash(templateParameters azure.ArmTemplateParameterDefinitions, params azure.ArmParameters) (string, error) {
 	hash256 := sha256.New()
 
 	// the order of the parameters is important for creating a hash out of them
@@ -452,15 +481,15 @@ func parametersHash(templateParameters azure.ArmTemplateParameterDefinitions, pa
 		var buffer bytes.Buffer
 		err := gob.NewEncoder(&buffer).Encode(pValue)
 		if err != nil {
-			return c_canNotHash
+			return "", fmt.Errorf("hashing parameter %s: %w", paramName, err)
 		}
 		hash256.Write(buffer.Bytes())
 	}
-	return fmt.Sprintf("%x", hash256.Sum(nil))
+	return fmt.Sprintf("%x", hash256.Sum(nil)), nil
 }
 
 // prevDeploymentEqualToCurrent compares the template hash from a previous deployment against a current template.
-func (p *BicepProvider) prevDeploymentEqualToCurrent(
+func prevDeploymentEqualToCurrent(
 	ctx context.Context, prev *armresources.DeploymentExtended, templateHash, paramsHash string) bool {
 	if prev == nil {
 		logDS("No previous deployment.")
@@ -469,10 +498,6 @@ func (p *BicepProvider) prevDeploymentEqualToCurrent(
 
 	if prev.Tags == nil {
 		logDS("No previous deployment params tags")
-		return false
-	}
-
-	if paramsHash == c_canNotHash {
 		return false
 	}
 
@@ -518,30 +543,21 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*DeployResult, error) {
 		return nil, err
 	}
 
-	var currentParamsHash string
-	if !p.ignoreDeploymentState {
-		p.console.ShowSpinner(ctx, "Looking for last deployment state.", input.Step)
-		prevDeploymentResult, err := p.latestDeploymentResult(ctx, bicepDeploymentData.Target)
-		if err != nil {
-			logDS(": error: unable to get previous deployment. Ignoring any previous deployment.")
-		}
+	// parameters hash is required for doing deployment state validation check but also to set the hash
+	// after a successful deployment.
+	currentParamsHash, parametersHashErr := parametersHash(
+		bicepDeploymentData.CompiledBicep.Template.Parameters, bicepDeploymentData.CompiledBicep.Parameters)
+	if parametersHashErr != nil {
+		// fail to hash parameters won't stop the operation. It only disables deployment state and recording parameters hash
+		logDS(parametersHashErr.Error())
+	}
 
-		var templateHash string
-		createHashResult, err := p.deploymentsService.CalculateTemplateHash(
-			ctx, p.env.GetSubscriptionId(), bicepDeploymentData.CompiledBicep.RawArmTemplate)
-		if err != nil {
-			logDS("can't get hash from current template: %v", err)
-		}
-		if createHashResult.TemplateHash != nil {
-			templateHash = *createHashResult.TemplateHash
-		}
-		currentParamsHash = parametersHash(
-			bicepDeploymentData.CompiledBicep.Template.Parameters, bicepDeploymentData.CompiledBicep.Parameters)
-
-		if p.prevDeploymentEqualToCurrent(ctx, prevDeploymentResult, templateHash, currentParamsHash) {
+	if !p.ignoreDeploymentState && parametersHashErr == nil {
+		deploymentState, err := p.deploymentState(ctx, bicepDeploymentData, currentParamsHash)
+		if err == nil {
 			deployment.Outputs = p.createOutputParameters(
 				bicepDeploymentData.CompiledBicep.Template.Outputs,
-				azapi.CreateDeploymentOutput(prevDeploymentResult.Properties.Outputs),
+				azapi.CreateDeploymentOutput(deploymentState.Properties.Outputs),
 			)
 
 			return &DeployResult{
@@ -549,6 +565,7 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*DeployResult, error) {
 				SkippedReason: DeploymentStateSkipped,
 			}, nil
 		}
+		logDS(err.Error())
 	}
 
 	cancelProgress := make(chan bool)
@@ -592,7 +609,7 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*DeployResult, error) {
 	deploymentTags := map[string]*string{
 		azure.TagKeyAzdEnvName: to.Ptr(p.env.GetEnvName()),
 	}
-	if currentParamsHash != c_canNotHash {
+	if parametersHashErr == nil {
 		deploymentTags[azure.TagKeyAzdDeploymentStateParamHashName] = to.Ptr(currentParamsHash)
 	}
 	deployResult, err := p.deployModule(

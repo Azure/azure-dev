@@ -178,7 +178,8 @@ func (c *AskerConsole) Message(ctx context.Context, message string) {
 	} else {
 		log.Println(message)
 	}
-	c.updateLastBytes(message)
+	// Adding "\n" b/c calling Fprintln is adding one new line at the end to the msg
+	c.updateLastBytes(message + "\n")
 }
 
 func (c *AskerConsole) updateLastBytes(msg string) {
@@ -226,7 +227,8 @@ func (c *AskerConsole) MessageUxItem(ctx context.Context, item ux.UxItem) {
 
 	msg := item.ToString(c.currentIndent)
 	c.println(ctx, msg)
-	c.updateLastBytes(msg)
+	// Adding "\n" b/c calling Fprintln is adding one new line at the end to the msg
+	c.updateLastBytes(msg + "\n")
 }
 
 func (c *AskerConsole) println(ctx context.Context, msg string) {

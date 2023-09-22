@@ -198,7 +198,7 @@ func Test_CLI_ProvisionCache(t *testing.T) {
 	cli.WorkingDirectory = dir
 	cli.Env = append(cli.Env, os.Environ()...)
 	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
-	cli.Env = append(cli.Env, "AZD_GLOBAL_DELAY=10")
+	cli.Env = append(cli.Env, "AZD_GLOBAL_DELAY=0")
 
 	err := copySample(dir, "storage")
 	require.NoError(t, err, "failed expanding sample")
@@ -206,8 +206,8 @@ func Test_CLI_ProvisionCache(t *testing.T) {
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
 	require.NoError(t, err)
 
-	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision", "--debug")
-	require.Error(t, err)
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
+	require.NoError(t, err)
 
 	expectedOutputContains := "There are no changes to provision for your application."
 

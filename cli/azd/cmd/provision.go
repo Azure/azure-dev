@@ -193,7 +193,7 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		}, nil
 	}
 
-	if deployResult.SkippedReason != "ads" {
+	if deployResult.SkippedReason == provisioning.DeploymentStateSkipped {
 		return &actions.ActionResult{
 			Message: &actions.ResultMessage{
 				Header: "There are no changes to provision for your application.",

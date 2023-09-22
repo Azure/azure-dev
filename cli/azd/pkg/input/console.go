@@ -190,6 +190,7 @@ func (c *AskerConsole) updateLastBytes(msg string) {
 	if msgLen < 2 {
 		c.last2Byte[0] = c.last2Byte[1]
 		c.last2Byte[1] = msg[msgLen-1]
+		return
 	}
 	c.last2Byte[0] = msg[msgLen-2]
 	c.last2Byte[1] = msg[msgLen-1]
@@ -480,6 +481,8 @@ func promptFromOptions(options ConsoleOptions) survey.Prompt {
 	}
 }
 
+const c_afterIO = "oi\n"
+
 // Prompts the user for a single value
 func (c *AskerConsole) Prompt(ctx context.Context, options ConsoleOptions) (string, error) {
 	var response string
@@ -490,7 +493,7 @@ func (c *AskerConsole) Prompt(ctx context.Context, options ConsoleOptions) (stri
 	if err != nil {
 		return response, err
 	}
-
+	c.updateLastBytes(c_afterIO)
 	return response, nil
 }
 
@@ -512,6 +515,7 @@ func (c *AskerConsole) Select(ctx context.Context, options ConsoleOptions) (int,
 		return -1, err
 	}
 
+	c.updateLastBytes(c_afterIO)
 	return response, nil
 }
 
@@ -537,6 +541,7 @@ func (c *AskerConsole) Confirm(ctx context.Context, options ConsoleOptions) (boo
 		return false, err
 	}
 
+	c.updateLastBytes(c_afterIO)
 	return response, nil
 }
 

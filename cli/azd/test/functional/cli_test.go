@@ -198,7 +198,6 @@ func Test_CLI_ProvisionCache(t *testing.T) {
 	cli.WorkingDirectory = dir
 	cli.Env = append(cli.Env, os.Environ()...)
 	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
-	cli.Env = append(cli.Env, "AZD_GLOBAL_DELAY=0")
 
 	err := copySample(dir, "storage")
 	require.NoError(t, err, "failed expanding sample")
@@ -215,6 +214,17 @@ func Test_CLI_ProvisionCache(t *testing.T) {
 	secondProvisionOutput, err := cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
 	require.NoError(t, err)
 	require.Contains(t, secondProvisionOutput.Stdout, expectedOutputContains)
+
+	// Third deploy setting a different param
+	cli.Env = append(cli.Env, "INT_TAG_VALUE=1989")
+	thirdProvisionOutput, err := cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
+	require.NoError(t, err)
+	require.NotContains(t, thirdProvisionOutput.Stdout, expectedOutputContains)
+
+	// last provision should use cache
+	lastProvisionOutput, err := cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
+	require.NoError(t, err)
+	require.Contains(t, lastProvisionOutput.Stdout, expectedOutputContains)
 
 	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
 	require.NoError(t, err)

@@ -169,7 +169,8 @@
                                     "host": {
                                         "enum": [
                                             "containerapp",
-                                            "aks"
+                                            "aks",
+                                            "appservice"
                                         ]
                                     }
                                 }

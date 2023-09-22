@@ -50,8 +50,6 @@ const DefaultModule = "main"
 
 type bicepDeploymentDetails struct {
 	CompiledBicep *compileBicepResult
-	// Parameters are the values to provide to the template during the deployment operation.
-	Parameters azure.ArmParameters
 	// Target is the unique resource in azure that represents the deployment that will happen. A target can be scoped to
 	// either subscriptions, or resource groups.
 	Target infra.Deployment
@@ -337,39 +335,33 @@ func isBicepParamFile(modulePath string) bool {
 }
 
 // Plans the infrastructure provisioning
-func (p *BicepProvider) plan(ctx context.Context) (*Deployment, *bicepDeploymentDetails, error) {
+func (p *BicepProvider) plan(ctx context.Context) (*bicepDeploymentDetails, error) {
 	p.console.ShowSpinner(ctx, "Creating a deployment plan", input.Step)
 
 	modulePath := p.modulePath()
 	// TODO: Report progress, "Compiling Bicep template"
 	compileResult, err := p.compileBicep(ctx, modulePath)
 	if err != nil {
-		return nil, nil, fmt.Errorf("creating template: %w", err)
+		return nil, fmt.Errorf("creating template: %w", err)
 	}
 
-	// for .bicepparam, parameters are resolved as part of bicep compilation
-	armParameters := compileResult.Parameters
 	// for .bicep, azd must load a parameters.json file and create the ArmParameters
 	if isBicepFile(modulePath) {
 		parameters, err := p.loadParameters(ctx)
 		if err != nil {
-			return nil, nil, fmt.Errorf("resolving bicep parameters file: %w", err)
+			return nil, fmt.Errorf("resolving bicep parameters file: %w", err)
 		}
 
 		configuredParameters, err := p.ensureParameters(ctx, compileResult.Template, parameters)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
-		armParameters = configuredParameters
-	}
-	deployment, err := p.convertToDeployment(compileResult.Template)
-	if err != nil {
-		return nil, nil, err
+		compileResult.Parameters = configuredParameters
 	}
 
 	deploymentScope, err := compileResult.Template.TargetScope()
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	var target infra.Deployment
@@ -391,12 +383,11 @@ func (p *BicepProvider) plan(ctx context.Context) (*Deployment, *bicepDeployment
 			deploymentNameForEnv(p.env.GetEnvName(), p.clock),
 		)
 	} else {
-		return nil, nil, fmt.Errorf("unsupported scope: %s", deploymentScope)
+		return nil, fmt.Errorf("unsupported scope: %s", deploymentScope)
 	}
 
-	return deployment, &bicepDeploymentDetails{
+	return &bicepDeploymentDetails{
 		CompiledBicep: compileResult,
-		Parameters:    armParameters,
 		Target:        target,
 	}, nil
 }
@@ -517,7 +508,12 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*DeployResult, error) {
 		logDS("Azure Deployment State is disabled by --ignore-ads arg.")
 	}
 
-	deployment, bicepDeploymentData, err := p.plan(ctx)
+	bicepDeploymentData, err := p.plan(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	deployment, err := p.convertToDeployment(bicepDeploymentData.CompiledBicep.Template)
 	if err != nil {
 		return nil, err
 	}
@@ -540,7 +536,7 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*DeployResult, error) {
 			templateHash = *createHashResult.TemplateHash
 		}
 		currentParamsHash = parametersHash(
-			bicepDeploymentData.CompiledBicep.Template.Parameters, bicepDeploymentData.Parameters)
+			bicepDeploymentData.CompiledBicep.Template.Parameters, bicepDeploymentData.CompiledBicep.Parameters)
 
 		if p.prevDeploymentEqualToCurrent(ctx, prevDeploymentResult, templateHash, currentParamsHash) {
 			deployment.Outputs = p.createOutputParameters(
@@ -603,7 +599,7 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*DeployResult, error) {
 		ctx,
 		bicepDeploymentData.Target,
 		bicepDeploymentData.CompiledBicep.RawArmTemplate,
-		bicepDeploymentData.Parameters,
+		bicepDeploymentData.CompiledBicep.Parameters,
 		deploymentTags,
 	)
 	if err != nil {
@@ -622,7 +618,7 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*DeployResult, error) {
 
 // Preview runs deploy using the what-if argument
 func (p *BicepProvider) Preview(ctx context.Context) (*DeployPreviewResult, error) {
-	_, bicepDeploymentData, err := p.plan(ctx)
+	bicepDeploymentData, err := p.plan(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -633,7 +629,7 @@ func (p *BicepProvider) Preview(ctx context.Context) (*DeployPreviewResult, erro
 	deployPreviewResult, err := targetScope.DeployPreview(
 		ctx,
 		bicepDeploymentData.CompiledBicep.RawArmTemplate,
-		bicepDeploymentData.Parameters,
+		bicepDeploymentData.CompiledBicep.Parameters,
 	)
 	if err != nil {
 		return nil, err

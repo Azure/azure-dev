@@ -226,6 +226,11 @@ func Test_CLI_ProvisionCache(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, lastProvisionOutput.Stdout, expectedOutputContains)
 
+	// use flag to force provision
+	flagProvisionOutput, err := cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision", "--disable-deployment-state")
+	require.NoError(t, err)
+	require.NotContains(t, flagProvisionOutput.Stdout, expectedOutputContains)
+
 	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
 	require.NoError(t, err)
 }

@@ -12,7 +12,7 @@ pool:
   vmImage: ubuntu-latest
 
 steps:
-  - task: setup-azd@0 
+  - task: setup-azd@0
     displayName: Install azd
 
   - pwsh: |
@@ -27,12 +27,33 @@ steps:
       AZURE_CREDENTIALS: $(AZURE_CREDENTIALS)
 
   - pwsh: |
-      azd provision --no-prompt
+      azd config set alpha.terraform on
+    displayName: Enable terraform alpha feature from azd
+
+  - task: JavaToolInstaller@0
+    inputs:
+      versionSpec: '17'
+      jdkArchitectureOption: 'x64'
+      jdkSourceOption: 'PreInstalled'
+      
+  - task: AzureCLI@2
     displayName: Provision Infrastructure
+    inputs:
+      azureSubscription: azconnection
+      scriptType: bash
+      scriptLocation: inlineScript
+      inlineScript: |
+        azd provision --no-prompt
     env:
       AZURE_SUBSCRIPTION_ID: $(AZURE_SUBSCRIPTION_ID)
       AZURE_ENV_NAME: $(AZURE_ENV_NAME)
       AZURE_LOCATION: $(AZURE_LOCATION)
+      ARM_TENANT_ID: $(ARM_TENANT_ID)
+      ARM_CLIENT_ID: $(ARM_CLIENT_ID)
+      ARM_CLIENT_SECRET: $(ARM_CLIENT_SECRET)
+      RS_RESOURCE_GROUP: $(RS_RESOURCE_GROUP)
+      RS_STORAGE_ACCOUNT: $(RS_STORAGE_ACCOUNT)
+      RS_CONTAINER_NAME: $(RS_CONTAINER_NAME)
 
   - pwsh: |
       azd deploy --no-prompt
@@ -41,3 +62,4 @@ steps:
       AZURE_SUBSCRIPTION_ID: $(AZURE_SUBSCRIPTION_ID)
       AZURE_ENV_NAME: $(AZURE_ENV_NAME)
       AZURE_LOCATION: $(AZURE_LOCATION)
+

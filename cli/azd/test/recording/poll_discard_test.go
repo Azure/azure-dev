@@ -29,7 +29,7 @@ func Test_httpPollDiscarder_BeforeSave(t *testing.T) {
 				locPoll(locPollOptions{id: "3", done: true}),
 			},
 			out: []cassette.Interaction{
-				locStart("1"),
+				locStart("3"),
 				locPoll(locPollOptions{id: "3", done: true}),
 			},
 		},

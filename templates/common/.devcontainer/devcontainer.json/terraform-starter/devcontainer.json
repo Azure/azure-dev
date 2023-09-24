@@ -29,7 +29,7 @@
     "forwardPorts": [
         // Forward ports if needed for local development
     ],
-    "postCreateCommand": "",
+    "postCreateCommand": "azd config set alpha.terraform on",
     "remoteUser": "vscode",
     "hostRequirements": {
         "memory": "8gb"

@@ -32,7 +32,7 @@
         3000,
         3100
     ],
-    "postCreateCommand": "",
+    "postCreateCommand": "azd config set alpha.terraform on",
     "remoteUser": "vscode",
     "hostRequirements": {
         "memory": "8gb"

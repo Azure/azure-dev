@@ -198,6 +198,7 @@ func Test_CLI_ProvisionCache(t *testing.T) {
 	cli.WorkingDirectory = dir
 	cli.Env = append(cli.Env, os.Environ()...)
 	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
+	cli.Env = append(cli.Env, "AZURE_RECORD_MODE=live")
 
 	err := copySample(dir, "storage")
 	require.NoError(t, err, "failed expanding sample")

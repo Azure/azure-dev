@@ -743,8 +743,10 @@ func ensureGitHubLogin(
 		}
 
 		if err := ghCli.Login(ctx, hostname); err == nil {
-			if projectPath != "" && ghGitProtocol == github.GitHttpsProtocolType {
+			if github.RunningOnCodespaces() && projectPath != "" && ghGitProtocol == github.GitHttpsProtocolType {
 				// For HTTPS, using gh as credential helper will avoid git asking for password
+				// Credential helper is only set for codespaces to improve the experience,
+				// see more about this here: https://github.com/Azure/azure-dev/issues/2451
 				if err := gitCli.SetGitHubAuthForRepo(
 					ctx, projectPath, fmt.Sprintf("https://%s", hostname), ghCli.BinaryPath()); err != nil {
 					return false, err

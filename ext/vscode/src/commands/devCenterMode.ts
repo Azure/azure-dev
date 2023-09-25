@@ -23,5 +23,5 @@ async function setDevCenterMode(context: IActionContext, enable: boolean): Promi
         .withArg(enable ? 'true' : 'false');
 
     await execAsync(command.build(), azureCli.spawnOptions());
-    void vscode.window.showInformationMessage(vscode.l10n.t('Azure Dev CLI\'s Dev Center mode has been {0}.', enable ? vscode.l10n.t('enabled') : vscode.l10n.t('disabled')));
+    void vscode.window.showInformationMessage(vscode.l10n.t('Azure Developer CLI\'s Dev Center mode has been {0}.', enable ? vscode.l10n.t('enabled') : vscode.l10n.t('disabled')));
 }

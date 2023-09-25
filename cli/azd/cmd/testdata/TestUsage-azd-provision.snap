@@ -10,7 +10,7 @@ Usage
   azd provision [flags]
 
 Flags
-        --disable-deployment-state 	: Do not use latest Deployment State (bicep only).
+        --ignore-deployment-state 	: Do not use latest Deployment State (bicep only).
         --docs                     	: Opens the documentation for azd provision in your web browser.
     -e, --environment string       	: The name of the environment to use.
     -h, --help                     	: Gets help for provision.

@@ -227,7 +227,7 @@ func Test_CLI_ProvisionCache(t *testing.T) {
 	require.Contains(t, lastProvisionOutput.Stdout, expectedOutputContains)
 
 	// use flag to force provision
-	flagProvisionOutput, err := cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision", "--disable-deployment-state")
+	flagProvisionOutput, err := cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision", "--ignore-deployment-state")
 	require.NoError(t, err)
 	require.NotContains(t, flagProvisionOutput.Stdout, expectedOutputContains)
 

@@ -179,6 +179,7 @@ func (o *opPoller) Done(i *cassette.Interaction) (bool, error) {
 // By default, this is a poller that checks for termination when HTTP status code is not 202.
 // In cases where the Azure-specific provisioning state is present in the body, that is used instead
 type locPoller struct {
+	initial  *cassette.Interaction
 	location url.URL
 }
 
@@ -194,6 +195,7 @@ func newLocationPoll(i *cassette.Interaction) (*locPoller, error) {
 	}
 	return &locPoller{
 		location: *loc,
+		initial:  i,
 	}, nil
 }
 
@@ -210,6 +212,7 @@ func (l *locPoller) Done(i *cassette.Interaction) (bool, error) {
 		}
 
 		l.location = *url
+		l.initial.Response.Headers.Set("Location", h)
 	}
 
 	// if provisioning state is available, use that. this is only

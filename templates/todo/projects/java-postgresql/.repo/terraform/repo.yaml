@@ -108,7 +108,7 @@ repo:
         - .azdo/pipelines/*/azure-dev.yml
 
     # AzDo workflows for terraform
-    - from: ../../../../../common/.azdo/pipelines/terraform/azure-dev.yml
+    - from: ../../../../../common/.azdo/pipelines/terraform/java/azure-dev.yml
       to: ./.azdo/pipelines/azure-dev.yml
 
     # Github workflows for terraform

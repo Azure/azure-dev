@@ -181,8 +181,7 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 }
 
 func Test_CLI_ProvisionCache(t *testing.T) {
-	// running this test in parallel is ok as it uses a t.TempDir()
-	t.Parallel()
+	t.Setenv("AZURE_RECORD_MODE", "live")
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
@@ -198,7 +197,6 @@ func Test_CLI_ProvisionCache(t *testing.T) {
 	cli.WorkingDirectory = dir
 	cli.Env = append(cli.Env, os.Environ()...)
 	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
-	cli.Env = append(cli.Env, "AZURE_RECORD_MODE=live")
 
 	err := copySample(dir, "storage")
 	require.NoError(t, err, "failed expanding sample")

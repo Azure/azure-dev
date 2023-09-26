@@ -37,7 +37,7 @@ export async function deleteEnvironment(context: IActionContext, selectedItem?: 
 
     let name = selectedEnvironment?.name;
 
-    if (!name) {       
+    if (!name) {
         let envData: EnvironmentInfo[] = [];
         try {
             envData = await getEnvironments(context, cwd);
@@ -49,12 +49,12 @@ export async function deleteEnvironment(context: IActionContext, selectedItem?: 
 
         // Filter out the default environment, it cannot be deleted without causing trouble
         envData = envData.filter(e => !e.IsDefault);
-        
+
         if (envData.length === 0) {
             void vscode.window.showInformationMessage(vscode.l10n.t('There are no environments to delete.'));
             return;
         }
-        
+
         const envChoices  = envData.map(d => ({ label: d.Name, data: d,} as IAzureQuickPickItem<EnvironmentInfo>));
         const selectedEnv = await context.ui.showQuickPick(envChoices, {
             canPickMany: false,
@@ -73,17 +73,17 @@ export async function deleteEnvironment(context: IActionContext, selectedItem?: 
 
     if (result === deleteOption) {
         const environmentDirectory = vscode.Uri.joinPath(folder.uri, '.azure', name);
-        
+
         await vscode.workspace.fs.delete(environmentDirectory, { recursive: true, useTrash: false });
-                
+
         // TODO: Use Azure Developer CLI to delete environment. https://github.com/Azure/azure-dev/issues/1554
         // const azureCli = await createAzureDevCli(context);
         // azureCli.commandBuilder.withArg('env').withArg('delete').withQuotedArg(name);
         // await spawnAsync(azureCli.commandBuilder.build(), azureCli.spawnOptions(cwd));
-        
+
         void vscode.window.showInformationMessage(
             vscode.l10n.t("'{0}' has been deleted.", name));
-            
+
         if (selectedEnvironment) {
             selectedEnvironment?.context.refreshEnvironments();
         }
@@ -101,7 +101,7 @@ export async function selectEnvironment(context: IActionContext, selectedItem?: 
 
     let name = selectedEnvironment?.name;
 
-    if (!name) {       
+    if (!name) {
         let envData: EnvironmentInfo[] = [];
         let errorMsg: string | undefined = undefined;
         try {
@@ -111,12 +111,12 @@ export async function selectEnvironment(context: IActionContext, selectedItem?: 
             errorMsg = parseError(err).message;
             ext.outputChannel.appendLog(vscode.l10n.t('Error while getting environments: {0}', errorMsg));
         }
-        
+
         if (envData.length === 0) {
             await promptCreateNewEnvironment(vscode.l10n.t('There are no environments to select. Would you like to create one?'), errorMsg);
             return; // promptCreateNewEnvironment() will call newEnvironment() asynchronously if necessary
         }
-        
+
         const envChoices  = envData.map(d => ({ label: d.Name, data: d,} as IAzureQuickPickItem<EnvironmentInfo>));
         const selectedEnv = await context.ui.showQuickPick(envChoices, {
             canPickMany: false,
@@ -129,7 +129,7 @@ export async function selectEnvironment(context: IActionContext, selectedItem?: 
     const azureCli = await createAzureDevCli(context);
     azureCli.commandBuilder.withArg('env').withArg('select').withQuotedArg(name);
     await spawnAsync(azureCli.commandBuilder.build(), azureCli.spawnOptions(cwd));
-    
+
     void vscode.window.showInformationMessage(
         vscode.l10n.t("'{0}' is now the default environment.", name));
 
@@ -148,7 +148,7 @@ export async function newEnvironment(context: IActionContext, selectedItem?: vsc
 
     const azureCli = await createAzureDevCli(context);
     const command = azureCli.commandBuilder.withArg('env').withArg('new');
-    
+
     void executeAsTask(command.build(), getAzDevTerminalTitle(), {
         focus: true,
         alwaysRunNew: true,
@@ -187,16 +187,33 @@ export async function refreshEnvironment(context: IActionContext, selectedItem?:
     });
 }
 
+export async function listEnvironments(context: IActionContext, selectedFile?: vscode.Uri): Promise<void> {
+    let folder: vscode.WorkspaceFolder | undefined = (selectedFile ? vscode.workspace.getWorkspaceFolder(selectedFile) : undefined);
+    if (!folder) {
+        folder = await quickPickWorkspaceFolder(context, vscode.l10n.t("To run '{0}' command you must first open a folder or workspace in VS Code", 'env list'));
+    }
+
+    const azureCli = await createAzureDevCli(context);
+    const command = azureCli.commandBuilder.withArg('env').withArg('list');
+
+    void executeAsTask(command.build(), getAzDevTerminalTitle(), {
+        focus: true,
+        alwaysRunNew: true,
+        cwd: folder.uri.fsPath,
+        env: azureCli.env
+    }, TelemetryId.EnvListCli);
+}
+
 async function promptCreateNewEnvironment(message: string, details?: string): Promise<void> {
-    const createNewEnvItem: vscode.MessageItem = { 
+    const createNewEnvItem: vscode.MessageItem = {
         title: vscode.l10n.t('Create a new environment'),
         isCloseAffordance: false
     };
-    const cancelItem: vscode.MessageItem = { 
+    const cancelItem: vscode.MessageItem = {
         title: vscode.l10n.t('Cancel'),
         isCloseAffordance: true
     };
-    const selectedItem = await vscode.window.showErrorMessage(message, 
+    const selectedItem = await vscode.window.showErrorMessage(message,
         { modal: true, detail: details }, createNewEnvItem, cancelItem);
     if (selectedItem === createNewEnvItem) {
         void vscode.commands.executeCommand('azure-dev.commands.cli.env-new'); // Don't wait

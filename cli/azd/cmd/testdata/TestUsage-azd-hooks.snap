@@ -8,6 +8,7 @@ Available Commands
   run	: Runs the specified hook for the project and services
 
 Flags
+        --docs 	: Opens the documentation for azd hooks in your web browser.
     -h, --help 	: Gets help for hooks.
 
 Global Flags

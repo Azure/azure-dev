@@ -5,6 +5,7 @@ Usage
   azd hooks run <name> [flags]
 
 Flags
+        --docs               	: Opens the documentation for azd hooks run in your web browser.
     -e, --environment string 	: The name of the environment to use.
     -h, --help               	: Gets help for run.
         --interactive        	: Forces all hooks to run in interactive mode for testing

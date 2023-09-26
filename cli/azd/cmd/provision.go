@@ -43,7 +43,7 @@ func (i *provisionFlags) bindCommon(local *pflag.FlagSet, global *internal.Globa
 	local.BoolVar(&i.preview, "preview", false, "Preview changes to Azure resources.")
 	local.BoolVar(
 		&i.ignoreDeploymentState,
-		"ignore-deployment-state",
+		"no-state",
 		false,
 		"Do not use latest Deployment State (bicep only).")
 

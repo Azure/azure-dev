@@ -51,7 +51,7 @@ func (m *fileConfigManager) Save(c Config, filePath string) error {
 		return fmt.Errorf("failed creating config directory: %w", err)
 	}
 
-	file, err := os.OpenFile(filePath, os.O_RDWR|os.O_CREATE, osutil.PermissionFile)
+	file, err := os.OpenFile(filePath, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, osutil.PermissionFile)
 	if err != nil {
 		return fmt.Errorf("failed creating config directory: %w", err)
 	}

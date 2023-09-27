@@ -132,7 +132,7 @@ func (c *MockConsole) Confirm(ctx context.Context, options input.ConsoleOptions)
 func (c *MockConsole) WaitForEnter() {
 }
 
-func (c *MockConsole) EnsureNewLine(context context.Context) {
+func (c *MockConsole) EnsureBlankLine(context context.Context) {
 }
 
 // Writes a single answer prompt to the console for the user to complete

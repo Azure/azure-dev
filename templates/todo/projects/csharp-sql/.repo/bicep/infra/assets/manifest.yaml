@@ -1,0 +1,24 @@
+# yaml-language-server: $schema=https://github.com/Azure/deployment-environments/releases/download/2022-11-11-preview/manifest.schema.json
+name: Todo-csharp-sql
+version: 1.0.0
+summary: Azure Todo dotnet APP Environment
+description: Deploys an Azure Web App
+runner: ARM
+templatePath: azuredeploy.json
+
+parameters:
+  - id: environmentName
+    name: environmentName
+    description: 'Name of the Web App.'
+    type: string
+    required: true
+  - id: sqlAdminPassword
+    name: sqlAdminPassword
+    description: 'sqlAdminPassword'
+    type: string
+    required: true
+  - id: appUserPassword
+    name: appUserPassword
+    description: 'appUserPassword'
+    type: string
+    required: true

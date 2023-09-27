@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=https://github.com/Azure/deployment-environments/releases/download/2022-11-11-preview/manifest.schema.json
+name: Todo-nodejs-mongo-swa-func
+version: 1.0.0
+summary: Azure Todo node func APP Environment
+description: Deploys an Azure fun App
+runner: ARM
+templatePath: azuredeploy.json
+
+parameters:
+  - id: environmentName
+    name: environmentName
+    description: 'Name of the Web App.'
+    type: string
+    required: true
+

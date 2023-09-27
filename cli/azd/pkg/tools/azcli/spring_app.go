@@ -15,6 +15,7 @@ import (
 	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
+	"github.com/sethvargo/go-retry"
 )
 
 // SpringService provides artifacts upload/deploy and query to Azure Spring Apps (ASA)
@@ -181,13 +182,13 @@ func (ss *springService) CreateBuild(
 		return nil, err
 	}
 
-      basePath := "/subscriptions/" + subscriptionId +
+	basePath := "/subscriptions/" + subscriptionId +
 		"/resourceGroups/" + resourceGroupName +
 		"/providers/Microsoft.AppPlatform/Spring/" + instanceName +
 		"/buildServices/" + buildServiceName
-	agentPoolId := basePath  +
+	agentPoolId := basePath +
 		"/agentPools/" + agentPoolName
-	builderId := basePath  +
+	builderId := basePath +
 		"/builders/" + builderName
 
 	resp, err := client.CreateOrUpdateBuild(ctx, resourceGroupName, instanceName, buildServiceName, buildName,
@@ -224,27 +225,27 @@ func (ss *springService) GetBuildResult(
 	}
 
 	buildResultName := buildResult[strings.LastIndex(buildResult, "/")+1:]
-	retries := 0
 	const maxRetries = 50
-	for {
+	var result *armappplatform.BuildResultProvisioningState
+	err = retry.Do(ctx, retry.WithMaxRetries(maxRetries, retry.NewConstant(20*time.Second)), func(ctx context.Context) error {
 		resp, err := client.GetBuildResult(ctx, resourceGroupName, instanceName, buildServiceName, buildName, buildResultName, nil)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		if *resp.Properties.ProvisioningState == armappplatform.BuildResultProvisioningStateSucceeded {
-			return resp.Properties.ProvisioningState, nil
+			result = resp.Properties.ProvisioningState
+			return nil
 		} else if *resp.Properties.ProvisioningState == armappplatform.BuildResultProvisioningStateFailed {
-			return resp.Properties.ProvisioningState, errors.New("build result failed")
-		}
-		retries++
-
-		if retries >= maxRetries {
-			return nil, errors.New("get build result timeout")
+			result = resp.Properties.ProvisioningState
+			return errors.New("build result failed")
 		}
 
-		time.Sleep(20 * time.Second)
-	}
+		// return error to retry
+		return retry.RetryableError(fmt.Errorf("error but will retry: %w", err))
+	})
+
+	return result, err
 }
 
 func (ss *springService) UploadSpringArtifact(
@@ -271,12 +272,14 @@ func (ss *springService) UploadSpringArtifact(
 	}
 
 	url, err := url.Parse(*storageInfo.UploadURL)
+	fmt.Println("storage upload url: " + *storageInfo.UploadURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse storage upload url %s : %w", *storageInfo.UploadURL, err)
 	}
 
 	// Pass NewAnonymousCredential here, since the URL returned by Azure Spring Apps already contains a SAS token
 	fileURL := azfile.NewFileURL(*url, azfile.NewPipeline(azfile.NewAnonymousCredential(), azfile.PipelineOptions{}))
+	fmt.Println("file url: " + fileURL.String())
 	err = azfile.UploadFileToAzureFile(ctx, file, fileURL,
 		azfile.UploadToAzureFileOptions{
 			Metadata: azfile.Metadata{

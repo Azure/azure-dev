@@ -4,8 +4,13 @@
 package project
 
 import (
+	"archive/tar"
+	"compress/gzip"
 	"fmt"
+	"io"
 	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/rzip"
 	"github.com/otiai10/copy"
@@ -34,6 +39,77 @@ func createDeployableZip(appName string, path string) (string, error) {
 	}
 
 	return zipFile.Name(), nil
+}
+
+// createDeployableTar creates a tar file of a folder, recursively, and put the tar file in the given directory dir.
+// Returns the path to the created tar file or an error if it fails.
+func createDeployableTar(appName, path, dir, packageTarName string) (string, error) {
+	ext := ".tar.gz"
+	tarFile, err := os.Create(filepath.Join(dir, packageTarName+ext))
+	if err != nil {
+		return "", fmt.Errorf("failed when creating tar package to deploy %s: %w", appName, err)
+	}
+
+	if err := compressFolderToTarGz(path, tarFile); err != nil {
+		// if we fail here just do our best to close things out and cleanup
+		tarFile.Close()
+		os.Remove(tarFile.Name())
+		return "", err
+	}
+
+	if err := tarFile.Close(); err != nil {
+		// may fail but, again, we'll do our best to cleanup here.
+		os.Remove(tarFile.Name())
+		return "", err
+	}
+
+	return tarFile.Name(), nil
+}
+
+func compressFolderToTarGz(path string, buf io.Writer) error {
+	zr := gzip.NewWriter(buf)
+	tw := tar.NewWriter(zr)
+
+	// walk through every file in the folder
+	filepath.Walk(path, func(file string, fi os.FileInfo, err error) error {
+		// generate tar header
+		header, err := tar.FileInfoHeader(fi, file)
+		if err != nil {
+			return err
+		}
+
+		// update the name to correctly reflect the desired destination when untaring
+		header.Name = strings.TrimPrefix(strings.TrimPrefix(file, path), string(filepath.Separator))
+
+		// write header
+		if err := tw.WriteHeader(header); err != nil {
+			return err
+		}
+		// if not a dir, write file content
+		if !fi.IsDir() {
+			data, err := os.Open(file)
+			defer func() {
+				_ = data.Close()
+			}()
+			if err != nil {
+				return err
+			}
+			if _, err := io.Copy(tw, data); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+
+	// produce tar
+	if err := tw.Close(); err != nil {
+		return err
+	}
+	// produce gzip
+	if err := zr.Close(); err != nil {
+		return err
+	}
+	return nil
 }
 
 // excludeDirEntryCondition resolves when a file or directory should be considered or not as part of build, when build is a

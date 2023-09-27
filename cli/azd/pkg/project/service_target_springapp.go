@@ -16,16 +16,20 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
+	"github.com/otiai10/copy"
 )
 
 const (
-	defaultDeploymentName   = "default"
-	defaultBuildServiceName = "default"
-	defaultBuilderName      = "default"
-	defaultAgentPoolName    = "default"
-	enterpriseTierName      = "Enterprise"
-	buildNameSuffix         = "-azd-build"
-	defaultJvmVersion       = "17"
+	defaultDeploymentName    = "default"
+	defaultBuildServiceName  = "default"
+	defaultBuilderName       = "default"
+	defaultAgentPoolName     = "default"
+	enterpriseTierName       = "Enterprise"
+	buildNameSuffix          = "-azd-build"
+	defaultJvmVersion        = "17"
+	springAppsPackageTarName = "app"
+	jarExtName               = ".jar"
+	tarExtName               = ".tar.gz"
 )
 
 // The Azure Spring Apps configuration options
@@ -73,7 +77,33 @@ func (st *springAppTarget) Package(
 ) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
-			task.SetResult(packageOutput)
+			task.SetProgress(NewServiceProgress("Compressing deployment artifacts"))
+
+			// create a temp directory to store the tar file in case the target project is a Java project, then we need to
+			// store both jar and tar file as the package output. The reason why we need two package output files for Java is
+			// because for ASA different plans, the target files to upload are different. It requires tars for enterprise plans
+			// but jars only for non-enterprise plans. Since we cannot determine which ASA plans the user will provision in the
+			// package stage, thus we need to build both of them.
+			packageDest, err := os.MkdirTemp("", "azdpackage")
+			_, err = createDeployableTar(serviceConfig.Name, serviceConfig.RelativePath, packageDest, springAppsPackageTarName)
+			if err != nil {
+				task.SetError(err)
+				return
+			}
+
+			if serviceConfig.Language == ServiceLanguageJava {
+				err = copy.Copy(filepath.Join(packageOutput.PackagePath, AppServiceJavaPackageName+jarExtName),
+					filepath.Join(packageDest, AppServiceJavaPackageName+jarExtName))
+				if err != nil {
+					task.SetError(fmt.Errorf("copying jar to staging directory failed: %w", err))
+					return
+				}
+			}
+
+			task.SetResult(&ServicePackageResult{
+				Build:       packageOutput.Build,
+				PackagePath: packageDest,
+			})
 		},
 	)
 }
@@ -128,37 +158,6 @@ func (st *springAppTarget) Deploy(
 				return
 			}
 
-			// Azure Spring Apps supports jar deployment for all of its tiers, thus we currently
-			// choose jar as the unified solution.
-			ext := ".jar"
-			artifactPath := filepath.Join(packageOutput.PackagePath, AppServiceJavaPackageName+ext)
-
-			_, err = os.Stat(artifactPath)
-			if errors.Is(err, os.ErrNotExist) {
-				task.SetError(fmt.Errorf("artifact %s does not exist: %w", artifactPath, err))
-				return
-			}
-			if err != nil {
-				task.SetError(fmt.Errorf("reading artifact file %s: %w", artifactPath, err))
-				return
-			}
-
-			task.SetProgress(NewServiceProgress("Uploading spring artifact"))
-
-			relativePath, err := st.springService.UploadSpringArtifact(
-				ctx,
-				targetResource.SubscriptionId(),
-				targetResource.ResourceGroupName(),
-				targetResource.ResourceName(),
-				serviceConfig.Name,
-				artifactPath,
-			)
-
-			if err != nil {
-				task.SetError(fmt.Errorf("failed to upload spring artifact: %w", err))
-				return
-			}
-
 			tier, err := st.springService.GetSpringInstanceTier(ctx, targetResource.SubscriptionId(),
 				targetResource.ResourceGroupName(),
 				targetResource.ResourceName())
@@ -167,6 +166,11 @@ func (st *springAppTarget) Deploy(
 				task.SetError(fmt.Errorf("failed to get tier: %w", err))
 				return
 			}
+
+			artifactPath := st.getArtifactPathByTier(task, *tier, packageOutput.PackagePath)
+			fmt.Println("artifact path: " + artifactPath)
+			relativePath := st.uploadArtifactToStorage(task, ctx, serviceConfig, targetResource, artifactPath)
+			fmt.Println("relative path: " + relativePath)
 
 			var result string
 			if *tier == enterpriseTierName {
@@ -180,7 +184,7 @@ func (st *springAppTarget) Deploy(
 					builderName,
 					serviceConfig.Name+buildNameSuffix,
 					jvmVersion,
-					*relativePath)
+					relativePath)
 
 				if err != nil {
 					task.SetError(fmt.Errorf("construct build failed"))
@@ -188,7 +192,6 @@ func (st *springAppTarget) Deploy(
 				}
 
 				task.SetProgress(NewServiceProgress("Getting build result"))
-
 				_, err = st.springService.GetBuildResult(ctx,
 					targetResource.SubscriptionId(),
 					targetResource.ResourceGroupName(),
@@ -230,7 +233,7 @@ func (st *springAppTarget) Deploy(
 					targetResource.ResourceGroupName(),
 					targetResource.ResourceName(),
 					serviceConfig.Name,
-					*relativePath,
+					relativePath,
 					deploymentName,
 				)
 				if err != nil {
@@ -241,7 +244,7 @@ func (st *springAppTarget) Deploy(
 				result = *deployResult
 				// save the storage relative, otherwise the relative path will be overwritten
 				// in the deployment from Bicep/Terraform
-				st.storeDeploymentEnvironment(task, serviceConfig.Name, "RELATIVE_PATH", *relativePath)
+				st.storeDeploymentEnvironment(task, serviceConfig.Name, "RELATIVE_PATH", relativePath)
 			}
 
 			task.SetProgress(NewServiceProgress("Fetching endpoints for spring app service"))
@@ -318,4 +321,53 @@ func (st *springAppTarget) storeDeploymentEnvironment(
 		task.SetError(fmt.Errorf("failed updating environment with %s, %w", propertyName, err))
 		return
 	}
+}
+
+func (st *springAppTarget) getArtifactPathByTier(
+	task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress],
+	tier string,
+	packageOutput string,
+) string {
+	artifactPath := ""
+	if tier == enterpriseTierName {
+		artifactPath = filepath.Join(packageOutput, springAppsPackageTarName+tarExtName)
+	} else {
+		artifactPath = filepath.Join(packageOutput, AppServiceJavaPackageName+jarExtName)
+	}
+
+	return artifactPath
+}
+
+func (st *springAppTarget) uploadArtifactToStorage(
+	task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress],
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	targetResource *environment.TargetResource,
+	artifactPath string,
+) string {
+	_, err := os.Stat(artifactPath)
+	if errors.Is(err, os.ErrNotExist) {
+		task.SetError(fmt.Errorf("artifact %s does not exist: %w", artifactPath, err))
+		return ""
+	} else if err != nil {
+		task.SetError(fmt.Errorf("reading artifact file %s: %w", artifactPath, err))
+		return ""
+	}
+
+	task.SetProgress(NewServiceProgress("Uploading spring artifact"))
+
+	relativePath, err := st.springService.UploadSpringArtifact(
+		ctx,
+		targetResource.SubscriptionId(),
+		targetResource.ResourceGroupName(),
+		targetResource.ResourceName(),
+		serviceConfig.Name,
+		artifactPath,
+	)
+	if err != nil {
+		task.SetError(fmt.Errorf("failed to upload spring artifact: %w", err))
+		return ""
+	}
+
+	return *relativePath
 }

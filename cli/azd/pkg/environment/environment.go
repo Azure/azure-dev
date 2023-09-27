@@ -18,6 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 )
 
@@ -227,7 +228,11 @@ func (e *Environment) Reload() error {
 	}
 
 	if e.GetSubscriptionId() != "" {
-		tracing.SetGlobalAttributes(fields.SubscriptionIdKey.String(e.GetSubscriptionId()))
+		if _, err := uuid.Parse(e.GetSubscriptionId()); err == nil {
+			tracing.SetGlobalAttributes(fields.SubscriptionIdKey.String(e.GetSubscriptionId()))
+		} else {
+			tracing.SetGlobalAttributes(fields.StringHashed(fields.SubscriptionIdKey, e.GetSubscriptionId()))
+		}
 	}
 
 	return nil

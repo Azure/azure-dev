@@ -12,8 +12,14 @@ pool:
   vmImage: ubuntu-latest
 
 steps:
-  - task: setup-azd@0 
+  - task: setup-azd@0
     displayName: Install azd
+  
+  - task: JavaToolInstaller@0
+    inputs:
+      versionSpec: '17'
+      jdkArchitectureOption: 'x64'
+      jdkSourceOption: 'PreInstalled'
 
   - pwsh: |
       $info = $Env:AZURE_CREDENTIALS | ConvertFrom-Json -AsHashtable;

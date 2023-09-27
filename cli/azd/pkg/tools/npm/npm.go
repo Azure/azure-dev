@@ -36,7 +36,7 @@ func NewNpmCli(commandRunner exec.CommandRunner) NpmCli {
 func (cli *npmCli) versionInfoNode() tools.VersionInfo {
 	return tools.VersionInfo{
 		MinimumVersion: semver.Version{
-			Major: 16,
+			Major: 18,
 			Minor: 0,
 			Patch: 0},
 		UpdateCommand: "Visit https://nodejs.org/en/ to upgrade",

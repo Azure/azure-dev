@@ -481,7 +481,10 @@ func promptFromOptions(options ConsoleOptions) survey.Prompt {
 	}
 }
 
-const c_afterIO = "oi\n"
+// cAfterIO is a sentinel used after Input/Output operations as the state for the last 2-bytes written.
+// For example, after running Prompt or Confirm, the last characters on the terminal should be any char (represented by the
+// 0 in the sentinel), followed by a new line.
+const cAfterIO = "0\n"
 
 // Prompts the user for a single value
 func (c *AskerConsole) Prompt(ctx context.Context, options ConsoleOptions) (string, error) {
@@ -493,7 +496,7 @@ func (c *AskerConsole) Prompt(ctx context.Context, options ConsoleOptions) (stri
 	if err != nil {
 		return response, err
 	}
-	c.updateLastBytes(c_afterIO)
+	c.updateLastBytes(cAfterIO)
 	return response, nil
 }
 
@@ -515,7 +518,7 @@ func (c *AskerConsole) Select(ctx context.Context, options ConsoleOptions) (int,
 		return -1, err
 	}
 
-	c.updateLastBytes(c_afterIO)
+	c.updateLastBytes(cAfterIO)
 	return response, nil
 }
 
@@ -541,7 +544,7 @@ func (c *AskerConsole) Confirm(ctx context.Context, options ConsoleOptions) (boo
 		return false, err
 	}
 
-	c.updateLastBytes(c_afterIO)
+	c.updateLastBytes(cAfterIO)
 	return response, nil
 }
 

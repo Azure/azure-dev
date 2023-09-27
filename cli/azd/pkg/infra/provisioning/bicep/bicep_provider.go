@@ -4,10 +4,8 @@
 package bicep
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
-	"encoding/gob"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -458,32 +456,28 @@ func (p *BicepProvider) latestDeploymentResult(
 	return deployments[0], nil
 }
 
-// parametersHash generates a hash from each parameter as [name-type-value]
+// parametersHash generates a hash from its name and final value.
+// The final value is either the parameter default value or the value from the params input.
 func parametersHash(templateParameters azure.ArmTemplateParameterDefinitions, params azure.ArmParameters) (string, error) {
 	hash256 := sha256.New()
 
-	// the order of the parameters is important for creating a hash out of them
-	var orderedParamKeys []string
-	for key := range templateParameters {
-		orderedParamKeys = append(orderedParamKeys, key)
-	}
-	slices.Sort(orderedParamKeys)
+	// Get the parameter name and its final value.
+	// Any other change on the parameter definition would break the template-hash
+	nameAndValueParams := make(map[string]any, len(templateParameters))
 
-	for _, paramName := range orderedParamKeys {
-		paramDefinition := templateParameters[paramName]
-		hash256.Write([]byte(paramName))
-		hash256.Write([]byte(paramDefinition.Type))
+	for paramName, paramDefinition := range templateParameters {
 		pValue := paramDefinition.DefaultValue
 		if param, exists := params[paramName]; exists {
 			pValue = param.Value
 		}
-		// since the value is type `any`, we can use the gob encoder to pull a []byte out of it.
-		var buffer bytes.Buffer
-		err := gob.NewEncoder(&buffer).Encode(pValue)
-		if err != nil {
-			return "", fmt.Errorf("hashing parameter %s: %w", paramName, err)
-		}
-		hash256.Write(buffer.Bytes())
+		nameAndValueParams[paramName] = pValue
+	}
+	nameAndValueParamsBytes, err := json.Marshal(nameAndValueParams)
+	if err != nil {
+		return "", err
+	}
+	if _, err := hash256.Write(nameAndValueParamsBytes); err != nil {
+		return "", err
 	}
 	return fmt.Sprintf("%x", hash256.Sum(nil)), nil
 }

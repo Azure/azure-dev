@@ -10,6 +10,21 @@
 
 ### Other Changes
 
+## 1.3.1 (2023-09-20)
+
+### Minor Changes
+
+- [[2737]](https://github.com/Azure/azure-dev/pull/2737) Update bicep to 0.21.1
+- [[2696]](https://github.com/Azure/azure-dev/pull/2696) Support filtering for azd location in bicep
+- [[2721]](https://github.com/Azure/azure-dev/pull/2721) `azd package` support for user specified output paths
+- [[2756]](https://github.com/Azure/azure-dev/pull/2756) Minor enhancements to simplified init
+
+### Bugs Fixed
+
+- [[2719]](https://github.com/Azure/azure-dev/pull/2719) Fix mistypes in soft delete warning message
+- [[2722]](https://github.com/Azure/azure-dev/pull/2722) Prefer glibc based Bicep when both musl and glibc are installed
+- [[2726]](https://github.com/Azure/azure-dev/pull/2726) Mention `AZD_CONFIG_DIR` in `azd config --help` help text
+
 ## 1.3.0 (2023-09-06)
 
 ### Features Added

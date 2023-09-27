@@ -86,8 +86,8 @@ type Console interface {
 	Confirm(ctx context.Context, options ConsoleOptions) (bool, error)
 	// block terminal until the next enter
 	WaitForEnter()
-	// Writes a new line to the writer if there if the last character written was not '\n'
-	EnsureNewLine(ctx context.Context)
+	// Writes a new line to the writer if there if the last two characters written are not '\n'
+	EnsureBlankLine(ctx context.Context)
 	// Sets the underlying writer for the console
 	SetWriter(writer io.Writer)
 	// Gets the underlying writer for the console
@@ -550,7 +550,7 @@ func (c *AskerConsole) Confirm(ctx context.Context, options ConsoleOptions) (boo
 
 const c_newLine = '\n'
 
-func (c *AskerConsole) EnsureNewLine(ctx context.Context) {
+func (c *AskerConsole) EnsureBlankLine(ctx context.Context) {
 	if c.last2Byte[0] == c_newLine && c.last2Byte[1] == c_newLine {
 		return
 	}

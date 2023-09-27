@@ -366,7 +366,7 @@ func (cli *ghCli) GitHubActionsExists(ctx context.Context, repoSlug string) (boo
 func (cli *ghCli) newRunArgs(args ...string) exec.RunArgs {
 
 	runArgs := exec.NewRunArgs(cli.path, args...)
-	if os.Getenv("CODESPACES") == "true" {
+	if RunningOnCodespaces() {
 		runArgs = runArgs.WithEnv([]string{"GITHUB_TOKEN=", "GH_TOKEN="})
 	}
 
@@ -597,4 +597,9 @@ func downloadGh(
 	}
 
 	return nil
+}
+
+// RunningOnCodespaces check if the application is running on codespaces.
+func RunningOnCodespaces() bool {
+	return os.Getenv("CODESPACES") == "true"
 }

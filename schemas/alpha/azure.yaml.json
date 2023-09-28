@@ -362,10 +362,10 @@
                         "backend": {
                             "type": "string",
                             "title": "The remote state backend type.",
-                            "description": "Optional. The remote state backend type. (Default: AzureStorage)",
-                            "default": "AzureStorage",
+                            "description": "Optional. The remote state backend type. (Default: AzureBlobStorage)",
+                            "default": "AzureBlobStorage",
                             "enum": [
-                                "AzureStorage"
+                                "AzureBlobStorage"
                             ]
                         },
                         "config": {
@@ -378,7 +378,7 @@
                             "if": {
                                 "properties": {
                                     "backend": {
-                                        "const": "AzureStorage"
+                                        "const": "AzureBlobStorage"
                                     }
                                 }
                             },
@@ -388,7 +388,7 @@
                                 ],
                                 "properties": {
                                     "config": {
-                                        "$ref": "#/definitions/azureStorageConfig"
+                                        "$ref": "#/definitions/azureBlobStorageConfig"
                                     }
                                 }
                             }
@@ -561,9 +561,9 @@
                 }
             }
         },
-        "azureStorageConfig": {
+        "azureBlobStorageConfig": {
             "type": "object",
-            "title": "The remote state backend configuration.",
+            "title": "The Azure Blob Storage remote state backend configuration.",
             "description": "Optional. Provides additional configuration for remote state management such as Azure Blob Storage.",
             "additionalProperties": false,
             "required": [

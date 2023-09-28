@@ -136,8 +136,8 @@ export async function selectEnvironment(context: IActionContext, selectedItem?: 
             } as IAzureQuickPickItem<EnvironmentInfo>;
         });
         const selectedEnv = await context.ui.showQuickPick(envChoices, {
+            placeHolder: vscode.l10n.t('Select environment'),
             canPickMany: false,
-            title: vscode.l10n.t('Which environment should be set as default?')
         });
 
         name = selectedEnv.data.Name;

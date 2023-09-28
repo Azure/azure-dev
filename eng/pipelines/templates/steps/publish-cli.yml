@@ -101,16 +101,16 @@ steps:
 
   - ${{ if eq('true', parameters.PublishArm64Binaries) }}: 
     - pwsh: |
-        Move-Item release-staging/azd-linux-arm64 release-staging/azd-linux-arm64-beta 
-        Move-Item signed/mac/azd-darwin-arm64 signed/mac/azd-darwin-arm64-beta
+        Move-Item release-staging/azd-linux-arm64 release-staging/azd-linux-arm64 
+        Move-Item signed/mac/azd-darwin-arm64 signed/mac/azd-darwin-arm64
 
         New-Item -ItemType Directory -Path release -Force
-        zip release/azd-darwin-arm64-beta.zip -j signed/mac/azd-darwin-arm64-beta NOTICE.txt
+        zip release/azd-darwin-arm64.zip -j signed/mac/azd-darwin-arm64 NOTICE.txt
 
         # Must place NOTICE.txt in file tree for tar to pick it up and place it in
         # the same place in the directory structure
         Copy-Item NOTICE.txt ./release-staging/
-        tar -C ./release-staging/ -cvzf release/azd-linux-arm64-beta.tar.gz azd-linux-arm64-beta NOTICE.txt
+        tar -C ./release-staging/ -cvzf release/azd-linux-arm64.tar.gz azd-linux-arm64 NOTICE.txt
       displayName: Compress standalone binary for release (ARM64)
 
 
@@ -253,7 +253,8 @@ steps:
         targetType: filePath
         filePath: eng/scripts/Update-HomebrewFormula.ps1
         arguments: >-
-          -ZipFilePath release/azd-darwin-amd64.zip
+          -ZipFilePathAmd64 release/azd-darwin-amd64.zip
+          -ZipFilePathArm64 release/azd-darwin-arm64.zip
           -Version $(CLI_VERSION)
           -OutFile homebrew-azd/Formula/azd.rb
 

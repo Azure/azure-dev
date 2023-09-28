@@ -3,6 +3,16 @@
     // ignore changes to this file so you don't need to worry about commiting your edits.
     "version": "0.2.0",
     "configurations": [
+        // This will launch azd (starting from main.go), under the debugger.
+        {
+            "name": "Debug azd cli",
+            "type": "go",
+            "request": "launch",
+            "mode": "debug",
+            "program": "${workspaceFolder}",
+            "args": "${input:cliArgs}",
+            "console": "integratedTerminal",
+        },
         // If you set `AZD_DEBUG=true` in your environment, `azd` will pause early in start up and allow you to attach
         // to it. Use the Attach to Process configuration and pick the corresponding `azd` process.
         {
@@ -12,17 +22,28 @@
             "mode": "local",
             "processId": "${command:pickGoProcess}"
         },
-        // This will launch azd (starting from main.go), under the debugger.
-
+        // Manually set configuration.
+        // Arguments, cwd and env are set before running F5
         {
-            "name": "Debug azd cli",
+            "name": "Manual Process",
             "type": "go",
             "request": "launch",
             "mode": "debug",
             "program": "${workspaceFolder}",
-            "args": "${input:cliArgs}",
             "console": "integratedTerminal",
-        }
+            "args": [
+                "auth", "login"
+                //"pipeline", "config", "--principal-name", "foo", "--provider", "github"
+                //"package", "api", "--debug"
+                //"provision"
+                //"up"
+                //"env", "new"
+            ],
+            //"cwd": "~/workspace/cwd/path",
+            // "env": {
+            //     "INT_TAG_VALUE":"1989"
+            // }
+        },
     ],
     "inputs": [
         {

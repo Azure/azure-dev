@@ -7,33 +7,33 @@ interactions:
         - --username
         - 00000000-0000-0000-0000-000000000000
         - --password-stdin
-        - crtn5xf6exmkoym.azurecr.io
+        - crwjyu6hjlk6kp2.azurecr.io
       exitCode: 0
       stdout: |
         Login Succeeded
-      stderr: "\nLogging in with your password grants your terminal complete access to your account. \nFor better security, log in with a limited-privilege personal access token. Learn more at https://docs.docker.com/go/access-tokens/\n"
+      stderr: ""
     - id: 1
       args:
         - push
-        - crtn5xf6exmkoym.azurecr.io/containerapp/web-azdtest-l9bb10f:azd-deploy-1692208280
+        - crwjyu6hjlk6kp2.azurecr.io/containerapp/web-azdtest-l17a694:azd-deploy-1695496283
       exitCode: 0
       stdout: |
-        The push refers to repository [crtn5xf6exmkoym.azurecr.io/containerapp/web-azdtest-l9bb10f]
-        b51aa84885f0: Preparing
-        5618852fc4f7: Preparing
-        83bb7265137c: Preparing
-        5342c39ff7fc: Preparing
-        5bd70f0c0235: Preparing
-        a5511d7cb706: Preparing
-        63290f9c9e52: Preparing
-        a5511d7cb706: Waiting
-        63290f9c9e52: Waiting
-        b51aa84885f0: Pushed
-        5618852fc4f7: Pushed
-        5342c39ff7fc: Pushed
-        83bb7265137c: Pushed
-        a5511d7cb706: Pushed
-        5bd70f0c0235: Pushed
-        63290f9c9e52: Pushed
-        azd-deploy-1692208280: digest: sha256:4a6b2013ac3696dcffdbc59b6167d3b66d4698a7e5c1204251b92e23384a5c3a size: 1786
+        The push refers to repository [crwjyu6hjlk6kp2.azurecr.io/containerapp/web-azdtest-l17a694]
+        667359c33cb3: Preparing
+        01206a546ccb: Preparing
+        0b06ef9e62c7: Preparing
+        de65fc897446: Preparing
+        cfa45b411d67: Preparing
+        4170e926e0d8: Preparing
+        6e3b92711bf1: Preparing
+        6e3b92711bf1: Waiting
+        4170e926e0d8: Waiting
+        667359c33cb3: Pushed
+        01206a546ccb: Pushed
+        de65fc897446: Pushed
+        0b06ef9e62c7: Pushed
+        4170e926e0d8: Pushed
+        cfa45b411d67: Pushed
+        6e3b92711bf1: Pushed
+        azd-deploy-1695496283: digest: sha256:3c13ee18e9dde908dd6af0f0a2388e4be3d64e7be8a4d004163e996e23107a86 size: 1786
       stderr: ""

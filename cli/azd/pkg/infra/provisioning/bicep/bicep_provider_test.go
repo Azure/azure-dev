@@ -45,13 +45,12 @@ func TestBicepPlan(t *testing.T) {
 	prepareBicepMocks(mockContext)
 	infraProvider := createBicepProvider(t, mockContext)
 
-	deployment, deploymentPlan, err := infraProvider.plan(*mockContext.Context)
+	deploymentPlan, err := infraProvider.plan(*mockContext.Context)
 
 	require.Nil(t, err)
-	require.NotNil(t, deployment)
 
-	require.IsType(t, &bicepDeploymentDetails{}, deploymentPlan)
-	configuredParameters := deploymentPlan.Parameters
+	require.IsType(t, &deploymentDetails{}, deploymentPlan)
+	configuredParameters := deploymentPlan.CompiledBicep.Parameters
 
 	require.Equal(t, infraProvider.env.GetLocation(), configuredParameters["location"].Value)
 	require.Equal(
@@ -102,11 +101,11 @@ func TestBicepPlanPrompt(t *testing.T) {
 	}).Respond(false)
 
 	infraProvider := createBicepProvider(t, mockContext)
-	_, plan, err := infraProvider.plan(*mockContext.Context)
+	plan, err := infraProvider.plan(*mockContext.Context)
 
 	require.NoError(t, err)
 
-	require.Equal(t, "value", plan.Parameters["stringParam"].Value)
+	require.Equal(t, "value", plan.CompiledBicep.Parameters["stringParam"].Value)
 }
 
 func TestBicepState(t *testing.T) {
@@ -301,7 +300,7 @@ func TestPlanForResourceGroup(t *testing.T) {
 	require.NoError(t, err)
 	// The computed plan should target the resource group we picked.
 
-	_, planResult, err := infraProvider.plan(*mockContext.Context)
+	planResult, err := infraProvider.plan(*mockContext.Context)
 	require.Nil(t, err)
 	require.NotNil(t, planResult)
 	require.Equal(t, "rg-test-env",

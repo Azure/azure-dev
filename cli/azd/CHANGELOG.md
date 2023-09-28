@@ -4,6 +4,8 @@
 
 ### Features Added
 
+- [[2725]](https://github.com/Azure/azure-dev/pull/2725) Adds support for provision state to the bicep provider.
+
 ### Breaking Changes
 
 ### Bugs Fixed

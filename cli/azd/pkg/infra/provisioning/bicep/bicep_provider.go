@@ -5,6 +5,7 @@ package bicep
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -45,13 +46,8 @@ import (
 
 const DefaultModule = "main"
 
-type bicepDeploymentDetails struct {
-	// Template is the template to deploy during the deployment operation.
-	Template azure.RawArmTemplate
-	// Parameters are the values to provide to the template during the deployment operation.
-	Parameters azure.ArmParameters
-	// TemplateOutputs are the outputs as specified by the template.
-	TemplateOutputs azure.ArmTemplateOutputs
+type deploymentDetails struct {
+	CompiledBicep *compileBicepResult
 	// Target is the unique resource in azure that represents the deployment that will happen. A target can be scoped to
 	// either subscriptions, or resource groups.
 	Target infra.Deployment
@@ -59,18 +55,19 @@ type bicepDeploymentDetails struct {
 
 // BicepProvider exposes infrastructure provisioning using Azure Bicep templates
 type BicepProvider struct {
-	env                  *environment.Environment
-	projectPath          string
-	options              Options
-	console              input.Console
-	bicepCli             bicep.BicepCli
-	azCli                azcli.AzCli
-	deploymentsService   azapi.Deployments
-	deploymentOperations azapi.DeploymentOperations
-	prompters            prompt.Prompter
-	curPrincipal         CurrentPrincipalIdProvider
-	alphaFeatureManager  *alpha.FeatureManager
-	clock                clock.Clock
+	env                   *environment.Environment
+	projectPath           string
+	options               Options
+	console               input.Console
+	bicepCli              bicep.BicepCli
+	azCli                 azcli.AzCli
+	deploymentsService    azapi.Deployments
+	deploymentOperations  azapi.DeploymentOperations
+	prompters             prompt.Prompter
+	curPrincipal          CurrentPrincipalIdProvider
+	alphaFeatureManager   *alpha.FeatureManager
+	clock                 clock.Clock
+	ignoreDeploymentState bool
 }
 
 var ErrResourceGroupScopeNotSupported = fmt.Errorf(
@@ -99,8 +96,12 @@ func (p *BicepProvider) Initialize(ctx context.Context, projectPath string, opti
 	if err := tools.EnsureInstalled(ctx, requiredTools...); err != nil {
 		return err
 	}
+	p.ignoreDeploymentState = options.IgnoreDeploymentState
 
-	return p.EnsureEnv(ctx)
+	p.console.ShowSpinner(ctx, "Initialize bicep provider", input.Step)
+	err := p.EnsureEnv(ctx)
+	p.console.StopSpinner(ctx, "", input.Step)
+	return err
 }
 
 // EnsureEnv ensures that the environment is in a provision-ready state with required values set, prompting the user if
@@ -332,39 +333,33 @@ func isBicepParamFile(modulePath string) bool {
 }
 
 // Plans the infrastructure provisioning
-func (p *BicepProvider) plan(ctx context.Context) (*Deployment, *bicepDeploymentDetails, error) {
+func (p *BicepProvider) plan(ctx context.Context) (*deploymentDetails, error) {
 	p.console.ShowSpinner(ctx, "Creating a deployment plan", input.Step)
 
 	modulePath := p.modulePath()
 	// TODO: Report progress, "Compiling Bicep template"
 	compileResult, err := p.compileBicep(ctx, modulePath)
 	if err != nil {
-		return nil, nil, fmt.Errorf("creating template: %w", err)
+		return nil, fmt.Errorf("creating template: %w", err)
 	}
 
-	// for .bicepparam, parameters are resolved as part of bicep compilation
-	armParameters := compileResult.Parameters
 	// for .bicep, azd must load a parameters.json file and create the ArmParameters
 	if isBicepFile(modulePath) {
 		parameters, err := p.loadParameters(ctx)
 		if err != nil {
-			return nil, nil, fmt.Errorf("resolving bicep parameters file: %w", err)
+			return nil, fmt.Errorf("resolving bicep parameters file: %w", err)
 		}
 
 		configuredParameters, err := p.ensureParameters(ctx, compileResult.Template, parameters)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
-		armParameters = configuredParameters
-	}
-	deployment, err := p.convertToDeployment(compileResult.Template)
-	if err != nil {
-		return nil, nil, err
+		compileResult.Parameters = configuredParameters
 	}
 
 	deploymentScope, err := compileResult.Template.TargetScope()
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
 
 	var target infra.Deployment
@@ -386,14 +381,12 @@ func (p *BicepProvider) plan(ctx context.Context) (*Deployment, *bicepDeployment
 			deploymentNameForEnv(p.env.GetEnvName(), p.clock),
 		)
 	} else {
-		return nil, nil, fmt.Errorf("unsupported scope: %s", deploymentScope)
+		return nil, fmt.Errorf("unsupported scope: %s", deploymentScope)
 	}
 
-	return deployment, &bicepDeploymentDetails{
-		Template:        compileResult.RawArmTemplate,
-		TemplateOutputs: compileResult.Template.Outputs,
-		Parameters:      armParameters,
-		Target:          target,
+	return &deploymentDetails{
+		CompiledBicep: compileResult,
+		Target:        target,
 	}, nil
 }
 
@@ -412,11 +405,161 @@ func deploymentNameForEnv(envName string, clock clock.Clock) string {
 	return name[len(name)-cArmDeploymentNameLengthMax:]
 }
 
-// Provisioning the infrastructure within the specified template
-func (p *BicepProvider) Deploy(ctx context.Context) (*DeployResult, error) {
-	deployment, bicepDeploymentData, err := p.plan(ctx)
+// deploymentState returns the latests deployment if it is the same as the deployment within deploymentData or an error
+// otherwise.
+func (p *BicepProvider) deploymentState(
+	ctx context.Context,
+	deploymentData *deploymentDetails,
+	currentParamsHash string) (*armresources.DeploymentExtended, error) {
+
+	p.console.ShowSpinner(ctx, "Comparing deployment state", input.Step)
+	prevDeploymentResult, err := p.latestDeploymentResult(ctx, deploymentData.Target)
+	if err != nil {
+		return nil, fmt.Errorf("deployment state error: %w", err)
+	}
+
+	var templateHash string
+	createHashResult, err := p.deploymentsService.CalculateTemplateHash(
+		ctx, p.env.GetSubscriptionId(), deploymentData.CompiledBicep.RawArmTemplate)
+	if err != nil {
+		return nil, fmt.Errorf("can't get hash from current template: %w", err)
+	}
+
+	if createHashResult.TemplateHash != nil {
+		templateHash = *createHashResult.TemplateHash
+	}
+
+	if !prevDeploymentEqualToCurrent(ctx, prevDeploymentResult, templateHash, currentParamsHash) {
+		return nil, fmt.Errorf("deployment state has changed")
+	}
+
+	return prevDeploymentResult, nil
+}
+
+// prevDeploymentResult looks and finds a previous deployment for the current azd project.
+func (p *BicepProvider) latestDeploymentResult(
+	ctx context.Context,
+	scope infra.Scope,
+) (*armresources.DeploymentExtended, error) {
+	deployments, err := p.findCompletedDeployments(ctx, p.env.GetEnvName(), scope, "")
+	// findCompletedDeployments returns error if no deployments are found
+	// No need to check for empty list
 	if err != nil {
 		return nil, err
+	}
+
+	if len(deployments) > 1 {
+		// If more than one deployment found, ignore the prev-deployment
+		return nil, fmt.Errorf("more than one previous deployment match.")
+	}
+
+	return deployments[0], nil
+}
+
+// parametersHash generates a hash from its name and final value.
+// The final value is either the parameter default value or the value from the params input.
+func parametersHash(templateParameters azure.ArmTemplateParameterDefinitions, params azure.ArmParameters) (string, error) {
+	hash256 := sha256.New()
+
+	// Get the parameter name and its final value.
+	// Any other change on the parameter definition would break the template-hash
+	nameAndValueParams := make(map[string]any, len(templateParameters))
+
+	for paramName, paramDefinition := range templateParameters {
+		pValue := paramDefinition.DefaultValue
+		if param, exists := params[paramName]; exists {
+			pValue = param.Value
+		}
+		nameAndValueParams[paramName] = pValue
+	}
+	nameAndValueParamsBytes, err := json.Marshal(nameAndValueParams)
+	if err != nil {
+		return "", err
+	}
+	if _, err := hash256.Write(nameAndValueParamsBytes); err != nil {
+		return "", err
+	}
+	return fmt.Sprintf("%x", hash256.Sum(nil)), nil
+}
+
+// prevDeploymentEqualToCurrent compares the template hash from a previous deployment against a current template.
+func prevDeploymentEqualToCurrent(
+	ctx context.Context, prev *armresources.DeploymentExtended, templateHash, paramsHash string) bool {
+	if prev == nil {
+		logDS("No previous deployment.")
+		return false
+	}
+
+	if prev.Tags == nil {
+		logDS("No previous deployment params tags")
+		return false
+	}
+
+	prevTemplateHash := convert.ToValueWithDefault(prev.Properties.TemplateHash, "")
+	if prevTemplateHash != templateHash {
+		logDS("template hash is different from previous deployment")
+		return false
+	}
+
+	prevParamHash, hasTag := prev.Tags[azure.TagKeyAzdDeploymentStateParamHashName]
+	if !hasTag {
+		logDS("no param hash tag on last deployment.")
+		return false
+	}
+
+	if *prevParamHash != paramsHash {
+		logDS("template parameters are different from previous deployment")
+		return false
+	}
+
+	logDS("Previous deployment state is equal to current deployment. Deployment can be skipped.")
+	return true
+}
+
+func logDS(msg string, v ...any) {
+	log.Printf("%s : %s", "deployment-state: ", fmt.Sprintf(msg, v...))
+}
+
+// Provisioning the infrastructure within the specified template
+func (p *BicepProvider) Deploy(ctx context.Context) (*DeployResult, error) {
+
+	if p.ignoreDeploymentState {
+		logDS("Azure Deployment State is disabled by --ignore-ads arg.")
+	}
+
+	bicepDeploymentData, err := p.plan(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	deployment, err := p.convertToDeployment(bicepDeploymentData.CompiledBicep.Template)
+	if err != nil {
+		return nil, err
+	}
+
+	// parameters hash is required for doing deployment state validation check but also to set the hash
+	// after a successful deployment.
+	currentParamsHash, parametersHashErr := parametersHash(
+		bicepDeploymentData.CompiledBicep.Template.Parameters, bicepDeploymentData.CompiledBicep.Parameters)
+	if parametersHashErr != nil {
+		// fail to hash parameters won't stop the operation. It only disables deployment state and recording parameters hash
+		logDS(parametersHashErr.Error())
+	}
+
+	if !p.ignoreDeploymentState && parametersHashErr == nil {
+		deploymentState, err := p.deploymentState(ctx, bicepDeploymentData, currentParamsHash)
+		if err == nil {
+			deployment.Outputs = p.createOutputParameters(
+				bicepDeploymentData.CompiledBicep.Template.Outputs,
+				azapi.CreateDeploymentOutput(deploymentState.Properties.Outputs),
+			)
+
+			return &DeployResult{
+				Deployment:    deployment,
+				SkippedReason: DeploymentStateSkipped,
+			}, nil
+		}
+		logDS(err.Error())
 	}
 
 	cancelProgress := make(chan bool)
@@ -457,21 +600,25 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*DeployResult, error) {
 	// Start the deployment
 	p.console.ShowSpinner(ctx, "Creating/Updating resources", input.Step)
 
+	deploymentTags := map[string]*string{
+		azure.TagKeyAzdEnvName: to.Ptr(p.env.GetEnvName()),
+	}
+	if parametersHashErr == nil {
+		deploymentTags[azure.TagKeyAzdDeploymentStateParamHashName] = to.Ptr(currentParamsHash)
+	}
 	deployResult, err := p.deployModule(
 		ctx,
 		bicepDeploymentData.Target,
-		bicepDeploymentData.Template,
-		bicepDeploymentData.Parameters,
-		map[string]*string{
-			azure.TagKeyAzdEnvName: to.Ptr(p.env.GetEnvName()),
-		},
+		bicepDeploymentData.CompiledBicep.RawArmTemplate,
+		bicepDeploymentData.CompiledBicep.Parameters,
+		deploymentTags,
 	)
 	if err != nil {
 		return nil, err
 	}
 
 	deployment.Outputs = p.createOutputParameters(
-		bicepDeploymentData.TemplateOutputs,
+		bicepDeploymentData.CompiledBicep.Template.Outputs,
 		azapi.CreateDeploymentOutput(deployResult.Properties.Outputs),
 	)
 
@@ -482,7 +629,7 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*DeployResult, error) {
 
 // Preview runs deploy using the what-if argument
 func (p *BicepProvider) Preview(ctx context.Context) (*DeployPreviewResult, error) {
-	_, bicepDeploymentData, err := p.plan(ctx)
+	bicepDeploymentData, err := p.plan(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -492,8 +639,8 @@ func (p *BicepProvider) Preview(ctx context.Context) (*DeployPreviewResult, erro
 	targetScope := bicepDeploymentData.Target
 	deployPreviewResult, err := targetScope.DeployPreview(
 		ctx,
-		bicepDeploymentData.Template,
-		bicepDeploymentData.Parameters,
+		bicepDeploymentData.CompiledBicep.RawArmTemplate,
+		bicepDeploymentData.CompiledBicep.Parameters,
 	)
 	if err != nil {
 		return nil, err

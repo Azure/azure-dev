@@ -1446,16 +1446,9 @@ func (p *BicepProvider) compileBicep(
 	if err != nil {
 		return nil, fmt.Errorf("fetching current principal id for bicepparam compilation: %w", err)
 	}
-	return compileBicep(ctx, modulePath, p.env, currentPrincipalId, p.bicepCli)
-}
 
-func compileBicep(
-	ctx context.Context,
-	modulePath string,
-	env *environment.Environment,
-	currentPrincipalId string,
-	bicepCli bicep.BicepCli,
-) (*compileBicepResult, error) {
+	env := p.env
+	bicepCli := p.bicepCli
 	var compiled string
 	var parameters azure.ArmParameters
 

@@ -8,6 +8,8 @@
 
 ### Bugs Fixed
 
+- [[2793]](https://github.com/Azure/azure-dev/pull/2793) Support user defined types for the bicep provider.
+
 ### Other Changes
 
 ## 1.3.1 (2023-09-20)

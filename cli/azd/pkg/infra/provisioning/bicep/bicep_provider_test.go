@@ -899,7 +899,23 @@ func TestUserDefinedTypes(t *testing.T) {
 		Stderr: "",
 	})
 
-	compiled, err := compileBicep(*mockContext.Context, "user-defined-types", env, "principalId", bicepCli)
+	// super basic provider to mock the compileBicep method
+	provider := NewBicepProvider(
+		bicepCli,
+		nil,
+		nil,
+		nil,
+		env,
+		mockContext.Console,
+		prompt.NewDefaultPrompter(env, mockContext.Console, nil, nil),
+		&mockCurrentPrincipal{},
+		mockContext.AlphaFeaturesManager,
+		clock.NewMock(),
+	)
+	bicepProvider, gooCast := provider.(*BicepProvider)
+	require.True(t, gooCast)
+
+	compiled, err := bicepProvider.compileBicep(*mockContext.Context, "user-defined-types")
 
 	require.NoError(t, err)
 	require.NotNil(t, compiled)

@@ -199,6 +199,7 @@ func describeError(err error) error {
 			errorMsg := "Ensure your Azure account has `Storage Blob Contributor` role on the storage account or container."
 			return fmt.Errorf("%w %s %w", ErrAccessDenied, errorMsg, err)
 		case "InvalidResourceName":
+			//nolint:lll
 			errorMsg := "It must be between 3 and 63 characters in length, and must contain only lowercase letters, numbers, and dashes."
 			return fmt.Errorf("%w %s %w", ErrInvalidContainer, errorMsg, err)
 		}

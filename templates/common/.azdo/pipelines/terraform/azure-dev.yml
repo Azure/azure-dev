@@ -26,10 +26,6 @@ steps:
     env:
       AZURE_CREDENTIALS: $(AZURE_CREDENTIALS)
 
-  - pwsh: |
-      azd config set alpha.terraform on
-    displayName: Enable terraform alpha feature from azd
-
   - task: AzureCLI@2
     displayName: Provision Infrastructure
     inputs:

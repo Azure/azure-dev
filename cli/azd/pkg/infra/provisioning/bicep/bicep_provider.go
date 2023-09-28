@@ -1489,6 +1489,25 @@ func (p *BicepProvider) compileBicep(
 		return nil, fmt.Errorf("failed unmarshalling arm template from json: %w", err)
 	}
 
+	// update user-defined parameters
+	for paramKey, param := range template.Parameters {
+		paramRef := param.Ref
+		isUserDefinedType := paramRef != ""
+		if isUserDefinedType {
+			definitionKeyNameTokens := strings.Split(paramRef, "/")
+			definitionKeyNameTokensLen := len(definitionKeyNameTokens)
+			if definitionKeyNameTokensLen < 1 {
+				return nil, fmt.Errorf("failed resolving user defined parameter type: %s", paramRef)
+			}
+			definitionKeyName := definitionKeyNameTokens[definitionKeyNameTokensLen-1]
+			paramDefinition, findDefinition := template.Definitions[definitionKeyName]
+			if !findDefinition {
+				return nil, fmt.Errorf("did not find definition for parameter type: %s", definitionKeyName)
+			}
+			template.Parameters[paramKey] = paramDefinition
+		}
+	}
+
 	return &compileBicepResult{
 		RawArmTemplate: rawTemplate,
 		Template:       template,

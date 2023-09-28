@@ -878,3 +878,195 @@ func (m *mockedScope) ListDeployments(ctx context.Context) ([]*armresources.Depl
 		},
 	}, nil
 }
+
+func TestUserDefinedTypes(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(args.Cmd, "bicep") && args.Args[0] == "--version"
+	}).Respond(exec.RunResult{
+		Stdout: fmt.Sprintf("Bicep CLI version %s (abcdef0123)", bicep.BicepVersion.String()),
+		Stderr: "",
+	})
+
+	bicepCli, err := bicep.NewBicepCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
+	require.NoError(t, err)
+	env := environment.EphemeralWithValues("test-env", map[string]string{})
+
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(args.Cmd, "bicep") && args.Args[0] == "build"
+	}).Respond(exec.RunResult{
+		Stdout: userDefinedParamsSample,
+		Stderr: "",
+	})
+
+	// super basic provider to mock the compileBicep method
+	provider := NewBicepProvider(
+		bicepCli,
+		nil,
+		nil,
+		nil,
+		env,
+		mockContext.Console,
+		prompt.NewDefaultPrompter(env, mockContext.Console, nil, nil),
+		&mockCurrentPrincipal{},
+		mockContext.AlphaFeaturesManager,
+		clock.NewMock(),
+	)
+	bicepProvider, gooCast := provider.(*BicepProvider)
+	require.True(t, gooCast)
+
+	compiled, err := bicepProvider.compileBicep(*mockContext.Context, "user-defined-types")
+
+	require.NoError(t, err)
+	require.NotNil(t, compiled)
+
+	template := compiled.Template
+
+	stringParam, exists := template.Parameters["stringParam"]
+	require.True(t, exists)
+	require.Equal(t, "string", stringParam.Type)
+	require.Nil(t, stringParam.AllowedValues)
+
+	stringLimitedParam, exists := template.Parameters["stringLimitedParam"]
+	require.True(t, exists)
+	require.Equal(t, "string", stringLimitedParam.Type)
+	require.NotNil(t, stringLimitedParam.AllowedValues)
+	require.Equal(t, []interface{}{"arm", "azure", "bicep"}, *stringLimitedParam.AllowedValues)
+
+	intType, exists := template.Parameters["intType"]
+	require.True(t, exists)
+	require.Equal(t, "int", intType.Type)
+	require.NotNil(t, intType.AllowedValues)
+	require.Equal(t, []interface{}{float64(10)}, *intType.AllowedValues)
+
+	boolParam, exists := template.Parameters["boolParam"]
+	require.True(t, exists)
+	require.Equal(t, "bool", boolParam.Type)
+	require.NotNil(t, boolParam.AllowedValues)
+	require.Equal(t, []interface{}{true}, *boolParam.AllowedValues)
+
+	arrayStringType, exists := template.Parameters["arrayParam"]
+	require.True(t, exists)
+	require.Equal(t, "array", arrayStringType.Type)
+	require.Nil(t, arrayStringType.AllowedValues)
+
+	arrayLimitedParam, exists := template.Parameters["arrayLimitedParam"]
+	require.True(t, exists)
+	require.Equal(t, "array", arrayLimitedParam.Type)
+	require.NotNil(t, arrayLimitedParam.AllowedValues)
+	require.Equal(t, []interface{}{"a", "b", "c"}, *arrayLimitedParam.AllowedValues)
+
+	mixedParam, exists := template.Parameters["mixedParam"]
+	require.True(t, exists)
+	require.Equal(t, "array", mixedParam.Type)
+	require.NotNil(t, mixedParam.AllowedValues)
+	require.Equal(
+		t, []interface{}{"fizz", float64(42), nil, map[string]interface{}{"an": "object"}}, *mixedParam.AllowedValues)
+
+	objectParam, exists := template.Parameters["objectParam"]
+	require.True(t, exists)
+	require.Equal(t, "object", objectParam.Type)
+	require.Nil(t, objectParam.AllowedValues)
+	require.NotNil(t, objectParam.Properties)
+	require.Equal(
+		t,
+		azure.ArmTemplateParameterDefinitions{
+			"name": {Type: "string"},
+			"sku":  {Type: "string"},
+		},
+		objectParam.Properties)
+
+}
+
+const userDefinedParamsSample = `{
+	"$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+	"languageVersion": "2.0",
+	"definitions": {
+	  "stringType": {
+		"type": "string"
+	  },
+	  "stringLimitedType": {
+		"type": "string",
+		"allowedValues": [
+		  "arm",
+		  "azure",
+		  "bicep"
+		]
+	  },
+	  "intType": {
+		"type": "int",
+		"allowedValues": [
+		  10
+		]
+	  },
+	  "boolType": {
+		"type": "bool",
+		"allowedValues": [
+		  true
+		]
+	  },
+	  "arrayStringType": {
+		"type": "array",
+		"items": {
+		  "type": "string"
+		}
+	  },
+	  "arrayStringLimitedType": {
+		"type": "array",
+		"allowedValues": [
+		  "a",
+		  "b",
+		  "c"
+		]
+	  },
+	  "mixedType": {
+		"type": "array",
+		"allowedValues": [
+		  "fizz",
+		  42,
+		  null,
+		  {
+			"an": "object"
+		  }
+		]
+	  },
+	  "objectType": {
+		"type": "object",
+		"properties": {
+		  "name": {
+			"type": "string"
+		  },
+		  "sku": {
+			"type": "string"
+		  }
+		}
+	  }
+	},
+	"parameters": {
+	  "stringParam": {
+		"$ref": "#/definitions/stringType"
+	  },
+	  "stringLimitedParam": {
+		"$ref": "#/definitions/stringLimitedType"
+	  },
+	  "intType": {
+		"$ref": "#/definitions/intType"
+	  },
+	  "boolParam": {
+		"$ref": "#/definitions/boolType"
+	  },
+	  "arrayParam": {
+		"$ref": "#/definitions/arrayStringType"
+	  },
+	  "arrayLimitedParam": {
+		"$ref": "#/definitions/arrayStringLimitedType"
+	  },
+	  "mixedParam": {
+		"$ref": "#/definitions/mixedType"
+	  },
+	  "objectParam": {
+		"$ref": "#/definitions/objectType"
+	  }
+	},
+	"resources": {}
+}`

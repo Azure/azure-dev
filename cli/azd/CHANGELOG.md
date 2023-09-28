@@ -14,6 +14,8 @@
 
 ### Other Changes
 
+- [[#2796]](https://github.com/Azure/azure-dev/pull/2796) Update `terraform` provider from alpha to beta.
+
 ## 1.3.1 (2023-09-20)
 
 ### Minor Changes

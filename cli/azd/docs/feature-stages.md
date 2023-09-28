@@ -30,7 +30,7 @@ As of `0.8.0-beta.1`, each Azure Developer CLI feature has been evaluated and as
 | CI/CD        | GitHub Actions           | Stable    |
 | CI/CD        | Azure Pipelines          | Stable    |
 | IaC          | Bicep                    | Stable    |
-| IaC          | Terraform                | Alpha     |
+| IaC          | Terraform                | Beta      |
 | IaC          | Resource Group-Scope Deployments | Alpha      |
 | Host         | Azure App Service        | Stable    |
 | Host         | Azure Static Web Apps    | Stable    |

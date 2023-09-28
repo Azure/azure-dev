@@ -285,7 +285,7 @@ func Test_EnvManager_CreateFromContainer(t *testing.T) {
 
 		mockContext.Container.RegisterSingleton(func() *state.RemoteConfig {
 			return &state.RemoteConfig{
-				Backend: "AzureStorage",
+				Backend: string(RemoteKindAzureBlobStorage),
 				Config:  map[string]interface{}{},
 			}
 		})
@@ -327,7 +327,7 @@ func registerContainerComponents(t *testing.T, mockContext *mocks.MockContext) {
 	})
 	mockContext.Container.RegisterSingleton(NewManager)
 	mockContext.Container.RegisterSingleton(NewLocalFileDataStore)
-	_ = mockContext.Container.RegisterNamedSingleton(string(RemoteKindAzureStorage), NewStorageBlobDataStore)
+	_ = mockContext.Container.RegisterNamedSingleton(string(RemoteKindAzureBlobStorage), NewStorageBlobDataStore)
 
 	mockContext.Container.RegisterSingleton(storage.NewBlobSdkClient)
 	mockContext.Container.RegisterSingleton(config.NewManager)

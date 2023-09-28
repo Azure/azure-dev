@@ -254,7 +254,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 	// Remote Environment State Providers
 	remoteStateProviderMap := map[environment.RemoteKind]any{
-		environment.RemoteKindAzureStorage: environment.NewStorageBlobDataStore,
+		environment.RemoteKindAzureBlobStorage: environment.NewStorageBlobDataStore,
 	}
 
 	for remoteKind, constructor := range remoteStateProviderMap {

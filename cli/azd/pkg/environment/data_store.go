@@ -11,7 +11,7 @@ import (
 type RemoteKind string
 
 const (
-	RemoteKindAzureStorage RemoteKind = "AzureStorage"
+	RemoteKindAzureBlobStorage RemoteKind = "AzureBlobStorage"
 )
 
 type DataStore interface {

@@ -1439,23 +1439,34 @@ type compileBicepResult struct {
 }
 
 func (p *BicepProvider) compileBicep(
-	ctx context.Context, modulePath string,
+	ctx context.Context,
+	modulePath string,
+) (*compileBicepResult, error) {
+	currentPrincipalId, err := p.curPrincipal.CurrentPrincipalId(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("fetching current principal id for bicepparam compilation: %w", err)
+	}
+	return compileBicep(ctx, modulePath, p.env, currentPrincipalId, p.bicepCli)
+}
+
+func compileBicep(
+	ctx context.Context,
+	modulePath string,
+	env *environment.Environment,
+	currentPrincipalId string,
+	bicepCli bicep.BicepCli,
 ) (*compileBicepResult, error) {
 	var compiled string
 	var parameters azure.ArmParameters
 
 	if isBicepParamFile(modulePath) {
-		azdEnv := p.env.Environ()
+		azdEnv := env.Environ()
 		// append principalID (not stored to .env by default). For non-bicepparam, principalId is resolved
 		// without looking at .env
-		if _, exists := p.env.LookupEnv(environment.PrincipalIdEnvVarName); !exists {
-			currentPrincipalId, err := p.curPrincipal.CurrentPrincipalId(ctx)
-			if err != nil {
-				return nil, fmt.Errorf("fetching current principal id for bicepparam compilation: %w", err)
-			}
+		if _, exists := env.LookupEnv(environment.PrincipalIdEnvVarName); !exists {
 			azdEnv = append(azdEnv, fmt.Sprintf("%s=%s", environment.PrincipalIdEnvVarName, currentPrincipalId))
 		}
-		compiledResult, err := p.bicepCli.BuildBicepParam(ctx, modulePath, azdEnv)
+		compiledResult, err := bicepCli.BuildBicepParam(ctx, modulePath, azdEnv)
 		if err != nil {
 			return nil, fmt.Errorf("failed to compile bicepparam template: %w", err)
 		}
@@ -1474,7 +1485,7 @@ func (p *BicepProvider) compileBicep(
 		}
 		parameters = params.Parameters
 	} else {
-		res, err := p.bicepCli.Build(ctx, modulePath)
+		res, err := bicepCli.Build(ctx, modulePath)
 		if err != nil {
 			return nil, fmt.Errorf("failed to compile bicep template: %w", err)
 		}

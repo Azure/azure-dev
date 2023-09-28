@@ -13,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -54,10 +55,9 @@ func newHooksRunCmd() *cobra.Command {
 
 type hooksRunFlags struct {
 	envFlag
-	global      *internal.GlobalCommandOptions
-	platform    string
-	interactive bool
-	service     string
+	global   *internal.GlobalCommandOptions
+	platform string
+	service  string
 }
 
 func (f *hooksRunFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
@@ -65,7 +65,6 @@ func (f *hooksRunFlags) Bind(local *pflag.FlagSet, global *internal.GlobalComman
 	f.global = global
 
 	local.StringVar(&f.platform, "platform", "", "Forces hooks to run for the specified platform.")
-	local.BoolVar(&f.interactive, "interactive", false, "Forces all hooks to run in interactive mode for testing")
 	local.StringVar(&f.service, "service", "", "Only runs hooks for the specified service.")
 }
 
@@ -161,15 +160,15 @@ func (hra *hooksRunAction) processHooks(
 	hooks map[string]*ext.HookConfig,
 	skip bool,
 ) error {
-	hra.console.ShowSpinner(ctx, message, input.Step)
-
 	if skip {
+		hra.console.ShowSpinner(ctx, message, input.Step)
 		hra.console.StopSpinner(ctx, message, input.StepSkipped)
 		return nil
 	}
 
 	hook, ok := hooks[hookName]
 	if !ok {
+		hra.console.ShowSpinner(ctx, message, input.Step)
 		hra.console.StopSpinner(ctx, message+noHookFoundMessage, input.StepWarning)
 		return nil
 	}
@@ -180,23 +179,24 @@ func (hra *hooksRunAction) processHooks(
 		return err
 	}
 
-	if hook.Interactive {
-		hra.console.StopSpinner(ctx, "", input.StepDone)
-		hra.console.Message(ctx, output.WithBold(output.WithUnderline(message)))
-	}
-
-	err := hra.execHook(ctx, cwd, hookType, commandName, hook)
+	hra.console.StopSpinner(ctx, "", input.Step)
+	err := hra.execHook(ctx, message, cwd, hookType, commandName, hook)
 	if err != nil {
+		hra.console.ShowSpinner(ctx, message, input.Step)
 		hra.console.StopSpinner(ctx, message, input.StepFailed)
 		return fmt.Errorf("failed running hook %s, %w", hookName, err)
 	}
 
+	// The previewer cancels the previous spinner so we need to restart/show it again.
+	hra.console.ShowSpinner(ctx, message, input.Step)
 	hra.console.StopSpinner(ctx, message, input.StepDone)
+
 	return nil
 }
 
 func (hra *hooksRunAction) execHook(
 	ctx context.Context,
+	previewMessage string,
 	cwd string,
 	hookType ext.HookType,
 	commandName string,
@@ -210,10 +210,19 @@ func (hra *hooksRunAction) execHook(
 
 	hooksManager := ext.NewHooksManager(cwd)
 	hooksRunner := ext.NewHooksRunner(hooksManager, hra.commandRunner, hra.console, cwd, hooks, hra.env)
-	err := hooksRunner.RunHooks(ctx, hookType, commandName)
+
+	previewer := hra.console.ShowPreviewer(ctx, &input.ShowPreviewerOptions{
+		Title:        previewMessage,
+		MaxLineCount: 10,
+	})
+
+	runOptions := &tools.ExecOptions{StdOut: previewer}
+	err := hooksRunner.RunHooks(ctx, hookType, runOptions, commandName)
 	if err != nil {
 		return err
 	}
+
+	hra.console.StopPreviewer(ctx)
 
 	return nil
 }
@@ -242,13 +251,10 @@ func (hra *hooksRunAction) prepareHook(name string, hook *ext.HookConfig) error 
 	}
 
 	hook.Name = name
+	hook.Interactive = false
 
 	// Don't display the 'Executing hook...' messages
 	hook.Quiet = true
-	if hra.flags.interactive {
-		hook.Interactive = true
-	}
-
 	hra.configureHookFlags(hook.Windows)
 	hra.configureHookFlags(hook.Posix)
 
@@ -261,7 +267,5 @@ func (hra *hooksRunAction) configureHookFlags(hook *ext.HookConfig) {
 	}
 
 	hook.Quiet = true
-	if hra.flags.interactive {
-		hook.Interactive = true
-	}
+	hook.Interactive = false
 }

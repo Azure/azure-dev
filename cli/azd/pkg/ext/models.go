@@ -72,7 +72,7 @@ type HookConfig struct {
 	Posix *HookConfig `yaml:"posix,omitempty"`
 	// Hides executing messages printed to the console
 	// This is a temp workaround until we have a better way to handle this
-	Quiet bool
+	Quiet bool `yaml:"-"`
 }
 
 // Validates and normalizes the hook configuration

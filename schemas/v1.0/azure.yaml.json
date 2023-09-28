@@ -437,6 +437,14 @@
                     "type": "string",
                     "title": "The tag that will be applied to the built container image.",
                     "description": "If omitted, a unique tag will be generated based on the format: {appName}/{serviceName}-{environmentName}:azd-deploy-{unix time (seconds)}. Supports environment variable substitution. For example, to generate unique tags for a given release: myapp/myimage:${DOCKER_IMAGE_TAG}"
+                },
+                "buildArgs": {
+                    "type": "array",
+                    "title": "Optional. Build arguments to pass to the docker build command",
+                    "description": "Build arguments to pass to the docker build command.",
+                    "items": {
+                        "type": "string"
+                    }
                 }
             }
         },

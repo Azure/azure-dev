@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -321,7 +322,9 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		// If a container name has not been explicitly configured
 		// Default to use the project name as the container name
 		if storageAccountConfig.ContainerName == "" {
-			storageAccountConfig.ContainerName = projectConfig.Name
+			// Azure blob storage containers must be lowercase and can only container alphanumeric characters and hyphens
+			// We will do our best to preserve the original project name by forcing to lowercase.
+			storageAccountConfig.ContainerName = strings.ToLower(projectConfig.Name)
 		}
 
 		return storageAccountConfig, nil

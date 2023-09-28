@@ -5,9 +5,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net/http"
 	"os"
 	"path/filepath"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
@@ -17,6 +19,8 @@ import (
 	"github.com/joho/godotenv"
 	"golang.org/x/exp/slices"
 )
+
+var ErrAccessDenied = errors.New("access denied connecting Azure Blob Storage container")
 
 type StorageBlobDataStore struct {
 	configManager config.Manager
@@ -43,11 +47,13 @@ func (fs *StorageBlobDataStore) ConfigPath(env *Environment) string {
 func (sbd *StorageBlobDataStore) List(ctx context.Context) ([]*contracts.EnvListEnvironment, error) {
 	blobs, err := sbd.blobClient.Items(ctx)
 	if err != nil {
-		if errors.Is(err, storage.ErrContainerNotFound) {
+		normalizedErr := normalizeError(err)
+
+		if errors.Is(normalizedErr, storage.ErrContainerNotFound) {
 			return []*contracts.EnvListEnvironment{}, nil
 		}
 
-		return nil, fmt.Errorf("listing blobs: %w", err)
+		return nil, fmt.Errorf("listing blobs: %w", normalizedErr)
 	}
 
 	envMap := map[string]*contracts.EnvListEnvironment{}
@@ -117,7 +123,7 @@ func (sbd *StorageBlobDataStore) Save(ctx context.Context, env *Environment) err
 	}
 
 	if err := sbd.blobClient.Upload(ctx, sbd.ConfigPath(env), cfgWriter); err != nil {
-		return fmt.Errorf("uploading config: %w", err)
+		return fmt.Errorf("uploading config: %w", normalizeError(err))
 	}
 
 	marshalled, err := marshallDotEnv(env)
@@ -128,7 +134,7 @@ func (sbd *StorageBlobDataStore) Save(ctx context.Context, env *Environment) err
 	buffer := bytes.NewBuffer([]byte(marshalled))
 
 	if err := sbd.blobClient.Upload(ctx, sbd.EnvPath(env), buffer); err != nil {
-		return fmt.Errorf("uploading .env: %w", err)
+		return fmt.Errorf("uploading .env: %w", normalizeError(err))
 	}
 
 	tracing.SetUsageAttributes(fields.StringHashed(fields.EnvNameKey, env.GetEnvName()))
@@ -139,7 +145,7 @@ func (sbd *StorageBlobDataStore) Reload(ctx context.Context, env *Environment) e
 	// Reload .env file
 	dotEnvBuffer, err := sbd.blobClient.Download(ctx, sbd.EnvPath(env))
 	if err != nil {
-		return err
+		return normalizeError(err)
 	}
 
 	defer dotEnvBuffer.Close()
@@ -156,7 +162,7 @@ func (sbd *StorageBlobDataStore) Reload(ctx context.Context, env *Environment) e
 	// Reload config file
 	configBuffer, err := sbd.blobClient.Download(ctx, sbd.ConfigPath(env))
 	if err != nil {
-		return err
+		return normalizeError(err)
 	}
 
 	defer configBuffer.Close()
@@ -180,4 +186,14 @@ func (sbd *StorageBlobDataStore) Reload(ctx context.Context, env *Environment) e
 	}
 
 	return nil
+}
+
+func normalizeError(err error) error {
+	var responseErr *azcore.ResponseError
+	if errors.As(err, &responseErr) && responseErr.StatusCode == http.StatusForbidden {
+		errorMsg := "Ensure your Azure account has `Storage Blob Contributor` role on the storage account or container."
+		return fmt.Errorf("%w, %s %w", ErrAccessDenied, errorMsg, err)
+	}
+
+	return err
 }

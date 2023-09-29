@@ -61,6 +61,7 @@ func (display *ProvisioningProgressDisplay) ReportProgress(
 		display.deploymentStarted = true
 		deploymentUrl := fmt.Sprintf(output.WithLinkFormat("%s\n"), display.target.PortalUrl())
 
+		display.console.EnsureBlankLine(ctx)
 		display.console.MessageUxItem(
 			ctx,
 			&ux.MultilineMessage{

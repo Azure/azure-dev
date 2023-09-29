@@ -20,6 +20,7 @@ import (
 	"path"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -43,7 +44,6 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/attribute"
-	"golang.org/x/exp/slices"
 )
 
 // The current running configuration for the test suite.
@@ -175,6 +175,60 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 	rgs, err := resourceManager.GetResourceGroupsForEnvironment(ctx, env.GetSubscriptionId(), env.GetEnvName())
 	require.NoError(t, err)
 	require.NotNil(t, rgs)
+
+	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
+	require.NoError(t, err)
+}
+
+func Test_CLI_ProvisionCache(t *testing.T) {
+	t.Setenv("AZURE_RECORD_MODE", "live")
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
+	t.Logf("DIR: %s", dir)
+
+	session := recording.Start(t)
+
+	envName := randomOrStoredEnvName(session)
+	t.Logf("AZURE_ENV_NAME: %s", envName)
+
+	cli := azdcli.NewCLI(t, azdcli.WithSession(session))
+	cli.WorkingDirectory = dir
+	cli.Env = append(cli.Env, os.Environ()...)
+	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
+
+	err := copySample(dir, "storage")
+	require.NoError(t, err, "failed expanding sample")
+
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
+	require.NoError(t, err)
+
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
+	require.NoError(t, err)
+
+	expectedOutputContains := "There are no changes to provision for your application."
+
+	// Second provision should use cache
+	secondProvisionOutput, err := cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
+	require.NoError(t, err)
+	require.Contains(t, secondProvisionOutput.Stdout, expectedOutputContains)
+
+	// Third deploy setting a different param
+	cli.Env = append(cli.Env, "INT_TAG_VALUE=1989")
+	thirdProvisionOutput, err := cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
+	require.NoError(t, err)
+	require.NotContains(t, thirdProvisionOutput.Stdout, expectedOutputContains)
+
+	// last provision should use cache
+	lastProvisionOutput, err := cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
+	require.NoError(t, err)
+	require.Contains(t, lastProvisionOutput.Stdout, expectedOutputContains)
+
+	// use flag to force provision
+	flagProvisionOutput, err := cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision", "--no-state")
+	require.NoError(t, err)
+	require.NotContains(t, flagProvisionOutput.Stdout, expectedOutputContains)
 
 	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
 	require.NoError(t, err)
@@ -374,6 +428,74 @@ func Test_CLI_ProvisionIsNeeded(t *testing.T) {
 			assert.Contains(t, result.Stdout, "azd provision")
 		})
 	}
+}
+
+// Verifies support for bicepparam
+func Test_CLI_InfraBicepParam(t *testing.T) {
+	// running this test in parallel is ok as it uses a t.TempDir()
+	t.Parallel()
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
+	t.Logf("DIR: %s", dir)
+
+	session := recording.Start(t)
+
+	envName := randomEnvName()
+	if session != nil {
+		if session.Playback {
+			if _, ok := session.Variables[recording.EnvNameKey]; ok {
+				envName = session.Variables[recording.EnvNameKey]
+			}
+		} else {
+			session.Variables[recording.EnvNameKey] = envName
+		}
+	}
+
+	t.Logf("AZURE_ENV_NAME: %s", envName)
+
+	cli := azdcli.NewCLI(t, azdcli.WithSession(session))
+	cli.WorkingDirectory = dir
+	cli.Env = append(cli.Env, os.Environ()...)
+	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
+
+	err := copySample(dir, "storage-bicepparam")
+	require.NoError(t, err, "failed expanding sample")
+
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
+	require.NoError(t, err)
+
+	// test 'infra create' alias
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision", "--output", "json")
+	require.NoError(t, err)
+
+	envPath := filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName)
+	env, err := environment.FromRoot(envPath)
+	require.NoError(t, err)
+
+	// WEBSITE_URL is an output of the template, make sure it was added to the .env file.
+	// the name should start with 'st'
+	accountName, ok := env.Dotenv()["AZURE_STORAGE_ACCOUNT_NAME"]
+	require.True(t, ok)
+	require.Regexp(t, `st\S*`, accountName)
+
+	assertEnvValuesStored(t, env)
+
+	if session != nil {
+		if session.Playback {
+			// This is currently required because azd doesn't store
+			// AZURE_SUBSCRIPTION_ID in the .env file
+			// See #2423
+			env.SetSubscriptionId(session.Variables[recording.SubscriptionIdKey])
+		} else {
+			session.Variables[recording.SubscriptionIdKey] = env.GetSubscriptionId()
+		}
+	}
+
+	// Delete
+	_, err = cli.RunCommand(ctx, "down", "--force", "--purge", "--output", "json")
+	require.NoError(t, err)
 }
 
 // Test_CLI_NoDebugSpewWhenHelpPassedWithoutDebug ensures that no debug spew is written to stderr when --help is passed

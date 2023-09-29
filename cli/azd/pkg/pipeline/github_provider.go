@@ -13,6 +13,7 @@ import (
 	"net/url"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -31,7 +32,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
-	"golang.org/x/exp/slices"
 )
 
 // GitHubScmProvider implements ScmProvider using GitHub as the provider
@@ -743,8 +743,10 @@ func ensureGitHubLogin(
 		}
 
 		if err := ghCli.Login(ctx, hostname); err == nil {
-			if projectPath != "" && ghGitProtocol == github.GitHttpsProtocolType {
+			if github.RunningOnCodespaces() && projectPath != "" && ghGitProtocol == github.GitHttpsProtocolType {
 				// For HTTPS, using gh as credential helper will avoid git asking for password
+				// Credential helper is only set for codespaces to improve the experience,
+				// see more about this here: https://github.com/Azure/azure-dev/issues/2451
 				if err := gitCli.SetGitHubAuthForRepo(
 					ctx, projectPath, fmt.Sprintf("https://%s", hostname), ghCli.BinaryPath()); err != nil {
 					return false, err

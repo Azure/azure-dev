@@ -14,6 +14,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/repository"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -22,7 +25,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
+	"github.com/fatih/color"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -65,9 +70,10 @@ func (i *initFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOpt
 		"b",
 		"",
 		"The template branch to initialize from. Must be used with a template argument (--template or -t).")
-	local.StringVar(
+	local.StringVarP(
 		&i.subscription,
 		"subscription",
+		"s",
 		"",
 		"Name or ID of an Azure subscription to use for the new environment",
 	)
@@ -83,6 +89,8 @@ type initAction struct {
 	gitCli          git.GitCli
 	flags           *initFlags
 	repoInitializer *repository.Initializer
+	templateManager *templates.TemplateManager
+	featuresManager *alpha.FeatureManager
 }
 
 func newInitAction(
@@ -90,13 +98,17 @@ func newInitAction(
 	console input.Console,
 	gitCli git.GitCli,
 	flags *initFlags,
-	repoInitializer *repository.Initializer) actions.Action {
+	repoInitializer *repository.Initializer,
+	templateManager *templates.TemplateManager,
+	featuresManager *alpha.FeatureManager) actions.Action {
 	return &initAction{
 		console:         console,
 		cmdRun:          cmdRun,
 		gitCli:          gitCli,
 		flags:           flags,
 		repoInitializer: repoInitializer,
+		templateManager: templateManager,
+		featuresManager: featuresManager,
 	}
 }
 
@@ -121,13 +133,9 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	// Command title
 	i.console.MessageUxItem(ctx, &ux.MessageTitle{
-		Title: "Initializing a new project (azd init)",
+		Title: "Initializing an app to run on Azure (azd init)",
 	})
 
-	// If azure.yaml project already exists, we should do the following:
-	//   - Not prompt for template selection (user can specify --template if needed to refresh from an existing template)
-	//   - Not overwrite azure.yaml (unless --template is explicitly specified)
-	//   - Allow for environment initialization
 	var existingProject bool
 	if _, err := os.Stat(azdCtx.ProjectPath()); err == nil {
 		existingProject = true
@@ -137,79 +145,202 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, fmt.Errorf("checking if project exists: %w", err)
 	}
 
-	if !existingProject {
-		err = i.repoInitializer.PromptIfNonEmpty(ctx, azdCtx)
+	var initTypeSelect initType
+	if i.flags.templatePath != "" {
+		// an explicit --template passed, always initialize from app template
+		initTypeSelect = initAppTemplate
+	}
+
+	if i.flags.templatePath == "" && existingProject {
+		// no explicit --template, and azure.yaml exists, only initialize environment
+		initTypeSelect = initEnvironment
+	}
+
+	if initTypeSelect == initUnknown {
+		if i.featuresManager.IsEnabled(alpha.EasyInit) {
+			initTypeSelect, err = promptInitType(i.console, ctx)
+			if err != nil {
+				return nil, err
+			}
+		} else {
+			initTypeSelect = initAppTemplate
+		}
+	}
+
+	header := "New project initialized!"
+	followUp := heredoc.Docf(`
+	You can view the template code in your directory: %s
+	Learn more about running 3rd party code on our DevHub: %s`,
+		output.WithLinkFormat("%s", wd),
+		output.WithLinkFormat("%s", "https://aka.ms/azd-third-party-code-notice"))
+
+	switch initTypeSelect {
+	case initAppTemplate:
+		tracing.SetUsageAttributes(fields.InitMethod.String("template"))
+		err := i.initializeTemplate(ctx, azdCtx)
 		if err != nil {
 			return nil, err
 		}
 
-		if i.flags.templatePath == "" {
-			template, err := templates.PromptTemplate(ctx, "Select a project template:", i.console)
-			i.flags.templatePath = template.RepositoryPath
+		err = i.initializeEnv(ctx, azdCtx)
+		if err != nil {
+			return nil, err
+		}
+	case initFromApp:
+		tracing.SetUsageAttributes(fields.InitMethod.String("app"))
 
-			if err != nil {
-				return nil, err
+		header = "Your app is ready for the cloud!"
+		followUp = "You can provision and deploy your app to Azure by running the " + color.BlueString("azd up") +
+			" command in this directory. For more information on configuring your app, see " +
+			output.WithHighLightFormat("./next-steps.md")
+		entries, err := os.ReadDir(azdCtx.ProjectDirectory())
+		if err != nil {
+			return nil, fmt.Errorf("reading current directory: %w", err)
+		}
+
+		if len(entries) == 0 {
+			return nil, &azcli.ErrorWithSuggestion{
+				Err: errors.New("no files found in the current directory"),
+				Suggestion: "Ensure you're in the directory where your app code is located and try again." +
+					" If you do not have code and would like to start with an app template, run '" +
+					color.BlueString("azd init") + "' and select the option to " +
+					color.MagentaString("Use a template") + ".",
 			}
+		}
+
+		err = i.repoInitializer.InitFromApp(ctx, azdCtx, func() error {
+			return i.initializeEnv(ctx, azdCtx)
+		})
+		if err != nil {
+			return nil, err
+		}
+	case initEnvironment:
+		err = i.initializeEnv(ctx, azdCtx)
+		if err != nil {
+			return nil, err
+		}
+	default:
+		panic("unhandled init type")
+	}
+
+	return &actions.ActionResult{
+		Message: &actions.ResultMessage{
+			Header:   header,
+			FollowUp: followUp,
+		},
+	}, nil
+}
+
+type initType int
+
+const (
+	initUnknown = iota
+	initFromApp
+	initAppTemplate
+	initEnvironment
+)
+
+func promptInitType(console input.Console, ctx context.Context) (initType, error) {
+	selection, err := console.Select(ctx, input.ConsoleOptions{
+		Message: "How do you want to initialize your app?",
+		Options: []string{
+			"Use code in the current directory",
+			"Select a template",
+		},
+	})
+	if err != nil {
+		return initUnknown, err
+	}
+
+	switch selection {
+	case 0:
+		return initFromApp, nil
+	case 1:
+		return initAppTemplate, nil
+	default:
+		panic("unhandled selection")
+	}
+}
+
+func (i *initAction) initializeTemplate(
+	ctx context.Context,
+	azdCtx *azdcontext.AzdContext) error {
+	err := i.repoInitializer.PromptIfNonEmpty(ctx, azdCtx)
+	if err != nil {
+		return err
+	}
+
+	if i.flags.templatePath == "" {
+		template, err := templates.PromptTemplate(ctx, "Select a project template:", i.templateManager, i.console)
+		if err != nil {
+			return err
+		}
+
+		if template != nil {
+			i.flags.templatePath = template.RepositoryPath
 		}
 	}
 
 	if i.flags.templatePath != "" {
 		gitUri, err := templates.Absolute(i.flags.templatePath)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		err = i.repoInitializer.Initialize(ctx, azdCtx, gitUri, i.flags.templateBranch)
 		if err != nil {
-			return nil, fmt.Errorf("init from template repository: %w", err)
+			return fmt.Errorf("init from template repository: %w", err)
 		}
-	} else if !existingProject { // do not initialize for empty if azure.yaml is present
-		err = i.repoInitializer.InitializeMinimal(ctx, azdCtx)
+	} else {
+		err := i.repoInitializer.InitializeMinimal(ctx, azdCtx)
 		if err != nil {
-			return nil, fmt.Errorf("init empty repository: %w", err)
+			return fmt.Errorf("init empty repository: %w", err)
 		}
 	}
 
+	return nil
+}
+
+func (i *initAction) initializeEnv(
+	ctx context.Context,
+	azdCtx *azdcontext.AzdContext) error {
 	envName, err := azdCtx.GetDefaultEnvironmentName()
 	if err != nil {
-		return nil, fmt.Errorf("retrieving default environment name: %w", err)
+		return fmt.Errorf("retrieving default environment name: %w", err)
 	}
 
 	if envName != "" {
-		return nil, environment.NewEnvironmentInitError(envName)
+		return environment.NewEnvironmentInitError(envName)
 	}
 
-	suggest := environment.CleanName(filepath.Base(wd) + "-dev")
-	if len(suggest) > environment.EnvironmentNameMaxLength {
-		suggest = suggest[len(suggest)-environment.EnvironmentNameMaxLength:]
+	base := filepath.Base(azdCtx.ProjectDirectory())
+	examples := []string{}
+	for _, c := range []string{"dev", "test", "prod"} {
+		suggest := environment.CleanName(base + "-" + c)
+		if len(suggest) > environment.EnvironmentNameMaxLength {
+			suggest = suggest[len(suggest)-environment.EnvironmentNameMaxLength:]
+		}
+
+		examples = append(examples, suggest)
 	}
 
 	envSpec := environmentSpec{
 		environmentName: i.flags.environmentName,
 		subscription:    i.flags.subscription,
 		location:        i.flags.location,
-		suggest:         suggest,
+		examples:        examples,
 	}
 
 	env, err := createEnvironment(ctx, envSpec, azdCtx, i.console)
 	if err != nil {
-		return nil, fmt.Errorf("loading environment: %w", err)
+		return fmt.Errorf("loading environment: %w", err)
 	}
 
 	if err := azdCtx.SetDefaultEnvironmentName(env.GetEnvName()); err != nil {
-		return nil, fmt.Errorf("saving default environment: %w", err)
+		return fmt.Errorf("saving default environment: %w", err)
 	}
 
-	return &actions.ActionResult{
-		Message: &actions.ResultMessage{
-			Header: "New project initialized!",
-			FollowUp: heredoc.Docf(`
-			You can view the template code in your directory: %s
-			Learn more about running 3rd party code on our DevHub: %s`,
-				output.WithLinkFormat("%s", wd),
-				output.WithLinkFormat("%s", "https://aka.ms/azd-third-party-code-notice")),
-		},
-	}, nil
+	return nil
 }
 
 func getCmdInitHelpDescription(*cobra.Command) string {

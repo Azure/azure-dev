@@ -1,3 +1,4 @@
+metadata description = 'Creates an Azure App Service in an existing Azure App Service plan.'
 param name string
 param location string = resourceGroup().location
 param tags object = {}
@@ -76,7 +77,6 @@ resource appService 'Microsoft.Web/sites@2022-03-01' = {
 
   resource basicPublishingCredentialsPoliciesFtp 'basicPublishingCredentialsPolicies' = {
     name: 'ftp'
-    location: location
     properties: {
       allow: false
     }
@@ -84,7 +84,6 @@ resource appService 'Microsoft.Web/sites@2022-03-01' = {
 
   resource basicPublishingCredentialsPoliciesScm 'basicPublishingCredentialsPolicies' = {
     name: 'scm'
-    location: location
     properties: {
       allow: false
     }

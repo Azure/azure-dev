@@ -26,7 +26,7 @@ type bashScript struct {
 
 // Executes the specified bash script
 // When interactive is true will attach to stdin, stdout & stderr
-func (bs *bashScript) Execute(ctx context.Context, path string, interactive bool) (exec.RunResult, error) {
+func (bs *bashScript) Execute(ctx context.Context, path string, options tools.ExecOptions) (exec.RunResult, error) {
 	var runArgs exec.RunArgs
 	// Bash likes all path separators in POSIX format
 	path = strings.ReplaceAll(path, "\\", "/")
@@ -40,8 +40,15 @@ func (bs *bashScript) Execute(ctx context.Context, path string, interactive bool
 	runArgs = runArgs.
 		WithCwd(bs.cwd).
 		WithEnv(bs.envVars).
-		WithInteractive(interactive).
 		WithShell(true)
+
+	if options.Interactive != nil {
+		runArgs = runArgs.WithInteractive(*options.Interactive)
+	}
+
+	if options.StdOut != nil {
+		runArgs = runArgs.WithStdOut(options.StdOut)
+	}
 
 	return bs.commandRunner.Run(ctx, runArgs)
 }

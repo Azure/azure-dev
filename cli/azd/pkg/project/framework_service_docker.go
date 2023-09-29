@@ -9,8 +9,14 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -18,14 +24,16 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/pack"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type DockerProjectOptions struct {
-	Path      string           `json:"path"`
-	Context   string           `json:"context"`
-	Platform  string           `json:"platform"`
-	Tag       ExpandableString `json:"tag"`
-	BuildArgs []string         `json:"buildArgs"`
+	Path      string           `yaml:"path,omitempty" json:"path,omitempty"`
+	Context   string           `yaml:"context,omitempty" json:"context,omitempty"`
+	Platform  string           `yaml:"platform,omitempty" json:"platform,omitempty"`
+	Tag       ExpandableString `yaml:"tag,omitempty" json:"tag,omitempty"`
+	BuildArgs []string         `yaml:"buildArgs,omitempty" json:"buildArgs,omitempty"`
 }
 
 type dockerBuildResult struct {
@@ -65,11 +73,13 @@ func (dpr *dockerPackageResult) MarshalJSON() ([]byte, error) {
 }
 
 type dockerProject struct {
-	env             *environment.Environment
-	docker          docker.Docker
-	framework       FrameworkService
-	containerHelper *ContainerHelper
-	console         input.Console
+	env                 *environment.Environment
+	docker              docker.Docker
+	framework           FrameworkService
+	containerHelper     *ContainerHelper
+	console             input.Console
+	alphaFeatureManager *alpha.FeatureManager
+	commandRunner       exec.CommandRunner
 }
 
 // NewDockerProject creates a new instance of a Azd project that
@@ -79,12 +89,16 @@ func NewDockerProject(
 	docker docker.Docker,
 	containerHelper *ContainerHelper,
 	console input.Console,
+	alphaFeatureManager *alpha.FeatureManager,
+	commandRunner exec.CommandRunner,
 ) CompositeFrameworkService {
 	return &dockerProject{
-		env:             env,
-		docker:          docker,
-		containerHelper: containerHelper,
-		console:         console,
+		env:                 env,
+		docker:              docker,
+		containerHelper:     containerHelper,
+		console:             console,
+		alphaFeatureManager: alphaFeatureManager,
+		commandRunner:       commandRunner,
 	}
 }
 
@@ -153,9 +167,37 @@ func (p *dockerProject) Build(
 				strings.ToLower(serviceConfig.Name),
 			)
 
+			path := filepath.Join(serviceConfig.Path(), dockerOptions.Path)
+			_, err := os.Stat(path)
+			packBuildEnabled := p.alphaFeatureManager.IsEnabled(alpha.Buildpacks)
+			if packBuildEnabled {
+				if err != nil && !errors.Is(err, os.ErrNotExist) {
+					task.SetError(fmt.Errorf("reading dockerfile: %w", err))
+					return
+				}
+			} else {
+				if err != nil {
+					task.SetError(fmt.Errorf("reading dockerfile: %w", err))
+					return
+				}
+			}
+
+			if packBuildEnabled && errors.Is(err, os.ErrNotExist) {
+				// Build the container from source
+				task.SetProgress(NewServiceProgress("Building Docker image from source"))
+				res, err := p.packBuild(ctx, serviceConfig, dockerOptions, imageName)
+				if err != nil {
+					task.SetError(err)
+					return
+				}
+
+				res.Restore = restoreOutput
+				task.SetResult(res)
+				return
+			}
+
 			// Build the container
 			task.SetProgress(NewServiceProgress("Building Docker image"))
-
 			previewerWriter := p.console.ShowPreviewer(ctx,
 				&input.ShowPreviewerOptions{
 					Prefix:       "  ",
@@ -228,6 +270,86 @@ func (p *dockerProject) Package(
 			})
 		},
 	)
+}
+
+// Default builder image to produce container images from source
+const DefaultBuilderImage = "mcr.microsoft.com/oryx/builder:debian-bullseye-20230830.1"
+const DefaultDotNetBuilderImage = "mcr.microsoft.com/oryx/builder:debian-buster-20230830.1"
+
+func (p *dockerProject) packBuild(
+	ctx context.Context,
+	svc *ServiceConfig,
+	dockerOptions DockerProjectOptions,
+	imageName string) (*ServiceBuildResult, error) {
+	pack, err := pack.NewPackCli(ctx, p.console, p.commandRunner)
+	if err != nil {
+		return nil, err
+	}
+	builder := DefaultBuilderImage
+	if svc.Language == ServiceLanguageDotNet {
+		builder = DefaultDotNetBuilderImage
+	}
+
+	environ := []string{}
+	userDefinedImage := false
+	if os.Getenv("AZD_BUILDER_IMAGE") != "" {
+		builder = os.Getenv("AZD_BUILDER_IMAGE")
+		userDefinedImage = true
+	}
+
+	previewer := p.console.ShowPreviewer(ctx,
+		&input.ShowPreviewerOptions{
+			Prefix:       "  ",
+			MaxLineCount: 8,
+			Title:        "Docker (pack) Output",
+		})
+
+	ctx, span := tracing.Start(
+		ctx,
+		events.PackBuildEvent,
+		trace.WithAttributes(fields.ProjectServiceLanguageKey.String(string(svc.Language))))
+
+	img, tag := docker.SplitDockerImage(builder)
+	if userDefinedImage {
+		span.SetAttributes(
+			fields.StringHashed(fields.PackBuilderImage, img),
+			fields.StringHashed(fields.PackBuilderTag, tag),
+		)
+	} else {
+		span.SetAttributes(
+			fields.PackBuilderImage.String(img),
+			fields.PackBuilderTag.String(tag),
+		)
+	}
+
+	err = pack.Build(
+		ctx,
+		svc.Path(),
+		builder,
+		imageName,
+		environ,
+		previewer)
+	p.console.StopPreviewer(ctx)
+	if err != nil {
+		span.EndWithStatus(err)
+		return nil, err
+	}
+
+	span.End()
+
+	imageId, err := p.docker.Inspect(ctx, imageName, "{{.Id}}")
+	if err != nil {
+		return nil, err
+	}
+	imageId = strings.TrimSpace(imageId)
+
+	return &ServiceBuildResult{
+		BuildOutputPath: imageId,
+		Details: &dockerBuildResult{
+			ImageId:   imageId,
+			ImageName: imageName,
+		},
+	}, nil
 }
 
 func getDockerOptionsWithDefaults(options DockerProjectOptions) DockerProjectOptions {

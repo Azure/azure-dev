@@ -55,6 +55,12 @@ const (
 	InstalledByKey = attribute.Key("service.installer")
 )
 
+// Fields related to the experimentation platform
+const (
+	// The assignment context as returned by the experimentation platform.
+	ExpAssignmentContextKey = attribute.Key("exp.assignmentContext")
+)
+
 // Context level fields. Availability depends on the command running.
 const (
 	// Object ID of the principal.
@@ -79,6 +85,8 @@ const (
 	ProjectServiceHostsKey = attribute.Key("project.service.hosts")
 	// The collection of hashed service languages in the project.
 	ProjectServiceLanguagesKey = attribute.Key("project.service.languages")
+	// The service language being executed.
+	ProjectServiceLanguageKey = attribute.Key("project.service.language")
 )
 
 // Environment related attributes
@@ -209,4 +217,30 @@ const (
 const (
 	// The time spent waiting on user interaction in milliseconds.
 	PerfInteractTime = attribute.Key("perf.interact_time")
+)
+
+// Pack related fields
+const (
+	// The builder image used. Hashed when a user-defined image is used.
+	PackBuilderImage = attribute.Key("pack.builder.image")
+
+	// The tag of the builder image used. Hashed when a user-defined image is used.
+	PackBuilderTag = attribute.Key("pack.builder.tag")
+)
+
+// Initialization from app related fields
+const (
+	InitMethod = attribute.Key("init.method")
+
+	AppInitDetectedDatabase = attribute.Key("appinit.detected.databases")
+	AppInitDetectedServices = attribute.Key("appinit.detected.services")
+
+	AppInitConfirmedDatabases = attribute.Key("appinit.confirmed.databases")
+	AppInitConfirmedServices  = attribute.Key("appinit.confirmed.services")
+
+	AppInitModifyAddCount    = attribute.Key("appinit.modify_add.count")
+	AppInitModifyRemoveCount = attribute.Key("appinit.modify_remove.count")
+
+	// The last step recorded during the app init process.
+	AppInitLastStep = attribute.Key("appinit.lastStep")
 )

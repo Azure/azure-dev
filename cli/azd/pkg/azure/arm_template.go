@@ -28,6 +28,7 @@ type ArmTemplate struct {
 	ContentVersion string                          `json:"contentVersion"`
 	Parameters     ArmTemplateParameterDefinitions `json:"parameters"`
 	Outputs        ArmTemplateOutputs              `json:"outputs"`
+	Definitions    ArmTemplateParameterDefinitions `json:"definitions"`
 }
 
 var cResourceDeploymentTemplateSchemaLower = strings.ToLower("deploymentTemplate.json")
@@ -60,14 +61,16 @@ type ArmTemplateParameterDefinitions map[string]ArmTemplateParameterDefinition
 type ArmTemplateOutputs map[string]ArmTemplateOutput
 
 type ArmTemplateParameterDefinition struct {
-	Type          string                     `json:"type"`
-	DefaultValue  any                        `json:"defaultValue"`
-	AllowedValues *[]any                     `json:"allowedValues,omitempty"`
-	MinValue      *int                       `json:"minValue,omitempty"`
-	MaxValue      *int                       `json:"maxValue,omitempty"`
-	MinLength     *int                       `json:"minLength,omitempty"`
-	MaxLength     *int                       `json:"maxLength,omitempty"`
-	Metadata      map[string]json.RawMessage `json:"metadata"`
+	Type          string                          `json:"type"`
+	DefaultValue  any                             `json:"defaultValue"`
+	AllowedValues *[]any                          `json:"allowedValues,omitempty"`
+	MinValue      *int                            `json:"minValue,omitempty"`
+	MaxValue      *int                            `json:"maxValue,omitempty"`
+	MinLength     *int                            `json:"minLength,omitempty"`
+	MaxLength     *int                            `json:"maxLength,omitempty"`
+	Metadata      map[string]json.RawMessage      `json:"metadata"`
+	Ref           string                          `json:"$ref"`
+	Properties    ArmTemplateParameterDefinitions `json:"properties,omitempty"`
 }
 
 func (d *ArmTemplateParameterDefinition) Secure() bool {

@@ -60,6 +60,10 @@ func (sbr *ServiceBuildResult) MarshalJSON() ([]byte, error) {
 	return json.Marshal(*sbr)
 }
 
+type PackageOptions struct {
+	OutputPath string
+}
+
 // ServicePackageResult is the result of a successful Package operation
 type ServicePackageResult struct {
 	Build       *ServiceBuildResult `json:"build"`

@@ -23,7 +23,7 @@ jobs:
       - name: Install Nodejs
         uses: actions/setup-node@v3
         with:
-          node-version: 16
+          node-version: 18
 
       - name: Login az
         uses: azure/login@v1
@@ -48,9 +48,6 @@ jobs:
         shell: pwsh
         env:
           AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
-
-      - name: Enable terraform alpha feature
-        run: azd config set alpha.terraform on
 
       - name: Provision Infrastructure
         run: azd provision --no-prompt

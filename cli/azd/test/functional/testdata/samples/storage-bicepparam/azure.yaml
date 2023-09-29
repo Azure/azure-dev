@@ -1,0 +1,3 @@
+name: storage-bicepparam
+metadata: 
+  template: azd-test/storage-bicepparam@v1

@@ -1,0 +1,7 @@
+name: minimal
+services:
+    minimal-service:
+        project: ./src
+        host: appservice
+        language: python
+

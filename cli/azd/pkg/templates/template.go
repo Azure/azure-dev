@@ -12,8 +12,11 @@ type Template struct {
 	// Name is the friendly short name of the template.
 	Name string `json:"name"`
 
+	// The source of the template
+	Source string `json:"source,omitempty"`
+
 	// Description is a long description of the template.
-	Description string `json:"description"`
+	Description string `json:"description,omitempty"`
 
 	// RepositoryPath is a fully qualified URI to a git repository,
 	// "{owner}/{repo}" for GitHub repositories,
@@ -33,6 +36,7 @@ func (t *Template) Display(writer io.Writer) error {
 	text := [][]string{
 		{"RepositoryPath", ":", t.RepositoryPath},
 		{"Name", ":", t.Name},
+		{"Source", ":", t.Source},
 		{"Description", ":", t.Description},
 	}
 

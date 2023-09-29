@@ -96,7 +96,6 @@ type Manager struct {
 	credentialCache     Cache
 	ghClient            *github.FederatedTokenClient
 	httpClient          HttpClient
-	launchBrowserFn     func(url string) error
 	console             input.Console
 }
 
@@ -142,7 +141,6 @@ func NewManager(
 		credentialCache:     newCredentialCache(authRoot),
 		ghClient:            ghClient,
 		httpClient:          httpClient,
-		launchBrowserFn:     browser.OpenURL,
 		console:             console,
 	}, nil
 }
@@ -492,13 +490,17 @@ func (m *Manager) LoginInteractive(
 }
 
 func (m *Manager) LoginWithDeviceCode(
-	ctx context.Context, tenantID string, scopes []string) (azcore.TokenCredential, error) {
+	ctx context.Context, tenantID string, scopes []string, withOpenUrl WithOpenUrl) (azcore.TokenCredential, error) {
 	if scopes == nil {
 		scopes = LoginScopes
 	}
 	options := []public.AcquireByDeviceCodeOption{}
 	if tenantID != "" {
 		options = append(options, public.WithTenantID(tenantID))
+	}
+
+	if withOpenUrl == nil {
+		withOpenUrl = browser.OpenURL
 	}
 
 	code, err := m.publicClient.AcquireTokenByDeviceCode(ctx, scopes, options...)
@@ -529,7 +531,7 @@ func (m *Manager) LoginWithDeviceCode(
 		})
 		m.console.WaitForEnter()
 
-		if err := m.launchBrowserFn(url); err != nil {
+		if err := withOpenUrl(url); err != nil {
 			log.Println("error launching browser: ", err.Error())
 			m.console.Message(ctx, fmt.Sprintf("Error launching browser. Manually go to: %s", url))
 		}

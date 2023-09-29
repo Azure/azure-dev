@@ -1,21 +1,78 @@
 # Release History
 
-## 1.1.1 (Unreleased)
+## 1.4.0-beta.1 (Unreleased)
 
 ### Features Added
 
-- [[2550]](https://github.com/Azure/azure-dev/pull/2550) Add `--preview` to `azd provision` to get the changes
-- [[2521]](https://github.com/Azure/azure-dev/pull/2521) Support `--principal-id` param for azd pipeline config to reuse existing service principal
-- [[2455]](https://github.com/Azure/azure-dev/pull/2455) Adds optional support for text templates in AKS k8s manifests
+- [[2725]](https://github.com/Azure/azure-dev/pull/2725) Adds support for provision state to the bicep provider.
+
+### Breaking Changes
 
 ### Bugs Fixed
 
-- [[2569]](https://github.com/Azure/azure-dev/pull/2569) Fix `azd down` so it works after a failed `azd provision`
-- [[2367]](https://github.com/Azure/azure-dev/pull/2367) Don't fail AKS deployment for failed environment substitution
+- [[2793]](https://github.com/Azure/azure-dev/pull/2793) Support user defined types for the bicep provider.
+
+### Other Changes
+
+- [[#2796]](https://github.com/Azure/azure-dev/pull/2796) Update `terraform` provider from alpha to beta.
+
+## 1.3.1 (2023-09-20)
+
+### Minor Changes
+
+- [[2737]](https://github.com/Azure/azure-dev/pull/2737) Update bicep to 0.21.1
+- [[2696]](https://github.com/Azure/azure-dev/pull/2696) Support filtering for azd location in bicep
+- [[2721]](https://github.com/Azure/azure-dev/pull/2721) `azd package` support for user specified output paths
+- [[2756]](https://github.com/Azure/azure-dev/pull/2756) Minor enhancements to simplified init
+
+### Bugs Fixed
+
+- [[2719]](https://github.com/Azure/azure-dev/pull/2719) Fix mistypes in soft delete warning message
+- [[2722]](https://github.com/Azure/azure-dev/pull/2722) Prefer glibc based Bicep when both musl and glibc are installed
+- [[2726]](https://github.com/Azure/azure-dev/pull/2726) Mention `AZD_CONFIG_DIR` in `azd config --help` help text
+
+## 1.3.0 (2023-09-06)
+
+### Features Added
+
+- [[2573]](https://github.com/Azure/azure-dev/pull/2573) Adds support for custom template sources.
+- [[2637]](https://github.com/Azure/azure-dev/pull/2637) Awesome azd templates are now shown by default in `azd init` template listing.
+- [[2628]](https://github.com/Azure/azure-dev/pull/2628) Support for `.bicepparam`.
+- [[2700]](https://github.com/Azure/azure-dev/pull/2700) New simplified `azd init` to initialize your existing application for Azure (alpha feature)
+- [[2678]](https://github.com/Azure/azure-dev/pull/2678) Support for Cloud Native Buildpacks (alpha feature)
+
+### Breaking Changes
+
+### Bugs Fixed
+
+- [[2624]](https://github.com/Azure/azure-dev/pull/2624) Fix provisioning deployment display not showing progress when certain errors occur.
+- [[2676]](https://github.com/Azure/azure-dev/pull/2676) Fix `buildArgs` support for docker build.
+- [[2698]](https://github.com/Azure/azure-dev/pull/2698) Fix `azd auth login` default browser prompt in Codespaces environments.
+- [[2664]](https://github.com/Azure/azure-dev/pull/2664) Fix `azd auth login` login loop after upgrading to 1.2.0.
+- [[2630]](https://github.com/Azure/azure-dev/pull/2630) Fix coloring for ignored operations in `azd provision --preview`
+
+### Other Changes
+
+- [[2660]](https://github.com/Azure/azure-dev/pull/2660) Starter templates now include `core` libraries by default.
+
+## 1.2.0 (2023-08-09)
+
+### Features Added
+
+- [[2550]](https://github.com/Azure/azure-dev/pull/2550) Add `--preview` to `azd provision` to get the changes.
+- [[2521]](https://github.com/Azure/azure-dev/pull/2521) Support `--principal-id` param for azd pipeline config to reuse existing service principal.
+- [[2455]](https://github.com/Azure/azure-dev/pull/2455) Adds optional support for text templates in AKS k8s manifests.
+
+### Bugs Fixed
+
+- [[2569]](https://github.com/Azure/azure-dev/pull/2569) Fix `azd down` so it works after a failed `azd provision`.
+- [[2367]](https://github.com/Azure/azure-dev/pull/2367) Don't fail AKS deployment for failed environment substitution.
+- [[2576]](https://github.com/Azure/azure-dev/pull/2576) Fix `azd auth login` unable to launch browser on WSL.
 
 ### Other changes
 
-- [[2572]](https://github.com/Azure/azure-dev/pull/2572) Decrease expiration time of service principal secret from default (24 months) to 180 days
+- [[2572]](https://github.com/Azure/azure-dev/pull/2572) Decrease expiration time of service principal secret from default (24 months) to 180 days.
+- [[2500]](https://github.com/Azure/azure-dev/pull/2500) Promoted Azure Spring Apps from `alpha` to `beta`.
 
 ## 1.1.0 (2023-07-12)
 

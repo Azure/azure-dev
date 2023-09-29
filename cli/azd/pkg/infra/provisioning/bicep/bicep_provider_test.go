@@ -45,13 +45,12 @@ func TestBicepPlan(t *testing.T) {
 	prepareBicepMocks(mockContext)
 	infraProvider := createBicepProvider(t, mockContext)
 
-	deployment, deploymentPlan, err := infraProvider.plan(*mockContext.Context)
+	deploymentPlan, err := infraProvider.plan(*mockContext.Context)
 
 	require.Nil(t, err)
-	require.NotNil(t, deployment)
 
-	require.IsType(t, &bicepDeploymentDetails{}, deploymentPlan)
-	configuredParameters := deploymentPlan.Parameters
+	require.IsType(t, &deploymentDetails{}, deploymentPlan)
+	configuredParameters := deploymentPlan.CompiledBicep.Parameters
 
 	require.Equal(t, infraProvider.env.GetLocation(), configuredParameters["location"].Value)
 	require.Equal(
@@ -102,11 +101,11 @@ func TestBicepPlanPrompt(t *testing.T) {
 	}).Respond(false)
 
 	infraProvider := createBicepProvider(t, mockContext)
-	_, plan, err := infraProvider.plan(*mockContext.Context)
+	plan, err := infraProvider.plan(*mockContext.Context)
 
 	require.NoError(t, err)
 
-	require.Equal(t, "value", plan.Parameters["stringParam"].Value)
+	require.Equal(t, "value", plan.CompiledBicep.Parameters["stringParam"].Value)
 }
 
 func TestBicepState(t *testing.T) {
@@ -301,7 +300,7 @@ func TestPlanForResourceGroup(t *testing.T) {
 	require.NoError(t, err)
 	// The computed plan should target the resource group we picked.
 
-	_, planResult, err := infraProvider.plan(*mockContext.Context)
+	planResult, err := infraProvider.plan(*mockContext.Context)
 	require.Nil(t, err)
 	require.NotNil(t, planResult)
 	require.Equal(t, "rg-test-env",
@@ -778,3 +777,295 @@ func TestDeploymentNameForEnv(t *testing.T) {
 		assert.LessOrEqual(t, len(deploymentName), 64)
 	}
 }
+
+// From a mocked list of deployments where there are multiple deployments with the matching tag, expect to pick the most
+// recent one.
+func TestFindCompletedDeployments(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(args.Cmd, "bicep") && strings.Contains(command, "--version")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		return exec.NewRunResult(0, fmt.Sprintf("Bicep CLI version %s (abcdef0123)", bicep.BicepVersion), ""), nil
+	})
+	// Have `bicep build` return a ARM template that targets a resource group.
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(args.Cmd, "bicep") && args.Args[0] == "build"
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		armTemplate := azure.ArmTemplate{
+			Schema:         "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+			ContentVersion: "1.0.0.0",
+			Parameters: azure.ArmTemplateParameterDefinitions{
+				"environmentName": {Type: "string"},
+				"location":        {Type: "string"},
+			},
+			Outputs: azure.ArmTemplateOutputs{
+				"WEBSITE_URL": {Type: "string"},
+			},
+		}
+
+		bicepBytes, _ := json.Marshal(armTemplate)
+
+		return exec.RunResult{
+			Stdout: string(bicepBytes),
+		}, nil
+	})
+
+	bicepProvider := createBicepProvider(t, mockContext)
+
+	baseDate := "1989-10-31"
+	envTag := "env-tag"
+
+	deployments, err := bicepProvider.findCompletedDeployments(
+		*mockContext.Context, envTag, &mockedScope{
+			baseDate: baseDate,
+			envTag:   envTag,
+		}, "")
+	require.NoError(t, err)
+	require.Equal(t, 1, len(deployments))
+	// should take the base date + 2 years
+	expectedDate, err := time.Parse(time.DateOnly, baseDate)
+	require.NoError(t, err)
+	expectedDate = expectedDate.Add(time.Hour * 24 * 365 * 2)
+
+	deploymentDate := *deployments[0].Properties.Timestamp
+	require.Equal(t, expectedDate, deploymentDate)
+}
+
+type mockedScope struct {
+	envTag   string
+	baseDate string
+}
+
+func (m *mockedScope) SubscriptionId() string {
+	return "sub-id"
+}
+
+// Return 3 deployments with the expected tag with one year difference each
+func (m *mockedScope) ListDeployments(ctx context.Context) ([]*armresources.DeploymentExtended, error) {
+	tags := map[string]*string{
+		azure.TagKeyAzdEnvName: &m.envTag,
+	}
+	baseDate, err := time.Parse(time.DateOnly, m.baseDate)
+	if err != nil {
+		return nil, err
+	}
+	// add one year
+	secondDate := baseDate.Add(time.Hour * 24 * 365)
+	thirdDate := secondDate.Add(time.Hour * 24 * 365)
+
+	return []*armresources.DeploymentExtended{
+		{
+			Tags: tags,
+			Properties: &armresources.DeploymentPropertiesExtended{
+				ProvisioningState: to.Ptr(armresources.ProvisioningStateSucceeded),
+				Timestamp:         to.Ptr(baseDate),
+			},
+		},
+		{
+			Tags: tags,
+			Properties: &armresources.DeploymentPropertiesExtended{
+				ProvisioningState: to.Ptr(armresources.ProvisioningStateSucceeded),
+				Timestamp:         to.Ptr(secondDate),
+			},
+		},
+		{
+			Tags: tags,
+			Properties: &armresources.DeploymentPropertiesExtended{
+				ProvisioningState: to.Ptr(armresources.ProvisioningStateSucceeded),
+				Timestamp:         to.Ptr(thirdDate),
+			},
+		},
+	}, nil
+}
+
+func TestUserDefinedTypes(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(args.Cmd, "bicep") && args.Args[0] == "--version"
+	}).Respond(exec.RunResult{
+		Stdout: fmt.Sprintf("Bicep CLI version %s (abcdef0123)", bicep.BicepVersion.String()),
+		Stderr: "",
+	})
+
+	bicepCli, err := bicep.NewBicepCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
+	require.NoError(t, err)
+	env := environment.EphemeralWithValues("test-env", map[string]string{})
+
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(args.Cmd, "bicep") && args.Args[0] == "build"
+	}).Respond(exec.RunResult{
+		Stdout: userDefinedParamsSample,
+		Stderr: "",
+	})
+
+	// super basic provider to mock the compileBicep method
+	provider := NewBicepProvider(
+		bicepCli,
+		nil,
+		nil,
+		nil,
+		env,
+		mockContext.Console,
+		prompt.NewDefaultPrompter(env, mockContext.Console, nil, nil),
+		&mockCurrentPrincipal{},
+		mockContext.AlphaFeaturesManager,
+		clock.NewMock(),
+	)
+	bicepProvider, gooCast := provider.(*BicepProvider)
+	require.True(t, gooCast)
+
+	compiled, err := bicepProvider.compileBicep(*mockContext.Context, "user-defined-types")
+
+	require.NoError(t, err)
+	require.NotNil(t, compiled)
+
+	template := compiled.Template
+
+	stringParam, exists := template.Parameters["stringParam"]
+	require.True(t, exists)
+	require.Equal(t, "string", stringParam.Type)
+	require.Nil(t, stringParam.AllowedValues)
+
+	stringLimitedParam, exists := template.Parameters["stringLimitedParam"]
+	require.True(t, exists)
+	require.Equal(t, "string", stringLimitedParam.Type)
+	require.NotNil(t, stringLimitedParam.AllowedValues)
+	require.Equal(t, []interface{}{"arm", "azure", "bicep"}, *stringLimitedParam.AllowedValues)
+
+	intType, exists := template.Parameters["intType"]
+	require.True(t, exists)
+	require.Equal(t, "int", intType.Type)
+	require.NotNil(t, intType.AllowedValues)
+	require.Equal(t, []interface{}{float64(10)}, *intType.AllowedValues)
+
+	boolParam, exists := template.Parameters["boolParam"]
+	require.True(t, exists)
+	require.Equal(t, "bool", boolParam.Type)
+	require.NotNil(t, boolParam.AllowedValues)
+	require.Equal(t, []interface{}{true}, *boolParam.AllowedValues)
+
+	arrayStringType, exists := template.Parameters["arrayParam"]
+	require.True(t, exists)
+	require.Equal(t, "array", arrayStringType.Type)
+	require.Nil(t, arrayStringType.AllowedValues)
+
+	arrayLimitedParam, exists := template.Parameters["arrayLimitedParam"]
+	require.True(t, exists)
+	require.Equal(t, "array", arrayLimitedParam.Type)
+	require.NotNil(t, arrayLimitedParam.AllowedValues)
+	require.Equal(t, []interface{}{"a", "b", "c"}, *arrayLimitedParam.AllowedValues)
+
+	mixedParam, exists := template.Parameters["mixedParam"]
+	require.True(t, exists)
+	require.Equal(t, "array", mixedParam.Type)
+	require.NotNil(t, mixedParam.AllowedValues)
+	require.Equal(
+		t, []interface{}{"fizz", float64(42), nil, map[string]interface{}{"an": "object"}}, *mixedParam.AllowedValues)
+
+	objectParam, exists := template.Parameters["objectParam"]
+	require.True(t, exists)
+	require.Equal(t, "object", objectParam.Type)
+	require.Nil(t, objectParam.AllowedValues)
+	require.NotNil(t, objectParam.Properties)
+	require.Equal(
+		t,
+		azure.ArmTemplateParameterDefinitions{
+			"name": {Type: "string"},
+			"sku":  {Type: "string"},
+		},
+		objectParam.Properties)
+
+}
+
+const userDefinedParamsSample = `{
+	"$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+	"languageVersion": "2.0",
+	"definitions": {
+	  "stringType": {
+		"type": "string"
+	  },
+	  "stringLimitedType": {
+		"type": "string",
+		"allowedValues": [
+		  "arm",
+		  "azure",
+		  "bicep"
+		]
+	  },
+	  "intType": {
+		"type": "int",
+		"allowedValues": [
+		  10
+		]
+	  },
+	  "boolType": {
+		"type": "bool",
+		"allowedValues": [
+		  true
+		]
+	  },
+	  "arrayStringType": {
+		"type": "array",
+		"items": {
+		  "type": "string"
+		}
+	  },
+	  "arrayStringLimitedType": {
+		"type": "array",
+		"allowedValues": [
+		  "a",
+		  "b",
+		  "c"
+		]
+	  },
+	  "mixedType": {
+		"type": "array",
+		"allowedValues": [
+		  "fizz",
+		  42,
+		  null,
+		  {
+			"an": "object"
+		  }
+		]
+	  },
+	  "objectType": {
+		"type": "object",
+		"properties": {
+		  "name": {
+			"type": "string"
+		  },
+		  "sku": {
+			"type": "string"
+		  }
+		}
+	  }
+	},
+	"parameters": {
+	  "stringParam": {
+		"$ref": "#/definitions/stringType"
+	  },
+	  "stringLimitedParam": {
+		"$ref": "#/definitions/stringLimitedType"
+	  },
+	  "intType": {
+		"$ref": "#/definitions/intType"
+	  },
+	  "boolParam": {
+		"$ref": "#/definitions/boolType"
+	  },
+	  "arrayParam": {
+		"$ref": "#/definitions/arrayStringType"
+	  },
+	  "arrayLimitedParam": {
+		"$ref": "#/definitions/arrayStringLimitedType"
+	  },
+	  "mixedParam": {
+		"$ref": "#/definitions/mixedType"
+	  },
+	  "objectParam": {
+		"$ref": "#/definitions/objectType"
+	  }
+	},
+	"resources": {}
+}`

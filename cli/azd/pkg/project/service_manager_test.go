@@ -170,7 +170,7 @@ func Test_ServiceManager_Package(t *testing.T) {
 	ctx := context.WithValue(*mockContext.Context, frameworkPackageCalled, fakeFrameworkPackageCalled)
 	ctx = context.WithValue(ctx, serviceTargetPackageCalled, fakeServiceTargetPackageCalled)
 
-	packageTask := sm.Package(ctx, serviceConfig, nil)
+	packageTask := sm.Package(ctx, serviceConfig, nil, nil)
 	logProgress(packageTask)
 
 	result, err := packageTask.Await()
@@ -296,7 +296,7 @@ func Test_ServiceManager_Events_With_Errors(t *testing.T) {
 		{
 			name: "package",
 			run: func(ctx context.Context, serviceManager ServiceManager, serviceConfig *ServiceConfig) (any, error) {
-				packageTask := serviceManager.Package(ctx, serviceConfig, nil)
+				packageTask := serviceManager.Package(ctx, serviceConfig, nil, nil)
 				logProgress(packageTask)
 				return packageTask.Await()
 			},

@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"strings"
 	"time"
 
@@ -42,6 +43,10 @@ func NewAzureResourceManager(
 	}
 }
 
+// GetDeploymentResourceOperations gets the list of all the resources created as part of the provided deployment.
+// Each DeploymentOperation on the list holds a resource and the result of its deployment.
+// One deployment operation can trigger new deployment operations, GetDeploymentResourceOperations traverses all
+// operations recursively to find the leaf operations.
 func (rm *AzureResourceManager) GetDeploymentResourceOperations(
 	ctx context.Context,
 	deployment Deployment,
@@ -299,6 +304,8 @@ func (rm *AzureResourceManager) getCognitiveServiceResourceTypeDisplayName(
 	}
 }
 
+// appendDeploymentResourcesRecursive gets the leaf deployment operations and adds them to resourceOperations
+// if they are not already in the list.
 func (rm *AzureResourceManager) appendDeploymentResourcesRecursive(
 	ctx context.Context,
 	subscriptionId string,
@@ -310,7 +317,13 @@ func (rm *AzureResourceManager) appendDeploymentResourcesRecursive(
 	operations, err := rm.deploymentOperations.ListResourceGroupDeploymentOperations(
 		ctx, subscriptionId, resourceGroupName, deploymentName)
 	if err != nil {
-		return fmt.Errorf("getting subscription deployment operations: %w", err)
+		// Don't return an error upon getting the deployment operations from deploymentName.
+		// That's because returning an error would stop traversing the entire deployments graph and prevent
+		// the caller function from getting any deployment operation at all.
+		// So, instead of returning error, ignore the problematic deployment node and log an error about it.
+		// This will allow the caller to get as much information about the deployments operations as possible.
+		log.Printf("getting subscription deployment operations: %s", err.Error())
+		return nil
 	}
 
 	for _, operation := range operations {

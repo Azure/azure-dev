@@ -13,6 +13,7 @@ Flags
         --docs               	: Opens the documentation for azd package in your web browser.
     -e, --environment string 	: The name of the environment to use.
     -h, --help               	: Gets help for package.
+        --output-path string 	: File or folder path where the generated packages will be saved.
 
 Global Flags
     -C, --cwd string 	: Sets the current working directory.
@@ -23,8 +24,14 @@ Examples
   Packages all services in the current project to Azure.
     azd package --all
 
+  Packages all services to the specified output path.
+    azd package --output-path ./dist
+
   Packages the service named 'api' to Azure.
     azd package api
+
+  Packages the service named 'api' to the specified output path.
+    azd package api --output-path ./dist/api.zip
 
   Packages the service named 'web' to Azure.
     azd package web

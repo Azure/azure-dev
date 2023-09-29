@@ -134,6 +134,9 @@ services:
     docker:
       path: ./Dockerfile.dev
       context: ../
+      buildArgs:
+        - 'foo'
+        - 'bar'
 `
 
 	mockContext := mocks.NewMockContext(context.Background())
@@ -146,6 +149,7 @@ services:
 
 	require.Equal(t, "./Dockerfile.dev", service.Docker.Path)
 	require.Equal(t, "../", service.Docker.Context)
+	require.Equal(t, []string{"foo", "bar"}, service.Docker.BuildArgs)
 }
 
 func TestProjectConfigAddHandler(t *testing.T) {

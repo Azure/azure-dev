@@ -15,7 +15,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockarmresources"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
+	"github.com/azure/azure-dev/cli/azd/test/snapshot"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 )
 
 // Specifying resource name in the project file should override the default
@@ -253,6 +255,59 @@ func Test_Invalid_Project_File(t *testing.T) {
 			projectConfig, err := Parse(context.Background(), test)
 			require.Nil(t, projectConfig)
 			require.Error(t, err)
+		})
+	}
+}
+
+func TestMinimalYaml(t *testing.T) {
+	prj := ProjectConfig{
+		Name:     "minimal",
+		Services: map[string]*ServiceConfig{},
+	}
+
+	t.Run("project only", func(t *testing.T) {
+		contents, err := yaml.Marshal(prj)
+		require.NoError(t, err)
+
+		snapshot.SnapshotT(t, string(contents))
+	})
+
+	tests := []struct {
+		name          string
+		serviceConfig ServiceConfig
+	}{
+		{
+			"minimal-service",
+			ServiceConfig{
+				Name:         "ignored",
+				Language:     ServiceLanguagePython,
+				Host:         AppServiceTarget,
+				RelativePath: "./src",
+			},
+		},
+		{
+			"minimal-docker",
+			ServiceConfig{
+				Name:     "ignored",
+				Language: ServiceLanguageDotNet,
+				Host:     ContainerAppTarget,
+				Docker: DockerProjectOptions{
+					Path: "./Dockerfile",
+				},
+				RelativePath: "./src",
+			},
+		},
+	}
+	for i, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			prj.Services = map[string]*ServiceConfig{
+				tt.name: &tests[i].serviceConfig,
+			}
+
+			contents, err := yaml.Marshal(prj)
+			require.NoError(t, err)
+
+			snapshot.SnapshotT(t, string(contents))
 		})
 	}
 }

@@ -1,3 +1,4 @@
+metadata description = 'Assigns ACR Pull permissions to access an Azure Container Registry.'
 param containerRegistryName string
 param principalId string
 

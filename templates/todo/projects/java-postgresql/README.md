@@ -17,11 +17,9 @@ The following prerequisites are required to use this application. Please ensure 
 
 - [Azure Developer CLI](https://aka.ms/azd-install)
 - [Java 17 or later](https://jdk.java.net/) - for API backend
-- [Node.js with npm (16.13.1+)](https://nodejs.org/) - for Web frontend
+- [Node.js with npm (18.17.1+)](https://nodejs.org/) - for Web frontend
 - [Terraform](https://www.terraform.io/)
     - Requires the [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli)
-
-> Note: Terraform is in **alpha mode**. You need to enable it by running `azd config set alpha.terraform on`. Read more about [alpha features](https://github.com/Azure/azure-dev/tree/main/cli/azd/docs).
 
 ### Quickstart
 To learn how to get started with any template, follow the steps in [this quickstart](https://learn.microsoft.com/azure/developer/azure-developer-cli/get-started?tabs=localinstall&pivots=programming-language-java) with this template (`Azure-Samples/todo-java-postgresql-terraform`).
@@ -51,7 +49,8 @@ Here's a high level architecture diagram that illustrates these components. Noti
 
 <img src="assets/resources.png" width="60%" alt="Application architecture diagram"/>
 
-> This template provisions resources to an Azure subscription that you will select upon provisioning them. Please refer to the [Pricing calculator for Microsoft Azure](https://azure.microsoft.com/pricing/calculator/) and, if needed, update the included Azure resource definitions found in `infra/main.bicep` to suit your needs.
+### Cost of provisioning and deploying this template
+This template provisions resources to an Azure subscription that you will select upon provisioning them. Refer to the [Pricing calculator for Microsoft Azure](https://azure.microsoft.com/pricing/calculator/) to estimate the cost you might incur when this template is running on Azure and, if needed, update the included Azure resource definitions found in `infra/main.bicep` to suit your needs.
 
 ### Application Code
 
@@ -60,6 +59,8 @@ This template is structured to follow the [Azure Developer CLI](https://aka.ms/a
 ### Next Steps
 
 At this point, you have a complete application deployed on Azure. But there is much more that the Azure Developer CLI can do. These next steps will introduce you to additional commands that will make creating applications on Azure much easier. Using the Azure Developer CLI, you can setup your pipelines, monitor your application, test and debug locally.
+
+> Note: Needs to manually install [setup-azd extension](https://marketplace.visualstudio.com/items?itemName=ms-azuretools.azd) for Azure DevOps (azdo).
 
 - [`azd pipeline config`](https://learn.microsoft.com/azure/developer/azure-developer-cli/configure-devops-pipeline?tabs=GitHub) - to configure a CI/CD pipeline (using GitHub Actions or Azure DevOps) to deploy your application whenever code is pushed to the main branch. 
 

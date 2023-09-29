@@ -13,7 +13,7 @@ Flags
     -e, --environment string  	: The name of the environment to use.
     -h, --help                	: Gets help for init.
     -l, --location string     	: Azure location for the new environment
-        --subscription string 	: Name or ID of an Azure subscription to use for the new environment
+    -s, --subscription string 	: Name or ID of an Azure subscription to use for the new environment
     -t, --template string     	: The template to use when you initialize the project. You can use Full URI, <owner>/<repository>, or <repository> if it's part of the azure-samples organization.
 
 Global Flags

@@ -76,6 +76,10 @@ type Deployments interface {
 		parameters azure.ArmParameters,
 	) (*armresources.WhatIfOperationResult, error)
 	DeleteSubscriptionDeployment(ctx context.Context, subscriptionId string, deploymentName string) error
+	CalculateTemplateHash(
+		ctx context.Context,
+		subscriptionId string,
+		template azure.RawArmTemplate) (armresources.DeploymentsClientCalculateTemplateHashResponse, error)
 }
 
 var (
@@ -97,6 +101,18 @@ func NewDeployments(
 		httpClient:         httpClient,
 		userAgent:          azdinternal.UserAgent(),
 	}
+}
+
+func (ds *deployments) CalculateTemplateHash(
+	ctx context.Context,
+	subscriptionId string,
+	template azure.RawArmTemplate) (result armresources.DeploymentsClientCalculateTemplateHashResponse, err error) {
+	deploymentClient, err := ds.createDeploymentsClient(ctx, subscriptionId)
+	if err != nil {
+		return result, fmt.Errorf("creating deployments client: %w", err)
+	}
+
+	return deploymentClient.CalculateTemplateHash(ctx, template, nil)
 }
 
 func (ds *deployments) ListSubscriptionDeployments(

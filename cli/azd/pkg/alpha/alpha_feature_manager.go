@@ -96,7 +96,22 @@ func (m *FeatureManager) IsEnabled(featureId FeatureId) bool {
 		return true
 	}
 
+	// check if the feature has been set with a default value internally
+	if val, ok := defaultEnablement[strings.ToLower(string(featureId))]; ok {
+		return val
+	}
+
 	return false
+}
+
+// defaultEnablement is a map of lower-cased feature ids to their default enablement values.
+//
+// This is used to determine if a feature is enabled by default, when no user configuration is specified.
+var defaultEnablement = map[string]bool{}
+
+// SetDefaultEnablement sets the default enablement value for the given feature id.
+func SetDefaultEnablement(id string, val bool) {
+	defaultEnablement[strings.ToLower(id)] = val
 }
 
 func isEnabled(config config.Config, id FeatureId) bool {

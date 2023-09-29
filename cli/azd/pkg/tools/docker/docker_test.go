@@ -560,3 +560,27 @@ func Test_IsSupportedDockerVersion(t *testing.T) {
 		})
 	}
 }
+
+func TestSplitDockerImage(t *testing.T) {
+	tests := []struct {
+		name      string
+		fullImg   string
+		wantImage string
+		wantTag   string
+	}{
+		{"local image", "local-img", "local-img", ""},
+		{"local image with tag", "local-img:tag", "local-img", "tag"},
+		{"remote image", "docker.io/remote-img", "docker.io/remote-img", ""},
+		{"remote image with tag", "docker.io/remote-img:tag", "docker.io/remote-img", "tag"},
+		{"remote image with port and tag", "docker.io:8080/remote-img:tag", "docker.io:8080/remote-img", "tag"},
+		{"invalid remote image", "docker.io:8080/remote-img:", "docker.io:8080/remote-img:", ""},
+		{"invalid local image", "local-img:", "local-img:", ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			image, tag := SplitDockerImage(tt.fullImg)
+			require.Equal(t, tt.wantImage, image)
+			require.Equal(t, tt.wantTag, tag)
+		})
+	}
+}

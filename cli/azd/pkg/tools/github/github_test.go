@@ -36,6 +36,10 @@ func TestZipExtractContents(t *testing.T) {
 	require.EqualValues(t, []byte(expectedPhrase), content)
 }
 
+func TestRepositoryNameInUse(t *testing.T) {
+	require.True(t, repositoryNameInUseRegex.MatchString("GraphQL: Name already exists on this account (createRepository)"))
+}
+
 func TestZipGhNotFound(t *testing.T) {
 	testPath := t.TempDir()
 	expectedPhrase := "this will be inside a zip file"

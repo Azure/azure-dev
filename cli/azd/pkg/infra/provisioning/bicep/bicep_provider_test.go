@@ -895,7 +895,7 @@ func TestUserDefinedTypes(t *testing.T) {
 
 	bicepCli, err := bicep.NewBicepCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
 	require.NoError(t, err)
-	env := environment.EphemeralWithValues("test-env", map[string]string{})
+	env := environment.NewWithValues("test-env", map[string]string{})
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(args.Cmd, "bicep") && args.Args[0] == "build"
@@ -910,6 +910,7 @@ func TestUserDefinedTypes(t *testing.T) {
 		nil,
 		nil,
 		nil,
+		&mockenv.MockEnvManager{},
 		env,
 		mockContext.Console,
 		prompt.NewDefaultPrompter(env, mockContext.Console, nil, nil),

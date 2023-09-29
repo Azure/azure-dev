@@ -109,4 +109,5 @@ type ArmTemplateOutput struct {
 	Type     string         `json:"type"`
 	Value    any            `json:"value"`
 	Metadata map[string]any `json:"metadata"`
+	Ref      string         `json:"$ref"`
 }

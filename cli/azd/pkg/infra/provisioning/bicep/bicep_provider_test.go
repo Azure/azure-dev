@@ -975,6 +975,14 @@ func TestUserDefinedTypes(t *testing.T) {
 		},
 		objectParam.Properties)
 
+	// output resolves just the type. Value and Metadata should persist
+	customOutput, exists := template.Outputs["customOutput"]
+	require.True(t, exists)
+	require.Equal(t, "string", customOutput.Type)
+	require.Equal(t, "[parameters('stringLimitedParam')]", customOutput.Value)
+	require.Equal(t, map[string]interface{}{
+		"foo": "bar",
+	}, customOutput.Metadata)
 }
 
 const userDefinedParamsSample = `{
@@ -1067,5 +1075,14 @@ const userDefinedParamsSample = `{
 		"$ref": "#/definitions/objectType"
 	  }
 	},
-	"resources": {}
+	"resources": {},
+	"outputs": {
+		"customOutput": {
+			"$ref": "#/definitions/stringLimitedType",
+			"metadata": {
+				"foo": "bar"
+			},
+			"value": "[parameters('stringLimitedParam')]"
+		}
+	}
 }`

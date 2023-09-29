@@ -1641,12 +1641,10 @@ func (p *BicepProvider) compileBicep(
 		paramRef := param.Ref
 		isUserDefinedType := paramRef != ""
 		if isUserDefinedType {
-			definitionKeyNameTokens := strings.Split(paramRef, "/")
-			definitionKeyNameTokensLen := len(definitionKeyNameTokens)
-			if definitionKeyNameTokensLen < 1 {
-				return nil, fmt.Errorf("failed resolving user defined parameter type: %s", paramRef)
+			definitionKeyName, err := definitionName(paramRef)
+			if err != nil {
+				return nil, err
 			}
-			definitionKeyName := definitionKeyNameTokens[definitionKeyNameTokensLen-1]
 			paramDefinition, findDefinition := template.Definitions[definitionKeyName]
 			if !findDefinition {
 				return nil, fmt.Errorf("did not find definition for parameter type: %s", definitionKeyName)
@@ -1655,11 +1653,41 @@ func (p *BicepProvider) compileBicep(
 		}
 	}
 
+	// outputs resolves just the type. Value and Metadata should persist
+	for outputKey, output := range template.Outputs {
+		paramRef := output.Ref
+		isUserDefinedType := paramRef != ""
+		if isUserDefinedType {
+			definitionKeyName, err := definitionName(paramRef)
+			if err != nil {
+				return nil, err
+			}
+			paramDefinition, findDefinition := template.Definitions[definitionKeyName]
+			if !findDefinition {
+				return nil, fmt.Errorf("did not find definition for parameter type: %s", definitionKeyName)
+			}
+			template.Outputs[outputKey] = azure.ArmTemplateOutput{
+				Type:     paramDefinition.Type,
+				Value:    output.Value,
+				Metadata: output.Metadata,
+			}
+		}
+	}
+
 	return &compileBicepResult{
 		RawArmTemplate: rawTemplate,
 		Template:       template,
 		Parameters:     parameters,
 	}, nil
+}
+
+func definitionName(typeDefinitionRef string) (string, error) {
+	definitionKeyNameTokens := strings.Split(typeDefinitionRef, "/")
+	definitionKeyNameTokensLen := len(definitionKeyNameTokens)
+	if definitionKeyNameTokensLen < 1 {
+		return "", fmt.Errorf("failed resolving user defined parameter type: %s", typeDefinitionRef)
+	}
+	return definitionKeyNameTokens[definitionKeyNameTokensLen-1], nil
 }
 
 // Converts a Bicep parameters file to a generic provisioning template

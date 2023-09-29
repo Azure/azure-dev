@@ -197,9 +197,19 @@ func (rm *resourceManager) GetTargetResource(
 	subscriptionId string,
 	serviceConfig *ServiceConfig,
 ) (*environment.TargetResource, error) {
-	resourceGroupName, err := rm.GetResourceGroupName(ctx, subscriptionId, serviceConfig.Project)
-	if err != nil {
-		return nil, err
+	var resourceGroupName string
+
+	if serviceGroupName := rm.env.GetServiceProperty(serviceConfig.Name, "RESOURCE_GROUP"); serviceGroupName != "" {
+		resourceGroupName = serviceGroupName
+	}
+
+	if resourceGroupName == "" {
+		projectResourceGroupName, err := rm.GetResourceGroupName(ctx, subscriptionId, serviceConfig.Project)
+		if err != nil {
+			return nil, err
+		}
+
+		resourceGroupName = projectResourceGroupName
 	}
 
 	azureResource, err := rm.resolveServiceResource(ctx, subscriptionId, resourceGroupName, serviceConfig, "provision")

@@ -1,0 +1,12 @@
+name: webapp
+metadata: 
+  template: azd-test/webapp-rgtest@v1
+services:
+  web:
+    project: src/dotnet/
+    host: appservice
+    language: csharp
+  web2:
+    project: src/dotnet/
+    host: appservice
+    language: csharp

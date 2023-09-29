@@ -1649,7 +1649,20 @@ func (p *BicepProvider) compileBicep(
 			if !findDefinition {
 				return nil, fmt.Errorf("did not find definition for parameter type: %s", definitionKeyName)
 			}
-			template.Parameters[paramKey] = paramDefinition
+			template.Parameters[paramKey] = azure.ArmTemplateParameterDefinition{
+				// Take this values from the parameter definition
+				Type:                 paramDefinition.Type,
+				AllowedValues:        paramDefinition.AllowedValues,
+				Properties:           paramDefinition.Properties,
+				AdditionalProperties: paramDefinition.AdditionalProperties,
+				// Azd combines Metadata from type definition and original parameter
+				// This allows to definitions to use azd-metadata on user-defined types and then add more properties
+				// to metadata or override something just for one parameter
+				Metadata: combineMetadata(paramDefinition.Metadata, param.Metadata),
+				// Keep this values from the original parameter
+				DefaultValue: param.DefaultValue,
+				// Note: Min/MaxLength and Min/MaxValue can't be used on user-defined types. No need to handle it here.
+			}
 		}
 	}
 
@@ -1679,6 +1692,29 @@ func (p *BicepProvider) compileBicep(
 		Template:       template,
 		Parameters:     parameters,
 	}, nil
+}
+
+func combineMetadata(base map[string]json.RawMessage, override map[string]json.RawMessage) map[string]json.RawMessage {
+	if base == nil && override == nil {
+		return nil
+	}
+
+	if override == nil {
+		return base
+	}
+
+	// final map is expected to be at lease the same size as the base
+	finalMetadata := make(map[string]json.RawMessage, len(base))
+
+	for key, data := range base {
+		finalMetadata[key] = data
+	}
+
+	for key, data := range override {
+		finalMetadata[key] = data
+	}
+
+	return finalMetadata
 }
 
 func definitionName(typeDefinitionRef string) (string, error) {

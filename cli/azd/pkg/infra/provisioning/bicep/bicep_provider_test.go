@@ -924,6 +924,7 @@ func TestUserDefinedTypes(t *testing.T) {
 	stringParam, exists := template.Parameters["stringParam"]
 	require.True(t, exists)
 	require.Equal(t, "string", stringParam.Type)
+	require.Equal(t, "foo", stringParam.DefaultValue)
 	require.Nil(t, stringParam.AllowedValues)
 
 	stringLimitedParam, exists := template.Parameters["stringLimitedParam"]
@@ -974,6 +975,30 @@ func TestUserDefinedTypes(t *testing.T) {
 			"sku":  {Type: "string"},
 		},
 		objectParam.Properties)
+	require.NotNil(t, objectParam.AdditionalProperties)
+	require.Equal(
+		t,
+		azure.ArmTemplateParameterAdditionalProperties{
+			Type:      "string",
+			MinLength: to.Ptr(10),
+			Metadata: map[string]json.RawMessage{
+				"fromDefinitionFoo": []byte("\"foo\""),
+				"fromDefinitionBar": []byte("\"bar\""),
+			},
+		},
+		objectParam.AdditionalProperties)
+	require.NotNil(t, objectParam.Metadata)
+	require.Equal(
+		t,
+		map[string]json.RawMessage{
+			// Note: Validating the metadata combining and override here.
+			// The parameter definition contains metadata that is automatically added to the parameter.
+			// Then the parameter also has metadata and overrides one of the values from the definition.
+			"fromDefinitionFoo": []byte("\"foo\""),
+			"fromDefinitionBar": []byte("\"override\""),
+			"fromParameter":     []byte("\"parameter\""),
+		},
+		objectParam.Metadata)
 
 	// output resolves just the type. Value and Metadata should persist
 	customOutput, exists := template.Outputs["customOutput"]
@@ -1046,12 +1071,25 @@ const userDefinedParamsSample = `{
 		  "sku": {
 			"type": "string"
 		  }
+		},
+		"additionalProperties": {
+			"type": "string",
+			"minLength": 10,
+			"metadata": {
+			  "fromDefinitionFoo": "foo",
+			  "fromDefinitionBar": "bar"
+			}
+		},
+		"metadata": {
+			"fromDefinitionFoo": "foo",
+			"fromDefinitionBar": "bar"
 		}
 	  }
 	},
 	"parameters": {
 	  "stringParam": {
-		"$ref": "#/definitions/stringType"
+		"$ref": "#/definitions/stringType",
+		"defaultValue": "foo"
 	  },
 	  "stringLimitedParam": {
 		"$ref": "#/definitions/stringLimitedType"
@@ -1072,7 +1110,11 @@ const userDefinedParamsSample = `{
 		"$ref": "#/definitions/mixedType"
 	  },
 	  "objectParam": {
-		"$ref": "#/definitions/objectType"
+		"$ref": "#/definitions/objectType",
+		"metadata": {
+			"fromDefinitionBar": "override",
+			"fromParameter": "parameter"
+		  }
 	  }
 	},
 	"resources": {},

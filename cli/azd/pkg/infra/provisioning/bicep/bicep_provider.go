@@ -56,7 +56,7 @@ type deploymentDetails struct {
 // BicepProvider exposes infrastructure provisioning using Azure Bicep templates
 type BicepProvider struct {
 	env                   *environment.Environment
-	envManager           environment.Manager
+	envManager            environment.Manager
 	projectPath           string
 	options               Options
 	console               input.Console

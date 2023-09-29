@@ -256,7 +256,7 @@ func (c *AskerConsole) ShowPreviewer(ctx context.Context, options *ShowPreviewer
 	// Pause any active spinner
 	currentMsg := c.currentSpinnerMessage
 	if c.spinner != nil {
-		c.spinner.Pause()
+		_ = c.spinner.Pause()
 	}
 
 	if options == nil {
@@ -277,7 +277,7 @@ func (c *AskerConsole) StopPreviewer(ctx context.Context) {
 	c.writer = c.initialWriter
 
 	if c.spinner != nil {
-		c.spinner.Unpause()
+		_ = c.spinner.Unpause()
 	}
 }
 

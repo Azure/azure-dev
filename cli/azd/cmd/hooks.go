@@ -129,15 +129,15 @@ func (hra *hooksRunAction) Run(ctx context.Context) (*actions.ActionResult, erro
 	}
 
 	// Service level hooks
-	for serviceName, service := range hra.projectConfig.Services {
-		skip := hra.flags.service != "" && serviceName != hra.flags.service
+	for _, service := range hra.projectConfig.GetServicesStable() {
+		skip := hra.flags.service != "" && service.Name != hra.flags.service
 
 		if err := hra.processHooks(
 			ctx,
 			service.RelativePath,
 			hookName,
-			fmt.Sprintf("Running %s service hook for %s", hookName, serviceName),
-			fmt.Sprintf("%s: %s hook output", serviceName, hookName),
+			fmt.Sprintf("Running %s service hook for %s", hookName, service.Name),
+			fmt.Sprintf("%s: %s hook output", service.Name, hookName),
 			service.Hooks,
 			skip,
 		); err != nil {
@@ -161,15 +161,15 @@ func (hra *hooksRunAction) processHooks(
 	hooks map[string]*ext.HookConfig,
 	skip bool,
 ) error {
+	hra.console.ShowSpinner(ctx, spinnerMessage, input.Step)
+
 	if skip {
-		hra.console.ShowSpinner(ctx, spinnerMessage, input.Step)
 		hra.console.StopSpinner(ctx, spinnerMessage, input.StepSkipped)
 		return nil
 	}
 
 	hook, ok := hooks[hookName]
 	if !ok {
-		hra.console.ShowSpinner(ctx, spinnerMessage, input.Step)
 		hra.console.StopSpinner(ctx, spinnerMessage+noHookFoundMessage, input.StepWarning)
 		return nil
 	}
@@ -180,16 +180,13 @@ func (hra *hooksRunAction) processHooks(
 		return err
 	}
 
-	hra.console.StopSpinner(ctx, "", input.Step)
 	err := hra.execHook(ctx, previewMessage, cwd, hookType, commandName, hook)
 	if err != nil {
-		hra.console.ShowSpinner(ctx, spinnerMessage, input.Step)
 		hra.console.StopSpinner(ctx, spinnerMessage, input.StepFailed)
 		return fmt.Errorf("failed running hook %s, %w", hookName, err)
 	}
 
 	// The previewer cancels the previous spinner so we need to restart/show it again.
-	hra.console.ShowSpinner(ctx, spinnerMessage, input.Step)
 	hra.console.StopSpinner(ctx, spinnerMessage, input.StepDone)
 
 	return nil

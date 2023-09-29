@@ -253,9 +253,11 @@ func (c *AskerConsole) ShowPreviewer(ctx context.Context, options *ShowPreviewer
 	c.writeControlMutex.Lock()
 	defer c.writeControlMutex.Unlock()
 
-	// auto-stop any spinner
+	// Pause any active spinner
 	currentMsg := c.currentSpinnerMessage
-	c.StopSpinner(ctx, "", Step)
+	if c.spinner != nil {
+		c.spinner.Pause()
+	}
 
 	if options == nil {
 		options = defaultShowPreviewerOptions()
@@ -273,6 +275,10 @@ func (c *AskerConsole) StopPreviewer(ctx context.Context) {
 	c.previewer.Stop()
 	c.previewer = nil
 	c.writer = c.initialWriter
+
+	if c.spinner != nil {
+		c.spinner.Unpause()
+	}
 }
 
 const cPostfix = "..."

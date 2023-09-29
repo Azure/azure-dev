@@ -68,7 +68,7 @@ func Test_Hooks_Execute(t *testing.T) {
 
 		hooksManager := NewHooksManager(cwd)
 		runner := NewHooksRunner(hooksManager, mockContext.CommandRunner, mockContext.Console, cwd, hooks, env)
-		err := runner.RunHooks(*mockContext.Context, HookTypePre, "command")
+		err := runner.RunHooks(*mockContext.Context, HookTypePre, nil, "command")
 
 		require.True(t, ranPreHook)
 		require.False(t, ranPostHook)
@@ -94,7 +94,7 @@ func Test_Hooks_Execute(t *testing.T) {
 
 		hooksManager := NewHooksManager(cwd)
 		runner := NewHooksRunner(hooksManager, mockContext.CommandRunner, mockContext.Console, cwd, hooks, env)
-		err := runner.RunHooks(*mockContext.Context, HookTypePost, "command")
+		err := runner.RunHooks(*mockContext.Context, HookTypePost, nil, "command")
 
 		require.False(t, ranPreHook)
 		require.True(t, ranPostHook)
@@ -120,7 +120,7 @@ func Test_Hooks_Execute(t *testing.T) {
 
 		hooksManager := NewHooksManager(cwd)
 		runner := NewHooksRunner(hooksManager, mockContext.CommandRunner, mockContext.Console, cwd, hooks, env)
-		err := runner.RunHooks(*mockContext.Context, HookTypePre, "interactive")
+		err := runner.RunHooks(*mockContext.Context, HookTypePre, nil, "interactive")
 
 		require.False(t, ranPreHook)
 		require.True(t, ranPostHook)
@@ -142,7 +142,7 @@ func Test_Hooks_Execute(t *testing.T) {
 
 		hooksManager := NewHooksManager(cwd)
 		runner := NewHooksRunner(hooksManager, mockContext.CommandRunner, mockContext.Console, cwd, hooks, env)
-		err := runner.RunHooks(*mockContext.Context, HookTypePre, "inline")
+		err := runner.RunHooks(*mockContext.Context, HookTypePre, nil, "inline")
 
 		require.False(t, ranPreHook)
 		require.True(t, ranPostHook)

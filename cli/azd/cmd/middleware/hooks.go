@@ -145,15 +145,11 @@ func (m *HooksMiddleware) registerServiceHooks(
 			env,
 		)
 
-		for hookName, hookConfig := range service.Hooks {
-			hookType, eventName, err := inferHookType(hookName, hookConfig)
-			if err != nil {
-				return fmt.Errorf(
-					//nolint:lll
-					"%w for service '%s'. Hooks must start with 'pre' or 'post' and end in a valid service event name. Examples: restore, package, deploy",
-					err,
-					serviceName,
-				)
+		for hookName := range service.Hooks {
+			hookType, eventName := ext.InferHookType(hookName)
+			// If not a pre or post hook we can continue on.
+			if hookType == ext.HookTypeNone {
+				continue
 			}
 
 			if err := service.AddHandler(
@@ -184,21 +180,8 @@ func (m *HooksMiddleware) createServiceEventHandler(
 	hooksRunner *ext.HooksRunner,
 ) ext.EventHandlerFn[project.ServiceLifecycleEventArgs] {
 	return func(ctx context.Context, eventArgs project.ServiceLifecycleEventArgs) error {
-		return hooksRunner.RunHooks(ctx, hookType, hookName)
+		return hooksRunner.RunHooks(ctx, hookType, nil, hookName)
 	}
-}
-
-func inferHookType(name string, config *ext.HookConfig) (ext.HookType, string, error) {
-	// Validate name length so go doesn't PANIC for string slicing below
-	if len(name) < 4 {
-		return "", "", fmt.Errorf("unable to infer hook '%s'", name)
-	} else if name[:3] == "pre" {
-		return ext.HookTypePre, name[3:], nil
-	} else if name[:4] == "post" {
-		return ext.HookTypePost, name[4:], nil
-	}
-
-	return "", "", fmt.Errorf("unable to infer hook '%s'", name)
 }
 
 // Gets a value that returns whether or not service hooks have already been registered

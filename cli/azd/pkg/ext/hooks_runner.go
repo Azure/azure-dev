@@ -58,7 +58,7 @@ func NewHooksRunner(
 
 // Invokes an action run runs any registered pre or post script hooks for the specified command.
 func (h *HooksRunner) Invoke(ctx context.Context, commands []string, actionFn InvokeFn) error {
-	err := h.RunHooks(ctx, HookTypePre, commands...)
+	err := h.RunHooks(ctx, HookTypePre, nil, commands...)
 	if err != nil {
 		return fmt.Errorf("failed running pre hooks: %w", err)
 	}
@@ -68,7 +68,7 @@ func (h *HooksRunner) Invoke(ctx context.Context, commands []string, actionFn In
 		return err
 	}
 
-	err = h.RunHooks(ctx, HookTypePost, commands...)
+	err = h.RunHooks(ctx, HookTypePost, nil, commands...)
 	if err != nil {
 		return fmt.Errorf("failed running post hooks: %w", err)
 	}
@@ -77,7 +77,12 @@ func (h *HooksRunner) Invoke(ctx context.Context, commands []string, actionFn In
 }
 
 // Invokes any registered script hooks for the specified hook type and command.
-func (h *HooksRunner) RunHooks(ctx context.Context, hookType HookType, commands ...string) error {
+func (h *HooksRunner) RunHooks(
+	ctx context.Context,
+	hookType HookType,
+	options *tools.ExecOptions,
+	commands ...string,
+) error {
 	hooks, err := h.hooksManager.GetByParams(h.hooks, hookType, commands...)
 	if err != nil {
 		return fmt.Errorf("failed running scripts for hooks '%s', %w", strings.Join(commands, ","), err)
@@ -88,7 +93,7 @@ func (h *HooksRunner) RunHooks(ctx context.Context, hookType HookType, commands 
 			return fmt.Errorf("reloading environment before running hook: %w", err)
 		}
 
-		err := h.execHook(ctx, hookConfig)
+		err := h.execHook(ctx, hookConfig, options)
 		if err != nil {
 			return err
 		}
@@ -121,18 +126,26 @@ func (h *HooksRunner) GetScript(hookConfig *HookConfig) (tools.Script, error) {
 	}
 }
 
-func (h *HooksRunner) execHook(ctx context.Context, hookConfig *HookConfig) error {
+func (h *HooksRunner) execHook(ctx context.Context, hookConfig *HookConfig, options *tools.ExecOptions) error {
+	if options == nil {
+		options = &tools.ExecOptions{}
+	}
+
 	script, err := h.GetScript(hookConfig)
 	if err != nil {
 		return err
 	}
 
 	formatter := h.console.GetFormatter()
-	consoleInteractive := formatter == nil || formatter.Kind() == output.NoneFormat
+	consoleInteractive := (formatter == nil || formatter.Kind() == output.NoneFormat)
 	scriptInteractive := consoleInteractive && hookConfig.Interactive
 
+	if options.Interactive == nil {
+		options.Interactive = &scriptInteractive
+	}
+
 	// When running in an interactive terminal broadcast a message to the dev to remind them that custom hooks are running.
-	if consoleInteractive {
+	if consoleInteractive && !hookConfig.Quiet {
 		h.console.Message(
 			ctx,
 			output.WithBold(
@@ -146,7 +159,7 @@ func (h *HooksRunner) execHook(ctx context.Context, hookConfig *HookConfig) erro
 	}
 
 	log.Printf("Executing script '%s'\n", hookConfig.path)
-	res, err := script.Execute(ctx, hookConfig.path, scriptInteractive)
+	res, err := script.Execute(ctx, hookConfig.path, *options)
 	if err != nil {
 		execErr := fmt.Errorf(
 			"'%s' hook failed with exit code: '%d', Path: '%s'. : %w",

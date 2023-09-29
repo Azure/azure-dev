@@ -144,18 +144,16 @@ func (h *HooksRunner) execHook(ctx context.Context, hookConfig *HookConfig, opti
 		options.Interactive = &scriptInteractive
 	}
 
-	// When running in an interactive terminal broadcast a message to the dev to remind them that custom hooks are running.
-	if consoleInteractive && !hookConfig.Quiet {
-		h.console.Message(
-			ctx,
-			output.WithBold(
-				fmt.Sprintf(
-					"Executing %s hook => %s",
-					output.WithHighLightFormat(hookConfig.Name),
-					output.WithHighLightFormat(hookConfig.path),
-				),
-			),
-		)
+	// When the hook is not configured to run in interactive mode and no stdout has been configured
+	// Then show the hook execution output within the console previewer pane
+	if !*options.Interactive && options.StdOut == nil {
+		previewer := h.console.ShowPreviewer(ctx, &input.ShowPreviewerOptions{
+			Prefix:       "  ",
+			Title:        fmt.Sprintf("%s Hook Output", hookConfig.Name),
+			MaxLineCount: 8,
+		})
+		options.StdOut = previewer
+		defer h.console.StopPreviewer(ctx)
 	}
 
 	log.Printf("Executing script '%s'\n", hookConfig.path)

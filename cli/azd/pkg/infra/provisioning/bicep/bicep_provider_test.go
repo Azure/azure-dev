@@ -982,8 +982,8 @@ func TestUserDefinedTypes(t *testing.T) {
 			Type:      "string",
 			MinLength: to.Ptr(10),
 			Metadata: map[string]json.RawMessage{
-				"fromDefinitionFoo": []byte("\"foo\""),
-				"fromDefinitionBar": []byte("\"bar\""),
+				"fromDefinitionFoo": []byte(`"foo"`),
+				"fromDefinitionBar": []byte(`"bar"`),
 			},
 		},
 		objectParam.AdditionalProperties)
@@ -994,9 +994,9 @@ func TestUserDefinedTypes(t *testing.T) {
 			// Note: Validating the metadata combining and override here.
 			// The parameter definition contains metadata that is automatically added to the parameter.
 			// Then the parameter also has metadata and overrides one of the values from the definition.
-			"fromDefinitionFoo": []byte("\"foo\""),
-			"fromDefinitionBar": []byte("\"override\""),
-			"fromParameter":     []byte("\"parameter\""),
+			"fromDefinitionFoo": []byte(`"foo"`),
+			"fromDefinitionBar": []byte(`"override"`),
+			"fromParameter":     []byte(`"parameter"`),
 		},
 		objectParam.Metadata)
 

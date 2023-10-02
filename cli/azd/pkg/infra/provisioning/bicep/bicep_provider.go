@@ -1718,6 +1718,8 @@ func combineMetadata(base map[string]json.RawMessage, override map[string]json.R
 }
 
 func definitionName(typeDefinitionRef string) (string, error) {
+	// We typically expect `#/definitions/<name>` or `/definitions/<name>`, but loosely, we simply take
+	// `<name>` as the value of the last separated element.
 	definitionKeyNameTokens := strings.Split(typeDefinitionRef, "/")
 	definitionKeyNameTokensLen := len(definitionKeyNameTokens)
 	if definitionKeyNameTokensLen < 1 {

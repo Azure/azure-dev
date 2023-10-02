@@ -1703,7 +1703,7 @@ func combineMetadata(base map[string]json.RawMessage, override map[string]json.R
 		return base
 	}
 
-	// final map is expected to be at lease the same size as the base
+	// final map is expected to be at least the same size as the base
 	finalMetadata := make(map[string]json.RawMessage, len(base))
 
 	for key, data := range base {

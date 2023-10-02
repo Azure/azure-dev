@@ -418,6 +418,11 @@ func (p *BicepProvider) deploymentState(
 		return nil, fmt.Errorf("deployment state error: %w", err)
 	}
 
+	// state is valid if the last deployment failed
+	if *prevDeploymentResult.Properties.ProvisioningState == armresources.ProvisioningStateFailed {
+		return nil, fmt.Errorf("last deployment failed.")
+	}
+
 	var templateHash string
 	createHashResult, err := p.deploymentsService.CalculateTemplateHash(
 		ctx, p.env.GetSubscriptionId(), deploymentData.CompiledBicep.RawArmTemplate)

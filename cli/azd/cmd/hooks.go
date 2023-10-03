@@ -71,6 +71,7 @@ func (f *hooksRunFlags) Bind(local *pflag.FlagSet, global *internal.GlobalComman
 type hooksRunAction struct {
 	projectConfig *project.ProjectConfig
 	env           *environment.Environment
+	envManager    environment.Manager
 	commandRunner exec.CommandRunner
 	console       input.Console
 	flags         *hooksRunFlags
@@ -80,6 +81,7 @@ type hooksRunAction struct {
 func newHooksRunAction(
 	projectConfig *project.ProjectConfig,
 	env *environment.Environment,
+	envManager environment.Manager,
 	commandRunner exec.CommandRunner,
 	console input.Console,
 	flags *hooksRunFlags,
@@ -88,6 +90,7 @@ func newHooksRunAction(
 	return &hooksRunAction{
 		projectConfig: projectConfig,
 		env:           env,
+		envManager:    envManager,
 		commandRunner: commandRunner,
 		console:       console,
 		flags:         flags,
@@ -209,7 +212,7 @@ func (hra *hooksRunAction) execHook(
 	}
 
 	hooksManager := ext.NewHooksManager(cwd)
-	hooksRunner := ext.NewHooksRunner(hooksManager, hra.commandRunner, hra.console, cwd, hooks, hra.env)
+	hooksRunner := ext.NewHooksRunner(hooksManager, hra.commandRunner, hra.envManager, hra.console, cwd, hooks, hra.env)
 
 	previewer := hra.console.ShowPreviewer(ctx, &input.ShowPreviewerOptions{
 		Title:        previewMessage,

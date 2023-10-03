@@ -11,8 +11,11 @@ import (
 	"io"
 	"log"
 	"os"
+	"os/signal"
+	"runtime"
 	"strconv"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/AlecAivazis/survey/v2"
@@ -277,14 +280,40 @@ func (c *AskerConsole) StopPreviewer(ctx context.Context) {
 
 const cPostfix = "..."
 
-func (c *AskerConsole) spinnerText(title, charset string) string {
+type spinnerText struct {
+	Message string
+	CharSet []string
+	Prefix  string
+}
 
-	spinnerLen := len(charset) + 1 // adding one for the empty space before the message
+func (c *AskerConsole) spinnerText(title string, indent string) spinnerText {
+	// adding one for the empty space before the message
+	spinnerLen := len(indent) + len(spinnerCharSet[0]) + 1
+	width := c.consoleWidth
+	switch {
+	case width <= spinnerLen+len(cPostfix):
+		if width <= 3 {
+			return spinnerText{
+				CharSet: shortCharSet[:width],
+			}
+		}
 
-	if len(title)+spinnerLen >= c.consoleWidth {
-		return fmt.Sprintf("%s%s", title[:c.consoleWidth-spinnerLen-len(cPostfix)], cPostfix)
+		return spinnerText{
+			CharSet: shortCharSet,
+		}
+	case width <= spinnerLen+len(title):
+		return spinnerText{
+			Prefix:  indent,
+			CharSet: spinnerCharSet,
+			Message: title[:width-spinnerLen-len(cPostfix)] + cPostfix,
+		}
+	default:
+		return spinnerText{
+			Prefix:  indent,
+			CharSet: spinnerCharSet,
+			Message: title,
+		}
 	}
-	return title
 }
 
 func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format SpinnerUxType) {
@@ -293,12 +322,6 @@ func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format Spi
 
 	if c.formatter != nil && c.formatter.Kind() == output.JsonFormat {
 		// Spinner is disabled when using json format.
-		return
-	}
-
-	if c.consoleWidth <= cMinConsoleWidth {
-		// no spinner for consoles with width <= cMinConsoleWidth
-		c.Message(ctx, title)
 		return
 	}
 
@@ -314,7 +337,6 @@ func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format Spi
 		_ = c.spinner.Stop()
 	}
 
-	charSet := c.getCharset(format)
 	c.currentSpinnerMessage = title
 
 	// determine the terminal mode once
@@ -322,18 +344,19 @@ func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format Spi
 		c.spinnerTerminalMode = GetSpinnerTerminalMode(&c.isTerminal)
 	})
 
+	indentPrefix := c.getIndent(format)
+	text := c.spinnerText(title, indentPrefix)
 	spinnerConfig := yacspin.Config{
-		Frequency:       200 * time.Millisecond,
-		Writer:          c.writer,
-		Suffix:          " ",
-		SuffixAutoColon: true,
-		Message:         c.spinnerText(title, charSet[0]),
-		CharSet:         charSet,
+		Frequency: 200 * time.Millisecond,
+		Writer:    c.writer,
+		Suffix:    " ",
+		Message:   text.Message,
+		CharSet:   text.CharSet,
+		Prefix:    text.Prefix,
 	}
 	spinnerConfig.TerminalMode = c.spinnerTerminalMode
 
 	c.spinner, _ = yacspin.New(spinnerConfig)
-
 	_ = c.spinner.Start()
 }
 
@@ -380,18 +403,12 @@ func GetSpinnerTerminalMode(isTerminal *bool) yacspin.TerminalMode {
 	return termMode
 }
 
-var customCharSet []string = []string{
+var spinnerCharSet []string = []string{
 	"|       |", "|=      |", "|==     |", "|===    |", "|====   |", "|=====  |", "|====== |",
 	"|=======|", "| ======|", "|  =====|", "|   ====|", "|    ===|", "|     ==|", "|      =|",
 }
 
-func (c *AskerConsole) getCharset(format SpinnerUxType) []string {
-	newCharSet := make([]string, len(customCharSet))
-	for i, value := range customCharSet {
-		newCharSet[i] = fmt.Sprintf("%s%s", c.getIndent(format), value)
-	}
-	return newCharSet
-}
+var shortCharSet []string = []string{".", "..", "..."}
 
 func setIndentation(spaces int) string {
 	bytes := make([]byte, spaces)
@@ -585,21 +602,55 @@ func (c *AskerConsole) Handles() ConsoleHandles {
 	return c.handles
 }
 
-const cMinConsoleWidth int = 40
-
 func getConsoleWidth() int {
 	width, _ := consolesize.GetConsoleSize()
-	if width < cMinConsoleWidth {
-		return cMinConsoleWidth
-	}
 	return width
+}
+
+func (c *AskerConsole) handleResize(width int) {
+	// update console width
+	c.consoleWidth = width
+	if c.spinner != nil && c.spinner.Status() == yacspin.SpinnerRunning {
+		text := c.spinnerText(c.currentSpinnerMessage, c.currentIndent)
+		_ = c.spinner.Pause()
+		c.spinner.Message(text.Message)
+		c.spinner.CharSet(text.CharSet)
+		c.spinner.Prefix(text.Prefix)
+		_ = c.spinner.Unpause()
+	}
+}
+
+func monitorWidthResize(c *AskerConsole) error {
+	if runtime.GOOS == "windows" {
+		go func() {
+			prevWidth := getConsoleWidth()
+			for {
+				time.Sleep(time.Millisecond * 250)
+				width := getConsoleWidth()
+
+				if prevWidth != width {
+					c.handleResize(width)
+				}
+				prevWidth = width
+			}
+		}()
+	} else {
+		sigchan := make(chan os.Signal, 1)
+		signal.Notify(sigchan, syscall.SIGWINCH)
+		go func() {
+			for range sigchan {
+				c.handleResize(getConsoleWidth())
+			}
+		}()
+	}
+	return nil
 }
 
 // Creates a new console with the specified writer, handles and formatter.
 func NewConsole(noPrompt bool, isTerminal bool, w io.Writer, handles ConsoleHandles, formatter output.Formatter) Console {
 	asker := NewAsker(noPrompt, isTerminal, handles.Stdout, handles.Stdin)
 
-	return &AskerConsole{
+	askerC := &AskerConsole{
 		asker:         asker,
 		handles:       handles,
 		defaultWriter: w,
@@ -610,6 +661,9 @@ func NewConsole(noPrompt bool, isTerminal bool, w io.Writer, handles ConsoleHand
 		initialWriter: w,
 		noPrompt:      noPrompt,
 	}
+
+	go monitorWidthResize(askerC)
+	return askerC
 }
 
 func GetStepResultFormat(result error) SpinnerUxType {

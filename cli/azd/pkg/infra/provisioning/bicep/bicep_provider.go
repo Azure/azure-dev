@@ -418,8 +418,10 @@ func (p *BicepProvider) deploymentState(
 		return nil, fmt.Errorf("deployment state error: %w", err)
 	}
 
-	// state is valid if the last deployment failed
-	if *prevDeploymentResult.Properties.ProvisioningState == armresources.ProvisioningStateFailed {
+	// State is invalid if the last deployment was not succeeded
+	// This is currently safe because we rely on latestDeploymentResult which
+	// relies on findCompletedDeployments which filters to only Failed and Succeeded
+	if *prevDeploymentResult.Properties.ProvisioningState != armresources.ProvisioningStateSucceeded {
 		return nil, fmt.Errorf("last deployment failed.")
 	}
 

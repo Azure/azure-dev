@@ -70,9 +70,6 @@ type HookConfig struct {
 	Windows *HookConfig `yaml:"windows,omitempty"`
 	// When running on linux/macos use this override config
 	Posix *HookConfig `yaml:"posix,omitempty"`
-	// Hides executing messages printed to the console
-	// This is a temp workaround until we have a better way to handle this
-	Quiet bool `yaml:"-"`
 }
 
 // Validates and normalizes the hook configuration

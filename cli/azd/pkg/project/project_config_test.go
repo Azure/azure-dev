@@ -74,7 +74,7 @@ services:
     host: appservice
 `
 
-	e := environment.EphemeralWithValues("test-env", map[string]string{
+	e := environment.NewWithValues("test-env", map[string]string{
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
 	})
 
@@ -364,7 +364,7 @@ services:
 	projectConfig, err := Parse(*mockContext.Context, testProj)
 	require.NoError(t, err)
 
-	env := environment.EphemeralWithValues("", map[string]string{
+	env := environment.NewWithValues("", map[string]string{
 		"foo": "hello",
 		"bar": "goodbye",
 	})

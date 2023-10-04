@@ -9,7 +9,6 @@ import (
 	"os"
 	"path/filepath"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
@@ -135,12 +134,3 @@ var (
 	azdoFolder   string = filepath.Join(".azdo", "pipelines")
 	azdoYml      string = filepath.Join(azdoFolder, "azure-dev.yml")
 )
-
-func savePipelineProviderToEnv(provider string, env *environment.Environment) error {
-	env.DotenvSet(envPersistedKey, provider)
-	err := env.Save()
-	if err != nil {
-		return err
-	}
-	return nil
-}

@@ -560,6 +560,32 @@
                     }
                 }
             }
+        },
+        "azureBlobStorageConfig": {
+            "type": "object",
+            "title": "The Azure Blob Storage remote state backend configuration.",
+            "description": "Optional. Provides additional configuration for remote state management such as Azure Blob Storage.",
+            "additionalProperties": false,
+            "required": [
+                "accountName"
+            ],
+            "properties": {
+                "accountName": {
+                    "type": "string",
+                    "title": "The Azure Storage account name.",
+                    "description": "Required. The Azure Storage account name."
+                },
+                "containerName": {
+                    "type": "string",
+                    "title": "The Azure Storage container name.",
+                    "description": "Optional. The Azure Storage container name. Defaults to project name if not specified."
+                },
+                "endpoint": {
+                    "type": "string",
+                    "title": "The Azure Storage endpoint.",
+                    "description": "Optional. The Azure Storage endpoint. (Default: blob.core.windows.net)"
+                }
+            }
         }
     }
 }

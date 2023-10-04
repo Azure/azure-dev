@@ -25,6 +25,10 @@ func Absolute(path string) (string, error) {
 		return fmt.Sprintf("https://github.com/Azure-Samples/%s", path), nil
 	case 1:
 		return fmt.Sprintf("https://github.com/%s", path), nil
+	// DevCenter use case
+	// <devcenter>/<project>/<catalog>/<env-definition>
+	case 3:
+		return path, nil
 	default:
 		return "", fmt.Errorf(
 			"template '%s' should either be <owner>/<repo> for GitHub repositories, "+

@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/repository"
@@ -16,13 +17,17 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
+	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/containerapps"
+	"github.com/azure/azure-dev/cli/azd/pkg/devcenter"
+	"github.com/azure/azure-dev/cli/azd/pkg/devcentersdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	infraBicep "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
 	infraTerraform "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/terraform"
@@ -232,6 +237,18 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(environment.NewLocalFileDataStore)
 	container.RegisterSingleton(environment.NewManager)
 
+	container.RegisterSingleton(func() *lazy.Lazy[environment.LocalDataStore] {
+		return lazy.NewLazy(func() (environment.LocalDataStore, error) {
+			var localDataStore environment.LocalDataStore
+			err := container.Resolve(&localDataStore)
+			if err != nil {
+				return nil, err
+			}
+
+			return localDataStore, nil
+		})
+	})
+
 	// Environment manager depends on azd context
 	container.RegisterSingleton(func(azdContext *lazy.Lazy[*azdcontext.AzdContext]) *lazy.Lazy[environment.Manager] {
 		return lazy.NewLazy(func() (environment.Manager, error) {
@@ -256,6 +273,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	// Remote Environment State Providers
 	remoteStateProviderMap := map[environment.RemoteKind]any{
 		environment.RemoteKindAzureBlobStorage: environment.NewStorageBlobDataStore,
+		devcenter.RemoteKindDevCenter:          devcenter.NewEnvironmentStore,
 	}
 
 	for remoteKind, constructor := range remoteStateProviderMap {
@@ -270,9 +288,24 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	) (*state.RemoteConfig, error) {
 		var remoteStateConfig *state.RemoteConfig
 
+		userConfig, err := userConfigManager.Load()
+		if err != nil {
+			return nil, fmt.Errorf("loading user config: %w", err)
+		}
+
 		// The project config may not be available yet
 		// Ex) Within init phase of fingerprinting
 		projectConfig, _ := lazyProjectConfig.GetValue()
+
+		// When devcenter is enabled in azd config, use devcenter as the remote state provider
+		// regardless of any other remote state configuration
+		if IsDevCenterEnabled(userConfig, projectConfig) {
+			remoteStateConfig = &state.RemoteConfig{
+				Backend: string(devcenter.RemoteKindDevCenter),
+			}
+
+			return remoteStateConfig, nil
+		}
 
 		// Lookup remote state config in the following precedence:
 		// 1. Project azure.yaml
@@ -280,11 +313,6 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		if projectConfig != nil && projectConfig.State != nil && projectConfig.State.Remote != nil {
 			remoteStateConfig = projectConfig.State.Remote
 		} else {
-			userConfig, err := userConfigManager.Load()
-			if err != nil {
-				return nil, fmt.Errorf("loading user config: %w", err)
-			}
-
 			remoteState, ok := userConfig.Get("state.remote")
 			if ok {
 				jsonBytes, err := json.Marshal(remoteState)
@@ -399,6 +427,154 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		})
 	})
 
+	// DevCenter Config
+	container.RegisterSingleton(func(
+		ctx context.Context,
+		lazyAzdCtx *lazy.Lazy[*azdcontext.AzdContext],
+		userConfigManager config.UserConfigManager,
+		lazyProjectConfig *lazy.Lazy[*project.ProjectConfig],
+		lazyLocalEnvStore *lazy.Lazy[environment.LocalDataStore],
+	) (*devcenter.Config, error) {
+		// Load deventer configuration in the following precedence:
+		// 1. Environment variables (AZURE_DEVCENTER_*)
+		// 2. Azd Environment configuration (devCenter node)
+		// 3. Azd Project configuration from azure.yaml (devCenter node)
+		// 4. Azd user configuration from config.json (devCenter node)
+
+		// Shell environment variables
+		envVarConfig := &devcenter.Config{
+			Name:                  os.Getenv(devcenter.DevCenterCatalogEnvName),
+			Project:               os.Getenv(devcenter.DevCenterProjectEnvName),
+			Catalog:               os.Getenv(devcenter.DevCenterCatalogEnvName),
+			EnvironmentType:       os.Getenv(devcenter.DevCenterEnvTypeEnvName),
+			EnvironmentDefinition: os.Getenv(devcenter.DevCenterEnvDefinitionEnvName),
+		}
+
+		azdCtx, _ := lazyAzdCtx.GetValue()
+		localEnvStore, _ := lazyLocalEnvStore.GetValue()
+
+		// Local environment configuration
+		var environmentConfig *devcenter.Config
+		if azdCtx != nil && localEnvStore != nil {
+			defaultEnvName, err := azdCtx.GetDefaultEnvironmentName()
+			if err != nil {
+				environmentConfig = &devcenter.Config{}
+			} else {
+				// Attempt to load any devcenter configuration from local environment
+				env, err := localEnvStore.Get(ctx, defaultEnvName)
+				if err == nil {
+					devCenterNode, exists := env.Config.Get(devcenter.ConfigPath)
+					if exists {
+						value, err := devcenter.ParseConfig(devCenterNode)
+						if err != nil {
+							return nil, err
+						}
+
+						environmentConfig = value
+					}
+				}
+			}
+		}
+
+		// User Configuration
+		var userConfig *devcenter.Config
+		azdConfig, err := userConfigManager.Load()
+		if err != nil {
+			userConfig = &devcenter.Config{}
+		} else {
+			devCenterNode, exists := azdConfig.Get(devcenter.ConfigPath)
+			if exists {
+				value, err := devcenter.ParseConfig(devCenterNode)
+				if err != nil {
+					return nil, err
+				}
+
+				userConfig = value
+			}
+		}
+
+		// Project Configuration
+		var projectConfig *devcenter.Config
+		projConfig, _ := lazyProjectConfig.GetValue()
+		if projConfig != nil {
+			projectConfig = projConfig.DevCenter
+		}
+
+		return devcenter.MergeConfigs(
+			envVarConfig,
+			environmentConfig,
+			projectConfig,
+			userConfig,
+		), nil
+	})
+
+	container.RegisterSingleton(func(
+		ctx context.Context,
+		credential azcore.TokenCredential,
+		httpClient httputil.HttpClient,
+	) (*armresourcegraph.Client, error) {
+		options := azsdk.
+			DefaultClientOptionsBuilder(ctx, httpClient, "azd").
+			BuildArmClientOptions()
+
+		return armresourcegraph.NewClient(credential, options)
+	})
+
+	container.RegisterSingleton(func(
+		ctx context.Context,
+		credential azcore.TokenCredential,
+		httpClient httputil.HttpClient,
+		resourceGraphClient *armresourcegraph.Client,
+	) (devcentersdk.DevCenterClient, error) {
+		options := azsdk.
+			DefaultClientOptionsBuilder(ctx, httpClient, "azd").
+			BuildCoreClientOptions()
+
+		return devcentersdk.NewDevCenterClient(credential, options, resourceGraphClient)
+	})
+
+	// Templates
+
+	// Gets a list of default template sources used in azd.
+	container.RegisterSingleton(func(
+		configManager config.UserConfigManager,
+		lazyProjectConfig *lazy.Lazy[*project.ProjectConfig],
+	) (*templates.SourceOptions, error) {
+		options := &templates.SourceOptions{
+			DefaultSources:        []*templates.SourceConfig{},
+			LoadConfiguredSources: true,
+		}
+
+		config, err := configManager.Load()
+		if err != nil {
+			return nil, err
+		}
+
+		projectConfig, _ := lazyProjectConfig.GetValue()
+
+		// When devcenter is enabled, consider devcenter source as default source
+		// And don't load any other configured sources
+		if IsDevCenterEnabled(config, projectConfig) {
+			options.DefaultSources = []*templates.SourceConfig{devcenter.SourceDevCenter}
+			options.LoadConfiguredSources = false
+		}
+
+		return options, nil
+	})
+
+	container.RegisterSingleton(templates.NewTemplateManager)
+	container.RegisterSingleton(templates.NewSourceManager)
+
+	templateSourceMap := map[templates.SourceKind]any{
+		devcenter.SourceKindDevCenter: devcenter.NewTemplateSource,
+	}
+
+	for sourceKind, constructor := range templateSourceMap {
+		if err := container.RegisterNamedSingleton(string(sourceKind), constructor); err != nil {
+			panic(fmt.Errorf("registering template source %s: %w", sourceKind, err))
+		}
+	}
+
 	container.RegisterSingleton(project.NewResourceManager)
 	container.RegisterSingleton(project.NewProjectManager)
 	container.RegisterSingleton(project.NewServiceManager)
@@ -407,8 +583,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(config.NewUserConfigManager)
 	container.RegisterSingleton(config.NewManager)
 	container.RegisterSingleton(config.NewFileConfigManager)
-	container.RegisterSingleton(templates.NewTemplateManager)
-	container.RegisterSingleton(templates.NewSourceManager)
+	container.RegisterSingleton(devcenter.NewTemplateSource)
 	container.RegisterSingleton(auth.NewManager)
 	container.RegisterSingleton(azcli.NewUserProfileService)
 	container.RegisterSingleton(account.NewSubscriptionsService)
@@ -460,14 +635,19 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(terraform.NewTerraformCli)
 
 	// Provisioning
+	container.RegisterSingleton(infra.NewAzureResourceManager)
+
 	container.RegisterTransient(provisioning.NewManager)
 	container.RegisterSingleton(provisioning.NewPrincipalIdProvider)
 	container.RegisterSingleton(prompt.NewDefaultPrompter)
+	container.RegisterSingleton(devcenter.NewManager)
+	container.RegisterSingleton(devcenter.NewPrompter)
 
 	// Provisioning Providers
 	provisionProviderMap := map[provisioning.ProviderKind]any{
 		provisioning.Bicep:     infraBicep.NewBicepProvider,
 		provisioning.Terraform: infraTerraform.NewTerraformProvider,
+		provisioning.DevCenter: devcenter.NewDevCenterProvider,
 	}
 
 	for provider, constructor := range provisionProviderMap {
@@ -475,6 +655,28 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			panic(fmt.Errorf("registering IaC provider %s: %w", provider, err))
 		}
 	}
+
+	// Function to determine the default IaC provider when provisioning
+	container.RegisterSingleton(func(
+		lazyProjectConfig *lazy.Lazy[*project.ProjectConfig],
+		configManager config.UserConfigManager,
+	) provisioning.DefaultProviderResolver {
+		return func() (provisioning.ProviderKind, error) {
+			config, err := configManager.Load()
+			if err != nil {
+				return provisioning.NotSpecified, err
+			}
+
+			projectConfig, _ := lazyProjectConfig.GetValue()
+
+			// DevCenter provider is default when enabled
+			if IsDevCenterEnabled(config, projectConfig) {
+				return provisioning.DevCenter, nil
+			}
+
+			return provisioning.Bicep, nil
+		}
+	})
 
 	// Other
 	container.RegisterSingleton(createClock)

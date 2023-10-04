@@ -44,7 +44,15 @@ func TestProvisionInitializesEnvironment(t *testing.T) {
 	registerContainerDependencies(mockContext, env)
 
 	envManager := &mockenv.MockEnvManager{}
-	mgr := NewManager(mockContext.Container, envManager, env, mockContext.Console, mockContext.AlphaFeaturesManager, nil)
+	mgr := NewManager(
+		mockContext.Container,
+		defaultProvider,
+		envManager,
+		env,
+		mockContext.Console,
+		mockContext.AlphaFeaturesManager,
+		nil,
+	)
 	err := mgr.Initialize(*mockContext.Context, "", Options{Provider: "test"})
 	require.NoError(t, err)
 
@@ -62,7 +70,15 @@ func TestManagerPreview(t *testing.T) {
 	registerContainerDependencies(mockContext, env)
 
 	envManager := &mockenv.MockEnvManager{}
-	mgr := NewManager(mockContext.Container, envManager, env, mockContext.Console, mockContext.AlphaFeaturesManager, nil)
+	mgr := NewManager(
+		mockContext.Container,
+		defaultProvider,
+		envManager,
+		env,
+		mockContext.Console,
+		mockContext.AlphaFeaturesManager,
+		nil,
+	)
 	err := mgr.Initialize(*mockContext.Context, "", Options{Provider: "test"})
 	require.NoError(t, err)
 
@@ -82,7 +98,15 @@ func TestManagerGetState(t *testing.T) {
 	registerContainerDependencies(mockContext, env)
 
 	envManager := &mockenv.MockEnvManager{}
-	mgr := NewManager(mockContext.Container, envManager, env, mockContext.Console, mockContext.AlphaFeaturesManager, nil)
+	mgr := NewManager(
+		mockContext.Container,
+		defaultProvider,
+		envManager,
+		env,
+		mockContext.Console,
+		mockContext.AlphaFeaturesManager,
+		nil,
+	)
 	err := mgr.Initialize(*mockContext.Context, "", Options{Provider: "test"})
 	require.NoError(t, err)
 
@@ -102,7 +126,15 @@ func TestManagerDeploy(t *testing.T) {
 	registerContainerDependencies(mockContext, env)
 
 	envManager := &mockenv.MockEnvManager{}
-	mgr := NewManager(mockContext.Container, envManager, env, mockContext.Console, mockContext.AlphaFeaturesManager, nil)
+	mgr := NewManager(
+		mockContext.Container,
+		defaultProvider,
+		envManager,
+		env,
+		mockContext.Console,
+		mockContext.AlphaFeaturesManager,
+		nil,
+	)
 	err := mgr.Initialize(*mockContext.Context, "", Options{Provider: "test"})
 	require.NoError(t, err)
 
@@ -128,7 +160,15 @@ func TestManagerDestroyWithPositiveConfirmation(t *testing.T) {
 	envManager := &mockenv.MockEnvManager{}
 	envManager.On("Save", *mockContext.Context, env).Return(nil)
 
-	mgr := NewManager(mockContext.Container, envManager, env, mockContext.Console, mockContext.AlphaFeaturesManager, nil)
+	mgr := NewManager(
+		mockContext.Container,
+		defaultProvider,
+		envManager,
+		env,
+		mockContext.Console,
+		mockContext.AlphaFeaturesManager,
+		nil,
+	)
 	err := mgr.Initialize(*mockContext.Context, "", Options{Provider: "test"})
 	require.NoError(t, err)
 
@@ -155,7 +195,15 @@ func TestManagerDestroyWithNegativeConfirmation(t *testing.T) {
 	registerContainerDependencies(mockContext, env)
 
 	envManager := &mockenv.MockEnvManager{}
-	mgr := NewManager(mockContext.Container, envManager, env, mockContext.Console, mockContext.AlphaFeaturesManager, nil)
+	mgr := NewManager(
+		mockContext.Container,
+		defaultProvider,
+		envManager,
+		env,
+		mockContext.Console,
+		mockContext.AlphaFeaturesManager,
+		nil,
+	)
 	err := mgr.Initialize(*mockContext.Context, "", Options{Provider: "test"})
 	require.NoError(t, err)
 
@@ -204,4 +252,8 @@ func registerContainerDependencies(mockContext *mocks.MockContext, env *environm
 	mockContext.Container.RegisterSingleton(func() clock.Clock {
 		return clock.NewMock()
 	})
+}
+
+func defaultProvider() (ProviderKind, error) {
+	return Bicep, nil
 }

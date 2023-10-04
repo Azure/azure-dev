@@ -16,6 +16,7 @@ import (
 type Config interface {
 	Raw() map[string]any
 	Get(path string) (any, bool)
+	GetString(path string) (string, bool)
 	Set(path string, value any) error
 	Unset(path string) error
 	IsEmpty() bool
@@ -145,4 +146,19 @@ func (c *config) Get(path string) (any, bool) {
 	}
 
 	return nil, false
+}
+
+// Gets the value stored at the specified location as a string
+func (c *config) GetString(path string) (string, bool) {
+	value, ok := c.Get(path)
+	if !ok {
+		return "", false
+	}
+
+	str, ok := value.(string)
+	if !ok {
+		return "", false
+	}
+
+	return str, true
 }

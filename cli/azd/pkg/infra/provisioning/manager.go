@@ -9,6 +9,7 @@ import (
 	"fmt"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -16,14 +17,17 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 )
 
+type DefaultProviderResolver func() (ProviderKind, error)
+
 // Manages the orchestration of infrastructure provisioning
 type Manager struct {
 	serviceLocator      ioc.ServiceLocator
+	defaultProvider     DefaultProviderResolver
 	envManager          environment.Manager
 	env                 *environment.Environment
 	console             input.Console
-	prompter            prompt.Prompter
 	provider            Provider
+	configManager       config.UserConfigManager
 	alphaFeatureManager *alpha.FeatureManager
 	projectPath         string
 	options             *Options
@@ -204,19 +208,21 @@ func EnsureSubscriptionAndLocation(
 // Creates a new instance of the Provisioning Manager
 func NewManager(
 	serviceLocator ioc.ServiceLocator,
+	defaultProvider DefaultProviderResolver,
 	envManager environment.Manager,
 	env *environment.Environment,
 	console input.Console,
 	alphaFeatureManager *alpha.FeatureManager,
-	prompter prompt.Prompter,
+	configManager config.UserConfigManager,
 ) *Manager {
 	return &Manager{
 		serviceLocator:      serviceLocator,
+		defaultProvider:     defaultProvider,
 		envManager:          envManager,
 		env:                 env,
 		console:             console,
 		alphaFeatureManager: alphaFeatureManager,
-		prompter:            prompter,
+		configManager:       configManager,
 	}
 }
 
@@ -238,10 +244,20 @@ func (m *Manager) newProvider(ctx context.Context) (Provider, error) {
 		m.console.WarnForFeature(ctx, alphaFeatureId)
 	}
 
+	providerKey := m.options.Provider
+	if providerKey == NotSpecified {
+		defaultProvider, err := m.defaultProvider()
+		if err != nil {
+			return nil, err
+		}
+
+		providerKey = defaultProvider
+	}
+
 	var provider Provider
-	err = m.serviceLocator.ResolveNamed(string(m.options.Provider), &provider)
+	err = m.serviceLocator.ResolveNamed(string(providerKey), &provider)
 	if err != nil {
-		return nil, fmt.Errorf("failed resolving IaC provider '%s': %w", m.options.Provider, err)
+		return nil, fmt.Errorf("failed resolving IaC provider '%s': %w", providerKey, err)
 	}
 
 	return provider, nil

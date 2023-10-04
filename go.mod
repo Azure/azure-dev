@@ -61,6 +61,8 @@ require github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/arma
 require github.com/bmatcuk/doublestar/v4 v4.6.0
 
 require (
+	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2 v2.1.1
+	github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph v0.7.1
 	github.com/Azure/azure-sdk-for-go/sdk/storage/azblob v1.1.0
 	github.com/adam-lavrik/go-imath v0.0.0-20210910152346-265a42a96f0b
 )

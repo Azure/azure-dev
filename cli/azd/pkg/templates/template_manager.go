@@ -74,31 +74,33 @@ func (tm *TemplateManager) ListTemplates(ctx context.Context, options *ListOptio
 }
 
 func (tm *TemplateManager) GetTemplate(ctx context.Context, path string) (*Template, error) {
-	absTemplatePath, err := Absolute(path)
+	sources, err := tm.getSources(ctx, nil)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed getting template sources: %w", err)
 	}
 
-	allTemplates, err := tm.ListTemplates(ctx, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed listing templates: %w", err)
-	}
+	var match *Template
+	var sourceErr error
 
-	matchingIndex := slices.IndexFunc(allTemplates, func(template *Template) bool {
-		absPath, err := Absolute(template.RepositoryPath)
+	for _, source := range sources {
+		template, err := source.GetTemplate(ctx, path)
 		if err != nil {
-			log.Printf("failed to get absolute path for template '%s': %s", template.RepositoryPath, err.Error())
-			return false
+			sourceErr = err
+		} else if template != nil {
+			match = template
+			break
 		}
-
-		return absPath == absTemplatePath
-	})
-
-	if matchingIndex == -1 {
-		return nil, fmt.Errorf("template with name '%s' was not found, %w", path, ErrTemplateNotFound)
 	}
 
-	return allTemplates[matchingIndex], nil
+	if match != nil {
+		return match, nil
+	}
+
+	if sourceErr != nil {
+		return nil, fmt.Errorf("failed getting template: %w", sourceErr)
+	}
+
+	return nil, ErrTemplateNotFound
 }
 
 func (tm *TemplateManager) getSources(ctx context.Context, filter sourceFilterPredicate) ([]Source, error) {

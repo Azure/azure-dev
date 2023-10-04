@@ -4,6 +4,7 @@ import (
 	"context"
 	"sort"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/devcenter"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/state"
@@ -16,15 +17,16 @@ type ProjectConfig struct {
 	RequiredVersions  *RequiredVersions          `yaml:"requiredVersions,omitempty"`
 	Name              string                     `yaml:"name"`
 	ResourceGroupName ExpandableString           `yaml:"resourceGroup,omitempty"`
-	Path              string                     `yaml:",omitempty"`
+	Path              string                     `yaml:"-"`
 	Metadata          *ProjectMetadata           `yaml:"metadata,omitempty"`
-	Services          map[string]*ServiceConfig  `yaml:",omitempty"`
+	Services          map[string]*ServiceConfig  `yaml:"services,omitempty"`
 	Infra             provisioning.Options       `yaml:"infra,omitempty"`
 	Pipeline          PipelineOptions            `yaml:"pipeline,omitempty"`
 	Hooks             map[string]*ext.HookConfig `yaml:"hooks,omitempty"`
 	State             *state.Config              `yaml:"state,omitempty"`
+	DevCenter         *devcenter.Config          `yaml:"devCenter,omitempty"`
 
-	*ext.EventDispatcher[ProjectLifecycleEventArgs] `yaml:",omitempty"`
+	*ext.EventDispatcher[ProjectLifecycleEventArgs] `yaml:"-"`
 }
 
 // RequiredVersions contains information about what versions of tools this project requires.

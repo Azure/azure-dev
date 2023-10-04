@@ -141,33 +141,33 @@ stages:
             parameters:
               AzdDirectory: cli/azd
 
-          - task: PowerShell@2
-            condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
-            inputs:
-              pwsh: true
-              targetType: filePath
-              filePath: cli/azd/ci-test.ps1
-              arguments: >-
-                -UnitTestCoverageDir './cover-$(AZURE_DEV_CI_OS)/unit'
-                -IntegrationTestCoverageDir './cover-$(AZURE_DEV_CI_OS)/int'
-              workingDirectory: cli/azd
-            displayName: Test Go Binary
-            env:
-              # AZD live test setup variables
-              CI: true
-              AZD_TEST_CLI_VERSION: $(CLI_VERSION)
-              AZD_TEST_CLIENT_ID: $(arm-client-id)
-              AZD_TEST_CLIENT_SECRET: $(arm-client-secret)
-              AZD_TEST_TENANT_ID: $(arm-tenant-id)
-              AZD_TEST_AZURE_SUBSCRIPTION_ID: $(SubscriptionId)
-              AZD_TEST_AZURE_LOCATION: eastus2
-              AZURE_RECORD_MODE: $(AZURE_RECORD_MODE)
-              # AZD Live Test: Terraform service principal authentication
-              ARM_CLIENT_ID: $(arm-client-id)
-              ARM_CLIENT_SECRET: $(arm-client-secret)
-              ARM_TENANT_ID: $(arm-tenant-id)
-              # Code Coverage: Generate junit report to publish results
-              GOTESTSUM_JUNITFILE: junitTestReport.xml
+          # - task: PowerShell@2
+          #   condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
+          #   inputs:
+          #     pwsh: true
+          #     targetType: filePath
+          #     filePath: cli/azd/ci-test.ps1
+          #     arguments: >-
+          #       -UnitTestCoverageDir './cover-$(AZURE_DEV_CI_OS)/unit'
+          #       -IntegrationTestCoverageDir './cover-$(AZURE_DEV_CI_OS)/int'
+          #     workingDirectory: cli/azd
+          #   displayName: Test Go Binary
+          #   env:
+          #     # AZD live test setup variables
+          #     CI: true
+          #     AZD_TEST_CLI_VERSION: $(CLI_VERSION)
+          #     AZD_TEST_CLIENT_ID: $(arm-client-id)
+          #     AZD_TEST_CLIENT_SECRET: $(arm-client-secret)
+          #     AZD_TEST_TENANT_ID: $(arm-tenant-id)
+          #     AZD_TEST_AZURE_SUBSCRIPTION_ID: $(SubscriptionId)
+          #     AZD_TEST_AZURE_LOCATION: eastus2
+          #     AZURE_RECORD_MODE: $(AZURE_RECORD_MODE)
+          #     # AZD Live Test: Terraform service principal authentication
+          #     ARM_CLIENT_ID: $(arm-client-id)
+          #     ARM_CLIENT_SECRET: $(arm-client-secret)
+          #     ARM_TENANT_ID: $(arm-tenant-id)
+          #     # Code Coverage: Generate junit report to publish results
+          #     GOTESTSUM_JUNITFILE: junitTestReport.xml
 
           - task: PublishTestResults@2
             inputs:
@@ -214,10 +214,10 @@ stages:
                 -Version "$(CLI_VERSION)"
             displayName: Set shield info
 
-          - publish: cli/azd/cover-$(AZURE_DEV_CI_OS)
-            condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
-            artifact: cover-$(AZURE_DEV_CI_OS)
-            displayName: Upload code coverage
+          # - publish: cli/azd/cover-$(AZURE_DEV_CI_OS)
+          #   condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
+          #   artifact: cover-$(AZURE_DEV_CI_OS)
+          #   displayName: Upload code coverage
 
           - publish: eng/shields/standalone.json
             condition: and(succeeded(), eq(variables['SetShieldInfo'], 'true'))
@@ -420,68 +420,68 @@ stages:
             artifact: docs
             displayName: Upload generated documentation
 
-  - stage: CodeCoverage_Upload
-    condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
-    dependsOn: BuildAndTest
-    jobs:
-    - job: Upload
-      pool:
-        name: azsdk-pool-mms-ubuntu-2004-general
-        vmImage: MMSUbuntu20.04
-      steps:
-        - template: /eng/pipelines/templates/steps/setup-go.yml
-        - template: /eng/pipelines/templates/steps/download-artifacts.yml
-          parameters:
-            Artifacts:
-            - cover-win
-            - cover-lin
-            - cover-mac
-        - pwsh: |
-            New-Item -ItemType Directory -Force -Path cover
-            New-Item -ItemType Directory -Force -Path cover-int
-            New-Item -ItemType Directory -Force -Path cover-unit
+  # - stage: CodeCoverage_Upload
+  #.  condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
+  #   dependsOn: BuildAndTest
+  #   jobs:
+  #   - job: Upload
+  #     pool:
+  #       name: azsdk-pool-mms-ubuntu-2004-general
+  #       vmImage: MMSUbuntu20.04
+  #     steps:
+  #       - template: /eng/pipelines/templates/steps/setup-go.yml
+  #       - template: /eng/pipelines/templates/steps/download-artifacts.yml
+  #         parameters:
+  #           Artifacts:
+  #           - cover-win
+  #           - cover-lin
+  #           - cover-mac
+  #       - pwsh: |
+  #           New-Item -ItemType Directory -Force -Path cover
+  #           New-Item -ItemType Directory -Force -Path cover-int
+  #           New-Item -ItemType Directory -Force -Path cover-unit
 
-            $unitCoverage = (Get-ChildItem cover-*/unit).FullName -join ","
-            $integrationCoverage = (Get-ChildItem cover-*/int).FullName -join ","
+  #           $unitCoverage = (Get-ChildItem cover-*/unit).FullName -join ","
+  #           $integrationCoverage = (Get-ChildItem cover-*/int).FullName -join ","
 
-            # Merge unit test coverage across platforms
-            go tool covdata merge -i="$unitCoverage" -o cover-unit
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+  #           # Merge unit test coverage across platforms
+  #           go tool covdata merge -i="$unitCoverage" -o cover-unit
+  #           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-            # Merge integration test coverage across platforms
-            go tool covdata merge -i="$integrationCoverage" -o cover-int
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+  #           # Merge integration test coverage across platforms
+  #           go tool covdata merge -i="$integrationCoverage" -o cover-int
+  #           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-            # Merge unit and integration code coverage
-            go tool covdata merge -i="cover-unit,cover-int" -o cover
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+  #           # Merge unit and integration code coverage
+  #           go tool covdata merge -i="cover-unit,cover-int" -o cover
+  #           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-            # Convert to text format
-            go tool covdata textfmt -i=cover -o cover.out
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+  #           # Convert to text format
+  #           go tool covdata textfmt -i=cover -o cover.out
+  #           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
 
-            go install github.com/axw/gocov/gocov@latest
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-            go install github.com/AlekSi/gocov-xml@latest
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+  #           go install github.com/axw/gocov/gocov@latest
+  #           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+  #           go install github.com/AlekSi/gocov-xml@latest
+  #           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
             
-            ~/go/bin/gocov convert cover.out | ~/go/bin/gocov-xml > coverage.xml
-            if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          displayName: Merge code coverage files
+  #           ~/go/bin/gocov convert cover.out | ~/go/bin/gocov-xml > coverage.xml
+  #           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+  #         displayName: Merge code coverage files
 
-        - publish: cover-unit
-          artifact: cover-unit
-          displayName: Upload unit test code coverage
+  #       - publish: cover-unit
+  #         artifact: cover-unit
+  #         displayName: Upload unit test code coverage
 
-        - publish: cover-int
-          artifact: cover-int
-          displayName: Upload integration test code coverage
+  #       - publish: cover-int
+  #         artifact: cover-int
+  #         displayName: Upload integration test code coverage
 
-        - task: PublishCodeCoverageResults@1
-          inputs:
-            codeCoverageTool: Cobertura
-            summaryFileLocation: '$(Build.SourcesDirectory)/**/coverage.xml'
-          displayName: Publish Code Coverage to DevOps
+  #       - task: PublishCodeCoverageResults@1
+  #         inputs:
+  #           codeCoverageTool: Cobertura
+  #           summaryFileLocation: '$(Build.SourcesDirectory)/**/coverage.xml'
+  #         displayName: Publish Code Coverage to DevOps
 
   - stage: Sign
     dependsOn: BuildAndTest

@@ -396,6 +396,42 @@
                     ]
                 }
             }
+        },
+        "devCenter": {
+            "type": "object",
+            "title": "The dev center configuration used for the project.",
+            "description": "Optional. Provides additional project configuration for Azure Dev Center integration.",
+            "additionalProperties": false,
+            "required": [
+                "name"
+            ],
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "title": "The name of the Azure Dev Center",
+                    "description": "Optional. Used as the default dev center for this project."
+                },
+                "project": {
+                    "type": "string",
+                    "title": "The name of the Azure Dev Center project.",
+                    "description": "Optional. Used as the default dev center project for this project."
+                },
+                "catalog": {
+                    "type": "string",
+                    "title": "The name of the Azure Dev Center catalog.",
+                    "description": "Optional. Used as the default dev center catalog for this project."
+                },
+                "environmentDefinition": {
+                    "type": "string",
+                    "title": "The name of the Dev Center catalog environment definition.",
+                    "description": "Optional. Used as the default dev center environment definition for this project."
+                },
+                "environmentType": {
+                    "type": "string",
+                    "title": "The Dev Center project environment type used for the deployment environment.",
+                    "description": "Optional. Used as the default environment type for this project."
+                }
+            }
         }
     },
     "definitions": {

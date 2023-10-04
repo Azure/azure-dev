@@ -8,11 +8,10 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
-	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
@@ -20,14 +19,9 @@ import (
 )
 
 func templateNameCompletion(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-	templateManager, err := templates.NewTemplateManager(
-		templates.NewSourceManager(
-			config.NewUserConfigManager(config.NewFileConfigManager(config.NewManager())),
-			http.DefaultClient,
-		),
-	)
-	if err != nil {
-		cobra.CompError(fmt.Sprintf("Error creating template manager: %s", err.Error()))
+	var templateManager *templates.TemplateManager
+	if err := ioc.Global.Resolve(&templateManager); err != nil {
+		cobra.CompError(fmt.Sprintf("Error resolving template manager: %s", err.Error()))
 		return []string{}, cobra.ShellCompDirectiveError
 	}
 

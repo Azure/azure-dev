@@ -19,6 +19,8 @@ armappconfiguration
 armappplatform
 armcognitiveservices
 asyncmy
+armresourcegraph
+armresourcegraph
 asyncpg
 azapi
 AZCLI
@@ -62,6 +64,9 @@ csharpapp
 csharpapptest
 cupaloy
 deletedservices
+devcenter
+devcenters
+devcentersdk
 devel
 discarder
 docf
@@ -136,6 +141,8 @@ pyvenv
 reauthentication
 relogin
 remarshal
+repourl
+resourcegraph
 restoreapp
 retriable
 rzip

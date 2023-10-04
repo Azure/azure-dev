@@ -81,7 +81,7 @@ overrides:
       - azdversion
   - filename: pkg/experimentation/client.go
     words:
-      - variantassignment
+      - variantassignment  
   - filename: pkg/azsdk/storage/storage_blob_client.go
     words:
       - azblob

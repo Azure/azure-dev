@@ -14,3 +14,12 @@ func ToValueWithDefault[T any](ptr *T, defaultValue T) T {
 func RefOf[T any](value T) *T {
 	return &value
 }
+
+// Attempts to convert the specified value to a string, otherwise returns the default value
+func ToStringWithDefault(value any, defaultValue string) string {
+	if value == nil {
+		return defaultValue
+	}
+
+	return value.(string)
+}

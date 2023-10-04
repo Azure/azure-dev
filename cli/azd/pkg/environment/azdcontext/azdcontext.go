@@ -6,9 +6,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"sort"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
 
@@ -42,50 +40,12 @@ func (c *AzdContext) GetDefaultProjectName() string {
 	return filepath.Base(c.ProjectDirectory())
 }
 
-func (c *AzdContext) EnvironmentDotEnvPath(name string) string {
-	return filepath.Join(c.EnvironmentDirectory(), name, DotEnvFileName)
-}
-
 func (c *AzdContext) EnvironmentRoot(name string) string {
 	return filepath.Join(c.EnvironmentDirectory(), name)
 }
 
 func (c *AzdContext) GetEnvironmentWorkDirectory(name string) string {
 	return filepath.Join(c.EnvironmentRoot(name), "wd")
-}
-
-func (c *AzdContext) ListEnvironments() ([]contracts.EnvListEnvironment, error) {
-	defaultEnv, err := c.GetDefaultEnvironmentName()
-	if err != nil {
-		return nil, err
-	}
-
-	ents, err := os.ReadDir(c.EnvironmentDirectory())
-	if errors.Is(err, os.ErrNotExist) {
-		return []contracts.EnvListEnvironment{}, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("listing entries: %w", err)
-	}
-
-	// prefer empty array over `nil` since this is a contracted return value,
-	// where empty array is preferred for "NotFound" semantics.
-	envs := []contracts.EnvListEnvironment{}
-	for _, ent := range ents {
-		if ent.IsDir() {
-			ev := contracts.EnvListEnvironment{
-				Name:       ent.Name(),
-				IsDefault:  ent.Name() == defaultEnv,
-				DotEnvPath: c.EnvironmentDotEnvPath(ent.Name()),
-			}
-			envs = append(envs, ev)
-		}
-	}
-
-	sort.Slice(envs, func(i, j int) bool {
-		return envs[i].Name < envs[j].Name
-	})
-	return envs, nil
 }
 
 // GetDefaultEnvironmentName returns the name of the default environment. Returns
@@ -116,12 +76,6 @@ func (c *AzdContext) SetDefaultEnvironmentName(name string) error {
 	}
 
 	return writeConfig(path, config)
-}
-
-var ErrEnvironmentExists = errors.New("environment already exists")
-
-func (c *AzdContext) NewEnvironment(name string) error {
-	return createEnvironment(c.EnvironmentDirectory(), name)
 }
 
 // Creates context with project directory set to the desired directory.
@@ -178,22 +132,6 @@ func NewAzdContext() (*AzdContext, error) {
 type configFile struct {
 	Version            int    `json:"version"`
 	DefaultEnvironment string `json:"defaultEnvironment"`
-}
-
-func createEnvironment(dir string, name string) error {
-	if err := os.MkdirAll(dir, osutil.PermissionDirectory); err != nil {
-		return fmt.Errorf("creating environment root: %w", err)
-	}
-
-	if err := os.Mkdir(filepath.Join(dir, name), osutil.PermissionDirectory); err != nil {
-		if errors.Is(err, os.ErrExist) {
-			return ErrEnvironmentExists
-		}
-
-		return fmt.Errorf("creating environment directory: %w", err)
-	}
-
-	return nil
 }
 
 func writeConfig(path string, config configFile) error {

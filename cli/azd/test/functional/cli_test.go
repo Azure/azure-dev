@@ -30,6 +30,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -47,14 +48,14 @@ import (
 )
 
 // The current running configuration for the test suite.
-var cfg = config{}
+var cfg = cliConfig{}
 
 func init() {
 	cfg.init()
 }
 
 // Configuration for the test suite.
-type config struct {
+type cliConfig struct {
 	// If true, the test is running in CI.
 	// This can be used to ensure tests that are skipped locally (due to complex setup), always strictly run in CI.
 	CI bool
@@ -71,7 +72,7 @@ type config struct {
 	Location string
 }
 
-func (c *config) init() {
+func (c *cliConfig) init() {
 	c.CI = os.Getenv("CI") != ""
 	c.ClientID = os.Getenv("AZD_TEST_CLIENT_ID")
 	c.ClientSecret = os.Getenv("AZD_TEST_CLIENT_SECRET")
@@ -121,8 +122,7 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
 	require.NoError(t, err)
 
-	envPath := filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName)
-	env, err := environment.FromRoot(envPath)
+	env, err := envFromAzdRoot(ctx, dir, envName)
 	require.NoError(t, err)
 
 	// AZURE_STORAGE_ACCOUNT_NAME is an output of the template, make sure it was added to the .env file.
@@ -273,8 +273,7 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "infra", "create", "--output", "json")
 	require.NoError(t, err)
 
-	envPath := filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName)
-	env, err := environment.FromRoot(envPath)
+	env, err := envFromAzdRoot(ctx, dir, envName)
 	require.NoError(t, err)
 
 	// AZURE_STORAGE_ACCOUNT_NAME is an output of the template, make sure it was added to the .env file.
@@ -470,8 +469,7 @@ func Test_CLI_InfraBicepParam(t *testing.T) {
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision", "--output", "json")
 	require.NoError(t, err)
 
-	envPath := filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName)
-	env, err := environment.FromRoot(envPath)
+	env, err := envFromAzdRoot(ctx, dir, envName)
 	require.NoError(t, err)
 
 	// WEBSITE_URL is an output of the template, make sure it was added to the .env file.
@@ -636,8 +634,7 @@ func Test_CLI_InfraCreateAndDeleteResourceTerraform(t *testing.T) {
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision", "--cwd", dir)
 	require.NoError(t, err)
 
-	envPath := filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName)
-	env, err := environment.FromRoot(envPath)
+	env, err := envFromAzdRoot(ctx, dir, envName)
 	require.NoError(t, err)
 	assertEnvValuesStored(t, env)
 
@@ -830,4 +827,10 @@ func assertEnvValuesStored(t *testing.T, env *environment.Environment) {
 			assert.JSONEq(t, v, actual)
 		}
 	}
+}
+
+func envFromAzdRoot(ctx context.Context, azdRootDir string, envName string) (*environment.Environment, error) {
+	azdCtx := azdcontext.NewAzdContextWithDirectory(azdRootDir)
+	localDataStore := environment.NewLocalFileDataStore(azdCtx, config.NewFileConfigManager(config.NewManager()))
+	return localDataStore.Get(ctx, envName)
 }

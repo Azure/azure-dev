@@ -19,12 +19,13 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
 	"github.com/benbjohnson/clock"
 	"github.com/stretchr/testify/require"
 )
 
 func TestProvisionInitializesEnvironment(t *testing.T) {
-	env := environment.EphemeralWithValues("test-env", nil)
+	env := environment.NewWithValues("test-env", nil)
 
 	mockContext := mocks.NewMockContext(context.Background())
 	mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool {
@@ -42,7 +43,8 @@ func TestProvisionInitializesEnvironment(t *testing.T) {
 
 	registerContainerDependencies(mockContext, env)
 
-	mgr := NewManager(mockContext.Container, env, mockContext.Console, mockContext.AlphaFeaturesManager, nil)
+	envManager := &mockenv.MockEnvManager{}
+	mgr := NewManager(mockContext.Container, envManager, env, mockContext.Console, mockContext.AlphaFeaturesManager, nil)
 	err := mgr.Initialize(*mockContext.Context, "", Options{Provider: "test"})
 	require.NoError(t, err)
 
@@ -51,7 +53,7 @@ func TestProvisionInitializesEnvironment(t *testing.T) {
 }
 
 func TestManagerPreview(t *testing.T) {
-	env := environment.EphemeralWithValues("test-env", map[string]string{
+	env := environment.NewWithValues("test-env", map[string]string{
 		"AZURE_SUBSCRIPTION_ID": "SUBSCRIPTION_ID",
 		"AZURE_LOCATION":        "eastus2",
 	})
@@ -59,7 +61,8 @@ func TestManagerPreview(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	registerContainerDependencies(mockContext, env)
 
-	mgr := NewManager(mockContext.Container, env, mockContext.Console, mockContext.AlphaFeaturesManager, nil)
+	envManager := &mockenv.MockEnvManager{}
+	mgr := NewManager(mockContext.Container, envManager, env, mockContext.Console, mockContext.AlphaFeaturesManager, nil)
 	err := mgr.Initialize(*mockContext.Context, "", Options{Provider: "test"})
 	require.NoError(t, err)
 
@@ -70,7 +73,7 @@ func TestManagerPreview(t *testing.T) {
 }
 
 func TestManagerGetState(t *testing.T) {
-	env := environment.EphemeralWithValues("test-env", map[string]string{
+	env := environment.NewWithValues("test-env", map[string]string{
 		"AZURE_SUBSCRIPTION_ID": "SUBSCRIPTION_ID",
 		"AZURE_LOCATION":        "eastus2",
 	})
@@ -78,7 +81,8 @@ func TestManagerGetState(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	registerContainerDependencies(mockContext, env)
 
-	mgr := NewManager(mockContext.Container, env, mockContext.Console, mockContext.AlphaFeaturesManager, nil)
+	envManager := &mockenv.MockEnvManager{}
+	mgr := NewManager(mockContext.Container, envManager, env, mockContext.Console, mockContext.AlphaFeaturesManager, nil)
 	err := mgr.Initialize(*mockContext.Context, "", Options{Provider: "test"})
 	require.NoError(t, err)
 
@@ -89,7 +93,7 @@ func TestManagerGetState(t *testing.T) {
 }
 
 func TestManagerDeploy(t *testing.T) {
-	env := environment.EphemeralWithValues("test-env", map[string]string{
+	env := environment.NewWithValues("test-env", map[string]string{
 		"AZURE_SUBSCRIPTION_ID": "SUBSCRIPTION_ID",
 		"AZURE_LOCATION":        "eastus2",
 	})
@@ -97,7 +101,8 @@ func TestManagerDeploy(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	registerContainerDependencies(mockContext, env)
 
-	mgr := NewManager(mockContext.Container, env, mockContext.Console, mockContext.AlphaFeaturesManager, nil)
+	envManager := &mockenv.MockEnvManager{}
+	mgr := NewManager(mockContext.Container, envManager, env, mockContext.Console, mockContext.AlphaFeaturesManager, nil)
 	err := mgr.Initialize(*mockContext.Context, "", Options{Provider: "test"})
 	require.NoError(t, err)
 
@@ -108,7 +113,7 @@ func TestManagerDeploy(t *testing.T) {
 }
 
 func TestManagerDestroyWithPositiveConfirmation(t *testing.T) {
-	env := environment.EphemeralWithValues("test-env", map[string]string{
+	env := environment.NewWithValues("test-env", map[string]string{
 		"AZURE_SUBSCRIPTION_ID": "SUBSCRIPTION_ID",
 		"AZURE_LOCATION":        "eastus2",
 	})
@@ -120,7 +125,10 @@ func TestManagerDestroyWithPositiveConfirmation(t *testing.T) {
 
 	registerContainerDependencies(mockContext, env)
 
-	mgr := NewManager(mockContext.Container, env, mockContext.Console, mockContext.AlphaFeaturesManager, nil)
+	envManager := &mockenv.MockEnvManager{}
+	envManager.On("Save", *mockContext.Context, env).Return(nil)
+
+	mgr := NewManager(mockContext.Container, envManager, env, mockContext.Console, mockContext.AlphaFeaturesManager, nil)
 	err := mgr.Initialize(*mockContext.Context, "", Options{Provider: "test"})
 	require.NoError(t, err)
 
@@ -133,7 +141,7 @@ func TestManagerDestroyWithPositiveConfirmation(t *testing.T) {
 }
 
 func TestManagerDestroyWithNegativeConfirmation(t *testing.T) {
-	env := environment.EphemeralWithValues("test-env", map[string]string{
+	env := environment.NewWithValues("test-env", map[string]string{
 		"AZURE_SUBSCRIPTION_ID": "SUBSCRIPTION_ID",
 		"AZURE_LOCATION":        "eastus2",
 	})
@@ -146,7 +154,8 @@ func TestManagerDestroyWithNegativeConfirmation(t *testing.T) {
 
 	registerContainerDependencies(mockContext, env)
 
-	mgr := NewManager(mockContext.Container, env, mockContext.Console, mockContext.AlphaFeaturesManager, nil)
+	envManager := &mockenv.MockEnvManager{}
+	mgr := NewManager(mockContext.Container, envManager, env, mockContext.Console, mockContext.AlphaFeaturesManager, nil)
 	err := mgr.Initialize(*mockContext.Context, "", Options{Provider: "test"})
 	require.NoError(t, err)
 
@@ -159,6 +168,13 @@ func TestManagerDestroyWithNegativeConfirmation(t *testing.T) {
 }
 
 func registerContainerDependencies(mockContext *mocks.MockContext, env *environment.Environment) {
+	envManager := &mockenv.MockEnvManager{}
+	envManager.On("Save", *mockContext.Context, env).Return(nil)
+
+	mockContext.Container.RegisterSingleton(func() environment.Manager {
+		return envManager
+	})
+
 	mockContext.Container.RegisterSingleton(prompt.NewDefaultPrompter)
 	_ = mockContext.Container.RegisterNamedTransient(string(provisioning.Test), test.NewTestProvider)
 	mockContext.Container.RegisterSingleton(func() account.Manager {

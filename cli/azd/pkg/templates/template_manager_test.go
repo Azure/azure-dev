@@ -23,7 +23,11 @@ var defaultTemplateSourceData = map[string]interface{}{
 
 func Test_Templates_NewTemplateManager(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
-	templateManager, err := NewTemplateManager(NewSourceManager(config.NewUserConfigManager(), mockContext.HttpClient))
+	templateManager, err := NewTemplateManager(
+		NewSourceManager(config.NewUserConfigManager(config.NewFileConfigManager(config.NewManager())),
+			mockContext.HttpClient,
+		),
+	)
 	require.NoError(t, err)
 	require.NotNil(t, templateManager)
 }

@@ -57,6 +57,7 @@ type showAction struct {
 	formatter            output.Formatter
 	writer               io.Writer
 	azCli                azcli.AzCli
+	envManager           environment.Manager
 	deploymentOperations azapi.DeploymentOperations
 	azdCtx               *azdcontext.AzdContext
 	flags                *showFlags
@@ -67,6 +68,7 @@ func newShowAction(
 	formatter output.Formatter,
 	writer io.Writer,
 	azCli azcli.AzCli,
+	envManager environment.Manager,
 	deploymentOperations azapi.DeploymentOperations,
 	projectConfig *project.ProjectConfig,
 	azdCtx *azdcontext.AzdContext,
@@ -78,6 +80,7 @@ func newShowAction(
 		formatter:            formatter,
 		writer:               writer,
 		azCli:                azCli,
+		envManager:           envManager,
 		deploymentOperations: deploymentOperations,
 		azdCtx:               azdCtx,
 		flags:                flags,
@@ -124,7 +127,7 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	}
 
-	if env, err := environment.GetEnvironment(s.azdCtx, environmentName); err != nil {
+	if env, err := s.envManager.Get(ctx, environmentName); err != nil {
 		log.Printf("could not load environment: %s, resource ids will not be available", err)
 	} else {
 		if subId := env.GetSubscriptionId(); subId == "" {

@@ -36,6 +36,7 @@ const (
 	AzureResourceTypeAgentPool               AzureResourceType = "Microsoft.ContainerService/managedClusters/agentPools"
 	AzureResourceTypeCognitiveServiceAccount AzureResourceType = "Microsoft.CognitiveServices/accounts"
 	AzureResourceTypeSearchService           AzureResourceType = "Microsoft.Search/searchServices"
+	AzurePrivateEndpoint                     AzureResourceType = "Microsoft.Network/privateEndpoints"
 )
 
 const resourceLevelSeparator = "/"
@@ -99,6 +100,8 @@ func GetResourceTypeDisplayName(resourceType AzureResourceType) string {
 		return "Search service"
 	case AzureResourceTypeSpringApp:
 		return "Azure Spring Apps"
+	case AzurePrivateEndpoint:
+		return "Private Endpoint"
 	}
 
 	return ""

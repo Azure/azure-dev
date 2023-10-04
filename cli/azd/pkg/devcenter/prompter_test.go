@@ -187,7 +187,7 @@ func Test_Prompt_Parameters(t *testing.T) {
 			},
 			"param4": {
 				Parameter: devcentersdk.Parameter{Id: "param4", Name: "Param 4", Type: devcentersdk.ParameterTypeInt},
-				value:     123,
+				value:     "123",
 			},
 		}
 

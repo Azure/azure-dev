@@ -44,7 +44,7 @@ func Test_EnvironmentStore_List(t *testing.T) {
 
 	t.Run("AllMatchingEnvironments", func(t *testing.T) {
 		config := &Config{
-			Name:                  "DEV_CENTER",
+			Name:                  "DEV_CENTER_01",
 			Project:               "Project1",
 			EnvironmentDefinition: "WebApp",
 			Catalog:               "SampleCatalog",
@@ -60,7 +60,7 @@ func Test_EnvironmentStore_List(t *testing.T) {
 
 	t.Run("SomeMatchingEnvironments", func(t *testing.T) {
 		config := &Config{
-			Name:                  "DEV_CENTER",
+			Name:                  "DEV_CENTER_01",
 			Project:               "Project1",
 			EnvironmentDefinition: "ContainerApp",
 			Catalog:               "SampleCatalog",
@@ -76,7 +76,7 @@ func Test_EnvironmentStore_List(t *testing.T) {
 
 	t.Run("NoMatchingEnvironments", func(t *testing.T) {
 		config := &Config{
-			Name:                  "DEV_CENTER",
+			Name:                  "DEV_CENTER_01",
 			Project:               "Project1",
 			EnvironmentDefinition: "FunctionApp",
 			Catalog:               "SampleCatalog",
@@ -100,7 +100,7 @@ func Test_EnvironmentStore_Get(t *testing.T) {
 		mockdevcentersdk.MockGetEnvironment(mockContext, "Project1", "me", mockEnvironments[0].Name, mockEnvironments[0])
 
 		config := &Config{
-			Name:                  "DEV_CENTER",
+			Name:                  "DEV_CENTER_01",
 			Project:               "Project1",
 			EnvironmentDefinition: "WebApp",
 			Catalog:               "SampleCatalog",
@@ -141,7 +141,7 @@ func Test_EnvironmentStore_Get(t *testing.T) {
 
 	t.Run("DoesNotExist", func(t *testing.T) {
 		config := &Config{
-			Name:                  "DEV_CENTER",
+			Name:                  "DEV_CENTER_01",
 			Project:               "Project1",
 			EnvironmentDefinition: "WebApp",
 			Catalog:               "SampleCatalog",
@@ -159,7 +159,7 @@ func Test_EnvironmentStore_GetEnvPath(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 
 	config := &Config{
-		Name:                  "DEV_CENTER",
+		Name:                  "DEV_CENTER_01",
 		Project:               "Project1",
 		EnvironmentDefinition: "WebApp",
 		Catalog:               "SampleCatalog",
@@ -176,7 +176,7 @@ func Test_EnvironmentStore_Save(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 
 	config := &Config{
-		Name:                  "DEV_CENTER",
+		Name:                  "DEV_CENTER_01",
 		Project:               "Project1",
 		EnvironmentDefinition: "WebApp",
 		Catalog:               "SampleCatalog",

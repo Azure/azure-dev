@@ -3,6 +3,7 @@ package devcenter
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/devcentersdk"
@@ -337,9 +338,13 @@ func (p *Prompter) PromptParameters(
 				}
 
 			case devcentersdk.ParameterTypeInt:
-				paramValue, promptErr = p.console.Prompt(ctx, promptOptions)
+				promptValue, promptErr := p.console.Prompt(ctx, promptOptions)
 				if promptErr != nil {
-					paramValue = paramValue.(int)
+					numValue, err := strconv.Atoi(promptValue)
+					if err != nil {
+						return nil, err
+					}
+					paramValue = numValue
 				}
 			default:
 				return nil, fmt.Errorf("unsupported parameter type: %s", param.Type)

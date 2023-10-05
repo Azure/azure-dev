@@ -4,12 +4,12 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/state"
 	"golang.org/x/exp/slices"
 )
@@ -81,7 +81,7 @@ func NewManager(
 				return nil, fmt.Errorf(
 					"remote state configuration is invalid. The specified backend '%s' is not valid. Valid values are '%s'.",
 					remoteConfig.Backend,
-					strings.Join(ValidRemoteKinds, ","),
+					ux.ListAsText(ValidRemoteKinds),
 				)
 			}
 

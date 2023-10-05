@@ -156,6 +156,8 @@ stages:
               AZD_TEST_TENANT_ID: $(arm-tenant-id)
               AZD_TEST_AZURE_SUBSCRIPTION_ID: $(SubscriptionId)
               AZD_TEST_AZURE_LOCATION: eastus2
+              AZD_TEST_REMOTE_STATE_ACCOUNT: saazdremotestate
+              AZD_TEST_REMOTE_STATE_CONTAINER: remote-env-test
               AZURE_RECORD_MODE: $(AZURE_RECORD_MODE)
               # AZD Live Test: Terraform service principal authentication
               ARM_CLIENT_ID: $(arm-client-id)

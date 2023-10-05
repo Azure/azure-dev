@@ -25,6 +25,7 @@ type HooksRunner struct {
 	cwd           string
 	hooks         map[string]*HookConfig
 	env           *environment.Environment
+	envManager    environment.Manager
 }
 
 // NewHooks creates a new instance of CommandHooks
@@ -32,6 +33,7 @@ type HooksRunner struct {
 func NewHooksRunner(
 	hooksManager *HooksManager,
 	commandRunner exec.CommandRunner,
+	envManager environment.Manager,
 	console input.Console,
 	cwd string,
 	hooks map[string]*HookConfig,
@@ -49,6 +51,7 @@ func NewHooksRunner(
 	return &HooksRunner{
 		hooksManager:  hooksManager,
 		commandRunner: commandRunner,
+		envManager:    envManager,
 		console:       console,
 		cwd:           cwd,
 		hooks:         hooks,
@@ -89,7 +92,7 @@ func (h *HooksRunner) RunHooks(
 	}
 
 	for _, hookConfig := range hooks {
-		if err := h.env.Reload(); err != nil {
+		if err := h.envManager.Reload(ctx, h.env); err != nil {
 			return fmt.Errorf("reloading environment before running hook: %w", err)
 		}
 
@@ -98,7 +101,7 @@ func (h *HooksRunner) RunHooks(
 			return err
 		}
 
-		if err := h.env.Reload(); err != nil {
+		if err := h.envManager.Reload(ctx, h.env); err != nil {
 			return fmt.Errorf("reloading environment after running hook: %w", err)
 		}
 	}
@@ -144,18 +147,16 @@ func (h *HooksRunner) execHook(ctx context.Context, hookConfig *HookConfig, opti
 		options.Interactive = &scriptInteractive
 	}
 
-	// When running in an interactive terminal broadcast a message to the dev to remind them that custom hooks are running.
-	if consoleInteractive && !hookConfig.Quiet {
-		h.console.Message(
-			ctx,
-			output.WithBold(
-				fmt.Sprintf(
-					"Executing %s hook => %s",
-					output.WithHighLightFormat(hookConfig.Name),
-					output.WithHighLightFormat(hookConfig.path),
-				),
-			),
-		)
+	// When the hook is not configured to run in interactive mode and no stdout has been configured
+	// Then show the hook execution output within the console previewer pane
+	if !*options.Interactive && options.StdOut == nil {
+		previewer := h.console.ShowPreviewer(ctx, &input.ShowPreviewerOptions{
+			Prefix:       "  ",
+			Title:        fmt.Sprintf("%s Hook Output", hookConfig.Name),
+			MaxLineCount: 8,
+		})
+		options.StdOut = previewer
+		defer h.console.StopPreviewer(ctx)
 	}
 
 	log.Printf("Executing script '%s'\n", hookConfig.path)

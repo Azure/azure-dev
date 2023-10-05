@@ -18,7 +18,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 )
 
 func Test_PipelineManager_Initialize(t *testing.T) {
@@ -65,12 +67,11 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 
 		envValues := map[string]string{}
 		envValues[envPersistedKey] = azdoLabel
-		env := environment.EphemeralWithValues("test-env", envValues)
+		env := environment.NewWithValues("test-env", envValues)
 
 		manager, err := createPipelineManager(t, mockContext, azdContext, env, nil)
 		assert.Nil(t, manager)
-		assert.EqualError(t, err, fmt.Sprintf("%s folder is missing. Can't use selected provider",
-			azdoFolder))
+		assert.EqualError(t, err, fmt.Sprintf("%s folder is missing. Can't use selected provider", azdoFolder))
 
 		os.Remove(azdoFolderTest)
 	})
@@ -81,7 +82,7 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 
 		envValues := map[string]string{}
 		envValues[envPersistedKey] = azdoLabel
-		env := environment.EphemeralWithValues("test-env", envValues)
+		env := environment.NewWithValues("test-env", envValues)
 
 		manager, err := createPipelineManager(t, mockContext, azdContext, env, nil)
 		assert.Nil(t, manager)
@@ -101,7 +102,7 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 
 		envValues := map[string]string{}
 		envValues[envPersistedKey] = azdoLabel
-		env := environment.EphemeralWithValues("test-env", envValues)
+		env := environment.NewWithValues("test-env", envValues)
 
 		manager, err := createPipelineManager(t, mockContext, azdContext, env, nil)
 		assert.IsType(t, &AzdoScmProvider{}, manager.scmProvider)
@@ -117,7 +118,7 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 
 		envValues := map[string]string{}
 		envValues[envPersistedKey] = gitHubLabel
-		env := environment.EphemeralWithValues("test-env", envValues)
+		env := environment.NewWithValues("test-env", envValues)
 		manager, err := createPipelineManager(t, mockContext, azdContext, env, nil)
 		assert.Nil(t, manager)
 		assert.EqualError(t, err, fmt.Sprintf("%s folder is missing. Can't use selected provider",
@@ -132,7 +133,7 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 
 		envValues := map[string]string{}
 		envValues[envPersistedKey] = gitHubLabel
-		env := environment.EphemeralWithValues("test-env", envValues)
+		env := environment.NewWithValues("test-env", envValues)
 
 		manager, err := createPipelineManager(t, mockContext, azdContext, env, nil)
 		assert.IsType(t, &GitHubScmProvider{}, manager.scmProvider)
@@ -163,7 +164,7 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 
 		envValues := map[string]string{}
 		envValues[envPersistedKey] = "other"
-		env := environment.EphemeralWithValues("test-env", envValues)
+		env := environment.NewWithValues("test-env", envValues)
 
 		manager, err := createPipelineManager(t, mockContext, azdContext, env, nil)
 		assert.Nil(t, manager)
@@ -203,7 +204,7 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 
 		envValues := map[string]string{}
 		envValues[envPersistedKey] = "persisted"
-		env := environment.EphemeralWithValues("test-env", envValues)
+		env := environment.NewWithValues("test-env", envValues)
 
 		manager, err := createPipelineManager(t, mockContext, azdContext, env, nil)
 		assert.Nil(t, manager)
@@ -228,7 +229,7 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 
 		envValues := map[string]string{}
 		envValues[envPersistedKey] = "persisted"
-		env := environment.EphemeralWithValues("test-env", envValues)
+		env := environment.NewWithValues("test-env", envValues)
 		args := &PipelineManagerArgs{
 			PipelineProvider: "arg",
 		}
@@ -291,7 +292,7 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 		err = os.MkdirAll(azdoFolder, osutil.PermissionDirectory)
 		assert.NoError(t, err)
 
-		env := environment.Ephemeral()
+		env := environment.New("test")
 		args := &PipelineManagerArgs{
 			PipelineProvider: azdoLabel,
 		}
@@ -321,7 +322,7 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 		err = os.MkdirAll(ghFolder, osutil.PermissionDirectory)
 		assert.NoError(t, err)
 
-		env := environment.Ephemeral()
+		env := environment.New("test")
 		args := &PipelineManagerArgs{
 			PipelineProvider: azdoLabel,
 		}
@@ -392,16 +393,20 @@ func createPipelineManager(
 	args *PipelineManagerArgs,
 ) (*PipelineManager, error) {
 	if env == nil {
-		env = environment.Ephemeral()
+		env = environment.New("test")
 	}
 
 	if args == nil {
 		args = &PipelineManagerArgs{}
 	}
 
+	envManager := &mockenv.MockEnvManager{}
+	envManager.On("Save", mock.Anything, env).Return(nil)
+
 	// Singletons
 	mockContext.Container.RegisterSingleton(func() context.Context { return *mockContext.Context })
 	mockContext.Container.RegisterSingleton(func() *azdcontext.AzdContext { return azdContext })
+	mockContext.Container.RegisterSingleton(func() environment.Manager { return envManager })
 	mockContext.Container.RegisterSingleton(func() *environment.Environment { return env })
 	mockContext.Container.RegisterSingleton(github.NewGitHubCli)
 	mockContext.Container.RegisterSingleton(git.NewGitCli)
@@ -424,6 +429,7 @@ func createPipelineManager(
 
 	return NewPipelineManager(
 		*mockContext.Context,
+		envManager,
 		azcli.NewAdService(mockContext.SubscriptionCredentialProvider, mockContext.HttpClient),
 		git.NewGitCli(mockContext.CommandRunner),
 		azdContext,

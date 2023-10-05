@@ -19,6 +19,7 @@ import (
 )
 
 type TestProvider struct {
+	envManager  environment.Manager
 	env         *environment.Environment
 	projectPath string
 	options     Options
@@ -48,7 +49,13 @@ func (p *TestProvider) Initialize(ctx context.Context, projectPath string, optio
 // An environment is considered to be in a provision-ready state if it contains both an AZURE_SUBSCRIPTION_ID and
 // AZURE_LOCATION value.
 func (t *TestProvider) EnsureEnv(ctx context.Context) error {
-	return EnsureSubscriptionAndLocation(ctx, t.env, t.prompters, func(_ account.Location) bool { return true })
+	return EnsureSubscriptionAndLocation(
+		ctx,
+		t.envManager,
+		t.env,
+		t.prompters,
+		func(_ account.Location) bool { return true },
+	)
 }
 
 func (p *TestProvider) State(ctx context.Context, options *StateOptions) (*StateResult, error) {
@@ -123,13 +130,15 @@ func (p *TestProvider) Destroy(ctx context.Context, options DestroyOptions) (*De
 }
 
 func NewTestProvider(
+	envManager environment.Manager,
 	env *environment.Environment,
 	console input.Console,
 	prompters prompt.Prompter,
 ) Provider {
 	return &TestProvider{
-		env:       env,
-		console:   console,
-		prompters: prompters,
+		envManager: envManager,
+		env:        env,
+		console:    console,
+		prompters:  prompters,
 	}
 }

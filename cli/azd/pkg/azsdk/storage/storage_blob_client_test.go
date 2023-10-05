@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"net/http"
 	"os"
 	"testing"
 
@@ -15,11 +16,17 @@ import (
 )
 
 func Test_StorageBlobClient_Crud(t *testing.T) {
-	t.Skip("Skipping while we troubleshoot the test failure")
-
 	mockContext := mocks.NewMockContext(context.Background())
 	session := recording.Start(t)
-	blobClient := createBlobClient(t, mockContext, session.ProxyClient)
+
+	// Use the session proxy client when recording or in playback
+	// Use default http client for live mode
+	httpClient := http.DefaultClient
+	if session != nil {
+		httpClient = session.ProxyClient
+	}
+
+	blobClient := createBlobClient(t, mockContext, httpClient)
 
 	blobPath := "test-env/.env"
 	envValues := "KEY=VALUE\n"

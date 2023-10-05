@@ -1,17 +1,24 @@
 # Release History
 
-## 1.4.0-beta.1 (Unreleased)
+## 1.4.0 (2023-10-05)
 
 ### Features Added
 
 - [[2725]](https://github.com/Azure/azure-dev/pull/2725) Adds support for provision state to the bicep provider.
-
-### Breaking Changes
+- [[2765]](https://github.com/Azure/azure-dev/pull/2765) Support for remote environments.
+- [[1642]](https://github.com/Azure/azure-dev/pull/1642) A new `azd hooks run` command for running and testing your hooks.
 
 ### Bugs Fixed
 
 - [[2793]](https://github.com/Azure/azure-dev/pull/2793) Support user defined types for the bicep provider.
-
+- [[2543]](https://github.com/Azure/azure-dev/pull/2543) `azd package` now allows users to specify `--output-path` parameter to control the output location of file-based packages.
+- [[2302]](https://github.com/Azure/azure-dev/pull/2302) `azd config --help` doesn't show help for `AZD_CONFIG_DIR`.
+- [[2050]](https://github.com/Azure/azure-dev/pull/2050) `azd init` now supports `--subscription`.
+- [[2695]](https://github.com/Azure/azure-dev/pull/2695) `azd` now honors `@allowed` locations in Bicep to filter the list of possible deploy locations.
+- [[2599]](https://github.com/Azure/azure-dev/pull/2599) ARM64 support is now generally available.
+- [[2683]](https://github.com/Azure/azure-dev/pull/2683) Bicep installer prefers MUSL variant over glibc.
+- [[2794]](https://github.com/Azure/azure-dev/pull/2794) When running `azd init`, the Starter - Bicep template is unavailable.
+  
 ### Other Changes
 
 - [[#2796]](https://github.com/Azure/azure-dev/pull/2796) Update `terraform` provider from alpha to beta.

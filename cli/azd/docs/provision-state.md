@@ -23,4 +23,5 @@ The next table describes some common cases where provision state is either used 
 
 ### Running on CI/CD
 
-You can take advantage of `provision state` running on any continuous integration pipeline like GitHub or Azure DevOps
+You can take advantage of `provision state` for any continuous integration pipeline like GitHub or Azure DevOps. You don't need to create conditions to trigger `azd provision` based on updating infrastructure files, azd will automatically handle it.
+

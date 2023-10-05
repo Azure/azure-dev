@@ -306,9 +306,9 @@ func (p *Prompter) PromptParameters(
 			}
 		}
 
-		paramPath := fmt.Sprintf("%s.%s", ProvisionParametersConfigPath, param.Name)
+		paramPath := fmt.Sprintf("%s.%s", ProvisionParametersConfigPath, param.Id)
 		paramValue, exists := env.Config.Get(paramPath)
-		var promptErr error
+
 		if !exists {
 			promptOptions := input.ConsoleOptions{
 				DefaultValue: param.Default,
@@ -319,13 +319,16 @@ func (p *Prompter) PromptParameters(
 
 			switch param.Type {
 			case devcentersdk.ParameterTypeBool:
-				paramValue, promptErr = p.console.Confirm(ctx, promptOptions)
+				confirmValue, err := p.console.Confirm(ctx, promptOptions)
+				if err != nil {
+					return nil, fmt.Errorf("failed to prompt for %s: %w", param.Name, err)
+				}
+				paramValue = confirmValue
 			case devcentersdk.ParameterTypeString:
 				if param.Allowed != nil && len(param.Allowed) > 0 {
 					selectedIndex, err := p.console.Select(ctx, promptOptions)
-
 					if err != nil {
-						return nil, err
+						return nil, fmt.Errorf("failed to prompt for %s: %w", param.Name, err)
 					}
 
 					paramValue = param.Allowed[selectedIndex]
@@ -334,24 +337,23 @@ func (p *Prompter) PromptParameters(
 					if err != nil {
 						return nil, err
 					}
+
 					paramValue = promptValue
 				}
 
 			case devcentersdk.ParameterTypeInt:
-				promptValue, promptErr := p.console.Prompt(ctx, promptOptions)
-				if promptErr != nil {
-					numValue, err := strconv.Atoi(promptValue)
-					if err != nil {
-						return nil, err
-					}
-					paramValue = numValue
+				promptValue, err := p.console.Prompt(ctx, promptOptions)
+				if err != nil {
+					return nil, fmt.Errorf("failed to prompt for %s: %w", param.Name, err)
 				}
-			default:
-				return nil, fmt.Errorf("unsupported parameter type: %s", param.Type)
-			}
 
-			if promptErr != nil {
-				return nil, promptErr
+				numValue, err := strconv.Atoi(promptValue)
+				if err != nil {
+					return nil, fmt.Errorf("failed to convert %s to int: %w", param.Name, err)
+				}
+				paramValue = numValue
+			default:
+				return nil, fmt.Errorf("failed to prompt for %s, unsupported parameter type: %s", param.Name, param.Type)
 			}
 		}
 

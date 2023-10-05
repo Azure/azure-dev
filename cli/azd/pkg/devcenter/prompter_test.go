@@ -161,56 +161,60 @@ func Test_Prompt_EnvironmentDefinitions(t *testing.T) {
 }
 
 func Test_Prompt_Parameters(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
-	prompter := newPrompterForTest(t, mockContext, &Config{}, nil)
-
 	type paramWithValue struct {
 		devcentersdk.Parameter
-		value any
+		userValue     any
+		expectedValue any
 	}
 
 	t.Run("MultipleParameters", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		prompter := newPrompterForTest(t, mockContext, &Config{}, nil)
 		promptedParams := map[string]bool{}
 
 		expectedValues := map[string]paramWithValue{
 			"param1": {
-				Parameter: devcentersdk.Parameter{Id: "param1", Name: "Param 1", Type: devcentersdk.ParameterTypeString},
-				value:     "value1",
+				Parameter:     devcentersdk.Parameter{Id: "param1", Name: "Param 1", Type: devcentersdk.ParameterTypeString},
+				userValue:     "value1",
+				expectedValue: "value1",
 			},
 			"param2": {
-				Parameter: devcentersdk.Parameter{Id: "param2", Name: "Param 2", Type: devcentersdk.ParameterTypeString},
-				value:     "value2",
+				Parameter:     devcentersdk.Parameter{Id: "param2", Name: "Param 2", Type: devcentersdk.ParameterTypeString},
+				userValue:     "value2",
+				expectedValue: "value2",
 			},
 			"param3": {
-				Parameter: devcentersdk.Parameter{Id: "param3", Name: "Param 3", Type: devcentersdk.ParameterTypeBool},
-				value:     true,
+				Parameter:     devcentersdk.Parameter{Id: "param3", Name: "Param 3", Type: devcentersdk.ParameterTypeBool},
+				userValue:     true,
+				expectedValue: true,
 			},
 			"param4": {
-				Parameter: devcentersdk.Parameter{Id: "param4", Name: "Param 4", Type: devcentersdk.ParameterTypeInt},
-				value:     "123",
+				Parameter:     devcentersdk.Parameter{Id: "param4", Name: "Param 4", Type: devcentersdk.ParameterTypeInt},
+				userValue:     "123",
+				expectedValue: 123,
 			},
 		}
 
-		var addPrompt = func(key string, param paramWithValue) {
+		var mockPrompt = func(key string, param paramWithValue) {
 			if param.Type == devcentersdk.ParameterTypeBool {
 				mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
 					return strings.Contains(options.Message, param.Name)
 				}).RespondFn(func(options input.ConsoleOptions) (any, error) {
 					promptedParams[key] = true
-					return param.value, nil
+					return param.userValue, nil
 				})
 			} else {
 				mockContext.Console.WhenPrompt(func(options input.ConsoleOptions) bool {
 					return strings.Contains(options.Message, param.Name)
 				}).RespondFn(func(options input.ConsoleOptions) (any, error) {
 					promptedParams[key] = true
-					return param.value, nil
+					return param.userValue, nil
 				})
 			}
 		}
 
 		for key, param := range expectedValues {
-			addPrompt(key, param)
+			mockPrompt(key, param)
 		}
 
 		env := environment.New("Test")
@@ -241,8 +245,84 @@ func Test_Prompt_Parameters(t *testing.T) {
 
 		values, err := prompter.PromptParameters(*mockContext.Context, env, envDefinition)
 		require.NoError(t, err)
-		require.Equal(t, expectedValues, values)
-		require.Len(t, promptedParams, len(expectedValues))
+
+		for key, value := range values {
+			require.Equal(t, expectedValues[key].expectedValue, value)
+		}
+	})
+
+	t.Run("WithSomeSetValues", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		prompter := newPrompterForTest(t, mockContext, &Config{}, nil)
+		promptCalled := false
+
+		// Only mock response for param 3
+		mockContext.Console.WhenPrompt(func(options input.ConsoleOptions) bool {
+			return strings.Contains(options.Message, "Param 3")
+		}).RespondFn(func(options input.ConsoleOptions) (any, error) {
+			promptCalled = true
+			return "value3", nil
+		})
+
+		env := environment.New("Test")
+		envDefinition := &devcentersdk.EnvironmentDefinition{
+			Parameters: []devcentersdk.Parameter{
+				{
+					Id:   "param1",
+					Name: "Param 1",
+					Type: devcentersdk.ParameterTypeString,
+				},
+				{
+					Id:   "param2",
+					Name: "Param 2",
+					Type: devcentersdk.ParameterTypeString,
+				},
+				{
+					Id:   "param3",
+					Name: "Param 3",
+					Type: devcentersdk.ParameterTypeString,
+				},
+			},
+		}
+
+		env.Config.Set("provision.parameters.param1", "value1")
+		env.Config.Set("provision.parameters.param2", "value2")
+
+		values, err := prompter.PromptParameters(*mockContext.Context, env, envDefinition)
+		require.NoError(t, err)
+		require.True(t, promptCalled)
+		require.Equal(t, "value1", values["param1"])
+		require.Equal(t, "value2", values["param2"])
+		require.Equal(t, "value3", values["param3"])
+	})
+
+	t.Run("WithAllSetValues", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		prompter := newPrompterForTest(t, mockContext, &Config{}, nil)
+
+		env := environment.New("Test")
+		envDefinition := &devcentersdk.EnvironmentDefinition{
+			Parameters: []devcentersdk.Parameter{
+				{
+					Id:   "param1",
+					Name: "Param 1",
+					Type: devcentersdk.ParameterTypeString,
+				},
+				{
+					Id:   "param2",
+					Name: "Param 2",
+					Type: devcentersdk.ParameterTypeString,
+				},
+			},
+		}
+
+		env.Config.Set("provision.parameters.param1", "value1")
+		env.Config.Set("provision.parameters.param2", "value2")
+
+		values, err := prompter.PromptParameters(*mockContext.Context, env, envDefinition)
+		require.NoError(t, err)
+		require.Equal(t, "value1", values["param1"])
+		require.Equal(t, "value2", values["param2"])
 	})
 }
 

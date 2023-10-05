@@ -108,6 +108,7 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 	telemetryActions(root)
 	templatesActions(root)
 	authActions(root)
+	hooksActions(root)
 
 	root.Add("version", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{

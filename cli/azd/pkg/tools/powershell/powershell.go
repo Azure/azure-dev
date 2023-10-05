@@ -24,12 +24,19 @@ type powershellScript struct {
 
 // Executes the specified powershell script
 // When interactive is true will attach to stdin, stdout & stderr
-func (bs *powershellScript) Execute(ctx context.Context, path string, interactive bool) (exec.RunResult, error) {
+func (bs *powershellScript) Execute(ctx context.Context, path string, options tools.ExecOptions) (exec.RunResult, error) {
 	runArgs := exec.NewRunArgs("pwsh", path).
 		WithCwd(bs.cwd).
 		WithEnv(bs.envVars).
-		WithInteractive(interactive).
 		WithShell(true)
+
+	if options.Interactive != nil {
+		runArgs = runArgs.WithInteractive(*options.Interactive)
+	}
+
+	if options.StdOut != nil {
+		runArgs = runArgs.WithStdOut(options.StdOut)
+	}
 
 	return bs.commandRunner.Run(ctx, runArgs)
 }

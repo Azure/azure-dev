@@ -6,6 +6,7 @@ package cli_test
 import (
 	"bufio"
 	"bytes"
+	"context"
 	"encoding/json"
 	"fmt"
 	"os"
@@ -15,6 +16,7 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -220,6 +222,9 @@ func Test_CLI_Telemetry_UsageData_EnvProjectLoad(t *testing.T) {
 
 // Verifies telemetry behavior for nested commands, such as ones invoked from `up`.
 func Test_CLI_Telemetry_NestedCommands(t *testing.T) {
+	// test is not compatible with easy init
+	t.Setenv("AZD_ALPHA_ENABLE_EASYINIT", "false")
+
 	// CLI process and working directory are isolated
 	ctx, cancel := newTestContext(t)
 	defer cancel()
@@ -347,9 +352,11 @@ func attributesMap(attributes []Attribute) map[attribute.Key]interface{} {
 }
 
 func getEnvSubscriptionId(t *testing.T, dir string, envName string) string {
-	envPath := filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName)
-	env, err := environment.FromRoot(envPath)
+	azdCtx := azdcontext.NewAzdContextWithDirectory(dir)
+	localDataStore := environment.NewLocalFileDataStore(azdCtx, config.NewFileConfigManager(config.NewManager()))
+	env, err := localDataStore.Get(context.Background(), envName)
 	require.NoError(t, err)
+
 	return env.GetSubscriptionId()
 }
 

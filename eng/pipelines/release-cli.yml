@@ -229,7 +229,7 @@ stages:
             displayName: Upload test MSI
 
           - publish: cli/installer/fpm/artifact
-            artifact: linux-packages
+            artifact: linux-packages-amd64
             condition: and(succeeded(), eq(variables['BuildLinuxPackages'], 'true'))
             displayName: Upload linux packages to artifact store
 
@@ -246,6 +246,7 @@ stages:
               SetExecutableBit: true
               GOOS: linux
               GOARCH: arm64
+              BuildLinuxPackages: true
             MacARM64:
               Pool: Azure Pipelines
               OSVmImage: macOS-11
@@ -300,10 +301,46 @@ stages:
             workingDirectory: cli/azd
             displayName: Set executable bit for non-Windows binaries
 
+          - template: /eng/pipelines/templates/steps/build-linux-packages.yml
+            parameters:
+              Architecture: arm64
+              Condition: and(succeeded(), eq(variables['BuildLinuxPackages'], 'true'))
+
           - publish: cli/azd/$(BuildTarget)
             artifact: $(BuildTarget)
             condition: always()
             displayName: Upload azd binary to artifact store
+
+          - publish: cli/installer/fpm/artifact
+            artifact: linux-packages-arm64
+            condition: and(succeeded(), eq(variables['BuildLinuxPackages'], 'true'))
+            displayName: Upload linux packages to artifact store
+
+      - job: MergeLinuxPackages
+        pool:
+          name: azsdk-pool-mms-ubuntu-2004-general
+        dependsOn:
+          - CrossBuildCLI
+          - BuildCLI
+        steps:
+          - download: current
+            artifact: linux-packages-amd64
+            displayName: Download linux-packages-amd64
+
+          - download: current
+            artifact: linux-packages-arm64
+            displayName: Download linux-packages-arm64
+
+          # Merge the folders
+          - pwsh: |
+              New-Item -ItemType Directory -Path linux-packages
+              Get-ChildItem $(Pipeline.Workspace)/linux-packages-amd64 | ForEach-Object { Copy-Item $_ linux-packages }
+              Get-ChildItem $(Pipeline.Workspace)/linux-packages-arm64 | ForEach-Object { Copy-Item $_ linux-packages }
+            displayName: Merge linux packages
+
+          - publish: linux-packages
+            artifact: linux-packages
+            displayName: Publish merged linux packages
 
       - job: ValidateCrossCompile
         dependsOn: CrossBuildCLI
@@ -991,15 +1028,30 @@ stages:
 
       - job: Verify_LinuxPackages
 
+        strategy:
+          matrix:
+            LinuxAMD64: 
+              Pool: azsdk-pool-mms-ubuntu-2004-general
+              OSVmImage:  MMSUbuntu20.04
+              Architecture: amd64
+            # TODO: When Docker can be installed and run properly on the ARM 
+            # host this can be used to validate the ARM64 Linux packages.
+            # https://github.com/Azure/azure-dev/issues/2617
+            # LinuxARM64:
+            #   Pool: azsdk-pool-mms-ubuntu-2004-arm
+            #   OSVmImage: MMSUbuntu20.04ARM64
+            #   Architecture: arm64
+            
         pool:
-          name: azsdk-pool-mms-ubuntu-2004-general
+          name: $(Pool)
+          vmImage: $(OSVmImage)
 
         steps: 
           - checkout: self
 
           - task: DownloadPipelineArtifact@2
             inputs:
-              artifact: linux-packages
+              artifact: linux-packages-$(Architecture)
               path: cli/installer/fpm
 
           - task: PowerShell@2
@@ -1277,9 +1329,9 @@ stages:
           - pwsh: |
               $urlBase = "$(GenerateUrlBase.UrlBase)"
               $linuxReleaseUrl = "$urlBase/azd-linux-amd64.tar.gz"
-              $linuxReleaseUrlArm64 = "$urlBase/azd-linux-arm64-beta.tar.gz"
+              $linuxReleaseUrlArm64 = "$urlBase/azd-linux-arm64.tar.gz"
               $macosReleaseUrl = "$urlBase/azd-darwin-amd64.zip"
-              $macosReleaseUrlArm64 = "$urlBase/azd-darwin-arm64-beta.zip"
+              $macosReleaseUrlArm64 = "$urlBase/azd-darwin-arm64.zip"
               $windowsReleaseUrl = "$urlBase/azd-windows-amd64.zip"
               $msiReleaseUrl = "$urlBase/azd-windows-amd64.msi"
 

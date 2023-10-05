@@ -19,6 +19,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/npm"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockarmresources"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/benbjohnson/clock"
 	"github.com/stretchr/testify/require"
@@ -39,10 +40,11 @@ services:
 `
 	ran := false
 
-	env := environment.EphemeralWithValues("test-env", nil)
+	env := environment.NewWithValues("test-env", nil)
 	env.SetSubscriptionId("sub")
 
 	mockContext := mocks.NewMockContext(context.Background())
+	envManager := &mockenv.MockEnvManager{}
 
 	mockarmresources.AddAzResourceListMock(
 		mockContext.HttpClient,
@@ -104,7 +106,7 @@ services:
 	framework := NewDockerProject(
 		env,
 		docker,
-		NewContainerHelper(env, clock.NewMock(), nil, docker),
+		NewContainerHelper(env, envManager, clock.NewMock(), nil, docker),
 		mockinput.NewMockConsole(),
 		mockContext.AlphaFeaturesManager,
 		mockContext.CommandRunner)
@@ -145,9 +147,10 @@ services:
       context: ../
 `
 
-	env := environment.EphemeralWithValues("test-env", nil)
+	env := environment.NewWithValues("test-env", nil)
 	env.SetSubscriptionId("sub")
 	mockContext := mocks.NewMockContext(context.Background())
+	envManager := &mockenv.MockEnvManager{}
 
 	mockarmresources.AddAzResourceListMock(
 		mockContext.HttpClient,
@@ -211,7 +214,7 @@ services:
 	framework := NewDockerProject(
 		env,
 		docker,
-		NewContainerHelper(env, clock.NewMock(), nil, docker),
+		NewContainerHelper(env, envManager, clock.NewMock(), nil, docker),
 		mockinput.NewMockConsole(),
 		mockContext.AlphaFeaturesManager,
 		mockContext.CommandRunner)
@@ -238,6 +241,8 @@ func Test_DockerProject_Build(t *testing.T) {
 	var runArgs exec.RunArgs
 
 	mockContext := mocks.NewMockContext(context.Background())
+	envManager := &mockenv.MockEnvManager{}
+
 	mockContext.CommandRunner.
 		When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "docker build")
@@ -253,7 +258,7 @@ func Test_DockerProject_Build(t *testing.T) {
 			return exec.NewRunResult(0, "IMAGE_ID", ""), nil
 		})
 
-	env := environment.Ephemeral()
+	env := environment.New("test")
 	dockerCli := docker.NewDocker(mockContext.CommandRunner)
 	serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
 	temp := t.TempDir()
@@ -265,7 +270,7 @@ func Test_DockerProject_Build(t *testing.T) {
 	dockerProject := NewDockerProject(
 		env,
 		dockerCli,
-		NewContainerHelper(env, clock.NewMock(), nil, dockerCli),
+		NewContainerHelper(env, envManager, clock.NewMock(), nil, dockerCli),
 		mockinput.NewMockConsole(),
 		mockContext.AlphaFeaturesManager,
 		mockContext.CommandRunner)
@@ -300,6 +305,8 @@ func Test_DockerProject_Package(t *testing.T) {
 	var runArgs exec.RunArgs
 
 	mockContext := mocks.NewMockContext(context.Background())
+	envManager := &mockenv.MockEnvManager{}
+
 	mockContext.CommandRunner.
 		When(func(args exec.RunArgs, command string) bool {
 			return strings.Contains(command, "docker tag")
@@ -309,14 +316,14 @@ func Test_DockerProject_Package(t *testing.T) {
 			return exec.NewRunResult(0, "IMAGE_ID", ""), nil
 		})
 
-	env := environment.EphemeralWithValues("test", map[string]string{})
+	env := environment.NewWithValues("test", map[string]string{})
 	dockerCli := docker.NewDocker(mockContext.CommandRunner)
 	serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
 
 	dockerProject := NewDockerProject(
 		env,
 		dockerCli,
-		NewContainerHelper(env, clock.NewMock(), nil, dockerCli),
+		NewContainerHelper(env, envManager, clock.NewMock(), nil, dockerCli),
 		mockinput.NewMockConsole(),
 		mockContext.AlphaFeaturesManager,
 		mockContext.CommandRunner)

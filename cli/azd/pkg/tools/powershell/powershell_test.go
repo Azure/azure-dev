@@ -5,7 +5,9 @@ import (
 	"errors"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
@@ -33,7 +35,11 @@ func Test_Powershell_Execute(t *testing.T) {
 		})
 
 		PowershellScript := NewPowershellScript(mockContext.CommandRunner, workingDir, env)
-		runResult, err := PowershellScript.Execute(*mockContext.Context, scriptPath, true)
+		runResult, err := PowershellScript.Execute(
+			*mockContext.Context,
+			scriptPath,
+			tools.ExecOptions{Interactive: convert.RefOf(true)},
+		)
 
 		require.NotNil(t, runResult)
 		require.NoError(t, err)
@@ -49,7 +55,11 @@ func Test_Powershell_Execute(t *testing.T) {
 		})
 
 		PowershellScript := NewPowershellScript(mockContext.CommandRunner, workingDir, env)
-		runResult, err := PowershellScript.Execute(*mockContext.Context, scriptPath, true)
+		runResult, err := PowershellScript.Execute(
+			*mockContext.Context,
+			scriptPath,
+			tools.ExecOptions{Interactive: convert.RefOf(true)},
+		)
 
 		require.Equal(t, 1, runResult.ExitCode)
 		require.Error(t, err)
@@ -57,10 +67,10 @@ func Test_Powershell_Execute(t *testing.T) {
 
 	tests := []struct {
 		name  string
-		value bool
+		value tools.ExecOptions
 	}{
-		{name: "Interactive", value: true},
-		{name: "NonInteractive", value: false},
+		{name: "Interactive", value: tools.ExecOptions{Interactive: convert.RefOf(true)}},
+		{name: "NonInteractive", value: tools.ExecOptions{Interactive: convert.RefOf(false)}},
 	}
 
 	for _, test := range tests {
@@ -70,7 +80,7 @@ func Test_Powershell_Execute(t *testing.T) {
 			mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 				return true
 			}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-				require.Equal(t, test.value, args.Interactive)
+				require.Equal(t, *test.value.Interactive, args.Interactive)
 				return exec.NewRunResult(0, "", ""), nil
 			})
 

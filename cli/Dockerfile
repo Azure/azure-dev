@@ -17,7 +17,7 @@ RUN export DEBIAN_FRONTEND=noninteractive \
      # az cli
      && curl -sSL https://aka.ms/InstallAzureCLIDeb | bash \
      # nodejs
-     && curl -fsSL https://deb.nodesource.com/setup_16.x | bash - \
+     && curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
      && apt-get install -y nodejs \
      # python
      && apt-get install -y --no-install-recommends python3-pip python-dev python3-venv \

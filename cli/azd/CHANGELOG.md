@@ -1,14 +1,42 @@
 # Release History
 
-## 1.4.0-beta.1 (Unreleased)
+## 1.4.0 (2023-10-05)
 
 ### Features Added
 
-### Breaking Changes
+- [[2725]](https://github.com/Azure/azure-dev/pull/2725) Adds support for provision state to the bicep provider.
+- [[2765]](https://github.com/Azure/azure-dev/pull/2765) Support for remote environments.
+- [[1642]](https://github.com/Azure/azure-dev/pull/1642) A new `azd hooks run` command for running and testing your hooks.
 
 ### Bugs Fixed
 
+- [[2793]](https://github.com/Azure/azure-dev/pull/2793) Support user defined types for the bicep provider.
+- [[2543]](https://github.com/Azure/azure-dev/pull/2543) `azd package` now allows users to specify `--output-path` parameter to control the output location of file-based packages.
+- [[2302]](https://github.com/Azure/azure-dev/pull/2302) `azd config --help` doesn't show help for `AZD_CONFIG_DIR`.
+- [[2050]](https://github.com/Azure/azure-dev/pull/2050) `azd init` now supports `--subscription`.
+- [[2695]](https://github.com/Azure/azure-dev/pull/2695) `azd` now honors `@allowed` locations in Bicep to filter the list of possible deploy locations.
+- [[2599]](https://github.com/Azure/azure-dev/pull/2599) ARM64 support is now generally available.
+- [[2683]](https://github.com/Azure/azure-dev/pull/2683) Bicep installer prefers MUSL variant over glibc.
+- [[2794]](https://github.com/Azure/azure-dev/pull/2794) When running `azd init`, the Starter - Bicep template is unavailable.
+  
 ### Other Changes
+
+- [[#2796]](https://github.com/Azure/azure-dev/pull/2796) Update `terraform` provider from alpha to beta.
+
+## 1.3.1 (2023-09-20)
+
+### Minor Changes
+
+- [[2737]](https://github.com/Azure/azure-dev/pull/2737) Update bicep to 0.21.1
+- [[2696]](https://github.com/Azure/azure-dev/pull/2696) Support filtering for azd location in bicep
+- [[2721]](https://github.com/Azure/azure-dev/pull/2721) `azd package` support for user specified output paths
+- [[2756]](https://github.com/Azure/azure-dev/pull/2756) Minor enhancements to simplified init
+
+### Bugs Fixed
+
+- [[2719]](https://github.com/Azure/azure-dev/pull/2719) Fix mistypes in soft delete warning message
+- [[2722]](https://github.com/Azure/azure-dev/pull/2722) Prefer glibc based Bicep when both musl and glibc are installed
+- [[2726]](https://github.com/Azure/azure-dev/pull/2726) Mention `AZD_CONFIG_DIR` in `azd config --help` help text
 
 ## 1.3.0 (2023-09-06)
 

@@ -54,7 +54,7 @@ export async function pickAzureYamlFile(context: IActionContext): Promise<vscode
     let filePath: vscode.Uri | undefined = undefined;
 
     const azureYamlFileUris = await vscode.workspace.findFiles(AzureYamlGlobPattern);
-        
+
     if (azureYamlFileUris && azureYamlFileUris.length > 0) {
         if (azureYamlFileUris.length > 1) {
             const choices: IAzureQuickPickItem<vscode.Uri>[] = azureYamlFileUris.map(u => { return {
@@ -116,6 +116,8 @@ export async function selectApplicationTemplate(context: IActionContext): Promis
 export type EnvironmentInfo = {
     Name: string,
     IsDefault: boolean,
+    HasLocal?: boolean,
+    HasRemote?: boolean,
     DotEnvPath: string
 };
 

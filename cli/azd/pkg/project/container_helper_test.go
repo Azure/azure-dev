@@ -7,6 +7,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
 	"github.com/benbjohnson/clock"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -27,6 +28,8 @@ func Test_ContainerHelper_LocalImageTag(t *testing.T) {
 	}
 	defaultImageName := fmt.Sprintf("%s/%s-%s", projectName, serviceName, envName)
 
+	envManager := &mockenv.MockEnvManager{}
+
 	tests := []struct {
 		name         string
 		dockerConfig DockerProjectOptions
@@ -46,8 +49,8 @@ func Test_ContainerHelper_LocalImageTag(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			env := environment.EphemeralWithValues("dev", map[string]string{})
-			containerHelper := NewContainerHelper(env, clock.NewMock(), nil, nil)
+			env := environment.NewWithValues("dev", map[string]string{})
+			containerHelper := NewContainerHelper(env, envManager, clock.NewMock(), nil, nil)
 			serviceConfig.Docker = tt.dockerConfig
 
 			tag, err := containerHelper.LocalImageTag(*mockContext.Context, serviceConfig)
@@ -59,10 +62,11 @@ func Test_ContainerHelper_LocalImageTag(t *testing.T) {
 
 func Test_ContainerHelper_RemoteImageTag(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
-	env := environment.EphemeralWithValues("dev", map[string]string{
+	env := environment.NewWithValues("dev", map[string]string{
 		environment.ContainerRegistryEndpointEnvVarName: "contoso.azurecr.io",
 	})
-	containerHelper := NewContainerHelper(env, clock.NewMock(), nil, nil)
+	envManager := &mockenv.MockEnvManager{}
+	containerHelper := NewContainerHelper(env, envManager, clock.NewMock(), nil, nil)
 	serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
 	localTag, err := containerHelper.LocalImageTag(*mockContext.Context, serviceConfig)
 	require.NoError(t, err)
@@ -74,9 +78,10 @@ func Test_ContainerHelper_RemoteImageTag(t *testing.T) {
 func Test_ContainerHelper_RemoteImageTag_NoContainer_Registry(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 
-	env := environment.Ephemeral()
+	env := environment.New("test")
 	serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
-	containerHelper := NewContainerHelper(env, clock.NewMock(), nil, nil)
+	envManager := &mockenv.MockEnvManager{}
+	containerHelper := NewContainerHelper(env, envManager, clock.NewMock(), nil, nil)
 
 	imageTag, err := containerHelper.RemoteImageTag(*mockContext.Context, serviceConfig, "local_tag")
 	require.Error(t, err)

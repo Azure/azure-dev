@@ -1,0 +1,61 @@
+# Run when commits are pushed to mainline branch (main or master)
+# Set this to the mainline branch you are using
+trigger:
+  - main
+  - master
+
+# Azure Pipelines workflow to deploy to Azure using azd
+# To configure required secrets for connecting to Azure, simply run `azd pipeline config --provider azdo`
+# Task "Install azd" needs to install setup-azd extension for azdo - https://marketplace.visualstudio.com/items?itemName=ms-azuretools.azd
+
+pool:
+  vmImage: ubuntu-latest
+
+steps:
+  - task: setup-azd@0
+    displayName: Install azd
+
+  - pwsh: |
+      $info = $Env:AZURE_CREDENTIALS | ConvertFrom-Json -AsHashtable;
+      
+      azd auth login `
+        --client-id "$($info.clientId)" `
+        --client-secret "$($info.clientSecret)" `
+        --tenant-id "$($info.tenantId)"
+    displayName: azd login
+    env:
+      AZURE_CREDENTIALS: $(AZURE_CREDENTIALS)
+
+  - task: JavaToolInstaller@0
+    inputs:
+      versionSpec: '17'
+      jdkArchitectureOption: 'x64'
+      jdkSourceOption: 'PreInstalled'
+      
+  - task: AzureCLI@2
+    displayName: Provision Infrastructure
+    inputs:
+      azureSubscription: azconnection
+      scriptType: bash
+      scriptLocation: inlineScript
+      inlineScript: |
+        azd provision --no-prompt
+    env:
+      AZURE_SUBSCRIPTION_ID: $(AZURE_SUBSCRIPTION_ID)
+      AZURE_ENV_NAME: $(AZURE_ENV_NAME)
+      AZURE_LOCATION: $(AZURE_LOCATION)
+      ARM_TENANT_ID: $(ARM_TENANT_ID)
+      ARM_CLIENT_ID: $(ARM_CLIENT_ID)
+      ARM_CLIENT_SECRET: $(ARM_CLIENT_SECRET)
+      RS_RESOURCE_GROUP: $(RS_RESOURCE_GROUP)
+      RS_STORAGE_ACCOUNT: $(RS_STORAGE_ACCOUNT)
+      RS_CONTAINER_NAME: $(RS_CONTAINER_NAME)
+
+  - pwsh: |
+      azd deploy --no-prompt
+    displayName: Deploy Application
+    env:
+      AZURE_SUBSCRIPTION_ID: $(AZURE_SUBSCRIPTION_ID)
+      AZURE_ENV_NAME: $(AZURE_ENV_NAME)
+      AZURE_LOCATION: $(AZURE_LOCATION)
+

@@ -39,7 +39,7 @@ The following prerequisites are required to use this application. Please ensure 
 
 - [Azure Developer CLI](https://aka.ms/azd-install)
 - [Java 17 or later](https://learn.microsoft.com/en-us/java/openjdk/install) - for API backend
-- [Node.js with npm (16.13.1+)](https://nodejs.org/) - for Web frontend
+- [Node.js with npm (18.17.1+)](https://nodejs.org/) - for Web frontend
 
 ### Quickstart
 To learn how to get started with any template, follow the steps in [this quickstart](https://learn.microsoft.com/azure/developer/azure-developer-cli/get-started?tabs=localinstall&pivots=programming-language-java) with this template(`Azure-Samples/todo-java-mongo`).
@@ -80,6 +80,8 @@ This template is structured to follow the [Azure Developer CLI](https://aka.ms/a
 ### Next Steps
 
 At this point, you have a complete application deployed on Azure. But there is much more that the Azure Developer CLI can do. These next steps will introduce you to additional commands that will make creating applications on Azure much easier. Using the Azure Developer CLI, you can setup your pipelines, monitor your application, test and debug locally.
+
+> Note: Needs to manually install [setup-azd extension](https://marketplace.visualstudio.com/items?itemName=ms-azuretools.azd) for Azure DevOps (azdo).
 
 - [`azd pipeline config`](https://learn.microsoft.com/azure/developer/azure-developer-cli/configure-devops-pipeline?tabs=GitHub) - to configure a CI/CD pipeline (using GitHub Actions or Azure DevOps) to deploy your application whenever code is pushed to the main branch. 
 

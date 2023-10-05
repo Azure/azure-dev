@@ -71,6 +71,7 @@ func (f *hooksRunFlags) Bind(local *pflag.FlagSet, global *internal.GlobalComman
 type hooksRunAction struct {
 	projectConfig *project.ProjectConfig
 	env           *environment.Environment
+	envManager    environment.Manager
 	commandRunner exec.CommandRunner
 	console       input.Console
 	flags         *hooksRunFlags
@@ -80,6 +81,7 @@ type hooksRunAction struct {
 func newHooksRunAction(
 	projectConfig *project.ProjectConfig,
 	env *environment.Environment,
+	envManager environment.Manager,
 	commandRunner exec.CommandRunner,
 	console input.Console,
 	flags *hooksRunFlags,
@@ -88,6 +90,7 @@ func newHooksRunAction(
 	return &hooksRunAction{
 		projectConfig: projectConfig,
 		env:           env,
+		envManager:    envManager,
 		commandRunner: commandRunner,
 		console:       console,
 		flags:         flags,
@@ -116,12 +119,12 @@ func (hra *hooksRunAction) Run(ctx context.Context) (*actions.ActionResult, erro
 	}
 
 	// Project level hooks
-	projectHooksMessage := "Running command hook for project"
 	if err := hra.processHooks(
 		ctx,
 		hra.projectConfig.Path,
 		hookName,
-		projectHooksMessage,
+		fmt.Sprintf("Running %s command hook for project", hookName),
+		fmt.Sprintf("Project: %s Hook Output", hookName),
 		hra.projectConfig.Hooks,
 		false,
 	); err != nil {
@@ -129,15 +132,15 @@ func (hra *hooksRunAction) Run(ctx context.Context) (*actions.ActionResult, erro
 	}
 
 	// Service level hooks
-	for serviceName, service := range hra.projectConfig.Services {
-		skip := hra.flags.service != "" && serviceName != hra.flags.service
+	for _, service := range hra.projectConfig.GetServicesStable() {
+		skip := hra.flags.service != "" && service.Name != hra.flags.service
 
-		serviceHookMessage := fmt.Sprintf("Running service hook for %s", serviceName)
 		if err := hra.processHooks(
 			ctx,
 			service.RelativePath,
 			hookName,
-			serviceHookMessage,
+			fmt.Sprintf("Running %s service hook for %s", hookName, service.Name),
+			fmt.Sprintf("%s: %s hook output", service.Name, hookName),
 			service.Hooks,
 			skip,
 		); err != nil {
@@ -156,20 +159,21 @@ func (hra *hooksRunAction) processHooks(
 	ctx context.Context,
 	cwd string,
 	hookName string,
-	message string,
+	spinnerMessage string,
+	previewMessage string,
 	hooks map[string]*ext.HookConfig,
 	skip bool,
 ) error {
+	hra.console.ShowSpinner(ctx, spinnerMessage, input.Step)
+
 	if skip {
-		hra.console.ShowSpinner(ctx, message, input.Step)
-		hra.console.StopSpinner(ctx, message, input.StepSkipped)
+		hra.console.StopSpinner(ctx, spinnerMessage, input.StepSkipped)
 		return nil
 	}
 
 	hook, ok := hooks[hookName]
 	if !ok {
-		hra.console.ShowSpinner(ctx, message, input.Step)
-		hra.console.StopSpinner(ctx, message+noHookFoundMessage, input.StepWarning)
+		hra.console.StopSpinner(ctx, spinnerMessage+noHookFoundMessage, input.StepWarning)
 		return nil
 	}
 
@@ -179,17 +183,14 @@ func (hra *hooksRunAction) processHooks(
 		return err
 	}
 
-	hra.console.StopSpinner(ctx, "", input.Step)
-	err := hra.execHook(ctx, message, cwd, hookType, commandName, hook)
+	err := hra.execHook(ctx, previewMessage, cwd, hookType, commandName, hook)
 	if err != nil {
-		hra.console.ShowSpinner(ctx, message, input.Step)
-		hra.console.StopSpinner(ctx, message, input.StepFailed)
+		hra.console.StopSpinner(ctx, spinnerMessage, input.StepFailed)
 		return fmt.Errorf("failed running hook %s, %w", hookName, err)
 	}
 
 	// The previewer cancels the previous spinner so we need to restart/show it again.
-	hra.console.ShowSpinner(ctx, message, input.Step)
-	hra.console.StopSpinner(ctx, message, input.StepDone)
+	hra.console.StopSpinner(ctx, spinnerMessage, input.StepDone)
 
 	return nil
 }
@@ -209,20 +210,20 @@ func (hra *hooksRunAction) execHook(
 	}
 
 	hooksManager := ext.NewHooksManager(cwd)
-	hooksRunner := ext.NewHooksRunner(hooksManager, hra.commandRunner, hra.console, cwd, hooks, hra.env)
+	hooksRunner := ext.NewHooksRunner(hooksManager, hra.commandRunner, hra.envManager, hra.console, cwd, hooks, hra.env)
 
 	previewer := hra.console.ShowPreviewer(ctx, &input.ShowPreviewerOptions{
+		Prefix:       "  ",
 		Title:        previewMessage,
-		MaxLineCount: 10,
+		MaxLineCount: 8,
 	})
+	defer hra.console.StopPreviewer(ctx)
 
 	runOptions := &tools.ExecOptions{StdOut: previewer}
 	err := hooksRunner.RunHooks(ctx, hookType, runOptions, commandName)
 	if err != nil {
 		return err
 	}
-
-	hra.console.StopPreviewer(ctx)
 
 	return nil
 }
@@ -254,7 +255,6 @@ func (hra *hooksRunAction) prepareHook(name string, hook *ext.HookConfig) error 
 	hook.Interactive = false
 
 	// Don't display the 'Executing hook...' messages
-	hook.Quiet = true
 	hra.configureHookFlags(hook.Windows)
 	hra.configureHookFlags(hook.Posix)
 
@@ -266,6 +266,5 @@ func (hra *hooksRunAction) configureHookFlags(hook *ext.HookConfig) {
 		return
 	}
 
-	hook.Quiet = true
 	hook.Interactive = false
 }

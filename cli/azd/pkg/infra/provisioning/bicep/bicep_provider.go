@@ -56,6 +56,7 @@ type deploymentDetails struct {
 // BicepProvider exposes infrastructure provisioning using Azure Bicep templates
 type BicepProvider struct {
 	env                   *environment.Environment
+	envManager            environment.Manager
 	projectPath           string
 	options               Options
 	console               input.Console
@@ -117,7 +118,7 @@ func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
 		log.Printf("Initializing environment w/o arm template info.")
 	}
 
-	if err := EnsureSubscriptionAndLocation(ctx, p.env, p.prompters, func(loc account.Location) bool {
+	if err := EnsureSubscriptionAndLocation(ctx, p.envManager, p.env, p.prompters, func(loc account.Location) bool {
 		// compileResult can be nil if the infra folder is missing and azd couldn't get a template information.
 		// A template information can be used to apply filters to the initial values (like location).
 		// But if there's not template, azd will continue with azd env init.
@@ -166,7 +167,7 @@ func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
 			}
 
 			p.env.DotenvSet(environment.ResourceGroupEnvVarName, rgName)
-			if err := p.env.Save(); err != nil {
+			if err := p.envManager.Save(ctx, p.env); err != nil {
 				return fmt.Errorf("saving resource group name: %w", err)
 			}
 		}
@@ -1648,17 +1649,49 @@ func (p *BicepProvider) compileBicep(
 		paramRef := param.Ref
 		isUserDefinedType := paramRef != ""
 		if isUserDefinedType {
-			definitionKeyNameTokens := strings.Split(paramRef, "/")
-			definitionKeyNameTokensLen := len(definitionKeyNameTokens)
-			if definitionKeyNameTokensLen < 1 {
-				return nil, fmt.Errorf("failed resolving user defined parameter type: %s", paramRef)
+			definitionKeyName, err := definitionName(paramRef)
+			if err != nil {
+				return nil, err
 			}
-			definitionKeyName := definitionKeyNameTokens[definitionKeyNameTokensLen-1]
 			paramDefinition, findDefinition := template.Definitions[definitionKeyName]
 			if !findDefinition {
 				return nil, fmt.Errorf("did not find definition for parameter type: %s", definitionKeyName)
 			}
-			template.Parameters[paramKey] = paramDefinition
+			template.Parameters[paramKey] = azure.ArmTemplateParameterDefinition{
+				// Take this values from the parameter definition
+				Type:                 paramDefinition.Type,
+				AllowedValues:        paramDefinition.AllowedValues,
+				Properties:           paramDefinition.Properties,
+				AdditionalProperties: paramDefinition.AdditionalProperties,
+				// Azd combines Metadata from type definition and original parameter
+				// This allows to definitions to use azd-metadata on user-defined types and then add more properties
+				// to metadata or override something just for one parameter
+				Metadata: combineMetadata(paramDefinition.Metadata, param.Metadata),
+				// Keep this values from the original parameter
+				DefaultValue: param.DefaultValue,
+				// Note: Min/MaxLength and Min/MaxValue can't be used on user-defined types. No need to handle it here.
+			}
+		}
+	}
+
+	// outputs resolves just the type. Value and Metadata should persist
+	for outputKey, output := range template.Outputs {
+		paramRef := output.Ref
+		isUserDefinedType := paramRef != ""
+		if isUserDefinedType {
+			definitionKeyName, err := definitionName(paramRef)
+			if err != nil {
+				return nil, err
+			}
+			paramDefinition, findDefinition := template.Definitions[definitionKeyName]
+			if !findDefinition {
+				return nil, fmt.Errorf("did not find definition for parameter type: %s", definitionKeyName)
+			}
+			template.Outputs[outputKey] = azure.ArmTemplateOutput{
+				Type:     paramDefinition.Type,
+				Value:    output.Value,
+				Metadata: output.Metadata,
+			}
 		}
 	}
 
@@ -1667,6 +1700,40 @@ func (p *BicepProvider) compileBicep(
 		Template:       template,
 		Parameters:     parameters,
 	}, nil
+}
+
+func combineMetadata(base map[string]json.RawMessage, override map[string]json.RawMessage) map[string]json.RawMessage {
+	if base == nil && override == nil {
+		return nil
+	}
+
+	if override == nil {
+		return base
+	}
+
+	// final map is expected to be at least the same size as the base
+	finalMetadata := make(map[string]json.RawMessage, len(base))
+
+	for key, data := range base {
+		finalMetadata[key] = data
+	}
+
+	for key, data := range override {
+		finalMetadata[key] = data
+	}
+
+	return finalMetadata
+}
+
+func definitionName(typeDefinitionRef string) (string, error) {
+	// We typically expect `#/definitions/<name>` or `/definitions/<name>`, but loosely, we simply take
+	// `<name>` as the value of the last separated element.
+	definitionKeyNameTokens := strings.Split(typeDefinitionRef, "/")
+	definitionKeyNameTokensLen := len(definitionKeyNameTokens)
+	if definitionKeyNameTokensLen < 1 {
+		return "", fmt.Errorf("failed resolving user defined parameter type: %s", typeDefinitionRef)
+	}
+	return definitionKeyNameTokens[definitionKeyNameTokensLen-1], nil
 }
 
 // Converts a Bicep parameters file to a generic provisioning template
@@ -1803,7 +1870,7 @@ func (p *BicepProvider) ensureParameters(
 	}
 
 	if configModified {
-		if err := p.env.Save(); err != nil {
+		if err := p.envManager.Save(ctx, p.env); err != nil {
 			p.console.Message(ctx, fmt.Sprintf("warning: failed to save configured values: %v", err))
 		}
 	}
@@ -1873,6 +1940,7 @@ func NewBicepProvider(
 	azCli azcli.AzCli,
 	deploymentsService azapi.Deployments,
 	deploymentOperations azapi.DeploymentOperations,
+	envManager environment.Manager,
 	env *environment.Environment,
 	console input.Console,
 	prompters prompt.Prompter,
@@ -1881,6 +1949,7 @@ func NewBicepProvider(
 	clock clock.Clock,
 ) Provider {
 	return &BicepProvider{
+		envManager:           envManager,
 		env:                  env,
 		console:              console,
 		bicepCli:             bicepCli,

@@ -81,7 +81,7 @@ func getTenantIdFromAzdEnv(
 	ctx context.Context,
 	envResolver environment.EnvironmentResolver,
 	subResolver account.SubscriptionTenantResolver) (tenantId string, err error) {
-	azdEnv, err := envResolver()
+	azdEnv, err := envResolver(ctx)
 	if err != nil {
 		// No azd env, return empty tenantId
 		return tenantId, nil

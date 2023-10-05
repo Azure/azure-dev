@@ -2,10 +2,8 @@ package config
 
 import (
 	"encoding/json"
-	"errors"
 	"fmt"
 	"io"
-	"log"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -20,8 +18,8 @@ type manager struct {
 }
 
 type Manager interface {
-	Save(config Config, filePath string) error
-	Load(filePath string) (Config, error)
+	Save(config Config, writer io.Writer) error
+	Load(io.Reader) (Config, error)
 }
 
 // Creates a new Configuration Manager
@@ -30,18 +28,13 @@ func NewManager() Manager {
 }
 
 // Saves the azd configuration to the specified file path
-func (c *manager) Save(config Config, filePath string) error {
+func (c *manager) Save(config Config, writer io.Writer) error {
 	configJson, err := json.MarshalIndent(config.Raw(), "", "  ")
 	if err != nil {
 		return fmt.Errorf("failed marshalling config JSON: %w", err)
 	}
 
-	folderPath := filepath.Dir(filePath)
-	if err := os.MkdirAll(folderPath, osutil.PermissionDirectory); err != nil {
-		return fmt.Errorf("failed creating config directory: %w", err)
-	}
-
-	err = os.WriteFile(filePath, configJson, osutil.PermissionFile)
+	_, err = writer.Write(configJson)
 	if err != nil {
 		return fmt.Errorf("failed writing configuration data: %w", err)
 	}
@@ -50,15 +43,8 @@ func (c *manager) Save(config Config, filePath string) error {
 }
 
 // Loads azd configuration from the specified file path
-func (c *manager) Load(filePath string) (Config, error) {
-	file, err := os.Open(filePath)
-	if err != nil {
-		return nil, fmt.Errorf("failed opening azd configuration file: %w", err)
-	}
-
-	defer file.Close()
-
-	jsonBytes, err := io.ReadAll(file)
+func (c *manager) Load(reader io.Reader) (Config, error) {
+	jsonBytes, err := io.ReadAll(reader)
 	if err != nil {
 		return nil, fmt.Errorf("failed reading azd configuration file")
 	}
@@ -114,66 +100,4 @@ func GetUserConfigDir() (string, error) {
 	}
 
 	return configDirPath, err
-}
-
-// Gets the local file system path to the Azd configuration file
-func GetUserConfigFilePath() (string, error) {
-	configPath, err := GetUserConfigDir()
-	if err != nil {
-		return "", fmt.Errorf("failed getting user config file path '%s'. %w", configPath, err)
-	}
-
-	return filepath.Join(configPath, "config.json"), nil
-}
-
-type UserConfigManager interface {
-	Save(Config) error
-	Load() (Config, error)
-}
-
-type userConfigManager struct {
-	manager Manager
-}
-
-func NewUserConfigManager() UserConfigManager {
-	return &userConfigManager{
-		manager: NewManager(),
-	}
-}
-
-func (m *userConfigManager) Load() (Config, error) {
-	var azdConfig Config
-
-	configFilePath, err := GetUserConfigFilePath()
-	if err != nil {
-		return nil, err
-	}
-
-	azdConfig, err = m.manager.Load(configFilePath)
-	if err != nil {
-		// Ignore missing file errors
-		// File will automatically be created on first `set` operation
-		if errors.Is(err, os.ErrNotExist) {
-			log.Printf("creating empty config since '%s' did not exist.", configFilePath)
-			return NewConfig(nil), nil
-		}
-
-		return nil, fmt.Errorf("failed loading azd user config from '%s'. %w", configFilePath, err)
-	}
-
-	return azdConfig, nil
-}
-
-func (m *userConfigManager) Save(c Config) error {
-	userConfigFilePath, err := GetUserConfigFilePath()
-	if err != nil {
-		return fmt.Errorf("failed getting user config file path. %w", err)
-	}
-
-	err = m.manager.Save(c, userConfigFilePath)
-	if err != nil {
-		return fmt.Errorf("failed saving configuration. %w", err)
-	}
-
-	return nil
 }

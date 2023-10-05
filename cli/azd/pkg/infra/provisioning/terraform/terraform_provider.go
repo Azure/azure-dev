@@ -25,6 +25,7 @@ import (
 
 // TerraformProvider exposes infrastructure provisioning using Azure Terraform templates
 type TerraformProvider struct {
+	envManager   environment.Manager
 	env          *environment.Environment
 	prompters    prompt.Prompter
 	console      input.Console
@@ -52,12 +53,14 @@ func (t *TerraformProvider) RequiredExternalTools() []tools.ExternalTool {
 // NewTerraformProvider creates a new instance of a Terraform Infra provider
 func NewTerraformProvider(
 	cli terraform.TerraformCli,
+	envManager environment.Manager,
 	env *environment.Environment,
 	console input.Console,
 	curPrincipal CurrentPrincipalIdProvider,
 	prompters prompt.Prompter,
 ) Provider {
 	provider := &TerraformProvider{
+		envManager:   envManager,
 		env:          env,
 		console:      console,
 		cli:          cli,
@@ -112,7 +115,13 @@ func (t *TerraformProvider) Initialize(ctx context.Context, projectPath string, 
 // An environment is considered to be in a provision-ready state if it contains both an AZURE_SUBSCRIPTION_ID and
 // AZURE_LOCATION value.
 func (t *TerraformProvider) EnsureEnv(ctx context.Context) error {
-	return EnsureSubscriptionAndLocation(ctx, t.env, t.prompters, func(_ account.Location) bool { return true })
+	return EnsureSubscriptionAndLocation(
+		ctx,
+		t.envManager,
+		t.env,
+		t.prompters,
+		func(_ account.Location) bool { return true },
+	)
 }
 
 // Previews the infrastructure through terraform plan

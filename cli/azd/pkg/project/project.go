@@ -7,7 +7,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
@@ -17,6 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/blang/semver/v4"
+	"golang.org/x/exp/slices"
 	"gopkg.in/yaml.v3"
 )
 

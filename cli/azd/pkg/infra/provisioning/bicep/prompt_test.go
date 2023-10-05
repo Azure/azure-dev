@@ -244,7 +244,7 @@ func TestPromptForParametersLocation(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	prepareBicepMocks(mockContext)
 
-	env := environment.Ephemeral()
+	env := environment.New("test")
 	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 	accountManager := &mockaccount.MockAccountManager{
 		Subscriptions: []account.Subscription{

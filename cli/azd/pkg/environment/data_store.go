@@ -14,6 +14,10 @@ const (
 	RemoteKindAzureBlobStorage RemoteKind = "AzureBlobStorage"
 )
 
+var ValidRemoteKinds = []string{
+	string(RemoteKindAzureBlobStorage),
+}
+
 type DataStore interface {
 	// Gets the path to the environment .env file
 	EnvPath(env *Environment) string

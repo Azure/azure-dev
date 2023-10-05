@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"strings"
 
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -74,8 +75,17 @@ func NewManager(
 	// via the container but we can't do that because the remote data store is optional and the IoC
 	// container doesn't support optional interface based dependencies.
 	if remoteConfig != nil {
-		if err := serviceLocator.ResolveNamed(remoteConfig.Backend, &remote); err != nil {
-			return nil, fmt.Errorf("resolving remote data store: %w", err)
+		err := serviceLocator.ResolveNamed(remoteConfig.Backend, &remote)
+		if err != nil {
+			if errors.Is(err, ioc.ErrResolveInstance) {
+				return nil, fmt.Errorf(
+					"remote state configuration is invalid. The specified backend '%s' is not valid. Valid values are '%s'.",
+					remoteConfig.Backend,
+					strings.Join(ValidRemoteKinds, ","),
+				)
+			}
+
+			return nil, fmt.Errorf("resolving remote state data store: %w", err)
 		}
 	}
 

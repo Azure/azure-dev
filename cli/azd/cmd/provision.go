@@ -8,6 +8,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -79,6 +80,7 @@ type provisionAction struct {
 	projectConfig    *project.ProjectConfig
 	writer           io.Writer
 	console          input.Console
+	subService       *account.SubscriptionsService
 }
 
 func newProvisionAction(
@@ -91,6 +93,7 @@ func newProvisionAction(
 	console input.Console,
 	formatter output.Formatter,
 	writer io.Writer,
+	subService *account.SubscriptionsService,
 ) actions.Action {
 	return &provisionAction{
 		flags:            flags,
@@ -102,6 +105,7 @@ func newProvisionAction(
 		projectConfig:    projectConfig,
 		writer:           writer,
 		console:          console,
+		subService:       subService,
 	}
 }
 

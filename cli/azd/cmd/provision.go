@@ -129,6 +129,23 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		defaultTitleNote = "This is a preview. No changes will be applied to your Azure resources."
 	}
 
+	// Get Subscription to Display in Command Title Note
+	subscription, subErr := p.subService.GetSubscription(ctx, p.env.GetSubscriptionId(), p.env.GetTenantId())
+	if subErr == nil {
+		defaultTitleNote = fmt.Sprintf(
+			"Provisioning Azure resources in subscription (%s) %s can take some time",
+			*subscription.DisplayName,
+			*subscription.SubscriptionID,
+		)
+		if previewMode {
+			defaultTitleNote = fmt.Sprintf(
+				"This is a preview. No changes will be applied to your Azure resources in subscription (%s) %s .",
+				*subscription.DisplayName,
+				*subscription.SubscriptionID,
+			)
+		}
+	}
+
 	p.console.MessageUxItem(ctx, &ux.MessageTitle{
 		Title:     defaultTitle,
 		TitleNote: defaultTitleNote},

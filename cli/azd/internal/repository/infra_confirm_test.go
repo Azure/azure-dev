@@ -2,6 +2,8 @@ package repository
 
 import (
 	"context"
+	"fmt"
+	"io"
 	"os"
 	"strings"
 	"testing"
@@ -205,7 +207,7 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 					false,
 					os.Stdout,
 					input.ConsoleHandles{
-						Stderr: os.Stderr,
+						Stderr: io.Discard,
 						Stdin:  strings.NewReader(strings.Join(tt.interactions, "\n") + "\n"),
 						Stdout: os.Stdout,
 					},
@@ -213,6 +215,11 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 			}
 
 			spec, err := i.infraSpecFromDetect(context.Background(), tt.detect)
+
+			// Print extra newline to avoid mangling `go test -v` final test result output while waiting for final stdin,
+			// which may result in incorrect `gotestsum` reporting
+			fmt.Println()
+
 			require.NoError(t, err)
 			require.Equal(t, tt.want, spec)
 		})

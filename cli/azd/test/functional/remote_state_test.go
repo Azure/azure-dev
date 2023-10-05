@@ -96,12 +96,23 @@ func runTestWithRemoteState(t *testing.T, testFunc remoteStateTestFunc) {
 	session := recording.Start(t)
 	envName := randomOrStoredEnvName(session)
 
-	cli, azdEnv := provisionRemoteStateStorage(t, ctx, envName, session)
+	cli, env := provisionRemoteStateStorage(t, ctx, envName, session)
 	defer destroyRemoteStateStorage(t, ctx, cli)
 
 	accountConfig := &storage.AccountConfig{
-		AccountName:   azdEnv.Getenv("AZURE_STORAGE_ACCOUNT_NAME"),
+		AccountName:   env.Getenv("AZURE_STORAGE_ACCOUNT_NAME"),
 		ContainerName: "azdtest",
+	}
+
+	if session != nil {
+		if session.Playback {
+			// This is currently required because azd doesn't store
+			// AZURE_SUBSCRIPTION_ID in the .env file
+			// See #2423
+			env.SetSubscriptionId(session.Variables[recording.SubscriptionIdKey])
+		} else {
+			session.Variables[recording.SubscriptionIdKey] = env.GetSubscriptionId()
+		}
 	}
 
 	testFunc(accountConfig)

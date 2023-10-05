@@ -80,7 +80,7 @@ type provisionAction struct {
 	projectConfig    *project.ProjectConfig
 	writer           io.Writer
 	console          input.Console
-	subService       *account.SubscriptionsService
+	subManager       *account.SubscriptionsManager
 }
 
 func newProvisionAction(
@@ -93,7 +93,7 @@ func newProvisionAction(
 	console input.Console,
 	formatter output.Formatter,
 	writer io.Writer,
-	subService *account.SubscriptionsService,
+	subManager *account.SubscriptionsManager,
 ) actions.Action {
 	return &provisionAction{
 		flags:            flags,
@@ -105,7 +105,7 @@ func newProvisionAction(
 		projectConfig:    projectConfig,
 		writer:           writer,
 		console:          console,
-		subService:       subService,
+		subManager:       subManager,
 	}
 }
 
@@ -130,19 +130,26 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 	}
 
 	// Get Subscription to Display in Command Title Note
-	subscription, subErr := p.subService.GetSubscription(ctx, p.env.GetSubscriptionId(), p.env.GetTenantId())
+	subscriptions, subErr := p.subManager.GetSubscriptions(ctx)
 	if subErr == nil {
-		defaultTitleNote = fmt.Sprintf(
-			"Provisioning Azure resources in subscription (%s) %s can take some time",
-			*subscription.DisplayName,
-			*subscription.SubscriptionID,
-		)
+		messageFormat := "Provisioning Azure resources in subscription (%s) %s can take some time"
 		if previewMode {
-			defaultTitleNote = fmt.Sprintf(
-				"This is a preview. No changes will be applied to your Azure resources in subscription (%s) %s .",
-				*subscription.DisplayName,
-				*subscription.SubscriptionID,
-			)
+			messageFormat = "This is a preview. No changes will be applied to your Azure resources in subscription (%s) %s."
+		}
+
+		// Find subscription name
+		for _, sub := range subscriptions {
+			if sub.Id == p.env.GetSubscriptionId() {
+				SubscriptionID := sub.Id
+				DisplayName := sub.Name
+				// Formate the note
+				defaultTitleNote = fmt.Sprintf(
+					messageFormat,
+					DisplayName,
+					SubscriptionID,
+				)
+				break
+			}
 		}
 	}
 

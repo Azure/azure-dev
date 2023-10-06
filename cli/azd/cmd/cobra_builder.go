@@ -189,6 +189,9 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 						output.WithHighLightFormat(suggestionErr.Suggestion))
 				}
 			}
+
+			// Stop the spinner if it is running to unhide cursor
+			console.StopSpinner(ctx, "", input.Step)
 		})
 
 		if invokeErr != nil {

@@ -122,8 +122,8 @@ func NewAzdContext() (*AzdContext, error) {
 		} else if err == nil {
 			// We found our azure.yaml file, and searchDir is the directory
 			// that contains it now we need to check for the environment .azure file.
-			EnvironmentDirectoryPath := filepath.Join(searchDir, EnvironmentDirectoryName)
-			_, err := os.Stat(EnvironmentDirectoryPath)
+			environmentDirectoryPath := filepath.Join(searchDir, EnvironmentDirectoryName)
+			_, err := os.Stat(environmentDirectoryPath)
 			if os.IsNotExist(err) {
 				return nil, ErrNoEnvironment
 			} else if err == nil {

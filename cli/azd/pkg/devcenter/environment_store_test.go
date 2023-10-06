@@ -131,7 +131,7 @@ func Test_EnvironmentStore_Get(t *testing.T) {
 		require.Equal(t, "value1", env.Getenv("KEY1"))
 		require.Equal(t, "value2", env.Getenv("KEY2"))
 
-		devCenterNode, ok := env.Config.Get("devCenter")
+		devCenterNode, ok := env.Config.Get("platform.config")
 		require.True(t, ok)
 
 		envConfig, err := ParseConfig(devCenterNode)

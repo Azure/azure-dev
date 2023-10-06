@@ -496,8 +496,11 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		// Project Configuration
 		var projectConfig *devcenter.Config
 		projConfig, _ := lazyProjectConfig.GetValue()
-		if projConfig != nil {
-			projectConfig = projConfig.DevCenter
+		if projConfig != nil && projConfig.Platform != nil && projConfig.Platform.Type == devcenter.PlatformKindDevCenter {
+			value, err := devcenter.ParseConfig(projConfig.Platform.Config)
+			if err == nil {
+				projectConfig = value
+			}
 		}
 
 		return devcenter.MergeConfigs(

@@ -1,6 +1,10 @@
 package devcenter
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
+)
 
 const (
 	// Environment variable names
@@ -9,6 +13,8 @@ const (
 	DevCenterProjectEnvName       = "AZURE_DEVCENTER_PROJECT"
 	DevCenterEnvTypeEnvName       = "AZURE_DEVCENTER_ENVIRONMENT_TYPE"
 	DevCenterEnvDefinitionEnvName = "AZURE_DEVCENTER_ENVIRONMENT_DEFINITION"
+
+	PlatformKindDevCenter project.PlatformKind = "devcenter"
 )
 
 var (

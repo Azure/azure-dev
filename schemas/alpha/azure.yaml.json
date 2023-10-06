@@ -397,41 +397,46 @@
                 }
             }
         },
-        "devCenter": {
+        "platform": {
             "type": "object",
-            "title": "The dev center configuration used for the project.",
-            "description": "Optional. Provides additional project configuration for Azure Dev Center integration.",
+            "title": "The platform configuration used for the project.",
+            "description": "Optional. Provides additional configuration for platform specific features such as Azure Dev Center.",
             "additionalProperties": false,
             "required": [
-                "name"
+                "type"
             ],
             "properties": {
-                "name": {
+                "type": {
                     "type": "string",
-                    "title": "The name of the Azure Dev Center",
-                    "description": "Optional. Used as the default dev center for this project."
+                    "title": "The platform type.",
+                    "description": "Required. The platform type. (Example: devcenter)",
+                    "enum": [
+                        "devcenter"
+                    ]
                 },
-                "project": {
-                    "type": "string",
-                    "title": "The name of the Azure Dev Center project.",
-                    "description": "Optional. Used as the default dev center project for this project."
-                },
-                "catalog": {
-                    "type": "string",
-                    "title": "The name of the Azure Dev Center catalog.",
-                    "description": "Optional. Used as the default dev center catalog for this project."
-                },
-                "environmentDefinition": {
-                    "type": "string",
-                    "title": "The name of the Dev Center catalog environment definition.",
-                    "description": "Optional. Used as the default dev center environment definition for this project."
-                },
-                "environmentType": {
-                    "type": "string",
-                    "title": "The Dev Center project environment type used for the deployment environment.",
-                    "description": "Optional. Used as the default environment type for this project."
+                "config": {
+                    "type": "object",
+                    "additionalProperties": true
                 }
-            }
+            },
+            "allOf": [
+                {
+                    "if": {
+                        "properties": {
+                            "type": {
+                                "const": "devcenter"
+                            }
+                        }
+                    },
+                    "then": {
+                        "properties": {
+                            "config": {
+                                "$ref": "#/definitions/azureDevCenterConfig"
+                            }
+                        }
+                    }
+                }
+            ]
         }
     },
     "definitions": {
@@ -620,6 +625,39 @@
                     "type": "string",
                     "title": "The Azure Storage endpoint.",
                     "description": "Optional. The Azure Storage endpoint. (Default: blob.core.windows.net)"
+                }
+            }
+        },
+        "azureDevCenterConfig": {
+            "type": "object",
+            "title": "The dev center configuration used for the project.",
+            "description": "Optional. Provides additional project configuration for Azure Dev Center integration.",
+            "additionalProperties": false,
+            "properties": {
+                "name": {
+                    "type": "string",
+                    "title": "The name of the Azure Dev Center",
+                    "description": "Optional. Used as the default dev center for this project."
+                },
+                "project": {
+                    "type": "string",
+                    "title": "The name of the Azure Dev Center project.",
+                    "description": "Optional. Used as the default dev center project for this project."
+                },
+                "catalog": {
+                    "type": "string",
+                    "title": "The name of the Azure Dev Center catalog.",
+                    "description": "Optional. Used as the default dev center catalog for this project."
+                },
+                "environmentDefinition": {
+                    "type": "string",
+                    "title": "The name of the Dev Center catalog environment definition.",
+                    "description": "Optional. Used as the default dev center environment definition for this project."
+                },
+                "environmentType": {
+                    "type": "string",
+                    "title": "The Dev Center project environment type used for the deployment environment.",
+                    "description": "Optional. Used as the default environment type for this project."
                 }
             }
         }

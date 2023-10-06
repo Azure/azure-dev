@@ -9,11 +9,13 @@ import (
 )
 
 func IsDevCenterEnabled(config config.Config, projectConfig *project.ProjectConfig) bool {
-	if projectConfig != nil && projectConfig.DevCenter != nil {
+	if projectConfig != nil &&
+		projectConfig.Platform != nil &&
+		projectConfig.Platform.Type == devcenter.PlatformKindDevCenter {
 		return true
 	}
 
-	devCenterModeNode, ok := config.Get(devcenter.ModeConfigPath)
+	devCenterModeNode, ok := config.Get("platform.type")
 	if !ok {
 		return false
 	}
@@ -23,5 +25,5 @@ func IsDevCenterEnabled(config config.Config, projectConfig *project.ProjectConf
 		return false
 	}
 
-	return strings.EqualFold(devCenterValue, "on")
+	return strings.EqualFold(devCenterValue, string(devcenter.PlatformKindDevCenter))
 }

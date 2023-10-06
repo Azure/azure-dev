@@ -25,10 +25,9 @@ func Test_TemplateSource_ListTemplates(t *testing.T) {
 		require.NotNil(t, templateList)
 		require.Len(t, templateList, len(mockEnvDefinitions))
 		require.Len(t, templateList[0].Metadata.Project, 4)
-		require.Contains(t, templateList[0].Metadata.Project, "devCenter.name")
-		require.Contains(t, templateList[0].Metadata.Project, "devCenter.catalog")
-		require.Contains(t, templateList[0].Metadata.Project, "devCenter.environmentDefinition")
-		require.Contains(t, templateList[0].Metadata.Project, "devCenter.repoUrl")
+		require.Contains(t, templateList[0].Metadata.Project, "platform.config.name")
+		require.Contains(t, templateList[0].Metadata.Project, "platform.config.catalog")
+		require.Contains(t, templateList[0].Metadata.Project, "platform.config.environmentDefinition")
 	})
 
 	t.Run("Fail", func(t *testing.T) {
@@ -50,7 +49,7 @@ func Test_TemplateSource_GetTemplate(t *testing.T) {
 		templateSource := newTemplateSourceForTest(t, mockContext, &Config{}, nil)
 		setupDevCenterSuccessMocks(t, mockContext, templateSource)
 
-		template, err := templateSource.GetTemplate(*mockContext.Context, "DEV_CENTER_01/SampleCatalog/WebApp")
+		template, err := templateSource.GetTemplate(*mockContext.Context, "DEV_CENTER_01/SampleCatalog/EnvDefinition_02")
 		require.NoError(t, err)
 		require.NotNil(t, template)
 	})

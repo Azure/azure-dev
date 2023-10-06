@@ -5,8 +5,6 @@ import (
 	"fmt"
 )
 
-var ModeConfigPath = fmt.Sprintf("%s.mode", ConfigPath)
-
 // Merges supplemental configuration into the base config only if the key/value doesn't already exist in the base config
 // Example: If the base config is a fully configured object, then any supplemental configuration will be ignored
 func MergeConfigs(configs ...*Config) *Config {

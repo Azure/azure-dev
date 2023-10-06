@@ -285,8 +285,8 @@ func Test_Prompt_Parameters(t *testing.T) {
 			},
 		}
 
-		env.Config.Set("provision.parameters.param1", "value1")
-		env.Config.Set("provision.parameters.param2", "value2")
+		_ = env.Config.Set("provision.parameters.param1", "value1")
+		_ = env.Config.Set("provision.parameters.param2", "value2")
 
 		values, err := prompter.PromptParameters(*mockContext.Context, env, envDefinition)
 		require.NoError(t, err)
@@ -316,8 +316,8 @@ func Test_Prompt_Parameters(t *testing.T) {
 			},
 		}
 
-		env.Config.Set("provision.parameters.param1", "value1")
-		env.Config.Set("provision.parameters.param2", "value2")
+		_ = env.Config.Set("provision.parameters.param1", "value1")
+		_ = env.Config.Set("provision.parameters.param2", "value2")
 
 		values, err := prompter.PromptParameters(*mockContext.Context, env, envDefinition)
 		require.NoError(t, err)

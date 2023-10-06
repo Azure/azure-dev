@@ -149,6 +149,7 @@ func (m *mockDevCenterManager) Outputs(
 
 var mockDevCenterList []*devcentersdk.DevCenter = []*devcentersdk.DevCenter{
 	{
+		//nolint:lll
 		Id:             "/subscriptions/SUBSCRIPTION_01/resourceGroups/RESOURCE_GROUP_01/providers/Microsoft.DevCenter/devcenters/DEV_CENTER_01",
 		SubscriptionId: "SUBSCRIPTION_01",
 		ResourceGroup:  "RESOURCE_GROUP_01",
@@ -156,6 +157,7 @@ var mockDevCenterList []*devcentersdk.DevCenter = []*devcentersdk.DevCenter{
 		ServiceUri:     "https://DEV_CENTER_01.eastus2.devcenter.azure.com",
 	},
 	{
+		//nolint:lll
 		Id:             "/subscriptions/SUBSCRIPTION_02/resourceGroups/RESOURCE_GROUP_02/providers/Microsoft.DevCenter/devcenters/DEV_CENTER_02",
 		SubscriptionId: "SUBSCRIPTION_02",
 		ResourceGroup:  "RESOURCE_GROUP_02",

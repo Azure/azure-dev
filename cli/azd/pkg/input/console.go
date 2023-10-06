@@ -649,6 +649,7 @@ func NewConsole(noPrompt bool, isTerminal bool, w io.Writer, handles ConsoleHand
 		CharSet:      spinnerCharSet,
 	}
 	c.spinner, _ = yacspin.New(spinnerConfig)
+	c.spinnerTerminalMode = spinnerConfig.TerminalMode
 
 	go watchConsoleWidth(c)
 	return c

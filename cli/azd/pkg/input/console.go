@@ -335,20 +335,12 @@ func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format Spi
 
 	c.spinnerLineMu.Lock()
 	c.spinnerCurrentTitle = title
-	_ = c.spinner.Stop()
 
 	indentPrefix := c.getIndent(format)
 	line := c.spinnerLine(title, indentPrefix)
-	spinnerConfig := yacspin.Config{
-		Frequency:    200 * time.Millisecond,
-		Writer:       c.writer,
-		Suffix:       " ",
-		TerminalMode: c.spinnerTerminalMode,
-		CharSet:      line.CharSet,
-		Message:      line.Message,
-		Prefix:       line.Prefix,
-	}
-	c.spinner, _ = yacspin.New(spinnerConfig)
+	c.spinner.Message(line.Message)
+	c.spinner.CharSet(line.CharSet)
+	c.spinner.Prefix(line.Prefix)
 
 	_ = c.spinner.Start()
 	c.spinnerLineMu.Unlock()
@@ -429,10 +421,8 @@ func (c *AskerConsole) StopSpinner(ctx context.Context, lastMessage string, form
 	c.spinnerLineMu.Lock()
 	c.spinnerCurrentTitle = ""
 	// Update style according to MessageUxType
-	if lastMessage == "" {
-		c.spinner.StopCharacter("")
-	} else {
-		c.spinner.StopCharacter(c.getStopChar(format))
+	if lastMessage != "" {
+		lastMessage = c.getStopChar(format) + " " + lastMessage
 	}
 
 	c.spinner.StopMessage(lastMessage)

@@ -141,13 +141,13 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		// Find subscription name
 		for _, sub := range subscriptions {
 			if sub.Id == p.env.GetSubscriptionId() {
-				SubscriptionID := sub.Id
-				DisplayName := sub.Name
+				subscriptionID := sub.Id
+				displayName := sub.Name
 				// Formate the note
 				defaultTitleNote = fmt.Sprintf(
 					messageFormat,
-					DisplayName,
-					SubscriptionID,
+					displayName,
+					subscriptionID,
 					p.env.GetLocation(),
 				)
 				break

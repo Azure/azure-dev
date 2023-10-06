@@ -135,13 +135,11 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		// Find subscription name
 		for _, sub := range subscriptions {
 			if sub.Id == p.env.GetSubscriptionId() {
-<<<<<<< HEAD
 				messageFormat := "Provisioning Azure resources in subscription (%s) %s and location (%s) can take some time"
 				if previewMode {
 					messageFormat = "This is a preview. No changes will be applied to your Azure resources in subscription (%s) %s " +
 						"and location (%s)."
 				}
-=======
 				subscriptionID := sub.Id
 				displayName := sub.Name
 				// Formate the note

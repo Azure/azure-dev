@@ -132,15 +132,14 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 	// Get Subscription to Display in Command Title Note
 	subscriptions, subErr := p.subManager.GetSubscriptions(ctx)
 	if subErr == nil {
-		messageFormat := "Provisioning Azure resources in subscription (%s) %s and location (%s) can take some time"
-		if previewMode {
-			messageFormat = "This is a preview. No changes will be applied to your Azure resources in subscription (%s) %s " +
-				"and location (%s)."
-		}
-
 		// Find subscription name
 		for _, sub := range subscriptions {
 			if sub.Id == p.env.GetSubscriptionId() {
+				messageFormat := "Provisioning Azure resources in subscription (%s) %s and location (%s) can take some time"
+				if previewMode {
+					messageFormat = "This is a preview. No changes will be applied to your Azure resources in subscription (%s) %s " +
+						"and location (%s)."
+				}
 				SubscriptionID := sub.Id
 				DisplayName := sub.Name
 				// Formate the note

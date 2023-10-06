@@ -89,6 +89,10 @@ var (
 	ErrNoProject = errors.New("no project exists; to create a new project, run `azd init`")
 )
 
+var (
+	ErrNoEnvironment = errors.New("no environment found to get values from")
+)
+
 // Creates context with project directory set to the nearest project file found.
 //
 // The project file is first searched for in the current directory, if not found, the parent directory is searched
@@ -117,8 +121,15 @@ func NewAzdContext() (*AzdContext, error) {
 			searchDir = parent
 		} else if err == nil {
 			// We found our azure.yaml file, and searchDir is the directory
-			// that contains it.
-			break
+			// that contains it now we need to check for the environment .azure file.
+			EnvironmentDirectoryPath := filepath.Join(searchDir, EnvironmentDirectoryName)
+			_, err := os.Stat(EnvironmentDirectoryPath)
+			if os.IsNotExist(err) {
+				return nil, ErrNoEnvironment
+			} else if err == nil {
+				// We found our .azure file.
+				break
+			}
 		} else {
 			return nil, fmt.Errorf("searching for project file: %w", err)
 		}

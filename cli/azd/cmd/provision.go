@@ -140,13 +140,11 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 					messageFormat = "This is a preview. No changes will be applied to your Azure resources in subscription (%s) %s " +
 						"and location (%s)."
 				}
-				subscriptionID := sub.Id
-				displayName := sub.Name
 				// Formate the note
 				defaultTitleNote = fmt.Sprintf(
 					messageFormat,
-					displayName,
-					subscriptionID,
+					sub.Name,
+					sub.Id,
 					p.env.GetLocation(),
 				)
 				break

@@ -928,6 +928,7 @@ func (p *BicepProvider) Destroy(ctx context.Context, options DestroyOptions) (*D
 		azure.ArmParameters{},
 		map[string]*string{
 			azure.TagKeyAzdEnvName: to.Ptr(p.env.GetEnvName()),
+			"azd-deploy-reason":    to.Ptr("down"),
 		}); err != nil {
 		log.Println("failed creating new empty deployment after destroy")
 	}

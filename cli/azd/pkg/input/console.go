@@ -616,10 +616,10 @@ func watchConsoleWidth(c *AskerConsole) {
 	} else {
 		// avoid taking a dependency on syscall.SIGWINCH (unix-only constant) directly
 		const SIGWINCH = syscall.Signal(0x1c)
-		sigchan := make(chan os.Signal, 1)
-		signal.Notify(sigchan, SIGWINCH)
+		signalChan := make(chan os.Signal, 1)
+		signal.Notify(signalChan, SIGWINCH)
 		go func() {
-			for range sigchan {
+			for range signalChan {
 				c.handleResize(getConsoleWidth())
 			}
 		}()

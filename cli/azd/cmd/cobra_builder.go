@@ -190,7 +190,7 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 				}
 			}
 
-			// Stop the spinner if it is running to unhide cursor
+			// Stop the spinner always to un-hide cursor
 			console.StopSpinner(ctx, "", input.Step)
 		})
 

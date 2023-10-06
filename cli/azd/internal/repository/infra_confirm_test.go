@@ -3,7 +3,6 @@ package repository
 import (
 	"context"
 	"fmt"
-	"io"
 	"os"
 	"strings"
 	"testing"
@@ -207,7 +206,7 @@ func TestInitializer_infraSpecFromDetect(t *testing.T) {
 					false,
 					os.Stdout,
 					input.ConsoleHandles{
-						Stderr: io.Discard,
+						Stderr: os.Stderr,
 						Stdin:  strings.NewReader(strings.Join(tt.interactions, "\n") + "\n"),
 						Stdout: os.Stdout,
 					},

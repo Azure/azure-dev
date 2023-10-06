@@ -363,32 +363,36 @@ func (p *BicepProvider) plan(ctx context.Context) (*deploymentDetails, error) {
 		return nil, err
 	}
 
-	var target infra.Deployment
-
-	if deploymentScope == azure.DeploymentScopeSubscription {
-		target = infra.NewSubscriptionDeployment(
-			p.deploymentsService,
-			p.deploymentOperations,
-			p.env.GetLocation(),
-			p.env.GetSubscriptionId(),
-			deploymentNameForEnv(p.env.GetEnvName(), p.clock),
-		)
-	} else if deploymentScope == azure.DeploymentScopeResourceGroup {
-		target = infra.NewResourceGroupDeployment(
-			p.deploymentsService,
-			p.deploymentOperations,
-			p.env.GetSubscriptionId(),
-			p.env.Getenv(environment.ResourceGroupEnvVarName),
-			deploymentNameForEnv(p.env.GetEnvName(), p.clock),
-		)
-	} else {
-		return nil, fmt.Errorf("unsupported scope: %s", deploymentScope)
+	target, err := p.deploymentScope(deploymentScope)
+	if err != nil {
+		return nil, err
 	}
 
 	return &deploymentDetails{
 		CompiledBicep: compileResult,
 		Target:        target,
 	}, nil
+}
+
+func (p *BicepProvider) deploymentScope(deploymentScope azure.DeploymentScope) (infra.Deployment, error) {
+	if deploymentScope == azure.DeploymentScopeSubscription {
+		return infra.NewSubscriptionDeployment(
+			p.deploymentsService,
+			p.deploymentOperations,
+			p.env.GetLocation(),
+			p.env.GetSubscriptionId(),
+			deploymentNameForEnv(p.env.GetEnvName(), p.clock),
+		), nil
+	} else if deploymentScope == azure.DeploymentScopeResourceGroup {
+		return infra.NewResourceGroupDeployment(
+			p.deploymentsService,
+			p.deploymentOperations,
+			p.env.GetSubscriptionId(),
+			p.env.Getenv(environment.ResourceGroupEnvVarName),
+			deploymentNameForEnv(p.env.GetEnvName(), p.clock),
+		), nil
+	}
+	return nil, fmt.Errorf("unsupported scope: %s", deploymentScope)
 }
 
 // cArmDeploymentNameLengthMax is the maximum length of the name of a deployment in ARM.
@@ -746,6 +750,24 @@ func (p *BicepProvider) inferScopeFromEnv(ctx context.Context) (infra.Scope, err
 	}
 }
 
+const cEmptySubDeployTemplate = `{
+	"$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+	"contentVersion": "1.0.0.0",
+	"parameters": {},
+	"variables": {},
+	"resources": [],
+	"outputs": {}
+  }`
+
+const cEmptyResourceGroupDeployTemplate = `{
+	"$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+	"contentVersion": "1.0.0.0",
+	"parameters": {},
+	"variables": {},
+	"resources": [],
+	"outputs": {}
+  }`
+
 // Destroys the specified deployment by deleting all azure resources, resource groups & deployments that are referenced.
 func (p *BicepProvider) Destroy(ctx context.Context, options DestroyOptions) (*DestroyResult, error) {
 	modulePath := p.modulePath()
@@ -758,6 +780,15 @@ func (p *BicepProvider) Destroy(ctx context.Context, options DestroyOptions) (*D
 	scope, err := p.scopeForTemplate(ctx, compileResult.Template)
 	if err != nil {
 		return nil, fmt.Errorf("computing deployment scope: %w", err)
+	}
+
+	targetScope, err := compileResult.Template.TargetScope()
+	if err != nil {
+		return nil, err
+	}
+	deployScope, err := p.deploymentScope(targetScope)
+	if err != nil {
+		return nil, err
 	}
 
 	// TODO: Report progress, "Fetching resource groups"
@@ -880,6 +911,25 @@ func (p *BicepProvider) Destroy(ctx context.Context, options DestroyOptions) (*D
 		destroyResult.InvalidatedEnvKeys = append(
 			destroyResult.InvalidatedEnvKeys, environment.ResourceGroupEnvVarName,
 		)
+	}
+
+	var emptyTemplate json.RawMessage
+	if targetScope == azure.DeploymentScopeSubscription {
+		emptyTemplate = []byte(cEmptySubDeployTemplate)
+	} else {
+		emptyTemplate = []byte(cEmptyResourceGroupDeployTemplate)
+	}
+
+	// create empty deployment to void provision state
+	// We want to keep the deployment history, that's why it's not just deleted
+	if _, err := p.deployModule(ctx,
+		deployScope,
+		emptyTemplate,
+		azure.ArmParameters{},
+		map[string]*string{
+			azure.TagKeyAzdEnvName: to.Ptr(p.env.GetEnvName()),
+		}); err != nil {
+		log.Println("failed creating new empty deployment after destroy")
 	}
 
 	return destroyResult, nil

@@ -60,7 +60,7 @@ func (st *appServiceTarget) Package(
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
 			// check if serviceConfig.Docker has valid values
-			if isDockerDeployment(serviceConfig) {
+			if st.isDockerDeployment(serviceConfig) {
 				task.SetResult(packageOutput)
 				return
 			}
@@ -98,7 +98,7 @@ func (st *appServiceTarget) Deploy(
 				return
 			}
 
-			if isDockerDeployment(serviceConfig) {
+			if st.isDockerDeployment(serviceConfig) {
 				sdr, err := st.containerDeploy(ctx, serviceConfig, packageOutput, targetResource, task)
 				if err != nil {
 					return
@@ -252,6 +252,6 @@ func (st *appServiceTarget) validateTargetResource(
 	return nil
 }
 
-func isDockerDeployment(serviceConfig *ServiceConfig) bool {
+func (st *appServiceTarget) isDockerDeployment(serviceConfig *ServiceConfig) bool {
 	return serviceConfig.Docker.Path != ""
 }

@@ -293,21 +293,19 @@ type spinnerLine struct {
 }
 
 func (c *AskerConsole) spinnerLine(title string, indent string) spinnerLine {
-	// adding one for the empty space before the message
-	spinnerLen := len(indent) + len(spinnerCharSet[0]) + 1
+	spinnerLen := len(indent) + len(spinnerCharSet[0]) + 1 // adding one for the empty space before the message
 	width := int(c.consoleWidth.Load())
-	switch {
-	case width <= spinnerLen+len(cPostfix):
-		if width <= 3 {
-			return spinnerLine{
-				CharSet: shortCharSet[:width],
-			}
-		}
 
+	switch {
+	case width <= 3: // show number of dots up to 3
 		return spinnerLine{
-			CharSet: shortCharSet,
+			CharSet: spinnerShortCharSet[:width],
 		}
-	case width <= spinnerLen+len(title):
+	case width <= spinnerLen+len(cPostfix): // show number of dots
+		return spinnerLine{
+			CharSet: spinnerShortCharSet,
+		}
+	case width <= spinnerLen+len(title): // truncate title
 		return spinnerLine{
 			Prefix:  indent,
 			CharSet: spinnerCharSet,
@@ -343,7 +341,7 @@ func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format Spi
 	indentPrefix := c.getIndent(format)
 	line := c.spinnerLine(title, indentPrefix)
 	c.spinner.Message(line.Message)
-	c.spinner.CharSet(line.CharSet)
+	_ = c.spinner.CharSet(line.CharSet)
 	c.spinner.Prefix(line.Prefix)
 
 	_ = c.spinner.Start()
@@ -393,7 +391,7 @@ var spinnerCharSet []string = []string{
 	"|=======|", "| ======|", "|  =====|", "|   ====|", "|    ===|", "|     ==|", "|      =|",
 }
 
-var shortCharSet []string = []string{".", "..", "..."}
+var spinnerShortCharSet []string = []string{".", "..", "..."}
 
 func setIndentation(spaces int) string {
 	bytes := make([]byte, spaces)
@@ -588,20 +586,20 @@ func getConsoleWidth() int {
 }
 
 func (c *AskerConsole) handleResize(width int) {
-	// update console width
 	c.consoleWidth.Store(int32(width))
+
 	if c.spinner.Status() == yacspin.SpinnerRunning {
 		c.spinnerLineMu.Lock()
 		defer c.spinnerLineMu.Unlock()
 
 		line := c.spinnerLine(c.spinnerCurrentTitle, c.currentIndent.Load())
 		c.spinner.Message(line.Message)
-		c.spinner.CharSet(line.CharSet)
+		_ = c.spinner.CharSet(line.CharSet)
 		c.spinner.Prefix(line.Prefix)
 	}
 }
 
-func monitorWidthResize(c *AskerConsole) error {
+func watchConsoleWidth(c *AskerConsole) {
 	if runtime.GOOS == "windows" {
 		go func() {
 			prevWidth := getConsoleWidth()
@@ -626,7 +624,6 @@ func monitorWidthResize(c *AskerConsole) error {
 			}
 		}()
 	}
-	return nil
 }
 
 // Creates a new console with the specified writer, handles and formatter.
@@ -654,7 +651,7 @@ func NewConsole(noPrompt bool, isTerminal bool, w io.Writer, handles ConsoleHand
 	}
 	c.spinner, _ = yacspin.New(spinnerConfig)
 
-	go monitorWidthResize(c)
+	go watchConsoleWidth(c)
 	return c
 }
 

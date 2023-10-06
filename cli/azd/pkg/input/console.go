@@ -588,15 +588,14 @@ func getConsoleWidth() int {
 func (c *AskerConsole) handleResize(width int) {
 	c.consoleWidth.Store(int32(width))
 
+	c.spinnerLineMu.Lock()
 	if c.spinner.Status() == yacspin.SpinnerRunning {
-		c.spinnerLineMu.Lock()
-		defer c.spinnerLineMu.Unlock()
-
 		line := c.spinnerLine(c.spinnerCurrentTitle, c.currentIndent.Load())
 		c.spinner.Message(line.Message)
 		_ = c.spinner.CharSet(line.CharSet)
 		c.spinner.Prefix(line.Prefix)
 	}
+	c.spinnerLineMu.Unlock()
 }
 
 func watchConsoleWidth(c *AskerConsole) {

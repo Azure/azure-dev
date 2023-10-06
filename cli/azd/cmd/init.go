@@ -9,7 +9,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"time"
 
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -121,9 +120,6 @@ func newInitAction(
 }
 
 func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	i.console.ShowSpinner(ctx, "Deploying service api (Updating container app)", input.Step)
-
-	time.Sleep(50 * time.Second)
 	wd, err := os.Getwd()
 	if err != nil {
 		return nil, fmt.Errorf("getting cwd: %w", err)

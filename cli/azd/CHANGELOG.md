@@ -4,6 +4,8 @@
 
 ### Bugs Fixed
 
+- [[2837]](https://github.com/Azure/azure-dev/pull/2837) `azd down` does not clear provision state.
+
 ## 1.4.0 (2023-10-05)
 
 ### Features Added

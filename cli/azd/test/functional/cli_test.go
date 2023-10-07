@@ -180,7 +180,7 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func Test_CLI_ProvisionCache(t *testing.T) {
+func Test_CLI_ProvisionState(t *testing.T) {
 	t.Setenv("AZURE_RECORD_MODE", "live")
 	ctx, cancel := newTestContext(t)
 	defer cancel()
@@ -204,10 +204,11 @@ func Test_CLI_ProvisionCache(t *testing.T) {
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
 	require.NoError(t, err)
 
-	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
-	require.NoError(t, err)
-
 	expectedOutputContains := "There are no changes to provision for your application."
+
+	initial, err := cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
+	require.NoError(t, err)
+	require.NotContains(t, initial.Stdout, expectedOutputContains)
 
 	// Second provision should use cache
 	secondProvisionOutput, err := cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
@@ -229,6 +230,54 @@ func Test_CLI_ProvisionCache(t *testing.T) {
 	flagProvisionOutput, err := cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision", "--no-state")
 	require.NoError(t, err)
 	require.NotContains(t, flagProvisionOutput.Stdout, expectedOutputContains)
+
+	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
+	require.NoError(t, err)
+}
+
+func Test_CLI_ProvisionStateWithDown(t *testing.T) {
+	t.Setenv("AZURE_RECORD_MODE", "live")
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
+	t.Logf("DIR: %s", dir)
+
+	session := recording.Start(t)
+
+	envName := randomOrStoredEnvName(session)
+	t.Logf("AZURE_ENV_NAME: %s", envName)
+
+	cli := azdcli.NewCLI(t, azdcli.WithSession(session))
+	cli.WorkingDirectory = dir
+	cli.Env = append(cli.Env, os.Environ()...)
+	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
+
+	err := copySample(dir, "storage")
+	require.NoError(t, err, "failed expanding sample")
+
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
+	require.NoError(t, err)
+
+	expectedOutputContains := "There are no changes to provision for your application."
+
+	initial, err := cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
+	require.NoError(t, err)
+	require.NotContains(t, initial.Stdout, expectedOutputContains)
+
+	// Second provision should use cache
+	secondProvisionOutput, err := cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
+	require.NoError(t, err)
+	require.Contains(t, secondProvisionOutput.Stdout, expectedOutputContains)
+
+	// down to delete resources
+	_, err = cli.RunCommandWithStdIn(ctx, "", "down", "--force", "--purge")
+	require.NoError(t, err)
+
+	// use flag to force provision
+	reProvisionAfterDown, err := cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
+	require.NoError(t, err)
+	require.NotContains(t, reProvisionAfterDown.Stdout, expectedOutputContains)
 
 	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
 	require.NoError(t, err)

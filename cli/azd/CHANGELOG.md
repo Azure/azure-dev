@@ -1,14 +1,10 @@
 # Release History
 
-## 1.5.0-beta.1 (Unreleased)
-
-### Features Added
-
-### Breaking Changes
+## 1.4.1 (2023-10-06)
 
 ### Bugs Fixed
 
-### Other Changes
+- [[2837]](https://github.com/Azure/azure-dev/pull/2837) `azd down` does not clear provision state.
 
 ## 1.4.0 (2023-10-05)
 

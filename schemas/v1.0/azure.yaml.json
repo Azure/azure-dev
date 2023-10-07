@@ -88,7 +88,8 @@
                             "containerapp",
                             "function",
                             "staticwebapp",
-                            "aks"
+                            "aks",
+                            "springapp"
                         ]
                     },
                     "language": {
@@ -119,6 +120,9 @@
                     },
                     "k8s": {
                         "$ref": "#/definitions/aksOptions"
+                    },
+                    "spring": {
+                        "$ref": "#/definitions/springOptions"
                     },
                     "hooks": {
                         "type": "object",
@@ -494,6 +498,55 @@
                             "description": "When set will be appended to the root of your ingress resource path."
                         }
                     }
+                }
+            }
+        },
+        "springOptions": {
+            "type": "object",
+            "title": "Optional. The Azure Spring Apps (ASA) configuration options",
+            "additionalProperties": false,
+            "properties": {
+                "deploymentName": {
+                    "type": "string",
+                    "title": "Optional. The deployment name to provision when using Azure Spring Apps Enterprise plan. (Default: default)",
+                    "description": "When set it will override the default deployment.",
+                    "default": "default"
+                },
+                "buildServiceName": {
+                    "type": "string",
+                    "title": "Optional. The build service name to provision when using Azure Spring Apps Enterprise plan. (Default: default)",
+                    "description": "When set it will override the default build service.",
+                    "default": "default"
+                },
+                "builderName": {
+                    "type": "string",
+                    "title": "Optional. The builder name to provision when using Azure Spring Apps Enterprise plan. (Default: default)",
+                    "description": "When set it will override the default builder.",
+                    "default": "default"
+                },
+                "agentPoolName": {
+                    "type": "string",
+                    "title": "Optional. The agent tool name to provision when using Azure Spring Apps Enterprise plan. (Default: default)",
+                    "description": "When set it will override the default agent tool.",
+                    "default": "default"
+                },
+                "jvmVersion": {
+                    "type": "string",
+                    "title": "Optional. The default jvm version used by the build pod to build projects when using Azure Spring Apps Enterprise plan. (Default: 17)",
+                    "description": "When set it will override the default jvm version",
+                    "default": "17"
+                },
+                "pythonVersion": {
+                    "type": "string",
+                    "title": "Optional. The default python version used by the build pod to build projects when using Azure Spring Apps Enterprise plan. (Default: 3.10.*)",
+                    "description": "When set it will override the default python version",
+                    "default": "3.10.*"
+                },
+                "nodeVersion": {
+                    "type": "string",
+                    "title": "Optional. The default node version used by the build pod to build projects when using Azure Spring Apps Enterprise plan. (Default: 18.*)",
+                    "description": "When set it will override the default node version",
+                    "default": "18.*"
                 }
             }
         }

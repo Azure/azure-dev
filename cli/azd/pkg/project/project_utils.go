@@ -8,12 +8,13 @@ import (
 	"compress/gzip"
 	"fmt"
 	"io"
+	"io/fs"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/rzip"
 	"github.com/otiai10/copy"
+	"github.com/walle/targz"
 )
 
 // CreateDeployableZip creates a zip file of a folder, recursively.
@@ -41,21 +42,22 @@ func createDeployableZip(appName string, path string) (string, error) {
 	return zipFile.Name(), nil
 }
 
-// createDeployableTar creates a tar file of a folder, recursively, and put the tar file in the given directory dir.
+// createDeployableTar creates a tar file of a folder, recursively.
 // Returns the path to the created tar file or an error if it fails.
-func createDeployableTar(appName, path, dir, packageTarName string) (string, error) {
-	ext := ".tar.gz"
-	tarFile, err := os.Create(filepath.Join(dir, packageTarName+ext))
+func createDeployableTar(appName, path string) (string, error) {
+	tarFile, err := os.CreateTemp("", "app*.tar.gz")
 	if err != nil {
 		return "", fmt.Errorf("failed when creating tar package to deploy %s: %w", appName, err)
 	}
 
-	if err := compressFolderToTarGz(path, tarFile); err != nil {
-		// if we fail here just do our best to close things out and cleanup
-		tarFile.Close()
-		os.Remove(tarFile.Name())
-		return "", err
-	}
+	// if err := compressFolderToTarGz(path, tarFile); err != nil {
+	// 	// if we fail here just do our best to close things out and cleanup
+	// 	tarFile.Close()
+	// 	os.Remove(tarFile.Name())
+	// 	return "", err
+	// }
+
+	err = targz.Compress(path, tarFile.Name())
 
 	if err := tarFile.Close(); err != nil {
 		// may fail but, again, we'll do our best to cleanup here.
@@ -69,9 +71,12 @@ func createDeployableTar(appName, path, dir, packageTarName string) (string, err
 func compressFolderToTarGz(path string, buf io.Writer) error {
 	zr := gzip.NewWriter(buf)
 	tw := tar.NewWriter(zr)
+	fmt.Println("source path: " + path)
 
 	// walk through every file in the folder
-	filepath.Walk(path, func(file string, fi os.FileInfo, err error) error {
+	filepath.WalkDir(path, func(file string, info fs.DirEntry, err error) error {
+		fmt.Println("each file path: " + file)
+		fi, err := info.Info()
 		// generate tar header
 		header, err := tar.FileInfoHeader(fi, file)
 		if err != nil {
@@ -79,14 +84,16 @@ func compressFolderToTarGz(path string, buf io.Writer) error {
 		}
 
 		// update the name to correctly reflect the desired destination when untaring
-		header.Name = strings.TrimPrefix(strings.TrimPrefix(file, path), string(filepath.Separator))
+		// header.Name = strings.TrimPrefix(strings.TrimPrefix(file, path), string(filepath.Separator))
+		header.Name = file
+		fmt.Println("file header name: " + header.Name)
 
 		// write header
 		if err := tw.WriteHeader(header); err != nil {
 			return err
 		}
 		// if not a dir, write file content
-		if !fi.IsDir() {
+		if !info.IsDir() {
 			data, err := os.Open(file)
 			defer func() {
 				_ = data.Close()

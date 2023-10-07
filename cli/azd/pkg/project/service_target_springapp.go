@@ -16,7 +16,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
-	"github.com/otiai10/copy"
 )
 
 const (
@@ -27,6 +26,8 @@ const (
 	enterpriseTierName       = "Enterprise"
 	buildNameSuffix          = "-azd-build"
 	defaultJvmVersion        = "17"
+	defaultPythonVersion     = "3.10.*"
+	defaultNodeVersion       = "18.*"
 	springAppsPackageTarName = "app"
 	jarExtName               = ".jar"
 	tarExtName               = ".tar.gz"
@@ -40,6 +41,8 @@ type SpringOptions struct {
 	BuilderName      string `yaml:"builderName"`
 	AgentPoolName    string `yaml:"agentPoolName"`
 	JvmVersion       string `yaml:"jvmVersion"`
+	PythonVersion    string `yaml:"pythonVersion"`
+	NodeVersion      string `yaml:"nodeVersion"`
 }
 
 type springAppTarget struct {
@@ -79,31 +82,25 @@ func (st *springAppTarget) Package(
 		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
 			task.SetProgress(NewServiceProgress("Compressing deployment artifacts"))
 
-			// create a temp directory to store the tar file in case the target project is a Java project, then we need to
-			// store both jar and tar file as the package output. The reason why we need two package output files for Java is
-			// because for ASA different plans, the target files to upload are different. It requires tars for enterprise plans
-			// but jars only for non-enterprise plans. Since we cannot determine which ASA plans the user will provision in the
-			// package stage, thus we need to build both of them.
-			packageDest, err := os.MkdirTemp("", "azdpackage")
-			_, err = createDeployableTar(serviceConfig.Name, serviceConfig.RelativePath, packageDest, springAppsPackageTarName)
-			if err != nil {
-				task.SetError(err)
-				return
-			}
-
+			// Package output can be either of the below two cases:
+			// When the target project is a Java project, then we package it as a jar.
+			// Otherwise we will compress the source code as a tar file.
 			if serviceConfig.Language == ServiceLanguageJava {
-				err = copy.Copy(filepath.Join(packageOutput.PackagePath, AppServiceJavaPackageName+jarExtName),
-					filepath.Join(packageDest, AppServiceJavaPackageName+jarExtName))
+				task.SetResult(&ServicePackageResult{
+					Build:       packageOutput.Build,
+					PackagePath: filepath.Join(packageOutput.PackagePath, AppServiceJavaPackageName+jarExtName),
+				})
+			} else {
+				tarFile, err := createDeployableTar(serviceConfig.Name, packageOutput.PackagePath)
 				if err != nil {
-					task.SetError(fmt.Errorf("copying jar to staging directory failed: %w", err))
+					task.SetError(err)
 					return
 				}
+				task.SetResult(&ServicePackageResult{
+					Build:       packageOutput.Build,
+					PackagePath: tarFile,
+				})
 			}
-
-			task.SetResult(&ServicePackageResult{
-				Build:       packageOutput.Build,
-				PackagePath: packageDest,
-			})
 		},
 	)
 }
@@ -125,22 +122,6 @@ func (st *springAppTarget) Deploy(
 			deploymentName := serviceConfig.Spring.DeploymentName
 			if deploymentName == "" {
 				deploymentName = defaultDeploymentName
-			}
-			buildServiceName := serviceConfig.Spring.BuildServiceName
-			if buildServiceName == "" {
-				buildServiceName = defaultBuildServiceName
-			}
-			builderName := serviceConfig.Spring.BuilderName
-			if builderName == "" {
-				builderName = defaultBuilderName
-			}
-			agentPoolName := serviceConfig.Spring.AgentPoolName
-			if agentPoolName == "" {
-				agentPoolName = defaultAgentPoolName
-			}
-			jvmVersion := serviceConfig.Spring.JvmVersion
-			if jvmVersion == "" {
-				jvmVersion = defaultJvmVersion
 			}
 
 			_, err := st.springService.GetSpringAppDeployment(
@@ -167,14 +148,30 @@ func (st *springAppTarget) Deploy(
 				return
 			}
 
-			artifactPath := st.getArtifactPathByTier(task, *tier, packageOutput.PackagePath)
-			fmt.Println("artifact path: " + artifactPath)
+			artifactPath := packageOutput.PackagePath
 			relativePath := st.uploadArtifactToStorage(task, ctx, serviceConfig, targetResource, artifactPath)
 			fmt.Println("relative path: " + relativePath)
 
 			var result string
 			if *tier == enterpriseTierName {
 				task.SetProgress(NewServiceProgress("Creating build for artifact"))
+
+				buildServiceName := serviceConfig.Spring.BuildServiceName
+				if buildServiceName == "" {
+					buildServiceName = defaultBuildServiceName
+				}
+				builderName := serviceConfig.Spring.BuilderName
+
+				if builderName == "" {
+					builderName = defaultBuilderName
+				}
+				fmt.Println("builder name: " + builderName)
+				agentPoolName := serviceConfig.Spring.AgentPoolName
+				if agentPoolName == "" {
+					agentPoolName = defaultAgentPoolName
+				}
+				language := serviceConfig.Language
+				languageVersion := st.getBuildPodRuntimeEnv(task, serviceConfig, language)
 				// Extra operation for Enterprise tier
 				buildResultId, err := st.springService.CreateBuild(ctx, targetResource.SubscriptionId(),
 					targetResource.ResourceGroupName(),
@@ -183,7 +180,7 @@ func (st *springAppTarget) Deploy(
 					agentPoolName,
 					builderName,
 					serviceConfig.Name+buildNameSuffix,
-					jvmVersion,
+					languageVersion,
 					relativePath)
 
 				if err != nil {
@@ -323,20 +320,52 @@ func (st *springAppTarget) storeDeploymentEnvironment(
 	}
 }
 
-func (st *springAppTarget) getArtifactPathByTier(
-	task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress],
-	tier string,
-	packageOutput string,
-) string {
-	artifactPath := ""
-	if tier == enterpriseTierName {
-		artifactPath = filepath.Join(packageOutput, springAppsPackageTarName+tarExtName)
+func (st *springAppTarget) setRuntimeEnvMap(
+	envMap map[string]*string,
+	key, configuredLanguageVersion, defaultLanguageVersion string,
+) {
+	if configuredLanguageVersion != "" {
+		envMap[key] = &configuredLanguageVersion
+		fmt.Println("env map key: " + key + "env map value: " + configuredLanguageVersion)
 	} else {
-		artifactPath = filepath.Join(packageOutput, AppServiceJavaPackageName+jarExtName)
+		envMap[key] = &defaultLanguageVersion
+		fmt.Println("env map key: " + key + "env map value: " + defaultLanguageVersion)
 	}
-
-	return artifactPath
 }
+
+func (st *springAppTarget) getBuildPodRuntimeEnv(
+	task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress],
+	serviceConfig *ServiceConfig,
+	language ServiceLanguageKind,
+) map[string]*string {
+	runtimeVersionEnv := make(map[string]*string)
+	// For the languages that are not supported by AZD, like PHP and Golang, or the ones not supported by ASA-E, like fcharp, docker
+	// or the ones that are supported by AZD and ASA-E but do not need to configure the runtime ENV, like dotnet and csharp, we will skip them.
+	switch language {
+	case ServiceLanguagePython:
+		st.setRuntimeEnvMap(runtimeVersionEnv, "BP_CPYTHON_VERSION", serviceConfig.Spring.PythonVersion, defaultPythonVersion)
+	case ServiceLanguageJava:
+		st.setRuntimeEnvMap(runtimeVersionEnv, "BP_JVM_VERSION", serviceConfig.Spring.JvmVersion, defaultJvmVersion)
+	case ServiceLanguageJavaScript, ServiceLanguageTypeScript:
+		st.setRuntimeEnvMap(runtimeVersionEnv, "BP_NODE_VERSION", serviceConfig.Spring.NodeVersion, defaultNodeVersion)
+	}
+	return runtimeVersionEnv
+}
+
+// func (st *springAppTarget) getArtifactPath(
+// 	task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress],
+// 	language ServiceLanguageKind,
+// 	packageOutput string,
+// ) string {
+// 	artifactPath := ""
+// 	if language != ServiceLanguageJava {
+// 		artifactPath = filepath.Join(packageOutput, springAppsPackageTarName+tarExtName)
+// 	} else {
+// 		artifactPath = filepath.Join(packageOutput, AppServiceJavaPackageName+jarExtName)
+// 	}
+
+// 	return artifactPath
+// }
 
 func (st *springAppTarget) uploadArtifactToStorage(
 	task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress],
@@ -364,6 +393,7 @@ func (st *springAppTarget) uploadArtifactToStorage(
 		serviceConfig.Name,
 		artifactPath,
 	)
+	fmt.Println("storage resource name: " + targetResource.ResourceName())
 	if err != nil {
 		task.SetError(fmt.Errorf("failed to upload spring artifact: %w", err))
 		return ""

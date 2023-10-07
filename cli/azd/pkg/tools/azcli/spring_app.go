@@ -73,7 +73,7 @@ type SpringService interface {
 		agentPoolName string,
 		builderName string,
 		buildName string,
-		jvmVersion string,
+		languageVersionEnvMap map[string]*string,
 		relativePath string,
 	) (*string, error)
 	// Get build result from BuildService
@@ -174,7 +174,7 @@ func (ss *springService) CreateBuild(
 	agentPoolName string,
 	builderName string,
 	buildName string,
-	jvmVersion string,
+	languageVersionEnvMap map[string]*string,
 	relativePath string,
 ) (*string, error) {
 	client, err := ss.createBuildServiceClient(ctx, subscriptionId)
@@ -191,14 +191,15 @@ func (ss *springService) CreateBuild(
 	builderId := basePath +
 		"/builders/" + builderName
 
+	fmt.Println("builder id: " + builderId)
+	fmt.Println("agentpool id: " + agentPoolId)
+
 	resp, err := client.CreateOrUpdateBuild(ctx, resourceGroupName, instanceName, buildServiceName, buildName,
 		armappplatform.Build{
 			Properties: &armappplatform.BuildProperties{
-				AgentPool: to.Ptr(agentPoolId),
-				Builder:   to.Ptr(builderId),
-				Env: map[string]*string{
-					"BP_JVM_VERSION": to.Ptr(jvmVersion),
-				},
+				AgentPool:    to.Ptr(agentPoolId),
+				Builder:      to.Ptr(builderId),
+				Env:          languageVersionEnvMap,
 				RelativePath: to.Ptr(relativePath),
 			},
 		}, nil)
@@ -242,7 +243,7 @@ func (ss *springService) GetBuildResult(
 		}
 
 		// return error to retry
-		return retry.RetryableError(fmt.Errorf("error but will retry: %w", err))
+		return retry.RetryableError(fmt.Errorf("timeout when getting the build result: %w", err))
 	})
 
 	return result, err
@@ -267,19 +268,18 @@ func (ss *springService) UploadSpringArtifact(
 		return nil, err
 	}
 	storageInfo, err := springClient.GetResourceUploadURL(ctx, resourceGroup, instanceName, appName, nil)
+	fmt.Println("storage info: " + *storageInfo.UploadURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get resource upload URL: %w", err)
 	}
 
 	url, err := url.Parse(*storageInfo.UploadURL)
-	fmt.Println("storage upload url: " + *storageInfo.UploadURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse storage upload url %s : %w", *storageInfo.UploadURL, err)
 	}
 
 	// Pass NewAnonymousCredential here, since the URL returned by Azure Spring Apps already contains a SAS token
 	fileURL := azfile.NewFileURL(*url, azfile.NewPipeline(azfile.NewAnonymousCredential(), azfile.PipelineOptions{}))
-	fmt.Println("file url: " + fileURL.String())
 	err = azfile.UploadFileToAzureFile(ctx, file, fileURL,
 		azfile.UploadToAzureFileOptions{
 			Metadata: azfile.Metadata{

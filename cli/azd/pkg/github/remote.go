@@ -7,6 +7,7 @@ import (
 	"regexp"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
+	"github.com/savioxavier/termlink"
 )
 
 var ErrRemoteHostIsNotGitHub = errors.New("not a github host")
@@ -38,7 +39,7 @@ func GetSlugForRemote(remoteUrl string) (string, error) {
 	for _, r := range []*regexp.Regexp{gitHubRemoteGitUrlRegex, gitHubRemoteHttpsUrlRegex} {
 		captures := r.FindStringSubmatch(remoteUrl)
 		if captures != nil {
-			return captures[1], nil
+			return termlink.Link(captures[1], remoteUrl), nil
 		}
 	}
 

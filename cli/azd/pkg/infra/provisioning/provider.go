@@ -21,10 +21,17 @@ type Options struct {
 	Provider ProviderKind `yaml:"provider"`
 	Path     string       `yaml:"path"`
 	Module   string       `yaml:"module"`
+	// Not expected to be defined at azure.yaml
+	IgnoreDeploymentState bool `yaml:"-"`
 }
 
+type SkippedReasonType string
+
+const DeploymentStateSkipped SkippedReasonType = "deployment State"
+
 type DeployResult struct {
-	Deployment *Deployment
+	Deployment    *Deployment
+	SkippedReason SkippedReasonType
 }
 
 // DeployPreviewResult defines one deployment in preview mode, displaying what changes would it be performed, without

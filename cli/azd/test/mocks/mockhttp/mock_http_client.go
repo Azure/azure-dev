@@ -62,6 +62,10 @@ func (c *MockHttpClient) Reset() {
 	c.expressions = []*HttpExpression{}
 }
 
+func (c *MockHttpClient) CloseIdleConnections() {
+	// No-op
+}
+
 func (e *HttpExpression) Respond(response *http.Response) *MockHttpClient {
 	e.response = response
 	return e.http

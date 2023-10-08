@@ -1,17 +1,35 @@
 {
-    "name": "Azure Developer CLI",
-    "build": {
-        "dockerfile": "Dockerfile",
-        "args": {
-            "IMAGE": "bullseye"
-        }
+    "name": "Azure Developer CLI - Contributor",
+    "image": "mcr.microsoft.com/devcontainers/base:ubuntu",
+    "features": {
+        "ghcr.io/devcontainers/features/go:1": {
+            "version": "1.21"
+        },
+        "ghcr.io/guiyomh/features/golangci-lint:0":{},
+        "ghcr.io/devcontainers/features/docker-in-docker:1": {
+            "version": "latest",
+            "moby": true
+        },
+        "ghcr.io/devcontainers/features/azure-cli:1": {},
+        "ghcr.io/devcontainers/features/dotnet:2": {},
+        "ghcr.io/devcontainers/features/java:1": {},
+        "ghcr.io/devcontainers/features/node:1": {},
+        "ghcr.io/devcontainers/features/python:1": {},
+        "ghcr.io/devcontainers/features/kubectl-helm-minikube:1": {},
+        "ghcr.io/devcontainers/features/git:1": {},
+        "ghcr.io/devcontainers/features/github-cli:1": {},
+        "ghcr.io/devcontainers/features/terraform:1": {}
+        
     },
     "customizations": {
         "vscode": {
             "extensions": [
                 "redhat.vscode-yaml",
                 "streetsidesoftware.code-spell-checker",
-                "golang.go"
+                "golang.go",
+                "ms-azuretools.vscode-bicep",
+                "eamodio.gitlens",
+                "hashicorp.terraform"
             ]
         }
     }

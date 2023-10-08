@@ -48,7 +48,7 @@ func TestBicepOutputsWithDoubleUnderscoresAreConverted(t *testing.T) {
 	}
 
 	dotNetCli := dotnet.NewDotNetCli(mockContext.CommandRunner)
-	dp := NewDotNetProject(dotNetCli, environment.Ephemeral()).(*dotnetProject)
+	dp := NewDotNetProject(dotNetCli, environment.New("test")).(*dotnetProject)
 
 	err := dp.setUserSecretsFromOutputs(*mockContext.Context, serviceConfig, ServiceLifecycleEventArgs{
 		Args: map[string]any{
@@ -92,7 +92,7 @@ func Test_DotNetProject_Init(t *testing.T) {
 		return exec.NewRunResult(0, "", ""), nil
 	})
 
-	env := environment.Ephemeral()
+	env := environment.New("test")
 	dotNetCli := dotnet.NewDotNetCli(mockContext.CommandRunner)
 	serviceConfig := createTestServiceConfig("./src/api/test.csproj", AppServiceTarget, ServiceLanguageDotNet)
 
@@ -144,7 +144,7 @@ func Test_DotNetProject_Restore(t *testing.T) {
 			return exec.NewRunResult(0, "", ""), nil
 		})
 
-	env := environment.Ephemeral()
+	env := environment.New("test")
 	dotNetCli := dotnet.NewDotNetCli(mockContext.CommandRunner)
 	serviceConfig := createTestServiceConfig("./src/api/test.csproj", AppServiceTarget, ServiceLanguageCsharp)
 
@@ -184,7 +184,7 @@ func Test_DotNetProject_Build(t *testing.T) {
 			return exec.NewRunResult(0, "", ""), nil
 		})
 
-	env := environment.Ephemeral()
+	env := environment.New("test")
 	dotNetCli := dotnet.NewDotNetCli(mockContext.CommandRunner)
 	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageCsharp)
 
@@ -242,7 +242,7 @@ func Test_DotNetProject_Package(t *testing.T) {
 			return exec.NewRunResult(0, "", ""), nil
 		})
 
-	env := environment.Ephemeral()
+	env := environment.New("test")
 	dotNetCli := dotnet.NewDotNetCli(mockContext.CommandRunner)
 	serviceConfig := createTestServiceConfig("./src/api/test3.csproj", AppServiceTarget, ServiceLanguageCsharp)
 

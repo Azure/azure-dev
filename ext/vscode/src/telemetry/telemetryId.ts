@@ -58,6 +58,9 @@ export enum TelemetryId {
     // Reported when 'env refresh' CLI command is invoked.
     EnvRefreshCli = 'azure-dev.commands.cli.env-refresh.task',
 
+    // Reported when 'env list' CLI command is invoked.
+    EnvListCli = 'azure-dev.commands.cli.env-list.task',
+
     // Reported when the product evaluates whether to prompt the user for a survey.
     // We capture
     // - whether the user was already offered the survey,

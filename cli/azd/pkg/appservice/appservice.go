@@ -102,7 +102,7 @@ func (as *appServiceService) AddRevision(
 	}
 
 	linuxFx := fmt.Sprintf("docker|%s", imageName)
-	appClient.Update(ctx, resourceGroupName, appName, armappservice.SitePatchResource{
+	_, _ = appClient.Update(ctx, resourceGroupName, appName, armappservice.SitePatchResource{
 		Properties: &armappservice.SitePatchResourceProperties{
 			SiteConfig: &armappservice.SiteConfig{
 				LinuxFxVersion: &linuxFx,

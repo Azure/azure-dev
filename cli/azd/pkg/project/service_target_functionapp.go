@@ -21,10 +21,10 @@ import (
 // functionAppTarget specifies an Azure Function to deploy to.
 // Implements `project.ServiceTarget`
 type functionAppTarget struct {
-	env *environment.Environment
-	cli azcli.AzCli
+	env               *environment.Environment
+	cli               azcli.AzCli
 	containerHelper   *ContainerHelper
-	appServiceService appService.AppServiceService
+	appServiceService appservice.AppServiceService
 }
 
 // NewFunctionAppTarget creates a new instance of the Function App target
@@ -32,11 +32,11 @@ func NewFunctionAppTarget(
 	env *environment.Environment,
 	azCli azcli.AzCli,
 	containerHelper *ContainerHelper,
-	appServiceService appService.AppServiceService,
+	appServiceService appservice.AppServiceService,
 ) ServiceTarget {
 	return &functionAppTarget{
-		env: env,
-		cli: azCli,
+		env:               env,
+		cli:               azCli,
 		containerHelper:   containerHelper,
 		appServiceService: appServiceService,
 	}
@@ -178,7 +178,7 @@ func (f *functionAppTarget) containerDeploy(
 
 	imageName := f.env.GetServiceProperty(serviceConfig.Name, "IMAGE_NAME")
 	task.SetProgress(NewServiceProgress("Updating app service container"))
-	f.appServiceService.AddRevision(
+	_ = f.appServiceService.AddRevision(
 		ctx,
 		targetResource.SubscriptionId(),
 		targetResource.ResourceGroupName(),

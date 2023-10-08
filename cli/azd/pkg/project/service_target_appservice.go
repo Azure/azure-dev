@@ -22,7 +22,7 @@ type appServiceTarget struct {
 	env               *environment.Environment
 	cli               azcli.AzCli
 	containerHelper   *ContainerHelper
-	appServiceService appService.AppServiceService
+	appServiceService appservice.AppServiceService
 }
 
 // NewAppServiceTarget creates a new instance of the AppServiceTarget
@@ -30,7 +30,7 @@ func NewAppServiceTarget(
 	env *environment.Environment,
 	azCli azcli.AzCli,
 	containerHelper *ContainerHelper,
-	appServiceService appService.AppServiceService,
+	appServiceService appservice.AppServiceService,
 ) ServiceTarget {
 
 	return &appServiceTarget{
@@ -136,7 +136,7 @@ func (st *appServiceTarget) containerDeploy(
 
 	imageName := st.env.GetServiceProperty(serviceConfig.Name, "IMAGE_NAME")
 	task.SetProgress(NewServiceProgress("Updating app service container"))
-	st.appServiceService.AddRevision(
+	_ = st.appServiceService.AddRevision(
 		ctx,
 		targetResource.SubscriptionId(),
 		targetResource.ResourceGroupName(),

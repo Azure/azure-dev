@@ -91,7 +91,12 @@ func (st *springAppTarget) Package(
 					PackagePath: filepath.Join(packageOutput.PackagePath, AppServiceJavaPackageName+jarExtName),
 				})
 			} else {
-				tarFile, err := createDeployableTar(serviceConfig.Name, packageOutput.PackagePath)
+				modulePath, err := filepath.Abs(serviceConfig.RelativePath)
+				fmt.Println("rel path: " + modulePath)
+				fmt.Println("proj name: " + serviceConfig.Project.Name)
+				fmt.Println("pkg out path: " + packageOutput.PackagePath)
+				tarFile := filepath.Join(modulePath, "app.tar.gz")
+				// tarFile, err := createDeployableTar(serviceConfig.Name, packageOutput.PackagePath)
 				if err != nil {
 					task.SetError(err)
 					return

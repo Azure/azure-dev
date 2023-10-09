@@ -8,7 +8,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	"github.com/savioxavier/termlink"
 	"github.com/theckman/yacspin"
 	"golang.org/x/exp/slices"
 )
@@ -178,22 +177,8 @@ func PromptTemplate(
 	for _, template := range templates {
 		templateChoice := template.Name
 		if isInteractive {
-			if termlink.SupportsHyperlinks() {
-				trimmedPath := strings.Split(
-					strings.TrimRight(
-						strings.TrimLeft(
-							template.RepositoryPath,
-							"\x1b]8;;https://github.com/"),
-						"\x1b]8;;\x07\u001b[0m"),
-					"\x07")
-				repoPath := output.WithGrayFormat("(%s)", trimmedPath[0])
-				templateChoice += fmt.Sprintf("\n  %s\n", repoPath)
-			} else {
-				trimmedPath := strings.SplitN(template.RepositoryPath, " (", 2)
-				repoPath := output.WithGrayFormat("(%s)", trimmedPath[0])
-				templateChoice += fmt.Sprintf("\n  %s\n", repoPath)
-			}
-
+			repoPath := output.WithGrayFormat("(%s)", template.RepositoryPath)
+			templateChoice += fmt.Sprintf("\n  %s\n", repoPath)
 		}
 		choices = append(choices, templateChoice)
 	}

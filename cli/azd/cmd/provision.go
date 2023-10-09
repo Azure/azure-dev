@@ -8,6 +8,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -79,6 +80,7 @@ type provisionAction struct {
 	projectConfig    *project.ProjectConfig
 	writer           io.Writer
 	console          input.Console
+	subManager       *account.SubscriptionsManager
 }
 
 func newProvisionAction(
@@ -91,6 +93,7 @@ func newProvisionAction(
 	console input.Console,
 	formatter output.Formatter,
 	writer io.Writer,
+	subManager *account.SubscriptionsManager,
 ) actions.Action {
 	return &provisionAction{
 		flags:            flags,
@@ -102,6 +105,7 @@ func newProvisionAction(
 		projectConfig:    projectConfig,
 		writer:           writer,
 		console:          console,
+		subManager:       subManager,
 	}
 }
 
@@ -123,6 +127,29 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 	if previewMode {
 		defaultTitle = "Previewing Azure resource changes (azd provision --preview)"
 		defaultTitleNote = "This is a preview. No changes will be applied to your Azure resources."
+	}
+
+	// Get Subscription to Display in Command Title Note
+	subscriptions, subErr := p.subManager.GetSubscriptions(ctx)
+	if subErr == nil {
+		// Find subscription name
+		for _, sub := range subscriptions {
+			if sub.Id == p.env.GetSubscriptionId() {
+				messageFormat := "Provisioning Azure resources in subscription (%s) %s and location (%s) can take some time"
+				if previewMode {
+					messageFormat = "This is a preview. No changes will be applied to your Azure resources in subscription (%s) %s " +
+						"and location (%s)."
+				}
+				// Formate the note
+				defaultTitleNote = fmt.Sprintf(
+					messageFormat,
+					sub.Name,
+					sub.Id,
+					p.env.GetLocation(),
+				)
+				break
+			}
+		}
 	}
 
 	p.console.MessageUxItem(ctx, &ux.MessageTitle{

@@ -90,7 +90,7 @@ var (
 )
 
 var (
-	ErrNoEnvironment = errors.New("no environment found to get values from")
+	ErrNoEnvironment = errors.New("no environment found to get values from, to create a new environment, run `azd env new`")
 )
 
 // Creates context with project directory set to the nearest project file found.

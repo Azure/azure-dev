@@ -170,15 +170,21 @@ func (p *Prompter) PromptProject(ctx context.Context, devCenterName string) (*de
 		return x.Name < y.Name
 	})
 
-	projectNames := []string{}
+	// Filter to only projects that match the specified devcenter
+	filteredProjects := []*devcentersdk.Project{}
 	for _, project := range writeableProjects {
 		if strings.EqualFold(devCenterName, project.DevCenter.Name) {
-			projectNames = append(projectNames, project.Name)
+			filteredProjects = append(filteredProjects, project)
 		}
 	}
 
+	projectNames := []string{}
+	for _, project := range filteredProjects {
+		projectNames = append(projectNames, project.Name)
+	}
+
 	if len(projectNames) == 1 {
-		return writeableProjects[0], nil
+		return filteredProjects[0], nil
 	}
 
 	selected, err := p.console.Select(ctx, input.ConsoleOptions{
@@ -190,7 +196,7 @@ func (p *Prompter) PromptProject(ctx context.Context, devCenterName string) (*de
 		return nil, err
 	}
 
-	return writeableProjects[selected], nil
+	return filteredProjects[selected], nil
 }
 
 // PromptEnvironmentType prompts the user to select an environment type for the specified devcenter and project
@@ -283,33 +289,34 @@ func (p *Prompter) PromptParameters(
 	paramValues := map[string]any{}
 
 	for _, param := range envDef.Parameters {
-		if param.Name == "environmentName" {
-			paramValues[param.Name] = env.GetEnvName()
-			continue
-		}
-
-		// Process repoUrl parameter from defaults and allowed values
-		if param.Name == "repoUrl" {
-			var repoUrlValue string
-			if len(param.Allowed) > 0 {
-				repoUrlValue = param.Allowed[0]
-			} else {
-				value, ok := param.Default.(string)
-				if ok {
-					repoUrlValue = value
-				}
-			}
-
-			if repoUrlValue != "" {
-				paramValues[param.Name] = param.Allowed[0]
-				continue
-			}
-		}
-
 		paramPath := fmt.Sprintf("%s.%s", ProvisionParametersConfigPath, param.Id)
 		paramValue, exists := env.Config.Get(paramPath)
 
+		// Only prompt for parameter values when it has not already been set in the environment configuration
 		if !exists {
+			if param.Name == "environmentName" {
+				paramValues[param.Id] = env.GetEnvName()
+				continue
+			}
+
+			// Process repoUrl parameter from defaults and allowed values
+			if param.Name == "repoUrl" {
+				var repoUrlValue string
+				if len(param.Allowed) > 0 {
+					repoUrlValue = param.Allowed[0]
+				} else {
+					value, ok := param.Default.(string)
+					if ok {
+						repoUrlValue = value
+					}
+				}
+
+				if repoUrlValue != "" {
+					paramValues[param.Id] = repoUrlValue
+					continue
+				}
+			}
+
 			promptOptions := input.ConsoleOptions{
 				DefaultValue: param.Default,
 				Options:      param.Allowed,

@@ -129,7 +129,7 @@ func (tl *templateListAction) Run(ctx context.Context) (*actions.ActionResult, e
 		columns := []output.Column{
 			{
 				Heading:       "Repository Path",
-				ValueTemplate: "{{.RepositoryPath}}",
+				ValueTemplate: output.WithHyperlink("https://github.com/"+"{{.RepositoryPath}}", "{{.RepositoryPath}}"),
 			},
 			{
 				Heading:       "Source",

@@ -67,10 +67,7 @@ require (
 
 require github.com/golang-jwt/jwt/v5 v5.0.0 // indirect
 
-require (
-	github.com/savioxavier/termlink v1.3.0 // indirect
-	github.com/stretchr/objx v0.5.0 // indirect
-)
+require github.com/stretchr/objx v0.5.0 // indirect
 
 require (
 	github.com/Azure/azure-pipeline-go v0.2.1 // indirect

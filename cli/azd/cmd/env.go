@@ -514,36 +514,40 @@ func (eg *envGetValuesFlags) Bind(local *pflag.FlagSet, global *internal.GlobalC
 }
 
 type envGetValuesAction struct {
-	azdCtx    *azdcontext.AzdContext
-	console   input.Console
-	env       *environment.Environment
-	formatter output.Formatter
-	writer    io.Writer
-	flags     *envGetValuesFlags
+	azdCtx     *azdcontext.AzdContext
+	console    input.Console
+	envManager environment.Manager
+	formatter  output.Formatter
+	writer     io.Writer
+	flags      *envGetValuesFlags
 }
 
 func newEnvGetValuesAction(
 	azdCtx *azdcontext.AzdContext,
-	env *environment.Environment,
+	envManager environment.Manager,
 	console input.Console,
 	formatter output.Formatter,
 	writer io.Writer,
 	flags *envGetValuesFlags,
 ) actions.Action {
 	return &envGetValuesAction{
-		azdCtx:    azdCtx,
-		console:   console,
-		env:       env,
-		formatter: formatter,
-		writer:    writer,
-		flags:     flags,
+		azdCtx:     azdCtx,
+		console:    console,
+		envManager: envManager,
+		formatter:  formatter,
+		writer:     writer,
+		flags:      flags,
 	}
 }
 
 func (eg *envGetValuesAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	err := eg.formatter.Format(eg.env.Dotenv(), eg.writer, nil)
-	if err != nil {
-		return nil, err
+	_, err := eg.envManager.Get(ctx, "")
+	if errors.Is(err, environment.ErrNotFound) {
+		return nil, fmt.Errorf(
+			`"environment does no exist. You can create it with "azd env new"`,
+		)
+	} else if err != nil {
+		return nil, fmt.Errorf("ensuring environment exists: %w", err)
 	}
 
 	return nil, nil

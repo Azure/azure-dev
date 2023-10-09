@@ -541,7 +541,7 @@ func newEnvGetValuesAction(
 }
 
 func (eg *envGetValuesAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	_, err := eg.envManager.Get(ctx, "")
+	env, err := eg.envManager.Get(ctx, "")
 	if errors.Is(err, environment.ErrNotFound) {
 		return nil, fmt.Errorf(
 			`"environment does no exist. You can create it with "azd env new"`,
@@ -550,7 +550,7 @@ func (eg *envGetValuesAction) Run(ctx context.Context) (*actions.ActionResult, e
 		return nil, fmt.Errorf("ensuring environment exists: %w", err)
 	}
 
-	return nil, nil
+	return nil, eg.formatter.Format(env.Dotenv(), eg.writer, nil)
 }
 
 func getCmdEnvHelpDescription(*cobra.Command) string {

@@ -42,7 +42,7 @@ func MockDevCenterGraphQuery(mockContext *mocks.MockContext, devCenters []*devce
 	})
 }
 
-func MockListEnvironments(
+func MockListEnvironmentsByProject(
 	mockContext *mocks.MockContext,
 	projectName string,
 	environments []*devcentersdk.Environment,
@@ -50,7 +50,32 @@ func MockListEnvironments(
 	mockRequest := &http.Request{}
 
 	mockContext.HttpClient.When(func(request *http.Request) bool {
-		return request.Method == http.MethodGet && request.URL.Path == fmt.Sprintf("/projects/%s/environments", projectName)
+		return request.Method == http.MethodGet &&
+			request.URL.Path == fmt.Sprintf("/projects/%s/environments", projectName)
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		*mockRequest = *request
+
+		response := devcentersdk.EnvironmentListResponse{
+			Value: environments,
+		}
+
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, response)
+	})
+
+	return mockRequest
+}
+
+func MockListEnvironmentsByUser(
+	mockContext *mocks.MockContext,
+	projectName string,
+	userId string,
+	environments []*devcentersdk.Environment,
+) *http.Request {
+	mockRequest := &http.Request{}
+
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet &&
+			request.URL.Path == fmt.Sprintf("/projects/%s/users/%s/environments", projectName, userId)
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		*mockRequest = *request
 

@@ -151,6 +151,7 @@ func Test_DevCenter_Client(t *testing.T) {
 	envName := fmt.Sprintf("env-%d", time.Now().Unix())
 
 	err = projectClient.
+		EnvironmentsByMe().
 		EnvironmentByName(envName).
 		Put(*mockContext.Context, envSpec)
 
@@ -158,12 +159,14 @@ func Test_DevCenter_Client(t *testing.T) {
 
 	// Delete environment
 	err = projectClient.
+		EnvironmentsByMe().
 		EnvironmentByName(envName).
 		Delete(*mockContext.Context)
 
 	require.NoError(t, err)
 
 	err = projectClient.
+		EnvironmentsByMe().
 		EnvironmentByName(envName).
 		Put(*mockContext.Context, envSpec)
 
@@ -171,6 +174,7 @@ func Test_DevCenter_Client(t *testing.T) {
 
 	// Delete environment
 	err = projectClient.
+		EnvironmentsByMe().
 		EnvironmentByName(envName).
 		Delete(*mockContext.Context)
 

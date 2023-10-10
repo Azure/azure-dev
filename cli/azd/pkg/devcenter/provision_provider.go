@@ -91,6 +91,7 @@ func (p *ProvisionProvider) State(
 	environment, err := p.devCenterClient.
 		DevCenterByName(p.config.Name).
 		ProjectByName(p.config.Project).
+		EnvironmentsByUser(p.config.User).
 		EnvironmentByName(envName).
 		Get(ctx)
 
@@ -157,7 +158,21 @@ func (p *ProvisionProvider) Deploy(ctx context.Context) (*provisioning.DeployRes
 	}
 
 	envName := p.env.GetEnvName()
-	spinnerMessage := fmt.Sprintf("Creating devcenter environment %s", output.WithHighLightFormat(envName))
+
+	// Check to see if an existing devcenter environment already exists
+	existingEnv, _ := p.devCenterClient.
+		DevCenterByName(p.config.Name).
+		ProjectByName(p.config.Project).
+		EnvironmentsByUser(p.config.User).
+		EnvironmentByName(envName).
+		Get(ctx)
+
+	var spinnerMessage string
+	if existingEnv == nil {
+		spinnerMessage = fmt.Sprintf("Creating devcenter environment %s", output.WithHighLightFormat(envName))
+	} else {
+		spinnerMessage = fmt.Sprintf("Updating devcenter environment %s", output.WithHighLightFormat(envName))
+	}
 
 	envSpec := devcentersdk.EnvironmentSpec{
 		CatalogName:               p.config.Catalog,
@@ -171,6 +186,7 @@ func (p *ProvisionProvider) Deploy(ctx context.Context) (*provisioning.DeployRes
 	poller, err := p.devCenterClient.
 		DevCenterByName(p.config.Name).
 		ProjectByName(p.config.Project).
+		EnvironmentsByUser(p.config.User).
 		EnvironmentByName(envName).
 		BeginPut(ctx, envSpec)
 
@@ -184,7 +200,7 @@ func (p *ProvisionProvider) Deploy(ctx context.Context) (*provisioning.DeployRes
 	pollingContext, cancel := context.WithCancel(ctx)
 	defer cancel()
 
-	spinnerMessage = "Provisioning devcenter environment"
+	spinnerMessage = "Deploying dev center environment"
 	p.console.ShowSpinner(ctx, spinnerMessage, input.Step)
 
 	go p.pollForEnvironment(pollingContext, envName)
@@ -198,6 +214,7 @@ func (p *ProvisionProvider) Deploy(ctx context.Context) (*provisioning.DeployRes
 	environment, err := p.devCenterClient.
 		DevCenterByName(p.config.Name).
 		ProjectByName(p.config.Project).
+		EnvironmentsByUser(p.config.User).
 		EnvironmentByName(envName).
 		Get(ctx)
 
@@ -280,6 +297,7 @@ func (p *ProvisionProvider) Destroy(
 	poller, err := p.devCenterClient.
 		DevCenterByName(p.config.Name).
 		ProjectByName(p.config.Project).
+		EnvironmentsByUser(p.config.User).
 		EnvironmentByName(envName).
 		BeginDelete(ctx)
 
@@ -368,6 +386,7 @@ func (p *ProvisionProvider) pollForEnvironment(ctx context.Context, envName stri
 			environment, err := p.devCenterClient.
 				DevCenterByName(p.config.Name).
 				ProjectByName(p.config.Project).
+				EnvironmentsByUser(p.config.User).
 				EnvironmentByName(envName).
 				Get(ctx)
 

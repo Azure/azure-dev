@@ -24,6 +24,9 @@ type ProjectFilterPredicate func(p *devcentersdk.Project) bool
 // DevCenterFilterPredicate is a predicate function for filtering dev centers
 type DevCenterFilterPredicate func(dc *devcentersdk.DevCenter) bool
 
+// EnvironmentFilterPredicate is a predicate function for filtering environments
+type EnvironmentFilterPredicate func(e *devcentersdk.Environment) bool
+
 type Manager interface {
 	// WritableProjects gets a list of ADE projects that a user has write permissions
 	WritableProjects(ctx context.Context) ([]*devcentersdk.Project, error)

@@ -46,6 +46,10 @@ func MergeConfigs(configs ...*Config) *Config {
 		if config.EnvironmentDefinition != "" && mergedConfig.EnvironmentDefinition == "" {
 			mergedConfig.EnvironmentDefinition = config.EnvironmentDefinition
 		}
+
+		if config.User != "" && mergedConfig.User == "" {
+			mergedConfig.User = config.User
+		}
 	}
 
 	return mergedConfig

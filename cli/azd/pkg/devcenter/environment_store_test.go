@@ -22,25 +22,28 @@ var mockEnvironments []*devcentersdk.Environment = []*devcentersdk.Environment{
 		CatalogName:               "SampleCatalog",
 		EnvironmentDefinitionName: "WebApp",
 		EnvironmentType:           "Dev",
+		User:                      "me",
 	},
 	{
 		Name:                      "user01-project1-dev-02",
 		CatalogName:               "SampleCatalog",
 		EnvironmentDefinitionName: "WebApp",
 		EnvironmentType:           "Dev",
+		User:                      "me",
 	},
 	{
 		Name:                      "user01-project1-dev-03",
 		CatalogName:               "SampleCatalog",
 		EnvironmentDefinitionName: "ContainerApp",
 		EnvironmentType:           "Dev",
+		User:                      "me",
 	},
 }
 
 func Test_EnvironmentStore_List(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	mockdevcentersdk.MockDevCenterGraphQuery(mockContext, mockDevCenterList)
-	mockdevcentersdk.MockListEnvironments(mockContext, "Project1", mockEnvironments)
+	mockdevcentersdk.MockListEnvironmentsByProject(mockContext, "Project1", mockEnvironments)
 
 	t.Run("AllMatchingEnvironments", func(t *testing.T) {
 		config := &Config{
@@ -49,6 +52,7 @@ func Test_EnvironmentStore_List(t *testing.T) {
 			EnvironmentDefinition: "WebApp",
 			Catalog:               "SampleCatalog",
 			EnvironmentType:       "Dev",
+			User:                  "me",
 		}
 
 		store := newEnvironmentStoreForTest(t, mockContext, config, nil)
@@ -65,6 +69,7 @@ func Test_EnvironmentStore_List(t *testing.T) {
 			EnvironmentDefinition: "ContainerApp",
 			Catalog:               "SampleCatalog",
 			EnvironmentType:       "Dev",
+			User:                  "me",
 		}
 
 		store := newEnvironmentStoreForTest(t, mockContext, config, nil)
@@ -81,6 +86,7 @@ func Test_EnvironmentStore_List(t *testing.T) {
 			EnvironmentDefinition: "FunctionApp",
 			Catalog:               "SampleCatalog",
 			EnvironmentType:       "Dev",
+			User:                  "me",
 		}
 
 		store := newEnvironmentStoreForTest(t, mockContext, config, nil)
@@ -94,7 +100,7 @@ func Test_EnvironmentStore_List(t *testing.T) {
 func Test_EnvironmentStore_Get(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	mockdevcentersdk.MockDevCenterGraphQuery(mockContext, mockDevCenterList)
-	mockdevcentersdk.MockListEnvironments(mockContext, "Project1", mockEnvironments)
+	mockdevcentersdk.MockListEnvironmentsByProject(mockContext, "Project1", mockEnvironments)
 
 	t.Run("Exists", func(t *testing.T) {
 		mockdevcentersdk.MockGetEnvironment(mockContext, "Project1", "me", mockEnvironments[0].Name, mockEnvironments[0])
@@ -105,6 +111,7 @@ func Test_EnvironmentStore_Get(t *testing.T) {
 			EnvironmentDefinition: "WebApp",
 			Catalog:               "SampleCatalog",
 			EnvironmentType:       "Dev",
+			User:                  "me",
 		}
 
 		outputs := map[string]provisioning.OutputParameter{
@@ -146,6 +153,7 @@ func Test_EnvironmentStore_Get(t *testing.T) {
 			EnvironmentDefinition: "WebApp",
 			Catalog:               "SampleCatalog",
 			EnvironmentType:       "Dev",
+			User:                  "me",
 		}
 
 		store := newEnvironmentStoreForTest(t, mockContext, config, nil)
@@ -164,6 +172,7 @@ func Test_EnvironmentStore_GetEnvPath(t *testing.T) {
 		EnvironmentDefinition: "WebApp",
 		Catalog:               "SampleCatalog",
 		EnvironmentType:       "Dev",
+		User:                  "me",
 	}
 
 	store := newEnvironmentStoreForTest(t, mockContext, config, nil)
@@ -181,6 +190,7 @@ func Test_EnvironmentStore_Save(t *testing.T) {
 		EnvironmentDefinition: "WebApp",
 		Catalog:               "SampleCatalog",
 		EnvironmentType:       "Dev",
+		User:                  "me",
 	}
 
 	store := newEnvironmentStoreForTest(t, mockContext, config, nil)

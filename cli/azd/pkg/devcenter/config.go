@@ -24,6 +24,7 @@ var (
 	DevCenterProjectPath       = fmt.Sprintf("%s.project", ConfigPath)
 	DevCenterEnvTypePath       = fmt.Sprintf("%s.environmentType", ConfigPath)
 	DevCenterEnvDefinitionPath = fmt.Sprintf("%s.environmentDefinition", ConfigPath)
+	DevCenterUserPath          = fmt.Sprintf("%s.user", ConfigPath)
 )
 
 // Config provides the Azure DevCenter configuration used for devcenter enabled projects
@@ -33,6 +34,7 @@ type Config struct {
 	Project               string `json:"project,omitempty"               yaml:"project,omitempty"`
 	EnvironmentType       string `json:"environmentType,omitempty"       yaml:"environmentType,omitempty"`
 	EnvironmentDefinition string `json:"environmentDefinition,omitempty" yaml:"environmentDefinition,omitempty"`
+	User                  string `json:"user,omitempty"                  yaml:"user,omitempty"`
 }
 
 func (c *Config) EnsureValid() error {

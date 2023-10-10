@@ -76,10 +76,6 @@ func (c *ProjectItemRequestBuilder) EnvironmentsByMe() *EnvironmentListRequestBu
 	return builder
 }
 
-func (c *ProjectItemRequestBuilder) EnvironmentByName(environmentName string) *EnvironmentItemRequestBuilder {
-	return NewEnvironmentItemRequestBuilder(c.client, c.devCenter, c.id, environmentName)
-}
-
 func (c ProjectItemRequestBuilder) Permissions() *PermissionListRequestBuilder {
 	return NewPermissionListRequestBuilder(c.client, c.devCenter, c.id)
 }

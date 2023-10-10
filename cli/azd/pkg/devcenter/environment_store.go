@@ -3,11 +3,11 @@ package devcenter
 import (
 	"context"
 	"fmt"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/devcentersdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"golang.org/x/exp/slices"
 )
 
 const (
@@ -61,28 +61,20 @@ func (s *EnvironmentStore) List(ctx context.Context) ([]*contracts.EnvListEnviro
 		s.config = updatedConfig
 	}
 
-	environmentListResponse, err := s.devCenterClient.
-		DevCenterByName(s.config.Name).
-		ProjectByName(s.config.Project).
-		Environments().
-		Get(ctx)
-
+	matches, err := s.matchingEnvironments(ctx, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get devcenter environment list: %w", err)
 	}
 
-	// Filter the environment list to those matching the configured environment definition
-	matches := []*contracts.EnvListEnvironment{}
-	for _, environment := range environmentListResponse.Value {
-		if environment.EnvironmentDefinitionName == s.config.EnvironmentDefinition {
-			matches = append(matches, &contracts.EnvListEnvironment{
-				Name:       environment.Name,
-				DotEnvPath: environment.ResourceGroupId,
-			})
-		}
+	envListEnvs := []*contracts.EnvListEnvironment{}
+	for _, environment := range matches {
+		envListEnvs = append(envListEnvs, &contracts.EnvListEnvironment{
+			Name:       environment.Name,
+			DotEnvPath: environment.ResourceGroupId,
+		})
 	}
 
-	return matches, nil
+	return envListEnvs, nil
 }
 
 // Get returns the environment for the given name
@@ -92,20 +84,24 @@ func (s *EnvironmentStore) Get(ctx context.Context, name string) (*environment.E
 		return nil, fmt.Errorf("%s %w", name, environment.ErrNotFound)
 	}
 
-	envs, err := s.List(ctx)
+	filter := func(env *devcentersdk.Environment) bool {
+		return s.envDefFilter(env) && strings.EqualFold(env.Name, name)
+	}
+
+	matchingEnvs, err := s.matchingEnvironments(ctx, filter)
 	if err != nil {
 		return nil, err
 	}
 
-	matchingIndex := slices.IndexFunc(envs, func(env *contracts.EnvListEnvironment) bool {
-		return env.Name == name
-	})
-
-	if matchingIndex < 0 {
+	if len(matchingEnvs) == 0 {
 		return nil, fmt.Errorf("%s %w", name, environment.ErrNotFound)
 	}
 
-	matchingEnv := envs[matchingIndex]
+	if len(matchingEnvs) > 1 {
+		return nil, fmt.Errorf("multiple environments found with name '%s'", name)
+	}
+
+	matchingEnv := matchingEnvs[0]
 	env := environment.New(matchingEnv.Name)
 
 	if err := s.Reload(ctx, env); err != nil {
@@ -117,9 +113,23 @@ func (s *EnvironmentStore) Get(ctx context.Context, name string) (*environment.E
 
 // Reload reloads the environment from the remote data store
 func (s *EnvironmentStore) Reload(ctx context.Context, env *environment.Environment) error {
+	filter := func(e *devcentersdk.Environment) bool {
+		return s.envDefFilter(e) && strings.EqualFold(e.Name, env.GetEnvName())
+	}
+
+	envList, err := s.matchingEnvironments(ctx, filter)
+	if err != nil {
+		return err
+	}
+
+	if len(envList) != 1 {
+		return environment.ErrNotFound
+	}
+
 	environment, err := s.devCenterClient.
 		DevCenterByName(s.config.Name).
 		ProjectByName(s.config.Project).
+		EnvironmentsByUser(envList[0].User).
 		EnvironmentByName(env.GetEnvName()).
 		Get(ctx)
 
@@ -144,13 +154,16 @@ func (s *EnvironmentStore) Reload(ctx context.Context, env *environment.Environm
 	if err := env.Config.Set(DevCenterProjectPath, s.config.Project); err != nil {
 		return err
 	}
-	if err := env.Config.Set(DevCenterCatalogPath, s.config.Catalog); err != nil {
+	if err := env.Config.Set(DevCenterCatalogPath, environment.CatalogName); err != nil {
 		return err
 	}
-	if err := env.Config.Set(DevCenterEnvTypePath, s.config.EnvironmentType); err != nil {
+	if err := env.Config.Set(DevCenterEnvTypePath, environment.EnvironmentType); err != nil {
 		return err
 	}
-	if err := env.Config.Set(DevCenterEnvDefinitionPath, s.config.EnvironmentDefinition); err != nil {
+	if err := env.Config.Set(DevCenterEnvDefinitionPath, environment.EnvironmentDefinitionName); err != nil {
+		return err
+	}
+	if err := env.Config.Set(DevCenterUserPath, environment.User); err != nil {
 		return err
 	}
 
@@ -162,4 +175,38 @@ func (s *EnvironmentStore) Reload(ctx context.Context, env *environment.Environm
 // outside of the environment definition itself or the ARM deployment outputs
 func (s *EnvironmentStore) Save(ctx context.Context, env *environment.Environment) error {
 	return nil
+}
+
+// matchingEnvironments returns a list of environments matching the configured environment definition
+func (s *EnvironmentStore) matchingEnvironments(
+	ctx context.Context,
+	filter EnvironmentFilterPredicate,
+) ([]*devcentersdk.Environment, error) {
+	environmentListResponse, err := s.devCenterClient.
+		DevCenterByName(s.config.Name).
+		ProjectByName(s.config.Project).
+		Environments().
+		Get(ctx)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get devcenter environment list: %w", err)
+	}
+
+	if filter == nil {
+		filter = s.envDefFilter
+	}
+
+	// Filter the environment list to those matching the configured environment definition
+	matches := []*devcentersdk.Environment{}
+	for _, environment := range environmentListResponse.Value {
+		if filter(environment) {
+			matches = append(matches, environment)
+		}
+	}
+
+	return matches, nil
+}
+
+func (s *EnvironmentStore) envDefFilter(env *devcentersdk.Environment) bool {
+	return env.EnvironmentDefinitionName == s.config.EnvironmentDefinition
 }

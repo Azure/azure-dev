@@ -34,6 +34,10 @@ func NewEnvironmentListRequestBuilder(
 	return builder
 }
 
+func (c *EnvironmentListRequestBuilder) EnvironmentByName(name string) *EnvironmentItemRequestBuilder {
+	return NewEnvironmentItemRequestBuilder(c.client, c.devCenter, c.projectName, c.userId, name)
+}
+
 func (c *EnvironmentListRequestBuilder) Get(ctx context.Context) (*EnvironmentListResponse, error) {
 	var requestUrl string
 
@@ -63,23 +67,26 @@ func (c *EnvironmentListRequestBuilder) Get(ctx context.Context) (*EnvironmentLi
 type EnvironmentItemRequestBuilder struct {
 	*EntityItemRequestBuilder[EnvironmentItemRequestBuilder]
 	projectName string
+	userId      string
 }
 
 func NewEnvironmentItemRequestBuilder(
 	c *devCenterClient,
 	devCenter *DevCenter,
 	projectName string,
+	userId string,
 	environmentName string,
 ) *EnvironmentItemRequestBuilder {
 	builder := &EnvironmentItemRequestBuilder{}
 	builder.EntityItemRequestBuilder = newEntityItemRequestBuilder(builder, c, devCenter, environmentName)
 	builder.projectName = projectName
+	builder.userId = userId
 
 	return builder
 }
 
 func (c *EnvironmentItemRequestBuilder) Get(ctx context.Context) (*Environment, error) {
-	requestUrl := fmt.Sprintf("projects/%s/users/me/environments/%s", c.projectName, c.id)
+	requestUrl := fmt.Sprintf("projects/%s/users/%s/environments/%s", c.projectName, c.userId, c.id)
 	req, err := c.createRequest(ctx, http.MethodGet, requestUrl)
 	if err != nil {
 		return nil, fmt.Errorf("failed creating request: %w", err)

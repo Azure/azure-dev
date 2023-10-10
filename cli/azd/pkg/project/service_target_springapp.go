@@ -91,12 +91,7 @@ func (st *springAppTarget) Package(
 					PackagePath: filepath.Join(packageOutput.PackagePath, AppServiceJavaPackageName+jarExtName),
 				})
 			} else {
-				modulePath, err := filepath.Abs(serviceConfig.RelativePath)
-				fmt.Println("rel path: " + modulePath)
-				fmt.Println("proj name: " + serviceConfig.Project.Name)
-				fmt.Println("pkg out path: " + packageOutput.PackagePath)
-				tarFile := filepath.Join(modulePath, "app.tar.gz")
-				// tarFile, err := createDeployableTar(serviceConfig.Name, packageOutput.PackagePath)
+				tarFile, err := createDeployableTar(serviceConfig.Name, packageOutput.PackagePath)
 				if err != nil {
 					task.SetError(err)
 					return
@@ -356,21 +351,6 @@ func (st *springAppTarget) getBuildPodRuntimeEnv(
 	}
 	return runtimeVersionEnv
 }
-
-// func (st *springAppTarget) getArtifactPath(
-// 	task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress],
-// 	language ServiceLanguageKind,
-// 	packageOutput string,
-// ) string {
-// 	artifactPath := ""
-// 	if language != ServiceLanguageJava {
-// 		artifactPath = filepath.Join(packageOutput, springAppsPackageTarName+tarExtName)
-// 	} else {
-// 		artifactPath = filepath.Join(packageOutput, AppServiceJavaPackageName+jarExtName)
-// 	}
-
-// 	return artifactPath
-// }
 
 func (st *springAppTarget) uploadArtifactToStorage(
 	task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress],

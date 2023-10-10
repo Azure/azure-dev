@@ -151,6 +151,7 @@ func (tl *templateListAction) Run(ctx context.Context) (*actions.ActionResult, e
 				ValueTemplate: "{{.Name}}",
 			},
 		}
+
 		err = tl.formatter.Format(listedTemplates, tl.writer, output.TableFormatterOptions{
 			Columns: columns,
 		})

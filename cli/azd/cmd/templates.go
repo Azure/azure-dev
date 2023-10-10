@@ -130,9 +130,8 @@ func (tl *templateListAction) Run(ctx context.Context) (*actions.ActionResult, e
 		url, err := templates.Absolute(repoPath)
 		if err == nil {
 			return output.WithHyperlink(url, repoPath)
-		} else {
-			return repoPath
 		}
+	        return repoPath
 	}
 
 	if tl.formatter.Kind() == output.TableFormat {

@@ -128,8 +128,15 @@ func (tl *templateListAction) Run(ctx context.Context) (*actions.ActionResult, e
 	if tl.formatter.Kind() == output.TableFormat {
 		columns := []output.Column{
 			{
-				Heading:       "Repository Path",
-				ValueTemplate: output.WithHyperlink("https://github.com/"+"{{.RepositoryPath}}", "{{.RepositoryPath}}"),
+				Heading: "Repository Path",
+				ValueTemplate: func() string {
+					url, err := templates.Absolute("{{.RepositoryPath}}")
+					if err == nil {
+						return output.WithHyperlink(url, "{{.RepositoryPath}}")
+					} else {
+						return "{{.RepositoryPath}}"
+					}
+				}(),
 			},
 			{
 				Heading:       "Source",

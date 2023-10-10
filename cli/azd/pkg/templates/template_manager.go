@@ -68,6 +68,13 @@ func (tm *TemplateManager) ListTemplates(ctx context.Context, options *ListOptio
 			return a.Name < b.Name
 		})
 
+		for _, template := range templates {
+			url, err := Absolute(template.RepositoryPath)
+			if err == nil {
+				template.RepositoryPath = output.WithHyperlink(url, template.RepositoryPath)
+			}
+		}
+
 		allTemplates = append(allTemplates, templates...)
 	}
 

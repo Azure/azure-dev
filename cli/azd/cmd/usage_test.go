@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"bytes"
+	"context"
 	"html/template"
 	"strings"
 	"testing"
@@ -21,7 +22,7 @@ import (
 func TestUsage(t *testing.T) {
 	// disable rich formatting output
 	t.Setenv("TERM", "dumb")
-	root := NewRootCmd(false, nil)
+	root := NewRootCmd(context.Background(), false, nil)
 
 	usageSnapshot(t, root)
 }

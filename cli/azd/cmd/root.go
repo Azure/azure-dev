@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -25,7 +26,7 @@ import (
 // Creates the root Cobra command for AZD.
 // staticHelp - False, except for running for doc generation
 // middlewareChain - nil, except for running unit tests
-func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistration) *cobra.Command {
+func NewRootCmd(ctx context.Context, staticHelp bool, middlewareChain []*actions.MiddlewareRegistration) *cobra.Command {
 	prevDir := ""
 	opts := &internal.GlobalCommandOptions{GenerateStaticHelp: staticHelp}
 	opts.EnableTelemetry = telemetry.IsTelemetryEnabled()
@@ -309,6 +310,7 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 			return !descriptor.Options.DisableTelemetry
 		})
 
+	ioc.RegisterInstance(ioc.Global, ctx)
 	registerCommonDependencies(ioc.Global)
 	cobraBuilder := NewCobraBuilder(ioc.Global)
 

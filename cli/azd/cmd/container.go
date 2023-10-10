@@ -22,7 +22,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/containerapps"
 	"github.com/azure/azure-dev/cli/azd/pkg/devcenter"
-	"github.com/azure/azure-dev/cli/azd/pkg/devcentersdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -273,7 +272,6 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	// Remote Environment State Providers
 	remoteStateProviderMap := map[environment.RemoteKind]any{
 		environment.RemoteKindAzureBlobStorage: environment.NewStorageBlobDataStore,
-		devcenter.RemoteKindDevCenter:          devcenter.NewEnvironmentStore,
 	}
 
 	for remoteKind, constructor := range remoteStateProviderMap {
@@ -296,16 +294,6 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		// The project config may not be available yet
 		// Ex) Within init phase of fingerprinting
 		projectConfig, _ := lazyProjectConfig.GetValue()
-
-		// When devcenter is enabled in azd config, use devcenter as the remote state provider
-		// regardless of any other remote state configuration
-		if IsDevCenterEnabled(userConfig, projectConfig) {
-			remoteStateConfig = &state.RemoteConfig{
-				Backend: string(devcenter.RemoteKindDevCenter),
-			}
-
-			return remoteStateConfig, nil
-		}
 
 		// Lookup remote state config in the following precedence:
 		// 1. Project azure.yaml
@@ -427,90 +415,6 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		})
 	})
 
-	// DevCenter Config
-	container.RegisterSingleton(func(
-		ctx context.Context,
-		lazyAzdCtx *lazy.Lazy[*azdcontext.AzdContext],
-		userConfigManager config.UserConfigManager,
-		lazyProjectConfig *lazy.Lazy[*project.ProjectConfig],
-		lazyLocalEnvStore *lazy.Lazy[environment.LocalDataStore],
-	) (*devcenter.Config, error) {
-		// Load deventer configuration in the following precedence:
-		// 1. Environment variables (AZURE_DEVCENTER_*)
-		// 2. Azd Environment configuration (devCenter node)
-		// 3. Azd Project configuration from azure.yaml (devCenter node)
-		// 4. Azd user configuration from config.json (devCenter node)
-
-		// Shell environment variables
-		envVarConfig := &devcenter.Config{
-			Name:                  os.Getenv(devcenter.DevCenterCatalogEnvName),
-			Project:               os.Getenv(devcenter.DevCenterProjectEnvName),
-			Catalog:               os.Getenv(devcenter.DevCenterCatalogEnvName),
-			EnvironmentType:       os.Getenv(devcenter.DevCenterEnvTypeEnvName),
-			EnvironmentDefinition: os.Getenv(devcenter.DevCenterEnvDefinitionEnvName),
-		}
-
-		azdCtx, _ := lazyAzdCtx.GetValue()
-		localEnvStore, _ := lazyLocalEnvStore.GetValue()
-
-		// Local environment configuration
-		var environmentConfig *devcenter.Config
-		if azdCtx != nil && localEnvStore != nil {
-			defaultEnvName, err := azdCtx.GetDefaultEnvironmentName()
-			if err != nil {
-				environmentConfig = &devcenter.Config{}
-			} else {
-				// Attempt to load any devcenter configuration from local environment
-				env, err := localEnvStore.Get(ctx, defaultEnvName)
-				if err == nil {
-					devCenterNode, exists := env.Config.Get(devcenter.ConfigPath)
-					if exists {
-						value, err := devcenter.ParseConfig(devCenterNode)
-						if err != nil {
-							return nil, err
-						}
-
-						environmentConfig = value
-					}
-				}
-			}
-		}
-
-		// User Configuration
-		var userConfig *devcenter.Config
-		azdConfig, err := userConfigManager.Load()
-		if err != nil {
-			userConfig = &devcenter.Config{}
-		} else {
-			devCenterNode, exists := azdConfig.Get(devcenter.ConfigPath)
-			if exists {
-				value, err := devcenter.ParseConfig(devCenterNode)
-				if err != nil {
-					return nil, err
-				}
-
-				userConfig = value
-			}
-		}
-
-		// Project Configuration
-		var projectConfig *devcenter.Config
-		projConfig, _ := lazyProjectConfig.GetValue()
-		if projConfig != nil && projConfig.Platform != nil && projConfig.Platform.Type == devcenter.PlatformKindDevCenter {
-			value, err := devcenter.ParseConfig(projConfig.Platform.Config)
-			if err == nil {
-				projectConfig = value
-			}
-		}
-
-		return devcenter.MergeConfigs(
-			envVarConfig,
-			environmentConfig,
-			projectConfig,
-			userConfig,
-		), nil
-	})
-
 	container.RegisterSingleton(func(
 		ctx context.Context,
 		credential azcore.TokenCredential,
@@ -523,60 +427,18 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		return armresourcegraph.NewClient(credential, options)
 	})
 
-	container.RegisterSingleton(func(
-		ctx context.Context,
-		credential azcore.TokenCredential,
-		httpClient httputil.HttpClient,
-		resourceGraphClient *armresourcegraph.Client,
-	) (devcentersdk.DevCenterClient, error) {
-		options := azsdk.
-			DefaultClientOptionsBuilder(ctx, httpClient, "azd").
-			BuildCoreClientOptions()
-
-		return devcentersdk.NewDevCenterClient(credential, options, resourceGraphClient)
-	})
-
 	// Templates
 
 	// Gets a list of default template sources used in azd.
-	container.RegisterSingleton(func(
-		configManager config.UserConfigManager,
-		lazyProjectConfig *lazy.Lazy[*project.ProjectConfig],
-	) (*templates.SourceOptions, error) {
-		options := &templates.SourceOptions{
+	container.RegisterSingleton(func() *templates.SourceOptions {
+		return &templates.SourceOptions{
 			DefaultSources:        []*templates.SourceConfig{},
 			LoadConfiguredSources: true,
 		}
-
-		config, err := configManager.Load()
-		if err != nil {
-			return nil, err
-		}
-
-		projectConfig, _ := lazyProjectConfig.GetValue()
-
-		// When devcenter is enabled, consider devcenter source as default source
-		// And don't load any other configured sources
-		if IsDevCenterEnabled(config, projectConfig) {
-			options.DefaultSources = []*templates.SourceConfig{devcenter.SourceDevCenter}
-			options.LoadConfiguredSources = false
-		}
-
-		return options, nil
 	})
 
 	container.RegisterSingleton(templates.NewTemplateManager)
 	container.RegisterSingleton(templates.NewSourceManager)
-
-	templateSourceMap := map[templates.SourceKind]any{
-		devcenter.SourceKindDevCenter: devcenter.NewTemplateSource,
-	}
-
-	for sourceKind, constructor := range templateSourceMap {
-		if err := container.RegisterNamedSingleton(string(sourceKind), constructor); err != nil {
-			panic(fmt.Errorf("registering template source %s: %w", sourceKind, err))
-		}
-	}
 
 	container.RegisterSingleton(project.NewResourceManager)
 	container.RegisterSingleton(project.NewProjectManager)
@@ -586,7 +448,6 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(config.NewUserConfigManager)
 	container.RegisterSingleton(config.NewManager)
 	container.RegisterSingleton(config.NewFileConfigManager)
-	container.RegisterSingleton(devcenter.NewTemplateSource)
 	container.RegisterSingleton(auth.NewManager)
 	container.RegisterSingleton(azcli.NewUserProfileService)
 	container.RegisterSingleton(account.NewSubscriptionsService)
@@ -643,14 +504,11 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterTransient(provisioning.NewManager)
 	container.RegisterSingleton(provisioning.NewPrincipalIdProvider)
 	container.RegisterSingleton(prompt.NewDefaultPrompter)
-	container.RegisterSingleton(devcenter.NewManager)
-	container.RegisterSingleton(devcenter.NewPrompter)
 
 	// Provisioning Providers
 	provisionProviderMap := map[provisioning.ProviderKind]any{
 		provisioning.Bicep:     infraBicep.NewBicepProvider,
 		provisioning.Terraform: infraTerraform.NewTerraformProvider,
-		provisioning.DevCenter: devcenter.NewDevCenterProvider,
 	}
 
 	for provider, constructor := range provisionProviderMap {
@@ -665,18 +523,6 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		configManager config.UserConfigManager,
 	) provisioning.DefaultProviderResolver {
 		return func() (provisioning.ProviderKind, error) {
-			config, err := configManager.Load()
-			if err != nil {
-				return provisioning.NotSpecified, err
-			}
-
-			projectConfig, _ := lazyProjectConfig.GetValue()
-
-			// DevCenter provider is default when enabled
-			if IsDevCenterEnabled(config, projectConfig) {
-				return provisioning.DevCenter, nil
-			}
-
 			return provisioning.Bicep, nil
 		}
 	})
@@ -736,6 +582,29 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	for provider, constructor := range pipelineProviderMap {
 		if err := container.RegisterNamedSingleton(string(provider), constructor); err != nil {
 			panic(fmt.Errorf("registering pipeline provider %s: %w", provider, err))
+		}
+	}
+
+	// Platforms
+	platformProviderMap := map[project.PlatformKind]any{
+		devcenter.PlatformKindDevCenter: devcenter.NewPlatform,
+	}
+
+	for provider, constructor := range platformProviderMap {
+		platformName := fmt.Sprintf("%s-platform", provider)
+		if err := container.RegisterNamedSingleton(platformName, constructor); err != nil {
+			panic(fmt.Errorf("registering platform provider %s: %w", provider, err))
+		}
+
+		var platform project.PlatformProvider
+		if err := container.ResolveNamed(platformName, &platform); err != nil {
+			panic(fmt.Errorf("resolving platform provider %s: %w", provider, err))
+		}
+
+		if platform.IsEnabled() {
+			if err := platform.ConfigureContainer(container); err != nil {
+				panic(fmt.Errorf("configuring platform provider %s: %w", provider, err))
+			}
 		}
 	}
 

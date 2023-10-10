@@ -85,6 +85,10 @@ overrides:
   - filename: pkg/azsdk/storage/storage_blob_client.go
     words:
       - azblob
+  - filename: pkg/project/service_target_springapp.go
+    words:
+      - fcharp
+      - CPYTHON
 ignorePaths:
   - "**/*_test.go"
   - "**/mock*.go"

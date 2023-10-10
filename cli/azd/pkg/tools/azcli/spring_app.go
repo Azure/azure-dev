@@ -191,9 +191,6 @@ func (ss *springService) CreateBuild(
 	builderId := basePath +
 		"/builders/" + builderName
 
-	fmt.Println("builder id: " + builderId)
-	fmt.Println("agentpool id: " + agentPoolId)
-
 	resp, err := client.CreateOrUpdateBuild(ctx, resourceGroupName, instanceName, buildServiceName, buildName,
 		armappplatform.Build{
 			Properties: &armappplatform.BuildProperties{
@@ -268,7 +265,6 @@ func (ss *springService) UploadSpringArtifact(
 		return nil, err
 	}
 	storageInfo, err := springClient.GetResourceUploadURL(ctx, resourceGroup, instanceName, appName, nil)
-	fmt.Println("storage info: " + *storageInfo.UploadURL)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get resource upload URL: %w", err)
 	}

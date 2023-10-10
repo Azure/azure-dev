@@ -73,12 +73,15 @@ func compressFolderToTarGz(path string, buf io.Writer) error {
 	tw := tar.NewWriter(zr)
 
 	// walk through every file in the folder
-	filepath.WalkDir(path, func(file string, info fs.DirEntry, err error) error {
+	if err := filepath.WalkDir(path, func(file string, info fs.DirEntry, err error) error {
 		fi, err := info.Info()
+		if err != nil {
+			return fmt.Errorf("Retriving source code file info: %w", err)
+		}
 		// generate tar header
 		header, err := tar.FileInfoHeader(fi, file)
 		if err != nil {
-			return err
+			return fmt.Errorf("Generating source code file header in tar: %w", err)
 		}
 
 		header.Name = strings.Replace(strings.TrimPrefix(strings.TrimPrefix(file, path), string(filepath.Separator)),
@@ -86,32 +89,33 @@ func compressFolderToTarGz(path string, buf io.Writer) error {
 
 		// write header
 		if err := tw.WriteHeader(header); err != nil {
-			return err
+			return fmt.Errorf("Writing source code file header in tar: %w", err)
 		}
 		// if not a dir, write file content
 		if !info.IsDir() {
-
 			data, err := os.Open(file)
 			defer func() {
 				_ = data.Close()
 			}()
 			if err != nil {
-				return err
+				return fmt.Errorf("Opening source code file: %w", err)
 			}
 			if _, err := io.Copy(tw, data); err != nil {
-				return err
+				return fmt.Errorf("Copying source code file to compress: %w", err)
 			}
 		}
 		return nil
-	})
+	}); err != nil {
+		return fmt.Errorf("Archiving source code to tar: %w", err)
+	}
 
 	// produce tar
 	if err := tw.Close(); err != nil {
-		return err
+		return fmt.Errorf("Producing .tar file: %w", err)
 	}
 	// produce gzip
 	if err := zr.Close(); err != nil {
-		return err
+		return fmt.Errorf("Producing .gzip file: %w", err)
 	}
 	return nil
 }

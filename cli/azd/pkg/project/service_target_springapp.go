@@ -335,8 +335,9 @@ func (st *springAppTarget) getBuildPodRuntimeEnv(
 	language ServiceLanguageKind,
 ) map[string]*string {
 	runtimeVersionEnv := make(map[string]*string)
-	// For the languages that are not supported by AZD, like PHP and Golang, or the ones not supported by ASA-E, like fcharp, docker
-	// or the ones that are supported by AZD and ASA-E but do not need to configure the runtime ENV, like dotnet and csharp, we will skip them.
+	// For the languages that are not supported by AZD, like PHP and Golang, or the ones not supported by
+	// ASA-E, like fcharp, docker or the ones that are supported by AZD and ASA-E but do not need to
+	// configure the runtime ENV, like dotnet and csharp, we will skip them.
 	switch language {
 	case ServiceLanguagePython:
 		st.setRuntimeEnvMap(runtimeVersionEnv, "BP_CPYTHON_VERSION", serviceConfig.Spring.PythonVersion, defaultPythonVersion)

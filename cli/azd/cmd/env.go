@@ -541,7 +541,8 @@ func newEnvGetValuesAction(
 }
 
 func (eg *envGetValuesAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	env, err := eg.envManager.Get(ctx, "")
+	name, _ := eg.azdCtx.GetDefaultEnvironmentName()
+	env, err := eg.envManager.Get(ctx, name)
 	if errors.Is(err, environment.ErrNotFound) {
 		return nil, fmt.Errorf(
 			`"environment does no exist. You can create it with "azd env new"`,

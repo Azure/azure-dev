@@ -139,17 +139,17 @@ func (tl *templateListAction) Run(ctx context.Context) (*actions.ActionResult, e
 	if tl.formatter.Kind() == output.TableFormat {
 		columns := []output.Column{
 			{
-				Heading:       "Repository Path",
-				ValueTemplate: "{{.RepositoryPath}}",
-				Transformer:   clickableUrl,
+				Heading:       "Name",
+				ValueTemplate: "{{.Name}}",
 			},
 			{
 				Heading:       "Source",
 				ValueTemplate: "{{.Source}}",
 			},
 			{
-				Heading:       "Name",
-				ValueTemplate: "{{.Name}}",
+				Heading:       "Repository Path",
+				ValueTemplate: "{{.RepositoryPath}}",
+				Transformer:   clickableUrl,
 			},
 		}
 

@@ -127,13 +127,13 @@ func (tl *templateListAction) Run(ctx context.Context) (*actions.ActionResult, e
 	}
 
 	// get clickable link for a repo path
-	clickableRepoUrl := func(repoPath string) string {
-		url, err := templates.Absolute(repoPath)
+	clickableUrl := func(text string) string {
+		url, err := templates.Absolute(text)
 		if err != nil {
 			log.Printf("error: getting absolute url from template: %v", err)
-			return repoPath
+			return text
 		}
-		return output.WithHyperlink(url, repoPath)
+		return output.WithHyperlink(url, text)
 	}
 
 	if tl.formatter.Kind() == output.TableFormat {
@@ -141,7 +141,7 @@ func (tl *templateListAction) Run(ctx context.Context) (*actions.ActionResult, e
 			{
 				Heading:       "Repository Path",
 				ValueTemplate: "{{.RepositoryPath}}",
-				Transformer:   clickableRepoUrl,
+				Transformer:   clickableUrl,
 			},
 			{
 				Heading:       "Source",

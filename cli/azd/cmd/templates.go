@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net/http"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -128,10 +129,11 @@ func (tl *templateListAction) Run(ctx context.Context) (*actions.ActionResult, e
 	// get clickable link for a repo path
 	clickableRepoUrl := func(repoPath string) string {
 		url, err := templates.Absolute(repoPath)
-		if err == nil {
-			return output.WithHyperlink(url, repoPath)
+		if err != nil {
+			log.Printf("error: getting absolute url from template: %v", err)
+			return repoPath
 		}
-	        return repoPath
+		return output.WithHyperlink(url, repoPath)
 	}
 
 	if tl.formatter.Kind() == output.TableFormat {

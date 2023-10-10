@@ -73,10 +73,14 @@ func compressFolderToTarGz(path string, buf io.Writer) error {
 	tw := tar.NewWriter(zr)
 
 	// walk through every file in the folder
-	if err := filepath.WalkDir(path, func(file string, info fs.DirEntry, err error) error {
+	if err := filepath.WalkDir(path, func(file string, info fs.DirEntry, walkErr error) error {
+		if walkErr != nil {
+			return walkErr
+		}
+
 		fi, err := info.Info()
 		if err != nil {
-			return fmt.Errorf("Retriving source code file info: %w", err)
+			return fmt.Errorf("Retrieving source code file info: %w", err)
 		}
 		// generate tar header
 		header, err := tar.FileInfoHeader(fi, file)

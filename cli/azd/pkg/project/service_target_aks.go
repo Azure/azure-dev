@@ -54,6 +54,7 @@ type AksServiceOptions struct {
 
 type aksTarget struct {
 	env                    *environment.Environment
+	envManager             environment.Manager
 	managedClustersService azcli.ManagedClustersService
 	kubectl                kubectl.KubectlCli
 	containerHelper        *ContainerHelper
@@ -62,12 +63,14 @@ type aksTarget struct {
 // Creates a new instance of the AKS service target
 func NewAksTarget(
 	env *environment.Environment,
+	envManager environment.Manager,
 	managedClustersService azcli.ManagedClustersService,
 	kubectlCli kubectl.KubectlCli,
 	containerHelper *ContainerHelper,
 ) ServiceTarget {
 	return &aksTarget{
 		env:                    env,
+		envManager:             envManager,
 		managedClustersService: managedClustersService,
 		kubectl:                kubectlCli,
 		containerHelper:        containerHelper,
@@ -242,7 +245,7 @@ func (t *aksTarget) Deploy(
 				// The last endpoint in the array will be the most publicly exposed
 				endpointParts := strings.Split(endpoints[len(endpoints)-1], ",")
 				t.env.SetServiceProperty(serviceConfig.Name, "ENDPOINT_URL", endpointParts[0])
-				if err := t.env.Save(); err != nil {
+				if err := t.envManager.Save(ctx, t.env); err != nil {
 					task.SetError(fmt.Errorf("failed updating environment with endpoint url, %w", err))
 					return
 				}

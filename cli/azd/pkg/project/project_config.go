@@ -6,6 +6,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/state"
 )
 
 // ProjectConfig is the top level object serialized into an azure.yaml file.
@@ -21,6 +22,7 @@ type ProjectConfig struct {
 	Infra             provisioning.Options       `yaml:"infra,omitempty"`
 	Pipeline          PipelineOptions            `yaml:"pipeline,omitempty"`
 	Hooks             map[string]*ext.HookConfig `yaml:"hooks,omitempty"`
+	State             *state.Config              `yaml:"state,omitempty"`
 
 	*ext.EventDispatcher[ProjectLifecycleEventArgs] `yaml:",omitempty"`
 }

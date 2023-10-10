@@ -21,7 +21,9 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockexec"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -100,7 +102,7 @@ func createTerraformProvider(t *testing.T, mockContext *mocks.MockContext) *Terr
 		Module: "main",
 	}
 
-	env := environment.EphemeralWithValues("test-env", map[string]string{
+	env := environment.NewWithValues("test-env", map[string]string{
 		"AZURE_LOCATION":        "westus2",
 		"AZURE_SUBSCRIPTION_ID": "00000000-0000-0000-0000-000000000000",
 	})
@@ -122,8 +124,12 @@ func createTerraformProvider(t *testing.T, mockContext *mocks.MockContext) *Terr
 		},
 	}
 
+	envManager := &mockenv.MockEnvManager{}
+	envManager.On("Save", mock.Anything, mock.Anything).Return(nil)
+
 	provider := NewTerraformProvider(
 		terraformTools.NewTerraformCli(mockContext.CommandRunner),
+		envManager,
 		env,
 		mockContext.Console,
 		&mockCurrentPrincipal{},

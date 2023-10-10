@@ -47,6 +47,7 @@ type SpringOptions struct {
 
 type springAppTarget struct {
 	env           *environment.Environment
+	envManager    environment.Manager
 	springService azcli.SpringService
 }
 
@@ -56,10 +57,12 @@ type springAppTarget struct {
 // can be provisioned during deployment.
 func NewSpringAppTarget(
 	env *environment.Environment,
+	envManager environment.Manager,
 	springService azcli.SpringService,
 ) ServiceTarget {
 	return &springAppTarget{
 		env:           env,
+		envManager:    envManager,
 		springService: springService,
 	}
 }
@@ -148,9 +151,7 @@ func (st *springAppTarget) Deploy(
 				return
 			}
 
-			artifactPath := packageOutput.PackagePath
-			relativePath := st.uploadArtifactToStorage(task, ctx, serviceConfig, targetResource, artifactPath)
-			fmt.Println("relative path: " + relativePath)
+			relativePath := st.uploadArtifactToStorage(task, ctx, serviceConfig, targetResource, packageOutput.PackagePath)
 
 			var result string
 			if *tier == enterpriseTierName {
@@ -161,11 +162,9 @@ func (st *springAppTarget) Deploy(
 					buildServiceName = defaultBuildServiceName
 				}
 				builderName := serviceConfig.Spring.BuilderName
-
 				if builderName == "" {
 					builderName = defaultBuilderName
 				}
-				fmt.Println("builder name: " + builderName)
 				agentPoolName := serviceConfig.Spring.AgentPoolName
 				if agentPoolName == "" {
 					agentPoolName = defaultAgentPoolName
@@ -220,7 +219,7 @@ func (st *springAppTarget) Deploy(
 				result = *buildResult
 				// save the build result id, otherwise the it will be overwritten
 				// in the deployment from Bicep/Terraform
-				st.storeDeploymentEnvironment(task, serviceConfig.Name, "BUILD_RESULT_ID", *buildResultId)
+				st.storeDeploymentEnvironment(ctx, task, serviceConfig.Name, "BUILD_RESULT_ID", *buildResultId)
 			} else {
 				// for non-Enterprise tier
 				task.SetProgress(NewServiceProgress("Deploying spring artifact"))
@@ -237,11 +236,11 @@ func (st *springAppTarget) Deploy(
 					task.SetError(fmt.Errorf("deploying service %s: %w", serviceConfig.Name, err))
 					return
 				}
-
 				result = *deployResult
 				// save the storage relative, otherwise the relative path will be overwritten
 				// in the deployment from Bicep/Terraform
-				st.storeDeploymentEnvironment(task, serviceConfig.Name, "RELATIVE_PATH", relativePath)
+				st.storeDeploymentEnvironment(ctx, task, serviceConfig.Name, "RELATIVE_PATH", relativePath)
+
 			}
 
 			task.SetProgress(NewServiceProgress("Fetching endpoints for spring app service"))
@@ -262,9 +261,7 @@ func (st *springAppTarget) Deploy(
 				endpoints,
 			)
 			sdr.Package = packageOutput
-
 			task.SetResult(sdr)
-
 		},
 	)
 }
@@ -308,13 +305,14 @@ func (st *springAppTarget) validateTargetResource(
 }
 
 func (st *springAppTarget) storeDeploymentEnvironment(
+	ctx context.Context,
 	task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress],
 	serviceName string,
 	propertyName string,
 	value string,
 ) {
 	st.env.SetServiceProperty(serviceName, propertyName, value)
-	if err := st.env.Save(); err != nil {
+	if err := st.envManager.Save(ctx, st.env); err != nil {
 		task.SetError(fmt.Errorf("failed updating environment with %s, %w", propertyName, err))
 		return
 	}
@@ -326,10 +324,8 @@ func (st *springAppTarget) setRuntimeEnvMap(
 ) {
 	if configuredLanguageVersion != "" {
 		envMap[key] = &configuredLanguageVersion
-		fmt.Println("env map key: " + key + "env map value: " + configuredLanguageVersion)
 	} else {
 		envMap[key] = &defaultLanguageVersion
-		fmt.Println("env map key: " + key + "env map value: " + defaultLanguageVersion)
 	}
 }
 
@@ -378,7 +374,6 @@ func (st *springAppTarget) uploadArtifactToStorage(
 		serviceConfig.Name,
 		artifactPath,
 	)
-	fmt.Println("storage resource name: " + targetResource.ResourceName())
 	if err != nil {
 		task.SetError(fmt.Errorf("failed to upload spring artifact: %w", err))
 		return ""

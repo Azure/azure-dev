@@ -86,6 +86,8 @@ type Console interface {
 	Confirm(ctx context.Context, options ConsoleOptions) (bool, error)
 	// block terminal until the next enter
 	WaitForEnter()
+	// Writes a new line to the writer if there if the last two characters written are not '\n'
+	EnsureBlankLine(ctx context.Context)
 	// Sets the underlying writer for the console
 	SetWriter(writer io.Writer)
 	// Gets the underlying writer for the console
@@ -119,6 +121,9 @@ type AskerConsole struct {
 	// AskerConsole can be used as a singleton, hence, more than one component can invoke its methods at the same time.
 	// A method should lock this mutex if no other writing to he terminal should occur at the same time.
 	writeControlMutex sync.Mutex
+	// holds the last 2 bytes written by message or messageUX. This is used to detect when there is already an empty
+	// line (\n\n)
+	last2Byte [2]byte
 }
 
 type ConsoleOptions struct {
@@ -126,7 +131,11 @@ type ConsoleOptions struct {
 	Help         string
 	Options      []string
 	DefaultValue any
-	IsPassword   bool
+
+	// Prompt-only options
+
+	IsPassword bool
+	Suggest    func(input string) (completions []string)
 }
 
 type ConsoleHandles struct {
@@ -165,10 +174,26 @@ func (c *AskerConsole) Message(ctx context.Context, message string) {
 		}
 		fmt.Fprintln(c.writer, string(jsonMessage))
 	} else if c.formatter == nil || c.formatter.Kind() == output.NoneFormat {
-		fmt.Fprintln(c.writer, message)
+		c.println(ctx, message)
 	} else {
 		log.Println(message)
 	}
+	// Adding "\n" b/c calling Fprintln is adding one new line at the end to the msg
+	c.updateLastBytes(message + "\n")
+}
+
+func (c *AskerConsole) updateLastBytes(msg string) {
+	msgLen := len(msg)
+	if msgLen == 0 {
+		return
+	}
+	if msgLen < 2 {
+		c.last2Byte[0] = c.last2Byte[1]
+		c.last2Byte[1] = msg[msgLen-1]
+		return
+	}
+	c.last2Byte[0] = msg[msgLen-2]
+	c.last2Byte[1] = msg[msgLen-1]
 }
 
 func (c *AskerConsole) WarnForFeature(ctx context.Context, key alpha.FeatureId) {
@@ -201,13 +226,20 @@ func (c *AskerConsole) MessageUxItem(ctx context.Context, item ux.UxItem) {
 		return
 	}
 
+	msg := item.ToString(c.currentIndent)
+	c.println(ctx, msg)
+	// Adding "\n" b/c calling Fprintln is adding one new line at the end to the msg
+	c.updateLastBytes(msg + "\n")
+}
+
+func (c *AskerConsole) println(ctx context.Context, msg string) {
 	if c.spinner != nil && c.spinner.Status() == yacspin.SpinnerRunning {
 		c.StopSpinner(ctx, "", Step)
 		// default non-format
-		fmt.Fprintln(c.writer, item.ToString(c.currentIndent))
+		fmt.Fprintln(c.writer, msg)
 		_ = c.spinner.Start()
 	} else {
-		fmt.Fprintln(c.writer, item.ToString(c.currentIndent))
+		fmt.Fprintln(c.writer, msg)
 	}
 }
 
@@ -221,9 +253,11 @@ func (c *AskerConsole) ShowPreviewer(ctx context.Context, options *ShowPreviewer
 	c.writeControlMutex.Lock()
 	defer c.writeControlMutex.Unlock()
 
-	// auto-stop any spinner
+	// Pause any active spinner
 	currentMsg := c.currentSpinnerMessage
-	c.StopSpinner(ctx, "", Step)
+	if c.spinner != nil {
+		_ = c.spinner.Pause()
+	}
 
 	if options == nil {
 		options = defaultShowPreviewerOptions()
@@ -241,6 +275,10 @@ func (c *AskerConsole) StopPreviewer(ctx context.Context) {
 	c.previewer.Stop()
 	c.previewer = nil
 	c.writer = c.initialWriter
+
+	if c.spinner != nil {
+		_ = c.spinner.Unpause()
+	}
 }
 
 const cPostfix = "..."
@@ -445,8 +483,14 @@ func promptFromOptions(options ConsoleOptions) survey.Prompt {
 		Message: options.Message,
 		Default: defaultValue,
 		Help:    options.Help,
+		Suggest: options.Suggest,
 	}
 }
+
+// cAfterIO is a sentinel used after Input/Output operations as the state for the last 2-bytes written.
+// For example, after running Prompt or Confirm, the last characters on the terminal should be any char (represented by the
+// 0 in the sentinel), followed by a new line.
+const cAfterIO = "0\n"
 
 // Prompts the user for a single value
 func (c *AskerConsole) Prompt(ctx context.Context, options ConsoleOptions) (string, error) {
@@ -458,7 +502,7 @@ func (c *AskerConsole) Prompt(ctx context.Context, options ConsoleOptions) (stri
 	if err != nil {
 		return response, err
 	}
-
+	c.updateLastBytes(cAfterIO)
 	return response, nil
 }
 
@@ -480,6 +524,7 @@ func (c *AskerConsole) Select(ctx context.Context, options ConsoleOptions) (int,
 		return -1, err
 	}
 
+	c.updateLastBytes(cAfterIO)
 	return response, nil
 }
 
@@ -505,7 +550,22 @@ func (c *AskerConsole) Confirm(ctx context.Context, options ConsoleOptions) (boo
 		return false, err
 	}
 
+	c.updateLastBytes(cAfterIO)
 	return response, nil
+}
+
+const c_newLine = '\n'
+
+func (c *AskerConsole) EnsureBlankLine(ctx context.Context) {
+	if c.last2Byte[0] == c_newLine && c.last2Byte[1] == c_newLine {
+		return
+	}
+	if c.last2Byte[1] != c_newLine {
+		c.Message(ctx, "\n")
+		return
+	}
+	// [1] is '\n' but [0] is not. One new line missing
+	c.Message(ctx, "")
 }
 
 // wait until the next enter

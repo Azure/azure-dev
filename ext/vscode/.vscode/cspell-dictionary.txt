@@ -11,3 +11,4 @@ DEBUGTELEMETRY
 appservice
 containerapp
 staticwebapp
+devcenter

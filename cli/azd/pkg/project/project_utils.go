@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/rzip"
 	"github.com/otiai10/copy"
@@ -19,9 +20,10 @@ import (
 
 // CreateDeployableZip creates a zip file of a folder, recursively.
 // Returns the path to the created zip file or an error if it fails.
-func createDeployableZip(appName string, path string) (string, error) {
+func createDeployableZip(projectName string, appName string, path string) (string, error) {
 	// TODO: should probably avoid picking up files that weren't meant to be deployed (ie, local .env files, etc..)
-	zipFile, err := os.CreateTemp("", "azddeploy*.zip")
+	filePath := filepath.Join(os.TempDir(), fmt.Sprintf("%s-%s-azddeploy-%d.zip", projectName, appName, time.Now().Unix()))
+	zipFile, err := os.Create(filePath)
 	if err != nil {
 		return "", fmt.Errorf("failed when creating zip package to deploy %s: %w", appName, err)
 	}

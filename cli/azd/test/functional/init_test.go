@@ -21,6 +21,9 @@ import (
 // - The project layout is valid (azure.yaml, .azure, infra/)
 // - The template creates a valid environment file
 func Test_CLI_Init_Minimal(t *testing.T) {
+	// test is not compatible with easy init
+	t.Setenv("AZD_ALPHA_ENABLE_EASYINIT", "false")
+
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
@@ -51,8 +54,44 @@ func Test_CLI_Init_Minimal(t *testing.T) {
 	require.FileExists(t, filepath.Join(dir, "infra", "main.parameters.json"))
 }
 
+func Test_CLI_Init_Minimal_EasyInit(t *testing.T) {
+	t.Setenv("AZD_ALPHA_ENABLE_EASYINIT", "true")
+
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
+
+	cli := azdcli.NewCLI(t)
+	cli.WorkingDirectory = dir
+	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
+
+	_, err := cli.RunCommandWithStdIn(
+		ctx,
+		"Select a template\nMinimal\nTESTENV\n",
+		"init",
+	)
+	require.NoError(t, err)
+
+	file, err := os.ReadFile(getTestEnvPath(dir, "TESTENV"))
+
+	require.NoError(t, err)
+	require.Regexp(t, regexp.MustCompile(`AZURE_ENV_NAME="TESTENV"`+"\n"), string(file))
+
+	proj, err := project.Load(ctx, filepath.Join(dir, azdcontext.ProjectFileName))
+	require.NoError(t, err)
+	require.Equal(t, filepath.Base(dir), proj.Name)
+
+	require.DirExists(t, filepath.Join(dir, ".azure"))
+	require.FileExists(t, filepath.Join(dir, "infra", "main.bicep"))
+	require.FileExists(t, filepath.Join(dir, "infra", "main.parameters.json"))
+}
+
 // Verifies init for the minimal template, when infra folder already exists with main.bicep and main.parameters.json.
 func Test_CLI_Init_Minimal_With_Existing_Infra(t *testing.T) {
+	// test is not compatible with easy init
+	t.Setenv("AZD_ALPHA_ENABLE_EASYINIT", "false")
+
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
@@ -139,4 +178,43 @@ func Test_CLI_Init_CanUseTemplate(t *testing.T) {
 
 	// Ensure the project was initialized from the template by checking that a file from the template is present.
 	require.FileExists(t, filepath.Join(dir, "README.md"))
+}
+
+func Test_CLI_Init_From_App(t *testing.T) {
+	// running this test in parallel is ok as it uses a t.TempDir()
+	t.Parallel()
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
+	appDir := filepath.Join(dir, "app")
+	err := os.MkdirAll(appDir, osutil.PermissionDirectory)
+	require.NoError(t, err)
+
+	cli := azdcli.NewCLI(t)
+	cli.WorkingDirectory = dir
+	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
+	cli.Env = append(cli.Env, "AZD_CONFIG_DIR="+dir)
+	cli.Env = append(cli.Env, "AZURE_DEV_COLLECT_TELEMETRY=no")
+
+	_, err = cli.RunCommand(ctx, "config", "set", "alpha.easyInit", "on")
+	require.NoError(t, err)
+
+	err = copySample(appDir, "py-postgres")
+	require.NoError(t, err, "failed expanding sample")
+
+	_, err = cli.RunCommandWithStdIn(
+		ctx,
+		"Use code in the current directory\n"+
+			"Confirm and continue initializing my app\n"+
+			"appdb\n"+
+			"TESTENV\n",
+		"init",
+	)
+	require.NoError(t, err)
+
+	require.FileExists(t, filepath.Join(dir, "infra", "main.bicep"))
+	require.FileExists(t, filepath.Join(dir, "azure.yaml"))
+	require.FileExists(t, filepath.Join(dir, "infra", "app", "app.bicep"))
+	require.FileExists(t, filepath.Join(dir, "infra", "app", "db-postgres.bicep"))
 }

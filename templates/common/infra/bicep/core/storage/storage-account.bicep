@@ -18,6 +18,7 @@ param deleteRetentionPolicy object = {}
 param dnsEndpointType string = 'Standard'
 param kind string = 'StorageV2'
 param minimumTlsVersion string = 'TLS1_2'
+param supportsHttpsTrafficOnly bool = true
 param networkAcls object = {
   bypass: 'AzureServices'
   defaultAction: 'Allow'
@@ -42,6 +43,7 @@ resource storage 'Microsoft.Storage/storageAccounts@2022-05-01' = {
     minimumTlsVersion: minimumTlsVersion
     networkAcls: networkAcls
     publicNetworkAccess: publicNetworkAccess
+    supportsHttpsTrafficOnly: supportsHttpsTrafficOnly
   }
 
   resource blobServices 'blobServices' = if (!empty(containers)) {

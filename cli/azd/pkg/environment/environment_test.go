@@ -4,12 +4,15 @@
 package environment
 
 import (
+	"context"
 	"os"
 	"path/filepath"
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/ostest"
 	"github.com/joho/godotenv"
 	"github.com/stretchr/testify/assert"
@@ -32,27 +35,29 @@ func TestIsValidEnvironmentName(t *testing.T) {
 func TestConfigRoundTrips(t *testing.T) {
 	t.Parallel()
 
+	mockContext := mocks.NewMockContext(context.Background())
 	root := t.TempDir()
 
+	envManager, _ := createEnvManager(t, mockContext, root)
+
 	// Create a new config from an empty root.
-	e, err := FromRoot(root)
-	require.NoError(t, err)
+	env := New("test")
 
 	// There should be no configuration since this is an empty environment.
-	require.True(t, e.Config.IsEmpty())
+	require.True(t, env.Config.IsEmpty())
 
 	// Set a config value.
-	err = e.Config.Set("is.this.a.test", true)
+	err := env.Config.Set("is.this.a.test", true)
 	require.NoError(t, err)
 
 	// Save the environment
-	err = e.Save()
+	err = envManager.Save(*mockContext.Context, env)
 	require.NoError(t, err)
 
 	// Load the environment back up, we expect no error and for the config value we wrote to still exist.
-	e, err = FromRoot(root)
+	env, err = envManager.Get(*mockContext.Context, "test")
 	require.NoError(t, err)
-	v, has := e.Config.Get("is.this.a.test")
+	v, has := env.Config.Get("is.this.a.test")
 	require.True(t, has)
 	require.Equal(t, true, v)
 }
@@ -60,32 +65,28 @@ func TestConfigRoundTrips(t *testing.T) {
 func TestFromRoot(t *testing.T) {
 	t.Parallel()
 
+	mockContext := mocks.NewMockContext(context.Background())
+
 	t.Run("EmptyRoot", func(t *testing.T) {
 		t.Parallel()
 
-		e, err := FromRoot(t.TempDir())
-		require.NoError(t, err)
-		require.NotNil(t, e)
+		env := New("test")
+		require.NotNil(t, env)
 
-		require.NotNil(t, e.Config)
-		require.NotNil(t, e.dotenv)
+		require.NotNil(t, env.Config)
+		require.NotNil(t, env.dotenv)
 
-		require.NotNil(t, e.Config.IsEmpty())
-		require.Equal(t, 0, len(e.dotenv))
+		require.NotNil(t, env.Config.IsEmpty())
+		require.Equal(t, 1, len(env.dotenv))
 	})
 
 	t.Run("EmptyWhenMissing", func(t *testing.T) {
 		t.Parallel()
 
-		e, err := FromRoot(filepath.Join(t.TempDir(), "test"))
+		envManager, _ := createEnvManager(t, mockContext, t.TempDir())
+		env, err := envManager.Get(*mockContext.Context, "test")
 		require.ErrorIs(t, err, os.ErrNotExist)
-		require.NotNil(t, e)
-
-		require.NotNil(t, e.Config)
-		require.NotNil(t, e.dotenv)
-
-		require.NotNil(t, e.Config.IsEmpty())
-		require.Equal(t, 0, len(e.dotenv))
+		require.Nil(t, env)
 	})
 
 	// Simulate loading an environment written by an earlier version of `azd` which did not write `config.json`. We should
@@ -94,19 +95,20 @@ func TestFromRoot(t *testing.T) {
 	t.Run("Upgrade", func(t *testing.T) {
 		t.Parallel()
 
-		testRoot := filepath.Join(t.TempDir(), "testEnv")
+		envManager, azdCtx := createEnvManager(t, mockContext, t.TempDir())
+		envRoot := azdCtx.EnvironmentRoot("testEnv")
 
-		err := os.MkdirAll(testRoot, osutil.PermissionDirectory)
+		err := os.MkdirAll(envRoot, osutil.PermissionDirectory)
 		require.NoError(t, err)
 
-		err = os.WriteFile(filepath.Join(testRoot, ".env"), []byte("TEST=yes\n"), osutil.PermissionFile)
+		err = os.WriteFile(filepath.Join(envRoot, ".env"), []byte("TEST=yes\n"), osutil.PermissionFile)
 		require.NoError(t, err)
 
-		e, err := FromRoot(testRoot)
+		env, err := envManager.Get(*mockContext.Context, "testEnv")
 		require.NoError(t, err)
 
-		require.Equal(t, "yes", e.dotenv["TEST"])
-		require.True(t, e.Config.IsEmpty())
+		require.Equal(t, "yes", env.dotenv["TEST"])
+		require.True(t, env.Config.IsEmpty())
 	})
 }
 
@@ -114,17 +116,21 @@ func Test_SaveAndReload(t *testing.T) {
 	tempDir := t.TempDir()
 	ostest.Chdir(t, tempDir)
 
-	env := EmptyWithRoot(tempDir)
+	mockContext := mocks.NewMockContext(context.Background())
+	envManager, azdCtx := createEnvManager(t, mockContext, t.TempDir())
+
+	env := New("test")
 	require.NotNil(t, env)
 
 	env.SetLocation("eastus2")
 	env.SetSubscriptionId("SUBSCRIPTION_ID")
 
-	err := env.Save()
+	err := envManager.Save(*mockContext.Context, env)
 	require.NoError(t, err)
 
 	// Simulate another process writing to .env file
-	envPath := filepath.Join(tempDir, azdcontext.DotEnvFileName)
+	envRoot := azdCtx.EnvironmentRoot("test")
+	envPath := filepath.Join(envRoot, azdcontext.DotEnvFileName)
 	envMap, err := godotenv.Read(envPath)
 	require.NotNil(t, envMap)
 	require.NoError(t, err)
@@ -134,12 +140,12 @@ func Test_SaveAndReload(t *testing.T) {
 	err = godotenv.Write(envMap, envPath)
 	require.NoError(t, err)
 
-	err = env.Reload()
+	err = envManager.Reload(*mockContext.Context, env)
 	require.NoError(t, err)
 
 	// Set a new property in the env
 	env.SetServiceProperty("web", "ENDPOINT_URL", "http://web.example.com")
-	err = env.Save()
+	err = envManager.Save(*mockContext.Context, env)
 	require.NoError(t, err)
 
 	// Verify all values exist with expected values
@@ -151,7 +157,7 @@ func Test_SaveAndReload(t *testing.T) {
 
 	// Delete the newly added property
 	env.DotenvDelete("SERVICE_WEB_ENDPOINT_URL")
-	err = env.Save()
+	err = envManager.Save(*mockContext.Context, env)
 	require.NoError(t, err)
 
 	// Verify the property is deleted
@@ -163,7 +169,7 @@ func Test_SaveAndReload(t *testing.T) {
 	env.DotenvDelete("SERVICE_API_ENDPOINT_URL")
 	env.DotenvSet("SERVICE_API_ENDPOINT_URL", "http://api.example.com/updated")
 
-	err = env.Save()
+	err = envManager.Save(*mockContext.Context, env)
 	require.NoError(t, err)
 
 	// Verify the property still exists, and has the updated value.
@@ -178,15 +184,16 @@ func TestCleanName(t *testing.T) {
 }
 
 func TestRoundTripNumberWithLeadingZeros(t *testing.T) {
-	root := t.TempDir()
-	e := EmptyWithRoot(root)
-	e.DotenvSet("TEST", "01")
-	err := e.Save()
+	mockContext := mocks.NewMockContext(context.Background())
+	envManager, _ := createEnvManager(t, mockContext, t.TempDir())
+	env := New("test")
+	env.DotenvSet("TEST", "01")
+	err := envManager.Save(*mockContext.Context, env)
 	require.NoError(t, err)
 
-	e2, err := FromRoot(root)
+	env2, err := envManager.Get(*mockContext.Context, "test")
 	require.NoError(t, err)
-	require.Equal(t, "01", e2.dotenv["TEST"])
+	require.Equal(t, "01", env2.dotenv["TEST"])
 }
 
 func Test_fixupUnquotedDotenv(t *testing.T) {
@@ -203,18 +210,10 @@ func Test_fixupUnquotedDotenv(t *testing.T) {
 	require.Equal(t, "TEST_SHOULD_NOT_QUOTE=1\nTEST_SHOULD_QUOTE=\"01\"", fixed)
 }
 
-func Test_Environment_Path(t *testing.T) {
-	root := t.TempDir()
-	env := EmptyWithRoot(root)
+func createEnvManager(t *testing.T, mockContext *mocks.MockContext, root string) (Manager, *azdcontext.AzdContext) {
+	azdCtx := azdcontext.NewAzdContextWithDirectory(root)
+	configManager := config.NewFileConfigManager(config.NewManager())
+	localDataStore := NewLocalFileDataStore(azdCtx, configManager)
 
-	path := env.Path()
-	require.Equal(t, filepath.Join(root, azdcontext.DotEnvFileName), path)
-}
-
-func Test_Environment_ConfigPath(t *testing.T) {
-	root := t.TempDir()
-	env := EmptyWithRoot(root)
-
-	path := env.ConfigPath()
-	require.Equal(t, filepath.Join(root, azdcontext.ConfigFileName), path)
+	return newManagerForTest(azdCtx, mockContext.Console, localDataStore, nil), azdCtx
 }

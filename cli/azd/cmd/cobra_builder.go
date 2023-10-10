@@ -184,14 +184,9 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 				}
 
 				if errors.As(err, &suggestionErr) {
-					if actionResult != nil && actionResult.TraceID != "" {
-						console.Message(
-							ctx,
-							output.WithErrorFormat(fmt.Sprintf("TraceID: %s", actionResult.TraceID)))
-						console.Message(
-							ctx,
-							output.WithHighLightFormat(suggestionErr.Suggestion))
-					}
+					console.Message(
+						ctx,
+						output.WithHighLightFormat(suggestionErr.Suggestion))
 				}
 			}
 		})

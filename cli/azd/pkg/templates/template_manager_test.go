@@ -13,17 +13,31 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+var defaultTemplateSourceData = map[string]interface{}{
+	"template": map[string]interface{}{
+		"sources": map[string]interface{}{
+			"default": map[string]interface{}{},
+		},
+	},
+}
+
 func Test_Templates_NewTemplateManager(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
-	templateManager, err := NewTemplateManager(NewSourceManager(config.NewUserConfigManager(), mockContext.HttpClient))
+	templateManager, err := NewTemplateManager(
+		NewSourceManager(config.NewUserConfigManager(config.NewFileConfigManager(config.NewManager())),
+			mockContext.HttpClient,
+		),
+	)
 	require.NoError(t, err)
 	require.NotNil(t, templateManager)
 }
 
 func Test_Templates_ListTemplates(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
+	mockAwesomeAzdTemplateSource(mockContext)
+
 	configManager := &mockUserConfigManager{}
-	configManager.On("Load").Return(config.NewConfig(nil), nil)
+	configManager.On("Load").Return(config.NewConfig(defaultTemplateSourceData), nil)
 
 	templateManager, err := NewTemplateManager(NewSourceManager(configManager, mockContext.HttpClient))
 	require.NoError(t, err)
@@ -75,7 +89,7 @@ func Test_Templates_ListTemplates_SourceError(t *testing.T) {
 func Test_Templates_GetTemplate_WithValidPath(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	configManager := &mockUserConfigManager{}
-	configManager.On("Load").Return(config.NewConfig(nil), nil)
+	configManager.On("Load").Return(config.NewConfig(defaultTemplateSourceData), nil)
 
 	templateManager, err := NewTemplateManager(NewSourceManager(configManager, mockContext.HttpClient))
 	require.NoError(t, err)
@@ -94,7 +108,7 @@ func Test_Templates_GetTemplate_WithValidPath(t *testing.T) {
 func Test_Templates_GetTemplate_WithInvalidPath(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	configManager := &mockUserConfigManager{}
-	configManager.On("Load").Return(config.NewConfig(nil), nil)
+	configManager.On("Load").Return(config.NewConfig(defaultTemplateSourceData), nil)
 
 	templateManager, err := NewTemplateManager(NewSourceManager(configManager, mockContext.HttpClient))
 	require.NoError(t, err)
@@ -109,7 +123,7 @@ func Test_Templates_GetTemplate_WithInvalidPath(t *testing.T) {
 func Test_Templates_GetTemplate_WithNotFoundPath(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	configManager := &mockUserConfigManager{}
-	configManager.On("Load").Return(config.NewConfig(nil), nil)
+	configManager.On("Load").Return(config.NewConfig(defaultTemplateSourceData), nil)
 
 	templateManager, err := NewTemplateManager(NewSourceManager(configManager, mockContext.HttpClient))
 	require.NoError(t, err)

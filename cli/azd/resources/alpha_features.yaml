@@ -1,4 +1,6 @@
-- id: terraform
-  description: "Provision Azure resources from terraform files."
 - id: resourceGroupDeployments
   description: "Support infrastructure deployments at resource group scope."
+- id: buildpacks
+  description: "Enables Cloud Native Buildpacks that can help transform your source code into container images."
+- id: easyInit
+  description: "Simplified init experience that allows initializing your application from existing code."

@@ -62,7 +62,7 @@ func PromptLocationWithFilter(
 		defaultLocation = accountManager.GetDefaultLocationName(ctx)
 	}
 
-	var defaultOption string
+	var defaultOption any
 
 	locationOptions := make([]string, len(locations))
 	for index, location := range locations {

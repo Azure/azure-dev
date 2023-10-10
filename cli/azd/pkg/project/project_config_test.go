@@ -74,7 +74,7 @@ services:
     host: appservice
 `
 
-	e := environment.EphemeralWithValues("test-env", map[string]string{
+	e := environment.NewWithValues("test-env", map[string]string{
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
 	})
 
@@ -134,6 +134,9 @@ services:
     docker:
       path: ./Dockerfile.dev
       context: ../
+      buildArgs:
+        - 'foo'
+        - 'bar'
 `
 
 	mockContext := mocks.NewMockContext(context.Background())
@@ -146,6 +149,7 @@ services:
 
 	require.Equal(t, "./Dockerfile.dev", service.Docker.Path)
 	require.Equal(t, "../", service.Docker.Context)
+	require.Equal(t, []string{"foo", "bar"}, service.Docker.BuildArgs)
 }
 
 func TestProjectConfigAddHandler(t *testing.T) {
@@ -360,7 +364,7 @@ services:
 	projectConfig, err := Parse(*mockContext.Context, testProj)
 	require.NoError(t, err)
 
-	env := environment.EphemeralWithValues("", map[string]string{
+	env := environment.NewWithValues("", map[string]string{
 		"foo": "hello",
 		"bar": "goodbye",
 	})

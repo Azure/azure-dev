@@ -297,7 +297,7 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 				fmt.Fprintln(la.console.Handles().Stdout, msg)
 			}
 			if act == nil {
-				fmt.Fprintln(la.console.Handles().Stdout, fmt.Sprintf("(%s) %s", act.HomeAccountID, msg))
+				fmt.Fprintln(la.console.Handles().Stdout, fmt.Sprintf("(%s) %s", la.flags.clientID, msg))
 			}
 			fmt.Fprintln(la.console.Handles().Stdout, fmt.Sprintf("(%s) %s", act.PreferredUsername, msg))
 			return nil, nil

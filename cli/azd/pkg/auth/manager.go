@@ -626,7 +626,7 @@ func (m *Manager) LoginWithServicePrincipalFederatedTokenProvider(
 
 // Logout signs out the current user and removes any cached authentication information
 func (m *Manager) Logout(ctx context.Context) error {
-	act, err := m.getSignedInAccount(ctx)
+	act, err := m.GetSignedInAccount(ctx)
 	if err != nil && !errors.Is(err, ErrNoCurrentUser) {
 		return fmt.Errorf("fetching current user: %w", err)
 	}
@@ -692,9 +692,9 @@ func (m *Manager) saveLoginForServicePrincipal(tenantId, clientId string, secret
 	return nil
 }
 
-// getSignedInAccount fetches the public.Account for the signed in user, or nil if one does not exist
+// GetSignedInAccount fetches the public.Account for the signed in user, or nil if one does not exist
 // (e.g when logged in with a service principal).
-func (m *Manager) getSignedInAccount(ctx context.Context) (*public.Account, error) {
+func (m *Manager) GetSignedInAccount(ctx context.Context) (*public.Account, error) {
 	cfg, err := m.readAuthConfig()
 	if err != nil {
 		return nil, fmt.Errorf("fetching current user: %w", err)

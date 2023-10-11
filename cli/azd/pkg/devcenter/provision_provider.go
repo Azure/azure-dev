@@ -43,8 +43,8 @@ type ProvisionProvider struct {
 	options         provisioning.Options
 }
 
-// NewDevCenterProvider creates a new devcenter provider
-func NewDevCenterProvider(
+// NewProvisionProvider creates a new devcenter provider
+func NewProvisionProvider(
 	console input.Console,
 	env *environment.Environment,
 	envManager environment.Manager,

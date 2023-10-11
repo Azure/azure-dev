@@ -60,12 +60,26 @@ func ParseConfig(partialConfig any) (*Config, error) {
 
 	jsonBytes, err := json.Marshal(partialConfig)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal devCenter configuration: %w", err)
+		return nil, fmt.Errorf("failed to marshal dev center configuration: %w", err)
 	}
 
 	if err := json.Unmarshal(jsonBytes, &config); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal devCenter configuration: %w", err)
+		return nil, fmt.Errorf("failed to unmarshal dev center configuration: %w", err)
 	}
 
 	return config, nil
+}
+
+func MarshalConfig(config *Config) (map[string]any, error) {
+	jsonBytes, err := json.Marshal(config)
+	if err != nil {
+		return nil, fmt.Errorf("failed to marshal dev center configuration: %w", err)
+	}
+
+	var configMap map[string]any
+	if err := json.Unmarshal(jsonBytes, &configMap); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal dev center configuration: %w", err)
+	}
+
+	return configMap, nil
 }

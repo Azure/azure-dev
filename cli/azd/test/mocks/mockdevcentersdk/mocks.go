@@ -121,6 +121,77 @@ func MockGetEnvironment(
 	return mockRequest
 }
 
+func MockGetEnvironmentDefinition(
+	mockContext *mocks.MockContext,
+	projectName string,
+	catalogName string,
+	environmentDefinitionName string,
+	environmentDefinition *devcentersdk.EnvironmentDefinition,
+) *http.Request {
+	mockRequest := &http.Request{}
+
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet &&
+			request.URL.Path == fmt.Sprintf(
+				"/projects/%s/catalogs/%s/environmentDefinitions/%s",
+				projectName,
+				catalogName,
+				environmentDefinitionName,
+			)
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		*mockRequest = *request
+
+		response := environmentDefinition
+
+		if environmentDefinition == nil {
+			return mocks.CreateEmptyHttpResponse(request, http.StatusNotFound)
+		}
+
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, response)
+	})
+
+	return mockRequest
+}
+
+func MockPutEnvironment(
+	mockContext *mocks.MockContext,
+	projectName string,
+	userId string,
+	environmentName string,
+	operationStatus *devcentersdk.OperationStatus,
+) *http.Request {
+	mockRequest := &http.Request{}
+
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodPut &&
+			request.URL.Path == fmt.Sprintf(
+				"/projects/%s/users/%s/environments/%s",
+				projectName,
+				userId,
+				environmentName,
+			)
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		*mockRequest = *request
+		response, err := mocks.CreateHttpResponseWithBody(request, http.StatusCreated, operationStatus)
+		response.Header.Set("Location", fmt.Sprintf("https://%s/projects/%s/operationstatuses/", request.Host, projectName))
+
+		return response, err
+	})
+
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet &&
+			strings.Contains(request.URL.Path, fmt.Sprintf(
+				"/projects/%s/operationstatuses",
+				projectName,
+			))
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		*mockRequest = *request
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, operationStatus)
+	})
+
+	return mockRequest
+}
+
 func MockListEnvironmentDefinitions(
 	mockContext *mocks.MockContext,
 	projectName string,

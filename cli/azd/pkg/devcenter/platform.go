@@ -180,7 +180,7 @@ func (p *Platform) ConfigureContainer(container *ioc.NestedContainer) error {
 	})
 
 	// Provision Provider
-	if err := container.RegisterNamedSingleton(string(provisioning.DevCenter), NewDevCenterProvider); err != nil {
+	if err := container.RegisterNamedSingleton(string(provisioning.DevCenter), NewProvisionProvider); err != nil {
 		return err
 	}
 

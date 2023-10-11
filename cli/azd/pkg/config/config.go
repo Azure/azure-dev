@@ -156,9 +156,5 @@ func (c *config) GetString(path string) (string, bool) {
 	}
 
 	str, ok := value.(string)
-	if !ok {
-		return "", false
-	}
-
-	return str, true
+	return str, ok
 }

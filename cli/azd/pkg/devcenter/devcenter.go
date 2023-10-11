@@ -55,6 +55,7 @@ func MergeConfigs(configs ...*Config) *Config {
 	return mergedConfig
 }
 
+// ParseConfig attempts to parse a partial JSON configuration into a devcenter configuration
 func ParseConfig(partialConfig any) (*Config, error) {
 	var config *Config
 
@@ -70,6 +71,7 @@ func ParseConfig(partialConfig any) (*Config, error) {
 	return config, nil
 }
 
+// MarshalConfig attempts to marshal a devcenter configuration into a map[string]any
 func MarshalConfig(config *Config) (map[string]any, error) {
 	jsonBytes, err := json.Marshal(config)
 	if err != nil {

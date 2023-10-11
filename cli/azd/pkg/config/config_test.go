@@ -94,3 +94,41 @@ func Test_IsEmpty(t *testing.T) {
 		require.False(t, azdConfig.IsEmpty())
 	})
 }
+
+func Test_GetString(t *testing.T) {
+	t.Run("ValidString", func(t *testing.T) {
+		azdConfig := NewConfig(nil)
+		azdConfig.Set("a.b.c", "apple")
+
+		value, ok := azdConfig.GetString("a.b.c")
+		require.Equal(t, "apple", value)
+		require.True(t, ok)
+	})
+
+	t.Run("EmptyString", func(t *testing.T) {
+		azdConfig := NewConfig(nil)
+		azdConfig.Set("a.b.c", "")
+
+		value, ok := azdConfig.GetString("a.b.c")
+		require.Equal(t, "", value)
+		require.True(t, ok)
+	})
+
+	t.Run("NonStringValue", func(t *testing.T) {
+		azdConfig := NewConfig(nil)
+		azdConfig.Set("a.b.c", 1)
+
+		value, ok := azdConfig.GetString("a.b.c")
+		require.Equal(t, "", value)
+		require.False(t, ok)
+	})
+
+	t.Run("NilValue", func(t *testing.T) {
+		azdConfig := NewConfig(nil)
+		azdConfig.Set("a.b.c", nil)
+
+		value, ok := azdConfig.GetString("a.b.c")
+		require.Equal(t, "", value)
+		require.False(t, ok)
+	})
+}

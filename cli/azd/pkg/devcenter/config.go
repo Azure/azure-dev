@@ -37,6 +37,7 @@ type Config struct {
 	User                  string `json:"user,omitempty"                  yaml:"user,omitempty"`
 }
 
+// EnsureValid ensures the devcenter configuration is valid to continue with provisioning
 func (c *Config) EnsureValid() error {
 	if c.Name == "" {
 		return fmt.Errorf("devcenter name is required")

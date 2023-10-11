@@ -290,8 +290,9 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			default:
 				panic("Unhandled login status")
 			}
-
-			fmt.Fprintln(la.console.Handles().Stdout, msg)
+			// get logged in user account information
+			act, _ := la.authManager.GetSignedInAccount(ctx)
+			fmt.Fprintln(la.console.Handles().Stdout, fmt.Sprintf("(%s) %s", act.PreferredUsername, msg))
 			return nil, nil
 		}
 	}

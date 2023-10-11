@@ -294,11 +294,9 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			act, err := la.authManager.GetSignedInAccount(ctx)
 			if err != nil {
 				log.Printf("error: getting signed in account: %v", err)
-				fmt.Fprintln(la.console.Handles().Stdout, msg)
+				fmt.Fprintln(la.console.Handles().Stdout, err)
 			}
-			if act == nil {
-				fmt.Fprintln(la.console.Handles().Stdout, fmt.Sprintf("(%s) %s", la.flags.clientID, msg))
-			}
+			//MNh8Q~vUsP1dc.bRy8TraLEo2PNHvkuZgXLH9aE3
 			fmt.Fprintln(la.console.Handles().Stdout, fmt.Sprintf("(%s) %s", act.PreferredUsername, msg))
 			return nil, nil
 		}
@@ -343,7 +341,7 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 	}
 
-	la.console.Message(ctx, cLoginSuccessMessage)
+	la.console.Message(ctx, fmt.Sprintf("(%s) %s", la.flags.clientID, cLoginSuccessMessage))
 	return nil, nil
 }
 

@@ -121,6 +121,54 @@ func MockGetEnvironment(
 	return mockRequest
 }
 
+func MockDeleteEnvironment(
+	mockContext *mocks.MockContext,
+	projectName string,
+	userId string,
+	environmentName string,
+	operationStatus *devcentersdk.OperationStatus,
+) *http.Request {
+	mockRequest := &http.Request{}
+
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodDelete &&
+			request.URL.Path == fmt.Sprintf(
+				"/projects/%s/users/%s/environments/%s",
+				projectName,
+				userId,
+				environmentName,
+			)
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		*mockRequest = *request
+
+		if operationStatus == nil {
+			return mocks.CreateEmptyHttpResponse(request, http.StatusNotFound)
+		}
+
+		if operationStatus.Status == "Succeeded" {
+			response, err := mocks.CreateHttpResponseWithBody(request, http.StatusAccepted, operationStatus)
+			response.Header.Set("Location", fmt.Sprintf("https://%s/projects/%s/operationstatuses/delete", request.Host, projectName))
+
+			return response, err
+		}
+
+		return mocks.CreateHttpResponseWithBody(request, http.StatusBadRequest, operationStatus)
+	})
+
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet &&
+			strings.Contains(request.URL.Path, fmt.Sprintf(
+				"/projects/%s/operationstatuses/delete",
+				projectName,
+			))
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		*mockRequest = *request
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, operationStatus)
+	})
+
+	return mockRequest
+}
+
 func MockGetEnvironmentDefinition(
 	mockContext *mocks.MockContext,
 	projectName string,
@@ -172,16 +220,21 @@ func MockPutEnvironment(
 			)
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		*mockRequest = *request
-		response, err := mocks.CreateHttpResponseWithBody(request, http.StatusCreated, operationStatus)
-		response.Header.Set("Location", fmt.Sprintf("https://%s/projects/%s/operationstatuses/", request.Host, projectName))
 
-		return response, err
+		if operationStatus.Status == "Succeeded" {
+			response, err := mocks.CreateHttpResponseWithBody(request, http.StatusCreated, operationStatus)
+			response.Header.Set("Location", fmt.Sprintf("https://%s/projects/%s/operationstatuses/put", request.Host, projectName))
+
+			return response, err
+		}
+
+		return mocks.CreateHttpResponseWithBody(request, http.StatusBadRequest, operationStatus)
 	})
 
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodGet &&
 			strings.Contains(request.URL.Path, fmt.Sprintf(
-				"/projects/%s/operationstatuses",
+				"/projects/%s/operationstatuses/put",
 				projectName,
 			))
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {

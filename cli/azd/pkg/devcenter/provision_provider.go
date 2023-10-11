@@ -496,10 +496,10 @@ func createInputParameters(
 	inputParams := map[string]provisioning.InputParameter{}
 
 	for _, param := range environmentDefinition.Parameters {
-		inputParams[param.Name] = provisioning.InputParameter{
+		inputParams[param.Id] = provisioning.InputParameter{
 			Type:         string(param.Type),
 			DefaultValue: param.Default,
-			Value:        parameterValues[param.Name],
+			Value:        parameterValues[param.Id],
 		}
 	}
 

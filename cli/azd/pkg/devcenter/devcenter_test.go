@@ -144,7 +144,13 @@ func (m *mockDevCenterManager) Outputs(
 	env *devcentersdk.Environment,
 ) (map[string]provisioning.OutputParameter, error) {
 	args := m.Called(ctx, env)
-	return args.Get(0).(map[string]provisioning.OutputParameter), args.Error(1)
+
+	outputs, ok := args.Get(0).(map[string]provisioning.OutputParameter)
+	if ok {
+		return outputs, args.Error(1)
+	}
+
+	return nil, args.Error(1)
 }
 
 var mockDevCenterList []*devcentersdk.DevCenter = []*devcentersdk.DevCenter{
@@ -279,6 +285,16 @@ var mockEnvDefinitions []*devcentersdk.EnvironmentDefinition = []*devcentersdk.E
 				Name:    "repoUrl",
 				Type:    devcentersdk.ParameterTypeString,
 				Default: "https://github.com/Azure-Samples/todo-nodejs-mongo-swa-func",
+			},
+			{
+				Id:   "param01",
+				Name: "Param 1",
+				Type: devcentersdk.ParameterTypeString,
+			},
+			{
+				Id:   "param02",
+				Name: "Param 2",
+				Type: devcentersdk.ParameterTypeString,
 			},
 		},
 	},

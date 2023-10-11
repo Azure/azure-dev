@@ -30,7 +30,6 @@ type Platform struct {
 func NewPlatform(
 	lazyProjectConfig *lazy.Lazy[*project.ProjectConfig],
 	userConfigManager config.UserConfigManager,
-
 ) project.PlatformProvider {
 	return &Platform{
 		lazyProjectConfig: lazyProjectConfig,

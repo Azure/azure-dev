@@ -18,6 +18,8 @@ import (
 
 var mockEnvironments []*devcentersdk.Environment = []*devcentersdk.Environment{
 	{
+		ProvisioningState:         "Succeeded",
+		ResourceGroupId:           "/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP_NAME",
 		Name:                      "user01-project1-dev-01",
 		CatalogName:               "SampleCatalog",
 		EnvironmentDefinitionName: "WebApp",
@@ -25,6 +27,8 @@ var mockEnvironments []*devcentersdk.Environment = []*devcentersdk.Environment{
 		User:                      "me",
 	},
 	{
+		ProvisioningState:         "Succeeded",
+		ResourceGroupId:           "/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP_NAME",
 		Name:                      "user01-project1-dev-02",
 		CatalogName:               "SampleCatalog",
 		EnvironmentDefinitionName: "WebApp",
@@ -32,6 +36,8 @@ var mockEnvironments []*devcentersdk.Environment = []*devcentersdk.Environment{
 		User:                      "me",
 	},
 	{
+		ProvisioningState:         "Succeeded",
+		ResourceGroupId:           "/subscriptions/SUBSCRIPTION_ID/resourceGroups/RESOURCE_GROUP_NAME",
 		Name:                      "user01-project1-dev-03",
 		CatalogName:               "SampleCatalog",
 		EnvironmentDefinitionName: "ContainerApp",

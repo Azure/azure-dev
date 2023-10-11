@@ -16,10 +16,11 @@ import (
 
 // Description is a metadata description of an environment returned for the `azd env list` command
 type Description struct {
-	Name      string
-	HasLocal  bool
-	HasRemote bool
-	IsDefault bool
+	Name       string
+	DotEnvPath string
+	HasLocal   bool
+	HasRemote  bool
+	IsDefault  bool
 }
 
 // Spec is the specification for creating a new environment
@@ -243,8 +244,9 @@ func (m *manager) List(ctx context.Context) ([]*Description, error) {
 
 	for _, env := range localEnvs {
 		envMap[env.Name] = &Description{
-			Name:     env.Name,
-			HasLocal: true,
+			Name:       env.Name,
+			HasLocal:   true,
+			DotEnvPath: env.DotEnvPath,
 		}
 	}
 

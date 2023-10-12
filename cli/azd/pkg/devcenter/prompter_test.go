@@ -38,37 +38,6 @@ func Test_Prompt_Project(t *testing.T) {
 	require.Equal(t, mockProjects[selectedProjectIndex], selectedProject)
 }
 
-func Test_Prompt_Catalog(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
-	selectedDevCenter := mockDevCenterList[0]
-	selectedProject := mockProjects[1]
-	selectedCatalogIndex := 1
-
-	mockdevcentersdk.MockDevCenterGraphQuery(mockContext, mockDevCenterList)
-	mockdevcentersdk.MockListCatalogs(mockContext, selectedProject.Name, mockCatalogs)
-
-	manager := &mockDevCenterManager{}
-	manager.
-		On("WritableProjects", *mockContext.Context).
-		Return(mockProjects, nil)
-
-	mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool {
-		return strings.Contains(options.Message, "Select a catalog")
-	}).RespondFn(func(options input.ConsoleOptions) (any, error) {
-		return selectedCatalogIndex, nil
-	})
-
-	prompter := newPrompterForTest(t, mockContext, &Config{}, manager)
-	selectedCatalog, err := prompter.PromptCatalog(
-		*mockContext.Context,
-		selectedDevCenter.Name,
-		selectedProject.Name,
-	)
-	require.NoError(t, err)
-	require.NotNil(t, selectedCatalog)
-	require.Equal(t, mockCatalogs[selectedCatalogIndex], selectedCatalog)
-}
-
 func Test_Prompt_EnvironmentType(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	selectedDevCenter := mockDevCenterList[0]

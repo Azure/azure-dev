@@ -58,49 +58,6 @@ func (p *Prompter) PromptForConfig(ctx context.Context) (*Config, error) {
 	return p.config, nil
 }
 
-// PromptCatalog prompts the user to select a catalog for the specified devcenter and project
-// If the user only has access to a single catalog, then that catalog will be returned
-func (p *Prompter) PromptCatalog(
-	ctx context.Context,
-	devCenterName string,
-	projectName string,
-) (*devcentersdk.Catalog, error) {
-	catalogsResponse, err := p.devCenterClient.
-		DevCenterByName(devCenterName).
-		ProjectByName(projectName).
-		Catalogs().
-		Get(ctx)
-
-	if err != nil {
-		return nil, err
-	}
-
-	catalogs := catalogsResponse.Value
-	slices.SortFunc(catalogs, func(x, y *devcentersdk.Catalog) bool {
-		return x.Name < y.Name
-	})
-
-	catalogNames := []string{}
-	for _, catalog := range catalogs {
-		catalogNames = append(catalogNames, catalog.Name)
-	}
-
-	if len(catalogNames) == 1 {
-		return catalogs[0], nil
-	}
-
-	selected, err := p.console.Select(ctx, input.ConsoleOptions{
-		Message: "Select a catalog:",
-		Options: catalogNames,
-	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	return catalogs[selected], nil
-}
-
 // PromptProject prompts the user to select a project for the specified devcenter
 // If the user only has access to a single project, then that project will be returned
 func (p *Prompter) PromptProject(ctx context.Context, devCenterName string) (*devcentersdk.Project, error) {

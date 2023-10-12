@@ -18,6 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"golang.org/x/exp/maps"
 )
 
 const (
@@ -293,6 +294,23 @@ func (p *ProvisionProvider) Destroy(
 		}
 	}
 
+	devCenterEnv, err := p.devCenterClient.
+		DevCenterByName(p.config.Name).
+		ProjectByName(p.config.Project).
+		EnvironmentsByUser(p.config.User).
+		EnvironmentByName(envName).
+		Get(ctx)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed getting devcenter environment: %w", err)
+	}
+
+	// Get environment outputs to invalidate them after destroy
+	outputs, err := p.manager.Outputs(ctx, devCenterEnv)
+	if err != nil {
+		return nil, fmt.Errorf("failed getting environment outputs: %w", err)
+	}
+
 	p.console.ShowSpinner(ctx, spinnerMessage, input.Step)
 
 	poller, err := p.devCenterClient.
@@ -315,7 +333,9 @@ func (p *ProvisionProvider) Destroy(
 
 	p.console.StopSpinner(ctx, spinnerMessage, input.StepDone)
 
-	result := &provisioning.DestroyResult{}
+	result := &provisioning.DestroyResult{
+		InvalidatedEnvKeys: maps.Keys(outputs),
+	}
 
 	return result, nil
 }
@@ -323,24 +343,26 @@ func (p *ProvisionProvider) Destroy(
 // EnsureEnv ensures that the environment is configured for the Dev Center provider.
 // Require selection for devcenter, project, catalog, environment type, and environment definition
 func (p *ProvisionProvider) EnsureEnv(ctx context.Context) error {
+	// Cache config values prior to prompting user
 	currentConfig := *p.config
 	updatedConfig, err := p.prompter.PromptForConfig(ctx)
 	if err != nil {
 		return err
 	}
 
-	if p.config.EnvironmentType == "" {
+	if updatedConfig.EnvironmentType == "" {
 		envType, err := p.prompter.PromptEnvironmentType(ctx, updatedConfig.Name, updatedConfig.Project)
 		if err != nil {
 			return err
 		}
-		p.config.EnvironmentType = envType.Name
+		updatedConfig.EnvironmentType = envType.Name
 	}
 
-	if p.config.User == "" {
-		p.config.User = "me"
+	if updatedConfig.User == "" {
+		updatedConfig.User = "me"
 	}
 
+	// Set any missing config values in environment configuration for future use
 	if currentConfig.Name == "" {
 		if err := p.env.Config.Set(DevCenterNamePath, updatedConfig.Name); err != nil {
 			return err
@@ -367,6 +389,12 @@ func (p *ProvisionProvider) EnsureEnv(ctx context.Context) error {
 
 	if currentConfig.EnvironmentDefinition == "" {
 		if err := p.env.Config.Set(DevCenterEnvDefinitionPath, updatedConfig.EnvironmentDefinition); err != nil {
+			return err
+		}
+	}
+
+	if currentConfig.User == "" {
+		if err := p.env.Config.Set(DevCenterUserPath, updatedConfig.User); err != nil {
 			return err
 		}
 	}

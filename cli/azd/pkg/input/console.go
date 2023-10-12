@@ -11,8 +11,11 @@ import (
 	"io"
 	"log"
 	"os"
+	"os/signal"
+	"runtime"
 	"strconv"
 	"sync"
+	"syscall"
 	"time"
 
 	"github.com/AlecAivazis/survey/v2"
@@ -21,9 +24,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
-	"github.com/mattn/go-isatty"
 	"github.com/nathan-fiscaletti/consolesize-go"
 	"github.com/theckman/yacspin"
+	"go.uber.org/atomic"
 )
 
 type SpinnerUxType int
@@ -108,19 +111,17 @@ type AskerConsole struct {
 	isTerminal bool
 	noPrompt   bool
 
-	spinner                 *yacspin.Spinner
-	spinnerTerminalMode     yacspin.TerminalMode
-	spinnerTerminalModeOnce sync.Once
+	showProgressMu sync.Mutex // ensures atomicity when swapping the current progress renderer (spinner or previewer)
 
-	currentIndent         string
-	consoleWidth          int
-	previewer             *progressLog
-	initialWriter         io.Writer
-	currentSpinnerMessage string
-	// writeControlMutex ensures no race conditions happen while methods are writing to the terminal.
-	// AskerConsole can be used as a singleton, hence, more than one component can invoke its methods at the same time.
-	// A method should lock this mutex if no other writing to he terminal should occur at the same time.
-	writeControlMutex sync.Mutex
+	spinner             *yacspin.Spinner
+	spinnerLineMu       sync.Mutex // secures spinnerCurrentTitle and the line of spinner text
+	spinnerTerminalMode yacspin.TerminalMode
+	spinnerCurrentTitle string
+
+	previewer *progressLog
+
+	currentIndent *atomic.String
+	consoleWidth  *atomic.Int32
 	// holds the last 2 bytes written by message or messageUX. This is used to detect when there is already an empty
 	// line (\n\n)
 	last2Byte [2]byte
@@ -226,14 +227,14 @@ func (c *AskerConsole) MessageUxItem(ctx context.Context, item ux.UxItem) {
 		return
 	}
 
-	msg := item.ToString(c.currentIndent)
+	msg := item.ToString(c.currentIndent.Load())
 	c.println(ctx, msg)
 	// Adding "\n" b/c calling Fprintln is adding one new line at the end to the msg
 	c.updateLastBytes(msg + "\n")
 }
 
 func (c *AskerConsole) println(ctx context.Context, msg string) {
-	if c.spinner != nil && c.spinner.Status() == yacspin.SpinnerRunning {
+	if c.spinner.Status() == yacspin.SpinnerRunning {
 		c.StopSpinner(ctx, "", Step)
 		// default non-format
 		fmt.Fprintln(c.writer, msg)
@@ -250,20 +251,18 @@ func defaultShowPreviewerOptions() *ShowPreviewerOptions {
 }
 
 func (c *AskerConsole) ShowPreviewer(ctx context.Context, options *ShowPreviewerOptions) io.Writer {
-	c.writeControlMutex.Lock()
-	defer c.writeControlMutex.Unlock()
+	c.showProgressMu.Lock()
+	defer c.showProgressMu.Unlock()
 
 	// Pause any active spinner
-	currentMsg := c.currentSpinnerMessage
-	if c.spinner != nil {
-		_ = c.spinner.Pause()
-	}
+	currentMsg := c.spinnerCurrentTitle
+	_ = c.spinner.Pause()
 
 	if options == nil {
 		options = defaultShowPreviewerOptions()
 	}
 
-	c.previewer = NewProgressLog(options.MaxLineCount, options.Prefix, options.Title, c.currentIndent+currentMsg)
+	c.previewer = NewProgressLog(options.MaxLineCount, options.Prefix, options.Title, c.currentIndent.Load()+currentMsg)
 	c.previewer.Start()
 	c.writer = c.previewer
 	return &consolePreviewerWriter{
@@ -274,85 +273,86 @@ func (c *AskerConsole) ShowPreviewer(ctx context.Context, options *ShowPreviewer
 func (c *AskerConsole) StopPreviewer(ctx context.Context) {
 	c.previewer.Stop()
 	c.previewer = nil
-	c.writer = c.initialWriter
+	c.writer = c.defaultWriter
 
-	if c.spinner != nil {
-		_ = c.spinner.Unpause()
-	}
+	_ = c.spinner.Unpause()
 }
 
 const cPostfix = "..."
 
-func (c *AskerConsole) spinnerText(title, charset string) string {
+// The line of text for the spinner, displayed in the format of: <prefix><spinner> <message>
+type spinnerLine struct {
+	// The prefix before the spinner.
+	Prefix string
 
-	spinnerLen := len(charset) + 1 // adding one for the empty space before the message
+	// Charset that is used to animate the spinner.
+	CharSet []string
 
-	if len(title)+spinnerLen >= c.consoleWidth {
-		return fmt.Sprintf("%s%s", title[:c.consoleWidth-spinnerLen-len(cPostfix)], cPostfix)
+	// The message to be displayed.
+	Message string
+}
+
+func (c *AskerConsole) spinnerLine(title string, indent string) spinnerLine {
+	spinnerLen := len(indent) + len(spinnerCharSet[0]) + 1 // adding one for the empty space before the message
+	width := int(c.consoleWidth.Load())
+
+	switch {
+	case width <= 3: // show number of dots up to 3
+		return spinnerLine{
+			CharSet: spinnerShortCharSet[:width],
+		}
+	case width <= spinnerLen+len(cPostfix): // show number of dots
+		return spinnerLine{
+			CharSet: spinnerShortCharSet,
+		}
+	case width <= spinnerLen+len(title): // truncate title
+		return spinnerLine{
+			Prefix:  indent,
+			CharSet: spinnerCharSet,
+			Message: title[:width-spinnerLen-len(cPostfix)] + cPostfix,
+		}
+	default:
+		return spinnerLine{
+			Prefix:  indent,
+			CharSet: spinnerCharSet,
+			Message: title,
+		}
 	}
-	return title
 }
 
 func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format SpinnerUxType) {
-	c.writeControlMutex.Lock()
-	defer c.writeControlMutex.Unlock()
+	c.showProgressMu.Lock()
+	defer c.showProgressMu.Unlock()
 
 	if c.formatter != nil && c.formatter.Kind() == output.JsonFormat {
 		// Spinner is disabled when using json format.
 		return
 	}
 
-	if c.consoleWidth <= cMinConsoleWidth {
-		// no spinner for consoles with width <= cMinConsoleWidth
-		c.Message(ctx, title)
-		return
-	}
-
 	if c.previewer != nil {
 		// spinner is not compatible with previewer.
-		c.previewer.Header(c.currentIndent + title)
+		c.previewer.Header(c.currentIndent.Load() + title)
 		return
 	}
 
-	// mutating an existing spinner brings issues on how the messages are formatted
-	// so, instead of mutating, we stop any current spinner and replaced it for a new one
-	if c.spinner != nil {
-		_ = c.spinner.Stop()
-	}
+	c.spinnerLineMu.Lock()
+	c.spinnerCurrentTitle = title
 
-	charSet := c.getCharset(format)
-	c.currentSpinnerMessage = title
-
-	// determine the terminal mode once
-	c.spinnerTerminalModeOnce.Do(func() {
-		c.spinnerTerminalMode = GetSpinnerTerminalMode(&c.isTerminal)
-	})
-
-	spinnerConfig := yacspin.Config{
-		Frequency:       200 * time.Millisecond,
-		Writer:          c.writer,
-		Suffix:          " ",
-		SuffixAutoColon: true,
-		Message:         c.spinnerText(title, charSet[0]),
-		CharSet:         charSet,
-	}
-	spinnerConfig.TerminalMode = c.spinnerTerminalMode
-
-	c.spinner, _ = yacspin.New(spinnerConfig)
+	indentPrefix := c.getIndent(format)
+	line := c.spinnerLine(title, indentPrefix)
+	c.spinner.Message(line.Message)
+	_ = c.spinner.CharSet(line.CharSet)
+	c.spinner.Prefix(line.Prefix)
 
 	_ = c.spinner.Start()
+	c.spinnerLineMu.Unlock()
 }
 
-// GetSpinnerTerminalMode gets the appropriate terminal mode for the spinner based on the current environment,
+// spinnerTerminalMode determines the appropriate terminal mode for the spinner based on the current environment,
 // taking into account of environment variables that can control the terminal mode behavior.
-func GetSpinnerTerminalMode(isTerminal *bool) yacspin.TerminalMode {
+func spinnerTerminalMode(isTerminal bool) yacspin.TerminalMode {
 	nonInteractiveMode := yacspin.ForceNoTTYMode | yacspin.ForceDumbTerminalMode
-	if isTerminal != nil && !*isTerminal {
-		return nonInteractiveMode
-	}
-
-	// isTerminal not provided, determine it ourselves
-	if isTerminal == nil && !isatty.IsTerminal(os.Stdout.Fd()) {
+	if !isTerminal {
 		return nonInteractiveMode
 	}
 
@@ -386,18 +386,12 @@ func GetSpinnerTerminalMode(isTerminal *bool) yacspin.TerminalMode {
 	return termMode
 }
 
-var customCharSet []string = []string{
+var spinnerCharSet []string = []string{
 	"|       |", "|=      |", "|==     |", "|===    |", "|====   |", "|=====  |", "|====== |",
 	"|=======|", "| ======|", "|  =====|", "|   ====|", "|    ===|", "|     ==|", "|      =|",
 }
 
-func (c *AskerConsole) getCharset(format SpinnerUxType) []string {
-	newCharSet := make([]string, len(customCharSet))
-	for i, value := range customCharSet {
-		newCharSet[i] = fmt.Sprintf("%s%s", c.getIndent(format), value)
-	}
-	return newCharSet
-}
+var spinnerShortCharSet []string = []string{".", "..", "..."}
 
 func setIndentation(spaces int) string {
 	bytes := make([]byte, spaces)
@@ -409,42 +403,37 @@ func setIndentation(spaces int) string {
 
 func (c *AskerConsole) getIndent(format SpinnerUxType) string {
 	requiredSize := 2
-	if requiredSize != len(c.currentIndent) {
-		c.currentIndent = setIndentation(requiredSize)
+	if requiredSize != len(c.currentIndent.Load()) {
+		c.currentIndent.Store(setIndentation(requiredSize))
 	}
-	return c.currentIndent
+	return c.currentIndent.Load()
 }
 
 func (c *AskerConsole) StopSpinner(ctx context.Context, lastMessage string, format SpinnerUxType) {
-	c.currentSpinnerMessage = ""
 	if c.formatter != nil && c.formatter.Kind() == output.JsonFormat {
 		// Spinner is disabled when using json format.
 		return
 	}
 
-	// calling stop for non existing spinner
-	if c.spinner == nil {
-		return
-	}
 	// Do nothing when it is already stopped
 	if c.spinner.Status() == yacspin.SpinnerStopped {
 		return
 	}
 
+	c.spinnerLineMu.Lock()
+	c.spinnerCurrentTitle = ""
 	// Update style according to MessageUxType
-	if lastMessage == "" {
-		c.spinner.StopCharacter("")
-	} else {
-		c.spinner.StopCharacter(c.getStopChar(format))
+	if lastMessage != "" {
+		lastMessage = c.getStopChar(format) + " " + lastMessage
 	}
 
-	_ = c.spinner.Pause()
 	c.spinner.StopMessage(lastMessage)
 	_ = c.spinner.Stop()
+	c.spinnerLineMu.Unlock()
 }
 
 func (c *AskerConsole) IsSpinnerRunning(ctx context.Context) bool {
-	return c.spinner != nil && c.spinner.Status() != yacspin.SpinnerStopped
+	return c.spinner.Status() != yacspin.SpinnerStopped
 }
 
 func (c *AskerConsole) IsSpinnerInteractive() bool {
@@ -591,31 +580,79 @@ func (c *AskerConsole) Handles() ConsoleHandles {
 	return c.handles
 }
 
-const cMinConsoleWidth int = 40
-
 func getConsoleWidth() int {
 	width, _ := consolesize.GetConsoleSize()
-	if width < cMinConsoleWidth {
-		return cMinConsoleWidth
-	}
 	return width
+}
+
+func (c *AskerConsole) handleResize(width int) {
+	c.consoleWidth.Store(int32(width))
+
+	c.spinnerLineMu.Lock()
+	if c.spinner.Status() == yacspin.SpinnerRunning {
+		line := c.spinnerLine(c.spinnerCurrentTitle, c.currentIndent.Load())
+		c.spinner.Message(line.Message)
+		_ = c.spinner.CharSet(line.CharSet)
+		c.spinner.Prefix(line.Prefix)
+	}
+	c.spinnerLineMu.Unlock()
+}
+
+func watchConsoleWidth(c *AskerConsole) {
+	if runtime.GOOS == "windows" {
+		go func() {
+			prevWidth := getConsoleWidth()
+			for {
+				time.Sleep(time.Millisecond * 250)
+				width := getConsoleWidth()
+
+				if prevWidth != width {
+					c.handleResize(width)
+				}
+				prevWidth = width
+			}
+		}()
+	} else {
+		// avoid taking a dependency on syscall.SIGWINCH (unix-only constant) directly
+		const SIGWINCH = syscall.Signal(0x1c)
+		signalChan := make(chan os.Signal, 1)
+		signal.Notify(signalChan, SIGWINCH)
+		go func() {
+			for range signalChan {
+				c.handleResize(getConsoleWidth())
+			}
+		}()
+	}
 }
 
 // Creates a new console with the specified writer, handles and formatter.
 func NewConsole(noPrompt bool, isTerminal bool, w io.Writer, handles ConsoleHandles, formatter output.Formatter) Console {
 	asker := NewAsker(noPrompt, isTerminal, handles.Stdout, handles.Stdin)
 
-	return &AskerConsole{
+	c := &AskerConsole{
 		asker:         asker,
 		handles:       handles,
 		defaultWriter: w,
 		writer:        w,
 		formatter:     formatter,
 		isTerminal:    isTerminal,
-		consoleWidth:  getConsoleWidth(),
-		initialWriter: w,
+		consoleWidth:  atomic.NewInt32(int32(getConsoleWidth())),
+		currentIndent: atomic.NewString(""),
 		noPrompt:      noPrompt,
 	}
+
+	spinnerConfig := yacspin.Config{
+		Frequency:    200 * time.Millisecond,
+		Writer:       c.writer,
+		Suffix:       " ",
+		TerminalMode: spinnerTerminalMode(isTerminal),
+		CharSet:      spinnerCharSet,
+	}
+	c.spinner, _ = yacspin.New(spinnerConfig)
+	c.spinnerTerminalMode = spinnerConfig.TerminalMode
+
+	go watchConsoleWidth(c)
+	return c
 }
 
 func GetStepResultFormat(result error) SpinnerUxType {
@@ -628,7 +665,7 @@ func GetStepResultFormat(result error) SpinnerUxType {
 
 // Handle doing interactive calls. It checks if there's a spinner running to pause it before doing interactive actions.
 func (c *AskerConsole) doInteraction(promptFn func(c *AskerConsole) error) error {
-	if c.spinner != nil && c.spinner.Status() == yacspin.SpinnerRunning {
+	if c.spinner.Status() == yacspin.SpinnerRunning {
 		_ = c.spinner.Pause()
 
 		// Ensure the spinner is always resumed

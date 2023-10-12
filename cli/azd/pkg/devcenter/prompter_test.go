@@ -15,29 +15,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func Test_Prompt_DevCenter(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
-	selectedDevCenterIndex := 0
-
-	manager := &mockDevCenterManager{}
-	manager.
-		On("WritableProjects", *mockContext.Context).
-		Return(mockProjects, nil)
-
-	prompter := newPrompterForTest(t, mockContext, &Config{}, manager)
-
-	mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool {
-		return strings.Contains(options.Message, "Select a Dev Center")
-	}).RespondFn(func(options input.ConsoleOptions) (any, error) {
-		return selectedDevCenterIndex, nil
-	})
-
-	selectedDevCenter, err := prompter.PromptDevCenter(*mockContext.Context)
-	require.NoError(t, err)
-	require.NotNil(t, selectedDevCenter)
-	require.Equal(t, mockDevCenterList[selectedDevCenterIndex], selectedDevCenter)
-}
-
 func Test_Prompt_Project(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	selectedDevCenter := mockDevCenterList[0]
@@ -48,14 +25,13 @@ func Test_Prompt_Project(t *testing.T) {
 		On("WritableProjects", *mockContext.Context).
 		Return(mockProjects, nil)
 
-	prompter := newPrompterForTest(t, mockContext, &Config{}, manager)
-
 	mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool {
 		return strings.Contains(options.Message, "Select a project")
 	}).RespondFn(func(options input.ConsoleOptions) (any, error) {
 		return selectedProjectIndex, nil
 	})
 
+	prompter := newPrompterForTest(t, mockContext, &Config{}, manager)
 	selectedProject, err := prompter.PromptProject(*mockContext.Context, selectedDevCenter.Name)
 	require.NoError(t, err)
 	require.NotNil(t, selectedProject)
@@ -76,14 +52,13 @@ func Test_Prompt_Catalog(t *testing.T) {
 		On("WritableProjects", *mockContext.Context).
 		Return(mockProjects, nil)
 
-	prompter := newPrompterForTest(t, mockContext, &Config{}, manager)
-
 	mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool {
 		return strings.Contains(options.Message, "Select a catalog")
 	}).RespondFn(func(options input.ConsoleOptions) (any, error) {
 		return selectedCatalogIndex, nil
 	})
 
+	prompter := newPrompterForTest(t, mockContext, &Config{}, manager)
 	selectedCatalog, err := prompter.PromptCatalog(
 		*mockContext.Context,
 		selectedDevCenter.Name,
@@ -109,14 +84,13 @@ func Test_Prompt_EnvironmentType(t *testing.T) {
 		On("WritableProjects", *mockContext.Context).
 		Return(mockProjects, nil)
 
-	prompter := newPrompterForTest(t, mockContext, &Config{}, manager)
-
 	mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool {
 		return strings.Contains(options.Message, "Select an environment type")
 	}).RespondFn(func(options input.ConsoleOptions) (any, error) {
 		return selectedIndex, nil
 	})
 
+	prompter := newPrompterForTest(t, mockContext, &Config{}, manager)
 	selectedEnvironmentType, err := prompter.PromptEnvironmentType(
 		*mockContext.Context,
 		selectedDevCenter.Name,
@@ -142,14 +116,13 @@ func Test_Prompt_EnvironmentDefinitions(t *testing.T) {
 		On("WritableProjects", *mockContext.Context).
 		Return(mockProjects, nil)
 
-	prompter := newPrompterForTest(t, mockContext, &Config{}, manager)
-
 	mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool {
 		return strings.Contains(options.Message, "Select an environment definition")
 	}).RespondFn(func(options input.ConsoleOptions) (any, error) {
 		return selectedIndex, nil
 	})
 
+	prompter := newPrompterForTest(t, mockContext, &Config{}, manager)
 	selectedEnvironmentType, err := prompter.PromptEnvironmentDefinition(
 		*mockContext.Context,
 		selectedDevCenter.Name,
@@ -158,6 +131,67 @@ func Test_Prompt_EnvironmentDefinitions(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, selectedEnvironmentType)
 	require.Equal(t, mockEnvDefinitions[selectedIndex], selectedEnvironmentType)
+}
+
+func Test_Prompt_Config(t *testing.T) {
+	t.Run("AllValuesSet", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		selectedDevCenter := mockDevCenterList[0]
+		selectedProject := mockProjects[1]
+		selectedEnvDefinition := mockEnvDefinitions[2]
+
+		config := &Config{
+			Name:                  selectedDevCenter.Name,
+			Project:               selectedProject.Name,
+			EnvironmentDefinition: selectedEnvDefinition.Name,
+			Catalog:               selectedEnvDefinition.CatalogName,
+		}
+
+		prompter := newPrompterForTest(t, mockContext, config, nil)
+		config, err := prompter.PromptForConfig(*mockContext.Context)
+		require.NoError(t, err)
+		require.NotNil(t, config)
+		require.Equal(t, selectedDevCenter.Name, config.Name)
+		require.Equal(t, selectedProject.Name, config.Project)
+		require.Equal(t, selectedEnvDefinition.Name, config.EnvironmentDefinition)
+		require.Equal(t, selectedEnvDefinition.CatalogName, config.Catalog)
+	})
+
+	t.Run("NoValuesSet", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		selectedDevCenter := mockDevCenterList[0]
+		selectedProject := mockProjects[1]
+		selectedEnvDefinition := mockEnvDefinitions[2]
+
+		mockdevcentersdk.MockDevCenterGraphQuery(mockContext, mockDevCenterList)
+		mockdevcentersdk.MockListEnvironmentDefinitions(mockContext, selectedProject.Name, mockEnvDefinitions)
+
+		manager := &mockDevCenterManager{}
+		manager.
+			On("WritableProjects", *mockContext.Context).
+			Return(mockProjects, nil)
+
+		mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool {
+			return strings.Contains(options.Message, "project")
+		}).RespondFn(func(options input.ConsoleOptions) (any, error) {
+			return 1, nil
+		})
+
+		mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool {
+			return strings.Contains(options.Message, "environment definition")
+		}).RespondFn(func(options input.ConsoleOptions) (any, error) {
+			return 2, nil
+		})
+
+		prompter := newPrompterForTest(t, mockContext, &Config{}, manager)
+		config, err := prompter.PromptForConfig(*mockContext.Context)
+		require.NoError(t, err)
+		require.NotNil(t, config)
+		require.Equal(t, selectedDevCenter.Name, config.Name)
+		require.Equal(t, selectedProject.Name, config.Project)
+		require.Equal(t, selectedEnvDefinition.Name, config.EnvironmentDefinition)
+		require.Equal(t, selectedEnvDefinition.CatalogName, config.Catalog)
+	})
 }
 
 func Test_Prompt_Parameters(t *testing.T) {
@@ -169,7 +203,6 @@ func Test_Prompt_Parameters(t *testing.T) {
 
 	t.Run("MultipleParameters", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		prompter := newPrompterForTest(t, mockContext, &Config{}, nil)
 		promptedParams := map[string]bool{}
 
 		expectedValues := map[string]paramWithValue{
@@ -243,6 +276,7 @@ func Test_Prompt_Parameters(t *testing.T) {
 			},
 		}
 
+		prompter := newPrompterForTest(t, mockContext, &Config{}, nil)
 		values, err := prompter.PromptParameters(*mockContext.Context, env, envDefinition)
 		require.NoError(t, err)
 

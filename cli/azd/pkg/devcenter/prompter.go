@@ -35,84 +35,27 @@ func NewPrompter(
 	}
 }
 
-// PromptForValues prompts the user for devcenter configuration values that have not been previously set
-func (p *Prompter) PromptForValues(ctx context.Context) (*Config, error) {
-	devCenterName := p.config.Name
-	if devCenterName == "" {
-		devCenter, err := p.PromptDevCenter(ctx)
+// PromptForConfig prompts the user for devcenter configuration values that have not been previously set
+func (p *Prompter) PromptForConfig(ctx context.Context) (*Config, error) {
+	if p.config.Project == "" {
+		project, err := p.PromptProject(ctx, p.config.Name)
 		if err != nil {
 			return nil, err
 		}
-		p.config.Name = devCenter.Name
-		devCenterName = devCenter.Name
-	}
-
-	projectName := p.config.Project
-	if projectName == "" {
-		project, err := p.PromptProject(ctx, devCenterName)
-		if err != nil {
-			return nil, err
-		}
+		p.config.Name = project.DevCenter.Name
 		p.config.Project = project.Name
-		projectName = project.Name
 	}
 
-	envDefinitionName := p.config.EnvironmentDefinition
-	if envDefinitionName == "" {
-		envDefinition, err := p.PromptEnvironmentDefinition(ctx, devCenterName, projectName)
+	if p.config.EnvironmentDefinition == "" {
+		envDefinition, err := p.PromptEnvironmentDefinition(ctx, p.config.Name, p.config.Project)
 		if err != nil {
 			return nil, err
 		}
-		envDefinitionName = envDefinition.Name
 		p.config.Catalog = envDefinition.CatalogName
-		p.config.EnvironmentDefinition = envDefinitionName
+		p.config.EnvironmentDefinition = envDefinition.Name
 	}
 
 	return p.config, nil
-}
-
-// PromptDevCenter prompts the user to select a devcenter
-// If the user only has access to a single devcenter, then that devcenter will be returned
-func (p *Prompter) PromptDevCenter(ctx context.Context) (*devcentersdk.DevCenter, error) {
-	devCenters := []*devcentersdk.DevCenter{}
-	writeableProjects, err := p.manager.WritableProjects(ctx)
-	if err != nil {
-		return nil, err
-	}
-
-	for _, project := range writeableProjects {
-		containsDevCenter := slices.ContainsFunc(devCenters, func(dc *devcentersdk.DevCenter) bool {
-			return dc.ServiceUri == project.DevCenter.ServiceUri
-		})
-
-		if !containsDevCenter {
-			devCenters = append(devCenters, project.DevCenter)
-		}
-	}
-
-	slices.SortFunc(devCenters, func(x, y *devcentersdk.DevCenter) bool {
-		return x.Name < y.Name
-	})
-
-	devCenterNames := []string{}
-	for _, devCenter := range devCenters {
-		devCenterNames = append(devCenterNames, devCenter.Name)
-	}
-
-	if len(devCenterNames) == 1 {
-		return devCenters[0], nil
-	}
-
-	selected, err := p.console.Select(ctx, input.ConsoleOptions{
-		Message: "Select a Dev Center:",
-		Options: devCenterNames,
-	})
-
-	if err != nil {
-		return nil, err
-	}
-
-	return devCenters[selected], nil
 }
 
 // PromptCatalog prompts the user to select a catalog for the specified devcenter and project
@@ -173,14 +116,14 @@ func (p *Prompter) PromptProject(ctx context.Context, devCenterName string) (*de
 	// Filter to only projects that match the specified devcenter
 	filteredProjects := []*devcentersdk.Project{}
 	for _, project := range writeableProjects {
-		if strings.EqualFold(devCenterName, project.DevCenter.Name) {
+		if devCenterName == "" || strings.EqualFold(devCenterName, project.DevCenter.Name) {
 			filteredProjects = append(filteredProjects, project)
 		}
 	}
 
 	projectNames := []string{}
 	for _, project := range filteredProjects {
-		projectNames = append(projectNames, project.Name)
+		projectNames = append(projectNames, project.DisplayName())
 	}
 
 	if len(projectNames) == 1 {

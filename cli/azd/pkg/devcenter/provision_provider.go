@@ -323,18 +323,21 @@ func (p *ProvisionProvider) Destroy(
 // Require selection for devcenter, project, catalog, environment type, and environment definition
 func (p *ProvisionProvider) EnsureEnv(ctx context.Context) error {
 	currentConfig := *p.config
-	updatedConfig, err := p.prompter.PromptForValues(ctx)
+	updatedConfig, err := p.prompter.PromptForConfig(ctx)
 	if err != nil {
 		return err
 	}
 
-	envTypeName := p.config.EnvironmentType
-	if envTypeName == "" {
+	if p.config.EnvironmentType == "" {
 		envType, err := p.prompter.PromptEnvironmentType(ctx, updatedConfig.Name, updatedConfig.Project)
 		if err != nil {
 			return err
 		}
 		p.config.EnvironmentType = envType.Name
+	}
+
+	if p.config.User == "" {
+		p.config.User = "me"
 	}
 
 	if currentConfig.Name == "" {

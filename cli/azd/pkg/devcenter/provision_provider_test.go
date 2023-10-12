@@ -346,6 +346,7 @@ func Test_ProvisionProvider_Destroy(t *testing.T) {
 		env := environment.New("test")
 
 		mockdevcentersdk.MockDevCenterGraphQuery(mockContext, mockDevCenterList)
+		mockdevcentersdk.MockGetEnvironment(mockContext, config.Project, config.User, env.GetEnvName(), mockEnvironments[0])
 		mockdevcentersdk.MockDeleteEnvironment(
 			mockContext,
 			config.Project,
@@ -360,11 +361,27 @@ func Test_ProvisionProvider_Destroy(t *testing.T) {
 			},
 		)
 
-		provider := newProvisionProviderForTest(t, mockContext, config, env, nil)
+		outputParams := map[string]provisioning.OutputParameter{
+			"PARAM_01": {Type: provisioning.ParameterTypeString, Value: "value1"},
+			"PARAM_02": {Type: provisioning.ParameterTypeString, Value: "value2"},
+			"PARAM_03": {Type: provisioning.ParameterTypeString, Value: "value3"},
+			"PARAM_04": {Type: provisioning.ParameterTypeString, Value: "value4"},
+		}
+
+		manager := &mockDevCenterManager{}
+		manager.
+			On("Outputs", *mockContext.Context, mock.AnythingOfType("*devcentersdk.Environment")).
+			Return(outputParams, nil)
+
+		provider := newProvisionProviderForTest(t, mockContext, config, env, manager)
 		destroyOptions := provisioning.NewDestroyOptions(true, true)
 		result, err := provider.Destroy(*mockContext.Context, destroyOptions)
 		require.NoError(t, err)
 		require.NotNil(t, result)
+		require.Contains(t, result.InvalidatedEnvKeys, "PARAM_01")
+		require.Contains(t, result.InvalidatedEnvKeys, "PARAM_02")
+		require.Contains(t, result.InvalidatedEnvKeys, "PARAM_03")
+		require.Contains(t, result.InvalidatedEnvKeys, "PARAM_04")
 	})
 
 	t.Run("DeploymentNotFound", func(t *testing.T) {
@@ -380,6 +397,7 @@ func Test_ProvisionProvider_Destroy(t *testing.T) {
 		env := environment.New("test")
 
 		mockdevcentersdk.MockDevCenterGraphQuery(mockContext, mockDevCenterList)
+		mockdevcentersdk.MockGetEnvironment(mockContext, config.Project, config.User, env.GetEnvName(), nil)
 		mockdevcentersdk.MockDeleteEnvironment(mockContext, config.Project, config.User, env.GetEnvName(), nil)
 
 		provider := newProvisionProviderForTest(t, mockContext, config, env, nil)

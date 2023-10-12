@@ -291,7 +291,30 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 				panic("Unhandled login status")
 			}
 
-			fmt.Fprintln(la.console.Handles().Stdout, msg)
+			// get user account information - login --check-status
+			act, err := la.authManager.GetSignedInAccount(ctx)
+
+			// error getting user account
+			if err != nil {
+				log.Printf("error: getting signed in account: %v", err)
+				fmt.Fprintln(la.console.Handles().Stdout, msg)
+				return nil, nil
+			}
+
+			// service principal account - login --check-status
+			if act == nil {
+				// get service principal client id and display it
+				value, err := la.authManager.GetLoggedInServicePrincipalClientID(ctx)
+				if err != nil || value == nil {
+					log.Printf("error: getting signed in service principal: %v", err)
+					fmt.Fprintln(la.console.Handles().Stdout, msg)
+					return nil, nil
+				}
+				fmt.Fprintln(la.console.Handles().Stdout, fmt.Sprintf("(%s) %s", *value, msg))
+				return nil, nil
+			}
+
+			fmt.Fprintln(la.console.Handles().Stdout, fmt.Sprintf("(%s) %s", act.PreferredUsername, msg))
 			return nil, nil
 		}
 	}
@@ -347,8 +370,14 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	// service principal account - login
 	if act == nil {
-		// get service principal client id from flags and display it
-		la.console.Message(ctx, fmt.Sprintf("(%s) %s", la.flags.clientID, cLoginSuccessMessage))
+		// get service principal client id and display it
+		value, err := la.authManager.GetLoggedInServicePrincipalClientID(ctx)
+		if err != nil || value == nil {
+			log.Printf("error: getting signed in service principal: %v", err)
+			fmt.Fprintln(la.console.Handles().Stdout, cLoginSuccessMessage)
+			return nil, nil
+		}
+		fmt.Fprintln(la.console.Handles().Stdout, fmt.Sprintf("(%s) %s", *value, cLoginSuccessMessage))
 		return nil, nil
 	}
 

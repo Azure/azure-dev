@@ -720,6 +720,26 @@ func (m *Manager) GetSignedInAccount(ctx context.Context) (*public.Account, erro
 	return nil, nil
 }
 
+// GetLoggedInServicePrincipalClientID fetches the client ID for the signed in service principal,
+// or nil if one does not exist.
+func (m *Manager) GetLoggedInServicePrincipalClientID(ctx context.Context) (*string, error) {
+	cfg, err := m.readAuthConfig()
+	if err != nil {
+		return nil, fmt.Errorf("fetching current user: %w", err)
+	}
+
+	currentUser, err := readUserProperties(cfg)
+	if err != nil {
+		return nil, ErrNoCurrentUser
+	}
+
+	if currentUser.ClientID != nil {
+		return currentUser.ClientID, nil
+	}
+
+	return nil, nil
+}
+
 // saveUserProperties writes the properties under [cCurrentUserKey], overwriting any existing value.
 func (m *Manager) saveUserProperties(user *userProperties) error {
 	cfg, err := m.readAuthConfig()

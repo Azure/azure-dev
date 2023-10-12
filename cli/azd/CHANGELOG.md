@@ -10,6 +10,12 @@
 
 ### Other Changes
 
+## 1.4.2 (2023-10-12)
+
+### Bugs Fixed
+
+- [[2858]](https://github.com/Azure/azure-dev/pull/2858) Fixes issue with running VS Code Tasks that rely on environment configuration path.
+
 ## 1.4.1 (2023-10-06)
 
 ### Bugs Fixed

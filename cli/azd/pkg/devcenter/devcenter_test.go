@@ -223,15 +223,6 @@ var mockProjects []*devcentersdk.Project = []*devcentersdk.Project{
 	},
 }
 
-var mockCatalogs []*devcentersdk.Catalog = []*devcentersdk.Catalog{
-	{
-		Name: "SampleCatalog_01",
-	},
-	{
-		Name: "SampleCatalog_02",
-	},
-}
-
 var mockEnvironmentTypes []*devcentersdk.EnvironmentType = []*devcentersdk.EnvironmentType{
 	{
 		Name:               "EnvType_01",

@@ -12,6 +12,11 @@
 
 ## 1.4.2 (2023-10-12)
 
+### Features Added
+
+- [[2845]](https://github.com/Azure/azure-dev/pull/2845) Feature Clickable Template Links in Terminal (azd template list).
+- [[2829]](https://github.com/Azure/azure-dev/pull/2829) Feature Display the Subscription Name and ID (azd provision).
+
 ### Bugs Fixed
 
 - [[2858]](https://github.com/Azure/azure-dev/pull/2858) Fixes issue with running VS Code Tasks that rely on environment configuration path.

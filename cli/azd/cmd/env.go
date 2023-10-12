@@ -545,7 +545,7 @@ func (eg *envGetValuesAction) Run(ctx context.Context) (*actions.ActionResult, e
 	env, err := eg.envManager.Get(ctx, name)
 	if errors.Is(err, environment.ErrNotFound) {
 		return nil, fmt.Errorf(
-			`"environment does no exist. You can create it with "azd env new"`,
+			`"environment does not exist. You can create it with "azd env new"`,
 		)
 	} else if err != nil {
 		return nil, fmt.Errorf("ensuring environment exists: %w", err)

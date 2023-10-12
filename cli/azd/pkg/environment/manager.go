@@ -16,11 +16,17 @@ import (
 
 // Description is a metadata description of an environment returned for the `azd env list` command
 type Description struct {
-	Name       string
+	// The name of the environment
+	Name string
+	// The path to the local .env file for the environment
+	// This path is used by the VS Code extension to load the current environment variables when using VS code tasks
 	DotEnvPath string
-	HasLocal   bool
-	HasRemote  bool
-	IsDefault  bool
+	// Specifies when the environment exists locally
+	HasLocal bool
+	// Specifies when the environment exists remotely
+	HasRemote bool
+	// Specifies when the environment is the default environment
+	IsDefault bool
 }
 
 // Spec is the specification for creating a new environment

@@ -151,9 +151,9 @@ func Test_EnvManager_List(t *testing.T) {
 
 		require.Equal(t, 2, len(envList))
 		require.Equal(t, "env1", envList[0].Name)
-		require.Equal(t, true, envList[1].HasLocal)
-		require.Equal(t, false, envList[1].HasRemote)
-		require.Equal(t, ".azure/env1/.env", envList[1].DotEnvPath)
+		require.Equal(t, true, envList[0].HasLocal)
+		require.Equal(t, false, envList[0].HasRemote)
+		require.Equal(t, ".azure/env1/.env", envList[0].DotEnvPath)
 	})
 
 	t.Run("RemoteOnly", func(t *testing.T) {
@@ -170,9 +170,9 @@ func Test_EnvManager_List(t *testing.T) {
 
 		require.Equal(t, 3, len(envList))
 		require.Equal(t, "env1", envList[0].Name)
-		require.Equal(t, false, envList[1].HasLocal)
-		require.Equal(t, true, envList[1].HasRemote)
-		require.Equal(t, "", envList[1].DotEnvPath)
+		require.Equal(t, false, envList[0].HasLocal)
+		require.Equal(t, true, envList[0].HasRemote)
+		require.Equal(t, "", envList[0].DotEnvPath)
 	})
 
 	t.Run("LocalAndRemote", func(t *testing.T) {
@@ -189,9 +189,9 @@ func Test_EnvManager_List(t *testing.T) {
 
 		require.Equal(t, 3, len(envList))
 		require.Equal(t, "env1", envList[0].Name)
-		require.Equal(t, true, envList[1].HasLocal)
-		require.Equal(t, true, envList[1].HasRemote)
-		require.Equal(t, ".azure/env1/.env", envList[1].DotEnvPath)
+		require.Equal(t, true, envList[0].HasLocal)
+		require.Equal(t, true, envList[0].HasRemote)
+		require.Equal(t, ".azure/env1/.env", envList[0].DotEnvPath)
 	})
 }
 

@@ -17,9 +17,9 @@ func RefOf[T any](value T) *T {
 
 // Attempts to convert the specified value to a string, otherwise returns the default value
 func ToStringWithDefault(value any, defaultValue string) string {
-	if value == nil {
-		return defaultValue
+	if str, ok := value.(string); ok {
+		return str
 	}
 
-	return value.(string)
+	return defaultValue
 }

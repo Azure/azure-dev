@@ -147,7 +147,10 @@ func MockDeleteEnvironment(
 
 		if operationStatus.Status == "Succeeded" {
 			response, err := mocks.CreateHttpResponseWithBody(request, http.StatusAccepted, operationStatus)
-			response.Header.Set("Location", fmt.Sprintf("https://%s/projects/%s/operationstatuses/delete", request.Host, projectName))
+			response.Header.Set(
+				"Location",
+				fmt.Sprintf("https://%s/projects/%s/operationstatuses/delete", request.Host, projectName),
+			)
 
 			return response, err
 		}
@@ -223,7 +226,10 @@ func MockPutEnvironment(
 
 		if operationStatus.Status == "Succeeded" {
 			response, err := mocks.CreateHttpResponseWithBody(request, http.StatusCreated, operationStatus)
-			response.Header.Set("Location", fmt.Sprintf("https://%s/projects/%s/operationstatuses/put", request.Host, projectName))
+			response.Header.Set(
+				"Location",
+				fmt.Sprintf("https://%s/projects/%s/operationstatuses/put", request.Host, projectName),
+			)
 
 			return response, err
 		}

@@ -9,7 +9,6 @@ import (
 	"fmt"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
-	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -27,7 +26,6 @@ type Manager struct {
 	env                 *environment.Environment
 	console             input.Console
 	provider            Provider
-	configManager       config.UserConfigManager
 	alphaFeatureManager *alpha.FeatureManager
 	projectPath         string
 	options             *Options
@@ -213,7 +211,6 @@ func NewManager(
 	env *environment.Environment,
 	console input.Console,
 	alphaFeatureManager *alpha.FeatureManager,
-	configManager config.UserConfigManager,
 ) *Manager {
 	return &Manager{
 		serviceLocator:      serviceLocator,
@@ -222,7 +219,6 @@ func NewManager(
 		env:                 env,
 		console:             console,
 		alphaFeatureManager: alphaFeatureManager,
-		configManager:       configManager,
 	}
 }
 

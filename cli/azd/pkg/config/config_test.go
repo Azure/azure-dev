@@ -98,7 +98,8 @@ func Test_IsEmpty(t *testing.T) {
 func Test_GetString(t *testing.T) {
 	t.Run("ValidString", func(t *testing.T) {
 		azdConfig := NewConfig(nil)
-		azdConfig.Set("a.b.c", "apple")
+		err := azdConfig.Set("a.b.c", "apple")
+		require.NoError(t, err)
 
 		value, ok := azdConfig.GetString("a.b.c")
 		require.Equal(t, "apple", value)
@@ -107,7 +108,8 @@ func Test_GetString(t *testing.T) {
 
 	t.Run("EmptyString", func(t *testing.T) {
 		azdConfig := NewConfig(nil)
-		azdConfig.Set("a.b.c", "")
+		err := azdConfig.Set("a.b.c", "")
+		require.NoError(t, err)
 
 		value, ok := azdConfig.GetString("a.b.c")
 		require.Equal(t, "", value)
@@ -116,7 +118,8 @@ func Test_GetString(t *testing.T) {
 
 	t.Run("NonStringValue", func(t *testing.T) {
 		azdConfig := NewConfig(nil)
-		azdConfig.Set("a.b.c", 1)
+		err := azdConfig.Set("a.b.c", 1)
+		require.NoError(t, err)
 
 		value, ok := azdConfig.GetString("a.b.c")
 		require.Equal(t, "", value)
@@ -125,7 +128,8 @@ func Test_GetString(t *testing.T) {
 
 	t.Run("NilValue", func(t *testing.T) {
 		azdConfig := NewConfig(nil)
-		azdConfig.Set("a.b.c", nil)
+		err := azdConfig.Set("a.b.c", nil)
+		require.NoError(t, err)
 
 		value, ok := azdConfig.GetString("a.b.c")
 		require.Equal(t, "", value)

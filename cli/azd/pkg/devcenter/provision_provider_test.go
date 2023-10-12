@@ -103,15 +103,27 @@ func Test_ProvisionProvider_Deploy(t *testing.T) {
 			Return(outputParams, nil)
 
 		mockdevcentersdk.MockDevCenterGraphQuery(mockContext, mockDevCenterList)
-		mockdevcentersdk.MockGetEnvironmentDefinition(mockContext, config.Project, config.Catalog, config.EnvironmentDefinition, mockEnvDefinitions[0])
+		mockdevcentersdk.MockGetEnvironmentDefinition(
+			mockContext,
+			config.Project,
+			config.Catalog,
+			config.EnvironmentDefinition,
+			mockEnvDefinitions[0],
+		)
 		mockdevcentersdk.MockGetEnvironment(mockContext, config.Project, config.User, env.GetEnvName(), mockEnvironments[0])
-		mockdevcentersdk.MockPutEnvironment(mockContext, config.Project, config.User, env.GetEnvName(), &devcentersdk.OperationStatus{
-			Id:        "id",
-			Name:      mockEnvironments[0].Name,
-			Status:    "Succeeded",
-			StartTime: time.Now(),
-			EndTime:   time.Now(),
-		})
+		mockdevcentersdk.MockPutEnvironment(
+			mockContext,
+			config.Project,
+			config.User,
+			env.GetEnvName(),
+			&devcentersdk.OperationStatus{
+				Id:        "id",
+				Name:      mockEnvironments[0].Name,
+				Status:    "Succeeded",
+				StartTime: time.Now(),
+				EndTime:   time.Now(),
+			},
+		)
 
 		provider := newProvisionProviderForTest(t, mockContext, config, env, manager)
 		result, err := provider.Deploy(*mockContext.Context)
@@ -157,15 +169,27 @@ func Test_ProvisionProvider_Deploy(t *testing.T) {
 
 		mockdevcentersdk.MockDevCenterGraphQuery(mockContext, mockDevCenterList)
 		mockdevcentersdk.MockListEnvironmentTypes(mockContext, config.Project, mockEnvironmentTypes)
-		mockdevcentersdk.MockGetEnvironmentDefinition(mockContext, config.Project, config.Catalog, config.EnvironmentDefinition, mockEnvDefinitions[3])
+		mockdevcentersdk.MockGetEnvironmentDefinition(
+			mockContext,
+			config.Project,
+			config.Catalog,
+			config.EnvironmentDefinition,
+			mockEnvDefinitions[3],
+		)
 		mockdevcentersdk.MockGetEnvironment(mockContext, config.Project, config.User, env.GetEnvName(), mockEnvironments[0])
-		mockdevcentersdk.MockPutEnvironment(mockContext, config.Project, config.User, env.GetEnvName(), &devcentersdk.OperationStatus{
-			Id:        "id",
-			Name:      mockEnvironments[0].Name,
-			Status:    "Succeeded",
-			StartTime: time.Now(),
-			EndTime:   time.Now(),
-		})
+		mockdevcentersdk.MockPutEnvironment(
+			mockContext,
+			config.Project,
+			config.User,
+			env.GetEnvName(),
+			&devcentersdk.OperationStatus{
+				Id:        "id",
+				Name:      mockEnvironments[0].Name,
+				Status:    "Succeeded",
+				StartTime: time.Now(),
+				EndTime:   time.Now(),
+			},
+		)
 
 		provider := newProvisionProviderForTest(t, mockContext, config, env, manager)
 
@@ -197,15 +221,27 @@ func Test_ProvisionProvider_Deploy(t *testing.T) {
 		provider := newProvisionProviderForTest(t, mockContext, config, env, nil)
 
 		mockdevcentersdk.MockDevCenterGraphQuery(mockContext, mockDevCenterList)
-		mockdevcentersdk.MockGetEnvironmentDefinition(mockContext, config.Project, config.Catalog, config.EnvironmentDefinition, mockEnvDefinitions[0])
+		mockdevcentersdk.MockGetEnvironmentDefinition(
+			mockContext,
+			config.Project,
+			config.Catalog,
+			config.EnvironmentDefinition,
+			mockEnvDefinitions[0],
+		)
 		mockdevcentersdk.MockGetEnvironment(mockContext, config.Project, config.User, env.GetEnvName(), nil)
-		mockdevcentersdk.MockPutEnvironment(mockContext, config.Project, config.User, env.GetEnvName(), &devcentersdk.OperationStatus{
-			Id:        "id",
-			Name:      mockEnvironments[0].Name,
-			Status:    "Failed",
-			StartTime: time.Now(),
-			EndTime:   time.Now(),
-		})
+		mockdevcentersdk.MockPutEnvironment(
+			mockContext,
+			config.Project,
+			config.User,
+			env.GetEnvName(),
+			&devcentersdk.OperationStatus{
+				Id:        "id",
+				Name:      mockEnvironments[0].Name,
+				Status:    "Failed",
+				StartTime: time.Now(),
+				EndTime:   time.Now(),
+			},
+		)
 
 		result, err := provider.Deploy(*mockContext.Context)
 		require.Error(t, err)
@@ -310,13 +346,19 @@ func Test_ProvisionProvider_Destroy(t *testing.T) {
 		env := environment.New("test")
 
 		mockdevcentersdk.MockDevCenterGraphQuery(mockContext, mockDevCenterList)
-		mockdevcentersdk.MockDeleteEnvironment(mockContext, config.Project, config.User, env.GetEnvName(), &devcentersdk.OperationStatus{
-			Id:        "id",
-			Name:      mockEnvironments[0].Name,
-			Status:    "Succeeded",
-			StartTime: time.Now(),
-			EndTime:   time.Now(),
-		})
+		mockdevcentersdk.MockDeleteEnvironment(
+			mockContext,
+			config.Project,
+			config.User,
+			env.GetEnvName(),
+			&devcentersdk.OperationStatus{
+				Id:        "id",
+				Name:      mockEnvironments[0].Name,
+				Status:    "Succeeded",
+				StartTime: time.Now(),
+				EndTime:   time.Now(),
+			},
+		)
 
 		provider := newProvisionProviderForTest(t, mockContext, config, env, nil)
 		destroyOptions := provisioning.NewDestroyOptions(true, true)
@@ -368,7 +410,13 @@ func Test_ProvisionProvider_Preview(t *testing.T) {
 	require.Nil(t, result)
 }
 
-func newProvisionProviderForTest(t *testing.T, mockContext *mocks.MockContext, config *Config, env *environment.Environment, manager Manager) provisioning.Provider {
+func newProvisionProviderForTest(
+	t *testing.T,
+	mockContext *mocks.MockContext,
+	config *Config,
+	env *environment.Environment,
+	manager Manager,
+) provisioning.Provider {
 	coreOptions := azsdk.
 		DefaultClientOptionsBuilder(*mockContext.Context, mockContext.HttpClient, "azd").
 		BuildCoreClientOptions()
@@ -389,7 +437,10 @@ func newProvisionProviderForTest(t *testing.T, mockContext *mocks.MockContext, c
 	require.NoError(t, err)
 
 	azCli := azcli.NewAzCli(mockContext.SubscriptionCredentialProvider, mockContext.HttpClient, azcli.NewAzCliArgs{})
-	resourceManager := infra.NewAzureResourceManager(azCli, azapi.NewDeploymentOperations(mockContext.SubscriptionCredentialProvider, mockContext.HttpClient))
+	resourceManager := infra.NewAzureResourceManager(
+		azCli,
+		azapi.NewDeploymentOperations(mockContext.SubscriptionCredentialProvider, mockContext.HttpClient),
+	)
 
 	if manager == nil {
 		manager = &mockDevCenterManager{}
@@ -400,5 +451,14 @@ func newProvisionProviderForTest(t *testing.T, mockContext *mocks.MockContext, c
 
 	prompter := NewPrompter(config, mockContext.Console, manager, devCenterClient)
 
-	return NewProvisionProvider(mockContext.Console, env, envManager, config, devCenterClient, resourceManager, manager, prompter)
+	return NewProvisionProvider(
+		mockContext.Console,
+		env,
+		envManager,
+		config,
+		devCenterClient,
+		resourceManager,
+		manager,
+		prompter,
+	)
 }

@@ -29,6 +29,8 @@ type Template struct {
 	Metadata Metadata `json:"metadata,omitempty"`
 }
 
+// Metadata contains additional metadata about the template
+// This metadata is used to modify azd project, environment config and environment variables during azd init commands.
 type Metadata struct {
 	Variables map[string]string `json:"variables,omitempty"`
 	Config    map[string]string `json:"config,omitempty"`

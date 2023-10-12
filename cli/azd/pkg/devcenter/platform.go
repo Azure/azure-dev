@@ -93,6 +93,7 @@ func (p *Platform) ConfigureContainer(container *ioc.NestedContainer) error {
 			Catalog:               os.Getenv(DevCenterCatalogEnvName),
 			EnvironmentType:       os.Getenv(DevCenterEnvTypeEnvName),
 			EnvironmentDefinition: os.Getenv(DevCenterEnvDefinitionEnvName),
+			User:                  os.Getenv(DevCenterEnvUser),
 		}
 
 		azdCtx, _ := lazyAzdCtx.GetValue()
@@ -159,7 +160,7 @@ func (p *Platform) ConfigureContainer(container *ioc.NestedContainer) error {
 	// Override default provision provider
 	container.RegisterSingleton(func() provisioning.DefaultProviderResolver {
 		return func() (provisioning.ProviderKind, error) {
-			return provisioning.DevCenter, nil
+			return ProvisionKindDevCenter, nil
 		}
 	})
 
@@ -179,7 +180,7 @@ func (p *Platform) ConfigureContainer(container *ioc.NestedContainer) error {
 	})
 
 	// Provision Provider
-	if err := container.RegisterNamedSingleton(string(provisioning.DevCenter), NewProvisionProvider); err != nil {
+	if err := container.RegisterNamedSingleton(string(ProvisionKindDevCenter), NewProvisionProvider); err != nil {
 		return err
 	}
 

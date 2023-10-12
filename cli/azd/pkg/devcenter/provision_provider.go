@@ -21,7 +21,8 @@ import (
 )
 
 const (
-	ProvisionParametersConfigPath = "provision.parameters"
+	ProvisionParametersConfigPath string                    = "provision.parameters"
+	ProvisionKindDevCenter        provisioning.ProviderKind = "devcenter"
 
 	// ADE environment ARM deployment tags
 	DeploymentTagDevCenterName    = "AdeDevCenterName"

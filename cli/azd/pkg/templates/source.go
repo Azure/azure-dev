@@ -25,7 +25,6 @@ const (
 	SourceKindUrl        SourceKind = "url"
 	SourceKindResource   SourceKind = "resource"
 	SourceKindAwesomeAzd SourceKind = "awesome-azd"
-	SourceKindDevCenter  SourceKind = "devcenter"
 )
 
 type SourceConfig struct {

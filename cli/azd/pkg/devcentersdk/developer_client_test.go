@@ -142,13 +142,16 @@ func Test_DevCenter_Client(t *testing.T) {
 	require.NotEmpty(t, userEnvironmentList)
 
 	// Create environment
+	envName := fmt.Sprintf("env-%d", time.Now().Unix())
+
 	envSpec := EnvironmentSpec{
 		CatalogName:               "SampleCatalog",
 		EnvironmentDefinitionName: "Sandbox",
 		EnvironmentType:           "Dev",
+		Parameters: map[string]interface{}{
+			"environmentName": envName,
+		},
 	}
-
-	envName := fmt.Sprintf("env-%d", time.Now().Unix())
 
 	err = projectClient.
 		EnvironmentsByMe().

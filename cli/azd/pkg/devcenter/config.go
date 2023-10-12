@@ -13,6 +13,7 @@ const (
 	DevCenterProjectEnvName       = "AZURE_DEVCENTER_PROJECT"
 	DevCenterEnvTypeEnvName       = "AZURE_DEVCENTER_ENVIRONMENT_TYPE"
 	DevCenterEnvDefinitionEnvName = "AZURE_DEVCENTER_ENVIRONMENT_DEFINITION"
+	DevCenterEnvUser              = "AZURE_DEVCENTER_ENVIRONMENT_USER"
 
 	PlatformKindDevCenter project.PlatformKind = "devcenter"
 )

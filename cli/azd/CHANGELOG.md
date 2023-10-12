@@ -14,8 +14,8 @@
 
 ### Features Added
 
-- [[2845]](https://github.com/Azure/azure-dev/pull/2845) Feature Clickable Template Links in Terminal (azd template list).
-- [[2829]](https://github.com/Azure/azure-dev/pull/2829) Feature Display the Subscription Name and ID (azd provision).
+- [[2845]](https://github.com/Azure/azure-dev/pull/2845) Feature Clickable Template Links in Terminal (azd template list). Thanks @john0isaac for the contribution
+- [[2829]](https://github.com/Azure/azure-dev/pull/2829) Feature Display the Subscription Name and ID (azd provision). Thanks @john0isaac for the contribution
 
 ### Bugs Fixed
 

@@ -296,7 +296,6 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 				log.Printf("error: getting signed in account: %v", err)
 				fmt.Fprintln(la.console.Handles().Stdout, err)
 			}
-			//MNh8Q~vUsP1dc.bRy8TraLEo2PNHvkuZgXLH9aE3
 			fmt.Fprintln(la.console.Handles().Stdout, fmt.Sprintf("(%s) %s", act.PreferredUsername, msg))
 			return nil, nil
 		}

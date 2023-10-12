@@ -16,9 +16,16 @@ import (
 
 // Description is a metadata description of an environment returned for the `azd env list` command
 type Description struct {
-	Name      string
-	HasLocal  bool
+	// The name of the environment
+	Name string
+	// The path to the local .env file for the environment
+	// This path is used by the VS Code extension to load the current environment variables when using VS code tasks
+	DotEnvPath string
+	// Specifies when the environment exists locally
+	HasLocal bool
+	// Specifies when the environment exists remotely
 	HasRemote bool
+	// Specifies when the environment is the default environment
 	IsDefault bool
 }
 
@@ -243,8 +250,9 @@ func (m *manager) List(ctx context.Context) ([]*Description, error) {
 
 	for _, env := range localEnvs {
 		envMap[env.Name] = &Description{
-			Name:     env.Name,
-			HasLocal: true,
+			Name:       env.Name,
+			HasLocal:   true,
+			DotEnvPath: env.DotEnvPath,
 		}
 	}
 

@@ -8,7 +8,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	"github.com/theckman/yacspin"
 	"golang.org/x/exp/slices"
 )
 
@@ -160,10 +159,8 @@ func PromptTemplate(
 		return nil, fmt.Errorf("prompting for template: %w", err)
 	}
 
-	// To support non-interactive unit tests scenarios we only add the line breaks and repo path in interactive TTY sessions.
-	terminalMode := input.GetSpinnerTerminalMode(nil)
-	nonInteractiveMode := yacspin.ForceNoTTYMode | yacspin.ForceDumbTerminalMode
-	isInteractive := terminalMode != nonInteractiveMode
+	// If stdin is not interactive (non-tty), we ensure the options are not formatted.
+	isInteractive := console.IsSpinnerInteractive()
 
 	choices := make([]string, 0, len(templates)+1)
 

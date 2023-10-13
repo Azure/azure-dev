@@ -512,7 +512,7 @@ stages:
             -DestinationPath mac/azd-darwin-arm64.zip
           displayName: Package mac binary for signing
 
-        - ${{ if in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual') }}:
+        - ${{ if and(in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual'), not(endsWith(variables['Build.Repository.Name'], '-pr')) }}:
           - template: pipelines/steps/azd-cli-mac-signing.yml@azure-sdk-build-tools
             parameters:
               MacPath: mac
@@ -574,7 +574,7 @@ stages:
         - pwsh: Copy-Item installer/*.ps1 win
           displayName: Copy install scripts to win/
 
-        - ${{ if in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual') }}:
+        - ${{ if and(in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual'), not(endsWith(variables['Build.Repository.Name'], '-pr')) }}:
           - template: pipelines/steps/azd-cli-win-signing.yml@azure-sdk-build-tools
             parameters:
               WinPath:  win
@@ -602,7 +602,7 @@ stages:
           parameters:
             Title: Build Release MSI
 
-        - ${{ if in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual') }}:
+        - ${{ if and(in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual'), not(endsWith(variables['Build.Repository.Name'], '-pr')) }}:
           - template: pipelines/steps/azd-cli-win-signing.yml@azure-sdk-build-tools
             parameters:
               WinPath:  cli/installer/windows/bin/Release
@@ -643,7 +643,7 @@ stages:
             artifact: linux-packages
             path: linux
 
-        - ${{ if in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual') }}:
+        - ${{ if and(in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual'), not(endsWith(variables['Build.Repository.Name'], '-pr')) }}:
           - template: pipelines/steps/azd-cli-linux-signing.yml@azure-sdk-build-tools
             parameters:
               LinuxPath: linux
@@ -1296,11 +1296,9 @@ stages:
 
         variables:
           ${{ if not(endsWith(variables['Build.Repository.Name'], '-pr')) }}:
-            storage-account-name: $[variables['azdev-storage-account-name']]
-            storage-account-key: $[variables['azdev-storage-account-key']]
+            storage-account-name: $(azdev-storage-account-name)
           ${{ else }}:
-            storage-account-name: $[variables['azdev-storage-account-name-pr']]
-            storage-account-key: $[variables['azdev-storage-account-key-pr']]
+            storage-account-name: $(azdev-storage-account-name-pr)
 
 
         steps:

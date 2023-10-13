@@ -27,6 +27,8 @@ pr:
 variables:
   - template: /eng/pipelines/templates/variables/globals.yml
 
+parameters:
+
 stages:
   - stage: BuildAndTest
     jobs:

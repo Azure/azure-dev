@@ -27,7 +27,7 @@ pr:
 variables:
   - template: /eng/pipelines/templates/variables/globals.yml
 
-parameters:
+parameters: []
 
 stages:
   - stage: BuildAndTest

@@ -512,7 +512,7 @@ stages:
             -DestinationPath mac/azd-darwin-arm64.zip
           displayName: Package mac binary for signing
 
-        - ${{ if and(in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual'), not(endsWith(variables['Build.Repository.Name'], '-pr')) }}:
+        - ${{ if and(in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual'), not(endsWith(variables['Build.Repository.Name'], '-pr'))) }}:
           - template: pipelines/steps/azd-cli-mac-signing.yml@azure-sdk-build-tools
             parameters:
               MacPath: mac
@@ -574,7 +574,7 @@ stages:
         - pwsh: Copy-Item installer/*.ps1 win
           displayName: Copy install scripts to win/
 
-        - ${{ if and(in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual'), not(endsWith(variables['Build.Repository.Name'], '-pr')) }}:
+        - ${{ if and(in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual'), not(endsWith(variables['Build.Repository.Name'], '-pr'))) }}:
           - template: pipelines/steps/azd-cli-win-signing.yml@azure-sdk-build-tools
             parameters:
               WinPath:  win
@@ -602,7 +602,7 @@ stages:
           parameters:
             Title: Build Release MSI
 
-        - ${{ if and(in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual'), not(endsWith(variables['Build.Repository.Name'], '-pr')) }}:
+        - ${{ if and(in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual'), not(endsWith(variables['Build.Repository.Name'], '-pr'))) }}:
           - template: pipelines/steps/azd-cli-win-signing.yml@azure-sdk-build-tools
             parameters:
               WinPath:  cli/installer/windows/bin/Release
@@ -643,7 +643,7 @@ stages:
             artifact: linux-packages
             path: linux
 
-        - ${{ if and(in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual'), not(endsWith(variables['Build.Repository.Name'], '-pr')) }}:
+        - ${{ if and(in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual'), not(endsWith(variables['Build.Repository.Name'], '-pr'))) }}:
           - template: pipelines/steps/azd-cli-linux-signing.yml@azure-sdk-build-tools
             parameters:
               LinuxPath: linux

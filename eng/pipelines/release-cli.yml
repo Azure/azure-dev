@@ -1296,11 +1296,11 @@ stages:
 
         variables:
           ${{ if not(endsWith(variables['Build.Repository.Name'], '-pr')) }}:
-            storage-account-name: $(azdev-storage-account-name)
-            storage-account-key: $(azdev-storage-account-key)
+            storage-account-name: $[variables['azdev-storage-account-name']]
+            storage-account-key: $[variables['azdev-storage-account-key']]
           ${{ else }}:
-            storage-account-name: $(azdev-storage-account-name-pr)
-            storage-account-key: $(azdev-storage-account-key-pr)
+            storage-account-name: $[variables['azdev-storage-account-name-pr']]
+            storage-account-key: $[variables['azdev-storage-account-key-pr']]
 
 
         steps:

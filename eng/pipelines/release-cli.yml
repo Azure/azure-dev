@@ -1148,66 +1148,66 @@ stages:
                     PublishArm64Binaries: true
 
 
-      # Only run these deployments if this is the public repo
-      - ${{ if not(endsWith(variables['Build.Repository.Name'], '-pr')) }}:
+      # # Only run these deployments if this is the public repo
+      # - ${{ if not(endsWith(variables['Build.Repository.Name'], '-pr')) }}:
 
-        - deployment: Publish_Choco
-          dependsOn: Publish_Release
-          condition: >-
-            and(
-              succeeded(),
-              ne('true', variables['Skip.Publish'])
-            )
-          environment: azure-dev
+      - deployment: Publish_Choco
+        dependsOn: Publish_Release
+        condition: >-
+          and(
+            succeeded(),
+            ne('true', variables['Skip.Publish'])
+          )
+        environment: azure-dev
 
-          pool:
-            name: azsdk-pool-mms-win-2022-general
+        pool:
+          name: azsdk-pool-mms-win-2022-general
 
-          strategy:
-            runOnce:
-              deploy:
-                steps:
-                  - checkout: self
-                  - task: PowerShell@2
-                    inputs:
-                      pwsh: true
-                      targetType: filePath
-                      filePath: eng/scripts/Set-CliVersionVariable.ps1
-                    displayName: Set CLI_VERSION
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                - task: PowerShell@2
+                  inputs:
+                    pwsh: true
+                    targetType: filePath
+                    filePath: eng/scripts/Set-CliVersionVariable.ps1
+                  displayName: Set CLI_VERSION
 
-                  - template: /eng/pipelines/templates/steps/publish-cli-choco.yml
-                    parameters:
-                      CliVersion: $(CLI_VERSION)
+                - template: /eng/pipelines/templates/steps/publish-cli-choco.yml
+                  parameters:
+                    CliVersion: $(CLI_VERSION)
 
-        - deployment: Publish_WinGet
-          dependsOn: Publish_Release
-          condition: >-
-            and(
-              succeeded(),
-              ne('true', variables['Skip.Publish'])
-            )
-          environment: azure-dev
+      - deployment: Publish_WinGet
+        dependsOn: Publish_Release
+        condition: >-
+          and(
+            succeeded(),
+            ne('true', variables['Skip.Publish'])
+          )
+        environment: azure-dev
 
-          pool:
-            name: azsdk-pool-mms-win-2022-general
+        pool:
+          name: azsdk-pool-mms-win-2022-general
 
-          strategy:
-            runOnce:
-              deploy:
-                steps:
-                  - checkout: self
-                  - task: PowerShell@2
-                    inputs:
-                      pwsh: true
-                      targetType: filePath
-                      filePath: eng/scripts/Set-CliVersionVariable.ps1
-                    displayName: Set CLI_VERSION
+        strategy:
+          runOnce:
+            deploy:
+              steps:
+                - checkout: self
+                - task: PowerShell@2
+                  inputs:
+                    pwsh: true
+                    targetType: filePath
+                    filePath: eng/scripts/Set-CliVersionVariable.ps1
+                  displayName: Set CLI_VERSION
 
-                  - template: /eng/pipelines/templates/steps/publish-cli-winget.yml
-                    parameters:
-                      CliVersion: $(CLI_VERSION)
+                - template: /eng/pipelines/templates/steps/publish-cli-winget.yml
+                  parameters:
+                    CliVersion: $(CLI_VERSION)
 
-        - deployment: Increment_Version
+      - deployment: Increment_Version
         condition: >-
           and(
             succeeded(),

@@ -13,8 +13,10 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -389,91 +391,126 @@ func newEnvRefreshCmd() *cobra.Command {
 }
 
 type envRefreshAction struct {
-	projectConfig *project.ProjectConfig
-	envManager    environment.Manager
-	console       input.Console
-	flags         *envRefreshFlags
-	formatter     output.Formatter
-	writer        io.Writer
+	provisionManager *provisioning.Manager
+	projectConfig    *project.ProjectConfig
+	projectManager   project.ProjectManager
+	env              *environment.Environment
+	envManager       environment.Manager
+	flags            *envRefreshFlags
+	console          input.Console
+	formatter        output.Formatter
+	writer           io.Writer
 }
 
 func newEnvRefreshAction(
+	provisionManager *provisioning.Manager,
 	projectConfig *project.ProjectConfig,
+	projectManager project.ProjectManager,
+	env *environment.Environment,
 	envManager environment.Manager,
-	console input.Console,
 	flags *envRefreshFlags,
+	console input.Console,
 	formatter output.Formatter,
 	writer io.Writer,
 ) actions.Action {
 	return &envRefreshAction{
-		projectConfig: projectConfig,
-		envManager:    envManager,
-		console:       console,
-		flags:         flags,
-		formatter:     formatter,
-		writer:        writer,
+		provisionManager: provisionManager,
+		projectManager:   projectManager,
+		env:              env,
+		envManager:       envManager,
+		console:          console,
+		flags:            flags,
+		formatter:        formatter,
+		projectConfig:    projectConfig,
+		writer:           writer,
 	}
 }
 
 func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	// get env name, empty string if no env
+	// display title message with env name
+	// check for env content
+	// if env not found display err, if err display it
+	//
+
+	// name, _ := ef.azdCtx.GetDefaultEnvironmentName()
 	// // Command title
 	// ef.console.MessageUxItem(ctx, &ux.MessageTitle{
-	// 	Title: fmt.Sprintf("Refreshing environment %s (azd env refresh)", ef.env.GetEnvName()),
+	// 	Title: fmt.Sprintf("Refreshing environment %s (azd env refresh)", name),
 	// })
+	// // Check environment exist
+	// _, err := ef.envManager.Get(ctx, name)
 
-	// if err := ef.projectManager.Initialize(ctx, ef.projectConfig); err != nil {
-	// 	return nil, err
+	// // if environment doesn't exist try to get it from azure
+	// // or display error
+	// if errors.Is(err, environment.ErrNotFound) {
+	// 	// try to get environment from azure by prompting to select subscription, rg
+	// 	// if error getting environment from azure display error use azd env new
+	// 	return nil, fmt.Errorf(
+	// 		`"environment does not exist. You can create it with "azd env new"`,
+	// 	)
+	// } else if err != nil {
+	// 	return nil, fmt.Errorf("ensuring environment exists: %w", err)
 	// }
 
-	// if err := ef.provisionManager.Initialize(ctx, ef.projectConfig.Path, ef.projectConfig.Infra); err != nil {
-	// 	return nil, fmt.Errorf("initializing provisioning manager: %w", err)
-	// }
+	// Command title
+	ef.console.MessageUxItem(ctx, &ux.MessageTitle{
+		Title: fmt.Sprintf("Refreshing environment %s (azd env refresh)", ef.env.GetEnvName()),
+	})
 
-	// // If resource group is defined within the project but not in the environment then
-	// // add it to the environment to support BYOI lookup scenarios like ADE
-	// // Infra providers do not currently have access to project configuration
-	// projectResourceGroup, _ := ef.projectConfig.ResourceGroupName.Envsubst(ef.env.Getenv)
-	// if _, has := ef.env.LookupEnv(environment.ResourceGroupEnvVarName); !has && projectResourceGroup != "" {
-	// 	ef.env.DotenvSet(environment.ResourceGroupEnvVarName, projectResourceGroup)
-	// }
+	if err := ef.projectManager.Initialize(ctx, ef.projectConfig); err != nil {
+		return nil, err
+	}
 
-	// stateOptions := provisioning.NewStateOptions(ef.flags.hint)
-	// getStateResult, err := ef.provisionManager.State(ctx, stateOptions)
-	// if err != nil {
-	// 	return nil, fmt.Errorf("getting deployment: %w", err)
-	// }
+	if err := ef.provisionManager.Initialize(ctx, ef.projectConfig.Path, ef.projectConfig.Infra); err != nil {
+		return nil, fmt.Errorf("initializing provisioning manager: %w", err)
+	}
 
-	// if err := ef.provisionManager.UpdateEnvironment(ctx, ef.env, getStateResult.State.Outputs); err != nil {
-	// 	return nil, err
-	// }
+	// If resource group is defined within the project but not in the environment then
+	// add it to the environment to support BYOI lookup scenarios like ADE
+	// Infra providers do not currently have access to project configuration
+	projectResourceGroup, _ := ef.projectConfig.ResourceGroupName.Envsubst(ef.env.Getenv)
+	if _, has := ef.env.LookupEnv(environment.ResourceGroupEnvVarName); !has && projectResourceGroup != "" {
+		ef.env.DotenvSet(environment.ResourceGroupEnvVarName, projectResourceGroup)
+	}
 
-	// if ef.formatter.Kind() == output.JsonFormat {
-	// 	err = ef.formatter.Format(provisioning.NewEnvRefreshResultFromState(getStateResult.State), ef.writer, nil)
-	// 	if err != nil {
-	// 		return nil, fmt.Errorf("writing deployment result in JSON format: %w", err)
-	// 	}
-	// }
+	stateOptions := provisioning.NewStateOptions(ef.flags.hint)
+	getStateResult, err := ef.provisionManager.State(ctx, stateOptions)
+	if err != nil {
+		return nil, fmt.Errorf("getting deployment: %w", err)
+	}
 
-	// for _, svc := range ef.projectConfig.Services {
-	// 	eventArgs := project.ServiceLifecycleEventArgs{
-	// 		Project: ef.projectConfig,
-	// 		Service: svc,
-	// 		Args: map[string]any{
-	// 			"bicepOutput": getStateResult.State.Outputs,
-	// 		},
-	// 	}
+	if err := ef.provisionManager.UpdateEnvironment(ctx, ef.env, getStateResult.State.Outputs); err != nil {
+		return nil, err
+	}
 
-	// 	if err := svc.RaiseEvent(ctx, project.ServiceEventEnvUpdated, eventArgs); err != nil {
-	// 		return nil, err
-	// 	}
-	// }
+	if ef.formatter.Kind() == output.JsonFormat {
+		err = ef.formatter.Format(provisioning.NewEnvRefreshResultFromState(getStateResult.State), ef.writer, nil)
+		if err != nil {
+			return nil, fmt.Errorf("writing deployment result in JSON format: %w", err)
+		}
+	}
 
-	// localEnvPath := ef.envManager.EnvPath(ef.env)
+	for _, svc := range ef.projectConfig.Services {
+		eventArgs := project.ServiceLifecycleEventArgs{
+			Project: ef.projectConfig,
+			Service: svc,
+			Args: map[string]any{
+				"bicepOutput": getStateResult.State.Outputs,
+			},
+		}
+
+		if err := svc.RaiseEvent(ctx, project.ServiceEventEnvUpdated, eventArgs); err != nil {
+			return nil, err
+		}
+	}
+
+	localEnvPath := ef.envManager.EnvPath(ef.env)
 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
 			Header:   "Environment refresh completed",
-			FollowUp: fmt.Sprintf("View environment variables at %s", output.WithHyperlink("localEnvPath", "localEnvPath")),
+			FollowUp: fmt.Sprintf("View environment variables at %s", output.WithHyperlink(localEnvPath, localEnvPath)),
 		},
 	}, nil
 }

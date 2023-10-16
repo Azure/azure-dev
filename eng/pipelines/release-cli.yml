@@ -512,7 +512,7 @@ stages:
             -DestinationPath mac/azd-darwin-arm64.zip
           displayName: Package mac binary for signing
 
-        - ${{ if and(in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual'), not(endsWith(variables['Build.Repository.Name'], '-pr'))) }}:
+        - ${{ if and(in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual'), eq(variables['Build.Repository.Name'], 'Azure/azure-dev')) }}:
           - template: pipelines/steps/azd-cli-mac-signing.yml@azure-sdk-build-tools
             parameters:
               MacPath: mac
@@ -574,7 +574,7 @@ stages:
         - pwsh: Copy-Item installer/*.ps1 win
           displayName: Copy install scripts to win/
 
-        - ${{ if and(in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual'), not(endsWith(variables['Build.Repository.Name'], '-pr'))) }}:
+        - ${{ if and(in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual'), eq(variables['Build.Repository.Name'], 'Azure/azure-dev')) }}:
           - template: pipelines/steps/azd-cli-win-signing.yml@azure-sdk-build-tools
             parameters:
               WinPath:  win
@@ -602,7 +602,7 @@ stages:
           parameters:
             Title: Build Release MSI
 
-        - ${{ if and(in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual'), not(endsWith(variables['Build.Repository.Name'], '-pr'))) }}:
+        - ${{ if and(in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual'), eq(variables['Build.Repository.Name'], 'Azure/azure-dev')) }}:
           - template: pipelines/steps/azd-cli-win-signing.yml@azure-sdk-build-tools
             parameters:
               WinPath:  cli/installer/windows/bin/Release
@@ -643,7 +643,7 @@ stages:
             artifact: linux-packages
             path: linux
 
-        - ${{ if and(in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual'), not(endsWith(variables['Build.Repository.Name'], '-pr'))) }}:
+        - ${{ if and(in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual'), eq(variables['Build.Repository.Name'], 'Azure/azure-dev')) }}:
           - template: pipelines/steps/azd-cli-linux-signing.yml@azure-sdk-build-tools
             parameters:
               LinuxPath: linux
@@ -1065,7 +1065,7 @@ stages:
               workingDirectory: cli/installer/fpm
               filePath: eng/scripts/Test-LinuxPackages.ps1
 
-  - ${{ if not(endsWith(variables['Build.Repository.Name'], '-pr')) }}:
+  - ${{ if eq(variables['Build.Repository.Name'], 'Azure/azure-dev') }}:
     - stage: PublishCLI
       dependsOn: Sign
       condition: >-
@@ -1239,7 +1239,7 @@ stages:
     dependsOn: Sign
     jobs:
       # Only publish Continuous Deployment if this is the public repo
-      - ${{ if not(endsWith(variables['Build.Repository.Name'], '-pr')) }}:
+      - ${{ if eq(variables['Build.Repository.Name'], 'Azure/azure-dev') }}:
         - job: Publish_Continuous_Deployment
           condition: >-
             and(
@@ -1295,7 +1295,7 @@ stages:
           OSVmImage: MMSUbuntu20.04
 
         variables:
-          ${{ if not(endsWith(variables['Build.Repository.Name'], '-pr')) }}:
+          ${{ if eq(variables['Build.Repository.Name'], 'Azure/azure-dev') }}:
             storage-account-name: $(azdev-storage-account-name)
           ${{ else }}:
             storage-account-name: $(azdev-storage-account-name-pr)
@@ -1327,7 +1327,7 @@ stages:
               UploadMsi: true
               PublishArm64Binaries: true
 
-              ${{ if not(endsWith(variables['Build.Repository.Name'], '-pr')) }}:
+              ${{ if eq(variables['Build.Repository.Name'], 'Azure/azure-dev') }}:
                 PublishContainer: true
                 DockerImageTags: pr-$(PRNumber)
                 StorageAccountName: $(azdev-storage-account-name)
@@ -1445,7 +1445,7 @@ stages:
             env:
               GH_TOKEN: $(azuresdk-github-pat)
 
-  - ${{ if not(endsWith(variables['Build.Repository.Name'], '-pr')) }}:
+  - ${{ if eq(variables['Build.Repository.Name'], 'Azure/azure-dev') }}:
     - stage: PublishInstallers
       dependsOn: Sign
       condition: >-

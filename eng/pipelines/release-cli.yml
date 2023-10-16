@@ -1282,7 +1282,7 @@ stages:
                       targetType: filePath
                       filePath: eng/scripts/Get-MsiVersion.ps1
                       arguments: >-
-                        -CliVersion '${{ parameters.CliVersion }}'
+                        -CliVersion '$(CLI_VERSION)'
                         -DevOpsOutput
 
                   - task: PowerShell@2

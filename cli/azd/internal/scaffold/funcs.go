@@ -1,6 +1,10 @@
 package scaffold
 
-import "strings"
+import (
+	"encoding/json"
+	"fmt"
+	"strings"
+)
 
 // BicepName returns a name suitable for use as a bicep variable name.
 //
@@ -105,4 +109,19 @@ func ContainerAppName(name string) string {
 	}
 
 	return sb.String()
+}
+
+// Formats a parameter value for use in a bicep file.
+// If the value is a string, it is quoted.
+// Otherwise, the value is marshaled with indentation specified by prefix and indent.
+func FormatParameter(prefix string, indent string, value any) (string, error) {
+	if valueStr, ok := value.(string); ok {
+		return fmt.Sprintf("\"%s\"", valueStr), nil
+	}
+
+	val, err := json.MarshalIndent(value, prefix, indent)
+	if err != nil {
+		return "", err
+	}
+	return string(val), nil
 }

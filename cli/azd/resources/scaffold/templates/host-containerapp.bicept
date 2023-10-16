@@ -34,7 +34,10 @@ var secrets = map(filter(appSettingsArray, i => i.?secret != null), i => {
   value: i.value
   secretRef: i.?secretRef ?? take(replace(replace(toLower(i.name), '_', '-'), '.', '-'), 32)
 })
-var env = filter(appSettingsArray, i => i.?secret == null)
+var env = map(filter(appSettingsArray, i => i.?secret == null), i => {
+  name: i.name
+  value: i.value
+})
 
 resource identity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
   name: identityName

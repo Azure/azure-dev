@@ -28,7 +28,7 @@ param exists bool
 @secure()
 param appDefinition object
 
-var appSettingsArray = filter(array(appDefinition.settings), i => i.name != null)
+var appSettingsArray = filter(array(appDefinition.settings), i => i.name != '')
 var secrets = map(filter(appSettingsArray, i => i.?secret != null), i => {
   name: i.name
   value: i.value

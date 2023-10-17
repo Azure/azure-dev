@@ -138,7 +138,7 @@ func (tl *templateListAction) Run(ctx context.Context) (*actions.ActionResult, e
 			{
 				Heading:       "Repository Path",
 				ValueTemplate: "{{.RepositoryPath}}",
-				Transformer:   templates.ClickableRepositoryPathUrl,
+				Transformer:   templates.Hyperlink,
 			},
 		}
 

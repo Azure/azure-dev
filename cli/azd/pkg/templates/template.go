@@ -26,9 +26,6 @@ type Template struct {
 
 // Display writes a string representation of the template suitable for display.
 func (t *Template) Display(writer io.Writer) error {
-
-	clickableRepositoryPath := ClickableRepositoryPathUrl(t.RepositoryPath)
-
 	tabs := tabwriter.NewWriter(
 		writer,
 		0,
@@ -37,7 +34,7 @@ func (t *Template) Display(writer io.Writer) error {
 		output.TablePadCharacter,
 		output.TableFlags)
 	text := [][]string{
-		{"RepositoryPath", ":", clickableRepositoryPath},
+		{"RepositoryPath", ":", Hyperlink(t.RepositoryPath)},
 		{"Name", ":", t.Name},
 		{"Source", ":", t.Source},
 		{"Description", ":", t.Description},

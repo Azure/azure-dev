@@ -32,7 +32,9 @@ func Absolute(path string) (string, error) {
 	}
 }
 
-func ClickableRepositoryPathUrl(path string) string {
+// Hyperlink returns a hyperlink to the given template path.
+// If the path is cannot be resolved absolutely, it is returned as-is.
+func Hyperlink(path string) string {
 	url, err := Absolute(path)
 	if err != nil {
 		log.Printf("error: getting absolute url from template: %v", err)

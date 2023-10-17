@@ -118,7 +118,7 @@ func (p *progressLog) Start() {
 
 // Stop clears the screen from any previous output and clear the buffer.
 // Calling Stop() before Start() is a no-op.
-func (p *progressLog) Stop() {
+func (p *progressLog) Stop(keepLogs bool) {
 	if p.output == nil {
 		return
 	}
@@ -126,19 +126,21 @@ func (p *progressLog) Stop() {
 	p.outputMutex.Lock()
 	defer p.outputMutex.Unlock()
 
-	p.clearContentAndFlush()
+	if !keepLogs {
+		p.clearContentAndFlush()
 
-	// title
-	tm.MoveCursorUp(2)
-	clearLine()
-
-	// header
-	if p.header != "" {
+		// title
 		tm.MoveCursorUp(2)
 		clearLine()
-	}
 
-	tm.Flush()
+		// header
+		if p.header != "" {
+			tm.MoveCursorUp(2)
+			clearLine()
+		}
+
+		tm.Flush()
+	}
 	p.output = nil
 }
 

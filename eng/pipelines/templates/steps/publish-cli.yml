@@ -10,6 +10,7 @@ parameters:
   StorageAccountName: $(azdev-storage-account-name)
   StorageAccountKey: $(azdev-storage-account-key)
   StorageContainerName: azd
+  PublishContainer: true
   AcrHost: $(azdev-acr-host)
   AcrUsername: $(azdev-acr-username)
   AcrPassword: $(azdev-acr-password)
@@ -36,16 +37,17 @@ steps:
           -DevOpsOutputFormat
       displayName: Verify and set GitHub Release Tag
 
-  - pwsh: |
-      docker login `
-        -u '${{ parameters.AcrUsername }}' `
-        -p '${{ parameters.AcrPassword }}' `
-        ${{ parameters.AcrHost }}
-      docker login `
-        -u '${{ parameters.SyndicatedAcrUsername }}' `
-        -p '${{ parameters.SyndicatedAcrPassword }}' `
-        ${{ parameters.SyndicatedAcrHost }}
-    displayName: Authenticate for publishing
+  - ${{ if eq('true', parameters.PublishContainer) }}:
+    - pwsh: |
+        docker login `
+          -u '${{ parameters.AcrUsername }}' `
+          -p '${{ parameters.AcrPassword }}' `
+          ${{ parameters.AcrHost }}
+        docker login `
+          -u '${{ parameters.SyndicatedAcrUsername }}' `
+          -p '${{ parameters.SyndicatedAcrPassword }}' `
+          ${{ parameters.SyndicatedAcrHost }}
+      displayName: Authenticate for publishing
 
   # Download signed artifacts, prepare packaging
   - task: DownloadPipelineArtifact@2
@@ -101,16 +103,16 @@ steps:
 
   - ${{ if eq('true', parameters.PublishArm64Binaries) }}: 
     - pwsh: |
-        Move-Item release-staging/azd-linux-arm64 release-staging/azd-linux-arm64-beta 
-        Move-Item signed/mac/azd-darwin-arm64 signed/mac/azd-darwin-arm64-beta
+        Move-Item release-staging/azd-linux-arm64 release-staging/azd-linux-arm64 
+        Move-Item signed/mac/azd-darwin-arm64 signed/mac/azd-darwin-arm64
 
         New-Item -ItemType Directory -Path release -Force
-        zip release/azd-darwin-arm64-beta.zip -j signed/mac/azd-darwin-arm64-beta NOTICE.txt
+        zip release/azd-darwin-arm64.zip -j signed/mac/azd-darwin-arm64 NOTICE.txt
 
         # Must place NOTICE.txt in file tree for tar to pick it up and place it in
         # the same place in the directory structure
         Copy-Item NOTICE.txt ./release-staging/
-        tar -C ./release-staging/ -cvzf release/azd-linux-arm64-beta.tar.gz azd-linux-arm64-beta NOTICE.txt
+        tar -C ./release-staging/ -cvzf release/azd-linux-arm64.tar.gz azd-linux-arm64 NOTICE.txt
       displayName: Compress standalone binary for release (ARM64)
 
 
@@ -132,30 +134,31 @@ steps:
         Copy-Item cli/installer/uninstall-azd.ps1 release/
       displayName: Copy install scripts to release (PR only)
 
-  # Docker build
-  - pwsh: |
-      # Move the binary to a folder where Docker can pick it up
-      New-Item -ItemType Directory -Path cli/bin
-      Copy-Item release-staging/azd-linux-amd64 cli/bin/
-
-      docker build . -f cli/Dockerfile -t release
-
-      $tags = "${{ parameters.DockerImageTags }}" -split ';'
-      foreach ($tag in $tags) {
-        Write-Host "docker tag release ${{ parameters.AcrHost }}/azure-dev:$tag"
-        docker tag release ${{ parameters.AcrHost }}/azure-dev:$tag
-      }
-    displayName: Docker build release container (latest)
-
-  - ${{ if eq('true', parameters.ReleaseSyndicatedDockerContainer) }}:
-    # Syndicated release
+  - ${{ if eq('true', parameters.PublishContainer) }}:
+    # Docker build
     - pwsh: |
+        # Move the binary to a folder where Docker can pick it up
+        New-Item -ItemType Directory -Path cli/bin
+        Copy-Item release-staging/azd-linux-amd64 cli/bin/
+
+        docker build . -f cli/Dockerfile -t release
+
         $tags = "${{ parameters.DockerImageTags }}" -split ';'
         foreach ($tag in $tags) {
-          Write-Host "docker tag release ${{ parameters.SyndicatedAcrHost }}/public/azure-dev-cli-apps:$tag"
-          docker tag release ${{ parameters.SyndicatedAcrHost }}/public/azure-dev-cli-apps:$tag
+          Write-Host "docker tag release ${{ parameters.AcrHost }}/azure-dev:$tag"
+          docker tag release ${{ parameters.AcrHost }}/azure-dev:$tag
         }
-      displayName: Build and tag release container (Release)
+      displayName: Docker build release container (latest)
+
+    - ${{ if eq('true', parameters.ReleaseSyndicatedDockerContainer) }}:
+      # Syndicated release
+      - pwsh: |
+          $tags = "${{ parameters.DockerImageTags }}" -split ';'
+          foreach ($tag in $tags) {
+            Write-Host "docker tag release ${{ parameters.SyndicatedAcrHost }}/public/azure-dev-cli-apps:$tag"
+            docker tag release ${{ parameters.SyndicatedAcrHost }}/public/azure-dev-cli-apps:$tag
+          }
+        displayName: Build and tag release container (Release)
 
   # Create release
   - ${{ if eq('true', parameters.CreateGitHubRelease ) }}:
@@ -221,14 +224,15 @@ steps:
         StorageContainerName: ${{ parameters.StorageContainerName }}
         PublishDestination: standalone/latest
 
-  - pwsh: |
-      docker push ${{ parameters.AcrHost }}/azure-dev --all-tags
-    displayName: Push container tags (latest)
-
-  - ${{ if eq('true', parameters.ReleaseSyndicatedDockerContainer) }}:
+  - ${{ if eq('true', parameters.PublishContainer) }}:
     - pwsh: |
-        docker push ${{ parameters.SyndicatedAcrHost }}/public/azure-dev-cli-apps --all-tags
-      displayName: Push container tags (syndicated release)
+        docker push ${{ parameters.AcrHost }}/azure-dev --all-tags
+      displayName: Push container tags (latest)
+
+    - ${{ if eq('true', parameters.ReleaseSyndicatedDockerContainer) }}:
+      - pwsh: |
+          docker push ${{ parameters.SyndicatedAcrHost }}/public/azure-dev-cli-apps --all-tags
+        displayName: Push container tags (syndicated release)
 
   - ${{ if eq('true', parameters.PublishBrewFormula) }}:
     - pwsh: |
@@ -253,7 +257,8 @@ steps:
         targetType: filePath
         filePath: eng/scripts/Update-HomebrewFormula.ps1
         arguments: >-
-          -ZipFilePath release/azd-darwin-amd64.zip
+          -ZipFilePathAmd64 release/azd-darwin-amd64.zip
+          -ZipFilePathArm64 release/azd-darwin-arm64.zip
           -Version $(CLI_VERSION)
           -OutFile homebrew-azd/Formula/azd.rb
 

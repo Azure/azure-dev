@@ -39,11 +39,9 @@ The following prerequisites are required to use this application. Please ensure 
 
 - [Azure Developer CLI](https://aka.ms/azd-install)
 - [Python (3.8+)](https://www.python.org/downloads/) - for the API backend
-- [Node.js with npm (16.13.1+)](https://nodejs.org/) - for the Web frontend
+- [Node.js with npm (18.17.1+)](https://nodejs.org/) - for the Web frontend
 - [Terraform CLI](https://aka.ms/azure-dev/terraform-install)
     - Requires the [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli)
-
-> Note: Terraform is in **alpha mode**. You need to enable it by running `azd config set alpha.terraform on`. Read more about [alpha features](https://github.com/Azure/azure-dev/tree/main/cli/azd/docs).
 
 ### Quickstart
 To learn how to get started with any template, follow the steps in [this quickstart](https://learn.microsoft.com/azure/developer/azure-developer-cli/get-started?tabs=localinstall&pivots=programming-language-python) with this template(`Azure-Samples/todo-python-mongo-terraform`).

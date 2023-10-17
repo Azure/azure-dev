@@ -6,15 +6,17 @@ package pipeline
 import (
 	"context"
 	"errors"
-	"path/filepath"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azdo"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/azure/azure-dev/cli/azd/test/ostest"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -80,7 +82,8 @@ func Test_azdo_scm_provider_preConfigureCheck(t *testing.T) {
 	t.Run("accepts a PAT via system environment variables", func(t *testing.T) {
 		// arrange
 		testPat := "12345"
-		provider := getEmptyAzdoScmProviderTestHarness(mockinput.NewMockConsole())
+		envManager := &mockenv.MockEnvManager{}
+		provider := getEmptyAzdoScmProviderTestHarness(envManager, mockinput.NewMockConsole())
 		t.Setenv(azdo.AzDoEnvironmentOrgName, "testOrg")
 		t.Setenv(azdo.AzDoPatName, testPat)
 		ctx := context.Background()
@@ -103,7 +106,8 @@ func Test_azdo_scm_provider_preConfigureCheck(t *testing.T) {
 			return options.Message == "Personal Access Token (PAT):"
 		}).Respond(testPat)
 		ctx := context.Background()
-		provider := getEmptyAzdoScmProviderTestHarness(testConsole)
+		envManager := &mockenv.MockEnvManager{}
+		provider := getEmptyAzdoScmProviderTestHarness(envManager, testConsole)
 
 		// act
 		updatedConfig, e := provider.preConfigureCheck(ctx, PipelineManagerArgs{}, provisioning.Options{}, "")
@@ -152,38 +156,41 @@ func Test_azdo_ci_provider_preConfigureCheck(t *testing.T) {
 }
 
 func Test_saveEnvironmentConfig(t *testing.T) {
-	tempDir := t.TempDir()
+	mockContext := mocks.NewMockContext(context.Background())
+	env := environment.New("test")
 
 	t.Run("saves to environment file", func(t *testing.T) {
 		// arrange
 		key := "test"
 		value := "12345"
-		provider := getEmptyAzdoScmProviderTestHarness(mockinput.NewMockConsole())
-		envPath := filepath.Join(tempDir, "test")
-		provider.Env = environment.EmptyWithRoot(envPath)
-		// act
-		e := provider.saveEnvironmentConfig(key, value)
-		// assert
-		writtenEnv, err := environment.FromRoot(envPath)
-		require.NoError(t, err)
+		envManager := &mockenv.MockEnvManager{}
+		envManager.On("Save", mock.Anything, env).Return(nil)
 
-		readValue := writtenEnv.Dotenv()[key]
+		provider := getEmptyAzdoScmProviderTestHarness(envManager, mockinput.NewMockConsole())
+		provider.Env = env
+		// act
+		e := provider.saveEnvironmentConfig(*mockContext.Context, key, value)
+		// assert
+		readValue := env.Dotenv()[key]
 		require.EqualValues(t, readValue, value)
 		require.NoError(t, e)
+
+		envManager.AssertCalled(t, "Save", mock.Anything, env)
 	})
 
 }
 
-func getEmptyAzdoScmProviderTestHarness(console input.Console) *AzdoScmProvider {
+func getEmptyAzdoScmProviderTestHarness(envManager environment.Manager, console input.Console) *AzdoScmProvider {
 	return &AzdoScmProvider{
-		Env:     environment.Ephemeral(),
-		console: console,
+		envManager: envManager,
+		Env:        environment.New("test"),
+		console:    console,
 	}
 }
 
 func getAzdoScmProviderTestHarness(console input.Console) *AzdoScmProvider {
 	return &AzdoScmProvider{
-		Env: environment.EphemeralWithValues(
+		Env: environment.NewWithValues(
 			"test-env",
 			map[string]string{
 				azdo.AzDoEnvironmentOrgName:       "fake_org",
@@ -200,7 +207,7 @@ func getAzdoScmProviderTestHarness(console input.Console) *AzdoScmProvider {
 
 func getAzdoCiProviderTestHarness(console input.Console) *AzdoCiProvider {
 	return &AzdoCiProvider{
-		Env: environment.EphemeralWithValues(
+		Env: environment.NewWithValues(
 			"test-env",
 			map[string]string{
 				azdo.AzDoEnvironmentOrgName:       "fake_org",

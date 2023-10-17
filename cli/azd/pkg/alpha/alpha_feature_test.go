@@ -156,7 +156,7 @@ func Test_AlphaToggle(t *testing.T) {
 	})
 
 	t.Run("cover constructor", func(t *testing.T) {
-		_ = NewFeaturesManager(config.NewUserConfigManager())
+		_ = NewFeaturesManager(config.NewUserConfigManager(config.NewFileConfigManager(config.NewManager())))
 	})
 
 }

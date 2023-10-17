@@ -20,6 +20,7 @@ type contextKey string
 var serviceHooksRegisteredContextKey contextKey = "service-hooks-registered"
 
 type HooksMiddleware struct {
+	lazyEnvManager    *lazy.Lazy[environment.Manager]
 	lazyEnv           *lazy.Lazy[*environment.Environment]
 	lazyProjectConfig *lazy.Lazy[*project.ProjectConfig]
 	commandRunner     exec.CommandRunner
@@ -29,15 +30,17 @@ type HooksMiddleware struct {
 
 // Creates a new instance of the Hooks middleware
 func NewHooksMiddleware(
-	env *lazy.Lazy[*environment.Environment],
-	projectConfig *lazy.Lazy[*project.ProjectConfig],
+	lazyEnvManager *lazy.Lazy[environment.Manager],
+	lazyEnv *lazy.Lazy[*environment.Environment],
+	lazyProjectConfig *lazy.Lazy[*project.ProjectConfig],
 	commandRunner exec.CommandRunner,
 	console input.Console,
 	options *Options,
 ) Middleware {
 	return &HooksMiddleware{
-		lazyEnv:           env,
-		lazyProjectConfig: projectConfig,
+		lazyEnvManager:    lazyEnvManager,
+		lazyEnv:           lazyEnv,
+		lazyProjectConfig: lazyProjectConfig,
 		commandRunner:     commandRunner,
 		console:           console,
 		options:           options,
@@ -76,17 +79,22 @@ func (m *HooksMiddleware) registerCommandHooks(
 	next NextFn,
 ) (*actions.ActionResult, error) {
 	if projectConfig.Hooks == nil || len(projectConfig.Hooks) == 0 {
-		//nolint:lll
 		log.Println(
 			"azd project is not available or does not contain any command hooks, skipping command hook registrations.",
 		)
 		return next(ctx)
 	}
 
+	envManager, err := m.lazyEnvManager.GetValue()
+	if err != nil {
+		return nil, fmt.Errorf("failed getting environment manager, %w", err)
+	}
+
 	hooksManager := ext.NewHooksManager(projectConfig.Path)
 	hooksRunner := ext.NewHooksRunner(
 		hooksManager,
 		m.commandRunner,
+		envManager,
 		m.console,
 		projectConfig.Path,
 		projectConfig.Hooks,
@@ -98,7 +106,7 @@ func (m *HooksMiddleware) registerCommandHooks(
 	commandNames := []string{m.options.CommandPath}
 	commandNames = append(commandNames, m.options.Aliases...)
 
-	err := hooksRunner.Invoke(ctx, commandNames, func() error {
+	err = hooksRunner.Invoke(ctx, commandNames, func() error {
 		result, err := next(ctx)
 		if err != nil {
 			return err
@@ -128,6 +136,11 @@ func (m *HooksMiddleware) registerServiceHooks(
 		return nil
 	}
 
+	envManager, err := m.lazyEnvManager.GetValue()
+	if err != nil {
+		return fmt.Errorf("failed getting environment manager, %w", err)
+	}
+
 	for serviceName, service := range projectConfig.Services {
 		// If the service hasn't configured any hooks we can continue on.
 		if service.Hooks == nil || len(service.Hooks) == 0 {
@@ -139,21 +152,18 @@ func (m *HooksMiddleware) registerServiceHooks(
 		serviceHooksRunner := ext.NewHooksRunner(
 			serviceHooksManager,
 			m.commandRunner,
+			envManager,
 			m.console,
 			service.Path(),
 			service.Hooks,
 			env,
 		)
 
-		for hookName, hookConfig := range service.Hooks {
-			hookType, eventName, err := inferHookType(hookName, hookConfig)
-			if err != nil {
-				return fmt.Errorf(
-					//nolint:lll
-					"%w for service '%s'. Hooks must start with 'pre' or 'post' and end in a valid service event name. Examples: restore, package, deploy",
-					err,
-					serviceName,
-				)
+		for hookName := range service.Hooks {
+			hookType, eventName := ext.InferHookType(hookName)
+			// If not a pre or post hook we can continue on.
+			if hookType == ext.HookTypeNone {
+				continue
 			}
 
 			if err := service.AddHandler(
@@ -184,21 +194,8 @@ func (m *HooksMiddleware) createServiceEventHandler(
 	hooksRunner *ext.HooksRunner,
 ) ext.EventHandlerFn[project.ServiceLifecycleEventArgs] {
 	return func(ctx context.Context, eventArgs project.ServiceLifecycleEventArgs) error {
-		return hooksRunner.RunHooks(ctx, hookType, hookName)
+		return hooksRunner.RunHooks(ctx, hookType, nil, hookName)
 	}
-}
-
-func inferHookType(name string, config *ext.HookConfig) (ext.HookType, string, error) {
-	// Validate name length so go doesn't PANIC for string slicing below
-	if len(name) < 4 {
-		return "", "", fmt.Errorf("unable to infer hook '%s'", name)
-	} else if name[:3] == "pre" {
-		return ext.HookTypePre, name[3:], nil
-	} else if name[:4] == "post" {
-		return ext.HookTypePost, name[4:], nil
-	}
-
-	return "", "", fmt.Errorf("unable to infer hook '%s'", name)
 }
 
 // Gets a value that returns whether or not service hooks have already been registered

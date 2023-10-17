@@ -1328,7 +1328,7 @@ stages:
                           --account-key '$(azdev-storage-account-key)' `
                           --auth-mode key `
                           -s release/ `
-                          -d "azd/standalone/$folder/version.txt" `
+                          -d "azd/standalone/$folder" `
                           --overwrite
 
                         if ($LASTEXITCODE) {

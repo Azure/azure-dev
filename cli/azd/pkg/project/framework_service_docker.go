@@ -214,7 +214,7 @@ func (p *dockerProject) Build(
 				dockerOptions.BuildArgs,
 				previewerWriter,
 			)
-			p.console.StopPreviewer(ctx)
+			p.console.StopPreviewer(ctx, false)
 			if err != nil {
 				task.SetError(fmt.Errorf("building container: %s at %s: %w", serviceConfig.Name, dockerOptions.Context, err))
 				return
@@ -329,7 +329,7 @@ func (p *dockerProject) packBuild(
 		imageName,
 		environ,
 		previewer)
-	p.console.StopPreviewer(ctx)
+	p.console.StopPreviewer(ctx, false)
 	if err != nil {
 		span.EndWithStatus(err)
 		return nil, err

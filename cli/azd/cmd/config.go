@@ -100,14 +100,14 @@ func configActions(root *actions.ActionDescriptor, rootOptions *internal.GlobalC
 		DefaultFormat:  output.JsonFormat,
 	})
 
-	group.Add("get-key", &actions.ActionDescriptorOptions{
+	group.Add("get", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
-			Use:   "get-key <key>",
-			Short: "Look for the key within the configuration and returns its value.",
-			Long:  `Search the configuration key and gets its value from ` + userConfigPath + `.`,
+			Use:   "get <path>",
+			Short: "Gets a configuration.",
+			Long:  `Gets a configuration in ` + userConfigPath + `.`,
 			Args:  cobra.ExactArgs(1),
 		},
-		ActionResolver: newConfigGetKeyAction,
+		ActionResolver: newConfigGetAction,
 		OutputFormats:  []output.Format{output.JsonFormat},
 		DefaultFormat:  output.JsonFormat,
 	})
@@ -196,20 +196,20 @@ func (a *configShowAction) Run(ctx context.Context) (*actions.ActionResult, erro
 
 // azd config get <path>
 
-type configGetKeyAction struct {
+type configGetAction struct {
 	configManager config.UserConfigManager
 	formatter     output.Formatter
 	writer        io.Writer
 	args          []string
 }
 
-func newConfigGetKeyAction(
+func newConfigGetAction(
 	configManager config.UserConfigManager,
 	formatter output.Formatter,
 	writer io.Writer,
 	args []string,
 ) actions.Action {
-	return &configGetKeyAction{
+	return &configGetAction{
 		configManager: configManager,
 		formatter:     formatter,
 		writer:        writer,
@@ -218,7 +218,7 @@ func newConfigGetKeyAction(
 }
 
 // Executes the `azd config get <path>` action
-func (a *configGetKeyAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+func (a *configGetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	azdConfig, err := a.configManager.Load()
 	if err != nil {
 		return nil, err
@@ -388,9 +388,6 @@ func getCmdConfigHelpDescription(*cobra.Command) string {
 			formatHelpNote(fmt.Sprintf("The configuration directory can be overridden by specifying a path"+
 				" in the %s environment variable.", output.WithBold("AZD_CONFIG_DIR"),
 			)),
-			formatHelpNote(
-				"Configuration can be used to store any key-value pair. Azd prints a warning if an unknown key is set.",
-			),
 			formatHelpNote(fmt.Sprintf(
 				"The default values for azd prompts like subscription and location are stored with the key: %s.",
 				output.WithLinkFormat("defaults"),

@@ -100,6 +100,16 @@ func configActions(root *actions.ActionDescriptor, rootOptions *internal.GlobalC
 		DefaultFormat:  output.JsonFormat,
 	})
 
+	group.Add("list", &actions.ActionDescriptorOptions{
+		Command: &cobra.Command{
+			Short:  "List all the configuration values. (Deprecated. Use azd config show)",
+			Hidden: true,
+		},
+		ActionResolver: newConfigListAction,
+		OutputFormats:  []output.Format{output.JsonFormat},
+		DefaultFormat:  output.JsonFormat,
+	})
+
 	group.Add("get", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
 			Use:   "get <path>",
@@ -157,7 +167,7 @@ $ azd config set defaults.location eastus`,
 	return group
 }
 
-// azd config list
+// azd config show
 
 type configShowAction struct {
 	configManager config.UserConfigManager
@@ -175,7 +185,7 @@ func newConfigShowAction(
 	}
 }
 
-// Executes the `azd config list` action
+// Executes the `azd config show` action
 func (a *configShowAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	azdConfig, err := a.configManager.Load()
 	if err != nil {
@@ -192,6 +202,33 @@ func (a *configShowAction) Run(ctx context.Context) (*actions.ActionResult, erro
 	}
 
 	return nil, nil
+}
+
+// azd config list - Deprecated
+
+type configListAction struct {
+	configShow *configShowAction
+	console    input.Console
+}
+
+func newConfigListAction(
+	console input.Console, configShow *configShowAction,
+) actions.Action {
+	return &configListAction{
+		configShow: configShow,
+		console:    console,
+	}
+}
+
+func (a *configListAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	fmt.Fprintln(
+		a.console.Handles().Stderr,
+		output.WithWarningFormat(
+			"WARNING: `azd config list` is deprecated and will be removed in a future release."))
+	fmt.Fprintln(
+		a.console.Handles().Stderr,
+		"Next time use `azd config show`")
+	return a.configShow.Run(ctx)
 }
 
 // azd config get <path>

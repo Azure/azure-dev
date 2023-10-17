@@ -4,10 +4,14 @@ param(
     $TimeoutInSeconds = 300
 )
 
+if (!(Test-Path wingetcreate.exe)) {
+    Invoke-WebRequest https://aka.ms/wingetcreate/latest -OutFile wingetcreate.exe
+}
+
 $startTime = Get-Date
 
 while (((Get-Date) - $startTime).TotalSeconds -lt $TimeoutInSeconds) {
-    if ((winget show $PackageName --versions) -contains $PackageVersion) {
+    if ((.\wingetcreate.exe show $PackageName --version-manifest) -contains "PackageVersion: $PackageVersion") {
         Write-Host "Package $PackageName $PackageVersion is available"
         exit 0
     }

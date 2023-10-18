@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -301,16 +302,8 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		if projectConfig != nil && projectConfig.State != nil && projectConfig.State.Remote != nil {
 			remoteStateConfig = projectConfig.State.Remote
 		} else {
-			remoteState, ok := userConfig.Get("state.remote")
-			if ok {
-				jsonBytes, err := json.Marshal(remoteState)
-				if err != nil {
-					return nil, fmt.Errorf("marshalling remote state: %w", err)
-				}
-
-				if err := json.Unmarshal(jsonBytes, &remoteStateConfig); err != nil {
-					return nil, fmt.Errorf("unmarshalling remote state: %w", err)
-				}
+			if _, err := userConfig.GetSection("state.remote", &remoteStateConfig); err != nil {
+				return nil, fmt.Errorf("getting remote state config: %w", err)
 			}
 		}
 
@@ -584,6 +577,45 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			panic(fmt.Errorf("registering pipeline provider %s: %w", provider, err))
 		}
 	}
+
+	// Platform configuration
+	container.RegisterSingleton(func() *lazy.Lazy[*project.PlatformConfig] {
+		return lazy.NewLazy(func() (*project.PlatformConfig, error) {
+			var platformConfig *project.PlatformConfig
+			err := container.Resolve(&platformConfig)
+
+			return platformConfig, err
+		})
+	})
+
+	container.RegisterSingleton(func(
+		lazyProjectConfig *lazy.Lazy[*project.ProjectConfig],
+		userConfigManager config.UserConfigManager,
+	) (*project.PlatformConfig, error) {
+		// First check `azure.yaml` for platform configuration section
+		projectConfig, err := lazyProjectConfig.GetValue()
+		if err == nil && projectConfig != nil && projectConfig.Platform != nil {
+			return projectConfig.Platform, nil
+		}
+
+		// Fallback to global user configuration
+		config, err := userConfigManager.Load()
+		if err != nil {
+			return nil, fmt.Errorf("loading user config: %w", err)
+		}
+
+		var platformConfig *project.PlatformConfig
+		ok, err := config.GetSection("platform", &platformConfig)
+		if err != nil {
+			return nil, fmt.Errorf("getting platform config: %w", err)
+		}
+
+		if !ok {
+			return nil, errors.New("platform config not found")
+		}
+
+		return platformConfig, nil
+	})
 
 	// Platforms
 	platformProviderMap := map[project.PlatformKind]any{

@@ -70,18 +70,3 @@ func ParseConfig(partialConfig any) (*Config, error) {
 
 	return config, nil
 }
-
-// MarshalConfig attempts to marshal a devcenter configuration into a map[string]any
-func MarshalConfig(config *Config) (map[string]any, error) {
-	jsonBytes, err := json.Marshal(config)
-	if err != nil {
-		return nil, fmt.Errorf("failed to marshal dev center configuration: %w", err)
-	}
-
-	var configMap map[string]any
-	if err := json.Unmarshal(jsonBytes, &configMap); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal dev center configuration: %w", err)
-	}
-
-	return configMap, nil
-}

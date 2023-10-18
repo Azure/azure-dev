@@ -18,6 +18,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/spf13/pflag"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -26,13 +28,15 @@ import (
 
 // Telemetry middleware tracks telemetry for the given action
 type TelemetryMiddleware struct {
-	options *Options
+	options            *Options
+	lazyPlatformConfig *lazy.Lazy[*project.PlatformConfig]
 }
 
 // Creates a new Telemetry middleware instance
-func NewTelemetryMiddleware(options *Options) Middleware {
+func NewTelemetryMiddleware(options *Options, lazyPlatformConfig *lazy.Lazy[*project.PlatformConfig]) Middleware {
 	return &TelemetryMiddleware{
-		options: options,
+		options:            options,
+		lazyPlatformConfig: lazyPlatformConfig,
 	}
 }
 
@@ -64,6 +68,11 @@ func (m *TelemetryMiddleware) Run(ctx context.Context, next NextFn) (*actions.Ac
 	}
 
 	span.SetAttributes(fields.CmdArgsCount.Int(len(m.options.Args)))
+
+	// Set the platform type when available
+	if platformConfig, err := m.lazyPlatformConfig.GetValue(); err == nil && platformConfig != nil {
+		span.SetAttributes(fields.PlatformTypeKey.String(string(platformConfig.Type)))
+	}
 
 	defer func() {
 		// Include any usage attributes set

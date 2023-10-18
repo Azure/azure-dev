@@ -7,6 +7,7 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
 	"strings"
 )
@@ -17,6 +18,7 @@ type Config interface {
 	Raw() map[string]any
 	Get(path string) (any, bool)
 	GetString(path string) (string, bool)
+	GetSection(path string, section any) (bool, error)
 	Set(path string, value any) error
 	Unset(path string) error
 	IsEmpty() bool
@@ -157,4 +159,22 @@ func (c *config) GetString(path string) (string, bool) {
 
 	str, ok := value.(string)
 	return str, ok
+}
+
+func (c *config) GetSection(path string, section any) (bool, error) {
+	sectionConfig, ok := c.Get(path)
+	if !ok {
+		return false, nil
+	}
+
+	jsonBytes, err := json.Marshal(sectionConfig)
+	if err != nil {
+		return true, fmt.Errorf("marshalling section config: %w", err)
+	}
+
+	if err := json.Unmarshal(jsonBytes, section); err != nil {
+		return true, fmt.Errorf("unmarshalling section config: %w", err)
+	}
+
+	return true, nil
 }

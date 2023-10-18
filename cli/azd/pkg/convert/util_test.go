@@ -51,3 +51,32 @@ func Test_RefOf(t *testing.T) {
 		require.Equal(t, 1, *value)
 	})
 }
+
+type Person struct {
+	Name    string
+	Address string
+}
+
+func Test_ToMap(t *testing.T) {
+	t.Run("ValidStruct", func(t *testing.T) {
+		input := Person{
+			Name:    "John Doe",
+			Address: "123 Main St",
+		}
+		expected := map[string]interface{}{
+			"Name":    "John Doe",
+			"Address": "123 Main St",
+		}
+		actual, err := ToMap(input)
+		require.NoError(t, err)
+		require.Equal(t, expected, actual)
+	})
+
+	t.Run("EmptyStruct", func(t *testing.T) {
+		input := struct{}{}
+		expected := map[string]interface{}{}
+		actual, err := ToMap(input)
+		require.NoError(t, err)
+		require.Equal(t, expected, actual)
+	})
+}

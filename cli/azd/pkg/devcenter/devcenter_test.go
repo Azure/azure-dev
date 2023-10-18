@@ -103,34 +103,6 @@ func Test_MergeConfigs(t *testing.T) {
 	})
 }
 
-func Test_MarshalConfig(t *testing.T) {
-	t.Run("Success", func(t *testing.T) {
-		config := &Config{
-			Name:    "DEVCENTER_NAME",
-			Project: "PROJECT",
-		}
-
-		configMap, err := MarshalConfig(config)
-		require.NoError(t, err)
-		require.Equal(t, "DEVCENTER_NAME", configMap["name"])
-		require.Equal(t, "PROJECT", configMap["project"])
-	})
-
-	t.Run("Empty", func(t *testing.T) {
-		config := &Config{}
-
-		configMap, err := MarshalConfig(config)
-		require.NoError(t, err)
-		require.Len(t, configMap, 0)
-	})
-
-	t.Run("Nil", func(t *testing.T) {
-		configMap, err := MarshalConfig(nil)
-		require.NoError(t, err)
-		require.Len(t, configMap, 0)
-	})
-}
-
 type mockDevCenterManager struct {
 	mock.Mock
 }

@@ -10,6 +10,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
+	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/devcentersdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
@@ -35,7 +36,7 @@ func Test_ProvisionProvider_Initialize(t *testing.T) {
 			User:                  "me",
 		}
 		env := environment.New("test")
-		configMap, err := MarshalConfig(config)
+		configMap, err := convert.ToMap(config)
 		require.NoError(t, err)
 		_ = env.Config.Set("platform.config", configMap)
 
@@ -54,7 +55,7 @@ func Test_ProvisionProvider_Initialize(t *testing.T) {
 			User:                  "me",
 		}
 		env := environment.New("test")
-		configMap, err := MarshalConfig(config)
+		configMap, err := convert.ToMap(config)
 		require.NoError(t, err)
 		_ = env.Config.Set("platform.config", configMap)
 

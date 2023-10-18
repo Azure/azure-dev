@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"strings"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -135,18 +136,14 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		// Find subscription name
 		for _, sub := range subscriptions {
 			if sub.Id == p.env.GetSubscriptionId() {
-				messageFormat := "Provisioning Azure resources in subscription (%s) %s and location (%s) can take some time"
-				if previewMode {
-					messageFormat = "This is a preview. No changes will be applied to your Azure resources in subscription (%s) %s " +
-						"and location (%s)."
-				}
 				// Formate the note
-				defaultTitleNote = fmt.Sprintf(
-					messageFormat,
-					sub.Name,
-					sub.Id,
-					p.env.GetLocation(),
-				)
+				defaultTitleNote = strings.Join(
+					[]string{
+						fmt.Sprintf("Subscription : %s (%s)", sub.Name, sub.Id),
+						fmt.Sprintf("Location     : %s", p.env.GetLocation()),
+						defaultTitleNote,
+					},
+					"\n")
 				break
 			}
 		}

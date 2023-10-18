@@ -542,6 +542,9 @@ func newEnvGetValuesAction(
 
 func (eg *envGetValuesAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	name, _ := eg.azdCtx.GetDefaultEnvironmentName()
+	if eg.flags.environmentName != "" {
+		name = eg.flags.environmentName
+	}
 	env, err := eg.envManager.Get(ctx, name)
 	if errors.Is(err, environment.ErrNotFound) {
 		return nil, fmt.Errorf(

@@ -541,7 +541,17 @@ func newEnvGetValuesAction(
 }
 
 func (eg *envGetValuesAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	name, _ := eg.azdCtx.GetDefaultEnvironmentName()
+	name, err := eg.azdCtx.GetDefaultEnvironmentName()
+	if err != nil {
+		return nil, err
+	}
+	// Note: if there is not an environment yet, GetDefaultEnvironmentName() returns empty string (not error)
+	// and later, when envManager.Get() is called with the empty string, azd returns an error.
+	// But if there is already an environment (default to be selected), azd must honor the --environment flag
+	// over the default environment.
+	if eg.flags.environmentName != "" {
+		name = eg.flags.environmentName
+	}
 	env, err := eg.envManager.Get(ctx, name)
 	if errors.Is(err, environment.ErrNotFound) {
 		return nil, fmt.Errorf(

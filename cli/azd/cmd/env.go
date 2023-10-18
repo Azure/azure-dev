@@ -546,7 +546,7 @@ func (eg *envGetValuesAction) Run(ctx context.Context) (*actions.ActionResult, e
 		return nil, err
 	}
 	// Note: if there is not an environment yet, GetDefaultEnvironmentName() returns empty string (not error)
-	// and later, then envManager.Get() is called with the empty string, azd returns an error.
+	// and later, when envManager.Get() is called with the empty string, azd returns an error.
 	// But if there is already an environment (default to be selected), azd must honor the --environment flag
 	// over the default environment.
 	if eg.flags.environmentName != "" {

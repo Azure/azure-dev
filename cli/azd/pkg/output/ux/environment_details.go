@@ -18,10 +18,8 @@ type EnvironmentDetails struct {
 
 func (t *EnvironmentDetails) ToString(currentIndentation string) string {
 	return fmt.Sprintf(
-		"%sSubscription: %s\n%sLocation: %s\n",
-		currentIndentation,
+		"Subscription: %s\nLocation: %s\n",
 		color.BlueString(t.Subscription),
-		currentIndentation,
 		color.BlueString(t.Location),
 	)
 }

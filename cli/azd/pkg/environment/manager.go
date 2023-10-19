@@ -7,11 +7,11 @@ import (
 
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/remote"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/state"
-	"github.com/john0isaac/azure-dev/cli/azd/pkg/environment/remote"
 	"golang.org/x/exp/slices"
 )
 
@@ -63,11 +63,12 @@ type Manager interface {
 }
 
 type manager struct {
-	local      DataStore
-	remote     DataStore
-	azdContext *azdcontext.AzdContext
-	console    input.Console
-	remoteEnv  remote.Environment
+	local         DataStore
+	remote        DataStore
+	azdContext    *azdcontext.AzdContext
+	console       input.Console
+	remoteEnv     remote.Environment
+	locationFiler remote.LocationFilterPredicate
 }
 
 // NewManager creates a new Manager instance
@@ -78,6 +79,7 @@ func NewManager(
 	local LocalDataStore,
 	remoteConfig *state.RemoteConfig,
 	remoteEnv remote.Environment,
+	locationFiler remote.LocationFilterPredicate,
 ) (Manager, error) {
 	var remote RemoteDataStore
 
@@ -100,11 +102,12 @@ func NewManager(
 	}
 
 	return &manager{
-		azdContext: azdContext,
-		local:      local,
-		remote:     remote,
-		console:    console,
-		remoteEnv:  remoteEnv,
+		azdContext:    azdContext,
+		local:         local,
+		remote:        remote,
+		console:       console,
+		remoteEnv:     remoteEnv,
+		locationFiler: locationFiler,
 	}, nil
 }
 
@@ -176,8 +179,28 @@ func (m *manager) LoadOrCreateInteractive(ctx context.Context, environmentName s
 				if !shouldCreate {
 					return nil, false, fmt.Errorf("environment '%s' not found: %w", environmentName, err)
 				}
+
+				// get subscription
 				subscriptionId, err := m.remoteEnv.PromptSubscription(ctx, "Select an Azure Subscription to use:")
-				fmt.Printf(" %s %w ", subscriptionId, err)
+				if err != nil {
+					return nil, false, err
+				}
+				// get location
+				location, err := m.remoteEnv.PromptLocation(
+					ctx,
+					subscriptionId,
+					"Select an Azure location to use:",
+					m.locationFiler,
+				)
+				if err != nil {
+					return nil, false, err
+				}
+				// return env without persisting to local store
+				return NewWithValues(environmentName, map[string]string{
+					SubscriptionIdEnvVarName: subscriptionId,
+					LocationEnvVarName:       location,
+				}), false, nil
+
 			case err != nil:
 				return nil, false, fmt.Errorf("loading environment '%s': %w", environmentName, err)
 			case err == nil:

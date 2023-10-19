@@ -11,6 +11,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/state"
+	"github.com/john0isaac/azure-dev/cli/azd/pkg/environment/remote"
 	"golang.org/x/exp/slices"
 )
 
@@ -66,6 +67,7 @@ type manager struct {
 	remote     DataStore
 	azdContext *azdcontext.AzdContext
 	console    input.Console
+	remoteEnv  remote.Environment
 }
 
 // NewManager creates a new Manager instance
@@ -75,6 +77,7 @@ func NewManager(
 	console input.Console,
 	local LocalDataStore,
 	remoteConfig *state.RemoteConfig,
+	remoteEnv remote.Environment,
 ) (Manager, error) {
 	var remote RemoteDataStore
 
@@ -101,6 +104,7 @@ func NewManager(
 		local:      local,
 		remote:     remote,
 		console:    console,
+		remoteEnv:  remoteEnv,
 	}, nil
 }
 
@@ -161,7 +165,7 @@ func (m *manager) LoadOrCreateInteractive(ctx context.Context, environmentName s
 				// prompt for subscription and location using the code from promptSubscription
 				// don't ask the user if they would like to create it or not
 
-				msg := fmt.Sprintf("Environment '%s' does not exist, would you like to create it?", environmentName)
+				msg := fmt.Sprintf("Environment '%s' does not exist, would you like to pull it from azure?", environmentName)
 				shouldCreate, promptErr := m.console.Confirm(ctx, input.ConsoleOptions{
 					Message:      msg,
 					DefaultValue: true,
@@ -172,6 +176,8 @@ func (m *manager) LoadOrCreateInteractive(ctx context.Context, environmentName s
 				if !shouldCreate {
 					return nil, false, fmt.Errorf("environment '%s' not found: %w", environmentName, err)
 				}
+				subscriptionId, err := m.remoteEnv.PromptSubscription(ctx, "Select an Azure Subscription to use:")
+				fmt.Printf(" %s %w ", subscriptionId, err)
 			case err != nil:
 				return nil, false, fmt.Errorf("loading environment '%s': %w", environmentName, err)
 			case err == nil:

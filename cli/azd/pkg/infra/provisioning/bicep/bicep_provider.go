@@ -1863,7 +1863,7 @@ func (p *BicepProvider) ensureParameters(
 		// If a value is explicitly configured via a parameters file, use it.
 		// unless the parameter value inference is nil/empty
 		if v, has := parameters[key]; has {
-			paramValue := armParameterFileValue(p.mapBicepTypeToInterfaceType(param.Type), v.Value)
+			paramValue := armParameterFileValue(p.mapBicepTypeToInterfaceType(param.Type), v.Value, param.DefaultValue)
 			if paramValue != nil {
 				configuredParameters[key] = azure.ArmParameterValue{
 					Value: paramValue,
@@ -1934,7 +1934,7 @@ func (p *BicepProvider) ensureParameters(
 }
 
 // Convert the ARM parameters file value into a value suitable for deployment
-func armParameterFileValue(paramType ParameterType, value any) any {
+func armParameterFileValue(paramType ParameterType, value any, defaultValue any) any {
 	// Relax the handling of bool and number types to accept convertible strings
 	switch paramType {
 	case ParameterTypeBoolean:
@@ -1950,8 +1950,20 @@ func armParameterFileValue(paramType ParameterType, value any) any {
 			}
 		}
 	case ParameterTypeString:
-		if val, ok := value.(string); ok && val != "" {
-			return val
+		// Use Cases
+		// 1. Non-empty input value, return input value (no prompt)
+		// 2. Empty input value and no default - return nil (prompt user)
+		// 3. Empty input value and non-empty default - return empty input string (no prompt)
+		paramVal, paramValid := value.(string)
+		defaultVal, hasDefault := defaultValue.(string)
+		if hasDefault {
+			if paramValid && paramVal != defaultVal {
+				return paramVal
+			}
+		}
+
+		if paramValid && paramVal != "" {
+			return paramVal
 		}
 	// All other parameter types return the specified value as-is
 	default:

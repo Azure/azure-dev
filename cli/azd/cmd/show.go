@@ -60,6 +60,8 @@ type showAction struct {
 	deploymentOperations azapi.DeploymentOperations
 	azdCtx               *azdcontext.AzdContext
 	flags                *showFlags
+	serviceManager       project.ServiceManager
+	resourceManager      project.ResourceManager
 }
 
 func newShowAction(
@@ -72,6 +74,8 @@ func newShowAction(
 	projectConfig *project.ProjectConfig,
 	azdCtx *azdcontext.AzdContext,
 	flags *showFlags,
+	serviceManager project.ServiceManager,
+	resourceManager project.ResourceManager,
 ) actions.Action {
 	return &showAction{
 		projectConfig:        projectConfig,
@@ -83,6 +87,8 @@ func newShowAction(
 		deploymentOperations: deploymentOperations,
 		azdCtx:               azdCtx,
 		flags:                flags,
+		serviceManager:       serviceManager,
+		resourceManager:      resourceManager,
 	}
 }
 
@@ -125,18 +131,18 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 
 	}
-
+	var subId, rgName string
 	if env, err := s.envManager.Get(ctx, environmentName); err != nil {
 		log.Printf("could not load environment: %s, resource ids will not be available", err)
 	} else {
-		if subId := env.GetSubscriptionId(); subId == "" {
+		if subId = env.GetSubscriptionId(); subId == "" {
 			log.Printf("provision has not been run, resource ids will not be available")
 		} else {
 			azureResourceManager := infra.NewAzureResourceManager(s.azCli, s.deploymentOperations)
 			resourceManager := project.NewResourceManager(env, s.azCli, s.deploymentOperations)
 			envName := env.GetEnvName()
 
-			rgName, err := azureResourceManager.FindResourceGroupForEnvironment(ctx, subId, envName)
+			rgName, err = azureResourceManager.FindResourceGroupForEnvironment(ctx, subId, envName)
 			if err == nil {
 				for svcName, serviceConfig := range s.projectConfig.Services {
 					resources, err := resourceManager.GetServiceResources(ctx, subId, rgName, serviceConfig)
@@ -150,6 +156,7 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 						resSvc.Target = &contracts.ShowTargetArm{
 							ResourceIds: resourceIds,
 						}
+						resSvc.IngresUrl = s.serviceEndpoint(ctx, subId, serviceConfig, env)
 						res.Services[svcName] = resSvc
 					} else {
 						log.Printf("ignoring error determining resource id for service %s: %v", svcName, err)
@@ -168,28 +175,66 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, s.formatter.Format(res, s.writer, nil)
 	}
 
+	appEnvironments, err := s.envManager.List(ctx)
+	if err != nil {
+		return nil, err
+	}
+	uxEnvironments := make([]*ux.ShowEnvironment, len(appEnvironments))
+	for index, environment := range appEnvironments {
+		uxEnvironments[index] = &ux.ShowEnvironment{
+			Name:      environment.Name,
+			IsDefault: environment.IsDefault,
+		}
+	}
+
+	uxServices := make([]*ux.ShowService, len(res.Services))
+	var index int
+	for serviceName, service := range res.Services {
+		uxServices[index] = &ux.ShowService{
+			Name:      serviceName,
+			IngresUrl: service.IngresUrl,
+		}
+		index++
+	}
+
 	s.console.MessageUxItem(ctx, &ux.Show{
-		AppName: "Foo",
-		Services: []*ux.ShowService{
-			{
-				Name:      "xx",
-				IngresUrl: "bar",
-			},
-		},
-		Environments: []*ux.ShowEnvironment{
-			{
-				Name:      "foo",
-				IsDefault: true,
-			},
-			{
-				Name:      "Bar",
-				IsDefault: false,
-			},
-		},
-		AzurePortalLink: "foo.com",
+		AppName:         s.azdCtx.GetDefaultProjectName(),
+		Services:        uxServices,
+		Environments:    uxEnvironments,
+		AzurePortalLink: azurePortalLink(subId, rgName),
 	})
 
 	return nil, nil
+}
+
+func (s *showAction) serviceEndpoint(
+	ctx context.Context, subId string, serviceConfig *project.ServiceConfig, env *environment.Environment) string {
+	targetResource, err := s.resourceManager.GetTargetResource(ctx, subId, serviceConfig)
+	if err != nil {
+		log.Printf("error: getting target-resource. Endpoints will be empty: %v", err)
+		return ""
+	}
+
+	st, err := s.serviceManager.GetServiceTarget(ctx, serviceConfig)
+	if err != nil {
+		log.Printf("error: getting service target. Endpoints will be empty: %v", err)
+		return ""
+	}
+	endpoints, err := st.Endpoints(ctx, serviceConfig, targetResource)
+	if err != nil {
+		log.Printf("error: getting service endpoints. Endpoints might be empty: %v", err)
+	}
+
+	overriddenEndpoints := project.OverriddenEndpoints(ctx, serviceConfig, env)
+	if len(overriddenEndpoints) > 0 {
+		endpoints = overriddenEndpoints
+	}
+
+	if len(endpoints) == 0 {
+		return ""
+	}
+
+	return endpoints[0]
 }
 
 func showTypeFromLanguage(language project.ServiceLanguageKind) contracts.ShowType {

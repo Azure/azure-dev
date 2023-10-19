@@ -1,0 +1,31 @@
+name: azureDevOps-ext-ci
+
+on:
+  pull_request:
+    paths:
+      - "ext/azuredevops/**"
+      - ".github/workflows/devops-ext-ci.yml"
+    branches: [main]
+
+permissions:
+  actions: read
+  contents: read
+  id-token: write
+
+jobs:
+  build-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v3
+      - uses: actions/setup-node@v3
+        with:
+          node-version: "18"
+      - name: Install dependencies
+        run: |
+          npm install -g npm
+          npm install
+        working-directory: ./ext/azuredevops/setupAzd
+
+      - name: Test
+        run: npm test
+        working-directory: ./ext/azuredevops/setupAzd

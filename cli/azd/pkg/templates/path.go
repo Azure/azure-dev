@@ -2,7 +2,10 @@ package templates
 
 import (
 	"fmt"
+	"log"
 	"strings"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 )
 
 // Absolute returns an absolute template path, given a possibly relative template path. An absolute path also corresponds to
@@ -27,4 +30,15 @@ func Absolute(path string) (string, error) {
 			"template '%s' should either be <owner>/<repo> for GitHub repositories, "+
 				"or <repo> for Azure-Samples GitHub repositories", path)
 	}
+}
+
+// Hyperlink returns a hyperlink to the given template path.
+// If the path is cannot be resolved absolutely, it is returned as-is.
+func Hyperlink(path string) string {
+	url, err := Absolute(path)
+	if err != nil {
+		log.Printf("error: getting absolute url from template: %v", err)
+		return path
+	}
+	return output.WithHyperlink(url, path)
 }

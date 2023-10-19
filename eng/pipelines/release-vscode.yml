@@ -12,13 +12,13 @@ trigger:
       - main
   paths:
     include:
-      - ext/
+      - ext/vscode
       - eng/pipelines/release-vscode.yml
 
 pr:
   paths:
     include:
-      - ext/
+      - ext/vscode
       - eng/pipelines/release-vscode.yml
 
 variables:
@@ -286,7 +286,7 @@ stages:
           - checkout: self
 
           - pwsh: |
-              $PRNumber = "$(System.PullRequest.PullRequestNumber)"
+              $PRNumber = '$(System.PullRequest.PullRequestNumber)'
               if ($env:PRNUMBEROVERRIDE) {
                 Write-Host "PR Number override: $($env:PRNUMBEROVERRIDE)"
                 $PRNumber = $env:PRNUMBEROVERRIDE

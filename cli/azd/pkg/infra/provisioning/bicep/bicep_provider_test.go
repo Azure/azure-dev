@@ -1022,6 +1022,53 @@ func TestUserDefinedTypes(t *testing.T) {
 	}, customOutput.Metadata)
 }
 
+func Test_armParameterFileValue(t *testing.T) {
+	t.Run("NilValue", func(t *testing.T) {
+		actual := armParameterFileValue(ParameterTypeString, nil)
+		require.Nil(t, actual)
+	})
+
+	t.Run("StringWithValue", func(t *testing.T) {
+		expected := "value"
+		actual := armParameterFileValue(ParameterTypeString, expected)
+		require.Equal(t, expected, actual)
+	})
+
+	t.Run("EmptyString", func(t *testing.T) {
+		expected := ""
+		actual := armParameterFileValue(ParameterTypeString, expected)
+		require.Nil(t, actual)
+	})
+
+	t.Run("ValidBool", func(t *testing.T) {
+		expected := true
+		actual := armParameterFileValue(ParameterTypeBoolean, "true")
+		require.Equal(t, expected, actual)
+	})
+
+	t.Run("InvalidBool", func(t *testing.T) {
+		actual := armParameterFileValue(ParameterTypeBoolean, "NotABool")
+		require.Nil(t, actual)
+	})
+
+	t.Run("ValidInt", func(t *testing.T) {
+		var expected int64 = 42
+		actual := armParameterFileValue(ParameterTypeNumber, "42")
+		require.Equal(t, expected, actual)
+	})
+
+	t.Run("InvalidInt", func(t *testing.T) {
+		actual := armParameterFileValue(ParameterTypeNumber, "NotAnInt")
+		require.Nil(t, actual)
+	})
+
+	t.Run("Array", func(t *testing.T) {
+		expected := []string{"a", "b", "c"}
+		actual := armParameterFileValue(ParameterTypeArray, expected)
+		require.Equal(t, expected, actual)
+	})
+}
+
 const userDefinedParamsSample = `{
 	"$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
 	"languageVersion": "2.0",

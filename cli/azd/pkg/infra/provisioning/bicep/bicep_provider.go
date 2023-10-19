@@ -1953,6 +1953,9 @@ func armParameterFileValue(paramType ParameterType, value any) any {
 		if val, ok := value.(string); ok && val != "" {
 			return val
 		}
+	// All other parameter types return the specified value as-is
+	default:
+		return value
 	}
 
 	return nil

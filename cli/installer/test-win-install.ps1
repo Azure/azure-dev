@@ -1,5 +1,5 @@
 param(
-    [string] $BaseUrl = 'https://azure-dev.azureedge.net/azd/standalone/release',
+    [string] $BaseUrl = 'https://azdrelease.azureedge.net/azd/standalone/release',
     [string] $Version = 'latest',
     [string] $InstallFolder = "$($env:USERPROFILE)\azd-install-test"
 )
@@ -57,6 +57,6 @@ try {
 
     Write-Host "Test succeeded"
     exit 0
-} finally { 
+} finally {
     $ErrorActionPreference = $originalErrorActionPreference
 }

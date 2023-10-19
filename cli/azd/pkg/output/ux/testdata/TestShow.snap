@@ -1,0 +1,12 @@
+
+Showing deployed endpoints and environments for apps in this directory.
+
+Foo
+  Services:
+    xx  bar
+  Environments:
+    foo  [Default]
+    Bar  
+  View in Azure Portal:
+    foo.com
+

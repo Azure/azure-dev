@@ -18,6 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
@@ -163,7 +164,32 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		}
 	}
 
-	return nil, s.formatter.Format(res, s.writer, nil)
+	if s.formatter.Kind() == output.JsonFormat {
+		return nil, s.formatter.Format(res, s.writer, nil)
+	}
+
+	s.console.MessageUxItem(ctx, &ux.Show{
+		AppName: "Foo",
+		Services: []*ux.ShowService{
+			{
+				Name:      "xx",
+				IngresUrl: "bar",
+			},
+		},
+		Environments: []*ux.ShowEnvironment{
+			{
+				Name:      "foo",
+				IsDefault: true,
+			},
+			{
+				Name:      "Bar",
+				IsDefault: false,
+			},
+		},
+		AzurePortalLink: "foo.com",
+	})
+
+	return nil, nil
 }
 
 func showTypeFromLanguage(language project.ServiceLanguageKind) contracts.ShowType {

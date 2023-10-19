@@ -1861,11 +1861,15 @@ func (p *BicepProvider) ensureParameters(
 		param := template.Parameters[key]
 
 		// If a value is explicitly configured via a parameters file, use it.
+		// unless the parameter value inference is nil/empty
 		if v, has := parameters[key]; has {
-			configuredParameters[key] = azure.ArmParameterValue{
-				Value: armParameterFileValue(p.mapBicepTypeToInterfaceType(param.Type), v.Value),
+			paramValue := armParameterFileValue(p.mapBicepTypeToInterfaceType(param.Type), v.Value)
+			if paramValue != nil {
+				configuredParameters[key] = azure.ArmParameterValue{
+					Value: paramValue,
+				}
+				continue
 			}
-			continue
 		}
 
 		// If this parameter has a default, then there is no need for us to configure it.
@@ -1945,9 +1949,13 @@ func armParameterFileValue(paramType ParameterType, value any) any {
 				return intVal
 			}
 		}
+	case ParameterTypeString:
+		if val, ok := value.(string); ok && val != "" {
+			return val
+		}
 	}
 
-	return value
+	return nil
 }
 
 func isValueAssignableToParameterType(paramType ParameterType, value any) bool {

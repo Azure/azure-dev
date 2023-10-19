@@ -9,7 +9,7 @@ download and install locations.
 
 .PARAMETER BaseUrl
 Specifies the base URL to use when downloading. Default is
-https://azure-dev.azureedge.net/azd/standalone
+https://azdrelease.azureedge.net/azd/standalone
 
 .PARAMETER Version
 Specifies the version to use. Default is `latest`. Valid values include a
@@ -59,7 +59,7 @@ Download the installer and install the "daily" build
 #>
 
 param(
-    [string] $BaseUrl = "https://azure-dev.azureedge.net/azd/standalone/release",
+    [string] $BaseUrl = "https://azdrelease.azureedge.net/azd/standalone/release",
     [string] $Version = "stable",
     [switch] $DryRun,
     [string] $InstallFolder,

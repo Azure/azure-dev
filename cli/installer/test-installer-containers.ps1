@@ -1,5 +1,5 @@
 param(
-    [string] $BaseUrl='https://azure-dev.azureedge.net/azd/standalone/release',
+    [string] $BaseUrl='https://azdrelease.azureedge.net/azd/standalone/release',
     [string] $Version = 'latest',
     [string] $ContainerPrefix = '',
     [string] $AdditionalBuildArgs = '--no-cache',

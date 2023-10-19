@@ -190,10 +190,16 @@ dictionaryDefinitions:
       path: ./cspell-schemas.txt
       description: Custom Schema Dictionary
       addWords: true
-      scope: workspace      
+      scope: workspace
+    - name: devopsExtension
+      path: ./cspell-devops-ext.txt
+      description: Custom DevOps Extension Dictionary
+      addWords: true
+      scope: workspace
 dictionaries:
     - powershell
     - go
     - gitHubUserAliases
     - noticeMd
     - schemas
+    - devopsExtension

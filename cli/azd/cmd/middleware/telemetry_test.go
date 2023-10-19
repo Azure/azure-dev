@@ -13,6 +13,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mocktracing"
 	"github.com/stretchr/testify/require"
@@ -20,6 +22,12 @@ import (
 )
 
 func Test_Telemetry_Run(t *testing.T) {
+	lazyPlatformConfig := lazy.NewLazy(func() (*project.PlatformConfig, error) {
+		return &project.PlatformConfig{
+			Type: "devcenter",
+		}, nil
+	})
+
 	t.Run("WithRootAction", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 
@@ -28,7 +36,7 @@ func Test_Telemetry_Run(t *testing.T) {
 			Name:          "provision",
 			isChildAction: false,
 		}
-		middleware := NewTelemetryMiddleware(options)
+		middleware := NewTelemetryMiddleware(options, lazyPlatformConfig)
 
 		ran := false
 		var actualContext context.Context
@@ -58,7 +66,7 @@ func Test_Telemetry_Run(t *testing.T) {
 			Name:          "provision",
 			isChildAction: true,
 		}
-		middleware := NewTelemetryMiddleware(options)
+		middleware := NewTelemetryMiddleware(options, lazyPlatformConfig)
 
 		ran := false
 		var actualContext context.Context

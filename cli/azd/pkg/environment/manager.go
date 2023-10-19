@@ -157,6 +157,10 @@ func (m *manager) LoadOrCreateInteractive(ctx context.Context, environmentName s
 			env, err := m.Get(ctx, environmentName)
 			switch {
 			case errors.Is(err, ErrNotFound):
+				// environment name was supplied but the environment is not found locally
+				// prompt for subscription and location using the code from promptSubscription
+				// don't ask the user if they would like to create it or not
+
 				msg := fmt.Sprintf("Environment '%s' does not exist, would you like to create it?", environmentName)
 				shouldCreate, promptErr := m.console.Confirm(ctx, input.ConsoleOptions{
 					Message:      msg,

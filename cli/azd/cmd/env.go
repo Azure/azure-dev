@@ -427,32 +427,6 @@ func newEnvRefreshAction(
 }
 
 func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	// get env name, empty string if no env
-	// display title message with env name
-	// check for env content
-	// if env not found display err, if err display it
-	//
-
-	// name, _ := ef.azdCtx.GetDefaultEnvironmentName()
-	// // Command title
-	// ef.console.MessageUxItem(ctx, &ux.MessageTitle{
-	// 	Title: fmt.Sprintf("Refreshing environment %s (azd env refresh)", name),
-	// })
-	// // Check environment exist
-	// _, err := ef.envManager.Get(ctx, name)
-
-	// // if environment doesn't exist try to get it from azure
-	// // or display error
-	// if errors.Is(err, environment.ErrNotFound) {
-	// 	// try to get environment from azure by prompting to select subscription, rg
-	// 	// if error getting environment from azure display error use azd env new
-	// 	return nil, fmt.Errorf(
-	// 		`"environment does not exist. You can create it with "azd env new"`,
-	// 	)
-	// } else if err != nil {
-	// 	return nil, fmt.Errorf("ensuring environment exists: %w", err)
-	// }
-
 	// Command title
 	ef.console.MessageUxItem(ctx, &ux.MessageTitle{
 		Title: fmt.Sprintf("Refreshing environment %s (azd env refresh)", ef.env.GetEnvName()),

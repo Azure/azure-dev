@@ -402,20 +402,20 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(project.NewResourceManager)
 	container.RegisterSingleton(func() *lazy.Lazy[project.ResourceManager] {
 		return lazy.NewLazy(func() (project.ResourceManager, error) {
-			var resourceManager *project.ResourceManager
+			var resourceManager project.ResourceManager
 			err := container.Resolve(&resourceManager)
 
-			return *resourceManager, err
+			return resourceManager, err
 		})
 	})
 	container.RegisterSingleton(project.NewProjectManager)
 	container.RegisterSingleton(project.NewServiceManager)
 	container.RegisterSingleton(func() *lazy.Lazy[project.ServiceManager] {
 		return lazy.NewLazy(func() (project.ServiceManager, error) {
-			var serviceManager *project.ServiceManager
+			var serviceManager project.ServiceManager
 			err := container.Resolve(&serviceManager)
 
-			return *serviceManager, err
+			return serviceManager, err
 		})
 	})
 	container.RegisterSingleton(repository.NewInitializer)

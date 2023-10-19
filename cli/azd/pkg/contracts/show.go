@@ -25,7 +25,7 @@ type ShowService struct {
 	// Target contains information about the resource that the service is deployed
 	// to.
 	Target    *ShowTargetArm `json:"target,omitempty"`
-	IngresUrl string
+	IngresUrl string         `json:"-"`
 }
 
 // ShowServiceProject is the contract for a service's project as returned by `azd show`

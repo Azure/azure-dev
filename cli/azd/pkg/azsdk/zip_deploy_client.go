@@ -137,7 +137,9 @@ func (c *ZipDeployClient) createDeployRequest(
 	appName string,
 	zipFile io.Reader,
 ) (*policy.Request, error) {
-	endpoint := fmt.Sprintf("https://%s.scm.azurewebsites.net/api/zipdeploy", appName)
+	// endpoint := fmt.Sprintf("https://%s.scm.azurewebsites.net/api/zipdeploy", appName)
+	endpoint := fmt.Sprintf("https://%s.scm.azurewebsites.us/api/zipdeploy", appName)
+
 	req, err := runtime.NewRequest(ctx, http.MethodPost, endpoint)
 	if err != nil {
 		return nil, fmt.Errorf("creating deploy request: %w", err)

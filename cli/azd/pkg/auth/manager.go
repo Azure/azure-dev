@@ -15,6 +15,7 @@ import (
 	"strconv"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/public"
@@ -35,6 +36,7 @@ import (
 //
 // nolint:lll
 // https://github.com/Azure/azure-cli/blob/azure-cli-2.41.0/src/azure-cli-core/azure/cli/core/auth/identity.py#L23
+// This does not appear to change based on the cloud in use (e.g. public cloud vs. sovereign cloud)
 const cAZD_CLIENT_ID = "04b07795-8ddb-461a-bbee-02f9e1bf7b46"
 
 // cCurrentUserKey is the key we use in config for the storing identity information of the currently logged in user.
@@ -51,7 +53,9 @@ const cAuthConfigFileName = "auth.json"
 // cDefaultAuthority is the default authority to use when a specific tenant is not presented. We use "organizations" to
 // allow both work/school accounts and personal accounts (this matches the default authority the `az` CLI uses when logging
 // in).
-const cDefaultAuthority = "https://login.microsoftonline.com/organizations"
+// const cDefaultAuthority = "https://login.microsoftonline.com/organizations"
+// Value varies based on cloud in use
+const cDefaultAuthority = "https://login.microsoftonline.us/organizations"
 
 const cUseCloudShellAuthEnvVar = "AZD_IN_CLOUDSHELL"
 
@@ -222,7 +226,7 @@ func (m *Manager) CredentialForCurrentUser(
 				if options.TenantID == "" {
 					return newAzdCredential(m.publicClient, &accounts[i]), nil
 				} else {
-					newAuthority := "https://login.microsoftonline.com/" + options.TenantID
+					newAuthority := "https://login.microsoftonline.us/" + options.TenantID
 
 					newOptions := make([]public.Option, 0, len(m.publicClientOptions)+1)
 					newOptions = append(newOptions, m.publicClientOptions...)
@@ -365,6 +369,7 @@ func (m *Manager) newCredentialFromClientSecret(
 	options := &azidentity.ClientSecretCredentialOptions{
 		ClientOptions: policy.ClientOptions{
 			Transport: m.httpClient,
+			Cloud:     cloud.AzureGovernment,
 		},
 	}
 	cred, err := azidentity.NewClientSecretCredential(tenantID, clientID, clientSecret, options)
@@ -393,6 +398,7 @@ func (m *Manager) newCredentialFromClientCertificate(
 	options := &azidentity.ClientCertificateCredentialOptions{
 		ClientOptions: policy.ClientOptions{
 			Transport: m.httpClient,
+			Cloud:     cloud.AzureGovernment,
 		},
 	}
 	cred, err := azidentity.NewClientCertificateCredential(
@@ -416,6 +422,7 @@ func (m *Manager) newCredentialFromFederatedTokenProvider(
 	options := &azidentity.ClientAssertionCredentialOptions{
 		ClientOptions: policy.ClientOptions{
 			Transport: m.httpClient,
+			Cloud:     cloud.AzureGovernment,
 		},
 	}
 	cred, err := azidentity.NewClientAssertionCredential(

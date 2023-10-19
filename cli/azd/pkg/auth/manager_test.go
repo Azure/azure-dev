@@ -14,6 +14,7 @@ import (
 
 	_ "embed"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/public"
@@ -141,6 +142,7 @@ func TestServicePrincipalLoginFederatedTokenProvider(t *testing.T) {
 		credentialCache:   credentialCache,
 		ghClient: github.NewFederatedTokenClient(&policy.ClientOptions{
 			Transport: mockContext.HttpClient,
+			Cloud:     cloud.AzureGovernment,
 		}),
 	}
 

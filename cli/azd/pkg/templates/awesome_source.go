@@ -8,6 +8,7 @@ import (
 	"log"
 	"net/http"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
 	"github.com/azure/azure-dev/cli/azd/pkg/github"
@@ -29,6 +30,7 @@ func NewAwesomeAzdTemplateSource(
 ) (Source, error) {
 	pipeline := runtime.NewPipeline("azd-templates", "1.0.0", runtime.PipelineOptions{}, &policy.ClientOptions{
 		Transport: httpClient,
+		Cloud:     cloud.AzureGovernment,
 	})
 
 	req, err := runtime.NewRequest(ctx, http.MethodGet, url)

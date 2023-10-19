@@ -6,6 +6,7 @@ import (
 	"sort"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
 	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
@@ -182,6 +183,7 @@ func clientOptions(httpClient httputil.HttpClient, userAgent string) *arm.Client
 		ClientOptions: policy.ClientOptions{
 			Transport:       httpClient,
 			PerCallPolicies: []policy.Policy{azsdk.NewUserAgentPolicy(userAgent)},
+			Cloud:           cloud.AzureGovernment,
 		},
 	}
 }

@@ -3,6 +3,7 @@ package azsdk
 import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 )
 
@@ -44,6 +45,8 @@ func (b *ClientOptionsBuilder) BuildCoreClientOptions() *azcore.ClientOptions {
 		PerCallPolicies: b.perCallPolicies,
 		// Per retry policies to inject into HTTP pipeline
 		PerRetryPolicies: b.perRetryPolicies,
+
+		Cloud: cloud.AzureGovernment,
 	}
 }
 
@@ -63,6 +66,7 @@ func (b *ClientOptionsBuilder) BuildArmClientOptions() *arm.ClientOptions {
 			Logging: policy.LogOptions{
 				AllowedHeaders: []string{cMsCorrelationIdHeader},
 			},
+			Cloud: cloud.AzureGovernment,
 		},
 	}
 }

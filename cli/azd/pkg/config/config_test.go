@@ -171,7 +171,8 @@ func Test_GetSection(t *testing.T) {
 
 	t.Run("NotStruct", func(t *testing.T) {
 		azdConfig := NewEmptyConfig()
-		azdConfig.Set("parent.section", "apple")
+		err := azdConfig.Set("parent.section", "apple")
+		require.NoError(t, err)
 
 		var actual *testConfig
 		ok, err := azdConfig.GetSection("parent.section", &actual)
@@ -181,7 +182,8 @@ func Test_GetSection(t *testing.T) {
 
 	t.Run("Empty", func(t *testing.T) {
 		azdConfig := NewEmptyConfig()
-		azdConfig.Set("parent.section", map[string]any{})
+		err := azdConfig.Set("parent.section", map[string]any{})
+		require.NoError(t, err)
 
 		var actual *testConfig
 		ok, err := azdConfig.GetSection("parent.section", &actual)
@@ -194,8 +196,10 @@ func Test_GetSection(t *testing.T) {
 
 	t.Run("PartialSection", func(t *testing.T) {
 		azdConfig := NewEmptyConfig()
-		azdConfig.Set("parent.section.A", "apple")
-		azdConfig.Set("parent.section.B", "banana")
+		err := azdConfig.Set("parent.section.A", "apple")
+		require.NoError(t, err)
+		err = azdConfig.Set("parent.section.B", "banana")
+		require.NoError(t, err)
 
 		var actual *testConfig
 		ok, err := azdConfig.GetSection("parent.section", &actual)
@@ -208,10 +212,14 @@ func Test_GetSection(t *testing.T) {
 
 	t.Run("ExtraProps", func(t *testing.T) {
 		azdConfig := NewEmptyConfig()
-		azdConfig.Set("parent.section.A", "apple")
-		azdConfig.Set("parent.section.B", "banana")
-		azdConfig.Set("parent.section.C", "cherry")
-		azdConfig.Set("parent.section.D", "durian")
+		err := azdConfig.Set("parent.section.A", "apple")
+		require.NoError(t, err)
+		err = azdConfig.Set("parent.section.B", "banana")
+		require.NoError(t, err)
+		err = azdConfig.Set("parent.section.C", "cherry")
+		require.NoError(t, err)
+		err = azdConfig.Set("parent.section.D", "durian")
+		require.NoError(t, err)
 
 		var actual *testConfig
 		ok, err := azdConfig.GetSection("parent.section", &actual)

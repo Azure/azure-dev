@@ -278,6 +278,24 @@ func (m *SubscriptionsManager) ListSubscriptions(ctx context.Context) ([]Subscri
 	return allSubscriptions, nil
 }
 
+func (m *SubscriptionsManager) GetLocation(ctx context.Context, subscriptionId, locationName string) (Location, error) {
+	var err error
+	m.console.ShowSpinner(ctx, "Reading subscription and location from environment...", input.Step)
+	defer m.console.StopSpinner(ctx, "", input.GetStepResultFormat(err))
+
+	allLocations, err := m.listLocations(ctx, subscriptionId)
+	if err != nil {
+		return Location{}, err
+	}
+
+	for _, location := range allLocations {
+		if locationName == location.Name {
+			return location, nil
+		}
+	}
+	return Location{}, fmt.Errorf("location name %s not found", locationName)
+}
+
 func (m *SubscriptionsManager) ListLocations(
 	ctx context.Context,
 	subscriptionId string,
@@ -287,6 +305,13 @@ func (m *SubscriptionsManager) ListLocations(
 	m.console.ShowSpinner(ctx, msg, input.Step)
 	defer m.console.StopSpinner(ctx, msg, input.GetStepResultFormat(err))
 
+	return m.listLocations(ctx, subscriptionId)
+}
+
+func (m *SubscriptionsManager) listLocations(
+	ctx context.Context,
+	subscriptionId string,
+) ([]Location, error) {
 	tenantId, err := m.LookupTenant(ctx, subscriptionId)
 	if err != nil {
 		return nil, err

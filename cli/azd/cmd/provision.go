@@ -4,7 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"strings"
+	"log"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -130,29 +130,31 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		defaultTitleNote = "This is a preview. No changes will be applied to your Azure resources."
 	}
 
+	p.console.MessageUxItem(ctx, &ux.MessageTitle{
+		Title:     defaultTitle,
+		TitleNote: defaultTitleNote},
+	)
+
 	// Get Subscription to Display in Command Title Note
 	subscriptions, subErr := p.subManager.GetSubscriptions(ctx)
 	if subErr == nil {
 		// Find subscription name
 		for _, sub := range subscriptions {
 			if sub.Id == p.env.GetSubscriptionId() {
-				// Formate the note
-				defaultTitleNote = strings.Join(
-					[]string{
-						fmt.Sprintf("Subscription : %s (%s)", sub.Name, sub.Id),
-						fmt.Sprintf("Location     : %s", p.env.GetLocation()),
-						defaultTitleNote,
-					},
-					"\n")
+				location, err := p.subManager.GetLocation(ctx, p.env.GetSubscriptionId(), p.env.GetLocation())
+				if err != nil {
+					log.Printf("failed getting location: %v", err)
+				}
+				p.console.MessageUxItem(ctx, &ux.EnvironmentDetails{
+					Subscription: fmt.Sprintf("%s (%s)", sub.Name, sub.Id),
+					Location:     location.DisplayName},
+				)
 				break
 			}
 		}
+	} else {
+		log.Printf("failed getting subscriptions. Skip displaying sub and location: %v", subErr)
 	}
-
-	p.console.MessageUxItem(ctx, &ux.MessageTitle{
-		Title:     defaultTitle,
-		TitleNote: defaultTitleNote},
-	)
 
 	startTime := time.Now()
 

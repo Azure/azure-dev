@@ -17,6 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -60,8 +61,8 @@ type showAction struct {
 	deploymentOperations azapi.DeploymentOperations
 	azdCtx               *azdcontext.AzdContext
 	flags                *showFlags
-	serviceManager       project.ServiceManager
-	resourceManager      project.ResourceManager
+	lazyServiceManager   *lazy.Lazy[project.ServiceManager]
+	lazyResourceManager  *lazy.Lazy[project.ResourceManager]
 }
 
 func newShowAction(
@@ -74,8 +75,8 @@ func newShowAction(
 	projectConfig *project.ProjectConfig,
 	azdCtx *azdcontext.AzdContext,
 	flags *showFlags,
-	serviceManager project.ServiceManager,
-	resourceManager project.ResourceManager,
+	lazyServiceManager *lazy.Lazy[project.ServiceManager],
+	lazyResourceManager *lazy.Lazy[project.ResourceManager],
 ) actions.Action {
 	return &showAction{
 		projectConfig:        projectConfig,
@@ -87,8 +88,8 @@ func newShowAction(
 		deploymentOperations: deploymentOperations,
 		azdCtx:               azdCtx,
 		flags:                flags,
-		serviceManager:       serviceManager,
-		resourceManager:      resourceManager,
+		lazyServiceManager:   lazyServiceManager,
+		lazyResourceManager:  lazyResourceManager,
 	}
 }
 
@@ -209,13 +210,23 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 func (s *showAction) serviceEndpoint(
 	ctx context.Context, subId string, serviceConfig *project.ServiceConfig, env *environment.Environment) string {
-	targetResource, err := s.resourceManager.GetTargetResource(ctx, subId, serviceConfig)
+	resourceManager, err := s.lazyResourceManager.GetValue()
+	if err != nil {
+		log.Printf("error: getting lazy target-resource. Endpoints will be empty: %v", err)
+		return ""
+	}
+	targetResource, err := resourceManager.GetTargetResource(ctx, subId, serviceConfig)
 	if err != nil {
 		log.Printf("error: getting target-resource. Endpoints will be empty: %v", err)
 		return ""
 	}
 
-	st, err := s.serviceManager.GetServiceTarget(ctx, serviceConfig)
+	serviceManager, err := s.lazyServiceManager.GetValue()
+	if err != nil {
+		log.Printf("error: getting lazy service manager. Endpoints will be empty: %v", err)
+		return ""
+	}
+	st, err := serviceManager.GetServiceTarget(ctx, serviceConfig)
 	if err != nil {
 		log.Printf("error: getting service target. Endpoints will be empty: %v", err)
 		return ""

@@ -163,7 +163,7 @@ func NewRootCmd(ctx context.Context, staticHelp bool, middlewareChain []*actions
 		GroupingOptions: actions.CommandGroupOptions{
 			RootLevelHelp: actions.CmdGroupConfig,
 		},
-	}).AddFlagCompletion("template", templateNameCompletion)
+	})
 
 	root.
 		Add("restore", &actions.ActionDescriptorOptions{

@@ -75,7 +75,7 @@ func getResourceGroupFollowUp(
 
 func azurePortalLink(subscriptionId, resourceGroupName string) string {
 	if subscriptionId == "" || resourceGroupName == "" {
-		return "Application is not yet provisioned. Run azd provision first."
+		return ""
 	}
 	return output.WithLinkFormat(fmt.Sprintf(
 		"https://portal.azure.com/#@/resource/subscriptions/%s/resourceGroups/%s/overview",

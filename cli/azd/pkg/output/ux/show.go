@@ -52,8 +52,19 @@ func (s *Show) ToString(currentIndentation string) string {
 		cServices,
 		services(s.Services),
 		cViewInPortal,
-		output.WithLinkFormat(s.AzurePortalLink),
+		azurePortalLink(s.AzurePortalLink),
 	)
+}
+
+func azurePortalLink(link string) string {
+	if link == "" {
+		return fmt.Sprintf(
+			"Application is not yet provisioned. Run %s or %s first.",
+			color.BlueString("azd provision"),
+			color.BlueString("azd up"),
+		)
+	}
+	return output.WithLinkFormat(link)
 }
 
 func services(services []*ShowService) string {

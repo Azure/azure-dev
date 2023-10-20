@@ -3,7 +3,6 @@ package devcenter
 import (
 	"context"
 	"fmt"
-	"strings"
 	"sync"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
@@ -176,27 +175,9 @@ func (m *manager) WritableProjects(ctx context.Context) ([]*devcentersdk.Project
 
 	go func() {
 		defer doneGroup.Done()
-		duplicateProjectNames := []string{}
 
 		for project := range projectsChan {
-			duplicateExists := slices.ContainsFunc(writeableProjects, func(p *devcentersdk.Project) bool {
-				return p.Name == project.Name
-			})
-
-			if duplicateExists {
-				duplicateProjectNames = append(duplicateProjectNames, project.Name)
-			}
-
 			writeableProjects = append(writeableProjects, project)
-		}
-
-		// Set distinct for project names when duplicates are detected
-		for _, duplicateName := range duplicateProjectNames {
-			for _, project := range writeableProjects {
-				if strings.EqualFold(project.Name, duplicateName) {
-					project.UniqueName = fmt.Sprintf("%s (%s)", project.Name, project.DevCenter.Name)
-				}
-			}
 		}
 	}()
 

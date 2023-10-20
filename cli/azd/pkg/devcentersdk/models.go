@@ -23,18 +23,8 @@ type Project struct {
 	SubscriptionId string
 	ResourceGroup  string
 	Name           string
-	UniqueName     string
 	Description    string
 	DevCenter      *DevCenter
-}
-
-// DisplayName returns the UniqueName if it is set, otherwise it returns the Name.
-func (p *Project) DisplayName() string {
-	if p.UniqueName != "" {
-		return p.UniqueName
-	}
-
-	return p.Name
 }
 
 type GenericResource struct {

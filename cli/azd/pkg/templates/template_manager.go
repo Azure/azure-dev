@@ -164,28 +164,55 @@ func PromptTemplate(
 	// If stdin is not interactive (non-tty), we ensure the options are not formatted.
 	isInteractive := console.IsSpinnerInteractive()
 
-	choices := make([]string, 0, len(templates)+1)
+	templateChoices := []*Template{}
+	duplicateNames := []string{}
 
-	// prepend the minimal template option to guarantee first selection
+	// Check for duplicate template names
+	for _, template := range templates {
+		hasDuplicateName := slices.ContainsFunc(templateChoices, func(t *Template) bool {
+			return t.Name == template.Name
+		})
+
+		if hasDuplicateName {
+			duplicateNames = append(duplicateNames, template.Name)
+		}
+
+		templateChoices = append(templateChoices, template)
+	}
+
+	templateNames := make([]string, 0, len(templates)+1)
+
+	// Prepend the minimal template option to guarantee first selection
 	minimalChoice := "Minimal"
 	if isInteractive {
 		minimalChoice += "\n"
 	}
 
-	choices = append(choices, minimalChoice)
+	templateNames = append(templateNames, minimalChoice)
 	for _, template := range templates {
 		templateChoice := template.Name
+
+		// Disambiguate duplicate template names with source identifier
+		if slices.Contains(duplicateNames, template.Name) {
+			templateChoice += fmt.Sprintf(" (%s)", template.Source)
+		}
+
 		if isInteractive {
 			repoPath := output.WithGrayFormat("(%s)", template.RepositoryPath)
 			templateChoice += fmt.Sprintf("\n  %s\n", repoPath)
 		}
-		choices = append(choices, templateChoice)
+
+		if slices.Contains(templateNames, templateChoice) {
+			duplicateNames = append(duplicateNames, templateChoice)
+		}
+
+		templateNames = append(templateNames, templateChoice)
 	}
 
 	selected, err := console.Select(ctx, input.ConsoleOptions{
 		Message:      message,
-		Options:      choices,
-		DefaultValue: choices[0],
+		Options:      templateNames,
+		DefaultValue: templateNames[0],
 	})
 
 	// separate this prompt from the next log

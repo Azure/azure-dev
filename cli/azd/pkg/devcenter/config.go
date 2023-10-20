@@ -15,17 +15,15 @@ const (
 	DevCenterEnvDefinitionEnvName = "AZURE_DEVCENTER_ENVIRONMENT_DEFINITION"
 	DevCenterEnvUser              = "AZURE_DEVCENTER_ENVIRONMENT_USER"
 
-	PlatformKindDevCenter project.PlatformKind = "devcenter"
-)
-
-var (
 	// Environment configuration paths
-	DevCenterNamePath          = fmt.Sprintf("%s.name", ConfigPath)
-	DevCenterCatalogPath       = fmt.Sprintf("%s.catalog", ConfigPath)
-	DevCenterProjectPath       = fmt.Sprintf("%s.project", ConfigPath)
-	DevCenterEnvTypePath       = fmt.Sprintf("%s.environmentType", ConfigPath)
-	DevCenterEnvDefinitionPath = fmt.Sprintf("%s.environmentDefinition", ConfigPath)
-	DevCenterUserPath          = fmt.Sprintf("%s.user", ConfigPath)
+	DevCenterNamePath          = ConfigPath + ".name"
+	DevCenterCatalogPath       = ConfigPath + ".catalog"
+	DevCenterProjectPath       = ConfigPath + ".project"
+	DevCenterEnvTypePath       = ConfigPath + ".environmentType"
+	DevCenterEnvDefinitionPath = ConfigPath + ".environmentDefinition"
+	DevCenterUserPath          = ConfigPath + ".user"
+
+	PlatformKindDevCenter project.PlatformKind = "devcenter"
 )
 
 // Config provides the Azure DevCenter configuration used for devcenter enabled projects

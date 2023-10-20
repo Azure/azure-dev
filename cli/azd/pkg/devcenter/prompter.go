@@ -78,9 +78,23 @@ func (p *Prompter) PromptProject(ctx context.Context, devCenterName string) (*de
 		}
 	}
 
+	duplicateNames := []string{}
 	projectNames := []string{}
 	for _, project := range filteredProjects {
-		projectNames = append(projectNames, project.DisplayName())
+		if slices.Contains(projectNames, project.Name) {
+			duplicateNames = append(duplicateNames, project.Name)
+		}
+
+		projectNames = append(projectNames, project.Name)
+	}
+
+	// Update display name of any duplicate project names
+	if len(duplicateNames) > 0 {
+		for index, project := range filteredProjects {
+			if slices.Contains(duplicateNames, project.Name) {
+				projectNames[index] = fmt.Sprintf("%s (%s)", project.Name, project.DevCenter.Name)
+			}
+		}
 	}
 
 	if len(projectNames) == 1 {
@@ -162,9 +176,23 @@ func (p *Prompter) PromptEnvironmentDefinition(
 		return x.Name < y.Name
 	})
 
+	duplicateNames := []string{}
 	envDefinitionNames := []string{}
 	for _, envDefinition := range environmentDefinitions {
+		if slices.Contains(envDefinitionNames, envDefinition.Name) {
+			duplicateNames = append(duplicateNames, envDefinition.Name)
+		}
+
 		envDefinitionNames = append(envDefinitionNames, envDefinition.Name)
+	}
+
+	// Update display name of any duplicate environment definition names
+	if len(duplicateNames) > 0 {
+		for index, envDefinition := range environmentDefinitions {
+			if slices.Contains(duplicateNames, envDefinition.Name) {
+				envDefinitionNames[index] = fmt.Sprintf("%s (%s)", envDefinition.Name, envDefinition.CatalogName)
+			}
+		}
 	}
 
 	selected, err := p.console.Select(ctx, input.ConsoleOptions{

@@ -8,8 +8,14 @@ import (
 // Merges supplemental configuration into the base config only if the key/value doesn't already exist in the base config
 // Example: If the base config is a fully configured object, then any supplemental configuration will be ignored
 func MergeConfigs(configs ...*Config) *Config {
-	if len(configs) == 0 {
+	configLens := len(configs)
+
+	if configLens == 0 {
 		panic("no configs provided")
+	}
+
+	if configLens == 1 {
+		return configs[0]
 	}
 
 	destConfig := configs[0]

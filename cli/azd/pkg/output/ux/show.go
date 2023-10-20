@@ -18,7 +18,8 @@ type ShowService struct {
 
 type ShowEnvironment struct {
 	Name      string
-	IsDefault bool
+	IsCurrent bool
+	IsRemote  bool
 }
 
 type Show struct {
@@ -29,29 +30,41 @@ type Show struct {
 }
 
 const (
-	cHeader       = "\nShowing deployed endpoints and environments for apps in this directory.\n\n"
-	cServices     = "\n  Services:\n"
-	cEnvironments = "\n  Environments:\n"
-	cDefault      = "[Default]"
-	cViewInPortal = "\n  View in Azure Portal:\n"
+	cHeader           = "\nShowing deployed endpoints and environments for apps in this directory.\n"
+	cHeaderNote       = "To view endpoints for a different environment run "
+	cShowDifferentEnv = "azd show -e <environment name>"
+	cServices         = "\n  Services:\n"
+	cEnvironments     = "\n  Environments:\n"
+	cCurrentEnv       = " [Current]"
+	cRemoteEnv        = " (Remote)"
+	cViewInPortal     = "\n  View in Azure Portal:\n"
 )
 
 func (s *Show) ToString(currentIndentation string) string {
 	return fmt.Sprintf(
-		"%s%s%s%s%s%s%s    %s\n",
+		"%s%s%s%s%s%s%s%s%s    %s\n",
 		cHeader,
+		cHeaderNote,
+		color.BlueString("%s\n\n", cShowDifferentEnv),
 		color.MagentaString(s.AppName),
-		cServices,
-		services(s.Services),
 		cEnvironments,
 		environments(s.Environments),
+		cServices,
+		services(s.Services),
 		cViewInPortal,
 		output.WithLinkFormat(s.AzurePortalLink),
 	)
 }
 
 func services(services []*ShowService) string {
-	lines := make([]string, len(services))
+	servicesCount := len(services)
+	if servicesCount == 0 {
+		return fmt.Sprintf(
+			"    You don't have services defined. Add your services to %s.",
+			color.BlueString("azure.yaml"),
+		)
+	}
+	lines := make([]string, servicesCount)
 	for index, service := range services {
 		lines[index] = fmt.Sprintf(
 			"    %s  %s",
@@ -63,16 +76,29 @@ func services(services []*ShowService) string {
 }
 
 func environments(environments []*ShowEnvironment) string {
-	lines := make([]string, len(environments))
+	environmentsCount := len(environments)
+	if environmentsCount == 0 {
+		return fmt.Sprintf(
+			"    You haven't created any environment. Run %s to create one.",
+			color.BlueString("azd env new"),
+		)
+	}
+
+	lines := make([]string, environmentsCount)
 	for index, environment := range environments {
 		var defaultEnv string
-		if environment.IsDefault {
-			defaultEnv = cDefault
+		if environment.IsCurrent {
+			defaultEnv = cCurrentEnv
+		}
+		var isRemote string
+		if environment.IsRemote {
+			isRemote = cRemoteEnv
 		}
 		lines[index] = fmt.Sprintf(
-			"    %s  %s",
+			"    %s%s%s",
 			color.BlueString(environment.Name),
-			output.WithGrayFormat(defaultEnv),
+			defaultEnv,
+			output.WithGrayFormat(isRemote),
 		)
 	}
 	return strings.Join(lines, "\n")

@@ -21,11 +21,11 @@ func TestShow(t *testing.T) {
 		Environments: []*ShowEnvironment{
 			{
 				Name:      "foo",
-				IsDefault: true,
+				IsCurrent: true,
 			},
 			{
 				Name:      "Bar",
-				IsDefault: false,
+				IsCurrent: false,
 			},
 		},
 		AzurePortalLink: "foo.com",

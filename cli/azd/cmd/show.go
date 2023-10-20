@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -134,6 +135,11 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 	var subId, rgName string
 	if env, err := s.envManager.Get(ctx, environmentName); err != nil {
+		if errors.Is(err, environment.ErrNotFound) {
+			return nil, fmt.Errorf(
+				`"environment '%s' does not exist. You can create it with "azd env new"`, environmentName,
+			)
+		}
 		log.Printf("could not load environment: %s, resource ids will not be available", err)
 	} else {
 		if subId = env.GetSubscriptionId(); subId == "" {
@@ -180,11 +186,13 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if err != nil {
 		return nil, err
 	}
+
 	uxEnvironments := make([]*ux.ShowEnvironment, len(appEnvironments))
 	for index, environment := range appEnvironments {
 		uxEnvironments[index] = &ux.ShowEnvironment{
 			Name:      environment.Name,
-			IsDefault: environment.IsDefault,
+			IsCurrent: environment.Name == environmentName,
+			IsRemote:  !environment.HasLocal && environment.HasRemote,
 		}
 	}
 

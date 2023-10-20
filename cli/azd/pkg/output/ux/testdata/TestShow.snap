@@ -1,12 +1,13 @@
 
 Showing deployed endpoints and environments for apps in this directory.
+To view endpoints for a different environment run azd show -e <environment name>
 
 Foo
+  Environments:
+    foo [Current]
+    Bar
   Services:
     xx  bar
-  Environments:
-    foo  [Default]
-    Bar  
   View in Azure Portal:
     foo.com
 

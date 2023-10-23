@@ -32,7 +32,7 @@ type Show struct {
 const (
 	cHeader            = "\nShowing deployed endpoints and environments for apps in this directory.\n"
 	cHeaderNotDeployed = "\nShowing services and environments for apps in this directory.\n"
-	cHeaderNote        = "To view endpoints for a different environment run "
+	cHeaderNote        = "To view a different environment run "
 	cShowDifferentEnv  = "azd show -e <environment name>"
 	cServices          = "\n  Services:\n"
 	cEnvironments      = "\n  Environments:\n"

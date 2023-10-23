@@ -1,6 +1,6 @@
 
 Showing services and environments for apps in this directory.
-To view endpoints for a different environment run azd show -e <environment name>
+To view a different environment run azd show -e <environment name>
 
 Foo
   Services:

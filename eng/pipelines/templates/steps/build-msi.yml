@@ -11,6 +11,7 @@ parameters:
 
 steps:
   - task: NuGetCommand@2
+    condition: ${{ parameters.Condition }}
     displayName: Restore NuGet packages
     inputs:
       restoreSolution: cli/installer/windows.sln
@@ -31,6 +32,7 @@ steps:
     - pwsh: |
         Write-Host "##[task.setvariable variable=MSI_PRODUCT_NAME_PARAM]/p:ProductName=`"Azure Developer CLI`""
         Write-Host "##[task.setvariable variable=MSI_VERSION_PARAM]/p:ProductVersion=$(MSI_VERSION)"
+      condition: ${{ parameters.Condition }}
       displayName: Set MSI_PRODUCT_NAME_PARAM for release
 
   - ${{ else }}:
@@ -41,6 +43,7 @@ steps:
     - pwsh: |
         Write-Host "##vso[task.setvariable variable=MSI_PRODUCT_NAME_PARAM]"
         Write-Host "##vso[task.setvariable variable=MSI_VERSION_PARAM]"
+      condition: ${{ parameters.Condition }}
       displayName: Set MSI_PRODUCT_NAME_PARAM and MSI_VERSION_PARAM for dev release
 
   - task: MSBuild@1

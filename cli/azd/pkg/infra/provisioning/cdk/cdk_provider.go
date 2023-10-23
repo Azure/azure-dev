@@ -30,6 +30,7 @@ type CdkProvider struct {
 	dotNetCli     dotnet.DotNetCli
 	bicepProvider Provider
 	env           *environment.Environment
+	envManager    environment.Manager
 	curPrincipal  CurrentPrincipalIdProvider
 	subResolver   account.SubscriptionTenantResolver
 	prompters     prompt.Prompter
@@ -115,7 +116,7 @@ func (p *CdkProvider) Initialize(ctx context.Context, projectPath string, option
 		return err
 	}
 
-	if err := EnsureSubscriptionAndLocation(ctx, p.env, p.prompters, func(loc account.Location) bool {
+	if err := EnsureSubscriptionAndLocation(ctx, p.envManager, p.env, p.prompters, func(loc account.Location) bool {
 		return true
 	}); err != nil {
 		return err
@@ -163,13 +164,14 @@ func NewCdkProvider(bicepCli bicep.BicepCli,
 	alphaFeatureManager *alpha.FeatureManager,
 	clock clock.Clock,
 	dotNetCli dotnet.DotNetCli,
+	envManager environment.Manager,
 	subResolver account.SubscriptionTenantResolver) Provider {
 	return &CdkProvider{
 		bicepProvider: bicepProvider.NewBicepProvider(
 			bicepCli,
 			azCli,
 			deploymentsService,
-			deploymentOperations, env, console, prompters, curPrincipal, alphaFeatureManager, clock,
+			deploymentOperations, envManager, env, console, prompters, curPrincipal, alphaFeatureManager, clock,
 		),
 		console:      console,
 		dotNetCli:    dotNetCli,
@@ -177,5 +179,6 @@ func NewCdkProvider(bicepCli bicep.BicepCli,
 		curPrincipal: curPrincipal,
 		subResolver:  subResolver,
 		prompters:    prompters,
+		envManager:   envManager,
 	}
 }

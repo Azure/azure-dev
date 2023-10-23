@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"path"
 	"path/filepath"
 	"strings"
 
@@ -273,8 +274,8 @@ func (p *dockerProject) Package(
 }
 
 // Default builder image to produce container images from source
-const DefaultBuilderImage = "mcr.microsoft.com/oryx/builder:debian-bullseye-20230830.1"
-const DefaultDotNetBuilderImage = "mcr.microsoft.com/oryx/builder:debian-buster-20230830.1"
+const DefaultBuilderImage = "mcr.microsoft.com/oryx/builder:debian-bullseye-20231004.1"
+const DefaultDotNetBuilderImage = "mcr.microsoft.com/oryx/builder:debian-buster-20231004.1"
 
 func (p *dockerProject) packBuild(
 	ctx context.Context,
@@ -295,6 +296,26 @@ func (p *dockerProject) packBuild(
 	if os.Getenv("AZD_BUILDER_IMAGE") != "" {
 		builder = os.Getenv("AZD_BUILDER_IMAGE")
 		userDefinedImage = true
+	}
+
+	if builder == DefaultBuilderImage && svc.OutputPath != "" &&
+		(svc.Language == ServiceLanguageTypeScript ||
+			svc.Language == ServiceLanguageJavaScript) {
+		inDockerOutputPath := path.Join("/workspace", svc.OutputPath)
+		// A dist folder has been set.
+		// We assume that the service is a front-end service, configuring a nginx web server to serve the static content
+		// produced.
+		environ = append(environ,
+			"ORYX_RUNTIME_IMAGE=nginx:1.25.2-bookworm",
+			"ORYX_RUNTIME_PORT=80",
+			fmt.Sprintf(
+				//nolint:lll
+				"ORYX_RUNTIME_SCRIPT=[ -d \"%s\" ] || { echo \"error: directory '%s' does not exist. ensure the 'dist' path in azure.yaml is specified correctly.\"; exit 1; } && "+
+					"rm -rf /usr/share/nginx/html && ln -sT %s /usr/share/nginx/html && "+
+					"nginx -g 'daemon off;'",
+				inDockerOutputPath,
+				svc.OutputPath,
+				inDockerOutputPath))
 	}
 
 	previewer := p.console.ShowPreviewer(ctx,

@@ -591,6 +591,11 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 		response.Header.Add("location", mockPollingUrl)
 		return response, err
 	})
+
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodPut &&
+			strings.Contains(request.URL.Path, "/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/")
+	}).RespondFn(httpRespondFn)
 }
 
 func getKeyVaultMock(mockContext *mocks.MockContext, keyVaultString string, name string, location string) {

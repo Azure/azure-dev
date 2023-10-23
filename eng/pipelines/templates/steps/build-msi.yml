@@ -30,8 +30,8 @@ steps:
           -DevOpsOutput
 
     - pwsh: |
-        Write-Host "##[task.setvariable variable=MSI_PRODUCT_NAME_PARAM]/p:ProductName=`"Azure Developer CLI`""
-        Write-Host "##[task.setvariable variable=MSI_VERSION_PARAM]/p:ProductVersion=$(MSI_VERSION)"
+        Write-Host "##vso[task.setvariable variable=MSI_PRODUCT_NAME_PARAM]/p:ProductName=`"Azure Developer CLI`""
+        Write-Host "##vso[task.setvariable variable=MSI_VERSION_PARAM]/p:ProductVersion=$(MSI_VERSION)"
       condition: ${{ parameters.Condition }}
       displayName: Set MSI_PRODUCT_NAME_PARAM for release
 

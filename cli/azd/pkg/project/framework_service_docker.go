@@ -298,24 +298,26 @@ func (p *dockerProject) packBuild(
 		userDefinedImage = true
 	}
 
-	if builder == DefaultBuilderImage && svc.OutputPath != "" &&
-		(svc.Language == ServiceLanguageTypeScript ||
-			svc.Language == ServiceLanguageJavaScript) {
-		inDockerOutputPath := path.Join("/workspace", svc.OutputPath)
-		// A dist folder has been set.
-		// We assume that the service is a front-end service, configuring a nginx web server to serve the static content
-		// produced.
-		environ = append(environ,
-			"ORYX_RUNTIME_IMAGE=nginx:1.25.2-bookworm",
-			"ORYX_RUNTIME_PORT=80",
-			fmt.Sprintf(
-				//nolint:lll
-				"ORYX_RUNTIME_SCRIPT=[ -d \"%s\" ] || { echo \"error: directory '%s' does not exist. ensure the 'dist' path in azure.yaml is specified correctly.\"; exit 1; } && "+
-					"rm -rf /usr/share/nginx/html && ln -sT %s /usr/share/nginx/html && "+
-					"nginx -g 'daemon off;'",
-				inDockerOutputPath,
-				svc.OutputPath,
-				inDockerOutputPath))
+	if !userDefinedImage {
+		// Always default to port 80 for consistency across languages
+		environ = append(environ, "ORYX_RUNTIME_PORT=80")
+
+		if svc.OutputPath != "" && (svc.Language == ServiceLanguageTypeScript || svc.Language == ServiceLanguageJavaScript) {
+			inDockerOutputPath := path.Join("/workspace", svc.OutputPath)
+			// A dist folder has been set.
+			// We assume that the service is a front-end service, configuring a nginx web server to serve the static content
+			// produced.
+			environ = append(environ,
+				"ORYX_RUNTIME_IMAGE=nginx:1.25.2-bookworm",
+				fmt.Sprintf(
+					//nolint:lll
+					"ORYX_RUNTIME_SCRIPT=[ -d \"%s\" ] || { echo \"error: directory '%s' does not exist. ensure the 'dist' path in azure.yaml is specified correctly.\"; exit 1; } && "+
+						"rm -rf /usr/share/nginx/html && ln -sT %s /usr/share/nginx/html && "+
+						"nginx -g 'daemon off;'",
+					inDockerOutputPath,
+					svc.OutputPath,
+					inDockerOutputPath))
+		}
 	}
 
 	previewer := p.console.ShowPreviewer(ctx,

@@ -135,7 +135,7 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 	var subId, rgName string
 	if env, err := s.envManager.Get(ctx, environmentName); err != nil {
-		if errors.Is(err, environment.ErrNotFound) {
+		if errors.Is(err, environment.ErrNotFound) && s.flags.environmentName != "" {
 			return nil, fmt.Errorf(
 				`"environment '%s' does not exist. You can create it with "azd env new"`, environmentName,
 			)

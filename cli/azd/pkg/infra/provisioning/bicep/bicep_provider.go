@@ -1955,22 +1955,19 @@ func armParameterFileValue(paramType ParameterType, value any, defaultValue any)
 		// 2. Empty input value and no default - return nil (prompt user)
 		// 3. Empty input value and non-empty default - return empty input string (no prompt)
 		paramVal, paramValid := value.(string)
-		defaultVal, hasDefault := defaultValue.(string)
-		if hasDefault {
-			if paramValid && paramVal != defaultVal {
-				return paramVal
-			}
+		if !paramValid {
+			return nil
 		}
 
-		if paramValid && paramVal != "" {
+		defaultVal, hasDefault := defaultValue.(string)
+		if paramValid && paramVal != "" || hasDefault && paramValid && paramVal != defaultVal {
 			return paramVal
 		}
-	// All other parameter types return the specified value as-is
-	default:
-		return value
+
+		return nil
 	}
 
-	return nil
+	return value
 }
 
 func isValueAssignableToParameterType(paramType ParameterType, value any) bool {

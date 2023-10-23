@@ -4,6 +4,8 @@
 
 ### Features Added
 
+- [[2787]](https://github.com/Azure/azure-dev/pull/2787) Added `azd config show` and deprecated `azd config list`.
+
 ### Breaking Changes
 
 ### Bugs Fixed

@@ -237,15 +237,20 @@ func prjConfigFromDetect(
 		if prj.HasWebUIFramework() {
 			// By default, use 'dist'. This is common for frameworks such as:
 			// - TypeScript
-			// - Angular
 			// - Vue.js
 			svc.OutputPath = "dist"
 
+		loop:
 			for _, dep := range prj.Dependencies {
-				if dep == appdetect.JsReact {
+				switch dep {
+				case appdetect.JsReact:
 					// react uses 'build'
 					svc.OutputPath = "build"
-					break
+					break loop
+				case appdetect.JsAngular:
+					// angular uses dist/<project name>
+					svc.OutputPath = "dist/" + filepath.Base(rel)
+					break loop
 				}
 			}
 		}

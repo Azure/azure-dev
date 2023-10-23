@@ -1,0 +1,65 @@
+{
+    "manifestVersion": 1,
+    "id": "azd",
+    "name": "Install azd",
+    "version": "0.13.0",
+    "publisher": "ms-azuretools",
+    "targets": [
+        {
+            "id": "Microsoft.VisualStudio.Services"
+        }
+    ],    
+    "description": "Extension for installing azd",
+    "categories": [
+        "Azure Pipelines"
+    ],
+    "tags": [
+        "Visual Studio Extensions",
+        "Azure Developer CLI",
+        "azd",
+        "Azure"
+    ],
+    "links": {
+        "repository": {
+            "uri": "https://github.com/Azure/azure-dev"
+        },
+        "issues": {
+            "uri": "https://github.com/Azure/azure-dev/issues"
+        }
+    },
+    "icons": {
+        "default": "icon.png"
+    },
+    "repository": {
+        "type": "git",
+        "uri": "https://github.com/Azure/azure-dev"
+    },
+    "content": {
+        "details": {
+            "path": "README.md"
+        },
+        "license": {
+            "path": "LICENSE"
+        }
+    },
+    "files": [
+        {
+            "path": "setupAzd"
+        }
+    ],
+    "contributions": [
+        {
+            "id": "setupAzd",
+            "type": "ms.vss-distributed-task.task",
+            "targets": [
+                "ms.vss-distributed-task.tasks"
+            ],
+            "properties": {
+                "name": "setupAzd"
+            }
+        }
+    ],
+    "galleryFlags": [
+        "Public"
+    ]
+}

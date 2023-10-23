@@ -34,7 +34,7 @@ func (t *Template) Display(writer io.Writer) error {
 		output.TablePadCharacter,
 		output.TableFlags)
 	text := [][]string{
-		{"RepositoryPath", ":", t.RepositoryPath},
+		{"RepositoryPath", ":", Hyperlink(t.RepositoryPath)},
 		{"Name", ":", t.Name},
 		{"Source", ":", t.Source},
 		{"Description", ":", t.Description},

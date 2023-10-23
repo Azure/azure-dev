@@ -1235,6 +1235,109 @@ stages:
                       CommitMsg: Increment CLI version after release
                       PRTitle: Increment CLI version after release
 
+    - stage: PublishVersionTxt
+      dependsOn: PublishCLI
+
+      condition: >-
+        and(
+          succeeded(),
+          ne(variables['Skip.Release'], 'true'),
+          or(
+            eq('Manual', variables['BuildReasonOverride']),
+            and(
+              eq('', variables['BuildReasonOverride']),
+              eq('Manual', variables['Build.Reason'])
+            )
+          )
+        )
+
+      jobs:
+        - deployment: Upload_Version_Txt
+          condition: >-
+            and(
+              succeeded(),
+              ne('true', variables['Skip.Publish'])
+            )
+          environment: azure-dev
+
+          pool:
+            name: azsdk-pool-mms-win-2022-general
+
+          strategy:
+            runOnce:
+              deploy:
+                steps:
+                  - checkout: self
+                  - task: PowerShell@2
+                    inputs:
+                      pwsh: true
+                      targetType: filePath
+                      filePath: eng/scripts/Set-CliVersionVariable.ps1
+                    displayName: Set CLI_VERSION
+
+                  - task: PowerShell@2
+                    displayName: Set MSI_VERSION
+                    inputs:
+                      pwsh: true
+                      targetType: filePath
+                      filePath: eng/scripts/Get-MsiVersion.ps1
+                      arguments: >-
+                        -CliVersion '$(CLI_VERSION)'
+                        -DevOpsOutput
+
+                  - task: PowerShell@2
+                    displayName: Wait for WinGet package
+                    inputs:
+                      pwsh: true
+                      targetType: filePath
+                      filePath: eng/scripts/Wait-WinGetPackage.ps1
+                      arguments: >-
+                        -PackageName 'Microsoft.Azd'
+                        -PackageVersion '$(MSI_VERSION)'
+
+                  - task: PowerShell@2
+                    displayName: Wait for Choco package
+                    inputs:
+                      pwsh: true
+                      targetType: filePath
+                      filePath: eng/scripts/Wait-ChocoPackage.ps1
+                      arguments: >-
+                        -PackageName 'azd'
+                        -PackageVersion '$(MSI_VERSION)'
+
+                  - pwsh: |
+                      New-Item -ItemType Directory -Path release
+                      Write-Output $(CLI_VERSION) | Out-File -Encoding utf8 -FilePath ./release/version.txt
+                    displayName: Write version.txt file for release
+
+                  - pwsh: |
+                      $isPublishingGa = eng/scripts/Test-ShouldReleasePackageVersion.ps1 `
+                        -CliVersion '$(CLI_VERSION)'
+
+                      $publishUploadLocations = @('release/latest')
+                      if ($isPublishingGa) {
+                        $publishUploadLocations += @('release/stable')
+                      }
+
+                      Get-ChildItem release/
+
+                      foreach ($folder in $publishUploadLocations) {
+                        Write-Host "Upload to azd/standalone/$folder"
+                        az storage blob upload-batch `
+                          --account-name '$(azdev-storage-account-name)' `
+                          --account-key '$(azdev-storage-account-key)' `
+                          --auth-mode key `
+                          -s release/ `
+                          -d "azd/standalone/$folder" `
+                          --overwrite
+
+                        if ($LASTEXITCODE) {
+                          Write-Error "Upload failed"
+                          exit 1
+                        }
+                      }
+                    displayName: Upload version.txt to storage account
+
   - stage: Publish_Integration
     dependsOn: Sign
     jobs:

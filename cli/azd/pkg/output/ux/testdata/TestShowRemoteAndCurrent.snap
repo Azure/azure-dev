@@ -1,14 +1,14 @@
 
-Showing deployed endpoints and environments for apps in this directory.
+Showing services and environments for apps in this directory.
 To view endpoints for a different environment run azd show -e <environment name>
 
 Foo
+  Services:
+    You don't have services defined. Add your services to azure.yaml.
   Environments:
     foo [Current]
     bar
     vh (Remote)
-  Services:
-    You don't have services defined. Add your services to azure.yaml.
   View in Azure Portal:
     Application is not yet provisioned. Run azd provision or azd up first.
 

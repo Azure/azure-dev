@@ -1,12 +1,12 @@
 
-Showing deployed endpoints and environments for apps in this directory.
+Showing services and environments for apps in this directory.
 To view endpoints for a different environment run azd show -e <environment name>
 
 Foo
-  Environments:
-    You haven't created any environment. Run azd env new to create one.
   Services:
     xx  bar
+  Environments:
+    You haven't created any environment. Run azd env new to create one.
   View in Azure Portal:
     Application is not yet provisioned. Run azd provision or azd up first.
 

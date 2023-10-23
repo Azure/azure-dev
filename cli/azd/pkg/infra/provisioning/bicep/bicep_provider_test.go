@@ -1064,6 +1064,11 @@ func Test_armParameterFileValue(t *testing.T) {
 		require.Equal(t, expected, actual)
 	})
 
+	t.Run("InvalidBool", func(t *testing.T) {
+		actual := armParameterFileValue(ParameterTypeBoolean, "NotABool", nil)
+		require.Nil(t, actual)
+	})
+
 	t.Run("ValidInt", func(t *testing.T) {
 		var expected int64 = 42
 		actual := armParameterFileValue(ParameterTypeNumber, "42", nil)
@@ -1074,6 +1079,11 @@ func Test_armParameterFileValue(t *testing.T) {
 		var expected int64 = 42
 		actual := armParameterFileValue(ParameterTypeNumber, expected, nil)
 		require.Equal(t, expected, actual)
+	})
+
+	t.Run("InvalidInt", func(t *testing.T) {
+		actual := armParameterFileValue(ParameterTypeNumber, "NotAnInt", nil)
+		require.Nil(t, actual)
 	})
 
 	t.Run("Array", func(t *testing.T) {

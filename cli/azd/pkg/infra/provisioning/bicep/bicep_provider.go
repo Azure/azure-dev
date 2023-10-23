@@ -13,6 +13,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -1935,6 +1936,11 @@ func (p *BicepProvider) ensureParameters(
 
 // Convert the ARM parameters file value into a value suitable for deployment
 func armParameterFileValue(paramType ParameterType, value any, defaultValue any) any {
+	// Quick return if the value being converted is not a string
+	if value == nil || reflect.TypeOf(value).Kind() != reflect.String {
+		return value
+	}
+
 	// Relax the handling of bool and number types to accept convertible strings
 	switch paramType {
 	case ParameterTypeBoolean:
@@ -1955,19 +1961,19 @@ func armParameterFileValue(paramType ParameterType, value any, defaultValue any)
 		// 2. Empty input value and no default - return nil (prompt user)
 		// 3. Empty input value and non-empty default - return empty input string (no prompt)
 		paramVal, paramValid := value.(string)
-		if !paramValid {
-			return nil
-		}
-
-		defaultVal, hasDefault := defaultValue.(string)
-		if paramValid && paramVal != "" || hasDefault && paramValid && paramVal != defaultVal {
+		if paramValid && paramVal != "" {
 			return paramVal
 		}
 
-		return nil
+		defaultVal, hasDefault := defaultValue.(string)
+		if hasDefault && paramValid && paramVal != defaultVal {
+			return paramVal
+		}
+	default:
+		return value
 	}
 
-	return value
+	return nil
 }
 
 func isValueAssignableToParameterType(paramType ParameterType, value any) bool {

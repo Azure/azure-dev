@@ -18,6 +18,9 @@ param databaseName string
 @secure()
 param databasePassword string
 {{- end}}
+{{- if .Redis}}
+param redisName string
+{{- end}}
 {{- if (and .Frontend .Frontend.Backends)}}
 param apiUrls array
 {{- end}}
@@ -74,6 +77,29 @@ module fetchLatestImage '../modules/fetch-container-image.bicep' = {
     name: name
   }
 }
+{{- if .Redis}}
+
+resource redis 'Microsoft.App/containerApps@2023-04-01-preview' = {
+  name: redisName
+  location: location
+  properties: {
+    environmentId: containerAppsEnvironment.id
+    configuration: {
+      service: {
+        type: 'redis'
+      }
+    }
+    template: {
+      containers: [
+        {
+          image: 'redis'
+          name: 'redis'
+        }
+      ]
+    }
+  }
+}
+{{- end}}
 
 resource app 'Microsoft.App/containerApps@2023-04-01-preview' = {
   name: name
@@ -190,6 +216,14 @@ resource app 'Microsoft.App/containerApps@2023-04-01-preview' = {
           }
         }
       ]
+      {{- if .Redis}}
+      serviceBinds: [
+        {
+          serviceId: redis.id
+          name: 'redis'
+        }
+      ]
+      {{- end}}
       scale: {
         minReplicas: 1
         maxReplicas: 10

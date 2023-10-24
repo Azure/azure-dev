@@ -24,6 +24,10 @@ func (i *Initializer) infraSpecFromDetect(
 	detect detectConfirm) (scaffold.InfraSpec, error) {
 	spec := scaffold.InfraSpec{}
 	for database := range detect.Databases {
+		if database == appdetect.DbRedis { // no configuration needed for redis
+			continue
+		}
+
 	dbPrompt:
 		for {
 			dbName, err := i.console.Prompt(ctx, input.ConsoleOptions{
@@ -126,6 +130,10 @@ func (i *Initializer) infraSpecFromDetect(
 			case appdetect.DbPostgres:
 				serviceSpec.DbPostgres = &scaffold.DatabaseReference{
 					DatabaseName: spec.DbPostgres.DatabaseName,
+				}
+			case appdetect.DbRedis:
+				serviceSpec.DbRedis = &scaffold.DatabaseReference{
+					DatabaseName: "redis",
 				}
 			}
 		}

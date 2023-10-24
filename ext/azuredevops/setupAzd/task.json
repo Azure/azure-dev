@@ -1,0 +1,30 @@
+{
+    "$schema": "https://raw.githubusercontent.com/Microsoft/azure-pipelines-task-lib/master/tasks.schema.json",
+    "id": "854fea0d-8738-413e-ad4d-600113529a20",
+    "name": "setup-azd",
+    "friendlyName": "Setup Azure Developer CLI",
+    "description": "Install azd",
+    "helpMarkDown": "",
+    "category": "Utility",
+    "author": "AzureDeveloperCLI",
+    "version": {
+        "Major": 0,
+        "Minor": 13,
+        "Patch": 0
+    },
+    "instanceNameFormat": "Installs azd: $(rootFolder)",
+    "inputs": [
+        {
+            "name": "version",
+            "type": "string",
+            "label": "The version of azd to install (default: latest)",
+            "required": false
+        }
+    ],
+    "execution": {
+        "Node10": {
+            "target": "index.js",
+            "argumentFormat": ""
+        }
+    }
+}

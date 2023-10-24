@@ -27,6 +27,8 @@ pr:
 variables:
   - template: /eng/pipelines/templates/variables/globals.yml
 
+parameters: []
+
 stages:
   - stage: BuildAndTest
     jobs:
@@ -513,7 +515,7 @@ stages:
             -DestinationPath mac/azd-darwin-arm64.zip
           displayName: Package mac binary for signing
 
-        - ${{ if in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual') }}:
+        - ${{ if and(in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual'), eq(variables['Build.Repository.Name'], 'Azure/azure-dev')) }}:
           - template: pipelines/steps/azd-cli-mac-signing.yml@azure-sdk-build-tools
             parameters:
               MacPath: mac
@@ -575,7 +577,7 @@ stages:
         - pwsh: Copy-Item installer/*.ps1 win
           displayName: Copy install scripts to win/
 
-        - ${{ if in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual') }}:
+        - ${{ if and(in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual'), eq(variables['Build.Repository.Name'], 'Azure/azure-dev')) }}:
           - template: pipelines/steps/azd-cli-win-signing.yml@azure-sdk-build-tools
             parameters:
               WinPath:  win
@@ -607,7 +609,7 @@ stages:
             # it to be installed over any previously installed version.
             ShouldBuildForRelease: ${{ eq(variables['Build.Reason'], 'Manual') }}
 
-        - ${{ if in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual') }}:
+        - ${{ if and(in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual'), eq(variables['Build.Repository.Name'], 'Azure/azure-dev')) }}:
           - template: pipelines/steps/azd-cli-win-signing.yml@azure-sdk-build-tools
             parameters:
               WinPath:  cli/installer/windows/bin/Release
@@ -648,7 +650,7 @@ stages:
             artifact: linux-packages
             path: linux
 
-        - ${{ if in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual') }}:
+        - ${{ if and(in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual'), eq(variables['Build.Repository.Name'], 'Azure/azure-dev')) }}:
           - template: pipelines/steps/azd-cli-linux-signing.yml@azure-sdk-build-tools
             parameters:
               LinuxPath: linux
@@ -1070,215 +1072,320 @@ stages:
               workingDirectory: cli/installer/fpm
               filePath: eng/scripts/Test-LinuxPackages.ps1
 
-
-  - stage: PublishCLI
-    dependsOn: Sign
-    condition: >-
-      and(
-        succeeded(),
-        ne(variables['Skip.Release'], 'true'),
-        or(
-          eq('Manual', variables['BuildReasonOverride']),
-          and(
-            eq('', variables['BuildReasonOverride']),
-            eq('Manual', variables['Build.Reason'])
+  - ${{ if eq(variables['Build.Repository.Name'], 'Azure/azure-dev') }}:
+    - stage: PublishCLI
+      dependsOn: Sign
+      condition: >-
+        and(
+          succeeded(),
+          ne(variables['Skip.Release'], 'true'),
+          or(
+            eq('Manual', variables['BuildReasonOverride']),
+            and(
+              eq('', variables['BuildReasonOverride']),
+              eq('Manual', variables['Build.Reason'])
+            )
           )
         )
-      )
-    jobs:
-      - deployment: Publish_Release
-        condition: >-
-          and(
-            succeeded(),
-            ne('true', variables['Skip.Publish'])
+      jobs:
+        - deployment: Publish_Release
+          condition: >-
+            and(
+              succeeded(),
+              ne('true', variables['Skip.Publish'])
+            )
+          environment: azure-dev
+
+          pool:
+            name: azsdk-pool-mms-ubuntu-2004-general
+            OSVmImage: MMSUbuntu20.04
+
+          strategy:
+            runOnce:
+              deploy:
+                steps:
+                  - checkout: self
+                  - task: PowerShell@2
+                    inputs:
+                      pwsh: true
+                      targetType: filePath
+                      filePath: eng/scripts/Set-CliVersionVariable.ps1
+                    displayName: Set CLI_VERSION
+
+                  - pwsh: |
+                      # Initial upload locations
+                      $publishUploadLocations = 'release/$(CLI_VERSION);release/latest'
+
+                      $isPublishingGa = eng/scripts/Test-ShouldReleasePackageVersion.ps1 `
+                        -CliVersion '$(CLI_VERSION)'
+
+                      if ($isPublishingGa) {
+                        $publishUploadLocations += ";release/stable"
+                      }
+
+                      Write-Host "Setting StorageUploadLocations to $publishUploadLocations"
+                      Write-Host "###vso[task.setvariable variable=StorageUploadLocations]$publishUploadLocations"
+                    displayName: Set StorageUploadLocations
+
+                  - pwsh: |
+                      # Initial tag
+                      $dockerTags = '$(CLI_VERSION)'
+
+                      $isPublishingGa = eng/scripts/Test-ShouldReleasePackageVersion.ps1 `
+                        -CliVersion '$(CLI_VERSION)'
+
+                      if ($isPublishingGa) {
+                        $dockerTags += ";latest"
+                      }
+
+                      Write-Host "Setting DockerImageTags to $dockerTags"
+                      Write-Host "###vso[task.setvariable variable=DockerImageTags]$dockerTags"
+                    displayName: Set DockerImageTags
+
+                  - template: /eng/pipelines/templates/steps/publish-cli.yml
+                    parameters:
+                      CreateGitHubRelease: true
+                      PublishUploadLocations: $(StorageUploadLocations)
+                      PublishShield: true
+                      DockerImageTags: $(DockerImageTags)
+                      ReleaseSyndicatedDockerContainer: true
+                      PublishUpdatedDocs: true
+                      UploadMsi: true
+                      PublishBrewFormula: true
+                      PublishArm64Binaries: true
+
+        - deployment: Publish_Choco
+          dependsOn: Publish_Release
+          condition: >-
+            and(
+              succeeded(),
+              ne('true', variables['Skip.Publish'])
+            )
+          environment: azure-dev
+
+          pool:
+            name: azsdk-pool-mms-win-2022-general
+
+          strategy:
+            runOnce:
+              deploy:
+                steps:
+                  - checkout: self
+                  - task: PowerShell@2
+                    inputs:
+                      pwsh: true
+                      targetType: filePath
+                      filePath: eng/scripts/Set-CliVersionVariable.ps1
+                    displayName: Set CLI_VERSION
+
+                  - template: /eng/pipelines/templates/steps/publish-cli-choco.yml
+                    parameters:
+                      CliVersion: $(CLI_VERSION)
+
+        - deployment: Publish_WinGet
+          dependsOn: Publish_Release
+          condition: >-
+            and(
+              succeeded(),
+              ne('true', variables['Skip.Publish'])
+            )
+          environment: azure-dev
+
+          pool:
+            name: azsdk-pool-mms-win-2022-general
+
+          strategy:
+            runOnce:
+              deploy:
+                steps:
+                  - checkout: self
+                  - task: PowerShell@2
+                    inputs:
+                      pwsh: true
+                      targetType: filePath
+                      filePath: eng/scripts/Set-CliVersionVariable.ps1
+                    displayName: Set CLI_VERSION
+
+                  - template: /eng/pipelines/templates/steps/publish-cli-winget.yml
+                    parameters:
+                      CliVersion: $(CLI_VERSION)
+
+        - deployment: Increment_Version
+          condition: >-
+            and(
+              succeeded(),
+              ne('true', variables['Skip.IncrementVersion'])
+            )
+          dependsOn: Publish_Release
+          environment: azure-dev
+
+          pool:
+            name: azsdk-pool-mms-ubuntu-2004-general
+            OSVmImage: MMSUbuntu20.04
+
+          strategy:
+            runOnce:
+              deploy:
+                steps:
+                  - checkout: self
+
+                  - task: PowerShell@2
+                    inputs:
+                      pwsh: true
+                      targetType: filePath
+                      filePath: eng/scripts/Update-CliVersion.ps1
+                    displayName: Increment CLI version
+
+                  - template: /eng/common/pipelines/templates/steps/create-pull-request.yml
+                    parameters:
+                      PRBranchName: cli-version-increment-$(Build.BuildId)
+                      CommitMsg: Increment CLI version after release
+                      PRTitle: Increment CLI version after release
+
+    - stage: PublishVersionTxt
+      dependsOn: PublishCLI
+
+      condition: >-
+        and(
+          succeeded(),
+          ne(variables['Skip.Release'], 'true'),
+          or(
+            eq('Manual', variables['BuildReasonOverride']),
+            and(
+              eq('', variables['BuildReasonOverride']),
+              eq('Manual', variables['Build.Reason'])
+            )
           )
-        environment: azure-dev
+        )
 
-        pool:
-          name: azsdk-pool-mms-ubuntu-2004-general
-          OSVmImage: MMSUbuntu20.04
+      jobs:
+        - deployment: Upload_Version_Txt
+          condition: >-
+            and(
+              succeeded(),
+              ne('true', variables['Skip.Publish'])
+            )
+          environment: azure-dev
 
-        strategy:
-          runOnce:
-            deploy:
-              steps:
-                - checkout: self
-                - task: PowerShell@2
-                  inputs:
-                    pwsh: true
-                    targetType: filePath
-                    filePath: eng/scripts/Set-CliVersionVariable.ps1
-                  displayName: Set CLI_VERSION
+          pool:
+            name: azsdk-pool-mms-win-2022-general
 
-                - pwsh: |
-                    # Initial upload locations
-                    $publishUploadLocations = 'release/$(CLI_VERSION);release/latest'
+          strategy:
+            runOnce:
+              deploy:
+                steps:
+                  - checkout: self
+                  - task: PowerShell@2
+                    inputs:
+                      pwsh: true
+                      targetType: filePath
+                      filePath: eng/scripts/Set-CliVersionVariable.ps1
+                    displayName: Set CLI_VERSION
 
-                    $isPublishingGa = eng/scripts/Test-ShouldReleasePackageVersion.ps1 `
-                      -CliVersion '$(CLI_VERSION)'
+                  - task: PowerShell@2
+                    displayName: Set MSI_VERSION
+                    inputs:
+                      pwsh: true
+                      targetType: filePath
+                      filePath: eng/scripts/Get-MsiVersion.ps1
+                      arguments: >-
+                        -CliVersion '$(CLI_VERSION)'
+                        -DevOpsOutput
 
-                    if ($isPublishingGa) {
-                      $publishUploadLocations += ";release/stable"
-                    }
+                  - task: PowerShell@2
+                    displayName: Wait for WinGet package
+                    inputs:
+                      pwsh: true
+                      targetType: filePath
+                      filePath: eng/scripts/Wait-WinGetPackage.ps1
+                      arguments: >-
+                        -PackageName 'Microsoft.Azd'
+                        -PackageVersion '$(MSI_VERSION)'
 
-                    Write-Host "Setting StorageUploadLocations to $publishUploadLocations"
-                    Write-Host "###vso[task.setvariable variable=StorageUploadLocations]$publishUploadLocations"
-                  displayName: Set StorageUploadLocations
+                  - task: PowerShell@2
+                    displayName: Wait for Choco package
+                    inputs:
+                      pwsh: true
+                      targetType: filePath
+                      filePath: eng/scripts/Wait-ChocoPackage.ps1
+                      arguments: >-
+                        -PackageName 'azd'
+                        -PackageVersion '$(MSI_VERSION)'
 
-                - pwsh: |
-                    # Initial tag
-                    $dockerTags = '$(CLI_VERSION)'
+                  - pwsh: |
+                      New-Item -ItemType Directory -Path release
+                      Write-Output $(CLI_VERSION) | Out-File -Encoding utf8 -FilePath ./release/version.txt
+                    displayName: Write version.txt file for release
 
-                    $isPublishingGa = eng/scripts/Test-ShouldReleasePackageVersion.ps1 `
-                      -CliVersion '$(CLI_VERSION)'
+                  - pwsh: |
+                      $isPublishingGa = eng/scripts/Test-ShouldReleasePackageVersion.ps1 `
+                        -CliVersion '$(CLI_VERSION)'
 
-                    if ($isPublishingGa) {
-                      $dockerTags += ";latest"
-                    }
+                      $publishUploadLocations = @('release/latest')
+                      if ($isPublishingGa) {
+                        $publishUploadLocations += @('release/stable')
+                      }
 
-                    Write-Host "Setting DockerImageTags to $dockerTags"
-                    Write-Host "###vso[task.setvariable variable=DockerImageTags]$dockerTags"
-                  displayName: Set DockerImageTags
+                      Get-ChildItem release/
 
-                - template: /eng/pipelines/templates/steps/publish-cli.yml
-                  parameters:
-                    CreateGitHubRelease: true
-                    PublishUploadLocations: $(StorageUploadLocations)
-                    PublishShield: true
-                    DockerImageTags: $(DockerImageTags)
-                    ReleaseSyndicatedDockerContainer: true
-                    PublishUpdatedDocs: true
-                    UploadMsi: true
-                    PublishBrewFormula: true
-                    PublishArm64Binaries: true
+                      foreach ($folder in $publishUploadLocations) {
+                        Write-Host "Upload to azd/standalone/$folder"
+                        az storage blob upload-batch `
+                          --account-name '$(azdev-storage-account-name)' `
+                          --account-key '$(azdev-storage-account-key)' `
+                          --auth-mode key `
+                          -s release/ `
+                          -d "azd/standalone/$folder" `
+                          --overwrite
 
-      - deployment: Publish_Choco
-        dependsOn: Publish_Release
-        condition: >-
-          and(
-            succeeded(),
-            ne('true', variables['Skip.Publish'])
-          )
-        environment: azure-dev
-
-        pool:
-          name: azsdk-pool-mms-win-2022-general
-
-        strategy:
-          runOnce:
-            deploy:
-              steps:
-                - checkout: self
-                - task: PowerShell@2
-                  inputs:
-                    pwsh: true
-                    targetType: filePath
-                    filePath: eng/scripts/Set-CliVersionVariable.ps1
-                  displayName: Set CLI_VERSION
-
-                - template: /eng/pipelines/templates/steps/publish-cli-choco.yml
-                  parameters:
-                    CliVersion: $(CLI_VERSION)
-
-      - deployment: Publish_WinGet
-        dependsOn: Publish_Release
-        condition: >-
-          and(
-            succeeded(),
-            ne('true', variables['Skip.Publish'])
-          )
-        environment: azure-dev
-
-        pool:
-          name: azsdk-pool-mms-win-2022-general
-
-        strategy:
-          runOnce:
-            deploy:
-              steps:
-                - checkout: self
-                - task: PowerShell@2
-                  inputs:
-                    pwsh: true
-                    targetType: filePath
-                    filePath: eng/scripts/Set-CliVersionVariable.ps1
-                  displayName: Set CLI_VERSION
-
-                - template: /eng/pipelines/templates/steps/publish-cli-winget.yml
-                  parameters:
-                    CliVersion: $(CLI_VERSION)
-
-      - deployment: Increment_Version
-        condition: >-
-          and(
-            succeeded(),
-            ne('true', variables['Skip.IncrementVersion'])
-          )
-        dependsOn: Publish_Release
-        environment: azure-dev
-
-        pool:
-          name: azsdk-pool-mms-ubuntu-2004-general
-          OSVmImage: MMSUbuntu20.04
-
-        strategy:
-          runOnce:
-            deploy:
-              steps:
-                - checkout: self
-
-                - task: PowerShell@2
-                  inputs:
-                    pwsh: true
-                    targetType: filePath
-                    filePath: eng/scripts/Update-CliVersion.ps1
-                  displayName: Increment CLI version
-
-                - template: /eng/common/pipelines/templates/steps/create-pull-request.yml
-                  parameters:
-                    PRBranchName: cli-version-increment-$(Build.BuildId)
-                    CommitMsg: Increment CLI version after release
-                    PRTitle: Increment CLI version after release
+                        if ($LASTEXITCODE) {
+                          Write-Error "Upload failed"
+                          exit 1
+                        }
+                      }
+                    displayName: Upload version.txt to storage account
 
   - stage: Publish_Integration
     dependsOn: Sign
     jobs:
-      - job: Publish_Continuous_Deployment
-        condition: >-
-          and(
-            succeeded(),
-            ne(variables['Skip.Release'], 'true'),
-            or(
-              in(variables['BuildReasonOverride'], 'IndividualCI', 'BatchedCI'),
-              and(
-                eq('', variables['BuildReasonOverride']),
-                in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI')
+      # Only publish Continuous Deployment if this is the public repo
+      - ${{ if eq(variables['Build.Repository.Name'], 'Azure/azure-dev') }}:
+        - job: Publish_Continuous_Deployment
+          condition: >-
+            and(
+              succeeded(),
+              ne(variables['Skip.Release'], 'true'),
+              or(
+                in(variables['BuildReasonOverride'], 'IndividualCI', 'BatchedCI'),
+                and(
+                  eq('', variables['BuildReasonOverride']),
+                  in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI')
+                )
               )
             )
-          )
-        pool:
-          name: azsdk-pool-mms-ubuntu-2004-general
-          OSVmImage: MMSUbuntu20.04
+          pool:
+            name: azsdk-pool-mms-ubuntu-2004-general
+            OSVmImage: MMSUbuntu20.04
 
-        steps:
-          - checkout: self
-          - template: /eng/pipelines/templates/steps/set-cli-version-cd.yml
+          steps:
+            - checkout: self
+            - template: /eng/pipelines/templates/steps/set-cli-version-cd.yml
 
-          - task: PowerShell@2
-            inputs:
-              pwsh: true
-              targetType: filePath
-              filePath: eng/scripts/Set-CliVersionVariable.ps1
-            displayName: Set CLI_VERSION
+            - task: PowerShell@2
+              inputs:
+                pwsh: true
+                targetType: filePath
+                filePath: eng/scripts/Set-CliVersionVariable.ps1
+              displayName: Set CLI_VERSION
 
-          - template: /eng/pipelines/templates/steps/publish-cli.yml
-            parameters:
-              CreateGitHubRelease: false
-              PublishUploadLocations: release/daily;daily/archive/$(Build.BuildId)-$(Build.SourceVersion)
-              PublishShield: false
-              DockerImageTags: daily;$(CLI_VERSION)
-              UploadMsi: true
-              PublishArm64Binaries: true
+            - template: /eng/pipelines/templates/steps/publish-cli.yml
+              parameters:
+                CreateGitHubRelease: false
+                PublishUploadLocations: release/daily;daily/archive/$(Build.BuildId)-$(Build.SourceVersion)
+                PublishShield: false
+                DockerImageTags: daily;$(CLI_VERSION)
+                UploadMsi: true
+                PublishArm64Binaries: true
 
       - job: Publish_For_PR
         condition: >-
@@ -1297,10 +1404,17 @@ stages:
           name: azsdk-pool-mms-ubuntu-2004-general
           OSVmImage: MMSUbuntu20.04
 
+        variables:
+          ${{ if eq(variables['Build.Repository.Name'], 'Azure/azure-dev') }}:
+            storage-account-name: $(azdev-storage-account-name)
+          ${{ else }}:
+            storage-account-name: $(azdev-storage-account-name-pr)
+
+
         steps:
           - checkout: self
           - pwsh: |
-              $PRNumber = "$(System.PullRequest.PullRequestNumber)"
+              $PRNumber = '$(System.PullRequest.PullRequestNumber)'
               if ($env:PRNUMBEROVERRIDE) {
                 Write-Host "PR Number override: $($env:PRNUMBEROVERRIDE)"
                 $PRNumber = "$($env:PRNUMBEROVERRIDE)"
@@ -1320,12 +1434,22 @@ stages:
               CreateGitHubRelease: false
               PublishUploadLocations: pr/$(PRNumber)
               UploadInstaller: true
-              DockerImageTags: pr-$(PRNumber)
               UploadMsi: true
               PublishArm64Binaries: true
 
+              ${{ if eq(variables['Build.Repository.Name'], 'Azure/azure-dev') }}:
+                PublishContainer: true
+                DockerImageTags: pr-$(PRNumber)
+                StorageAccountName: $(azdev-storage-account-name)
+                StorageAccountKey: $(azdev-storage-account-key)
+              ${{ else }}:
+                PublishContainer: false
+                StorageAccountName: $(azdev-storage-account-name-pr)
+                StorageAccountKey: $(azdev-storage-account-key-pr)
+
+
           - pwsh: |
-              $urlBase = "https://$(azdev-storage-account-name).blob.core.windows.net/azd/standalone/pr/$(PRNumber)"
+              $urlBase = "https://$(storage-account-name).blob.core.windows.net/azd/standalone/pr/$(PRNumber)"
               Write-Host "##vso[task.setvariable variable=UrlBase;isOutput=true]$urlBase"
             name: GenerateUrlBase
             displayName: Set UrlBase
@@ -1431,50 +1555,51 @@ stages:
             env:
               GH_TOKEN: $(azuresdk-github-pat)
 
-  - stage: PublishInstallers
-    dependsOn: Sign
-    condition: >-
-      and(
-        succeeded(),
-        ne(variables['Skip.Release'], 'true'),
-        or(
-          eq('Manual', variables['BuildReasonOverride']),
-          and(
-            eq('', variables['BuildReasonOverride']),
-            eq('Manual', variables['Build.Reason'])
+  - ${{ if eq(variables['Build.Repository.Name'], 'Azure/azure-dev') }}:
+    - stage: PublishInstallers
+      dependsOn: Sign
+      condition: >-
+        and(
+          succeeded(),
+          ne(variables['Skip.Release'], 'true'),
+          or(
+            eq('Manual', variables['BuildReasonOverride']),
+            and(
+              eq('', variables['BuildReasonOverride']),
+              eq('Manual', variables['Build.Reason'])
+            )
           )
         )
-      )
-    jobs:
-      - deployment: PublishInstallers
-        environment: azure-dev
-        pool:
-          name: azsdk-pool-mms-ubuntu-2004-general
-          OSVmImage: MMSUbuntu20.04
+      jobs:
+        - deployment: PublishInstallers
+          environment: azure-dev
+          pool:
+            name: azsdk-pool-mms-ubuntu-2004-general
+            OSVmImage: MMSUbuntu20.04
 
-        strategy:
-          runOnce:
-            deploy:
-              steps:
-                - checkout: self
+          strategy:
+            runOnce:
+              deploy:
+                steps:
+                  - checkout: self
 
-                - task: DownloadPipelineArtifact@2
-                  inputs:
-                    artifact: signed-win
-                    path: signed-win
+                  - task: DownloadPipelineArtifact@2
+                    inputs:
+                      artifact: signed-win
+                      path: signed-win
 
-                - pwsh: |
-                    New-Item -ItemType Directory -Path script-release
-                    Copy-Item signed-win/*.ps1 script-release/
-                    Copy-Item cli/installer/*.sh script-release/
-                  displayName: Copy scripts for release upload
+                  - pwsh: |
+                      New-Item -ItemType Directory -Path script-release
+                      Copy-Item signed-win/*.ps1 script-release/
+                      Copy-Item cli/installer/*.sh script-release/
+                    displayName: Copy scripts for release upload
 
-                - pwsh: |
-                    az storage blob upload-batch `
-                      --account-name '$(azdev-storage-account-name)' `
-                      --account-key '$(azdev-storage-account-key)' `
-                      --auth-mode key `
-                      -s script-release/ `
-                      -d "azd/standalone/installer" `
-                      --overwrite
-                  displayName: Upload installer to storage location
+                  - pwsh: |
+                      az storage blob upload-batch `
+                        --account-name '$(azdev-storage-account-name)' `
+                        --account-key '$(azdev-storage-account-key)' `
+                        --auth-mode key `
+                        -s script-release/ `
+                        -d "azd/standalone/installer" `
+                        --overwrite
+                    displayName: Upload installer to storage location

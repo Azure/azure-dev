@@ -138,7 +138,7 @@ extract() {
     fi
 }
 
-DEFAULT_BASE_URL="https://azure-dev.azureedge.net/azd/standalone/release"
+DEFAULT_BASE_URL="https://azdrelease.azureedge.net/azd/standalone/release"
 
 base_url="$DEFAULT_BASE_URL"
 platform="$(get_platform)"

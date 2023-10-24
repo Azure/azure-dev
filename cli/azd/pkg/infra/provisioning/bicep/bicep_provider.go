@@ -13,6 +13,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -56,6 +57,7 @@ type deploymentDetails struct {
 // BicepProvider exposes infrastructure provisioning using Azure Bicep templates
 type BicepProvider struct {
 	env                   *environment.Environment
+	envManager            environment.Manager
 	projectPath           string
 	options               Options
 	console               input.Console
@@ -117,7 +119,7 @@ func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
 		log.Printf("Initializing environment w/o arm template info.")
 	}
 
-	if err := EnsureSubscriptionAndLocation(ctx, p.env, p.prompters, func(loc account.Location) bool {
+	if err := EnsureSubscriptionAndLocation(ctx, p.envManager, p.env, p.prompters, func(loc account.Location) bool {
 		// compileResult can be nil if the infra folder is missing and azd couldn't get a template information.
 		// A template information can be used to apply filters to the initial values (like location).
 		// But if there's not template, azd will continue with azd env init.
@@ -166,7 +168,7 @@ func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
 			}
 
 			p.env.DotenvSet(environment.ResourceGroupEnvVarName, rgName)
-			if err := p.env.Save(); err != nil {
+			if err := p.envManager.Save(ctx, p.env); err != nil {
 				return fmt.Errorf("saving resource group name: %w", err)
 			}
 		}
@@ -362,32 +364,36 @@ func (p *BicepProvider) plan(ctx context.Context) (*deploymentDetails, error) {
 		return nil, err
 	}
 
-	var target infra.Deployment
-
-	if deploymentScope == azure.DeploymentScopeSubscription {
-		target = infra.NewSubscriptionDeployment(
-			p.deploymentsService,
-			p.deploymentOperations,
-			p.env.GetLocation(),
-			p.env.GetSubscriptionId(),
-			deploymentNameForEnv(p.env.GetEnvName(), p.clock),
-		)
-	} else if deploymentScope == azure.DeploymentScopeResourceGroup {
-		target = infra.NewResourceGroupDeployment(
-			p.deploymentsService,
-			p.deploymentOperations,
-			p.env.GetSubscriptionId(),
-			p.env.Getenv(environment.ResourceGroupEnvVarName),
-			deploymentNameForEnv(p.env.GetEnvName(), p.clock),
-		)
-	} else {
-		return nil, fmt.Errorf("unsupported scope: %s", deploymentScope)
+	target, err := p.deploymentScope(deploymentScope)
+	if err != nil {
+		return nil, err
 	}
 
 	return &deploymentDetails{
 		CompiledBicep: compileResult,
 		Target:        target,
 	}, nil
+}
+
+func (p *BicepProvider) deploymentScope(deploymentScope azure.DeploymentScope) (infra.Deployment, error) {
+	if deploymentScope == azure.DeploymentScopeSubscription {
+		return infra.NewSubscriptionDeployment(
+			p.deploymentsService,
+			p.deploymentOperations,
+			p.env.GetLocation(),
+			p.env.GetSubscriptionId(),
+			deploymentNameForEnv(p.env.GetEnvName(), p.clock),
+		), nil
+	} else if deploymentScope == azure.DeploymentScopeResourceGroup {
+		return infra.NewResourceGroupDeployment(
+			p.deploymentsService,
+			p.deploymentOperations,
+			p.env.GetSubscriptionId(),
+			p.env.Getenv(environment.ResourceGroupEnvVarName),
+			deploymentNameForEnv(p.env.GetEnvName(), p.clock),
+		), nil
+	}
+	return nil, fmt.Errorf("unsupported scope: %s", deploymentScope)
 }
 
 // cArmDeploymentNameLengthMax is the maximum length of the name of a deployment in ARM.
@@ -416,6 +422,13 @@ func (p *BicepProvider) deploymentState(
 	prevDeploymentResult, err := p.latestDeploymentResult(ctx, deploymentData.Target)
 	if err != nil {
 		return nil, fmt.Errorf("deployment state error: %w", err)
+	}
+
+	// State is invalid if the last deployment was not succeeded
+	// This is currently safe because we rely on latestDeploymentResult which
+	// relies on findCompletedDeployments which filters to only Failed and Succeeded
+	if *prevDeploymentResult.Properties.ProvisioningState != armresources.ProvisioningStateSucceeded {
+		return nil, fmt.Errorf("last deployment failed.")
 	}
 
 	var templateHash string
@@ -738,6 +751,24 @@ func (p *BicepProvider) inferScopeFromEnv(ctx context.Context) (infra.Scope, err
 	}
 }
 
+const cEmptySubDeployTemplate = `{
+	"$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+	"contentVersion": "1.0.0.0",
+	"parameters": {},
+	"variables": {},
+	"resources": [],
+	"outputs": {}
+  }`
+
+const cEmptyResourceGroupDeployTemplate = `{
+	"$schema": "https://schema.management.azure.com/schemas/2019-04-01/deploymentTemplate.json#",
+	"contentVersion": "1.0.0.0",
+	"parameters": {},
+	"variables": {},
+	"resources": [],
+	"outputs": {}
+  }`
+
 // Destroys the specified deployment by deleting all azure resources, resource groups & deployments that are referenced.
 func (p *BicepProvider) Destroy(ctx context.Context, options DestroyOptions) (*DestroyResult, error) {
 	modulePath := p.modulePath()
@@ -750,6 +781,15 @@ func (p *BicepProvider) Destroy(ctx context.Context, options DestroyOptions) (*D
 	scope, err := p.scopeForTemplate(ctx, compileResult.Template)
 	if err != nil {
 		return nil, fmt.Errorf("computing deployment scope: %w", err)
+	}
+
+	targetScope, err := compileResult.Template.TargetScope()
+	if err != nil {
+		return nil, err
+	}
+	deployScope, err := p.deploymentScope(targetScope)
+	if err != nil {
+		return nil, err
 	}
 
 	// TODO: Report progress, "Fetching resource groups"
@@ -872,6 +912,26 @@ func (p *BicepProvider) Destroy(ctx context.Context, options DestroyOptions) (*D
 		destroyResult.InvalidatedEnvKeys = append(
 			destroyResult.InvalidatedEnvKeys, environment.ResourceGroupEnvVarName,
 		)
+	}
+
+	var emptyTemplate json.RawMessage
+	if targetScope == azure.DeploymentScopeSubscription {
+		emptyTemplate = []byte(cEmptySubDeployTemplate)
+	} else {
+		emptyTemplate = []byte(cEmptyResourceGroupDeployTemplate)
+	}
+
+	// create empty deployment to void provision state
+	// We want to keep the deployment history, that's why it's not just deleted
+	if _, err := p.deployModule(ctx,
+		deployScope,
+		emptyTemplate,
+		azure.ArmParameters{},
+		map[string]*string{
+			azure.TagKeyAzdEnvName: to.Ptr(p.env.GetEnvName()),
+			"azd-deploy-reason":    to.Ptr("down"),
+		}); err != nil {
+		log.Println("failed creating new empty deployment after destroy")
 	}
 
 	return destroyResult, nil
@@ -1641,17 +1701,49 @@ func (p *BicepProvider) compileBicep(
 		paramRef := param.Ref
 		isUserDefinedType := paramRef != ""
 		if isUserDefinedType {
-			definitionKeyNameTokens := strings.Split(paramRef, "/")
-			definitionKeyNameTokensLen := len(definitionKeyNameTokens)
-			if definitionKeyNameTokensLen < 1 {
-				return nil, fmt.Errorf("failed resolving user defined parameter type: %s", paramRef)
+			definitionKeyName, err := definitionName(paramRef)
+			if err != nil {
+				return nil, err
 			}
-			definitionKeyName := definitionKeyNameTokens[definitionKeyNameTokensLen-1]
 			paramDefinition, findDefinition := template.Definitions[definitionKeyName]
 			if !findDefinition {
 				return nil, fmt.Errorf("did not find definition for parameter type: %s", definitionKeyName)
 			}
-			template.Parameters[paramKey] = paramDefinition
+			template.Parameters[paramKey] = azure.ArmTemplateParameterDefinition{
+				// Take this values from the parameter definition
+				Type:                 paramDefinition.Type,
+				AllowedValues:        paramDefinition.AllowedValues,
+				Properties:           paramDefinition.Properties,
+				AdditionalProperties: paramDefinition.AdditionalProperties,
+				// Azd combines Metadata from type definition and original parameter
+				// This allows to definitions to use azd-metadata on user-defined types and then add more properties
+				// to metadata or override something just for one parameter
+				Metadata: combineMetadata(paramDefinition.Metadata, param.Metadata),
+				// Keep this values from the original parameter
+				DefaultValue: param.DefaultValue,
+				// Note: Min/MaxLength and Min/MaxValue can't be used on user-defined types. No need to handle it here.
+			}
+		}
+	}
+
+	// outputs resolves just the type. Value and Metadata should persist
+	for outputKey, output := range template.Outputs {
+		paramRef := output.Ref
+		isUserDefinedType := paramRef != ""
+		if isUserDefinedType {
+			definitionKeyName, err := definitionName(paramRef)
+			if err != nil {
+				return nil, err
+			}
+			paramDefinition, findDefinition := template.Definitions[definitionKeyName]
+			if !findDefinition {
+				return nil, fmt.Errorf("did not find definition for parameter type: %s", definitionKeyName)
+			}
+			template.Outputs[outputKey] = azure.ArmTemplateOutput{
+				Type:     paramDefinition.Type,
+				Value:    output.Value,
+				Metadata: output.Metadata,
+			}
 		}
 	}
 
@@ -1660,6 +1752,40 @@ func (p *BicepProvider) compileBicep(
 		Template:       template,
 		Parameters:     parameters,
 	}, nil
+}
+
+func combineMetadata(base map[string]json.RawMessage, override map[string]json.RawMessage) map[string]json.RawMessage {
+	if base == nil && override == nil {
+		return nil
+	}
+
+	if override == nil {
+		return base
+	}
+
+	// final map is expected to be at least the same size as the base
+	finalMetadata := make(map[string]json.RawMessage, len(base))
+
+	for key, data := range base {
+		finalMetadata[key] = data
+	}
+
+	for key, data := range override {
+		finalMetadata[key] = data
+	}
+
+	return finalMetadata
+}
+
+func definitionName(typeDefinitionRef string) (string, error) {
+	// We typically expect `#/definitions/<name>` or `/definitions/<name>`, but loosely, we simply take
+	// `<name>` as the value of the last separated element.
+	definitionKeyNameTokens := strings.Split(typeDefinitionRef, "/")
+	definitionKeyNameTokensLen := len(definitionKeyNameTokens)
+	if definitionKeyNameTokensLen < 1 {
+		return "", fmt.Errorf("failed resolving user defined parameter type: %s", typeDefinitionRef)
+	}
+	return definitionKeyNameTokens[definitionKeyNameTokensLen-1], nil
 }
 
 // Converts a Bicep parameters file to a generic provisioning template
@@ -1736,11 +1862,15 @@ func (p *BicepProvider) ensureParameters(
 		param := template.Parameters[key]
 
 		// If a value is explicitly configured via a parameters file, use it.
+		// unless the parameter value inference is nil/empty
 		if v, has := parameters[key]; has {
-			configuredParameters[key] = azure.ArmParameterValue{
-				Value: armParameterFileValue(p.mapBicepTypeToInterfaceType(param.Type), v.Value),
+			paramValue := armParameterFileValue(p.mapBicepTypeToInterfaceType(param.Type), v.Value, param.DefaultValue)
+			if paramValue != nil {
+				configuredParameters[key] = azure.ArmParameterValue{
+					Value: paramValue,
+				}
+				continue
 			}
-			continue
 		}
 
 		// If this parameter has a default, then there is no need for us to configure it.
@@ -1796,7 +1926,7 @@ func (p *BicepProvider) ensureParameters(
 	}
 
 	if configModified {
-		if err := p.env.Save(); err != nil {
+		if err := p.envManager.Save(ctx, p.env); err != nil {
 			p.console.Message(ctx, fmt.Sprintf("warning: failed to save configured values: %v", err))
 		}
 	}
@@ -1805,7 +1935,12 @@ func (p *BicepProvider) ensureParameters(
 }
 
 // Convert the ARM parameters file value into a value suitable for deployment
-func armParameterFileValue(paramType ParameterType, value any) any {
+func armParameterFileValue(paramType ParameterType, value any, defaultValue any) any {
+	// Quick return if the value being converted is not a string
+	if value == nil || reflect.TypeOf(value).Kind() != reflect.String {
+		return value
+	}
+
 	// Relax the handling of bool and number types to accept convertible strings
 	switch paramType {
 	case ParameterTypeBoolean:
@@ -1820,9 +1955,25 @@ func armParameterFileValue(paramType ParameterType, value any) any {
 				return intVal
 			}
 		}
+	case ParameterTypeString:
+		// Use Cases
+		// 1. Non-empty input value, return input value (no prompt)
+		// 2. Empty input value and no default - return nil (prompt user)
+		// 3. Empty input value and non-empty default - return empty input string (no prompt)
+		paramVal, paramValid := value.(string)
+		if paramValid && paramVal != "" {
+			return paramVal
+		}
+
+		defaultVal, hasDefault := defaultValue.(string)
+		if hasDefault && paramValid && paramVal != defaultVal {
+			return paramVal
+		}
+	default:
+		return value
 	}
 
-	return value
+	return nil
 }
 
 func isValueAssignableToParameterType(paramType ParameterType, value any) bool {
@@ -1866,6 +2017,7 @@ func NewBicepProvider(
 	azCli azcli.AzCli,
 	deploymentsService azapi.Deployments,
 	deploymentOperations azapi.DeploymentOperations,
+	envManager environment.Manager,
 	env *environment.Environment,
 	console input.Console,
 	prompters prompt.Prompter,
@@ -1874,6 +2026,7 @@ func NewBicepProvider(
 	clock clock.Clock,
 ) Provider {
 	return &BicepProvider{
+		envManager:           envManager,
 		env:                  env,
 		console:              console,
 		bicepCli:             bicepCli,

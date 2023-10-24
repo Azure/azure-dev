@@ -2,6 +2,7 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"path/filepath"
@@ -125,7 +126,7 @@ func (d *detectConfirm) Confirm(ctx context.Context) error {
 			return nil
 		case 1:
 			if err := d.remove(ctx); err != nil {
-				if err == terminal.InterruptErr {
+				if errors.Is(err, terminal.InterruptErr) {
 					continue
 				}
 				return err
@@ -134,7 +135,7 @@ func (d *detectConfirm) Confirm(ctx context.Context) error {
 			tracing.IncrementUsageAttribute(fields.AppInitModifyRemoveCount.Int(1))
 		case 2:
 			if err := d.add(ctx); err != nil {
-				if err == terminal.InterruptErr {
+				if errors.Is(err, terminal.InterruptErr) {
 					continue
 				}
 				return err

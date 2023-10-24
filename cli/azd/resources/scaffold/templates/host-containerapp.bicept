@@ -18,7 +18,7 @@ param databaseName string
 @secure()
 param databasePassword string
 {{- end}}
-{{- if .Redis}}
+{{- if .DbRedis}}
 param redisName string
 {{- end}}
 {{- if (and .Frontend .Frontend.Backends)}}
@@ -77,7 +77,7 @@ module fetchLatestImage '../modules/fetch-container-image.bicep' = {
     name: name
   }
 }
-{{- if .Redis}}
+{{- if .DbRedis}}
 
 resource redis 'Microsoft.App/containerApps@2023-04-01-preview' = {
   name: redisName
@@ -216,7 +216,7 @@ resource app 'Microsoft.App/containerApps@2023-04-01-preview' = {
           }
         }
       ]
-      {{- if .Redis}}
+      {{- if .DbRedis}}
       serviceBinds: [
         {
           serviceId: redis.id

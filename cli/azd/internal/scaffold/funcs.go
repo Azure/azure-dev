@@ -112,7 +112,7 @@ func ContainerAppName(name string) string {
 }
 
 // Formats a parameter value for use in a bicep file.
-// If the value is a string, it is quoted.
+// If the value is a string, it is quoted inline with no indentation.
 // Otherwise, the value is marshaled with indentation specified by prefix and indent.
 func FormatParameter(prefix string, indent string, value any) (string, error) {
 	if valueStr, ok := value.(string); ok {

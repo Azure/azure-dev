@@ -139,6 +139,7 @@ module {{bicepName .Name}} './app/{{.Name}}.bicep' = {
     containerAppsEnvironmentName: appsEnv.outputs.name
     containerRegistryName: registry.outputs.name
     exists: {{bicepName .Name}}Exists
+    appDefinition: {{bicepName .Name}}Definition
     {{- if .DbCosmosMongo}}
     cosmosDbConnectionString: vault.getSecret(cosmosDb.outputs.connectionStringKey)
     {{- end}}

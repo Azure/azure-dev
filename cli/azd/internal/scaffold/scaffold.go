@@ -58,6 +58,7 @@ func Load() (*template.Template, error) {
 		"containerAppName": ContainerAppName,
 		"upper":            strings.ToUpper,
 		"lower":            strings.ToLower,
+		"formatParam":      FormatParameter,
 	}
 
 	t, err := template.New("templates").
@@ -164,5 +165,7 @@ func preExecExpand(spec *InfraSpec) {
 		// containerapp requires a global '_exist' parameter for each service
 		spec.Parameters = append(spec.Parameters,
 			containerAppExistsParameter(svc.Name))
+		spec.Parameters = append(spec.Parameters,
+			serviceDefPlaceholder(svc.Name))
 	}
 }

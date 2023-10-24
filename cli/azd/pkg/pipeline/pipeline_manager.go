@@ -178,14 +178,14 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 		lookupKind = lookupKindEnvironmentVariable
 	}
 
-	var application *graphsdk.Application
+	var servicePrincipal *graphsdk.ServicePrincipal
 	var displayMsg, applicationName string
 
 	if appIdOrName != "" {
-		application, _ = pm.adService.GetServicePrincipal(ctx, pm.env.GetSubscriptionId(), appIdOrName)
-		if application != nil {
-			appIdOrName = *application.AppId
-			applicationName = application.DisplayName
+		servicePrincipal, _ = pm.adService.GetServicePrincipal(ctx, pm.env.GetSubscriptionId(), appIdOrName)
+		if servicePrincipal != nil {
+			appIdOrName = servicePrincipal.AppId
+			applicationName = servicePrincipal.DisplayName
 		} else {
 			applicationName = pm.args.PipelineServicePrincipalName
 		}
@@ -196,7 +196,7 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 	}
 
 	// If an explicit client id was specified but not found then fail
-	if application == nil && lookupKind == lookupKindPrincipalId {
+	if servicePrincipal == nil && lookupKind == lookupKindPrincipalId {
 		return nil, fmt.Errorf(
 			"service principal with client id '%s' specified in '--principal-id' parameter was not found",
 			pm.args.PipelineServicePrincipalId,
@@ -204,7 +204,7 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 	}
 
 	// If an explicit client id was specified but not found then fail
-	if application == nil && lookupKind == lookupKindEnvironmentVariable {
+	if servicePrincipal == nil && lookupKind == lookupKindEnvironmentVariable {
 		return nil, fmt.Errorf(
 			"service principal with client id '%s' specified in environment variable '%s' was not found",
 			envClientId,
@@ -212,22 +212,45 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 		)
 	}
 
-	if application == nil {
+	if servicePrincipal == nil {
 		displayMsg = fmt.Sprintf("Creating service principal %s", applicationName)
 	} else {
-		displayMsg = fmt.Sprintf("Updating service principal %s (%s)", application.DisplayName, *application.AppId)
+		displayMsg = fmt.Sprintf("Updating service principal %s (%s)", servicePrincipal.DisplayName, servicePrincipal.AppId)
 	}
 
 	pm.console.ShowSpinner(ctx, displayMsg, input.Step)
-	clientId, credentials, err := pm.adService.CreateOrUpdateServicePrincipal(
+	servicePrincipal, err = pm.adService.CreateOrUpdateServicePrincipal(
 		ctx,
 		pm.env.GetSubscriptionId(),
 		appIdOrName,
 		pm.args.PipelineRoleNames)
 
+	var credentials *azcli.AzureCredentials
+
+	if PipelineAuthType(pm.args.PipelineAuthTypeName) == AuthTypeClientCredentials {
+		updatedCreds, err := pm.adService.ResetPasswordCredentials(
+			ctx,
+			pm.env.GetSubscriptionId(),
+			servicePrincipal.AppId,
+		)
+		if err != nil {
+			return result, fmt.Errorf("failed to reset password credentials: %w", err)
+		}
+
+		credentials = updatedCreds
+	}
+
+	if credentials == nil {
+		credentials = &azcli.AzureCredentials{
+			ClientId:       servicePrincipal.AppId,
+			SubscriptionId: pm.env.GetSubscriptionId(),
+			TenantId:       *servicePrincipal.AppOwnerOrganizationId,
+		}
+	}
+
 	// Update new service principal to include client id
-	if application == nil && clientId != nil {
-		displayMsg += fmt.Sprintf(" (%s)", *clientId)
+	if !strings.Contains(displayMsg, servicePrincipal.AppId) {
+		displayMsg += fmt.Sprintf(" (%s)", servicePrincipal.AppId)
 	}
 	pm.console.StopSpinner(ctx, displayMsg, input.GetStepResultFormat(err))
 	if err != nil {
@@ -235,8 +258,8 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 	}
 
 	// Set in .env to be retrieved for any additional runs
-	if clientId != nil {
-		pm.env.DotenvSet(AzurePipelineClientIdEnvVarName, *clientId)
+	if servicePrincipal.AppId != "" {
+		pm.env.DotenvSet(AzurePipelineClientIdEnvVarName, servicePrincipal.AppId)
 		if err := pm.envManager.Save(ctx, pm.env); err != nil {
 			return result, fmt.Errorf("failed to save environment: %w", err)
 		}

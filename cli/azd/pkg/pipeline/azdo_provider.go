@@ -5,7 +5,6 @@ package pipeline
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -21,6 +20,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/microsoft/azure-devops-go-api/azuredevops"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/build"
@@ -634,7 +634,7 @@ type AzdoCiProvider struct {
 	envManager    environment.Manager
 	Env           *environment.Environment
 	AzdContext    *azdcontext.AzdContext
-	credentials   *azdo.AzureServicePrincipalCredentials
+	credentials   *azcli.AzureCredentials
 	console       input.Console
 	commandRunner exec.CommandRunner
 }
@@ -701,16 +701,10 @@ func (p *AzdoCiProvider) configureConnection(
 	ctx context.Context,
 	repoDetails *gitRepositoryDetails,
 	provisioningProvider provisioning.Options,
-	credentials json.RawMessage,
+	credentials *azcli.AzureCredentials,
 	authType PipelineAuthType,
 ) error {
-
-	azureCredentials, err := parseCredentials(ctx, credentials)
-	if err != nil {
-		return err
-	}
-
-	p.credentials = azureCredentials
+	p.credentials = credentials
 	details := repoDetails.details.(*AzdoRepositoryDetails)
 	org, _, err := azdo.EnsureOrgNameExists(ctx, p.envManager, p.Env, p.console)
 	if err != nil {
@@ -724,7 +718,7 @@ func (p *AzdoCiProvider) configureConnection(
 	if err != nil {
 		return err
 	}
-	err = azdo.CreateServiceConnection(ctx, connection, details.projectId, *p.Env, *p.credentials, p.console)
+	err = azdo.CreateServiceConnection(ctx, connection, details.projectId, *p.Env, p.credentials, p.console)
 	if err != nil {
 		return err
 	}
@@ -736,15 +730,6 @@ func (p *AzdoCiProvider) configureConnection(
 			""},
 	})
 	return nil
-}
-
-// parses the incoming json object and deserializes it to a struct
-func parseCredentials(ctx context.Context, credentials json.RawMessage) (*azdo.AzureServicePrincipalCredentials, error) {
-	azureCredentials := azdo.AzureServicePrincipalCredentials{}
-	if e := json.Unmarshal(credentials, &azureCredentials); e != nil {
-		return nil, fmt.Errorf("setting terraform env var credentials: %w", e)
-	}
-	return &azureCredentials, nil
 }
 
 // configurePipeline create Azdo pipeline
@@ -773,7 +758,7 @@ func (p *AzdoCiProvider) configurePipeline(
 		azdo.AzurePipelineName,
 		details.repoName,
 		connection,
-		*p.credentials,
+		p.credentials,
 		p.Env,
 		p.console,
 		provisioningProvider,

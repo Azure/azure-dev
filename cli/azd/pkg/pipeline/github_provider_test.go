@@ -13,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -120,6 +121,7 @@ func createGitHubCiProvider(t *testing.T, mockContext *mocks.MockContext) CiProv
 	return NewGitHubCiProvider(
 		env,
 		mockContext.SubscriptionCredentialProvider,
+		azcli.NewAdService(mockContext.SubscriptionCredentialProvider, mockContext.HttpClient),
 		ghCli,
 		git.NewGitCli(mockContext.CommandRunner),
 		mockContext.Console,

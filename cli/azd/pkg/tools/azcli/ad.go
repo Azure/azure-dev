@@ -2,10 +2,12 @@ package azcli
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
+	"log"
 	"net/http"
+	"net/url"
+	"strings"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -20,13 +22,17 @@ import (
 	"github.com/sethvargo/go-retry"
 )
 
+const (
+	federatedIdentityIssuer   = "https://token.actions.githubusercontent.com"
+	federatedIdentityAudience = "api://AzureADTokenExchange"
+)
+
 // Required model structure for Azure Credentials tools
 type AzureCredentials struct {
-	ClientId                   string `json:"clientId"`
-	ClientSecret               string `json:"clientSecret"`
-	SubscriptionId             string `json:"subscriptionId"`
-	TenantId                   string `json:"tenantId"`
-	ResourceManagerEndpointUrl string `json:"resourceManagerEndpointUrl"`
+	ClientId       string `json:"clientId"`
+	ClientSecret   string `json:"clientSecret"`
+	SubscriptionId string `json:"subscriptionId"`
+	TenantId       string `json:"tenantId"`
 }
 
 type ErrorWithSuggestion struct {
@@ -43,20 +49,33 @@ type AdService interface {
 	GetServicePrincipal(
 		ctx context.Context,
 		subscriptionId string,
-		applicationId string,
-	) (*graphsdk.Application, error)
+		appIdOrName string,
+	) (*graphsdk.ServicePrincipal, error)
 	CreateOrUpdateServicePrincipal(
 		ctx context.Context,
 		subscriptionId string,
-		applicationIdOrName string,
+		appIdOrName string,
 		rolesToAssign []string,
-	) (*string, json.RawMessage, error)
+	) (*graphsdk.ServicePrincipal, error)
+	ResetPasswordCredentials(
+		ctx context.Context,
+		subscriptionId string,
+		appId string,
+	) (*AzureCredentials, error)
+	ApplyFederatedCredentials(
+		ctx context.Context,
+		subscriptionId string,
+		clientId string,
+		repoSlug string,
+		branches []string,
+	) ([]*graphsdk.FederatedIdentityCredential, error)
 }
 
 type adService struct {
 	credentialProvider account.SubscriptionCredentialProvider
 	httpClient         httputil.HttpClient
 	userAgent          string
+	clientCache        map[string]*graphsdk.GraphClient
 }
 
 // Creates a new instance of the AdService
@@ -68,6 +87,7 @@ func NewAdService(
 		credentialProvider: credentialProvider,
 		httpClient:         httpClient,
 		userAgent:          azdinternal.UserAgent(),
+		clientCache:        map[string]*graphsdk.GraphClient{},
 	}
 }
 
@@ -76,20 +96,189 @@ func (ad *adService) GetServicePrincipal(
 	ctx context.Context,
 	subscriptionId string,
 	appIdOrName string,
-) (*graphsdk.Application, error) {
-	graphClient, err := ad.createGraphClient(ctx, subscriptionId)
+) (*graphsdk.ServicePrincipal, error) {
+	application, err := ad.getApplicationByNameOrId(ctx, subscriptionId, appIdOrName)
 	if err != nil {
 		return nil, err
 	}
 
-	var application *graphsdk.Application
+	return ad.getServicePrincipal(ctx, subscriptionId, application)
+}
 
+func (ad *adService) CreateOrUpdateServicePrincipal(
+	ctx context.Context,
+	subscriptionId string,
+	appIdOrName string,
+	roleNames []string,
+) (*graphsdk.ServicePrincipal, error) {
+	var application *graphsdk.Application
+	var err error
+
+	// Attempt to find existing application by ID or name
+	application, _ = ad.getApplicationByNameOrId(ctx, subscriptionId, appIdOrName)
+
+	// Create new application if not found
+	if application == nil {
+		// Create application
+		application, err = ad.createApplication(ctx, subscriptionId, appIdOrName)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	// Get or create service principal from application
+	servicePrincipal, err := ad.ensureServicePrincipal(ctx, subscriptionId, application)
+	if err != nil {
+		return nil, err
+	}
+
+	// Apply specified role assignments
+	err = ad.ensureRoleAssignments(ctx, subscriptionId, roleNames, servicePrincipal)
+	if err != nil {
+		return nil, fmt.Errorf("failed applying role assignment: %w", err)
+	}
+
+	return servicePrincipal, nil
+}
+
+// Removes any existing password credentials from the application
+// and creates a new password credential
+func (ad *adService) ResetPasswordCredentials(
+	ctx context.Context,
+	subscriptionId string,
+	appId string,
+) (*AzureCredentials, error) {
+	graphClient, err := ad.getOrCreateGraphClient(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	application, err := ad.getApplicationByAppId(ctx, subscriptionId, appId)
+	if err != nil {
+		return nil, fmt.Errorf("failed finding matching application: %w", err)
+	}
+
+	servicePrincipal, err := ad.getServicePrincipal(ctx, subscriptionId, application)
+	if err != nil {
+		return nil, fmt.Errorf("failed finding matching service principal: %w", err)
+	}
+
+	for _, credential := range application.PasswordCredentials {
+		err := graphClient.
+			ApplicationById(*application.Id).
+			RemovePassword(ctx, *credential.KeyId)
+
+		if err != nil {
+			return nil, fmt.Errorf("failed removing credentials for KeyId '%s' : %w", *credential.KeyId, err)
+		}
+	}
+
+	credential, err := graphClient.
+		ApplicationById(*application.Id).
+		AddPassword(ctx)
+
+	if err != nil {
+		return nil, fmt.Errorf(
+			"failed adding new password credential for application '%s' : %w",
+			application.DisplayName,
+			err,
+		)
+	}
+
+	return &AzureCredentials{
+		ClientId:       *application.AppId,
+		ClientSecret:   *credential.SecretText,
+		SubscriptionId: subscriptionId,
+		TenantId:       *servicePrincipal.AppOwnerOrganizationId,
+	}, nil
+}
+
+func (ad *adService) ApplyFederatedCredentials(
+	ctx context.Context,
+	subscriptionId string,
+	clientId string,
+	repoSlug string,
+	branches []string,
+) ([]*graphsdk.FederatedIdentityCredential, error) {
+	graphClient, err := ad.getOrCreateGraphClient(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	application, err := ad.getApplicationByAppId(ctx, subscriptionId, clientId)
+	if err != nil {
+		return nil, fmt.Errorf("failed finding matching application: %w", err)
+	}
+
+	existingCredsResponse, err := graphClient.
+		ApplicationById(*application.Id).
+		FederatedIdentityCredentials().
+		Get(ctx)
+
+	if err != nil {
+		return nil, fmt.Errorf("failed retrieving federated credentials: %w", err)
+	}
+
+	existingCredentials := existingCredsResponse.Value
+	credentialSafeName := strings.ReplaceAll(repoSlug, "/", "-")
+
+	// List of desired federated credentials
+	federatedCredentials := []*graphsdk.FederatedIdentityCredential{
+		{
+			Name:        url.PathEscape(fmt.Sprintf("%s-pull_request", credentialSafeName)),
+			Issuer:      federatedIdentityIssuer,
+			Subject:     fmt.Sprintf("repo:%s:pull_request", repoSlug),
+			Description: convert.RefOf("Created by Azure Developer CLI"),
+			Audiences:   []string{federatedIdentityAudience},
+		},
+	}
+
+	for _, branch := range branches {
+		branchCredentials := &graphsdk.FederatedIdentityCredential{
+			Name:        url.PathEscape(fmt.Sprintf("%s-%s", credentialSafeName, branch)),
+			Issuer:      federatedIdentityIssuer,
+			Subject:     fmt.Sprintf("repo:%s:ref:refs/heads/%s", repoSlug, branch),
+			Description: convert.RefOf("Created by Azure Developer CLI"),
+			Audiences:   []string{federatedIdentityAudience},
+		}
+
+		federatedCredentials = append(federatedCredentials, branchCredentials)
+	}
+
+	createdCredentials := []*graphsdk.FederatedIdentityCredential{}
+
+	// Ensure the credential exists otherwise create a new one.
+	for i := range federatedCredentials {
+		credential, err := ad.ensureFederatedCredential(
+			ctx,
+			subscriptionId,
+			application,
+			existingCredentials,
+			federatedCredentials[i],
+		)
+		if err != nil {
+			return nil, err
+		}
+
+		if credential != nil {
+			createdCredentials = append(createdCredentials, credential)
+		}
+	}
+
+	return createdCredentials, nil
+}
+
+func (ad *adService) getApplicationByNameOrId(
+	ctx context.Context,
+	subscriptionId string,
+	appIdOrName string,
+) (*graphsdk.Application, error) {
 	// Attempt to find existing application by ID
-	application, _ = ad.getApplicationByAppId(ctx, graphClient, appIdOrName)
+	application, _ := ad.getApplicationByAppId(ctx, subscriptionId, appIdOrName)
 
 	// Fallback to find by name
 	if application == nil {
-		application, _ = getApplicationByName(ctx, graphClient, appIdOrName)
+		application, _ = ad.getApplicationByName(ctx, subscriptionId, appIdOrName)
 	}
 
 	if application == nil {
@@ -99,91 +288,37 @@ func (ad *adService) GetServicePrincipal(
 	return application, nil
 }
 
-func (ad *adService) CreateOrUpdateServicePrincipal(
-	ctx context.Context,
-	subscriptionId string,
-	applicationIdOrName string,
-	roleNames []string,
-) (*string, json.RawMessage, error) {
-	graphClient, err := ad.createGraphClient(ctx, subscriptionId)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	var application *graphsdk.Application
-
-	// Attempt to find existing application by ID or name
-	application, _ = ad.GetServicePrincipal(ctx, subscriptionId, applicationIdOrName)
-
-	// Create new application if not found
-	if application == nil {
-		// Create application
-		application, err = createApplication(ctx, graphClient, applicationIdOrName)
-		if err != nil {
-			return nil, nil, err
-		}
-	}
-
-	// Get or create service principal from application
-	servicePrincipal, err := ensureServicePrincipal(ctx, graphClient, application)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	// Reset credentials for service principal
-	credential, err := resetCredentials(ctx, graphClient, application)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed resetting application credentials: %w", err)
-	}
-
-	// Apply specified role assignments
-	err = ad.ensureRoleAssignments(ctx, subscriptionId, roleNames, servicePrincipal)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed applying role assignment: %w", err)
-	}
-
-	azureCreds := AzureCredentials{
-		ClientId:                   *application.AppId,
-		ClientSecret:               *credential.SecretText,
-		SubscriptionId:             subscriptionId,
-		TenantId:                   *servicePrincipal.AppOwnerOrganizationId,
-		ResourceManagerEndpointUrl: "https://management.azure.com/",
-	}
-
-	credentialsJson, err := json.Marshal(azureCreds)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed marshalling Azure credentials to JSON: %w", err)
-	}
-
-	var rawMessage json.RawMessage
-	if err := json.Unmarshal(credentialsJson, &rawMessage); err != nil {
-		return nil, nil, fmt.Errorf("failed unmarshalling JSON to raw message: %w", err)
-	}
-
-	return application.AppId, rawMessage, nil
-}
-
 func (ad *adService) getApplicationByAppId(
 	ctx context.Context,
-	graphClient *graphsdk.GraphClient,
-	applicationId string,
+	subscriptionId string,
+	appId string,
 ) (*graphsdk.Application, error) {
+	graphClient, err := ad.getOrCreateGraphClient(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
 	application, err := graphClient.
-		ApplicationById(applicationId).
+		ApplicationById(appId).
 		GetByAppId(ctx)
 
 	if err != nil {
-		return nil, fmt.Errorf("failed retrieving application with id '%s': %w", applicationId, err)
+		return nil, fmt.Errorf("failed retrieving application with id '%s': %w", appId, err)
 	}
 
 	return application, nil
 }
 
-func getApplicationByName(
+func (ad *adService) getApplicationByName(
 	ctx context.Context,
-	graphClient *graphsdk.GraphClient,
+	subscriptionId string,
 	applicationName string,
 ) (*graphsdk.Application, error) {
+	graphClient, err := ad.getOrCreateGraphClient(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
 	matchingItems, err := graphClient.
 		Applications().
 		Filter(fmt.Sprintf("startswith(displayName, '%s')", applicationName)).
@@ -205,11 +340,16 @@ func getApplicationByName(
 }
 
 // Gets or creates an application with the specified name
-func createApplication(
+func (ad *adService) createApplication(
 	ctx context.Context,
-	graphClient *graphsdk.GraphClient,
+	subscriptionId string,
 	applicationName string,
 ) (*graphsdk.Application, error) {
+	graphClient, err := ad.getOrCreateGraphClient(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
 	// Existing application doesn't exist - create a new one
 	newApp := &graphsdk.Application{
 		DisplayName:         applicationName,
@@ -217,7 +357,7 @@ func createApplication(
 		PasswordCredentials: []*graphsdk.ApplicationPasswordCredential{},
 	}
 
-	newApp, err := graphClient.Applications().Post(ctx, newApp)
+	newApp, err = graphClient.Applications().Post(ctx, newApp)
 	if err != nil {
 		return nil, fmt.Errorf("failed creating application '%s': %w", applicationName, err)
 	}
@@ -225,13 +365,17 @@ func createApplication(
 	return newApp, nil
 }
 
-// Gets or creates a service principal for the specified application name
-func ensureServicePrincipal(
+func (ad *adService) getServicePrincipal(
 	ctx context.Context,
-	client *graphsdk.GraphClient,
+	subscriptionId string,
 	application *graphsdk.Application,
 ) (*graphsdk.ServicePrincipal, error) {
-	matchingItems, err := client.
+	graphClient, err := ad.getOrCreateGraphClient(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	matchingItems, err := graphClient.
 		ServicePrincipals().
 		Filter(fmt.Sprintf("displayName eq '%s'", application.DisplayName)).
 		Get(ctx)
@@ -248,6 +392,25 @@ func ensureServicePrincipal(
 		return &matchingItems.Value[0], nil
 	}
 
+	return nil, fmt.Errorf("no service principal found for application '%s'", application.DisplayName)
+}
+
+// Gets or creates a service principal for the specified application name
+func (ad *adService) ensureServicePrincipal(
+	ctx context.Context,
+	subscriptionId string,
+	application *graphsdk.Application,
+) (*graphsdk.ServicePrincipal, error) {
+	graphClient, err := ad.getOrCreateGraphClient(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	servicePrincipal, err := ad.getServicePrincipal(ctx, subscriptionId, application)
+	if err == nil && servicePrincipal != nil {
+		return servicePrincipal, nil
+	}
+
 	// Existing service principal doesn't exist - create a new one.
 	newSpn := &graphsdk.ServicePrincipal{
 		AppId:       *application.AppId,
@@ -255,7 +418,7 @@ func ensureServicePrincipal(
 		Description: application.Description,
 	}
 
-	newSpn, err = client.ServicePrincipals().Post(ctx, newSpn)
+	newSpn, err = graphClient.ServicePrincipals().Post(ctx, newSpn)
 	if err != nil {
 		return nil, fmt.Errorf("failed creating service principal '%s': %w", application.DisplayName, err)
 	}
@@ -263,33 +426,39 @@ func ensureServicePrincipal(
 	return newSpn, nil
 }
 
-// Removes any existing password credentials from the application
-// and creates a new password credential
-func resetCredentials(
+// Ensures that the federated credential exists on the application otherwise create a new one
+func (ad *adService) ensureFederatedCredential(
 	ctx context.Context,
-	client *graphsdk.GraphClient,
+	subscriptionId string,
 	application *graphsdk.Application,
-) (*graphsdk.ApplicationPasswordCredential, error) {
-	for _, credential := range application.PasswordCredentials {
-		err := client.
-			ApplicationById(*application.Id).
-			RemovePassword(ctx, *credential.KeyId)
+	existingCredentials []graphsdk.FederatedIdentityCredential,
+	repoCredential *graphsdk.FederatedIdentityCredential,
+) (*graphsdk.FederatedIdentityCredential, error) {
+	graphClient, err := ad.getOrCreateGraphClient(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
 
-		if err != nil {
-			return nil, fmt.Errorf("failed removing credentials for KeyId '%s' : %w", *credential.KeyId, err)
+	// If a federated credential already exists for the same subject then nothing to do.
+	for _, existing := range existingCredentials {
+		if existing.Subject == repoCredential.Subject {
+			log.Printf(
+				"federated credential with subject '%s' already exists on application '%s'",
+				repoCredential.Subject,
+				*application.Id,
+			)
+			return nil, nil
 		}
 	}
 
-	credential, err := client.
+	// Otherwise create the new federated credential
+	credential, err := graphClient.
 		ApplicationById(*application.Id).
-		AddPassword(ctx)
+		FederatedIdentityCredentials().
+		Post(ctx, repoCredential)
 
 	if err != nil {
-		return nil, fmt.Errorf(
-			"failed adding new password credential for application '%s' : %w",
-			application.DisplayName,
-			err,
-		)
+		return nil, fmt.Errorf("failed creating federated credential: %w", err)
 	}
 
 	return credential, nil
@@ -427,25 +596,6 @@ func (ad *adService) getRoleDefinition(
 }
 
 // Creates a graph users client using credentials from the Go context.
-func (ad *adService) createGraphClient(
-	ctx context.Context,
-	subscriptionId string,
-) (*graphsdk.GraphClient, error) {
-	credential, err := ad.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
-	if err != nil {
-		return nil, err
-	}
-
-	options := clientOptionsBuilder(ctx, ad.httpClient, ad.userAgent).BuildCoreClientOptions()
-	client, err := graphsdk.NewGraphClient(credential, options)
-	if err != nil {
-		return nil, fmt.Errorf("creating Graph Users client: %w", err)
-	}
-
-	return client, nil
-}
-
-// Creates a graph users client using credentials from the Go context.
 func (ad *adService) createRoleDefinitionsClient(
 	ctx context.Context,
 	subscriptionId string,
@@ -479,6 +629,31 @@ func (ad *adService) createRoleAssignmentsClient(
 	if err != nil {
 		return nil, fmt.Errorf("creating ARM Role Assignments client: %w", err)
 	}
+
+	return client, nil
+}
+
+// Creates a graph users client using credentials from the Go context.
+func (ad *adService) getOrCreateGraphClient(
+	ctx context.Context,
+	subscriptionId string,
+) (*graphsdk.GraphClient, error) {
+	if client, ok := ad.clientCache[subscriptionId]; ok {
+		return client, nil
+	}
+
+	credential, err := ad.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	options := clientOptionsBuilder(ctx, ad.httpClient, ad.userAgent).BuildCoreClientOptions()
+	client, err := graphsdk.NewGraphClient(credential, options)
+	if err != nil {
+		return nil, fmt.Errorf("creating Graph Users client: %w", err)
+	}
+
+	ad.clientCache[subscriptionId] = client
 
 	return client, nil
 }

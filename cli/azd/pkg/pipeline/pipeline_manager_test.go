@@ -13,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
@@ -21,6 +22,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
+	"github.com/stretchr/testify/require"
 )
 
 func Test_PipelineManager_Initialize(t *testing.T) {
@@ -385,6 +387,21 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 	})
 }
 
+func Test_PipelineManager_Configure(t *testing.T) {
+	tempDir := t.TempDir()
+	azdContext := azdcontext.NewAzdContextWithDirectory(tempDir)
+	mockContext := mocks.NewMockContext(context.Background())
+	env := environment.New("test")
+	args := &PipelineManagerArgs{}
+
+	pipelineManager, err := createPipelineManager(t, mockContext, azdContext, env, args)
+	require.NoError(t, err)
+
+	result, err := pipelineManager.Configure(*mockContext.Context)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+}
+
 func createPipelineManager(
 	t *testing.T,
 	mockContext *mocks.MockContext,
@@ -403,16 +420,20 @@ func createPipelineManager(
 	envManager := &mockenv.MockEnvManager{}
 	envManager.On("Save", mock.Anything, env).Return(nil)
 
+	adService := azcli.NewAdService(mockContext.SubscriptionCredentialProvider, mockContext.HttpClient)
+
 	// Singletons
-	mockContext.Container.RegisterSingleton(func() context.Context { return *mockContext.Context })
-	mockContext.Container.RegisterSingleton(func() *azdcontext.AzdContext { return azdContext })
-	mockContext.Container.RegisterSingleton(func() environment.Manager { return envManager })
-	mockContext.Container.RegisterSingleton(func() *environment.Environment { return env })
+	ioc.RegisterInstance(mockContext.Container, *mockContext.Context)
+	ioc.RegisterInstance(mockContext.Container, azdContext)
+	ioc.RegisterInstance[environment.Manager](mockContext.Container, envManager)
+	ioc.RegisterInstance(mockContext.Container, env)
+	ioc.RegisterInstance(mockContext.Container, adService)
+	ioc.RegisterInstance[account.SubscriptionCredentialProvider](
+		mockContext.Container,
+		mockContext.SubscriptionCredentialProvider,
+	)
 	mockContext.Container.RegisterSingleton(github.NewGitHubCli)
 	mockContext.Container.RegisterSingleton(git.NewGitCli)
-	mockContext.Container.RegisterSingleton(func() account.SubscriptionCredentialProvider {
-		return mockContext.SubscriptionCredentialProvider
-	})
 
 	// Pipeline providers
 	pipelineProviderMap := map[string]any{
@@ -430,7 +451,7 @@ func createPipelineManager(
 	return NewPipelineManager(
 		*mockContext.Context,
 		envManager,
-		azcli.NewAdService(mockContext.SubscriptionCredentialProvider, mockContext.HttpClient),
+		adService,
 		git.NewGitCli(mockContext.CommandRunner),
 		azdContext,
 		env,

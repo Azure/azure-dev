@@ -5,12 +5,12 @@ package pipeline
 
 import (
 	"context"
-	"encoding/json"
 	"os"
 	"path/filepath"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
 // subareaProvider defines the base behavior from any pipeline provider
@@ -102,7 +102,7 @@ type CiProvider interface {
 		ctx context.Context,
 		gitRepo *gitRepositoryDetails,
 		provisioningProvider provisioning.Options,
-		credential json.RawMessage,
+		credentials *azcli.AzureCredentials,
 		authType PipelineAuthType,
 	) error
 }

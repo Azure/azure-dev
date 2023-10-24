@@ -17,7 +17,7 @@
 {{- range .Services}}
     - [app/{{.Name}}.bicep](./infra/app/{{.Name}}.bicep)
 {{- end}}
-3. For services using Redis, the environment variables will not show up under `env` explicitly, but are available as: `REDIS_ENDPOINT`, `REDIS_HOST`, `REDIS_PASSWORD`, and `REDIS_PORT`.
+3. For services using Redis, environment variables will not show up under `env` explicitly, but are available as: `REDIS_ENDPOINT`, `REDIS_HOST`, `REDIS_PASSWORD`, and `REDIS_PORT`.
 
 ### Provision infrastructure and deploy application code
 

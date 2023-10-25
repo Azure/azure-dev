@@ -225,29 +225,6 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 		appIdOrName,
 		pm.args.PipelineRoleNames)
 
-	var credentials *azcli.AzureCredentials
-
-	if PipelineAuthType(pm.args.PipelineAuthTypeName) == AuthTypeClientCredentials {
-		updatedCreds, err := pm.adService.ResetPasswordCredentials(
-			ctx,
-			pm.env.GetSubscriptionId(),
-			servicePrincipal.AppId,
-		)
-		if err != nil {
-			return result, fmt.Errorf("failed to reset password credentials: %w", err)
-		}
-
-		credentials = updatedCreds
-	}
-
-	if credentials == nil {
-		credentials = &azcli.AzureCredentials{
-			ClientId:       servicePrincipal.AppId,
-			SubscriptionId: pm.env.GetSubscriptionId(),
-			TenantId:       *servicePrincipal.AppOwnerOrganizationId,
-		}
-	}
-
 	// Update new service principal to include client id
 	if !strings.Contains(displayMsg, servicePrincipal.AppId) {
 		displayMsg += fmt.Sprintf(" (%s)", servicePrincipal.AppId)
@@ -273,7 +250,7 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 		ctx,
 		gitRepoInfo,
 		prj.Infra,
-		credentials,
+		servicePrincipal,
 		PipelineAuthType(pm.args.PipelineAuthTypeName))
 	pm.console.StopSpinner(ctx, "", input.GetStepResultFormat(err))
 	if err != nil {

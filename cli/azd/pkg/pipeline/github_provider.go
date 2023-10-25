@@ -16,6 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	githubRemote "github.com/azure/azure-dev/cli/azd/pkg/github"
+	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -393,7 +394,7 @@ func (p *GitHubCiProvider) configureConnection(
 	ctx context.Context,
 	repoDetails *gitRepositoryDetails,
 	infraOptions provisioning.Options,
-	credentials *azcli.AzureCredentials,
+	servicePrincipal *graphsdk.ServicePrincipal,
 	authType PipelineAuthType,
 ) error {
 
@@ -414,9 +415,9 @@ func (p *GitHubCiProvider) configureConnection(
 
 	switch authType {
 	case AuthTypeClientCredentials:
-		authErr = p.configureClientCredentialsAuth(ctx, infraOptions, repoSlug, credentials)
+		authErr = p.configureClientCredentialsAuth(ctx, infraOptions, repoSlug, servicePrincipal)
 	default:
-		authErr = p.configureFederatedAuth(ctx, infraOptions, repoSlug, branches, credentials)
+		authErr = p.configureFederatedAuth(ctx, infraOptions, repoSlug, branches, servicePrincipal)
 	}
 
 	if authErr != nil {
@@ -509,8 +510,21 @@ func (p *GitHubCiProvider) configureClientCredentialsAuth(
 	ctx context.Context,
 	infraOptions provisioning.Options,
 	repoSlug string,
-	credentials *azcli.AzureCredentials,
+	servicePrincipal *graphsdk.ServicePrincipal,
 ) error {
+	credentials, err := p.adService.ResetPasswordCredentials(ctx, p.env.GetSubscriptionId(), servicePrincipal.AppId)
+	if err != nil {
+		return err
+	}
+
+	p.console.MessageUxItem(
+		ctx,
+		&ux.DisplayedResource{
+			Type: "Configuring client credentials for service principal",
+			Name: servicePrincipal.DisplayName,
+		},
+	)
+
 	/* #nosec G101 - Potential hardcoded credentials - false positive */
 	secretName := "AZURE_CREDENTIALS"
 	credsJson, err := json.Marshal(credentials)
@@ -564,12 +578,12 @@ func (p *GitHubCiProvider) configureFederatedAuth(
 	infraOptions provisioning.Options,
 	repoSlug string,
 	branches []string,
-	credentials *azcli.AzureCredentials,
+	servicePrincipal *graphsdk.ServicePrincipal,
 ) error {
 	federatedCredentials, err := p.adService.ApplyFederatedCredentials(
 		ctx,
-		credentials.SubscriptionId,
-		credentials.ClientId,
+		p.env.GetSubscriptionId(),
+		servicePrincipal.AppId,
 		repoSlug,
 		branches,
 	)
@@ -588,8 +602,8 @@ func (p *GitHubCiProvider) configureFederatedAuth(
 	}
 
 	for key, value := range map[string]string{
-		environment.TenantIdEnvVarName: credentials.TenantId,
-		"AZURE_CLIENT_ID":              credentials.ClientId,
+		environment.TenantIdEnvVarName: *servicePrincipal.AppOwnerOrganizationId,
+		"AZURE_CLIENT_ID":              servicePrincipal.AppId,
 	} {
 		if err := p.ghCli.SetVariable(ctx, repoSlug, key, value); err != nil {
 			return fmt.Errorf("failed setting github variable '%s':  %w", key, err)

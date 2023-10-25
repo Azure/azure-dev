@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -129,29 +130,6 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		defaultTitleNote = "This is a preview. No changes will be applied to your Azure resources."
 	}
 
-	// Get Subscription to Display in Command Title Note
-	subscriptions, subErr := p.subManager.GetSubscriptions(ctx)
-	if subErr == nil {
-		// Find subscription name
-		for _, sub := range subscriptions {
-			if sub.Id == p.env.GetSubscriptionId() {
-				messageFormat := "Provisioning Azure resources in subscription (%s) %s and location (%s) can take some time"
-				if previewMode {
-					messageFormat = "This is a preview. No changes will be applied to your Azure resources in subscription (%s) %s " +
-						"and location (%s)."
-				}
-				// Formate the note
-				defaultTitleNote = fmt.Sprintf(
-					messageFormat,
-					sub.Name,
-					sub.Id,
-					p.env.GetLocation(),
-				)
-				break
-			}
-		}
-	}
-
 	p.console.MessageUxItem(ctx, &ux.MessageTitle{
 		Title:     defaultTitle,
 		TitleNote: defaultTitleNote},
@@ -166,6 +144,30 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 	p.projectConfig.Infra.IgnoreDeploymentState = p.flags.ignoreDeploymentState
 	if err := p.provisionManager.Initialize(ctx, p.projectConfig.Path, p.projectConfig.Infra); err != nil {
 		return nil, fmt.Errorf("initializing provisioning manager: %w", err)
+	}
+
+	// Get Subscription to Display in Command Title Note
+	// Subscription and Location are ONLY displayed when they are available (found from env), otherwise, this message
+	// is not displayed.
+	// This needs to happen after the provisionManager initializes to make sure the env is ready for the provisioning
+	// provider
+	subscription, subErr := p.subManager.GetSubscription(ctx, p.env.GetSubscriptionId())
+	if subErr == nil {
+		location, err := p.subManager.GetLocation(ctx, p.env.GetSubscriptionId(), p.env.GetLocation())
+		var locationDisplay string
+		if err != nil {
+			log.Printf("failed getting location: %v", err)
+		} else {
+			locationDisplay = location.DisplayName
+		}
+
+		p.console.MessageUxItem(ctx, &ux.EnvironmentDetails{
+			Subscription: fmt.Sprintf("%s (%s)", subscription.Name, subscription.Id),
+			Location:     locationDisplay},
+		)
+
+	} else {
+		log.Printf("failed getting subscriptions. Skip displaying sub and location: %v", subErr)
 	}
 
 	var deployResult *provisioning.DeployResult

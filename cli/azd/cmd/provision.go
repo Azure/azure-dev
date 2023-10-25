@@ -135,9 +135,22 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		TitleNote: defaultTitleNote},
 	)
 
+	startTime := time.Now()
+
+	if err := p.projectManager.Initialize(ctx, p.projectConfig); err != nil {
+		return nil, err
+	}
+
+	p.projectConfig.Infra.IgnoreDeploymentState = p.flags.ignoreDeploymentState
+	if err := p.provisionManager.Initialize(ctx, p.projectConfig.Path, p.projectConfig.Infra); err != nil {
+		return nil, fmt.Errorf("initializing provisioning manager: %w", err)
+	}
+
 	// Get Subscription to Display in Command Title Note
 	// Subscription and Location are ONLY displayed when they are available (found from env), otherwise, this message
-	// is not displayed
+	// is not displayed.
+	// This needs to happen after the provisionManager initializes to make sure the env is ready for the provisioning
+	// provider
 	subscription, subErr := p.subManager.GetSubscription(ctx, p.env.GetSubscriptionId())
 	if subErr == nil {
 		location, err := p.subManager.GetLocation(ctx, p.env.GetSubscriptionId(), p.env.GetLocation())
@@ -155,17 +168,6 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 
 	} else {
 		log.Printf("failed getting subscriptions. Skip displaying sub and location: %v", subErr)
-	}
-
-	startTime := time.Now()
-
-	if err := p.projectManager.Initialize(ctx, p.projectConfig); err != nil {
-		return nil, err
-	}
-
-	p.projectConfig.Infra.IgnoreDeploymentState = p.flags.ignoreDeploymentState
-	if err := p.provisionManager.Initialize(ctx, p.projectConfig.Path, p.projectConfig.Infra); err != nil {
-		return nil, fmt.Errorf("initializing provisioning manager: %w", err)
 	}
 
 	var deployResult *provisioning.DeployResult

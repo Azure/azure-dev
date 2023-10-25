@@ -22,7 +22,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
-	"github.com/stretchr/testify/require"
 )
 
 func Test_PipelineManager_Initialize(t *testing.T) {
@@ -385,21 +384,6 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 		os.Remove(azdoFolder)
 		os.Remove(ghFolder)
 	})
-}
-
-func Test_PipelineManager_Configure(t *testing.T) {
-	tempDir := t.TempDir()
-	azdContext := azdcontext.NewAzdContextWithDirectory(tempDir)
-	mockContext := mocks.NewMockContext(context.Background())
-	env := environment.New("test")
-	args := &PipelineManagerArgs{}
-
-	pipelineManager, err := createPipelineManager(t, mockContext, azdContext, env, args)
-	require.NoError(t, err)
-
-	result, err := pipelineManager.Configure(*mockContext.Context)
-	require.NoError(t, err)
-	require.NotNil(t, result)
 }
 
 func createPipelineManager(

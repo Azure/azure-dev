@@ -55,7 +55,7 @@ func (s *EnvironmentStore) List(ctx context.Context) ([]*contracts.EnvListEnviro
 	if err := s.config.EnsureValid(); err != nil {
 		updatedConfig, err := s.prompter.PromptForConfig(ctx)
 		if err != nil {
-			return []*contracts.EnvListEnvironment{}, nil
+			return nil, fmt.Errorf("DevCenter configuration is not valid. Confirm your configuration and try again, %w", err)
 		}
 
 		s.config = updatedConfig
@@ -81,7 +81,7 @@ func (s *EnvironmentStore) List(ctx context.Context) ([]*contracts.EnvListEnviro
 func (s *EnvironmentStore) Get(ctx context.Context, name string) (*environment.Environment, error) {
 	// If the devcenter configuration is not valid then we don't have enough information to query for the environment
 	if err := s.config.EnsureValid(); err != nil {
-		return nil, fmt.Errorf("%s %w", name, environment.ErrNotFound)
+		return nil, fmt.Errorf("%s %w, %w", name, environment.ErrNotFound, err)
 	}
 
 	filter := func(env *devcentersdk.Environment) bool {

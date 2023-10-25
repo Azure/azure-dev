@@ -64,6 +64,6 @@ func Test_CLI_ShowWorksWithoutEnvironment(t *testing.T) {
 
 	// Repeat the process but passing an explicit environment name for an environment that doesn't exist and ensure
 	// that we get an error, as the selected env does not exists.
-	result, err = cli.RunCommand(ctx, "show", "-e", "does-not-exist-by-design", "--output", "json")
+	_, err = cli.RunCommand(ctx, "show", "-e", "does-not-exist-by-design", "--output", "json")
 	require.Error(t, err)
 }

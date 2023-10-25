@@ -70,6 +70,7 @@ func (m *TelemetryMiddleware) Run(ctx context.Context, next NextFn) (*actions.Ac
 	span.SetAttributes(fields.CmdArgsCount.Int(len(m.options.Args)))
 
 	// Set the platform type when available
+	// Valid platform types are validating in the platform config resolver and will error here if not known & valid
 	if platformConfig, err := m.lazyPlatformConfig.GetValue(); err == nil && platformConfig != nil {
 		span.SetAttributes(fields.PlatformTypeKey.String(string(platformConfig.Type)))
 	}

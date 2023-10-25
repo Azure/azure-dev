@@ -56,6 +56,7 @@ import (
 	"github.com/mattn/go-colorable"
 	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
+	"golang.org/x/exp/slices"
 )
 
 // Registers a singleton action initializer for the specified action name
@@ -612,6 +613,16 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 		if !ok {
 			return nil, errors.New("platform config not found")
+		}
+
+		// Validate platform type
+		supportedPlatformKinds := []string{string(devcenter.PlatformKindDevCenter)}
+		if !slices.Contains(supportedPlatformKinds, string(platformConfig.Type)) {
+			return nil, fmt.Errorf(
+				"platform kind '%s' is not supported. Valid values are '%s'",
+				platformConfig.Type,
+				strings.Join(supportedPlatformKinds, ","),
+			)
 		}
 
 		return platformConfig, nil

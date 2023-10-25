@@ -7,20 +7,51 @@ import (
 )
 
 func Test_ToStringWithDefault(t *testing.T) {
-	t.Run("ValidString", func(t *testing.T) {
-		value := ToStringWithDefault("apple", "default")
-		require.Equal(t, "apple", value)
-	})
+	type testCase struct {
+		name     string
+		input    interface{}
+		expected interface{}
+	}
 
-	t.Run("NotString", func(t *testing.T) {
-		value := ToStringWithDefault(1, "default")
-		require.Equal(t, "default", value)
-	})
+	testCases := []testCase{
+		{
+			name:     "ValidString",
+			input:    "apple",
+			expected: "apple",
+		},
+		{
+			name:     "NotString",
+			input:    1,
+			expected: "default",
+		},
+		{
+			name:     "EmptyString",
+			input:    "",
+			expected: "default",
+		},
+		{
+			name:     "Nil",
+			input:    nil,
+			expected: "default",
+		},
+		{
+			name:     "StringPointer",
+			input:    RefOf("apple"),
+			expected: "apple",
+		},
+		{
+			name:     "NotStringPointer",
+			input:    RefOf(1),
+			expected: "default",
+		},
+	}
 
-	t.Run("NotString", func(t *testing.T) {
-		value := ToStringWithDefault("", "default")
-		require.Equal(t, "", value)
-	})
+	for _, tc := range testCases {
+		t.Run(tc.name, func(t *testing.T) {
+			actual := ToStringWithDefault(tc.input, "default")
+			require.Equal(t, tc.expected, actual)
+		})
+	}
 }
 
 func Test_ToValueWithDefault(t *testing.T) {
@@ -36,6 +67,11 @@ func Test_ToValueWithDefault(t *testing.T) {
 
 	t.Run("Nil", func(t *testing.T) {
 		value := ToValueWithDefault(nil, "default")
+		require.Equal(t, "default", value)
+	})
+
+	t.Run("EmptyString", func(t *testing.T) {
+		value := ToValueWithDefault(RefOf(""), "default")
 		require.Equal(t, "default", value)
 	})
 }

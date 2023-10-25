@@ -3,12 +3,17 @@ package convert
 import (
 	"encoding/json"
 	"fmt"
+	"reflect"
 )
 
 // Converts a pointer to a value type
 // If the ptr is nil returns default value, otherwise the value of value of the pointer
 func ToValueWithDefault[T any](ptr *T, defaultValue T) T {
 	if ptr == nil {
+		return defaultValue
+	}
+
+	if str, ok := any(ptr).(*string); ok && *str == "" {
 		return defaultValue
 	}
 
@@ -22,8 +27,20 @@ func RefOf[T any](value T) *T {
 
 // Attempts to convert the specified value to a string, otherwise returns the default value
 func ToStringWithDefault(value any, defaultValue string) string {
-	if str, ok := value.(string); ok {
-		return str
+	if value == nil {
+		return defaultValue
+	}
+
+	kind := reflect.TypeOf(value).Kind()
+	switch kind {
+	case reflect.Pointer:
+		if ptr, ok := value.(*string); ok && *ptr != "" {
+			return *ptr
+		}
+	case reflect.String:
+		if str, ok := value.(string); ok && str != "" {
+			return str
+		}
 	}
 
 	return defaultValue

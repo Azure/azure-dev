@@ -235,11 +235,9 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 	}
 
 	// Set in .env to be retrieved for any additional runs
-	if servicePrincipal.AppId != "" {
-		pm.env.DotenvSet(AzurePipelineClientIdEnvVarName, servicePrincipal.AppId)
-		if err := pm.envManager.Save(ctx, pm.env); err != nil {
-			return result, fmt.Errorf("failed to save environment: %w", err)
-		}
+	pm.env.DotenvSet(AzurePipelineClientIdEnvVarName, servicePrincipal.AppId)
+	if err := pm.envManager.Save(ctx, pm.env); err != nil {
+		return result, fmt.Errorf("failed to save environment: %w", err)
 	}
 
 	repoSlug := gitRepoInfo.owner + "/" + gitRepoInfo.repoName

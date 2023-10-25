@@ -111,6 +111,9 @@ stages:
             parameters:
               Title: Build Test MSI
               Condition: and(succeeded(), eq(variables['BuildTestMsi'], 'true'))
+              # Build the test MSI with the same configuration as the
+              # release MSI (no special upgrade behavior)
+              ShouldBuildForRelease: true
 
           - template: /eng/pipelines/templates/steps/install-terraform.yml
           - template: /eng/pipelines/templates/steps/install-kubectl.yml
@@ -601,6 +604,10 @@ stages:
         - template: /eng/pipelines/templates/steps/build-msi.yml
           parameters:
             Title: Build Release MSI
+            # Only build for release in a manual (releasing) build. Otherwise
+            # the package version will be 0.1.0 with upgrade logic that allows
+            # it to be installed over any previously installed version.
+            ShouldBuildForRelease: ${{ eq(variables['Build.Reason'], 'Manual') }}
 
         - ${{ if and(in(variables['Build.Reason'], 'IndividualCI', 'BatchedCI', 'Manual'), eq(variables['Build.Repository.Name'], 'Azure/azure-dev')) }}:
           - template: pipelines/steps/azd-cli-win-signing.yml@azure-sdk-build-tools

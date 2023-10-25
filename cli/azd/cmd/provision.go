@@ -136,22 +136,23 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 	)
 
 	// Get Subscription to Display in Command Title Note
-	subscriptions, subErr := p.subManager.GetSubscriptions(ctx)
+	// Subscription and Location are ONLY displayed when they are available (found from env), otherwise, this message
+	// is not displayed
+	subscription, subErr := p.subManager.GetSubscription(ctx, p.env.GetSubscriptionId())
 	if subErr == nil {
-		// Find subscription name
-		for _, sub := range subscriptions {
-			if sub.Id == p.env.GetSubscriptionId() {
-				location, err := p.subManager.GetLocation(ctx, p.env.GetSubscriptionId(), p.env.GetLocation())
-				if err != nil {
-					log.Printf("failed getting location: %v", err)
-				}
-				p.console.MessageUxItem(ctx, &ux.EnvironmentDetails{
-					Subscription: fmt.Sprintf("%s (%s)", sub.Name, sub.Id),
-					Location:     location.DisplayName},
-				)
-				break
-			}
+		location, err := p.subManager.GetLocation(ctx, p.env.GetSubscriptionId(), p.env.GetLocation())
+		var locationDisplay string
+		if err != nil {
+			log.Printf("failed getting location: %v", err)
+		} else {
+			locationDisplay = location.DisplayName
 		}
+
+		p.console.MessageUxItem(ctx, &ux.EnvironmentDetails{
+			Subscription: fmt.Sprintf("%s (%s)", subscription.Name, subscription.Id),
+			Location:     locationDisplay},
+		)
+
 	} else {
 		log.Printf("failed getting subscriptions. Skip displaying sub and location: %v", subErr)
 	}

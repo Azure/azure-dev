@@ -149,6 +149,20 @@ func (m *SubscriptionsManager) GetSubscriptions(ctx context.Context) ([]Subscrip
 	return subscriptions, nil
 }
 
+func (m *SubscriptionsManager) GetSubscription(ctx context.Context, subscriptionId string) (*Subscription, error) {
+	subscriptions, err := m.GetSubscriptions(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, sub := range subscriptions {
+		if sub.Id == subscriptionId {
+			return &sub, nil
+		}
+	}
+	return m.getSubscription(ctx, subscriptionId)
+}
+
 type tenantSubsResult struct {
 	subs []Subscription
 	err  error
@@ -319,7 +333,7 @@ func (m *SubscriptionsManager) listLocations(
 	return m.service.ListSubscriptionLocations(ctx, subscriptionId, tenantId)
 }
 
-func (m *SubscriptionsManager) GetSubscription(ctx context.Context, subscriptionId string) (*Subscription, error) {
+func (m *SubscriptionsManager) getSubscription(ctx context.Context, subscriptionId string) (*Subscription, error) {
 	tenantId, err := m.LookupTenant(ctx, subscriptionId)
 	if err != nil {
 		return nil, err

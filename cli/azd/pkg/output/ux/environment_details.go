@@ -17,10 +17,14 @@ type EnvironmentDetails struct {
 }
 
 func (t *EnvironmentDetails) ToString(currentIndentation string) string {
+	var location string
+	if t.Location != "" {
+		location = fmt.Sprintf("\nLocation: %s", color.BlueString(t.Location))
+	}
 	return fmt.Sprintf(
-		"Subscription: %s\nLocation: %s\n",
+		"Subscription: %s%s\n",
 		color.BlueString(t.Subscription),
-		color.BlueString(t.Location),
+		location,
 	)
 }
 

@@ -16,6 +16,7 @@ import (
 	// Importing for infrastructure provider plugin registrations
 
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/project"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
@@ -313,6 +314,16 @@ func NewRootCmd(ctx context.Context, staticHelp bool, middlewareChain []*actions
 	ioc.RegisterInstance(ioc.Global, ctx)
 	registerCommonDependencies(ioc.Global)
 	cobraBuilder := NewCobraBuilder(ioc.Global)
+
+	// Enable the platform provider if it is configured
+	var platformConfig *project.PlatformConfig
+	if err := ioc.Global.Resolve(&platformConfig); err == nil && platformConfig != nil {
+		platformKey := fmt.Sprintf("%s-platform", platformConfig.Type)
+		var platformProvider project.PlatformProvider
+		if err := ioc.Global.ResolveNamed(platformKey, &platformProvider); err == nil && platformProvider.IsEnabled() {
+			platformProvider.ConfigureContainer(ioc.Global)
+		}
+	}
 
 	// Compose the hierarchy of action descriptions into cobra commands
 	cmd, err := cobraBuilder.BuildCommand(root)

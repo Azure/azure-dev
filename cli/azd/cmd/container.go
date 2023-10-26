@@ -628,7 +628,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		return platformConfig, nil
 	})
 
-	// Platforms
+	// Platform Providers
 	platformProviderMap := map[project.PlatformKind]any{
 		devcenter.PlatformKindDevCenter: devcenter.NewPlatform,
 	}
@@ -637,17 +637,6 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		platformName := fmt.Sprintf("%s-platform", provider)
 		if err := container.RegisterNamedSingleton(platformName, constructor); err != nil {
 			panic(fmt.Errorf("registering platform provider %s: %w", provider, err))
-		}
-
-		var platform project.PlatformProvider
-		if err := container.ResolveNamed(platformName, &platform); err != nil {
-			panic(fmt.Errorf("resolving platform provider %s: %w", provider, err))
-		}
-
-		if platform.IsEnabled() {
-			if err := platform.ConfigureContainer(container); err != nil {
-				panic(fmt.Errorf("configuring platform provider %s: %w", provider, err))
-			}
 		}
 	}
 

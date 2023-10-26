@@ -117,6 +117,7 @@ func (p *progressLog) Start() {
 }
 
 // Stop clears the screen from any previous output and clear the buffer.
+// If keepLogs is true, the current screen is not cleared.
 // Calling Stop() before Start() is a no-op.
 func (p *progressLog) Stop(keepLogs bool) {
 	if p.output == nil {

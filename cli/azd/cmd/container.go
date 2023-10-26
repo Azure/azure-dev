@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -19,7 +18,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
-	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/containerapps"
 	"github.com/azure/azure-dev/cli/azd/pkg/devcenter"
@@ -29,19 +27,17 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
-	infraBicep "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
-	infraTerraform "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/terraform"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/pipeline"
+	"github.com/azure/azure-dev/cli/azd/pkg/platform"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/pkg/state"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
@@ -52,7 +48,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/npm"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/python"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/swa"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/terraform"
 	"github.com/mattn/go-colorable"
 	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
@@ -233,8 +228,6 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		}
 	})
 
-	container.RegisterSingleton(storage.NewBlobClient)
-	container.RegisterSingleton(storage.NewBlobSdkClient)
 	container.RegisterSingleton(environment.NewLocalFileDataStore)
 	container.RegisterSingleton(environment.NewManager)
 
@@ -271,17 +264,6 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		})
 	})
 
-	// Remote Environment State Providers
-	remoteStateProviderMap := map[environment.RemoteKind]any{
-		environment.RemoteKindAzureBlobStorage: environment.NewStorageBlobDataStore,
-	}
-
-	for remoteKind, constructor := range remoteStateProviderMap {
-		if err := container.RegisterNamedSingleton(string(remoteKind), constructor); err != nil {
-			panic(fmt.Errorf("registering remote state provider %s: %w", remoteKind, err))
-		}
-	}
-
 	container.RegisterSingleton(func(
 		lazyProjectConfig *lazy.Lazy[*project.ProjectConfig],
 		userConfigManager config.UserConfigManager,
@@ -309,35 +291,6 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		}
 
 		return remoteStateConfig, nil
-	})
-
-	container.RegisterSingleton(func(
-		remoteStateConfig *state.RemoteConfig,
-		projectConfig *project.ProjectConfig,
-	) (*storage.AccountConfig, error) {
-		if remoteStateConfig == nil {
-			return nil, nil
-		}
-
-		var storageAccountConfig *storage.AccountConfig
-		jsonBytes, err := json.Marshal(remoteStateConfig.Config)
-		if err != nil {
-			return nil, fmt.Errorf("marshalling remote state config: %w", err)
-		}
-
-		if err := json.Unmarshal(jsonBytes, &storageAccountConfig); err != nil {
-			return nil, fmt.Errorf("unmarshalling remote state config: %w", err)
-		}
-
-		// If a container name has not been explicitly configured
-		// Default to use the project name as the container name
-		if storageAccountConfig.ContainerName == "" {
-			// Azure blob storage containers must be lowercase and can only container alphanumeric characters and hyphens
-			// We will do our best to preserve the original project name by forcing to lowercase.
-			storageAccountConfig.ContainerName = strings.ToLower(projectConfig.Name)
-		}
-
-		return storageAccountConfig, nil
 	})
 
 	// Lazy loads an existing environment, erroring out if not available
@@ -421,19 +374,8 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		return armresourcegraph.NewClient(credential, options)
 	})
 
-	// Templates
-
-	// Gets a list of default template sources used in azd.
-	container.RegisterSingleton(func() *templates.SourceOptions {
-		return &templates.SourceOptions{
-			DefaultSources:        []*templates.SourceConfig{},
-			LoadConfiguredSources: true,
-		}
-	})
-
 	container.RegisterSingleton(templates.NewTemplateManager)
 	container.RegisterSingleton(templates.NewSourceManager)
-
 	container.RegisterSingleton(project.NewResourceManager)
 	container.RegisterSingleton(project.NewProjectManager)
 	container.RegisterSingleton(project.NewServiceManager)
@@ -479,7 +421,6 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	})
 	container.RegisterSingleton(azapi.NewDeployments)
 	container.RegisterSingleton(azapi.NewDeploymentOperations)
-	container.RegisterSingleton(bicep.NewBicepCli)
 	container.RegisterSingleton(docker.NewDocker)
 	container.RegisterSingleton(dotnet.NewDotNetCli)
 	container.RegisterSingleton(git.NewGitCli)
@@ -490,36 +431,12 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(npm.NewNpmCli)
 	container.RegisterSingleton(python.NewPythonCli)
 	container.RegisterSingleton(swa.NewSwaCli)
-	container.RegisterSingleton(terraform.NewTerraformCli)
 
 	// Provisioning
 	container.RegisterSingleton(infra.NewAzureResourceManager)
-
 	container.RegisterTransient(provisioning.NewManager)
 	container.RegisterSingleton(provisioning.NewPrincipalIdProvider)
 	container.RegisterSingleton(prompt.NewDefaultPrompter)
-
-	// Provisioning Providers
-	provisionProviderMap := map[provisioning.ProviderKind]any{
-		provisioning.Bicep:     infraBicep.NewBicepProvider,
-		provisioning.Terraform: infraTerraform.NewTerraformProvider,
-	}
-
-	for provider, constructor := range provisionProviderMap {
-		if err := container.RegisterNamedTransient(string(provider), constructor); err != nil {
-			panic(fmt.Errorf("registering IaC provider %s: %w", provider, err))
-		}
-	}
-
-	// Function to determine the default IaC provider when provisioning
-	container.RegisterSingleton(func(
-		lazyProjectConfig *lazy.Lazy[*project.ProjectConfig],
-		configManager config.UserConfigManager,
-	) provisioning.DefaultProviderResolver {
-		return func() (provisioning.ProviderKind, error) {
-			return provisioning.Bicep, nil
-		}
-	})
 
 	// Other
 	container.RegisterSingleton(createClock)
@@ -616,7 +533,10 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		}
 
 		// Validate platform type
-		supportedPlatformKinds := []string{string(devcenter.PlatformKindDevCenter)}
+		supportedPlatformKinds := []string{
+			string(devcenter.PlatformKindDevCenter),
+			string(platform.PlatformKindDefault),
+		}
 		if !slices.Contains(supportedPlatformKinds, string(platformConfig.Type)) {
 			return nil, fmt.Errorf(
 				"platform kind '%s' is not supported. Valid values are '%s'",
@@ -630,6 +550,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 	// Platform Providers
 	platformProviderMap := map[project.PlatformKind]any{
+		platform.PlatformKindDefault:    platform.NewDefaultPlatform,
 		devcenter.PlatformKindDevCenter: devcenter.NewPlatform,
 	}
 

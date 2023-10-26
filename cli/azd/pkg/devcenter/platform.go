@@ -3,7 +3,6 @@ package devcenter
 import (
 	"context"
 	"os"
-	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
@@ -23,17 +22,12 @@ import (
 
 // Platform manages the Azd configuration of the devcenter platform
 type Platform struct {
-	lazyProjectConfig *lazy.Lazy[*project.ProjectConfig]
-	userConfigManager config.UserConfigManager
+	config *project.PlatformConfig
 }
 
-func NewPlatform(
-	lazyProjectConfig *lazy.Lazy[*project.ProjectConfig],
-	userConfigManager config.UserConfigManager,
-) project.PlatformProvider {
+func NewPlatform(config *project.PlatformConfig) project.PlatformProvider {
 	return &Platform{
-		lazyProjectConfig: lazyProjectConfig,
-		userConfigManager: userConfigManager,
+		config: config,
 	}
 }
 
@@ -44,30 +38,7 @@ func (p *Platform) Name() string {
 
 // IsEnabled returns true if the devcenter platform is enabled
 func (p *Platform) IsEnabled() bool {
-	projectConfig, _ := p.lazyProjectConfig.GetValue()
-
-	if projectConfig != nil &&
-		projectConfig.Platform != nil &&
-		projectConfig.Platform.Type == PlatformKindDevCenter {
-		return true
-	}
-
-	config, err := p.userConfigManager.Load()
-	if err != nil {
-		return false
-	}
-
-	devCenterModeNode, ok := config.Get("platform.type")
-	if !ok {
-		return false
-	}
-
-	devCenterValue, ok := devCenterModeNode.(string)
-	if !ok {
-		return false
-	}
-
-	return strings.EqualFold(devCenterValue, string(PlatformKindDevCenter))
+	return p.config.Type == PlatformKindDevCenter
 }
 
 // ConfigureContainer configures the IoC container for the devcenter platform components

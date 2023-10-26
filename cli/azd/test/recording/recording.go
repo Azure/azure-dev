@@ -243,7 +243,8 @@ func Start(t *testing.T, opts ...Options) *Session {
 			strings.Contains(req.URL.Host, "applicationinsights.azure.com") ||
 			(strings.Contains(req.URL.Host, "aka.ms") &&
 				strings.Contains(req.URL.Path, "/azure-dev")) ||
-			strings.Contains(req.URL.Host, "azure-dev.azureedge.net")
+			strings.Contains(req.URL.Host, "azure-dev.azureedge.net") ||
+			strings.Contains(req.URL.Host, "azdrelease.azureedge.net")
 	})
 
 	proxy := &connectHandler{

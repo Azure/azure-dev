@@ -13,6 +13,7 @@ import (
 	"math"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strconv"
 	"strings"
@@ -1861,11 +1862,15 @@ func (p *BicepProvider) ensureParameters(
 		param := template.Parameters[key]
 
 		// If a value is explicitly configured via a parameters file, use it.
+		// unless the parameter value inference is nil/empty
 		if v, has := parameters[key]; has {
-			configuredParameters[key] = azure.ArmParameterValue{
-				Value: armParameterFileValue(p.mapBicepTypeToInterfaceType(param.Type), v.Value),
+			paramValue := armParameterFileValue(p.mapBicepTypeToInterfaceType(param.Type), v.Value, param.DefaultValue)
+			if paramValue != nil {
+				configuredParameters[key] = azure.ArmParameterValue{
+					Value: paramValue,
+				}
+				continue
 			}
-			continue
 		}
 
 		// If this parameter has a default, then there is no need for us to configure it.
@@ -1930,7 +1935,12 @@ func (p *BicepProvider) ensureParameters(
 }
 
 // Convert the ARM parameters file value into a value suitable for deployment
-func armParameterFileValue(paramType ParameterType, value any) any {
+func armParameterFileValue(paramType ParameterType, value any, defaultValue any) any {
+	// Quick return if the value being converted is not a string
+	if value == nil || reflect.TypeOf(value).Kind() != reflect.String {
+		return value
+	}
+
 	// Relax the handling of bool and number types to accept convertible strings
 	switch paramType {
 	case ParameterTypeBoolean:
@@ -1945,9 +1955,25 @@ func armParameterFileValue(paramType ParameterType, value any) any {
 				return intVal
 			}
 		}
+	case ParameterTypeString:
+		// Use Cases
+		// 1. Non-empty input value, return input value (no prompt)
+		// 2. Empty input value and no default - return nil (prompt user)
+		// 3. Empty input value and non-empty default - return empty input string (no prompt)
+		paramVal, paramValid := value.(string)
+		if paramValid && paramVal != "" {
+			return paramVal
+		}
+
+		defaultVal, hasDefault := defaultValue.(string)
+		if hasDefault && paramValid && paramVal != defaultVal {
+			return paramVal
+		}
+	default:
+		return value
 	}
 
-	return value
+	return nil
 }
 
 func isValueAssignableToParameterType(paramType ParameterType, value any) bool {

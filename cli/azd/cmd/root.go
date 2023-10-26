@@ -321,7 +321,9 @@ func NewRootCmd(ctx context.Context, staticHelp bool, middlewareChain []*actions
 		platformKey := fmt.Sprintf("%s-platform", platformConfig.Type)
 		var platformProvider project.PlatformProvider
 		if err := ioc.Global.ResolveNamed(platformKey, &platformProvider); err == nil && platformProvider.IsEnabled() {
-			platformProvider.ConfigureContainer(ioc.Global)
+			if err := platformProvider.ConfigureContainer(ioc.Global); err != nil {
+				panic(fmt.Errorf("failed to configure platform provider: %w", err))
+			}
 		}
 	}
 

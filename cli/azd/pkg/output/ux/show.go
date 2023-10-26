@@ -32,7 +32,7 @@ type Show struct {
 const (
 	cHeader            = "\nShowing deployed endpoints and environments for apps in this directory.\n"
 	cHeaderNotDeployed = "\nShowing services and environments for apps in this directory.\n"
-	cHeaderNote        = "To view a different environment run "
+	cHeaderNote        = "To view a different environment, run "
 	cShowDifferentEnv  = "azd show -e <environment name>"
 	cServices          = "\n  Services:\n"
 	cEnvironments      = "\n  Environments:\n"
@@ -95,7 +95,7 @@ func environments(environments []*ShowEnvironment) string {
 	environmentsCount := len(environments)
 	if environmentsCount == 0 {
 		return fmt.Sprintf(
-			"    You haven't created any environment. Run %s to create one.",
+			"    You haven't created any environments. Run %s to create one.",
 			color.HiBlueString("azd env new"),
 		)
 	}

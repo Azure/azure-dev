@@ -18,11 +18,13 @@ var (
 type TemplateManager struct {
 	sourceManager SourceManager
 	sources       []Source
+	console       input.Console
 }
 
-func NewTemplateManager(sourceManager SourceManager) (*TemplateManager, error) {
+func NewTemplateManager(sourceManager SourceManager, console input.Console) (*TemplateManager, error) {
 	return &TemplateManager{
 		sourceManager: sourceManager,
+		console:       console,
 	}, nil
 }
 
@@ -34,6 +36,10 @@ type sourceFilterPredicate func(config *SourceConfig) bool
 
 // ListTemplates retrieves the list of templates in a deterministic order.
 func (tm *TemplateManager) ListTemplates(ctx context.Context, options *ListOptions) ([]*Template, error) {
+	msg := "Retrieving templates..."
+	tm.console.ShowSpinner(ctx, msg, input.Step)
+	defer tm.console.StopSpinner(ctx, "", input.StepDone)
+
 	allTemplates := []*Template{}
 
 	var filterPredicate sourceFilterPredicate

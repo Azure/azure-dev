@@ -24,8 +24,6 @@ import (
 const (
 	//nolint:lll
 	projectSchemaAnnotation = "# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json"
-
-	cInfraDirectory = "infra"
 )
 
 func New(ctx context.Context, projectFilePath string, projectName string) (*ProjectConfig, error) {
@@ -100,10 +98,6 @@ func Parse(ctx context.Context, yamlContent string) (*ProjectConfig, error) {
 		if err != nil {
 			return nil, fmt.Errorf("parsing service %s: %w", svc.Name, err)
 		}
-	}
-
-	if projectConfig.Infra.Path == "" {
-		projectConfig.Infra.Path = cInfraDirectory
 	}
 
 	return &projectConfig, nil

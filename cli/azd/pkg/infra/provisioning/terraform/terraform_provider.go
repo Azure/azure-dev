@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"dario.cat/mergo"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -22,6 +23,11 @@ import (
 	"go.opentelemetry.io/otel/trace"
 	"golang.org/x/exp/maps"
 )
+
+var Defaults = Options{
+	Module: "main",
+	Path:   "infra",
+}
 
 // TerraformProvider exposes infrastructure provisioning using Azure Terraform templates
 type TerraformProvider struct {
@@ -72,8 +78,8 @@ func NewTerraformProvider(
 }
 
 func (t *TerraformProvider) Initialize(ctx context.Context, projectPath string, options Options) error {
-	if strings.TrimSpace(options.Module) == "" {
-		options.Module = "main"
+	if err := mergo.Merge(&options, Defaults); err != nil {
+		return fmt.Errorf("merging terraform defaults: %w", err)
 	}
 
 	t.projectPath = projectPath

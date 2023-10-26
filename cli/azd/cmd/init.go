@@ -24,7 +24,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
-	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
@@ -202,10 +201,6 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		if err := i.initializeEnv(ctx, azdCtx, templateMetadata); err != nil {
 			return nil, err
 		}
-
-		if err := i.initializeProject(ctx, azdCtx, templateMetadata); err != nil {
-			return nil, err
-		}
 	case initFromApp:
 		tracing.SetUsageAttributes(fields.InitMethod.String("app"))
 
@@ -310,12 +305,7 @@ func (i *initAction) initializeTemplate(
 			}
 		}
 
-		gitUri, err := templates.Absolute(i.flags.templatePath)
-		if err != nil {
-			return nil, err
-		}
-
-		err = i.repoInitializer.Initialize(ctx, azdCtx, gitUri, i.flags.templateBranch)
+		err = i.repoInitializer.Initialize(ctx, azdCtx, template, i.flags.templateBranch)
 		if err != nil {
 			return nil, fmt.Errorf("init from template repository: %w", err)
 		}
@@ -327,31 +317,6 @@ func (i *initAction) initializeTemplate(
 	}
 
 	return template, nil
-}
-
-// Initialize the project with any metadata values from the template
-func (i *initAction) initializeProject(
-	ctx context.Context,
-	azdCtx *azdcontext.AzdContext,
-	templateMetaData *templates.Metadata,
-) error {
-	if templateMetaData == nil {
-		return nil
-	}
-
-	projectPath := azdCtx.ProjectPath()
-	projectConfig, err := project.LoadConfig(ctx, projectPath)
-	if err != nil {
-		return fmt.Errorf("loading project config: %w", err)
-	}
-
-	for key, value := range templateMetaData.Project {
-		if err := projectConfig.Set(key, value); err != nil {
-			return fmt.Errorf("setting project config: %w", err)
-		}
-	}
-
-	return project.SaveConfig(ctx, projectConfig, projectPath)
 }
 
 func (i *initAction) initializeEnv(

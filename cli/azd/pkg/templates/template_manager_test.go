@@ -30,6 +30,7 @@ func Test_Templates_NewTemplateManager(t *testing.T) {
 			config.NewUserConfigManager(config.NewFileConfigManager(config.NewManager())),
 			mockContext.HttpClient,
 		),
+		mockContext.Console,
 	)
 	require.NoError(t, err)
 	require.NotNil(t, templateManager)
@@ -44,6 +45,7 @@ func Test_Templates_ListTemplates(t *testing.T) {
 
 	templateManager, err := NewTemplateManager(
 		NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient),
+		mockContext.Console,
 	)
 	require.NoError(t, err)
 
@@ -83,6 +85,7 @@ func Test_Templates_ListTemplates_SourceError(t *testing.T) {
 
 	templateManager, err := NewTemplateManager(
 		NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient),
+		mockContext.Console,
 	)
 	require.NoError(t, err)
 
@@ -100,6 +103,7 @@ func Test_Templates_GetTemplate_WithValidPath(t *testing.T) {
 
 	templateManager, err := NewTemplateManager(
 		NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient),
+		mockContext.Console,
 	)
 	require.NoError(t, err)
 
@@ -121,6 +125,7 @@ func Test_Templates_GetTemplate_WithInvalidPath(t *testing.T) {
 
 	templateManager, err := NewTemplateManager(
 		NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient),
+		mockContext.Console,
 	)
 	require.NoError(t, err)
 
@@ -138,6 +143,7 @@ func Test_Templates_GetTemplate_WithNotFoundPath(t *testing.T) {
 
 	templateManager, err := NewTemplateManager(
 		NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient),
+		mockContext.Console,
 	)
 	require.NoError(t, err)
 

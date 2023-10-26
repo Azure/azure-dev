@@ -102,6 +102,7 @@ LASTEXITCODE
 ldflags
 lechnerc77
 libc
+mergo
 mgmt
 mgutz
 microsoftonline

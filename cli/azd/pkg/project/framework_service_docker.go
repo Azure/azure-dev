@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
@@ -317,6 +318,29 @@ func (p *dockerProject) packBuild(
 					inDockerOutputPath,
 					svc.OutputPath,
 					inDockerOutputPath))
+		}
+
+		// Support for FastAPI apps since the Oryx builder does not support it yet
+		if svc.Language == ServiceLanguagePython {
+			prj, err := appdetect.DetectDirectory(svc.Path())
+			if err != nil {
+				return nil, err
+			}
+
+			for _, dep := range prj.Dependencies {
+				if dep == appdetect.PyFastApi {
+					launch, err := appdetect.PyFastApiLaunch(prj.Path)
+					if err != nil {
+						return nil, err
+					}
+
+					environ = append(environ,
+						"POST_BUILD_COMMAND=pip install uvicorn",
+						"ORYX_RUNTIME_SCRIPT=oryx create-script -appPath ./oryx-output -bindPort 80 -userStartupCommand "+
+							"'uvicorn "+launch+" --port $PORT --host $HOST' && ./run.sh")
+					break
+				}
+			}
 		}
 	}
 

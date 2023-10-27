@@ -33,6 +33,7 @@ var languageMap = map[appdetect.Language]project.ServiceLanguageKind{
 var dbMap = map[appdetect.DatabaseDep]struct{}{
 	appdetect.DbMongo:    {},
 	appdetect.DbPostgres: {},
+	appdetect.DbRedis:    {},
 }
 
 var ErrNoServicesDetected = errors.New("no services detected in the current directory")

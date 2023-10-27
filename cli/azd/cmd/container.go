@@ -17,6 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
+	"github.com/azure/azure-dev/cli/azd/pkg/azd"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/containerapps"
@@ -497,9 +498,9 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	}
 
 	// Platform configuration
-	container.RegisterSingleton(func() *lazy.Lazy[*project.PlatformConfig] {
-		return lazy.NewLazy(func() (*project.PlatformConfig, error) {
-			var platformConfig *project.PlatformConfig
+	container.RegisterSingleton(func() *lazy.Lazy[*platform.Config] {
+		return lazy.NewLazy(func() (*platform.Config, error) {
+			var platformConfig *platform.Config
 			err := container.Resolve(&platformConfig)
 
 			return platformConfig, err
@@ -509,7 +510,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(func(
 		lazyProjectConfig *lazy.Lazy[*project.ProjectConfig],
 		userConfigManager config.UserConfigManager,
-	) (*project.PlatformConfig, error) {
+	) (*platform.Config, error) {
 		// First check `azure.yaml` for platform configuration section
 		projectConfig, err := lazyProjectConfig.GetValue()
 		if err == nil && projectConfig != nil && projectConfig.Platform != nil {
@@ -522,7 +523,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			return nil, fmt.Errorf("loading user config: %w", err)
 		}
 
-		var platformConfig *project.PlatformConfig
+		var platformConfig *platform.Config
 		ok, err := config.GetSection("platform", &platformConfig)
 		if err != nil {
 			return nil, fmt.Errorf("getting platform config: %w", err)
@@ -535,13 +536,14 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		// Validate platform type
 		supportedPlatformKinds := []string{
 			string(devcenter.PlatformKindDevCenter),
-			string(platform.PlatformKindDefault),
+			string(azd.PlatformKindDefault),
 		}
 		if !slices.Contains(supportedPlatformKinds, string(platformConfig.Type)) {
 			return nil, fmt.Errorf(
-				"platform kind '%s' is not supported. Valid values are '%s'",
+				"platform kind '%s' is not supported. Valid values are '%s', %w",
 				platformConfig.Type,
 				strings.Join(supportedPlatformKinds, ","),
+				platform.ErrPlatformNotSupported,
 			)
 		}
 
@@ -549,8 +551,8 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	})
 
 	// Platform Providers
-	platformProviderMap := map[project.PlatformKind]any{
-		platform.PlatformKindDefault:    platform.NewDefaultPlatform,
+	platformProviderMap := map[platform.PlatformKind]any{
+		azd.PlatformKindDefault:         azd.NewDefaultPlatform,
 		devcenter.PlatformKindDevCenter: devcenter.NewPlatform,
 	}
 

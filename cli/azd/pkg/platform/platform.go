@@ -1,37 +1,51 @@
 package platform
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
-	"github.com/azure/azure-dev/cli/azd/pkg/project"
 )
 
+var ErrPlatformNotSupported = fmt.Errorf("unsupported platform")
+
+type PlatformKind string
+
+type Config struct {
+	Type   PlatformKind   `yaml:"type"`
+	Config map[string]any `yaml:"config"`
+}
+
 // Initialize configures the IoC container with the platform specific components
-func Initialize(container *ioc.NestedContainer) error {
+func Initialize(container *ioc.NestedContainer, defaultPlatform PlatformKind) (Provider, error) {
 	// Enable the platform provider if it is configured
-	var platformConfig *project.PlatformConfig
-	var platformType = PlatformKindDefault
+	var platformConfig *Config
+	platformType := defaultPlatform
 
 	// Override platform type when specified
-	if err := container.Resolve(&platformConfig); err == nil && platformConfig != nil {
+	err := container.Resolve(&platformConfig)
+	if err != nil && errors.Is(err, ErrPlatformNotSupported) {
+		return nil, err
+	}
+
+	if platformConfig != nil {
 		platformType = platformConfig.Type
 	}
 
-	var platformProvider project.PlatformProvider
+	var provider Provider
 	platformKey := fmt.Sprintf("%s-platform", platformType)
 
 	// Resolve the platform provider
-	if err := container.ResolveNamed(platformKey, &platformProvider); err != nil {
-		return fmt.Errorf("failed to resolve platform provider '%s': %w", platformType, err)
+	if err := container.ResolveNamed(platformKey, &provider); err != nil {
+		return nil, fmt.Errorf("failed to resolve platform provider '%s': %w", platformType, err)
 	}
 
-	if platformProvider.IsEnabled() {
+	if provider.IsEnabled() {
 		// Configure the container for the platform provider
-		if err := platformProvider.ConfigureContainer(container); err != nil {
-			return fmt.Errorf("failed to configure platform provider '%s': %w", platformType, err)
+		if err := provider.ConfigureContainer(container); err != nil {
+			return nil, fmt.Errorf("failed to configure platform provider '%s': %w", platformType, err)
 		}
 	}
 
-	return nil
+	return provider, nil
 }

@@ -19,7 +19,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
-	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/pkg/platform"
 	"github.com/spf13/pflag"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -29,11 +29,11 @@ import (
 // Telemetry middleware tracks telemetry for the given action
 type TelemetryMiddleware struct {
 	options            *Options
-	lazyPlatformConfig *lazy.Lazy[*project.PlatformConfig]
+	lazyPlatformConfig *lazy.Lazy[*platform.Config]
 }
 
 // Creates a new Telemetry middleware instance
-func NewTelemetryMiddleware(options *Options, lazyPlatformConfig *lazy.Lazy[*project.PlatformConfig]) Middleware {
+func NewTelemetryMiddleware(options *Options, lazyPlatformConfig *lazy.Lazy[*platform.Config]) Middleware {
 	return &TelemetryMiddleware{
 		options:            options,
 		lazyPlatformConfig: lazyPlatformConfig,

@@ -15,6 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
+	"github.com/azure/azure-dev/cli/azd/pkg/platform"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/state"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
@@ -22,10 +23,10 @@ import (
 
 // Platform manages the Azd configuration of the devcenter platform
 type Platform struct {
-	config *project.PlatformConfig
+	config *platform.Config
 }
 
-func NewPlatform(config *project.PlatformConfig) project.PlatformProvider {
+func NewPlatform(config *platform.Config) platform.Provider {
 	return &Platform{
 		config: config,
 	}

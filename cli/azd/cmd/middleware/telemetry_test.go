@@ -14,7 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
-	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/pkg/platform"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mocktracing"
 	"github.com/stretchr/testify/require"
@@ -22,8 +22,8 @@ import (
 )
 
 func Test_Telemetry_Run(t *testing.T) {
-	lazyPlatformConfig := lazy.NewLazy(func() (*project.PlatformConfig, error) {
-		return &project.PlatformConfig{
+	lazyPlatformConfig := lazy.NewLazy(func() (*platform.Config, error) {
+		return &platform.Config{
 			Type: "devcenter",
 		}, nil
 	})

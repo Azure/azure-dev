@@ -6,6 +6,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/platform"
 	"github.com/azure/azure-dev/cli/azd/pkg/state"
 )
 
@@ -23,16 +24,9 @@ type ProjectConfig struct {
 	Pipeline          PipelineOptions            `yaml:"pipeline,omitempty"`
 	Hooks             map[string]*ext.HookConfig `yaml:"hooks,omitempty"`
 	State             *state.Config              `yaml:"state,omitempty"`
-	Platform          *PlatformConfig            `yaml:"platform,omitempty"`
+	Platform          *platform.Config           `yaml:"platform,omitempty"`
 
 	*ext.EventDispatcher[ProjectLifecycleEventArgs] `yaml:"-"`
-}
-
-type PlatformKind string
-
-type PlatformConfig struct {
-	Type   PlatformKind   `yaml:"type"`
-	Config map[string]any `yaml:"config"`
 }
 
 // RequiredVersions contains information about what versions of tools this project requires.

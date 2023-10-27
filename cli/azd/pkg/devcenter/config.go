@@ -3,7 +3,7 @@ package devcenter
 import (
 	"fmt"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/pkg/platform"
 )
 
 const (
@@ -23,7 +23,7 @@ const (
 	DevCenterEnvDefinitionPath = ConfigPath + ".environmentDefinition"
 	DevCenterUserPath          = ConfigPath + ".user"
 
-	PlatformKindDevCenter project.PlatformKind = "devcenter"
+	PlatformKindDevCenter platform.PlatformKind = "devcenter"
 )
 
 // Config provides the Azure DevCenter configuration used for devcenter enabled projects

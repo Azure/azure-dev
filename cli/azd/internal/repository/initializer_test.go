@@ -16,6 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/platform"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
@@ -88,7 +89,7 @@ func Test_Initializer_DevCenter(t *testing.T) {
 
 	prj, err := project.Load(*mockContext.Context, azdCtx.ProjectPath())
 	require.NoError(t, err)
-	require.Equal(t, prj.Platform.Type, project.PlatformKind("devcenter"))
+	require.Equal(t, prj.Platform.Type, platform.PlatformKind("devcenter"))
 	require.Equal(t, prj.Platform.Config["name"], "DEVCENTER_NAME")
 	require.Equal(t, prj.Platform.Config["project"], "DEVCENTER_PROJECT")
 	require.Equal(t, prj.Platform.Config["environmentDefinition"], "DEVCENTER_ENV_DEFINITION")

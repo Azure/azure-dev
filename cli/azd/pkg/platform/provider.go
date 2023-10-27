@@ -1,9 +1,9 @@
-package project
+package platform
 
 import "github.com/azure/azure-dev/cli/azd/pkg/ioc"
 
-// PlatformProvider is an interface for a platform provider
-type PlatformProvider interface {
+// Provider is an interface for a platform provider
+type Provider interface {
 	// Name returns the name of the platform
 	Name() string
 

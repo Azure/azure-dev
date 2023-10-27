@@ -15,6 +15,7 @@ import (
 
 	// Importing for infrastructure provider plugin registrations
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azd"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/platform"
 
@@ -316,7 +317,7 @@ func NewRootCmd(ctx context.Context, staticHelp bool, middlewareChain []*actions
 	registerCommonDependencies(ioc.Global)
 
 	// Initialize the platform specific components for the IoC container
-	if err := platform.Initialize(ioc.Global); err != nil {
+	if _, err := platform.Initialize(ioc.Global, azd.PlatformKindDefault); err != nil {
 		panic(err)
 	}
 

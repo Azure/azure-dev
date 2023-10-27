@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"context"
 	"fmt"
 	"log"
 	"os"
@@ -14,7 +15,9 @@ import (
 
 	// Importing for infrastructure provider plugin registrations
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azd"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/platform"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
@@ -25,7 +28,7 @@ import (
 // Creates the root Cobra command for AZD.
 // staticHelp - False, except for running for doc generation
 // middlewareChain - nil, except for running unit tests
-func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistration) *cobra.Command {
+func NewRootCmd(ctx context.Context, staticHelp bool, middlewareChain []*actions.MiddlewareRegistration) *cobra.Command {
 	prevDir := ""
 	opts := &internal.GlobalCommandOptions{GenerateStaticHelp: staticHelp}
 	opts.EnableTelemetry = telemetry.IsTelemetryEnabled()
@@ -162,7 +165,7 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 		GroupingOptions: actions.CommandGroupOptions{
 			RootLevelHelp: actions.CmdGroupConfig,
 		},
-	}).AddFlagCompletion("template", templateNameCompletion)
+	})
 
 	root.
 		Add("restore", &actions.ActionDescriptorOptions{
@@ -309,10 +312,17 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 			return !descriptor.Options.DisableTelemetry
 		})
 
+	// Register common dependencies for the IoC container
+	ioc.RegisterInstance(ioc.Global, ctx)
 	registerCommonDependencies(ioc.Global)
-	cobraBuilder := NewCobraBuilder(ioc.Global)
+
+	// Initialize the platform specific components for the IoC container
+	if _, err := platform.Initialize(ioc.Global, azd.PlatformKindDefault); err != nil {
+		panic(err)
+	}
 
 	// Compose the hierarchy of action descriptions into cobra commands
+	cobraBuilder := NewCobraBuilder(ioc.Global)
 	cmd, err := cobraBuilder.BuildCommand(root)
 
 	if err != nil {

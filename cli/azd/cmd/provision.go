@@ -31,6 +31,12 @@ type provisionFlags struct {
 	*envFlag
 }
 
+const (
+	openAINotValid        = "The template deployment 'openai' is not valid according to the validation procedure"
+	subscriptionNoQuotaId = "The subscription does not have QuotaId/Feature required by SKU 'S0' from kind 'OpenAI'"
+	responsibleAITerms    = "until you agree to Responsible AI terms for this resource"
+)
+
 func (i *provisionFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	i.bindNonCommon(local, global)
 	i.bindCommon(local, global)
@@ -210,8 +216,8 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 
 		//if user don't have access to openai
 		errorMsg := err.Error()
-		if strings.Contains(errorMsg, "The template deployment 'openai' is not valid according to the validation procedure") &&
-			strings.Contains(errorMsg, "The subscription does not have QuotaId/Feature required by SKU 'S0' from kind 'OpenAI'") {
+		if strings.Contains(errorMsg, openAINotValid) &&
+			strings.Contains(errorMsg, subscriptionNoQuotaId) {
 			return nil, &azcli.ErrorWithSuggestion{
 				Suggestion: fmt.Sprintf("\nSuggested Action: The selected subscription has not been enabled for use of 'OpenAI' service and does not have quota for any pricing tiers. " +
 					"Please visit https://portal.azure.com/#create/Microsoft.CognitiveServicesOpenAI to request access to Azure OpenAI service"),
@@ -220,7 +226,7 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		}
 
 		//if user haven't agree to Responsible AI terms
-		if strings.Contains(errorMsg, "until you agree to Responsible AI terms for this resource") {
+		if strings.Contains(errorMsg, responsibleAITerms) {
 			return nil, &azcli.ErrorWithSuggestion{
 				Suggestion: fmt.Sprintf("\nSuggested Action: Please visit azure portal in https://ms.portal.azure.com/. Create the service in azure portal " +
 					"will go through Responsible AI terms. After that, run 'azd provision' again"),

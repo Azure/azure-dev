@@ -59,6 +59,9 @@ jobs:
       - name: Build
         run: go build
         working-directory: cli/azd
+      - name: Set fake azd auth
+        shell: pwsh
+        run: ./fakeAzdAuth.ps1
       - name: Test
         run: go run gotest.tools/gotestsum@latest --format standard-verbose
         working-directory: cli/azd        

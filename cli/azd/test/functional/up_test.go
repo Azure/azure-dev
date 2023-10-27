@@ -54,7 +54,7 @@ func Test_CLI_Up_Down_WebApp(t *testing.T) {
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
 	require.NoError(t, err)
 
-	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "infra", "create")
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
 	require.NoError(t, err)
 
 	t.Logf("Running show\n")
@@ -88,7 +88,7 @@ func Test_CLI_Up_Down_WebApp(t *testing.T) {
 	require.NoError(t, err)
 
 	url, has := env["WEBSITE_URL"]
-	require.True(t, has, "WEBSITE_URL should be in environment after infra create")
+	require.True(t, has, "WEBSITE_URL should be in environment after azd provision")
 
 	err = probeServiceHealth(t, ctx, http.DefaultClient, retry.NewConstant(5*time.Second), url, expectedTestAppResponse)
 	require.NoError(t, err)
@@ -128,7 +128,7 @@ func Test_CLI_Up_Down_WebApp(t *testing.T) {
 	contain = strings.Contains(secrets.Stdout, fmt.Sprintf("WEBSITE_URL = %s", url))
 	require.True(t, contain)
 
-	_, err = cli.RunCommand(ctx, "infra", "delete", "--force", "--purge")
+	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
 	require.NoError(t, err)
 
 	t.Logf("Running show (again)\n")
@@ -138,7 +138,7 @@ func Test_CLI_Up_Down_WebApp(t *testing.T) {
 	err = json.Unmarshal([]byte(result.Stdout), &showRes)
 	require.NoError(t, err)
 
-	// Project information should be present, but since we have run infra delete, there shouldn't
+	// Project information should be present, but since we have run azd down, there shouldn't
 	// be any resource ids.
 	service, has = showRes.Services["web"]
 	require.True(t, has)
@@ -170,8 +170,8 @@ func Test_CLI_Up_Down_FuncApp(t *testing.T) {
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
 	require.NoError(t, err)
 
-	t.Logf("Starting infra create\n")
-	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "infra", "create", "--cwd", dir)
+	t.Logf("Starting provision\n")
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision", "--cwd", dir)
 	require.NoError(t, err)
 
 	t.Logf("Starting deploy\n")
@@ -210,8 +210,8 @@ func Test_CLI_Up_Down_FuncApp(t *testing.T) {
 	})
 	require.NoError(t, err)
 
-	t.Logf("Starting infra delete\n")
-	_, err = cli.RunCommand(ctx, "infra", "delete", "--cwd", dir, "--force", "--purge")
+	t.Logf("Starting azd down\n")
+	_, err = cli.RunCommand(ctx, "down", "--cwd", dir, "--force", "--purge")
 	require.NoError(t, err)
 
 	t.Logf("Done\n")
@@ -246,7 +246,7 @@ func Test_CLI_Up_Down_ContainerApp(t *testing.T) {
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
 	require.NoError(t, err)
 
-	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "infra", "create")
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
 	require.NoError(t, err)
 
 	_, err = cli.RunCommand(ctx, "deploy", "--cwd", filepath.Join(dir, "src", "dotnet"))
@@ -272,7 +272,7 @@ func Test_CLI_Up_Down_ContainerApp(t *testing.T) {
 		require.NoError(t, err)
 	}
 
-	_, err = cli.RunCommand(ctx, "infra", "delete", "--force", "--purge")
+	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
 	require.NoError(t, err)
 
 	// As part of deleting the infrastructure, outputs of the infrastructure such as "WEBSITE_URL" should
@@ -327,7 +327,7 @@ func Test_CLI_Up_ResourceGroupScope(t *testing.T) {
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "env", "set", "AZURE_RESOURCE_GROUP", resourceGroupName)
 	require.NoError(t, err)
 
-	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "infra", "create")
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
 	require.NoError(t, err)
 
 	// The sample outputs the ID of the storage account it created, let's make sure that resource is in the resource
@@ -340,7 +340,7 @@ func Test_CLI_Up_ResourceGroupScope(t *testing.T) {
 
 	require.Contains(t, strings.ToLower(storageAccountId), fmt.Sprintf("/resourcegroups/%s/", resourceGroupName))
 
-	_, err = cli.RunCommand(ctx, "infra", "delete", "--force", "--purge")
+	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
 	require.NoError(t, err)
 }
 

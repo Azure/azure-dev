@@ -101,13 +101,8 @@ func (i *Initializer) infraSpecFromDetect(
 		}
 
 		if svc.Docker == nil || svc.Docker.Path == "" {
-			// Match target ports from the default builder image:
-			// - python: 80
-			// - other: 8080
-			serviceSpec.Port = 8080
-			if svc.Language == appdetect.Python {
-				serviceSpec.Port = 80
-			}
+			// default builder always specifies port 80
+			serviceSpec.Port = 80
 		}
 
 		for _, framework := range svc.Dependencies {

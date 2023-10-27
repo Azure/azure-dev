@@ -219,8 +219,10 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		if strings.Contains(errorMsg, openAINotValid) &&
 			strings.Contains(errorMsg, subscriptionNoQuotaId) {
 			return nil, &azcli.ErrorWithSuggestion{
-				Suggestion: fmt.Sprintf("\nSuggested Action: The selected subscription has not been enabled for use of 'OpenAI' service and does not have quota for any pricing tiers. " +
-					"Please visit https://portal.azure.com/#create/Microsoft.CognitiveServicesOpenAI to request access to Azure OpenAI service"),
+				Suggestion: fmt.Sprintf("\nSuggested Action: The selected subscription has not been enabled " +
+					"for use of 'OpenAI' service and does not have quota for any pricing tiers. Please visit " +
+					"https://portal.azure.com/#create/Microsoft.CognitiveServicesOpenAI to request access " +
+					"to Azure OpenAI service"),
 				Err: err,
 			}
 		}
@@ -228,7 +230,8 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		//if user haven't agree to Responsible AI terms
 		if strings.Contains(errorMsg, responsibleAITerms) {
 			return nil, &azcli.ErrorWithSuggestion{
-				Suggestion: fmt.Sprintf("\nSuggested Action: Please visit azure portal in https://ms.portal.azure.com/. Create the service in azure portal " +
+				Suggestion: fmt.Sprintf("\nSuggested Action: Please visit azure portal in " +
+					"https://ms.portal.azure.com/. Create the service in azure portal " +
 					"will go through Responsible AI terms. After that, run 'azd provision' again"),
 				Err: err,
 			}

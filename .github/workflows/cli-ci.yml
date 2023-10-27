@@ -41,5 +41,25 @@ jobs:
       - name: Spell check for CLI source code
         run: cspell lint '**/*.go' --config ./cli/azd/.vscode/cspell.yaml --root ./cli/azd --no-progress
 
+  build-and-test:
+    needs:
+     - azd-lint
+     - cspell-lint
+    runs-on: ${{ matrix.os }}
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+    steps:
+      - uses: actions/setup-go@v3
+        with:
+          go-version: "^1.21.0"
+      - uses: actions/checkout@v3
+      - name: Build
+        run: go build
+        working-directory: cli/azd
+      - name: Test
+        run: go run gotest.tools/gotestsum@latest --format standard-verbose
+        working-directory: cli/azd        
+
   bicep-lint:
     uses: ./.github/workflows/lint-bicep.yml

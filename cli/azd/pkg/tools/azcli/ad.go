@@ -38,6 +38,10 @@ func (es *ErrorWithSuggestion) Error() string {
 	return es.Err.Error()
 }
 
+func (es *ErrorWithSuggestion) Unwrap() error {
+	return es.Err
+}
+
 // AdService provides actions on top of Azure Active Directory (AD)
 type AdService interface {
 	GetServicePrincipal(

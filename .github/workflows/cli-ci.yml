@@ -62,6 +62,7 @@ jobs:
       - name: Set fake azd auth
         shell: pwsh
         run: ./fakeAzdAuth.ps1
+        working-directory: .github/workflows
       - name: Test
         run: go run gotest.tools/gotestsum@latest --format standard-verbose
         working-directory: cli/azd        

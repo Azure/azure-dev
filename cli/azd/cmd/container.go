@@ -544,4 +544,5 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 	registerAction[*provisionAction](container, "azd-provision-action")
 	registerAction[*downAction](container, "azd-down-action")
+	registerAction[*configShowAction](container, "azd-config-show-action")
 }

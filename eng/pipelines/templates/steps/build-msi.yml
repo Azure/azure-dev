@@ -2,23 +2,49 @@ parameters:
   CliVersion: $(CLI_VERSION)
   Title: Build MSI
   Condition: succeeded()
+  # Building for release will specify a version number directly and the MSI will
+  # be set to fail if it is installed over a later version. If
+  # ShouldBuildForRelease is false the MSI will be built with the version 0.1.0
+  # and will always install over any other installed version (even if the
+  # existing installed version is higher than 0.1.0).
+  ShouldBuildForRelease: true
 
 steps:
   - task: NuGetCommand@2
+    condition: ${{ parameters.Condition }}
     displayName: Restore NuGet packages
     inputs:
       restoreSolution: cli/installer/windows.sln
 
-  - task: PowerShell@2
-    displayName: Get MSI version from CLI version
-    condition: ${{ parameters.Condition }}
-    inputs:
-      pwsh: true
-      targetType: filePath
-      filePath: eng/scripts/Get-MsiVersion.ps1
-      arguments: >-
-        -CliVersion "${{ parameters.CliVersion }}"
-        -DevOpsOutput
+  - ${{ if eq(parameters.ShouldBuildForRelease, 'true') }}:
+    # Release build uses version and product name for release
+    - task: PowerShell@2
+      displayName: Get MSI version from CLI version
+      condition: ${{ parameters.Condition }}
+      inputs:
+        pwsh: true
+        targetType: filePath
+        filePath: eng/scripts/Get-MsiVersion.ps1
+        arguments: >-
+          -CliVersion "${{ parameters.CliVersion }}"
+          -DevOpsOutput
+
+    - pwsh: |
+        Write-Host "##vso[task.setvariable variable=MSI_PRODUCT_NAME_PARAM]/p:ProductName=`"Azure Developer CLI`""
+        Write-Host "##vso[task.setvariable variable=MSI_VERSION_PARAM]/p:ProductVersion=$(MSI_VERSION)"
+      condition: ${{ parameters.Condition }}
+      displayName: Set MSI_PRODUCT_NAME_PARAM for release
+
+  - ${{ else }}:
+    # Leave version and product name empty for dev build (allows dev version to)
+    # install over any previously installed version. These variables must be set
+    # or DevOps will substitute in the literal string
+    # (e.g. '$(MSI_PRODUCT_NAME_PARAM)') into the msbuild command arguments.
+    - pwsh: |
+        Write-Host "##vso[task.setvariable variable=MSI_PRODUCT_NAME_PARAM]"
+        Write-Host "##vso[task.setvariable variable=MSI_VERSION_PARAM]"
+      condition: ${{ parameters.Condition }}
+      displayName: Set MSI_PRODUCT_NAME_PARAM and MSI_VERSION_PARAM for dev release
 
   - task: MSBuild@1
     displayName: ${{ parameters.Title }}
@@ -28,4 +54,5 @@ steps:
       msbuildArguments: >-
         /p:RunWixToolsOutOfProc=true
         /p:Configuration=Release
-        /p:ProductVersion=$(MSI_VERSION)
+        $(MSI_PRODUCT_NAME_PARAM)
+        $(MSI_VERSION_PARAM)

@@ -10,6 +10,16 @@
 
 ### Other Changes
 
+## 1.4.3 (2023-10-24)
+
+### Features Added
+
+- [[2787]](https://github.com/Azure/azure-dev/pull/2787) Added `azd config show` and deprecated `azd config list`.
+
+### Other Changes
+
+- [[2887]](https://github.com/Azure/azure-dev/pull/2887) Update the subscription and location information during `azd provision`.
+
 ## 1.4.2 (2023-10-12)
 
 ### Features Added

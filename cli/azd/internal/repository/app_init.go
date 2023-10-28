@@ -54,14 +54,14 @@ func (i *Initializer) InitFromApp(
 	tracing.SetUsageAttributes(fields.AppInitLastStep.String("detect"))
 	// Prioritize src directory if it exists
 	if ent, err := os.Stat(sourceDir); err == nil && ent.IsDir() {
-		prj, err := appdetect.Detect(sourceDir)
+		prj, err := appdetect.Detect(ctx, sourceDir)
 		if err == nil && len(prj) > 0 {
 			projects = prj
 		}
 	}
 
 	if len(projects) == 0 {
-		prj, err := appdetect.Detect(wd, appdetect.WithExcludePatterns([]string{
+		prj, err := appdetect.Detect(ctx, wd, appdetect.WithExcludePatterns([]string{
 			"**/eng",
 			"**/tool",
 			"**/tools"},

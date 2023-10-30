@@ -47,6 +47,7 @@ var (
 	DefaultRoleNames    = []string{"Contributor", "User Access Administrator"}
 )
 
+// PipelineManagerArgs represents the arguments passed to the pipeline manager from Azd CLI
 type PipelineManagerArgs struct {
 	PipelineServicePrincipalId   string
 	PipelineServicePrincipalName string
@@ -56,6 +57,7 @@ type PipelineManagerArgs struct {
 	PipelineAuthTypeName         string
 }
 
+// CredentialOptions represents the options for configuring credentials for a pipeline.
 type CredentialOptions struct {
 	EnableClientCredentials    bool
 	EnableFederatedCredentials bool

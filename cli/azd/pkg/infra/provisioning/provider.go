@@ -10,21 +10,22 @@ import (
 type ProviderKind string
 
 const (
-	Bicep     ProviderKind = "bicep"
-	Arm       ProviderKind = "arm"
-	Terraform ProviderKind = "terraform"
-	Pulumi    ProviderKind = "pulumi"
-	Test      ProviderKind = "test"
-	Cdk       ProviderKind = "cdk"
+	NotSpecified ProviderKind = ""
+	Bicep        ProviderKind = "bicep"
+	Arm          ProviderKind = "arm"
+	Terraform    ProviderKind = "terraform"
+	Pulumi       ProviderKind = "pulumi"
+	Test         ProviderKind = "test"
+	Cdk          ProviderKind = "cdk"
 )
 
 type Options struct {
-	Provider   ProviderKind `yaml:"provider"`
-	Path       string       `yaml:"path"`
-	Module     string       `yaml:"module"`
-	HideOutput bool         `yaml:"-"`
+	Provider ProviderKind `yaml:"provider,omitempty"`
+	Path     string       `yaml:"path,omitempty"`
+	Module   string       `yaml:"module,omitempty"`
 	// Not expected to be defined at azure.yaml
 	IgnoreDeploymentState bool `yaml:"-"`
+	HideOutput            bool `yaml:"-"`
 }
 
 type SkippedReasonType string

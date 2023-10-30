@@ -360,7 +360,7 @@ func Test_SetDefaultSubscription(t *testing.T) {
 			NewBypassSubscriptionsCache()))
 		require.NoError(t, err)
 
-		actualSubscription, err := manager.SetDefaultSubscription(context.Background(), expectedSubscription.Id)
+		actualSubscription, err := manager.SetDefaultSubscription(context.Background(), "invalid")
 
 		require.Error(t, err)
 		require.Nil(t, actualSubscription)

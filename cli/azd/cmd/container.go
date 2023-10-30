@@ -2,13 +2,14 @@ package cmd
 
 import (
 	"context"
-	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"os"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/repository"
@@ -16,28 +17,28 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
-	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
+	"github.com/azure/azure-dev/cli/azd/pkg/azd"
+	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/containerapps"
+	"github.com/azure/azure-dev/cli/azd/pkg/devcenter"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
-	infraBicep "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
-	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/cdk"
-	infraTerraform "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/terraform"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/pipeline"
+	"github.com/azure/azure-dev/cli/azd/pkg/platform"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/pkg/state"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
@@ -48,10 +49,10 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/npm"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/python"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/swa"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/terraform"
 	"github.com/mattn/go-colorable"
 	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
+	"golang.org/x/exp/slices"
 )
 
 // Registers a singleton action initializer for the specified action name
@@ -228,10 +229,20 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		}
 	})
 
-	container.RegisterSingleton(storage.NewBlobClient)
-	container.RegisterSingleton(storage.NewBlobSdkClient)
 	container.RegisterSingleton(environment.NewLocalFileDataStore)
 	container.RegisterSingleton(environment.NewManager)
+
+	container.RegisterSingleton(func() *lazy.Lazy[environment.LocalDataStore] {
+		return lazy.NewLazy(func() (environment.LocalDataStore, error) {
+			var localDataStore environment.LocalDataStore
+			err := container.Resolve(&localDataStore)
+			if err != nil {
+				return nil, err
+			}
+
+			return localDataStore, nil
+		})
+	})
 
 	// Environment manager depends on azd context
 	container.RegisterSingleton(func(azdContext *lazy.Lazy[*azdcontext.AzdContext]) *lazy.Lazy[environment.Manager] {
@@ -254,22 +265,16 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		})
 	})
 
-	// Remote Environment State Providers
-	remoteStateProviderMap := map[environment.RemoteKind]any{
-		environment.RemoteKindAzureBlobStorage: environment.NewStorageBlobDataStore,
-	}
-
-	for remoteKind, constructor := range remoteStateProviderMap {
-		if err := container.RegisterNamedSingleton(string(remoteKind), constructor); err != nil {
-			panic(fmt.Errorf("registering remote state provider %s: %w", remoteKind, err))
-		}
-	}
-
 	container.RegisterSingleton(func(
 		lazyProjectConfig *lazy.Lazy[*project.ProjectConfig],
 		userConfigManager config.UserConfigManager,
 	) (*state.RemoteConfig, error) {
 		var remoteStateConfig *state.RemoteConfig
+
+		userConfig, err := userConfigManager.Load()
+		if err != nil {
+			return nil, fmt.Errorf("loading user config: %w", err)
+		}
 
 		// The project config may not be available yet
 		// Ex) Within init phase of fingerprinting
@@ -281,54 +286,12 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		if projectConfig != nil && projectConfig.State != nil && projectConfig.State.Remote != nil {
 			remoteStateConfig = projectConfig.State.Remote
 		} else {
-			userConfig, err := userConfigManager.Load()
-			if err != nil {
-				return nil, fmt.Errorf("loading user config: %w", err)
-			}
-
-			remoteState, ok := userConfig.Get("state.remote")
-			if ok {
-				jsonBytes, err := json.Marshal(remoteState)
-				if err != nil {
-					return nil, fmt.Errorf("marshalling remote state: %w", err)
-				}
-
-				if err := json.Unmarshal(jsonBytes, &remoteStateConfig); err != nil {
-					return nil, fmt.Errorf("unmarshalling remote state: %w", err)
-				}
+			if _, err := userConfig.GetSection("state.remote", &remoteStateConfig); err != nil {
+				return nil, fmt.Errorf("getting remote state config: %w", err)
 			}
 		}
 
 		return remoteStateConfig, nil
-	})
-
-	container.RegisterSingleton(func(
-		remoteStateConfig *state.RemoteConfig,
-		projectConfig *project.ProjectConfig,
-	) (*storage.AccountConfig, error) {
-		if remoteStateConfig == nil {
-			return nil, nil
-		}
-
-		var storageAccountConfig *storage.AccountConfig
-		jsonBytes, err := json.Marshal(remoteStateConfig.Config)
-		if err != nil {
-			return nil, fmt.Errorf("marshalling remote state config: %w", err)
-		}
-
-		if err := json.Unmarshal(jsonBytes, &storageAccountConfig); err != nil {
-			return nil, fmt.Errorf("unmarshalling remote state config: %w", err)
-		}
-
-		// If a container name has not been explicitly configured
-		// Default to use the project name as the container name
-		if storageAccountConfig.ContainerName == "" {
-			// Azure blob storage containers must be lowercase and can only container alphanumeric characters and hyphens
-			// We will do our best to preserve the original project name by forcing to lowercase.
-			storageAccountConfig.ContainerName = strings.ToLower(projectConfig.Name)
-		}
-
-		return storageAccountConfig, nil
 	})
 
 	// Lazy loads an existing environment, erroring out if not available
@@ -400,6 +363,20 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		})
 	})
 
+	container.RegisterSingleton(func(
+		ctx context.Context,
+		credential azcore.TokenCredential,
+		httpClient httputil.HttpClient,
+	) (*armresourcegraph.Client, error) {
+		options := azsdk.
+			DefaultClientOptionsBuilder(ctx, httpClient, "azd").
+			BuildArmClientOptions()
+
+		return armresourcegraph.NewClient(credential, options)
+	})
+
+	container.RegisterSingleton(templates.NewTemplateManager)
+	container.RegisterSingleton(templates.NewSourceManager)
 	container.RegisterSingleton(project.NewResourceManager)
 	container.RegisterSingleton(project.NewProjectManager)
 	container.RegisterSingleton(project.NewServiceManager)
@@ -408,8 +385,6 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(config.NewUserConfigManager)
 	container.RegisterSingleton(config.NewManager)
 	container.RegisterSingleton(config.NewFileConfigManager)
-	container.RegisterSingleton(templates.NewTemplateManager)
-	container.RegisterSingleton(templates.NewSourceManager)
 	container.RegisterSingleton(auth.NewManager)
 	container.RegisterSingleton(azcli.NewUserProfileService)
 	container.RegisterSingleton(account.NewSubscriptionsService)
@@ -447,7 +422,6 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	})
 	container.RegisterSingleton(azapi.NewDeployments)
 	container.RegisterSingleton(azapi.NewDeploymentOperations)
-	container.RegisterSingleton(bicep.NewBicepCli)
 	container.RegisterSingleton(docker.NewDocker)
 	container.RegisterSingleton(dotnet.NewDotNetCli)
 	container.RegisterSingleton(git.NewGitCli)
@@ -458,25 +432,12 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(npm.NewNpmCli)
 	container.RegisterSingleton(python.NewPythonCli)
 	container.RegisterSingleton(swa.NewSwaCli)
-	container.RegisterSingleton(terraform.NewTerraformCli)
 
 	// Provisioning
+	container.RegisterSingleton(infra.NewAzureResourceManager)
 	container.RegisterTransient(provisioning.NewManager)
 	container.RegisterSingleton(provisioning.NewPrincipalIdProvider)
 	container.RegisterSingleton(prompt.NewDefaultPrompter)
-
-	// Provisioning Providers
-	provisionProviderMap := map[provisioning.ProviderKind]any{
-		provisioning.Bicep:     infraBicep.NewBicepProvider,
-		provisioning.Terraform: infraTerraform.NewTerraformProvider,
-		provisioning.Cdk:       cdk.NewCdkProvider,
-	}
-
-	for provider, constructor := range provisionProviderMap {
-		if err := container.RegisterNamedTransient(string(provider), constructor); err != nil {
-			panic(fmt.Errorf("registering IaC provider %s: %w", provider, err))
-		}
-	}
 
 	// Other
 	container.RegisterSingleton(createClock)
@@ -536,6 +497,72 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		}
 	}
 
+	// Platform configuration
+	container.RegisterSingleton(func() *lazy.Lazy[*platform.Config] {
+		return lazy.NewLazy(func() (*platform.Config, error) {
+			var platformConfig *platform.Config
+			err := container.Resolve(&platformConfig)
+
+			return platformConfig, err
+		})
+	})
+
+	container.RegisterSingleton(func(
+		lazyProjectConfig *lazy.Lazy[*project.ProjectConfig],
+		userConfigManager config.UserConfigManager,
+	) (*platform.Config, error) {
+		// First check `azure.yaml` for platform configuration section
+		projectConfig, err := lazyProjectConfig.GetValue()
+		if err == nil && projectConfig != nil && projectConfig.Platform != nil {
+			return projectConfig.Platform, nil
+		}
+
+		// Fallback to global user configuration
+		config, err := userConfigManager.Load()
+		if err != nil {
+			return nil, fmt.Errorf("loading user config: %w", err)
+		}
+
+		var platformConfig *platform.Config
+		ok, err := config.GetSection("platform", &platformConfig)
+		if err != nil {
+			return nil, fmt.Errorf("getting platform config: %w", err)
+		}
+
+		if !ok {
+			return nil, errors.New("platform config not found")
+		}
+
+		// Validate platform type
+		supportedPlatformKinds := []string{
+			string(devcenter.PlatformKindDevCenter),
+			string(azd.PlatformKindDefault),
+		}
+		if !slices.Contains(supportedPlatformKinds, string(platformConfig.Type)) {
+			return nil, fmt.Errorf(
+				"platform kind '%s' is not supported. Valid values are '%s', %w",
+				platformConfig.Type,
+				strings.Join(supportedPlatformKinds, ","),
+				platform.ErrPlatformNotSupported,
+			)
+		}
+
+		return platformConfig, nil
+	})
+
+	// Platform Providers
+	platformProviderMap := map[platform.PlatformKind]any{
+		azd.PlatformKindDefault:         azd.NewDefaultPlatform,
+		devcenter.PlatformKindDevCenter: devcenter.NewPlatform,
+	}
+
+	for provider, constructor := range platformProviderMap {
+		platformName := fmt.Sprintf("%s-platform", provider)
+		if err := container.RegisterNamedSingleton(platformName, constructor); err != nil {
+			panic(fmt.Errorf("registering platform provider %s: %w", provider, err))
+		}
+	}
+
 	// Required for nested actions called from composite actions like 'up'
 	registerActionInitializer[*initAction](container, "azd-init-action")
 	registerActionInitializer[*provisionAction](container, "azd-provision-action")
@@ -546,4 +573,5 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 	registerAction[*provisionAction](container, "azd-provision-action")
 	registerAction[*downAction](container, "azd-down-action")
+	registerAction[*configShowAction](container, "azd-config-show-action")
 }

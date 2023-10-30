@@ -1,6 +1,7 @@
 package appdetect
 
 import (
+	"context"
 	"embed"
 	"io/fs"
 	"os"
@@ -161,7 +162,7 @@ func TestDetect(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			projects, err := Detect(dir, tt.options...)
+			projects, err := Detect(context.Background(), dir, tt.options...)
 			require.NoError(t, err)
 
 			// Convert relative to absolute paths
@@ -183,7 +184,7 @@ func TestDetectDocker(t *testing.T) {
 	err = os.WriteFile(filepath.Join(dir, "dotnet", "Dockerfile"), []byte{}, 0600)
 	require.NoError(t, err)
 
-	projects, err := Detect(dir)
+	projects, err := Detect(context.Background(), dir)
 	require.NoError(t, err)
 
 	require.Len(t, projects, 1)
@@ -210,7 +211,7 @@ func TestDetectNested(t *testing.T) {
 	err = copyTestDataDir(t, "**/javascript/**", filepath.Join(src, "dotnet"))
 	require.NoError(t, err)
 
-	projects, err := Detect(dir)
+	projects, err := Detect(context.Background(), dir)
 	require.NoError(t, err)
 
 	require.Len(t, projects, 1)

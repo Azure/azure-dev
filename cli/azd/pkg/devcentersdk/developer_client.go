@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+	"sync"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
@@ -26,7 +27,7 @@ type devCenterClient struct {
 	resourceGraphClient *armresourcegraph.Client
 	pipeline            runtime.Pipeline
 	cache               map[string]interface{}
-	endpoint            string
+	cacheMutex          sync.RWMutex
 }
 
 func NewDevCenterClient(
@@ -130,7 +131,12 @@ func (c *devCenterClient) projectList(ctx context.Context) ([]*Project, error) {
 		projects = append(projects, project)
 	}
 
+	// Caches the list of projects so we don't need to lookup on each API call
+	// This cache is safe since during the lifetime of this client the list will be only be used by a single user
+	c.cacheMutex.Lock()
+	defer c.cacheMutex.Unlock()
 	c.cache["projects"] = projects
+
 	return projects, nil
 }
 
@@ -196,7 +202,12 @@ func (c *devCenterClient) devCenterList(ctx context.Context) ([]*DevCenter, erro
 		}
 	}
 
+	// Caches the list of devcenters so we don't need to lookup on each API call
+	// This cache is safe since during the lifetime of this client the list will be only be used by a single user
+	c.cacheMutex.Lock()
+	defer c.cacheMutex.Unlock()
 	c.cache["devcenters"] = devCenters
+
 	return devCenters, nil
 }
 

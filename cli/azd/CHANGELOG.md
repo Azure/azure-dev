@@ -1,8 +1,10 @@
 # Release History
 
-## 1.5.0-beta.1 (Unreleased)
+## 1.5.0 (2023-11-08)
 
 ### Features Added
+
+- [[2893]](https://github.com/Azure/azure-dev/pull/2893) Added command `azd show`.
 
 ### Breaking Changes
 

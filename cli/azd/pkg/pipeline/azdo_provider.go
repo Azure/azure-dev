@@ -633,7 +633,6 @@ func (p *AzdoScmProvider) GitPush(
 // AzdoCiProvider implements a CiProvider using Azure DevOps to manage CI with azdo pipelines.
 type AzdoCiProvider struct {
 	envManager    environment.Manager
-	adService     azcli.AdService
 	Env           *environment.Environment
 	AzdContext    *azdcontext.AzdContext
 	credentials   *azcli.AzureCredentials
@@ -643,7 +642,6 @@ type AzdoCiProvider struct {
 
 func NewAzdoCiProvider(
 	envManager environment.Manager,
-	adService azcli.AdService,
 	env *environment.Environment,
 	azdContext *azdcontext.AzdContext,
 	console input.Console,
@@ -651,7 +649,6 @@ func NewAzdoCiProvider(
 ) CiProvider {
 	return &AzdoCiProvider{
 		envManager:    envManager,
-		adService:     adService,
 		Env:           env,
 		AzdContext:    azdContext,
 		console:       console,
@@ -700,6 +697,24 @@ func (p *AzdoCiProvider) Name() string {
 
 // ***  ciProvider implementation ******
 
+func (p *AzdoCiProvider) credentialOptions(
+	ctx context.Context,
+	repoDetails *gitRepositoryDetails,
+	infraOptions provisioning.Options,
+	authType PipelineAuthType,
+) *CredentialOptions {
+	if authType == "" || authType == AuthTypeClientCredentials {
+		return &CredentialOptions{
+			EnableClientCredentials: true,
+		}
+	}
+
+	return &CredentialOptions{
+		EnableClientCredentials:    false,
+		EnableFederatedCredentials: false,
+	}
+}
+
 // configureConnection set up Azure DevOps with the Azure credential
 func (p *AzdoCiProvider) configureConnection(
 	ctx context.Context,
@@ -707,20 +722,8 @@ func (p *AzdoCiProvider) configureConnection(
 	provisioningProvider provisioning.Options,
 	servicePrincipal *graphsdk.ServicePrincipal,
 	authType PipelineAuthType,
+	credentials *azcli.AzureCredentials,
 ) error {
-	credentials, err := p.adService.ResetPasswordCredentials(ctx, p.Env.GetSubscriptionId(), servicePrincipal.AppId)
-	if err != nil {
-		return err
-	}
-
-	p.console.MessageUxItem(
-		ctx,
-		&ux.DisplayedResource{
-			Type: "Configuring client credentials for service principal",
-			Name: servicePrincipal.DisplayName,
-		},
-	)
-
 	p.credentials = credentials
 	details := repoDetails.details.(*AzdoRepositoryDetails)
 	org, _, err := azdo.EnsureOrgNameExists(ctx, p.envManager, p.Env, p.console)

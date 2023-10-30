@@ -6,8 +6,6 @@ import (
 	"fmt"
 	"log"
 	"net/http"
-	"net/url"
-	"strings"
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -66,8 +64,7 @@ type AdService interface {
 		ctx context.Context,
 		subscriptionId string,
 		clientId string,
-		repoSlug string,
-		branches []string,
+		federatedCredentials []*graphsdk.FederatedIdentityCredential,
 	) ([]*graphsdk.FederatedIdentityCredential, error)
 }
 
@@ -197,8 +194,7 @@ func (ad *adService) ApplyFederatedCredentials(
 	ctx context.Context,
 	subscriptionId string,
 	clientId string,
-	repoSlug string,
-	branches []string,
+	federatedCredentials []*graphsdk.FederatedIdentityCredential,
 ) ([]*graphsdk.FederatedIdentityCredential, error) {
 	graphClient, err := ad.getOrCreateGraphClient(ctx, subscriptionId)
 	if err != nil {
@@ -220,31 +216,6 @@ func (ad *adService) ApplyFederatedCredentials(
 	}
 
 	existingCredentials := existingCredsResponse.Value
-	credentialSafeName := strings.ReplaceAll(repoSlug, "/", "-")
-
-	// List of desired federated credentials
-	federatedCredentials := []*graphsdk.FederatedIdentityCredential{
-		{
-			Name:        url.PathEscape(fmt.Sprintf("%s-pull_request", credentialSafeName)),
-			Issuer:      federatedIdentityIssuer,
-			Subject:     fmt.Sprintf("repo:%s:pull_request", repoSlug),
-			Description: convert.RefOf("Created by Azure Developer CLI"),
-			Audiences:   []string{federatedIdentityAudience},
-		},
-	}
-
-	for _, branch := range branches {
-		branchCredentials := &graphsdk.FederatedIdentityCredential{
-			Name:        url.PathEscape(fmt.Sprintf("%s-%s", credentialSafeName, branch)),
-			Issuer:      federatedIdentityIssuer,
-			Subject:     fmt.Sprintf("repo:%s:ref:refs/heads/%s", repoSlug, branch),
-			Description: convert.RefOf("Created by Azure Developer CLI"),
-			Audiences:   []string{federatedIdentityAudience},
-		}
-
-		federatedCredentials = append(federatedCredentials, branchCredentials)
-	}
-
 	createdCredentials := []*graphsdk.FederatedIdentityCredential{}
 
 	// Ensure the credential exists otherwise create a new one.

@@ -230,8 +230,7 @@ func Test_ApplyFederatedCredentials(t *testing.T) {
 			*mockContext.Context,
 			"SUBSCRIPTION_ID",
 			*mockApplication.AppId,
-			"owner/repo",
-			[]string{"main"},
+			nil,
 		)
 
 		require.Error(t, err)
@@ -240,6 +239,25 @@ func Test_ApplyFederatedCredentials(t *testing.T) {
 	})
 	t.Run("SingleBranch", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
+		mockCredentials := []graphsdk.FederatedIdentityCredential{
+			{
+				Id:          convert.RefOf("CREDENTIAL_ID"),
+				Name:        "owner-repo-pull_request",
+				Issuer:      federatedIdentityIssuer,
+				Subject:     "repo:owner/repo:pull_request",
+				Description: convert.RefOf("DESCRIPTION"),
+				Audiences:   []string{federatedIdentityAudience},
+			},
+			{
+				Id:          convert.RefOf("CREDENTIAL_ID"),
+				Name:        "owner-repo-main",
+				Issuer:      federatedIdentityIssuer,
+				Subject:     "repo:owner/repo:ref:refs/heads/main",
+				Description: convert.RefOf("DESCRIPTION"),
+				Audiences:   []string{federatedIdentityAudience},
+			},
+		}
+
 		mockgraphsdk.RegisterApplicationGetItemByAppIdMock(
 			mockContext,
 			http.StatusOK,
@@ -264,8 +282,7 @@ func Test_ApplyFederatedCredentials(t *testing.T) {
 			*mockContext.Context,
 			"SUBSCRIPTION_ID",
 			*mockApplication.AppId,
-			"owner/repo",
-			[]string{"main"},
+			[]*graphsdk.FederatedIdentityCredential{&mockCredentials[0], &mockCredentials[1]},
 		)
 
 		require.NoError(t, err)
@@ -275,6 +292,33 @@ func Test_ApplyFederatedCredentials(t *testing.T) {
 
 	t.Run("MultipleBranches", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
+		mockCredentials := []graphsdk.FederatedIdentityCredential{
+			{
+				Id:          convert.RefOf("CREDENTIAL_ID"),
+				Name:        "owner-repo-pull_request",
+				Issuer:      federatedIdentityIssuer,
+				Subject:     "repo:owner/repo:pull_request",
+				Description: convert.RefOf("DESCRIPTION"),
+				Audiences:   []string{federatedIdentityAudience},
+			},
+			{
+				Id:          convert.RefOf("CREDENTIAL_ID"),
+				Name:        "owner-repo-main",
+				Issuer:      federatedIdentityIssuer,
+				Subject:     "repo:owner/repo:ref:refs/heads/main",
+				Description: convert.RefOf("DESCRIPTION"),
+				Audiences:   []string{federatedIdentityAudience},
+			},
+			{
+				Id:          convert.RefOf("CREDENTIAL_ID"),
+				Name:        "owner-repo-dev",
+				Issuer:      federatedIdentityIssuer,
+				Subject:     "repo:owner/repo:ref:refs/heads/dev",
+				Description: convert.RefOf("DESCRIPTION"),
+				Audiences:   []string{federatedIdentityAudience},
+			},
+		}
+
 		mockgraphsdk.RegisterApplicationGetItemByAppIdMock(
 			mockContext,
 			http.StatusOK,
@@ -299,8 +343,7 @@ func Test_ApplyFederatedCredentials(t *testing.T) {
 			*mockContext.Context,
 			"SUBSCRIPTION_ID",
 			*mockApplication.AppId,
-			"owner/repo",
-			[]string{"main", "dev"},
+			[]*graphsdk.FederatedIdentityCredential{&mockCredentials[0], &mockCredentials[1], &mockCredentials[2]},
 		)
 
 		require.NoError(t, err)
@@ -342,8 +385,7 @@ func Test_ApplyFederatedCredentials(t *testing.T) {
 			*mockContext.Context,
 			"SUBSCRIPTION_ID",
 			*mockApplication.AppId,
-			"owner/repo",
-			[]string{"main"},
+			[]*graphsdk.FederatedIdentityCredential{&mockCredentials[0], &mockCredentials[1]},
 		)
 
 		require.NoError(t, err)

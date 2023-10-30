@@ -11,6 +11,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
 // subareaProvider defines the base behavior from any pipeline provider
@@ -104,7 +105,15 @@ type CiProvider interface {
 		provisioningProvider provisioning.Options,
 		servicePrincipal *graphsdk.ServicePrincipal,
 		authType PipelineAuthType,
+		credentials *azcli.AzureCredentials,
 	) error
+	// Gets the credential options that should be configured for the provider
+	credentialOptions(
+		ctx context.Context,
+		repoDetails *gitRepositoryDetails,
+		infraOptions provisioning.Options,
+		authType PipelineAuthType,
+	) *CredentialOptions
 }
 
 func folderExists(folderPath string) bool {

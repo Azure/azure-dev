@@ -56,6 +56,12 @@ type PipelineManagerArgs struct {
 	PipelineAuthTypeName         string
 }
 
+type CredentialOptions struct {
+	EnableClientCredentials    bool
+	EnableFederatedCredentials bool
+	FederatedCredentialOptions []*graphsdk.FederatedIdentityCredential
+}
+
 type PipelineConfigResult struct {
 	RepositoryLink string
 	PipelineLink   string
@@ -244,12 +250,66 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 	displayMsg = fmt.Sprintf("Configuring repository %s to use credentials for %s", repoSlug, applicationName)
 	pm.console.ShowSpinner(ctx, displayMsg, input.Step)
 
+	// Get the requested credential options from the CI provider
+	credentialOptions := pm.ciProvider.credentialOptions(
+		ctx,
+		gitRepoInfo,
+		prj.Infra,
+		PipelineAuthType(pm.args.PipelineAuthTypeName),
+	)
+
+	subscriptionId := pm.env.GetSubscriptionId()
+	credentials := &azcli.AzureCredentials{
+		ClientId:       servicePrincipal.AppId,
+		TenantId:       *servicePrincipal.AppOwnerOrganizationId,
+		SubscriptionId: subscriptionId,
+	}
+
+	// Enable client credentials if requested
+	if credentialOptions.EnableClientCredentials {
+		spinnerMessage := "Configuring client credentials for service principal"
+		pm.console.ShowSpinner(ctx, spinnerMessage, input.Step)
+
+		creds, err := pm.adService.ResetPasswordCredentials(ctx, subscriptionId, servicePrincipal.AppId)
+		pm.console.StopSpinner(ctx, spinnerMessage, input.GetStepResultFormat(err))
+		if err != nil {
+			return result, fmt.Errorf("failed to reset password credentials: %w", err)
+		}
+
+		credentials = creds
+	}
+
+	// Enable federated credentials if requested
+	if credentialOptions.EnableFederatedCredentials {
+		createdCredentials, err := pm.adService.ApplyFederatedCredentials(
+			ctx, subscriptionId,
+			servicePrincipal.AppId,
+			credentialOptions.FederatedCredentialOptions,
+		)
+		if err != nil {
+			return result, fmt.Errorf("failed to create federated credentials: %w", err)
+		}
+
+		for _, credential := range createdCredentials {
+			pm.console.MessageUxItem(
+				ctx,
+				&ux.DisplayedResource{
+					Type: fmt.Sprintf("Federated identity credential for %s", pm.ciProvider.Name()),
+					Name: fmt.Sprintf("subject %s", credential.Subject),
+				},
+			)
+		}
+	}
+
 	err = pm.ciProvider.configureConnection(
 		ctx,
 		gitRepoInfo,
 		prj.Infra,
 		servicePrincipal,
-		PipelineAuthType(pm.args.PipelineAuthTypeName))
+		PipelineAuthType(pm.args.PipelineAuthTypeName),
+		credentials,
+	)
+
 	pm.console.StopSpinner(ctx, "", input.GetStepResultFormat(err))
 	if err != nil {
 		return result, err

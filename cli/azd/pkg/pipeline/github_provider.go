@@ -9,11 +9,13 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net/url"
 	"path/filepath"
 	"regexp"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	githubRemote "github.com/azure/azure-dev/cli/azd/pkg/github"
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
@@ -302,6 +304,11 @@ func (p *GitHubScmProvider) notifyWhenGitHubActionsAreDisabled(
 	return false, nil
 }
 
+const (
+	federatedIdentityIssuer   = "https://token.actions.githubusercontent.com"
+	federatedIdentityAudience = "api://AzureADTokenExchange"
+)
+
 // GitHubCiProvider implements a CiProvider using GitHub to manage CI pipelines as
 // GitHub actions.
 type GitHubCiProvider struct {
@@ -385,6 +392,68 @@ func (p *GitHubCiProvider) Name() string {
 	return "GitHub"
 }
 
+func (p *GitHubCiProvider) credentialOptions(
+	ctx context.Context,
+	repoDetails *gitRepositoryDetails,
+	infraOptions provisioning.Options,
+	authType PipelineAuthType,
+) *CredentialOptions {
+	// Default auth type to client-credentials for terraform
+	if infraOptions.Provider == provisioning.Terraform && authType == "" {
+		authType = AuthTypeClientCredentials
+	}
+
+	if authType == AuthTypeClientCredentials {
+		return &CredentialOptions{
+			EnableClientCredentials: true,
+		}
+	}
+
+	// If not specified default to federated credentials
+	if authType == "" || authType == AuthTypeFederated {
+		// Configure federated auth for both main branch and current branch
+		branches := []string{repoDetails.branch}
+		if !slices.Contains(branches, "main") {
+			branches = append(branches, "main")
+		}
+
+		repoSlug := repoDetails.owner + "/" + repoDetails.repoName
+		credentialSafeName := strings.ReplaceAll(repoSlug, "/", "-")
+
+		federatedCredentials := []*graphsdk.FederatedIdentityCredential{
+			{
+				Name:        url.PathEscape(fmt.Sprintf("%s-pull_request", credentialSafeName)),
+				Issuer:      federatedIdentityIssuer,
+				Subject:     fmt.Sprintf("repo:%s:pull_request", repoSlug),
+				Description: convert.RefOf("Created by Azure Developer CLI"),
+				Audiences:   []string{federatedIdentityAudience},
+			},
+		}
+
+		for _, branch := range branches {
+			branchCredentials := &graphsdk.FederatedIdentityCredential{
+				Name:        url.PathEscape(fmt.Sprintf("%s-%s", credentialSafeName, branch)),
+				Issuer:      federatedIdentityIssuer,
+				Subject:     fmt.Sprintf("repo:%s:ref:refs/heads/%s", repoSlug, branch),
+				Description: convert.RefOf("Created by Azure Developer CLI"),
+				Audiences:   []string{federatedIdentityAudience},
+			}
+
+			federatedCredentials = append(federatedCredentials, branchCredentials)
+		}
+
+		return &CredentialOptions{
+			EnableFederatedCredentials: true,
+			FederatedCredentialOptions: federatedCredentials,
+		}
+	}
+
+	return &CredentialOptions{
+		EnableClientCredentials:    false,
+		EnableFederatedCredentials: false,
+	}
+}
+
 // ***  ciProvider implementation ******
 
 // configureConnection set up GitHub account with Azure Credentials for
@@ -396,35 +465,22 @@ func (p *GitHubCiProvider) configureConnection(
 	infraOptions provisioning.Options,
 	servicePrincipal *graphsdk.ServicePrincipal,
 	authType PipelineAuthType,
+	credentials *azcli.AzureCredentials,
 ) error {
-
-	repoSlug := repoDetails.owner + "/" + repoDetails.repoName
-
-	// Configure federated auth for both main branch and current branch
-	branches := []string{repoDetails.branch}
-	if !slices.Contains(branches, "main") {
-		branches = append(branches, "main")
-	}
-
 	// Default auth type to client-credentials for terraform
 	if infraOptions.Provider == provisioning.Terraform && authType == "" {
 		authType = AuthTypeClientCredentials
 	}
 
-	var authErr error
-
-	switch authType {
-	case AuthTypeClientCredentials:
-		authErr = p.configureClientCredentialsAuth(ctx, infraOptions, repoSlug, servicePrincipal)
-	default:
-		authErr = p.configureFederatedAuth(ctx, infraOptions, repoSlug, branches, servicePrincipal)
+	repoSlug := repoDetails.owner + "/" + repoDetails.repoName
+	if authType == AuthTypeClientCredentials {
+		err := p.configureClientCredentialsAuth(ctx, infraOptions, repoSlug, servicePrincipal, credentials)
+		if err != nil {
+			return fmt.Errorf("configuring client credentials auth: %w", err)
+		}
 	}
 
-	if authErr != nil {
-		return fmt.Errorf("failed configuring authentication: %w", authErr)
-	}
-
-	if err := p.setPipelineVariables(ctx, repoSlug, infraOptions); err != nil {
+	if err := p.setPipelineVariables(ctx, repoSlug, infraOptions, servicePrincipal); err != nil {
 		return fmt.Errorf("failed setting pipeline variables: %w", err)
 	}
 
@@ -447,11 +503,14 @@ func (p *GitHubCiProvider) setPipelineVariables(
 	ctx context.Context,
 	repoSlug string,
 	infraOptions provisioning.Options,
+	servicePrincipal *graphsdk.ServicePrincipal,
 ) error {
 	for name, value := range map[string]string{
 		environment.EnvNameEnvVarName:        p.env.GetEnvName(),
 		environment.LocationEnvVarName:       p.env.GetLocation(),
 		environment.SubscriptionIdEnvVarName: p.env.GetSubscriptionId(),
+		environment.TenantIdEnvVarName:       *servicePrincipal.AppOwnerOrganizationId,
+		"AZURE_CLIENT_ID":                    servicePrincipal.AppId,
 	} {
 		if err := p.ghCli.SetVariable(ctx, repoSlug, name, value); err != nil {
 			return fmt.Errorf("failed setting %s variable: %w", name, err)
@@ -511,20 +570,8 @@ func (p *GitHubCiProvider) configureClientCredentialsAuth(
 	infraOptions provisioning.Options,
 	repoSlug string,
 	servicePrincipal *graphsdk.ServicePrincipal,
+	credentials *azcli.AzureCredentials,
 ) error {
-	credentials, err := p.adService.ResetPasswordCredentials(ctx, p.env.GetSubscriptionId(), servicePrincipal.AppId)
-	if err != nil {
-		return err
-	}
-
-	p.console.MessageUxItem(
-		ctx,
-		&ux.DisplayedResource{
-			Type: "Configuring client credentials for service principal",
-			Name: servicePrincipal.DisplayName,
-		},
-	)
-
 	/* #nosec G101 - Potential hardcoded credentials - false positive */
 	secretName := "AZURE_CREDENTIALS"
 	credsJson, err := json.Marshal(credentials)
@@ -567,51 +614,6 @@ func (p *GitHubCiProvider) configureClientCredentialsAuth(
 				})
 			}
 		}
-	}
-
-	return nil
-}
-
-// Configures Github for federated authentication using registered application with federated identity credentials
-func (p *GitHubCiProvider) configureFederatedAuth(
-	ctx context.Context,
-	infraOptions provisioning.Options,
-	repoSlug string,
-	branches []string,
-	servicePrincipal *graphsdk.ServicePrincipal,
-) error {
-	federatedCredentials, err := p.adService.ApplyFederatedCredentials(
-		ctx,
-		p.env.GetSubscriptionId(),
-		servicePrincipal.AppId,
-		repoSlug,
-		branches,
-	)
-	if err != nil {
-		return err
-	}
-
-	for _, credential := range federatedCredentials {
-		p.console.MessageUxItem(
-			ctx,
-			&ux.DisplayedResource{
-				Type: "Federated identity credential for GitHub",
-				Name: fmt.Sprintf("subject %s", credential.Subject),
-			},
-		)
-	}
-
-	for key, value := range map[string]string{
-		environment.TenantIdEnvVarName: *servicePrincipal.AppOwnerOrganizationId,
-		"AZURE_CLIENT_ID":              servicePrincipal.AppId,
-	} {
-		if err := p.ghCli.SetVariable(ctx, repoSlug, key, value); err != nil {
-			return fmt.Errorf("failed setting github variable '%s':  %w", key, err)
-		}
-		p.console.MessageUxItem(ctx, &ux.CreatedRepoValue{
-			Name: key,
-			Kind: ux.GitHubVariable,
-		})
 	}
 
 	return nil

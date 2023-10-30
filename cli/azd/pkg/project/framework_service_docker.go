@@ -316,7 +316,8 @@ func (p *dockerProject) packBuild(
 						"nginx -g 'daemon off;'",
 					inDockerOutputPath,
 					svc.OutputPath,
-					inDockerOutputPath))
+					inDockerOutputPath,
+				))
 		}
 	}
 

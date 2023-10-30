@@ -59,6 +59,7 @@ func TestDetect(t *testing.T) {
 						DbMongo,
 						DbMySql,
 						DbPostgres,
+						DbRedis,
 						DbSqlServer,
 					},
 				},
@@ -80,6 +81,7 @@ func TestDetect(t *testing.T) {
 						DbMongo,
 						DbMySql,
 						DbPostgres,
+						DbRedis,
 					},
 				},
 				{

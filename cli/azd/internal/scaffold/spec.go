@@ -40,9 +40,10 @@ type ServiceSpec struct {
 	// Back-end properties
 	Backend *Backend
 
-	// Connection to a database. Only one should be set.
+	// Connection to a database
 	DbPostgres    *DatabaseReference
 	DbCosmosMongo *DatabaseReference
+	DbRedis       *DatabaseReference
 }
 
 type Frontend struct {

@@ -102,6 +102,7 @@ const (
 	DbMongo     DatabaseDep = "mongo"
 	DbMySql     DatabaseDep = "mysql"
 	DbSqlServer DatabaseDep = "sqlserver"
+	DbRedis     DatabaseDep = "redis"
 )
 
 func (db DatabaseDep) Display() string {
@@ -114,6 +115,8 @@ func (db DatabaseDep) Display() string {
 		return "MySQL"
 	case DbSqlServer:
 		return "SQL Server"
+	case DbRedis:
+		return "Redis"
 	}
 
 	return ""

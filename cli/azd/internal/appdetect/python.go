@@ -71,6 +71,8 @@ func (pd *pythonDetector) DetectProject(path string, entries []fs.DirEntry) (*Pr
 					"beanie",
 					"motor":
 					databaseDepMap[DbMongo] = struct{}{}
+				case "redis", "redis-om":
+					databaseDepMap[DbRedis] = struct{}{}
 				}
 			}
 

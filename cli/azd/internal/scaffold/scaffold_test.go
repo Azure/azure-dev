@@ -111,6 +111,20 @@ func TestExecInfra(t *testing.T) {
 				},
 			},
 		},
+		{
+			"API with Redis",
+			InfraSpec{
+				Services: []ServiceSpec{
+					{
+						Name: "api",
+						Port: 3100,
+						DbRedis: &DatabaseReference{
+							DatabaseName: "redis",
+						},
+					},
+				},
+			},
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {

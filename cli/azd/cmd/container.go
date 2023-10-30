@@ -378,8 +378,24 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(templates.NewTemplateManager)
 	container.RegisterSingleton(templates.NewSourceManager)
 	container.RegisterSingleton(project.NewResourceManager)
+	container.RegisterSingleton(func() *lazy.Lazy[project.ResourceManager] {
+		return lazy.NewLazy(func() (project.ResourceManager, error) {
+			var resourceManager project.ResourceManager
+			err := container.Resolve(&resourceManager)
+
+			return resourceManager, err
+		})
+	})
 	container.RegisterSingleton(project.NewProjectManager)
 	container.RegisterSingleton(project.NewServiceManager)
+	container.RegisterSingleton(func() *lazy.Lazy[project.ServiceManager] {
+		return lazy.NewLazy(func() (project.ServiceManager, error) {
+			var serviceManager project.ServiceManager
+			err := container.Resolve(&serviceManager)
+
+			return serviceManager, err
+		})
+	})
 	container.RegisterSingleton(repository.NewInitializer)
 	container.RegisterSingleton(alpha.NewFeaturesManager)
 	container.RegisterSingleton(config.NewUserConfigManager)

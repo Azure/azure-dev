@@ -131,8 +131,11 @@ func NewRootCmd(ctx context.Context, staticHelp bool, middlewareChain []*actions
 		Command:        newShowCmd(),
 		FlagsResolver:  newShowFlags,
 		ActionResolver: newShowAction,
-		OutputFormats:  []output.Format{output.JsonFormat},
+		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 		DefaultFormat:  output.NoneFormat,
+		GroupingOptions: actions.CommandGroupOptions{
+			RootLevelHelp: actions.CmdGroupMonitor,
+		},
 	})
 
 	//deprecate:cmd hide login

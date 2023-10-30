@@ -63,15 +63,7 @@ func Test_CLI_ShowWorksWithoutEnvironment(t *testing.T) {
 	require.Nil(t, showRes.Services["web"].Target)
 
 	// Repeat the process but passing an explicit environment name for an environment that doesn't exist and ensure
-	// that we get the same result as above.
-	result, err = cli.RunCommand(ctx, "show", "-e", "does-not-exist-by-design", "--output", "json")
-	require.NoError(t, err)
-
-	err = json.Unmarshal([]byte(result.Stdout), &showRes)
-	require.NoError(t, err)
-
-	require.Equal(t, "webapp", showRes.Name)
-	require.Equal(t, 1, len(showRes.Services))
-	require.NotNil(t, showRes.Services["web"])
-	require.Nil(t, showRes.Services["web"].Target)
+	// that we get an error, as the selected env does not exists.
+	_, err = cli.RunCommand(ctx, "show", "-e", "does-not-exist-by-design", "--output", "json")
+	require.Error(t, err)
 }

@@ -66,6 +66,10 @@ func (p *Prompter) PromptProject(ctx context.Context, devCenterName string) (*de
 		return nil, err
 	}
 
+	if len(writeableProjects) == 0 {
+		return nil, fmt.Errorf("no dev center projects have been found")
+	}
+
 	slices.SortFunc(writeableProjects, func(x, y *devcentersdk.Project) bool {
 		return x.Name < y.Name
 	})
@@ -135,6 +139,10 @@ func (p *Prompter) PromptEnvironmentType(
 		return x.Name < y.Name
 	})
 
+	if len(envTypes) == 0 {
+		return nil, fmt.Errorf("no environment types have been found for '%s'", projectName)
+	}
+
 	envTypeNames := []string{}
 	for _, envType := range envTypesResponse.Value {
 		envTypeNames = append(envTypeNames, envType.Name)
@@ -175,6 +183,10 @@ func (p *Prompter) PromptEnvironmentDefinition(
 	slices.SortFunc(environmentDefinitions, func(x, y *devcentersdk.EnvironmentDefinition) bool {
 		return x.Name < y.Name
 	})
+
+	if len(environmentDefinitions) == 0 {
+		return nil, fmt.Errorf("no environment definitions have been found for '%s'", projectName)
+	}
 
 	duplicateNames := []string{}
 	envDefinitionNames := []string{}

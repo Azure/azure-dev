@@ -168,13 +168,9 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	if initTypeSelect == initUnknown {
-		if i.featuresManager.IsEnabled(alpha.EasyInit) {
-			initTypeSelect, err = promptInitType(i.console, ctx)
-			if err != nil {
-				return nil, err
-			}
-		} else {
-			initTypeSelect = initAppTemplate
+		initTypeSelect, err = promptInitType(i.console, ctx)
+		if err != nil {
+			return nil, err
 		}
 	}
 

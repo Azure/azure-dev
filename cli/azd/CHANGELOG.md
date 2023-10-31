@@ -4,6 +4,8 @@
 
 ### Features Added
 
+- [[2925]](https://github.com/Azure/azure-dev/pull/2925) Promote simplified `azd init` and Cloud Native buildpacks features to beta
+
 ### Breaking Changes
 
 ### Bugs Fixed

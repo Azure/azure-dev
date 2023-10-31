@@ -10,6 +10,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/microsoft/azure-devops-go-api/azuredevops"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/build"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/serviceendpoint"
@@ -82,7 +83,7 @@ func CreateServiceConnection(
 	connection *azuredevops.Connection,
 	projectId string,
 	azdEnvironment environment.Environment,
-	credentials AzureServicePrincipalCredentials,
+	credentials *azcli.AzureCredentials,
 	console input.Console) error {
 
 	client, err := serviceendpoint.NewClient(ctx, connection)
@@ -141,7 +142,7 @@ func CreateServiceConnection(
 func createAzureRMServiceEndPointArgs(
 	ctx context.Context,
 	projectId *string,
-	credentials AzureServicePrincipalCredentials,
+	credentials *azcli.AzureCredentials,
 ) (serviceendpoint.CreateServiceEndpointArgs, error) {
 	endpointType := "azurerm"
 	endpointOwner := "library"

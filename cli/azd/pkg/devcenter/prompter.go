@@ -185,7 +185,7 @@ func (p *Prompter) PromptEnvironmentDefinition(
 	})
 
 	if len(environmentDefinitions) == 0 {
-		return nil, fmt.Errorf("no environment definitions have been found for '%s'", projectName)
+		return nil, fmt.Errorf("no environment definitions found for '%s'", projectName)
 	}
 
 	duplicateNames := []string{}

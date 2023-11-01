@@ -4,9 +4,12 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/spf13/cobra"
 )
@@ -60,33 +63,44 @@ func newWorkflowRunFlags(cmd *cobra.Command) *workflowRunFlags {
 	return &workflowRunFlags{}
 }
 
-func newWorkflowRunAction(args []string, projectConfig *project.ProjectConfig, rootDescriptor *actions.ActionDescriptor, container *ioc.NestedContainer) actions.Action {
+func newWorkflowRunAction(
+	args []string,
+	projectConfig *project.ProjectConfig,
+	serviceLocator ioc.ServiceLocator,
+	console input.Console,
+) actions.Action {
 	return &workflowRunAction{
 		args:           args,
 		projectConfig:  projectConfig,
-		rootDescriptor: rootDescriptor,
-		container:      container,
+		serviceLocator: serviceLocator,
+		console:        console,
 	}
 }
 
 type workflowRunAction struct {
 	args           []string
 	projectConfig  *project.ProjectConfig
-	rootDescriptor *actions.ActionDescriptor
-	container      *ioc.NestedContainer
+	serviceLocator ioc.ServiceLocator
+	console        input.Console
 }
 
 func (a *workflowRunAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	workflowName := a.args[0]
-	fmt.Printf("running worklfow '%s'\n", workflowName)
+
+	// Command title
+	a.console.MessageUxItem(ctx, &ux.MessageTitle{
+		Title: fmt.Sprintf("Running workflow '%s' (azd workflow run)", workflowName),
+	})
+
+	startTime := time.Now()
 
 	workflow, has := a.projectConfig.Workflows[workflowName]
 	if !has {
 		return nil, fmt.Errorf("workflow '%s' not found", workflowName)
 	}
 
-	var cmd *cobra.Command
-	if err := a.container.ResolveNamed("root", &cmd); err != nil {
+	var rootCmd *cobra.Command
+	if err := a.serviceLocator.ResolveNamed("root-cmd", &rootCmd); err != nil {
 		return nil, err
 	}
 
@@ -94,21 +108,15 @@ func (a *workflowRunAction) Run(ctx context.Context) (*actions.ActionResult, err
 		args := strings.Split(step.Command, " ")
 		args = append(args, step.Args...)
 
-		cmd.SetArgs(args)
-		if err := cmd.ExecuteContext(ctx); err != nil {
+		rootCmd.SetArgs(args)
+		if err := rootCmd.ExecuteContext(ctx); err != nil {
 			return nil, fmt.Errorf("error executing step '%s': %w", step.Command, err)
 		}
 	}
 
-	return nil, nil
-}
-
-func (a *workflowRunAction) findStep(command string) (*actions.ActionDescriptor, error) {
-	for _, child := range a.rootDescriptor.Children() {
-		if child.Name == command {
-			return child, nil
-		}
-	}
-
-	return nil, fmt.Errorf("step '%s' not found", command)
+	return &actions.ActionResult{
+		Message: &actions.ResultMessage{
+			Header: fmt.Sprintf("Your workflow completed in %s.", ux.DurationAsText(since(startTime))),
+		},
+	}, nil
 }

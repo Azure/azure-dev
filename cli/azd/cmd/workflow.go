@@ -49,13 +49,6 @@ func getCmdWorkflowHelpDescription(*cobra.Command) string {
 	)
 }
 
-func newWorkflowRunCmd() *cobra.Command {
-	return &cobra.Command{
-		Use:   "run <workflow-name>",
-		Short: "Runs a workflow with the specified name.",
-	}
-}
-
 type workflowRunFlags struct {
 }
 

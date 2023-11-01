@@ -140,7 +140,7 @@ func (p *Prompter) PromptEnvironmentType(
 	})
 
 	if len(envTypes) == 0 {
-		return nil, fmt.Errorf("no environment types have been found for '%s'", projectName)
+		return nil, fmt.Errorf("no environment types found for '%s'", projectName)
 	}
 
 	envTypeNames := []string{}

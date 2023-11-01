@@ -50,7 +50,7 @@ func Test_Prompt_Project(t *testing.T) {
 		prompter := newPrompterForTest(t, mockContext, &Config{}, manager)
 		selectedProject, err := prompter.PromptProject(*mockContext.Context, "")
 		require.Error(t, err)
-		require.ErrorContains(t, err, "no dev center projects have been found")
+		require.ErrorContains(t, err, "no dev center projects found")
 		require.Nil(t, selectedProject)
 	})
 }
@@ -116,7 +116,7 @@ func Test_Prompt_EnvironmentType(t *testing.T) {
 			selectedProject.Name,
 		)
 		require.Error(t, err)
-		require.ErrorContains(t, err, "no environment types have been found")
+		require.ErrorContains(t, err, "no environment types found")
 		require.Nil(t, selectedEnvironmentType)
 	})
 }
@@ -174,7 +174,7 @@ func Test_Prompt_EnvironmentDefinitions(t *testing.T) {
 			selectedProject.Name,
 		)
 		require.Error(t, err)
-		require.ErrorContains(t, err, "no environment definitions have been found")
+		require.ErrorContains(t, err, "no environment definitions found")
 		require.Nil(t, selectedEnvironmentType)
 	})
 }

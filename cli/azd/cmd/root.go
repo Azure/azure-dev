@@ -325,8 +325,6 @@ func NewRootCmd(ctx context.Context, staticHelp bool, middlewareChain []*actions
 
 	// Register common dependencies for the IoC container
 	ioc.RegisterInstance(ioc.Global, ctx)
-	ioc.RegisterInstance(ioc.Global, ioc.Global)
-	ioc.RegisterInstance(ioc.Global, root)
 	registerCommonDependencies(ioc.Global)
 
 	// Initialize the platform specific components for the IoC container

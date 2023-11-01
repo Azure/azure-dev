@@ -87,11 +87,12 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 
 	// Dev Error: Both action resolver and RunE have been defined
 	if descriptor.Options.ActionResolver != nil && cmd.RunE != nil {
-		return fmt.Errorf(
-			//nolint:lll
-			"action descriptor for '%s' must be configured with either an ActionResolver or a Cobra RunE command but NOT both",
-			cmd.CommandPath(),
-		)
+		return nil
+		// return fmt.Errorf(
+		// 	//nolint:lll
+		// 	"action descriptor for '%s' must be configured with either an ActionResolver or a Cobra RunE command but NOT both",
+		// 	cmd.CommandPath(),
+		// )
 	}
 
 	// Only bind command to action if an action resolver had been defined

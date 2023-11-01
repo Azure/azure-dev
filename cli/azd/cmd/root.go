@@ -355,7 +355,7 @@ func NewRootCmd(ctx context.Context, staticHelp bool, middlewareChain []*actions
 			Footer:      getCmdRootHelpFooter,
 		}))
 
-	ioc.RegisterNamedInstance(ioc.Global, "root", cmd)
+	ioc.RegisterNamedInstance(ioc.Global, "root-cmd", cmd)
 
 	return cmd
 }

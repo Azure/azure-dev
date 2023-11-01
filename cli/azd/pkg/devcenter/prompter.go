@@ -67,7 +67,7 @@ func (p *Prompter) PromptProject(ctx context.Context, devCenterName string) (*de
 	}
 
 	if len(writeableProjects) == 0 {
-		return nil, fmt.Errorf("no dev center projects have been found")
+		return nil, fmt.Errorf("no dev center projects found")
 	}
 
 	slices.SortFunc(writeableProjects, func(x, y *devcentersdk.Project) bool {

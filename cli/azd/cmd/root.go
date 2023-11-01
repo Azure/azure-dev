@@ -119,6 +119,7 @@ func NewRootCmd(ctx context.Context, staticHelp bool, middlewareChain []*actions
 	templatesActions(root)
 	authActions(root)
 	hooksActions(root)
+	workflowActions(root)
 
 	root.Add("version", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
@@ -324,6 +325,8 @@ func NewRootCmd(ctx context.Context, staticHelp bool, middlewareChain []*actions
 
 	// Register common dependencies for the IoC container
 	ioc.RegisterInstance(ioc.Global, ctx)
+	ioc.RegisterInstance(ioc.Global, ioc.Global)
+	ioc.RegisterInstance(ioc.Global, root)
 	registerCommonDependencies(ioc.Global)
 
 	// Initialize the platform specific components for the IoC container
@@ -351,6 +354,8 @@ func NewRootCmd(ctx context.Context, staticHelp bool, middlewareChain []*actions
 			Commands:    func(c *cobra.Command) string { return getCmdHelpGroupedCommands(getCmdRootHelpCommands(c)) },
 			Footer:      getCmdRootHelpFooter,
 		}))
+
+	ioc.RegisterNamedInstance(ioc.Global, "root", cmd)
 
 	return cmd
 }

@@ -109,7 +109,7 @@ func (a *workflowRunAction) Run(ctx context.Context) (*actions.ActionResult, err
 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			Header: fmt.Sprintf("Your workflow completed in %s.", ux.DurationAsText(since(startTime))),
+			Header: fmt.Sprintf("Workflow completed in %s.", ux.DurationAsText(since(startTime))),
 		},
 	}, nil
 }

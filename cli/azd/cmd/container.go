@@ -55,20 +55,20 @@ import (
 	"golang.org/x/exp/slices"
 )
 
-// Registers a singleton action initializer for the specified action name
+// Registers a transient action initializer for the specified action name
 // This returns a function that when called resolves the action
 // This is to ensure pre-conditions are met for composite actions like 'up'
 // This finds the action for a named instance and casts it to the correct type for injection
 func registerAction[T actions.Action](container *ioc.NestedContainer, actionName string) {
-	container.RegisterSingleton(func() (T, error) {
+	container.RegisterTransient(func() (T, error) {
 		return resolveAction[T](container, actionName)
 	})
 }
 
-// Registers a singleton action for the specified action name
+// Registers a transient action for the specified action name
 // This finds the action for a named instance and casts it to the correct type for injection
 func registerActionInitializer[T actions.Action](container *ioc.NestedContainer, actionName string) {
-	container.RegisterSingleton(func() actions.ActionInitializer[T] {
+	container.RegisterTransient(func() actions.ActionInitializer[T] {
 		return func() (T, error) {
 			return resolveAction[T](container, actionName)
 		}
@@ -95,7 +95,7 @@ func resolveAction[T actions.Action](container *ioc.NestedContainer, actionName 
 
 // Registers common Azd dependencies
 func registerCommonDependencies(container *ioc.NestedContainer) {
-	container.RegisterSingleton(output.GetCommandFormatter)
+	container.RegisterTransient(output.GetCommandFormatter)
 
 	container.RegisterSingleton(func(
 		rootOptions *internal.GlobalCommandOptions,

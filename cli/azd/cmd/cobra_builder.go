@@ -313,7 +313,7 @@ func (cb *CobraBuilder) bindCommand(cmd *cobra.Command, descriptor *actions.Acti
 	// These functions are typically the constructor function for the action. ex) newDeployAction(...)
 	// Action resolvers can take any number of dependencies and instantiated via the IoC container
 	if descriptor.Options.ActionResolver != nil {
-		if err := cb.container.RegisterNamedSingleton(actionName, descriptor.Options.ActionResolver); err != nil {
+		if err := cb.container.RegisterNamedTransient(actionName, descriptor.Options.ActionResolver); err != nil {
 			return fmt.Errorf(
 				//nolint:lll
 				"failed registering ActionResolver for action'%s'. Ensure the resolver is a valid go function and resolves without error. %w",

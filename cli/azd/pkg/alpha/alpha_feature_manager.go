@@ -31,6 +31,7 @@ func NewFeaturesManager(configManager config.UserConfigManager) *FeatureManager 
 func NewFeaturesManagerWithConfig(config config.Config) *FeatureManager {
 	return &FeatureManager{
 		userConfigCache: config,
+		withSync:        &sync.Once{},
 	}
 }
 

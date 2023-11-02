@@ -16,90 +16,167 @@ import (
 )
 
 func Test_Prompt_Project(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
-	selectedDevCenter := mockDevCenterList[0]
-	selectedProjectIndex := 1
+	t.Run("Success", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		selectedDevCenter := mockDevCenterList[0]
+		selectedProjectIndex := 1
 
-	manager := &mockDevCenterManager{}
-	manager.
-		On("WritableProjects", *mockContext.Context).
-		Return(mockProjects, nil)
+		manager := &mockDevCenterManager{}
+		manager.
+			On("WritableProjects", *mockContext.Context).
+			Return(mockProjects, nil)
 
-	mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool {
-		return strings.Contains(options.Message, "Select a project")
-	}).RespondFn(func(options input.ConsoleOptions) (any, error) {
-		return selectedProjectIndex, nil
+		mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool {
+			return strings.Contains(options.Message, "Select a project")
+		}).RespondFn(func(options input.ConsoleOptions) (any, error) {
+			return selectedProjectIndex, nil
+		})
+
+		prompter := newPrompterForTest(t, mockContext, &Config{}, manager)
+		selectedProject, err := prompter.PromptProject(*mockContext.Context, selectedDevCenter.Name)
+		require.NoError(t, err)
+		require.NotNil(t, selectedProject)
+		require.Equal(t, mockProjects[selectedProjectIndex], selectedProject)
 	})
 
-	prompter := newPrompterForTest(t, mockContext, &Config{}, manager)
-	selectedProject, err := prompter.PromptProject(*mockContext.Context, selectedDevCenter.Name)
-	require.NoError(t, err)
-	require.NotNil(t, selectedProject)
-	require.Equal(t, mockProjects[selectedProjectIndex], selectedProject)
+	t.Run("NoProjects", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+
+		manager := &mockDevCenterManager{}
+		manager.
+			On("WritableProjects", *mockContext.Context).
+			Return([]*devcentersdk.Project{}, nil)
+
+		prompter := newPrompterForTest(t, mockContext, &Config{}, manager)
+		selectedProject, err := prompter.PromptProject(*mockContext.Context, "")
+		require.Error(t, err)
+		require.ErrorContains(t, err, "no dev center projects found")
+		require.Nil(t, selectedProject)
+	})
 }
 
 func Test_Prompt_EnvironmentType(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
-	selectedDevCenter := mockDevCenterList[0]
-	selectedProject := mockProjects[1]
+	t.Run("Success", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		selectedDevCenter := mockDevCenterList[0]
+		selectedProject := mockProjects[1]
 
-	selectedIndex := 3
+		selectedIndex := 3
 
-	mockdevcentersdk.MockDevCenterGraphQuery(mockContext, mockDevCenterList)
-	mockdevcentersdk.MockListEnvironmentTypes(mockContext, selectedProject.Name, mockEnvironmentTypes)
+		mockdevcentersdk.MockDevCenterGraphQuery(mockContext, mockDevCenterList)
+		mockdevcentersdk.MockListEnvironmentTypes(mockContext, selectedProject.Name, mockEnvironmentTypes)
 
-	manager := &mockDevCenterManager{}
-	manager.
-		On("WritableProjects", *mockContext.Context).
-		Return(mockProjects, nil)
+		manager := &mockDevCenterManager{}
+		manager.
+			On("WritableProjects", *mockContext.Context).
+			Return(mockProjects, nil)
 
-	mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool {
-		return strings.Contains(options.Message, "Select an environment type")
-	}).RespondFn(func(options input.ConsoleOptions) (any, error) {
-		return selectedIndex, nil
+		mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool {
+			return strings.Contains(options.Message, "Select an environment type")
+		}).RespondFn(func(options input.ConsoleOptions) (any, error) {
+			return selectedIndex, nil
+		})
+
+		prompter := newPrompterForTest(t, mockContext, &Config{}, manager)
+		selectedEnvironmentType, err := prompter.PromptEnvironmentType(
+			*mockContext.Context,
+			selectedDevCenter.Name,
+			selectedProject.Name,
+		)
+		require.NoError(t, err)
+		require.NotNil(t, selectedEnvironmentType)
+		require.Equal(t, mockEnvironmentTypes[selectedIndex], selectedEnvironmentType)
 	})
 
-	prompter := newPrompterForTest(t, mockContext, &Config{}, manager)
-	selectedEnvironmentType, err := prompter.PromptEnvironmentType(
-		*mockContext.Context,
-		selectedDevCenter.Name,
-		selectedProject.Name,
-	)
-	require.NoError(t, err)
-	require.NotNil(t, selectedEnvironmentType)
-	require.Equal(t, mockEnvironmentTypes[selectedIndex], selectedEnvironmentType)
+	t.Run("NoEnvironmentTypes", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		selectedDevCenter := mockDevCenterList[0]
+		selectedProject := mockProjects[1]
+
+		selectedIndex := 3
+
+		mockdevcentersdk.MockDevCenterGraphQuery(mockContext, mockDevCenterList)
+		mockdevcentersdk.MockListEnvironmentTypes(mockContext, selectedProject.Name, []*devcentersdk.EnvironmentType{})
+
+		manager := &mockDevCenterManager{}
+		manager.
+			On("WritableProjects", *mockContext.Context).
+			Return(mockProjects, nil)
+
+		mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool {
+			return strings.Contains(options.Message, "Select an environment type")
+		}).RespondFn(func(options input.ConsoleOptions) (any, error) {
+			return selectedIndex, nil
+		})
+
+		prompter := newPrompterForTest(t, mockContext, &Config{}, manager)
+		selectedEnvironmentType, err := prompter.PromptEnvironmentType(
+			*mockContext.Context,
+			selectedDevCenter.Name,
+			selectedProject.Name,
+		)
+		require.Error(t, err)
+		require.ErrorContains(t, err, "no environment types found")
+		require.Nil(t, selectedEnvironmentType)
+	})
 }
 
 func Test_Prompt_EnvironmentDefinitions(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
-	selectedDevCenter := mockDevCenterList[0]
-	selectedProject := mockProjects[1]
+	t.Run("Success", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		selectedDevCenter := mockDevCenterList[0]
+		selectedProject := mockProjects[1]
 
-	selectedIndex := 2
+		selectedIndex := 2
 
-	mockdevcentersdk.MockDevCenterGraphQuery(mockContext, mockDevCenterList)
-	mockdevcentersdk.MockListEnvironmentDefinitions(mockContext, selectedProject.Name, mockEnvDefinitions)
+		mockdevcentersdk.MockDevCenterGraphQuery(mockContext, mockDevCenterList)
+		mockdevcentersdk.MockListEnvironmentDefinitions(mockContext, selectedProject.Name, mockEnvDefinitions)
 
-	manager := &mockDevCenterManager{}
-	manager.
-		On("WritableProjects", *mockContext.Context).
-		Return(mockProjects, nil)
+		manager := &mockDevCenterManager{}
+		manager.
+			On("WritableProjects", *mockContext.Context).
+			Return(mockProjects, nil)
 
-	mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool {
-		return strings.Contains(options.Message, "Select an environment definition")
-	}).RespondFn(func(options input.ConsoleOptions) (any, error) {
-		return selectedIndex, nil
+		mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool {
+			return strings.Contains(options.Message, "Select an environment definition")
+		}).RespondFn(func(options input.ConsoleOptions) (any, error) {
+			return selectedIndex, nil
+		})
+
+		prompter := newPrompterForTest(t, mockContext, &Config{}, manager)
+		selectedEnvironmentType, err := prompter.PromptEnvironmentDefinition(
+			*mockContext.Context,
+			selectedDevCenter.Name,
+			selectedProject.Name,
+		)
+		require.NoError(t, err)
+		require.NotNil(t, selectedEnvironmentType)
+		require.Equal(t, mockEnvDefinitions[selectedIndex], selectedEnvironmentType)
 	})
 
-	prompter := newPrompterForTest(t, mockContext, &Config{}, manager)
-	selectedEnvironmentType, err := prompter.PromptEnvironmentDefinition(
-		*mockContext.Context,
-		selectedDevCenter.Name,
-		selectedProject.Name,
-	)
-	require.NoError(t, err)
-	require.NotNil(t, selectedEnvironmentType)
-	require.Equal(t, mockEnvDefinitions[selectedIndex], selectedEnvironmentType)
+	t.Run("NoEnvironmentDefinitions", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		selectedDevCenter := mockDevCenterList[0]
+		selectedProject := mockProjects[1]
+
+		mockdevcentersdk.MockDevCenterGraphQuery(mockContext, mockDevCenterList)
+		mockdevcentersdk.MockListEnvironmentDefinitions(mockContext, selectedProject.Name, []*devcentersdk.EnvironmentDefinition{})
+
+		manager := &mockDevCenterManager{}
+		manager.
+			On("WritableProjects", *mockContext.Context).
+			Return(mockProjects, nil)
+
+		prompter := newPrompterForTest(t, mockContext, &Config{}, manager)
+		selectedEnvironmentType, err := prompter.PromptEnvironmentDefinition(
+			*mockContext.Context,
+			selectedDevCenter.Name,
+			selectedProject.Name,
+		)
+		require.Error(t, err)
+		require.ErrorContains(t, err, "no environment definitions found")
+		require.Nil(t, selectedEnvironmentType)
+	})
 }
 
 func Test_Prompt_Config(t *testing.T) {

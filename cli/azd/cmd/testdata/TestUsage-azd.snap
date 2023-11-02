@@ -20,6 +20,7 @@ Commands
     package  	: Packages the application's code to be deployed to Azure. (Beta)
     provision	: Provision the Azure resources for an application.
     up       	: Provision Azure resources, and deploy your project with a single command.
+    workflow 	: Manage workflows.
 
   Monitor, test and release your app
     monitor  	: Monitor a deployed application. (Beta)

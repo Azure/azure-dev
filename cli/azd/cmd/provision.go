@@ -63,10 +63,6 @@ func (i *provisionFlags) bindCommon(local *pflag.FlagSet, global *internal.Globa
 	i.envFlag.Bind(local, global)
 }
 
-func (i *provisionFlags) setCommon(envFlag *envFlag) {
-	i.envFlag = envFlag
-}
-
 func newProvisionFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *provisionFlags {
 	flags := &provisionFlags{}
 	flags.Bind(cmd.Flags(), global)

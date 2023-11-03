@@ -62,12 +62,6 @@ func (c *NestedContainer) RegisterSingletonAndInvoke(resolveFn any) error {
 	return c.inner.Singleton(resolveFn)
 }
 
-// Registers a resolver with a transient lifetime and instantiates the instance
-// Returns an error if the resolver cannot instantiate the type
-func (c *NestedContainer) RegisterTransientAndInvoke(resolveFn any) error {
-	return c.inner.Transient(resolveFn)
-}
-
 // Registers a named resolver with a singleton lifetime
 // Returns an error if the resolver is not valid
 func (c *NestedContainer) RegisterNamedSingleton(name string, resolveFn any) error {

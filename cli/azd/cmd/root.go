@@ -46,7 +46,7 @@ func NewRootCmd(ctx context.Context, staticHelp bool, middlewareChain []*actions
 			// If there was a platform configuration error report it to the user until it is resolved
 			// Using fmt.Printf directly here since we can't leverage our IoC container to resolve a console instance
 			if platform.Error != nil && errors.Is(platform.Error, platform.ErrPlatformNotSupported) {
-				fmt.Printf(output.WithWarningFormat("WARNING: %s\n\n", platform.Error.Error()))
+				fmt.Print(output.WithWarningFormat("WARNING: %s\n\n", platform.Error.Error()))
 			}
 
 			if opts.Cwd != "" {

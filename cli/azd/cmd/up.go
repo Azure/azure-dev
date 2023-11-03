@@ -96,14 +96,14 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		u.console.Message(ctx, output.WithWarningFormat("WARNING: Running custom 'up' workflow from azure.yaml"))
 	}
 
-	workRunflowAction, err := u.workflowRunActionInitializer()
+	workflowRunAction, err := u.workflowRunActionInitializer()
 	if err != nil {
 		return nil, err
 	}
 
-	workRunflowAction.args = []string{"up"}
+	workflowRunAction.args = []string{"up"}
 	provisionOptions := &middleware.Options{CommandPath: "workflow run"}
-	return u.runner.RunChildAction(ctx, provisionOptions, workRunflowAction)
+	return u.runner.RunChildAction(ctx, provisionOptions, workflowRunAction)
 }
 
 func getCmdUpHelpDescription(c *cobra.Command) string {

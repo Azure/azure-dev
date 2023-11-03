@@ -165,11 +165,11 @@ func Test_Middleware_RunChildAction(t *testing.T) {
 	action, actionRan := createAction(&runLog)
 	runOptions := &Options{Name: "test"}
 
-	require.False(t, runOptions.IsChildAction())
+	require.False(t, runOptions.IsChildAction(*mockContext.Context))
 	result, err := middlewareRunner.RunChildAction(*mockContext.Context, runOptions, action)
 
 	// Executing RunChildAction sets a marker on the options that this is a child action
-	require.True(t, runOptions.IsChildAction())
+	require.True(t, runOptions.IsChildAction(*mockContext.Context))
 
 	require.NotNil(t, result)
 	require.NoError(t, err)

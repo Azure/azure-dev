@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"log"
+	"slices"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
@@ -17,6 +18,10 @@ type ResolveFn func() Middleware
 type Middleware interface {
 	Run(ctx context.Context, nextFn NextFn) (*actions.ActionResult, error)
 }
+
+type ChildActionKey string
+
+var childActionKey = "child-action"
 
 // MiddlewareContext allow composite actions to orchestrate invoking child actions
 type MiddlewareContext interface {
@@ -38,8 +43,9 @@ type Options struct {
 	isChildAction bool
 }
 
-func (o *Options) IsChildAction() bool {
-	return o.isChildAction
+func (o *Options) IsChildAction(ctx context.Context) bool {
+	value, ok := ctx.Value(childActionKey).(bool)
+	return o.isChildAction || ok && value == true
 }
 
 // Executes the next middleware in the command chain
@@ -137,7 +143,13 @@ func (r *MiddlewareRunner) Use(name string, resolveFn any) error {
 		return fmt.Errorf("failed registering middleware '%s'. Ensure the resolver is a go function. %w", name, err)
 	}
 
-	r.chain = append(r.chain, name)
+	if !slices.Contains(r.chain, name) {
+		r.chain = append(r.chain, name)
+	}
 
 	return nil
+}
+
+func WithChildAction(ctx context.Context) context.Context {
+	return context.WithValue(ctx, childActionKey, true)
 }

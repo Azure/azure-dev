@@ -218,4 +218,8 @@ func openWithDefaultBrowser(ctx context.Context, console input.Console, url stri
 	console.Message(ctx, fmt.Sprintf("Azd was unable to open the next url. Please try it manually: %s", url))
 }
 
+type ChildActionKey string
+
+var childActionKey ChildActionKey = "child-action"
+
 const cReferenceDocumentationUrl = "https://learn.microsoft.com/azure/developer/azure-developer-cli/reference#"

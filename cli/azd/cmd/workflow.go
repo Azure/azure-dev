@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
@@ -98,11 +99,13 @@ func (a *workflowRunAction) Run(ctx context.Context) (*actions.ActionResult, err
 	}
 
 	for _, step := range workflow {
+		childCtx := middleware.WithChildAction(ctx)
+
 		args := strings.Split(step.Command, " ")
 		args = append(args, step.Args...)
 
 		rootCmd.SetArgs(args)
-		if err := rootCmd.ExecuteContext(ctx); err != nil {
+		if err := rootCmd.ExecuteContext(childCtx); err != nil {
 			return nil, fmt.Errorf("error executing step '%s': %w", step.Command, err)
 		}
 	}

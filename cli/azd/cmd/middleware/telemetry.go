@@ -49,7 +49,7 @@ func (m *TelemetryMiddleware) Run(ctx context.Context, next NextFn) (*actions.Ac
 
 	log.Printf("TraceID: %s", span.SpanContext().TraceID())
 
-	if !m.options.IsChildAction() {
+	if !m.options.IsChildAction(ctx) {
 		// Set the command name as a baggage item on the span context.
 		// This allow inner actions to have command name attached.
 		spanCtx = tracing.SetBaggageInContext(

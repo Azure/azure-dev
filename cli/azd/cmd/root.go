@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -42,6 +43,12 @@ func NewRootCmd(ctx context.Context, staticHelp bool, middlewareChain []*actions
 		Use:   "azd",
 		Short: fmt.Sprintf("%s is an open-source tool that helps onboard and manage your application on Azure", productName),
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			// If there was a platform configuration error report it to the user until it is resolved
+			// Using fmt.Printf directly here since we can't leverage our IoC container to resolve a console instance
+			if errors.Is(platform.Error, platform.ErrPlatformNotSupported) {
+				fmt.Print(output.WithWarningFormat("WARNING: %s\n\n", platform.Error.Error()))
+			}
+
 			if opts.Cwd != "" {
 				current, err := os.Getwd()
 
@@ -320,6 +327,8 @@ func NewRootCmd(ctx context.Context, staticHelp bool, middlewareChain []*actions
 	registerCommonDependencies(ioc.Global)
 
 	// Initialize the platform specific components for the IoC container
+	// Only container resolution errors will return an error
+	// Invalid configurations will fall back to default platform
 	if _, err := platform.Initialize(ioc.Global, azd.PlatformKindDefault); err != nil {
 		panic(err)
 	}

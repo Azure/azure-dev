@@ -1,13 +1,17 @@
 package platform
 
 import (
-	"errors"
 	"fmt"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 )
 
-var ErrPlatformNotSupported = fmt.Errorf("unsupported platform")
+var (
+	ErrPlatformNotSupported   = fmt.Errorf("unsupported platform")
+	ErrPlatformConfigNotFound = fmt.Errorf("platform config not found")
+
+	Error error = nil
+)
 
 type PlatformKind string
 
@@ -23,9 +27,8 @@ func Initialize(container *ioc.NestedContainer, defaultPlatform PlatformKind) (P
 	platformType := defaultPlatform
 
 	// Override platform type when specified
-	err := container.Resolve(&platformConfig)
-	if err != nil && errors.Is(err, ErrPlatformNotSupported) {
-		return nil, err
+	if err := container.Resolve(&platformConfig); err != nil {
+		Error = err
 	}
 
 	if platformConfig != nil {

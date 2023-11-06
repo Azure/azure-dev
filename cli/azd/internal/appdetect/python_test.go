@@ -25,7 +25,7 @@ func TestFindFastApiMain(t *testing.T) {
 	require.NoError(t, err)
 
 	dst := filepath.Join(temp, "main.py")
-	os.WriteFile(dst, contents, 0600)
+	err = os.WriteFile(dst, contents, 0600)
 	require.NoError(t, err)
 	s, err := PyFastApiLaunch(temp)
 	require.NoError(t, err)

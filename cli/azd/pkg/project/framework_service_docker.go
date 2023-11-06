@@ -315,7 +315,7 @@ func (p *dockerProject) packBuild(
 
 		// Support for FastAPI apps since the Oryx builder does not support it yet
 		if svc.Language == ServiceLanguagePython {
-			prj, err := appdetect.DetectDirectory(svc.Path())
+			prj, err := appdetect.DetectDirectory(ctx, svc.Path())
 			if err != nil {
 				return nil, err
 			}

@@ -2,11 +2,13 @@ package repository
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"path/filepath"
 	"time"
 
+	"github.com/AlecAivazis/survey/v2/terminal"
 	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
@@ -124,12 +126,18 @@ func (d *detectConfirm) Confirm(ctx context.Context) error {
 			return nil
 		case 1:
 			if err := d.remove(ctx); err != nil {
+				if errors.Is(err, terminal.InterruptErr) {
+					continue
+				}
 				return err
 			}
 
 			tracing.IncrementUsageAttribute(fields.AppInitModifyRemoveCount.Int(1))
 		case 2:
 			if err := d.add(ctx); err != nil {
+				if errors.Is(err, terminal.InterruptErr) {
+					continue
+				}
 				return err
 			}
 
@@ -175,6 +183,8 @@ func (d *detectConfirm) render(ctx context.Context) error {
 			recommendedServices = append(recommendedServices, "Azure Database for PostgreSQL flexible server")
 		case appdetect.DbMongo:
 			recommendedServices = append(recommendedServices, "Azure CosmosDB API for MongoDB")
+		case appdetect.DbRedis:
+			recommendedServices = append(recommendedServices, "Azure Container Apps Redis add-on")
 		}
 
 		status := ""

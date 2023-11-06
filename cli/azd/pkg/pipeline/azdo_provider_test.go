@@ -24,8 +24,8 @@ func Test_azdo_provider_getRepoDetails(t *testing.T) {
 	t.Run("error", func(t *testing.T) {
 		// arrange
 		provider := getAzdoScmProviderTestHarness(mockinput.NewMockConsole())
-		testOrgName := provider.Env.Dotenv()[azdo.AzDoEnvironmentOrgName]
-		testRepoName := provider.Env.Dotenv()[azdo.AzDoEnvironmentRepoName]
+		testOrgName := provider.env.Dotenv()[azdo.AzDoEnvironmentOrgName]
+		testRepoName := provider.env.Dotenv()[azdo.AzDoEnvironmentRepoName]
 		ctx := context.Background()
 
 		// act
@@ -115,7 +115,7 @@ func Test_azdo_scm_provider_preConfigureCheck(t *testing.T) {
 		// assert
 		require.Nil(t, e)
 		// PAT is not persisted to .env
-		require.EqualValues(t, "", provider.Env.Dotenv()[azdo.AzDoPatName])
+		require.EqualValues(t, "", provider.env.Dotenv()[azdo.AzDoPatName])
 		require.True(t, updatedConfig)
 	})
 }
@@ -167,7 +167,7 @@ func Test_saveEnvironmentConfig(t *testing.T) {
 		envManager.On("Save", mock.Anything, env).Return(nil)
 
 		provider := getEmptyAzdoScmProviderTestHarness(envManager, mockinput.NewMockConsole())
-		provider.Env = env
+		provider.env = env
 		// act
 		e := provider.saveEnvironmentConfig(*mockContext.Context, key, value)
 		// assert
@@ -183,14 +183,14 @@ func Test_saveEnvironmentConfig(t *testing.T) {
 func getEmptyAzdoScmProviderTestHarness(envManager environment.Manager, console input.Console) *AzdoScmProvider {
 	return &AzdoScmProvider{
 		envManager: envManager,
-		Env:        environment.New("test"),
+		env:        environment.New("test"),
 		console:    console,
 	}
 }
 
 func getAzdoScmProviderTestHarness(console input.Console) *AzdoScmProvider {
 	return &AzdoScmProvider{
-		Env: environment.NewWithValues(
+		env: environment.NewWithValues(
 			"test-env",
 			map[string]string{
 				azdo.AzDoEnvironmentOrgName:       "fake_org",

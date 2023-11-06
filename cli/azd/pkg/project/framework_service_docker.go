@@ -171,20 +171,12 @@ func (p *dockerProject) Build(
 
 			path := filepath.Join(serviceConfig.Path(), dockerOptions.Path)
 			_, err := os.Stat(path)
-			packBuildEnabled := p.alphaFeatureManager.IsEnabled(alpha.Buildpacks)
-			if packBuildEnabled {
-				if err != nil && !errors.Is(err, os.ErrNotExist) {
-					task.SetError(fmt.Errorf("reading dockerfile: %w", err))
-					return
-				}
-			} else {
-				if err != nil {
-					task.SetError(fmt.Errorf("reading dockerfile: %w", err))
-					return
-				}
+			if err != nil && !errors.Is(err, os.ErrNotExist) {
+				task.SetError(fmt.Errorf("reading dockerfile: %w", err))
+				return
 			}
 
-			if packBuildEnabled && errors.Is(err, os.ErrNotExist) {
+			if errors.Is(err, os.ErrNotExist) {
 				// Build the container from source
 				task.SetProgress(NewServiceProgress("Building Docker image from source"))
 				res, err := p.packBuild(ctx, serviceConfig, dockerOptions, imageName)
@@ -317,7 +309,8 @@ func (p *dockerProject) packBuild(
 						"nginx -g 'daemon off;'",
 					inDockerOutputPath,
 					svc.OutputPath,
-					inDockerOutputPath))
+					inDockerOutputPath,
+				))
 		}
 
 		// Support for FastAPI apps since the Oryx builder does not support it yet

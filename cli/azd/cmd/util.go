@@ -67,13 +67,20 @@ func getResourceGroupFollowUp(
 		}
 		followUp = fmt.Sprintf("%s\n%s",
 			defaultFollowUpText,
-			output.WithLinkFormat(fmt.Sprintf(
-				"https://portal.azure.com/#@/resource/subscriptions/%s/resourceGroups/%s/overview",
-				subscriptionId,
-				resourceGroupName)))
+			azurePortalLink(subscriptionId, resourceGroupName))
 	}
 
 	return followUp
+}
+
+func azurePortalLink(subscriptionId, resourceGroupName string) string {
+	if subscriptionId == "" || resourceGroupName == "" {
+		return ""
+	}
+	return output.WithLinkFormat(fmt.Sprintf(
+		"https://portal.azure.com/#@/resource/subscriptions/%s/resourceGroups/%s/overview",
+		subscriptionId,
+		resourceGroupName))
 }
 
 func serviceNameWarningCheck(console input.Console, serviceNameFlag string, commandName string) {

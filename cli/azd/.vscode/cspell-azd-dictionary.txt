@@ -19,6 +19,7 @@ armappconfiguration
 armappplatform
 armcognitiveservices
 asyncmy
+armresourcegraph
 asyncpg
 azapi
 AZCLI
@@ -62,6 +63,9 @@ csharpapp
 csharpapptest
 cupaloy
 deletedservices
+devcenter
+devcenters
+devcentersdk
 devel
 discarder
 docf
@@ -98,6 +102,7 @@ LASTEXITCODE
 ldflags
 lechnerc77
 libc
+mergo
 mgmt
 mgutz
 microsoftonline
@@ -136,6 +141,8 @@ pyvenv
 reauthentication
 relogin
 remarshal
+repourl
+resourcegraph
 restoreapp
 retriable
 rzip

@@ -2,7 +2,6 @@ package cmd
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"io"
 	"os"
@@ -10,6 +9,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
+	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/repository"
@@ -545,8 +545,8 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			return nil, fmt.Errorf("getting platform config: %w", err)
 		}
 
-		if !ok {
-			return nil, errors.New("platform config not found")
+		if !ok || platformConfig.Type == "" {
+			return nil, platform.ErrPlatformConfigNotFound
 		}
 
 		// Validate platform type
@@ -556,9 +556,12 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		}
 		if !slices.Contains(supportedPlatformKinds, string(platformConfig.Type)) {
 			return nil, fmt.Errorf(
-				"platform kind '%s' is not supported. Valid values are '%s', %w",
+				heredoc.Doc(`platform type '%s' is not supported. Valid values are '%s'.
+				Run %s to set or %s to reset. (%w)`),
 				platformConfig.Type,
 				strings.Join(supportedPlatformKinds, ","),
+				output.WithBackticks("azd config set platform.type <type>"),
+				output.WithBackticks("azd config unset platform.type"),
 				platform.ErrPlatformNotSupported,
 			)
 		}

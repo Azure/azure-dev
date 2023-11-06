@@ -160,7 +160,11 @@ func Test_Prompt_EnvironmentDefinitions(t *testing.T) {
 		selectedProject := mockProjects[1]
 
 		mockdevcentersdk.MockDevCenterGraphQuery(mockContext, mockDevCenterList)
-		mockdevcentersdk.MockListEnvironmentDefinitions(mockContext, selectedProject.Name, []*devcentersdk.EnvironmentDefinition{})
+		mockdevcentersdk.MockListEnvironmentDefinitions(
+			mockContext,
+			selectedProject.Name,
+			[]*devcentersdk.EnvironmentDefinition{},
+		)
 
 		manager := &mockDevCenterManager{}
 		manager.

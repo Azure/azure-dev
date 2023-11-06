@@ -8,7 +8,7 @@ import (
 )
 
 func Test_Platform_Initialize(t *testing.T) {
-	t.Run("ExplicitdConfig", func(t *testing.T) {
+	t.Run("ExplicitConfig", func(t *testing.T) {
 		container := ioc.NewNestedContainer(nil)
 		_ = container.RegisterNamedSingleton("default-platform", newDefaultProvider)
 		_ = container.RegisterNamedSingleton("test-platform", newTestProvider)
@@ -22,6 +22,7 @@ func Test_Platform_Initialize(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, provider)
 		require.IsType(t, new(testProvider), provider)
+		require.NoError(t, Error)
 	})
 
 	t.Run("ImplicitConfig", func(t *testing.T) {
@@ -29,10 +30,17 @@ func Test_Platform_Initialize(t *testing.T) {
 		_ = container.RegisterNamedSingleton("default-platform", newDefaultProvider)
 		_ = container.RegisterNamedSingleton("test-platform", newTestProvider)
 
+		container.RegisterSingleton(func() (*Config, error) {
+			return nil, ErrPlatformConfigNotFound
+		})
+
 		provider, err := Initialize(container, PlatformKind("default"))
 		require.NoError(t, err)
 		require.NotNil(t, provider)
 		require.IsType(t, new(defaultProvider), provider)
+
+		require.Error(t, Error)
+		require.ErrorIs(t, Error, ErrPlatformConfigNotFound)
 	})
 
 	t.Run("Unsupported", func(t *testing.T) {
@@ -45,9 +53,12 @@ func Test_Platform_Initialize(t *testing.T) {
 		})
 
 		provider, err := Initialize(container, PlatformKind("default"))
-		require.Error(t, err)
-		require.ErrorIs(t, err, ErrPlatformNotSupported)
-		require.Nil(t, provider)
+		require.NoError(t, err)
+		require.NotNil(t, provider)
+		require.IsType(t, new(defaultProvider), provider)
+
+		require.Error(t, Error)
+		require.ErrorIs(t, Error, ErrPlatformNotSupported)
 	})
 }
 

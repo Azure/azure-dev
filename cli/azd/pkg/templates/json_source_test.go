@@ -12,12 +12,12 @@ var testTemplates []*Template = []*Template{
 	{
 		Name:           "template1",
 		Description:    "Description of template 1",
-		RepositoryPath: "path/to/template1",
+		RepositoryPath: "owner/template1",
 	},
 	{
 		Name:           "template2",
 		Description:    "Description of template 2",
-		RepositoryPath: "path/to/template2",
+		RepositoryPath: "owner/template2",
 	},
 }
 
@@ -60,13 +60,13 @@ func Test_JsonTemplateSource_GetTemplate_MatchFound(t *testing.T) {
 	source, err := NewJsonTemplateSource(name, jsonTemplates())
 	require.Nil(t, err)
 
-	template, err := source.GetTemplate(context.Background(), "path/to/template1")
+	template, err := source.GetTemplate(context.Background(), "owner/template1")
 	require.Nil(t, err)
 
 	expectedTemplate := &Template{
 		Name:           "template1",
 		Description:    "Description of template 1",
-		RepositoryPath: "path/to/template1",
+		RepositoryPath: "owner/template1",
 		Source:         name,
 	}
 	require.Equal(t, expectedTemplate, template)
@@ -77,7 +77,7 @@ func Test_JsonTemplateSource_GetTemplate_NoMatchFound(t *testing.T) {
 	source, err := NewJsonTemplateSource(name, jsonTemplates())
 	require.Nil(t, err)
 
-	template, err := source.GetTemplate(context.Background(), "path/to/template3")
+	template, err := source.GetTemplate(context.Background(), "owner/notfound")
 	require.Error(t, err)
 	require.ErrorIs(t, err, ErrTemplateNotFound)
 

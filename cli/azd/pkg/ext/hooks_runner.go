@@ -156,7 +156,7 @@ func (h *HooksRunner) execHook(ctx context.Context, hookConfig *HookConfig, opti
 			MaxLineCount: 8,
 		})
 		options.StdOut = previewer
-		defer h.console.StopPreviewer(ctx)
+		defer h.console.StopPreviewer(ctx, false)
 	}
 
 	log.Printf("Executing script '%s'\n", hookConfig.path)

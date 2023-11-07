@@ -17,7 +17,7 @@ import (
 func Test_sourceManager_List(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	configManager := &mockUserConfigManager{}
-	sm := NewSourceManager(configManager, mockContext.HttpClient)
+	sm := NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient)
 
 	config := config.NewConfig(nil)
 	_ = config.Set("template.sources", map[string]interface{}{
@@ -39,7 +39,7 @@ func Test_sourceManager_List(t *testing.T) {
 func Test_sourceManager_List_EmptySources(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	configManager := &mockUserConfigManager{}
-	sm := NewSourceManager(configManager, mockContext.HttpClient)
+	sm := NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient)
 
 	config := config.NewConfig(nil)
 	_ = config.Set("template.sources", map[string]interface{}{})
@@ -56,7 +56,7 @@ func Test_sourceManager_List_EmptySources(t *testing.T) {
 func Test_sourceManager_List_UndefinedSources(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	configManager := &mockUserConfigManager{}
-	sm := NewSourceManager(configManager, mockContext.HttpClient)
+	sm := NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient)
 
 	config := config.NewConfig(nil)
 	configManager.On("Load").Return(config, nil)
@@ -73,7 +73,7 @@ func Test_sourceManager_List_UndefinedSources(t *testing.T) {
 func Test_sourceManager_Get(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	configManager := &mockUserConfigManager{}
-	sm := NewSourceManager(configManager, mockContext.HttpClient)
+	sm := NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient)
 
 	config := config.NewConfig(nil)
 	_ = config.Set("template.sources", map[string]interface{}{
@@ -94,7 +94,7 @@ func Test_sourceManager_Get(t *testing.T) {
 func Test_sourceManager_Add(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	configManager := &mockUserConfigManager{}
-	sm := NewSourceManager(configManager, mockContext.HttpClient)
+	sm := NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient)
 
 	config := config.NewConfig(defaultTemplateSourceData)
 	configManager.On("Load").Return(config, nil)
@@ -112,7 +112,7 @@ func Test_sourceManager_Add(t *testing.T) {
 func Test_sourceManager_Add_DuplicateKey(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	configManager := &mockUserConfigManager{}
-	sm := NewSourceManager(configManager, mockContext.HttpClient)
+	sm := NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient)
 
 	key := "test"
 	config := config.NewConfig(nil)
@@ -131,7 +131,7 @@ func Test_sourceManager_Add_DuplicateKey(t *testing.T) {
 func Test_sourceManager_Remove(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	configManager := &mockUserConfigManager{}
-	sm := NewSourceManager(configManager, mockContext.HttpClient)
+	sm := NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient)
 
 	key := "test"
 	config := config.NewConfig(defaultTemplateSourceData)
@@ -146,7 +146,7 @@ func Test_sourceManager_Remove(t *testing.T) {
 func Test_sourceManager_Remove_SourceNotFound(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	configManager := &mockUserConfigManager{}
-	sm := NewSourceManager(configManager, mockContext.HttpClient)
+	sm := NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient)
 
 	key := "invalid"
 	config := config.NewConfig(defaultTemplateSourceData)
@@ -162,7 +162,7 @@ func Test_sourceManager_CreateSource(t *testing.T) {
 	mockAwesomeAzdTemplateSource(mockContext)
 
 	configManager := &mockUserConfigManager{}
-	sm := NewSourceManager(configManager, mockContext.HttpClient)
+	sm := NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient)
 
 	configDir, err := config.GetUserConfigDir()
 	require.NoError(t, err)

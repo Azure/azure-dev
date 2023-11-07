@@ -33,6 +33,7 @@ var languageMap = map[appdetect.Language]project.ServiceLanguageKind{
 var dbMap = map[appdetect.DatabaseDep]struct{}{
 	appdetect.DbMongo:    {},
 	appdetect.DbPostgres: {},
+	appdetect.DbRedis:    {},
 }
 
 var ErrNoServicesDetected = errors.New("no services detected in the current directory")
@@ -53,14 +54,14 @@ func (i *Initializer) InitFromApp(
 	tracing.SetUsageAttributes(fields.AppInitLastStep.String("detect"))
 	// Prioritize src directory if it exists
 	if ent, err := os.Stat(sourceDir); err == nil && ent.IsDir() {
-		prj, err := appdetect.Detect(sourceDir)
+		prj, err := appdetect.Detect(ctx, sourceDir)
 		if err == nil && len(prj) > 0 {
 			projects = prj
 		}
 	}
 
 	if len(projects) == 0 {
-		prj, err := appdetect.Detect(wd, appdetect.WithExcludePatterns([]string{
+		prj, err := appdetect.Detect(ctx, wd, appdetect.WithExcludePatterns([]string{
 			"**/eng",
 			"**/tool",
 			"**/tools"},
@@ -231,6 +232,27 @@ func prjConfigFromDetect(
 
 			svc.Docker = project.DockerProjectOptions{
 				Path: relDocker,
+			}
+		}
+
+		if prj.HasWebUIFramework() {
+			// By default, use 'dist'. This is common for frameworks such as:
+			// - TypeScript
+			// - Vue.js
+			svc.OutputPath = "dist"
+
+		loop:
+			for _, dep := range prj.Dependencies {
+				switch dep {
+				case appdetect.JsReact:
+					// react uses 'build'
+					svc.OutputPath = "build"
+					break loop
+				case appdetect.JsAngular:
+					// angular uses dist/<project name>
+					svc.OutputPath = "dist/" + filepath.Base(rel)
+					break loop
+				}
 			}
 		}
 

@@ -141,7 +141,10 @@ func PyFastApiLaunch(projectPath string) (string, error) {
 						mainObjName := decl[0]
 						mainFilePath := rel
 						// dir1/dir2/main.py -> dir1.dir2.main
-						mainPath := strings.ReplaceAll(strings.TrimSuffix(mainFilePath, ".py"), "/", ".")
+						mainPath := strings.ReplaceAll(
+							strings.TrimSuffix(mainFilePath, ".py"),
+							string(os.PathSeparator),
+							".")
 
 						launchPath = mainPath + ":" + mainObjName
 

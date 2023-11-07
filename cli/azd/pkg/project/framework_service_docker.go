@@ -327,10 +327,15 @@ func (p *dockerProject) packBuild(
 						return nil, err
 					}
 
-					environ = append(environ,
-						"POST_BUILD_COMMAND=pip install uvicorn",
-						"ORYX_RUNTIME_SCRIPT=oryx create-script -appPath ./oryx-output -bindPort 80 -userStartupCommand "+
-							"'uvicorn "+launch+" --port $PORT --host $HOST' && ./run.sh")
+					// If launch isn't detected, fallback to default Oryx runtime logic, which may recover for scenarios
+					// such as a simple main entrypoint launch.
+					if launch != "" {
+						environ = append(environ,
+							"POST_BUILD_COMMAND=pip install uvicorn",
+							//nolint:lll
+							"ORYX_RUNTIME_SCRIPT=oryx create-script -appPath ./oryx-output -bindPort 80 -userStartupCommand "+
+								"'uvicorn "+launch+" --port $PORT --host $HOST' && ./run.sh")
+					}
 					break
 				}
 			}

@@ -90,10 +90,20 @@ func configActions(root *actions.ActionDescriptor, rootOptions *internal.GlobalC
 		},
 	})
 
+	group.Add("show", &actions.ActionDescriptorOptions{
+		Command: &cobra.Command{
+			Short: "Show all the configuration values.",
+			Long:  `Show all configuration values in ` + userConfigPath + `.`,
+		},
+		ActionResolver: newConfigShowAction,
+		OutputFormats:  []output.Format{output.JsonFormat},
+		DefaultFormat:  output.JsonFormat,
+	})
+
 	group.Add("list", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
-			Short: "Lists all configuration values.",
-			Long:  `Lists all configuration values in ` + userConfigPath + `.`,
+			Short:  "List all the configuration values. (Deprecated. Use azd config show)",
+			Hidden: true,
 		},
 		ActionResolver: newConfigListAction,
 		OutputFormats:  []output.Format{output.JsonFormat},
@@ -157,26 +167,26 @@ $ azd config set defaults.location eastus`,
 	return group
 }
 
-// azd config list
+// azd config show
 
-type configListAction struct {
+type configShowAction struct {
 	configManager config.UserConfigManager
 	formatter     output.Formatter
 	writer        io.Writer
 }
 
-func newConfigListAction(
+func newConfigShowAction(
 	configManager config.UserConfigManager, formatter output.Formatter, writer io.Writer,
 ) actions.Action {
-	return &configListAction{
+	return &configShowAction{
 		configManager: configManager,
 		formatter:     formatter,
 		writer:        writer,
 	}
 }
 
-// Executes the `azd config list` action
-func (a *configListAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+// Executes the `azd config show` action
+func (a *configShowAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	azdConfig, err := a.configManager.Load()
 	if err != nil {
 		return nil, err
@@ -192,6 +202,33 @@ func (a *configListAction) Run(ctx context.Context) (*actions.ActionResult, erro
 	}
 
 	return nil, nil
+}
+
+// azd config list - Deprecated
+
+type configListAction struct {
+	configShow *configShowAction
+	console    input.Console
+}
+
+func newConfigListAction(
+	console input.Console, configShow *configShowAction,
+) actions.Action {
+	return &configListAction{
+		configShow: configShow,
+		console:    console,
+	}
+}
+
+func (a *configListAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+	fmt.Fprintln(
+		a.console.Handles().Stderr,
+		output.WithWarningFormat(
+			"WARNING: `azd config list` is deprecated and will be removed in a future release."))
+	fmt.Fprintln(
+		a.console.Handles().Stderr,
+		"Next time use `azd config show`")
+	return a.configShow.Run(ctx)
 }
 
 // azd config get <path>
@@ -380,19 +417,17 @@ func (a *configResetAction) Run(ctx context.Context) (*actions.ActionResult, err
 
 func getCmdConfigHelpDescription(*cobra.Command) string {
 	return generateCmdHelpDescription(
-		"Manage the Azure Developer CLI user configuration, which includes your default Azure subscription and location.",
+		"Manage the Azure Developer CLI user configuration.",
 		[]string{
-			formatHelpNote(fmt.Sprintf("Applications are initially configured when you run %s.",
-				output.WithHighLightFormat("azd init"),
-			)),
-			formatHelpNote(fmt.Sprintf("The subscription and location you select will be stored at: %s.",
-				output.WithLinkFormat("%HOME/.azd/config.json"),
-			)),
 			formatHelpNote(fmt.Sprintf("The default configuration path is: %s.",
 				output.WithLinkFormat("%HOME/.azd"),
 			)),
-			formatHelpNote(fmt.Sprintf("The configuration directory can be overridden by specifying a path" +
-				" in the AZD_CONFIG_DIR environment variable.",
+			formatHelpNote(fmt.Sprintf("The configuration directory can be overridden by specifying a path"+
+				" in the %s environment variable.", output.WithBold("AZD_CONFIG_DIR"),
+			)),
+			formatHelpNote(fmt.Sprintf(
+				"The default values for azd prompts like subscription and location are stored with the key: %s.",
+				output.WithLinkFormat("defaults"),
 			)),
 		})
 }

@@ -466,7 +466,7 @@ func (sm *serviceManager) Deploy(
 
 		// Allow users to specify their own endpoints, in cases where they've configured their own front-end load balancers,
 		// reverse proxies or DNS host names outside of the service target (and prefer that to be used instead).
-		overriddenEndpoints := sm.getOverriddenEndpoints(ctx, serviceConfig)
+		overriddenEndpoints := OverriddenEndpoints(ctx, serviceConfig, sm.env)
 		if len(overriddenEndpoints) > 0 {
 			deployResult.Endpoints = overriddenEndpoints
 		}
@@ -537,8 +537,8 @@ func (sm *serviceManager) GetFrameworkService(ctx context.Context, serviceConfig
 	return frameworkService, nil
 }
 
-func (sm *serviceManager) getOverriddenEndpoints(ctx context.Context, serviceConfig *ServiceConfig) []string {
-	overriddenEndpoints := sm.env.GetServiceProperty(serviceConfig.Name, "ENDPOINTS")
+func OverriddenEndpoints(ctx context.Context, serviceConfig *ServiceConfig, env *environment.Environment) []string {
+	overriddenEndpoints := env.GetServiceProperty(serviceConfig.Name, "ENDPOINTS")
 	if overriddenEndpoints != "" {
 		var endpoints []string
 		err := json.Unmarshal([]byte(overriddenEndpoints), &endpoints)

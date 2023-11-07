@@ -1,6 +1,7 @@
 package appdetect
 
 import (
+	"context"
 	"fmt"
 	"io/fs"
 	"path/filepath"
@@ -14,7 +15,7 @@ func (dd *dotNetDetector) Language() Language {
 	return DotNet
 }
 
-func (dd *dotNetDetector) DetectProject(path string, entries []fs.DirEntry) (*Project, error) {
+func (dd *dotNetDetector) DetectProject(ctx context.Context, path string, entries []fs.DirEntry) (*Project, error) {
 	var hasProjectFile bool
 	var hasStartupFile bool
 	var projFileName string

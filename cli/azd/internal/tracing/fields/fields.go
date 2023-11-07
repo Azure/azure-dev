@@ -89,6 +89,11 @@ const (
 	ProjectServiceLanguageKey = attribute.Key("project.service.language")
 )
 
+// Platform related attributes for integrations like devcenter / ADE
+const (
+	PlatformTypeKey = attribute.Key("platform.type")
+)
+
 // Environment related attributes
 const (
 	// Hashed environment name

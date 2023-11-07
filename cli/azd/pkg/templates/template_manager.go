@@ -18,11 +18,13 @@ var (
 type TemplateManager struct {
 	sourceManager SourceManager
 	sources       []Source
+	console       input.Console
 }
 
-func NewTemplateManager(sourceManager SourceManager) (*TemplateManager, error) {
+func NewTemplateManager(sourceManager SourceManager, console input.Console) (*TemplateManager, error) {
 	return &TemplateManager{
 		sourceManager: sourceManager,
+		console:       console,
 	}, nil
 }
 
@@ -34,6 +36,10 @@ type sourceFilterPredicate func(config *SourceConfig) bool
 
 // ListTemplates retrieves the list of templates in a deterministic order.
 func (tm *TemplateManager) ListTemplates(ctx context.Context, options *ListOptions) ([]*Template, error) {
+	msg := "Retrieving templates..."
+	tm.console.ShowSpinner(ctx, msg, input.Step)
+	defer tm.console.StopSpinner(ctx, "", input.StepDone)
+
 	allTemplates := []*Template{}
 
 	var filterPredicate sourceFilterPredicate
@@ -74,31 +80,33 @@ func (tm *TemplateManager) ListTemplates(ctx context.Context, options *ListOptio
 }
 
 func (tm *TemplateManager) GetTemplate(ctx context.Context, path string) (*Template, error) {
-	absTemplatePath, err := Absolute(path)
+	sources, err := tm.getSources(ctx, nil)
 	if err != nil {
-		return nil, err
+		return nil, fmt.Errorf("failed getting template sources: %w", err)
 	}
 
-	allTemplates, err := tm.ListTemplates(ctx, nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed listing templates: %w", err)
-	}
+	var match *Template
+	var sourceErr error
 
-	matchingIndex := slices.IndexFunc(allTemplates, func(template *Template) bool {
-		absPath, err := Absolute(template.RepositoryPath)
+	for _, source := range sources {
+		template, err := source.GetTemplate(ctx, path)
 		if err != nil {
-			log.Printf("failed to get absolute path for template '%s': %s", template.RepositoryPath, err.Error())
-			return false
+			sourceErr = err
+		} else if template != nil {
+			match = template
+			break
 		}
-
-		return absPath == absTemplatePath
-	})
-
-	if matchingIndex == -1 {
-		return nil, fmt.Errorf("template with name '%s' was not found, %w", path, ErrTemplateNotFound)
 	}
 
-	return allTemplates[matchingIndex], nil
+	if match != nil {
+		return match, nil
+	}
+
+	if sourceErr != nil {
+		return nil, fmt.Errorf("failed getting template: %w", sourceErr)
+	}
+
+	return nil, ErrTemplateNotFound
 }
 
 func (tm *TemplateManager) getSources(ctx context.Context, filter sourceFilterPredicate) ([]Source, error) {
@@ -162,28 +170,55 @@ func PromptTemplate(
 	// If stdin is not interactive (non-tty), we ensure the options are not formatted.
 	isInteractive := console.IsSpinnerInteractive()
 
-	choices := make([]string, 0, len(templates)+1)
+	templateChoices := []*Template{}
+	duplicateNames := []string{}
 
-	// prepend the minimal template option to guarantee first selection
+	// Check for duplicate template names
+	for _, template := range templates {
+		hasDuplicateName := slices.ContainsFunc(templateChoices, func(t *Template) bool {
+			return t.Name == template.Name
+		})
+
+		if hasDuplicateName {
+			duplicateNames = append(duplicateNames, template.Name)
+		}
+
+		templateChoices = append(templateChoices, template)
+	}
+
+	templateNames := make([]string, 0, len(templates)+1)
+
+	// Prepend the minimal template option to guarantee first selection
 	minimalChoice := "Minimal"
 	if isInteractive {
 		minimalChoice += "\n"
 	}
 
-	choices = append(choices, minimalChoice)
+	templateNames = append(templateNames, minimalChoice)
 	for _, template := range templates {
 		templateChoice := template.Name
+
+		// Disambiguate duplicate template names with source identifier
+		if slices.Contains(duplicateNames, template.Name) {
+			templateChoice += fmt.Sprintf(" (%s)", template.Source)
+		}
+
 		if isInteractive {
 			repoPath := output.WithGrayFormat("(%s)", template.RepositoryPath)
 			templateChoice += fmt.Sprintf("\n  %s\n", repoPath)
 		}
-		choices = append(choices, templateChoice)
+
+		if slices.Contains(templateNames, templateChoice) {
+			duplicateNames = append(duplicateNames, templateChoice)
+		}
+
+		templateNames = append(templateNames, templateChoice)
 	}
 
 	selected, err := console.Select(ctx, input.ConsoleOptions{
 		Message:      message,
-		Options:      choices,
-		DefaultValue: choices[0],
+		Options:      templateNames,
+		DefaultValue: templateNames[0],
 	})
 
 	// separate this prompt from the next log

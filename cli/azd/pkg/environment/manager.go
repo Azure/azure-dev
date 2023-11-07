@@ -7,7 +7,6 @@ import (
 
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/remote"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
@@ -63,12 +62,10 @@ type Manager interface {
 }
 
 type manager struct {
-	local         DataStore
-	remote        DataStore
-	azdContext    *azdcontext.AzdContext
-	console       input.Console
-	remoteEnv     remote.Environment
-	locationFiler remote.LocationFilterPredicate
+	local      DataStore
+	remote     DataStore
+	azdContext *azdcontext.AzdContext
+	console    input.Console
 }
 
 // NewManager creates a new Manager instance
@@ -78,8 +75,6 @@ func NewManager(
 	console input.Console,
 	local LocalDataStore,
 	remoteConfig *state.RemoteConfig,
-	remoteEnv remote.Environment,
-	locationFiler remote.LocationFilterPredicate,
 ) (Manager, error) {
 	var remote RemoteDataStore
 
@@ -102,12 +97,10 @@ func NewManager(
 	}
 
 	return &manager{
-		azdContext:    azdContext,
-		local:         local,
-		remote:        remote,
-		console:       console,
-		remoteEnv:     remoteEnv,
-		locationFiler: locationFiler,
+		azdContext: azdContext,
+		local:      local,
+		remote:     remote,
+		console:    console,
 	}, nil
 }
 
@@ -164,11 +157,7 @@ func (m *manager) LoadOrCreateInteractive(ctx context.Context, environmentName s
 			env, err := m.Get(ctx, environmentName)
 			switch {
 			case errors.Is(err, ErrNotFound):
-				// environment name was supplied but the environment is not found locally
-				// prompt for subscription and location using the code from promptSubscription
-				// don't ask the user if they would like to create it or not
-
-				msg := fmt.Sprintf("Environment '%s' does not exist, would you like to pull it from azure?", environmentName)
+				msg := fmt.Sprintf("Environment '%s' does not exist, would you like to create it?", environmentName)
 				shouldCreate, promptErr := m.console.Confirm(ctx, input.ConsoleOptions{
 					Message:      msg,
 					DefaultValue: true,
@@ -179,28 +168,6 @@ func (m *manager) LoadOrCreateInteractive(ctx context.Context, environmentName s
 				if !shouldCreate {
 					return nil, false, fmt.Errorf("environment '%s' not found: %w", environmentName, err)
 				}
-
-				// get subscription
-				subscriptionId, err := m.remoteEnv.PromptSubscription(ctx, "Select an Azure Subscription to use:")
-				if err != nil {
-					return nil, false, err
-				}
-				// get location
-				location, err := m.remoteEnv.PromptLocation(
-					ctx,
-					subscriptionId,
-					"Select an Azure location to use:",
-					m.locationFiler,
-				)
-				if err != nil {
-					return nil, false, err
-				}
-				// return env without persisting to local store
-				return NewWithValues(environmentName, map[string]string{
-					SubscriptionIdEnvVarName: subscriptionId,
-					LocationEnvVarName:       location,
-				}), false, nil
-
 			case err != nil:
 				return nil, false, fmt.Errorf("loading environment '%s': %w", environmentName, err)
 			case err == nil:

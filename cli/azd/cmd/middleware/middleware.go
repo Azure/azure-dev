@@ -19,9 +19,9 @@ type Middleware interface {
 	Run(ctx context.Context, nextFn NextFn) (*actions.ActionResult, error)
 }
 
-type ChildActionKey string
+type childActionKeyType string
 
-var childActionKey = "child-action"
+var childActionKey childActionKeyType = "child-action"
 
 // MiddlewareContext allow composite actions to orchestrate invoking child actions
 type MiddlewareContext interface {
@@ -45,7 +45,7 @@ type Options struct {
 
 func (o *Options) IsChildAction(ctx context.Context) bool {
 	value, ok := ctx.Value(childActionKey).(bool)
-	return o.isChildAction || ok && value == true
+	return o.isChildAction || ok && value
 }
 
 // Executes the next middleware in the command chain

@@ -222,9 +222,6 @@ func Test_CLI_Telemetry_UsageData_EnvProjectLoad(t *testing.T) {
 
 // Verifies telemetry behavior for nested commands, such as ones invoked from `up`.
 func Test_CLI_Telemetry_NestedCommands(t *testing.T) {
-	// test is not compatible with easy init
-	t.Setenv("AZD_ALPHA_ENABLE_EASYINIT", "false")
-
 	// CLI process and working directory are isolated
 	ctx, cancel := newTestContext(t)
 	defer cancel()
@@ -247,7 +244,7 @@ func Test_CLI_Telemetry_NestedCommands(t *testing.T) {
 	_, err := cli.RunCommandWithStdIn(
 		ctx,
 		// Choose the default minimal template
-		"\n"+stdinForInit(envName),
+		"Select a template\n\n"+stdinForInit(envName),
 		"init")
 	require.NoError(t, err)
 

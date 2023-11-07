@@ -19,6 +19,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/azure/azure-dev/cli/azd/resources"
 	"github.com/otiai10/copy"
@@ -45,7 +46,7 @@ func NewInitializer(
 func (i *Initializer) Initialize(
 	ctx context.Context,
 	azdCtx *azdcontext.AzdContext,
-	templateUrl string,
+	template *templates.Template,
 	templateBranch string) error {
 	var err error
 	stepMessage := fmt.Sprintf("Downloading template code to: %s", output.WithLinkFormat("%s", azdCtx.ProjectDirectory()))
@@ -65,6 +66,11 @@ func (i *Initializer) Initialize(
 	}()
 
 	target := azdCtx.ProjectDirectory()
+
+	templateUrl, err := templates.Absolute(template.RepositoryPath)
+	if err != nil {
+		return err
+	}
 
 	filesWithExecPerms, err := i.fetchCode(ctx, templateUrl, templateBranch, staging)
 	if err != nil {
@@ -99,6 +105,10 @@ func (i *Initializer) Initialize(
 	err = i.writeCoreAssets(ctx, azdCtx)
 	if err != nil {
 		return err
+	}
+
+	if err := i.initializeProject(ctx, azdCtx, &template.Metadata); err != nil {
+		return fmt.Errorf("initializing project: %w", err)
 	}
 
 	err = i.gitInitialize(ctx, target, filesWithExecPerms, isEmpty)
@@ -237,6 +247,31 @@ func (i *Initializer) ensureGitRepository(ctx context.Context, repoPath string) 
 	return nil
 }
 
+// Initialize the project with any metadata values from the template
+func (i *Initializer) initializeProject(
+	ctx context.Context,
+	azdCtx *azdcontext.AzdContext,
+	templateMetaData *templates.Metadata,
+) error {
+	if templateMetaData == nil || len(templateMetaData.Project) == 0 {
+		return nil
+	}
+
+	projectPath := azdCtx.ProjectPath()
+	projectConfig, err := project.LoadConfig(ctx, projectPath)
+	if err != nil {
+		return fmt.Errorf("loading project config: %w", err)
+	}
+
+	for key, value := range templateMetaData.Project {
+		if err := projectConfig.Set(key, value); err != nil {
+			return fmt.Errorf("setting project config: %w", err)
+		}
+	}
+
+	return project.SaveConfig(ctx, projectConfig, projectPath)
+}
+
 func parseExecutableFiles(stagedFilesOutput string) ([]string, error) {
 	scanner := bufio.NewScanner(strings.NewReader(stagedFilesOutput))
 	executableFiles := []string{}
@@ -293,17 +328,23 @@ func (i *Initializer) InitializeMinimal(ctx context.Context, azdCtx *azdcontext.
 		return err
 	}
 
-	err = os.MkdirAll(projectConfig.Infra.Path, osutil.PermissionDirectory)
+	// Default infra path if not specified
+	infraPath := projectConfig.Infra.Path
+	if infraPath == "" {
+		infraPath = bicep.Defaults.Path
+	}
+
+	err = os.MkdirAll(infraPath, osutil.PermissionDirectory)
 	if err != nil {
 		return err
 	}
 
 	module := projectConfig.Infra.Module
 	if projectConfig.Infra.Module == "" {
-		module = bicep.DefaultModule
+		module = bicep.Defaults.Module
 	}
 
-	mainPath := filepath.Join(projectConfig.Infra.Path, module)
+	mainPath := filepath.Join(infraPath, module)
 	retryInfix := ".azd"
 	err = i.writeFileSafe(
 		ctx,

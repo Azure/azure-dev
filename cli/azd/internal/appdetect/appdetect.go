@@ -4,6 +4,7 @@
 package appdetect
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -102,6 +103,7 @@ const (
 	DbMongo     DatabaseDep = "mongo"
 	DbMySql     DatabaseDep = "mysql"
 	DbSqlServer DatabaseDep = "sqlserver"
+	DbRedis     DatabaseDep = "redis"
 )
 
 func (db DatabaseDep) Display() string {
@@ -114,6 +116,8 @@ func (db DatabaseDep) Display() string {
 		return "MySQL"
 	case DbSqlServer:
 		return "SQL Server"
+	case DbRedis:
+		return "Redis"
 	}
 
 	return ""
@@ -155,7 +159,7 @@ type Docker struct {
 
 type projectDetector interface {
 	Language() Language
-	DetectProject(path string, entries []fs.DirEntry) (*Project, error)
+	DetectProject(ctx context.Context, path string, entries []fs.DirEntry) (*Project, error)
 }
 
 var allDetectors = []projectDetector{
@@ -168,23 +172,23 @@ var allDetectors = []projectDetector{
 }
 
 // Detect detects projects located under a directory.
-func Detect(root string, options ...DetectOption) ([]Project, error) {
+func Detect(ctx context.Context, root string, options ...DetectOption) ([]Project, error) {
 	config := newConfig(options...)
-	return detectUnder(root, config)
+	return detectUnder(ctx, root, config)
 }
 
 // DetectDirectory detects the project located in a directory.
-func DetectDirectory(directory string, options ...DetectDirectoryOption) (*Project, error) {
+func DetectDirectory(ctx context.Context, directory string, options ...DetectDirectoryOption) (*Project, error) {
 	config := newDirectoryConfig(options...)
 	entries, err := os.ReadDir(directory)
 	if err != nil {
 		return nil, fmt.Errorf("reading directory: %w", err)
 	}
 
-	return detectAny(config.detectors, directory, entries)
+	return detectAny(ctx, config.detectors, directory, entries)
 }
 
-func detectUnder(root string, config detectConfig) ([]Project, error) {
+func detectUnder(ctx context.Context, root string, config detectConfig) ([]Project, error) {
 	projects := []Project{}
 
 	walkFunc := func(path string, entries []fs.DirEntry) error {
@@ -206,7 +210,7 @@ func detectUnder(root string, config detectConfig) ([]Project, error) {
 			}
 		}
 
-		project, err := detectAny(config.detectors, path, entries)
+		project, err := detectAny(ctx, config.detectors, path, entries)
 		if err != nil {
 			return err
 		}
@@ -229,10 +233,10 @@ func detectUnder(root string, config detectConfig) ([]Project, error) {
 }
 
 // Detects if a directory belongs to any projects.
-func detectAny(detectors []projectDetector, path string, entries []fs.DirEntry) (*Project, error) {
+func detectAny(ctx context.Context, detectors []projectDetector, path string, entries []fs.DirEntry) (*Project, error) {
 	log.Printf("Detecting projects in directory: %s", path)
 	for _, detector := range detectors {
-		project, err := detector.DetectProject(path, entries)
+		project, err := detector.DetectProject(ctx, path, entries)
 		if err != nil {
 			return nil, fmt.Errorf("detecting %s project: %w", string(detector.Language()), err)
 		}

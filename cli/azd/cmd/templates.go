@@ -8,41 +8,14 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
-	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/spf13/cobra"
 )
-
-func templateNameCompletion(cmd *cobra.Command, args []string, toComplete string) ([]string, cobra.ShellCompDirective) {
-	templateManager, err := templates.NewTemplateManager(
-		templates.NewSourceManager(
-			config.NewUserConfigManager(config.NewFileConfigManager(config.NewManager())),
-			http.DefaultClient,
-		),
-	)
-	if err != nil {
-		cobra.CompError(fmt.Sprintf("Error creating template manager: %s", err.Error()))
-		return []string{}, cobra.ShellCompDirectiveError
-	}
-
-	templates, err := templateManager.ListTemplates(cmd.Context(), nil)
-	if err != nil {
-		cobra.CompError(fmt.Sprintf("Error listing templates: %s", err))
-		return []string{}, cobra.ShellCompDirectiveError
-	}
-
-	templateNames := make([]string, len(templates))
-	for i, v := range templates {
-		templateNames[i] = v.Name
-	}
-	return templateNames, cobra.ShellCompDirectiveDefault
-}
 
 func templatesActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 	group := root.Add("template", &actions.ActionDescriptorOptions{

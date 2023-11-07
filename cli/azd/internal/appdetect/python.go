@@ -2,6 +2,7 @@ package appdetect
 
 import (
 	"bufio"
+	"context"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -18,7 +19,7 @@ func (pd *pythonDetector) Language() Language {
 	return Python
 }
 
-func (pd *pythonDetector) DetectProject(path string, entries []fs.DirEntry) (*Project, error) {
+func (pd *pythonDetector) DetectProject(ctx context.Context, path string, entries []fs.DirEntry) (*Project, error) {
 	for _, entry := range entries {
 		// entry.Name() == "pyproject.toml" when azd supports pyproject files
 		if strings.ToLower(entry.Name()) == "requirements.txt" {
@@ -71,6 +72,8 @@ func (pd *pythonDetector) DetectProject(path string, entries []fs.DirEntry) (*Pr
 					"beanie",
 					"motor":
 					databaseDepMap[DbMongo] = struct{}{}
+				case "redis", "redis-om":
+					databaseDepMap[DbRedis] = struct{}{}
 				}
 			}
 

@@ -5,7 +5,8 @@
         <SchemaVersion>2.0</SchemaVersion>
         <Configuration Condition="'$(Configuration)'==''">Release</Configuration>
         <Platform Condition="'$(Platform)' == ''">x64</Platform>
-        <ProductVersion Condition="'$(CLI_VERSION)' != ''">$(CLI_VERSION)</ProductVersion>
+        <ProductName Condition="'$(ProductName)' == ''">Azure Developer CLI (dev)</ProductName>
+        <ReleaseBuild Condition="'$(ProductVersion)' != ''">true</ReleaseBuild>
         <ProductVersion Condition="'$(ProductVersion)' == ''">0.1.0</ProductVersion>
         <!-- Windows Installer ProductVersion uses only major.minor.patch -->
         <ProductVersion Condition="$(ProductVersion.IndexOf('-')) &gt; 0">$(ProductVersion.Substring(0, $(ProductVersion.IndexOf('-'))))</ProductVersion>
@@ -18,7 +19,9 @@
         <IntermediateOutputPath>obj\$(Configuration)</IntermediateOutputPath>
         <DefineConstants>
             $(DefineConstants);
+            ProductName=$(ProductName);
             ProductVersion=$(ProductVersion);
+            ReleaseBuild=$(ReleaseBuild);
         </DefineConstants>
         <SuppressIces Condition="'$(Platform)' == 'arm' Or '$(Platform)' == 'arm64'">ICE39</SuppressIces>
         <DefineSolutionProperties>false</DefineSolutionProperties>

@@ -24,6 +24,10 @@ func (i *Initializer) infraSpecFromDetect(
 	detect detectConfirm) (scaffold.InfraSpec, error) {
 	spec := scaffold.InfraSpec{}
 	for database := range detect.Databases {
+		if database == appdetect.DbRedis { // no configuration needed for redis
+			continue
+		}
+
 	dbPrompt:
 		for {
 			dbName, err := i.console.Prompt(ctx, input.ConsoleOptions{
@@ -97,13 +101,8 @@ func (i *Initializer) infraSpecFromDetect(
 		}
 
 		if svc.Docker == nil || svc.Docker.Path == "" {
-			// Match target ports from the default builder image:
-			// - python: 80
-			// - other: 8080
-			serviceSpec.Port = 8080
-			if svc.Language == appdetect.Python {
-				serviceSpec.Port = 80
-			}
+			// default builder always specifies port 80
+			serviceSpec.Port = 80
 		}
 
 		for _, framework := range svc.Dependencies {
@@ -126,6 +125,10 @@ func (i *Initializer) infraSpecFromDetect(
 			case appdetect.DbPostgres:
 				serviceSpec.DbPostgres = &scaffold.DatabaseReference{
 					DatabaseName: spec.DbPostgres.DatabaseName,
+				}
+			case appdetect.DbRedis:
+				serviceSpec.DbRedis = &scaffold.DatabaseReference{
+					DatabaseName: "redis",
 				}
 			}
 		}

@@ -24,9 +24,13 @@ var defaultTemplateSourceData = map[string]interface{}{
 func Test_Templates_NewTemplateManager(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	templateManager, err := NewTemplateManager(
-		NewSourceManager(config.NewUserConfigManager(config.NewFileConfigManager(config.NewManager())),
+		NewSourceManager(
+			NewSourceOptions(),
+			mockContext.Container,
+			config.NewUserConfigManager(config.NewFileConfigManager(config.NewManager())),
 			mockContext.HttpClient,
 		),
+		mockContext.Console,
 	)
 	require.NoError(t, err)
 	require.NotNil(t, templateManager)
@@ -39,7 +43,10 @@ func Test_Templates_ListTemplates(t *testing.T) {
 	configManager := &mockUserConfigManager{}
 	configManager.On("Load").Return(config.NewConfig(defaultTemplateSourceData), nil)
 
-	templateManager, err := NewTemplateManager(NewSourceManager(configManager, mockContext.HttpClient))
+	templateManager, err := NewTemplateManager(
+		NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient),
+		mockContext.Console,
+	)
 	require.NoError(t, err)
 
 	templates, err := templateManager.ListTemplates(*mockContext.Context, nil)
@@ -76,7 +83,10 @@ func Test_Templates_ListTemplates_SourceError(t *testing.T) {
 	})
 	configManager.On("Load").Return(config, nil)
 
-	templateManager, err := NewTemplateManager(NewSourceManager(configManager, mockContext.HttpClient))
+	templateManager, err := NewTemplateManager(
+		NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient),
+		mockContext.Console,
+	)
 	require.NoError(t, err)
 
 	// An invalid source should not cause an unrecoverable error
@@ -91,7 +101,10 @@ func Test_Templates_GetTemplate_WithValidPath(t *testing.T) {
 	configManager := &mockUserConfigManager{}
 	configManager.On("Load").Return(config.NewConfig(defaultTemplateSourceData), nil)
 
-	templateManager, err := NewTemplateManager(NewSourceManager(configManager, mockContext.HttpClient))
+	templateManager, err := NewTemplateManager(
+		NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient),
+		mockContext.Console,
+	)
 	require.NoError(t, err)
 
 	rel := "todo-nodejs-mongo"
@@ -110,7 +123,10 @@ func Test_Templates_GetTemplate_WithInvalidPath(t *testing.T) {
 	configManager := &mockUserConfigManager{}
 	configManager.On("Load").Return(config.NewConfig(defaultTemplateSourceData), nil)
 
-	templateManager, err := NewTemplateManager(NewSourceManager(configManager, mockContext.HttpClient))
+	templateManager, err := NewTemplateManager(
+		NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient),
+		mockContext.Console,
+	)
 	require.NoError(t, err)
 
 	templateName := "not-a-valid-template-name"
@@ -125,7 +141,10 @@ func Test_Templates_GetTemplate_WithNotFoundPath(t *testing.T) {
 	configManager := &mockUserConfigManager{}
 	configManager.On("Load").Return(config.NewConfig(defaultTemplateSourceData), nil)
 
-	templateManager, err := NewTemplateManager(NewSourceManager(configManager, mockContext.HttpClient))
+	templateManager, err := NewTemplateManager(
+		NewSourceManager(NewSourceOptions(), mockContext.Container, configManager, mockContext.HttpClient),
+		mockContext.Console,
+	)
 	require.NoError(t, err)
 
 	templateName := "not-a-valid-template-path"

@@ -47,6 +47,7 @@ var (
 	DefaultRoleNames    = []string{"Contributor", "User Access Administrator"}
 )
 
+// PipelineManagerArgs represents the arguments passed to the pipeline manager from Azd CLI
 type PipelineManagerArgs struct {
 	PipelineServicePrincipalId   string
 	PipelineServicePrincipalName string
@@ -54,6 +55,13 @@ type PipelineManagerArgs struct {
 	PipelineRoleNames            []string
 	PipelineProvider             string
 	PipelineAuthTypeName         string
+}
+
+// CredentialOptions represents the options for configuring credentials for a pipeline.
+type CredentialOptions struct {
+	EnableClientCredentials    bool
+	EnableFederatedCredentials bool
+	FederatedCredentialOptions []*graphsdk.FederatedIdentityCredential
 }
 
 type PipelineConfigResult struct {
@@ -178,14 +186,14 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 		lookupKind = lookupKindEnvironmentVariable
 	}
 
-	var application *graphsdk.Application
+	var servicePrincipal *graphsdk.ServicePrincipal
 	var displayMsg, applicationName string
 
 	if appIdOrName != "" {
-		application, _ = pm.adService.GetServicePrincipal(ctx, pm.env.GetSubscriptionId(), appIdOrName)
-		if application != nil {
-			appIdOrName = *application.AppId
-			applicationName = application.DisplayName
+		servicePrincipal, _ = pm.adService.GetServicePrincipal(ctx, pm.env.GetSubscriptionId(), appIdOrName)
+		if servicePrincipal != nil {
+			appIdOrName = servicePrincipal.AppId
+			applicationName = servicePrincipal.DisplayName
 		} else {
 			applicationName = pm.args.PipelineServicePrincipalName
 		}
@@ -196,7 +204,7 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 	}
 
 	// If an explicit client id was specified but not found then fail
-	if application == nil && lookupKind == lookupKindPrincipalId {
+	if servicePrincipal == nil && lookupKind == lookupKindPrincipalId {
 		return nil, fmt.Errorf(
 			"service principal with client id '%s' specified in '--principal-id' parameter was not found",
 			pm.args.PipelineServicePrincipalId,
@@ -204,7 +212,7 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 	}
 
 	// If an explicit client id was specified but not found then fail
-	if application == nil && lookupKind == lookupKindEnvironmentVariable {
+	if servicePrincipal == nil && lookupKind == lookupKindEnvironmentVariable {
 		return nil, fmt.Errorf(
 			"service principal with client id '%s' specified in environment variable '%s' was not found",
 			envClientId,
@@ -212,22 +220,22 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 		)
 	}
 
-	if application == nil {
+	if servicePrincipal == nil {
 		displayMsg = fmt.Sprintf("Creating service principal %s", applicationName)
 	} else {
-		displayMsg = fmt.Sprintf("Updating service principal %s (%s)", application.DisplayName, *application.AppId)
+		displayMsg = fmt.Sprintf("Updating service principal %s (%s)", servicePrincipal.DisplayName, servicePrincipal.AppId)
 	}
 
 	pm.console.ShowSpinner(ctx, displayMsg, input.Step)
-	clientId, credentials, err := pm.adService.CreateOrUpdateServicePrincipal(
+	servicePrincipal, err = pm.adService.CreateOrUpdateServicePrincipal(
 		ctx,
 		pm.env.GetSubscriptionId(),
 		appIdOrName,
 		pm.args.PipelineRoleNames)
 
 	// Update new service principal to include client id
-	if application == nil && clientId != nil {
-		displayMsg += fmt.Sprintf(" (%s)", *clientId)
+	if !strings.Contains(displayMsg, servicePrincipal.AppId) {
+		displayMsg += fmt.Sprintf(" (%s)", servicePrincipal.AppId)
 	}
 	pm.console.StopSpinner(ctx, displayMsg, input.GetStepResultFormat(err))
 	if err != nil {
@@ -235,23 +243,75 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 	}
 
 	// Set in .env to be retrieved for any additional runs
-	if clientId != nil {
-		pm.env.DotenvSet(AzurePipelineClientIdEnvVarName, *clientId)
-		if err := pm.envManager.Save(ctx, pm.env); err != nil {
-			return result, fmt.Errorf("failed to save environment: %w", err)
-		}
+	pm.env.DotenvSet(AzurePipelineClientIdEnvVarName, servicePrincipal.AppId)
+	if err := pm.envManager.Save(ctx, pm.env); err != nil {
+		return result, fmt.Errorf("failed to save environment: %w", err)
 	}
 
 	repoSlug := gitRepoInfo.owner + "/" + gitRepoInfo.repoName
 	displayMsg = fmt.Sprintf("Configuring repository %s to use credentials for %s", repoSlug, applicationName)
 	pm.console.ShowSpinner(ctx, displayMsg, input.Step)
 
+	// Get the requested credential options from the CI provider
+	credentialOptions := pm.ciProvider.credentialOptions(
+		ctx,
+		gitRepoInfo,
+		prj.Infra,
+		PipelineAuthType(pm.args.PipelineAuthTypeName),
+	)
+
+	subscriptionId := pm.env.GetSubscriptionId()
+	credentials := &azcli.AzureCredentials{
+		ClientId:       servicePrincipal.AppId,
+		TenantId:       *servicePrincipal.AppOwnerOrganizationId,
+		SubscriptionId: subscriptionId,
+	}
+
+	// Enable client credentials if requested
+	if credentialOptions.EnableClientCredentials {
+		spinnerMessage := "Configuring client credentials for service principal"
+		pm.console.ShowSpinner(ctx, spinnerMessage, input.Step)
+
+		creds, err := pm.adService.ResetPasswordCredentials(ctx, subscriptionId, servicePrincipal.AppId)
+		pm.console.StopSpinner(ctx, spinnerMessage, input.GetStepResultFormat(err))
+		if err != nil {
+			return result, fmt.Errorf("failed to reset password credentials: %w", err)
+		}
+
+		credentials = creds
+	}
+
+	// Enable federated credentials if requested
+	if credentialOptions.EnableFederatedCredentials {
+		createdCredentials, err := pm.adService.ApplyFederatedCredentials(
+			ctx, subscriptionId,
+			servicePrincipal.AppId,
+			credentialOptions.FederatedCredentialOptions,
+		)
+		if err != nil {
+			return result, fmt.Errorf("failed to create federated credentials: %w", err)
+		}
+
+		for _, credential := range createdCredentials {
+			pm.console.MessageUxItem(
+				ctx,
+				&ux.DisplayedResource{
+					Type: fmt.Sprintf("Federated identity credential for %s", pm.ciProvider.Name()),
+					Name: fmt.Sprintf("subject %s", credential.Subject),
+				},
+			)
+		}
+	}
+
 	err = pm.ciProvider.configureConnection(
 		ctx,
 		gitRepoInfo,
 		prj.Infra,
+		servicePrincipal,
+		PipelineAuthType(pm.args.PipelineAuthTypeName),
 		credentials,
-		PipelineAuthType(pm.args.PipelineAuthTypeName))
+	)
+
 	pm.console.StopSpinner(ctx, "", input.GetStepResultFormat(err))
 	if err != nil {
 		return result, err

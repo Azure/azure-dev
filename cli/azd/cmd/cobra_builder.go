@@ -107,7 +107,6 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 		// Registers the following to enable injection into actions that require them
 		ioc.RegisterInstance(cb.container, cb.runner)
 		ioc.RegisterInstance(cb.container, middleware.MiddlewareContext(cb.runner))
-		ioc.RegisterInstance(cb.container, ctx)
 		ioc.RegisterInstance(cb.container, cmd)
 		ioc.RegisterInstance(cb.container, args)
 

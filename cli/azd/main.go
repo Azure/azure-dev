@@ -58,7 +58,7 @@ func main() {
 	latest := make(chan semver.Version)
 	go fetchLatestVersion(latest)
 
-	cmdErr := cmd.NewRootCmd(false, nil).ExecuteContext(ctx)
+	cmdErr := cmd.NewRootCmd(ctx, false, nil).ExecuteContext(ctx)
 
 	if !isJsonOutput() {
 		if firstNotice := telemetry.FirstNotice(); firstNotice != "" {

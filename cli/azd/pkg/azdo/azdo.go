@@ -44,13 +44,6 @@ var (
 	ServiceConnectionName = "azconnection"
 )
 
-type AzureServicePrincipalCredentials struct {
-	TenantId       string `json:"tenantId"`
-	ClientId       string `json:"clientId"`
-	ClientSecret   string `json:"clientSecret"`
-	SubscriptionId string `json:"subscriptionId"`
-}
-
 // helper method to return an Azure DevOps connection used the AzDo go sdk
 func GetConnection(
 	ctx context.Context, organization string, personalAccessToken string) (*azuredevops.Connection, error) {

@@ -38,7 +38,7 @@ func Test_progressLogStartStop(t *testing.T) {
 
 	err := snConfig.SnapshotMulti("start", bufHandler.snap())
 	require.NoError(t, err)
-	pg.Stop()
+	pg.Stop(false)
 	bufHandler.page()
 	err = snConfig.SnapshotMulti("stop", bufHandler.snap())
 	require.NoError(t, err)
@@ -69,7 +69,7 @@ func Test_progressLogLine(t *testing.T) {
 
 	err = snConfig.SnapshotMulti("log", bufHandler.snap())
 	require.NoError(t, err)
-	pg.Stop()
+	pg.Stop(false)
 	bufHandler.page()
 	err = snConfig.SnapshotMulti("stop", bufHandler.snap())
 	require.NoError(t, err)
@@ -102,7 +102,7 @@ func Test_progressLogMultiWrite(t *testing.T) {
 	}
 
 	snConfig.SnapshotT(t, bufHandler.snap())
-	pg.Stop()
+	pg.Stop(false)
 }
 
 func Test_progressLogWithBreak(t *testing.T) {
@@ -125,7 +125,7 @@ func Test_progressLogWithBreak(t *testing.T) {
 	bufHandler.page()
 
 	snConfig.SnapshotT(t, bufHandler.snap())
-	pg.Stop()
+	pg.Stop(false)
 }
 
 func Test_progressLogStartWithBreak(t *testing.T) {
@@ -154,7 +154,7 @@ func Test_progressLogStartWithBreak(t *testing.T) {
 	bufHandler.page()
 
 	snConfig.SnapshotT(t, bufHandler.snap())
-	pg.Stop()
+	pg.Stop(false)
 }
 
 func Test_progressLogLongLine(t *testing.T) {
@@ -179,7 +179,7 @@ func Test_progressLogLongLine(t *testing.T) {
 	bufHandler.page()
 
 	snConfig.SnapshotT(t, bufHandler.snap())
-	pg.Stop()
+	pg.Stop(false)
 }
 
 func Test_progressLogManyLines(t *testing.T) {
@@ -205,7 +205,7 @@ func Test_progressLogManyLines(t *testing.T) {
 	}
 
 	snConfig.SnapshotT(t, bufHandler.snap())
-	pg.Stop()
+	pg.Stop(false)
 }
 
 // test structure that generates screen-time-travel snap
@@ -328,5 +328,5 @@ func Test_progressChangeHeader(t *testing.T) {
 	}
 
 	snConfig.SnapshotT(t, bufHandler.snap())
-	pg.Stop()
+	pg.Stop(false)
 }

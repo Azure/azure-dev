@@ -24,6 +24,7 @@ Commands
   Monitor, test and release your app
     monitor  	: Monitor a deployed application. (Beta)
     pipeline 	: Manage and configure your deployment pipelines. (Beta)
+    show     	: Display information about your app and its resources.
 
   About, help and upgrade
     version  	: Print the version number of Azure Developer CLI.

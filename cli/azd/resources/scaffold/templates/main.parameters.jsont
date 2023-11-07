@@ -11,7 +11,7 @@
       },
       {{- range .Parameters}}
       "{{.Name}}": {
-        "value": "{{.Value}}"
+        "value": {{formatParam "        " "  " .Value}}
       },
       {{- end}}
       "principalId": {

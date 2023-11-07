@@ -1,6 +1,7 @@
 package appdetect
 
 import (
+	"context"
 	"encoding/json"
 	"io/fs"
 	"os"
@@ -22,7 +23,7 @@ func (nd *javaScriptDetector) Language() Language {
 	return JavaScript
 }
 
-func (nd *javaScriptDetector) DetectProject(path string, entries []fs.DirEntry) (*Project, error) {
+func (nd *javaScriptDetector) DetectProject(ctx context.Context, path string, entries []fs.DirEntry) (*Project, error) {
 	for _, entry := range entries {
 		if strings.ToLower(entry.Name()) == "package.json" {
 			project := &Project{
@@ -69,6 +70,8 @@ func (nd *javaScriptDetector) DetectProject(path string, entries []fs.DirEntry) 
 					databaseDepMap[DbPostgres] = struct{}{}
 				case "tedious":
 					databaseDepMap[DbSqlServer] = struct{}{}
+				case "redis", "redis-om":
+					databaseDepMap[DbRedis] = struct{}{}
 				}
 			}
 

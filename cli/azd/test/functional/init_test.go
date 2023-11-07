@@ -21,42 +21,6 @@ import (
 // - The project layout is valid (azure.yaml, .azure, infra/)
 // - The template creates a valid environment file
 func Test_CLI_Init_Minimal(t *testing.T) {
-	// test is not compatible with easy init
-	t.Setenv("AZD_ALPHA_ENABLE_EASYINIT", "false")
-
-	ctx, cancel := newTestContext(t)
-	defer cancel()
-
-	dir := tempDirWithDiagnostics(t)
-
-	cli := azdcli.NewCLI(t)
-	cli.WorkingDirectory = dir
-	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
-
-	_, err := cli.RunCommandWithStdIn(
-		ctx,
-		"Minimal\nTESTENV\n",
-		"init",
-	)
-	require.NoError(t, err)
-
-	file, err := os.ReadFile(getTestEnvPath(dir, "TESTENV"))
-
-	require.NoError(t, err)
-	require.Regexp(t, regexp.MustCompile(`AZURE_ENV_NAME="TESTENV"`+"\n"), string(file))
-
-	proj, err := project.Load(ctx, filepath.Join(dir, azdcontext.ProjectFileName))
-	require.NoError(t, err)
-	require.Equal(t, filepath.Base(dir), proj.Name)
-
-	require.DirExists(t, filepath.Join(dir, ".azure"))
-	require.FileExists(t, filepath.Join(dir, "infra", "main.bicep"))
-	require.FileExists(t, filepath.Join(dir, "infra", "main.parameters.json"))
-}
-
-func Test_CLI_Init_Minimal_EasyInit(t *testing.T) {
-	t.Setenv("AZD_ALPHA_ENABLE_EASYINIT", "true")
-
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
@@ -89,9 +53,6 @@ func Test_CLI_Init_Minimal_EasyInit(t *testing.T) {
 
 // Verifies init for the minimal template, when infra folder already exists with main.bicep and main.parameters.json.
 func Test_CLI_Init_Minimal_With_Existing_Infra(t *testing.T) {
-	// test is not compatible with easy init
-	t.Setenv("AZD_ALPHA_ENABLE_EASYINIT", "false")
-
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
@@ -118,7 +79,8 @@ func Test_CLI_Init_Minimal_With_Existing_Infra(t *testing.T) {
 
 	_, err = cli.RunCommandWithStdIn(
 		ctx,
-		"y\n"+ // Say yes to initialize in existing folder
+		"Select a template\n"+
+			"y\n"+ // Say yes to initialize in existing folder
 			"Minimal\n"+ // Choose minimal
 			"TESTENV\n", // Provide environment name
 		"init",
@@ -196,9 +158,6 @@ func Test_CLI_Init_From_App(t *testing.T) {
 	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
 	cli.Env = append(cli.Env, "AZD_CONFIG_DIR="+dir)
 	cli.Env = append(cli.Env, "AZURE_DEV_COLLECT_TELEMETRY=no")
-
-	_, err = cli.RunCommand(ctx, "config", "set", "alpha.easyInit", "on")
-	require.NoError(t, err)
 
 	err = copySample(appDir, "py-postgres")
 	require.NoError(t, err, "failed expanding sample")

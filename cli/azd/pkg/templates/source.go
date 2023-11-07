@@ -3,6 +3,9 @@ package templates
 import (
 	"context"
 	"fmt"
+	"log"
+
+	"golang.org/x/exp/slices"
 )
 
 // Source is a source of AZD compatible templates.
@@ -57,16 +60,29 @@ func (ts *templateSource) ListTemplates(ctx context.Context) ([]*Template, error
 }
 
 func (ts *templateSource) GetTemplate(ctx context.Context, path string) (*Template, error) {
-	templates, err := ts.ListTemplates(ctx)
+	absTemplatePath, err := Absolute(path)
 	if err != nil {
-		return nil, fmt.Errorf("unable to list templates: %w", err)
+		return nil, err
 	}
 
-	for _, template := range templates {
-		if template.RepositoryPath == path {
-			return template, nil
+	allTemplates, err := ts.ListTemplates(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("failed listing templates: %w", err)
+	}
+
+	matchingIndex := slices.IndexFunc(allTemplates, func(template *Template) bool {
+		absPath, err := Absolute(template.RepositoryPath)
+		if err != nil {
+			log.Printf("failed to get absolute path for template '%s': %s", template.RepositoryPath, err.Error())
+			return false
 		}
+
+		return absPath == absTemplatePath
+	})
+
+	if matchingIndex == -1 {
+		return nil, fmt.Errorf("template with path '%s' was not found, %w", path, ErrTemplateNotFound)
 	}
 
-	return nil, fmt.Errorf("template with name '%s' was not found, %w", path, ErrTemplateNotFound)
+	return allTemplates[matchingIndex], nil
 }

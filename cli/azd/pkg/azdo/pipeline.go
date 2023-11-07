@@ -13,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/microsoft/azure-devops-go-api/azuredevops"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/build"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/taskagent"
@@ -89,7 +90,7 @@ func CreatePipeline(
 	name string,
 	repoName string,
 	connection *azuredevops.Connection,
-	credentials AzureServicePrincipalCredentials,
+	credentials *azcli.AzureCredentials,
 	env *environment.Environment,
 	console input.Console,
 	provisioningProvider provisioning.Options) (*build.BuildDefinition, error) {
@@ -146,7 +147,7 @@ func CreatePipeline(
 
 func getDefinitionVariables(
 	env *environment.Environment,
-	credentials AzureServicePrincipalCredentials,
+	credentials *azcli.AzureCredentials,
 	provisioningProvider provisioning.Options) (*map[string]build.BuildDefinitionVariable, error) {
 	rawCredential, err := json.Marshal(credentials)
 	if err != nil {
@@ -192,7 +193,7 @@ func createAzureDevPipelineArgs(
 	projectId string,
 	name string,
 	repoName string,
-	credentials AzureServicePrincipalCredentials,
+	credentials *azcli.AzureCredentials,
 	env *environment.Environment,
 	queue *taskagent.TaskAgentQueue,
 	provisioningProvider provisioning.Options,

@@ -18,6 +18,9 @@ param databaseName string
 @secure()
 param databasePassword string
 {{- end}}
+{{- if .DbRedis}}
+param redisName string
+{{- end}}
 {{- if (and .Frontend .Frontend.Backends)}}
 param apiUrls array
 {{- end}}
@@ -25,6 +28,19 @@ param apiUrls array
 param allowedOrigins array
 {{- end}}
 param exists bool
+@secure()
+param appDefinition object
+
+var appSettingsArray = filter(array(appDefinition.settings), i => i.name != '')
+var secrets = map(filter(appSettingsArray, i => i.?secret != null), i => {
+  name: i.name
+  value: i.value
+  secretRef: i.?secretRef ?? take(replace(replace(toLower(i.name), '_', '-'), '.', '-'), 32)
+})
+var env = map(filter(appSettingsArray, i => i.?secret == null), i => {
+  name: i.name
+  value: i.value
+})
 
 resource identity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
   name: identityName
@@ -61,6 +77,29 @@ module fetchLatestImage '../modules/fetch-container-image.bicep' = {
     name: name
   }
 }
+{{- if .DbRedis}}
+
+resource redis 'Microsoft.App/containerApps@2023-04-01-preview' = {
+  name: redisName
+  location: location
+  properties: {
+    environmentId: containerAppsEnvironment.id
+    configuration: {
+      service: {
+        type: 'redis'
+      }
+    }
+    template: {
+      containers: [
+        {
+          image: 'redis'
+          name: 'redis'
+        }
+      ]
+    }
+  }
+}
+{{- end}}
 
 resource app 'Microsoft.App/containerApps@2023-04-01-preview' = {
   name: name
@@ -94,7 +133,7 @@ resource app 'Microsoft.App/containerApps@2023-04-01-preview' = {
           identity: identity.id
         }
       ]
-      secrets: [
+      secrets: union([
         {{- if .DbCosmosMongo}}
         {
           name: 'azure-cosmos-connection-string'
@@ -107,14 +146,18 @@ resource app 'Microsoft.App/containerApps@2023-04-01-preview' = {
           value: databasePassword
         }
         {{- end}}
-      ]
+      ],
+      map(secrets, secret => {
+        name: secret.secretRef
+        value: secret.value
+      }))
     }
     template: {
       containers: [
         {
           image: fetchLatestImage.outputs.?containers[?0].?image ?? 'mcr.microsoft.com/azuredocs/containerapps-helloworld:latest'
           name: 'main'
-          env: [
+          env: union([
             {
               name: 'APPLICATIONINSIGHTS_CONNECTION_STRING'
               value: applicationInsights.properties.ConnectionString
@@ -161,13 +204,26 @@ resource app 'Microsoft.App/containerApps@2023-04-01-preview' = {
               value: '{{ .Port }}'
             }
             {{- end}}
-          ]
+          ],
+          env,
+          map(secrets, secret => {
+            name: secret.name
+            secretRef: secret.secretRef
+          }))
           resources: {
             cpu: json('1.0')
             memory: '2.0Gi'
           }
         }
       ]
+      {{- if .DbRedis}}
+      serviceBinds: [
+        {
+          serviceId: redis.id
+          name: 'redis'
+        }
+      ]
+      {{- end}}
       scale: {
         minReplicas: 1
         maxReplicas: 10

@@ -74,7 +74,7 @@ type Console interface {
 	// Use the returned io.Writer to produce the output within the previewer
 	ShowPreviewer(ctx context.Context, options *ShowPreviewerOptions) io.Writer
 	// Finalize the preview mode from console.
-	StopPreviewer(ctx context.Context)
+	StopPreviewer(ctx context.Context, keepLogs bool)
 	// Determines if there is a current spinner running.
 	IsSpinnerRunning(ctx context.Context) bool
 	// Determines if the current spinner is an interactive spinner, where messages are updated periodically.
@@ -270,8 +270,8 @@ func (c *AskerConsole) ShowPreviewer(ctx context.Context, options *ShowPreviewer
 	}
 }
 
-func (c *AskerConsole) StopPreviewer(ctx context.Context) {
-	c.previewer.Stop()
+func (c *AskerConsole) StopPreviewer(ctx context.Context, keepLogs bool) {
+	c.previewer.Stop(keepLogs)
 	c.previewer = nil
 	c.writer = c.defaultWriter
 

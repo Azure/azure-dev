@@ -9,6 +9,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/resources"
 )
 
@@ -38,6 +39,22 @@ var (
 	ErrSourceTypeInvalid = errors.New("invalid template source type")
 )
 
+// SourceOptions defines options for the SourceManager.
+type SourceOptions struct {
+	// List of default template sources to use for listing templates
+	DefaultSources []*SourceConfig
+	// Whether to load template sources from azd configuration
+	LoadConfiguredSources bool
+}
+
+// NewSourceOptions creates a new SourceOptions with default values
+func NewSourceOptions() *SourceOptions {
+	return &SourceOptions{
+		DefaultSources:        []*SourceConfig{},
+		LoadConfiguredSources: true,
+	}
+}
+
 // SourceManager manages template sources used in azd template list and azd init experiences.
 type SourceManager interface {
 	// List returns a list of template sources.
@@ -53,15 +70,28 @@ type SourceManager interface {
 }
 
 type sourceManager struct {
-	configManager config.UserConfigManager
-	httpClient    httputil.HttpClient
+	options        *SourceOptions
+	serviceLocator ioc.ServiceLocator
+	configManager  config.UserConfigManager
+	httpClient     httputil.HttpClient
 }
 
 // NewSourceManager creates a new SourceManager.
-func NewSourceManager(configManager config.UserConfigManager, httpClient httputil.HttpClient) SourceManager {
+func NewSourceManager(
+	options *SourceOptions,
+	serviceLocator ioc.ServiceLocator,
+	configManager config.UserConfigManager,
+	httpClient httputil.HttpClient,
+) SourceManager {
+	if options == nil {
+		options = NewSourceOptions()
+	}
+
 	return &sourceManager{
-		configManager: configManager,
-		httpClient:    httpClient,
+		options:        options,
+		serviceLocator: serviceLocator,
+		configManager:  configManager,
+		httpClient:     httpClient,
 	}
 }
 
@@ -72,7 +102,16 @@ func (sm *sourceManager) List(ctx context.Context) ([]*SourceConfig, error) {
 		return nil, fmt.Errorf("unable to load user configuration: %w", err)
 	}
 
-	sourceConfigs := []*SourceConfig{}
+	allSourceConfigs := []*SourceConfig{}
+
+	if sm.options.DefaultSources != nil && len(sm.options.DefaultSources) > 0 {
+		allSourceConfigs = append(allSourceConfigs, sm.options.DefaultSources...)
+	}
+
+	if !sm.options.LoadConfiguredSources {
+		return allSourceConfigs, nil
+	}
+
 	rawSources, ok := config.Get(baseConfigKey)
 	if ok {
 		sourceMap := rawSources.(map[string]interface{})
@@ -94,7 +133,7 @@ func (sm *sourceManager) List(ctx context.Context) ([]*SourceConfig, error) {
 			}
 
 			sourceConfig.Key = key
-			sourceConfigs = append(sourceConfigs, sourceConfig)
+			allSourceConfigs = append(allSourceConfigs, sourceConfig)
 		}
 	} else {
 		// In the use case where template sources have never been configured,
@@ -102,10 +141,10 @@ func (sm *sourceManager) List(ctx context.Context) ([]*SourceConfig, error) {
 		if err := sm.addInternal(ctx, SourceAwesomeAzd.Key, SourceAwesomeAzd); err != nil {
 			return nil, fmt.Errorf("unable to default template source '%s': %w", SourceAwesomeAzd.Key, err)
 		}
-		sourceConfigs = append(sourceConfigs, SourceAwesomeAzd)
+		allSourceConfigs = append(allSourceConfigs, SourceAwesomeAzd)
 	}
 
-	return sourceConfigs, nil
+	return allSourceConfigs, nil
 }
 
 // Get returns a template source by key.
@@ -190,7 +229,10 @@ func (sm *sourceManager) CreateSource(ctx context.Context, config *SourceConfig)
 	case SourceKindResource:
 		source, err = NewJsonTemplateSource(SourceDefault.Name, string(resources.TemplatesJson))
 	default:
-		err = fmt.Errorf("%w, '%s'", ErrSourceTypeInvalid, config.Type)
+		err = sm.serviceLocator.ResolveNamed(string(config.Type), &source)
+		if err != nil {
+			err = fmt.Errorf("%w, '%s', %w", ErrSourceTypeInvalid, config.Type, err)
+		}
 	}
 
 	if err != nil {

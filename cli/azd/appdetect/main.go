@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -19,6 +20,7 @@ func init() {
 
 func main() {
 	flag.Parse()
+	ctx := context.Background()
 
 	if directory == "" && projectDirectory == "" {
 		fmt.Println("must set one of 'proj', or 'dir'")
@@ -29,12 +31,12 @@ func main() {
 	var err error
 
 	if directory != "" {
-		projects, err = appdetect.Detect(directory)
+		projects, err = appdetect.Detect(ctx, directory)
 	}
 
 	if projectDirectory != "" {
 		var project *appdetect.Project
-		project, err = appdetect.DetectDirectory(projectDirectory)
+		project, err = appdetect.DetectDirectory(ctx, projectDirectory)
 
 		if err == nil && project != nil {
 			projects = append(projects, *project)

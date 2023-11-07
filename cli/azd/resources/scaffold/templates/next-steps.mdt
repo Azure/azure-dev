@@ -12,12 +12,12 @@
 
 ### Define environment variables for running services
 
-1. Modify or add environment variables to configure the running application. Environment variables can be configured by modifying the `env` node in the following files:
+1. Modify or add environment variables to configure the running application. Environment variables can be configured by updating the `settings` node(s) for each service in [main.parameters.json](./infra/main.parameters.json).
+2. For services using a database, environment variables have been pre-configured under the `env` node in the following files to allow connection to the database. Modify the name of these variables as needed to match your application.
 {{- range .Services}}
     - [app/{{.Name}}.bicep](./infra/app/{{.Name}}.bicep)
 {{- end}}
-2. For services using a database, environment variables have been pre-configured under `env` to allow connection to the database. Modify the name of these variables as needed to match your application.
-3. To set a secret or API key as an environment variable under `env`, the variable should be added with a `secretRef` pointing to a `secrets` entry or a stored KeyVault secret.
+3. For services using Redis, environment variables will not show up under `env` explicitly, but are available as: `REDIS_ENDPOINT`, `REDIS_HOST`, `REDIS_PASSWORD`, and `REDIS_PORT`.
 
 ### Provision infrastructure and deploy application code
 

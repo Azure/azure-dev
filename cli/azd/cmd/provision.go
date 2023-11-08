@@ -32,8 +32,8 @@ type provisionFlags struct {
 }
 
 const (
-	openAINotValid        = "The template deployment 'openai' is not valid according to the validation procedure"
-	subscriptionNoQuotaId = "The subscription does not have QuotaId/Feature required by SKU 'S0' from kind 'OpenAI'"
+	AINotValid            = "is not valid according to the validation procedure"
+	subscriptionNoQuotaId = "The subscription does not have QuotaId/Feature required by SKU 'S0' from kind"
 	responsibleAITerms    = "until you agree to Responsible AI terms for this resource"
 )
 
@@ -216,13 +216,13 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 
 		//if user don't have access to openai
 		errorMsg := err.Error()
-		if strings.Contains(errorMsg, openAINotValid) &&
+		if strings.Contains(errorMsg, AINotValid) &&
 			strings.Contains(errorMsg, subscriptionNoQuotaId) {
 			return nil, &azcli.ErrorWithSuggestion{
-				Suggestion: fmt.Sprintf("\nSuggested Action: The selected subscription has not been enabled " +
-					"for use of 'OpenAI' service and does not have quota for any pricing tiers. Please visit " +
-					"https://portal.azure.com/#create/Microsoft.CognitiveServicesOpenAI to request access " +
-					"to Azure OpenAI service"),
+				Suggestion: fmt.Sprintf("\nIf you are provisioning Azure AI service, the error means the selected " +
+					"subscription has not been enabled " +
+					"for use of Azure AI service and does not have quota for any pricing tiers. Please visit " +
+					"https://ms.portal.azure.com/ and select 'Create' on specific services to request access."),
 				Err: err,
 			}
 		}
@@ -231,8 +231,9 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		if strings.Contains(errorMsg, responsibleAITerms) {
 			return nil, &azcli.ErrorWithSuggestion{
 				Suggestion: fmt.Sprintf("\nSuggested Action: Please visit azure portal in " +
-					"https://ms.portal.azure.com/. Create the service in azure portal " +
-					"will go through Responsible AI terms. After that, run 'azd provision' again"),
+					"https://ms.portal.azure.com/. Create the resource in azure portal " +
+					"to go through Responsible AI terms, and then delete it. " +
+					"After that, run 'azd provision' again"),
 				Err: err,
 			}
 		}

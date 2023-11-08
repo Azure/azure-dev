@@ -35,6 +35,7 @@ const (
 	AINotValid            = "is not valid according to the validation procedure"
 	subscriptionNoQuotaId = "The subscription does not have QuotaId/Feature required by SKU 'S0' from kind"
 	responsibleAITerms    = "until you agree to Responsible AI terms for this resource"
+	azurePortalURL        = "https://ms.portal.azure.com/"
 )
 
 func (i *provisionFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
@@ -220,9 +221,9 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 			strings.Contains(errorMsg, subscriptionNoQuotaId) {
 			return nil, &azcli.ErrorWithSuggestion{
 				Suggestion: fmt.Sprintf("\nIf you are provisioning Azure AI service, the error means the selected " +
-					"subscription has not been enabled " +
-					"for use of Azure AI service and does not have quota for any pricing tiers. Please visit " +
-					"https://ms.portal.azure.com/ and select 'Create' on specific services to request access."),
+					"subscription has not been enabled for use of Azure AI service and  does not have quota for " +
+					"any pricing tiers. Please visit " + output.WithLinkFormat(azurePortalURL) +
+					" and select 'Create' on specific services to request access."),
 				Err: err,
 			}
 		}
@@ -231,7 +232,7 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		if strings.Contains(errorMsg, responsibleAITerms) {
 			return nil, &azcli.ErrorWithSuggestion{
 				Suggestion: fmt.Sprintf("\nSuggested Action: Please visit azure portal in " +
-					"https://ms.portal.azure.com/. Create the resource in azure portal " +
+					output.WithLinkFormat(azurePortalURL) + " Create the resource in azure portal " +
 					"to go through Responsible AI terms, and then delete it. " +
 					"After that, run 'azd provision' again"),
 				Err: err,

@@ -232,7 +232,7 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		if strings.Contains(errorMsg, responsibleAITerms) {
 			return nil, &azcli.ErrorWithSuggestion{
 				Suggestion: fmt.Sprintf("\nSuggested Action: Please visit azure portal in " +
-					output.WithLinkFormat(azurePortalURL) + " Create the resource in azure portal " +
+					output.WithLinkFormat(azurePortalURL) + ". Create the resource in azure portal " +
 					"to go through Responsible AI terms, and then delete it. " +
 					"After that, run 'azd provision' again"),
 				Err: err,

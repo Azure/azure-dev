@@ -194,7 +194,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			templateMetadata = &template.Metadata
 		}
 
-		if err := i.initializeEnv(ctx, azdCtx, templateMetadata); err != nil {
+		if _, err := i.initializeEnv(ctx, azdCtx, templateMetadata); err != nil {
 			return nil, err
 		}
 	case initFromApp:
@@ -219,14 +219,14 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			}
 		}
 
-		err = i.repoInitializer.InitFromApp(ctx, azdCtx, func() error {
+		err = i.repoInitializer.InitFromApp(ctx, azdCtx, func() (*environment.Environment, error) {
 			return i.initializeEnv(ctx, azdCtx, nil)
 		})
 		if err != nil {
 			return nil, err
 		}
 	case initEnvironment:
-		err = i.initializeEnv(ctx, azdCtx, nil)
+		_, err = i.initializeEnv(ctx, azdCtx, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -318,14 +318,14 @@ func (i *initAction) initializeTemplate(
 func (i *initAction) initializeEnv(
 	ctx context.Context,
 	azdCtx *azdcontext.AzdContext,
-	templateMetadata *templates.Metadata) error {
+	templateMetadata *templates.Metadata) (*environment.Environment, error) {
 	envName, err := azdCtx.GetDefaultEnvironmentName()
 	if err != nil {
-		return fmt.Errorf("retrieving default environment name: %w", err)
+		return nil, fmt.Errorf("retrieving default environment name: %w", err)
 	}
 
 	if envName != "" {
-		return environment.NewEnvironmentInitError(envName)
+		return nil, environment.NewEnvironmentInitError(envName)
 	}
 
 	base := filepath.Base(azdCtx.ProjectDirectory())
@@ -344,7 +344,7 @@ func (i *initAction) initializeEnv(
 	// it here after the template is hydrated and the context is available
 	envManager, err := i.lazyEnvManager.GetValue()
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	envSpec := environment.Spec{
@@ -356,11 +356,11 @@ func (i *initAction) initializeEnv(
 
 	env, err := envManager.Create(ctx, envSpec)
 	if err != nil {
-		return fmt.Errorf("loading environment: %w", err)
+		return nil, fmt.Errorf("loading environment: %w", err)
 	}
 
 	if err := azdCtx.SetDefaultEnvironmentName(env.GetEnvName()); err != nil {
-		return fmt.Errorf("saving default environment: %w", err)
+		return nil, fmt.Errorf("saving default environment: %w", err)
 	}
 
 	// If the template includes any metadata values, set them in the environment
@@ -371,16 +371,16 @@ func (i *initAction) initializeEnv(
 
 		for key, value := range templateMetadata.Config {
 			if err := env.Config.Set(key, value); err != nil {
-				return fmt.Errorf("setting environment config: %w", err)
+				return nil, fmt.Errorf("setting environment config: %w", err)
 			}
 		}
 
 		if err := envManager.Save(ctx, env); err != nil {
-			return fmt.Errorf("saving environment: %w", err)
+			return nil, fmt.Errorf("saving environment: %w", err)
 		}
 	}
 
-	return nil
+	return env, nil
 }
 
 func getCmdInitHelpDescription(*cobra.Command) string {

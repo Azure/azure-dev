@@ -1,14 +1,11 @@
 # Release History
 
-## 0.8.0-alpha.1 (Unreleased)
+## 0.8.0 (2023-11-15)
 
 ### Features Added
 
-### Breaking Changes
-
-### Bugs Fixed
-
-### Other Changes
+- [[#2541]](https://github.com/Azure/azure-dev/pull/2541) Support has been added for the Azure Developer CLI to fetch authentication tokens from VSCode, reducing the need to re-authenticate.
+- [[#2771]](https://github.com/Azure/azure-dev/pull/2771) Commands to enable or disable Dev Center mode have been added. Dev Center mode lorem ipsum dolor sit.
 
 ## 0.7.0 (2023-07-12)
 

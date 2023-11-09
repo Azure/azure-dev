@@ -82,6 +82,7 @@ type PipelineManager struct {
 	gitCli         git.GitCli
 	console        input.Console
 	serviceLocator ioc.ServiceLocator
+	importManager  *project.ImportManager
 }
 
 func NewPipelineManager(
@@ -94,6 +95,7 @@ func NewPipelineManager(
 	console input.Console,
 	args *PipelineManagerArgs,
 	serviceLocator ioc.ServiceLocator,
+	importManager *project.ImportManager,
 ) (*PipelineManager, error) {
 	pipelineProvider := &PipelineManager{
 		azdCtx:         azdCtx,
@@ -104,6 +106,7 @@ func NewPipelineManager(
 		gitCli:         gitCli,
 		console:        console,
 		serviceLocator: serviceLocator,
+		importManager:  importManager,
 	}
 
 	// check that scm and ci providers are set
@@ -141,10 +144,16 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 		return result, fmt.Errorf("finding provisioning provider: %w", err)
 	}
 
+	infra, err := pm.importManager.ProjectInfrastructure(ctx, prj)
+	if err != nil {
+		return result, err
+	}
+	defer func() { _ = infra.Cleanup() }()
+
 	// run pre-config validations. manager will check az cli is logged in and
 	// will invoke the per-provider validations.
 	rootPath := pm.azdCtx.ProjectDirectory()
-	updatedConfig, errorsFromPreConfig := pm.preConfigureCheck(ctx, prj.Infra, rootPath)
+	updatedConfig, errorsFromPreConfig := pm.preConfigureCheck(ctx, infra.Options, rootPath)
 	if errorsFromPreConfig != nil {
 		return result, errorsFromPreConfig
 	}
@@ -256,7 +265,7 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 	credentialOptions := pm.ciProvider.credentialOptions(
 		ctx,
 		gitRepoInfo,
-		prj.Infra,
+		infra.Options,
 		PipelineAuthType(pm.args.PipelineAuthTypeName),
 	)
 
@@ -306,7 +315,7 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 	err = pm.ciProvider.configureConnection(
 		ctx,
 		gitRepoInfo,
-		prj.Infra,
+		infra.Options,
 		servicePrincipal,
 		PipelineAuthType(pm.args.PipelineAuthTypeName),
 		credentials,
@@ -318,7 +327,7 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 	}
 
 	// config pipeline handles setting or creating the provider pipeline to be used
-	ciPipeline, err := pm.ciProvider.configurePipeline(ctx, gitRepoInfo, prj.Infra)
+	ciPipeline, err := pm.ciProvider.configurePipeline(ctx, gitRepoInfo, infra.Options)
 	if err != nil {
 		return result, err
 	}

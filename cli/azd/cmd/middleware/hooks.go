@@ -23,6 +23,7 @@ type HooksMiddleware struct {
 	lazyEnvManager    *lazy.Lazy[environment.Manager]
 	lazyEnv           *lazy.Lazy[*environment.Environment]
 	lazyProjectConfig *lazy.Lazy[*project.ProjectConfig]
+	importManager     *project.ImportManager
 	commandRunner     exec.CommandRunner
 	console           input.Console
 	options           *Options
@@ -33,6 +34,7 @@ func NewHooksMiddleware(
 	lazyEnvManager *lazy.Lazy[environment.Manager],
 	lazyEnv *lazy.Lazy[*environment.Environment],
 	lazyProjectConfig *lazy.Lazy[*project.ProjectConfig],
+	importManager *project.ImportManager,
 	commandRunner exec.CommandRunner,
 	console input.Console,
 	options *Options,
@@ -41,6 +43,7 @@ func NewHooksMiddleware(
 		lazyEnvManager:    lazyEnvManager,
 		lazyEnv:           lazyEnv,
 		lazyProjectConfig: lazyProjectConfig,
+		importManager:     importManager,
 		commandRunner:     commandRunner,
 		console:           console,
 		options:           options,
@@ -141,7 +144,13 @@ func (m *HooksMiddleware) registerServiceHooks(
 		return fmt.Errorf("failed getting environment manager, %w", err)
 	}
 
-	for serviceName, service := range projectConfig.Services {
+	stableServices, err := m.importManager.ServiceStable(ctx, projectConfig)
+	if err != nil {
+		return fmt.Errorf("failed getting services: %w", err)
+	}
+
+	for _, service := range stableServices {
+		serviceName := service.Name
 		// If the service hasn't configured any hooks we can continue on.
 		if service.Hooks == nil || len(service.Hooks) == 0 {
 			log.Printf("service '%s' does not require any command hooks.\n", serviceName)

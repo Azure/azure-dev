@@ -62,6 +62,7 @@ type upAction struct {
 	runner                     middleware.MiddlewareContext
 	prompters                  prompt.Prompter
 	provisioningManager        *provisioning.Manager
+	importManager              *project.ImportManager
 }
 
 func newUpAction(
@@ -76,6 +77,7 @@ func newUpAction(
 	runner middleware.MiddlewareContext,
 	prompters prompt.Prompter,
 	provisioningManager *provisioning.Manager,
+	importManager *project.ImportManager,
 ) actions.Action {
 	return &upAction{
 		flags:                      flags,
@@ -88,6 +90,7 @@ func newUpAction(
 		runner:                     runner,
 		prompters:                  prompters,
 		provisioningManager:        provisioningManager,
+		importManager:              importManager,
 	}
 }
 
@@ -111,7 +114,13 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			output.WithWarningFormat("WARNING: The '--service' flag is deprecated and will be removed in a future release."))
 	}
 
-	err := u.provisioningManager.Initialize(ctx, u.projectConfig.Path, u.projectConfig.Infra)
+	infra, err := u.importManager.ProjectInfrastructure(ctx, u.projectConfig)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = infra.Cleanup() }()
+
+	err = u.provisioningManager.Initialize(ctx, u.projectConfig.Path, infra.Options)
 	if err != nil {
 		return nil, err
 	}

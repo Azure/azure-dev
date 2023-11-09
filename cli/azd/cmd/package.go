@@ -69,6 +69,7 @@ type packageAction struct {
 	args           []string
 	projectConfig  *project.ProjectConfig
 	projectManager project.ProjectManager
+	importManager  *project.ImportManager
 	serviceManager project.ServiceManager
 	console        input.Console
 	formatter      output.Formatter
@@ -84,6 +85,7 @@ func newPackageAction(
 	console input.Console,
 	formatter output.Formatter,
 	writer io.Writer,
+	importManager *project.ImportManager,
 ) actions.Action {
 	return &packageAction{
 		flags:          flags,
@@ -94,6 +96,7 @@ func newPackageAction(
 		console:        console,
 		formatter:      formatter,
 		writer:         writer,
+		importManager:  importManager,
 	}
 }
 
@@ -118,6 +121,7 @@ func (pa *packageAction) Run(ctx context.Context) (*actions.ActionResult, error)
 	targetServiceName, err := getTargetServiceName(
 		ctx,
 		pa.projectManager,
+		pa.importManager,
 		pa.projectConfig,
 		string(project.ServiceEventPackage),
 		targetServiceName,
@@ -139,7 +143,10 @@ func (pa *packageAction) Run(ctx context.Context) (*actions.ActionResult, error)
 
 	packageResults := map[string]*project.ServicePackageResult{}
 
-	serviceTable := pa.projectConfig.GetServicesStable()
+	serviceTable, err := pa.importManager.ServiceStable(ctx, pa.projectConfig)
+	if err != nil {
+		return nil, err
+	}
 	serviceCount := len(serviceTable)
 	for index, svc := range serviceTable {
 		stepMessage := fmt.Sprintf("Packaging service %s", svc.Name)

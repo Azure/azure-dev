@@ -82,12 +82,14 @@ type provisionAction struct {
 	writer           io.Writer
 	console          input.Console
 	subManager       *account.SubscriptionsManager
+	importManager    *project.ImportManager
 }
 
 func newProvisionAction(
 	flags *provisionFlags,
 	provisionManager *provisioning.Manager,
 	projectManager project.ProjectManager,
+	importManager *project.ImportManager,
 	resourceManager project.ResourceManager,
 	projectConfig *project.ProjectConfig,
 	env *environment.Environment,
@@ -107,6 +109,7 @@ func newProvisionAction(
 		writer:           writer,
 		console:          console,
 		subManager:       subManager,
+		importManager:    importManager,
 	}
 }
 
@@ -141,8 +144,15 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		return nil, err
 	}
 
-	p.projectConfig.Infra.IgnoreDeploymentState = p.flags.ignoreDeploymentState
-	if err := p.provisionManager.Initialize(ctx, p.projectConfig.Path, p.projectConfig.Infra); err != nil {
+	infra, err := p.importManager.ProjectInfrastructure(ctx, p.projectConfig)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = infra.Cleanup() }()
+
+	infraOptions := infra.Options
+	infraOptions.IgnoreDeploymentState = p.flags.ignoreDeploymentState
+	if err := p.provisionManager.Initialize(ctx, p.projectConfig.Path, infraOptions); err != nil {
 		return nil, fmt.Errorf("initializing provisioning manager: %w", err)
 	}
 
@@ -177,7 +187,7 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		Project: p.projectConfig,
 	}
 
-	err := p.projectConfig.Invoke(ctx, project.ProjectEventProvision, projectEventArgs, func() error {
+	err = p.projectConfig.Invoke(ctx, project.ProjectEventProvision, projectEventArgs, func() error {
 		var err error
 		if previewMode {
 			deployPreviewResult, err = p.provisionManager.Preview(ctx)
@@ -230,7 +240,12 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		}, nil
 	}
 
-	for _, svc := range p.projectConfig.Services {
+	servicesStable, err := p.importManager.ServiceStable(ctx, p.projectConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, svc := range servicesStable {
 		eventArgs := project.ServiceLifecycleEventArgs{
 			Project: p.projectConfig,
 			Service: svc,

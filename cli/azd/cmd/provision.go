@@ -33,7 +33,7 @@ type provisionFlags struct {
 
 const (
 	AINotValid            = "is not valid according to the validation procedure"
-	subscriptionNoQuotaId = "The subscription does not have QuotaId/Feature required by SKU 'S0' from kind"
+	openAIsubscriptionNoQuotaId = "The subscription does not have QuotaId/Feature required by SKU 'S0' from kind 'OpenAI'"
 	responsibleAITerms    = "until you agree to Responsible AI terms for this resource"
 	azurePortalURL        = "https://ms.portal.azure.com/"
 )
@@ -218,10 +218,10 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		//if user don't have access to openai
 		errorMsg := err.Error()
 		if strings.Contains(errorMsg, AINotValid) &&
-			strings.Contains(errorMsg, subscriptionNoQuotaId) {
+			strings.Contains(errorMsg, openAIsubscriptionNoQuotaId) {
 			return nil, &azcli.ErrorWithSuggestion{
-				Suggestion: fmt.Sprintf("\nIf you are provisioning Azure AI service, the error means the selected " +
-					"subscription has not been enabled for use of Azure AI service and  does not have quota for " +
+				Suggestion: fmt.Sprintf("\nSuggested Action: The selected " +
+					"subscription has not been enabled for use of Azure AI service and does not have quota for " +
 					"any pricing tiers. Please visit " + output.WithLinkFormat(azurePortalURL) +
 					" and select 'Create' on specific services to request access."),
 				Err: err,

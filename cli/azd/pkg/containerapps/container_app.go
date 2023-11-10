@@ -39,6 +39,11 @@ type ContainerAppService interface {
 		appName string,
 		imageName string,
 	) error
+	ListSecrets(ctx context.Context,
+		subscriptionId string,
+		resourceGroupName string,
+		appName string,
+	) ([]*armappcontainers.ContainerAppSecret, error)
 }
 
 // NewContainerAppService creates a new ContainerAppService
@@ -186,6 +191,25 @@ func (cas *containerAppService) AddRevision(
 	}
 
 	return nil
+}
+
+func (cas *containerAppService) ListSecrets(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroupName string,
+	appName string,
+) ([]*armappcontainers.ContainerAppSecret, error) {
+	appClient, err := cas.createContainerAppsClient(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	secretsResponse, err := appClient.ListSecrets(ctx, resourceGroupName, appName, nil)
+	if err != nil {
+		return nil, fmt.Errorf("listing secrets: %w", err)
+	}
+
+	return secretsResponse.Value, nil
 }
 
 func (cas *containerAppService) syncSecrets(

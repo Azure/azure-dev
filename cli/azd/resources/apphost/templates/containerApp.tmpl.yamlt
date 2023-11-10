@@ -1,0 +1,38 @@
+{{define "containerApp.tmpl.yaml" -}}
+location: {{ "{{ .Env.AZURE_LOCATION }}" }}
+identity:
+  type: UserAssigned
+  userAssignedIdentities:
+    ? {{ `"{{ .Env.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID }}"` }}
+    : {}
+properties:
+  environmentId: {{ "{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_ID }}" }}
+  configuration:
+    activeRevisionsMode: single
+{{- if .Ingress}}
+    ingress:
+      external: {{ .Ingress.External }}
+      targetPort: {{ .Ingress.TargetPort }}
+      transport: {{ .Ingress.Transport }}
+      allowInsecure: {{ .Ingress.AllowInsecure }}
+{{- end}}
+    registries:
+    - server: {{ "{{ .Env.AZURE_CONTAINER_REGISTRY_ENDPOINT }}" }}
+      identity: {{ "{{ .Env.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID }}" }}
+  template:
+    containers:
+    - image: {{ "{{ .Image }}" }}
+      name: {{ .Name }}
+      env:
+      - name: AZURE_CLIENT_ID
+        value: {{ "{{ .Env.MANAGED_IDENTITY_CLIENT_ID }}" }}
+{{- range $name, $value := .Env}}
+      - name: {{$name}}
+        value: {{$value}}
+{{- end}}
+    scale:
+      minReplicas: 1
+tags:
+  azd-service-name: {{ .Name }}
+  aspire-resource-name: {{ .Name }}
+{{ end}}

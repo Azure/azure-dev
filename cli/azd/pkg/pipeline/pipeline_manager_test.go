@@ -443,6 +443,6 @@ func createPipelineManager(
 		mockContext.Console,
 		args,
 		mockContext.Container,
-		project.NewImportManager(),
+		project.NewImportManager(nil),
 	)
 }

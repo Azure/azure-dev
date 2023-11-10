@@ -13,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
+	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -21,6 +22,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/otiai10/copy"
+	"golang.org/x/exp/slices"
 )
 
 var languageMap = map[appdetect.Language]project.ServiceLanguageKind{
@@ -53,6 +55,7 @@ func (i *Initializer) InitFromApp(
 	start := time.Now()
 	sourceDir := filepath.Join(wd, "src")
 	tracing.SetUsageAttributes(fields.AppInitLastStep.String("detect"))
+
 	// Prioritize src directory if it exists
 	if ent, err := os.Stat(sourceDir); err == nil && ent.IsDir() {
 		prj, err := appdetect.Detect(ctx, sourceDir)
@@ -75,12 +78,146 @@ func (i *Initializer) InitFromApp(
 		projects = prj
 	}
 
+	appHostManifests := make(map[string]*apphost.Manifest)
+	appHostForProject := make(map[string]string)
+
+	// Load the manifests for all the App Host projects we detected, we use the manifest as part of infrastructure
+	// generation.
+	for _, prj := range projects {
+		if prj.Language != appdetect.DotNetAppHost {
+			continue
+		}
+
+		manifest, err := apphost.ManifestFromAppHost(ctx, prj.Path, i.dotnetCli)
+		if err != nil {
+			return fmt.Errorf("failed to generate manifest from app host project: %w", err)
+		}
+		appHostManifests[prj.Path] = manifest
+
+		for _, path := range apphost.ProjectPaths(manifest) {
+			appHostForProject[filepath.Dir(path)] = prj.Path
+		}
+	}
+
+	// Filter out all the projects owned by an App Host.
+	{
+		var filteredProject []appdetect.Project
+		for _, prj := range projects {
+			if _, has := appHostForProject[prj.Path]; !has {
+				filteredProject = append(filteredProject, prj)
+			}
+		}
+		projects = filteredProject
+	}
+
 	end := time.Since(start)
 	if i.console.IsSpinnerInteractive() {
 		// If the spinner is interactive, we want to show it for at least 1 second
 		time.Sleep((1 * time.Second) - end)
 	}
 	i.console.StopSpinner(ctx, title, input.StepDone)
+
+	isDotNetAppHost := func(p appdetect.Project) bool { return p.Language == appdetect.DotNetAppHost }
+	if idx := slices.IndexFunc(projects, isDotNetAppHost); idx >= 0 {
+		// TODO(ellismg): We will have to figure out how to relax this over time.
+		if len(projects) != 1 {
+			return errors.New("only a single Aspire project is supported at this time")
+		}
+
+		detect := detectConfirmAppHost{console: i.console}
+		detect.Init(projects[idx], wd)
+
+		if err := detect.Confirm(ctx); err != nil {
+			return err
+		}
+
+		// Figure out what services to expose.
+		ingressSelector := apphost.NewIngressSelector(appHostManifests[projects[idx].Path], i.console)
+		tracing.SetUsageAttributes(fields.AppInitLastStep.String("modify"))
+
+		exposed, err := ingressSelector.SelectPublicServices(ctx)
+		if err != nil {
+			return err
+		}
+
+		tracing.SetUsageAttributes(fields.AppInitLastStep.String("config"))
+
+		// Prompt for environment before proceeding with generation
+		newEnv, err := initializeEnv()
+		if err != nil {
+			return err
+		}
+
+		// Persist the configuration of the exposed services, as the user picked above. We know that the name
+		// of the generated import (in azure.yaml) is "app" by construction, since we are creating the user's azure.yaml
+		// during init.
+		if err := newEnv.Config.Set("services.app.config.exposedServices", exposed); err != nil {
+			return err
+		}
+		envManager, err := i.lazyEnvManager.GetValue()
+		if err != nil {
+			return err
+		}
+		if err := envManager.Save(ctx, newEnv); err != nil {
+			return err
+		}
+
+		i.console.Message(ctx, "\n"+output.WithBold("Generating files to run your app on Azure:")+"\n")
+
+		files, err := apphost.GenerateProjectArtifacts(
+			ctx,
+			azdCtx.ProjectDirectory(),
+			filepath.Base(azdCtx.ProjectDirectory()),
+			appHostManifests[projects[idx].Path],
+			projects[idx].Path,
+		)
+		if err != nil {
+			return err
+		}
+
+		staging, err := os.MkdirTemp("", "azd-infra")
+		if err != nil {
+			return fmt.Errorf("mkdir temp: %w", err)
+		}
+
+		defer func() { _ = os.RemoveAll(staging) }()
+		for path, file := range files {
+			if err := os.MkdirAll(filepath.Join(staging, filepath.Dir(path)), osutil.PermissionDirectory); err != nil {
+				return err
+			}
+
+			if err := os.WriteFile(filepath.Join(staging, path), []byte(file.Contents), file.Mode); err != nil {
+				return err
+			}
+		}
+
+		skipStagingFiles, err := i.promptForDuplicates(ctx, staging, azdCtx.ProjectDirectory())
+		if err != nil {
+			return err
+		}
+
+		options := copy.Options{}
+		if skipStagingFiles != nil {
+			options.Skip = func(fileInfo os.FileInfo, src, dest string) (bool, error) {
+				_, skip := skipStagingFiles[src]
+				return skip, nil
+			}
+		}
+
+		if err := copy.Copy(staging, azdCtx.ProjectDirectory(), options); err != nil {
+			return fmt.Errorf("copying contents from temp staging directory: %w", err)
+		}
+
+		i.console.MessageUxItem(ctx, &ux.DoneMessage{
+			Message: "Generating " + output.WithHighLightFormat("./azure.yaml"),
+		})
+
+		i.console.MessageUxItem(ctx, &ux.DoneMessage{
+			Message: "Generating " + output.WithHighLightFormat("./next-steps.md"),
+		})
+
+		return i.writeCoreAssets(ctx, azdCtx)
+	}
 
 	detect := detectConfirm{console: i.console}
 	detect.Init(projects, wd)

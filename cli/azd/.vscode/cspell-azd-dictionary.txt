@@ -7,6 +7,7 @@ apimanagement
 apims
 appconfiguration
 appdetect
+apphost
 appinit
 appinsights
 appinsightsexporter
@@ -102,6 +103,7 @@ LASTEXITCODE
 ldflags
 lechnerc77
 libc
+memfs
 mergo
 mgmt
 mgutz
@@ -130,14 +132,17 @@ otlptrace
 otlptracehttp
 paketobuildpacks
 pflag
+posix
 preinit
 proxying
+psanford
 psycopg
 psycopgbinary
 pulumi
 pyapp
 pyproject
 pyvenv
+rabbitmq
 reauthentication
 relogin
 remarshal
@@ -145,6 +150,7 @@ repourl
 resourcegraph
 restoreapp
 retriable
+requirepass
 rzip
 secureobject
 securestring

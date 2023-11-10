@@ -45,3 +45,22 @@ func Test_BicepName(t *testing.T) {
 		})
 	}
 }
+
+func Test_AlphaUpperSnake(t *testing.T) {
+	tests := []struct {
+		name string
+		in   string
+		want string
+	}{
+		{"uppercase separators", "this-is-my-var-123", "THIS_IS_MY_VAR_123"},
+		{"allowed characters", "myVar!#%^", "MYVAR"},
+		{"dash at front or end", "--my-var--", "MY_VAR"},
+		{"multiple dashes", "my----var", "MY_VAR"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			actual := AlphaSnakeUpper(tt.in)
+			assert.Equal(t, tt.want, actual)
+		})
+	}
+}

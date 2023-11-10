@@ -39,6 +39,7 @@ func parseServiceHost(kind ServiceTargetKind) (ServiceTargetKind, error) {
 		StaticWebAppTarget,
 		SpringAppTarget,
 		AksTarget:
+
 		return kind, nil
 	}
 

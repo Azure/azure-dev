@@ -6,12 +6,16 @@ package project
 import (
 	"context"
 	"fmt"
+	"log"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
 	"text/template"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
+	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/containerapps"
@@ -111,20 +115,54 @@ func (at *dotnetContainerAppTarget) Deploy(
 
 			task.SetProgress(NewServiceProgress("Updating container app"))
 
+			var manifest string
+
 			projectRoot := serviceConfig.Path()
 			if f, err := os.Stat(projectRoot); err == nil && !f.IsDir() {
 				projectRoot = filepath.Dir(projectRoot)
 			}
 
-			manifest, err := os.ReadFile(filepath.Join(projectRoot, "manifests", "containerApp.tmpl.yaml"))
-			if err != nil {
-				task.SetError(fmt.Errorf("reading container app manifest: %w", err))
-				return
+			manifestPath := filepath.Join(projectRoot, "manifests", "containerApp.tmpl.yaml")
+			if _, err := os.Stat(manifestPath); err == nil {
+				log.Printf("using container app manifest from %s", manifestPath)
+
+				contents, err := os.ReadFile(filepath.Join(projectRoot, "manifests", "containerApp.tmpl.yaml"))
+				if err != nil {
+					task.SetError(fmt.Errorf("reading container app manifest: %w", err))
+					return
+				}
+				manifest = string(contents)
+			} else {
+				log.Printf(
+					"generating container app manifest from %s for project %s",
+					serviceConfig.DotNetContainerApp.ProjectPath,
+					serviceConfig.DotNetContainerApp.ProjectName)
+
+				generatedManifest, err := apphost.ContainerAppManifestTemplateForProject(
+					serviceConfig.DotNetContainerApp.Manifest,
+					serviceConfig.DotNetContainerApp.ProjectName,
+				)
+				if err != nil {
+					task.SetError(fmt.Errorf("generating container app manifest: %w", err))
+					return
+				}
+				manifest = generatedManifest
+			}
+
+			fns := &containerAppTemplateManifestFuncs{
+				ctx:                 ctx,
+				manifest:            serviceConfig.DotNetContainerApp.Manifest,
+				targetResource:      targetResource,
+				containerAppService: at.containerAppService,
 			}
 
 			tmpl, err := template.New("containerApp.tmpl.yaml").
 				Option("missingkey=error").
-				Parse(string(manifest))
+				Funcs(template.FuncMap{
+					"urlHost":          fns.UrlHost,
+					"connectionString": fns.ConnectionString,
+				}).
+				Parse(manifest)
 			if err != nil {
 				task.SetError(fmt.Errorf("failing parsing containerApp.tmpl.yaml: %w", err))
 				return
@@ -222,4 +260,87 @@ func (at *dotnetContainerAppTarget) validateTargetResource(
 	}
 
 	return nil
+}
+
+// containerAppTemplateManifestFuncs contains all the functions that are callable while evaluating the manifest template.
+type containerAppTemplateManifestFuncs struct {
+	ctx                 context.Context
+	manifest            *apphost.Manifest
+	targetResource      *environment.TargetResource
+	containerAppService containerapps.ContainerAppService
+}
+
+// UrlHost returns the Hostname (without the port) of the given string, or an error if the string is not a valid URL.
+//
+// It is callable from a template under the name `urlHost`
+func (_ *containerAppTemplateManifestFuncs) UrlHost(s string) (string, error) {
+	u, err := url.Parse(s)
+	if err != nil {
+		return "", err
+	}
+	return u.Hostname(), nil
+}
+
+// ConnectionString returns the connection string for the given resource name. Presently, we only support resources of
+// type `redis.v0` and `postgres.v0`.
+//
+// It is callable from a template under the name `connectionString`.
+func (fns *containerAppTemplateManifestFuncs) ConnectionString(name string) (string, error) {
+	resource, has := fns.manifest.Resources[name]
+	if !has {
+		return "", fmt.Errorf("resource %s not found in manifest", name)
+	}
+
+	switch resource.Type {
+	case "redis.v0":
+		targetContainerName := scaffold.ContainerAppName(name)
+
+		cfg, err := fns.secretValue(targetContainerName, "redis-config")
+		if err != nil {
+			return "", fmt.Errorf("could not determine redis password: %w", err)
+		}
+
+		for _, line := range strings.Split(cfg, "\n") {
+			if strings.HasPrefix(line, "requirepass ") {
+				password := strings.TrimPrefix(line, "requirepass ")
+				return fmt.Sprintf("%s:6379,password=%s", targetContainerName, password), nil
+			}
+		}
+
+		return "", fmt.Errorf("could not determine redis password: no requirepass line found in redis-config")
+
+	case "postgres.database.v0":
+		targetContainerName := scaffold.ContainerAppName(name)
+
+		password, err := fns.secretValue(targetContainerName, "pg-password")
+		if err != nil {
+			return "", fmt.Errorf("could not determine postgres password: %w", err)
+		}
+
+		return fmt.Sprintf("Host=%s;Database=postgres;Username=postgres;Password=%s", targetContainerName, password), nil
+	default:
+		return "", fmt.Errorf("connectionString: unsupported resource type '%s'", resource.Type)
+	}
+}
+
+// secretValue returns the value of the secret with the given name, or an error if the secret is not found. A nil value
+// is returned as "", without an error.
+func (fns *containerAppTemplateManifestFuncs) secretValue(containerAppName string, secretName string) (string, error) {
+	secrets, err := fns.containerAppService.ListSecrets(
+		fns.ctx, fns.targetResource.SubscriptionId(), fns.targetResource.ResourceGroupName(), containerAppName)
+	if err != nil {
+		return "", fmt.Errorf("fetching %s secrets: %w", containerAppName, err)
+	}
+
+	for _, secret := range secrets {
+		if secret.Name != nil && *secret.Name == secretName {
+			if secret.Value == nil {
+				return "", nil
+			}
+
+			return *secret.Value, nil
+		}
+	}
+
+	return "", fmt.Errorf("secret %s not found", secretName)
 }

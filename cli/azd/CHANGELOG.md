@@ -1,10 +1,10 @@
 # Release History
 
-## 1.5.0 (2023-11-10)
+## 1.4.4 (2023-11-10)
 
 ### Features Added
 
-- [[2925]](https://github.com/Azure/azure-dev/pull/2925) Promote simplified `azd init` and Cloud Native buildpacks features to beta
+- [[2893]](https://github.com/Azure/azure-dev/pull/2893) Added command `azd show`.
 
 ### Breaking Changes
 

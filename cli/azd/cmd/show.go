@@ -54,6 +54,7 @@ func newShowCmd() *cobra.Command {
 
 type showAction struct {
 	projectConfig        *project.ProjectConfig
+	importManager        *project.ImportManager
 	console              input.Console
 	formatter            output.Formatter
 	writer               io.Writer
@@ -74,6 +75,7 @@ func newShowAction(
 	envManager environment.Manager,
 	deploymentOperations azapi.DeploymentOperations,
 	projectConfig *project.ProjectConfig,
+	importManager *project.ImportManager,
 	azdCtx *azdcontext.AzdContext,
 	flags *showFlags,
 	lazyServiceManager *lazy.Lazy[project.ServiceManager],
@@ -81,6 +83,7 @@ func newShowAction(
 ) actions.Action {
 	return &showAction{
 		projectConfig:        projectConfig,
+		importManager:        importManager,
 		console:              console,
 		formatter:            formatter,
 		writer:               writer,
@@ -97,10 +100,15 @@ func newShowAction(
 func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	res := contracts.ShowResult{
 		Name:     s.projectConfig.Name,
-		Services: make(map[string]contracts.ShowService, len(s.projectConfig.Services)),
+		Services: make(map[string]contracts.ShowService),
 	}
 
-	for name, svc := range s.projectConfig.Services {
+	stableServices, err := s.importManager.ServiceStable(ctx, s.projectConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, svc := range stableServices {
 		path, err := getFullPathToProjectForService(svc)
 		if err != nil {
 			return nil, err
@@ -113,7 +121,7 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			},
 		}
 
-		res.Services[name] = showSvc
+		res.Services[svc.Name] = showSvc
 	}
 
 	// Add information about the target of each service, if we can determine it (if the infrastructure has
@@ -151,7 +159,8 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 			rgName, err = azureResourceManager.FindResourceGroupForEnvironment(ctx, subId, envName)
 			if err == nil {
-				for svcName, serviceConfig := range s.projectConfig.Services {
+				for _, serviceConfig := range stableServices {
+					svcName := serviceConfig.Name
 					resources, err := resourceManager.GetServiceResources(ctx, subId, rgName, serviceConfig)
 					if err == nil {
 						resourceIds := make([]string, len(resources))

@@ -27,6 +27,7 @@ const (
 	AzureResourceTypeResourceGroup           AzureResourceType = "Microsoft.Resources/resourceGroups"
 	AzureResourceTypeStorageAccount          AzureResourceType = "Microsoft.Storage/storageAccounts"
 	AzureResourceTypeStaticWebSite           AzureResourceType = "Microsoft.Web/staticSites"
+	AzureResourceTypeServiceBusNamespace     AzureResourceType = "Microsoft.ServiceBus/namespaces"
 	AzureResourceTypeServicePlan             AzureResourceType = "Microsoft.Web/serverfarms"
 	AzureResourceTypeSqlServer               AzureResourceType = "Microsoft.Sql/servers"
 	AzureResourceTypeVirtualNetwork          AzureResourceType = "Microsoft.Network/virtualNetworks"
@@ -72,6 +73,8 @@ func GetResourceTypeDisplayName(resourceType AzureResourceType) string {
 		return "Container App"
 	case AzureResourceTypeContainerAppEnvironment:
 		return "Container Apps Environment"
+	case AzureResourceTypeServiceBusNamespace:
+		return "Service Bus Namespace"
 	case AzureResourceTypeServicePlan:
 		return "App Service plan"
 	case AzureResourceTypeCosmosDb:

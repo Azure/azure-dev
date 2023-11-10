@@ -387,6 +387,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		})
 	})
 	container.RegisterSingleton(project.NewProjectManager)
+	container.RegisterSingleton(project.NewImportManager)
 	container.RegisterSingleton(project.NewServiceManager)
 	container.RegisterSingleton(func() *lazy.Lazy[project.ServiceManager] {
 		return lazy.NewLazy(func() (project.ServiceManager, error) {
@@ -460,13 +461,14 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 	// Service Targets
 	serviceTargetMap := map[project.ServiceTargetKind]any{
-		"":                          project.NewAppServiceTarget,
-		project.AppServiceTarget:    project.NewAppServiceTarget,
-		project.AzureFunctionTarget: project.NewFunctionAppTarget,
-		project.ContainerAppTarget:  project.NewContainerAppTarget,
-		project.StaticWebAppTarget:  project.NewStaticWebAppTarget,
-		project.AksTarget:           project.NewAksTarget,
-		project.SpringAppTarget:     project.NewSpringAppTarget,
+		"":                               project.NewAppServiceTarget,
+		project.AppServiceTarget:         project.NewAppServiceTarget,
+		project.AzureFunctionTarget:      project.NewFunctionAppTarget,
+		project.ContainerAppTarget:       project.NewContainerAppTarget,
+		project.StaticWebAppTarget:       project.NewStaticWebAppTarget,
+		project.AksTarget:                project.NewAksTarget,
+		project.SpringAppTarget:          project.NewSpringAppTarget,
+		project.DotNetContainerAppTarget: project.NewDotNetContainerAppTarget,
 	}
 
 	for target, constructor := range serviceTargetMap {

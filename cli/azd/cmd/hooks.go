@@ -72,6 +72,7 @@ type hooksRunAction struct {
 	projectConfig *project.ProjectConfig
 	env           *environment.Environment
 	envManager    environment.Manager
+	importManager *project.ImportManager
 	commandRunner exec.CommandRunner
 	console       input.Console
 	flags         *hooksRunFlags
@@ -80,6 +81,7 @@ type hooksRunAction struct {
 
 func newHooksRunAction(
 	projectConfig *project.ProjectConfig,
+	importManager *project.ImportManager,
 	env *environment.Environment,
 	envManager environment.Manager,
 	commandRunner exec.CommandRunner,
@@ -95,6 +97,7 @@ func newHooksRunAction(
 		console:       console,
 		flags:         flags,
 		args:          args,
+		importManager: importManager,
 	}
 }
 
@@ -114,8 +117,12 @@ func (hra *hooksRunAction) Run(ctx context.Context) (*actions.ActionResult, erro
 	})
 
 	// Validate service name
-	if _, ok := hra.projectConfig.Services[hra.flags.service]; hra.flags.service != "" && !ok {
-		return nil, fmt.Errorf("service name '%s' doesn't exist", hra.flags.service)
+	if hra.flags.service != "" {
+		if has, err := hra.importManager.HasService(ctx, hra.projectConfig, hra.flags.service); err != nil {
+			return nil, err
+		} else if !has {
+			return nil, fmt.Errorf("service name '%s' doesn't exist", hra.flags.service)
+		}
 	}
 
 	// Project level hooks
@@ -131,8 +138,13 @@ func (hra *hooksRunAction) Run(ctx context.Context) (*actions.ActionResult, erro
 		return nil, err
 	}
 
+	stableServices, err := hra.importManager.ServiceStable(ctx, hra.projectConfig)
+	if err != nil {
+		return nil, err
+	}
+
 	// Service level hooks
-	for _, service := range hra.projectConfig.GetServicesStable() {
+	for _, service := range stableServices {
 		skip := hra.flags.service != "" && service.Name != hra.flags.service
 
 		if err := hra.processHooks(

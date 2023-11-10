@@ -112,6 +112,7 @@ type deployAction struct {
 	middlewareRunner         middleware.MiddlewareContext
 	packageActionInitializer actions.ActionInitializer[*packageAction]
 	alphaFeatureManager      *alpha.FeatureManager
+	importManager            *project.ImportManager
 }
 
 func newDeployAction(
@@ -132,6 +133,7 @@ func newDeployAction(
 	middlewareRunner middleware.MiddlewareContext,
 	packageActionInitializer actions.ActionInitializer[*packageAction],
 	alphaFeatureManager *alpha.FeatureManager,
+	importManager *project.ImportManager,
 ) actions.Action {
 	return &deployAction{
 		flags:                    flags,
@@ -151,6 +153,7 @@ func newDeployAction(
 		middlewareRunner:         middlewareRunner,
 		packageActionInitializer: packageActionInitializer,
 		alphaFeatureManager:      alphaFeatureManager,
+		importManager:            importManager,
 	}
 }
 
@@ -176,6 +179,7 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	targetServiceName, err := getTargetServiceName(
 		ctx,
 		da.projectManager,
+		da.importManager,
 		da.projectConfig,
 		string(project.ServiceEventDeploy),
 		targetServiceName,
@@ -215,8 +219,12 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	startTime := time.Now()
 
 	deployResults := map[string]*project.ServiceDeployResult{}
+	stableServices, err := da.importManager.ServiceStable(ctx, da.projectConfig)
+	if err != nil {
+		return nil, err
+	}
 
-	for _, svc := range da.projectConfig.GetServicesStable() {
+	for _, svc := range stableServices {
 		stepMessage := fmt.Sprintf("Deploying service %s", svc.Name)
 
 		// Skip this service if both cases are true:

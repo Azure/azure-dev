@@ -19,6 +19,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
 	"github.com/google/uuid"
@@ -251,6 +252,9 @@ func Test_CLI_Telemetry_NestedCommands(t *testing.T) {
 	// Remove infra folder to avoid lengthy Azure operations while asserting the intended telemetry behavior.
 	// The current behavior is that `azd provision` will fail when trying to read the nonexistent bicep folder.
 	require.NoError(t, os.RemoveAll(filepath.Join(dir, "infra")))
+
+	// We do require that infra folder exist, however, so put it back (empty).
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "infra"), osutil.PermissionDirectoryOwnerOnly))
 
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "up", "--trace-log-file", traceFilePath)
 	require.Error(t, err)

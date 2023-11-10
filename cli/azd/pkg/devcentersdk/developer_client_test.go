@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 	"net/http"
-	"os"
 	"testing"
 	"time"
 
@@ -17,9 +16,7 @@ import (
 )
 
 func Test_DevCenter_Client(t *testing.T) {
-	if os.Getenv("CI") != "" {
-		t.Skip("Skipping DevCenter tests in CI")
-	}
+	t.Skip("azure/azure-dev#2944")
 
 	mockContext := mocks.NewMockContext(context.Background())
 	fileConfigManager := config.NewFileConfigManager(config.NewManager())

@@ -166,6 +166,7 @@ swacli
 Syncer
 teamcity
 testdata
+tmpl
 tracesdk
 tracetest
 trafficmanager

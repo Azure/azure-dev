@@ -61,16 +61,19 @@ type ServiceFilterPredicate func(svc *ServiceConfig) bool
 type projectManager struct {
 	azdContext     *azdcontext.AzdContext
 	serviceManager ServiceManager
+	importManager  *ImportManager
 }
 
 // NewProjectManager creates a new instance of the ProjectManager
 func NewProjectManager(
 	azdContext *azdcontext.AzdContext,
 	serviceManager ServiceManager,
+	importManager *ImportManager,
 ) ProjectManager {
 	return &projectManager{
 		azdContext:     azdContext,
 		serviceManager: serviceManager,
+		importManager:  importManager,
 	}
 }
 
@@ -78,7 +81,12 @@ func NewProjectManager(
 func (pm *projectManager) Initialize(ctx context.Context, projectConfig *ProjectConfig) error {
 	var projectTools []tools.ExternalTool
 
-	for _, svc := range projectConfig.Services {
+	servicesStable, err := pm.importManager.ServiceStable(ctx, projectConfig)
+	if err != nil {
+		return err
+	}
+
+	for _, svc := range servicesStable {
 		if err := pm.serviceManager.Initialize(ctx, svc); err != nil {
 			return fmt.Errorf("initializing service '%s', %w", svc.Name, err)
 		}
@@ -112,7 +120,12 @@ func (pm *projectManager) DefaultServiceFromWd(
 		return nil, nil
 	}
 
-	for _, svcConfig := range projectConfig.Services {
+	servicesStable, err := pm.importManager.ServiceStable(ctx, projectConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, svcConfig := range servicesStable {
 		if wd == svcConfig.Path() {
 			return svcConfig, nil
 		}
@@ -128,7 +141,12 @@ func (pm *projectManager) EnsureAllTools(
 ) error {
 	var projectTools []tools.ExternalTool
 
-	for _, svc := range projectConfig.Services {
+	servicesStable, err := pm.importManager.ServiceStable(ctx, projectConfig)
+	if err != nil {
+		return err
+	}
+
+	for _, svc := range servicesStable {
 		if serviceFilterFn != nil && !serviceFilterFn(svc) {
 			continue
 		}
@@ -155,7 +173,12 @@ func (pm *projectManager) EnsureFrameworkTools(
 ) error {
 	var requiredTools []tools.ExternalTool
 
-	for _, svc := range projectConfig.Services {
+	servicesStable, err := pm.importManager.ServiceStable(ctx, projectConfig)
+	if err != nil {
+		return err
+	}
+
+	for _, svc := range servicesStable {
 		if serviceFilterFn != nil && !serviceFilterFn(svc) {
 			continue
 		}
@@ -187,7 +210,12 @@ func (pm *projectManager) EnsureServiceTargetTools(
 ) error {
 	var requiredTools []tools.ExternalTool
 
-	for _, svc := range projectConfig.Services {
+	servicesStable, err := pm.importManager.ServiceStable(ctx, projectConfig)
+	if err != nil {
+		return err
+	}
+
+	for _, svc := range servicesStable {
 		if serviceFilterFn != nil && !serviceFilterFn(svc) {
 			continue
 		}

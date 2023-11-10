@@ -98,3 +98,70 @@ func (pd *pythonDetector) DetectProject(ctx context.Context, path string, entrie
 
 	return nil, nil
 }
+
+// PyFastApiLaunch returns the launch argument for a python FastAPI project to be served by a python web server.
+// An empty string is returned if the project is not a FastAPI project.
+// An error is returned only if the project path cannot be walked.
+func PyFastApiLaunch(projectPath string) (string, error) {
+	maxDepth := 2
+	// A launch path that looks like: dir1.dir2.main:app
+	launchPath := ""
+
+	err := filepath.WalkDir(projectPath, func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+
+		rel, err := filepath.Rel(projectPath, path)
+		if err != nil {
+			return err
+		}
+
+		if d.IsDir() && strings.Count(rel, string(os.PathSeparator)) > maxDepth-1 {
+			return filepath.SkipDir
+		}
+
+		if strings.HasSuffix(path, "main.py") || strings.HasSuffix(path, "app.py") {
+			f, err := os.Open(path)
+			if err != nil {
+				return err
+			}
+			defer f.Close()
+
+			scanner := bufio.NewScanner(f)
+			for scanner.Scan() {
+				// match on something that looks like:
+				//   app = FastAPI()
+				//   app = fastapi.FastAPI()
+				//   app = FastAPI(
+				if strings.Contains(scanner.Text(), "FastAPI(") {
+					decl := strings.Split(scanner.Text(), " ")
+
+					if len(decl) >= 3 && decl[1] == "=" {
+						mainObjName := decl[0]
+						mainFilePath := rel
+						// dir1/dir2/main.py -> dir1.dir2.main
+						mainPath := strings.ReplaceAll(
+							strings.TrimSuffix(mainFilePath, ".py"),
+							string(os.PathSeparator),
+							".")
+
+						launchPath = mainPath + ":" + mainObjName
+
+						return filepath.SkipAll
+					}
+				}
+			}
+
+			return scanner.Err()
+		}
+
+		return nil
+	})
+
+	if err != nil {
+		return "", err
+	}
+
+	return launchPath, nil
+}

@@ -13,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
@@ -42,7 +43,7 @@ var ErrNoServicesDetected = errors.New("no services detected in the current dire
 func (i *Initializer) InitFromApp(
 	ctx context.Context,
 	azdCtx *azdcontext.AzdContext,
-	initializeEnv func() error) error {
+	initializeEnv func() (*environment.Environment, error)) error {
 	i.console.Message(ctx, "")
 	title := "Scanning app code in current directory"
 	i.console.ShowSpinner(ctx, title, input.Step)
@@ -104,7 +105,7 @@ func (i *Initializer) InitFromApp(
 	}
 
 	// Prompt for environment before proceeding with generation
-	err = initializeEnv()
+	_, err = initializeEnv()
 	if err != nil {
 		return err
 	}

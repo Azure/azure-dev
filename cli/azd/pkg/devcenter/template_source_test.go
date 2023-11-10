@@ -25,9 +25,119 @@ func Test_TemplateSource_ListTemplates(t *testing.T) {
 		require.NotNil(t, templateList)
 		require.Len(t, templateList, len(mockEnvDefinitions))
 		require.Len(t, templateList[0].Metadata.Project, 4)
+		require.Contains(t, templateList[0].Metadata.Project, "platform.type")
 		require.Contains(t, templateList[0].Metadata.Project, "platform.config.name")
 		require.Contains(t, templateList[0].Metadata.Project, "platform.config.catalog")
 		require.Contains(t, templateList[0].Metadata.Project, "platform.config.environmentDefinition")
+	})
+
+	t.Run("WithSingleDefaultValue", func(t *testing.T) {
+		mockEnvDefinition := &devcentersdk.EnvironmentDefinition{
+			Id:           "/projects/Project1/catalogs/SampleCatalog/environmentDefinitions/EnvDefinition_05",
+			Name:         "EnvDefinition_05",
+			CatalogName:  "SampleCatalog",
+			Description:  "Description of EnvDefinition_05",
+			TemplatePath: "azuredeploy.json",
+			Parameters: []devcentersdk.Parameter{
+				{
+					Id:      "repoUrl",
+					Name:    "repoUrl",
+					Type:    devcentersdk.ParameterTypeString,
+					Default: "https://github.com/Azure-Samples/todo-nodejs-mongo-swa-func",
+				},
+			},
+		}
+
+		mockContext := mocks.NewMockContext(context.Background())
+		templateSource := newTemplateSourceForTest(t, mockContext, &Config{}, nil)
+		setupDevCenterSuccessMocks(t, mockContext, templateSource)
+		mockdevcentersdk.MockListEnvironmentDefinitions(
+			mockContext,
+			"Project1",
+			[]*devcentersdk.EnvironmentDefinition{mockEnvDefinition},
+		)
+
+		templateList, err := templateSource.ListTemplates(*mockContext.Context)
+		require.NoError(t, err)
+		require.NotNil(t, templateList)
+		require.Len(t, templateList, 1)
+		require.Len(t, templateList[0].Metadata.Project, 4)
+		require.Equal(t, templateList[0].RepositoryPath, mockEnvDefinition.Parameters[0].Default)
+		require.Contains(t, templateList[0].Metadata.Project, "platform.type")
+		require.Contains(t, templateList[0].Metadata.Project, "platform.config.name")
+		require.Contains(t, templateList[0].Metadata.Project, "platform.config.catalog")
+		require.Contains(t, templateList[0].Metadata.Project, "platform.config.environmentDefinition")
+	})
+
+	t.Run("WithMultipleAllowedValues", func(t *testing.T) {
+		mockEnvDefinition := &devcentersdk.EnvironmentDefinition{
+			Id:           "/projects/Project1/catalogs/SampleCatalog/environmentDefinitions/EnvDefinition_05",
+			Name:         "EnvDefinition_05",
+			CatalogName:  "SampleCatalog",
+			Description:  "Description of EnvDefinition_05",
+			TemplatePath: "azuredeploy.json",
+			Parameters: []devcentersdk.Parameter{
+				{
+					Id:      "repoUrl",
+					Name:    "repoUrl",
+					Type:    devcentersdk.ParameterTypeString,
+					Default: "https://github.com/Azure-Samples/todo-nodejs-mongo-swa-func",
+					Allowed: []string{
+						"https://github.com/Azure-Samples/todo-nodejs-mongo-swa-func",
+						"https://github.com/Azure-Samples/todo-python-mongo-swa-func",
+						"https://github.com/Azure-Samples/todo-java-mongo-swa-func",
+					},
+				},
+			},
+		}
+
+		mockContext := mocks.NewMockContext(context.Background())
+		templateSource := newTemplateSourceForTest(t, mockContext, &Config{}, nil)
+		setupDevCenterSuccessMocks(t, mockContext, templateSource)
+		mockdevcentersdk.MockListEnvironmentDefinitions(
+			mockContext,
+			"Project1",
+			[]*devcentersdk.EnvironmentDefinition{mockEnvDefinition},
+		)
+
+		templateList, err := templateSource.ListTemplates(*mockContext.Context)
+		require.NoError(t, err)
+		require.NotNil(t, templateList)
+		require.Len(t, templateList, len(mockEnvDefinition.Parameters[0].Allowed))
+		require.Len(t, templateList[0].Metadata.Project, 4)
+
+		for index := range templateList {
+			require.Equal(t, templateList[index].RepositoryPath, mockEnvDefinition.Parameters[0].Allowed[index])
+			require.Contains(t, templateList[index].Metadata.Project, "platform.type")
+			require.Contains(t, templateList[index].Metadata.Project, "platform.config.name")
+			require.Contains(t, templateList[index].Metadata.Project, "platform.config.catalog")
+			require.Contains(t, templateList[index].Metadata.Project, "platform.config.environmentDefinition")
+		}
+	})
+
+	t.Run("NoRepoUrlParameter", func(t *testing.T) {
+		mockEnvDefinition := &devcentersdk.EnvironmentDefinition{
+			Id:           "/projects/Project1/catalogs/SampleCatalog/environmentDefinitions/EnvDefinition_05",
+			Name:         "EnvDefinition_05",
+			CatalogName:  "SampleCatalog",
+			Description:  "Description of EnvDefinition_05",
+			TemplatePath: "azuredeploy.json",
+			Parameters:   []devcentersdk.Parameter{},
+		}
+
+		mockContext := mocks.NewMockContext(context.Background())
+		templateSource := newTemplateSourceForTest(t, mockContext, &Config{}, nil)
+		setupDevCenterSuccessMocks(t, mockContext, templateSource)
+		mockdevcentersdk.MockListEnvironmentDefinitions(
+			mockContext,
+			"Project1",
+			[]*devcentersdk.EnvironmentDefinition{mockEnvDefinition},
+		)
+
+		templateList, err := templateSource.ListTemplates(*mockContext.Context)
+		require.NoError(t, err)
+		require.NotNil(t, templateList)
+		require.Len(t, templateList, 0)
 	})
 
 	t.Run("Fail", func(t *testing.T) {

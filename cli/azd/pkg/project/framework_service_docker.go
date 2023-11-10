@@ -14,6 +14,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
@@ -170,20 +171,12 @@ func (p *dockerProject) Build(
 
 			path := filepath.Join(serviceConfig.Path(), dockerOptions.Path)
 			_, err := os.Stat(path)
-			packBuildEnabled := p.alphaFeatureManager.IsEnabled(alpha.Buildpacks)
-			if packBuildEnabled {
-				if err != nil && !errors.Is(err, os.ErrNotExist) {
-					task.SetError(fmt.Errorf("reading dockerfile: %w", err))
-					return
-				}
-			} else {
-				if err != nil {
-					task.SetError(fmt.Errorf("reading dockerfile: %w", err))
-					return
-				}
+			if err != nil && !errors.Is(err, os.ErrNotExist) {
+				task.SetError(fmt.Errorf("reading dockerfile: %w", err))
+				return
 			}
 
-			if packBuildEnabled && errors.Is(err, os.ErrNotExist) {
+			if errors.Is(err, os.ErrNotExist) {
 				// Build the container from source
 				task.SetProgress(NewServiceProgress("Building Docker image from source"))
 				res, err := p.packBuild(ctx, serviceConfig, dockerOptions, imageName)
@@ -316,7 +309,36 @@ func (p *dockerProject) packBuild(
 						"nginx -g 'daemon off;'",
 					inDockerOutputPath,
 					svc.OutputPath,
-					inDockerOutputPath))
+					inDockerOutputPath,
+				))
+		}
+
+		// Support for FastAPI apps since the Oryx builder does not support it yet
+		if svc.Language == ServiceLanguagePython {
+			prj, err := appdetect.DetectDirectory(ctx, svc.Path())
+			if err != nil {
+				return nil, err
+			}
+
+			for _, dep := range prj.Dependencies {
+				if dep == appdetect.PyFastApi {
+					launch, err := appdetect.PyFastApiLaunch(prj.Path)
+					if err != nil {
+						return nil, err
+					}
+
+					// If launch isn't detected, fallback to default Oryx runtime logic, which may recover for scenarios
+					// such as a simple main entrypoint launch.
+					if launch != "" {
+						environ = append(environ,
+							"POST_BUILD_COMMAND=pip install uvicorn",
+							//nolint:lll
+							"ORYX_RUNTIME_SCRIPT=oryx create-script -appPath ./oryx-output -bindPort 80 -userStartupCommand "+
+								"'uvicorn "+launch+" --port $PORT --host $HOST' && ./run.sh")
+					}
+					break
+				}
+			}
 		}
 	}
 

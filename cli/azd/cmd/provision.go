@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"log"
+	"strings"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -16,6 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"go.uber.org/multierr"
@@ -28,6 +30,13 @@ type provisionFlags struct {
 	global                *internal.GlobalCommandOptions
 	*envFlag
 }
+
+const (
+	AINotValid                  = "is not valid according to the validation procedure"
+	openAIsubscriptionNoQuotaId = "The subscription does not have QuotaId/Feature required by SKU 'S0' from kind 'OpenAI'"
+	responsibleAITerms          = "until you agree to Responsible AI terms for this resource"
+	azurePortalURL              = "https://ms.portal.azure.com/"
+)
 
 func (i *provisionFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	i.bindNonCommon(local, global)
@@ -82,12 +91,14 @@ type provisionAction struct {
 	writer           io.Writer
 	console          input.Console
 	subManager       *account.SubscriptionsManager
+	importManager    *project.ImportManager
 }
 
 func newProvisionAction(
 	flags *provisionFlags,
 	provisionManager *provisioning.Manager,
 	projectManager project.ProjectManager,
+	importManager *project.ImportManager,
 	resourceManager project.ResourceManager,
 	projectConfig *project.ProjectConfig,
 	env *environment.Environment,
@@ -107,6 +118,7 @@ func newProvisionAction(
 		writer:           writer,
 		console:          console,
 		subManager:       subManager,
+		importManager:    importManager,
 	}
 }
 
@@ -141,8 +153,15 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		return nil, err
 	}
 
-	p.projectConfig.Infra.IgnoreDeploymentState = p.flags.ignoreDeploymentState
-	if err := p.provisionManager.Initialize(ctx, p.projectConfig.Path, p.projectConfig.Infra); err != nil {
+	infra, err := p.importManager.ProjectInfrastructure(ctx, p.projectConfig)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = infra.Cleanup() }()
+
+	infraOptions := infra.Options
+	infraOptions.IgnoreDeploymentState = p.flags.ignoreDeploymentState
+	if err := p.provisionManager.Initialize(ctx, p.projectConfig.Path, infraOptions); err != nil {
 		return nil, fmt.Errorf("initializing provisioning manager: %w", err)
 	}
 
@@ -177,7 +196,7 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		Project: p.projectConfig,
 	}
 
-	err := p.projectConfig.Invoke(ctx, project.ProjectEventProvision, projectEventArgs, func() error {
+	err = p.projectConfig.Invoke(ctx, project.ProjectEventProvision, projectEventArgs, func() error {
 		var err error
 		if previewMode {
 			deployPreviewResult, err = p.provisionManager.Preview(ctx)
@@ -206,6 +225,30 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 			}
 		}
 
+		//if user don't have access to openai
+		errorMsg := err.Error()
+		if strings.Contains(errorMsg, AINotValid) &&
+			strings.Contains(errorMsg, openAIsubscriptionNoQuotaId) {
+			return nil, &azcli.ErrorWithSuggestion{
+				Suggestion: fmt.Sprintf("\nSuggested Action: The selected " +
+					"subscription has not been enabled for use of Azure AI service and does not have quota for " +
+					"any pricing tiers. Please visit " + output.WithLinkFormat(azurePortalURL) +
+					" and select 'Create' on specific services to request access."),
+				Err: err,
+			}
+		}
+
+		//if user haven't agree to Responsible AI terms
+		if strings.Contains(errorMsg, responsibleAITerms) {
+			return nil, &azcli.ErrorWithSuggestion{
+				Suggestion: fmt.Sprintf("\nSuggested Action: Please visit azure portal in " +
+					output.WithLinkFormat(azurePortalURL) + ". Create the resource in azure portal " +
+					"to go through Responsible AI terms, and then delete it. " +
+					"After that, run 'azd provision' again"),
+				Err: err,
+			}
+		}
+
 		return nil, fmt.Errorf("deployment failed: %w", err)
 	}
 
@@ -230,7 +273,12 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		}, nil
 	}
 
-	for _, svc := range p.projectConfig.Services {
+	servicesStable, err := p.importManager.ServiceStable(ctx, p.projectConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, svc := range servicesStable {
 		eventArgs := project.ServiceLifecycleEventArgs{
 			Project: p.projectConfig,
 			Service: svc,

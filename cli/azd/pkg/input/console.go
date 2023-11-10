@@ -83,8 +83,10 @@ type Console interface {
 	IsSpinnerInteractive() bool
 	// Prompts the user for a single value
 	Prompt(ctx context.Context, options ConsoleOptions) (string, error)
-	// Prompts the user to select from a set of values
+	// Prompts the user to select a single value from a set of values
 	Select(ctx context.Context, options ConsoleOptions) (int, error)
+	// Prompts the user to select zero or more values from a set of values
+	MultiSelect(ctx context.Context, options ConsoleOptions) ([]string, error)
 	// Prompts the user to confirm an operation
 	Confirm(ctx context.Context, options ConsoleOptions) (bool, error)
 	// block terminal until the next enter
@@ -514,6 +516,26 @@ func (c *AskerConsole) Select(ctx context.Context, options ConsoleOptions) (int,
 	}
 
 	c.updateLastBytes(cAfterIO)
+	return response, nil
+}
+
+func (c *AskerConsole) MultiSelect(ctx context.Context, options ConsoleOptions) ([]string, error) {
+	survey := &survey.MultiSelect{
+		Message: options.Message,
+		Options: options.Options,
+		Default: options.DefaultValue,
+		Help:    options.Help,
+	}
+
+	var response []string
+
+	err := c.doInteraction(func(c *AskerConsole) error {
+		return c.asker(survey, &response)
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	return response, nil
 }
 

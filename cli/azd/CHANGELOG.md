@@ -1,14 +1,11 @@
 # Release History
 
-## 1.5.0-beta.1 (Unreleased)
-
-### Features Added
-
-### Breaking Changes
+## 1.4.5 (2023-11-13)
 
 ### Bugs Fixed
 
-### Other Changes
+- [[2962]](https://github.com/Azure/azure-dev/pull/2962) Fix for incorrect id on storage blob built-in role id.
+- [[2963]](https://github.com/Azure/azure-dev/pull/2963) Handle project is undetected.
 
 ## 1.4.4 (2023-11-10)
 

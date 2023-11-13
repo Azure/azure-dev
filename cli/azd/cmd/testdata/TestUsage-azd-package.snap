@@ -9,7 +9,7 @@ Usage
   azd package <service> [flags]
 
 Flags
-        --all                	: Deploys all services that are listed in azure.yaml
+        --all                	: Packages all services that are listed in azure.yaml
         --docs               	: Opens the documentation for azd package in your web browser.
     -e, --environment string 	: The name of the environment to use.
     -h, --help               	: Gets help for package.

@@ -25,6 +25,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/pack"
 	"go.opentelemetry.io/otel/trace"
@@ -275,7 +276,7 @@ func (p *dockerProject) packBuild(
 	svc *ServiceConfig,
 	dockerOptions DockerProjectOptions,
 	imageName string) (*ServiceBuildResult, error) {
-	pack, err := pack.NewPackCli(ctx, p.console, p.commandRunner)
+	packCli, err := pack.NewPackCli(ctx, p.console, p.commandRunner)
 	if err != nil {
 		return nil, err
 	}
@@ -313,31 +314,13 @@ func (p *dockerProject) packBuild(
 				))
 		}
 
-		// Support for FastAPI apps since the Oryx builder does not support it yet
 		if svc.Language == ServiceLanguagePython {
-			prj, err := appdetect.DetectDirectory(ctx, svc.Path())
+			pyEnviron, err := getEnvironForPython(ctx, svc)
 			if err != nil {
 				return nil, err
 			}
-
-			for _, dep := range prj.Dependencies {
-				if dep == appdetect.PyFastApi {
-					launch, err := appdetect.PyFastApiLaunch(prj.Path)
-					if err != nil {
-						return nil, err
-					}
-
-					// If launch isn't detected, fallback to default Oryx runtime logic, which may recover for scenarios
-					// such as a simple main entrypoint launch.
-					if launch != "" {
-						environ = append(environ,
-							"POST_BUILD_COMMAND=pip install uvicorn",
-							//nolint:lll
-							"ORYX_RUNTIME_SCRIPT=oryx create-script -appPath ./oryx-output -bindPort 80 -userStartupCommand "+
-								"'uvicorn "+launch+" --port $PORT --host $HOST' && ./run.sh")
-					}
-					break
-				}
+			if len(pyEnviron) > 0 {
+				environ = append(environ, pyEnviron...)
 			}
 		}
 	}
@@ -367,7 +350,7 @@ func (p *dockerProject) packBuild(
 		)
 	}
 
-	err = pack.Build(
+	err = packCli.Build(
 		ctx,
 		svc.Path(),
 		builder,
@@ -377,6 +360,18 @@ func (p *dockerProject) packBuild(
 	p.console.StopPreviewer(ctx, false)
 	if err != nil {
 		span.EndWithStatus(err)
+
+		var statusCodeErr *pack.StatusCodeError
+		if errors.As(err, &statusCodeErr) && statusCodeErr.Code == pack.StatusCodeUndetectedNoError {
+			return nil, &azcli.ErrorWithSuggestion{
+				Err: err,
+				Suggestion: "No Dockerfile was found, and image could not be automatically built from source. " +
+					fmt.Sprintf(
+						"\nSuggested action: Author a Dockerfile and save it as %s",
+						filepath.Join(svc.Path(), dockerOptions.Path)),
+			}
+		}
+
 		return nil, err
 	}
 
@@ -395,6 +390,41 @@ func (p *dockerProject) packBuild(
 			ImageName: imageName,
 		},
 	}, nil
+}
+
+func getEnvironForPython(ctx context.Context, svc *ServiceConfig) ([]string, error) {
+	prj, err := appdetect.DetectDirectory(ctx, svc.Path())
+	if err != nil {
+		return nil, err
+	}
+
+	if prj == nil { // Undetected project, resume build from the Oryx builder
+		return nil, nil
+	}
+
+	// Support for FastAPI apps since the Oryx builder does not support it yet
+	for _, dep := range prj.Dependencies {
+		if dep == appdetect.PyFastApi {
+			launch, err := appdetect.PyFastApiLaunch(prj.Path)
+			if err != nil {
+				return nil, err
+			}
+
+			// If launch isn't detected, fallback to default Oryx runtime logic, which may recover for scenarios
+			// such as a simple main entrypoint launch.
+			if launch == "" {
+				return nil, nil
+			}
+
+			return []string{
+				"POST_BUILD_COMMAND=pip install uvicorn",
+				//nolint:lll
+				"ORYX_RUNTIME_SCRIPT=oryx create-script -appPath ./oryx-output -bindPort 80 -userStartupCommand " +
+					"'uvicorn " + launch + " --port $PORT --host $HOST' && ./run.sh"}, nil
+		}
+	}
+
+	return nil, nil
 }
 
 func getDockerOptionsWithDefaults(options DockerProjectOptions) DockerProjectOptions {

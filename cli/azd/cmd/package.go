@@ -42,7 +42,7 @@ func (pf *packageFlags) Bind(local *pflag.FlagSet, global *internal.GlobalComman
 		&pf.all,
 		"all",
 		false,
-		"Deploys all services that are listed in "+azdcontext.ProjectFileName,
+		"Packages all services that are listed in "+azdcontext.ProjectFileName,
 	)
 	local.StringVar(
 		&pf.outputPath,

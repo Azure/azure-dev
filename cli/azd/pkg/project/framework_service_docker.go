@@ -25,6 +25,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/pack"
 	"go.opentelemetry.io/otel/trace"
@@ -270,12 +271,16 @@ func (p *dockerProject) Package(
 const DefaultBuilderImage = "mcr.microsoft.com/oryx/builder:debian-bullseye-20231004.1"
 const DefaultDotNetBuilderImage = "mcr.microsoft.com/oryx/builder:debian-buster-20231004.1"
 
+// All buildpacks groups have failed to detect w/o error.
+// See https://buildpacks.io/docs/concepts/components/lifecycle/detect/#exit-codes
+const PackExitCodeUndetected = 20
+
 func (p *dockerProject) packBuild(
 	ctx context.Context,
 	svc *ServiceConfig,
 	dockerOptions DockerProjectOptions,
 	imageName string) (*ServiceBuildResult, error) {
-	pack, err := pack.NewPackCli(ctx, p.console, p.commandRunner)
+	packCli, err := pack.NewPackCli(ctx, p.console, p.commandRunner)
 	if err != nil {
 		return nil, err
 	}
@@ -369,7 +374,7 @@ func (p *dockerProject) packBuild(
 		)
 	}
 
-	err = pack.Build(
+	err = packCli.Build(
 		ctx,
 		svc.Path(),
 		builder,
@@ -379,6 +384,18 @@ func (p *dockerProject) packBuild(
 	p.console.StopPreviewer(ctx, false)
 	if err != nil {
 		span.EndWithStatus(err)
+
+		var statusCodeErr *pack.StatusCodeError
+		if errors.As(err, &statusCodeErr) && statusCodeErr.Code == pack.StatusCodeUndetectedNoError {
+			return nil, &azcli.ErrorWithSuggestion{
+				Err: err,
+				Suggestion: "Failed to build image from source without a Dockerfile. " +
+					fmt.Sprintf(
+						"To provide explicit instructions for building the image, author a Dockerfile and save it as %s",
+						filepath.Join(svc.Path(), dockerOptions.Path)),
+			}
+		}
+
 		return nil, err
 	}
 

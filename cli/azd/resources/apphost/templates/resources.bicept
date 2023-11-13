@@ -170,15 +170,6 @@ resource {{bicepName $name}} 'Microsoft.Storage/storageAccounts@2022-05-01' = {
 
   resource blobs 'blobServices@2022-05-01' = {
     name: 'default'
-{{range $cname := $value.Containers}}
-
-    resource {{bicepName $cname}} 'containers@2022-05-01' = {
-      name: '{{bicepName $cname}}'
-      properties: {
-        publicAccess: 'None'
-      }
-    }
-{{- end}}
   }
 }
 

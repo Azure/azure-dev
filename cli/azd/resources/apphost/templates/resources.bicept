@@ -183,12 +183,12 @@ resource {{bicepName $name}} 'Microsoft.Storage/storageAccounts@2022-05-01' = {
 }
 
 resource {{bicepName $name}}RoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid({{bicepName $name}}.id, managedIdentity.id, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '974c5e8b-45b9-4653-ba55-5f855dd0fb88'))
+  name: guid({{bicepName $name}}.id, managedIdentity.id, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'))
   scope: {{bicepName $name}}
   properties: {
     principalId: managedIdentity.properties.principalId
     principalType: 'ServicePrincipal'
-    roleDefinitionId:  subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '974c5e8b-45b9-4653-ba55-5f855dd0fb88')
+    roleDefinitionId:  subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
   }
 }
 {{end -}}

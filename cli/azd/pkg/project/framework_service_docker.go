@@ -271,10 +271,6 @@ func (p *dockerProject) Package(
 const DefaultBuilderImage = "mcr.microsoft.com/oryx/builder:debian-bullseye-20231004.1"
 const DefaultDotNetBuilderImage = "mcr.microsoft.com/oryx/builder:debian-buster-20231004.1"
 
-// All buildpacks groups have failed to detect w/o error.
-// See https://buildpacks.io/docs/concepts/components/lifecycle/detect/#exit-codes
-const PackExitCodeUndetected = 20
-
 func (p *dockerProject) packBuild(
 	ctx context.Context,
 	svc *ServiceConfig,

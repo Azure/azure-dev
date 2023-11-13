@@ -318,33 +318,13 @@ func (p *dockerProject) packBuild(
 				))
 		}
 
-		// Support for FastAPI apps since the Oryx builder does not support it yet
 		if svc.Language == ServiceLanguagePython {
-			prj, err := appdetect.DetectDirectory(ctx, svc.Path())
+			pyEnviron, err := getEnvironForPython(ctx, svc)
 			if err != nil {
 				return nil, err
 			}
-
-			if prj != nil {
-				for _, dep := range prj.Dependencies {
-					if dep == appdetect.PyFastApi {
-						launch, err := appdetect.PyFastApiLaunch(prj.Path)
-						if err != nil {
-							return nil, err
-						}
-
-						// If launch isn't detected, fallback to default Oryx runtime logic, which may recover for scenarios
-						// such as a simple main entrypoint launch.
-						if launch != "" {
-							environ = append(environ,
-								"POST_BUILD_COMMAND=pip install uvicorn",
-								//nolint:lll
-								"ORYX_RUNTIME_SCRIPT=oryx create-script -appPath ./oryx-output -bindPort 80 -userStartupCommand "+
-									"'uvicorn "+launch+" --port $PORT --host $HOST' && ./run.sh")
-						}
-						break
-					}
-				}
+			if len(pyEnviron) > 0 {
+				environ = append(environ, pyEnviron...)
 			}
 		}
 	}
@@ -389,9 +369,9 @@ func (p *dockerProject) packBuild(
 		if errors.As(err, &statusCodeErr) && statusCodeErr.Code == pack.StatusCodeUndetectedNoError {
 			return nil, &azcli.ErrorWithSuggestion{
 				Err: err,
-				Suggestion: "Failed to build image from source without a Dockerfile. " +
+				Suggestion: "No Dockerfile was found, and image could not be automatically built from source. " +
 					fmt.Sprintf(
-						"To provide explicit instructions for building the image, author a Dockerfile and save it as %s",
+						"\nSuggested action: Author a Dockerfile and save it as %s",
 						filepath.Join(svc.Path(), dockerOptions.Path)),
 			}
 		}
@@ -414,6 +394,41 @@ func (p *dockerProject) packBuild(
 			ImageName: imageName,
 		},
 	}, nil
+}
+
+func getEnvironForPython(ctx context.Context, svc *ServiceConfig) ([]string, error) {
+	prj, err := appdetect.DetectDirectory(ctx, svc.Path())
+	if err != nil {
+		return nil, err
+	}
+
+	if prj == nil { // Undetected project, resume build from the Oryx builder
+		return nil, nil
+	}
+
+	// Support for FastAPI apps since the Oryx builder does not support it yet
+	for _, dep := range prj.Dependencies {
+		if dep == appdetect.PyFastApi {
+			launch, err := appdetect.PyFastApiLaunch(prj.Path)
+			if err != nil {
+				return nil, err
+			}
+
+			// If launch isn't detected, fallback to default Oryx runtime logic, which may recover for scenarios
+			// such as a simple main entrypoint launch.
+			if launch == "" {
+				return nil, nil
+			}
+
+			return []string{
+				"POST_BUILD_COMMAND=pip install uvicorn",
+				//nolint:lll
+				"ORYX_RUNTIME_SCRIPT=oryx create-script -appPath ./oryx-output -bindPort 80 -userStartupCommand " +
+					"'uvicorn " + launch + " --port $PORT --host $HOST' && ./run.sh"}, nil
+		}
+	}
+
+	return nil, nil
 }
 
 func getDockerOptionsWithDefaults(options DockerProjectOptions) DockerProjectOptions {

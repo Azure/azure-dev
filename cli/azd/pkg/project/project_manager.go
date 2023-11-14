@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -85,6 +87,13 @@ func (pm *projectManager) Initialize(ctx context.Context, projectConfig *Project
 	if err != nil {
 		return err
 	}
+
+	serviceTargets := make([]string, 0, len(servicesStable))
+	for _, svc := range servicesStable {
+		serviceTargets = append(serviceTargets, string(svc.Host))
+	}
+
+	tracing.SetUsageAttributes(fields.ProjectServiceTargetsKey.StringSlice(serviceTargets))
 
 	for _, svc := range servicesStable {
 		if err := pm.serviceManager.Initialize(ctx, svc); err != nil {

@@ -242,6 +242,10 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 		appIdOrName,
 		pm.args.PipelineRoleNames)
 
+	if err != nil {
+		return result, fmt.Errorf("failed to create or update service principal: %w", err)
+	}
+
 	// Update new service principal to include client id
 	if !strings.Contains(displayMsg, servicePrincipal.AppId) {
 		displayMsg += fmt.Sprintf(" (%s)", servicePrincipal.AppId)

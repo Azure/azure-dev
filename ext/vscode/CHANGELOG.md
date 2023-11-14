@@ -5,7 +5,7 @@
 ### Features Added
 
 - [[#2541]](https://github.com/Azure/azure-dev/pull/2541) Support has been added for the Azure Developer CLI to fetch authentication tokens from VSCode, reducing the need to re-authenticate. Use the setting `azure-dev.auth.useIntegratedAuth` to try this feature.
-- [[#2771]](https://github.com/Azure/azure-dev/pull/2771) Commands to enable or disable Dev Center mode have been added. Dev Center mode allows you to use Azure Deployment Environments for environment definitions (which include infrastructure as code and other manifests).
+- [[#2771]](https://github.com/Azure/azure-dev/pull/2771) Commands to enable or disable Dev Center mode have been added. Dev Center mode allows `azd` to leverage Infrastructure as Code (IaC) templates from Dev Center's centrally managed catalogs, manage remote Azure Deployment Environments (ADE) and seamlessly deploy applications to ADE environments using existing `azd deploy` commands.
 
 ## 0.7.0 (2023-07-12)
 

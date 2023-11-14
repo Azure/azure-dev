@@ -1,14 +1,10 @@
 # Release History
 
-## 1.5.0-beta.1 (Unreleased)
+## 1.5.0 (2023-11-15)
 
 ### Features Added
 
-### Breaking Changes
-
-### Bugs Fixed
-
-### Other Changes
+- [[2767]](https://github.com/Azure/azure-dev/pull/2767) Adding support for Azure Deployments Environment.
 
 ## 1.4.5 (2023-11-13)
 

@@ -4,7 +4,7 @@
 
 ### Features Added
 
-- [[2767]](https://github.com/Azure/azure-dev/pull/2767) Adding support for Azure Deployments Environment.
+- [[2767]](https://github.com/Azure/azure-dev/pull/2767) Adds support for Azure Deployments Environments.
 
 ## 1.4.5 (2023-11-13)
 

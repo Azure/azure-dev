@@ -228,7 +228,7 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 		case "container.v0":
 			b.addContainer(name, *comp.Image, comp.Env, comp.Bindings)
 		case "dapr.v0":
-			b.addDapr(name, *comp.Application)
+			b.addDapr(name, comp.Dapr)
 		case "dapr.component.v0":
 			b.addDaprComponent(name)
 		case "redis.v0":
@@ -346,11 +346,22 @@ func (b *infraGenerator) addContainer(name string, image string, env map[string]
 	}
 }
 
-func (b* infraGenerator) addDapr(name string, application string) {
+func (b* infraGenerator) addDapr(name string, metadata *DaprResourceMetadata) {
+	if (metadata == nil || metadata.Application == nil) {
+		// Return an error?
+		return
+	}
+
 	b.requireCluster()
 
 	b.dapr[name] = genDapr{
-		Application: application,
+		Application:           *metadata.Application,
+		AppPort:                metadata.AppPort,
+		AppProtocol:            metadata.AppProtocol,
+		DaprHttpMaxRequestSize: metadata.DaprHttpMaxRequestSize,
+		DaprHttpReadBufferSize: metadata.DaprHttpReadBufferSize,
+		EnableApiLogging:       metadata.EnableApiLogging,
+		LogLevel:               metadata.LogLevel,
 	}
 }
 
@@ -468,11 +479,23 @@ func (b *infraGenerator) Compile() error {
 
 		for daprName, dapr := range b.dapr {
 			if dapr.Application == projectName {
-				log.Printf("Enabling Dapr for %s", dapr.Application)
-				
+				appPort := dapr.AppPort
+
+				if (appPort == nil && projectTemplateCtx.Ingress != nil) {
+					appPort = &projectTemplateCtx.Ingress.TargetPort
+				}
+
 				projectTemplateCtx.Dapr = &genContainerAppManifestTemplateContextDapr{
 					AppId: daprName,
+					AppPort: appPort,
+					AppProtocol: dapr.AppProtocol,
+					EnableApiLogging: dapr.EnableApiLogging,
+					HttpMaxRequestSize: dapr.DaprHttpMaxRequestSize,
+					HttpReadBufferSize: dapr.DaprHttpReadBufferSize,
+					LogLevel: dapr.LogLevel,
 				}
+
+				break
 			}
 		}
 

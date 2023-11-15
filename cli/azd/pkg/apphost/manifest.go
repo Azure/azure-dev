@@ -50,8 +50,18 @@ type Resource struct {
 	// a "connectionString" property which is the connection string that should be used during binding.
 	ConnectionString *string `json:"connectionString,omitempty"`
 
-	// Application is present on dapr.v0 resources, and is the name of the application resource with which to associate the Dapr sidecar.
-	Application *string `json:"application,omitempty"`
+	// Dapr is present on dapr.v0 resources.
+	Dapr *DaprResourceMetadata `json:"dapr,omitempty"`
+}
+
+type DaprResourceMetadata struct {
+	Application            *string `json:"application,omitempty"`
+	AppPort                *int    `json:"appPort,omitempty"`
+	AppProtocol            *string `json:"appProtocol,omitempty"`
+	DaprHttpMaxRequestSize *int    `json:"daprHttpMaxRequestSize,omitempty"`
+	DaprHttpReadBufferSize *int    `json:"daprHttpReadBufferSize,omitempty"`
+	EnableApiLogging       *bool   `json:"enableApiLogging,omitempty"`
+	LogLevel               *string `json:"logLevel,omitempty"`
 }
 
 type Reference struct {

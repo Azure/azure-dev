@@ -94,8 +94,12 @@ resource {{bicepName $name}} 'Microsoft.App/containerApps@2023-05-02-preview' = 
 {{if $value.Dapr}}
       dapr: {
         appId: {{$value.Dapr.AppId}}
-        appProtocol: http
-        appPort: 80
+{{if $value.Dapr.AppPort}}
+        appPort: {{$value.Dapr.AppPort}}
+{{end}}
+{{if $value.Dapr.AppProtocol}}
+        appProtocol: {{$value.Dapr.AppProtocol}}
+{{end}}
         enabled: true
       }
 {{end}}

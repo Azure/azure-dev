@@ -12,8 +12,12 @@ properties:
 {{- if .Dapr}}
     dapr:
       appId: {{ .Dapr.AppId }}
-      appProtocol: http
-      appPort: 80
+{{- if .Dapr.AppPort}}
+      appPort: {{ .Dapr.AppPort }}
+{{- end}}
+{{- if .Dapr.AppProtocol}}
+      appProtocol: {{ .Dapr.AppProtocol }}
+{{- end}}
       enabled: true
 {{- end}}
 {{- if .Ingress}}

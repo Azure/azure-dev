@@ -42,7 +42,13 @@ type genProject struct {
 }
 
 type genDapr struct {
-	Application string
+	Application             string
+	AppPort                *int
+	AppProtocol            *string
+	DaprHttpMaxRequestSize *int
+	DaprHttpReadBufferSize *int
+	EnableApiLogging       *bool
+	LogLevel               *string
 }
 
 type genBicepTemplateContext struct {
@@ -77,5 +83,11 @@ type genContainerAppManifestTemplateContextIngress struct {
 }
 
 type genContainerAppManifestTemplateContextDapr struct {
-	AppId string
+	AppId              string
+	AppPort            *int
+	AppProtocol        *string
+	EnableApiLogging   *bool
+	HttpMaxRequestSize *int
+	HttpReadBufferSize *int
+	LogLevel           *string
 }

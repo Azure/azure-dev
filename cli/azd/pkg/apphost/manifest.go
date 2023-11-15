@@ -49,6 +49,9 @@ type Resource struct {
 	// Some resources just represent connections to existing resources that need not be provisioned.  These resources have
 	// a "connectionString" property which is the connection string that should be used during binding.
 	ConnectionString *string `json:"connectionString,omitempty"`
+
+	// Application is present on dapr.v0 resources, and is the name of the application resource with which to associate the Dapr sidecar.
+	Application *string `json:"application,omitempty"`
 }
 
 type Reference struct {

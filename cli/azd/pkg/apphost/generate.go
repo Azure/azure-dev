@@ -185,6 +185,7 @@ func GenerateProjectArtifacts(
 
 type infraGenerator struct {
 	containers        map[string]genContainer
+	dapr              map[string]genDapr
 	projects          map[string]genProject
 	connectionStrings map[string]string
 	resourceTypes     map[string]string
@@ -204,6 +205,7 @@ func newInfraGenerator() *infraGenerator {
 			ContainerApps:                   make(map[string]genContainerApp),
 		},
 		containers:                   make(map[string]genContainer),
+		dapr:                         make(map[string]genDapr),
 		projects:                     make(map[string]genProject),
 		connectionStrings:            make(map[string]string),
 		resourceTypes:                make(map[string]string),
@@ -225,6 +227,10 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 			b.addProject(name, *comp.Path, comp.Env, comp.Bindings)
 		case "container.v0":
 			b.addContainer(name, *comp.Image, comp.Env, comp.Bindings)
+		case "dapr.v0":
+			b.addDapr(name, *comp.Application)
+		case "dapr.component.v0":
+			b.addDaprComponent(name)
 		case "redis.v0":
 			b.addContainerAppService(name, "redis")
 		case "azure.keyvault.v0":
@@ -340,6 +346,18 @@ func (b *infraGenerator) addContainer(name string, image string, env map[string]
 	}
 }
 
+func (b* infraGenerator) addDapr(name string, application string) {
+	b.requireCluster()
+
+	b.dapr[name] = genDapr{
+		Application: application,
+	}
+}
+
+func (b* infraGenerator) addDaprComponent(name string) {
+	b.requireCluster()
+}
+
 func validateAndMergeBindings(bindings map[string]*Binding) (*Binding, error) {
 	if len(bindings) == 0 {
 		return nil, nil
@@ -445,6 +463,16 @@ func (b *infraGenerator) Compile() error {
 				// Note that the protocol type is apparently optional.
 				TargetPort:    8080,
 				AllowInsecure: strings.ToLower(binding.Transport) == "http2",
+			}
+		}
+
+		for daprName, dapr := range b.dapr {
+			if dapr.Application == projectName {
+				log.Printf("Enabling Dapr for %s", dapr.Application)
+				
+				projectTemplateCtx.Dapr = &genContainerAppManifestTemplateContextDapr{
+					AppId: daprName,
+				}
 			}
 		}
 

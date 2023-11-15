@@ -9,6 +9,13 @@ properties:
   environmentId: {{ "{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_ID }}" }}
   configuration:
     activeRevisionsMode: single
+{{- if .Dapr}}
+    dapr:
+      appId: {{ .Dapr.AppId }}
+      appProtocol: http
+      appPort: 80
+      enabled: true
+{{- end}}
 {{- if .Ingress}}
     ingress:
       external: {{ .Ingress.External }}

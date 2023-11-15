@@ -41,6 +41,10 @@ type genProject struct {
 	Bindings map[string]*Binding
 }
 
+type genDapr struct {
+	Application string
+}
+
 type genBicepTemplateContext struct {
 	HasContainerRegistry            bool
 	HasContainerEnvironment         bool
@@ -57,6 +61,7 @@ type genContainerAppManifestTemplateContext struct {
 	Name    string
 	Ingress *genContainerAppManifestTemplateContextIngress
 	Env     map[string]string
+	Dapr *genContainerAppManifestTemplateContextDapr
 }
 
 type genProjectFileContext struct {
@@ -69,4 +74,8 @@ type genContainerAppManifestTemplateContextIngress struct {
 	Transport     string
 	TargetPort    int
 	AllowInsecure bool
+}
+
+type genContainerAppManifestTemplateContextDapr struct {
+	AppId string
 }

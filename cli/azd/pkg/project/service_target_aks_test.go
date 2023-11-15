@@ -536,7 +536,6 @@ func createAksServiceTarget(
 		envManager,
 		managedClustersService,
 		resourceManager,
-		resourceManager,
 		kubeCtl,
 		containerHelper,
 	)

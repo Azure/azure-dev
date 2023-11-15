@@ -180,7 +180,8 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 func getCmdUpHelpDescription(c *cobra.Command) string {
 	return generateCmdHelpDescription(
-		fmt.Sprintf("Executes the %s and %s commands in a single step.",
+		fmt.Sprintf("Executes the %s, %s and %s commands in a single step.",
+			output.WithHighLightFormat("azd package"),
 			output.WithHighLightFormat("azd provision"),
 			output.WithHighLightFormat("azd deploy")), nil)
 }

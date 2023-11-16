@@ -225,8 +225,14 @@ output SERVICE_BINDING_{{alphaSnakeUpper $name}}_ENDPOINT string = {{bicepName $
 output SERVICE_BINDING_{{alphaSnakeUpper $name}}_CONNECTION_STRING string = {{bicepName $name}}.properties.ConnectionString
 {{end -}}
 {{range $name, $value := .StorageAccounts -}}
-{{range $cname := $value.Containers -}}
+{{range $cname := $value.Blobs -}}
 output SERVICE_BINDING_{{alphaSnakeUpper $cname}}_ENDPOINT string = {{bicepName $name}}.properties.primaryEndpoints.blob
+{{end -}}
+{{range $cname := $value.Tables -}}
+output SERVICE_BINDING_{{alphaSnakeUpper $cname}}_ENDPOINT string = {{bicepName $name}}.properties.primaryEndpoints.table
+{{end -}}
+{{range $cname := $value.Queues -}}
+output SERVICE_BINDING_{{alphaSnakeUpper $cname}}_ENDPOINT string = {{bicepName $name}}.properties.primaryEndpoints.queue
 {{end -}}
 {{end -}}
 {{range $name, $value := .KeyVaults -}}

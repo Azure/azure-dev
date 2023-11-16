@@ -45,7 +45,13 @@ output SERVICE_BINDING_{{alphaSnakeUpper $name}}_ENDPOINT string = resources.out
 output SERVICE_BINDING_{{alphaSnakeUpper $name}}_CONNECTION_STRING string = resources.outputs.SERVICE_BINDING_{{alphaSnakeUpper $name}}_CONNECTION_STRING
 {{end -}}
 {{range $name, $value := .StorageAccounts -}}
-{{range $cname := $value.Containers -}}
+{{range $cname := $value.Blobs -}}
+output SERVICE_BINDING_{{alphaSnakeUpper $cname}}_ENDPOINT string = resources.outputs.SERVICE_BINDING_{{alphaSnakeUpper $cname}}_ENDPOINT
+{{end -}}
+{{range $cname := $value.Tables -}}
+output SERVICE_BINDING_{{alphaSnakeUpper $cname}}_ENDPOINT string = resources.outputs.SERVICE_BINDING_{{alphaSnakeUpper $cname}}_ENDPOINT
+{{end -}}
+{{range $cname := $value.Queues -}}
 output SERVICE_BINDING_{{alphaSnakeUpper $cname}}_ENDPOINT string = resources.outputs.SERVICE_BINDING_{{alphaSnakeUpper $cname}}_ENDPOINT
 {{end -}}
 {{end -}}

@@ -48,7 +48,7 @@ func Test_getResourceGroupFollowUp(t *testing.T) {
 		env,
 		false)
 
-	require.Contains(t, followUp, "You can view the resources created under the resource group Name in Azure Portal:")
+	require.Contains(t, followUp, "You can view the resources created under the resource group Name in the")
 }
 
 func Test_getResourceGroupFollowUpPreview(t *testing.T) {
@@ -83,5 +83,5 @@ func Test_getResourceGroupFollowUpPreview(t *testing.T) {
 		env,
 		true)
 
-	require.Contains(t, followUp, "You can view the current resources under the resource group Name in Azure Portal:")
+	require.Contains(t, followUp, "You can view the current resources under the resource group Name in the")
 }

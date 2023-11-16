@@ -43,8 +43,8 @@ Initialize from a sample application by running the azd init --template [templat
 Then, run azd up to get the application up-and-running in Azure.
 
 To view a curated list of sample templates, run azd template list.
-To view all available sample templates, including those submitted by the azd community, visit: https://azure.github.io/awesome-azd.
+To view all available sample templates, including those submitted by the azd community, visit: ]8;;https://azure.github.io/awesome-azdhttps://azure.github.io/awesome-azd]8;;.
 
-Find a bug? Want to let us know how we're doing? Fill out this brief survey: https://aka.ms/azure-dev/hats.
+Find a bug? Want to let us know how we're doing? Fill out this brief survey: ]8;;https://aka.ms/azure-dev/hatshttps://aka.ms/azure-dev/hats]8;;.
 
 

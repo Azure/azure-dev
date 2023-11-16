@@ -4,9 +4,9 @@ To view a different environment, run azd show -e <environment name>
 
 Foo
   Services:
-    xx  bar
+    xx  ]8;;barbar]8;;
   Environments:
     You haven't created any environments. Run azd env new to create one.
   View in Azure Portal:
-    foo.com
+    ]8;;foo.comfoo.com]8;;
 

@@ -80,7 +80,6 @@ type kubectlCli struct {
 	commandRunner exec.CommandRunner
 	env           map[string]string
 	cwd           string
-	kubeConfig    string
 }
 
 // Creates a new K8s CLI instance
@@ -145,7 +144,7 @@ func (cli *kubectlCli) SetEnv(envValues map[string]string) {
 
 // Sets the KUBECONFIG environment variable
 func (cli *kubectlCli) SetKubeConfig(kubeConfig string) {
-	cli.kubeConfig = kubeConfig
+	cli.env[KubeConfigEnvVarName] = kubeConfig
 }
 
 // Sets the current working directory
@@ -336,12 +335,7 @@ func (cli *kubectlCli) executeCommandWithArgs(
 		args = args.WithCwd(cli.cwd)
 	}
 
-	env := cli.env
-	if cli.kubeConfig != "" {
-		env[KubeConfigEnvVarName] = cli.kubeConfig
-	}
-
-	args = args.WithEnv(environ(env))
+	args = args.WithEnv(environ(cli.env))
 
 	if flags != nil {
 		if flags.DryRun != "" {

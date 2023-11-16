@@ -420,7 +420,7 @@ func getCmdConfigHelpDescription(*cobra.Command) string {
 		"Manage the Azure Developer CLI user configuration.",
 		[]string{
 			formatHelpNote(fmt.Sprintf("The default configuration path is: %s.",
-				output.WithHyperlink("%HOME/.azd", ""),
+				output.WithLinkFormat("%HOME/.azd"),
 			)),
 			formatHelpNote(fmt.Sprintf("The configuration directory can be overridden by specifying a path"+
 				" in the %s environment variable.", output.WithBold("AZD_CONFIG_DIR"),

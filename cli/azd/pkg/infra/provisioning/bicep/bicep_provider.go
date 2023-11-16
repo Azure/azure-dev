@@ -1108,7 +1108,7 @@ func generateResourceGroupsToDelete(groupedResources map[string][]azcli.AzCliRes
 			subId,
 			rg,
 		)
-		lines = append(lines, fmt.Sprintf("  • %s: %s", rg, output.WithLinkFormat(link, "View Resource Group")))
+		lines = append(lines, fmt.Sprintf("  • %s: %s", rg, output.WithHyperlink(link, "View Resource Group")))
 	}
 	return append(lines, "")
 }

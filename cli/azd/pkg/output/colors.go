@@ -48,20 +48,21 @@ func WithBackticks(text string) string {
 	return "`" + text + "`"
 }
 
-var noColor = os.Getenv("NO_COLOR") != ""
-
 // WithHyperlink wraps text with the colored hyperlink format escape sequence.
-func WithHyperlink(url string, text string) string {
-	if text == "" {
-		text = url
+// When url and displayName are specified the displayName is used as the link display name
+// When url is an empty string the url is used as the link and the display name
+func WithHyperlink(url string, displayName string) string {
+	if displayName == "" {
+		displayName = url
 	}
 
+	var noColor = os.Getenv("NO_COLOR") != ""
 	var urlOutput string
 
 	if noColor {
 		urlOutput = url
 	} else {
-		urlOutput = fmt.Sprintf("\033]8;;%s\007%s\033]8;;\007", url, text)
+		urlOutput = fmt.Sprintf("\033]8;;%s\007%s\033]8;;\007", url, displayName)
 	}
 
 	return WithLinkFormat(urlOutput)

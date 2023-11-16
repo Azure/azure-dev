@@ -173,7 +173,8 @@ resource {{bicepName $name}} 'Microsoft.Storage/storageAccounts@2022-05-01' = {
   }
 }
 
-resource {{bicepName $name}}RoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+{{if gt (len $value.Blobs) 0 -}}
+resource {{bicepName $name}}BlobsRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid({{bicepName $name}}.id, managedIdentity.id, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe'))
   scope: {{bicepName $name}}
   properties: {
@@ -182,6 +183,32 @@ resource {{bicepName $name}}RoleAssignment 'Microsoft.Authorization/roleAssignme
     roleDefinitionId:  subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'ba92f5b4-2d11-453d-a403-e96b0029c9fe')
   }
 }
+{{end -}}
+
+{{if gt (len $value.Queues) 0 -}}
+resource {{bicepName $name}}QueuesRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid({{bicepName $name}}.id, managedIdentity.id, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '974c5e8b-45b9-4653-ba55-5f855dd0fb88'))
+  scope: {{bicepName $name}}
+  properties: {
+    principalId: managedIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId:  subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '974c5e8b-45b9-4653-ba55-5f855dd0fb88')
+  }
+}
+{{end -}}
+
+{{if gt (len $value.Tables) 0 -}}
+resource {{bicepName $name}}TablesRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid({{bicepName $name}}.id, managedIdentity.id, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3'))
+  scope: {{bicepName $name}}
+  properties: {
+    principalId: managedIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId:  subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '0a9a7e1f-b9d0-4cc4-a60d-0319b160aaa3')
+  }
+}
+{{end -}}
+
 {{end -}}
 {{range $name, $value := .KeyVaults}}
 resource {{bicepName $name}} 'Microsoft.KeyVault/vaults@2023-07-01' = {

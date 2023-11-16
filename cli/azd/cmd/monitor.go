@@ -167,7 +167,7 @@ func getCmdMonitorHelpDescription(*cobra.Command) string {
 	return generateCmdHelpDescription(
 		fmt.Sprintf("Monitor a deployed application %s. For more information, go to: %s.",
 			output.WithWarningFormat("(Beta)"),
-			output.WithLinkFormat("https://aka.ms/azure-dev/monitor")), nil)
+			output.WithHyperlink("https://aka.ms/azure-dev/monitor", "")), nil)
 }
 
 func getCmdMonitorHelpFooter(c *cobra.Command) string {

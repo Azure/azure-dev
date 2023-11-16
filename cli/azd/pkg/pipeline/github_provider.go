@@ -488,7 +488,7 @@ func (p *GitHubCiProvider) configureConnection(
 		Lines: []string{
 			"",
 			"GitHub Action secrets are now configured. You can view GitHub action secrets that were created at this link:",
-			output.WithLinkFormat("https://github.com/%s/settings/secrets/actions", repoSlug),
+			output.WithHyperlink(fmt.Sprintf("https://github.com/%s/settings/secrets/actions", repoSlug), ""),
 			""},
 	})
 
@@ -535,7 +535,7 @@ func (p *GitHubCiProvider) setPipelineVariables(
 					ctx,
 					fmt.Sprintf(
 						"Visit %s for more information on configuring Terraform remote state",
-						output.WithLinkFormat("https://aka.ms/azure-dev/terraform"),
+						output.WithHyperlink("https://aka.ms/azure-dev/terraform", ""),
 					),
 				)
 				p.console.Message(ctx, "")

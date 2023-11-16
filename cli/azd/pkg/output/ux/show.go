@@ -69,7 +69,7 @@ func azurePortalLink(link string) string {
 			color.HiBlueString("azd up"),
 		)
 	}
-	return output.WithLinkFormat(link)
+	return output.WithHyperlink(link, "")
 }
 
 func services(services []*ShowService) string {
@@ -85,7 +85,7 @@ func services(services []*ShowService) string {
 		lines[index] = fmt.Sprintf(
 			"    %s  %s",
 			color.HiBlueString(service.Name),
-			output.WithLinkFormat(service.IngresUrl),
+			output.WithHyperlink(service.IngresUrl, ""),
 		)
 	}
 	return strings.Join(lines, "\n")

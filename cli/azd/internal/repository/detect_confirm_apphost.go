@@ -74,11 +74,15 @@ func (d *detectConfirmAppHost) Confirm(ctx context.Context) error {
 func (d *detectConfirmAppHost) render(ctx context.Context) error {
 	d.console.Message(ctx, "\n"+output.WithBold("Detected services:")+"\n")
 
-	d.console.Message(ctx, "  "+color.BlueString(projectDisplayName(d.AppHost)))
+	d.console.Message(ctx, "  "+output.WithHighLightFormat(projectDisplayName(d.AppHost)))
 	d.console.Message(ctx, "  "+"Detected in: "+output.WithHighLightFormat(relSafe(d.root, d.AppHost.Path)))
 	d.console.Message(ctx, "")
-	d.console.Message(ctx,
-		"azd will generate the files necessary to host your app on Azure using "+color.MagentaString("Azure Container Apps")+".\n")
+	d.console.Message(
+		ctx,
+		"azd will generate the files necessary to host your app on Azure using "+color.MagentaString(
+			"Azure Container Apps",
+		)+".\n",
+	)
 
 	return nil
 }

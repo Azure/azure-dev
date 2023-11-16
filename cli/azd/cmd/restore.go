@@ -214,7 +214,7 @@ func getCmdRestoreHelpDescription(*cobra.Command) string {
 				" run, and debug the application locally."),
 			formatHelpNote(fmt.Sprintf("For the best local run and debug experience, go to %s to learn how "+
 				"to use the Visual Studio Code extension.",
-				output.WithLinkFormat("https://aka.ms/azure-dev/vscode"),
+				output.WithHyperlink("https://aka.ms/azure-dev/vscode", ""),
 			)),
 		})
 }

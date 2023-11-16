@@ -190,7 +190,7 @@ func (st *springAppTarget) Endpoints(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	targetResource *environment.TargetResource,
-) ([]string, error) {
+) ([]*Endpoint, error) {
 	springAppProperties, err := st.springService.GetSpringAppProperties(
 		ctx,
 		targetResource.SubscriptionId(),
@@ -202,7 +202,12 @@ func (st *springAppTarget) Endpoints(
 		return nil, fmt.Errorf("fetching service properties: %w", err)
 	}
 
-	return springAppProperties.Url, nil
+	endpoints := make([]*Endpoint, len(springAppProperties.Url))
+	for idx, url := range springAppProperties.Url {
+		endpoints[idx] = &Endpoint{Url: url}
+	}
+
+	return endpoints, nil
 }
 
 func (st *springAppTarget) validateTargetResource(

@@ -200,11 +200,8 @@ func (t *aksTarget) Deploy(
 			}
 
 			if len(endpoints) > 0 {
-				// The AKS endpoints contain some additional identifying information
-				// Split on common to pull out the URL as the first segment
 				// The last endpoint in the array will be the most publicly exposed
-				endpointParts := strings.Split(endpoints[len(endpoints)-1], ",")
-				t.env.SetServiceProperty(serviceConfig.Name, "ENDPOINT_URL", endpointParts[0])
+				t.env.SetServiceProperty(serviceConfig.Name, "ENDPOINT_URL", endpoints[len(endpoints)-1].Url)
 				if err := t.envManager.Save(ctx, t.env); err != nil {
 					task.SetError(fmt.Errorf("failed updating environment with endpoint url, %w", err))
 					return
@@ -230,7 +227,7 @@ func (t *aksTarget) Endpoints(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	targetResource *environment.TargetResource,
-) ([]string, error) {
+) ([]*Endpoint, error) {
 	serviceName := serviceConfig.K8s.Service.Name
 	if serviceName == "" {
 		serviceName = serviceConfig.Name
@@ -475,20 +472,26 @@ func (t *aksTarget) getServiceEndpoints(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	serviceNameFilter string,
-) ([]string, error) {
+) ([]*Endpoint, error) {
 	service, err := t.waitForService(ctx, serviceNameFilter)
 	if err != nil {
 		return nil, err
 	}
 
-	var endpoints []string
+	endpoints := []*Endpoint{}
 	if service.Spec.Type == kubectl.ServiceTypeLoadBalancer {
 		for _, resource := range service.Status.LoadBalancer.Ingress {
-			endpoints = append(endpoints, fmt.Sprintf("http://%s, (Service, Type: LoadBalancer)", resource.Ip))
+			endpoints = append(endpoints, &Endpoint{
+				Url:         fmt.Sprintf("http://%s", resource.Ip),
+				Description: "Service, Type: LoadBalancer",
+			})
 		}
 	} else if service.Spec.Type == kubectl.ServiceTypeClusterIp {
 		for index, ip := range service.Spec.ClusterIps {
-			endpoints = append(endpoints, fmt.Sprintf("http://%s:%d, (Service, Type: ClusterIP)", ip, service.Spec.Ports[index].Port))
+			endpoints = append(endpoints, &Endpoint{
+				Url:         fmt.Sprintf("http://%s:%d", ip, service.Spec.Ports[index].Port),
+				Description: "Service, Type: ClusterIP",
+			})
 		}
 	}
 
@@ -501,13 +504,13 @@ func (t *aksTarget) getIngressEndpoints(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	resourceFilter string,
-) ([]string, error) {
+) ([]*Endpoint, error) {
 	ingress, err := t.waitForIngress(ctx, resourceFilter)
 	if err != nil {
 		return nil, err
 	}
 
-	var endpoints []string
+	endpoints := []*Endpoint{}
 	var protocol string
 	if len(ingress.Spec.Tls) == 0 {
 		protocol = "http"
@@ -528,7 +531,10 @@ func (t *aksTarget) getIngressEndpoints(
 			return nil, fmt.Errorf("failed constructing service endpoints, %w", err)
 		}
 
-		endpoints = append(endpoints, fmt.Sprintf("%s, (Ingress, Type: LoadBalancer)", endpointUrl))
+		endpoints = append(endpoints, &Endpoint{
+			Url:         endpointUrl,
+			Description: "Ingress, Type: LoadBalancer",
+		})
 	}
 
 	return endpoints, nil

@@ -75,7 +75,7 @@ type ServiceTarget interface {
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
 		targetResource *environment.TargetResource,
-	) ([]string, error)
+	) ([]*Endpoint, error)
 }
 
 // NewServiceDeployResult is a helper function to create a new ServiceDeployResult
@@ -83,7 +83,7 @@ func NewServiceDeployResult(
 	relatedResourceId string,
 	kind ServiceTargetKind,
 	rawResult string,
-	endpoints []string,
+	endpoints []*Endpoint,
 ) *ServiceDeployResult {
 	returnValue := &ServiceDeployResult{
 		TargetResourceId: relatedResourceId,

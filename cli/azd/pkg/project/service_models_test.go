@@ -11,8 +11,8 @@ func Test_ServiceResults_Json_Marshal(t *testing.T) {
 	deployResult := &ServiceDeployResult{
 		Kind:             AppServiceTarget,
 		TargetResourceId: "target-resource-id",
-		Endpoints: []string{
-			"https://aka.ms/azd",
+		Endpoints: []*Endpoint{
+			{Url: "https://aka.ms/azd"},
 		},
 		Details: nil,
 		Package: &ServicePackageResult{

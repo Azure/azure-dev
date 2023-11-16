@@ -180,7 +180,7 @@ func getCmdTemplateHelpDescription(*cobra.Command) string {
 				output.WithHighLightFormat("azd template list"))),
 			formatHelpNote(fmt.Sprintf("To view all available sample templates, including those submitted by the azd"+
 				" community visit: %s.",
-				output.WithLinkFormat("https://azure.github.io/awesome-azd"))),
+				output.WithHyperlink("https://azure.github.io/awesome-azd", ""))),
 			formatHelpNote(fmt.Sprintf("Running %s without a template will prompt you to start with a minimal"+
 				" template or select from our curated list of samples.",
 				output.WithHighLightFormat("azd init"))),

@@ -53,7 +53,7 @@ func (sbr *ServiceBuildResult) ToString(currentIndentation string) string {
 		return uxItem.ToString(currentIndentation)
 	}
 
-	return fmt.Sprintf("%s- Build Output: %s", currentIndentation, output.WithLinkFormat(sbr.BuildOutputPath))
+	return fmt.Sprintf("%s- Build Output: %s", currentIndentation, output.WithHyperlink(sbr.BuildOutputPath, ""))
 }
 
 func (sbr *ServiceBuildResult) MarshalJSON() ([]byte, error) {
@@ -78,11 +78,29 @@ func (spr *ServicePackageResult) ToString(currentIndentation string) string {
 		return uxItem.ToString(currentIndentation)
 	}
 
-	return fmt.Sprintf("%s- Package Output: %s", currentIndentation, output.WithLinkFormat(spr.PackagePath))
+	return fmt.Sprintf("%s- Package Output: %s", currentIndentation, output.WithHighLightFormat(spr.PackagePath, ""))
 }
 
 func (spr *ServicePackageResult) MarshalJSON() ([]byte, error) {
 	return json.Marshal(*spr)
+}
+
+// Endpoint is a URL with an option name and description
+type Endpoint struct {
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Url         string `json:"url"`
+}
+
+// String returns a string representation of the endpoint
+func (s *Endpoint) String() string {
+	link := output.WithHyperlink(s.Url, s.Name)
+
+	if s.Description != "" {
+		return fmt.Sprintf("Endpoint: %s %s", link, output.WithGrayFormat("(%s)", s.Description))
+	}
+
+	return fmt.Sprintf("Endpoint: %s", link)
 }
 
 // ServiceDeployResult is the result of a successful Deploy operation
@@ -91,7 +109,7 @@ type ServiceDeployResult struct {
 	// Related Azure resource ID
 	TargetResourceId string            `json:"targetResourceId"`
 	Kind             ServiceTargetKind `json:"kind"`
-	Endpoints        []string          `json:"endpoints"`
+	Endpoints        []*Endpoint       `json:"endpoints"`
 	Details          interface{}       `json:"details"`
 }
 
@@ -108,7 +126,7 @@ func (spr *ServiceDeployResult) ToString(currentIndentation string) string {
 		builder.WriteString(fmt.Sprintf("%s- No endpoints were found\n", currentIndentation))
 	} else {
 		for _, endpoint := range spr.Endpoints {
-			builder.WriteString(fmt.Sprintf("%s- Endpoint: %s\n", currentIndentation, output.WithLinkFormat(endpoint)))
+			builder.WriteString(fmt.Sprintf("%s- %s\n", currentIndentation, endpoint))
 		}
 	}
 

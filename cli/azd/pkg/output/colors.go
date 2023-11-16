@@ -2,6 +2,7 @@ package output
 
 import (
 	"fmt"
+	"os"
 
 	"github.com/fatih/color"
 )
@@ -47,7 +48,21 @@ func WithBackticks(text string) string {
 	return "`" + text + "`"
 }
 
+var noColor = os.Getenv("NO_COLOR") != ""
+
 // WithHyperlink wraps text with the colored hyperlink format escape sequence.
 func WithHyperlink(url string, text string) string {
-	return WithLinkFormat(fmt.Sprintf("\033]8;;%s\007%s\033]8;;\007", url, text))
+	if text == "" {
+		text = url
+	}
+
+	var urlOutput string
+
+	if noColor {
+		urlOutput = url
+	} else {
+		urlOutput = fmt.Sprintf("\033]8;;%s\007%s\033]8;;\007", url, text)
+	}
+
+	return WithLinkFormat(urlOutput)
 }

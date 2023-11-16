@@ -46,8 +46,8 @@ type dockerBuildResult struct {
 
 func (dbr *dockerBuildResult) ToString(currentIndentation string) string {
 	lines := []string{
-		fmt.Sprintf("%s- Image ID: %s", currentIndentation, output.WithLinkFormat(dbr.ImageId)),
-		fmt.Sprintf("%s- Image Name: %s", currentIndentation, output.WithLinkFormat(dbr.ImageName)),
+		fmt.Sprintf("%s- Image ID: %s", currentIndentation, output.WithHighLightFormat(dbr.ImageId)),
+		fmt.Sprintf("%s- Image Name: %s", currentIndentation, output.WithHighLightFormat(dbr.ImageName)),
 	}
 
 	return strings.Join(lines, "\n")
@@ -64,8 +64,8 @@ type dockerPackageResult struct {
 
 func (dpr *dockerPackageResult) ToString(currentIndentation string) string {
 	lines := []string{
-		fmt.Sprintf("%s- Image Hash: %s", currentIndentation, output.WithLinkFormat(dpr.ImageHash)),
-		fmt.Sprintf("%s- Image Tag: %s", currentIndentation, output.WithLinkFormat(dpr.ImageTag)),
+		fmt.Sprintf("%s- Image Hash: %s", currentIndentation, output.WithHighLightFormat(dpr.ImageHash)),
+		fmt.Sprintf("%s- Image Tag: %s", currentIndentation, output.WithHighLightFormat(dpr.ImageTag)),
 	}
 
 	return strings.Join(lines, "\n")

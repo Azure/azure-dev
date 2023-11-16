@@ -1103,14 +1103,12 @@ func generateResourceGroupsToDelete(groupedResources map[string][]azcli.AzCliRes
 	lines := []string{"Resource group(s) to be deleted:", ""}
 
 	for rg := range groupedResources {
-		lines = append(lines, fmt.Sprintf(
-			"  • %s: %s",
+		link := fmt.Sprintf(
+			"https://portal.azure.com/#@/resource/subscriptions/%s/resourceGroups/%s/overview",
+			subId,
 			rg,
-			output.WithLinkFormat("https://portal.azure.com/#@/resource/subscriptions/%s/resourceGroups/%s/overview",
-				subId,
-				rg,
-			),
-		))
+		)
+		lines = append(lines, fmt.Sprintf("  • %s: %s", rg, output.WithLinkFormat(link, "View Resource Group")))
 	}
 	return append(lines, "")
 }

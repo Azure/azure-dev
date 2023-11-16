@@ -112,7 +112,7 @@ func getCmdHelpDefaultFlags(cmd *cobra.Command) (result string) {
 // getCmdHelpDefaultFooter provides the default implementation for displaying the help footer section.
 func getCmdHelpDefaultFooter(*cobra.Command) string {
 	return fmt.Sprintf("Find a bug? Want to let us know how we're doing? Fill out this brief survey: %s.\n",
-		output.WithLinkFormat("https://aka.ms/azure-dev/hats"))
+		output.WithHyperlink("https://aka.ms/azure-dev/hats", ""))
 }
 
 /*

@@ -232,7 +232,7 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 			return nil, &azcli.ErrorWithSuggestion{
 				Suggestion: fmt.Sprintf("\nSuggested Action: The selected " +
 					"subscription has not been enabled for use of Azure AI service and does not have quota for " +
-					"any pricing tiers. Please visit " + output.WithLinkFormat(azurePortalURL) +
+					"any pricing tiers. Please visit the " + output.WithHyperlink(azurePortalURL, "Azure Portal") +
 					" and select 'Create' on specific services to request access."),
 				Err: err,
 			}
@@ -241,8 +241,8 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		//if user haven't agree to Responsible AI terms
 		if strings.Contains(errorMsg, responsibleAITerms) {
 			return nil, &azcli.ErrorWithSuggestion{
-				Suggestion: fmt.Sprintf("\nSuggested Action: Please visit azure portal in " +
-					output.WithLinkFormat(azurePortalURL) + ". Create the resource in azure portal " +
+				Suggestion: fmt.Sprintf("\nSuggested Action: Please visit azure portal in the " +
+					output.WithHyperlink(azurePortalURL, "Azure Portal") + ". Create the resource in azure portal " +
 					"to go through Responsible AI terms, and then delete it. " +
 					"After that, run 'azd provision' again"),
 				Err: err,

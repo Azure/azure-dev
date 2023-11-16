@@ -30,7 +30,7 @@ func EnsurePatExists(ctx context.Context, env *environment.Environment, console 
 		console.Message(ctx, fmt.Sprintf(
 			"You need an %s. Create a PAT by following the instructions here %s",
 			output.WithWarningFormat("Azure DevOps Personal Access Token (PAT)"),
-			output.WithLinkFormat("https://aka.ms/azure-dev/azdo-pat")))
+			output.WithHyperlink("https://aka.ms/azure-dev/azdo-pat", "")))
 		console.Message(ctx, fmt.Sprintf("(%s this prompt by setting the PAT to env var: %s)",
 			output.WithWarningFormat("%s", "skip"),
 			output.WithHighLightFormat("%s", AzDoPatName)))

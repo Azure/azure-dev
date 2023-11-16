@@ -59,7 +59,7 @@ func (i *Initializer) Initialize(
 	template *templates.Template,
 	templateBranch string) error {
 	var err error
-	stepMessage := fmt.Sprintf("Downloading template code to: %s", output.WithLinkFormat("%s", azdCtx.ProjectDirectory()))
+	stepMessage := fmt.Sprintf("Downloading template code to: %s", output.WithHyperlink(azdCtx.ProjectDirectory(), ""))
 	i.console.ShowSpinner(ctx, stepMessage, input.Step)
 	defer i.console.StopSpinner(ctx, stepMessage+"\n", input.GetStepResultFormat(err))
 
@@ -315,7 +315,7 @@ func (i *Initializer) InitializeMinimal(ctx context.Context, azdCtx *azdcontext.
 	projectDir := azdCtx.ProjectDirectory()
 	var err error
 
-	projectFormatted := output.WithLinkFormat("%s", projectDir)
+	projectFormatted := output.WithHyperlink(projectDir, "")
 	i.console.ShowSpinner(ctx,
 		fmt.Sprintf("Creating minimal project files at: %s", projectFormatted),
 		input.Step)

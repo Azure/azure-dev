@@ -59,16 +59,15 @@ func (display *ProvisioningProgressDisplay) ReportProgress(
 		}
 
 		display.deploymentStarted = true
-		deploymentUrl := fmt.Sprintf(output.WithLinkFormat("%s\n"), display.target.PortalUrl())
 
 		display.console.EnsureBlankLine(ctx)
 		display.console.MessageUxItem(
 			ctx,
 			&ux.MultilineMessage{
 				Lines: []string{
-					"You can view detailed progress in the Azure Portal:",
-					deploymentUrl,
-				},
+					fmt.Sprintf("You can view detailed progress in the %s\n",
+						output.WithHyperlink(display.target.PortalUrl(), "Azure Portal"),
+					)},
 			},
 		)
 	}

@@ -136,7 +136,7 @@ func (st *appServiceTarget) Endpoints(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	targetResource *environment.TargetResource,
-) ([]string, error) {
+) ([]*Endpoint, error) {
 	appServiceProperties, err := st.cli.GetAppServiceProperties(
 		ctx,
 		targetResource.SubscriptionId(),
@@ -147,9 +147,9 @@ func (st *appServiceTarget) Endpoints(
 		return nil, fmt.Errorf("fetching service properties: %w", err)
 	}
 
-	endpoints := make([]string, len(appServiceProperties.HostNames))
+	endpoints := make([]*Endpoint, len(appServiceProperties.HostNames))
 	for idx, hostName := range appServiceProperties.HostNames {
-		endpoints[idx] = fmt.Sprintf("https://%s/", hostName)
+		endpoints[idx] = &Endpoint{Url: fmt.Sprintf("https://%s/", hostName)}
 	}
 
 	return endpoints, nil

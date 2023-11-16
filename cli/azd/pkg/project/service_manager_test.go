@@ -576,8 +576,10 @@ func (st *fakeServiceTarget) Endpoints(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	targetResource *environment.TargetResource,
-) ([]string, error) {
-	return []string{"https://test.azurewebsites.net"}, nil
+) ([]*Endpoint, error) {
+	return []*Endpoint{
+		{Url: "https://test.azurewebsites.net"},
+	}, nil
 }
 
 type fakeTool struct {

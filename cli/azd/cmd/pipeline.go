@@ -182,8 +182,8 @@ func (p *pipelineConfigAction) Run(ctx context.Context) (*actions.ActionResult, 
 			FollowUp: heredoc.Docf(`
 			Link to view your new repo: %s
 			Link to view your pipeline status: %s`,
-				output.WithLinkFormat("%s", pipelineResult.RepositoryLink),
-				output.WithLinkFormat("%s", pipelineResult.PipelineLink)),
+				output.WithHyperlink(pipelineResult.RepositoryLink, ""),
+				output.WithHyperlink(pipelineResult.PipelineLink, "")),
 		},
 	}, nil
 }
@@ -203,7 +203,7 @@ func getCmdPipelineHelpDescription(*cobra.Command) string {
 					output.WithHighLightFormat("pipeline config") +
 					" will help configure your deployment pipeline to connect securely to Azure."),
 			formatHelpNote(fmt.Sprintf("For more information on how to use azd in your pipeline, go to: %s.",
-				output.WithLinkFormat("https://aka.ms/azure-dev/pipeline"))),
+				output.WithHyperlink("https://aka.ms/azure-dev/pipeline", ""))),
 		})
 }
 

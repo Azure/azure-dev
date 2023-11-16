@@ -226,7 +226,7 @@ func (at *dotnetContainerAppTarget) Endpoints(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	targetResource *environment.TargetResource,
-) ([]string, error) {
+) ([]*Endpoint, error) {
 	if ingressConfig, err := at.containerAppService.GetIngressConfiguration(
 		ctx,
 		targetResource.SubscriptionId(),
@@ -235,9 +235,9 @@ func (at *dotnetContainerAppTarget) Endpoints(
 	); err != nil {
 		return nil, fmt.Errorf("fetching service properties: %w", err)
 	} else {
-		endpoints := make([]string, len(ingressConfig.HostNames))
+		endpoints := make([]*Endpoint, len(ingressConfig.HostNames))
 		for idx, hostName := range ingressConfig.HostNames {
-			endpoints[idx] = fmt.Sprintf("https://%s/", hostName)
+			endpoints[idx] = &Endpoint{Url: fmt.Sprintf("https://%s/", hostName)}
 		}
 
 		return endpoints, nil

@@ -6,9 +6,9 @@ package ux
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	"github.com/fatih/color"
 )
 
 type EnvironmentDetails struct {
@@ -17,15 +17,22 @@ type EnvironmentDetails struct {
 }
 
 func (t *EnvironmentDetails) ToString(currentIndentation string) string {
-	var location string
-	if t.Location != "" {
-		location = fmt.Sprintf("\nLocation: %s", color.BlueString(t.Location))
+	details := []string{}
+	if t.Subscription != "" {
+		details = append(details, fmt.Sprintf(
+			"Subscription: %s",
+			output.WithHighLightFormat(t.Subscription),
+		))
 	}
-	return fmt.Sprintf(
-		"Subscription: %s%s\n",
-		color.BlueString(t.Subscription),
-		location,
-	)
+
+	if t.Location != "" {
+		details = append(details, fmt.Sprintf(
+			"Location: %s",
+			output.WithHighLightFormat(t.Location),
+		))
+	}
+
+	return strings.Join(details, "\n") + "\n"
 }
 
 func (t *EnvironmentDetails) MarshalJSON() ([]byte, error) {

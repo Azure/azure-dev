@@ -365,7 +365,7 @@ func getCmdRootHelpFooter(cmd *cobra.Command) string {
 		"To view a curated list of sample templates, run "+
 			output.WithHighLightFormat("azd template list")+".\n"+
 			"To view all available sample templates, including those submitted by the azd community, visit: "+
-			output.WithLinkFormat("https://azure.github.io/awesome-azd")+".",
+			output.WithHyperlink("https://azure.github.io/awesome-azd", "")+".",
 		getCmdHelpDefaultFooter(cmd),
 	)
 }

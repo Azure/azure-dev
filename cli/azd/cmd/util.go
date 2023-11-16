@@ -59,15 +59,18 @@ func getResourceGroupFollowUp(
 
 	subscriptionId := env.GetSubscriptionId()
 	if resourceGroupName, err := resourceManager.GetResourceGroupName(ctx, subscriptionId, projectConfig); err == nil {
-		defaultFollowUpText := fmt.Sprintf(
-			"You can view the resources created under the resource group %s in Azure Portal:", resourceGroupName)
+		followUp = fmt.Sprintf(
+			"You can view the resources created under the resource group %s in the %s",
+			output.WithHighLightFormat(resourceGroupName),
+			azurePortalLink(subscriptionId, resourceGroupName),
+		)
 		if whatIf {
-			defaultFollowUpText = fmt.Sprintf(
-				"You can view the current resources under the resource group %s in Azure Portal:", resourceGroupName)
+			followUp = fmt.Sprintf(
+				"You can view the current resources under the resource group %s in the %s",
+				output.WithHighLightFormat(resourceGroupName),
+				azurePortalLink(subscriptionId, resourceGroupName),
+			)
 		}
-		followUp = fmt.Sprintf("%s\n%s",
-			defaultFollowUpText,
-			azurePortalLink(subscriptionId, resourceGroupName))
 	}
 
 	return followUp
@@ -77,10 +80,10 @@ func azurePortalLink(subscriptionId, resourceGroupName string) string {
 	if subscriptionId == "" || resourceGroupName == "" {
 		return ""
 	}
-	return output.WithLinkFormat(fmt.Sprintf(
+	return output.WithHyperlink(fmt.Sprintf(
 		"https://portal.azure.com/#@/resource/subscriptions/%s/resourceGroups/%s/overview",
 		subscriptionId,
-		resourceGroupName))
+		resourceGroupName), "Azure Portal")
 }
 
 func serviceNameWarningCheck(console input.Console, serviceNameFlag string, commandName string) {

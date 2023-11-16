@@ -155,7 +155,7 @@ func (at *staticWebAppTarget) Endpoints(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	targetResource *environment.TargetResource,
-) ([]string, error) {
+) ([]*Endpoint, error) {
 	// TODO: Enhance for multi-environment support
 	// https://github.com/Azure/azure-dev/issues/1152
 	if envProps, err := at.cli.GetStaticWebAppEnvironmentProperties(
@@ -167,7 +167,9 @@ func (at *staticWebAppTarget) Endpoints(
 	); err != nil {
 		return nil, fmt.Errorf("fetching service properties: %w", err)
 	} else {
-		return []string{fmt.Sprintf("https://%s/", envProps.Hostname)}, nil
+		return []*Endpoint{
+			{Url: fmt.Sprintf("https://%s/", envProps.Hostname)},
+		}, nil
 	}
 }
 

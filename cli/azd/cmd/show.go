@@ -266,7 +266,7 @@ func (s *showAction) serviceEndpoint(
 		return ""
 	}
 
-	return endpoints[0]
+	return endpoints[0].Url
 }
 
 func showTypeFromLanguage(language project.ServiceLanguageKind) contracts.ShowType {

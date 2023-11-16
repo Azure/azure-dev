@@ -574,8 +574,9 @@ func (sm *serviceManager) GetFrameworkService(ctx context.Context, serviceConfig
 	return frameworkService, nil
 }
 
-func OverriddenEndpoints(ctx context.Context, serviceConfig *ServiceConfig, env *environment.Environment) []string {
+func OverriddenEndpoints(ctx context.Context, serviceConfig *ServiceConfig, env *environment.Environment) []*Endpoint {
 	overriddenEndpoints := env.GetServiceProperty(serviceConfig.Name, "ENDPOINTS")
+	finalEndpoints := []*Endpoint{}
 	if overriddenEndpoints != "" {
 		var endpoints []string
 		err := json.Unmarshal([]byte(overriddenEndpoints), &endpoints)
@@ -588,10 +589,12 @@ func OverriddenEndpoints(ctx context.Context, serviceConfig *ServiceConfig, env 
 				err)
 		}
 
-		return endpoints
+		for _, url := range endpoints {
+			finalEndpoints = append(finalEndpoints, &Endpoint{Url: url})
+		}
 	}
 
-	return nil
+	return finalEndpoints
 }
 
 // Attempts to retrieve the result of a previous operation from the cache

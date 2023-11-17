@@ -98,6 +98,10 @@ func newShowAction(
 }
 
 func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+
+	s.console.ShowSpinner(ctx, "Gathering information about your app and its resources...", input.Step)
+	defer s.console.StopSpinner(ctx, "", input.Step)
+
 	res := contracts.ShowResult{
 		Name:     s.projectConfig.Name,
 		Services: make(map[string]contracts.ShowService),

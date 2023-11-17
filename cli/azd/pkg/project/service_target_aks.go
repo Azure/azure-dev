@@ -13,6 +13,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/ext"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/kubectl"
@@ -55,6 +58,7 @@ type AksServiceOptions struct {
 type aksTarget struct {
 	env                    *environment.Environment
 	envManager             environment.Manager
+	console                input.Console
 	managedClustersService azcli.ManagedClustersService
 	resourceManager        ResourceManager
 	kubectl                kubectl.KubectlCli
@@ -65,6 +69,7 @@ type aksTarget struct {
 func NewAksTarget(
 	env *environment.Environment,
 	envManager environment.Manager,
+	console input.Console,
 	managedClustersService azcli.ManagedClustersService,
 	resourceManager ResourceManager,
 	kubectlCli kubectl.KubectlCli,
@@ -73,6 +78,7 @@ func NewAksTarget(
 	return &aksTarget{
 		env:                    env,
 		envManager:             envManager,
+		console:                console,
 		managedClustersService: managedClustersService,
 		resourceManager:        resourceManager,
 		kubectl:                kubectlCli,
@@ -91,32 +97,30 @@ func (t *aksTarget) RequiredExternalTools(ctx context.Context) []tools.ExternalT
 
 // Initializes the AKS service target
 func (t *aksTarget) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
-	// If a KUBECONFIG env var is set, use it.
-	kubeConfig := t.env.Getenv(kubectl.KubeConfigEnvVarName)
-	if kubeConfig != "" {
-		t.kubectl.SetKubeConfig(kubeConfig)
+	// Ensure that the k8s context has been configured by the time a deploy operation is performed.
+	// We attach to "postprovision" so that any predeploy or postprovision hooks can take advantage of the configuration
+	err := serviceConfig.Project.AddHandler(
+		"postprovision",
+		func(ctx context.Context, args ProjectLifecycleEventArgs) error {
+			return t.setK8sContext(ctx, serviceConfig, "postprovision")
+		},
+	)
+
+	if err != nil {
+		return fmt.Errorf("failed adding postprovision handler, %w", err)
 	}
 
-	return serviceConfig.Project.AddHandler("postprovision",
-		func(ctx context.Context, args ProjectLifecycleEventArgs) error {
-			targetResource, err := t.resourceManager.GetTargetResource(ctx, t.env.GetSubscriptionId(), serviceConfig)
-			if err != nil {
-				return err
-			}
+	// Ensure that the k8s context has been configured by the time a deploy operation is performed.
+	// We attach to "predeploy" so that any predeploy hooks can take advantage of the configuration
+	err = serviceConfig.AddHandler("predeploy", func(ctx context.Context, args ServiceLifecycleEventArgs) error {
+		return t.setK8sContext(ctx, serviceConfig, "predeploy")
+	})
 
-			defaultNamespace := t.getK8sNamespace(serviceConfig)
-			err = t.ensureClusterContext(ctx, serviceConfig, targetResource, defaultNamespace)
-			if err != nil {
-				return err
-			}
+	if err != nil {
+		return fmt.Errorf("failed adding predeploy handler, %w", err)
+	}
 
-			err = t.ensureNamespace(ctx, defaultNamespace)
-			if err != nil {
-				return err
-			}
-
-			return nil
-		})
+	return nil
 }
 
 // Prepares and tags the container image from the build output based on the specified service configuration
@@ -155,28 +159,8 @@ func (t *aksTarget) Deploy(
 			containerDeployTask := t.containerHelper.Deploy(ctx, serviceConfig, packageOutput, targetResource)
 			syncProgress(task, containerDeployTask.Progress())
 
-			env := t.env.Dotenv()
-			t.kubectl.SetEnv(env)
-
-			// If a KUBECONFIG env var is set, use it.
-			// Check is required here again in the event KUBECONFIG was set via a postprovision or predeploy hook
-			kubeConfig := t.env.Getenv(kubectl.KubeConfigEnvVarName)
-			if kubeConfig != "" {
-				t.kubectl.SetKubeConfig(kubeConfig)
-			}
-
-			task.SetProgress(NewServiceProgress("Getting AKS credentials"))
-			defaultNamespace := t.getK8sNamespace(serviceConfig)
-			if err := t.ensureClusterContext(ctx, serviceConfig, targetResource, defaultNamespace); err != nil {
-				task.SetError(err)
-				return
-			}
-
-			task.SetProgress(NewServiceProgress("Creating k8s namespace"))
-			if err := t.ensureNamespace(ctx, defaultNamespace); err != nil {
-				task.SetError(err)
-				return
-			}
+			// Sync environment
+			t.kubectl.SetEnv(t.env.Dotenv())
 
 			task.SetProgress(NewServiceProgress("Applying k8s manifests"))
 			deploymentPath := serviceConfig.K8s.DeploymentPath
@@ -293,16 +277,16 @@ func (t *aksTarget) ensureClusterContext(
 	serviceConfig *ServiceConfig,
 	targetResource *environment.TargetResource,
 	defaultNamespace string,
-) error {
+) (string, error) {
 	kubeConfigPath := t.env.Getenv(kubectl.KubeConfigEnvVarName)
 	if kubeConfigPath != "" {
-		return nil
+		return kubeConfigPath, nil
 	}
 
 	// Login to AKS cluster
 	clusterName, has := t.env.LookupEnv(environment.AksClusterEnvVarName)
 	if !has {
-		return fmt.Errorf(
+		return "", fmt.Errorf(
 			"could not determine AKS cluster, ensure %s is set as an output of your infrastructure",
 			environment.AksClusterEnvVarName,
 		)
@@ -316,14 +300,14 @@ func (t *aksTarget) ensureClusterContext(
 		clusterName,
 	)
 	if err != nil {
-		return fmt.Errorf(
+		return "", fmt.Errorf(
 			"failed retrieving cluster admin credentials. Ensure your cluster has been configured to support admin credentials, %w",
 			err,
 		)
 	}
 
 	if len(clusterCreds.Kubeconfigs) == 0 {
-		return fmt.Errorf(
+		return "", fmt.Errorf(
 			"cluster credentials is empty. Ensure your cluster has been configured to support admin credentials. , %w",
 			err,
 		)
@@ -331,12 +315,12 @@ func (t *aksTarget) ensureClusterContext(
 
 	// The kubeConfig that we care about will also be at position 0
 	// I don't know if there is a valid use case where this credential results would container multiple configs
-	err = t.configureK8sContext(ctx, clusterName, defaultNamespace, clusterCreds.Kubeconfigs[0])
+	kubeConfigPath, err = t.configureK8sContext(ctx, clusterName, defaultNamespace, clusterCreds.Kubeconfigs[0])
 	if err != nil {
-		return err
+		return "", err
 	}
 
-	return nil
+	return kubeConfigPath, nil
 }
 
 // Ensures the k8s namespace exists otherwise creates it
@@ -366,15 +350,15 @@ func (t *aksTarget) configureK8sContext(
 	clusterName string,
 	namespace string,
 	credentialResult *armcontainerservice.CredentialResult,
-) error {
+) (string, error) {
 	kubeConfigManager, err := kubectl.NewKubeConfigManager(t.kubectl)
 	if err != nil {
-		return err
+		return "", err
 	}
 
 	kubeConfig, err := kubectl.ParseKubeConfig(ctx, credentialResult.Value)
 	if err != nil {
-		return fmt.Errorf(
+		return "", fmt.Errorf(
 			"failed parsing kube config. Ensure your configuration is valid yaml. %w",
 			err,
 		)
@@ -383,28 +367,19 @@ func (t *aksTarget) configureK8sContext(
 	// Set default namespace for the context
 	// This avoids having to specify the namespace for every kubectl command
 	kubeConfig.Contexts[0].Context.Namespace = namespace
-	if err := kubeConfigManager.SaveKubeConfig(ctx, clusterName, kubeConfig); err != nil {
-		return fmt.Errorf(
-			"failed saving kube config. Ensure write permissions to your local ~/.kube directory. %w",
-			err,
-		)
-	}
-
-	if err := kubeConfigManager.MergeConfigs(ctx, "config", "config", clusterName); err != nil {
-		return fmt.Errorf(
-			"failed merging kube configs. Verify your k8s configuration is valid. %w",
-			err,
-		)
+	kubeConfigPath, err := kubeConfigManager.AddOrUpdateContext(ctx, clusterName, kubeConfig)
+	if err != nil {
+		return "", fmt.Errorf("failed adding/updating kube context, %w", err)
 	}
 
 	if _, err := t.kubectl.ConfigUseContext(ctx, clusterName, nil); err != nil {
-		return fmt.Errorf(
+		return "", fmt.Errorf(
 			"failed setting kube context '%s'. Ensure the specified context exists. %w", clusterName,
 			err,
 		)
 	}
 
-	return nil
+	return kubeConfigPath, nil
 }
 
 // Finds a deployment using the specified deploymentNameFilter string
@@ -566,4 +541,40 @@ func (t *aksTarget) getK8sNamespace(serviceConfig *ServiceConfig) string {
 	}
 
 	return namespace
+}
+
+func (t *aksTarget) setK8sContext(ctx context.Context, serviceConfig *ServiceConfig, eventName ext.Event) error {
+	t.kubectl.SetEnv(t.env.Dotenv())
+	hasCustomKubeConfig := false
+
+	// If a KUBECONFIG env var is set, use it.
+	kubeConfigPath := t.env.Getenv(kubectl.KubeConfigEnvVarName)
+	if kubeConfigPath != "" {
+		t.kubectl.SetKubeConfig(kubeConfigPath)
+		hasCustomKubeConfig = true
+	}
+
+	targetResource, err := t.resourceManager.GetTargetResource(ctx, t.env.GetSubscriptionId(), serviceConfig)
+	if err != nil {
+		return err
+	}
+
+	defaultNamespace := t.getK8sNamespace(serviceConfig)
+	_, err = t.ensureClusterContext(ctx, serviceConfig, targetResource, defaultNamespace)
+	if err != nil {
+		return err
+	}
+
+	err = t.ensureNamespace(ctx, defaultNamespace)
+	if err != nil {
+		return err
+	}
+
+	// Display message to the user when we detect they are using a non-default KUBECONFIG configuration
+	// In standard AZD AKS deployment users should not typically need to set a custom KUBECONFIG
+	if hasCustomKubeConfig && eventName == "predeploy" {
+		t.console.Message(ctx, output.WithWarningFormat("Using KUBECONFIG @ %s\n", kubeConfigPath))
+	}
+
+	return nil
 }

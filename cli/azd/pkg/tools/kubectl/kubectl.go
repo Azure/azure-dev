@@ -139,7 +139,9 @@ func (cli *kubectlCli) Name() string {
 
 // Sets the env vars available to the CLI
 func (cli *kubectlCli) SetEnv(envValues map[string]string) {
-	cli.env = envValues
+	for key, value := range envValues {
+		cli.env[key] = value
+	}
 }
 
 // Sets the KUBECONFIG environment variable

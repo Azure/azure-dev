@@ -14,8 +14,8 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v2"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
-	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -26,17 +26,20 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/kubectl"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
-	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazsdk"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
 	"github.com/azure/azure-dev/cli/azd/test/ostest"
 	"github.com/benbjohnson/clock"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 )
 
 func Test_NewAksTarget(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
+	err := setupMocksForAksTarget(mockContext)
+	require.NoError(t, err)
+
 	serviceConfig := createTestServiceConfig("./src/api", AksTarget, ServiceLanguageTypeScript)
 	env := createEnv()
 
@@ -77,6 +80,9 @@ func Test_Package_Deploy_HappyPath(t *testing.T) {
 	env := createEnv()
 
 	serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env)
+	err = simulateInitliaze(*mockContext.Context, serviceTarget, serviceConfig)
+	require.NoError(t, err)
+
 	err = setupK8sManifests(t, serviceConfig)
 	require.NoError(t, err)
 
@@ -127,21 +133,9 @@ func Test_Deploy_No_Cluster_Name(t *testing.T) {
 	env.DotenvDelete(environment.AksClusterEnvVarName)
 
 	serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env)
-	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "CLUSTER_NAME", string(infra.AzureResourceTypeManagedCluster))
-	packageOutput := &ServicePackageResult{
-		Build: &ServiceBuildResult{BuildOutputPath: "IMAGE_ID"},
-		Details: &dockerPackageResult{
-			ImageTag: "IMAGE_TAG",
-		},
-	}
-
-	deployTask := serviceTarget.Deploy(*mockContext.Context, serviceConfig, packageOutput, scope)
-	logProgress(deployTask)
-
-	deployResult, err := deployTask.Await()
+	err = simulateInitliaze(*mockContext.Context, serviceTarget, serviceConfig)
 	require.Error(t, err)
 	require.ErrorContains(t, err, "could not determine AKS cluster")
-	require.Nil(t, deployResult)
 }
 
 func Test_Deploy_No_Credentials(t *testing.T) {
@@ -161,21 +155,9 @@ func Test_Deploy_No_Credentials(t *testing.T) {
 	env := createEnv()
 
 	serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env)
-	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "CLUSTER_NAME", string(infra.AzureResourceTypeManagedCluster))
-	packageOutput := &ServicePackageResult{
-		Build: &ServiceBuildResult{BuildOutputPath: "IMAGE_ID"},
-		Details: &dockerPackageResult{
-			ImageTag: "IMAGE_TAG",
-		},
-	}
-
-	deployTask := serviceTarget.Deploy(*mockContext.Context, serviceConfig, packageOutput, scope)
-	logProgress(deployTask)
-	deployResult, err := deployTask.Await()
-
+	err = simulateInitliaze(*mockContext.Context, serviceTarget, serviceConfig)
 	require.Error(t, err)
 	require.ErrorContains(t, err, "failed retrieving cluster admin credentials")
-	require.Nil(t, deployResult)
 }
 
 func setupK8sManifests(t *testing.T, serviceConfig *ServiceConfig) error {
@@ -207,6 +189,23 @@ func setupMocksForAksTarget(mockContext *mocks.MockContext) error {
 	setupMocksForAcr(mockContext)
 	setupMocksForKubectl(mockContext)
 	setupMocksForDocker(mockContext)
+
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet && strings.Contains(request.URL.String(), "resources?$filter=tagName")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		result := armresources.ResourceListResult{
+			Value: []*armresources.GenericResourceExpanded{
+				{
+					ID:       convert.RefOf("RESOURCE_ID"),
+					Location: convert.RefOf("eastus2"),
+					Name:     convert.RefOf("Resource"),
+					Type:     convert.RefOf("Microsoft.ContainerService/managedClusters"),
+				},
+			},
+		}
+
+		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, result)
+	})
 
 	return nil
 }
@@ -521,12 +520,17 @@ func createAksServiceTarget(
 	envManager := &mockenv.MockEnvManager{}
 	envManager.On("Save", *mockContext.Context, env).Return(nil)
 
-	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
-	resourceManager := NewResourceManager(
-		env,
-		azCli,
-		azapi.NewDeploymentOperations(credentialProvider, mockContext.HttpClient),
+	resourceManager := &MockResourceManager{}
+	targetResource := environment.NewTargetResource(
+		"SUBSCRIPTION_ID",
+		"RESOURCE_GROUP",
+		"CLUSTER_NAME",
+		string(infra.AzureResourceTypeManagedCluster),
 	)
+	resourceManager.
+		On("GetTargetResource", *mockContext.Context, "SUBSCRIPTION_ID", serviceConfig).
+		Return(targetResource, nil)
+
 	managedClustersService := azcli.NewManagedClustersService(credentialProvider, mockContext.HttpClient)
 	containerRegistryService := azcli.NewContainerRegistryService(credentialProvider, mockContext.HttpClient, dockerCli)
 	containerHelper := NewContainerHelper(env, envManager, clock.NewMock(), containerRegistryService, dockerCli)
@@ -534,11 +538,29 @@ func createAksServiceTarget(
 	return NewAksTarget(
 		env,
 		envManager,
+		mockContext.Console,
 		managedClustersService,
 		resourceManager,
 		kubeCtl,
 		containerHelper,
 	)
+}
+
+func simulateInitliaze(ctx context.Context, serviceTarget ServiceTarget, serviceConfig *ServiceConfig) error {
+	if err := serviceTarget.Initialize(ctx, serviceConfig); err != nil {
+		return err
+	}
+
+	err := serviceConfig.RaiseEvent(ctx, "predeploy", ServiceLifecycleEventArgs{
+		Project: serviceConfig.Project,
+		Service: serviceConfig,
+	})
+
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func createTestCluster(clusterName, username string) *kubectl.KubeConfig {
@@ -578,4 +600,47 @@ func logProgress[T comparable, P comparable](task *async.TaskWithProgress[T, P])
 			log.Println(value)
 		}
 	}()
+}
+
+type MockResourceManager struct {
+	mock.Mock
+}
+
+func (m *MockResourceManager) GetResourceGroupName(
+	ctx context.Context,
+	subscriptionId string,
+	projectConfig *ProjectConfig,
+) (string, error) {
+	args := m.Called(ctx, subscriptionId, projectConfig)
+	return args.String(0), args.Error(1)
+}
+
+func (m *MockResourceManager) GetServiceResources(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroupName string,
+	serviceConfig *ServiceConfig,
+) ([]azcli.AzCliResource, error) {
+	args := m.Called(ctx, subscriptionId, resourceGroupName, serviceConfig)
+	return args.Get(0).([]azcli.AzCliResource), args.Error(1)
+}
+
+func (m *MockResourceManager) GetServiceResource(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroupName string,
+	serviceConfig *ServiceConfig,
+	rerunCommand string,
+) (azcli.AzCliResource, error) {
+	args := m.Called(ctx, subscriptionId, resourceGroupName, serviceConfig, rerunCommand)
+	return args.Get(0).(azcli.AzCliResource), args.Error(1)
+}
+
+func (m *MockResourceManager) GetTargetResource(
+	ctx context.Context,
+	subscriptionId string,
+	serviceConfig *ServiceConfig,
+) (*environment.TargetResource, error) {
+	args := m.Called(ctx, subscriptionId, serviceConfig)
+	return args.Get(0).(*environment.TargetResource), args.Error(1)
 }

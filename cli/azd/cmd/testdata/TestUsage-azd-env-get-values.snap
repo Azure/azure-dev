@@ -14,6 +14,6 @@ Global Flags
         --debug      	: Enables debugging and diagnostics logging.
         --no-prompt  	: Accepts the default value instead of prompting, or it fails if there is no default.
 
-Find a bug? Want to let us know how we're doing? Fill out this brief survey: ]8;;https://aka.ms/azure-dev/hatshttps://aka.ms/azure-dev/hats]8;;.
+Find a bug? Want to let us know how we're doing? Fill out this brief survey: https://aka.ms/azure-dev/hats.
 
 

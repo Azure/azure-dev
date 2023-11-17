@@ -2,7 +2,6 @@ package output
 
 import (
 	"fmt"
-	"os"
 
 	"github.com/fatih/color"
 )
@@ -56,10 +55,9 @@ func WithHyperlink(url string, displayName string) string {
 		displayName = url
 	}
 
-	var noColor = os.Getenv("NO_COLOR") != ""
 	var urlOutput string
 
-	if noColor {
+	if color.NoColor {
 		urlOutput = url
 	} else {
 		urlOutput = fmt.Sprintf("\033]8;;%s\007%s\033]8;;\007", url, displayName)

@@ -3,7 +3,7 @@ Manage integrating your application with deployment pipelines. (Beta)
 
   • azd commands (e.g. provision, deploy) can be used within GitHub Actions and Azure Pipelines to test your code against real Azure resources and facilitate deployments.
   • After creating a pipeline definition file, running pipeline config will help configure your deployment pipeline to connect securely to Azure.
-  • For more information on how to use azd in your pipeline, go to: ]8;;https://aka.ms/azure-dev/pipelinehttps://aka.ms/azure-dev/pipeline]8;;.
+  • For more information on how to use azd in your pipeline, go to: https://aka.ms/azure-dev/pipeline.
 
 Usage
   azd pipeline [command]

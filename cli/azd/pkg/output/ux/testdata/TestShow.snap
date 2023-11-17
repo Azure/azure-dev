@@ -4,10 +4,10 @@ To view a different environment, run azd show -e <environment name>
 
 Foo
   Services:
-    xx  ]8;;barbar]8;;
+    xx  bar
   Environments:
     foo [Current]
     Bar
   View in Azure Portal:
-    ]8;;foo.comfoo.com]8;;
+    foo.com
 

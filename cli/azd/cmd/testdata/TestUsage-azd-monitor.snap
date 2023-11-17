@@ -1,5 +1,5 @@
 
-Monitor a deployed application (Beta). For more information, go to: ]8;;https://aka.ms/azure-dev/monitorhttps://aka.ms/azure-dev/monitor]8;;.
+Monitor a deployed application (Beta). For more information, go to: https://aka.ms/azure-dev/monitor.
 
 Usage
   azd monitor [flags]

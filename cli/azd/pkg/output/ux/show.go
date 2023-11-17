@@ -50,7 +50,7 @@ func (s *Show) ToString(currentIndentation string) string {
 		"%s%s%s%s%s%s%s%s%s    %s\n",
 		pickHeader,
 		cHeaderNote,
-		output.WithHighLightFormat("%s\n\n", cShowDifferentEnv),
+		color.HiBlueString("%s\n\n", cShowDifferentEnv),
 		color.HiMagentaString(s.AppName),
 		cServices,
 		services(s.Services),
@@ -65,8 +65,8 @@ func azurePortalLink(link string) string {
 	if link == "" {
 		return fmt.Sprintf(
 			"Application is not yet provisioned. Run %s or %s first.",
-			output.WithHighLightFormat("azd provision"),
-			output.WithHighLightFormat("azd up"),
+			color.HiBlueString("azd provision"),
+			color.HiBlueString("azd up"),
 		)
 	}
 	return output.WithHyperlink(link, "")
@@ -77,14 +77,14 @@ func services(services []*ShowService) string {
 	if servicesCount == 0 {
 		return fmt.Sprintf(
 			"    You don't have services defined. Add your services to %s.",
-			output.WithHighLightFormat("azure.yaml"),
+			color.HiBlueString("azure.yaml"),
 		)
 	}
 	lines := make([]string, servicesCount)
 	for index, service := range services {
 		lines[index] = fmt.Sprintf(
 			"    %s  %s",
-			output.WithHighLightFormat(service.Name),
+			color.HiBlueString(service.Name),
 			output.WithHyperlink(service.IngresUrl, ""),
 		)
 	}
@@ -96,7 +96,7 @@ func environments(environments []*ShowEnvironment) string {
 	if environmentsCount == 0 {
 		return fmt.Sprintf(
 			"    You haven't created any environments. Run %s to create one.",
-			output.WithHighLightFormat("azd env new"),
+			color.HiBlueString("azd env new"),
 		)
 	}
 
@@ -112,7 +112,7 @@ func environments(environments []*ShowEnvironment) string {
 		}
 		lines[index] = fmt.Sprintf(
 			"    %s%s%s",
-			output.WithHighLightFormat(environment.Name),
+			color.HiBlueString(environment.Name),
 			defaultEnv,
 			output.WithGrayFormat(isRemote),
 		)

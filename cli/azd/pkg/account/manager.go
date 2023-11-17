@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"slices"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
-	"golang.org/x/exp/slices"
 )
 
 // JSON document path locations for default subscription & location
@@ -42,14 +42,14 @@ type Manager interface {
 type manager struct {
 	// Path to the local azd user configuration file
 	filePath      string
-	configManager config.Manager
+	configManager config.FileConfigManager
 	config        config.Config
 	subManager    *SubscriptionsManager
 }
 
 // Creates a new Account Manager instance
 func NewManager(
-	configManager config.Manager,
+	configManager config.FileConfigManager,
 	subManager *SubscriptionsManager) (Manager, error) {
 	filePath, err := config.GetUserConfigFilePath()
 	if err != nil {

@@ -9,23 +9,34 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"os"
+	"path"
+	"path/filepath"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/events"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/pack"
+	"go.opentelemetry.io/otel/trace"
 )
 
 type DockerProjectOptions struct {
-	Path      string           `json:"path"`
-	Context   string           `json:"context"`
-	Platform  string           `json:"platform"`
-	Tag       ExpandableString `json:"tag"`
-	BuildArgs []string         `json:"buildArgs"`
+	Path      string           `yaml:"path,omitempty"      json:"path,omitempty"`
+	Context   string           `yaml:"context,omitempty"   json:"context,omitempty"`
+	Platform  string           `yaml:"platform,omitempty"  json:"platform,omitempty"`
+	Tag       ExpandableString `yaml:"tag,omitempty"       json:"tag,omitempty"`
+	BuildArgs []string         `yaml:"buildArgs,omitempty" json:"buildArgs,omitempty"`
 }
 
 type dockerBuildResult struct {
@@ -65,11 +76,13 @@ func (dpr *dockerPackageResult) MarshalJSON() ([]byte, error) {
 }
 
 type dockerProject struct {
-	env             *environment.Environment
-	docker          docker.Docker
-	framework       FrameworkService
-	containerHelper *ContainerHelper
-	console         input.Console
+	env                 *environment.Environment
+	docker              docker.Docker
+	framework           FrameworkService
+	containerHelper     *ContainerHelper
+	console             input.Console
+	alphaFeatureManager *alpha.FeatureManager
+	commandRunner       exec.CommandRunner
 }
 
 // NewDockerProject creates a new instance of a Azd project that
@@ -79,12 +92,16 @@ func NewDockerProject(
 	docker docker.Docker,
 	containerHelper *ContainerHelper,
 	console input.Console,
+	alphaFeatureManager *alpha.FeatureManager,
+	commandRunner exec.CommandRunner,
 ) CompositeFrameworkService {
 	return &dockerProject{
-		env:             env,
-		docker:          docker,
-		containerHelper: containerHelper,
-		console:         console,
+		env:                 env,
+		docker:              docker,
+		containerHelper:     containerHelper,
+		console:             console,
+		alphaFeatureManager: alphaFeatureManager,
+		commandRunner:       commandRunner,
 	}
 }
 
@@ -153,9 +170,29 @@ func (p *dockerProject) Build(
 				strings.ToLower(serviceConfig.Name),
 			)
 
+			path := filepath.Join(serviceConfig.Path(), dockerOptions.Path)
+			_, err := os.Stat(path)
+			if err != nil && !errors.Is(err, os.ErrNotExist) {
+				task.SetError(fmt.Errorf("reading dockerfile: %w", err))
+				return
+			}
+
+			if errors.Is(err, os.ErrNotExist) {
+				// Build the container from source
+				task.SetProgress(NewServiceProgress("Building Docker image from source"))
+				res, err := p.packBuild(ctx, serviceConfig, dockerOptions, imageName)
+				if err != nil {
+					task.SetError(err)
+					return
+				}
+
+				res.Restore = restoreOutput
+				task.SetResult(res)
+				return
+			}
+
 			// Build the container
 			task.SetProgress(NewServiceProgress("Building Docker image"))
-
 			previewerWriter := p.console.ShowPreviewer(ctx,
 				&input.ShowPreviewerOptions{
 					Prefix:       "  ",
@@ -172,7 +209,7 @@ func (p *dockerProject) Build(
 				dockerOptions.BuildArgs,
 				previewerWriter,
 			)
-			p.console.StopPreviewer(ctx)
+			p.console.StopPreviewer(ctx, false)
 			if err != nil {
 				task.SetError(fmt.Errorf("building container: %s at %s: %w", serviceConfig.Name, dockerOptions.Context, err))
 				return
@@ -228,6 +265,166 @@ func (p *dockerProject) Package(
 			})
 		},
 	)
+}
+
+// Default builder image to produce container images from source
+const DefaultBuilderImage = "mcr.microsoft.com/oryx/builder:debian-bullseye-20231004.1"
+const DefaultDotNetBuilderImage = "mcr.microsoft.com/oryx/builder:debian-buster-20231004.1"
+
+func (p *dockerProject) packBuild(
+	ctx context.Context,
+	svc *ServiceConfig,
+	dockerOptions DockerProjectOptions,
+	imageName string) (*ServiceBuildResult, error) {
+	packCli, err := pack.NewPackCli(ctx, p.console, p.commandRunner)
+	if err != nil {
+		return nil, err
+	}
+	builder := DefaultBuilderImage
+	if svc.Language == ServiceLanguageDotNet {
+		builder = DefaultDotNetBuilderImage
+	}
+
+	environ := []string{}
+	userDefinedImage := false
+	if os.Getenv("AZD_BUILDER_IMAGE") != "" {
+		builder = os.Getenv("AZD_BUILDER_IMAGE")
+		userDefinedImage = true
+	}
+
+	if !userDefinedImage {
+		// Always default to port 80 for consistency across languages
+		environ = append(environ, "ORYX_RUNTIME_PORT=80")
+
+		if svc.OutputPath != "" && (svc.Language == ServiceLanguageTypeScript || svc.Language == ServiceLanguageJavaScript) {
+			inDockerOutputPath := path.Join("/workspace", svc.OutputPath)
+			// A dist folder has been set.
+			// We assume that the service is a front-end service, configuring a nginx web server to serve the static content
+			// produced.
+			environ = append(environ,
+				"ORYX_RUNTIME_IMAGE=nginx:1.25.2-bookworm",
+				fmt.Sprintf(
+					//nolint:lll
+					"ORYX_RUNTIME_SCRIPT=[ -d \"%s\" ] || { echo \"error: directory '%s' does not exist. ensure the 'dist' path in azure.yaml is specified correctly.\"; exit 1; } && "+
+						"rm -rf /usr/share/nginx/html && ln -sT %s /usr/share/nginx/html && "+
+						"nginx -g 'daemon off;'",
+					inDockerOutputPath,
+					svc.OutputPath,
+					inDockerOutputPath,
+				))
+		}
+
+		if svc.Language == ServiceLanguagePython {
+			pyEnviron, err := getEnvironForPython(ctx, svc)
+			if err != nil {
+				return nil, err
+			}
+			if len(pyEnviron) > 0 {
+				environ = append(environ, pyEnviron...)
+			}
+		}
+	}
+
+	previewer := p.console.ShowPreviewer(ctx,
+		&input.ShowPreviewerOptions{
+			Prefix:       "  ",
+			MaxLineCount: 8,
+			Title:        "Docker (pack) Output",
+		})
+
+	ctx, span := tracing.Start(
+		ctx,
+		events.PackBuildEvent,
+		trace.WithAttributes(fields.ProjectServiceLanguageKey.String(string(svc.Language))))
+
+	img, tag := docker.SplitDockerImage(builder)
+	if userDefinedImage {
+		span.SetAttributes(
+			fields.StringHashed(fields.PackBuilderImage, img),
+			fields.StringHashed(fields.PackBuilderTag, tag),
+		)
+	} else {
+		span.SetAttributes(
+			fields.PackBuilderImage.String(img),
+			fields.PackBuilderTag.String(tag),
+		)
+	}
+
+	err = packCli.Build(
+		ctx,
+		svc.Path(),
+		builder,
+		imageName,
+		environ,
+		previewer)
+	p.console.StopPreviewer(ctx, false)
+	if err != nil {
+		span.EndWithStatus(err)
+
+		var statusCodeErr *pack.StatusCodeError
+		if errors.As(err, &statusCodeErr) && statusCodeErr.Code == pack.StatusCodeUndetectedNoError {
+			return nil, &azcli.ErrorWithSuggestion{
+				Err: err,
+				Suggestion: "No Dockerfile was found, and image could not be automatically built from source. " +
+					fmt.Sprintf(
+						"\nSuggested action: Author a Dockerfile and save it as %s",
+						filepath.Join(svc.Path(), dockerOptions.Path)),
+			}
+		}
+
+		return nil, err
+	}
+
+	span.End()
+
+	imageId, err := p.docker.Inspect(ctx, imageName, "{{.Id}}")
+	if err != nil {
+		return nil, err
+	}
+	imageId = strings.TrimSpace(imageId)
+
+	return &ServiceBuildResult{
+		BuildOutputPath: imageId,
+		Details: &dockerBuildResult{
+			ImageId:   imageId,
+			ImageName: imageName,
+		},
+	}, nil
+}
+
+func getEnvironForPython(ctx context.Context, svc *ServiceConfig) ([]string, error) {
+	prj, err := appdetect.DetectDirectory(ctx, svc.Path())
+	if err != nil {
+		return nil, err
+	}
+
+	if prj == nil { // Undetected project, resume build from the Oryx builder
+		return nil, nil
+	}
+
+	// Support for FastAPI apps since the Oryx builder does not support it yet
+	for _, dep := range prj.Dependencies {
+		if dep == appdetect.PyFastApi {
+			launch, err := appdetect.PyFastApiLaunch(prj.Path)
+			if err != nil {
+				return nil, err
+			}
+
+			// If launch isn't detected, fallback to default Oryx runtime logic, which may recover for scenarios
+			// such as a simple main entrypoint launch.
+			if launch == "" {
+				return nil, nil
+			}
+
+			return []string{
+				"POST_BUILD_COMMAND=pip install uvicorn",
+				//nolint:lll
+				"ORYX_RUNTIME_SCRIPT=oryx create-script -appPath ./oryx-output -bindPort 80 -userStartupCommand " +
+					"'uvicorn " + launch + " --port $PORT --host $HOST' && ./run.sh"}, nil
+		}
+	}
+
+	return nil, nil
 }
 
 func getDockerOptionsWithDefaults(options DockerProjectOptions) DockerProjectOptions {

@@ -2,6 +2,7 @@ package containerapps
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v2"
@@ -11,6 +12,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/benbjohnson/clock"
+	"gopkg.in/yaml.v3"
 )
 
 // ContainerAppService exposes operations for managing Azure Container Apps
@@ -22,6 +24,13 @@ type ContainerAppService interface {
 		resourceGroup,
 		appName string,
 	) (*ContainerAppIngressConfiguration, error)
+	DeployYaml(
+		ctx context.Context,
+		subscriptionId string,
+		resourceGroupName string,
+		appName string,
+		containerAppYaml []byte,
+	) error
 	// Adds and activates a new revision to the specified container app
 	AddRevision(
 		ctx context.Context,
@@ -30,6 +39,11 @@ type ContainerAppService interface {
 		appName string,
 		imageName string,
 	) error
+	ListSecrets(ctx context.Context,
+		subscriptionId string,
+		resourceGroupName string,
+		appName string,
+	) ([]*armappcontainers.ContainerAppSecret, error)
 }
 
 // NewContainerAppService creates a new ContainerAppService
@@ -82,6 +96,46 @@ func (cas *containerAppService) GetIngressConfiguration(
 	return &ContainerAppIngressConfiguration{
 		HostNames: hostNames,
 	}, nil
+}
+
+func (cas *containerAppService) DeployYaml(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroupName string,
+	appName string,
+	containerAppYaml []byte,
+) error {
+	appClient, err := cas.createContainerAppsClient(ctx, subscriptionId)
+	if err != nil {
+		return err
+	}
+
+	var obj map[string]any
+	if err := yaml.Unmarshal(containerAppYaml, &obj); err != nil {
+		return fmt.Errorf("decoding yaml: %w", err)
+	}
+
+	containerAppJson, err := json.Marshal(obj)
+	if err != nil {
+		panic("should not have failed")
+	}
+
+	var containerApp armappcontainers.ContainerApp
+	if err := json.Unmarshal(containerAppJson, &containerApp); err != nil {
+		return fmt.Errorf("converting to container app type: %w", err)
+	}
+
+	poller, err := appClient.BeginCreateOrUpdate(ctx, resourceGroupName, appName, containerApp, nil)
+	if err != nil {
+		return fmt.Errorf("applying manifest: %w", err)
+	}
+
+	_, err = poller.PollUntilDone(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("polling for container app update completion: %w", err)
+	}
+
+	return nil
 }
 
 // Adds and activates a new revision to the specified container app
@@ -137,6 +191,25 @@ func (cas *containerAppService) AddRevision(
 	}
 
 	return nil
+}
+
+func (cas *containerAppService) ListSecrets(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroupName string,
+	appName string,
+) ([]*armappcontainers.ContainerAppSecret, error) {
+	appClient, err := cas.createContainerAppsClient(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	secretsResponse, err := appClient.ListSecrets(ctx, resourceGroupName, appName, nil)
+	if err != nil {
+		return nil, fmt.Errorf("listing secrets: %w", err)
+	}
+
+	return secretsResponse.Value, nil
 }
 
 func (cas *containerAppService) syncSecrets(

@@ -27,6 +27,7 @@ const (
 	AzureResourceTypeResourceGroup           AzureResourceType = "Microsoft.Resources/resourceGroups"
 	AzureResourceTypeStorageAccount          AzureResourceType = "Microsoft.Storage/storageAccounts"
 	AzureResourceTypeStaticWebSite           AzureResourceType = "Microsoft.Web/staticSites"
+	AzureResourceTypeServiceBusNamespace     AzureResourceType = "Microsoft.ServiceBus/namespaces"
 	AzureResourceTypeServicePlan             AzureResourceType = "Microsoft.Web/serverfarms"
 	AzureResourceTypeSqlServer               AzureResourceType = "Microsoft.Sql/servers"
 	AzureResourceTypeVirtualNetwork          AzureResourceType = "Microsoft.Network/virtualNetworks"
@@ -36,6 +37,9 @@ const (
 	AzureResourceTypeAgentPool               AzureResourceType = "Microsoft.ContainerService/managedClusters/agentPools"
 	AzureResourceTypeCognitiveServiceAccount AzureResourceType = "Microsoft.CognitiveServices/accounts"
 	AzureResourceTypeSearchService           AzureResourceType = "Microsoft.Search/searchServices"
+	AzurePrivateEndpoint                     AzureResourceType = "Microsoft.Network/privateEndpoints"
+	AzureDevCenter                           AzureResourceType = "Microsoft.DevCenter/devcenters"
+	AzureDevCenterProject                    AzureResourceType = "Microsoft.DevCenter/projects"
 )
 
 const resourceLevelSeparator = "/"
@@ -69,6 +73,8 @@ func GetResourceTypeDisplayName(resourceType AzureResourceType) string {
 		return "Container App"
 	case AzureResourceTypeContainerAppEnvironment:
 		return "Container Apps Environment"
+	case AzureResourceTypeServiceBusNamespace:
+		return "Service Bus Namespace"
 	case AzureResourceTypeServicePlan:
 		return "App Service plan"
 	case AzureResourceTypeCosmosDb:
@@ -99,6 +105,12 @@ func GetResourceTypeDisplayName(resourceType AzureResourceType) string {
 		return "Search service"
 	case AzureResourceTypeSpringApp:
 		return "Azure Spring Apps"
+	case AzurePrivateEndpoint:
+		return "Private Endpoint"
+	case AzureDevCenter:
+		return "Dev Center"
+	case AzureDevCenterProject:
+		return "Dev Center Project"
 	}
 
 	return ""

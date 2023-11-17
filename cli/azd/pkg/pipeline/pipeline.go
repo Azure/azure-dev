@@ -5,13 +5,13 @@ package pipeline
 
 import (
 	"context"
-	"encoding/json"
 	"os"
 	"path/filepath"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
 // subareaProvider defines the base behavior from any pipeline provider
@@ -103,9 +103,17 @@ type CiProvider interface {
 		ctx context.Context,
 		gitRepo *gitRepositoryDetails,
 		provisioningProvider provisioning.Options,
-		credential json.RawMessage,
+		servicePrincipal *graphsdk.ServicePrincipal,
 		authType PipelineAuthType,
+		credentials *azcli.AzureCredentials,
 	) error
+	// Gets the credential options that should be configured for the provider
+	credentialOptions(
+		ctx context.Context,
+		repoDetails *gitRepositoryDetails,
+		infraOptions provisioning.Options,
+		authType PipelineAuthType,
+	) *CredentialOptions
 }
 
 func folderExists(folderPath string) bool {
@@ -135,12 +143,3 @@ var (
 	azdoFolder   string = filepath.Join(".azdo", "pipelines")
 	azdoYml      string = filepath.Join(azdoFolder, "azure-dev.yml")
 )
-
-func savePipelineProviderToEnv(provider string, env *environment.Environment) error {
-	env.DotenvSet(envPersistedKey, provider)
-	err := env.Save()
-	if err != nil {
-		return err
-	}
-	return nil
-}

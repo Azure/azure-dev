@@ -5,6 +5,7 @@ package auth
 
 import (
 	"context"
+	"encoding/json"
 	"math/rand"
 	"testing"
 
@@ -112,4 +113,109 @@ func TestCredentialCache(t *testing.T) {
 	// read some non-existing data, ensure errCacheKeyNotFound is returned.
 	_, err = c.Read("nonExist")
 	require.ErrorIs(t, err, errCacheKeyNotFound)
+}
+
+type mockContractHolder struct {
+	contract *mockContract
+}
+
+// Marshal implements cache.Marshaler in msal/apps/cache.
+func (c *mockContractHolder) Marshal() ([]byte, error) {
+	return json.Marshal(c.contract)
+}
+
+// Unmarshal implements cache.Unmarshaler in msal/apps/cache.
+func (c *mockContractHolder) Unmarshal(b []byte) error {
+	contract := &mockContract{}
+
+	err := json.Unmarshal(b, contract)
+	if err != nil {
+		return err
+	}
+
+	c.contract = contract
+	return nil
+}
+
+type val struct {
+	Value string `json:"value"`
+}
+
+// mockContract that simulates the MSAL cache contract.
+type mockContract struct {
+	AccessTokens  map[string]val `json:"AccessToken,omitempty"`
+	RefreshTokens map[string]val `json:"RefreshToken,omitempty"`
+	IDTokens      map[string]val `json:"IdToken,omitempty"`
+	Accounts      map[string]val `json:"Account,omitempty"`
+	AppMetaData   map[string]val `json:"AppMetadata,omitempty"`
+
+	// mock remainder fields
+	Remainder map[string]val `json:"Remainder,omitempty"`
+}
+
+func TestKeyNormalization(t *testing.T) {
+	entries := map[string]val{
+		"Upper":           {"Upper"},
+		"lower":           {"lower"},
+		"Upper-And-Lower": {"Upper-And-Lower"},
+		"upper-and-lower": {"upper-and-lower"},
+	}
+	orig := mockContract{
+		AccessTokens:  entries,
+		RefreshTokens: entries,
+		IDTokens:      entries,
+		Accounts:      entries,
+		AppMetaData:   entries,
+		Remainder: map[string]val{
+			"remainder": {"remainder"},
+		},
+	}
+
+	normalizedEntries := map[string]val{
+		"upper":           {"Upper"},
+		"lower":           {"lower"},
+		"upper-and-lower": {"upper-and-lower"},
+	}
+	normalized := mockContract{
+		AccessTokens:  normalizedEntries,
+		RefreshTokens: normalizedEntries,
+		IDTokens:      normalizedEntries,
+		Accounts:      normalizedEntries,
+		AppMetaData:   normalizedEntries,
+		Remainder: map[string]val{
+			"remainder": {"remainder"},
+		},
+	}
+
+	ctx := context.Background()
+	c := msalCacheAdapter{&memoryCache{
+		cache: map[string][]byte{},
+		inner: nil,
+	}}
+
+	// Replace (retrieve) when cache is empty, expect nil
+	h := mockContractHolder{}
+	err := c.Replace(ctx, &h, cache.ReplaceHints{})
+	require.NoError(t, err)
+	require.Nil(t, h.contract)
+
+	// Export (save) with original entry
+	h.contract = &orig
+	err = c.Export(ctx, &h, cache.ExportHints{})
+	require.NoError(t, err)
+	require.JSONEq(t, mustJson(orig), mustJson(h.contract))
+
+	// Replace (retrieve) that will normalize the keys
+	err = c.Replace(ctx, &h, cache.ReplaceHints{})
+	require.NoError(t, err)
+	require.JSONEq(t, mustJson(normalized), mustJson(h.contract))
+}
+
+func mustJson(v any) string {
+	b, err := json.Marshal(v)
+	if err != nil {
+		panic(err)
+	}
+
+	return string(b)
 }

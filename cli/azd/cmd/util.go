@@ -7,16 +7,16 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log"
 	"os"
-	"os/exec"
+	"strings"
 	"time"
 
 	"github.com/AlecAivazis/survey/v2"
-	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	azdExec "github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -28,191 +28,6 @@ import (
 type CmdAnnotations map[string]string
 
 type Asker func(p survey.Prompt, response interface{}) error
-
-func invalidEnvironmentNameMsg(environmentName string) string {
-	return fmt.Sprintf(
-		"environment name '%s' is invalid (it should contain only alphanumeric characters and hyphens)\n",
-		environmentName,
-	)
-}
-
-// ensureValidEnvironmentName ensures the environment name is valid, if it is not, an error is printed
-// and the user is prompted for a new name.
-func ensureValidEnvironmentName(ctx context.Context, environmentName *string, suggest string, console input.Console) error {
-	for !environment.IsValidEnvironmentName(*environmentName) {
-		userInput, err := console.Prompt(ctx, input.ConsoleOptions{
-			Message: "Enter a new environment name:",
-			Help: heredoc.Doc(`
-			A unique string that can be used to differentiate copies of your application in Azure. 
-			
-			This value is typically used by the infrastructure as code templates to name the resource group that contains
-			the infrastructure for your application and to generate a unique suffix that is applied to resources to prevent
-			naming collisions.`),
-			DefaultValue: suggest,
-		})
-
-		if err != nil {
-			return fmt.Errorf("reading environment name: %w", err)
-		}
-
-		*environmentName = userInput
-
-		if !environment.IsValidEnvironmentName(*environmentName) {
-			fmt.Fprint(console.Handles().Stdout, invalidEnvironmentNameMsg(*environmentName))
-		}
-	}
-
-	return nil
-}
-
-type environmentSpec struct {
-	environmentName string
-	subscription    string
-	location        string
-	// suggest is the name that is offered as a suggestion if we need to prompt the user for an environment name.
-	suggest string
-}
-
-// createEnvironment creates a new named environment. If an environment with this name already
-// exists, and error is returned.
-func createEnvironment(
-	ctx context.Context,
-	envSpec environmentSpec,
-	azdCtx *azdcontext.AzdContext,
-	console input.Console,
-) (*environment.Environment, error) {
-	if envSpec.environmentName != "" && !environment.IsValidEnvironmentName(envSpec.environmentName) {
-		errMsg := invalidEnvironmentNameMsg(envSpec.environmentName)
-		fmt.Fprint(console.Handles().Stdout, errMsg)
-		return nil, fmt.Errorf(errMsg)
-	}
-
-	if err := ensureValidEnvironmentName(ctx, &envSpec.environmentName, envSpec.suggest, console); err != nil {
-		return nil, err
-	}
-
-	// Ensure the environment does not already exist:
-	env, err := environment.GetEnvironment(azdCtx, envSpec.environmentName)
-	switch {
-	case errors.Is(err, os.ErrNotExist):
-	case err != nil:
-		return nil, fmt.Errorf("checking for existing environment: %w", err)
-	case err == nil:
-		return nil, fmt.Errorf("environment '%s' already exists", envSpec.environmentName)
-	}
-
-	env.SetEnvName(envSpec.environmentName)
-
-	if envSpec.subscription != "" {
-		env.SetSubscriptionId(envSpec.subscription)
-	}
-
-	if envSpec.location != "" {
-		env.SetLocation(envSpec.location)
-	}
-
-	if err := env.Save(); err != nil {
-		return nil, err
-	}
-
-	return env, nil
-}
-
-func loadEnvironmentIfAvailable() (*environment.Environment, error) {
-	azdCtx, err := azdcontext.NewAzdContext()
-	if err != nil {
-		return nil, err
-	}
-	defaultEnv, err := azdCtx.GetDefaultEnvironmentName()
-	if err != nil {
-		return nil, err
-	}
-	return environment.GetEnvironment(azdCtx, defaultEnv)
-}
-
-func loadOrCreateEnvironment(
-	ctx context.Context,
-	environmentName string,
-	azdCtx *azdcontext.AzdContext,
-	console input.Console,
-) (*environment.Environment, error) {
-	loadOrCreateEnvironment := func() (*environment.Environment, bool, error) {
-		// If there's a default environment, use that
-		if environmentName == "" {
-			var err error
-			environmentName, err = azdCtx.GetDefaultEnvironmentName()
-			if err != nil {
-				return nil, false, fmt.Errorf("getting default environment: %w", err)
-			}
-		}
-
-		if environmentName != "" {
-			env, err := environment.GetEnvironment(azdCtx, environmentName)
-			switch {
-			case errors.Is(err, os.ErrNotExist):
-				msg := fmt.Sprintf("Environment '%s' does not exist, would you like to create it?", environmentName)
-				shouldCreate, promptErr := console.Confirm(ctx, input.ConsoleOptions{
-					Message:      msg,
-					DefaultValue: true,
-				})
-				if promptErr != nil {
-					return nil, false, fmt.Errorf("prompting to create environment '%s': %w", environmentName, promptErr)
-				}
-				if !shouldCreate {
-					return nil, false, fmt.Errorf("environment '%s' not found: %w", environmentName, err)
-				}
-			case err != nil:
-				return nil, false, fmt.Errorf("loading environment '%s': %w", environmentName, err)
-			case err == nil:
-				return env, false, nil
-			}
-		}
-
-		// Two cases if we get to here:
-		// - The user has not specified an environment name (and there was no default environment set)
-		// - The user has specified an environment name, but the named environment didn't exist and they told us they would
-		//   like us to create it.
-		if environmentName != "" && !environment.IsValidEnvironmentName(environmentName) {
-			fmt.Fprintf(
-				console.Handles().Stdout,
-				"environment name '%s' is invalid (it should contain only alphanumeric characters and hyphens)\n",
-				environmentName)
-			return nil, false, fmt.Errorf(
-				"environment name '%s' is invalid (it should contain only alphanumeric characters and hyphens)",
-				environmentName)
-		}
-
-		if err := ensureValidEnvironmentName(ctx, &environmentName, "", console); err != nil {
-			return nil, false, err
-		}
-
-		return environment.EmptyWithRoot(azdCtx.EnvironmentRoot(environmentName)), true, nil
-	}
-
-	env, isNew, err := loadOrCreateEnvironment()
-	switch {
-	case errors.Is(err, os.ErrNotExist):
-		return nil, fmt.Errorf("environment %s does not exist", environmentName)
-	case err != nil:
-		return nil, err
-	}
-
-	if isNew {
-		if env.GetEnvName() == "" {
-			env.SetEnvName(environmentName)
-		}
-
-		if err := env.Save(); err != nil {
-			return nil, err
-		}
-
-		if err := azdCtx.SetDefaultEnvironmentName(env.GetEnvName()); err != nil {
-			return nil, fmt.Errorf("saving default environment: %w", err)
-		}
-	}
-
-	return env, nil
-}
 
 const environmentNameFlag string = "environment"
 
@@ -252,13 +67,20 @@ func getResourceGroupFollowUp(
 		}
 		followUp = fmt.Sprintf("%s\n%s",
 			defaultFollowUpText,
-			output.WithLinkFormat(fmt.Sprintf(
-				"https://portal.azure.com/#@/resource/subscriptions/%s/resourceGroups/%s/overview",
-				subscriptionId,
-				resourceGroupName)))
+			azurePortalLink(subscriptionId, resourceGroupName))
 	}
 
 	return followUp
+}
+
+func azurePortalLink(subscriptionId, resourceGroupName string) string {
+	if subscriptionId == "" || resourceGroupName == "" {
+		return ""
+	}
+	return output.WithLinkFormat(fmt.Sprintf(
+		"https://portal.azure.com/#@/resource/subscriptions/%s/resourceGroups/%s/overview",
+		subscriptionId,
+		resourceGroupName))
 }
 
 func serviceNameWarningCheck(console input.Console, serviceNameFlag string, commandName string) {
@@ -276,6 +98,7 @@ func serviceNameWarningCheck(console input.Console, serviceNameFlag string, comm
 func getTargetServiceName(
 	ctx context.Context,
 	projectManager project.ProjectManager,
+	importManager *project.ImportManager,
 	projectConfig *project.ProjectConfig,
 	commandName string,
 	targetServiceName string,
@@ -303,8 +126,12 @@ func getTargetServiceName(
 		}
 	}
 
-	if targetServiceName != "" && !projectConfig.HasService(targetServiceName) {
-		return "", fmt.Errorf("service name '%s' doesn't exist", targetServiceName)
+	if targetServiceName != "" {
+		if has, err := importManager.HasService(ctx, projectConfig, targetServiceName); err != nil {
+			return "", err
+		} else if !has {
+			return "", fmt.Errorf("service name '%s' doesn't exist", targetServiceName)
+		}
 	}
 
 	return targetServiceName, nil
@@ -328,22 +155,24 @@ func openWithDefaultBrowser(ctx context.Context, console input.Console, url stri
 		return
 	}
 
-	console.Message(ctx, fmt.Sprintf("Opening %s in the default browser...\n", url))
+	cmdRunner := azdExec.NewCommandRunner(nil)
+
 	// In Codespaces and devcontainers a $BROWSER environment variable is
 	// present whose value is an executable that launches the browser when
 	// called with the form:
 	// $BROWSER <url>
-
 	const BrowserEnvVarName = "BROWSER"
 
 	if envBrowser := os.Getenv(BrowserEnvVarName); len(envBrowser) > 0 {
-		err := exec.Command(envBrowser, url).Run()
+		_, err := cmdRunner.Run(ctx, azdExec.RunArgs{
+			Cmd:  envBrowser,
+			Args: []string{url},
+		})
 		if err == nil {
 			return
 		}
-		fmt.Fprintf(
-			console.Handles().Stderr,
-			"warning: failed to open browser configured by $BROWSER: %s\n. Trying with default browser.",
+		log.Printf(
+			"warning: failed to open browser configured by $BROWSER: %s\nTrying with default browser.\n",
 			err.Error(),
 		)
 	}
@@ -353,11 +182,39 @@ func openWithDefaultBrowser(ctx context.Context, console input.Console, url stri
 		return
 	}
 
-	fmt.Fprintf(
-		console.Handles().Stderr,
-		"warning: failed to open default browser: %s\n", err.Error(),
+	log.Printf(
+		"warning: failed to open default browser: %s\nTrying manual launch.", err.Error(),
 	)
 
+	// wsl manual launch. Trying cmd first, and pwsh second
+	_, err = cmdRunner.Run(ctx, azdExec.RunArgs{
+		Cmd: "cmd.exe",
+		// cmd notes:
+		// /c -> run command
+		// /s -> quoted string, use the text within the quotes as it is
+		// Replace `&` for `^&` -> cmd require to scape the & to avoid using it as a command concat
+		Args: []string{
+			"/s", "/c", fmt.Sprintf("start %s", strings.ReplaceAll(url, "&", "^&")),
+		},
+	})
+	if err == nil {
+		return
+	}
+	log.Printf(
+		"warning: failed to open browser with cmd: %s\nTrying powershell.", err.Error(),
+	)
+
+	_, err = cmdRunner.Run(ctx, azdExec.RunArgs{
+		Cmd: "powershell.exe",
+		Args: []string{
+			"-NoProfile", "-Command", "Start-Process", fmt.Sprintf("\"%s\"", url),
+		},
+	})
+	if err == nil {
+		return
+	}
+
+	log.Printf("warning: failed to use manual launch: %s\n", err.Error())
 	console.Message(ctx, fmt.Sprintf("Azd was unable to open the next url. Please try it manually: %s", url))
 }
 

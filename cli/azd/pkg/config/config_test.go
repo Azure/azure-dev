@@ -3,6 +3,7 @@ package config
 import (
 	"testing"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/stretchr/testify/require"
 )
 
@@ -26,7 +27,7 @@ func Test_SetGetUnsetWithValue(t *testing.T) {
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			azdConfig := NewConfig(nil)
+			azdConfig := NewEmptyConfig()
 			err := azdConfig.Set(test.path, test.value)
 			require.NoError(t, err)
 
@@ -48,7 +49,7 @@ func Test_SetGetUnsetRootNodeWithChildren(t *testing.T) {
 	expectedLocation := "westus2"
 	expectedEmail := "john.doe@contoso.com"
 
-	azdConfig := NewConfig(nil)
+	azdConfig := NewEmptyConfig()
 	_ = azdConfig.Set("defaults.location", expectedLocation)
 	_ = azdConfig.Set("defaults.subscription", "SUBSCRIPTION_ID")
 	_ = azdConfig.Set("user.email", expectedEmail)
@@ -78,7 +79,7 @@ func Test_SetGetUnsetRootNodeWithChildren(t *testing.T) {
 
 func Test_IsEmpty(t *testing.T) {
 	t.Run("Empty", func(t *testing.T) {
-		azdConfig := NewConfig(nil)
+		azdConfig := NewEmptyConfig()
 		require.True(t, azdConfig.IsEmpty())
 	})
 
@@ -93,4 +94,145 @@ func Test_IsEmpty(t *testing.T) {
 		})
 		require.False(t, azdConfig.IsEmpty())
 	})
+}
+
+func Test_GetString(t *testing.T) {
+	t.Run("ValidString", func(t *testing.T) {
+		azdConfig := NewEmptyConfig()
+		err := azdConfig.Set("a.b.c", "apple")
+		require.NoError(t, err)
+
+		value, ok := azdConfig.GetString("a.b.c")
+		require.Equal(t, "apple", value)
+		require.True(t, ok)
+	})
+
+	t.Run("EmptyString", func(t *testing.T) {
+		azdConfig := NewEmptyConfig()
+		err := azdConfig.Set("a.b.c", "")
+		require.NoError(t, err)
+
+		value, ok := azdConfig.GetString("a.b.c")
+		require.Equal(t, "", value)
+		require.True(t, ok)
+	})
+
+	t.Run("NonStringValue", func(t *testing.T) {
+		azdConfig := NewEmptyConfig()
+		err := azdConfig.Set("a.b.c", 1)
+		require.NoError(t, err)
+
+		value, ok := azdConfig.GetString("a.b.c")
+		require.Equal(t, "", value)
+		require.False(t, ok)
+	})
+
+	t.Run("NilValue", func(t *testing.T) {
+		azdConfig := NewEmptyConfig()
+		err := azdConfig.Set("a.b.c", nil)
+		require.NoError(t, err)
+
+		value, ok := azdConfig.GetString("a.b.c")
+		require.Equal(t, "", value)
+		require.False(t, ok)
+	})
+}
+
+func Test_GetSection(t *testing.T) {
+	t.Run("Success", func(t *testing.T) {
+		expected := &testConfig{
+			A: "apple",
+			B: "banana",
+			C: "cherry",
+		}
+
+		values, err := convert.ToMap(expected)
+		require.NoError(t, err)
+
+		azdConfig := NewEmptyConfig()
+		err = azdConfig.Set("parent.section", values)
+		require.NoError(t, err)
+
+		var actual *testConfig
+		ok, err := azdConfig.GetSection("parent.section", &actual)
+		require.True(t, ok)
+		require.NoError(t, err)
+		require.Equal(t, expected, actual)
+	})
+
+	t.Run("NotFound", func(t *testing.T) {
+		azdConfig := NewEmptyConfig()
+
+		var actual *testConfig
+		ok, err := azdConfig.GetSection("parent.section", &actual)
+		require.False(t, ok)
+		require.NoError(t, err)
+	})
+
+	t.Run("NotStruct", func(t *testing.T) {
+		azdConfig := NewEmptyConfig()
+		err := azdConfig.Set("parent.section", "apple")
+		require.NoError(t, err)
+
+		var actual *testConfig
+		ok, err := azdConfig.GetSection("parent.section", &actual)
+		require.True(t, ok)
+		require.Error(t, err)
+	})
+
+	t.Run("Empty", func(t *testing.T) {
+		azdConfig := NewEmptyConfig()
+		err := azdConfig.Set("parent.section", map[string]any{})
+		require.NoError(t, err)
+
+		var actual *testConfig
+		ok, err := azdConfig.GetSection("parent.section", &actual)
+		require.True(t, ok)
+		require.NoError(t, err)
+		require.Equal(t, "", actual.A)
+		require.Equal(t, "", actual.B)
+		require.Equal(t, "", actual.C)
+	})
+
+	t.Run("PartialSection", func(t *testing.T) {
+		azdConfig := NewEmptyConfig()
+		err := azdConfig.Set("parent.section.A", "apple")
+		require.NoError(t, err)
+		err = azdConfig.Set("parent.section.B", "banana")
+		require.NoError(t, err)
+
+		var actual *testConfig
+		ok, err := azdConfig.GetSection("parent.section", &actual)
+		require.True(t, ok)
+		require.NoError(t, err)
+		require.Equal(t, "apple", actual.A)
+		require.Equal(t, "banana", actual.B)
+		require.Equal(t, "", actual.C)
+	})
+
+	t.Run("ExtraProps", func(t *testing.T) {
+		azdConfig := NewEmptyConfig()
+		err := azdConfig.Set("parent.section.A", "apple")
+		require.NoError(t, err)
+		err = azdConfig.Set("parent.section.B", "banana")
+		require.NoError(t, err)
+		err = azdConfig.Set("parent.section.C", "cherry")
+		require.NoError(t, err)
+		err = azdConfig.Set("parent.section.D", "durian")
+		require.NoError(t, err)
+
+		var actual *testConfig
+		ok, err := azdConfig.GetSection("parent.section", &actual)
+		require.True(t, ok)
+		require.NoError(t, err)
+		require.Equal(t, "apple", actual.A)
+		require.Equal(t, "banana", actual.B)
+		require.Equal(t, "cherry", actual.C)
+	})
+}
+
+type testConfig struct {
+	A string
+	B string
+	C string
 }

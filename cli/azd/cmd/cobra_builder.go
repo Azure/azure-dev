@@ -4,6 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -19,7 +20,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
-	"golang.org/x/exp/slices"
 )
 
 const cDocsFlagName = "docs"
@@ -107,7 +107,6 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 		// Registers the following to enable injection into actions that require them
 		ioc.RegisterInstance(cb.container, cb.runner)
 		ioc.RegisterInstance(cb.container, middleware.MiddlewareContext(cb.runner))
-		ioc.RegisterInstance(cb.container, ctx)
 		ioc.RegisterInstance(cb.container, cmd)
 		ioc.RegisterInstance(cb.container, args)
 
@@ -184,16 +183,14 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 				}
 
 				if errors.As(err, &suggestionErr) {
-					if actionResult != nil && actionResult.TraceID != "" {
-						console.Message(
-							ctx,
-							output.WithErrorFormat(fmt.Sprintf("TraceID: %s", actionResult.TraceID)))
-						console.Message(
-							ctx,
-							output.WithHighLightFormat(suggestionErr.Suggestion))
-					}
+					console.Message(
+						ctx,
+						suggestionErr.Suggestion)
 				}
 			}
+
+			// Stop the spinner always to un-hide cursor
+			console.StopSpinner(ctx, "", input.Step)
 		})
 
 		if invokeErr != nil {

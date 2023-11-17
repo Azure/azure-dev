@@ -2,7 +2,7 @@
     "name": "azure-dev",
     "displayName": "Azure Developer CLI",
     "description": "Makes it easy to run, provision, and deploy Azure applications using the Azure Developer CLI",
-    "version": "0.8.0-alpha.1",
+    "version": "0.9.0-alpha.1",
     "license": "MIT",
     "icon": "resources/icon.png",
     "preview": true,
@@ -104,6 +104,11 @@
             },
             {
                 "category": "%azure-dev.commands_category%",
+                "command": "azure-dev.commands.cli.env-list",
+                "title": "%azure-dev.commands.cli.env-list.title%"
+            },
+            {
+                "category": "%azure-dev.commands_category%",
                 "command": "azure-dev.commands.cli.pipeline-config",
                 "title": "%azure-dev.commands.cli.pipeline-config.title%"
             },
@@ -131,6 +136,16 @@
                 "category": "%azure-dev.commands_category%",
                 "command": "azure-dev.commands.azureWorkspace.revealAzureResourceGroup",
                 "title": "%azure-dev.commands.azureWorkspace.revealAzureResourceGroup.title%"
+            },
+            {
+                "category": "%azure-dev.commands_category%",
+                "command": "azure-dev.commands.enableDevCenterMode",
+                "title": "%azure-dev.commands.enableDevCenterMode.title%"
+            },
+            {
+                "category": "%azure-dev.commands_category%",
+                "command": "azure-dev.commands.disableDevCenterMode",
+                "title": "%azure-dev.commands.disableDevCenterMode.title%"
             }
         ],
         "configuration": {
@@ -209,6 +224,11 @@
                     "when": "resourceFilename =~ /azure.yaml/i",
                     "command": "azure-dev.commands.cli.env-refresh",
                     "group": "20env@30"
+                },
+                {
+                    "when": "resourceFilename =~ /azure.yaml/i",
+                    "command": "azure-dev.commands.cli.env-list",
+                    "group": "20env@40"
                 },
                 {
                     "when": "resourceFilename =~ /azure.yaml/i",

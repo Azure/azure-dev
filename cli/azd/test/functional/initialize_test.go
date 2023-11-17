@@ -11,6 +11,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
@@ -46,22 +47,23 @@ func Test_CommandsAndActions_Initialize(t *testing.T) {
 	// Set environment for commands that require environment.
 	envName := "envname"
 	azdCtx := azdcontext.NewAzdContextWithDirectory(tempDir)
-	err = azdCtx.NewEnvironment(envName)
+	localDataStore := environment.NewLocalFileDataStore(azdCtx, config.NewFileConfigManager(config.NewManager()))
+
 	require.NoError(t, err)
 	err = azdCtx.SetDefaultEnvironmentName(envName)
 	require.NoError(t, err)
 
-	env, _ := environment.GetEnvironment(azdCtx, envName)
+	env := environment.New(envName)
 	env.SetSubscriptionId(cfg.SubscriptionID)
 	env.SetLocation(cfg.Location)
-	err = env.Save()
+	err = localDataStore.Save(ctx, env)
 	require.NoError(t, err)
 
 	// Also requires that the user is logged in. This is automatically done in CI. Locally, `azd auth login` is required.
 
 	// Creates the azd root command with a "Skip" middleware that will skip the invocation
 	// of the underlying command / actions
-	rootCmd := cmd.NewRootCmd(true, chain)
+	rootCmd := cmd.NewRootCmd(ctx, true, chain)
 	testCommand(t, rootCmd, ctx, chain, tempDir)
 }
 
@@ -83,7 +85,7 @@ func testCommand(
 			fullCmd := fmt.Sprintf("%s %s", testCmd.Parent().CommandPath(), use)
 			args := strings.Split(fullCmd, " ")[1:]
 			args = append(args, "--cwd", cwd)
-			childCmd := cmd.NewRootCmd(true, chain)
+			childCmd := cmd.NewRootCmd(ctx, true, chain)
 			childCmd.SetArgs(args)
 			err := childCmd.ExecuteContext(ctx)
 			require.NoError(t, err)

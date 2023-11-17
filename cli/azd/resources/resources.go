@@ -1,7 +1,7 @@
 package resources
 
 import (
-	_ "embed"
+	"embed"
 )
 
 //go:embed templates.json
@@ -15,3 +15,12 @@ var MinimalBicep []byte
 
 //go:embed minimal/main.parameters.json
 var MinimalBicepParameters []byte
+
+//go:embed scaffold/base/*
+var ScaffoldBase embed.FS
+
+//go:embed scaffold/templates/*
+var ScaffoldTemplates embed.FS
+
+//go:embed apphost/templates/*
+var AppHostTemplates embed.FS

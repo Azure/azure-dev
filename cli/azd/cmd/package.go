@@ -21,6 +21,7 @@ type packageFlags struct {
 	all    bool
 	global *internal.GlobalCommandOptions
 	*envFlag
+	outputPath string
 }
 
 func newPackageFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *packageFlags {
@@ -41,7 +42,13 @@ func (pf *packageFlags) Bind(local *pflag.FlagSet, global *internal.GlobalComman
 		&pf.all,
 		"all",
 		false,
-		"Deploys all services that are listed in "+azdcontext.ProjectFileName,
+		"Packages all services that are listed in "+azdcontext.ProjectFileName,
+	)
+	local.StringVar(
+		&pf.outputPath,
+		"output-path",
+		"",
+		"File or folder path where the generated packages will be saved.",
 	)
 }
 
@@ -62,6 +69,7 @@ type packageAction struct {
 	args           []string
 	projectConfig  *project.ProjectConfig
 	projectManager project.ProjectManager
+	importManager  *project.ImportManager
 	serviceManager project.ServiceManager
 	console        input.Console
 	formatter      output.Formatter
@@ -77,6 +85,7 @@ func newPackageAction(
 	console input.Console,
 	formatter output.Formatter,
 	writer io.Writer,
+	importManager *project.ImportManager,
 ) actions.Action {
 	return &packageAction{
 		flags:          flags,
@@ -87,6 +96,7 @@ func newPackageAction(
 		console:        console,
 		formatter:      formatter,
 		writer:         writer,
+		importManager:  importManager,
 	}
 }
 
@@ -111,6 +121,7 @@ func (pa *packageAction) Run(ctx context.Context) (*actions.ActionResult, error)
 	targetServiceName, err := getTargetServiceName(
 		ctx,
 		pa.projectManager,
+		pa.importManager,
 		pa.projectConfig,
 		string(project.ServiceEventPackage),
 		targetServiceName,
@@ -132,9 +143,46 @@ func (pa *packageAction) Run(ctx context.Context) (*actions.ActionResult, error)
 
 	packageResults := map[string]*project.ServicePackageResult{}
 
-	serviceTable := pa.projectConfig.GetServicesStable()
+	serviceTable, err := pa.importManager.ServiceStable(ctx, pa.projectConfig)
+	if err != nil {
+		return nil, err
+	}
 	serviceCount := len(serviceTable)
 	for index, svc := range serviceTable {
+		// TODO(ellismg): We need to figure out what packaging an containerized dotnet app means. For now, just skip it.
+		//  We "package" the app during deploy when we call `dotnet publish /p:PublishProfile=DefaultContainer` to build
+		//  and push the container image.
+		//
+		// Doing this skip here means that during `azd up` we don't show output like:
+		// /* cSpell:disable */
+		//
+		// Packaging services (azd package)
+		//
+		// (✓) Done: Packaging service basketservice
+		// - Package Output: /var/folders/6n/sxbj12js5ksg6ztn0kslqp400000gn/T/azd472091284
+		//
+		// (✓) Done: Packaging service catalogservice
+		// - Package Output: /var/folders/6n/sxbj12js5ksg6ztn0kslqp400000gn/T/azd2265185954
+		//
+		// (✓) Done: Packaging service frontend
+		// - Package Output: /var/folders/6n/sxbj12js5ksg6ztn0kslqp400000gn/T/azd2956031596
+		//
+		// /* cSpell:enable */
+		// Which is nice - since the above is not the package that we publish (instead it's the raw output of
+		// `dotnet publish`, as if you were going to run on App Service.).
+		//
+		// With .NET 8, we'll be able to build just the container image, by setting ContainerArchiveOutputPath
+		// as a property when we run `dotnet publish`.  If we set this to the filepath of a tgz (doesn't need to exist)
+		// the the action will just produce a container image and save it to that tgz, as `docker save` would have. It will
+		// not push the container image.
+		//
+		// It's probably right for us to think about "package" for a containerized application as meaning "produce the tgz"
+		// of the image, as would be done by `docker save` and then do this for both DotNetContainerAppTargets and
+		// ContainerAppTargets.
+		if svc.Host == project.DotNetContainerAppTarget {
+			continue
+		}
+
 		stepMessage := fmt.Sprintf("Packaging service %s", svc.Name)
 		pa.console.ShowSpinner(ctx, stepMessage, input.Step)
 
@@ -146,7 +194,8 @@ func (pa *packageAction) Run(ctx context.Context) (*actions.ActionResult, error)
 			continue
 		}
 
-		packageTask := pa.serviceManager.Package(ctx, svc, nil)
+		options := &project.PackageOptions{OutputPath: pa.flags.outputPath}
+		packageTask := pa.serviceManager.Package(ctx, svc, nil, options)
 		done := make(chan struct{})
 		go func() {
 			for packageProgress := range packageTask.Progress() {
@@ -210,5 +259,11 @@ func getCmdPackageHelpFooter(*cobra.Command) string {
 		"Packages all services in the current project to Azure.": output.WithHighLightFormat("azd package --all"),
 		"Packages the service named 'api' to Azure.":             output.WithHighLightFormat("azd package api"),
 		"Packages the service named 'web' to Azure.":             output.WithHighLightFormat("azd package web"),
+		"Packages all services to the specified output path.": output.WithHighLightFormat(
+			"azd package --output-path ./dist",
+		),
+		"Packages the service named 'api' to the specified output path.": output.WithHighLightFormat(
+			"azd package api --output-path ./dist/api.zip",
+		),
 	})
 }

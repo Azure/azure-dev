@@ -4,8 +4,8 @@
 
 ### Prerequisites
 
-- Node (16.13.0)
-- NPM (8.1.0)
+- Node (18.17.1)
+- NPM (9.8.1)
 
 ### Local Environment
 

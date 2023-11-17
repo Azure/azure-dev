@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/runcontext"
 	appinsightsexporter "github.com/azure/azure-dev/cli/azd/internal/telemetry/appinsights-exporter"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
@@ -65,7 +66,17 @@ func getTelemetryDirectory() (string, error) {
 }
 
 func IsTelemetryEnabled() bool {
-	return os.Getenv(collectTelemetryEnvVar) != "no"
+	// If the user has opted out of telemetry directly, don't collect telemetry.
+	if os.Getenv(collectTelemetryEnvVar) == "no" {
+		return false
+	}
+
+	// If it's the first run and we're in cloud shell, don't collect telemetry.
+	if noticeShown() && runcontext.IsRunningInCloudShell() {
+		return false
+	}
+
+	return true
 }
 
 // Returns the singleton TelemetrySystem instance.

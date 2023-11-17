@@ -8,9 +8,13 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/blang/semver/v4"
 )
@@ -20,8 +24,11 @@ type DotNetCli interface {
 	Restore(ctx context.Context, project string) error
 	Build(ctx context.Context, project string, configuration string, output string) error
 	Publish(ctx context.Context, project string, configuration string, output string) error
+	PublishContainer(ctx context.Context, project string, configuration string, imageName string, server string) error
 	InitializeSecret(ctx context.Context, project string) error
+	PublishAppHostManifest(ctx context.Context, hostProject string, manifestPath string) error
 	SetSecrets(ctx context.Context, secrets map[string]string, project string) error
+	GetMsBuildProperty(ctx context.Context, project string, propertyName string) (string, error)
 }
 
 type dotNetCli struct {
@@ -110,6 +117,66 @@ func (cli *dotNetCli) Publish(ctx context.Context, project string, configuration
 	return nil
 }
 
+func (cli *dotNetCli) PublishAppHostManifest(
+	ctx context.Context, hostProject string, manifestPath string,
+) error {
+
+	// TODO(ellismg): Before we GA manifest support, we should remove this debug tool, but being able to control what
+	// manifest is used is helpful, while the manifest/generator is still being built.  So if
+	// `AZD_DEBUG_DOTNET_APPHOST_USE_FIXED_MANIFEST` is set, then we will expect to find apphost-manifest.json SxS with the host
+	// project, and we just use that instead.
+	if enabled, err := strconv.ParseBool(os.Getenv("AZD_DEBUG_DOTNET_APPHOST_USE_FIXED_MANIFEST")); err == nil && enabled {
+		m, err := os.ReadFile(filepath.Join(filepath.Dir(hostProject), "apphost-manifest.json"))
+		if err != nil {
+			return fmt.Errorf(
+				"reading apphost-manifest.json (did you mean to have AZD_DEBUG_DOTNET_APPHOST_USE_FIXED_MANIFEST set?): %w", err)
+		}
+
+		return os.WriteFile(manifestPath, m, osutil.PermissionFile)
+	}
+
+	runArgs := exec.NewRunArgs(
+		"dotnet", "run", "--project", filepath.Base(hostProject), "--publisher", "manifest", "--output-path", manifestPath)
+
+	runArgs = runArgs.WithCwd(filepath.Dir(hostProject))
+
+	_, err := cli.commandRunner.Run(ctx, runArgs)
+	if err != nil {
+		return fmt.Errorf("dotnet run --publisher manifest on project '%s' failed: %w", hostProject, err)
+	}
+
+	return nil
+}
+
+// PublishContainer runs a `dotnet publish“ with `PublishProfile=DefaultContainer` to build and publish the container.
+func (cli *dotNetCli) PublishContainer(
+	ctx context.Context, project string, configuration string, imageName string, server string,
+) error {
+	runArgs := exec.NewRunArgs("dotnet", "publish", project)
+	if configuration != "" {
+		runArgs = runArgs.AppendParams("-c", configuration)
+	}
+
+	if imageName != "" {
+		runArgs = runArgs.AppendParams(fmt.Sprintf("-p:ContainerImageName=%s", imageName))
+	}
+
+	runArgs = runArgs.AppendParams(
+		"-r", "linux-x64",
+		"-p:PublishProfile=DefaultContainer",
+		fmt.Sprintf("-p:ContainerRegistry=%s", server),
+	)
+
+	// TODO(ellismg): Remove this when the .NET 8 RTM base images have been pushed.
+	runArgs = runArgs.AppendParams("--self-contained")
+
+	_, err := cli.commandRunner.Run(ctx, runArgs)
+	if err != nil {
+		return fmt.Errorf("dotnet publish on project '%s' failed: %w", project, err)
+	}
+	return nil
+}
+
 func (cli *dotNetCli) InitializeSecret(ctx context.Context, project string) error {
 	runArgs := exec.NewRunArgs("dotnet", "user-secrets", "init", "--project", project)
 	_, err := cli.commandRunner.Run(ctx, runArgs)
@@ -136,6 +203,15 @@ func (cli *dotNetCli) SetSecrets(ctx context.Context, secrets map[string]string,
 		return fmt.Errorf("failed running %s secret set: %w", cli.Name(), err)
 	}
 	return nil
+}
+
+func (cli *dotNetCli) GetMsBuildProperty(ctx context.Context, project string, propertyName string) (string, error) {
+	runArgs := exec.NewRunArgs("dotnet", "msbuild", project, fmt.Sprintf("--getProperty:%s", propertyName))
+	res, err := cli.commandRunner.Run(ctx, runArgs)
+	if err != nil {
+		return "", err
+	}
+	return res.Stdout, nil
 }
 
 func NewDotNetCli(commandRunner exec.CommandRunner) DotNetCli {

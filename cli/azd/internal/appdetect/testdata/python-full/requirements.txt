@@ -1,0 +1,12 @@
+leftpad
+Django==4.2.4
+fastapi==0.101.1
+Flask==2.3.2
+
+flask_mysqldb
+mysqlclient
+psycopg2
+pymongo
+psycopg2-binary
+beanie
+redis

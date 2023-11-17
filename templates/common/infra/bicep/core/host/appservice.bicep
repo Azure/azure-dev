@@ -1,3 +1,4 @@
+metadata description = 'Creates an Azure App Service in an existing Azure App Service plan.'
 param name string
 param location string = resourceGroup().location
 param tags object = {}
@@ -23,6 +24,7 @@ param kind string = 'app,linux'
 param allowedOrigins array = []
 param alwaysOn bool = true
 param appCommandLine string = ''
+@secure()
 param appSettings object = {}
 param clientAffinityEnabled bool = false
 param enableOryxBuild bool = contains(kind, 'linux')
@@ -75,7 +77,6 @@ resource appService 'Microsoft.Web/sites@2022-03-01' = {
 
   resource basicPublishingCredentialsPoliciesFtp 'basicPublishingCredentialsPolicies' = {
     name: 'ftp'
-    location: location
     properties: {
       allow: false
     }
@@ -83,7 +84,6 @@ resource appService 'Microsoft.Web/sites@2022-03-01' = {
 
   resource basicPublishingCredentialsPoliciesScm 'basicPublishingCredentialsPolicies' = {
     name: 'scm'
-    location: location
     properties: {
       allow: false
     }

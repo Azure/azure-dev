@@ -20,6 +20,22 @@ jobs:
       - name: Install azd
         uses: Azure/setup-azd@v0.1.0
 
+      - name: Install Nodejs
+        uses: actions/setup-node@v3
+        with:
+          node-version: 18
+
+      - name: Login az
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Set az account
+        uses: azure/CLI@v1
+        with:
+          inlineScript: |
+            az account set --subscription ${{vars.AZURE_SUBSCRIPTION_ID}}
+
       - name: Log in with Azure
         run: |
           $info = $Env:AZURE_CREDENTIALS | ConvertFrom-Json -AsHashtable;
@@ -32,9 +48,6 @@ jobs:
         shell: pwsh
         env:
           AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
-
-      - name: Enable terraform alpha feature
-        run: azd config set alpha.terraform on
 
       - name: Provision Infrastructure
         run: azd provision --no-prompt

@@ -3,14 +3,21 @@ package project
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
+	"io"
 	"log"
+	"os"
+	"path/filepath"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 )
 
@@ -68,6 +75,7 @@ type ServiceManager interface {
 		ctx context.Context,
 		serviceConfig *ServiceConfig,
 		buildOutput *ServiceBuildResult,
+		options *PackageOptions,
 	) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress]
 
 	// Deploys the generated artifacts to the Azure resource that will
@@ -256,8 +264,13 @@ func (sm *serviceManager) Package(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	buildOutput *ServiceBuildResult,
+	options *PackageOptions,
 ) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
 	return async.RunTaskWithProgress(func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
+		if options == nil {
+			options = &PackageOptions{}
+		}
+
 		cachedResult, ok := sm.getOperationResult(ctx, serviceConfig, string(ServiceEventPackage))
 		if ok && cachedResult != nil {
 			task.SetResult(cachedResult.(*ServicePackageResult))
@@ -361,6 +374,45 @@ func (sm *serviceManager) Package(
 			return
 		}
 
+		// Package path can be a file path or a container image name
+		// We only move to desired output path for file based packages
+		_, err = os.Stat(packageResult.PackagePath)
+		hasPackageFile := err == nil
+
+		if hasPackageFile && options.OutputPath != "" {
+			var destFilePath string
+			var destDirectory string
+
+			isFilePath := filepath.Ext(options.OutputPath) != ""
+			if isFilePath {
+				destFilePath = options.OutputPath
+				destDirectory = filepath.Dir(options.OutputPath)
+			} else {
+				destFilePath = filepath.Join(options.OutputPath, filepath.Base(packageResult.PackagePath))
+				destDirectory = options.OutputPath
+			}
+
+			_, err := os.Stat(destDirectory)
+			if errors.Is(err, os.ErrNotExist) {
+				// Create the desired output directory if it does not already exist
+				if err := os.MkdirAll(destDirectory, osutil.PermissionDirectory); err != nil {
+					task.SetError(fmt.Errorf("failed creating output directory '%s': %w", destDirectory, err))
+					return
+				}
+			}
+
+			// Move the package file to the desired path
+			// We can't use os.Rename here since that does not work across disks
+			if err := moveFile(packageResult.PackagePath, destFilePath); err != nil {
+				task.SetError(
+					fmt.Errorf("failed moving package file '%s' to '%s': %w", packageResult.PackagePath, destFilePath, err),
+				)
+				return
+			}
+
+			packageResult.PackagePath = destFilePath
+		}
+
 		task.SetResult(packageResult)
 	})
 }
@@ -393,10 +445,45 @@ func (sm *serviceManager) Deploy(
 			return
 		}
 
-		targetResource, err := sm.resourceManager.GetTargetResource(ctx, sm.env.GetSubscriptionId(), serviceConfig)
-		if err != nil {
-			task.SetError(fmt.Errorf("getting target resource: %w", err))
-			return
+		var targetResource *environment.TargetResource
+
+		if serviceConfig.Host == DotNetContainerAppTarget {
+			containerEnvName := sm.env.GetServiceProperty(serviceConfig.Name, "CONTAINER_ENVIRONMENT_NAME")
+			if containerEnvName == "" {
+				containerEnvName = sm.env.Getenv("AZURE_CONTAINER_APPS_ENVIRONMENT_ID")
+				if containerEnvName == "" {
+					task.SetError(fmt.Errorf(
+						"could not determine container app environment for service %s, "+
+							"have you set AZURE_CONTAINER_ENVIRONMENT_NAME or "+
+							"SERVICE_%s_CONTAINER_ENVIRONMENT_NAME as an output of your "+
+							"infrastructure?", serviceConfig.Name, strings.ToUpper(serviceConfig.Name)))
+
+					return
+				}
+
+				parts := strings.Split(containerEnvName, "/")
+				containerEnvName = parts[len(parts)-1]
+			}
+
+			resourceGroupName, err := sm.resourceManager.GetResourceGroupName(
+				ctx, sm.env.GetSubscriptionId(), serviceConfig.Project)
+			if err != nil {
+				task.SetError(fmt.Errorf("getting resource group name: %w", err))
+				return
+			}
+
+			targetResource = environment.NewTargetResource(
+				sm.env.GetSubscriptionId(),
+				resourceGroupName,
+				containerEnvName,
+				string(infra.AzureResourceTypeContainerAppEnvironment),
+			)
+		} else {
+			targetResource, err = sm.resourceManager.GetTargetResource(ctx, sm.env.GetSubscriptionId(), serviceConfig)
+			if err != nil {
+				task.SetError(fmt.Errorf("getting target resource: %w", err))
+				return
+			}
 		}
 
 		deployResult, err := runCommand(
@@ -416,7 +503,7 @@ func (sm *serviceManager) Deploy(
 
 		// Allow users to specify their own endpoints, in cases where they've configured their own front-end load balancers,
 		// reverse proxies or DNS host names outside of the service target (and prefer that to be used instead).
-		overriddenEndpoints := sm.getOverriddenEndpoints(ctx, serviceConfig)
+		overriddenEndpoints := OverriddenEndpoints(ctx, serviceConfig, sm.env)
 		if len(overriddenEndpoints) > 0 {
 			deployResult.Endpoints = overriddenEndpoints
 		}
@@ -487,8 +574,8 @@ func (sm *serviceManager) GetFrameworkService(ctx context.Context, serviceConfig
 	return frameworkService, nil
 }
 
-func (sm *serviceManager) getOverriddenEndpoints(ctx context.Context, serviceConfig *ServiceConfig) []string {
-	overriddenEndpoints := sm.env.GetServiceProperty(serviceConfig.Name, "ENDPOINTS")
+func OverriddenEndpoints(ctx context.Context, serviceConfig *ServiceConfig, env *environment.Environment) []string {
+	overriddenEndpoints := env.GetServiceProperty(serviceConfig.Name, "ENDPOINTS")
 	if overriddenEndpoints != "" {
 		var endpoints []string
 		err := json.Unmarshal([]byte(overriddenEndpoints), &endpoints)
@@ -568,4 +655,32 @@ func syncProgress[T comparable, P comparable](task *async.TaskContextWithProgres
 	for progress := range progressChannel {
 		task.SetProgress(progress)
 	}
+}
+
+// Copies a file from the source path to the destination path
+// Deletes the source file after the copy is complete
+func moveFile(sourcePath string, destinationPath string) error {
+	sourceFile, err := os.Open(sourcePath)
+	if err != nil {
+		return fmt.Errorf("opening source file: %w", err)
+	}
+	defer sourceFile.Close()
+
+	// Create or truncate the destination file
+	destinationFile, err := os.Create(destinationPath)
+	if err != nil {
+		return fmt.Errorf("creating destination file: %w", err)
+	}
+	defer destinationFile.Close()
+
+	// Copy the contents of the source file to the destination file
+	_, err = io.Copy(destinationFile, sourceFile)
+	if err != nil {
+		return fmt.Errorf("copying file: %w", err)
+	}
+
+	// Remove the source file (optional)
+	defer os.Remove(sourcePath)
+
+	return nil
 }

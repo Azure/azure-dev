@@ -74,7 +74,7 @@ services:
     host: appservice
 `
 
-	e := environment.EphemeralWithValues("test-env", map[string]string{
+	e := environment.NewWithValues("test-env", map[string]string{
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
 	})
 
@@ -94,32 +94,6 @@ services:
 	}
 }
 
-func TestProjectConfigHasService(t *testing.T) {
-	const testProj = `
-name: test-proj
-metadata:
-  template: test-proj-template
-resourceGroup: rg-test
-services:
-  web:
-    project: src/web
-    language: js
-    host: appservice
-  api:
-    project: src/api
-    language: js
-    host: appservice
-`
-
-	mockContext := mocks.NewMockContext(context.Background())
-	projectConfig, err := Parse(*mockContext.Context, testProj)
-	require.Nil(t, err)
-
-	require.True(t, projectConfig.HasService("web"))
-	require.True(t, projectConfig.HasService("api"))
-	require.False(t, projectConfig.HasService("foobar"))
-}
-
 func TestProjectWithCustomDockerOptions(t *testing.T) {
 	const testProj = `
 name: test-proj
@@ -134,6 +108,9 @@ services:
     docker:
       path: ./Dockerfile.dev
       context: ../
+      buildArgs:
+        - 'foo'
+        - 'bar'
 `
 
 	mockContext := mocks.NewMockContext(context.Background())
@@ -146,6 +123,7 @@ services:
 
 	require.Equal(t, "./Dockerfile.dev", service.Docker.Path)
 	require.Equal(t, "../", service.Docker.Context)
+	require.Equal(t, []string{"foo", "bar"}, service.Docker.BuildArgs)
 }
 
 func TestProjectConfigAddHandler(t *testing.T) {
@@ -360,7 +338,7 @@ services:
 	projectConfig, err := Parse(*mockContext.Context, testProj)
 	require.NoError(t, err)
 
-	env := environment.EphemeralWithValues("", map[string]string{
+	env := environment.NewWithValues("", map[string]string{
 		"foo": "hello",
 		"bar": "goodbye",
 	})

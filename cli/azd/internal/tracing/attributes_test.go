@@ -81,3 +81,48 @@ func TestAppendAttribute(t *testing.T) {
 		})
 	}
 }
+
+func TestIncrementAttribute(t *testing.T) {
+	tests := []struct {
+		name     string
+		existing []attribute.KeyValue
+		set      attribute.KeyValue
+		expected []attribute.KeyValue
+	}{
+		{"SetUnknown", []attribute.KeyValue{}, attribute.String("k", "v"), []attribute.KeyValue{attribute.String("k", "v")}},
+		{"Set",
+			[]attribute.KeyValue{},
+			attribute.Float64("k", 5.0),
+			[]attribute.KeyValue{attribute.Float64("k", 5.0)}},
+		{"ReplaceWhenUnmatched",
+			[]attribute.KeyValue{attribute.StringSlice("k", []string{"v1"})},
+			attribute.Float64("k", 5.0),
+			[]attribute.KeyValue{attribute.Float64("k", 5.0)}},
+		{"IncrementFloat64",
+			[]attribute.KeyValue{attribute.Float64("k", 5.0)},
+			attribute.Float64("k", 5.0),
+			[]attribute.KeyValue{attribute.Float64("k", 10.0)}},
+		{"IncrementInt64",
+			[]attribute.KeyValue{attribute.Int64("k", 5)},
+			attribute.Int64("k", 5),
+			[]attribute.KeyValue{attribute.Int64("k", 10)}},
+		{"ConcatenateString",
+			[]attribute.KeyValue{attribute.String("k", "v")},
+			attribute.String("k", "v"),
+			[]attribute.KeyValue{attribute.String("k", "vv")}},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			val := &valSynced{}
+			val.val.Store(baggage.NewBaggage())
+
+			set(val, tt.existing)
+
+			increment(val, tt.set)
+
+			attributes := get(val)
+
+			assert.ElementsMatch(t, attributes, tt.expected)
+		})
+	}
+}

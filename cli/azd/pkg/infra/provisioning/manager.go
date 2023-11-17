@@ -5,9 +5,9 @@ package provisioning
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
@@ -16,12 +16,15 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 )
 
+type DefaultProviderResolver func() (ProviderKind, error)
+
 // Manages the orchestration of infrastructure provisioning
 type Manager struct {
 	serviceLocator      ioc.ServiceLocator
+	defaultProvider     DefaultProviderResolver
+	envManager          environment.Manager
 	env                 *environment.Environment
 	console             input.Console
-	prompter            prompt.Prompter
 	provider            Provider
 	alphaFeatureManager *alpha.FeatureManager
 	projectPath         string
@@ -59,7 +62,13 @@ func (m *Manager) Deploy(ctx context.Context) (*DeployResult, error) {
 		return nil, fmt.Errorf("error deploying infrastructure: %w", err)
 	}
 
-	if err := UpdateEnvironment(m.env, deployResult.Deployment.Outputs); err != nil {
+	skippedDueToDeploymentState := deployResult.SkippedReason == DeploymentStateSkipped
+
+	if skippedDueToDeploymentState {
+		m.console.StopSpinner(ctx, "Didn't find new changes.", input.StepSkipped)
+	}
+
+	if err := m.UpdateEnvironment(ctx, m.env, deployResult.Deployment.Outputs); err != nil {
 		return nil, fmt.Errorf("updating environment with deployment outputs: %w", err)
 	}
 
@@ -117,16 +126,49 @@ func (m *Manager) Destroy(ctx context.Context, options DestroyOptions) (*Destroy
 	}
 
 	// Update environment files to remove invalid infrastructure parameters
-	if err := m.env.Save(); err != nil {
+	if err := m.envManager.Save(ctx, m.env); err != nil {
 		return nil, fmt.Errorf("saving environment: %w", err)
 	}
 
 	return destroyResult, nil
 }
 
+func (m *Manager) UpdateEnvironment(
+	ctx context.Context,
+	env *environment.Environment,
+	outputs map[string]OutputParameter,
+) error {
+	if len(outputs) > 0 {
+		for key, param := range outputs {
+			// Complex types marshalled as JSON strings, simple types marshalled as simple strings
+			if param.Type == ParameterTypeArray || param.Type == ParameterTypeObject {
+				bytes, err := json.Marshal(param.Value)
+				if err != nil {
+					return fmt.Errorf("invalid value for output parameter '%s' (%s): %w", key, string(param.Type), err)
+				}
+				env.DotenvSet(key, string(bytes))
+			} else {
+				env.DotenvSet(key, fmt.Sprintf("%v", param.Value))
+			}
+		}
+
+		if err := m.envManager.Save(ctx, env); err != nil {
+			return fmt.Errorf("writing environment: %w", err)
+		}
+	}
+
+	return nil
+}
+
 // EnsureSubscriptionAndLocation ensures that that that subscription (AZURE_SUBSCRIPTION_ID) and location (AZURE_LOCATION)
 // variables are set in the environment, prompting the user for the values if they do not exist.
-func EnsureSubscriptionAndLocation(ctx context.Context, env *environment.Environment, prompter prompt.Prompter) error {
+func EnsureSubscriptionAndLocation(
+	ctx context.Context,
+	envManager environment.Manager,
+	env *environment.Environment,
+	prompter prompt.Prompter,
+	locationFiler prompt.LocationFilterPredicate,
+) error {
 	if env.GetSubscriptionId() == "" {
 		subscriptionId, err := prompter.PromptSubscription(ctx, "Select an Azure Subscription to use:")
 		if err != nil {
@@ -135,7 +177,7 @@ func EnsureSubscriptionAndLocation(ctx context.Context, env *environment.Environ
 
 		env.SetSubscriptionId(subscriptionId)
 
-		if err := env.Save(); err != nil {
+		if err := envManager.Save(ctx, env); err != nil {
 			return err
 		}
 	}
@@ -145,7 +187,7 @@ func EnsureSubscriptionAndLocation(ctx context.Context, env *environment.Environ
 			ctx,
 			env.GetSubscriptionId(),
 			"Select an Azure location to use:",
-			func(_ account.Location) bool { return true },
+			locationFiler,
 		)
 		if err != nil {
 			return err
@@ -153,7 +195,7 @@ func EnsureSubscriptionAndLocation(ctx context.Context, env *environment.Environ
 
 		env.SetLocation(location)
 
-		if err := env.Save(); err != nil {
+		if err := envManager.Save(ctx, env); err != nil {
 			return err
 		}
 	}
@@ -164,17 +206,19 @@ func EnsureSubscriptionAndLocation(ctx context.Context, env *environment.Environ
 // Creates a new instance of the Provisioning Manager
 func NewManager(
 	serviceLocator ioc.ServiceLocator,
+	defaultProvider DefaultProviderResolver,
+	envManager environment.Manager,
 	env *environment.Environment,
 	console input.Console,
 	alphaFeatureManager *alpha.FeatureManager,
-	prompter prompt.Prompter,
 ) *Manager {
 	return &Manager{
 		serviceLocator:      serviceLocator,
+		defaultProvider:     defaultProvider,
+		envManager:          envManager,
 		env:                 env,
 		console:             console,
 		alphaFeatureManager: alphaFeatureManager,
-		prompter:            prompter,
 	}
 }
 
@@ -196,10 +240,20 @@ func (m *Manager) newProvider(ctx context.Context) (Provider, error) {
 		m.console.WarnForFeature(ctx, alphaFeatureId)
 	}
 
+	providerKey := m.options.Provider
+	if providerKey == NotSpecified {
+		defaultProvider, err := m.defaultProvider()
+		if err != nil {
+			return nil, err
+		}
+
+		providerKey = defaultProvider
+	}
+
 	var provider Provider
-	err = m.serviceLocator.ResolveNamed(string(m.options.Provider), &provider)
+	err = m.serviceLocator.ResolveNamed(string(providerKey), &provider)
 	if err != nil {
-		return nil, fmt.Errorf("failed resolving IaC provider '%s': %w", m.options.Provider, err)
+		return nil, fmt.Errorf("failed resolving IaC provider '%s': %w", providerKey, err)
 	}
 
 	return provider, nil

@@ -132,43 +132,52 @@ function PrintFlags() {
     }
 }
 
-Write-Host "Running: go build ``"
-PrintFlags -flags $buildFlags
-go build @buildFlags
+$oldGOEXPERIMENT = $env:GOEXPERIMENT
+# Enable the loopvar experiment, which makes the loop variaible for go loops like `range` behave as most folks would expect.
+# the go team is exploring making this default in the future, and we'd like to opt into the behavior now.
+$env:GOEXPERIMENT="loopvar"
 
-if ($BuildRecordMode) {
-    $recordFlagPresent = $false
-    for ($i = 0; $i -lt $buildFlags.Length; $i++) {
-        if ($buildFlags[$i].StartsWith("-tags=")) {
-            $recordFlagPresent = $true
-            $buildFlags[$i] += ",record"
-        }
-    }
-
-    if (-not $recordFlagPresent) {
-        $buildFlags[$i] += "-tags=record"
-    }
-
-    $outputFlag = "-o=azd-record"
-    if ($IsWindows) {
-        $outputFlag += ".exe"
-    }
-    $buildFlags += $outputFlag
-
-    Write-Host "Running: go build (record) ``"
+try {
+    Write-Host "Running: go build ``"
     PrintFlags -flags $buildFlags
     go build @buildFlags
-}
-
-if ($LASTEXITCODE) {
-    Write-Host "Error running go build"
-    exit $LASTEXITCODE
-}
-Write-Host "go build succeeded"
-
-if ($IsWindows) {
-    Write-Host "Windows exe file version info"
-    $azdExe = Get-Item azd.exe
-    Write-Host "File Version: $($azdExe.VersionInfo.FileVersionRaw)"
-    Write-Host "Product Version: $($azdExe.VersionInfo.ProductVersionRaw)"
+    
+    if ($BuildRecordMode) {
+        $recordFlagPresent = $false
+        for ($i = 0; $i -lt $buildFlags.Length; $i++) {
+            if ($buildFlags[$i].StartsWith("-tags=")) {
+                $recordFlagPresent = $true
+                $buildFlags[$i] += ",record"
+            }
+        }
+    
+        if (-not $recordFlagPresent) {
+            $buildFlags[$i] += "-tags=record"
+        }
+    
+        $outputFlag = "-o=azd-record"
+        if ($IsWindows) {
+            $outputFlag += ".exe"
+        }
+        $buildFlags += $outputFlag
+    
+        Write-Host "Running: go build (record) ``"
+        PrintFlags -flags $buildFlags
+        go build @buildFlags
+    }
+    
+    if ($LASTEXITCODE) {
+        Write-Host "Error running go build"
+        exit $LASTEXITCODE
+    }
+    Write-Host "go build succeeded"
+    
+    if ($IsWindows) {
+        Write-Host "Windows exe file version info"
+        $azdExe = Get-Item azd.exe
+        Write-Host "File Version: $($azdExe.VersionInfo.FileVersionRaw)"
+        Write-Host "Product Version: $($azdExe.VersionInfo.ProductVersionRaw)"
+    }
+} finally {
+    $env:GOEXPERIMENT = $oldGOEXPERIMENT    
 }

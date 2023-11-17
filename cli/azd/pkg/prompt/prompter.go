@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
@@ -15,7 +16,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
-	"golang.org/x/exp/slices"
 )
 
 type LocationFilterPredicate func(loc account.Location) bool
@@ -112,8 +112,8 @@ func (p *DefaultPrompter) PromptResourceGroup(ctx context.Context) (string, erro
 		return "", fmt.Errorf("listing resource groups: %w", err)
 	}
 
-	slices.SortFunc(groups, func(a, b azcli.AzCliResource) bool {
-		return strings.Compare(a.Name, b.Name) < 0
+	slices.SortFunc(groups, func(a, b azcli.AzCliResource) int {
+		return strings.Compare(a.Name, b.Name)
 	})
 
 	choices := make([]string, len(groups)+1)

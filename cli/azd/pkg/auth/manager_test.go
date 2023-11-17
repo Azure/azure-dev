@@ -206,7 +206,7 @@ func TestLoginInteractive(t *testing.T) {
 		publicClient:      &mockPublicClient{},
 	}
 
-	cred, err := m.LoginInteractive(context.Background(), 0, "", nil)
+	cred, err := m.LoginInteractive(context.Background(), nil, nil)
 
 	require.NoError(t, err)
 	require.IsType(t, new(azdCredential), cred)
@@ -231,11 +231,10 @@ func TestLoginDeviceCode(t *testing.T) {
 		configManager:     newMemoryConfigManager(),
 		userConfigManager: newMemoryUserConfigManager(),
 		publicClient:      &mockPublicClient{},
-		launchBrowserFn:   func(url string) error { return nil },
 		console:           console,
 	}
 
-	cred, err := m.LoginWithDeviceCode(context.Background(), "", nil)
+	cred, err := m.LoginWithDeviceCode(context.Background(), "", nil, func(url string) error { return nil })
 
 	require.Regexp(t, "Start by copying the next code: 123-456", console.Output())
 

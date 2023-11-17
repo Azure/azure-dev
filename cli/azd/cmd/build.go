@@ -62,6 +62,7 @@ type buildAction struct {
 	args                     []string
 	projectConfig            *project.ProjectConfig
 	projectManager           project.ProjectManager
+	importManager            *project.ImportManager
 	serviceManager           project.ServiceManager
 	console                  input.Console
 	formatter                output.Formatter
@@ -75,6 +76,7 @@ func newBuildAction(
 	args []string,
 	projectConfig *project.ProjectConfig,
 	projectManager project.ProjectManager,
+	importManager *project.ImportManager,
 	serviceManager project.ServiceManager,
 	console input.Console,
 	formatter output.Formatter,
@@ -94,6 +96,7 @@ func newBuildAction(
 		writer:                   writer,
 		middlewareRunner:         middlewareRunner,
 		restoreActionInitializer: restoreActionInitializer,
+		importManager:            importManager,
 	}
 }
 
@@ -133,6 +136,7 @@ func (ba *buildAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	targetServiceName, err := getTargetServiceName(
 		ctx,
 		ba.projectManager,
+		ba.importManager,
 		ba.projectConfig,
 		string(project.ServiceEventBuild),
 		targetServiceName,
@@ -153,8 +157,12 @@ func (ba *buildAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	buildResults := map[string]*project.ServiceBuildResult{}
+	stableServices, err := ba.importManager.ServiceStable(ctx, ba.projectConfig)
+	if err != nil {
+		return nil, err
+	}
 
-	for _, svc := range ba.projectConfig.GetServicesStable() {
+	for _, svc := range stableServices {
 		stepMessage := fmt.Sprintf("Building service %s", svc.Name)
 		ba.console.ShowSpinner(ctx, stepMessage, input.Step)
 

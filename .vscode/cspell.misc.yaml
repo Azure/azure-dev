@@ -10,7 +10,8 @@ import: cspell.global.yaml
 ignorePaths:
     # Project changes here should be kept in-sync workflow cspell-misc.yml
     - cli # uses its own cspell config
-    - ext # uses its own cspell config
+    - ext/vscode # uses its own cspell config
+    - ext/devcontainer
     - templates # uses its own cspell config
 
     - eng # not required

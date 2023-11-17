@@ -4,6 +4,8 @@
 package cmd
 
 import (
+	"context"
+	"errors"
 	"fmt"
 	"log"
 	"os"
@@ -14,7 +16,9 @@ import (
 
 	// Importing for infrastructure provider plugin registrations
 
+	"github.com/azure/azure-dev/cli/azd/pkg/azd"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
+	"github.com/azure/azure-dev/cli/azd/pkg/platform"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
@@ -25,7 +29,7 @@ import (
 // Creates the root Cobra command for AZD.
 // staticHelp - False, except for running for doc generation
 // middlewareChain - nil, except for running unit tests
-func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistration) *cobra.Command {
+func NewRootCmd(ctx context.Context, staticHelp bool, middlewareChain []*actions.MiddlewareRegistration) *cobra.Command {
 	prevDir := ""
 	opts := &internal.GlobalCommandOptions{GenerateStaticHelp: staticHelp}
 	opts.EnableTelemetry = telemetry.IsTelemetryEnabled()
@@ -39,6 +43,12 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 		Use:   "azd",
 		Short: fmt.Sprintf("%s is an open-source tool that helps onboard and manage your application on Azure", productName),
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
+			// If there was a platform configuration error report it to the user until it is resolved
+			// Using fmt.Printf directly here since we can't leverage our IoC container to resolve a console instance
+			if errors.Is(platform.Error, platform.ErrPlatformNotSupported) {
+				fmt.Print(output.WithWarningFormat("WARNING: %s\n\n", platform.Error.Error()))
+			}
+
 			if opts.Cwd != "" {
 				current, err := os.Getwd()
 
@@ -108,6 +118,7 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 	telemetryActions(root)
 	templatesActions(root)
 	authActions(root)
+	hooksActions(root)
 
 	root.Add("version", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{
@@ -127,8 +138,11 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 		Command:        newShowCmd(),
 		FlagsResolver:  newShowFlags,
 		ActionResolver: newShowAction,
-		OutputFormats:  []output.Format{output.JsonFormat},
+		OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 		DefaultFormat:  output.NoneFormat,
+		GroupingOptions: actions.CommandGroupOptions{
+			RootLevelHelp: actions.CmdGroupMonitor,
+		},
 	})
 
 	//deprecate:cmd hide login
@@ -161,7 +175,7 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 		GroupingOptions: actions.CommandGroupOptions{
 			RootLevelHelp: actions.CmdGroupConfig,
 		},
-	}).AddFlagCompletion("template", templateNameCompletion)
+	})
 
 	root.
 		Add("restore", &actions.ActionDescriptorOptions{
@@ -303,14 +317,24 @@ func NewRootCmd(staticHelp bool, middlewareChain []*actions.MiddlewareRegistrati
 	// Global middleware registration
 	root.
 		UseMiddleware("debug", middleware.NewDebugMiddleware).
+		UseMiddleware("experimentation", middleware.NewExperimentationMiddleware).
 		UseMiddlewareWhen("telemetry", middleware.NewTelemetryMiddleware, func(descriptor *actions.ActionDescriptor) bool {
 			return !descriptor.Options.DisableTelemetry
 		})
 
+	// Register common dependencies for the IoC container
+	ioc.RegisterInstance(ioc.Global, ctx)
 	registerCommonDependencies(ioc.Global)
-	cobraBuilder := NewCobraBuilder(ioc.Global)
+
+	// Initialize the platform specific components for the IoC container
+	// Only container resolution errors will return an error
+	// Invalid configurations will fall back to default platform
+	if _, err := platform.Initialize(ioc.Global, azd.PlatformKindDefault); err != nil {
+		panic(err)
+	}
 
 	// Compose the hierarchy of action descriptions into cobra commands
+	cobraBuilder := NewCobraBuilder(ioc.Global)
 	cmd, err := cobraBuilder.BuildCommand(root)
 
 	if err != nil {

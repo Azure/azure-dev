@@ -26,6 +26,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/installer"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -57,7 +58,14 @@ func main() {
 	latest := make(chan semver.Version)
 	go fetchLatestVersion(latest)
 
-	cmdErr := cmd.NewRootCmd(false, nil).ExecuteContext(ctx)
+	cmdErr := cmd.NewRootCmd(ctx, false, nil).ExecuteContext(ctx)
+
+	if !isJsonOutput() {
+		if firstNotice := telemetry.FirstNotice(); firstNotice != "" {
+			fmt.Fprintln(os.Stderr, output.WithWarningFormat(firstNotice))
+		}
+	}
+
 	latestVersion, ok := <-latest
 
 	// If we were able to fetch a latest version, check to see if we are up to date and
@@ -148,9 +156,6 @@ func main() {
 	}
 }
 
-// azdConfigDir is the name of the folder where `azd` writes user wide configuration data.
-const azdConfigDir = ".azd"
-
 // updateCheckCacheFileName is the name of the file created in the azd configuration directory
 // which is used to cache version information for our up to date check.
 const updateCheckCacheFileName = "update-check.json"
@@ -175,13 +180,13 @@ func fetchLatestVersion(version chan<- semver.Version) {
 
 	// To avoid fetching the latest version of the CLI on every invocation, we cache the result for a period
 	// of time, in the user's home directory.
-	homeDir, err := os.UserHomeDir()
+	configDir, err := config.GetUserConfigDir()
 	if err != nil {
-		log.Printf("could not determine current home directory: %v, skipping update check", err)
+		log.Printf("could not determine config directory: %v, skipping update check", err)
 		return
 	}
 
-	cacheFilePath := filepath.Join(homeDir, azdConfigDir, updateCheckCacheFileName)
+	cacheFilePath := filepath.Join(configDir, updateCheckCacheFileName)
 	cacheFile, err := os.ReadFile(cacheFilePath)
 	if err != nil && !errors.Is(err, fs.ErrNotExist) {
 		log.Printf("error reading update cache file: %v, skipping update check", err)

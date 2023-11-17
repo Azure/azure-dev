@@ -113,39 +113,16 @@ get_architecture() {
     if [ "$architecture_raw" = "x86_64" ]; then
         echo 'amd64';
         return;
-    elif [ "$architecture_raw" = "arm64" ] && [ "$platform" = 'darwin' ]; then
-        # In the case of Apple Silicon use the existing ARM64 environment
-        echo 'amd64';
+    elif [ "$architecture_raw" = "arm64" ]; then
+        echo "$architecture_raw";
+        return;
+    elif [ "$architecture_raw" = "aarch64" ]; then
+        echo 'arm64';
         return;
     else
         say_error "Architecture not supported: $architecture_raw on platform: $platform"
         exit 1;
     fi;
-}
-
-ensure_rosetta() {
-    if [[ $(uname -m) == 'x86_64' ]]; then
-        # The current system is identified as an Intel system (either because it
-        # is running in Rosetta 2 or the system is running on Intel silicon) so
-        # Rosetta 2 is not needed.
-        say_verbose "Detected x86_64 system. Rosetta 2 is not needed."
-        return
-    fi
-
-    if /usr/bin/pgrep oahd >/dev/null 2>&1; then
-        say "Rosetta 2 is already installed and running. Nothing to do."
-    else
-        say "Rosetta 2 is not installed. You may be prompted to accept terms necessary to install Rosetta 2."
-
-        # Ensure that softwareupdate gets input from the terminal
-        if /usr/sbin/softwareupdate --install-rosetta </dev/tty; then
-            say "Rosetta has been successfully installed."
-        else
-            say_error "Rosetta 2 installation failed!"
-            save_error_report_if_enabled "InstallFailed" "Rosetta2InstallFailed"
-            exit 1
-        fi
-    fi
 }
 
 extract() {
@@ -161,7 +138,7 @@ extract() {
     fi
 }
 
-DEFAULT_BASE_URL="https://azure-dev.azureedge.net/azd/standalone/release"
+DEFAULT_BASE_URL="https://azdrelease.azureedge.net/azd/standalone/release"
 
 base_url="$DEFAULT_BASE_URL"
 platform="$(get_platform)"
@@ -286,22 +263,10 @@ say_verbose "Platform: $platform"
 say_verbose "Architecture: $architecture"
 say_verbose "File extension: $extension"
 
-if [ "$platform" = "darwin" ] && [ "$architecture" = "amd64" ]; then
-    say_verbose "Mac detected, ensuring compatibility with amd64 binaries"
-    ensure_rosetta
-fi
-
-# ARM64 bits are in beta, and so both the distribution package and the azd binary inside have a `-beta` suffix we
-# need to take into account.
-suffix=""
-if [ "$architecture" = "arm64" ]; then
-    suffix="-beta"
-fi
-
 if [ -z "$version" ]; then
-    url="$base_url/azd-$platform-$architecture$suffix.$extension"
+    url="$base_url/azd-$platform-$architecture.$extension"
 else
-    url="$base_url/$version/azd-$platform-$architecture$suffix.$extension"
+    url="$base_url/$version/azd-$platform-$architecture.$extension"
 fi
 
 if [ "$dry_run" = true ]; then
@@ -310,7 +275,7 @@ if [ "$dry_run" = true ]; then
 fi
 
 tmp_folder="$(mktemp -d)";
-compressed_file_path="$tmp_folder/azd-$platform-$architecture$suffix.$extension"
+compressed_file_path="$tmp_folder/azd-$platform-$architecture.$extension"
 say_verbose "Downloading $url to $tmp_folder"
 
 if ! curl -so "$compressed_file_path" "$url" --fail; then
@@ -322,7 +287,7 @@ if ! curl -so "$compressed_file_path" "$url" --fail; then
     exit 1
 fi
 
-bin_name="azd-$platform-$architecture$suffix"
+bin_name="azd-$platform-$architecture"
 extract "$compressed_file_path" "$tmp_folder"
 rm "$compressed_file_path"
 chmod +x "$tmp_folder/$bin_name"

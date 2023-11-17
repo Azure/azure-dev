@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/AlecAivazis/survey/v2/terminal"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
@@ -17,6 +18,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
+	"github.com/azure/azure-dev/cli/azd/pkg/platform"
 	"github.com/spf13/pflag"
 
 	"go.opentelemetry.io/otel/attribute"
@@ -25,13 +28,15 @@ import (
 
 // Telemetry middleware tracks telemetry for the given action
 type TelemetryMiddleware struct {
-	options *Options
+	options            *Options
+	lazyPlatformConfig *lazy.Lazy[*platform.Config]
 }
 
 // Creates a new Telemetry middleware instance
-func NewTelemetryMiddleware(options *Options) Middleware {
+func NewTelemetryMiddleware(options *Options, lazyPlatformConfig *lazy.Lazy[*platform.Config]) Middleware {
 	return &TelemetryMiddleware{
-		options: options,
+		options:            options,
+		lazyPlatformConfig: lazyPlatformConfig,
 	}
 }
 
@@ -63,6 +68,12 @@ func (m *TelemetryMiddleware) Run(ctx context.Context, next NextFn) (*actions.Ac
 	}
 
 	span.SetAttributes(fields.CmdArgsCount.Int(len(m.options.Args)))
+
+	// Set the platform type when available
+	// Valid platform types are validating in the platform config resolver and will error here if not known & valid
+	if platformConfig, err := m.lazyPlatformConfig.GetValue(); err == nil && platformConfig != nil {
+		span.SetAttributes(fields.PlatformTypeKey.String(string(platformConfig.Type)))
+	}
 
 	defer func() {
 		// Include any usage attributes set
@@ -167,6 +178,8 @@ func mapError(err error, span tracing.Span) {
 				fields.ServiceCorrelationId.String(authFailedErr.Parsed.CorrelationId))
 		}
 		errCode = "service.aad.failed"
+	} else if errors.Is(err, terminal.InterruptErr) {
+		errCode = "user.canceled"
 	}
 
 	if len(errDetails) > 0 {

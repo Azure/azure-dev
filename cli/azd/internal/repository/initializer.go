@@ -12,13 +12,17 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/pkg/templates"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/azure/azure-dev/cli/azd/resources"
 	"github.com/otiai10/copy"
@@ -26,16 +30,23 @@ import (
 
 // Initializer handles the initialization of a local repository.
 type Initializer struct {
-	console input.Console
-	gitCli  git.GitCli
+	console        input.Console
+	gitCli         git.GitCli
+	dotnetCli      dotnet.DotNetCli
+	lazyEnvManager *lazy.Lazy[environment.Manager]
 }
 
 func NewInitializer(
 	console input.Console,
-	gitCli git.GitCli) *Initializer {
+	gitCli git.GitCli,
+	dotnetCli dotnet.DotNetCli,
+	lazyEnvManager *lazy.Lazy[environment.Manager],
+) *Initializer {
 	return &Initializer{
-		console: console,
-		gitCli:  gitCli,
+		console:        console,
+		gitCli:         gitCli,
+		lazyEnvManager: lazyEnvManager,
+		dotnetCli:      dotnetCli,
 	}
 }
 
@@ -45,7 +56,7 @@ func NewInitializer(
 func (i *Initializer) Initialize(
 	ctx context.Context,
 	azdCtx *azdcontext.AzdContext,
-	templateUrl string,
+	template *templates.Template,
 	templateBranch string) error {
 	var err error
 	stepMessage := fmt.Sprintf("Downloading template code to: %s", output.WithLinkFormat("%s", azdCtx.ProjectDirectory()))
@@ -65,6 +76,11 @@ func (i *Initializer) Initialize(
 	}()
 
 	target := azdCtx.ProjectDirectory()
+
+	templateUrl, err := templates.Absolute(template.RepositoryPath)
+	if err != nil {
+		return err
+	}
 
 	filesWithExecPerms, err := i.fetchCode(ctx, templateUrl, templateBranch, staging)
 	if err != nil {
@@ -99,6 +115,10 @@ func (i *Initializer) Initialize(
 	err = i.writeCoreAssets(ctx, azdCtx)
 	if err != nil {
 		return err
+	}
+
+	if err := i.initializeProject(ctx, azdCtx, &template.Metadata); err != nil {
+		return fmt.Errorf("initializing project: %w", err)
 	}
 
 	err = i.gitInitialize(ctx, target, filesWithExecPerms, isEmpty)
@@ -237,6 +257,31 @@ func (i *Initializer) ensureGitRepository(ctx context.Context, repoPath string) 
 	return nil
 }
 
+// Initialize the project with any metadata values from the template
+func (i *Initializer) initializeProject(
+	ctx context.Context,
+	azdCtx *azdcontext.AzdContext,
+	templateMetaData *templates.Metadata,
+) error {
+	if templateMetaData == nil || len(templateMetaData.Project) == 0 {
+		return nil
+	}
+
+	projectPath := azdCtx.ProjectPath()
+	projectConfig, err := project.LoadConfig(ctx, projectPath)
+	if err != nil {
+		return fmt.Errorf("loading project config: %w", err)
+	}
+
+	for key, value := range templateMetaData.Project {
+		if err := projectConfig.Set(key, value); err != nil {
+			return fmt.Errorf("setting project config: %w", err)
+		}
+	}
+
+	return project.SaveConfig(ctx, projectConfig, projectPath)
+}
+
 func parseExecutableFiles(stagedFilesOutput string) ([]string, error) {
 	scanner := bufio.NewScanner(strings.NewReader(stagedFilesOutput))
 	executableFiles := []string{}
@@ -293,17 +338,23 @@ func (i *Initializer) InitializeMinimal(ctx context.Context, azdCtx *azdcontext.
 		return err
 	}
 
-	err = os.MkdirAll(projectConfig.Infra.Path, osutil.PermissionDirectory)
+	// Default infra path if not specified
+	infraPath := projectConfig.Infra.Path
+	if infraPath == "" {
+		infraPath = bicep.Defaults.Path
+	}
+
+	err = os.MkdirAll(infraPath, osutil.PermissionDirectory)
 	if err != nil {
 		return err
 	}
 
 	module := projectConfig.Infra.Module
 	if projectConfig.Infra.Module == "" {
-		module = bicep.DefaultModule
+		module = bicep.Defaults.Module
 	}
 
-	mainPath := filepath.Join(projectConfig.Infra.Path, module)
+	mainPath := filepath.Join(infraPath, module)
 	retryInfix := ".azd"
 	err = i.writeFileSafe(
 		ctx,
@@ -480,14 +531,16 @@ func (i *Initializer) PromptIfNonEmpty(ctx context.Context, azdCtx *azdcontext.A
 			return fmt.Errorf("determining current git repository state: %w", err)
 		}
 
+		warningMessage := output.WithWarningFormat("WARNING: The current directory is not empty.")
+		i.console.Message(ctx, warningMessage)
+		i.console.Message(ctx, "Initializing an app in this directory may overwrite existing files.\n")
+
 		message := fmt.Sprintf(
-			"The current directory is not empty. Would you like to initialize a project here in '%s'?",
+			"Continue initializing an app in '%s'?",
 			dir)
 		if err != nil {
 			message = fmt.Sprintf(
-				"The current directory is not empty. "+
-					"Would you like to initialize a project here? "+
-					"Doing so will also initialize a new git repository in '%s'.",
+				"Continue initializing an app here? This will also initialize a new git repository in '%s'.",
 				dir)
 		}
 

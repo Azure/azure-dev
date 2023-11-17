@@ -112,6 +112,7 @@ type deployAction struct {
 	middlewareRunner         middleware.MiddlewareContext
 	packageActionInitializer actions.ActionInitializer[*packageAction]
 	alphaFeatureManager      *alpha.FeatureManager
+	importManager            *project.ImportManager
 }
 
 func newDeployAction(
@@ -132,6 +133,7 @@ func newDeployAction(
 	middlewareRunner middleware.MiddlewareContext,
 	packageActionInitializer actions.ActionInitializer[*packageAction],
 	alphaFeatureManager *alpha.FeatureManager,
+	importManager *project.ImportManager,
 ) actions.Action {
 	return &deployAction{
 		flags:                    flags,
@@ -151,6 +153,7 @@ func newDeployAction(
 		middlewareRunner:         middlewareRunner,
 		packageActionInitializer: packageActionInitializer,
 		alphaFeatureManager:      alphaFeatureManager,
+		importManager:            importManager,
 	}
 }
 
@@ -176,6 +179,7 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	targetServiceName, err := getTargetServiceName(
 		ctx,
 		da.projectManager,
+		da.importManager,
 		da.projectConfig,
 		string(project.ServiceEventDeploy),
 		targetServiceName,
@@ -215,14 +219,20 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	startTime := time.Now()
 
 	deployResults := map[string]*project.ServiceDeployResult{}
+	stableServices, err := da.importManager.ServiceStable(ctx, da.projectConfig)
+	if err != nil {
+		return nil, err
+	}
 
-	for _, svc := range da.projectConfig.GetServicesStable() {
+	for _, svc := range stableServices {
 		stepMessage := fmt.Sprintf("Deploying service %s", svc.Name)
+		da.console.ShowSpinner(ctx, stepMessage, input.Step)
 
 		// Skip this service if both cases are true:
 		// 1. The user specified a service name
 		// 2. This service is not the one the user specified
 		if targetServiceName != "" && targetServiceName != svc.Name {
+			da.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
 			continue
 		}
 
@@ -232,7 +242,6 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 			da.console.WarnForFeature(ctx, alphaFeatureId)
 		}
 
-		da.console.ShowSpinner(ctx, stepMessage, input.Step)
 		var packageResult *project.ServicePackageResult
 		if da.flags.fromPackage != "" {
 			// --from-package set, skip packaging
@@ -241,7 +250,7 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 			}
 		} else {
 			//  --from-package not set, package the application
-			packageTask := da.serviceManager.Package(ctx, svc, nil)
+			packageTask := da.serviceManager.Package(ctx, svc, nil, nil)
 			done := make(chan struct{})
 			go func() {
 				for packageProgress := range packageTask.Progress() {

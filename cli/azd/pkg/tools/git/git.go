@@ -8,13 +8,13 @@ import (
 	"errors"
 	"fmt"
 	"log"
-	"os"
 	"regexp"
 	"runtime"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 	"github.com/blang/semver/v4"
 )
 
@@ -96,7 +96,10 @@ func (cli *gitCli) ShallowClone(ctx context.Context, repositoryPath string, bran
 	}
 	args = append(args, target)
 
-	runArgs := newRunArgs(args...)
+	// Do not call `newRunArgs()` here because we don't want to apply the codespaces special patch that removes
+	// default authentication. `git clone` should work for private repos within a codespace with default auth.
+	// See: https://github.com/Azure/azure-dev/issues/2582
+	runArgs := exec.NewRunArgs("git", args...)
 	_, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
 		return fmt.Errorf("failed to clone repository %s: %w", repositoryPath, err)
@@ -297,7 +300,7 @@ func setAuthCredentialHelper(
 func newRunArgs(args ...string) exec.RunArgs {
 
 	runArgs := exec.NewRunArgs("git", args...)
-	if os.Getenv("CODESPACES") == "true" {
+	if github.RunningOnCodespaces() {
 		// azd running git in codespaces should not use the Codespaces token.
 		// As azd needs bigger access across repos. And the token in codespaces is mono-repo by default
 		runArgs = runArgs.WithEnv([]string{"GITHUB_TOKEN=", "GH_TOKEN="})

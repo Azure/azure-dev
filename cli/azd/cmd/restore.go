@@ -75,6 +75,7 @@ type restoreAction struct {
 	env            *environment.Environment
 	projectConfig  *project.ProjectConfig
 	projectManager project.ProjectManager
+	importManager  *project.ImportManager
 	serviceManager project.ServiceManager
 	commandRunner  exec.CommandRunner
 }
@@ -130,6 +131,7 @@ func (ra *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error)
 	targetServiceName, err := getTargetServiceName(
 		ctx,
 		ra.projectManager,
+		ra.importManager,
 		ra.projectConfig,
 		string(project.ServiceEventRestore),
 		targetServiceName,
@@ -150,8 +152,12 @@ func (ra *restoreAction) Run(ctx context.Context) (*actions.ActionResult, error)
 	}
 
 	restoreResults := map[string]*project.ServiceRestoreResult{}
+	stableServices, err := ra.importManager.ServiceStable(ctx, ra.projectConfig)
+	if err != nil {
+		return nil, err
+	}
 
-	for _, svc := range ra.projectConfig.GetServicesStable() {
+	for _, svc := range stableServices {
 		stepMessage := fmt.Sprintf("Restoring service %s", svc.Name)
 		ra.console.ShowSpinner(ctx, stepMessage, input.Step)
 

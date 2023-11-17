@@ -15,12 +15,12 @@ products:
 - azure-pipelines
 - aspnet-core
 urlFragment: todo-csharp-cosmos-sql
-name: React Web App with C# API and MongoDB on Azure
-description: A complete ToDo app with C# API and Azure Cosmos DB SQL API for storage. Uses Azure Developer CLI (azd) to build, deploy, and monitor
+name: React Web App with C# API and Cosmos DB for NoSQL on Azure
+description: A complete ToDo app with C# API and Azure Cosmos DB (NoSQL) for storage. Uses Azure Developer CLI (azd) to build, deploy, and monitor
 ---
 <!-- YAML front-matter schema: https://review.learn.microsoft.com/en-us/help/contribute/samples/process/onboarding?branch=main#supported-metadata-fields-for-readmemd -->
 
-# React Web App with C# API and MongoDB on Azure
+# React Web App with C# API and Cosmos DB for NoSQL on Azure
 
 [![Open in GitHub Codespaces](https://img.shields.io/static/v1?style=for-the-badge&label=GitHub+Codespaces&message=Open&color=brightgreen&logo=github)](https://codespaces.new/azure-samples/todo-csharp-cosmos-sql)
 [![Open in Dev Container](https://img.shields.io/static/v1?style=for-the-badge&label=Dev+Containers&message=Open&color=blue&logo=visualstudiocode)](https://vscode.dev/redirect?url=vscode://ms-vscode-remote.remote-containers/cloneInVolume?url=https://github.com/azure-samples/todo-csharp-cosmos-sql)
@@ -41,7 +41,7 @@ The following prerequisites are required to use this application. Please ensure 
 
 - [Azure Developer CLI](https://aka.ms/azd-install)
 - [.NET SDK 6.0](https://dotnet.microsoft.com/download/dotnet/6.0) - for the API backend
-- [Node.js with npm (16.13.1+)](https://nodejs.org/) - for the Web frontend
+- [Node.js with npm (18.17.1+)](https://nodejs.org/) - for the Web frontend
 
 ### Quickstart
 To learn how to get started with any template, follow the steps in [this quickstart](https://learn.microsoft.com/azure/developer/azure-developer-cli/get-started?tabs=localinstall&pivots=programming-language-csharp) with this template (`Azure-Samples/todo-csharp-cosmos-sql`).
@@ -64,7 +64,7 @@ azd up
 This application utilizes the following Azure resources:
 
 - [**Azure App Services**](https://docs.microsoft.com/azure/app-service/) to host the Web frontend and API backend
-- [**Azure Cosmos DB SQL API**](https://docs.microsoft.com/learn/modules/intro-to-azure-cosmos-db-core-api/) for storage
+- [**Azure Cosmos DB for NoSQL**](https://docs.microsoft.com/learn/modules/intro-to-azure-cosmos-db-core-api/) for storage
 - [**Azure Monitor**](https://docs.microsoft.com/azure/azure-monitor/) for monitoring and logging
 - [**Azure Key Vault**](https://docs.microsoft.com/azure/key-vault/) for securing secrets
 
@@ -72,7 +72,8 @@ Here's a high level architecture diagram that illustrates these components. Noti
 
 !["Application architecture diagram"](assets/resources.png)
 
-> This template provisions resources to an Azure subscription that you will select upon provisioning them. Please refer to the [Pricing calculator for Microsoft Azure](https://azure.microsoft.com/pricing/calculator/) and, if needed, update the included Azure resource definitions found in `infra/main.bicep` to suit your needs.
+### Cost of provisioning and deploying this template
+This template provisions resources to an Azure subscription that you will select upon provisioning them. Refer to the [Pricing calculator for Microsoft Azure](https://azure.microsoft.com/pricing/calculator/) to estimate the cost you might incur when this template is running on Azure and, if needed, update the included Azure resource definitions found in `infra/main.bicep` to suit your needs.
 
 ### Application Code
 
@@ -81,6 +82,8 @@ This template is structured to follow the [Azure Developer CLI](https://aka.ms/a
 ### Next Steps
 
 At this point, you have a complete application deployed on Azure. But there is much more that the Azure Developer CLI can do. These next steps will introduce you to additional commands that will make creating applications on Azure much easier. Using the Azure Developer CLI, you can setup your pipelines, monitor your application, test and debug locally.
+
+> Note: Needs to manually install [setup-azd extension](https://marketplace.visualstudio.com/items?itemName=ms-azuretools.azd) for Azure DevOps (azdo).
 
 - [`azd pipeline config`](https://learn.microsoft.com/azure/developer/azure-developer-cli/configure-devops-pipeline?tabs=GitHub) - to configure a CI/CD pipeline (using GitHub Actions or Azure DevOps) to deploy your application whenever code is pushed to the main branch. 
 

@@ -1,21 +1,142 @@
 # Release History
 
-## 1.1.1 (Unreleased)
+## 1.6.0-beta.1 (Unreleased)
 
 ### Features Added
 
-- [[2550]](https://github.com/Azure/azure-dev/pull/2550) Add `--preview` to `azd provision` to get the changes
-- [[2521]](https://github.com/Azure/azure-dev/pull/2521) Support `--principal-id` param for azd pipeline config to reuse existing service principal
-- [[2455]](https://github.com/Azure/azure-dev/pull/2455) Adds optional support for text templates in AKS k8s manifests
+### Breaking Changes
 
 ### Bugs Fixed
 
-- [[2569]](https://github.com/Azure/azure-dev/pull/2569) Fix `azd down` so it works after a failed `azd provision`
-- [[2367]](https://github.com/Azure/azure-dev/pull/2367) Don't fail AKS deployment for failed environment substitution
+### Other Changes
+
+## 1.5.0 (2023-11-15)
+
+### Features Added
+
+- [[2767]](https://github.com/Azure/azure-dev/pull/2767) Adds support for Azure Deployments Environments.
+
+## 1.4.5 (2023-11-13)
+
+### Bugs Fixed
+
+- [[2962]](https://github.com/Azure/azure-dev/pull/2962) Fix for incorrect id on storage blob built-in role id.
+- [[2963]](https://github.com/Azure/azure-dev/pull/2963) Handle project is undetected.
+
+## 1.4.4 (2023-11-10)
+
+### Features Added
+
+- [[2893]](https://github.com/Azure/azure-dev/pull/2893) Added command `azd show`.
+- [[2925]](https://github.com/Azure/azure-dev/pull/2925) Promote simplified `azd init` and Cloud Native buildpacks features to beta
+
+## 1.4.3 (2023-10-24)
+
+### Features Added
+
+- [[2787]](https://github.com/Azure/azure-dev/pull/2787) Added `azd config show` and deprecated `azd config list`.
+
+### Other Changes
+
+- [[2887]](https://github.com/Azure/azure-dev/pull/2887) Update the subscription and location information during `azd provision`.
+
+## 1.4.2 (2023-10-12)
+
+### Features Added
+
+- [[2845]](https://github.com/Azure/azure-dev/pull/2845) Feature Clickable Template Links in Terminal (azd template list). Thanks @john0isaac for the contribution
+- [[2829]](https://github.com/Azure/azure-dev/pull/2829) Feature Display the Subscription Name and ID (azd provision). Thanks @john0isaac for the contribution
+
+### Bugs Fixed
+
+- [[2858]](https://github.com/Azure/azure-dev/pull/2858) Fixes issue with running VS Code Tasks that rely on environment configuration path.
+
+## 1.4.1 (2023-10-06)
+
+### Bugs Fixed
+
+- [[2837]](https://github.com/Azure/azure-dev/pull/2837) `azd down` does not clear provision state.
+
+## 1.4.0 (2023-10-05)
+
+### Features Added
+
+- [[2725]](https://github.com/Azure/azure-dev/pull/2725) Adds support for provision state to the bicep provider.
+- [[2765]](https://github.com/Azure/azure-dev/pull/2765) Support for remote environments.
+- [[1642]](https://github.com/Azure/azure-dev/pull/1642) A new `azd hooks run` command for running and testing your hooks.
+
+### Bugs Fixed
+
+- [[2793]](https://github.com/Azure/azure-dev/pull/2793) Support user defined types for the bicep provider.
+- [[2543]](https://github.com/Azure/azure-dev/pull/2543) `azd package` now allows users to specify `--output-path` parameter to control the output location of file-based packages.
+- [[2302]](https://github.com/Azure/azure-dev/pull/2302) `azd config --help` doesn't show help for `AZD_CONFIG_DIR`.
+- [[2050]](https://github.com/Azure/azure-dev/pull/2050) `azd init` now supports `--subscription`.
+- [[2695]](https://github.com/Azure/azure-dev/pull/2695) `azd` now honors `@allowed` locations in Bicep to filter the list of possible deploy locations.
+- [[2599]](https://github.com/Azure/azure-dev/pull/2599) ARM64 support is now generally available.
+- [[2683]](https://github.com/Azure/azure-dev/pull/2683) Bicep installer prefers MUSL variant over glibc.
+- [[2794]](https://github.com/Azure/azure-dev/pull/2794) When running `azd init`, the Starter - Bicep template is unavailable.
+  
+### Other Changes
+
+- [[#2796]](https://github.com/Azure/azure-dev/pull/2796) Update `terraform` provider from alpha to beta.
+
+## 1.3.1 (2023-09-20)
+
+### Minor Changes
+
+- [[2737]](https://github.com/Azure/azure-dev/pull/2737) Update bicep to 0.21.1
+- [[2696]](https://github.com/Azure/azure-dev/pull/2696) Support filtering for azd location in bicep
+- [[2721]](https://github.com/Azure/azure-dev/pull/2721) `azd package` support for user specified output paths
+- [[2756]](https://github.com/Azure/azure-dev/pull/2756) Minor enhancements to simplified init
+
+### Bugs Fixed
+
+- [[2719]](https://github.com/Azure/azure-dev/pull/2719) Fix mistypes in soft delete warning message
+- [[2722]](https://github.com/Azure/azure-dev/pull/2722) Prefer glibc based Bicep when both musl and glibc are installed
+- [[2726]](https://github.com/Azure/azure-dev/pull/2726) Mention `AZD_CONFIG_DIR` in `azd config --help` help text
+
+## 1.3.0 (2023-09-06)
+
+### Features Added
+
+- [[2573]](https://github.com/Azure/azure-dev/pull/2573) Adds support for custom template sources.
+- [[2637]](https://github.com/Azure/azure-dev/pull/2637) Awesome azd templates are now shown by default in `azd init` template listing.
+- [[2628]](https://github.com/Azure/azure-dev/pull/2628) Support for `.bicepparam`.
+- [[2700]](https://github.com/Azure/azure-dev/pull/2700) New simplified `azd init` to initialize your existing application for Azure (alpha feature)
+- [[2678]](https://github.com/Azure/azure-dev/pull/2678) Support for Cloud Native Buildpacks (alpha feature)
+
+### Breaking Changes
+
+### Bugs Fixed
+
+- [[2624]](https://github.com/Azure/azure-dev/pull/2624) Fix provisioning deployment display not showing progress when certain errors occur.
+- [[2676]](https://github.com/Azure/azure-dev/pull/2676) Fix `buildArgs` support for docker build.
+- [[2698]](https://github.com/Azure/azure-dev/pull/2698) Fix `azd auth login` default browser prompt in Codespaces environments.
+- [[2664]](https://github.com/Azure/azure-dev/pull/2664) Fix `azd auth login` login loop after upgrading to 1.2.0.
+- [[2630]](https://github.com/Azure/azure-dev/pull/2630) Fix coloring for ignored operations in `azd provision --preview`
+
+### Other Changes
+
+- [[2660]](https://github.com/Azure/azure-dev/pull/2660) Starter templates now include `core` libraries by default.
+
+## 1.2.0 (2023-08-09)
+
+### Features Added
+
+- [[2550]](https://github.com/Azure/azure-dev/pull/2550) Add `--preview` to `azd provision` to get the changes.
+- [[2521]](https://github.com/Azure/azure-dev/pull/2521) Support `--principal-id` param for azd pipeline config to reuse existing service principal.
+- [[2455]](https://github.com/Azure/azure-dev/pull/2455) Adds optional support for text templates in AKS k8s manifests.
+
+### Bugs Fixed
+
+- [[2569]](https://github.com/Azure/azure-dev/pull/2569) Fix `azd down` so it works after a failed `azd provision`.
+- [[2367]](https://github.com/Azure/azure-dev/pull/2367) Don't fail AKS deployment for failed environment substitution.
+- [[2576]](https://github.com/Azure/azure-dev/pull/2576) Fix `azd auth login` unable to launch browser on WSL.
 
 ### Other changes
 
-- [[2572]](https://github.com/Azure/azure-dev/pull/2572) Decrease expiration time of service principal secret from default (24 months) to 180 days
+- [[2572]](https://github.com/Azure/azure-dev/pull/2572) Decrease expiration time of service principal secret from default (24 months) to 180 days.
+- [[2500]](https://github.com/Azure/azure-dev/pull/2500) Promoted Azure Spring Apps from `alpha` to `beta`.
 
 ## 1.1.0 (2023-07-12)
 

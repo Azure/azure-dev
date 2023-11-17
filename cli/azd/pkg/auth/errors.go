@@ -8,9 +8,9 @@ import (
 	"io"
 	"log"
 	"net/http"
+	"slices"
 
 	msal "github.com/AzureAD/microsoft-authentication-library-for-go/apps/errors"
-	"golang.org/x/exp/slices"
 )
 
 const cLoginCmd = "azd auth login"

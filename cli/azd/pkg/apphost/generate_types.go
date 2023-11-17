@@ -51,7 +51,12 @@ type genDapr struct {
 	LogLevel               *string
 }
 
+type genDaprComponentMetadata struct {
+	Value *string
+}
+
 type genDaprComponent struct {
+	Metadata map[string]genDaprComponentMetadata
 	Type    string
 	Version string
 }

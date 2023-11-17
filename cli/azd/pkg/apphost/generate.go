@@ -379,19 +379,51 @@ func (b* infraGenerator) addDaprComponent(name string, metadata *DaprComponentRe
 	}
 
 	switch *metadata.Type {
+	case "pubsub":
+		b.addDaprPubSubComponent(name)
 	case "state":
+		b.addDaprStateStoreComponent(name)
 	default:
 		return fmt.Errorf("dapr component resource '%s' has unsupported type '%s'", name, *metadata.Type)
 	}
 
+	return nil
+}
+
+func (b* infraGenerator) addDaprPubSubComponent(name string) {
+	b.requireCluster()
+
+	redisName := fmt.Sprintf("%sRedis", name)
+
+	b.addContainerAppService(redisName, "redis")
+
+	component := genDaprComponent{
+		Metadata: make(map[string]genDaprComponentMetadata),
+		Type: "pubsub.redis",
+		Version: "v1",
+	}
+
+	redisHost := fmt.Sprintf("%s.properties.configuration.ingress.fqdn", redisName)
+	redisPassword := fmt.Sprintf(`%s.listSecrets().value[0].value`, redisName)
+
+	component.Metadata["redisHost"] = genDaprComponentMetadata{
+		Value: &redisHost,
+	}
+
+	component.Metadata["redisPassword"] = genDaprComponentMetadata{
+		Value: &redisPassword,
+	}
+
+	b.bicepContext.DaprComponents[name] = component
+}
+
+func (b* infraGenerator) addDaprStateStoreComponent(name string) {
 	b.requireCluster()
 
 	b.bicepContext.DaprComponents[name] = genDaprComponent{
 		Type: "state.in-memory",
 		Version: "v1",
 	}
-
-	return nil
 }
 
 func validateAndMergeBindings(bindings map[string]*Binding) (*Binding, error) {

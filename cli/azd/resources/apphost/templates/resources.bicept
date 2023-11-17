@@ -67,6 +67,12 @@ resource {{$componentName}} 'Microsoft.App/managedEnvironments/daprComponents@20
     componentType: '{{$componentValue.Type}}'
     version: '{{$componentValue.Version}}'
     metadata: [
+{{range $metadataName, $metadataValue := $componentValue.Metadata}}
+      {
+        name: '{{$metadataName}}'
+        value: {{$metadataValue.Value}}
+      }
+{{end -}}
     ]
   }
 }

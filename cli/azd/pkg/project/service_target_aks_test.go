@@ -14,7 +14,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v2"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -189,23 +188,6 @@ func setupMocksForAksTarget(mockContext *mocks.MockContext) error {
 	setupMocksForAcr(mockContext)
 	setupMocksForKubectl(mockContext)
 	setupMocksForDocker(mockContext)
-
-	mockContext.HttpClient.When(func(request *http.Request) bool {
-		return request.Method == http.MethodGet && strings.Contains(request.URL.String(), "resources?$filter=tagName")
-	}).RespondFn(func(request *http.Request) (*http.Response, error) {
-		result := armresources.ResourceListResult{
-			Value: []*armresources.GenericResourceExpanded{
-				{
-					ID:       convert.RefOf("RESOURCE_ID"),
-					Location: convert.RefOf("eastus2"),
-					Name:     convert.RefOf("Resource"),
-					Type:     convert.RefOf("Microsoft.ContainerService/managedClusters"),
-				},
-			},
-		}
-
-		return mocks.CreateHttpResponseWithBody(request, http.StatusOK, result)
-	})
 
 	return nil
 }

@@ -3,6 +3,8 @@ package project
 import (
 	"encoding/json"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -78,7 +80,22 @@ func (spr *ServicePackageResult) ToString(currentIndentation string) string {
 		return uxItem.ToString(currentIndentation)
 	}
 
-	return fmt.Sprintf("%s- Package Output: %s", currentIndentation, output.WithHighLightFormat(spr.PackagePath, ""))
+	// Render valid file paths as hyperlinks
+	// Clicking on the link *should* open the file in the OS file explorer
+	// Depending on if the user specified an --output-path parameter we need to support both relative and absolute paths
+	packagePathLink := output.WithHighLightFormat(spr.PackagePath)
+	if _, err := os.Stat(spr.PackagePath); err == nil {
+		packagePath := spr.PackagePath
+		if !filepath.IsAbs(spr.PackagePath) {
+			if absPath, err := filepath.Abs(spr.PackagePath); err == nil {
+				packagePath = absPath
+			}
+		}
+
+		packagePathLink = output.WithHyperlink(packagePath, spr.PackagePath)
+	}
+
+	return fmt.Sprintf("%s- Package Output: %s", currentIndentation, packagePathLink)
 }
 
 func (spr *ServicePackageResult) MarshalJSON() ([]byte, error) {

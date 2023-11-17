@@ -4,6 +4,8 @@
 
 ### Features Added
 
+- [[2998]](https://github.com/Azure/azure-dev/pull/2998) Adds support for Azure Storage Tables and Queues on Aspire projects.
+
 ### Breaking Changes
 
 ### Bugs Fixed

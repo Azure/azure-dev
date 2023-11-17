@@ -29,12 +29,16 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
 	"github.com/azure/azure-dev/cli/azd/test/ostest"
 	"github.com/benbjohnson/clock"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 	"gopkg.in/yaml.v3"
 )
 
 func Test_NewAksTarget(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
+	err := setupMocksForAksTarget(mockContext)
+	require.NoError(t, err)
+
 	serviceConfig := createTestServiceConfig("./src/api", AksTarget, ServiceLanguageTypeScript)
 	env := createEnv()
 
@@ -75,6 +79,9 @@ func Test_Package_Deploy_HappyPath(t *testing.T) {
 	env := createEnv()
 
 	serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env)
+	err = simulateInitliaze(*mockContext.Context, serviceTarget, serviceConfig)
+	require.NoError(t, err)
+
 	err = setupK8sManifests(t, serviceConfig)
 	require.NoError(t, err)
 
@@ -125,24 +132,12 @@ func Test_Deploy_No_Cluster_Name(t *testing.T) {
 	env.DotenvDelete(environment.AksClusterEnvVarName)
 
 	serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env)
-	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "CLUSTER_NAME", string(infra.AzureResourceTypeManagedCluster))
-	packageOutput := &ServicePackageResult{
-		Build: &ServiceBuildResult{BuildOutputPath: "IMAGE_ID"},
-		Details: &dockerPackageResult{
-			ImageTag: "IMAGE_TAG",
-		},
-	}
-
-	deployTask := serviceTarget.Deploy(*mockContext.Context, serviceConfig, packageOutput, scope)
-	logProgress(deployTask)
-
-	deployResult, err := deployTask.Await()
+	err = simulateInitliaze(*mockContext.Context, serviceTarget, serviceConfig)
 	require.Error(t, err)
 	require.ErrorContains(t, err, "could not determine AKS cluster")
-	require.Nil(t, deployResult)
 }
 
-func Test_Deploy_No_Admin_Credentials(t *testing.T) {
+func Test_Deploy_No_Credentials(t *testing.T) {
 	tempDir := t.TempDir()
 	ostest.Chdir(t, tempDir)
 
@@ -152,28 +147,16 @@ func Test_Deploy_No_Admin_Credentials(t *testing.T) {
 
 	// Simulate list credentials fail.
 	// For more secure clusters getting admin credentials can fail
-	err = setupListClusterAdminCredentialsMock(mockContext, http.StatusUnauthorized)
+	err = setupListClusterUserCredentialsMock(mockContext, http.StatusUnauthorized)
 	require.NoError(t, err)
 
 	serviceConfig := createTestServiceConfig(tempDir, AksTarget, ServiceLanguageTypeScript)
 	env := createEnv()
 
 	serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env)
-	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "CLUSTER_NAME", string(infra.AzureResourceTypeManagedCluster))
-	packageOutput := &ServicePackageResult{
-		Build: &ServiceBuildResult{BuildOutputPath: "IMAGE_ID"},
-		Details: &dockerPackageResult{
-			ImageTag: "IMAGE_TAG",
-		},
-	}
-
-	deployTask := serviceTarget.Deploy(*mockContext.Context, serviceConfig, packageOutput, scope)
-	logProgress(deployTask)
-	deployResult, err := deployTask.Await()
-
+	err = simulateInitliaze(*mockContext.Context, serviceTarget, serviceConfig)
 	require.Error(t, err)
 	require.ErrorContains(t, err, "failed retrieving cluster admin credentials")
-	require.Nil(t, deployResult)
 }
 
 func setupK8sManifests(t *testing.T, serviceConfig *ServiceConfig) error {
@@ -197,6 +180,11 @@ func setupMocksForAksTarget(mockContext *mocks.MockContext) error {
 		return err
 	}
 
+	err = setupListClusterUserCredentialsMock(mockContext, http.StatusOK)
+	if err != nil {
+		return err
+	}
+
 	setupMocksForAcr(mockContext)
 	setupMocksForKubectl(mockContext)
 	setupMocksForDocker(mockContext)
@@ -214,6 +202,36 @@ func setupListClusterAdminCredentialsMock(mockContext *mocks.MockContext, status
 	// Get Admin cluster credentials
 	mockContext.HttpClient.When(func(request *http.Request) bool {
 		return request.Method == http.MethodPost && strings.Contains(request.URL.Path, "listClusterAdminCredential")
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		creds := armcontainerservice.CredentialResults{
+			Kubeconfigs: []*armcontainerservice.CredentialResult{
+				{
+					Name:  convert.RefOf("context"),
+					Value: kubeConfigBytes,
+				},
+			},
+		}
+
+		if statusCode == http.StatusOK {
+			return mocks.CreateHttpResponseWithBody(request, statusCode, creds)
+		} else {
+			return mocks.CreateEmptyHttpResponse(request, statusCode)
+		}
+	})
+
+	return nil
+}
+
+func setupListClusterUserCredentialsMock(mockContext *mocks.MockContext, statusCode int) error {
+	kubeConfig := createTestCluster("cluster1", "user1")
+	kubeConfigBytes, err := yaml.Marshal(kubeConfig)
+	if err != nil {
+		return err
+	}
+
+	// Get Admin cluster credentials
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodPost && strings.Contains(request.URL.Path, "listClusterUserCredential")
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		creds := armcontainerservice.CredentialResults{
 			Kubeconfigs: []*armcontainerservice.CredentialResult{
@@ -484,6 +502,17 @@ func createAksServiceTarget(
 	envManager := &mockenv.MockEnvManager{}
 	envManager.On("Save", *mockContext.Context, env).Return(nil)
 
+	resourceManager := &MockResourceManager{}
+	targetResource := environment.NewTargetResource(
+		"SUBSCRIPTION_ID",
+		"RESOURCE_GROUP",
+		"CLUSTER_NAME",
+		string(infra.AzureResourceTypeManagedCluster),
+	)
+	resourceManager.
+		On("GetTargetResource", *mockContext.Context, "SUBSCRIPTION_ID", serviceConfig).
+		Return(targetResource, nil)
+
 	managedClustersService := azcli.NewManagedClustersService(credentialProvider, mockContext.HttpClient)
 	containerRegistryService := azcli.NewContainerRegistryService(credentialProvider, mockContext.HttpClient, dockerCli)
 	containerHelper := NewContainerHelper(env, envManager, clock.NewMock(), containerRegistryService, dockerCli)
@@ -491,10 +520,29 @@ func createAksServiceTarget(
 	return NewAksTarget(
 		env,
 		envManager,
+		mockContext.Console,
 		managedClustersService,
+		resourceManager,
 		kubeCtl,
 		containerHelper,
 	)
+}
+
+func simulateInitliaze(ctx context.Context, serviceTarget ServiceTarget, serviceConfig *ServiceConfig) error {
+	if err := serviceTarget.Initialize(ctx, serviceConfig); err != nil {
+		return err
+	}
+
+	err := serviceConfig.RaiseEvent(ctx, "predeploy", ServiceLifecycleEventArgs{
+		Project: serviceConfig.Project,
+		Service: serviceConfig,
+	})
+
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func createTestCluster(clusterName, username string) *kubectl.KubeConfig {
@@ -534,4 +582,47 @@ func logProgress[T comparable, P comparable](task *async.TaskWithProgress[T, P])
 			log.Println(value)
 		}
 	}()
+}
+
+type MockResourceManager struct {
+	mock.Mock
+}
+
+func (m *MockResourceManager) GetResourceGroupName(
+	ctx context.Context,
+	subscriptionId string,
+	projectConfig *ProjectConfig,
+) (string, error) {
+	args := m.Called(ctx, subscriptionId, projectConfig)
+	return args.String(0), args.Error(1)
+}
+
+func (m *MockResourceManager) GetServiceResources(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroupName string,
+	serviceConfig *ServiceConfig,
+) ([]azcli.AzCliResource, error) {
+	args := m.Called(ctx, subscriptionId, resourceGroupName, serviceConfig)
+	return args.Get(0).([]azcli.AzCliResource), args.Error(1)
+}
+
+func (m *MockResourceManager) GetServiceResource(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroupName string,
+	serviceConfig *ServiceConfig,
+	rerunCommand string,
+) (azcli.AzCliResource, error) {
+	args := m.Called(ctx, subscriptionId, resourceGroupName, serviceConfig, rerunCommand)
+	return args.Get(0).(azcli.AzCliResource), args.Error(1)
+}
+
+func (m *MockResourceManager) GetTargetResource(
+	ctx context.Context,
+	subscriptionId string,
+	serviceConfig *ServiceConfig,
+) (*environment.TargetResource, error) {
+	args := m.Called(ctx, subscriptionId, serviceConfig)
+	return args.Get(0).(*environment.TargetResource), args.Error(1)
 }

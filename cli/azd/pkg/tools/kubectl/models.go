@@ -11,6 +11,7 @@ const (
 	ResourceTypeDeployment ResourceType = "deployment"
 	ResourceTypeIngress    ResourceType = "ing"
 	ResourceTypeService    ResourceType = "svc"
+	KubeConfigEnvVarName   string       = "KUBECONFIG"
 )
 
 type Resource struct {
@@ -166,8 +167,9 @@ type KubeContext struct {
 }
 
 type KubeContextData struct {
-	Cluster string `yaml:"cluster"`
-	User    string `yaml:"user"`
+	Cluster   string `yaml:"cluster"`
+	Namespace string `yaml:"namespace"`
+	User      string `yaml:"user"`
 }
 
 type KubeUser struct {

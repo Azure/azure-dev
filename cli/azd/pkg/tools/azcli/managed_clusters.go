@@ -19,6 +19,13 @@ type ManagedClustersService interface {
 		resourceGroupName string,
 		resourceName string,
 	) (*armcontainerservice.CredentialResults, error)
+	// Gets the user credentials for the specified resource
+	GetUserCredentials(
+		ctx context.Context,
+		subscriptionId string,
+		resourceGroupName string,
+		resourceName string,
+	) (*armcontainerservice.CredentialResults, error)
 }
 
 type managedClustersService struct {
@@ -37,6 +44,26 @@ func NewManagedClustersService(
 		httpClient:         httpClient,
 		userAgent:          azdinternal.UserAgent(),
 	}
+}
+
+// Gets the user credentials for the specified resource
+func (cs *managedClustersService) GetUserCredentials(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroupName string,
+	resourceName string,
+) (*armcontainerservice.CredentialResults, error) {
+	client, err := cs.createManagedClusterClient(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	credResult, err := client.ListClusterUserCredentials(ctx, resourceGroupName, resourceName, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return &credResult.CredentialResults, nil
 }
 
 // Gets the admin credentials for the specified resource

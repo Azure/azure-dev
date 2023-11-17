@@ -18,7 +18,19 @@ properties:
 {{- if .Dapr.AppProtocol}}
       appProtocol: {{ .Dapr.AppProtocol }}
 {{- end}}
+{{- if .Dapr.EnableApiLogging}}
+      enableApiLogging: {{ .Dapr.EnableApiLogging }}
+{{- end}}
       enabled: true
+{{- if .Dapr.HttpMaxRequestSize}}
+      httpMaxRequestSize: {{ .Dapr.HttpMaxRequestSize }}
+{{- end}}
+{{- if .Dapr.HttpReadBufferSize}}
+      httpReadBufferSize: {{ .Dapr.HttpReadBufferSize }}
+{{- end}}
+{{- if .Dapr.LogLevel}}
+      logLevel: {{ .Dapr.LogLevel }}
+{{- end}}
 {{- end}}
 {{- if .Ingress}}
     ingress:

@@ -52,6 +52,9 @@ type Resource struct {
 
 	// Dapr is present on dapr.v0 resources.
 	Dapr *DaprResourceMetadata `json:"dapr,omitempty"`
+
+	// DaprComponent is present on dapr.component.v0 resources.
+	DaprComponent *DaprComponentResourceMetadata `json:"daprComponent,omitempty"`
 }
 
 type DaprResourceMetadata struct {
@@ -62,6 +65,10 @@ type DaprResourceMetadata struct {
 	DaprHttpReadBufferSize *int    `json:"daprHttpReadBufferSize,omitempty"`
 	EnableApiLogging       *bool   `json:"enableApiLogging,omitempty"`
 	LogLevel               *string `json:"logLevel,omitempty"`
+}
+
+type DaprComponentResourceMetadata struct {
+	Type    *string `json:"type"`
 }
 
 type Reference struct {

@@ -59,6 +59,18 @@ resource containerAppEnvironment 'Microsoft.App/managedEnvironments@2023-05-01' 
   }
   tags: tags
 }
+{{range $componentName, $componentValue := .DaprComponents}}
+resource {{$componentName}} 'Microsoft.App/managedEnvironments/daprComponents@2023-05-01' = {
+  name: '{{$componentName}}'
+  parent: containerAppEnvironment
+  properties: {
+    componentType: '{{$componentValue.Type}}'
+    version: '{{$componentValue.Version}}'
+    metadata: [
+    ]
+  }
+}
+{{end -}}
 {{end -}}
 {{range $name, $value := .ContainerAppEnvironmentServices}}
 resource {{bicepName $name}} 'Microsoft.App/containerApps@2023-05-02-preview' = {
@@ -100,7 +112,19 @@ resource {{bicepName $name}} 'Microsoft.App/containerApps@2023-05-02-preview' = 
 {{if $value.Dapr.AppProtocol}}
         appProtocol: {{$value.Dapr.AppProtocol}}
 {{end}}
+{{if $value.Dapr.EnableApiLogging}}
+        enableApiLogging: {{$value.Dapr.EnableApiLogging}}
+{{end}}
         enabled: true
+{{if $value.Dapr.HttpMaxRequestSize}}
+        httpMaxRequestSize: {{$value.Dapr.HttpMaxRequestSize}}
+{{end}}
+{{if $value.Dapr.HttpReadBufferSize}}
+        httpReadBufferSize: {{$value.Dapr.HttpReadBufferSize}}
+{{end}}
+{{if $value.Dapr.LogLevel}}
+        logLevel: {{$value.Dapr.LogLevel}}
+{{end}}
       }
 {{end}}
 {{if $value.Ingress}}      

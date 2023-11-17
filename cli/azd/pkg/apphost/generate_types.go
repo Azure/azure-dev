@@ -51,6 +51,11 @@ type genDapr struct {
 	LogLevel               *string
 }
 
+type genDaprComponent struct {
+	Type    string
+	Version string
+}
+
 type genBicepTemplateContext struct {
 	HasContainerRegistry            bool
 	HasContainerEnvironment         bool
@@ -61,6 +66,7 @@ type genBicepTemplateContext struct {
 	KeyVaults                       map[string]genKeyVault
 	ContainerAppEnvironmentServices map[string]genContainerAppEnvironmentServices
 	ContainerApps                   map[string]genContainerApp
+	DaprComponents                  map[string]genDaprComponent
 }
 
 type genContainerAppManifestTemplateContext struct {

@@ -203,6 +203,7 @@ func newInfraGenerator() *infraGenerator {
 			StorageAccounts:                 make(map[string]genStorageAccount),
 			KeyVaults:                       make(map[string]genKeyVault),
 			ContainerApps:                   make(map[string]genContainerApp),
+			DaprComponents:                  make(map[string]genDaprComponent),
 		},
 		containers:                   make(map[string]genContainer),
 		dapr:                         make(map[string]genDapr),
@@ -228,9 +229,15 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 		case "container.v0":
 			b.addContainer(name, *comp.Image, comp.Env, comp.Bindings)
 		case "dapr.v0":
-			b.addDapr(name, comp.Dapr)
+			err := b.addDapr(name, comp.Dapr)
+			if (err != nil) {
+				return err
+			}
 		case "dapr.component.v0":
-			b.addDaprComponent(name)
+			err := b.addDaprComponent(name, comp.DaprComponent)
+			if (err != nil) {
+				return err
+			}
 		case "redis.v0":
 			b.addContainerAppService(name, "redis")
 		case "azure.keyvault.v0":
@@ -346,10 +353,9 @@ func (b *infraGenerator) addContainer(name string, image string, env map[string]
 	}
 }
 
-func (b* infraGenerator) addDapr(name string, metadata *DaprResourceMetadata) {
+func (b* infraGenerator) addDapr(name string, metadata *DaprResourceMetadata) error {
 	if (metadata == nil || metadata.Application == nil) {
-		// Return an error?
-		return
+		return fmt.Errorf("dapr resource '%s' did not include required metadata", name)
 	}
 
 	b.requireCluster()
@@ -363,10 +369,29 @@ func (b* infraGenerator) addDapr(name string, metadata *DaprResourceMetadata) {
 		EnableApiLogging:       metadata.EnableApiLogging,
 		LogLevel:               metadata.LogLevel,
 	}
+
+	return nil
 }
 
-func (b* infraGenerator) addDaprComponent(name string) {
+func (b* infraGenerator) addDaprComponent(name string, metadata *DaprComponentResourceMetadata) error {
+	if (metadata == nil || metadata.Type == nil) {
+		return fmt.Errorf("dapr component resource '%s' did not include required metadata", name)
+	}
+
+	switch *metadata.Type {
+	case "state":
+	default:
+		return fmt.Errorf("dapr component resource '%s' has unsupported type '%s'", name, *metadata.Type)
+	}
+
 	b.requireCluster()
+
+	b.bicepContext.DaprComponents[name] = genDaprComponent{
+		Type: "state.in-memory",
+		Version: "v1",
+	}
+
+	return nil
 }
 
 func validateAndMergeBindings(bindings map[string]*Binding) (*Binding, error) {

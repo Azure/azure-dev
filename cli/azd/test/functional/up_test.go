@@ -344,6 +344,43 @@ func Test_CLI_Up_ResourceGroupScope(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func Test_CLI_Up_Down_Aspire(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
+	t.Logf("DIR: %s", dir)
+
+	envName := randomEnvName()
+	t.Logf("AZURE_ENV_NAME: %s", envName)
+
+	cli := azdcli.NewCLI(t)
+	cli.WorkingDirectory = dir
+	cli.Env = append(os.Environ(), "AZURE_LOCATION=eastus2")
+
+	err := copySample(dir, "aspire")
+	require.NoError(t, err, "failed expanding sample")
+
+	initResponses := []string{
+		"Use code in the current directory",        // Initialize from code
+		"Confirm and continue initializing my app", // Confirm everything looks good.
+		"n",     // Don't expose 'apiservice' service.
+		"y",     // Expose 'webfrontend' service.
+		envName, // The name of the environment to create.
+		"",      // ensure a trailing newline when we join each of these lines together.
+	}
+
+	_, err = cli.RunCommandWithStdIn(ctx, strings.Join(initResponses, "\n"), "init")
+	require.NoError(t, err)
+
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "up")
+	require.NoError(t, err)
+
+	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
+	require.NoError(t, err)
+}
+
 type httpClient interface {
 	Get(url string) (*http.Response, error)
 }

@@ -127,11 +127,11 @@ stages:
               dockerVersion: 17.09.0-ce
               releaseType: stable
 
-          # Live testing uses dotnet 6.0.x in the WebApp project deployment
+          # Live testing uses dotnet 8 for Aspire.
           - task: UseDotNet@2
             condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))
             inputs:
-              version: 6.0.x
+              version: 8.0.x
 
           - template: /eng/pipelines/templates/steps/az-login.yml
             parameters:

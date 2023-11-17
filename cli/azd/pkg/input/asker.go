@@ -64,8 +64,8 @@ func askOneNoPrompt(p survey.Prompt, response interface{}) error {
 		if v.Default == nil {
 			return fmt.Errorf("no default response for prompt '%s'", v.Message)
 		}
-		defValue, err := v.Default.([]string)
-		if !err {
+		defValue, ok := v.Default.([]string)
+		if !ok {
 			return fmt.Errorf("default response type is not a string list '%s'", v.Message)
 		}
 		*(response.(*[]string)) = defValue
@@ -148,8 +148,8 @@ func askOnePrompt(p survey.Prompt, response interface{}, isTerminal bool, stdout
 		return nil
 	case *survey.MultiSelect:
 		// For multi-selection, azd will do a Select for each item, using the default to control the Y or N
-		defValue, err := v.Default.([]string)
-		if !err {
+		defValue, ok := v.Default.([]string)
+		if !ok {
 			return fmt.Errorf("default response type is not a string list '%s'", v.Message)
 		}
 		fmt.Fprintf(stdout, "%s:", v.Message)

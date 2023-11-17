@@ -172,7 +172,12 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 						resSvc.Target = &contracts.ShowTargetArm{
 							ResourceIds: resourceIds,
 						}
-						resSvc.IngresUrl = s.serviceEndpoint(ctx, subId, serviceConfig, env)
+
+						endpoint := s.serviceEndpoint(ctx, subId, serviceConfig, env)
+						if endpoint != "" {
+							resSvc.Endpoints = []string{endpoint}
+						}
+
 						res.Services[svcName] = resSvc
 					} else {
 						log.Printf("ignoring error determining resource id for service %s: %v", svcName, err)
@@ -208,10 +213,15 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	uxServices := make([]*ux.ShowService, len(res.Services))
 	var index int
 	for serviceName, service := range res.Services {
-		uxServices[index] = &ux.ShowService{
-			Name:      serviceName,
-			IngresUrl: service.IngresUrl,
+		uxSvc := &ux.ShowService{
+			Name: serviceName,
 		}
+
+		if len(service.Endpoints) >= 1 {
+			uxSvc.IngresUrl = service.Endpoints[0]
+		}
+
+		uxServices[index] = uxSvc
 		index++
 	}
 

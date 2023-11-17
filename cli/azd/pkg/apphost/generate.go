@@ -84,7 +84,7 @@ func ContainerAppManifestTemplateForProject(manifest *Manifest, projectName stri
 
 // BicepTemplate returns a filesystem containing the generated bicep files for the given manifest. These files represent
 // the shared infrastructure that would normally be under the `infra/` folder for the given manifest.
-func BicepTemplate(manifest *Manifest) (fs.FS, error) {
+func BicepTemplate(manifest *Manifest) (*memfs.FS, error) {
 	generator := newInfraGenerator()
 
 	if err := generator.LoadManifest(manifest); err != nil {

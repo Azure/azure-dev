@@ -21,3 +21,6 @@ var ScaffoldBase embed.FS
 
 //go:embed scaffold/templates/*
 var ScaffoldTemplates embed.FS
+
+//go:embed apphost/templates/*
+var AppHostTemplates embed.FS

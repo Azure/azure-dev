@@ -12,14 +12,17 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/azure/azure-dev/cli/azd/resources"
 	"github.com/otiai10/copy"
@@ -27,16 +30,23 @@ import (
 
 // Initializer handles the initialization of a local repository.
 type Initializer struct {
-	console input.Console
-	gitCli  git.GitCli
+	console        input.Console
+	gitCli         git.GitCli
+	dotnetCli      dotnet.DotNetCli
+	lazyEnvManager *lazy.Lazy[environment.Manager]
 }
 
 func NewInitializer(
 	console input.Console,
-	gitCli git.GitCli) *Initializer {
+	gitCli git.GitCli,
+	dotnetCli dotnet.DotNetCli,
+	lazyEnvManager *lazy.Lazy[environment.Manager],
+) *Initializer {
 	return &Initializer{
-		console: console,
-		gitCli:  gitCli,
+		console:        console,
+		gitCli:         gitCli,
+		lazyEnvManager: lazyEnvManager,
+		dotnetCli:      dotnetCli,
 	}
 }
 

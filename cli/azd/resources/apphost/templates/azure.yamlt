@@ -1,0 +1,14 @@
+{{define "azure.yaml" -}}
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+
+name: {{ .Name }}
+{{- if .Services}}
+services:
+{{- range $name, $value := .Services}}  
+  {{$name}}:
+    language: dotnet
+    project: {{$value}}
+    host: containerapp
+{{- end}}
+{{- end}}
+{{ end}}

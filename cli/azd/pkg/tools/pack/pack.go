@@ -12,7 +12,9 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"regexp"
 	"runtime"
+	"strconv"
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
@@ -29,6 +31,28 @@ import (
 // PackVersion is the minimum version of pack that we require (and the one we fetch when we fetch pack on behalf of a
 // user).
 var PackVersion semver.Version = semver.MustParse("0.30.0")
+
+var statusCodeFailureRegexp = regexp.MustCompile(`failed with status code: (\d+)`)
+
+// All buildpacks groups have failed to detect w/o error.
+// See https://buildpacks.io/docs/concepts/components/lifecycle/detect/#exit-codes
+const StatusCodeUndetectedNoError = 20
+
+// StatusCodeError is a status code error provided by pack CLI.
+type StatusCodeError struct {
+	Err error
+
+	// See all available status codes https://buildpacks.io/docs/concepts/components/lifecycle/create/
+	Code int
+}
+
+func (s *StatusCodeError) Error() string {
+	return s.Err.Error()
+}
+
+func (s *StatusCodeError) Unwrap() error {
+	return s.Err
+}
 
 type PackCli interface {
 	Build(
@@ -200,12 +224,31 @@ func (cli *packCli) Build(
 		runArgs = runArgs.WithStdOut(progressWriter).WithStdErr(progressWriter)
 	}
 
-	_, err = cli.runner.Run(ctx, runArgs)
+	res, err := cli.runner.Run(ctx, runArgs)
 	if err != nil {
-		return err
+		return wrapStatusCodeErr(err, res)
 	}
 
 	return nil
+}
+
+func wrapStatusCodeErr(err error, res exec.RunResult) error {
+	if err == nil {
+		return err
+	}
+
+	matches := statusCodeFailureRegexp.FindStringSubmatch(res.Stderr)
+	if len(matches) == 2 {
+		code, parseErr := strconv.Atoi(matches[1])
+		if parseErr == nil {
+			return &StatusCodeError{
+				Err:  err,
+				Code: code,
+			}
+		}
+	}
+
+	return err
 }
 
 func packName() string {

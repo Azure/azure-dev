@@ -149,6 +149,13 @@ func (c *MockConsole) Select(ctx context.Context, options input.ConsoleOptions) 
 	return value.(int), err
 }
 
+// Writes a multiple choice selection to the console for the user to choose
+func (c *MockConsole) MultiSelect(ctx context.Context, options input.ConsoleOptions) ([]string, error) {
+	c.log = append(c.log, options.Message)
+	value, err := c.respond("MultiSelect", options)
+	return value.([]string), err
+}
+
 // Writes messages to the underlying writer
 func (c *MockConsole) Flush() {
 }

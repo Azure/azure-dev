@@ -9,11 +9,13 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -443,10 +445,45 @@ func (sm *serviceManager) Deploy(
 			return
 		}
 
-		targetResource, err := sm.resourceManager.GetTargetResource(ctx, sm.env.GetSubscriptionId(), serviceConfig)
-		if err != nil {
-			task.SetError(fmt.Errorf("getting target resource: %w", err))
-			return
+		var targetResource *environment.TargetResource
+
+		if serviceConfig.Host == DotNetContainerAppTarget {
+			containerEnvName := sm.env.GetServiceProperty(serviceConfig.Name, "CONTAINER_ENVIRONMENT_NAME")
+			if containerEnvName == "" {
+				containerEnvName = sm.env.Getenv("AZURE_CONTAINER_APPS_ENVIRONMENT_ID")
+				if containerEnvName == "" {
+					task.SetError(fmt.Errorf(
+						"could not determine container app environment for service %s, "+
+							"have you set AZURE_CONTAINER_ENVIRONMENT_NAME or "+
+							"SERVICE_%s_CONTAINER_ENVIRONMENT_NAME as an output of your "+
+							"infrastructure?", serviceConfig.Name, strings.ToUpper(serviceConfig.Name)))
+
+					return
+				}
+
+				parts := strings.Split(containerEnvName, "/")
+				containerEnvName = parts[len(parts)-1]
+			}
+
+			resourceGroupName, err := sm.resourceManager.GetResourceGroupName(
+				ctx, sm.env.GetSubscriptionId(), serviceConfig.Project)
+			if err != nil {
+				task.SetError(fmt.Errorf("getting resource group name: %w", err))
+				return
+			}
+
+			targetResource = environment.NewTargetResource(
+				sm.env.GetSubscriptionId(),
+				resourceGroupName,
+				containerEnvName,
+				string(infra.AzureResourceTypeContainerAppEnvironment),
+			)
+		} else {
+			targetResource, err = sm.resourceManager.GetTargetResource(ctx, sm.env.GetSubscriptionId(), serviceConfig)
+			if err != nil {
+				task.SetError(fmt.Errorf("getting target resource: %w", err))
+				return
+			}
 		}
 
 		deployResult, err := runCommand(

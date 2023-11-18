@@ -50,15 +50,8 @@ func (s *EnvironmentStore) ConfigPath(env *environment.Environment) string {
 
 // List returns a list of environments for the devcenter configuration
 func (s *EnvironmentStore) List(ctx context.Context) ([]*contracts.EnvListEnvironment, error) {
-	// If we don't have a valid devcenter configuration yet
-	// then prompt the user to initialize the correct configuration then provide the listing
-	if err := s.config.EnsureValid(); err != nil {
-		updatedConfig, err := s.prompter.PromptForConfig(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("DevCenter configuration is not valid. Confirm your configuration and try again, %w", err)
-		}
-
-		s.config = updatedConfig
+	if err := s.ensureDevCenterConfig(ctx); err != nil {
+		return nil, err
 	}
 
 	matches, err := s.matchingEnvironments(ctx, nil)
@@ -79,9 +72,8 @@ func (s *EnvironmentStore) List(ctx context.Context) ([]*contracts.EnvListEnviro
 
 // Get returns the environment for the given name
 func (s *EnvironmentStore) Get(ctx context.Context, name string) (*environment.Environment, error) {
-	// If the devcenter configuration is not valid then we don't have enough information to query for the environment
-	if err := s.config.EnsureValid(); err != nil {
-		return nil, fmt.Errorf("%s %w, %w", name, environment.ErrNotFound, err)
+	if err := s.ensureDevCenterConfig(ctx); err != nil {
+		return nil, err
 	}
 
 	filter := func(env *devcentersdk.Environment) bool {
@@ -167,6 +159,14 @@ func (s *EnvironmentStore) Reload(ctx context.Context, env *environment.Environm
 		return err
 	}
 
+	// Set the environment definition parameters
+	for key, value := range environment.Parameters {
+		path := fmt.Sprintf("%s.%s", ProvisionParametersConfigPath, key)
+		if err := env.Config.Set(path, value); err != nil {
+			return fmt.Errorf("failed setting config value %s: %w", path, err)
+		}
+	}
+
 	return nil
 }
 
@@ -209,4 +209,21 @@ func (s *EnvironmentStore) matchingEnvironments(
 
 func (s *EnvironmentStore) envDefFilter(env *devcentersdk.Environment) bool {
 	return env.EnvironmentDefinitionName == s.config.EnvironmentDefinition
+}
+
+// Checks whether a valid dev center configuration exists
+// If values are missing prompts the user to supply values used for the lifetime of this command
+func (s *EnvironmentStore) ensureDevCenterConfig(ctx context.Context) error {
+	// If we don't have a valid devcenter configuration yet
+	// then prompt the user to initialize the correct configuration then provide the listing
+	if err := s.config.EnsureValid(); err != nil {
+		updatedConfig, err := s.prompter.PromptForConfig(ctx)
+		if err != nil {
+			return fmt.Errorf("DevCenter configuration is not valid. Confirm your configuration and try again, %w", err)
+		}
+
+		s.config = updatedConfig
+	}
+
+	return nil
 }

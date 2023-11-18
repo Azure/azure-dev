@@ -12,23 +12,28 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/bmatcuk/doublestar/v4"
 )
 
 type Language string
 
 const (
-	DotNet     Language = "dotnet"
-	Java       Language = "java"
-	JavaScript Language = "js"
-	TypeScript Language = "ts"
-	Python     Language = "python"
+	DotNet        Language = "dotnet"
+	DotNetAppHost Language = "dotnet-apphost"
+	Java          Language = "java"
+	JavaScript    Language = "js"
+	TypeScript    Language = "ts"
+	Python        Language = "python"
 )
 
 func (pt Language) Display() string {
 	switch pt {
 	case DotNet:
 		return ".NET"
+	case DotNetAppHost:
+		return ".NET (Aspire)"
 	case Java:
 		return "Java"
 	case JavaScript:
@@ -166,6 +171,10 @@ var allDetectors = []projectDetector{
 	// Order here determines precedence when two projects are in the same directory.
 	// This is unlikely to occur in practice, but reordering could help to break the tie in these cases.
 	&javaDetector{},
+	&dotNetAppHostDetector{
+		// TODO(ellismg): Remove ambient authority.
+		dotnetCli: dotnet.NewDotNetCli(exec.NewCommandRunner(nil)),
+	},
 	&dotNetDetector{},
 	&pythonDetector{},
 	&javaScriptDetector{},

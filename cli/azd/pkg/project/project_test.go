@@ -260,7 +260,7 @@ func Test_Invalid_Project_File(t *testing.T) {
 }
 
 func TestMinimalYaml(t *testing.T) {
-	prj := ProjectConfig{
+	prj := &ProjectConfig{
 		Name:     "minimal",
 		Services: map[string]*ServiceConfig{},
 	}

@@ -400,6 +400,7 @@ type envRefreshAction struct {
 	console          input.Console
 	formatter        output.Formatter
 	writer           io.Writer
+	importManager    *project.ImportManager
 }
 
 func newEnvRefreshAction(
@@ -412,6 +413,7 @@ func newEnvRefreshAction(
 	console input.Console,
 	formatter output.Formatter,
 	writer io.Writer,
+	importManager *project.ImportManager,
 ) actions.Action {
 	return &envRefreshAction{
 		provisionManager: provisionManager,
@@ -423,6 +425,7 @@ func newEnvRefreshAction(
 		formatter:        formatter,
 		projectConfig:    projectConfig,
 		writer:           writer,
+		importManager:    importManager,
 	}
 }
 
@@ -436,7 +439,13 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 		return nil, err
 	}
 
-	if err := ef.provisionManager.Initialize(ctx, ef.projectConfig.Path, ef.projectConfig.Infra); err != nil {
+	infra, err := ef.importManager.ProjectInfrastructure(ctx, ef.projectConfig)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = infra.Cleanup() }()
+
+	if err := ef.provisionManager.Initialize(ctx, ef.projectConfig.Path, infra.Options); err != nil {
 		return nil, fmt.Errorf("initializing provisioning manager: %w", err)
 	}
 
@@ -465,7 +474,12 @@ func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, err
 		}
 	}
 
-	for _, svc := range ef.projectConfig.Services {
+	servicesStable, err := ef.importManager.ServiceStable(ctx, ef.projectConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, svc := range servicesStable {
 		eventArgs := project.ServiceLifecycleEventArgs{
 			Project: ef.projectConfig,
 			Service: svc,

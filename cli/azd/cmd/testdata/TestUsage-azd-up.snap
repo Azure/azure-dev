@@ -1,5 +1,5 @@
 
-Executes the azd provision and azd deploy commands in a single step.
+Executes the azd package, azd provision and azd deploy commands in a single step.
 
 Usage
   azd up [flags]

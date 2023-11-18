@@ -44,6 +44,38 @@ func BicepName(name string) string {
 	return sb.String()
 }
 
+// UpperSnakeAlpha returns a name in upper-snake case alphanumeric name separated only by underscores.
+//
+// Non-alphanumeric characters are discarded, while consecutive separators ('-', '_', and '.') are treated
+// as a single underscore separator.
+func AlphaSnakeUpper(name string) string {
+	sb := strings.Builder{}
+	separatorStart := -1
+	for i := range name {
+		switch name[i] {
+		case '-', '_', '.':
+			if separatorStart == -1 { // track first occurrence of consecutive separators
+				separatorStart = i
+			}
+		default:
+			if !isAsciiAlphaNumeric(name[i]) {
+				continue
+			}
+
+			if separatorStart != -1 {
+				if separatorStart != 0 { // don't write prefix separator
+					sb.WriteByte('_')
+				}
+				separatorStart = -1
+			}
+
+			sb.WriteByte(upperCase(name[i]))
+		}
+	}
+
+	return sb.String()
+}
+
 func isAsciiAlphaNumeric(c byte) bool {
 	return ('0' <= c && c <= '9') || ('A' <= c && c <= 'Z') || ('a' <= c && c <= 'z')
 }

@@ -90,6 +90,20 @@ func (ch *ContainerHelper) RequiredExternalTools(context.Context) []tools.Extern
 	return []tools.ExternalTool{ch.docker}
 }
 
+// Login logs into the container registry specified by AZURE_CONTAINER_REGISTRY_ENDPOINT in the environment. On success,
+// it returns the name of the container registry that was logged into.
+func (ch *ContainerHelper) Login(
+	ctx context.Context,
+	targetResource *environment.TargetResource,
+) (string, error) {
+	loginServer, err := ch.RegistryName(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	return loginServer, ch.containerRegistryService.Login(ctx, targetResource.SubscriptionId(), loginServer)
+}
+
 func (ch *ContainerHelper) Deploy(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,

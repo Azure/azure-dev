@@ -6,7 +6,7 @@
     "@fluentui/react": "^8.73.0",
     "@microsoft/applicationinsights-react-js": "^3.3.4",
     "@microsoft/applicationinsights-web": "^2.8.4",
-    "axios": "^0.27.2",
+    "axios": "^1.6.0",
     "react": "^17.0.2",
     "react-dom": "^17.0.2",
     "react-router-dom": "^6.3.0",

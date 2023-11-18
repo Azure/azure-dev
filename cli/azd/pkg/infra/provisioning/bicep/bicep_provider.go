@@ -1599,7 +1599,13 @@ func (p *BicepProvider) createOutputParameters(
 // doing environment and command substitutions, and returns the values.
 func (p *BicepProvider) loadParameters(ctx context.Context) (map[string]azure.ArmParameterValue, error) {
 	parametersFilename := fmt.Sprintf("%s.parameters.json", p.options.Module)
-	paramFilePath := filepath.Join(p.projectPath, p.options.Path, parametersFilename)
+	parametersRoot := p.options.Path
+
+	if !filepath.IsAbs(parametersRoot) {
+		parametersRoot = filepath.Join(p.projectPath, parametersRoot)
+	}
+
+	paramFilePath := filepath.Join(parametersRoot, parametersFilename)
 	parametersBytes, err := os.ReadFile(paramFilePath)
 	if err != nil {
 		return nil, fmt.Errorf("reading parameters.json: %w", err)
@@ -1831,19 +1837,23 @@ func (p *BicepProvider) deployModule(
 
 // Gets the folder path to the specified module
 func (p *BicepProvider) modulePath() string {
-	infraPath := p.options.Path
+	infraRoot := p.options.Path
 	moduleName := p.options.Module
+
+	if !filepath.IsAbs(infraRoot) {
+		infraRoot = filepath.Join(p.projectPath, infraRoot)
+	}
 
 	// Check if there's a <moduleName>.bicepparam first. It will be preferred over a <moduleName>.bicep
 	moduleFilename := moduleName + bicepparamFileExtension
-	moduleFilePath := filepath.Join(p.projectPath, infraPath, moduleFilename)
+	moduleFilePath := filepath.Join(infraRoot, moduleFilename)
 	if _, err := os.Stat(moduleFilePath); err == nil {
 		return moduleFilePath
 	}
 
 	// fallback to .bicep
 	moduleFilename = moduleName + bicepFileExtension
-	return filepath.Join(p.projectPath, infraPath, moduleFilename)
+	return filepath.Join(infraRoot, moduleFilename)
 }
 
 // Ensures the provisioning parameters are valid and prompts the user for input as needed

@@ -3,6 +3,7 @@ package project
 import (
 	"path/filepath"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 )
@@ -32,13 +33,25 @@ type ServiceConfig struct {
 	Infra provisioning.Options `yaml:"infra,omitempty"`
 	// Hook configuration for service
 	Hooks map[string]*ext.HookConfig `yaml:"hooks,omitempty"`
+	// Options specific to the DotNetContainerApp target. These are set by the importer and
+	// can not be controlled via the project file today.
+	DotNetContainerApp *DotNetContainerAppOptions `yaml:"-,omitempty"`
 
 	*ext.EventDispatcher[ServiceLifecycleEventArgs] `yaml:"-"`
 
 	initialized bool
 }
 
+type DotNetContainerAppOptions struct {
+	Manifest    *apphost.Manifest
+	ProjectName string
+	ProjectPath string
+}
+
 // Path returns the fully qualified path to the project
 func (sc *ServiceConfig) Path() string {
+	if filepath.IsAbs(sc.RelativePath) {
+		return sc.RelativePath
+	}
 	return filepath.Join(sc.Project.Path, sc.RelativePath)
 }

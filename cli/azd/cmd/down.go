@@ -55,6 +55,7 @@ func newDownCmd() *cobra.Command {
 type downAction struct {
 	flags            *downFlags
 	provisionManager *provisioning.Manager
+	importManager    *project.ImportManager
 	env              *environment.Environment
 	console          input.Console
 	projectConfig    *project.ProjectConfig
@@ -67,6 +68,7 @@ func newDownAction(
 	projectConfig *project.ProjectConfig,
 	console input.Console,
 	alphaFeatureManager *alpha.FeatureManager,
+	importManager *project.ImportManager,
 ) actions.Action {
 	return &downAction{
 		flags:            flags,
@@ -74,6 +76,7 @@ func newDownAction(
 		env:              env,
 		console:          console,
 		projectConfig:    projectConfig,
+		importManager:    importManager,
 	}
 }
 
@@ -86,7 +89,13 @@ func (a *downAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	startTime := time.Now()
 
-	if err := a.provisionManager.Initialize(ctx, a.projectConfig.Path, a.projectConfig.Infra); err != nil {
+	infra, err := a.importManager.ProjectInfrastructure(ctx, a.projectConfig)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = infra.Cleanup() }()
+
+	if err := a.provisionManager.Initialize(ctx, a.projectConfig.Path, infra.Options); err != nil {
 		return nil, fmt.Errorf("initializing provisioning manager: %w", err)
 	}
 

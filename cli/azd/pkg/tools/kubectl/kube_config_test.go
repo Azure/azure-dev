@@ -3,6 +3,7 @@ package kubectl
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -30,15 +31,25 @@ func Test_MergeKubeConfig(t *testing.T) {
 		require.NoError(t, err)
 	}()
 
-	err = kubeConfigManager.SaveKubeConfig(*mockContext.Context, "config1", config1)
+	kubeConfigPath, err := kubeConfigManager.SaveKubeConfig(*mockContext.Context, "config1", config1)
 	require.NoError(t, err)
-	err = kubeConfigManager.SaveKubeConfig(*mockContext.Context, "config2", config2)
-	require.NoError(t, err)
-	err = kubeConfigManager.SaveKubeConfig(*mockContext.Context, "config3", config3)
-	require.NoError(t, err)
+	require.NotEmpty(t, kubeConfigPath)
+	require.Contains(t, kubeConfigPath, filepath.Join(".kube", "config1"))
 
-	err = kubeConfigManager.MergeConfigs(*mockContext.Context, "config", "config1", "config2", "config3")
+	kubeConfigPath, err = kubeConfigManager.SaveKubeConfig(*mockContext.Context, "config2", config2)
 	require.NoError(t, err)
+	require.NotEmpty(t, kubeConfigPath)
+	require.Contains(t, kubeConfigPath, filepath.Join(".kube", "config2"))
+
+	kubeConfigPath, err = kubeConfigManager.SaveKubeConfig(*mockContext.Context, "config3", config3)
+	require.NoError(t, err)
+	require.NotEmpty(t, kubeConfigPath)
+	require.Contains(t, kubeConfigPath, filepath.Join(".kube", "config3"))
+
+	kubeConfigPath, err = kubeConfigManager.MergeConfigs(*mockContext.Context, "config", "config1", "config2", "config3")
+	require.NoError(t, err)
+	require.NotEmpty(t, kubeConfigPath)
+	require.Contains(t, kubeConfigPath, filepath.Join(".kube", "config"))
 }
 
 func createTestCluster(clusterName, username string) *KubeConfig {

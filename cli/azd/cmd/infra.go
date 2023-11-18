@@ -39,5 +39,14 @@ func infraActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 		}).
 		UseMiddleware("hooks", middleware.NewHooksMiddleware)
 
+	group.
+		Add("synth", &actions.ActionDescriptorOptions{
+			Command:        newInfraSynthCmd(),
+			FlagsResolver:  newInfraSynthFlags,
+			ActionResolver: newInfraSynthAction,
+			OutputFormats:  []output.Format{output.NoneFormat},
+			DefaultFormat:  output.NoneFormat,
+		})
+
 	return group
 }

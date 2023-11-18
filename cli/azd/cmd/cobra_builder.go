@@ -185,7 +185,7 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 				if errors.As(err, &suggestionErr) {
 					console.Message(
 						ctx,
-						output.WithHighLightFormat(suggestionErr.Suggestion))
+						suggestionErr.Suggestion)
 				}
 			}
 

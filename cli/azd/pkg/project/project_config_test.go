@@ -94,32 +94,6 @@ services:
 	}
 }
 
-func TestProjectConfigHasService(t *testing.T) {
-	const testProj = `
-name: test-proj
-metadata:
-  template: test-proj-template
-resourceGroup: rg-test
-services:
-  web:
-    project: src/web
-    language: js
-    host: appservice
-  api:
-    project: src/api
-    language: js
-    host: appservice
-`
-
-	mockContext := mocks.NewMockContext(context.Background())
-	projectConfig, err := Parse(*mockContext.Context, testProj)
-	require.Nil(t, err)
-
-	require.True(t, projectConfig.HasService("web"))
-	require.True(t, projectConfig.HasService("api"))
-	require.False(t, projectConfig.HasService("foobar"))
-}
-
 func TestProjectWithCustomDockerOptions(t *testing.T) {
 	const testProj = `
 name: test-proj

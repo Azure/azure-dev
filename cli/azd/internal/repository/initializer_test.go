@@ -12,18 +12,23 @@ import (
 	"testing"
 
 	"github.com/MakeNowJust/heredoc/v2"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/platform"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockexec"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -47,7 +52,15 @@ func Test_Initializer_Initialize(t *testing.T) {
 			mockContext := mocks.NewMockContext(context.Background())
 			mockGitClone(t, mockContext, "https://github.com/Azure-Samples/local", tt)
 
-			i := NewInitializer(mockContext.Console, git.NewGitCli(mockContext.CommandRunner))
+			mockEnv := &mockenv.MockEnvManager{}
+			mockEnv.On("Save", mock.Anything, mock.Anything).Return(nil)
+
+			i := NewInitializer(
+				mockContext.Console,
+				git.NewGitCli(mockContext.CommandRunner),
+				dotnet.NewDotNetCli(mockContext.CommandRunner),
+				lazy.From[environment.Manager](mockEnv),
+			)
 			err := i.Initialize(*mockContext.Context, azdCtx, &templates.Template{RepositoryPath: "local"}, "")
 			require.NoError(t, err)
 
@@ -83,7 +96,15 @@ func Test_Initializer_DevCenter(t *testing.T) {
 		},
 	}
 
-	i := NewInitializer(mockContext.Console, git.NewGitCli(mockContext.CommandRunner))
+	mockEnv := &mockenv.MockEnvManager{}
+	mockEnv.On("Save", mock.Anything, mock.Anything).Return(nil)
+
+	i := NewInitializer(
+		mockContext.Console,
+		git.NewGitCli(mockContext.CommandRunner),
+		dotnet.NewDotNetCli(mockContext.CommandRunner),
+		lazy.From[environment.Manager](mockEnv),
+	)
 	err := i.Initialize(*mockContext.Context, azdCtx, template, "")
 	require.NoError(t, err)
 
@@ -145,7 +166,15 @@ func Test_Initializer_InitializeWithOverwritePrompt(t *testing.T) {
 					return realRunner.Run(context.Background(), args)
 				})
 
-			i := NewInitializer(console, git.NewGitCli(mockRunner))
+			mockEnv := &mockenv.MockEnvManager{}
+			mockEnv.On("Save", mock.Anything, mock.Anything).Return(nil)
+
+			i := NewInitializer(
+				console,
+				git.NewGitCli(mockRunner),
+				dotnet.NewDotNetCli(mockRunner),
+				lazy.From[environment.Manager](mockEnv),
+			)
 			err = i.Initialize(context.Background(), azdCtx, &templates.Template{RepositoryPath: "local"}, "")
 			require.NoError(t, err)
 
@@ -342,7 +371,11 @@ func Test_Initializer_WriteCoreAssets(t *testing.T) {
 
 			console := mockinput.NewMockConsole()
 			realRunner := exec.NewCommandRunner(nil)
-			i := NewInitializer(console, git.NewGitCli(realRunner))
+
+			envManager := &mockenv.MockEnvManager{}
+			envManager.On("Save", mock.Anything, mock.Anything).Return(nil)
+
+			i := NewInitializer(console, git.NewGitCli(realRunner), nil, lazy.From[environment.Manager](envManager))
 			err := i.writeCoreAssets(context.Background(), azdCtx)
 			require.NoError(t, err)
 

@@ -2,7 +2,6 @@ package project
 
 import (
 	"context"
-	"sort"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
@@ -55,31 +54,4 @@ type ProjectMetadata struct {
 	// in every template that we ship.
 	// ex: todo-python-mongo@version
 	Template string
-}
-
-// HasService checks if the project contains a service with a given name.
-func (p *ProjectConfig) HasService(name string) bool {
-	for key, svc := range p.Services {
-		if key == name && svc != nil {
-			return true
-		}
-	}
-
-	return false
-}
-
-// Retrieves the list of services in the project, in a stable ordering that is deterministic.
-func (p *ProjectConfig) GetServicesStable() []*ServiceConfig {
-	// Sort services by friendly name an then collect them into a list. This provides a stable ordering of services.
-	serviceKeys := make([]string, 0, len(p.Services))
-	for k := range p.Services {
-		serviceKeys = append(serviceKeys, k)
-	}
-	sort.Strings(serviceKeys)
-
-	services := make([]*ServiceConfig, 0, len(p.Services))
-	for _, key := range serviceKeys {
-		services = append(services, p.Services[key])
-	}
-	return services
 }

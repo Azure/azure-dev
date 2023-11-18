@@ -98,6 +98,7 @@ func serviceNameWarningCheck(console input.Console, serviceNameFlag string, comm
 func getTargetServiceName(
 	ctx context.Context,
 	projectManager project.ProjectManager,
+	importManager *project.ImportManager,
 	projectConfig *project.ProjectConfig,
 	commandName string,
 	targetServiceName string,
@@ -125,8 +126,12 @@ func getTargetServiceName(
 		}
 	}
 
-	if targetServiceName != "" && !projectConfig.HasService(targetServiceName) {
-		return "", fmt.Errorf("service name '%s' doesn't exist", targetServiceName)
+	if targetServiceName != "" {
+		if has, err := importManager.HasService(ctx, projectConfig, targetServiceName); err != nil {
+			return "", err
+		} else if !has {
+			return "", fmt.Errorf("service name '%s' doesn't exist", targetServiceName)
+		}
 	}
 
 	return targetServiceName, nil

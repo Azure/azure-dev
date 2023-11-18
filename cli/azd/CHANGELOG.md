@@ -1,16 +1,36 @@
 # Release History
 
-## 1.5.0-beta.1 (Unreleased)
+## 1.6.0-beta.1 (Unreleased)
 
 ### Features Added
 
-- [[2925]](https://github.com/Azure/azure-dev/pull/2925) Promote simplified `azd init` and Cloud Native buildpacks features to beta
+- [[2998]](https://github.com/Azure/azure-dev/pull/2998) Adds support for Azure Storage Tables and Queues on Aspire projects.
 
 ### Breaking Changes
 
 ### Bugs Fixed
 
 ### Other Changes
+
+## 1.5.0 (2023-11-15)
+
+### Features Added
+
+- [[2767]](https://github.com/Azure/azure-dev/pull/2767) Adds support for Azure Deployments Environments.
+
+## 1.4.5 (2023-11-13)
+
+### Bugs Fixed
+
+- [[2962]](https://github.com/Azure/azure-dev/pull/2962) Fix for incorrect id on storage blob built-in role id.
+- [[2963]](https://github.com/Azure/azure-dev/pull/2963) Handle project is undetected.
+
+## 1.4.4 (2023-11-10)
+
+### Features Added
+
+- [[2893]](https://github.com/Azure/azure-dev/pull/2893) Added command `azd show`.
+- [[2925]](https://github.com/Azure/azure-dev/pull/2925) Promote simplified `azd init` and Cloud Native buildpacks features to beta
 
 ## 1.4.3 (2023-10-24)
 

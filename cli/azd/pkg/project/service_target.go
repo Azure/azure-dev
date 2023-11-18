@@ -18,22 +18,28 @@ import (
 type ServiceTargetKind string
 
 const (
-	AppServiceTarget    ServiceTargetKind = "appservice"
-	ContainerAppTarget  ServiceTargetKind = "containerapp"
-	AzureFunctionTarget ServiceTargetKind = "function"
-	StaticWebAppTarget  ServiceTargetKind = "staticwebapp"
-	SpringAppTarget     ServiceTargetKind = "springapp"
-	AksTarget           ServiceTargetKind = "aks"
+	AppServiceTarget         ServiceTargetKind = "appservice"
+	ContainerAppTarget       ServiceTargetKind = "containerapp"
+	AzureFunctionTarget      ServiceTargetKind = "function"
+	StaticWebAppTarget       ServiceTargetKind = "staticwebapp"
+	SpringAppTarget          ServiceTargetKind = "springapp"
+	AksTarget                ServiceTargetKind = "aks"
+	DotNetContainerAppTarget ServiceTargetKind = "containerapp-dotnet"
 )
 
 func parseServiceHost(kind ServiceTargetKind) (ServiceTargetKind, error) {
 	switch kind {
+
+	// NOTE: We do not support DotNetContainerAppTarget as a listed service host type in azure.yaml, hence
+	// it not include in this switch statement. We should think about if we should support this in azure.yaml because
+	// presently it's the only service target that is tied to a language.
 	case AppServiceTarget,
 		ContainerAppTarget,
 		AzureFunctionTarget,
 		StaticWebAppTarget,
 		SpringAppTarget,
 		AksTarget:
+
 		return kind, nil
 	}
 

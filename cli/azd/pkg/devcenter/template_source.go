@@ -97,11 +97,15 @@ func (s *TemplateSource) ListTemplates(ctx context.Context) ([]*templates.Templa
 					if strings.EqualFold(p.Name, "repourl") {
 						// Repo url parameter can support multiple values
 						// Values can either have a default or multiple allowed values but not both
-						if p.Default != nil {
-							repoUrls = append(repoUrls, p.Default.(string))
-						} else {
+						if p.Allowed != nil && len(p.Allowed) > 0 {
 							repoUrls = append(repoUrls, p.Allowed...)
+						} else if p.Default != nil {
+							defaultValue, ok := p.Default.(string)
+							if ok && defaultValue != "" {
+								repoUrls = append(repoUrls, defaultValue)
+							}
 						}
+
 						return true
 					}
 

@@ -14,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
+	"github.com/azure/azure-dev/cli/azd/pkg/helm"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -37,6 +38,8 @@ type AksOptions struct {
 	Deployment AksDeploymentOptions `yaml:"deployment"`
 	// The services service configuration options
 	Service AksServiceOptions `yaml:"service"`
+	// The helm configuration options
+	Helm *helm.Config `yaml:"helm"`
 }
 
 // The AKS ingress options
@@ -62,6 +65,7 @@ type aksTarget struct {
 	managedClustersService azcli.ManagedClustersService
 	resourceManager        ResourceManager
 	kubectl                kubectl.KubectlCli
+	helmCli                *helm.Cli
 	containerHelper        *ContainerHelper
 }
 
@@ -73,6 +77,7 @@ func NewAksTarget(
 	managedClustersService azcli.ManagedClustersService,
 	resourceManager ResourceManager,
 	kubectlCli kubectl.KubectlCli,
+	helmCli *helm.Cli,
 	containerHelper *ContainerHelper,
 ) ServiceTarget {
 	return &aksTarget{
@@ -82,6 +87,7 @@ func NewAksTarget(
 		managedClustersService: managedClustersService,
 		resourceManager:        resourceManager,
 		kubectl:                kubectlCli,
+		helmCli:                helmCli,
 		containerHelper:        containerHelper,
 	}
 }
@@ -153,6 +159,28 @@ func (t *aksTarget) Deploy(
 			if packageOutput == nil {
 				task.SetError(errors.New("missing package output"))
 				return
+			}
+
+			// WIP: Helm stuff
+			if serviceConfig.K8s.Helm != nil {
+				for _, repo := range serviceConfig.K8s.Helm.Repositories {
+					if err := t.helmCli.AddRepo(ctx, repo); err != nil {
+						task.SetError(err)
+						return
+					}
+
+					if err := t.helmCli.UpdateRepo(ctx, repo.Name); err != nil {
+						task.SetError(err)
+						return
+					}
+				}
+
+				for _, release := range serviceConfig.K8s.Helm.Releases {
+					if err := t.helmCli.Upgrade(ctx, release); err != nil {
+						task.SetError(err)
+						return
+					}
+				}
 			}
 
 			// Login, tag & push container image to ACR

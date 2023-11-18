@@ -78,13 +78,15 @@ func Test_CLI_Package_WithOutputPath(t *testing.T) {
 		err := copySample(dir, "webapp")
 		require.NoError(t, err, "failed expanding sample")
 
+		artifactPath := filepath.Join(dir, "dist")
 		packageResult, err := cli.RunCommandWithStdIn(
 			ctx,
 			stdinForInit(envName),
-			"package", "--output-path", "./dist",
+			"package", "--output-path", artifactPath,
 		)
 		require.NoError(t, err)
-		require.Contains(t, packageResult.Stdout, "Package Output: dist")
+		require.Contains(t, packageResult.Stdout, "Package Output:")
+		require.Contains(t, packageResult.Stdout, artifactPath)
 
 		distPath := filepath.Join(dir, "dist")
 		files, err := os.ReadDir(distPath)
@@ -109,15 +111,16 @@ func Test_CLI_Package_WithOutputPath(t *testing.T) {
 		err := copySample(dir, "webapp")
 		require.NoError(t, err, "failed expanding sample")
 
+		artifactPath := filepath.Join(dir, "dist", "web.zip")
 		packageResult, err := cli.RunCommandWithStdIn(
 			ctx,
 			stdinForInit(envName),
-			"package", "web", "--output-path", "./dist/web.zip",
+			"package", "web", "--output-path", artifactPath,
 		)
 		require.NoError(t, err)
-		require.Contains(t, packageResult.Stdout, "Package Output: ./dist/web.zip")
+		require.Contains(t, packageResult.Stdout, "Package Output:")
+		require.Contains(t, packageResult.Stdout, artifactPath)
 
-		artifactPath := filepath.Join(dir, "dist", "web.zip")
 		info, err := os.Stat(artifactPath)
 		require.NoError(t, err)
 		require.NotNil(t, info)

@@ -362,6 +362,13 @@ func Test_CLI_Up_Down_Aspire(t *testing.T) {
 	err := copySample(dir, "aspire")
 	require.NoError(t, err, "failed expanding sample")
 
+	// Aspire is a workload and needs to be installed seperately via `dotnet workload restore`, so do that.
+	commandRunner := exec.NewCommandRunner(nil)
+	runArgs := newRunArgs("dotnet", "workload", "restore").WithCwd(dir)
+
+	_, err = commandRunner.Run(ctx, runArgs)
+	require.NoError(t, err)
+
 	initResponses := []string{
 		"Use code in the current directory",        // Initialize from code
 		"Confirm and continue initializing my app", // Confirm everything looks good.

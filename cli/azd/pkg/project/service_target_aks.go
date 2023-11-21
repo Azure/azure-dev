@@ -164,65 +164,6 @@ func (t *aksTarget) Deploy(
 				return
 			}
 
-			// WIP: Helm stuff
-			if serviceConfig.K8s.Helm != nil {
-				for _, repo := range serviceConfig.K8s.Helm.Repositories {
-					task.SetProgress(NewServiceProgress(fmt.Sprintf("Configuring helm repo: %s", repo.Name)))
-					if err := t.helmCli.AddRepo(ctx, repo); err != nil {
-						task.SetError(err)
-						return
-					}
-
-					if err := t.helmCli.UpdateRepo(ctx, repo.Name); err != nil {
-						task.SetError(err)
-						return
-					}
-				}
-
-				for _, release := range serviceConfig.K8s.Helm.Releases {
-					if release.Namespace == "" {
-						release.Namespace = t.getK8sNamespace(serviceConfig)
-					}
-
-					if err := t.ensureNamespace(ctx, release.Namespace); err != nil {
-						task.SetError(err)
-						return
-					}
-
-					task.SetProgress(NewServiceProgress(fmt.Sprintf("Installing helm release: %s", release.Name)))
-					if err := t.helmCli.Upgrade(ctx, release); err != nil {
-						task.SetError(err)
-						return
-					}
-
-					task.SetProgress(NewServiceProgress(fmt.Sprintf("Checking helm release status: %s", release.Name)))
-					err := retry.Do(
-						ctx,
-						retry.WithMaxDuration(10*time.Minute, retry.NewConstant(5*time.Second)),
-						func(ctx context.Context) error {
-							status, err := t.helmCli.Status(ctx, release)
-							if err != nil {
-								return err
-							}
-
-							if status.Info.Status != helm.StatusKindDeployed {
-								fmt.Printf("Status: %s\n", status.Info.Status)
-								return retry.RetryableError(
-									fmt.Errorf("helm release '%s' is not ready, %w", release.Name, err),
-								)
-							}
-
-							return nil
-						},
-					)
-
-					if err != nil {
-						task.SetError(err)
-						return
-					}
-				}
-			}
-
 			if packageOutput.PackagePath != "" {
 				// Login, tag & push container image to ACR
 				containerDeployTask := t.containerHelper.Deploy(ctx, serviceConfig, packageOutput, targetResource, true)
@@ -232,38 +173,15 @@ func (t *aksTarget) Deploy(
 			// Sync environment
 			t.kubectl.SetEnv(t.env.Dotenv())
 
-			task.SetProgress(NewServiceProgress("Applying k8s manifests"))
-			deploymentPath := serviceConfig.K8s.DeploymentPath
-			if deploymentPath == "" {
-				deploymentPath = defaultDeploymentPath
+			deployment, err := t.deployManifests(ctx, serviceConfig, task)
+			if err != nil && !os.IsNotExist(err) {
+				task.SetError(err)
+				return
 			}
 
-			var deployment *kubectl.Deployment
-
-			if _, err := os.Stat(deploymentPath); !os.IsNotExist(err) {
-				err := t.kubectl.Apply(
-					ctx,
-					filepath.Join(serviceConfig.RelativePath, deploymentPath),
-					nil,
-				)
-				if err != nil {
-					task.SetError(fmt.Errorf("failed applying kube manifests: %w", err))
-					return
-				}
-
-				deploymentName := serviceConfig.K8s.Deployment.Name
-				if deploymentName == "" {
-					deploymentName = serviceConfig.Name
-				}
-
-				// It is not a requirement for a AZD deploy to contain a deployment object
-				// If we don't find any deployment within the namespace we will continue
-				task.SetProgress(NewServiceProgress("Verifying deployment"))
-				deployment, err = t.waitForDeployment(ctx, deploymentName)
-				if err != nil && !errors.Is(err, kubectl.ErrResourceNotFound) {
-					task.SetError(err)
-					return
-				}
+			if err := t.deployHelmCharts(ctx, serviceConfig, task); err != nil {
+				task.SetError(err)
+				return
 			}
 
 			task.SetProgress(NewServiceProgress("Fetching endpoints for AKS service"))
@@ -297,6 +215,110 @@ func (t *aksTarget) Deploy(
 				Endpoints: endpoints,
 			})
 		})
+}
+
+// deployManifests deploys raw or templated yaml manifests to the k8s cluster
+func (t *aksTarget) deployManifests(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress],
+) (*kubectl.Deployment, error) {
+	deploymentPath := serviceConfig.K8s.DeploymentPath
+	if deploymentPath == "" {
+		deploymentPath = defaultDeploymentPath
+	}
+
+	if _, err := os.Stat(deploymentPath); os.IsNotExist(err) {
+		return nil, err
+	}
+
+	task.SetProgress(NewServiceProgress("Applying k8s manifests"))
+	err := t.kubectl.Apply(
+		ctx,
+		filepath.Join(serviceConfig.RelativePath, deploymentPath),
+		nil,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed applying kube manifests: %w", err)
+	}
+
+	deploymentName := serviceConfig.K8s.Deployment.Name
+	if deploymentName == "" {
+		deploymentName = serviceConfig.Name
+	}
+
+	// It is not a requirement for a AZD deploy to contain a deployment object
+	// If we don't find any deployment within the namespace we will continue
+	task.SetProgress(NewServiceProgress("Verifying deployment"))
+	deployment, err := t.waitForDeployment(ctx, deploymentName)
+	if err != nil && !errors.Is(err, kubectl.ErrResourceNotFound) {
+		return nil, err
+	}
+
+	return deployment, nil
+}
+
+// deployHelmCharts deploys helm charts to the k8s cluster
+func (t *aksTarget) deployHelmCharts(
+	ctx context.Context, serviceConfig *ServiceConfig,
+	task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress],
+) error {
+	if serviceConfig.K8s.Helm == nil {
+		return nil
+	}
+
+	for _, repo := range serviceConfig.K8s.Helm.Repositories {
+		task.SetProgress(NewServiceProgress(fmt.Sprintf("Configuring helm repo: %s", repo.Name)))
+		if err := t.helmCli.AddRepo(ctx, repo); err != nil {
+			return err
+		}
+
+		if err := t.helmCli.UpdateRepo(ctx, repo.Name); err != nil {
+			return err
+		}
+	}
+
+	for _, release := range serviceConfig.K8s.Helm.Releases {
+		if release.Namespace == "" {
+			release.Namespace = t.getK8sNamespace(serviceConfig)
+		}
+
+		if err := t.ensureNamespace(ctx, release.Namespace); err != nil {
+			return err
+		}
+
+		task.SetProgress(NewServiceProgress(fmt.Sprintf("Installing helm release: %s", release.Name)))
+		if err := t.helmCli.Upgrade(ctx, release); err != nil {
+			return err
+		}
+
+		task.SetProgress(NewServiceProgress(fmt.Sprintf("Checking helm release status: %s", release.Name)))
+		err := retry.Do(
+			ctx,
+			retry.WithMaxDuration(10*time.Minute, retry.NewConstant(5*time.Second)),
+			func(ctx context.Context) error {
+				status, err := t.helmCli.Status(ctx, release)
+				if err != nil {
+					return err
+				}
+
+				if status.Info.Status != helm.StatusKindDeployed {
+					fmt.Printf("Status: %s\n", status.Info.Status)
+					return retry.RetryableError(
+						fmt.Errorf("helm release '%s' is not ready, %w", release.Name, err),
+					)
+				}
+
+				return nil
+			},
+		)
+
+		if err != nil {
+			return err
+		}
+	}
+
+	return nil
 }
 
 // Gets the service endpoints for the AKS service target

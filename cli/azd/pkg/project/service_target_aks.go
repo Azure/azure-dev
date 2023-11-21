@@ -196,19 +196,25 @@ func (t *aksTarget) Deploy(
 					}
 
 					task.SetProgress(NewServiceProgress(fmt.Sprintf("Checking helm release status: %s", release.Name)))
-					err := retry.Do(ctx, retry.WithMaxDuration(10*time.Minute, retry.NewConstant(5*time.Second)), func(ctx context.Context) error {
-						status, err := t.helmCli.Status(ctx, release)
-						if err != nil {
-							return err
-						}
+					err := retry.Do(
+						ctx,
+						retry.WithMaxDuration(10*time.Minute, retry.NewConstant(5*time.Second)),
+						func(ctx context.Context) error {
+							status, err := t.helmCli.Status(ctx, release)
+							if err != nil {
+								return err
+							}
 
-						if status.Info.Status != helm.StatusKindDeployed {
-							fmt.Printf("Status: %s\n", status.Info.Status)
-							return retry.RetryableError(fmt.Errorf("helm release '%s' is not ready, %w", release.Name, err))
-						}
+							if status.Info.Status != helm.StatusKindDeployed {
+								fmt.Printf("Status: %s\n", status.Info.Status)
+								return retry.RetryableError(
+									fmt.Errorf("helm release '%s' is not ready, %w", release.Name, err),
+								)
+							}
 
-						return nil
-					})
+							return nil
+						},
+					)
 
 					if err != nil {
 						task.SetError(err)
@@ -232,6 +238,8 @@ func (t *aksTarget) Deploy(
 				deploymentPath = defaultDeploymentPath
 			}
 
+			var deployment *kubectl.Deployment
+
 			if _, err := os.Stat(deploymentPath); !os.IsNotExist(err) {
 				err := t.kubectl.Apply(
 					ctx,
@@ -251,7 +259,7 @@ func (t *aksTarget) Deploy(
 				// It is not a requirement for a AZD deploy to contain a deployment object
 				// If we don't find any deployment within the namespace we will continue
 				task.SetProgress(NewServiceProgress("Verifying deployment"))
-				_, err = t.waitForDeployment(ctx, deploymentName)
+				deployment, err = t.waitForDeployment(ctx, deploymentName)
 				if err != nil && !errors.Is(err, kubectl.ErrResourceNotFound) {
 					task.SetError(err)
 					return
@@ -284,8 +292,8 @@ func (t *aksTarget) Deploy(
 					targetResource.ResourceGroupName(),
 					targetResource.ResourceName(),
 				),
-				Kind: AksTarget,
-				//Details:   deployment,
+				Kind:      AksTarget,
+				Details:   deployment,
 				Endpoints: endpoints,
 			})
 		})
@@ -550,11 +558,21 @@ func (t *aksTarget) getServiceEndpoints(
 	var endpoints []string
 	if service.Spec.Type == kubectl.ServiceTypeLoadBalancer {
 		for _, resource := range service.Status.LoadBalancer.Ingress {
-			endpoints = append(endpoints, fmt.Sprintf("http://%s, (Service: %s, Type: LoadBalancer)", resource.Ip, service.Metadata.Name))
+			endpoints = append(
+				endpoints,
+				fmt.Sprintf("http://%s, (Service: %s, Type: LoadBalancer)", resource.Ip, service.Metadata.Name),
+			)
 		}
 	} else if service.Spec.Type == kubectl.ServiceTypeClusterIp {
 		for index, ip := range service.Spec.ClusterIps {
-			endpoints = append(endpoints, fmt.Sprintf("http://%s:%d, (Service: %s, Type: ClusterIP)", ip, service.Spec.Ports[index].Port, service.Metadata.Name))
+			endpoints = append(
+				endpoints,
+				fmt.Sprintf("http://%s:%d, (Service: %s, Type: ClusterIP)",
+					ip,
+					service.Spec.Ports[index].Port,
+					service.Metadata.Name,
+				),
+			)
 		}
 	}
 

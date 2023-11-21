@@ -561,7 +561,8 @@ func (sm *serviceManager) GetFrameworkService(ctx context.Context, serviceConfig
 	}
 
 	// For hosts which run in containers, if the source project is not already a container, we need to wrap it in a docker
-	if serviceConfig.Language != ServiceLanguageNone && (serviceConfig.Host == ContainerAppTarget || serviceConfig.Host == AksTarget) {
+	if serviceConfig.Language != ServiceLanguageNone &&
+		(serviceConfig.Host == ContainerAppTarget || serviceConfig.Host == AksTarget) {
 		var compositeFramework CompositeFrameworkService
 		if err := sm.serviceLocator.ResolveNamed(string(ServiceLanguageDocker), &compositeFramework); err != nil {
 			panic(fmt.Errorf(

@@ -82,7 +82,7 @@ jobs:
         displayName: 'Run APIScan'
         condition: and(succeeded(), eq(variables['OSVmImage'], 'windows'))
         inputs:
-          softwareFolder: $(Build.ArtifactStagingDirectory)
+          softwareFolder: cli/azd
           # SoftwareName cannot change as it is used for looking up baselining data
           softwareName: 'Azure Developer CLI'
           softwareVersionNum: '$(CLI_VERSION)'

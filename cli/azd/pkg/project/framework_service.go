@@ -55,6 +55,7 @@ type FrameworkRequirements struct {
 type FrameworkPackageRequirements struct {
 	RequireRestore bool
 	RequireBuild   bool
+	SkipPackage    bool
 }
 
 // FrameworkService is an abstraction for a programming language or framework

@@ -55,6 +55,10 @@ func (c *Cli) Install(ctx context.Context, release *Release) error {
 
 func (c *Cli) Upgrade(ctx context.Context, release *Release) error {
 	runArgs := exec.NewRunArgs("helm", "upgrade", release.Name, release.Chart, "--install")
+	if release.Version != "" {
+		runArgs = runArgs.AppendParams("--version", release.Version)
+	}
+
 	if release.Values != "" {
 		runArgs = runArgs.AppendParams("--values", release.Values)
 	}

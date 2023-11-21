@@ -24,7 +24,9 @@ type DotNetCli interface {
 	Restore(ctx context.Context, project string) error
 	Build(ctx context.Context, project string, configuration string, output string) error
 	Publish(ctx context.Context, project string, configuration string, output string) error
-	PublishContainer(ctx context.Context, project string, configuration string, imageName string, server string) error
+	PublishContainer(
+		ctx context.Context, project, configuration, imageName, server, username, password string,
+	) error
 	InitializeSecret(ctx context.Context, project string) error
 	PublishAppHostManifest(ctx context.Context, hostProject string, manifestPath string) error
 	SetSecrets(ctx context.Context, secrets map[string]string, project string) error
@@ -150,22 +152,22 @@ func (cli *dotNetCli) PublishAppHostManifest(
 
 // PublishContainer runs a `dotnet publish“ with `PublishProfile=DefaultContainer` to build and publish the container.
 func (cli *dotNetCli) PublishContainer(
-	ctx context.Context, project string, configuration string, imageName string, server string,
+	ctx context.Context, project, configuration, imageName, server, username, password string,
 ) error {
 	runArgs := exec.NewRunArgs("dotnet", "publish", project)
-	if configuration != "" {
-		runArgs = runArgs.AppendParams("-c", configuration)
-	}
-
-	if imageName != "" {
-		runArgs = runArgs.AppendParams(fmt.Sprintf("-p:ContainerImageName=%s", imageName))
-	}
 
 	runArgs = runArgs.AppendParams(
 		"-r", "linux-x64",
+		"-c", configuration,
 		"-p:PublishProfile=DefaultContainer",
+		fmt.Sprintf("-p:ContainerImageName=%s", imageName),
 		fmt.Sprintf("-p:ContainerRegistry=%s", server),
 	)
+
+	runArgs = runArgs.WithEnv([]string{
+		fmt.Sprintf("SDK_CONTAINER_REGISTRY_UNAME=%s", username),
+		fmt.Sprintf("SDK_CONTAINER_REGISTRY_PWORD=%s", password),
+	})
 
 	// TODO(ellismg): Remove this when the .NET 8 RTM base images have been pushed.
 	runArgs = runArgs.AppendParams("--self-contained")

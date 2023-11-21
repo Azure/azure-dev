@@ -104,6 +104,18 @@ func (ch *ContainerHelper) Login(
 	return loginServer, ch.containerRegistryService.Login(ctx, targetResource.SubscriptionId(), loginServer)
 }
 
+func (ch *ContainerHelper) Credentials(
+	ctx context.Context,
+	targetResource *environment.TargetResource,
+) (*azcli.DockerCredentials, error) {
+	loginServer, err := ch.RegistryName(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return ch.containerRegistryService.Credentials(ctx, targetResource.SubscriptionId(), loginServer)
+}
+
 func (ch *ContainerHelper) Deploy(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,

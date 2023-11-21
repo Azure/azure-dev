@@ -18,6 +18,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/helm"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
@@ -493,6 +494,7 @@ func createAksServiceTarget(
 	env *environment.Environment,
 ) ServiceTarget {
 	kubeCtl := kubectl.NewKubectl(mockContext.CommandRunner)
+	helmCli := helm.NewCli(mockContext.CommandRunner)
 	dockerCli := docker.NewDocker(mockContext.CommandRunner)
 	credentialProvider := mockaccount.SubscriptionCredentialProviderFunc(
 		func(_ context.Context, _ string) (azcore.TokenCredential, error) {
@@ -524,6 +526,7 @@ func createAksServiceTarget(
 		managedClustersService,
 		resourceManager,
 		kubeCtl,
+		helmCli,
 		containerHelper,
 	)
 }

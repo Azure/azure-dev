@@ -346,32 +346,38 @@ func (sm *serviceManager) Package(
 
 		var packageResult *ServicePackageResult
 
-		err = serviceConfig.Invoke(ctx, ServiceEventPackage, eventArgs, func() error {
-			frameworkPackageTask := frameworkService.Package(ctx, serviceConfig, buildOutput)
-			syncProgress(task, frameworkPackageTask.Progress())
-
-			frameworkPackageResult, err := frameworkPackageTask.Await()
-			if err != nil {
-				return err
+		if frameworkRequirements.Package.SkipPackage {
+			packageResult = &ServicePackageResult{
+				Build: buildResult,
 			}
+		} else {
+			err = serviceConfig.Invoke(ctx, ServiceEventPackage, eventArgs, func() error {
+				frameworkPackageTask := frameworkService.Package(ctx, serviceConfig, buildOutput)
+				syncProgress(task, frameworkPackageTask.Progress())
 
-			serviceTargetPackageTask := serviceTarget.Package(ctx, serviceConfig, frameworkPackageResult)
-			syncProgress(task, serviceTargetPackageTask.Progress())
+				frameworkPackageResult, err := frameworkPackageTask.Await()
+				if err != nil {
+					return err
+				}
 
-			serviceTargetPackageResult, err := serviceTargetPackageTask.Await()
+				serviceTargetPackageTask := serviceTarget.Package(ctx, serviceConfig, frameworkPackageResult)
+				syncProgress(task, serviceTargetPackageTask.Progress())
+
+				serviceTargetPackageResult, err := serviceTargetPackageTask.Await()
+				if err != nil {
+					return err
+				}
+
+				packageResult = serviceTargetPackageResult
+				sm.setOperationResult(ctx, serviceConfig, string(ServiceEventPackage), packageResult)
+
+				return nil
+			})
+
 			if err != nil {
-				return err
+				task.SetError(fmt.Errorf("failed packaging service '%s': %w", serviceConfig.Name, err))
+				return
 			}
-
-			packageResult = serviceTargetPackageResult
-			sm.setOperationResult(ctx, serviceConfig, string(ServiceEventPackage), packageResult)
-
-			return nil
-		})
-
-		if err != nil {
-			task.SetError(fmt.Errorf("failed packaging service '%s': %w", serviceConfig.Name, err))
-			return
 		}
 
 		// Package path can be a file path or a container image name
@@ -554,9 +560,8 @@ func (sm *serviceManager) GetFrameworkService(ctx context.Context, serviceConfig
 		))
 	}
 
-	// For hosts which run in containers, if the source project is not already a container, we need to wrap it in a docker
-	// project that handles the containerization.
-	if serviceConfig.Host.RequiresContainer() && serviceConfig.Language != ServiceLanguageDocker {
+	// For containerized applications we use a composite framework service
+	if serviceConfig.Language != ServiceLanguageNone && (serviceConfig.Host == ContainerAppTarget || serviceConfig.Host == AksTarget) {
 		var compositeFramework CompositeFrameworkService
 		if err := sm.serviceLocator.ResolveNamed(string(ServiceLanguageDocker), &compositeFramework); err != nil {
 			panic(fmt.Errorf(

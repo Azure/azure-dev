@@ -6,8 +6,10 @@ import (
 	"fmt"
 	"log"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
@@ -20,6 +22,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/kubectl"
+	"github.com/sethvargo/go-retry"
 )
 
 const (
@@ -164,6 +167,7 @@ func (t *aksTarget) Deploy(
 			// WIP: Helm stuff
 			if serviceConfig.K8s.Helm != nil {
 				for _, repo := range serviceConfig.K8s.Helm.Repositories {
+					task.SetProgress(NewServiceProgress(fmt.Sprintf("Configuring helm repo: %s", repo.Name)))
 					if err := t.helmCli.AddRepo(ctx, repo); err != nil {
 						task.SetError(err)
 						return
@@ -176,16 +180,48 @@ func (t *aksTarget) Deploy(
 				}
 
 				for _, release := range serviceConfig.K8s.Helm.Releases {
+					if release.Namespace == "" {
+						release.Namespace = t.getK8sNamespace(serviceConfig)
+					}
+
+					if err := t.ensureNamespace(ctx, release.Namespace); err != nil {
+						task.SetError(err)
+						return
+					}
+
+					task.SetProgress(NewServiceProgress(fmt.Sprintf("Installing helm release: %s", release.Name)))
 					if err := t.helmCli.Upgrade(ctx, release); err != nil {
+						task.SetError(err)
+						return
+					}
+
+					task.SetProgress(NewServiceProgress(fmt.Sprintf("Checking helm release status: %s", release.Name)))
+					err := retry.Do(ctx, retry.WithMaxDuration(10*time.Minute, retry.NewConstant(5*time.Second)), func(ctx context.Context) error {
+						status, err := t.helmCli.Status(ctx, release)
+						if err != nil {
+							return err
+						}
+
+						if status.Info.Status != helm.StatusKindDeployed {
+							fmt.Printf("Status: %s\n", status.Info.Status)
+							return retry.RetryableError(fmt.Errorf("helm release '%s' is not ready, %w", release.Name, err))
+						}
+
+						return nil
+					})
+
+					if err != nil {
 						task.SetError(err)
 						return
 					}
 				}
 			}
 
-			// Login, tag & push container image to ACR
-			containerDeployTask := t.containerHelper.Deploy(ctx, serviceConfig, packageOutput, targetResource, true)
-			syncProgress(task, containerDeployTask.Progress())
+			if packageOutput.PackagePath != "" {
+				// Login, tag & push container image to ACR
+				containerDeployTask := t.containerHelper.Deploy(ctx, serviceConfig, packageOutput, targetResource, true)
+				syncProgress(task, containerDeployTask.Progress())
+			}
 
 			// Sync environment
 			t.kubectl.SetEnv(t.env.Dotenv())
@@ -196,28 +232,30 @@ func (t *aksTarget) Deploy(
 				deploymentPath = defaultDeploymentPath
 			}
 
-			err := t.kubectl.Apply(
-				ctx,
-				filepath.Join(serviceConfig.RelativePath, deploymentPath),
-				nil,
-			)
-			if err != nil {
-				task.SetError(fmt.Errorf("failed applying kube manifests: %w", err))
-				return
-			}
+			if _, err := os.Stat(deploymentPath); !os.IsNotExist(err) {
+				err := t.kubectl.Apply(
+					ctx,
+					filepath.Join(serviceConfig.RelativePath, deploymentPath),
+					nil,
+				)
+				if err != nil {
+					task.SetError(fmt.Errorf("failed applying kube manifests: %w", err))
+					return
+				}
 
-			deploymentName := serviceConfig.K8s.Deployment.Name
-			if deploymentName == "" {
-				deploymentName = serviceConfig.Name
-			}
+				deploymentName := serviceConfig.K8s.Deployment.Name
+				if deploymentName == "" {
+					deploymentName = serviceConfig.Name
+				}
 
-			// It is not a requirement for a AZD deploy to contain a deployment object
-			// If we don't find any deployment within the namespace we will continue
-			task.SetProgress(NewServiceProgress("Verifying deployment"))
-			deployment, err := t.waitForDeployment(ctx, deploymentName)
-			if err != nil && !errors.Is(err, kubectl.ErrResourceNotFound) {
-				task.SetError(err)
-				return
+				// It is not a requirement for a AZD deploy to contain a deployment object
+				// If we don't find any deployment within the namespace we will continue
+				task.SetProgress(NewServiceProgress("Verifying deployment"))
+				_, err = t.waitForDeployment(ctx, deploymentName)
+				if err != nil && !errors.Is(err, kubectl.ErrResourceNotFound) {
+					task.SetError(err)
+					return
+				}
 			}
 
 			task.SetProgress(NewServiceProgress("Fetching endpoints for AKS service"))
@@ -246,8 +284,8 @@ func (t *aksTarget) Deploy(
 					targetResource.ResourceGroupName(),
 					targetResource.ResourceName(),
 				),
-				Kind:      AksTarget,
-				Details:   deployment,
+				Kind: AksTarget,
+				//Details:   deployment,
 				Endpoints: endpoints,
 			})
 		})
@@ -512,11 +550,11 @@ func (t *aksTarget) getServiceEndpoints(
 	var endpoints []string
 	if service.Spec.Type == kubectl.ServiceTypeLoadBalancer {
 		for _, resource := range service.Status.LoadBalancer.Ingress {
-			endpoints = append(endpoints, fmt.Sprintf("http://%s, (Service, Type: LoadBalancer)", resource.Ip))
+			endpoints = append(endpoints, fmt.Sprintf("http://%s, (Service: %s, Type: LoadBalancer)", resource.Ip, service.Metadata.Name))
 		}
 	} else if service.Spec.Type == kubectl.ServiceTypeClusterIp {
 		for index, ip := range service.Spec.ClusterIps {
-			endpoints = append(endpoints, fmt.Sprintf("http://%s:%d, (Service, Type: ClusterIP)", ip, service.Spec.Ports[index].Port))
+			endpoints = append(endpoints, fmt.Sprintf("http://%s:%d, (Service: %s, Type: ClusterIP)", ip, service.Spec.Ports[index].Port, service.Metadata.Name))
 		}
 	}
 

@@ -482,7 +482,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 	// Languages
 	frameworkServiceMap := map[project.ServiceLanguageKind]any{
-		"":                                project.NewDotNetProject,
+		project.ServiceLanguageNone:       project.NewNoneProject,
 		project.ServiceLanguageDotNet:     project.NewDotNetProject,
 		project.ServiceLanguageCsharp:     project.NewDotNetProject,
 		project.ServiceLanguageFsharp:     project.NewDotNetProject,

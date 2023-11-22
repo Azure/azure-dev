@@ -13,7 +13,7 @@ builder.Services.AddDbContext<TodoDb>(options =>
     options.UseSqlServer(connectionString, sqlOptions => sqlOptions.EnableRetryOnFailure());
 });
 
-builder.Services.AddControllers();
+builder.Services.AddCors();
 builder.Services.AddApplicationInsightsTelemetry(builder.Configuration);
 
 var app = builder.Build();
@@ -30,7 +30,7 @@ app.UseCors(policy =>
     policy.AllowAnyHeader();
     policy.AllowAnyMethod();
 });
-    
+
 // Swagger UI
 app.UseSwaggerUI(options => {
     options.SwaggerEndpoint("./openapi.yaml", "v1");
@@ -42,5 +42,5 @@ app.UseStaticFiles(new StaticFileOptions{
     ServeUnknownFileTypes = true,
 });
 
-app.MapControllers();
+app.MapTodoEndpoints();
 app.Run();

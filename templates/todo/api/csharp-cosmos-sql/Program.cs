@@ -1,20 +1,15 @@
 using Azure.Identity;
-using Microsoft.ApplicationInsights.AspNetCore.Extensions;
 using Microsoft.Azure.Cosmos;
 using SimpleTodo.Api;
+using Todo.Api;
 
-var credential = new DefaultAzureCredential();
 var builder = WebApplication.CreateBuilder(args);
+var credential = new DefaultAzureCredential();
+builder.Configuration.AddAzureKeyVault(new Uri(builder.Configuration["AZURE_KEY_VAULT_ENDPOINT"]), credential);
 
 builder.Services.AddSingleton<ListsRepository>();
-builder.Services.AddSingleton(_ => new CosmosClient(builder.Configuration["AZURE_COSMOS_ENDPOINT"], credential, new CosmosClientOptions()
-{
-    SerializerOptions = new CosmosSerializationOptions
-    {
-        PropertyNamingPolicy = CosmosPropertyNamingPolicy.CamelCase
-    }
-}));
-builder.Services.AddControllers();
+builder.Services.AddSingleton(_ => new CosmosClient(builder.Configuration[builder.Configuration["AZURE_COSMOS_CONNECTION_STRING_KEY"]]));
+builder.Services.AddCors();
 builder.Services.AddApplicationInsightsTelemetry(builder.Configuration);
 
 var app = builder.Build();
@@ -37,5 +32,5 @@ app.UseStaticFiles(new StaticFileOptions{
     ServeUnknownFileTypes = true,
 });
 
-app.MapControllers();
+app.MapTodoEndpoints();
 app.Run();

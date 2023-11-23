@@ -8,12 +8,12 @@ namespace SimpleTodo.Api;
 public class ListsFunctions
 {
     private readonly ILogger _logger;
-    private readonly ListsRepository _repository;
+    private readonly ListsRepository repository;
 
     public ListsFunctions(ILoggerFactory loggerFactory, ListsRepository repository)
     {
         _logger = loggerFactory.CreateLogger<ListsFunctions>();
-        _repository = repository;
+        repository = repository;
     }
 
     [Function("GetLists")]
@@ -22,31 +22,31 @@ public class ListsFunctions
         HttpRequestData req, int? skip, int? batchSize)
     {
         var response = req.CreateResponse(HttpStatusCode.OK);
-        var lists = await _repository.GetListsAsync(skip, batchSize);
+        var lists = await repository.GetListsAsync(skip, batchSize);
         response.WriteString(JsonSerializer.Serialize(lists));
         return response;
     }
 
     [Function("CreateList")]
     public async Task<HttpResponseData> CreateList(
-       [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "lists")] HttpRequestData req, string list_id, string name, string? description = null)
+       [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "lists")] HttpRequestData req, string listId, string name, string? description = null)
     {
         var response = req.CreateResponse(HttpStatusCode.Created);
         var todoList = new TodoList(name)
         {
             Description = description
         };
-        await _repository.AddListAsync(todoList);
+        await repository.AddListAsync(todoList);
         response.WriteString(JsonSerializer.Serialize(todoList));
         return response;
     }
 
     [Function("GetList")]
     public async Task<HttpResponseData> GetList(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "lists/{list_id}")] HttpRequestData req, Guid list_id)
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "lists/{listId}")] HttpRequestData req, Guid listId)
     {
         var response = req.CreateResponse(HttpStatusCode.OK);
-        var list = await _repository.GetListAsync(list_id);
+        var list = await repository.GetListAsync(listId);
         if (list == null)
         {
             return req.CreateResponse(HttpStatusCode.NotFound);
@@ -57,10 +57,10 @@ public class ListsFunctions
 
     [Function("UpdateList")]
     public async Task<HttpResponseData> UpdateList(
-       [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "lists/{list_id}")] HttpRequestData req, Guid list_id, string name, string? description)
+       [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "lists/{listId}")] HttpRequestData req, Guid listId, string name, string? description)
     {
         var response = req.CreateResponse(HttpStatusCode.OK);
-        var existingList = await _repository.GetListAsync(list_id);
+        var existingList = await repository.GetListAsync(listId);
         if (existingList == null)
         {
             return req.CreateResponse(HttpStatusCode.NotFound);
@@ -68,85 +68,85 @@ public class ListsFunctions
         existingList.Name = name;
         existingList.Description = description;
         existingList.UpdatedDate = DateTimeOffset.UtcNow;
-        await _repository.SaveChangesAsync();
+        await repository.SaveChangesAsync();
         response.WriteString(JsonSerializer.Serialize(existingList));
         return response;
     }
 
     [Function("DeleteList")]
     public async Task<HttpResponseData> DeleteList(
-            [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "lists/{list_id}")]
-        HttpRequestData req, Guid list_id)
+            [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "lists/{listId}")]
+        HttpRequestData req, Guid listId)
     {
         var response = req.CreateResponse(HttpStatusCode.NoContent);
-        if (await _repository.GetListAsync(list_id) == null)
+        if (await repository.GetListAsync(listId) == null)
         {
             return req.CreateResponse(HttpStatusCode.NotFound);
         }
-        await _repository.DeleteListAsync(list_id);
+        await repository.DeleteListAsync(listId);
         return response;
     }
 
     [Function("GetListItems")]
     public async Task<HttpResponseData> GetListItems(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "lists/{list_id}/items")]
-        HttpRequestData req, Guid list_id, int? skip, int? batchSize)
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "lists/{listId}/items")]
+        HttpRequestData req, Guid listId, int? skip, int? batchSize)
     {
         var response = req.CreateResponse(HttpStatusCode.OK);
-        if (await _repository.GetListAsync(list_id) == null)
+        if (await repository.GetListAsync(listId) == null)
         {
             return req.CreateResponse(HttpStatusCode.NotFound);
         }
-        var items = await _repository.GetListItemsAsync(list_id, skip, batchSize);
+        var items = await repository.GetListItemsAsync(listId, skip, batchSize);
         response.WriteString(JsonSerializer.Serialize(items));
         return response;
     }
 
     [Function("CreateListItem")]
     public async Task<HttpResponseData> CreateListItem(
-           [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "lists/{list_id}/items")] HttpRequestData req,
-           Guid list_id, string name, string? state, string? description)
+           [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "lists/{listId}/items")] HttpRequestData req,
+           Guid listId, string name, string? state, string? description)
     {
         var response = req.CreateResponse(HttpStatusCode.Created);
-        if (await _repository.GetListAsync(list_id) == null)
+        if (await repository.GetListAsync(listId) == null)
         {
             return req.CreateResponse(HttpStatusCode.NotFound);
         }
-        var newItem = new TodoItem(list_id, name)
+        var newItem = new TodoItem(listId, name)
         {
             Name = name,
             Description = description,
             State = (state == null ? "todo" : state),
             CreatedDate = DateTimeOffset.UtcNow
         };
-        await _repository.AddListItemAsync(newItem);
+        await repository.AddListItemAsync(newItem);
         response.WriteString(JsonSerializer.Serialize(newItem));
         return response;
     }
 
     [Function("GetListItem")]
     public async Task<HttpResponseData> GetListItem(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "lists/{list_id}/items/{item_id}")] HttpRequestData req,
-        Guid item_id, Guid list_id)
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "lists/{listId}/items/{item_id}")] HttpRequestData req,
+        Guid item_id, Guid listId)
     {
         var response = req.CreateResponse(HttpStatusCode.OK);
-        if (await _repository.GetListAsync(list_id) == null)
+        if (await repository.GetListAsync(listId) == null)
         {
             return req.CreateResponse(HttpStatusCode.NotFound);
         }
-        var item = await _repository.GetListItemAsync(list_id, item_id);
+        var item = await repository.GetListItemAsync(listId, item_id);
         response.WriteString(JsonSerializer.Serialize(item));
         return response;
     }
 
     [Function("UpdateListItem")]
     public async Task<HttpResponseData> UpdateListItem(
-       [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "lists/{list_id}/items/{item_id}")]
-       HttpRequestData req, Guid list_id, Guid item_id, string name, string? description,
+       [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "lists/{listId}/items/{item_id}")]
+       HttpRequestData req, Guid listId, Guid item_id, string name, string? description,
        string state, string? completedDate, string? dueDate)
     {
         var response = req.CreateResponse(HttpStatusCode.OK);
-        var existingItem = await _repository.GetListItemAsync(list_id, item_id);
+        var existingItem = await repository.GetListItemAsync(listId, item_id);
         if (existingItem == null)
         {
             return req.CreateResponse(HttpStatusCode.NotFound);
@@ -163,36 +163,36 @@ public class ListsFunctions
         }
         existingItem.State = state;
         existingItem.UpdatedDate = DateTimeOffset.UtcNow;
-        await _repository.SaveChangesAsync();
+        await repository.SaveChangesAsync();
         response.WriteString(JsonSerializer.Serialize(existingItem));
         return response;
     }
 
     [Function("DeleteListItem")]
     public async Task<HttpResponseData> DeleteListItem(
-            [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "lists/{list_id}/items/{item_id}")]
-        HttpRequestData req, Guid item_id, Guid list_id)
+            [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "lists/{listId}/items/{item_id}")]
+        HttpRequestData req, Guid item_id, Guid listId)
     {
         var response = req.CreateResponse(HttpStatusCode.NoContent);
-        if (await _repository.GetListItemAsync(list_id, item_id) == null)
+        if (await repository.GetListItemAsync(listId, item_id) == null)
         {
             return req.CreateResponse(HttpStatusCode.NotFound); ;
         }
-        await _repository.DeleteListItemAsync(list_id, item_id);
+        await repository.DeleteListItemAsync(listId, item_id);
         return response;
     }
 
     [Function("GetListItemsByState")]
     public async Task<HttpResponseData> GetListItemsByState(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "lists/{list_id}/state/{state}")]
-        HttpRequestData req, Guid list_id, string state, int? skip = null, int? batchSize = null)
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "lists/{listId}/state/{state}")]
+        HttpRequestData req, Guid listId, string state, int? skip = null, int? batchSize = null)
     {
         var response = req.CreateResponse(HttpStatusCode.OK);
-        if (await _repository.GetListAsync(list_id) == null)
+        if (await repository.GetListAsync(listId) == null)
         {
             return req.CreateResponse(HttpStatusCode.NotFound);
         }
-        var items = await _repository.GetListItemsByStateAsync(list_id, state, skip, batchSize);
+        var items = await repository.GetListItemsByStateAsync(listId, state, skip, batchSize);
         response.WriteString(JsonSerializer.Serialize(items));
         return response;
     }

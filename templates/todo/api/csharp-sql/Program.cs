@@ -1,6 +1,7 @@
 using Azure.Identity;
 using Microsoft.EntityFrameworkCore;
 using SimpleTodo.Api;
+using Todo.Api;
 
 var builder = WebApplication.CreateBuilder(args);
 var credential = new DefaultAzureCredential();
@@ -12,7 +13,8 @@ builder.Services.AddDbContext<TodoDb>(options =>
     var connectionString = builder.Configuration[builder.Configuration["AZURE_SQL_CONNECTION_STRING_KEY"]];
     options.UseSqlServer(connectionString, sqlOptions => sqlOptions.EnableRetryOnFailure());
 });
-
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
 builder.Services.AddCors();
 builder.Services.AddApplicationInsightsTelemetry(builder.Configuration);
 
@@ -32,15 +34,20 @@ app.UseCors(policy =>
 });
 
 // Swagger UI
-app.UseSwaggerUI(options => {
+app.UseSwaggerUI(options =>
+{
     options.SwaggerEndpoint("./openapi.yaml", "v1");
     options.RoutePrefix = "";
 });
 
-app.UseStaticFiles(new StaticFileOptions{
+app.UseStaticFiles(new StaticFileOptions
+{
     // Serve openapi.yaml file
     ServeUnknownFileTypes = true,
 });
 
-app.MapTodoEndpoints();
+
+app.MapGroup("/lists")
+    .MapTodosApi()
+    .WithOpenApi();
 app.Run();

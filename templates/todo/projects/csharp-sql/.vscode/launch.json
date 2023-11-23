@@ -9,7 +9,7 @@
             "url": "http://localhost:3000",
             "sourceMapPathOverrides": {
                 "webpack:///src/*": "${webRoot}/*"
-            }, 
+            },
         },
 
         {
@@ -21,7 +21,7 @@
             "request": "launch",
             "preLaunchTask": "Build API",
             // If you have changed target frameworks, make sure to update the program path.
-            "program": "${workspaceFolder}/src/api/bin/Debug/net6.0/Todo.Api.dll",
+            "program": "${workspaceFolder}/src/api/bin/Debug/net8.0/Todo.Api.dll",
             "args": [],
             "cwd": "${workspaceFolder}/src/api",
             "stopAtEntry": false,

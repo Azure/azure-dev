@@ -11,7 +11,8 @@ builder.Services.AddSingleton<ListsRepository>();
 builder.Services.AddSingleton(_ => new CosmosClient(builder.Configuration[builder.Configuration["AZURE_COSMOS_CONNECTION_STRING_KEY"]]));
 builder.Services.AddCors();
 builder.Services.AddApplicationInsightsTelemetry(builder.Configuration);
-
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
 var app = builder.Build();
 
 app.UseCors(policy =>
@@ -32,5 +33,7 @@ app.UseStaticFiles(new StaticFileOptions{
     ServeUnknownFileTypes = true,
 });
 
-app.MapTodoEndpoints();
+app.MapGroup("/lists")
+    .MapTodosApi()
+    .WithOpenApi();
 app.Run();

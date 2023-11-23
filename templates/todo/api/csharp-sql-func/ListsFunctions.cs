@@ -7,13 +7,13 @@ using System.Text.Json;
 namespace SimpleTodo.Api;
 public class ListsFunctions
 {
-    private readonly ILogger _logger;
+    private readonly ILogger logger;
     private readonly ListsRepository repository;
 
-    public ListsFunctions(ILoggerFactory loggerFactory, ListsRepository repository)
+    public ListsFunctions(ILoggerFactory _loggerFactory, ListsRepository _repository)
     {
-        _logger = loggerFactory.CreateLogger<ListsFunctions>();
-        repository = repository;
+        logger = _loggerFactory.CreateLogger<ListsFunctions>();
+        repository = _repository;
     }
 
     [Function("GetLists")]

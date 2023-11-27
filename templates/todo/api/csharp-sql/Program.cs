@@ -1,7 +1,6 @@
 using Azure.Identity;
 using Microsoft.EntityFrameworkCore;
 using SimpleTodo.Api;
-using Todo.Api;
 
 var builder = WebApplication.CreateBuilder(args);
 var credential = new DefaultAzureCredential();

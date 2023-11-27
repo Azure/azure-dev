@@ -126,27 +126,27 @@ public class ListsFunctions
 
     [Function("GetListItem")]
     public async Task<HttpResponseData> GetListItem(
-        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "lists/{listId}/items/{item_id}")] HttpRequestData req,
-        Guid item_id, Guid listId)
+        [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "lists/{listId}/items/{itemId}")] HttpRequestData req,
+        Guid itemId, Guid listId)
     {
         var response = req.CreateResponse(HttpStatusCode.OK);
         if (await repository.GetListAsync(listId) == null)
         {
             return req.CreateResponse(HttpStatusCode.NotFound);
         }
-        var item = await repository.GetListItemAsync(listId, item_id);
+        var item = await repository.GetListItemAsync(listId, itemId);
         response.WriteString(JsonSerializer.Serialize(item));
         return response;
     }
 
     [Function("UpdateListItem")]
     public async Task<HttpResponseData> UpdateListItem(
-       [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "lists/{listId}/items/{item_id}")]
-       HttpRequestData req, Guid listId, Guid item_id, string name, string? description,
+       [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "lists/{listId}/items/{itemId}")]
+       HttpRequestData req, Guid listId, Guid itemId, string name, string? description,
        string state, string? completedDate, string? dueDate)
     {
         var response = req.CreateResponse(HttpStatusCode.OK);
-        var existingItem = await repository.GetListItemAsync(listId, item_id);
+        var existingItem = await repository.GetListItemAsync(listId, itemId);
         if (existingItem == null)
         {
             return req.CreateResponse(HttpStatusCode.NotFound);
@@ -170,15 +170,15 @@ public class ListsFunctions
 
     [Function("DeleteListItem")]
     public async Task<HttpResponseData> DeleteListItem(
-            [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "lists/{listId}/items/{item_id}")]
-        HttpRequestData req, Guid item_id, Guid listId)
+            [HttpTrigger(AuthorizationLevel.Anonymous, "delete", Route = "lists/{listId}/items/{itemId}")]
+        HttpRequestData req, Guid itemId, Guid listId)
     {
         var response = req.CreateResponse(HttpStatusCode.NoContent);
-        if (await repository.GetListItemAsync(listId, item_id) == null)
+        if (await repository.GetListItemAsync(listId, itemId) == null)
         {
             return req.CreateResponse(HttpStatusCode.NotFound); ;
         }
-        await repository.DeleteListItemAsync(listId, item_id);
+        await repository.DeleteListItemAsync(listId, itemId);
         return response;
     }
 

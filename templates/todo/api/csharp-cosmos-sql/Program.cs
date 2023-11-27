@@ -1,7 +1,6 @@
 using Azure.Identity;
 using Microsoft.Azure.Cosmos;
 using SimpleTodo.Api;
-using Todo.Api;
 
 var builder = WebApplication.CreateBuilder(args);
 var credential = new DefaultAzureCredential();

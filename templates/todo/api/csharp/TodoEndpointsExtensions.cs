@@ -1,9 +1,8 @@
 ﻿using Microsoft.AspNetCore.Http.HttpResults;
-using SimpleTodo.Api;
 
-namespace Todo.Api
+namespace SimpleTodo.Api
 {
-    public static class TodoEndpointsExt
+    public static class TodoEndpointsExtensions
     {
         public static RouteGroupBuilder MapTodoApi(this RouteGroupBuilder group)
         {
@@ -14,9 +13,9 @@ namespace Todo.Api
             group.MapDelete("/{listId}", DeleteList);
             group.MapGet("/{listId}/items", GetListItems);
             group.MapPost("/{listId}/items", CreateListItem);
-            group.MapGet("/{listId}/items/{item_id}", GetListItem);
-            group.MapPut("/{listId}/items/{item_id}", UpdateListItem);
-            group.MapDelete("/{listId}/items/{item_id}", DeleteListItem);
+            group.MapGet("/{listId}/items/{itemId}", GetListItem);
+            group.MapPut("/{listId}/items/{itemId}", UpdateListItem);
+            group.MapDelete("/{listId}/items/{itemId}", DeleteListItem);
             group.MapGet("/{listId}/state/{state}", GetListItemsByState);
             return group;
         }
@@ -38,14 +37,14 @@ namespace Todo.Api
             return TypedResults.Created($"/lists/{todoList.Id}", todoList);
         }
 
-        public static async Task<IResult> GetList(ListsRepository repository, Guid listId)
+        public static async Task<IResult> GetList(ListsRepository repository, string listId)
         {
             var list = await repository.GetListAsync(listId);
 
             return list == null ? TypedResults.NotFound() : TypedResults.Ok(list);
         }
 
-        public static async Task<IResult> UpdateList(ListsRepository repository, Guid listId, CreateUpdateTodoList list)
+        public static async Task<IResult> UpdateList(ListsRepository repository, string listId, CreateUpdateTodoList list)
         {
             var existingList = await repository.GetListAsync(listId);
             if (existingList == null)
@@ -57,12 +56,12 @@ namespace Todo.Api
             existingList.Description = list.description;
             existingList.UpdatedDate = DateTimeOffset.UtcNow;
 
-            await repository.SaveChangesAsync();
+            await repository.UpdateList(existingList);
 
             return TypedResults.Ok(existingList);
         }
 
-        public static async Task<IResult> DeleteList(ListsRepository repository, Guid listId)
+        public static async Task<IResult> DeleteList(ListsRepository repository, string listId)
         {
             if (await repository.GetListAsync(listId) == null)
             {
@@ -74,16 +73,17 @@ namespace Todo.Api
             return TypedResults.NoContent();
         }
 
-        public static async Task<IResult> GetListItems(ListsRepository repository, Guid listId, int? skip = null, int? batchSize = null)
+        public static async Task<IResult> GetListItems(ListsRepository repository, string listId, int? skip = null, int? batchSize = null)
         {
             if (await repository.GetListAsync(listId) == null)
             {
                 return TypedResults.NotFound();
             }
+
             return TypedResults.Ok(await repository.GetListItemsAsync(listId, skip, batchSize));
         }
 
-        public static async Task<IResult> CreateListItem(ListsRepository repository, Guid listId, CreateUpdateTodoItem item)
+        public static async Task<IResult> CreateListItem(ListsRepository repository, string listId, CreateUpdateTodoItem item)
         {
             if (await repository.GetListAsync(listId) == null)
             {
@@ -100,24 +100,24 @@ namespace Todo.Api
 
             await repository.AddListItemAsync(newItem);
 
-            return TypedResults.CreatedAtRoute($"/lists/{listId}/items", newItem);
+            return TypedResults.CreatedAtRoute($"/lists/{listId}/items{newItem.Id}", newItem);
         }
 
-        public static async Task<IResult> GetListItem(ListsRepository repository, Guid listId, Guid item_id)
+        public static async Task<IResult> GetListItem(ListsRepository repository, string listId, string itemId)
         {
             if (await repository.GetListAsync(listId) == null)
             {
                 return TypedResults.NotFound();
             }
 
-            var item = await repository.GetListItemAsync(listId, item_id);
+            var item = await repository.GetListItemAsync(listId, itemId);
 
             return item == null ? TypedResults.NotFound() : TypedResults.Ok(item);
         }
 
-        public static async Task<IResult> UpdateListItem(ListsRepository repository, Guid listId, Guid item_id, CreateUpdateTodoItem item)
+        public static async Task<IResult> UpdateListItem(ListsRepository repository, string listId, string itemId, CreateUpdateTodoItem item)
         {
-            var existingItem = await repository.GetListItemAsync(listId, item_id);
+            var existingItem = await repository.GetListItemAsync(listId, itemId);
             if (existingItem == null)
             {
                 return TypedResults.NotFound();
@@ -130,24 +130,24 @@ namespace Todo.Api
             existingItem.State = item.state;
             existingItem.UpdatedDate = DateTimeOffset.UtcNow;
 
-            await repository.SaveChangesAsync();
+            await repository.UpdateListItem(existingItem);
 
             return TypedResults.Ok(existingItem);
         }
 
-        public static async Task<IResult> DeleteListItem(ListsRepository repository, Guid listId, Guid item_id)
+        public static async Task<IResult> DeleteListItem(ListsRepository repository, string listId, string itemId)
         {
-            if (await repository.GetListItemAsync(listId, item_id) == null)
+            if (await repository.GetListItemAsync(listId, itemId) == null)
             {
                 return TypedResults.NotFound();
             }
 
-            await repository.DeleteListItemAsync(listId, item_id);
+            await repository.DeleteListItemAsync(listId, itemId);
 
             return TypedResults.NoContent();
         }
 
-        public static async Task<IResult> GetListItemsByState(ListsRepository repository, Guid listId, string state, int? skip = null, int? batchSize = null)
+        public static async Task<IResult> GetListItemsByState(ListsRepository repository, string listId, string state, int? skip = null, int? batchSize = null)
         {
             if (await repository.GetListAsync(listId) == null)
             {

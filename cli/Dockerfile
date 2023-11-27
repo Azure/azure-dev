@@ -1,4 +1,4 @@
-FROM --platform=amd64 mcr.microsoft.com/dotnet/sdk:6.0
+FROM --platform=amd64 mcr.microsoft.com/dotnet/sdk:8.0
 
 WORKDIR /app
 

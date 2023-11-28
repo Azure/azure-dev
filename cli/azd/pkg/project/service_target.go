@@ -125,7 +125,7 @@ func resourceTypeMismatchError(
 // As an example, ContainerAppTarget is able to provision the container app as part of deployment,
 // and thus returns true.
 func (st ServiceTargetKind) SupportsDelayedProvisioning() bool {
-	return st == AksTarget
+	return st == AksTarget || st == RegistryTarget
 }
 
 func checkResourceType(resource *environment.TargetResource, expectedResourceType infra.AzureResourceType) error {

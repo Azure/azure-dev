@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
@@ -554,8 +555,14 @@ func (sm *serviceManager) GetFrameworkService(ctx context.Context, serviceConfig
 		))
 	}
 
+	containerizedAppTargets := []ServiceTargetKind{
+		ContainerAppTarget,
+		AksTarget,
+		RegistryTarget,
+	}
+
 	// For containerized applications we use a composite framework service
-	if serviceConfig.Host == ContainerAppTarget || serviceConfig.Host == AksTarget {
+	if slices.Contains(containerizedAppTargets, serviceConfig.Host) {
 		var compositeFramework CompositeFrameworkService
 		if err := sm.serviceLocator.ResolveNamed(string(ServiceLanguageDocker), &compositeFramework); err != nil {
 			panic(fmt.Errorf(

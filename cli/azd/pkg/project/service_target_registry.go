@@ -63,13 +63,13 @@ func (r *registryTarget) Deploy(
 			containerDeployTask := r.containerHelper.Deploy(ctx, serviceConfig, packageOutput, targetResource)
 			syncProgress(task, containerDeployTask.Progress())
 
-			deployResult, err := containerDeployTask.Await()
+			_, err := containerDeployTask.Await()
 			if err != nil {
 				task.SetError(err)
 				return
 			}
 
-			task.SetProgress(NewServiceProgress("Fetching endpoints for container app service"))
+			task.SetProgress(NewServiceProgress("Fetching endpoints for container registry service"))
 			endpoints, err := r.Endpoints(ctx, serviceConfig, targetResource)
 			if err != nil {
 				task.SetError(err)
@@ -83,7 +83,6 @@ func (r *registryTarget) Deploy(
 					targetResource.ResourceGroupName(),
 					targetResource.ResourceName(),
 				),
-				Details:   deployResult,
 				Kind:      RegistryTarget,
 				Endpoints: endpoints,
 			})
@@ -96,10 +95,8 @@ func (r *registryTarget) Endpoints(
 	serviceConfig *ServiceConfig,
 	targetResource *environment.TargetResource,
 ) ([]string, error) {
-	registryEndpoint := r.env.Getenv(environment.ContainerRegistryEndpointEnvVarName)
 	imageName := r.env.GetServiceProperty(serviceConfig.Name, "IMAGE_NAME")
-
-	return []string{fmt.Sprintf("%s/%s", registryEndpoint, imageName)}, nil
+	return []string{imageName}, nil
 }
 
 func (r *registryTarget) validateTargetResource(

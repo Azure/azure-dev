@@ -51,8 +51,14 @@ type genDapr struct {
 	LogLevel               *string
 }
 
+type genDaprComponentMetadataSecretKeyRef struct {
+	Name string
+	Key  string
+}
+
 type genDaprComponentMetadata struct {
-	Value *string
+	SecretKeyRef *genDaprComponentMetadataSecretKeyRef
+	Value        *string
 }
 
 type genDaprComponent struct {
@@ -64,7 +70,8 @@ type genDaprComponent struct {
 type genBicepTemplateContext struct {
 	HasContainerRegistry            bool
 	HasContainerEnvironment         bool
-	HasLogAnalyticsWorkspace        bool
+	HasOnDemandDaprStore            bool
+	HasLogAnalyticsWorkspace        bool	
 	AppInsights                     map[string]genAppInsight
 	ServiceBuses                    map[string]genServiceBus
 	StorageAccounts                 map[string]genStorageAccount

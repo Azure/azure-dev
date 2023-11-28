@@ -284,6 +284,20 @@ func (b *infraGenerator) requireContainerRegistry() {
 	b.bicepContext.HasContainerRegistry = true
 }
 
+func (b *infraGenerator) requireDaprOnDemandStore() string {
+	daprOnDemandStoreName := "daprOnDemandStore"
+
+	if !b.bicepContext.HasOnDemandDaprStore {
+		b.requireCluster()
+
+		b.addContainerAppService(daprOnDemandStoreName, "redis")
+	
+		b.bicepContext.HasOnDemandDaprStore = true
+	}
+
+	return daprOnDemandStoreName
+}
+
 func (b *infraGenerator) requireLogAnalyticsWorkspace() {
 	b.bicepContext.HasLogAnalyticsWorkspace = true
 }
@@ -390,21 +404,18 @@ func (b* infraGenerator) addDaprComponent(name string, metadata *DaprComponentRe
 	return nil
 }
 
-func (b* infraGenerator) addDaprPubSubComponent(name string) {
-	b.requireCluster()
-
-	redisName := fmt.Sprintf("%sRedis", name)
-
-	b.addContainerAppService(redisName, "redis")
+func (b* infraGenerator) addDaprRedisComponent(componentName string, componentType string) {
+	redisName := b.requireDaprOnDemandStore()
 
 	component := genDaprComponent{
 		Metadata: make(map[string]genDaprComponentMetadata),
-		Type: "pubsub.redis",
+		Type: fmt.Sprintf("%s.redis", componentType),
 		Version: "v1",
 	}
 
-	redisHost := fmt.Sprintf("%s.properties.configuration.ingress.fqdn", redisName)
-	redisPassword := fmt.Sprintf(`%s.listSecrets().value[0].value`, redisName)
+	redisPort := 6379
+	redisHost := fmt.Sprintf(`'${%s.name}:%d'`, redisName, redisPort)
+	redisPassword := fmt.Sprintf(`substring(%s.listSecrets().value[0].value, 12, 128)`, redisName)
 
 	component.Metadata["redisHost"] = genDaprComponentMetadata{
 		Value: &redisHost,
@@ -414,16 +425,15 @@ func (b* infraGenerator) addDaprPubSubComponent(name string) {
 		Value: &redisPassword,
 	}
 
-	b.bicepContext.DaprComponents[name] = component
+	b.bicepContext.DaprComponents[componentName] = component
+}
+
+func (b* infraGenerator) addDaprPubSubComponent(name string) {
+	b.addDaprRedisComponent(name, "pubsub")
 }
 
 func (b* infraGenerator) addDaprStateStoreComponent(name string) {
-	b.requireCluster()
-
-	b.bicepContext.DaprComponents[name] = genDaprComponent{
-		Type: "state.in-memory",
-		Version: "v1",
-	}
+	b.addDaprRedisComponent(name, "state")
 }
 
 func validateAndMergeBindings(bindings map[string]*Binding) (*Binding, error) {

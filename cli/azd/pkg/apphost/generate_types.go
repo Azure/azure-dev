@@ -3,7 +3,9 @@ package apphost
 type genAppInsight struct{}
 
 type genStorageAccount struct {
-	Containers []string
+	Blobs  []string
+	Tables []string
+	Queues []string
 }
 
 type genServiceBus struct {

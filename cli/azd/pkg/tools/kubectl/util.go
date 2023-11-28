@@ -100,7 +100,6 @@ type ResourceFilterFn[T comparable] func(resource T) bool
 func WaitForResource[T comparable](
 	ctx context.Context,
 	cli KubectlCli,
-	namespace string,
 	resourceType ResourceType,
 	resourceFilter ResourceFilterFn[T],
 	readyStatusFilter ResourceFilterFn[T],
@@ -111,9 +110,7 @@ func WaitForResource[T comparable](
 		ctx,
 		retry.WithMaxDuration(time.Minute*10, retry.NewConstant(time.Second*10)),
 		func(ctx context.Context) error {
-			result, err := GetResources[T](ctx, cli, resourceType, &KubeCliFlags{
-				Namespace: namespace,
-			})
+			result, err := GetResources[T](ctx, cli, resourceType, nil)
 
 			if err != nil {
 				return fmt.Errorf("failed waiting for resource, %w", err)

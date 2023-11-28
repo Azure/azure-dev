@@ -245,7 +245,11 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 		case "azure.storage.v0":
 			b.addStorageAccount(name)
 		case "azure.storage.blob.v0":
-			b.addStorageBlobContainer(*comp.Parent, name)
+			b.addStorageBlob(*comp.Parent, name)
+		case "azure.storage.queue.v0":
+			b.addStorageQueue(*comp.Parent, name)
+		case "azure.storage.table.v0":
+			b.addStorageTable(*comp.Parent, name)
 		case "postgres.server.v0":
 			// We currently use a ACA Postgres Service per database. Because of this, we don't need to retain any
 			// information from the server resource.
@@ -347,13 +351,25 @@ func (b *infraGenerator) addKeyVault(name string) {
 	b.bicepContext.KeyVaults[name] = genKeyVault{}
 }
 
-func (b *infraGenerator) addStorageBlobContainer(storageAccount, containerName string) {
+func (b *infraGenerator) addStorageBlob(storageAccount, blobName string) {
 	// TODO(ellismg): We have to handle the case where we may visit the blob resource before the storage account resource.
 	// But this implementation means that if the parent storage account is not in the manifest, we will not detect that
 	// as an error.  We probably should.
 
 	account := b.bicepContext.StorageAccounts[storageAccount]
-	account.Containers = append(account.Containers, containerName)
+	account.Blobs = append(account.Blobs, blobName)
+	b.bicepContext.StorageAccounts[storageAccount] = account
+}
+
+func (b *infraGenerator) addStorageQueue(storageAccount, queueName string) {
+	account := b.bicepContext.StorageAccounts[storageAccount]
+	account.Queues = append(account.Queues, queueName)
+	b.bicepContext.StorageAccounts[storageAccount] = account
+}
+
+func (b *infraGenerator) addStorageTable(storageAccount, tableName string) {
+	account := b.bicepContext.StorageAccounts[storageAccount]
+	account.Tables = append(account.Tables, tableName)
 	b.bicepContext.StorageAccounts[storageAccount] = account
 }
 
@@ -671,7 +687,10 @@ func (b *infraGenerator) Compile() error {
 				default:
 					return errUnsupportedProperty(targetType, prop)
 				}
-			case targetType == "azure.keyvault.v0" || targetType == "azure.storage.blob.v0":
+			case targetType == "azure.keyvault.v0" ||
+				targetType == "azure.storage.blob.v0" ||
+				targetType == "azure.storage.queue.v0" ||
+				targetType == "azure.storage.table.v0":
 				switch prop {
 				case "connectionString":
 					projectTemplateCtx.Env[k] = fmt.Sprintf(

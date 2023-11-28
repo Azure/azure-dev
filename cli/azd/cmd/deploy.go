@@ -226,11 +226,13 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 
 	for _, svc := range stableServices {
 		stepMessage := fmt.Sprintf("Deploying service %s", svc.Name)
+		da.console.ShowSpinner(ctx, stepMessage, input.Step)
 
 		// Skip this service if both cases are true:
 		// 1. The user specified a service name
 		// 2. This service is not the one the user specified
 		if targetServiceName != "" && targetServiceName != svc.Name {
+			da.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
 			continue
 		}
 
@@ -240,7 +242,6 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 			da.console.WarnForFeature(ctx, alphaFeatureId)
 		}
 
-		da.console.ShowSpinner(ctx, stepMessage, input.Step)
 		var packageResult *project.ServicePackageResult
 		if da.flags.fromPackage != "" {
 			// --from-package set, skip packaging

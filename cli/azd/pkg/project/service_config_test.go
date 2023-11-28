@@ -217,8 +217,9 @@ func createTestServiceConfig(path string, host ServiceTargetKind, language Servi
 		Language:     language,
 		RelativePath: filepath.Join(path),
 		Project: &ProjectConfig{
-			Name: "Test-App",
-			Path: ".",
+			Name:            "Test-App",
+			Path:            ".",
+			EventDispatcher: ext.NewEventDispatcher[ProjectLifecycleEventArgs](),
 		},
 		EventDispatcher: ext.NewEventDispatcher[ServiceLifecycleEventArgs](),
 	}

@@ -18,7 +18,7 @@ RUN export DEBIAN_FRONTEND=noninteractive \
      && curl -sSL https://aka.ms/InstallAzureCLIDeb | bash \
      # nodejs
      #&& curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
-     && apt-get install -y nodejs gcc g++ make\
+     && apt-get install -y nodejs gcc g++ make npm\
      # python
      && apt-get install -y --no-install-recommends python3-pip python3-venv \
      && echo 'alias python=python3' >> ~/.bashrc \

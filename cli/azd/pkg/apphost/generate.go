@@ -409,6 +409,7 @@ func (b* infraGenerator) addDaprRedisComponent(componentName string, componentTy
 
 	component := genDaprComponent{
 		Metadata: make(map[string]genDaprComponentMetadata),
+		Secrets: make(map[string]genDaprComponentSecret),
 		Type: fmt.Sprintf("%s.redis", componentType),
 		Version: "v1",
 	}
@@ -416,13 +417,19 @@ func (b* infraGenerator) addDaprRedisComponent(componentName string, componentTy
 	redisPort := 6379
 	redisHost := fmt.Sprintf(`'${%s.name}:%d'`, redisName, redisPort)
 	redisPassword := fmt.Sprintf(`substring(%s.listSecrets().value[0].value, 12, 128)`, redisName)
+	redisPasswordKey := "password"
+	redisSecretKeyRef := fmt.Sprintf(`'%s'`, redisPasswordKey)
 
 	component.Metadata["redisHost"] = genDaprComponentMetadata{
 		Value: &redisHost,
 	}
 
 	component.Metadata["redisPassword"] = genDaprComponentMetadata{
-		Value: &redisPassword,
+		SecretKeyRef: &redisSecretKeyRef,
+	}
+
+	component.Secrets[redisPasswordKey] = genDaprComponentSecret{
+		Value: redisPassword,
 	}
 
 	b.bicepContext.DaprComponents[componentName] = component

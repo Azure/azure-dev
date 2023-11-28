@@ -70,14 +70,20 @@ resource {{$componentName}} 'Microsoft.App/managedEnvironments/daprComponents@20
 {{range $metadataName, $metadataValue := $componentValue.Metadata}}
       {
         name: '{{$metadataName}}'
+{{if $metadataValue.SecretKeyRef}}
+        secretRef: {{$metadataValue.SecretKeyRef}}
+{{end -}}
 {{if $metadataValue.Value}}
         value: {{$metadataValue.Value}}
 {{end -}}
-{{if $metadataValue.SecretKeyRef}}
-        secretKeyRef:
-          name: '{{$metadataValue.SecretKeyRef.Name}}'
-          key: '{{$metadataValue.SecretKeyRef.Key}}'
+      }
 {{end -}}
+    ]
+    secrets: [
+{{range $secretName, $secret := $componentValue.Secrets}}
+      {
+        name: '{{$secretName}}'
+        value: {{$secret.Value}}
       }
 {{end -}}
     ]

@@ -51,18 +51,18 @@ type genDapr struct {
 	LogLevel               *string
 }
 
-type genDaprComponentMetadataSecretKeyRef struct {
-	Name string
-	Key  string
+type genDaprComponentMetadata struct {
+	SecretKeyRef *string
+	Value        *string
 }
 
-type genDaprComponentMetadata struct {
-	SecretKeyRef *genDaprComponentMetadataSecretKeyRef
-	Value        *string
+type genDaprComponentSecret struct {
+	Value string
 }
 
 type genDaprComponent struct {
 	Metadata map[string]genDaprComponentMetadata
+	Secrets map[string]genDaprComponentSecret
 	Type    string
 	Version string
 }

@@ -230,12 +230,12 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 			b.addContainer(name, *comp.Image, comp.Env, comp.Bindings)
 		case "dapr.v0":
 			err := b.addDapr(name, comp.Dapr)
-			if (err != nil) {
+			if err != nil {
 				return err
 			}
 		case "dapr.component.v0":
 			err := b.addDaprComponent(name, comp.DaprComponent)
-			if (err != nil) {
+			if err != nil {
 				return err
 			}
 		case "redis.v0":
@@ -291,7 +291,7 @@ func (b *infraGenerator) requireDaprOnDemandStore() string {
 		b.requireCluster()
 
 		b.addContainerAppService(daprOnDemandStoreName, "redis")
-	
+
 		b.bicepContext.HasOnDemandDaprStore = true
 	}
 
@@ -367,15 +367,15 @@ func (b *infraGenerator) addContainer(name string, image string, env map[string]
 	}
 }
 
-func (b* infraGenerator) addDapr(name string, metadata *DaprResourceMetadata) error {
-	if (metadata == nil || metadata.Application == nil) {
+func (b *infraGenerator) addDapr(name string, metadata *DaprResourceMetadata) error {
+	if metadata == nil || metadata.Application == nil {
 		return fmt.Errorf("dapr resource '%s' did not include required metadata", name)
 	}
 
 	b.requireCluster()
 
 	b.dapr[name] = genDapr{
-		Application:           *metadata.Application,
+		Application:            *metadata.Application,
 		AppPort:                metadata.AppPort,
 		AppProtocol:            metadata.AppProtocol,
 		DaprHttpMaxRequestSize: metadata.DaprHttpMaxRequestSize,
@@ -387,8 +387,8 @@ func (b* infraGenerator) addDapr(name string, metadata *DaprResourceMetadata) er
 	return nil
 }
 
-func (b* infraGenerator) addDaprComponent(name string, metadata *DaprComponentResourceMetadata) error {
-	if (metadata == nil || metadata.Type == nil) {
+func (b *infraGenerator) addDaprComponent(name string, metadata *DaprComponentResourceMetadata) error {
+	if metadata == nil || metadata.Type == nil {
 		return fmt.Errorf("dapr component resource '%s' did not include required metadata", name)
 	}
 
@@ -404,14 +404,14 @@ func (b* infraGenerator) addDaprComponent(name string, metadata *DaprComponentRe
 	return nil
 }
 
-func (b* infraGenerator) addDaprRedisComponent(componentName string, componentType string) {
+func (b *infraGenerator) addDaprRedisComponent(componentName string, componentType string) {
 	redisName := b.requireDaprOnDemandStore()
 
 	component := genDaprComponent{
 		Metadata: make(map[string]genDaprComponentMetadata),
-		Secrets: make(map[string]genDaprComponentSecret),
-		Type: fmt.Sprintf("%s.redis", componentType),
-		Version: "v1",
+		Secrets:  make(map[string]genDaprComponentSecret),
+		Type:     fmt.Sprintf("%s.redis", componentType),
+		Version:  "v1",
 	}
 
 	redisPort := 6379
@@ -435,11 +435,11 @@ func (b* infraGenerator) addDaprRedisComponent(componentName string, componentTy
 	b.bicepContext.DaprComponents[componentName] = component
 }
 
-func (b* infraGenerator) addDaprPubSubComponent(name string) {
+func (b *infraGenerator) addDaprPubSubComponent(name string) {
 	b.addDaprRedisComponent(name, "pubsub")
 }
 
-func (b* infraGenerator) addDaprStateStoreComponent(name string) {
+func (b *infraGenerator) addDaprStateStoreComponent(name string) {
 	b.addDaprRedisComponent(name, "state")
 }
 
@@ -555,18 +555,18 @@ func (b *infraGenerator) Compile() error {
 			if dapr.Application == projectName {
 				appPort := dapr.AppPort
 
-				if (appPort == nil && projectTemplateCtx.Ingress != nil) {
+				if appPort == nil && projectTemplateCtx.Ingress != nil {
 					appPort = &projectTemplateCtx.Ingress.TargetPort
 				}
 
 				projectTemplateCtx.Dapr = &genContainerAppManifestTemplateContextDapr{
-					AppId: daprName,
-					AppPort: appPort,
-					AppProtocol: dapr.AppProtocol,
-					EnableApiLogging: dapr.EnableApiLogging,
+					AppId:              daprName,
+					AppPort:            appPort,
+					AppProtocol:        dapr.AppProtocol,
+					EnableApiLogging:   dapr.EnableApiLogging,
 					HttpMaxRequestSize: dapr.DaprHttpMaxRequestSize,
 					HttpReadBufferSize: dapr.DaprHttpReadBufferSize,
-					LogLevel: dapr.LogLevel,
+					LogLevel:           dapr.LogLevel,
 				}
 
 				break

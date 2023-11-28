@@ -68,7 +68,7 @@ type DaprResourceMetadata struct {
 }
 
 type DaprComponentResourceMetadata struct {
-	Type    *string `json:"type"`
+	Type *string `json:"type"`
 }
 
 type Reference struct {

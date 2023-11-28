@@ -42,7 +42,7 @@ type genProject struct {
 }
 
 type genDapr struct {
-	Application             string
+	Application            string
 	AppPort                *int
 	AppProtocol            *string
 	DaprHttpMaxRequestSize *int
@@ -62,16 +62,16 @@ type genDaprComponentSecret struct {
 
 type genDaprComponent struct {
 	Metadata map[string]genDaprComponentMetadata
-	Secrets map[string]genDaprComponentSecret
-	Type    string
-	Version string
+	Secrets  map[string]genDaprComponentSecret
+	Type     string
+	Version  string
 }
 
 type genBicepTemplateContext struct {
 	HasContainerRegistry            bool
 	HasContainerEnvironment         bool
 	HasOnDemandDaprStore            bool
-	HasLogAnalyticsWorkspace        bool	
+	HasLogAnalyticsWorkspace        bool
 	AppInsights                     map[string]genAppInsight
 	ServiceBuses                    map[string]genServiceBus
 	StorageAccounts                 map[string]genStorageAccount
@@ -85,7 +85,7 @@ type genContainerAppManifestTemplateContext struct {
 	Name    string
 	Ingress *genContainerAppManifestTemplateContextIngress
 	Env     map[string]string
-	Dapr *genContainerAppManifestTemplateContextDapr
+	Dapr    *genContainerAppManifestTemplateContextDapr
 }
 
 type genProjectFileContext struct {

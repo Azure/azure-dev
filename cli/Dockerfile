@@ -17,11 +17,10 @@ RUN export DEBIAN_FRONTEND=noninteractive \
      # az cli
      && curl -sSL https://aka.ms/InstallAzureCLIDeb | bash \
      # nodejs
-     && curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
-     && apt-get install -y nodejs \
+     #&& curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
+     && apt-get install -y nodejs gcc g++ make\
      # python
-     && apt-get install -y --no-install-recommends python3-pip python-dev python3-venv \
-     && python3 -m pip install --upgrade pip \
+     && apt-get install -y --no-install-recommends python3-pip python3-venv \
      && echo 'alias python=python3' >> ~/.bashrc \
      && echo 'alias pip=pip3' >> ~/.bashrc \
      # java

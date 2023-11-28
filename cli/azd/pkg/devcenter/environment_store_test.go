@@ -25,6 +25,11 @@ var mockEnvironments []*devcentersdk.Environment = []*devcentersdk.Environment{
 		EnvironmentDefinitionName: "WebApp",
 		EnvironmentType:           "Dev",
 		User:                      "me",
+		Parameters: map[string]any{
+			"stringParam": "value",
+			"boolParam":   true,
+			"numberParam": 42,
+		},
 	},
 	{
 		ProvisioningState:         "Succeeded",
@@ -34,6 +39,11 @@ var mockEnvironments []*devcentersdk.Environment = []*devcentersdk.Environment{
 		EnvironmentDefinitionName: "WebApp",
 		EnvironmentType:           "Dev",
 		User:                      "me",
+		Parameters: map[string]any{
+			"stringParam": "value",
+			"boolParam":   true,
+			"numberParam": 42,
+		},
 	},
 	{
 		ProvisioningState:         "Succeeded",
@@ -43,6 +53,11 @@ var mockEnvironments []*devcentersdk.Environment = []*devcentersdk.Environment{
 		EnvironmentDefinitionName: "ContainerApp",
 		EnvironmentType:           "Dev",
 		User:                      "me",
+		Parameters: map[string]any{
+			"stringParam": "value",
+			"boolParam":   true,
+			"numberParam": 42,
+		},
 	},
 }
 
@@ -146,6 +161,13 @@ func Test_EnvironmentStore_Get(t *testing.T) {
 
 		devCenterNode, ok := env.Config.Get("platform.config")
 		require.True(t, ok)
+
+		for key, expected := range mockEnvironments[0].Parameters {
+			paramPath := fmt.Sprintf("%s.%s", ProvisionParametersConfigPath, key)
+			actual, ok := env.Config.Get(paramPath)
+			require.True(t, ok)
+			require.Equal(t, fmt.Sprint(expected), fmt.Sprint(actual))
+		}
 
 		envConfig, err := ParseConfig(devCenterNode)
 		require.NoError(t, err)

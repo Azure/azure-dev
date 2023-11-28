@@ -1,5 +1,23 @@
 # Release History
 
+## 1.6.0-beta.1 (Unreleased)
+
+### Features Added
+
+- [[2998]](https://github.com/Azure/azure-dev/pull/2998) Adds support for Azure Storage Tables and Queues on Aspire projects.
+
+### Breaking Changes
+
+### Bugs Fixed
+
+### Other Changes
+
+## 1.5.0 (2023-11-15)
+
+### Features Added
+
+- [[2767]](https://github.com/Azure/azure-dev/pull/2767) Adds support for Azure Deployments Environments.
+
 ## 1.4.5 (2023-11-13)
 
 ### Bugs Fixed

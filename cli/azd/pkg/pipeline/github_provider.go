@@ -625,7 +625,16 @@ func (p *GitHubCiProvider) configurePipeline(
 	ctx context.Context,
 	repoDetails *gitRepositoryDetails,
 	provisioningProvider provisioning.Options,
+	additionalSecrets map[string]string,
 ) (CiPipeline, error) {
+
+	repoSlug := repoDetails.owner + "/" + repoDetails.repoName
+	for key, value := range additionalSecrets {
+		if err := p.ghCli.SetSecret(ctx, repoSlug, key, value); err != nil {
+			return nil, fmt.Errorf("failed setting %s secret: %w", key, err)
+		}
+	}
+
 	return &workflow{
 		repoDetails: repoDetails,
 	}, nil

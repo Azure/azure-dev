@@ -262,7 +262,9 @@ func (ai *DotNetImporter) readManifest(ctx context.Context, svcConfig *ServiceCo
 		return cached, nil
 	}
 
+	ai.console.ShowSpinner(ctx, "Generating app host manifest", input.Step)
 	manifest, err := apphost.ManifestFromAppHost(ctx, svcConfig.Path(), ai.dotnetCli)
+	ai.console.StopSpinner(ctx, "", input.Step)
 	if err != nil {
 		return nil, err
 	}

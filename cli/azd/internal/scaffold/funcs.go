@@ -102,16 +102,14 @@ func lowerCase(r byte) byte {
 //  3. Bicep resource token (13 characters) + separator '-' (1 character) -- total of 14 characters
 //
 // Which leaves us with: 32 - 4 - 14 = 14 characters.
-// We allow 2 additional characters for wiggle-room. We've seen failures when container app name is exactly at 32.
 const containerAppNameInfixMaxLen = 12
 
-// ContainerAppName returns a name that is valid to be used as an infix for a container app resource.
-//
-// The name is treated to only contain alphanumeric and dash characters, with no repeated dashes, and no dashes
-// as the first or last character.
-func ContainerAppName(name string) string {
-	if len(name) > containerAppNameInfixMaxLen {
-		name = name[:containerAppNameInfixMaxLen]
+// We allow 2 additional characters for wiggle-room. We've seen failures when container app name is exactly at 32.
+const containerAppNameMaxLen = 30
+
+func containerAppName(name string, maxLen int) string {
+	if len(name) > maxLen {
+		name = name[:maxLen]
 	}
 
 	// trim to allowed characters:
@@ -141,6 +139,22 @@ func ContainerAppName(name string) string {
 	}
 
 	return sb.String()
+}
+
+// ContainerAppName returns a suitable name a container app resource.
+//
+// The name is treated to only contain alphanumeric and dash characters, with no repeated dashes, and no dashes
+// as the first or last character.
+func ContainerAppName(name string) string {
+	return containerAppName(name, containerAppNameMaxLen)
+}
+
+// ContainerAppInfix returns a suitable infix for a container app resource.
+//
+// The name is treated to only contain alphanumeric and dash characters, with no repeated dashes, and no dashes
+// as the first or last character.
+func ContainerAppInfix(name string) string {
+	return containerAppName(name, containerAppNameInfixMaxLen)
 }
 
 // Formats a parameter value for use in a bicep file.

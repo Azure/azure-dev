@@ -97,7 +97,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 			task.SetProgress(NewServiceProgress("Logging in to registry"))
 
 			// Login, tag & push container image to ACR
-			loginServer, err := at.containerHelper.Login(ctx, targetResource)
+			loginServer, err := at.containerHelper.Login(ctx, serviceConfig, targetResource)
 			if err != nil {
 				task.SetError(fmt.Errorf("logging in to registry: %w", err))
 				return

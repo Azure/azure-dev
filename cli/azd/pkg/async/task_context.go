@@ -64,7 +64,9 @@ func NewTaskContextWithProgress[R comparable, P comparable](task *TaskWithProgre
 
 // Write a new progress value to the underlying progress channel
 func (c *TaskContextWithProgress[R, P]) SetProgress(progress P) {
-	c.task.progressChannel <- progress
+	if c.task.status == Running {
+		c.task.progressChannel <- progress
+	}
 }
 
 // Task with progress function definition

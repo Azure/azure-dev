@@ -2,6 +2,7 @@ package project
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -39,11 +40,17 @@ func NewContainerHelper(
 	}
 }
 
-func (ch *ContainerHelper) RegistryName(ctx context.Context) (string, error) {
+func (ch *ContainerHelper) RegistryName(ctx context.Context, serviceConfig *ServiceConfig) (string, error) {
 	loginServer, has := ch.env.LookupEnv(environment.ContainerRegistryEndpointEnvVarName)
 	if !has {
+		loginServer = serviceConfig.Docker.Registry
+	}
+
+	if loginServer == "" {
 		return "", fmt.Errorf(
-			"could not determine container registry endpoint, ensure %s is set as an output of your infrastructure",
+			"failed to identify the container registry endpoint. Please make sure the '%s' environment variable "+
+				"is properly set or specified within the 'docker.registry' node in the "+
+				"service configuration of the azure.yaml file.",
 			environment.ContainerRegistryEndpointEnvVarName,
 		)
 	}
@@ -56,7 +63,7 @@ func (ch *ContainerHelper) RemoteImageTag(
 	serviceConfig *ServiceConfig,
 	localImageTag string,
 ) (string, error) {
-	loginServer, err := ch.RegistryName(ctx)
+	loginServer, err := ch.RegistryName(ctx, serviceConfig)
 	if err != nil {
 		return "", err
 	}
@@ -94,9 +101,10 @@ func (ch *ContainerHelper) RequiredExternalTools(context.Context) []tools.Extern
 // it returns the name of the container registry that was logged into.
 func (ch *ContainerHelper) Login(
 	ctx context.Context,
+	serviceConfig *ServiceConfig,
 	targetResource *environment.TargetResource,
 ) (string, error) {
-	loginServer, err := ch.RegistryName(ctx)
+	loginServer, err := ch.RegistryName(ctx, serviceConfig)
 	if err != nil {
 		return "", err
 	}
@@ -113,7 +121,7 @@ func (ch *ContainerHelper) Deploy(
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress]) {
 			// Get ACR Login Server
-			loginServer, err := ch.RegistryName(ctx)
+			loginServer, err := ch.RegistryName(ctx, serviceConfig)
 			if err != nil {
 				task.SetError(err)
 				return
@@ -169,8 +177,32 @@ func (ch *ContainerHelper) Deploy(
 				return
 			}
 
+			deployResult := &ContainerDeployResult{
+				RegistryName: loginServer,
+				ImageTag:     remoteTag,
+			}
+
 			task.SetResult(&ServiceDeployResult{
 				Package: packageOutput,
+				Details: deployResult,
 			})
 		})
+}
+
+type ContainerDeployResult struct {
+	RegistryName string
+	ImageTag     string
+}
+
+func (rdr *ContainerDeployResult) ToString(currentIndentation string) string {
+	lines := []string{
+		fmt.Sprintf("%s- Registry: %s", currentIndentation, rdr.RegistryName),
+		fmt.Sprintf("%s- Image Name: %s", currentIndentation, rdr.ImageTag),
+	}
+
+	return strings.Join(lines, "\n") + "\n"
+}
+
+func (rdr *ContainerDeployResult) MarshalJSON() ([]byte, error) {
+	return json.Marshal(*rdr)
 }

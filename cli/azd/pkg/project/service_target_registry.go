@@ -63,7 +63,7 @@ func (r *registryTarget) Deploy(
 			containerDeployTask := r.containerHelper.Deploy(ctx, serviceConfig, packageOutput, targetResource)
 			syncProgress(task, containerDeployTask.Progress())
 
-			_, err := containerDeployTask.Await()
+			containerDeployResult, err := containerDeployTask.Await()
 			if err != nil {
 				task.SetError(err)
 				return
@@ -83,6 +83,7 @@ func (r *registryTarget) Deploy(
 					targetResource.ResourceGroupName(),
 					targetResource.ResourceName(),
 				),
+				Details:   containerDeployResult.Details,
 				Kind:      RegistryTarget,
 				Endpoints: endpoints,
 			})

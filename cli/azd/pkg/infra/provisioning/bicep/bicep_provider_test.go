@@ -346,6 +346,7 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 	env := environment.NewWithValues("test-env", map[string]string{
 		environment.LocationEnvVarName:       "westus2",
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
+		environment.EnvNameEnvVarName:        "test-env",
 	})
 
 	envManager := &mockenv.MockEnvManager{}

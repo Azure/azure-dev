@@ -438,14 +438,26 @@ func (b *infraGenerator) addDaprRedisComponent(componentName string, componentTy
 	}
 
 	redisPort := 6379
+
+	// The Redis component expects the host to be in the format <host>:<port>. The "short name" should suffice rather than the FQDN.
 	redisHost := fmt.Sprintf(`'${%s.name}:%d'`, redisName, redisPort)
+
+	// The Redis add-on exposes its configuration as an ACA secret with the form 'requirepass <128 character password>dir ...'.
+	// We need to extract the password from this secret and pass it to the Redis component.
+	// While apps could "service bind" to the Redis add-on, in which case the password would be available as an environment variable,
+	// the Dapr environment variable secret store is not currently available in ACA.
 	redisPassword := fmt.Sprintf(`substring(%s.listSecrets().value[0].value, 12, 128)`, redisName)
+
 	redisPasswordKey := "password"
 	redisSecretKeyRef := fmt.Sprintf(`'%s'`, redisPasswordKey)
 
 	component.Metadata["redisHost"] = genDaprComponentMetadata{
 		Value: &redisHost,
 	}
+
+	//
+	// Create a secret for the Redis password. This secret will be then be referenced by the component metadata.
+	//
 
 	component.Metadata["redisPassword"] = genDaprComponentMetadata{
 		SecretKeyRef: &redisSecretKeyRef,

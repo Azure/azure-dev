@@ -211,6 +211,10 @@ func Test_EnvManager_Get(t *testing.T) {
 		require.NoError(t, err)
 		require.NotNil(t, env)
 		require.Equal(t, getEnv, env)
+		require.Equal(t, "env1", env.Name())
+		require.Equal(t, "env1", env.Getenv(EnvNameEnvVarName))
+
+		localDataStore.AssertNotCalled(t, "Save")
 	})
 
 	t.Run("ExistsRemotely", func(t *testing.T) {
@@ -239,6 +243,29 @@ func Test_EnvManager_Get(t *testing.T) {
 		env, err := manager.Get(*mockContext.Context, "env1")
 		require.ErrorIs(t, err, ErrNotFound)
 		require.Nil(t, env)
+	})
+
+	// Validates that environments with missing AZURE_ENV_NAME environment variable
+	// are syncronized with the environment name.
+	t.Run("MissingEnvVarName", func(t *testing.T) {
+		localDataStore := &MockDataStore{}
+
+		foundEnv := NewWithValues("env1", map[string]string{
+			"key1": "value1",
+		})
+
+		localDataStore.On("Get", *mockContext.Context, "env1").Return(foundEnv, nil)
+		localDataStore.On("Save", *mockContext.Context, foundEnv).Return(nil)
+
+		manager := newManagerForTest(azdContext, mockContext.Console, localDataStore, nil)
+		env, err := manager.Get(*mockContext.Context, "env1")
+		require.NoError(t, err)
+		require.NotNil(t, env)
+		require.Equal(t, getEnv, env)
+		require.Equal(t, "env1", env.Name())
+		require.Equal(t, "env1", env.Getenv(EnvNameEnvVarName))
+
+		localDataStore.AssertCalled(t, "Save", *mockContext.Context, foundEnv)
 	})
 }
 

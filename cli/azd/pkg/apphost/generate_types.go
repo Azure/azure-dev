@@ -72,7 +72,7 @@ type genDaprComponent struct {
 type genBicepTemplateContext struct {
 	HasContainerRegistry            bool
 	HasContainerEnvironment         bool
-	HasOnDemandDaprStore            bool
+	HasDaprStore                    bool
 	HasLogAnalyticsWorkspace        bool
 	AppInsights                     map[string]genAppInsight
 	ServiceBuses                    map[string]genServiceBus

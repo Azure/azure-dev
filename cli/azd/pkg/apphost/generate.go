@@ -19,6 +19,11 @@ import (
 	"github.com/psanford/memfs"
 )
 
+const RedisContainerAppService = "redis"
+
+const DaprStateStoreComponentType = "state"
+const DaprPubSubComponentType = "pubsub"
+
 // genTemplates is the collection of templates that are used when generating infrastructure files from a manifest.
 var genTemplates *template.Template
 
@@ -239,7 +244,7 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 				return err
 			}
 		case "redis.v0":
-			b.addContainerAppService(name, "redis")
+			b.addContainerAppService(name, RedisContainerAppService)
 		case "azure.keyvault.v0":
 			b.addKeyVault(name)
 		case "azure.storage.v0":
@@ -288,18 +293,19 @@ func (b *infraGenerator) requireContainerRegistry() {
 	b.bicepContext.HasContainerRegistry = true
 }
 
-func (b *infraGenerator) requireDaprOnDemandStore() string {
-	daprOnDemandStoreName := "daprOnDemandStore"
+func (b *infraGenerator) requireDaprStore() string {
+	daprStoreName := "daprStore"
 
-	if !b.bicepContext.HasOnDemandDaprStore {
+	if !b.bicepContext.HasDaprStore {
 		b.requireCluster()
 
-		b.addContainerAppService(daprOnDemandStoreName, "redis")
+		// A single store can be shared across all Dapr components, so we only need to create one.
+		b.addContainerAppService(daprStoreName, RedisContainerAppService)
 
-		b.bicepContext.HasOnDemandDaprStore = true
+		b.bicepContext.HasDaprStore = true
 	}
 
-	return daprOnDemandStoreName
+	return daprStoreName
 }
 
 func (b *infraGenerator) requireLogAnalyticsWorkspace() {
@@ -390,6 +396,7 @@ func (b *infraGenerator) addDapr(name string, metadata *DaprResourceMetadata) er
 
 	b.requireCluster()
 
+	// NOTE: ACA only supports a small subset of the Dapr sidecar configuration options.
 	b.dapr[name] = genDapr{
 		Application:            *metadata.Application,
 		AppPort:                metadata.AppPort,
@@ -409,9 +416,9 @@ func (b *infraGenerator) addDaprComponent(name string, metadata *DaprComponentRe
 	}
 
 	switch *metadata.Type {
-	case "pubsub":
+	case DaprPubSubComponentType:
 		b.addDaprPubSubComponent(name)
-	case "state":
+	case DaprStateStoreComponentType:
 		b.addDaprStateStoreComponent(name)
 	default:
 		return fmt.Errorf("dapr component resource '%s' has unsupported type '%s'", name, *metadata.Type)
@@ -421,7 +428,7 @@ func (b *infraGenerator) addDaprComponent(name string, metadata *DaprComponentRe
 }
 
 func (b *infraGenerator) addDaprRedisComponent(componentName string, componentType string) {
-	redisName := b.requireDaprOnDemandStore()
+	redisName := b.requireDaprStore()
 
 	component := genDaprComponent{
 		Metadata: make(map[string]genDaprComponentMetadata),
@@ -452,11 +459,11 @@ func (b *infraGenerator) addDaprRedisComponent(componentName string, componentTy
 }
 
 func (b *infraGenerator) addDaprPubSubComponent(name string) {
-	b.addDaprRedisComponent(name, "pubsub")
+	b.addDaprRedisComponent(name, DaprPubSubComponentType)
 }
 
 func (b *infraGenerator) addDaprStateStoreComponent(name string) {
-	b.addDaprRedisComponent(name, "state")
+	b.addDaprRedisComponent(name, DaprStateStoreComponentType)
 }
 
 func validateAndMergeBindings(bindings map[string]*Binding) (*Binding, error) {

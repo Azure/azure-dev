@@ -81,7 +81,7 @@ func (ch *ContainerHelper) LocalImageTag(ctx context.Context, serviceConfig *Ser
 	return fmt.Sprintf("%s/%s-%s:azd-deploy-%d",
 		strings.ToLower(serviceConfig.Project.Name),
 		strings.ToLower(serviceConfig.Name),
-		strings.ToLower(ch.env.GetEnvName()),
+		strings.ToLower(ch.env.Name()),
 		ch.clock.Now().Unix(),
 	), nil
 }

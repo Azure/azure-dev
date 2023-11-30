@@ -506,7 +506,7 @@ func (p *GitHubCiProvider) setPipelineVariables(
 	servicePrincipal *graphsdk.ServicePrincipal,
 ) error {
 	for name, value := range map[string]string{
-		environment.EnvNameEnvVarName:        p.env.GetEnvName(),
+		environment.EnvNameEnvVarName:        p.env.Name(),
 		environment.LocationEnvVarName:       p.env.GetLocation(),
 		environment.SubscriptionIdEnvVarName: p.env.GetSubscriptionId(),
 		environment.TenantIdEnvVarName:       *servicePrincipal.AppOwnerOrganizationId,

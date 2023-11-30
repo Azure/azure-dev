@@ -139,7 +139,7 @@ func (sbd *StorageBlobDataStore) Save(ctx context.Context, env *Environment) err
 		return fmt.Errorf("uploading .env: %w", describeError(err))
 	}
 
-	tracing.SetUsageAttributes(fields.StringHashed(fields.EnvNameKey, env.GetEnvName()))
+	tracing.SetUsageAttributes(fields.StringHashed(fields.EnvNameKey, env.Name()))
 	return nil
 }
 
@@ -177,8 +177,8 @@ func (sbd *StorageBlobDataStore) Reload(ctx context.Context, env *Environment) e
 		env.Config = cfg
 	}
 
-	if env.GetEnvName() != "" {
-		tracing.SetUsageAttributes(fields.StringHashed(fields.EnvNameKey, env.GetEnvName()))
+	if env.Name() != "" {
+		tracing.SetUsageAttributes(fields.StringHashed(fields.EnvNameKey, env.Name()))
 	}
 
 	if _, err := uuid.Parse(env.GetSubscriptionId()); err == nil {

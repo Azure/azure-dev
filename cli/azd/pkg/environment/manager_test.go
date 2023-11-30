@@ -51,7 +51,8 @@ var (
 	}
 
 	getEnv *Environment = NewWithValues("env1", map[string]string{
-		"key1": "value1",
+		"key1":            "value1",
+		EnvNameEnvVarName: "env1",
 	})
 )
 
@@ -85,7 +86,7 @@ func Test_EnvManager_PromptEnvironmentName(t *testing.T) {
 		env, err := envManager.LoadOrCreateInteractive(*mockContext.Context, expected)
 		require.NoError(t, err)
 		require.NotNil(t, env)
-		require.Equal(t, expected, env.GetEnvName())
+		require.Equal(t, expected, env.Name())
 	})
 
 	t.Run("empty name gets prompted", func(t *testing.T) {
@@ -105,7 +106,7 @@ func Test_EnvManager_PromptEnvironmentName(t *testing.T) {
 
 		require.NoError(t, err)
 		require.NotNil(t, env)
-		require.Equal(t, expected, env.GetEnvName())
+		require.Equal(t, expected, env.Name())
 	})
 }
 

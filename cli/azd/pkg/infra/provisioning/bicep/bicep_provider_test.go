@@ -57,7 +57,7 @@ func TestBicepPlan(t *testing.T) {
 	require.Equal(t, infraProvider.env.GetLocation(), configuredParameters["location"].Value)
 	require.Equal(
 		t,
-		infraProvider.env.GetEnvName(),
+		infraProvider.env.Name(),
 		configuredParameters["environmentName"].Value,
 	)
 }

@@ -155,7 +155,7 @@ func getDefinitionVariables(
 	}
 	variables := map[string]build.BuildDefinitionVariable{
 		"AZURE_LOCATION":           createBuildDefinitionVariable(env.GetLocation(), false, false),
-		"AZURE_ENV_NAME":           createBuildDefinitionVariable(env.GetEnvName(), false, false),
+		"AZURE_ENV_NAME":           createBuildDefinitionVariable(env.Name(), false, false),
 		"AZURE_SERVICE_CONNECTION": createBuildDefinitionVariable(ServiceConnectionName, false, false),
 		"AZURE_SUBSCRIPTION_ID":    createBuildDefinitionVariable(credentials.SubscriptionId, false, false),
 		"AZURE_CREDENTIALS":        createBuildDefinitionVariable(string(rawCredential), true, false),

@@ -22,8 +22,6 @@ RUN export DEBIAN_FRONTEND=noninteractive \
      && echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_18.x nodistro main" | tee /etc/apt/sources.list.d/nodesource.list \
      && apt-get update \
      && apt-get install -y nodejs \
-     #&& curl -fsSL https://deb.nodesource.com/setup_19.x | bash - \
-     #&& apt-get install -y nodejs gcc g++ make npm\
      # python
      && apt-get install -y --no-install-recommends python3-pip python3-venv \
      && echo 'alias python=python3' >> ~/.bashrc \

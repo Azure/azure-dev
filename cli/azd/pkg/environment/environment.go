@@ -59,7 +59,7 @@ type Environment struct {
 	Config config.Config
 }
 
-const AzureInitialEnvironmentConfigName = "AZURE_INITIAL_ENVIRONMENT_CONFIG"
+const AzdInitialEnvironmentConfigName = "AZD_INITIAL_ENVIRONMENT_CONFIG"
 
 // New returns a new environment with the specified name.
 func New(name string) *Environment {
@@ -75,14 +75,14 @@ func New(name string) *Environment {
 }
 
 func getInitialConfig() config.Config {
-	initialConfig := os.Getenv(AzureInitialEnvironmentConfigName)
+	initialConfig := os.Getenv(AzdInitialEnvironmentConfigName)
 	if initialConfig == "" {
 		return config.NewEmptyConfig()
 	}
 
 	var initConfig map[string]any
 	if err := json.Unmarshal([]byte(initialConfig), &initConfig); err != nil {
-		log.Panicln("Failed to unmarshal initial config", err, "Using empty config.")
+		log.Println("Failed to unmarshal initial config", err, "Using empty config.")
 		return config.NewEmptyConfig()
 	}
 

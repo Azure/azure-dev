@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"log"
 	"path/filepath"
-	"strconv"
 	"strings"
 	"time"
 
@@ -341,7 +340,7 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 	}
 
 	additionalSecrets := map[string]string{
-		environment.AzureInitialEnvironmentConfigName: strconv.Quote(string(localEnvConfig)),
+		environment.AzdInitialEnvironmentConfigName: string(localEnvConfig),
 	}
 
 	// config pipeline handles setting or creating the provider pipeline to be used

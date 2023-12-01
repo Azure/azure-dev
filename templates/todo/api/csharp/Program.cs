@@ -1,5 +1,6 @@
 using Azure.Identity;
-using Microsoft.Azure.Cosmos;
+using Microsoft.ApplicationInsights.AspNetCore.Extensions;
+using MongoDB.Driver;
 using SimpleTodo.Api;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -7,11 +8,10 @@ var credential = new DefaultAzureCredential();
 builder.Configuration.AddAzureKeyVault(new Uri(builder.Configuration["AZURE_KEY_VAULT_ENDPOINT"]), credential);
 
 builder.Services.AddSingleton<ListsRepository>();
-builder.Services.AddSingleton(_ => new CosmosClient(builder.Configuration[builder.Configuration["AZURE_COSMOS_CONNECTION_STRING_KEY"]]));
-builder.Services.AddCors();
+builder.Services.AddSingleton(_ => new MongoClient(builder.Configuration[builder.Configuration["AZURE_COSMOS_CONNECTION_STRING_KEY"]]));
+builder.Services.AddControllers();
 builder.Services.AddApplicationInsightsTelemetry(builder.Configuration);
-builder.Services.AddEndpointsApiExplorer();
-builder.Services.AddSwaggerGen();
+
 var app = builder.Build();
 
 app.UseCors(policy =>
@@ -32,7 +32,5 @@ app.UseStaticFiles(new StaticFileOptions{
     ServeUnknownFileTypes = true,
 });
 
-app.MapGroup("/lists")
-    .MapTodoApi()
-    .WithOpenApi();
+app.MapControllers();
 app.Run();

@@ -18,10 +18,12 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/helm"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/kubectl"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/kustomize"
 	"github.com/sethvargo/go-retry"
 )
 
@@ -43,6 +45,14 @@ type AksOptions struct {
 	Service AksServiceOptions `yaml:"service"`
 	// The helm configuration options
 	Helm *helm.Config `yaml:"helm"`
+	// The optional kustomize configuration options
+	Kustomize *KustomizeOptions `yaml:"kustomize"`
+}
+
+type KustomizeOptions struct {
+	Directory ExpandableString            `yaml:"dir"`
+	Edits     []ExpandableString          `yaml:"edits"`
+	Env       map[string]ExpandableString `yaml:"env"`
 }
 
 // The AKS ingress options
@@ -69,6 +79,7 @@ type aksTarget struct {
 	resourceManager        ResourceManager
 	kubectl                kubectl.KubectlCli
 	helmCli                *helm.Cli
+	kustomizeCli           kustomize.KustomizeCli
 	containerHelper        *ContainerHelper
 }
 
@@ -81,6 +92,7 @@ func NewAksTarget(
 	resourceManager ResourceManager,
 	kubectlCli kubectl.KubectlCli,
 	helmCli *helm.Cli,
+	kustomizeCli kustomize.KustomizeCli,
 	containerHelper *ContainerHelper,
 ) ServiceTarget {
 	return &aksTarget{
@@ -91,6 +103,7 @@ func NewAksTarget(
 		resourceManager:        resourceManager,
 		kubectl:                kubectlCli,
 		helmCli:                helmCli,
+		kustomizeCli:           kustomizeCli,
 		containerHelper:        containerHelper,
 	}
 }
@@ -173,12 +186,19 @@ func (t *aksTarget) Deploy(
 			// Sync environment
 			t.kubectl.SetEnv(t.env.Dotenv())
 
+			// Vanilla k8s manifests with minimal templating support
 			deployment, err := t.deployManifests(ctx, serviceConfig, task)
 			if err != nil && !os.IsNotExist(err) {
 				task.SetError(err)
 				return
 			}
 
+			// Kustomize Support
+			if err := t.deployKustomize(ctx, serviceConfig, task); err != nil {
+				task.SetError(fmt.Errorf("failed applying with kustomize: %w", err))
+			}
+
+			// Helm Support
 			if err := t.deployHelmCharts(ctx, serviceConfig, task); err != nil {
 				task.SetError(err)
 				return
@@ -256,6 +276,62 @@ func (t *aksTarget) deployManifests(
 	}
 
 	return deployment, nil
+}
+
+// deployKustomize deploys kustomize manifests to the k8s cluster
+func (t *aksTarget) deployKustomize(ctx context.Context, serviceConfig *ServiceConfig, task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress]) error {
+	if serviceConfig.K8s.Kustomize == nil {
+		return nil
+	}
+
+	task.SetProgress(NewServiceProgress("Applying k8s manifests"))
+	overlayPath, err := serviceConfig.K8s.Kustomize.Directory.Envsubst(t.env.Getenv)
+	if err != nil {
+		return fmt.Errorf("failed to envsubst kustomize directory: %w", err)
+	}
+
+	kustomizeDir := filepath.Join(serviceConfig.Project.Path, serviceConfig.RelativePath, overlayPath)
+	if _, err := os.Stat(kustomizeDir); os.IsNotExist(err) {
+		return fmt.Errorf("kustomize directory '%s' does not exist: %w", kustomizeDir, err)
+	}
+
+	if len(serviceConfig.K8s.Kustomize.Env) > 0 {
+		builder := strings.Builder{}
+		for key, exp := range serviceConfig.K8s.Kustomize.Env {
+			value, err := exp.Envsubst(t.env.Getenv)
+			if err != nil {
+				return fmt.Errorf("failed to envsubst kustomize env: %w", err)
+			}
+
+			builder.WriteString(fmt.Sprintf("%s=%s\n", key, value))
+		}
+
+		// We are manually writing the .env file since k8s config maps expect unquoted values
+		// The godotenv library will quote values when writing the file without an option to disable
+		envFilePath := filepath.Join(kustomizeDir, ".env")
+		if err := os.WriteFile(envFilePath, []byte(builder.String()), osutil.PermissionFile); err != nil {
+			return fmt.Errorf("failed to write kustomize .env: %w", err)
+		}
+
+		defer os.Remove(envFilePath)
+	}
+
+	// Perform kustomize edits
+	for _, edit := range serviceConfig.K8s.Kustomize.Edits {
+		editArgs, err := edit.Envsubst(t.env.Getenv)
+		if err != nil {
+			return fmt.Errorf("failed to envsubst kustomize edit: %w", err)
+		}
+
+		t.kustomizeCli.WithCwd(kustomizeDir).Edit(ctx, strings.Split(editArgs, " ")...)
+	}
+
+	// Apply manifests with kustomize
+	if err := t.kubectl.Kustomize(ctx, kustomizeDir, nil); err != nil {
+		return fmt.Errorf("failed applying kustomize: %w", err)
+	}
+
+	return nil
 }
 
 // deployHelmCharts deploys helm charts to the k8s cluster

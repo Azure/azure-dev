@@ -46,6 +46,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/javac"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/kubectl"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/kustomize"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/maven"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/npm"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/python"
@@ -448,6 +449,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(javac.NewCli)
 	container.RegisterSingleton(kubectl.NewKubectl)
 	container.RegisterSingleton(helm.NewCli)
+	container.RegisterSingleton(kustomize.NewKustomize)
 	container.RegisterSingleton(maven.NewMavenCli)
 	container.RegisterSingleton(npm.NewNpmCli)
 	container.RegisterSingleton(python.NewPythonCli)

@@ -4,7 +4,7 @@ WORKDIR /app
 
 RUN export DEBIAN_FRONTEND=noninteractive \
      && wget -q https://packages.microsoft.com/config/ubuntu/20.04/packages-microsoft-prod.deb && dpkg -i packages-microsoft-prod.deb \
-     && apt-get update && apt-get install -y --no-install-recommends apt-utils && apt-get install -y apt-transport-https ca-certificates curl unzip procps gnupg2 software-properties-common lsb-release \
+     && apt-get update && apt-get install -y --no-install-recommends apt-utils && apt-get install -y apt-transport-https ca-certificates curl gnupg unzip procps gnupg2 software-properties-common lsb-release \
      # functions core tools
      && curl https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > microsoft.gpg \
      && mv microsoft.gpg /etc/apt/trusted.gpg.d/microsoft.gpg \
@@ -17,8 +17,13 @@ RUN export DEBIAN_FRONTEND=noninteractive \
      # az cli
      && curl -sSL https://aka.ms/InstallAzureCLIDeb | bash \
      # nodejs
-     #&& curl -fsSL https://deb.nodesource.com/setup_18.x | bash - \
-     && apt-get install -y nodejs gcc g++ make npm\
+     && mkdir -p /etc/apt/keyrings \
+     && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg \
+     && echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_18.x nodistro main" | tee /etc/apt/sources.list.d/nodesource.list \
+     && apt-get update \
+     && apt-get install -y nodejs \
+     #&& curl -fsSL https://deb.nodesource.com/setup_19.x | bash - \
+     #&& apt-get install -y nodejs gcc g++ make npm\
      # python
      && apt-get install -y --no-install-recommends python3-pip python3-venv \
      && echo 'alias python=python3' >> ~/.bashrc \
@@ -26,7 +31,7 @@ RUN export DEBIAN_FRONTEND=noninteractive \
      # java
      && apt-get update && apt-get install -y msopenjdk-17 \
      # terraform cli
-     && apt-get update && apt-get install -y gnupg software-properties-common \
+     && apt-get update && apt-get install -y software-properties-common \
      && wget -O- https://apt.releases.hashicorp.com/gpg | \
           gpg --dearmor | \
           tee /usr/share/keyrings/hashicorp-archive-keyring.gpg \

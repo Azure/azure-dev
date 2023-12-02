@@ -39,8 +39,8 @@ type KubectlCli interface {
 	Exec(ctx context.Context, flags *KubeCliFlags, args ...string) (exec.RunResult, error)
 	// Gets the deployment rollout status
 	RolloutStatus(ctx context.Context, deploymentName string, flags *KubeCliFlags) (*exec.RunResult, error)
-	// Apply the manifests at the specified path using kustomize
-	Kustomize(ctx context.Context, path string, flags *KubeCliFlags) error
+	// Applies the manifests at the specified path using kustomize
+	ApplyWithKustomize(ctx context.Context, path string, flags *KubeCliFlags) error
 }
 
 type OutputType string
@@ -230,12 +230,13 @@ func (cli *kubectlCli) Apply(ctx context.Context, path string, flags *KubeCliFla
 	return nil
 }
 
-func (cli *kubectlCli) Kustomize(ctx context.Context, path string, flags *KubeCliFlags) error {
+// Applies the manifests at the specified path using kustomize
+func (cli *kubectlCli) ApplyWithKustomize(ctx context.Context, path string, flags *KubeCliFlags) error {
 	runArgs := exec.NewRunArgs("kubectl", "apply", "-k", path)
 
 	_, err := cli.executeCommandWithArgs(ctx, runArgs, flags)
 	if err != nil {
-		return fmt.Errorf("kubectl apply -k: %w", err)
+		return fmt.Errorf("failing running kubectl apply -k: %w", err)
 	}
 
 	return nil

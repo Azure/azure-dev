@@ -23,6 +23,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
@@ -32,12 +33,12 @@ import (
 )
 
 type DockerProjectOptions struct {
-	Path      string           `yaml:"path,omitempty"      json:"path,omitempty"`
-	Context   string           `yaml:"context,omitempty"   json:"context,omitempty"`
-	Platform  string           `yaml:"platform,omitempty"  json:"platform,omitempty"`
-	Target    string           `yaml:"target,omitempty"    json:"target,omitempty"`
-	Tag       ExpandableString `yaml:"tag,omitempty"       json:"tag,omitempty"`
-	BuildArgs []string         `yaml:"buildArgs,omitempty" json:"buildArgs,omitempty"`
+	Path      string                  `yaml:"path,omitempty"      json:"path,omitempty"`
+	Context   string                  `yaml:"context,omitempty"   json:"context,omitempty"`
+	Platform  string                  `yaml:"platform,omitempty"  json:"platform,omitempty"`
+	Target    string                  `yaml:"target,omitempty"    json:"target,omitempty"`
+	Tag       osutil.ExpandableString `yaml:"tag,omitempty"       json:"tag,omitempty"`
+	BuildArgs []string                `yaml:"buildArgs,omitempty" json:"buildArgs,omitempty"`
 }
 
 type dockerBuildResult struct {

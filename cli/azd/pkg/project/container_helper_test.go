@@ -6,6 +6,7 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
 	"github.com/benbjohnson/clock"
@@ -42,7 +43,7 @@ func Test_ContainerHelper_LocalImageTag(t *testing.T) {
 		{
 			"ImageTagSpecified",
 			DockerProjectOptions{
-				Tag: NewExpandableString("contoso/contoso-image:latest"),
+				Tag: osutil.NewExpandableString("contoso/contoso-image:latest"),
 			},
 			"contoso/contoso-image:latest"},
 	}

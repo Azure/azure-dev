@@ -37,8 +37,9 @@ func (adc *IngressSelector) SelectPublicServices(ctx context.Context) ([]string,
 		"it is running in. Selecting a service here will also allow it to be reached from the Internet.")
 
 	exposed, err := adc.console.MultiSelect(ctx, input.ConsoleOptions{
-		Message: "Select which services to expose to the Internet",
-		Options: services,
+		Message:      "Select which services to expose to the Internet",
+		Options:      services,
+		DefaultValue: []string{},
 	})
 	if err != nil {
 		return nil, err

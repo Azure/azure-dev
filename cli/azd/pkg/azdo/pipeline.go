@@ -93,7 +93,8 @@ func CreatePipeline(
 	credentials *azcli.AzureCredentials,
 	env *environment.Environment,
 	console input.Console,
-	provisioningProvider provisioning.Options) (*build.BuildDefinition, error) {
+	provisioningProvider provisioning.Options,
+	additionalSecrets map[string]string) (*build.BuildDefinition, error) {
 
 	client, err := build.NewClient(ctx, connection)
 	if err != nil {
@@ -110,7 +111,7 @@ func CreatePipeline(
 		// Pipeline is already created. It uses the same connection but
 		// we need to update the variables and secrets as they
 		// might have been updated
-		buildDefinitionVariables, err := getDefinitionVariables(env, credentials, provisioningProvider)
+		buildDefinitionVariables, err := getDefinitionVariables(env, credentials, provisioningProvider, additionalSecrets)
 		if err != nil {
 			return nil, err
 		}
@@ -132,7 +133,7 @@ func CreatePipeline(
 	}
 
 	createDefinitionArgs, err := createAzureDevPipelineArgs(
-		ctx, projectId, name, repoName, credentials, env, queue, provisioningProvider)
+		ctx, projectId, name, repoName, credentials, env, queue, provisioningProvider, additionalSecrets)
 	if err != nil {
 		return nil, err
 	}
@@ -148,7 +149,8 @@ func CreatePipeline(
 func getDefinitionVariables(
 	env *environment.Environment,
 	credentials *azcli.AzureCredentials,
-	provisioningProvider provisioning.Options) (*map[string]build.BuildDefinitionVariable, error) {
+	provisioningProvider provisioning.Options,
+	additionalSecrets map[string]string) (*map[string]build.BuildDefinitionVariable, error) {
 	rawCredential, err := json.Marshal(credentials)
 	if err != nil {
 		return nil, err
@@ -184,6 +186,11 @@ Visit %s for more information on configuring Terraform remote state`,
 			variables[key] = createBuildDefinitionVariable(value, false, true)
 		}
 	}
+
+	for key, value := range additionalSecrets {
+		variables[key] = createBuildDefinitionVariable(value, true, false)
+	}
+
 	return &variables, nil
 }
 
@@ -197,6 +204,7 @@ func createAzureDevPipelineArgs(
 	env *environment.Environment,
 	queue *taskagent.TaskAgentQueue,
 	provisioningProvider provisioning.Options,
+	additionalSecrets map[string]string,
 ) (*build.CreateDefinitionArgs, error) {
 
 	repoType := "tfsgit"
@@ -233,7 +241,7 @@ func createAzureDevPipelineArgs(
 		trigger,
 	}
 
-	buildDefinitionVariables, err := getDefinitionVariables(env, credentials, provisioningProvider)
+	buildDefinitionVariables, err := getDefinitionVariables(env, credentials, provisioningProvider, additionalSecrets)
 	if err != nil {
 		return nil, err
 	}

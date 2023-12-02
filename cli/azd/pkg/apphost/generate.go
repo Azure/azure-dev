@@ -424,7 +424,7 @@ func (b *infraGenerator) Compile() error {
 				External:      binding.External,
 				TargetPort:    *binding.ContainerPort,
 				Transport:     binding.Transport,
-				AllowInsecure: strings.ToLower(binding.Transport) == "http2",
+				AllowInsecure: strings.ToLower(binding.Transport) == "http2" || !binding.External,
 			}
 		}
 
@@ -460,7 +460,7 @@ func (b *infraGenerator) Compile() error {
 				//
 				// Note that the protocol type is apparently optional.
 				TargetPort:    8080,
-				AllowInsecure: strings.ToLower(binding.Transport) == "http2",
+				AllowInsecure: strings.ToLower(binding.Transport) == "http2" || !binding.External,
 			}
 		}
 

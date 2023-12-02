@@ -90,7 +90,7 @@ resource appService 'Microsoft.Web/sites@2022-03-01' = {
   }
 }
 
-module config 'appservice-appsettings.bicep' = if (!empty(appSettings)) {
+module config 'appservice-appsettings.bicep' = {
   name: '${name}-appSettings'
   params: {
     name: appService.name

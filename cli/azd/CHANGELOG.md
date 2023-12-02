@@ -10,6 +10,9 @@
 
 ### Bugs Fixed
 
+- [[2969]](https://github.com/Azure/azure-dev/pull/2969) Relax container names truncation logic for Aspire `redis.v0` and `postgres.database.v0`.
+  Truncation now happens above 30 characters instead of 12 characters.
+
 ### Other Changes
 
 ## 1.5.0 (2023-11-15)

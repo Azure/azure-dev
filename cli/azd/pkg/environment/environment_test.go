@@ -5,6 +5,7 @@ package environment
 
 import (
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -194,6 +195,70 @@ func TestRoundTripNumberWithLeadingZeros(t *testing.T) {
 	env2, err := envManager.Get(*mockContext.Context, "test")
 	require.NoError(t, err)
 	require.Equal(t, "01", env2.dotenv["TEST"])
+}
+
+const configSample = `{
+	"infra": {
+	  "parameters": {
+		"bro": "xms"
+	  }
+	},
+	"services": {
+	  "app": {
+		"config": {
+		  "exposedServices": [
+			"webapp"
+		  ]
+		}
+	  }
+	}
+  }`
+
+func TestInitialEnvState(t *testing.T) {
+
+	// expected config
+	var configEncode map[string]any
+	err := json.Unmarshal([]byte(configSample), &configEncode)
+	require.NoError(t, err)
+	configBytes, err := json.Marshal(configEncode)
+	require.NoError(t, err)
+
+	// Set up the environment variable
+	t.Setenv(AzdInitialEnvironmentConfigName, string(configBytes))
+
+	// Create the environment
+	env := New("test")
+
+	// pull config back and compare against expected
+	config := env.Config.Raw()
+	require.Equal(t, configEncode, config)
+}
+
+func TestInitialEnvStateWithError(t *testing.T) {
+
+	// Set up the environment variable
+	t.Setenv(AzdInitialEnvironmentConfigName, "not{}valid{}json")
+
+	// Create the environment
+	env := New("test")
+
+	// pull unexpectedConfig back and compare
+	unexpectedConfig := env.Config.Raw()
+	expected := config.NewEmptyConfig().Raw()
+	require.Equal(t, expected, unexpectedConfig)
+}
+
+func TestInitialEnvStateEmpty(t *testing.T) {
+
+	// expected config
+	expected := config.NewEmptyConfig().Raw()
+
+	// Create the environment
+	env := New("test")
+
+	// pull config back and compare against expected
+	config := env.Config.Raw()
+	require.Equal(t, expected, config)
 }
 
 func Test_fixupUnquotedDotenv(t *testing.T) {

@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func Test_ContainerAppName(t *testing.T) {
+func Test_containerAppName(t *testing.T) {
 	tests := []struct {
 		name string
 		in   string
@@ -20,7 +20,7 @@ func Test_ContainerAppName(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			actual := ContainerAppName(tt.in)
+			actual := containerAppName(tt.in, 12)
 			assert.Equal(t, tt.want, actual)
 		})
 	}

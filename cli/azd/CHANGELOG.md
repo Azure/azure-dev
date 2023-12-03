@@ -1,10 +1,11 @@
 # Release History
 
-## 1.6.0-beta.1 (Unreleased)
+## 1.5.1 (Unreleased)
 
 ### Features Added
 
 - [[2998]](https://github.com/Azure/azure-dev/pull/2998) Adds support for Azure Storage Tables and Queues on Aspire projects.
+- [[3052]](https://github.com/Azure/azure-dev/pull/3052) Adds `target` argument support for docker build.
 
 ### Breaking Changes
 

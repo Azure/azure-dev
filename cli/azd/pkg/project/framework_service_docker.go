@@ -35,6 +35,7 @@ type DockerProjectOptions struct {
 	Path      string           `yaml:"path,omitempty"      json:"path,omitempty"`
 	Context   string           `yaml:"context,omitempty"   json:"context,omitempty"`
 	Platform  string           `yaml:"platform,omitempty"  json:"platform,omitempty"`
+	Target    string           `yaml:"target,omitempty"    json:"target,omitempty"`
 	Tag       ExpandableString `yaml:"tag,omitempty"       json:"tag,omitempty"`
 	BuildArgs []string         `yaml:"buildArgs,omitempty" json:"buildArgs,omitempty"`
 }
@@ -204,6 +205,7 @@ func (p *dockerProject) Build(
 				serviceConfig.Path(),
 				dockerOptions.Path,
 				dockerOptions.Platform,
+				dockerOptions.Target,
 				dockerOptions.Context,
 				imageName,
 				dockerOptions.BuildArgs,

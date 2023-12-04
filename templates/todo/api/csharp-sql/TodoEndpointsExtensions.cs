@@ -99,7 +99,7 @@ namespace SimpleTodo.Api
 
             await repository.AddListItemAsync(newItem);
 
-            return TypedResults.CreatedAtRoute($"/lists/{listId}/items", newItem);
+            return TypedResults.Created($"/lists/{listId}/items{newItem.Id}", newItem);
         }
 
         public static async Task<IResult> GetListItem(ListsRepository repository, Guid listId, Guid itemId)

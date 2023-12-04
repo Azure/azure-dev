@@ -599,6 +599,107 @@
                             "description": "When set will be appended to the root of your ingress resource path."
                         }
                     }
+                },
+                "helm": {
+                    "type": "object",
+                    "title": "Optional. The helm configuration",
+                    "additionalProperties": false,
+                    "properties": {
+                        "repositories": {
+                            "type": "array",
+                            "title": "Optional. The helm repositories to add",
+                            "description": "When set will add the helm repositories to the helm client.",
+                            "minItems": 1,
+                            "items": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "name",
+                                    "url"
+                                ],
+                                "properties": {
+                                    "name": {
+                                        "type": "string",
+                                        "title": "The name of the helm repository",
+                                        "description": "The name of the helm repository to add."
+                                    },
+                                    "url": {
+                                        "type": "string",
+                                        "title": "The url of the helm repository",
+                                        "description": "The url of the helm repository to add."
+                                    }
+                                }
+                            }
+                        },
+                        "releases": {
+                            "type": "array",
+                            "title": "Optional. The helm releases to install",
+                            "description": "When set will install the helm releases to the k8s cluster.",
+                            "minItems": 1,
+                            "items": {
+                                "type": "object",
+                                "additionalProperties": false,
+                                "required": [
+                                    "name",
+                                    "chart"
+                                ],
+                                "properties": {
+                                    "name": {
+                                        "type": "string",
+                                        "title": "The name of the helm release",
+                                        "description": "The name of the helm release to install."
+                                    },
+                                    "chart": {
+                                        "type": "string",
+                                        "title": "The name of the helm chart",
+                                        "description": "The name of the helm chart to install."
+                                    },
+                                    "version": {
+                                        "type": "string",
+                                        "title": "The version of the helm chart",
+                                        "description": "The version of the helm chart to install."
+                                    },
+                                    "values": {
+                                        "type": "string",
+                                        "title": "Optional. Relative path from service to a values.yaml to pass to the helm chart",
+                                        "description": "When set will pass the values to the helm chart."
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                "kustomize": {
+                    "type": "object",
+                    "title": "Optional. The kustomize configuration",
+                    "additionalProperties": false,
+                    "properties": {
+                        "dir": {
+                            "type": "string",
+                            "title": "Optional. The relative path to the kustomize directory.",
+                            "description": "When set will use the kustomize directory to deploy to the k8s cluster. Supports environment variable substitution."
+                        },
+                        "edits": {
+                            "type": "array",
+                            "title": "Optional. The kustomize edits to apply before deployment.",
+                            "description": "When set will apply the edits to the kustomize directory before deployment. Supports environment variable substitution.",
+                            "items": {
+                                "type": "string"
+                            }
+                        },
+                        "env": {
+                            "type": "object",
+                            "title": "Optional. The environment key/value pairs used to generate a .env file.",
+                            "description": "When set will generate a .env file in the kustomize directory. Values support environment variable substitution.",
+                            "additionalProperties": {
+                                "type": [
+                                    "string",
+                                    "boolean",
+                                    "number"
+                                ]
+                            }
+                        }
+                    }
                 }
             }
         },

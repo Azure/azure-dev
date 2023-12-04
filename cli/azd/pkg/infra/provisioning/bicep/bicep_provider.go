@@ -1106,6 +1106,7 @@ func generateResourceGroupsToDelete(groupedResources map[string][]azcli.AzCliRes
 		lines = append(lines, fmt.Sprintf(
 			"  • %s: %s",
 			rg,
+			// TODO: Fix hardcoded URL
 			output.WithLinkFormat("https://portal.azure.com/#@/resource/subscriptions/%s/resourceGroups/%s/overview",
 				subId,
 				rg,

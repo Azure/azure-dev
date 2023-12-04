@@ -154,6 +154,7 @@ func (s *ResourceGroupScope) ListDeployments(ctx context.Context) ([]*armresourc
 
 // cPortalUrlPrefix is the prefix which can be combined with the RID of a deployment to produce a URL into the Azure Portal
 // that shows information about the deployment.
+// TODO: Fix hardcoded URL
 const cPortalUrlPrefix = "https://portal.azure.com/#view/HubsExtension/DeploymentDetailsBlade/~/overview/id"
 const cOutputsUrlPrefix = "https://portal.azure.com/#view/HubsExtension/DeploymentDetailsBlade/~/outputs/id"
 

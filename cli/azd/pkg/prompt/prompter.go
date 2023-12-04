@@ -54,6 +54,7 @@ func (p *DefaultPrompter) PromptSubscription(ctx context.Context, msg string) (s
 	}
 
 	if len(subscriptionOptions) == 0 {
+		// TODO: Fix hardcoded URL portal.azure.com
 		return "", fmt.Errorf(heredoc.Doc(
 			`no subscriptions found.
 			Ensure you have a subscription by visiting https://portal.azure.com and search for Subscriptions in the search bar.

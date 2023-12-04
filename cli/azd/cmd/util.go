@@ -77,6 +77,7 @@ func azurePortalLink(subscriptionId, resourceGroupName string) string {
 	if subscriptionId == "" || resourceGroupName == "" {
 		return ""
 	}
+	// TODO: Fix hardcoded URL
 	return output.WithLinkFormat(fmt.Sprintf(
 		"https://portal.azure.com/#@/resource/subscriptions/%s/resourceGroups/%s/overview",
 		subscriptionId,

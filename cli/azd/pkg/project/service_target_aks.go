@@ -108,6 +108,9 @@ func (t *aksTarget) RequiredExternalTools(ctx context.Context) []tools.ExternalT
 	allTools = append(allTools, t.containerHelper.RequiredExternalTools(ctx)...)
 	allTools = append(allTools, t.kubectl)
 
+	// TODO: Need to update to have conditional tooling
+	// For example, Helm & Kustomize are only required if the user is using AKS with these deployment tools.
+
 	return allTools
 }
 

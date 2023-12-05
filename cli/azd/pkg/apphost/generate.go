@@ -420,6 +420,10 @@ func (b *infraGenerator) Compile() error {
 		}
 
 		if binding != nil {
+			if binding.ContainerPort == nil {
+				return fmt.Errorf("binding for %s resource does not have containerPort specified", name)
+			}
+
 			cs.Ingress = &genContainerServiceIngress{
 				External:      binding.External,
 				TargetPort:    *binding.ContainerPort,

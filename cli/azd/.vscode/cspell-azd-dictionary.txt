@@ -178,6 +178,7 @@ tracetest
 trafficmanager
 Truef
 typeflag
+unhide
 unmarshaled
 unmarshalling
 unsetenvs

@@ -167,9 +167,6 @@ func (cli *dotNetCli) PublishContainer(
 		fmt.Sprintf("-p:ContainerRegistry=%s", server),
 	)
 
-	// TODO(ellismg): Remove this when the .NET 8 RTM base images have been pushed.
-	runArgs = runArgs.AppendParams("--self-contained")
-
 	_, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
 		return fmt.Errorf("dotnet publish on project '%s' failed: %w", project, err)

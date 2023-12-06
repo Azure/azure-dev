@@ -146,9 +146,6 @@ func (c *credential) HomeAccountID() string {
 
 func (c *credential) Authenticate(homeAccountID, scope string) (authResult, error) {
 	res := authResult{}
-	if oid, _, found := strings.Cut(homeAccountID, "."); found {
-		homeAccountID = oid
-	}
 	authority := unsafe.Pointer(C.CString(c.authority))
 	defer C.free(authority)
 	accountID := unsafe.Pointer(C.CString(homeAccountID))

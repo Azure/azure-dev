@@ -25,6 +25,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/github"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/oneauth"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
@@ -213,6 +214,10 @@ func (m *Manager) CredentialForCurrentUser(
 	}
 
 	if currentUser.HomeAccountID != nil {
+		if currentUser.Brokered {
+			return oneauth.NewCredential(cDefaultAuthority, cAZD_CLIENT_ID, *currentUser.HomeAccountID)
+		}
+
 		accounts, err := m.publicClient.Accounts(ctx)
 		if err != nil {
 			return nil, err
@@ -487,6 +492,26 @@ func (m *Manager) LoginInteractive(
 	}
 
 	return newAzdCredential(m.publicClient, &res.Account), nil
+}
+
+// LoginWithBroker authenticates the user via the authentication broker, if one is available.
+func (m *Manager) LoginWithBroker(ctx context.Context, scopes []string) error {
+	if scopes == nil {
+		scopes = LoginScopes
+	}
+	cred, err := oneauth.NewCredential(cDefaultAuthority, cAZD_CLIENT_ID, "")
+	if err != nil {
+		return err
+	}
+	_, err = cred.GetToken(ctx, policy.TokenRequestOptions{Scopes: scopes})
+	if err == nil {
+		homeAccountID := cred.HomeAccountID()
+		err = m.saveUserProperties(&userProperties{
+			Brokered:      true,
+			HomeAccountID: &homeAccountID,
+		})
+	}
+	return err
 }
 
 func (m *Manager) LoginWithDeviceCode(
@@ -858,6 +883,7 @@ type federatedAuth struct {
 // client).
 type userProperties struct {
 	HomeAccountID *string `json:"homeAccountId,omitempty"`
+	Brokered      bool    `json:"brokered,omitempty"`
 	ClientID      *string `json:"clientId,omitempty"`
 	TenantID      *string `json:"tenantId,omitempty"`
 }

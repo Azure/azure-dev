@@ -51,7 +51,7 @@ resource containerRegistry 'Microsoft.ContainerRegistry/registries@2022-02-01-pr
   name: containerRegistryName
 }
 
-resource containerAppsEnvironment 'Microsoft.App/managedEnvironments@2023-04-01-preview' existing = {
+resource containerAppsEnvironment 'Microsoft.App/managedEnvironments@2023-04-01' existing = {
   name: containerAppsEnvironmentName
 }
 
@@ -79,7 +79,7 @@ module fetchLatestImage '../modules/fetch-container-image.bicep' = {
 }
 {{- if .DbRedis}}
 
-resource redis 'Microsoft.App/containerApps@2023-04-01-preview' = {
+resource redis 'Microsoft.App/containerApps@2023-05-01' = {
   name: redisName
   location: location
   properties: {
@@ -101,7 +101,7 @@ resource redis 'Microsoft.App/containerApps@2023-04-01-preview' = {
 }
 {{- end}}
 
-resource app 'Microsoft.App/containerApps@2023-04-01-preview' = {
+resource app 'Microsoft.App/containerApps@2023-05-01' = {
   name: name
   location: location
   tags: union(tags, {'azd-service-name':  '{{.Name}}' })

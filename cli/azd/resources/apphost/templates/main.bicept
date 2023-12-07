@@ -56,6 +56,9 @@ output SERVICE_BINDING_{{alphaSnakeUpper $cname}}_ENDPOINT string = resources.ou
 {{end -}}
 {{end -}}
 {{range $name, $value := .KeyVaults -}}
-output SERVICE_BINDING_{{alphaSnakeUpper $name}}_ENDPOINT string =resources.outputs.SERVICE_BINDING_{{alphaSnakeUpper $name}}_ENDPOINT
+output SERVICE_BINDING_{{alphaSnakeUpper $name}}_ENDPOINT string = resources.outputs.SERVICE_BINDING_{{alphaSnakeUpper $name}}_ENDPOINT
+{{end -}}
+{{range $name, $value := .AppConfigs -}}
+output SERVICE_BINDING_{{alphaSnakeUpper $name}}_ENDPOINT string = resources.outputs.SERVICE_BINDING_{{alphaSnakeUpper $name}}_ENDPOINT
 {{end -}}
 {{ end}}

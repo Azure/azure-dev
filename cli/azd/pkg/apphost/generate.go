@@ -202,6 +202,7 @@ func newInfraGenerator() *infraGenerator {
 			StorageAccounts:                 make(map[string]genStorageAccount),
 			KeyVaults:                       make(map[string]genKeyVault),
 			ContainerApps:                   make(map[string]genContainerApp),
+			AppConfigs:                      make(map[string]genAppConfig),
 		},
 		containers:                   make(map[string]genContainer),
 		projects:                     make(map[string]genProject),
@@ -229,6 +230,8 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 			b.addContainerAppService(name, "redis")
 		case "azure.keyvault.v0":
 			b.addKeyVault(name)
+		case "azure.appconfiguration.v0":
+			b.addAppConfig(name)
 		case "azure.storage.v0":
 			b.addStorageAccount(name)
 		case "azure.storage.blob.v0":
@@ -322,6 +325,10 @@ func (b *infraGenerator) addStorageAccount(name string) {
 
 func (b *infraGenerator) addKeyVault(name string) {
 	b.bicepContext.KeyVaults[name] = genKeyVault{}
+}
+
+func (b *infraGenerator) addAppConfig(name string) {
+	b.bicepContext.AppConfigs[name] = genAppConfig{}
 }
 
 func (b *infraGenerator) addStorageBlob(storageAccount, blobName string) {
@@ -563,6 +570,7 @@ func (b *infraGenerator) Compile() error {
 					return errUnsupportedProperty(targetType, prop)
 				}
 			case targetType == "azure.keyvault.v0" ||
+				targetType == "azure.appconfiguration.v0" ||
 				targetType == "azure.storage.blob.v0" ||
 				targetType == "azure.storage.queue.v0" ||
 				targetType == "azure.storage.table.v0":

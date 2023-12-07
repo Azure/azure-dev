@@ -43,6 +43,8 @@ type genProject struct {
 	Bindings map[string]*Binding
 }
 
+type genAppConfig struct{}
+
 type genBicepTemplateContext struct {
 	HasContainerRegistry            bool
 	HasContainerEnvironment         bool
@@ -53,6 +55,7 @@ type genBicepTemplateContext struct {
 	KeyVaults                       map[string]genKeyVault
 	ContainerAppEnvironmentServices map[string]genContainerAppEnvironmentServices
 	ContainerApps                   map[string]genContainerApp
+	AppConfigs                      map[string]genAppConfig
 }
 
 type genContainerAppManifestTemplateContext struct {

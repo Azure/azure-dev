@@ -1,8 +1,4 @@
 {
   "cSpell.import": ["cspell.yaml"],
-  "go.testFlags": [
-    "-timeout",
-    "30m"
-  ],
-  "dotnet.defaultSolution": "disable"
+  "go.testFlags": ["-timeout", "30m"]
 }

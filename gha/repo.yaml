@@ -1,0 +1,70 @@
+templateApi: 1.0.0
+metadata:
+  type: repo
+  name: setup-azd
+  description: Github Actions for installing Azure Developer CLI (azd).
+
+repo:
+  includeProjectAssets: true
+
+  remotes:
+    - name: setup-azd-main
+      url: git@github.com:Azure/setup-azd.git
+    - name: setup-azd-staging
+      url: git@github.com:Azure/setup-azd.git
+      branch: staging
+
+  # rewrite:
+  #   rules:
+  #     - from: ./
+  #       to: ./
+  #       patterns:
+  #         - "**/*.yaml"
+
+  assets:
+    # Github workflows
+    - from: ./.github/workflows
+      to: ./.github/workflows
+    
+    - from: ./.github/dependabot.yml
+      to: ./.github/dependabot.yml
+
+    # dist folder
+    - from: ./dist
+      to: ./dist
+
+    # main.js
+    - from: ./lib/main.js
+      to: ./lib/main.js
+
+    # .gitignore
+    - from: ./.gitignore
+      to: ./.gitignore
+    
+    # .eslintignore
+    - from: ./.eslintignore
+      to: ./.eslintignore
+
+    # .eslintrc.json
+    - from: ./.eslintrc.json
+      to: ./.eslintrc.json
+    
+    # .prettierignore
+    - from: ./.prettierignore
+      to: ./.prettierignore
+
+    # action.yml
+    - from: ./action.yml
+      to: ./action.yml
+    
+    # ReadME
+    - from: ./README.md
+      to: ./README.md
+    
+    # package.json
+    - from: ./package.json
+      to: ./package.json
+
+    # package.json
+    - from: ./package-lock.json
+      to: ./package-lock.json

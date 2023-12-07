@@ -1,0 +1,40 @@
+pr:
+  branches:
+    include: [main]
+
+  paths:
+    include:
+      - eng/pipelines/notice.yml
+
+trigger:
+  branches:
+    include: [main]
+
+jobs:
+  - job: PoliCheck
+    pool:
+      name: azsdk-pool-mms-win-2022-general
+      vmImage: MMS2022
+    timeoutInMinutes: 120
+    steps:
+      - template: /eng/common/pipelines/templates/steps/policheck.yml
+        parameters:
+          ExclusionDataBaseFileName: AzDevPoliCheckExclusion
+          PublishAnalysisLogs: false
+
+  - job: GenerateNoticeTxt
+    pool:
+      name: azsdk-pool-mms-ubuntu-2004-general
+      OSVmImage: MMSUbuntu20.04
+
+    steps:
+      - task: ComponentGovernanceComponentDetection@0
+
+      - task: notice@0
+        displayName: Generate NOTICE.txt file
+        inputs:
+          outputfile: $(Build.SourcesDirectory)/NOTICE.txt
+          outputformat: text
+
+      - publish: NOTICE.txt
+        artifact: notice

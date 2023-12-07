@@ -1,0 +1,20 @@
+# Copyright (c) Microsoft Corporation. All rights reserved.
+# Licensed under the MIT License.
+
+# cspell settings for azd templates
+
+ignorePaths:
+  - ./dist # autogenerate dist folder based on main.ts
+  - ./NOTICE.txt
+
+# Use global config
+import: ../.vscode/cspell.global.yaml
+
+dictionaryDefinitions:
+  - name: ghaDictionary
+    path: ./cspell-gha.txt
+    description: Custom Dictionary for Github Actions
+    addWords: true
+    scope: workspace
+dictionaries:
+  - ghaDictionary

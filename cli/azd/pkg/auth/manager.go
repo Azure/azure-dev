@@ -663,6 +663,13 @@ func (m *Manager) Logout(ctx context.Context) error {
 
 	// we are fine to ignore the error here, it just means there's nothing to clean up.
 	currentUser, _ := readUserProperties(cfg)
+	if currentUser != nil && currentUser.Brokered {
+		cred, err := oneauth.NewCredential(cDefaultAuthority, cAZD_CLIENT_ID, "")
+		if err != nil {
+			return fmt.Errorf("creating credential: %w", err)
+		}
+		return cred.Logout()
+	}
 
 	// When logged in as a service principal, remove the stored credential
 	if currentUser != nil && currentUser.TenantID != nil && currentUser.ClientID != nil {

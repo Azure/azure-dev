@@ -156,12 +156,21 @@ AuthnResult *Authenticate(const char *authority, const char *homeAccountID, cons
     auto res = future.get();
     if (auto account = res.GetAccount())
     {
-        // TODO: have azd auth logout call DisassociateAccount
-        // Note: don't call SignOutSilently because it deletes data based on client ID i.e. will sign out az accounts
-        // (Dis/associate uses application ID instead e.g. "com.azure.azd")
         OneAuth::GetAuthenticator()->AssociateAccount(*account, telemetryParams);
     }
     return wrapAuthResult(&res);
+}
+
+void Logout()
+{
+    auto telemetryParams = TelemetryParameters(UUID::Generate());
+    for (auto a : OneAuth::GetAuthenticator()->ReadAssociatedAccounts(telemetryParams))
+    {
+        // SignOut* delete data based on client ID i.e. they would sign the account
+        // out from az as well so long as azd and az share a client ID. Dis/associate
+        // use application ID e.g. "com.azure.azd" instead.
+        OneAuth::GetAuthenticator()->DisassociateAccount(a, telemetryParams, "");
+    }
 }
 
 void FreeAuthnResult(AuthnResult *authnResult)

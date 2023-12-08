@@ -46,7 +46,7 @@ import (
 const (
 	applicationID = "com.microsoft.azd"
 
-	// Supported indicates whether brokered authentication is supported.
+	// Supported indicates whether this build supports brokered authentication.
 	Supported = true
 )
 
@@ -65,11 +65,12 @@ var (
 	bridge       *windows.LazyDLL
 	authenticate *windows.LazyProc
 	freeAR       *windows.LazyProc
+	logout       *windows.LazyProc
 	shutdown     *windows.LazyProc
 	startup      *windows.LazyProc
 
-	// started tracks whether the bridge's Startup function has been called because OneAuth
-	// returns an error when its Startup function is called more than once
+	// started tracks whether the bridge's Startup function has succeeded. This is necessary
+	// because OneAuth returns an error when its Startup function is called more than once.
 	started atomic.Bool
 )
 
@@ -105,25 +106,10 @@ func NewCredential(authority, clientID, homeAccountID string) (UserCredential, e
 
 func (c *credential) GetToken(ctx context.Context, opts policy.TokenRequestOptions) (azcore.AccessToken, error) {
 	at := azcore.AccessToken{}
-
-	if started.CompareAndSwap(false, true) {
-		dbg := uintptr(0)
-		if c.debug {
-			dbg = uintptr(1)
-		}
-		clientID := unsafe.Pointer(C.CString(c.clientID))
-		defer C.free(clientID)
-		appID := unsafe.Pointer(C.CString(applicationID))
-		defer C.free(appID)
-		v := unsafe.Pointer(C.CString(internal.VersionInfo().Version.String()))
-		defer C.free(v)
-		msg, _, _ := startup.Call(uintptr(clientID), uintptr(appID), uintptr(v), dbg)
-		if msg != 0 {
-			msg := C.GoString((*C.char)(unsafe.Pointer(msg)))
-			return at, fmt.Errorf("couldn't start OneAuth: %s", msg)
-		}
+	err := c.start()
+	if err != nil {
+		return at, err
 	}
-
 	// OneAuth always appends /.default to scopes
 	scopes := make([]string, len(opts.Scopes))
 	for i, scope := range opts.Scopes {
@@ -180,6 +166,38 @@ func (c *credential) Authenticate(homeAccountID, scope string) (authResult, erro
 	return res, nil
 }
 
+func (c *credential) Logout() error {
+	err := c.start()
+	if err == nil {
+		_, _, _ = logout.Call()
+	}
+	return err
+}
+
+func (c *credential) start() error {
+	if started.CompareAndSwap(false, true) {
+		dbg := uintptr(0)
+		if c.debug {
+			dbg = uintptr(1)
+		}
+		clientID := unsafe.Pointer(C.CString(c.clientID))
+		defer C.free(clientID)
+		appID := unsafe.Pointer(C.CString(applicationID))
+		defer C.free(appID)
+		v := unsafe.Pointer(C.CString(internal.VersionInfo().Version.String()))
+		defer C.free(v)
+		msg, _, _ := startup.Call(uintptr(clientID), uintptr(appID), uintptr(v), dbg)
+		// startup returns an error message when it fails
+		if msg != 0 {
+			// reset started so the next call will try to start OneAuth again
+			started.CompareAndSwap(true, false)
+			msg := C.GoString((*C.char)(unsafe.Pointer(msg)))
+			return fmt.Errorf("couldn't start OneAuth: %s", msg)
+		}
+	}
+	return nil
+}
+
 // TODO: check hash
 func findDLLs() error {
 	if bridge != nil {
@@ -209,6 +227,7 @@ func findDLLs() error {
 		bridge = windows.NewLazyDLL(p)
 		authenticate = bridge.NewProc("Authenticate")
 		freeAR = bridge.NewProc("FreeAuthnResult")
+		logout = bridge.NewProc("Logout")
 		shutdown = bridge.NewProc("Shutdown")
 		startup = bridge.NewProc("Startup")
 	}

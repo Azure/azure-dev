@@ -13,10 +13,10 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 )
 
-// Supported indicates whether brokered authentication is supported.
+// Supported indicates whether this build supports brokered authentication.
 const Supported = false
 
-var errNoBroker = errors.New("no authentication broker on this platform")
+var errNoBroker = errors.New("this build doesn't support brokered authentication")
 
 type credential struct{}
 
@@ -30,4 +30,8 @@ func (*credential) GetToken(context.Context, policy.TokenRequestOptions) (azcore
 
 func (*credential) HomeAccountID() string {
 	return ""
+}
+
+func (c *credential) Logout() error {
+	return errNoBroker
 }

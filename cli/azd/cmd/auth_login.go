@@ -46,6 +46,7 @@ func newAuthLoginFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions
 type loginFlags struct {
 	onlyCheckStatus        bool
 	useDeviceCode          boolPtr
+	manualBrowsing         boolPtr
 	tenantID               string
 	clientID               string
 	clientSecret           stringPtr
@@ -118,6 +119,14 @@ func (lf *loginFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 	)
 	// ensure the flag behaves as a common boolean flag which is set to true when used without any other arg
 	f.NoOptDefVal = "true"
+	b := local.VarPF(
+		&lf.manualBrowsing,
+		"manual-browser",
+		"",
+		"When true, azd will not follow login urls automatically.",
+	)
+	// ensure the flag behaves as a common boolean flag which is set to true when used without any other arg
+	b.NoOptDefVal = "true"
 	local.StringVar(&lf.clientID, "client-id", "", "The client id for the service principal to authenticate with.")
 	local.Var(
 		&lf.clientSecret,
@@ -471,9 +480,18 @@ func (la *loginAction) login(ctx context.Context) error {
 			return err
 		}
 
+		manualBrowsing := la.flags.manualBrowsing.ptr != nil
+		if manualBrowsing {
+			userInput, err := strconv.ParseBool(*la.flags.manualBrowsing.ptr)
+			if err != nil {
+				return fmt.Errorf("unexpected boolean input for '--manual-browsing': %w", err)
+			}
+			manualBrowsing = userInput
+		}
+
 		if useDevCode {
 			_, err := la.authManager.LoginWithDeviceCode(ctx, la.flags.tenantID, la.flags.scopes, func(url string) error {
-				openWithDefaultBrowser(ctx, la.console, url)
+				openWithDefaultBrowser(ctx, la.console, url, manualBrowsing)
 				return nil
 			})
 			if err != nil {
@@ -485,7 +503,7 @@ func (la *loginAction) login(ctx context.Context) error {
 					TenantID:     la.flags.tenantID,
 					RedirectPort: la.flags.redirectPort,
 					WithOpenUrl: func(url string) error {
-						openWithDefaultBrowser(ctx, la.console, url)
+						openWithDefaultBrowser(ctx, la.console, url, manualBrowsing)
 						return nil
 					},
 				})

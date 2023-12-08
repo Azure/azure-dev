@@ -8,7 +8,7 @@ ignorePaths:
   - ./NOTICE.txt
 
 # Use global config
-import: ../.vscode/cspell.global.yaml
+import: ../../.vscode/cspell.global.yaml
 
 dictionaryDefinitions:
   - name: ghaDictionary

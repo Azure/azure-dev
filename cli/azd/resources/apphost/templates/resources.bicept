@@ -236,7 +236,7 @@ resource {{bicepName $name}}RoleAssignment 'Microsoft.Authorization/roleAssignme
     roleDefinitionId:  subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '00482a5a-887f-4fb3-b363-3b7fe8e74483')
   }
 }
-{{- end -}}
+{{end -}}
 {{range $name, $value := .AppConfigs}}
 resource {{bicepName $name}} 'Microsoft.AppConfiguration/configurationStores@2023-03-01'= {
   name: replace('{{$name}}-${resourceToken}', '-', '')

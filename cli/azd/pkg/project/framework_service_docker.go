@@ -103,7 +103,22 @@ func NewDockerProject(
 		console:             console,
 		alphaFeatureManager: alphaFeatureManager,
 		commandRunner:       commandRunner,
+		framework:           NewNoOpProject(env),
 	}
+}
+
+// NewDockerProjectAsFrameworkService is the same as NewDockerProject().(FrameworkService) and exists to support our
+// use of DI and ServiceLocators, where we sometimes need to resolve this type as a FrameworkService instance instead
+// of a CompositeFrameworkService as [NewDockerProject] does.
+func NewDockerProjectAsFrameworkService(
+	env *environment.Environment,
+	docker docker.Docker,
+	containerHelper *ContainerHelper,
+	console input.Console,
+	alphaFeatureManager *alpha.FeatureManager,
+	commandRunner exec.CommandRunner,
+) FrameworkService {
+	return NewDockerProject(env, docker, containerHelper, console, alphaFeatureManager, commandRunner)
 }
 
 func (p *dockerProject) Requirements() FrameworkRequirements {
@@ -171,7 +186,11 @@ func (p *dockerProject) Build(
 				strings.ToLower(serviceConfig.Name),
 			)
 
-			path := filepath.Join(serviceConfig.Path(), dockerOptions.Path)
+			path := dockerOptions.Path
+			if !filepath.IsAbs(path) {
+				path = filepath.Join(serviceConfig.Path(), path)
+			}
+
 			_, err := os.Stat(path)
 			if err != nil && !errors.Is(err, os.ErrNotExist) {
 				task.SetError(fmt.Errorf("reading dockerfile: %w", err))

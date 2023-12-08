@@ -420,11 +420,17 @@ func (b *infraGenerator) Compile() error {
 		}
 
 		if binding != nil {
+			if binding.ContainerPort == nil {
+				return fmt.Errorf(
+					"binding for %s resource does not specify a container port, "+
+						"ensure WithServiceBinding for this resource specifies a hostPort value", name)
+			}
+
 			cs.Ingress = &genContainerServiceIngress{
 				External:      binding.External,
 				TargetPort:    *binding.ContainerPort,
 				Transport:     binding.Transport,
-				AllowInsecure: strings.ToLower(binding.Transport) == "http2",
+				AllowInsecure: strings.ToLower(binding.Transport) == "http2" || !binding.External,
 			}
 		}
 
@@ -460,7 +466,7 @@ func (b *infraGenerator) Compile() error {
 				//
 				// Note that the protocol type is apparently optional.
 				TargetPort:    8080,
-				AllowInsecure: strings.ToLower(binding.Transport) == "http2",
+				AllowInsecure: strings.ToLower(binding.Transport) == "http2" || !binding.External,
 			}
 		}
 

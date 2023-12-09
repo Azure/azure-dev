@@ -86,7 +86,7 @@ AuthnResult *wrapAuthResult(const AuthResult *ar)
     return wrapped;
 }
 
-AuthnResult *Authenticate(const char *authority, const char *homeAccountID, const char *scope)
+AuthnResult *Authenticate(const char *authority, const char *homeAccountID, const char *scope, bool allowPrompt)
 {
     auto authParams = AuthParameters::CreateForBearer(authority, scope);
     auto telemetryParams = TelemetryParameters(UUID::Generate());
@@ -95,7 +95,6 @@ AuthnResult *Authenticate(const char *authority, const char *homeAccountID, cons
     std::future<AuthResult> future = promise.get_future();
     auto callback = [&promise](const AuthResult &result)
     {
-        // TODO: write to a Go channel?
         promise.set_value(result);
     };
 
@@ -123,6 +122,13 @@ AuthnResult *Authenticate(const char *authority, const char *homeAccountID, cons
     // (we don't care why silent auth failed because in any case we would fall back to interactive auth)
     if (future.wait_for(std::chrono::seconds(0)) != std::future_status::ready)
     {
+        if (!allowPrompt)
+        {
+            auto ar = new AuthnResult();
+            ar->errorDescription = strdup("Interactive authentication is required. Run 'azd auth login'");
+            return ar;
+        }
+
         OneAuth::GetAuthenticator()->SignInInteractively(
             OneAuth::DefaultUxContext,
             "", // TODO: account hint?

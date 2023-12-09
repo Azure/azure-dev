@@ -220,6 +220,7 @@ func (m *Manager) CredentialForCurrentUser(
 				// TODO: read GlobalCommandOptions.EnableDebugLogging
 				Debug:         false,
 				HomeAccountID: *currentUser.HomeAccountID,
+				NoPrompt:      options.NoPrompt,
 			})
 		}
 
@@ -862,6 +863,8 @@ func (m *Manager) saveSecret(tenantId, clientId string, ps *persistedSecret) err
 }
 
 type CredentialForCurrentUserOptions struct {
+	// NoPrompt controls whether the credential may prompt for user interaction.
+	NoPrompt bool
 	// The tenant ID to use when constructing the credential, instead of the default tenant.
 	TenantID string
 }

@@ -27,8 +27,8 @@ extern "C"
     // - debug: whether to enable OneAuth console logging
     __declspec(dllexport) const char *Startup(const char *clientId, const char *applicationId, const char *version, bool debug);
 
-    // Authenticate acquires an access token, interactively signing in a user if necessary.
-    __declspec(dllexport) AuthnResult *Authenticate(const char *authority, const char *homeAccountID, const char *scope);
+    // Authenticate acquires an access token. It will display an interactive login window if necessary, unless allowPrompt is false.
+    __declspec(dllexport) AuthnResult *Authenticate(const char *authority, const char *homeAccountID, const char *scope, bool allowPrompt);
 
     // Logout disassociates all accounts from the application. This prevents
     // Authenticate silently using them but doesn't delete any of their data.

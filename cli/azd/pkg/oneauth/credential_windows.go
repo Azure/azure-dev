@@ -137,7 +137,11 @@ func (c *credential) Authenticate(homeAccountID, scope string) (authResult, erro
 	defer C.free(accountID)
 	scp := unsafe.Pointer(C.CString(scope))
 	defer C.free(scp)
-	result, _, _ := authenticate.Call(uintptr(authority), uintptr(accountID), uintptr(scp))
+	allowPrompt := 1
+	if c.opts.NoPrompt {
+		allowPrompt = 0
+	}
+	result, _, _ := authenticate.Call(uintptr(authority), uintptr(accountID), uintptr(scp), uintptr(allowPrompt))
 	if result == 0 {
 		return res, fmt.Errorf("authentication failed")
 	}

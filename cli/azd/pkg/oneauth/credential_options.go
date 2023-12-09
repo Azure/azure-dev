@@ -6,4 +6,5 @@ package oneauth
 type CredentialOptions struct {
 	Debug         bool
 	HomeAccountID string
+	NoPrompt      bool
 }

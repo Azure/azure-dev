@@ -5,7 +5,6 @@ package azdo
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strings"
 
@@ -155,16 +154,11 @@ func getDefinitionVariables(
 	provisioningProvider provisioning.Options,
 	additionalSecrets map[string]string,
 	additionalVariables map[string]string) (*map[string]build.BuildDefinitionVariable, error) {
-	rawCredential, err := json.Marshal(credentials)
-	if err != nil {
-		return nil, err
-	}
 	variables := map[string]build.BuildDefinitionVariable{
 		"AZURE_LOCATION":           createBuildDefinitionVariable(env.GetLocation(), false, false),
 		"AZURE_ENV_NAME":           createBuildDefinitionVariable(env.GetEnvName(), false, false),
 		"AZURE_SERVICE_CONNECTION": createBuildDefinitionVariable(ServiceConnectionName, false, false),
 		"AZURE_SUBSCRIPTION_ID":    createBuildDefinitionVariable(credentials.SubscriptionId, false, false),
-		"AZURE_CREDENTIALS":        createBuildDefinitionVariable(string(rawCredential), true, false),
 	}
 
 	if provisioningProvider.Provider == provisioning.Bicep {

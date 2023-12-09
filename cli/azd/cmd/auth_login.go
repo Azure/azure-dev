@@ -459,6 +459,10 @@ func (la *loginAction) login(ctx context.Context) error {
 		return nil
 	}
 
+	if la.flags.useBroker {
+		return la.authManager.LoginWithBroker(ctx, la.flags.scopes, la.flags.global)
+	}
+
 	if la.authManager.UseExternalAuth() {
 		// Request a token and assume the external auth system will prompt the user to log in.
 		//

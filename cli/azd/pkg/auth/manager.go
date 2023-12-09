@@ -18,6 +18,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/public"
+	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
@@ -215,7 +216,10 @@ func (m *Manager) CredentialForCurrentUser(
 
 	if currentUser.HomeAccountID != nil {
 		if currentUser.Brokered {
-			return oneauth.NewCredential(cDefaultAuthority, cAZD_CLIENT_ID, *currentUser.HomeAccountID)
+			return oneauth.NewCredential(cDefaultAuthority, cAZD_CLIENT_ID, *currentUser.HomeAccountID, oneauth.CredentialOptions{
+				// TODO: read GlobalCommandOptions.EnableDebugLogging
+				Debug: false,
+			})
 		}
 
 		accounts, err := m.publicClient.Accounts(ctx)
@@ -495,11 +499,12 @@ func (m *Manager) LoginInteractive(
 }
 
 // LoginWithBroker authenticates the user via the authentication broker, if one is available.
-func (m *Manager) LoginWithBroker(ctx context.Context, scopes []string) error {
+func (m *Manager) LoginWithBroker(ctx context.Context, scopes []string, global *internal.GlobalCommandOptions) error {
 	if scopes == nil {
 		scopes = LoginScopes
 	}
-	cred, err := oneauth.NewCredential(cDefaultAuthority, cAZD_CLIENT_ID, "")
+	debug := global != nil && global.EnableDebugLogging
+	cred, err := oneauth.NewCredential(cDefaultAuthority, cAZD_CLIENT_ID, "", oneauth.CredentialOptions{Debug: debug})
 	if err != nil {
 		return err
 	}
@@ -664,7 +669,10 @@ func (m *Manager) Logout(ctx context.Context) error {
 	// we are fine to ignore the error here, it just means there's nothing to clean up.
 	currentUser, _ := readUserProperties(cfg)
 	if currentUser != nil && currentUser.Brokered {
-		cred, err := oneauth.NewCredential(cDefaultAuthority, cAZD_CLIENT_ID, "")
+		cred, err := oneauth.NewCredential(cDefaultAuthority, cAZD_CLIENT_ID, "", oneauth.CredentialOptions{
+			// TODO: read GlobalCommandOptions.EnableDebugLogging
+			Debug: false,
+		})
 		if err != nil {
 			return fmt.Errorf("creating credential: %w", err)
 		}

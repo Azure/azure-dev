@@ -86,20 +86,19 @@ type credential struct {
 	authority     string
 	clientID      string
 	homeAccountID string
-
-	// TODO: get this from internal.GlobalCommandOptions
-	debug bool
+	opts          CredentialOptions
 }
 
 // NewCredential creates a new credential that uses OneAuth to broker authentication.
 // If homeAccountID is empty, GetToken will prompt a user to authenticate.
-func NewCredential(authority, clientID, homeAccountID string) (UserCredential, error) {
+func NewCredential(authority, clientID, homeAccountID string, opts CredentialOptions) (UserCredential, error) {
 	if err := findDLLs(); err != nil {
 		return nil, err
 	}
 	cred := &credential{
 		clientID:      clientID,
 		homeAccountID: homeAccountID,
+		opts:          opts,
 	}
 	return cred, nil
 }
@@ -177,7 +176,7 @@ func (c *credential) Logout() error {
 func (c *credential) start() error {
 	if started.CompareAndSwap(false, true) {
 		dbg := uintptr(0)
-		if c.debug {
+		if c.opts.Debug {
 			dbg = uintptr(1)
 		}
 		clientID := unsafe.Pointer(C.CString(c.clientID))

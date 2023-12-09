@@ -96,15 +96,31 @@ func (im *ImportManager) ServiceStable(ctx context.Context, projectConfig *Proje
 	return allServicesSlice, nil
 }
 
+// defaultOptions for infra settings. These values are applied across provisioning providers.
+var InfraDefaults = provisioning.Options{
+	Module: "main",
+	Path:   "infra",
+}
+
+// ProjectInfrastructure parses the project configuration and returns the infrastructure configuration.
+// The configuration can be explicitly defined on azure.yaml using path and module, or in case these values
+// are not explicitly defined, the project importer uses default values to find the infrastructure.
 func (im *ImportManager) ProjectInfrastructure(ctx context.Context, projectConfig *ProjectConfig) (*Infra, error) {
+	// Use default project values for Infra when not specified in azure.yaml
+	if projectConfig.Infra.Module == "" {
+		projectConfig.Infra.Module = InfraDefaults.Module
+	}
+	if projectConfig.Infra.Path == "" {
+		projectConfig.Infra.Path = InfraDefaults.Path
+	}
+
 	infraRoot := projectConfig.Infra.Path
 	if !filepath.IsAbs(infraRoot) {
 		infraRoot = filepath.Join(projectConfig.Path, infraRoot)
 	}
 
-	// Allow overriding the infrastructure by placing an `infra` folder in the location that would be expected based
-	// on azure.yaml
-	if _, err := os.Stat(infraRoot); err == nil {
+	// Allow overriding the infrastructure only when path and module exists.
+	if moduleExists, err := pathHasModule(infraRoot, projectConfig.Infra.Module); err == nil && moduleExists {
 		log.Printf("using infrastructure from %s directory", infraRoot)
 		return &Infra{
 			Options: projectConfig.Infra,
@@ -130,7 +146,32 @@ func (im *ImportManager) ProjectInfrastructure(ctx context.Context, projectConfi
 	}
 
 	return nil, fmt.Errorf(
-		"this project does not contain any infrastructure, have you created an '%s' folder?", filepath.Base(infraRoot))
+		"this project does not contain expected infrastructure, folder: '%s' and module: '%s'",
+		infraRoot,
+		projectConfig.Infra.Module)
+}
+
+func pathHasModule(path, module string) (bool, error) {
+	var moduleFound bool
+	err := filepath.Walk(path, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if !info.IsDir() {
+			fileNameWithoutExt := strings.TrimSuffix(info.Name(), filepath.Ext(info.Name()))
+			if fileNameWithoutExt == module {
+				moduleFound = true
+				return filepath.SkipDir
+			}
+		}
+		return nil
+	})
+
+	if err != nil {
+		return false, fmt.Errorf("error while iterating directory: %w", err)
+	}
+
+	return moduleFound, nil
 }
 
 func (im *ImportManager) SynthAllInfrastructure(ctx context.Context, projectConfig *ProjectConfig) (fs.FS, error) {

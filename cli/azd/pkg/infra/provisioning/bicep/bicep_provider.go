@@ -19,7 +19,6 @@ import (
 	"strings"
 	"time"
 
-	"dario.cat/mergo"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
@@ -45,11 +44,6 @@ import (
 	"github.com/drone/envsubst"
 	"golang.org/x/exp/maps"
 )
-
-var Defaults = Options{
-	Module: "main",
-	Path:   "infra",
-}
 
 type deploymentDetails struct {
 	CompiledBicep *compileBicepResult
@@ -91,10 +85,6 @@ func (p *BicepProvider) RequiredExternalTools() []tools.ExternalTool {
 }
 
 func (p *BicepProvider) Initialize(ctx context.Context, projectPath string, options Options) error {
-	if err := mergo.Merge(&options, Defaults); err != nil {
-		return fmt.Errorf("merging bicep defaults: %w", err)
-	}
-
 	p.projectPath = projectPath
 	p.options = options
 

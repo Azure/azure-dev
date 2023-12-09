@@ -31,7 +31,21 @@ type Manager struct {
 	options             *Options
 }
 
+// defaultOptions for this package. These values are applied across provisioning providers.
+var defaults = Options{
+	Module: "main",
+	Path:   "infra",
+}
+
 func (m *Manager) Initialize(ctx context.Context, projectPath string, options Options) error {
+	// applied defaults if missing
+	if options.Module == "" {
+		options.Module = defaults.Module
+	}
+	if options.Path == "" {
+		options.Path = defaults.Path
+	}
+
 	m.projectPath = projectPath
 	m.options = &options
 

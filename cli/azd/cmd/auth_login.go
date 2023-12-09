@@ -123,7 +123,7 @@ func (lf *loginFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 		&lf.manualBrowsing,
 		"manual-browser",
 		"",
-		"When true, azd will not follow login urls automatically.",
+		"When true, the URL used to complete the login process is printed instead of being opened.",
 	)
 	// ensure the flag behaves as a common boolean flag which is set to true when used without any other arg
 	b.NoOptDefVal = "true"

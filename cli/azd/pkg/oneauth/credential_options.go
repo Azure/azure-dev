@@ -3,6 +3,7 @@
 
 package oneauth
 
-type CredentialOptions struct{
-	Debug bool
+type CredentialOptions struct {
+	Debug         bool
+	HomeAccountID string
 }

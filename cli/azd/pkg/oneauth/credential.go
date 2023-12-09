@@ -20,7 +20,7 @@ var errNoBroker = errors.New("this build doesn't support brokered authentication
 
 type credential struct{}
 
-func NewCredential(authority, clientID, homeAccountID string, opts CredentialOptions) (UserCredential, error) {
+func NewCredential(authority, clientID string, opts CredentialOptions) (UserCredential, error) {
 	return nil, errNoBroker
 }
 

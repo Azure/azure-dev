@@ -216,9 +216,10 @@ func (m *Manager) CredentialForCurrentUser(
 
 	if currentUser.HomeAccountID != nil {
 		if currentUser.Brokered {
-			return oneauth.NewCredential(cDefaultAuthority, cAZD_CLIENT_ID, *currentUser.HomeAccountID, oneauth.CredentialOptions{
+			return oneauth.NewCredential(cDefaultAuthority, cAZD_CLIENT_ID, oneauth.CredentialOptions{
 				// TODO: read GlobalCommandOptions.EnableDebugLogging
-				Debug: false,
+				Debug:         false,
+				HomeAccountID: *currentUser.HomeAccountID,
 			})
 		}
 
@@ -504,7 +505,7 @@ func (m *Manager) LoginWithBroker(ctx context.Context, scopes []string, global *
 		scopes = LoginScopes
 	}
 	debug := global != nil && global.EnableDebugLogging
-	cred, err := oneauth.NewCredential(cDefaultAuthority, cAZD_CLIENT_ID, "", oneauth.CredentialOptions{Debug: debug})
+	cred, err := oneauth.NewCredential(cDefaultAuthority, cAZD_CLIENT_ID, oneauth.CredentialOptions{Debug: debug})
 	if err != nil {
 		return err
 	}
@@ -669,7 +670,7 @@ func (m *Manager) Logout(ctx context.Context) error {
 	// we are fine to ignore the error here, it just means there's nothing to clean up.
 	currentUser, _ := readUserProperties(cfg)
 	if currentUser != nil && currentUser.Brokered {
-		cred, err := oneauth.NewCredential(cDefaultAuthority, cAZD_CLIENT_ID, "", oneauth.CredentialOptions{
+		cred, err := oneauth.NewCredential(cDefaultAuthority, cAZD_CLIENT_ID, oneauth.CredentialOptions{
 			// TODO: read GlobalCommandOptions.EnableDebugLogging
 			Debug: false,
 		})

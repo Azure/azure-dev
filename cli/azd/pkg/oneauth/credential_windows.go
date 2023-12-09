@@ -91,13 +91,13 @@ type credential struct {
 
 // NewCredential creates a new credential that uses OneAuth to broker authentication.
 // If homeAccountID is empty, GetToken will prompt a user to authenticate.
-func NewCredential(authority, clientID, homeAccountID string, opts CredentialOptions) (UserCredential, error) {
+func NewCredential(authority, clientID string, opts CredentialOptions) (UserCredential, error) {
 	if err := findDLLs(); err != nil {
 		return nil, err
 	}
 	cred := &credential{
 		clientID:      clientID,
-		homeAccountID: homeAccountID,
+		homeAccountID: opts.HomeAccountID,
 		opts:          opts,
 	}
 	return cred, nil

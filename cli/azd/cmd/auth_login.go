@@ -121,7 +121,7 @@ func (lf *loginFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 	f.NoOptDefVal = "true"
 	b := local.VarPF(
 		&lf.manualBrowsing,
-		"manual-browser",
+		"no-browser",
 		"",
 		"When true, the URL used to complete the login process is printed instead of being opened.",
 	)

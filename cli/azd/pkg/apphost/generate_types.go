@@ -102,13 +102,6 @@ type genProjectFileContext struct {
 	Services map[string]string
 }
 
-type genContainerAppManifestTemplateContextIngress struct {
-	External      bool
-	Transport     string
-	TargetPort    int
-	AllowInsecure bool
-}
-
 type genContainerAppManifestTemplateContextDapr struct {
 	AppId              string
 	AppPort            *int

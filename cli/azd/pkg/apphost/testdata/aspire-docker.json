@@ -1,0 +1,21 @@
+{
+  "resources": {
+    "nodeapp": {
+      "type": "dockerfile.v0",
+      "path": "../NodeApp/Dockerfile",
+      "context": "../NodeApp",
+      "env": {
+        "NODE_ENV": "development",
+        "PORT": "{nodeapp.bindings.http.port}"
+      },
+      "bindings": {
+        "http": {
+          "scheme": "http",
+          "protocol": "tcp",
+          "transport": "http",
+          "containerPort": 3000
+        }
+      }
+    }
+  }
+}

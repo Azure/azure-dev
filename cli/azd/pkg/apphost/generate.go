@@ -59,6 +59,25 @@ func ProjectPaths(manifest *Manifest) map[string]string {
 	return res
 }
 
+// Dockerfiles returns information about all dockerfile.v0 resources from a manifest.
+func Dockerfiles(manifest *Manifest) map[string]genDockerfile {
+	res := make(map[string]genDockerfile)
+
+	for name, comp := range manifest.Resources {
+		switch comp.Type {
+		case "dockerfile.v0":
+			res[name] = genDockerfile{
+				Path:     *comp.Path,
+				Context:  *comp.Context,
+				Env:      comp.Env,
+				Bindings: comp.Bindings,
+			}
+		}
+	}
+
+	return res
+}
+
 // ContainerAppManifestTemplateForProject returns the container app manifest template for a given project.
 // It can be used (after evaluation) to deploy the service to a container app environment.
 func ContainerAppManifestTemplateForProject(manifest *Manifest, projectName string) (string, error) {
@@ -84,7 +103,7 @@ func ContainerAppManifestTemplateForProject(manifest *Manifest, projectName stri
 
 // BicepTemplate returns a filesystem containing the generated bicep files for the given manifest. These files represent
 // the shared infrastructure that would normally be under the `infra/` folder for the given manifest.
-func BicepTemplate(manifest *Manifest) (fs.FS, error) {
+func BicepTemplate(manifest *Manifest) (*memfs.FS, error) {
 	generator := newInfraGenerator()
 
 	if err := generator.LoadManifest(manifest); err != nil {
@@ -185,6 +204,7 @@ func GenerateProjectArtifacts(
 
 type infraGenerator struct {
 	containers        map[string]genContainer
+	dockerfiles       map[string]genDockerfile
 	projects          map[string]genProject
 	connectionStrings map[string]string
 	resourceTypes     map[string]string
@@ -204,6 +224,7 @@ func newInfraGenerator() *infraGenerator {
 			ContainerApps:                   make(map[string]genContainerApp),
 		},
 		containers:                   make(map[string]genContainer),
+		dockerfiles:                  make(map[string]genDockerfile),
 		projects:                     make(map[string]genProject),
 		connectionStrings:            make(map[string]string),
 		resourceTypes:                make(map[string]string),
@@ -225,6 +246,8 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 			b.addProject(name, *comp.Path, comp.Env, comp.Bindings)
 		case "container.v0":
 			b.addContainer(name, *comp.Image, comp.Env, comp.Bindings)
+		case "dockerfile.v0":
+			b.addDockerfile(name, *comp.Path, *comp.Context, comp.Env, comp.Bindings)
 		case "redis.v0":
 			b.addContainerAppService(name, "redis")
 		case "azure.keyvault.v0":
@@ -356,6 +379,20 @@ func (b *infraGenerator) addContainer(name string, image string, env map[string]
 	}
 }
 
+func (b *infraGenerator) addDockerfile(
+	name string, path string, context string, env map[string]string, bindings map[string]*Binding,
+) {
+	b.requireCluster()
+	b.requireContainerRegistry()
+
+	b.dockerfiles[name] = genDockerfile{
+		Path:     path,
+		Context:  context,
+		Env:      env,
+		Bindings: bindings,
+	}
+}
+
 func validateAndMergeBindings(bindings map[string]*Binding) (*Binding, error) {
 	if len(bindings) == 0 {
 		return nil, nil
@@ -410,40 +447,53 @@ func validateAndMergeBindings(bindings map[string]*Binding) (*Binding, error) {
 // infrastructure.
 func (b *infraGenerator) Compile() error {
 	for name, container := range b.containers {
-		binding, err := validateAndMergeBindings(container.Bindings)
-		if err != nil {
-			return fmt.Errorf("validating binding for %s resource: %w", name, err)
-		}
-
 		cs := genContainerApp{
 			Image: container.Image,
 		}
 
-		if binding != nil {
-			cs.Ingress = &genContainerServiceIngress{
-				External:      binding.External,
-				TargetPort:    *binding.ContainerPort,
-				Transport:     binding.Transport,
-				AllowInsecure: strings.ToLower(binding.Transport) == "http2",
-			}
+		ingress, err := buildIngress(container.Bindings)
+		if err != nil {
+			return fmt.Errorf("configuring ingress for resource %s: %w", name, err)
 		}
+
+		cs.Ingress = ingress
 
 		b.bicepContext.ContainerApps[name] = cs
 	}
 
-	for projectName, project := range b.projects {
+	for resourceName, docker := range b.dockerfiles {
 		projectTemplateCtx := genContainerAppManifestTemplateContext{
-			Name: projectName,
+			Name: resourceName,
+			Env:  make(map[string]string),
+		}
+
+		ingress, err := buildIngress(docker.Bindings)
+		if err != nil {
+			return fmt.Errorf("configuring ingress for resource %s: %w", resourceName, err)
+		}
+
+		projectTemplateCtx.Ingress = ingress
+
+		if err := b.buildEnvBlock(docker.Env, &projectTemplateCtx); err != nil {
+			return fmt.Errorf("configuring environment for resource %s: %w", resourceName, err)
+		}
+
+		b.containerAppTemplateContexts[resourceName] = projectTemplateCtx
+	}
+
+	for resourceName, project := range b.projects {
+		projectTemplateCtx := genContainerAppManifestTemplateContext{
+			Name: resourceName,
 			Env:  make(map[string]string),
 		}
 
 		binding, err := validateAndMergeBindings(project.Bindings)
 		if err != nil {
-			return fmt.Errorf("configuring ingress for project %s: %w", projectName, err)
+			return fmt.Errorf("configuring ingress for project %s: %w", resourceName, err)
 		}
 
 		if binding != nil {
-			projectTemplateCtx.Ingress = &genContainerAppManifestTemplateContextIngress{
+			projectTemplateCtx.Ingress = &genContainerAppIngress{
 				External:  binding.External,
 				Transport: binding.Transport,
 
@@ -460,135 +510,183 @@ func (b *infraGenerator) Compile() error {
 				//
 				// Note that the protocol type is apparently optional.
 				TargetPort:    8080,
-				AllowInsecure: strings.ToLower(binding.Transport) == "http2",
+				AllowInsecure: strings.ToLower(binding.Transport) == "http2" || !binding.External,
 			}
 		}
 
-		for k, v := range project.Env {
-			if !strings.HasPrefix(v, "{") || !strings.HasSuffix(v, "}") {
-				// We want to ensure that we render these values in the YAML as strings.  If `v` was the string "false"
-				// (without the quotes), we would naturally create a value directive in yaml that looks like this:
-				//
-				// - name: OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EXCEPTION_LOG_ATTRIBUTES
-				//   value: true
-				//
-				// And YAML rules would treat the above as the value being a boolean instead of a string, which the container
-				// app service expects.
-				//
-				// JSON marshalling the string value will give us something like `"true"` (with the quotes, and any escaping
-				// that needs to be done), which is what we want here.
-				jsonStr, err := json.Marshal(v)
-				if err != nil {
-					return fmt.Errorf("marshalling env value: %w", err)
+		if err := b.buildEnvBlock(project.Env, &projectTemplateCtx); err != nil {
+			return err
+		}
+
+		b.containerAppTemplateContexts[resourceName] = projectTemplateCtx
+	}
+
+	return nil
+}
+
+// buildIngress builds the ingress configuration for a given set of bindings. It returns nil, nil if no ingress should
+// be configured (i.e. the bindings are empty).
+func buildIngress(bindings map[string]*Binding) (*genContainerAppIngress, error) {
+	binding, err := validateAndMergeBindings(bindings)
+	if err != nil {
+		return nil, err
+	}
+
+	if binding != nil {
+		if binding.ContainerPort == nil {
+			return nil, fmt.Errorf(
+				"binding for does not specify a container port, " +
+					"ensure WithServiceBinding for this resource specifies a hostPort value")
+		}
+
+		return &genContainerAppIngress{
+			External:      binding.External,
+			Transport:     binding.Transport,
+			TargetPort:    *binding.ContainerPort,
+			AllowInsecure: strings.ToLower(binding.Transport) == "http2" || !binding.External,
+		}, nil
+	}
+
+	return nil, nil
+}
+
+// buildEnvBlock creates the environment map in the template context. It does this by copying the values from the given map,
+// evaluating any binding expressions that are present.
+func (b *infraGenerator) buildEnvBlock(env map[string]string, manifestCtx *genContainerAppManifestTemplateContext) error {
+	for k, v := range env {
+		if !strings.HasPrefix(v, "{") || !strings.HasSuffix(v, "}") {
+			// We want to ensure that we render these values in the YAML as strings.  If `v` was the string "true"
+			// (without the quotes), we would naturally create a value directive in yaml that looks like this:
+			//
+			// - name: OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EXCEPTION_LOG_ATTRIBUTES
+			//   value: true
+			//
+			// And YAML rules would treat the above as the value being a boolean instead of a string, which the container
+			// app service expects.
+			//
+			// JSON marshalling the string value will give us something like `"true"` (with the quotes, and any escaping
+			// that needs to be done), which is what we want here.
+			jsonStr, err := json.Marshal(v)
+			if err != nil {
+				return fmt.Errorf("marshalling env value: %w", err)
+			}
+
+			manifestCtx.Env[k] = string(jsonStr)
+			continue
+		}
+
+		parts := strings.SplitN(v[1:len(v)-1], ".", 2)
+		if len(parts) != 2 {
+			return fmt.Errorf("malformed binding expression, expected <resourceName>.<propertyPath> but was: %s", v)
+		}
+
+		resource, prop := parts[0], parts[1]
+		targetType, ok := b.resourceTypes[resource]
+		if !ok {
+			return fmt.Errorf("unknown resource referenced in binding expression: %s", resource)
+		}
+
+		switch {
+		case targetType == "project.v0" || targetType == "container.v0" || targetType == "dockerfile.v0":
+			if !strings.HasPrefix(prop, "bindings.") {
+				return fmt.Errorf("unsupported property referenced in binding expression: %s for %s", prop, targetType)
+			}
+
+			parts := strings.Split(prop[len("bindings."):], ".")
+
+			if len(parts) != 2 {
+				return fmt.Errorf("malformed binding expression, expected bindings.<binding-name>.<property> but was: %s", v)
+			}
+
+			var binding *Binding
+			var has bool
+
+			if targetType == "project.v0" {
+				binding, has = b.projects[resource].Bindings[parts[0]]
+			} else if targetType == "container.v0" {
+				binding, has = b.containers[resource].Bindings[parts[0]]
+			} else if targetType == "dockerfile.v0" {
+				binding, has = b.dockerfiles[resource].Bindings[parts[0]]
+			}
+
+			if !has {
+				return fmt.Errorf(
+					"unknown binding referenced in binding expression: %s for resource %s", parts[0], resource)
+			}
+
+			switch parts[1] {
+			case "port":
+				manifestCtx.Env[k] = fmt.Sprintf(`"%d"`, *binding.ContainerPort)
+			case "url":
+				var urlFormatString string
+
+				if binding.External {
+					urlFormatString = "%s://%s.{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}"
+				} else {
+					urlFormatString = "%s://%s.internal.{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}"
 				}
 
-				projectTemplateCtx.Env[k] = string(jsonStr)
+				manifestCtx.Env[k] = fmt.Sprintf(urlFormatString, binding.Scheme, resource)
+			default:
+				return fmt.Errorf("malformed binding expression, expected bindings.<binding-name>.[port|url] but was: %s", v)
+			}
+		case targetType == "postgres.database.v0" || targetType == "redis.v0":
+			switch prop {
+			case "connectionString":
+				manifestCtx.Env[k] = fmt.Sprintf(`{{ connectionString "%s" }}`, resource)
+			default:
+				return errUnsupportedProperty(targetType, prop)
+			}
+		case targetType == "azure.servicebus.v0":
+			switch prop {
+			case "connectionString":
+				manifestCtx.Env[k] = fmt.Sprintf(
+					"{{ urlHost .Env.SERVICE_BINDING_%s_ENDPOINT }}", scaffold.AlphaSnakeUpper(resource))
+			default:
+				return errUnsupportedProperty("azure.servicebus.v0", prop)
+			}
+		case targetType == "azure.appinsights.v0":
+			switch prop {
+			case "connectionString":
+				manifestCtx.Env[k] = fmt.Sprintf(
+					"{{ .Env.SERVICE_BINDING_%s_CONNECTION_STRING }}", scaffold.AlphaSnakeUpper(resource))
+			default:
+				return errUnsupportedProperty("azure.appinsights.v0", prop)
+			}
+		case targetType == "azure.cosmosdb.connection.v0" ||
+			targetType == "postgres.connection.v0" ||
+			targetType == "rabbitmq.connection.v0":
+
+			switch prop {
+			case "connectionString":
+				manifestCtx.Env[k] = b.connectionStrings[resource]
+			default:
+				return errUnsupportedProperty(targetType, prop)
+			}
+		case targetType == "azure.keyvault.v0" ||
+			targetType == "azure.storage.blob.v0" ||
+			targetType == "azure.storage.queue.v0" ||
+			targetType == "azure.storage.table.v0":
+			switch prop {
+			case "connectionString":
+				manifestCtx.Env[k] = fmt.Sprintf(
+					"{{ .Env.SERVICE_BINDING_%s_ENDPOINT }}", scaffold.AlphaSnakeUpper(resource))
+			default:
+				return errUnsupportedProperty(targetType, prop)
+			}
+		default:
+			ignore, err := strconv.ParseBool(os.Getenv("AZD_DEBUG_DOTNET_APPHOST_IGNORE_UNSUPPORTED_RESOURCES"))
+			if err == nil && ignore {
+				log.Printf("ignoring binding reference to resource of type %s since "+
+					"AZD_DEBUG_DOTNET_APPHOST_IGNORE_UNSUPPORTED_RESOURCES is set", targetType)
+
+				manifestCtx.Env[k] = fmt.Sprintf(
+					"!!! expression '%s' to type '%s' unsupported by azd !!!", v, targetType)
 				continue
 			}
 
-			parts := strings.SplitN(v[1:len(v)-1], ".", 2)
-			if len(parts) != 2 {
-				return fmt.Errorf("malformed binding expression, expected <resourceName>.<propertyPath> but was: %s", v)
-			}
-
-			resource, prop := parts[0], parts[1]
-			targetType, ok := b.resourceTypes[resource]
-			if !ok {
-				return fmt.Errorf("unknown resource referenced in binding expression: %s", resource)
-			}
-
-			switch {
-			case targetType == "project.v0" || targetType == "container.v0":
-				if !strings.HasPrefix(prop, "bindings.") {
-					return fmt.Errorf("unsupported property referenced in binding expression: %s for %s", prop, targetType)
-				}
-
-				parts := strings.Split(prop[len("bindings."):], ".")
-				if len(parts) != 2 || parts[1] != "url" {
-					return fmt.Errorf("malformed binding expression, expected bindings.<binding-name>.url but was: %s", v)
-				}
-
-				var binding *Binding
-				var has bool
-
-				if targetType == "project.v0" {
-					binding, has = b.projects[resource].Bindings[parts[0]]
-				} else if targetType == "container.v0" {
-					binding, has = b.containers[resource].Bindings[parts[0]]
-				}
-
-				if !has {
-					return fmt.Errorf(
-						"unknown binding referenced in binding expression: %s for resource %s", parts[0], resource)
-				}
-
-				if binding.External {
-					projectTemplateCtx.Env[k] = fmt.Sprintf(
-						"%s://%s.{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}", binding.Scheme, resource)
-				} else {
-					projectTemplateCtx.Env[k] = fmt.Sprintf(
-						"%s://%s.internal.{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}", binding.Scheme, resource)
-				}
-			case targetType == "postgres.database.v0" || targetType == "redis.v0":
-				switch prop {
-				case "connectionString":
-					projectTemplateCtx.Env[k] = fmt.Sprintf(`{{ connectionString "%s" }}`, resource)
-				default:
-					return errUnsupportedProperty(targetType, prop)
-				}
-			case targetType == "azure.servicebus.v0":
-				switch prop {
-				case "connectionString":
-					projectTemplateCtx.Env[k] = fmt.Sprintf(
-						"{{ urlHost .Env.SERVICE_BINDING_%s_ENDPOINT }}", scaffold.AlphaSnakeUpper(resource))
-				default:
-					return errUnsupportedProperty("azure.servicebus.v0", prop)
-				}
-			case targetType == "azure.appinsights.v0":
-				switch prop {
-				case "connectionString":
-					projectTemplateCtx.Env[k] = fmt.Sprintf(
-						"{{ .Env.SERVICE_BINDING_%s_CONNECTION_STRING }}", scaffold.AlphaSnakeUpper(resource))
-				default:
-					return errUnsupportedProperty("azure.appinsights.v0", prop)
-				}
-			case targetType == "azure.cosmosdb.connection.v0" ||
-				targetType == "postgres.connection.v0" ||
-				targetType == "rabbitmq.connection.v0":
-
-				switch prop {
-				case "connectionString":
-					projectTemplateCtx.Env[k] = b.connectionStrings[resource]
-				default:
-					return errUnsupportedProperty(targetType, prop)
-				}
-			case targetType == "azure.keyvault.v0" ||
-				targetType == "azure.storage.blob.v0" ||
-				targetType == "azure.storage.queue.v0" ||
-				targetType == "azure.storage.table.v0":
-				switch prop {
-				case "connectionString":
-					projectTemplateCtx.Env[k] = fmt.Sprintf(
-						"{{ .Env.SERVICE_BINDING_%s_ENDPOINT }}", scaffold.AlphaSnakeUpper(resource))
-				default:
-					return errUnsupportedProperty(targetType, prop)
-				}
-			default:
-				ignore, err := strconv.ParseBool(os.Getenv("AZD_DEBUG_DOTNET_APPHOST_IGNORE_UNSUPPORTED_RESOURCES"))
-				if err == nil && ignore {
-					log.Printf("ignoring binding reference to resource of type %s since "+
-						"AZD_DEBUG_DOTNET_APPHOST_IGNORE_UNSUPPORTED_RESOURCES is set", targetType)
-
-					projectTemplateCtx.Env[k] = fmt.Sprintf(
-						"!!! expression '%s' to type '%s' unsupported by azd !!!", v, targetType)
-					continue
-				}
-
-				return fmt.Errorf("unsupported resource type %s referenced in binding expression", targetType)
-			}
+			return fmt.Errorf("unsupported resource type %s referenced in binding expression", targetType)
 		}
-
-		b.containerAppTemplateContexts[projectName] = projectTemplateCtx
 	}
 
 	return nil

@@ -1,6 +1,6 @@
 parameters:
   TargetBranchName: $(TargetBranchName)
-  RemoteName: azure-samples-main
+  RemoteName: $(RemoteName)
   GitHubPat: $(azuresdk-github-pat)
   ResultsFileLocation: ""
 

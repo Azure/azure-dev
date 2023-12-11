@@ -497,6 +497,12 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		}
 	}
 
+	err := container.RegisterNamedSingleton(
+		string(project.ServiceLanguageDocker), project.NewDockerProjectAsFrameworkService)
+	if err != nil {
+		panic(fmt.Errorf("registering docker framework service: %w", err))
+	}
+
 	// Pipelines
 	container.RegisterSingleton(pipeline.NewPipelineManager)
 	container.RegisterSingleton(func(flags *pipelineConfigFlags) *pipeline.PipelineManagerArgs {

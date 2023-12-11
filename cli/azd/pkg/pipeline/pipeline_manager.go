@@ -5,6 +5,7 @@ package pipeline
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -150,8 +151,7 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 	}
 	defer func() { _ = infra.Cleanup() }()
 
-	// run pre-config validations. manager will check az cli is logged in and
-	// will invoke the per-provider validations.
+	// run pre-config validations.
 	rootPath := pm.azdCtx.ProjectDirectory()
 	updatedConfig, errorsFromPreConfig := pm.preConfigureCheck(ctx, infra.Options, rootPath)
 	if errorsFromPreConfig != nil {
@@ -330,8 +330,28 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 		return result, err
 	}
 
+	// Adding environment.AzdInitialEnvironmentConfigName as a secret to the pipeline as the base configuration for
+	// whenever a new environment is created. This means loading the local environment config into a pipeline secret which
+	// azd will use to restore the the config on CI
+	localEnvConfig, err := json.Marshal(pm.env.Config.Raw())
+	if err != nil {
+		return result, fmt.Errorf("failed to marshal environment config: %w", err)
+	}
+
+	additionalSecrets := map[string]string{
+		environment.AzdInitialEnvironmentConfigName: string(localEnvConfig),
+	}
+
+	additionalVariables := map[string]string{}
+	// If the user has set the resource group name as an environment variable, we need to pass it to the pipeline
+	// as this likely means rg-deployment
+	if rgGroup, exists := pm.env.LookupEnv(environment.ResourceGroupEnvVarName); exists {
+		additionalVariables[environment.ResourceGroupEnvVarName] = rgGroup
+	}
+
 	// config pipeline handles setting or creating the provider pipeline to be used
-	ciPipeline, err := pm.ciProvider.configurePipeline(ctx, gitRepoInfo, infra.Options)
+	ciPipeline, err := pm.ciProvider.configurePipeline(
+		ctx, gitRepoInfo, infra.Options, additionalSecrets, additionalVariables)
 	if err != nil {
 		return result, err
 	}

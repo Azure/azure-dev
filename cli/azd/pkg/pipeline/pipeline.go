@@ -96,6 +96,8 @@ type CiProvider interface {
 		ctx context.Context,
 		repoDetails *gitRepositoryDetails,
 		provisioningProvider provisioning.Options,
+		additionalSecrets map[string]string,
+		additionalVariables map[string]string,
 	) (CiPipeline, error)
 	// configureConnection use the credential to set up the connection from the pipeline
 	// to Azure

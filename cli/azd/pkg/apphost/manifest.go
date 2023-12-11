@@ -20,8 +20,12 @@ type Resource struct {
 	// Type is present on all resource types
 	Type string `json:"type"`
 
-	// Path is present on a project.v0 resource and is the full path to the project file.
+	// Path is present on a project.v0 resource and is the path to the project file, and on a dockerfile.v0
+	// resource and is the path to the Dockerfile (including the "Dockerfile" filename).
 	Path *string `json:"path,omitempty"`
+
+	// Context is present on a dockerfile.v0 resource and is the path to the context directory.
+	Context *string `json:"context,omitempty"`
 
 	// Parent is present on a resource which is a child of another. It is the name of the parent resource. For example, a
 	// postgres.database.v0 is a child of a postgres.server.v0, and so it would have a parent of which is the name of
@@ -31,13 +35,14 @@ type Resource struct {
 	// Image is present on a container.v0 resource and is the image to use for the container.
 	Image *string `json:"image,omitempty"`
 
-	// Bindings is present on container.v0 and project.v0 resources, and is a map of binding names to binding details.
+	// Bindings is present on container.v0, project.v0 and dockerfile.v0 resources, and is a map of binding names to
+	// binding details.
 	Bindings map[string]*Binding `json:"bindings,omitempty"`
 
-	// Env is present on a project.v0 and container.v0 resource, and is a map of environment variable names to value
-	// expressions. The value expressions are simple expressions like "{redis.connectionString}" or "{postgres.port}" to
-	// allow referencing properties of other resources. The set of properties supported in these expressions
-	// depends on the type of resource you are referencing.
+	// Env is present on project.v0, container.v0 and dockerfile.v0 resources, and is a map of environment variable
+	// names to value  expressions. The value expressions are simple expressions like "{redis.connectionString}" or
+	// "{postgres.port}" to allow referencing properties of other resources. The set of properties supported in these
+	// expressions depends on the type of resource you are referencing.
 	Env map[string]string `json:"env,omitempty"`
 
 	// Queues is optionally present on a azure.servicebus.v0 resource, and is a list of queue names to create.
@@ -100,6 +105,12 @@ func ManifestFromAppHost(ctx context.Context, appHostProject string, dotnetCli d
 		if res.Path != nil {
 			if !filepath.IsAbs(*res.Path) {
 				*res.Path = filepath.Join(manifestDir, *res.Path)
+			}
+		}
+
+		if res.Type == "dockerfile.v0" {
+			if !filepath.IsAbs(*res.Context) {
+				*res.Context = filepath.Join(manifestDir, *res.Context)
 			}
 		}
 	}

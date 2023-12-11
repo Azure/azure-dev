@@ -620,7 +620,7 @@ func (c *AskerConsole) handleResize(width int) {
 	c.spinnerLineMu.Unlock()
 }
 
-func watchConsoleWidth(c *AskerConsole) {
+func watchTerminalResize(c *AskerConsole) {
 	if runtime.GOOS == "windows" {
 		go func() {
 			prevWidth := getConsoleWidth()
@@ -645,6 +645,19 @@ func watchConsoleWidth(c *AskerConsole) {
 			}
 		}()
 	}
+}
+
+func watchTerminalInterrupt(c *AskerConsole) {
+	signalChan := make(chan os.Signal, 1)
+	signal.Notify(signalChan, os.Interrupt)
+	go func() {
+		<-signalChan
+
+		// unhide the cursor if applicable
+		_ = c.spinner.Stop()
+
+		os.Exit(1)
+	}()
 }
 
 // Creates a new console with the specified writer, handles and formatter.
@@ -673,7 +686,11 @@ func NewConsole(noPrompt bool, isTerminal bool, w io.Writer, handles ConsoleHand
 	c.spinner, _ = yacspin.New(spinnerConfig)
 	c.spinnerTerminalMode = spinnerConfig.TerminalMode
 
-	go watchConsoleWidth(c)
+	if isTerminal {
+		watchTerminalResize(c)
+		watchTerminalInterrupt(c)
+	}
+
 	return c
 }
 

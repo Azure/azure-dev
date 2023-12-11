@@ -125,11 +125,8 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, fmt.Errorf("getting cwd: %w", err)
 	}
 
-	azdCtx, err := i.lazyAzdCtx.GetValue()
-	if err != nil {
-		azdCtx = azdcontext.NewAzdContextWithDirectory(wd)
-		i.lazyAzdCtx.SetValue(azdCtx)
-	}
+	azdCtx := azdcontext.NewAzdContextWithDirectory(wd)
+	i.lazyAzdCtx.SetValue(azdCtx)
 
 	if i.flags.templateBranch != "" && i.flags.templatePath == "" {
 		return nil,

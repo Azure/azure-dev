@@ -70,6 +70,7 @@ devcentersdk
 devel
 discarder
 docf
+dockerfiles
 dockerproject
 doublestar
 dskip
@@ -178,6 +179,7 @@ tracetest
 trafficmanager
 Truef
 typeflag
+unhide
 unmarshaled
 unmarshalling
 unsetenvs

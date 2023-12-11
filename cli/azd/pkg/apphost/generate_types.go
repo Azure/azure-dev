@@ -21,10 +21,10 @@ type genKeyVault struct{}
 
 type genContainerApp struct {
 	Image   string
-	Ingress *genContainerServiceIngress
+	Ingress *genContainerAppIngress
 }
 
-type genContainerServiceIngress struct {
+type genContainerAppIngress struct {
 	External      bool
 	TargetPort    int
 	Transport     string
@@ -33,6 +33,13 @@ type genContainerServiceIngress struct {
 
 type genContainer struct {
 	Image    string
+	Env      map[string]string
+	Bindings map[string]*Binding
+}
+
+type genDockerfile struct {
+	Path     string
+	Context  string
 	Env      map[string]string
 	Bindings map[string]*Binding
 }
@@ -57,18 +64,11 @@ type genBicepTemplateContext struct {
 
 type genContainerAppManifestTemplateContext struct {
 	Name    string
-	Ingress *genContainerAppManifestTemplateContextIngress
+	Ingress *genContainerAppIngress
 	Env     map[string]string
 }
 
 type genProjectFileContext struct {
 	Name     string
 	Services map[string]string
-}
-
-type genContainerAppManifestTemplateContextIngress struct {
-	External      bool
-	Transport     string
-	TargetPort    int
-	AllowInsecure bool
 }

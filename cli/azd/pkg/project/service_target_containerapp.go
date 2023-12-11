@@ -86,7 +86,7 @@ func (at *containerAppTarget) Deploy(
 			}
 
 			// Login, tag & push container image to ACR
-			containerDeployTask := at.containerHelper.Deploy(ctx, serviceConfig, packageOutput, targetResource)
+			containerDeployTask := at.containerHelper.Deploy(ctx, serviceConfig, packageOutput, targetResource, true)
 			syncProgress(task, containerDeployTask.Progress())
 
 			_, err := containerDeployTask.Await()

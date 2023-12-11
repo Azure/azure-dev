@@ -156,7 +156,7 @@ func (t *aksTarget) Deploy(
 			}
 
 			// Login, tag & push container image to ACR
-			containerDeployTask := t.containerHelper.Deploy(ctx, serviceConfig, packageOutput, targetResource)
+			containerDeployTask := t.containerHelper.Deploy(ctx, serviceConfig, packageOutput, targetResource, true)
 			syncProgress(task, containerDeployTask.Progress())
 
 			// Sync environment

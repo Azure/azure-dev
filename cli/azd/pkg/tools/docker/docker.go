@@ -26,6 +26,7 @@ type Docker interface {
 		cwd string,
 		dockerFilePath string,
 		platform string,
+		target string,
 		buildContext string,
 		name string,
 		buildArgs []string,
@@ -70,6 +71,7 @@ func (d *docker) Build(
 	cwd string,
 	dockerFilePath string,
 	platform string,
+	target string,
 	buildContext string,
 	tagName string,
 	buildArgs []string,
@@ -95,6 +97,10 @@ func (d *docker) Build(
 		"build",
 		"-f", dockerFilePath,
 		"--platform", platform,
+	}
+
+	if target != "" {
+		args = append(args, "--target", target)
 	}
 
 	if tagName != "" {

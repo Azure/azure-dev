@@ -15,10 +15,6 @@ pr:
       - ext/gha/
       - eng/pipelines/repoman-gha.yml
 
-variables:                               
-  - template: /eng/pipelines/templates/variables/repoman-generate.yml
-    value: setup-azd-staging
-
 stages:
   - stage: Validation
     jobs:

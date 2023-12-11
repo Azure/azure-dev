@@ -54,12 +54,11 @@ var (
 	//go:embed bridge/_build/Release/bridge.dll
 	bridgeDLL []byte
 	//go:embed bridge/_build/Release/bridge.dll.sha256
-	bridgeHash []byte
-
+	bridgeChecksum []byte
 	//go:embed bridge/_build/Release/fmt.dll
 	fmtDLL []byte
 	//go:embed bridge/_build/Release/fmt.dll.sha256
-	fmtHash []byte
+	fmtChecksum []byte
 
 	// bridge is a lazy-loaded DLL that provides access to the OneAuth API
 	bridge       *windows.LazyDLL
@@ -92,7 +91,7 @@ type credential struct {
 // NewCredential creates a new credential that uses OneAuth to broker authentication.
 // If homeAccountID is empty, GetToken will prompt a user to authenticate.
 func NewCredential(authority, clientID string, opts CredentialOptions) (UserCredential, error) {
-	if err := findDLLs(); err != nil {
+	if err := loadDLL(); err != nil {
 		return nil, err
 	}
 	cred := &credential{
@@ -201,32 +200,34 @@ func (c *credential) start() error {
 	return nil
 }
 
-// TODO: check hash
-func findDLLs() error {
+// loadDLL loads the bridge DLL and its dependencies, writing them to disk if necessary.
+func loadDLL() error {
 	if bridge != nil {
 		return nil
 	}
-	exePath, err := os.Executable()
+	// cacheDir is %LocalAppData%
+	cacheDir, err := os.UserCacheDir()
 	if err != nil {
 		return err
 	}
-	write := func(name string, data []byte) error {
-		p := filepath.Join(filepath.Dir(exePath), name)
-		if _, err := os.Stat(p); err == nil {
-			err = os.Remove(p)
-			if err != nil {
-				return fmt.Errorf("couldn't remove %s: %w", p, err)
-			}
+	for _, dll := range []struct {
+		name           string
+		checksum, data []byte
+	}{
+		{name: "fmt.dll", checksum: fmtChecksum, data: fmtDLL},
+		{name: "bridge.dll", checksum: bridgeChecksum, data: bridgeDLL},
+	} {
+		hash, err := cmakeChecksumToBytes(dll.checksum)
+		if err != nil {
+			return fmt.Errorf("parsing checksum for %s: %w", dll.name, err)
 		}
-		err = os.WriteFile(p, data, 0600)
-		return err
-	}
-	err = write("fmt.dll", fmtDLL)
-	if err == nil {
-		err = write("bridge.dll", bridgeDLL)
+		err = writeDynamicLib(filepath.Join(cacheDir, "azd", dll.name), dll.data, hash)
+		if err != nil {
+			return err
+		}
 	}
 	if err == nil {
-		p := filepath.Join(filepath.Dir(exePath), "bridge.dll")
+		p := filepath.Join(cacheDir, "azd", "bridge.dll")
 		bridge = windows.NewLazyDLL(p)
 		authenticate = bridge.NewProc("Authenticate")
 		freeAR = bridge.NewProc("FreeAuthnResult")

@@ -554,8 +554,9 @@ func (sm *serviceManager) GetFrameworkService(ctx context.Context, serviceConfig
 		))
 	}
 
-	// For containerized applications we use a composite framework service
-	if serviceConfig.Host == ContainerAppTarget || serviceConfig.Host == AksTarget {
+	// For hosts which run in containers, if the source project is not already a container, we need to wrap it in a docker
+	// project that handles the containerization.
+	if serviceConfig.Host.RequiresContainer() && serviceConfig.Language != ServiceLanguageDocker {
 		var compositeFramework CompositeFrameworkService
 		if err := sm.serviceLocator.ResolveNamed(string(ServiceLanguageDocker), &compositeFramework); err != nil {
 			panic(fmt.Errorf(

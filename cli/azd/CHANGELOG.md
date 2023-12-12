@@ -1,13 +1,13 @@
 # Release History
 
-## 1.5.1 (Unreleased)
+## 1.5.1 (2023-12-13)
 
 ### Features Added
 
 - [[2998]](https://github.com/Azure/azure-dev/pull/2998) Adds support for Azure Storage Tables and Queues on Aspire projects.
 - [[3052]](https://github.com/Azure/azure-dev/pull/3052) Adds `target` argument support for docker build.
-
-### Breaking Changes
+- [[2488]](https://github.com/Azure/azure-dev/pull/2488) Adds support to override behavior of the KUBECONFIG environment variable on AKS.
+- [[3075]](https://github.com/Azure/azure-dev/pull/3075) Adds support for `dockerfile.v0` on Aspire projects.
 
 ### Bugs Fixed
 
@@ -15,6 +15,8 @@
   Truncation now happens above 30 characters instead of 12 characters.
 
 ### Other Changes
+
+- [[3044]](https://github.com/Azure/azure-dev/pull/3044) Sets allowInsecure to true for internal services on Aspire projects.
 
 ## 1.5.0 (2023-11-15)
 

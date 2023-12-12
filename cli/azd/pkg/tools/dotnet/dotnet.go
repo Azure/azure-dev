@@ -129,7 +129,9 @@ func (cli *dotNetCli) PublishAppHostManifest(
 		m, err := os.ReadFile(filepath.Join(filepath.Dir(hostProject), "apphost-manifest.json"))
 		if err != nil {
 			return fmt.Errorf(
-				"reading apphost-manifest.json (did you mean to have AZD_DEBUG_DOTNET_APPHOST_USE_FIXED_MANIFEST set?): %w", err)
+				"reading apphost-manifest.json (did you mean to have AZD_DEBUG_DOTNET_APPHOST_USE_FIXED_MANIFEST set?): %w",
+				err,
+			)
 		}
 
 		return os.WriteFile(manifestPath, m, osutil.PermissionFile)

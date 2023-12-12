@@ -89,7 +89,7 @@ func (p *ProvisionProvider) State(
 		return nil, fmt.Errorf("invalid devcenter configuration, %w", err)
 	}
 
-	envName := p.env.GetEnvName()
+	envName := p.env.Name()
 	environment, err := p.devCenterClient.
 		DevCenterByName(p.config.Name).
 		ProjectByName(p.config.Project).
@@ -159,7 +159,7 @@ func (p *ProvisionProvider) Deploy(ctx context.Context) (*provisioning.DeployRes
 		return nil, fmt.Errorf("failed saving environment: %w", err)
 	}
 
-	envName := p.env.GetEnvName()
+	envName := p.env.Name()
 
 	// Check to see if an existing devcenter environment already exists
 	existingEnv, _ := p.devCenterClient.
@@ -256,7 +256,7 @@ func (p *ProvisionProvider) Destroy(
 		return nil, fmt.Errorf("invalid devcenter configuration, %w", err)
 	}
 
-	envName := p.env.GetEnvName()
+	envName := p.env.Name()
 	spinnerMessage := fmt.Sprintf("Deleting devcenter environment %s", output.WithHighLightFormat(envName))
 
 	if !options.Force() {

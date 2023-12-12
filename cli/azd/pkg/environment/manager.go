@@ -209,15 +209,11 @@ func (m *manager) LoadOrCreateInteractive(ctx context.Context, environmentName s
 	}
 
 	if isNew {
-		if env.GetEnvName() == "" {
-			env.SetEnvName(environmentName)
-		}
-
 		if err := m.Save(ctx, env); err != nil {
 			return nil, err
 		}
 
-		if err := m.azdContext.SetDefaultEnvironmentName(env.GetEnvName()); err != nil {
+		if err := m.azdContext.SetDefaultEnvironmentName(env.Name()); err != nil {
 			return nil, fmt.Errorf("saving default environment: %w", err)
 		}
 	}
@@ -308,6 +304,15 @@ func (m *manager) Get(ctx context.Context, name string) (*Environment, error) {
 		}
 
 		localEnv = remoteEnv
+	}
+
+	// Ensures local environment variable name is synced with the environment name
+	envName, ok := localEnv.LookupEnv(EnvNameEnvVarName)
+	if !ok || envName != name {
+		localEnv.DotenvSet(EnvNameEnvVarName, name)
+		if err := m.Save(ctx, localEnv); err != nil {
+			return nil, err
+		}
 	}
 
 	return localEnv, nil

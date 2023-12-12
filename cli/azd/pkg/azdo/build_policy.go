@@ -69,7 +69,7 @@ func CreateBuildPolicy(
 
 	policySettings := map[string]interface{}{
 		"buildDefinitionId":       buildDefinition.Id,
-		"displayName":             fmt.Sprintf("Azure Dev Deploy PR - %s", env.GetEnvName()),
+		"displayName":             fmt.Sprintf("Azure Dev Deploy PR - %s", env.Name()),
 		"manualQueueOnly":         false,
 		"queueOnSourceUpdateOnly": true,
 		"validDuration":           720,

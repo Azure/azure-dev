@@ -19,7 +19,7 @@ public class ListsFunctions
     [Function("GetLists")]
     public async Task<HttpResponseData> GetLists(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "lists")]
-        HttpRequestData req, int? skip, int? batchSize)
+        HttpRequestData req, int? skip = null, int? batchSize = null)
     {
         var response = req.CreateResponse(HttpStatusCode.OK);
         var lists = await repository.GetListsAsync(skip, batchSize);
@@ -29,7 +29,7 @@ public class ListsFunctions
 
     [Function("CreateList")]
     public async Task<HttpResponseData> CreateList(
-       [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "lists")] HttpRequestData req, string listId, string name, string? description = null)
+       [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "lists")] HttpRequestData req, string name, string? description = "")
     {
         var response = req.CreateResponse(HttpStatusCode.Created);
         var todoList = new TodoList(name)
@@ -57,7 +57,7 @@ public class ListsFunctions
 
     [Function("UpdateList")]
     public async Task<HttpResponseData> UpdateList(
-       [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "lists/{listId}")] HttpRequestData req, Guid listId, string name, string? description)
+       [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "lists/{listId}")] HttpRequestData req, Guid listId, string name, string? description = "")
     {
         var response = req.CreateResponse(HttpStatusCode.OK);
         var existingList = await repository.GetListAsync(listId);
@@ -90,7 +90,7 @@ public class ListsFunctions
     [Function("GetListItems")]
     public async Task<HttpResponseData> GetListItems(
         [HttpTrigger(AuthorizationLevel.Anonymous, "get", Route = "lists/{listId}/items")]
-        HttpRequestData req, Guid listId, int? skip, int? batchSize)
+        HttpRequestData req, Guid listId, int? skip = null, int? batchSize = null)
     {
         var response = req.CreateResponse(HttpStatusCode.OK);
         if (await repository.GetListAsync(listId) == null)
@@ -105,7 +105,7 @@ public class ListsFunctions
     [Function("CreateListItem")]
     public async Task<HttpResponseData> CreateListItem(
            [HttpTrigger(AuthorizationLevel.Anonymous, "post", Route = "lists/{listId}/items")] HttpRequestData req,
-           Guid listId, string name, string? state, string? description)
+           Guid listId, string name, string? state = "", string? description = "")
     {
         var response = req.CreateResponse(HttpStatusCode.Created);
         if (await repository.GetListAsync(listId) == null)
@@ -142,8 +142,8 @@ public class ListsFunctions
     [Function("UpdateListItem")]
     public async Task<HttpResponseData> UpdateListItem(
        [HttpTrigger(AuthorizationLevel.Anonymous, "put", Route = "lists/{listId}/items/{itemId}")]
-       HttpRequestData req, Guid listId, Guid itemId, string name, string? description,
-       string state, string? completedDate, string? dueDate)
+       HttpRequestData req, Guid listId, Guid itemId, string name, string? description = "",
+       string? state = "", string? completedDate = null, string? dueDate = null)
     {
         var response = req.CreateResponse(HttpStatusCode.OK);
         var existingItem = await repository.GetListItemAsync(listId, itemId);

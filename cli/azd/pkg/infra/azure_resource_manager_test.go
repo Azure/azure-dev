@@ -467,7 +467,7 @@ func TestFindResourceGroupForEnvironment(t *testing.T) {
 
 			arm := NewAzureResourceManager(azCli, depOpService)
 			rgName, err := arm.FindResourceGroupForEnvironment(
-				*mockContext.Context, env.GetSubscriptionId(), env.GetEnvName())
+				*mockContext.Context, env.GetSubscriptionId(), env.Name())
 
 			if tt.expectedErrorText == "" {
 				require.NoError(t, err)

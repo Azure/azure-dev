@@ -85,7 +85,7 @@ services:
 
 	require.Equal(t, "test-proj", projectConfig.Name)
 	require.Equal(t, "test-proj-template", projectConfig.Metadata.Template)
-	require.Equal(t, fmt.Sprintf("rg-%s", e.GetEnvName()), projectConfig.ResourceGroupName.MustEnvsubst(e.Getenv))
+	require.Equal(t, fmt.Sprintf("rg-%s", e.Name()), projectConfig.ResourceGroupName.MustEnvsubst(e.Getenv))
 	require.Equal(t, 2, len(projectConfig.Services))
 
 	for key, svc := range projectConfig.Services {

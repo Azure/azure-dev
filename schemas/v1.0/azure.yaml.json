@@ -530,7 +530,7 @@
                 },                
                 "target": {
                     "type": "string",
-                    "title": "The target build stage to build",
+                    "title": "The target build stage to build"
                 },
                 "tag": {
                     "type": "string",

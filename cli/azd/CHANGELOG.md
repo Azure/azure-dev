@@ -13,6 +13,14 @@
 
 - [[2969]](https://github.com/Azure/azure-dev/pull/2969) Relax container names truncation logic for Aspire `redis.v0` and `postgres.database.v0`.
   Truncation now happens above 30 characters instead of 12 characters.
+- [[3035]](https://github.com/Azure/azure-dev/pull/3035) .NET Aspire issues after `azd pipeline config`.
+- [[3038]](https://github.com/Azure/azure-dev/pull/3038) Fix init to not consider parent directories.
+- [[3045]](https://github.com/Azure/azure-dev/pull/3045) Handle interrupt to unhide cursor.
+- [[3069]](https://github.com/Azure/azure-dev/pull/3069) .NET Aspire, enable `admin user` for ACR.
+- [[3049]](https://github.com/Azure/azure-dev/pull/3049) Persist location from provisioning manager.
+- [[3056]](https://github.com/Azure/azure-dev/pull/3056) Fix `azd pipeline config` for resource group deployment.
+- [[3106]](https://github.com/Azure/azure-dev/pull/3106) Fix `azd restore` on .NET projects.
+- [[3041]](https://github.com/Azure/azure-dev/pull/3041) Ensure azd environment name is synchronized to .env file.
 
 ### Other Changes
 

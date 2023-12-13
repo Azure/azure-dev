@@ -87,7 +87,7 @@ func TestTerraformState(t *testing.T) {
 	require.NotNil(t, getStateResult.State)
 
 	require.Equal(t, infraProvider.env.Dotenv()["AZURE_LOCATION"], getStateResult.State.Outputs["AZURE_LOCATION"].Value)
-	require.Equal(t, fmt.Sprintf("rg-%s", infraProvider.env.GetEnvName()), getStateResult.State.Outputs["RG_NAME"].Value)
+	require.Equal(t, fmt.Sprintf("rg-%s", infraProvider.env.Name()), getStateResult.State.Outputs["RG_NAME"].Value)
 	require.Len(t, getStateResult.State.Resources, 1)
 	require.Regexp(
 		t,

@@ -90,7 +90,9 @@
             </Component>
 
             <!-- Override ARP to display full UI during uninstall. -->
-            <Component Directory="INSTALLDIR">
+            <!-- Uncomment this block to restore displaying full UI on uninstall (which includes a notice to clean ~/.azd/bin) -->
+            <!-- See https://github.com/Azure/azure-dev/issues/3012 -->
+            <!-- <Component Directory="INSTALLDIR">
                 <RegistryKey Root="HKCU" Key="SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$(var.BaseProductName)">
                     <RegistryValue Name="DisplayName" Value="$(var.BaseProductName)" Type="string" />
                     <RegistryValue Name="DisplayVersion" Value="[ProductVersion]" Type="string" />
@@ -100,11 +102,13 @@
                     <RegistryValue Name="Publisher" Value="[Manufacturer]" Type="string" />
                     <RegistryValue Name="UninstallString" Value="msiexec.exe /X[ProductCode] /qf" Type="string" />
                 </RegistryKey>
-            </Component>
+            </Component> -->
         </Feature>
 
         <!-- Override ARP to display full UI during uninstall. -->
-        <Property Id="ARPSYSTEMCOMPONENT" Value="1" />
+        <!-- Uncomment this line to restore displaying full UI on uninstall (which includes a notice to clean ~/.azd/bin) -->
+        <!-- See https://github.com/Azure/azure-dev/issues/3012 -->
+        <!-- <Property Id="ARPSYSTEMCOMPONENT" Value="1" /> -->
 
         <!-- Broadcast environment variable changes even if a reboot is pending -->
         <CustomActionRef Id="WixBroadcastEnvironmentChange" />

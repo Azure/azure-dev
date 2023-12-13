@@ -198,6 +198,7 @@ func (t *aksTarget) Deploy(
 			kustomizeDeployed, err := t.deployKustomize(ctx, serviceConfig, task)
 			if err != nil {
 				task.SetError(fmt.Errorf("kustomize deployment failed: %w", err))
+				return
 			}
 
 			deployed = deployed || kustomizeDeployed

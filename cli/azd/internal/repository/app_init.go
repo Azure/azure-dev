@@ -94,7 +94,7 @@ func (i *Initializer) InitFromApp(
 		appHostManifests[prj.Path] = manifest
 
 		for _, path := range apphost.ProjectPaths(manifest) {
-			appHostForProject[path] = prj.Path
+			appHostForProject[filepath.Dir(path)] = prj.Path
 		}
 	}
 

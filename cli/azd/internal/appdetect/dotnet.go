@@ -56,7 +56,7 @@ func (dd *dotNetDetector) DetectProject(ctx context.Context, path string, entrie
 
 		return &Project{
 			Language:      DotNet,
-			Path:          path,
+			Path:          projectPath,
 			DetectionRule: "Inferred by presence of: " + fmt.Sprintf("%s, %s", projFileName, startUpFileName),
 		}, nil
 	}

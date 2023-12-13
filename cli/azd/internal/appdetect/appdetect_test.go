@@ -33,7 +33,7 @@ func TestDetect(t *testing.T) {
 			[]Project{
 				{
 					Language:      DotNet,
-					Path:          "dotnet",
+					Path:          filepath.Join("dotnet", "dotnettestapp.csproj"),
 					DetectionRule: "Inferred by presence of: dotnettestapp.csproj, program.cs",
 				},
 				{
@@ -103,7 +103,7 @@ func TestDetect(t *testing.T) {
 			[]Project{
 				{
 					Language:      DotNet,
-					Path:          "dotnet",
+					Path:          filepath.Join("dotnet", "dotnettestapp.csproj"),
 					DetectionRule: "Inferred by presence of: dotnettestapp.csproj, program.cs",
 				},
 				{
@@ -122,7 +122,7 @@ func TestDetect(t *testing.T) {
 			[]Project{
 				{
 					Language:      DotNet,
-					Path:          "dotnet",
+					Path:          filepath.Join("dotnet", "dotnettestapp.csproj"),
 					DetectionRule: "Inferred by presence of: dotnettestapp.csproj, program.cs",
 				},
 				{
@@ -144,7 +144,7 @@ func TestDetect(t *testing.T) {
 			[]Project{
 				{
 					Language:      DotNet,
-					Path:          "dotnet",
+					Path:          filepath.Join("dotnet", "dotnettestapp.csproj"),
 					DetectionRule: "Inferred by presence of: dotnettestapp.csproj, program.cs",
 				},
 				{
@@ -190,7 +190,7 @@ func TestDetectDocker(t *testing.T) {
 	require.Len(t, projects, 1)
 	require.Equal(t, projects[0], Project{
 		Language:      DotNet,
-		Path:          filepath.Join(dir, "dotnet"),
+		Path:          filepath.Join(dir, "dotnet", "dotnettestapp.csproj"),
 		DetectionRule: "Inferred by presence of: dotnettestapp.csproj, program.cs",
 		Docker: &Docker{
 			Path: filepath.Join(dir, "dotnet", "Dockerfile"),
@@ -217,7 +217,7 @@ func TestDetectNested(t *testing.T) {
 	require.Len(t, projects, 1)
 	require.Equal(t, projects[0], Project{
 		Language:      DotNet,
-		Path:          filepath.Join(src, "dotnet"),
+		Path:          filepath.Join(src, "dotnet", "dotnettestapp.csproj"),
 		DetectionRule: "Inferred by presence of: dotnettestapp.csproj, program.cs",
 	})
 }

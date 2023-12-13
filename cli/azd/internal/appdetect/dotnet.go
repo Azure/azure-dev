@@ -32,8 +32,7 @@ func (dd *dotNetDetector) DetectProject(ctx context.Context, path string, entrie
 		// This detection logic doesn't work if Program.cs has been renamed, or moved into a different directory.
 		// A true detection of an "Application" is much harder since ASP .NET applications are just libraries
 		// that are ran with "dotnet run".
-		name = strings.ToLower(name)
-		switch name {
+		switch strings.ToLower(name) {
 		case "program.cs", "program.fs", "program.vb":
 			hasStartupFile = true
 			startUpFileName = name

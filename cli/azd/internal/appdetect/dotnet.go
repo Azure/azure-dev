@@ -4,11 +4,15 @@ import (
 	"context"
 	"fmt"
 	"io/fs"
+	"log"
 	"path/filepath"
 	"strings"
+
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 )
 
 type dotNetDetector struct {
+	dotnetCli dotnet.DotNetCli
 }
 
 func (dd *dotNetDetector) Language() Language {
@@ -43,6 +47,13 @@ func (dd *dotNetDetector) DetectProject(ctx context.Context, path string, entrie
 	}
 
 	if hasProjectFile && hasStartupFile {
+		projectPath := filepath.Join(path, projFileName)
+		if isWasm, err := dd.isWasmProject(ctx, projectPath); err != nil {
+			log.Printf("error checking if %s is a browser-wasm project: %v", projectPath, err)
+		} else if isWasm { // Web assembly projects currently not supported as hostable application project
+			return nil, nil
+		}
+
 		return &Project{
 			Language:      DotNet,
 			Path:          path,
@@ -51,4 +62,13 @@ func (dd *dotNetDetector) DetectProject(ctx context.Context, path string, entrie
 	}
 
 	return nil, nil
+}
+
+func (ad *dotNetDetector) isWasmProject(ctx context.Context, projectPath string) (bool, error) {
+	value, err := ad.dotnetCli.GetMsBuildProperty(ctx, projectPath, "RuntimeIdentifier")
+	if err != nil {
+		return false, err
+	}
+
+	return strings.TrimSpace(value) == "browser-wasm", nil
 }

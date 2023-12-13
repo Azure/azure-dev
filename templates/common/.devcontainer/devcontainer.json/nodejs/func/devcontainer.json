@@ -1,11 +1,6 @@
 {
     "name": "Azure Developer CLI",
-    "build": {
-        "dockerfile": "Dockerfile",
-        "args": {
-            "IMAGE": "javascript-node:18-bullseye"
-        }
-    },
+    "image": "mcr.microsoft.com/devcontainers/javascript-node:18-bullseye",
     "features": {
         "ghcr.io/devcontainers/features/docker-in-docker:2": {
         },
@@ -30,7 +25,7 @@
         3000,
         3100
     ],
-    "postCreateCommand": "",
+    "postCreateCommand": "echo 'Installing functions-core-tools:' && cd && mkdir functions-core-tools-install && cd functions-core-tools-install && wget -q \"https://github.com/Azure/azure-functions-core-tools/releases/download/4.0.5455/Azure.Functions.Cli.linux-x64.4.0.5455.zip\" && echo ' - extracting files.' && unzip -q -d azure-functions-cli Azure.Functions.Cli.linux-x64.4.0.5455.zip && rm Azure.Functions.Cli.linux-x64.4.0.5455.zip && cd azure-functions-cli && chmod +x func && chmod +x gozip && echo ' - export func.' && sudo rsync -av ~/functions-core-tools-install/azure-functions-cli/ /usr/bin/",
     "remoteUser": "node",
     "hostRequirements": {
         "memory": "8gb"

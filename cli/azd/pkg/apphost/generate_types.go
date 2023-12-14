@@ -51,6 +51,7 @@ type genProject struct {
 }
 
 type genDapr struct {
+	AppId                  string
 	Application            string
 	AppPort                *int
 	AppProtocol            *string

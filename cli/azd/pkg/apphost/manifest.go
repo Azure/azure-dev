@@ -63,6 +63,7 @@ type Resource struct {
 }
 
 type DaprResourceMetadata struct {
+	AppId                  *string `json:"appId,omitempty"`
 	Application            *string `json:"application,omitempty"`
 	AppPort                *int    `json:"appPort,omitempty"`
 	AppProtocol            *string `json:"appProtocol,omitempty"`

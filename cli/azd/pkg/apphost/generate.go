@@ -413,7 +413,7 @@ func (b *infraGenerator) addContainer(name string, image string, env map[string]
 }
 
 func (b *infraGenerator) addDapr(name string, metadata *DaprResourceMetadata) error {
-	if metadata == nil || metadata.Application == nil {
+	if metadata == nil || metadata.Application == nil || metadata.AppId == nil {
 		return fmt.Errorf("dapr resource '%s' did not include required metadata", name)
 	}
 
@@ -421,6 +421,7 @@ func (b *infraGenerator) addDapr(name string, metadata *DaprResourceMetadata) er
 
 	// NOTE: ACA only supports a small subset of the Dapr sidecar configuration options.
 	b.dapr[name] = genDapr{
+		AppId:                  *metadata.AppId,
 		Application:            *metadata.Application,
 		AppPort:                metadata.AppPort,
 		AppProtocol:            metadata.AppProtocol,
@@ -640,7 +641,7 @@ func (b *infraGenerator) Compile() error {
 			}
 		}
 
-		for daprName, dapr := range b.dapr {
+		for _, dapr := range b.dapr {
 			if dapr.Application == resourceName {
 				appPort := dapr.AppPort
 
@@ -649,7 +650,7 @@ func (b *infraGenerator) Compile() error {
 				}
 
 				projectTemplateCtx.Dapr = &genContainerAppManifestTemplateContextDapr{
-					AppId:              daprName,
+					AppId:              dapr.AppId,
 					AppPort:            appPort,
 					AppProtocol:        dapr.AppProtocol,
 					EnableApiLogging:   dapr.EnableApiLogging,

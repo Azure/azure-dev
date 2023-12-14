@@ -20,8 +20,13 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 )
 
+// Credentials for authenticating with a docker registry,
+// can be both username/password or access token based.
 type DockerCredentials struct {
-	Username    string
+	// Username is the name of the user. Note that this may be set to a value like
+	// '00000000-0000-0000-0000-000000000000' when using access tokens.
+	Username string
+	// Password is the password for the user, or the access token when using access tokens.
 	Password    string
 	LoginServer string
 }
@@ -105,6 +110,8 @@ func (crs *containerRegistryService) Login(ctx context.Context, subscriptionId s
 
 // Credentials gets the credentials that could be used to login to the specified container registry. It prefers to use
 // AAD token credentials for the current user, but if that fails it will fall back to admin user credentials.
+// Note: the loginServer returned as part of the credentials, and will always match the parameter on success, and is
+// only added as convenience.
 func (crs *containerRegistryService) Credentials(
 	ctx context.Context, subscriptionId string, loginServer string,
 ) (*DockerCredentials, error) {
@@ -136,6 +143,9 @@ func (crs *containerRegistryService) getTokenCredentials(
 		return nil, fmt.Errorf("failed getting ACR token: %w", err)
 	}
 
+	// Set it to 00000000-0000-0000-0000-000000000000 as per documented in
+	//nolint:lll
+	// https://learn.microsoft.com/en-us/azure/container-registry/container-registry-authentication?tabs=azure-cli#individual-login-with-microsoft-entra-id
 	return &DockerCredentials{
 		Username:    "00000000-0000-0000-0000-000000000000",
 		Password:    acrToken.RefreshToken,

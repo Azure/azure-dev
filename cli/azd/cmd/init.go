@@ -125,11 +125,8 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		return nil, fmt.Errorf("getting cwd: %w", err)
 	}
 
-	azdCtx, err := i.lazyAzdCtx.GetValue()
-	if err != nil {
-		azdCtx = azdcontext.NewAzdContextWithDirectory(wd)
-		i.lazyAzdCtx.SetValue(azdCtx)
-	}
+	azdCtx := azdcontext.NewAzdContextWithDirectory(wd)
+	i.lazyAzdCtx.SetValue(azdCtx)
 
 	if i.flags.templateBranch != "" && i.flags.templatePath == "" {
 		return nil,
@@ -359,7 +356,7 @@ func (i *initAction) initializeEnv(
 		return nil, fmt.Errorf("loading environment: %w", err)
 	}
 
-	if err := azdCtx.SetDefaultEnvironmentName(env.GetEnvName()); err != nil {
+	if err := azdCtx.SetDefaultEnvironmentName(env.Name()); err != nil {
 		return nil, fmt.Errorf("saving default environment: %w", err)
 	}
 

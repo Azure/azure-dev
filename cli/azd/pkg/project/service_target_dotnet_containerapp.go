@@ -105,19 +105,36 @@ func (at *dotnetContainerAppTarget) Deploy(
 
 			task.SetProgress(NewServiceProgress("Pushing container image"))
 
-			imageName := fmt.Sprintf("azd-deploy-%s-%d", serviceConfig.Name, time.Now().Unix())
+			var remoteImageName string
 
-			err = at.dotNetCli.PublishContainer(
-				ctx,
-				serviceConfig.Path(),
-				"Debug",
-				imageName,
-				dockerCreds.LoginServer,
-				dockerCreds.Username,
-				dockerCreds.Password)
-			if err != nil {
-				task.SetError(fmt.Errorf("publishing container: %w", err))
-				return
+			if serviceConfig.Language == ServiceLanguageDocker {
+				containerDeployTask := at.containerHelper.Deploy(ctx, serviceConfig, packageOutput, targetResource, false)
+				syncProgress(task, containerDeployTask.Progress())
+
+				res, err := containerDeployTask.Await()
+				if err != nil {
+					task.SetError(err)
+					return
+				}
+
+				remoteImageName = res.Details.(*dockerDeployResult).RemoteImageTag
+			} else {
+				imageName := fmt.Sprintf("azd-deploy-%s-%d", serviceConfig.Name, time.Now().Unix())
+
+				err = at.dotNetCli.PublishContainer(
+					ctx,
+					serviceConfig.Path(),
+					"Debug",
+					imageName,
+					dockerCreds.LoginServer,
+					dockerCreds.Username,
+					dockerCreds.Password)
+				if err != nil {
+					task.SetError(fmt.Errorf("publishing container: %w", err))
+					return
+				}
+
+				remoteImageName = fmt.Sprintf("%s/%s", dockerCreds.LoginServer, imageName)
 			}
 
 			task.SetProgress(NewServiceProgress("Updating container app"))
@@ -181,7 +198,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 				Image string
 			}{
 				Env:   at.env.Dotenv(),
-				Image: fmt.Sprintf("%s/%s", dockerCreds.LoginServer, imageName),
+				Image: remoteImageName,
 			})
 			if err != nil {
 				task.SetError(fmt.Errorf("failed executing template file: %w", err))

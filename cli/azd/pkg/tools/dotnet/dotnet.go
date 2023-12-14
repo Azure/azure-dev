@@ -131,7 +131,9 @@ func (cli *dotNetCli) PublishAppHostManifest(
 		m, err := os.ReadFile(filepath.Join(filepath.Dir(hostProject), "apphost-manifest.json"))
 		if err != nil {
 			return fmt.Errorf(
-				"reading apphost-manifest.json (did you mean to have AZD_DEBUG_DOTNET_APPHOST_USE_FIXED_MANIFEST set?): %w", err)
+				"reading apphost-manifest.json (did you mean to have AZD_DEBUG_DOTNET_APPHOST_USE_FIXED_MANIFEST set?): %w",
+				err,
+			)
 		}
 
 		return os.WriteFile(manifestPath, m, osutil.PermissionFile)
@@ -168,9 +170,6 @@ func (cli *dotNetCli) PublishContainer(
 		fmt.Sprintf("SDK_CONTAINER_REGISTRY_UNAME=%s", username),
 		fmt.Sprintf("SDK_CONTAINER_REGISTRY_PWORD=%s", password),
 	})
-
-	// TODO(ellismg): Remove this when the .NET 8 RTM base images have been pushed.
-	runArgs = runArgs.AppendParams("--self-contained")
 
 	_, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {

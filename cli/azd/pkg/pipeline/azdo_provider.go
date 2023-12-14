@@ -757,6 +757,8 @@ func (p *AzdoCiProvider) configurePipeline(
 	ctx context.Context,
 	repoDetails *gitRepositoryDetails,
 	provisioningProvider provisioning.Options,
+	additionalSecrets map[string]string,
+	additionalVariables map[string]string,
 ) (CiPipeline, error) {
 	details := repoDetails.details.(*AzdoRepositoryDetails)
 
@@ -782,6 +784,8 @@ func (p *AzdoCiProvider) configurePipeline(
 		p.Env,
 		p.console,
 		provisioningProvider,
+		additionalSecrets,
+		additionalVariables,
 	)
 	if err != nil {
 		return nil, err

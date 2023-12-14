@@ -81,7 +81,7 @@ func (ch *ContainerHelper) LocalImageTag(ctx context.Context, serviceConfig *Ser
 	return fmt.Sprintf("%s/%s-%s:azd-deploy-%d",
 		strings.ToLower(serviceConfig.Project.Name),
 		strings.ToLower(serviceConfig.Name),
-		strings.ToLower(ch.env.GetEnvName()),
+		strings.ToLower(ch.env.Name()),
 		ch.clock.Now().Unix(),
 	), nil
 }
@@ -102,6 +102,18 @@ func (ch *ContainerHelper) Login(
 	}
 
 	return loginServer, ch.containerRegistryService.Login(ctx, targetResource.SubscriptionId(), loginServer)
+}
+
+func (ch *ContainerHelper) Credentials(
+	ctx context.Context,
+	targetResource *environment.TargetResource,
+) (*azcli.DockerCredentials, error) {
+	loginServer, err := ch.RegistryName(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return ch.containerRegistryService.Credentials(ctx, targetResource.SubscriptionId(), loginServer)
 }
 
 // Deploy pushes and image to a remote server, and optionally writes the fully qualified remote image name to the

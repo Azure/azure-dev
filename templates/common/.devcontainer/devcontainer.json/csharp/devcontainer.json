@@ -1,6 +1,6 @@
 {
     "name": "Azure Developer CLI",
-    "image": "mcr.microsoft.com/devcontainers/dotnet:6.0-bullseye",
+    "image": "mcr.microsoft.com/devcontainers/dotnet:8.0-bookworm",
     "features": {
         "ghcr.io/devcontainers/features/docker-in-docker:2": {
         },

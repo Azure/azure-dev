@@ -698,143 +698,143 @@ func buildIngress(bindings map[string]*Binding) (*genContainerAppIngress, error)
 	return nil, nil
 }
 
+// evalBindingRef evaluates a binding reference expression based on the state of the manifest loaded into the generator.
+func (b infraGenerator) evalBindingRef(v string) (string, error) {
+	parts := strings.SplitN(v, ".", 2)
+	if len(parts) != 2 {
+		return "", fmt.Errorf("malformed binding expression, expected <resourceName>.<propertyPath> but was: %s", v)
+	}
+
+	resource, prop := parts[0], parts[1]
+	targetType, ok := b.resourceTypes[resource]
+	if !ok {
+		return "", fmt.Errorf("unknown resource referenced in binding expression: %s", resource)
+	}
+
+	switch {
+	case targetType == "project.v0" || targetType == "container.v0" || targetType == "dockerfile.v0":
+		if !strings.HasPrefix(prop, "bindings.") {
+			return "", fmt.Errorf("unsupported property referenced in binding expression: %s for %s", prop, targetType)
+		}
+
+		parts := strings.Split(prop[len("bindings."):], ".")
+
+		if len(parts) != 2 {
+			return "", fmt.Errorf("malformed binding expression, expected "+
+				"bindings.<binding-name>.<property> but was: %s", v)
+		}
+
+		var binding *Binding
+		var has bool
+
+		if targetType == "project.v0" {
+			binding, has = b.projects[resource].Bindings[parts[0]]
+		} else if targetType == "container.v0" {
+			binding, has = b.containers[resource].Bindings[parts[0]]
+		} else if targetType == "dockerfile.v0" {
+			binding, has = b.dockerfiles[resource].Bindings[parts[0]]
+		}
+
+		if !has {
+			return "", fmt.Errorf("unknown binding referenced in binding expression: %s for resource %s", parts[0], resource)
+		}
+
+		switch parts[1] {
+		case "port":
+			return fmt.Sprintf(`%d`, *binding.ContainerPort), nil
+		case "url":
+			var urlFormatString string
+
+			if binding.External {
+				urlFormatString = "%s://%s.{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}"
+			} else {
+				urlFormatString = "%s://%s.internal.{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}"
+			}
+
+			return fmt.Sprintf(urlFormatString, binding.Scheme, resource), nil
+		default:
+			return "", fmt.Errorf("malformed binding expression, expected bindings.<binding-name>.[port|url] but was: %s", v)
+		}
+	case targetType == "postgres.database.v0" || targetType == "redis.v0":
+		switch prop {
+		case "connectionString":
+			return fmt.Sprintf(`{{ connectionString "%s" }}`, resource), nil
+		default:
+			return "", errUnsupportedProperty(targetType, prop)
+		}
+	case targetType == "azure.servicebus.v0":
+		switch prop {
+		case "connectionString":
+			return fmt.Sprintf("{{ urlHost .Env.SERVICE_BINDING_%s_ENDPOINT }}", scaffold.AlphaSnakeUpper(resource)), nil
+		default:
+			return "", errUnsupportedProperty("azure.servicebus.v0", prop)
+		}
+	case targetType == "azure.appinsights.v0":
+		switch prop {
+		case "connectionString":
+			return fmt.Sprintf("{{ .Env.SERVICE_BINDING_%s_CONNECTION_STRING }}", scaffold.AlphaSnakeUpper(resource)), nil
+		default:
+			return "", errUnsupportedProperty("azure.appinsights.v0", prop)
+		}
+	case targetType == "azure.cosmosdb.connection.v0" ||
+		targetType == "postgres.connection.v0" ||
+		targetType == "rabbitmq.connection.v0":
+
+		switch prop {
+		case "connectionString":
+			return b.connectionStrings[resource], nil
+		default:
+			return "", errUnsupportedProperty(targetType, prop)
+		}
+	case targetType == "azure.keyvault.v0" ||
+		targetType == "azure.storage.blob.v0" ||
+		targetType == "azure.storage.queue.v0" ||
+		targetType == "azure.storage.table.v0":
+		switch prop {
+		case "connectionString":
+			return fmt.Sprintf("{{ .Env.SERVICE_BINDING_%s_ENDPOINT }}", scaffold.AlphaSnakeUpper(resource)), nil
+		default:
+			return "", errUnsupportedProperty(targetType, prop)
+		}
+	default:
+		ignore, err := strconv.ParseBool(os.Getenv("AZD_DEBUG_DOTNET_APPHOST_IGNORE_UNSUPPORTED_RESOURCES"))
+		if err == nil && ignore {
+			log.Printf("ignoring binding reference to resource of type %s since "+
+				"AZD_DEBUG_DOTNET_APPHOST_IGNORE_UNSUPPORTED_RESOURCES is set", targetType)
+
+			return fmt.Sprintf("!!! expression '%s' to type '%s' unsupported by azd !!!", v, targetType), nil
+		}
+
+		return "", fmt.Errorf("unsupported resource type %s referenced in binding expression", targetType)
+	}
+}
+
 // buildEnvBlock creates the environment map in the template context. It does this by copying the values from the given map,
 // evaluating any binding expressions that are present.
 func (b *infraGenerator) buildEnvBlock(env map[string]string, manifestCtx *genContainerAppManifestTemplateContext) error {
-	for k, v := range env {
-		if !strings.HasPrefix(v, "{") || !strings.HasSuffix(v, "}") {
-			// We want to ensure that we render these values in the YAML as strings.  If `v` was the string "true"
-			// (without the quotes), we would naturally create a value directive in yaml that looks like this:
-			//
-			// - name: OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EXCEPTION_LOG_ATTRIBUTES
-			//   value: true
-			//
-			// And YAML rules would treat the above as the value being a boolean instead of a string, which the container
-			// app service expects.
-			//
-			// JSON marshalling the string value will give us something like `"true"` (with the quotes, and any escaping
-			// that needs to be done), which is what we want here.
-			jsonStr, err := json.Marshal(v)
-			if err != nil {
-				return fmt.Errorf("marshalling env value: %w", err)
-			}
-
-			manifestCtx.Env[k] = string(jsonStr)
-			continue
+	for k, value := range env {
+		res, err := evalString(value, b.evalBindingRef)
+		if err != nil {
+			return fmt.Errorf("evaluating value for %s: %w", k, err)
 		}
 
-		parts := strings.SplitN(v[1:len(v)-1], ".", 2)
-		if len(parts) != 2 {
-			return fmt.Errorf("malformed binding expression, expected <resourceName>.<propertyPath> but was: %s", v)
+		// We want to ensure that we render these values in the YAML as strings.  If `res` was the string "true"
+		// (without the quotes), we would naturally create a value directive in yaml that looks like this:
+		//
+		// - name: OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EXCEPTION_LOG_ATTRIBUTES
+		//   value: true
+		//
+		// And YAML rules would treat the above as the value being a boolean instead of a string, which the container
+		// app service expects.
+		//
+		// JSON marshalling the string value will give us something like `"true"` (with the quotes, and any escaping
+		// that needs to be done), which is what we want here.
+		jsonStr, err := json.Marshal(res)
+		if err != nil {
+			return fmt.Errorf("marshalling env value: %w", err)
 		}
 
-		resource, prop := parts[0], parts[1]
-		targetType, ok := b.resourceTypes[resource]
-		if !ok {
-			return fmt.Errorf("unknown resource referenced in binding expression: %s", resource)
-		}
-
-		switch {
-		case targetType == "project.v0" || targetType == "container.v0" || targetType == "dockerfile.v0":
-			if !strings.HasPrefix(prop, "bindings.") {
-				return fmt.Errorf("unsupported property referenced in binding expression: %s for %s", prop, targetType)
-			}
-
-			parts := strings.Split(prop[len("bindings."):], ".")
-
-			if len(parts) != 2 {
-				return fmt.Errorf("malformed binding expression, expected bindings.<binding-name>.<property> but was: %s", v)
-			}
-
-			var binding *Binding
-			var has bool
-
-			if targetType == "project.v0" {
-				binding, has = b.projects[resource].Bindings[parts[0]]
-			} else if targetType == "container.v0" {
-				binding, has = b.containers[resource].Bindings[parts[0]]
-			} else if targetType == "dockerfile.v0" {
-				binding, has = b.dockerfiles[resource].Bindings[parts[0]]
-			}
-
-			if !has {
-				return fmt.Errorf(
-					"unknown binding referenced in binding expression: %s for resource %s", parts[0], resource)
-			}
-
-			switch parts[1] {
-			case "port":
-				manifestCtx.Env[k] = fmt.Sprintf(`"%d"`, *binding.ContainerPort)
-			case "url":
-				var urlFormatString string
-
-				if binding.External {
-					urlFormatString = "%s://%s.{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}"
-				} else {
-					urlFormatString = "%s://%s.internal.{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}"
-				}
-
-				manifestCtx.Env[k] = fmt.Sprintf(urlFormatString, binding.Scheme, resource)
-			default:
-				return fmt.Errorf("malformed binding expression, expected bindings.<binding-name>.[port|url] but was: %s", v)
-			}
-		case targetType == "postgres.database.v0" || targetType == "redis.v0":
-			switch prop {
-			case "connectionString":
-				manifestCtx.Env[k] = fmt.Sprintf(`{{ connectionString "%s" }}`, resource)
-			default:
-				return errUnsupportedProperty(targetType, prop)
-			}
-		case targetType == "azure.servicebus.v0":
-			switch prop {
-			case "connectionString":
-				manifestCtx.Env[k] = fmt.Sprintf(
-					"{{ urlHost .Env.SERVICE_BINDING_%s_ENDPOINT }}", scaffold.AlphaSnakeUpper(resource))
-			default:
-				return errUnsupportedProperty("azure.servicebus.v0", prop)
-			}
-		case targetType == "azure.appinsights.v0":
-			switch prop {
-			case "connectionString":
-				manifestCtx.Env[k] = fmt.Sprintf(
-					"{{ .Env.SERVICE_BINDING_%s_CONNECTION_STRING }}", scaffold.AlphaSnakeUpper(resource))
-			default:
-				return errUnsupportedProperty("azure.appinsights.v0", prop)
-			}
-		case targetType == "azure.cosmosdb.connection.v0" ||
-			targetType == "postgres.connection.v0" ||
-			targetType == "rabbitmq.connection.v0":
-
-			switch prop {
-			case "connectionString":
-				manifestCtx.Env[k] = b.connectionStrings[resource]
-			default:
-				return errUnsupportedProperty(targetType, prop)
-			}
-		case targetType == "azure.keyvault.v0" ||
-			targetType == "azure.storage.blob.v0" ||
-			targetType == "azure.storage.queue.v0" ||
-			targetType == "azure.storage.table.v0":
-			switch prop {
-			case "connectionString":
-				manifestCtx.Env[k] = fmt.Sprintf(
-					"{{ .Env.SERVICE_BINDING_%s_ENDPOINT }}", scaffold.AlphaSnakeUpper(resource))
-			default:
-				return errUnsupportedProperty(targetType, prop)
-			}
-		default:
-			ignore, err := strconv.ParseBool(os.Getenv("AZD_DEBUG_DOTNET_APPHOST_IGNORE_UNSUPPORTED_RESOURCES"))
-			if err == nil && ignore {
-				log.Printf("ignoring binding reference to resource of type %s since "+
-					"AZD_DEBUG_DOTNET_APPHOST_IGNORE_UNSUPPORTED_RESOURCES is set", targetType)
-
-				manifestCtx.Env[k] = fmt.Sprintf(
-					"!!! expression '%s' to type '%s' unsupported by azd !!!", v, targetType)
-				continue
-			}
-
-			return fmt.Errorf("unsupported resource type %s referenced in binding expression", targetType)
-		}
+		manifestCtx.Env[k] = string(jsonStr)
 	}
 
 	return nil

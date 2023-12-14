@@ -172,7 +172,7 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 
 	// Verify that resource groups are created with tag
 	resourceManager := infra.NewAzureResourceManager(azCli, deploymentOperations)
-	rgs, err := resourceManager.GetResourceGroupsForEnvironment(ctx, env.GetSubscriptionId(), env.GetEnvName())
+	rgs, err := resourceManager.GetResourceGroupsForEnvironment(ctx, env.GetSubscriptionId(), env.Name())
 	require.NoError(t, err)
 	require.NotNil(t, rgs)
 
@@ -371,7 +371,7 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 
 	// Verify that resource groups are created with tag
 	resourceManager := infra.NewAzureResourceManager(azCli, deploymentOperations)
-	rgs, err := resourceManager.GetResourceGroupsForEnvironment(ctx, env.GetSubscriptionId(), env.GetEnvName())
+	rgs, err := resourceManager.GetResourceGroupsForEnvironment(ctx, env.GetSubscriptionId(), env.Name())
 	require.NoError(t, err)
 	require.NotNil(t, rgs)
 

@@ -59,7 +59,7 @@ func NewDotNetContainerAppTarget(
 
 // Gets the required external tools
 func (at *dotnetContainerAppTarget) RequiredExternalTools(ctx context.Context) []tools.ExternalTool {
-	return tools.Unique(append(at.containerHelper.RequiredExternalTools(ctx), at.dotNetCli))
+	return []tools.ExternalTool{at.dotNetCli}
 }
 
 // Initializes the Container App target
@@ -97,7 +97,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 			task.SetProgress(NewServiceProgress("Logging in to registry"))
 
 			// Login, tag & push container image to ACR
-			loginServer, err := at.containerHelper.Login(ctx, targetResource)
+			dockerCreds, err := at.containerHelper.Credentials(ctx, targetResource)
 			if err != nil {
 				task.SetError(fmt.Errorf("logging in to registry: %w", err))
 				return
@@ -121,13 +121,20 @@ func (at *dotnetContainerAppTarget) Deploy(
 			} else {
 				imageName := fmt.Sprintf("azd-deploy-%s-%d", serviceConfig.Name, time.Now().Unix())
 
-				err = at.dotNetCli.PublishContainer(ctx, serviceConfig.Path(), "Debug", imageName, loginServer)
+				err = at.dotNetCli.PublishContainer(
+					ctx,
+					serviceConfig.Path(),
+					"Debug",
+					imageName,
+					dockerCreds.LoginServer,
+					dockerCreds.Username,
+					dockerCreds.Password)
 				if err != nil {
 					task.SetError(fmt.Errorf("publishing container: %w", err))
 					return
 				}
 
-				remoteImageName = fmt.Sprintf("%s/%s", loginServer, imageName)
+				remoteImageName = fmt.Sprintf("%s/%s", dockerCreds.LoginServer, imageName)
 			}
 
 			task.SetProgress(NewServiceProgress("Updating container app"))

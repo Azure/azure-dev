@@ -104,6 +104,18 @@ func (ch *ContainerHelper) Login(
 	return loginServer, ch.containerRegistryService.Login(ctx, targetResource.SubscriptionId(), loginServer)
 }
 
+func (ch *ContainerHelper) Credentials(
+	ctx context.Context,
+	targetResource *environment.TargetResource,
+) (*azcli.DockerCredentials, error) {
+	loginServer, err := ch.RegistryName(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return ch.containerRegistryService.Credentials(ctx, targetResource.SubscriptionId(), loginServer)
+}
+
 // Deploy pushes and image to a remote server, and optionally writes the fully qualified remote image name to the
 // environment on success.
 func (ch *ContainerHelper) Deploy(

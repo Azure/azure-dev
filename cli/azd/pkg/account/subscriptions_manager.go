@@ -317,7 +317,7 @@ func (m *SubscriptionsManager) ListLocations(
 	var err error
 	msg := "Retrieving locations..."
 	m.console.ShowSpinner(ctx, msg, input.Step)
-	defer m.console.StopSpinner(ctx, msg, input.GetStepResultFormat(err))
+	defer m.console.StopSpinner(ctx, "", input.GetStepResultFormat(err))
 
 	return m.listLocations(ctx, subscriptionId)
 }

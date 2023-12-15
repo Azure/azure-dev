@@ -105,14 +105,7 @@ func runTestWithRemoteState(t *testing.T, testFunc remoteStateTestFunc) {
 	}
 
 	if session != nil {
-		if session.Playback {
-			// This is currently required because azd doesn't store
-			// AZURE_SUBSCRIPTION_ID in the .env file
-			// See #2423
-			env.SetSubscriptionId(session.Variables[recording.SubscriptionIdKey])
-		} else {
-			session.Variables[recording.SubscriptionIdKey] = env.GetSubscriptionId()
-		}
+		session.Variables[recording.SubscriptionIdKey] = env.GetSubscriptionId()
 	}
 
 	testFunc(accountConfig)

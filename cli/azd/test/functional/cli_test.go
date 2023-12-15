@@ -134,14 +134,7 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 	assertEnvValuesStored(t, env)
 
 	if session != nil {
-		if session.Playback {
-			// This is currently required because azd doesn't store
-			// AZURE_SUBSCRIPTION_ID in the .env file
-			// See #2423
-			env.SetSubscriptionId(session.Variables[recording.SubscriptionIdKey])
-		} else {
-			session.Variables[recording.SubscriptionIdKey] = env.GetSubscriptionId()
-		}
+		session.Variables[recording.SubscriptionIdKey] = env.GetSubscriptionId()
 	}
 
 	// GetResourceGroupsForEnvironment requires a credential since it is using the SDK now
@@ -181,7 +174,8 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 }
 
 func Test_CLI_ProvisionState(t *testing.T) {
-	t.Setenv("AZURE_RECORD_MODE", "live")
+	t.Parallel()
+
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
@@ -231,12 +225,20 @@ func Test_CLI_ProvisionState(t *testing.T) {
 	require.NoError(t, err)
 	require.NotContains(t, flagProvisionOutput.Stdout, expectedOutputContains)
 
+	env, err := godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
+	require.NoError(t, err)
+
+	if session != nil {
+		session.Variables[recording.SubscriptionIdKey] = env[environment.SubscriptionIdEnvVarName]
+	}
+
 	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
 	require.NoError(t, err)
 }
 
 func Test_CLI_ProvisionStateWithDown(t *testing.T) {
-	t.Setenv("AZURE_RECORD_MODE", "live")
+	t.Parallel()
+
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
@@ -278,6 +280,13 @@ func Test_CLI_ProvisionStateWithDown(t *testing.T) {
 	reProvisionAfterDown, err := cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
 	require.NoError(t, err)
 	require.NotContains(t, reProvisionAfterDown.Stdout, expectedOutputContains)
+
+	env, err := godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
+	require.NoError(t, err)
+
+	if session != nil {
+		session.Variables[recording.SubscriptionIdKey] = env[environment.SubscriptionIdEnvVarName]
+	}
 
 	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
 	require.NoError(t, err)
@@ -334,14 +343,7 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 	assertEnvValuesStored(t, env)
 
 	if session != nil {
-		if session.Playback {
-			// This is currently required because azd doesn't store
-			// AZURE_SUBSCRIPTION_ID in the .env file
-			// See #2423
-			env.SetSubscriptionId(session.Variables[recording.SubscriptionIdKey])
-		} else {
-			session.Variables[recording.SubscriptionIdKey] = env.GetSubscriptionId()
-		}
+		session.Variables[recording.SubscriptionIdKey] = env.GetSubscriptionId()
 	}
 
 	// GetResourceGroupsForEnvironment requires a credential since it is using the SDK now
@@ -530,14 +532,7 @@ func Test_CLI_InfraBicepParam(t *testing.T) {
 	assertEnvValuesStored(t, env)
 
 	if session != nil {
-		if session.Playback {
-			// This is currently required because azd doesn't store
-			// AZURE_SUBSCRIPTION_ID in the .env file
-			// See #2423
-			env.SetSubscriptionId(session.Variables[recording.SubscriptionIdKey])
-		} else {
-			session.Variables[recording.SubscriptionIdKey] = env.GetSubscriptionId()
-		}
+		session.Variables[recording.SubscriptionIdKey] = env.GetSubscriptionId()
 	}
 
 	// Delete

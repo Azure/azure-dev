@@ -225,6 +225,13 @@ func Test_CLI_ProvisionState(t *testing.T) {
 	require.NoError(t, err)
 	require.NotContains(t, flagProvisionOutput.Stdout, expectedOutputContains)
 
+	env, err := godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
+	require.NoError(t, err)
+
+	if session != nil {
+		session.Variables[recording.SubscriptionIdKey] = env[environment.SubscriptionIdEnvVarName]
+	}
+
 	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
 	require.NoError(t, err)
 }
@@ -273,6 +280,13 @@ func Test_CLI_ProvisionStateWithDown(t *testing.T) {
 	reProvisionAfterDown, err := cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
 	require.NoError(t, err)
 	require.NotContains(t, reProvisionAfterDown.Stdout, expectedOutputContains)
+
+	env, err := godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
+	require.NoError(t, err)
+
+	if session != nil {
+		session.Variables[recording.SubscriptionIdKey] = env[environment.SubscriptionIdEnvVarName]
+	}
 
 	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
 	require.NoError(t, err)

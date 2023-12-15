@@ -62,6 +62,37 @@ resource containerAppEnvironment 'Microsoft.App/managedEnvironments@2023-05-01' 
   }
   tags: tags
 }
+{{range $componentName, $componentValue := .DaprComponents}}
+resource {{$componentName}} 'Microsoft.App/managedEnvironments/daprComponents@2023-05-01' = {
+  name: '{{$componentName}}'
+  parent: containerAppEnvironment
+  properties: {
+    componentType: '{{$componentValue.Type}}'
+    version: '{{$componentValue.Version}}'
+    metadata: [
+{{range $metadataName, $metadataValue := $componentValue.Metadata}}
+      {
+        name: '{{$metadataName}}'
+{{if $metadataValue.SecretKeyRef}}
+        secretRef: {{$metadataValue.SecretKeyRef}}
+{{end -}}
+{{if $metadataValue.Value}}
+        value: {{$metadataValue.Value}}
+{{end -}}
+      }
+{{end -}}
+    ]
+    secrets: [
+{{range $secretName, $secret := $componentValue.Secrets}}
+      {
+        name: '{{$secretName}}'
+        value: {{$secret.Value}}
+      }
+{{end -}}
+    ]
+  }
+}
+{{end -}}
 {{end -}}
 {{range $name, $value := .ContainerAppEnvironmentServices}}
 resource {{bicepName $name}} 'Microsoft.App/containerApps@2023-05-02-preview' = {
@@ -94,6 +125,30 @@ resource {{bicepName $name}} 'Microsoft.App/containerApps@2023-05-02-preview' = 
     environmentId: containerAppEnvironment.id
     configuration: {
       activeRevisionsMode: 'Single'
+{{if $value.Dapr}}
+      dapr: {
+        appId: {{$value.Dapr.AppId}}
+{{if $value.Dapr.AppPort}}
+        appPort: {{$value.Dapr.AppPort}}
+{{end}}
+{{if $value.Dapr.AppProtocol}}
+        appProtocol: {{$value.Dapr.AppProtocol}}
+{{end}}
+{{if $value.Dapr.EnableApiLogging}}
+        enableApiLogging: {{$value.Dapr.EnableApiLogging}}
+{{end}}
+        enabled: true
+{{if $value.Dapr.HttpMaxRequestSize}}
+        httpMaxRequestSize: {{$value.Dapr.HttpMaxRequestSize}}
+{{end}}
+{{if $value.Dapr.HttpReadBufferSize}}
+        httpReadBufferSize: {{$value.Dapr.HttpReadBufferSize}}
+{{end}}
+{{if $value.Dapr.LogLevel}}
+        logLevel: {{$value.Dapr.LogLevel}}
+{{end}}
+      }
+{{end}}
 {{if $value.Ingress}}      
       ingress: {
         external: {{$value.Ingress.External}}

@@ -1,6 +1,6 @@
 # Release History
 
-## 1.5.1 (2023-12-13)
+## 1.5.1 (2023-12-15)
 
 ### Features Added
 
@@ -8,6 +8,7 @@
 - [[3052]](https://github.com/Azure/azure-dev/pull/3052) Adds `target` argument support for docker build.
 - [[2488]](https://github.com/Azure/azure-dev/pull/2488) Adds support to override behavior of the KUBECONFIG environment variable on AKS.
 - [[3075]](https://github.com/Azure/azure-dev/pull/3075) Adds support for `dockerfile.v0` on Aspire projects.
+- [[2992]](https://github.com/Azure/azure-dev/pull/2992) Adds support for `dapr` on Aspire projects.
 
 ### Bugs Fixed
 

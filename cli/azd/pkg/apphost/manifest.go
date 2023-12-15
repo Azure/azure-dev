@@ -54,6 +54,27 @@ type Resource struct {
 	// Some resources just represent connections to existing resources that need not be provisioned.  These resources have
 	// a "connectionString" property which is the connection string that should be used during binding.
 	ConnectionString *string `json:"connectionString,omitempty"`
+
+	// Dapr is present on dapr.v0 resources.
+	Dapr *DaprResourceMetadata `json:"dapr,omitempty"`
+
+	// DaprComponent is present on dapr.component.v0 resources.
+	DaprComponent *DaprComponentResourceMetadata `json:"daprComponent,omitempty"`
+}
+
+type DaprResourceMetadata struct {
+	AppId                  *string `json:"appId,omitempty"`
+	Application            *string `json:"application,omitempty"`
+	AppPort                *int    `json:"appPort,omitempty"`
+	AppProtocol            *string `json:"appProtocol,omitempty"`
+	DaprHttpMaxRequestSize *int    `json:"daprHttpMaxRequestSize,omitempty"`
+	DaprHttpReadBufferSize *int    `json:"daprHttpReadBufferSize,omitempty"`
+	EnableApiLogging       *bool   `json:"enableApiLogging,omitempty"`
+	LogLevel               *string `json:"logLevel,omitempty"`
+}
+
+type DaprComponentResourceMetadata struct {
+	Type *string `json:"type"`
 }
 
 type Reference struct {

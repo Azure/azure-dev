@@ -19,6 +19,11 @@ import (
 	"github.com/psanford/memfs"
 )
 
+const RedisContainerAppService = "redis"
+
+const DaprStateStoreComponentType = "state"
+const DaprPubSubComponentType = "pubsub"
+
 // genTemplates is the collection of templates that are used when generating infrastructure files from a manifest.
 var genTemplates *template.Template
 
@@ -204,6 +209,7 @@ func GenerateProjectArtifacts(
 
 type infraGenerator struct {
 	containers        map[string]genContainer
+	dapr              map[string]genDapr
 	dockerfiles       map[string]genDockerfile
 	projects          map[string]genProject
 	connectionStrings map[string]string
@@ -222,8 +228,10 @@ func newInfraGenerator() *infraGenerator {
 			StorageAccounts:                 make(map[string]genStorageAccount),
 			KeyVaults:                       make(map[string]genKeyVault),
 			ContainerApps:                   make(map[string]genContainerApp),
+			DaprComponents:                  make(map[string]genDaprComponent),
 		},
 		containers:                   make(map[string]genContainer),
+		dapr:                         make(map[string]genDapr),
 		dockerfiles:                  make(map[string]genDockerfile),
 		projects:                     make(map[string]genProject),
 		connectionStrings:            make(map[string]string),
@@ -246,10 +254,20 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 			b.addProject(name, *comp.Path, comp.Env, comp.Bindings)
 		case "container.v0":
 			b.addContainer(name, *comp.Image, comp.Env, comp.Bindings)
+		case "dapr.v0":
+			err := b.addDapr(name, comp.Dapr)
+			if err != nil {
+				return err
+			}
+		case "dapr.component.v0":
+			err := b.addDaprComponent(name, comp.DaprComponent)
+			if err != nil {
+				return err
+			}
 		case "dockerfile.v0":
 			b.addDockerfile(name, *comp.Path, *comp.Context, comp.Env, comp.Bindings)
 		case "redis.v0":
-			b.addContainerAppService(name, "redis")
+			b.addContainerAppService(name, RedisContainerAppService)
 		case "azure.keyvault.v0":
 			b.addKeyVault(name)
 		case "azure.storage.v0":
@@ -296,6 +314,21 @@ func (b *infraGenerator) requireCluster() {
 func (b *infraGenerator) requireContainerRegistry() {
 	b.requireLogAnalyticsWorkspace()
 	b.bicepContext.HasContainerRegistry = true
+}
+
+func (b *infraGenerator) requireDaprStore() string {
+	daprStoreName := "daprStore"
+
+	if !b.bicepContext.HasDaprStore {
+		b.requireCluster()
+
+		// A single store can be shared across all Dapr components, so we only need to create one.
+		b.addContainerAppService(daprStoreName, RedisContainerAppService)
+
+		b.bicepContext.HasDaprStore = true
+	}
+
+	return daprStoreName
 }
 
 func (b *infraGenerator) requireLogAnalyticsWorkspace() {
@@ -377,6 +410,100 @@ func (b *infraGenerator) addContainer(name string, image string, env map[string]
 		Env:      env,
 		Bindings: bindings,
 	}
+}
+
+func (b *infraGenerator) addDapr(name string, metadata *DaprResourceMetadata) error {
+	if metadata == nil || metadata.Application == nil || metadata.AppId == nil {
+		return fmt.Errorf("dapr resource '%s' did not include required metadata", name)
+	}
+
+	b.requireCluster()
+
+	// NOTE: ACA only supports a small subset of the Dapr sidecar configuration options.
+	b.dapr[name] = genDapr{
+		AppId:                  *metadata.AppId,
+		Application:            *metadata.Application,
+		AppPort:                metadata.AppPort,
+		AppProtocol:            metadata.AppProtocol,
+		DaprHttpMaxRequestSize: metadata.DaprHttpMaxRequestSize,
+		DaprHttpReadBufferSize: metadata.DaprHttpReadBufferSize,
+		EnableApiLogging:       metadata.EnableApiLogging,
+		LogLevel:               metadata.LogLevel,
+	}
+
+	return nil
+}
+
+func (b *infraGenerator) addDaprComponent(name string, metadata *DaprComponentResourceMetadata) error {
+	if metadata == nil || metadata.Type == nil {
+		return fmt.Errorf("dapr component resource '%s' did not include required metadata", name)
+	}
+
+	switch *metadata.Type {
+	case DaprPubSubComponentType:
+		b.addDaprPubSubComponent(name)
+	case DaprStateStoreComponentType:
+		b.addDaprStateStoreComponent(name)
+	default:
+		return fmt.Errorf("dapr component resource '%s' has unsupported type '%s'", name, *metadata.Type)
+	}
+
+	return nil
+}
+
+func (b *infraGenerator) addDaprRedisComponent(componentName string, componentType string) {
+	redisName := b.requireDaprStore()
+
+	component := genDaprComponent{
+		Metadata: make(map[string]genDaprComponentMetadata),
+		Secrets:  make(map[string]genDaprComponentSecret),
+		Type:     fmt.Sprintf("%s.redis", componentType),
+		Version:  "v1",
+	}
+
+	redisPort := 6379
+
+	// The Redis component expects the host to be in the format <host>:<port>.
+	// NOTE: the "short name" should suffice rather than the FQDN.
+	redisHost := fmt.Sprintf(`'${%s.name}:%d'`, redisName, redisPort)
+
+	// The Redis add-on exposes its configuration as an ACA secret with the form:
+	//   'requirepass <128 character password>dir ...'
+	//
+	// We need to extract the password from this secret and pass it to the Redis component.
+	// While apps could "service bind" to the Redis add-on, in which case the password would be
+	// available as an environment variable, the Dapr environment variable secret store is not
+	// currently available in ACA.
+	redisPassword := fmt.Sprintf(`substring(%s.listSecrets().value[0].value, 12, 128)`, redisName)
+
+	redisPasswordKey := "password"
+	redisSecretKeyRef := fmt.Sprintf(`'%s'`, redisPasswordKey)
+
+	component.Metadata["redisHost"] = genDaprComponentMetadata{
+		Value: &redisHost,
+	}
+
+	//
+	// Create a secret for the Redis password. This secret will be then be referenced by the component metadata.
+	//
+
+	component.Metadata["redisPassword"] = genDaprComponentMetadata{
+		SecretKeyRef: &redisSecretKeyRef,
+	}
+
+	component.Secrets[redisPasswordKey] = genDaprComponentSecret{
+		Value: redisPassword,
+	}
+
+	b.bicepContext.DaprComponents[componentName] = component
+}
+
+func (b *infraGenerator) addDaprPubSubComponent(name string) {
+	b.addDaprRedisComponent(name, DaprPubSubComponentType)
+}
+
+func (b *infraGenerator) addDaprStateStoreComponent(name string) {
+	b.addDaprRedisComponent(name, DaprStateStoreComponentType)
 }
 
 func (b *infraGenerator) addDockerfile(
@@ -511,6 +638,28 @@ func (b *infraGenerator) Compile() error {
 				// Note that the protocol type is apparently optional.
 				TargetPort:    8080,
 				AllowInsecure: strings.ToLower(binding.Transport) == "http2" || !binding.External,
+			}
+		}
+
+		for _, dapr := range b.dapr {
+			if dapr.Application == resourceName {
+				appPort := dapr.AppPort
+
+				if appPort == nil && projectTemplateCtx.Ingress != nil {
+					appPort = &projectTemplateCtx.Ingress.TargetPort
+				}
+
+				projectTemplateCtx.Dapr = &genContainerAppManifestTemplateContextDapr{
+					AppId:              dapr.AppId,
+					AppPort:            appPort,
+					AppProtocol:        dapr.AppProtocol,
+					EnableApiLogging:   dapr.EnableApiLogging,
+					HttpMaxRequestSize: dapr.DaprHttpMaxRequestSize,
+					HttpReadBufferSize: dapr.DaprHttpReadBufferSize,
+					LogLevel:           dapr.LogLevel,
+				}
+
+				break
 			}
 		}
 

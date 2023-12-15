@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
+	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
@@ -506,13 +507,8 @@ func (m *Manager) LoginWithBroker(ctx context.Context, scopes []string, global *
 		scopes = LoginScopes
 	}
 	debug := global != nil && global.EnableDebugLogging
-	cred, err := oneauth.NewCredential(cDefaultAuthority, cAZD_CLIENT_ID, oneauth.CredentialOptions{Debug: debug})
-	if err != nil {
-		return err
-	}
-	_, err = cred.GetToken(ctx, policy.TokenRequestOptions{Scopes: scopes})
+	homeAccountID, err := oneauth.SignIn(cDefaultAuthority, cAZD_CLIENT_ID, "", strings.Join(scopes, " "), debug)
 	if err == nil {
-		homeAccountID := cred.HomeAccountID()
 		err = m.saveUserProperties(&userProperties{
 			Brokered:      true,
 			HomeAccountID: &homeAccountID,
@@ -671,14 +667,7 @@ func (m *Manager) Logout(ctx context.Context) error {
 	// we are fine to ignore the error here, it just means there's nothing to clean up.
 	currentUser, _ := readUserProperties(cfg)
 	if currentUser != nil && currentUser.Brokered {
-		cred, err := oneauth.NewCredential(cDefaultAuthority, cAZD_CLIENT_ID, oneauth.CredentialOptions{
-			// TODO: read GlobalCommandOptions.EnableDebugLogging
-			Debug: false,
-		})
-		if err != nil {
-			return fmt.Errorf("creating credential: %w", err)
-		}
-		return cred.Logout()
+		return oneauth.Logout(cAZD_CLIENT_ID, false)
 	}
 
 	// When logged in as a service principal, remove the stored credential

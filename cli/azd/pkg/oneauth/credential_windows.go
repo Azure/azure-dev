@@ -89,12 +89,12 @@ type credential struct {
 }
 
 // NewCredential creates a new credential that uses OneAuth to broker authentication.
-// If homeAccountID is empty, GetToken will prompt a user to authenticate.
 func NewCredential(authority, clientID string, opts CredentialOptions) (UserCredential, error) {
-	if err := loadDLL(); err != nil {
+	if err := start(clientID, opts.Debug); err != nil {
 		return nil, err
 	}
 	cred := &credential{
+		authority:     authority,
 		clientID:      clientID,
 		homeAccountID: opts.HomeAccountID,
 		opts:          opts,
@@ -104,17 +104,7 @@ func NewCredential(authority, clientID string, opts CredentialOptions) (UserCred
 
 func (c *credential) GetToken(ctx context.Context, opts policy.TokenRequestOptions) (azcore.AccessToken, error) {
 	at := azcore.AccessToken{}
-	err := c.start()
-	if err != nil {
-		return at, err
-	}
-	// OneAuth always appends /.default to scopes
-	scopes := make([]string, len(opts.Scopes))
-	for i, scope := range opts.Scopes {
-		scopes[i] = strings.TrimSuffix(scope, "/.default")
-	}
-	// TODO: claims
-	ar, err := c.Authenticate(c.homeAccountID, strings.Join(scopes, " "))
+	ar, err := authn(c.authority, c.clientID, c.homeAccountID, strings.Join(opts.Scopes, " "), c.opts.NoPrompt, c.opts.Debug)
 	if err == nil {
 		at.ExpiresOn = time.Unix(int64(ar.expiresOn), 0)
 		at.Token = ar.token
@@ -128,61 +118,30 @@ func (c *credential) HomeAccountID() string {
 	return c.homeAccountID
 }
 
-func (c *credential) Authenticate(homeAccountID, scope string) (authResult, error) {
-	res := authResult{}
-	authority := unsafe.Pointer(C.CString(c.authority))
-	defer C.free(authority)
-	accountID := unsafe.Pointer(C.CString(homeAccountID))
-	defer C.free(accountID)
-	scp := unsafe.Pointer(C.CString(scope))
-	defer C.free(scp)
-	allowPrompt := 1
-	if c.opts.NoPrompt {
-		allowPrompt = 0
-	}
-	result, _, _ := authenticate.Call(uintptr(authority), uintptr(accountID), uintptr(scp), uintptr(allowPrompt))
-	if result == 0 {
-		return res, fmt.Errorf("authentication failed")
-	}
-	defer freeAR.Call(result)
-
-	ar := (*C.AuthnResult)(unsafe.Pointer(result))
-	if ar.errorDescription != nil {
-		res.errorDesc = C.GoString(ar.errorDescription)
-		return res, fmt.Errorf(res.errorDesc)
-	}
-
-	res.expiresOn = int(ar.expiresOn)
-
-	if ar.accountID != nil {
-		res.homeAccountID = C.GoString(ar.accountID)
-	}
-
-	if ar.loginName != nil {
-		res.loginName = C.GoString(ar.loginName)
-	}
-
-	if ar.token != nil {
-		res.token = C.GoString(ar.token)
-	}
-	return res, nil
-}
-
-func (c *credential) Logout() error {
-	err := c.start()
+func Logout(clientID string, debug bool) error {
+	err := start(clientID, debug)
 	if err == nil {
-		_, _, _ = logout.Call()
+		logout.Call()
 	}
-	return err
+	return nil
 }
 
-func (c *credential) start() error {
+func SignIn(authority, clientID, homeAccountID, scope string, debug bool) (string, error) {
+	ar, err := authn(authority, clientID, homeAccountID, scope, false, debug)
+	return ar.homeAccountID, err
+}
+
+func start(clientID string, debug bool) error {
 	if started.CompareAndSwap(false, true) {
+		err := loadDLL()
+		if err != nil {
+			return err
+		}
 		dbg := uintptr(0)
-		if c.opts.Debug {
+		if debug {
 			dbg = uintptr(1)
 		}
-		clientID := unsafe.Pointer(C.CString(c.clientID))
+		clientID := unsafe.Pointer(C.CString(clientID))
 		defer C.free(clientID)
 		appID := unsafe.Pointer(C.CString(applicationID))
 		defer C.free(appID)
@@ -198,6 +157,49 @@ func (c *credential) start() error {
 		}
 	}
 	return nil
+}
+
+func authn(authority, clientID, homeAccountID, scope string, noPrompt, debug bool) (authResult, error) {
+	res := authResult{}
+	if err := start(clientID, debug); err != nil {
+		return res, err
+	}
+	a := unsafe.Pointer(C.CString(authority))
+	defer C.free(a)
+	accountID := unsafe.Pointer(C.CString(homeAccountID))
+	defer C.free(accountID)
+	// OneAuth always appends /.default to scopes
+	scope = strings.ReplaceAll(scope, "/.default", "")
+	scp := unsafe.Pointer(C.CString(scope))
+	defer C.free(scp)
+	allowPrompt := 1
+	if noPrompt {
+		allowPrompt = 0
+	}
+	result, _, _ := authenticate.Call(uintptr(a), uintptr(accountID), uintptr(scp), uintptr(allowPrompt))
+	if result == 0 {
+		return res, fmt.Errorf("authentication failed")
+	}
+	defer freeAR.Call(result)
+
+	ar := (*C.AuthnResult)(unsafe.Pointer(result))
+	if ar.errorDescription != nil {
+		res.errorDesc = C.GoString(ar.errorDescription)
+		return res, fmt.Errorf(res.errorDesc)
+	}
+
+	res.expiresOn = int(ar.expiresOn)
+	if ar.accountID != nil {
+		res.homeAccountID = C.GoString(ar.accountID)
+	}
+	if ar.loginName != nil {
+		res.loginName = C.GoString(ar.loginName)
+	}
+	if ar.token != nil {
+		res.token = C.GoString(ar.token)
+	}
+
+	return res, nil
 }
 
 // loadDLL loads the bridge DLL and its dependencies, writing them to disk if necessary.

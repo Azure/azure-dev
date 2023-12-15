@@ -8,5 +8,4 @@ import "github.com/Azure/azure-sdk-for-go/sdk/azcore"
 type UserCredential interface {
 	azcore.TokenCredential
 	HomeAccountID() string
-	Logout() error
 }

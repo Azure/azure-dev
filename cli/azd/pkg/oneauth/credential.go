@@ -6,11 +6,7 @@
 package oneauth
 
 import (
-	"context"
 	"errors"
-
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 )
 
 // Supported indicates whether this build supports brokered authentication.
@@ -18,20 +14,18 @@ const Supported = false
 
 var errNoBroker = errors.New("this build doesn't support brokered authentication")
 
-type credential struct{}
-
 func NewCredential(authority, clientID string, opts CredentialOptions) (UserCredential, error) {
 	return nil, errNoBroker
 }
 
-func (*credential) GetToken(context.Context, policy.TokenRequestOptions) (azcore.AccessToken, error) {
-	return azcore.AccessToken{}, errNoBroker
+func Logout(clientID string, debug bool) error {
+	return errNoBroker
 }
 
-func (*credential) HomeAccountID() string {
-	return ""
+func SignIn(authority, clientID, homeAccountID, scope string, debug bool) (string, error) {
+	return "", errNoBroker
 }
 
-func (c *credential) Logout() error {
+func Start(clientID string, debug bool) error {
 	return errNoBroker
 }

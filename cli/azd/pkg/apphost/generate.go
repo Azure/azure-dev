@@ -829,15 +829,15 @@ func (b *infraGenerator) buildEnvBlock(env map[string]string, manifestCtx *genCo
 		// app service expects.
 		//
 		// YAML marshalling the string value will give us something like `"true"` (with the quotes, and any escaping
-		// that needs to be done), which is what we want here.
-		// Do not use JSON marshall as it would escape the quotes within the string, breaking the meaning of the value.
-		// yaml marshall will use 'some text "quoted" more text' as a valid yaml string.
-		jsonStr, err := yaml.Marshal(res)
+		// that needs to be done), which is what we want here. The TrimSpace is to remove any leading or trailing whitespace
+		// in the string, as yaml.Marshal("true") will give back a string with a trailing newline.
+		yamlStr, err := yaml.Marshal(res)
 		if err != nil {
 			return fmt.Errorf("marshalling env value: %w", err)
 		}
 
-		manifestCtx.Env[k] = string(jsonStr)
+		// Remove the trailing newline that `yaml.Marshal` adds.
+		manifestCtx.Env[k] = string(yamlStr[0 : len(yamlStr)-1])
 	}
 
 	return nil

@@ -7,6 +7,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v2"
 	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
 
@@ -32,17 +33,20 @@ type managedClustersService struct {
 	credentialProvider account.SubscriptionCredentialProvider
 	httpClient         httputil.HttpClient
 	userAgent          string
+	cloud              *cloud.Cloud
 }
 
 // Creates a new instance of the ManagedClustersService
 func NewManagedClustersService(
 	credentialProvider account.SubscriptionCredentialProvider,
 	httpClient httputil.HttpClient,
+	cloud *cloud.Cloud,
 ) ManagedClustersService {
 	return &managedClustersService{
 		credentialProvider: credentialProvider,
 		httpClient:         httpClient,
 		userAgent:          azdinternal.UserAgent(),
+		cloud:              cloud,
 	}
 }
 
@@ -95,7 +99,7 @@ func (cs *managedClustersService) createManagedClusterClient(
 		return nil, err
 	}
 
-	options := clientOptionsBuilder(ctx, cs.httpClient, cs.userAgent).BuildArmClientOptions()
+	options := clientOptionsBuilder(ctx, cs.httpClient, cs.userAgent, cs.cloud).BuildArmClientOptions()
 
 	client, err := armcontainerservice.NewManagedClustersClient(subscriptionId, credential, options)
 	if err != nil {

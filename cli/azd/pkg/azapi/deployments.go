@@ -17,6 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
+	azdCloud "github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
 
@@ -90,19 +91,23 @@ type deployments struct {
 	credentialProvider account.SubscriptionCredentialProvider
 	httpClient         httputil.HttpClient
 	userAgent          string
+	cloud              *azdCloud.Cloud
 }
 
 func NewDeployments(
 	credentialProvider account.SubscriptionCredentialProvider,
 	httpClient httputil.HttpClient,
+	cloud *azdCloud.Cloud,
 ) Deployments {
 	return &deployments{
 		credentialProvider: credentialProvider,
 		httpClient:         httpClient,
 		userAgent:          azdinternal.UserAgent(),
+		cloud:              cloud,
 	}
 }
 
+// TODO: Should cloud be included
 func (ds *deployments) CalculateTemplateHash(
 	ctx context.Context,
 	subscriptionId string,
@@ -532,5 +537,6 @@ func (ds *deployments) clientOptionsBuilder(ctx context.Context) *azsdk.ClientOp
 	return azsdk.NewClientOptionsBuilder().
 		WithTransport(ds.httpClient).
 		WithPerCallPolicy(azsdk.NewUserAgentPolicy(ds.userAgent)).
-		WithPerCallPolicy(azsdk.NewMsCorrelationPolicy(ctx))
+		WithPerCallPolicy(azsdk.NewMsCorrelationPolicy(ctx)).
+		WithCloud(ds.cloud)
 }

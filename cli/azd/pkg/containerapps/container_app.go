@@ -9,6 +9,7 @@ import (
 	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/benbjohnson/clock"
@@ -49,14 +50,16 @@ type ContainerAppService interface {
 // NewContainerAppService creates a new ContainerAppService
 func NewContainerAppService(
 	credentialProvider account.SubscriptionCredentialProvider,
-	httpClient httputil.HttpClient,
+	httpClient httputil.HttpClient, // TODO: should we use an az client instead of raw HTTP client?
 	clock clock.Clock,
+	cloud *cloud.Cloud,
 ) ContainerAppService {
 	return &containerAppService{
 		credentialProvider: credentialProvider,
 		httpClient:         httpClient,
 		userAgent:          azdinternal.UserAgent(),
 		clock:              clock,
+		cloud:              cloud,
 	}
 }
 
@@ -65,6 +68,7 @@ type containerAppService struct {
 	httpClient         httputil.HttpClient
 	userAgent          string
 	clock              clock.Clock
+	cloud              *cloud.Cloud
 }
 
 type ContainerAppIngressConfiguration struct {
@@ -326,7 +330,8 @@ func (cas *containerAppService) createContainerAppsClient(
 		return nil, err
 	}
 
-	options := azsdk.DefaultClientOptionsBuilder(ctx, cas.httpClient, cas.userAgent).BuildArmClientOptions()
+	// TODO: can this be populated injection?
+	options := azsdk.DefaultClientOptionsBuilder(ctx, cas.httpClient, cas.userAgent, cas.cloud).BuildArmClientOptions()
 	client, err := armappcontainers.NewContainerAppsClient(subscriptionId, credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating ContainerApps client: %w", err)
@@ -344,7 +349,7 @@ func (cas *containerAppService) createRevisionsClient(
 		return nil, err
 	}
 
-	options := azsdk.DefaultClientOptionsBuilder(ctx, cas.httpClient, cas.userAgent).BuildArmClientOptions()
+	options := azsdk.DefaultClientOptionsBuilder(ctx, cas.httpClient, cas.userAgent, cas.cloud).BuildArmClientOptions()
 	client, err := armappcontainers.NewContainerAppsRevisionsClient(subscriptionId, credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating ContainerApps client: %w", err)

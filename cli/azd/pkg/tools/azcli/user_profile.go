@@ -4,11 +4,12 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
+	azCloud "github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
+	azdCloud "github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
@@ -18,20 +19,24 @@ type UserProfileService struct {
 	credentialProvider auth.MultiTenantCredentialProvider
 	userAgent          string
 	httpClient         httputil.HttpClient
+	cloud              *azdCloud.Cloud
 }
 
 func NewUserProfileService(
 	credentialProvider auth.MultiTenantCredentialProvider,
-	httpClient httputil.HttpClient) *UserProfileService {
+	httpClient httputil.HttpClient,
+	cloud *azdCloud.Cloud,
+) *UserProfileService {
 	return &UserProfileService{
 		userAgent:          azdinternal.UserAgent(),
 		httpClient:         httpClient,
 		credentialProvider: credentialProvider,
+		cloud:              cloud,
 	}
 }
 
 func (u *UserProfileService) createGraphClient(ctx context.Context, tenantId string) (*graphsdk.GraphClient, error) {
-	options := clientOptionsBuilder(ctx, u.httpClient, u.userAgent).
+	options := clientOptionsBuilder(ctx, u.httpClient, u.userAgent, u.cloud).
 		WithPerCallPolicy(azsdk.NewMsGraphCorrelationPolicy(ctx)).
 		BuildCoreClientOptions()
 	cred, err := u.credentialProvider.GetTokenCredential(ctx, tenantId)
@@ -69,7 +74,7 @@ func (u *UserProfileService) GetAccessToken(ctx context.Context, tenantId string
 
 	token, err := cred.GetToken(ctx, policy.TokenRequestOptions{
 		Scopes: []string{
-			fmt.Sprintf("%s/.default", cloud.AzurePublic.Services[cloud.ResourceManager].Audience),
+			fmt.Sprintf("%s/.default", u.cloud.Configuration.Services[azCloud.ResourceManager].Audience),
 		},
 	})
 

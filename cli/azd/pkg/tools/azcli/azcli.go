@@ -12,6 +12,7 @@ import (
 	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
 
@@ -189,6 +190,7 @@ type NewAzCliArgs struct {
 func NewAzCli(
 	credentialProvider account.SubscriptionCredentialProvider,
 	httpClient httputil.HttpClient,
+	cloud *cloud.Cloud,
 	args NewAzCliArgs,
 ) AzCli {
 	return &azCli{
@@ -197,6 +199,7 @@ func NewAzCli(
 		enableTelemetry:    args.EnableTelemetry,
 		httpClient:         httpClient,
 		userAgent:          azdinternal.UserAgent(),
+		cloud:              cloud,
 	}
 }
 
@@ -209,6 +212,8 @@ type azCli struct {
 	httpClient httputil.HttpClient
 
 	credentialProvider account.SubscriptionCredentialProvider
+
+	cloud *cloud.Cloud
 }
 
 // SetUserAgent sets the user agent that's sent with each call to the Azure
@@ -225,15 +230,19 @@ func (cli *azCli) clientOptionsBuilder(ctx context.Context) *azsdk.ClientOptions
 	return azsdk.NewClientOptionsBuilder().
 		WithTransport(cli.httpClient).
 		WithPerCallPolicy(azsdk.NewUserAgentPolicy(cli.UserAgent())).
-		WithPerCallPolicy(azsdk.NewMsCorrelationPolicy(ctx))
+		WithPerCallPolicy(azsdk.NewMsCorrelationPolicy(ctx)).
+		WithCloud(cli.cloud)
 }
 
 func clientOptionsBuilder(
 	ctx context.Context,
 	httpClient httputil.HttpClient,
-	userAgent string) *azsdk.ClientOptionsBuilder {
+	userAgent string,
+	cloud *cloud.Cloud,
+) *azsdk.ClientOptionsBuilder {
 	return azsdk.NewClientOptionsBuilder().
 		WithTransport(httpClient).
 		WithPerCallPolicy(azsdk.NewUserAgentPolicy(userAgent)).
-		WithPerCallPolicy(azsdk.NewMsCorrelationPolicy(ctx))
+		WithPerCallPolicy(azsdk.NewMsCorrelationPolicy(ctx)).
+		WithCloud(cloud)
 }

@@ -11,6 +11,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
 
@@ -23,6 +24,7 @@ type AccountConfig struct {
 
 const (
 	DefaultBlobEndpoint = "blob.core.windows.net"
+	UsGovBlobEndpoint   = "blob.core.usgovcloudapi.net" // TODO: Figure this out
 )
 
 var (
@@ -174,9 +176,12 @@ func NewBlobSdkClient(
 	accountConfig *AccountConfig,
 	httpClient httputil.HttpClient,
 	userAgent httputil.UserAgent,
+	cloud *cloud.Cloud,
 ) (*azblob.Client, error) {
+
+	// TODO: Should we be injecting coreOptions instead of httpClient, userAgent, cloud?
 	coreOptions := azsdk.
-		DefaultClientOptionsBuilder(ctx, httpClient, string(userAgent)).
+		DefaultClientOptionsBuilder(ctx, httpClient, string(userAgent), cloud).
 		BuildCoreClientOptions()
 
 	blobOptions := &azblob.ClientOptions{
@@ -184,6 +189,7 @@ func NewBlobSdkClient(
 	}
 
 	if accountConfig.Endpoint == "" {
+		// TODO: Fix default blob endpoint
 		accountConfig.Endpoint = DefaultBlobEndpoint
 	}
 

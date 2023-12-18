@@ -16,6 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 )
@@ -50,6 +51,7 @@ type containerRegistryService struct {
 	docker             docker.Docker
 	httpClient         httputil.HttpClient
 	userAgent          string
+	cloud              *cloud.Cloud
 }
 
 // Creates a new instance of the ContainerRegistryService
@@ -57,12 +59,14 @@ func NewContainerRegistryService(
 	credentialProvider account.SubscriptionCredentialProvider,
 	httpClient httputil.HttpClient,
 	docker docker.Docker,
+	cloud *cloud.Cloud,
 ) ContainerRegistryService {
 	return &containerRegistryService{
 		credentialProvider: credentialProvider,
 		docker:             docker,
 		httpClient:         httpClient,
 		userAgent:          internal.UserAgent(),
+		cloud:              cloud,
 	}
 }
 
@@ -232,7 +236,7 @@ func (crs *containerRegistryService) createRegistriesClient(
 		return nil, err
 	}
 
-	options := clientOptionsBuilder(ctx, crs.httpClient, crs.userAgent).BuildArmClientOptions()
+	options := clientOptionsBuilder(ctx, crs.httpClient, crs.userAgent, crs.cloud).BuildArmClientOptions()
 	client, err := armcontainerregistry.NewRegistriesClient(subscriptionId, credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating registries client: %w", err)
@@ -258,7 +262,7 @@ func (crs *containerRegistryService) getAcrToken(
 	}
 
 	// Implementation based on docs @ https://azure.github.io/acr/AAD-OAuth.html
-	options := clientOptionsBuilder(ctx, crs.httpClient, crs.userAgent).BuildCoreClientOptions()
+	options := clientOptionsBuilder(ctx, crs.httpClient, crs.userAgent, crs.cloud).BuildCoreClientOptions()
 	pipeline := azruntime.NewPipeline("azd-acr", internal.Version, azruntime.PipelineOptions{}, options)
 
 	formData := url.Values{}

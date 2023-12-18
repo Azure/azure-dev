@@ -3,14 +3,15 @@ package azsdk
 import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
+	azdCloud "github.com/azure/azure-dev/cli/azd/pkg/cloud"
 )
 
 type ClientOptionsBuilder struct {
 	transport        policy.Transporter
 	perCallPolicies  []policy.Policy
 	perRetryPolicies []policy.Policy
+	cloud            *azdCloud.Cloud
 }
 
 func NewClientOptionsBuilder() *ClientOptionsBuilder {
@@ -35,6 +36,15 @@ func (b *ClientOptionsBuilder) WithPerRetryPolicy(policy policy.Policy) *ClientO
 	return b
 }
 
+func (b *ClientOptionsBuilder) WithCloud(cloud *azdCloud.Cloud) *ClientOptionsBuilder {
+	b.cloud = cloud
+	return b
+}
+
+func (b *ClientOptionsBuilder) WithOptions(options *policy.ClientOptions) {
+
+}
+
 // Builds the az core client options for data plane operations
 // These options include the underlying transport to be used.
 func (b *ClientOptionsBuilder) BuildCoreClientOptions() *azcore.ClientOptions {
@@ -46,7 +56,7 @@ func (b *ClientOptionsBuilder) BuildCoreClientOptions() *azcore.ClientOptions {
 		// Per retry policies to inject into HTTP pipeline
 		PerRetryPolicies: b.perRetryPolicies,
 
-		Cloud: cloud.AzureGovernment,
+		Cloud: *b.cloud.Configuration,
 	}
 }
 
@@ -66,7 +76,7 @@ func (b *ClientOptionsBuilder) BuildArmClientOptions() *arm.ClientOptions {
 			Logging: policy.LogOptions{
 				AllowedHeaders: []string{cMsCorrelationIdHeader},
 			},
-			Cloud: cloud.AzureGovernment,
+			Cloud: *b.cloud.Configuration,
 		},
 	}
 }

@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/resource"
@@ -40,7 +39,10 @@ type AssignmentsManager struct {
 // NewAssignmentsManager creates a new AssignmentManager, which will communicate with the TAS service. The
 // AssignmentManager caches the assignment information for 24 hours in files in the user's config directory
 // under the "experimentation" subdirectory.
-func NewAssignmentsManager(endpoint string, transport policy.Transporter) (*AssignmentsManager, error) {
+func NewAssignmentsManager(
+	endpoint string,
+	transport policy.Transporter,
+) (*AssignmentsManager, error) {
 	configRoot, err := config.GetUserConfigDir()
 	if err != nil {
 		return nil, err
@@ -53,7 +55,6 @@ func NewAssignmentsManager(endpoint string, transport policy.Transporter) (*Assi
 
 	client, err := newTasClient(endpoint, &policy.ClientOptions{
 		Transport: transport,
-		Cloud:     cloud.AzureGovernment,
 	})
 	if err != nil {
 		return nil, err

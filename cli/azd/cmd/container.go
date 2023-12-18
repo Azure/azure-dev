@@ -21,6 +21,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azd"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/containerapps"
 	"github.com/azure/azure-dev/cli/azd/pkg/devcenter"
@@ -381,9 +382,10 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		ctx context.Context,
 		credential azcore.TokenCredential,
 		httpClient httputil.HttpClient,
+		cloud *cloud.Cloud,
 	) (*armresourcegraph.Client, error) {
 		options := azsdk.
-			DefaultClientOptionsBuilder(ctx, httpClient, "azd").
+			DefaultClientOptionsBuilder(ctx, httpClient, "azd", cloud).
 			BuildArmClientOptions()
 
 		return armresourcegraph.NewClient(credential, options)
@@ -450,8 +452,9 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		rootOptions *internal.GlobalCommandOptions,
 		credentialProvider account.SubscriptionCredentialProvider,
 		httpClient httputil.HttpClient,
+		cloud *cloud.Cloud,
 	) azcli.AzCli {
-		return azcli.NewAzCli(credentialProvider, httpClient, azcli.NewAzCliArgs{
+		return azcli.NewAzCli(credentialProvider, httpClient, cloud, azcli.NewAzCliArgs{
 			EnableDebug:     rootOptions.EnableDebugLogging,
 			EnableTelemetry: rootOptions.EnableTelemetry,
 		})
@@ -611,6 +614,65 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	registerAction[*provisionAction](container, "azd-provision-action")
 	registerAction[*downAction](container, "azd-down-action")
 	registerAction[*configShowAction](container, "azd-config-show-action")
+
+	container.RegisterSingleton(cloud.NewCloud)
+	container.RegisterSingleton(func(
+		ctx context.Context,
+		azdCtx *azdcontext.AzdContext,
+		userConfigManager config.UserConfigManager,
+		// TODO: Why are these lazy?
+		lazyProjectConfig *lazy.Lazy[*project.ProjectConfig],
+		lazyLocalEnvStore *lazy.Lazy[environment.LocalDataStore],
+	) *cloud.Config {
+
+		// 1. Check config (~/.azure/config.json) set by azd config set (cloud node)
+		// 2. Check project config (azure.yaml)
+		// 3. Check .azure/<environment>/config.json
+
+		// Default configuration
+		var cloudConfig = &cloud.Config{Name: "AzurePublic"}
+
+		// User Configuration
+		if azdConfig, err := userConfigManager.Load(); err == nil {
+			cloudConfigNode, exists := azdConfig.Get(cloud.ConfigPath)
+			if exists {
+				value, err := cloud.ParseCloudConfig(cloudConfigNode)
+				if err == nil {
+					cloudConfig = value
+				} // TODO: How do we surface config errors?
+
+			}
+		}
+
+		// Project Configuration
+		projConfig, _ := lazyProjectConfig.GetValue()
+		if projConfig != nil && projConfig.Cloud != nil {
+			value, err := cloud.ParseCloudConfig(projConfig.Cloud)
+			if err == nil {
+				cloudConfig = value
+			}
+		}
+
+		// Local Environment Configuration
+		localEnvStore, _ := lazyLocalEnvStore.GetValue()
+		if azdCtx != nil && localEnvStore != nil {
+			if defaultEnvName, err := azdCtx.GetDefaultEnvironmentName(); err == nil {
+				env, err := localEnvStore.Get(ctx, defaultEnvName)
+				if err == nil {
+					cloudConfigurationNode, exists := env.Config.Get(cloud.ConfigPath)
+					if exists {
+						value, err := cloud.ParseCloudConfig(cloudConfigurationNode)
+						if err == nil {
+							cloudConfig = value
+						}
+					}
+				}
+			}
+		}
+
+		return cloudConfig
+	})
+
 }
 
 // workflowCmdAdapter adapts a cobra command to the workflow.AzdCommandRunner interface

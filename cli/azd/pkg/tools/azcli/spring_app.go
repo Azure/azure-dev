@@ -12,6 +12,7 @@ import (
 	"github.com/Azure/azure-storage-file-go/azfile"
 	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
 
@@ -59,17 +60,20 @@ type springService struct {
 	credentialProvider account.SubscriptionCredentialProvider
 	httpClient         httputil.HttpClient
 	userAgent          string
+	cloud              *cloud.Cloud
 }
 
 // Creates a new instance of the NewSpringService
 func NewSpringService(
 	credentialProvider account.SubscriptionCredentialProvider,
 	httpClient httputil.HttpClient,
+	cloud *cloud.Cloud,
 ) SpringService {
 	return &springService{
 		credentialProvider: credentialProvider,
 		httpClient:         httpClient,
 		userAgent:          azdinternal.UserAgent(),
+		cloud:              cloud,
 	}
 }
 
@@ -212,7 +216,7 @@ func (ss *springService) createSpringAppClient(
 		return nil, err
 	}
 
-	options := clientOptionsBuilder(ctx, ss.httpClient, ss.userAgent).BuildArmClientOptions()
+	options := clientOptionsBuilder(ctx, ss.httpClient, ss.userAgent, ss.cloud).BuildArmClientOptions()
 	client, err := armappplatform.NewAppsClient(subscriptionId, credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating SpringApp client: %w", err)
@@ -230,7 +234,7 @@ func (ss *springService) createSpringAppDeploymentClient(
 		return nil, err
 	}
 
-	options := clientOptionsBuilder(ctx, ss.httpClient, ss.userAgent).BuildArmClientOptions()
+	options := clientOptionsBuilder(ctx, ss.httpClient, ss.userAgent, ss.cloud).BuildArmClientOptions()
 	client, err := armappplatform.NewDeploymentsClient(subscriptionId, credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating SpringAppDeployment client: %w", err)

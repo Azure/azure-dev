@@ -13,6 +13,7 @@ import (
 	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
@@ -77,18 +78,21 @@ type adService struct {
 	httpClient         httputil.HttpClient
 	userAgent          string
 	clientCache        map[string]*graphsdk.GraphClient
+	cloud              *cloud.Cloud
 }
 
 // Creates a new instance of the AdService
 func NewAdService(
 	credentialProvider account.SubscriptionCredentialProvider,
 	httpClient httputil.HttpClient,
+	cloud *cloud.Cloud,
 ) AdService {
 	return &adService{
 		credentialProvider: credentialProvider,
 		httpClient:         httpClient,
 		userAgent:          azdinternal.UserAgent(),
 		clientCache:        map[string]*graphsdk.GraphClient{},
+		cloud:              cloud,
 	}
 }
 
@@ -580,7 +584,7 @@ func (ad *adService) createRoleDefinitionsClient(
 		return nil, err
 	}
 
-	options := clientOptionsBuilder(ctx, ad.httpClient, ad.userAgent).BuildArmClientOptions()
+	options := clientOptionsBuilder(ctx, ad.httpClient, ad.userAgent, ad.cloud).BuildArmClientOptions()
 	client, err := armauthorization.NewRoleDefinitionsClient(credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating ARM Role Definitions client: %w", err)
@@ -599,7 +603,7 @@ func (ad *adService) createRoleAssignmentsClient(
 		return nil, err
 	}
 
-	options := clientOptionsBuilder(ctx, ad.httpClient, ad.userAgent).BuildArmClientOptions()
+	options := clientOptionsBuilder(ctx, ad.httpClient, ad.userAgent, ad.cloud).BuildArmClientOptions()
 	client, err := armauthorization.NewRoleAssignmentsClient(subscriptionId, credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating ARM Role Assignments client: %w", err)
@@ -622,7 +626,7 @@ func (ad *adService) getOrCreateGraphClient(
 		return nil, err
 	}
 
-	options := clientOptionsBuilder(ctx, ad.httpClient, ad.userAgent).BuildCoreClientOptions()
+	options := clientOptionsBuilder(ctx, ad.httpClient, ad.userAgent, ad.cloud).BuildCoreClientOptions()
 	client, err := graphsdk.NewGraphClient(credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating Graph Users client: %w", err)

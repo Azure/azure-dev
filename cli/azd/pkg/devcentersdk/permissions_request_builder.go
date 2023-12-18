@@ -8,11 +8,13 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 )
 
 type PermissionListRequestBuilder struct {
 	*EntityListRequestBuilder[PermissionListRequestBuilder]
 	projectName string
+	cloud       *cloud.Cloud
 }
 
 func NewPermissionListRequestBuilder(
@@ -33,7 +35,8 @@ func (c *PermissionListRequestBuilder) Get(ctx context.Context) ([]*armauthoriza
 		return nil, err
 	}
 
-	options := azsdk.DefaultClientOptionsBuilder(ctx, c.client.options.Transport, "azd").BuildArmClientOptions()
+	// TODO: Can we use an injected client instead of creating a new one?
+	options := azsdk.DefaultClientOptionsBuilder(ctx, c.client.options.Transport, "azd", c.cloud).BuildArmClientOptions()
 	permissionsClient, err := armauthorization.NewPermissionsClient(project.SubscriptionId, c.client.credential, options)
 	if err != nil {
 		return nil, err

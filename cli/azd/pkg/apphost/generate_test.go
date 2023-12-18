@@ -15,6 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/snapshot"
 	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
 )
 
 //go:embed testdata/aspire-docker.json
@@ -81,4 +82,33 @@ func TestAspireDockerGeneration(t *testing.T) {
 		return nil
 	})
 	require.NoError(t, err)
+}
+
+func TestBuildEnvBlock(t *testing.T) {
+	// Create a mock infraGenerator instance
+	mockGenerator := &infraGenerator{}
+
+	// Define test input
+	env := map[string]string{
+		"VAR1": "value1",
+		"VAR2": "value2",
+		"VAR3": `complex {{connectionString "arg"}} expression`,
+	}
+
+	manifestCtx := &genContainerAppManifestTemplateContext{
+		Env: make(map[string]string),
+	}
+
+	// Call the method being tested
+	err := mockGenerator.buildEnvBlock(env, manifestCtx)
+	require.NoError(t, err)
+
+	for key, value := range manifestCtx.Env {
+		originalValue, exists := env[key]
+		require.True(t, exists)
+		marshallValue, err := yaml.Marshal(originalValue)
+		require.NoError(t, err)
+		expectedValue := string(marshallValue)
+		require.Equal(t, expectedValue, value)
+	}
 }

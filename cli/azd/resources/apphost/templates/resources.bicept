@@ -5,6 +5,10 @@ param location string = resourceGroup().location
 @description('Tags that will be applied to all resources')
 param tags object = {}
 
+@secure()
+@metadata({azd: {type: 'inputs' }})
+param inputs object
+
 var resourceToken = uniqueString(resourceGroup().id)
 
 resource managedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
@@ -125,44 +129,56 @@ resource {{bicepName $name}} 'Microsoft.App/containerApps@2023-05-02-preview' = 
     environmentId: containerAppEnvironment.id
     configuration: {
       activeRevisionsMode: 'Single'
-{{if $value.Dapr}}
+{{- if $value.Dapr}}
       dapr: {
         appId: {{$value.Dapr.AppId}}
-{{if $value.Dapr.AppPort}}
+{{- if $value.Dapr.AppPort}}
         appPort: {{$value.Dapr.AppPort}}
-{{end}}
-{{if $value.Dapr.AppProtocol}}
+{{- end}}
+{{- if $value.Dapr.AppProtocol}}
         appProtocol: {{$value.Dapr.AppProtocol}}
-{{end}}
-{{if $value.Dapr.EnableApiLogging}}
+{{- end}}
+{{- if $value.Dapr.EnableApiLogging}}
         enableApiLogging: {{$value.Dapr.EnableApiLogging}}
-{{end}}
+{{- end}}
         enabled: true
-{{if $value.Dapr.HttpMaxRequestSize}}
+{{- if $value.Dapr.HttpMaxRequestSize}}
         httpMaxRequestSize: {{$value.Dapr.HttpMaxRequestSize}}
-{{end}}
-{{if $value.Dapr.HttpReadBufferSize}}
+{{- end}}
+{{- if $value.Dapr.HttpReadBufferSize}}
         httpReadBufferSize: {{$value.Dapr.HttpReadBufferSize}}
-{{end}}
-{{if $value.Dapr.LogLevel}}
+{{- end}}
+{{- if $value.Dapr.LogLevel}}
         logLevel: {{$value.Dapr.LogLevel}}
-{{end}}
+{{- end}}
       }
-{{end}}
-{{if $value.Ingress}}      
+{{- end}}
+{{- if $value.Ingress}}
       ingress: {
         external: {{$value.Ingress.External}}
         targetPort: {{$value.Ingress.TargetPort}}
         transport: '{{$value.Ingress.Transport}}'
+{{- if ne $value.Ingress.Transport "tcp" }}
         allowInsecure: {{$value.Ingress.AllowInsecure}}
+{{- end}}
       }
-{{end}}      
+{{- end}}
     }
     template: {
       containers: [
         {
           image: '{{$value.Image}}'
           name: '{{$name}}'
+{{- if $value.Env }}
+          env: [
+{{- range $name, $value := $value.Env}}
+            {
+              name: '{{$name}}'
+              value: '{{$value}}'
+            }
+{{- end}}
+          ]
+{{- end}}
         }
       ]
     }

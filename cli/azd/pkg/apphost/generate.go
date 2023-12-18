@@ -136,6 +136,32 @@ func BicepTemplate(manifest *Manifest) (*memfs.FS, error) {
 	return fs, nil
 }
 
+// Inputs returns a map of fully qualified input names (as the dotted pair of resource name and input name) to information
+// about the input for every input across all resources in the manifest.
+func Inputs(manifest *Manifest) (map[string]Input, error) {
+	generator := newInfraGenerator()
+
+	if err := generator.LoadManifest(manifest); err != nil {
+		return nil, err
+	}
+
+	res := make(map[string]Input, len(generator.inputs))
+
+	for k, v := range generator.inputs {
+		res[k] = Input{
+			Secret: v.Secret,
+			Type:   "string",
+			Default: &InputDefault{
+				Generate: &InputDefaultGenerate{
+					MinLength: &v.DefaultMinLength,
+				},
+			},
+		}
+	}
+
+	return res, nil
+}
+
 // GenerateProjectArtifacts generates all the artifacts to manage a project with `azd`. Te azure.yaml file as well as
 // a helpful next-steps.md file.
 func GenerateProjectArtifacts(
@@ -214,6 +240,7 @@ type infraGenerator struct {
 	projects          map[string]genProject
 	connectionStrings map[string]string
 	resourceTypes     map[string]string
+	inputs            map[string]genInput
 
 	bicepContext                 genBicepTemplateContext
 	containerAppTemplateContexts map[string]genContainerAppManifestTemplateContext
@@ -237,13 +264,42 @@ func newInfraGenerator() *infraGenerator {
 		connectionStrings:            make(map[string]string),
 		resourceTypes:                make(map[string]string),
 		containerAppTemplateContexts: make(map[string]genContainerAppManifestTemplateContext),
+		inputs:                       make(map[string]genInput),
 	}
 }
 
 // LoadManifest loads the given manifest into the generator. It should be called before [Compile].
 func (b *infraGenerator) LoadManifest(m *Manifest) error {
 	for name, comp := range m.Resources {
+		for k, v := range comp.Inputs {
+			input := genInput{
+				Secret: v.Secret,
+			}
+
+			if v.Type != "string" {
+				return fmt.Errorf("unsupported input type: %s", v.Type)
+			}
+
+			// TODO(ellismg): For Preview 2 of Aspire, we only support inputs which have a default.generate section
+			// with a minimum length, (i.e. for use as things like database passwords where `azd` will generate a random
+			//  password for the user).
+			//
+			// We will improve this for Preview 3 to support prompting for values without a default.generate (i.e. external
+			// API keys or such that the user need to provide).
+			if v.Default != nil && v.Default.Generate != nil && v.Default.Generate.MinLength != nil {
+				input.DefaultMinLength = *v.Default.Generate.MinLength
+			} else {
+				return fmt.Errorf("expected input %s for resource %s to have a default.generate.minLength value", k, name)
+			}
+
+			b.inputs[fmt.Sprintf("%s.%s", name, k)] = input
+		}
+
 		b.resourceTypes[name] = comp.Type
+
+		if comp.ConnectionString != nil {
+			b.connectionStrings[name] = *comp.ConnectionString
+		}
 
 		switch comp.Type {
 		case "azure.servicebus.v0":
@@ -286,12 +342,11 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 			// resource type.
 		case "postgres.database.v0":
 			b.addContainerAppService(name, "postgres")
-		case "postgres.connection.v0":
-			b.connectionStrings[name] = *comp.ConnectionString
-		case "rabbitmq.connection.v0":
-			b.connectionStrings[name] = *comp.ConnectionString
-		case "azure.cosmosdb.connection.v0":
-			b.connectionStrings[name] = *comp.ConnectionString
+		case "postgres.connection.v0", "rabbitmq.connection.v0", "azure.cosmosdb.connection.v0":
+			// Only interesting thing about the connection resource is the connection string, which we handle above.
+
+			// We have the case statement here to ensure we don't error out on the resource type by treating it as an unknown
+			// resource type.
 		default:
 			ignore, err := strconv.ParseBool(os.Getenv("AZD_DEBUG_DOTNET_APPHOST_IGNORE_UNSUPPORTED_RESOURCES"))
 			if err == nil && ignore {
@@ -576,6 +631,7 @@ func (b *infraGenerator) Compile() error {
 	for name, container := range b.containers {
 		cs := genContainerApp{
 			Image: container.Image,
+			Env:   make(map[string]string),
 		}
 
 		ingress, err := buildIngress(container.Bindings)
@@ -584,6 +640,14 @@ func (b *infraGenerator) Compile() error {
 		}
 
 		cs.Ingress = ingress
+
+		for k, value := range container.Env {
+			res, err := evalString(value, func(s string) (string, error) { return b.evalBindingRef(s, inputEmitTypeBicep) })
+			if err != nil {
+				return fmt.Errorf("configuring environment for resource %s: evaluating value for %s: %w", name, k, err)
+			}
+			cs.Env[k] = res
+		}
 
 		b.bicepContext.ContainerApps[name] = cs
 	}
@@ -699,8 +763,14 @@ func buildIngress(bindings map[string]*Binding) (*genContainerAppIngress, error)
 	return nil, nil
 }
 
+// inputEmitType controls how references to inputs are emitted in the generated file.
+type inputEmitType string
+
+const inputEmitTypeBicep inputEmitType = "bicep"
+const inputEmitTypeYaml inputEmitType = "yaml"
+
 // evalBindingRef evaluates a binding reference expression based on the state of the manifest loaded into the generator.
-func (b infraGenerator) evalBindingRef(v string) (string, error) {
+func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string, error) {
 	parts := strings.SplitN(v, ".", 2)
 	if len(parts) != 2 {
 		return "", fmt.Errorf("malformed binding expression, expected <resourceName>.<propertyPath> but was: %s", v)
@@ -710,6 +780,35 @@ func (b infraGenerator) evalBindingRef(v string) (string, error) {
 	targetType, ok := b.resourceTypes[resource]
 	if !ok {
 		return "", fmt.Errorf("unknown resource referenced in binding expression: %s", resource)
+	}
+
+	if connectionString, has := b.connectionStrings[resource]; has && prop == "connectionString" {
+		// The connection string can be a expression itself, so we need to evaluate it.
+		res, err := evalString(connectionString, func(s string) (string, error) {
+			return b.evalBindingRef(s, emitType)
+		})
+		if err != nil {
+			return "", fmt.Errorf("evaluating connection string for %s: %w", resource, err)
+		}
+
+		return res, nil
+	}
+
+	if strings.HasPrefix(prop, "inputs.") {
+		parts := strings.Split(prop[len("inputs."):], ".")
+
+		if len(parts) != 1 {
+			return "", fmt.Errorf("malformed binding expression, expected inputs.<input-name> but was: %s", v)
+		}
+
+		switch emitType {
+		case inputEmitTypeBicep:
+			return fmt.Sprintf("${inputs['%s']['%s']}", resource, parts[0]), nil
+		case inputEmitTypeYaml:
+			return fmt.Sprintf("{{ index .Inputs `%s` `%s` }}", resource, parts[0]), nil
+		default:
+			panic(fmt.Sprintf("unexpected inputEmitType %s", string(emitType)))
+		}
 	}
 
 	switch {
@@ -741,6 +840,9 @@ func (b infraGenerator) evalBindingRef(v string) (string, error) {
 		}
 
 		switch parts[1] {
+		case "host":
+			// The host name matches the containerapp name, so we can just return the resource name.
+			return resource, nil
 		case "port":
 			return fmt.Sprintf(`%d`, *binding.ContainerPort), nil
 		case "url":
@@ -754,7 +856,8 @@ func (b infraGenerator) evalBindingRef(v string) (string, error) {
 
 			return fmt.Sprintf(urlFormatString, binding.Scheme, resource), nil
 		default:
-			return "", fmt.Errorf("malformed binding expression, expected bindings.<binding-name>.[port|url] but was: %s", v)
+			return "",
+				fmt.Errorf("malformed binding expression, expected bindings.<binding-name>.[host|port|url] but was: %s", v)
 		}
 	case targetType == "postgres.database.v0" || targetType == "redis.v0":
 		switch prop {
@@ -811,10 +914,11 @@ func (b infraGenerator) evalBindingRef(v string) (string, error) {
 }
 
 // buildEnvBlock creates the environment map in the template context. It does this by copying the values from the given map,
-// evaluating any binding expressions that are present.
+// evaluating any binding expressions that are present. It writes the result of the evaluation after calling json.Marshal
+// so the values may be emitted into YAML as is without worrying about escaping.
 func (b *infraGenerator) buildEnvBlock(env map[string]string, manifestCtx *genContainerAppManifestTemplateContext) error {
 	for k, value := range env {
-		res, err := evalString(value, b.evalBindingRef)
+		res, err := evalString(value, func(s string) (string, error) { return b.evalBindingRef(s, inputEmitTypeYaml) })
 		if err != nil {
 			return fmt.Errorf("evaluating value for %s: %w", k, err)
 		}

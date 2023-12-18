@@ -1892,6 +1892,25 @@ func (p *BicepProvider) ensureParameters(
 			continue
 		}
 
+		// For object inputs, if the "AZD Type" is a "inputs" it gets the value from the inputs section of the config,
+		// or an empty object, if there are no inputs configured.
+		if p.mapBicepTypeToInterfaceType(param.Type) == ParameterTypeObject {
+			if m, has := param.AzdMetadata(); has && m.Type != nil && *m.Type == "inputs" {
+				var inputs map[string]any
+				if has, err := p.env.Config.GetSection("inputs", &inputs); err != nil {
+					return nil, fmt.Errorf("reading inputs from config: %w", err)
+				} else if !has {
+					inputs = make(map[string]any)
+				}
+
+				configuredParameters[key] = azure.ArmParameterValue{
+					Value: inputs,
+				}
+
+				continue
+			}
+		}
+
 		// This required parameter was not in parameters file - see if we stored a value in config from an earlier
 		// prompt and if so use it.
 		configKey := fmt.Sprintf("infra.parameters.%s", key)

@@ -9,27 +9,29 @@ properties:
   configuration:
     activeRevisionsMode: single
     ingress:
-      external: true
-      targetPort: 3000
+      external: false
+      targetPort: 8080
       transport: http
-      allowInsecure: false
+      allowInsecure: true
     registries:
     - server: {{ .Env.AZURE_CONTAINER_REGISTRY_ENDPOINT }}
       identity: {{ .Env.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID }}
   template:
     containers:
     - image: {{ .Image }}
-      name: nodeapp
+      name: api
       env:
       - name: AZURE_CLIENT_ID
         value: {{ .Env.MANAGED_IDENTITY_CLIENT_ID }}
-      - name: NODE_ENV
-        value: development
-      - name: PORT
-        value: "3000"
+      - name: ConnectionStrings__db
+        value: '{{ connectionString "db" }}'
+      - name: OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EVENT_LOG_ATTRIBUTES
+        value: "true"
+      - name: OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EXCEPTION_LOG_ATTRIBUTES
+        value: "true"
     scale:
       minReplicas: 1
 tags:
-  azd-service-name: nodeapp
-  aspire-resource-name: nodeapp
+  azd-service-name: api
+  aspire-resource-name: api
 

@@ -20,6 +20,9 @@ import (
 //go:embed testdata/aspire-docker.json
 var aspireDockerManifest []byte
 
+//go:embed testdata/aspire-storage.json
+var aspireStorageManifest []byte
+
 //go:embed testdata/aspire-escaping.json
 var aspireEscapingManifest []byte
 
@@ -59,6 +62,41 @@ func TestAspireEscaping(t *testing.T) {
 			snapshot.SnapshotT(t, tmpl)
 		})
 	}
+}
+
+func TestAspireStorageGeneration(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping due to EOL issues on Windows with the baselines")
+	}
+
+	ctx := context.Background()
+	mockCtx := mocks.NewMockContext(ctx)
+	mockPublishManifest(mockCtx, aspireStorageManifest)
+	mockCli := dotnet.NewDotNetCli(mockCtx.CommandRunner)
+
+	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli)
+	require.NoError(t, err)
+
+	files, err := BicepTemplate(m)
+	require.NoError(t, err)
+
+	err = fs.WalkDir(files, ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		contents, err := fs.ReadFile(files, path)
+		if err != nil {
+			return err
+		}
+		t.Run(path, func(t *testing.T) {
+			snapshot.SnapshotT(t, string(contents))
+		})
+		return nil
+	})
+	require.NoError(t, err)
 }
 
 func TestAspireDockerGeneration(t *testing.T) {

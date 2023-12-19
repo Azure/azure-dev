@@ -195,8 +195,25 @@ func TestAddContainerAppService(t *testing.T) {
 	mockGenerator.addStorageQueue("storage", "quue")
 	mockGenerator.addStorageAccount("storage")
 	mockGenerator.addStorageTable("storage", "table")
+	mockGenerator.addStorageAccount("storage2")
+	mockGenerator.addStorageAccount("storage3")
+	mockGenerator.addStorageTable("storage4", "table")
+	mockGenerator.addStorageTable("storage2", "table")
+	mockGenerator.addStorageQueue("storage", "quue2")
 
 	require.Equal(t, 1, len(mockGenerator.bicepContext.StorageAccounts["storage"].Blobs))
-	require.Equal(t, 1, len(mockGenerator.bicepContext.StorageAccounts["storage"].Queues))
+	require.Equal(t, 2, len(mockGenerator.bicepContext.StorageAccounts["storage"].Queues))
 	require.Equal(t, 1, len(mockGenerator.bicepContext.StorageAccounts["storage"].Tables))
+
+	require.Equal(t, 0, len(mockGenerator.bicepContext.StorageAccounts["storage2"].Blobs))
+	require.Equal(t, 0, len(mockGenerator.bicepContext.StorageAccounts["storage2"].Queues))
+	require.Equal(t, 1, len(mockGenerator.bicepContext.StorageAccounts["storage2"].Tables))
+
+	require.Equal(t, 0, len(mockGenerator.bicepContext.StorageAccounts["storage3"].Blobs))
+	require.Equal(t, 0, len(mockGenerator.bicepContext.StorageAccounts["storage3"].Queues))
+	require.Equal(t, 0, len(mockGenerator.bicepContext.StorageAccounts["storage3"].Tables))
+
+	require.Equal(t, 0, len(mockGenerator.bicepContext.StorageAccounts["storage4"].Blobs))
+	require.Equal(t, 0, len(mockGenerator.bicepContext.StorageAccounts["storage4"].Queues))
+	require.Equal(t, 1, len(mockGenerator.bicepContext.StorageAccounts["storage4"].Tables))
 }

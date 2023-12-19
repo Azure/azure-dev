@@ -363,11 +363,11 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 }
 
 func (b *infraGenerator) requireCluster() {
+	b.requireLogAnalyticsWorkspace()
 	b.bicepContext.HasContainerEnvironment = true
 }
 
 func (b *infraGenerator) requireContainerRegistry() {
-	b.requireLogAnalyticsWorkspace()
 	b.bicepContext.HasContainerRegistry = true
 }
 

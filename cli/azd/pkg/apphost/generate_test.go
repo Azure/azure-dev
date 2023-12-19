@@ -20,17 +20,15 @@ import (
 //go:embed testdata/aspire-docker.json
 var aspireDockerManifest []byte
 
-func TestAspireDockerGeneration(t *testing.T) {
-	if runtime.GOOS == "windows" {
-		t.Skip("Skipping due to EOL issues on Windows with the baselines")
-	}
+//go:embed testdata/aspire-escaping.json
+var aspireEscapingManifest []byte
 
-	ctx := context.Background()
-	mockCtx := mocks.NewMockContext(ctx)
+// mockPublishManifest mocks the dotnet run --publisher manifest command to return a fixed manifest.
+func mockPublishManifest(mockCtx *mocks.MockContext, manifest []byte) {
 	mockCtx.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return args.Cmd == "dotnet" && args.Args[0] == "run" && args.Args[3] == "--publisher" && args.Args[4] == "manifest"
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-		err := os.WriteFile(args.Args[6], aspireDockerManifest, osutil.PermissionFile)
+		err := os.WriteFile(args.Args[6], manifest, osutil.PermissionFile)
 		if err != nil {
 			return exec.RunResult{
 				ExitCode: -1,
@@ -39,7 +37,38 @@ func TestAspireDockerGeneration(t *testing.T) {
 		}
 		return exec.RunResult{}, nil
 	})
+}
 
+func TestAspireEscaping(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping due to EOL issues on Windows with the baselines")
+	}
+
+	ctx := context.Background()
+	mockCtx := mocks.NewMockContext(ctx)
+	mockPublishManifest(mockCtx, aspireEscapingManifest)
+	mockCli := dotnet.NewDotNetCli(mockCtx.CommandRunner)
+
+	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli)
+	require.NoError(t, err)
+
+	for _, name := range []string{"api"} {
+		t.Run(name, func(t *testing.T) {
+			tmpl, err := ContainerAppManifestTemplateForProject(m, name)
+			require.NoError(t, err)
+			snapshot.SnapshotT(t, tmpl)
+		})
+	}
+}
+
+func TestAspireDockerGeneration(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping due to EOL issues on Windows with the baselines")
+	}
+
+	ctx := context.Background()
+	mockCtx := mocks.NewMockContext(ctx)
+	mockPublishManifest(mockCtx, aspireDockerManifest)
 	mockCli := dotnet.NewDotNetCli(mockCtx.CommandRunner)
 
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli)
@@ -81,4 +110,35 @@ func TestAspireDockerGeneration(t *testing.T) {
 		return nil
 	})
 	require.NoError(t, err)
+}
+
+func TestBuildEnvResolveServiceToConnectionString(t *testing.T) {
+	// Create a mock infraGenerator instance
+	mockGenerator := &infraGenerator{
+		resourceTypes: map[string]string{
+			"service": "postgres.database.v0",
+		},
+	}
+
+	// Define test input
+	env := map[string]string{
+		"VAR1": "value1",
+		"VAR2": "value2",
+		"VAR3": `complex {service.connectionString} expression`,
+	}
+
+	expected := map[string]string{
+		"VAR1": "value1",
+		"VAR2": "value2",
+		"VAR3": `complex {{ connectionString "service" }} expression`,
+	}
+
+	manifestCtx := &genContainerAppManifestTemplateContext{
+		Env: make(map[string]string),
+	}
+
+	// Call the method being tested
+	err := mockGenerator.buildEnvBlock(env, manifestCtx)
+	require.NoError(t, err)
+	require.Equal(t, expected, manifestCtx.Env)
 }

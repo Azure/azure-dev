@@ -3,7 +3,6 @@ package apphost
 import (
 	"bytes"
 	"context"
-	"encoding/json"
 	"fmt"
 	"io/fs"
 	"log"
@@ -17,6 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/resources"
 	"github.com/psanford/memfs"
+	"gopkg.in/yaml.v3"
 )
 
 const RedisContainerAppService = "redis"
@@ -828,14 +828,19 @@ func (b *infraGenerator) buildEnvBlock(env map[string]string, manifestCtx *genCo
 		// And YAML rules would treat the above as the value being a boolean instead of a string, which the container
 		// app service expects.
 		//
-		// JSON marshalling the string value will give us something like `"true"` (with the quotes, and any escaping
+		// YAML marshalling the string value will give us something like `"true"` (with the quotes, and any escaping
 		// that needs to be done), which is what we want here.
-		jsonStr, err := json.Marshal(res)
+		// Do not use JSON marshall as it would escape the quotes within the string, breaking the meaning of the value.
+		// yaml marshall will use 'some text "quoted" more text' as a valid yaml string.
+		yamlString, err := yaml.Marshal(res)
 		if err != nil {
 			return fmt.Errorf("marshalling env value: %w", err)
 		}
 
-		manifestCtx.Env[k] = string(jsonStr)
+		// remove the trailing newline. yaml marshall will add a newline at the end of the string, as the new line is
+		// expected at the end of the yaml document. But we are getting a single value with valid yaml here, so we don't
+		// need the newline.
+		manifestCtx.Env[k] = string(yamlString[0 : len(yamlString)-1])
 	}
 
 	return nil

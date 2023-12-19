@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -137,7 +138,7 @@ func TestBuildEnvBlock(t *testing.T) {
 		require.True(t, exists)
 		marshallValue, err := yaml.Marshal(originalValue)
 		require.NoError(t, err)
-		expectedValue := string(marshallValue)
+		expectedValue := strings.ReplaceAll(strings.ReplaceAll(string(marshallValue), "{{", "{"), "}}", "}")
 		require.Equal(t, expectedValue, value)
 	}
 }

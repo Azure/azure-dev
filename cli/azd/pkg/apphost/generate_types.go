@@ -21,6 +21,8 @@ type genKeyVault struct{}
 
 type genContainerApp struct {
 	Image   string
+	Dapr    *genContainerAppManifestTemplateContextDapr
+	Env     map[string]string
 	Ingress *genContainerAppIngress
 }
 
@@ -75,6 +77,11 @@ type genDaprComponent struct {
 	Secrets  map[string]genDaprComponentSecret
 	Type     string
 	Version  string
+}
+
+type genInput struct {
+	Secret           bool
+	DefaultMinLength int
 }
 
 type genBicepTemplateContext struct {

@@ -430,7 +430,7 @@ func (b *infraGenerator) addContainerAppService(name string, serviceType string)
 func (b *infraGenerator) addStorageAccount(name string) {
 	// storage account can be added from addStorageTable, addStorageQueue or addStorageBlob
 	// We only need to add it if it wasn't added before to cover cases of manifest with only one storage account and no
-	// blobs, queues or tables
+	// blobs, queues or tables.
 	if _, exists := b.bicepContext.StorageAccounts[name]; !exists {
 		b.bicepContext.StorageAccounts[name] = genStorageAccount{}
 	}

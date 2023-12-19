@@ -142,3 +142,23 @@ func TestBuildEnvResolveServiceToConnectionString(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, expected, manifestCtx.Env)
 }
+
+func TestAddContainerAppService(t *testing.T) {
+	// Create a mock infraGenerator instance
+	mockGenerator := &infraGenerator{
+		bicepContext: genBicepTemplateContext{
+			StorageAccounts: make(map[string]genStorageAccount),
+		},
+	}
+
+	// Call the method being tested
+	mockGenerator.addStorageBlob("storage", "blob")
+	mockGenerator.addStorageAccount("storage")
+	mockGenerator.addStorageQueue("storage", "quue")
+	mockGenerator.addStorageAccount("storage")
+	mockGenerator.addStorageTable("storage", "table")
+
+	require.Equal(t, 1, len(mockGenerator.bicepContext.StorageAccounts["storage"].Blobs))
+	require.Equal(t, 1, len(mockGenerator.bicepContext.StorageAccounts["storage"].Queues))
+	require.Equal(t, 1, len(mockGenerator.bicepContext.StorageAccounts["storage"].Tables))
+}

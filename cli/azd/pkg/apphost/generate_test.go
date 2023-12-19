@@ -7,7 +7,6 @@ import (
 	"os"
 	"path/filepath"
 	"runtime"
-	"strings"
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -16,7 +15,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/snapshot"
 	"github.com/stretchr/testify/require"
-	"gopkg.in/yaml.v3"
 )
 
 //go:embed testdata/aspire-docker.json
@@ -114,15 +112,25 @@ func TestAspireDockerGeneration(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestBuildEnvBlock(t *testing.T) {
+func TestBuildEnvResolveServiceToConnectionString(t *testing.T) {
 	// Create a mock infraGenerator instance
-	mockGenerator := &infraGenerator{}
+	mockGenerator := &infraGenerator{
+		resourceTypes: map[string]string{
+			"service": "postgres.database.v0",
+		},
+	}
 
 	// Define test input
 	env := map[string]string{
 		"VAR1": "value1",
 		"VAR2": "value2",
-		"VAR3": `complex {{connectionString "arg"}} expression`,
+		"VAR3": `complex {service.connectionString} expression`,
+	}
+
+	expected := map[string]string{
+		"VAR1": "value1",
+		"VAR2": "value2",
+		"VAR3": `complex {{ connectionString "service" }} expression`,
 	}
 
 	manifestCtx := &genContainerAppManifestTemplateContext{
@@ -132,13 +140,5 @@ func TestBuildEnvBlock(t *testing.T) {
 	// Call the method being tested
 	err := mockGenerator.buildEnvBlock(env, manifestCtx)
 	require.NoError(t, err)
-
-	for key, value := range manifestCtx.Env {
-		originalValue, exists := env[key]
-		require.True(t, exists)
-		marshallValue, err := yaml.Marshal(originalValue)
-		require.NoError(t, err)
-		expectedValue := strings.ReplaceAll(strings.ReplaceAll(string(marshallValue), "{{", "{"), "}}", "}")
-		require.Equal(t, expectedValue, value)
-	}
+	require.Equal(t, expected, manifestCtx.Env)
 }

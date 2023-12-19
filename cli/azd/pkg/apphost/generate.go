@@ -837,7 +837,10 @@ func (b *infraGenerator) buildEnvBlock(env map[string]string, manifestCtx *genCo
 			return fmt.Errorf("marshalling env value: %w", err)
 		}
 
-		manifestCtx.Env[k] = string(yamlString)
+		// remove the trailing newline. yaml marshall will add a newline at the end of the string, as the new line is
+		// expected at the end of the yaml document. But we are getting a single value with valid yaml here, so we don't
+		// need the newline.
+		manifestCtx.Env[k] = string(yamlString[0 : len(yamlString)-1])
 	}
 
 	return nil

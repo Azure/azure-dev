@@ -84,6 +84,8 @@ type PipelineManager struct {
 	console        input.Console
 	serviceLocator ioc.ServiceLocator
 	importManager  *project.ImportManager
+	configOptions  *ConfigOptions
+	infra          *project.Infra
 }
 
 func NewPipelineManager(
@@ -212,19 +214,7 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 		return result, err
 	}
 
-	// Figure out what is the expected provider to use for provisioning
-	projectPath := pm.azdCtx.ProjectPath()
-	prj, err := project.Load(ctx, projectPath)
-	if err != nil {
-		return result, fmt.Errorf("finding provisioning provider: %w", err)
-	}
-
-	infra, err := pm.importManager.ProjectInfrastructure(ctx, prj)
-	if err != nil {
-		return result, err
-	}
-	defer func() { _ = infra.Cleanup() }()
-
+	infra := pm.infra
 	// run pre-config validations.
 	rootPath := pm.azdCtx.ProjectDirectory()
 	updatedConfig, errorsFromPreConfig := pm.preConfigureCheck(ctx, infra.Options, rootPath)
@@ -624,13 +614,10 @@ func (pm *PipelineManager) pushGitRepo(ctx context.Context, gitRepoInfo *gitRepo
 	})
 }
 
-func (pm *PipelineManager) resolveProvider(ctx context.Context, projectPath string) (string, error) {
+func (pm *PipelineManager) resolveProvider(
+	ctx context.Context, prj *project.ProjectConfig) (string, error) {
 	// 1) if provider is set on azure.yaml, it should override the `lastUsedProvider`, as it can be changed by customer
 	// at any moment.
-	prj, err := project.Load(ctx, projectPath)
-	if err != nil {
-		return "", fmt.Errorf("finding pipeline provider: %w", err)
-	}
 	if prj.Pipeline.Provider != "" {
 		return prj.Pipeline.Provider, nil
 	}
@@ -662,6 +649,7 @@ func (pm *PipelineManager) resolveProvider(ctx context.Context, projectPath stri
 //     the last used configuration
 func (pm *PipelineManager) initialize(ctx context.Context, override string) error {
 	projectDir := pm.azdCtx.ProjectDirectory()
+	projectPath := pm.azdCtx.ProjectPath()
 	pm.args.PipelineProvider = override
 	pipelineProvider := strings.ToLower(pm.args.PipelineProvider)
 
@@ -678,11 +666,17 @@ func (pm *PipelineManager) initialize(ctx context.Context, override string) erro
 			azdoLabel)
 	}
 
+	// Figure out what is the expected provider to use for provisioning
+	prjConfig, err := project.Load(ctx, projectPath)
+	if err != nil {
+		return fmt.Errorf("Loading project configuration: %w", err)
+	}
+
 	// overrideWith is the last overriding mode. When it is empty
 	// we can re-assign it based on a previous run (persisted data)
 	// or based on the azure.yaml
 	if pipelineProvider == "" {
-		resolved, err := pm.resolveProvider(ctx, pm.azdCtx.ProjectPath())
+		resolved, err := pm.resolveProvider(ctx, prjConfig)
 		if err != nil {
 			return fmt.Errorf("resolving provider when no provider arg was used: %w", err)
 		}
@@ -741,6 +735,19 @@ func (pm *PipelineManager) initialize(ctx context.Context, override string) erro
 
 	pm.scmProvider = scmProvider
 	pm.ciProvider = ciProvider
+
+	infra, err := pm.importManager.ProjectInfrastructure(ctx, prjConfig)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = infra.Cleanup() }()
+	pm.infra = infra
+
+	pm.configOptions = &ConfigOptions{
+		Variables:                    slices.Clone(prjConfig.Pipeline.Variables),
+		Secrets:                      slices.Clone(prjConfig.Pipeline.Secrets),
+		AdditionalVariablesAsSecrets: prjConfig.Pipeline.AdditionalVariablesAsSecrets,
+	}
 
 	return nil
 }

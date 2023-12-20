@@ -118,6 +118,12 @@ type CiProvider interface {
 	) *CredentialOptions
 }
 
+type ConfigOptions struct {
+	Variables                    []string
+	Secrets                      []string
+	AdditionalVariablesAsSecrets bool
+}
+
 func folderExists(folderPath string) bool {
 	if _, err := os.Stat(folderPath); err == nil {
 		return true

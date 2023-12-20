@@ -23,6 +23,9 @@ var aspireDockerManifest []byte
 //go:embed testdata/aspire-escaping.json
 var aspireEscapingManifest []byte
 
+//go:embed testdata/aspire-container.json
+var aspireContainerManifest []byte
+
 // mockPublishManifest mocks the dotnet run --publisher manifest command to return a fixed manifest.
 func mockPublishManifest(mockCtx *mocks.MockContext, manifest []byte) {
 	mockCtx.CommandRunner.When(func(args exec.RunArgs, command string) bool {
@@ -89,6 +92,41 @@ func TestAspireDockerGeneration(t *testing.T) {
 			snapshot.SnapshotT(t, tmpl)
 		})
 	}
+
+	files, err := BicepTemplate(m)
+	require.NoError(t, err)
+
+	err = fs.WalkDir(files, ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		contents, err := fs.ReadFile(files, path)
+		if err != nil {
+			return err
+		}
+		t.Run(path, func(t *testing.T) {
+			snapshot.SnapshotT(t, string(contents))
+		})
+		return nil
+	})
+	require.NoError(t, err)
+}
+
+func TestAspireContainerGeneration(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping due to EOL issues on Windows with the baselines")
+	}
+
+	ctx := context.Background()
+	mockCtx := mocks.NewMockContext(ctx)
+	mockPublishManifest(mockCtx, aspireContainerManifest)
+	mockCli := dotnet.NewDotNetCli(mockCtx.CommandRunner)
+
+	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli)
+	require.NoError(t, err)
 
 	files, err := BicepTemplate(m)
 	require.NoError(t, err)

@@ -5,8 +5,10 @@ package pipeline
 
 import (
 	"context"
+	"maps"
 	"os"
 	"path/filepath"
+	"slices"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
@@ -122,6 +124,29 @@ type ConfigOptions struct {
 	Variables                    []string
 	Secrets                      []string
 	AdditionalVariablesAsSecrets bool
+}
+
+// SecretsAndVar returns the list of variables and secrets to be used in the pipeline
+// The initial values reference azd known values, which are merged with the ones defined on azure.yaml by the user.
+func (c *ConfigOptions) SecretsAndVars(
+	initialVariables, initialSecrets, env map[string]string) (variables map[string]string, secrets map[string]string) {
+	variables = maps.Clone(initialVariables)
+	secrets = maps.Clone(initialSecrets)
+
+	for key, value := range env {
+		if slices.Contains(c.Variables, key) {
+			variables[key] = value
+		}
+		if slices.Contains(c.Secrets, key) {
+			secrets[key] = value
+		}
+		// AdditionalVariablesAsSecrets automatically adds all variables not explicitly defined as secrets
+		if c.AdditionalVariablesAsSecrets && !slices.Contains(c.Variables, key) {
+			secrets[key] = value
+		}
+	}
+
+	return variables, secrets
 }
 
 func folderExists(folderPath string) bool {

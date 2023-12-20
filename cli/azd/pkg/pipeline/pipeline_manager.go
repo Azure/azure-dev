@@ -367,6 +367,10 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 		additionalVariables[environment.ResourceGroupEnvVarName] = rgGroup
 	}
 
+	// Merge azd required variables and secrets with the ones defined on azure.yaml
+	additionalVariables, additionalSecrets = pm.configOptions.SecretsAndVars(
+		additionalVariables, additionalSecrets, pm.env.Dotenv())
+
 	// config pipeline handles setting or creating the provider pipeline to be used
 	ciPipeline, err := pm.ciProvider.configurePipeline(
 		ctx, gitRepoInfo, infra.Options, additionalSecrets, additionalVariables)

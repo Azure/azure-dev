@@ -126,6 +126,80 @@ func (pm *PipelineManager) ScmProviderName() string {
 	return pm.scmProvider.Name()
 }
 
+type servicePrincipalResult struct {
+	appIdOrName      string
+	applicationName  string
+	lookupKind       servicePrincipalLookupKind
+	servicePrincipal *graphsdk.ServicePrincipal
+}
+
+func servicePrincipal(
+	ctx context.Context,
+	envClientId,
+	subscriptionId string,
+	args *PipelineManagerArgs, adService azcli.AdService) (*servicePrincipalResult, error) {
+	// Existing Service Principal Lookup strategy
+	// 1. --principal-id
+	// 2. --principal-name
+	// 3. AZURE_PIPELINE_CLIENT_ID environment variable
+	// 4. Create new service principal with default naming convention
+	var appIdOrName, applicationName string
+	var lookupKind servicePrincipalLookupKind
+
+	if args.PipelineServicePrincipalId != "" {
+		appIdOrName = args.PipelineServicePrincipalId
+		lookupKind = lookupKindPrincipalId
+	} else if args.PipelineServicePrincipalName != "" {
+		appIdOrName = args.PipelineServicePrincipalName
+		lookupKind = lookupKindPrincipleName
+	} else if envClientId != "" {
+		appIdOrName = envClientId
+		lookupKind = lookupKindEnvironmentVariable
+	}
+
+	if appIdOrName != "" {
+		servicePrincipal, err := adService.GetServicePrincipal(ctx, subscriptionId, appIdOrName)
+		if err != nil {
+			// If an explicit client id was specified but not found then fail
+			if lookupKind == lookupKindPrincipalId {
+				return nil, fmt.Errorf(
+					"service principal with client id '%s' specified in '--principal-id' parameter was not found. Error: %w",
+					args.PipelineServicePrincipalId,
+					err,
+				)
+			}
+
+			// If an explicit client id was specified but not found then fail
+			if lookupKind == lookupKindEnvironmentVariable {
+				return nil, fmt.Errorf(
+					"service principal with client id '%s' specified in environment variable '%s' was not found Error: %w",
+					envClientId,
+					AzurePipelineClientIdEnvVarName,
+					err,
+				)
+			}
+			return nil, fmt.Errorf("failed to get service principal (%s): %w", appIdOrName, err)
+		}
+
+		return &servicePrincipalResult{
+			appIdOrName:      servicePrincipal.AppId,
+			applicationName:  servicePrincipal.DisplayName,
+			servicePrincipal: servicePrincipal,
+			lookupKind:       lookupKind,
+		}, nil
+
+	}
+
+	// Fall back to convention based naming
+	applicationName = fmt.Sprintf("az-dev-%s", time.Now().UTC().Format("01-02-2006-15-04-05"))
+	return &servicePrincipalResult{
+		appIdOrName:      applicationName,
+		applicationName:  applicationName,
+		servicePrincipal: nil,
+		lookupKind:       lookupKind,
+	}, nil
+}
+
 // Configure is the main function from the pipeline manager which takes care
 // of creating or setting up the git project, the ci pipeline and the Azure connection.
 func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfigResult, err error) {
@@ -174,72 +248,26 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 		)
 	}
 
-	// Existing Service Principal Lookup strategy
-	// 1. --principal-id
-	// 2. --principal-name
-	// 3. AZURE_PIPELINE_CLIENT_ID environment variable
-	// 4. Create new service principal with default naming convention
-	envClientId := pm.env.Getenv(AzurePipelineClientIdEnvVarName)
-	var appIdOrName string
-	var lookupKind servicePrincipalLookupKind
-	if pm.args.PipelineServicePrincipalId != "" {
-		appIdOrName = pm.args.PipelineServicePrincipalId
-		lookupKind = lookupKindPrincipalId
-	}
-	if appIdOrName == "" && pm.args.PipelineServicePrincipalName != "" {
-		appIdOrName = pm.args.PipelineServicePrincipalName
-		lookupKind = lookupKindPrincipleName
-	}
-	if appIdOrName == "" && envClientId != "" {
-		appIdOrName = envClientId
-		lookupKind = lookupKindEnvironmentVariable
+	spConfig, err := servicePrincipal(
+		ctx, pm.env.Getenv(AzurePipelineClientIdEnvVarName), pm.env.GetSubscriptionId(), pm.args, pm.adService)
+	if err != nil {
+		return result, err
 	}
 
-	var servicePrincipal *graphsdk.ServicePrincipal
-	var displayMsg, applicationName string
-
-	if appIdOrName != "" {
-		servicePrincipal, _ = pm.adService.GetServicePrincipal(ctx, pm.env.GetSubscriptionId(), appIdOrName)
-		if servicePrincipal != nil {
-			appIdOrName = servicePrincipal.AppId
-			applicationName = servicePrincipal.DisplayName
-		} else {
-			applicationName = pm.args.PipelineServicePrincipalName
-		}
+	var displayMsg string
+	if spConfig.servicePrincipal == nil {
+		displayMsg = fmt.Sprintf("Creating service principal %s", spConfig.applicationName)
 	} else {
-		// Fall back to convention based naming
-		applicationName = fmt.Sprintf("az-dev-%s", time.Now().UTC().Format("01-02-2006-15-04-05"))
-		appIdOrName = applicationName
-	}
-
-	// If an explicit client id was specified but not found then fail
-	if servicePrincipal == nil && lookupKind == lookupKindPrincipalId {
-		return nil, fmt.Errorf(
-			"service principal with client id '%s' specified in '--principal-id' parameter was not found",
-			pm.args.PipelineServicePrincipalId,
-		)
-	}
-
-	// If an explicit client id was specified but not found then fail
-	if servicePrincipal == nil && lookupKind == lookupKindEnvironmentVariable {
-		return nil, fmt.Errorf(
-			"service principal with client id '%s' specified in environment variable '%s' was not found",
-			envClientId,
-			AzurePipelineClientIdEnvVarName,
-		)
-	}
-
-	if servicePrincipal == nil {
-		displayMsg = fmt.Sprintf("Creating service principal %s", applicationName)
-	} else {
-		displayMsg = fmt.Sprintf("Updating service principal %s (%s)", servicePrincipal.DisplayName, servicePrincipal.AppId)
+		displayMsg = fmt.Sprintf("Updating service principal %s (%s)",
+			spConfig.servicePrincipal.DisplayName,
+			spConfig.servicePrincipal.AppId)
 	}
 
 	pm.console.ShowSpinner(ctx, displayMsg, input.Step)
-	servicePrincipal, err = pm.adService.CreateOrUpdateServicePrincipal(
+	servicePrincipal, err := pm.adService.CreateOrUpdateServicePrincipal(
 		ctx,
 		pm.env.GetSubscriptionId(),
-		appIdOrName,
+		spConfig.appIdOrName,
 		pm.args.PipelineRoleNames)
 
 	if err != nil {
@@ -262,7 +290,7 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 	}
 
 	repoSlug := gitRepoInfo.owner + "/" + gitRepoInfo.repoName
-	displayMsg = fmt.Sprintf("Configuring repository %s to use credentials for %s", repoSlug, applicationName)
+	displayMsg = fmt.Sprintf("Configuring repository %s to use credentials for %s", repoSlug, spConfig.applicationName)
 	pm.console.ShowSpinner(ctx, displayMsg, input.Step)
 
 	// Get the requested credential options from the CI provider

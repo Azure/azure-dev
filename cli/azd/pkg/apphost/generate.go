@@ -148,12 +148,13 @@ func Inputs(manifest *Manifest) (map[string]Input, error) {
 	res := make(map[string]Input, len(generator.inputs))
 
 	for k, v := range generator.inputs {
+		minLen := v.DefaultMinLength
 		res[k] = Input{
 			Secret: v.Secret,
 			Type:   "string",
 			Default: &InputDefault{
 				Generate: &InputDefaultGenerate{
-					MinLength: &v.DefaultMinLength,
+					MinLength: &minLen,
 				},
 			},
 		}

@@ -424,7 +424,11 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	})
 
 	container.RegisterSingleton(func(ctx context.Context, authManager *auth.Manager) (azcore.TokenCredential, error) {
-		return authManager.CredentialForCurrentUser(ctx, nil)
+		var options = &auth.CredentialForCurrentUserOptions{
+			TenantID: os.Getenv(environment.TenantIdEnvVarName),
+		}
+
+		return authManager.CredentialForCurrentUser(ctx, options)
 	})
 
 	// Tools

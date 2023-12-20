@@ -1,3 +1,7 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+package pipeline
+
 import (
 	"testing"
 
@@ -8,22 +12,23 @@ func Test_ConfigOptions_SecretsAndVars(t *testing.T) {
 	// Initialize the ConfigOptions instance
 	config := &ConfigOptions{
 		Variables:                    []string{"var1", "var2"},
-		Secrets:                      []string{"secret1", "secret2"},
+		Secrets:                      []string{"secret1"},
 		AdditionalVariablesAsSecrets: true,
 	}
 
 	// Define the initial variables, secrets, and environment
 	initialVariables := map[string]string{
-		"var1": "value1",
+		"azdVar": "foo",
 	}
 	initialSecrets := map[string]string{
-		"secret1": "value2",
+		"azdSecret": "foo",
 	}
 	env := map[string]string{
-		"var1":    "new_value1",
-		"var2":    "value2",
-		"secret1": "new_value2",
+		"var1":    "foo",
+		"var2":    "bar",
+		"secret1": "foo",
 		"secret2": "value3",
+		"exraVar": "value4",
 	}
 
 	// Call the SecretsAndVars function
@@ -31,12 +36,15 @@ func Test_ConfigOptions_SecretsAndVars(t *testing.T) {
 
 	// Assert the expected results
 	expectedVariables := map[string]string{
-		"var1": "new_value1",
-		"var2": "value2",
+		"azdVar": "foo",
+		"var1":   "foo",
+		"var2":   "bar",
 	}
 	expectedSecrets := map[string]string{
-		"secret1": "new_value2",
-		"secret2": "value3",
+		"azdSecret": "foo",
+		"secret1":   "foo",
+		"exraVar":   "value4",
+		"secret2":   "value3",
 	}
 	assert.Equal(t, expectedVariables, variables)
 	assert.Equal(t, expectedSecrets, secrets)

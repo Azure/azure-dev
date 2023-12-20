@@ -428,7 +428,12 @@ func (b *infraGenerator) addContainerAppService(name string, serviceType string)
 }
 
 func (b *infraGenerator) addStorageAccount(name string) {
-	b.bicepContext.StorageAccounts[name] = genStorageAccount{}
+	// storage account can be added from addStorageTable, addStorageQueue or addStorageBlob
+	// We only need to add it if it wasn't added before to cover cases of manifest with only one storage account and no
+	// blobs, queues or tables.
+	if _, exists := b.bicepContext.StorageAccounts[name]; !exists {
+		b.bicepContext.StorageAccounts[name] = genStorageAccount{}
+	}
 }
 
 func (b *infraGenerator) addKeyVault(name string) {
@@ -436,10 +441,6 @@ func (b *infraGenerator) addKeyVault(name string) {
 }
 
 func (b *infraGenerator) addStorageBlob(storageAccount, blobName string) {
-	// TODO(ellismg): We have to handle the case where we may visit the blob resource before the storage account resource.
-	// But this implementation means that if the parent storage account is not in the manifest, we will not detect that
-	// as an error.  We probably should.
-
 	account := b.bicepContext.StorageAccounts[storageAccount]
 	account.Blobs = append(account.Blobs, blobName)
 	b.bicepContext.StorageAccounts[storageAccount] = account

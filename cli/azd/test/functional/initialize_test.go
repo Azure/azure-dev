@@ -37,6 +37,13 @@ func Test_CommandsAndActions_Initialize(t *testing.T) {
 	err = os.MkdirAll(ciProviderPath, osutil.PermissionDirectory)
 	require.NoError(t, err)
 
+	// set a dummy infra folder for pipeline config
+	err = os.MkdirAll("infra", osutil.PermissionDirectory)
+	require.NoError(t, err)
+	module, err := os.Create(filepath.Join("infra", "main.ext"))
+	require.NoError(t, err)
+	defer module.Close()
+
 	chain := []*actions.MiddlewareRegistration{
 		{
 			Name:     "skip",

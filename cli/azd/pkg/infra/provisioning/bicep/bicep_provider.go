@@ -74,6 +74,10 @@ type BicepProvider struct {
 	alphaFeatureManager   *alpha.FeatureManager
 	clock                 clock.Clock
 	ignoreDeploymentState bool
+	// compileBicepResult is cached to avoid recompiling the same bicep file multiple times in the same azd run.
+	compileBicepMemoryCache *compileBicepResult
+	// prevent resolving parameters multiple times in the same azd run.
+	ensureParamsInMemoryCache azure.ArmParameters
 }
 
 var ErrResourceGroupScopeNotSupported = fmt.Errorf(
@@ -1654,14 +1658,11 @@ type compileBicepResult struct {
 	Parameters azure.ArmParameters
 }
 
-// compileBicepResult is cached to avoid recompiling the same bicep file multiple times in the same azd run.
-var compileBicepMemoryCache *compileBicepResult
-
 func (p *BicepProvider) compileBicep(
 	ctx context.Context, modulePath string,
 ) (*compileBicepResult, error) {
-	if compileBicepMemoryCache != nil {
-		return compileBicepMemoryCache, nil
+	if p.compileBicepMemoryCache != nil {
+		return p.compileBicepMemoryCache, nil
 	}
 
 	var compiled string
@@ -1762,13 +1763,13 @@ func (p *BicepProvider) compileBicep(
 			}
 		}
 	}
-	compileBicepMemoryCache = &compileBicepResult{
+	p.compileBicepMemoryCache = &compileBicepResult{
 		RawArmTemplate: rawTemplate,
 		Template:       template,
 		Parameters:     parameters,
 	}
 
-	return compileBicepMemoryCache, nil
+	return p.compileBicepMemoryCache, nil
 }
 
 func combineMetadata(base map[string]json.RawMessage, override map[string]json.RawMessage) map[string]json.RawMessage {
@@ -1863,16 +1864,13 @@ func (p *BicepProvider) modulePath() string {
 	return filepath.Join(infraRoot, moduleFilename)
 }
 
-// prevent resolving parameters multiple times in the same azd run.
-var ensureParamsInMemoryCache azure.ArmParameters
-
 // Ensures the provisioning parameters are valid and prompts the user for input as needed
 func (p *BicepProvider) ensureParameters(
 	ctx context.Context,
 	template azure.ArmTemplate,
 ) (azure.ArmParameters, error) {
-	if ensureParamsInMemoryCache != nil {
-		return ensureParamsInMemoryCache, nil
+	if p.ensureParamsInMemoryCache != nil {
+		return p.ensureParamsInMemoryCache, nil
 	}
 
 	parameters, err := p.loadParameters(ctx)
@@ -1981,7 +1979,7 @@ func (p *BicepProvider) ensureParameters(
 			p.console.Message(ctx, fmt.Sprintf("warning: failed to save configured values: %v", err))
 		}
 	}
-	ensureParamsInMemoryCache = maps.Clone(configuredParameters)
+	p.ensureParamsInMemoryCache = maps.Clone(configuredParameters)
 	return configuredParameters, nil
 }
 

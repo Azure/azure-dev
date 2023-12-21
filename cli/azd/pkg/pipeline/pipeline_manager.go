@@ -180,7 +180,14 @@ func servicePrincipal(
 					err,
 				)
 			}
-			return nil, fmt.Errorf("failed to get service principal (%s): %w", appIdOrName, err)
+
+			// Return the name of the service principal that was not found. It will be use to create a new one.
+			return &servicePrincipalResult{
+				appIdOrName:      appIdOrName,
+				applicationName:  appIdOrName,
+				servicePrincipal: servicePrincipal,
+				lookupKind:       lookupKind,
+			}, nil
 		}
 
 		return &servicePrincipalResult{

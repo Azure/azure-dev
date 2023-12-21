@@ -51,7 +51,7 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 		manager, err := createPipelineManager(t, mockContext, azdContext, nil, nil)
 		assert.Nil(t, manager)
 		assert.ErrorContains(
-			t, err, "azure.yaml: no such file or directory")
+			t, err, "Loading project configuration: reading project file:")
 		os.Remove(ghFolder)
 	})
 

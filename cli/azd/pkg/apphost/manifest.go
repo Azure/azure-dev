@@ -20,8 +20,12 @@ type Resource struct {
 	// Type is present on all resource types
 	Type string `json:"type"`
 
-	// Path is present on a project.v0 resource and is the full path to the project file.
+	// Path is present on a project.v0 resource and is the path to the project file, and on a dockerfile.v0
+	// resource and is the path to the Dockerfile (including the "Dockerfile" filename).
 	Path *string `json:"path,omitempty"`
+
+	// Context is present on a dockerfile.v0 resource and is the path to the context directory.
+	Context *string `json:"context,omitempty"`
 
 	// Parent is present on a resource which is a child of another. It is the name of the parent resource. For example, a
 	// postgres.database.v0 is a child of a postgres.server.v0, and so it would have a parent of which is the name of
@@ -31,13 +35,14 @@ type Resource struct {
 	// Image is present on a container.v0 resource and is the image to use for the container.
 	Image *string `json:"image,omitempty"`
 
-	// Bindings is present on container.v0 and project.v0 resources, and is a map of binding names to binding details.
+	// Bindings is present on container.v0, project.v0 and dockerfile.v0 resources, and is a map of binding names to
+	// binding details.
 	Bindings map[string]*Binding `json:"bindings,omitempty"`
 
-	// Env is present on a project.v0 and container.v0 resource, and is a map of environment variable names to value
-	// expressions. The value expressions are simple expressions like "{redis.connectionString}" or "{postgres.port}" to
-	// allow referencing properties of other resources. The set of properties supported in these expressions
-	// depends on the type of resource you are referencing.
+	// Env is present on project.v0, container.v0 and dockerfile.v0 resources, and is a map of environment variable
+	// names to value  expressions. The value expressions are simple expressions like "{redis.connectionString}" or
+	// "{postgres.port}" to allow referencing properties of other resources. The set of properties supported in these
+	// expressions depends on the type of resource you are referencing.
 	Env map[string]string `json:"env,omitempty"`
 
 	// Queues is optionally present on a azure.servicebus.v0 resource, and is a list of queue names to create.
@@ -49,6 +54,31 @@ type Resource struct {
 	// Some resources just represent connections to existing resources that need not be provisioned.  These resources have
 	// a "connectionString" property which is the connection string that should be used during binding.
 	ConnectionString *string `json:"connectionString,omitempty"`
+
+	// Dapr is present on dapr.v0 resources.
+	Dapr *DaprResourceMetadata `json:"dapr,omitempty"`
+
+	// DaprComponent is present on dapr.component.v0 resources.
+	DaprComponent *DaprComponentResourceMetadata `json:"daprComponent,omitempty"`
+
+	// Inputs is present on resources that need inputs from during the provisioning process (e.g asking for an API key, or
+	// a password for a database).
+	Inputs map[string]Input `json:"inputs,omitempty"`
+}
+
+type DaprResourceMetadata struct {
+	AppId                  *string `json:"appId,omitempty"`
+	Application            *string `json:"application,omitempty"`
+	AppPort                *int    `json:"appPort,omitempty"`
+	AppProtocol            *string `json:"appProtocol,omitempty"`
+	DaprHttpMaxRequestSize *int    `json:"daprHttpMaxRequestSize,omitempty"`
+	DaprHttpReadBufferSize *int    `json:"daprHttpReadBufferSize,omitempty"`
+	EnableApiLogging       *bool   `json:"enableApiLogging,omitempty"`
+	LogLevel               *string `json:"logLevel,omitempty"`
+}
+
+type DaprComponentResourceMetadata struct {
+	Type *string `json:"type"`
 }
 
 type Reference struct {
@@ -61,6 +91,20 @@ type Binding struct {
 	Protocol      string `json:"protocol"`
 	Transport     string `json:"transport"`
 	External      bool   `json:"external"`
+}
+
+type Input struct {
+	Type    string        `json:"type"`
+	Secret  bool          `json:"secret"`
+	Default *InputDefault `json:"default,omitempty"`
+}
+
+type InputDefault struct {
+	Generate *InputDefaultGenerate `json:"generate,omitempty"`
+}
+
+type InputDefaultGenerate struct {
+	MinLength *int `json:"minLength,omitempty"`
 }
 
 // ManifestFromAppHost returns the Manifest from the given app host.
@@ -100,6 +144,12 @@ func ManifestFromAppHost(ctx context.Context, appHostProject string, dotnetCli d
 		if res.Path != nil {
 			if !filepath.IsAbs(*res.Path) {
 				*res.Path = filepath.Join(manifestDir, *res.Path)
+			}
+		}
+
+		if res.Type == "dockerfile.v0" {
+			if !filepath.IsAbs(*res.Context) {
+				*res.Context = filepath.Join(manifestDir, *res.Context)
 			}
 		}
 	}

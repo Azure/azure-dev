@@ -151,8 +151,7 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 	}
 	defer func() { _ = infra.Cleanup() }()
 
-	// run pre-config validations. manager will check az cli is logged in and
-	// will invoke the per-provider validations.
+	// run pre-config validations.
 	rootPath := pm.azdCtx.ProjectDirectory()
 	updatedConfig, errorsFromPreConfig := pm.preConfigureCheck(ctx, infra.Options, rootPath)
 	if errorsFromPreConfig != nil {
@@ -343,8 +342,16 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 		environment.AzdInitialEnvironmentConfigName: string(localEnvConfig),
 	}
 
+	additionalVariables := map[string]string{}
+	// If the user has set the resource group name as an environment variable, we need to pass it to the pipeline
+	// as this likely means rg-deployment
+	if rgGroup, exists := pm.env.LookupEnv(environment.ResourceGroupEnvVarName); exists {
+		additionalVariables[environment.ResourceGroupEnvVarName] = rgGroup
+	}
+
 	// config pipeline handles setting or creating the provider pipeline to be used
-	ciPipeline, err := pm.ciProvider.configurePipeline(ctx, gitRepoInfo, infra.Options, additionalSecrets)
+	ciPipeline, err := pm.ciProvider.configurePipeline(
+		ctx, gitRepoInfo, infra.Options, additionalSecrets, additionalVariables)
 	if err != nil {
 		return result, err
 	}

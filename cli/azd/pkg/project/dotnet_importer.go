@@ -99,6 +99,11 @@ func (ai *DotNetImporter) ProjectInfrastructure(ctx context.Context, svcConfig *
 		return nil, fmt.Errorf("generating bicep from manifest: %w", err)
 	}
 
+	inputs, err := apphost.Inputs(manifest)
+	if err != nil {
+		return nil, fmt.Errorf("getting inputs from manifest: %w", err)
+	}
+
 	tmpDir, err := os.MkdirTemp("", "azd-infra")
 	if err != nil {
 		return nil, fmt.Errorf("creating temporary directory: %w", err)
@@ -135,6 +140,7 @@ func (ai *DotNetImporter) ProjectInfrastructure(ctx context.Context, svcConfig *
 			Path:     tmpDir,
 			Module:   "main",
 		},
+		Inputs:     inputs,
 		cleanupDir: tmpDir,
 	}, nil
 }
@@ -161,6 +167,42 @@ func (ai *DotNetImporter) Services(
 			RelativePath: relPath,
 			Language:     ServiceLanguageDotNet,
 			Host:         DotNetContainerAppTarget,
+		}
+
+		svc.Name = name
+		svc.Project = p
+		svc.EventDispatcher = ext.NewEventDispatcher[ServiceLifecycleEventArgs]()
+
+		svc.Infra.Provider, err = provisioning.ParseProvider(svc.Infra.Provider)
+		if err != nil {
+			return nil, fmt.Errorf("parsing service %s: %w", svc.Name, err)
+		}
+
+		svc.DotNetContainerApp = &DotNetContainerAppOptions{
+			Manifest:    manifest,
+			ProjectName: name,
+			ProjectPath: svcConfig.Path(),
+		}
+
+		services[svc.Name] = svc
+	}
+
+	dockerfiles := apphost.Dockerfiles(manifest)
+	for name, dockerfile := range dockerfiles {
+		relPath, err := filepath.Rel(p.Path, filepath.Dir(dockerfile.Path))
+		if err != nil {
+			return nil, err
+		}
+
+		// TODO(ellismg): Some of this code is duplicated from project.Parse, we should centralize this logic long term.
+		svc := &ServiceConfig{
+			RelativePath: relPath,
+			Language:     ServiceLanguageDocker,
+			Host:         DotNetContainerAppTarget,
+			Docker: DockerProjectOptions{
+				Path:    dockerfile.Path,
+				Context: dockerfile.Context,
+			},
 		}
 
 		svc.Name = name
@@ -224,24 +266,37 @@ func (ai *DotNetImporter) SynthAllInfrastructure(
 		return nil, err
 	}
 
-	for name, path := range apphost.ProjectPaths(manifest) {
+	// writeManifestForResource writes the containerApp.tmpl.yaml for the given resource to the generated filesystem. The
+	// manifest is written to a file name "containerApp.tmpl.yaml" in the same directory as the project that produces the
+	// container we will deploy.
+	writeManifestForResource := func(name string, path string) error {
 		containerAppManifest, err := apphost.ContainerAppManifestTemplateForProject(manifest, name)
 		if err != nil {
-			return nil, fmt.Errorf("generating containerApp.tmpl.yaml for project %s: %w", name, err)
+			return fmt.Errorf("generating containerApp.tmpl.yaml for resource %s: %w", name, err)
 		}
 
 		projectRelPath, err := filepath.Rel(p.Path, path)
 		if err != nil {
-			return nil, err
+			return err
 		}
 
 		manifestPath := filepath.Join(filepath.Dir(projectRelPath), "manifests", "containerApp.tmpl.yaml")
 
 		if err := generatedFS.MkdirAll(filepath.Dir(manifestPath), osutil.PermissionDirectoryOwnerOnly); err != nil {
-			return nil, err
+			return err
 		}
 
-		if err := generatedFS.WriteFile(manifestPath, []byte(containerAppManifest), osutil.PermissionFileOwnerOnly); err != nil {
+		return generatedFS.WriteFile(manifestPath, []byte(containerAppManifest), osutil.PermissionFileOwnerOnly)
+	}
+
+	for name, path := range apphost.ProjectPaths(manifest) {
+		if writeManifestForResource(name, path) != nil {
+			return nil, err
+		}
+	}
+
+	for name, docker := range apphost.Dockerfiles(manifest) {
+		if writeManifestForResource(name, docker.Path) != nil {
 			return nil, err
 		}
 	}
@@ -280,6 +335,13 @@ func (ai *DotNetImporter) readManifest(ctx context.Context, svcConfig *ServiceCo
 						log.Printf("services.%s.config.exposedServices[%d] is not a string, ignoring value.",
 							svcConfig.Name, idx)
 					} else {
+						// This can happen if the user has removed a service from their app host that they previously
+						// had and had exposed (or changed the service such that it no longer has any bindings).
+						if binding, has := manifest.Resources[strName]; !has || binding.Bindings == nil {
+							log.Printf("service %s does not exist or has no bindings, ignoring value.", strName)
+							continue
+						}
+
 						for _, binding := range manifest.Resources[strName].Bindings {
 							binding.External = true
 						}

@@ -221,7 +221,7 @@ func (p *BicepProvider) State(ctx context.Context, options *StateOptions) (*Stat
 
 	var deployment *armresources.DeploymentExtended
 
-	deployments, err := p.findCompletedDeployments(ctx, p.env.GetEnvName(), scope, options.Hint())
+	deployments, err := p.findCompletedDeployments(ctx, p.env.Name(), scope, options.Hint())
 	p.console.StopSpinner(ctx, "", input.StepDone)
 
 	if err != nil {
@@ -376,7 +376,7 @@ func (p *BicepProvider) deploymentScope(deploymentScope azure.DeploymentScope) (
 			p.deploymentOperations,
 			p.env.GetLocation(),
 			p.env.GetSubscriptionId(),
-			deploymentNameForEnv(p.env.GetEnvName(), p.clock),
+			deploymentNameForEnv(p.env.Name(), p.clock),
 		), nil
 	} else if deploymentScope == azure.DeploymentScopeResourceGroup {
 		return infra.NewResourceGroupDeployment(
@@ -384,7 +384,7 @@ func (p *BicepProvider) deploymentScope(deploymentScope azure.DeploymentScope) (
 			p.deploymentOperations,
 			p.env.GetSubscriptionId(),
 			p.env.Getenv(environment.ResourceGroupEnvVarName),
-			deploymentNameForEnv(p.env.GetEnvName(), p.clock),
+			deploymentNameForEnv(p.env.Name(), p.clock),
 		), nil
 	}
 	return nil, fmt.Errorf("unsupported scope: %s", deploymentScope)
@@ -448,7 +448,7 @@ func (p *BicepProvider) latestDeploymentResult(
 	ctx context.Context,
 	scope infra.Scope,
 ) (*armresources.DeploymentExtended, error) {
-	deployments, err := p.findCompletedDeployments(ctx, p.env.GetEnvName(), scope, "")
+	deployments, err := p.findCompletedDeployments(ctx, p.env.Name(), scope, "")
 	// findCompletedDeployments returns error if no deployments are found
 	// No need to check for empty list
 	if err != nil {
@@ -608,7 +608,7 @@ func (p *BicepProvider) Deploy(ctx context.Context) (*DeployResult, error) {
 	p.console.ShowSpinner(ctx, "Creating/Updating resources", input.Step)
 
 	deploymentTags := map[string]*string{
-		azure.TagKeyAzdEnvName: to.Ptr(p.env.GetEnvName()),
+		azure.TagKeyAzdEnvName: to.Ptr(p.env.Name()),
 	}
 	if parametersHashErr == nil {
 		deploymentTags[azure.TagKeyAzdDeploymentStateParamHashName] = to.Ptr(currentParamsHash)
@@ -787,7 +787,7 @@ func (p *BicepProvider) Destroy(ctx context.Context, options DestroyOptions) (*D
 	}
 
 	// TODO: Report progress, "Fetching resource groups"
-	deployments, err := p.findCompletedDeployments(ctx, p.env.GetEnvName(), scope, "")
+	deployments, err := p.findCompletedDeployments(ctx, p.env.Name(), scope, "")
 	if err != nil {
 		return nil, err
 	}
@@ -922,7 +922,7 @@ func (p *BicepProvider) Destroy(ctx context.Context, options DestroyOptions) (*D
 		emptyTemplate,
 		azure.ArmParameters{},
 		map[string]*string{
-			azure.TagKeyAzdEnvName: to.Ptr(p.env.GetEnvName()),
+			azure.TagKeyAzdEnvName: to.Ptr(p.env.Name()),
 			"azd-deploy-reason":    to.Ptr("down"),
 		}); err != nil {
 		log.Println("failed creating new empty deployment after destroy")
@@ -1880,6 +1880,25 @@ func (p *BicepProvider) ensureParameters(
 		// If this parameter has a default, then there is no need for us to configure it.
 		if param.DefaultValue != nil {
 			continue
+		}
+
+		// For object inputs, if the "AZD Type" is a "inputs" it gets the value from the inputs section of the config,
+		// or an empty object, if there are no inputs configured.
+		if p.mapBicepTypeToInterfaceType(param.Type) == ParameterTypeObject {
+			if m, has := param.AzdMetadata(); has && m.Type != nil && *m.Type == "inputs" {
+				var inputs map[string]any
+				if has, err := p.env.Config.GetSection("inputs", &inputs); err != nil {
+					return nil, fmt.Errorf("reading inputs from config: %w", err)
+				} else if !has {
+					inputs = make(map[string]any)
+				}
+
+				configuredParameters[key] = azure.ArmParameterValue{
+					Value: inputs,
+				}
+
+				continue
+			}
 		}
 
 		// This required parameter was not in parameters file - see if we stored a value in config from an earlier

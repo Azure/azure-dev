@@ -54,6 +54,31 @@ type Resource struct {
 	// Some resources just represent connections to existing resources that need not be provisioned.  These resources have
 	// a "connectionString" property which is the connection string that should be used during binding.
 	ConnectionString *string `json:"connectionString,omitempty"`
+
+	// Dapr is present on dapr.v0 resources.
+	Dapr *DaprResourceMetadata `json:"dapr,omitempty"`
+
+	// DaprComponent is present on dapr.component.v0 resources.
+	DaprComponent *DaprComponentResourceMetadata `json:"daprComponent,omitempty"`
+
+	// Inputs is present on resources that need inputs from during the provisioning process (e.g asking for an API key, or
+	// a password for a database).
+	Inputs map[string]Input `json:"inputs,omitempty"`
+}
+
+type DaprResourceMetadata struct {
+	AppId                  *string `json:"appId,omitempty"`
+	Application            *string `json:"application,omitempty"`
+	AppPort                *int    `json:"appPort,omitempty"`
+	AppProtocol            *string `json:"appProtocol,omitempty"`
+	DaprHttpMaxRequestSize *int    `json:"daprHttpMaxRequestSize,omitempty"`
+	DaprHttpReadBufferSize *int    `json:"daprHttpReadBufferSize,omitempty"`
+	EnableApiLogging       *bool   `json:"enableApiLogging,omitempty"`
+	LogLevel               *string `json:"logLevel,omitempty"`
+}
+
+type DaprComponentResourceMetadata struct {
+	Type *string `json:"type"`
 }
 
 type Reference struct {
@@ -66,6 +91,20 @@ type Binding struct {
 	Protocol      string `json:"protocol"`
 	Transport     string `json:"transport"`
 	External      bool   `json:"external"`
+}
+
+type Input struct {
+	Type    string        `json:"type"`
+	Secret  bool          `json:"secret"`
+	Default *InputDefault `json:"default,omitempty"`
+}
+
+type InputDefault struct {
+	Generate *InputDefaultGenerate `json:"generate,omitempty"`
+}
+
+type InputDefaultGenerate struct {
+	MinLength *int `json:"minLength,omitempty"`
 }
 
 // ManifestFromAppHost returns the Manifest from the given app host.

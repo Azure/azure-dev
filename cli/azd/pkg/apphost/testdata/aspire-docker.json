@@ -6,7 +6,8 @@
       "context": "../NodeApp",
       "env": {
         "NODE_ENV": "development",
-        "PORT": "{nodeapp.bindings.http.port}"
+        "PORT": "{nodeapp.bindings.http.port}",
+        "MY_SQL_CONNECTION_STRING": "{mysqlabstract.connectionString}"
       },
       "bindings": {
         "http": {
@@ -14,6 +15,33 @@
           "protocol": "tcp",
           "transport": "http",
           "containerPort": 3000
+        }
+      }
+    },
+    "mysqlabstract": {
+      "type": "container.v0",
+      "image": "mysql:latest",
+      "env": {
+        "MYSQL_ROOT_PASSWORD": "{mysqlabstract.inputs.password}"
+      },
+      "bindings": {
+        "tcp": {
+          "scheme": "tcp",
+          "protocol": "tcp",
+          "transport": "tcp",
+          "containerPort": 3306
+        }
+      },
+      "connectionString": "Server={mysqlabstract.bindings.tcp.host};Port={mysqlabstract.bindings.tcp.port};User ID=root;Password={mysqlabstract.inputs.password}",
+      "inputs": {
+        "password": {
+          "type": "string",
+          "secret": true,
+          "default": {
+            "generate": {
+              "minLength": 10
+            }
+          }
         }
       }
     }

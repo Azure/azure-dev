@@ -153,26 +153,17 @@ func (im *ImportManager) ProjectInfrastructure(ctx context.Context, projectConfi
 }
 
 func pathHasModule(path, module string) (bool, error) {
-	var moduleFound bool
-	err := filepath.Walk(path, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			return err
-		}
-		if !info.IsDir() {
-			fileNameWithoutExt := strings.TrimSuffix(info.Name(), filepath.Ext(info.Name()))
-			if fileNameWithoutExt == module {
-				moduleFound = true
-				return filepath.SkipDir
-			}
-		}
-		return nil
-	})
-
+	files, err := os.ReadDir(path)
 	if err != nil {
 		return false, fmt.Errorf("error while iterating directory: %w", err)
 	}
 
-	return moduleFound, nil
+	return slices.ContainsFunc(files, func(file fs.DirEntry) bool {
+		fileName := file.Name()
+		fileNameNoExt := strings.TrimSuffix(fileName, filepath.Ext(fileName))
+		return !file.IsDir() && fileNameNoExt == module
+	}), nil
+
 }
 
 func (im *ImportManager) SynthAllInfrastructure(ctx context.Context, projectConfig *ProjectConfig) (fs.FS, error) {

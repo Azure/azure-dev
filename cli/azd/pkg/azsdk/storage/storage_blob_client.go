@@ -4,11 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"io"
 	"path/filepath"
 	"time"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
@@ -19,6 +19,7 @@ type AccountConfig struct {
 	AccountName   string
 	ContainerName string
 	Endpoint      string
+	TenantID      string
 }
 
 const (
@@ -167,10 +168,14 @@ func (bc *blobClient) ensureContainerExists(ctx context.Context) error {
 	return nil
 }
 
+type RemoteEnvTokenCredential struct {
+	TokenCredential azcore.TokenCredential
+}
+
 // createClient creates a new blob client and caches it for future use
 func NewBlobSdkClient(
 	ctx context.Context,
-	credential azcore.TokenCredential,
+	credential *RemoteEnvTokenCredential,
 	accountConfig *AccountConfig,
 	httpClient httputil.HttpClient,
 	userAgent httputil.UserAgent,
@@ -188,7 +193,7 @@ func NewBlobSdkClient(
 	}
 
 	serviceUrl := fmt.Sprintf("https://%s.%s", accountConfig.AccountName, accountConfig.Endpoint)
-	client, err := azblob.NewClient(serviceUrl, credential, blobOptions)
+	client, err := azblob.NewClient(serviceUrl, credential.TokenCredential, blobOptions)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create blob client, %w", err)
 	}

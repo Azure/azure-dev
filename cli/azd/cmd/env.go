@@ -44,6 +44,7 @@ func envActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 
 	group.Add("select", &actions.ActionDescriptorOptions{
 		Command:        newEnvSelectCmd(),
+		FlagsResolver:  newEnvSelectFlags,
 		ActionResolver: newEnvSelectAction,
 	})
 
@@ -55,6 +56,7 @@ func envActions(root *actions.ActionDescriptor) *actions.ActionDescriptor {
 
 	group.Add("list", &actions.ActionDescriptorOptions{
 		Command:        newEnvListCmd(),
+		FlagsResolver:  newEnvListFlags,
 		ActionResolver: newEnvListAction,
 		OutputFormats:  []output.Format{output.JsonFormat, output.TableFormat},
 		DefaultFormat:  output.TableFormat,
@@ -96,11 +98,13 @@ func newEnvSetCmd() *cobra.Command {
 
 type envSetFlags struct {
 	envFlag
+	tenantIdFlag
 	global *internal.GlobalCommandOptions
 }
 
 func (f *envSetFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	f.envFlag.Bind(local, global)
+	f.tenantIdFlag.Bind(local, global)
 	f.global = global
 }
 
@@ -139,6 +143,23 @@ func (e *envSetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	return nil, nil
+}
+
+type envSelectFlags struct {
+	envFlag
+	tenantIdFlag
+}
+
+func (f *envSelectFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+	f.envFlag.Bind(local, global)
+	f.tenantIdFlag.Bind(local, global)
+}
+
+func newEnvSelectFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *envSelectFlags {
+	flags := &envSelectFlags{}
+	flags.Bind(cmd.Flags(), global)
+
+	return flags
 }
 
 func newEnvSelectCmd() *cobra.Command {
@@ -180,6 +201,23 @@ func (e *envSelectAction) Run(ctx context.Context) (*actions.ActionResult, error
 	}
 
 	return nil, nil
+}
+
+type envListFlags struct {
+	envFlag
+	tenantIdFlag
+}
+
+func (f *envListFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+	f.envFlag.Bind(local, global)
+	f.tenantIdFlag.Bind(local, global)
+}
+
+func newEnvListFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *envListFlags {
+	flags := &envListFlags{}
+	flags.Bind(cmd.Flags(), global)
+
+	return flags
 }
 
 func newEnvListCmd() *cobra.Command {
@@ -255,6 +293,8 @@ type envNewFlags struct {
 	subscription string
 	location     string
 	global       *internal.GlobalCommandOptions
+	envFlag
+	tenantIdFlag
 }
 
 func (f *envNewFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
@@ -265,6 +305,9 @@ func (f *envNewFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 		"Name or ID of an Azure subscription to use for the new environment",
 	)
 	local.StringVarP(&f.location, "location", "l", "", "Azure location for the new environment")
+
+	f.envFlag.Bind(local, global)
+	f.tenantIdFlag.Bind(local, global)
 
 	f.global = global
 }
@@ -338,12 +381,14 @@ type envRefreshFlags struct {
 	hint   string
 	global *internal.GlobalCommandOptions
 	envFlag
+	tenantIdFlag
 }
 
 func (er *envRefreshFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	local.StringVarP(&er.hint, "hint", "", "", "Hint to help identify the environment to refresh")
 
 	er.envFlag.Bind(local, global)
+	er.tenantIdFlag.Bind(local, global)
 	er.global = global
 }
 
@@ -519,11 +564,13 @@ func newEnvGetValuesCmd() *cobra.Command {
 
 type envGetValuesFlags struct {
 	envFlag
+	tenantIdFlag
 	global *internal.GlobalCommandOptions
 }
 
 func (eg *envGetValuesFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	eg.envFlag.Bind(local, global)
+	eg.tenantIdFlag.Bind(local, global)
 	eg.global = global
 }
 

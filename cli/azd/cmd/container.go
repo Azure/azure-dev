@@ -3,6 +3,7 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
 	"io"
 	"os"
 	"strings"
@@ -163,6 +164,12 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		}
 
 		return envFlag{environmentName: envValue}
+	})
+
+	container.RegisterSingleton(func(cmd *cobra.Command) tenantIdFlag {
+		tenantIdValue, _ := cmd.Flags().GetString(tenantIdFlagName)
+
+		return tenantIdFlag{tenantID: tenantIdValue}
 	})
 
 	container.RegisterSingleton(func(cmd *cobra.Command) CmdAnnotations {
@@ -424,11 +431,28 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	})
 
 	container.RegisterSingleton(func(ctx context.Context, authManager *auth.Manager) (azcore.TokenCredential, error) {
+		return authManager.CredentialForCurrentUser(ctx, nil)
+	})
+
+	container.RegisterSingleton(func(ctx context.Context, authManager *auth.Manager, accountConfig *storage.AccountConfig, flag tenantIdFlag) (*storage.RemoteEnvTokenCredential, error) {
 		var options = &auth.CredentialForCurrentUserOptions{
-			TenantID: os.Getenv(environment.TenantIdEnvVarName),
+			TenantID: flag.tenantID,
 		}
 
-		return authManager.CredentialForCurrentUser(ctx, options)
+		if options.TenantID == "" {
+			options.TenantID = accountConfig.TenantID
+		}
+
+		if options.TenantID == "" {
+			options.TenantID = os.Getenv(environment.TenantIdEnvVarName)
+		}
+
+		var credential, err = authManager.CredentialForCurrentUser(ctx, options)
+		if err != nil {
+			return nil, err
+		}
+
+		return &storage.RemoteEnvTokenCredential{TokenCredential: credential}, nil
 	})
 
 	// Tools

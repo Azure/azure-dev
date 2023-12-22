@@ -101,7 +101,7 @@ func (m *monitorAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 
 	resourceManager := infra.NewAzureResourceManager(m.azCli, m.deploymentOperations)
 	resourceGroups, err := resourceManager.GetResourceGroupsForEnvironment(
-		ctx, m.env.GetSubscriptionId(), m.env.GetEnvName())
+		ctx, m.env.GetSubscriptionId(), m.env.Name())
 	if err != nil {
 		return nil, fmt.Errorf("discovering resource groups from deployment: %w", err)
 	}

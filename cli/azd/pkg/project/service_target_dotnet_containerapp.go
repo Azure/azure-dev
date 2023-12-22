@@ -21,6 +21,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/containerapps"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
+	"github.com/azure/azure-dev/cli/azd/pkg/password"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 )
@@ -59,7 +60,7 @@ func NewDotNetContainerAppTarget(
 
 // Gets the required external tools
 func (at *dotnetContainerAppTarget) RequiredExternalTools(ctx context.Context) []tools.ExternalTool {
-	return tools.Unique(append(at.containerHelper.RequiredExternalTools(ctx), at.dotNetCli))
+	return []tools.ExternalTool{at.dotNetCli}
 }
 
 // Initializes the Container App target
@@ -97,7 +98,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 			task.SetProgress(NewServiceProgress("Logging in to registry"))
 
 			// Login, tag & push container image to ACR
-			loginServer, err := at.containerHelper.Login(ctx, targetResource)
+			dockerCreds, err := at.containerHelper.Credentials(ctx, targetResource)
 			if err != nil {
 				task.SetError(fmt.Errorf("logging in to registry: %w", err))
 				return
@@ -121,13 +122,20 @@ func (at *dotnetContainerAppTarget) Deploy(
 			} else {
 				imageName := fmt.Sprintf("azd-deploy-%s-%d", serviceConfig.Name, time.Now().Unix())
 
-				err = at.dotNetCli.PublishContainer(ctx, serviceConfig.Path(), "Debug", imageName, loginServer)
+				err = at.dotNetCli.PublishContainer(
+					ctx,
+					serviceConfig.Path(),
+					"Debug",
+					imageName,
+					dockerCreds.LoginServer,
+					dockerCreds.Username,
+					dockerCreds.Password)
 				if err != nil {
 					task.SetError(fmt.Errorf("publishing container: %w", err))
 					return
 				}
 
-				remoteImageName = fmt.Sprintf("%s/%s", loginServer, imageName)
+				remoteImageName = fmt.Sprintf("%s/%s", dockerCreds.LoginServer, imageName)
 			}
 
 			task.SetProgress(NewServiceProgress("Updating container app"))
@@ -185,13 +193,64 @@ func (at *dotnetContainerAppTarget) Deploy(
 				return
 			}
 
+			requiredInputs, err := apphost.Inputs(serviceConfig.DotNetContainerApp.Manifest)
+			if err != nil {
+				task.SetError(fmt.Errorf("failed to get required inputs: %w", err))
+			}
+
+			wroteNewInput := false
+
+			for inputName, inputInfo := range requiredInputs {
+				inputConfigKey := fmt.Sprintf("inputs.%s", inputName)
+
+				if _, has := at.env.Config.GetString(inputConfigKey); !has {
+					// No value found, so we need to generate one, and store it in the config bag.
+					//
+					// TODO(ellismg): Today this dereference is safe because when loading a manifest we validate that every
+					// input has a generate block with a min length property.  We would like to relax this in Preview 3 to
+					// to support cases where this is not the case (and we'd prompt for the value).  When we do that, we'll
+					// need to audit these dereferences to check for nil.
+					val, err := password.FromAlphabet(password.LettersAndDigits, *inputInfo.Default.Generate.MinLength)
+					if err != nil {
+						task.SetError(fmt.Errorf("generating value for input %s: %w", inputName, err))
+						return
+
+					}
+
+					if err := at.env.Config.Set(inputConfigKey, val); err != nil {
+						task.SetError(fmt.Errorf("saving value for input %s: %w", inputName, err))
+						return
+					}
+
+					wroteNewInput = true
+				}
+			}
+
+			if wroteNewInput {
+				if err := at.containerHelper.envManager.Save(ctx, at.env); err != nil {
+					task.SetError(fmt.Errorf("saving environment: %w", err))
+					return
+				}
+			}
+
+			var inputs map[string]any
+
+			if has, err := at.env.Config.GetSection("inputs", &inputs); err != nil {
+				task.SetError(fmt.Errorf("failed to get inputs section: %w", err))
+				return
+			} else if !has {
+				inputs = make(map[string]any)
+			}
+
 			builder := strings.Builder{}
 			err = tmpl.Execute(&builder, struct {
-				Env   map[string]string
-				Image string
+				Env    map[string]string
+				Image  string
+				Inputs map[string]any
 			}{
-				Env:   at.env.Dotenv(),
-				Image: remoteImageName,
+				Env:    at.env.Dotenv(),
+				Image:  remoteImageName,
+				Inputs: inputs,
 			})
 			if err != nil {
 				task.SetError(fmt.Errorf("failed executing template file: %w", err))

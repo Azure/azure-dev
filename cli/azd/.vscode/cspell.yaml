@@ -71,6 +71,9 @@ overrides:
       - keychain
       - crusername
       - azurecr
+  - filename: pkg/tools/dotnet/dotnet.go
+    words:
+      - PWORD
   - filename: pkg/tools/kubectl/kubectl.go
     words:
       - tmpl

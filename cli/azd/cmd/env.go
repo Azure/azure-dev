@@ -327,7 +327,7 @@ func (en *envNewAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 		return nil, fmt.Errorf("creating new environment: %w", err)
 	}
 
-	if err := en.azdCtx.SetDefaultEnvironmentName(env.GetEnvName()); err != nil {
+	if err := en.azdCtx.SetDefaultEnvironmentName(env.Name()); err != nil {
 		return nil, fmt.Errorf("saving default environment: %w", err)
 	}
 
@@ -432,7 +432,7 @@ func newEnvRefreshAction(
 func (ef *envRefreshAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	// Command title
 	ef.console.MessageUxItem(ctx, &ux.MessageTitle{
-		Title: fmt.Sprintf("Refreshing environment %s (azd env refresh)", ef.env.GetEnvName()),
+		Title: fmt.Sprintf("Refreshing environment %s (azd env refresh)", ef.env.Name()),
 	})
 
 	if err := ef.projectManager.Initialize(ctx, ef.projectConfig); err != nil {

@@ -146,12 +146,10 @@ func (e *envSetAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 }
 
 type envSelectFlags struct {
-	envFlag
 	tenantIdFlag
 }
 
 func (f *envSelectFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
-	f.envFlag.Bind(local, global)
 	f.tenantIdFlag.Bind(local, global)
 }
 
@@ -204,12 +202,10 @@ func (e *envSelectAction) Run(ctx context.Context) (*actions.ActionResult, error
 }
 
 type envListFlags struct {
-	envFlag
 	tenantIdFlag
 }
 
 func (f *envListFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
-	f.envFlag.Bind(local, global)
 	f.tenantIdFlag.Bind(local, global)
 }
 

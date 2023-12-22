@@ -149,15 +149,9 @@ type browseUrl func(ctx context.Context, console input.Console, url string)
 // OverrideBrowser allows users to set their own implementation for browsing urls.
 var overrideBrowser browseUrl
 
-func openWithDefaultBrowser(ctx context.Context, console input.Console, url string, manualBrowsing bool) {
+func openWithDefaultBrowser(ctx context.Context, console input.Console, url string) {
 	if overrideBrowser != nil {
 		overrideBrowser(ctx, console, url)
-		return
-	}
-
-	// If manual browsing is enabled, we don't want to open the browser automatically
-	if manualBrowsing {
-		console.Message(ctx, fmt.Sprintf("Manual browser, go to: %s", url))
 		return
 	}
 

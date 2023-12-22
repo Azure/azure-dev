@@ -260,7 +260,7 @@ func (df *docsFlag) Set(value string) error {
 
 		commandPath := strings.ReplaceAll(c.CommandPath(), " ", "-")
 		commandDocsUrl := cReferenceDocumentationUrl + commandPath
-		openWithDefaultBrowser(ctx, console, commandDocsUrl, false)
+		openWithDefaultBrowser(ctx, console, commandDocsUrl)
 	})
 
 	return nil

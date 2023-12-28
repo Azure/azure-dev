@@ -23,6 +23,11 @@ import (
 	"golang.org/x/exp/maps"
 )
 
+const (
+	defaultModule = "main"
+	defaultPath   = "infra"
+)
+
 // TerraformProvider exposes infrastructure provisioning using Azure Terraform templates
 type TerraformProvider struct {
 	envManager   environment.Manager
@@ -74,6 +79,12 @@ func NewTerraformProvider(
 func (t *TerraformProvider) Initialize(ctx context.Context, projectPath string, options Options) error {
 	t.projectPath = projectPath
 	t.options = options
+	if t.options.Module == "" {
+		t.options.Module = defaultModule
+	}
+	if t.options.Path == "" {
+		t.options.Path = defaultPath
+	}
 
 	requiredTools := t.RequiredExternalTools()
 	if err := tools.EnsureInstalled(ctx, requiredTools...); err != nil {

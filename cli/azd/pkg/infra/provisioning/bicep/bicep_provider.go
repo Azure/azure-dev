@@ -45,6 +45,11 @@ import (
 	"golang.org/x/exp/maps"
 )
 
+const (
+	defaultModule = "main"
+	defaultPath   = "infra"
+)
+
 type deploymentDetails struct {
 	CompiledBicep *compileBicepResult
 	// Target is the unique resource in azure that represents the deployment that will happen. A target can be scoped to
@@ -87,6 +92,12 @@ func (p *BicepProvider) RequiredExternalTools() []tools.ExternalTool {
 func (p *BicepProvider) Initialize(ctx context.Context, projectPath string, options Options) error {
 	p.projectPath = projectPath
 	p.options = options
+	if p.options.Module == "" {
+		p.options.Module = defaultModule
+	}
+	if p.options.Path == "" {
+		p.options.Path = defaultPath
+	}
 
 	requiredTools := p.RequiredExternalTools()
 	if err := tools.EnsureInstalled(ctx, requiredTools...); err != nil {

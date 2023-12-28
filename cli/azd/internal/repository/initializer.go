@@ -340,7 +340,7 @@ func (i *Initializer) InitializeMinimal(ctx context.Context, azdCtx *azdcontext.
 	// Default infra path if not specified
 	infraPath := projectConfig.Infra.Path
 	if infraPath == "" {
-		infraPath = project.InfraDefaults.Path
+		infraPath = project.DefaultPath
 	}
 
 	err = os.MkdirAll(infraPath, osutil.PermissionDirectory)
@@ -350,7 +350,7 @@ func (i *Initializer) InitializeMinimal(ctx context.Context, azdCtx *azdcontext.
 
 	module := projectConfig.Infra.Module
 	if projectConfig.Infra.Module == "" {
-		module = project.InfraDefaults.Module
+		module = project.DefaultModule
 	}
 
 	mainPath := filepath.Join(infraPath, module)

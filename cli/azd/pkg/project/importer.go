@@ -98,10 +98,10 @@ func (im *ImportManager) ServiceStable(ctx context.Context, projectConfig *Proje
 }
 
 // defaultOptions for infra settings. These values are applied across provisioning providers.
-var InfraDefaults = provisioning.Options{
-	Module: "main",
-	Path:   "infra",
-}
+const (
+	DefaultModule = "main"
+	DefaultPath   = "infra"
+)
 
 // ProjectInfrastructure parses the project configuration and returns the infrastructure configuration.
 // The configuration can be explicitly defined on azure.yaml using path and module, or in case these values
@@ -109,10 +109,10 @@ var InfraDefaults = provisioning.Options{
 func (im *ImportManager) ProjectInfrastructure(ctx context.Context, projectConfig *ProjectConfig) (*Infra, error) {
 	// Use default project values for Infra when not specified in azure.yaml
 	if projectConfig.Infra.Module == "" {
-		projectConfig.Infra.Module = InfraDefaults.Module
+		projectConfig.Infra.Module = DefaultModule
 	}
 	if projectConfig.Infra.Path == "" {
-		projectConfig.Infra.Path = InfraDefaults.Path
+		projectConfig.Infra.Path = DefaultPath
 	}
 
 	infraRoot := projectConfig.Infra.Path

@@ -309,6 +309,43 @@ resource {{bicepName $name}}RoleAssignment 'Microsoft.Authorization/roleAssignme
   }
 }
 {{- end}}
+{{range $name, $value := .CosmosDbAccounts}}
+resource {{bicepName $name}} 'Microsoft.DocumentDB/databaseAccounts@2023-11-15' = {
+  name: replace('{{$name}}-${resourceToken}', '-', '')
+  location: location
+  tags: union(tags, {'aspire-resource-name': '{{$name}}'})
+  properties: {
+    consistencyPolicy: { defaultConsistencyLevel: 'Session' }
+    locations: [
+      {
+        locationName: location
+        failoverPriority: 0
+      }
+    ]
+    databaseAccountOfferType: 'Standard'
+  }
+}
+// Cosmos DB Account Reader Role
+resource {{bicepName $name}}ReaderRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid({{bicepName $name}}.id, managedIdentity.id, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'fbdf93bf-df7d-467e-a4d2-9458aa1360c8'))
+  scope: {{bicepName $name}}
+  properties: {
+    principalId: managedIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId:  subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'fbdf93bf-df7d-467e-a4d2-9458aa1360c8')
+  }
+}
+// Cosmos DB Operator
+resource {{bicepName $name}}OperatorRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid({{bicepName $name}}.id, managedIdentity.id, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '230815da-be43-4aae-9cb4-875f7bd000aa'))
+  scope: {{bicepName $name}}
+  properties: {
+    principalId: managedIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId:  subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '230815da-be43-4aae-9cb4-875f7bd000aa')
+  }
+}
+{{- end}}
 
 output MANAGED_IDENTITY_CLIENT_ID string = managedIdentity.properties.clientId
 {{if .HasContainerRegistry -}}
@@ -338,5 +375,8 @@ output SERVICE_BINDING_{{alphaSnakeUpper $cname}}_ENDPOINT string = {{bicepName 
 {{end -}}
 {{range $name, $value := .KeyVaults -}}
 output SERVICE_BINDING_{{alphaSnakeUpper $name}}_ENDPOINT string = {{bicepName $name}}.properties.vaultUri
+{{end -}}
+{{range $name, $value := .CosmosDbAccounts -}}
+output SERVICE_BINDING_{{alphaSnakeUpper $name}}_ENDPOINT string = {{bicepName $name}}.properties.documentEndpoint
 {{end -}}
 {{ end}}

@@ -346,7 +346,6 @@ resource {{bicepName $name}}OperatorRoleAssignment 'Microsoft.Authorization/role
   }
 }
 {{- end}}
-
 output MANAGED_IDENTITY_CLIENT_ID string = managedIdentity.properties.clientId
 {{if .HasContainerRegistry -}}
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = containerRegistry.properties.loginServer

@@ -13,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/azureutil"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
@@ -31,6 +32,7 @@ type DefaultPrompter struct {
 	env            *environment.Environment
 	accountManager account.Manager
 	azCli          azcli.AzCli
+	cloud          *cloud.Cloud
 }
 
 func NewDefaultPrompter(
@@ -38,12 +40,14 @@ func NewDefaultPrompter(
 	console input.Console,
 	accountManager account.Manager,
 	azCli azcli.AzCli,
+	cloud *cloud.Cloud,
 ) Prompter {
 	return &DefaultPrompter{
 		console:        console,
 		env:            env,
 		accountManager: accountManager,
 		azCli:          azCli,
+		cloud:          cloud,
 	}
 }
 
@@ -54,11 +58,10 @@ func (p *DefaultPrompter) PromptSubscription(ctx context.Context, msg string) (s
 	}
 
 	if len(subscriptionOptions) == 0 {
-		// TODO: Fix hardcoded URL portal.azure.com
 		return "", fmt.Errorf(heredoc.Doc(
 			`no subscriptions found.
-			Ensure you have a subscription by visiting https://portal.azure.com and search for Subscriptions in the search bar.
-			Once you have a subscription, run 'azd auth login' again to reload subscriptions.`))
+			Ensure you have a subscription by visiting %s and search for Subscriptions in the search bar.
+			Once you have a subscription, run 'azd auth login' again to reload subscriptions.`), p.cloud.PortalUrlBase)
 	}
 
 	for subscriptionId == "" {

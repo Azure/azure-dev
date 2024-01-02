@@ -15,6 +15,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
@@ -256,7 +257,7 @@ func (crs *containerRegistryService) getAcrToken(
 		return nil, fmt.Errorf("getting credentials for subscription '%s': %w", subscriptionId, err)
 	}
 
-	token, err := creds.GetToken(ctx, policy.TokenRequestOptions{Scopes: []string{azure.ManagementScope}})
+	token, err := creds.GetToken(ctx, policy.TokenRequestOptions{Scopes: auth.GetLoginScopes(crs.cloud)})
 	if err != nil {
 		return nil, fmt.Errorf("getting token for subscription '%s': %w", subscriptionId, err)
 	}

@@ -7,6 +7,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/devcentersdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
@@ -61,6 +62,7 @@ type manager struct {
 	client               devcentersdk.DevCenterClient
 	deploymentsService   azapi.Deployments
 	deploymentOperations azapi.DeploymentOperations
+	cloud                *cloud.Cloud
 }
 
 // NewManager creates a new devcenter manager
@@ -69,12 +71,14 @@ func NewManager(
 	client devcentersdk.DevCenterClient,
 	deploymentsService azapi.Deployments,
 	deploymentOperations azapi.DeploymentOperations,
+	cloud *cloud.Cloud,
 ) Manager {
 	return &manager{
 		config:               config,
 		client:               client,
 		deploymentsService:   deploymentsService,
 		deploymentOperations: deploymentOperations,
+		cloud:                cloud,
 	}
 }
 
@@ -218,6 +222,7 @@ func (m *manager) Deployment(
 	return infra.NewResourceGroupDeployment(
 		m.deploymentsService,
 		m.deploymentOperations,
+		m.cloud,
 		resourceGroupId.SubscriptionId,
 		resourceGroupId.Name,
 		*latestDeployment.Name,

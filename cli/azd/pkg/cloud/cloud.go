@@ -20,6 +20,11 @@ type Cloud struct {
 	// TODO: Should this be a pointer? Yes depending on where during runtime
 	// the Services values are set.
 	Configuration *cloud.Configuration
+
+	// The base URL for the cloud's portal (e.g. https://portal.azure.com for
+	// Azure public cloud).
+	// TODO: How would this configuration be configured by a user?
+	PortalUrlBase string
 }
 
 type Config struct {
@@ -56,18 +61,21 @@ func ParseCloudConfig(partialConfig any) (*Config, error) {
 func GetAzurePublic() Cloud {
 	return Cloud{
 		Configuration: &cloud.AzurePublic,
+		PortalUrlBase: "https://portal.azure.com",
 	}
 }
 
 func GetAzureGovernment() Cloud {
 	return Cloud{
 		Configuration: &cloud.AzureGovernment,
+		PortalUrlBase: "https://portal.azure.us",
 	}
 }
 
 func GetAzureChina() Cloud {
 	return Cloud{
 		Configuration: &cloud.AzureChina,
+		PortalUrlBase: "https://portal.azure.cn",
 	}
 }
 

@@ -29,6 +29,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/cmdsubst"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -74,6 +75,7 @@ type BicepProvider struct {
 	alphaFeatureManager   *alpha.FeatureManager
 	clock                 clock.Clock
 	ignoreDeploymentState bool
+	cloud                 *cloud.Cloud
 }
 
 var ErrResourceGroupScopeNotSupported = fmt.Errorf(
@@ -308,6 +310,7 @@ func (p *BicepProvider) createDeploymentFromArmDeployment(
 		return infra.NewResourceGroupDeployment(
 			p.deploymentsService,
 			p.deploymentOperations,
+			p.cloud,
 			p.env.GetSubscriptionId(),
 			p.env.Getenv(environment.ResourceGroupEnvVarName),
 			deploymentName,
@@ -316,6 +319,7 @@ func (p *BicepProvider) createDeploymentFromArmDeployment(
 		return infra.NewSubscriptionDeployment(
 			p.deploymentsService,
 			p.deploymentOperations,
+			p.cloud,
 			p.env.GetLocation(),
 			p.env.GetSubscriptionId(),
 			deploymentName,
@@ -384,6 +388,7 @@ func (p *BicepProvider) deploymentScope(deploymentScope azure.DeploymentScope) (
 		return infra.NewSubscriptionDeployment(
 			p.deploymentsService,
 			p.deploymentOperations,
+			p.cloud,
 			p.env.GetLocation(),
 			p.env.GetSubscriptionId(),
 			deploymentNameForEnv(p.env.Name(), p.clock),
@@ -392,6 +397,7 @@ func (p *BicepProvider) deploymentScope(deploymentScope azure.DeploymentScope) (
 		return infra.NewResourceGroupDeployment(
 			p.deploymentsService,
 			p.deploymentOperations,
+			p.cloud,
 			p.env.GetSubscriptionId(),
 			p.env.Getenv(environment.ResourceGroupEnvVarName),
 			deploymentNameForEnv(p.env.Name(), p.clock),
@@ -1099,7 +1105,7 @@ func (p *BicepProvider) getAllResourcesToDelete(
 	return allResources, nil
 }
 
-func generateResourceGroupsToDelete(groupedResources map[string][]azcli.AzCliResource, subId string) []string {
+func generateResourceGroupsToDelete(groupedResources map[string][]azcli.AzCliResource, subId, portalUrlBase string) []string {
 	lines := []string{"Resource group(s) to be deleted:", ""}
 
 	for rg := range groupedResources {
@@ -1107,7 +1113,8 @@ func generateResourceGroupsToDelete(groupedResources map[string][]azcli.AzCliRes
 			"  • %s: %s",
 			rg,
 			// TODO: Fix hardcoded URL
-			output.WithLinkFormat("https://portal.azure.com/#@/resource/subscriptions/%s/resourceGroups/%s/overview",
+			output.WithLinkFormat("%s/#@/resource/subscriptions/%s/resourceGroups/%s/overview",
+				portalUrlBase,
 				subId,
 				rg,
 			),
@@ -1125,7 +1132,7 @@ func (p *BicepProvider) destroyResourceGroups(
 ) error {
 	if !options.Force() {
 		p.console.MessageUxItem(ctx, &ux.MultilineMessage{
-			Lines: generateResourceGroupsToDelete(groupedResources, p.env.GetSubscriptionId())},
+			Lines: generateResourceGroupsToDelete(groupedResources, p.env.GetSubscriptionId(), p.cloud.PortalUrlBase)},
 		)
 		confirmDestroy, err := p.console.Confirm(ctx, input.ConsoleOptions{
 			Message: fmt.Sprintf(
@@ -2058,6 +2065,7 @@ func NewBicepProvider(
 	curPrincipal CurrentPrincipalIdProvider,
 	alphaFeatureManager *alpha.FeatureManager,
 	clock clock.Clock,
+	cloud *cloud.Cloud,
 ) Provider {
 	return &BicepProvider{
 		envManager:           envManager,
@@ -2071,5 +2079,6 @@ func NewBicepProvider(
 		curPrincipal:         curPrincipal,
 		alphaFeatureManager:  alphaFeatureManager,
 		clock:                clock,
+		cloud:                cloud,
 	}
 }

@@ -46,7 +46,8 @@ func Test_getResourceGroupFollowUp(t *testing.T) {
 		&project.ProjectConfig{},
 		project.NewResourceManager(env, azCli, depOpService),
 		env,
-		false)
+		false,
+		"")
 
 	require.Contains(t, followUp, "You can view the resources created under the resource group Name in Azure Portal:")
 }
@@ -81,7 +82,8 @@ func Test_getResourceGroupFollowUpPreview(t *testing.T) {
 		&project.ProjectConfig{},
 		project.NewResourceManager(env, azCli, depOpService),
 		env,
-		true)
+		true,
+		"")
 
 	require.Contains(t, followUp, "You can view the current resources under the resource group Name in Azure Portal:")
 }

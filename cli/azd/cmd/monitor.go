@@ -13,8 +13,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
@@ -59,32 +59,32 @@ func newMonitorCmd() *cobra.Command {
 }
 
 type monitorAction struct {
-	azdCtx               *azdcontext.AzdContext
 	env                  *environment.Environment
 	subResolver          account.SubscriptionTenantResolver
 	azCli                azcli.AzCli
 	deploymentOperations azapi.DeploymentOperations
 	console              input.Console
 	flags                *monitorFlags
+	cloud                *cloud.Cloud
 }
 
 func newMonitorAction(
-	azdCtx *azdcontext.AzdContext,
 	env *environment.Environment,
 	subResolver account.SubscriptionTenantResolver,
 	azCli azcli.AzCli,
 	deploymentOperations azapi.DeploymentOperations,
 	console input.Console,
 	flags *monitorFlags,
+	cloud *cloud.Cloud,
 ) actions.Action {
 	return &monitorAction{
-		azdCtx:               azdCtx,
 		env:                  env,
 		azCli:                azCli,
 		deploymentOperations: deploymentOperations,
 		console:              console,
 		flags:                flags,
 		subResolver:          subResolver,
+		cloud:                cloud,
 	}
 }
 
@@ -142,19 +142,21 @@ func (m *monitorAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	for _, insightsResource := range insightsResources {
 		if m.flags.monitorLive {
 			openWithDefaultBrowser(ctx, m.console,
-				fmt.Sprintf("https://app.azure.com/%s%s/quickPulse", tenantId, insightsResource.Id))
+				fmt.Sprintf("%s/#@%s/resource%s/quickPulse", m.cloud.PortalUrlBase, tenantId, insightsResource.Id),
+			)
 		}
 
 		if m.flags.monitorLogs {
 			openWithDefaultBrowser(ctx, m.console,
-				fmt.Sprintf("https://app.azure.com/%s%s/logs", tenantId, insightsResource.Id))
+				fmt.Sprintf("%s/#@%s/resource%s/logs", m.cloud.PortalUrlBase, tenantId, insightsResource.Id))
 		}
 	}
 
 	for _, portalResource := range portalResources {
 		if m.flags.monitorOverview {
 			openWithDefaultBrowser(ctx, m.console,
-				fmt.Sprintf("https://portal.azure.com/#@%s/dashboard/arm%s", tenantId, portalResource.Id))
+				fmt.Sprintf("%s/#@%s/dashboard/arm%s", m.cloud.PortalUrlBase, tenantId, portalResource.Id),
+			)
 		}
 	}
 

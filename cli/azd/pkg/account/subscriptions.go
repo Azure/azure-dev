@@ -6,12 +6,12 @@ import (
 	"sort"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
 	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/compare"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
@@ -22,21 +22,25 @@ type SubscriptionsService struct {
 	credentialProvider auth.MultiTenantCredentialProvider
 	userAgent          string
 	httpClient         httputil.HttpClient
+	cloud              *cloud.Cloud
 }
 
 func NewSubscriptionsService(
 	credentialProvider auth.MultiTenantCredentialProvider,
-	httpClient httputil.HttpClient) *SubscriptionsService {
+	httpClient httputil.HttpClient,
+	cloud *cloud.Cloud,
+) *SubscriptionsService {
 	return &SubscriptionsService{
 		userAgent:          azdinternal.UserAgent(),
 		httpClient:         httpClient,
 		credentialProvider: credentialProvider,
+		cloud:              cloud,
 	}
 }
 
 func (ss *SubscriptionsService) createSubscriptionsClient(
 	ctx context.Context, tenantId string) (*armsubscriptions.Client, error) {
-	options := clientOptions(ss.httpClient, ss.userAgent)
+	options := clientOptions(ss.httpClient, ss.userAgent, ss.cloud)
 	cred, err := ss.credentialProvider.GetTokenCredential(ctx, tenantId)
 	if err != nil {
 		return nil, err
@@ -51,7 +55,7 @@ func (ss *SubscriptionsService) createSubscriptionsClient(
 }
 
 func (ss *SubscriptionsService) createTenantsClient(ctx context.Context) (*armsubscriptions.TenantsClient, error) {
-	options := clientOptions(ss.httpClient, ss.userAgent)
+	options := clientOptions(ss.httpClient, ss.userAgent, ss.cloud)
 	// Use default home tenant, since tenants itself can be listed across tenants
 	cred, err := ss.credentialProvider.GetTokenCredential(ctx, "")
 	if err != nil {
@@ -178,12 +182,12 @@ func (s *SubscriptionsService) ListTenants(ctx context.Context) ([]armsubscripti
 	return tenants, nil
 }
 
-func clientOptions(httpClient httputil.HttpClient, userAgent string) *arm.ClientOptions {
+func clientOptions(httpClient httputil.HttpClient, userAgent string, cloud *cloud.Cloud) *arm.ClientOptions {
 	return &arm.ClientOptions{
 		ClientOptions: policy.ClientOptions{
 			Transport:       httpClient,
 			PerCallPolicies: []policy.Policy{azsdk.NewUserAgentPolicy(userAgent)},
-			Cloud:           cloud.AzureGovernment,
+			Cloud:           *cloud.Configuration,
 		},
 	}
 }

@@ -21,7 +21,6 @@ import (
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/public"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
-	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/github"
@@ -55,14 +54,6 @@ const cUseCloudShellAuthEnvVar = "AZD_IN_CLOUDSHELL"
 
 const cExternalAuthEndpointEnvVarName = "AZD_AUTH_ENDPOINT"
 const cExternalAuthKeyEnvVarName = "AZD_AUTH_KEY"
-
-// The scopes to request when acquiring our token during the login flow or when requesting a token to validate if the client
-// is logged in.
-// TODO: Ensure these can be removed
-// var LoginScopes = []string{azure.ManagementScope}
-var loginScopesMap = map[string]struct{}{
-	azure.ManagementScope: {},
-}
 
 // HttpClient interface as required by MSAL library.
 type HttpClient interface {

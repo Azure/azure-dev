@@ -11,6 +11,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -36,8 +37,6 @@ const (
 	AINotValid                  = "is not valid according to the validation procedure"
 	openAIsubscriptionNoQuotaId = "The subscription does not have QuotaId/Feature required by SKU 'S0' from kind 'OpenAI'"
 	responsibleAITerms          = "until you agree to Responsible AI terms for this resource"
-	// TODO: Fix hardcoded URL portal.azure.com
-	azurePortalURL = "https://ms.portal.azure.com/"
 )
 
 func (i *provisionFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
@@ -95,6 +94,7 @@ type provisionAction struct {
 	console          input.Console
 	subManager       *account.SubscriptionsManager
 	importManager    *project.ImportManager
+	cloud            *cloud.Cloud
 }
 
 func newProvisionAction(
@@ -110,6 +110,7 @@ func newProvisionAction(
 	formatter output.Formatter,
 	writer io.Writer,
 	subManager *account.SubscriptionsManager,
+	cloud *cloud.Cloud,
 ) actions.Action {
 	return &provisionAction{
 		flags:            flags,
@@ -124,6 +125,7 @@ func newProvisionAction(
 		console:          console,
 		subManager:       subManager,
 		importManager:    importManager,
+		cloud:            cloud,
 	}
 }
 
@@ -268,7 +270,7 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 			return nil, &azcli.ErrorWithSuggestion{
 				Suggestion: fmt.Sprintf("\nSuggested Action: The selected " +
 					"subscription has not been enabled for use of Azure AI service and does not have quota for " +
-					"any pricing tiers. Please visit " + output.WithLinkFormat(azurePortalURL) +
+					"any pricing tiers. Please visit " + output.WithLinkFormat(p.cloud.PortalUrlBase) +
 					" and select 'Create' on specific services to request access."),
 				Err: err,
 			}
@@ -278,7 +280,7 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		if strings.Contains(errorMsg, responsibleAITerms) {
 			return nil, &azcli.ErrorWithSuggestion{
 				Suggestion: fmt.Sprintf("\nSuggested Action: Please visit azure portal in " +
-					output.WithLinkFormat(azurePortalURL) + ". Create the resource in azure portal " +
+					output.WithLinkFormat(p.cloud.PortalUrlBase) + ". Create the resource in azure portal " +
 					"to go through Responsible AI terms, and then delete it. " +
 					"After that, run 'azd provision' again"),
 				Err: err,
@@ -296,7 +298,7 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 				Header: fmt.Sprintf(
 					"Generated provisioning preview in %s.", ux.DurationAsText(since(startTime))),
 				FollowUp: getResourceGroupFollowUp(
-					ctx, p.formatter, p.projectConfig, p.resourceManager, p.env, true),
+					ctx, p.formatter, p.projectConfig, p.resourceManager, p.env, true, p.cloud.PortalUrlBase),
 			},
 		}, nil
 	}
@@ -351,7 +353,7 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 			Header: fmt.Sprintf(
 				"Your application was provisioned in Azure in %s.", ux.DurationAsText(since(startTime))),
 			FollowUp: getResourceGroupFollowUp(
-				ctx, p.formatter, p.projectConfig, p.resourceManager, p.env, false),
+				ctx, p.formatter, p.projectConfig, p.resourceManager, p.env, false, p.cloud.PortalUrlBase),
 		},
 	}, nil
 }

@@ -52,6 +52,7 @@ func getResourceGroupFollowUp(
 	resourceManager project.ResourceManager,
 	env *environment.Environment,
 	whatIf bool,
+	portalUrlBase string,
 ) (followUp string) {
 	if formatter.Kind() == output.JsonFormat {
 		return followUp
@@ -67,19 +68,20 @@ func getResourceGroupFollowUp(
 		}
 		followUp = fmt.Sprintf("%s\n%s",
 			defaultFollowUpText,
-			azurePortalLink(subscriptionId, resourceGroupName))
+			azurePortalLink(portalUrlBase, subscriptionId, resourceGroupName))
 	}
 
 	return followUp
 }
 
-func azurePortalLink(subscriptionId, resourceGroupName string) string {
+func azurePortalLink(portalUrlBase, subscriptionId, resourceGroupName string) string {
 	if subscriptionId == "" || resourceGroupName == "" {
 		return ""
 	}
 	// TODO: Fix hardcoded URL
 	return output.WithLinkFormat(fmt.Sprintf(
-		"https://portal.azure.com/#@/resource/subscriptions/%s/resourceGroups/%s/overview",
+		"%s/#@/resource/subscriptions/%s/resourceGroups/%s/overview",
+		portalUrlBase,
 		subscriptionId,
 		resourceGroupName))
 }

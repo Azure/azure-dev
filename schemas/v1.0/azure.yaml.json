@@ -239,6 +239,28 @@
                         "github",
                         "azdo"
                     ]
+                },
+                "variables": {
+                    "type": "array",
+                    "title": "Optional. List of azd environment variables to be used in the pipeline as variables.",
+                    "description": "If variable is found on azd environment, it is set as a variable for the pipeline.",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "secrets": {
+                    "type": "array",
+                    "title": "Optional. List of azd environment variables to be used in the pipeline as secrets.",
+                    "description": "If variable is found on azd environment, it is set as a secret for the pipeline.",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "additionalVariablesAsSecrets": {
+                    "type": "boolean",
+                    "default": false,
+                    "title": "Optional. Whether to add all azd environment variables as secrets to the pipeline.",
+                    "description": "If set to true, all variables found on azd environment are set as secrets for the pipeline. (Default: false)"
                 }
             }
         },

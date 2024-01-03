@@ -29,7 +29,8 @@
                 "golang.go",
                 "ms-azuretools.vscode-bicep",
                 "eamodio.gitlens",
-                "hashicorp.terraform"
+                "hashicorp.terraform",
+                "jinliming2.vscode-go-template"
             ]
         }
     }

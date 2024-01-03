@@ -111,12 +111,12 @@ func Test_ProvisionProvider_Deploy(t *testing.T) {
 			config.EnvironmentDefinition,
 			mockEnvDefinitions[0],
 		)
-		mockdevcentersdk.MockGetEnvironment(mockContext, config.Project, config.User, env.GetEnvName(), mockEnvironments[0])
+		mockdevcentersdk.MockGetEnvironment(mockContext, config.Project, config.User, env.Name(), mockEnvironments[0])
 		mockdevcentersdk.MockPutEnvironment(
 			mockContext,
 			config.Project,
 			config.User,
-			env.GetEnvName(),
+			env.Name(),
 			&devcentersdk.OperationStatus{
 				Id:        "id",
 				Name:      mockEnvironments[0].Name,
@@ -177,12 +177,12 @@ func Test_ProvisionProvider_Deploy(t *testing.T) {
 			config.EnvironmentDefinition,
 			mockEnvDefinitions[3],
 		)
-		mockdevcentersdk.MockGetEnvironment(mockContext, config.Project, config.User, env.GetEnvName(), mockEnvironments[0])
+		mockdevcentersdk.MockGetEnvironment(mockContext, config.Project, config.User, env.Name(), mockEnvironments[0])
 		mockdevcentersdk.MockPutEnvironment(
 			mockContext,
 			config.Project,
 			config.User,
-			env.GetEnvName(),
+			env.Name(),
 			&devcentersdk.OperationStatus{
 				Id:        "id",
 				Name:      mockEnvironments[0].Name,
@@ -229,12 +229,12 @@ func Test_ProvisionProvider_Deploy(t *testing.T) {
 			config.EnvironmentDefinition,
 			mockEnvDefinitions[0],
 		)
-		mockdevcentersdk.MockGetEnvironment(mockContext, config.Project, config.User, env.GetEnvName(), nil)
+		mockdevcentersdk.MockGetEnvironment(mockContext, config.Project, config.User, env.Name(), nil)
 		mockdevcentersdk.MockPutEnvironment(
 			mockContext,
 			config.Project,
 			config.User,
-			env.GetEnvName(),
+			env.Name(),
 			&devcentersdk.OperationStatus{
 				Id:        "id",
 				Name:      mockEnvironments[0].Name,
@@ -276,7 +276,7 @@ func Test_ProvisionProvider_State(t *testing.T) {
 			Return(outputParams, nil)
 
 		mockdevcentersdk.MockDevCenterGraphQuery(mockContext, mockDevCenterList)
-		mockdevcentersdk.MockGetEnvironment(mockContext, config.Project, config.User, env.GetEnvName(), mockEnvironments[0])
+		mockdevcentersdk.MockGetEnvironment(mockContext, config.Project, config.User, env.Name(), mockEnvironments[0])
 
 		provider := newProvisionProviderForTest(t, mockContext, config, env, manager)
 		result, err := provider.State(*mockContext.Context, &provisioning.StateOptions{})
@@ -298,7 +298,7 @@ func Test_ProvisionProvider_State(t *testing.T) {
 		env := environment.New("test")
 
 		mockdevcentersdk.MockDevCenterGraphQuery(mockContext, mockDevCenterList)
-		mockdevcentersdk.MockGetEnvironment(mockContext, config.Project, config.User, env.GetEnvName(), nil)
+		mockdevcentersdk.MockGetEnvironment(mockContext, config.Project, config.User, env.Name(), nil)
 
 		provider := newProvisionProviderForTest(t, mockContext, config, env, nil)
 		result, err := provider.State(*mockContext.Context, &provisioning.StateOptions{})
@@ -324,7 +324,7 @@ func Test_ProvisionProvider_State(t *testing.T) {
 			Return(nil, errors.New("no outputs"))
 
 		mockdevcentersdk.MockDevCenterGraphQuery(mockContext, mockDevCenterList)
-		mockdevcentersdk.MockGetEnvironment(mockContext, config.Project, config.User, env.GetEnvName(), mockEnvironments[0])
+		mockdevcentersdk.MockGetEnvironment(mockContext, config.Project, config.User, env.Name(), mockEnvironments[0])
 
 		provider := newProvisionProviderForTest(t, mockContext, config, env, manager)
 		result, err := provider.State(*mockContext.Context, &provisioning.StateOptions{})
@@ -347,12 +347,12 @@ func Test_ProvisionProvider_Destroy(t *testing.T) {
 		env := environment.New("test")
 
 		mockdevcentersdk.MockDevCenterGraphQuery(mockContext, mockDevCenterList)
-		mockdevcentersdk.MockGetEnvironment(mockContext, config.Project, config.User, env.GetEnvName(), mockEnvironments[0])
+		mockdevcentersdk.MockGetEnvironment(mockContext, config.Project, config.User, env.Name(), mockEnvironments[0])
 		mockdevcentersdk.MockDeleteEnvironment(
 			mockContext,
 			config.Project,
 			config.User,
-			env.GetEnvName(),
+			env.Name(),
 			&devcentersdk.OperationStatus{
 				Id:        "id",
 				Name:      mockEnvironments[0].Name,
@@ -398,8 +398,8 @@ func Test_ProvisionProvider_Destroy(t *testing.T) {
 		env := environment.New("test")
 
 		mockdevcentersdk.MockDevCenterGraphQuery(mockContext, mockDevCenterList)
-		mockdevcentersdk.MockGetEnvironment(mockContext, config.Project, config.User, env.GetEnvName(), nil)
-		mockdevcentersdk.MockDeleteEnvironment(mockContext, config.Project, config.User, env.GetEnvName(), nil)
+		mockdevcentersdk.MockGetEnvironment(mockContext, config.Project, config.User, env.Name(), nil)
+		mockdevcentersdk.MockDeleteEnvironment(mockContext, config.Project, config.User, env.Name(), nil)
 
 		provider := newProvisionProviderForTest(t, mockContext, config, env, nil)
 		destroyOptions := provisioning.NewDestroyOptions(true, true)

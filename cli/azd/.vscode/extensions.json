@@ -4,6 +4,7 @@
     "recommendations": [
         "golang.go",
         "streetsidesoftware.code-spell-checker",
-        "redhat.vscode-yaml"
+        "redhat.vscode-yaml",
+        "jinliming2.vscode-go-template"
     ]
 }

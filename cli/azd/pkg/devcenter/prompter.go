@@ -235,7 +235,7 @@ func (p *Prompter) PromptParameters(
 		// Only prompt for parameter values when it has not already been set in the environment configuration
 		if !exists {
 			if param.Name == "environmentName" {
-				paramValues[param.Id] = env.GetEnvName()
+				paramValues[param.Id] = env.Name()
 				continue
 			}
 

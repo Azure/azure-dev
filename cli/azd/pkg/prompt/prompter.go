@@ -136,7 +136,7 @@ func (p *DefaultPrompter) PromptResourceGroup(ctx context.Context) (string, erro
 
 	name, err := p.console.Prompt(ctx, input.ConsoleOptions{
 		Message:      "Enter a name for the new resource group:",
-		DefaultValue: fmt.Sprintf("rg-%s", p.env.GetEnvName()),
+		DefaultValue: fmt.Sprintf("rg-%s", p.env.Name()),
 	})
 	if err != nil {
 		return "", fmt.Errorf("prompting for resource group name: %w", err)
@@ -144,7 +144,7 @@ func (p *DefaultPrompter) PromptResourceGroup(ctx context.Context) (string, erro
 
 	err = p.azCli.CreateOrUpdateResourceGroup(ctx, p.env.GetSubscriptionId(), name, p.env.GetLocation(),
 		map[string]*string{
-			azure.TagKeyAzdEnvName: to.Ptr(p.env.GetEnvName()),
+			azure.TagKeyAzdEnvName: to.Ptr(p.env.Name()),
 		},
 	)
 	if err != nil {

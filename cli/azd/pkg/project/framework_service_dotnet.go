@@ -132,7 +132,7 @@ func (dp *dotnetProject) Build(
 				buildOutputDir = filepath.Join(buildOutputDir, defaultOutputDir)
 			}
 
-			// By default dotnet build will create a sub folder for the project framework version, etc. net6.0
+			// By default dotnet build will create a sub folder for the project framework version, etc. net8.0
 			// If we have a single folder under build configuration assume this location as build output result
 			subDirs, err := os.ReadDir(buildOutputDir)
 			if err == nil {

@@ -92,6 +92,7 @@ func newRestoreAction(
 	projectManager project.ProjectManager,
 	serviceManager project.ServiceManager,
 	commandRunner exec.CommandRunner,
+	importManager *project.ImportManager,
 ) actions.Action {
 	return &restoreAction{
 		flags:          flags,
@@ -105,6 +106,7 @@ func newRestoreAction(
 		serviceManager: serviceManager,
 		env:            env,
 		commandRunner:  commandRunner,
+		importManager:  importManager,
 	}
 }
 

@@ -70,7 +70,8 @@ func New(name string) *Environment {
 		Config:      getInitialConfig(),
 	}
 
-	env.SetEnvName(name)
+	env.DotenvSet(EnvNameEnvVarName, name)
+
 	return env
 }
 
@@ -100,7 +101,6 @@ func NewWithValues(name string, values map[string]string) *Environment {
 		env.dotenv = values
 	}
 
-	env.SetEnvName(name)
 	return env
 }
 
@@ -179,14 +179,14 @@ func (e *Environment) DotenvSet(key string, value string) {
 	delete(e.deletedKeys, key)
 }
 
-// GetEnvName is shorthand for Getenv(EnvNameEnvVarName)
-func (e *Environment) GetEnvName() string {
-	return e.Getenv(EnvNameEnvVarName)
-}
+// Name gets the name of the environment
+// If empty will fallback to the value of the AZURE_ENV_NAME environment variable
+func (e *Environment) Name() string {
+	if e.name == "" {
+		e.name = e.Getenv(EnvNameEnvVarName)
+	}
 
-// SetEnvName is shorthand for DotenvSet(EnvNameEnvVarName, envname)
-func (e *Environment) SetEnvName(envname string) {
-	e.DotenvSet(EnvNameEnvVarName, envname)
+	return e.name
 }
 
 // GetSubscriptionId is shorthand for Getenv(SubscriptionIdEnvVarName)

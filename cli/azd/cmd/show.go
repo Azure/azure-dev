@@ -159,7 +159,7 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		} else {
 			azureResourceManager := infra.NewAzureResourceManager(s.azCli, s.deploymentOperations)
 			resourceManager := project.NewResourceManager(env, s.azCli, s.deploymentOperations)
-			envName := env.GetEnvName()
+			envName := env.Name()
 
 			rgName, err = azureResourceManager.FindResourceGroupForEnvironment(ctx, subId, envName)
 			if err == nil {
@@ -185,7 +185,7 @@ func (s *showAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			} else {
 				log.Printf(
 					"ignoring error determining resource group for environment %s, resource ids will not be available: %v",
-					env.GetEnvName(),
+					env.Name(),
 					err)
 			}
 		}

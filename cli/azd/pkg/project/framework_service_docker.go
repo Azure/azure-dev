@@ -289,8 +289,7 @@ func (p *dockerProject) Package(
 }
 
 // Default builder image to produce container images from source
-const DefaultBuilderImage = "mcr.microsoft.com/oryx/builder:debian-bullseye-20231004.1"
-const DefaultDotNetBuilderImage = "mcr.microsoft.com/oryx/builder:debian-buster-20231004.1"
+const DefaultBuilderImage = "mcr.microsoft.com/oryx/builder:debian-bullseye-20231107.2"
 
 func (p *dockerProject) packBuild(
 	ctx context.Context,
@@ -302,9 +301,6 @@ func (p *dockerProject) packBuild(
 		return nil, err
 	}
 	builder := DefaultBuilderImage
-	if svc.Language == ServiceLanguageDotNet {
-		builder = DefaultDotNetBuilderImage
-	}
 
 	environ := []string{}
 	userDefinedImage := false

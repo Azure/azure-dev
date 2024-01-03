@@ -24,7 +24,7 @@ module api '../../../../../common/infra/bicep/core/host/functions.bicep' = {
     appServicePlanId: appServicePlanId
     keyVaultName: keyVaultName
     runtimeName: 'dotnet-isolated'
-    runtimeVersion: '6.0'
+    runtimeVersion: '8.0'
     storageAccountName: storageAccountName
     scmDoBuildDuringDeployment: false
   }

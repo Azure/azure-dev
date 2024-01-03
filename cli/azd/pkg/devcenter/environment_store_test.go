@@ -155,7 +155,7 @@ func Test_EnvironmentStore_Get(t *testing.T) {
 		env, err := store.Get(*mockContext.Context, mockEnvironments[0].Name)
 		require.NoError(t, err)
 		require.NotNil(t, env)
-		require.Equal(t, mockEnvironments[0].Name, env.GetEnvName())
+		require.Equal(t, mockEnvironments[0].Name, env.Name())
 		require.Equal(t, "value1", env.Getenv("KEY1"))
 		require.Equal(t, "value2", env.Getenv("KEY2"))
 
@@ -206,7 +206,7 @@ func Test_EnvironmentStore_GetEnvPath(t *testing.T) {
 	store := newEnvironmentStoreForTest(t, mockContext, config, nil)
 	env := environment.New(mockEnvironments[0].Name)
 	path := store.EnvPath(env)
-	require.Equal(t, fmt.Sprintf("projects/%s/users/me/environments/%s", config.Project, env.GetEnvName()), path)
+	require.Equal(t, fmt.Sprintf("projects/%s/users/me/environments/%s", config.Project, env.Name()), path)
 }
 
 func Test_EnvironmentStore_Save(t *testing.T) {

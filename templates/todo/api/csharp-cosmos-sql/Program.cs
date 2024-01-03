@@ -1,5 +1,4 @@
 using Azure.Identity;
-using Microsoft.ApplicationInsights.AspNetCore.Extensions;
 using Microsoft.Azure.Cosmos;
 using SimpleTodo.Api;
 
@@ -14,9 +13,10 @@ builder.Services.AddSingleton(_ => new CosmosClient(builder.Configuration["AZURE
         PropertyNamingPolicy = CosmosPropertyNamingPolicy.CamelCase
     }
 }));
-builder.Services.AddControllers();
+builder.Services.AddCors();
 builder.Services.AddApplicationInsightsTelemetry(builder.Configuration);
-
+builder.Services.AddEndpointsApiExplorer();
+builder.Services.AddSwaggerGen();
 var app = builder.Build();
 
 app.UseCors(policy =>
@@ -37,5 +37,7 @@ app.UseStaticFiles(new StaticFileOptions{
     ServeUnknownFileTypes = true,
 });
 
-app.MapControllers();
+app.MapGroup("/lists")
+    .MapTodoApi()
+    .WithOpenApi();
 app.Run();

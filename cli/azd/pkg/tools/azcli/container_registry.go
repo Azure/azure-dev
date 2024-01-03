@@ -20,8 +20,13 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 )
 
-type dockerCredentials struct {
-	Username    string
+// Credentials for authenticating with a docker registry,
+// can be both username/password or access token based.
+type DockerCredentials struct {
+	// Username is the name of the user. Note that this may be set to a value like
+	// '00000000-0000-0000-0000-000000000000' when using access tokens.
+	Username string
+	// Password is the password for the user, or the access token when using access tokens.
 	Password    string
 	LoginServer string
 }
@@ -34,6 +39,8 @@ type acrToken struct {
 type ContainerRegistryService interface {
 	// Logs into the specified container registry
 	Login(ctx context.Context, subscriptionId string, loginServer string) error
+	// Gets the credentials that could be used to login to the specified container registry.
+	Credentials(ctx context.Context, subscriptionId string, loginServer string) (*DockerCredentials, error)
 	// Gets a list of container registries for the specified subscription
 	GetContainerRegistries(ctx context.Context, subscriptionId string) ([]*armcontainerregistry.Registry, error)
 }
@@ -85,21 +92,12 @@ func (crs *containerRegistryService) GetContainerRegistries(
 }
 
 func (crs *containerRegistryService) Login(ctx context.Context, subscriptionId string, loginServer string) error {
-	// First attempt to get ACR credentials from the logged in user
-	dockerCreds, tokenErr := crs.getTokenCredentials(ctx, subscriptionId, loginServer)
-	if tokenErr != nil {
-		log.Printf("failed getting ACR token credentials: %s\n", tokenErr.Error())
-
-		// If that fails, attempt to get ACR credentials from the admin user
-		adminCreds, adminErr := crs.getAdminUserCredentials(ctx, subscriptionId, loginServer)
-		if adminErr != nil {
-			return fmt.Errorf("failed logging into container registry, token: %w, admin: %w", tokenErr, adminErr)
-		}
-
-		dockerCreds = adminCreds
+	dockerCreds, err := crs.Credentials(ctx, subscriptionId, loginServer)
+	if err != nil {
+		return err
 	}
 
-	err := crs.docker.Login(ctx, dockerCreds.LoginServer, dockerCreds.Username, dockerCreds.Password)
+	err = crs.docker.Login(ctx, dockerCreds.LoginServer, dockerCreds.Username, dockerCreds.Password)
 	if err != nil {
 		return fmt.Errorf(
 			"failed logging into docker registry %s: %w",
@@ -110,29 +108,58 @@ func (crs *containerRegistryService) Login(ctx context.Context, subscriptionId s
 	return nil
 }
 
+// Credentials gets the credentials that could be used to login to the specified container registry. It prefers to use
+// AAD token credentials for the current user, but if that fails it will fall back to admin user credentials.
+// Note: the loginServer returned as part of the credentials, and will always match the parameter on success, and is
+// only added as convenience.
+func (crs *containerRegistryService) Credentials(
+	ctx context.Context, subscriptionId string, loginServer string,
+) (*DockerCredentials, error) {
+	// First attempt to get ACR credentials from the logged in user
+	dockerCreds, tokenErr := crs.getTokenCredentials(ctx, subscriptionId, loginServer)
+	if tokenErr != nil {
+		log.Printf("failed getting ACR token credentials: %s\n", tokenErr.Error())
+
+		// If that fails, attempt to get ACR credentials from the admin user
+		adminCreds, adminErr := crs.getAdminUserCredentials(ctx, subscriptionId, loginServer)
+		if adminErr != nil {
+			return nil, fmt.Errorf("failed logging into container registry, token: %w, admin: %w", tokenErr, adminErr)
+		}
+
+		dockerCreds = adminCreds
+	}
+
+	return dockerCreds, nil
+}
+
+// getTokenCredentials
 func (crs *containerRegistryService) getTokenCredentials(
 	ctx context.Context,
 	subscriptionId string,
 	loginServer string,
-) (*dockerCredentials, error) {
+) (*DockerCredentials, error) {
 	acrToken, err := crs.getAcrToken(ctx, subscriptionId, loginServer)
 	if err != nil {
 		return nil, fmt.Errorf("failed getting ACR token: %w", err)
 	}
 
-	return &dockerCredentials{
+	// Set it to 00000000-0000-0000-0000-000000000000 as per documented in
+	//nolint:lll
+	// https://learn.microsoft.com/en-us/azure/container-registry/container-registry-authentication?tabs=azure-cli#individual-login-with-microsoft-entra-id
+	return &DockerCredentials{
 		Username:    "00000000-0000-0000-0000-000000000000",
 		Password:    acrToken.RefreshToken,
 		LoginServer: loginServer,
 	}, nil
 }
 
-// Logs into the specified container registry
+// getAdminUserCredentials gets the credentials for the admin user of the specified container registry or an error if
+// the registry does not have the admin user enabled.
 func (crs *containerRegistryService) getAdminUserCredentials(
 	ctx context.Context,
 	subscriptionId string,
 	loginServer string,
-) (*dockerCredentials, error) {
+) (*DockerCredentials, error) {
 	client, err := crs.createRegistriesClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
@@ -142,9 +169,14 @@ func (crs *containerRegistryService) getAdminUserCredentials(
 	registryName := parts[0]
 
 	// Find the registry and resource group
-	_, resourceGroup, err := crs.findContainerRegistryByName(ctx, subscriptionId, registryName)
+	registry, resourceGroup, err := crs.findContainerRegistryByName(ctx, subscriptionId, registryName)
 	if err != nil {
 		return nil, err
+	}
+
+	// Ensure the registry has admin user enabled
+	if registry.Properties.AdminUserEnabled == nil || !*registry.Properties.AdminUserEnabled {
+		return nil, fmt.Errorf("admin user is not enabled for container registry '%s'", registryName)
 	}
 
 	// Retrieve the registry credentials
@@ -153,7 +185,7 @@ func (crs *containerRegistryService) getAdminUserCredentials(
 		return nil, fmt.Errorf("getting container registry credentials: %w", err)
 	}
 
-	return &dockerCredentials{
+	return &DockerCredentials{
 		Username:    *credResponse.Username,
 		Password:    *credResponse.Passwords[0].Value,
 		LoginServer: loginServer,

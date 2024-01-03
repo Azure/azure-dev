@@ -86,7 +86,7 @@ func (rm *resourceManager) GetResourceGroupName(
 	}
 
 	resourceManager := infra.NewAzureResourceManager(rm.azCli, rm.deploymentOperations)
-	resourceGroupName, err := resourceManager.FindResourceGroupForEnvironment(ctx, subscriptionId, rm.env.GetEnvName())
+	resourceGroupName, err := resourceManager.FindResourceGroupForEnvironment(ctx, subscriptionId, rm.env.Name())
 	if err != nil {
 		return "", err
 	}

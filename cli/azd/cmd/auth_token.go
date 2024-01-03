@@ -97,7 +97,7 @@ func getTenantIdFromAzdEnv(
 	if err != nil {
 		return tenantId, fmt.Errorf(
 			"resolving the Azure Directory from azd environment (%s): %w",
-			azdEnv.GetEnvName(),
+			azdEnv.Name(),
 			err)
 	}
 

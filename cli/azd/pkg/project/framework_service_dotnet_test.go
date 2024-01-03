@@ -188,7 +188,7 @@ func Test_DotNetProject_Build(t *testing.T) {
 	dotNetCli := dotnet.NewDotNetCli(mockContext.CommandRunner)
 	serviceConfig := createTestServiceConfig("./src/api", AppServiceTarget, ServiceLanguageCsharp)
 
-	buildOutputDir := filepath.Join(serviceConfig.Path(), "bin", "Release", "net6.0")
+	buildOutputDir := filepath.Join(serviceConfig.Path(), "bin", "Release", "net8.0")
 	err = os.MkdirAll(buildOutputDir, osutil.PermissionDirectory)
 	require.NoError(t, err)
 

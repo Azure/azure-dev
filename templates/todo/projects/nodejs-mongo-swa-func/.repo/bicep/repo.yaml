@@ -149,10 +149,6 @@ repo:
     - from: ../../../../../common/.devcontainer/devcontainer.json/nodejs/func/devcontainer.json
       to: ./.devcontainer/devcontainer.json
 
-    # .devcontainer common (Dockerfile)
-    - from: ../../../../../common/.devcontainer/Dockerfile/func
-      to: ./.devcontainer
-
     # Assets common
     - from: ../../../../common/assets
       to: ./assets

@@ -1,0 +1,50 @@
+{
+    "resources": {
+      "mydata": {
+        "type": "azure.storage.v0"
+      },
+      "blobs": {
+        "type": "azure.storage.blob.v0",
+        "parent": "mydata"
+      },
+      "queues": {
+        "type": "azure.storage.queue.v0",
+        "parent": "mydata"
+      },
+      "photos": {
+        "type": "azure.storage.v0"
+      },
+      "photoblobs": {
+        "type": "azure.storage.blob.v0",
+        "parent": "photos"
+      },
+      "photoqueues": {
+        "type": "azure.storage.queue.v0",
+        "parent": "photos"
+      },
+      "frontend": {
+        "type": "project.v0",
+        "path": "../Test1.Web/Test1.Web.csproj",
+        "env": {
+          "OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EXCEPTION_LOG_ATTRIBUTES": "true",
+          "OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EVENT_LOG_ATTRIBUTES": "true",
+          "ConnectionStrings__blobs": "{blobs.connectionString}",
+          "ConnectionStrings__queues": "{queues.connectionString}",
+          "ConnectionStrings__photoblobs": "{photoblobs.connectionString}",
+          "ConnectionStrings__photoqueues": "{photoqueues.connectionString}"
+        },
+        "bindings": {
+          "http": {
+            "scheme": "http",
+            "protocol": "tcp",
+            "transport": "http"
+          },
+          "https": {
+            "scheme": "https",
+            "protocol": "tcp",
+            "transport": "http"
+          }
+        }
+      }
+    }
+  }

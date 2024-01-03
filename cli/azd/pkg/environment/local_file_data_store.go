@@ -115,8 +115,8 @@ func (fs *LocalFileDataStore) Reload(ctx context.Context, env *Environment) erro
 		env.Config = cfg
 	}
 
-	if env.GetEnvName() != "" {
-		tracing.SetUsageAttributes(fields.StringHashed(fields.EnvNameKey, env.GetEnvName()))
+	if env.Name() != "" {
+		tracing.SetUsageAttributes(fields.StringHashed(fields.EnvNameKey, env.Name()))
 	}
 
 	if _, err := uuid.Parse(env.GetSubscriptionId()); err == nil {
@@ -172,6 +172,6 @@ func (fs *LocalFileDataStore) Save(ctx context.Context, env *Environment) error 
 		return fmt.Errorf("saving .env: %w", err)
 	}
 
-	tracing.SetUsageAttributes(fields.StringHashed(fields.EnvNameKey, env.GetEnvName()))
+	tracing.SetUsageAttributes(fields.StringHashed(fields.EnvNameKey, env.Name()))
 	return nil
 }

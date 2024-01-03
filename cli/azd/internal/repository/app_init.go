@@ -22,7 +22,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/otiai10/copy"
-	"golang.org/x/exp/slices"
 )
 
 var languageMap = map[appdetect.Language]project.ServiceLanguageKind{
@@ -117,22 +116,52 @@ func (i *Initializer) InitFromApp(
 	}
 	i.console.StopSpinner(ctx, title, input.StepDone)
 
-	isDotNetAppHost := func(p appdetect.Project) bool { return p.Language == appdetect.DotNetAppHost }
-	if idx := slices.IndexFunc(projects, isDotNetAppHost); idx >= 0 {
-		// TODO(ellismg): We will have to figure out how to relax this over time.
-		if len(projects) != 1 {
-			return errors.New("only a single Aspire project is supported at this time")
+	var prjAppHost []appdetect.Project
+	for _, prj := range projects {
+		if prj.Language == appdetect.DotNetAppHost {
+			prjAppHost = append(prjAppHost, prj)
+		}
+	}
+
+	if len(prjAppHost) > 1 {
+		relPaths := make([]string, 0, len(prjAppHost))
+		for _, appHost := range prjAppHost {
+			rel, _ := filepath.Rel(wd, appHost.Path)
+			relPaths = append(relPaths, rel)
+		}
+		return fmt.Errorf(
+			"only a single Aspire app host project is supported at this time, found multiple: %s",
+			ux.ListAsText(relPaths))
+	}
+
+	if len(prjAppHost) == 1 {
+		appHost := prjAppHost[0]
+
+		otherProjects := make([]string, 0, len(projects))
+		for _, prj := range projects {
+			if prj.Language != appdetect.DotNetAppHost {
+				rel, _ := filepath.Rel(wd, prj.Path)
+				otherProjects = append(otherProjects, rel)
+			}
+		}
+
+		if len(otherProjects) > 0 {
+			i.console.Message(
+				ctx,
+				output.WithWarningFormat(
+					"\nIgnoring other projects present but not referenced by app host: %s",
+					ux.ListAsText(otherProjects)))
 		}
 
 		detect := detectConfirmAppHost{console: i.console}
-		detect.Init(projects[idx], wd)
+		detect.Init(appHost, wd)
 
 		if err := detect.Confirm(ctx); err != nil {
 			return err
 		}
 
 		// Figure out what services to expose.
-		ingressSelector := apphost.NewIngressSelector(appHostManifests[projects[idx].Path], i.console)
+		ingressSelector := apphost.NewIngressSelector(appHostManifests[appHost.Path], i.console)
 		tracing.SetUsageAttributes(fields.AppInitLastStep.String("modify"))
 
 		exposed, err := ingressSelector.SelectPublicServices(ctx)
@@ -168,8 +197,8 @@ func (i *Initializer) InitFromApp(
 			ctx,
 			azdCtx.ProjectDirectory(),
 			filepath.Base(azdCtx.ProjectDirectory()),
-			appHostManifests[projects[idx].Path],
-			projects[idx].Path,
+			appHostManifests[appHost.Path],
+			appHost.Path,
 		)
 		if err != nil {
 			return err

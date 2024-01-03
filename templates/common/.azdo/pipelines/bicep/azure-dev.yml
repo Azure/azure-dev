@@ -5,8 +5,9 @@ trigger:
   - master
 
 # Azure Pipelines workflow to deploy to Azure using azd
-# To configure required secrets for connecting to Azure, simply run `azd pipeline config --provider azdo`
+# To configure required secrets and service connection for connecting to Azure, simply run `azd pipeline config --provider azdo`
 # Task "Install azd" needs to install setup-azd extension for azdo - https://marketplace.visualstudio.com/items?itemName=ms-azuretools.azd
+# See below for alternative task to install azd if you can't install above task in your organization
 
 pool:
   vmImage: ubuntu-latest
@@ -15,28 +16,40 @@ steps:
   - task: setup-azd@0 
     displayName: Install azd
 
-  - pwsh: |
-      $info = $Env:AZURE_CREDENTIALS | ConvertFrom-Json -AsHashtable;
-      
-      azd auth login `
-        --client-id "$($info.clientId)" `
-        --client-secret "$($info.clientSecret)" `
-        --tenant-id "$($info.tenantId)"
-    displayName: azd login
-    env:
-      AZURE_CREDENTIALS: $(AZURE_CREDENTIALS)
+  # If you can't install above task in your organization, you can comment it and uncomment below task to install azd
+  # - task: Bash@3
+  #   displayName: Install azd
+  #   inputs:
+  #     targetType: 'inline'
+  #     script: |
+  #       curl -fsSL https://aka.ms/install-azd.sh | bash
 
+  # azd delegate auth to az to use service connection with AzureCLI@2
   - pwsh: |
-      azd provision --no-prompt
+      azd config set auth.useAzCliAuth "true"
+    displayName: Configure AZD to Use AZ CLI Authentication.
+
+  - task: AzureCLI@2
     displayName: Provision Infrastructure
+    inputs:
+      azureSubscription: azconnection
+      scriptType: bash
+      scriptLocation: inlineScript
+      inlineScript: |
+        azd provision --no-prompt
     env:
       AZURE_SUBSCRIPTION_ID: $(AZURE_SUBSCRIPTION_ID)
       AZURE_ENV_NAME: $(AZURE_ENV_NAME)
       AZURE_LOCATION: $(AZURE_LOCATION)
 
-  - pwsh: |
-      azd deploy --no-prompt
+  - task: AzureCLI@2
     displayName: Deploy Application
+    inputs:
+      azureSubscription: azconnection
+      scriptType: bash
+      scriptLocation: inlineScript
+      inlineScript: |
+        azd deploy --no-prompt
     env:
       AZURE_SUBSCRIPTION_ID: $(AZURE_SUBSCRIPTION_ID)
       AZURE_ENV_NAME: $(AZURE_ENV_NAME)

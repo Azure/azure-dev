@@ -9,6 +9,29 @@ properties:
   environmentId: {{ "{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_ID }}" }}
   configuration:
     activeRevisionsMode: single
+{{- if .Dapr}}
+    dapr:
+      appId: {{ .Dapr.AppId }}
+{{- if .Dapr.AppPort}}
+      appPort: {{ .Dapr.AppPort }}
+{{- end}}
+{{- if .Dapr.AppProtocol}}
+      appProtocol: {{ .Dapr.AppProtocol }}
+{{- end}}
+{{- if .Dapr.EnableApiLogging}}
+      enableApiLogging: {{ .Dapr.EnableApiLogging }}
+{{- end}}
+      enabled: true
+{{- if .Dapr.HttpMaxRequestSize}}
+      httpMaxRequestSize: {{ .Dapr.HttpMaxRequestSize }}
+{{- end}}
+{{- if .Dapr.HttpReadBufferSize}}
+      httpReadBufferSize: {{ .Dapr.HttpReadBufferSize }}
+{{- end}}
+{{- if .Dapr.LogLevel}}
+      logLevel: {{ .Dapr.LogLevel }}
+{{- end}}
+{{- end}}
 {{- if .Ingress}}
     ingress:
       external: {{ .Ingress.External }}

@@ -112,7 +112,7 @@ func (hra *hooksRunAction) Run(ctx context.Context) (*actions.ActionResult, erro
 		TitleNote: fmt.Sprintf(
 			"Finding and executing %s hooks for environment %s",
 			output.WithHighLightFormat(hookName),
-			output.WithHighLightFormat(hra.env.GetEnvName()),
+			output.WithHighLightFormat(hra.env.Name()),
 		),
 	})
 

@@ -13,6 +13,7 @@ import (
 	armruntime "github.com/Azure/azure-sdk-for-go/sdk/azcore/arm/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
 
@@ -27,6 +28,7 @@ const (
 type ZipDeployClient struct {
 	subscriptionId string
 	pipeline       runtime.Pipeline
+	cloud          *cloud.Cloud
 }
 
 type DeployResponse struct {
@@ -57,6 +59,7 @@ func NewZipDeployClient(
 	subscriptionId string,
 	credential azcore.TokenCredential,
 	options *arm.ClientOptions,
+	cloud *cloud.Cloud,
 ) (*ZipDeployClient, error) {
 	if options == nil {
 		options = &arm.ClientOptions{}
@@ -79,6 +82,7 @@ func NewZipDeployClient(
 	return &ZipDeployClient{
 		subscriptionId: subscriptionId,
 		pipeline:       pipeline,
+		cloud:          cloud,
 	}, nil
 }
 
@@ -137,8 +141,7 @@ func (c *ZipDeployClient) createDeployRequest(
 	appName string,
 	zipFile io.Reader,
 ) (*policy.Request, error) {
-	// endpoint := fmt.Sprintf("https://%s.scm.azurewebsites.net/api/zipdeploy", appName)
-	endpoint := fmt.Sprintf("https://%s.scm.azurewebsites.us/api/zipdeploy", appName)
+	endpoint := fmt.Sprintf("https://%s.scm.%s/api/zipdeploy", appName, c.cloud.WebSitesUrlBase)
 
 	req, err := runtime.NewRequest(ctx, http.MethodPost, endpoint)
 	if err != nil {

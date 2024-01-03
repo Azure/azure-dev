@@ -25,6 +25,12 @@ type Cloud struct {
 	// Azure public cloud).
 	// TODO: How would this configuration be configured by a user?
 	PortalUrlBase string
+
+	// The base URL for cloud's Azure Websites (e.g. azurewebsites.net for Azure
+	// public cloud).
+	// TODO: Resolve using ARM and look at .hostNameSslStates where
+	// hostType == 1 (i.e. "repository") or hosts with ".scm."?
+	WebSitesUrlBase string
 }
 
 type Config struct {
@@ -60,15 +66,17 @@ func ParseCloudConfig(partialConfig any) (*Config, error) {
 
 func GetAzurePublic() Cloud {
 	return Cloud{
-		Configuration: &cloud.AzurePublic,
-		PortalUrlBase: "https://portal.azure.com",
+		Configuration:   &cloud.AzurePublic,
+		PortalUrlBase:   "https://portal.azure.com",
+		WebSitesUrlBase: "azurewebsites.net",
 	}
 }
 
 func GetAzureGovernment() Cloud {
 	return Cloud{
-		Configuration: &cloud.AzureGovernment,
-		PortalUrlBase: "https://portal.azure.us",
+		Configuration:   &cloud.AzureGovernment,
+		PortalUrlBase:   "https://portal.azure.us",
+		WebSitesUrlBase: "azurewebsites.us",
 	}
 }
 
@@ -76,6 +84,7 @@ func GetAzureChina() Cloud {
 	return Cloud{
 		Configuration: &cloud.AzureChina,
 		PortalUrlBase: "https://portal.azure.cn",
+		// TODO: fill in WebSitesUrlBase
 	}
 }
 

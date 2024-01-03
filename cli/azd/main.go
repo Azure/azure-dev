@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-//go:generate goversioninfo
+//go:generate goversioninfo -64
 
 package main
 

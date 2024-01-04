@@ -1,0 +1,4 @@
+**/.devcontainer
+**/build
+**/node_modules
+README.md

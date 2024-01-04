@@ -24,6 +24,7 @@ const (
 	AzureResourceTypeLogAnalyticsWorkspace   AzureResourceType = "Microsoft.OperationalInsights/workspaces"
 	AzureResourceTypePortalDashboard         AzureResourceType = "Microsoft.Portal/dashboards"
 	AzureResourceTypePostgreSqlServer        AzureResourceType = "Microsoft.DBforPostgreSQL/flexibleServers"
+	AzureResourceTypeMySqlServer             AzureResourceType = "Microsoft.DBforMySQL/flexibleServers"
 	AzureResourceTypeResourceGroup           AzureResourceType = "Microsoft.Resources/resourceGroups"
 	AzureResourceTypeStorageAccount          AzureResourceType = "Microsoft.Storage/storageAccounts"
 	AzureResourceTypeStaticWebSite           AzureResourceType = "Microsoft.Web/staticSites"
@@ -87,6 +88,8 @@ func GetResourceTypeDisplayName(resourceType AzureResourceType) string {
 		return "Azure SQL Server"
 	case AzureResourceTypePostgreSqlServer:
 		return "Azure Database for PostgreSQL flexible server"
+	case AzureResourceTypeMySqlServer:
+		return "Azure Database for MySQL flexible server"
 	case AzureResourceTypeCDNProfile:
 		return "Azure Front Door / CDN profile"
 	case AzureResourceTypeLoadTest:

@@ -62,7 +62,7 @@ repo:
         patterns:
           - "**/azure.@(yml|yaml)"
 
-      - from: ../../web/react-fluent
+      - from: ../../web/vite-react-fluent
         to: ./src/web
         patterns:
           - "**/azure.@(yml|yaml)"
@@ -178,7 +178,7 @@ repo:
         - "**/*.log"
 
     # React Frontend
-    - from: ../../../../web/react-fluent
+    - from: ../../../../web/vite-react-fluent
       to: ./src/web
       ignore:
         - "build/**/*"

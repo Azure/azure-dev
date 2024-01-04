@@ -5,22 +5,24 @@ metadata:
   template: todo-csharp-sql-swa-func@0.0.1-beta
 services:
   web:
-    project: ../../web/react-fluent
-    dist: build
+    project: ../../web/vite-react-fluent
+    dist: dist
     language: js
     host: staticwebapp
     hooks:
+      # When azd runs package, the static-web-app-required .env-values (from azd env) are not visible to `npm run build`.
+      # This hook creates a temporary `.env.local` file for the build command. Vite will automatically use it during build.
+      # The expected/required values are mapped to the infrastructure outputs.
+      # .env.local is ignored by git, so it will not be committed if for any reason the hook does not remove it at the end.
+      # see: https://vitejs.dev/guide/env-and-mode
+      # Note: Notice that dotenv must be a project dependency for this to work. See package.json.
       predeploy:
-        posix:
-          shell: sh
-          run: node entrypoint.js -o ./build/env-config.js
-          continueOnError: false
-          interactive: false
         windows:
           shell: pwsh
-          run: node entrypoint.js -o ./build/env-config.js
-          continueOnError: false
-          interactive: false
+          run: 'echo "VITE_API_BASE_URL=\"$env:API_BASE_URL\"" > .env.local ; echo "VITE_APPLICATIONINSIGHTS_CONNECTION_STRING=\"$env:APPLICATIONINSIGHTS_CONNECTION_STRING\"" >> .env.local ; npm run build; rm .env.local'
+        posix:
+          shell: sh
+          run: 'echo VITE_API_BASE_URL=\"$API_BASE_URL\" > .env.local && echo VITE_APPLICATIONINSIGHTS_CONNECTION_STRING=\"$APPLICATIONINSIGHTS_CONNECTION_STRING\" >> .env.local && npm run build && rm .env.local'
   api:
     project: ../../api/csharp-sql-func
     language: dotnet

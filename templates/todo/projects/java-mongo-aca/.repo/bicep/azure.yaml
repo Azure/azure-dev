@@ -5,7 +5,7 @@ metadata:
   template: todo-java-mongo-aca@0.0.1-beta
 services:
   web:
-    project: ../../web/react-fluent
+    project: ../../web/vite-react-fluent
     language: js
     host: containerapp
   api:

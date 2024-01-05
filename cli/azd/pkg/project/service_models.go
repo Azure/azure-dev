@@ -62,6 +62,7 @@ func (sbr *ServiceBuildResult) MarshalJSON() ([]byte, error) {
 
 type PackageOptions struct {
 	OutputPath string
+	NoCache    bool
 }
 
 // ServicePackageResult is the result of a successful Package operation

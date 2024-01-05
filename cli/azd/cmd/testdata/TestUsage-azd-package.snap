@@ -13,6 +13,7 @@ Flags
         --docs               	: Opens the documentation for azd package in your web browser.
     -e, --environment string 	: The name of the environment to use.
     -h, --help               	: Gets help for package.
+        --no-cache           	: Ignores if there is a previous package cache and always packages the services.
         --output-path string 	: File or folder path where the generated packages will be saved.
 
 Global Flags

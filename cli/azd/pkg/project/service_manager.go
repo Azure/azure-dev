@@ -178,7 +178,7 @@ func (sm *serviceManager) Restore(
 	serviceConfig *ServiceConfig,
 ) *async.TaskWithProgress[*ServiceRestoreResult, ServiceProgress] {
 	return async.RunTaskWithProgress(func(task *async.TaskContextWithProgress[*ServiceRestoreResult, ServiceProgress]) {
-		cachedResult, ok := sm.getOperationResult(ctx, serviceConfig, string(ServiceEventRestore))
+		cachedResult, ok := sm.getOperationResult(ctx, serviceConfig, string(ServiceEventRestore), nil)
 		if ok && cachedResult != nil {
 			task.SetResult(cachedResult.(*ServiceRestoreResult))
 			return
@@ -218,14 +218,14 @@ func (sm *serviceManager) Build(
 	restoreOutput *ServiceRestoreResult,
 ) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress] {
 	return async.RunTaskWithProgress(func(task *async.TaskContextWithProgress[*ServiceBuildResult, ServiceProgress]) {
-		cachedResult, ok := sm.getOperationResult(ctx, serviceConfig, string(ServiceEventBuild))
+		cachedResult, ok := sm.getOperationResult(ctx, serviceConfig, string(ServiceEventBuild), nil)
 		if ok && cachedResult != nil {
 			task.SetResult(cachedResult.(*ServiceBuildResult))
 			return
 		}
 
 		if restoreOutput == nil {
-			cachedResult, ok := sm.getOperationResult(ctx, serviceConfig, string(ServiceEventRestore))
+			cachedResult, ok := sm.getOperationResult(ctx, serviceConfig, string(ServiceEventRestore), nil)
 			if ok && cachedResult != nil {
 				restoreOutput = cachedResult.(*ServiceRestoreResult)
 			}
@@ -271,14 +271,14 @@ func (sm *serviceManager) Package(
 			options = &PackageOptions{}
 		}
 
-		cachedResult, ok := sm.getOperationResult(ctx, serviceConfig, string(ServiceEventPackage))
+		cachedResult, ok := sm.getOperationResult(ctx, serviceConfig, string(ServiceEventPackage), options)
 		if ok && cachedResult != nil {
 			task.SetResult(cachedResult.(*ServicePackageResult))
 			return
 		}
 
 		if buildOutput == nil {
-			cachedResult, ok := sm.getOperationResult(ctx, serviceConfig, string(ServiceEventBuild))
+			cachedResult, ok := sm.getOperationResult(ctx, serviceConfig, string(ServiceEventBuild), options)
 			if ok && cachedResult != nil {
 				buildOutput = cachedResult.(*ServiceBuildResult)
 			}
@@ -426,14 +426,14 @@ func (sm *serviceManager) Deploy(
 	packageResult *ServicePackageResult,
 ) *async.TaskWithProgress[*ServiceDeployResult, ServiceProgress] {
 	return async.RunTaskWithProgress(func(task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress]) {
-		cachedResult, ok := sm.getOperationResult(ctx, serviceConfig, string(ServiceEventDeploy))
+		cachedResult, ok := sm.getOperationResult(ctx, serviceConfig, string(ServiceEventDeploy), nil)
 		if ok && cachedResult != nil {
 			task.SetResult(cachedResult.(*ServiceDeployResult))
 			return
 		}
 
 		if packageResult == nil {
-			cachedResult, ok := sm.getOperationResult(ctx, serviceConfig, string(ServiceEventPackage))
+			cachedResult, ok := sm.getOperationResult(ctx, serviceConfig, string(ServiceEventPackage), nil)
 			if ok && cachedResult != nil {
 				packageResult = cachedResult.(*ServicePackageResult)
 			}
@@ -600,7 +600,12 @@ func (sm *serviceManager) getOperationResult(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	operationName string,
+	options *PackageOptions,
 ) (any, bool) {
+	if options != nil && options.NoCache {
+		return nil, false
+	}
+
 	key := fmt.Sprintf("%s:%s", serviceConfig.Name, operationName)
 	value, ok := sm.operationCache[key]
 

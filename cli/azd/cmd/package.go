@@ -22,6 +22,7 @@ type packageFlags struct {
 	global *internal.GlobalCommandOptions
 	*envFlag
 	outputPath string
+	noCache    bool
 }
 
 func newPackageFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *packageFlags {
@@ -49,6 +50,12 @@ func (pf *packageFlags) Bind(local *pflag.FlagSet, global *internal.GlobalComman
 		"output-path",
 		"",
 		"File or folder path where the generated packages will be saved.",
+	)
+	local.BoolVar(
+		&pf.noCache,
+		"no-cache",
+		false,
+		"Ignores if there is a previous package cache and always packages the services.",
 	)
 }
 
@@ -194,7 +201,7 @@ func (pa *packageAction) Run(ctx context.Context) (*actions.ActionResult, error)
 			continue
 		}
 
-		options := &project.PackageOptions{OutputPath: pa.flags.outputPath}
+		options := &project.PackageOptions{OutputPath: pa.flags.outputPath, NoCache: pa.flags.noCache}
 		packageTask := pa.serviceManager.Package(ctx, svc, nil, options)
 		done := make(chan struct{})
 		go func() {

@@ -9,8 +9,8 @@ services:
     language: js
     host: containerapp
     hooks:
-      # When azd runs package, the static-web-app-required .env-values (from azd env) are not visible to `npm run build`.
-      # This hook creates a temporary `.env.local` file for the build command. Vite will automatically use it during build.
+      # When azd runs package, the static-web-app-required azd-.env-values are not visible to `docker build`.
+      # This hook creates a temporary `.env.local` file for the build command. Vite will automatically use it during docker image creation.
       # The expected/required values are mapped to the infrastructure outputs.
       # .env.local is ignored by git, so it will not be committed if for any reason the hook does not remove it at the end.
       # see: https://vitejs.dev/guide/env-and-mode
@@ -18,10 +18,17 @@ services:
       predeploy:
         windows:
           shell: pwsh
-          run: 'echo "VITE_API_BASE_URL=\"$env:API_BASE_URL\"" > .env.local ; echo "VITE_APPLICATIONINSIGHTS_CONNECTION_STRING=\"$env:APPLICATIONINSIGHTS_CONNECTION_STRING\"" >> .env.local ; npm run build; rm .env.local'
+          run: 'echo "VITE_API_BASE_URL=\"$env:API_BASE_URL\"" > .env.local ; echo "VITE_APPLICATIONINSIGHTS_CONNECTION_STRING=\"$env:APPLICATIONINSIGHTS_CONNECTION_STRING\"" >> .env.local'
         posix:
           shell: sh
-          run: 'echo VITE_API_BASE_URL=\"$API_BASE_URL\" > .env.local && echo VITE_APPLICATIONINSIGHTS_CONNECTION_STRING=\"$APPLICATIONINSIGHTS_CONNECTION_STRING\" >> .env.local && npm install && npm run build && rm .env.local'    
+          run: 'echo VITE_API_BASE_URL=\"$API_BASE_URL\" > .env.local && echo VITE_APPLICATIONINSIGHTS_CONNECTION_STRING=\"$APPLICATIONINSIGHTS_CONNECTION_STRING\" >> .env.local'
+      postdeploy:
+        windows:
+          shell: pwsh
+          run: 'rm .env.local'
+        posix:
+          shell: sh
+          run: 'rm .env.local'
   api:
     project: ../../api/js
     language: js

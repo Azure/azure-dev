@@ -13,7 +13,7 @@ services:
       # This strategy workarounds the `azd up` order, where package is called before provision, and the image created by package is used by deploy.
       # If the tag is not static, calling package from a hook would produce a new unique image, which would be ignored by deploy.
       # For static-web-applications, package must happen after provision.
-      tag: 'todo-python-mongo-aca/{AZURE_ENV_NAME}:azd-deploy'
+      tag: 'todo-python-mongo-aca/${AZURE_ENV_NAME}:azd-deploy'
     hooks:
       # This hook creates a temporary `.env.local` file for the build command. Vite will automatically use it during docker image creation.
       # The values are mapped to the infrastructure outputs.

@@ -146,8 +146,9 @@ func (u *upAction) runWorkflow(ctx context.Context, workflow *workflow.Workflow)
 
 		args := []string{}
 		if step.AzdCommand.Name != "" {
-			args = strings.Split(step.AzdCommand.Name, " ")
+			args = append(args, step.AzdCommand.Name)
 		}
+
 		if len(step.AzdCommand.Args) > 0 {
 			args = append(args, step.AzdCommand.Args...)
 		}

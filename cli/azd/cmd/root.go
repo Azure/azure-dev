@@ -119,7 +119,6 @@ func NewRootCmd(ctx context.Context, staticHelp bool, middlewareChain []*actions
 	templatesActions(root)
 	authActions(root)
 	hooksActions(root)
-	//workflowActions(root)
 
 	root.Add("version", &actions.ActionDescriptorOptions{
 		Command: &cobra.Command{

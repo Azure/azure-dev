@@ -594,7 +594,6 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	// Required for nested actions called from composite actions like 'up'
 	registerActionInitializer[*restoreAction](container, "azd-restore-action")
 	registerActionInitializer[*packageAction](container, "azd-package-action")
-	//registerActionInitializer[*workflowRunAction](container, "azd-workflow-run-action")
 
 	registerAction[*provisionAction](container, "azd-provision-action")
 	registerAction[*downAction](container, "azd-down-action")

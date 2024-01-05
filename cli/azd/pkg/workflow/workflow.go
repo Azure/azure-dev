@@ -16,7 +16,7 @@ type Workflow struct {
 // UnmarshalYAML will unmarshal the Workflow from YAML.
 // The workflow YAML can be specified as either a simple array of steps or a more verbose map/struct style
 func (w *Workflow) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	valid := false
+	parsed := false
 
 	// Map
 	var m map[string]interface{}
@@ -37,7 +37,7 @@ func (w *Workflow) UnmarshalYAML(unmarshal func(interface{}) error) error {
 			}
 		}
 
-		valid = true
+		parsed = true
 	}
 
 	// Array
@@ -48,10 +48,10 @@ func (w *Workflow) UnmarshalYAML(unmarshal func(interface{}) error) error {
 			return err
 		}
 
-		valid = true
+		parsed = true
 	}
 
-	if !valid || len(w.Steps) == 0 {
+	if !parsed || len(w.Steps) == 0 {
 		return fmt.Errorf("workflow configuration must be a map or an array of steps")
 	}
 

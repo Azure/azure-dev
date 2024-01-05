@@ -3,17 +3,15 @@ package cmd
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
+	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
-	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -58,9 +56,9 @@ type upAction struct {
 	console             input.Console
 	env                 *environment.Environment
 	projectConfig       *project.ProjectConfig
-	serviceLocator      ioc.ServiceLocator
 	provisioningManager *provisioning.Manager
 	importManager       *project.ImportManager
+	workflowRunner      *WorkflowRunner
 }
 
 var defaultUpWorkflow = &workflow.Workflow{
@@ -78,18 +76,18 @@ func newUpAction(
 	env *environment.Environment,
 	_ auth.LoggedInGuard,
 	projectConfig *project.ProjectConfig,
-	serviceLocator ioc.ServiceLocator,
 	provisioningManager *provisioning.Manager,
 	importManager *project.ImportManager,
+	workflowRunner *WorkflowRunner,
 ) actions.Action {
 	return &upAction{
 		flags:               flags,
 		console:             console,
 		env:                 env,
 		projectConfig:       projectConfig,
-		serviceLocator:      serviceLocator,
 		provisioningManager: provisioningManager,
 		importManager:       importManager,
+		workflowRunner:      workflowRunner,
 	}
 }
 
@@ -114,13 +112,13 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		u.console.Message(ctx, output.WithGrayFormat("Note: Running custom 'up' workflow from azure.yaml"))
 	}
 
-	if err := u.runWorkflow(ctx, upWorkflow); err != nil {
+	if err := u.workflowRunner.Run(ctx, upWorkflow); err != nil {
 		return nil, err
 	}
 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			Header: fmt.Sprintf("Your application was provisioned and deployed to Azure in %s.",
+			Header: fmt.Sprintf("Your up workflow to provision and deploy to Azure completed in %s.",
 				ux.DurationAsText(since(startTime))),
 		},
 	}, nil
@@ -128,39 +126,31 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 func getCmdUpHelpDescription(c *cobra.Command) string {
 	return generateCmdHelpDescription(
-		fmt.Sprintf("Executes the %s, %s and %s commands in a single step.",
-			output.WithHighLightFormat("azd package"),
-			output.WithHighLightFormat("azd provision"),
-			output.WithHighLightFormat("azd deploy")), nil)
-}
+		heredoc.Docf(
+			`Runs a workflow to %s, %s and %s your application in a single step.
 
-// Execute the 'up' workflow
-func (u *upAction) runWorkflow(ctx context.Context, workflow *workflow.Workflow) error {
-	var rootCmd *cobra.Command
-	if err := u.serviceLocator.ResolveNamed("root-cmd", &rootCmd); err != nil {
-		return err
-	}
+			The %s workflow can be customized by adding a %s section to your %s.
 
-	for _, step := range workflow.Steps {
-		childCtx := middleware.WithChildAction(ctx)
+			For example, modify the workflow to provision before packaging and deploying:
 
-		args := []string{}
-		if step.AzdCommand.Name != "" {
-			args = append(args, step.AzdCommand.Name)
-		}
+			-------------------------
+			%s
+			workflows:
+			  up:
+			    - azd: provision
+			    - azd: package --all
+			    - azd: deploy --all
+			-------------------------
 
-		if len(step.AzdCommand.Args) > 0 {
-			args = append(args, step.AzdCommand.Args...)
-		}
-
-		// Write blank line in between steps
-		u.console.Message(ctx, "")
-
-		rootCmd.SetArgs(args)
-		if err := rootCmd.ExecuteContext(childCtx); err != nil {
-			return fmt.Errorf("error executing step command '%s': %w", strings.Join(args, " "), err)
-		}
-	}
-
-	return nil
+			Any azd command and flags are supported in the workflow steps.`,
+			output.WithHighLightFormat("package"),
+			output.WithHighLightFormat("provision"),
+			output.WithHighLightFormat("deploy"),
+			output.WithHighLightFormat("up"),
+			output.WithHighLightFormat("workflows"),
+			output.WithHighLightFormat("azure.yaml"),
+			output.WithGrayFormat("# azure.yaml"),
+		),
+		nil,
+	)
 }

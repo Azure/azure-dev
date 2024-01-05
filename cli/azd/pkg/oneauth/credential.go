@@ -1,31 +1,29 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-//go:build !(windows && broker)
+//go:build !(oneauth && windows)
 
 package oneauth
 
-import (
-	"errors"
-)
+import "errors"
 
-// Supported indicates whether this build supports brokered authentication.
+// Supported indicates whether this build includes OneAuth integration.
 const Supported = false
 
-var errNoBroker = errors.New("this build doesn't support brokered authentication")
-
-func NewCredential(authority, clientID string, opts CredentialOptions) (UserCredential, error) {
-	return nil, errNoBroker
-}
+var errNotSupported = errors.New("this build doesn't support OneAuth authentication")
 
 func Logout(clientID string, debug bool) error {
-	return errNoBroker
+	return errNotSupported
+}
+
+func NewCredential(authority, clientID string, opts CredentialOptions) (UserCredential, error) {
+	return nil, errNotSupported
 }
 
 func SignIn(authority, clientID, homeAccountID, scope string, debug bool) (string, error) {
-	return "", errNoBroker
+	return "", errNotSupported
 }
 
 func Start(clientID string, debug bool) error {
-	return errNoBroker
+	return errNotSupported
 }

@@ -1,7 +1,7 @@
 // Copyright (c) Microsoft Corporation. All rights reserved.
 // Licensed under the MIT License.
 
-//go:build broker && windows
+//go:build oneauth && windows
 
 package oneauth
 
@@ -46,7 +46,7 @@ import (
 const (
 	applicationID = "com.microsoft.azd"
 
-	// Supported indicates whether this build supports brokered authentication.
+	// Supported indicates whether this build includes OneAuth integration.
 	Supported = true
 )
 
@@ -88,7 +88,7 @@ type credential struct {
 	opts          CredentialOptions
 }
 
-// NewCredential creates a new credential that uses OneAuth to broker authentication.
+// NewCredential creates a new credential that acquires tokens via OneAuth.
 func NewCredential(authority, clientID string, opts CredentialOptions) (UserCredential, error) {
 	if err := start(clientID, opts.Debug); err != nil {
 		return nil, err

@@ -46,7 +46,6 @@ func newAuthLoginFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions
 
 type loginFlags struct {
 	onlyCheckStatus        bool
-	useBroker              bool
 	useDeviceCode          boolPtr
 	tenantID               string
 	clientID               string
@@ -457,10 +456,6 @@ func (la *loginAction) login(ctx context.Context) error {
 		}
 
 		return nil
-	}
-
-	if la.flags.useBroker {
-		return la.authManager.LoginWithBroker(ctx, la.flags.scopes, la.flags.global)
 	}
 
 	if la.authManager.UseExternalAuth() {

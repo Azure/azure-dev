@@ -216,7 +216,7 @@ func (m *Manager) CredentialForCurrentUser(
 	}
 
 	if currentUser.HomeAccountID != nil {
-		if currentUser.Brokered {
+		if currentUser.FromOneAuth {
 			return oneauth.NewCredential(cDefaultAuthority, cAZD_CLIENT_ID, oneauth.CredentialOptions{
 				// TODO: read GlobalCommandOptions.EnableDebugLogging
 				Debug:         false,
@@ -501,8 +501,7 @@ func (m *Manager) LoginInteractive(
 	return newAzdCredential(m.publicClient, &res.Account), nil
 }
 
-// LoginWithBroker authenticates the user via the authentication broker, if one is available.
-func (m *Manager) LoginWithBroker(ctx context.Context, scopes []string, global *internal.GlobalCommandOptions) error {
+func (m *Manager) LoginWithOneAuth(ctx context.Context, scopes []string, global *internal.GlobalCommandOptions) error {
 	if scopes == nil {
 		scopes = LoginScopes
 	}
@@ -510,7 +509,7 @@ func (m *Manager) LoginWithBroker(ctx context.Context, scopes []string, global *
 	homeAccountID, err := oneauth.SignIn(cDefaultAuthority, cAZD_CLIENT_ID, "", strings.Join(scopes, " "), debug)
 	if err == nil {
 		err = m.saveUserProperties(&userProperties{
-			Brokered:      true,
+			FromOneAuth:   true,
 			HomeAccountID: &homeAccountID,
 		})
 	}
@@ -666,7 +665,7 @@ func (m *Manager) Logout(ctx context.Context) error {
 
 	// we are fine to ignore the error here, it just means there's nothing to clean up.
 	currentUser, _ := readUserProperties(cfg)
-	if currentUser != nil && currentUser.Brokered {
+	if currentUser != nil && currentUser.FromOneAuth {
 		return oneauth.Logout(cAZD_CLIENT_ID, false)
 	}
 
@@ -891,7 +890,7 @@ type federatedAuth struct {
 // client).
 type userProperties struct {
 	HomeAccountID *string `json:"homeAccountId,omitempty"`
-	Brokered      bool    `json:"brokered,omitempty"`
+	FromOneAuth   bool    `json:"fromOneAuth,omitempty"`
 	ClientID      *string `json:"clientId,omitempty"`
 	TenantID      *string `json:"tenantId,omitempty"`
 }

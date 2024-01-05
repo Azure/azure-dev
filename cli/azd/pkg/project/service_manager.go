@@ -614,6 +614,10 @@ func (sm *serviceManager) setOperationResult(
 	operationName string,
 	result any,
 ) {
+	if serviceConfig.NoMemoryCache {
+		log.Println("skipping caching of operation result as per service configuration.")
+		return
+	}
 	key := fmt.Sprintf("%s:%s", serviceConfig.Name, operationName)
 	sm.operationCache[key] = result
 }

@@ -40,6 +40,10 @@ type ServiceConfig struct {
 	*ext.EventDispatcher[ServiceLifecycleEventArgs] `yaml:"-"`
 
 	initialized bool
+
+	// When true, azd will not cache the package result in memory. It allows re-packaging option for static web apps
+	// and any other service which depends on provision for deploying.
+	NoMemoryCache bool `yaml:"noCache,omitempty"`
 }
 
 type DotNetContainerAppOptions struct {

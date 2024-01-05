@@ -13,6 +13,8 @@ import (
 )
 
 // Runner is responsible for executing a workflow
+// Ideally this struct would be in the workflow package, but since it requires middleware package and cobra it will need
+// to live in the cmd package until we resolve the circular dependency.
 type WorkflowRunner struct {
 	serviceLocator ioc.ServiceLocator
 	console        input.Console

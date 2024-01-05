@@ -95,6 +95,16 @@ func Test_WorkflowMap_UnmarshallYAML(t *testing.T) {
 
 		assertWorkflow(t, upWorkflow)
 	})
+
+	t.Run("invalid workflow", func(t *testing.T) {
+		var wm *WorkflowMap
+		yamlString := heredoc.Doc(`
+			up: provision && deploy --all && package --all
+		`)
+
+		err := yaml.Unmarshal([]byte(yamlString), &wm)
+		require.Error(t, err)
+	})
 }
 
 func assertWorkflow(t *testing.T, workflow *Workflow) {

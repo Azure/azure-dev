@@ -7,11 +7,14 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
+// Workflow stores a list of steps to execute
 type Workflow struct {
 	Name  string  `yaml:"-"`
 	Steps []*Step `yaml:"steps,omitempty"`
 }
 
+// UnmarshalYAML will unmarshal the Workflow from YAML.
+// The workflow YAML can be specified as either a simple array of steps or a more verbose map/struct style
 func (w *Workflow) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	valid := false
 
@@ -27,7 +30,7 @@ func (w *Workflow) UnmarshalYAML(unmarshal func(interface{}) error) error {
 		if has {
 			stepsArray, ok := rawSteps.([]interface{})
 			if ok {
-				w.Steps, err = w.UnmarshallSteps(stepsArray)
+				w.Steps, err = w.unmarshalSteps(stepsArray)
 				if err != nil {
 					return err
 				}
@@ -40,7 +43,7 @@ func (w *Workflow) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	// Array
 	var steps []interface{}
 	if err := unmarshal(&steps); err == nil {
-		w.Steps, err = w.UnmarshallSteps(steps)
+		w.Steps, err = w.unmarshalSteps(steps)
 		if err != nil {
 			return err
 		}
@@ -55,7 +58,8 @@ func (w *Workflow) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	return nil
 }
 
-func (w *Workflow) UnmarshallSteps(rawSteps any) ([]*Step, error) {
+// unmarshalSteps will unmarshal the steps from YAML.
+func (w *Workflow) unmarshalSteps(rawSteps any) ([]*Step, error) {
 	stepsArray, ok := rawSteps.([]interface{})
 	if !ok {
 		return nil, fmt.Errorf("steps must be an array")
@@ -80,15 +84,20 @@ func (w *Workflow) UnmarshallSteps(rawSteps any) ([]*Step, error) {
 	return steps, nil
 }
 
+// Step stores a single step to execute within a workflow
+// This struct can be expanded over time to support other types of steps/commands
 type Step struct {
 	AzdCommand Command `yaml:"azd,omitempty"`
 }
 
+// Command stores a single command to execute
 type Command struct {
 	Name string   `yaml:"command,omitempty"`
 	Args []string `yaml:"args,omitempty"`
 }
 
+// UnmarshalYAML will unmarshal the Command from YAML.
+// In command YAML the command can be specified as a simple string or a more verbose map/struct style
 func (c *Command) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	parsed := false
 

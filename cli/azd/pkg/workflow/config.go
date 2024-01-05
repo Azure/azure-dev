@@ -1,15 +1,11 @@
 package workflow
 
-import (
-	"strings"
-
-	"gopkg.in/yaml.v3"
-)
-
+// Stores a map of workflows configured for an azd project
 type WorkflowMap struct {
 	inner map[string]*Workflow
 }
 
+// NewWorkflowMap creates a new WorkflowMap.
 func NewWorkflowMap() *WorkflowMap {
 	return &WorkflowMap{
 		inner: map[string]*Workflow{},
@@ -35,10 +31,14 @@ func (wm *WorkflowMap) Get(key string) (*Workflow, bool) {
 	return val, ok
 }
 
+// MarshalYAML marshals the WorkflowMap into YAML.
 func (wm *WorkflowMap) MarshalYAML() (interface{}, error) {
 	return wm.inner, nil
 }
 
+// UnmarshalYAML will unmarshal the WorkflowMap from YAML.
+// The unmarshalling will marshall the YAML like a standard Go map
+// but will also persist the key as the workflow name within the Workflow struct.
 func (wm *WorkflowMap) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	var m map[string]*Workflow
 	if err := unmarshal(&m); err != nil {
@@ -50,33 +50,5 @@ func (wm *WorkflowMap) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	}
 
 	wm.inner = m
-	return nil
-}
-
-type AzdCommand Command
-
-func (command *AzdCommand) MarshalYAML() (interface{}, error) {
-	c := Command{
-		Name: "",
-		Args: command.Args,
-	}
-
-	return yaml.Marshal(c)
-}
-
-func (command *AzdCommand) UnmarshalYAML(unmarshal func(interface{}) error) error {
-	command.Name = "azd"
-
-	var args []string
-	if err := unmarshal(&args); err != nil {
-		command.Args = args
-		return nil
-	}
-
-	var cmdString string
-	if err := unmarshal(&cmdString); err != nil {
-		command.Args = strings.Split(cmdString, " ")
-	}
-
 	return nil
 }

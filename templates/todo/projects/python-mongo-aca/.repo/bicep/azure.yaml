@@ -10,8 +10,8 @@ services:
     host: containerapp
     docker:
       # Setting an static tag for the docker image will allow us to re-build it before deploying.
-      # This strategy workarounds the `azd up` order, where package is called before provision, and the imgage created by package is used by deploy.
-      # If the tag is not static, calling package from a hook would produce a new unique image, which would be ignoted by deploy.
+      # This strategy workarounds the `azd up` order, where package is called before provision, and the image created by package is used by deploy.
+      # If the tag is not static, calling package from a hook would produce a new unique image, which would be ignored by deploy.
       # For static-web-applications, package must happen after provision.
       tag: 'todo-python-mongo-aca/{AZURE_ENV_NAME}:azd-deploy'
     hooks:

@@ -3,6 +3,8 @@ package cmd
 import (
 	"context"
 	"fmt"
+	"strings"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
@@ -11,7 +13,9 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/workflow"
 	"github.com/spf13/cobra"
@@ -43,19 +47,22 @@ func newUpCmd() *cobra.Command {
 }
 
 type upAction struct {
-	flags                        *upFlags
-	console                      input.Console
-	env                          *environment.Environment
-	projectConfig                *project.ProjectConfig
-	runner                       middleware.MiddlewareContext
-	workflowRunActionInitializer actions.ActionInitializer[*workflowRunAction]
-	provisioningManager          *provisioning.Manager
+	flags               *upFlags
+	console             input.Console
+	env                 *environment.Environment
+	projectConfig       *project.ProjectConfig
+	serviceLocator      ioc.ServiceLocator
+	provisioningManager *provisioning.Manager
+	importManager       *project.ImportManager
 }
 
-var defaultUpWorkflow = []*workflow.Step{
-	{Command: "package --all"},
-	{Command: "provision"},
-	{Command: "deploy --all"},
+var defaultUpWorkflow = &workflow.Workflow{
+	Name: "up",
+	Steps: []*workflow.Step{
+		{AzdCommand: workflow.Command{Args: []string{"package", "--all"}}},
+		{AzdCommand: workflow.Command{Args: []string{"provision"}}},
+		{AzdCommand: workflow.Command{Args: []string{"deploy", "--all"}}},
+	},
 }
 
 func newUpAction(
@@ -64,46 +71,52 @@ func newUpAction(
 	env *environment.Environment,
 	_ auth.LoggedInGuard,
 	projectConfig *project.ProjectConfig,
-	workflowRunActionInitializer actions.ActionInitializer[*workflowRunAction],
-	runner middleware.MiddlewareContext,
+	serviceLocator ioc.ServiceLocator,
 	provisioningManager *provisioning.Manager,
+	importManager *project.ImportManager,
 ) actions.Action {
 	return &upAction{
-		flags:                        flags,
-		console:                      console,
-		env:                          env,
-		projectConfig:                projectConfig,
-		workflowRunActionInitializer: workflowRunActionInitializer,
-		runner:                       runner,
-		provisioningManager:          provisioningManager,
+		flags:               flags,
+		console:             console,
+		env:                 env,
+		projectConfig:       projectConfig,
+		serviceLocator:      serviceLocator,
+		provisioningManager: provisioningManager,
+		importManager:       importManager,
 	}
 }
 
 func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	if u.projectConfig.Workflows == nil {
-		u.projectConfig.Workflows = map[string][]*workflow.Step{}
+	infra, err := u.importManager.ProjectInfrastructure(ctx, u.projectConfig)
+	if err != nil {
+		return nil, err
 	}
+	defer func() { _ = infra.Cleanup() }()
 
-	upWorkflow, has := u.projectConfig.Workflows["up"]
-	if !has || len(upWorkflow) == 0 {
-		err := u.provisioningManager.Initialize(ctx, u.projectConfig.Path, u.projectConfig.Infra)
-		if err != nil {
-			return nil, err
-		}
-
-		u.projectConfig.Workflows["up"] = defaultUpWorkflow
-	} else {
-		u.console.Message(ctx, output.WithWarningFormat("WARNING: Running custom 'up' workflow from azure.yaml"))
-	}
-
-	workflowRunAction, err := u.workflowRunActionInitializer()
+	err = u.provisioningManager.Initialize(ctx, u.projectConfig.Path, infra.Options)
 	if err != nil {
 		return nil, err
 	}
 
-	workflowRunAction.args = []string{"up"}
-	provisionOptions := &middleware.Options{CommandPath: "workflow run"}
-	return u.runner.RunChildAction(ctx, provisionOptions, workflowRunAction)
+	startTime := time.Now()
+
+	upWorkflow, has := u.projectConfig.Workflows.Get("up")
+	if !has {
+		upWorkflow = defaultUpWorkflow
+	} else {
+		u.console.Message(ctx, output.WithGrayFormat("Note: Running custom 'up' workflow from azure.yaml"))
+	}
+
+	if err := u.runWorkflow(ctx, upWorkflow); err != nil {
+		return nil, err
+	}
+
+	return &actions.ActionResult{
+		Message: &actions.ResultMessage{
+			Header: fmt.Sprintf("Your application was provisioned and deployed to Azure in %s.",
+				ux.DurationAsText(since(startTime))),
+		},
+	}, nil
 }
 
 func getCmdUpHelpDescription(c *cobra.Command) string {
@@ -112,4 +125,34 @@ func getCmdUpHelpDescription(c *cobra.Command) string {
 			output.WithHighLightFormat("azd package"),
 			output.WithHighLightFormat("azd provision"),
 			output.WithHighLightFormat("azd deploy")), nil)
+}
+
+// Execute the 'up' workflow
+func (u *upAction) runWorkflow(ctx context.Context, workflow *workflow.Workflow) error {
+	var rootCmd *cobra.Command
+	if err := u.serviceLocator.ResolveNamed("root-cmd", &rootCmd); err != nil {
+		return err
+	}
+
+	for _, step := range workflow.Steps {
+		childCtx := middleware.WithChildAction(ctx)
+
+		args := []string{}
+		if step.AzdCommand.Name != "" {
+			args = strings.Split(step.AzdCommand.Name, " ")
+		}
+		if len(step.AzdCommand.Args) > 0 {
+			args = append(args, step.AzdCommand.Args...)
+		}
+
+		// Write blank line in between steps
+		u.console.Message(ctx, "")
+
+		rootCmd.SetArgs(args)
+		if err := rootCmd.ExecuteContext(childCtx); err != nil {
+			return fmt.Errorf("error executing step command '%s': %w", strings.Join(args, " "), err)
+		}
+	}
+
+	return nil
 }

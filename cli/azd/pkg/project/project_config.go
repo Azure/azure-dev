@@ -14,18 +14,18 @@ import (
 // When changing project structure, make sure to update the JSON schema file for azure.yaml (<workspace
 // root>/schemas/vN.M/azure.yaml.json).
 type ProjectConfig struct {
-	RequiredVersions  *RequiredVersions           `yaml:"requiredVersions,omitempty"`
-	Name              string                      `yaml:"name"`
-	ResourceGroupName ExpandableString            `yaml:"resourceGroup,omitempty"`
-	Path              string                      `yaml:"-"`
-	Metadata          *ProjectMetadata            `yaml:"metadata,omitempty"`
-	Services          map[string]*ServiceConfig   `yaml:"services,omitempty"`
-	Infra             provisioning.Options        `yaml:"infra,omitempty"`
-	Pipeline          PipelineOptions             `yaml:"pipeline,omitempty"`
-	Hooks             map[string]*ext.HookConfig  `yaml:"hooks,omitempty"`
-	State             *state.Config               `yaml:"state,omitempty"`
-	Platform          *platform.Config            `yaml:"platform,omitempty"`
-	Workflows         map[string][]*workflow.Step `yaml:"workflows,omitempty"`
+	RequiredVersions  *RequiredVersions          `yaml:"requiredVersions,omitempty"`
+	Name              string                     `yaml:"name"`
+	ResourceGroupName ExpandableString           `yaml:"resourceGroup,omitempty"`
+	Path              string                     `yaml:"-"`
+	Metadata          *ProjectMetadata           `yaml:"metadata,omitempty"`
+	Services          map[string]*ServiceConfig  `yaml:"services,omitempty"`
+	Infra             provisioning.Options       `yaml:"infra,omitempty"`
+	Pipeline          PipelineOptions            `yaml:"pipeline,omitempty"`
+	Hooks             map[string]*ext.HookConfig `yaml:"hooks,omitempty"`
+	State             *state.Config              `yaml:"state,omitempty"`
+	Platform          *platform.Config           `yaml:"platform,omitempty"`
+	Workflows         workflow.WorkflowMap       `yaml:"workflows,omitempty"`
 
 	*ext.EventDispatcher[ProjectLifecycleEventArgs] `yaml:"-"`
 }

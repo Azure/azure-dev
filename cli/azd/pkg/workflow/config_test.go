@@ -1,0 +1,108 @@
+package workflow
+
+import (
+	"testing"
+
+	"github.com/MakeNowJust/heredoc/v2"
+	"github.com/stretchr/testify/require"
+	"gopkg.in/yaml.v3"
+)
+
+var testWorkflow = &Workflow{
+	Name: "up",
+	Steps: []*Step{
+		{AzdCommand: Command{Args: []string{"package", "--all"}}},
+		{AzdCommand: Command{Args: []string{"provision"}}},
+		{AzdCommand: Command{Args: []string{"deploy", "--all"}}},
+	},
+}
+
+func Test_WorkflowMap_MarshalYAML(t *testing.T) {
+	m := NewWorkflowMap()
+	m.Set("up", testWorkflow)
+	m.Set("down", testWorkflow)
+
+	expected, err := yaml.Marshal(m.inner)
+	require.NoError(t, err)
+
+	actual, err := yaml.Marshal(m)
+	require.NoError(t, err)
+
+	require.NoError(t, err)
+	require.Equal(t, expected, actual)
+}
+
+func Test_WorkflowMap_UnmarshallYAML(t *testing.T) {
+	t.Run("array style", func(t *testing.T) {
+		var wm *WorkflowMap
+		yamlString := heredoc.Doc(`
+			up:
+			  - azd: package --all
+			  - azd: provision
+			  - azd: deploy --all
+		`)
+
+		err := yaml.Unmarshal([]byte(yamlString), &wm)
+		require.NoError(t, err)
+
+		upWorkflow, ok := wm.Get("up")
+		require.True(t, ok)
+
+		assertWorkflow(t, upWorkflow)
+	})
+
+	t.Run("map style", func(t *testing.T) {
+		var wm *WorkflowMap
+		yamlString := heredoc.Doc(`
+			up:
+			  steps:
+			    - azd: package --all
+			    - azd: provision
+			    - azd: deploy --all
+		`)
+
+		err := yaml.Unmarshal([]byte(yamlString), &wm)
+		require.NoError(t, err)
+
+		upWorkflow, ok := wm.Get("up")
+		require.True(t, ok)
+
+		assertWorkflow(t, upWorkflow)
+	})
+
+	t.Run("verbose style", func(t *testing.T) {
+		var wm *WorkflowMap
+		yamlString := heredoc.Doc(`
+			up:
+			  steps:
+			    - azd:
+			        command: package
+			        args:
+			          - --all
+			    - azd:
+			        command: provision
+			    - azd:
+			        command: deploy
+			        args:
+			          - --all
+		`)
+
+		err := yaml.Unmarshal([]byte(yamlString), &wm)
+		require.NoError(t, err)
+
+		upWorkflow, ok := wm.Get("up")
+		require.True(t, ok)
+
+		assertWorkflow(t, upWorkflow)
+	})
+}
+
+func assertWorkflow(t *testing.T, workflow *Workflow) {
+	require.NotNil(t, workflow)
+
+	require.Equal(t, "up", workflow.Name)
+	require.Len(t, workflow.Steps, 3)
+	require.Equal(t, "package", workflow.Steps[0].AzdCommand.Name)
+	require.Len(t, workflow.Steps[0].AzdCommand.Args, 1)
+	require.Equal(t, "--all", workflow.Steps[0].AzdCommand.Args[0])
+}

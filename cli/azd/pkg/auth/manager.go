@@ -665,16 +665,21 @@ func (m *Manager) Logout(ctx context.Context) error {
 
 	// we are fine to ignore the error here, it just means there's nothing to clean up.
 	currentUser, _ := readUserProperties(cfg)
-	if currentUser != nil && currentUser.FromOneAuth {
-		return oneauth.Logout(cAZD_CLIENT_ID, false)
-	}
-
-	// When logged in as a service principal, remove the stored credential
-	if currentUser != nil && currentUser.TenantID != nil && currentUser.ClientID != nil {
-		if err := m.saveLoginForServicePrincipal(
-			*currentUser.TenantID, *currentUser.ClientID, &persistedSecret{},
-		); err != nil {
-			return fmt.Errorf("removing authentication secrets: %w", err)
+	if currentUser != nil {
+		if currentUser.FromOneAuth {
+			// TODO: read GlobalCommandOptions.EnableDebugLogging
+			// (low priority; OneAuth doesn't currently log anything interesting during logout)
+			debug := false
+			if err := oneauth.Logout(cAZD_CLIENT_ID, debug); err != nil {
+				return fmt.Errorf("logging out of OneAuth: %w", err)
+			}
+		} else if currentUser.TenantID != nil && currentUser.ClientID != nil {
+			// When logged in as a service principal, remove the stored credential
+			if err := m.saveLoginForServicePrincipal(
+				*currentUser.TenantID, *currentUser.ClientID, &persistedSecret{},
+			); err != nil {
+				return fmt.Errorf("removing authentication secrets: %w", err)
+			}
 		}
 	}
 

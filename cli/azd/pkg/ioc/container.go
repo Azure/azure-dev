@@ -47,6 +47,11 @@ func NewNestedContainer(parent *NestedContainer) *NestedContainer {
 	return instance
 }
 
+// Fill takes a structure and resolves fields with the tag `container:"type" or `container:"name"`.
+func (c *NestedContainer) Fill(structure any) error {
+	return c.inner.Fill(structure)
+}
+
 // Registers a resolver with a singleton lifetime
 // Returns an error if the resolver is not valid
 func (c *NestedContainer) RegisterSingleton(resolveFn any) error {

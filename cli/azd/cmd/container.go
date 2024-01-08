@@ -341,7 +341,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	)
 
 	// Project Config
-	container.MustRegisterSingleton(
+	container.MustRegisterTransient(
 		func(ctx context.Context, azdContext *azdcontext.AzdContext) (*project.ProjectConfig, error) {
 			if azdContext == nil {
 				return nil, azdcontext.ErrNoProject

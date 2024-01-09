@@ -618,10 +618,9 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(cloud.NewCloud)
 	container.RegisterSingleton(func(
 		ctx context.Context,
-		azdCtx *azdcontext.AzdContext,
 		userConfigManager config.UserConfigManager,
-		// TODO: Why are these lazy?
 		lazyProjectConfig *lazy.Lazy[*project.ProjectConfig],
+		lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext],
 		lazyLocalEnvStore *lazy.Lazy[environment.LocalDataStore],
 	) *cloud.Config {
 
@@ -655,15 +654,17 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 		// Local Environment Configuration
 		localEnvStore, _ := lazyLocalEnvStore.GetValue()
-		if azdCtx != nil && localEnvStore != nil {
-			if defaultEnvName, err := azdCtx.GetDefaultEnvironmentName(); err == nil {
-				env, err := localEnvStore.Get(ctx, defaultEnvName)
-				if err == nil {
-					cloudConfigurationNode, exists := env.Config.Get(cloud.ConfigPath)
-					if exists {
-						value, err := cloud.ParseCloudConfig(cloudConfigurationNode)
-						if err == nil {
-							cloudConfig = value
+		if azdCtx, err := lazyAzdContext.GetValue(); err == nil {
+			if azdCtx != nil && localEnvStore != nil {
+				if defaultEnvName, err := azdCtx.GetDefaultEnvironmentName(); err == nil {
+					env, err := localEnvStore.Get(ctx, defaultEnvName)
+					if err == nil {
+						cloudConfigurationNode, exists := env.Config.Get(cloud.ConfigPath)
+						if exists {
+							value, err := cloud.ParseCloudConfig(cloudConfigurationNode)
+							if err == nil {
+								cloudConfig = value
+							}
 						}
 					}
 				}

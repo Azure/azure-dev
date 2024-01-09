@@ -16,7 +16,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
-	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockarmresources"
@@ -41,7 +40,6 @@ func createServiceManager(mockContext *mocks.MockContext, env *environment.Envir
 	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 	depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
 	resourceManager := NewResourceManager(env, azCli, depOpService)
-	serviceLocator := ioc.NewServiceLocator(mockContext.Container)
 
 	alphaManager := alpha.NewFeaturesManagerWithConfig(config.NewConfig(
 		map[string]any{
@@ -50,7 +48,7 @@ func createServiceManager(mockContext *mocks.MockContext, env *environment.Envir
 			},
 		}))
 
-	return NewServiceManager(env, resourceManager, serviceLocator, alphaManager)
+	return NewServiceManager(env, resourceManager, mockContext.Container, alphaManager)
 }
 
 func Test_ServiceManager_GetRequiredTools(t *testing.T) {
@@ -342,8 +340,8 @@ func Test_ServiceManager_Events_With_Errors(t *testing.T) {
 }
 
 func setupMocksForServiceManager(mockContext *mocks.MockContext) {
-	_ = mockContext.Container.RegisterNamedSingleton(string(ServiceLanguageFake), newFakeFramework)
-	_ = mockContext.Container.RegisterNamedSingleton(string(ServiceTargetFake), newFakeServiceTarget)
+	mockContext.Container.RegisterNamedSingleton(string(ServiceLanguageFake), newFakeFramework)
+	mockContext.Container.RegisterNamedSingleton(string(ServiceTargetFake), newFakeServiceTarget)
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "fake-framework restore")

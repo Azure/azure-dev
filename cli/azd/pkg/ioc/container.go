@@ -29,24 +29,30 @@ var (
 // NestedContainer is an IoC container that support nested containers
 // Used for more complex registration scenarios such as scop based registration/resolution.
 type NestedContainer struct {
-	inner  container.Container
-	parent *NestedContainer
+	inner          container.Container
+	parent         *NestedContainer
+	scopedBindings []*binding
 }
 
 // Creates a new nested container from the specified parent container
 func NewNestedContainer(parent *NestedContainer) *NestedContainer {
 	current := container.New()
 	if parent != nil {
-		// Copy the resolvers to the new container
+		// Copy the bindings to the new container
+		// The bindings hold the concrete instance of singleton registrations
 		for key, value := range parent.inner {
 			current[key] = value
 		}
 	}
 
-	return &NestedContainer{
+	instance := &NestedContainer{
 		inner:  current,
 		parent: parent,
 	}
+
+	instance.RegisterScoped(func() ServiceLocator { return instance })
+
+	return instance
 }
 
 // Registers a resolver with a singleton lifetime
@@ -64,8 +70,8 @@ func (c *NestedContainer) RegisterSingletonAndInvoke(resolveFn any) error {
 
 // Registers a named resolver with a singleton lifetime
 // Returns an error if the resolver is not valid
-func (c *NestedContainer) RegisterNamedSingleton(name string, resolveFn any) error {
-	return c.inner.NamedSingletonLazy(name, resolveFn)
+func (c *NestedContainer) RegisterNamedSingleton(name string, resolveFn any) {
+	container.MustNamedSingletonLazy(c.inner, name, resolveFn)
 }
 
 // Registers a resolver with a transient lifetime (instance per resolution)
@@ -76,8 +82,29 @@ func (c *NestedContainer) RegisterTransient(resolveFn any) {
 
 // Registers a named resolver with a transient lifetime (instance per resolution)
 // Returns an error if the resolver is not valid
-func (c *NestedContainer) RegisterNamedTransient(name string, resolveFn any) error {
-	return c.inner.NamedTransientLazy(name, resolveFn)
+func (c *NestedContainer) RegisterNamedTransient(name string, resolveFn any) {
+	container.MustNamedTransientLazy(c.inner, name, resolveFn)
+}
+
+// Registers a resolver with a scoped lifetime (instance per container)
+func (c *NestedContainer) RegisterScoped(resolveFn any) {
+	container.MustSingletonLazy(c.inner, resolveFn)
+
+	c.scopedBindings = append(c.scopedBindings, &binding{
+		lifetime: Scoped,
+		resolver: resolveFn,
+	})
+}
+
+// Registers a named resolver with a scoped lifetime (instance per container)
+func (c *NestedContainer) RegisterNamedScoped(name string, resolveFn any) {
+	container.MustNamedSingletonLazy(c.inner, name, resolveFn)
+
+	c.scopedBindings = append(c.scopedBindings, &binding{
+		name:     name,
+		lifetime: Scoped,
+		resolver: resolveFn,
+	})
 }
 
 // Resolves an instance for the specified type
@@ -134,6 +161,24 @@ func RegisterNamedInstance[F any](c *NestedContainer, name string, instance F) {
 	container.MustNamedSingletonLazy(c.inner, name, func() F {
 		return instance
 	})
+}
+
+// NewScope creates a new nested container with a relationship back to the parent container
+// Scope registrations are converted to singleton registrations within the new nested container.
+func (c *NestedContainer) NewScope() *NestedContainer {
+	childContainer := NewNestedContainer(c)
+
+	for _, binding := range c.scopedBindings {
+		if binding.name == "" {
+			childContainer.RegisterSingleton(binding.resolver)
+		} else {
+			childContainer.RegisterNamedSingleton(binding.name, binding.resolver)
+		}
+
+		childContainer.scopedBindings = append(childContainer.scopedBindings, binding)
+	}
+
+	return childContainer
 }
 
 // Inspects the specified error to determine whether the error is a

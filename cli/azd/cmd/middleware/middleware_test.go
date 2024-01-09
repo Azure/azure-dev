@@ -6,7 +6,6 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
-	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/stretchr/testify/require"
 )
@@ -19,7 +18,7 @@ func Test_Middleware_RunAction(t *testing.T) {
 		runLog := []string{}
 
 		mockContext := mocks.NewMockContext(context.Background())
-		middlewareRunner := NewMiddlewareRunner(ioc.NewNestedContainer(nil))
+		middlewareRunner := NewMiddlewareRunner()
 
 		_ = middlewareRunner.Use("test", func() Middleware {
 			return &testMiddleware{
@@ -56,7 +55,7 @@ func Test_Middleware_RunAction(t *testing.T) {
 		runLog := []string{}
 
 		mockContext := mocks.NewMockContext(context.Background())
-		middlewareRunner := NewMiddlewareRunner(ioc.NewNestedContainer(nil))
+		middlewareRunner := NewMiddlewareRunner()
 
 		_ = middlewareRunner.Use("test", func() Middleware {
 			return &testMiddleware{
@@ -86,7 +85,7 @@ func Test_Middleware_RunAction(t *testing.T) {
 
 	t.Run("multiple middleware components", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		middlewareRunner := NewMiddlewareRunner(ioc.NewNestedContainer(nil))
+		middlewareRunner := NewMiddlewareRunner()
 		runLog := []string{}
 
 		_ = middlewareRunner.Use("A", func() Middleware {
@@ -128,7 +127,7 @@ func Test_Middleware_RunAction(t *testing.T) {
 
 	t.Run("context propagated to action", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
-		middlewareRunner := NewMiddlewareRunner(ioc.NewNestedContainer(nil))
+		middlewareRunner := NewMiddlewareRunner()
 
 		key := cxtKey{}
 
@@ -159,7 +158,7 @@ func Test_Middleware_RunAction(t *testing.T) {
 
 func Test_Middleware_RunChildAction(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
-	middlewareRunner := NewMiddlewareRunner(ioc.NewNestedContainer(nil))
+	middlewareRunner := NewMiddlewareRunner()
 	runLog := []string{}
 
 	action, actionRan := createAction(&runLog)

@@ -218,7 +218,7 @@ func registerContainerDependencies(mockContext *mocks.MockContext, env *environm
 	})
 
 	mockContext.Container.RegisterSingleton(prompt.NewDefaultPrompter)
-	_ = mockContext.Container.RegisterNamedTransient(string(provisioning.Test), test.NewTestProvider)
+	mockContext.Container.RegisterNamedTransient(string(provisioning.Test), test.NewTestProvider)
 	mockContext.Container.RegisterSingleton(func() account.Manager {
 		return &mockaccount.MockAccountManager{
 			Subscriptions: []account.Subscription{

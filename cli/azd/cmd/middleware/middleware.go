@@ -2,7 +2,6 @@ package middleware
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"slices"
 
@@ -54,17 +53,17 @@ type NextFn func(ctx context.Context) (*actions.ActionResult, error)
 // Middleware runner stores middleware registrations and orchestrates the
 // invocation of middleware components and actions.
 type MiddlewareRunner struct {
-	chain       []string
-	container   *ioc.NestedContainer
-	actionCache map[actions.Action]*actions.ActionResult
+	chain             []string
+	actionCache       map[actions.Action]*actions.ActionResult
+	registrationCache map[string]any
 }
 
 // Creates a new middleware runner
-func NewMiddlewareRunner(container *ioc.NestedContainer) *MiddlewareRunner {
+func NewMiddlewareRunner() *MiddlewareRunner {
 	return &MiddlewareRunner{
-		container:   container,
-		chain:       []string{},
-		actionCache: map[actions.Action]*actions.ActionResult{},
+		chain:             []string{},
+		actionCache:       map[actions.Action]*actions.ActionResult{},
+		registrationCache: map[string]any{},
 	}
 }
 
@@ -102,8 +101,19 @@ func (r *MiddlewareRunner) RunAction(
 
 	var nextFn NextFn
 
-	actionContainer := ioc.NewNestedContainer(r.container)
+	// We need to get the actionContainer for the current executing scope
+	actionContainer, err := ioc.GetContainer(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	// Create a new context with the child container which will be leveraged on any child command/actions
 	ioc.RegisterInstance(actionContainer, runOptions)
+
+	// Registers all the registered middlewares into the IoC container for the new scope
+	for name, resolveFn := range r.registrationCache {
+		actionContainer.RegisterNamedTransient(name, resolveFn)
+	}
 
 	// This recursive function executes the middleware chain in the order that
 	// the middlewares were registered. nextFn is passed into the middleware run
@@ -139,9 +149,7 @@ func (r *MiddlewareRunner) RunAction(
 
 // Registers middleware components that will be run for all actions
 func (r *MiddlewareRunner) Use(name string, resolveFn any) error {
-	if err := r.container.RegisterNamedTransient(name, resolveFn); err != nil {
-		return fmt.Errorf("failed registering middleware '%s'. Ensure the resolver is a go function. %w", name, err)
-	}
+	r.registrationCache[name] = resolveFn
 
 	if !slices.Contains(r.chain, name) {
 		r.chain = append(r.chain, name)

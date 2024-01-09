@@ -429,8 +429,7 @@ func createPipelineManager(
 	}
 
 	for provider, constructor := range pipelineProviderMap {
-		err := mockContext.Container.RegisterNamedSingleton(string(provider), constructor)
-		assert.NoError(t, err)
+		mockContext.Container.RegisterNamedSingleton(string(provider), constructor)
 	}
 
 	return NewPipelineManager(

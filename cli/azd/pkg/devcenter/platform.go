@@ -152,19 +152,13 @@ func (p *Platform) ConfigureContainer(container *ioc.NestedContainer) error {
 	})
 
 	// Provision Provider
-	if err := container.RegisterNamedSingleton(string(ProvisionKindDevCenter), NewProvisionProvider); err != nil {
-		return err
-	}
+	container.RegisterNamedScoped(string(ProvisionKindDevCenter), NewProvisionProvider)
 
 	// Remote Environment Storage
-	if err := container.RegisterNamedSingleton(string(RemoteKindDevCenter), NewEnvironmentStore); err != nil {
-		return err
-	}
+	container.RegisterNamedScoped(string(RemoteKindDevCenter), NewEnvironmentStore)
 
 	// Template Sources
-	if err := container.RegisterNamedSingleton(string(SourceKindDevCenter), NewTemplateSource); err != nil {
-		return err
-	}
+	container.RegisterNamedScoped(string(SourceKindDevCenter), NewTemplateSource)
 
 	container.RegisterSingleton(NewManager)
 	container.RegisterSingleton(NewPrompter)

@@ -11,6 +11,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
+	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/repository"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
@@ -60,27 +61,27 @@ import (
 // This is to ensure pre-conditions are met for composite actions like 'up'
 // This finds the action for a named instance and casts it to the correct type for injection
 func registerAction[T actions.Action](container *ioc.NestedContainer, actionName string) {
-	container.RegisterTransient(func() (T, error) {
-		return resolveAction[T](container, actionName)
+	container.RegisterTransient(func(serviceLocator ioc.ServiceLocator) (T, error) {
+		return resolveAction[T](serviceLocator, actionName)
 	})
 }
 
 // Registers a transient action for the specified action name
 // This finds the action for a named instance and casts it to the correct type for injection
 func registerActionInitializer[T actions.Action](container *ioc.NestedContainer, actionName string) {
-	container.RegisterTransient(func() actions.ActionInitializer[T] {
+	container.RegisterTransient(func(serviceLocator ioc.ServiceLocator) actions.ActionInitializer[T] {
 		return func() (T, error) {
-			return resolveAction[T](container, actionName)
+			return resolveAction[T](serviceLocator, actionName)
 		}
 	})
 }
 
 // Resolves the action instance for the specified action name
 // This finds the action for a named instance and casts it to the correct type for injection
-func resolveAction[T actions.Action](container *ioc.NestedContainer, actionName string) (T, error) {
+func resolveAction[T actions.Action](serviceLocator ioc.ServiceLocator, actionName string) (T, error) {
 	var zero T
 	var action actions.Action
-	err := container.ResolveNamed(actionName, &action)
+	err := serviceLocator.ResolveNamed(actionName, &action)
 	if err != nil {
 		return zero, err
 	}
@@ -95,6 +96,15 @@ func resolveAction[T actions.Action](container *ioc.NestedContainer, actionName 
 
 // Registers common Azd dependencies
 func registerCommonDependencies(container *ioc.NestedContainer) {
+	// Core bootstrapping registrations
+	ioc.RegisterInstance(container, container)
+	container.RegisterSingleton(NewCobraBuilder)
+	container.RegisterSingleton(middleware.NewMiddlewareRunner)
+	container.RegisterSingleton(func(runner *middleware.MiddlewareRunner) middleware.MiddlewareContext {
+		return runner
+	})
+
+	// Standard Registrations
 	container.RegisterTransient(output.GetCommandFormatter)
 
 	container.RegisterSingleton(func(
@@ -156,10 +166,15 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		return writer
 	})
 
-	container.RegisterSingleton(func(cmd *cobra.Command) envFlag {
+	container.RegisterScoped(func(cmd *cobra.Command) envFlag {
+		// The env flag `-e, --environment` is available on most azd commands but not all
+		// This is typically used to override the default environment and is used for bootstrapping other components
+		// such as the azd environment.
+		// If the flag is not available, don't panic, just return an empty string which will then allow for our default
+		// semantics to follow.
 		envValue, err := cmd.Flags().GetString(environmentNameFlag)
 		if err != nil {
-			panic("command asked for envFlag, but envFlag was not included in cmd.Flags().")
+			envValue = ""
 		}
 
 		return envFlag{environmentName: envValue}
@@ -182,7 +197,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	// Register an initialized environment based on the specified environment flag, or the default environment.
 	// Note that referencing an *environment.Environment in a command automatically triggers a UI prompt if the
 	// environment is uninitialized or a default environment doesn't yet exist.
-	container.RegisterSingleton(
+	container.RegisterScoped(
 		func(ctx context.Context,
 			azdContext *azdcontext.AzdContext,
 			envManager environment.Manager,
@@ -208,7 +223,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			return env, nil
 		},
 	)
-	container.RegisterSingleton(func(lazyEnvManager *lazy.Lazy[environment.Manager]) environment.EnvironmentResolver {
+	container.RegisterScoped(func(lazyEnvManager *lazy.Lazy[environment.Manager]) environment.EnvironmentResolver {
 		return func(ctx context.Context) (*environment.Environment, error) {
 			azdCtx, err := azdcontext.NewAzdContext()
 			if err != nil {
@@ -232,10 +247,10 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(environment.NewLocalFileDataStore)
 	container.RegisterSingleton(environment.NewManager)
 
-	container.RegisterSingleton(func() *lazy.Lazy[environment.LocalDataStore] {
+	container.RegisterSingleton(func(serviceLocator ioc.ServiceLocator) *lazy.Lazy[environment.LocalDataStore] {
 		return lazy.NewLazy(func() (environment.LocalDataStore, error) {
 			var localDataStore environment.LocalDataStore
-			err := container.Resolve(&localDataStore)
+			err := serviceLocator.Resolve(&localDataStore)
 			if err != nil {
 				return nil, err
 			}
@@ -245,25 +260,27 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	})
 
 	// Environment manager depends on azd context
-	container.RegisterSingleton(func(azdContext *lazy.Lazy[*azdcontext.AzdContext]) *lazy.Lazy[environment.Manager] {
-		return lazy.NewLazy(func() (environment.Manager, error) {
-			azdCtx, err := azdContext.GetValue()
-			if err != nil {
-				return nil, err
-			}
+	container.RegisterSingleton(
+		func(serviceLocator ioc.ServiceLocator, azdContext *lazy.Lazy[*azdcontext.AzdContext]) *lazy.Lazy[environment.Manager] {
+			return lazy.NewLazy(func() (environment.Manager, error) {
+				azdCtx, err := azdContext.GetValue()
+				if err != nil {
+					return nil, err
+				}
 
-			// Register the Azd context instance as a singleton in the container if now available
-			ioc.RegisterInstance(container, azdCtx)
+				// Register the Azd context instance as a singleton in the container if now available
+				ioc.RegisterInstance(container, azdCtx)
 
-			var envManager environment.Manager
-			err = container.Resolve(&envManager)
-			if err != nil {
-				return nil, err
-			}
+				var envManager environment.Manager
+				err = serviceLocator.Resolve(&envManager)
+				if err != nil {
+					return nil, err
+				}
 
-			return envManager, nil
-		})
-	})
+				return envManager, nil
+			})
+		},
+	)
 
 	container.RegisterSingleton(func(
 		lazyProjectConfig *lazy.Lazy[*project.ProjectConfig],
@@ -296,7 +313,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 	// Lazy loads an existing environment, erroring out if not available
 	// One can repeatedly call GetValue to wait until the environment is available.
-	container.RegisterSingleton(
+	container.RegisterScoped(
 		func(
 			ctx context.Context,
 			lazyEnvManager *lazy.Lazy[environment.Manager],
@@ -349,19 +366,24 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	)
 
 	// Lazy loads the project config from the Azd Context when it becomes available
-	container.RegisterSingleton(func(lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext]) *lazy.Lazy[*project.ProjectConfig] {
-		return lazy.NewLazy(func() (*project.ProjectConfig, error) {
-			_, err := lazyAzdContext.GetValue()
-			if err != nil {
-				return nil, err
-			}
+	container.RegisterSingleton(
+		func(
+			serviceLocator ioc.ServiceLocator,
+			lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext],
+		) *lazy.Lazy[*project.ProjectConfig] {
+			return lazy.NewLazy(func() (*project.ProjectConfig, error) {
+				_, err := lazyAzdContext.GetValue()
+				if err != nil {
+					return nil, err
+				}
 
-			var projectConfig *project.ProjectConfig
-			err = container.Resolve(&projectConfig)
+				var projectConfig *project.ProjectConfig
+				err = serviceLocator.Resolve(&projectConfig)
 
-			return projectConfig, err
-		})
-	})
+				return projectConfig, err
+			})
+		},
+	)
 
 	container.RegisterSingleton(func(
 		ctx context.Context,
@@ -378,10 +400,10 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(templates.NewTemplateManager)
 	container.RegisterSingleton(templates.NewSourceManager)
 	container.RegisterSingleton(project.NewResourceManager)
-	container.RegisterSingleton(func() *lazy.Lazy[project.ResourceManager] {
+	container.RegisterSingleton(func(serviceLocator ioc.ServiceLocator) *lazy.Lazy[project.ResourceManager] {
 		return lazy.NewLazy(func() (project.ResourceManager, error) {
 			var resourceManager project.ResourceManager
-			err := container.Resolve(&resourceManager)
+			err := serviceLocator.Resolve(&resourceManager)
 
 			return resourceManager, err
 		})
@@ -390,10 +412,10 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(project.NewDotNetImporter)
 	container.RegisterSingleton(project.NewImportManager)
 	container.RegisterSingleton(project.NewServiceManager)
-	container.RegisterSingleton(func() *lazy.Lazy[project.ServiceManager] {
+	container.RegisterSingleton(func(serviceLocator ioc.ServiceLocator) *lazy.Lazy[project.ServiceManager] {
 		return lazy.NewLazy(func() (project.ServiceManager, error) {
 			var serviceManager project.ServiceManager
-			err := container.Resolve(&serviceManager)
+			err := serviceLocator.Resolve(&serviceManager)
 
 			return serviceManager, err
 		})
@@ -415,9 +437,6 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.RegisterSingleton(containerapps.NewContainerAppService)
 	container.RegisterSingleton(project.NewContainerHelper)
 	container.RegisterSingleton(azcli.NewSpringService)
-	container.RegisterSingleton(func() ioc.ServiceLocator {
-		return ioc.NewServiceLocator(container)
-	})
 
 	container.RegisterSingleton(func(subManager *account.SubscriptionsManager) account.SubscriptionTenantResolver {
 		return subManager
@@ -473,9 +492,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	}
 
 	for target, constructor := range serviceTargetMap {
-		if err := container.RegisterNamedSingleton(string(target), constructor); err != nil {
-			panic(fmt.Errorf("registering service target %s: %w", target, err))
-		}
+		container.RegisterNamedScoped(string(target), constructor)
 	}
 
 	// Languages
@@ -492,16 +509,10 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	}
 
 	for language, constructor := range frameworkServiceMap {
-		if err := container.RegisterNamedSingleton(string(language), constructor); err != nil {
-			panic(fmt.Errorf("registering framework service %s: %w", language, err))
-		}
+		container.RegisterNamedScoped(string(language), constructor)
 	}
 
-	err := container.RegisterNamedSingleton(
-		string(project.ServiceLanguageDocker), project.NewDockerProjectAsFrameworkService)
-	if err != nil {
-		panic(fmt.Errorf("registering docker framework service: %w", err))
-	}
+	container.RegisterNamedScoped(string(project.ServiceLanguageDocker), project.NewDockerProjectAsFrameworkService)
 
 	// Pipelines
 	container.RegisterSingleton(pipeline.NewPipelineManager)
@@ -517,16 +528,14 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	}
 
 	for provider, constructor := range pipelineProviderMap {
-		if err := container.RegisterNamedSingleton(string(provider), constructor); err != nil {
-			panic(fmt.Errorf("registering pipeline provider %s: %w", provider, err))
-		}
+		container.RegisterNamedScoped(string(provider), constructor)
 	}
 
 	// Platform configuration
-	container.RegisterSingleton(func() *lazy.Lazy[*platform.Config] {
+	container.RegisterSingleton(func(serviceLocator ioc.ServiceLocator) *lazy.Lazy[*platform.Config] {
 		return lazy.NewLazy(func() (*platform.Config, error) {
 			var platformConfig *platform.Config
-			err := container.Resolve(&platformConfig)
+			err := serviceLocator.Resolve(&platformConfig)
 
 			return platformConfig, err
 		})
@@ -586,9 +595,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 	for provider, constructor := range platformProviderMap {
 		platformName := fmt.Sprintf("%s-platform", provider)
-		if err := container.RegisterNamedSingleton(platformName, constructor); err != nil {
-			panic(fmt.Errorf("registering platform provider %s: %w", provider, err))
-		}
+		container.RegisterNamedSingleton(platformName, constructor)
 	}
 
 	container.RegisterSingleton(NewWorkflowRunner)

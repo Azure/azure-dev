@@ -55,9 +55,7 @@ func (p *DefaultPlatform) ConfigureContainer(container *ioc.NestedContainer) err
 	}
 
 	for provider, constructor := range provisionProviderMap {
-		if err := container.RegisterNamedTransient(string(provider), constructor); err != nil {
-			panic(fmt.Errorf("registering IaC provider %s: %w", provider, err))
-		}
+		container.RegisterNamedTransient(string(provider), constructor)
 	}
 
 	// Function to determine the default IaC provider when provisioning
@@ -73,9 +71,7 @@ func (p *DefaultPlatform) ConfigureContainer(container *ioc.NestedContainer) err
 	}
 
 	for remoteKind, constructor := range remoteStateProviderMap {
-		if err := container.RegisterNamedSingleton(string(remoteKind), constructor); err != nil {
-			panic(fmt.Errorf("registering remote state provider %s: %w", remoteKind, err))
-		}
+		container.RegisterNamedScoped(string(remoteKind), constructor)
 	}
 
 	container.RegisterSingleton(func(

@@ -28,6 +28,7 @@ func NewWorkflowRunner(serviceLocator ioc.ServiceLocator, console input.Console)
 	}
 }
 
+// Run executes the specified workflow against the root cobra command
 func (r *WorkflowRunner) Run(ctx context.Context, workflow *workflow.Workflow) error {
 	var rootCmd *cobra.Command
 	if err := r.serviceLocator.ResolveNamed("root-cmd", &rootCmd); err != nil {

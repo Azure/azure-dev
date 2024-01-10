@@ -30,6 +30,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -49,6 +50,8 @@ import (
 
 // The current running configuration for the test suite.
 var cfg = cliConfig{}
+
+var publicCloud = cloud.GetAzurePublic()
 
 func init() {
 	cfg.init()
@@ -155,13 +158,15 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 			return cred, nil
 		}),
 		client,
+		&publicCloud,
 		azcli.NewAzCliArgs{})
 	deploymentOperations := azapi.NewDeploymentOperations(
 		mockaccount.SubscriptionCredentialProviderFunc(
 			func(_ context.Context, _ string) (azcore.TokenCredential, error) {
 				return cred, nil
 			}),
-		client)
+		client,
+		&publicCloud)
 
 	// Verify that resource groups are created with tag
 	resourceManager := infra.NewAzureResourceManager(azCli, deploymentOperations)
@@ -363,13 +368,15 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 			return cred, nil
 		}),
 		client,
+		&publicCloud,
 		azcli.NewAzCliArgs{})
 	deploymentOperations := azapi.NewDeploymentOperations(
 		mockaccount.SubscriptionCredentialProviderFunc(
 			func(_ context.Context, _ string) (azcore.TokenCredential, error) {
 				return cred, nil
 			}),
-		client)
+		client,
+		&publicCloud)
 
 	// Verify that resource groups are created with tag
 	resourceManager := infra.NewAzureResourceManager(azCli, deploymentOperations)

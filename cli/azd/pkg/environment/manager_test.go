@@ -10,6 +10,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -352,7 +353,11 @@ func Test_EnvManager_CreateFromContainer(t *testing.T) {
 }
 
 func registerContainerComponents(t *testing.T, mockContext *mocks.MockContext) {
-	mockContext.Container.MustRegisterSingleton(func() context.Context {
+	mockContext.Container.RegisterSingleton(func() *cloud.Cloud {
+		mockCloud := cloud.GetAzurePublic()
+		return &mockCloud
+	})
+	mockContext.Container.RegisterSingleton(func() context.Context {
 		return *mockContext.Context
 	})
 	mockContext.Container.MustRegisterSingleton(func() httputil.UserAgent {

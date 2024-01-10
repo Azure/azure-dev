@@ -133,5 +133,5 @@ func (dp *deploymentOperations) clientOptionsBuilder(ctx context.Context) *azsdk
 		WithTransport(dp.httpClient).
 		WithPerCallPolicy(azsdk.NewUserAgentPolicy(dp.userAgent)).
 		WithPerCallPolicy(azsdk.NewMsCorrelationPolicy(ctx)).
-		WithCloud(dp.cloud)
+		WithCloud(*dp.cloud.Configuration)
 }

@@ -17,6 +17,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/public"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/github"
@@ -24,6 +25,8 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/stretchr/testify/require"
 )
+
+var publicCloud = cloud.GetAzurePublic()
 
 func TestReadUserProperties(t *testing.T) {
 	t.Run("homeID", func(t *testing.T) {
@@ -61,6 +64,7 @@ func TestServicePrincipalLoginClientSecret(t *testing.T) {
 		configManager:     newMemoryConfigManager(),
 		userConfigManager: newMemoryUserConfigManager(),
 		credentialCache:   credentialCache,
+		cloud:             &publicCloud,
 	}
 
 	cred, err := m.LoginWithServicePrincipalSecret(
@@ -96,6 +100,7 @@ func TestServicePrincipalLoginClientCertificate(t *testing.T) {
 		configManager:     newMemoryConfigManager(),
 		userConfigManager: newMemoryUserConfigManager(),
 		credentialCache:   credentialCache,
+		cloud:             &publicCloud,
 	}
 
 	cred, err := m.LoginWithServicePrincipalCertificate(
@@ -142,6 +147,7 @@ func TestServicePrincipalLoginFederatedTokenProvider(t *testing.T) {
 		ghClient: github.NewFederatedTokenClient(&policy.ClientOptions{
 			Transport: mockContext.HttpClient,
 		}),
+		cloud: &publicCloud,
 	}
 
 	cred, err := m.LoginWithServicePrincipalFederatedTokenProvider(
@@ -179,6 +185,7 @@ func TestLegacyAzCliCredentialSupport(t *testing.T) {
 
 	m := Manager{
 		userConfigManager: mgr,
+		cloud:             &publicCloud,
 	}
 
 	cred, err := m.CredentialForCurrentUser(context.Background(), nil)
@@ -192,6 +199,7 @@ func TestCloudShellCredentialSupport(t *testing.T) {
 	m := Manager{
 		configManager:     newMemoryConfigManager(),
 		userConfigManager: newMemoryUserConfigManager(),
+		cloud:             &publicCloud,
 	}
 
 	cred, err := m.CredentialForCurrentUser(context.Background(), nil)
@@ -204,6 +212,7 @@ func TestLoginInteractive(t *testing.T) {
 		configManager:     newMemoryConfigManager(),
 		userConfigManager: newMemoryUserConfigManager(),
 		publicClient:      &mockPublicClient{},
+		cloud:             &publicCloud,
 	}
 
 	cred, err := m.LoginInteractive(context.Background(), nil, nil)
@@ -232,6 +241,7 @@ func TestLoginDeviceCode(t *testing.T) {
 		userConfigManager: newMemoryUserConfigManager(),
 		publicClient:      &mockPublicClient{},
 		console:           console,
+		cloud:             &publicCloud,
 	}
 
 	cred, err := m.LoginWithDeviceCode(context.Background(), "", nil, func(url string) error { return nil })
@@ -272,6 +282,7 @@ func TestAuthFileConfigUpgrade(t *testing.T) {
 		configManager:     cfgMgr,
 		userConfigManager: userCfgMgr,
 		publicClient:      &mockPublicClient{},
+		cloud:             &publicCloud,
 	}
 
 	cfg, err := m.readAuthConfig()

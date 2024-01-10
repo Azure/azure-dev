@@ -133,7 +133,7 @@ func createTerraformProvider(t *testing.T, mockContext *mocks.MockContext) *Terr
 		env,
 		mockContext.Console,
 		&mockCurrentPrincipal{},
-		prompt.NewDefaultPrompter(env, mockContext.Console, accountManager, azCli),
+		prompt.NewDefaultPrompter(env, mockContext.Console, accountManager, azCli, mockContext.Cloud),
 	)
 
 	err := provider.Initialize(*mockContext.Context, projectDir, options)

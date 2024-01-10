@@ -273,7 +273,7 @@ func TestPromptForParametersLocation(t *testing.T) {
 	}
 
 	p := createBicepProvider(t, mockContext)
-	p.prompters = prompt.NewDefaultPrompter(env, mockContext.Console, accountManager, azCli)
+	p.prompters = prompt.NewDefaultPrompter(env, mockContext.Console, accountManager, azCli, mockContext.Cloud)
 
 	mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool {
 		return strings.Contains(options.Message, "'unfilteredLocation")

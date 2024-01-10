@@ -3,15 +3,15 @@ package azsdk
 import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/cloud"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
-	azdCloud "github.com/azure/azure-dev/cli/azd/pkg/cloud"
 )
 
 type ClientOptionsBuilder struct {
 	transport        policy.Transporter
 	perCallPolicies  []policy.Policy
 	perRetryPolicies []policy.Policy
-	cloud            *azdCloud.Cloud
+	cloud            cloud.Configuration
 }
 
 func NewClientOptionsBuilder() *ClientOptionsBuilder {
@@ -36,18 +36,15 @@ func (b *ClientOptionsBuilder) WithPerRetryPolicy(policy policy.Policy) *ClientO
 	return b
 }
 
-func (b *ClientOptionsBuilder) WithCloud(cloud *azdCloud.Cloud) *ClientOptionsBuilder {
+func (b *ClientOptionsBuilder) WithCloud(cloud cloud.Configuration) *ClientOptionsBuilder {
 	b.cloud = cloud
 	return b
-}
-
-func (b *ClientOptionsBuilder) WithOptions(options *policy.ClientOptions) {
-
 }
 
 // Builds the az core client options for data plane operations
 // These options include the underlying transport to be used.
 func (b *ClientOptionsBuilder) BuildCoreClientOptions() *azcore.ClientOptions {
+
 	return &azcore.ClientOptions{
 		// Supports mocking for unit tests
 		Transport: b.transport,
@@ -56,13 +53,14 @@ func (b *ClientOptionsBuilder) BuildCoreClientOptions() *azcore.ClientOptions {
 		// Per retry policies to inject into HTTP pipeline
 		PerRetryPolicies: b.perRetryPolicies,
 
-		Cloud: *b.cloud.Configuration,
+		Cloud: b.cloud,
 	}
 }
 
 // Builds the ARM module client options for control plane operations
 // These options include the underlying transport to be used.
 func (b *ClientOptionsBuilder) BuildArmClientOptions() *arm.ClientOptions {
+
 	return &arm.ClientOptions{
 		ClientOptions: policy.ClientOptions{
 			// Supports mocking for unit tests
@@ -76,7 +74,7 @@ func (b *ClientOptionsBuilder) BuildArmClientOptions() *arm.ClientOptions {
 			Logging: policy.LogOptions{
 				AllowedHeaders: []string{cMsCorrelationIdHeader},
 			},
-			Cloud: *b.cloud.Configuration,
+			Cloud: b.cloud,
 		},
 	}
 }

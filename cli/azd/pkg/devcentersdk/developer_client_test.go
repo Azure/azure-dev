@@ -23,6 +23,7 @@ func Test_DevCenter_Client(t *testing.T) {
 	authManager, err := auth.NewManager(
 		fileConfigManager,
 		config.NewUserConfigManager(fileConfigManager),
+		mockContext.Cloud,
 		http.DefaultClient,
 		mockContext.Console,
 	)
@@ -32,11 +33,11 @@ func Test_DevCenter_Client(t *testing.T) {
 	require.NoError(t, err)
 
 	options := azsdk.
-		DefaultClientOptionsBuilder(*mockContext.Context, http.DefaultClient, "azd").
+		DefaultClientOptionsBuilder(*mockContext.Context, http.DefaultClient, "azd", mockContext.Cloud).
 		BuildCoreClientOptions()
 
 	armOptions := azsdk.
-		DefaultClientOptionsBuilder(*mockContext.Context, http.DefaultClient, "azd").
+		DefaultClientOptionsBuilder(*mockContext.Context, http.DefaultClient, "azd", mockContext.Cloud).
 		BuildArmClientOptions()
 
 	resourceGraphClient, err := armresourcegraph.NewClient(credentials, armOptions)

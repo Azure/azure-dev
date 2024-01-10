@@ -73,14 +73,23 @@ func createBlobClient(
 	authManager, err := auth.NewManager(
 		fileConfigManager,
 		config.NewUserConfigManager(fileConfigManager),
-		httpClient, mockContext.Console,
+		mockContext.Cloud,
+		httpClient,
+		mockContext.Console,
 	)
 	require.NoError(t, err)
 
 	credentials, err := authManager.CredentialForCurrentUser(*mockContext.Context, nil)
 	require.NoError(t, err)
 
-	sdkClient, err := storage.NewBlobSdkClient(*mockContext.Context, credentials, storageConfig, httpClient, "azd")
+	sdkClient, err := storage.NewBlobSdkClient(
+		*mockContext.Context,
+		credentials,
+		storageConfig,
+		httpClient,
+		"azd",
+		mockContext.Cloud,
+	)
 	require.NoError(t, err)
 	require.NotNil(t, sdkClient)
 

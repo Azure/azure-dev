@@ -19,6 +19,12 @@ const (
 type Cloud struct {
 	// TODO: Should this be a pointer? Yes depending on where during runtime
 	// the Services values are set.
+	// Probably not necessary... cloud configurations are initialized in init()
+	// so they should be stable by the time application logic is called. Plus
+	// maps are reference types so passing cloud configuration is relatively
+	// inexpensive.
+
+	// TODO: pass by value, remove pointer
 	Configuration *cloud.Configuration
 
 	// The base URL for the cloud's portal (e.g. https://portal.azure.com for

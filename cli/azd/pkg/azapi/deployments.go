@@ -538,5 +538,5 @@ func (ds *deployments) clientOptionsBuilder(ctx context.Context) *azsdk.ClientOp
 		WithTransport(ds.httpClient).
 		WithPerCallPolicy(azsdk.NewUserAgentPolicy(ds.userAgent)).
 		WithPerCallPolicy(azsdk.NewMsCorrelationPolicy(ctx)).
-		WithCloud(ds.cloud)
+		WithCloud(*ds.cloud.Configuration)
 }

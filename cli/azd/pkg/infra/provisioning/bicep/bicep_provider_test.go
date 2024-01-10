@@ -381,10 +381,11 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 		envManager,
 		env,
 		mockContext.Console,
-		prompt.NewDefaultPrompter(env, mockContext.Console, accountManager, azCli),
+		prompt.NewDefaultPrompter(env, mockContext.Console, accountManager, azCli, mockContext.Cloud),
 		&mockCurrentPrincipal{},
 		mockContext.AlphaFeaturesManager,
 		clock.NewMock(),
+		mockContext.Cloud,
 	)
 
 	err = provider.Initialize(*mockContext.Context, projectDir, options)
@@ -919,10 +920,11 @@ func TestUserDefinedTypes(t *testing.T) {
 		&mockenv.MockEnvManager{},
 		env,
 		mockContext.Console,
-		prompt.NewDefaultPrompter(env, mockContext.Console, nil, nil),
+		prompt.NewDefaultPrompter(env, mockContext.Console, nil, nil, mockContext.Cloud),
 		&mockCurrentPrincipal{},
 		mockContext.AlphaFeaturesManager,
 		clock.NewMock(),
+		mockContext.Cloud,
 	)
 	bicepProvider, gooCast := provider.(*BicepProvider)
 	require.True(t, gooCast)

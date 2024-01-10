@@ -17,7 +17,7 @@ func DefaultClientOptionsBuilder(
 		WithTransport(httpClient).
 		WithPerCallPolicy(NewUserAgentPolicy(userAgent)).
 		WithPerCallPolicy(NewMsCorrelationPolicy(ctx)).
-		WithCloud(cloud)
+		WithCloud(*cloud.Configuration)
 }
 
 // // TODO: Is this allowed?

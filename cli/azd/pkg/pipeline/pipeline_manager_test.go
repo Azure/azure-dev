@@ -405,7 +405,7 @@ func createPipelineManager(
 	envManager := &mockenv.MockEnvManager{}
 	envManager.On("Save", mock.Anything, env).Return(nil)
 
-	adService := azcli.NewAdService(mockContext.SubscriptionCredentialProvider, mockContext.HttpClient)
+	adService := azcli.NewAdService(mockContext.SubscriptionCredentialProvider, mockContext.HttpClient, mockContext.Cloud)
 
 	// Singletons
 	ioc.RegisterInstance(mockContext.Container, *mockContext.Context)

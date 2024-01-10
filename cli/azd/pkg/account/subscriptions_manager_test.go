@@ -11,6 +11,7 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armsubscriptions"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockarmresources"
@@ -156,10 +157,13 @@ func TestSubscriptionsManager_ListSubscriptions(t *testing.T) {
 				principalInfo = tt.args.principalInfo
 			}
 
+			publicCloud := cloud.GetAzurePublic()
+
 			subManager := &SubscriptionsManager{
 				service: NewSubscriptionsService(
 					&mocks.MockMultiTenantCredentialProvider{},
 					mockHttp,
+					&publicCloud,
 				),
 				cache:         NewBypassSubscriptionsCache(),
 				principalInfo: principalInfo,

@@ -5,6 +5,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
@@ -28,12 +29,14 @@ type MockContext struct {
 	SubscriptionCredentialProvider *MockSubscriptionCredentialProvider
 	MultiTenantCredentialProvider  *MockMultiTenantCredentialProvider
 	Config                         config.Config
+	Cloud                          *cloud.Cloud
 }
 
 func NewMockContext(ctx context.Context) *MockContext {
 	httpClient := mockhttp.NewMockHttpUtil()
 	configManager := mockconfig.NewMockConfigManager()
 	config := config.NewEmptyConfig()
+	publicCloud := cloud.GetAzurePublic()
 
 	mockContext := &MockContext{
 		Credentials:                    &MockCredentials{},
@@ -47,6 +50,7 @@ func NewMockContext(ctx context.Context) *MockContext {
 		Container:                      ioc.NewNestedContainer(nil),
 		Config:                         config,
 		AlphaFeaturesManager:           alpha.NewFeaturesManagerWithConfig(config),
+		Cloud:                          &publicCloud,
 	}
 
 	registerCommonMocks(mockContext)
@@ -75,5 +79,8 @@ func registerCommonMocks(mockContext *MockContext) {
 	})
 	mockContext.Container.MustRegisterSingleton(func() *alpha.FeatureManager {
 		return mockContext.AlphaFeaturesManager
+	})
+	mockContext.Container.RegisterSingleton(func() *cloud.Cloud {
+		return mockContext.Cloud
 	})
 }

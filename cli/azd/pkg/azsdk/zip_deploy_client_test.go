@@ -24,7 +24,7 @@ func TestZipDeploy(t *testing.T) {
 			WithTransport(mockContext.HttpClient).
 			BuildArmClientOptions()
 
-		client, err := NewZipDeployClient("SUBSCRIPTION_ID", &mocks.MockCredentials{}, options)
+		client, err := NewZipDeployClient("SUBSCRIPTION_ID", &mocks.MockCredentials{}, options, mockContext.Cloud)
 		require.NoError(t, err)
 
 		zipFile := bytes.NewBuffer([]byte{})
@@ -49,7 +49,7 @@ func TestZipDeploy(t *testing.T) {
 			WithTransport(mockContext.HttpClient).
 			BuildArmClientOptions()
 
-		client, err := NewZipDeployClient("SUBSCRIPTION_ID", &mocks.MockCredentials{}, options)
+		client, err := NewZipDeployClient("SUBSCRIPTION_ID", &mocks.MockCredentials{}, options, mockContext.Cloud)
 		require.NoError(t, err)
 
 		zipFile := bytes.NewBuffer([]byte{})
@@ -73,7 +73,7 @@ func TestZipDeploy(t *testing.T) {
 			WithTransport(mockContext.HttpClient).
 			BuildArmClientOptions()
 
-		client, err := NewZipDeployClient("SUBSCRIPTION_ID", &mocks.MockCredentials{}, options)
+		client, err := NewZipDeployClient("SUBSCRIPTION_ID", &mocks.MockCredentials{}, options, mockContext.Cloud)
 		require.NoError(t, err)
 
 		zipFile := bytes.NewBuffer([]byte{})

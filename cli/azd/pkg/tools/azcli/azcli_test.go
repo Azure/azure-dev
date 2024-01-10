@@ -93,6 +93,7 @@ func newAzCliFromMockContext(mockContext *mocks.MockContext) AzCli {
 			return mockContext.Credentials, nil
 		}),
 		mockContext.HttpClient,
+		mockContext.Cloud,
 		NewAzCliArgs{},
 	)
 }

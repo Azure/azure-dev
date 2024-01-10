@@ -31,7 +31,7 @@ func Test_GetUserAccessToken(t *testing.T) {
 		TokenMap: map[string]mocks.MockCredentials{
 			"": mockCredential,
 		},
-	}, mockContext.HttpClient)
+	}, mockContext.HttpClient, mockContext.Cloud)
 
 	actual, err := userProfile.GetAccessToken(*mockContext.Context, "")
 	require.NoError(t, err)
@@ -52,7 +52,7 @@ func Test_GetSignedInUserId(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		registerGetMeGraphMock(mockContext, http.StatusOK, &mockUserProfile)
 
-		userProfile := NewUserProfileService(&mocks.MockMultiTenantCredentialProvider{}, mockContext.HttpClient)
+		userProfile := NewUserProfileService(&mocks.MockMultiTenantCredentialProvider{}, mockContext.HttpClient, mockContext.Cloud)
 
 		userId, err := userProfile.GetSignedInUserId(*mockContext.Context, "")
 		require.NoError(t, err)
@@ -63,7 +63,7 @@ func Test_GetSignedInUserId(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		registerGetMeGraphMock(mockContext, http.StatusBadRequest, nil)
 
-		userProfile := NewUserProfileService(&mocks.MockMultiTenantCredentialProvider{}, mockContext.HttpClient)
+		userProfile := NewUserProfileService(&mocks.MockMultiTenantCredentialProvider{}, mockContext.HttpClient, mockContext.Cloud)
 
 		userId, err := userProfile.GetSignedInUserId(*mockContext.Context, "")
 		require.Error(t, err)

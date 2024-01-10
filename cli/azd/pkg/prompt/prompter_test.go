@@ -32,7 +32,7 @@ func Test_getSubscriptionOptions(t *testing.T) {
 			},
 		}
 
-		prompter := NewDefaultPrompter(env, mockContext.Console, mockAccount, azCli).(*DefaultPrompter)
+		prompter := NewDefaultPrompter(env, mockContext.Console, mockAccount, azCli, mockContext.Cloud).(*DefaultPrompter)
 		subList, result, err := prompter.getSubscriptionOptions(*mockContext.Context)
 
 		require.Nil(t, err)
@@ -68,7 +68,7 @@ func Test_getSubscriptionOptions(t *testing.T) {
 			Locations: []account.Location{},
 		}
 
-		prompter := NewDefaultPrompter(env, mockContext.Console, mockAccount, azCli).(*DefaultPrompter)
+		prompter := NewDefaultPrompter(env, mockContext.Console, mockAccount, azCli, mockContext.Cloud).(*DefaultPrompter)
 		subList, result, err := prompter.getSubscriptionOptions(*mockContext.Context)
 
 		require.Nil(t, err)

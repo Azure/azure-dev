@@ -202,11 +202,11 @@ func newTemplateSourceForTest(
 	manager Manager,
 ) *TemplateSource {
 	coreOptions := azsdk.
-		DefaultClientOptionsBuilder(*mockContext.Context, mockContext.HttpClient, "azd").
+		DefaultClientOptionsBuilder(*mockContext.Context, mockContext.HttpClient, "azd", mockContext.Cloud).
 		BuildCoreClientOptions()
 
 	armOptions := azsdk.
-		DefaultClientOptionsBuilder(*mockContext.Context, mockContext.HttpClient, "azd").
+		DefaultClientOptionsBuilder(*mockContext.Context, mockContext.HttpClient, "azd", mockContext.Cloud).
 		BuildArmClientOptions()
 
 	resourceGraphClient, err := armresourcegraph.NewClient(mockContext.Credentials, armOptions)

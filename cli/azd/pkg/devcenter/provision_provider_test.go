@@ -437,11 +437,11 @@ func newProvisionProviderForTest(
 	manager Manager,
 ) provisioning.Provider {
 	coreOptions := azsdk.
-		DefaultClientOptionsBuilder(*mockContext.Context, mockContext.HttpClient, "azd").
+		DefaultClientOptionsBuilder(*mockContext.Context, mockContext.HttpClient, "azd", mockContext.Cloud).
 		BuildCoreClientOptions()
 
 	armOptions := azsdk.
-		DefaultClientOptionsBuilder(*mockContext.Context, mockContext.HttpClient, "azd").
+		DefaultClientOptionsBuilder(*mockContext.Context, mockContext.HttpClient, "azd", mockContext.Cloud).
 		BuildArmClientOptions()
 
 	resourceGraphClient, err := armresourcegraph.NewClient(mockContext.Credentials, armOptions)
@@ -455,10 +455,10 @@ func newProvisionProviderForTest(
 
 	require.NoError(t, err)
 
-	azCli := azcli.NewAzCli(mockContext.SubscriptionCredentialProvider, mockContext.HttpClient, azcli.NewAzCliArgs{})
+	azCli := azcli.NewAzCli(mockContext.SubscriptionCredentialProvider, mockContext.HttpClient, mockContext.Cloud, azcli.NewAzCliArgs{})
 	resourceManager := infra.NewAzureResourceManager(
 		azCli,
-		azapi.NewDeploymentOperations(mockContext.SubscriptionCredentialProvider, mockContext.HttpClient),
+		azapi.NewDeploymentOperations(mockContext.SubscriptionCredentialProvider, mockContext.HttpClient, mockContext.Cloud),
 	)
 
 	if manager == nil {

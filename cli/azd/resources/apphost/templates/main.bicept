@@ -64,6 +64,8 @@ output SERVICE_BINDING_{{alphaSnakeUpper $cname}}_ENDPOINT string = resources.ou
 output SERVICE_BINDING_{{alphaSnakeUpper $name}}_ENDPOINT string = resources.outputs.SERVICE_BINDING_{{alphaSnakeUpper $name}}_ENDPOINT
 {{end -}}
 {{range $name, $value := .CosmosDbAccounts -}}
-output SERVICE_BINDING_{{alphaSnakeUpper $name}}_ENDPOINT string = resources.outputs.SERVICE_BINDING_{{alphaSnakeUpper $name}}_ENDPOINT
+{{range $cname := $value.Databases -}}
+output SERVICE_BINDING_{{alphaSnakeUpper $cname}}_ENDPOINT string = resources.outputs.SERVICE_BINDING_{{alphaSnakeUpper $cname}}_ENDPOINT
+{{end -}}
 {{end -}}
 {{ end}}

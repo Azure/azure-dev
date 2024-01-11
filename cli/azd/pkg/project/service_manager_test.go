@@ -36,7 +36,7 @@ const (
 	serviceTargetDeployCalled  contextKey = "serviceTargetDeployCalled"
 )
 
-func createServiceManager(mockContext *mocks.MockContext, env *environment.Environment) ServiceManager {
+func createServiceManager(mockContext *mocks.MockContext, env *environment.Environment, operationCache ServiceOperationCache) ServiceManager {
 	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 	depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
 	resourceManager := NewResourceManager(env, azCli, depOpService)
@@ -48,16 +48,15 @@ func createServiceManager(mockContext *mocks.MockContext, env *environment.Envir
 			},
 		}))
 
-	return NewServiceManager(env, resourceManager, mockContext.Container, alphaManager)
+	return NewServiceManager(env, resourceManager, mockContext.Container, operationCache, alphaManager)
 }
 
 func Test_ServiceManager_GetRequiredTools(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	setupMocksForServiceManager(mockContext)
 	env := environment.New("test")
-	sm := createServiceManager(mockContext, env)
+	sm := createServiceManager(mockContext, env, ServiceOperationCache{})
 	serviceConfig := createTestServiceConfig("./src/api", ServiceTargetFake, ServiceLanguageFake)
-
 	tools, err := sm.GetRequiredTools(*mockContext.Context, serviceConfig)
 	require.NoError(t, err)
 	// Both require a tool, but only 1 unique tool
@@ -68,7 +67,7 @@ func Test_ServiceManager_Initialize(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	setupMocksForServiceManager(mockContext)
 	env := environment.New("test")
-	sm := createServiceManager(mockContext, env)
+	sm := createServiceManager(mockContext, env, ServiceOperationCache{})
 	serviceConfig := createTestServiceConfig("./src/api", ServiceTargetFake, ServiceLanguageFake)
 
 	err := sm.Initialize(*mockContext.Context, serviceConfig)
@@ -79,7 +78,7 @@ func Test_ServiceManager_Restore(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	setupMocksForServiceManager(mockContext)
 	env := environment.New("test")
-	sm := createServiceManager(mockContext, env)
+	sm := createServiceManager(mockContext, env, ServiceOperationCache{})
 	serviceConfig := createTestServiceConfig("./src/api", ServiceTargetFake, ServiceLanguageFake)
 
 	raisedPreRestoreEvent := false
@@ -113,7 +112,7 @@ func Test_ServiceManager_Build(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	setupMocksForServiceManager(mockContext)
 	env := environment.New("test")
-	sm := createServiceManager(mockContext, env)
+	sm := createServiceManager(mockContext, env, ServiceOperationCache{})
 	serviceConfig := createTestServiceConfig("./src/api", ServiceTargetFake, ServiceLanguageFake)
 
 	raisedPreBuildEvent := false
@@ -147,7 +146,7 @@ func Test_ServiceManager_Package(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	setupMocksForServiceManager(mockContext)
 	env := environment.New("test")
-	sm := createServiceManager(mockContext, env)
+	sm := createServiceManager(mockContext, env, ServiceOperationCache{})
 	serviceConfig := createTestServiceConfig("./src/api", ServiceTargetFake, ServiceLanguageFake)
 
 	raisedPrePackageEvent := false
@@ -186,7 +185,7 @@ func Test_ServiceManager_Deploy(t *testing.T) {
 	env := environment.NewWithValues("test", map[string]string{
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
 	})
-	sm := createServiceManager(mockContext, env)
+	sm := createServiceManager(mockContext, env, ServiceOperationCache{})
 	serviceConfig := createTestServiceConfig("./src/api", ServiceTargetFake, ServiceLanguageFake)
 
 	raisedPreDeployEvent := false
@@ -220,7 +219,7 @@ func Test_ServiceManager_GetFrameworkService(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	setupMocksForServiceManager(mockContext)
 	env := environment.New("test")
-	sm := createServiceManager(mockContext, env)
+	sm := createServiceManager(mockContext, env, ServiceOperationCache{})
 	serviceConfig := createTestServiceConfig("./src/api", ServiceTargetFake, ServiceLanguageFake)
 
 	framework, err := sm.GetFrameworkService(*mockContext.Context, serviceConfig)
@@ -233,7 +232,7 @@ func Test_ServiceManager_GetServiceTarget(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	setupMocksForServiceManager(mockContext)
 	env := environment.New("test")
-	sm := createServiceManager(mockContext, env)
+	sm := createServiceManager(mockContext, env, ServiceOperationCache{})
 	serviceConfig := createTestServiceConfig("./src/api", ServiceTargetFake, ServiceLanguageFake)
 
 	serviceTarget, err := sm.GetServiceTarget(*mockContext.Context, serviceConfig)
@@ -246,7 +245,7 @@ func Test_ServiceManager_CacheResults(t *testing.T) {
 	mockContext := mocks.NewMockContext(context.Background())
 	setupMocksForServiceManager(mockContext)
 	env := environment.New("test")
-	sm := createServiceManager(mockContext, env)
+	sm := createServiceManager(mockContext, env, ServiceOperationCache{})
 	serviceConfig := createTestServiceConfig("./src/api", ServiceTargetFake, ServiceLanguageFake)
 
 	buildCalled := convert.RefOf(false)
@@ -267,6 +266,37 @@ func Test_ServiceManager_CacheResults(t *testing.T) {
 
 	require.False(t, *buildCalled)
 	require.Same(t, buildResult1, buildResult2)
+}
+
+func Test_ServiceManager_CacheResults_Across_Instances(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	setupMocksForServiceManager(mockContext)
+	env := environment.New("test")
+
+	operationCache := ServiceOperationCache{}
+
+	sm1 := createServiceManager(mockContext, env, operationCache)
+	serviceConfig := createTestServiceConfig("./src/api", ServiceTargetFake, ServiceLanguageFake)
+
+	packageCalled := convert.RefOf(false)
+	ctx := context.WithValue(*mockContext.Context, serviceTargetPackageCalled, packageCalled)
+
+	packageTask1 := sm1.Package(ctx, serviceConfig, nil, nil)
+	logProgress(packageTask1)
+
+	packageResult1, _ := packageTask1.Await()
+
+	require.True(t, *packageCalled)
+	*packageCalled = false
+
+	sm2 := createServiceManager(mockContext, env, operationCache)
+	packageTask2 := sm2.Package(ctx, serviceConfig, nil, nil)
+	logProgress(packageTask2)
+
+	packageResult2, _ := packageTask2.Await()
+
+	require.False(t, *packageCalled)
+	require.Same(t, packageResult1, packageResult2)
 }
 
 func Test_ServiceManager_Events_With_Errors(t *testing.T) {
@@ -316,7 +346,7 @@ func Test_ServiceManager_Events_With_Errors(t *testing.T) {
 			env := environment.NewWithValues("test", map[string]string{
 				environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
 			})
-			sm := createServiceManager(mockContext, env)
+			sm := createServiceManager(mockContext, env, ServiceOperationCache{})
 			serviceConfig := createTestServiceConfig("./src/api", ServiceTargetFake, ServiceLanguageFake)
 
 			eventTypes := []string{"pre", "post"}

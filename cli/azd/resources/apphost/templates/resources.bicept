@@ -383,7 +383,7 @@ output SERVICE_BINDING_{{alphaSnakeUpper $name}}_ENDPOINT string = {{bicepName $
 {{end -}}
 {{range $name, $value := .CosmosDbAccounts -}}
 {{range $cname := $value.Databases -}}
-output SERVICE_BINDING_{{alphaSnakeUpper $name}}_ENDPOINT string = {{bicepName $name}}.properties.documentEndpoint
+output SERVICE_BINDING_{{alphaSnakeUpper $cname}}_ENDPOINT string = {{bicepName $name}}.properties.documentEndpoint
 {{end -}}
 {{end -}}
 {{ end}}

@@ -338,6 +338,8 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 			b.addStorageTable(*comp.Parent, name)
 		case "azure.cosmosdb.account.v0":
 			b.addCosmosDbAccount(name)
+		case "azure.cosmosdb.database.v0":
+			b.addCosmosDatabase(*comp.Parent, name)
 		case "postgres.server.v0":
 			// We currently use a ACA Postgres Service per database. Because of this, we don't need to retain any
 			// information from the server resource.
@@ -411,7 +413,15 @@ func (b *infraGenerator) addAppInsights(name string) {
 }
 
 func (b *infraGenerator) addCosmosDbAccount(name string) {
-	b.bicepContext.CosmosDbAccounts[name] = genCosmosAccount{}
+	if _, exists := b.bicepContext.CosmosDbAccounts[name]; !exists {
+		b.bicepContext.CosmosDbAccounts[name] = genCosmosAccount{}
+	}
+}
+
+func (b *infraGenerator) addCosmosDatabase(cosmosDbAccount, dbName string) {
+	account := b.bicepContext.CosmosDbAccounts[cosmosDbAccount]
+	account.Databases = append(account.Databases, dbName)
+	b.bicepContext.CosmosDbAccounts[cosmosDbAccount] = account
 }
 
 func (b *infraGenerator) addProject(
@@ -903,7 +913,8 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 		targetType == "azure.storage.blob.v0" ||
 		targetType == "azure.storage.queue.v0" ||
 		targetType == "azure.storage.table.v0" ||
-		targetType == "azure.cosmosdb.account.v0":
+		targetType == "azure.cosmosdb.account.v0" ||
+		targetType == "azure.cosmosdb.database.v0":
 		switch prop {
 		case "connectionString":
 			return fmt.Sprintf("{{ .Env.SERVICE_BINDING_%s_ENDPOINT }}", scaffold.AlphaSnakeUpper(resource)), nil

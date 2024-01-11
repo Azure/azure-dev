@@ -9,6 +9,7 @@ type genStorageAccount struct {
 }
 
 type genCosmosAccount struct {
+	Databases []string
 }
 
 type genServiceBus struct {

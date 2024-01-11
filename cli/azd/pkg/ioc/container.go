@@ -87,6 +87,7 @@ func (c *NestedContainer) RegisterNamedTransient(name string, resolveFn any) {
 }
 
 // Registers a resolver with a scoped lifetime (instance per container)
+// Scoped registrations are added as singletons in the current container then are reset in any new child containers
 func (c *NestedContainer) RegisterScoped(resolveFn any) {
 	container.MustSingletonLazy(c.inner, resolveFn)
 
@@ -97,6 +98,7 @@ func (c *NestedContainer) RegisterScoped(resolveFn any) {
 }
 
 // Registers a named resolver with a scoped lifetime (instance per container)
+// Scoped registrations are added as singletons in the current container then are reset in any new child containers
 func (c *NestedContainer) RegisterNamedScoped(name string, resolveFn any) {
 	container.MustNamedSingletonLazy(c.inner, name, resolveFn)
 
@@ -110,35 +112,21 @@ func (c *NestedContainer) RegisterNamedScoped(name string, resolveFn any) {
 // Resolves an instance for the specified type
 // Returns an error if the resolution fails
 func (c *NestedContainer) Resolve(instance any) error {
-	current := c
-	for {
-		err := current.inner.Resolve(instance)
-		if err == nil {
-			return nil
-		}
-
-		if current.parent == nil {
-			return inspectResolveError(err)
-		}
-		current = current.parent
+	if err := c.inner.Resolve(instance); err != nil {
+		return inspectResolveError(err)
 	}
+
+	return nil
 }
 
 // Resolves a named instance for the specified type
 // Returns an error if the resolution fails
 func (c *NestedContainer) ResolveNamed(name string, instance any) error {
-	current := c
-	for {
-		err := current.inner.NamedResolve(instance, name)
-		if err == nil {
-			return nil
-		}
-
-		if current.parent == nil {
-			return inspectResolveError(err)
-		}
-		current = current.parent
+	if err := c.inner.NamedResolve(instance, name); err != nil {
+		return inspectResolveError(err)
 	}
+
+	return nil
 }
 
 // Invokes the specified function and resolves any arguments specified

@@ -101,6 +101,11 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 	}
 
 	cmd.RunE = func(cmd *cobra.Command, args []string) error {
+		// Register root go context that will be used for resolving singleton dependencies
+		ctx := tools.WithInstalledCheckCache(cmd.Context())
+		ioc.RegisterInstance(cb.container, ctx)
+
+		// Create new container scope for the current command
 		cmdContainer := cb.container.NewScope()
 
 		// Registers the following to enable injection into actions that require them
@@ -109,8 +114,8 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 		ioc.RegisterInstance(cmdContainer, cmdContainer)
 		ioc.RegisterInstance[ioc.ServiceLocator](cmdContainer, cmdContainer)
 
-		ctx := ioc.WithContainer(cmd.Context(), cmdContainer)
-		ctx = tools.WithInstalledCheckCache(ctx)
+		// Override the go context within the command container
+		ctx = ioc.WithContainer(ctx, cmdContainer)
 		ioc.RegisterInstance(cmdContainer, ctx)
 
 		if err := cb.registerMiddleware(descriptor); err != nil {

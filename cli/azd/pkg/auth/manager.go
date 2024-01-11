@@ -218,8 +218,7 @@ func (m *Manager) CredentialForCurrentUser(
 	if currentUser.HomeAccountID != nil {
 		if currentUser.FromOneAuth {
 			return oneauth.NewCredential(cDefaultAuthority, cAZD_CLIENT_ID, oneauth.CredentialOptions{
-				// TODO: read GlobalCommandOptions.EnableDebugLogging
-				Debug:         false,
+				Debug:         options.Debug,
 				HomeAccountID: *currentUser.HomeAccountID,
 				NoPrompt:      options.NoPrompt,
 			})
@@ -856,6 +855,8 @@ func (m *Manager) saveSecret(tenantId, clientId string, ps *persistedSecret) err
 }
 
 type CredentialForCurrentUserOptions struct {
+	// Debug controls whether to enable OneAuth logging, including PII.
+	Debug bool
 	// NoPrompt controls whether the credential may prompt for user interaction.
 	NoPrompt bool
 	// The tenant ID to use when constructing the credential, instead of the default tenant.

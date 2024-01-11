@@ -344,6 +344,7 @@ func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 // and that the credentials stored is accepted by the identity server (can be exchanged for access token).
 func (la *loginAction) verifyLoggedIn(ctx context.Context) (*azcore.AccessToken, error) {
 	credOptions := auth.CredentialForCurrentUserOptions{
+		Debug:    la.flags.global.EnableDebugLogging,
 		TenantID: la.flags.tenantID,
 	}
 

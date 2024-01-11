@@ -185,10 +185,10 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	})
 
 	// Azd Context
-	container.RegisterScoped(azdcontext.NewAzdContext)
+	container.RegisterSingleton(azdcontext.NewAzdContext)
 
 	// Lazy loads the Azd context after the azure.yaml file becomes available
-	container.RegisterScoped(func() *lazy.Lazy[*azdcontext.AzdContext] {
+	container.RegisterSingleton(func() *lazy.Lazy[*azdcontext.AzdContext] {
 		return lazy.NewLazy(func() (*azdcontext.AzdContext, error) {
 			return azdcontext.NewAzdContext()
 		})
@@ -244,10 +244,10 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		}
 	})
 
-	container.RegisterScoped(environment.NewLocalFileDataStore)
-	container.RegisterScoped(environment.NewManager)
+	container.RegisterSingleton(environment.NewLocalFileDataStore)
+	container.RegisterSingleton(environment.NewManager)
 
-	container.RegisterScoped(func(serviceLocator ioc.ServiceLocator) *lazy.Lazy[environment.LocalDataStore] {
+	container.RegisterSingleton(func(serviceLocator ioc.ServiceLocator) *lazy.Lazy[environment.LocalDataStore] {
 		return lazy.NewLazy(func() (environment.LocalDataStore, error) {
 			var localDataStore environment.LocalDataStore
 			err := serviceLocator.Resolve(&localDataStore)
@@ -260,7 +260,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	})
 
 	// Environment manager depends on azd context
-	container.RegisterScoped(
+	container.RegisterSingleton(
 		func(serviceLocator ioc.ServiceLocator, azdContext *lazy.Lazy[*azdcontext.AzdContext]) *lazy.Lazy[environment.Manager] {
 			return lazy.NewLazy(func() (environment.Manager, error) {
 				azdCtx, err := azdContext.GetValue()
@@ -282,7 +282,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		},
 	)
 
-	container.RegisterScoped(func(
+	container.RegisterSingleton(func(
 		lazyProjectConfig *lazy.Lazy[*project.ProjectConfig],
 		userConfigManager config.UserConfigManager,
 	) (*state.RemoteConfig, error) {
@@ -350,7 +350,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	)
 
 	// Project Config
-	container.RegisterScoped(
+	container.RegisterSingleton(
 		func(ctx context.Context, azdContext *azdcontext.AzdContext) (*project.ProjectConfig, error) {
 			if azdContext == nil {
 				return nil, azdcontext.ErrNoProject
@@ -366,7 +366,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	)
 
 	// Lazy loads the project config from the Azd Context when it becomes available
-	container.RegisterScoped(
+	container.RegisterSingleton(
 		func(
 			serviceLocator ioc.ServiceLocator,
 			lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext],
@@ -408,10 +408,17 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			return resourceManager, err
 		})
 	})
-	container.RegisterScoped(project.NewProjectManager)
+	container.RegisterSingleton(project.NewProjectManager)
 	container.RegisterScoped(project.NewDotNetImporter)
 	container.RegisterScoped(project.NewImportManager)
 	container.RegisterScoped(project.NewServiceManager)
+
+	// Even though the service manager is scoped based on its use of environment we can still
+	// register its internal cache as a singleton to ensure operation caching is consistent across all instances
+	container.RegisterSingleton(func() project.ServiceOperationCache {
+		return project.ServiceOperationCache{}
+	})
+
 	container.RegisterScoped(func(serviceLocator ioc.ServiceLocator) *lazy.Lazy[project.ServiceManager] {
 		return lazy.NewLazy(func() (project.ServiceManager, error) {
 			var serviceManager project.ServiceManager
@@ -420,7 +427,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			return serviceManager, err
 		})
 	})
-	container.RegisterScoped(repository.NewInitializer)
+	container.RegisterSingleton(repository.NewInitializer)
 	container.RegisterSingleton(alpha.NewFeaturesManager)
 	container.RegisterSingleton(config.NewUserConfigManager)
 	container.RegisterSingleton(config.NewManager)
@@ -532,7 +539,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	}
 
 	// Platform configuration
-	container.RegisterScoped(func(serviceLocator ioc.ServiceLocator) *lazy.Lazy[*platform.Config] {
+	container.RegisterSingleton(func(serviceLocator ioc.ServiceLocator) *lazy.Lazy[*platform.Config] {
 		return lazy.NewLazy(func() (*platform.Config, error) {
 			var platformConfig *platform.Config
 			err := serviceLocator.Resolve(&platformConfig)
@@ -541,7 +548,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		})
 	})
 
-	container.RegisterScoped(func(
+	container.RegisterSingleton(func(
 		lazyProjectConfig *lazy.Lazy[*project.ProjectConfig],
 		userConfigManager config.UserConfigManager,
 	) (*platform.Config, error) {

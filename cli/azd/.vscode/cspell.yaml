@@ -1,5 +1,6 @@
 import: ../../../.vscode/cspell.global.yaml
 words:
+  - azcloud
   - backoff
   - Canonicalize
   - Codespace
@@ -9,6 +10,7 @@ words:
   - nosec
   - Retryable
   - runcontext
+  - usgovcloudapi
 languageSettings:
   - languageId: go
     ignoreRegExpList:

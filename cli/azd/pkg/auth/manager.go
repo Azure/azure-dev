@@ -157,7 +157,11 @@ func getLoginScopesMap(cloud *cloud.Cloud) map[string]struct{} {
 
 // EnsureLoggedInCredential uses the credential's GetToken method to ensure an access token can be fetched.
 // On success, the token we fetched is returned.
-func EnsureLoggedInCredential(ctx context.Context, credential azcore.TokenCredential, cloud *cloud.Cloud) (*azcore.AccessToken, error) {
+func EnsureLoggedInCredential(
+	ctx context.Context,
+	credential azcore.TokenCredential,
+	cloud *cloud.Cloud,
+) (*azcore.AccessToken, error) {
 	token, err := credential.GetToken(ctx, policy.TokenRequestOptions{
 		Scopes: GetLoginScopes(cloud),
 	})
@@ -232,7 +236,7 @@ func (m *Manager) CredentialForCurrentUser(
 				if options.TenantID == "" {
 					return newAzdCredential(m.publicClient, &accounts[i], m.cloud), nil
 				} else {
-					newAuthority := *&m.cloud.Configuration.ActiveDirectoryAuthorityHost + options.TenantID
+					newAuthority := m.cloud.Configuration.ActiveDirectoryAuthorityHost + options.TenantID
 
 					newOptions := make([]public.Option, 0, len(m.publicClientOptions)+1)
 					newOptions = append(newOptions, m.publicClientOptions...)

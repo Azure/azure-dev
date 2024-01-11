@@ -455,7 +455,12 @@ func newProvisionProviderForTest(
 
 	require.NoError(t, err)
 
-	azCli := azcli.NewAzCli(mockContext.SubscriptionCredentialProvider, mockContext.HttpClient, mockContext.Cloud, azcli.NewAzCliArgs{})
+	azCli := azcli.NewAzCli(
+		mockContext.SubscriptionCredentialProvider,
+		mockContext.HttpClient,
+		mockContext.Cloud,
+		azcli.NewAzCliArgs{},
+	)
 	resourceManager := infra.NewAzureResourceManager(
 		azCli,
 		azapi.NewDeploymentOperations(mockContext.SubscriptionCredentialProvider, mockContext.HttpClient, mockContext.Cloud),

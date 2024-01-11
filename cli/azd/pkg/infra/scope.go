@@ -249,7 +249,6 @@ func NewSubscriptionDeployment(
 type SubscriptionScope struct {
 	deploymentsService   azapi.Deployments
 	deploymentOperations azapi.DeploymentOperations
-	cloud                *cloud.Cloud
 	subscriptionId       string
 }
 

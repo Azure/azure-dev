@@ -102,7 +102,13 @@ func TestScopeGetDeployment(t *testing.T) {
 			}, nil
 		})
 
-		target := NewResourceGroupDeployment(depService, depOpService, mockContext.Cloud, subscriptionId, resourceGroupName, deploymentName)
+		target := NewResourceGroupDeployment(depService,
+			depOpService,
+			mockContext.Cloud,
+			subscriptionId,
+			resourceGroupName,
+			deploymentName,
+		)
 
 		deployment, err := target.Deployment(*mockContext.Context)
 		require.NoError(t, err)
@@ -134,7 +140,14 @@ func TestScopeDeploy(t *testing.T) {
 			}, nil
 		})
 
-		target := NewSubscriptionDeployment(depService, depOpService, mockContext.Cloud, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
+		target := NewSubscriptionDeployment(
+			depService,
+			depOpService,
+			mockContext.Cloud,
+			"eastus2",
+			"SUBSCRIPTION_ID",
+			"DEPLOYMENT_NAME",
+		)
 
 		armTemplate := azure.RawArmTemplate(testArmTemplate)
 		_, err := target.Deploy(*mockContext.Context, armTemplate, testArmParameters, nil)
@@ -192,7 +205,14 @@ func TestScopeGetResourceOperations(t *testing.T) {
 			}, nil
 		})
 
-		target := NewSubscriptionDeployment(depService, depOpService, mockContext.Cloud, "eastus2", "SUBSCRIPTION_ID", "DEPLOYMENT_NAME")
+		target := NewSubscriptionDeployment(
+			depService,
+			depOpService,
+			mockContext.Cloud,
+			"eastus2",
+			"SUBSCRIPTION_ID",
+			"DEPLOYMENT_NAME",
+		)
 
 		operations, err := target.Operations(*mockContext.Context)
 		require.NoError(t, err)

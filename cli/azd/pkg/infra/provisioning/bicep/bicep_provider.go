@@ -1105,7 +1105,11 @@ func (p *BicepProvider) getAllResourcesToDelete(
 	return allResources, nil
 }
 
-func generateResourceGroupsToDelete(groupedResources map[string][]azcli.AzCliResource, subId, portalUrlBase string) []string {
+func generateResourceGroupsToDelete(
+	groupedResources map[string][]azcli.AzCliResource,
+	subId,
+	portalUrlBase string,
+) []string {
 	lines := []string{"Resource group(s) to be deleted:", ""}
 
 	for rg := range groupedResources {

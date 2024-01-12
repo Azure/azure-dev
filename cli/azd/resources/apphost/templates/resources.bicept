@@ -329,7 +329,7 @@ resource {{bicepName $name}} 'Microsoft.DocumentDB/databaseAccounts@2023-11-15' 
 }
 
 {{if gt (len $value.Databases) 0 -}}
-{% comment %} Cosmos DB Account Reader Role {% endcomment %}
+// Cosmos DB Account Reader Role
 resource {{bicepName $name}}ReaderRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid({{bicepName $name}}.id, managedIdentity.id, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'fbdf93bf-df7d-467e-a4d2-9458aa1360c8'))
   scope: {{bicepName $name}}
@@ -339,7 +339,7 @@ resource {{bicepName $name}}ReaderRoleAssignment 'Microsoft.Authorization/roleAs
     roleDefinitionId:  subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'fbdf93bf-df7d-467e-a4d2-9458aa1360c8')
   }
 }
-{% comment %} Cosmos DB Operator {% endcomment %}
+// Cosmos DB Operator
 resource {{bicepName $name}}OperatorRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   name: guid({{bicepName $name}}.id, managedIdentity.id, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '230815da-be43-4aae-9cb4-875f7bd000aa'))
   scope: {{bicepName $name}}

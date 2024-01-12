@@ -505,7 +505,7 @@ func (m *Manager) LoginWithOneAuth(ctx context.Context, scopes []string, global 
 		scopes = LoginScopes
 	}
 	debug := global != nil && global.EnableDebugLogging
-	homeAccountID, err := oneauth.SignIn(cDefaultAuthority, cAZD_CLIENT_ID, "", strings.Join(scopes, " "), debug)
+	homeAccountID, err := oneauth.LogIn(cDefaultAuthority, cAZD_CLIENT_ID, strings.Join(scopes, " "), debug)
 	if err == nil {
 		err = m.saveUserProperties(&userProperties{
 			FromOneAuth:   true,

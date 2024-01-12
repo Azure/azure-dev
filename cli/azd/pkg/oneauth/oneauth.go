@@ -5,25 +5,25 @@
 
 package oneauth
 
-import "errors"
+import (
+	"errors"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+)
 
 // Supported indicates whether this build includes OneAuth integration.
 const Supported = false
 
 var errNotSupported = errors.New("this build doesn't support OneAuth authentication")
 
+func LogIn(authority, clientID, scope string, debug bool) (string, error) {
+	return "", errNotSupported
+}
+
 func Logout(clientID string, debug bool) error {
 	return errNotSupported
 }
 
-func NewCredential(authority, clientID string, opts CredentialOptions) (UserCredential, error) {
+func NewCredential(authority, clientID string, opts CredentialOptions) (azcore.TokenCredential, error) {
 	return nil, errNotSupported
-}
-
-func SignIn(authority, clientID, homeAccountID, scope string, debug bool) (string, error) {
-	return "", errNotSupported
-}
-
-func Start(clientID string, debug bool) error {
-	return errNotSupported
 }

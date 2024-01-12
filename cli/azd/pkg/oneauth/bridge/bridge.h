@@ -13,7 +13,6 @@ extern "C"
         char *accountID;
         char *errorDescription;
         int expiresOn;
-        char *loginName;
         char *token;
     } AuthnResult;
 

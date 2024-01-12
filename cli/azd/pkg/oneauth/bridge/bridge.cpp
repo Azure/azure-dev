@@ -70,7 +70,6 @@ AuthnResult *wrapAuthResult(const AuthResult *ar)
     if (auto account = ar->GetAccount())
     {
         wrapped->accountID = strdup(account->GetHomeAccountId().c_str());
-        wrapped->loginName = strdup(account->GetLoginName().c_str());
     }
     if (auto credential = ar->GetCredential())
     {
@@ -185,7 +184,6 @@ void FreeAuthnResult(AuthnResult *authnResult)
     // delete the struct because it was allocated with new
     free(authnResult->accountID);
     free(authnResult->errorDescription);
-    free(authnResult->loginName);
     free(authnResult->token);
     delete authnResult;
 }

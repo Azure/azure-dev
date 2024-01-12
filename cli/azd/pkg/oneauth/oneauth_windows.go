@@ -19,7 +19,6 @@ typedef struct
 	char *accountID;
 	char *errorDescription;
 	int expiresOn;
-	char *loginName;
 	char *token;
 } AuthnResult;
 */
@@ -32,7 +31,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync/atomic"
 	"time"
 	"unsafe"
 
@@ -43,12 +41,8 @@ import (
 	"golang.org/x/sys/windows"
 )
 
-const (
-	applicationID = "com.microsoft.azd"
-
-	// Supported indicates whether this build includes OneAuth integration.
-	Supported = true
-)
+// Supported indicates whether this build includes OneAuth integration.
+const Supported = true
 
 var (
 	//go:embed bridge/_build/Release/bridge.dll
@@ -67,17 +61,12 @@ var (
 	logout       *windows.LazyProc
 	shutdown     *windows.LazyProc
 	startup      *windows.LazyProc
-
-	// started tracks whether the bridge's Startup function has succeeded. This is necessary
-	// because OneAuth returns an error when its Startup function is called more than once.
-	started atomic.Bool
 )
 
 type authResult struct {
 	errorDesc     string
 	expiresOn     int
 	homeAccountID string
-	loginName     string
 	token         string
 }
 
@@ -89,7 +78,7 @@ type credential struct {
 }
 
 // NewCredential creates a new credential that acquires tokens via OneAuth.
-func NewCredential(authority, clientID string, opts CredentialOptions) (UserCredential, error) {
+func NewCredential(authority, clientID string, opts CredentialOptions) (azcore.TokenCredential, error) {
 	if err := start(clientID, opts.Debug); err != nil {
 		return nil, err
 	}
@@ -113,9 +102,9 @@ func (c *credential) GetToken(ctx context.Context, opts policy.TokenRequestOptio
 	return at, err
 }
 
-// HomeAccountID of the most recently authenticated user or an empty string, if no user has authenticated
-func (c *credential) HomeAccountID() string {
-	return c.homeAccountID
+func LogIn(authority, clientID, scope string, debug bool) (string, error) {
+	ar, err := authn(authority, clientID, "", scope, false, debug)
+	return ar.homeAccountID, err
 }
 
 func Logout(clientID string, debug bool) error {
@@ -124,11 +113,6 @@ func Logout(clientID string, debug bool) error {
 		logout.Call()
 	}
 	return nil
-}
-
-func SignIn(authority, clientID, homeAccountID, scope string, debug bool) (string, error) {
-	ar, err := authn(authority, clientID, homeAccountID, scope, false, debug)
-	return ar.homeAccountID, err
 }
 
 func start(clientID string, debug bool) error {
@@ -187,13 +171,9 @@ func authn(authority, clientID, homeAccountID, scope string, noPrompt, debug boo
 		res.errorDesc = C.GoString(ar.errorDescription)
 		return res, fmt.Errorf(res.errorDesc)
 	}
-
 	res.expiresOn = int(ar.expiresOn)
 	if ar.accountID != nil {
 		res.homeAccountID = C.GoString(ar.accountID)
-	}
-	if ar.loginName != nil {
-		res.loginName = C.GoString(ar.loginName)
 	}
 	if ar.token != nil {
 		res.token = C.GoString(ar.token)

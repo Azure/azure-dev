@@ -36,7 +36,11 @@ const (
 	serviceTargetDeployCalled  contextKey = "serviceTargetDeployCalled"
 )
 
-func createServiceManager(mockContext *mocks.MockContext, env *environment.Environment, operationCache ServiceOperationCache) ServiceManager {
+func createServiceManager(
+	mockContext *mocks.MockContext,
+	env *environment.Environment,
+	operationCache ServiceOperationCache,
+) ServiceManager {
 	azCli := mockazcli.NewAzCliFromMockContext(mockContext)
 	depOpService := mockazcli.NewDeploymentOperationsServiceFromMockContext(mockContext)
 	resourceManager := NewResourceManager(env, azCli, depOpService)

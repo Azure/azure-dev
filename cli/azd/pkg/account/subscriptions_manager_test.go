@@ -163,7 +163,7 @@ func TestSubscriptionsManager_ListSubscriptions(t *testing.T) {
 				service: NewSubscriptionsService(
 					&mocks.MockMultiTenantCredentialProvider{},
 					mockHttp,
-					&publicCloud,
+					publicCloud,
 				),
 				cache:         NewBypassSubscriptionsCache(),
 				principalInfo: principalInfo,

@@ -158,7 +158,7 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 			return cred, nil
 		}),
 		client,
-		&publicCloud,
+		publicCloud,
 		azcli.NewAzCliArgs{})
 	deploymentOperations := azapi.NewDeploymentOperations(
 		mockaccount.SubscriptionCredentialProviderFunc(
@@ -166,7 +166,7 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 				return cred, nil
 			}),
 		client,
-		&publicCloud)
+		publicCloud)
 
 	// Verify that resource groups are created with tag
 	resourceManager := infra.NewAzureResourceManager(azCli, deploymentOperations)
@@ -368,7 +368,7 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 			return cred, nil
 		}),
 		client,
-		&publicCloud,
+		publicCloud,
 		azcli.NewAzCliArgs{})
 	deploymentOperations := azapi.NewDeploymentOperations(
 		mockaccount.SubscriptionCredentialProviderFunc(
@@ -376,7 +376,7 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 				return cred, nil
 			}),
 		client,
-		&publicCloud)
+		publicCloud)
 
 	// Verify that resource groups are created with tag
 	resourceManager := infra.NewAzureResourceManager(azCli, deploymentOperations)

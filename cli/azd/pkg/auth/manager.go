@@ -379,7 +379,7 @@ func (m *Manager) newCredentialFromClientSecret(
 	options := &azidentity.ClientSecretCredentialOptions{
 		ClientOptions: policy.ClientOptions{
 			Transport: m.httpClient,
-			Cloud:     *(m.cloud).Configuration,
+			Cloud:     m.cloud.Configuration,
 		},
 	}
 
@@ -409,7 +409,7 @@ func (m *Manager) newCredentialFromClientCertificate(
 	options := &azidentity.ClientCertificateCredentialOptions{
 		ClientOptions: policy.ClientOptions{
 			Transport: m.httpClient,
-			Cloud:     *(m.cloud).Configuration,
+			Cloud:     m.cloud.Configuration,
 		},
 	}
 	cred, err := azidentity.NewClientCertificateCredential(
@@ -433,7 +433,7 @@ func (m *Manager) newCredentialFromFederatedTokenProvider(
 	options := &azidentity.ClientAssertionCredentialOptions{
 		ClientOptions: policy.ClientOptions{
 			Transport: m.httpClient,
-			Cloud:     *(m.cloud).Configuration,
+			Cloud:     m.cloud.Configuration,
 		},
 	}
 	cred, err := azidentity.NewClientAssertionCredential(

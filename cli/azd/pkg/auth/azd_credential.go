@@ -33,7 +33,6 @@ func (c *azdCredential) GetToken(ctx context.Context, options policy.TokenReques
 	if err != nil {
 		var authFailed *AuthFailedError
 		if errors.As(err, &authFailed) {
-			// TODO: Figure out what code path could even reach this that we would need to check for presence of a default scope
 			if loginErr, ok := newReLoginRequiredError(authFailed.Parsed, options.Scopes, c.cloud); ok {
 				log.Println(authFailed.httpErrorDetails())
 				return azcore.AccessToken{}, loginErr

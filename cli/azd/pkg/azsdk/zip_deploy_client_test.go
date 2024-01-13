@@ -24,11 +24,11 @@ func TestZipDeploy(t *testing.T) {
 			WithTransport(mockContext.HttpClient).
 			BuildArmClientOptions()
 
-		client, err := NewZipDeployClient("SUBSCRIPTION_ID", &mocks.MockCredentials{}, options, mockContext.Cloud)
+		client, err := NewZipDeployClient("HOSTNAME", &mocks.MockCredentials{}, options)
 		require.NoError(t, err)
 
 		zipFile := bytes.NewBuffer([]byte{})
-		poller, err := client.BeginDeploy(*mockContext.Context, "APP_NAME", zipFile)
+		poller, err := client.BeginDeploy(*mockContext.Context, zipFile)
 		require.NotNil(t, poller)
 		require.NoError(t, err)
 
@@ -49,11 +49,11 @@ func TestZipDeploy(t *testing.T) {
 			WithTransport(mockContext.HttpClient).
 			BuildArmClientOptions()
 
-		client, err := NewZipDeployClient("SUBSCRIPTION_ID", &mocks.MockCredentials{}, options, mockContext.Cloud)
+		client, err := NewZipDeployClient("HOSTNAME", &mocks.MockCredentials{}, options)
 		require.NoError(t, err)
 
 		zipFile := bytes.NewBuffer([]byte{})
-		poller, err := client.BeginDeploy(*mockContext.Context, "APP_NAME", zipFile)
+		poller, err := client.BeginDeploy(*mockContext.Context, zipFile)
 		require.NotNil(t, poller)
 		require.NoError(t, err)
 
@@ -73,11 +73,11 @@ func TestZipDeploy(t *testing.T) {
 			WithTransport(mockContext.HttpClient).
 			BuildArmClientOptions()
 
-		client, err := NewZipDeployClient("SUBSCRIPTION_ID", &mocks.MockCredentials{}, options, mockContext.Cloud)
+		client, err := NewZipDeployClient("HOSTNAME", &mocks.MockCredentials{}, options)
 		require.NoError(t, err)
 
 		zipFile := bytes.NewBuffer([]byte{})
-		poller, err := client.BeginDeploy(*mockContext.Context, "APP_NAME", zipFile)
+		poller, err := client.BeginDeploy(*mockContext.Context, zipFile)
 		require.Nil(t, poller)
 		require.Error(t, err)
 	})

@@ -107,7 +107,6 @@ func NewDeployments(
 	}
 }
 
-// TODO: Should cloud be included
 func (ds *deployments) CalculateTemplateHash(
 	ctx context.Context,
 	subscriptionId string,
@@ -538,5 +537,5 @@ func (ds *deployments) clientOptionsBuilder(ctx context.Context) *azsdk.ClientOp
 		WithTransport(ds.httpClient).
 		WithPerCallPolicy(azsdk.NewUserAgentPolicy(ds.userAgent)).
 		WithPerCallPolicy(azsdk.NewMsCorrelationPolicy(ctx)).
-		WithCloud(*ds.cloud.Configuration)
+		WithCloud(ds.cloud.Configuration)
 }

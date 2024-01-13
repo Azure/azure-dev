@@ -231,7 +231,7 @@ func (cli *azCli) clientOptionsBuilder(ctx context.Context) *azsdk.ClientOptions
 		WithTransport(cli.httpClient).
 		WithPerCallPolicy(azsdk.NewUserAgentPolicy(cli.UserAgent())).
 		WithPerCallPolicy(azsdk.NewMsCorrelationPolicy(ctx)).
-		WithCloud(*cli.cloud.Configuration)
+		WithCloud(cli.cloud.Configuration)
 }
 
 func clientOptionsBuilder(
@@ -244,5 +244,5 @@ func clientOptionsBuilder(
 		WithTransport(httpClient).
 		WithPerCallPolicy(azsdk.NewUserAgentPolicy(userAgent)).
 		WithPerCallPolicy(azsdk.NewMsCorrelationPolicy(ctx)).
-		WithCloud(*cloud.Configuration)
+		WithCloud(cloud.Configuration)
 }

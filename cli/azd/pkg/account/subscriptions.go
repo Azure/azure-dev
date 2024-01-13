@@ -187,7 +187,7 @@ func clientOptions(httpClient httputil.HttpClient, userAgent string, cloud *clou
 		ClientOptions: policy.ClientOptions{
 			Transport:       httpClient,
 			PerCallPolicies: []policy.Policy{azsdk.NewUserAgentPolicy(userAgent)},
-			Cloud:           *cloud.Configuration,
+			Cloud:           cloud.Configuration,
 		},
 	}
 }

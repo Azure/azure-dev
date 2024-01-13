@@ -50,7 +50,7 @@ func NewMockContext(ctx context.Context) *MockContext {
 		Container:                      ioc.NewNestedContainer(nil),
 		Config:                         config,
 		AlphaFeaturesManager:           alpha.NewFeaturesManagerWithConfig(config),
-		Cloud:                          &publicCloud,
+		Cloud:                          publicCloud,
 	}
 
 	registerCommonMocks(mockContext)

@@ -629,7 +629,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		// 3. Check .azure/<environment>/config.json
 
 		// Default configuration
-		var cloudConfig = &cloud.Config{Name: "AzurePublic"}
+		var cloudConfig = &cloud.Config{Name: cloud.AzurePublicName}
 
 		// User Configuration
 		if azdConfig, err := userConfigManager.Load(); err == nil {
@@ -638,7 +638,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 				value, err := cloud.ParseCloudConfig(cloudConfigNode)
 				if err == nil {
 					cloudConfig = value
-				} // TODO: How do we surface config errors?
+				}
 
 			}
 		}

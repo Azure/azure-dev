@@ -47,7 +47,7 @@ func Test_GetAccountDefaults(t *testing.T) {
 				NewSubscriptionsService(
 					&mocks.MockMultiTenantCredentialProvider{},
 					mockHttp,
-					&publicCloud,
+					publicCloud,
 				),
 				NewBypassSubscriptionsCache(),
 			),
@@ -73,7 +73,7 @@ func Test_GetAccountDefaults(t *testing.T) {
 				NewSubscriptionsService(
 					&mocks.MockMultiTenantCredentialProvider{},
 					mockHttp,
-					&publicCloud,
+					publicCloud,
 				),
 				NewBypassSubscriptionsCache(),
 			),
@@ -108,7 +108,7 @@ func Test_GetAccountDefaults(t *testing.T) {
 				NewSubscriptionsService(
 					&mocks.MockMultiTenantCredentialProvider{},
 					mockHttp,
-					&publicCloud,
+					publicCloud,
 				),
 				NewBypassSubscriptionsCache(),
 			),
@@ -143,7 +143,7 @@ func Test_GetAccountDefaults(t *testing.T) {
 				NewSubscriptionsService(
 					&mocks.MockMultiTenantCredentialProvider{},
 					mockHttp,
-					&publicCloud,
+					publicCloud,
 				),
 				NewBypassSubscriptionsCache(),
 			),
@@ -166,7 +166,7 @@ func Test_GetSubscriptionsWithDefaultSet(t *testing.T) {
 			NewSubscriptionsService(
 				&mocks.MockMultiTenantCredentialProvider{},
 				mockHttp,
-				&publicCloud,
+				publicCloud,
 			),
 			NewBypassSubscriptionsCache()))
 		require.NoError(t, err)
@@ -202,7 +202,7 @@ func Test_GetSubscriptionsWithDefaultSet(t *testing.T) {
 				NewSubscriptionsService(
 					&mocks.MockMultiTenantCredentialProvider{},
 					mockHttp,
-					&publicCloud,
+					publicCloud,
 				),
 				NewBypassSubscriptionsCache(),
 			),
@@ -232,7 +232,7 @@ func Test_GetSubscriptionsWithDefaultSet(t *testing.T) {
 				NewSubscriptionsService(
 					&mocks.MockMultiTenantCredentialProvider{},
 					mockHttp,
-					&publicCloud,
+					publicCloud,
 				),
 				NewBypassSubscriptionsCache(),
 			))
@@ -271,7 +271,7 @@ func Test_GetLocations(t *testing.T) {
 				NewSubscriptionsService(
 					&mocks.MockMultiTenantCredentialProvider{},
 					mockHttp,
-					&publicCloud,
+					publicCloud,
 				),
 				NewBypassSubscriptionsCache(),
 			),
@@ -293,7 +293,7 @@ func Test_GetLocations(t *testing.T) {
 			NewSubscriptionsService(
 				&mocks.MockMultiTenantCredentialProvider{},
 				mockHttp,
-				&publicCloud,
+				publicCloud,
 			),
 			NewBypassSubscriptionsCache()))
 		require.NoError(t, err)
@@ -314,7 +314,7 @@ func Test_GetLocations(t *testing.T) {
 			NewSubscriptionsService(
 				&mocks.MockMultiTenantCredentialProvider{},
 				mockHttp,
-				&publicCloud,
+				publicCloud,
 			),
 			NewBypassSubscriptionsCache()))
 		require.NoError(t, err)
@@ -343,7 +343,7 @@ func Test_SetDefaultSubscription(t *testing.T) {
 			NewSubscriptionsService(
 				&mocks.MockMultiTenantCredentialProvider{},
 				mockHttp,
-				&publicCloud,
+				publicCloud,
 			),
 			NewBypassSubscriptionsCache()))
 		require.NoError(t, err)
@@ -370,7 +370,7 @@ func Test_SetDefaultSubscription(t *testing.T) {
 			NewSubscriptionsService(
 				&mocks.MockMultiTenantCredentialProvider{},
 				mockHttp,
-				&publicCloud,
+				publicCloud,
 			),
 			NewBypassSubscriptionsCache()))
 		require.NoError(t, err)
@@ -410,7 +410,7 @@ func Test_SetDefaultLocation(t *testing.T) {
 				NewSubscriptionsService(
 					&mocks.MockMultiTenantCredentialProvider{},
 					mockHttp,
-					&publicCloud,
+					publicCloud,
 				),
 				NewBypassSubscriptionsCache(),
 			),
@@ -435,7 +435,7 @@ func Test_SetDefaultLocation(t *testing.T) {
 			NewSubscriptionsService(
 				&mocks.MockMultiTenantCredentialProvider{},
 				mockHttp,
-				&publicCloud,
+				publicCloud,
 			),
 			NewBypassSubscriptionsCache()))
 		require.NoError(t, err)
@@ -463,7 +463,7 @@ func Test_Clear(t *testing.T) {
 		NewSubscriptionsService(
 			&mocks.MockMultiTenantCredentialProvider{},
 			mockHttp,
-			&publicCloud,
+			publicCloud,
 		),
 		NewBypassSubscriptionsCache()))
 	require.NoError(t, err)
@@ -515,7 +515,7 @@ func Test_HasDefaults(t *testing.T) {
 				NewSubscriptionsService(
 					&mocks.MockMultiTenantCredentialProvider{},
 					mockHttp,
-					&publicCloud,
+					publicCloud,
 				),
 				NewBypassSubscriptionsCache(),
 			),
@@ -535,7 +535,7 @@ func Test_HasDefaults(t *testing.T) {
 				NewSubscriptionsService(
 					&mocks.MockMultiTenantCredentialProvider{},
 					mockHttp,
-					&publicCloud,
+					publicCloud,
 				),
 				NewBypassSubscriptionsCache(),
 			),

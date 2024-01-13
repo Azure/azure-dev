@@ -58,8 +58,7 @@ type authTokenAction struct {
 	envResolver        environment.EnvironmentResolver
 	subResolver        account.SubscriptionTenantResolver
 	flags              *authTokenFlags
-	// TODO: Cloud resolver?
-	cloud *cloud.Cloud
+	cloud              *cloud.Cloud
 }
 
 func newAuthTokenAction(

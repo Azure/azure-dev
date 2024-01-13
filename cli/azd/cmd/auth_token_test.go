@@ -26,7 +26,7 @@ import (
 
 const TestManagementScope string = "https://management.azure.com//.default"
 
-var testCloud = cloud.GetAzurePublic()
+var publicCloud = cloud.GetAzurePublic()
 
 func TestAuthToken(t *testing.T) {
 	wasCalled := false
@@ -53,7 +53,7 @@ func TestAuthToken(t *testing.T) {
 			return nil, fmt.Errorf("not an azd env directory")
 		},
 		&mockSubscriptionTenantResolver{},
-		&testCloud,
+		publicCloud,
 	)
 
 	_, err := a.Run(context.Background())
@@ -96,7 +96,7 @@ func TestAuthTokenSysEnv(t *testing.T) {
 		&mockSubscriptionTenantResolver{
 			TenantId: expectedTenant,
 		},
-		&testCloud,
+		publicCloud,
 	)
 
 	_, err := a.Run(context.Background())
@@ -144,7 +144,7 @@ func TestAuthTokenSysEnvError(t *testing.T) {
 		&mockSubscriptionTenantResolver{
 			Err: fmt.Errorf(expectedError),
 		},
-		&testCloud,
+		publicCloud,
 	)
 
 	_, err := a.Run(context.Background())
@@ -188,7 +188,7 @@ func TestAuthTokenAzdEnvError(t *testing.T) {
 		&mockSubscriptionTenantResolver{
 			Err: fmt.Errorf(expectedError),
 		},
-		&testCloud,
+		publicCloud,
 	)
 
 	_, err := a.Run(context.Background())
@@ -229,7 +229,7 @@ func TestAuthTokenAzdEnv(t *testing.T) {
 		&mockSubscriptionTenantResolver{
 			TenantId: expectedTenant,
 		},
-		&testCloud,
+		publicCloud,
 	)
 
 	_, err := a.Run(context.Background())
@@ -270,7 +270,7 @@ func TestAuthTokenAzdEnvWithEmpty(t *testing.T) {
 		&mockSubscriptionTenantResolver{
 			TenantId: expectedTenant,
 		},
-		&testCloud,
+		publicCloud,
 	)
 
 	_, err := a.Run(context.Background())
@@ -307,7 +307,7 @@ func TestAuthTokenCustomScopes(t *testing.T) {
 			return nil, fmt.Errorf("not an azd env directory")
 		},
 		&mockSubscriptionTenantResolver{},
-		&testCloud,
+		publicCloud,
 	)
 
 	_, err := a.Run(context.Background())
@@ -329,7 +329,7 @@ func TestAuthTokenFailure(t *testing.T) {
 			return nil, fmt.Errorf("not an azd env directory")
 		},
 		&mockSubscriptionTenantResolver{},
-		&testCloud,
+		publicCloud,
 	)
 
 	_, err := a.Run(context.Background())

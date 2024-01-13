@@ -354,8 +354,7 @@ func Test_EnvManager_CreateFromContainer(t *testing.T) {
 
 func registerContainerComponents(t *testing.T, mockContext *mocks.MockContext) {
 	mockContext.Container.RegisterSingleton(func() *cloud.Cloud {
-		mockCloud := cloud.GetAzurePublic()
-		return &mockCloud
+		return cloud.GetAzurePublic()
 	})
 	mockContext.Container.RegisterSingleton(func() context.Context {
 		return *mockContext.Context

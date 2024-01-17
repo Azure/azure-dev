@@ -32,12 +32,11 @@ type Config struct {
 	Name string `json:"name,omitempty" yaml:"name,omitempty"`
 }
 
-func NewCloud(config *Config) *Cloud {
+func NewCloud(config *Config) (*Cloud, error) {
 	if cloud, err := getNamedCloud(config.Name); err != nil {
-		// TODO: Find a friendly way to surface errors here
-		panic(err)
+		return nil, err
 	} else {
-		return cloud
+		return cloud, nil
 	}
 }
 

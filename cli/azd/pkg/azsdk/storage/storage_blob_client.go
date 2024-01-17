@@ -22,11 +22,6 @@ type AccountConfig struct {
 	Endpoint      string
 }
 
-const (
-	DefaultBlobEndpoint = "blob.core.windows.net"
-	UsGovBlobEndpoint   = "blob.core.usgovcloudapi.net" // TODO: Figure this out
-)
-
 var (
 	ErrContainerNotFound = errors.New("container not found")
 )
@@ -179,7 +174,6 @@ func NewBlobSdkClient(
 	cloud *cloud.Cloud,
 ) (*azblob.Client, error) {
 
-	// TODO: Should we be injecting coreOptions instead of httpClient, userAgent, cloud?
 	coreOptions := azsdk.
 		DefaultClientOptionsBuilder(ctx, httpClient, string(userAgent), cloud).
 		BuildCoreClientOptions()
@@ -189,11 +183,10 @@ func NewBlobSdkClient(
 	}
 
 	if accountConfig.Endpoint == "" {
-		// TODO: Fix default blob endpoint
-		accountConfig.Endpoint = DefaultBlobEndpoint
+		accountConfig.Endpoint = cloud.StorageEndpointSuffix
 	}
 
-	serviceUrl := fmt.Sprintf("https://%s.%s", accountConfig.AccountName, accountConfig.Endpoint)
+	serviceUrl := fmt.Sprintf("https://%s.blob.%s", accountConfig.AccountName, accountConfig.Endpoint)
 	client, err := azblob.NewClient(serviceUrl, credential, blobOptions)
 	if err != nil {
 		return nil, fmt.Errorf("failed to create blob client, %w", err)

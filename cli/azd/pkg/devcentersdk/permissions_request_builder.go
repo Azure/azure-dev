@@ -35,7 +35,6 @@ func (c *PermissionListRequestBuilder) Get(ctx context.Context) ([]*armauthoriza
 		return nil, err
 	}
 
-	// TODO: Can we use an injected client instead of creating a new one?
 	options := azsdk.DefaultClientOptionsBuilder(ctx, c.client.options.Transport, "azd", c.cloud).BuildArmClientOptions()
 	permissionsClient, err := armauthorization.NewPermissionsClient(project.SubscriptionId, c.client.credential, options)
 	if err != nil {

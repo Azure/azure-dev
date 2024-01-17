@@ -1116,7 +1116,6 @@ func generateResourceGroupsToDelete(
 		lines = append(lines, fmt.Sprintf(
 			"  • %s: %s",
 			rg,
-			// TODO: Fix hardcoded URL
 			output.WithLinkFormat("%s/#@/resource/subscriptions/%s/resourceGroups/%s/overview",
 				portalUrlBase,
 				subId,

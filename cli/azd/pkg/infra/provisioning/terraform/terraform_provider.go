@@ -111,9 +111,6 @@ func (t *TerraformProvider) Initialize(ctx context.Context, projectPath string, 
 		envVars = append(envVars, fmt.Sprintf("ARM_CORRELATION_REQUEST_ID=%s", spanCtx.TraceID().String()))
 	}
 
-	// TODO: Set cloud TF ARM_ENVIRONMENT variable based on injected cloud
-	// Also, add value to cloud configs
-
 	t.cli.SetEnv(envVars)
 	return nil
 }

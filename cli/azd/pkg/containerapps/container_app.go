@@ -50,7 +50,7 @@ type ContainerAppService interface {
 // NewContainerAppService creates a new ContainerAppService
 func NewContainerAppService(
 	credentialProvider account.SubscriptionCredentialProvider,
-	httpClient httputil.HttpClient, // TODO: should we use an az client instead of raw HTTP client?
+	httpClient httputil.HttpClient,
 	clock clock.Clock,
 	cloud *cloud.Cloud,
 ) ContainerAppService {
@@ -330,7 +330,6 @@ func (cas *containerAppService) createContainerAppsClient(
 		return nil, err
 	}
 
-	// TODO: can this be populated injection?
 	options := azsdk.DefaultClientOptionsBuilder(ctx, cas.httpClient, cas.userAgent, cas.cloud).BuildArmClientOptions()
 	client, err := armappcontainers.NewContainerAppsClient(subscriptionId, credential, options)
 	if err != nil {

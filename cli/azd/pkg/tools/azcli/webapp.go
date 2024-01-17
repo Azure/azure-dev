@@ -115,7 +115,11 @@ func (cli *azCli) createWebAppsClient(ctx context.Context, subscriptionId string
 	return client, nil
 }
 
-func (cli *azCli) createZipDeployClient(ctx context.Context, subscriptionId string, hostName string) (*azsdk.ZipDeployClient, error) {
+func (cli *azCli) createZipDeployClient(
+	ctx context.Context,
+	subscriptionId string,
+	hostName string,
+) (*azsdk.ZipDeployClient, error) {
 	credential, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
 	if err != nil {
 		return nil, err

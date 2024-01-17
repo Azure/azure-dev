@@ -13,7 +13,6 @@ import (
 	armruntime "github.com/Azure/azure-sdk-for-go/sdk/azcore/arm/runtime"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/runtime"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
 
@@ -26,9 +25,8 @@ const (
 // https://github.com/MicrosoftDocs/azure-docs/blob/main/includes/app-service-deploy-zip-push-rest.md
 // https://github.com/projectkudu/kudu/wiki/REST-API
 type ZipDeployClient struct {
-	hostName      string
-	pipeline      runtime.Pipeline
-	webappsClient *armappservice.WebAppsClient
+	hostName string
+	pipeline runtime.Pipeline
 }
 
 type DeployResponse struct {

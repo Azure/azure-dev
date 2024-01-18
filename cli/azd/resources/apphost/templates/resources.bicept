@@ -238,6 +238,9 @@ resource {{bicepName $name}} 'Microsoft.App/containerApps@2023-05-02-preview' = 
 resource {{bicepName $name}} 'Microsoft.App/containerApps@2023-05-02-preview' = {
   name: '{{containerAppName $name}}'
   location: location
+  identity: {
+    type: 'SystemAssigned'
+  }
   properties: {
     environmentId: containerAppEnvironment.id
     configuration: {
@@ -275,15 +278,16 @@ resource {{bicepName $name}} 'Microsoft.App/containerApps@2023-05-02-preview' = 
         allowInsecure: {{$value.Ingress.AllowInsecure}}
 {{- end}}
       }
-      secrets: {
-{{range $name, $value := .CosmosDbAccounts}}
+{{- end}}
+      secrets:[
+{{- range $name, $value := .CosmosDbAccounts}}
         {
           name: '{{bicepName $name}}CosmosConnectionString'
-          value: '{{bicepName $name}}CosmosConnectionString.properties.value'
+          KeyVaultUrl: {{bicepName $name}}CosmosConnectionString.properties.secretUri
+          identity: 'system'
         }
 {{- end}}
-      }
-{{- end}}
+      ]
     }
     template: {
       containers: [

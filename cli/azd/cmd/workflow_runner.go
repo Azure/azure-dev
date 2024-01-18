@@ -47,9 +47,6 @@ func (r *WorkflowRunner) Run(ctx context.Context, workflow *workflow.Workflow) e
 			args = append(args, step.AzdCommand.Args...)
 		}
 
-		// Write blank line in between steps
-		r.console.Message(ctx, "")
-
 		rootCmd.SetArgs(args)
 		if err := rootCmd.ExecuteContext(childCtx); err != nil {
 			return fmt.Errorf("error executing step command '%s': %w", strings.Join(args, " "), err)

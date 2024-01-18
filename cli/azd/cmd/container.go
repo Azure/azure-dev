@@ -67,16 +67,6 @@ func registerAction[T actions.Action](container *ioc.NestedContainer, actionName
 	})
 }
 
-// Registers a transient action for the specified action name
-// This finds the action for a named instance and casts it to the correct type for injection
-func registerActionInitializer[T actions.Action](container *ioc.NestedContainer, actionName string) {
-	container.MustRegisterTransient(func(serviceLocator ioc.ServiceLocator) actions.ActionInitializer[T] {
-		return func() (T, error) {
-			return resolveAction[T](serviceLocator, actionName)
-		}
-	})
-}
-
 // Resolves the action instance for the specified action name
 // This finds the action for a named instance and casts it to the correct type for injection
 func resolveAction[T actions.Action](serviceLocator ioc.ServiceLocator, actionName string) (T, error) {
@@ -612,9 +602,6 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(NewWorkflowRunner)
 
 	// Required for nested actions called from composite actions like 'up'
-	registerActionInitializer[*restoreAction](container, "azd-restore-action")
-	registerActionInitializer[*packageAction](container, "azd-package-action")
-
 	registerAction[*provisionAction](container, "azd-provision-action")
 	registerAction[*downAction](container, "azd-down-action")
 	registerAction[*configShowAction](container, "azd-config-show-action")

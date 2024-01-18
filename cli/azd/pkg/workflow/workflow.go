@@ -90,6 +90,16 @@ type Step struct {
 	AzdCommand Command `yaml:"azd,omitempty"`
 }
 
+// NewAzdCommandStep creates a new step that executes an azd command with the specified name and args
+func NewAzdCommandStep(name string, args ...string) *Step {
+	return &Step{
+		AzdCommand: Command{
+			Name: name,
+			Args: args,
+		},
+	}
+}
+
 // Command stores a single command to execute
 type Command struct {
 	Name string   `yaml:"command,omitempty"`

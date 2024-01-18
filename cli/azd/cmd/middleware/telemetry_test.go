@@ -32,9 +32,8 @@ func Test_Telemetry_Run(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 
 		options := &Options{
-			CommandPath:   "azd provision",
-			Name:          "provision",
-			isChildAction: false,
+			CommandPath: "azd provision",
+			Name:        "provision",
 		}
 		middleware := NewTelemetryMiddleware(options, lazyPlatformConfig)
 
@@ -62,9 +61,8 @@ func Test_Telemetry_Run(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 
 		options := &Options{
-			CommandPath:   "azd provision",
-			Name:          "provision",
-			isChildAction: true,
+			CommandPath: "azd provision",
+			Name:        "provision",
 		}
 		middleware := NewTelemetryMiddleware(options, lazyPlatformConfig)
 
@@ -77,7 +75,8 @@ func Test_Telemetry_Run(t *testing.T) {
 			return nil, nil
 		}
 
-		_, _ = middleware.Run(*mockContext.Context, nextFn)
+		ctx := WithChildAction(*mockContext.Context)
+		_, _ = middleware.Run(ctx, nextFn)
 
 		require.True(t, ran)
 		require.NotEqual(

@@ -91,9 +91,6 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	ioc.RegisterInstance(container, container)
 	container.MustRegisterSingleton(NewCobraBuilder)
 	container.MustRegisterSingleton(middleware.NewMiddlewareRunner)
-	container.MustRegisterSingleton(func(runner *middleware.MiddlewareRunner) middleware.MiddlewareContext {
-		return runner
-	})
 
 	// Standard Registrations
 	container.MustRegisterTransient(output.GetCommandFormatter)

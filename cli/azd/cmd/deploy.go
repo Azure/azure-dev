@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
-	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
@@ -109,7 +108,6 @@ type deployAction struct {
 	writer              io.Writer
 	console             input.Console
 	commandRunner       exec.CommandRunner
-	middlewareRunner    middleware.MiddlewareContext
 	alphaFeatureManager *alpha.FeatureManager
 	importManager       *project.ImportManager
 }
@@ -129,7 +127,6 @@ func newDeployAction(
 	console input.Console,
 	formatter output.Formatter,
 	writer io.Writer,
-	middlewareRunner middleware.MiddlewareContext,
 	alphaFeatureManager *alpha.FeatureManager,
 	importManager *project.ImportManager,
 ) actions.Action {
@@ -148,7 +145,6 @@ func newDeployAction(
 		writer:              writer,
 		console:             console,
 		commandRunner:       commandRunner,
-		middlewareRunner:    middlewareRunner,
 		alphaFeatureManager: alphaFeatureManager,
 		importManager:       importManager,
 	}

@@ -156,25 +156,6 @@ func Test_Middleware_RunAction(t *testing.T) {
 	})
 }
 
-func Test_Middleware_RunChildAction(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
-	middlewareRunner := NewMiddlewareRunner()
-	runLog := []string{}
-
-	action, actionRan := createAction(&runLog)
-	runOptions := &Options{Name: "test"}
-
-	require.False(t, runOptions.IsChildAction(*mockContext.Context))
-	result, err := middlewareRunner.RunChildAction(*mockContext.Context, runOptions, action)
-
-	// Executing RunChildAction sets a marker on the options that this is a child action
-	require.True(t, runOptions.IsChildAction(*mockContext.Context))
-
-	require.NotNil(t, result)
-	require.NoError(t, err)
-	require.True(t, *actionRan)
-}
-
 func createAction(runLog *[]string) (actions.Action, *bool) {
 	actionRan := false
 

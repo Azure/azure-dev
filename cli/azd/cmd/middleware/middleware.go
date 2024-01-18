@@ -23,29 +23,18 @@ type childActionKeyType string
 
 var childActionKey childActionKeyType = "child-action"
 
-// MiddlewareContext allow composite actions to orchestrate invoking child actions
-type MiddlewareContext interface {
-	// Executes the middleware chain for the specified child action
-	RunChildAction(
-		ctx context.Context,
-		runOptions *Options,
-		action actions.Action,
-	) (*actions.ActionResult, error)
-}
-
 // Middleware Run options
 type Options struct {
-	CommandPath   string
-	Name          string
-	Aliases       []string
-	Flags         *pflag.FlagSet
-	Args          []string
-	isChildAction bool
+	CommandPath string
+	Name        string
+	Aliases     []string
+	Flags       *pflag.FlagSet
+	Args        []string
 }
 
 func (o *Options) IsChildAction(ctx context.Context) bool {
 	value, ok := ctx.Value(childActionKey).(bool)
-	return o.isChildAction || ok && value
+	return ok && value
 }
 
 // Executes the next middleware in the command chain
@@ -66,29 +55,6 @@ func NewMiddlewareRunner() *MiddlewareRunner {
 		actionCache:       map[actions.Action]*actions.ActionResult{},
 		registrationCache: map[string]any{},
 	}
-}
-
-// Executes the middleware chain for the specified child action
-func (r *MiddlewareRunner) RunChildAction(
-	ctx context.Context,
-	runOptions *Options,
-	action actions.Action,
-) (*actions.ActionResult, error) {
-	// If we have previously run this action then return the cached result
-	if cachedActionResult, has := r.actionCache[action]; has {
-		return cachedActionResult, nil
-	}
-
-	// If we have not previously run this action then execute it
-	runOptions.isChildAction = true
-	result, err := r.RunAction(ctx, runOptions, action)
-
-	// Cache the result on action success
-	if err == nil {
-		r.actionCache[action] = result
-	}
-
-	return result, err
 }
 
 // Executes the middleware chain for the specified action

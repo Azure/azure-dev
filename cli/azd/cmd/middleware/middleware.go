@@ -2,6 +2,7 @@ package middleware
 
 import (
 	"context"
+	"fmt"
 	"log"
 	"slices"
 
@@ -112,7 +113,14 @@ func (r *MiddlewareRunner) RunAction(
 
 	// Registers all the registered middlewares into the IoC container for the new scope
 	for name, resolveFn := range r.registrationCache {
-		actionContainer.RegisterNamedTransient(name, resolveFn)
+		if err := actionContainer.RegisterNamedTransient(name, resolveFn); err != nil {
+			//nolint: lll
+			return nil, fmt.Errorf(
+				"failed registering Middleware for '%s'. Ensure the resolver is a valid go function and resolves without error. %w",
+				name,
+				err,
+			)
+		}
 	}
 
 	// This recursive function executes the middleware chain in the order that

@@ -316,7 +316,7 @@ func Test_EnvManager_CreateFromContainer(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		registerContainerComponents(t, mockContext)
 
-		mockContext.Container.RegisterSingleton(func() *state.RemoteConfig {
+		mockContext.Container.MustRegisterSingleton(func() *state.RemoteConfig {
 			return &state.RemoteConfig{
 				Backend: string(RemoteKindAzureBlobStorage),
 				Config:  map[string]interface{}{},
@@ -337,7 +337,7 @@ func Test_EnvManager_CreateFromContainer(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		registerContainerComponents(t, mockContext)
 
-		mockContext.Container.RegisterSingleton(func() *state.RemoteConfig {
+		mockContext.Container.MustRegisterSingleton(func() *state.RemoteConfig {
 			return nil
 		})
 
@@ -352,25 +352,25 @@ func Test_EnvManager_CreateFromContainer(t *testing.T) {
 }
 
 func registerContainerComponents(t *testing.T, mockContext *mocks.MockContext) {
-	mockContext.Container.RegisterSingleton(func() context.Context {
+	mockContext.Container.MustRegisterSingleton(func() context.Context {
 		return *mockContext.Context
 	})
-	mockContext.Container.RegisterSingleton(func() httputil.UserAgent {
+	mockContext.Container.MustRegisterSingleton(func() httputil.UserAgent {
 		return httputil.UserAgent(internal.UserAgent())
 	})
-	mockContext.Container.RegisterSingleton(NewManager)
-	mockContext.Container.RegisterSingleton(NewLocalFileDataStore)
-	mockContext.Container.RegisterNamedSingleton(string(RemoteKindAzureBlobStorage), NewStorageBlobDataStore)
+	mockContext.Container.MustRegisterSingleton(NewManager)
+	mockContext.Container.MustRegisterSingleton(NewLocalFileDataStore)
+	mockContext.Container.MustRegisterNamedSingleton(string(RemoteKindAzureBlobStorage), NewStorageBlobDataStore)
 
-	mockContext.Container.RegisterSingleton(storage.NewBlobSdkClient)
-	mockContext.Container.RegisterSingleton(config.NewManager)
-	mockContext.Container.RegisterSingleton(storage.NewBlobClient)
+	mockContext.Container.MustRegisterSingleton(storage.NewBlobSdkClient)
+	mockContext.Container.MustRegisterSingleton(config.NewManager)
+	mockContext.Container.MustRegisterSingleton(storage.NewBlobClient)
 
 	azdContext := azdcontext.NewAzdContextWithDirectory(t.TempDir())
-	mockContext.Container.RegisterSingleton(func() *azdcontext.AzdContext {
+	mockContext.Container.MustRegisterSingleton(func() *azdcontext.AzdContext {
 		return azdContext
 	})
-	mockContext.Container.RegisterSingleton(func() auth.HttpClient {
+	mockContext.Container.MustRegisterSingleton(func() auth.HttpClient {
 		return mockContext.HttpClient
 	})
 
@@ -378,7 +378,7 @@ func registerContainerComponents(t *testing.T, mockContext *mocks.MockContext) {
 		AccountName:   "test",
 		ContainerName: "test",
 	}
-	mockContext.Container.RegisterSingleton(func() *storage.AccountConfig {
+	mockContext.Container.MustRegisterSingleton(func() *storage.AccountConfig {
 		return storageAccountConfig
 	})
 }

@@ -106,7 +106,10 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 		ioc.RegisterInstance(cb.container, ctx)
 
 		// Create new container scope for the current command
-		cmdContainer := cb.container.NewScope()
+		cmdContainer, err := cb.container.NewScope()
+		if err != nil {
+			return fmt.Errorf("failed creating new scope for command, %w", err)
+		}
 
 		// Registers the following to enable injection into actions that require them
 		ioc.RegisterInstance(cmdContainer, cmd)
@@ -307,7 +310,12 @@ func (cb *CobraBuilder) bindCommand(cmd *cobra.Command, descriptor *actions.Acti
 		// The flags resolver is constructed and bound to the cobra command via dependency injection
 		// This allows flags to be options and support any set of required dependencies
 		if err := cb.container.RegisterSingletonAndInvoke(descriptor.Options.FlagsResolver); err != nil {
-			return fmt.Errorf("failed invoking flags resolver, %w", err)
+			return fmt.Errorf(
+				//nolint:lll
+				"failed registering FlagsResolver for action '%s'. Ensure the resolver is a valid go function and resolves without error. %w",
+				actionName,
+				err,
+			)
 		}
 	}
 
@@ -316,7 +324,14 @@ func (cb *CobraBuilder) bindCommand(cmd *cobra.Command, descriptor *actions.Acti
 	// These functions are typically the constructor function for the action. ex) newDeployAction(...)
 	// Action resolvers can take any number of dependencies and instantiated via the IoC container
 	if descriptor.Options.ActionResolver != nil {
-		cb.container.RegisterNamedTransient(actionName, descriptor.Options.ActionResolver)
+		if err := cb.container.RegisterNamedTransient(actionName, descriptor.Options.ActionResolver); err != nil {
+			return fmt.Errorf(
+				//nolint:lll
+				"failed registering ActionResolver for action '%s'. Ensure the resolver is a valid go function and resolves without error. %w",
+				actionName,
+				err,
+			)
+		}
 	}
 
 	// Bind flag completions

@@ -220,7 +220,7 @@ func Test_BuildCommandsWithAutomaticHelpAndOutputFlags(t *testing.T) {
 func Test_RunDocsFlow(t *testing.T) {
 	container := ioc.NewNestedContainer(nil)
 	testCtx := mocks.NewMockContext(context.Background())
-	container.RegisterSingleton(func() input.Console {
+	container.MustRegisterSingleton(func() input.Console {
 		return testCtx.Console
 	})
 
@@ -254,7 +254,7 @@ func Test_RunDocsFlow(t *testing.T) {
 func Test_RunDocsAndHelpFlow(t *testing.T) {
 	container := ioc.NewNestedContainer(nil)
 	testCtx := mocks.NewMockContext(context.Background())
-	container.RegisterSingleton(func() input.Console {
+	container.MustRegisterSingleton(func() input.Console {
 		return testCtx.Console
 	})
 

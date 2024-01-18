@@ -57,25 +57,25 @@ func NewMockContext(ctx context.Context) *MockContext {
 }
 
 func registerCommonMocks(mockContext *MockContext) {
-	mockContext.Container.RegisterSingleton(func() ioc.ServiceLocator {
+	mockContext.Container.MustRegisterSingleton(func() ioc.ServiceLocator {
 		return mockContext.Container
 	})
-	mockContext.Container.RegisterSingleton(func() azcore.TokenCredential {
+	mockContext.Container.MustRegisterSingleton(func() azcore.TokenCredential {
 		return mockContext.Credentials
 	})
-	mockContext.Container.RegisterSingleton(func() httputil.HttpClient {
+	mockContext.Container.MustRegisterSingleton(func() httputil.HttpClient {
 		return mockContext.HttpClient
 	})
-	mockContext.Container.RegisterSingleton(func() exec.CommandRunner {
+	mockContext.Container.MustRegisterSingleton(func() exec.CommandRunner {
 		return mockContext.CommandRunner
 	})
-	mockContext.Container.RegisterSingleton(func() input.Console {
+	mockContext.Container.MustRegisterSingleton(func() input.Console {
 		return mockContext.Console
 	})
-	mockContext.Container.RegisterSingleton(func() config.FileConfigManager {
+	mockContext.Container.MustRegisterSingleton(func() config.FileConfigManager {
 		return mockContext.ConfigManager
 	})
-	mockContext.Container.RegisterSingleton(func() *alpha.FeatureManager {
+	mockContext.Container.MustRegisterSingleton(func() *alpha.FeatureManager {
 		return mockContext.AlphaFeaturesManager
 	})
 }

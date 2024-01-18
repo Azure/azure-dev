@@ -17,12 +17,6 @@ var (
 	// but all the error messages are prefixed with `container:`
 	containerErrorRegex *regexp.Regexp = regexp.MustCompile("container:")
 
-	// The global/root level container
-	Global *NestedContainer = &NestedContainer{
-		inner:  container.Global,
-		parent: nil,
-	}
-
 	ErrResolveInstance error = errors.New("failed resolving instance from container")
 )
 
@@ -50,14 +44,20 @@ func NewNestedContainer(parent *NestedContainer) *NestedContainer {
 		parent: parent,
 	}
 
-	instance.RegisterScoped(func() ServiceLocator { return instance })
+	RegisterInstance[ServiceLocator](instance, instance)
 
 	return instance
 }
 
 // Registers a resolver with a singleton lifetime
+// Returns an error if the resolver is not valid
+func (c *NestedContainer) RegisterSingleton(resolveFn any) error {
+	return c.inner.SingletonLazy(resolveFn)
+}
+
+// Registers a resolver with a singleton lifetime
 // Panics if the resolver is not valid
-func (c *NestedContainer) RegisterSingleton(resolveFn any) {
+func (c *NestedContainer) MustRegisterSingleton(resolveFn any) {
 	container.MustSingletonLazy(c.inner, resolveFn)
 }
 
@@ -70,43 +70,92 @@ func (c *NestedContainer) RegisterSingletonAndInvoke(resolveFn any) error {
 
 // Registers a named resolver with a singleton lifetime
 // Returns an error if the resolver is not valid
-func (c *NestedContainer) RegisterNamedSingleton(name string, resolveFn any) {
+func (c *NestedContainer) RegisterNamedSingleton(name string, resolveFn any) error {
+	return c.inner.NamedSingletonLazy(name, resolveFn)
+}
+
+// Registers a named resolver with a singleton lifetime
+// Panics if the resolver is not valid
+func (c *NestedContainer) MustRegisterNamedSingleton(name string, resolveFn any) {
 	container.MustNamedSingletonLazy(c.inner, name, resolveFn)
 }
 
 // Registers a resolver with a transient lifetime (instance per resolution)
 // Returns an error if the resolver is not valid
-func (c *NestedContainer) RegisterTransient(resolveFn any) {
+func (c *NestedContainer) RegisterTransient(resolveFn any) error {
+	return c.inner.TransientLazy(resolveFn)
+}
+
+// Registers a named resolver with a singleton lifetime and instantiates the instance
+// Panics if the resolver is not valid
+func (c *NestedContainer) MustRegisterTransient(resolveFn any) {
 	container.MustTransientLazy(c.inner, resolveFn)
 }
 
 // Registers a named resolver with a transient lifetime (instance per resolution)
 // Returns an error if the resolver is not valid
-func (c *NestedContainer) RegisterNamedTransient(name string, resolveFn any) {
+func (c *NestedContainer) RegisterNamedTransient(name string, resolveFn any) error {
+	return c.inner.NamedTransientLazy(name, resolveFn)
+}
+
+// Registers a named resolver with a transient lifetime (instance per resolution)
+// Panics if the resolver is not valid
+func (c *NestedContainer) MustRegisterNamedTransient(name string, resolveFn any) {
 	container.MustNamedTransientLazy(c.inner, name, resolveFn)
 }
 
-// Registers a resolver with a scoped lifetime (instance per container)
+// Registers a resolver with a scoped lifetime (instance per scope)
+// Ex: Each new cobra command will create a new scope
 // Scoped registrations are added as singletons in the current container then are reset in any new child containers
-func (c *NestedContainer) RegisterScoped(resolveFn any) {
-	container.MustSingletonLazy(c.inner, resolveFn)
+// Returns an error if the resolver is not valid
+func (c *NestedContainer) RegisterScoped(resolveFn any) error {
+	if err := c.inner.SingletonLazy(resolveFn); err != nil {
+		return err
+	}
 
 	c.scopedBindings = append(c.scopedBindings, &binding{
 		lifetime: Scoped,
 		resolver: resolveFn,
 	})
+
+	return nil
 }
 
-// Registers a named resolver with a scoped lifetime (instance per container)
+// Registers a resolver with a scoped lifetime (instance per scope)
+// Ex: Each new cobra command will create a new scope
 // Scoped registrations are added as singletons in the current container then are reset in any new child containers
-func (c *NestedContainer) RegisterNamedScoped(name string, resolveFn any) {
-	container.MustNamedSingletonLazy(c.inner, name, resolveFn)
+// Panics if the resolver is not valid
+func (c *NestedContainer) MustRegisterScoped(resolveFn any) {
+	if err := c.RegisterScoped(resolveFn); err != nil {
+		panic(err)
+	}
+}
+
+// Registers a named resolver with a scoped lifetime (instance per scope)
+// Ex: Each new cobra command will create a new scope
+// Scoped registrations are added as singletons in the current container then are reset in any new child containers
+func (c *NestedContainer) RegisterNamedScoped(name string, resolveFn any) error {
+	if err := c.inner.NamedSingletonLazy(name, resolveFn); err != nil {
+		return err
+	}
 
 	c.scopedBindings = append(c.scopedBindings, &binding{
 		name:     name,
 		lifetime: Scoped,
 		resolver: resolveFn,
 	})
+
+	return nil
+}
+
+// Registers a named resolver with a scoped lifetime (instance per scope)
+// Ex: Each new cobra command will create a new scope
+// Scoped registrations are added as singletons in the current container then are reset in any new child containers
+// Panics if the resolver is not valid
+func (c *NestedContainer) MustRegisterNamedScoped(name string, resolveFn any) {
+	if err := c.RegisterNamedScoped(name, resolveFn); err != nil {
+		panic(err)
+	}
 }
 
 // Resolves an instance for the specified type
@@ -153,20 +202,24 @@ func RegisterNamedInstance[F any](c *NestedContainer, name string, instance F) {
 
 // NewScope creates a new nested container with a relationship back to the parent container
 // Scope registrations are converted to singleton registrations within the new nested container.
-func (c *NestedContainer) NewScope() *NestedContainer {
+func (c *NestedContainer) NewScope() (*NestedContainer, error) {
 	childContainer := NewNestedContainer(c)
 
 	for _, binding := range c.scopedBindings {
 		if binding.name == "" {
-			childContainer.RegisterSingleton(binding.resolver)
+			if err := childContainer.RegisterSingleton(binding.resolver); err != nil {
+				return nil, err
+			}
 		} else {
-			childContainer.RegisterNamedSingleton(binding.name, binding.resolver)
+			if err := childContainer.RegisterNamedSingleton(binding.name, binding.resolver); err != nil {
+				return nil, err
+			}
 		}
 
 		childContainer.scopedBindings = append(childContainer.scopedBindings, binding)
 	}
 
-	return childContainer
+	return childContainer, nil
 }
 
 // Inspects the specified error to determine whether the error is a

@@ -417,8 +417,8 @@ func createPipelineManager(
 		mockContext.Container,
 		mockContext.SubscriptionCredentialProvider,
 	)
-	mockContext.Container.RegisterSingleton(github.NewGitHubCli)
-	mockContext.Container.RegisterSingleton(git.NewGitCli)
+	mockContext.Container.MustRegisterSingleton(github.NewGitHubCli)
+	mockContext.Container.MustRegisterSingleton(git.NewGitCli)
 
 	// Pipeline providers
 	pipelineProviderMap := map[string]any{
@@ -429,7 +429,7 @@ func createPipelineManager(
 	}
 
 	for provider, constructor := range pipelineProviderMap {
-		mockContext.Container.RegisterNamedSingleton(string(provider), constructor)
+		mockContext.Container.MustRegisterNamedSingleton(string(provider), constructor)
 	}
 
 	return NewPipelineManager(

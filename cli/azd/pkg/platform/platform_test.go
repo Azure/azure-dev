@@ -10,8 +10,8 @@ import (
 func Test_Platform_Initialize(t *testing.T) {
 	t.Run("ExplicitConfig", func(t *testing.T) {
 		container := ioc.NewNestedContainer(nil)
-		container.RegisterNamedSingleton("default-platform", newDefaultProvider)
-		container.RegisterNamedSingleton("test-platform", newTestProvider)
+		container.MustRegisterNamedSingleton("default-platform", newDefaultProvider)
+		container.MustRegisterNamedSingleton("test-platform", newTestProvider)
 
 		config := &Config{
 			Type: PlatformKind("test"),
@@ -27,10 +27,10 @@ func Test_Platform_Initialize(t *testing.T) {
 
 	t.Run("ImplicitConfig", func(t *testing.T) {
 		container := ioc.NewNestedContainer(nil)
-		container.RegisterNamedSingleton("default-platform", newDefaultProvider)
-		container.RegisterNamedSingleton("test-platform", newTestProvider)
+		container.MustRegisterNamedSingleton("default-platform", newDefaultProvider)
+		container.MustRegisterNamedSingleton("test-platform", newTestProvider)
 
-		container.RegisterSingleton(func() (*Config, error) {
+		container.MustRegisterSingleton(func() (*Config, error) {
 			return nil, ErrPlatformConfigNotFound
 		})
 
@@ -45,10 +45,10 @@ func Test_Platform_Initialize(t *testing.T) {
 
 	t.Run("Unsupported", func(t *testing.T) {
 		container := ioc.NewNestedContainer(nil)
-		container.RegisterNamedSingleton("default-platform", newDefaultProvider)
-		container.RegisterNamedSingleton("test-platform", newTestProvider)
+		container.MustRegisterNamedSingleton("default-platform", newDefaultProvider)
+		container.MustRegisterNamedSingleton("test-platform", newTestProvider)
 
-		container.RegisterSingleton(func() (*Config, error) {
+		container.MustRegisterSingleton(func() (*Config, error) {
 			return nil, ErrPlatformNotSupported
 		})
 

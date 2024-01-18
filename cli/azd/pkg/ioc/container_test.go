@@ -12,7 +12,7 @@ import (
 func Test_Container_Resolve(t *testing.T) {
 	t.Run("Success", func(t *testing.T) {
 		container := NewNestedContainer(nil)
-		container.RegisterSingleton(func() string {
+		container.MustRegisterSingleton(func() string {
 			return "Test"
 		})
 
@@ -38,7 +38,7 @@ func Test_Container_Resolve(t *testing.T) {
 
 	t.Run("FailWithOtherError", func(t *testing.T) {
 		container := NewNestedContainer(nil)
-		container.RegisterSingleton(azdcontext.NewAzdContext)
+		container.MustRegisterSingleton(azdcontext.NewAzdContext)
 
 		var instance *azdcontext.AzdContext
 		// AzdContext resolver is registered above
@@ -53,15 +53,16 @@ func Test_Container_Resolve(t *testing.T) {
 
 func Test_Container_NewScope(t *testing.T) {
 	rootContainer := NewNestedContainer(nil)
-	rootContainer.RegisterSingleton(newSingletonService)
-	rootContainer.RegisterScoped(newScopedService)
+	rootContainer.MustRegisterSingleton(newSingletonService)
+	rootContainer.MustRegisterScoped(newScopedService)
 
 	var singletonInstance *singletonService
 	err := rootContainer.Resolve(&singletonInstance)
 	require.NoError(t, err)
 	require.NotNil(t, singletonInstance)
 
-	scope1 := rootContainer.NewScope()
+	scope1, err := rootContainer.NewScope()
+	require.NoError(t, err)
 	var scopedInstance1 *scopedService
 
 	err = scope1.Resolve(&scopedInstance1)
@@ -73,10 +74,11 @@ func Test_Container_NewScope(t *testing.T) {
 	require.NoError(t, err)
 	require.NotNil(t, singletonInstance2)
 
-	// Singletone instance 1 & 2 are singleton still singletons and should be the same
+	// Singleton instance 1 & 2 are singleton still singletons and should be the same
 	require.Same(t, singletonInstance, singletonInstance2)
 
-	scope2 := rootContainer.NewScope()
+	scope2, err := rootContainer.NewScope()
+	require.NoError(t, err)
 	var scopedInstance2 *scopedService
 
 	err = scope2.Resolve(&scopedInstance2)
@@ -96,7 +98,7 @@ func Test_Container_NewScope(t *testing.T) {
 
 func Test_Container_Transient_Register_Resolve(t *testing.T) {
 	container := NewNestedContainer(nil)
-	container.RegisterTransient(newTransientService)
+	container.MustRegisterTransient(newTransientService)
 
 	var instance1 *transientService
 	err := container.Resolve(&instance1)
@@ -139,16 +141,18 @@ func Test_Container_Singleton_Instance_Register_Resolve(t *testing.T) {
 		rootInstance := newSingletonService()
 		RegisterInstance(rootContainer, rootInstance)
 
-		scope1 := rootContainer.NewScope()
+		scope1, err := rootContainer.NewScope()
+		require.NoError(t, err)
 		scope1Instance := newSingletonService()
 		RegisterInstance(scope1, scope1Instance)
 
-		scope2 := rootContainer.NewScope()
+		scope2, err := rootContainer.NewScope()
+		require.NoError(t, err)
 		scope2Instance := newSingletonService()
 		RegisterInstance(scope2, scope2Instance)
 
 		var rootInstanceResolved *singletonService
-		err := rootContainer.Resolve(&rootInstanceResolved)
+		err = rootContainer.Resolve(&rootInstanceResolved)
 		require.NoError(t, err)
 		require.NotNil(t, rootInstanceResolved)
 

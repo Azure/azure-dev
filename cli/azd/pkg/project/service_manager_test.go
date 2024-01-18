@@ -374,8 +374,8 @@ func Test_ServiceManager_Events_With_Errors(t *testing.T) {
 }
 
 func setupMocksForServiceManager(mockContext *mocks.MockContext) {
-	mockContext.Container.RegisterNamedSingleton(string(ServiceLanguageFake), newFakeFramework)
-	mockContext.Container.RegisterNamedSingleton(string(ServiceTargetFake), newFakeServiceTarget)
+	mockContext.Container.MustRegisterNamedSingleton(string(ServiceLanguageFake), newFakeFramework)
+	mockContext.Container.MustRegisterNamedSingleton(string(ServiceTargetFake), newFakeServiceTarget)
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "fake-framework restore")

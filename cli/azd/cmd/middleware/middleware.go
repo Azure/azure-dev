@@ -2,7 +2,6 @@ package middleware
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"slices"
 
@@ -43,17 +42,15 @@ type NextFn func(ctx context.Context) (*actions.ActionResult, error)
 // Middleware runner stores middleware registrations and orchestrates the
 // invocation of middleware components and actions.
 type MiddlewareRunner struct {
-	chain             []string
-	actionCache       map[actions.Action]*actions.ActionResult
-	registrationCache map[string]any
+	chain     []string
+	container *ioc.NestedContainer
 }
 
 // Creates a new middleware runner
-func NewMiddlewareRunner() *MiddlewareRunner {
+func NewMiddlewareRunner(container *ioc.NestedContainer) *MiddlewareRunner {
 	return &MiddlewareRunner{
-		chain:             []string{},
-		actionCache:       map[actions.Action]*actions.ActionResult{},
-		registrationCache: map[string]any{},
+		chain:     []string{},
+		container: container,
 	}
 }
 
@@ -76,18 +73,6 @@ func (r *MiddlewareRunner) RunAction(
 
 	// Create a new context with the child container which will be leveraged on any child command/actions
 	ioc.RegisterInstance(actionContainer, runOptions)
-
-	// Registers all the registered middlewares into the IoC container for the new scope
-	for name, resolveFn := range r.registrationCache {
-		if err := actionContainer.RegisterNamedTransient(name, resolveFn); err != nil {
-			//nolint: lll
-			return nil, fmt.Errorf(
-				"failed registering Middleware for '%s'. Ensure the resolver is a valid go function and resolves without error. %w",
-				name,
-				err,
-			)
-		}
-	}
 
 	// This recursive function executes the middleware chain in the order that
 	// the middlewares were registered. nextFn is passed into the middleware run
@@ -123,7 +108,9 @@ func (r *MiddlewareRunner) RunAction(
 
 // Registers middleware components that will be run for all actions
 func (r *MiddlewareRunner) Use(name string, resolveFn any) error {
-	r.registrationCache[name] = resolveFn
+	if err := r.container.RegisterNamedTransient(name, resolveFn); err != nil {
+		return err
+	}
 
 	if !slices.Contains(r.chain, name) {
 		r.chain = append(r.chain, name)

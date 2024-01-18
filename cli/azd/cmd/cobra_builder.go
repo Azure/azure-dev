@@ -105,6 +105,11 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 		ctx := tools.WithInstalledCheckCache(cmd.Context())
 		ioc.RegisterInstance(cb.container, ctx)
 
+		// Register any required middleware registered for the current action descriptor
+		if err := cb.registerMiddleware(descriptor); err != nil {
+			return err
+		}
+
 		// Create new container scope for the current command
 		cmdContainer, err := cb.container.NewScope()
 		if err != nil {
@@ -120,10 +125,6 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 		// Override the go context within the command container
 		ctx = ioc.WithContainer(ctx, cmdContainer)
 		ioc.RegisterInstance(cmdContainer, ctx)
-
-		if err := cb.registerMiddleware(descriptor); err != nil {
-			return err
-		}
 
 		actionName := createActionName(cmd)
 		var action actions.Action

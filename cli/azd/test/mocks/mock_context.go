@@ -34,8 +34,6 @@ func NewMockContext(ctx context.Context) *MockContext {
 	httpClient := mockhttp.NewMockHttpUtil()
 	configManager := mockconfig.NewMockConfigManager()
 	config := config.NewEmptyConfig()
-	container := ioc.NewNestedContainer(nil)
-	ctx = ioc.WithContainer(ctx, container)
 
 	mockContext := &MockContext{
 		Credentials:                    &MockCredentials{},
@@ -46,7 +44,7 @@ func NewMockContext(ctx context.Context) *MockContext {
 		ConfigManager:                  configManager,
 		SubscriptionCredentialProvider: &MockSubscriptionCredentialProvider{},
 		MultiTenantCredentialProvider:  &MockMultiTenantCredentialProvider{},
-		Container:                      container,
+		Container:                      ioc.NewNestedContainer(nil),
 		Config:                         config,
 		AlphaFeaturesManager:           alpha.NewFeaturesManagerWithConfig(config),
 	}

@@ -117,14 +117,11 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 		}
 
 		// Registers the following to enable injection into actions that require them
+		ioc.RegisterInstance(cmdContainer, ctx)
 		ioc.RegisterInstance(cmdContainer, cmd)
 		ioc.RegisterInstance(cmdContainer, args)
 		ioc.RegisterInstance(cmdContainer, cmdContainer)
 		ioc.RegisterInstance[ioc.ServiceLocator](cmdContainer, cmdContainer)
-
-		// Override the go context within the command container
-		ctx = ioc.WithContainer(ctx, cmdContainer)
-		ioc.RegisterInstance(cmdContainer, ctx)
 
 		actionName := createActionName(cmd)
 		var action actions.Action
@@ -149,8 +146,9 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 			Args:        args,
 		}
 
+		// Set the container that should be used for resolving middleware components
+		runOptions.WithContainer(cmdContainer)
 		// Run the middleware chain with action
-		log.Printf("Resolved action '%s'\n", actionName)
 		actionResult, err := cb.runner.RunAction(ctx, runOptions, action)
 
 		// At this point, we know that there might be an error, so we can silence cobra from showing it after us.

@@ -24,6 +24,8 @@ var childActionKey childActionKeyType = "child-action"
 
 // Middleware Run options
 type Options struct {
+	container *ioc.NestedContainer
+
 	CommandPath string
 	Name        string
 	Aliases     []string
@@ -34,6 +36,11 @@ type Options struct {
 func (o *Options) IsChildAction(ctx context.Context) bool {
 	value, ok := ctx.Value(childActionKey).(bool)
 	return ok && value
+}
+
+// Sets the container to be used for resolving middleware components
+func (o *Options) WithContainer(container *ioc.NestedContainer) {
+	o.container = container
 }
 
 // Executes the next middleware in the command chain
@@ -66,9 +73,9 @@ func (r *MiddlewareRunner) RunAction(
 	var nextFn NextFn
 
 	// We need to get the actionContainer for the current executing scope
-	actionContainer, err := ioc.GetContainer(ctx)
-	if err != nil {
-		return nil, err
+	actionContainer := runOptions.container
+	if actionContainer == nil {
+		actionContainer = r.container
 	}
 
 	// Create a new context with the child container which will be leveraged on any child command/actions

@@ -279,15 +279,6 @@ resource {{bicepName $name}} 'Microsoft.App/containerApps@2023-05-02-preview' = 
 {{- end}}
       }
 {{- end}}
-      secrets:[
-{{- range $name, $value := .CosmosDbAccounts}}
-        {
-          name: '{{bicepName $name}}CosmosConnectionString'
-          KeyVaultUrl: {{bicepName $name}}CosmosConnectionString.properties.secretUri
-          identity: 'system'
-        }
-{{- end}}
-      ]
     }
     template: {
       containers: [
@@ -300,12 +291,6 @@ resource {{bicepName $name}} 'Microsoft.App/containerApps@2023-05-02-preview' = 
             {
               name: '{{$name}}'
               value: '{{$value}}'
-            }
-{{- end}}
-{{range $name, $value := .CosmosDbAccounts}}
-            {
-              name: toUpper(AZURE_COSMOS_CONNECTION_STRING_{{bicepName $name}})
-              secretRef: '{{bicepName $name}}CosmosConnectionString'
             }
 {{- end}}
           ]

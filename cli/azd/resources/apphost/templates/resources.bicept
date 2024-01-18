@@ -467,6 +467,6 @@ output SERVICE_BINDING_{{alphaSnakeUpper $cname}}_ENDPOINT string = {{bicepName 
 output SERVICE_BINDING_{{alphaSnakeUpper $name}}_ENDPOINT string = {{bicepName $name}}.properties.vaultUri
 {{end -}}
 {{range $name, $value := .CosmosDbAccounts -}}
-output SERVICE_BINDING_{{alphaSnakeUpper $name}}_CONNECTION_STRING string = {{bicepName $name}}CosmosConnectionString.properties.value
+output SERVICE_BINDING_{{alphaSnakeUpper $name}}_ENDPOINT string = {{bicepName $name}}.properties.documentEndpoint
 {{end -}}
 {{ end}}

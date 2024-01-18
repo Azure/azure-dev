@@ -18,14 +18,14 @@ var testWorkflow = &Workflow{
 }
 
 func Test_WorkflowMap_MarshalYAML(t *testing.T) {
-	m := NewWorkflowMap()
-	m.Set("up", testWorkflow)
-	m.Set("down", testWorkflow)
+	workflowMap := WorkflowMap{}
+	workflowMap["up"] = testWorkflow
+	workflowMap["down"] = testWorkflow
 
-	expected, err := yaml.Marshal(m.inner)
+	expected, err := yaml.Marshal(workflowMap)
 	require.NoError(t, err)
 
-	actual, err := yaml.Marshal(m)
+	actual, err := yaml.Marshal(workflowMap)
 	require.NoError(t, err)
 
 	require.NoError(t, err)
@@ -34,7 +34,7 @@ func Test_WorkflowMap_MarshalYAML(t *testing.T) {
 
 func Test_WorkflowMap_UnmarshallYAML(t *testing.T) {
 	t.Run("array style", func(t *testing.T) {
-		var wm *WorkflowMap
+		var wm WorkflowMap
 		yamlString := heredoc.Doc(`
 			up:
 			  - azd: package --all
@@ -45,14 +45,14 @@ func Test_WorkflowMap_UnmarshallYAML(t *testing.T) {
 		err := yaml.Unmarshal([]byte(yamlString), &wm)
 		require.NoError(t, err)
 
-		upWorkflow, ok := wm.Get("up")
+		upWorkflow, ok := wm["up"]
 		require.True(t, ok)
 
 		assertWorkflow(t, upWorkflow)
 	})
 
 	t.Run("map style", func(t *testing.T) {
-		var wm *WorkflowMap
+		var workflowMap WorkflowMap
 		yamlString := heredoc.Doc(`
 			up:
 			  steps:
@@ -61,17 +61,17 @@ func Test_WorkflowMap_UnmarshallYAML(t *testing.T) {
 			    - azd: deploy --all
 		`)
 
-		err := yaml.Unmarshal([]byte(yamlString), &wm)
+		err := yaml.Unmarshal([]byte(yamlString), &workflowMap)
 		require.NoError(t, err)
 
-		upWorkflow, ok := wm.Get("up")
+		upWorkflow, ok := workflowMap["up"]
 		require.True(t, ok)
 
 		assertWorkflow(t, upWorkflow)
 	})
 
 	t.Run("verbose style", func(t *testing.T) {
-		var wm *WorkflowMap
+		var workflowMap WorkflowMap
 		yamlString := heredoc.Doc(`
 			up:
 			  steps:
@@ -87,22 +87,22 @@ func Test_WorkflowMap_UnmarshallYAML(t *testing.T) {
 			          - --all
 		`)
 
-		err := yaml.Unmarshal([]byte(yamlString), &wm)
+		err := yaml.Unmarshal([]byte(yamlString), &workflowMap)
 		require.NoError(t, err)
 
-		upWorkflow, ok := wm.Get("up")
+		upWorkflow, ok := workflowMap["up"]
 		require.True(t, ok)
 
 		assertWorkflow(t, upWorkflow)
 	})
 
 	t.Run("invalid workflow", func(t *testing.T) {
-		var wm *WorkflowMap
+		var workflowMap WorkflowMap
 		yamlString := heredoc.Doc(`
 			up: provision && deploy --all && package --all
 		`)
 
-		err := yaml.Unmarshal([]byte(yamlString), &wm)
+		err := yaml.Unmarshal([]byte(yamlString), &workflowMap)
 		require.Error(t, err)
 	})
 }

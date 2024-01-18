@@ -105,7 +105,7 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	startTime := time.Now()
 
-	upWorkflow, has := u.projectConfig.Workflows.Get("up")
+	upWorkflow, has := u.projectConfig.Workflows["up"]
 	if !has {
 		upWorkflow = defaultUpWorkflow
 	} else {

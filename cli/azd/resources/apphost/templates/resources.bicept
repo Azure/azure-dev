@@ -349,6 +349,38 @@ resource {{bicepName $name}}OperatorRoleAssignment 'Microsoft.Authorization/role
   }
 }
 
+resource {{bicepName $name}}KeyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
+  name: replace('kv-{{$name}}-${resourceToken}', '-', '')
+  location: location
+  properties: {
+    sku: {
+      name: 'standard'
+      family: 'A'
+    }
+    tenantId: subscription().tenantId
+    enableRbacAuthorization: true
+  }
+  tags: union(tags, {'aspire-resource-name': '{{$name}}'})
+}
+
+resource {{bicepName $name}}AdministratorRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid({{bicepName $name}}.id, managedIdentity.id, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '00482a5a-887f-4fb3-b363-3b7fe8e74483'))
+  scope: {{bicepName $name}}KeyVault
+  properties: {
+    principalId: managedIdentity.properties.principalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId:  subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '00482a5a-887f-4fb3-b363-3b7fe8e74483')
+  }
+}
+
+resource {{bicepName $name}}CosmosConnectionString 'Microsoft.KeyVault/vaults/secrets@2022-07-01' = {
+  parent: {{bicepName $name}}KeyVault
+  name: 'cs-{{$name}}-${resourceToken}'
+  properties: {
+    value: {{bicepName $name}}.listConnectionStrings().connectionStrings[0].connectionString
+  }
+}
+
 {{range $cname := $value.Databases}}
   resource {{bicepName $cname}} 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases@2023-04-15' = {
   name: '{{$cname}}'
@@ -404,8 +436,6 @@ output SERVICE_BINDING_{{alphaSnakeUpper $cname}}_ENDPOINT string = {{bicepName 
 output SERVICE_BINDING_{{alphaSnakeUpper $name}}_ENDPOINT string = {{bicepName $name}}.properties.vaultUri
 {{end -}}
 {{range $name, $value := .CosmosDbAccounts -}}
-{{range $cname := $value.Databases -}}
-output SERVICE_BINDING_{{alphaSnakeUpper $cname}}_ENDPOINT string = {{bicepName $name}}.properties.documentEndpoint
-{{end -}}
+output connectionStringKey_{{alphaSnakeUpper $name}} string = {{bicepName $name}}.name
 {{end -}}
 {{ end}}

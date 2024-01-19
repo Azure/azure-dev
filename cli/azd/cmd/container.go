@@ -615,7 +615,6 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	registerAction[*downAction](container, "azd-down-action")
 	registerAction[*configShowAction](container, "azd-config-show-action")
 
-	container.RegisterSingleton(cloud.NewCloud)
 	container.RegisterSingleton(func(
 		ctx context.Context,
 		userConfigManager config.UserConfigManager,

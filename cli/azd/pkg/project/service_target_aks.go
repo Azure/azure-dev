@@ -11,6 +11,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
+	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -228,6 +229,10 @@ func (t *aksTarget) Deploy(
 		})
 }
 
+	deploymentPath = filepath.Join(serviceConfig.Path(), deploymentPath)
+
+	err := t.kubectl.Apply(ctx, deploymentPath, nil)
+	kustomizeDir := filepath.Join(serviceConfig.Path(), overlayPath)
 // Gets the service endpoints for the AKS service target
 func (t *aksTarget) Endpoints(
 	ctx context.Context,
@@ -337,14 +342,32 @@ func (t *aksTarget) ensureClusterContext(
 		return "", fmt.Errorf("failed adding/updating kube context, %w", err)
 	}
 
-	// Verify we have proper cluster connection using call to `kubectl cluster-info`
-	// If not, attempt to convert kube config to use the exec auth module with azd auth
-	convertOptions := &kubelogin.ConvertOptions{
-		Login:      "azd",
-		KubeConfig: kubeConfigPath,
+	// Get the provisioned cluster properties to inspect configuration
+	managedCluster, err := t.managedClustersService.Get(
+		ctx,
+		targetResource.SubscriptionId(),
+		targetResource.ResourceGroupName(),
+		clusterName,
+	)
+	if err != nil {
+		return "", fmt.Errorf("failed retrieving managed cluster, %w", err)
 	}
-	if err := t.kubeLoginCli.ConvertKubeConfig(ctx, convertOptions); err != nil {
-		return "", err
+
+	rbacEnabled := convert.ToValueWithDefault(managedCluster.Properties.EnableRBAC, false)
+	localAccountsDisabled := convert.ToValueWithDefault(managedCluster.Properties.DisableLocalAccounts, false)
+
+	// If we're connecting to a cluster with RBAC enabled and local accounts disabled
+	// then we need to convert the kube config to use the exec auth module with azd auth
+	if rbacEnabled && localAccountsDisabled {
+		// Verify we have proper cluster connection using call to `kubectl cluster-info`
+		// If not, attempt to convert kube config to use the exec auth module with azd auth
+		convertOptions := &kubelogin.ConvertOptions{
+			Login:      "azd",
+			KubeConfig: kubeConfigPath,
+		}
+		if err := t.kubeLoginCli.ConvertKubeConfig(ctx, convertOptions); err != nil {
+			return "", err
+		}
 	}
 
 	// Merge the cluster config/context into the default kube config
@@ -352,8 +375,6 @@ func (t *aksTarget) ensureClusterContext(
 	if err != nil {
 		return "", err
 	}
-
-	t.kubectl.SetKubeConfig(kubeConfigPath)
 
 	// Setup the default kube context to use the AKS cluster context
 	if _, err := t.kubectl.ConfigUseContext(ctx, clusterName, nil); err != nil {

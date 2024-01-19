@@ -12,6 +12,13 @@ import (
 
 // ManagedClustersService provides actions on top of Azure Kubernetes Service (AKS) Managed Clusters
 type ManagedClustersService interface {
+	// Gets the managed cluster resource by name
+	Get(
+		ctx context.Context,
+		subscriptionId string,
+		resourceGroupName string,
+		resourceName string,
+	) (*armcontainerservice.ManagedCluster, error)
 	// Gets the admin credentials for the specified resource
 	GetAdminCredentials(
 		ctx context.Context,
@@ -44,6 +51,26 @@ func NewManagedClustersService(
 		httpClient:         httpClient,
 		userAgent:          azdinternal.UserAgent(),
 	}
+}
+
+// Gets the managed cluster resource by name
+func (cs *managedClustersService) Get(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroupName string,
+	resourceName string,
+) (*armcontainerservice.ManagedCluster, error) {
+	client, err := cs.createManagedClusterClient(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	managedCluster, err := client.Get(ctx, resourceGroupName, resourceName, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return &managedCluster.ManagedCluster, nil
 }
 
 // Gets the user credentials for the specified resource

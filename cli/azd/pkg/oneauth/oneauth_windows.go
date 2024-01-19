@@ -54,13 +54,13 @@ var (
 	//go:embed bridge/_build/Release/fmt.dll.sha256
 	fmtChecksum []byte
 
-	// bridge is a lazy-loaded DLL that provides access to the OneAuth API
-	bridge       *windows.LazyDLL
-	authenticate *windows.LazyProc
-	freeAR       *windows.LazyProc
-	logout       *windows.LazyProc
-	shutdown     *windows.LazyProc
-	startup      *windows.LazyProc
+	// bridge provides access to the OneAuth API
+	bridge       *windows.DLL
+	authenticate *windows.Proc
+	freeAR       *windows.Proc
+	logout       *windows.Proc
+	shutdown     *windows.Proc
+	startup      *windows.Proc
 )
 
 type authResult struct {
@@ -79,9 +79,6 @@ type credential struct {
 
 // NewCredential creates a new credential that acquires tokens via OneAuth.
 func NewCredential(authority, clientID string, opts CredentialOptions) (azcore.TokenCredential, error) {
-	if err := start(clientID, opts.Debug); err != nil {
-		return nil, err
-	}
 	cred := &credential{
 		authority:     authority,
 		clientID:      clientID,
@@ -192,6 +189,7 @@ func loadDLL() error {
 	if err != nil {
 		return err
 	}
+	dir := filepath.Join(cacheDir, "azd")
 	for _, dll := range []struct {
 		name           string
 		checksum, data []byte
@@ -203,19 +201,36 @@ func loadDLL() error {
 		if err != nil {
 			return fmt.Errorf("parsing checksum for %s: %w", dll.name, err)
 		}
-		err = writeDynamicLib(filepath.Join(cacheDir, "azd", dll.name), dll.data, hash)
+		p := filepath.Join(dir, dll.name)
+		err = writeDynamicLib(p, dll.data, hash)
 		if err != nil {
-			return err
+			return fmt.Errorf("writing %s: %w", p, err)
+		}
+		// LoadLibrary searches the path for a DLL's dependencies but not the directory containing that DLL.
+		// So, if a DLL has dependencies (currently only bridge.dll does), we load them first.
+		if dll.name != "bridge.dll" {
+			_, err = windows.LoadDLL(p)
+			if err != nil {
+				return fmt.Errorf("loading %s: %w", p, err)
+			}
 		}
 	}
+	p := filepath.Join(dir, "bridge.dll")
+	bridge, err = windows.LoadDLL(p)
 	if err == nil {
-		p := filepath.Join(cacheDir, "azd", "bridge.dll")
-		bridge = windows.NewLazyDLL(p)
-		authenticate = bridge.NewProc("Authenticate")
-		freeAR = bridge.NewProc("FreeWrappedAuthResult")
-		logout = bridge.NewProc("Logout")
-		shutdown = bridge.NewProc("Shutdown")
-		startup = bridge.NewProc("Startup")
+		authenticate, err = bridge.FindProc("Authenticate")
+	}
+	if err == nil {
+		freeAR, err = bridge.FindProc("FreeWrappedAuthResult")
+	}
+	if err == nil {
+		logout, err = bridge.FindProc("Logout")
+	}
+	if err == nil {
+		shutdown, err = bridge.FindProc("Shutdown")
+	}
+	if err == nil {
+		startup, err = bridge.FindProc("Startup")
 	}
 	return err
 }

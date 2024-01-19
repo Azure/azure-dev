@@ -242,11 +242,40 @@ func setupMocksForAksTarget(mockContext *mocks.MockContext) error {
 		return err
 	}
 
+	setupGetClusterMock(mockContext, http.StatusOK)
 	setupMocksForAcr(mockContext)
 	setupMocksForKubectl(mockContext)
 	setupMocksForDocker(mockContext)
 
 	return nil
+}
+
+func setupGetClusterMock(mockContext *mocks.MockContext, statusCode int) {
+	// Get cluster configuration
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet && strings.Contains(
+			request.URL.Path,
+			"Microsoft.ContainerService/managedClusters/AKS_CLUSTER",
+		)
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		managedCluster := armcontainerservice.ManagedClustersClientGetResponse{
+			ManagedCluster: armcontainerservice.ManagedCluster{
+				ID:       convert.RefOf("cluster1"),
+				Location: convert.RefOf("eastus2"),
+				Type:     convert.RefOf("Microsoft.ContainerService/managedClusters"),
+				Properties: &armcontainerservice.ManagedClusterProperties{
+					EnableRBAC:           convert.RefOf(true),
+					DisableLocalAccounts: convert.RefOf(false),
+				},
+			},
+		}
+
+		if statusCode == http.StatusOK {
+			return mocks.CreateHttpResponseWithBody(request, statusCode, managedCluster)
+		} else {
+			return mocks.CreateEmptyHttpResponse(request, statusCode)
+		}
+	})
 }
 
 func setupListClusterAdminCredentialsMock(mockContext *mocks.MockContext, statusCode int) error {

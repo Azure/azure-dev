@@ -359,8 +359,6 @@ func (t *aksTarget) ensureClusterContext(
 	// If we're connecting to a cluster with RBAC enabled and local accounts disabled
 	// then we need to convert the kube config to use the exec auth module with azd auth
 	if rbacEnabled && localAccountsDisabled {
-		// Verify we have proper cluster connection using call to `kubectl cluster-info`
-		// If not, attempt to convert kube config to use the exec auth module with azd auth
 		convertOptions := &kubelogin.ConvertOptions{
 			Login:      "azd",
 			KubeConfig: kubeConfigPath,

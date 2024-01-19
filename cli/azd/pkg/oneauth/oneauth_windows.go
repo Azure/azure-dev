@@ -48,11 +48,11 @@ var (
 	//go:embed bridge/_build/Release/bridge.dll
 	bridgeDLL []byte
 	//go:embed bridge/_build/Release/bridge.dll.sha256
-	bridgeChecksum []byte
+	bridgeChecksum string
 	//go:embed bridge/_build/Release/fmt.dll
 	fmtDLL []byte
 	//go:embed bridge/_build/Release/fmt.dll.sha256
-	fmtChecksum []byte
+	fmtChecksum string
 
 	// bridge provides access to the OneAuth API
 	bridge       *windows.DLL
@@ -191,13 +191,13 @@ func loadDLL() error {
 	}
 	dir := filepath.Join(cacheDir, "azd")
 	for _, dll := range []struct {
-		name           string
-		checksum, data []byte
+		name, checksum string
+		data           []byte
 	}{
 		{name: "fmt.dll", checksum: fmtChecksum, data: fmtDLL},
 		{name: "bridge.dll", checksum: bridgeChecksum, data: bridgeDLL},
 	} {
-		hash, err := cmakeChecksumToBytes(dll.checksum)
+		hash, err := extractCMakeChecksum(dll.checksum)
 		if err != nil {
 			return fmt.Errorf("parsing checksum for %s: %w", dll.name, err)
 		}

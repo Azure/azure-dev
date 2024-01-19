@@ -9,12 +9,12 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/kubelogin"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
@@ -62,6 +62,7 @@ type aksTarget struct {
 	managedClustersService azcli.ManagedClustersService
 	resourceManager        ResourceManager
 	kubectl                kubectl.KubectlCli
+	kubeLoginCli           *kubelogin.Cli
 	containerHelper        *ContainerHelper
 }
 
@@ -73,6 +74,7 @@ func NewAksTarget(
 	managedClustersService azcli.ManagedClustersService,
 	resourceManager ResourceManager,
 	kubectlCli kubectl.KubectlCli,
+	kubeLoginCli *kubelogin.Cli,
 	containerHelper *ContainerHelper,
 ) ServiceTarget {
 	return &aksTarget{
@@ -82,6 +84,7 @@ func NewAksTarget(
 		managedClustersService: managedClustersService,
 		resourceManager:        resourceManager,
 		kubectl:                kubectlCli,
+		kubeLoginCli:           kubeLoginCli,
 		containerHelper:        containerHelper,
 	}
 }
@@ -312,9 +315,52 @@ func (t *aksTarget) ensureClusterContext(
 
 	// The kubeConfig that we care about will also be at position 0
 	// I don't know if there is a valid use case where this credential results would container multiple configs
-	kubeConfigPath, err = t.configureK8sContext(ctx, clusterName, defaultNamespace, clusterCreds.Kubeconfigs[0])
+	kubeConfig, err := kubectl.ParseKubeConfig(ctx, clusterCreds.Kubeconfigs[0].Value)
+	if err != nil {
+		return "", fmt.Errorf(
+			"failed parsing kube config. Ensure your configuration is valid yaml. %w",
+			err,
+		)
+	}
+
+	// Set default namespace for the context
+	// This avoids having to specify the namespace for every kubectl command
+	kubeConfig.Contexts[0].Context.Namespace = defaultNamespace
+	kubeConfigManager, err := kubectl.NewKubeConfigManager(t.kubectl)
 	if err != nil {
 		return "", err
+	}
+
+	// Create or update the kube config/context for the AKS cluster
+	kubeConfigPath, err = kubeConfigManager.AddOrUpdateContext(ctx, clusterName, kubeConfig)
+	if err != nil {
+		return "", fmt.Errorf("failed adding/updating kube context, %w", err)
+	}
+
+	// Verify we have proper cluster connection using call to `kubectl cluster-info`
+	// If not, attempt to convert kube config to use the exec auth module with azd auth
+	convertOptions := &kubelogin.ConvertOptions{
+		Login:      "azd",
+		KubeConfig: kubeConfigPath,
+	}
+	if err := t.kubeLoginCli.ConvertKubeConfig(ctx, convertOptions); err != nil {
+		return "", err
+	}
+
+	// Merge the cluster config/context into the default kube config
+	kubeConfigPath, err = kubeConfigManager.MergeConfigs(ctx, "config", clusterName)
+	if err != nil {
+		return "", err
+	}
+
+	t.kubectl.SetKubeConfig(kubeConfigPath)
+
+	// Setup the default kube context to use the AKS cluster context
+	if _, err := t.kubectl.ConfigUseContext(ctx, clusterName, nil); err != nil {
+		return "", fmt.Errorf(
+			"failed setting kube context '%s'. Ensure the specified context exists. %w", clusterName,
+			err,
+		)
 	}
 
 	return kubeConfigPath, nil
@@ -340,43 +386,6 @@ func (t *aksTarget) ensureNamespace(ctx context.Context, namespace string) error
 	}
 
 	return nil
-}
-
-func (t *aksTarget) configureK8sContext(
-	ctx context.Context,
-	clusterName string,
-	namespace string,
-	credentialResult *armcontainerservice.CredentialResult,
-) (string, error) {
-	kubeConfigManager, err := kubectl.NewKubeConfigManager(t.kubectl)
-	if err != nil {
-		return "", err
-	}
-
-	kubeConfig, err := kubectl.ParseKubeConfig(ctx, credentialResult.Value)
-	if err != nil {
-		return "", fmt.Errorf(
-			"failed parsing kube config. Ensure your configuration is valid yaml. %w",
-			err,
-		)
-	}
-
-	// Set default namespace for the context
-	// This avoids having to specify the namespace for every kubectl command
-	kubeConfig.Contexts[0].Context.Namespace = namespace
-	kubeConfigPath, err := kubeConfigManager.AddOrUpdateContext(ctx, clusterName, kubeConfig)
-	if err != nil {
-		return "", fmt.Errorf("failed adding/updating kube context, %w", err)
-	}
-
-	if _, err := t.kubectl.ConfigUseContext(ctx, clusterName, nil); err != nil {
-		return "", fmt.Errorf(
-			"failed setting kube context '%s'. Ensure the specified context exists. %w", clusterName,
-			err,
-		)
-	}
-
-	return kubeConfigPath, nil
 }
 
 // Finds a deployment using the specified deploymentNameFilter string

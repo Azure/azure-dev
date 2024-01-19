@@ -374,7 +374,7 @@ resource {{bicepName $name}}KeyVaultRoleAssignment 'Microsoft.Authorization/role
 
 // resource {{bicepName $name}}KeyVaultAccessPolicies 'Microsoft.KeyVault/vaults/accessPolicies@2022-07-01' = {
 //  parent: {{bicepName $name}}KeyVault
-//  name: any('vaultap-{{$name}}-${resourceToken}')
+//  name: {{bicepName $name}}KeyVault/add
 //  properties: {
 //    accessPolicies: [ 
 //      {

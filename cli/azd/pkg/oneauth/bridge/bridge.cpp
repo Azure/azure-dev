@@ -63,10 +63,10 @@ void Shutdown()
 // wrapAuthResult copies the data from a OneAuth AuthResult into a new struct that can be returned to
 // Go. An AuthResult itself can't be returned to Go because it contains shared_ptrs that may be freed
 // before Go is done with them. This workaround makes the Go application responsible for calling
-// FreeAuthnResult to free memory allocated here.
-AuthnResult *wrapAuthResult(const AuthResult *ar)
+// FreeWrappedAuthResult to free memory allocated here.
+WrappedAuthResult *wrapAuthResult(const AuthResult *ar)
 {
-    auto wrapped = new AuthnResult();
+    auto wrapped = new WrappedAuthResult();
     if (auto account = ar->GetAccount())
     {
         wrapped->accountID = strdup(account->GetHomeAccountId().c_str());
@@ -85,7 +85,7 @@ AuthnResult *wrapAuthResult(const AuthResult *ar)
     return wrapped;
 }
 
-AuthnResult *Authenticate(const char *authority, const char *homeAccountID, const char *scope, bool allowPrompt)
+WrappedAuthResult *Authenticate(const char *authority, const char *homeAccountID, const char *scope, bool allowPrompt)
 {
     auto authParams = AuthParameters::CreateForBearer(authority, scope);
     auto telemetryParams = TelemetryParameters(UUID::Generate());
@@ -123,7 +123,7 @@ AuthnResult *Authenticate(const char *authority, const char *homeAccountID, cons
     {
         if (!allowPrompt)
         {
-            auto ar = new AuthnResult();
+            auto ar = new WrappedAuthResult();
             ar->errorDescription = strdup("Interactive authentication is required. Run 'azd auth login'");
             return ar;
         }
@@ -151,7 +151,7 @@ AuthnResult *Authenticate(const char *authority, const char *homeAccountID, cons
             else if (std::chrono::steady_clock::now() - start >= std::chrono::seconds(timeoutSeconds))
             {
                 PostQuitMessage(0);
-                auto ar = new AuthnResult();
+                auto ar = new WrappedAuthResult();
                 ar->errorDescription = strdup("timed out waiting for login");
                 return ar;
             }
@@ -178,12 +178,12 @@ void Logout()
     }
 }
 
-void FreeAuthnResult(AuthnResult *authnResult)
+void FreeWrappedAuthResult(WrappedAuthResult *WrappedAuthResult)
 {
     // free the C strings because they were allocated with strdup;
     // delete the struct because it was allocated with new
-    free(authnResult->accountID);
-    free(authnResult->errorDescription);
-    free(authnResult->token);
-    delete authnResult;
+    free(WrappedAuthResult->accountID);
+    free(WrappedAuthResult->errorDescription);
+    free(WrappedAuthResult->token);
+    delete WrappedAuthResult;
 }

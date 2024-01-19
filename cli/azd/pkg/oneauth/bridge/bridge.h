@@ -14,9 +14,9 @@ extern "C"
         char *errorDescription;
         int expiresOn;
         char *token;
-    } AuthnResult;
+    } WrappedAuthResult;
 
-    __declspec(dllexport) void FreeAuthnResult(AuthnResult *);
+    __declspec(dllexport) void FreeWrappedAuthResult(WrappedAuthResult *);
 
     // Startup OneAuth. Returns an error message if this fails, NULL if it succeeds.
     // The returned string must be freed by the caller. The parameters are:
@@ -27,7 +27,7 @@ extern "C"
     __declspec(dllexport) const char *Startup(const char *clientId, const char *applicationId, const char *version, bool debug);
 
     // Authenticate acquires an access token. It will display an interactive login window if necessary, unless allowPrompt is false.
-    __declspec(dllexport) AuthnResult *Authenticate(const char *authority, const char *homeAccountID, const char *scope, bool allowPrompt);
+    __declspec(dllexport) WrappedAuthResult *Authenticate(const char *authority, const char *homeAccountID, const char *scope, bool allowPrompt);
 
     // Logout disassociates all accounts from the application. This prevents
     // Authenticate silently using them but doesn't delete any of their data.

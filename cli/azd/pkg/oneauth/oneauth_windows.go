@@ -20,7 +20,7 @@ typedef struct
 	char *errorDescription;
 	int expiresOn;
 	char *token;
-} AuthnResult;
+} WrappedAuthResult;
 */
 import "C"
 
@@ -166,7 +166,7 @@ func authn(authority, clientID, homeAccountID, scope string, noPrompt, debug boo
 	}
 	defer freeAR.Call(result)
 
-	ar := (*C.AuthnResult)(unsafe.Pointer(result))
+	ar := (*C.WrappedAuthResult)(unsafe.Pointer(result))
 	if ar.errorDescription != nil {
 		res.errorDesc = C.GoString(ar.errorDescription)
 		return res, fmt.Errorf(res.errorDesc)
@@ -212,7 +212,7 @@ func loadDLL() error {
 		p := filepath.Join(cacheDir, "azd", "bridge.dll")
 		bridge = windows.NewLazyDLL(p)
 		authenticate = bridge.NewProc("Authenticate")
-		freeAR = bridge.NewProc("FreeAuthnResult")
+		freeAR = bridge.NewProc("FreeWrappedAuthResult")
 		logout = bridge.NewProc("Logout")
 		shutdown = bridge.NewProc("Shutdown")
 		startup = bridge.NewProc("Startup")

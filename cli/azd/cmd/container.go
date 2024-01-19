@@ -622,7 +622,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		lazyProjectConfig *lazy.Lazy[*project.ProjectConfig],
 		lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext],
 		lazyLocalEnvStore *lazy.Lazy[environment.LocalDataStore],
-	) *cloud.Config {
+	) (*cloud.Cloud, error) {
 
 		// 1. Check config (~/.azure/config.json) set by azd config set (cloud node)
 		// 2. Check project config (azure.yaml)
@@ -630,6 +630,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 		// Default configuration
 		var cloudConfig = &cloud.Config{Name: cloud.AzurePublicName}
+		var suggestion func() string
 
 		// User Configuration
 		if azdConfig, err := userConfigManager.Load(); err == nil {
@@ -638,6 +639,11 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 				value, err := cloud.ParseCloudConfig(cloudConfigNode)
 				if err == nil {
 					cloudConfig = value
+
+					// In the event of an error set the suggestion for updating the cloud configuration
+					suggestion = func() string {
+						return "Set the cloud configuration using 'azd config set cloud.name <name>'. "
+					}
 				}
 
 			}
@@ -649,6 +655,11 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			value, err := cloud.ParseCloudConfig(projConfig.Cloud)
 			if err == nil {
 				cloudConfig = value
+
+				// In the event of an error set the suggestion for updating the cloud configuration
+				suggestion = func() string {
+					return "Set the cloud configuration by editing the 'cloud' node in the project YAML file"
+				}
 			}
 		}
 
@@ -664,6 +675,11 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 							value, err := cloud.ParseCloudConfig(cloudConfigurationNode)
 							if err == nil {
 								cloudConfig = value
+
+								// In the event of an error set the suggestion for updating the cloud configuration
+								suggestion = func() string {
+									return fmt.Sprintf("Set the cloud configuration by editing the 'cloud' node in the config.json file for the %s environment", defaultEnvName)
+								}
 							}
 						}
 					}
@@ -671,7 +687,23 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			}
 		}
 
-		return cloudConfig
+		resolvedCloud, err := cloud.NewCloud(cloudConfig)
+
+		if err != nil {
+			validClouds := fmt.Sprintf(
+				"Valid cloud names are '%s', '%s', '%s'.",
+				cloud.AzurePublicName,
+				cloud.AzureChinaCloudName,
+				cloud.AzureUSGovernmentName,
+			)
+
+			return nil, &azcli.ErrorWithSuggestion{
+				Err:        err,
+				Suggestion: fmt.Sprintf("%s\n%s", suggestion(), validClouds),
+			}
+		}
+
+		return resolvedCloud, nil
 	})
 
 }

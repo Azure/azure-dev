@@ -88,11 +88,5 @@ func getNamedCloud(name string) (*Cloud, error) {
 		return GetAzureGovernment(), nil
 	}
 
-	return &Cloud{}, fmt.Errorf(
-		"cloud name '%s' not found use valid names '%s', '%s', '%s'",
-		name,
-		AzurePublicName,
-		AzureChinaCloudName,
-		AzureUSGovernmentName,
-	)
+	return &Cloud{}, fmt.Errorf("Cloud name '%s' not found.", name)
 }

@@ -362,8 +362,8 @@ resource {{bicepName $name}}KeyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
 }
 
 resource {{bicepName $name}}KeyVaultRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid({{bicepName $name}}KeyVault.id, managedIdentity.id, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '00482a5a-887f-4fb3-b363-3b7fe8e74483'))
-  scope: {{bicepName $name}}KeyVault
+  name: guid({{bicepName $name}}.id, managedIdentity.id, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '00482a5a-887f-4fb3-b363-3b7fe8e74483'))
+  scope: {{bicepName $name}}
   properties: {
     principalId: managedIdentity.properties.principalId
     principalType: 'ServicePrincipal'

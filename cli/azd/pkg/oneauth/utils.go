@@ -22,21 +22,19 @@ const applicationID = "com.microsoft.azd"
 // because OneAuth returns an error when its Startup function is called more than once.
 var started atomic.Bool
 
-// extractCMakeChecksum extracts a checksum from the output of "cmake -E sha256sum"
-func extractCMakeChecksum(s string) ([]byte, error) {
-	checksum, _, found := strings.Cut(s, " ")
-	if !found {
-		return nil, fmt.Errorf("malformed checksum %q", s)
-	}
-	return hex.DecodeString(checksum)
-}
-
-// writeDynamicLib writes data to path if path doesn't exist or its content doesn't match checksum
-// (which is a SHA256 digest). The checksum is essentially a file version used to avoid unnecessary
-// writes.
-func writeDynamicLib(path string, data, checksum []byte) error {
+// writeDynamicLib writes data to path if path doesn't exist or its content doesn't match
+// cmakeChecksum (the output of "cmake -E sha256sum").
+func writeDynamicLib(path string, data []byte, cmakeChecksum string) error {
 	if b, err := os.ReadFile(path); err == nil {
-		if actual := sha256.Sum256(b); bytes.Equal(actual[:], checksum) {
+		hash, _, found := strings.Cut(cmakeChecksum, " ")
+		if !found {
+			return fmt.Errorf("malformed checksum %q", cmakeChecksum)
+		}
+		expected, err := hex.DecodeString(hash)
+		if err != nil {
+			return err
+		}
+		if actual := sha256.Sum256(b); bytes.Equal(expected, actual[:]) {
 			return nil
 		}
 	}

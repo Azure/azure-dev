@@ -19,15 +19,22 @@ extern "C"
     __declspec(dllexport) void FreeWrappedAuthResult(WrappedAuthResult *);
 
     // Startup OneAuth. Returns an error message if this fails, NULL if it succeeds.
-    // The returned string must be freed by the caller. The parameters are:
+    // The parameters are:
     // - clientId: the client ID of the application
     // - applicationId: an identifier for the application e.g. "com.microsoft.azd"
     // - version: the application version
-    // - debug: whether to enable OneAuth console logging
-    __declspec(dllexport) const char *Startup(const char *clientId, const char *applicationId, const char *version, bool debug);
+    // - debug: whether to enable OneAuth console logging, including PII
+    __declspec(dllexport) char *Startup(const char *clientId, const char *applicationId, const char *version, bool debug);
 
     // Authenticate acquires an access token. It will display an interactive login window if necessary, unless allowPrompt is false.
-    __declspec(dllexport) WrappedAuthResult *Authenticate(const char *authority, const char *homeAccountID, const char *scope, bool allowPrompt);
+    // The parameters are:
+    // - authority: authority for token requests e.g. "https://login.microsoftonline.com/tenant"
+    // - scope: scope of the desired access token
+    // - homeAccountID: optional home account ID of a user to authenticate. Required for silent authentication. If no value
+    //                  is given or no account associated with azd matches the given value, this function will fall back to
+    //                  interactive authentication, provided allowPrompt is true.
+    // - allowPrompt: whether to display an interactive login window when necessary
+    __declspec(dllexport) WrappedAuthResult *Authenticate(const char *authority, const char *scope, const char *homeAccountID, bool allowPrompt);
 
     // Logout disassociates all accounts from the application. This prevents
     // Authenticate silently using them but doesn't delete any of their data.

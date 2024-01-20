@@ -11,7 +11,7 @@ using Microsoft::Authentication::UUID;
 
 const int timeoutSeconds = 60;
 
-const char *Startup(const char *clientId, const char *applicationId, const char *version, bool debug)
+char *Startup(const char *clientId, const char *applicationId, const char *version, bool debug)
 {
     HRESULT OleInitResult = OleInitialize(NULL);
     if (OleInitResult != S_OK && OleInitResult != S_FALSE)
@@ -85,7 +85,7 @@ WrappedAuthResult *wrapAuthResult(const AuthResult *ar)
     return wrapped;
 }
 
-WrappedAuthResult *Authenticate(const char *authority, const char *homeAccountID, const char *scope, bool allowPrompt)
+WrappedAuthResult *Authenticate(const char *authority, const char *scope, const char *homeAccountID, bool allowPrompt)
 {
     auto authParams = AuthParameters::CreateForBearer(authority, scope);
     auto telemetryParams = TelemetryParameters(UUID::Generate());
@@ -130,13 +130,13 @@ WrappedAuthResult *Authenticate(const char *authority, const char *homeAccountID
 
         OneAuth::GetAuthenticator()->SignInInteractively(
             OneAuth::DefaultUxContext,
-            "", // TODO: account hint?
+            "", // accountHint
             authParams,
             std::nullopt,
             telemetryParams,
             callback);
 
-        // TODO: login window requires us to pump win32 messages
+        // login window requires us to pump win32 messages
         auto start = std::chrono::steady_clock::now();
         MSG msg;
         while (GetMessage(&msg, nullptr, 0, 0))
@@ -173,7 +173,7 @@ void Logout()
     {
         // SignOut* delete data based on client ID i.e. they would sign the account
         // out from az as well so long as azd and az share a client ID. Dis/associate
-        // use application ID e.g. "com.azure.azd" instead.
+        // use application ID e.g. "com.microsoft.azd" instead.
         OneAuth::GetAuthenticator()->DisassociateAccount(a, telemetryParams, "");
     }
 }

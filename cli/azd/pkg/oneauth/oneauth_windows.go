@@ -64,10 +64,8 @@ var (
 )
 
 type authResult struct {
-	errorDesc     string
-	expiresOn     int
 	homeAccountID string
-	token         string
+	token         azcore.AccessToken
 }
 
 type credential struct {
@@ -89,14 +87,11 @@ func NewCredential(authority, clientID string, opts CredentialOptions) (azcore.T
 }
 
 func (c *credential) GetToken(ctx context.Context, opts policy.TokenRequestOptions) (azcore.AccessToken, error) {
-	at := azcore.AccessToken{}
 	ar, err := authn(c.authority, c.clientID, c.homeAccountID, strings.Join(opts.Scopes, " "), c.opts.NoPrompt, c.opts.Debug)
 	if err == nil {
-		at.ExpiresOn = time.Unix(int64(ar.expiresOn), 0)
-		at.Token = ar.token
 		c.homeAccountID = ar.homeAccountID
 	}
-	return at, err
+	return ar.token, err
 }
 
 func LogIn(authority, clientID, scope string, debug bool) (string, error) {
@@ -109,7 +104,7 @@ func Logout(clientID string, debug bool) error {
 	if err == nil {
 		logout.Call()
 	}
-	return nil
+	return err
 }
 
 func start(clientID string, debug bool) error {
@@ -128,12 +123,13 @@ func start(clientID string, debug bool) error {
 		defer C.free(appID)
 		v := unsafe.Pointer(C.CString(internal.VersionInfo().Version.String()))
 		defer C.free(v)
-		msg, _, _ := startup.Call(uintptr(clientID), uintptr(appID), uintptr(v), dbg)
-		// startup returns an error message when it fails
-		if msg != 0 {
+		p, _, _ := startup.Call(uintptr(clientID), uintptr(appID), uintptr(v), dbg)
+		// startup returns a char* message when it fails
+		if p != 0 {
 			// reset started so the next call will try to start OneAuth again
 			started.CompareAndSwap(true, false)
-			msg := C.GoString((*C.char)(unsafe.Pointer(msg)))
+			// TODO: in principle we should free the pointer but doing so from Go can cause a crash
+			msg := C.GoString((*C.char)(unsafe.Pointer(p)))
 			return fmt.Errorf("couldn't start OneAuth: %s", msg)
 		}
 	}
@@ -157,23 +153,25 @@ func authn(authority, clientID, homeAccountID, scope string, noPrompt, debug boo
 	if noPrompt {
 		allowPrompt = 0
 	}
-	result, _, _ := authenticate.Call(uintptr(a), uintptr(accountID), uintptr(scp), uintptr(allowPrompt))
-	if result == 0 {
+	p, _, _ := authenticate.Call(uintptr(a), uintptr(scp), uintptr(accountID), uintptr(allowPrompt))
+	if p == 0 {
+		// this shouldn't happen but if it did, this vague error would be better than a panic
 		return res, fmt.Errorf("authentication failed")
 	}
-	defer freeAR.Call(result)
+	defer freeAR.Call(p)
 
-	ar := (*C.WrappedAuthResult)(unsafe.Pointer(result))
-	if ar.errorDescription != nil {
-		res.errorDesc = C.GoString(ar.errorDescription)
-		return res, fmt.Errorf(res.errorDesc)
+	wrapped := (*C.WrappedAuthResult)(unsafe.Pointer(p))
+	if wrapped.errorDescription != nil {
+		return res, fmt.Errorf(C.GoString(wrapped.errorDescription))
 	}
-	res.expiresOn = int(ar.expiresOn)
-	if ar.accountID != nil {
-		res.homeAccountID = C.GoString(ar.accountID)
+	if wrapped.accountID != nil {
+		res.homeAccountID = C.GoString(wrapped.accountID)
 	}
-	if ar.token != nil {
-		res.token = C.GoString(ar.token)
+	if wrapped.token != nil {
+		res.token = azcore.AccessToken{
+			ExpiresOn: time.Unix(int64(wrapped.expiresOn), 0),
+			Token:     C.GoString(wrapped.token),
+		}
 	}
 
 	return res, nil
@@ -197,12 +195,8 @@ func loadDLL() error {
 		{name: "fmt.dll", checksum: fmtChecksum, data: fmtDLL},
 		{name: "bridge.dll", checksum: bridgeChecksum, data: bridgeDLL},
 	} {
-		hash, err := extractCMakeChecksum(dll.checksum)
-		if err != nil {
-			return fmt.Errorf("parsing checksum for %s: %w", dll.name, err)
-		}
 		p := filepath.Join(dir, dll.name)
-		err = writeDynamicLib(p, dll.data, hash)
+		err = writeDynamicLib(p, dll.data, dll.checksum)
 		if err != nil {
 			return fmt.Errorf("writing %s: %w", p, err)
 		}

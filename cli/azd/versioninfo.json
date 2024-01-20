@@ -1,15 +1,15 @@
 {
   "FixedFileInfo": {
     "FileVersion": {
-      "Major": 0,
-      "Minor": 0,
-      "Patch": 0,
+      "Major": 1,
+      "Minor": 6,
+      "Patch": 1,
       "Build": 0
     },
     "ProductVersion": {
-      "Major": 0,
-      "Minor": 0,
-      "Patch": 0,
+      "Major": 1,
+      "Minor": 6,
+      "Patch": 1,
       "Build": 0
     },
     "FileFlagsMask": "3f",
@@ -29,7 +29,7 @@
     "OriginalFilename": "",
     "PrivateBuild": "",
     "ProductName": "Azure Developer CLI",
-    "ProductVersion": "",
+    "ProductVersion": "1.6.0-beta.1",
     "SpecialBuild": ""
   },
   "VarFileInfo": {

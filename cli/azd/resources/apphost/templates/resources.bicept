@@ -346,93 +346,29 @@ resource {{bicepName $name}}OperatorRoleAssignment 'Microsoft.Authorization/role
     roleDefinitionId:  subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '230815da-be43-4aae-9cb4-875f7bd000aa')
   }
 }
-
-resource {{bicepName $name}}KeyVault 'Microsoft.KeyVault/vaults@2023-07-01' = {
-  name: replace('kv-{{$name}}-${resourceToken}', '-', '')
+{{range $cname := $value.Databases}}
+resource {{bicepName $cname}} 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases@2023-04-15' = {
+  name: '{{$cname}}'
   location: location
+  tags: union(tags, {'aspire-resource-name': '{{$cname}}'})
+  parent: {{bicepName $name}}
   properties: {
-    sku: {
-      name: 'standard'
-      family: 'A'
+    resource: {
+      id: '{{$cname}}'
     }
-    tenantId: subscription().tenantId
-    enableRbacAuthorization: true
   }
-  tags: union(tags, {'aspire-resource-name': '{{$name}}KeyVault'})
 }
 
-resource {{bicepName $name}}KeyVaultRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid({{bicepName $name}}.id, managedIdentity.id, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '00482a5a-887f-4fb3-b363-3b7fe8e74483'))
-  scope: {{bicepName $name}}
+// SQL DB Contributor Role
+resource {{bicepName $cname}}ContributorRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid({{bicepName $cname}}.id, managedIdentity.id, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '9b7fa17d-e63e-47b0-bb0a-15c516ac86ec'))
+  scope: {{bicepName $cname}}
   properties: {
     principalId: managedIdentity.properties.principalId
     principalType: 'ServicePrincipal'
-    roleDefinitionId:  subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '00482a5a-887f-4fb3-b363-3b7fe8e74483')
+    roleDefinitionId:  subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '9b7fa17d-e63e-47b0-bb0a-15c516ac86ec')
   }
 }
-
-// resource {{bicepName $name}}KeyVaultAccessPolicies 'Microsoft.KeyVault/vaults/accessPolicies@2022-07-01' = {
-//  parent: {{bicepName $name}}KeyVault
-//  name: 'add'
-//  properties: {
-//    accessPolicies: [ 
-//      {
-//        objectId: managedIdentity.properties.principalId
-//        tenantId: subscription().tenantId
-//        permissions: { secrets: [ 'get', 'list' ] }
-//      } 
-//    ]
-//  }
-//}
-
-resource {{bicepName $name}}CosmosConnectionString 'Microsoft.KeyVault/vaults/secrets@2022-07-01' = {
-  parent: {{bicepName $name}}KeyVault
-  name: 'cs-{{$name}}-${resourceToken}'
-  properties: {
-    value: {{bicepName $name}}.listConnectionStrings().connectionStrings[0].connectionString
-  }
-}
-
-{{range $cname := $value.Databases}}
-  resource {{bicepName $cname}} 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases@2023-04-15' = {
-    name: '{{$cname}}'
-    location: location
-    tags: union(tags, {'aspire-resource-name': '{{$cname}}'})
-    parent: {{bicepName $name}}
-    properties: {
-      resource: {
-        id: '{{$cname}}'
-      }
-    }
-  }
-
-  resource {{bicepName $cname}}Container 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases/containers@2023-04-15' = {
-    name: 'container-{{$cname}}'
-    location: location
-    tags: union(tags, {'aspire-resource-name': '{{$cname}}Container'})
-    parent: {{bicepName $cname}}
-    properties: {
-      resource: {
-        id: 'container-{{$cname}}'
-        partitionKey: {
-          paths: [
-          '/myPartitionKey'
-        ]
-          kind: 'Hash'
-        }
-      }
-    }
-  }
-  // SQL DB Contributor Role
-  resource {{bicepName $cname}}ContributorRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-    name: guid({{bicepName $cname}}.id, managedIdentity.id, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '9b7fa17d-e63e-47b0-bb0a-15c516ac86ec'))
-    scope: {{bicepName $cname}}
-    properties: {
-      principalId: managedIdentity.properties.principalId
-      principalType: 'ServicePrincipal'
-      roleDefinitionId:  subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '9b7fa17d-e63e-47b0-bb0a-15c516ac86ec')
-    }
-  }
 {{end -}}
 {{end -}}
 output MANAGED_IDENTITY_CLIENT_ID string = managedIdentity.properties.clientId
@@ -465,6 +401,6 @@ output SERVICE_BINDING_{{alphaSnakeUpper $cname}}_ENDPOINT string = {{bicepName 
 output SERVICE_BINDING_{{alphaSnakeUpper $name}}_ENDPOINT string = {{bicepName $name}}.properties.vaultUri
 {{end -}}
 {{range $name, $value := .CosmosDbAccounts -}}
-output SERVICE_BINDING_{{alphaSnakeUpper $name}}_ENDPOINT string = {{bicepName $name}}.properties.documentEndpoint
+output SERVICE_BINDING_{{alphaSnakeUpper $name}}_NAME string = {{bicepName $name}}.name
 {{end -}}
 {{ end}}

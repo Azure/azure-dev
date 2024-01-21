@@ -878,7 +878,10 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 			return "",
 				fmt.Errorf("malformed binding expression, expected bindings.<binding-name>.[host|port|url] but was: %s", v)
 		}
-	case targetType == "postgres.database.v0" || targetType == "redis.v0":
+	case targetType == "postgres.database.v0" ||
+		targetType == "redis.v0" ||
+		targetType == "azure.cosmosdb.account.v0" ||
+		targetType == "azure.cosmosdb.database.v0":
 		switch prop {
 		case "connectionString":
 			return fmt.Sprintf(`{{ connectionString "%s" }}`, resource), nil
@@ -912,9 +915,7 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 	case targetType == "azure.keyvault.v0" ||
 		targetType == "azure.storage.blob.v0" ||
 		targetType == "azure.storage.queue.v0" ||
-		targetType == "azure.storage.table.v0" ||
-		targetType == "azure.cosmosdb.account.v0" ||
-		targetType == "azure.cosmosdb.database.v0":
+		targetType == "azure.storage.table.v0":
 		switch prop {
 		case "connectionString":
 			return fmt.Sprintf("{{ .Env.SERVICE_BINDING_%s_ENDPOINT }}", scaffold.AlphaSnakeUpper(resource)), nil

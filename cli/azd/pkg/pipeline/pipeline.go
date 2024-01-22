@@ -121,9 +121,8 @@ type CiProvider interface {
 }
 
 type ConfigOptions struct {
-	Variables                    []string
-	Secrets                      []string
-	AdditionalVariablesAsSecrets bool
+	Variables []string
+	Secrets   []string
 }
 
 // SecretsAndVar returns the list of variables and secrets to be used in the pipeline
@@ -133,32 +132,11 @@ func (c *ConfigOptions) SecretsAndVars(
 	variables = maps.Clone(initialVariables)
 	secrets = maps.Clone(initialSecrets)
 
-	// each provider (gh/ado) is setting some variables which we don't want to make them secrets as well when
-	// AdditionalVariablesAsSecrets is set to true.
-	// The next list helps to filter out those variables.
-	// TODO: remove the secret/variables from the providers and make the manager to create the variables and secrets list.
-	// A provider should only receive the list of variables and secrets to be used in the pipeline.
-	knownVars := []string{
-		"AZURE_LOCATION",
-		"AZURE_ENV_NAME",
-		"AZURE_SERVICE_CONNECTION",
-		"AZURE_SUBSCRIPTION_ID",
-		"AZURE_RESOURCE_GROUP",
-		"ARM_TENANT_ID",
-		"RS_RESOURCE_GROUP",
-		"RS_STORAGE_ACCOUNT",
-		"RS_CONTAINER_NAME",
-	}
-
 	for key, value := range env {
 		if slices.Contains(c.Variables, key) {
 			variables[key] = value
 		}
 		if slices.Contains(c.Secrets, key) {
-			secrets[key] = value
-		}
-		// AdditionalVariablesAsSecrets automatically adds all variables not explicitly defined as secrets
-		if c.AdditionalVariablesAsSecrets && !slices.Contains(c.Variables, key) && !slices.Contains(knownVars, key) {
 			secrets[key] = value
 		}
 	}

@@ -755,9 +755,8 @@ func (pm *PipelineManager) initialize(ctx context.Context, override string) erro
 	pm.infra = infra
 
 	pm.configOptions = &ConfigOptions{
-		Variables:                    slices.Clone(prjConfig.Pipeline.Variables),
-		Secrets:                      slices.Clone(prjConfig.Pipeline.Secrets),
-		AdditionalVariablesAsSecrets: prjConfig.Pipeline.AdditionalVariablesAsSecrets,
+		Variables: slices.Clone(prjConfig.Pipeline.Variables),
+		Secrets:   slices.Clone(prjConfig.Pipeline.Secrets),
 	}
 
 	return nil

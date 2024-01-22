@@ -11,9 +11,8 @@ import (
 func Test_ConfigOptions_SecretsAndVars(t *testing.T) {
 	// Initialize the ConfigOptions instance
 	config := &ConfigOptions{
-		Variables:                    []string{"var1", "var2"},
-		Secrets:                      []string{"secret1"},
-		AdditionalVariablesAsSecrets: true,
+		Variables: []string{"var1", "var2"},
+		Secrets:   []string{"secret1"},
 	}
 
 	// Define the initial variables, secrets, and environment
@@ -43,8 +42,6 @@ func Test_ConfigOptions_SecretsAndVars(t *testing.T) {
 	expectedSecrets := map[string]string{
 		"azdSecret": "foo",
 		"secret1":   "foo",
-		"exraVar":   "value4",
-		"secret2":   "value3",
 	}
 	assert.Equal(t, expectedVariables, variables)
 	assert.Equal(t, expectedSecrets, secrets)

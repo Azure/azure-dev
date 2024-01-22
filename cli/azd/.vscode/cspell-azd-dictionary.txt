@@ -121,6 +121,7 @@ nodeapp
 nolint
 notrail
 omitempty
+oneauth
 oneline
 opentelemetry
 ostest
@@ -165,6 +166,8 @@ sqlserver
 sstore
 staticcheck
 staticwebapp
+stdbool
+stdlib
 stdouttrace
 STRINGSLICE
 structs

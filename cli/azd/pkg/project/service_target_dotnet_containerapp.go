@@ -402,19 +402,26 @@ func (fns *containerAppTemplateManifestFuncs) ConnectionString(name string) (str
 		}
 
 		return fmt.Sprintf("Host=%s;Database=postgres;Username=postgres;Password=%s", targetContainerName, password), nil
-	case "azure.cosmosdb.account.v0", "azure.cosmosdb.database.v0":
-		// cosmos account name can be defined with a resourceToken during provisioning
-		// the final name is expected to be output as SERVICE_BINDING_{accountName}_NAME
-		accountNameKey := fmt.Sprintf("SERVICE_BINDING_%s_NAME", scaffold.AlphaSnakeUpper(name))
-
-		return fns.cosmosDbService.ConnectionString(
-			fns.ctx,
-			fns.targetResource.SubscriptionId(),
-			fns.targetResource.ResourceGroupName(),
-			fns.env.Getenv(accountNameKey))
+	case "azure.cosmosdb.account.v0":
+		return fns.cosmosConnectionString(name)
+	case "azure.cosmosdb.database.v0":
+		// get the parent resource name, which is the cosmos account name
+		return fns.cosmosConnectionString(*resource.Parent)
 	default:
 		return "", fmt.Errorf("connectionString: unsupported resource type '%s'", resource.Type)
 	}
+}
+
+func (fns *containerAppTemplateManifestFuncs) cosmosConnectionString(accountName string) (string, error) {
+	// cosmos account name can be defined with a resourceToken during provisioning
+	// the final name is expected to be output as SERVICE_BINDING_{accountName}_NAME
+	accountNameKey := fmt.Sprintf("SERVICE_BINDING_%s_NAME", scaffold.AlphaSnakeUpper(accountName))
+
+	return fns.cosmosDbService.ConnectionString(
+		fns.ctx,
+		fns.targetResource.SubscriptionId(),
+		fns.targetResource.ResourceGroupName(),
+		fns.env.Getenv(accountNameKey))
 }
 
 // secretValue returns the value of the secret with the given name, or an error if the secret is not found. A nil value

@@ -23,6 +23,7 @@ const RedisContainerAppService = "redis"
 
 const DaprStateStoreComponentType = "state"
 const DaprPubSubComponentType = "pubsub"
+const containerAppSecretRef = "secretRef:"
 
 // genTemplates is the collection of templates that are used when generating infrastructure files from a manifest.
 var genTemplates *template.Template
@@ -896,7 +897,7 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 		switch prop {
 		case "connectionString":
 			//return fmt.Sprintf(`{{ connectionString "%s" }}`, resource), nil
-			return fmt.Sprintf(`secretRef:%s`, resource), nil
+			return fmt.Sprintf(`%s%s`, containerAppSecretRef, resource), nil
 		default:
 			return "", errUnsupportedProperty(targetType, prop)
 		}
@@ -980,8 +981,8 @@ func (b *infraGenerator) buildEnvBlock(env map[string]string, manifestCtx *genCo
 		// need the newline
 		value := string(yamlString[0 : len(yamlString)-1])
 		var containerAppEnvVar genContainerAppEnvVar
-		if strings.Index(value, "secretRef:") != -1 {
-			resource := strings.Split(value, "secretRef:")[1]
+		if strings.Contains(value, containerAppSecretRef) {
+			resource := strings.Split(value, containerAppSecretRef)[1]
 			containerAppEnvVar.SecretRef = resource
 			containerAppEnvVar.Value = fmt.Sprintf(`{{ connectionString "%s" }}`, resource)
 		} else {

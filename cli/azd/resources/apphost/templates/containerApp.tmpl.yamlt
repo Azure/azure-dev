@@ -42,14 +42,12 @@ properties:
     registries:
     - server: {{ "{{ .Env.AZURE_CONTAINER_REGISTRY_ENDPOINT }}" }}
       identity: {{ "{{ .Env.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID }}" }}
-{{- if hasSecrets .Env}}
+{{- if gt (len .Secrets) 0}}
     secrets:
 {{- end}}
-{{- range $name, $value := .Env}}
-{{- if not (eq $value.SecretRef "")}}
-      - name: {{$value.SecretRef}}
-        value: {{$value.Value}}
-{{- end}}
+{{- range $name, $value := .Secrets}}
+      - name: {{containerAppSecretName $name}}
+        value: {{$value}}
 {{- end}}      
   template:
     containers:
@@ -59,14 +57,12 @@ properties:
       - name: AZURE_CLIENT_ID
         value: {{ "{{ .Env.MANAGED_IDENTITY_CLIENT_ID }}" }}
 {{- range $name, $value := .Env}}
-{{- if (eq $value.SecretRef "")}}
       - name: {{$name}}
-        value: {{$value.Value}}
+        value: {{$value}}
 {{- end}}
-{{- if not (eq $value.SecretRef "")}}
+{{- range $name, $value := .Secrets}}
       - name: {{$name}}
-        secretRef: {{$value.SecretRef}}
-{{- end}}
+        secretRef: {{containerAppSecretName $name}}
 {{- end}}
     scale:
       minReplicas: 1

@@ -34,20 +34,10 @@ func init() {
 		Option("missingkey=error").
 		Funcs(
 			template.FuncMap{
-				"bicepName":        scaffold.BicepName,
-				"alphaSnakeUpper":  scaffold.AlphaSnakeUpper,
-				"containerAppName": scaffold.ContainerAppName,
-				"hasSecrets": func(env map[string]genContainerAppEnvVar) bool {
-					if env == nil {
-						return false
-					}
-					for _, v := range env {
-						if v.SecretRef != "" {
-							return true
-						}
-					}
-					return false
-				},
+				"bicepName":              scaffold.BicepName,
+				"alphaSnakeUpper":        scaffold.AlphaSnakeUpper,
+				"containerAppName":       scaffold.ContainerAppName,
+				"containerAppSecretName": scaffold.ContainerAppSecretName,
 			},
 		).
 		ParseFS(resources.AppHostTemplates, "apphost/templates/*")
@@ -686,8 +676,9 @@ func (b *infraGenerator) Compile() error {
 
 	for resourceName, docker := range b.dockerfiles {
 		projectTemplateCtx := genContainerAppManifestTemplateContext{
-			Name: resourceName,
-			Env:  make(map[string]genContainerAppEnvVar),
+			Name:    resourceName,
+			Env:     make(map[string]string),
+			Secrets: make(map[string]string),
 		}
 
 		ingress, err := buildIngress(docker.Bindings)
@@ -706,8 +697,9 @@ func (b *infraGenerator) Compile() error {
 
 	for resourceName, project := range b.projects {
 		projectTemplateCtx := genContainerAppManifestTemplateContext{
-			Name: resourceName,
-			Env:  make(map[string]genContainerAppEnvVar),
+			Name:    resourceName,
+			Env:     make(map[string]string),
+			Secrets: make(map[string]string),
 		}
 
 		binding, err := validateAndMergeBindings(project.Bindings)
@@ -981,16 +973,14 @@ func (b *infraGenerator) buildEnvBlock(env map[string]string, manifestCtx *genCo
 		// need the newline
 		value := string(yamlString[0 : len(yamlString)-1])
 
-		var containerAppEnvVar genContainerAppEnvVar
+		//
 		secretRefRegex := regexp.MustCompile(fmt.Sprintf(`({{%s)(.*)}}`, containerAppSecretRef))
 		secretRefMatches := secretRefRegex.FindAllStringSubmatch(value, 1)
 		if len(secretRefMatches) > 0 {
-			containerAppEnvVar.SecretRef = secretRefMatches[0][2]
-			containerAppEnvVar.Value = secretRefRegex.ReplaceAllString(value, `{{ connectionString "$2" }}`)
+			manifestCtx.Secrets[k] = secretRefRegex.ReplaceAllString(value, `{{ connectionString "$2" }}`)
 		} else {
-			containerAppEnvVar.Value = value
+			manifestCtx.Env[k] = value
 		}
-		manifestCtx.Env[k] = containerAppEnvVar
 	}
 
 	return nil

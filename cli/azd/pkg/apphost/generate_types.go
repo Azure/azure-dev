@@ -103,15 +103,11 @@ type genBicepTemplateContext struct {
 	CosmosDbAccounts                map[string]genCosmosAccount
 }
 
-type genContainerAppEnvVar struct {
-	Value     string
-	SecretRef string
-}
-
 type genContainerAppManifestTemplateContext struct {
 	Name    string
 	Ingress *genContainerAppIngress
-	Env     map[string]genContainerAppEnvVar
+	Env     map[string]string
+	Secrets map[string]string
 	Dapr    *genContainerAppManifestTemplateContextDapr
 }
 

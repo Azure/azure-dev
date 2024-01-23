@@ -416,12 +416,16 @@ func (fns *containerAppTemplateManifestFuncs) cosmosConnectionString(accountName
 	// cosmos account name can be defined with a resourceToken during provisioning
 	// the final name is expected to be output as SERVICE_BINDING_{accountName}_NAME
 	accountNameKey := fmt.Sprintf("SERVICE_BINDING_%s_NAME", scaffold.AlphaSnakeUpper(accountName))
+	resourceName := fns.env.Getenv(accountNameKey)
+	if resourceName == "" {
+		return "", fmt.Errorf("The value for SERVICE_BINDING_%s_NAME was not found or is empty.", accountName)
+	}
 
 	return fns.cosmosDbService.ConnectionString(
 		fns.ctx,
 		fns.targetResource.SubscriptionId(),
 		fns.targetResource.ResourceGroupName(),
-		fns.env.Getenv(accountNameKey))
+		resourceName)
 }
 
 // secretValue returns the value of the secret with the given name, or an error if the secret is not found. A nil value

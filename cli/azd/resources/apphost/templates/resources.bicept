@@ -325,51 +325,19 @@ resource {{bicepName $name}} 'Microsoft.DocumentDB/databaseAccounts@2023-04-15' 
     ]
     databaseAccountOfferType: 'Standard'
   }
-}
-// Cosmos DB Account Reader Role
-resource {{bicepName $name}}ReaderRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid({{bicepName $name}}.id, managedIdentity.id, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'fbdf93bf-df7d-467e-a4d2-9458aa1360c8'))
-  scope: {{bicepName $name}}
-  properties: {
-    principalId: managedIdentity.properties.principalId
-    principalType: 'ServicePrincipal'
-    roleDefinitionId:  subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'fbdf93bf-df7d-467e-a4d2-9458aa1360c8')
-  }
-}
-// Cosmos DB Operator
-resource {{bicepName $name}}OperatorRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid({{bicepName $name}}.id, managedIdentity.id, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '230815da-be43-4aae-9cb4-875f7bd000aa'))
-  scope: {{bicepName $name}}
-  properties: {
-    principalId: managedIdentity.properties.principalId
-    principalType: 'ServicePrincipal'
-    roleDefinitionId:  subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '230815da-be43-4aae-9cb4-875f7bd000aa')
-  }
-}
 {{range $cname := $value.Databases}}
-resource {{bicepName $cname}} 'Microsoft.DocumentDB/databaseAccounts/sqlDatabases@2023-04-15' = {
-  name: '{{$cname}}'
-  location: location
-  tags: union(tags, {'aspire-resource-name': '{{$cname}}'})
-  parent: {{bicepName $name}}
-  properties: {
-    resource: {
-      id: '{{$cname}}'
+  resource {{bicepName $cname}} 'sqlDatabases@2023-04-15' = {
+    name: '{{$cname}}'
+    location: location
+    tags: union(tags, {'aspire-resource-name': '{{$cname}}'})
+    properties: {
+      resource: {
+        id: '{{$cname}}'
+      }
     }
   }
-}
-
-// SQL DB Contributor Role
-resource {{bicepName $cname}}ContributorRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid({{bicepName $cname}}.id, managedIdentity.id, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '9b7fa17d-e63e-47b0-bb0a-15c516ac86ec'))
-  scope: {{bicepName $cname}}
-  properties: {
-    principalId: managedIdentity.properties.principalId
-    principalType: 'ServicePrincipal'
-    roleDefinitionId:  subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '9b7fa17d-e63e-47b0-bb0a-15c516ac86ec')
-  }
-}
 {{end -}}
+}
 {{end -}}
 output MANAGED_IDENTITY_CLIENT_ID string = managedIdentity.properties.clientId
 {{if .HasContainerRegistry -}}

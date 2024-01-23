@@ -139,10 +139,14 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 			var suggestionErr *azcli.ErrorWithSuggestion
 			if errors.As(err, &suggestionErr) {
 				cmd.SilenceErrors = true
-				cb.container.Invoke(func(console input.Console) {
+				invokeErr := cb.container.Invoke(func(console input.Console) {
 					console.Message(ctx, color.RedString("ERROR: %s", err.Error()))
 					console.Message(ctx, (*azcli.ErrorWithSuggestion)(suggestionErr).Suggestion)
 				})
+
+				if invokeErr != nil {
+					return invokeErr
+				}
 				return err
 			}
 

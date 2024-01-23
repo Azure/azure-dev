@@ -59,7 +59,7 @@ properties:
       - name: AZURE_CLIENT_ID
         value: {{ "{{ .Env.MANAGED_IDENTITY_CLIENT_ID }}" }}
 {{- range $name, $value := .Env}}
-{{- if not (eq $value.Value "")}}
+{{- if (eq $value.SecretRef "")}}
       - name: {{$name}}
         value: {{$value.Value}}
 {{- end}}

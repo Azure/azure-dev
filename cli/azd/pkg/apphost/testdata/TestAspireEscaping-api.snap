@@ -18,7 +18,7 @@ properties:
       identity: {{ .Env.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID }}
     secrets:
       - name: connectionstrings--db
-        value: '{{ connectionString "db" }}'      
+        value: '{{ connectionString "db" }}'
   template:
     containers:
     - image: {{ .Image }}

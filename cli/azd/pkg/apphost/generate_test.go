@@ -203,10 +203,10 @@ func TestBuildEnvResolveServiceToConnectionString(t *testing.T) {
 		"VAR3": `complex {service.connectionString} expression`,
 	}
 
-	expected := map[string]string{
-		"VAR1": "value1",
-		"VAR2": "value2",
-		"VAR3": `complex {{ connectionString "service" }} expression`,
+	expected := map[string]genContainerAppEnvVar{
+		"VAR1": {"value1", ""},
+		"VAR2": {"value2", ""},
+		"VAR3": {`complex {{ connectionString "service" }} expression`, "service"},
 	}
 
 	manifestCtx := &genContainerAppManifestTemplateContext{

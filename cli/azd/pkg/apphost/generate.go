@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"text/template"
@@ -896,8 +897,7 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 		targetType == "azure.cosmosdb.database.v0":
 		switch prop {
 		case "connectionString":
-			//return fmt.Sprintf(`{{ connectionString "%s" }}`, resource), nil
-			return fmt.Sprintf(`%s%s`, containerAppSecretRef, resource), nil
+			return fmt.Sprintf(`{{%s%s}}`, containerAppSecretRef, resource), nil
 		default:
 			return "", errUnsupportedProperty(targetType, prop)
 		}
@@ -980,11 +980,13 @@ func (b *infraGenerator) buildEnvBlock(env map[string]string, manifestCtx *genCo
 		// expected at the end of the yaml document. But we are getting a single value with valid yaml here, so we don't
 		// need the newline
 		value := string(yamlString[0 : len(yamlString)-1])
+
 		var containerAppEnvVar genContainerAppEnvVar
-		if strings.Contains(value, containerAppSecretRef) {
-			resource := strings.Split(value, containerAppSecretRef)[1]
-			containerAppEnvVar.SecretRef = resource
-			containerAppEnvVar.Value = fmt.Sprintf(`{{ connectionString "%s" }}`, resource)
+		secretRefRegex := regexp.MustCompile(fmt.Sprintf(`({{%s)(.*)}}`, containerAppSecretRef))
+		secretRefMatches := secretRefRegex.FindAllStringSubmatch(value, 1)
+		if len(secretRefMatches) > 0 {
+			containerAppEnvVar.SecretRef = secretRefMatches[0][2]
+			containerAppEnvVar.Value = secretRefRegex.ReplaceAllString(value, `{{ connectionString "$2" }}`)
 		} else {
 			containerAppEnvVar.Value = value
 		}

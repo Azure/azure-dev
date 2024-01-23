@@ -16,6 +16,9 @@ properties:
     registries:
     - server: {{ .Env.AZURE_CONTAINER_REGISTRY_ENDPOINT }}
       identity: {{ .Env.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID }}
+    secrets:
+      - name: db
+        value: '{{ connectionString "db" }}'      
   template:
     containers:
     - image: {{ .Image }}
@@ -25,6 +28,8 @@ properties:
         value: {{ .Env.MANAGED_IDENTITY_CLIENT_ID }}
       - name: ConnectionStrings__db
         value: '{{ connectionString "db" }}'
+      - name: ConnectionStrings__db
+        secretRef: db
       - name: OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EVENT_LOG_ATTRIBUTES
         value: "true"
       - name: OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EXCEPTION_LOG_ATTRIBUTES

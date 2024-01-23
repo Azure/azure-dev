@@ -8,7 +8,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strconv"
 	"strings"
 	"text/template"
@@ -24,7 +23,7 @@ const RedisContainerAppService = "redis"
 
 const DaprStateStoreComponentType = "state"
 const DaprPubSubComponentType = "pubsub"
-const containerAppSecretRef = "secretRef:"
+const containerAppSecretConnectionString = "{{ connectionString "
 
 // genTemplates is the collection of templates that are used when generating infrastructure files from a manifest.
 var genTemplates *template.Template
@@ -889,7 +888,8 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 		targetType == "azure.cosmosdb.database.v0":
 		switch prop {
 		case "connectionString":
-			return fmt.Sprintf(`{{%s%s}}`, containerAppSecretRef, resource), nil
+			// returns something like {{ connectionString "resource" }}
+			return fmt.Sprintf(`%s"%s" }}`, containerAppSecretConnectionString, resource), nil
 		default:
 			return "", errUnsupportedProperty(targetType, prop)
 		}
@@ -973,11 +973,8 @@ func (b *infraGenerator) buildEnvBlock(env map[string]string, manifestCtx *genCo
 		// need the newline
 		value := string(yamlString[0 : len(yamlString)-1])
 
-		//
-		secretRefRegex := regexp.MustCompile(fmt.Sprintf(`({{%s)(.*)}}`, containerAppSecretRef))
-		secretRefMatches := secretRefRegex.FindAllStringSubmatch(value, 1)
-		if len(secretRefMatches) > 0 {
-			manifestCtx.Secrets[k] = secretRefRegex.ReplaceAllString(value, `{{ connectionString "$2" }}`)
+		if strings.Contains(value, containerAppSecretConnectionString) {
+			manifestCtx.Secrets[k] = value
 		} else {
 			manifestCtx.Env[k] = value
 		}

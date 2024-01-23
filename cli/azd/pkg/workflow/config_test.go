@@ -76,14 +76,15 @@ func Test_WorkflowMap_UnmarshallYAML(t *testing.T) {
 			up:
 			  steps:
 			    - azd:
-			        command: package
 			        args:
+			          - package
 			          - --all
 			    - azd:
-			        command: provision
-			    - azd:
-			        command: deploy
 			        args:
+			          - provision
+			    - azd:
+			        args:
+			          - deploy
 			          - --all
 		`)
 
@@ -112,7 +113,7 @@ func assertWorkflow(t *testing.T, workflow *Workflow) {
 
 	require.Equal(t, "up", workflow.Name)
 	require.Len(t, workflow.Steps, 3)
-	require.Equal(t, "package", workflow.Steps[0].AzdCommand.Name)
-	require.Len(t, workflow.Steps[0].AzdCommand.Args, 1)
-	require.Equal(t, "--all", workflow.Steps[0].AzdCommand.Args[0])
+	require.Len(t, workflow.Steps[0].AzdCommand.Args, 2)
+	require.Equal(t, "package", workflow.Steps[0].AzdCommand.Args[0])
+	require.Equal(t, "--all", workflow.Steps[0].AzdCommand.Args[1])
 }

@@ -91,10 +91,9 @@ type Step struct {
 }
 
 // NewAzdCommandStep creates a new step that executes an azd command with the specified name and args
-func NewAzdCommandStep(name string, args ...string) *Step {
+func NewAzdCommandStep(args ...string) *Step {
 	return &Step{
 		AzdCommand: Command{
-			Name: name,
 			Args: args,
 		},
 	}
@@ -102,7 +101,6 @@ func NewAzdCommandStep(name string, args ...string) *Step {
 
 // Command stores a single command to execute
 type Command struct {
-	Name string   `yaml:"command,omitempty"`
 	Args []string `yaml:"args,omitempty"`
 }
 
@@ -114,11 +112,6 @@ func (c *Command) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	// Map
 	var m map[string]interface{}
 	if err := unmarshal(&m); err == nil {
-		rawName, has := m["command"]
-		if has {
-			c.Name = rawName.(string)
-		}
-
 		rawArgs, has := m["args"]
 		if has {
 			argsArray, ok := rawArgs.([]interface{})
@@ -140,10 +133,7 @@ func (c *Command) UnmarshalYAML(unmarshal func(interface{}) error) error {
 	if err := unmarshal(&s); err == nil {
 		parts := strings.Split(s, " ")
 		if len(parts) > 0 {
-			c.Name = parts[0]
-		}
-		if len(parts) > 1 {
-			c.Args = parts[1:]
+			c.Args = parts
 		}
 
 		parsed = true

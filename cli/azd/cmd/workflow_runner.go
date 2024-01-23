@@ -38,18 +38,12 @@ func (r *WorkflowRunner) Run(ctx context.Context, workflow *workflow.Workflow) e
 	for _, step := range workflow.Steps {
 		childCtx := middleware.WithChildAction(ctx)
 
-		args := []string{}
-		if step.AzdCommand.Name != "" {
-			args = append(args, step.AzdCommand.Name)
-		}
-
 		if len(step.AzdCommand.Args) > 0 {
-			args = append(args, step.AzdCommand.Args...)
+			rootCmd.SetArgs(step.AzdCommand.Args)
 		}
 
-		rootCmd.SetArgs(args)
 		if err := rootCmd.ExecuteContext(childCtx); err != nil {
-			return fmt.Errorf("error executing step command '%s': %w", strings.Join(args, " "), err)
+			return fmt.Errorf("error executing step command '%s': %w", strings.Join(step.AzdCommand.Args, " "), err)
 		}
 	}
 

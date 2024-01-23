@@ -105,7 +105,7 @@ type BuildResult struct {
 func (ba *buildAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	// When the --only flag is NOT specified, we need to restore the project before building it.
 	if !ba.flags.only {
-		restoreArgs := []string{}
+		restoreArgs := []string{"restore"}
 		restoreArgs = append(restoreArgs, ba.args...)
 		if ba.flags.all {
 			restoreArgs = append(restoreArgs, "--all")
@@ -114,7 +114,7 @@ func (ba *buildAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 		// We restore the project by running a workflow that contains a restore command
 		workflow := &workflow.Workflow{
 			Steps: []*workflow.Step{
-				workflow.NewAzdCommandStep("restore", restoreArgs...),
+				workflow.NewAzdCommandStep(restoreArgs...),
 			},
 		}
 

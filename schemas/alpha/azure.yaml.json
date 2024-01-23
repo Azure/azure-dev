@@ -679,7 +679,9 @@
                 {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["steps"],
+                    "required": [
+                        "steps"
+                    ],
                     "properties": {
                         "steps": {
                             "type": "array",
@@ -721,17 +723,15 @@
                 {
                     "type": "object",
                     "additionalProperties": false,
-                    "required": ["command"],
+                    "required": [
+                        "args"
+                    ],
                     "properties": {
-                        "command": {
-                            "type": "string",
-                            "title": "The name of the azd command to execute",
-                            "description": "The name of the azd command to execute. (Example: deploy)"
-                        },
                         "args": {
                             "type": "array",
                             "title": "The arguments or flags to pass to the azd command",
-                            "description": "The arguments to pass to the azd command. (Example: --all)"
+                            "description": "The arguments to pass to the azd command. (Example: --all)",
+                            "minItems": 1
                         }
                     }
                 }

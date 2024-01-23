@@ -42,13 +42,13 @@ properties:
     registries:
     - server: {{ "{{ .Env.AZURE_CONTAINER_REGISTRY_ENDPOINT }}" }}
       identity: {{ "{{ .Env.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID }}" }}
-{{- if gt (len .Secrets) 0}}
+{{- if gt (len .Secrets) 0 }}
     secrets:
 {{- end}}
 {{- range $name, $value := .Secrets}}
       - name: {{containerAppSecretName $name}}
         value: {{$value}}
-{{- end}}      
+{{- end}}
   template:
     containers:
     - image: {{ "{{ .Image }}" }}

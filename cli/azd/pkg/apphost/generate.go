@@ -35,6 +35,17 @@ func init() {
 				"bicepName":        scaffold.BicepName,
 				"alphaSnakeUpper":  scaffold.AlphaSnakeUpper,
 				"containerAppName": scaffold.ContainerAppName,
+				"hasSecrets": func(env map[string]genContainerAppEnvVar) bool {
+					if env == nil {
+						return false
+					}
+					for _, v := range env {
+						if v.SecretRef != "" {
+							return true
+						}
+					}
+					return false
+				},
 			},
 		).
 		ParseFS(resources.AppHostTemplates, "apphost/templates/*")
@@ -674,7 +685,7 @@ func (b *infraGenerator) Compile() error {
 	for resourceName, docker := range b.dockerfiles {
 		projectTemplateCtx := genContainerAppManifestTemplateContext{
 			Name: resourceName,
-			Env:  make(map[string]string),
+			Env:  make(map[string]genContainerAppEnvVar),
 		}
 
 		ingress, err := buildIngress(docker.Bindings)
@@ -694,7 +705,7 @@ func (b *infraGenerator) Compile() error {
 	for resourceName, project := range b.projects {
 		projectTemplateCtx := genContainerAppManifestTemplateContext{
 			Name: resourceName,
-			Env:  make(map[string]string),
+			Env:  make(map[string]genContainerAppEnvVar),
 		}
 
 		binding, err := validateAndMergeBindings(project.Bindings)
@@ -884,7 +895,8 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 		targetType == "azure.cosmosdb.database.v0":
 		switch prop {
 		case "connectionString":
-			return fmt.Sprintf(`{{ connectionString "%s" }}`, resource), nil
+			//return fmt.Sprintf(`{{ connectionString "%s" }}`, resource), nil
+			return fmt.Sprintf(`secretRef:%s`, resource), nil
 		default:
 			return "", errUnsupportedProperty(targetType, prop)
 		}
@@ -965,8 +977,17 @@ func (b *infraGenerator) buildEnvBlock(env map[string]string, manifestCtx *genCo
 
 		// remove the trailing newline. yaml marshall will add a newline at the end of the string, as the new line is
 		// expected at the end of the yaml document. But we are getting a single value with valid yaml here, so we don't
-		// need the newline.
-		manifestCtx.Env[k] = string(yamlString[0 : len(yamlString)-1])
+		// need the newline
+		value := string(yamlString[0 : len(yamlString)-1])
+		var containerAppEnvVar genContainerAppEnvVar
+		if strings.Index(value, "secretRef:") != -1 {
+			resource := strings.Split(value, "secretRef:")[1]
+			containerAppEnvVar.SecretRef = resource
+			containerAppEnvVar.Value = fmt.Sprintf(`{{ connectionString "%s" }}`, resource)
+		} else {
+			containerAppEnvVar.Value = value
+		}
+		manifestCtx.Env[k] = containerAppEnvVar
 	}
 
 	return nil

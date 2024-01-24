@@ -212,18 +212,11 @@ func loadDLL() error {
 		if err != nil {
 			return fmt.Errorf("writing %s: %w", p, err)
 		}
-		// LoadLibrary searches the path for a DLL's dependencies but not the directory containing that DLL.
-		// So, if a DLL has dependencies (currently only bridge.dll does), we load them first.
-		if dll.name != "bridge.dll" {
-			_, err = windows.LoadDLL(p)
-			if err != nil {
-				return fmt.Errorf("loading %s: %w", p, err)
-			}
-		}
 	}
 	p := filepath.Join(dir, "bridge.dll")
-	bridge, err = windows.LoadDLL(p)
+	h, err := windows.LoadLibraryEx(p, 0, windows.LOAD_LIBRARY_SEARCH_DEFAULT_DIRS|windows.LOAD_LIBRARY_SEARCH_DLL_LOAD_DIR)
 	if err == nil {
+		bridge = &windows.DLL{Handle: h, Name: p}
 		authenticate, err = bridge.FindProc("Authenticate")
 	}
 	if err == nil {

@@ -5,7 +5,9 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
+	"github.com/azure/azure-dev/cli/azd/pkg/cosmosdb"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	infraBicep "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
@@ -108,6 +110,12 @@ func (p *DefaultPlatform) ConfigureContainer(container *ioc.NestedContainer) err
 	// Storage components
 	container.RegisterSingleton(storage.NewBlobClient)
 	container.RegisterSingleton(storage.NewBlobSdkClient)
+
+	// cosmosdb
+	container.RegisterSingleton(func() *arm.ClientOptions {
+		return &arm.ClientOptions{}
+	})
+	container.RegisterSingleton(cosmosdb.NewCosmosDbService)
 
 	// Templates
 

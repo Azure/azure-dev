@@ -8,6 +8,10 @@ type genStorageAccount struct {
 	Queues []string
 }
 
+type genCosmosAccount struct {
+	Databases []string
+}
+
 type genServiceBus struct {
 	Queues []string
 	Topics []string
@@ -96,12 +100,14 @@ type genBicepTemplateContext struct {
 	ContainerAppEnvironmentServices map[string]genContainerAppEnvironmentServices
 	ContainerApps                   map[string]genContainerApp
 	DaprComponents                  map[string]genDaprComponent
+	CosmosDbAccounts                map[string]genCosmosAccount
 }
 
 type genContainerAppManifestTemplateContext struct {
 	Name    string
 	Ingress *genContainerAppIngress
 	Env     map[string]string
+	Secrets map[string]string
 	Dapr    *genContainerAppManifestTemplateContextDapr
 }
 

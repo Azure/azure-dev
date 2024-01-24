@@ -14,6 +14,6 @@ resource aksRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
   }
 }
 
-resource aksCluster 'Microsoft.ContainerService/managedClusters@2023-10-01' existing = {
+resource aksCluster 'Microsoft.ContainerService/managedClusters@2023-10-02-preview' existing = {
   name: clusterName
 }

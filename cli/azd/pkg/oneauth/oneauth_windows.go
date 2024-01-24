@@ -9,11 +9,16 @@ package oneauth
 #include <stdbool.h>
 #include <stdlib.h>
 
-// This must match the definition in bridge.h exactly. We don't include
-// bridge.h because doing so would make the bridge DLL a dependency of
-// azd.exe and prevent distributing the DLL via embedding because Windows
-// won't execute a program's entry point if its DLL dependencies are
-// unavailable.
+// forward declaration; definition in c_funcs.go
+void goLogGateway(char *s);
+
+// Below definitions must match the ones in bridge.h exactly. We don't include
+// bridge.h because doing so would make the bridge DLL a dependency of azd.exe
+// and prevent distributing the DLL via embedding because Windows won't execute
+// a program's entry point if its DLL dependencies are unavailable.
+
+typedef void (*Logger)(char *);
+
 typedef struct
 {
 	char *accountID;
@@ -28,6 +33,7 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strings"
@@ -40,6 +46,11 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"golang.org/x/sys/windows"
 )
+
+//export goLog
+func goLog(s *C.char) {
+	log.Print(C.GoString(s))
+}
 
 // Supported indicates whether this build includes OneAuth integration.
 const Supported = true
@@ -87,35 +98,31 @@ func NewCredential(authority, clientID string, opts CredentialOptions) (azcore.T
 }
 
 func (c *credential) GetToken(ctx context.Context, opts policy.TokenRequestOptions) (azcore.AccessToken, error) {
-	ar, err := authn(c.authority, c.clientID, c.homeAccountID, strings.Join(opts.Scopes, " "), c.opts.NoPrompt, c.opts.Debug)
+	ar, err := authn(c.authority, c.clientID, c.homeAccountID, strings.Join(opts.Scopes, " "), c.opts.NoPrompt)
 	if err == nil {
 		c.homeAccountID = ar.homeAccountID
 	}
 	return ar.token, err
 }
 
-func LogIn(authority, clientID, scope string, debug bool) (string, error) {
-	ar, err := authn(authority, clientID, "", scope, false, debug)
+func LogIn(authority, clientID, scope string) (string, error) {
+	ar, err := authn(authority, clientID, "", scope, false)
 	return ar.homeAccountID, err
 }
 
-func Logout(clientID string, debug bool) error {
-	err := start(clientID, debug)
+func Logout(clientID string) error {
+	err := start(clientID)
 	if err == nil {
 		logout.Call()
 	}
 	return err
 }
 
-func start(clientID string, debug bool) error {
+func start(clientID string) error {
 	if started.CompareAndSwap(false, true) {
 		err := loadDLL()
 		if err != nil {
 			return err
-		}
-		dbg := uintptr(0)
-		if debug {
-			dbg = uintptr(1)
 		}
 		clientID := unsafe.Pointer(C.CString(clientID))
 		defer C.free(clientID)
@@ -123,7 +130,12 @@ func start(clientID string, debug bool) error {
 		defer C.free(appID)
 		v := unsafe.Pointer(C.CString(internal.VersionInfo().Version.String()))
 		defer C.free(v)
-		p, _, _ := startup.Call(uintptr(clientID), uintptr(appID), uintptr(v), dbg)
+		p, _, _ := startup.Call(
+			uintptr(clientID),
+			uintptr(appID),
+			uintptr(v),
+			uintptr(unsafe.Pointer(C.goLogGateway)),
+		)
 		// startup returns a char* message when it fails
 		if p != 0 {
 			// reset started so the next call will try to start OneAuth again
@@ -136,9 +148,9 @@ func start(clientID string, debug bool) error {
 	return nil
 }
 
-func authn(authority, clientID, homeAccountID, scope string, noPrompt, debug bool) (authResult, error) {
+func authn(authority, clientID, homeAccountID, scope string, noPrompt bool) (authResult, error) {
 	res := authResult{}
-	if err := start(clientID, debug); err != nil {
+	if err := start(clientID); err != nil {
 		return res, err
 	}
 	a := unsafe.Pointer(C.CString(authority))

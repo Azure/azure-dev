@@ -12,7 +12,7 @@ import (
 )
 
 func TestStart(t *testing.T) {
-	require.NoError(t, start("clientID", true))
+	require.NoError(t, start("clientID"))
 }
 
 func TestSupported(t *testing.T) {

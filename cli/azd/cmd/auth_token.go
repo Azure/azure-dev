@@ -151,7 +151,6 @@ func (a *authTokenAction) Run(ctx context.Context) (*actions.ActionResult, error
 
 	// If tenantId is still empty, the fallback is to use current logged in user's home-tenant id.
 	cred, err := a.credentialProvider(ctx, &auth.CredentialForCurrentUserOptions{
-		Debug:    a.flags.global != nil && a.flags.global.EnableDebugLogging,
 		NoPrompt: true,
 		TenantID: tenantId,
 	})

@@ -11,7 +11,16 @@ using Microsoft::Authentication::UUID;
 
 const int timeoutSeconds = 60;
 
-char *Startup(const char *clientId, const char *applicationId, const char *version, bool debug)
+static std::function<void(const char *)> globalLogCallback;
+void logCallback(LogLevel level, const char *message, int identifiableInformation)
+{
+    if (!identifiableInformation && globalLogCallback)
+    {
+        globalLogCallback(message);
+    }
+}
+
+char *Startup(const char *clientId, const char *applicationId, const char *version, Logger logger)
 {
     HRESULT OleInitResult = OleInitialize(NULL);
     if (OleInitResult != S_OK && OleInitResult != S_FALSE)
@@ -19,16 +28,9 @@ char *Startup(const char *clientId, const char *applicationId, const char *versi
         return "OleInitialize failed";
     }
 
-    if (debug)
-    {
-        // TODO: is it okay for --debug to imply PII logging?
-        OneAuth::SetLogPiiEnabled(true);
-        OneAuth::SetLogLevel(LogLevel::LogLevelInfo);
-    }
-    else
-    {
-        OneAuth::SetLogLevel(LogLevel::LogLevelNoLog);
-    }
+    globalLogCallback = logger;
+    OneAuth::SetLogCallback(logCallback);
+    OneAuth::SetLogLevel(LogLevel::LogLevelInfo);
 
     auto appConfig = AppConfiguration(applicationId, "azd", version, "en");
 

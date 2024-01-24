@@ -16,11 +16,11 @@ const Supported = false
 
 var errNotSupported = errors.New("this build doesn't support OneAuth authentication")
 
-func LogIn(authority, clientID, scope string, debug bool) (string, error) {
+func LogIn(authority, clientID, scope string) (string, error) {
 	return "", errNotSupported
 }
 
-func Logout(clientID string, debug bool) error {
+func Logout(clientID string) error {
 	return errNotSupported
 }
 

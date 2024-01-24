@@ -12,12 +12,12 @@ import (
 )
 
 func TestLogin(t *testing.T) {
-	_, err := LogIn("authority", "clientID", "scope", true)
+	_, err := LogIn("authority", "clientID", "scope")
 	require.ErrorIs(t, err, errNotSupported)
 }
 
 func TestLogout(t *testing.T) {
-	err := Logout("clientID", true)
+	err := Logout("clientID")
 	require.ErrorIs(t, err, errNotSupported)
 }
 

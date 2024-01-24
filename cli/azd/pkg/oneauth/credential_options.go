@@ -4,8 +4,6 @@
 package oneauth
 
 type CredentialOptions struct {
-	// Debug enables OneAuth logging, including PII.
-	Debug bool
 	// HomeAccountID of a previously authenticated user the credential
 	// should attempt to authenticate from OneAuth's cache.
 	HomeAccountID string

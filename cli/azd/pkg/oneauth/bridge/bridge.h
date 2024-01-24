@@ -8,6 +8,8 @@ extern "C"
 {
 #endif
 
+    typedef void (*Logger)(const char *);
+
     typedef struct
     {
         char *accountID;
@@ -23,8 +25,8 @@ extern "C"
     // - clientId: the client ID of the application
     // - applicationId: an identifier for the application e.g. "com.microsoft.azd"
     // - version: the application version
-    // - debug: whether to enable OneAuth console logging, including PII
-    __declspec(dllexport) char *Startup(const char *clientId, const char *applicationId, const char *version, bool debug);
+    // - logCallback: a function to call with log messages
+    __declspec(dllexport) char *Startup(const char *clientId, const char *applicationId, const char *version, Logger logCallback);
 
     // Authenticate acquires an access token. It will display an interactive login window if necessary, unless allowPrompt is false.
     // The parameters are:

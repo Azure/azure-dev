@@ -19,7 +19,6 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
 	"github.com/AzureAD/microsoft-authentication-library-for-go/apps/public"
-	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
@@ -218,7 +217,6 @@ func (m *Manager) CredentialForCurrentUser(
 	if currentUser.HomeAccountID != nil {
 		if currentUser.FromOneAuth {
 			return oneauth.NewCredential(cDefaultAuthority, cAZD_CLIENT_ID, oneauth.CredentialOptions{
-				Debug:         options.Debug,
 				HomeAccountID: *currentUser.HomeAccountID,
 				NoPrompt:      options.NoPrompt,
 			})
@@ -500,12 +498,11 @@ func (m *Manager) LoginInteractive(
 	return newAzdCredential(m.publicClient, &res.Account), nil
 }
 
-func (m *Manager) LoginWithOneAuth(ctx context.Context, scopes []string, global *internal.GlobalCommandOptions) error {
-	if scopes == nil {
+func (m *Manager) LoginWithOneAuth(ctx context.Context, scopes []string) error {
+	if len(scopes) == 0 {
 		scopes = LoginScopes
 	}
-	debug := global != nil && global.EnableDebugLogging
-	homeAccountID, err := oneauth.LogIn(cDefaultAuthority, cAZD_CLIENT_ID, strings.Join(scopes, " "), debug)
+	homeAccountID, err := oneauth.LogIn(cDefaultAuthority, cAZD_CLIENT_ID, strings.Join(scopes, " "))
 	if err == nil {
 		err = m.saveUserProperties(&userProperties{
 			FromOneAuth:   true,
@@ -666,10 +663,7 @@ func (m *Manager) Logout(ctx context.Context) error {
 	currentUser, _ := readUserProperties(cfg)
 	if currentUser != nil {
 		if currentUser.FromOneAuth {
-			// TODO: read GlobalCommandOptions.EnableDebugLogging
-			// (low priority; OneAuth doesn't currently log anything interesting during logout)
-			debug := false
-			if err := oneauth.Logout(cAZD_CLIENT_ID, debug); err != nil {
+			if err := oneauth.Logout(cAZD_CLIENT_ID); err != nil {
 				return fmt.Errorf("logging out of OneAuth: %w", err)
 			}
 		} else if currentUser.TenantID != nil && currentUser.ClientID != nil {
@@ -855,8 +849,6 @@ func (m *Manager) saveSecret(tenantId, clientId string, ps *persistedSecret) err
 }
 
 type CredentialForCurrentUserOptions struct {
-	// Debug controls whether to enable OneAuth logging, including PII.
-	Debug bool
 	// NoPrompt controls whether the credential may prompt for user interaction.
 	NoPrompt bool
 	// The tenant ID to use when constructing the credential, instead of the default tenant.

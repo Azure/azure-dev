@@ -80,7 +80,7 @@ func registerCommonMocks(mockContext *MockContext) {
 	mockContext.Container.MustRegisterSingleton(func() *alpha.FeatureManager {
 		return mockContext.AlphaFeaturesManager
 	})
-	mockContext.Container.RegisterSingleton(func() *cloud.Cloud {
+	mockContext.Container.MustRegisterSingleton(func() *cloud.Cloud {
 		return mockContext.Cloud
 	})
 }

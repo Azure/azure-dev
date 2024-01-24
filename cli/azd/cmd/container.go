@@ -615,7 +615,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	registerAction[*downAction](container, "azd-down-action")
 	registerAction[*configShowAction](container, "azd-config-show-action")
 
-	container.RegisterSingleton(func(
+	container.MustRegisterSingleton(func(
 		ctx context.Context,
 		userConfigManager config.UserConfigManager,
 		lazyProjectConfig *lazy.Lazy[*project.ProjectConfig],

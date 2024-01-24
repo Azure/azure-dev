@@ -353,10 +353,10 @@ func Test_EnvManager_CreateFromContainer(t *testing.T) {
 }
 
 func registerContainerComponents(t *testing.T, mockContext *mocks.MockContext) {
-	mockContext.Container.RegisterSingleton(func() *cloud.Cloud {
+	mockContext.Container.MustRegisterSingleton(func() *cloud.Cloud {
 		return cloud.GetAzurePublic()
 	})
-	mockContext.Container.RegisterSingleton(func() context.Context {
+	mockContext.Container.MustRegisterSingleton(func() context.Context {
 		return *mockContext.Context
 	})
 	mockContext.Container.MustRegisterSingleton(func() httputil.UserAgent {

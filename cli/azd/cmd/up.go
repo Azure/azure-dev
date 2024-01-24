@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
-	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -15,7 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
-	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
+	"github.com/azure/azure-dev/cli/azd/pkg/workflow"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -52,68 +52,46 @@ func newUpCmd() *cobra.Command {
 }
 
 type upAction struct {
-	flags                      *upFlags
-	env                        *environment.Environment
-	projectConfig              *project.ProjectConfig
-	packageActionInitializer   actions.ActionInitializer[*packageAction]
-	provisionActionInitializer actions.ActionInitializer[*provisionAction]
-	deployActionInitializer    actions.ActionInitializer[*deployAction]
-	console                    input.Console
-	runner                     middleware.MiddlewareContext
-	prompters                  prompt.Prompter
-	provisioningManager        *provisioning.Manager
-	importManager              *project.ImportManager
+	flags               *upFlags
+	console             input.Console
+	env                 *environment.Environment
+	projectConfig       *project.ProjectConfig
+	provisioningManager *provisioning.Manager
+	importManager       *project.ImportManager
+	workflowRunner      *WorkflowRunner
+}
+
+var defaultUpWorkflow = &workflow.Workflow{
+	Name: "up",
+	Steps: []*workflow.Step{
+		{AzdCommand: workflow.Command{Args: []string{"package", "--all"}}},
+		{AzdCommand: workflow.Command{Args: []string{"provision"}}},
+		{AzdCommand: workflow.Command{Args: []string{"deploy", "--all"}}},
+	},
 }
 
 func newUpAction(
 	flags *upFlags,
+	console input.Console,
 	env *environment.Environment,
 	_ auth.LoggedInGuard,
 	projectConfig *project.ProjectConfig,
-	packageActionInitializer actions.ActionInitializer[*packageAction],
-	provisionActionInitializer actions.ActionInitializer[*provisionAction],
-	deployActionInitializer actions.ActionInitializer[*deployAction],
-	console input.Console,
-	runner middleware.MiddlewareContext,
-	prompters prompt.Prompter,
 	provisioningManager *provisioning.Manager,
 	importManager *project.ImportManager,
+	workflowRunner *WorkflowRunner,
 ) actions.Action {
 	return &upAction{
-		flags:                      flags,
-		env:                        env,
-		projectConfig:              projectConfig,
-		packageActionInitializer:   packageActionInitializer,
-		provisionActionInitializer: provisionActionInitializer,
-		deployActionInitializer:    deployActionInitializer,
-		console:                    console,
-		runner:                     runner,
-		prompters:                  prompters,
-		provisioningManager:        provisioningManager,
-		importManager:              importManager,
+		flags:               flags,
+		console:             console,
+		env:                 env,
+		projectConfig:       projectConfig,
+		provisioningManager: provisioningManager,
+		importManager:       importManager,
+		workflowRunner:      workflowRunner,
 	}
 }
 
 func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
-	if u.flags.provisionFlags.noProgress {
-		fmt.Fprintln(
-			u.console.Handles().Stderr,
-			//nolint:lll
-			output.WithWarningFormat(
-				"WARNING: The '--no-progress' flag is deprecated and will be removed in a future release.",
-			),
-		)
-		// this flag actually isn't used by the provision command, we set it to false to hide the extra warning
-		u.flags.provisionFlags.noProgress = false
-	}
-
-	if u.flags.deployFlags.serviceName != "" {
-		fmt.Fprintln(
-			u.console.Handles().Stderr,
-			//nolint:lll
-			output.WithWarningFormat("WARNING: The '--service' flag is deprecated and will be removed in a future release."))
-	}
-
 	infra, err := u.importManager.ProjectInfrastructure(ctx, u.projectConfig)
 	if err != nil {
 		return nil, err
@@ -127,61 +105,52 @@ func (u *upAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 
 	startTime := time.Now()
 
-	packageAction, err := u.packageActionInitializer()
-	if err != nil {
-		return nil, err
-	}
-	packageOptions := &middleware.Options{CommandPath: "package"}
-	_, err = u.runner.RunChildAction(ctx, packageOptions, packageAction)
-	if err != nil {
-		return nil, err
+	upWorkflow, has := u.projectConfig.Workflows["up"]
+	if !has {
+		upWorkflow = defaultUpWorkflow
+	} else {
+		u.console.Message(ctx, output.WithGrayFormat("Note: Running custom 'up' workflow from azure.yaml"))
 	}
 
-	provision, err := u.provisionActionInitializer()
-	if err != nil {
-		return nil, err
-	}
-
-	provision.flags = &u.flags.provisionFlags
-	provisionOptions := &middleware.Options{CommandPath: "provision"}
-	provisionResult, err := u.runner.RunChildAction(ctx, provisionOptions, provision)
-	if err != nil {
-		return nil, err
-	}
-
-	// Print an additional newline to separate provision from deploy
-	u.console.Message(ctx, "")
-
-	deploy, err := u.deployActionInitializer()
-	if err != nil {
-		return nil, err
-	}
-
-	deploy.flags = &u.flags.deployFlags
-	// move flag to args to avoid extra deprecation flag warning
-	if deploy.flags.serviceName != "" {
-		deploy.args = []string{deploy.flags.serviceName}
-		deploy.flags.serviceName = ""
-	}
-	deployOptions := &middleware.Options{CommandPath: "deploy"}
-	_, err = u.runner.RunChildAction(ctx, deployOptions, deploy)
-	if err != nil {
+	if err := u.workflowRunner.Run(ctx, upWorkflow); err != nil {
 		return nil, err
 	}
 
 	return &actions.ActionResult{
 		Message: &actions.ResultMessage{
-			Header: fmt.Sprintf("Your application was provisioned and deployed to Azure in %s.",
+			Header: fmt.Sprintf("Your up workflow to provision and deploy to Azure completed in %s.",
 				ux.DurationAsText(since(startTime))),
-			FollowUp: provisionResult.Message.FollowUp,
 		},
 	}, nil
 }
 
 func getCmdUpHelpDescription(c *cobra.Command) string {
 	return generateCmdHelpDescription(
-		fmt.Sprintf("Executes the %s, %s and %s commands in a single step.",
-			output.WithHighLightFormat("azd package"),
-			output.WithHighLightFormat("azd provision"),
-			output.WithHighLightFormat("azd deploy")), nil)
+		heredoc.Docf(
+			`Runs a workflow to %s, %s and %s your application in a single step.
+
+			The %s workflow can be customized by adding a %s section to your %s.
+
+			For example, modify the workflow to provision before packaging and deploying:
+
+			-------------------------
+			%s
+			workflows:
+			  up:
+			    - azd: provision
+			    - azd: package --all
+			    - azd: deploy --all
+			-------------------------
+
+			Any azd command and flags are supported in the workflow steps.`,
+			output.WithHighLightFormat("package"),
+			output.WithHighLightFormat("provision"),
+			output.WithHighLightFormat("deploy"),
+			output.WithHighLightFormat("up"),
+			output.WithHighLightFormat("workflows"),
+			output.WithHighLightFormat("azure.yaml"),
+			output.WithGrayFormat("# azure.yaml"),
+		),
+		nil,
+	)
 }

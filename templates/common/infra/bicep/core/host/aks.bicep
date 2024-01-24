@@ -158,7 +158,7 @@ module managedCluster 'aks-managed-cluster.bicep' = {
     kubernetesVersion: kubernetesVersion
     addOns: addOnsConfig
     workspaceId: !empty(logAnalyticsName) ? logAnalytics.id : ''
-    enableAad: enableRbac
+    enableAad: enableAzureRbac && aadTenantId != ''
     disableLocalAccounts: disableLocalAccounts
     aadTenantId: aadTenantId
     enableRbac: enableRbac

@@ -108,10 +108,8 @@ func (p *DefaultPlatform) ConfigureContainer(container *ioc.NestedContainer) err
 	container.MustRegisterSingleton(storage.NewBlobSdkClient)
 
 	// cosmosdb
-	container.RegisterSingleton(func() *arm.ClientOptions {
-		return &arm.ClientOptions{}
-	})
-	container.RegisterSingleton(cosmosdb.NewCosmosDbService)
+	ioc.RegisterInstance(container, &arm.ClientOptions{})
+	container.MustRegisterSingleton(cosmosdb.NewCosmosDbService)
 
 	// Templates
 

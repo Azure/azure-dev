@@ -310,9 +310,10 @@ resource {{bicepName $name}}RoleAssignment 'Microsoft.Authorization/roleAssignme
 }
 {{- end}}
 {{range $name, $value := .CosmosDbAccounts}}
-resource {{bicepName $name}} 'Microsoft.DocumentDB/databaseAccounts@2023-11-15' = {
+resource {{bicepName $name}} 'Microsoft.DocumentDB/databaseAccounts@2023-04-15' = {
   name: replace('{{$name}}-${resourceToken}', '-', '')
   location: location
+  kind: 'GlobalDocumentDB'
   tags: union(tags, {'aspire-resource-name': '{{$name}}'})
   properties: {
     consistencyPolicy: { defaultConsistencyLevel: 'Session' }
@@ -324,28 +325,20 @@ resource {{bicepName $name}} 'Microsoft.DocumentDB/databaseAccounts@2023-11-15' 
     ]
     databaseAccountOfferType: 'Standard'
   }
-}
-// Cosmos DB Account Reader Role
-resource {{bicepName $name}}ReaderRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid({{bicepName $name}}.id, managedIdentity.id, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'fbdf93bf-df7d-467e-a4d2-9458aa1360c8'))
-  scope: {{bicepName $name}}
-  properties: {
-    principalId: managedIdentity.properties.principalId
-    principalType: 'ServicePrincipal'
-    roleDefinitionId:  subscriptionResourceId('Microsoft.Authorization/roleDefinitions', 'fbdf93bf-df7d-467e-a4d2-9458aa1360c8')
+{{range $cname := $value.Databases}}
+  resource {{bicepName $cname}} 'sqlDatabases@2023-04-15' = {
+    name: '{{$cname}}'
+    location: location
+    tags: union(tags, {'aspire-resource-name': '{{$cname}}'})
+    properties: {
+      resource: {
+        id: '{{$cname}}'
+      }
+    }
   }
+{{end -}}
 }
-// Cosmos DB Operator
-resource {{bicepName $name}}OperatorRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid({{bicepName $name}}.id, managedIdentity.id, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '230815da-be43-4aae-9cb4-875f7bd000aa'))
-  scope: {{bicepName $name}}
-  properties: {
-    principalId: managedIdentity.properties.principalId
-    principalType: 'ServicePrincipal'
-    roleDefinitionId:  subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '230815da-be43-4aae-9cb4-875f7bd000aa')
-  }
-}
-{{- end}}
+{{end -}}
 output MANAGED_IDENTITY_CLIENT_ID string = managedIdentity.properties.clientId
 {{if .HasContainerRegistry -}}
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = containerRegistry.properties.loginServer
@@ -376,6 +369,6 @@ output SERVICE_BINDING_{{alphaSnakeUpper $cname}}_ENDPOINT string = {{bicepName 
 output SERVICE_BINDING_{{alphaSnakeUpper $name}}_ENDPOINT string = {{bicepName $name}}.properties.vaultUri
 {{end -}}
 {{range $name, $value := .CosmosDbAccounts -}}
-output SERVICE_BINDING_{{alphaSnakeUpper $name}}_ENDPOINT string = {{bicepName $name}}.properties.documentEndpoint
+output SERVICE_BINDING_{{alphaSnakeUpper $name}}_NAME string = {{bicepName $name}}.name
 {{end -}}
 {{ end}}

@@ -9,6 +9,7 @@ type genStorageAccount struct {
 }
 
 type genCosmosAccount struct {
+	Databases []string
 }
 
 type genServiceBus struct {
@@ -106,6 +107,7 @@ type genContainerAppManifestTemplateContext struct {
 	Name    string
 	Ingress *genContainerAppIngress
 	Env     map[string]string
+	Secrets map[string]string
 	Dapr    *genContainerAppManifestTemplateContextDapr
 }
 

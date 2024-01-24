@@ -206,17 +206,22 @@ func TestBuildEnvResolveServiceToConnectionString(t *testing.T) {
 	expected := map[string]string{
 		"VAR1": "value1",
 		"VAR2": "value2",
+	}
+
+	expectedSecrets := map[string]string{
 		"VAR3": `complex {{ connectionString "service" }} expression`,
 	}
 
 	manifestCtx := &genContainerAppManifestTemplateContext{
-		Env: make(map[string]string),
+		Env:     make(map[string]string),
+		Secrets: make(map[string]string),
 	}
 
 	// Call the method being tested
 	err := mockGenerator.buildEnvBlock(env, manifestCtx)
 	require.NoError(t, err)
 	require.Equal(t, expected, manifestCtx.Env)
+	require.Equal(t, expectedSecrets, manifestCtx.Secrets)
 }
 
 func TestAddContainerAppService(t *testing.T) {

@@ -30,6 +30,7 @@ type CmdAnnotations map[string]string
 type Asker func(p survey.Prompt, response interface{}) error
 
 const environmentNameFlag string = "environment"
+const tenantIdFlagName string = "tenant-id"
 
 type envFlag struct {
 	environmentName string
@@ -43,6 +44,14 @@ func (e *envFlag) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptio
 		// Set the default value to AZURE_ENV_NAME value if available
 		os.Getenv(environment.EnvNameEnvVarName),
 		"The name of the environment to use.")
+}
+
+type tenantIdFlag struct {
+	tenantID string
+}
+
+func (e *tenantIdFlag) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+	local.StringVar(&e.tenantID, tenantIdFlagName, "", "Optional Tenant ID for the remote storage of the new environment")
 }
 
 func getResourceGroupFollowUp(

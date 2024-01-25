@@ -23,7 +23,7 @@ const RedisContainerAppService = "redis"
 
 const DaprStateStoreComponentType = "state"
 const DaprPubSubComponentType = "pubsub"
-const containerAppSecretConnectionString = "{{ connectionString }}"
+const containerAppSecretConnectionString = "{{ connectionString "
 
 // genTemplates is the collection of templates that are used when generating infrastructure files from a manifest.
 var genTemplates *template.Template

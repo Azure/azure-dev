@@ -20,12 +20,14 @@ void logCallback(LogLevel level, const char *message, int identifiableInformatio
     }
 }
 
-char *Startup(const char *clientId, const char *applicationId, const char *version, Logger logger)
+WrappedError *Startup(const char *clientId, const char *applicationId, const char *version, Logger logger)
 {
     HRESULT OleInitResult = OleInitialize(NULL);
     if (OleInitResult != S_OK && OleInitResult != S_FALSE)
     {
-        return "OleInitialize failed";
+        auto err = new WrappedError();
+        err->message = strdup("OleInitialize failed");
+        return err;
     }
 
     globalLogCallback = logger;
@@ -49,8 +51,9 @@ char *Startup(const char *clientId, const char *applicationId, const char *versi
     auto authnConfig = AuthenticatorConfiguration(appConfig, aadConfig, msaConfig, std::nullopt, std::nullopt);
     if (auto error = OneAuth::Startup(authnConfig))
     {
-        auto copy = strdup(error->ToString().c_str());
-        return copy;
+        auto wrapped = new WrappedError();
+        wrapped->message = strdup(error->ToString().c_str());
+        return wrapped;
     }
 
     return nullptr;
@@ -184,8 +187,20 @@ void FreeWrappedAuthResult(WrappedAuthResult *WrappedAuthResult)
 {
     // free the C strings because they were allocated with strdup;
     // delete the struct because it was allocated with new
-    free(WrappedAuthResult->accountID);
-    free(WrappedAuthResult->errorDescription);
-    free(WrappedAuthResult->token);
-    delete WrappedAuthResult;
+    if (WrappedAuthResult)
+    {
+        free(WrappedAuthResult->accountID);
+        free(WrappedAuthResult->errorDescription);
+        free(WrappedAuthResult->token);
+        delete WrappedAuthResult;
+    }
+}
+
+void FreeWrappedError(WrappedError *error)
+{
+    if (error)
+    {
+        free(error->message);
+        delete error;
+    }
 }

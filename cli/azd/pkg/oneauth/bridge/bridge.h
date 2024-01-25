@@ -18,7 +18,13 @@ extern "C"
         char *token;
     } WrappedAuthResult;
 
+    typedef struct
+    {
+        char *message;
+    } WrappedError;
+
     __declspec(dllexport) void FreeWrappedAuthResult(WrappedAuthResult *);
+    __declspec(dllexport) void FreeWrappedError(WrappedError *);
 
     // Startup OneAuth. Returns an error message if this fails, NULL if it succeeds.
     // The parameters are:
@@ -26,7 +32,7 @@ extern "C"
     // - applicationId: an identifier for the application e.g. "com.microsoft.azd"
     // - version: the application version
     // - logCallback: a function to call with log messages
-    __declspec(dllexport) char *Startup(const char *clientId, const char *applicationId, const char *version, Logger logCallback);
+    __declspec(dllexport) WrappedError *Startup(const char *clientId, const char *applicationId, const char *version, Logger logCallback);
 
     // Authenticate acquires an access token. It will display an interactive login window if necessary, unless allowPrompt is false.
     // The parameters are:

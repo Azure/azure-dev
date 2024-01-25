@@ -26,6 +26,11 @@ typedef struct
 	int expiresOn;
 	char *token;
 } WrappedAuthResult;
+
+typedef struct
+{
+	char *message;
+} WrappedError;
 */
 import "C"
 
@@ -69,6 +74,7 @@ var (
 	bridge       *windows.DLL
 	authenticate *windows.Proc
 	freeAR       *windows.Proc
+	freeError    *windows.Proc
 	logout       *windows.Proc
 	shutdown     *windows.Proc
 	startup      *windows.Proc
@@ -140,9 +146,9 @@ func start(clientID string) error {
 		if p != 0 {
 			// reset started so the next call will try to start OneAuth again
 			started.CompareAndSwap(true, false)
-			// TODO: in principle we should free the pointer but doing so from Go can cause a crash
-			msg := C.GoString((*C.char)(unsafe.Pointer(p)))
-			return fmt.Errorf("couldn't start OneAuth: %s", msg)
+			defer freeError.Call(p)
+			wrapped := (*C.WrappedError)(unsafe.Pointer(p))
+			return fmt.Errorf("couldn't start OneAuth: %s", C.GoString(wrapped.message))
 		}
 	}
 	return nil
@@ -221,6 +227,9 @@ func loadDLL() error {
 	}
 	if err == nil {
 		freeAR, err = bridge.FindProc("FreeWrappedAuthResult")
+	}
+	if err == nil {
+		freeError, err = bridge.FindProc("FreeWrappedError")
 	}
 	if err == nil {
 		logout, err = bridge.FindProc("Logout")

@@ -358,8 +358,8 @@ resource {{bicepName $name}} 'Microsoft.Sql/servers@2022-05-01-preview' = {
   }
 }
 
-resource {{bicepName $name}}Firewall 'Microsoft.Sql/servers/firewallRules@2022-05-01-preview' = {
-    name: 'fw-{{$name}}-${resourceToken}'
+resource {{bicepName $name}}Firewall 'firewallRules@2022-05-01-preview' = {
+    name: 'fw-{{$name}}'
     parent: {{bicepName $name}}
     properties: {
       startIpAddress: '0.0.0.0'
@@ -367,7 +367,7 @@ resource {{bicepName $name}}Firewall 'Microsoft.Sql/servers/firewallRules@2022-0
     }
 }
   {{range $cname := $value.Databases}}
-  resource {{bicepName $cname}} 'Microsoft.Sql/servers/databases@2022-05-01-preview' = {
+  resource {{bicepName $cname}} 'databases@2022-05-01-preview' = {
   name: '{{$cname}}'
   parent: {{bicepName $name}}
   location: location

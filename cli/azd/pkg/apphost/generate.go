@@ -23,7 +23,7 @@ const RedisContainerAppService = "redis"
 
 const DaprStateStoreComponentType = "state"
 const DaprPubSubComponentType = "pubsub"
-const containerAppSecretConnectionString = "{{ connectionString "
+const containerAppSecretConnectionString = "{{ connectionString }}"
 
 // genTemplates is the collection of templates that are used when generating infrastructure files from a manifest.
 var genTemplates *template.Template
@@ -344,7 +344,7 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 		case "azure.cosmosdb.database.v0":
 			b.addCosmosDatabase(*comp.Parent, name)
 		case "azure.sql.v0", "sqlserver.server.v0", "sqlserver.server.v1":
-			b.addSqlServers(name)
+			b.addSqlServer(name)
 		case "azure.sql.database.v0", "sqlserver.database.v0", "sqlserver.database.v1":
 			b.addSqlDatabase(*comp.Parent, name)
 		case "postgres.server.v0":
@@ -355,7 +355,7 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 			// resource type.
 		case "postgres.database.v0":
 			b.addContainerAppService(name, "postgres")
-		case "postgres.connection.v0", "rabbitmq.connection.v0", "azure.cosmosdb.connection.v0", "sqlserver.connection.v0":
+		case "postgres.connection.v0", "rabbitmq.connection.v0", "azure.cosmosdb.connection.v0":
 			// Only interesting thing about the connection resource is the connection string, which we handle above.
 
 			// We have the case statement here to ensure we don't error out on the resource type by treating it as an unknown
@@ -431,7 +431,7 @@ func (b *infraGenerator) addCosmosDatabase(cosmosDbAccount, dbName string) {
 	b.bicepContext.CosmosDbAccounts[cosmosDbAccount] = account
 }
 
-func (b *infraGenerator) addSqlServers(name string) {
+func (b *infraGenerator) addSqlServer(name string) {
 	if _, exists := b.bicepContext.SqlServers[name]; !exists {
 		b.bicepContext.SqlServers[name] = genSqlServer{}
 	}
@@ -902,7 +902,10 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 	case targetType == "postgres.database.v0" ||
 		targetType == "redis.v0" ||
 		targetType == "azure.cosmosdb.account.v0" ||
-		targetType == "azure.cosmosdb.database.v0":
+		targetType == "azure.cosmosdb.database.v0" ||
+		targetType == "azure.sql.database.v0" ||
+		targetType == "sqlserver.database.v0" ||
+		targetType == "sqlserver.database.v1":
 		switch prop {
 		case "connectionString":
 			// returns something like {{ connectionString "resource" }}
@@ -922,12 +925,11 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 		case "connectionString":
 			return fmt.Sprintf("{{ .Env.SERVICE_BINDING_%s_CONNECTION_STRING }}", scaffold.AlphaSnakeUpper(resource)), nil
 		default:
-			return "", errUnsupportedProperty("azure.appinsights.v0", prop)
+			return "", errUnsupportedProperty(targetType, prop)
 		}
 	case targetType == "azure.cosmosdb.connection.v0" ||
 		targetType == "postgres.connection.v0" ||
 		targetType == "rabbitmq.connection.v0":
-
 		switch prop {
 		case "connectionString":
 			return b.connectionStrings[resource], nil

@@ -88,6 +88,10 @@ type genInput struct {
 	DefaultMinLength int
 }
 
+type genSqlServer struct {
+	Databases []string
+}
+
 type genBicepTemplateContext struct {
 	HasContainerRegistry            bool
 	HasContainerEnvironment         bool
@@ -101,6 +105,7 @@ type genBicepTemplateContext struct {
 	ContainerApps                   map[string]genContainerApp
 	DaprComponents                  map[string]genDaprComponent
 	CosmosDbAccounts                map[string]genCosmosAccount
+	SqlServers                      map[string]genSqlServer
 }
 
 type genContainerAppManifestTemplateContext struct {

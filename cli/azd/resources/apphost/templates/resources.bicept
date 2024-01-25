@@ -325,6 +325,7 @@ resource {{bicepName $name}} 'Microsoft.DocumentDB/databaseAccounts@2023-04-15' 
     ]
     databaseAccountOfferType: 'Standard'
   }
+}
 {{range $cname := $value.Databases}}
   resource {{bicepName $cname}} 'sqlDatabases@2023-04-15' = {
     name: '{{$cname}}'
@@ -337,7 +338,45 @@ resource {{bicepName $name}} 'Microsoft.DocumentDB/databaseAccounts@2023-04-15' 
     }
   }
 {{end -}}
+{{end -}}
+{{range $name, $value := .SqlServers}}
+resource {{bicepName $name}} 'Microsoft.Sql/servers@2022-05-01-preview' = {
+  name: '{{$name}}-${resourceToken}'
+  location: location
+  tags: union(tags, {'aspire-resource-name': '{{$name}}'})
+  properties: {
+    minimalTlsVersion: '1.2'
+    publicNetworkAccess: 'Enabled'
+    administrators: {
+      administratorType: 'ActiveDirectory'
+      azureADOnlyAuthentication: true
+      login: managedIdentity.name
+      principalType: 'User'
+      sid: managedIdentity.properties.principalId
+      tenantId: subscription().tenantId
+    }
+  }
 }
+
+resource {{bicepName $name}}Firewall 'Microsoft.Sql/servers/firewallRules@2022-05-01-preview' = {
+    name: 'fw-{{$name}}-${resourceToken}'
+    parent: {{bicepName $name}}
+    properties: {
+      startIpAddress: '0.0.0.0'
+      endIpAddress: '255.255.255.255'
+    }
+}
+  {{range $cname := $value.Databases}}
+  resource {{bicepName $cname}} 'Microsoft.Sql/servers/databases@2022-05-01-preview' = {
+  name: '{{$cname}}'
+  parent: {{bicepName $name}}
+  location: location
+  sku: {
+    name: 'S0'
+  }
+  tags: union(tags, {'aspire-resource-name': '{{$cname}}'})
+  }
+{{end -}}
 {{end -}}
 output MANAGED_IDENTITY_CLIENT_ID string = managedIdentity.properties.clientId
 {{if .HasContainerRegistry -}}
@@ -370,5 +409,10 @@ output SERVICE_BINDING_{{alphaSnakeUpper $name}}_ENDPOINT string = {{bicepName $
 {{end -}}
 {{range $name, $value := .CosmosDbAccounts -}}
 output SERVICE_BINDING_{{alphaSnakeUpper $name}}_NAME string = {{bicepName $name}}.name
+{{end -}}
+{{range $name, $value := .SqlServers -}}
+{{range $cname := $value.Databases -}}
+output SERVICE_BINDING_{{alphaSnakeUpper $cname}}_CONNECTION_STRING string = 'Server=tcp:{{bicepName $name}}.Data.FullyQualifiedDomainName,1433;Initial Catalog={{bicepName $cname}};Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;Authentication=\'Active Directory Default\';'
+{{end -}}
 {{end -}}
 {{ end}}

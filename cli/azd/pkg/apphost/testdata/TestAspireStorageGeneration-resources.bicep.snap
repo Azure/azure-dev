@@ -130,7 +130,6 @@ resource photosQueuesRoleAssignment 'Microsoft.Authorization/roleAssignments@202
   }
 }
 
-
 output MANAGED_IDENTITY_CLIENT_ID string = managedIdentity.properties.clientId
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = containerRegistry.properties.loginServer
 output AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID string = managedIdentity.id

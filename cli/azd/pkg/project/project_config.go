@@ -7,6 +7,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/platform"
 	"github.com/azure/azure-dev/cli/azd/pkg/state"
+	"github.com/azure/azure-dev/cli/azd/pkg/workflow"
 )
 
 // ProjectConfig is the top level object serialized into an azure.yaml file.
@@ -24,6 +25,7 @@ type ProjectConfig struct {
 	Hooks             map[string]*ext.HookConfig `yaml:"hooks,omitempty"`
 	State             *state.Config              `yaml:"state,omitempty"`
 	Platform          *platform.Config           `yaml:"platform,omitempty"`
+	Workflows         workflow.WorkflowMap       `yaml:"workflows,omitempty"`
 
 	*ext.EventDispatcher[ProjectLifecycleEventArgs] `yaml:"-"`
 }

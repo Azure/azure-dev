@@ -73,7 +73,6 @@ resource mysqlabstract 'Microsoft.App/containerApps@2023-05-02-preview' = {
   tags: union(tags, {'aspire-resource-name': 'mysqlabstract'})
 }
 
-
 output MANAGED_IDENTITY_CLIENT_ID string = managedIdentity.properties.clientId
 output AZURE_CONTAINER_APPS_ENVIRONMENT_ID string = containerAppEnvironment.id
 output AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN string = containerAppEnvironment.properties.defaultDomain

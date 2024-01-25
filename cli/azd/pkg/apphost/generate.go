@@ -23,6 +23,7 @@ const RedisContainerAppService = "redis"
 
 const DaprStateStoreComponentType = "state"
 const DaprPubSubComponentType = "pubsub"
+const containerAppSecretConnectionString = "{{ connectionString "
 
 // genTemplates is the collection of templates that are used when generating infrastructure files from a manifest.
 var genTemplates *template.Template
@@ -32,9 +33,10 @@ func init() {
 		Option("missingkey=error").
 		Funcs(
 			template.FuncMap{
-				"bicepName":        scaffold.BicepName,
-				"alphaSnakeUpper":  scaffold.AlphaSnakeUpper,
-				"containerAppName": scaffold.ContainerAppName,
+				"bicepName":              scaffold.BicepName,
+				"alphaSnakeUpper":        scaffold.AlphaSnakeUpper,
+				"containerAppName":       scaffold.ContainerAppName,
+				"containerAppSecretName": scaffold.ContainerAppSecretName,
 			},
 		).
 		ParseFS(resources.AppHostTemplates, "apphost/templates/*")
@@ -338,6 +340,8 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 			b.addStorageTable(*comp.Parent, name)
 		case "azure.cosmosdb.account.v0":
 			b.addCosmosDbAccount(name)
+		case "azure.cosmosdb.database.v0":
+			b.addCosmosDatabase(*comp.Parent, name)
 		case "postgres.server.v0":
 			// We currently use a ACA Postgres Service per database. Because of this, we don't need to retain any
 			// information from the server resource.
@@ -411,7 +415,15 @@ func (b *infraGenerator) addAppInsights(name string) {
 }
 
 func (b *infraGenerator) addCosmosDbAccount(name string) {
-	b.bicepContext.CosmosDbAccounts[name] = genCosmosAccount{}
+	if _, exists := b.bicepContext.CosmosDbAccounts[name]; !exists {
+		b.bicepContext.CosmosDbAccounts[name] = genCosmosAccount{}
+	}
+}
+
+func (b *infraGenerator) addCosmosDatabase(cosmosDbAccount, dbName string) {
+	account := b.bicepContext.CosmosDbAccounts[cosmosDbAccount]
+	account.Databases = append(account.Databases, dbName)
+	b.bicepContext.CosmosDbAccounts[cosmosDbAccount] = account
 }
 
 func (b *infraGenerator) addProject(
@@ -663,8 +675,9 @@ func (b *infraGenerator) Compile() error {
 
 	for resourceName, docker := range b.dockerfiles {
 		projectTemplateCtx := genContainerAppManifestTemplateContext{
-			Name: resourceName,
-			Env:  make(map[string]string),
+			Name:    resourceName,
+			Env:     make(map[string]string),
+			Secrets: make(map[string]string),
 		}
 
 		ingress, err := buildIngress(docker.Bindings)
@@ -683,8 +696,9 @@ func (b *infraGenerator) Compile() error {
 
 	for resourceName, project := range b.projects {
 		projectTemplateCtx := genContainerAppManifestTemplateContext{
-			Name: resourceName,
-			Env:  make(map[string]string),
+			Name:    resourceName,
+			Env:     make(map[string]string),
+			Secrets: make(map[string]string),
 		}
 
 		binding, err := validateAndMergeBindings(project.Bindings)
@@ -868,10 +882,14 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 			return "",
 				fmt.Errorf("malformed binding expression, expected bindings.<binding-name>.[host|port|url] but was: %s", v)
 		}
-	case targetType == "postgres.database.v0" || targetType == "redis.v0":
+	case targetType == "postgres.database.v0" ||
+		targetType == "redis.v0" ||
+		targetType == "azure.cosmosdb.account.v0" ||
+		targetType == "azure.cosmosdb.database.v0":
 		switch prop {
 		case "connectionString":
-			return fmt.Sprintf(`{{ connectionString "%s" }}`, resource), nil
+			// returns something like {{ connectionString "resource" }}
+			return fmt.Sprintf(`%s"%s" }}`, containerAppSecretConnectionString, resource), nil
 		default:
 			return "", errUnsupportedProperty(targetType, prop)
 		}
@@ -902,8 +920,7 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 	case targetType == "azure.keyvault.v0" ||
 		targetType == "azure.storage.blob.v0" ||
 		targetType == "azure.storage.queue.v0" ||
-		targetType == "azure.storage.table.v0" ||
-		targetType == "azure.cosmosdb.account.v0":
+		targetType == "azure.storage.table.v0":
 		switch prop {
 		case "connectionString":
 			return fmt.Sprintf("{{ .Env.SERVICE_BINDING_%s_ENDPOINT }}", scaffold.AlphaSnakeUpper(resource)), nil
@@ -953,8 +970,14 @@ func (b *infraGenerator) buildEnvBlock(env map[string]string, manifestCtx *genCo
 
 		// remove the trailing newline. yaml marshall will add a newline at the end of the string, as the new line is
 		// expected at the end of the yaml document. But we are getting a single value with valid yaml here, so we don't
-		// need the newline.
-		manifestCtx.Env[k] = string(yamlString[0 : len(yamlString)-1])
+		// need the newline
+		value := string(yamlString[0 : len(yamlString)-1])
+
+		if strings.Contains(value, containerAppSecretConnectionString) {
+			manifestCtx.Secrets[k] = value
+		} else {
+			manifestCtx.Env[k] = value
+		}
 	}
 
 	return nil

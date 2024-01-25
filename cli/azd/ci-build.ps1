@@ -179,7 +179,7 @@ try {
     PrintFlags -flags $buildFlags
     if ($OneAuth) {
         # write the go build command line to a script because that's simpler than trying
-        # to escape the build flags, which contain commas and both kinds of quote
+        # to escape the build flags, which contain commas and both kinds of quotes
         Set-Content -Path build.sh -Value "go build $($buildFlags)"
         Invoke-Expression "$($MSYS2Shell) -mingw64 -defterm -no-start -here -c 'bash ./build.sh'"
         Remove-Item -Path build.sh -ErrorAction Ignore

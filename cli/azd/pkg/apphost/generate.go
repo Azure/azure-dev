@@ -902,9 +902,7 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 	case targetType == "postgres.database.v0" ||
 		targetType == "redis.v0" ||
 		targetType == "azure.cosmosdb.account.v0" ||
-		targetType == "azure.cosmosdb.database.v0" ||
-		targetType == "azure.sql.v0" ||
-		targetType == "azure.sql.database.v0":
+		targetType == "azure.cosmosdb.database.v0":
 		switch prop {
 		case "connectionString":
 			// returns something like {{ connectionString "resource" }}

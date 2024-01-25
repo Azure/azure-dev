@@ -149,6 +149,14 @@ func ContainerAppName(name string) string {
 	return containerAppName(name, containerAppNameMaxLen)
 }
 
+// ContainerAppSecretName returns a suitable name a container app secret name.
+//
+// The name is treated to only contain lowercase alphanumeric and dash characters, and must start and end with an
+// alphanumeric character
+func ContainerAppSecretName(name string) string {
+	return strings.ReplaceAll(strings.ToLower(name), "_", "-")
+}
+
 // ContainerAppInfix returns a suitable infix for a container app resource.
 //
 // The name is treated to only contain alphanumeric and dash characters, with no repeated dashes, and no dashes

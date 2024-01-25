@@ -19,8 +19,9 @@ armapimanagement
 armappconfiguration
 armappplatform
 armcognitiveservices
-asyncmy
+armcosmos
 armresourcegraph
+asyncmy
 asyncpg
 azapi
 AZCLI
@@ -52,8 +53,8 @@ buildpacks
 byoi
 cflags
 circleci
-cmdsubst
 cmdrecord
+cmdsubst
 cognitiveservices
 consolesize
 containerapp
@@ -97,8 +98,8 @@ hotspot
 iidfile
 ineffassign
 javac
-jquery
 jmes
+jquery
 keychain
 LASTEXITCODE
 ldflags
@@ -114,8 +115,8 @@ mockarmresources
 mockazcli
 mongojs
 mvnw
-mysqldb
 mysqlclient
+mysqldb
 nobanner
 nodeapp
 nolint
@@ -148,10 +149,10 @@ reauthentication
 relogin
 remarshal
 repourl
+requirepass
 resourcegraph
 restoreapp
 retriable
-requirepass
 rzip
 secureobject
 securestring

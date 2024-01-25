@@ -304,7 +304,8 @@ func Test_CLI_Telemetry_NestedCommands(t *testing.T) {
 			require.Contains(t, m, fields.CmdEntry)
 			require.Equal(t, "cmd.up", m[fields.CmdEntry])
 
-			require.NotContains(t, m, fields.CmdFlags)
+			require.Contains(t, m, fields.CmdFlags)
+			require.ElementsMatch(t, []string{"all", "trace-log-file"}, m[fields.CmdFlags])
 		} else if !provisionCmdFound {
 			require.Equal(t, "cmd.provision", span.Name)
 			provisionCmdFound = true
@@ -320,7 +321,8 @@ func Test_CLI_Telemetry_NestedCommands(t *testing.T) {
 			require.Contains(t, m, fields.CmdEntry)
 			require.Equal(t, "cmd.up", m[fields.CmdEntry])
 
-			require.NotContains(t, m, fields.CmdFlags)
+			require.Contains(t, m, fields.CmdFlags)
+			require.ElementsMatch(t, []string{"trace-log-file"}, m[fields.CmdFlags])
 		} else if !upCmdFound {
 			require.Equal(t, "cmd.up", span.Name)
 			upCmdFound = true

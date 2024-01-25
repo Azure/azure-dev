@@ -159,52 +159,51 @@ func servicePrincipal(
 		lookupKind = lookupKindEnvironmentVariable
 	}
 
-	if appIdOrName != "" {
-		servicePrincipal, err := adService.GetServicePrincipal(ctx, subscriptionId, appIdOrName)
-		if err != nil {
-			// If an explicit client id was specified but not found then fail
-			if lookupKind == lookupKindPrincipalId {
-				return nil, fmt.Errorf(
-					"service principal with client id '%s' specified in '--principal-id' parameter was not found. Error: %w",
-					args.PipelineServicePrincipalId,
-					err,
-				)
-			}
+	if appIdOrName == "" {
+		// Fall back to convention based naming
+		applicationName = fmt.Sprintf("az-dev-%s", time.Now().UTC().Format("01-02-2006-15-04-05"))
+		return &servicePrincipalResult{
+			appIdOrName:      applicationName,
+			applicationName:  applicationName,
+			servicePrincipal: nil,
+			lookupKind:       lookupKind,
+		}, nil
+	}
 
-			// If an explicit client id was specified but not found then fail
-			if lookupKind == lookupKindEnvironmentVariable {
-				return nil, fmt.Errorf(
-					"service principal with client id '%s' specified in environment variable '%s' was not found Error: %w",
-					envClientId,
-					AzurePipelineClientIdEnvVarName,
-					err,
-				)
-			}
-
-			// Return the name of the service principal that was not found. It will be use to create a new one.
-			return &servicePrincipalResult{
-				appIdOrName:      appIdOrName,
-				applicationName:  appIdOrName,
-				servicePrincipal: servicePrincipal,
-				lookupKind:       lookupKind,
-			}, nil
+	servicePrincipal, err := adService.GetServicePrincipal(ctx, subscriptionId, appIdOrName)
+	if err != nil {
+		// If an explicit client id was specified but not found then fail
+		if lookupKind == lookupKindPrincipalId {
+			return nil, fmt.Errorf(
+				"service principal with client id '%s' specified in '--principal-id' parameter was not found. Error: %w",
+				args.PipelineServicePrincipalId,
+				err,
+			)
 		}
 
+		// If an explicit client id was specified but not found then fail
+		if lookupKind == lookupKindEnvironmentVariable {
+			return nil, fmt.Errorf(
+				"service principal with client id '%s' specified in environment variable '%s' was not found Error: %w",
+				envClientId,
+				AzurePipelineClientIdEnvVarName,
+				err,
+			)
+		}
+
+		// Return the name of the service principal that was not found. It will be use to create a new one.
 		return &servicePrincipalResult{
-			appIdOrName:      servicePrincipal.AppId,
-			applicationName:  servicePrincipal.DisplayName,
+			appIdOrName:      appIdOrName,
+			applicationName:  appIdOrName,
 			servicePrincipal: servicePrincipal,
 			lookupKind:       lookupKind,
 		}, nil
-
 	}
 
-	// Fall back to convention based naming
-	applicationName = fmt.Sprintf("az-dev-%s", time.Now().UTC().Format("01-02-2006-15-04-05"))
 	return &servicePrincipalResult{
-		appIdOrName:      applicationName,
-		applicationName:  applicationName,
-		servicePrincipal: nil,
+		appIdOrName:      servicePrincipal.AppId,
+		applicationName:  servicePrincipal.DisplayName,
+		servicePrincipal: servicePrincipal,
 		lookupKind:       lookupKind,
 	}, nil
 }

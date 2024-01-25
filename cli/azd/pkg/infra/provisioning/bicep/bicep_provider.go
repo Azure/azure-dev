@@ -1870,7 +1870,7 @@ func (p *BicepProvider) ensureParameters(
 	template azure.ArmTemplate,
 ) (azure.ArmParameters, error) {
 	if p.ensureParamsInMemoryCache != nil {
-		return p.ensureParamsInMemoryCache, nil
+		return maps.Clone(p.ensureParamsInMemoryCache), nil
 	}
 
 	parameters, err := p.loadParameters(ctx)

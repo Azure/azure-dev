@@ -232,7 +232,7 @@ func (t *aksTarget) Deploy(
 	deploymentPath = filepath.Join(serviceConfig.Path(), deploymentPath)
 
 	err := t.kubectl.Apply(ctx, deploymentPath, nil)
-	kustomizeDir := filepath.Join(serviceConfig.Path(), overlayPath)
+	kustomizeDir := filepath.Join(serviceConfig.Project.Path, serviceConfig.RelativePath, overlayPath)
 // Gets the service endpoints for the AKS service target
 func (t *aksTarget) Endpoints(
 	ctx context.Context,

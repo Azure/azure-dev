@@ -355,11 +355,6 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 			// resource type.
 		case "postgres.database.v0":
 			b.addContainerAppService(name, "postgres")
-		case "postgres.connection.v0", "rabbitmq.connection.v0", "azure.cosmosdb.connection.v0":
-			// Only interesting thing about the connection resource is the connection string, which we handle above.
-
-			// We have the case statement here to ensure we don't error out on the resource type by treating it as an unknown
-			// resource type.
 		default:
 			ignore, err := strconv.ParseBool(os.Getenv("AZD_DEBUG_DOTNET_APPHOST_IGNORE_UNSUPPORTED_RESOURCES"))
 			if err == nil && ignore {
@@ -927,15 +922,6 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 			return fmt.Sprintf("{{ .Env.SERVICE_BINDING_%s_CONNECTION_STRING }}", scaffold.AlphaSnakeUpper(resource)), nil
 		default:
 			return "", errUnsupportedProperty("azure.appinsights.v0", prop)
-		}
-	case targetType == "azure.cosmosdb.connection.v0" ||
-		targetType == "postgres.connection.v0" ||
-		targetType == "rabbitmq.connection.v0":
-		switch prop {
-		case "connectionString":
-			return b.connectionStrings[resource], nil
-		default:
-			return "", errUnsupportedProperty(targetType, prop)
 		}
 	case targetType == "azure.keyvault.v0" ||
 		targetType == "azure.storage.blob.v0" ||

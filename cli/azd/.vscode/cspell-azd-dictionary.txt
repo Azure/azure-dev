@@ -21,6 +21,7 @@ armappplatform
 armcognitiveservices
 armcosmos
 armresourcegraph
+armsql
 asyncmy
 asyncpg
 azapi

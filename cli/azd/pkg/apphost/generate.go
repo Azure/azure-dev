@@ -343,9 +343,9 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 			b.addCosmosDbAccount(name)
 		case "azure.cosmosdb.database.v0":
 			b.addCosmosDatabase(*comp.Parent, name)
-		case "azure.sql.v0", "sqlserver.server.v0", "sqlserver.server.v1":
+		case "azure.sql.v0", "sqlserver.server.v0":
 			b.addSqlServer(name)
-		case "azure.sql.database.v0", "sqlserver.database.v0", "sqlserver.database.v1":
+		case "azure.sql.database.v0", "sqlserver.database.v0":
 			b.addSqlDatabase(*comp.Parent, name)
 		case "postgres.server.v0":
 			// We currently use a ACA Postgres Service per database. Because of this, we don't need to retain any
@@ -905,10 +905,8 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 		targetType == "azure.cosmosdb.database.v0" ||
 		targetType == "azure.sql.v0" ||
 		targetType == "sqlserver.server.v0" ||
-		targetType == "sqlserver.server.v1" ||
 		targetType == "azure.sql.database.v0" ||
-		targetType == "sqlserver.database.v0" ||
-		targetType == "sqlserver.database.v1":
+		targetType == "sqlserver.database.v0":
 		switch prop {
 		case "connectionString":
 			// returns something like {{ connectionString "resource" }}

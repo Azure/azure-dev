@@ -204,7 +204,7 @@ module containerRegistryAccess '../security/registry-access.bicep' = {
 }
 
 // Give AKS cluster access to the specified principal
-module clusterAccess '../security/aks-managed-cluster-access.bicep' = if (enableAzureRbac && disableLocalAccounts) {
+module clusterAccess '../security/aks-managed-cluster-access.bicep' = if (enableAzureRbac || disableLocalAccounts) {
   name: 'cluster-access'
   params: {
     clusterName: managedCluster.outputs.clusterName

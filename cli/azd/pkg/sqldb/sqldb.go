@@ -37,30 +37,13 @@ func (c *sqlDbClient) ConnectionString(ctx context.Context, subId, rgName, serve
 		return "", err
 	}
 
-	// Will delete this if not using: get list of databases for the server
-	// dbs := []armsql.Database{}
-	// pager := clientFactory.NewDatabasesClient().NewListByServerPager(rgName, serverName, &armsql.DatabasesClientListByServerOptions{SkipToken: nil})
-	// for pager.More() {
-	// 	page, err := pager.NextPage(ctx)
-	// 	if err != nil {
-	// 		return "", fmt.Errorf("failed getting next page of databases: %w", err)
-	// 	}
-
-	// 	for _, db := range page.DatabaseListResult.Value {
-	// 		if db != nil && db.Name != nil {
-	// 			dbs = append(dbs, *db)
-	// 		}
-	// 	}
-
-	// }
-
 	// get server fully qualified domain name
 	res, err := clientFactory.NewServersClient().Get(ctx, rgName, serverName, &armsql.ServersClientGetOptions{Expand: nil})
 	if err != nil {
 		return "", fmt.Errorf("failed getting server '%s' for resource group '%s'", serverName, rgName)
 	}
 
-	serverDomain := *res.Properties.FullyQualifiedDomainName
+	serverDomain := *res.Server.Properties.FullyQualifiedDomainName
 
 	if serverDomain == "" {
 		return "", fmt.Errorf("failed getting fully qualified domain name from server '%s'", serverName)

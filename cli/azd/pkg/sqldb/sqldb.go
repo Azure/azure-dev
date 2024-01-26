@@ -53,7 +53,7 @@ func (c *sqlDbClient) ConnectionString(ctx context.Context, subId, rgName, serve
 	if dbName != "" {
 		initialCatalog = fmt.Sprintf("Initial Catalog=%s;", dbName)
 	}
-	
+
 	return fmt.Sprintf("Server=tcp:%s,1433;Encrypt=True;%s"+
 		"TrustServerCertificate=False;Connection Timeout=30;Authentication=\"Active Directory Default\";",
 		serverDomain, initialCatalog), nil

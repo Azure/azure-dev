@@ -98,11 +98,16 @@ type ServiceManager interface {
 	GetServiceTarget(ctx context.Context, serviceConfig *ServiceConfig) (ServiceTarget, error)
 }
 
+// ServiceOperationCache is an alias to map used for internal caching of service operation results
+// The ServiceManager is a scoped component since it depends on the current environment
+// The ServiceOperationCache is used as a singleton cache for all service manager instances
+type ServiceOperationCache map[string]any
+
 type serviceManager struct {
 	env                 *environment.Environment
 	resourceManager     ResourceManager
 	serviceLocator      ioc.ServiceLocator
-	operationCache      map[string]any
+	operationCache      ServiceOperationCache
 	alphaFeatureManager *alpha.FeatureManager
 }
 
@@ -111,13 +116,14 @@ func NewServiceManager(
 	env *environment.Environment,
 	resourceManager ResourceManager,
 	serviceLocator ioc.ServiceLocator,
+	operationCache ServiceOperationCache,
 	alphaFeatureManager *alpha.FeatureManager,
 ) ServiceManager {
 	return &serviceManager{
 		env:                 env,
 		resourceManager:     resourceManager,
 		serviceLocator:      serviceLocator,
-		operationCache:      map[string]any{},
+		operationCache:      operationCache,
 		alphaFeatureManager: alphaFeatureManager,
 	}
 }
@@ -601,7 +607,7 @@ func (sm *serviceManager) getOperationResult(
 	serviceConfig *ServiceConfig,
 	operationName string,
 ) (any, bool) {
-	key := fmt.Sprintf("%s:%s", serviceConfig.Name, operationName)
+	key := fmt.Sprintf("%s:%s:%s", sm.env.Name(), serviceConfig.Name, operationName)
 	value, ok := sm.operationCache[key]
 
 	return value, ok
@@ -614,7 +620,7 @@ func (sm *serviceManager) setOperationResult(
 	operationName string,
 	result any,
 ) {
-	key := fmt.Sprintf("%s:%s", serviceConfig.Name, operationName)
+	key := fmt.Sprintf("%s:%s:%s", sm.env.Name(), serviceConfig.Name, operationName)
 	sm.operationCache[key] = result
 }
 

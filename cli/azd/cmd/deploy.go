@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
-	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
@@ -95,24 +94,22 @@ func newDeployCmd() *cobra.Command {
 }
 
 type deployAction struct {
-	flags                    *deployFlags
-	args                     []string
-	projectConfig            *project.ProjectConfig
-	azdCtx                   *azdcontext.AzdContext
-	env                      *environment.Environment
-	projectManager           project.ProjectManager
-	serviceManager           project.ServiceManager
-	resourceManager          project.ResourceManager
-	accountManager           account.Manager
-	azCli                    azcli.AzCli
-	formatter                output.Formatter
-	writer                   io.Writer
-	console                  input.Console
-	commandRunner            exec.CommandRunner
-	middlewareRunner         middleware.MiddlewareContext
-	packageActionInitializer actions.ActionInitializer[*packageAction]
-	alphaFeatureManager      *alpha.FeatureManager
-	importManager            *project.ImportManager
+	flags               *deployFlags
+	args                []string
+	projectConfig       *project.ProjectConfig
+	azdCtx              *azdcontext.AzdContext
+	env                 *environment.Environment
+	projectManager      project.ProjectManager
+	serviceManager      project.ServiceManager
+	resourceManager     project.ResourceManager
+	accountManager      account.Manager
+	azCli               azcli.AzCli
+	formatter           output.Formatter
+	writer              io.Writer
+	console             input.Console
+	commandRunner       exec.CommandRunner
+	alphaFeatureManager *alpha.FeatureManager
+	importManager       *project.ImportManager
 }
 
 func newDeployAction(
@@ -130,30 +127,26 @@ func newDeployAction(
 	console input.Console,
 	formatter output.Formatter,
 	writer io.Writer,
-	middlewareRunner middleware.MiddlewareContext,
-	packageActionInitializer actions.ActionInitializer[*packageAction],
 	alphaFeatureManager *alpha.FeatureManager,
 	importManager *project.ImportManager,
 ) actions.Action {
 	return &deployAction{
-		flags:                    flags,
-		args:                     args,
-		projectConfig:            projectConfig,
-		azdCtx:                   azdCtx,
-		env:                      environment,
-		projectManager:           projectManager,
-		serviceManager:           serviceManager,
-		resourceManager:          resourceManager,
-		accountManager:           accountManager,
-		azCli:                    azCli,
-		formatter:                formatter,
-		writer:                   writer,
-		console:                  console,
-		commandRunner:            commandRunner,
-		middlewareRunner:         middlewareRunner,
-		packageActionInitializer: packageActionInitializer,
-		alphaFeatureManager:      alphaFeatureManager,
-		importManager:            importManager,
+		flags:               flags,
+		args:                args,
+		projectConfig:       projectConfig,
+		azdCtx:              azdCtx,
+		env:                 environment,
+		projectManager:      projectManager,
+		serviceManager:      serviceManager,
+		resourceManager:     resourceManager,
+		accountManager:      accountManager,
+		azCli:               azCli,
+		formatter:           formatter,
+		writer:              writer,
+		console:             console,
+		commandRunner:       commandRunner,
+		alphaFeatureManager: alphaFeatureManager,
+		importManager:       importManager,
 	}
 }
 

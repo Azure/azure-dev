@@ -903,7 +903,7 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 		targetType == "redis.v0" ||
 		targetType == "azure.cosmosdb.account.v0" ||
 		targetType == "azure.cosmosdb.database.v0" ||
-		targetType == "azure.sql.v0" || 
+		targetType == "azure.sql.v0" ||
 		targetType == "sqlserver.server.v0" ||
 		targetType == "sqlserver.server.v1" ||
 		targetType == "azure.sql.database.v0" ||

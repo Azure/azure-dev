@@ -31,7 +31,7 @@ func NewSqlDbService(
 }
 
 // ConnectionString returns the connection string for the CosmosDB account
-func (c *sqlDbClient) ConnectionString(ctx context.Context, subId, rgName, serverName string, dbName string) (string, error) {
+func (c *sqlDbClient) ConnectionString(ctx context.Context, subId, rgName, serverName, dbName string) (string, error) {
 	clientFactory, err := armsql.NewClientFactory(subId, c.credential, c.options)
 	if err != nil {
 		return "", err
@@ -51,8 +51,11 @@ func (c *sqlDbClient) ConnectionString(ctx context.Context, subId, rgName, serve
 
 	// connection string for the server with no database
 	if dbName == "" {
-		return fmt.Sprintf("Server=tcp:%s,1433;Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;Authentication=\"Active Directory Default\";", serverDomain), nil
+		return fmt.Sprintf("Server=tcp:%s,1433;Encrypt=True;TrustServerCertificate=False;"+
+			"Connection Timeout=30;Authentication=\"Active Directory Default\";", serverDomain), nil
 	}
 
-	return fmt.Sprintf("Server=tcp:%s,1433;Encrypt=True;Initial Catalog=%s;TrustServerCertificate=False;Connection Timeout=30;Authentication=\"Active Directory Default\";", serverDomain, dbName), nil
+	return fmt.Sprintf("Server=tcp:%s,1433;Encrypt=True;Initial Catalog=%s;"+
+		"TrustServerCertificate=False;Connection Timeout=30;Authentication=\"Active Directory Default\";",
+		serverDomain, dbName), nil
 }

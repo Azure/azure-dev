@@ -413,7 +413,7 @@ func (fns *containerAppTemplateManifestFuncs) ConnectionString(name string) (str
 	case "azure.cosmosdb.database.v0":
 		// get the parent resource name, which is the cosmos account name
 		return fns.cosmosConnectionString(*resource.Parent)
-	case "azure.sql.account.v0", "sqlserver.account.v0":
+	case "azure.sql.v0", "sqlserver.server.v0", "sqlserver.server.v1":
 		return fns.sqlConnectionString(name, "")
 	case "azure.sql.database.v0", "sqlserver.database.v0", "sqlserver.database.v1":
 		return fns.sqlConnectionString(*resource.Parent, name)

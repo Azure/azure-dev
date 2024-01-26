@@ -920,15 +920,12 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 		default:
 			return "", errUnsupportedProperty("azure.servicebus.v0", prop)
 		}
-	case targetType == "azure.appinsights.v0" ||
-		targetType == "azure.sql.database.v0" ||
-		targetType == "sqlserver.database.v0" ||
-		targetType == "sqlserver.database.v1":
+	case targetType == "azure.appinsights.v0":
 		switch prop {
 		case "connectionString":
 			return fmt.Sprintf("{{ .Env.SERVICE_BINDING_%s_CONNECTION_STRING }}", scaffold.AlphaSnakeUpper(resource)), nil
 		default:
-			return "", errUnsupportedProperty(targetType, prop)
+			return "", errUnsupportedProperty("azure.appinsights.v0", prop)
 		}
 	case targetType == "azure.cosmosdb.connection.v0" ||
 		targetType == "postgres.connection.v0" ||

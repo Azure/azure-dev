@@ -28,6 +28,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/installer"
+	"github.com/azure/azure-dev/cli/azd/pkg/oneauth"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/blang/semver/v4"
@@ -59,6 +60,8 @@ func main() {
 	go fetchLatestVersion(latest)
 
 	cmdErr := cmd.NewRootCmd(ctx, false, nil).ExecuteContext(ctx)
+
+	oneauth.Shutdown()
 
 	if !isJsonOutput() {
 		if firstNotice := telemetry.FirstNotice(); firstNotice != "" {

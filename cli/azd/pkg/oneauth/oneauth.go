@@ -27,3 +27,5 @@ func Logout(clientID string) error {
 func NewCredential(authority, clientID string, opts CredentialOptions) (azcore.TokenCredential, error) {
 	return nil, errNotSupported
 }
+
+func Shutdown() {}

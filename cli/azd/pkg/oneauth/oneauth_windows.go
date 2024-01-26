@@ -80,6 +80,12 @@ var (
 	startup      *windows.Proc
 )
 
+func Shutdown() {
+	if started.CompareAndSwap(true, false) {
+		shutdown.Call()
+	}
+}
+
 type authResult struct {
 	homeAccountID string
 	token         azcore.AccessToken

@@ -15,6 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/platform"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/pkg/sqldb"
 	"github.com/azure/azure-dev/cli/azd/pkg/state"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
@@ -116,6 +117,9 @@ func (p *DefaultPlatform) ConfigureContainer(container *ioc.NestedContainer) err
 		return &arm.ClientOptions{}
 	})
 	container.RegisterSingleton(cosmosdb.NewCosmosDbService)
+
+	// sqldb
+	container.RegisterSingleton(sqldb.NewSqlDbService)
 
 	// Templates
 

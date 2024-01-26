@@ -67,8 +67,6 @@ output SERVICE_BINDING_{{alphaSnakeUpper $name}}_ENDPOINT string = resources.out
 output SERVICE_BINDING_{{alphaSnakeUpper $name}}_NAME string = resources.outputs.SERVICE_BINDING_{{alphaSnakeUpper $name}}_NAME
 {{end -}}
 {{range $name, $value := .SqlServers -}}
-{{range $cname := $value.Databases -}}
-output SERVICE_BINDING_{{alphaSnakeUpper $cname}}_CONNECTION_STRING string = resources.outputs.SERVICE_BINDING_{{alphaSnakeUpper $cname}}_CONNECTION_STRING
-{{end -}}
+output SERVICE_BINDING_{{alphaSnakeUpper $name}}_NAME string = resources.outputs.SERVICE_BINDING_{{alphaSnakeUpper $name}}_NAME
 {{end -}}
 {{ end}}

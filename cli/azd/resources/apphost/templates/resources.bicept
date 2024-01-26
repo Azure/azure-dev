@@ -414,8 +414,6 @@ output SERVICE_BINDING_{{alphaSnakeUpper $name}}_ENDPOINT string = {{bicepName $
 output SERVICE_BINDING_{{alphaSnakeUpper $name}}_NAME string = {{bicepName $name}}.name
 {{end -}}
 {{range $name, $value := .SqlServers -}}
-{{range $cname := $value.Databases -}}
-output SERVICE_BINDING_{{alphaSnakeUpper $cname}}_CONNECTION_STRING string = 'Server=tcp:{{bicepName $name}}.Data.FullyQualifiedDomainName,1433;Initial Catalog={{bicepName $cname}};Encrypt=True;TrustServerCertificate=False;Connection Timeout=30;Authentication=\'Active Directory Default\';'
-{{end -}}
+output SERVICE_BINDING_{{alphaSnakeUpper $name}}_NAME string = {{bicepName $name}}.name
 {{end -}}
 {{ end}}

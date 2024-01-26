@@ -355,12 +355,13 @@ func (t *aksTarget) ensureClusterContext(
 		return "", fmt.Errorf("failed retrieving managed cluster, %w", err)
 	}
 
-	rbacEnabled := convert.ToValueWithDefault(managedCluster.Properties.EnableRBAC, false)
+	azureRbacEnabled := managedCluster.Properties.AADProfile != nil &&
+		convert.ToValueWithDefault(managedCluster.Properties.AADProfile.EnableAzureRBAC, false)
 	localAccountsDisabled := convert.ToValueWithDefault(managedCluster.Properties.DisableLocalAccounts, false)
 
 	// If we're connecting to a cluster with RBAC enabled and local accounts disabled
 	// then we need to convert the kube config to use the exec auth module with azd auth
-	if rbacEnabled && localAccountsDisabled {
+	if azureRbacEnabled || localAccountsDisabled {
 		convertOptions := &kubelogin.ConvertOptions{
 			Login:      "azd",
 			KubeConfig: kubeConfigPath,

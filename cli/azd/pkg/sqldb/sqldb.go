@@ -49,13 +49,12 @@ func (c *sqlDbClient) ConnectionString(ctx context.Context, subId, rgName, serve
 		return "", fmt.Errorf("failed getting fully qualified domain name from server '%s'", serverName)
 	}
 
-	// connection string for the server with no database
-	if dbName == "" {
-		return fmt.Sprintf("Server=tcp:%s,1433;Encrypt=True;TrustServerCertificate=False;"+
-			"Connection Timeout=30;Authentication=\"Active Directory Default\";", serverDomain), nil
+	var initialCatalog string
+	if dbName != "" {
+		initialCatalog = fmt.Sprintf("Initial Catalog=%s;", dbName)
 	}
-
-	return fmt.Sprintf("Server=tcp:%s,1433;Encrypt=True;Initial Catalog=%s;"+
+	
+	return fmt.Sprintf("Server=tcp:%s,1433;Encrypt=True;%s"+
 		"TrustServerCertificate=False;Connection Timeout=30;Authentication=\"Active Directory Default\";",
-		serverDomain, dbName), nil
+		serverDomain, initialCatalog), nil
 }

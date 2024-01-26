@@ -438,7 +438,7 @@ func (fns *containerAppTemplateManifestFuncs) cosmosConnectionString(accountName
 		resourceName)
 }
 
-func (fns *containerAppTemplateManifestFuncs) sqlConnectionString(serverName string, sqlDbName string) (string, error) {
+func (fns *containerAppTemplateManifestFuncs) sqlConnectionString(serverName, sqlDbName string) (string, error) {
 	serverNameKey := fmt.Sprintf("SERVICE_BINDING_%s_NAME", scaffold.AlphaSnakeUpper(serverName))
 	resourceName := fns.env.Getenv(serverNameKey)
 	if resourceName == "" {

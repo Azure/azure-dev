@@ -113,7 +113,7 @@ func (p *DefaultPlatform) ConfigureContainer(container *ioc.NestedContainer) err
 	container.MustRegisterSingleton(cosmosdb.NewCosmosDbService)
 
 	// sqldb
-	container.RegisterSingleton(sqldb.NewSqlDbService)
+	container.MustRegisterSingleton(sqldb.NewSqlDbService)
 
 	// Templates
 

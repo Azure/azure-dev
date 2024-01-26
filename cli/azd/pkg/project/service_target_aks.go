@@ -291,12 +291,14 @@ func (t *aksTarget) ensureClusterContext(
 		return kubeConfigPath, nil
 	}
 
-	// Login to AKS cluster
+	// Resolve cluster name
 	clusterName, err := t.resolveClusterName(serviceConfig, targetResource)
 	if err != nil {
 		return "", err
+
 	}
 
+	// Login to AKS cluster
 	log.Printf("getting AKS credentials for cluster '%s'\n", clusterName)
 	clusterCreds, err := t.managedClustersService.GetUserCredentials(
 		ctx,

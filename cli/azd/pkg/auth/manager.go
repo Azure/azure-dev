@@ -22,6 +22,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
+	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/github"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -410,9 +411,6 @@ func (m *Manager) newCredentialFromFederatedTokenProvider(
 	clientID string,
 	provider federatedTokenProvider,
 ) (azcore.TokenCredential, error) {
-	if provider != gitHubFederatedAuth {
-		return nil, fmt.Errorf("unsupported federated token provider: '%s'", string(provider))
-	}
 	options := &azidentity.ClientAssertionCredentialOptions{
 		ClientOptions: policy.ClientOptions{
 			Transport: m.httpClient,
@@ -422,12 +420,26 @@ func (m *Manager) newCredentialFromFederatedTokenProvider(
 		tenantID,
 		clientID,
 		func(ctx context.Context) (string, error) {
-			federatedToken, err := m.ghClient.TokenForAudience(ctx, "api://AzureADTokenExchange")
-			if err != nil {
-				return "", fmt.Errorf("fetching federated token: %w", err)
-			}
+			switch provider {
+			case gitHubFederatedAuth:
+				federatedToken, err := m.ghClient.TokenForAudience(ctx, "api://AzureADTokenExchange")
+				if err != nil {
+					return "", fmt.Errorf("fetching federated token: %w", err)
+				}
 
-			return federatedToken, nil
+				return federatedToken, nil
+			case gitLabFederatedAuth:
+				federatedToken, has := os.LookupEnv("AZD_GITLAB_FEDERATED_TOKEN")
+				if !has {
+					return "",
+						errors.New("AZD_GITLAB_FEDERATED_TOKEN is not set. It should be a valid GitLab id_token with an " +
+							" an audience of 'api://AzureADTokenExchange'")
+				}
+
+				return federatedToken, nil
+			default:
+				panic(fmt.Sprintf("unexpected federated token provider: %v", provider))
+			}
 		},
 		options)
 	if err != nil {
@@ -598,7 +610,16 @@ func (m *Manager) LoginWithServicePrincipalCertificate(
 func (m *Manager) LoginWithServicePrincipalFederatedTokenProvider(
 	ctx context.Context, tenantId, clientId, provider string,
 ) (azcore.TokenCredential, error) {
-	cred, err := m.newCredentialFromFederatedTokenProvider(tenantId, clientId, federatedTokenProvider(provider))
+	switch federatedTokenProvider(provider) {
+	case gitHubFederatedAuth, gitLabFederatedAuth:
+		// ok
+	default:
+		return nil, fmt.Errorf("unsupported provider type: %s", provider)
+
+	}
+
+	federatedProvider := federatedTokenProvider(provider)
+	cred, err := m.newCredentialFromFederatedTokenProvider(tenantId, clientId, federatedProvider)
 	if err != nil {
 		return nil, err
 	}
@@ -608,7 +629,7 @@ func (m *Manager) LoginWithServicePrincipalFederatedTokenProvider(
 		clientId,
 		&persistedSecret{
 			FederatedAuth: &federatedAuth{
-				TokenProvider: &gitHubFederatedAuth,
+				TokenProvider: convert.RefOf(federatedProvider),
 			},
 		},
 	); err != nil {
@@ -840,8 +861,9 @@ type persistedSecret struct {
 }
 
 // federated auth token providers
-var (
+const (
 	gitHubFederatedAuth federatedTokenProvider = "github"
+	gitLabFederatedAuth federatedTokenProvider = "gitlab"
 )
 
 // token provider for federated auth

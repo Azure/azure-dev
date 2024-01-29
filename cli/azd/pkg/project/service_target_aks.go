@@ -576,7 +576,7 @@ func (t *aksTarget) setK8sContext(ctx context.Context, serviceConfig *ServiceCon
 	return nil
 }
 
-// resolveCluterName attempts to resolve the cluster name from the following sources:
+// resolveClusterName attempts to resolve the cluster name from the following sources:
 // 1. The 'AZD_AKS_CLUSTER' environment variable
 // 2. The 'resourceName' property in the azure.yaml (Can use expandable string as well)
 // 3. The 'resourceName' property passed the target resource

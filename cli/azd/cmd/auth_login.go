@@ -245,7 +245,7 @@ const cLoginSuccessMessage = "Logged in to Azure."
 
 func (la *loginAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if len(la.flags.scopes) == 0 {
-		la.flags.scopes = la.authManager.GetLoginScopes()
+		la.flags.scopes = la.authManager.LoginScopes()
 	}
 
 	if la.annotations[loginCmdParentAnnotation] == "" {

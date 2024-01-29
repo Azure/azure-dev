@@ -325,7 +325,6 @@ resource {{bicepName $name}} 'Microsoft.DocumentDB/databaseAccounts@2023-04-15' 
     ]
     databaseAccountOfferType: 'Standard'
   }
-}
 {{range $cname := $value.Databases}}
   resource {{bicepName $cname}} 'sqlDatabases@2023-04-15' = {
     name: '{{$cname}}'
@@ -338,7 +337,7 @@ resource {{bicepName $name}} 'Microsoft.DocumentDB/databaseAccounts@2023-04-15' 
     }
   }
 {{end -}}
-
+}
 {{end -}}
 
 {{range $name, $value := .SqlServers}}
@@ -358,11 +357,9 @@ resource {{bicepName $name}} 'Microsoft.Sql/servers@2022-05-01-preview' = {
       tenantId: subscription().tenantId
     }
   }
-}
 
-resource {{bicepName $name}}Firewall 'Microsoft.Sql/servers/firewallRules@2022-05-01-preview' = {
+resource {{bicepName $name}}Firewall 'firewallRules@2022-05-01-preview' = {
     name: 'fw-{{$name}}'
-    parent: {{bicepName $name}}
     properties: {
       startIpAddress: '0.0.0.0'
       endIpAddress: '255.255.255.255'
@@ -370,9 +367,8 @@ resource {{bicepName $name}}Firewall 'Microsoft.Sql/servers/firewallRules@2022-0
 }
 
   {{range $cname := $value.Databases}}
-  resource {{bicepName $cname}} 'Microsoft.Sql/servers/databases@2022-05-01-preview' = {
+  resource {{bicepName $cname}} 'databases@2022-05-01-preview' = {
   name: '{{$cname}}'
-  parent: {{bicepName $name}}
   location: location
   sku: {
     name: 'S0'
@@ -380,6 +376,7 @@ resource {{bicepName $name}}Firewall 'Microsoft.Sql/servers/firewallRules@2022-0
   tags: union(tags, {'aspire-resource-name': '{{$cname}}'})
   }
 {{end -}}
+}
 {{end -}}
 output MANAGED_IDENTITY_CLIENT_ID string = managedIdentity.properties.clientId
 {{if .HasContainerRegistry -}}

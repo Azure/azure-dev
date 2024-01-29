@@ -284,12 +284,9 @@ func (t *aksTarget) ensureClusterContext(
 	}
 
 	// Login to AKS cluster
-	clusterName, has := t.env.LookupEnv(environment.AksClusterEnvVarName)
-	if !has {
-		return "", fmt.Errorf(
-			"could not determine AKS cluster, ensure %s is set as an output of your infrastructure",
-			environment.AksClusterEnvVarName,
-		)
+	clusterName, err := t.resolveClusterName(serviceConfig, targetResource)
+	if err != nil {
+		return "", err
 	}
 
 	log.Printf("getting AKS credentials for cluster '%s'\n", clusterName)
@@ -577,4 +574,41 @@ func (t *aksTarget) setK8sContext(ctx context.Context, serviceConfig *ServiceCon
 	}
 
 	return nil
+}
+
+// resolveCluterName attempts to resolve the cluster name from the following sources:
+// 1. The 'AZD_AKS_CLUSTER' environment variable
+// 2. The 'resourceName' property in the azure.yaml (Can use expandable string as well)
+// 3. The 'resourceName' property passed the target resource
+func (t *aksTarget) resolveClusterName(
+	serviceConfig *ServiceConfig,
+	targetResource *environment.TargetResource,
+) (string, error) {
+	// Resolve cluster name
+	var clusterName string
+	envVarClusterName, _ := t.env.LookupEnv(environment.AksClusterEnvVarName)
+	yamlClusterName, _ := serviceConfig.ResourceName.Envsubst(t.env.Getenv)
+
+	clusterNameResolutions := []string{
+		envVarClusterName,
+		yamlClusterName,
+		targetResource.ResourceName(),
+	}
+
+	for _, resourceName := range clusterNameResolutions {
+		if resourceName != "" {
+			clusterName = resourceName
+			break
+		}
+	}
+
+	if clusterName == "" {
+		return "", fmt.Errorf(
+			// nolint:lll
+			"could not determine AKS cluster, ensure 'resourceName' is set in your azure.yaml or '%s' environment variable has been set.",
+			environment.AksClusterEnvVarName,
+		)
+	}
+
+	return clusterName, nil
 }

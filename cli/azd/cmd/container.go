@@ -629,7 +629,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 		// Default configuration
 		var cloudConfig = &cloud.Config{Name: cloud.AzurePublicName}
-		var suggestion func() string
+		var suggestionFn func() string
 
 		// User Configuration
 		if azdConfig, err := userConfigManager.Load(); err == nil {
@@ -640,7 +640,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 					cloudConfig = value
 
 					// In the event of an error set the suggestion for updating the cloud configuration
-					suggestion = func() string {
+					suggestionFn = func() string {
 						return "Set the cloud configuration using 'azd config set cloud.name <name>'. "
 					}
 				}
@@ -656,7 +656,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 				cloudConfig = value
 
 				// In the event of an error set the suggestion for updating the cloud configuration
-				suggestion = func() string {
+				suggestionFn = func() string {
 					return "Set the cloud configuration by editing the 'cloud' node in the project YAML file"
 				}
 			}
@@ -676,7 +676,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 								cloudConfig = value
 
 								// In the event of an error set the suggestion for updating the cloud configuration
-								suggestion = func() string {
+								suggestionFn = func() string {
 									// nolint:lll
 									return fmt.Sprintf("Set the cloud configuration by editing the 'cloud' node in the config.json file for the %s environment", defaultEnvName)
 								}
@@ -699,7 +699,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 			return nil, &azcli.ErrorWithSuggestion{
 				Err:        err,
-				Suggestion: fmt.Sprintf("%s\n%s", suggestion(), validClouds),
+				Suggestion: fmt.Sprintf("%s\n%s", suggestionFn(), validClouds),
 			}
 		}
 

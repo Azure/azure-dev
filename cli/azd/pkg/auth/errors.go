@@ -77,7 +77,7 @@ func (e *ReLoginRequiredError) Error() string {
 // matchesLoginScopes checks if the elements contained in the slice match the scopes acquired during login.
 func matchesLoginScopes(scopes []string, cloud *cloud.Cloud) bool {
 	for _, scope := range scopes {
-		_, matchLogin := getLoginScopesMap(cloud)[scope]
+		_, matchLogin := loginScopesMap(cloud)[scope]
 		if !matchLogin {
 			return false
 		}

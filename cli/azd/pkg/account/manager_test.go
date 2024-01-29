@@ -19,7 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var publicCloud = cloud.GetAzurePublic()
+var publicCloud = cloud.AzurePublic()
 
 func Test_GetAccountDefaults(t *testing.T) {
 	defaultSubscription := Subscription{

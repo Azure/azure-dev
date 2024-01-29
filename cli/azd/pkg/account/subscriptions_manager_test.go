@@ -157,7 +157,7 @@ func TestSubscriptionsManager_ListSubscriptions(t *testing.T) {
 				principalInfo = tt.args.principalInfo
 			}
 
-			publicCloud := cloud.GetAzurePublic()
+			publicCloud := cloud.AzurePublic()
 
 			subManager := &SubscriptionsManager{
 				service: NewSubscriptionsService(

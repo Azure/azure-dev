@@ -257,7 +257,7 @@ func (crs *containerRegistryService) getAcrToken(
 		return nil, fmt.Errorf("getting credentials for subscription '%s': %w", subscriptionId, err)
 	}
 
-	token, err := creds.GetToken(ctx, policy.TokenRequestOptions{Scopes: auth.GetLoginScopes(crs.cloud)})
+	token, err := creds.GetToken(ctx, policy.TokenRequestOptions{Scopes: auth.LoginScopes(crs.cloud)})
 	if err != nil {
 		return nil, fmt.Errorf("getting token for subscription '%s': %w", subscriptionId, err)
 	}

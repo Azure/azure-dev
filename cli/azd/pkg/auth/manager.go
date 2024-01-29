@@ -138,18 +138,18 @@ func NewManager(
 	}, nil
 }
 
-func GetLoginScopes(cloud *cloud.Cloud) []string {
+func LoginScopes(cloud *cloud.Cloud) []string {
 	resourceManagerUrl := cloud.Configuration.Services[azcloud.ResourceManager].Endpoint
 	return []string{
 		fmt.Sprintf("%s//.default", resourceManagerUrl),
 	}
 }
 
-func (m *Manager) GetLoginScopes() []string {
-	return GetLoginScopes(m.cloud)
+func (m *Manager) LoginScopes() []string {
+	return LoginScopes(m.cloud)
 }
 
-func getLoginScopesMap(cloud *cloud.Cloud) map[string]struct{} {
+func loginScopesMap(cloud *cloud.Cloud) map[string]struct{} {
 	resourceManagerUrl := cloud.Configuration.Services[azcloud.ResourceManager].Endpoint
 
 	return map[string]struct{}{resourceManagerUrl: {}}
@@ -163,7 +163,7 @@ func EnsureLoggedInCredential(
 	cloud *cloud.Cloud,
 ) (*azcore.AccessToken, error) {
 	token, err := credential.GetToken(ctx, policy.TokenRequestOptions{
-		Scopes: GetLoginScopes(cloud),
+		Scopes: LoginScopes(cloud),
 	})
 	if err != nil {
 		return &azcore.AccessToken{}, err

@@ -17,7 +17,7 @@ func (cli *azCli) GetFunctionAppProperties(
 	resourceGroup string,
 	appName string,
 ) (*AzCliFunctionAppProperties, error) {
-	webApp, err := cli.getAppService(ctx, subscriptionId, resourceGroup, appName)
+	webApp, err := cli.appService(ctx, subscriptionId, resourceGroup, appName)
 	if err != nil {
 		return nil, err
 	}
@@ -34,7 +34,7 @@ func (cli *azCli) DeployFunctionAppUsingZipFile(
 	appName string,
 	deployZipFile io.Reader,
 ) (*string, error) {
-	hostName, err := cli.getAppServiceRepositoryHost(ctx, subscriptionId, resourceGroup, appName)
+	hostName, err := cli.appServiceRepositoryHost(ctx, subscriptionId, resourceGroup, appName)
 	if err != nil {
 		return nil, err
 	}

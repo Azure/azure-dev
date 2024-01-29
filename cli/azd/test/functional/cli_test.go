@@ -51,7 +51,7 @@ import (
 // The current running configuration for the test suite.
 var cfg = cliConfig{}
 
-var publicCloud = cloud.GetAzurePublic()
+var publicCloud = cloud.AzurePublic()
 
 func init() {
 	cfg.init()

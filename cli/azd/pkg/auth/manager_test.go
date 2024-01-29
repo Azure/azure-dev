@@ -26,7 +26,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-var publicCloud = cloud.GetAzurePublic()
+var publicCloud = cloud.AzurePublic()
 
 func TestReadUserProperties(t *testing.T) {
 	t.Run("homeID", func(t *testing.T) {

@@ -95,8 +95,8 @@ func TestReLoginRequired(t *testing.T) {
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			publicCloud := cloud.GetAzurePublic()
-			_, got := newReLoginRequiredError(tt.resp, GetLoginScopes(publicCloud), publicCloud)
+			publicCloud := cloud.AzurePublic()
+			_, got := newReLoginRequiredError(tt.resp, LoginScopes(publicCloud), publicCloud)
 			require.Equal(t, tt.want, got)
 		})
 	}

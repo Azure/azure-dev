@@ -26,7 +26,7 @@ import (
 
 const TestManagementScope string = "https://management.azure.com//.default"
 
-var publicCloud = cloud.GetAzurePublic()
+var publicCloud = cloud.AzurePublic()
 
 func TestAuthToken(t *testing.T) {
 	wasCalled := false

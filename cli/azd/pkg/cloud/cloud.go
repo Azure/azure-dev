@@ -33,7 +33,7 @@ type Config struct {
 }
 
 func NewCloud(config *Config) (*Cloud, error) {
-	if cloud, err := getNamedCloud(config.Name); err != nil {
+	if cloud, err := namedCloud(config.Name); err != nil {
 		return nil, err
 	} else {
 		return cloud, nil
@@ -55,7 +55,7 @@ func ParseCloudConfig(partialConfig any) (*Config, error) {
 	return config, nil
 }
 
-func GetAzurePublic() *Cloud {
+func AzurePublic() *Cloud {
 	return &Cloud{
 		Configuration:         cloud.AzurePublic,
 		PortalUrlBase:         "https://portal.azure.com",
@@ -63,7 +63,7 @@ func GetAzurePublic() *Cloud {
 	}
 }
 
-func GetAzureGovernment() *Cloud {
+func AzureGovernment() *Cloud {
 	return &Cloud{
 		Configuration:         cloud.AzureGovernment,
 		PortalUrlBase:         "https://portal.azure.us",
@@ -71,7 +71,7 @@ func GetAzureGovernment() *Cloud {
 	}
 }
 
-func GetAzureChina() *Cloud {
+func AzureChina() *Cloud {
 	return &Cloud{
 		Configuration:         cloud.AzureChina,
 		PortalUrlBase:         "https://portal.azure.cn",
@@ -79,13 +79,13 @@ func GetAzureChina() *Cloud {
 	}
 }
 
-func getNamedCloud(name string) (*Cloud, error) {
+func namedCloud(name string) (*Cloud, error) {
 	if name == AzurePublicName || name == "" {
-		return GetAzurePublic(), nil
+		return AzurePublic(), nil
 	} else if name == AzureChinaCloudName {
-		return GetAzureChina(), nil
+		return AzureChina(), nil
 	} else if name == AzureUSGovernmentName {
-		return GetAzureGovernment(), nil
+		return AzureGovernment(), nil
 	}
 
 	return &Cloud{}, fmt.Errorf("Cloud name '%s' not found.", name)

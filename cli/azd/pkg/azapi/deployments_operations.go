@@ -13,7 +13,7 @@ import (
 	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
-	azdCloud "github.com/azure/azure-dev/cli/azd/pkg/cloud"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
 
@@ -34,7 +34,7 @@ type DeploymentOperations interface {
 func NewDeploymentOperations(
 	credentialProvider account.SubscriptionCredentialProvider,
 	httpClient httputil.HttpClient,
-	cloud *azdCloud.Cloud,
+	cloud *cloud.Cloud,
 ) DeploymentOperations {
 	return &deploymentOperations{
 		credentialProvider: credentialProvider,
@@ -48,7 +48,7 @@ type deploymentOperations struct {
 	credentialProvider account.SubscriptionCredentialProvider
 	httpClient         httputil.HttpClient
 	userAgent          string
-	cloud              *azdCloud.Cloud
+	cloud              *cloud.Cloud
 }
 
 func (dp *deploymentOperations) createDeploymentsOperationsClient(

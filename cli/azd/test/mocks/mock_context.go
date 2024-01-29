@@ -36,7 +36,7 @@ func NewMockContext(ctx context.Context) *MockContext {
 	httpClient := mockhttp.NewMockHttpUtil()
 	configManager := mockconfig.NewMockConfigManager()
 	config := config.NewEmptyConfig()
-	publicCloud := cloud.GetAzurePublic()
+	publicCloud := cloud.AzurePublic()
 
 	mockContext := &MockContext{
 		Credentials:                    &MockCredentials{},

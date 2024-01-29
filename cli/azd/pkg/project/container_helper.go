@@ -39,15 +39,33 @@ func NewContainerHelper(
 	}
 }
 
-func (ch *ContainerHelper) RegistryName(ctx context.Context) (string, error) {
-	loginServer, has := ch.env.LookupEnv(environment.ContainerRegistryEndpointEnvVarName)
-	if !has {
+// RegistryName returns the name of the container registry to use for the current environment from the following:
+// 1. AZURE_CONTAINER_REGISTRY_ENDPOINT environment variable
+// 2. docker.registry from the service configuration
+func (ch *ContainerHelper) RegistryName(ctx context.Context, serviceConfig *ServiceConfig) (string, error) {
+	var loginServer string
+	envVarRegistryName, _ := ch.env.LookupEnv(environment.ContainerRegistryEndpointEnvVarName)
+	yamlRegistryName, _ := serviceConfig.Docker.Registry.Envsubst(ch.env.Getenv)
+
+	registryNameResolution := []string{
+		envVarRegistryName,
+		yamlRegistryName,
+	}
+
+	for _, registryName := range registryNameResolution {
+		if registryName != "" {
+			loginServer = registryName
+			break
+		}
+	}
+
+	if loginServer == "" {
 		return "", fmt.Errorf(
-			"could not determine container registry endpoint, ensure %s is set as an output of your infrastructure",
+			//nolint:lll
+			"could not determine container registry endpoint, ensure 'registry' has been set in the docker options or '%s' environment variable has been set",
 			environment.ContainerRegistryEndpointEnvVarName,
 		)
 	}
-
 	return loginServer, nil
 }
 
@@ -56,7 +74,7 @@ func (ch *ContainerHelper) RemoteImageTag(
 	serviceConfig *ServiceConfig,
 	localImageTag string,
 ) (string, error) {
-	loginServer, err := ch.RegistryName(ctx)
+	loginServer, err := ch.RegistryName(ctx, serviceConfig)
 	if err != nil {
 		return "", err
 	}
@@ -94,9 +112,10 @@ func (ch *ContainerHelper) RequiredExternalTools(context.Context) []tools.Extern
 // it returns the name of the container registry that was logged into.
 func (ch *ContainerHelper) Login(
 	ctx context.Context,
+	serviceConfig *ServiceConfig,
 	targetResource *environment.TargetResource,
 ) (string, error) {
-	loginServer, err := ch.RegistryName(ctx)
+	loginServer, err := ch.RegistryName(ctx, serviceConfig)
 	if err != nil {
 		return "", err
 	}
@@ -106,9 +125,10 @@ func (ch *ContainerHelper) Login(
 
 func (ch *ContainerHelper) Credentials(
 	ctx context.Context,
+	serviceConfig *ServiceConfig,
 	targetResource *environment.TargetResource,
 ) (*azcli.DockerCredentials, error) {
-	loginServer, err := ch.RegistryName(ctx)
+	loginServer, err := ch.RegistryName(ctx, serviceConfig)
 	if err != nil {
 		return nil, err
 	}
@@ -128,7 +148,7 @@ func (ch *ContainerHelper) Deploy(
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress]) {
 			// Get ACR Login Server
-			loginServer, err := ch.RegistryName(ctx)
+			loginServer, err := ch.RegistryName(ctx, serviceConfig)
 			if err != nil {
 				task.SetError(err)
 				return

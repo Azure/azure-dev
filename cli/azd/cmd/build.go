@@ -67,7 +67,7 @@ type buildAction struct {
 	console        input.Console
 	formatter      output.Formatter
 	writer         io.Writer
-	workflowRunner *WorkflowRunner
+	workflowRunner *workflow.Runner
 }
 
 func newBuildAction(
@@ -80,7 +80,7 @@ func newBuildAction(
 	console input.Console,
 	formatter output.Formatter,
 	writer io.Writer,
-	workflowRunner *WorkflowRunner,
+	workflowRunner *workflow.Runner,
 
 ) actions.Action {
 	return &buildAction{

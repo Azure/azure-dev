@@ -56,6 +56,8 @@ type genProject struct {
 	Bindings map[string]*Binding
 }
 
+type genAppConfig struct{}
+
 type genDapr struct {
 	AppId                  string
 	Application            string
@@ -99,6 +101,7 @@ type genBicepTemplateContext struct {
 	KeyVaults                       map[string]genKeyVault
 	ContainerAppEnvironmentServices map[string]genContainerAppEnvironmentServices
 	ContainerApps                   map[string]genContainerApp
+	AppConfigs                      map[string]genAppConfig
 	DaprComponents                  map[string]genDaprComponent
 	CosmosDbAccounts                map[string]genCosmosAccount
 }

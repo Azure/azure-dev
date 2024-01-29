@@ -51,6 +51,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/npm"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/python"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/swa"
+	"github.com/azure/azure-dev/cli/azd/pkg/workflow"
 	"github.com/mattn/go-colorable"
 	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
@@ -596,10 +597,33 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		container.MustRegisterNamedSingleton(platformName, constructor)
 	}
 
-	container.MustRegisterSingleton(NewWorkflowRunner)
+	container.MustRegisterSingleton(func(s ioc.ServiceLocator) (workflow.AzdCommandRunner, error) {
+		var rootCmd *cobra.Command
+		if err := s.ResolveNamed("root-cmd", &rootCmd); err != nil {
+			return nil, err
+		}
+		return &workflowCmdAdapter{cmd: rootCmd}, nil
+
+	})
+	container.MustRegisterSingleton(workflow.NewRunner)
 
 	// Required for nested actions called from composite actions like 'up'
 	registerAction[*provisionAction](container, "azd-provision-action")
 	registerAction[*downAction](container, "azd-down-action")
 	registerAction[*configShowAction](container, "azd-config-show-action")
+}
+
+// workflowCmdAdapter adapts a cobra command to the workflow.AzdCommandRunner interface
+type workflowCmdAdapter struct {
+	cmd *cobra.Command
+}
+
+func (w *workflowCmdAdapter) SetArgs(args []string) {
+	w.cmd.SetArgs(args)
+}
+
+// ExecuteContext implements workflow.AzdCommandRunner
+func (w *workflowCmdAdapter) ExecuteContext(ctx context.Context) error {
+	childCtx := middleware.WithChildAction(ctx)
+	return w.cmd.ExecuteContext(childCtx)
 }

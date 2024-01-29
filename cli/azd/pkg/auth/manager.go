@@ -475,7 +475,7 @@ func (m *Manager) LoginInteractive(
 	scopes []string,
 	options *LoginInteractiveOptions) (azcore.TokenCredential, error) {
 	if scopes == nil {
-		scopes = m.GetLoginScopes()
+		scopes = m.LoginScopes()
 	}
 	acquireTokenOptions := []public.AcquireInteractiveOption{}
 	if options == nil {
@@ -510,7 +510,7 @@ func (m *Manager) LoginInteractive(
 func (m *Manager) LoginWithDeviceCode(
 	ctx context.Context, tenantID string, scopes []string, withOpenUrl WithOpenUrl) (azcore.TokenCredential, error) {
 	if scopes == nil {
-		scopes = m.GetLoginScopes()
+		scopes = m.LoginScopes()
 	}
 	options := []public.AcquireByDeviceCodeOption{}
 	if tenantID != "" {

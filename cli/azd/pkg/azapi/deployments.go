@@ -17,7 +17,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
-	azdCloud "github.com/azure/azure-dev/cli/azd/pkg/cloud"
+	"github.com/azure/azure-dev/cli/azd/pkg/cloud"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
 
@@ -91,13 +91,13 @@ type deployments struct {
 	credentialProvider account.SubscriptionCredentialProvider
 	httpClient         httputil.HttpClient
 	userAgent          string
-	cloud              *azdCloud.Cloud
+	cloud              *cloud.Cloud
 }
 
 func NewDeployments(
 	credentialProvider account.SubscriptionCredentialProvider,
 	httpClient httputil.HttpClient,
-	cloud *azdCloud.Cloud,
+	cloud *cloud.Cloud,
 ) Deployments {
 	return &deployments{
 		credentialProvider: credentialProvider,

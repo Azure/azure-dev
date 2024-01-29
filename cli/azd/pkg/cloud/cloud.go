@@ -33,7 +33,7 @@ type Config struct {
 }
 
 func NewCloud(config *Config) (*Cloud, error) {
-	if cloud, err := namedCloud(config.Name); err != nil {
+	if cloud, err := parseCloudName(config.Name); err != nil {
 		return nil, err
 	} else {
 		return cloud, nil
@@ -79,7 +79,7 @@ func AzureChina() *Cloud {
 	}
 }
 
-func namedCloud(name string) (*Cloud, error) {
+func parseCloudName(name string) (*Cloud, error) {
 	if name == AzurePublicName || name == "" {
 		return AzurePublic(), nil
 	} else if name == AzureChinaCloudName {

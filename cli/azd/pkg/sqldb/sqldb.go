@@ -43,9 +43,11 @@ func (c *sqlDbClient) ConnectionString(ctx context.Context, subId, rgName, serve
 		return "", fmt.Errorf("failed getting server '%s' for resource group '%s'", serverName, rgName)
 	}
 
-	serverDomain := *res.Server.Properties.FullyQualifiedDomainName
+	if res.Server.Properties == nil {
+		return "", fmt.Errorf("failed getting server properties from server '%s'", serverName)
+	}
 
-	if serverDomain == "" {
+	if res.Server.Properties.FullyQualifiedDomainName == nil {
 		return "", fmt.Errorf("failed getting fully qualified domain name from server '%s'", serverName)
 	}
 
@@ -56,5 +58,5 @@ func (c *sqlDbClient) ConnectionString(ctx context.Context, subId, rgName, serve
 
 	return fmt.Sprintf("Server=tcp:%s,1433;Encrypt=True;%s"+
 		"TrustServerCertificate=False;Connection Timeout=30;Authentication=\"Active Directory Default\";",
-		serverDomain, initialCatalog), nil
+		*res.Server.Properties.FullyQualifiedDomainName, initialCatalog), nil
 }

@@ -1,0 +1,18 @@
+{
+    "id": "azd-persistence",
+    "version": "0.0.1",
+    "name": "Azure Developer CLI - persistence",
+    "documentationURL": "https://github.com/azure/azure-dev/tree/main/ext/devcontainer/src/azd-persistence",
+    "description": "Preserve ~/.azd folder across container instances.",
+    "options": {},
+    "mounts": [
+      {
+        "source": "${devcontainerId}-azd",
+        "target": "/dc/azd",
+        "type": "volume"
+      }
+    ],
+    "installsAfter": [
+      "ghcr.io/azure/azure-dev/azd"
+    ]
+  }

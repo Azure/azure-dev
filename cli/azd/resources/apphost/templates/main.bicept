@@ -65,6 +65,7 @@ output SERVICE_BINDING_{{alphaSnakeUpper $name}}_ENDPOINT string = resources.out
 {{end -}}
 {{range $name, $value := .AppConfigs -}}
 output SERVICE_BINDING_{{alphaSnakeUpper $name}}_ENDPOINT string = resources.outputs.SERVICE_BINDING_{{alphaSnakeUpper $name}}_ENDPOINT
+{{end -}}
 {{range $name, $value := .CosmosDbAccounts -}}
 output SERVICE_BINDING_{{alphaSnakeUpper $name}}_NAME string = resources.outputs.SERVICE_BINDING_{{alphaSnakeUpper $name}}_NAME
 {{end -}}

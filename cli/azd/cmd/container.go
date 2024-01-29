@@ -88,8 +88,6 @@ func resolveAction[T actions.Action](serviceLocator ioc.ServiceLocator, actionNa
 
 // Registers common Azd dependencies
 func registerCommonDependencies(container *ioc.NestedContainer) {
-	// Core bootstrapping registrations
-	ioc.RegisterInstance(container, container)
 	container.MustRegisterSingleton(NewCobraBuilder)
 	container.MustRegisterSingleton(middleware.NewMiddlewareRunner)
 

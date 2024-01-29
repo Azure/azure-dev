@@ -21,7 +21,8 @@ var (
 )
 
 // NestedContainer is an IoC container that support nested containers
-// Used for more complex registration scenarios such as scop based registration/resolution.
+// Used for more complex registration scenarios such as scop based registration/resolution. The new container contains
+// registrations for itself as a [ServiceLocator] and [NestedContainer].
 type NestedContainer struct {
 	inner          container.Container
 	scopedBindings []*binding
@@ -43,6 +44,7 @@ func NewNestedContainer(parent *NestedContainer) *NestedContainer {
 	}
 
 	RegisterInstance[ServiceLocator](instance, instance)
+	RegisterInstance(instance, instance)
 
 	return instance
 }

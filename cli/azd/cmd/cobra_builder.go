@@ -120,8 +120,6 @@ func (cb *CobraBuilder) configureActionResolver(cmd *cobra.Command, descriptor *
 		ioc.RegisterInstance(cmdContainer, ctx)
 		ioc.RegisterInstance(cmdContainer, cmd)
 		ioc.RegisterInstance(cmdContainer, args)
-		ioc.RegisterInstance(cmdContainer, cmdContainer)
-		ioc.RegisterInstance[ioc.ServiceLocator](cmdContainer, cmdContainer)
 
 		actionName := createActionName(cmd)
 		var action actions.Action

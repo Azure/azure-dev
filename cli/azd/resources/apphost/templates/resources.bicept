@@ -327,7 +327,36 @@ resource {{bicepName $name}}RoleAssignment 'Microsoft.Authorization/roleAssignme
   }
 }
 {{- end}}
-
+{{range $name, $value := .CosmosDbAccounts}}
+resource {{bicepName $name}} 'Microsoft.DocumentDB/databaseAccounts@2023-04-15' = {
+  name: replace('{{$name}}-${resourceToken}', '-', '')
+  location: location
+  kind: 'GlobalDocumentDB'
+  tags: union(tags, {'aspire-resource-name': '{{$name}}'})
+  properties: {
+    consistencyPolicy: { defaultConsistencyLevel: 'Session' }
+    locations: [
+      {
+        locationName: location
+        failoverPriority: 0
+      }
+    ]
+    databaseAccountOfferType: 'Standard'
+  }
+{{range $cname := $value.Databases}}
+  resource {{bicepName $cname}} 'sqlDatabases@2023-04-15' = {
+    name: '{{$cname}}'
+    location: location
+    tags: union(tags, {'aspire-resource-name': '{{$cname}}'})
+    properties: {
+      resource: {
+        id: '{{$cname}}'
+      }
+    }
+  }
+{{end -}}
+}
+{{end -}}
 output MANAGED_IDENTITY_CLIENT_ID string = managedIdentity.properties.clientId
 {{if .HasContainerRegistry -}}
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = containerRegistry.properties.loginServer
@@ -359,5 +388,7 @@ output SERVICE_BINDING_{{alphaSnakeUpper $name}}_ENDPOINT string = {{bicepName $
 {{end -}}
 {{range $name, $value := .AppConfigs -}}
 output SERVICE_BINDING_{{alphaSnakeUpper $name}}_ENDPOINT string = {{bicepName $name}}.properties.endpoint
+{{range $name, $value := .CosmosDbAccounts -}}
+output SERVICE_BINDING_{{alphaSnakeUpper $name}}_NAME string = {{bicepName $name}}.name
 {{end -}}
 {{ end}}

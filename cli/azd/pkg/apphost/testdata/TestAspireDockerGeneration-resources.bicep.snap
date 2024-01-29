@@ -95,7 +95,6 @@ resource mysqlabstract 'Microsoft.App/containerApps@2023-05-02-preview' = {
   tags: union(tags, {'aspire-resource-name': 'mysqlabstract'})
 }
 
-
 output MANAGED_IDENTITY_CLIENT_ID string = managedIdentity.properties.clientId
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = containerRegistry.properties.loginServer
 output AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID string = managedIdentity.id

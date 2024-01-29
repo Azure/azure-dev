@@ -437,6 +437,19 @@
                     }
                 }
             ]
+        },
+        "workflows": {
+            "type": "object",
+            "title": "The workflows configuration used for the project.",
+            "description": "Optional. Provides additional configuration for workflows such as override azd up behavior.",
+            "additionalProperties": false,
+            "properties": {
+                "up": {
+                    "title": "The up workflow configuration",
+                    "description": "When specified will override the default behavior for the azd up workflow. Common use cases include changing the order of the provision, package and deploy commands.",
+                    "$ref": "#/definitions/workflow"
+                }
+            }
         }
     },
     "definitions": {
@@ -660,6 +673,69 @@
                     "description": "Optional. Used as the default environment type for this project."
                 }
             }
+        },
+        "workflow": {
+            "anyOf": [
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "steps"
+                    ],
+                    "properties": {
+                        "steps": {
+                            "type": "array",
+                            "title": "The steps to execute in the workflow",
+                            "description": "The steps to execute in the workflow. (Example: provision, package, deploy)",
+                            "minItems": 1,
+                            "items": {
+                                "type": "object",
+                                "$ref": "#/definitions/workflowStep"
+                            }
+                        }
+                    }
+                },
+                {
+                    "type": "array",
+                    "items": {
+                        "type": "object",
+                        "$ref": "#/definitions/workflowStep"
+                    }
+                }
+            ]
+        },
+        "workflowStep": {
+            "properties": {
+                "azd": {
+                    "title": "The azd command command configuration",
+                    "description": "The azd command configuration to execute. (Example: up)",
+                    "$ref": "#/definitions/azdCommand"
+                }
+            }
+        },
+        "azdCommand": {
+            "anyOf": [
+                {
+                    "type": "string",
+                    "title": "The azd command to execute",
+                    "description": "The name and args of the azd command to execute. (Example: deploy --all)"
+                },
+                {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "required": [
+                        "args"
+                    ],
+                    "properties": {
+                        "args": {
+                            "type": "array",
+                            "title": "The arguments or flags to pass to the azd command",
+                            "description": "The arguments to pass to the azd command. (Example: --all)",
+                            "minItems": 1
+                        }
+                    }
+                }
+            ]
         }
     }
 }

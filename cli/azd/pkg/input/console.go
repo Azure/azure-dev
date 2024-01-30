@@ -123,7 +123,9 @@ type AskerConsole struct {
 	previewer *progressLog
 
 	currentIndent *atomic.String
-	consoleWidth  *atomic.Int32
+	// consoleWidth is the width of the underlying console window. The value is updated as the window resized. Nil when
+	// isTerminal is false.
+	consoleWidth *atomic.Int32
 	// holds the last 2 bytes written by message or messageUX. This is used to detect when there is already an empty
 	// line (\n\n)
 	last2Byte [2]byte
@@ -295,6 +297,14 @@ type spinnerLine struct {
 }
 
 func (c *AskerConsole) spinnerLine(title string, indent string) spinnerLine {
+	if !c.isTerminal {
+		return spinnerLine{
+			Prefix:  indent,
+			CharSet: spinnerNoTerminalCharSet,
+			Message: title,
+		}
+	}
+
 	spinnerLen := len(indent) + len(spinnerCharSet[0]) + 1 // adding one for the empty space before the message
 	width := int(c.consoleWidth.Load())
 
@@ -394,6 +404,8 @@ var spinnerCharSet []string = []string{
 }
 
 var spinnerShortCharSet []string = []string{".", "..", "..."}
+
+var spinnerNoTerminalCharSet []string = []string{""}
 
 func setIndentation(spaces int) string {
 	bytes := make([]byte, spaces)
@@ -602,7 +614,8 @@ func (c *AskerConsole) Handles() ConsoleHandles {
 	return c.handles
 }
 
-func getConsoleWidth() int {
+// consoleWidth the number of columns in the active console window
+func consoleWidth() int {
 	width, _ := consolesize.GetConsoleSize()
 	return width
 }
@@ -623,10 +636,10 @@ func (c *AskerConsole) handleResize(width int) {
 func watchTerminalResize(c *AskerConsole) {
 	if runtime.GOOS == "windows" {
 		go func() {
-			prevWidth := getConsoleWidth()
+			prevWidth := consoleWidth()
 			for {
 				time.Sleep(time.Millisecond * 250)
-				width := getConsoleWidth()
+				width := consoleWidth()
 
 				if prevWidth != width {
 					c.handleResize(width)
@@ -641,7 +654,7 @@ func watchTerminalResize(c *AskerConsole) {
 		signal.Notify(signalChan, SIGWINCH)
 		go func() {
 			for range signalChan {
-				c.handleResize(getConsoleWidth())
+				c.handleResize(consoleWidth())
 			}
 		}()
 	}
@@ -671,7 +684,6 @@ func NewConsole(noPrompt bool, isTerminal bool, w io.Writer, handles ConsoleHand
 		writer:        w,
 		formatter:     formatter,
 		isTerminal:    isTerminal,
-		consoleWidth:  atomic.NewInt32(int32(getConsoleWidth())),
 		currentIndent: atomic.NewString(""),
 		noPrompt:      noPrompt,
 	}
@@ -681,12 +693,19 @@ func NewConsole(noPrompt bool, isTerminal bool, w io.Writer, handles ConsoleHand
 		Writer:       c.writer,
 		Suffix:       " ",
 		TerminalMode: spinnerTerminalMode(isTerminal),
-		CharSet:      spinnerCharSet,
 	}
+
+	if isTerminal {
+		spinnerConfig.CharSet = spinnerCharSet
+	} else {
+		spinnerConfig.CharSet = spinnerNoTerminalCharSet
+	}
+
 	c.spinner, _ = yacspin.New(spinnerConfig)
 	c.spinnerTerminalMode = spinnerConfig.TerminalMode
 
 	if isTerminal {
+		c.consoleWidth = atomic.NewInt32(int32(consoleWidth()))
 		watchTerminalResize(c)
 		watchTerminalInterrupt(c)
 	}

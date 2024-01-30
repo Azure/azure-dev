@@ -258,6 +258,7 @@ func newInfraGenerator() *infraGenerator {
 			StorageAccounts:                 make(map[string]genStorageAccount),
 			KeyVaults:                       make(map[string]genKeyVault),
 			ContainerApps:                   make(map[string]genContainerApp),
+			AppConfigs:                      make(map[string]genAppConfig),
 			DaprComponents:                  make(map[string]genDaprComponent),
 			CosmosDbAccounts:                make(map[string]genCosmosAccount),
 			SqlServers:                      make(map[string]genSqlServer),
@@ -331,6 +332,8 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 			b.addContainerAppService(name, RedisContainerAppService)
 		case "azure.keyvault.v0":
 			b.addKeyVault(name)
+		case "azure.appconfiguration.v0":
+			b.addAppConfig(name)
 		case "azure.storage.v0":
 			b.addStorageAccount(name)
 		case "azure.storage.blob.v0":
@@ -470,6 +473,10 @@ func (b *infraGenerator) addStorageAccount(name string) {
 
 func (b *infraGenerator) addKeyVault(name string) {
 	b.bicepContext.KeyVaults[name] = genKeyVault{}
+}
+
+func (b *infraGenerator) addAppConfig(name string) {
+	b.bicepContext.AppConfigs[name] = genAppConfig{}
 }
 
 func (b *infraGenerator) addStorageBlob(storageAccount, blobName string) {

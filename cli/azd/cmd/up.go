@@ -58,7 +58,7 @@ type upAction struct {
 	projectConfig       *project.ProjectConfig
 	provisioningManager *provisioning.Manager
 	importManager       *project.ImportManager
-	workflowRunner      *WorkflowRunner
+	workflowRunner      *workflow.Runner
 }
 
 var defaultUpWorkflow = &workflow.Workflow{
@@ -78,7 +78,7 @@ func newUpAction(
 	projectConfig *project.ProjectConfig,
 	provisioningManager *provisioning.Manager,
 	importManager *project.ImportManager,
-	workflowRunner *WorkflowRunner,
+	workflowRunner *workflow.Runner,
 ) actions.Action {
 	return &upAction{
 		flags:               flags,

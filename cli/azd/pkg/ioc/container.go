@@ -24,7 +24,6 @@ var (
 // Used for more complex registration scenarios such as scop based registration/resolution.
 type NestedContainer struct {
 	inner          container.Container
-	parent         *NestedContainer
 	scopedBindings []*binding
 }
 
@@ -40,8 +39,7 @@ func NewNestedContainer(parent *NestedContainer) *NestedContainer {
 	}
 
 	instance := &NestedContainer{
-		inner:  current,
-		parent: parent,
+		inner: current,
 	}
 
 	RegisterInstance[ServiceLocator](instance, instance)
@@ -114,7 +112,6 @@ func (c *NestedContainer) RegisterScoped(resolveFn any) error {
 	}
 
 	c.scopedBindings = append(c.scopedBindings, &binding{
-		lifetime: Scoped,
 		resolver: resolveFn,
 	})
 
@@ -141,7 +138,6 @@ func (c *NestedContainer) RegisterNamedScoped(name string, resolveFn any) error 
 
 	c.scopedBindings = append(c.scopedBindings, &binding{
 		name:     name,
-		lifetime: Scoped,
 		resolver: resolveFn,
 	})
 

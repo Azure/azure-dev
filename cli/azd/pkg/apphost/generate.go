@@ -261,6 +261,7 @@ func newInfraGenerator() *infraGenerator {
 			AppConfigs:                      make(map[string]genAppConfig),
 			DaprComponents:                  make(map[string]genDaprComponent),
 			CosmosDbAccounts:                make(map[string]genCosmosAccount),
+			SqlServers:                      make(map[string]genSqlServer),
 		},
 		containers:                   make(map[string]genContainer),
 		dapr:                         make(map[string]genDapr),
@@ -345,6 +346,10 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 			b.addCosmosDbAccount(name)
 		case "azure.cosmosdb.database.v0":
 			b.addCosmosDatabase(*comp.Parent, name)
+		case "azure.sql.v0", "sqlserver.server.v0":
+			b.addSqlServer(name)
+		case "azure.sql.database.v0", "sqlserver.database.v0":
+			b.addSqlDatabase(*comp.Parent, name)
 		case "postgres.server.v0":
 			// We currently use a ACA Postgres Service per database. Because of this, we don't need to retain any
 			// information from the server resource.
@@ -422,6 +427,18 @@ func (b *infraGenerator) addCosmosDatabase(cosmosDbAccount, dbName string) {
 	account := b.bicepContext.CosmosDbAccounts[cosmosDbAccount]
 	account.Databases = append(account.Databases, dbName)
 	b.bicepContext.CosmosDbAccounts[cosmosDbAccount] = account
+}
+
+func (b *infraGenerator) addSqlServer(name string) {
+	if _, exists := b.bicepContext.SqlServers[name]; !exists {
+		b.bicepContext.SqlServers[name] = genSqlServer{}
+	}
+}
+
+func (b *infraGenerator) addSqlDatabase(sqlAccount, dbName string) {
+	account := b.bicepContext.SqlServers[sqlAccount]
+	account.Databases = append(account.Databases, dbName)
+	b.bicepContext.SqlServers[sqlAccount] = account
 }
 
 func (b *infraGenerator) addProject(
@@ -887,7 +904,11 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 	case targetType == "postgres.database.v0" ||
 		targetType == "redis.v0" ||
 		targetType == "azure.cosmosdb.account.v0" ||
-		targetType == "azure.cosmosdb.database.v0":
+		targetType == "azure.cosmosdb.database.v0" ||
+		targetType == "azure.sql.v0" ||
+		targetType == "azure.sql.database.v0" ||
+		targetType == "sqlserver.server.v0" ||
+		targetType == "sqlserver.database.v0":
 		switch prop {
 		case "connectionString":
 			// returns something like {{ connectionString "resource" }}

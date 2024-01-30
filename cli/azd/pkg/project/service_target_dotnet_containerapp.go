@@ -23,6 +23,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/password"
+	"github.com/azure/azure-dev/cli/azd/pkg/sqldb"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 )
@@ -34,6 +35,7 @@ type dotnetContainerAppTarget struct {
 	resourceManager     ResourceManager
 	dotNetCli           dotnet.DotNetCli
 	cosmosDbService     cosmosdb.CosmosDbService
+	sqlDbService        sqldb.SqlDbService
 }
 
 // NewDotNetContainerAppTarget creates the Service Target for a Container App that is written in .NET. Unlike
@@ -51,6 +53,7 @@ func NewDotNetContainerAppTarget(
 	resourceManager ResourceManager,
 	dotNetCli dotnet.DotNetCli,
 	cosmosDbService cosmosdb.CosmosDbService,
+	sqlDbService sqldb.SqlDbService,
 ) ServiceTarget {
 	return &dotnetContainerAppTarget{
 		env:                 env,
@@ -59,6 +62,7 @@ func NewDotNetContainerAppTarget(
 		resourceManager:     resourceManager,
 		dotNetCli:           dotNetCli,
 		cosmosDbService:     cosmosDbService,
+		sqlDbService:        sqlDbService,
 	}
 }
 
@@ -184,6 +188,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 				targetResource:      targetResource,
 				containerAppService: at.containerAppService,
 				cosmosDbService:     at.cosmosDbService,
+				sqlDbService:        at.sqlDbService,
 				env:                 at.env,
 			}
 
@@ -351,6 +356,7 @@ type containerAppTemplateManifestFuncs struct {
 	targetResource      *environment.TargetResource
 	containerAppService containerapps.ContainerAppService
 	cosmosDbService     cosmosdb.CosmosDbService
+	sqlDbService        sqldb.SqlDbService
 	env                 *environment.Environment
 }
 
@@ -366,7 +372,7 @@ func (_ *containerAppTemplateManifestFuncs) UrlHost(s string) (string, error) {
 }
 
 // ConnectionString returns the connection string for the given resource name. Presently, we only support resources of
-// type `redis.v0`, `postgres.v0` and `cosmosdb.database.v0`.
+// type `redis.v0`, `postgres.v0`, `cosmosdb.database.v0`, `azure.sql.database.v0` and `sqlserver.database.v0`.
 //
 // It is callable from a template under the name `connectionString`.
 func (fns *containerAppTemplateManifestFuncs) ConnectionString(name string) (string, error) {
@@ -407,6 +413,10 @@ func (fns *containerAppTemplateManifestFuncs) ConnectionString(name string) (str
 	case "azure.cosmosdb.database.v0":
 		// get the parent resource name, which is the cosmos account name
 		return fns.cosmosConnectionString(*resource.Parent)
+	case "azure.sql.v0", "sqlserver.server.v0":
+		return fns.sqlConnectionString(name, "")
+	case "azure.sql.database.v0", "sqlserver.database.v0":
+		return fns.sqlConnectionString(*resource.Parent, name)
 	default:
 		return "", fmt.Errorf("connectionString: unsupported resource type '%s'", resource.Type)
 	}
@@ -426,6 +436,21 @@ func (fns *containerAppTemplateManifestFuncs) cosmosConnectionString(accountName
 		fns.targetResource.SubscriptionId(),
 		fns.targetResource.ResourceGroupName(),
 		resourceName)
+}
+
+func (fns *containerAppTemplateManifestFuncs) sqlConnectionString(serverName, sqlDbName string) (string, error) {
+	serverNameKey := fmt.Sprintf("SERVICE_BINDING_%s_NAME", scaffold.AlphaSnakeUpper(serverName))
+	resourceName := fns.env.Getenv(serverNameKey)
+	if resourceName == "" {
+		return "", fmt.Errorf("the value for SERVICE_BINDING_%s_NAME was not found or is empty", serverName)
+	}
+
+	return fns.sqlDbService.ConnectionString(
+		fns.ctx,
+		fns.targetResource.SubscriptionId(),
+		fns.targetResource.ResourceGroupName(),
+		resourceName,
+		sqlDbName)
 }
 
 // secretValue returns the value of the secret with the given name, or an error if the secret is not found. A nil value

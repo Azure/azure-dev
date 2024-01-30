@@ -295,7 +295,8 @@ func TestImportManagerProjectInfrastructureAspire(t *testing.T) {
 		lazyEnv: lazy.NewLazy(func() (*environment.Environment, error) {
 			env := environment.NewWithValues("env", map[string]string{})
 			// set the config to skip prompting
-			env.Config.Set("services.test.config.exposedServices", []interface{}{"test"})
+			e := env.Config.Set("services.test.config.exposedServices", []interface{}{"test"})
+			require.NoError(t, e)
 			return env, nil
 		}),
 		lazyEnvManager: lazy.NewLazy(func() (environment.Manager, error) {

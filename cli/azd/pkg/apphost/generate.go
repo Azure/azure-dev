@@ -258,8 +258,10 @@ func newInfraGenerator() *infraGenerator {
 			StorageAccounts:                 make(map[string]genStorageAccount),
 			KeyVaults:                       make(map[string]genKeyVault),
 			ContainerApps:                   make(map[string]genContainerApp),
+			AppConfigs:                      make(map[string]genAppConfig),
 			DaprComponents:                  make(map[string]genDaprComponent),
 			CosmosDbAccounts:                make(map[string]genCosmosAccount),
+			SqlServers:                      make(map[string]genSqlServer),
 		},
 		containers:                   make(map[string]genContainer),
 		dapr:                         make(map[string]genDapr),
@@ -330,6 +332,8 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 			b.addContainerAppService(name, RedisContainerAppService)
 		case "azure.keyvault.v0":
 			b.addKeyVault(name)
+		case "azure.appconfiguration.v0":
+			b.addAppConfig(name)
 		case "azure.storage.v0":
 			b.addStorageAccount(name)
 		case "azure.storage.blob.v0":
@@ -342,6 +346,10 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 			b.addCosmosDbAccount(name)
 		case "azure.cosmosdb.database.v0":
 			b.addCosmosDatabase(*comp.Parent, name)
+		case "azure.sql.v0", "sqlserver.server.v0":
+			b.addSqlServer(name)
+		case "azure.sql.database.v0", "sqlserver.database.v0":
+			b.addSqlDatabase(*comp.Parent, name)
 		case "postgres.server.v0":
 			// We currently use a ACA Postgres Service per database. Because of this, we don't need to retain any
 			// information from the server resource.
@@ -350,11 +358,6 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 			// resource type.
 		case "postgres.database.v0":
 			b.addContainerAppService(name, "postgres")
-		case "postgres.connection.v0", "rabbitmq.connection.v0", "azure.cosmosdb.connection.v0":
-			// Only interesting thing about the connection resource is the connection string, which we handle above.
-
-			// We have the case statement here to ensure we don't error out on the resource type by treating it as an unknown
-			// resource type.
 		default:
 			ignore, err := strconv.ParseBool(os.Getenv("AZD_DEBUG_DOTNET_APPHOST_IGNORE_UNSUPPORTED_RESOURCES"))
 			if err == nil && ignore {
@@ -426,6 +429,18 @@ func (b *infraGenerator) addCosmosDatabase(cosmosDbAccount, dbName string) {
 	b.bicepContext.CosmosDbAccounts[cosmosDbAccount] = account
 }
 
+func (b *infraGenerator) addSqlServer(name string) {
+	if _, exists := b.bicepContext.SqlServers[name]; !exists {
+		b.bicepContext.SqlServers[name] = genSqlServer{}
+	}
+}
+
+func (b *infraGenerator) addSqlDatabase(sqlAccount, dbName string) {
+	account := b.bicepContext.SqlServers[sqlAccount]
+	account.Databases = append(account.Databases, dbName)
+	b.bicepContext.SqlServers[sqlAccount] = account
+}
+
 func (b *infraGenerator) addProject(
 	name string, path string, env map[string]string, bindings map[string]*Binding,
 ) {
@@ -458,6 +473,10 @@ func (b *infraGenerator) addStorageAccount(name string) {
 
 func (b *infraGenerator) addKeyVault(name string) {
 	b.bicepContext.KeyVaults[name] = genKeyVault{}
+}
+
+func (b *infraGenerator) addAppConfig(name string) {
+	b.bicepContext.AppConfigs[name] = genAppConfig{}
 }
 
 func (b *infraGenerator) addStorageBlob(storageAccount, blobName string) {
@@ -885,7 +904,11 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 	case targetType == "postgres.database.v0" ||
 		targetType == "redis.v0" ||
 		targetType == "azure.cosmosdb.account.v0" ||
-		targetType == "azure.cosmosdb.database.v0":
+		targetType == "azure.cosmosdb.database.v0" ||
+		targetType == "azure.sql.v0" ||
+		targetType == "azure.sql.database.v0" ||
+		targetType == "sqlserver.server.v0" ||
+		targetType == "sqlserver.database.v0":
 		switch prop {
 		case "connectionString":
 			// returns something like {{ connectionString "resource" }}
@@ -906,16 +929,6 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 			return fmt.Sprintf("{{ .Env.SERVICE_BINDING_%s_CONNECTION_STRING }}", scaffold.AlphaSnakeUpper(resource)), nil
 		default:
 			return "", errUnsupportedProperty("azure.appinsights.v0", prop)
-		}
-	case targetType == "azure.cosmosdb.connection.v0" ||
-		targetType == "postgres.connection.v0" ||
-		targetType == "rabbitmq.connection.v0":
-
-		switch prop {
-		case "connectionString":
-			return b.connectionStrings[resource], nil
-		default:
-			return "", errUnsupportedProperty(targetType, prop)
 		}
 	case targetType == "azure.keyvault.v0" ||
 		targetType == "azure.storage.blob.v0" ||

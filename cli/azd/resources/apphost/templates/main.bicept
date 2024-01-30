@@ -35,6 +35,9 @@ module resources 'resources.bicep' = {
 }
 
 output MANAGED_IDENTITY_CLIENT_ID string = resources.outputs.MANAGED_IDENTITY_CLIENT_ID
+{{if .HasLogAnalyticsWorkspace -}}
+output AZURE_LOG_ANALYTICS_WORKSPACE_NAME string = resources.outputs.AZURE_LOG_ANALYTICS_WORKSPACE_NAME
+{{end -}}
 {{if .HasContainerRegistry -}}
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = resources.outputs.AZURE_CONTAINER_REGISTRY_ENDPOINT
 output AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID string = resources.outputs.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID
@@ -63,7 +66,13 @@ output SERVICE_BINDING_{{alphaSnakeUpper $cname}}_ENDPOINT string = resources.ou
 {{range $name, $value := .KeyVaults -}}
 output SERVICE_BINDING_{{alphaSnakeUpper $name}}_ENDPOINT string = resources.outputs.SERVICE_BINDING_{{alphaSnakeUpper $name}}_ENDPOINT
 {{end -}}
+{{range $name, $value := .AppConfigs -}}
+output SERVICE_BINDING_{{alphaSnakeUpper $name}}_ENDPOINT string = resources.outputs.SERVICE_BINDING_{{alphaSnakeUpper $name}}_ENDPOINT
+{{end -}}
 {{range $name, $value := .CosmosDbAccounts -}}
+output SERVICE_BINDING_{{alphaSnakeUpper $name}}_NAME string = resources.outputs.SERVICE_BINDING_{{alphaSnakeUpper $name}}_NAME
+{{end -}}
+{{range $name, $value := .SqlServers -}}
 output SERVICE_BINDING_{{alphaSnakeUpper $name}}_NAME string = resources.outputs.SERVICE_BINDING_{{alphaSnakeUpper $name}}_NAME
 {{end -}}
 {{ end}}

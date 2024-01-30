@@ -1,11 +1,16 @@
 <?xml version="1.0" encoding="utf-8"?>
 
-<?define ProductName = "Azure Developer CLI"?>
-<?define ProductFolder = "Azure Dev CLI"?>
+<?ifndef ProductName?>
+<?error ProductName property not defined?>
+<?endif?>
 
 <?ifndef ProductVersion?>
 <?error ProductVersion property not defined?>
 <?endif?>
+
+<!-- BaseProductName is used for shared registration; should be per-channel (or just use ProductName) if/when channels are supported. -->
+<?define BaseProductName = "Azure Developer CLI"?>
+<?define ProductFolder = "Azure Dev CLI"?>
 
 <!-- Define a unique UpgradeCode per platform -->
 <?if $(var.Platform) = "x64"?>
@@ -32,7 +37,13 @@
         <Property Id="REINSTALLMODE" Value="amus"/>
 
         <!-- Remove older product(s) late but within the transaction to support removing ~\.azd\bin -->
-        <MajorUpgrade Schedule="afterInstallExecute" DowngradeErrorMessage="A newer version of !(bind.property.ProductName) is already installed."/>
+        <?if $(var.ReleaseBuild) = "true"?>
+        <!-- Release builds should still be linear to prevent installing older version. -->
+        <MajorUpgrade Schedule="afterInstallExecute" DowngradeErrorMessage="A newer version of $(var.BaseProductName) is already installed."/>
+        <?else?>
+        <!-- Dev builds should install over any other version installed for easy testing. -->
+        <MajorUpgrade Schedule="afterInstallExecute" AllowDowngrades="yes"/>
+        <?endif?>
 
         <Directory Id="TARGETDIR" Name="SourceDir">
             <Directory Id="$(var.ProgramFilesFolder)" Name="Program Files">
@@ -79,9 +90,11 @@
             </Component>
 
             <!-- Override ARP to display full UI during uninstall. -->
-            <Component Directory="INSTALLDIR">
-                <RegistryKey Root="HKCU" Key="SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\[ProductName]">
-                    <RegistryValue Name="DisplayName" Value="[ProductName]" Type="string" />
+            <!-- Uncomment this block to restore displaying full UI on uninstall (which includes a notice to clean ~/.azd/bin) -->
+            <!-- See https://github.com/Azure/azure-dev/issues/3012 -->
+            <!-- <Component Directory="INSTALLDIR">
+                <RegistryKey Root="HKCU" Key="SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\$(var.BaseProductName)">
+                    <RegistryValue Name="DisplayName" Value="$(var.BaseProductName)" Type="string" />
                     <RegistryValue Name="DisplayVersion" Value="[ProductVersion]" Type="string" />
                     <RegistryValue Name="HelpLink" Value="https://aka.ms/azd/support" Type="string" />
                     <RegistryValue Name="InstallLocation" Value="[INSTALLDIR]" Type="string" />
@@ -89,11 +102,13 @@
                     <RegistryValue Name="Publisher" Value="[Manufacturer]" Type="string" />
                     <RegistryValue Name="UninstallString" Value="msiexec.exe /X[ProductCode] /qf" Type="string" />
                 </RegistryKey>
-            </Component>
+            </Component> -->
         </Feature>
 
         <!-- Override ARP to display full UI during uninstall. -->
-        <Property Id="ARPSYSTEMCOMPONENT" Value="1" />
+        <!-- Uncomment this line to restore displaying full UI on uninstall (which includes a notice to clean ~/.azd/bin) -->
+        <!-- See https://github.com/Azure/azure-dev/issues/3012 -->
+        <!-- <Property Id="ARPSYSTEMCOMPONENT" Value="1" /> -->
 
         <!-- Broadcast environment variable changes even if a reboot is pending -->
         <CustomActionRef Id="WixBroadcastEnvironmentChange" />

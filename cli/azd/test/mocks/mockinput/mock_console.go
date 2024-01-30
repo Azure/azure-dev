@@ -107,7 +107,7 @@ func (c *MockConsole) ShowPreviewer(ctx context.Context, options *input.ShowPrev
 	return io.Discard
 }
 
-func (c *MockConsole) StopPreviewer(ctx context.Context) {}
+func (c *MockConsole) StopPreviewer(ctx context.Context, keepLogs bool) {}
 
 func (c *MockConsole) IsSpinnerRunning(ctx context.Context) bool {
 	if len(c.spinnerOps) > 0 && c.spinnerOps[len(c.spinnerOps)-1].Op == SpinnerOpShow {
@@ -147,6 +147,13 @@ func (c *MockConsole) Select(ctx context.Context, options input.ConsoleOptions) 
 	c.log = append(c.log, options.Message)
 	value, err := c.respond("Select", options)
 	return value.(int), err
+}
+
+// Writes a multiple choice selection to the console for the user to choose
+func (c *MockConsole) MultiSelect(ctx context.Context, options input.ConsoleOptions) ([]string, error) {
+	c.log = append(c.log, options.Message)
+	value, err := c.respond("MultiSelect", options)
+	return value.([]string), err
 }
 
 // Writes messages to the underlying writer

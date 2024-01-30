@@ -17,6 +17,7 @@ import (
 
 type ContainerHelper struct {
 	env                      *environment.Environment
+	envManager               environment.Manager
 	containerRegistryService azcli.ContainerRegistryService
 	docker                   docker.Docker
 	clock                    clock.Clock
@@ -24,12 +25,14 @@ type ContainerHelper struct {
 
 func NewContainerHelper(
 	env *environment.Environment,
+	envManager environment.Manager,
 	clock clock.Clock,
 	containerRegistryService azcli.ContainerRegistryService,
 	docker docker.Docker,
 ) *ContainerHelper {
 	return &ContainerHelper{
 		env:                      env,
+		envManager:               envManager,
 		containerRegistryService: containerRegistryService,
 		docker:                   docker,
 		clock:                    clock,
@@ -78,7 +81,7 @@ func (ch *ContainerHelper) LocalImageTag(ctx context.Context, serviceConfig *Ser
 	return fmt.Sprintf("%s/%s-%s:azd-deploy-%d",
 		strings.ToLower(serviceConfig.Project.Name),
 		strings.ToLower(serviceConfig.Name),
-		strings.ToLower(ch.env.GetEnvName()),
+		strings.ToLower(ch.env.Name()),
 		ch.clock.Now().Unix(),
 	), nil
 }
@@ -87,11 +90,40 @@ func (ch *ContainerHelper) RequiredExternalTools(context.Context) []tools.Extern
 	return []tools.ExternalTool{ch.docker}
 }
 
+// Login logs into the container registry specified by AZURE_CONTAINER_REGISTRY_ENDPOINT in the environment. On success,
+// it returns the name of the container registry that was logged into.
+func (ch *ContainerHelper) Login(
+	ctx context.Context,
+	targetResource *environment.TargetResource,
+) (string, error) {
+	loginServer, err := ch.RegistryName(ctx)
+	if err != nil {
+		return "", err
+	}
+
+	return loginServer, ch.containerRegistryService.Login(ctx, targetResource.SubscriptionId(), loginServer)
+}
+
+func (ch *ContainerHelper) Credentials(
+	ctx context.Context,
+	targetResource *environment.TargetResource,
+) (*azcli.DockerCredentials, error) {
+	loginServer, err := ch.RegistryName(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	return ch.containerRegistryService.Credentials(ctx, targetResource.SubscriptionId(), loginServer)
+}
+
+// Deploy pushes and image to a remote server, and optionally writes the fully qualified remote image name to the
+// environment on success.
 func (ch *ContainerHelper) Deploy(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
 	targetResource *environment.TargetResource,
+	writeImageToEnv bool,
 ) *async.TaskWithProgress[*ServiceDeployResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress]) {
@@ -143,17 +175,26 @@ func (ch *ContainerHelper) Deploy(
 				return
 			}
 
-			// Save the name of the image we pushed into the environment with a well known key.
-			log.Printf("writing image name to environment")
-			ch.env.SetServiceProperty(serviceConfig.Name, "IMAGE_NAME", remoteTag)
+			if writeImageToEnv {
+				// Save the name of the image we pushed into the environment with a well known key.
+				log.Printf("writing image name to environment")
+				ch.env.SetServiceProperty(serviceConfig.Name, "IMAGE_NAME", remoteTag)
 
-			if err := ch.env.Save(); err != nil {
-				task.SetError(fmt.Errorf("saving image name to environment: %w", err))
-				return
+				if err := ch.envManager.Save(ctx, ch.env); err != nil {
+					task.SetError(fmt.Errorf("saving image name to environment: %w", err))
+					return
+				}
 			}
 
 			task.SetResult(&ServiceDeployResult{
 				Package: packageOutput,
+				Details: &dockerDeployResult{
+					RemoteImageTag: remoteTag,
+				},
 			})
 		})
+}
+
+type dockerDeployResult struct {
+	RemoteImageTag string
 }

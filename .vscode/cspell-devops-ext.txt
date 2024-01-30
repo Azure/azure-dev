@@ -1,0 +1,4 @@
+vsix
+tsbuildinfo
+codepaths
+azuretools

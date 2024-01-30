@@ -21,6 +21,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/templates"
@@ -84,6 +85,8 @@ func (i *initFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOpt
 }
 
 type initAction struct {
+	lazyAzdCtx      *lazy.Lazy[*azdcontext.AzdContext]
+	lazyEnvManager  *lazy.Lazy[environment.Manager]
 	console         input.Console
 	cmdRun          exec.CommandRunner
 	gitCli          git.GitCli
@@ -94,6 +97,8 @@ type initAction struct {
 }
 
 func newInitAction(
+	lazyAzdCtx *lazy.Lazy[*azdcontext.AzdContext],
+	lazyEnvManager *lazy.Lazy[environment.Manager],
 	cmdRun exec.CommandRunner,
 	console input.Console,
 	gitCli git.GitCli,
@@ -102,6 +107,8 @@ func newInitAction(
 	templateManager *templates.TemplateManager,
 	featuresManager *alpha.FeatureManager) actions.Action {
 	return &initAction{
+		lazyAzdCtx:      lazyAzdCtx,
+		lazyEnvManager:  lazyEnvManager,
 		console:         console,
 		cmdRun:          cmdRun,
 		gitCli:          gitCli,
@@ -119,6 +126,7 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	azdCtx := azdcontext.NewAzdContextWithDirectory(wd)
+	i.lazyAzdCtx.SetValue(azdCtx)
 
 	if i.flags.templateBranch != "" && i.flags.templatePath == "" {
 		return nil,
@@ -157,13 +165,9 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	}
 
 	if initTypeSelect == initUnknown {
-		if i.featuresManager.IsEnabled(alpha.EasyInit) {
-			initTypeSelect, err = promptInitType(i.console, ctx)
-			if err != nil {
-				return nil, err
-			}
-		} else {
-			initTypeSelect = initAppTemplate
+		initTypeSelect, err = promptInitType(i.console, ctx)
+		if err != nil {
+			return nil, err
 		}
 	}
 
@@ -177,13 +181,17 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	switch initTypeSelect {
 	case initAppTemplate:
 		tracing.SetUsageAttributes(fields.InitMethod.String("template"))
-		err := i.initializeTemplate(ctx, azdCtx)
+		template, err := i.initializeTemplate(ctx, azdCtx)
 		if err != nil {
 			return nil, err
 		}
 
-		err = i.initializeEnv(ctx, azdCtx)
-		if err != nil {
+		var templateMetadata *templates.Metadata
+		if template != nil {
+			templateMetadata = &template.Metadata
+		}
+
+		if _, err := i.initializeEnv(ctx, azdCtx, templateMetadata); err != nil {
 			return nil, err
 		}
 	case initFromApp:
@@ -208,14 +216,14 @@ func (i *initAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 			}
 		}
 
-		err = i.repoInitializer.InitFromApp(ctx, azdCtx, func() error {
-			return i.initializeEnv(ctx, azdCtx)
+		err = i.repoInitializer.InitFromApp(ctx, azdCtx, func() (*environment.Environment, error) {
+			return i.initializeEnv(ctx, azdCtx, nil)
 		})
 		if err != nil {
 			return nil, err
 		}
 	case initEnvironment:
-		err = i.initializeEnv(ctx, azdCtx)
+		_, err = i.initializeEnv(ctx, azdCtx, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -264,16 +272,18 @@ func promptInitType(console input.Console, ctx context.Context) (initType, error
 
 func (i *initAction) initializeTemplate(
 	ctx context.Context,
-	azdCtx *azdcontext.AzdContext) error {
+	azdCtx *azdcontext.AzdContext) (*templates.Template, error) {
 	err := i.repoInitializer.PromptIfNonEmpty(ctx, azdCtx)
 	if err != nil {
-		return err
+		return nil, err
 	}
 
+	var template *templates.Template
+
 	if i.flags.templatePath == "" {
-		template, err := templates.PromptTemplate(ctx, "Select a project template:", i.templateManager, i.console)
+		template, err = templates.PromptTemplate(ctx, "Select a project template:", i.templateManager, i.console)
 		if err != nil {
-			return err
+			return nil, err
 		}
 
 		if template != nil {
@@ -282,35 +292,37 @@ func (i *initAction) initializeTemplate(
 	}
 
 	if i.flags.templatePath != "" {
-		gitUri, err := templates.Absolute(i.flags.templatePath)
-		if err != nil {
-			return err
+		if template == nil {
+			template = &templates.Template{
+				RepositoryPath: i.flags.templatePath,
+			}
 		}
 
-		err = i.repoInitializer.Initialize(ctx, azdCtx, gitUri, i.flags.templateBranch)
+		err = i.repoInitializer.Initialize(ctx, azdCtx, template, i.flags.templateBranch)
 		if err != nil {
-			return fmt.Errorf("init from template repository: %w", err)
+			return nil, fmt.Errorf("init from template repository: %w", err)
 		}
 	} else {
 		err := i.repoInitializer.InitializeMinimal(ctx, azdCtx)
 		if err != nil {
-			return fmt.Errorf("init empty repository: %w", err)
+			return nil, fmt.Errorf("init empty repository: %w", err)
 		}
 	}
 
-	return nil
+	return template, nil
 }
 
 func (i *initAction) initializeEnv(
 	ctx context.Context,
-	azdCtx *azdcontext.AzdContext) error {
+	azdCtx *azdcontext.AzdContext,
+	templateMetadata *templates.Metadata) (*environment.Environment, error) {
 	envName, err := azdCtx.GetDefaultEnvironmentName()
 	if err != nil {
-		return fmt.Errorf("retrieving default environment name: %w", err)
+		return nil, fmt.Errorf("retrieving default environment name: %w", err)
 	}
 
 	if envName != "" {
-		return environment.NewEnvironmentInitError(envName)
+		return nil, environment.NewEnvironmentInitError(envName)
 	}
 
 	base := filepath.Base(azdCtx.ProjectDirectory())
@@ -324,23 +336,48 @@ func (i *initAction) initializeEnv(
 		examples = append(examples, suggest)
 	}
 
-	envSpec := environmentSpec{
-		environmentName: i.flags.environmentName,
-		subscription:    i.flags.subscription,
-		location:        i.flags.location,
-		examples:        examples,
-	}
-
-	env, err := createEnvironment(ctx, envSpec, azdCtx, i.console)
+	// Environment manager requires azd context
+	// Azd context isn't available in init so lazy instantiating
+	// it here after the template is hydrated and the context is available
+	envManager, err := i.lazyEnvManager.GetValue()
 	if err != nil {
-		return fmt.Errorf("loading environment: %w", err)
+		return nil, err
 	}
 
-	if err := azdCtx.SetDefaultEnvironmentName(env.GetEnvName()); err != nil {
-		return fmt.Errorf("saving default environment: %w", err)
+	envSpec := environment.Spec{
+		Name:         i.flags.environmentName,
+		Subscription: i.flags.subscription,
+		Location:     i.flags.location,
+		Examples:     examples,
 	}
 
-	return nil
+	env, err := envManager.Create(ctx, envSpec)
+	if err != nil {
+		return nil, fmt.Errorf("loading environment: %w", err)
+	}
+
+	if err := azdCtx.SetDefaultEnvironmentName(env.Name()); err != nil {
+		return nil, fmt.Errorf("saving default environment: %w", err)
+	}
+
+	// If the template includes any metadata values, set them in the environment
+	if templateMetadata != nil {
+		for key, value := range templateMetadata.Variables {
+			env.DotenvSet(key, value)
+		}
+
+		for key, value := range templateMetadata.Config {
+			if err := env.Config.Set(key, value); err != nil {
+				return nil, fmt.Errorf("setting environment config: %w", err)
+			}
+		}
+
+		if err := envManager.Save(ctx, env); err != nil {
+			return nil, fmt.Errorf("saving environment: %w", err)
+		}
+	}
+
+	return env, nil
 }
 
 func getCmdInitHelpDescription(*cobra.Command) string {

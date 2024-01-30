@@ -1,0 +1,31 @@
+{
+  "resources": {
+    "mysqlabstract": {
+      "type": "container.v0",
+      "image": "mysql:latest",
+      "env": {
+        "MYSQL_ROOT_PASSWORD": "{mysqlabstract.inputs.password}"
+      },
+      "bindings": {
+        "tcp": {
+          "scheme": "tcp",
+          "protocol": "tcp",
+          "transport": "tcp",
+          "containerPort": 3306
+        }
+      },
+      "connectionString": "Server={mysqlabstract.bindings.tcp.host};Port={mysqlabstract.bindings.tcp.port};User ID=root;Password={mysqlabstract.inputs.password}",
+      "inputs": {
+        "password": {
+          "type": "string",
+          "secret": true,
+          "default": {
+            "generate": {
+              "minLength": 10
+            }
+          }
+        }
+      }
+    }
+  }
+}

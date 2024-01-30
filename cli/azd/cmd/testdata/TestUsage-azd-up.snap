@@ -1,5 +1,20 @@
 
-Executes the azd provision and azd deploy commands in a single step.
+Runs a workflow to package, provision and deploy your application in a single step.
+
+The up workflow can be customized by adding a workflows section to your azure.yaml.
+
+For example, modify the workflow to provision before packaging and deploying:
+
+-------------------------
+# azure.yaml
+workflows:
+  up:
+    - azd: provision
+    - azd: package --all
+    - azd: deploy --all
+-------------------------
+
+Any azd command and flags are supported in the workflow steps.
 
 Usage
   azd up [flags]

@@ -7,24 +7,23 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"slices"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/blang/semver/v4"
+	"golang.org/x/exp/slices"
 	"gopkg.in/yaml.v3"
 )
 
 const (
 	//nolint:lll
 	projectSchemaAnnotation = "# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json"
-
-	cInfraDirectory = "infra"
 )
 
 func New(ctx context.Context, projectFilePath string, projectName string) (*ProjectConfig, error) {
@@ -79,6 +78,10 @@ func Parse(ctx context.Context, yamlContent string) (*ProjectConfig, error) {
 		return nil, fmt.Errorf("parsing project %s: %w", projectConfig.Name, err)
 	}
 
+	if projectConfig.Infra.Path == "" {
+		projectConfig.Infra.Path = "infra"
+	}
+
 	for key, svc := range projectConfig.Services {
 		svc.Name = key
 		svc.Project = &projectConfig
@@ -99,10 +102,6 @@ func Parse(ctx context.Context, yamlContent string) (*ProjectConfig, error) {
 		if err != nil {
 			return nil, fmt.Errorf("parsing service %s: %w", svc.Name, err)
 		}
-	}
-
-	if projectConfig.Infra.Path == "" {
-		projectConfig.Infra.Path = cInfraDirectory
 	}
 
 	return &projectConfig, nil
@@ -159,6 +158,42 @@ func Load(ctx context.Context, projectFilePath string) (*ProjectConfig, error) {
 
 	projectConfig.Path = filepath.Dir(projectFilePath)
 	return projectConfig, nil
+}
+
+func LoadConfig(ctx context.Context, projectFilePath string) (config.Config, error) {
+	log.Printf("Reading project from file '%s'\n", projectFilePath)
+	bytes, err := os.ReadFile(projectFilePath)
+	if err != nil {
+		return nil, fmt.Errorf("reading project file: %w", err)
+	}
+
+	yamlContent := string(bytes)
+
+	rawConfig := map[string]any{}
+
+	if err := yaml.Unmarshal([]byte(yamlContent), &rawConfig); err != nil {
+		return nil, fmt.Errorf(
+			"unable to parse azure.yaml file. Check the format of the file, "+
+				"and also verify you have the latest version of the CLI: %w",
+			err,
+		)
+	}
+
+	return config.NewConfig(rawConfig), nil
+}
+
+func SaveConfig(ctx context.Context, config config.Config, projectFilePath string) error {
+	projectBytes, err := yaml.Marshal(config.Raw())
+	if err != nil {
+		return fmt.Errorf("marshalling project yaml: %w", err)
+	}
+
+	projectConfig, err := Parse(ctx, string(projectBytes))
+	if err != nil {
+		return fmt.Errorf("parsing project yaml: %w", err)
+	}
+
+	return Save(ctx, projectConfig, projectFilePath)
 }
 
 // Saves the current instance back to the azure.yaml file

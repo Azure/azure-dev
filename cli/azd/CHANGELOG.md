@@ -1,17 +1,108 @@
 # Release History
 
-## 1.4.0-beta.1 (Unreleased)
+## 1.6.0-beta.1 (Unreleased)
 
 ### Features Added
-
-- [[2725]](https://github.com/Azure/azure-dev/pull/2725) Adds support for provision state to the bicep provider.
 
 ### Breaking Changes
 
 ### Bugs Fixed
 
-- [[2793]](https://github.com/Azure/azure-dev/pull/2793) Support user defined types for the bicep provider.
+### Other Changes
 
+## 1.5.1 (2023-12-20)
+
+### Features Added
+
+- [[2998]](https://github.com/Azure/azure-dev/pull/2998) Adds support for Azure Storage Tables and Queues on Aspire projects.
+- [[3052]](https://github.com/Azure/azure-dev/pull/3052) Adds `target` argument support for docker build.
+- [[2488]](https://github.com/Azure/azure-dev/pull/2488) Adds support to override behavior of the KUBECONFIG environment variable on AKS.
+- [[3075]](https://github.com/Azure/azure-dev/pull/3075) Adds support for `dockerfile.v0` on Aspire projects.
+- [[2992]](https://github.com/Azure/azure-dev/pull/2992) Adds support for `dapr` on Aspire projects.
+
+### Bugs Fixed
+
+- [[2969]](https://github.com/Azure/azure-dev/pull/2969) Relax container names truncation logic for Aspire `redis.v0` and `postgres.database.v0`.
+  Truncation now happens above 30 characters instead of 12 characters.
+- [[3035]](https://github.com/Azure/azure-dev/pull/3035) .NET Aspire issues after `azd pipeline config`.
+- [[3038]](https://github.com/Azure/azure-dev/pull/3038) Fix init to not consider parent directories.
+- [[3045]](https://github.com/Azure/azure-dev/pull/3045) Handle interrupt to unhide cursor.
+- [[3069]](https://github.com/Azure/azure-dev/pull/3069) .NET Aspire, enable `admin user` for ACR.
+- [[3049]](https://github.com/Azure/azure-dev/pull/3049) Persist location from provisioning manager.
+- [[3056]](https://github.com/Azure/azure-dev/pull/3056) Fix `azd pipeline config` for resource group deployment.
+- [[3106]](https://github.com/Azure/azure-dev/pull/3106) Fix `azd restore` on .NET projects.
+- [[3041]](https://github.com/Azure/azure-dev/pull/3041) Ensure azd environment name is synchronized to .env file.
+
+### Other Changes
+
+- [[3044]](https://github.com/Azure/azure-dev/pull/3044) Sets allowInsecure to true for internal services on Aspire projects.
+
+## 1.5.0 (2023-11-15)
+
+### Features Added
+
+- [[2767]](https://github.com/Azure/azure-dev/pull/2767) Adds support for Azure Deployments Environments.
+
+## 1.4.5 (2023-11-13)
+
+### Bugs Fixed
+
+- [[2962]](https://github.com/Azure/azure-dev/pull/2962) Fix for incorrect id on storage blob built-in role id.
+- [[2963]](https://github.com/Azure/azure-dev/pull/2963) Handle project is undetected.
+
+## 1.4.4 (2023-11-10)
+
+### Features Added
+
+- [[2893]](https://github.com/Azure/azure-dev/pull/2893) Added command `azd show`.
+- [[2925]](https://github.com/Azure/azure-dev/pull/2925) Promote simplified `azd init` and Cloud Native buildpacks features to beta
+
+## 1.4.3 (2023-10-24)
+
+### Features Added
+
+- [[2787]](https://github.com/Azure/azure-dev/pull/2787) Added `azd config show` and deprecated `azd config list`.
+
+### Other Changes
+
+- [[2887]](https://github.com/Azure/azure-dev/pull/2887) Update the subscription and location information during `azd provision`.
+
+## 1.4.2 (2023-10-12)
+
+### Features Added
+
+- [[2845]](https://github.com/Azure/azure-dev/pull/2845) Feature Clickable Template Links in Terminal (azd template list). Thanks @john0isaac for the contribution
+- [[2829]](https://github.com/Azure/azure-dev/pull/2829) Feature Display the Subscription Name and ID (azd provision). Thanks @john0isaac for the contribution
+
+### Bugs Fixed
+
+- [[2858]](https://github.com/Azure/azure-dev/pull/2858) Fixes issue with running VS Code Tasks that rely on environment configuration path.
+
+## 1.4.1 (2023-10-06)
+
+### Bugs Fixed
+
+- [[2837]](https://github.com/Azure/azure-dev/pull/2837) `azd down` does not clear provision state.
+
+## 1.4.0 (2023-10-05)
+
+### Features Added
+
+- [[2725]](https://github.com/Azure/azure-dev/pull/2725) Adds support for provision state to the bicep provider.
+- [[2765]](https://github.com/Azure/azure-dev/pull/2765) Support for remote environments.
+- [[1642]](https://github.com/Azure/azure-dev/pull/1642) A new `azd hooks run` command for running and testing your hooks.
+
+### Bugs Fixed
+
+- [[2793]](https://github.com/Azure/azure-dev/pull/2793) Support user defined types for the bicep provider.
+- [[2543]](https://github.com/Azure/azure-dev/pull/2543) `azd package` now allows users to specify `--output-path` parameter to control the output location of file-based packages.
+- [[2302]](https://github.com/Azure/azure-dev/pull/2302) `azd config --help` doesn't show help for `AZD_CONFIG_DIR`.
+- [[2050]](https://github.com/Azure/azure-dev/pull/2050) `azd init` now supports `--subscription`.
+- [[2695]](https://github.com/Azure/azure-dev/pull/2695) `azd` now honors `@allowed` locations in Bicep to filter the list of possible deploy locations.
+- [[2599]](https://github.com/Azure/azure-dev/pull/2599) ARM64 support is now generally available.
+- [[2683]](https://github.com/Azure/azure-dev/pull/2683) Bicep installer prefers MUSL variant over glibc.
+- [[2794]](https://github.com/Azure/azure-dev/pull/2794) When running `azd init`, the Starter - Bicep template is unavailable.
+  
 ### Other Changes
 
 - [[#2796]](https://github.com/Azure/azure-dev/pull/2796) Update `terraform` provider from alpha to beta.
@@ -589,6 +680,7 @@ We plan to improve this behavior with [[#1126]](https://github.com/Azure/azure-d
 - [[#115]](https://github.com/Azure/azure-dev/issues/115) Fix deploy error when using a resource name with capital letters.
 
 ### Other Changes
+
 - [[#188]](https://github.com/Azure/azure-dev/issues/188) Update the minimum Bicep version to `v0.8.9`.
 
 ## 0.1.0-beta.2 (2022-07-13)

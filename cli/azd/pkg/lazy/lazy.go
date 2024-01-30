@@ -22,6 +22,11 @@ func NewLazy[T comparable](initializerFn InitializerFn[T]) *Lazy[T] {
 	}
 }
 
+// From creates a lazy that resolves to the specified value.
+func From[T comparable](value T) *Lazy[T] {
+	return NewLazy(func() (T, error) { return value, nil })
+}
+
 // Gets the value of the configured initializer
 // Initializer will only run once on success
 func (l *Lazy[T]) GetValue() (T, error) {

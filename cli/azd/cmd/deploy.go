@@ -11,7 +11,6 @@ import (
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
-	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
@@ -95,23 +94,22 @@ func newDeployCmd() *cobra.Command {
 }
 
 type deployAction struct {
-	flags                    *deployFlags
-	args                     []string
-	projectConfig            *project.ProjectConfig
-	azdCtx                   *azdcontext.AzdContext
-	env                      *environment.Environment
-	projectManager           project.ProjectManager
-	serviceManager           project.ServiceManager
-	resourceManager          project.ResourceManager
-	accountManager           account.Manager
-	azCli                    azcli.AzCli
-	formatter                output.Formatter
-	writer                   io.Writer
-	console                  input.Console
-	commandRunner            exec.CommandRunner
-	middlewareRunner         middleware.MiddlewareContext
-	packageActionInitializer actions.ActionInitializer[*packageAction]
-	alphaFeatureManager      *alpha.FeatureManager
+	flags               *deployFlags
+	args                []string
+	projectConfig       *project.ProjectConfig
+	azdCtx              *azdcontext.AzdContext
+	env                 *environment.Environment
+	projectManager      project.ProjectManager
+	serviceManager      project.ServiceManager
+	resourceManager     project.ResourceManager
+	accountManager      account.Manager
+	azCli               azcli.AzCli
+	formatter           output.Formatter
+	writer              io.Writer
+	console             input.Console
+	commandRunner       exec.CommandRunner
+	alphaFeatureManager *alpha.FeatureManager
+	importManager       *project.ImportManager
 }
 
 func newDeployAction(
@@ -129,28 +127,26 @@ func newDeployAction(
 	console input.Console,
 	formatter output.Formatter,
 	writer io.Writer,
-	middlewareRunner middleware.MiddlewareContext,
-	packageActionInitializer actions.ActionInitializer[*packageAction],
 	alphaFeatureManager *alpha.FeatureManager,
+	importManager *project.ImportManager,
 ) actions.Action {
 	return &deployAction{
-		flags:                    flags,
-		args:                     args,
-		projectConfig:            projectConfig,
-		azdCtx:                   azdCtx,
-		env:                      environment,
-		projectManager:           projectManager,
-		serviceManager:           serviceManager,
-		resourceManager:          resourceManager,
-		accountManager:           accountManager,
-		azCli:                    azCli,
-		formatter:                formatter,
-		writer:                   writer,
-		console:                  console,
-		commandRunner:            commandRunner,
-		middlewareRunner:         middlewareRunner,
-		packageActionInitializer: packageActionInitializer,
-		alphaFeatureManager:      alphaFeatureManager,
+		flags:               flags,
+		args:                args,
+		projectConfig:       projectConfig,
+		azdCtx:              azdCtx,
+		env:                 environment,
+		projectManager:      projectManager,
+		serviceManager:      serviceManager,
+		resourceManager:     resourceManager,
+		accountManager:      accountManager,
+		azCli:               azCli,
+		formatter:           formatter,
+		writer:              writer,
+		console:             console,
+		commandRunner:       commandRunner,
+		alphaFeatureManager: alphaFeatureManager,
+		importManager:       importManager,
 	}
 }
 
@@ -176,6 +172,7 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	targetServiceName, err := getTargetServiceName(
 		ctx,
 		da.projectManager,
+		da.importManager,
 		da.projectConfig,
 		string(project.ServiceEventDeploy),
 		targetServiceName,
@@ -215,14 +212,20 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	startTime := time.Now()
 
 	deployResults := map[string]*project.ServiceDeployResult{}
+	stableServices, err := da.importManager.ServiceStable(ctx, da.projectConfig)
+	if err != nil {
+		return nil, err
+	}
 
-	for _, svc := range da.projectConfig.GetServicesStable() {
+	for _, svc := range stableServices {
 		stepMessage := fmt.Sprintf("Deploying service %s", svc.Name)
+		da.console.ShowSpinner(ctx, stepMessage, input.Step)
 
 		// Skip this service if both cases are true:
 		// 1. The user specified a service name
 		// 2. This service is not the one the user specified
 		if targetServiceName != "" && targetServiceName != svc.Name {
+			da.console.StopSpinner(ctx, stepMessage, input.StepSkipped)
 			continue
 		}
 
@@ -232,7 +235,6 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 			da.console.WarnForFeature(ctx, alphaFeatureId)
 		}
 
-		da.console.ShowSpinner(ctx, stepMessage, input.Step)
 		var packageResult *project.ServicePackageResult
 		if da.flags.fromPackage != "" {
 			// --from-package set, skip packaging

@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"dario.cat/mergo"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -23,8 +24,14 @@ import (
 	"golang.org/x/exp/maps"
 )
 
+var Defaults = Options{
+	Module: "main",
+	Path:   "infra",
+}
+
 // TerraformProvider exposes infrastructure provisioning using Azure Terraform templates
 type TerraformProvider struct {
+	envManager   environment.Manager
 	env          *environment.Environment
 	prompters    prompt.Prompter
 	console      input.Console
@@ -52,12 +59,14 @@ func (t *TerraformProvider) RequiredExternalTools() []tools.ExternalTool {
 // NewTerraformProvider creates a new instance of a Terraform Infra provider
 func NewTerraformProvider(
 	cli terraform.TerraformCli,
+	envManager environment.Manager,
 	env *environment.Environment,
 	console input.Console,
 	curPrincipal CurrentPrincipalIdProvider,
 	prompters prompt.Prompter,
 ) Provider {
 	provider := &TerraformProvider{
+		envManager:   envManager,
 		env:          env,
 		console:      console,
 		cli:          cli,
@@ -69,8 +78,8 @@ func NewTerraformProvider(
 }
 
 func (t *TerraformProvider) Initialize(ctx context.Context, projectPath string, options Options) error {
-	if strings.TrimSpace(options.Module) == "" {
-		options.Module = "main"
+	if err := mergo.Merge(&options, Defaults); err != nil {
+		return fmt.Errorf("merging terraform defaults: %w", err)
 	}
 
 	t.projectPath = projectPath
@@ -112,7 +121,13 @@ func (t *TerraformProvider) Initialize(ctx context.Context, projectPath string, 
 // An environment is considered to be in a provision-ready state if it contains both an AZURE_SUBSCRIPTION_ID and
 // AZURE_LOCATION value.
 func (t *TerraformProvider) EnsureEnv(ctx context.Context) error {
-	return EnsureSubscriptionAndLocation(ctx, t.env, t.prompters, func(_ account.Location) bool { return true })
+	return EnsureSubscriptionAndLocation(
+		ctx,
+		t.envManager,
+		t.env,
+		t.prompters,
+		func(_ account.Location) bool { return true },
+	)
 }
 
 // Previews the infrastructure through terraform plan
@@ -598,29 +613,29 @@ func (t *TerraformProvider) modulePath() string {
 // Gets the path to the staging .azure terraform plan file path
 func (t *TerraformProvider) planFilePath() string {
 	planFilename := fmt.Sprintf("%s.tfplan", t.options.Module)
-	return filepath.Join(t.projectPath, ".azure", t.env.GetEnvName(), t.options.Path, planFilename)
+	return filepath.Join(t.projectPath, ".azure", t.env.Name(), t.options.Path, planFilename)
 }
 
 // Gets the path to the staging .azure terraform local state file path
 func (t *TerraformProvider) localStateFilePath() string {
-	return filepath.Join(t.projectPath, ".azure", t.env.GetEnvName(), t.options.Path, "terraform.tfstate")
+	return filepath.Join(t.projectPath, ".azure", t.env.Name(), t.options.Path, "terraform.tfstate")
 }
 
 // Gets the path to the staging .azure parameters file path
 func (t *TerraformProvider) backendConfigFilePath() string {
-	backendConfigFilename := fmt.Sprintf("%s.conf.json", t.env.GetEnvName())
-	return filepath.Join(t.projectPath, ".azure", t.env.GetEnvName(), t.options.Path, backendConfigFilename)
+	backendConfigFilename := fmt.Sprintf("%s.conf.json", t.env.Name())
+	return filepath.Join(t.projectPath, ".azure", t.env.Name(), t.options.Path, backendConfigFilename)
 }
 
 // Gets the path to the staging .azure backend config file path
 func (t *TerraformProvider) parametersFilePath() string {
 	parametersFilename := fmt.Sprintf("%s.tfvars.json", t.options.Module)
-	return filepath.Join(t.projectPath, ".azure", t.env.GetEnvName(), t.options.Path, parametersFilename)
+	return filepath.Join(t.projectPath, ".azure", t.env.Name(), t.options.Path, parametersFilename)
 }
 
 // Gets the path to the current env.
 func (t *TerraformProvider) dataDirPath() string {
-	return filepath.Join(t.projectPath, ".azure", t.env.GetEnvName(), t.options.Path, ".terraform")
+	return filepath.Join(t.projectPath, ".azure", t.env.Name(), t.options.Path, ".terraform")
 }
 
 // Check terraform file for remote backend provider

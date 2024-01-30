@@ -149,6 +149,20 @@ func (m *SubscriptionsManager) GetSubscriptions(ctx context.Context) ([]Subscrip
 	return subscriptions, nil
 }
 
+func (m *SubscriptionsManager) GetSubscription(ctx context.Context, subscriptionId string) (*Subscription, error) {
+	subscriptions, err := m.GetSubscriptions(ctx)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, sub := range subscriptions {
+		if sub.Id == subscriptionId {
+			return &sub, nil
+		}
+	}
+	return m.getSubscription(ctx, subscriptionId)
+}
+
 type tenantSubsResult struct {
 	subs []Subscription
 	err  error
@@ -278,6 +292,24 @@ func (m *SubscriptionsManager) ListSubscriptions(ctx context.Context) ([]Subscri
 	return allSubscriptions, nil
 }
 
+func (m *SubscriptionsManager) GetLocation(ctx context.Context, subscriptionId, locationName string) (Location, error) {
+	var err error
+	m.console.ShowSpinner(ctx, "Reading subscription and location from environment...", input.Step)
+	defer m.console.StopSpinner(ctx, "", input.GetStepResultFormat(err))
+
+	allLocations, err := m.listLocations(ctx, subscriptionId)
+	if err != nil {
+		return Location{}, err
+	}
+
+	for _, location := range allLocations {
+		if locationName == location.Name {
+			return location, nil
+		}
+	}
+	return Location{}, fmt.Errorf("location name %s not found", locationName)
+}
+
 func (m *SubscriptionsManager) ListLocations(
 	ctx context.Context,
 	subscriptionId string,
@@ -285,8 +317,15 @@ func (m *SubscriptionsManager) ListLocations(
 	var err error
 	msg := "Retrieving locations..."
 	m.console.ShowSpinner(ctx, msg, input.Step)
-	defer m.console.StopSpinner(ctx, msg, input.GetStepResultFormat(err))
+	defer m.console.StopSpinner(ctx, "", input.GetStepResultFormat(err))
 
+	return m.listLocations(ctx, subscriptionId)
+}
+
+func (m *SubscriptionsManager) listLocations(
+	ctx context.Context,
+	subscriptionId string,
+) ([]Location, error) {
 	tenantId, err := m.LookupTenant(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
@@ -294,7 +333,7 @@ func (m *SubscriptionsManager) ListLocations(
 	return m.service.ListSubscriptionLocations(ctx, subscriptionId, tenantId)
 }
 
-func (m *SubscriptionsManager) GetSubscription(ctx context.Context, subscriptionId string) (*Subscription, error) {
+func (m *SubscriptionsManager) getSubscription(ctx context.Context, subscriptionId string) (*Subscription, error) {
 	tenantId, err := m.LookupTenant(ctx, subscriptionId)
 	if err != nil {
 		return nil, err

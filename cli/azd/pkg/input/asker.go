@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/AlecAivazis/survey/v2"
@@ -59,6 +60,15 @@ func askOneNoPrompt(p survey.Prompt, response interface{}) error {
 		}
 	case *survey.Confirm:
 		*(response.(*bool)) = v.Default
+	case *survey.MultiSelect:
+		if v.Default == nil {
+			return fmt.Errorf("no default response for prompt '%s'", v.Message)
+		}
+		defValue, err := v.Default.([]string)
+		if !err {
+			return fmt.Errorf("default response type is not a string list '%s'", v.Message)
+		}
+		*(response.(*[]string)) = defValue
 	default:
 		panic(fmt.Sprintf("don't know how to prompt for type %T", p))
 	}
@@ -135,6 +145,33 @@ func askOnePrompt(p survey.Prompt, response interface{}, isTerminal bool, stdout
 			result = v.Default
 		}
 		*pResponse = result
+		return nil
+	case *survey.MultiSelect:
+		// For multi-selection, azd will do a Select for each item, using the default to control the Y or N
+		defValue, err := v.Default.([]string)
+		if !err {
+			return fmt.Errorf("default response type is not a string list '%s'", v.Message)
+		}
+		fmt.Fprintf(stdout, "%s:", v.Message)
+		selection := make([]string, 0, len(v.Options))
+		for _, item := range v.Options {
+			response := slices.Contains(defValue, item)
+			err := askOnePrompt(&survey.Confirm{
+				Message: fmt.Sprintf("\n  select %s?", item),
+			}, &response, isTerminal, stdout, stdin)
+			if err != nil {
+				return err
+			}
+			confirmation := "N"
+			if response {
+				confirmation = "Y"
+				selection = append(selection, item)
+			}
+			fmt.Fprintf(stdout, "  %s", confirmation)
+		}
+		// assign the selection to the response
+		*(response.(*[]string)) = selection
+
 		return nil
 	case *survey.Select:
 		fmt.Fprintf(stdout, "%s", v.Message[0:len(v.Message)-1])

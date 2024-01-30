@@ -87,3 +87,58 @@ func Test_ContainerHelper_RemoteImageTag_NoContainer_Registry(t *testing.T) {
 	require.Error(t, err)
 	require.Empty(t, imageTag)
 }
+
+func Test_Resolve_RegistryName(t *testing.T) {
+	t.Run("Default EnvVar", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		env := environment.NewWithValues("dev", map[string]string{
+			environment.ContainerRegistryEndpointEnvVarName: "contoso.azurecr.io",
+		})
+		envManager := &mockenv.MockEnvManager{}
+		containerHelper := NewContainerHelper(env, envManager, clock.NewMock(), nil, nil)
+		serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
+		registryName, err := containerHelper.RegistryName(*mockContext.Context, serviceConfig)
+
+		require.NoError(t, err)
+		require.Equal(t, "contoso.azurecr.io", registryName)
+	})
+
+	t.Run("Azure Yaml with simple string", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		env := environment.NewWithValues("dev", map[string]string{})
+		envManager := &mockenv.MockEnvManager{}
+		containerHelper := NewContainerHelper(env, envManager, clock.NewMock(), nil, nil)
+		serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
+		serviceConfig.Docker.Registry = NewExpandableString("contoso.azurecr.io")
+		registryName, err := containerHelper.RegistryName(*mockContext.Context, serviceConfig)
+
+		require.NoError(t, err)
+		require.Equal(t, "contoso.azurecr.io", registryName)
+	})
+
+	t.Run("Azure Yaml with expandable string", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		env := environment.NewWithValues("dev", map[string]string{})
+		env.DotenvSet("MY_CUSTOM_REGISTRY", "custom.azurecr.io")
+		envManager := &mockenv.MockEnvManager{}
+		containerHelper := NewContainerHelper(env, envManager, clock.NewMock(), nil, nil)
+		serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
+		serviceConfig.Docker.Registry = NewExpandableString("${MY_CUSTOM_REGISTRY}")
+		registryName, err := containerHelper.RegistryName(*mockContext.Context, serviceConfig)
+
+		require.NoError(t, err)
+		require.Equal(t, "custom.azurecr.io", registryName)
+	})
+
+	t.Run("No registry name", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		env := environment.NewWithValues("dev", map[string]string{})
+		envManager := &mockenv.MockEnvManager{}
+		containerHelper := NewContainerHelper(env, envManager, clock.NewMock(), nil, nil)
+		serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
+		registryName, err := containerHelper.RegistryName(*mockContext.Context, serviceConfig)
+
+		require.Error(t, err)
+		require.Empty(t, registryName)
+	})
+}

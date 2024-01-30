@@ -102,7 +102,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 			task.SetProgress(NewServiceProgress("Logging in to registry"))
 
 			// Login, tag & push container image to ACR
-			dockerCreds, err := at.containerHelper.Credentials(ctx, targetResource)
+			dockerCreds, err := at.containerHelper.Credentials(ctx, serviceConfig, targetResource)
 			if err != nil {
 				task.SetError(fmt.Errorf("logging in to registry: %w", err))
 				return

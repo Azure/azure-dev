@@ -15,6 +15,7 @@ import (
 type ServiceLanguageKind string
 
 const (
+	ServiceLanguageNone       ServiceLanguageKind = ""
 	ServiceLanguageDotNet     ServiceLanguageKind = "dotnet"
 	ServiceLanguageCsharp     ServiceLanguageKind = "csharp"
 	ServiceLanguageFsharp     ServiceLanguageKind = "fsharp"
@@ -25,18 +26,24 @@ const (
 	ServiceLanguageDocker     ServiceLanguageKind = "docker"
 )
 
-func parseServiceLanguage(kind ServiceLanguageKind) (ServiceLanguageKind, error) {
-	if string(kind) == "" {
-		return ServiceLanguageKind(""), fmt.Errorf("language property must not be empty")
+var (
+	NoFrameworkRequirements = FrameworkRequirements{
+		Package: FrameworkPackageRequirements{
+			RequireRestore: false,
+			RequireBuild:   false,
+		},
 	}
+)
 
+func parseServiceLanguage(kind ServiceLanguageKind) (ServiceLanguageKind, error) {
 	// aliases
 	if string(kind) == "py" {
 		return ServiceLanguagePython, nil
 	}
 
 	switch kind {
-	case ServiceLanguageDotNet,
+	case ServiceLanguageNone,
+		ServiceLanguageDotNet,
 		ServiceLanguageCsharp,
 		ServiceLanguageFsharp,
 		ServiceLanguageJavaScript,

@@ -162,6 +162,18 @@ func (ch *ContainerHelper) Deploy(
 				localImageTag = packageDetails.ImageTag
 			}
 
+			// If we don't have a registry specified and the service does not reference a project path
+			// then we are referencing a public/pre-existing image and don't have anything to tag or push
+			if loginServer == "" && serviceConfig.RelativePath != "" {
+				task.SetResult(&ServiceDeployResult{
+					Package: packageOutput,
+					Details: &dockerDeployResult{
+						RemoteImageTag: localImageTag,
+					},
+				})
+				return
+			}
+
 			if localImageTag == "" {
 				task.SetError(errors.New("failed retrieving package result details"))
 				return

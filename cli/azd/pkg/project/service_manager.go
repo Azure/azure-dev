@@ -9,6 +9,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
@@ -550,6 +551,11 @@ func (sm *serviceManager) GetServiceTarget(ctx context.Context, serviceConfig *S
 // GetFrameworkService constructs a framework service from the underlying service configuration
 func (sm *serviceManager) GetFrameworkService(ctx context.Context, serviceConfig *ServiceConfig) (FrameworkService, error) {
 	var frameworkService FrameworkService
+
+	if serviceConfig.Language == ServiceLanguageNone &&
+		!reflect.DeepEqual(serviceConfig.Docker, DefaultDockerProjectOptions) {
+		serviceConfig.Language = ServiceLanguageDocker
+	}
 
 	if err := sm.serviceLocator.ResolveNamed(string(serviceConfig.Language), &frameworkService); err != nil {
 		panic(fmt.Errorf(

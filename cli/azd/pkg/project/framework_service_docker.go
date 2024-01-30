@@ -31,6 +31,8 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
+var DefaultDockerProjectOptions DockerProjectOptions = DockerProjectOptions{}
+
 type DockerProjectOptions struct {
 	Path      string           `yaml:"path,omitempty"      json:"path,omitempty"`
 	Context   string           `yaml:"context,omitempty"   json:"context,omitempty"`
@@ -167,6 +169,12 @@ func (p *dockerProject) Build(
 		func(task *async.TaskContextWithProgress[*ServiceBuildResult, ServiceProgress]) {
 			dockerOptions := getDockerOptionsWithDefaults(serviceConfig.Docker)
 
+			// No framework has been set, return empty build result
+			if _, ok := p.framework.(*noOpProject); ok {
+				task.SetResult(&ServiceBuildResult{})
+				return
+			}
+
 			buildArgs := []string{}
 			for _, arg := range dockerOptions.BuildArgs {
 				buildArgs = append(buildArgs, exec.RedactSensitiveData(arg))
@@ -257,10 +265,10 @@ func (p *dockerProject) Package(
 ) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
-			imageId := buildOutput.BuildOutputPath
-			if imageId == "" {
-				task.SetError(errors.New("missing container image id from build output"))
-				return
+			var imageId string
+
+			if buildOutput != nil {
+				imageId = buildOutput.BuildOutputPath
 			}
 
 			localTag, err := p.containerHelper.LocalImageTag(ctx, serviceConfig)
@@ -269,12 +277,14 @@ func (p *dockerProject) Package(
 				return
 			}
 
-			// Tag image.
-			log.Printf("tagging image %s as %s", imageId, localTag)
-			task.SetProgress(NewServiceProgress("Tagging Docker image"))
-			if err := p.docker.Tag(ctx, serviceConfig.Path(), imageId, localTag); err != nil {
-				task.SetError(fmt.Errorf("tagging image: %w", err))
-				return
+			if imageId != "" {
+				// Tag image.
+				log.Printf("tagging image %s as %s", imageId, localTag)
+				task.SetProgress(NewServiceProgress("Tagging Docker image"))
+				if err := p.docker.Tag(ctx, serviceConfig.Path(), imageId, localTag); err != nil {
+					task.SetError(fmt.Errorf("tagging image: %w", err))
+					return
+				}
 			}
 
 			task.SetResult(&ServicePackageResult{

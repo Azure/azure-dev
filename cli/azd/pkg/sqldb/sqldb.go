@@ -47,7 +47,7 @@ func (c *sqlDbClient) ConnectionString(ctx context.Context, subId, rgName, serve
 		return "", fmt.Errorf("failed getting server properties from server '%s'", serverName)
 	}
 
-	if res.Server.Properties.FullyQualifiedDomainName == nil {
+	if res.Server.Properties.FullyQualifiedDomainName == nil || len(*res.Server.Properties.FullyQualifiedDomainName) == 0 {
 		return "", fmt.Errorf("failed getting fully qualified domain name from server '%s'", serverName)
 	}
 

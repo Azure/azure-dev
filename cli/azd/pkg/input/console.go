@@ -238,7 +238,7 @@ func (c *AskerConsole) MessageUxItem(ctx context.Context, item ux.UxItem) {
 }
 
 func (c *AskerConsole) println(ctx context.Context, msg string) {
-	if c.spinner.Status() == yacspin.SpinnerRunning {
+	if c.IsSpinnerInteractive() && c.spinner.Status() == yacspin.SpinnerRunning {
 		c.StopSpinner(ctx, "", Step)
 		// default non-format
 		fmt.Fprintln(c.writer, msg)
@@ -352,11 +352,19 @@ func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format Spi
 
 	indentPrefix := c.getIndent(format)
 	line := c.spinnerLine(title, indentPrefix)
+
+	_ = c.spinner.Pause()
 	c.spinner.Message(line.Message)
 	_ = c.spinner.CharSet(line.CharSet)
 	c.spinner.Prefix(line.Prefix)
+	_ = c.spinner.Unpause()
 
-	_ = c.spinner.Start()
+	if c.spinner.Status() == yacspin.SpinnerStopped {
+		// Start the spinner if it is not running.
+		// While it is indeed safe to call Start regardless of whether the spinner is running,
+		// calling Start may result in an additional line of output being written in non-tty scenarios
+		_ = c.spinner.Start()
+	}
 	c.spinnerLineMu.Unlock()
 }
 
@@ -441,8 +449,12 @@ func (c *AskerConsole) StopSpinner(ctx context.Context, lastMessage string, form
 		lastMessage = c.getStopChar(format) + " " + lastMessage
 	}
 
-	c.spinner.StopMessage(lastMessage)
 	_ = c.spinner.Stop()
+	if lastMessage != "" {
+		// Avoid using StopMessage() as it may result in an extra Message line print in non-tty scenarios
+		fmt.Fprintln(c.writer, lastMessage)
+	}
+
 	c.spinnerLineMu.Unlock()
 }
 
@@ -695,7 +707,7 @@ func NewConsole(noPrompt bool, isTerminal bool, w io.Writer, handles ConsoleHand
 		TerminalMode: spinnerTerminalMode(isTerminal),
 	}
 
-	if isTerminal {
+	if spinnerConfig.TerminalMode&yacspin.ForceTTYMode > 0 {
 		spinnerConfig.CharSet = spinnerCharSet
 	} else {
 		spinnerConfig.CharSet = spinnerNoTerminalCharSet

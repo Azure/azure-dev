@@ -360,7 +360,6 @@ func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format Spi
 	_ = c.spinner.Unpause()
 
 	if c.spinner.Status() == yacspin.SpinnerStopped {
-		// Start the spinner if it is not running.
 		// While it is indeed safe to call Start regardless of whether the spinner is running,
 		// calling Start may result in an additional line of output being written in non-tty scenarios
 		_ = c.spinner.Start()

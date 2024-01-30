@@ -585,21 +585,22 @@ func (t *aksTarget) resolveClusterName(
 	targetResource *environment.TargetResource,
 ) (string, error) {
 	// Resolve cluster name
-	var clusterName string
-	envVarClusterName, _ := t.env.LookupEnv(environment.AksClusterEnvVarName)
-	yamlClusterName, _ := serviceConfig.ResourceName.Envsubst(t.env.Getenv)
-
-	clusterNameResolutions := []string{
-		envVarClusterName,
-		yamlClusterName,
-		targetResource.ResourceName(),
+	clusterName, found := t.env.LookupEnv(environment.AksClusterEnvVarName)
+	if !found {
+		log.Printf("'%s' environment variable not found\n", environment.AksClusterEnvVarName)
 	}
 
-	for _, resourceName := range clusterNameResolutions {
-		if resourceName != "" {
-			clusterName = resourceName
-			break
+	if clusterName == "" {
+		yamlClusterName, err := serviceConfig.ResourceName.Envsubst(t.env.Getenv)
+		if err != nil {
+			log.Println("failed resolving cluster name from `resourceName` in azure.yaml", err)
 		}
+
+		clusterName = yamlClusterName
+	}
+
+	if clusterName == "" {
+		clusterName = targetResource.ResourceName()
 	}
 
 	if clusterName == "" {

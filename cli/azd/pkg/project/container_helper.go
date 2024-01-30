@@ -43,30 +43,32 @@ func NewContainerHelper(
 // 1. AZURE_CONTAINER_REGISTRY_ENDPOINT environment variable
 // 2. docker.registry from the service configuration
 func (ch *ContainerHelper) RegistryName(ctx context.Context, serviceConfig *ServiceConfig) (string, error) {
-	var loginServer string
-	envVarRegistryName, _ := ch.env.LookupEnv(environment.ContainerRegistryEndpointEnvVarName)
-	yamlRegistryName, _ := serviceConfig.Docker.Registry.Envsubst(ch.env.Getenv)
-
-	registryNameResolution := []string{
-		envVarRegistryName,
-		yamlRegistryName,
+	registryName, found := ch.env.LookupEnv(environment.ContainerRegistryEndpointEnvVarName)
+	if !found {
+		log.Printf(
+			"Container registry not found in '%s' environment variable\n",
+			environment.ContainerRegistryEndpointEnvVarName,
+		)
 	}
 
-	for _, registryName := range registryNameResolution {
-		if registryName != "" {
-			loginServer = registryName
-			break
+	if registryName == "" {
+		yamlRegistryName, err := serviceConfig.Docker.Registry.Envsubst(ch.env.Getenv)
+		if err != nil {
+			log.Println("Failed expanding 'docker.registry'")
 		}
+
+		registryName = yamlRegistryName
 	}
 
-	if loginServer == "" {
+	if registryName == "" {
 		return "", fmt.Errorf(
 			//nolint:lll
 			"could not determine container registry endpoint, ensure 'registry' has been set in the docker options or '%s' environment variable has been set",
 			environment.ContainerRegistryEndpointEnvVarName,
 		)
 	}
-	return loginServer, nil
+
+	return registryName, nil
 }
 
 func (ch *ContainerHelper) RemoteImageTag(

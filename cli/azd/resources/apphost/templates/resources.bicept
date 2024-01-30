@@ -340,6 +340,9 @@ resource {{bicepName $name}} 'Microsoft.DocumentDB/databaseAccounts@2023-04-15' 
 }
 {{end -}}
 output MANAGED_IDENTITY_CLIENT_ID string = managedIdentity.properties.clientId
+{{if .HasLogAnalyticsWorkspace -}}
+output AZURE_LOG_ANALYTICS_WORKSPACE_NAME string = logAnalyticsWorkspace.name
+{{end -}}
 {{if .HasContainerRegistry -}}
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = containerRegistry.properties.loginServer
 output AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID string = managedIdentity.id

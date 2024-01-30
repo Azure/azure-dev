@@ -53,7 +53,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/swa"
 	"github.com/azure/azure-dev/cli/azd/pkg/workflow"
 	"github.com/mattn/go-colorable"
-	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
 	"golang.org/x/exp/slices"
 )
@@ -111,8 +110,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		}
 
 		isTerminal := cmd.OutOrStdout() == os.Stdout &&
-			cmd.InOrStdin() == os.Stdin && isatty.IsTerminal(os.Stdin.Fd()) &&
-			isatty.IsTerminal(os.Stdout.Fd())
+			cmd.InOrStdin() == os.Stdin && input.IsTerminal(os.Stdout.Fd(), os.Stdin.Fd())
 
 		return input.NewConsole(rootOptions.NoPrompt, isTerminal, writer, input.ConsoleHandles{
 			Stdin:  cmd.InOrStdin(),

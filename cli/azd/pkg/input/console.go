@@ -24,6 +24,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
+	"github.com/mattn/go-isatty"
 	"github.com/nathan-fiscaletti/consolesize-go"
 	"github.com/theckman/yacspin"
 	"go.uber.org/atomic"
@@ -367,35 +368,12 @@ func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format Spi
 	c.spinnerLineMu.Unlock()
 }
 
-// spinnerTerminalMode determines the appropriate terminal mode for the spinner based on the current environment,
-// taking into account of environment variables that can control the terminal mode behavior.
+// spinnerTerminalMode determines the appropriate terminal mode.
 func spinnerTerminalMode(isTerminal bool) yacspin.TerminalMode {
 	nonInteractiveMode := yacspin.ForceNoTTYMode | yacspin.ForceDumbTerminalMode
 	if !isTerminal {
 		return nonInteractiveMode
 	}
-
-	// User override to force non-TTY behavior
-	if os.Getenv("AZD_DEBUG_FORCE_NO_TTY") == "1" {
-		return nonInteractiveMode
-	}
-
-	// By default, detect if we are running on CI and force no TTY mode if we are.
-	// Allow for an override if this is not desired.
-	shouldDetectCI := true
-	if strVal, has := os.LookupEnv("AZD_TERM_SKIP_CI_DETECT"); has {
-		skip, err := strconv.ParseBool(strVal)
-		if err != nil {
-			log.Println("AZD_TERM_SKIP_CI_DETECT is not a valid boolean value")
-		} else if skip {
-			shouldDetectCI = false
-		}
-	}
-
-	if shouldDetectCI && resource.IsRunningOnCI() {
-		return nonInteractiveMode
-	}
-
 	termMode := yacspin.ForceTTYMode
 	if os.Getenv("TERM") == "dumb" {
 		termMode |= yacspin.ForceDumbTerminalMode
@@ -706,7 +684,7 @@ func NewConsole(noPrompt bool, isTerminal bool, w io.Writer, handles ConsoleHand
 		TerminalMode: spinnerTerminalMode(isTerminal),
 	}
 
-	if spinnerConfig.TerminalMode&yacspin.ForceTTYMode > 0 {
+	if isTerminal {
 		spinnerConfig.CharSet = spinnerCharSet
 	} else {
 		spinnerConfig.CharSet = spinnerNoTerminalCharSet
@@ -722,6 +700,33 @@ func NewConsole(noPrompt bool, isTerminal bool, w io.Writer, handles ConsoleHand
 	}
 
 	return c
+}
+
+// IsTerminal returns true if the given file descriptors are attached to a terminal,
+// taking into account of environment variables that force TTY behavior.
+func IsTerminal(stdoutFd uintptr, stdinFd uintptr) bool {
+	// User override to force non-TTY behavior
+	if os.Getenv("AZD_DEBUG_FORCE_NO_TTY") == "1" {
+		return false
+	}
+
+	// By default, detect if we are running on CI and force no TTY mode if we are.
+	// Allow for an override if this is not desired.
+	shouldDetectCI := true
+	if strVal, has := os.LookupEnv("AZD_TERM_SKIP_CI_DETECT"); has {
+		skip, err := strconv.ParseBool(strVal)
+		if err != nil {
+			log.Println("AZD_TERM_SKIP_CI_DETECT is not a valid boolean value")
+		} else if skip {
+			shouldDetectCI = false
+		}
+	}
+
+	if shouldDetectCI && resource.IsRunningOnCI() {
+		return false
+	}
+
+	return isatty.IsTerminal(stdoutFd) && isatty.IsTerminal(stdinFd)
 }
 
 func GetStepResultFormat(result error) SpinnerUxType {

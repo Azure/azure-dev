@@ -35,8 +35,10 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
 	"github.com/benbjohnson/clock"
 	"github.com/stretchr/testify/assert"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -45,18 +47,17 @@ func TestBicepPlan(t *testing.T) {
 	prepareBicepMocks(mockContext)
 	infraProvider := createBicepProvider(t, mockContext)
 
-	deployment, deploymentPlan, err := infraProvider.plan(*mockContext.Context)
+	deploymentPlan, err := infraProvider.plan(*mockContext.Context)
 
 	require.Nil(t, err)
-	require.NotNil(t, deployment)
 
-	require.IsType(t, &bicepDeploymentDetails{}, deploymentPlan)
-	configuredParameters := deploymentPlan.Parameters
+	require.IsType(t, &deploymentDetails{}, deploymentPlan)
+	configuredParameters := deploymentPlan.CompiledBicep.Parameters
 
 	require.Equal(t, infraProvider.env.GetLocation(), configuredParameters["location"].Value)
 	require.Equal(
 		t,
-		infraProvider.env.GetEnvName(),
+		infraProvider.env.Name(),
 		configuredParameters["environmentName"].Value,
 	)
 }
@@ -102,11 +103,11 @@ func TestBicepPlanPrompt(t *testing.T) {
 	}).Respond(false)
 
 	infraProvider := createBicepProvider(t, mockContext)
-	_, plan, err := infraProvider.plan(*mockContext.Context)
+	plan, err := infraProvider.plan(*mockContext.Context)
 
 	require.NoError(t, err)
 
-	require.Equal(t, "value", plan.Parameters["stringParam"].Value)
+	require.Equal(t, "value", plan.CompiledBicep.Parameters["stringParam"].Value)
 }
 
 func TestBicepState(t *testing.T) {
@@ -301,7 +302,7 @@ func TestPlanForResourceGroup(t *testing.T) {
 	require.NoError(t, err)
 	// The computed plan should target the resource group we picked.
 
-	_, planResult, err := infraProvider.plan(*mockContext.Context)
+	planResult, err := infraProvider.plan(*mockContext.Context)
 	require.Nil(t, err)
 	require.NotNil(t, planResult)
 	require.Equal(t, "rg-test-env",
@@ -342,10 +343,14 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 		Module: "main",
 	}
 
-	env := environment.EphemeralWithValues("test-env", map[string]string{
+	env := environment.NewWithValues("test-env", map[string]string{
 		environment.LocationEnvVarName:       "westus2",
 		environment.SubscriptionIdEnvVarName: "SUBSCRIPTION_ID",
+		environment.EnvNameEnvVarName:        "test-env",
 	})
+
+	envManager := &mockenv.MockEnvManager{}
+	envManager.On("Save", mock.Anything, mock.Anything).Return(nil)
 
 	bicepCli, err := bicep.NewBicepCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
 	require.NoError(t, err)
@@ -373,6 +378,7 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 		azCli,
 		depService,
 		depOpService,
+		envManager,
 		env,
 		mockContext.Console,
 		prompt.NewDefaultPrompter(env, mockContext.Console, accountManager, azCli),
@@ -586,6 +592,11 @@ func prepareDestroyMocks(mockContext *mocks.MockContext) {
 		response.Header.Add("location", mockPollingUrl)
 		return response, err
 	})
+
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodPut &&
+			strings.Contains(request.URL.Path, "/subscriptions/SUBSCRIPTION_ID/providers/Microsoft.Resources/deployments/")
+	}).RespondFn(httpRespondFn)
 }
 
 func getKeyVaultMock(mockContext *mocks.MockContext, keyVaultString string, name string, location string) {
@@ -878,3 +889,326 @@ func (m *mockedScope) ListDeployments(ctx context.Context) ([]*armresources.Depl
 		},
 	}, nil
 }
+
+func TestUserDefinedTypes(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(args.Cmd, "bicep") && args.Args[0] == "--version"
+	}).Respond(exec.RunResult{
+		Stdout: fmt.Sprintf("Bicep CLI version %s (abcdef0123)", bicep.BicepVersion.String()),
+		Stderr: "",
+	})
+
+	bicepCli, err := bicep.NewBicepCli(*mockContext.Context, mockContext.Console, mockContext.CommandRunner)
+	require.NoError(t, err)
+	env := environment.NewWithValues("test-env", map[string]string{})
+
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(args.Cmd, "bicep") && args.Args[0] == "build"
+	}).Respond(exec.RunResult{
+		Stdout: userDefinedParamsSample,
+		Stderr: "",
+	})
+
+	// super basic provider to mock the compileBicep method
+	provider := NewBicepProvider(
+		bicepCli,
+		nil,
+		nil,
+		nil,
+		&mockenv.MockEnvManager{},
+		env,
+		mockContext.Console,
+		prompt.NewDefaultPrompter(env, mockContext.Console, nil, nil),
+		&mockCurrentPrincipal{},
+		mockContext.AlphaFeaturesManager,
+		clock.NewMock(),
+	)
+	bicepProvider, gooCast := provider.(*BicepProvider)
+	require.True(t, gooCast)
+
+	compiled, err := bicepProvider.compileBicep(*mockContext.Context, "user-defined-types")
+
+	require.NoError(t, err)
+	require.NotNil(t, compiled)
+
+	template := compiled.Template
+
+	stringParam, exists := template.Parameters["stringParam"]
+	require.True(t, exists)
+	require.Equal(t, "string", stringParam.Type)
+	require.Equal(t, "foo", stringParam.DefaultValue)
+	require.Nil(t, stringParam.AllowedValues)
+
+	stringLimitedParam, exists := template.Parameters["stringLimitedParam"]
+	require.True(t, exists)
+	require.Equal(t, "string", stringLimitedParam.Type)
+	require.NotNil(t, stringLimitedParam.AllowedValues)
+	require.Equal(t, []interface{}{"arm", "azure", "bicep"}, *stringLimitedParam.AllowedValues)
+
+	intType, exists := template.Parameters["intType"]
+	require.True(t, exists)
+	require.Equal(t, "int", intType.Type)
+	require.NotNil(t, intType.AllowedValues)
+	require.Equal(t, []interface{}{float64(10)}, *intType.AllowedValues)
+
+	boolParam, exists := template.Parameters["boolParam"]
+	require.True(t, exists)
+	require.Equal(t, "bool", boolParam.Type)
+	require.NotNil(t, boolParam.AllowedValues)
+	require.Equal(t, []interface{}{true}, *boolParam.AllowedValues)
+
+	arrayStringType, exists := template.Parameters["arrayParam"]
+	require.True(t, exists)
+	require.Equal(t, "array", arrayStringType.Type)
+	require.Nil(t, arrayStringType.AllowedValues)
+
+	arrayLimitedParam, exists := template.Parameters["arrayLimitedParam"]
+	require.True(t, exists)
+	require.Equal(t, "array", arrayLimitedParam.Type)
+	require.NotNil(t, arrayLimitedParam.AllowedValues)
+	require.Equal(t, []interface{}{"a", "b", "c"}, *arrayLimitedParam.AllowedValues)
+
+	mixedParam, exists := template.Parameters["mixedParam"]
+	require.True(t, exists)
+	require.Equal(t, "array", mixedParam.Type)
+	require.NotNil(t, mixedParam.AllowedValues)
+	require.Equal(
+		t, []interface{}{"fizz", float64(42), nil, map[string]interface{}{"an": "object"}}, *mixedParam.AllowedValues)
+
+	objectParam, exists := template.Parameters["objectParam"]
+	require.True(t, exists)
+	require.Equal(t, "object", objectParam.Type)
+	require.Nil(t, objectParam.AllowedValues)
+	require.NotNil(t, objectParam.Properties)
+	require.Equal(
+		t,
+		azure.ArmTemplateParameterDefinitions{
+			"name": {Type: "string"},
+			"sku":  {Type: "string"},
+		},
+		objectParam.Properties)
+	require.NotNil(t, objectParam.AdditionalProperties)
+	require.Equal(
+		t,
+		azure.ArmTemplateParameterAdditionalProperties{
+			Type:      "string",
+			MinLength: to.Ptr(10),
+			Metadata: map[string]json.RawMessage{
+				"fromDefinitionFoo": []byte(`"foo"`),
+				"fromDefinitionBar": []byte(`"bar"`),
+			},
+		},
+		objectParam.AdditionalProperties)
+	require.NotNil(t, objectParam.Metadata)
+	require.Equal(
+		t,
+		map[string]json.RawMessage{
+			// Note: Validating the metadata combining and override here.
+			// The parameter definition contains metadata that is automatically added to the parameter.
+			// Then the parameter also has metadata and overrides one of the values from the definition.
+			"fromDefinitionFoo": []byte(`"foo"`),
+			"fromDefinitionBar": []byte(`"override"`),
+			"fromParameter":     []byte(`"parameter"`),
+		},
+		objectParam.Metadata)
+
+	// output resolves just the type. Value and Metadata should persist
+	customOutput, exists := template.Outputs["customOutput"]
+	require.True(t, exists)
+	require.Equal(t, "string", customOutput.Type)
+	require.Equal(t, "[parameters('stringLimitedParam')]", customOutput.Value)
+	require.Equal(t, map[string]interface{}{
+		"foo": "bar",
+	}, customOutput.Metadata)
+}
+
+func Test_armParameterFileValue(t *testing.T) {
+	t.Run("NilValue", func(t *testing.T) {
+		actual := armParameterFileValue(ParameterTypeString, nil, nil)
+		require.Nil(t, actual)
+	})
+
+	t.Run("StringWithValue", func(t *testing.T) {
+		expected := "value"
+		actual := armParameterFileValue(ParameterTypeString, expected, nil)
+		require.Equal(t, expected, actual)
+	})
+
+	t.Run("EmptyString", func(t *testing.T) {
+		input := ""
+		actual := armParameterFileValue(ParameterTypeString, input, nil)
+		require.Nil(t, actual)
+	})
+
+	t.Run("EmptyStringWithNonEmptyDefault", func(t *testing.T) {
+		expected := ""
+		actual := armParameterFileValue(ParameterTypeString, expected, "not-empty")
+		require.Equal(t, expected, actual)
+	})
+
+	t.Run("EmptyStringWithEmptyDefault", func(t *testing.T) {
+		input := ""
+		actual := armParameterFileValue(ParameterTypeString, input, "")
+		require.Nil(t, actual)
+	})
+
+	t.Run("ValidBool", func(t *testing.T) {
+		expected := true
+		actual := armParameterFileValue(ParameterTypeBoolean, expected, nil)
+		require.Equal(t, expected, actual)
+	})
+
+	t.Run("ActualBool", func(t *testing.T) {
+		expected := true
+		actual := armParameterFileValue(ParameterTypeBoolean, "true", nil)
+		require.Equal(t, expected, actual)
+	})
+
+	t.Run("InvalidBool", func(t *testing.T) {
+		actual := armParameterFileValue(ParameterTypeBoolean, "NotABool", nil)
+		require.Nil(t, actual)
+	})
+
+	t.Run("ValidInt", func(t *testing.T) {
+		var expected int64 = 42
+		actual := armParameterFileValue(ParameterTypeNumber, "42", nil)
+		require.Equal(t, expected, actual)
+	})
+
+	t.Run("ActualInt", func(t *testing.T) {
+		var expected int64 = 42
+		actual := armParameterFileValue(ParameterTypeNumber, expected, nil)
+		require.Equal(t, expected, actual)
+	})
+
+	t.Run("InvalidInt", func(t *testing.T) {
+		actual := armParameterFileValue(ParameterTypeNumber, "NotAnInt", nil)
+		require.Nil(t, actual)
+	})
+
+	t.Run("Array", func(t *testing.T) {
+		expected := []string{"a", "b", "c"}
+		actual := armParameterFileValue(ParameterTypeArray, expected, nil)
+		require.Equal(t, expected, actual)
+	})
+}
+
+const userDefinedParamsSample = `{
+	"$schema": "https://schema.management.azure.com/schemas/2018-05-01/subscriptionDeploymentTemplate.json#",
+	"languageVersion": "2.0",
+	"definitions": {
+	  "stringType": {
+		"type": "string"
+	  },
+	  "stringLimitedType": {
+		"type": "string",
+		"allowedValues": [
+		  "arm",
+		  "azure",
+		  "bicep"
+		]
+	  },
+	  "intType": {
+		"type": "int",
+		"allowedValues": [
+		  10
+		]
+	  },
+	  "boolType": {
+		"type": "bool",
+		"allowedValues": [
+		  true
+		]
+	  },
+	  "arrayStringType": {
+		"type": "array",
+		"items": {
+		  "type": "string"
+		}
+	  },
+	  "arrayStringLimitedType": {
+		"type": "array",
+		"allowedValues": [
+		  "a",
+		  "b",
+		  "c"
+		]
+	  },
+	  "mixedType": {
+		"type": "array",
+		"allowedValues": [
+		  "fizz",
+		  42,
+		  null,
+		  {
+			"an": "object"
+		  }
+		]
+	  },
+	  "objectType": {
+		"type": "object",
+		"properties": {
+		  "name": {
+			"type": "string"
+		  },
+		  "sku": {
+			"type": "string"
+		  }
+		},
+		"additionalProperties": {
+			"type": "string",
+			"minLength": 10,
+			"metadata": {
+			  "fromDefinitionFoo": "foo",
+			  "fromDefinitionBar": "bar"
+			}
+		},
+		"metadata": {
+			"fromDefinitionFoo": "foo",
+			"fromDefinitionBar": "bar"
+		}
+	  }
+	},
+	"parameters": {
+	  "stringParam": {
+		"$ref": "#/definitions/stringType",
+		"defaultValue": "foo"
+	  },
+	  "stringLimitedParam": {
+		"$ref": "#/definitions/stringLimitedType"
+	  },
+	  "intType": {
+		"$ref": "#/definitions/intType"
+	  },
+	  "boolParam": {
+		"$ref": "#/definitions/boolType"
+	  },
+	  "arrayParam": {
+		"$ref": "#/definitions/arrayStringType"
+	  },
+	  "arrayLimitedParam": {
+		"$ref": "#/definitions/arrayStringLimitedType"
+	  },
+	  "mixedParam": {
+		"$ref": "#/definitions/mixedType"
+	  },
+	  "objectParam": {
+		"$ref": "#/definitions/objectType",
+		"metadata": {
+			"fromDefinitionBar": "override",
+			"fromParameter": "parameter"
+		  }
+	  }
+	},
+	"resources": {},
+	"outputs": {
+		"customOutput": {
+			"$ref": "#/definitions/stringLimitedType",
+			"metadata": {
+				"foo": "bar"
+			},
+			"value": "[parameters('stringLimitedParam')]"
+		}
+	}
+}`

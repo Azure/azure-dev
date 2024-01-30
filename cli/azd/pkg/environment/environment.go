@@ -4,21 +4,17 @@
 package environment
 
 import (
-	"errors"
+	"context"
+	"encoding/json"
 	"fmt"
+	"log"
 	"os"
-	"path/filepath"
 	"regexp"
 	"strings"
 
 	"maps"
 
-	"github.com/azure/azure-dev/cli/azd/internal/tracing"
-	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
-	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
-	"github.com/google/uuid"
 	"github.com/joho/godotenv"
 )
 
@@ -47,9 +43,11 @@ const AksClusterEnvVarName = "AZURE_AKS_CLUSTER_NAME"
 // ResourceGroupEnvVarName is the name of the azure resource group that should be used for deployments
 const ResourceGroupEnvVarName = "AZURE_RESOURCE_GROUP"
 
-// The zero value of an Environment is not valid. Use [FromRoot] or [EmptyWithRoot] to create one. When writing tests,
+// The zero value of an Environment is not valid. Use [New] to create one. When writing tests,
 // [Ephemeral] and [EphemeralWithValues] are useful to create environments which are not persisted to disk.
 type Environment struct {
+	name string
+
 	// dotenv is a map of keys to values, persisted to the `.env` file stored in this environment's [Root].
 	dotenv map[string]string
 
@@ -59,14 +57,54 @@ type Environment struct {
 
 	// Config is environment specific config
 	Config config.Config
-
-	// File is a path to the directory that backs this environment. If empty, the Environment
-	// will not be persisted when `Save` is called. This allows the zero value to be used
-	// for testing.
-	Root string
 }
 
-type EnvironmentResolver func() (*Environment, error)
+const AzdInitialEnvironmentConfigName = "AZD_INITIAL_ENVIRONMENT_CONFIG"
+
+// New returns a new environment with the specified name.
+func New(name string) *Environment {
+	env := &Environment{
+		name:        name,
+		dotenv:      make(map[string]string),
+		deletedKeys: make(map[string]struct{}),
+		Config:      getInitialConfig(),
+	}
+
+	env.DotenvSet(EnvNameEnvVarName, name)
+
+	return env
+}
+
+func getInitialConfig() config.Config {
+	initialConfig := os.Getenv(AzdInitialEnvironmentConfigName)
+	if initialConfig == "" {
+		return config.NewEmptyConfig()
+	}
+
+	var initConfig map[string]any
+	if err := json.Unmarshal([]byte(initialConfig), &initConfig); err != nil {
+		log.Println("Failed to unmarshal initial config", err, "Using empty config.")
+		return config.NewEmptyConfig()
+	}
+
+	return config.NewConfig(initConfig)
+}
+
+// NewWithValues returns an ephemeral environment (i.e. not backed by a data store) with a set
+// of values. Useful for testing. The name parameter is added to the environment with the
+// AZURE_ENV_NAME key, replacing an existing value in the provided values map. A nil values is
+// treated the same way as an empty map.
+func NewWithValues(name string, values map[string]string) *Environment {
+	env := New(name)
+
+	if values != nil {
+		env.dotenv = values
+	}
+
+	return env
+}
+
+type EnvironmentResolver func(ctx context.Context) (*Environment, error)
 
 // Same restrictions as a deployment name (ref:
 // https://docs.microsoft.com/azure/azure-resource-manager/management/resource-name-rules#microsoftresources)
@@ -100,65 +138,6 @@ func CleanName(name string) string {
 	}
 
 	return result.String()
-}
-
-// FromRoot loads an environment located in a directory. On error,
-// an valid empty environment file, configured to persist its contents
-// to this directory, is returned.
-func FromRoot(root string) (*Environment, error) {
-	if _, err := os.Stat(root); err != nil {
-		return EmptyWithRoot(root), err
-	}
-
-	env := &Environment{
-		Root: root,
-	}
-
-	if err := env.Reload(); err != nil {
-		return EmptyWithRoot(root), err
-	}
-
-	return env, nil
-}
-
-func GetEnvironment(azdContext *azdcontext.AzdContext, name string) (*Environment, error) {
-	return FromRoot(azdContext.EnvironmentRoot(name))
-}
-
-// EmptyWithRoot returns an empty environment, which will be persisted
-// to a given directory when saved.
-func EmptyWithRoot(root string) *Environment {
-	return &Environment{
-		Root:        root,
-		dotenv:      make(map[string]string),
-		deletedKeys: make(map[string]struct{}),
-		Config:      config.NewEmptyConfig(),
-	}
-}
-
-// Ephemeral returns returns an empty ephemeral environment (i.e. not backed by a file) with a set
-func Ephemeral() *Environment {
-	return &Environment{
-		dotenv:      make(map[string]string),
-		deletedKeys: make(map[string]struct{}),
-		Config:      config.NewEmptyConfig(),
-	}
-}
-
-// EphemeralWithValues returns an ephemeral environment (i.e. not backed by a file) with a set
-// of values. Useful for testing. The name parameter is added to the environment with the
-// AZURE_ENV_NAME key, replacing an existing value in the provided values map. A nil values is
-// treated the same way as an empty map.
-func EphemeralWithValues(name string, values map[string]string) *Environment {
-	env := Ephemeral()
-
-	if values != nil {
-		env.dotenv = values
-	}
-
-	env.dotenv[EnvNameEnvVarName] = name
-
-	return env
 }
 
 // Getenv behaves like os.Getenv, except that any keys in the `.env` file associated with this environment are considered
@@ -200,123 +179,14 @@ func (e *Environment) DotenvSet(key string, value string) {
 	delete(e.deletedKeys, key)
 }
 
-// Reloads environment variables and configuration
-func (e *Environment) Reload() error {
-	// Reload env values
-	if envMap, err := godotenv.Read(e.Path()); errors.Is(err, os.ErrNotExist) {
-		e.dotenv = make(map[string]string)
-		e.deletedKeys = make(map[string]struct{})
-	} else if err != nil {
-		return fmt.Errorf("loading .env: %w", err)
-	} else {
-		e.dotenv = envMap
-		e.deletedKeys = make(map[string]struct{})
+// Name gets the name of the environment
+// If empty will fallback to the value of the AZURE_ENV_NAME environment variable
+func (e *Environment) Name() string {
+	if e.name == "" {
+		e.name = e.Getenv(EnvNameEnvVarName)
 	}
 
-	// Reload env config
-	cfgMgr := config.NewManager()
-	if cfg, err := cfgMgr.Load(e.ConfigPath()); errors.Is(err, os.ErrNotExist) {
-		e.Config = config.NewEmptyConfig()
-	} else if err != nil {
-		return fmt.Errorf("loading config: %w", err)
-	} else {
-		e.Config = cfg
-	}
-
-	if e.GetEnvName() != "" {
-		tracing.SetUsageAttributes(fields.StringHashed(fields.EnvNameKey, e.GetEnvName()))
-	}
-
-	if e.GetSubscriptionId() != "" {
-		if _, err := uuid.Parse(e.GetSubscriptionId()); err == nil {
-			tracing.SetGlobalAttributes(fields.SubscriptionIdKey.String(e.GetSubscriptionId()))
-		} else {
-			tracing.SetGlobalAttributes(fields.StringHashed(fields.SubscriptionIdKey, e.GetSubscriptionId()))
-		}
-	}
-
-	return nil
-}
-
-// If `Root` is set, Save writes the current contents of the environment to
-// the given directory, creating it and any intermediate directories as needed.
-func (e *Environment) Save() error {
-	if e.Root == "" {
-		return nil
-	}
-
-	// Update configuration
-	cfgMgr := config.NewManager()
-	if err := cfgMgr.Save(e.Config, e.ConfigPath()); err != nil {
-		return fmt.Errorf("saving config: %w", err)
-	}
-
-	// Cache current values & reload to get any new env vars
-	currentValues := e.dotenv
-	deletedValues := e.deletedKeys
-	if err := e.Reload(); err != nil {
-		return fmt.Errorf("failed reloading env vars, %w", err)
-	}
-
-	// Overlay current values before saving
-	for key, value := range currentValues {
-		e.dotenv[key] = value
-	}
-
-	// Replay deletion
-	for key := range deletedValues {
-		delete(e.dotenv, key)
-	}
-
-	err := os.MkdirAll(e.Root, osutil.PermissionDirectory)
-	if err != nil {
-		return fmt.Errorf("failed to create a directory: %w", err)
-	}
-
-	// Instead of calling `godotenv.Write` directly, we need to save the file ourselves, so we can fixup any numeric values
-	// that were incorrectly unquoted.
-	marshalled, err := godotenv.Marshal(e.dotenv)
-	if err != nil {
-		return fmt.Errorf("saving .env: %w", err)
-	}
-
-	marshalled = fixupUnquotedDotenv(e.dotenv, marshalled)
-
-	envFile, err := os.Create(e.Path())
-	if err != nil {
-		return fmt.Errorf("saving .env: %w", err)
-	}
-	defer envFile.Close()
-
-	// Write the contents (with a trailing newline), and sync the file, as godotenv.Write would have.
-	if _, err := envFile.WriteString(marshalled + "\n"); err != nil {
-		return fmt.Errorf("saving .env: %w", err)
-	}
-
-	if err := envFile.Sync(); err != nil {
-		return fmt.Errorf("saving .env: %w", err)
-	}
-
-	tracing.SetUsageAttributes(fields.StringHashed(fields.EnvNameKey, e.GetEnvName()))
-	return nil
-}
-
-func (e *Environment) Path() string {
-	return filepath.Join(e.Root, azdcontext.DotEnvFileName)
-}
-
-func (e *Environment) ConfigPath() string {
-	return filepath.Join(e.Root, azdcontext.ConfigFileName)
-}
-
-// GetEnvName is shorthand for Getenv(EnvNameEnvVarName)
-func (e *Environment) GetEnvName() string {
-	return e.Getenv(EnvNameEnvVarName)
-}
-
-// SetEnvName is shorthand for DotenvSet(EnvNameEnvVarName, envname)
-func (e *Environment) SetEnvName(envname string) {
-	e.DotenvSet(EnvNameEnvVarName, envname)
+	return e.name
 }
 
 // GetSubscriptionId is shorthand for Getenv(SubscriptionIdEnvVarName)
@@ -402,4 +272,16 @@ func fixupUnquotedDotenv(values map[string]string, dotenv string) string {
 	}
 
 	return strings.Join(entries, "\n")
+}
+
+// Prepare dotenv for saving and returns a marshalled string that can be save to the underlying data store
+// Instead of calling `godotenv.Write` directly, we need to save the file ourselves, so we can fixup any numeric values
+// that were incorrectly unquoted.
+func marshallDotEnv(env *Environment) (string, error) {
+	marshalled, err := godotenv.Marshal(env.dotenv)
+	if err != nil {
+		return "", fmt.Errorf("marshalling .env: %w", err)
+	}
+
+	return fixupUnquotedDotenv(env.dotenv, marshalled), nil
 }

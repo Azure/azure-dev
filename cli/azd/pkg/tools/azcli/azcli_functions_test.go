@@ -145,7 +145,7 @@ func registerDeployMocks(mockContext *mocks.MockContext, ran *bool) {
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		*ran = true
 		response, _ := mocks.CreateEmptyHttpResponse(request, http.StatusAccepted)
-		response.Header.Set("Location", "http://myapp.scm.azurewebsites.net/deployments/latest")
+		response.Header.Set("Location", "https://myapp.scm.azurewebsites.net/deployments/latest")
 
 		return response, nil
 	})

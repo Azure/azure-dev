@@ -21,6 +21,8 @@ type KubectlCli interface {
 	Cwd(cwd string)
 	// Sets the env vars available to the CLI
 	SetEnv(env map[string]string)
+	// Sets the KUBECONFIG environment variable
+	SetKubeConfig(kubeConfig string)
 	// Applies one or more files from the specified path
 	Apply(ctx context.Context, path string, flags *KubeCliFlags) error
 	// Applies manifests from the specified input
@@ -84,6 +86,7 @@ type kubectlCli struct {
 func NewKubectl(commandRunner exec.CommandRunner) KubectlCli {
 	return &kubectlCli{
 		commandRunner: commandRunner,
+		env:           map[string]string{},
 	}
 }
 
@@ -136,7 +139,14 @@ func (cli *kubectlCli) Name() string {
 
 // Sets the env vars available to the CLI
 func (cli *kubectlCli) SetEnv(envValues map[string]string) {
-	cli.env = envValues
+	for key, value := range envValues {
+		cli.env[key] = value
+	}
+}
+
+// Sets the KUBECONFIG environment variable
+func (cli *kubectlCli) SetKubeConfig(kubeConfig string) {
+	cli.env[KubeConfigEnvVarName] = kubeConfig
 }
 
 // Sets the current working directory
@@ -175,8 +185,7 @@ func (cli *kubectlCli) ConfigView(
 	}
 
 	runArgs := exec.NewRunArgs("kubectl", args...).
-		WithCwd(kubeConfigDir).
-		WithEnv(environ(cli.env))
+		WithCwd(kubeConfigDir)
 
 	res, err := cli.executeCommandWithArgs(ctx, runArgs, flags)
 	if err != nil {
@@ -189,7 +198,6 @@ func (cli *kubectlCli) ConfigView(
 func (cli *kubectlCli) ApplyWithStdIn(ctx context.Context, input string, flags *KubeCliFlags) (*exec.RunResult, error) {
 	runArgs := exec.
 		NewRunArgs("kubectl", "apply", "-f", "-").
-		WithEnv(environ(cli.env)).
 		WithStdIn(strings.NewReader(input))
 
 	res, err := cli.executeCommandWithArgs(ctx, runArgs, flags)
@@ -201,9 +209,7 @@ func (cli *kubectlCli) ApplyWithStdIn(ctx context.Context, input string, flags *
 }
 
 func (cli *kubectlCli) ApplyWithFile(ctx context.Context, filePath string, flags *KubeCliFlags) (*exec.RunResult, error) {
-	runArgs := exec.
-		NewRunArgs("kubectl", "apply", "-f", filePath).
-		WithEnv(environ(cli.env))
+	runArgs := exec.NewRunArgs("kubectl", "apply", "-f", filePath)
 
 	res, err := cli.executeCommandWithArgs(ctx, runArgs, flags)
 	if err != nil {
@@ -330,6 +336,8 @@ func (cli *kubectlCli) executeCommandWithArgs(
 	if cli.cwd != "" {
 		args = args.WithCwd(cli.cwd)
 	}
+
+	args = args.WithEnv(environ(cli.env))
 
 	if flags != nil {
 		if flags.DryRun != "" {

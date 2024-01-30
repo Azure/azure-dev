@@ -1,0 +1,72 @@
+{{define "containerApp.tmpl.yaml" -}}
+location: {{ "{{ .Env.AZURE_LOCATION }}" }}
+identity:
+  type: UserAssigned
+  userAssignedIdentities:
+    ? {{ `"{{ .Env.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID }}"` }}
+    : {}
+properties:
+  environmentId: {{ "{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_ID }}" }}
+  configuration:
+    activeRevisionsMode: single
+{{- if .Dapr}}
+    dapr:
+      appId: {{ .Dapr.AppId }}
+{{- if .Dapr.AppPort}}
+      appPort: {{ .Dapr.AppPort }}
+{{- end}}
+{{- if .Dapr.AppProtocol}}
+      appProtocol: {{ .Dapr.AppProtocol }}
+{{- end}}
+{{- if .Dapr.EnableApiLogging}}
+      enableApiLogging: {{ .Dapr.EnableApiLogging }}
+{{- end}}
+      enabled: true
+{{- if .Dapr.HttpMaxRequestSize}}
+      httpMaxRequestSize: {{ .Dapr.HttpMaxRequestSize }}
+{{- end}}
+{{- if .Dapr.HttpReadBufferSize}}
+      httpReadBufferSize: {{ .Dapr.HttpReadBufferSize }}
+{{- end}}
+{{- if .Dapr.LogLevel}}
+      logLevel: {{ .Dapr.LogLevel }}
+{{- end}}
+{{- end}}
+{{- if .Ingress}}
+    ingress:
+      external: {{ .Ingress.External }}
+      targetPort: {{ .Ingress.TargetPort }}
+      transport: {{ .Ingress.Transport }}
+      allowInsecure: {{ .Ingress.AllowInsecure }}
+{{- end}}
+    registries:
+    - server: {{ "{{ .Env.AZURE_CONTAINER_REGISTRY_ENDPOINT }}" }}
+      identity: {{ "{{ .Env.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID }}" }}
+{{- if gt (len .Secrets) 0 }}
+    secrets:
+{{- end}}
+{{- range $name, $value := .Secrets}}
+      - name: {{containerAppSecretName $name}}
+        value: {{$value}}
+{{- end}}
+  template:
+    containers:
+    - image: {{ "{{ .Image }}" }}
+      name: {{ .Name }}
+      env:
+      - name: AZURE_CLIENT_ID
+        value: {{ "{{ .Env.MANAGED_IDENTITY_CLIENT_ID }}" }}
+{{- range $name, $value := .Env}}
+      - name: {{$name}}
+        value: {{$value}}
+{{- end}}
+{{- range $name, $value := .Secrets}}
+      - name: {{$name}}
+        secretRef: {{containerAppSecretName $name}}
+{{- end}}
+    scale:
+      minReplicas: 1
+tags:
+  azd-service-name: {{ .Name }}
+  aspire-resource-name: {{ .Name }}
+{{ end}}

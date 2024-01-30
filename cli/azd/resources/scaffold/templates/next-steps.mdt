@@ -12,12 +12,12 @@
 
 ### Define environment variables for running services
 
-1. Modify or add environment variables to configure the running application. Environment variables can be configured by modifying the `env` node in the following files:
+1. Modify or add environment variables to configure the running application. Environment variables can be configured by updating the `settings` node(s) for each service in [main.parameters.json](./infra/main.parameters.json).
+2. For services using a database, environment variables have been pre-configured under the `env` node in the following files to allow connection to the database. Modify the name of these variables as needed to match your application.
 {{- range .Services}}
     - [app/{{.Name}}.bicep](./infra/app/{{.Name}}.bicep)
 {{- end}}
-2. For services using a database, environment variables have been pre-configured under `env` to allow connection to the database. Modify the name of these variables as needed to match your application.
-3. To set a secret or API key as an environment variable under `env`, the variable should be added with a `secretRef` pointing to a `secrets` entry or a stored KeyVault secret.
+3. For services using Redis, environment variables will not show up under `env` explicitly, but are available as: `REDIS_ENDPOINT`, `REDIS_HOST`, `REDIS_PASSWORD`, and `REDIS_PORT`.
 
 ### Provision infrastructure and deploy application code
 
@@ -65,8 +65,6 @@ More information about [Bicep](https://aka.ms/bicep) language.
 
 ### Build from source (no Dockerfile)
 
-*Note: Build from source is currently experimental. We recommend authoring a Dockerfile for a static front-end service.*
-
 #### Build with Buildpacks using Oryx
 
 If your project does not contain a Dockerfile, we will use [Buildpacks](https://buildpacks.io/) using [Oryx](https://github.com/microsoft/Oryx/blob/main/doc/README.md) to create an image for the services in `azure.yaml` and get your containerized app onto Azure.
@@ -79,7 +77,7 @@ To produce and run the docker image locally:
 
 #### Exposed port
 
-Oryx will automatically set `PORT` to a default value of `80` or `8080` depending on the language. Additionally, it will auto-configure supported web servers such as `gunicorn` and `ASP .NET Core` to listen to the target `PORT`. If your application already listens to the port specified by the `PORT` variable, the application will work out-of-the-box. Otherwise, you may need to perform one of the steps below:
+Oryx will automatically set `PORT` to a default value of `80`. Additionally, it will auto-configure supported web servers such as `gunicorn` and `ASP .NET Core` to listen to the target `PORT`. If your application already listens to the port specified by the `PORT` variable, the application will work out-of-the-box. Otherwise, you may need to perform one of the steps below:
 
 1. Update your application code or configuration to listen to the port specified by the `PORT` variable
 1. (Alternatively) Search for `targetPort` in a .bicep file under the `infra/app` folder, and update the variable to match the port used by the application.

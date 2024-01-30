@@ -9,6 +9,8 @@ import (
 )
 
 type Template struct {
+	Id string `json:"id"`
+
 	// Name is the friendly short name of the template.
 	Name string `json:"name"`
 
@@ -22,6 +24,17 @@ type Template struct {
 	// "{owner}/{repo}" for GitHub repositories,
 	// or "{repo}" for GitHub repositories under Azure-Samples (default organization).
 	RepositoryPath string `json:"repositoryPath"`
+
+	// Additional metadata about the template
+	Metadata Metadata `json:"metadata,omitempty"`
+}
+
+// Metadata contains additional metadata about the template
+// This metadata is used to modify azd project, environment config and environment variables during azd init commands.
+type Metadata struct {
+	Variables map[string]string `json:"variables,omitempty"`
+	Config    map[string]string `json:"config,omitempty"`
+	Project   map[string]string `json:"project,omitempty"`
 }
 
 // Display writes a string representation of the template suitable for display.
@@ -34,7 +47,7 @@ func (t *Template) Display(writer io.Writer) error {
 		output.TablePadCharacter,
 		output.TableFlags)
 	text := [][]string{
-		{"RepositoryPath", ":", t.RepositoryPath},
+		{"RepositoryPath", ":", Hyperlink(t.RepositoryPath)},
 		{"Name", ":", t.Name},
 		{"Source", ":", t.Source},
 		{"Description", ":", t.Description},

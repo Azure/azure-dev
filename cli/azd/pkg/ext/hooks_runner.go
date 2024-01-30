@@ -25,6 +25,7 @@ type HooksRunner struct {
 	cwd           string
 	hooks         map[string]*HookConfig
 	env           *environment.Environment
+	envManager    environment.Manager
 }
 
 // NewHooks creates a new instance of CommandHooks
@@ -32,6 +33,7 @@ type HooksRunner struct {
 func NewHooksRunner(
 	hooksManager *HooksManager,
 	commandRunner exec.CommandRunner,
+	envManager environment.Manager,
 	console input.Console,
 	cwd string,
 	hooks map[string]*HookConfig,
@@ -49,6 +51,7 @@ func NewHooksRunner(
 	return &HooksRunner{
 		hooksManager:  hooksManager,
 		commandRunner: commandRunner,
+		envManager:    envManager,
 		console:       console,
 		cwd:           cwd,
 		hooks:         hooks,
@@ -58,7 +61,7 @@ func NewHooksRunner(
 
 // Invokes an action run runs any registered pre or post script hooks for the specified command.
 func (h *HooksRunner) Invoke(ctx context.Context, commands []string, actionFn InvokeFn) error {
-	err := h.RunHooks(ctx, HookTypePre, commands...)
+	err := h.RunHooks(ctx, HookTypePre, nil, commands...)
 	if err != nil {
 		return fmt.Errorf("failed running pre hooks: %w", err)
 	}
@@ -68,7 +71,7 @@ func (h *HooksRunner) Invoke(ctx context.Context, commands []string, actionFn In
 		return err
 	}
 
-	err = h.RunHooks(ctx, HookTypePost, commands...)
+	err = h.RunHooks(ctx, HookTypePost, nil, commands...)
 	if err != nil {
 		return fmt.Errorf("failed running post hooks: %w", err)
 	}
@@ -77,23 +80,28 @@ func (h *HooksRunner) Invoke(ctx context.Context, commands []string, actionFn In
 }
 
 // Invokes any registered script hooks for the specified hook type and command.
-func (h *HooksRunner) RunHooks(ctx context.Context, hookType HookType, commands ...string) error {
+func (h *HooksRunner) RunHooks(
+	ctx context.Context,
+	hookType HookType,
+	options *tools.ExecOptions,
+	commands ...string,
+) error {
 	hooks, err := h.hooksManager.GetByParams(h.hooks, hookType, commands...)
 	if err != nil {
 		return fmt.Errorf("failed running scripts for hooks '%s', %w", strings.Join(commands, ","), err)
 	}
 
 	for _, hookConfig := range hooks {
-		if err := h.env.Reload(); err != nil {
+		if err := h.envManager.Reload(ctx, h.env); err != nil {
 			return fmt.Errorf("reloading environment before running hook: %w", err)
 		}
 
-		err := h.execHook(ctx, hookConfig)
+		err := h.execHook(ctx, hookConfig, options)
 		if err != nil {
 			return err
 		}
 
-		if err := h.env.Reload(); err != nil {
+		if err := h.envManager.Reload(ctx, h.env); err != nil {
 			return fmt.Errorf("reloading environment after running hook: %w", err)
 		}
 	}
@@ -121,32 +129,38 @@ func (h *HooksRunner) GetScript(hookConfig *HookConfig) (tools.Script, error) {
 	}
 }
 
-func (h *HooksRunner) execHook(ctx context.Context, hookConfig *HookConfig) error {
+func (h *HooksRunner) execHook(ctx context.Context, hookConfig *HookConfig, options *tools.ExecOptions) error {
+	if options == nil {
+		options = &tools.ExecOptions{}
+	}
+
 	script, err := h.GetScript(hookConfig)
 	if err != nil {
 		return err
 	}
 
 	formatter := h.console.GetFormatter()
-	consoleInteractive := formatter == nil || formatter.Kind() == output.NoneFormat
+	consoleInteractive := (formatter == nil || formatter.Kind() == output.NoneFormat)
 	scriptInteractive := consoleInteractive && hookConfig.Interactive
 
-	// When running in an interactive terminal broadcast a message to the dev to remind them that custom hooks are running.
-	if consoleInteractive {
-		h.console.Message(
-			ctx,
-			output.WithBold(
-				fmt.Sprintf(
-					"Executing %s hook => %s",
-					output.WithHighLightFormat(hookConfig.Name),
-					output.WithHighLightFormat(hookConfig.path),
-				),
-			),
-		)
+	if options.Interactive == nil {
+		options.Interactive = &scriptInteractive
+	}
+
+	// When the hook is not configured to run in interactive mode and no stdout has been configured
+	// Then show the hook execution output within the console previewer pane
+	if !*options.Interactive && options.StdOut == nil {
+		previewer := h.console.ShowPreviewer(ctx, &input.ShowPreviewerOptions{
+			Prefix:       "  ",
+			Title:        fmt.Sprintf("%s Hook Output", hookConfig.Name),
+			MaxLineCount: 8,
+		})
+		options.StdOut = previewer
+		defer h.console.StopPreviewer(ctx, false)
 	}
 
 	log.Printf("Executing script '%s'\n", hookConfig.path)
-	res, err := script.Execute(ctx, hookConfig.path, scriptInteractive)
+	res, err := script.Execute(ctx, hookConfig.path, *options)
 	if err != nil {
 		execErr := fmt.Errorf(
 			"'%s' hook failed with exit code: '%d', Path: '%s'. : %w",

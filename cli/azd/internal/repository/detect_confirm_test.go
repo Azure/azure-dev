@@ -205,8 +205,12 @@ func Test_detectConfirm_confirm(t *testing.T) {
 			d.Init(tt.detection, dir)
 
 			err = d.Confirm(context.Background())
-			require.NoError(t, err)
 
+			// Print extra newline to avoid mangling `go test -v` final test result output while waiting for final stdin,
+			// which may result in incorrect `gotestsum` reporting
+			fmt.Println()
+
+			require.NoError(t, err)
 			require.Equal(t, tt.want, d.Services)
 		})
 	}

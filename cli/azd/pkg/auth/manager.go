@@ -91,7 +91,7 @@ type HttpClient interface {
 type Manager struct {
 	publicClient        publicClient
 	publicClientOptions []public.Option
-	configManager       config.Manager
+	configManager       config.FileConfigManager
 	userConfigManager   config.UserConfigManager
 	credentialCache     Cache
 	ghClient            *github.FederatedTokenClient
@@ -100,7 +100,7 @@ type Manager struct {
 }
 
 func NewManager(
-	configManager config.Manager,
+	configManager config.FileConfigManager,
 	userConfigManager config.UserConfigManager,
 	httpClient HttpClient,
 	console input.Console,
@@ -523,13 +523,7 @@ func (m *Manager) LoginWithDeviceCode(
 			},
 		})
 	} else {
-		m.console.MessageUxItem(ctx, &ux.MultilineMessage{
-			Lines: []string{
-				fmt.Sprintf("Start by copying the next code: %s", output.WithBold(code.UserCode())),
-				"Then press enter and continue to log in from your browser...",
-			},
-		})
-		m.console.WaitForEnter()
+		m.console.Message(ctx, fmt.Sprintf("Start by copying the next code: %s", output.WithBold(code.UserCode())))
 
 		if err := withOpenUrl(url); err != nil {
 			log.Println("error launching browser: ", err.Error())

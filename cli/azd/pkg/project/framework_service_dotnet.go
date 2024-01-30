@@ -55,18 +55,27 @@ func (dp *dotnetProject) RequiredExternalTools(context.Context) []tools.External
 
 // Initializes the dotnet project
 func (dp *dotnetProject) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
-	projFile, err := findProjectFile(serviceConfig.Name, serviceConfig.Path())
-	if err != nil {
-		return err
-	}
-	if err := dp.dotnetCli.InitializeSecret(ctx, projFile); err != nil {
-		return err
-	}
-	handler := func(ctx context.Context, args ServiceLifecycleEventArgs) error {
-		return dp.setUserSecretsFromOutputs(ctx, serviceConfig, args)
-	}
-	if err := serviceConfig.AddHandler(ServiceEventEnvUpdated, handler); err != nil {
-		return err
+	// NOTE(ellismg): For dotnet based apps, we installed a lifecycle hook that would write all the outputs from a deployment
+	// into dotnet user-secrets. The goal of this was to make it easy to consume the values from your infrastructure in your
+	// dotnet app, but the strategy doesn't work well in practice and it ends up being an abuse of the user secrets setup.
+	//
+	// We'd like to stop doing this at some point for all .NET projects, but we can make sure that we don't inherit the
+	// bad behavior for containerized projects, without being concerned about it being considered a breaking change.
+	if serviceConfig.Host != DotNetContainerAppTarget {
+		projFile, err := findProjectFile(serviceConfig.Name, serviceConfig.Path())
+		if err != nil {
+			return err
+		}
+
+		if err := dp.dotnetCli.InitializeSecret(ctx, projFile); err != nil {
+			return err
+		}
+		handler := func(ctx context.Context, args ServiceLifecycleEventArgs) error {
+			return dp.setUserSecretsFromOutputs(ctx, serviceConfig, args)
+		}
+		if err := serviceConfig.AddHandler(ServiceEventEnvUpdated, handler); err != nil {
+			return err
+		}
 	}
 
 	return nil
@@ -123,7 +132,7 @@ func (dp *dotnetProject) Build(
 				buildOutputDir = filepath.Join(buildOutputDir, defaultOutputDir)
 			}
 
-			// By default dotnet build will create a sub folder for the project framework version, etc. net6.0
+			// By default dotnet build will create a sub folder for the project framework version, etc. net8.0
 			// If we have a single folder under build configuration assume this location as build output result
 			subDirs, err := os.ReadDir(buildOutputDir)
 			if err == nil {

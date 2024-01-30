@@ -35,7 +35,7 @@ func Test_BuildAndRunSimpleCommand(t *testing.T) {
 		},
 	})
 
-	builder := NewCobraBuilder(container)
+	builder := NewCobraBuilder(container, middleware.NewMiddlewareRunner(container))
 	cmd, err := builder.BuildCommand(root)
 
 	require.NotNil(t, cmd)
@@ -58,7 +58,7 @@ func Test_BuildAndRunSimpleAction(t *testing.T) {
 		FlagsResolver:  newTestFlags,
 	})
 
-	builder := NewCobraBuilder(container)
+	builder := NewCobraBuilder(container, middleware.NewMiddlewareRunner(container))
 	cmd, err := builder.BuildCommand(root)
 
 	require.NotNil(t, cmd)
@@ -79,7 +79,7 @@ func Test_BuildAndRunSimpleActionWithMiddleware(t *testing.T) {
 		FlagsResolver:  newTestFlags,
 	}).UseMiddleware("A", newTestMiddlewareA)
 
-	builder := NewCobraBuilder(container)
+	builder := NewCobraBuilder(container, middleware.NewMiddlewareRunner(container))
 	cmd, err := builder.BuildCommand(root)
 
 	require.NotNil(t, cmd)
@@ -112,7 +112,7 @@ func Test_BuildAndRunActionWithNestedMiddleware(t *testing.T) {
 		FlagsResolver:  newTestFlags,
 	}).UseMiddleware("B", newTestMiddlewareB)
 
-	builder := NewCobraBuilder(container)
+	builder := NewCobraBuilder(container, middleware.NewMiddlewareRunner(container))
 	cmd, err := builder.BuildCommand(root)
 
 	require.NotNil(t, cmd)
@@ -154,7 +154,7 @@ func Test_BuildAndRunActionWithNestedAndConditionalMiddleware(t *testing.T) {
 			return false
 		})
 
-	builder := NewCobraBuilder(container)
+	builder := NewCobraBuilder(container, middleware.NewMiddlewareRunner(container))
 	cmd, err := builder.BuildCommand(root)
 
 	require.NotNil(t, cmd)
@@ -191,7 +191,7 @@ func Test_BuildCommandsWithAutomaticHelpAndOutputFlags(t *testing.T) {
 		},
 	})
 
-	cobraBuilder := NewCobraBuilder(container)
+	cobraBuilder := NewCobraBuilder(container, middleware.NewMiddlewareRunner(container))
 	cmd, err := cobraBuilder.BuildCommand(root)
 
 	require.NoError(t, err)
@@ -220,7 +220,7 @@ func Test_BuildCommandsWithAutomaticHelpAndOutputFlags(t *testing.T) {
 func Test_RunDocsFlow(t *testing.T) {
 	container := ioc.NewNestedContainer(nil)
 	testCtx := mocks.NewMockContext(context.Background())
-	container.RegisterSingleton(func() input.Console {
+	container.MustRegisterSingleton(func() input.Console {
 		return testCtx.Console
 	})
 
@@ -239,7 +239,7 @@ func Test_RunDocsFlow(t *testing.T) {
 		calledUrl = url
 	}
 
-	cobraBuilder := NewCobraBuilder(container)
+	cobraBuilder := NewCobraBuilder(container, middleware.NewMiddlewareRunner(container))
 	cmd, err := cobraBuilder.BuildCommand(root)
 
 	require.NoError(t, err)
@@ -254,7 +254,7 @@ func Test_RunDocsFlow(t *testing.T) {
 func Test_RunDocsAndHelpFlow(t *testing.T) {
 	container := ioc.NewNestedContainer(nil)
 	testCtx := mocks.NewMockContext(context.Background())
-	container.RegisterSingleton(func() input.Console {
+	container.MustRegisterSingleton(func() input.Console {
 		return testCtx.Console
 	})
 
@@ -273,7 +273,7 @@ func Test_RunDocsAndHelpFlow(t *testing.T) {
 		calledUrl = url
 	}
 
-	cobraBuilder := NewCobraBuilder(container)
+	cobraBuilder := NewCobraBuilder(container, middleware.NewMiddlewareRunner(container))
 	cmd, err := cobraBuilder.BuildCommand(root)
 
 	require.NoError(t, err)

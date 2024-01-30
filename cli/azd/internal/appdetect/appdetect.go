@@ -4,6 +4,7 @@
 package appdetect
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -11,23 +12,28 @@ import (
 	"os"
 	"path/filepath"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/bmatcuk/doublestar/v4"
 )
 
 type Language string
 
 const (
-	DotNet     Language = "dotnet"
-	Java       Language = "java"
-	JavaScript Language = "js"
-	TypeScript Language = "ts"
-	Python     Language = "python"
+	DotNet        Language = "dotnet"
+	DotNetAppHost Language = "dotnet-apphost"
+	Java          Language = "java"
+	JavaScript    Language = "js"
+	TypeScript    Language = "ts"
+	Python        Language = "python"
 )
 
 func (pt Language) Display() string {
 	switch pt {
 	case DotNet:
 		return ".NET"
+	case DotNetAppHost:
+		return ".NET (Aspire)"
 	case Java:
 		return "Java"
 	case JavaScript:
@@ -102,6 +108,7 @@ const (
 	DbMongo     DatabaseDep = "mongo"
 	DbMySql     DatabaseDep = "mysql"
 	DbSqlServer DatabaseDep = "sqlserver"
+	DbRedis     DatabaseDep = "redis"
 )
 
 func (db DatabaseDep) Display() string {
@@ -114,6 +121,8 @@ func (db DatabaseDep) Display() string {
 		return "MySQL"
 	case DbSqlServer:
 		return "SQL Server"
+	case DbRedis:
+		return "Redis"
 	}
 
 	return ""
@@ -155,36 +164,42 @@ type Docker struct {
 
 type projectDetector interface {
 	Language() Language
-	DetectProject(path string, entries []fs.DirEntry) (*Project, error)
+	DetectProject(ctx context.Context, path string, entries []fs.DirEntry) (*Project, error)
 }
 
 var allDetectors = []projectDetector{
 	// Order here determines precedence when two projects are in the same directory.
 	// This is unlikely to occur in practice, but reordering could help to break the tie in these cases.
 	&javaDetector{},
-	&dotNetDetector{},
+	&dotNetAppHostDetector{
+		// TODO(ellismg): Remove ambient authority.
+		dotnetCli: dotnet.NewDotNetCli(exec.NewCommandRunner(nil)),
+	},
+	&dotNetDetector{
+		dotnetCli: dotnet.NewDotNetCli(exec.NewCommandRunner(nil)),
+	},
 	&pythonDetector{},
 	&javaScriptDetector{},
 }
 
 // Detect detects projects located under a directory.
-func Detect(root string, options ...DetectOption) ([]Project, error) {
+func Detect(ctx context.Context, root string, options ...DetectOption) ([]Project, error) {
 	config := newConfig(options...)
-	return detectUnder(root, config)
+	return detectUnder(ctx, root, config)
 }
 
 // DetectDirectory detects the project located in a directory.
-func DetectDirectory(directory string, options ...DetectDirectoryOption) (*Project, error) {
+func DetectDirectory(ctx context.Context, directory string, options ...DetectDirectoryOption) (*Project, error) {
 	config := newDirectoryConfig(options...)
 	entries, err := os.ReadDir(directory)
 	if err != nil {
 		return nil, fmt.Errorf("reading directory: %w", err)
 	}
 
-	return detectAny(config.detectors, directory, entries)
+	return detectAny(ctx, config.detectors, directory, entries)
 }
 
-func detectUnder(root string, config detectConfig) ([]Project, error) {
+func detectUnder(ctx context.Context, root string, config detectConfig) ([]Project, error) {
 	projects := []Project{}
 
 	walkFunc := func(path string, entries []fs.DirEntry) error {
@@ -206,7 +221,7 @@ func detectUnder(root string, config detectConfig) ([]Project, error) {
 			}
 		}
 
-		project, err := detectAny(config.detectors, path, entries)
+		project, err := detectAny(ctx, config.detectors, path, entries)
 		if err != nil {
 			return err
 		}
@@ -229,10 +244,10 @@ func detectUnder(root string, config detectConfig) ([]Project, error) {
 }
 
 // Detects if a directory belongs to any projects.
-func detectAny(detectors []projectDetector, path string, entries []fs.DirEntry) (*Project, error) {
+func detectAny(ctx context.Context, detectors []projectDetector, path string, entries []fs.DirEntry) (*Project, error) {
 	log.Printf("Detecting projects in directory: %s", path)
 	for _, detector := range detectors {
-		project, err := detector.DetectProject(path, entries)
+		project, err := detector.DetectProject(ctx, path, entries)
 		if err != nil {
 			return nil, fmt.Errorf("detecting %s project: %w", string(detector.Language()), err)
 		}

@@ -117,10 +117,27 @@ export async function selectEnvironment(context: IActionContext, selectedItem?: 
             return; // promptCreateNewEnvironment() will call newEnvironment() asynchronously if necessary
         }
 
-        const envChoices  = envData.map(d => ({ label: d.Name, data: d,} as IAzureQuickPickItem<EnvironmentInfo>));
+        const envChoices  = envData.map(d => {
+            let description: string | undefined;
+            if (d.HasLocal && d.HasRemote) {
+                description = vscode.l10n.t('local, remote');
+            } else if (d.HasLocal) {
+                description = vscode.l10n.t('local');
+            } else if (d.HasRemote) {
+                description = vscode.l10n.t('remote');
+            } else {
+                description = undefined;
+            }
+
+            return {
+                label: d.Name,
+                data: d,
+                description: description,
+            } as IAzureQuickPickItem<EnvironmentInfo>;
+        });
         const selectedEnv = await context.ui.showQuickPick(envChoices, {
+            placeHolder: vscode.l10n.t('Select environment'),
             canPickMany: false,
-            title: vscode.l10n.t('Which environment should be set as default?')
         });
 
         name = selectedEnv.data.Name;

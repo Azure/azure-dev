@@ -9,11 +9,13 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -96,11 +98,16 @@ type ServiceManager interface {
 	GetServiceTarget(ctx context.Context, serviceConfig *ServiceConfig) (ServiceTarget, error)
 }
 
+// ServiceOperationCache is an alias to map used for internal caching of service operation results
+// The ServiceManager is a scoped component since it depends on the current environment
+// The ServiceOperationCache is used as a singleton cache for all service manager instances
+type ServiceOperationCache map[string]any
+
 type serviceManager struct {
 	env                 *environment.Environment
 	resourceManager     ResourceManager
 	serviceLocator      ioc.ServiceLocator
-	operationCache      map[string]any
+	operationCache      ServiceOperationCache
 	alphaFeatureManager *alpha.FeatureManager
 }
 
@@ -109,13 +116,14 @@ func NewServiceManager(
 	env *environment.Environment,
 	resourceManager ResourceManager,
 	serviceLocator ioc.ServiceLocator,
+	operationCache ServiceOperationCache,
 	alphaFeatureManager *alpha.FeatureManager,
 ) ServiceManager {
 	return &serviceManager{
 		env:                 env,
 		resourceManager:     resourceManager,
 		serviceLocator:      serviceLocator,
-		operationCache:      map[string]any{},
+		operationCache:      operationCache,
 		alphaFeatureManager: alphaFeatureManager,
 	}
 }
@@ -443,10 +451,45 @@ func (sm *serviceManager) Deploy(
 			return
 		}
 
-		targetResource, err := sm.resourceManager.GetTargetResource(ctx, sm.env.GetSubscriptionId(), serviceConfig)
-		if err != nil {
-			task.SetError(fmt.Errorf("getting target resource: %w", err))
-			return
+		var targetResource *environment.TargetResource
+
+		if serviceConfig.Host == DotNetContainerAppTarget {
+			containerEnvName := sm.env.GetServiceProperty(serviceConfig.Name, "CONTAINER_ENVIRONMENT_NAME")
+			if containerEnvName == "" {
+				containerEnvName = sm.env.Getenv("AZURE_CONTAINER_APPS_ENVIRONMENT_ID")
+				if containerEnvName == "" {
+					task.SetError(fmt.Errorf(
+						"could not determine container app environment for service %s, "+
+							"have you set AZURE_CONTAINER_ENVIRONMENT_NAME or "+
+							"SERVICE_%s_CONTAINER_ENVIRONMENT_NAME as an output of your "+
+							"infrastructure?", serviceConfig.Name, strings.ToUpper(serviceConfig.Name)))
+
+					return
+				}
+
+				parts := strings.Split(containerEnvName, "/")
+				containerEnvName = parts[len(parts)-1]
+			}
+
+			resourceGroupName, err := sm.resourceManager.GetResourceGroupName(
+				ctx, sm.env.GetSubscriptionId(), serviceConfig.Project)
+			if err != nil {
+				task.SetError(fmt.Errorf("getting resource group name: %w", err))
+				return
+			}
+
+			targetResource = environment.NewTargetResource(
+				sm.env.GetSubscriptionId(),
+				resourceGroupName,
+				containerEnvName,
+				string(infra.AzureResourceTypeContainerAppEnvironment),
+			)
+		} else {
+			targetResource, err = sm.resourceManager.GetTargetResource(ctx, sm.env.GetSubscriptionId(), serviceConfig)
+			if err != nil {
+				task.SetError(fmt.Errorf("getting target resource: %w", err))
+				return
+			}
 		}
 
 		deployResult, err := runCommand(
@@ -466,7 +509,7 @@ func (sm *serviceManager) Deploy(
 
 		// Allow users to specify their own endpoints, in cases where they've configured their own front-end load balancers,
 		// reverse proxies or DNS host names outside of the service target (and prefer that to be used instead).
-		overriddenEndpoints := sm.getOverriddenEndpoints(ctx, serviceConfig)
+		overriddenEndpoints := OverriddenEndpoints(ctx, serviceConfig, sm.env)
 		if len(overriddenEndpoints) > 0 {
 			deployResult.Endpoints = overriddenEndpoints
 		}
@@ -517,8 +560,9 @@ func (sm *serviceManager) GetFrameworkService(ctx context.Context, serviceConfig
 		))
 	}
 
-	// For containerized applications we use a composite framework service
-	if serviceConfig.Host == ContainerAppTarget || serviceConfig.Host == AksTarget {
+	// For hosts which run in containers, if the source project is not already a container, we need to wrap it in a docker
+	// project that handles the containerization.
+	if serviceConfig.Host.RequiresContainer() && serviceConfig.Language != ServiceLanguageDocker {
 		var compositeFramework CompositeFrameworkService
 		if err := sm.serviceLocator.ResolveNamed(string(ServiceLanguageDocker), &compositeFramework); err != nil {
 			panic(fmt.Errorf(
@@ -537,8 +581,8 @@ func (sm *serviceManager) GetFrameworkService(ctx context.Context, serviceConfig
 	return frameworkService, nil
 }
 
-func (sm *serviceManager) getOverriddenEndpoints(ctx context.Context, serviceConfig *ServiceConfig) []string {
-	overriddenEndpoints := sm.env.GetServiceProperty(serviceConfig.Name, "ENDPOINTS")
+func OverriddenEndpoints(ctx context.Context, serviceConfig *ServiceConfig, env *environment.Environment) []string {
+	overriddenEndpoints := env.GetServiceProperty(serviceConfig.Name, "ENDPOINTS")
 	if overriddenEndpoints != "" {
 		var endpoints []string
 		err := json.Unmarshal([]byte(overriddenEndpoints), &endpoints)
@@ -563,7 +607,7 @@ func (sm *serviceManager) getOperationResult(
 	serviceConfig *ServiceConfig,
 	operationName string,
 ) (any, bool) {
-	key := fmt.Sprintf("%s:%s", serviceConfig.Name, operationName)
+	key := fmt.Sprintf("%s:%s:%s", sm.env.Name(), serviceConfig.Name, operationName)
 	value, ok := sm.operationCache[key]
 
 	return value, ok
@@ -576,7 +620,7 @@ func (sm *serviceManager) setOperationResult(
 	operationName string,
 	result any,
 ) {
-	key := fmt.Sprintf("%s:%s", serviceConfig.Name, operationName)
+	key := fmt.Sprintf("%s:%s:%s", sm.env.Name(), serviceConfig.Name, operationName)
 	sm.operationCache[key] = result
 }
 

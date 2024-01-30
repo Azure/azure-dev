@@ -9,3 +9,4 @@ psycopg2
 pymongo
 psycopg2-binary
 beanie
+redis

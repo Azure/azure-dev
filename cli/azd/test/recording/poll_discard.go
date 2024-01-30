@@ -246,7 +246,8 @@ const (
 func isBodyPoll(i *cassette.Interaction) bool {
 	return (i.Request.Method == http.MethodPatch ||
 		i.Request.Method == http.MethodPut) &&
-		i.Response.Code == http.StatusCreated
+		i.Response.Code == http.StatusCreated &&
+		i.Response.Headers.Get("Content-Type") == "application/json"
 }
 
 func newBodyPoll(i *cassette.Interaction) (*bodyPoller, error) {

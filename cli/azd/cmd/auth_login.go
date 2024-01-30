@@ -24,6 +24,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/github"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -472,7 +473,15 @@ func (la *loginAction) login(ctx context.Context) error {
 
 		if useDevCode {
 			_, err := la.authManager.LoginWithDeviceCode(ctx, la.flags.tenantID, la.flags.scopes, func(url string) error {
-				openWithDefaultBrowser(ctx, la.console, url)
+				if !la.flags.global.NoPrompt {
+					la.console.Message(ctx, "Then press enter and continue to log in from your browser...")
+					la.console.WaitForEnter()
+					openWithDefaultBrowser(ctx, la.console, url)
+					return nil
+				}
+				// For no-prompt, Just provide instructions without trying to open the browser
+				// If manual browsing is enabled, we don't want to open the browser automatically
+				la.console.Message(ctx, fmt.Sprintf("Then, go to: %s", url))
 				return nil
 			})
 			if err != nil {
@@ -512,8 +521,7 @@ func parseUseDeviceCode(ctx context.Context, flag boolPtr, commandRunner exec.Co
 
 	// Detect cases where the browser isn't available for interactive auth, and we instead want to set `useDeviceCode`
 	// to be true by default
-	inCodespacesEnv := os.Getenv("CODESPACES") == "true"
-	if inCodespacesEnv {
+	if github.RunningOnCodespaces() {
 		// For VSCode online (in web Browser), like GitHub Codespaces or VSCode online attached to any server,
 		// interactive browser login will 404 when attempting to redirect to localhost
 		// (since azd launches a localhost server running remotely and the login response is accepted locally).

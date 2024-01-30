@@ -4,35 +4,10 @@
 package provisioning
 
 import (
-	"encoding/json"
 	"fmt"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 )
-
-func UpdateEnvironment(env *environment.Environment, outputs map[string]OutputParameter) error {
-	if len(outputs) > 0 {
-		for key, param := range outputs {
-			// Complex types marshalled as JSON strings, simple types marshalled as simple strings
-			if param.Type == ParameterTypeArray || param.Type == ParameterTypeObject {
-				bytes, err := json.Marshal(param.Value)
-				if err != nil {
-					return fmt.Errorf("invalid value for output parameter '%s' (%s): %w", key, string(param.Type), err)
-				}
-				env.DotenvSet(key, string(bytes))
-			} else {
-				env.DotenvSet(key, fmt.Sprintf("%v", param.Value))
-			}
-		}
-
-		if err := env.Save(); err != nil {
-			return fmt.Errorf("writing environment: %w", err)
-		}
-	}
-
-	return nil
-}
 
 // NewEnvRefreshResultFromState creates a EnvRefreshResult from a provisioning state object,
 // applying the required translations.
@@ -79,11 +54,9 @@ func NewEnvRefreshResultFromState(state *State) contracts.EnvRefreshResult {
 // Defaults to `Bicep` if no provider is specified
 func ParseProvider(kind ProviderKind) (ProviderKind, error) {
 	switch kind {
-	case "":
-		return Bicep, nil
 	// For the time being we need to include `Test` here for the unit tests to work as expected
 	// App builds will pass this test but fail resolving the provider since `Test` won't be registered in the container
-	case Bicep, Terraform, Test:
+	case NotSpecified, Bicep, Terraform, Test:
 		return kind, nil
 	}
 

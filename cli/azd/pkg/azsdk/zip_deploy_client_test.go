@@ -98,7 +98,7 @@ func registerDeployMocks(mockContext *mocks.MockContext) {
 		return request.Method == http.MethodPost && strings.Contains(request.URL.Path, "/api/zipdeploy")
 	}).RespondFn(func(request *http.Request) (*http.Response, error) {
 		response, _ := mocks.CreateEmptyHttpResponse(request, http.StatusAccepted)
-		response.Header.Set("Location", "http://myapp.scm.azurewebsites.net/deployments/latest")
+		response.Header.Set("Location", "https://myapp.scm.azurewebsites.net/deployments/latest")
 
 		return response, nil
 	})

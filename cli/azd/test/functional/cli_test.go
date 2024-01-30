@@ -30,6 +30,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -47,14 +48,14 @@ import (
 )
 
 // The current running configuration for the test suite.
-var cfg = config{}
+var cfg = cliConfig{}
 
 func init() {
 	cfg.init()
 }
 
 // Configuration for the test suite.
-type config struct {
+type cliConfig struct {
 	// If true, the test is running in CI.
 	// This can be used to ensure tests that are skipped locally (due to complex setup), always strictly run in CI.
 	CI bool
@@ -71,7 +72,7 @@ type config struct {
 	Location string
 }
 
-func (c *config) init() {
+func (c *cliConfig) init() {
 	c.CI = os.Getenv("CI") != ""
 	c.ClientID = os.Getenv("AZD_TEST_CLIENT_ID")
 	c.ClientSecret = os.Getenv("AZD_TEST_CLIENT_SECRET")
@@ -121,8 +122,7 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
 	require.NoError(t, err)
 
-	envPath := filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName)
-	env, err := environment.FromRoot(envPath)
+	env, err := envFromAzdRoot(ctx, dir, envName)
 	require.NoError(t, err)
 
 	// AZURE_STORAGE_ACCOUNT_NAME is an output of the template, make sure it was added to the .env file.
@@ -134,14 +134,7 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 	assertEnvValuesStored(t, env)
 
 	if session != nil {
-		if session.Playback {
-			// This is currently required because azd doesn't store
-			// AZURE_SUBSCRIPTION_ID in the .env file
-			// See #2423
-			env.SetSubscriptionId(session.Variables[recording.SubscriptionIdKey])
-		} else {
-			session.Variables[recording.SubscriptionIdKey] = env.GetSubscriptionId()
-		}
+		session.Variables[recording.SubscriptionIdKey] = env.GetSubscriptionId()
 	}
 
 	// GetResourceGroupsForEnvironment requires a credential since it is using the SDK now
@@ -172,9 +165,128 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 
 	// Verify that resource groups are created with tag
 	resourceManager := infra.NewAzureResourceManager(azCli, deploymentOperations)
-	rgs, err := resourceManager.GetResourceGroupsForEnvironment(ctx, env.GetSubscriptionId(), env.GetEnvName())
+	rgs, err := resourceManager.GetResourceGroupsForEnvironment(ctx, env.GetSubscriptionId(), env.Name())
 	require.NoError(t, err)
 	require.NotNil(t, rgs)
+
+	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
+	require.NoError(t, err)
+}
+
+func Test_CLI_ProvisionState(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
+	t.Logf("DIR: %s", dir)
+
+	session := recording.Start(t)
+
+	envName := randomOrStoredEnvName(session)
+	t.Logf("AZURE_ENV_NAME: %s", envName)
+
+	cli := azdcli.NewCLI(t, azdcli.WithSession(session))
+	cli.WorkingDirectory = dir
+	cli.Env = append(cli.Env, os.Environ()...)
+	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
+
+	err := copySample(dir, "storage")
+	require.NoError(t, err, "failed expanding sample")
+
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
+	require.NoError(t, err)
+
+	expectedOutputContains := "There are no changes to provision for your application."
+
+	initial, err := cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
+	require.NoError(t, err)
+	require.NotContains(t, initial.Stdout, expectedOutputContains)
+
+	// Second provision should use cache
+	secondProvisionOutput, err := cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
+	require.NoError(t, err)
+	require.Contains(t, secondProvisionOutput.Stdout, expectedOutputContains)
+
+	// Third deploy setting a different param
+	cli.Env = append(cli.Env, "INT_TAG_VALUE=1989")
+	thirdProvisionOutput, err := cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
+	require.NoError(t, err)
+	require.NotContains(t, thirdProvisionOutput.Stdout, expectedOutputContains)
+
+	// last provision should use cache
+	lastProvisionOutput, err := cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
+	require.NoError(t, err)
+	require.Contains(t, lastProvisionOutput.Stdout, expectedOutputContains)
+
+	// use flag to force provision
+	flagProvisionOutput, err := cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision", "--no-state")
+	require.NoError(t, err)
+	require.NotContains(t, flagProvisionOutput.Stdout, expectedOutputContains)
+
+	env, err := godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
+	require.NoError(t, err)
+
+	if session != nil {
+		session.Variables[recording.SubscriptionIdKey] = env[environment.SubscriptionIdEnvVarName]
+	}
+
+	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
+	require.NoError(t, err)
+}
+
+func Test_CLI_ProvisionStateWithDown(t *testing.T) {
+	t.Parallel()
+
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
+	t.Logf("DIR: %s", dir)
+
+	session := recording.Start(t)
+
+	envName := randomOrStoredEnvName(session)
+	t.Logf("AZURE_ENV_NAME: %s", envName)
+
+	cli := azdcli.NewCLI(t, azdcli.WithSession(session))
+	cli.WorkingDirectory = dir
+	cli.Env = append(cli.Env, os.Environ()...)
+	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
+
+	err := copySample(dir, "storage")
+	require.NoError(t, err, "failed expanding sample")
+
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
+	require.NoError(t, err)
+
+	expectedOutputContains := "There are no changes to provision for your application."
+
+	initial, err := cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
+	require.NoError(t, err)
+	require.NotContains(t, initial.Stdout, expectedOutputContains)
+
+	// Second provision should use cache
+	secondProvisionOutput, err := cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
+	require.NoError(t, err)
+	require.Contains(t, secondProvisionOutput.Stdout, expectedOutputContains)
+
+	// down to delete resources
+	_, err = cli.RunCommandWithStdIn(ctx, "", "down", "--force", "--purge")
+	require.NoError(t, err)
+
+	// use flag to force provision
+	reProvisionAfterDown, err := cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision")
+	require.NoError(t, err)
+	require.NotContains(t, reProvisionAfterDown.Stdout, expectedOutputContains)
+
+	env, err := godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
+	require.NoError(t, err)
+
+	if session != nil {
+		session.Variables[recording.SubscriptionIdKey] = env[environment.SubscriptionIdEnvVarName]
+	}
 
 	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
 	require.NoError(t, err)
@@ -219,8 +331,7 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "infra", "create", "--output", "json")
 	require.NoError(t, err)
 
-	envPath := filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName)
-	env, err := environment.FromRoot(envPath)
+	env, err := envFromAzdRoot(ctx, dir, envName)
 	require.NoError(t, err)
 
 	// AZURE_STORAGE_ACCOUNT_NAME is an output of the template, make sure it was added to the .env file.
@@ -232,14 +343,7 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 	assertEnvValuesStored(t, env)
 
 	if session != nil {
-		if session.Playback {
-			// This is currently required because azd doesn't store
-			// AZURE_SUBSCRIPTION_ID in the .env file
-			// See #2423
-			env.SetSubscriptionId(session.Variables[recording.SubscriptionIdKey])
-		} else {
-			session.Variables[recording.SubscriptionIdKey] = env.GetSubscriptionId()
-		}
+		session.Variables[recording.SubscriptionIdKey] = env.GetSubscriptionId()
 	}
 
 	// GetResourceGroupsForEnvironment requires a credential since it is using the SDK now
@@ -269,7 +373,7 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 
 	// Verify that resource groups are created with tag
 	resourceManager := infra.NewAzureResourceManager(azCli, deploymentOperations)
-	rgs, err := resourceManager.GetResourceGroupsForEnvironment(ctx, env.GetSubscriptionId(), env.GetEnvName())
+	rgs, err := resourceManager.GetResourceGroupsForEnvironment(ctx, env.GetSubscriptionId(), env.Name())
 	require.NoError(t, err)
 	require.NotNil(t, rgs)
 
@@ -416,8 +520,7 @@ func Test_CLI_InfraBicepParam(t *testing.T) {
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision", "--output", "json")
 	require.NoError(t, err)
 
-	envPath := filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName)
-	env, err := environment.FromRoot(envPath)
+	env, err := envFromAzdRoot(ctx, dir, envName)
 	require.NoError(t, err)
 
 	// WEBSITE_URL is an output of the template, make sure it was added to the .env file.
@@ -429,14 +532,7 @@ func Test_CLI_InfraBicepParam(t *testing.T) {
 	assertEnvValuesStored(t, env)
 
 	if session != nil {
-		if session.Playback {
-			// This is currently required because azd doesn't store
-			// AZURE_SUBSCRIPTION_ID in the .env file
-			// See #2423
-			env.SetSubscriptionId(session.Variables[recording.SubscriptionIdKey])
-		} else {
-			session.Variables[recording.SubscriptionIdKey] = env.GetSubscriptionId()
-		}
+		session.Variables[recording.SubscriptionIdKey] = env.GetSubscriptionId()
 	}
 
 	// Delete
@@ -582,8 +678,7 @@ func Test_CLI_InfraCreateAndDeleteResourceTerraform(t *testing.T) {
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision", "--cwd", dir)
 	require.NoError(t, err)
 
-	envPath := filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName)
-	env, err := environment.FromRoot(envPath)
+	env, err := envFromAzdRoot(ctx, dir, envName)
 	require.NoError(t, err)
 	assertEnvValuesStored(t, env)
 
@@ -776,4 +871,10 @@ func assertEnvValuesStored(t *testing.T, env *environment.Environment) {
 			assert.JSONEq(t, v, actual)
 		}
 	}
+}
+
+func envFromAzdRoot(ctx context.Context, azdRootDir string, envName string) (*environment.Environment, error) {
+	azdCtx := azdcontext.NewAzdContextWithDirectory(azdRootDir)
+	localDataStore := environment.NewLocalFileDataStore(azdCtx, config.NewFileConfigManager(config.NewManager()))
+	return localDataStore.Get(ctx, envName)
 }

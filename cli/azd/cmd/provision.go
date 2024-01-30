@@ -4,27 +4,40 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"log"
+	"strings"
 	"time"
 
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
+	"github.com/azure/azure-dev/cli/azd/pkg/password"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"go.uber.org/multierr"
 )
 
 type provisionFlags struct {
-	noProgress bool
-	preview    bool
-	global     *internal.GlobalCommandOptions
+	noProgress            bool
+	preview               bool
+	ignoreDeploymentState bool
+	global                *internal.GlobalCommandOptions
 	*envFlag
 }
+
+const (
+	AINotValid                  = "is not valid according to the validation procedure"
+	openAIsubscriptionNoQuotaId = "The subscription does not have QuotaId/Feature required by SKU 'S0' from kind 'OpenAI'"
+	responsibleAITerms          = "until you agree to Responsible AI terms for this resource"
+	azurePortalURL              = "https://ms.portal.azure.com/"
+)
 
 func (i *provisionFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	i.bindNonCommon(local, global)
@@ -40,6 +53,12 @@ func (i *provisionFlags) bindNonCommon(local *pflag.FlagSet, global *internal.Gl
 
 func (i *provisionFlags) bindCommon(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	local.BoolVar(&i.preview, "preview", false, "Preview changes to Azure resources.")
+	local.BoolVar(
+		&i.ignoreDeploymentState,
+		"no-state",
+		false,
+		"Do not use latest Deployment State (bicep only).")
+
 	i.envFlag = &envFlag{}
 	i.envFlag.Bind(local, global)
 }
@@ -68,22 +87,28 @@ type provisionAction struct {
 	projectManager   project.ProjectManager
 	resourceManager  project.ResourceManager
 	env              *environment.Environment
+	envManager       environment.Manager
 	formatter        output.Formatter
 	projectConfig    *project.ProjectConfig
 	writer           io.Writer
 	console          input.Console
+	subManager       *account.SubscriptionsManager
+	importManager    *project.ImportManager
 }
 
 func newProvisionAction(
 	flags *provisionFlags,
 	provisionManager *provisioning.Manager,
 	projectManager project.ProjectManager,
+	importManager *project.ImportManager,
 	resourceManager project.ResourceManager,
 	projectConfig *project.ProjectConfig,
 	env *environment.Environment,
+	envManager environment.Manager,
 	console input.Console,
 	formatter output.Formatter,
 	writer io.Writer,
+	subManager *account.SubscriptionsManager,
 ) actions.Action {
 	return &provisionAction{
 		flags:            flags,
@@ -91,10 +116,13 @@ func newProvisionAction(
 		projectManager:   projectManager,
 		resourceManager:  resourceManager,
 		env:              env,
+		envManager:       envManager,
 		formatter:        formatter,
 		projectConfig:    projectConfig,
 		writer:           writer,
 		console:          console,
+		subManager:       subManager,
+		importManager:    importManager,
 	}
 }
 
@@ -129,8 +157,71 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		return nil, err
 	}
 
-	if err := p.provisionManager.Initialize(ctx, p.projectConfig.Path, p.projectConfig.Infra); err != nil {
+	infra, err := p.importManager.ProjectInfrastructure(ctx, p.projectConfig)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = infra.Cleanup() }()
+
+	wroteNewInput := false
+
+	for inputName, inputInfo := range infra.Inputs {
+		inputConfigKey := fmt.Sprintf("inputs.%s", inputName)
+
+		if _, has := p.env.Config.GetString(inputConfigKey); !has {
+			// No value found, so we need to generate one, and store it in the config bag.
+			//
+			// TODO(ellismg): Today this dereference is safe because when loading a manifest we validate that every
+			// input has a generate block with a min length property.  We would like to relax this in Preview 3 to
+			// to support cases where this is not the case (and we'd prompt for the value).  When we do that, we'll need
+			// to audit these dereferences to check for nil.
+			val, err := password.FromAlphabet(password.LettersAndDigits, *inputInfo.Default.Generate.MinLength)
+			if err != nil {
+				return nil, fmt.Errorf("generating value for input %s: %w", inputName, err)
+			}
+
+			if err := p.env.Config.Set(inputConfigKey, val); err != nil {
+				return nil, fmt.Errorf("saving value for input %s: %w", inputName, err)
+			}
+
+			wroteNewInput = true
+		}
+	}
+
+	if wroteNewInput {
+		if err := p.envManager.Save(ctx, p.env); err != nil {
+			return nil, fmt.Errorf("saving environment: %w", err)
+		}
+	}
+
+	infraOptions := infra.Options
+	infraOptions.IgnoreDeploymentState = p.flags.ignoreDeploymentState
+	if err := p.provisionManager.Initialize(ctx, p.projectConfig.Path, infraOptions); err != nil {
 		return nil, fmt.Errorf("initializing provisioning manager: %w", err)
+	}
+
+	// Get Subscription to Display in Command Title Note
+	// Subscription and Location are ONLY displayed when they are available (found from env), otherwise, this message
+	// is not displayed.
+	// This needs to happen after the provisionManager initializes to make sure the env is ready for the provisioning
+	// provider
+	subscription, subErr := p.subManager.GetSubscription(ctx, p.env.GetSubscriptionId())
+	if subErr == nil {
+		location, err := p.subManager.GetLocation(ctx, p.env.GetSubscriptionId(), p.env.GetLocation())
+		var locationDisplay string
+		if err != nil {
+			log.Printf("failed getting location: %v", err)
+		} else {
+			locationDisplay = location.DisplayName
+		}
+
+		p.console.MessageUxItem(ctx, &ux.EnvironmentDetails{
+			Subscription: fmt.Sprintf("%s (%s)", subscription.Name, subscription.Id),
+			Location:     locationDisplay},
+		)
+
+	} else {
+		log.Printf("failed getting subscriptions. Skip displaying sub and location: %v", subErr)
 	}
 
 	var deployResult *provisioning.DeployResult
@@ -140,7 +231,7 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		Project: p.projectConfig,
 	}
 
-	err := p.projectConfig.Invoke(ctx, project.ProjectEventProvision, projectEventArgs, func() error {
+	err = p.projectConfig.Invoke(ctx, project.ProjectEventProvision, projectEventArgs, func() error {
 		var err error
 		if previewMode {
 			deployPreviewResult, err = p.provisionManager.Preview(ctx)
@@ -169,6 +260,30 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 			}
 		}
 
+		//if user don't have access to openai
+		errorMsg := err.Error()
+		if strings.Contains(errorMsg, AINotValid) &&
+			strings.Contains(errorMsg, openAIsubscriptionNoQuotaId) {
+			return nil, &azcli.ErrorWithSuggestion{
+				Suggestion: fmt.Sprintf("\nSuggested Action: The selected " +
+					"subscription has not been enabled for use of Azure AI service and does not have quota for " +
+					"any pricing tiers. Please visit " + output.WithLinkFormat(azurePortalURL) +
+					" and select 'Create' on specific services to request access."),
+				Err: err,
+			}
+		}
+
+		//if user haven't agree to Responsible AI terms
+		if strings.Contains(errorMsg, responsibleAITerms) {
+			return nil, &azcli.ErrorWithSuggestion{
+				Suggestion: fmt.Sprintf("\nSuggested Action: Please visit azure portal in " +
+					output.WithLinkFormat(azurePortalURL) + ". Create the resource in azure portal " +
+					"to go through Responsible AI terms, and then delete it. " +
+					"After that, run 'azd provision' again"),
+				Err: err,
+			}
+		}
+
 		return nil, fmt.Errorf("deployment failed: %w", err)
 	}
 
@@ -185,7 +300,20 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		}, nil
 	}
 
-	for _, svc := range p.projectConfig.Services {
+	if deployResult.SkippedReason == provisioning.DeploymentStateSkipped {
+		return &actions.ActionResult{
+			Message: &actions.ResultMessage{
+				Header: "There are no changes to provision for your application.",
+			},
+		}, nil
+	}
+
+	servicesStable, err := p.importManager.ServiceStable(ctx, p.projectConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, svc := range servicesStable {
 		eventArgs := project.ServiceLifecycleEventArgs{
 			Project: p.projectConfig,
 			Service: svc,

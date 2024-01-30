@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/AlecAivazis/survey/v2"
@@ -59,6 +60,15 @@ func askOneNoPrompt(p survey.Prompt, response interface{}) error {
 		}
 	case *survey.Confirm:
 		*(response.(*bool)) = v.Default
+	case *survey.MultiSelect:
+		if v.Default == nil {
+			return fmt.Errorf("no default response for prompt '%s'", v.Message)
+		}
+		defValue, err := v.Default.([]string)
+		if !err {
+			return fmt.Errorf("default response type is not a string list '%s'", v.Message)
+		}
+		*(response.(*[]string)) = defValue
 	default:
 		panic(fmt.Sprintf("don't know how to prompt for type %T", p))
 	}
@@ -104,12 +114,15 @@ func askOnePrompt(p survey.Prompt, response interface{}, isTerminal bool, stdout
 			opts = append(opts, withShowCursor)
 		}
 
+		survey.InputQuestionTemplate = cInputQuestionTemplate
+
 		opts = append(opts, survey.WithIcons(func(icons *survey.IconSet) {
-			// use blue question mark for all questions
-			icons.Question.Format = "blue"
+			// use bold blue question mark for all questions
+			icons.Question.Format = "blue+b"
 
 			icons.Help.Format = "black+h"
 			icons.Help.Text = "Hint:"
+			icons.MarkedOption.Format = "red"
 		}))
 
 		return survey.AskOne(p, response, opts...)
@@ -132,6 +145,33 @@ func askOnePrompt(p survey.Prompt, response interface{}, isTerminal bool, stdout
 			result = v.Default
 		}
 		*pResponse = result
+		return nil
+	case *survey.MultiSelect:
+		// For multi-selection, azd will do a Select for each item, using the default to control the Y or N
+		defValue, err := v.Default.([]string)
+		if !err {
+			return fmt.Errorf("default response type is not a string list '%s'", v.Message)
+		}
+		fmt.Fprintf(stdout, "%s:", v.Message)
+		selection := make([]string, 0, len(v.Options))
+		for _, item := range v.Options {
+			response := slices.Contains(defValue, item)
+			err := askOnePrompt(&survey.Confirm{
+				Message: fmt.Sprintf("\n  select %s?", item),
+			}, &response, isTerminal, stdout, stdin)
+			if err != nil {
+				return err
+			}
+			confirmation := "N"
+			if response {
+				confirmation = "Y"
+				selection = append(selection, item)
+			}
+			fmt.Fprintf(stdout, "  %s", confirmation)
+		}
+		// assign the selection to the response
+		*(response.(*[]string)) = selection
+
 		return nil
 	case *survey.Select:
 		fmt.Fprintf(stdout, "%s", v.Message[0:len(v.Message)-1])
@@ -194,3 +234,30 @@ func askOnePrompt(p survey.Prompt, response interface{}, isTerminal bool, stdout
 		panic(fmt.Sprintf("don't know how to prompt for type %T", p))
 	}
 }
+
+// Asker uses this template instead of the default one from survey.InputQuestionTemplate
+// Differences:
+// - Use color blue instead of cyan
+//
+//nolint:lll
+const cInputQuestionTemplate = `
+{{- if .ShowHelp }}{{- color .Config.Icons.Help.Format }}{{ .Config.Icons.Help.Text }} {{ .Help }}{{color "reset"}}{{"\n"}}{{end}}
+{{- color .Config.Icons.Question.Format }}{{ .Config.Icons.Question.Text }} {{color "reset"}}
+{{- color "default+hb"}}{{ .Message }} {{color "reset"}}
+{{- if .ShowAnswer}}
+  {{- color "blue"}}{{.Answer}}{{color "reset"}}{{"\n"}}
+{{- else if .PageEntries -}}
+  {{- .Answer}} [Use arrows to move, enter to select, type to continue]
+  {{- "\n"}}
+  {{- range $ix, $choice := .PageEntries}}
+	{{- if eq $ix $.SelectedIndex }}{{color $.Config.Icons.SelectFocus.Format }}{{ $.Config.Icons.SelectFocus.Text }} {{else}}{{color "default"}}  {{end}}
+	{{- $choice.Value}}
+	{{- color "reset"}}{{"\n"}}
+  {{- end}}
+{{- else }}
+  {{- if or (and .Help (not .ShowHelp)) .Suggest }}{{color "cyan"}}[
+	{{- if and .Help (not .ShowHelp)}}{{ print .Config.HelpInput }} for help {{- if and .Suggest}}, {{end}}{{end -}}
+	{{- if and .Suggest }}{{color "cyan"}}{{ print .Config.SuggestInput }} for suggestions{{end -}}
+  ]{{color "reset"}} {{end}}
+  {{- if .Default}}{{color "white"}}({{.Default}}) {{color "reset"}}{{end}}
+{{- end}}`

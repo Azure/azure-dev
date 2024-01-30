@@ -5,7 +5,6 @@ package pipeline
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"log"
@@ -16,11 +15,13 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/graphsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/git"
 	"github.com/microsoft/azure-devops-go-api/azuredevops"
 	"github.com/microsoft/azure-devops-go-api/azuredevops/build"
@@ -30,9 +31,10 @@ import (
 // AzdoScmProvider implements ScmProvider using Azure DevOps as the provider
 // for source control manager.
 type AzdoScmProvider struct {
+	envManager     environment.Manager
 	repoDetails    *AzdoRepositoryDetails
-	Env            *environment.Environment
-	AzdContext     *azdcontext.AzdContext
+	env            *environment.Environment
+	azdContext     *azdcontext.AzdContext
 	azdoConnection *azuredevops.Connection
 	commandRunner  exec.CommandRunner
 	console        input.Console
@@ -40,6 +42,7 @@ type AzdoScmProvider struct {
 }
 
 func NewAzdoScmProvider(
+	envManager environment.Manager,
 	env *environment.Environment,
 	azdContext *azdcontext.AzdContext,
 	commandRunner exec.CommandRunner,
@@ -47,8 +50,9 @@ func NewAzdoScmProvider(
 	gitCli git.GitCli,
 ) ScmProvider {
 	return &AzdoScmProvider{
-		Env:           env,
-		AzdContext:    azdContext,
+		envManager:    envManager,
+		env:           env,
+		azdContext:    azdContext,
 		commandRunner: commandRunner,
 		console:       console,
 		gitCli:        gitCli,
@@ -85,19 +89,19 @@ func (p *AzdoScmProvider) preConfigureCheck(
 	infraOptions provisioning.Options,
 	projectPath string,
 ) (bool, error) {
-	_, updatedPat, err := azdo.EnsurePatExists(ctx, p.Env, p.console)
+	_, updatedPat, err := azdo.EnsurePatExists(ctx, p.env, p.console)
 	if err != nil {
 		return updatedPat, err
 	}
 
-	_, updatedOrg, err := azdo.EnsureOrgNameExists(ctx, p.Env, p.console)
+	_, updatedOrg, err := azdo.EnsureOrgNameExists(ctx, p.envManager, p.env, p.console)
 	return (updatedPat || updatedOrg), err
 }
 
 // helper function to save configuration values to .env file
-func (p *AzdoScmProvider) saveEnvironmentConfig(key string, value string) error {
-	p.Env.DotenvSet(key, value)
-	err := p.Env.Save()
+func (p *AzdoScmProvider) saveEnvironmentConfig(ctx context.Context, key string, value string) error {
+	p.env.DotenvSet(key, value)
+	err := p.envManager.Save(ctx, p.env)
 	if err != nil {
 		return err
 	}
@@ -120,17 +124,17 @@ func (p *AzdoScmProvider) StoreRepoDetails(ctx context.Context, repo *azdoGit.Gi
 	repoDetails.sshUrl = *repo.SshUrl
 	repoDetails.repoId = repo.Id.String()
 
-	err := p.saveEnvironmentConfig(azdo.AzDoEnvironmentRepoIdName, p.repoDetails.repoId)
+	err := p.saveEnvironmentConfig(ctx, azdo.AzDoEnvironmentRepoIdName, p.repoDetails.repoId)
 	if err != nil {
 		return fmt.Errorf("error saving repo id to environment %w", err)
 	}
 
-	err = p.saveEnvironmentConfig(azdo.AzDoEnvironmentRepoName, p.repoDetails.repoName)
+	err = p.saveEnvironmentConfig(ctx, azdo.AzDoEnvironmentRepoName, p.repoDetails.repoName)
 	if err != nil {
 		return fmt.Errorf("error saving repo name to environment %w", err)
 	}
 
-	err = p.saveEnvironmentConfig(azdo.AzDoEnvironmentRepoWebUrl, p.repoDetails.repoWebUrl)
+	err = p.saveEnvironmentConfig(ctx, azdo.AzDoEnvironmentRepoWebUrl, p.repoDetails.repoWebUrl)
 	if err != nil {
 		return fmt.Errorf("error saving repo web url to environment %w", err)
 	}
@@ -224,7 +228,7 @@ func (p *AzdoScmProvider) getAzdoConnection(ctx context.Context) (*azuredevops.C
 		return p.azdoConnection, nil
 	}
 
-	org, _, err := azdo.EnsureOrgNameExists(ctx, p.Env, p.console)
+	org, _, err := azdo.EnsureOrgNameExists(ctx, p.envManager, p.env, p.console)
 	if err != nil {
 		return nil, err
 	}
@@ -232,7 +236,7 @@ func (p *AzdoScmProvider) getAzdoConnection(ctx context.Context) (*azuredevops.C
 	repoDetails := p.getRepoDetails()
 	repoDetails.orgName = org
 
-	pat, _, err := azdo.EnsurePatExists(ctx, p.Env, p.console)
+	pat, _, err := azdo.EnsurePatExists(ctx, p.env, p.console)
 	if err != nil {
 		return nil, err
 	}
@@ -281,9 +285,9 @@ func (p *AzdoScmProvider) ensureProjectExists(ctx context.Context, console input
 	case 1:
 		projectName, projectId, err = azdo.GetProjectFromNew(
 			ctx,
-			p.AzdContext.ProjectDirectory(),
+			p.azdContext.ProjectDirectory(),
 			connection,
-			p.Env,
+			p.env,
 			console,
 		)
 		newProject = true
@@ -311,12 +315,12 @@ func (p *AzdoScmProvider) configureGitRemote(
 	repoDetails.projectName = projectName
 	repoDetails.projectId = projectId
 
-	err = p.saveEnvironmentConfig(azdo.AzDoEnvironmentProjectIdName, projectId)
+	err = p.saveEnvironmentConfig(ctx, azdo.AzDoEnvironmentProjectIdName, projectId)
 	if err != nil {
 		return "", fmt.Errorf("error saving project id to environment %w", err)
 	}
 
-	err = p.saveEnvironmentConfig(azdo.AzDoEnvironmentProjectName, projectName)
+	err = p.saveEnvironmentConfig(ctx, azdo.AzDoEnvironmentProjectName, projectName)
 	if err != nil {
 		return "", fmt.Errorf("error saving project name to environment %w", err)
 	}
@@ -470,22 +474,22 @@ func (p *AzdoScmProvider) gitRepoDetails(ctx context.Context, remoteUrl string) 
 	// While using the same .env file, the outputs from creating a project and repository
 	// are memorized in .env file
 	if repoDetails.orgName == "" {
-		repoDetails.orgName = p.Env.Getenv(azdo.AzDoEnvironmentOrgName)
+		repoDetails.orgName = p.env.Getenv(azdo.AzDoEnvironmentOrgName)
 	}
 	if repoDetails.projectName == "" {
-		repoDetails.projectName = p.Env.Getenv(azdo.AzDoEnvironmentProjectName)
+		repoDetails.projectName = p.env.Getenv(azdo.AzDoEnvironmentProjectName)
 	}
 	if repoDetails.projectId == "" {
-		repoDetails.projectId = p.Env.Getenv(azdo.AzDoEnvironmentProjectIdName)
+		repoDetails.projectId = p.env.Getenv(azdo.AzDoEnvironmentProjectIdName)
 	}
 	if repoDetails.repoName == "" {
-		repoDetails.repoName = p.Env.Getenv(azdo.AzDoEnvironmentRepoName)
+		repoDetails.repoName = p.env.Getenv(azdo.AzDoEnvironmentRepoName)
 	}
 	if repoDetails.repoId == "" {
-		repoDetails.repoId = p.Env.Getenv(azdo.AzDoEnvironmentRepoIdName)
+		repoDetails.repoId = p.env.Getenv(azdo.AzDoEnvironmentRepoIdName)
 	}
 	if repoDetails.repoWebUrl == "" {
-		repoDetails.repoWebUrl = p.Env.Getenv(azdo.AzDoEnvironmentRepoWebUrl)
+		repoDetails.repoWebUrl = p.env.Getenv(azdo.AzDoEnvironmentRepoWebUrl)
 	}
 	if repoDetails.remoteUrl == "" {
 		repoDetails.remoteUrl = remoteUrl
@@ -501,9 +505,9 @@ func (p *AzdoScmProvider) gitRepoDetails(ctx context.Context, remoteUrl string) 
 		// azdoSlug => Org/Project/_git/repoName
 		parts := strings.Split(azdoSlug, "_git/")
 		repoDetails.projectName = strings.Split(parts[0], "/")[1]
-		p.Env.DotenvSet(azdo.AzDoEnvironmentProjectName, repoDetails.projectName)
+		p.env.DotenvSet(azdo.AzDoEnvironmentProjectName, repoDetails.projectName)
 		repoDetails.repoName = parts[1]
-		p.Env.DotenvSet(azdo.AzDoEnvironmentRepoName, repoDetails.repoName)
+		p.env.DotenvSet(azdo.AzDoEnvironmentRepoName, repoDetails.repoName)
 
 		connection, err := p.getAzdoConnection(ctx)
 		if err != nil {
@@ -515,18 +519,20 @@ func (p *AzdoScmProvider) gitRepoDetails(ctx context.Context, remoteUrl string) 
 			return nil, fmt.Errorf("Looking for repository: %w", err)
 		}
 		repoDetails.repoId = repo.Id.String()
-		p.Env.DotenvSet(azdo.AzDoEnvironmentRepoIdName, repoDetails.repoId)
+		p.env.DotenvSet(azdo.AzDoEnvironmentRepoIdName, repoDetails.repoId)
 		repoDetails.repoWebUrl = *repo.WebUrl
-		p.Env.DotenvSet(azdo.AzDoEnvironmentRepoWebUrl, repoDetails.repoWebUrl)
+		p.env.DotenvSet(azdo.AzDoEnvironmentRepoWebUrl, repoDetails.repoWebUrl)
 
 		proj, err := azdo.GetProjectByName(ctx, connection, repoDetails.projectName)
 		if err != nil {
 			return nil, fmt.Errorf("Looking for project: %w", err)
 		}
 		repoDetails.projectId = proj.Id.String()
-		p.Env.DotenvSet(azdo.AzDoEnvironmentProjectIdName, repoDetails.projectId)
+		p.env.DotenvSet(azdo.AzDoEnvironmentProjectIdName, repoDetails.projectId)
 
-		_ = p.Env.Save() // best effort to persist in the env
+		if err := p.envManager.Save(ctx, p.env); err != nil {
+			return nil, fmt.Errorf("saving environment: %w", err)
+		}
 	}
 
 	return &gitRepositoryDetails{
@@ -576,7 +582,7 @@ func (p *AzdoScmProvider) GitPush(
 	// ** Push code with PAT
 	// This is the same as gitCli.PushUpstream(), but it adds `-c url.PAT+HostName.insteadOf=HostName` to execute
 	// git push with the PAT to authenticate
-	pat := azdoPat(ctx, p.Env, p.console)
+	pat := azdoPat(ctx, p.env, p.console)
 	remoteAndPatUrl, originalUrl := gitInsteadOfConfig(ctx, pat, gitRepo)
 	runArgs := exec.NewRunArgsWithSensitiveData("git",
 		[]string{
@@ -610,7 +616,7 @@ func (p *AzdoScmProvider) GitPush(
 		p.repoDetails.projectId,
 		p.repoDetails.repoId,
 		p.repoDetails.buildDefinition,
-		p.Env,
+		p.env,
 	)
 	if err != nil {
 		return err
@@ -626,20 +632,23 @@ func (p *AzdoScmProvider) GitPush(
 
 // AzdoCiProvider implements a CiProvider using Azure DevOps to manage CI with azdo pipelines.
 type AzdoCiProvider struct {
+	envManager    environment.Manager
 	Env           *environment.Environment
 	AzdContext    *azdcontext.AzdContext
-	credentials   *azdo.AzureServicePrincipalCredentials
+	credentials   *azcli.AzureCredentials
 	console       input.Console
 	commandRunner exec.CommandRunner
 }
 
 func NewAzdoCiProvider(
+	envManager environment.Manager,
 	env *environment.Environment,
 	azdContext *azdcontext.AzdContext,
 	console input.Console,
 	commandRunner exec.CommandRunner,
 ) CiProvider {
 	return &AzdoCiProvider{
+		envManager:    envManager,
 		Env:           env,
 		AzdContext:    azdContext,
 		console:       console,
@@ -677,7 +686,7 @@ func (p *AzdoCiProvider) preConfigureCheck(
 		return updatedPat, err
 	}
 
-	_, updatedOrg, err := azdo.EnsureOrgNameExists(ctx, p.Env, p.console)
+	_, updatedOrg, err := azdo.EnsureOrgNameExists(ctx, p.envManager, p.Env, p.console)
 	return (updatedPat || updatedOrg), err
 }
 
@@ -688,23 +697,36 @@ func (p *AzdoCiProvider) Name() string {
 
 // ***  ciProvider implementation ******
 
+func (p *AzdoCiProvider) credentialOptions(
+	ctx context.Context,
+	repoDetails *gitRepositoryDetails,
+	infraOptions provisioning.Options,
+	authType PipelineAuthType,
+) *CredentialOptions {
+	if authType == "" || authType == AuthTypeClientCredentials {
+		return &CredentialOptions{
+			EnableClientCredentials: true,
+		}
+	}
+
+	return &CredentialOptions{
+		EnableClientCredentials:    false,
+		EnableFederatedCredentials: false,
+	}
+}
+
 // configureConnection set up Azure DevOps with the Azure credential
 func (p *AzdoCiProvider) configureConnection(
 	ctx context.Context,
 	repoDetails *gitRepositoryDetails,
 	provisioningProvider provisioning.Options,
-	credentials json.RawMessage,
+	servicePrincipal *graphsdk.ServicePrincipal,
 	authType PipelineAuthType,
+	credentials *azcli.AzureCredentials,
 ) error {
-
-	azureCredentials, err := parseCredentials(ctx, credentials)
-	if err != nil {
-		return err
-	}
-
-	p.credentials = azureCredentials
+	p.credentials = credentials
 	details := repoDetails.details.(*AzdoRepositoryDetails)
-	org, _, err := azdo.EnsureOrgNameExists(ctx, p.Env, p.console)
+	org, _, err := azdo.EnsureOrgNameExists(ctx, p.envManager, p.Env, p.console)
 	if err != nil {
 		return err
 	}
@@ -716,7 +738,7 @@ func (p *AzdoCiProvider) configureConnection(
 	if err != nil {
 		return err
 	}
-	err = azdo.CreateServiceConnection(ctx, connection, details.projectId, *p.Env, *p.credentials, p.console)
+	err = azdo.CreateServiceConnection(ctx, connection, details.projectId, *p.Env, p.credentials, p.console)
 	if err != nil {
 		return err
 	}
@@ -730,24 +752,17 @@ func (p *AzdoCiProvider) configureConnection(
 	return nil
 }
 
-// parses the incoming json object and deserializes it to a struct
-func parseCredentials(ctx context.Context, credentials json.RawMessage) (*azdo.AzureServicePrincipalCredentials, error) {
-	azureCredentials := azdo.AzureServicePrincipalCredentials{}
-	if e := json.Unmarshal(credentials, &azureCredentials); e != nil {
-		return nil, fmt.Errorf("setting terraform env var credentials: %w", e)
-	}
-	return &azureCredentials, nil
-}
-
 // configurePipeline create Azdo pipeline
 func (p *AzdoCiProvider) configurePipeline(
 	ctx context.Context,
 	repoDetails *gitRepositoryDetails,
 	provisioningProvider provisioning.Options,
+	additionalSecrets map[string]string,
+	additionalVariables map[string]string,
 ) (CiPipeline, error) {
 	details := repoDetails.details.(*AzdoRepositoryDetails)
 
-	org, _, err := azdo.EnsureOrgNameExists(ctx, p.Env, p.console)
+	org, _, err := azdo.EnsureOrgNameExists(ctx, p.envManager, p.Env, p.console)
 	if err != nil {
 		return nil, err
 	}
@@ -765,10 +780,12 @@ func (p *AzdoCiProvider) configurePipeline(
 		azdo.AzurePipelineName,
 		details.repoName,
 		connection,
-		*p.credentials,
+		p.credentials,
 		p.Env,
 		p.console,
 		provisioningProvider,
+		additionalSecrets,
+		additionalVariables,
 	)
 	if err != nil {
 		return nil, err

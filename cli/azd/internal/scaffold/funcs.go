@@ -1,6 +1,10 @@
 package scaffold
 
-import "strings"
+import (
+	"encoding/json"
+	"fmt"
+	"strings"
+)
 
 // BicepName returns a name suitable for use as a bicep variable name.
 //
@@ -40,6 +44,38 @@ func BicepName(name string) string {
 	return sb.String()
 }
 
+// UpperSnakeAlpha returns a name in upper-snake case alphanumeric name separated only by underscores.
+//
+// Non-alphanumeric characters are discarded, while consecutive separators ('-', '_', and '.') are treated
+// as a single underscore separator.
+func AlphaSnakeUpper(name string) string {
+	sb := strings.Builder{}
+	separatorStart := -1
+	for i := range name {
+		switch name[i] {
+		case '-', '_', '.':
+			if separatorStart == -1 { // track first occurrence of consecutive separators
+				separatorStart = i
+			}
+		default:
+			if !isAsciiAlphaNumeric(name[i]) {
+				continue
+			}
+
+			if separatorStart != -1 {
+				if separatorStart != 0 { // don't write prefix separator
+					sb.WriteByte('_')
+				}
+				separatorStart = -1
+			}
+
+			sb.WriteByte(upperCase(name[i]))
+		}
+	}
+
+	return sb.String()
+}
+
 func isAsciiAlphaNumeric(c byte) bool {
 	return ('0' <= c && c <= '9') || ('A' <= c && c <= 'Z') || ('a' <= c && c <= 'z')
 }
@@ -66,16 +102,14 @@ func lowerCase(r byte) byte {
 //  3. Bicep resource token (13 characters) + separator '-' (1 character) -- total of 14 characters
 //
 // Which leaves us with: 32 - 4 - 14 = 14 characters.
-// We allow 2 additional characters for wiggle-room. We've seen failures when container app name is exactly at 32.
 const containerAppNameInfixMaxLen = 12
 
-// ContainerAppName returns a name that is valid to be used as an infix for a container app resource.
-//
-// The name is treated to only contain alphanumeric and dash characters, with no repeated dashes, and no dashes
-// as the first or last character.
-func ContainerAppName(name string) string {
-	if len(name) > containerAppNameInfixMaxLen {
-		name = name[:containerAppNameInfixMaxLen]
+// We allow 2 additional characters for wiggle-room. We've seen failures when container app name is exactly at 32.
+const containerAppNameMaxLen = 30
+
+func containerAppName(name string, maxLen int) string {
+	if len(name) > maxLen {
+		name = name[:maxLen]
 	}
 
 	// trim to allowed characters:
@@ -105,4 +139,43 @@ func ContainerAppName(name string) string {
 	}
 
 	return sb.String()
+}
+
+// ContainerAppName returns a suitable name a container app resource.
+//
+// The name is treated to only contain alphanumeric and dash characters, with no repeated dashes, and no dashes
+// as the first or last character.
+func ContainerAppName(name string) string {
+	return containerAppName(name, containerAppNameMaxLen)
+}
+
+// ContainerAppSecretName returns a suitable name a container app secret name.
+//
+// The name is treated to only contain lowercase alphanumeric and dash characters, and must start and end with an
+// alphanumeric character
+func ContainerAppSecretName(name string) string {
+	return strings.ReplaceAll(strings.ToLower(name), "_", "-")
+}
+
+// ContainerAppInfix returns a suitable infix for a container app resource.
+//
+// The name is treated to only contain alphanumeric and dash characters, with no repeated dashes, and no dashes
+// as the first or last character.
+func ContainerAppInfix(name string) string {
+	return containerAppName(name, containerAppNameInfixMaxLen)
+}
+
+// Formats a parameter value for use in a bicep file.
+// If the value is a string, it is quoted inline with no indentation.
+// Otherwise, the value is marshaled with indentation specified by prefix and indent.
+func FormatParameter(prefix string, indent string, value any) (string, error) {
+	if valueStr, ok := value.(string); ok {
+		return fmt.Sprintf("\"%s\"", valueStr), nil
+	}
+
+	val, err := json.MarshalIndent(value, prefix, indent)
+	if err != nil {
+		return "", err
+	}
+	return string(val), nil
 }

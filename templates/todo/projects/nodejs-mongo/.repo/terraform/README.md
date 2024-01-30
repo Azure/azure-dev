@@ -41,8 +41,6 @@ The following prerequisites are required to use this application. Please ensure 
 - [Terraform CLI](https://aka.ms/azure-dev/terraform-install)
     - Requires the [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli)
 
-> Note: Terraform is in **alpha mode**. You need to enable it by running `azd config set alpha.terraform on`. Read more about [alpha features](https://github.com/Azure/azure-dev/tree/main/cli/azd/docs).
-
 ### Quickstart
 To learn how to get started with any template, follow the steps in [this quickstart](https://learn.microsoft.com/azure/developer/azure-developer-cli/get-started?tabs=localinstall&pivots=programming-language-nodejs) with this template(`Azure-Samples/todo-nodejs-mongo-terraform`)
 

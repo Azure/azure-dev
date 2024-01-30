@@ -131,14 +131,18 @@ module postgresDb './app/db-postgres.bicep' = {
 module {{bicepName .Name}} './app/{{.Name}}.bicep' = {
   name: '{{.Name}}'
   params: {
-    name: '${abbrs.appContainerApps}{{containerAppName .Name}}-${resourceToken}'
+    name: '${abbrs.appContainerApps}{{containerAppInfix .Name}}-${resourceToken}'
     location: location
     tags: tags
-    identityName: '${abbrs.managedIdentityUserAssignedIdentities}{{containerAppName .Name}}-${resourceToken}'
+    identityName: '${abbrs.managedIdentityUserAssignedIdentities}{{containerAppInfix .Name}}-${resourceToken}'
     applicationInsightsName: monitoring.outputs.applicationInsightsName
     containerAppsEnvironmentName: appsEnv.outputs.name
     containerRegistryName: registry.outputs.name
     exists: {{bicepName .Name}}Exists
+    appDefinition: {{bicepName .Name}}Definition
+    {{- if .DbRedis}}
+    redisName: 'rd-{{containerAppInfix .Name}}-${resourceToken}'
+    {{- end}}
     {{- if .DbCosmosMongo}}
     cosmosDbConnectionString: vault.getSecret(cosmosDb.outputs.connectionStringKey)
     {{- end}}
@@ -158,7 +162,7 @@ module {{bicepName .Name}} './app/{{.Name}}.bicep' = {
     {{- if (and .Backend .Backend.Frontends)}}
     allowedOrigins: [
       {{- range .Backend.Frontends}}
-      'https://${abbrs.appContainerApps}{{containerAppName .Name}}-${resourceToken}.${appsEnv.outputs.domain}'
+      'https://${abbrs.appContainerApps}{{containerAppInfix .Name}}-${resourceToken}.${appsEnv.outputs.domain}'
       {{- end}}
     ]
     {{- end}}

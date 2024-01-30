@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 
+	"github.com/azure/azure-dev/cli/azd/internal/tracing"
+	"github.com/azure/azure-dev/cli/azd/internal/tracing/fields"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -61,16 +63,19 @@ type ServiceFilterPredicate func(svc *ServiceConfig) bool
 type projectManager struct {
 	azdContext     *azdcontext.AzdContext
 	serviceManager ServiceManager
+	importManager  *ImportManager
 }
 
 // NewProjectManager creates a new instance of the ProjectManager
 func NewProjectManager(
 	azdContext *azdcontext.AzdContext,
 	serviceManager ServiceManager,
+	importManager *ImportManager,
 ) ProjectManager {
 	return &projectManager{
 		azdContext:     azdContext,
 		serviceManager: serviceManager,
+		importManager:  importManager,
 	}
 }
 
@@ -78,7 +83,19 @@ func NewProjectManager(
 func (pm *projectManager) Initialize(ctx context.Context, projectConfig *ProjectConfig) error {
 	var projectTools []tools.ExternalTool
 
-	for _, svc := range projectConfig.Services {
+	servicesStable, err := pm.importManager.ServiceStable(ctx, projectConfig)
+	if err != nil {
+		return err
+	}
+
+	serviceTargets := make([]string, 0, len(servicesStable))
+	for _, svc := range servicesStable {
+		serviceTargets = append(serviceTargets, string(svc.Host))
+	}
+
+	tracing.SetUsageAttributes(fields.ProjectServiceTargetsKey.StringSlice(serviceTargets))
+
+	for _, svc := range servicesStable {
 		if err := pm.serviceManager.Initialize(ctx, svc); err != nil {
 			return fmt.Errorf("initializing service '%s', %w", svc.Name, err)
 		}
@@ -112,7 +129,12 @@ func (pm *projectManager) DefaultServiceFromWd(
 		return nil, nil
 	}
 
-	for _, svcConfig := range projectConfig.Services {
+	servicesStable, err := pm.importManager.ServiceStable(ctx, projectConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	for _, svcConfig := range servicesStable {
 		if wd == svcConfig.Path() {
 			return svcConfig, nil
 		}
@@ -128,7 +150,12 @@ func (pm *projectManager) EnsureAllTools(
 ) error {
 	var projectTools []tools.ExternalTool
 
-	for _, svc := range projectConfig.Services {
+	servicesStable, err := pm.importManager.ServiceStable(ctx, projectConfig)
+	if err != nil {
+		return err
+	}
+
+	for _, svc := range servicesStable {
 		if serviceFilterFn != nil && !serviceFilterFn(svc) {
 			continue
 		}
@@ -155,7 +182,12 @@ func (pm *projectManager) EnsureFrameworkTools(
 ) error {
 	var requiredTools []tools.ExternalTool
 
-	for _, svc := range projectConfig.Services {
+	servicesStable, err := pm.importManager.ServiceStable(ctx, projectConfig)
+	if err != nil {
+		return err
+	}
+
+	for _, svc := range servicesStable {
 		if serviceFilterFn != nil && !serviceFilterFn(svc) {
 			continue
 		}
@@ -187,7 +219,12 @@ func (pm *projectManager) EnsureServiceTargetTools(
 ) error {
 	var requiredTools []tools.ExternalTool
 
-	for _, svc := range projectConfig.Services {
+	servicesStable, err := pm.importManager.ServiceStable(ctx, projectConfig)
+	if err != nil {
+		return err
+	}
+
+	for _, svc := range servicesStable {
 		if serviceFilterFn != nil && !serviceFilterFn(svc) {
 			continue
 		}

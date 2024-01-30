@@ -10,21 +10,29 @@ import (
 type ProviderKind string
 
 const (
-	Bicep     ProviderKind = "bicep"
-	Arm       ProviderKind = "arm"
-	Terraform ProviderKind = "terraform"
-	Pulumi    ProviderKind = "pulumi"
-	Test      ProviderKind = "test"
+	NotSpecified ProviderKind = ""
+	Bicep        ProviderKind = "bicep"
+	Arm          ProviderKind = "arm"
+	Terraform    ProviderKind = "terraform"
+	Pulumi       ProviderKind = "pulumi"
+	Test         ProviderKind = "test"
 )
 
 type Options struct {
-	Provider ProviderKind `yaml:"provider"`
-	Path     string       `yaml:"path"`
-	Module   string       `yaml:"module"`
+	Provider ProviderKind `yaml:"provider,omitempty"`
+	Path     string       `yaml:"path,omitempty"`
+	Module   string       `yaml:"module,omitempty"`
+	// Not expected to be defined at azure.yaml
+	IgnoreDeploymentState bool `yaml:"-"`
 }
 
+type SkippedReasonType string
+
+const DeploymentStateSkipped SkippedReasonType = "deployment State"
+
 type DeployResult struct {
-	Deployment *Deployment
+	Deployment    *Deployment
+	SkippedReason SkippedReasonType
 }
 
 // DeployPreviewResult defines one deployment in preview mode, displaying what changes would it be performed, without

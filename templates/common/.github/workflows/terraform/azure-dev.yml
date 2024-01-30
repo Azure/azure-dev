@@ -49,9 +49,6 @@ jobs:
         env:
           AZURE_CREDENTIALS: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Enable terraform alpha feature
-        run: azd config set alpha.terraform on
-
       - name: Provision Infrastructure
         run: azd provision --no-prompt
         env:

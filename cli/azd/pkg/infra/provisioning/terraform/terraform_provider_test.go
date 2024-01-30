@@ -21,7 +21,9 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockaccount"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazcli"
+	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockexec"
+	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -85,7 +87,7 @@ func TestTerraformState(t *testing.T) {
 	require.NotNil(t, getStateResult.State)
 
 	require.Equal(t, infraProvider.env.Dotenv()["AZURE_LOCATION"], getStateResult.State.Outputs["AZURE_LOCATION"].Value)
-	require.Equal(t, fmt.Sprintf("rg-%s", infraProvider.env.GetEnvName()), getStateResult.State.Outputs["RG_NAME"].Value)
+	require.Equal(t, fmt.Sprintf("rg-%s", infraProvider.env.Name()), getStateResult.State.Outputs["RG_NAME"].Value)
 	require.Len(t, getStateResult.State.Resources, 1)
 	require.Regexp(
 		t,
@@ -100,7 +102,7 @@ func createTerraformProvider(t *testing.T, mockContext *mocks.MockContext) *Terr
 		Module: "main",
 	}
 
-	env := environment.EphemeralWithValues("test-env", map[string]string{
+	env := environment.NewWithValues("test-env", map[string]string{
 		"AZURE_LOCATION":        "westus2",
 		"AZURE_SUBSCRIPTION_ID": "00000000-0000-0000-0000-000000000000",
 	})
@@ -122,8 +124,12 @@ func createTerraformProvider(t *testing.T, mockContext *mocks.MockContext) *Terr
 		},
 	}
 
+	envManager := &mockenv.MockEnvManager{}
+	envManager.On("Save", mock.Anything, mock.Anything).Return(nil)
+
 	provider := NewTerraformProvider(
 		terraformTools.NewTerraformCli(mockContext.CommandRunner),
+		envManager,
 		env,
 		mockContext.Console,
 		&mockCurrentPrincipal{},

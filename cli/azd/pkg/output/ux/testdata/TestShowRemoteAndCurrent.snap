@@ -1,0 +1,14 @@
+
+Showing services and environments for apps in this directory.
+To view a different environment, run azd show -e <environment name>
+
+Foo
+  Services:
+    You don't have services defined. Add your services to azure.yaml.
+  Environments:
+    foo [Current]
+    bar
+    vh (Remote)
+  View in Azure Portal:
+    Application is not yet provisioned. Run azd provision or azd up first.
+

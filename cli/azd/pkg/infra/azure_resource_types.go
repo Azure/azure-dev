@@ -24,9 +24,11 @@ const (
 	AzureResourceTypeLogAnalyticsWorkspace   AzureResourceType = "Microsoft.OperationalInsights/workspaces"
 	AzureResourceTypePortalDashboard         AzureResourceType = "Microsoft.Portal/dashboards"
 	AzureResourceTypePostgreSqlServer        AzureResourceType = "Microsoft.DBforPostgreSQL/flexibleServers"
+	AzureResourceTypeMySqlServer             AzureResourceType = "Microsoft.DBforMySQL/flexibleServers"
 	AzureResourceTypeResourceGroup           AzureResourceType = "Microsoft.Resources/resourceGroups"
 	AzureResourceTypeStorageAccount          AzureResourceType = "Microsoft.Storage/storageAccounts"
 	AzureResourceTypeStaticWebSite           AzureResourceType = "Microsoft.Web/staticSites"
+	AzureResourceTypeServiceBusNamespace     AzureResourceType = "Microsoft.ServiceBus/namespaces"
 	AzureResourceTypeServicePlan             AzureResourceType = "Microsoft.Web/serverfarms"
 	AzureResourceTypeSqlServer               AzureResourceType = "Microsoft.Sql/servers"
 	AzureResourceTypeVirtualNetwork          AzureResourceType = "Microsoft.Network/virtualNetworks"
@@ -36,6 +38,9 @@ const (
 	AzureResourceTypeAgentPool               AzureResourceType = "Microsoft.ContainerService/managedClusters/agentPools"
 	AzureResourceTypeCognitiveServiceAccount AzureResourceType = "Microsoft.CognitiveServices/accounts"
 	AzureResourceTypeSearchService           AzureResourceType = "Microsoft.Search/searchServices"
+	AzurePrivateEndpoint                     AzureResourceType = "Microsoft.Network/privateEndpoints"
+	AzureDevCenter                           AzureResourceType = "Microsoft.DevCenter/devcenters"
+	AzureDevCenterProject                    AzureResourceType = "Microsoft.DevCenter/projects"
 )
 
 const resourceLevelSeparator = "/"
@@ -69,6 +74,8 @@ func GetResourceTypeDisplayName(resourceType AzureResourceType) string {
 		return "Container App"
 	case AzureResourceTypeContainerAppEnvironment:
 		return "Container Apps Environment"
+	case AzureResourceTypeServiceBusNamespace:
+		return "Service Bus Namespace"
 	case AzureResourceTypeServicePlan:
 		return "App Service plan"
 	case AzureResourceTypeCosmosDb:
@@ -81,6 +88,8 @@ func GetResourceTypeDisplayName(resourceType AzureResourceType) string {
 		return "Azure SQL Server"
 	case AzureResourceTypePostgreSqlServer:
 		return "Azure Database for PostgreSQL flexible server"
+	case AzureResourceTypeMySqlServer:
+		return "Azure Database for MySQL flexible server"
 	case AzureResourceTypeCDNProfile:
 		return "Azure Front Door / CDN profile"
 	case AzureResourceTypeLoadTest:
@@ -99,6 +108,12 @@ func GetResourceTypeDisplayName(resourceType AzureResourceType) string {
 		return "Search service"
 	case AzureResourceTypeSpringApp:
 		return "Azure Spring Apps"
+	case AzurePrivateEndpoint:
+		return "Private Endpoint"
+	case AzureDevCenter:
+		return "Dev Center"
+	case AzureDevCenterProject:
+		return "Dev Center Project"
 	}
 
 	return ""

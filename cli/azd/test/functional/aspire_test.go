@@ -10,6 +10,7 @@ import (
 	"runtime"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -178,6 +179,7 @@ func Test_CLI_Aspire(t *testing.T) {
 		//endpoint := fmt.Sprintf("https://%s.%s", "webfrontend", domain)
 		runner := exec.NewCommandRunner(nil)
 		run := func() (res exec.RunResult, err error) {
+			wr := logWriter{initialTime: time.Now(), t: t, prefix: "webfrontend: "}
 			res, err = runner.Run(ctx, exec.NewRunArgs(
 				"dotnet",
 				"test",
@@ -185,19 +187,27 @@ func Test_CLI_Aspire(t *testing.T) {
 				"console;verbosity=detailed",
 			).WithCwd(filepath.Join(dir, "AspireAzdTests")).WithEnv([]string{
 				"LIVE_APP_URL=" + endpoint,
-			}))
-			t.Log(res.Stdout)
+			}).WithStdOut(&wr))
 			return
 		}
 		res, err := run()
 		if err != nil && strings.Contains(res.Stdout, "Permission denied") {
 			err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+				t.Log("walk:", path)
 				if err != nil {
 					return err
 				}
 
 				if !d.IsDir() && d.Name() == "playwright.sh" {
-					return os.Chmod(path, 0700)
+					t.Log("chmod: ", path)
+					err = os.Chmod(path, 0700)
+					if err != nil {
+						t.Log(err)
+					}
+
+					t.Log("chmod-done: ", path)
+
+					return err
 				}
 
 				return nil
@@ -206,6 +216,7 @@ func Test_CLI_Aspire(t *testing.T) {
 				t.Fatal(err)
 			}
 
+			t.Log("running: ")
 			res, err = run()
 			require.NoError(t, err)
 		}
@@ -213,6 +224,28 @@ func Test_CLI_Aspire(t *testing.T) {
 		_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
 		require.NoError(t, err)
 	})
+}
+
+type logWriter struct {
+	t           *testing.T
+	sb          strings.Builder
+	prefix      string
+	initialTime time.Time
+}
+
+func (l *logWriter) Write(bytes []byte) (n int, err error) {
+	for i, b := range bytes {
+		err = l.sb.WriteByte(b)
+		if err != nil {
+			return i, err
+		}
+
+		if b == '\n' {
+			l.t.Logf("%s %s%s", time.Since(l.initialTime).Round(1*time.Millisecond), l.prefix, l.sb.String())
+			l.sb.Reset()
+		}
+	}
+	return len(bytes), nil
 }
 
 func lintErr(buildRes bicep.BuildResult, exclude []string) []string {

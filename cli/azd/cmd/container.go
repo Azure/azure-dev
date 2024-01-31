@@ -157,19 +157,19 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		return writer
 	})
 
-	container.MustRegisterScoped(func(cmd *cobra.Command) envFlag {
+	container.MustRegisterScoped(func(cmd *cobra.Command) internal.EnvFlag {
 		// The env flag `-e, --environment` is available on most azd commands but not all
 		// This is typically used to override the default environment and is used for bootstrapping other components
 		// such as the azd environment.
 		// If the flag is not available, don't panic, just return an empty string which will then allow for our default
 		// semantics to follow.
-		envValue, err := cmd.Flags().GetString(environmentNameFlag)
+		envValue, err := cmd.Flags().GetString(internal.EnvironmentNameFlagName)
 		if err != nil {
 			log.Printf("'%s'command asked for envFlag, but envFlag was not included in cmd.Flags().", cmd.CommandPath())
 			envValue = ""
 		}
 
-		return envFlag{environmentName: envValue}
+		return internal.EnvFlag{EnvironmentName: envValue}
 	})
 
 	container.MustRegisterSingleton(func(cmd *cobra.Command) CmdAnnotations {
@@ -194,13 +194,13 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			azdContext *azdcontext.AzdContext,
 			envManager environment.Manager,
 			lazyEnv *lazy.Lazy[*environment.Environment],
-			envFlags envFlag,
+			envFlags internal.EnvFlag,
 		) (*environment.Environment, error) {
 			if azdContext == nil {
 				return nil, azdcontext.ErrNoProject
 			}
 
-			environmentName := envFlags.environmentName
+			environmentName := envFlags.EnvironmentName
 			var err error
 
 			env, err := envManager.LoadOrCreateInteractive(ctx, environmentName)
@@ -310,7 +310,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			ctx context.Context,
 			lazyEnvManager *lazy.Lazy[environment.Manager],
 			lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext],
-			envFlags envFlag,
+			envFlags internal.EnvFlag,
 		) *lazy.Lazy[*environment.Environment] {
 			return lazy.NewLazy(func() (*environment.Environment, error) {
 				azdCtx, err := lazyAzdContext.GetValue()
@@ -318,7 +318,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 					return nil, err
 				}
 
-				environmentName := envFlags.environmentName
+				environmentName := envFlags.EnvironmentName
 				if environmentName == "" {
 					environmentName, err = azdCtx.GetDefaultEnvironmentName()
 					if err != nil {

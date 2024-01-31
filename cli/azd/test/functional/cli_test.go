@@ -554,7 +554,7 @@ func Test_CLI_NoDebugSpewWhenHelpPassedWithoutDebug(t *testing.T) {
 	assert.Equal(t, "", result.Stderr, "no output should be written to stderr when --help is passed")
 }
 
-//go:embed testdata/samples/*
+//go:embed all:testdata/samples/*
 var samples embed.FS
 
 func samplePath(paths ...string) string {

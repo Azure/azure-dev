@@ -220,16 +220,48 @@ func Test_ServiceManager_Deploy(t *testing.T) {
 }
 
 func Test_ServiceManager_GetFrameworkService(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
-	setupMocksForServiceManager(mockContext)
-	env := environment.New("test")
-	sm := createServiceManager(mockContext, env, ServiceOperationCache{})
-	serviceConfig := createTestServiceConfig("./src/api", ServiceTargetFake, ServiceLanguageFake)
+	t.Run("Standard", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		setupMocksForServiceManager(mockContext)
+		env := environment.New("test")
+		sm := createServiceManager(mockContext, env, ServiceOperationCache{})
+		serviceConfig := createTestServiceConfig("./src/api", ServiceTargetFake, ServiceLanguageFake)
 
-	framework, err := sm.GetFrameworkService(*mockContext.Context, serviceConfig)
-	require.NoError(t, err)
-	require.NotNil(t, framework)
-	require.IsType(t, new(fakeFramework), framework)
+		framework, err := sm.GetFrameworkService(*mockContext.Context, serviceConfig)
+		require.NoError(t, err)
+		require.NotNil(t, framework)
+		require.IsType(t, new(fakeFramework), framework)
+	})
+
+	t.Run("No project path and has docker tag", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		mockContext.Container.MustRegisterNamedTransient("docker", newFakeFramework)
+
+		setupMocksForServiceManager(mockContext)
+		env := environment.New("test")
+		sm := createServiceManager(mockContext, env, ServiceOperationCache{})
+		serviceConfig := createTestServiceConfig("", ServiceTargetFake, ServiceLanguageNone)
+		serviceConfig.Docker.Tag = NewExpandableString("nginx")
+
+		framework, err := sm.GetFrameworkService(*mockContext.Context, serviceConfig)
+		require.NoError(t, err)
+		require.NotNil(t, framework)
+		require.IsType(t, new(fakeFramework), framework)
+	})
+
+	t.Run("No project path or docker tag", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		mockContext.Container.MustRegisterNamedTransient("docker", newFakeFramework)
+
+		setupMocksForServiceManager(mockContext)
+		env := environment.New("test")
+		sm := createServiceManager(mockContext, env, ServiceOperationCache{})
+		serviceConfig := createTestServiceConfig("", ServiceTargetFake, ServiceLanguageNone)
+
+		require.Panics(t, func() {
+			_, _ = sm.GetFrameworkService(*mockContext.Context, serviceConfig)
+		})
+	})
 }
 
 func Test_ServiceManager_GetServiceTarget(t *testing.T) {

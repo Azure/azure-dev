@@ -35,7 +35,7 @@ func (l *lineCapturer) Write(bytes []byte) (n int, err error) {
 	return len(bytes), nil
 }
 
-// Verifies no extra output is printed in non-tty scenarios.
+// Verifies no extra output is printed in non-tty scenarios for the spinner.
 func TestAskerConsole_Spinner_NonTty(t *testing.T) {
 	// The underlying spinner relies on non-blocking channels for paint updates.
 	// We need to give it some time to paint.

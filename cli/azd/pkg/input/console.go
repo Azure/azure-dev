@@ -704,7 +704,7 @@ func NewConsole(noPrompt bool, isTerminal bool, w io.Writer, handles ConsoleHand
 // taking into account of environment variables that force TTY behavior.
 func IsTerminal(stdoutFd uintptr, stdinFd uintptr) bool {
 	// User override to force non-TTY behavior
-	if os.Getenv("AZD_DEBUG_FORCE_NO_TTY") == "1" {
+	if ok, _ := strconv.ParseBool(os.Getenv("AZD_DEBUG_FORCE_NO_TTY")); ok {
 		return false
 	}
 

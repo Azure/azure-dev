@@ -1,0 +1,72 @@
+{
+  "resources": {
+    "cache": {
+      "type": "redis.v0"
+    },
+    "pubsub": {
+      "type": "redis.v0"
+    },
+    "storage": {
+      "type": "azure.storage.v0"
+    },
+    "requestlog": {
+      "type": "azure.storage.table.v0",
+      "parent": "storage"
+    },
+    "markdown": {
+      "type": "azure.storage.blob.v0",
+      "parent": "storage"
+    },
+    "messages": {
+      "type": "azure.storage.queue.v0",
+      "parent": "storage"
+    },
+    "apiservice": {
+      "type": "project.v0",
+      "path": "../AspireAzdTests.ApiService/AspireAzdTests.ApiService.csproj",
+      "env": {
+        "OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EXCEPTION_LOG_ATTRIBUTES": "true",
+        "OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EVENT_LOG_ATTRIBUTES": "true"
+      },
+      "bindings": {
+        "http": {
+          "scheme": "http",
+          "protocol": "tcp",
+          "transport": "http"
+        },
+        "https": {
+          "scheme": "https",
+          "protocol": "tcp",
+          "transport": "http"
+        }
+      }
+    },
+    "webfrontend": {
+      "type": "project.v0",
+      "path": "../AspireAzdTests.Web/AspireAzdTests.Web.csproj",
+      "env": {
+        "OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EXCEPTION_LOG_ATTRIBUTES": "true",
+        "OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EVENT_LOG_ATTRIBUTES": "true",
+        "ConnectionStrings__cache": "{cache.connectionString}",
+        "ConnectionStrings__pubsub": "{pubsub.connectionString}",
+        "ConnectionStrings__requestlog": "{requestlog.connectionString}",
+        "ConnectionStrings__markdown": "{markdown.connectionString}",
+        "ConnectionStrings__messages": "{messages.connectionString}",
+        "services__apiservice__0": "{apiservice.bindings.http.url}",
+        "services__apiservice__1": "{apiservice.bindings.https.url}"
+      },
+      "bindings": {
+        "http": {
+          "scheme": "http",
+          "protocol": "tcp",
+          "transport": "http"
+        },
+        "https": {
+          "scheme": "https",
+          "protocol": "tcp",
+          "transport": "http"
+        }
+      }
+    }
+  }
+}

@@ -14,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/cmd"
 	"github.com/azure/azure-dev/cli/azd/internal/repository"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
@@ -606,7 +607,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(workflow.NewRunner)
 
 	// Required for nested actions called from composite actions like 'up'
-	registerAction[*provisionAction](container, "azd-provision-action")
+	registerAction[*cmd.ProvisionAction](container, "azd-provision-action")
 	registerAction[*downAction](container, "azd-down-action")
 	registerAction[*configShowAction](container, "azd-config-show-action")
 }

@@ -22,7 +22,7 @@ type downFlags struct {
 	forceDelete bool
 	purgeDelete bool
 	global      *internal.GlobalCommandOptions
-	envFlag
+	internal.EnvFlag
 }
 
 func (i *downFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
@@ -34,7 +34,7 @@ func (i *downFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOpt
 		//nolint:lll
 		"Does not require confirmation before it permanently deletes resources that are soft-deleted by default (for example, key vaults).",
 	)
-	i.envFlag.Bind(local, global)
+	i.EnvFlag.Bind(local, global)
 	i.global = global
 }
 

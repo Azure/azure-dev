@@ -31,7 +31,7 @@ type deployFlags struct {
 	all         bool
 	fromPackage string
 	global      *internal.GlobalCommandOptions
-	*envFlag
+	*internal.EnvFlag
 }
 
 func (d *deployFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
@@ -55,8 +55,8 @@ func (d *deployFlags) bindNonCommon(
 }
 
 func (d *deployFlags) bindCommon(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
-	d.envFlag = &envFlag{}
-	d.envFlag.Bind(local, global)
+	d.EnvFlag = &internal.EnvFlag{}
+	d.EnvFlag.Bind(local, global)
 
 	local.BoolVar(
 		&d.all,
@@ -72,8 +72,8 @@ func (d *deployFlags) bindCommon(local *pflag.FlagSet, global *internal.GlobalCo
 	)
 }
 
-func (d *deployFlags) setCommon(envFlag *envFlag) {
-	d.envFlag = envFlag
+func (d *deployFlags) setCommon(envFlag *internal.EnvFlag) {
+	d.EnvFlag = envFlag
 }
 
 func newDeployFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *deployFlags {

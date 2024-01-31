@@ -29,7 +29,7 @@ type provisionFlags struct {
 	preview               bool
 	ignoreDeploymentState bool
 	global                *internal.GlobalCommandOptions
-	*envFlag
+	*internal.EnvFlag
 }
 
 const (
@@ -59,12 +59,12 @@ func (i *provisionFlags) bindCommon(local *pflag.FlagSet, global *internal.Globa
 		false,
 		"Do not use latest Deployment State (bicep only).")
 
-	i.envFlag = &envFlag{}
-	i.envFlag.Bind(local, global)
+	i.EnvFlag = &internal.EnvFlag{}
+	i.EnvFlag.Bind(local, global)
 }
 
-func (i *provisionFlags) setCommon(envFlag *envFlag) {
-	i.envFlag = envFlag
+func (i *provisionFlags) setCommon(envFlag *internal.EnvFlag) {
+	i.EnvFlag = envFlag
 }
 
 func newProvisionFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *provisionFlags {

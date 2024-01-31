@@ -60,7 +60,7 @@ func (b *ClientOptionsBuilder) WithPerRetryPolicy(policy policy.Policy) *ClientO
 }
 
 // Combines the per-call policies with the user agent and correlation policies
-// TODO: there may be a more idomatic way to do this
+// TODO: there may be a more ideal way to do this
 func (b *ClientOptionsBuilder) buildPerCallPolicies() []policy.Policy {
 	if b.perCallPolicies == nil && b.userAgentPolicy == nil && b.correlationPolicy == nil {
 		return nil

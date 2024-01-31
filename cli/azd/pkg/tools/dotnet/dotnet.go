@@ -60,12 +60,12 @@ func (cli *dotNetCli) CheckInstalled(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	dotnetRes, err := tools.ExecuteCommand(ctx, cli.commandRunner, "dotnet", "--version")
+	dotnetRes, err := cli.commandRunner.Run(ctx, newDotNetRunArgs("--version"))
 	if err != nil {
 		return fmt.Errorf("checking %s version: %w", cli.Name(), err)
 	}
-	log.Printf("dotnet version: %s", dotnetRes)
-	dotnetSemver, err := tools.ExtractVersion(dotnetRes)
+	log.Printf("dotnet version: %s", dotnetRes.Stdout)
+	dotnetSemver, err := tools.ExtractVersion(dotnetRes.Stdout)
 	if err != nil {
 		return fmt.Errorf("converting to semver version fails: %w", err)
 	}
@@ -77,7 +77,7 @@ func (cli *dotNetCli) CheckInstalled(ctx context.Context) error {
 }
 
 func (cli *dotNetCli) Restore(ctx context.Context, project string) error {
-	runArgs := exec.NewRunArgs("dotnet", "restore", project)
+	runArgs := newDotNetRunArgs("restore", project)
 	_, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
 		return fmt.Errorf("dotnet restore on project '%s' failed: %w", project, err)
@@ -86,7 +86,7 @@ func (cli *dotNetCli) Restore(ctx context.Context, project string) error {
 }
 
 func (cli *dotNetCli) Build(ctx context.Context, project string, configuration string, output string) error {
-	runArgs := exec.NewRunArgs("dotnet", "build", project)
+	runArgs := newDotNetRunArgs("build", project)
 	if configuration != "" {
 		runArgs = runArgs.AppendParams("-c", configuration)
 	}
@@ -103,7 +103,7 @@ func (cli *dotNetCli) Build(ctx context.Context, project string, configuration s
 }
 
 func (cli *dotNetCli) Publish(ctx context.Context, project string, configuration string, output string) error {
-	runArgs := exec.NewRunArgs("dotnet", "publish", project)
+	runArgs := newDotNetRunArgs("publish", project)
 	if configuration != "" {
 		runArgs = runArgs.AppendParams("-c", configuration)
 	}
@@ -156,7 +156,7 @@ func (cli *dotNetCli) PublishAppHostManifest(
 func (cli *dotNetCli) PublishContainer(
 	ctx context.Context, project, configuration, imageName, server, username, password string,
 ) error {
-	runArgs := exec.NewRunArgs("dotnet", "publish", project)
+	runArgs := newDotNetRunArgs("publish", project)
 
 	runArgs = runArgs.AppendParams(
 		"-r", "linux-x64",
@@ -179,7 +179,7 @@ func (cli *dotNetCli) PublishContainer(
 }
 
 func (cli *dotNetCli) InitializeSecret(ctx context.Context, project string) error {
-	runArgs := exec.NewRunArgs("dotnet", "user-secrets", "init", "--project", project)
+	runArgs := newDotNetRunArgs("user-secrets", "init", "--project", project)
 	_, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
 		return fmt.Errorf("failed to initialize secrets at project '%s': %w", project, err)
@@ -195,8 +195,7 @@ func (cli *dotNetCli) SetSecrets(ctx context.Context, secrets map[string]string,
 
 	// dotnet user-secrets now support setting multiple values at once
 	//https://learn.microsoft.com/en-us/aspnet/core/security/app-secrets?view=aspnetcore-7.0&tabs=windows#set-multiple-secrets
-	runArgs := exec.
-		NewRunArgs("dotnet", "user-secrets", "set", "--project", project).
+	runArgs := newDotNetRunArgs("user-secrets", "set", "--project", project).
 		WithStdIn(strings.NewReader(string(secretsJson)))
 
 	_, err = cli.commandRunner.Run(ctx, runArgs)
@@ -211,7 +210,7 @@ func (cli *dotNetCli) SetSecrets(ctx context.Context, secrets map[string]string,
 // This only works for versions dotnet >= 8, MSBuild >= 17.8.
 // On older tool versions, this will return an error.
 func (cli *dotNetCli) GetMsBuildProperty(ctx context.Context, project string, propertyName string) (string, error) {
-	runArgs := exec.NewRunArgs("dotnet", "msbuild", project, fmt.Sprintf("--getProperty:%s", propertyName))
+	runArgs := newDotNetRunArgs("msbuild", project, fmt.Sprintf("--getProperty:%s", propertyName))
 	res, err := cli.commandRunner.Run(ctx, runArgs)
 	if err != nil {
 		return "", err
@@ -223,4 +222,16 @@ func NewDotNetCli(commandRunner exec.CommandRunner) DotNetCli {
 	return &dotNetCli{
 		commandRunner: commandRunner,
 	}
+}
+
+// newDotNetRunArgs creates a new RunArgs to run the specified dotnet command. It sets the environment variable
+// to disable output of workload update notifications, to make it easier for us to parse the output.
+func newDotNetRunArgs(args ...string) exec.RunArgs {
+	runArgs := exec.NewRunArgs("dotnet", args...)
+
+	runArgs = runArgs.WithEnv([]string{
+		"DOTNET_CLI_WORKLOAD_UPDATE_NOTIFY_DISABLE=1",
+	})
+
+	return runArgs
 }

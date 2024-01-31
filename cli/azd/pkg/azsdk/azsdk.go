@@ -1,15 +1,9 @@
 package azsdk
 
 import (
-	"context"
-
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
-
-type BasicClientOptions struct {
-	transport policy.Transporter
-}
 
 // TODO: RENAME
 type ClientOptionsBuilderFactory struct {
@@ -32,14 +26,4 @@ func (c *ClientOptionsBuilderFactory) ClientOptionsBuilder() *ClientOptionsBuild
 	return NewClientOptionsBuilder().
 		WithTransport(c.defaultTransport).
 		SetUserAgent(c.defaultUserAgent)
-}
-
-func DefaultClientOptionsBuilder(
-	ctx context.Context,
-	httpClient httputil.HttpClient,
-	userAgent string) *ClientOptionsBuilder {
-	return NewClientOptionsBuilder().
-		WithTransport(httpClient).
-		WithPerCallPolicy(NewUserAgentPolicy(userAgent)).
-		WithPerCallPolicy(NewMsCorrelationPolicy(ctx))
 }

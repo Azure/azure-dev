@@ -694,7 +694,6 @@ func NewConsole(noPrompt bool, isTerminal bool, w io.Writer, handles ConsoleHand
 		Suffix:       " ",
 		TerminalMode: spinnerTerminalMode(isTerminal),
 	}
-
 	if isTerminal {
 		spinnerConfig.CharSet = spinnerCharSet
 	} else {
@@ -703,7 +702,6 @@ func NewConsole(noPrompt bool, isTerminal bool, w io.Writer, handles ConsoleHand
 
 	c.spinner, _ = yacspin.New(spinnerConfig)
 	c.spinnerTerminalMode = spinnerConfig.TerminalMode
-
 	if isTerminal {
 		c.consoleWidth = atomic.NewInt32(int32(consoleWidth()))
 		watchTerminalResize(c)

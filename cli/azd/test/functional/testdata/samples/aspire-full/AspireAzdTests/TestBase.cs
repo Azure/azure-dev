@@ -12,7 +12,9 @@ public class TestBase : PageTest
     [OneTimeSetUp]
     public void OneTimeSetup()
     {
-        var builder = new ConfigurationBuilder().AddUserSecrets(typeof(HomePageTests).Assembly);
+        var builder = new ConfigurationBuilder()
+            .AddEnvironmentVariables()
+            .AddUserSecrets(typeof(HomePageTests).Assembly);
         var config = builder.Build();
 
         _url = config["LIVE_APP_URL"] ?? string.Empty;

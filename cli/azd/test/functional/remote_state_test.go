@@ -9,6 +9,7 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
+	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -80,7 +81,12 @@ func createBlobClient(
 	credentials, err := authManager.CredentialForCurrentUser(*mockContext.Context, nil)
 	require.NoError(t, err)
 
-	sdkClient, err := storage.NewBlobSdkClient(*mockContext.Context, credentials, storageConfig, httpClient, "azd")
+	sdkClient, err := storage.NewBlobSdkClient(
+		*mockContext.Context,
+		credentials,
+		storageConfig,
+		*azsdk.NewClientOptionsBuilderFactory(httpClient, "azd"),
+	)
 	require.NoError(t, err)
 	require.NotNil(t, sdkClient)
 

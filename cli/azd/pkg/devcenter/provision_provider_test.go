@@ -436,12 +436,13 @@ func newProvisionProviderForTest(
 	env *environment.Environment,
 	manager Manager,
 ) provisioning.Provider {
-	coreOptions := azsdk.
-		DefaultClientOptionsBuilder(*mockContext.Context, mockContext.HttpClient, "azd").
+	defaultClientOptionsBuilder := azsdk.NewClientOptionsBuilderFactory(mockContext.HttpClient, "azd")
+	coreOptions := defaultClientOptionsBuilder.ClientOptionsBuilder().
+		SetContext(*mockContext.Context).
 		BuildCoreClientOptions()
 
-	armOptions := azsdk.
-		DefaultClientOptionsBuilder(*mockContext.Context, mockContext.HttpClient, "azd").
+	armOptions := defaultClientOptionsBuilder.ClientOptionsBuilder().
+		SetContext(*mockContext.Context).
 		BuildArmClientOptions()
 
 	resourceGraphClient, err := armresourcegraph.NewClient(mockContext.Credentials, armOptions)

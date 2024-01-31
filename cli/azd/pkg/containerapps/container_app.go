@@ -6,11 +6,9 @@ import (
 	"fmt"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v2"
-	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
-	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/benbjohnson/clock"
 	"gopkg.in/yaml.v3"
 )
@@ -49,22 +47,20 @@ type ContainerAppService interface {
 // NewContainerAppService creates a new ContainerAppService
 func NewContainerAppService(
 	credentialProvider account.SubscriptionCredentialProvider,
-	httpClient httputil.HttpClient,
 	clock clock.Clock,
+	defaultClientOptionsBuilder *azsdk.ClientOptionsBuilderFactory,
 ) ContainerAppService {
 	return &containerAppService{
-		credentialProvider: credentialProvider,
-		httpClient:         httpClient,
-		userAgent:          azdinternal.UserAgent(),
-		clock:              clock,
+		credentialProvider:          credentialProvider,
+		clock:                       clock,
+		defaultClientOptionsBuilder: defaultClientOptionsBuilder,
 	}
 }
 
 type containerAppService struct {
-	credentialProvider account.SubscriptionCredentialProvider
-	httpClient         httputil.HttpClient
-	userAgent          string
-	clock              clock.Clock
+	credentialProvider          account.SubscriptionCredentialProvider
+	clock                       clock.Clock
+	defaultClientOptionsBuilder *azsdk.ClientOptionsBuilderFactory
 }
 
 type ContainerAppIngressConfiguration struct {
@@ -326,7 +322,9 @@ func (cas *containerAppService) createContainerAppsClient(
 		return nil, err
 	}
 
-	options := azsdk.DefaultClientOptionsBuilder(ctx, cas.httpClient, cas.userAgent).BuildArmClientOptions()
+	options := cas.defaultClientOptionsBuilder.ClientOptionsBuilder().
+		SetContext(ctx).
+		BuildArmClientOptions()
 	client, err := armappcontainers.NewContainerAppsClient(subscriptionId, credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating ContainerApps client: %w", err)
@@ -344,7 +342,9 @@ func (cas *containerAppService) createRevisionsClient(
 		return nil, err
 	}
 
-	options := azsdk.DefaultClientOptionsBuilder(ctx, cas.httpClient, cas.userAgent).BuildArmClientOptions()
+	options := cas.defaultClientOptionsBuilder.ClientOptionsBuilder().
+		SetContext(ctx).
+		BuildArmClientOptions()
 	client, err := armappcontainers.NewContainerAppsRevisionsClient(subscriptionId, credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating ContainerApps client: %w", err)

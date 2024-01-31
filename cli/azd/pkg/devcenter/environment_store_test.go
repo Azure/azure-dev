@@ -232,12 +232,13 @@ func newEnvironmentStoreForTest(
 	config *Config,
 	manager Manager,
 ) environment.RemoteDataStore {
-	coreOptions := azsdk.
-		DefaultClientOptionsBuilder(*mockContext.Context, mockContext.HttpClient, "azd").
+	defaultClientOptionsBuilder := azsdk.NewClientOptionsBuilderFactory(mockContext.HttpClient, "azd")
+	coreOptions := defaultClientOptionsBuilder.
+		ClientOptionsBuilder().
 		BuildCoreClientOptions()
 
-	armOptions := azsdk.
-		DefaultClientOptionsBuilder(*mockContext.Context, mockContext.HttpClient, "azd").
+	armOptions := defaultClientOptionsBuilder.
+		ClientOptionsBuilder().
 		BuildArmClientOptions()
 
 	resourceGraphClient, err := armresourcegraph.NewClient(mockContext.Credentials, armOptions)

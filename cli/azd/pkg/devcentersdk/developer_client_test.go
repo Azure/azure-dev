@@ -31,12 +31,14 @@ func Test_DevCenter_Client(t *testing.T) {
 	credentials, err := authManager.CredentialForCurrentUser(*mockContext.Context, nil)
 	require.NoError(t, err)
 
-	options := azsdk.
-		DefaultClientOptionsBuilder(*mockContext.Context, http.DefaultClient, "azd").
+	defaultClientOptionsBuilder := azsdk.NewClientOptionsBuilderFactory(mockContext.HttpClient, "azd")
+
+	options := defaultClientOptionsBuilder.ClientOptionsBuilder().
+		SetContext(*mockContext.Context).
 		BuildCoreClientOptions()
 
-	armOptions := azsdk.
-		DefaultClientOptionsBuilder(*mockContext.Context, http.DefaultClient, "azd").
+	armOptions := defaultClientOptionsBuilder.ClientOptionsBuilder().
+		SetContext(*mockContext.Context).
 		BuildArmClientOptions()
 
 	resourceGraphClient, err := armresourcegraph.NewClient(credentials, armOptions)

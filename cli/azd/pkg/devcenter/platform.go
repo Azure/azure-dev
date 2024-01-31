@@ -11,7 +11,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/devcentersdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
-	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
@@ -167,11 +166,12 @@ func (p *Platform) ConfigureContainer(container *ioc.NestedContainer) error {
 	container.MustRegisterSingleton(func(
 		ctx context.Context,
 		credential azcore.TokenCredential,
-		httpClient httputil.HttpClient,
+		defaultClientOptionsBuilder azsdk.ClientOptionsBuilderFactory,
 		resourceGraphClient *armresourcegraph.Client,
 	) (devcentersdk.DevCenterClient, error) {
-		options := azsdk.
-			DefaultClientOptionsBuilder(ctx, httpClient, "azd").
+		options := defaultClientOptionsBuilder.ClientOptionsBuilder().
+			SetContext(ctx).
+			SetUserAgent("azd").
 			BuildCoreClientOptions()
 
 		return devcentersdk.NewDevCenterClient(credential, options, resourceGraphClient)

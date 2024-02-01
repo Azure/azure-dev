@@ -163,18 +163,34 @@ resource {{bicepName $name}} 'Microsoft.App/containerApps@2023-05-02-preview' = 
 {{- end}}
       }
 {{- end}}
+{{- if gt (len $value.Secrets) 0 }}
+      secrets: [
+{{- range $sName, $sValue := $value.Secrets}}
+        {
+          name: '{{containerAppSecretName $sName}}'
+          value: {{toDotNotation $sValue}}
+        }
+{{- end}}    
+      ]
+{{- end}}
     }
     template: {
       containers: [
         {
           image: '{{$value.Image}}'
           name: '{{containerAppName $name}}-${resourceToken}'
-{{- if $value.Env }}
+{{- if or (gt (len $value.Env) 0) (gt (len $value.Secrets) 0)}}
           env: [
 {{- range $name, $value := $value.Env}}
             {
               name: '{{$name}}'
               value: '{{$value}}'
+            }
+{{- end}}
+{{- range $sName, $sValue := $value.Secrets}}
+            {
+              name: '{{$sName}}'
+              secretRef: '{{containerAppSecretName $sName}}'
             }
 {{- end}}
           ]

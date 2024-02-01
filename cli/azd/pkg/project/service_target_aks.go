@@ -134,9 +134,14 @@ func (t *aksTarget) RequiredExternalTools(ctx context.Context) []tools.ExternalT
 
 // Initializes the AKS service target
 func (t *aksTarget) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
+	_, err := t.getTargetResource(ctx, serviceConfig)
+	if err != nil {
+		return nil
+	}
+
 	// Ensure that the k8s context has been configured by the time a deploy operation is performed.
 	// We attach to "postprovision" so that any predeploy or postprovision hooks can take advantage of the configuration
-	err := serviceConfig.Project.AddHandler(
+	err = serviceConfig.Project.AddHandler(
 		"postprovision",
 		func(ctx context.Context, args ProjectLifecycleEventArgs) error {
 			return t.setK8sContext(ctx, serviceConfig, "postprovision")
@@ -166,6 +171,11 @@ func (t *aksTarget) Package(
 	serviceConfig *ServiceConfig,
 	packageOutput *ServicePackageResult,
 ) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
+	_, err := t.getTargetResource(ctx, serviceConfig)
+	if err != nil {
+		return nil
+	}
+
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
 			task.SetResult(packageOutput)
@@ -180,6 +190,10 @@ func (t *aksTarget) Deploy(
 	packageOutput *ServicePackageResult,
 	targetResource *environment.TargetResource,
 ) *async.TaskWithProgress[*ServiceDeployResult, ServiceProgress] {
+	_, err := t.getTargetResource(ctx, serviceConfig)
+	if err != nil {
+		return nil
+	}
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress]) {
 			if err := t.validateTargetResource(ctx, serviceConfig, targetResource); err != nil {
@@ -477,6 +491,11 @@ func (t *aksTarget) Endpoints(
 	serviceConfig *ServiceConfig,
 	targetResource *environment.TargetResource,
 ) ([]string, error) {
+	_, err := t.getTargetResource(ctx, serviceConfig)
+	if err != nil {
+		return nil, nil
+	}
+
 	serviceName := serviceConfig.K8s.Service.Name
 	if serviceName == "" {
 		serviceName = serviceConfig.Name
@@ -818,6 +837,15 @@ func (t *aksTarget) getK8sNamespace(serviceConfig *ServiceConfig) string {
 	return namespace
 }
 
+func (t *aksTarget) getTargetResource(
+	ctx context.Context, serviceConfig *ServiceConfig) (*environment.TargetResource, error) {
+	targetResource, err := t.resourceManager.GetTargetResource(ctx, t.env.GetSubscriptionId(), serviceConfig)
+	if err != nil {
+		return nil, err
+	}
+	return targetResource, nil
+}
+
 func (t *aksTarget) setK8sContext(ctx context.Context, serviceConfig *ServiceConfig, eventName ext.Event) error {
 	t.kubectl.SetEnv(t.env.Dotenv())
 	hasCustomKubeConfig := false
@@ -829,7 +857,7 @@ func (t *aksTarget) setK8sContext(ctx context.Context, serviceConfig *ServiceCon
 		hasCustomKubeConfig = true
 	}
 
-	targetResource, err := t.resourceManager.GetTargetResource(ctx, t.env.GetSubscriptionId(), serviceConfig)
+	targetResource, err := t.getTargetResource(ctx, serviceConfig)
 	if err != nil {
 		return err
 	}

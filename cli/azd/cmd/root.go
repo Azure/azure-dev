@@ -20,6 +20,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/platform"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/cmd"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/spf13/cobra"
@@ -211,13 +212,13 @@ func NewRootCmd(
 
 	root.
 		Add("provision", &actions.ActionDescriptorOptions{
-			Command:        newProvisionCmd(),
-			FlagsResolver:  newProvisionFlags,
-			ActionResolver: newProvisionAction,
+			Command:        cmd.NewProvisionCmd(),
+			FlagsResolver:  cmd.NewProvisionFlags,
+			ActionResolver: cmd.NewProvisionAction,
 			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 			DefaultFormat:  output.NoneFormat,
 			HelpOptions: actions.ActionHelpOptions{
-				Description: getCmdProvisionHelpDescription,
+				Description: cmd.GetCmdProvisionHelpDescription,
 				Footer:      getCmdHelpDefaultFooter,
 			},
 			GroupingOptions: actions.CommandGroupOptions{
@@ -251,14 +252,14 @@ func NewRootCmd(
 
 	root.
 		Add("deploy", &actions.ActionDescriptorOptions{
-			Command:        newDeployCmd(),
-			FlagsResolver:  newDeployFlags,
-			ActionResolver: newDeployAction,
+			Command:        cmd.NewDeployCmd(),
+			FlagsResolver:  cmd.NewDeployFlags,
+			ActionResolver: cmd.NewDeployAction,
 			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 			DefaultFormat:  output.NoneFormat,
 			HelpOptions: actions.ActionHelpOptions{
-				Description: getCmdDeployHelpDescription,
-				Footer:      getCmdDeployHelpFooter,
+				Description: cmd.GetCmdDeployHelpDescription,
+				Footer:      cmd.GetCmdDeployHelpFooter,
 			},
 			GroupingOptions: actions.CommandGroupOptions{
 				RootLevelHelp: actions.CmdGroupManage,

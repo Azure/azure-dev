@@ -391,8 +391,8 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(func(
 		httpClient httputil.HttpClient,
 		userAgent httputil.UserAgent,
-	) azsdk.ClientOptionsBuilderFactory {
-		return *azsdk.NewClientOptionsBuilderFactory(httpClient, string(userAgent))
+	) *azsdk.ClientOptionsBuilderFactory {
+		return azsdk.NewClientOptionsBuilderFactory(httpClient, string(userAgent))
 	})
 
 	container.MustRegisterSingleton(templates.NewTemplateManager)

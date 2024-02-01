@@ -383,8 +383,8 @@ func registerContainerComponents(t *testing.T, mockContext *mocks.MockContext) {
 		return storageAccountConfig
 	})
 
-	mockContext.Container.MustRegisterSingleton(func() azsdk.ClientOptionsBuilderFactory {
-		return *azsdk.NewClientOptionsBuilderFactory(mockContext.HttpClient, "azd")
+	mockContext.Container.MustRegisterSingleton(func() *azsdk.ClientOptionsBuilderFactory {
+		return azsdk.NewClientOptionsBuilderFactory(mockContext.HttpClient, "azd")
 	})
 }
 

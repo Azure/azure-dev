@@ -166,7 +166,7 @@ func (p *Platform) ConfigureContainer(container *ioc.NestedContainer) error {
 	container.MustRegisterSingleton(func(
 		ctx context.Context,
 		credential azcore.TokenCredential,
-		defaultClientOptionsBuilder azsdk.ClientOptionsBuilderFactory,
+		defaultClientOptionsBuilder *azsdk.ClientOptionsBuilderFactory,
 		resourceGraphClient *armresourcegraph.Client,
 	) (devcentersdk.DevCenterClient, error) {
 		options := defaultClientOptionsBuilder.ClientOptionsBuilder().

@@ -171,7 +171,7 @@ func NewBlobSdkClient(
 	ctx context.Context,
 	credential azcore.TokenCredential,
 	accountConfig *AccountConfig,
-	defaultClientOptionsBuilder azsdk.ClientOptionsBuilderFactory,
+	defaultClientOptionsBuilder *azsdk.ClientOptionsBuilderFactory,
 ) (*azblob.Client, error) {
 	coreOptions := defaultClientOptionsBuilder.ClientOptionsBuilder().
 		SetContext(ctx).

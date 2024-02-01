@@ -48,9 +48,10 @@ func Test_ContainerHelper_LocalImageTag(t *testing.T) {
 		{
 			"ImageTagSpecified",
 			DockerProjectOptions{
-				Tag: NewExpandableString("contoso/contoso-image:latest"),
+				Image: NewExpandableString("contoso/contoso-image:latest"),
 			},
-			"contoso/contoso-image:latest"},
+			"contoso/contoso-image:latest",
+		},
 	}
 
 	for _, tt := range tests {
@@ -239,9 +240,11 @@ func Test_ContainerHelper_Deploy(t *testing.T) {
 		require.Equal(t, "contoso.azurecr.io/nginx", dockerDeployDetails.RemoteImageTag)
 
 		_, dockerTagCalled := mockResults["docker-tag"]
+		_, dockerPullCalled := mockResults["docker-pull"]
 		_, dockerPushCalled := mockResults["docker-push"]
 
 		require.True(t, dockerTagCalled)
+		require.True(t, dockerPullCalled)
 		require.True(t, dockerPushCalled)
 		mockContainerRegistryService.AssertCalled(t, "Login", *mockContext.Context, "SUBSCRIPTION_ID", "contoso.azurecr.io")
 	})
@@ -285,9 +288,11 @@ func Test_ContainerHelper_Deploy(t *testing.T) {
 		require.Equal(t, "nginx", dockerDeployDetails.RemoteImageTag)
 
 		_, dockerTagCalled := mockResults["docker-tag"]
+		_, dockerPullCalled := mockResults["docker-pull"]
 		_, dockerPushCalled := mockResults["docker-push"]
 
 		require.False(t, dockerTagCalled)
+		require.False(t, dockerPullCalled)
 		require.False(t, dockerPushCalled)
 		mockContainerRegistryService.AssertNotCalled(t, "Login")
 	})
@@ -345,6 +350,13 @@ func setupDockerMocks(mockContext *mocks.MockContext) map[string]exec.RunArgs {
 		return strings.Contains(command, "docker push")
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		mockResults["docker-push"] = args
+		return exec.NewRunResult(0, "", ""), nil
+	})
+
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "docker pull")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		mockResults["docker-pull"] = args
 		return exec.NewRunResult(0, "", ""), nil
 	})
 

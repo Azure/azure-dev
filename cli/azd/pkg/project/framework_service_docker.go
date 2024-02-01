@@ -38,8 +38,9 @@ type DockerProjectOptions struct {
 	Context   string           `yaml:"context,omitempty"   json:"context,omitempty"`
 	Platform  string           `yaml:"platform,omitempty"  json:"platform,omitempty"`
 	Target    string           `yaml:"target,omitempty"    json:"target,omitempty"`
-	Tag       ExpandableString `yaml:"tag,omitempty"       json:"tag,omitempty"`
 	Registry  ExpandableString `yaml:"registry,omitempty"  json:"registry,omitempty"`
+	Image     ExpandableString `yaml:"image,omitempty"     json:"image,omitempty"`
+	Tag       ExpandableString `yaml:"tag,omitempty"       json:"tag,omitempty"`
 	BuildArgs []string         `yaml:"buildArgs,omitempty" json:"buildArgs,omitempty"`
 }
 
@@ -67,8 +68,13 @@ type dockerPackageResult struct {
 }
 
 func (dpr *dockerPackageResult) ToString(currentIndentation string) string {
+	imageHash := dpr.ImageHash
+	if imageHash == "" {
+		imageHash = "N/A"
+	}
+
 	lines := []string{
-		fmt.Sprintf("%s- Image Hash: %s", currentIndentation, output.WithLinkFormat(dpr.ImageHash)),
+		fmt.Sprintf("%s- Image Hash: %s", currentIndentation, output.WithLinkFormat(imageHash)),
 		fmt.Sprintf("%s- Image Tag: %s", currentIndentation, output.WithLinkFormat(dpr.ImageTag)),
 	}
 

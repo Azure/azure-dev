@@ -1,31 +1,17 @@
-// Copyright (c) Microsoft Corporation. All rights reserved.
-// Licensed under the MIT License.
-
 package cmd
 
 import (
 	"context"
 	"errors"
 	"fmt"
-	"log"
-	"os"
-	"strings"
 	"time"
 
-	"github.com/AlecAivazis/survey/v2"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	azdExec "github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
-	"github.com/cli/browser"
 )
-
-// CmdAnnotations on a command
-type CmdAnnotations map[string]string
-
-type Asker func(p survey.Prompt, response interface{}) error
 
 func getResourceGroupFollowUp(
 	ctx context.Context,
@@ -124,80 +110,3 @@ func since(t time.Time) time.Duration {
 	userInteractTime := tracing.InteractTimeMs.Load()
 	return time.Since(t) - time.Duration(userInteractTime)*time.Millisecond
 }
-
-// BrowseUrl allow users to override the default browser from the cmd package with some external implementation.
-type browseUrl func(ctx context.Context, console input.Console, url string)
-
-// OverrideBrowser allows users to set their own implementation for browsing urls.
-var overrideBrowser browseUrl
-
-func openWithDefaultBrowser(ctx context.Context, console input.Console, url string) {
-	if overrideBrowser != nil {
-		overrideBrowser(ctx, console, url)
-		return
-	}
-
-	cmdRunner := azdExec.NewCommandRunner(nil)
-
-	// In Codespaces and devcontainers a $BROWSER environment variable is
-	// present whose value is an executable that launches the browser when
-	// called with the form:
-	// $BROWSER <url>
-	const BrowserEnvVarName = "BROWSER"
-
-	if envBrowser := os.Getenv(BrowserEnvVarName); len(envBrowser) > 0 {
-		_, err := cmdRunner.Run(ctx, azdExec.RunArgs{
-			Cmd:  envBrowser,
-			Args: []string{url},
-		})
-		if err == nil {
-			return
-		}
-		log.Printf(
-			"warning: failed to open browser configured by $BROWSER: %s\nTrying with default browser.\n",
-			err.Error(),
-		)
-	}
-
-	err := browser.OpenURL(url)
-	if err == nil {
-		return
-	}
-
-	log.Printf(
-		"warning: failed to open default browser: %s\nTrying manual launch.", err.Error(),
-	)
-
-	// wsl manual launch. Trying cmd first, and pwsh second
-	_, err = cmdRunner.Run(ctx, azdExec.RunArgs{
-		Cmd: "cmd.exe",
-		// cmd notes:
-		// /c -> run command
-		// /s -> quoted string, use the text within the quotes as it is
-		// Replace `&` for `^&` -> cmd require to scape the & to avoid using it as a command concat
-		Args: []string{
-			"/s", "/c", fmt.Sprintf("start %s", strings.ReplaceAll(url, "&", "^&")),
-		},
-	})
-	if err == nil {
-		return
-	}
-	log.Printf(
-		"warning: failed to open browser with cmd: %s\nTrying powershell.", err.Error(),
-	)
-
-	_, err = cmdRunner.Run(ctx, azdExec.RunArgs{
-		Cmd: "powershell.exe",
-		Args: []string{
-			"-NoProfile", "-Command", "Start-Process", fmt.Sprintf("\"%s\"", url),
-		},
-	})
-	if err == nil {
-		return
-	}
-
-	log.Printf("warning: failed to use manual launch: %s\n", err.Error())
-	console.Message(ctx, fmt.Sprintf("Azd was unable to open the next url. Please try it manually: %s", url))
-}
-
-const cReferenceDocumentationUrl = "https://learn.microsoft.com/azure/developer/azure-developer-cli/reference#"

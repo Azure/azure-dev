@@ -53,7 +53,7 @@ type initFlags struct {
 	subscription   string
 	location       string
 	global         *internal.GlobalCommandOptions
-	envFlag
+	internal.EnvFlag
 }
 
 func (i *initFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
@@ -79,7 +79,7 @@ func (i *initFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOpt
 		"Name or ID of an Azure subscription to use for the new environment",
 	)
 	local.StringVarP(&i.location, "location", "l", "", "Azure location for the new environment")
-	i.envFlag.Bind(local, global)
+	i.EnvFlag.Bind(local, global)
 
 	i.global = global
 }
@@ -345,7 +345,7 @@ func (i *initAction) initializeEnv(
 	}
 
 	envSpec := environment.Spec{
-		Name:         i.flags.environmentName,
+		Name:         i.flags.EnvironmentName,
 		Subscription: i.flags.subscription,
 		Location:     i.flags.location,
 		Examples:     examples,

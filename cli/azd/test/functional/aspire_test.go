@@ -4,6 +4,7 @@
 package cli_test
 
 import (
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -12,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
@@ -20,6 +22,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
 	"github.com/azure/azure-dev/cli/azd/test/recording"
 	"github.com/azure/azure-dev/cli/azd/test/snapshot"
+	"github.com/joho/godotenv"
 	"github.com/stretchr/testify/require"
 )
 
@@ -151,79 +154,80 @@ func Test_CLI_Aspire(t *testing.T) {
 		err := copySample(dir, "aspire-full")
 		require.NoError(t, err, "failed expanding sample")
 
-		cli := azdcli.NewCLI(t)
+		cli := azdcli.NewCLI(t, azdcli.WithSession(session))
 		cli.WorkingDirectory = dir
 		cli.Env = append(cli.Env, os.Environ()...)
 		cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
 
-		// _, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
-		// require.NoError(t, err)
+		_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
+		require.NoError(t, err)
 
-		// _, err = cli.RunCommandWithStdIn(ctx,
-		// 	"n\n"+ // Don't expose 'apiservice' service.
-		// 		"y\n"+ // Expose 'webfrontend' service.
-		// 		stdinForProvision(), "up")
-		// require.NoError(t, err)
+		_, err = cli.RunCommandWithStdIn(ctx,
+			"n\n"+ // Don't expose 'apiservice' service.
+				"y\n"+ // Expose 'webfrontend' service.
+				stdinForProvision(), "up")
+		require.NoError(t, err)
 
-		// env, err := godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
-		// require.NoError(t, err)
+		env, err := godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
+		require.NoError(t, err)
 
-		// domain, has := env["AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN"]
-		// require.True(t, has, "AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN should be in environment after deploy")
+		domain, has := env["AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN"]
+		require.True(t, has, "AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN should be in environment after deploy")
 
-		// if session != nil {
-		// 	session.Variables[recording.SubscriptionIdKey] = env["AZURE_SUBSCRIPTION_ID"]
-		// }
-
-		endpoint := fmt.Sprintf("https://%s.%s", "webfrontend", "lemonsand-4c6ed263.eastus2.azurecontainerapps.io")
-		//endpoint := fmt.Sprintf("https://%s.%s", "webfrontend", domain)
-		runner := exec.NewCommandRunner(nil)
-		run := func() (res exec.RunResult, err error) {
-			wr := logWriter{initialTime: time.Now(), t: t, prefix: "webfrontend: "}
-			res, err = runner.Run(ctx, exec.NewRunArgs(
-				"dotnet",
-				"test",
-				"--logger",
-				"console;verbosity=detailed",
-			).WithCwd(filepath.Join(dir, "AspireAzdTests")).WithEnv([]string{
-				"LIVE_APP_URL=" + endpoint,
-			}).WithStdOut(&wr))
-			return
+		if session != nil {
+			session.Variables[recording.SubscriptionIdKey] = env["AZURE_SUBSCRIPTION_ID"]
 		}
-		res, err := run()
-		if err != nil && strings.Contains(res.Stdout, "Permission denied") {
-			err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
-				t.Log("walk:", path)
-				if err != nil {
-					return err
-				}
 
-				if !d.IsDir() && d.Name() == "playwright.sh" {
-					t.Log("chmod: ", path)
-					err = os.Chmod(path, 0700)
-					if err != nil {
-						t.Log(err)
-					}
-
-					t.Log("chmod-done: ", path)
-
-					return err
-				}
-
-				return nil
-			})
-			if err != nil {
-				t.Fatal(err)
-			}
-
-			t.Log("running: ")
-			res, err = run()
-			require.NoError(t, err)
+		if session != nil && !session.Playback {
+			endpoint := fmt.Sprintf("https://%s.%s", "webfrontend", domain)
+			runLiveDotnetPlaywright(t, ctx, filepath.Join(dir, "AspireAzdTests"), endpoint)
 		}
 
 		_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
 		require.NoError(t, err)
 	})
+}
+
+func runLiveDotnetPlaywright(
+	t *testing.T,
+	ctx context.Context,
+	projDir string,
+	endpoint string) {
+	runner := exec.NewCommandRunner(nil)
+	run := func() (res exec.RunResult, err error) {
+		wr := logWriter{initialTime: time.Now(), t: t, prefix: "webfrontend: "}
+		res, err = runner.Run(ctx, exec.NewRunArgs(
+			"dotnet",
+			"test",
+			"--logger",
+			"console;verbosity=detailed",
+		).WithCwd(projDir).WithEnv([]string{
+			"LIVE_APP_URL=" + endpoint,
+		}).WithStdOut(&wr))
+		return
+	}
+
+	res, err := run()
+	if err != nil && strings.Contains(res.Stdout, "Permission denied") {
+		// recover from permission denied error
+		err := filepath.WalkDir(projDir, func(path string, d os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
+
+			if !d.IsDir() && d.Name() == "playwright.sh" {
+				return os.Chmod(path, 0700)
+			}
+
+			return nil
+		})
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		res, err = run()
+		require.NoError(t, err)
+	}
 }
 
 type logWriter struct {

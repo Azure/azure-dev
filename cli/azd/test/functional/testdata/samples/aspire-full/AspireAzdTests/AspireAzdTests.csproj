@@ -16,7 +16,7 @@
     <PackageReference Include="Microsoft.Extensions.Configuration.EnvironmentVariables" Version="8.0.0" />
     <PackageReference Include="Microsoft.Extensions.Configuration.UserSecrets" Version="8.0.0" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.9.0-release-23619-01" />
-    <PackageReference Include="Microsoft.Playwright.NUnit" Version="1.40.0" />
+    <PackageReference Include="Microsoft.Playwright.NUnit" Version="1.41.2" />
     <PackageReference Include="NUnit" Version="4.0.1" />
     <PackageReference Include="NUnit3TestAdapter" Version="4.5.0" />
     <PackageReference Include="NUnit.Analyzers" Version="3.10.0">

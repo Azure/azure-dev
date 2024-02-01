@@ -216,7 +216,11 @@ func (m *Manager) CredentialForCurrentUser(
 
 	if currentUser.HomeAccountID != nil {
 		if currentUser.FromOneAuth {
-			return oneauth.NewCredential(cDefaultAuthority, cAZD_CLIENT_ID, oneauth.CredentialOptions{
+			authority := cDefaultAuthority
+			if options.TenantID != "" {
+				authority = "https://login.microsoftonline.com/" + options.TenantID
+			}
+			return oneauth.NewCredential(authority, cAZD_CLIENT_ID, oneauth.CredentialOptions{
 				HomeAccountID: *currentUser.HomeAccountID,
 				NoPrompt:      options.NoPrompt,
 			})
@@ -498,11 +502,15 @@ func (m *Manager) LoginInteractive(
 	return newAzdCredential(m.publicClient, &res.Account), nil
 }
 
-func (m *Manager) LoginWithOneAuth(ctx context.Context, scopes []string) error {
+func (m *Manager) LoginWithOneAuth(ctx context.Context, tenantID string, scopes []string) error {
 	if len(scopes) == 0 {
 		scopes = LoginScopes
 	}
-	homeAccountID, err := oneauth.LogIn(cDefaultAuthority, cAZD_CLIENT_ID, strings.Join(scopes, " "))
+	authority := cDefaultAuthority
+	if tenantID != "" {
+		authority = "https://login.microsoftonline.com/" + tenantID
+	}
+	homeAccountID, err := oneauth.LogIn(authority, cAZD_CLIENT_ID, strings.Join(scopes, " "))
 	if err == nil {
 		err = m.saveUserProperties(&userProperties{
 			FromOneAuth:   true,

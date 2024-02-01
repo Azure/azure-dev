@@ -227,6 +227,59 @@
                 ]
             }
         },
+        "bindings": {
+            "type": "array",
+            "title": "...",
+            "description": "...",
+            "items": {
+                "type": "object",
+                "properties": {
+                    "name": {
+                        "type": "string",
+                        "title": "...",
+                        "description": "..."
+                    },
+                    "sourceType": {
+                        "type": "string",
+                        "title": "...",
+                        "description": "..."
+                    },
+                    "sourceResource": {
+                        "type": "string",
+                        "title": "...",
+                        "description": "..."
+                    },
+                    "targetType": {
+                        "type": "string",
+                        "title": "...",
+                        "description": "..."
+                    },
+                    "targetResource": {
+                        "type": "string",
+                        "title": "...",
+                        "description": "..."
+                    },
+                    "storeType": {
+                        "type": "string",
+                        "title": "...",
+                        "description": "..."
+                    },
+                    "storeResource": {
+                        "type": "string",
+                        "title": "...",
+                        "description": "..."
+                    }
+                },
+                "required": [
+                    "sourceType",
+                    "sourceResource",
+                    "targetType",
+                    "targetResource",
+                    "storeType",
+                    "storeResource"
+                ]
+            }
+        },
         "pipeline": {
             "type": "object",
             "title": "Definition of continuous integration pipeline",

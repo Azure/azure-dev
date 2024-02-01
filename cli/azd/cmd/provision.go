@@ -11,6 +11,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
+	"github.com/azure/azure-dev/cli/azd/pkg/binding"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
@@ -86,6 +87,7 @@ type provisionAction struct {
 	provisionManager *provisioning.Manager
 	projectManager   project.ProjectManager
 	resourceManager  project.ResourceManager
+	bindingManager   binding.BindingManager
 	env              *environment.Environment
 	envManager       environment.Manager
 	formatter        output.Formatter
@@ -102,6 +104,7 @@ func newProvisionAction(
 	projectManager project.ProjectManager,
 	importManager *project.ImportManager,
 	resourceManager project.ResourceManager,
+	bindingManager binding.BindingManager,
 	projectConfig *project.ProjectConfig,
 	env *environment.Environment,
 	envManager environment.Manager,
@@ -115,6 +118,7 @@ func newProvisionAction(
 		provisionManager: provisionManager,
 		projectManager:   projectManager,
 		resourceManager:  resourceManager,
+		bindingManager:   bindingManager,
 		env:              env,
 		envManager:       envManager,
 		formatter:        formatter,
@@ -137,6 +141,19 @@ func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error
 		)
 	}
 	previewMode := p.flags.preview
+
+	// Test
+	subscriptionId := p.env.GetSubscriptionId()
+	resourceGroupName, err := p.resourceManager.GetResourceGroupName(
+		ctx, subscriptionId, p.projectConfig)
+	if err != nil {
+		return nil, err
+	}
+
+	err = p.bindingManager.CreateBindings(ctx, subscriptionId, resourceGroupName, p.projectConfig.Bindings)
+	if err != nil {
+		return nil, err
+	}
 
 	// Command title
 	defaultTitle := "Provisioning Azure resources (azd provision)"

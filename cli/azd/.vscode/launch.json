@@ -10,7 +10,7 @@
             "request": "launch",
             "mode": "debug",
             "program": "${workspaceFolder}",
-            "args": "${input:cliArgs}",
+            "args": "deploy -C C:\\Users\\houk\\Desktop\\msws\\AZD_SC_AppConfig_Demo\\todo-python-mongo-aca-before",
             "console": "integratedTerminal",
         },
         // If you set `AZD_DEBUG=true` in your environment, `azd` will pause early in start up and allow you to attach

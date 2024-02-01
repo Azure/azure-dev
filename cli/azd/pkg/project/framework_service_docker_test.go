@@ -261,12 +261,16 @@ func Test_DockerProject_Build(t *testing.T) {
 	env := environment.New("test")
 	dockerCli := docker.NewDocker(mockContext.CommandRunner)
 	serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
+
 	temp := t.TempDir()
+
+	serviceConfig.Docker.Registry = NewExpandableString("contoso.azurecr.io")
 	serviceConfig.Project.Path = temp
 	serviceConfig.RelativePath = ""
 	err := os.WriteFile(filepath.Join(temp, "Dockerfile"), []byte("FROM node:14"), 0600)
 	require.NoError(t, err)
 
+	npmProject := NewNpmProject(npm.NewNpmCli(mockContext.CommandRunner), env)
 	dockerProject := NewDockerProject(
 		env,
 		dockerCli,
@@ -274,6 +278,8 @@ func Test_DockerProject_Build(t *testing.T) {
 		mockinput.NewMockConsole(),
 		mockContext.AlphaFeaturesManager,
 		mockContext.CommandRunner)
+	dockerProject.SetSource(npmProject)
+
 	buildTask := dockerProject.Build(*mockContext.Context, serviceConfig, nil)
 	logProgress(buildTask)
 
@@ -319,7 +325,9 @@ func Test_DockerProject_Package(t *testing.T) {
 	env := environment.NewWithValues("test", map[string]string{})
 	dockerCli := docker.NewDocker(mockContext.CommandRunner)
 	serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
+	serviceConfig.Docker.Registry = NewExpandableString("contoso.azurecr.io")
 
+	npmProject := NewNpmProject(npm.NewNpmCli(mockContext.CommandRunner), env)
 	dockerProject := NewDockerProject(
 		env,
 		dockerCli,
@@ -327,6 +335,8 @@ func Test_DockerProject_Package(t *testing.T) {
 		mockinput.NewMockConsole(),
 		mockContext.AlphaFeaturesManager,
 		mockContext.CommandRunner)
+	dockerProject.SetSource(npmProject)
+
 	packageTask := dockerProject.Package(
 		*mockContext.Context,
 		serviceConfig,

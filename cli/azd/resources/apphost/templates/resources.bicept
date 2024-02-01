@@ -168,7 +168,7 @@ resource {{bicepName $name}} 'Microsoft.App/containerApps@2023-05-02-preview' = 
       containers: [
         {
           image: '{{$value.Image}}'
-          name: '{{$name}}'
+          name: '{{containerAppName $name}}-${resourceToken}'
 {{- if $value.Env }}
           env: [
 {{- range $name, $value := $value.Env}}

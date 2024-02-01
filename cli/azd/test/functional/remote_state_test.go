@@ -85,7 +85,7 @@ func createBlobClient(
 		*mockContext.Context,
 		credentials,
 		storageConfig,
-		*azsdk.NewClientOptionsBuilderFactory(httpClient, "azd"),
+		azsdk.NewClientOptionsBuilderFactory(httpClient, "azd"),
 	)
 	require.NoError(t, err)
 	require.NotNil(t, sdkClient)

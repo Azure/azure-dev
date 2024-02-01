@@ -26,15 +26,6 @@ const (
 	ServiceLanguageDocker     ServiceLanguageKind = "docker"
 )
 
-var (
-	NoFrameworkRequirements = FrameworkRequirements{
-		Package: FrameworkPackageRequirements{
-			RequireRestore: false,
-			RequireBuild:   false,
-		},
-	}
-)
-
 func parseServiceLanguage(kind ServiceLanguageKind) (ServiceLanguageKind, error) {
 	// aliases
 	if string(kind) == "py" {

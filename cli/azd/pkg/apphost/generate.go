@@ -1011,7 +1011,10 @@ func (b *infraGenerator) buildEnvBlock(env map[string]string, manifestCtx *genCo
 		// need the newline
 		resolvedValue := string(yamlString[0 : len(yamlString)-1])
 
-		if strings.Contains(k, "ConnectionStrings__") {
+		// connectionString detection:
+		//  - If the env-key contains "ConnectionStrings__" or the value contains "{{ connectionString" then it is considered
+		//    as a secret and added to the secrets map.
+		if strings.Contains(k, "ConnectionStrings__") || strings.Contains(resolvedValue, "{{ connectionString") {
 			manifestCtx.Secrets[k] = resolvedValue
 		} else {
 			manifestCtx.Env[k] = resolvedValue

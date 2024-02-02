@@ -32,8 +32,7 @@ import (
 )
 
 type recordOptions struct {
-	mode             recorder.Mode
-	cmdRecordOptions []CmdRecordOption
+	mode recorder.Mode
 }
 
 type Options interface {
@@ -53,20 +52,6 @@ func (in modeOption) Apply(out recordOptions) recordOptions {
 	return out
 }
 
-type CmdRecordOption struct {
-	Cmd        string
-	Intercepts []cmdrecord.Intercept
-}
-
-func (in CmdRecordOption) Apply(out recordOptions) recordOptions {
-	out.cmdRecordOptions = append(out.cmdRecordOptions, in)
-	return out
-}
-
-func WithCmdRecord(mode CmdRecordOption) Options {
-	return mode
-}
-
 const EnvNameKey = "env_name"
 const TimeKey = "time"
 const SubscriptionIdKey = "subscription_id"
@@ -75,8 +60,8 @@ type Session struct {
 	// ProxyUrl is the URL of the proxy server that will be recording or replaying interactions.
 	ProxyUrl string
 
-	// CmdProxyPath is the list of paths that should be appended to PATH to proxy any cmd invocations.
-	CmdProxyPath []string
+	// CmdProxyPath is the path that should be appended to PATH to proxy any cmd invocations.
+	CmdProxyPath string
 
 	// If true, playing back from recording.
 	Playback bool
@@ -274,8 +259,6 @@ func Start(t *testing.T, opts ...Options) *Session {
 		},
 	}
 
-	// global docker override
-	var cmdRecorders []*cmdrecord.Recorder
 	cmdRecorder := cmdrecord.NewWithOptions(cmdrecord.Options{
 		CmdName:      "docker",
 		CassetteName: name,
@@ -289,23 +272,7 @@ func Start(t *testing.T, opts ...Options) *Session {
 	if err != nil {
 		t.Fatalf("failed to start cmd recorder: %v", err)
 	}
-	session.CmdProxyPath = append(session.CmdProxyPath, path)
-	cmdRecorders = append(cmdRecorders, cmdRecorder)
-
-	for _, intercept := range opt.cmdRecordOptions {
-		cmdRecorder := cmdrecord.NewWithOptions(cmdrecord.Options{
-			CmdName:      intercept.Cmd,
-			CassetteName: name,
-			RecordMode:   opt.mode,
-			Intercepts:   intercept.Intercepts,
-		})
-		path, err := cmdRecorder.Start()
-		if err != nil {
-			t.Fatalf("failed to start cmd recorder: %v", err)
-		}
-		session.CmdProxyPath = append(session.CmdProxyPath, path)
-		cmdRecorders = append(cmdRecorders, cmdRecorder)
-	}
+	session.CmdProxyPath = path
 
 	server := httptest.NewTLSServer(proxy)
 	proxy.TLS = server.TLS
@@ -334,11 +301,9 @@ func Start(t *testing.T, opts ...Options) *Session {
 				}
 			}
 
-			for _, cmdRecorder := range cmdRecorders {
-				err = cmdRecorder.Stop()
-				if err != nil {
-					t.Fatalf("failed to save cmd recording: %v", err)
-				}
+			err = cmdRecorder.Stop()
+			if err != nil {
+				t.Fatalf("failed to save cmd recording: %v", err)
 			}
 		}
 	})

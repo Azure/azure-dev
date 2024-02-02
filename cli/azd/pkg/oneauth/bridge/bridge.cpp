@@ -43,12 +43,7 @@ WrappedError *Startup(const char *clientId, const char *applicationId, const cha
         "http://localhost",               // redirectUri
         "https://management.azure.com/"); // defaultSignInResource
 
-    auto msaConfig = std::make_optional<MsaConfiguration>(
-        clientId,
-        "http://localhost",               // redirectUri
-        "https://management.azure.com/"); // defaultSignInScope
-
-    auto authnConfig = AuthenticatorConfiguration(appConfig, aadConfig, msaConfig, std::nullopt, std::nullopt);
+    auto authnConfig = AuthenticatorConfiguration(appConfig, aadConfig, std::nullopt, std::nullopt, std::nullopt);
     if (auto error = OneAuth::Startup(authnConfig))
     {
         auto wrapped = new WrappedError();

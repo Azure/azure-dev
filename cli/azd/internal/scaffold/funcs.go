@@ -157,6 +157,18 @@ func ContainerAppSecretName(name string) string {
 	return strings.ReplaceAll(strings.ToLower(name), "_", "-")
 }
 
+// ToDotNotation receives a string and if it is on the form of "${inputs['foo']['bar']}" it returns a new string using dot
+// notation, i.e. "${inputs.foo.bar}". Otherwise, the original string is returned.
+func ToDotNotation(s string) string {
+	if strings.HasPrefix(s, "${inputs['") && strings.HasSuffix(s, "']}") {
+		s = strings.TrimPrefix(s, "${inputs['")
+		s = strings.TrimSuffix(s, "']}")
+		s = strings.ReplaceAll(s, "']['", ".")
+		return "inputs." + s
+	}
+	return fmt.Sprintf("'%s'", s)
+}
+
 // ContainerAppInfix returns a suitable infix for a container app resource.
 //
 // The name is treated to only contain alphanumeric and dash characters, with no repeated dashes, and no dashes

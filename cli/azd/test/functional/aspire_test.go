@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -20,18 +19,23 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockinput"
-	"github.com/azure/azure-dev/cli/azd/test/recording"
 	"github.com/azure/azure-dev/cli/azd/test/snapshot"
+	"github.com/bradleyjkemp/cupaloy/v2"
 	"github.com/joho/godotenv"
 	"github.com/stretchr/testify/require"
 )
 
-func testDataDir() string {
-	_, b, _, _ := runtime.Caller(0)
-	return filepath.Join(filepath.Dir(b), "testdata")
-}
+// The tests in this file is structured in such a way that:
+//
+// (fast) go test -run ^Test_CLI_Aspire_DetectGen - Detection + generation acceptance tests.
+// (slow, > 10 mins) go test -run ^Test_CLI_Aspire_Deploy -timeout 30m - Full deployment acceptance tests.
+// (all) go test -run ^Test_CLI_Aspire - Runs all tests.
 
-func Test_CLI_Aspire(t *testing.T) {
+// Test_CLI_Aspire_DetectGen tests the detection and generation of an Aspire project.
+func Test_CLI_Aspire_DetectGen(t *testing.T) {
+	sn := snapshot.NewDefaultConfig().WithOptions(cupaloy.SnapshotFileExtension(""))
+	snRoot := filepath.Join("testdata", "snaps", "aspire-full")
+
 	t.Run("ManifestGen", func(t *testing.T) {
 		t.Parallel()
 		ctx, cancel := newTestContext(t)
@@ -52,10 +56,8 @@ func Test_CLI_Aspire(t *testing.T) {
 		err = dotnetCli.PublishAppHostManifest(ctx, appHostProject, manifestPath)
 		require.NoError(t, err)
 
-		manifest, err := os.ReadFile(manifestPath)
+		err = snapshotFile(sn, snRoot, dir, manifestPath)
 		require.NoError(t, err)
-
-		snapshot.SnapshotT(t, manifest)
 	})
 
 	t.Run("Init", func(t *testing.T) {
@@ -64,12 +66,17 @@ func Test_CLI_Aspire(t *testing.T) {
 		defer cancel()
 
 		dir := tempDirWithDiagnostics(t)
+
+		// create subdirectory with a known name
+		dir = filepath.Join(dir, "AspireAzdTests")
+		err := os.MkdirAll(dir, 0755)
+		require.NoError(t, err, "failed creating temp dir")
 		t.Logf("DIR: %s", dir)
 
 		envName := randomEnvName()
 		t.Logf("AZURE_ENV_NAME: %s", envName)
 
-		err := copySample(dir, "aspire-full")
+		err = copySample(dir, "aspire-full")
 		require.NoError(t, err, "failed expanding sample")
 
 		// Rename existing azure.yaml that is included with the sample
@@ -98,12 +105,7 @@ func Test_CLI_Aspire(t *testing.T) {
 		old, err := project.Load(ctx, filepath.Join(dir, "azure.yaml.old"))
 		require.NoError(t, err)
 
-		// clear out name for comparison purposes
-		prj.Name = ""
-		old.Name = ""
-
 		require.Equal(t, prj.Services, old.Services)
-
 	})
 
 	t.Run("InfraSynth", func(t *testing.T) {
@@ -114,10 +116,16 @@ func Test_CLI_Aspire(t *testing.T) {
 		dir := tempDirWithDiagnostics(t)
 		t.Logf("DIR: %s", dir)
 
+		// create subdirectory with a known name
+		dir = filepath.Join(dir, "AspireAzdTests")
+		err := os.MkdirAll(dir, 0755)
+		require.NoError(t, err, "failed creating temp dir")
+		t.Logf("DIR: %s", dir)
+
 		envName := randomEnvName()
 		t.Logf("AZURE_ENV_NAME: %s", envName)
 
-		err := copySample(dir, "aspire-full")
+		err = copySample(dir, "aspire-full")
 		require.NoError(t, err, "failed expanding sample")
 
 		cli := azdcli.NewCLI(t)
@@ -136,56 +144,64 @@ func Test_CLI_Aspire(t *testing.T) {
 			res,
 			[]string{"Warning no-unused-params: Parameter \"inputs\" is declared but never used."})
 		require.Len(t, lintErr, 0, "lint errors occurred")
-	})
 
-	t.Run("Up", func(t *testing.T) {
-		t.Parallel()
-		ctx, cancel := newTestContext(t)
-		defer cancel()
+		// Snapshot everything under infra and manifests
+		err = filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+			if err != nil {
+				return err
+			}
 
-		dir := tempDirWithDiagnostics(t)
-		t.Logf("DIR: %s", dir)
+			parentDir := filepath.Base(filepath.Dir(path))
+			if !d.IsDir() && parentDir == "infra" || parentDir == "manifests" {
+				return snapshotFile(sn, snRoot, dir, path)
+			}
 
-		session := recording.Start(t)
-
-		envName := randomOrStoredEnvName(session)
-		t.Logf("AZURE_ENV_NAME: %s", envName)
-
-		err := copySample(dir, "aspire-full")
-		require.NoError(t, err, "failed expanding sample")
-
-		cli := azdcli.NewCLI(t, azdcli.WithSession(session))
-		cli.WorkingDirectory = dir
-		cli.Env = append(cli.Env, os.Environ()...)
-		cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
-
-		_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
-		require.NoError(t, err)
-
-		_, err = cli.RunCommandWithStdIn(ctx,
-			"n\n"+ // Don't expose 'apiservice' service.
-				"y\n"+ // Expose 'webfrontend' service.
-				stdinForProvision(), "up")
-		require.NoError(t, err)
-
-		env, err := godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
-		require.NoError(t, err)
-
-		domain, has := env["AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN"]
-		require.True(t, has, "AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN should be in environment after deploy")
-
-		if session != nil {
-			session.Variables[recording.SubscriptionIdKey] = env["AZURE_SUBSCRIPTION_ID"]
-		}
-
-		if session != nil && !session.Playback {
-			endpoint := fmt.Sprintf("https://%s.%s", "webfrontend", domain)
-			runLiveDotnetPlaywright(t, ctx, filepath.Join(dir, "AspireAzdTests"), endpoint)
-		}
-
-		_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
+			return nil
+		})
 		require.NoError(t, err)
 	})
+}
+
+// Test_CLI_Aspire_Deploy tests the full deployment of an Aspire project.
+func Test_CLI_Aspire_Deploy(t *testing.T) {
+	t.Parallel()
+	ctx, cancel := newTestContext(t)
+	defer cancel()
+
+	dir := tempDirWithDiagnostics(t)
+	t.Logf("DIR: %s", dir)
+
+	envName := randomEnvName()
+	t.Logf("AZURE_ENV_NAME: %s", envName)
+
+	err := copySample(dir, "aspire-full")
+	require.NoError(t, err, "failed expanding sample")
+
+	cli := azdcli.NewCLI(t)
+	cli.WorkingDirectory = dir
+	cli.Env = append(cli.Env, os.Environ()...)
+	cli.Env = append(cli.Env, "AZURE_LOCATION=eastus2")
+
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForInit(envName), "init")
+	require.NoError(t, err)
+
+	_, err = cli.RunCommandWithStdIn(ctx,
+		"n\n"+ // Don't expose 'apiservice' service.
+			"y\n"+ // Expose 'webfrontend' service.
+			stdinForProvision(), "up")
+	require.NoError(t, err)
+
+	env, err := godotenv.Read(filepath.Join(dir, azdcontext.EnvironmentDirectoryName, envName, ".env"))
+	require.NoError(t, err)
+
+	domain, has := env["AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN"]
+	require.True(t, has, "AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN should be in environment after deploy")
+
+	endpoint := fmt.Sprintf("https://%s.%s", "webfrontend", domain)
+	runLiveDotnetPlaywright(t, ctx, filepath.Join(dir, "AspireAzdTests"), endpoint)
+
+	_, err = cli.RunCommand(ctx, "down", "--force", "--purge")
+	require.NoError(t, err)
 }
 
 func runLiveDotnetPlaywright(
@@ -201,9 +217,10 @@ func runLiveDotnetPlaywright(
 			"test",
 			"--logger",
 			"console;verbosity=detailed",
-		).WithCwd(projDir).WithEnv([]string{
-			"LIVE_APP_URL=" + endpoint,
-		}).WithStdOut(&wr))
+		).WithCwd(projDir).WithEnv(append(
+			os.Environ(),
+			"LIVE_APP_URL="+endpoint,
+		)).WithStdOut(&wr))
 		return
 	}
 
@@ -228,6 +245,27 @@ func runLiveDotnetPlaywright(
 		res, err = run()
 		require.NoError(t, err)
 	}
+}
+
+// Snapshots a file located at targetPath. Saves the snapshot to snapshotRoot/rel, where rel is relative to targetRoot.
+func snapshotFile(
+	sn *cupaloy.Config,
+	snapshotRoot string,
+	targetRoot string,
+	targetPath string) error {
+	relDir, err := filepath.Rel(targetRoot, filepath.Dir(targetPath))
+	if err != nil {
+		return err
+	}
+
+	contents, err := os.ReadFile(targetPath)
+	if err != nil {
+		return err
+	}
+
+	return sn.
+		WithOptions(cupaloy.SnapshotSubdirectory(filepath.Join(snapshotRoot, relDir))).
+		SnapshotWithName(filepath.Base(targetPath), string(contents))
 }
 
 type logWriter struct {

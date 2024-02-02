@@ -123,7 +123,7 @@ resource {{bicepName $name}} 'Microsoft.App/containerApps@2023-05-02-preview' = 
 {{end -}}
 {{range $name, $value := .ContainerApps}}
 resource {{bicepName $name}} 'Microsoft.App/containerApps@2023-05-02-preview' = {
-  name: '{{containerAppName $name}}'
+  name: '{{$name}}'
   location: location
   properties: {
     environmentId: containerAppEnvironment.id
@@ -178,7 +178,7 @@ resource {{bicepName $name}} 'Microsoft.App/containerApps@2023-05-02-preview' = 
       containers: [
         {
           image: '{{$value.Image}}'
-          name: '{{containerAppName $name}}-${resourceToken}'
+          name: '{{$name}}'
 {{- if or (gt (len $value.Env) 0) (gt (len $value.Secrets) 0)}}
           env: [
 {{- range $name, $value := $value.Env}}

@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -25,6 +26,24 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+var dotnetWorkloadInstallOnce sync.Once
+
+func installDotnetWorkload(t *testing.T) {
+	dotnetWorkloadInstallOnce.Do(func() {
+		dir := t.TempDir()
+		err := copySample(dir, "aspire-full")
+		require.NoError(t, err, "failed expanding sample")
+
+		ctx := context.Background()
+		appHostProject := filepath.Join(dir, "AspireAzdTests.AppHost")
+
+		commandRunner := exec.NewCommandRunner(nil)
+		runArgs := newRunArgs("dotnet", "workload", "restore").WithCwd(appHostProject)
+		_, err = commandRunner.Run(ctx, runArgs)
+		require.NoError(t, err)
+	})
+}
+
 // The tests in this file is structured in such a way that:
 //
 // (fast) go test -run ^Test_CLI_Aspire_DetectGen - Detection + generation acceptance tests.
@@ -33,6 +52,8 @@ import (
 
 // Test_CLI_Aspire_DetectGen tests the detection and generation of an Aspire project.
 func Test_CLI_Aspire_DetectGen(t *testing.T) {
+	installDotnetWorkload(t)
+
 	sn := snapshot.NewDefaultConfig().WithOptions(cupaloy.SnapshotFileExtension(""))
 	snRoot := filepath.Join("testdata", "snaps", "aspire-full")
 
@@ -53,6 +74,12 @@ func Test_CLI_Aspire_DetectGen(t *testing.T) {
 		dotnetCli := dotnet.NewDotNetCli(exec.NewCommandRunner(nil))
 		appHostProject := filepath.Join(dir, "AspireAzdTests.AppHost")
 		manifestPath := filepath.Join(appHostProject, "manifest.json")
+
+		commandRunner := exec.NewCommandRunner(nil)
+		runArgs := newRunArgs("dotnet", "workload", "restore").WithCwd(appHostProject)
+		_, err = commandRunner.Run(ctx, runArgs)
+		require.NoError(t, err)
+
 		err = dotnetCli.PublishAppHostManifest(ctx, appHostProject, manifestPath)
 		require.NoError(t, err)
 
@@ -130,6 +157,9 @@ func Test_CLI_Aspire_DetectGen(t *testing.T) {
 
 		cli := azdcli.NewCLI(t)
 		cli.WorkingDirectory = dir
+		cli.Env = append(cli.Env, os.Environ()...)
+		//nolint:lll
+		cli.Env = append(cli.Env, "AZD_ALPHA_ENABLE_INFRASYNTH=true")
 
 		_, err = cli.RunCommand(ctx, "infra", "synth")
 		require.NoError(t, err)
@@ -164,6 +194,8 @@ func Test_CLI_Aspire_DetectGen(t *testing.T) {
 
 // Test_CLI_Aspire_Deploy tests the full deployment of an Aspire project.
 func Test_CLI_Aspire_Deploy(t *testing.T) {
+	installDotnetWorkload(t)
+
 	t.Parallel()
 	ctx, cancel := newTestContext(t)
 	defer cancel()

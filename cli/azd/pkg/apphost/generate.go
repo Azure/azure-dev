@@ -12,6 +12,7 @@ import (
 	"strings"
 	"text/template"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/azure/azure-dev/cli/azd/internal/scaffold"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/resources"
@@ -274,9 +275,50 @@ func newInfraGenerator() *infraGenerator {
 	}
 }
 
+// pullParentSettings check a special case where:
+// - resource has a parent with type `container.v0`
+// When this is true, the resource should inherit the parent settings (type, bindings, env, inputs, etc.)
+// For example, a `postgres.database.v0` resource that has a parent of type `container.v0` should inherit the
+// container settings from the parent and become a `container.v0` resource.
+func pullParentSettings(resourceName string, resource *Resource, manifest *Manifest) *Resource {
+	if resource.Parent == nil {
+		return resource
+	}
+
+	if *resource.Parent == "" {
+		return resource
+	}
+
+	parentResource := manifest.Resources[*resource.Parent]
+
+	if parentResource.Type != "container.v0" {
+		return resource
+	}
+
+	reNameParentToChild := func(source, parent, child string) string {
+		return strings.ReplaceAll(
+			source, fmt.Sprintf("%s.inputs.", parent), fmt.Sprintf("%s.inputs.", child))
+	}
+
+	reMapEnv := make(map[string]string, len(parentResource.Env))
+	for k, v := range parentResource.Env {
+		reMapEnv[k] = reNameParentToChild(v, *resource.Parent, resourceName)
+	}
+
+	return &Resource{
+		Type:             parentResource.Type,
+		Image:            parentResource.Image,
+		Env:              reMapEnv,
+		Inputs:           parentResource.Inputs,
+		Bindings:         parentResource.Bindings,
+		ConnectionString: to.Ptr(reNameParentToChild(*parentResource.ConnectionString, *resource.Parent, resourceName)),
+	}
+}
+
 // LoadManifest loads the given manifest into the generator. It should be called before [Compile].
 func (b *infraGenerator) LoadManifest(m *Manifest) error {
 	for name, comp := range m.Resources {
+		comp = pullParentSettings(name, comp, m)
 		for k, v := range comp.Inputs {
 			input := genInput{
 				Secret: v.Secret,

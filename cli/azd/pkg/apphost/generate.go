@@ -165,7 +165,7 @@ func Inputs(manifest *Manifest) (map[string]Input, error) {
 	return res, nil
 }
 
-// GenerateProjectArtifacts generates all the artifacts to manage a project with `azd`. Te azure.yaml file as well as
+// GenerateProjectArtifacts generates all the artifacts to manage a project with `azd`. The azure.yaml file as well as
 // a helpful next-steps.md file.
 func GenerateProjectArtifacts(
 	ctx context.Context, projectDir string, projectName string, manifest *Manifest, appHostProject string,

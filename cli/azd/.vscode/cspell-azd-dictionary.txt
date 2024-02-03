@@ -5,6 +5,7 @@ aiopg
 alphafeatures
 apimanagement
 apims
+apiservice
 appconfiguration
 appdetect
 apphost
@@ -183,11 +184,14 @@ Truef
 typeflag
 unhide
 unmarshaled
+upgrader
 unmarshalling
 unsetenvs
 unsets
 utsname
+vsrpc
 vuejs
+webfrontend
 westus2
 wireinject
 yacspin

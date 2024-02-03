@@ -83,6 +83,13 @@ func NewDeployFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *
 	return flags
 }
 
+func NewDeployFlagsFromEnvAndOptions(envFlag *internal.EnvFlag, global *internal.GlobalCommandOptions) *DeployFlags {
+	return &DeployFlags{
+		EnvFlag: envFlag,
+		global:  global,
+	}
+}
+
 func NewDeployCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "deploy <service>",

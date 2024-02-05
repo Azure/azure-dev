@@ -213,7 +213,7 @@ func Test_Deploy_No_Credentials(t *testing.T) {
 	serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env)
 	err = simulateInitliaze(*mockContext.Context, serviceTarget, serviceConfig)
 	require.Error(t, err)
-	require.ErrorContains(t, err, "failed retrieving cluster admin credentials")
+	require.ErrorContains(t, err, "failed retrieving cluster user credentials")
 }
 
 func setupK8sManifests(t *testing.T, serviceConfig *ServiceConfig) error {

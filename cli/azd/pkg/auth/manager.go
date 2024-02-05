@@ -510,11 +510,11 @@ func (m *Manager) LoginWithOneAuth(ctx context.Context, tenantID string, scopes 
 	if tenantID != "" {
 		authority = "https://login.microsoftonline.com/" + tenantID
 	}
-	homeAccountID, err := oneauth.LogIn(authority, cAZD_CLIENT_ID, strings.Join(scopes, " "))
+	accountID, err := oneauth.LogIn(authority, cAZD_CLIENT_ID, strings.Join(scopes, " "))
 	if err == nil {
 		err = m.saveUserProperties(&userProperties{
 			FromOneAuth:   true,
-			HomeAccountID: &homeAccountID,
+			HomeAccountID: &accountID,
 		})
 	}
 	return err

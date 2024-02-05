@@ -69,7 +69,7 @@ WrappedAuthResult *wrapAuthResult(const AuthResult *ar)
     auto wrapped = new WrappedAuthResult();
     if (auto account = ar->GetAccount())
     {
-        wrapped->accountID = strdup(account->GetHomeAccountId().c_str());
+        wrapped->accountID = strdup(account->GetId().c_str());
     }
     if (auto credential = ar->GetCredential())
     {
@@ -85,7 +85,7 @@ WrappedAuthResult *wrapAuthResult(const AuthResult *ar)
     return wrapped;
 }
 
-WrappedAuthResult *Authenticate(const char *authority, const char *scope, const char *homeAccountID, bool allowPrompt)
+WrappedAuthResult *Authenticate(const char *authority, const char *scope, const char *accountID, bool allowPrompt)
 {
     auto authParams = AuthParameters::CreateForBearer(authority, scope);
     auto telemetryParams = TelemetryParameters(UUID::Generate());
@@ -97,24 +97,14 @@ WrappedAuthResult *Authenticate(const char *authority, const char *scope, const 
         promise.set_value(result);
     };
 
-    std::shared_ptr<Account> account = nullptr;
-    if (strlen(homeAccountID) > 0)
+    if (accountID && strlen(accountID) > 0)
     {
-        for (auto a : OneAuth::GetAuthenticator()->ReadAssociatedAccounts(telemetryParams))
+        if (auto account = OneAuth::GetAuthenticator()->ReadAccountById(accountID, telemetryParams))
         {
-            if (a.GetHomeAccountId() == homeAccountID)
-            {
-                account = std::make_shared<Account>(a);
-                break;
-            }
+            OneAuth::GetAuthenticator()->AcquireCredentialSilently(*account, authParams, telemetryParams, callback);
+            // impose a deadline because we don't want to hang should OneAuth not call the callback
+            future.wait_for(std::chrono::seconds(timeoutSeconds));
         }
-    }
-
-    if (account)
-    {
-        OneAuth::GetAuthenticator()->AcquireCredentialSilently(*account, authParams, telemetryParams, callback);
-        // impose a deadline because we don't want to hang should OneAuth not call the callback
-        future.wait_for(std::chrono::seconds(timeoutSeconds));
     }
 
     // if the future isn't ready, we didn't find an account or silent auth failed or timed out
@@ -159,10 +149,6 @@ WrappedAuthResult *Authenticate(const char *authority, const char *scope, const 
     }
 
     auto res = future.get();
-    if (auto account = res.GetAccount())
-    {
-        OneAuth::GetAuthenticator()->AssociateAccount(*account, telemetryParams);
-    }
     return wrapAuthResult(&res);
 }
 

@@ -38,14 +38,13 @@ extern "C"
     // The parameters are:
     // - authority: authority for token requests e.g. "https://login.microsoftonline.com/tenant"
     // - scope: scope of the desired access token
-    // - homeAccountID: optional home account ID of a user to authenticate. Required for silent authentication. If no value
-    //                  is given or no account associated with azd matches the given value, this function will fall back to
-    //                  interactive authentication, provided allowPrompt is true.
+    // - accountID: optional account ID of a user to authenticate, as returned by a previous call to this function. Required for silent
+    //              authentication. If empty or no account associated with azd matches the given value, this function will fall back to
+    //              interactive authentication, provided allowPrompt is true.
     // - allowPrompt: whether to display an interactive login window when necessary
-    __declspec(dllexport) WrappedAuthResult *Authenticate(const char *authority, const char *scope, const char *homeAccountID, bool allowPrompt);
+    __declspec(dllexport) WrappedAuthResult *Authenticate(const char *authority, const char *scope, const char *accountID, bool allowPrompt);
 
-    // Logout disassociates all accounts from the application. This prevents
-    // Authenticate silently using them but doesn't delete any of their data.
+    // Logout disassociates all accounts from the application.
     __declspec(dllexport) void Logout();
 
     __declspec(dllexport) void Shutdown();

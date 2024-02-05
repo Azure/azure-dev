@@ -288,7 +288,11 @@ func (ai *DotNetImporter) SynthAllInfrastructure(
 		}
 
 		err = generatedFS.WriteFile(manifestPath, []byte(containerAppManifest), osutil.PermissionFileOwnerOnly)
-		log.Printf("stop writeManifestForResource: name:%s, path: %s, err: %s", name, path, err.Error())
+		if err == nil {
+			log.Printf("stop writeManifestForResource: name:%s, path: %s", name, path)
+		} else {
+			log.Printf("stop writeManifestForResource: name:%s, path: %s, err: %s", name, path, err.Error())
+		}
 		return err
 	}
 

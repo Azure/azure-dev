@@ -53,6 +53,6 @@ func (s *wsStream) Write(ctx context.Context, msg jsonrpc2.Message) (int64, erro
 	return int64(len(data)), nil
 }
 
-func NewWebSocketStream(c *websocket.Conn) *wsStream {
+func newWebSocketStream(c *websocket.Conn) *wsStream {
 	return &wsStream{c: c}
 }

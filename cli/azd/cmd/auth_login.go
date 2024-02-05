@@ -46,6 +46,7 @@ func newAuthLoginFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions
 
 type loginFlags struct {
 	onlyCheckStatus        bool
+	browser                bool
 	useDeviceCode          boolPtr
 	tenantID               string
 	clientID               string
@@ -151,6 +152,9 @@ func (lf *loginFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandO
 		"redirect-port",
 		0,
 		"Choose the port to be used as part of the redirect URI during interactive login.")
+	if oneauth.Supported {
+		local.BoolVar(&lf.browser, "browser", false, "Authenticate in a web browser instead of an integrated dialog.")
+	}
 
 	lf.global = global
 }
@@ -487,7 +491,7 @@ func (la *loginAction) login(ctx context.Context) error {
 		return err
 	}
 
-	if oneauth.Supported {
+	if oneauth.Supported && !la.flags.browser {
 		err = la.authManager.LoginWithOneAuth(ctx, la.flags.tenantID, la.flags.scopes)
 	} else {
 		_, err = la.authManager.LoginInteractive(ctx, la.flags.scopes,

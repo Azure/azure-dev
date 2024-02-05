@@ -297,12 +297,17 @@ func pullParentSettings(resourceName string, resource *Resource, manifest *Manif
 
 	reNameParentToChild := func(source, parent, child string) string {
 		return strings.ReplaceAll(
-			source, fmt.Sprintf("%s.inputs.", parent), fmt.Sprintf("%s.inputs.", child))
+			source, fmt.Sprintf("%s.", parent), fmt.Sprintf("%s.", child))
 	}
 
 	reMapEnv := make(map[string]string, len(parentResource.Env))
 	for k, v := range parentResource.Env {
 		reMapEnv[k] = reNameParentToChild(v, *resource.Parent, resourceName)
+	}
+
+	connectionString := reNameParentToChild(*parentResource.ConnectionString, *resource.Parent, resourceName)
+	if resource.Type == "postgres.database.v0" {
+		connectionString = fmt.Sprintf("%sDatabase=%s;", connectionString, resourceName)
 	}
 
 	return &Resource{
@@ -311,7 +316,7 @@ func pullParentSettings(resourceName string, resource *Resource, manifest *Manif
 		Env:              reMapEnv,
 		Inputs:           parentResource.Inputs,
 		Bindings:         parentResource.Bindings,
-		ConnectionString: to.Ptr(reNameParentToChild(*parentResource.ConnectionString, *resource.Parent, resourceName)),
+		ConnectionString: to.Ptr(connectionString),
 	}
 }
 

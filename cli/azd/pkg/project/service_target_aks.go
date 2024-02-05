@@ -229,10 +229,6 @@ func (t *aksTarget) Deploy(
 		})
 }
 
-	deploymentPath = filepath.Join(serviceConfig.Path(), deploymentPath)
-
-	err := t.kubectl.Apply(ctx, deploymentPath, nil)
-	kustomizeDir := filepath.Join(serviceConfig.Project.Path, serviceConfig.RelativePath, overlayPath)
 // Gets the service endpoints for the AKS service target
 func (t *aksTarget) Endpoints(
 	ctx context.Context,
@@ -291,14 +287,12 @@ func (t *aksTarget) ensureClusterContext(
 		return kubeConfigPath, nil
 	}
 
-	// Resolve cluster name
+	// Login to AKS cluster
 	clusterName, err := t.resolveClusterName(serviceConfig, targetResource)
 	if err != nil {
 		return "", err
-
 	}
 
-	// Login to AKS cluster
 	log.Printf("getting AKS credentials for cluster '%s'\n", clusterName)
 	clusterCreds, err := t.managedClustersService.GetUserCredentials(
 		ctx,

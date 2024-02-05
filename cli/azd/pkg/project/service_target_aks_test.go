@@ -144,7 +144,7 @@ func Test_Resolve_Cluster_Name(t *testing.T) {
 		require.NoError(t, err)
 
 		serviceConfig := createTestServiceConfig(tempDir, AksTarget, ServiceLanguageTypeScript)
-		serviceConfig.ResourceName = NewExpandableString("MY_AKS_CLUSTER")
+		serviceConfig.ResourceName = NewExpandableString("AKS_CLUSTER")
 		env := createEnv()
 
 		// Remove default AKS cluster name from env file
@@ -161,9 +161,9 @@ func Test_Resolve_Cluster_Name(t *testing.T) {
 		require.NoError(t, err)
 
 		serviceConfig := createTestServiceConfig(tempDir, AksTarget, ServiceLanguageTypeScript)
-		serviceConfig.ResourceName = NewExpandableString("$MY_CUSTOM_ENV_VAR")
+		serviceConfig.ResourceName = NewExpandableString("${MY_CUSTOM_ENV_VAR}")
 		env := createEnv()
-		env.DotenvSet("MY_CUSTOM_ENV_VAR", "MY_AKS_CLUSTER")
+		env.DotenvSet("MY_CUSTOM_ENV_VAR", "AKS_CLUSTER")
 
 		// Remove default AKS cluster name from env file
 		env.DotenvDelete(environment.AksClusterEnvVarName)

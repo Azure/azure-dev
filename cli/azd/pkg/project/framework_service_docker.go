@@ -32,7 +32,6 @@ import (
 )
 
 type DockerProjectOptions struct {
-	Registry  string                  `yaml:"registry,omitempty"  json:"registry,omitempty"`
 	Path      string           `yaml:"path,omitempty"      json:"path,omitempty"`
 	Context   string           `yaml:"context,omitempty"   json:"context,omitempty"`
 	Platform  string           `yaml:"platform,omitempty"  json:"platform,omitempty"`

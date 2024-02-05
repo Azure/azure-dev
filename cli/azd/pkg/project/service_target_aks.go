@@ -302,14 +302,15 @@ func (t *aksTarget) ensureClusterContext(
 	)
 	if err != nil {
 		return "", fmt.Errorf(
-			"failed retrieving cluster admin credentials. Ensure your cluster has been configured to support admin credentials, %w",
+			//nolint:lll
+			"failed retrieving cluster user credentials. Ensure the current principal has been granted rights to the AKS cluster, %w",
 			err,
 		)
 	}
 
 	if len(clusterCreds.Kubeconfigs) == 0 {
 		return "", fmt.Errorf(
-			"cluster credentials is empty. Ensure your cluster has been configured to support admin credentials. , %w",
+			"cluster credentials is empty. Ensure the current principal has been granted rights to the AKS cluster. , %w",
 			err,
 		)
 	}

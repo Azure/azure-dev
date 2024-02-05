@@ -19,13 +19,6 @@ type ManagedClustersService interface {
 		resourceGroupName string,
 		resourceName string,
 	) (*armcontainerservice.ManagedCluster, error)
-	// Gets the admin credentials for the specified resource
-	GetAdminCredentials(
-		ctx context.Context,
-		subscriptionId string,
-		resourceGroupName string,
-		resourceName string,
-	) (*armcontainerservice.CredentialResults, error)
 	// Gets the user credentials for the specified resource
 	GetUserCredentials(
 		ctx context.Context,
@@ -86,26 +79,6 @@ func (cs *managedClustersService) GetUserCredentials(
 	}
 
 	credResult, err := client.ListClusterUserCredentials(ctx, resourceGroupName, resourceName, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return &credResult.CredentialResults, nil
-}
-
-// Gets the admin credentials for the specified resource
-func (cs *managedClustersService) GetAdminCredentials(
-	ctx context.Context,
-	subscriptionId string,
-	resourceGroupName string,
-	resourceName string,
-) (*armcontainerservice.CredentialResults, error) {
-	client, err := cs.createManagedClusterClient(ctx, subscriptionId)
-	if err != nil {
-		return nil, err
-	}
-
-	credResult, err := client.ListClusterAdminCredentials(ctx, resourceGroupName, resourceName, nil)
 	if err != nil {
 		return nil, err
 	}

@@ -270,6 +270,7 @@ func (ai *DotNetImporter) SynthAllInfrastructure(
 	// manifest is written to a file name "containerApp.tmpl.yaml" in the same directory as the project that produces the
 	// container we will deploy.
 	writeManifestForResource := func(name string, path string) error {
+		log.Printf("start writeManifestForResource: name:%s, path: %s", name, path)
 		containerAppManifest, err := apphost.ContainerAppManifestTemplateForProject(manifest, name)
 		if err != nil {
 			return fmt.Errorf("generating containerApp.tmpl.yaml for resource %s: %w", name, err)
@@ -286,17 +287,19 @@ func (ai *DotNetImporter) SynthAllInfrastructure(
 			return err
 		}
 
-		return generatedFS.WriteFile(manifestPath, []byte(containerAppManifest), osutil.PermissionFileOwnerOnly)
+		err = generatedFS.WriteFile(manifestPath, []byte(containerAppManifest), osutil.PermissionFileOwnerOnly)
+		log.Printf("stop writeManifestForResource: name:%s, path: %s, err: %s", name, path, err.Error())
+		return err
 	}
 
 	for name, path := range apphost.ProjectPaths(manifest) {
-		if writeManifestForResource(name, path) != nil {
+		if err := writeManifestForResource(name, path); err != nil {
 			return nil, err
 		}
 	}
 
 	for name, docker := range apphost.Dockerfiles(manifest) {
-		if writeManifestForResource(name, docker.Path) != nil {
+		if err := writeManifestForResource(name, docker.Path); err != nil {
 			return nil, err
 		}
 	}

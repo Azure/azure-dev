@@ -125,6 +125,7 @@ func (a *infraSynthAction) Run(ctx context.Context) (*actions.ActionResult, erro
 			return err
 		}
 
+		log.Printf("write to staging: %s", path)
 		return os.WriteFile(filepath.Join(staging, path), contents, d.Type().Perm())
 	})
 	if err != nil {
@@ -228,6 +229,8 @@ func determineDuplicates(source string, target string) ([]string, error) {
 		if err != nil {
 			return fmt.Errorf("computing relative path: %w", err)
 		}
+
+		log.Printf("found staging file: %s", path)
 
 		if _, err := os.Stat(filepath.Join(target, partial)); err == nil {
 			duplicateFiles = append(duplicateFiles, partial)

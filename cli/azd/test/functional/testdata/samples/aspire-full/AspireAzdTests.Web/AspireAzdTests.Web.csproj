@@ -25,11 +25,11 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="Aspire.Azure.Data.Tables" Version="8.0.0-preview.2.23619.3" />
-		<PackageReference Include="Aspire.Azure.Storage.Blobs" Version="8.0.0-preview.2.23619.3" />
-		<PackageReference Include="Aspire.Azure.Storage.Queues" Version="8.0.0-preview.2.23619.3" />
-		<PackageReference Include="Aspire.StackExchange.Redis" Version="8.0.0-preview.2.23619.3" />
-		<PackageReference Include="Aspire.StackExchange.Redis.OutputCaching" Version="8.0.0-preview.2.23619.3" />
+		<PackageReference Include="Aspire.Azure.Data.Tables" Version="$(AspireVersion)" />
+		<PackageReference Include="Aspire.Azure.Storage.Blobs" Version="$(AspireVersion)" />
+		<PackageReference Include="Aspire.Azure.Storage.Queues" Version="$(AspireVersion)" />
+		<PackageReference Include="Aspire.StackExchange.Redis" Version="$(AspireVersion)" />
+		<PackageReference Include="Aspire.StackExchange.Redis.OutputCaching" Version="$(AspireVersion)" />
 		<PackageReference Include="Markdig" Version="0.34.0" />
 	</ItemGroup>
 

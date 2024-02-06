@@ -15,11 +15,11 @@
 	</ItemGroup>
 
 	<ItemGroup>
-		<PackageReference Include="Aspire.Azure.Data.Tables" Version="8.0.0-preview.2.23619.3" />
-		<PackageReference Include="Aspire.Azure.Storage.Blobs" Version="8.0.0-preview.2.23619.3" />
-		<PackageReference Include="Aspire.Azure.Storage.Queues" Version="8.0.0-preview.2.23619.3" />
-		<PackageReference Include="Aspire.Hosting" Version="8.0.0-preview.2.23619.3" />
-		<PackageReference Include="Aspire.Hosting.Azure" Version="8.0.0-preview.2.23619.3" />
+		<PackageReference Include="Aspire.Azure.Data.Tables" Version="$(AspireVersion)" />
+		<PackageReference Include="Aspire.Azure.Storage.Blobs" Version="$(AspireVersion)" />
+		<PackageReference Include="Aspire.Azure.Storage.Queues" Version="$(AspireVersion)" />
+		<PackageReference Include="Aspire.Hosting" Version="$(AspireVersion)" />
+		<PackageReference Include="Aspire.Hosting.Azure" Version="$(AspireVersion)" />
 	</ItemGroup>
 
 </Project>

@@ -38,7 +38,7 @@ func restore(t *testing.T) {
 
 	wr := logWriter{initialTime: time.Now(), t: t, prefix: "restore: "}
 	commandRunner := exec.NewCommandRunner(nil)
-	runArgs := newRunArgs("dotnet", "workload", "restore").WithCwd(appHostProject).WithStdOut(&wr)
+	runArgs := newRunArgs("dotnet", "workload", "restore", "--skip-sign-check").WithCwd(appHostProject).WithStdOut(&wr)
 	_, err = commandRunner.Run(ctx, runArgs)
 	require.NoError(t, err)
 }

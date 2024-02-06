@@ -138,7 +138,7 @@ func (ai *DotNetImporter) ProjectInfrastructure(ctx context.Context, svcConfig *
 		Options: provisioning.Options{
 			Provider: provisioning.Bicep,
 			Path:     tmpDir,
-			Module:   "main",
+			Module:   DefaultModule,
 		},
 		Inputs:     inputs,
 		cleanupDir: tmpDir,

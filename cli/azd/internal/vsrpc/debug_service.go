@@ -6,19 +6,22 @@ package vsrpc
 import (
 	"context"
 	"net/http"
+	"sync"
 	"time"
 )
 
 // debugService is the RPC server for the '/TestDebugService/v1.0' endpoint. It is only exposed when
-// AZD_DEBUG_SERVER_DEBUG_ENDPOINTS is set to true as per [strconv.ParseBool].
+// AZD_DEBUG_SERVER_DEBUG_ENDPOINTS is set to true as per [strconv.ParseBool]. It is also used by our
+// unit tests.
 type debugService struct {
-	server *Server
+	// When non-nil, TestCancelAsync will call `Done` on this wait group before waiting to observe
+	// cancellation. This allows test code to orchestrate when it sends the cancellation message and to
+	// know the RPC is ready to observe it.
+	wg *sync.WaitGroup
 }
 
-func newDebugService(server *Server) *debugService {
-	return &debugService{
-		server: server,
-	}
+func newDebugService() *debugService {
+	return &debugService{}
 }
 
 // TestCancelAsync is the server implementation of:
@@ -27,6 +30,9 @@ func newDebugService(server *Server) *debugService {
 // It waits for the given timeoutMs, and then returns true. However, if the context is cancelled before the timeout,
 // it returns false and ctx.Err() which should cause the client to throw a TaskCanceledException.
 func (s *debugService) TestCancelAsync(ctx context.Context, timeoutMs int) (bool, error) {
+	if s.wg != nil {
+		s.wg.Done()
+	}
 	select {
 	case <-ctx.Done():
 		return false, ctx.Err()

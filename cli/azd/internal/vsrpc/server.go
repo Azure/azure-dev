@@ -51,7 +51,7 @@ func (s *Server) Serve(l net.Listener) error {
 	// IObservers. This is useful for both developers unit testing in VS Code (where they can set this value in launch.json
 	// as well as tests where we can set this value with t.SetEnv()).
 	if on, err := strconv.ParseBool(os.Getenv("AZD_DEBUG_SERVER_DEBUG_ENDPOINTS")); err == nil && on {
-		mux.Handle("/TestDebugService/v1.0", newDebugService(s))
+		mux.Handle("/TestDebugService/v1.0", newDebugService())
 	}
 
 	server := http.Server{
@@ -70,7 +70,7 @@ func serveRpc(w http.ResponseWriter, r *http.Request, handlers map[string]Handle
 	}
 	defer c.Close()
 
-	rpcServer := jsonrpc2.NewConn(NewWebSocketStream(c))
+	rpcServer := jsonrpc2.NewConn(newWebSocketStream(c))
 	cancelers := make(map[jsonrpc2.ID]context.CancelFunc)
 	cancelersMu := sync.Mutex{}
 

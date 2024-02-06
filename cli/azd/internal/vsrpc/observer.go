@@ -47,7 +47,7 @@ func (o *IObserver[T]) UnmarshalJSON(data []byte) error {
 		return err
 	}
 
-	if v, has := wire["__jsonrpc_marshaled"]; !has && v != 1 {
+	if v, has := wire["__jsonrpc_marshaled"]; !has || v != 1 {
 		return errors.New("expected __jsonrpc_marshaled=1")
 	}
 

@@ -155,6 +155,7 @@ func (im *ImportManager) ProjectInfrastructure(ctx context.Context, projectConfi
 		projectConfig.Infra.Module)
 }
 
++// pathHasModule returns true if there is a file named "<module>" or "<module.bicep>" in path.
 func pathHasModule(path, module string) (bool, error) {
 	files, err := os.ReadDir(path)
 	if err != nil {

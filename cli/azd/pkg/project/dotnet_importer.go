@@ -290,13 +290,13 @@ func (ai *DotNetImporter) SynthAllInfrastructure(
 	}
 
 	for name, path := range apphost.ProjectPaths(manifest) {
-		if writeManifestForResource(name, path) != nil {
+		if err := writeManifestForResource(name, path); err != nil {
 			return nil, err
 		}
 	}
 
 	for name, docker := range apphost.Dockerfiles(manifest) {
-		if writeManifestForResource(name, docker.Path) != nil {
+		if err := writeManifestForResource(name, docker.Path); err != nil {
 			return nil, err
 		}
 	}

@@ -53,7 +53,7 @@ func main() {
 
 	// staticHelp is true to inform commands to use generate help text instead
 	// of generating help text that includes execution-specific state.
-	cmd := azd.NewRootCmd(true, nil)
+	cmd := azd.NewRootCmd(true, nil, nil)
 
 	basename := strings.Replace(cmd.CommandPath(), " ", "_", -1) + ".md"
 	filename := filepath.Join("./md", basename)

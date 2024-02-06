@@ -27,6 +27,7 @@ type genContainerApp struct {
 	Image   string
 	Dapr    *genContainerAppManifestTemplateContextDapr
 	Env     map[string]string
+	Secrets map[string]string
 	Ingress *genContainerAppIngress
 }
 
@@ -41,6 +42,7 @@ type genContainer struct {
 	Image    string
 	Env      map[string]string
 	Bindings map[string]*Binding
+	Inputs   map[string]Input
 }
 
 type genDockerfile struct {
@@ -90,6 +92,10 @@ type genInput struct {
 	DefaultMinLength int
 }
 
+type genSqlServer struct {
+	Databases []string
+}
+
 type genBicepTemplateContext struct {
 	HasContainerRegistry            bool
 	HasContainerEnvironment         bool
@@ -104,6 +110,7 @@ type genBicepTemplateContext struct {
 	AppConfigs                      map[string]genAppConfig
 	DaprComponents                  map[string]genDaprComponent
 	CosmosDbAccounts                map[string]genCosmosAccount
+	SqlServers                      map[string]genSqlServer
 }
 
 type genContainerAppManifestTemplateContext struct {

@@ -103,7 +103,7 @@ func Test_Package_Deploy_HappyPath(t *testing.T) {
 	require.NotNil(t, packageResult)
 	require.IsType(t, new(dockerPackageResult), packageResult.Details)
 
-	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "CLUSTER_NAME", string(infra.AzureResourceTypeManagedCluster))
+	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "", string(infra.AzureResourceTypeManagedCluster))
 	deployTask := serviceTarget.Deploy(*mockContext.Context, serviceConfig, packageResult, scope)
 	logProgress(deployTask)
 	deployResult, err := deployTask.Await()
@@ -117,24 +117,80 @@ func Test_Package_Deploy_HappyPath(t *testing.T) {
 	require.Equal(t, "REGISTRY.azurecr.io/test-app/api-test:azd-deploy-0", env.Dotenv()["SERVICE_API_IMAGE_NAME"])
 }
 
-func Test_Deploy_No_Cluster_Name(t *testing.T) {
+func Test_Resolve_Cluster_Name(t *testing.T) {
 	tempDir := t.TempDir()
 	ostest.Chdir(t, tempDir)
 
-	mockContext := mocks.NewMockContext(context.Background())
-	err := setupMocksForAksTarget(mockContext)
-	require.NoError(t, err)
+	t.Run("Default env var", func(t *testing.T) {
+		tempDir := t.TempDir()
+		ostest.Chdir(t, tempDir)
 
-	serviceConfig := createTestServiceConfig(tempDir, AksTarget, ServiceLanguageTypeScript)
-	env := createEnv()
+		mockContext := mocks.NewMockContext(context.Background())
+		err := setupMocksForAksTarget(mockContext)
+		require.NoError(t, err)
 
-	// Simulate AKS cluster name not found in env file
-	env.DotenvDelete(environment.AksClusterEnvVarName)
+		serviceConfig := createTestServiceConfig(tempDir, AksTarget, ServiceLanguageTypeScript)
+		env := createEnv()
 
-	serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env)
-	err = simulateInitliaze(*mockContext.Context, serviceTarget, serviceConfig)
-	require.Error(t, err)
-	require.ErrorContains(t, err, "could not determine AKS cluster")
+		serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env)
+		err = simulateInitliaze(*mockContext.Context, serviceTarget, serviceConfig)
+		require.NoError(t, err)
+	})
+
+	t.Run("Simple String", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		err := setupMocksForAksTarget(mockContext)
+		require.NoError(t, err)
+
+		serviceConfig := createTestServiceConfig(tempDir, AksTarget, ServiceLanguageTypeScript)
+		serviceConfig.ResourceName = NewExpandableString("MY_AKS_CLUSTER")
+		env := createEnv()
+
+		// Remove default AKS cluster name from env file
+		env.DotenvDelete(environment.AksClusterEnvVarName)
+
+		serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env)
+		err = simulateInitliaze(*mockContext.Context, serviceTarget, serviceConfig)
+		require.NoError(t, err)
+	})
+
+	t.Run("Expandable String", func(t *testing.T) {
+		mockContext := mocks.NewMockContext(context.Background())
+		err := setupMocksForAksTarget(mockContext)
+		require.NoError(t, err)
+
+		serviceConfig := createTestServiceConfig(tempDir, AksTarget, ServiceLanguageTypeScript)
+		serviceConfig.ResourceName = NewExpandableString("$MY_CUSTOM_ENV_VAR")
+		env := createEnv()
+		env.DotenvSet("MY_CUSTOM_ENV_VAR", "MY_AKS_CLUSTER")
+
+		// Remove default AKS cluster name from env file
+		env.DotenvDelete(environment.AksClusterEnvVarName)
+
+		serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env)
+		err = simulateInitliaze(*mockContext.Context, serviceTarget, serviceConfig)
+		require.NoError(t, err)
+	})
+
+	t.Run("No Cluster Name", func(t *testing.T) {
+		tempDir := t.TempDir()
+		ostest.Chdir(t, tempDir)
+
+		mockContext := mocks.NewMockContext(context.Background())
+		err := setupMocksForAksTarget(mockContext)
+		require.NoError(t, err)
+
+		serviceConfig := createTestServiceConfig(tempDir, AksTarget, ServiceLanguageTypeScript)
+		env := createEnv()
+
+		// Simulate AKS cluster name not found in env file
+		env.DotenvDelete(environment.AksClusterEnvVarName)
+
+		serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env)
+		err = simulateInitliaze(*mockContext.Context, serviceTarget, serviceConfig)
+		require.Error(t, err)
+		require.ErrorContains(t, err, "could not determine AKS cluster")
+	})
 }
 
 func Test_Deploy_No_Credentials(t *testing.T) {
@@ -506,7 +562,7 @@ func createAksServiceTarget(
 	targetResource := environment.NewTargetResource(
 		"SUBSCRIPTION_ID",
 		"RESOURCE_GROUP",
-		"CLUSTER_NAME",
+		"",
 		string(infra.AzureResourceTypeManagedCluster),
 	)
 	resourceManager.

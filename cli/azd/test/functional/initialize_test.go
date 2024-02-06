@@ -63,7 +63,7 @@ func Test_CommandsAndActions_Initialize(t *testing.T) {
 
 	// Creates the azd root command with a "Skip" middleware that will skip the invocation
 	// of the underlying command / actions
-	rootCmd := cmd.NewRootCmd(true, chain)
+	rootCmd := cmd.NewRootCmd(true, chain, nil)
 	testCommand(t, rootCmd, ctx, chain, tempDir)
 }
 
@@ -73,6 +73,7 @@ func testCommand(
 	ctx context.Context,
 	chain []*actions.MiddlewareRegistration,
 	cwd string) {
+
 	// Run the command when we find a leaf command
 	if testCmd.Runnable() {
 		t.Run(testCmd.CommandPath(), func(t *testing.T) {
@@ -85,7 +86,7 @@ func testCommand(
 			fullCmd := fmt.Sprintf("%s %s", testCmd.Parent().CommandPath(), use)
 			args := strings.Split(fullCmd, " ")[1:]
 			args = append(args, "--cwd", cwd)
-			childCmd := cmd.NewRootCmd(true, chain)
+			childCmd := cmd.NewRootCmd(true, chain, nil)
 			childCmd.SetArgs(args)
 			err := childCmd.ExecuteContext(ctx)
 			require.NoError(t, err)

@@ -5,6 +5,7 @@ aiopg
 alphafeatures
 apimanagement
 apims
+apiservice
 appconfiguration
 appdetect
 apphost
@@ -21,6 +22,7 @@ armappplatform
 armcognitiveservices
 armcosmos
 armresourcegraph
+armsql
 asyncmy
 asyncpg
 azapi
@@ -182,11 +184,14 @@ Truef
 typeflag
 unhide
 unmarshaled
+upgrader
 unmarshalling
 unsetenvs
 unsets
 utsname
+vsrpc
 vuejs
+webfrontend
 westus2
 wireinject
 yacspin

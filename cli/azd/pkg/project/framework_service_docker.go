@@ -37,6 +37,7 @@ type DockerProjectOptions struct {
 	Platform  string           `yaml:"platform,omitempty"  json:"platform,omitempty"`
 	Target    string           `yaml:"target,omitempty"    json:"target,omitempty"`
 	Tag       ExpandableString `yaml:"tag,omitempty"       json:"tag,omitempty"`
+	Registry  ExpandableString `yaml:"registry,omitempty"  json:"registry,omitempty"`
 	BuildArgs []string         `yaml:"buildArgs,omitempty" json:"buildArgs,omitempty"`
 }
 

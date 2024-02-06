@@ -19,7 +19,7 @@ import (
 )
 
 type buildFlags struct {
-	*envFlag
+	*internal.EnvFlag
 	all    bool
 	global *internal.GlobalCommandOptions
 	only   bool
@@ -27,7 +27,7 @@ type buildFlags struct {
 
 func newBuildFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *buildFlags {
 	flags := &buildFlags{
-		envFlag: &envFlag{},
+		EnvFlag: &internal.EnvFlag{},
 	}
 
 	flags.Bind(cmd.Flags(), global)
@@ -36,7 +36,7 @@ func newBuildFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *b
 }
 
 func (bf *buildFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
-	bf.envFlag.Bind(local, global)
+	bf.EnvFlag.Bind(local, global)
 	bf.global = global
 
 	local.BoolVar(

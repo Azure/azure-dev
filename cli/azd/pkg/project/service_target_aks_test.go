@@ -819,6 +819,7 @@ func createAksServiceTarget(
 
 	envManager := &mockenv.MockEnvManager{}
 	envManager.On("Save", *mockContext.Context, env).Return(nil)
+	envManager.On("Reload", *mockContext.Context, env).Return(nil)
 
 	resourceManager := &MockResourceManager{}
 	targetResource := environment.NewTargetResource(

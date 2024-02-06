@@ -400,14 +400,53 @@ func (fns *containerAppTemplateManifestFuncs) ConnectionString(name string) (str
 		return "", fmt.Errorf("could not determine redis password: no requirepass line found in redis-config")
 
 	case "postgres.database.v0":
-		targetContainerName := scaffold.ContainerAppName(name)
-
-		password, err := fns.secretValue(targetContainerName, "pg-password")
-		if err != nil {
-			return "", fmt.Errorf("could not determine postgres password: %w", err)
+		dbConnString := dbConnectionString{
+			Host:     scaffold.ContainerAppName(name),
+			Database: "postgres",
+			Username: "postgres",
 		}
 
-		return fmt.Sprintf("Host=%s;Database=postgres;Username=postgres;Password=%s", targetContainerName, password), nil
+		parentResource := resource.Parent
+		if parentResource == nil || *parentResource == "" {
+			password, err := fns.secretValue(dbConnString.Host, "pg-password")
+			if err != nil {
+				return "", fmt.Errorf("could not determine postgres password: %w", err)
+			}
+			dbConnString.Password = password
+			return dbConnString.String(), nil
+		}
+
+		parent := fns.manifest.Resources[*parentResource]
+
+		if parent.Type == "postgres.server.v0" {
+			dbConnString.Host = scaffold.ContainerAppName(*parentResource)
+			dbConnString.Database = name
+			password, err := fns.secretValue(dbConnString.Host, "pg-password")
+			if err != nil {
+				return "", fmt.Errorf("could not determine postgres password: %w", err)
+			}
+			dbConnString.Password = password
+			return dbConnString.String(), nil
+		}
+
+		if parent.Type == "container.v0" {
+			rawConnectionString := strings.Split(strings.TrimRight(*parent.ConnectionString, ";"), ";")
+			rawConnectionString = append(rawConnectionString, fmt.Sprintf("Database=%s;", name))
+			for i, part := range rawConnectionString {
+				keyValue := strings.Split(part, "=")
+				resolvedValue, err := apphost.EvalString(keyValue[1], func(expr string) (string, error) {
+					return evalBindingRefWithParent(expr, parent, fns.env)
+				})
+				if err != nil {
+					return "", fmt.Errorf("evaluating connection string for %s: %w", name, err)
+				}
+				rawConnectionString[i] = fmt.Sprintf("%s=%s", keyValue[0], resolvedValue)
+			}
+			return strings.Join(rawConnectionString, ";"), nil
+		}
+
+		return "", fmt.Errorf("connectionString: unsupported parent resource type '%s'", parent.Type)
+
 	case "azure.cosmosdb.account.v0":
 		return fns.cosmosConnectionString(name)
 	case "azure.cosmosdb.database.v0":
@@ -420,6 +459,92 @@ func (fns *containerAppTemplateManifestFuncs) ConnectionString(name string) (str
 	default:
 		return "", fmt.Errorf("connectionString: unsupported resource type '%s'", resource.Type)
 	}
+}
+
+type dbConnectionString struct {
+	Host     string
+	Port     string
+	Username string
+	Password string
+	Database string
+}
+
+func (db *dbConnectionString) String() string {
+	var port string
+	if db.Port != "" {
+		port = fmt.Sprintf("Port=%s;", db.Port)
+	}
+	return fmt.Sprintf(
+		"Host=%s;%sUsername=%s;Password=%s;Database=%s;",
+		db.Host,
+		port,
+		db.Username,
+		db.Password,
+		db.Database)
+}
+
+// evalBindingRefWithParent evaluates a binding reference expression with the given parent resource. The expression is
+// expected to be of the form <resourceName>.<propertyPath> where <resourceName> is the name of a resource in the manifest
+// and <propertyPath> is a property path within that resource. The function returns the value of the property, or an error
+// if the property is not found or the expression is malformed.
+func evalBindingRefWithParent(v string, parent *apphost.Resource, env *environment.Environment) (string, error) {
+	expParts := strings.SplitN(v, ".", 2)
+	if len(expParts) != 2 {
+		return "", fmt.Errorf("malformed binding expression, expected <resourceName>.<propertyPath> but was: %s", v)
+	}
+
+	resource, prop := expParts[0], expParts[1]
+
+	// resolve inputs
+	if strings.HasPrefix(prop, "inputs.") {
+		inputParts := strings.Split(prop[len("inputs."):], ".")
+
+		if len(inputParts) != 1 {
+			return "", fmt.Errorf("malformed binding expression, expected inputs.<input-name> but was: %s", v)
+		}
+		val, found := env.Config.Get(fmt.Sprintf("inputs.%s.%s", resource, inputParts[0]))
+		if !found {
+			return "", fmt.Errorf("input %s not found", inputParts[0])
+		}
+		valString, ok := val.(string)
+		if !ok {
+			return "", fmt.Errorf("input %s is not a string", inputParts[0])
+		}
+		return valString, nil
+	}
+
+	if strings.HasPrefix(prop, "bindings.") {
+		bindParts := strings.Split(prop[len("bindings."):], ".")
+
+		if len(bindParts) != 2 {
+			return "", fmt.Errorf("malformed binding expression, expected "+
+				"bindings.<binding-name>.<property> but was: %s", v)
+		}
+
+		binding := *parent.Bindings[bindParts[0]]
+		switch bindParts[1] {
+		case "host":
+			// The host name matches the containerapp name, so we can just return the resource name.
+			return resource, nil
+		case "port":
+			return fmt.Sprintf(`%d`, *binding.ContainerPort), nil
+		case "url":
+			var urlFormatString string
+
+			if binding.External {
+				urlFormatString = "%s://%s.{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}"
+			} else {
+				urlFormatString = "%s://%s.internal.{{ .Env.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN }}"
+			}
+
+			return fmt.Sprintf(urlFormatString, binding.Scheme, resource), nil
+		default:
+			return "",
+				fmt.Errorf("malformed binding expression, expected bindings.<binding-name>.[host|port|url] but was: %s", v)
+		}
+	}
+	return "", fmt.Errorf(
+		"malformed binding expression, expected inputs.<input-name> or bindings.<binding-name>.<property> but was: %s", v)
 }
 
 func (fns *containerAppTemplateManifestFuncs) cosmosConnectionString(accountName string) (string, error) {

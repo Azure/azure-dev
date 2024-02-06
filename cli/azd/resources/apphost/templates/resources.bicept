@@ -116,6 +116,9 @@ resource {{bicepName $name}} 'Microsoft.App/containerApps@2023-05-02-preview' = 
           name: '{{$value.Type}}'
         }
       ]
+      scale: {
+        minReplicas: 1
+      }
     }
   }
   tags: union(tags, {'aspire-resource-name': '{{$name}}'})
@@ -197,6 +200,9 @@ resource {{bicepName $name}} 'Microsoft.App/containerApps@2023-05-02-preview' = 
 {{- end}}
         }
       ]
+      scale: {
+        minReplicas: 1
+      }
     }
   }
   tags: union(tags, {'aspire-resource-name': '{{$name}}'})

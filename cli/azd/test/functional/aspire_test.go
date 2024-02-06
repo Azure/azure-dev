@@ -28,19 +28,24 @@ import (
 
 var dotnetWorkloadInstallOnce sync.Once
 
+func restore(t *testing.T) {
+	dir := t.TempDir()
+	err := copySample(dir, "aspire-full")
+	require.NoError(t, err, "failed expanding sample")
+
+	ctx := context.Background()
+	appHostProject := filepath.Join(dir, "AspireAzdTests.AppHost")
+
+	wr := logWriter{initialTime: time.Now(), t: t, prefix: "restore: "}
+	commandRunner := exec.NewCommandRunner(nil)
+	runArgs := newRunArgs("dotnet", "workload", "restore").WithCwd(appHostProject).WithStdOut(&wr)
+	_, err = commandRunner.Run(ctx, runArgs)
+	require.NoError(t, err)
+}
+
 func installDotnetWorkload(t *testing.T) {
 	dotnetWorkloadInstallOnce.Do(func() {
-		dir := t.TempDir()
-		err := copySample(dir, "aspire-full")
-		require.NoError(t, err, "failed expanding sample")
-
-		ctx := context.Background()
-		appHostProject := filepath.Join(dir, "AspireAzdTests.AppHost")
-
-		commandRunner := exec.NewCommandRunner(nil)
-		runArgs := newRunArgs("dotnet", "workload", "restore").WithCwd(appHostProject)
-		_, err = commandRunner.Run(ctx, runArgs)
-		require.NoError(t, err)
+		restore(t)
 	})
 }
 
@@ -75,11 +80,7 @@ func Test_CLI_Aspire_DetectGen(t *testing.T) {
 		appHostProject := filepath.Join(dir, "AspireAzdTests.AppHost")
 		manifestPath := filepath.Join(appHostProject, "manifest.json")
 
-		commandRunner := exec.NewCommandRunner(nil)
-		runArgs := newRunArgs("dotnet", "workload", "restore").WithCwd(appHostProject)
-		_, err = commandRunner.Run(ctx, runArgs)
-		require.NoError(t, err)
-
+		restore(t)
 		err = dotnetCli.PublishAppHostManifest(ctx, appHostProject, manifestPath)
 		require.NoError(t, err)
 
@@ -102,6 +103,8 @@ func Test_CLI_Aspire_DetectGen(t *testing.T) {
 
 		envName := randomEnvName()
 		t.Logf("AZURE_ENV_NAME: %s", envName)
+
+		restore(t)
 
 		err = copySample(dir, "aspire-full")
 		require.NoError(t, err, "failed expanding sample")
@@ -132,6 +135,15 @@ func Test_CLI_Aspire_DetectGen(t *testing.T) {
 		old, err := project.Load(ctx, filepath.Join(dir, "azure.yaml.old"))
 		require.NoError(t, err)
 
+		// Clean relative paths to account for OS differences
+		for svc := range prj.Services {
+			prj.Services[svc].RelativePath = filepath.Clean(prj.Services[svc].RelativePath)
+		}
+
+		for svc := range old.Services {
+			old.Services[svc].RelativePath = filepath.Clean(old.Services[svc].RelativePath)
+		}
+
 		require.Equal(t, prj.Services, old.Services)
 	})
 
@@ -148,6 +160,8 @@ func Test_CLI_Aspire_DetectGen(t *testing.T) {
 		err := os.MkdirAll(dir, 0755)
 		require.NoError(t, err, "failed creating temp dir")
 		t.Logf("DIR: %s", dir)
+
+		restore(t)
 
 		envName := randomEnvName()
 		t.Logf("AZURE_ENV_NAME: %s", envName)
@@ -295,9 +309,14 @@ func snapshotFile(
 		return err
 	}
 
-	return sn.
+	err = sn.
 		WithOptions(cupaloy.SnapshotSubdirectory(filepath.Join(snapshotRoot, relDir))).
 		SnapshotWithName(filepath.Base(targetPath), string(contents))
+	if err != nil {
+		return fmt.Errorf("%s: %w", filepath.Join(relDir, filepath.Base(targetPath)), err)
+	}
+
+	return nil
 }
 
 type logWriter struct {

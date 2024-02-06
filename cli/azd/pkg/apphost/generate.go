@@ -357,7 +357,11 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 			// We have the case statement here to ensure we don't error out on the resource type by treating it as an unknown
 			// resource type.
 		case "postgres.database.v0":
-			b.addContainerAppService(name, "postgres")
+			if comp.Parent == nil || (m.Resources[*comp.Parent].Type != "container.v0") {
+				// When the resource has a container.v0 as a parent, it means that the database is a part of a container
+				// and it should not be created as a separate resource.
+				b.addContainerAppService(name, "postgres")
+			}
 		default:
 			ignore, err := strconv.ParseBool(os.Getenv("AZD_DEBUG_DOTNET_APPHOST_IGNORE_UNSUPPORTED_RESOURCES"))
 			if err == nil && ignore {
@@ -703,7 +707,7 @@ func (b *infraGenerator) Compile() error {
 		cs.Ingress = ingress
 
 		for k, value := range container.Env {
-			res, err := evalString(value, func(s string) (string, error) { return b.evalBindingRef(s, inputEmitTypeBicep) })
+			res, err := EvalString(value, func(s string) (string, error) { return b.evalBindingRef(s, inputEmitTypeBicep) })
 			if err != nil {
 				return fmt.Errorf("configuring environment for resource %s: evaluating value for %s: %w", name, k, err)
 			}
@@ -851,7 +855,7 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 
 	if connectionString, has := b.connectionStrings[resource]; has && prop == "connectionString" {
 		// The connection string can be a expression itself, so we need to evaluate it.
-		res, err := evalString(connectionString, func(s string) (string, error) {
+		res, err := EvalString(connectionString, func(s string) (string, error) {
 			return b.evalBindingRef(s, emitType)
 		})
 		if err != nil {
@@ -983,7 +987,7 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 // so the values may be emitted into YAML as is without worrying about escaping.
 func (b *infraGenerator) buildEnvBlock(env map[string]string, manifestCtx *genContainerAppManifestTemplateContext) error {
 	for k, value := range env {
-		res, err := evalString(value, func(s string) (string, error) { return b.evalBindingRef(s, inputEmitTypeYaml) })
+		res, err := EvalString(value, func(s string) (string, error) { return b.evalBindingRef(s, inputEmitTypeYaml) })
 		if err != nil {
 			return fmt.Errorf("evaluating value for %s: %w", k, err)
 		}

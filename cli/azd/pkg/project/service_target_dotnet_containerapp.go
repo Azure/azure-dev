@@ -400,35 +400,52 @@ func (fns *containerAppTemplateManifestFuncs) ConnectionString(name string) (str
 		return "", fmt.Errorf("could not determine redis password: no requirepass line found in redis-config")
 
 	case "postgres.database.v0":
-		parentResource := resource.Parent
-		if parentResource == nil || (fns.manifest.Resources[*parentResource].Type != "container.v0") {
-			targetContainerName := scaffold.ContainerAppName(name)
+		dbConnString := dbConnectionString{
+			Host:     scaffold.ContainerAppName(name),
+			Database: "postgres",
+			Username: "postgres",
+		}
 
-			password, err := fns.secretValue(targetContainerName, "pg-password")
+		parentResource := resource.Parent
+		if parentResource == nil || *parentResource == "" {
+			password, err := fns.secretValue(dbConnString.Host, "pg-password")
 			if err != nil {
 				return "", fmt.Errorf("could not determine postgres password: %w", err)
 			}
-
-			return fmt.Sprintf("Host=%s;Database=postgres;Username=postgres;Password=%s", targetContainerName, password), nil
+			dbConnString.Password = password
+			return dbConnString.String(), nil
 		}
 
-		// if the parent resource is a container, then we need to use the connection string from the parent resource
-		// and resolve the references
 		parent := fns.manifest.Resources[*parentResource]
-		rawConnectionString := strings.Split(strings.TrimRight(*parent.ConnectionString, ";"), ";")
-		rawConnectionString = append(rawConnectionString, fmt.Sprintf("Database=%s;", name))
-		for i, part := range rawConnectionString {
-			keyValue := strings.Split(part, "=")
-			resolvedValue, err := apphost.EvalString(keyValue[1], func(expr string) (string, error) {
-				return evalBindingRefWithParent(expr, parent, fns.env)
-			})
+
+		if parent.Type == "postgres.server.v0" {
+			dbConnString.Host = scaffold.ContainerAppName(*parentResource)
+			dbConnString.Database = name
+			password, err := fns.secretValue(dbConnString.Host, "pg-password")
 			if err != nil {
-				return "", fmt.Errorf("evaluating connection string for %s: %w", name, err)
+				return "", fmt.Errorf("could not determine postgres password: %w", err)
 			}
-			rawConnectionString[i] = fmt.Sprintf("%s=%s", keyValue[0], resolvedValue)
+			dbConnString.Password = password
+			return dbConnString.String(), nil
 		}
 
-		return strings.Join(rawConnectionString, ";"), nil
+		if parent.Type == "container.v0" {
+			rawConnectionString := strings.Split(strings.TrimRight(*parent.ConnectionString, ";"), ";")
+			rawConnectionString = append(rawConnectionString, fmt.Sprintf("Database=%s;", name))
+			for i, part := range rawConnectionString {
+				keyValue := strings.Split(part, "=")
+				resolvedValue, err := apphost.EvalString(keyValue[1], func(expr string) (string, error) {
+					return evalBindingRefWithParent(expr, parent, fns.env)
+				})
+				if err != nil {
+					return "", fmt.Errorf("evaluating connection string for %s: %w", name, err)
+				}
+				rawConnectionString[i] = fmt.Sprintf("%s=%s", keyValue[0], resolvedValue)
+			}
+			return strings.Join(rawConnectionString, ";"), nil
+		}
+
+		return "", fmt.Errorf("connectionString: unsupported parent resource type '%s'", parent.Type)
 
 	case "azure.cosmosdb.account.v0":
 		return fns.cosmosConnectionString(name)
@@ -442,6 +459,28 @@ func (fns *containerAppTemplateManifestFuncs) ConnectionString(name string) (str
 	default:
 		return "", fmt.Errorf("connectionString: unsupported resource type '%s'", resource.Type)
 	}
+}
+
+type dbConnectionString struct {
+	Host     string
+	Port     string
+	Username string
+	Password string
+	Database string
+}
+
+func (db *dbConnectionString) String() string {
+	var port string
+	if db.Port != "" {
+		port = fmt.Sprintf("Port=%s;", db.Port)
+	}
+	return fmt.Sprintf(
+		"Host=%s;%sUsername=%s;Password=%s;Database=%s;",
+		db.Host,
+		port,
+		db.Username,
+		db.Password,
+		db.Database)
 }
 
 // evalBindingRefWithParent evaluates a binding reference expression with the given parent resource. The expression is

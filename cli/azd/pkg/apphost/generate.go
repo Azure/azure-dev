@@ -351,15 +351,13 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 		case "azure.sql.database.v0", "sqlserver.database.v0":
 			b.addSqlDatabase(*comp.Parent, name)
 		case "postgres.server.v0":
-			// We currently use a ACA Postgres Service per database. Because of this, we don't need to retain any
-			// information from the server resource.
-			//
-			// We have the case statement here to ensure we don't error out on the resource type by treating it as an unknown
-			// resource type.
+			b.addContainerAppService(name, "postgres")
 		case "postgres.database.v0":
-			if comp.Parent == nil || (m.Resources[*comp.Parent].Type != "container.v0") {
-				// When the resource has a container.v0 as a parent, it means that the database is a part of a container
-				// and it should not be created as a separate resource.
+			if comp.Parent == nil ||
+				(m.Resources[*comp.Parent].Type != "container.v0" &&
+					m.Resources[*comp.Parent].Type != "postgres.server.v0") {
+				// When the resource has a server (container or p.server) as a parent, it means that the database is
+				// a part of a server and it should not be created as a separate resource.
 				b.addContainerAppService(name, "postgres")
 			}
 		default:

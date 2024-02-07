@@ -14,6 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/internal/cmd"
 	"github.com/azure/azure-dev/cli/azd/internal/repository"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
@@ -53,7 +54,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/swa"
 	"github.com/azure/azure-dev/cli/azd/pkg/workflow"
 	"github.com/mattn/go-colorable"
-	"github.com/mattn/go-isatty"
 	"github.com/spf13/cobra"
 	"golang.org/x/exp/slices"
 )
@@ -111,8 +111,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		}
 
 		isTerminal := cmd.OutOrStdout() == os.Stdout &&
-			cmd.InOrStdin() == os.Stdin && isatty.IsTerminal(os.Stdin.Fd()) &&
-			isatty.IsTerminal(os.Stdout.Fd())
+			cmd.InOrStdin() == os.Stdin && input.IsTerminal(os.Stdout.Fd(), os.Stdin.Fd())
 
 		return input.NewConsole(rootOptions.NoPrompt, isTerminal, writer, input.ConsoleHandles{
 			Stdin:  cmd.InOrStdin(),
@@ -342,7 +341,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	)
 
 	// Project Config
-	container.MustRegisterSingleton(
+	container.MustRegisterTransient(
 		func(ctx context.Context, azdContext *azdcontext.AzdContext) (*project.ProjectConfig, error) {
 			if azdContext == nil {
 				return nil, azdcontext.ErrNoProject
@@ -608,7 +607,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(workflow.NewRunner)
 
 	// Required for nested actions called from composite actions like 'up'
-	registerAction[*provisionAction](container, "azd-provision-action")
+	registerAction[*cmd.ProvisionAction](container, "azd-provision-action")
 	registerAction[*downAction](container, "azd-down-action")
 	registerAction[*configShowAction](container, "azd-config-show-action")
 }

@@ -24,7 +24,7 @@ import (
 	"go.uber.org/multierr"
 )
 
-type provisionFlags struct {
+type ProvisionFlags struct {
 	noProgress            bool
 	preview               bool
 	ignoreDeploymentState bool
@@ -39,19 +39,19 @@ const (
 	azurePortalURL              = "https://ms.portal.azure.com/"
 )
 
-func (i *provisionFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
-	i.bindNonCommon(local, global)
+func (i *ProvisionFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+	i.BindNonCommon(local, global)
 	i.bindCommon(local, global)
 }
 
-func (i *provisionFlags) bindNonCommon(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+func (i *ProvisionFlags) BindNonCommon(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	local.BoolVar(&i.noProgress, "no-progress", false, "Suppresses progress information.")
 	//deprecate:Flag hide --no-progress
 	_ = local.MarkHidden("no-progress")
 	i.global = global
 }
 
-func (i *provisionFlags) bindCommon(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+func (i *ProvisionFlags) bindCommon(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
 	local.BoolVar(&i.preview, "preview", false, "Preview changes to Azure resources.")
 	local.BoolVar(
 		&i.ignoreDeploymentState,
@@ -63,26 +63,35 @@ func (i *provisionFlags) bindCommon(local *pflag.FlagSet, global *internal.Globa
 	i.EnvFlag.Bind(local, global)
 }
 
-func (i *provisionFlags) setCommon(envFlag *internal.EnvFlag) {
+func (i *ProvisionFlags) SetCommon(envFlag *internal.EnvFlag) {
 	i.EnvFlag = envFlag
 }
 
-func newProvisionFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *provisionFlags {
-	flags := &provisionFlags{}
+func NewProvisionFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *ProvisionFlags {
+	flags := &ProvisionFlags{}
 	flags.Bind(cmd.Flags(), global)
 
 	return flags
 }
 
-func newProvisionCmd() *cobra.Command {
+func NewProvisionFlagsFromEnvAndOptions(envFlag *internal.EnvFlag, global *internal.GlobalCommandOptions) *ProvisionFlags {
+	flags := &ProvisionFlags{
+		EnvFlag: envFlag,
+		global:  global,
+	}
+
+	return flags
+}
+
+func NewProvisionCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "provision",
 		Short: "Provision the Azure resources for an application.",
 	}
 }
 
-type provisionAction struct {
-	flags            *provisionFlags
+type ProvisionAction struct {
+	flags            *ProvisionFlags
 	provisionManager *provisioning.Manager
 	projectManager   project.ProjectManager
 	resourceManager  project.ResourceManager
@@ -96,8 +105,8 @@ type provisionAction struct {
 	importManager    *project.ImportManager
 }
 
-func newProvisionAction(
-	flags *provisionFlags,
+func NewProvisionAction(
+	flags *ProvisionFlags,
 	provisionManager *provisioning.Manager,
 	projectManager project.ProjectManager,
 	importManager *project.ImportManager,
@@ -110,7 +119,7 @@ func newProvisionAction(
 	writer io.Writer,
 	subManager *account.SubscriptionsManager,
 ) actions.Action {
-	return &provisionAction{
+	return &ProvisionAction{
 		flags:            flags,
 		provisionManager: provisionManager,
 		projectManager:   projectManager,
@@ -126,7 +135,16 @@ func newProvisionAction(
 	}
 }
 
-func (p *provisionAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+// SetFlags sets the flags for the provision action. Panics if `flags` is nil
+func (p *ProvisionAction) SetFlags(flags *ProvisionFlags) {
+	if flags == nil {
+		panic("flags is nil")
+	}
+
+	p.flags = flags
+}
+
+func (p *ProvisionAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	if p.flags.noProgress {
 		fmt.Fprintln(
 			p.console.Handles().Stderr,
@@ -370,7 +388,7 @@ func deployResultToUx(previewResult *provisioning.DeployPreviewResult) ux.UxItem
 	}
 }
 
-func getCmdProvisionHelpDescription(c *cobra.Command) string {
+func GetCmdProvisionHelpDescription(c *cobra.Command) string {
 	return generateCmdHelpDescription(fmt.Sprintf(
 		"Provision the Azure resources for an application."+
 			" This step may take a while depending on the resources provisioned."+

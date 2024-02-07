@@ -81,6 +81,9 @@ resource cache 'Microsoft.App/containerApps@2023-05-02-preview' = {
           name: 'redis'
         }
       ]
+      scale: {
+        minReplicas: 1
+      }
     }
   }
   tags: union(tags, {'aspire-resource-name': 'cache'})
@@ -103,6 +106,9 @@ resource pubsub 'Microsoft.App/containerApps@2023-05-02-preview' = {
           name: 'redis'
         }
       ]
+      scale: {
+        minReplicas: 1
+      }
     }
   }
   tags: union(tags, {'aspire-resource-name': 'pubsub'})

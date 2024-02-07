@@ -425,19 +425,14 @@ func (fns *containerAppTemplateManifestFuncs) ConnectionString(name string) (str
 		}
 
 		if parent.Type == "container.v0" {
-			rawConnectionString := strings.Split(strings.TrimRight(*parent.ConnectionString, ";"), ";")
-			rawConnectionString = append(rawConnectionString, fmt.Sprintf("Database=%s;", name))
-			for i, part := range rawConnectionString {
-				keyValue := strings.Split(part, "=")
-				resolvedValue, err := apphost.EvalString(keyValue[1], func(expr string) (string, error) {
-					return evalBindingRefWithParent(expr, parent, fns.env)
-				})
-				if err != nil {
-					return "", fmt.Errorf("evaluating connection string for %s: %w", name, err)
-				}
-				rawConnectionString[i] = fmt.Sprintf("%s=%s", keyValue[0], resolvedValue)
+			rawConnectionString := *parent.ConnectionString + fmt.Sprintf("Database=%s;", name)
+			resolvedConnectionString, err := apphost.EvalString(rawConnectionString, func(expr string) (string, error) {
+				return evalBindingRefWithParent(expr, parent, fns.env)
+			})
+			if err != nil {
+				return "", fmt.Errorf("evaluating connection string for %s: %w", name, err)
 			}
-			return strings.Join(rawConnectionString, ";"), nil
+			return resolvedConnectionString, nil
 		}
 
 		return "", fmt.Errorf("connectionString: unsupported parent resource type '%s'", parent.Type)
@@ -457,19 +452,14 @@ func (fns *containerAppTemplateManifestFuncs) ConnectionString(name string) (str
 
 		parent := fns.manifest.Resources[*parentResource]
 		if parent.Type == "container.v0" {
-			rawConnectionString := strings.Split(strings.TrimRight(*parent.ConnectionString, ";"), ";")
-			rawConnectionString = append(rawConnectionString, fmt.Sprintf("Database=%s;", name))
-			for i, part := range rawConnectionString {
-				keyValue := strings.Split(part, "=")
-				resolvedValue, err := apphost.EvalString(keyValue[1], func(expr string) (string, error) {
-					return evalBindingRefWithParent(expr, parent, fns.env)
-				})
-				if err != nil {
-					return "", fmt.Errorf("evaluating connection string for %s: %w", name, err)
-				}
-				rawConnectionString[i] = fmt.Sprintf("%s=%s", keyValue[0], resolvedValue)
+			rawConnectionString := *parent.ConnectionString + fmt.Sprintf("Database=%s;", name)
+			resolvedConnectionString, err := apphost.EvalString(rawConnectionString, func(expr string) (string, error) {
+				return evalBindingRefWithParent(expr, parent, fns.env)
+			})
+			if err != nil {
+				return "", fmt.Errorf("evaluating connection string for %s: %w", name, err)
 			}
-			return strings.Join(rawConnectionString, ";"), nil
+			return resolvedConnectionString, nil
 		}
 
 		return fns.sqlConnectionString(*resource.Parent, name)

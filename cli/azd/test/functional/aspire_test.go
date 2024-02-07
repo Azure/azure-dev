@@ -49,7 +49,7 @@ func restoreDotnetWorkload(t *testing.T) {
 //
 // (fast) go test -run ^Test_CLI_Aspire_DetectGen - Detection + generation acceptance tests.
 // (slow, > 10 mins) go test -run ^Test_CLI_Aspire_Deploy -timeout 30m - Full deployment acceptance tests.
-// (all) go test -run ^Test_CLI_Aspire - Runs all tests.
+// (all) go test -run ^Test_CLI_Aspire -timeout 30m - Runs all tests.
 
 // Test_CLI_Aspire_DetectGen tests the detection and generation of an Aspire project.
 func Test_CLI_Aspire_DetectGen(t *testing.T) {

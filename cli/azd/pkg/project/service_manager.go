@@ -551,6 +551,7 @@ func (sm *serviceManager) GetServiceTarget(ctx context.Context, serviceConfig *S
 func (sm *serviceManager) GetFrameworkService(ctx context.Context, serviceConfig *ServiceConfig) (FrameworkService, error) {
 	var frameworkService FrameworkService
 
+	// Publishing from an existing image currently follows the same lifecycle as a docker project
 	if serviceConfig.Language == ServiceLanguageNone && serviceConfig.Image != "" {
 		serviceConfig.Language = ServiceLanguageDocker
 	}

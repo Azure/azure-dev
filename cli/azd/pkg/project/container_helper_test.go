@@ -35,8 +35,6 @@ func Test_ContainerHelper_LocalImageTag(t *testing.T) {
 	}
 	defaultImageName := fmt.Sprintf("%s/%s-%s", projectName, serviceName, envName)
 
-	envManager := &mockenv.MockEnvManager{}
-
 	tests := []struct {
 		name         string
 		dockerConfig DockerProjectOptions
@@ -58,7 +56,7 @@ func Test_ContainerHelper_LocalImageTag(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			env := environment.NewWithValues("dev", map[string]string{})
-			containerHelper := NewContainerHelper(env, envManager, clock.NewMock(), nil, nil)
+			containerHelper := NewContainerHelper(env, nil, clock.NewMock(), nil, nil)
 			serviceConfig.Docker = tt.dockerConfig
 
 			tag, err := containerHelper.LocalImageTag(*mockContext.Context, serviceConfig)
@@ -69,31 +67,62 @@ func Test_ContainerHelper_LocalImageTag(t *testing.T) {
 }
 
 func Test_ContainerHelper_RemoteImageTag(t *testing.T) {
+	tests := []struct {
+		name              string
+		project           string
+		localImageTag     string
+		registry          ExpandableString
+		expectedRemoteTag string
+		expectError       bool
+	}{
+		{
+			name:              "with registry",
+			project:           "./src/api",
+			registry:          NewExpandableString("contoso.azurecr.io"),
+			localImageTag:     "test-app/api-dev:azd-deploy-0",
+			expectedRemoteTag: "contoso.azurecr.io/test-app/api-dev:azd-deploy-0",
+		},
+		{
+			name:              "with no registry and custom image",
+			project:           "",
+			localImageTag:     "docker.io/org/my-custom-image:latest",
+			expectedRemoteTag: "docker.io/org/my-custom-image:latest",
+		},
+		{
+			name:              "registry with fully qualified custom image",
+			project:           "",
+			registry:          NewExpandableString("contoso.azurecr.io"),
+			localImageTag:     "docker.io/org/my-custom-image:latest",
+			expectedRemoteTag: "contoso.azurecr.io/org/my-custom-image:latest",
+		},
+		{
+			name:          "missing registry with local project",
+			project:       "./src/api",
+			localImageTag: "test-app/api-dev:azd-deploy-0",
+			expectError:   true,
+		},
+	}
+
 	mockContext := mocks.NewMockContext(context.Background())
-	env := environment.NewWithValues("dev", map[string]string{
-		environment.ContainerRegistryEndpointEnvVarName: "contoso.azurecr.io",
-	})
-	envManager := &mockenv.MockEnvManager{}
-	containerHelper := NewContainerHelper(env, envManager, clock.NewMock(), nil, nil)
-	serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
-	localTag, err := containerHelper.LocalImageTag(*mockContext.Context, serviceConfig)
-	require.NoError(t, err)
-	remoteTag, err := containerHelper.RemoteImageTag(*mockContext.Context, serviceConfig, localTag)
-	require.NoError(t, err)
-	require.Equal(t, "contoso.azurecr.io/test-app/api-dev:azd-deploy-0", remoteTag)
-}
+	env := environment.NewWithValues("dev", map[string]string{})
+	containerHelper := NewContainerHelper(env, nil, clock.NewMock(), nil, nil)
 
-func Test_ContainerHelper_RemoteImageTag_NoContainer_Registry(t *testing.T) {
-	mockContext := mocks.NewMockContext(context.Background())
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			serviceConfig := createTestServiceConfig(tt.project, ContainerAppTarget, ServiceLanguageTypeScript)
+			serviceConfig.Docker.Registry = tt.registry
 
-	env := environment.New("test")
-	serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
-	envManager := &mockenv.MockEnvManager{}
-	containerHelper := NewContainerHelper(env, envManager, clock.NewMock(), nil, nil)
+			remoteTag, err := containerHelper.RemoteImageTag(*mockContext.Context, serviceConfig, tt.localImageTag)
 
-	imageTag, err := containerHelper.RemoteImageTag(*mockContext.Context, serviceConfig, "local_tag")
-	require.Error(t, err)
-	require.Empty(t, imageTag)
+			if tt.expectError {
+				require.Error(t, err)
+				require.Empty(t, remoteTag)
+			} else {
+				require.NoError(t, err)
+				require.Equal(t, tt.expectedRemoteTag, remoteTag)
+			}
+		})
+	}
 }
 
 func Test_ContainerHelper_Resolve_RegistryName(t *testing.T) {
@@ -306,6 +335,145 @@ func Test_ContainerHelper_Deploy(t *testing.T) {
 			require.Equal(t, tt.expectDockerPullCalled, dockerPullCalled)
 			require.Equal(t, tt.expectDockerTagCalled, dockerTagCalled)
 			require.Equal(t, tt.expectDockerPushCalled, dockerPushCalled)
+		})
+	}
+}
+
+func Test_ContainerHelper_ConfiguredImage(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+	env := environment.NewWithValues("dev", map[string]string{})
+	containerHelper := NewContainerHelper(env, nil, clock.NewMock(), nil, nil)
+
+	tests := []struct {
+		name                 string
+		projectName          string
+		serviceName          string
+		sourceImage          string
+		env                  map[string]string
+		registry             ExpandableString
+		image                ExpandableString
+		tag                  ExpandableString
+		expectedImage        docker.ContainerImage
+		expectError          bool
+		expectedErrorMessage string
+	}{
+		{
+			name: "with defaults",
+			expectedImage: docker.ContainerImage{
+				Registry:   "",
+				Repository: "test-app/api-dev",
+				Tag:        "azd-deploy-0",
+			},
+		},
+		{
+			name: "with custom tag",
+			tag:  NewExpandableString("custom-tag"),
+			expectedImage: docker.ContainerImage{
+				Registry:   "",
+				Repository: "test-app/api-dev",
+				Tag:        "custom-tag",
+			},
+		},
+		{
+			name:  "with custom iamge",
+			image: NewExpandableString("custom-image"),
+			expectedImage: docker.ContainerImage{
+				Registry:   "",
+				Repository: "custom-image",
+				Tag:        "azd-deploy-0",
+			},
+		},
+		{
+			name:  "with custom iamge and tag",
+			image: NewExpandableString("custom-image"),
+			tag:   NewExpandableString("custom-tag"),
+			expectedImage: docker.ContainerImage{
+				Registry:   "",
+				Repository: "custom-image",
+				Tag:        "custom-tag",
+			},
+		},
+		{
+			name:     "with registry",
+			registry: NewExpandableString("contoso.azurecr.io"),
+			expectedImage: docker.ContainerImage{
+				Registry:   "contoso.azurecr.io",
+				Repository: "test-app/api-dev",
+				Tag:        "azd-deploy-0",
+			},
+		},
+		{
+			name:     "with registry, custom image and tag",
+			registry: NewExpandableString("contoso.azurecr.io"),
+			image:    NewExpandableString("custom-image"),
+			tag:      NewExpandableString("custom-tag"),
+			expectedImage: docker.ContainerImage{
+				Registry:   "contoso.azurecr.io",
+				Repository: "custom-image",
+				Tag:        "custom-tag",
+			},
+		},
+		{
+			name: "with expandable overrides",
+			env: map[string]string{
+				"MY_CUSTOM_REGISTRY": "custom.azurecr.io",
+				"MY_CUSTOM_IMAGE":    "custom-image",
+				"MY_CUSTOM_TAG":      "custom-tag",
+			},
+			registry: NewExpandableString("${MY_CUSTOM_REGISTRY}"),
+			image:    NewExpandableString("${MY_CUSTOM_IMAGE}"),
+			tag:      NewExpandableString("${MY_CUSTOM_TAG}"),
+			expectedImage: docker.ContainerImage{
+				Registry:   "custom.azurecr.io",
+				Repository: "custom-image",
+				Tag:        "custom-tag",
+			},
+		},
+		{
+			name:                 "invalid image name",
+			image:                NewExpandableString("${MISSING_CLOSING_BRACE"),
+			expectError:          true,
+			expectedErrorMessage: "missing closing brace",
+		},
+		{
+			name:                 "invalid tag",
+			image:                NewExpandableString("repo/::latest"),
+			expectError:          true,
+			expectedErrorMessage: "invalid tag",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
+			if tt.projectName != "" {
+				serviceConfig.Project.Name = tt.projectName
+			}
+			if tt.serviceName != "" {
+				serviceConfig.Name = tt.serviceName
+			}
+			serviceConfig.Image = tt.sourceImage
+			serviceConfig.Docker.Registry = tt.registry
+			serviceConfig.Docker.Image = tt.image
+			serviceConfig.Docker.Tag = tt.tag
+
+			for k, v := range tt.env {
+				env.DotenvSet(k, v)
+			}
+
+			image, err := containerHelper.GeneratedImage(*mockContext.Context, serviceConfig)
+
+			if tt.expectError {
+				require.Error(t, err)
+				require.Nil(t, image)
+				if tt.expectedErrorMessage != "" {
+					require.Contains(t, err.Error(), tt.expectedErrorMessage)
+				}
+			} else {
+				require.NoError(t, err)
+				require.NotNil(t, image)
+				require.Equal(t, tt.expectedImage, *image)
+			}
 		})
 	}
 }

@@ -145,7 +145,9 @@ func (ch *ContainerHelper) RemoteImageTag(
 		return "", err
 	}
 
-	containerImage.Registry = registryName
+	if registryName != "" {
+		containerImage.Registry = registryName
+	}
 
 	return containerImage.Remote(), nil
 }

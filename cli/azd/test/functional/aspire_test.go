@@ -28,24 +28,20 @@ import (
 
 var dotnetWorkloadInstallOnce sync.Once
 
-func restore(t *testing.T) {
-	dir := t.TempDir()
-	err := copySample(dir, "aspire-full")
-	require.NoError(t, err, "failed expanding sample")
-
-	ctx := context.Background()
-	appHostProject := filepath.Join(dir, "AspireAzdTests.AppHost")
-
-	wr := logWriter{initialTime: time.Now(), t: t, prefix: "restore: "}
-	commandRunner := exec.NewCommandRunner(nil)
-	runArgs := newRunArgs("dotnet", "workload", "restore", "--skip-sign-check").WithCwd(appHostProject).WithStdOut(&wr)
-	_, err = commandRunner.Run(ctx, runArgs)
-	require.NoError(t, err)
-}
-
-func installDotnetWorkload(t *testing.T) {
+func restoreDotnetWorkload(t *testing.T) {
 	dotnetWorkloadInstallOnce.Do(func() {
-		restore(t)
+		dir := t.TempDir()
+		err := copySample(dir, "aspire-full")
+		require.NoError(t, err, "failed expanding sample")
+
+		ctx := context.Background()
+		appHostProject := filepath.Join(dir, "AspireAzdTests.AppHost")
+
+		wr := logWriter{initialTime: time.Now(), t: t, prefix: "restore: "}
+		commandRunner := exec.NewCommandRunner(nil)
+		runArgs := newRunArgs("dotnet", "workload", "restore", "--skip-sign-check").WithCwd(appHostProject).WithStdOut(&wr)
+		_, err = commandRunner.Run(ctx, runArgs)
+		require.NoError(t, err)
 	})
 }
 
@@ -57,7 +53,7 @@ func installDotnetWorkload(t *testing.T) {
 
 // Test_CLI_Aspire_DetectGen tests the detection and generation of an Aspire project.
 func Test_CLI_Aspire_DetectGen(t *testing.T) {
-	installDotnetWorkload(t)
+	restoreDotnetWorkload(t)
 
 	sn := snapshot.NewDefaultConfig().WithOptions(cupaloy.SnapshotFileExtension(""))
 	snRoot := filepath.Join("testdata", "snaps", "aspire-full")
@@ -80,7 +76,6 @@ func Test_CLI_Aspire_DetectGen(t *testing.T) {
 		appHostProject := filepath.Join(dir, "AspireAzdTests.AppHost")
 		manifestPath := filepath.Join(appHostProject, "manifest.json")
 
-		restore(t)
 		err = dotnetCli.PublishAppHostManifest(ctx, appHostProject, manifestPath)
 		require.NoError(t, err)
 
@@ -103,8 +98,6 @@ func Test_CLI_Aspire_DetectGen(t *testing.T) {
 
 		envName := randomEnvName()
 		t.Logf("AZURE_ENV_NAME: %s", envName)
-
-		restore(t)
 
 		err = copySample(dir, "aspire-full")
 		require.NoError(t, err, "failed expanding sample")
@@ -161,8 +154,6 @@ func Test_CLI_Aspire_DetectGen(t *testing.T) {
 		require.NoError(t, err, "failed creating temp dir")
 		t.Logf("DIR: %s", dir)
 
-		restore(t)
-
 		envName := randomEnvName()
 		t.Logf("AZURE_ENV_NAME: %s", envName)
 
@@ -208,7 +199,7 @@ func Test_CLI_Aspire_DetectGen(t *testing.T) {
 
 // Test_CLI_Aspire_Deploy tests the full deployment of an Aspire project.
 func Test_CLI_Aspire_Deploy(t *testing.T) {
-	installDotnetWorkload(t)
+	restoreDotnetWorkload(t)
 
 	t.Parallel()
 	ctx, cancel := newTestContext(t)

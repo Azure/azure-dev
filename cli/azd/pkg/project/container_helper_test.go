@@ -9,7 +9,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -47,7 +47,7 @@ func Test_ContainerHelper_LocalImageTag(t *testing.T) {
 		{
 			"ImageTagSpecified",
 			DockerProjectOptions{
-				Image: NewExpandableString("contoso/contoso-image:latest"),
+				Image: osutil.NewExpandableString("contoso/contoso-image:latest"),
 			},
 			"contoso/contoso-image:latest",
 		},
@@ -146,7 +146,7 @@ func Test_ContainerHelper_Resolve_RegistryName(t *testing.T) {
 		envManager := &mockenv.MockEnvManager{}
 		containerHelper := NewContainerHelper(env, envManager, clock.NewMock(), nil, nil)
 		serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
-		serviceConfig.Docker.Registry = NewExpandableString("contoso.azurecr.io")
+		serviceConfig.Docker.Registry = osutil.NewExpandableString("contoso.azurecr.io")
 		registryName, err := containerHelper.RegistryName(*mockContext.Context, serviceConfig)
 
 		require.NoError(t, err)
@@ -160,7 +160,7 @@ func Test_ContainerHelper_Resolve_RegistryName(t *testing.T) {
 		envManager := &mockenv.MockEnvManager{}
 		containerHelper := NewContainerHelper(env, envManager, clock.NewMock(), nil, nil)
 		serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
-		serviceConfig.Docker.Registry = NewExpandableString("${MY_CUSTOM_REGISTRY}")
+		serviceConfig.Docker.Registry = osutil.NewExpandableString("${MY_CUSTOM_REGISTRY}")
 		registryName, err := containerHelper.RegistryName(*mockContext.Context, serviceConfig)
 
 		require.NoError(t, err)

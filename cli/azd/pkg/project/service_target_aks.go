@@ -6,24 +6,36 @@ import (
 	"fmt"
 	"log"
 	"net/url"
+	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
+	"github.com/azure/azure-dev/cli/azd/pkg/helm"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/kubelogin"
+	"github.com/azure/azure-dev/cli/azd/pkg/kustomize"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/kubectl"
+	"github.com/sethvargo/go-retry"
 )
 
 const (
 	defaultDeploymentPath = "manifests"
+)
+
+var (
+	featureHelm      alpha.FeatureId = alpha.MustFeatureKey("aks.helm")
+	featureKustomize alpha.FeatureId = alpha.MustFeatureKey("aks.kustomize")
 )
 
 // The AKS configuration options
@@ -38,6 +50,10 @@ type AksOptions struct {
 	Deployment AksDeploymentOptions `yaml:"deployment"`
 	// The services service configuration options
 	Service AksServiceOptions `yaml:"service"`
+	// The helm configuration options
+	Helm *helm.Config `yaml:"helm"`
+	// The kustomize configuration options
+	Kustomize *kustomize.Config `yaml:"kustomize"`
 }
 
 // The AKS ingress options
@@ -64,7 +80,10 @@ type aksTarget struct {
 	resourceManager        ResourceManager
 	kubectl                kubectl.KubectlCli
 	kubeLoginCli           *kubelogin.Cli
+	helmCli                *helm.Cli
+	kustomizeCli           *kustomize.Cli
 	containerHelper        *ContainerHelper
+	featureManager         *alpha.FeatureManager
 }
 
 // Creates a new instance of the AKS service target
@@ -76,7 +95,10 @@ func NewAksTarget(
 	resourceManager ResourceManager,
 	kubectlCli kubectl.KubectlCli,
 	kubeLoginCli *kubelogin.Cli,
+	helmCli *helm.Cli,
+	kustomizeCli *kustomize.Cli,
 	containerHelper *ContainerHelper,
+	featureManager *alpha.FeatureManager,
 ) ServiceTarget {
 	return &aksTarget{
 		env:                    env,
@@ -86,7 +108,10 @@ func NewAksTarget(
 		resourceManager:        resourceManager,
 		kubectl:                kubectlCli,
 		kubeLoginCli:           kubeLoginCli,
+		helmCli:                helmCli,
+		kustomizeCli:           kustomizeCli,
 		containerHelper:        containerHelper,
+		featureManager:         featureManager,
 	}
 }
 
@@ -95,6 +120,14 @@ func (t *aksTarget) RequiredExternalTools(ctx context.Context) []tools.ExternalT
 	allTools := []tools.ExternalTool{}
 	allTools = append(allTools, t.containerHelper.RequiredExternalTools(ctx)...)
 	allTools = append(allTools, t.kubectl)
+
+	if t.featureManager.IsEnabled(featureHelm) {
+		allTools = append(allTools, t.helmCli)
+	}
+
+	if t.featureManager.IsEnabled(featureKustomize) {
+		allTools = append(allTools, t.kustomizeCli)
+	}
 
 	return allTools
 }
@@ -159,40 +192,61 @@ func (t *aksTarget) Deploy(
 				return
 			}
 
-			// Login, tag & push container image to ACR
-			containerDeployTask := t.containerHelper.Deploy(ctx, serviceConfig, packageOutput, targetResource, true)
-			syncProgress(task, containerDeployTask.Progress())
+			if packageOutput.PackagePath != "" {
+				// Login, tag & push container image to ACR
+				containerDeployTask := t.containerHelper.Deploy(ctx, serviceConfig, packageOutput, targetResource, true)
+				syncProgress(task, containerDeployTask.Progress())
+
+				_, err := containerDeployTask.Await()
+				if err != nil {
+					task.SetError(err)
+					return
+				}
+			}
 
 			// Sync environment
 			t.kubectl.SetEnv(t.env.Dotenv())
 
-			task.SetProgress(NewServiceProgress("Applying k8s manifests"))
-			deploymentPath := serviceConfig.K8s.DeploymentPath
-			if deploymentPath == "" {
-				deploymentPath = defaultDeploymentPath
-			}
+			// Deploy k8s resources in the following order:
+			// 1. Helm
+			// 2. Kustomize
+			// 3. Manifests
+			//
+			// Users may install a helm chart to setup their cluster with custom resource definitions that their
+			// custom manifests depend on.
+			// Users are more likely to either deploy with kustomize or vanilla manifests but they could do both.
 
-			err := t.kubectl.Apply(
-				ctx,
-				filepath.Join(serviceConfig.RelativePath, deploymentPath),
-				nil,
-			)
+			deployed := false
+
+			// Helm Support
+			helmDeployed, err := t.deployHelmCharts(ctx, serviceConfig, task)
 			if err != nil {
-				task.SetError(fmt.Errorf("failed applying kube manifests: %w", err))
+				task.SetError(fmt.Errorf("helm deployment failed: %w", err))
 				return
 			}
 
-			deploymentName := serviceConfig.K8s.Deployment.Name
-			if deploymentName == "" {
-				deploymentName = serviceConfig.Name
+			deployed = deployed || helmDeployed
+
+			// Kustomize Support
+			kustomizeDeployed, err := t.deployKustomize(ctx, serviceConfig, task)
+			if err != nil {
+				task.SetError(fmt.Errorf("kustomize deployment failed: %w", err))
+				return
 			}
 
-			// It is not a requirement for a AZD deploy to contain a deployment object
-			// If we don't find any deployment within the namespace we will continue
-			task.SetProgress(NewServiceProgress("Verifying deployment"))
-			deployment, err := t.waitForDeployment(ctx, deploymentName)
-			if err != nil && !errors.Is(err, kubectl.ErrResourceNotFound) {
+			deployed = deployed || kustomizeDeployed
+
+			// Vanilla k8s manifests with minimal templating support
+			deployment, err := t.deployManifests(ctx, serviceConfig, task)
+			if err != nil && !os.IsNotExist(err) {
 				task.SetError(err)
+				return
+			}
+
+			deployed = deployed || deployment != nil
+
+			if !deployed {
+				task.SetError(errors.New("no deployment manifests found"))
 				return
 			}
 
@@ -227,6 +281,194 @@ func (t *aksTarget) Deploy(
 				Endpoints: endpoints,
 			})
 		})
+}
+
+// deployManifests deploys raw or templated yaml manifests to the k8s cluster
+func (t *aksTarget) deployManifests(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress],
+) (*kubectl.Deployment, error) {
+	deploymentPath := serviceConfig.K8s.DeploymentPath
+	if deploymentPath == "" {
+		deploymentPath = defaultDeploymentPath
+	}
+
+	// Manifests are optional so we will continue if the directory does not exist
+	if _, err := os.Stat(deploymentPath); os.IsNotExist(err) {
+		return nil, err
+	}
+
+	task.SetProgress(NewServiceProgress("Applying k8s manifests"))
+	err := t.kubectl.Apply(
+		ctx,
+		filepath.Join(serviceConfig.RelativePath, deploymentPath),
+		nil,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed applying kube manifests: %w", err)
+	}
+
+	deploymentName := serviceConfig.K8s.Deployment.Name
+	if deploymentName == "" {
+		deploymentName = serviceConfig.Name
+	}
+
+	// It is not a requirement for a AZD deploy to contain a deployment object
+	// If we don't find any deployment within the namespace we will continue
+	task.SetProgress(NewServiceProgress("Verifying deployment"))
+	deployment, err := t.waitForDeployment(ctx, deploymentName)
+	if err != nil && !errors.Is(err, kubectl.ErrResourceNotFound) {
+		return nil, err
+	}
+
+	return deployment, nil
+}
+
+// deployKustomize deploys kustomize manifests to the k8s cluster
+func (t *aksTarget) deployKustomize(
+	ctx context.Context,
+	serviceConfig *ServiceConfig,
+	task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress],
+) (bool, error) {
+	if serviceConfig.K8s.Kustomize == nil {
+		return false, nil
+	}
+
+	if !t.featureManager.IsEnabled(featureKustomize) {
+		return false, fmt.Errorf(
+			"Kustomize support is not enabled. Run '%s' to enable it.",
+			alpha.GetEnableCommand(featureKustomize),
+		)
+	}
+
+	task.SetProgress(NewServiceProgress("Applying k8s manifests with Kustomize"))
+	overlayPath, err := serviceConfig.K8s.Kustomize.Directory.Envsubst(t.env.Getenv)
+	if err != nil {
+		return false, fmt.Errorf("failed to envsubst kustomize directory: %w", err)
+	}
+
+	// When deploying with kustomize we need to specify the full path to the kustomize directory.
+	// This can either be a base or overlay directory but must contain a kustomization.yaml file
+	kustomizeDir := filepath.Join(serviceConfig.Project.Path, serviceConfig.RelativePath, overlayPath)
+	if _, err := os.Stat(kustomizeDir); os.IsNotExist(err) {
+		return false, fmt.Errorf("kustomize directory '%s' does not exist: %w", kustomizeDir, err)
+	}
+
+	// Kustomize does not have a built in way to specify environment variables
+	// A common well-known solution is to use the kustomize configMapGenerator within your kustomization.yaml
+	// and then generate a .env file that can be used to generate config maps
+	// azd can help here to create an .env file from the map specified within azure.yaml kustomize config section
+	if len(serviceConfig.K8s.Kustomize.Env) > 0 {
+		builder := strings.Builder{}
+		for key, exp := range serviceConfig.K8s.Kustomize.Env {
+			value, err := exp.Envsubst(t.env.Getenv)
+			if err != nil {
+				return false, fmt.Errorf("failed to envsubst kustomize env: %w", err)
+			}
+
+			builder.WriteString(fmt.Sprintf("%s=%s\n", key, value))
+		}
+
+		// We are manually writing the .env file since k8s config maps expect unquoted values
+		// The godotenv library will quote values when writing the file without an option to disable
+		envFilePath := filepath.Join(kustomizeDir, ".env")
+		if err := os.WriteFile(envFilePath, []byte(builder.String()), osutil.PermissionFile); err != nil {
+			return false, fmt.Errorf("failed to write kustomize .env: %w", err)
+		}
+
+		defer os.Remove(envFilePath)
+	}
+
+	// Another common scenario is to use the kustomize edit commands to modify the kustomization.yaml
+	// configuration before	applying the manifests.
+	// Common scenarios for this would be for modifying the images or namespace used for the deployment
+	for _, edit := range serviceConfig.K8s.Kustomize.Edits {
+		editArgs, err := edit.Envsubst(t.env.Getenv)
+		if err != nil {
+			return false, fmt.Errorf("failed to envsubst kustomize edit: %w", err)
+		}
+
+		if err := t.kustomizeCli.
+			WithCwd(kustomizeDir).
+			Edit(ctx, strings.Split(editArgs, " ")...); err != nil {
+			return false, err
+		}
+	}
+
+	// Finally apply manifests with kustomize using the -k flag
+	if err := t.kubectl.ApplyWithKustomize(ctx, kustomizeDir, nil); err != nil {
+		return false, err
+	}
+
+	return true, nil
+}
+
+// deployHelmCharts deploys helm charts to the k8s cluster
+func (t *aksTarget) deployHelmCharts(
+	ctx context.Context, serviceConfig *ServiceConfig,
+	task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress],
+) (bool, error) {
+	if serviceConfig.K8s.Helm == nil {
+		return false, nil
+	}
+
+	if !t.featureManager.IsEnabled(featureHelm) {
+		return false, fmt.Errorf("Helm support is not enabled. Run '%s' to enable it.", alpha.GetEnableCommand(featureHelm))
+	}
+
+	for _, repo := range serviceConfig.K8s.Helm.Repositories {
+		task.SetProgress(NewServiceProgress(fmt.Sprintf("Configuring helm repo: %s", repo.Name)))
+		if err := t.helmCli.AddRepo(ctx, repo); err != nil {
+			return false, err
+		}
+
+		if err := t.helmCli.UpdateRepo(ctx, repo.Name); err != nil {
+			return false, err
+		}
+	}
+
+	for _, release := range serviceConfig.K8s.Helm.Releases {
+		if release.Namespace == "" {
+			release.Namespace = t.getK8sNamespace(serviceConfig)
+		}
+
+		if err := t.ensureNamespace(ctx, release.Namespace); err != nil {
+			return false, err
+		}
+
+		task.SetProgress(NewServiceProgress(fmt.Sprintf("Installing helm release: %s", release.Name)))
+		if err := t.helmCli.Upgrade(ctx, release); err != nil {
+			return false, err
+		}
+
+		task.SetProgress(NewServiceProgress(fmt.Sprintf("Checking helm release status: %s", release.Name)))
+		err := retry.Do(
+			ctx,
+			retry.WithMaxDuration(10*time.Minute, retry.NewConstant(5*time.Second)),
+			func(ctx context.Context) error {
+				status, err := t.helmCli.Status(ctx, release)
+				if err != nil {
+					return err
+				}
+
+				if status.Info.Status != helm.StatusKindDeployed {
+					fmt.Printf("Status: %s\n", status.Info.Status)
+					return retry.RetryableError(
+						fmt.Errorf("helm release '%s' is not ready, %w", release.Name, err),
+					)
+				}
+
+				return nil
+			},
+		)
+
+		if err != nil {
+			return false, err
+		}
+	}
+
+	return true, nil
 }
 
 // Gets the service endpoints for the AKS service target
@@ -507,11 +749,21 @@ func (t *aksTarget) getServiceEndpoints(
 	var endpoints []string
 	if service.Spec.Type == kubectl.ServiceTypeLoadBalancer {
 		for _, resource := range service.Status.LoadBalancer.Ingress {
-			endpoints = append(endpoints, fmt.Sprintf("http://%s, (Service, Type: LoadBalancer)", resource.Ip))
+			endpoints = append(
+				endpoints,
+				fmt.Sprintf("http://%s, (Service: %s, Type: LoadBalancer)", resource.Ip, service.Metadata.Name),
+			)
 		}
 	} else if service.Spec.Type == kubectl.ServiceTypeClusterIp {
 		for index, ip := range service.Spec.ClusterIps {
-			endpoints = append(endpoints, fmt.Sprintf("http://%s:%d, (Service, Type: ClusterIP)", ip, service.Spec.Ports[index].Port))
+			endpoints = append(
+				endpoints,
+				fmt.Sprintf("http://%s:%d, (Service: %s, Type: ClusterIP)",
+					ip,
+					service.Spec.Ports[index].Port,
+					service.Metadata.Name,
+				),
+			)
 		}
 	}
 

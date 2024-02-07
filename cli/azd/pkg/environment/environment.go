@@ -59,6 +59,8 @@ type Environment struct {
 	Config config.Config
 }
 
+type SubscriptionId string
+
 const AzdInitialEnvironmentConfigName = "AZD_INITIAL_ENVIRONMENT_CONFIG"
 
 // New returns a new environment with the specified name.

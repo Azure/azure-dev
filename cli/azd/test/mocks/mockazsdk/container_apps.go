@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v2"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 )
@@ -135,4 +136,16 @@ func MockContainerAppSecretsList(
 	})
 
 	return mockRequest
+}
+
+func MockContainerAppsClient(subscriptionId string, credentials *mocks.MockCredentials) *armappcontainers.ContainerAppsClient {
+	// TODO: probably needs to provide more functionality
+	client, _ := &armappcontainers.NewContainerAppsClient(subscriptionId, credentials, &policy.ClientOptions{})
+	return client
+}
+
+func MockContainerAppsRevisionsClient(subscriptionId string, credentials *mocks.MockCredentials) *armappcontainers.ContainerAppsRevisionsClient {
+	// TODO: probably needs to provide more functionality
+	client, _ := &armappcontainers.NewContainerAppsRevisionClient(subscriptionId, credentials, &policy.ClientOptions{})
+	return client
 }

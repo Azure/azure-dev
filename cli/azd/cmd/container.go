@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
@@ -375,13 +376,45 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		},
 	)
 
+	// Clients
+
+	// TODO: File this registration in a reasonable place
+	container.MustRegisterSingleton(func(
+		env *environment.Environment,
+	) environment.SubscriptionId {
+		return environment.SubscriptionId(env.GetSubscriptionId())
+	})
+
+	// Default client options
 	container.MustRegisterSingleton(func(
 		clientOptionsBuilderFactory azsdk.ClientOptionsBuilderFactory,
-		ctx context.Context,
+		userAgent httputil.UserAgent,
+	) *azcore.ClientOptions {
+		return clientOptionsBuilderFactory.
+			ClientOptionsBuilder().
+			WithPerCallPolicy(azsdk.NewMsCorrelationPolicy()).
+			WithPerCallPolicy(azsdk.NewUserAgentPolicy(string(userAgent))).
+			BuildCoreClientOptions()
+	})
+
+	container.MustRegisterSingleton(func(
+		clientOptionsBuilderFactory azsdk.ClientOptionsBuilderFactory,
+		userAgent httputil.UserAgent,
+	) *arm.ClientOptions {
+		return clientOptionsBuilderFactory.
+			ClientOptionsBuilder().
+			WithPerCallPolicy(azsdk.NewMsCorrelationPolicy()).
+			WithPerCallPolicy(azsdk.NewUserAgentPolicy(string(userAgent))).
+			BuildArmClientOptions()
+	})
+
+	container.MustRegisterSingleton(func(
+		clientOptionsBuilderFactory azsdk.ClientOptionsBuilderFactory,
 		credential azcore.TokenCredential,
 	) (*armresourcegraph.Client, error) {
 		options := clientOptionsBuilderFactory.ClientOptionsBuilder().
-			SetContext(ctx).
+			// TODO: ensure that armresourcegraph doesn't require a specific correlation header policy
+			WithPerCallPolicy(azsdk.NewMsCorrelationPolicy()).
 			SetUserAgent("azd").
 			BuildArmClientOptions()
 

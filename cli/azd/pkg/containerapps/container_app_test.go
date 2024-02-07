@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v2"
-	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazsdk"
@@ -41,9 +40,10 @@ func Test_ContainerApp_GetIngressConfiguration(t *testing.T) {
 	cas := NewContainerAppService(
 		mockContext.SubscriptionCredentialProvider,
 		clock.NewMock(),
-		azsdk.NewClientOptionsBuilderFactory(mockContext.HttpClient, "azd"),
+		mockazsdk.MockContainerAppsClient(),
+		mockazsdk.MockContainerAppsRevisionsClient(),
 	)
-	ingressConfig, err := cas.GetIngressConfiguration(*mockContext.Context, subscriptionId, resourceGroup, appName)
+	ingressConfig, err := cas.GetIngressConfiguration(*mockContext.Context, resourceGroup, appName)
 	require.NoError(t, err)
 	require.NotNil(t, ingressConfig)
 
@@ -135,9 +135,10 @@ func Test_ContainerApp_AddRevision(t *testing.T) {
 	cas := NewContainerAppService(
 		mockContext.SubscriptionCredentialProvider,
 		clock.NewMock(),
-		azsdk.NewClientOptionsBuilderFactory(mockContext.HttpClient, "azd"),
+		mockazsdk.MockContainerAppsClient(),
+		mockazsdk.MockContainerAppsRevisionsClient(),
 	)
-	err := cas.AddRevision(*mockContext.Context, subscriptionId, resourceGroup, appName, updatedImageName)
+	err := cas.AddRevision(*mockContext.Context, resourceGroup, appName, updatedImageName)
 	require.NoError(t, err)
 
 	// Verify lastest revision is read

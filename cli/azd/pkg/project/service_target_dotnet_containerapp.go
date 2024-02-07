@@ -270,7 +270,6 @@ func (at *dotnetContainerAppTarget) Deploy(
 
 			err = at.containerAppService.DeployYaml(
 				ctx,
-				targetResource.SubscriptionId(),
 				targetResource.ResourceGroupName(),
 				serviceConfig.Name,
 				[]byte(builder.String()),
@@ -316,7 +315,6 @@ func (at *dotnetContainerAppTarget) Endpoints(
 ) ([]string, error) {
 	if ingressConfig, err := at.containerAppService.GetIngressConfiguration(
 		ctx,
-		targetResource.SubscriptionId(),
 		targetResource.ResourceGroupName(),
 		targetResource.ResourceName(),
 	); err != nil {
@@ -457,7 +455,7 @@ func (fns *containerAppTemplateManifestFuncs) sqlConnectionString(serverName, sq
 // is returned as "", without an error.
 func (fns *containerAppTemplateManifestFuncs) secretValue(containerAppName string, secretName string) (string, error) {
 	secrets, err := fns.containerAppService.ListSecrets(
-		fns.ctx, fns.targetResource.SubscriptionId(), fns.targetResource.ResourceGroupName(), containerAppName)
+		fns.ctx, fns.targetResource.ResourceGroupName(), containerAppName)
 	if err != nil {
 		return "", fmt.Errorf("fetching %s secrets: %w", containerAppName, err)
 	}

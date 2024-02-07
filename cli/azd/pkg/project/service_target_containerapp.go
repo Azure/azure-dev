@@ -99,7 +99,6 @@ func (at *containerAppTarget) Deploy(
 			task.SetProgress(NewServiceProgress("Updating container app revision"))
 			err = at.containerAppService.AddRevision(
 				ctx,
-				targetResource.SubscriptionId(),
 				targetResource.ResourceGroupName(),
 				targetResource.ResourceName(),
 				imageName,
@@ -138,7 +137,6 @@ func (at *containerAppTarget) Endpoints(
 ) ([]string, error) {
 	if ingressConfig, err := at.containerAppService.GetIngressConfiguration(
 		ctx,
-		targetResource.SubscriptionId(),
 		targetResource.ResourceGroupName(),
 		targetResource.ResourceName(),
 	); err != nil {

@@ -8,8 +8,8 @@ import (
 	"os"
 	"testing"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
-	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk/storage"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -85,7 +85,7 @@ func createBlobClient(
 		*mockContext.Context,
 		credentials,
 		storageConfig,
-		azsdk.NewClientOptionsBuilderFactory(httpClient, "azd"),
+		&policy.ClientOptions{},
 	)
 	require.NoError(t, err)
 	require.NotNil(t, sdkClient)

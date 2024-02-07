@@ -6,7 +6,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
-	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/devcentersdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
@@ -164,16 +163,10 @@ func (p *Platform) ConfigureContainer(container *ioc.NestedContainer) error {
 
 	// Other devcenter components
 	container.MustRegisterSingleton(func(
-		ctx context.Context,
 		credential azcore.TokenCredential,
-		defaultClientOptionsBuilder *azsdk.ClientOptionsBuilderFactory,
+		options *azcore.ClientOptions,
 		resourceGraphClient *armresourcegraph.Client,
 	) (devcentersdk.DevCenterClient, error) {
-		options := defaultClientOptionsBuilder.ClientOptionsBuilder().
-			SetContext(ctx).
-			SetUserAgent("azd").
-			BuildCoreClientOptions()
-
 		return devcentersdk.NewDevCenterClient(credential, options, resourceGraphClient)
 	})
 

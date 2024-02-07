@@ -10,7 +10,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
-	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 )
 
 // AccountConfig contains the configuration for connecting to a storage account
@@ -171,12 +170,8 @@ func NewBlobSdkClient(
 	ctx context.Context,
 	credential azcore.TokenCredential,
 	accountConfig *AccountConfig,
-	defaultClientOptionsBuilder *azsdk.ClientOptionsBuilderFactory,
+	coreOptions *azcore.ClientOptions,
 ) (*azblob.Client, error) {
-	coreOptions := defaultClientOptionsBuilder.ClientOptionsBuilder().
-		SetContext(ctx).
-		BuildCoreClientOptions()
-
 	blobOptions := &azblob.ClientOptions{
 		ClientOptions: *coreOptions,
 	}
@@ -185,6 +180,7 @@ func NewBlobSdkClient(
 		accountConfig.Endpoint = DefaultBlobEndpoint
 	}
 
+	// TODO: ensure options are properly configured
 	serviceUrl := fmt.Sprintf("https://%s.%s", accountConfig.AccountName, accountConfig.Endpoint)
 	client, err := azblob.NewClient(serviceUrl, credential, blobOptions)
 	if err != nil {

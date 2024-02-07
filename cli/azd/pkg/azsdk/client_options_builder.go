@@ -1,8 +1,6 @@
 package azsdk
 
 import (
-	"context"
-
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
@@ -33,16 +31,6 @@ func (b *ClientOptionsBuilder) SetUserAgent(userAgent string) *ClientOptionsBuil
 		b.userAgentPolicy = nil
 	} else {
 		b.userAgentPolicy = NewUserAgentPolicy(userAgent)
-	}
-	return b
-}
-
-// Sets the context to be used for all requests. Set ctx to nil to not use a correlation policy.
-func (b *ClientOptionsBuilder) SetContext(ctx context.Context) *ClientOptionsBuilder {
-	if ctx == nil {
-		b.correlationPolicy = nil
-	} else {
-		b.correlationPolicy = NewMsCorrelationPolicy(ctx)
 	}
 	return b
 }

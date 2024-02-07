@@ -7,7 +7,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
-	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/benbjohnson/clock"
 	"gopkg.in/yaml.v3"
@@ -18,13 +17,11 @@ type ContainerAppService interface {
 	// Gets the ingress configuration for the specified container app
 	GetIngressConfiguration(
 		ctx context.Context,
-		subscriptionId,
 		resourceGroup,
 		appName string,
 	) (*ContainerAppIngressConfiguration, error)
 	DeployYaml(
 		ctx context.Context,
-		subscriptionId string,
 		resourceGroupName string,
 		appName string,
 		containerAppYaml []byte,
@@ -32,13 +29,11 @@ type ContainerAppService interface {
 	// Adds and activates a new revision to the specified container app
 	AddRevision(
 		ctx context.Context,
-		subscriptionId string,
 		resourceGroupName string,
 		appName string,
 		imageName string,
 	) error
 	ListSecrets(ctx context.Context,
-		subscriptionId string,
 		resourceGroupName string,
 		appName string,
 	) ([]*armappcontainers.ContainerAppSecret, error)
@@ -48,19 +43,22 @@ type ContainerAppService interface {
 func NewContainerAppService(
 	credentialProvider account.SubscriptionCredentialProvider,
 	clock clock.Clock,
-	defaultClientOptionsBuilder *azsdk.ClientOptionsBuilderFactory,
+	appClient *armappcontainers.ContainerAppsClient,
+	revisionsClient *armappcontainers.ContainerAppsRevisionsClient,
 ) ContainerAppService {
 	return &containerAppService{
-		credentialProvider:          credentialProvider,
-		clock:                       clock,
-		defaultClientOptionsBuilder: defaultClientOptionsBuilder,
+		credentialProvider: credentialProvider,
+		clock:              clock,
+		appClient:          appClient,
+		revisionsClient:    revisionsClient,
 	}
 }
 
 type containerAppService struct {
-	credentialProvider          account.SubscriptionCredentialProvider
-	clock                       clock.Clock
-	defaultClientOptionsBuilder *azsdk.ClientOptionsBuilderFactory
+	credentialProvider account.SubscriptionCredentialProvider
+	clock              clock.Clock
+	appClient          *armappcontainers.ContainerAppsClient
+	revisionsClient    *armappcontainers.ContainerAppsRevisionsClient
 }
 
 type ContainerAppIngressConfiguration struct {
@@ -70,11 +68,10 @@ type ContainerAppIngressConfiguration struct {
 // Gets the ingress configuration for the specified container app
 func (cas *containerAppService) GetIngressConfiguration(
 	ctx context.Context,
-	subscriptionId string,
 	resourceGroup string,
 	appName string,
 ) (*ContainerAppIngressConfiguration, error) {
-	containerApp, err := cas.getContainerApp(ctx, subscriptionId, resourceGroup, appName)
+	containerApp, err := cas.getContainerApp(ctx, resourceGroup, appName)
 	if err != nil {
 		return nil, fmt.Errorf("failed retrieving container app properties: %w", err)
 	}
@@ -96,16 +93,10 @@ func (cas *containerAppService) GetIngressConfiguration(
 
 func (cas *containerAppService) DeployYaml(
 	ctx context.Context,
-	subscriptionId string,
 	resourceGroupName string,
 	appName string,
 	containerAppYaml []byte,
 ) error {
-	appClient, err := cas.createContainerAppsClient(ctx, subscriptionId)
-	if err != nil {
-		return err
-	}
-
 	var obj map[string]any
 	if err := yaml.Unmarshal(containerAppYaml, &obj); err != nil {
 		return fmt.Errorf("decoding yaml: %w", err)
@@ -121,7 +112,7 @@ func (cas *containerAppService) DeployYaml(
 		return fmt.Errorf("converting to container app type: %w", err)
 	}
 
-	poller, err := appClient.BeginCreateOrUpdate(ctx, resourceGroupName, appName, containerApp, nil)
+	poller, err := cas.appClient.BeginCreateOrUpdate(ctx, resourceGroupName, appName, containerApp, nil)
 	if err != nil {
 		return fmt.Errorf("applying manifest: %w", err)
 	}
@@ -137,24 +128,19 @@ func (cas *containerAppService) DeployYaml(
 // Adds and activates a new revision to the specified container app
 func (cas *containerAppService) AddRevision(
 	ctx context.Context,
-	subscriptionId string,
 	resourceGroupName string,
 	appName string,
 	imageName string,
 ) error {
-	containerApp, err := cas.getContainerApp(ctx, subscriptionId, resourceGroupName, appName)
+	containerApp, err := cas.getContainerApp(ctx, resourceGroupName, appName)
 	if err != nil {
 		return fmt.Errorf("getting container app: %w", err)
 	}
 
 	// Get the latest revision name
 	currentRevisionName := *containerApp.Properties.LatestRevisionName
-	revisionsClient, err := cas.createRevisionsClient(ctx, subscriptionId)
-	if err != nil {
-		return err
-	}
 
-	revisionResponse, err := revisionsClient.GetRevision(ctx, resourceGroupName, appName, currentRevisionName, nil)
+	revisionResponse, err := cas.revisionsClient.GetRevision(ctx, resourceGroupName, appName, currentRevisionName, nil)
 	if err != nil {
 		return fmt.Errorf("getting revision '%s': %w", currentRevisionName, err)
 	}
@@ -166,13 +152,13 @@ func (cas *containerAppService) AddRevision(
 
 	// Update the container app with the new revision
 	containerApp.Properties.Template = revision.Properties.Template
-	containerApp, err = cas.syncSecrets(ctx, subscriptionId, resourceGroupName, appName, containerApp)
+	containerApp, err = cas.syncSecrets(ctx, resourceGroupName, appName, containerApp)
 	if err != nil {
 		return fmt.Errorf("syncing secrets: %w", err)
 	}
 
 	// Update the container app
-	err = cas.updateContainerApp(ctx, subscriptionId, resourceGroupName, appName, containerApp)
+	err = cas.updateContainerApp(ctx, resourceGroupName, appName, containerApp)
 	if err != nil {
 		return fmt.Errorf("updating container app revision: %w", err)
 	}
@@ -180,7 +166,7 @@ func (cas *containerAppService) AddRevision(
 	// If the container app is in multiple revision mode, update the traffic to point to the new revision
 	if *containerApp.Properties.Configuration.ActiveRevisionsMode == armappcontainers.ActiveRevisionsModeMultiple {
 		newRevisionName := fmt.Sprintf("%s--%s", appName, *revision.Properties.Template.RevisionSuffix)
-		err = cas.setTrafficWeights(ctx, subscriptionId, resourceGroupName, appName, containerApp, newRevisionName)
+		err = cas.setTrafficWeights(ctx, resourceGroupName, appName, containerApp, newRevisionName)
 		if err != nil {
 			return fmt.Errorf("setting traffic weights: %w", err)
 		}
@@ -191,16 +177,10 @@ func (cas *containerAppService) AddRevision(
 
 func (cas *containerAppService) ListSecrets(
 	ctx context.Context,
-	subscriptionId string,
 	resourceGroupName string,
 	appName string,
 ) ([]*armappcontainers.ContainerAppSecret, error) {
-	appClient, err := cas.createContainerAppsClient(ctx, subscriptionId)
-	if err != nil {
-		return nil, err
-	}
-
-	secretsResponse, err := appClient.ListSecrets(ctx, resourceGroupName, appName, nil)
+	secretsResponse, err := cas.appClient.ListSecrets(ctx, resourceGroupName, appName, nil)
 	if err != nil {
 		return nil, fmt.Errorf("listing secrets: %w", err)
 	}
@@ -210,7 +190,6 @@ func (cas *containerAppService) ListSecrets(
 
 func (cas *containerAppService) syncSecrets(
 	ctx context.Context,
-	subscriptionId string,
 	resourceGroupName string,
 	appName string,
 	containerApp *armappcontainers.ContainerApp,
@@ -220,15 +199,10 @@ func (cas *containerAppService) syncSecrets(
 		return containerApp, nil
 	}
 
-	appClient, err := cas.createContainerAppsClient(ctx, subscriptionId)
-	if err != nil {
-		return nil, err
-	}
-
 	// Copy the secret configuration from the current version
 	// Secret values are not returned by the API, so we need to get them separately
 	// to ensure the update call succeeds
-	secretsResponse, err := appClient.ListSecrets(ctx, resourceGroupName, appName, nil)
+	secretsResponse, err := cas.appClient.ListSecrets(ctx, resourceGroupName, appName, nil)
 	if err != nil {
 		return nil, fmt.Errorf("listing secrets: %w", err)
 	}
@@ -248,7 +222,6 @@ func (cas *containerAppService) syncSecrets(
 
 func (cas *containerAppService) setTrafficWeights(
 	ctx context.Context,
-	subscriptionId string,
 	resourceGroupName string,
 	appName string,
 	containerApp *armappcontainers.ContainerApp,
@@ -261,7 +234,7 @@ func (cas *containerAppService) setTrafficWeights(
 		},
 	}
 
-	err := cas.updateContainerApp(ctx, subscriptionId, resourceGroupName, appName, containerApp)
+	err := cas.updateContainerApp(ctx, resourceGroupName, appName, containerApp)
 	if err != nil {
 		return fmt.Errorf("updating traffic weights: %w", err)
 	}
@@ -271,16 +244,10 @@ func (cas *containerAppService) setTrafficWeights(
 
 func (cas *containerAppService) getContainerApp(
 	ctx context.Context,
-	subscriptionId string,
 	resourceGroupName string,
 	appName string,
 ) (*armappcontainers.ContainerApp, error) {
-	appClient, err := cas.createContainerAppsClient(ctx, subscriptionId)
-	if err != nil {
-		return nil, err
-	}
-
-	containerAppResponse, err := appClient.Get(ctx, resourceGroupName, appName, nil)
+	containerAppResponse, err := cas.appClient.Get(ctx, resourceGroupName, appName, nil)
 	if err != nil {
 		return nil, fmt.Errorf("getting container app: %w", err)
 	}
@@ -290,17 +257,11 @@ func (cas *containerAppService) getContainerApp(
 
 func (cas *containerAppService) updateContainerApp(
 	ctx context.Context,
-	subscriptionId string,
 	resourceGroupName string,
 	appName string,
 	containerApp *armappcontainers.ContainerApp,
 ) error {
-	appClient, err := cas.createContainerAppsClient(ctx, subscriptionId)
-	if err != nil {
-		return err
-	}
-
-	poller, err := appClient.BeginUpdate(ctx, resourceGroupName, appName, *containerApp, nil)
+	poller, err := cas.appClient.BeginUpdate(ctx, resourceGroupName, appName, *containerApp, nil)
 	if err != nil {
 		return fmt.Errorf("begin updating ingress traffic: %w", err)
 	}
@@ -311,44 +272,4 @@ func (cas *containerAppService) updateContainerApp(
 	}
 
 	return nil
-}
-
-func (cas *containerAppService) createContainerAppsClient(
-	ctx context.Context,
-	subscriptionId string,
-) (*armappcontainers.ContainerAppsClient, error) {
-	credential, err := cas.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
-	if err != nil {
-		return nil, err
-	}
-
-	options := cas.defaultClientOptionsBuilder.ClientOptionsBuilder().
-		SetContext(ctx).
-		BuildArmClientOptions()
-	client, err := armappcontainers.NewContainerAppsClient(subscriptionId, credential, options)
-	if err != nil {
-		return nil, fmt.Errorf("creating ContainerApps client: %w", err)
-	}
-
-	return client, nil
-}
-
-func (cas *containerAppService) createRevisionsClient(
-	ctx context.Context,
-	subscriptionId string,
-) (*armappcontainers.ContainerAppsRevisionsClient, error) {
-	credential, err := cas.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
-	if err != nil {
-		return nil, err
-	}
-
-	options := cas.defaultClientOptionsBuilder.ClientOptionsBuilder().
-		SetContext(ctx).
-		BuildArmClientOptions()
-	client, err := armappcontainers.NewContainerAppsRevisionsClient(subscriptionId, credential, options)
-	if err != nil {
-		return nil, fmt.Errorf("creating ContainerApps client: %w", err)
-	}
-
-	return client, nil
 }

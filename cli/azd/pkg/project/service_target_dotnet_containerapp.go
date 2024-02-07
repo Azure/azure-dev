@@ -408,12 +408,7 @@ func (fns *containerAppTemplateManifestFuncs) ConnectionString(name string) (str
 
 		parentResource := resource.Parent
 		if parentResource == nil || *parentResource == "" {
-			password, err := fns.secretValue(dbConnString.Host, "pg-password")
-			if err != nil {
-				return "", fmt.Errorf("could not determine postgres password: %w", err)
-			}
-			dbConnString.Password = password
-			return dbConnString.String(), nil
+			return "", fmt.Errorf("parent resource not found for db: %s", name)
 		}
 
 		parent := fns.manifest.Resources[*parentResource]
@@ -455,6 +450,28 @@ func (fns *containerAppTemplateManifestFuncs) ConnectionString(name string) (str
 	case "azure.sql.v0", "sqlserver.server.v0":
 		return fns.sqlConnectionString(name, "")
 	case "azure.sql.database.v0", "sqlserver.database.v0":
+		parentResource := resource.Parent
+		if parentResource == nil || *parentResource == "" {
+			return "", fmt.Errorf("parent resource not found for db: %s", name)
+		}
+
+		parent := fns.manifest.Resources[*parentResource]
+		if parent.Type == "container.v0" {
+			rawConnectionString := strings.Split(strings.TrimRight(*parent.ConnectionString, ";"), ";")
+			rawConnectionString = append(rawConnectionString, fmt.Sprintf("Database=%s;", name))
+			for i, part := range rawConnectionString {
+				keyValue := strings.Split(part, "=")
+				resolvedValue, err := apphost.EvalString(keyValue[1], func(expr string) (string, error) {
+					return evalBindingRefWithParent(expr, parent, fns.env)
+				})
+				if err != nil {
+					return "", fmt.Errorf("evaluating connection string for %s: %w", name, err)
+				}
+				rawConnectionString[i] = fmt.Sprintf("%s=%s", keyValue[0], resolvedValue)
+			}
+			return strings.Join(rawConnectionString, ";"), nil
+		}
+
 		return fns.sqlConnectionString(*resource.Parent, name)
 	default:
 		return "", fmt.Errorf("connectionString: unsupported resource type '%s'", resource.Type)

@@ -308,59 +308,137 @@ func Test_DockerProject_Build(t *testing.T) {
 }
 
 func Test_DockerProject_Package(t *testing.T) {
-	var runArgs exec.RunArgs
-
-	mockContext := mocks.NewMockContext(context.Background())
-	envManager := &mockenv.MockEnvManager{}
-
-	mockContext.CommandRunner.
-		When(func(args exec.RunArgs, command string) bool {
-			return strings.Contains(command, "docker tag")
-		}).
-		RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-			runArgs = args
-			return exec.NewRunResult(0, "IMAGE_ID", ""), nil
-		})
-
-	env := environment.NewWithValues("test", map[string]string{})
-	dockerCli := docker.NewDocker(mockContext.CommandRunner)
-	serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
-	serviceConfig.Docker.Registry = NewExpandableString("contoso.azurecr.io")
-
-	npmProject := NewNpmProject(npm.NewNpmCli(mockContext.CommandRunner), env)
-	dockerProject := NewDockerProject(
-		env,
-		dockerCli,
-		NewContainerHelper(env, envManager, clock.NewMock(), nil, dockerCli),
-		mockinput.NewMockConsole(),
-		mockContext.AlphaFeaturesManager,
-		mockContext.CommandRunner)
-	dockerProject.SetSource(npmProject)
-
-	packageTask := dockerProject.Package(
-		*mockContext.Context,
-		serviceConfig,
-		&ServiceBuildResult{
-			BuildOutputPath: "IMAGE_ID",
+	tests := []struct {
+		name                   string
+		image                  string
+		project                string
+		docker                 DockerProjectOptions
+		expectedPackageResult  dockerPackageResult
+		expectDockerPullCalled bool
+		expectDockerTagCalled  bool
+	}{
+		{
+			name:    "source with defaults",
+			project: "./src/api",
+			expectedPackageResult: dockerPackageResult{
+				ImageHash:   "IMAGE_ID",
+				SourceImage: "",
+				TargetImage: "test-app/api-test:azd-deploy-0",
+			},
+			expectDockerPullCalled: false,
+			expectDockerTagCalled:  true,
 		},
-	)
-	logProgress(packageTask)
+		{
+			name:    "source with custom docker options",
+			project: "./src/api",
+			docker: DockerProjectOptions{
+				Image: NewExpandableString("foo/bar"),
+				Tag:   NewExpandableString("latest"),
+			},
+			expectedPackageResult: dockerPackageResult{
+				ImageHash:   "IMAGE_ID",
+				SourceImage: "",
+				TargetImage: "foo/bar:latest",
+			},
+			expectDockerPullCalled: false,
+			expectDockerTagCalled:  true,
+		},
+		{
+			name:  "image with defaults",
+			image: "nginx:latest",
+			expectedPackageResult: dockerPackageResult{
+				ImageHash:   "",
+				SourceImage: "nginx:latest",
+				TargetImage: "test-app/api-test:azd-deploy-0",
+			},
+			expectDockerPullCalled: true,
+			expectDockerTagCalled:  true,
+		},
+		{
+			name:  "image with custom docker options",
+			image: "nginx:latest",
+			docker: DockerProjectOptions{
+				Image: NewExpandableString("foo/bar"),
+				Tag:   NewExpandableString("latest"),
+			},
+			expectedPackageResult: dockerPackageResult{
+				ImageHash:   "",
+				SourceImage: "nginx:latest",
+				TargetImage: "foo/bar:latest",
+			},
+			expectDockerPullCalled: true,
+			expectDockerTagCalled:  true,
+		},
+		{
+			name:  "fully qualified image with custom docker options",
+			image: "docker.io/repository/iamge:latest",
+			docker: DockerProjectOptions{
+				Image: NewExpandableString("myapp-service"),
+				Tag:   NewExpandableString("latest"),
+			},
+			expectedPackageResult: dockerPackageResult{
+				ImageHash:   "",
+				SourceImage: "docker.io/repository/iamge:latest",
+				TargetImage: "myapp-service:latest",
+			},
+			expectDockerPullCalled: true,
+			expectDockerTagCalled:  true,
+		},
+	}
 
-	result, err := packageTask.Await()
-	require.NoError(t, err)
-	require.NotNil(t, result)
-	require.IsType(t, new(dockerPackageResult), result.Details)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockContext := mocks.NewMockContext(context.Background())
+			mockResults := setupDockerMocks(mockContext)
+			envManager := &mockenv.MockEnvManager{}
 
-	packageResult, ok := result.Details.(*dockerPackageResult)
-	require.Equal(t, "test-app/api-test:azd-deploy-0", result.PackagePath)
+			env := environment.NewWithValues("test", map[string]string{})
+			dockerCli := docker.NewDocker(mockContext.CommandRunner)
+			serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
 
-	require.True(t, ok)
-	require.Equal(t, "test-app/api-test:azd-deploy-0", packageResult.ImageTag)
+			dockerProject := NewDockerProject(
+				env,
+				dockerCli,
+				NewContainerHelper(env, envManager, clock.NewMock(), nil, dockerCli),
+				mockinput.NewMockConsole(),
+				mockContext.AlphaFeaturesManager,
+				mockContext.CommandRunner)
 
-	require.Equal(t, "docker", runArgs.Cmd)
-	require.Equal(t, serviceConfig.RelativePath, runArgs.Cwd)
-	require.Equal(t,
-		[]string{"tag", "IMAGE_ID", "test-app/api-test:azd-deploy-0"},
-		runArgs.Args,
-	)
+			// Set the custom test options
+			serviceConfig.Docker = tt.docker
+			serviceConfig.RelativePath = tt.project
+			serviceConfig.Image = tt.image
+
+			if serviceConfig.RelativePath != "" {
+				npmProject := NewNpmProject(npm.NewNpmCli(mockContext.CommandRunner), env)
+				dockerProject.SetSource(npmProject)
+			}
+
+			buildOutputPath := ""
+			if serviceConfig.Image == "" && serviceConfig.RelativePath != "" {
+				buildOutputPath = "IMAGE_ID"
+			}
+
+			packageTask := dockerProject.Package(
+				*mockContext.Context,
+				serviceConfig,
+				&ServiceBuildResult{
+					BuildOutputPath: buildOutputPath,
+				},
+			)
+			logProgress(packageTask)
+
+			result, err := packageTask.Await()
+			require.NoError(t, err)
+			dockerDetails, ok := result.Details.(*dockerPackageResult)
+			require.True(t, ok)
+			require.Equal(t, tt.expectedPackageResult, *dockerDetails)
+
+			_, dockerPullCalled := mockResults["docker-pull"]
+			_, dockerTagCalled := mockResults["docker-tag"]
+
+			require.Equal(t, tt.expectDockerPullCalled, dockerPullCalled)
+			require.Equal(t, tt.expectDockerTagCalled, dockerTagCalled)
+		})
+	}
 }

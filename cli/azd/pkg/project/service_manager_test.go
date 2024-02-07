@@ -241,7 +241,7 @@ func Test_ServiceManager_GetFrameworkService(t *testing.T) {
 		env := environment.New("test")
 		sm := createServiceManager(mockContext, env, ServiceOperationCache{})
 		serviceConfig := createTestServiceConfig("", ServiceTargetFake, ServiceLanguageNone)
-		serviceConfig.Docker.Tag = NewExpandableString("nginx")
+		serviceConfig.Image = "nginx"
 
 		framework, err := sm.GetFrameworkService(*mockContext.Context, serviceConfig)
 		require.NoError(t, err)

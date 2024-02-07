@@ -2,6 +2,7 @@ package project
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 	"testing"
@@ -151,180 +152,162 @@ func Test_ContainerHelper_Resolve_RegistryName(t *testing.T) {
 }
 
 func Test_ContainerHelper_Deploy(t *testing.T) {
-	t.Run("Registry and private image", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
-		mockResults := setupDockerMocks(mockContext)
-		env := environment.NewWithValues("dev", map[string]string{
-			environment.ContainerRegistryEndpointEnvVarName: "contoso.azurecr.io",
+	tests := []struct {
+		name                   string
+		registry               ExpandableString
+		image                  string
+		project                string
+		packagePath            string
+		dockerDetails          *dockerPackageResult
+		expectedRemoteImage    string
+		expectDockerPullCalled bool
+		expectDockerTagCalled  bool
+		expectDockerPushCalled bool
+		expectError            bool
+	}{
+		{
+			name:     "Source code and registry",
+			project:  "./src/api",
+			registry: NewExpandableString("contoso.azurecr.io"),
+			dockerDetails: &dockerPackageResult{
+				ImageHash:   "IMAGE_ID",
+				SourceImage: "",
+				TargetImage: "my-project/my-service:azd-deploy-0",
+			},
+			expectDockerPullCalled: false,
+			expectDockerTagCalled:  true,
+			expectDockerPushCalled: true,
+			expectedRemoteImage:    "contoso.azurecr.io/my-project/my-service:azd-deploy-0",
+			expectError:            false,
+		},
+		{
+			name:    "Source code and no registry",
+			project: "./src/api",
+			dockerDetails: &dockerPackageResult{
+				ImageHash:   "IMAGE_ID",
+				SourceImage: "",
+				TargetImage: "my-project/my-service:azd-deploy-0",
+			},
+			expectError:            true,
+			expectDockerPullCalled: false,
+			expectDockerTagCalled:  false,
+			expectDockerPushCalled: false,
+		},
+		{
+			name:                   "Source code with existing package path",
+			project:                "./src/api",
+			registry:               NewExpandableString("contoso.azurecr.io"),
+			packagePath:            "my-project/my-service:azd-deploy-0",
+			expectedRemoteImage:    "contoso.azurecr.io/my-project/my-service:azd-deploy-0",
+			expectDockerPullCalled: false,
+			expectDockerTagCalled:  true,
+			expectDockerPushCalled: true,
+			expectError:            false,
+		},
+		{
+			name:     "Source image and registry",
+			image:    "nginx",
+			registry: NewExpandableString("contoso.azurecr.io"),
+			dockerDetails: &dockerPackageResult{
+				ImageHash:   "",
+				SourceImage: "nginx",
+				TargetImage: "my-project/nginx:azd-deploy-0",
+			},
+			expectDockerPullCalled: true,
+			expectDockerTagCalled:  true,
+			expectDockerPushCalled: true,
+			expectedRemoteImage:    "contoso.azurecr.io/my-project/nginx:azd-deploy-0",
+			expectError:            false,
+		},
+		{
+			name:  "Source image and no registry",
+			image: "nginx",
+			dockerDetails: &dockerPackageResult{
+				ImageHash:   "",
+				SourceImage: "nginx",
+				TargetImage: "my-project/nginx:azd-deploy-0",
+			},
+			expectDockerPullCalled: false,
+			expectDockerTagCalled:  false,
+			expectDockerPushCalled: false,
+			expectedRemoteImage:    "nginx",
+			expectError:            false,
+		},
+		{
+			name:                   "Source image with existing package path and registry",
+			registry:               NewExpandableString("contoso.azurecr.io"),
+			packagePath:            "my-project/my-service:azd-deploy-0",
+			expectedRemoteImage:    "contoso.azurecr.io/my-project/my-service:azd-deploy-0",
+			expectDockerPullCalled: false,
+			expectDockerTagCalled:  true,
+			expectDockerPushCalled: true,
+			expectError:            false,
+		},
+		{
+			name:                   "Missing target image",
+			dockerDetails:          &dockerPackageResult{},
+			expectError:            true,
+			expectDockerPullCalled: false,
+			expectDockerTagCalled:  false,
+			expectDockerPushCalled: false,
+		},
+	}
+
+	targetResource := environment.NewTargetResource(
+		"SUBSCRIPTION_ID",
+		"RESOURCE_GROUP",
+		"CONTAINER_APP",
+		"Microsoft.App/containerApps",
+	)
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mockContext := mocks.NewMockContext(context.Background())
+			mockResults := setupDockerMocks(mockContext)
+			env := environment.NewWithValues("dev", map[string]string{})
+			dockerCli := docker.NewDocker(mockContext.CommandRunner)
+			envManager := &mockenv.MockEnvManager{}
+			envManager.On("Save", *mockContext.Context, env).Return(nil)
+
+			mockContainerRegistryService := &mockContainerRegistryService{}
+			setupContainerRegistryMocks(mockContext, &mockContainerRegistryService.Mock)
+
+			containerHelper := NewContainerHelper(env, envManager, clock.NewMock(), mockContainerRegistryService, dockerCli)
+			serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
+
+			serviceConfig.Image = tt.image
+			serviceConfig.RelativePath = tt.project
+			serviceConfig.Docker.Registry = tt.registry
+
+			packageOutput := &ServicePackageResult{
+				Details:     tt.dockerDetails,
+				PackagePath: tt.packagePath,
+			}
+
+			deployTask := containerHelper.Deploy(*mockContext.Context, serviceConfig, packageOutput, targetResource, true)
+			logProgress(deployTask)
+			deployResult, err := deployTask.Await()
+
+			if tt.expectError {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+				require.Same(t, packageOutput, deployResult.Package)
+
+				dockerDeployResult, ok := deployResult.Details.(*dockerDeployResult)
+				require.True(t, ok)
+				require.Equal(t, tt.expectedRemoteImage, dockerDeployResult.RemoteImageTag)
+			}
+
+			_, dockerPullCalled := mockResults["docker-pull"]
+			_, dockerTagCalled := mockResults["docker-tag"]
+			_, dockerPushCalled := mockResults["docker-push"]
+
+			require.Equal(t, tt.expectDockerPullCalled, dockerPullCalled)
+			require.Equal(t, tt.expectDockerTagCalled, dockerTagCalled)
+			require.Equal(t, tt.expectDockerPushCalled, dockerPushCalled)
 		})
-		dockerCli := docker.NewDocker(mockContext.CommandRunner)
-		envManager := &mockenv.MockEnvManager{}
-		envManager.On("Save", *mockContext.Context, env).Return(nil)
-
-		mockContainerRegistryService := &mockContainerRegistryService{}
-		setupContainerRegistryMocks(mockContext, &mockContainerRegistryService.Mock)
-
-		containerHelper := NewContainerHelper(env, envManager, clock.NewMock(), mockContainerRegistryService, dockerCli)
-		serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
-
-		packageOutput := &ServicePackageResult{
-			Details: &dockerPackageResult{
-				ImageHash: "1234567890",
-				ImageTag:  "my-app:azd-deploy-1234567890",
-			},
-		}
-
-		targetResource := environment.NewTargetResource(
-			"SUBSCRIPTION_ID",
-			"RESOURCE_GROUP",
-			"CONTAINER_APP",
-			"Microsoft.App/containerApps",
-		)
-
-		deployTask := containerHelper.Deploy(*mockContext.Context, serviceConfig, packageOutput, targetResource, true)
-		logProgress(deployTask)
-		deployResult, err := deployTask.Await()
-
-		require.NoError(t, err)
-		require.NotNil(t, deployResult)
-
-		dockerDeployDetails, _ := deployResult.Details.(*dockerDeployResult)
-		require.Equal(t, "contoso.azurecr.io/my-app:azd-deploy-1234567890", dockerDeployDetails.RemoteImageTag)
-
-		_, dockerTagCalled := mockResults["docker-tag"]
-		_, dockerPushCalled := mockResults["docker-push"]
-
-		require.True(t, dockerTagCalled)
-		require.True(t, dockerPushCalled)
-		mockContainerRegistryService.AssertCalled(t, "Login", *mockContext.Context, "SUBSCRIPTION_ID", "contoso.azurecr.io")
-	})
-
-	t.Run("Registry and public image", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
-		mockResults := setupDockerMocks(mockContext)
-		env := environment.NewWithValues("dev", map[string]string{
-			environment.ContainerRegistryEndpointEnvVarName: "contoso.azurecr.io",
-		})
-		dockerCli := docker.NewDocker(mockContext.CommandRunner)
-		envManager := &mockenv.MockEnvManager{}
-		envManager.On("Save", *mockContext.Context, env).Return(nil)
-
-		mockContainerRegistryService := &mockContainerRegistryService{}
-		setupContainerRegistryMocks(mockContext, &mockContainerRegistryService.Mock)
-
-		containerHelper := NewContainerHelper(env, envManager, clock.NewMock(), mockContainerRegistryService, dockerCli)
-		serviceConfig := createTestServiceConfig("", ContainerAppTarget, ServiceLanguageDocker)
-
-		packageOutput := &ServicePackageResult{
-			Details: &dockerPackageResult{
-				ImageHash: "",
-				ImageTag:  "nginx",
-			},
-		}
-
-		targetResource := environment.NewTargetResource(
-			"SUBSCRIPTION_ID",
-			"RESOURCE_GROUP",
-			"CONTAINER_APP",
-			"Microsoft.App/containerApps",
-		)
-
-		deployTask := containerHelper.Deploy(*mockContext.Context, serviceConfig, packageOutput, targetResource, true)
-		logProgress(deployTask)
-		deployResult, err := deployTask.Await()
-
-		require.NoError(t, err)
-		require.NotNil(t, deployResult)
-
-		dockerDeployDetails, _ := deployResult.Details.(*dockerDeployResult)
-		require.Equal(t, "contoso.azurecr.io/nginx", dockerDeployDetails.RemoteImageTag)
-
-		_, dockerTagCalled := mockResults["docker-tag"]
-		_, dockerPullCalled := mockResults["docker-pull"]
-		_, dockerPushCalled := mockResults["docker-push"]
-
-		require.True(t, dockerTagCalled)
-		require.True(t, dockerPullCalled)
-		require.True(t, dockerPushCalled)
-		mockContainerRegistryService.AssertCalled(t, "Login", *mockContext.Context, "SUBSCRIPTION_ID", "contoso.azurecr.io")
-	})
-
-	t.Run("No registry and public image", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
-		mockResults := setupDockerMocks(mockContext)
-		env := environment.NewWithValues("dev", map[string]string{})
-		dockerCli := docker.NewDocker(mockContext.CommandRunner)
-		envManager := &mockenv.MockEnvManager{}
-		envManager.On("Save", *mockContext.Context, env).Return(nil)
-
-		mockContainerRegistryService := &mockContainerRegistryService{}
-		setupContainerRegistryMocks(mockContext, &mockContainerRegistryService.Mock)
-
-		containerHelper := NewContainerHelper(env, envManager, clock.NewMock(), mockContainerRegistryService, dockerCli)
-		serviceConfig := createTestServiceConfig("", ContainerAppTarget, ServiceLanguageDocker)
-
-		packageOutput := &ServicePackageResult{
-			Details: &dockerPackageResult{
-				ImageHash: "",
-				ImageTag:  "nginx",
-			},
-		}
-
-		targetResource := environment.NewTargetResource(
-			"SUBSCRIPTION_ID",
-			"RESOURCE_GROUP",
-			"CONTAINER_APP",
-			"Microsoft.App/containerApps",
-		)
-
-		deployTask := containerHelper.Deploy(*mockContext.Context, serviceConfig, packageOutput, targetResource, true)
-		logProgress(deployTask)
-		deployResult, err := deployTask.Await()
-
-		require.NoError(t, err)
-		require.NotNil(t, deployResult)
-
-		dockerDeployDetails, _ := deployResult.Details.(*dockerDeployResult)
-		require.Equal(t, "nginx", dockerDeployDetails.RemoteImageTag)
-
-		_, dockerTagCalled := mockResults["docker-tag"]
-		_, dockerPullCalled := mockResults["docker-pull"]
-		_, dockerPushCalled := mockResults["docker-push"]
-
-		require.False(t, dockerTagCalled)
-		require.False(t, dockerPullCalled)
-		require.False(t, dockerPushCalled)
-		mockContainerRegistryService.AssertNotCalled(t, "Login")
-	})
-
-	t.Run("Code without registry", func(t *testing.T) {
-		mockContext := mocks.NewMockContext(context.Background())
-		env := environment.NewWithValues("dev", map[string]string{})
-		dockerCli := docker.NewDocker(mockContext.CommandRunner)
-		envManager := &mockenv.MockEnvManager{}
-		envManager.On("Save", *mockContext.Context, env).Return(nil)
-
-		mockContainerRegistryService := &mockContainerRegistryService{}
-		setupContainerRegistryMocks(mockContext, &mockContainerRegistryService.Mock)
-
-		containerHelper := NewContainerHelper(env, envManager, clock.NewMock(), mockContainerRegistryService, dockerCli)
-		serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
-
-		targetResource := environment.NewTargetResource(
-			"SUBSCRIPTION_ID",
-			"RESOURCE_GROUP",
-			"CONTAINER_APP",
-			"Microsoft.App/containerApps",
-		)
-
-		deployTask := containerHelper.Deploy(*mockContext.Context, serviceConfig, nil, targetResource, true)
-		logProgress(deployTask)
-		deployResult, err := deployTask.Await()
-
-		// Expected to fail when no registry is specified
-		require.Error(t, err)
-		require.Nil(t, deployResult)
-	})
+	}
 }
 
 func setupContainerRegistryMocks(mockContext *mocks.MockContext, mockContainerRegistryService *mock.Mock) {
@@ -343,6 +326,11 @@ func setupDockerMocks(mockContext *mocks.MockContext) map[string]exec.RunArgs {
 		return strings.Contains(command, "docker tag")
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		mockResults["docker-tag"] = args
+
+		if args.Args[1] == "" || args.Args[2] == "" {
+			return exec.NewRunResult(1, "", ""), errors.New("no image or tag")
+		}
+
 		return exec.NewRunResult(0, "", ""), nil
 	})
 
@@ -350,6 +338,11 @@ func setupDockerMocks(mockContext *mocks.MockContext) map[string]exec.RunArgs {
 		return strings.Contains(command, "docker push")
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		mockResults["docker-push"] = args
+
+		if args.Args[1] == "" {
+			return exec.NewRunResult(1, "", ""), errors.New("no image")
+		}
+
 		return exec.NewRunResult(0, "", ""), nil
 	})
 
@@ -357,6 +350,11 @@ func setupDockerMocks(mockContext *mocks.MockContext) map[string]exec.RunArgs {
 		return strings.Contains(command, "docker pull")
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		mockResults["docker-pull"] = args
+
+		if args.Args[1] == "" {
+			return exec.NewRunResult(1, "", ""), errors.New("no image")
+		}
+
 		return exec.NewRunResult(0, "", ""), nil
 	})
 

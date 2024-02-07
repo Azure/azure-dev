@@ -78,6 +78,11 @@
                         "type": "string",
                         "title": "Path to the service source code directory"
                     },
+                    "image": {
+                        "type": "string",
+                        "title": "Optional. The source image to be used for the container image instead of building from source.",
+                        "description": "If omitted, container image will be built from source specified in the 'project' property. Setting both 'project' and 'image' is invalid."
+                    },
                     "host": {
                         "type": "string",
                         "title": "Required. The type of Azure resource used for service implementation",
@@ -160,6 +165,58 @@
                     }
                 },
                 "allOf": [
+                    {
+                        "if": {
+                            "properties": {
+                                "host": {
+                                    "const": "containerapp"
+                                }
+                            }
+                        },
+                        "then": {
+                            "anyOf": [
+                                {
+                                    "required": [
+                                        "image"
+                                    ],
+                                    "properties": {
+                                        "language": false
+                                    },
+                                    "not": {
+                                        "required": [
+                                            "project"
+                                        ]
+                                    }
+                                },
+                                {
+                                    "required": [
+                                        "project"
+                                    ],
+                                    "not": {
+                                        "required": [
+                                            "image"
+                                        ]
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        "if": {
+                            "not": {
+                                "properties": {
+                                    "host": {
+                                        "const": "containerapp"
+                                    }
+                                }
+                            }
+                        },
+                        "then": {
+                            "properties": {
+                                "image": false
+                            }
+                        }
+                    },
                     {
                         "if": {
                             "not": {
@@ -550,7 +607,7 @@
                 },
                 "image": {
                     "type": "string",
-                    "title": "Optional. The name of the container image to use for the service.",
+                    "title": "Optional. The name that will be applied to the built container image.",
                     "description": "If omitted, will default to the '{appName}/{serviceName}-{environmentName}'. Supports environment variable substitution."
                 },
                 "tag": {

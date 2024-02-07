@@ -91,8 +91,8 @@ func Test_Package_Deploy_HappyPath(t *testing.T) {
 		&ServicePackageResult{
 			PackagePath: "test-app/api-test:azd-deploy-0",
 			Details: &dockerPackageResult{
-				ImageHash: "IMAGE_HASH",
-				ImageTag:  "test-app/api-test:azd-deploy-0",
+				ImageHash:   "IMAGE_HASH",
+				SourceImage: "test-app/api-test:azd-deploy-0",
 			},
 		},
 	)

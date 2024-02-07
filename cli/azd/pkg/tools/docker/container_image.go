@@ -8,11 +8,11 @@ import (
 // ContainerImage represents a container image and its components
 type ContainerImage struct {
 	// The registry name
-	Registry string
+	Registry string `json:"registry,omitempty"`
 	// The repository name or path
-	Repository string
+	Repository string `json:"repository,omitempty"`
 	// The tag
-	Tag string
+	Tag string `json:"tag,omitempty"`
 }
 
 // Local returns the local image name without registry
@@ -58,29 +58,38 @@ func ParseContainerImage(image string) (*ContainerImage, error) {
 	}
 
 	containerImage := &ContainerImage{}
+	imageWithTag := image
+	slashParts := strings.Split(imageWithTag, "/")
 
 	// Detect tags
-	tagParts := strings.Split(image, ":")
+	if len(slashParts) > 1 {
+		imageWithTag = slashParts[len(slashParts)-1]
+	}
+
+	tagParts := strings.Split(imageWithTag, ":")
 	if len(tagParts) > 2 {
-		return containerImage, errors.New("invalid tag format")
+		return nil, errors.New("invalid tag format")
 	}
 
 	if len(tagParts) == 2 {
 		containerImage.Tag = tagParts[1]
-		image = tagParts[0]
 	}
 
-	// Split the imageURL by "/"
-	parts := strings.Split(image, "/")
+	allParts := slashParts[:len(slashParts)-1]
+	allParts = append(allParts, tagParts[0])
 
 	// Check if the parts contain a registry (parts[0] contains ".")
-	if strings.Contains(parts[0], ".") {
-		containerImage.Registry = parts[0]
-		parts = parts[1:]
+	if strings.Contains(allParts[0], ".") {
+		containerImage.Registry = allParts[0]
+		allParts = allParts[1:]
 	}
 
 	// Set the repository as the remaining parts joined by "/"
-	containerImage.Repository = strings.Join(parts, "/")
+	containerImage.Repository = strings.Join(allParts, "/")
+
+	if containerImage.Repository == "" {
+		return nil, errors.New("empty repository")
+	}
 
 	return containerImage, nil
 }

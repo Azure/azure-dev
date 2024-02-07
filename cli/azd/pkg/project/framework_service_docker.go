@@ -31,8 +31,6 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
-var DefaultDockerProjectOptions DockerProjectOptions = DockerProjectOptions{}
-
 type DockerProjectOptions struct {
 	Path      string           `yaml:"path,omitempty"      json:"path,omitempty"`
 	Context   string           `yaml:"context,omitempty"   json:"context,omitempty"`
@@ -63,22 +61,39 @@ func (dbr *dockerBuildResult) MarshalJSON() ([]byte, error) {
 }
 
 type dockerPackageResult struct {
+	// The image hash that is generated from a docker build
 	ImageHash string `json:"imageHash"`
-	ImageTag  string `json:"imageTag"`
+	// The external source image specified when not building from source
+	SourceImage string `json:"sourceImage"`
+	// The target image with tag that is used for publishing and deployment when targeting a container registry
+	TargetImage string `json:"targetImage"`
 }
 
 func (dpr *dockerPackageResult) ToString(currentIndentation string) string {
-	imageHash := dpr.ImageHash
-	if imageHash == "" {
-		imageHash = "N/A"
+	builder := strings.Builder{}
+	if dpr.ImageHash != "" {
+		builder.WriteString(fmt.Sprintf("%s- Image Hash: %s\n", currentIndentation, output.WithLinkFormat(dpr.ImageHash)))
 	}
 
-	lines := []string{
-		fmt.Sprintf("%s- Image Hash: %s", currentIndentation, output.WithLinkFormat(imageHash)),
-		fmt.Sprintf("%s- Image Tag: %s", currentIndentation, output.WithLinkFormat(dpr.ImageTag)),
+	if dpr.SourceImage != "" {
+		builder.WriteString(
+			fmt.Sprintf("%s- Source Image: %s\n",
+				currentIndentation,
+				output.WithLinkFormat(dpr.SourceImage),
+			),
+		)
 	}
 
-	return strings.Join(lines, "\n")
+	if dpr.TargetImage != "" {
+		builder.WriteString(
+			fmt.Sprintf("%s- Target Image: %s\n",
+				currentIndentation,
+				output.WithLinkFormat(dpr.TargetImage),
+			),
+		)
+	}
+
+	return builder.String()
 }
 
 func (dpr *dockerPackageResult) MarshalJSON() ([]byte, error) {
@@ -277,29 +292,51 @@ func (p *dockerProject) Package(
 				imageId = buildOutput.BuildOutputPath
 			}
 
-			localTag, err := p.containerHelper.LocalImageTag(ctx, serviceConfig)
+			packageDetails := &dockerPackageResult{
+				ImageHash: imageId,
+			}
+
+			// If we don't have an image ID from a docker build then an external source image is being used
+			if imageId == "" {
+				sourceImage, err := docker.ParseContainerImage(serviceConfig.Image)
+				if err != nil {
+					task.SetError(fmt.Errorf("parsing source container image: %w", err))
+					return
+				}
+
+				remoteImageUrl := sourceImage.Remote()
+
+				task.SetProgress(NewServiceProgress("Pulling container source image"))
+				if err := p.docker.Pull(ctx, remoteImageUrl); err != nil {
+					task.SetError(fmt.Errorf("pulling source container image: %w", err))
+					return
+				}
+
+				imageId = remoteImageUrl
+				packageDetails.SourceImage = remoteImageUrl
+			}
+
+			// Generate a local tag from the 'docker' configuration section of the service
+			imageWithTag, err := p.containerHelper.LocalImageTag(ctx, serviceConfig)
 			if err != nil {
 				task.SetError(fmt.Errorf("generating local image tag: %w", err))
 				return
 			}
 
-			if imageId != "" {
-				// Tag image.
-				log.Printf("tagging image %s as %s", imageId, localTag)
-				task.SetProgress(NewServiceProgress("Tagging Docker image"))
-				if err := p.docker.Tag(ctx, serviceConfig.Path(), imageId, localTag); err != nil {
-					task.SetError(fmt.Errorf("tagging image: %w", err))
-					return
-				}
+			// Tag image.
+			log.Printf("tagging image %s as %s", imageId, imageWithTag)
+			task.SetProgress(NewServiceProgress("Tagging container image"))
+			if err := p.docker.Tag(ctx, serviceConfig.Path(), imageId, imageWithTag); err != nil {
+				task.SetError(fmt.Errorf("tagging image: %w", err))
+				return
 			}
+
+			packageDetails.TargetImage = imageWithTag
 
 			task.SetResult(&ServicePackageResult{
 				Build:       buildOutput,
-				PackagePath: localTag,
-				Details: &dockerPackageResult{
-					ImageHash: imageId,
-					ImageTag:  localTag,
-				},
+				PackagePath: packageDetails.SourceImage,
+				Details:     packageDetails,
 			})
 		},
 	)

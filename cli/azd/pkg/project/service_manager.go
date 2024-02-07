@@ -9,7 +9,6 @@ import (
 	"log"
 	"os"
 	"path/filepath"
-	"reflect"
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
@@ -552,8 +551,7 @@ func (sm *serviceManager) GetServiceTarget(ctx context.Context, serviceConfig *S
 func (sm *serviceManager) GetFrameworkService(ctx context.Context, serviceConfig *ServiceConfig) (FrameworkService, error) {
 	var frameworkService FrameworkService
 
-	if serviceConfig.Language == ServiceLanguageNone &&
-		!reflect.DeepEqual(serviceConfig.Docker, DefaultDockerProjectOptions) {
+	if serviceConfig.Language == ServiceLanguageNone && serviceConfig.Image != "" {
 		serviceConfig.Language = ServiceLanguageDocker
 	}
 

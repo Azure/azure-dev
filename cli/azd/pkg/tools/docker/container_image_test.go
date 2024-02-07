@@ -6,7 +6,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func Test_ParseContainerImage(t *testing.T) {
+func Test_ParseContainerImage_Success(t *testing.T) {
 	tests := []struct {
 		name     string
 		input    string
@@ -22,7 +22,7 @@ func Test_ParseContainerImage(t *testing.T) {
 			},
 		},
 		{
-			name:  "image with registry, no tag",
+			name:  "image with registry and no tag",
 			input: "registry.example.com/my-image",
 			expected: ContainerImage{
 				Registry:   "registry.example.com",
@@ -57,6 +57,15 @@ func Test_ParseContainerImage(t *testing.T) {
 				Tag:        "1.0",
 			},
 		},
+		{
+			name:  "image with host and port",
+			input: "registry.example.com:5000/my-image:1.0",
+			expected: ContainerImage{
+				Registry:   "registry.example.com:5000",
+				Repository: "my-image",
+				Tag:        "1.0",
+			},
+		},
 	}
 
 	for _, tt := range tests {
@@ -66,6 +75,43 @@ func Test_ParseContainerImage(t *testing.T) {
 			require.Equal(t, tt.expected, *actual)
 		})
 	}
+}
+
+func Test_ParseContainerImage_Invalid(t *testing.T) {
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{
+			name:  "empty image",
+			input: "",
+		},
+		{
+			name:  "image with only tag",
+			input: ":1.0",
+		},
+		{
+			name:  "image with multiple tags",
+			input: "my-image:1.0:latest",
+		},
+		{
+			name:  "image with only registry",
+			input: "registry.example.com",
+		},
+		{
+			name:  "image with only registry and tag",
+			input: "registry.example.com:1.0",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			actual, err := ParseContainerImage(tt.input)
+			require.Error(t, err)
+			require.Nil(t, actual)
+		})
+	}
+
 }
 
 func Test_ContainerImage_Local_And_Remote(t *testing.T) {

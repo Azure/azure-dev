@@ -27,7 +27,7 @@ func Test_ServiceResults_Json_Marshal(t *testing.T) {
 			PackagePath: "package/path/project.zip",
 			Details: &dockerPackageResult{
 				ImageHash:   "image-hash",
-				SourceImage: "image-tag",
+				TargetImage: "image-tag",
 			},
 		},
 	}

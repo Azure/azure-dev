@@ -103,6 +103,7 @@ javac
 jmes
 jquery
 keychain
+kubelogin
 LASTEXITCODE
 ldflags
 lechnerc77

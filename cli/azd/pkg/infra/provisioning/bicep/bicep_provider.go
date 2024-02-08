@@ -73,6 +73,10 @@ type BicepProvider struct {
 	alphaFeatureManager   *alpha.FeatureManager
 	clock                 clock.Clock
 	ignoreDeploymentState bool
+	// compileBicepResult is cached to avoid recompiling the same bicep file multiple times in the same azd run.
+	compileBicepMemoryCache *compileBicepResult
+	// prevent resolving parameters multiple times in the same azd run.
+	ensureParamsInMemoryCache azure.ArmParameters
 }
 
 var ErrResourceGroupScopeNotSupported = fmt.Errorf(
@@ -153,6 +157,10 @@ func (p *BicepProvider) EnsureEnv(ctx context.Context) error {
 	if compileErr != nil {
 		return nil
 	}
+
+	// prompt parameters during initialization and ignore any errors.
+	// This strategy takes advantage of the bicep compilation from initialization and allows prompting for required inputs
+	_, _ = p.ensureParameters(ctx, compileResult.Template)
 
 	scope, err := compileResult.Template.TargetScope()
 	if err != nil {
@@ -367,12 +375,7 @@ func (p *BicepProvider) plan(ctx context.Context) (*deploymentDetails, error) {
 
 	// for .bicep, azd must load a parameters.json file and create the ArmParameters
 	if isBicepFile(modulePath) {
-		parameters, err := p.loadParameters(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("resolving bicep parameters file: %w", err)
-		}
-
-		configuredParameters, err := p.ensureParameters(ctx, compileResult.Template, parameters)
+		configuredParameters, err := p.ensureParameters(ctx, compileResult.Template)
 		if err != nil {
 			return nil, err
 		}
@@ -1674,6 +1677,10 @@ type compileBicepResult struct {
 func (p *BicepProvider) compileBicep(
 	ctx context.Context, modulePath string,
 ) (*compileBicepResult, error) {
+	if p.compileBicepMemoryCache != nil {
+		return p.compileBicepMemoryCache, nil
+	}
+
 	var compiled string
 	var parameters azure.ArmParameters
 
@@ -1772,12 +1779,13 @@ func (p *BicepProvider) compileBicep(
 			}
 		}
 	}
-
-	return &compileBicepResult{
+	p.compileBicepMemoryCache = &compileBicepResult{
 		RawArmTemplate: rawTemplate,
 		Template:       template,
 		Parameters:     parameters,
-	}, nil
+	}
+
+	return p.compileBicepMemoryCache, nil
 }
 
 func combineMetadata(base map[string]json.RawMessage, override map[string]json.RawMessage) map[string]json.RawMessage {
@@ -1876,8 +1884,16 @@ func (p *BicepProvider) modulePath() string {
 func (p *BicepProvider) ensureParameters(
 	ctx context.Context,
 	template azure.ArmTemplate,
-	parameters azure.ArmParameters,
 ) (azure.ArmParameters, error) {
+	if p.ensureParamsInMemoryCache != nil {
+		return maps.Clone(p.ensureParamsInMemoryCache), nil
+	}
+
+	parameters, err := p.loadParameters(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("resolving bicep parameters file: %w", err)
+	}
+
 	if len(template.Parameters) == 0 {
 		return azure.ArmParameters{}, nil
 	}
@@ -1979,7 +1995,7 @@ func (p *BicepProvider) ensureParameters(
 			p.console.Message(ctx, fmt.Sprintf("warning: failed to save configured values: %v", err))
 		}
 	}
-
+	p.ensureParamsInMemoryCache = maps.Clone(configuredParameters)
 	return configuredParameters, nil
 }
 

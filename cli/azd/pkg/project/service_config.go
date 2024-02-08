@@ -23,7 +23,9 @@ type ServiceConfig struct {
 	Language ServiceLanguageKind `yaml:"language"`
 	// The output path for build artifacts
 	OutputPath string `yaml:"dist,omitempty"`
-	// The optional docker options
+	// The source image to use for container based applications
+	Image string `yaml:"image,omitempty"`
+	// The optional docker options for configuring the output image
 	Docker DockerProjectOptions `yaml:"docker,omitempty"`
 	// The optional K8S / AKS options
 	K8s AksOptions `yaml:"k8s,omitempty"`

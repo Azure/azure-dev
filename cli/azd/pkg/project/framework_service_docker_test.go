@@ -15,6 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/npm"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -264,7 +265,7 @@ func Test_DockerProject_Build(t *testing.T) {
 
 	temp := t.TempDir()
 
-	serviceConfig.Docker.Registry = NewExpandableString("contoso.azurecr.io")
+	serviceConfig.Docker.Registry = osutil.NewExpandableString("contoso.azurecr.io")
 	serviceConfig.Project.Path = temp
 	serviceConfig.RelativePath = ""
 	err := os.WriteFile(filepath.Join(temp, "Dockerfile"), []byte("FROM node:14"), 0600)
@@ -332,8 +333,8 @@ func Test_DockerProject_Package(t *testing.T) {
 			name:    "source with custom docker options",
 			project: "./src/api",
 			docker: DockerProjectOptions{
-				Image: NewExpandableString("foo/bar"),
-				Tag:   NewExpandableString("latest"),
+				Image: osutil.NewExpandableString("foo/bar"),
+				Tag:   osutil.NewExpandableString("latest"),
 			},
 			expectedPackageResult: dockerPackageResult{
 				ImageHash:   "IMAGE_ID",
@@ -358,8 +359,8 @@ func Test_DockerProject_Package(t *testing.T) {
 			name:  "image with custom docker options",
 			image: "nginx:latest",
 			docker: DockerProjectOptions{
-				Image: NewExpandableString("foo/bar"),
-				Tag:   NewExpandableString("latest"),
+				Image: osutil.NewExpandableString("foo/bar"),
+				Tag:   osutil.NewExpandableString("latest"),
 			},
 			expectedPackageResult: dockerPackageResult{
 				ImageHash:   "",
@@ -373,8 +374,8 @@ func Test_DockerProject_Package(t *testing.T) {
 			name:  "fully qualified image with custom docker options",
 			image: "docker.io/repository/iamge:latest",
 			docker: DockerProjectOptions{
-				Image: NewExpandableString("myapp-service"),
-				Tag:   NewExpandableString("latest"),
+				Image: osutil.NewExpandableString("myapp-service"),
+				Tag:   osutil.NewExpandableString("latest"),
 			},
 			expectedPackageResult: dockerPackageResult{
 				ImageHash:   "",

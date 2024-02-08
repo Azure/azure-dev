@@ -285,8 +285,8 @@ func Test_Deploy_Helm(t *testing.T) {
 	packageResult := &ServicePackageResult{
 		PackagePath: "test-app/api-test:azd-deploy-0",
 		Details: &dockerPackageResult{
-			ImageHash: "IMAGE_HASH",
-			ImageTag:  "test-app/api-test:azd-deploy-0",
+			ImageHash:   "IMAGE_HASH",
+			TargetImage: "test-app/api-test:azd-deploy-0",
 		},
 	}
 
@@ -351,8 +351,8 @@ func Test_Deploy_Kustomize(t *testing.T) {
 	packageResult := &ServicePackageResult{
 		PackagePath: "test-app/api-test:azd-deploy-0",
 		Details: &dockerPackageResult{
-			ImageHash: "IMAGE_HASH",
-			ImageTag:  "test-app/api-test:azd-deploy-0",
+			ImageHash:   "IMAGE_HASH",
+			TargetImage: "test-app/api-test:azd-deploy-0",
 		},
 	}
 
@@ -748,6 +748,13 @@ func setupMocksForDocker(mockContext *mocks.MockContext) {
 	// Docker login
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "docker login")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		return exec.NewRunResult(0, "", ""), nil
+	})
+
+	// Docker Pull
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "docker pull")
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
 		return exec.NewRunResult(0, "", ""), nil
 	})

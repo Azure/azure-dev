@@ -288,8 +288,8 @@ func runLiveDotnetPlaywright(
 		}
 
 		res, err = run()
-		require.NoError(t, err)
 	}
+	require.NoError(t, err)
 }
 
 // Snapshots a file located at targetPath. Saves the snapshot to snapshotRoot/rel, where rel is relative to targetRoot.

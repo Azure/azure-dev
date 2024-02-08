@@ -13,7 +13,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func Test_ParensInComman(t *testing.T) {
+func Test_ParensInCommand(t *testing.T) {
 	cmdPath := getCmdPath()
 
 	root := filepath.Join(t.TempDir(), "johndoe(somecompany)")

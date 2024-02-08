@@ -207,19 +207,35 @@ func Test_CLI_Aspire_DetectGen(t *testing.T) {
 
 // Test_CLI_Aspire_Deploy tests the full deployment of an Aspire project.
 func Test_CLI_Aspire_Deploy(t *testing.T) {
+	if cfg.CI && os.Getenv("AZURE_RECORD_MODE") != "live" {
+		t.Skip("skipping live test")
+	}
+
 	restoreDotnetWorkload(t)
 
 	t.Parallel()
 	ctx, cancel := newTestContext(t)
 	defer cancel()
 
-	dir := tempDirWithDiagnostics(t)
+	dir, err := os.MkdirTemp("", "aspire-deploy")
+	require.NoError(t, err)
 	t.Logf("DIR: %s", dir)
+	defer func() {
+		if !cfg.CI && t.Failed() {
+			t.Logf("kept directory %s for troubleshooting", dir)
+			return
+		}
+
+		err = os.RemoveAll(dir)
+		if err != nil {
+			t.Logf("failed to remove %s", dir)
+		}
+	}()
 
 	envName := randomEnvName()
 	t.Logf("AZURE_ENV_NAME: %s", envName)
 
-	err := copySample(dir, "aspire-full")
+	err = copySample(dir, "aspire-full")
 	require.NoError(t, err, "failed expanding sample")
 
 	cli := azdcli.NewCLI(t)
@@ -297,7 +313,16 @@ func runLiveDotnetPlaywright(
 			}
 		}
 
-		require.NoError(t, err)
+		if cfg.CI {
+			require.NoError(t, err)
+		} else {
+			require.NoError(
+				t,
+				err,
+				"to troubleshoot, rerun `dotnet test` in %s with LIVE_APP_URL=%s",
+				projDir,
+				endpoint)
+		}
 		break
 	}
 }

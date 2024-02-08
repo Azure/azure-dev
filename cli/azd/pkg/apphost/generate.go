@@ -349,13 +349,22 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 		case "azure.sql.v0", "sqlserver.server.v0":
 			b.addSqlServer(name)
 		case "azure.sql.database.v0", "sqlserver.database.v0":
-			b.addSqlDatabase(*comp.Parent, name)
+			if comp.Parent == nil || *comp.Parent == "" {
+				return fmt.Errorf("database resource %s does not have a parent", name)
+			}
+			if m.Resources[*comp.Parent].Type != "container.v0" {
+				// When the resource has a server (using container) as a parent, it means that the database is
+				// NOT created within AzureSql service, and db will use parent's connection string instead.
+				b.addSqlDatabase(*comp.Parent, name)
+			}
 		case "postgres.server.v0":
 			b.addContainerAppService(name, "postgres")
 		case "postgres.database.v0":
-			if comp.Parent == nil ||
-				(m.Resources[*comp.Parent].Type != "container.v0" &&
-					m.Resources[*comp.Parent].Type != "postgres.server.v0") {
+			if comp.Parent == nil || *comp.Parent == "" {
+				return fmt.Errorf("database resource %s does not have a parent", name)
+			}
+			pType := m.Resources[*comp.Parent].Type
+			if pType != "container.v0" && pType != "postgres.server.v0" {
 				// When the resource has a server (container or p.server) as a parent, it means that the database is
 				// a part of a server and it should not be created as a separate resource.
 				b.addContainerAppService(name, "postgres")

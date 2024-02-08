@@ -4,6 +4,8 @@ import (
 	"context"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
@@ -21,6 +23,8 @@ type MockContext struct {
 	Context                        *context.Context
 	Console                        *mockinput.MockConsole
 	HttpClient                     *mockhttp.MockHttpClient
+	CoreClientOptions              *policy.ClientOptions
+	ArmClientOptions               *arm.ClientOptions
 	CommandRunner                  *mockexec.MockCommandRunner
 	ConfigManager                  *mockconfig.MockConfigManager
 	Container                      *ioc.NestedContainer
@@ -35,12 +39,23 @@ func NewMockContext(ctx context.Context) *MockContext {
 	configManager := mockconfig.NewMockConfigManager()
 	config := config.NewEmptyConfig()
 
+	coreClientOptions := &azcore.ClientOptions{
+		Transport: httpClient,
+	}
+	armClientOptions := &arm.ClientOptions{
+		ClientOptions: policy.ClientOptions{
+			Transport: httpClient,
+		},
+	}
+
 	mockContext := &MockContext{
 		Credentials:                    &MockCredentials{},
 		Context:                        &ctx,
 		Console:                        mockinput.NewMockConsole(),
 		CommandRunner:                  mockexec.NewMockCommandRunner(),
 		HttpClient:                     httpClient,
+		CoreClientOptions:              coreClientOptions,
+		ArmClientOptions:               armClientOptions,
 		ConfigManager:                  configManager,
 		SubscriptionCredentialProvider: &MockSubscriptionCredentialProvider{},
 		MultiTenantCredentialProvider:  &MockMultiTenantCredentialProvider{},
@@ -75,5 +90,11 @@ func registerCommonMocks(mockContext *MockContext) {
 	})
 	mockContext.Container.MustRegisterSingleton(func() *alpha.FeatureManager {
 		return mockContext.AlphaFeaturesManager
+	})
+	mockContext.Container.MustRegisterSingleton(func() *policy.ClientOptions {
+		return mockContext.CoreClientOptions
+	})
+	mockContext.Container.MustRegisterSingleton(func() *arm.ClientOptions {
+		return mockContext.ArmClientOptions
 	})
 }

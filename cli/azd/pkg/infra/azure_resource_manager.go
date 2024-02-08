@@ -106,7 +106,6 @@ func (rm *AzureResourceManager) GetDeploymentResourceOperations(
 			// for deploy/create ops, we want to traverse all inner operations to fetch resources.
 			err = rm.appendDeploymentResourcesRecursive(
 				ctx,
-				subscriptionId,
 				resourceGroupName,
 				*operation.Properties.TargetResource.ResourceName,
 				&innerLevelDeploymentOperations,
@@ -308,14 +307,13 @@ func (rm *AzureResourceManager) getCognitiveServiceResourceTypeDisplayName(
 // if they are not already in the list.
 func (rm *AzureResourceManager) appendDeploymentResourcesRecursive(
 	ctx context.Context,
-	subscriptionId string,
 	resourceGroupName string,
 	deploymentName string,
 	resourceOperations *map[string]*armresources.DeploymentOperation,
 	queryStart *time.Time,
 ) error {
 	operations, err := rm.deploymentOperations.ListResourceGroupDeploymentOperations(
-		ctx, subscriptionId, resourceGroupName, deploymentName)
+		ctx, resourceGroupName, deploymentName)
 	if err != nil {
 		// Don't return an error upon getting the deployment operations from deploymentName.
 		// That's because returning an error would stop traversing the entire deployments graph and prevent
@@ -342,7 +340,6 @@ func (rm *AzureResourceManager) appendDeploymentResourcesRecursive(
 			// go to inner levels to resolve resources
 			err := rm.appendDeploymentResourcesRecursive(
 				ctx,
-				subscriptionId,
 				resourceGroupName,
 				*operation.Properties.TargetResource.ResourceName,
 				resourceOperations,

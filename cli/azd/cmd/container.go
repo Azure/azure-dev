@@ -10,7 +10,9 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v2"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
@@ -407,6 +409,57 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			WithPerCallPolicy(azsdk.NewUserAgentPolicy(string(userAgent))).
 			BuildArmClientOptions()
 	})
+
+	container.MustRegisterSingleton(func(
+		subscriptionId environment.SubscriptionId,
+		credential azcore.TokenCredential,
+		options *arm.ClientOptions,
+	) (*armappcontainers.ContainerAppsClient, error) {
+		return armappcontainers.NewContainerAppsClient(
+			string(subscriptionId),
+			credential,
+			options,
+		)
+	})
+	container.MustRegisterSingleton(func(
+		subscriptionId environment.SubscriptionId,
+		credential azcore.TokenCredential,
+		options *arm.ClientOptions,
+	) (*armappcontainers.ContainerAppsRevisionsClient, error) {
+		return armappcontainers.NewContainerAppsRevisionsClient(
+			string(subscriptionId),
+			credential,
+			options,
+		)
+	})
+	container.MustRegisterSingleton(containerapps.NewContainerAppService)
+
+	container.MustRegisterSingleton(func(
+		options *arm.ClientOptions,
+		credential azcore.TokenCredential,
+		subscriptionId environment.SubscriptionId,
+	) (*armresources.DeploymentsClient, error) {
+		return armresources.NewDeploymentsClient(
+			string(subscriptionId),
+			credential,
+			options,
+		)
+	})
+	container.MustRegisterSingleton(azapi.NewDeployments)
+
+	container.MustRegisterSingleton(func(
+		options *arm.ClientOptions,
+		credential azcore.TokenCredential,
+		subscriptionId environment.SubscriptionId,
+	) (*armresources.DeploymentOperationsClient, error) {
+		client, err := armresources.NewDeploymentOperationsClient(
+			string(subscriptionId),
+			credential,
+			options,
+		)
+		return client, err
+	})
+	container.MustRegisterSingleton(azapi.NewDeploymentOperations)
 
 	container.MustRegisterSingleton(func(
 		clientOptionsBuilderFactory azsdk.ClientOptionsBuilderFactory,

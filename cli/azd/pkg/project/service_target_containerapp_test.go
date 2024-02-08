@@ -136,8 +136,8 @@ func createContainerAppServiceTarget(
 	containerAppService := containerapps.NewContainerAppService(
 		credentialProvider,
 		clock.NewMock(),
-		mockazsdk.MockContainerAppsClient("SUBSCRIPTION_ID", mockContext.Credentials),
-		mockazsdk.MockContainerAppsRevisionsClient("SUBSCRIPTION_ID", mockContext.Credentials),
+		mockazsdk.MockContainerAppsClient("SUBSCRIPTION_ID", mockContext.Credentials, mockContext.ArmClientOptions),
+		mockazsdk.MockContainerAppsRevisionsClient("SUBSCRIPTION_ID", mockContext.Credentials, mockContext.ArmClientOptions),
 	)
 	containerRegistryService := azcli.NewContainerRegistryService(credentialProvider, mockContext.HttpClient, dockerCli)
 	containerHelper := NewContainerHelper(env, envManager, clock.NewMock(), containerRegistryService, dockerCli)

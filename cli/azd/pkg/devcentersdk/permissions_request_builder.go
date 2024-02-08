@@ -33,9 +33,10 @@ func (c *PermissionListRequestBuilder) Get(ctx context.Context) ([]*armauthoriza
 		return nil, err
 	}
 
+	// TODO: fix
 	options := azsdk.NewClientOptionsBuilderFactory(c.client.options.Transport, "azd").
 		ClientOptionsBuilder().
-		SetContext(ctx).
+		WithPerCallPolicy(azsdk.NewMsCorrelationPolicy()).
 		BuildArmClientOptions()
 
 	permissionsClient, err := armauthorization.NewPermissionsClient(project.SubscriptionId, c.client.credential, options)

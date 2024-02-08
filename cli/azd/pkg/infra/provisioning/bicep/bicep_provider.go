@@ -437,7 +437,7 @@ func (p *BicepProvider) deploymentState(
 
 	var templateHash string
 	createHashResult, err := p.deploymentsService.CalculateTemplateHash(
-		ctx, p.env.GetSubscriptionId(), deploymentData.CompiledBicep.RawArmTemplate)
+		ctx, deploymentData.CompiledBicep.RawArmTemplate)
 	if err != nil {
 		return nil, fmt.Errorf("can't get hash from current template: %w", err)
 	}

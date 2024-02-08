@@ -26,7 +26,10 @@ import (
 	"time"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/policy"
 	"github.com/Azure/azure-sdk-for-go/sdk/azidentity"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/internal/tracing"
 	"github.com/azure/azure-dev/cli/azd/pkg/azapi"
@@ -156,12 +159,18 @@ func Test_CLI_InfraCreateAndDelete(t *testing.T) {
 		}),
 		client,
 		azcli.NewAzCliArgs{})
-	deploymentOperations := azapi.NewDeploymentOperations(
-		mockaccount.SubscriptionCredentialProviderFunc(
-			func(_ context.Context, _ string) (azcore.TokenCredential, error) {
-				return cred, nil
-			}),
-		client)
+
+	deploymentOperationsClient, err := armresources.NewDeploymentOperationsClient(
+		env.GetSubscriptionId(),
+		cred,
+		&arm.ClientOptions{
+			ClientOptions: policy.ClientOptions{
+				Transport: client,
+			},
+		},
+	)
+	require.NoError(t, err)
+	deploymentOperations := azapi.NewDeploymentOperations(deploymentOperationsClient)
 
 	// Verify that resource groups are created with tag
 	resourceManager := infra.NewAzureResourceManager(azCli, deploymentOperations)
@@ -364,12 +373,18 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 		}),
 		client,
 		azcli.NewAzCliArgs{})
-	deploymentOperations := azapi.NewDeploymentOperations(
-		mockaccount.SubscriptionCredentialProviderFunc(
-			func(_ context.Context, _ string) (azcore.TokenCredential, error) {
-				return cred, nil
-			}),
-		client)
+
+	deploymentOperationsClient, err := armresources.NewDeploymentOperationsClient(
+		env.GetSubscriptionId(),
+		cred,
+		&arm.ClientOptions{
+			ClientOptions: policy.ClientOptions{
+				Transport: client,
+			},
+		},
+	)
+	require.NoError(t, err)
+	deploymentOperations := azapi.NewDeploymentOperations(deploymentOperationsClient)
 
 	// Verify that resource groups are created with tag
 	resourceManager := infra.NewAzureResourceManager(azCli, deploymentOperations)

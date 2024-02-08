@@ -70,7 +70,7 @@ func (s *ResourceGroupDeployment) Deploy(
 	ctx context.Context, template azure.RawArmTemplate, parameters azure.ArmParameters, tags map[string]*string,
 ) (*armresources.DeploymentExtended, error) {
 	return s.deployments.DeployToResourceGroup(
-		ctx, s.subscriptionId, s.resourceGroupName, s.name, template, parameters, tags)
+		ctx, s.resourceGroupName, s.name, template, parameters, tags)
 }
 
 func (s *ResourceGroupDeployment) DeployPreview(
@@ -78,18 +78,18 @@ func (s *ResourceGroupDeployment) DeployPreview(
 	template azure.RawArmTemplate,
 	parameters azure.ArmParameters) (*armresources.WhatIfOperationResult, error) {
 	return s.deployments.WhatIfDeployToResourceGroup(
-		ctx, s.subscriptionId, s.resourceGroupName, s.name, template, parameters)
+		ctx, s.resourceGroupName, s.name, template, parameters)
 }
 
 // GetDeployment fetches the result of the most recent deployment.
 func (s *ResourceGroupDeployment) Deployment(ctx context.Context) (*armresources.DeploymentExtended, error) {
-	return s.deployments.GetResourceGroupDeployment(ctx, s.subscriptionId, s.resourceGroupName, s.name)
+	return s.deployments.GetResourceGroupDeployment(ctx, s.resourceGroupName, s.name)
 }
 
 // Gets the resource deployment operations for the current scope
 func (s *ResourceGroupDeployment) Operations(ctx context.Context) ([]*armresources.DeploymentOperation, error) {
 	return s.deploymentOperations.ListResourceGroupDeploymentOperations(
-		ctx, s.subscriptionId, s.resourceGroupName, s.name)
+		ctx, s.resourceGroupName, s.name)
 }
 
 // Gets the url to check deployment progress
@@ -149,7 +149,7 @@ func (s *ResourceGroupScope) ResourceGroupName() string {
 
 // ListDeployments returns all the deployments in this resource group.
 func (s *ResourceGroupScope) ListDeployments(ctx context.Context) ([]*armresources.DeploymentExtended, error) {
-	return s.deployments.ListResourceGroupDeployments(ctx, s.subscriptionId, s.resourceGroupName)
+	return s.deployments.ListResourceGroupDeployments(ctx, s.resourceGroupName)
 }
 
 // cPortalUrlPrefix is the prefix which can be combined with the RID of a deployment to produce a URL into the Azure Portal
@@ -195,7 +195,7 @@ func (s *SubscriptionDeployment) Location() string {
 func (s *SubscriptionDeployment) Deploy(
 	ctx context.Context, template azure.RawArmTemplate, parameters azure.ArmParameters, tags map[string]*string,
 ) (*armresources.DeploymentExtended, error) {
-	return s.deploymentsService.DeployToSubscription(ctx, s.subscriptionId, s.location, s.name, template, parameters, tags)
+	return s.deploymentsService.DeployToSubscription(ctx, s.location, s.name, template, parameters, tags)
 }
 
 // Deploy a given template with a set of parameters.
@@ -204,17 +204,17 @@ func (s *SubscriptionDeployment) DeployPreview(
 	template azure.RawArmTemplate,
 	parameters azure.ArmParameters) (*armresources.WhatIfOperationResult, error) {
 	return s.deploymentsService.WhatIfDeployToSubscription(
-		ctx, s.subscriptionId, s.location, s.name, template, parameters)
+		ctx, s.location, s.name, template, parameters)
 }
 
 // GetDeployment fetches the result of the most recent deployment.
 func (s *SubscriptionDeployment) Deployment(ctx context.Context) (*armresources.DeploymentExtended, error) {
-	return s.deploymentsService.GetSubscriptionDeployment(ctx, s.subscriptionId, s.name)
+	return s.deploymentsService.GetSubscriptionDeployment(ctx, s.name)
 }
 
 // Gets the resource deployment operations for the current scope
 func (s *SubscriptionDeployment) Operations(ctx context.Context) ([]*armresources.DeploymentOperation, error) {
-	return s.deploymentOperations.ListSubscriptionDeploymentOperations(ctx, s.subscriptionId, s.name)
+	return s.deploymentOperations.ListSubscriptionDeploymentOperations(ctx, s.name)
 }
 
 func NewSubscriptionDeployment(
@@ -245,7 +245,7 @@ func (s *SubscriptionScope) SubscriptionId() string {
 
 // ListDeployments returns all the deployments at subscription scope.
 func (s *SubscriptionScope) ListDeployments(ctx context.Context) ([]*armresources.DeploymentExtended, error) {
-	return s.deploymentsService.ListSubscriptionDeployments(ctx, s.subscriptionId)
+	return s.deploymentsService.ListSubscriptionDeployments(ctx)
 }
 
 func NewSubscriptionScope(

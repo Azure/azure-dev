@@ -13,37 +13,28 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
-	azdinternal "github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/account"
-	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
-	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 )
 
 type Deployments interface {
 	ListSubscriptionDeployments(
 		ctx context.Context,
-		subscriptionId string,
 	) ([]*armresources.DeploymentExtended, error)
 	GetSubscriptionDeployment(
 		ctx context.Context,
-		subscriptionId string,
 		deploymentName string,
 	) (*armresources.DeploymentExtended, error)
 	ListResourceGroupDeployments(
 		ctx context.Context,
-		subscriptionId string,
 		resourceGroupName string,
 	) ([]*armresources.DeploymentExtended, error)
 	GetResourceGroupDeployment(
 		ctx context.Context,
-		subscriptionId string,
 		resourceGroupName string,
 		deploymentName string,
 	) (*armresources.DeploymentExtended, error)
 	DeployToSubscription(
 		ctx context.Context,
-		subscriptionId string,
 		location string,
 		deploymentName string,
 		armTemplate azure.RawArmTemplate,
@@ -52,7 +43,6 @@ type Deployments interface {
 	) (*armresources.DeploymentExtended, error)
 	DeployToResourceGroup(
 		ctx context.Context,
-		subscriptionId,
 		resourceGroup,
 		deploymentName string,
 		armTemplate azure.RawArmTemplate,
@@ -61,7 +51,6 @@ type Deployments interface {
 	) (*armresources.DeploymentExtended, error)
 	WhatIfDeployToSubscription(
 		ctx context.Context,
-		subscriptionId string,
 		location string,
 		deploymentName string,
 		armTemplate azure.RawArmTemplate,
@@ -69,17 +58,16 @@ type Deployments interface {
 	) (*armresources.WhatIfOperationResult, error)
 	WhatIfDeployToResourceGroup(
 		ctx context.Context,
-		subscriptionId,
 		resourceGroup,
 		deploymentName string,
 		armTemplate azure.RawArmTemplate,
 		parameters azure.ArmParameters,
 	) (*armresources.WhatIfOperationResult, error)
-	DeleteSubscriptionDeployment(ctx context.Context, subscriptionId string, deploymentName string) error
+	DeleteSubscriptionDeployment(ctx context.Context, deploymentName string) error
 	CalculateTemplateHash(
 		ctx context.Context,
-		subscriptionId string,
-		template azure.RawArmTemplate) (armresources.DeploymentsClientCalculateTemplateHashResponse, error)
+		template azure.RawArmTemplate,
+	) (armresources.DeploymentsClientCalculateTemplateHashResponse, error)
 }
 
 var (
@@ -87,46 +75,31 @@ var (
 )
 
 type deployments struct {
-	credentialProvider account.SubscriptionCredentialProvider
-	httpClient         httputil.HttpClient
-	userAgent          string
+	deploymentsClient *armresources.DeploymentsClient
 }
 
 func NewDeployments(
-	credentialProvider account.SubscriptionCredentialProvider,
-	httpClient httputil.HttpClient,
+	deploymentsClient *armresources.DeploymentsClient,
 ) Deployments {
 	return &deployments{
-		credentialProvider: credentialProvider,
-		httpClient:         httpClient,
-		userAgent:          azdinternal.UserAgent(),
+		deploymentsClient: deploymentsClient,
 	}
 }
 
 func (ds *deployments) CalculateTemplateHash(
 	ctx context.Context,
-	subscriptionId string,
-	template azure.RawArmTemplate) (result armresources.DeploymentsClientCalculateTemplateHashResponse, err error) {
-	deploymentClient, err := ds.createDeploymentsClient(ctx, subscriptionId)
-	if err != nil {
-		return result, fmt.Errorf("creating deployments client: %w", err)
-	}
-
-	return deploymentClient.CalculateTemplateHash(ctx, template, nil)
+	template azure.RawArmTemplate,
+) (result armresources.DeploymentsClientCalculateTemplateHashResponse, err error) {
+	return ds.deploymentsClient.CalculateTemplateHash(ctx, template, nil)
 }
 
 func (ds *deployments) ListSubscriptionDeployments(
 	ctx context.Context,
-	subscriptionId string,
 ) ([]*armresources.DeploymentExtended, error) {
-	deploymentClient, err := ds.createDeploymentsClient(ctx, subscriptionId)
-	if err != nil {
-		return nil, fmt.Errorf("creating deployments client: %w", err)
-	}
 
 	results := []*armresources.DeploymentExtended{}
 
-	pager := deploymentClient.NewListAtSubscriptionScopePager(nil)
+	pager := ds.deploymentsClient.NewListAtSubscriptionScopePager(nil)
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
@@ -141,15 +114,10 @@ func (ds *deployments) ListSubscriptionDeployments(
 
 func (ds *deployments) GetSubscriptionDeployment(
 	ctx context.Context,
-	subscriptionId string,
 	deploymentName string,
 ) (*armresources.DeploymentExtended, error) {
-	deploymentClient, err := ds.createDeploymentsClient(ctx, subscriptionId)
-	if err != nil {
-		return nil, fmt.Errorf("creating deployments client: %w", err)
-	}
 
-	deployment, err := deploymentClient.GetAtSubscriptionScope(ctx, deploymentName, nil)
+	deployment, err := ds.deploymentsClient.GetAtSubscriptionScope(ctx, deploymentName, nil)
 	if err != nil {
 		var errDetails *azcore.ResponseError
 		if errors.As(err, &errDetails) && errDetails.StatusCode == 404 {
@@ -163,17 +131,12 @@ func (ds *deployments) GetSubscriptionDeployment(
 
 func (ds *deployments) ListResourceGroupDeployments(
 	ctx context.Context,
-	subscriptionId string,
 	resourceGroupName string,
 ) ([]*armresources.DeploymentExtended, error) {
-	deploymentClient, err := ds.createDeploymentsClient(ctx, subscriptionId)
-	if err != nil {
-		return nil, fmt.Errorf("creating deployments client: %w", err)
-	}
 
 	results := []*armresources.DeploymentExtended{}
 
-	pager := deploymentClient.NewListByResourceGroupPager(resourceGroupName, nil)
+	pager := ds.deploymentsClient.NewListByResourceGroupPager(resourceGroupName, nil)
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
@@ -188,16 +151,11 @@ func (ds *deployments) ListResourceGroupDeployments(
 
 func (ds *deployments) GetResourceGroupDeployment(
 	ctx context.Context,
-	subscriptionId string,
 	resourceGroupName string,
 	deploymentName string,
 ) (*armresources.DeploymentExtended, error) {
-	deploymentClient, err := ds.createDeploymentsClient(ctx, subscriptionId)
-	if err != nil {
-		return nil, fmt.Errorf("creating deployments client: %w", err)
-	}
 
-	deployment, err := deploymentClient.Get(ctx, resourceGroupName, deploymentName, nil)
+	deployment, err := ds.deploymentsClient.Get(ctx, resourceGroupName, deploymentName, nil)
 	if err != nil {
 		var errDetails *azcore.ResponseError
 		if errors.As(err, &errDetails) && errDetails.StatusCode == 404 {
@@ -209,39 +167,15 @@ func (ds *deployments) GetResourceGroupDeployment(
 	return &deployment.DeploymentExtended, nil
 }
 
-func (ds *deployments) createDeploymentsClient(
-	ctx context.Context,
-	subscriptionId string,
-) (*armresources.DeploymentsClient, error) {
-	credential, err := ds.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
-	if err != nil {
-		return nil, err
-	}
-
-	options := ds.clientOptionsBuilder(ctx).BuildArmClientOptions()
-	client, err := armresources.NewDeploymentsClient(subscriptionId, credential, options)
-	if err != nil {
-		return nil, fmt.Errorf("creating deployments client: %w", err)
-	}
-
-	return client, nil
-}
-
 func (ds *deployments) DeployToSubscription(
 	ctx context.Context,
-	subscriptionId string,
 	location string,
 	deploymentName string,
 	armTemplate azure.RawArmTemplate,
 	parameters azure.ArmParameters,
 	tags map[string]*string,
 ) (*armresources.DeploymentExtended, error) {
-	deploymentClient, err := ds.createDeploymentsClient(ctx, subscriptionId)
-	if err != nil {
-		return nil, fmt.Errorf("creating deployments client: %w", err)
-	}
-
-	createFromTemplateOperation, err := deploymentClient.BeginCreateOrUpdateAtSubscriptionScope(
+	createFromTemplateOperation, err := ds.deploymentsClient.BeginCreateOrUpdateAtSubscriptionScope(
 		ctx, deploymentName,
 		armresources.Deployment{
 			Properties: &armresources.DeploymentProperties{
@@ -271,17 +205,12 @@ func (ds *deployments) DeployToSubscription(
 
 func (ds *deployments) DeployToResourceGroup(
 	ctx context.Context,
-	subscriptionId, resourceGroup, deploymentName string,
+	resourceGroup, deploymentName string,
 	armTemplate azure.RawArmTemplate,
 	parameters azure.ArmParameters,
 	tags map[string]*string,
 ) (*armresources.DeploymentExtended, error) {
-	deploymentClient, err := ds.createDeploymentsClient(ctx, subscriptionId)
-	if err != nil {
-		return nil, fmt.Errorf("creating deployments client: %w", err)
-	}
-
-	createFromTemplateOperation, err := deploymentClient.BeginCreateOrUpdate(
+	createFromTemplateOperation, err := ds.deploymentsClient.BeginCreateOrUpdate(
 		ctx, resourceGroup, deploymentName,
 		armresources.Deployment{
 			Properties: &armresources.DeploymentProperties{
@@ -310,18 +239,12 @@ func (ds *deployments) DeployToResourceGroup(
 
 func (ds *deployments) WhatIfDeployToSubscription(
 	ctx context.Context,
-	subscriptionId string,
 	location string,
 	deploymentName string,
 	armTemplate azure.RawArmTemplate,
 	parameters azure.ArmParameters,
 ) (*armresources.WhatIfOperationResult, error) {
-	deploymentClient, err := ds.createDeploymentsClient(ctx, subscriptionId)
-	if err != nil {
-		return nil, fmt.Errorf("creating deployments client: %w", err)
-	}
-
-	createFromTemplateOperation, err := deploymentClient.BeginWhatIfAtSubscriptionScope(
+	createFromTemplateOperation, err := ds.deploymentsClient.BeginWhatIfAtSubscriptionScope(
 		ctx, deploymentName,
 		armresources.DeploymentWhatIf{
 			Properties: &armresources.DeploymentWhatIfProperties{
@@ -351,16 +274,11 @@ func (ds *deployments) WhatIfDeployToSubscription(
 
 func (ds *deployments) WhatIfDeployToResourceGroup(
 	ctx context.Context,
-	subscriptionId, resourceGroup, deploymentName string,
+	resourceGroup, deploymentName string,
 	armTemplate azure.RawArmTemplate,
 	parameters azure.ArmParameters,
 ) (*armresources.WhatIfOperationResult, error) {
-	deploymentClient, err := ds.createDeploymentsClient(ctx, subscriptionId)
-	if err != nil {
-		return nil, fmt.Errorf("creating deployments client: %w", err)
-	}
-
-	createFromTemplateOperation, err := deploymentClient.BeginWhatIf(
+	createFromTemplateOperation, err := ds.deploymentsClient.BeginWhatIf(
 		ctx, resourceGroup, deploymentName,
 		armresources.DeploymentWhatIf{
 			Properties: &armresources.DeploymentWhatIfProperties{
@@ -387,13 +305,10 @@ func (ds *deployments) WhatIfDeployToResourceGroup(
 }
 
 func (ds *deployments) DeleteSubscriptionDeployment(
-	ctx context.Context, subscriptionId string, deploymentName string) error {
-	deploymentClient, err := ds.createDeploymentsClient(ctx, subscriptionId)
-	if err != nil {
-		return fmt.Errorf("deleting deployment: %w", err)
-	}
-
-	deleteDeploymentOperation, err := deploymentClient.BeginDeleteAtSubscriptionScope(ctx, deploymentName, nil)
+	ctx context.Context,
+	deploymentName string,
+) error {
+	deleteDeploymentOperation, err := ds.deploymentsClient.BeginDeleteAtSubscriptionScope(ctx, deploymentName, nil)
 	if err != nil {
 		return fmt.Errorf("starting to delete deployment: %w", err)
 	}
@@ -526,11 +441,4 @@ func createDeploymentError(err error) error {
 	}
 
 	return err
-}
-
-func (ds *deployments) clientOptionsBuilder(ctx context.Context) *azsdk.ClientOptionsBuilder {
-	return azsdk.NewClientOptionsBuilder().
-		WithTransport(ds.httpClient).
-		WithPerCallPolicy(azsdk.NewUserAgentPolicy(ds.userAgent)).
-		WithPerCallPolicy(azsdk.NewMsCorrelationPolicy())
 }

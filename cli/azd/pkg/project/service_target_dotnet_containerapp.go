@@ -425,7 +425,11 @@ func (fns *containerAppTemplateManifestFuncs) ConnectionString(name string) (str
 		}
 
 		if parent.Type == "container.v0" {
-			rawConnectionString := *parent.ConnectionString + fmt.Sprintf("Database=%s;", name)
+			var ensureDelimiter string
+			if !strings.HasSuffix(*parent.ConnectionString, ";") {
+				ensureDelimiter = ";"
+			}
+			rawConnectionString := *parent.ConnectionString + fmt.Sprintf("%sDatabase=%s;", ensureDelimiter, name)
 			resolvedConnectionString, err := apphost.EvalString(rawConnectionString, func(expr string) (string, error) {
 				return evalBindingRefWithParent(expr, parent, fns.env)
 			})
@@ -452,7 +456,11 @@ func (fns *containerAppTemplateManifestFuncs) ConnectionString(name string) (str
 
 		parent := fns.manifest.Resources[*parentResource]
 		if parent.Type == "container.v0" {
-			rawConnectionString := *parent.ConnectionString + fmt.Sprintf("Database=%s;", name)
+			var ensureDelimiter string
+			if !strings.HasSuffix(*parent.ConnectionString, ";") {
+				ensureDelimiter = ";"
+			}
+			rawConnectionString := *parent.ConnectionString + fmt.Sprintf("%sDatabase=%s;", ensureDelimiter, name)
 			resolvedConnectionString, err := apphost.EvalString(rawConnectionString, func(expr string) (string, error) {
 				return evalBindingRefWithParent(expr, parent, fns.env)
 			})

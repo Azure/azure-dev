@@ -10,6 +10,7 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/storage/azblob"
+	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 )
 
 // AccountConfig contains the configuration for connecting to a storage account
@@ -167,13 +168,14 @@ func (bc *blobClient) ensureContainerExists(ctx context.Context) error {
 
 // createClient creates a new blob client and caches it for future use
 func NewBlobSdkClient(
-	ctx context.Context,
 	credential azcore.TokenCredential,
 	accountConfig *AccountConfig,
-	coreOptions *azcore.ClientOptions,
+	clientOptionsBuilderFactory *azsdk.ClientOptionsBuilderFactory,
 ) (*azblob.Client, error) {
+	// Build the client directly because it does not have correlation policies
+	clientOptions := clientOptionsBuilderFactory.ClientOptionsBuilder().BuildCoreClientOptions()
 	blobOptions := &azblob.ClientOptions{
-		ClientOptions: *coreOptions,
+		ClientOptions: *clientOptions,
 	}
 
 	if accountConfig.Endpoint == "" {

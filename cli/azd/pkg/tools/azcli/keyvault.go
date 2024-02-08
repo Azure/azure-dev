@@ -8,7 +8,6 @@ import (
 	"strings"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/keyvault/armkeyvault"
 	"github.com/Azure/azure-sdk-for-go/sdk/security/keyvault/azsecrets"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 )
@@ -35,12 +34,7 @@ func (cli *azCli) GetKeyVault(
 	resourceGroupName string,
 	vaultName string,
 ) (*AzCliKeyVault, error) {
-	client, err := cli.createKeyVaultClient(ctx, subscriptionId)
-	if err != nil {
-		return nil, err
-	}
-
-	vault, err := client.Get(ctx, resourceGroupName, vaultName, nil)
+	vault, err := cli.keyVaultsClient.Get(ctx, resourceGroupName, vaultName, nil)
 	if err != nil {
 		return nil, fmt.Errorf("getting key vault: %w", err)
 	}
@@ -75,7 +69,7 @@ func (cli *azCli) GetKeyVaultSecret(
 		return nil, nil
 	}
 
-	response, err := client.GetSecret(ctx, secretName, "", nil)
+	response, err := cli.secretsClient.GetSecret(ctx, secretName, "", nil)
 	if err != nil {
 		var httpErr *azcore.ResponseError
 		if errors.As(err, &httpErr) && httpErr.StatusCode == http.StatusNotFound {
@@ -92,12 +86,7 @@ func (cli *azCli) GetKeyVaultSecret(
 }
 
 func (cli *azCli) PurgeKeyVault(ctx context.Context, subscriptionId string, vaultName string, location string) error {
-	client, err := cli.createKeyVaultClient(ctx, subscriptionId)
-	if err != nil {
-		return err
-	}
-
-	poller, err := client.BeginPurgeDeleted(ctx, vaultName, location, nil)
+	poller, err := cli.keyVaultsClient.BeginPurgeDeleted(ctx, vaultName, location, nil)
 	if err != nil {
 		return fmt.Errorf("starting purging key vault: %w", err)
 	}
@@ -110,24 +99,12 @@ func (cli *azCli) PurgeKeyVault(ctx context.Context, subscriptionId string, vaul
 	return nil
 }
 
-// Creates a KeyVault client for ARM control plane operations
-func (cli *azCli) createKeyVaultClient(ctx context.Context, subscriptionId string) (*armkeyvault.VaultsClient, error) {
-	credential, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
-	if err != nil {
-		return nil, err
-	}
-
-	options := cli.clientOptionsBuilder(ctx).BuildArmClientOptions()
-	client, err := armkeyvault.NewVaultsClient(subscriptionId, credential, options)
-	if err != nil {
-		return nil, fmt.Errorf("creating Resource client: %w", err)
-	}
-
-	return client, nil
-}
-
 // Creates a KeyVault client for data plan operations
 // Data plane client is able to fetch secret values. ARM control plane client never returns secret values.
+
+// TODO: How do we get vault URL? Should probably create a func that takes
+// vault name and then creates the KV client from the vault name using ARM to
+// get the vault URL.
 func (cli *azCli) createSecretsDataClient(
 	ctx context.Context,
 	subscriptionId string,
@@ -138,7 +115,7 @@ func (cli *azCli) createSecretsDataClient(
 		return nil, err
 	}
 
-	coreOptions := cli.clientOptionsBuilder(ctx).BuildCoreClientOptions()
+	coreOptions := cli.clientOptionsBuilder().BuildCoreClientOptions()
 	options := &azsecrets.ClientOptions{
 		ClientOptions:                        *coreOptions,
 		DisableChallengeResourceVerification: false,

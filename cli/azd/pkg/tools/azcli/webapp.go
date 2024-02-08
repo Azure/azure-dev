@@ -5,8 +5,6 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice"
-	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 )
 
@@ -20,12 +18,7 @@ func (cli *azCli) GetAppServiceProperties(
 	resourceGroup string,
 	appName string,
 ) (*AzCliAppServiceProperties, error) {
-	client, err := cli.createWebAppsClient(ctx, subscriptionId)
-	if err != nil {
-		return nil, err
-	}
-
-	webApp, err := client.Get(ctx, resourceGroup, appName, nil)
+	webApp, err := cli.webAppsClient.Get(ctx, resourceGroup, appName, nil)
 	if err != nil {
 		return nil, fmt.Errorf("failed retrieving webapp properties: %w", err)
 	}
@@ -42,45 +35,10 @@ func (cli *azCli) DeployAppServiceZip(
 	appName string,
 	deployZipFile io.Reader,
 ) (*string, error) {
-	client, err := cli.createZipDeployClient(ctx, subscriptionId)
-	if err != nil {
-		return nil, err
-	}
-
-	response, err := client.Deploy(ctx, appName, deployZipFile)
+	response, err := cli.zipDeployClient.Deploy(ctx, appName, deployZipFile)
 	if err != nil {
 		return nil, err
 	}
 
 	return convert.RefOf(response.StatusText), nil
-}
-
-func (cli *azCli) createWebAppsClient(ctx context.Context, subscriptionId string) (*armappservice.WebAppsClient, error) {
-	credential, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
-	if err != nil {
-		return nil, err
-	}
-
-	options := cli.clientOptionsBuilder(ctx).BuildArmClientOptions()
-	client, err := armappservice.NewWebAppsClient(subscriptionId, credential, options)
-	if err != nil {
-		return nil, fmt.Errorf("creating WebApps client: %w", err)
-	}
-
-	return client, nil
-}
-
-func (cli *azCli) createZipDeployClient(ctx context.Context, subscriptionId string) (*azsdk.ZipDeployClient, error) {
-	credential, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
-	if err != nil {
-		return nil, err
-	}
-
-	options := cli.clientOptionsBuilder(ctx).BuildArmClientOptions()
-	client, err := azsdk.NewZipDeployClient(subscriptionId, credential, options)
-	if err != nil {
-		return nil, fmt.Errorf("creating WebApps client: %w", err)
-	}
-
-	return client, nil
 }

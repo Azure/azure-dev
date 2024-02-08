@@ -7,7 +7,6 @@ import (
 	"testing"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v2"
-	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockazsdk"
@@ -133,16 +132,11 @@ func Test_ContainerApp_AddRevision(t *testing.T) {
 		containerApp,
 	)
 
-	// TODO: Refactor
-	options := azsdk.NewClientOptionsBuilderFactory(mockContext.HttpClient, "azd").
-		ClientOptionsBuilder().
-		BuildArmClientOptions()
-
 	cas := NewContainerAppService(
 		mockContext.SubscriptionCredentialProvider,
 		clock.NewMock(),
-		mockazsdk.MockContainerAppsClient(subscriptionId, mockContext.Credentials, options),
-		mockazsdk.MockContainerAppsRevisionsClient(subscriptionId, mockContext.Credentials, options),
+		mockazsdk.MockContainerAppsClient(subscriptionId, mockContext.Credentials, mockContext.ArmClientOptions),
+		mockazsdk.MockContainerAppsRevisionsClient(subscriptionId, mockContext.Credentials, mockContext.ArmClientOptions),
 	)
 	err := cas.AddRevision(*mockContext.Context, resourceGroup, appName, updatedImageName)
 	require.NoError(t, err)

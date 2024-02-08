@@ -10,7 +10,13 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/apimanagement/armapimanagement"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appconfiguration/armappconfiguration"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appcontainers/armappcontainers/v2"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/cognitiveservices/armcognitiveservices"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/keyvault/armkeyvault"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/MakeNowJust/heredoc/v2"
@@ -381,7 +387,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	// Clients
 
 	// TODO: File this registration in a reasonable place
-	container.MustRegisterSingleton(func(
+	container.MustRegisterScoped(func(
 		env *environment.Environment,
 	) environment.SubscriptionId {
 		return environment.SubscriptionId(env.GetSubscriptionId())
@@ -410,7 +416,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			BuildArmClientOptions()
 	})
 
-	container.MustRegisterSingleton(func(
+	container.MustRegisterScoped(func(
 		subscriptionId environment.SubscriptionId,
 		credential azcore.TokenCredential,
 		options *arm.ClientOptions,
@@ -421,7 +427,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			options,
 		)
 	})
-	container.MustRegisterSingleton(func(
+	container.MustRegisterScoped(func(
 		subscriptionId environment.SubscriptionId,
 		credential azcore.TokenCredential,
 		options *arm.ClientOptions,
@@ -432,9 +438,9 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			options,
 		)
 	})
-	container.MustRegisterSingleton(containerapps.NewContainerAppService)
+	container.MustRegisterScoped(containerapps.NewContainerAppService)
 
-	container.MustRegisterSingleton(func(
+	container.MustRegisterScoped(func(
 		options *arm.ClientOptions,
 		credential azcore.TokenCredential,
 		subscriptionId environment.SubscriptionId,
@@ -445,9 +451,9 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			options,
 		)
 	})
-	container.MustRegisterSingleton(azapi.NewDeployments)
+	container.MustRegisterScoped(azapi.NewDeployments)
 
-	container.MustRegisterSingleton(func(
+	container.MustRegisterScoped(func(
 		options *arm.ClientOptions,
 		credential azcore.TokenCredential,
 		subscriptionId environment.SubscriptionId,
@@ -459,20 +465,150 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		)
 		return client, err
 	})
-	container.MustRegisterSingleton(azapi.NewDeploymentOperations)
+	container.MustRegisterScoped(azapi.NewDeploymentOperations)
 
+	/////////////////////////////////////////////
 	container.MustRegisterSingleton(func(
+		credential account.TokenCredentialForSubscription,
+		clientOptionsBuilderFactory azsdk.ClientOptionsBuilderFactory,
+		userAgent httputil.UserAgent,
+	) (*armauthorization.RoleDefinitionsClient, error) {
+		// Custom options because this client does not have correlation policies
+		options := clientOptionsBuilderFactory.ClientOptionsBuilder().
+			WithPerCallPolicy(azsdk.NewUserAgentPolicy(string(userAgent))).
+			BuildArmClientOptions()
+		client, err := armauthorization.NewRoleDefinitionsClient(credential, options)
+		if err != nil {
+			return nil, fmt.Errorf("creating ARM Role Definitions client: %w", err)
+		}
+
+		return client, nil
+	})
+
+	container.MustRegisterScoped(func(
+		subscriptionId environment.SubscriptionId,
+		credential account.TokenCredentialForSubscription,
+		clientOptionsBuilderFactory azsdk.ClientOptionsBuilderFactory,
+		userAgent httputil.UserAgent,
+	) (*armauthorization.RoleAssignmentsClient, error) {
+		// Custom options because this client does not have correlation policies
+		options := clientOptionsBuilderFactory.ClientOptionsBuilder().
+			WithPerCallPolicy(azsdk.NewUserAgentPolicy(string(userAgent))).
+			BuildArmClientOptions()
+		return armauthorization.NewRoleAssignmentsClient(string(subscriptionId), credential, options)
+	})
+
+	container.MustRegisterScoped(func(
 		clientOptionsBuilderFactory azsdk.ClientOptionsBuilderFactory,
 		credential azcore.TokenCredential,
 	) (*armresourcegraph.Client, error) {
 		options := clientOptionsBuilderFactory.ClientOptionsBuilder().
-			// TODO: ensure that armresourcegraph doesn't require a specific correlation header policy
-			WithPerCallPolicy(azsdk.NewMsCorrelationPolicy()).
-			SetUserAgent("azd").
+			SetUserAgent("azd"). // Usages of armresourcegraph.Client hardcode the user agent "azd"
 			BuildArmClientOptions()
 
 		return armresourcegraph.NewClient(credential, options)
 	})
+
+	container.MustRegisterScoped(func(
+		subscriptionId environment.SubscriptionId,
+		credential account.TokenCredentialForSubscription,
+		options *arm.ClientOptions,
+	) (*armapimanagement.DeletedServicesClient, error) {
+		return armapimanagement.NewDeletedServicesClient(string(subscriptionId), credential, options)
+	})
+
+	container.MustRegisterScoped(func(
+		subscriptionId environment.SubscriptionId,
+		credential account.TokenCredentialForSubscription,
+		options *arm.ClientOptions,
+	) (*armapimanagement.ServiceClient, error) {
+		return armapimanagement.NewServiceClient(string(subscriptionId), credential, options)
+	})
+
+	container.MustRegisterScoped(func(
+		subscriptionId environment.SubscriptionId,
+		credential account.TokenCredentialForSubscription,
+		options *arm.ClientOptions,
+	) (*armappconfiguration.ConfigurationStoresClient, error) {
+		return armappconfiguration.NewConfigurationStoresClient(string(subscriptionId), credential, options)
+	})
+
+	container.MustRegisterScoped(func(
+		subscriptionId environment.SubscriptionId,
+		credential account.TokenCredentialForSubscription,
+		options *arm.ClientOptions,
+	) (*armcognitiveservices.AccountsClient, error) {
+		return armcognitiveservices.NewAccountsClient(string(subscriptionId), credential, options)
+	})
+
+	container.MustRegisterScoped(func(
+		subscriptionId environment.SubscriptionId,
+		credential account.TokenCredentialForSubscription,
+		options *arm.ClientOptions,
+	) (*armcognitiveservices.AccountsClient, error) {
+		return armcognitiveservices.NewAccountsClient(string(subscriptionId), credential, options)
+	})
+
+	container.MustRegisterScoped(func(
+		subscriptionId environment.SubscriptionId,
+		credential account.TokenCredentialForSubscription,
+		options *arm.ClientOptions,
+	) (*armcognitiveservices.DeletedAccountsClient, error) {
+		return armcognitiveservices.NewDeletedAccountsClient(string(subscriptionId), credential, options)
+	})
+
+	container.MustRegisterScoped(func(
+		subscriptionId environment.SubscriptionId,
+		credential account.TokenCredentialForSubscription,
+		options *arm.ClientOptions,
+	) (*armkeyvault.VaultsClient, error) {
+		return armkeyvault.NewVaultsClient(string(subscriptionId), credential, options)
+	})
+
+	container.MustRegisterScoped(func(
+		subscriptionId environment.SubscriptionId,
+		credential account.TokenCredentialForSubscription,
+		options *arm.ClientOptions,
+	) (*armkeyvault.ManagedHsmsClient, error) {
+		return armkeyvault.NewManagedHsmsClient(string(subscriptionId), credential, options)
+	})
+
+	container.MustRegisterScoped(func(
+		subscriptionId environment.SubscriptionId,
+		credential account.TokenCredentialForSubscription,
+		options *arm.ClientOptions,
+	) (*armresources.Client, error) {
+		return armresources.NewClient(string(subscriptionId), credential, options)
+	})
+
+	container.MustRegisterScoped(func(
+		subscriptionId environment.SubscriptionId,
+		credential account.TokenCredentialForSubscription,
+		options *arm.ClientOptions,
+	) (*armresources.ResourceGroupsClient, error) {
+		return armresources.NewResourceGroupsClient(string(subscriptionId), credential, options)
+	})
+
+	// Create a map of client types to their respective factory methods
+	armClientMap := map[interface{}]func(string, account.TokenCredentialForSubscription, *arm.ClientOptions) any{
+		(*azsdk.ZipDeployClient)(nil): azsdk.NewZipDeployClient,
+		(*armappservice.WebAppsClient)(nil): armappservice.NewWebAppsClient,
+		(*armappservice.StaticSitesClient)(nil): armappservice.NewStaticSitesClient,
+	}
+
+	// Register the client factories
+	for clientType, factory := range armClientMap {
+		container.MustRegisterScoped(func(
+			subscriptionId environment.SubscriptionId,
+			credential account.TokenCredentialForSubscription,
+			options *arm.ClientOptions,
+		) (clientType, error) {
+			return factory(string(subscriptionId), credential, options)
+		}
+	}
+
+	// BOTTOM OF CLIENT REGISTRATIONS
+	//////////////////////////////////////////////////////////////////////////////////////////
 
 	container.MustRegisterSingleton(func(
 		httpClient httputil.HttpClient,
@@ -521,7 +657,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(account.NewSubscriptionsService)
 	container.MustRegisterSingleton(account.NewManager)
 	container.MustRegisterSingleton(account.NewSubscriptionsManager)
-	container.MustRegisterSingleton(account.NewSubscriptionCredentialProvider)
+	container.MustRegisterScoped(account.NewSubscriptionCredentialProvider)
 	container.MustRegisterSingleton(azcli.NewManagedClustersService)
 	container.MustRegisterSingleton(azcli.NewAdService)
 	container.MustRegisterSingleton(azcli.NewContainerRegistryService)
@@ -537,8 +673,16 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		return authManager.CredentialForCurrentUser(ctx, nil)
 	})
 
+	container.MustRegisterScoped(func(
+		ctx context.Context,
+		subscriptionId environment.SubscriptionId,
+		credProvider account.SubscriptionCredentialProvider,
+	) (account.TokenCredentialForSubscription, error) {
+		return credProvider.CredentialForSubscription(ctx, string(subscriptionId))
+	})
+
 	// Tools
-	container.MustRegisterSingleton(func(
+	container.MustRegisterScoped(func(
 		rootOptions *internal.GlobalCommandOptions,
 		credentialProvider account.SubscriptionCredentialProvider,
 		httpClient httputil.HttpClient,

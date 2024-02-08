@@ -33,7 +33,7 @@ func (c *PermissionListRequestBuilder) Get(ctx context.Context) ([]*armauthoriza
 		return nil, err
 	}
 
-	// TODO: fix
+	// Must build options because the user agent is hardcoded to "azd"
 	options := azsdk.NewClientOptionsBuilderFactory(c.client.options.Transport, "azd").
 		ClientOptionsBuilder().
 		WithPerCallPolicy(azsdk.NewMsCorrelationPolicy()).

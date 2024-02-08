@@ -232,7 +232,7 @@ func (crs *containerRegistryService) createRegistriesClient(
 		return nil, err
 	}
 
-	options := clientOptionsBuilder(ctx, crs.httpClient, crs.userAgent).BuildArmClientOptions()
+	options := clientOptionsBuilder(crs.httpClient, crs.userAgent).BuildArmClientOptions()
 	client, err := armcontainerregistry.NewRegistriesClient(subscriptionId, credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating registries client: %w", err)
@@ -258,7 +258,7 @@ func (crs *containerRegistryService) getAcrToken(
 	}
 
 	// Implementation based on docs @ https://azure.github.io/acr/AAD-OAuth.html
-	options := clientOptionsBuilder(ctx, crs.httpClient, crs.userAgent).BuildCoreClientOptions()
+	options := clientOptionsBuilder(crs.httpClient, crs.userAgent).BuildCoreClientOptions()
 	pipeline := azruntime.NewPipeline("azd-acr", internal.Version, azruntime.PipelineOptions{}, options)
 
 	formData := url.Values{}

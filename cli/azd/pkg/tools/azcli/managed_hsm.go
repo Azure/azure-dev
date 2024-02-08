@@ -4,7 +4,6 @@ import (
 	"context"
 	"fmt"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/keyvault/armkeyvault"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 )
 
@@ -24,12 +23,7 @@ func (cli *azCli) GetManagedHSM(
 	resourceGroupName string,
 	hsmName string,
 ) (*AzCliManagedHSM, error) {
-	client, err := cli.createManagedHSMClient(ctx, subscriptionId)
-	if err != nil {
-		return nil, err
-	}
-
-	managedHSM, err := client.Get(ctx, resourceGroupName, hsmName, nil)
+	managedHSM, err := cli.managedHsmsClient.Get(ctx, resourceGroupName, hsmName, nil)
 	if err != nil {
 		return nil, fmt.Errorf("getting managed hsm: %w", err)
 	}
@@ -49,12 +43,7 @@ func (cli *azCli) GetManagedHSM(
 }
 
 func (cli *azCli) PurgeManagedHSM(ctx context.Context, subscriptionId string, hsmName string, location string) error {
-	client, err := cli.createManagedHSMClient(ctx, subscriptionId)
-	if err != nil {
-		return err
-	}
-
-	poller, err := client.BeginPurgeDeleted(ctx, hsmName, location, nil)
+	poller, err := cli.managedHsmsClient.BeginPurgeDeleted(ctx, hsmName, location, nil)
 	if err != nil {
 		return fmt.Errorf("starting purging managed hsm: %w", err)
 	}
@@ -65,23 +54,4 @@ func (cli *azCli) PurgeManagedHSM(ctx context.Context, subscriptionId string, hs
 	}
 
 	return nil
-}
-
-// Creates a Managed HSM client for ARM control plane operations
-func (cli *azCli) createManagedHSMClient(
-	ctx context.Context,
-	subscriptionId string,
-) (*armkeyvault.ManagedHsmsClient, error) {
-	credential, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
-	if err != nil {
-		return nil, err
-	}
-
-	options := cli.clientOptionsBuilder(ctx).BuildArmClientOptions()
-	client, err := armkeyvault.NewManagedHsmsClient(subscriptionId, credential, options)
-	if err != nil {
-		return nil, fmt.Errorf("creating Resource client: %w", err)
-	}
-
-	return client, nil
 }

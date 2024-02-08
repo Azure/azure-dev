@@ -143,7 +143,6 @@ func MockContainerAppsClient(
 	credentials *mocks.MockCredentials,
 	options *policy.ClientOptions,
 ) *armappcontainers.ContainerAppsClient {
-	// TODO: probably needs to provide more functionality
 	client, _ := armappcontainers.NewContainerAppsClient(subscriptionId, credentials, options)
 	return client
 }
@@ -153,7 +152,6 @@ func MockContainerAppsRevisionsClient(
 	credentials *mocks.MockCredentials,
 	options *policy.ClientOptions,
 ) *armappcontainers.ContainerAppsRevisionsClient {
-	// TODO: probably needs to provide more functionality
 	client, _ := armappcontainers.NewContainerAppsRevisionsClient(subscriptionId, credentials, options)
 	return client
 }

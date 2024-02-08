@@ -26,6 +26,12 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// The tests in this file is structured in such a way that:
+//
+// (fast) go test -run ^Test_CLI_Aspire_DetectGen - Detection + generation acceptance tests.
+// (slow, > 10 mins) go test -run ^Test_CLI_Aspire_Deploy -timeout 30m - Full deployment acceptance tests.
+// (all) go test -run ^Test_CLI_Aspire -timeout 30m - Runs all tests.
+
 var dotnetWorkloadInstallOnce sync.Once
 
 func restoreDotnetWorkload(t *testing.T) {
@@ -45,12 +51,6 @@ func restoreDotnetWorkload(t *testing.T) {
 	})
 }
 
-// The tests in this file is structured in such a way that:
-//
-// (fast) go test -run ^Test_CLI_Aspire_DetectGen - Detection + generation acceptance tests.
-// (slow, > 10 mins) go test -run ^Test_CLI_Aspire_Deploy -timeout 30m - Full deployment acceptance tests.
-// (all) go test -run ^Test_CLI_Aspire -timeout 30m - Runs all tests.
-
 // Test_CLI_Aspire_DetectGen tests the detection and generation of an Aspire project.
 func Test_CLI_Aspire_DetectGen(t *testing.T) {
 	restoreDotnetWorkload(t)
@@ -64,12 +64,20 @@ func Test_CLI_Aspire_DetectGen(t *testing.T) {
 		defer cancel()
 
 		dir := t.TempDir()
+		// avoid symlinked paths as this may result in the final path returned
+		// to be a valid, but aliased path to the absolute entries in the test,
+		// which fails the test's path equality assertions.
+		//
+		// This issue occurs on macOS runner where TempDir returned is symlinked to /private/var.
+		dir, err := filepath.EvalSymlinks(dir)
+		require.NoError(t, err)
+
 		t.Logf("DIR: %s", dir)
 
 		envName := randomEnvName()
 		t.Logf("AZURE_ENV_NAME: %s", envName)
 
-		err := copySample(dir, "aspire-full")
+		err = copySample(dir, "aspire-full")
 		require.NoError(t, err, "failed expanding sample")
 
 		dotnetCli := dotnet.NewDotNetCli(exec.NewCommandRunner(nil))
@@ -299,6 +307,9 @@ func snapshotFile(
 	if err != nil {
 		return err
 	}
+
+	// normalize line endings
+	contents = []byte(strings.ReplaceAll(string(contents), "\r\n", "\n"))
 
 	err = sn.
 		WithOptions(cupaloy.SnapshotSubdirectory(filepath.Join(snapshotRoot, relDir))).

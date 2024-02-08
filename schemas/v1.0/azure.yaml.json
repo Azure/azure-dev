@@ -242,7 +242,7 @@
                 },
                 "variables": {
                     "type": "array",
-                    "title": "Optional. List of azd environment variables to be used in the pipeline as variables.",
+                    "title": "Optional. List of azd environment variable names to be used in the pipeline as variables.",
                     "description": "If variable is found on azd environment, it is set as a variable for the pipeline.",
                     "items": {
                         "type": "string"
@@ -250,7 +250,7 @@
                 },
                 "secrets": {
                     "type": "array",
-                    "title": "Optional. List of azd environment variables to be used in the pipeline as secrets.",
+                    "title": "Optional. List of azd environment variable names to be used in the pipeline as secrets.",
                     "description": "If variable is found on azd environment, it is set as a secret for the pipeline.",
                     "items": {
                         "type": "string"

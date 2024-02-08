@@ -459,4 +459,4 @@ output SERVICE_BINDING_{{alphaSnakeUpper $name}}_NAME string = {{bicepName $name
 {{range $name, $value := .SqlServers -}}
 output SERVICE_BINDING_{{alphaSnakeUpper $name}}_NAME string = {{bicepName $name}}.name
 {{end -}}
-{{- end}}
+{{ end}}

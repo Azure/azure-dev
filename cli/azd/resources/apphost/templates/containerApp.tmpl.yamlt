@@ -69,4 +69,4 @@ properties:
 tags:
   azd-service-name: {{ .Name }}
   aspire-resource-name: {{ .Name }}
-{{- end}}
+{{ end}}

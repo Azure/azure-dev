@@ -10,5 +10,5 @@
         "value": "${AZURE_LOCATION}"
       }
     }
-}
-{{- end}}
+  }
+  {{ end}}

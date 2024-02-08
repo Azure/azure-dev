@@ -269,27 +269,37 @@ func runLiveDotnetPlaywright(
 		return
 	}
 
-	res, err := run()
-	if err != nil && strings.Contains(res.Stdout, "Permission denied") {
-		// recover from permission denied error
-		err := filepath.WalkDir(projDir, func(path string, d os.DirEntry, err error) error {
-			if err != nil {
-				return err
-			}
+	i := 0 // precautionary max retries
+	for {
+		res, err := run()
+		i++
 
-			if !d.IsDir() && d.Name() == "playwright.sh" {
-				return os.Chmod(path, 0700)
-			}
+		if err != nil && i < 10 {
+			if strings.Contains(res.Stdout, "Permission denied") {
+				err := filepath.WalkDir(projDir, func(path string, d os.DirEntry, err error) error {
+					if err != nil {
+						return err
+					}
 
-			return nil
-		})
-		if err != nil {
-			t.Fatal(err)
+					if !d.IsDir() && d.Name() == "playwright.sh" {
+						return os.Chmod(path, 0700)
+					}
+
+					return nil
+				})
+				require.NoError(t, err, "failed to recover from permission denied error")
+				continue
+			} else if strings.Contains(res.Stdout, "Please run the following command to download new browsers") {
+				res, err := runner.Run(ctx, exec.NewRunArgs(
+					"pwsh", filepath.Join(projDir, "bin/Debug/net8.0/playwright.ps1"), "install"))
+				require.NoError(t, err, "failed to install playwright, stdout: %v, stderr: %v", res.Stdout, res.Stderr)
+				continue
+			}
 		}
 
-		res, err = run()
+		require.NoError(t, err)
+		break
 	}
-	require.NoError(t, err)
 }
 
 // Snapshots a file located at targetPath. Saves the snapshot to snapshotRoot/rel, where rel is relative to targetRoot.

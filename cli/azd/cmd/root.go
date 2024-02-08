@@ -140,6 +140,14 @@ func NewRootCmd(
 		},
 	})
 
+	root.Add("vs-server", &actions.ActionDescriptorOptions{
+		Command:        newVsServerCmd(),
+		FlagsResolver:  newVsServerFlags,
+		ActionResolver: newVsServerAction,
+		OutputFormats:  []output.Format{output.NoneFormat},
+		DefaultFormat:  output.NoneFormat,
+	})
+
 	root.Add("show", &actions.ActionDescriptorOptions{
 		Command:        newShowCmd(),
 		FlagsResolver:  newShowFlags,

@@ -3,7 +3,6 @@ module github.com/azure/azure-dev
 go 1.21
 
 require (
-	dario.cat/mergo v1.0.0
 	github.com/AlecAivazis/survey/v2 v2.3.2
 	github.com/Azure/azure-sdk-for-go/sdk/azcore v1.9.0
 	github.com/Azure/azure-sdk-for-go/sdk/azidentity v1.4.0
@@ -36,6 +35,7 @@ require (
 	github.com/gofrs/flock v0.8.1
 	github.com/golobby/container/v3 v3.3.1
 	github.com/google/uuid v1.3.1
+	github.com/gorilla/websocket v1.5.1
 	github.com/joho/godotenv v1.4.0
 	github.com/magefile/mage v1.12.1
 	github.com/mattn/go-colorable v0.1.12
@@ -50,6 +50,7 @@ require (
 	github.com/spf13/pflag v1.0.5
 	github.com/stretchr/testify v1.8.4
 	github.com/theckman/yacspin v0.13.12
+	go.lsp.dev/jsonrpc2 v0.10.0
 	go.opentelemetry.io/otel v1.8.0
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp v1.8.0
 	go.opentelemetry.io/otel/exporters/stdout/stdouttrace v1.8.0
@@ -88,6 +89,8 @@ require (
 	github.com/pkg/browser v0.0.0-20210911075715-681adbf594b8 // indirect
 	github.com/pmezard/go-difflib v1.0.0 // indirect
 	github.com/rivo/uniseg v0.2.0 // indirect
+	github.com/segmentio/asm v1.1.3 // indirect
+	github.com/segmentio/encoding v0.3.4 // indirect
 	github.com/stretchr/objx v0.5.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/internal/retry v1.8.0 // indirect
 	go.opentelemetry.io/otel/exporters/otlp/otlptrace v1.8.0 // indirect

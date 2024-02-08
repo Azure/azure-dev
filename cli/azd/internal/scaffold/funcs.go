@@ -3,6 +3,7 @@ package scaffold
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -155,6 +156,25 @@ func ContainerAppName(name string) string {
 // alphanumeric character
 func ContainerAppSecretName(name string) string {
 	return strings.ReplaceAll(strings.ToLower(name), "_", "-")
+}
+
+// ToDotNotation receives a string and if it is on the form of "${inputs['resourceName']['inputName']}" it returns a new
+// string using dot notation, i.e. "${inputs.resourceName.InputName}".
+// Otherwise, the original string is returned adding quotes.
+// Note: If resourceName or inputName container `-`
+func ToDotNotation(s string) string {
+	if strings.HasPrefix(s, "${inputs['") && strings.HasSuffix(s, "']}") {
+		re := regexp.MustCompile(`(\['[a-zA-Z0-9\-]+'\])`)
+		updated := re.ReplaceAllStringFunc(s, func(sub string) string {
+			noBrackets := strings.TrimRight(strings.TrimLeft(sub, "['"), "']")
+			if !strings.Contains(noBrackets, "-") {
+				return "." + noBrackets
+			}
+			return sub
+		})
+		return strings.TrimRight(strings.TrimLeft(updated, "${"), "}")
+	}
+	return fmt.Sprintf("'%s'", s)
 }
 
 // ContainerAppInfix returns a suitable infix for a container app resource.

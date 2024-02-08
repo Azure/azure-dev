@@ -36,8 +36,9 @@ type DockerProjectOptions struct {
 	Context   string           `yaml:"context,omitempty"   json:"context,omitempty"`
 	Platform  string           `yaml:"platform,omitempty"  json:"platform,omitempty"`
 	Target    string           `yaml:"target,omitempty"    json:"target,omitempty"`
-	Tag       ExpandableString `yaml:"tag,omitempty"       json:"tag,omitempty"`
 	Registry  ExpandableString `yaml:"registry,omitempty"  json:"registry,omitempty"`
+	Image     ExpandableString `yaml:"image,omitempty"     json:"image,omitempty"`
+	Tag       ExpandableString `yaml:"tag,omitempty"       json:"tag,omitempty"`
 	BuildArgs []string         `yaml:"buildArgs,omitempty" json:"buildArgs,omitempty"`
 }
 
@@ -60,17 +61,39 @@ func (dbr *dockerBuildResult) MarshalJSON() ([]byte, error) {
 }
 
 type dockerPackageResult struct {
+	// The image hash that is generated from a docker build
 	ImageHash string `json:"imageHash"`
-	ImageTag  string `json:"imageTag"`
+	// The external source image specified when not building from source
+	SourceImage string `json:"sourceImage"`
+	// The target image with tag that is used for publishing and deployment when targeting a container registry
+	TargetImage string `json:"targetImage"`
 }
 
 func (dpr *dockerPackageResult) ToString(currentIndentation string) string {
-	lines := []string{
-		fmt.Sprintf("%s- Image Hash: %s", currentIndentation, output.WithLinkFormat(dpr.ImageHash)),
-		fmt.Sprintf("%s- Image Tag: %s", currentIndentation, output.WithLinkFormat(dpr.ImageTag)),
+	builder := strings.Builder{}
+	if dpr.ImageHash != "" {
+		builder.WriteString(fmt.Sprintf("%s- Image Hash: %s\n", currentIndentation, output.WithLinkFormat(dpr.ImageHash)))
 	}
 
-	return strings.Join(lines, "\n")
+	if dpr.SourceImage != "" {
+		builder.WriteString(
+			fmt.Sprintf("%s- Source Image: %s\n",
+				currentIndentation,
+				output.WithLinkFormat(dpr.SourceImage),
+			),
+		)
+	}
+
+	if dpr.TargetImage != "" {
+		builder.WriteString(
+			fmt.Sprintf("%s- Target Image: %s\n",
+				currentIndentation,
+				output.WithLinkFormat(dpr.TargetImage),
+			),
+		)
+	}
+
+	return builder.String()
 }
 
 func (dpr *dockerPackageResult) MarshalJSON() ([]byte, error) {
@@ -167,6 +190,12 @@ func (p *dockerProject) Build(
 		func(task *async.TaskContextWithProgress[*ServiceBuildResult, ServiceProgress]) {
 			dockerOptions := getDockerOptionsWithDefaults(serviceConfig.Docker)
 
+			// No framework has been set, return empty build result
+			if _, ok := p.framework.(*noOpProject); ok {
+				task.SetResult(&ServiceBuildResult{})
+				return
+			}
+
 			buildArgs := []string{}
 			for _, arg := range dockerOptions.BuildArgs {
 				buildArgs = append(buildArgs, exec.RedactSensitiveData(arg))
@@ -257,33 +286,57 @@ func (p *dockerProject) Package(
 ) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
-			imageId := buildOutput.BuildOutputPath
-			if imageId == "" {
-				task.SetError(errors.New("missing container image id from build output"))
-				return
+			var imageId string
+
+			if buildOutput != nil {
+				imageId = buildOutput.BuildOutputPath
 			}
 
-			localTag, err := p.containerHelper.LocalImageTag(ctx, serviceConfig)
+			packageDetails := &dockerPackageResult{
+				ImageHash: imageId,
+			}
+
+			// If we don't have an image ID from a docker build then an external source image is being used
+			if imageId == "" {
+				sourceImage, err := docker.ParseContainerImage(serviceConfig.Image)
+				if err != nil {
+					task.SetError(fmt.Errorf("parsing source container image: %w", err))
+					return
+				}
+
+				remoteImageUrl := sourceImage.Remote()
+
+				task.SetProgress(NewServiceProgress("Pulling container source image"))
+				if err := p.docker.Pull(ctx, remoteImageUrl); err != nil {
+					task.SetError(fmt.Errorf("pulling source container image: %w", err))
+					return
+				}
+
+				imageId = remoteImageUrl
+				packageDetails.SourceImage = remoteImageUrl
+			}
+
+			// Generate a local tag from the 'docker' configuration section of the service
+			imageWithTag, err := p.containerHelper.LocalImageTag(ctx, serviceConfig)
 			if err != nil {
 				task.SetError(fmt.Errorf("generating local image tag: %w", err))
 				return
 			}
 
 			// Tag image.
-			log.Printf("tagging image %s as %s", imageId, localTag)
-			task.SetProgress(NewServiceProgress("Tagging Docker image"))
-			if err := p.docker.Tag(ctx, serviceConfig.Path(), imageId, localTag); err != nil {
+			log.Printf("tagging image %s as %s", imageId, imageWithTag)
+			task.SetProgress(NewServiceProgress("Tagging container image"))
+			if err := p.docker.Tag(ctx, serviceConfig.Path(), imageId, imageWithTag); err != nil {
 				task.SetError(fmt.Errorf("tagging image: %w", err))
 				return
 			}
 
+			packageDetails.TargetImage = imageWithTag
+
 			task.SetResult(&ServicePackageResult{
 				Build:       buildOutput,
-				PackagePath: localTag,
-				Details: &dockerPackageResult{
-					ImageHash: imageId,
-					ImageTag:  localTag,
-				},
+				PackagePath: packageDetails.SourceImage,
+				Details:     packageDetails,
 			})
 		},
 	)

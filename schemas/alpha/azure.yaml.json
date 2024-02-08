@@ -66,8 +66,7 @@
                 "type": "object",
                 "additionalProperties": false,
                 "required": [
-                    "project",
-                    "language"
+                    "host"
                 ],
                 "properties": {
                     "resourceName": {
@@ -79,12 +78,16 @@
                         "type": "string",
                         "title": "Path to the service source code directory"
                     },
+                    "image": {
+                        "type": "string",
+                        "title": "Optional. The source image to be used for the container image instead of building from source.",
+                        "description": "If omitted, container image will be built from source specified in the 'project' property. Setting both 'project' and 'image' is invalid."
+                    },
                     "host": {
                         "type": "string",
-                        "title": "Type of Azure resource used for service implementation",
-                        "description": "If omitted, App Service will be assumed.",
+                        "title": "Required. The type of Azure resource used for service implementation",
+                        "description": "The Azure service that will be used as the target for deployment operations for the service.",
                         "enum": [
-                            "",
                             "appservice",
                             "containerapp",
                             "function",
@@ -164,6 +167,58 @@
                 "allOf": [
                     {
                         "if": {
+                            "properties": {
+                                "host": {
+                                    "const": "containerapp"
+                                }
+                            }
+                        },
+                        "then": {
+                            "anyOf": [
+                                {
+                                    "required": [
+                                        "image"
+                                    ],
+                                    "properties": {
+                                        "language": false
+                                    },
+                                    "not": {
+                                        "required": [
+                                            "project"
+                                        ]
+                                    }
+                                },
+                                {
+                                    "required": [
+                                        "project"
+                                    ],
+                                    "not": {
+                                        "required": [
+                                            "image"
+                                        ]
+                                    }
+                                }
+                            ]
+                        }
+                    },
+                    {
+                        "if": {
+                            "not": {
+                                "properties": {
+                                    "host": {
+                                        "const": "containerapp"
+                                    }
+                                }
+                            }
+                        },
+                        "then": {
+                            "properties": {
+                                "image": false
+                            }
+                        }
+                    },
+                    {
+                        "if": {
                             "not": {
                                 "properties": {
                                     "host": {
@@ -176,6 +231,10 @@
                             }
                         },
                         "then": {
+                            "required": [
+                                "project",
+                                "language"
+                            ],
                             "properties": {
                                 "docker": false
                             }
@@ -541,15 +600,20 @@
                     "title": "The platform target",
                     "default": "amd64"
                 },
+                "registry": {
+                    "type": "string",
+                    "title": "Optional. The container registry to push the image to.",
+                    "description": "If omitted, will default to value of AZURE_CONTAINER_REGISTRY_ENDPOINT environment variable. Supports environment variable substitution."
+                },
+                "image": {
+                    "type": "string",
+                    "title": "Optional. The name that will be applied to the built container image.",
+                    "description": "If omitted, will default to the '{appName}/{serviceName}-{environmentName}'. Supports environment variable substitution."
+                },
                 "tag": {
                     "type": "string",
                     "title": "The tag that will be applied to the built container image.",
-                    "description": "If omitted, a unique tag will be generated based on the format: {appName}/{serviceName}-{environmentName}:azd-deploy-{unix time (seconds)}. Supports environment variable substitution. For example, to generate unique tags for a given release: myapp/myimage:${DOCKER_IMAGE_TAG}"
-                },
-                "registry": {
-                    "type": "string",
-                    "title": "The container registry to push the image to.",
-                    "description": "If omitted, will default to value of AZURE_CONTAINER_REGISTRY_ENDPOINT environment variable. Supports environment variable substitution."
+                    "description": "If omitted, will default to 'azd-deploy-{unix time (seconds)}'. Supports environment variable substitution. For example, to generate unique tags for a given release: myapp/myimage:${DOCKER_IMAGE_TAG}"
                 },
                 "buildArgs": {
                     "type": "array",

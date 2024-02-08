@@ -73,6 +73,7 @@ func testCommand(
 	ctx context.Context,
 	chain []*actions.MiddlewareRegistration,
 	cwd string) {
+
 	// Run the command when we find a leaf command
 	if testCmd.Runnable() {
 		t.Run(testCmd.CommandPath(), func(t *testing.T) {

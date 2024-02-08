@@ -74,6 +74,15 @@ func NewProvisionFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions
 	return flags
 }
 
+func NewProvisionFlagsFromEnvAndOptions(envFlag *internal.EnvFlag, global *internal.GlobalCommandOptions) *ProvisionFlags {
+	flags := &ProvisionFlags{
+		EnvFlag: envFlag,
+		global:  global,
+	}
+
+	return flags
+}
+
 func NewProvisionCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "provision",

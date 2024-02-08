@@ -75,4 +75,4 @@ output SERVICE_BINDING_{{alphaSnakeUpper $name}}_NAME string = resources.outputs
 {{range $name, $value := .SqlServers -}}
 output SERVICE_BINDING_{{alphaSnakeUpper $name}}_NAME string = resources.outputs.SERVICE_BINDING_{{alphaSnakeUpper $name}}_NAME
 {{end -}}
-{{ end}}
+{{- end}}

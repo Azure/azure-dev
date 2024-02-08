@@ -11,4 +11,4 @@ services:
     host: containerapp
 {{- end}}
 {{- end}}
-{{ end}}
+{{- end}}

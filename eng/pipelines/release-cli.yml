@@ -133,6 +133,9 @@ stages:
             inputs:
               version: 8.0.x
 
+          - bash: dotnet nuget add source --name dotnet8 https://pkgs.dev.azure.com/dnceng/public/_packaging/dotnet8/nuget/v3/index.json
+            displayName: Add internal dotnet nuget feed
+
           - template: /eng/pipelines/templates/steps/az-login.yml
             parameters:
               Condition: and(succeeded(), ne(variables['Skip.LiveTest'], 'true'))

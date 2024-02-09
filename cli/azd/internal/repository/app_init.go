@@ -99,8 +99,21 @@ func (i *Initializer) InitFromApp(
 		const parentDir = ".." + string(os.PathSeparator)
 		relParentCount := 0
 		relParentProject := ""
+
+		// Use canonical paths for Rel comparison due to absolute paths provided by ManifestFromAppHost
+		// being possibly symlinked paths.
+		compWd, err := filepath.EvalSymlinks(wd)
+		if err != nil {
+			return err
+		}
+
 		for _, path := range apphost.ProjectPaths(manifest) {
-			rel, err := filepath.Rel(wd, path)
+			normalPath, err := filepath.EvalSymlinks(path)
+			if err != nil {
+				return err
+			}
+
+			rel, err := filepath.Rel(compWd, normalPath)
 			if err != nil {
 				return err
 			}
@@ -115,7 +128,7 @@ func (i *Initializer) InitFromApp(
 
 		if relParentCount > 0 {
 			return fmt.Errorf(
-				"found project %s located above the current directory. To fix, rerun `azd init` in directory %s",
+				"found project %s located not under the current directory. To fix, rerun `azd init` in directory %s",
 				relParentProject,
 				filepath.Clean(filepath.Join(wd, strings.Repeat(parentDir, relParentCount))))
 		}

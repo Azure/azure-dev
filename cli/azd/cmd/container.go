@@ -28,12 +28,14 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/helm"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/kubelogin"
+	"github.com/azure/azure-dev/cli/azd/pkg/kustomize"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/pipeline"
@@ -466,6 +468,8 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(kubectl.NewKubectl)
 	container.MustRegisterSingleton(maven.NewMavenCli)
 	container.MustRegisterSingleton(kubelogin.NewCli)
+	container.MustRegisterSingleton(helm.NewCli)
+	container.MustRegisterSingleton(kustomize.NewCli)
 	container.MustRegisterSingleton(npm.NewNpmCli)
 	container.MustRegisterSingleton(python.NewPythonCli)
 	container.MustRegisterSingleton(swa.NewSwaCli)
@@ -481,7 +485,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 	// Service Targets
 	serviceTargetMap := map[project.ServiceTargetKind]any{
-		"":                               project.NewAppServiceTarget,
+		project.NonSpecifiedTarget:       project.NewAppServiceTarget,
 		project.AppServiceTarget:         project.NewAppServiceTarget,
 		project.AzureFunctionTarget:      project.NewFunctionAppTarget,
 		project.ContainerAppTarget:       project.NewContainerAppTarget,
@@ -497,7 +501,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 	// Languages
 	frameworkServiceMap := map[project.ServiceLanguageKind]any{
-		"":                                project.NewDotNetProject,
+		project.ServiceLanguageNone:       project.NewNoOpProject,
 		project.ServiceLanguageDotNet:     project.NewDotNetProject,
 		project.ServiceLanguageCsharp:     project.NewDotNetProject,
 		project.ServiceLanguageFsharp:     project.NewDotNetProject,

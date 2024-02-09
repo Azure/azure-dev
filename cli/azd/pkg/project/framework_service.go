@@ -45,7 +45,7 @@ func parseServiceLanguage(kind ServiceLanguageKind) (ServiceLanguageKind, error)
 		return kind, nil
 	}
 
-	return ServiceLanguageKind(""), fmt.Errorf("unsupported language '%s'", kind)
+	return ServiceLanguageKind("Unsupported"), fmt.Errorf("unsupported language '%s'", kind)
 }
 
 type FrameworkRequirements struct {

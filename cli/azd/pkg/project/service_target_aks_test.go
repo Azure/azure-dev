@@ -14,12 +14,16 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v2"
+	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/helm"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/kubelogin"
+	"github.com/azure/azure-dev/cli/azd/pkg/kustomize"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
@@ -43,7 +47,7 @@ func Test_NewAksTarget(t *testing.T) {
 	serviceConfig := createTestServiceConfig("./src/api", AksTarget, ServiceLanguageTypeScript)
 	env := createEnv()
 
-	serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env)
+	serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env, nil)
 
 	require.NotNil(t, serviceTarget)
 	require.NotNil(t, serviceConfig)
@@ -60,12 +64,37 @@ func Test_Required_Tools(t *testing.T) {
 	serviceConfig := createTestServiceConfig(tempDir, AksTarget, ServiceLanguageTypeScript)
 	env := createEnv()
 
-	serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env)
+	userConfig := config.NewConfig(nil)
+	serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env, userConfig)
 
 	requiredTools := serviceTarget.RequiredExternalTools(*mockContext.Context)
 	require.Len(t, requiredTools, 2)
 	require.Implements(t, new(docker.Docker), requiredTools[0])
 	require.Implements(t, new(kubectl.KubectlCli), requiredTools[1])
+}
+
+func Test_Required_Tools_WithAlpha(t *testing.T) {
+	tempDir := t.TempDir()
+	ostest.Chdir(t, tempDir)
+
+	mockContext := mocks.NewMockContext(context.Background())
+	err := setupMocksForAksTarget(mockContext)
+	require.NoError(t, err)
+
+	serviceConfig := createTestServiceConfig(tempDir, AksTarget, ServiceLanguageTypeScript)
+	env := createEnv()
+
+	userConfig := config.NewConfig(nil)
+	_ = userConfig.Set("alpha.aks.helm", "on")
+	_ = userConfig.Set("alpha.aks.kustomize", "on")
+	serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env, userConfig)
+
+	requiredTools := serviceTarget.RequiredExternalTools(*mockContext.Context)
+	require.Len(t, requiredTools, 4)
+	require.Implements(t, new(docker.Docker), requiredTools[0])
+	require.Implements(t, new(kubectl.KubectlCli), requiredTools[1])
+	require.IsType(t, &helm.Cli{}, requiredTools[2])
+	require.IsType(t, &kustomize.Cli{}, requiredTools[3])
 }
 
 func Test_Package_Deploy_HappyPath(t *testing.T) {
@@ -79,7 +108,7 @@ func Test_Package_Deploy_HappyPath(t *testing.T) {
 	serviceConfig := createTestServiceConfig(tempDir, AksTarget, ServiceLanguageTypeScript)
 	env := createEnv()
 
-	serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env)
+	serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env, nil)
 	err = simulateInitliaze(*mockContext.Context, serviceTarget, serviceConfig)
 	require.NoError(t, err)
 
@@ -133,7 +162,7 @@ func Test_Resolve_Cluster_Name(t *testing.T) {
 		serviceConfig := createTestServiceConfig(tempDir, AksTarget, ServiceLanguageTypeScript)
 		env := createEnv()
 
-		serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env)
+		serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env, nil)
 		err = simulateInitliaze(*mockContext.Context, serviceTarget, serviceConfig)
 		require.NoError(t, err)
 	})
@@ -144,13 +173,13 @@ func Test_Resolve_Cluster_Name(t *testing.T) {
 		require.NoError(t, err)
 
 		serviceConfig := createTestServiceConfig(tempDir, AksTarget, ServiceLanguageTypeScript)
-		serviceConfig.ResourceName = NewExpandableString("AKS_CLUSTER")
+		serviceConfig.ResourceName = osutil.NewExpandableString("AKS_CLUSTER")
 		env := createEnv()
 
 		// Remove default AKS cluster name from env file
 		env.DotenvDelete(environment.AksClusterEnvVarName)
 
-		serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env)
+		serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env, nil)
 		err = simulateInitliaze(*mockContext.Context, serviceTarget, serviceConfig)
 		require.NoError(t, err)
 	})
@@ -161,14 +190,14 @@ func Test_Resolve_Cluster_Name(t *testing.T) {
 		require.NoError(t, err)
 
 		serviceConfig := createTestServiceConfig(tempDir, AksTarget, ServiceLanguageTypeScript)
-		serviceConfig.ResourceName = NewExpandableString("${MY_CUSTOM_ENV_VAR}")
+		serviceConfig.ResourceName = osutil.NewExpandableString("${MY_CUSTOM_ENV_VAR}")
 		env := createEnv()
 		env.DotenvSet("MY_CUSTOM_ENV_VAR", "AKS_CLUSTER")
 
 		// Remove default AKS cluster name from env file
 		env.DotenvDelete(environment.AksClusterEnvVarName)
 
-		serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env)
+		serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env, nil)
 		err = simulateInitliaze(*mockContext.Context, serviceTarget, serviceConfig)
 		require.NoError(t, err)
 	})
@@ -187,7 +216,7 @@ func Test_Resolve_Cluster_Name(t *testing.T) {
 		// Simulate AKS cluster name not found in env file
 		env.DotenvDelete(environment.AksClusterEnvVarName)
 
-		serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env)
+		serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env, nil)
 		err = simulateInitliaze(*mockContext.Context, serviceTarget, serviceConfig)
 		require.Error(t, err)
 		require.ErrorContains(t, err, "could not determine AKS cluster")
@@ -210,10 +239,143 @@ func Test_Deploy_No_Credentials(t *testing.T) {
 	serviceConfig := createTestServiceConfig(tempDir, AksTarget, ServiceLanguageTypeScript)
 	env := createEnv()
 
-	serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env)
+	serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env, nil)
 	err = simulateInitliaze(*mockContext.Context, serviceTarget, serviceConfig)
 	require.Error(t, err)
 	require.ErrorContains(t, err, "failed retrieving cluster user credentials")
+}
+
+func Test_Deploy_Helm(t *testing.T) {
+	tempDir := t.TempDir()
+	ostest.Chdir(t, tempDir)
+
+	mockContext := mocks.NewMockContext(context.Background())
+	err := setupMocksForAksTarget(mockContext)
+	require.NoError(t, err)
+
+	mockResults, err := setupMocksForHelm(mockContext)
+	require.NoError(t, err)
+
+	serviceConfig := *createTestServiceConfig(tempDir, AksTarget, ServiceLanguageTypeScript)
+	serviceConfig.RelativePath = ""
+	serviceConfig.K8s.Helm = &helm.Config{
+		Repositories: []*helm.Repository{
+			{
+				Name: "argo",
+				Url:  "https://argoproj.github.io/argo-helm",
+			},
+		},
+		Releases: []*helm.Release{
+			{
+				Name:    "argocd",
+				Chart:   "argo/argo-cd",
+				Version: "5.51.4",
+			},
+		},
+	}
+
+	env := createEnv()
+	userConfig := config.NewConfig(nil)
+	_ = userConfig.Set("alpha.aks.helm", "on")
+
+	serviceTarget := createAksServiceTarget(mockContext, &serviceConfig, env, userConfig)
+	err = simulateInitliaze(*mockContext.Context, serviceTarget, &serviceConfig)
+	require.NoError(t, err)
+
+	packageResult := &ServicePackageResult{
+		PackagePath: "test-app/api-test:azd-deploy-0",
+		Details: &dockerPackageResult{
+			ImageHash:   "IMAGE_HASH",
+			TargetImage: "test-app/api-test:azd-deploy-0",
+		},
+	}
+
+	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "", string(infra.AzureResourceTypeManagedCluster))
+	deployTask := serviceTarget.Deploy(*mockContext.Context, &serviceConfig, packageResult, scope)
+	logProgress(deployTask)
+	deployResult, err := deployTask.Await()
+
+	require.NoError(t, err)
+	require.NotNil(t, deployResult)
+
+	repoAdd, repoAddCalled := mockResults["helm-repo-add"]
+	require.True(t, repoAddCalled)
+	require.Equal(t, []string{"repo", "add", "argo", "https://argoproj.github.io/argo-helm"}, repoAdd.Args)
+
+	repoUpdate, repoUpdateCalled := mockResults["helm-repo-update"]
+	require.True(t, repoUpdateCalled)
+	require.Equal(t, []string{"repo", "update", "argo"}, repoUpdate.Args)
+
+	helmUpgrade, helmUpgradeCalled := mockResults["helm-upgrade"]
+	require.True(t, helmUpgradeCalled)
+	require.Contains(t, strings.Join(helmUpgrade.Args, " "), "upgrade argocd argo/argo-cd")
+
+	helmStatus, helmStatusCalled := mockResults["helm-status"]
+	require.True(t, helmStatusCalled)
+	require.Contains(t, strings.Join(helmStatus.Args, " "), "status argocd")
+}
+
+func Test_Deploy_Kustomize(t *testing.T) {
+	tempDir := t.TempDir()
+	ostest.Chdir(t, tempDir)
+
+	mockContext := mocks.NewMockContext(context.Background())
+	err := setupMocksForAksTarget(mockContext)
+	require.NoError(t, err)
+
+	mockResults, err := setupMocksForKustomize(mockContext)
+	require.NoError(t, err)
+
+	serviceConfig := *createTestServiceConfig(tempDir, AksTarget, ServiceLanguageTypeScript)
+	serviceConfig.RelativePath = ""
+	serviceConfig.K8s.Kustomize = &kustomize.Config{
+		Directory: osutil.NewExpandableString("./kustomize/overlays/dev"),
+		Edits: []osutil.ExpandableString{
+			osutil.NewExpandableString("set image todo-api=${SERVICE_API_IMAGE_NAME}"),
+		},
+	}
+
+	err = os.MkdirAll(filepath.Join(tempDir, "./kustomize/overlays/dev"), osutil.PermissionDirectory)
+	require.NoError(t, err)
+
+	env := createEnv()
+	env.DotenvSet("SERVICE_API_IMAGE_NAME", "REGISTRY.azurecr.io/test-app/api-test:azd-deploy-0")
+
+	userConfig := config.NewConfig(nil)
+	_ = userConfig.Set("alpha.aks.kustomize", "on")
+
+	serviceTarget := createAksServiceTarget(mockContext, &serviceConfig, env, userConfig)
+	err = simulateInitliaze(*mockContext.Context, serviceTarget, &serviceConfig)
+	require.NoError(t, err)
+
+	packageResult := &ServicePackageResult{
+		PackagePath: "test-app/api-test:azd-deploy-0",
+		Details: &dockerPackageResult{
+			ImageHash:   "IMAGE_HASH",
+			TargetImage: "test-app/api-test:azd-deploy-0",
+		},
+	}
+
+	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "", string(infra.AzureResourceTypeManagedCluster))
+	deployTask := serviceTarget.Deploy(*mockContext.Context, &serviceConfig, packageResult, scope)
+	logProgress(deployTask)
+	deployResult, err := deployTask.Await()
+
+	require.NoError(t, err)
+	require.NotNil(t, deployResult)
+
+	kustomizeEdit, kustomizeEditCalled := mockResults["kustomize-edit"]
+	require.True(t, kustomizeEditCalled)
+	require.Equal(t, []string{
+		"edit",
+		"set",
+		"image",
+		"todo-api=REGISTRY.azurecr.io/test-app/api-test:azd-deploy-0",
+	}, kustomizeEdit.Args)
+
+	kubectlApplyKustomize, kubectlApplyKustomizeCalled := mockResults["kubectl-apply-kustomize"]
+	require.True(t, kubectlApplyKustomizeCalled)
+	require.Equal(t, []string{"apply", "-k", filepath.FromSlash("kustomize/overlays/dev")}, kubectlApplyKustomize.Args)
 }
 
 func setupK8sManifests(t *testing.T, serviceConfig *ServiceConfig) error {
@@ -229,6 +391,65 @@ func setupK8sManifests(t *testing.T, serviceConfig *ServiceConfig) error {
 	}
 
 	return nil
+}
+
+func setupMocksForHelm(mockContext *mocks.MockContext) (map[string]exec.RunArgs, error) {
+	result := map[string]exec.RunArgs{}
+
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "helm repo add")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		result["helm-repo-add"] = args
+		return exec.NewRunResult(0, "", ""), nil
+	})
+
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "helm repo update")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		result["helm-repo-update"] = args
+		return exec.NewRunResult(0, "", ""), nil
+	})
+
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "helm upgrade")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		result["helm-upgrade"] = args
+		return exec.NewRunResult(0, "", ""), nil
+	})
+
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "helm status")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		result["helm-status"] = args
+		statusResult := `{
+			"info": {
+				"status": "deployed"
+			}
+		}`
+		return exec.NewRunResult(0, statusResult, ""), nil
+	})
+
+	return result, nil
+}
+
+func setupMocksForKustomize(mockContext *mocks.MockContext) (map[string]exec.RunArgs, error) {
+	result := map[string]exec.RunArgs{}
+
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "kustomize edit")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		result["kustomize-edit"] = args
+		return exec.NewRunResult(0, "", ""), nil
+	})
+
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "kubectl apply -k")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		result["kubectl-apply-kustomize"] = args
+		return exec.NewRunResult(0, "", ""), nil
+	})
+
+	return result, nil
 }
 
 func setupMocksForAksTarget(mockContext *mocks.MockContext) error {
@@ -531,6 +752,13 @@ func setupMocksForDocker(mockContext *mocks.MockContext) {
 		return exec.NewRunResult(0, "", ""), nil
 	})
 
+	// Docker Pull
+	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+		return strings.Contains(command, "docker pull")
+	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		return exec.NewRunResult(0, "", ""), nil
+	})
+
 	// Docker Tag
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "docker tag")
@@ -577,8 +805,11 @@ func createAksServiceTarget(
 	mockContext *mocks.MockContext,
 	serviceConfig *ServiceConfig,
 	env *environment.Environment,
+	userConfig config.Config,
 ) ServiceTarget {
 	kubeCtl := kubectl.NewKubectl(mockContext.CommandRunner)
+	helmCli := helm.NewCli(mockContext.CommandRunner)
+	kustomizeCli := kustomize.NewCli(mockContext.CommandRunner)
 	dockerCli := docker.NewDocker(mockContext.CommandRunner)
 	kubeLoginCli := kubelogin.NewCli(mockContext.CommandRunner)
 	credentialProvider := mockaccount.SubscriptionCredentialProviderFunc(
@@ -604,6 +835,13 @@ func createAksServiceTarget(
 	containerRegistryService := azcli.NewContainerRegistryService(credentialProvider, mockContext.HttpClient, dockerCli)
 	containerHelper := NewContainerHelper(env, envManager, clock.NewMock(), containerRegistryService, dockerCli)
 
+	if userConfig == nil {
+		userConfig = config.NewConfig(nil)
+	}
+
+	configManager := &mockUserConfigManager{}
+	configManager.On("Load").Return(userConfig, nil)
+
 	return NewAksTarget(
 		env,
 		envManager,
@@ -612,7 +850,10 @@ func createAksServiceTarget(
 		resourceManager,
 		kubeCtl,
 		kubeLoginCli,
+		helmCli,
+		kustomizeCli,
 		containerHelper,
+		alpha.NewFeaturesManagerWithConfig(userConfig),
 	)
 }
 
@@ -713,4 +954,18 @@ func (m *MockResourceManager) GetTargetResource(
 ) (*environment.TargetResource, error) {
 	args := m.Called(ctx, subscriptionId, serviceConfig)
 	return args.Get(0).(*environment.TargetResource), args.Error(1)
+}
+
+type mockUserConfigManager struct {
+	mock.Mock
+}
+
+func (m *mockUserConfigManager) Load() (config.Config, error) {
+	args := m.Called()
+	return args.Get(0).(config.Config), args.Error(1)
+}
+
+func (m *mockUserConfigManager) Save(config config.Config) error {
+	args := m.Called(config)
+	return args.Error(0)
 }

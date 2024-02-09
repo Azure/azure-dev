@@ -10,6 +10,7 @@ import (
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
+	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -47,7 +48,7 @@ func Test_ContainerHelper_LocalImageTag(t *testing.T) {
 		{
 			"ImageTagSpecified",
 			DockerProjectOptions{
-				Image: NewExpandableString("contoso/contoso-image:latest"),
+				Image: osutil.NewExpandableString("contoso/contoso-image:latest"),
 			},
 			"contoso/contoso-image:latest",
 		},
@@ -71,14 +72,14 @@ func Test_ContainerHelper_RemoteImageTag(t *testing.T) {
 		name              string
 		project           string
 		localImageTag     string
-		registry          ExpandableString
+		registry          osutil.ExpandableString
 		expectedRemoteTag string
 		expectError       bool
 	}{
 		{
 			name:              "with registry",
 			project:           "./src/api",
-			registry:          NewExpandableString("contoso.azurecr.io"),
+			registry:          osutil.NewExpandableString("contoso.azurecr.io"),
 			localImageTag:     "test-app/api-dev:azd-deploy-0",
 			expectedRemoteTag: "contoso.azurecr.io/test-app/api-dev:azd-deploy-0",
 		},
@@ -91,7 +92,7 @@ func Test_ContainerHelper_RemoteImageTag(t *testing.T) {
 		{
 			name:              "registry with fully qualified custom image",
 			project:           "",
-			registry:          NewExpandableString("contoso.azurecr.io"),
+			registry:          osutil.NewExpandableString("contoso.azurecr.io"),
 			localImageTag:     "docker.io/org/my-custom-image:latest",
 			expectedRemoteTag: "contoso.azurecr.io/org/my-custom-image:latest",
 		},
@@ -146,7 +147,7 @@ func Test_ContainerHelper_Resolve_RegistryName(t *testing.T) {
 		envManager := &mockenv.MockEnvManager{}
 		containerHelper := NewContainerHelper(env, envManager, clock.NewMock(), nil, nil)
 		serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
-		serviceConfig.Docker.Registry = NewExpandableString("contoso.azurecr.io")
+		serviceConfig.Docker.Registry = osutil.NewExpandableString("contoso.azurecr.io")
 		registryName, err := containerHelper.RegistryName(*mockContext.Context, serviceConfig)
 
 		require.NoError(t, err)
@@ -160,7 +161,7 @@ func Test_ContainerHelper_Resolve_RegistryName(t *testing.T) {
 		envManager := &mockenv.MockEnvManager{}
 		containerHelper := NewContainerHelper(env, envManager, clock.NewMock(), nil, nil)
 		serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
-		serviceConfig.Docker.Registry = NewExpandableString("${MY_CUSTOM_REGISTRY}")
+		serviceConfig.Docker.Registry = osutil.NewExpandableString("${MY_CUSTOM_REGISTRY}")
 		registryName, err := containerHelper.RegistryName(*mockContext.Context, serviceConfig)
 
 		require.NoError(t, err)
@@ -183,7 +184,7 @@ func Test_ContainerHelper_Resolve_RegistryName(t *testing.T) {
 func Test_ContainerHelper_Deploy(t *testing.T) {
 	tests := []struct {
 		name                   string
-		registry               ExpandableString
+		registry               osutil.ExpandableString
 		image                  string
 		project                string
 		packagePath            string
@@ -197,7 +198,7 @@ func Test_ContainerHelper_Deploy(t *testing.T) {
 		{
 			name:     "Source code and registry",
 			project:  "./src/api",
-			registry: NewExpandableString("contoso.azurecr.io"),
+			registry: osutil.NewExpandableString("contoso.azurecr.io"),
 			dockerDetails: &dockerPackageResult{
 				ImageHash:   "IMAGE_ID",
 				SourceImage: "",
@@ -225,7 +226,7 @@ func Test_ContainerHelper_Deploy(t *testing.T) {
 		{
 			name:                   "Source code with existing package path",
 			project:                "./src/api",
-			registry:               NewExpandableString("contoso.azurecr.io"),
+			registry:               osutil.NewExpandableString("contoso.azurecr.io"),
 			packagePath:            "my-project/my-service:azd-deploy-0",
 			expectedRemoteImage:    "contoso.azurecr.io/my-project/my-service:azd-deploy-0",
 			expectDockerPullCalled: false,
@@ -236,7 +237,7 @@ func Test_ContainerHelper_Deploy(t *testing.T) {
 		{
 			name:     "Source image and registry",
 			image:    "nginx",
-			registry: NewExpandableString("contoso.azurecr.io"),
+			registry: osutil.NewExpandableString("contoso.azurecr.io"),
 			dockerDetails: &dockerPackageResult{
 				ImageHash:   "",
 				SourceImage: "nginx",
@@ -264,7 +265,7 @@ func Test_ContainerHelper_Deploy(t *testing.T) {
 		},
 		{
 			name:                   "Source image with existing package path and registry",
-			registry:               NewExpandableString("contoso.azurecr.io"),
+			registry:               osutil.NewExpandableString("contoso.azurecr.io"),
 			packagePath:            "my-project/my-service:azd-deploy-0",
 			expectedRemoteImage:    "contoso.azurecr.io/my-project/my-service:azd-deploy-0",
 			expectDockerPullCalled: false,
@@ -350,9 +351,9 @@ func Test_ContainerHelper_ConfiguredImage(t *testing.T) {
 		serviceName          string
 		sourceImage          string
 		env                  map[string]string
-		registry             ExpandableString
-		image                ExpandableString
-		tag                  ExpandableString
+		registry             osutil.ExpandableString
+		image                osutil.ExpandableString
+		tag                  osutil.ExpandableString
 		expectedImage        docker.ContainerImage
 		expectError          bool
 		expectedErrorMessage string
@@ -367,7 +368,7 @@ func Test_ContainerHelper_ConfiguredImage(t *testing.T) {
 		},
 		{
 			name: "with custom tag",
-			tag:  NewExpandableString("custom-tag"),
+			tag:  osutil.NewExpandableString("custom-tag"),
 			expectedImage: docker.ContainerImage{
 				Registry:   "",
 				Repository: "test-app/api-dev",
@@ -376,7 +377,7 @@ func Test_ContainerHelper_ConfiguredImage(t *testing.T) {
 		},
 		{
 			name:  "with custom iamge",
-			image: NewExpandableString("custom-image"),
+			image: osutil.NewExpandableString("custom-image"),
 			expectedImage: docker.ContainerImage{
 				Registry:   "",
 				Repository: "custom-image",
@@ -385,8 +386,8 @@ func Test_ContainerHelper_ConfiguredImage(t *testing.T) {
 		},
 		{
 			name:  "with custom iamge and tag",
-			image: NewExpandableString("custom-image"),
-			tag:   NewExpandableString("custom-tag"),
+			image: osutil.NewExpandableString("custom-image"),
+			tag:   osutil.NewExpandableString("custom-tag"),
 			expectedImage: docker.ContainerImage{
 				Registry:   "",
 				Repository: "custom-image",
@@ -395,7 +396,7 @@ func Test_ContainerHelper_ConfiguredImage(t *testing.T) {
 		},
 		{
 			name:     "with registry",
-			registry: NewExpandableString("contoso.azurecr.io"),
+			registry: osutil.NewExpandableString("contoso.azurecr.io"),
 			expectedImage: docker.ContainerImage{
 				Registry:   "contoso.azurecr.io",
 				Repository: "test-app/api-dev",
@@ -404,9 +405,9 @@ func Test_ContainerHelper_ConfiguredImage(t *testing.T) {
 		},
 		{
 			name:     "with registry, custom image and tag",
-			registry: NewExpandableString("contoso.azurecr.io"),
-			image:    NewExpandableString("custom-image"),
-			tag:      NewExpandableString("custom-tag"),
+			registry: osutil.NewExpandableString("contoso.azurecr.io"),
+			image:    osutil.NewExpandableString("custom-image"),
+			tag:      osutil.NewExpandableString("custom-tag"),
 			expectedImage: docker.ContainerImage{
 				Registry:   "contoso.azurecr.io",
 				Repository: "custom-image",
@@ -420,9 +421,9 @@ func Test_ContainerHelper_ConfiguredImage(t *testing.T) {
 				"MY_CUSTOM_IMAGE":    "custom-image",
 				"MY_CUSTOM_TAG":      "custom-tag",
 			},
-			registry: NewExpandableString("${MY_CUSTOM_REGISTRY}"),
-			image:    NewExpandableString("${MY_CUSTOM_IMAGE}"),
-			tag:      NewExpandableString("${MY_CUSTOM_TAG}"),
+			registry: osutil.NewExpandableString("${MY_CUSTOM_REGISTRY}"),
+			image:    osutil.NewExpandableString("${MY_CUSTOM_IMAGE}"),
+			tag:      osutil.NewExpandableString("${MY_CUSTOM_TAG}"),
 			expectedImage: docker.ContainerImage{
 				Registry:   "custom.azurecr.io",
 				Repository: "custom-image",
@@ -431,13 +432,13 @@ func Test_ContainerHelper_ConfiguredImage(t *testing.T) {
 		},
 		{
 			name:                 "invalid image name",
-			image:                NewExpandableString("${MISSING_CLOSING_BRACE"),
+			image:                osutil.NewExpandableString("${MISSING_CLOSING_BRACE"),
 			expectError:          true,
 			expectedErrorMessage: "missing closing brace",
 		},
 		{
 			name:                 "invalid tag",
-			image:                NewExpandableString("repo/::latest"),
+			image:                osutil.NewExpandableString("repo/::latest"),
 			expectError:          true,
 			expectedErrorMessage: "invalid tag",
 		},

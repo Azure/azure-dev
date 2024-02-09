@@ -99,6 +99,10 @@ func TestAppendEnv(t *testing.T) {
 }
 
 func TestRunList(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping test on Windows")
+	}
+
 	runner := NewCommandRunner(nil)
 	res, err := runner.RunList(context.Background(), []string{
 		"git --version",

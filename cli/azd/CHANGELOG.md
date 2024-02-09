@@ -4,6 +4,14 @@
 
 ### Features Added
 
+- [[3269]](https://github.com/Azure/azure-dev/pull/3269) Adds support for external/prebuilt container image references
+- [[3251]](https://github.com/Azure/azure-dev/pull/3251) Adds additional configuration resolving container registry names
+- [[3249]](https://github.com/Azure/azure-dev/pull/3249) Adds additional configuration resolving AKS cluster names
+- [[3223]](https://github.com/Azure/azure-dev/pull/3223) Updates AKS core modules for `azd` to easily enable RBAC clusters
+- [[3211]](https://github.com/Azure/azure-dev/pull/3211) Adds support for RBAC enabled AKS clusters using `kubelogin`
+- [[3196]](https://github.com/Azure/azure-dev/pull/3196) Adds support for Helm and Kustomize for AKS service targets
+- [[3173]](https://github.com/Azure/azure-dev/pull/3173) Adds support for defining customizable `azd up` workflows
+
 ### Breaking Changes
 
 ### Bugs Fixed

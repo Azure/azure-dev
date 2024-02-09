@@ -53,9 +53,7 @@ func TestKillCommand(t *testing.T) {
 	s := time.Now()
 
 	runner := NewCommandRunner(nil)
-	var args RunArgs
-
-	args = RunArgs{
+	args := RunArgs{
 		Cmd: "sh",
 		Args: []string{
 			"-c",

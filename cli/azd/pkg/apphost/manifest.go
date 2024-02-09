@@ -132,6 +132,8 @@ func ManifestFromAppHost(ctx context.Context, appHostProject string, dotnetCli d
 	}
 
 	// Make all paths absolute, to simplify logic for consumers.
+	// Note that since we created a temp dir, and `dotnet run --publisher` returns relative paths to the temp dir,
+	// the resulting path may be a symlinked path that isn't safe for Rel comparisons with the azd root directory.
 	manifestDir := filepath.Dir(manifestPath)
 
 	// The manifest writer writes paths relative to the manifest file. When we use a fixed manifest, the manifest is

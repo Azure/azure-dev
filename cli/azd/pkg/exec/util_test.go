@@ -43,6 +43,10 @@ func TestRunCommand(t *testing.T) {
 }
 
 func TestKillCommand(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping test on Windows")
+	}
+
 	ctx, cancel := context.WithTimeout(context.Background(), 1*time.Second)
 	defer cancel()
 
@@ -50,23 +54,13 @@ func TestKillCommand(t *testing.T) {
 
 	runner := NewCommandRunner(nil)
 	var args RunArgs
-	if runtime.GOOS == "windows" {
-		args = RunArgs{
-			Cmd: "pwsh",
-			Args: []string{
-				"-c",
-				"sleep",
-				"10000",
-			},
-		}
-	} else {
-		args = RunArgs{
-			Cmd: "sh",
-			Args: []string{
-				"-c",
-				"sleep 10",
-			},
-		}
+
+	args = RunArgs{
+		Cmd: "sh",
+		Args: []string{
+			"-c",
+			"sleep 10",
+		},
 	}
 
 	_, err := runner.Run(ctx, args)

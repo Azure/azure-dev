@@ -19,6 +19,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
+	"github.com/azure/azure-dev/cli/azd/pkg/kubelogin"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
@@ -91,8 +92,8 @@ func Test_Package_Deploy_HappyPath(t *testing.T) {
 		&ServicePackageResult{
 			PackagePath: "test-app/api-test:azd-deploy-0",
 			Details: &dockerPackageResult{
-				ImageHash: "IMAGE_HASH",
-				ImageTag:  "test-app/api-test:azd-deploy-0",
+				ImageHash:   "IMAGE_HASH",
+				TargetImage: "test-app/api-test:azd-deploy-0",
 			},
 		},
 	)
@@ -143,7 +144,7 @@ func Test_Resolve_Cluster_Name(t *testing.T) {
 		require.NoError(t, err)
 
 		serviceConfig := createTestServiceConfig(tempDir, AksTarget, ServiceLanguageTypeScript)
-		serviceConfig.ResourceName = NewExpandableString("MY_AKS_CLUSTER")
+		serviceConfig.ResourceName = NewExpandableString("AKS_CLUSTER")
 		env := createEnv()
 
 		// Remove default AKS cluster name from env file
@@ -160,9 +161,9 @@ func Test_Resolve_Cluster_Name(t *testing.T) {
 		require.NoError(t, err)
 
 		serviceConfig := createTestServiceConfig(tempDir, AksTarget, ServiceLanguageTypeScript)
-		serviceConfig.ResourceName = NewExpandableString("$MY_CUSTOM_ENV_VAR")
+		serviceConfig.ResourceName = NewExpandableString("${MY_CUSTOM_ENV_VAR}")
 		env := createEnv()
-		env.DotenvSet("MY_CUSTOM_ENV_VAR", "MY_AKS_CLUSTER")
+		env.DotenvSet("MY_CUSTOM_ENV_VAR", "AKS_CLUSTER")
 
 		// Remove default AKS cluster name from env file
 		env.DotenvDelete(environment.AksClusterEnvVarName)
@@ -212,7 +213,7 @@ func Test_Deploy_No_Credentials(t *testing.T) {
 	serviceTarget := createAksServiceTarget(mockContext, serviceConfig, env)
 	err = simulateInitliaze(*mockContext.Context, serviceTarget, serviceConfig)
 	require.Error(t, err)
-	require.ErrorContains(t, err, "failed retrieving cluster admin credentials")
+	require.ErrorContains(t, err, "failed retrieving cluster user credentials")
 }
 
 func setupK8sManifests(t *testing.T, serviceConfig *ServiceConfig) error {
@@ -241,11 +242,40 @@ func setupMocksForAksTarget(mockContext *mocks.MockContext) error {
 		return err
 	}
 
+	setupGetClusterMock(mockContext, http.StatusOK)
 	setupMocksForAcr(mockContext)
 	setupMocksForKubectl(mockContext)
 	setupMocksForDocker(mockContext)
 
 	return nil
+}
+
+func setupGetClusterMock(mockContext *mocks.MockContext, statusCode int) {
+	// Get cluster configuration
+	mockContext.HttpClient.When(func(request *http.Request) bool {
+		return request.Method == http.MethodGet && strings.Contains(
+			request.URL.Path,
+			"Microsoft.ContainerService/managedClusters/AKS_CLUSTER",
+		)
+	}).RespondFn(func(request *http.Request) (*http.Response, error) {
+		managedCluster := armcontainerservice.ManagedClustersClientGetResponse{
+			ManagedCluster: armcontainerservice.ManagedCluster{
+				ID:       convert.RefOf("cluster1"),
+				Location: convert.RefOf("eastus2"),
+				Type:     convert.RefOf("Microsoft.ContainerService/managedClusters"),
+				Properties: &armcontainerservice.ManagedClusterProperties{
+					EnableRBAC:           convert.RefOf(true),
+					DisableLocalAccounts: convert.RefOf(false),
+				},
+			},
+		}
+
+		if statusCode == http.StatusOK {
+			return mocks.CreateHttpResponseWithBody(request, statusCode, managedCluster)
+		} else {
+			return mocks.CreateEmptyHttpResponse(request, statusCode)
+		}
+	})
 }
 
 func setupListClusterAdminCredentialsMock(mockContext *mocks.MockContext, statusCode int) error {
@@ -550,6 +580,7 @@ func createAksServiceTarget(
 ) ServiceTarget {
 	kubeCtl := kubectl.NewKubectl(mockContext.CommandRunner)
 	dockerCli := docker.NewDocker(mockContext.CommandRunner)
+	kubeLoginCli := kubelogin.NewCli(mockContext.CommandRunner)
 	credentialProvider := mockaccount.SubscriptionCredentialProviderFunc(
 		func(_ context.Context, _ string) (azcore.TokenCredential, error) {
 			return mockContext.Credentials, nil
@@ -580,6 +611,7 @@ func createAksServiceTarget(
 		managedClustersService,
 		resourceManager,
 		kubeCtl,
+		kubeLoginCli,
 		containerHelper,
 	)
 }

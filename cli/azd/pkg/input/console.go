@@ -24,6 +24,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
+	"github.com/mattn/go-isatty"
 	"github.com/nathan-fiscaletti/consolesize-go"
 	"github.com/theckman/yacspin"
 	"go.uber.org/atomic"
@@ -238,7 +239,7 @@ func (c *AskerConsole) MessageUxItem(ctx context.Context, item ux.UxItem) {
 }
 
 func (c *AskerConsole) println(ctx context.Context, msg string) {
-	if c.spinner.Status() == yacspin.SpinnerRunning {
+	if c.IsSpinnerInteractive() && c.spinner.Status() == yacspin.SpinnerRunning {
 		c.StopSpinner(ctx, "", Step)
 		// default non-format
 		fmt.Fprintln(c.writer, msg)
@@ -352,43 +353,27 @@ func (c *AskerConsole) ShowSpinner(ctx context.Context, title string, format Spi
 
 	indentPrefix := c.getIndent(format)
 	line := c.spinnerLine(title, indentPrefix)
+
+	_ = c.spinner.Pause()
 	c.spinner.Message(line.Message)
 	_ = c.spinner.CharSet(line.CharSet)
 	c.spinner.Prefix(line.Prefix)
+	_ = c.spinner.Unpause()
 
-	_ = c.spinner.Start()
+	if c.spinner.Status() == yacspin.SpinnerStopped {
+		// While it is indeed safe to call Start regardless of whether the spinner is running,
+		// calling Start may result in an additional line of output being written in non-tty scenarios
+		_ = c.spinner.Start()
+	}
 	c.spinnerLineMu.Unlock()
 }
 
-// spinnerTerminalMode determines the appropriate terminal mode for the spinner based on the current environment,
-// taking into account of environment variables that can control the terminal mode behavior.
+// spinnerTerminalMode determines the appropriate terminal mode.
 func spinnerTerminalMode(isTerminal bool) yacspin.TerminalMode {
 	nonInteractiveMode := yacspin.ForceNoTTYMode | yacspin.ForceDumbTerminalMode
 	if !isTerminal {
 		return nonInteractiveMode
 	}
-
-	// User override to force non-TTY behavior
-	if os.Getenv("AZD_DEBUG_FORCE_NO_TTY") == "1" {
-		return nonInteractiveMode
-	}
-
-	// By default, detect if we are running on CI and force no TTY mode if we are.
-	// Allow for an override if this is not desired.
-	shouldDetectCI := true
-	if strVal, has := os.LookupEnv("AZD_TERM_SKIP_CI_DETECT"); has {
-		skip, err := strconv.ParseBool(strVal)
-		if err != nil {
-			log.Println("AZD_TERM_SKIP_CI_DETECT is not a valid boolean value")
-		} else if skip {
-			shouldDetectCI = false
-		}
-	}
-
-	if shouldDetectCI && resource.IsRunningOnCI() {
-		return nonInteractiveMode
-	}
-
 	termMode := yacspin.ForceTTYMode
 	if os.Getenv("TERM") == "dumb" {
 		termMode |= yacspin.ForceDumbTerminalMode
@@ -441,8 +426,12 @@ func (c *AskerConsole) StopSpinner(ctx context.Context, lastMessage string, form
 		lastMessage = c.getStopChar(format) + " " + lastMessage
 	}
 
-	c.spinner.StopMessage(lastMessage)
 	_ = c.spinner.Stop()
+	if lastMessage != "" {
+		// Avoid using StopMessage() as it may result in an extra Message line print in non-tty scenarios
+		fmt.Fprintln(c.writer, lastMessage)
+	}
+
 	c.spinnerLineMu.Unlock()
 }
 
@@ -694,7 +683,6 @@ func NewConsole(noPrompt bool, isTerminal bool, w io.Writer, handles ConsoleHand
 		Suffix:       " ",
 		TerminalMode: spinnerTerminalMode(isTerminal),
 	}
-
 	if isTerminal {
 		spinnerConfig.CharSet = spinnerCharSet
 	} else {
@@ -703,7 +691,6 @@ func NewConsole(noPrompt bool, isTerminal bool, w io.Writer, handles ConsoleHand
 
 	c.spinner, _ = yacspin.New(spinnerConfig)
 	c.spinnerTerminalMode = spinnerConfig.TerminalMode
-
 	if isTerminal {
 		c.consoleWidth = atomic.NewInt32(int32(consoleWidth()))
 		watchTerminalResize(c)
@@ -711,6 +698,33 @@ func NewConsole(noPrompt bool, isTerminal bool, w io.Writer, handles ConsoleHand
 	}
 
 	return c
+}
+
+// IsTerminal returns true if the given file descriptors are attached to a terminal,
+// taking into account of environment variables that force TTY behavior.
+func IsTerminal(stdoutFd uintptr, stdinFd uintptr) bool {
+	// User override to force non-TTY behavior
+	if ok, _ := strconv.ParseBool(os.Getenv("AZD_DEBUG_FORCE_NO_TTY")); ok {
+		return false
+	}
+
+	// By default, detect if we are running on CI and force no TTY mode if we are.
+	// Allow for an override if this is not desired.
+	shouldDetectCI := true
+	if strVal, has := os.LookupEnv("AZD_TERM_SKIP_CI_DETECT"); has {
+		skip, err := strconv.ParseBool(strVal)
+		if err != nil {
+			log.Println("AZD_TERM_SKIP_CI_DETECT is not a valid boolean value")
+		} else if skip {
+			shouldDetectCI = false
+		}
+	}
+
+	if shouldDetectCI && resource.IsRunningOnCI() {
+		return false
+	}
+
+	return isatty.IsTerminal(stdoutFd) && isatty.IsTerminal(stdinFd)
 }
 
 func GetStepResultFormat(result error) SpinnerUxType {

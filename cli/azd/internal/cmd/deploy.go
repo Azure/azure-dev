@@ -26,20 +26,20 @@ import (
 	"github.com/spf13/pflag"
 )
 
-type deployFlags struct {
+type DeployFlags struct {
 	serviceName string
 	all         bool
 	fromPackage string
 	global      *internal.GlobalCommandOptions
-	*envFlag
+	*internal.EnvFlag
 }
 
-func (d *deployFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
-	d.bindNonCommon(local, global)
+func (d *DeployFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+	d.BindNonCommon(local, global)
 	d.bindCommon(local, global)
 }
 
-func (d *deployFlags) bindNonCommon(
+func (d *DeployFlags) BindNonCommon(
 	local *pflag.FlagSet,
 	global *internal.GlobalCommandOptions) {
 	local.StringVar(
@@ -54,9 +54,9 @@ func (d *deployFlags) bindNonCommon(
 	d.global = global
 }
 
-func (d *deployFlags) bindCommon(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
-	d.envFlag = &envFlag{}
-	d.envFlag.Bind(local, global)
+func (d *DeployFlags) bindCommon(local *pflag.FlagSet, global *internal.GlobalCommandOptions) {
+	d.EnvFlag = &internal.EnvFlag{}
+	d.EnvFlag.Bind(local, global)
 
 	local.BoolVar(
 		&d.all,
@@ -72,18 +72,25 @@ func (d *deployFlags) bindCommon(local *pflag.FlagSet, global *internal.GlobalCo
 	)
 }
 
-func (d *deployFlags) setCommon(envFlag *envFlag) {
-	d.envFlag = envFlag
+func (d *DeployFlags) SetCommon(envFlag *internal.EnvFlag) {
+	d.EnvFlag = envFlag
 }
 
-func newDeployFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *deployFlags {
-	flags := &deployFlags{}
+func NewDeployFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *DeployFlags {
+	flags := &DeployFlags{}
 	flags.Bind(cmd.Flags(), global)
 
 	return flags
 }
 
-func newDeployCmd() *cobra.Command {
+func NewDeployFlagsFromEnvAndOptions(envFlag *internal.EnvFlag, global *internal.GlobalCommandOptions) *DeployFlags {
+	return &DeployFlags{
+		EnvFlag: envFlag,
+		global:  global,
+	}
+}
+
+func NewDeployCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "deploy <service>",
 		Short: "Deploy the application's code to Azure.",
@@ -93,8 +100,8 @@ func newDeployCmd() *cobra.Command {
 	return cmd
 }
 
-type deployAction struct {
-	flags               *deployFlags
+type DeployAction struct {
+	flags               *DeployFlags
 	args                []string
 	projectConfig       *project.ProjectConfig
 	azdCtx              *azdcontext.AzdContext
@@ -112,8 +119,8 @@ type deployAction struct {
 	importManager       *project.ImportManager
 }
 
-func newDeployAction(
-	flags *deployFlags,
+func NewDeployAction(
+	flags *DeployFlags,
 	args []string,
 	projectConfig *project.ProjectConfig,
 	projectManager project.ProjectManager,
@@ -130,7 +137,7 @@ func newDeployAction(
 	alphaFeatureManager *alpha.FeatureManager,
 	importManager *project.ImportManager,
 ) actions.Action {
-	return &deployAction{
+	return &DeployAction{
 		flags:               flags,
 		args:                args,
 		projectConfig:       projectConfig,
@@ -155,7 +162,7 @@ type DeploymentResult struct {
 	Services  map[string]*project.ServiceDeployResult `json:"services"`
 }
 
-func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
+func (da *DeployAction) Run(ctx context.Context) (*actions.ActionResult, error) {
 	targetServiceName := da.flags.serviceName
 	if len(da.args) == 1 {
 		targetServiceName = da.args[0]
@@ -306,7 +313,7 @@ func (da *deployAction) Run(ctx context.Context) (*actions.ActionResult, error) 
 	}, nil
 }
 
-func getCmdDeployHelpDescription(*cobra.Command) string {
+func GetCmdDeployHelpDescription(*cobra.Command) string {
 	return generateCmdHelpDescription("Deploy application to Azure.", []string{
 		formatHelpNote(
 			"By default, deploys all services listed in 'azure.yaml' in the current directory," +
@@ -318,7 +325,7 @@ func getCmdDeployHelpDescription(*cobra.Command) string {
 	})
 }
 
-func getCmdDeployHelpFooter(*cobra.Command) string {
+func GetCmdDeployHelpFooter(*cobra.Command) string {
 	return generateCmdHelpSamplesBlock(map[string]string{
 		"Deploy all services in the current project to Azure.": output.WithHighLightFormat(
 			"azd deploy --all",

@@ -13,6 +13,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/vsrpc"
+	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
@@ -63,18 +64,24 @@ func (s *vsServerAction) Run(ctx context.Context) (*actions.ActionResult, error)
 		panic(err)
 	}
 
-	res, err := json.Marshal(struct {
-		Port int `json:"port"`
-		Pid  int `json:"pid"`
-	}{
-		Port: listener.Addr().(*net.TCPAddr).Port,
-		Pid:  os.Getpid(),
-	})
+	var versionRes contracts.VersionResult
+	versionSpec := internal.VersionInfo()
+
+	versionRes.Azd.Commit = versionSpec.Commit
+	versionRes.Azd.Version = versionSpec.Version.String()
+
+	res := contracts.VsServerResult{
+		Port:          listener.Addr().(*net.TCPAddr).Port,
+		Pid:           os.Getpid(),
+		VersionResult: versionRes,
+	}
+
+	resString, err := json.Marshal(res)
 	if err != nil {
 		return nil, err
 	}
 
-	fmt.Printf("%s\n", string(res))
+	fmt.Printf("%s\n", string(resString))
 
 	return nil, vsrpc.NewServer(s.rootContainer).Serve(listener)
 }

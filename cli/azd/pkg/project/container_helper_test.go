@@ -28,10 +28,12 @@ func Test_ContainerHelper_LocalImageTag(t *testing.T) {
 	projectName := "my-app"
 	serviceName := "web"
 	serviceConfig := &ServiceConfig{
-		Name: serviceName,
-		Host: "containerapp",
-		Project: &ProjectConfig{
-			Name: projectName,
+		ComponentConfig: ComponentConfig{
+			Name: serviceName,
+			Host: "containerapp",
+			Project: &ProjectConfig{
+				Name: projectName,
+			},
 		},
 	}
 	defaultImageName := fmt.Sprintf("%s/%s-%s", projectName, serviceName, envName)

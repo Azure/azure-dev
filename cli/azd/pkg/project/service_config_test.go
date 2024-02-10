@@ -212,14 +212,16 @@ func TestServiceConfigRaiseEventWithArgs(t *testing.T) {
 
 func createTestServiceConfig(path string, host ServiceTargetKind, language ServiceLanguageKind) *ServiceConfig {
 	return &ServiceConfig{
-		Name:         "api",
-		Host:         host,
-		Language:     language,
-		RelativePath: filepath.Join(path),
-		Project: &ProjectConfig{
-			Name:            "Test-App",
-			Path:            ".",
-			EventDispatcher: ext.NewEventDispatcher[ProjectLifecycleEventArgs](),
+		ComponentConfig: ComponentConfig{
+			Name:         "api",
+			Host:         host,
+			Language:     language,
+			RelativePath: filepath.Join(path),
+			Project: &ProjectConfig{
+				Name:            "Test-App",
+				Path:            ".",
+				EventDispatcher: ext.NewEventDispatcher[ProjectLifecycleEventArgs](),
+			},
 		},
 		EventDispatcher: ext.NewEventDispatcher[ServiceLifecycleEventArgs](),
 	}

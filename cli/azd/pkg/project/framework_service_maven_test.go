@@ -165,11 +165,13 @@ func Test_MavenProject_Package(t *testing.T) {
 			"Default",
 			args{
 				&ServiceConfig{
-					Project:         &ProjectConfig{},
-					Name:            "api",
-					RelativePath:    "src/api",
-					Host:            AppServiceTarget,
-					Language:        ServiceLanguageJava,
+					ComponentConfig: ComponentConfig{
+						Project:      &ProjectConfig{},
+						Name:         "api",
+						RelativePath: "src/api",
+						Host:         AppServiceTarget,
+						Language:     ServiceLanguageJava,
+					},
 					EventDispatcher: ext.NewEventDispatcher[ServiceLifecycleEventArgs](),
 				},
 				[]string{".jar"},
@@ -179,12 +181,14 @@ func Test_MavenProject_Package(t *testing.T) {
 		{
 			"SpecifyOutputDir",
 			args{&ServiceConfig{
-				Project:         &ProjectConfig{},
-				Name:            "api",
-				RelativePath:    "src/api",
-				OutputPath:      "mydir",
-				Host:            AppServiceTarget,
-				Language:        ServiceLanguageJava,
+				ComponentConfig: ComponentConfig{
+					Project:      &ProjectConfig{},
+					Name:         "api",
+					RelativePath: "src/api",
+					OutputPath:   "mydir",
+					Host:         AppServiceTarget,
+					Language:     ServiceLanguageJava,
+				},
 				EventDispatcher: ext.NewEventDispatcher[ServiceLifecycleEventArgs](),
 			},
 				[]string{".war"},
@@ -194,12 +198,14 @@ func Test_MavenProject_Package(t *testing.T) {
 		{
 			"SpecifyOutputFile",
 			args{&ServiceConfig{
-				Project:         &ProjectConfig{},
-				Name:            "api",
-				RelativePath:    "src/api",
-				OutputPath:      "mydir/ear.ear",
-				Host:            AppServiceTarget,
-				Language:        ServiceLanguageJava,
+				ComponentConfig: ComponentConfig{
+					Project:      &ProjectConfig{},
+					Name:         "api",
+					RelativePath: "src/api",
+					OutputPath:   "mydir/ear.ear",
+					Host:         AppServiceTarget,
+					Language:     ServiceLanguageJava,
+				},
 				EventDispatcher: ext.NewEventDispatcher[ServiceLifecycleEventArgs](),
 			},
 				[]string{".ear"},
@@ -209,11 +215,13 @@ func Test_MavenProject_Package(t *testing.T) {
 		{
 			"ErrNoArchive",
 			args{&ServiceConfig{
-				Project:         &ProjectConfig{},
-				Name:            "api",
-				RelativePath:    "src/api",
-				Host:            AppServiceTarget,
-				Language:        ServiceLanguageJava,
+				ComponentConfig: ComponentConfig{
+					Project:      &ProjectConfig{},
+					Name:         "api",
+					RelativePath: "src/api",
+					Host:         AppServiceTarget,
+					Language:     ServiceLanguageJava,
+				},
 				EventDispatcher: ext.NewEventDispatcher[ServiceLifecycleEventArgs](),
 			},
 				[]string{},
@@ -223,12 +231,14 @@ func Test_MavenProject_Package(t *testing.T) {
 		{
 			"ErrMultipleArchives",
 			args{&ServiceConfig{
-				Project:         &ProjectConfig{},
-				Name:            "api",
-				RelativePath:    "src/api",
-				OutputPath:      "mydir",
-				Host:            AppServiceTarget,
-				Language:        ServiceLanguageJava,
+				ComponentConfig: ComponentConfig{
+					Project:      &ProjectConfig{},
+					Name:         "api",
+					RelativePath: "src/api",
+					OutputPath:   "mydir",
+					Host:         AppServiceTarget,
+					Language:     ServiceLanguageJava,
+				},
 				EventDispatcher: ext.NewEventDispatcher[ServiceLifecycleEventArgs](),
 			},
 				[]string{".jar", ".war", ".ear"},

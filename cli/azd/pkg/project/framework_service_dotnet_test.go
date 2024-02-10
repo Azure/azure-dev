@@ -41,10 +41,12 @@ func TestBicepOutputsWithDoubleUnderscoresAreConverted(t *testing.T) {
 	})
 
 	serviceConfig := &ServiceConfig{
-		Project: &ProjectConfig{
-			Path: "/sample/path/for/test",
+		ComponentConfig: ComponentConfig{
+			Project: &ProjectConfig{
+				Path: "/sample/path/for/test",
+			},
+			RelativePath: "",
 		},
-		RelativePath: "",
 	}
 
 	dotNetCli := dotnet.NewDotNetCli(mockContext.CommandRunner)

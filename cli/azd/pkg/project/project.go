@@ -98,9 +98,19 @@ func Parse(ctx context.Context, yamlContent string) (*ProjectConfig, error) {
 			return nil, fmt.Errorf("parsing service %s: %w", svc.Name, err)
 		}
 
-		svc.Infra.Provider, err = provisioning.ParseProvider(svc.Infra.Provider)
-		if err != nil {
-			return nil, fmt.Errorf("parsing service %s: %w", svc.Name, err)
+		if len(svc.Containers) == 0 {
+			svc.Containers = map[string]*ComponentConfig{}
+			svc.Containers["default"] = &ComponentConfig{
+				Project:      &projectConfig,
+				Service:      svc,
+				Name:         "default",
+				Host:         svc.Host,
+				RelativePath: svc.RelativePath,
+				Language:     svc.Language,
+				OutputPath:   svc.OutputPath,
+				Image:        svc.Image,
+				Docker:       svc.Docker,
+			}
 		}
 
 		// TODO: Move parsing/validation requirements for service targets into their respective components.

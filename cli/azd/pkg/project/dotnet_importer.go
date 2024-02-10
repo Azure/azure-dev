@@ -171,19 +171,16 @@ func (ai *DotNetImporter) Services(
 
 		// TODO(ellismg): Some of this code is duplicated from project.Parse, we should centralize this logic long term.
 		svc := &ServiceConfig{
-			RelativePath: relPath,
-			Language:     ServiceLanguageDotNet,
-			Host:         DotNetContainerAppTarget,
+			ComponentConfig: ComponentConfig{
+				RelativePath: relPath,
+				Language:     ServiceLanguageDotNet,
+				Host:         DotNetContainerAppTarget,
+			},
 		}
 
 		svc.Name = name
 		svc.Project = p
 		svc.EventDispatcher = ext.NewEventDispatcher[ServiceLifecycleEventArgs]()
-
-		svc.Infra.Provider, err = provisioning.ParseProvider(svc.Infra.Provider)
-		if err != nil {
-			return nil, fmt.Errorf("parsing service %s: %w", svc.Name, err)
-		}
 
 		svc.DotNetContainerApp = &DotNetContainerAppOptions{
 			Manifest:    manifest,
@@ -203,23 +200,20 @@ func (ai *DotNetImporter) Services(
 
 		// TODO(ellismg): Some of this code is duplicated from project.Parse, we should centralize this logic long term.
 		svc := &ServiceConfig{
-			RelativePath: relPath,
-			Language:     ServiceLanguageDocker,
-			Host:         DotNetContainerAppTarget,
-			Docker: DockerProjectOptions{
-				Path:    dockerfile.Path,
-				Context: dockerfile.Context,
+			ComponentConfig: ComponentConfig{
+				RelativePath: relPath,
+				Language:     ServiceLanguageDocker,
+				Host:         DotNetContainerAppTarget,
+				Docker: DockerProjectOptions{
+					Path:    dockerfile.Path,
+					Context: dockerfile.Context,
+				},
 			},
 		}
 
 		svc.Name = name
 		svc.Project = p
 		svc.EventDispatcher = ext.NewEventDispatcher[ServiceLifecycleEventArgs]()
-
-		svc.Infra.Provider, err = provisioning.ParseProvider(svc.Infra.Provider)
-		if err != nil {
-			return nil, fmt.Errorf("parsing service %s: %w", svc.Name, err)
-		}
 
 		svc.DotNetContainerApp = &DotNetContainerAppOptions{
 			Manifest:    manifest,

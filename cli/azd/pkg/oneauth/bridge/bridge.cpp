@@ -126,25 +126,31 @@ WrappedAuthResult *Authenticate(const char *authority, const char *scope, const 
             telemetryParams,
             callback);
 
-        // login window requires us to pump win32 messages
-        auto start = std::chrono::steady_clock::now();
+        // Login window requires us to pump win32 messages. Check the future before starting the pump because
+        // SignInInteractively may call back with an error before displaying the login window, in which case
+        // GetMessage will never return because there will never be a message in the queue, because azd has no
+        // windows.
         MSG msg;
-        while (GetMessage(&msg, nullptr, 0, 0))
+        auto ready = future.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
+        auto start = std::chrono::steady_clock::now();
+        auto timedOut = false;
+        while (!(ready || timedOut))
         {
+            GetMessage(&msg, nullptr, 0, 0);
             TranslateMessage(&msg);
             DispatchMessage(&msg);
-
-            if (future.wait_for(std::chrono::seconds(0)) == std::future_status::ready)
+            ready = future.wait_for(std::chrono::seconds(0)) == std::future_status::ready;
+            timedOut = std::chrono::steady_clock::now() - start >= std::chrono::seconds(timeoutSeconds);
+            if (ready || timedOut)
             {
                 PostQuitMessage(0);
             }
-            else if (std::chrono::steady_clock::now() - start >= std::chrono::seconds(timeoutSeconds))
-            {
-                PostQuitMessage(0);
-                auto ar = new WrappedAuthResult();
-                ar->errorDescription = strdup("timed out waiting for login");
-                return ar;
-            }
+        }
+        if (timedOut)
+        {
+            auto ar = new WrappedAuthResult();
+            ar->errorDescription = strdup("timed out waiting for login");
+            return ar;
         }
     }
 

@@ -1,6 +1,10 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 package vsrpc
 
 import (
+	"context"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -73,4 +77,57 @@ func TestUnmarshalIObserver(t *testing.T) {
 		_, err = unmarshalArg[IObserver[int]](nil, req, 0)
 		require.Error(t, err)
 	})
+}
+
+// mockRpcConn implements the jsonrpc2.Conn interface just enough such that it can record any calls to [Notify]. This allows
+// it to be used as the Conn for an [IObserver[T]] and can be used to validate any notifications that were sent during and
+// RPC operatio
+type mockRpcConn struct {
+	// notifies is a log of all the calls to [Notify]. The first entry is the oldest call observed.
+	notifies []struct {
+		method string
+		params interface{}
+	}
+}
+
+// Call implements jsonrpc2.Conn
+func (c *mockRpcConn) Call(ctx context.Context, method string, params interface{}, result interface{}) (jsonrpc2.ID, error) {
+	panic("not implemented")
+}
+
+// Notify implements jsonrpc2.Conn
+func (c *mockRpcConn) Notify(ctx context.Context, method string, params interface{}) error {
+	c.notifies = append(c.notifies, struct {
+		method string
+		params interface{}
+	}{method, params})
+	return nil
+}
+
+// Go implements jsonrpc2.Conn
+func (c *mockRpcConn) Go(ctx context.Context, handler jsonrpc2.Handler) {
+	panic("not implemented")
+}
+
+// Close implements jsonrpc2.Conn
+func (c *mockRpcConn) Close() error {
+	panic("not implemented")
+}
+
+// Done implements jsonrpc2.Conn
+func (c *mockRpcConn) Done() <-chan struct{} {
+	panic("not implemented")
+}
+
+// Err implements jsonrpc2.Conn
+func (c *mockRpcConn) Err() error {
+	panic("not implemented")
+}
+
+// newLoggingObserver returns an IObserver[T] that records every message sent to it, and the [mockRpcConn] that can be used
+// to view the log of these messages.
+func newLoggingObserver[T any]() (IObserver[T], *mockRpcConn) {
+	c := &mockRpcConn{}
+
+	return IObserver[T]{c: c}, c
 }

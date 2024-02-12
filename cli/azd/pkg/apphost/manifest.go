@@ -4,9 +4,11 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"os"
 	"path/filepath"
 	"strconv"
+	"time"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 )
@@ -109,17 +111,26 @@ type InputDefaultGenerate struct {
 
 // ManifestFromAppHost returns the Manifest from the given app host.
 func ManifestFromAppHost(ctx context.Context, appHostProject string, dotnetCli dotnet.DotNetCli) (*Manifest, error) {
+	start := time.Now()
 	tempDir, err := os.MkdirTemp("", "azd-provision")
 	if err != nil {
 		return nil, fmt.Errorf("creating temp directory for apphost-manifest.json: %w", err)
 	}
-	defer os.RemoveAll(tempDir)
+	defer func() {
+		start = time.Now()
+		os.RemoveAll(tempDir)
+		log.Printf("Deleting temp directory took %v", time.Since(start))
+	}()
+
+	log.Printf("Creating temp directory took %v", time.Since(start))
 
 	manifestPath := filepath.Join(tempDir, "apphost-manifest.json")
 
+	start = time.Now()
 	if err := dotnetCli.PublishAppHostManifest(ctx, appHostProject, manifestPath); err != nil {
 		return nil, fmt.Errorf("generating app host manifest: %w", err)
 	}
+	log.Printf("Publishing manifest took %v", time.Since(start))
 
 	manifestData, err := os.ReadFile(manifestPath)
 	if err != nil {

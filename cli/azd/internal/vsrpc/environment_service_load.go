@@ -29,9 +29,6 @@ func (s *environmentService) OpenEnvironmentAsync(
 		return nil, err
 	}
 
-	session.sessionMu.Lock()
-	defer session.sessionMu.Unlock()
-
 	return s.loadEnvironmentAsyncWithSession(ctx, session, name, false)
 }
 
@@ -49,9 +46,6 @@ func (s *environmentService) LoadEnvironmentAsync(
 		return nil, err
 	}
 
-	session.sessionMu.Lock()
-	defer session.sessionMu.Unlock()
-
 	return s.loadEnvironmentAsyncWithSession(ctx, session, name, true)
 }
 
@@ -66,7 +60,8 @@ func (s *environmentService) loadEnvironmentAsyncWithSession(
 		dotnetCli     dotnet.DotNetCli       `container:"type"`
 	}
 
-	if err := session.container.Fill(&c); err != nil {
+	container := newContainer(session)
+	if err := container.Fill(&c); err != nil {
 		return nil, err
 	}
 
@@ -110,20 +105,16 @@ func (s *environmentService) loadEnvironmentAsyncWithSession(
 
 	// If we would have to discover the app host or load the manifest from disk and the caller did not request it
 	// skip this somewhat expensive operation, at the expense of not building out the services array.
-	if (session.appHostPath == "" || session.manifestCache[session.appHostPath] == nil) && !mustLoadServices {
+	if !mustLoadServices {
 		return ret, nil
 	}
 
-	if session.appHostPath == "" {
-		appHost, err := appHostForProject(ctx, c.projectConfig, c.dotnetCli)
-		if err != nil {
-			return nil, fmt.Errorf("failed to find Aspire app host: %w", err)
-		}
-
-		session.appHostPath = appHost.Path()
+	appHost, err := appHostForProject(ctx, c.projectConfig, c.dotnetCli)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find Aspire app host: %w", err)
 	}
 
-	manifest, err := session.readManifest(ctx, session.appHostPath, c.dotnetCli)
+	manifest, err := session.readManifest(ctx, appHost.Path(), c.dotnetCli)
 	if err != nil {
 		return nil, fmt.Errorf("reading app host manifest: %w", err)
 	}

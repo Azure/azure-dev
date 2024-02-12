@@ -15,6 +15,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/mattn/go-colorable"
@@ -49,12 +50,27 @@ func (s *serverService) InitializeAsync(ctx context.Context, rootPath string) (*
 		return nil, err
 	}
 
-	container, err := s.server.rootContainer.NewScope()
-	if err != nil {
-		return nil, err
-	}
+	session.rootPath = rootPath
+	session.rootContainer = s.server.rootContainer
 
-	azdCtx := azdcontext.NewAzdContextWithDirectory(rootPath)
+	return &Session{
+		Id: id,
+	}, nil
+}
+
+type container struct {
+	*ioc.NestedContainer
+	outWriter *writerMultiplexer
+	errWriter *writerMultiplexer
+}
+
+func newContainer(s *serverSession) *container {
+	c, err := s.rootContainer.NewScope()
+	if err != nil {
+		panic(err)
+	}
+	id := s.id
+	azdCtx := azdcontext.NewAzdContextWithDirectory(s.rootPath)
 
 	outWriter := newWriter(fmt.Sprintf("[%s stdout] ", id))
 	errWriter := newWriter(fmt.Sprintf("[%s stderr] ", id))
@@ -74,7 +90,7 @@ func (s *serverService) InitializeAsync(ctx context.Context, rootPath string) (*
 		}),
 	})
 
-	container.MustRegisterScoped(func() input.Console {
+	c.MustRegisterScoped(func() input.Console {
 		stdout := outWriter
 		stderr := errWriter
 		stdin := strings.NewReader("")
@@ -87,33 +103,29 @@ func (s *serverService) InitializeAsync(ctx context.Context, rootPath string) (*
 		}, &output.NoneFormatter{})
 	})
 
-	container.MustRegisterScoped(func(console input.Console) io.Writer {
+	c.MustRegisterScoped(func(console input.Console) io.Writer {
 		return colorable.NewNonColorable(console.Handles().Stdout)
 	})
 
-	container.MustRegisterScoped(func() *internal.GlobalCommandOptions {
+	c.MustRegisterScoped(func() *internal.GlobalCommandOptions {
 		return &internal.GlobalCommandOptions{
 			NoPrompt: true,
-			Cwd:      rootPath,
 		}
 	})
 
-	container.MustRegisterScoped(func() *azdcontext.AzdContext {
+	c.MustRegisterScoped(func() *azdcontext.AzdContext {
 		return azdCtx
 	})
 
-	container.MustRegisterScoped(func() *lazy.Lazy[*azdcontext.AzdContext] {
+	c.MustRegisterScoped(func() *lazy.Lazy[*azdcontext.AzdContext] {
 		return lazy.From(azdCtx)
 	})
 
-	session.rootPath = rootPath
-	session.container = container
-	session.outWriter = outWriter
-	session.errWriter = errWriter
-
-	return &Session{
-		Id: id,
-	}, nil
+	return &container{
+		NestedContainer: c,
+		outWriter:       outWriter,
+		errWriter:       errWriter,
+	}
 }
 
 // StopAsync is the server implementation of:

@@ -32,9 +32,6 @@ func (s *environmentService) RefreshEnvironmentAsync(
 		return nil, err
 	}
 
-	session.sessionMu.Lock()
-	defer session.sessionMu.Unlock()
-
 	return s.refreshEnvironmentAsyncWithSession(ctx, session, name, observer)
 }
 
@@ -60,13 +57,14 @@ func (s *environmentService) refreshEnvironmentAsyncWithSession(
 		envManager           environment.Manager         `container:"type"`
 	}
 
-	session.container.MustRegisterScoped(func() internal.EnvFlag {
+	container := newContainer(session)
+	container.MustRegisterScoped(func() internal.EnvFlag {
 		return internal.EnvFlag{
 			EnvironmentName: name,
 		}
 	})
 
-	if err := session.container.Fill(&c); err != nil {
+	if err := container.Fill(&c); err != nil {
 		return nil, err
 	}
 

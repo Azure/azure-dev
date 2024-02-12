@@ -34,14 +34,12 @@ func (s *environmentService) GetEnvironmentsAsync(
 		return nil, err
 	}
 
-	session.sessionMu.Lock()
-	defer session.sessionMu.Unlock()
-
 	var c struct {
 		envManager environment.Manager `container:"type"`
 	}
 
-	if err := session.container.Fill(&c); err != nil {
+	container := newContainer(session)
+	if err := container.Fill(&c); err != nil {
 		return nil, err
 	}
 
@@ -71,14 +69,12 @@ func (s *environmentService) SetCurrentEnvironmentAsync(
 		return false, err
 	}
 
-	session.sessionMu.Lock()
-	defer session.sessionMu.Unlock()
-
 	var c struct {
 		azdCtx *azdcontext.AzdContext `container:"type"`
 	}
 
-	if err := session.container.Fill(&c); err != nil {
+	container := newContainer(session)
+	if err := container.Fill(&c); err != nil {
 		return false, err
 	}
 
@@ -94,13 +90,10 @@ func (s *environmentService) SetCurrentEnvironmentAsync(
 func (s *environmentService) DeleteEnvironmentAsync(
 	ctx context.Context, sessionId Session, name string, observer IObserver[ProgressMessage],
 ) (bool, error) {
-	session, err := s.server.validateSession(ctx, sessionId)
+	_, err := s.server.validateSession(ctx, sessionId)
 	if err != nil {
 		return false, err
 	}
-
-	session.sessionMu.Lock()
-	defer session.sessionMu.Unlock()
 
 	// TODO(azure/azure-dev#3285): Implement this.
 	return false, errors.New("not implemented")

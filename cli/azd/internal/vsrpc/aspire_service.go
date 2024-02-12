@@ -38,15 +38,14 @@ func (s *aspireService) GetAspireHostAsync(
 		return nil, err
 	}
 
-	session.sessionMu.Lock()
-	defer session.sessionMu.Unlock()
-
 	var c struct {
 		azdContext *azdcontext.AzdContext `container:"type"`
 		dotnetCli  dotnet.DotNetCli       `container:"type"`
 	}
 
-	if err := session.container.Fill(&c); err != nil {
+	container := newContainer(session)
+
+	if err := container.Fill(&c); err != nil {
 		return nil, err
 	}
 
@@ -56,25 +55,21 @@ func (s *aspireService) GetAspireHostAsync(
 			projectConfig *project.ProjectConfig `container:"type"`
 		}
 
-		if err := session.container.Fill(&cc); err != nil {
+		if err := container.Fill(&cc); err != nil {
 			return nil, err
 		}
 
-		if session.appHostPath == "" {
-			appHost, err := appHostForProject(ctx, cc.projectConfig, c.dotnetCli)
-			if err != nil {
-				return nil, err
-			}
-
-			session.appHostPath = appHost.Path()
+		appHost, err := appHostForProject(ctx, cc.projectConfig, c.dotnetCli)
+		if err != nil {
+			return nil, err
 		}
 
 		hostInfo := &AspireHost{
-			Name: filepath.Base(filepath.Dir(session.appHostPath)),
-			Path: session.appHostPath,
+			Name: filepath.Base(filepath.Dir(appHost.Path())),
+			Path: appHost.Path(),
 		}
 
-		manifest, err := session.readManifest(ctx, session.appHostPath, c.dotnetCli)
+		manifest, err := session.readManifest(ctx, appHost.Path(), c.dotnetCli)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load app host manifest: %w", err)
 		}
@@ -98,13 +93,11 @@ func (s *aspireService) GetAspireHostAsync(
 		}
 
 		hostInfo := &AspireHost{
-			Name: filepath.Base(filepath.Dir(session.appHostPath)),
+			Name: filepath.Base(filepath.Dir(hosts[0].Path)),
 			Path: hosts[0].Path,
 		}
 
-		session.appHostPath = hostInfo.Path
-
-		manifest, err := session.readManifest(ctx, session.appHostPath, c.dotnetCli)
+		manifest, err := session.readManifest(ctx, hosts[0].Path, c.dotnetCli)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load app host manifest: %w", err)
 		}
@@ -124,13 +117,10 @@ func (s *aspireService) GetAspireHostAsync(
 func (s *aspireService) RenameAspireHostAsync(
 	ctx context.Context, sessionId Session, newPath string, observer IObserver[ProgressMessage],
 ) error {
-	session, err := s.server.validateSession(ctx, sessionId)
+	_, err := s.server.validateSession(ctx, sessionId)
 	if err != nil {
 		return err
 	}
-
-	session.sessionMu.Lock()
-	defer session.sessionMu.Unlock()
 
 	// TODO(azure/azure-dev#3283): What should this do?  Rewrite azure.yaml?  We'll end up losing comments...
 	return errors.New("not implemented")

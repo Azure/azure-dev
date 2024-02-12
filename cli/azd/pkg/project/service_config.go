@@ -6,6 +6,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
+	"gopkg.in/yaml.v3"
 )
 
 type ServiceConfig struct {
@@ -80,61 +81,39 @@ func (sc *ServiceConfig) Path() string {
 	return filepath.Join(sc.Project.Path, sc.RelativePath)
 }
 
-// func (sc *ServiceConfig) MarshalYAML() (interface{}, error) {
-// 	type serviceConfig ServiceConfig
+func (sc *ServiceConfig) MarshalYAML() (interface{}, error) {
+	type serviceConfig ServiceConfig
 
-// 	svc := serviceConfig(*sc)
-// 	svcBytes, err := yaml.Marshal(svc)
-// 	if err != nil {
-// 		return nil, err
-// 	}
+	svc := serviceConfig(*sc)
 
-// 	componentBytes, err := yaml.Marshal(sc.ComponentConfig)
-// 	if err != nil {
-// 		return nil, err
-// 	}
+	if len(svc.Containers) == 1 {
+		svc.ComponentConfig = *svc.Containers["default"]
+		svc.Containers = nil
+	}
 
-// 	var svcMap map[string]interface{}
-// 	if err := yaml.Unmarshal(svcBytes, &svcMap); err != nil {
-// 		return nil, err
-// 	}
+	yamlBytes, err := yaml.Marshal(svc)
+	if err != nil {
+		return nil, err
+	}
 
-// 	var componentMap map[string]interface{}
-// 	if err := yaml.Unmarshal(componentBytes, &componentMap); err != nil {
-// 		return nil, err
-// 	}
+	return string(yamlBytes), nil
+}
 
-// 	for k, v := range componentMap {
-// 		svcMap[k] = v
-// 	}
+func (sc *ServiceConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
+	// Leverage the built-in unmarshaler to hydrate the service configuration
+	type serviceConfig ServiceConfig
+	var svc serviceConfig
+	if err := unmarshal(&svc); err != nil {
+		return err
+	}
 
-// 	yamlBytes, err := yaml.Marshal(svcMap)
-// 	if err != nil {
-// 		return nil, err
-// 	}
+	if len(svc.Containers) == 0 {
+		svc.Containers = map[string]*ComponentConfig{}
+		svc.ComponentConfig.Name = "default"
+		svc.Containers["default"] = &svc.ComponentConfig
+	}
 
-// 	return string(yamlBytes), nil
-// }
+	*sc = ServiceConfig(svc)
 
-// func (sc *ServiceConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
-// 	// Leverage the built-in unmarshaler to hydrate the service configuration
-// 	type serviceConfig ServiceConfig
-// 	var svc serviceConfig
-// 	if err := unmarshal(&svc); err != nil {
-// 		return err
-// 	}
-
-// 	// Reset the pointer
-// 	*sc = ServiceConfig(svc)
-
-// 	// Append the component configuration
-// 	var componentConfig ComponentConfig
-// 	if err := unmarshal(&componentConfig); err != nil {
-// 		return err
-// 	}
-
-// 	componentConfig.Service = sc
-// 	sc.ComponentConfig = componentConfig
-
-// 	return nil
-// }
+	return nil
+}

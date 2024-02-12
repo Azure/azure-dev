@@ -11,7 +11,7 @@ test("Create and delete item test", async ({ page }) => {
   const guid = uuidv4();
   console.log(`Creating item with text: ${guid}`);
 
-  await page.locator('[placeholder="Add an item"]').focus();;
+  await page.locator('[placeholder="Add an item"]').focus();
   await page.locator('[placeholder="Add an item"]').type(guid);
   await page.locator('[placeholder="Add an item"]').press("Enter");
 

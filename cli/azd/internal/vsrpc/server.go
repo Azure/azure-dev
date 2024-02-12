@@ -63,6 +63,7 @@ func (s *Server) Serve(l net.Listener) error {
 
 // serveRpc upgrades the HTTP connection to a WebSocket connection and then serves a set of named method using JSON-RPC 2.0.
 func serveRpc(w http.ResponseWriter, r *http.Request, handlers map[string]Handler) {
+	log.Printf("serving rpc for %s", r.URL.Path)
 	c, err := upgrader.Upgrade(w, r, nil)
 	if err != nil {
 		log.Print("upgrade:", err)
@@ -115,6 +116,11 @@ func serveRpc(w http.ResponseWriter, r *http.Request, handlers map[string]Handle
 		}
 
 		go func() {
+			start := time.Now()
+
+			defer func() {
+				log.Printf("handled rpc for %s in %s", req.Method(), time.Since(start))
+			}()
 			var childCtx context.Context = ctx
 
 			// If this is a call, create a new context and cancel function to track the request and allow it to be

@@ -109,6 +109,8 @@ func NewCredential(authority, clientID string, opts CredentialOptions) (azcore.T
 	return cred, nil
 }
 
+// GetToken acquires a token from OneAuth. If doing so requires user interaction and NoPrompt is true, it returns
+// an error. Otherwise, OneAuth will display a login window and this call must occur on the main thread.
 func (c *credential) GetToken(ctx context.Context, opts policy.TokenRequestOptions) (azcore.AccessToken, error) {
 	ar, err := authn(c.authority, c.clientID, c.homeAccountID, strings.Join(opts.Scopes, " "), c.opts.NoPrompt)
 	if err == nil {

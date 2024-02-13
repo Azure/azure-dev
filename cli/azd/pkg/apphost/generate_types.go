@@ -96,6 +96,20 @@ type genSqlServer struct {
 	Databases []string
 }
 
+type genInputParameter struct {
+	Type string
+}
+
+type genOutputParameter struct {
+	Type  string
+	Value string
+}
+
+type genBicepModules struct {
+	Path   string
+	Params map[string]any
+}
+
 type genBicepTemplateContext struct {
 	HasContainerRegistry            bool
 	HasContainerEnvironment         bool
@@ -111,6 +125,9 @@ type genBicepTemplateContext struct {
 	DaprComponents                  map[string]genDaprComponent
 	CosmosDbAccounts                map[string]genCosmosAccount
 	SqlServers                      map[string]genSqlServer
+	InputParameters                 map[string]genInputParameter
+	OutputParameters                map[string]genOutputParameter
+	BicepModules                    map[string]genBicepModules
 }
 
 type genContainerAppManifestTemplateContext struct {

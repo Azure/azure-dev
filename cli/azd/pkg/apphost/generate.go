@@ -8,6 +8,7 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strconv"
 	"strings"
 	"text/template"
@@ -243,7 +244,10 @@ type infraGenerator struct {
 	projects          map[string]genProject
 	connectionStrings map[string]string
 	resourceTypes     map[string]string
-	inputs            map[string]genInput
+	// inputs on this map holds only the inputs with `Default.Generate` configuration
+	// azd uses the env.config to persist the inputs after generating a value
+	// inputs which are not default.generate are tracked within bicepContext.InputParameters
+	inputs map[string]genInput
 
 	bicepContext                 genBicepTemplateContext
 	containerAppTemplateContexts map[string]genContainerAppManifestTemplateContext
@@ -262,6 +266,9 @@ func newInfraGenerator() *infraGenerator {
 			DaprComponents:                  make(map[string]genDaprComponent),
 			CosmosDbAccounts:                make(map[string]genCosmosAccount),
 			SqlServers:                      make(map[string]genSqlServer),
+			InputParameters:                 make(map[string]genInputParameter),
+			BicepModules:                    make(map[string]genBicepModules),
+			OutputParameters:                make(map[string]genOutputParameter),
 		},
 		containers:                   make(map[string]genContainer),
 		dapr:                         make(map[string]genDapr),
@@ -272,6 +279,47 @@ func newInfraGenerator() *infraGenerator {
 		containerAppTemplateContexts: make(map[string]genContainerAppManifestTemplateContext),
 		inputs:                       make(map[string]genInput),
 	}
+}
+
+func evaluateForOutputs(value string) (map[string]genOutputParameter, error) {
+	outputs := make(map[string]genOutputParameter)
+	re := regexp.MustCompile(`\{[a-zA-Z0-9\-]+\.outputs\.[a-zA-Z0-9\-]+\}`)
+	matches := re.FindAllString(value, -1)
+	for _, match := range matches {
+		noBrackets := strings.TrimRight(strings.TrimLeft(match, "{"), "}")
+		parts := strings.Split(noBrackets, ".")
+		name := fmt.Sprintf("%s_%s", strings.ToUpper(parts[0]), strings.ToUpper(parts[2]))
+		outputs[name] = genOutputParameter{
+			Type:  "string",
+			Value: fmt.Sprintf("%s.outputs.%s", parts[0], parts[2]),
+		}
+	}
+	return outputs, nil
+}
+
+// extractOutputs evaluates the known fields where a Resource can reference an output and persist it.
+func (b *infraGenerator) extractOutputs(resource *Resource) error {
+	// from connection string
+	if resource.ConnectionString != nil {
+		outputs, err := evaluateForOutputs(*resource.ConnectionString)
+		if err != nil {
+			return err
+		}
+		for key, output := range outputs {
+			b.bicepContext.OutputParameters[key] = output
+		}
+	}
+	for _, value := range resource.Env {
+		outputs, err := evaluateForOutputs(value)
+		if err != nil {
+			return err
+		}
+		for key, output := range outputs {
+			b.bicepContext.OutputParameters[key] = output
+		}
+
+	}
+	return nil
 }
 
 // LoadManifest loads the given manifest into the generator. It should be called before [Compile].
@@ -286,19 +334,14 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 				return fmt.Errorf("unsupported input type: %s", v.Type)
 			}
 
-			// TODO(ellismg): For Preview 2 of Aspire, we only support inputs which have a default.generate section
-			// with a minimum length, (i.e. for use as things like database passwords where `azd` will generate a random
-			//  password for the user).
-			//
-			// We will improve this for Preview 3 to support prompting for values without a default.generate (i.e. external
-			// API keys or such that the user need to provide).
 			if v.Default != nil && v.Default.Generate != nil && v.Default.Generate.MinLength != nil {
 				input.DefaultMinLength = *v.Default.Generate.MinLength
-			} else {
-				return fmt.Errorf("expected input %s for resource %s to have a default.generate.minLength value", k, name)
+				// only inputs with default.generate are tracked here
+				b.inputs[fmt.Sprintf("%s.%s", name, k)] = input
 			}
-
-			b.inputs[fmt.Sprintf("%s.%s", name, k)] = input
+		}
+		if err := b.extractOutputs(comp); err != nil {
+			return fmt.Errorf("extracting outputs: %w", err)
 		}
 
 		b.resourceTypes[name] = comp.Type
@@ -369,6 +412,20 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 				// a part of a server and it should not be created as a separate resource.
 				b.addContainerAppService(name, "postgres")
 			}
+		case "parameter.v0":
+			b.addInputParameter(name, comp.Inputs["value"].Type)
+		case "azure.bicep.v0":
+			if comp.Path == nil {
+				if comp.Parent == nil {
+					return fmt.Errorf("bicep resource %s does not have a path or a parent", name)
+				}
+				// module uses parent
+				continue
+			}
+			if comp.Params == nil {
+				comp.Params = make(map[string]any)
+			}
+			b.addBicep(name, *comp.Path, comp.Params)
 		default:
 			ignore, err := strconv.ParseBool(os.Getenv("AZD_DEBUG_DOTNET_APPHOST_IGNORE_UNSUPPORTED_RESOURCES"))
 			if err == nil && ignore {
@@ -421,6 +478,14 @@ func (b *infraGenerator) addServiceBus(name string, queues, topics *[]string) {
 		topics = &[]string{}
 	}
 	b.bicepContext.ServiceBuses[name] = genServiceBus{Queues: *queues, Topics: *topics}
+}
+
+func (b *infraGenerator) addInputParameter(name, pType string) {
+	b.bicepContext.InputParameters[name] = genInputParameter{Type: pType}
+}
+
+func (b *infraGenerator) addBicep(name, path string, params map[string]any) {
+	b.bicepContext.BicepModules[name] = genBicepModules{Path: path, Params: params}
 }
 
 func (b *infraGenerator) addAppInsights(name string) {
@@ -976,6 +1041,10 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 		default:
 			return "", errUnsupportedProperty(targetType, prop)
 		}
+	case targetType == "azure.bicep.v0":
+		return "bicepHere", nil
+	case targetType == "parameter.v0":
+		return "bicepParamHere", nil
 	default:
 		ignore, err := strconv.ParseBool(os.Getenv("AZD_DEBUG_DOTNET_APPHOST_IGNORE_UNSUPPORTED_RESOURCES"))
 		if err == nil && ignore {

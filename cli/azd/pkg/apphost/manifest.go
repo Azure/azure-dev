@@ -22,6 +22,7 @@ type Resource struct {
 
 	// Path is present on a project.v0 resource and is the path to the project file, and on a dockerfile.v0
 	// resource and is the path to the Dockerfile (including the "Dockerfile" filename).
+	// For a bicep.v0 resource, it is the path to the bicep file.
 	Path *string `json:"path,omitempty"`
 
 	// Context is present on a dockerfile.v0 resource and is the path to the context directory.
@@ -64,6 +65,9 @@ type Resource struct {
 	// Inputs is present on resources that need inputs from during the provisioning process (e.g asking for an API key, or
 	// a password for a database).
 	Inputs map[string]Input `json:"inputs,omitempty"`
+
+	// For a bicep.v0 resource, defines the input parameters for the bicep file.
+	Params map[string]any `json:"params,omitempty"`
 }
 
 type DaprResourceMetadata struct {

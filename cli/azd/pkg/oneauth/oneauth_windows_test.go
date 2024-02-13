@@ -11,8 +11,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestStart(t *testing.T) {
-	require.NoError(t, start("clientID"))
+func TestStartShutdown(t *testing.T) {
+	fakeClientID := "7922c055-2cb8-4450-9669-c4952562f2b9"
+	require.NoError(t, start(fakeClientID))
+	Shutdown()
 }
 
 func TestSupported(t *testing.T) {

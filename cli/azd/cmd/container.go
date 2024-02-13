@@ -347,17 +347,8 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	// Required to be singleton (shared) because the project/service holds important event handlers
 	// from both hooks and internal that are used during azd lifecycle calls.
 	container.MustRegisterSingleton(
-		func(ctx context.Context, azdContext *azdcontext.AzdContext) (*project.ProjectConfig, error) {
-			if azdContext == nil {
-				return nil, azdcontext.ErrNoProject
-			}
-
-			projectConfig, err := project.Load(ctx, azdContext.ProjectPath())
-			if err != nil {
-				return nil, err
-			}
-
-			return projectConfig, nil
+		func(lazyConfig *lazy.Lazy[*project.ProjectConfig]) (*project.ProjectConfig, error) {
+			return lazyConfig.GetValue()
 		},
 	)
 
@@ -366,19 +357,19 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	// from both hooks and internal that are used during azd lifecycle calls.
 	container.MustRegisterSingleton(
 		func(
-			serviceLocator ioc.ServiceLocator,
 			lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext],
 		) *lazy.Lazy[*project.ProjectConfig] {
 			return lazy.NewLazy(func() (*project.ProjectConfig, error) {
-				_, err := lazyAzdContext.GetValue()
+				azdContext, err := lazyAzdContext.GetValue()
 				if err != nil {
 					return nil, err
 				}
 
-				var projectConfig *project.ProjectConfig
-				err = serviceLocator.Resolve(&projectConfig)
+				if azdContext == nil {
+					return nil, azdcontext.ErrNoProject
+				}
 
-				return projectConfig, err
+				return project.Load(context.TODO(), azdContext.ProjectPath())
 			})
 		},
 	)

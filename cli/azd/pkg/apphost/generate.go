@@ -122,7 +122,10 @@ func BicepTemplate(manifest *Manifest) (*memfs.FS, error) {
 		return nil, err
 	}
 
-	fs := memfs.New()
+	// use the filesystem coming from the manifest
+	// the in-memory filesystem from the manifest is guaranteed to be initialized and contains all the bicep files
+	// referenced by the Aspire manifest.
+	fs := manifest.BicepFiles
 
 	if err := executeToFS(fs, genTemplates, "main.bicep", "main.bicep", generator.bicepContext); err != nil {
 		return nil, fmt.Errorf("generating infra/main.bicep: %w", err)

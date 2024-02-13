@@ -11,12 +11,15 @@
 - [[3211]](https://github.com/Azure/azure-dev/pull/3211) Adds support for RBAC enabled AKS clusters using `kubelogin`
 - [[3196]](https://github.com/Azure/azure-dev/pull/3196) Adds support for Helm and Kustomize for AKS service targets
 - [[3173]](https://github.com/Azure/azure-dev/pull/3173) Adds support for defining customizable `azd up` workflows
-
-### Breaking Changes
+- Dotnet Aspire additions:
+  - [[3164]](https://github.com/Azure/azure-dev/pull/3164) Azure Cosmos DB.
+  - [[3226]](https://github.com/Azure/azure-dev/pull/3226) Azure SQL Database.
+  - [[3276]](https://github.com/Azure/azure-dev/pull/3276) Secrets handling improvement.
+- [[3155]](https://github.com/Azure/azure-dev/pull/3155) Adds support to define secrets and variables for `azd pipeline config`.
 
 ### Bugs Fixed
 
-### Other Changes
+- [[3097]](https://github.com/Azure/azure-dev/pull/3097) For Dotnet Aspire projects, do not fail if folder `infra` is empty.
 
 ## 1.5.1 (2023-12-20)
 

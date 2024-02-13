@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
 	"github.com/stretchr/testify/require"
 )
@@ -108,6 +109,37 @@ func Test_CLI_Env_Management(t *testing.T) {
 	// Verify that running refresh with an explicit env name from an argument and from a flag leads to an error.
 	_, err = cli.RunCommand(context.Background(), "env", "refresh", "-e", "from-flag", "from-arg")
 	require.Error(t, err)
+
+	// Verify create when no default environment is set
+	azdCtx := azdcontext.NewAzdContextWithDirectory(dir)
+	err = azdCtx.SetDefaultEnvironmentName("")
+	require.NoError(t, err)
+
+	// Here we should 'monitor' as the command that requires environment to operate on
+	cmdNeedingEnv := []string{"monitor"}
+
+	envName3 := randomEnvName()
+	_, _ = cli.RunCommandWithStdIn(
+		ctx,
+		"Create a new environment\n"+envName3+"\n",
+		cmdNeedingEnv...)
+	environmentList = envList(ctx, t, cli)
+	require.Len(t, environmentList, 3)
+	requireIsDefault(t, environmentList, envName3)
+
+	// Verify select environment when no default environment is set
+	err = azdCtx.SetDefaultEnvironmentName("")
+	require.NoError(t, err)
+
+	_, _ = cli.RunCommandWithStdIn(
+		ctx,
+		envName2+"\n"+
+			"y\n", // Set as default
+		cmdNeedingEnv...)
+
+	environmentList = envList(ctx, t, cli)
+	require.Len(t, environmentList, 3)
+	requireIsDefault(t, environmentList, envName2)
 }
 
 func Test_CLI_Env_Values_Json(t *testing.T) {

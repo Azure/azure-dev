@@ -344,7 +344,9 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	)
 
 	// Project Config
-	container.MustRegisterTransient(
+	// Required to be singleton (shared) because the project/service holds important event handlers
+	// from both hooks and internal that are used during azd lifecycle calls.
+	container.MustRegisterSingleton(
 		func(ctx context.Context, azdContext *azdcontext.AzdContext) (*project.ProjectConfig, error) {
 			if azdContext == nil {
 				return nil, azdcontext.ErrNoProject
@@ -360,6 +362,8 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	)
 
 	// Lazy loads the project config from the Azd Context when it becomes available
+	// Required to be singleton (shared) because the project/service holds important event handlers
+	// from both hooks and internal that are used during azd lifecycle calls.
 	container.MustRegisterSingleton(
 		func(
 			serviceLocator ioc.ServiceLocator,

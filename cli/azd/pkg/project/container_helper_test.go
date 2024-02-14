@@ -74,7 +74,7 @@ func Test_ContainerHelper_RemoteImageTag(t *testing.T) {
 		name              string
 		project           string
 		localImageTag     string
-		registry          osutil.ExpandableString
+		registry          *osutil.ExpandableString
 		expectedRemoteTag string
 		expectError       bool
 	}{
@@ -404,9 +404,9 @@ func Test_ContainerHelper_ConfiguredImage(t *testing.T) {
 		serviceName          string
 		sourceImage          string
 		env                  map[string]string
-		registry             osutil.ExpandableString
-		image                osutil.ExpandableString
-		tag                  osutil.ExpandableString
+		registry             *osutil.ExpandableString
+		image                *osutil.ExpandableString
+		tag                  *osutil.ExpandableString
 		expectedImage        docker.ContainerImage
 		expectError          bool
 		expectedErrorMessage string

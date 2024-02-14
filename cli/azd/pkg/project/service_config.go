@@ -6,14 +6,13 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
-	"gopkg.in/yaml.v3"
 )
 
 type ServiceConfig struct {
 	ComponentConfig `yaml:",inline"`
 
 	// The name used to override the default azure resource name
-	ResourceName osutil.ExpandableString `yaml:"resourceName,omitempty"`
+	ResourceName *osutil.ExpandableString `yaml:"resourceName,omitempty"`
 	// The optional K8S / AKS options
 	K8s AksOptions `yaml:"k8s,omitempty"`
 	// The optional Azure Spring Apps options
@@ -38,33 +37,19 @@ type ComponentConfig struct {
 	// Reference to the parent project configuration
 	Service *ServiceConfig `yaml:"-"`
 	// The azure hosting model to use, ex) appservice, function, containerapp
-	Host ServiceTargetKind `yaml:"host"`
+	Host ServiceTargetKind `yaml:"host,omitempty"`
 	// The friendly name/key of the project from the azure.yaml file
 	Name string `yaml:"-"`
 	// The relative path to the project folder from the project root
-	RelativePath string `yaml:"project"`
+	RelativePath string `yaml:"project,omitempty"`
 	// The programming language of the project
-	Language ServiceLanguageKind `yaml:"language"`
+	Language ServiceLanguageKind `yaml:"language,omitempty"`
 	// The output path for build artifacts
 	OutputPath string `yaml:"dist,omitempty"`
 	// The source image to use for container based applications
 	Image string `yaml:"image,omitempty"`
 	// The optional docker options for configuring the output image
 	Docker DockerProjectOptions `yaml:"docker,omitempty"`
-	// The optional K8S / AKS options
-}
-
-type ServiceComponent interface {
-	Project() *ProjectConfig
-	Service() *ServiceConfig
-	Name() string
-	Path() string
-	Host() ServiceTargetKind
-	Language() ServiceLanguageKind
-	WithLanguage(language ServiceLanguageKind)
-	OutputPath() string
-	Image() string
-	Docker() *DockerProjectOptions
 }
 
 type DotNetContainerAppOptions struct {
@@ -86,17 +71,19 @@ func (sc *ServiceConfig) MarshalYAML() (interface{}, error) {
 
 	svc := serviceConfig(*sc)
 
-	if len(svc.Containers) == 1 {
+	// If there is only a single container and it maps to our "default" convention,
+	// then we can promote the container to the service level
+	if _, has := svc.Containers["default"]; has && len(svc.Containers) == 1 {
 		svc.ComponentConfig = *svc.Containers["default"]
 		svc.Containers = nil
+	} else {
+		// Host can be ignored
+		for _, value := range svc.Containers {
+			value.Host = ""
+		}
 	}
 
-	yamlBytes, err := yaml.Marshal(svc)
-	if err != nil {
-		return nil, err
-	}
-
-	return string(yamlBytes), nil
+	return svc, nil
 }
 
 func (sc *ServiceConfig) UnmarshalYAML(unmarshal func(interface{}) error) error {
@@ -108,9 +95,13 @@ func (sc *ServiceConfig) UnmarshalYAML(unmarshal func(interface{}) error) error 
 	}
 
 	if len(svc.Containers) == 0 {
-		svc.Containers = map[string]*ComponentConfig{}
-		svc.ComponentConfig.Name = "default"
-		svc.Containers["default"] = &svc.ComponentConfig
+		svc.Containers = map[string]*ComponentConfig{
+			"default": &svc.ComponentConfig,
+		}
+	}
+
+	for key, value := range svc.Containers {
+		value.Name = key
 	}
 
 	*sc = ServiceConfig(svc)

@@ -23,3 +23,24 @@ func TestExpandableStringYaml(t *testing.T) {
 
 	assert.Equal(t, "${foo}\n", string(marshalled))
 }
+
+func TestNestedObjectYaml(t *testing.T) {
+	c := Custom{
+		A: &ExpandableString{
+			template: "${foo}",
+		},
+		B: &ExpandableString{
+			template: "${bar}",
+		},
+	}
+
+	marshalled, err := yaml.Marshal(c)
+	assert.NoError(t, err)
+
+	assert.Equal(t, "a: ${foo}\nb: ${bar}\n", string(marshalled))
+}
+
+type Custom struct {
+	A *ExpandableString `yaml:"a,omitempty"`
+	B *ExpandableString `yaml:"b,omitempty"`
+}

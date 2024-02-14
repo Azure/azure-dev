@@ -9,8 +9,8 @@ import (
 	"github.com/drone/envsubst"
 )
 
-func NewExpandableString(template string) ExpandableString {
-	return ExpandableString{
+func NewExpandableString(template string) *ExpandableString {
+	return &ExpandableString{
 		template: template,
 	}
 }
@@ -21,13 +21,13 @@ type ExpandableString struct {
 }
 
 // Envsubst evaluates the template, substituting values as [envsubst.Eval] would.
-func (e ExpandableString) Envsubst(mapping func(string) string) (string, error) {
+func (e *ExpandableString) Envsubst(mapping func(string) string) (string, error) {
 	return envsubst.Eval(e.template, mapping)
 }
 
 // MustEnvsubst evaluates the template, substituting values as [envsubst.Eval] would and panics if there
 // is an error (for example, the string is malformed).
-func (e ExpandableString) MustEnvsubst(mapping func(string) string) string {
+func (e *ExpandableString) MustEnvsubst(mapping func(string) string) string {
 	if v, err := envsubst.Eval(e.template, mapping); err != nil {
 		panic(fmt.Sprintf("MustEnvsubst: %v", err))
 	} else {
@@ -35,7 +35,7 @@ func (e ExpandableString) MustEnvsubst(mapping func(string) string) string {
 	}
 }
 
-func (e ExpandableString) MarshalYAML() (interface{}, error) {
+func (e *ExpandableString) MarshalYAML() (interface{}, error) {
 	return e.template, nil
 }
 

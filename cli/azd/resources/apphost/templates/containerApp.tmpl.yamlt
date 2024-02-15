@@ -49,6 +49,10 @@ properties:
       - name: {{containerAppSecretName $name}}
         value: {{$value}}
 {{- end}}
+{{- range $name, $value := .KeyVaultSecrets}}
+      - name: {{containerAppSecretName $name}}
+        keyVaultUrl: {{$value}}
+{{- end}}
   template:
     containers:
     - image: {{ "{{ .Image }}" }}
@@ -61,6 +65,10 @@ properties:
         value: {{$value}}
 {{- end}}
 {{- range $name, $value := .Secrets}}
+      - name: {{$name}}
+        secretRef: {{containerAppSecretName $name}}
+{{- end}}
+{{- range $name, $value := .KeyVaultSecrets}}
       - name: {{$name}}
         secretRef: {{containerAppSecretName $name}}
 {{- end}}

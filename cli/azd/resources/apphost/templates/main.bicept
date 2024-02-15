@@ -45,13 +45,14 @@ module {{$name}} '{{$module.Path}}' = {
   params: {
     location: location
 {{- range $param, $value := $module.Params}}
-    {{$param}}: '{{$value}}'
+    {{$param}}: {{$value}}
 {{- end}}
   }
 }
 {{end -}}
 
 output MANAGED_IDENTITY_CLIENT_ID string = resources.outputs.MANAGED_IDENTITY_CLIENT_ID
+output MANAGED_IDENTITY_NAME string = resources.outputs.MANAGED_IDENTITY_NAME
 {{if .HasLogAnalyticsWorkspace -}}
 output AZURE_LOG_ANALYTICS_WORKSPACE_NAME string = resources.outputs.AZURE_LOG_ANALYTICS_WORKSPACE_NAME
 {{end -}}

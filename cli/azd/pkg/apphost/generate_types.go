@@ -127,15 +127,17 @@ type genBicepTemplateContext struct {
 	SqlServers                      map[string]genSqlServer
 	InputParameters                 map[string]genInputParameter
 	OutputParameters                map[string]genOutputParameter
+	OutputSecretParameters          map[string]genOutputParameter
 	BicepModules                    map[string]genBicepModules
 }
 
 type genContainerAppManifestTemplateContext struct {
-	Name    string
-	Ingress *genContainerAppIngress
-	Env     map[string]string
-	Secrets map[string]string
-	Dapr    *genContainerAppManifestTemplateContextDapr
+	Name            string
+	Ingress         *genContainerAppIngress
+	Env             map[string]string
+	Secrets         map[string]string
+	KeyVaultSecrets map[string]string
+	Dapr            *genContainerAppManifestTemplateContextDapr
 }
 
 type genProjectFileContext struct {

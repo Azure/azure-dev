@@ -213,8 +213,9 @@ func TestBuildEnvResolveServiceToConnectionString(t *testing.T) {
 	}
 
 	manifestCtx := &genContainerAppManifestTemplateContext{
-		Env:     make(map[string]string),
-		Secrets: make(map[string]string),
+		Env:             make(map[string]string),
+		Secrets:         make(map[string]string),
+		KeyVaultSecrets: make(map[string]string),
 	}
 
 	// Call the method being tested

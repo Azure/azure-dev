@@ -3,6 +3,7 @@ package apphost
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"fmt"
 	"io/fs"
 	"log"
@@ -272,6 +273,7 @@ func newInfraGenerator() *infraGenerator {
 			InputParameters:                 make(map[string]genInputParameter),
 			BicepModules:                    make(map[string]genBicepModules),
 			OutputParameters:                make(map[string]genOutputParameter),
+			OutputSecretParameters:          make(map[string]genOutputParameter),
 		},
 		containers:                   make(map[string]genContainer),
 		dapr:                         make(map[string]genDapr),
@@ -286,15 +288,20 @@ func newInfraGenerator() *infraGenerator {
 
 func evaluateForOutputs(value string) (map[string]genOutputParameter, error) {
 	outputs := make(map[string]genOutputParameter)
-	re := regexp.MustCompile(`\{[a-zA-Z0-9\-]+\.outputs\.[a-zA-Z0-9\-]+\}`)
+
+	re := regexp.MustCompile(`\{[a-zA-Z0-9\-]+\.(outputs|secretOutputs)\.[a-zA-Z0-9\-]+\}`)
 	matches := re.FindAllString(value, -1)
 	for _, match := range matches {
 		noBrackets := strings.TrimRight(strings.TrimLeft(match, "{"), "}")
 		parts := strings.Split(noBrackets, ".")
 		name := fmt.Sprintf("%s_%s", strings.ToUpper(parts[0]), strings.ToUpper(parts[2]))
+		outputType := "outputs"
+		if strings.Contains(match, "secretOutputs") {
+			outputType = "secretOutputs"
+		}
 		outputs[name] = genOutputParameter{
 			Type:  "string",
-			Value: fmt.Sprintf("%s.outputs.%s", parts[0], parts[2]),
+			Value: fmt.Sprintf("%s.%s.%s", parts[0], outputType, parts[2]),
 		}
 	}
 	return outputs, nil
@@ -309,7 +316,11 @@ func (b *infraGenerator) extractOutputs(resource *Resource) error {
 			return err
 		}
 		for key, output := range outputs {
-			b.bicepContext.OutputParameters[key] = output
+			if strings.Contains(output.Value, ".outputs.") {
+				b.bicepContext.OutputParameters[key] = output
+			} else {
+				b.bicepContext.OutputSecretParameters[key] = output
+			}
 		}
 	}
 	for _, value := range resource.Env {
@@ -318,7 +329,11 @@ func (b *infraGenerator) extractOutputs(resource *Resource) error {
 			return err
 		}
 		for key, output := range outputs {
-			b.bicepContext.OutputParameters[key] = output
+			if strings.Contains(output.Value, ".outputs.") {
+				b.bicepContext.OutputParameters[key] = output
+			} else {
+				b.bicepContext.OutputSecretParameters[key] = output
+			}
 		}
 
 	}
@@ -427,6 +442,44 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 			}
 			if comp.Params == nil {
 				comp.Params = make(map[string]any)
+			}
+			useSecretOutputs := false
+			if comp.ConnectionString != nil && strings.Contains(*comp.ConnectionString, "secretOutputs") {
+				useSecretOutputs = true
+			}
+			keyVaultForParam := ""
+			emptyJsonString := "\"\""
+			for p, pVal := range comp.Params {
+				jsonBytes, err := json.Marshal(pVal)
+				finalParamValue := string(jsonBytes)
+				if err != nil {
+					return fmt.Errorf("marshalling param %s. error: %w", p, err)
+				}
+				if p == "keyVaultName" && useSecretOutputs {
+					keyVaultForParam = name + "kv"
+					keyVaultParam := fmt.Sprintf(
+						"resources.outputs.SERVICE_BINDING_%s_NAME", strings.ToUpper(keyVaultForParam))
+					if finalParamValue == emptyJsonString {
+						finalParamValue = keyVaultParam
+					}
+				}
+				if p == "principalId" && finalParamValue == emptyJsonString {
+					finalParamValue = "guid(resources.outputs.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID)"
+				}
+				if p == "principalType" && finalParamValue == emptyJsonString {
+					finalParamValue = "'ServicePrincipal'"
+				}
+				if p == "principalName" && finalParamValue == emptyJsonString {
+					finalParamValue = "resources.outputs.MANAGED_IDENTITY_NAME"
+				}
+				comp.Params[p] = finalParamValue
+			}
+			if useSecretOutputs && keyVaultForParam == "" {
+				return fmt.Errorf(
+					"bicep resource %s has connectionString with secretOutputs but no keyVaultName param", name)
+			}
+			if useSecretOutputs && keyVaultForParam != "" {
+				b.addKeyVault(keyVaultForParam)
 			}
 			b.addBicep(name, *comp.Path, comp.Params)
 		default:
@@ -798,9 +851,10 @@ func (b *infraGenerator) Compile() error {
 
 	for resourceName, docker := range b.dockerfiles {
 		projectTemplateCtx := genContainerAppManifestTemplateContext{
-			Name:    resourceName,
-			Env:     make(map[string]string),
-			Secrets: make(map[string]string),
+			Name:            resourceName,
+			Env:             make(map[string]string),
+			Secrets:         make(map[string]string),
+			KeyVaultSecrets: make(map[string]string),
 		}
 
 		ingress, err := buildIngress(docker.Bindings)
@@ -819,9 +873,10 @@ func (b *infraGenerator) Compile() error {
 
 	for resourceName, project := range b.projects {
 		projectTemplateCtx := genContainerAppManifestTemplateContext{
-			Name:    resourceName,
-			Env:     make(map[string]string),
-			Secrets: make(map[string]string),
+			Name:            resourceName,
+			Env:             make(map[string]string),
+			Secrets:         make(map[string]string),
+			KeyVaultSecrets: make(map[string]string),
 		}
 
 		binding, err := validateAndMergeBindings(project.Bindings)
@@ -878,6 +933,37 @@ func (b *infraGenerator) Compile() error {
 		}
 
 		b.containerAppTemplateContexts[resourceName] = projectTemplateCtx
+	}
+
+	for moduleName, module := range b.bicepContext.BicepModules {
+		for paramName, paramValue := range module.Params {
+			// paramValue comes from the manifest and it can be any type, but it is saved into bicepContext with json.Marshal
+			// ensuring that is is represented with a string. We can safely cast it to string here.
+			paramValueString, _ := paramValue.(string)
+
+			// bicep uses ' instead of " for strings, so we need to replace all " with '
+			singleQuoted := strings.ReplaceAll(paramValueString, "\"", "'")
+
+			// evaluate references
+			evaluatedString, err := EvalString(singleQuoted, func(s string) (string, error) {
+				return b.evalBindingRef(s, inputEmitTypeBicep)
+			})
+			if err != nil {
+				return fmt.Errorf("evaluating bicep module %s parameter %s: %w", moduleName, paramName, err)
+			}
+
+			// quick check to know if evaluatedString is only holding one only reference. If so, we don't need to use
+			// the form of '%{ref}' and we can directly use ref alone.
+			removeSpecialChars := strings.ReplaceAll(strings.ReplaceAll(evaluatedString, "'{{", ""), "}}'", "")
+
+			if evaluatedString == fmt.Sprintf("'{{%s}}'", removeSpecialChars) {
+				module.Params[paramName] = removeSpecialChars
+				continue
+			}
+			// restore double {{ }} to single { } for bicep output
+			// we used double only during the evaluation to scape single brackets
+			module.Params[paramName] = strings.ReplaceAll(strings.ReplaceAll(evaluatedString, "'{{", "${"), "}}'", "}")
+		}
 	}
 
 	return nil
@@ -1045,9 +1131,29 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 			return "", errUnsupportedProperty(targetType, prop)
 		}
 	case targetType == "azure.bicep.v0":
-		return "bicepHere", nil
+		if !strings.HasPrefix(prop, "outputs.") && !strings.HasPrefix(prop, "secretOutputs.") {
+			return "", fmt.Errorf("unsupported property referenced in binding expression: %s for %s", prop, targetType)
+		}
+		outputParts := strings.SplitN(prop, ".", 2)
+		outputType := outputParts[0]
+		outputName := outputParts[1]
+		if outputType == "outputs" {
+			return fmt.Sprintf("{{ .Env.%s_%s }}", strings.ToUpper(resource), strings.ToUpper(outputName)), nil
+		} else {
+			return fmt.Sprintf(
+				"{{ secretOutput https://{{ .Env.SERVICE_BINDING_%s_ENDPOINT }}.vault.azure.net/secrets/%s }}",
+				strings.ToUpper(resource),
+				outputName), nil
+		}
 	case targetType == "parameter.v0":
-		return "bicepParamHere", nil
+		switch emitType {
+		case inputEmitTypeBicep:
+			return fmt.Sprintf("{{%s}}", resource), nil
+		case inputEmitTypeYaml:
+			return fmt.Sprintf("{{ parameter %s }}", resource), nil
+		default:
+			panic(fmt.Sprintf("unexpected parameter emit type %s", string(emitType)))
+		}
 	default:
 		ignore, err := strconv.ParseBool(os.Getenv("AZD_DEBUG_DOTNET_APPHOST_IGNORE_UNSUPPORTED_RESOURCES"))
 		if err == nil && ignore {
@@ -1098,7 +1204,15 @@ func (b *infraGenerator) buildEnvBlock(env map[string]string, manifestCtx *genCo
 		//  - If the env-key contains "ConnectionStrings__" or the value contains "{{ connectionString" then it is considered
 		//    as a secret and added to the secrets map.
 		if strings.Contains(k, "ConnectionStrings__") || strings.Contains(resolvedValue, "{{ connectionString") {
-			manifestCtx.Secrets[k] = resolvedValue
+			if strings.Contains(resolvedValue, "{{ secretOutput ") {
+				// secretOutputs can't be used within complex expressions, so we don't worry about combining it with
+				// something like `expr {{ secretOutput }} foo`. A secretOutput should be a unique reference, like
+				// `{{ secretOutput }}`.
+				removeBrackets := strings.ReplaceAll(strings.ReplaceAll(resolvedValue, " }}'", "'"), "{{ secretOutput ", "")
+				manifestCtx.KeyVaultSecrets[k] = removeBrackets
+			} else {
+				manifestCtx.Secrets[k] = resolvedValue
+			}
 		} else {
 			manifestCtx.Env[k] = resolvedValue
 		}
@@ -1116,6 +1230,7 @@ func errUnsupportedProperty(resourceType, propertyName string) error {
 // the given target filesystem.
 func executeToFS(targetFS *memfs.FS, tmpl *template.Template, name string, path string, context any) error {
 	buf := bytes.NewBufferString("")
+
 	if err := tmpl.ExecuteTemplate(buf, name, context); err != nil {
 		return fmt.Errorf("executing template: %w", err)
 	}

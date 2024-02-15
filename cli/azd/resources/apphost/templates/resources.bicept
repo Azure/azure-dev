@@ -419,6 +419,7 @@ resource {{bicepName $name}}Firewall 'firewallRules@2022-05-01-preview' = {
 }
 {{end -}}
 output MANAGED_IDENTITY_CLIENT_ID string = managedIdentity.properties.clientId
+output MANAGED_IDENTITY_NAME string = managedIdentity.name
 {{if .HasLogAnalyticsWorkspace -}}
 output AZURE_LOG_ANALYTICS_WORKSPACE_NAME string = logAnalyticsWorkspace.name
 {{end -}}
@@ -449,6 +450,7 @@ output SERVICE_BINDING_{{alphaSnakeUpper $cname}}_ENDPOINT string = {{bicepName 
 {{end -}}
 {{range $name, $value := .KeyVaults -}}
 output SERVICE_BINDING_{{alphaSnakeUpper $name}}_ENDPOINT string = {{bicepName $name}}.properties.vaultUri
+output SERVICE_BINDING_{{alphaSnakeUpper $name}}_NAME string = {{bicepName $name}}.name
 {{end -}}
 {{range $name, $value := .AppConfigs -}}
 output SERVICE_BINDING_{{alphaSnakeUpper $name}}_ENDPOINT string = {{bicepName $name}}.properties.endpoint

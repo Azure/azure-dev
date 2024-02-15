@@ -10,7 +10,6 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization"
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
@@ -397,24 +396,6 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			WithPerCallPolicy(azsdk.NewMsCorrelationPolicy()).
 			WithPerCallPolicy(azsdk.NewUserAgentPolicy(string(userAgent))).
 			BuildArmClientOptions()
-	})
-
-	/////////////////////////////////////////////
-	container.MustRegisterSingleton(func(
-		credential account.TokenCredentialForSubscription,
-		clientOptionsBuilderFactory azsdk.ClientOptionsBuilderFactory,
-		userAgent httputil.UserAgent,
-	) (*armauthorization.RoleDefinitionsClient, error) {
-		// Custom options because this client does not have correlation policies
-		options := clientOptionsBuilderFactory.ClientOptionsBuilder().
-			WithPerCallPolicy(azsdk.NewUserAgentPolicy(string(userAgent))).
-			BuildArmClientOptions()
-		client, err := armauthorization.NewRoleDefinitionsClient(credential, options)
-		if err != nil {
-			return nil, fmt.Errorf("creating ARM Role Definitions client: %w", err)
-		}
-
-		return client, nil
 	})
 
 	container.MustRegisterSingleton(func(

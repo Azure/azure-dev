@@ -10,8 +10,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 )
 
-type TokenCredentialForSubscription = azcore.TokenCredential
-
 // SubscriptionCredentialProvider provides an [azcore.TokenCredential] configured
 // to use the tenant id that corresponds to the tenant the given subscription
 // is located in.

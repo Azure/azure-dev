@@ -15,14 +15,17 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
+	"github.com/azure/azure-dev/cli/azd/pkg/platform"
 )
 
 type ImportManager struct {
+	platformConfig *platform.Config
 	dotNetImporter *DotNetImporter
 }
 
-func NewImportManager(dotNetImporter *DotNetImporter) *ImportManager {
+func NewImportManager(platformConfig *platform.Config, dotNetImporter *DotNetImporter) *ImportManager {
 	return &ImportManager{
+		platformConfig: platformConfig,
 		dotNetImporter: dotNetImporter,
 	}
 }
@@ -110,6 +113,10 @@ const (
 // The configuration can be explicitly defined on azure.yaml using path and module, or in case these values
 // are not explicitly defined, the project importer uses default values to find the infrastructure.
 func (im *ImportManager) ProjectInfrastructure(ctx context.Context, projectConfig *ProjectConfig) (*Infra, error) {
+	if im.platformConfig.Type == platform.PlatformKind("devcenter") {
+		return &Infra{}, nil
+	}
+
 	// Use default project values for Infra when not specified in azure.yaml
 	if projectConfig.Infra.Module == "" {
 		projectConfig.Infra.Module = DefaultModule

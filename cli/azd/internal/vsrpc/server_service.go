@@ -5,20 +5,9 @@ package vsrpc
 
 import (
 	"context"
-	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"os"
-	"strings"
-
-	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
-	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
-	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	"github.com/mattn/go-colorable"
 )
 
 // serverService is the RPC server for the '/ServerService/v1.0' endpoint.
@@ -56,77 +45,6 @@ func (s *serverService) InitializeAsync(ctx context.Context, rootPath string) (*
 	return &Session{
 		Id: id,
 	}, nil
-}
-
-type container struct {
-	*ioc.NestedContainer
-	outWriter *writerMultiplexer
-	errWriter *writerMultiplexer
-}
-
-func newContainer(s *serverSession) *container {
-	c, err := s.rootContainer.NewScopeRegistrationsOnly()
-	if err != nil {
-		panic(err)
-	}
-
-	id := s.id
-	azdCtx := azdcontext.NewAzdContextWithDirectory(s.rootPath)
-
-	outWriter := newWriter(fmt.Sprintf("[%s stdout] ", id))
-	errWriter := newWriter(fmt.Sprintf("[%s stderr] ", id))
-
-	// Useful for debugging, direct all the output to the console, so you can see it in VS Code.
-	outWriter.AddWriter(&lineWriter{
-		next: writerFunc(func(p []byte) (n int, err error) {
-			os.Stdout.Write([]byte(fmt.Sprintf("[%s stdout] %s", id, string(p))))
-			return n, nil
-		}),
-	})
-
-	errWriter.AddWriter(&lineWriter{
-		next: writerFunc(func(p []byte) (n int, err error) {
-			os.Stdout.Write([]byte(fmt.Sprintf("[%s stderr] %s", id, string(p))))
-			return n, nil
-		}),
-	})
-
-	c.MustRegisterScoped(func() input.Console {
-		stdout := outWriter
-		stderr := errWriter
-		stdin := strings.NewReader("")
-		writer := colorable.NewNonColorable(stdout)
-
-		return input.NewConsole(true, false, writer, input.ConsoleHandles{
-			Stdin:  stdin,
-			Stdout: stdout,
-			Stderr: stderr,
-		}, &output.NoneFormatter{})
-	})
-
-	c.MustRegisterScoped(func(console input.Console) io.Writer {
-		return colorable.NewNonColorable(console.Handles().Stdout)
-	})
-
-	c.MustRegisterScoped(func() *internal.GlobalCommandOptions {
-		return &internal.GlobalCommandOptions{
-			NoPrompt: true,
-		}
-	})
-
-	c.MustRegisterScoped(func() *azdcontext.AzdContext {
-		return azdCtx
-	})
-
-	c.MustRegisterScoped(func() *lazy.Lazy[*azdcontext.AzdContext] {
-		return lazy.From(azdCtx)
-	})
-
-	return &container{
-		NestedContainer: c,
-		outWriter:       outWriter,
-		errWriter:       errWriter,
-	}
 }
 
 // StopAsync is the server implementation of:

@@ -57,7 +57,10 @@ func (s *environmentService) refreshEnvironmentAsyncWithSession(
 		envManager           environment.Manager         `container:"type"`
 	}
 
-	container := newContainer(session)
+	container, err := session.newContainer()
+	if err != nil {
+		return nil, err
+	}
 	container.MustRegisterScoped(func() internal.EnvFlag {
 		return internal.EnvFlag{
 			EnvironmentName: name,

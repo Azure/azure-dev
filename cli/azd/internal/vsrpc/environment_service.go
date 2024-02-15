@@ -38,7 +38,10 @@ func (s *environmentService) GetEnvironmentsAsync(
 		envManager environment.Manager `container:"type"`
 	}
 
-	container := newContainer(session)
+	container, err := session.newContainer()
+	if err != nil {
+		return nil, err
+	}
 	if err := container.Fill(&c); err != nil {
 		return nil, err
 	}
@@ -73,7 +76,10 @@ func (s *environmentService) SetCurrentEnvironmentAsync(
 		azdCtx *azdcontext.AzdContext `container:"type"`
 	}
 
-	container := newContainer(session)
+	container, err := session.newContainer()
+	if err != nil {
+		return false, err
+	}
 	if err := container.Fill(&c); err != nil {
 		return false, err
 	}

@@ -31,7 +31,10 @@ func (s *environmentService) DeployAsync(
 		},
 	}
 
-	container := newContainer(session)
+	container, err := session.newContainer()
+	if err != nil {
+		return nil, err
+	}
 	container.outWriter.AddWriter(outputWriter)
 	defer container.outWriter.RemoveWriter(outputWriter)
 

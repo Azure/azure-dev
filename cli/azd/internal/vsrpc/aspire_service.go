@@ -43,7 +43,10 @@ func (s *aspireService) GetAspireHostAsync(
 		dotnetCli  dotnet.DotNetCli       `container:"type"`
 	}
 
-	container := newContainer(session)
+	container, err := session.newContainer()
+	if err != nil {
+		return nil, err
+	}
 
 	if err := container.Fill(&c); err != nil {
 		return nil, err

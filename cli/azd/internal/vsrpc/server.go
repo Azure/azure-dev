@@ -24,8 +24,8 @@ type Server struct {
 	sessions map[string]*serverSession
 	// sessionsMu protects access to sessions.
 	sessionsMu sync.Mutex
-	// rootContainer contains all the core registrations for the azd components. Each session creates a new scope from
-	// this root container.
+	// rootContainer contains all the core registrations for the azd components.
+	// It is not expected to be modified throughout the lifetime of the server.
 	rootContainer *ioc.NestedContainer
 }
 

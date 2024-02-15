@@ -376,8 +376,6 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		},
 	)
 
-	// Clients
-
 	// Default client options
 	container.MustRegisterSingleton(func(
 		clientOptionsBuilderFactory azsdk.ClientOptionsBuilderFactory,
@@ -466,7 +464,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(account.NewSubscriptionsService)
 	container.MustRegisterSingleton(account.NewManager)
 	container.MustRegisterSingleton(account.NewSubscriptionsManager)
-	container.MustRegisterScoped(account.NewSubscriptionCredentialProvider)
+	container.MustRegisterSingleton(account.NewSubscriptionCredentialProvider)
 	container.MustRegisterSingleton(azcli.NewManagedClustersService)
 	container.MustRegisterSingleton(azcli.NewAdService)
 	container.MustRegisterSingleton(azcli.NewContainerRegistryService)

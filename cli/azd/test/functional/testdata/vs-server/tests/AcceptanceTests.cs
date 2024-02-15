@@ -69,30 +69,5 @@ public class AcceptanceTests : TestBase
         openEnv = await esSvc.OpenEnvironmentAsync(session, e.Name, observer, CancellationToken.None);
         openEnv.Name.ShouldEqual(e.Name);
         openEnv.IsCurrent.ShouldBeTrue();
-
-        Console.WriteLine("== Just a message ==");
-
-    //     var result = await esSvc.LoadEnvironmentAsync(session, Settings.EnvironmentName, observer, CancellationToken.None);
-    //     WriteEnvironment(result);
-    // { 
-    //     Console.WriteLine($"== Refreshing Environment: {Settings.EnvironmentName} ==");
-    //     var result = await esSvc.RefreshEnvironmentAsync(session, Settings.EnvironmentName, observer, CancellationToken.None);
-    //     WriteEnvironment(result);
-    //     Console.WriteLine($"== Done Refreshing Environment: {Settings.EnvironmentName} ==");
-    // }
-
-    // {
-    //     Console.WriteLine($"== Deploying Environment: {Settings.EnvironmentName} ==");
-    //     var result = await esSvc.DeployAsync(session, Settings.EnvironmentName, observer, CancellationToken.None);
-    //     WriteEnvironment(result);
-    //     Console.WriteLine("== Done Deploying Environment ==");
-    // }
-
-    // {
-    //     Console.WriteLine($"== Setting Current Environment: {Settings.EnvironmentName} ==");
-    //     var result = await esSvc.SetCurrentEnvironmentAsync(session, Settings.EnvironmentName, observer, CancellationToken.None);
-    //     Console.WriteLine($"Result: {result}");
-    //     Console.WriteLine("== Done Setting Current Environment ==");
-    // }
     }
 }

@@ -73,6 +73,16 @@ type ServicePackageResult struct {
 
 // Supports rendering messages for UX items
 func (spr *ServicePackageResult) ToString(currentIndentation string) string {
+	compositeResult, ok := spr.Details.(map[string]*ServicePackageResult)
+	if ok {
+		builder := strings.Builder{}
+		for name, componentResult := range compositeResult {
+			builder.WriteString(fmt.Sprintf("(%s) %s\n", name, componentResult.ToString(currentIndentation)))
+		}
+
+		return builder.String()
+	}
+
 	uxItem, ok := spr.Details.(ux.UxItem)
 	if ok {
 		return uxItem.ToString(currentIndentation)

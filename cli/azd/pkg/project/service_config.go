@@ -12,7 +12,7 @@ type ServiceConfig struct {
 	ComponentConfig `yaml:",inline"`
 
 	// The name used to override the default azure resource name
-	ResourceName *osutil.ExpandableString `yaml:"resourceName,omitempty"`
+	ResourceName osutil.ExpandableString `yaml:"resourceName,omitempty"`
 	// The optional K8S / AKS options
 	K8s AksOptions `yaml:"k8s,omitempty"`
 	// The optional Azure Spring Apps options
@@ -23,7 +23,7 @@ type ServiceConfig struct {
 	// can not be controlled via the project file today.
 	DotNetContainerApp *DotNetContainerAppOptions `yaml:"-,omitempty"`
 	// The optional container configuration for container based applications
-	Containers map[string]*ComponentConfig `yaml:"containers,omitempty"`
+	Components map[string]*ComponentConfig `yaml:"containers,omitempty"`
 
 	*ext.EventDispatcher[ServiceLifecycleEventArgs] `yaml:"-"`
 
@@ -52,6 +52,13 @@ type ComponentConfig struct {
 	Docker DockerProjectOptions `yaml:"docker,omitempty"`
 }
 
+func (cc *ComponentConfig) Path() string {
+	if filepath.IsAbs(cc.RelativePath) {
+		return cc.RelativePath
+	}
+	return filepath.Join(cc.Project.Path, cc.RelativePath)
+}
+
 type DotNetContainerAppOptions struct {
 	Manifest    *apphost.Manifest
 	ProjectName string
@@ -73,12 +80,12 @@ func (sc *ServiceConfig) MarshalYAML() (interface{}, error) {
 
 	// If there is only a single container and it maps to our "default" convention,
 	// then we can promote the container to the service level
-	if _, has := svc.Containers["default"]; has && len(svc.Containers) == 1 {
-		svc.ComponentConfig = *svc.Containers["default"]
-		svc.Containers = nil
+	if _, has := svc.Components["default"]; has && len(svc.Components) == 1 {
+		svc.ComponentConfig = *svc.Components["default"]
+		svc.Components = nil
 	} else {
 		// Host can be ignored
-		for _, value := range svc.Containers {
+		for _, value := range svc.Components {
 			value.Host = ""
 		}
 	}
@@ -94,14 +101,15 @@ func (sc *ServiceConfig) UnmarshalYAML(unmarshal func(interface{}) error) error 
 		return err
 	}
 
-	if len(svc.Containers) == 0 {
-		svc.Containers = map[string]*ComponentConfig{
+	if len(svc.Components) == 0 {
+		svc.Components = map[string]*ComponentConfig{
 			"default": &svc.ComponentConfig,
 		}
 	}
 
-	for key, value := range svc.Containers {
+	for key, value := range svc.Components {
 		value.Name = key
+		value.Host = svc.Host
 	}
 
 	*sc = ServiceConfig(svc)

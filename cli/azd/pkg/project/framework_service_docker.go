@@ -33,14 +33,14 @@ import (
 )
 
 type DockerProjectOptions struct {
-	Path      string                   `yaml:"path,omitempty"      json:"path,omitempty"`
-	Context   string                   `yaml:"context,omitempty"   json:"context,omitempty"`
-	Platform  string                   `yaml:"platform,omitempty"  json:"platform,omitempty"`
-	Target    string                   `yaml:"target,omitempty"    json:"target,omitempty"`
-	Registry  *osutil.ExpandableString `yaml:"registry,omitempty"  json:"registry,omitempty"`
-	Image     *osutil.ExpandableString `yaml:"image,omitempty"     json:"image,omitempty"`
-	Tag       *osutil.ExpandableString `yaml:"tag,omitempty"       json:"tag,omitempty"`
-	BuildArgs []string                 `yaml:"buildArgs,omitempty" json:"buildArgs,omitempty"`
+	Path      string                  `yaml:"path,omitempty"      json:"path,omitempty"`
+	Context   string                  `yaml:"context,omitempty"   json:"context,omitempty"`
+	Platform  string                  `yaml:"platform,omitempty"  json:"platform,omitempty"`
+	Target    string                  `yaml:"target,omitempty"    json:"target,omitempty"`
+	Registry  osutil.ExpandableString `yaml:"registry,omitempty"  json:"registry,omitempty"`
+	Image     osutil.ExpandableString `yaml:"image,omitempty"     json:"image,omitempty"`
+	Tag       osutil.ExpandableString `yaml:"tag,omitempty"       json:"tag,omitempty"`
+	BuildArgs []string                `yaml:"buildArgs,omitempty" json:"buildArgs,omitempty"`
 }
 
 type dockerBuildResult struct {
@@ -162,8 +162,8 @@ func (p *dockerProject) RequiredExternalTools(context.Context) []tools.ExternalT
 }
 
 // Initializes the docker project
-func (p *dockerProject) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
-	return p.framework.Initialize(ctx, serviceConfig)
+func (p *dockerProject) Initialize(ctx context.Context, component *ComponentConfig) error {
+	return p.framework.Initialize(ctx, component)
 }
 
 // Sets the inner framework service used for restore and build command
@@ -174,28 +174,28 @@ func (p *dockerProject) SetSource(inner FrameworkService) {
 // Restores the dependencies for the docker project
 func (p *dockerProject) Restore(
 	ctx context.Context,
-	serviceConfig *ServiceConfig,
+	component *ComponentConfig,
 ) *async.TaskWithProgress[*ServiceRestoreResult, ServiceProgress] {
 	// When the program runs the restore actions for the underlying project (containerapp),
 	// the dependencies are installed locally
-	return p.framework.Restore(ctx, serviceConfig)
+	return p.framework.Restore(ctx, component)
 }
 
 // Builds the docker project based on the docker options specified within the Service configuration
 func (p *dockerProject) Build(
 	ctx context.Context,
-	serviceConfig *ServiceConfig,
+	component *ComponentConfig,
 	restoreOutput *ServiceRestoreResult,
 ) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServiceBuildResult, ServiceProgress]) {
-			dockerOptions := getDockerOptionsWithDefaults(serviceConfig.Docker)
+			dockerOptions := getDockerOptionsWithDefaults(component.Docker)
 
 			// For services that do not specify a project path and have not specified a language then
 			// there is nothing to build and we can return an empty build result
 			// Ex) A container app project that uses an external image path
-			if serviceConfig.RelativePath == "" &&
-				(serviceConfig.Language == ServiceLanguageNone || serviceConfig.Language == ServiceLanguageDocker) {
+			if component.RelativePath == "" &&
+				(component.Language == ServiceLanguageNone || component.Language == ServiceLanguageDocker) {
 				task.SetResult(&ServiceBuildResult{})
 				return
 			}
@@ -207,8 +207,8 @@ func (p *dockerProject) Build(
 
 			log.Printf(
 				"building image for service %s, cwd: %s, path: %s, context: %s, buildArgs: %s)",
-				serviceConfig.Name,
-				serviceConfig.Path(),
+				component.Name,
+				component.Path(),
 				dockerOptions.Path,
 				dockerOptions.Context,
 				buildArgs,
@@ -216,13 +216,13 @@ func (p *dockerProject) Build(
 
 			imageName := fmt.Sprintf(
 				"%s-%s",
-				strings.ToLower(serviceConfig.Project.Name),
-				strings.ToLower(serviceConfig.Name),
+				strings.ToLower(component.Project.Name),
+				strings.ToLower(component.Name),
 			)
 
 			path := dockerOptions.Path
 			if !filepath.IsAbs(path) {
-				path = filepath.Join(serviceConfig.Path(), path)
+				path = filepath.Join(component.Path(), path)
 			}
 
 			_, err := os.Stat(path)
@@ -234,7 +234,7 @@ func (p *dockerProject) Build(
 			if errors.Is(err, os.ErrNotExist) {
 				// Build the container from source
 				task.SetProgress(NewServiceProgress("Building Docker image from source"))
-				res, err := p.packBuild(ctx, serviceConfig, dockerOptions, imageName)
+				res, err := p.packBuild(ctx, component, dockerOptions, imageName)
 				if err != nil {
 					task.SetError(err)
 					return
@@ -255,7 +255,7 @@ func (p *dockerProject) Build(
 				})
 			imageId, err := p.docker.Build(
 				ctx,
-				serviceConfig.Path(),
+				component.Path(),
 				dockerOptions.Path,
 				dockerOptions.Platform,
 				dockerOptions.Target,
@@ -266,11 +266,11 @@ func (p *dockerProject) Build(
 			)
 			p.console.StopPreviewer(ctx, false)
 			if err != nil {
-				task.SetError(fmt.Errorf("building container: %s at %s: %w", serviceConfig.Name, dockerOptions.Context, err))
+				task.SetError(fmt.Errorf("building container: %s at %s: %w", component.Name, dockerOptions.Context, err))
 				return
 			}
 
-			log.Printf("built image %s for %s", imageId, serviceConfig.Name)
+			log.Printf("built image %s for %s", imageId, component.Name)
 			task.SetResult(&ServiceBuildResult{
 				Restore:         restoreOutput,
 				BuildOutputPath: imageId,
@@ -285,7 +285,7 @@ func (p *dockerProject) Build(
 
 func (p *dockerProject) Package(
 	ctx context.Context,
-	serviceConfig *ServiceConfig,
+	component *ComponentConfig,
 	buildOutput *ServiceBuildResult,
 ) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
@@ -302,7 +302,7 @@ func (p *dockerProject) Package(
 
 			// If we don't have an image ID from a docker build then an external source image is being used
 			if imageId == "" {
-				sourceImage, err := docker.ParseContainerImage(serviceConfig.Image)
+				sourceImage, err := docker.ParseContainerImage(component.Image)
 				if err != nil {
 					task.SetError(fmt.Errorf("parsing source container image: %w", err))
 					return
@@ -321,7 +321,7 @@ func (p *dockerProject) Package(
 			}
 
 			// Generate a local tag from the 'docker' configuration section of the service
-			imageWithTag, err := p.containerHelper.LocalImageTag(ctx, serviceConfig)
+			imageWithTag, err := p.containerHelper.LocalImageTag(ctx, component)
 			if err != nil {
 				task.SetError(fmt.Errorf("generating local image tag: %w", err))
 				return
@@ -330,7 +330,7 @@ func (p *dockerProject) Package(
 			// Tag image.
 			log.Printf("tagging image %s as %s", imageId, imageWithTag)
 			task.SetProgress(NewServiceProgress("Tagging container image"))
-			if err := p.docker.Tag(ctx, serviceConfig.Path(), imageId, imageWithTag); err != nil {
+			if err := p.docker.Tag(ctx, component.Path(), imageId, imageWithTag); err != nil {
 				task.SetError(fmt.Errorf("tagging image: %w", err))
 				return
 			}
@@ -351,7 +351,7 @@ const DefaultBuilderImage = "mcr.microsoft.com/oryx/builder:debian-bullseye-2023
 
 func (p *dockerProject) packBuild(
 	ctx context.Context,
-	svc *ServiceConfig,
+	component *ComponentConfig,
 	dockerOptions DockerProjectOptions,
 	imageName string) (*ServiceBuildResult, error) {
 	packCli, err := pack.NewPackCli(ctx, p.console, p.commandRunner)
@@ -371,8 +371,8 @@ func (p *dockerProject) packBuild(
 		// Always default to port 80 for consistency across languages
 		environ = append(environ, "ORYX_RUNTIME_PORT=80")
 
-		if svc.OutputPath != "" && (svc.Language == ServiceLanguageTypeScript || svc.Language == ServiceLanguageJavaScript) {
-			inDockerOutputPath := path.Join("/workspace", svc.OutputPath)
+		if component.OutputPath != "" && (component.Language == ServiceLanguageTypeScript || component.Language == ServiceLanguageJavaScript) {
+			inDockerOutputPath := path.Join("/workspace", component.OutputPath)
 			// A dist folder has been set.
 			// We assume that the service is a front-end service, configuring a nginx web server to serve the static content
 			// produced.
@@ -384,13 +384,13 @@ func (p *dockerProject) packBuild(
 						"rm -rf /usr/share/nginx/html && ln -sT %s /usr/share/nginx/html && "+
 						"nginx -g 'daemon off;'",
 					inDockerOutputPath,
-					svc.OutputPath,
+					component.OutputPath,
 					inDockerOutputPath,
 				))
 		}
 
-		if svc.Language == ServiceLanguagePython {
-			pyEnviron, err := getEnvironForPython(ctx, svc)
+		if component.Language == ServiceLanguagePython {
+			pyEnviron, err := getEnvironForPython(ctx, component)
 			if err != nil {
 				return nil, err
 			}
@@ -410,7 +410,7 @@ func (p *dockerProject) packBuild(
 	ctx, span := tracing.Start(
 		ctx,
 		events.PackBuildEvent,
-		trace.WithAttributes(fields.ProjectServiceLanguageKey.String(string(svc.Language))))
+		trace.WithAttributes(fields.ProjectServiceLanguageKey.String(string(component.Language))))
 
 	img, tag := docker.SplitDockerImage(builder)
 	if userDefinedImage {
@@ -427,7 +427,7 @@ func (p *dockerProject) packBuild(
 
 	err = packCli.Build(
 		ctx,
-		svc.Path(),
+		component.Path(),
 		builder,
 		imageName,
 		environ,
@@ -443,7 +443,7 @@ func (p *dockerProject) packBuild(
 				Suggestion: "No Dockerfile was found, and image could not be automatically built from source. " +
 					fmt.Sprintf(
 						"\nSuggested action: Author a Dockerfile and save it as %s",
-						filepath.Join(svc.Path(), dockerOptions.Path)),
+						filepath.Join(component.Path(), dockerOptions.Path)),
 			}
 		}
 
@@ -467,8 +467,8 @@ func (p *dockerProject) packBuild(
 	}, nil
 }
 
-func getEnvironForPython(ctx context.Context, svc *ServiceConfig) ([]string, error) {
-	prj, err := appdetect.DetectDirectory(ctx, svc.Path())
+func getEnvironForPython(ctx context.Context, component *ComponentConfig) ([]string, error) {
+	prj, err := appdetect.DetectDirectory(ctx, component.Path())
 	if err != nil {
 		return nil, err
 	}

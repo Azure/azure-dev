@@ -9,8 +9,8 @@ import (
 	"github.com/drone/envsubst"
 )
 
-func NewExpandableString(template string) *ExpandableString {
-	return &ExpandableString{
+func NewExpandableString(template string) ExpandableString {
+	return ExpandableString{
 		template: template,
 	}
 }

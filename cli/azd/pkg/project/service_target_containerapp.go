@@ -5,6 +5,7 @@ package project
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 
@@ -79,44 +80,64 @@ func (at *containerAppTarget) Deploy(
 	targetResource *environment.TargetResource,
 ) *async.TaskWithProgress[*ServiceDeployResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress]) {
+		func(rootTask *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress]) {
 			if err := at.validateTargetResource(ctx, serviceConfig, targetResource); err != nil {
-				task.SetError(fmt.Errorf("validating target resource: %w", err))
+				rootTask.SetError(fmt.Errorf("validating target resource: %w", err))
 				return
 			}
 
-			// Login, tag & push container image to ACR
-			containerDeployTask := at.containerHelper.Deploy(ctx, serviceConfig, packageOutput, targetResource, true)
-			syncProgress(task, containerDeployTask.Progress())
-
-			_, err := containerDeployTask.Await()
-			if err != nil {
-				task.SetError(err)
+			if packageOutput == nil {
+				rootTask.SetError(errors.New("missing package output"))
 				return
 			}
 
-			imageName := at.env.GetServiceProperty(serviceConfig.Name, "IMAGE_NAME")
-			task.SetProgress(NewServiceProgress("Updating container app revision"))
-			err = at.containerAppService.AddRevision(
-				ctx,
-				targetResource.SubscriptionId(),
-				targetResource.ResourceGroupName(),
-				targetResource.ResourceName(),
-				imageName,
-			)
-			if err != nil {
-				task.SetError(fmt.Errorf("updating container app service: %w", err))
+			componentPackageResults, ok := packageOutput.Details.(map[string]*ServicePackageResult)
+			if !ok {
+				rootTask.SetError(errors.New("missing component package results"))
 				return
 			}
 
-			task.SetProgress(NewServiceProgress("Fetching endpoints for container app service"))
+			if packageOutput.PackagePath != "" {
+				for key, component := range serviceConfig.Components {
+					componentOutput := componentPackageResults[key]
+
+					// Login, tag & push container image to ACR
+					containerDeployTask := at.containerHelper.Deploy(ctx, component, componentOutput, targetResource, true)
+					syncProgress(rootTask, containerDeployTask.Progress())
+
+					_, err := containerDeployTask.Await()
+					if err != nil {
+						rootTask.SetError(err)
+						return
+					}
+
+					imageName := at.env.GetServiceProperty(component.Name, "IMAGE_NAME")
+					rootTask.SetProgress(NewServiceProgress("Updating container app revision"))
+
+					// TODO: Need to set all the containers
+					err = at.containerAppService.AddRevision(
+						ctx,
+						targetResource.SubscriptionId(),
+						targetResource.ResourceGroupName(),
+						targetResource.ResourceName(),
+						imageName,
+					)
+					if err != nil {
+						rootTask.SetError(fmt.Errorf("updating container app service: %w", err))
+						return
+					}
+
+				}
+			}
+
+			rootTask.SetProgress(NewServiceProgress("Fetching endpoints for container app service"))
 			endpoints, err := at.Endpoints(ctx, serviceConfig, targetResource)
 			if err != nil {
-				task.SetError(err)
+				rootTask.SetError(err)
 				return
 			}
 
-			task.SetResult(&ServiceDeployResult{
+			rootTask.SetResult(&ServiceDeployResult{
 				Package: packageOutput,
 				TargetResourceId: azure.ContainerAppRID(
 					targetResource.SubscriptionId(),

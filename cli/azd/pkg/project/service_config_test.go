@@ -238,9 +238,9 @@ func Test_ServiceConfig_Unmarshall(t *testing.T) {
 				require.Equal(t, "./src/api", proj.Services["api"].RelativePath)
 
 				// Expect the same values to be available in the container configuration
-				require.Equal(t, AksTarget, proj.Services["api"].Containers["default"].Host)
-				require.Equal(t, ServiceLanguageJavaScript, proj.Services["api"].Containers["default"].Language)
-				require.Equal(t, "./src/api", proj.Services["api"].Containers["default"].RelativePath)
+				require.Equal(t, AksTarget, proj.Services["api"].Components["default"].Host)
+				require.Equal(t, ServiceLanguageJavaScript, proj.Services["api"].Components["default"].Language)
+				require.Equal(t, "./src/api", proj.Services["api"].Components["default"].RelativePath)
 			},
 		},
 		{
@@ -261,11 +261,11 @@ func Test_ServiceConfig_Unmarshall(t *testing.T) {
 			validateFn: func(t *testing.T, proj *ProjectConfig) {
 				require.Equal(t, "todo", proj.Services["todo"].Name)
 				require.Equal(t, AksTarget, proj.Services["todo"].Host)
-				require.Equal(t, 2, len(proj.Services["todo"].Containers))
-				require.Equal(t, ServiceLanguageJavaScript, proj.Services["todo"].Containers["api"].Language)
-				require.Equal(t, ServiceLanguageJavaScript, proj.Services["todo"].Containers["web"].Language)
-				require.Equal(t, "./src/api", proj.Services["todo"].Containers["api"].RelativePath)
-				require.Equal(t, "./src/web", proj.Services["todo"].Containers["web"].RelativePath)
+				require.Equal(t, 2, len(proj.Services["todo"].Components))
+				require.Equal(t, ServiceLanguageJavaScript, proj.Services["todo"].Components["api"].Language)
+				require.Equal(t, ServiceLanguageJavaScript, proj.Services["todo"].Components["web"].Language)
+				require.Equal(t, "./src/api", proj.Services["todo"].Components["api"].RelativePath)
+				require.Equal(t, "./src/web", proj.Services["todo"].Components["web"].RelativePath)
 			},
 		},
 	}
@@ -294,7 +294,7 @@ func Test_ServiceConfig_Marshall(t *testing.T) {
 				Name: "test-proj",
 				Services: map[string]*ServiceConfig{
 					"api": {
-						Containers: map[string]*ComponentConfig{
+						Components: map[string]*ComponentConfig{
 							"default": {
 								Host:         AksTarget,
 								Language:     ServiceLanguageJavaScript,
@@ -314,7 +314,7 @@ func Test_ServiceConfig_Marshall(t *testing.T) {
 						ComponentConfig: ComponentConfig{
 							Host: AksTarget,
 						},
-						Containers: map[string]*ComponentConfig{
+						Components: map[string]*ComponentConfig{
 							"api": {
 								Language:     ServiceLanguageJavaScript,
 								RelativePath: "./src/api",
@@ -337,7 +337,7 @@ func Test_ServiceConfig_Marshall(t *testing.T) {
 						ComponentConfig: ComponentConfig{
 							Host: AksTarget,
 						},
-						Containers: map[string]*ComponentConfig{
+						Components: map[string]*ComponentConfig{
 							"api": {
 								Language:     ServiceLanguageJavaScript,
 								RelativePath: "./src/api",
@@ -356,7 +356,7 @@ func Test_ServiceConfig_Marshall(t *testing.T) {
 						ComponentConfig: ComponentConfig{
 							Host: ContainerAppTarget,
 						},
-						Containers: map[string]*ComponentConfig{
+						Components: map[string]*ComponentConfig{
 							"main": {
 								Language:     ServiceLanguageJavaScript,
 								RelativePath: "./src/api",

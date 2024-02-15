@@ -52,20 +52,20 @@ func (m *mavenProject) RequiredExternalTools(context.Context) []tools.ExternalTo
 }
 
 // Initializes the maven project
-func (m *mavenProject) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
-	m.mavenCli.SetPath(serviceConfig.Path(), serviceConfig.Project.Path)
+func (m *mavenProject) Initialize(ctx context.Context, component *ComponentConfig) error {
+	m.mavenCli.SetPath(component.Path(), component.Project.Path)
 	return nil
 }
 
 // Restores dependencies using the Maven CLI
 func (m *mavenProject) Restore(
 	ctx context.Context,
-	serviceConfig *ServiceConfig,
+	component *ComponentConfig,
 ) *async.TaskWithProgress[*ServiceRestoreResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServiceRestoreResult, ServiceProgress]) {
 			task.SetProgress(NewServiceProgress("Resolving maven dependencies"))
-			if err := m.mavenCli.ResolveDependencies(ctx, serviceConfig.Path()); err != nil {
+			if err := m.mavenCli.ResolveDependencies(ctx, component.Path()); err != nil {
 				task.SetError(fmt.Errorf("resolving maven dependencies: %w", err))
 				return
 			}
@@ -78,20 +78,20 @@ func (m *mavenProject) Restore(
 // Builds the maven project
 func (m *mavenProject) Build(
 	ctx context.Context,
-	serviceConfig *ServiceConfig,
+	component *ComponentConfig,
 	restoreOutput *ServiceRestoreResult,
 ) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServiceBuildResult, ServiceProgress]) {
 			task.SetProgress(NewServiceProgress("Compiling maven project"))
-			if err := m.mavenCli.Compile(ctx, serviceConfig.Path()); err != nil {
+			if err := m.mavenCli.Compile(ctx, component.Path()); err != nil {
 				task.SetError(err)
 				return
 			}
 
 			task.SetResult(&ServiceBuildResult{
 				Restore:         restoreOutput,
-				BuildOutputPath: serviceConfig.Path(),
+				BuildOutputPath: component.Path(),
 			})
 		},
 	)
@@ -99,7 +99,7 @@ func (m *mavenProject) Build(
 
 func (m *mavenProject) Package(
 	ctx context.Context,
-	serviceConfig *ServiceConfig,
+	component *ComponentConfig,
 	buildOutput *ServiceBuildResult,
 ) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
@@ -111,25 +111,25 @@ func (m *mavenProject) Package(
 			}
 
 			task.SetProgress(NewServiceProgress("Packaging maven project"))
-			if err := m.mavenCli.Package(ctx, serviceConfig.Path()); err != nil {
+			if err := m.mavenCli.Package(ctx, component.Path()); err != nil {
 				task.SetError(err)
 				return
 			}
 
 			packageSrcPath := buildOutput.BuildOutputPath
 			if packageSrcPath == "" {
-				packageSrcPath = serviceConfig.Path()
+				packageSrcPath = component.Path()
 			}
 
-			if serviceConfig.OutputPath != "" {
-				packageSrcPath = filepath.Join(packageSrcPath, serviceConfig.OutputPath)
+			if component.OutputPath != "" {
+				packageSrcPath = filepath.Join(packageSrcPath, component.OutputPath)
 			} else {
 				packageSrcPath = filepath.Join(packageSrcPath, "target")
 			}
 
 			packageSrcFileInfo, err := os.Stat(packageSrcPath)
 			if err != nil {
-				if serviceConfig.OutputPath == "" {
+				if component.OutputPath == "" {
 					task.SetError(fmt.Errorf("reading default maven target path %s: %w", packageSrcPath, err))
 				} else {
 					task.SetError(fmt.Errorf("reading dist path %s: %w", packageSrcPath, err))

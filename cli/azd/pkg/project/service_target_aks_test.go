@@ -326,7 +326,7 @@ func Test_Deploy_Kustomize(t *testing.T) {
 	serviceConfig.RelativePath = ""
 	serviceConfig.K8s.Kustomize = &kustomize.Config{
 		Directory: osutil.NewExpandableString("./kustomize/overlays/dev"),
-		Edits: []*osutil.ExpandableString{
+		Edits: []osutil.ExpandableString{
 			osutil.NewExpandableString("set image todo-api=${SERVICE_API_IMAGE_NAME}"),
 		},
 	}

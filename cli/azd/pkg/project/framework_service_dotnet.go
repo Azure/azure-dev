@@ -54,15 +54,15 @@ func (dp *dotnetProject) RequiredExternalTools(context.Context) []tools.External
 }
 
 // Initializes the dotnet project
-func (dp *dotnetProject) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
+func (dp *dotnetProject) Initialize(ctx context.Context, component *ComponentConfig) error {
 	// NOTE(ellismg): For dotnet based apps, we installed a lifecycle hook that would write all the outputs from a deployment
 	// into dotnet user-secrets. The goal of this was to make it easy to consume the values from your infrastructure in your
 	// dotnet app, but the strategy doesn't work well in practice and it ends up being an abuse of the user secrets setup.
 	//
 	// We'd like to stop doing this at some point for all .NET projects, but we can make sure that we don't inherit the
 	// bad behavior for containerized projects, without being concerned about it being considered a breaking change.
-	if serviceConfig.Host != DotNetContainerAppTarget {
-		projFile, err := findProjectFile(serviceConfig.Name, serviceConfig.Path())
+	if component.Host != DotNetContainerAppTarget {
+		projFile, err := findProjectFile(component.Name, component.Path())
 		if err != nil {
 			return err
 		}
@@ -71,9 +71,9 @@ func (dp *dotnetProject) Initialize(ctx context.Context, serviceConfig *ServiceC
 			return err
 		}
 		handler := func(ctx context.Context, args ServiceLifecycleEventArgs) error {
-			return dp.setUserSecretsFromOutputs(ctx, serviceConfig, args)
+			return dp.setUserSecretsFromOutputs(ctx, component, args)
 		}
-		if err := serviceConfig.AddHandler(ServiceEventEnvUpdated, handler); err != nil {
+		if err := component.Service.AddHandler(ServiceEventEnvUpdated, handler); err != nil {
 			return err
 		}
 	}
@@ -84,12 +84,12 @@ func (dp *dotnetProject) Initialize(ctx context.Context, serviceConfig *ServiceC
 // Restores the dependencies for the project
 func (dp *dotnetProject) Restore(
 	ctx context.Context,
-	serviceConfig *ServiceConfig,
+	component *ComponentConfig,
 ) *async.TaskWithProgress[*ServiceRestoreResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServiceRestoreResult, ServiceProgress]) {
 			task.SetProgress(NewServiceProgress("Restoring .NET project dependencies"))
-			projFile, err := findProjectFile(serviceConfig.Name, serviceConfig.Path())
+			projFile, err := findProjectFile(component.Name, component.Path())
 			if err != nil {
 				task.SetError(err)
 				return
@@ -107,13 +107,13 @@ func (dp *dotnetProject) Restore(
 // Builds the dotnet project using the dotnet CLI
 func (dp *dotnetProject) Build(
 	ctx context.Context,
-	serviceConfig *ServiceConfig,
+	component *ComponentConfig,
 	restoreOutput *ServiceRestoreResult,
 ) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServiceBuildResult, ServiceProgress]) {
 			task.SetProgress(NewServiceProgress("Building .NET project"))
-			projFile, err := findProjectFile(serviceConfig.Name, serviceConfig.Path())
+			projFile, err := findProjectFile(component.Name, component.Path())
 			if err != nil {
 				task.SetError(err)
 				return
@@ -126,7 +126,7 @@ func (dp *dotnetProject) Build(
 			defaultOutputDir := filepath.Join("./bin", defaultDotNetBuildConfiguration)
 
 			// Attempt to find the default build output location
-			buildOutputDir := serviceConfig.Path()
+			buildOutputDir := component.Path()
 			_, err = os.Stat(filepath.Join(buildOutputDir, defaultOutputDir))
 			if err == nil {
 				buildOutputDir = filepath.Join(buildOutputDir, defaultOutputDir)
@@ -151,12 +151,12 @@ func (dp *dotnetProject) Build(
 
 func (dp *dotnetProject) Package(
 	ctx context.Context,
-	serviceConfig *ServiceConfig,
+	component *ComponentConfig,
 	buildOutput *ServiceBuildResult,
 ) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
-			if serviceConfig.Host == DotNetContainerAppTarget {
+			if component.Host == DotNetContainerAppTarget {
 				// TODO(weilim): For containerized projects, we publish the produced container image in a single call
 				// via `dotnet publish /p:PublishProfile=DefaultContainer`, thus the default `dotnet publish` command
 				// executed here is not useful.
@@ -171,12 +171,12 @@ func (dp *dotnetProject) Package(
 
 			packageDest, err := os.MkdirTemp("", "azd")
 			if err != nil {
-				task.SetError(fmt.Errorf("creating package directory for %s: %w", serviceConfig.Name, err))
+				task.SetError(fmt.Errorf("creating package directory for %s: %w", component.Name, err))
 				return
 			}
 
 			task.SetProgress(NewServiceProgress("Publishing .NET project"))
-			projFile, err := findProjectFile(serviceConfig.Name, serviceConfig.Path())
+			projFile, err := findProjectFile(component.Name, component.Path())
 			if err != nil {
 				task.SetError(err)
 				return
@@ -186,8 +186,8 @@ func (dp *dotnetProject) Package(
 				return
 			}
 
-			if serviceConfig.OutputPath != "" {
-				packageDest = filepath.Join(packageDest, serviceConfig.OutputPath)
+			if component.OutputPath != "" {
+				packageDest = filepath.Join(packageDest, component.OutputPath)
 			}
 
 			if err := validatePackageOutput(packageDest); err != nil {
@@ -205,7 +205,7 @@ func (dp *dotnetProject) Package(
 
 func (dp *dotnetProject) setUserSecretsFromOutputs(
 	ctx context.Context,
-	serviceConfig *ServiceConfig,
+	component *ComponentConfig,
 	args ServiceLifecycleEventArgs,
 ) error {
 	bicepOutputArgs := args.Args["bicepOutput"]
@@ -225,7 +225,7 @@ func (dp *dotnetProject) setUserSecretsFromOutputs(
 		secrets[normalizeDotNetSecret(key)] = fmt.Sprint(val.Value)
 	}
 
-	if err := dp.dotnetCli.SetSecrets(ctx, secrets, serviceConfig.Path()); err != nil {
+	if err := dp.dotnetCli.SetSecrets(ctx, secrets, component.Path()); err != nil {
 		return fmt.Errorf("failed to set secrets: %w", err)
 	}
 

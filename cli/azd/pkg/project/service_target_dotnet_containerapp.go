@@ -5,6 +5,7 @@ package project
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log"
 	"net/url"
@@ -101,56 +102,65 @@ func (at *dotnetContainerAppTarget) Deploy(
 	targetResource *environment.TargetResource,
 ) *async.TaskWithProgress[*ServiceDeployResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress]) {
+		func(rootTask *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress]) {
 			if err := at.validateTargetResource(ctx, serviceConfig, targetResource); err != nil {
-				task.SetError(fmt.Errorf("validating target resource: %w", err))
+				rootTask.SetError(fmt.Errorf("validating target resource: %w", err))
 				return
 			}
-
-			task.SetProgress(NewServiceProgress("Logging in to registry"))
-
-			// Login, tag & push container image to ACR
-			dockerCreds, err := at.containerHelper.Credentials(ctx, serviceConfig, targetResource)
-			if err != nil {
-				task.SetError(fmt.Errorf("logging in to registry: %w", err))
-				return
-			}
-
-			task.SetProgress(NewServiceProgress("Pushing container image"))
 
 			var remoteImageName string
 
-			if serviceConfig.Language == ServiceLanguageDocker {
-				containerDeployTask := at.containerHelper.Deploy(ctx, serviceConfig, packageOutput, targetResource, false)
-				syncProgress(task, containerDeployTask.Progress())
-
-				res, err := containerDeployTask.Await()
-				if err != nil {
-					task.SetError(err)
-					return
-				}
-
-				remoteImageName = res.Details.(*dockerDeployResult).RemoteImageTag
-			} else {
-				imageName := fmt.Sprintf("azd-deploy-%s-%d", serviceConfig.Name, time.Now().Unix())
-
-				err = at.dotNetCli.PublishContainer(
-					ctx,
-					serviceConfig.Path(),
-					"Release",
-					imageName,
-					dockerCreds.LoginServer,
-					dockerCreds.Username,
-					dockerCreds.Password)
-				if err != nil {
-					task.SetError(fmt.Errorf("publishing container: %w", err))
-					return
-				}
-
-				remoteImageName = fmt.Sprintf("%s/%s", dockerCreds.LoginServer, imageName)
+			componentPackageResults, ok := packageOutput.Details.(map[string]*ServicePackageResult)
+			if !ok {
+				rootTask.SetError(errors.New("missing component package results"))
+				return
 			}
 
-			task.SetProgress(NewServiceProgress("Updating container app"))
+			for key, component := range serviceConfig.Components {
+				rootTask.SetProgress(NewServiceProgress("Logging in to registry"))
+
+				// Login, tag & push container image to ACR
+				dockerCreds, err := at.containerHelper.Credentials(ctx, component, targetResource)
+				if err != nil {
+					rootTask.SetError(fmt.Errorf("logging in to registry: %w", err))
+					return
+				}
+
+				rootTask.SetProgress(NewServiceProgress("Pushing container image"))
+
+				if serviceConfig.Language == ServiceLanguageDocker {
+					componentOutput := componentPackageResults[key]
+					containerDeployTask := at.containerHelper.Deploy(ctx, component, componentOutput, targetResource, false)
+					syncProgress(rootTask, containerDeployTask.Progress())
+
+					res, err := containerDeployTask.Await()
+					if err != nil {
+						rootTask.SetError(err)
+						return
+					}
+
+					remoteImageName = res.Details.(*dockerDeployResult).RemoteImageTag
+				} else {
+					imageName := fmt.Sprintf("azd-deploy-%s-%d", serviceConfig.Name, time.Now().Unix())
+
+					err = at.dotNetCli.PublishContainer(
+						ctx,
+						serviceConfig.Path(),
+						"Release",
+						imageName,
+						dockerCreds.LoginServer,
+						dockerCreds.Username,
+						dockerCreds.Password)
+					if err != nil {
+						rootTask.SetError(fmt.Errorf("publishing container: %w", err))
+						return
+					}
+
+					remoteImageName = fmt.Sprintf("%s/%s", dockerCreds.LoginServer, imageName)
+				}
+			}
+
+			rootTask.SetProgress(NewServiceProgress("Updating container app"))
 
 			var manifest string
 
@@ -165,7 +175,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 
 				contents, err := os.ReadFile(filepath.Join(projectRoot, "manifests", "containerApp.tmpl.yaml"))
 				if err != nil {
-					task.SetError(fmt.Errorf("reading container app manifest: %w", err))
+					rootTask.SetError(fmt.Errorf("reading container app manifest: %w", err))
 					return
 				}
 				manifest = string(contents)
@@ -180,7 +190,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 					serviceConfig.DotNetContainerApp.ProjectName,
 				)
 				if err != nil {
-					task.SetError(fmt.Errorf("generating container app manifest: %w", err))
+					rootTask.SetError(fmt.Errorf("generating container app manifest: %w", err))
 					return
 				}
 				manifest = generatedManifest
@@ -207,13 +217,13 @@ func (at *dotnetContainerAppTarget) Deploy(
 				}).
 				Parse(manifest)
 			if err != nil {
-				task.SetError(fmt.Errorf("failing parsing containerApp.tmpl.yaml: %w", err))
+				rootTask.SetError(fmt.Errorf("failing parsing containerApp.tmpl.yaml: %w", err))
 				return
 			}
 
 			requiredInputs, err := apphost.Inputs(serviceConfig.DotNetContainerApp.Manifest)
 			if err != nil {
-				task.SetError(fmt.Errorf("failed to get required inputs: %w", err))
+				rootTask.SetError(fmt.Errorf("failed to get required inputs: %w", err))
 			}
 
 			wroteNewInput := false
@@ -230,13 +240,13 @@ func (at *dotnetContainerAppTarget) Deploy(
 					// need to audit these dereferences to check for nil.
 					val, err := password.FromAlphabet(password.LettersAndDigits, *inputInfo.Default.Generate.MinLength)
 					if err != nil {
-						task.SetError(fmt.Errorf("generating value for input %s: %w", inputName, err))
+						rootTask.SetError(fmt.Errorf("generating value for input %s: %w", inputName, err))
 						return
 
 					}
 
 					if err := at.env.Config.Set(inputConfigKey, val); err != nil {
-						task.SetError(fmt.Errorf("saving value for input %s: %w", inputName, err))
+						rootTask.SetError(fmt.Errorf("saving value for input %s: %w", inputName, err))
 						return
 					}
 
@@ -246,7 +256,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 
 			if wroteNewInput {
 				if err := at.containerHelper.envManager.Save(ctx, at.env); err != nil {
-					task.SetError(fmt.Errorf("saving environment: %w", err))
+					rootTask.SetError(fmt.Errorf("saving environment: %w", err))
 					return
 				}
 			}
@@ -254,7 +264,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 			var inputs map[string]any
 
 			if has, err := at.env.Config.GetSection("inputs", &inputs); err != nil {
-				task.SetError(fmt.Errorf("failed to get inputs section: %w", err))
+				rootTask.SetError(fmt.Errorf("failed to get inputs section: %w", err))
 				return
 			} else if !has {
 				inputs = make(map[string]any)
@@ -271,7 +281,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 				Inputs: inputs,
 			})
 			if err != nil {
-				task.SetError(fmt.Errorf("failed executing template file: %w", err))
+				rootTask.SetError(fmt.Errorf("failed executing template file: %w", err))
 				return
 			}
 
@@ -283,11 +293,11 @@ func (at *dotnetContainerAppTarget) Deploy(
 				[]byte(builder.String()),
 			)
 			if err != nil {
-				task.SetError(fmt.Errorf("updating container app service: %w", err))
+				rootTask.SetError(fmt.Errorf("updating container app service: %w", err))
 				return
 			}
 
-			task.SetProgress(NewServiceProgress("Fetching endpoints for container app service"))
+			rootTask.SetProgress(NewServiceProgress("Fetching endpoints for container app service"))
 
 			containerAppTarget := environment.NewTargetResource(
 				targetResource.SubscriptionId(),
@@ -297,11 +307,11 @@ func (at *dotnetContainerAppTarget) Deploy(
 
 			endpoints, err := at.Endpoints(ctx, serviceConfig, containerAppTarget)
 			if err != nil {
-				task.SetError(err)
+				rootTask.SetError(err)
 				return
 			}
 
-			task.SetResult(&ServiceDeployResult{
+			rootTask.SetResult(&ServiceDeployResult{
 				Package: packageOutput,
 				TargetResourceId: azure.ContainerAppRID(
 					targetResource.SubscriptionId(),

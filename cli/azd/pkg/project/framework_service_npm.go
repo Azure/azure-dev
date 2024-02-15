@@ -44,19 +44,19 @@ func (np *npmProject) RequiredExternalTools(context.Context) []tools.ExternalToo
 }
 
 // Initializes the NPM project
-func (np *npmProject) Initialize(ctx context.Context, serviceConfig *ServiceConfig) error {
+func (np *npmProject) Initialize(ctx context.Context, component *ComponentConfig) error {
 	return nil
 }
 
 // Restores dependencies for the NPM project using npm install command
 func (np *npmProject) Restore(
 	ctx context.Context,
-	serviceConfig *ServiceConfig,
+	component *ComponentConfig,
 ) *async.TaskWithProgress[*ServiceRestoreResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServiceRestoreResult, ServiceProgress]) {
 			task.SetProgress(NewServiceProgress("Installing NPM dependencies"))
-			if err := np.cli.Install(ctx, serviceConfig.Path()); err != nil {
+			if err := np.cli.Install(ctx, component.Path()); err != nil {
 				task.SetError(err)
 				return
 			}
@@ -69,7 +69,7 @@ func (np *npmProject) Restore(
 // Builds the project executing the npm `build` script defined within the project package.json
 func (np *npmProject) Build(
 	ctx context.Context,
-	serviceConfig *ServiceConfig,
+	component *ComponentConfig,
 	restoreOutput *ServiceRestoreResult,
 ) *async.TaskWithProgress[*ServiceBuildResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
@@ -77,15 +77,15 @@ func (np *npmProject) Build(
 			// Exec custom `build` script if available
 			// If `build`` script is not defined in the package.json the NPM script will NOT fail
 			task.SetProgress(NewServiceProgress("Running NPM build script"))
-			if err := np.cli.RunScript(ctx, serviceConfig.Path(), "build"); err != nil {
+			if err := np.cli.RunScript(ctx, component.Path(), "build"); err != nil {
 				task.SetError(err)
 				return
 			}
 
-			buildSource := serviceConfig.Path()
+			buildSource := component.Path()
 
-			if serviceConfig.OutputPath != "" {
-				buildSource = filepath.Join(buildSource, serviceConfig.OutputPath)
+			if component.OutputPath != "" {
+				buildSource = filepath.Join(buildSource, component.OutputPath)
 			}
 
 			task.SetResult(&ServiceBuildResult{
@@ -98,14 +98,14 @@ func (np *npmProject) Build(
 
 func (np *npmProject) Package(
 	ctx context.Context,
-	serviceConfig *ServiceConfig,
+	component *ComponentConfig,
 	buildOutput *ServiceBuildResult,
 ) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
 			packageDest, err := os.MkdirTemp("", "azd")
 			if err != nil {
-				task.SetError(fmt.Errorf("creating package directory for %s: %w", serviceConfig.Name, err))
+				task.SetError(fmt.Errorf("creating package directory for %s: %w", component.Name, err))
 				return
 			}
 
@@ -114,7 +114,7 @@ func (np *npmProject) Package(
 			// Long term this script we call should better align with our inner-loop scenarios
 			// Keeping this defaulted to `build` will create confusion for users when we start to support
 			// both local dev / debug builds and production bundled builds
-			if err := np.cli.RunScript(ctx, serviceConfig.Path(), "build"); err != nil {
+			if err := np.cli.RunScript(ctx, component.Path(), "build"); err != nil {
 				task.SetError(err)
 				return
 			}
@@ -122,7 +122,7 @@ func (np *npmProject) Package(
 			// Copy directory rooted by dist to package root.
 			packageSource := buildOutput.BuildOutputPath
 			if packageSource == "" {
-				packageSource = filepath.Join(serviceConfig.Path(), serviceConfig.OutputPath)
+				packageSource = filepath.Join(component.Path(), component.OutputPath)
 			}
 
 			if entries, err := os.ReadDir(packageSource); err != nil || len(entries) == 0 {
@@ -147,7 +147,7 @@ func (np *npmProject) Package(
 						excludeNodeModules,
 					},
 				}); err != nil {
-				task.SetError(fmt.Errorf("packaging for %s: %w", serviceConfig.Name, err))
+				task.SetError(fmt.Errorf("packaging for %s: %w", component.Name, err))
 				return
 			}
 

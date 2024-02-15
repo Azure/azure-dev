@@ -187,14 +187,20 @@ func (t *aksTarget) Deploy(
 	targetResource *environment.TargetResource,
 ) *async.TaskWithProgress[*ServiceDeployResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
-		func(task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress]) {
+		func(rootTask *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress]) {
 			if err := t.validateTargetResource(ctx, serviceConfig, targetResource); err != nil {
-				task.SetError(fmt.Errorf("validating target resource: %w", err))
+				rootTask.SetError(fmt.Errorf("validating target resource: %w", err))
 				return
 			}
 
 			if packageOutput == nil {
-				task.SetError(errors.New("missing package output"))
+				rootTask.SetError(errors.New("missing package output"))
+				return
+			}
+
+			componentPackageResults, ok := packageOutput.Details.(map[string]*ServicePackageResult)
+			if !ok {
+				rootTask.SetError(errors.New("missing component package results"))
 				return
 			}
 
@@ -202,14 +208,18 @@ func (t *aksTarget) Deploy(
 			// Empty package details is a valid scenario for any AKS deployment that does not build any containers
 			// Ex) Helm charts, or other manifests that reference external images
 			if packageOutput.Details != nil || packageOutput.PackagePath != "" {
-				// Login, tag & push container image to ACR
-				containerDeployTask := t.containerHelper.Deploy(ctx, serviceConfig, packageOutput, targetResource, true)
-				syncProgress(task, containerDeployTask.Progress())
+				for key, component := range serviceConfig.Components {
+					componentOutput := componentPackageResults[key]
 
-				_, err := containerDeployTask.Await()
-				if err != nil {
-					task.SetError(err)
-					return
+					// Login, tag & push container image to ACR
+					containerDeployTask := t.containerHelper.Deploy(ctx, component, componentOutput, targetResource, true)
+					syncProgress(rootTask, containerDeployTask.Progress())
+
+					_, err := containerDeployTask.Await()
+					if err != nil {
+						rootTask.SetError(err)
+						return
+					}
 				}
 			}
 
@@ -228,41 +238,41 @@ func (t *aksTarget) Deploy(
 			deployed := false
 
 			// Helm Support
-			helmDeployed, err := t.deployHelmCharts(ctx, serviceConfig, task)
+			helmDeployed, err := t.deployHelmCharts(ctx, serviceConfig, rootTask)
 			if err != nil {
-				task.SetError(fmt.Errorf("helm deployment failed: %w", err))
+				rootTask.SetError(fmt.Errorf("helm deployment failed: %w", err))
 				return
 			}
 
 			deployed = deployed || helmDeployed
 
 			// Kustomize Support
-			kustomizeDeployed, err := t.deployKustomize(ctx, serviceConfig, task)
+			kustomizeDeployed, err := t.deployKustomize(ctx, serviceConfig, rootTask)
 			if err != nil {
-				task.SetError(fmt.Errorf("kustomize deployment failed: %w", err))
+				rootTask.SetError(fmt.Errorf("kustomize deployment failed: %w", err))
 				return
 			}
 
 			deployed = deployed || kustomizeDeployed
 
 			// Vanilla k8s manifests with minimal templating support
-			deployment, err := t.deployManifests(ctx, serviceConfig, task)
+			deployment, err := t.deployManifests(ctx, serviceConfig, rootTask)
 			if err != nil && !os.IsNotExist(err) {
-				task.SetError(err)
+				rootTask.SetError(err)
 				return
 			}
 
 			deployed = deployed || deployment != nil
 
 			if !deployed {
-				task.SetError(errors.New("no deployment manifests found"))
+				rootTask.SetError(errors.New("no deployment manifests found"))
 				return
 			}
 
-			task.SetProgress(NewServiceProgress("Fetching endpoints for AKS service"))
+			rootTask.SetProgress(NewServiceProgress("Fetching endpoints for AKS service"))
 			endpoints, err := t.Endpoints(ctx, serviceConfig, targetResource)
 			if err != nil {
-				task.SetError(err)
+				rootTask.SetError(err)
 				return
 			}
 
@@ -273,12 +283,12 @@ func (t *aksTarget) Deploy(
 				endpointParts := strings.Split(endpoints[len(endpoints)-1], ",")
 				t.env.SetServiceProperty(serviceConfig.Name, "ENDPOINT_URL", endpointParts[0])
 				if err := t.envManager.Save(ctx, t.env); err != nil {
-					task.SetError(fmt.Errorf("failed updating environment with endpoint url, %w", err))
+					rootTask.SetError(fmt.Errorf("failed updating environment with endpoint url, %w", err))
 					return
 				}
 			}
 
-			task.SetResult(&ServiceDeployResult{
+			rootTask.SetResult(&ServiceDeployResult{
 				Package: packageOutput,
 				TargetResourceId: azure.KubernetesServiceRID(
 					targetResource.SubscriptionId(),

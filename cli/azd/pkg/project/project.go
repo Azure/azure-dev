@@ -98,11 +98,9 @@ func Parse(ctx context.Context, yamlContent string) (*ProjectConfig, error) {
 			return nil, fmt.Errorf("parsing service %s: %w", svc.Name, err)
 		}
 
-		if len(svc.Containers) == 0 {
-			svc.Containers = map[string]*ComponentConfig{}
-			svc.Containers["default"] = &ComponentConfig{
-				Project:      &projectConfig,
-				Service:      svc,
+		if len(svc.Components) == 0 {
+			svc.Components = map[string]*ComponentConfig{}
+			svc.Components["default"] = &ComponentConfig{
 				Name:         "default",
 				Host:         svc.Host,
 				RelativePath: svc.RelativePath,
@@ -111,6 +109,11 @@ func Parse(ctx context.Context, yamlContent string) (*ProjectConfig, error) {
 				Image:        svc.Image,
 				Docker:       svc.Docker,
 			}
+		}
+
+		for _, comp := range svc.Components {
+			comp.Service = svc
+			comp.Project = &projectConfig
 		}
 
 		// TODO: Move parsing/validation requirements for service targets into their respective components.

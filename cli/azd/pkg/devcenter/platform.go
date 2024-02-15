@@ -45,7 +45,7 @@ func (p *Platform) IsEnabled() bool {
 // ConfigureContainer configures the IoC container for the devcenter platform components
 func (p *Platform) ConfigureContainer(container *ioc.NestedContainer) error {
 	// DevCenter Config
-	container.MustRegisterTransient(func(
+	container.MustRegisterSingleton(func(
 		ctx context.Context,
 		lazyAzdCtx *lazy.Lazy[*azdcontext.AzdContext],
 		userConfigManager config.UserConfigManager,
@@ -75,7 +75,7 @@ func (p *Platform) ConfigureContainer(container *ioc.NestedContainer) error {
 		var environmentConfig *Config
 		if azdCtx != nil && localEnvStore != nil {
 			defaultEnvName, err := azdCtx.GetDefaultEnvironmentName()
-			if err != nil || defaultEnvName == "" {
+			if err != nil {
 				environmentConfig = &Config{}
 			} else {
 				// Attempt to load any devcenter configuration from local environment

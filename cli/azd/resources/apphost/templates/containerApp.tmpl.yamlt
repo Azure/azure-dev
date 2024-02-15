@@ -52,7 +52,7 @@ properties:
 {{- range $name, $value := .KeyVaultSecrets}}
       - name: {{containerAppSecretName $name}}
         keyVaultUrl: {{$value}}
-        identity: System
+        identity: {{ "{{ .Env.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID }}" }}
 {{- end}}
   template:
     containers:

@@ -55,7 +55,8 @@ func NewRegistrationsOnly(from *NestedContainer) *NestedContainer {
 	current := container.New()
 
 	if from != nil {
-		// Reset all concrete instances
+		// Reset all concrete instances by copying 'resolver' and 'isSingleton' fields
+		// Reflection is necessary since *container.binding is unexported
 		for key, value := range from.inner {
 			var valueType = reflect.TypeOf(value)
 			newValue := reflect.MakeMapWithSize(valueType, len(value))

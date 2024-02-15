@@ -113,6 +113,8 @@ const (
 // The configuration can be explicitly defined on azure.yaml using path and module, or in case these values
 // are not explicitly defined, the project importer uses default values to find the infrastructure.
 func (im *ImportManager) ProjectInfrastructure(ctx context.Context, projectConfig *ProjectConfig) (*Infra, error) {
+	// TODO: This project infra generation should not even be called for devcenter projects.
+	// Ideally this should be a concern of the provision provider and not a higher level component.
 	if im.platformConfig.Type == platform.PlatformKind("devcenter") {
 		return &Infra{}, nil
 	}

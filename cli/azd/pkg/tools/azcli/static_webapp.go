@@ -4,6 +4,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appservice/armappservice"
 )
 
 type AzCliStaticWebAppProperties struct {
@@ -21,7 +23,12 @@ func (cli *azCli) GetStaticWebAppProperties(
 	resourceGroup string,
 	appName string,
 ) (*AzCliStaticWebAppProperties, error) {
-	staticSite, err := cli.staticSitesClient.GetStaticSite(ctx, resourceGroup, appName, nil)
+	client, err := cli.createStaticSitesClient(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	staticSite, err := client.GetStaticSite(ctx, resourceGroup, appName, nil)
 	if err != nil {
 		return nil, fmt.Errorf("retrieving static site '%s': %w", appName, err)
 	}
@@ -38,7 +45,12 @@ func (cli *azCli) GetStaticWebAppEnvironmentProperties(
 	appName string,
 	environmentName string,
 ) (*AzCliStaticWebAppEnvironmentProperties, error) {
-	build, err := cli.staticSitesClient.GetStaticSiteBuild(ctx, resourceGroup, appName, environmentName, nil)
+	client, err := cli.createStaticSitesClient(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	build, err := client.GetStaticSiteBuild(ctx, resourceGroup, appName, environmentName, nil)
 	if err != nil {
 		return nil, fmt.Errorf("retrieving static site environment '%s': %w", environmentName, err)
 	}
@@ -55,7 +67,12 @@ func (cli *azCli) GetStaticWebAppApiKey(
 	resourceGroup string,
 	appName string,
 ) (*string, error) {
-	secretsResponse, err := cli.staticSitesClient.ListStaticSiteSecrets(ctx, resourceGroup, appName, nil)
+	client, err := cli.createStaticSitesClient(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	secretsResponse, err := client.ListStaticSiteSecrets(ctx, resourceGroup, appName, nil)
 	if err != nil {
 		return nil, fmt.Errorf("retrieving static site secrets for '%s': %w", appName, err)
 	}
@@ -66,4 +83,22 @@ func (cli *azCli) GetStaticWebAppApiKey(
 	}
 
 	return apiKey, nil
+}
+
+func (cli *azCli) createStaticSitesClient(
+	ctx context.Context,
+	subscriptionId string,
+) (*armappservice.StaticSitesClient, error) {
+	credential, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	options := cli.clientOptionsBuilder(ctx).BuildArmClientOptions()
+	client, err := armappservice.NewStaticSitesClient(subscriptionId, credential, options)
+	if err != nil {
+		return nil, fmt.Errorf("creating Static Sites client: %w", err)
+	}
+
+	return client, nil
 }

@@ -31,8 +31,8 @@ func NewUserProfileService(
 }
 
 func (u *UserProfileService) createGraphClient(ctx context.Context, tenantId string) (*graphsdk.GraphClient, error) {
-	options := clientOptionsBuilder(u.httpClient, u.userAgent).
-		WithPerCallPolicy(azsdk.NewMsGraphCorrelationPolicy()).
+	options := clientOptionsBuilder(ctx, u.httpClient, u.userAgent).
+		WithPerCallPolicy(azsdk.NewMsGraphCorrelationPolicy(ctx)).
 		BuildCoreClientOptions()
 	cred, err := u.credentialProvider.GetTokenCredential(ctx, tenantId)
 	if err != nil {

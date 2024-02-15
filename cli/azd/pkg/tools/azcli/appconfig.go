@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appconfiguration/armappconfiguration"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 )
 
@@ -22,7 +23,12 @@ func (cli *azCli) GetAppConfig(
 	resourceGroupName string,
 	configName string,
 ) (*AzCliAppConfig, error) {
-	config, err := cli.appConfigStoresClient.Get(ctx, resourceGroupName, configName, nil)
+	appConfigStoresClient, err := cli.createAppConfigClient(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	config, err := appConfigStoresClient.Get(ctx, resourceGroupName, configName, nil)
 	if err != nil {
 		return nil, fmt.Errorf("getting app configuration: %w", err)
 	}
@@ -40,7 +46,12 @@ func (cli *azCli) GetAppConfig(
 }
 
 func (cli *azCli) PurgeAppConfig(ctx context.Context, subscriptionId string, configName string, location string) error {
-	poller, err := cli.appConfigStoresClient.BeginPurgeDeleted(ctx, location, configName, nil)
+	appConfigStoresClient, err := cli.createAppConfigClient(ctx, subscriptionId)
+	if err != nil {
+		return err
+	}
+
+	poller, err := appConfigStoresClient.BeginPurgeDeleted(ctx, location, configName, nil)
 	if err != nil {
 		return fmt.Errorf("starting purging app configuration: %w", err)
 	}
@@ -51,4 +62,23 @@ func (cli *azCli) PurgeAppConfig(ctx context.Context, subscriptionId string, con
 	}
 
 	return nil
+}
+
+// Creates a AppConfig client for ARM control plane operations
+func (cli *azCli) createAppConfigClient(
+	ctx context.Context,
+	subscriptionId string,
+) (*armappconfiguration.ConfigurationStoresClient, error) {
+	credential, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	options := cli.clientOptionsBuilder(ctx).BuildArmClientOptions()
+	appConfigStoresClient, err := armappconfiguration.NewConfigurationStoresClient(subscriptionId, credential, options)
+	if err != nil {
+		return nil, fmt.Errorf("creating Resource client: %w", err)
+	}
+
+	return appConfigStoresClient, nil
 }

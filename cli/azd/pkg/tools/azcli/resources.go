@@ -8,12 +8,13 @@ import (
 )
 
 func (cli *azCli) GetResource(
-	ctx context.Context,
-	subscriptionId string,
-	resourceId string,
-	apiVersion string,
-) (AzCliResourceExtended, error) {
-	res, err := cli.resourcesClient.GetByID(ctx, resourceId, apiVersion, nil)
+	ctx context.Context, subscriptionId string, resourceId string, apiVersion string) (AzCliResourceExtended, error) {
+	client, err := cli.createResourcesClient(ctx, subscriptionId)
+	if err != nil {
+		return AzCliResourceExtended{}, err
+	}
+
+	res, err := client.GetByID(ctx, resourceId, apiVersion, nil)
 	if err != nil {
 		return AzCliResourceExtended{}, fmt.Errorf("getting resource by id: %w", err)
 	}
@@ -35,6 +36,11 @@ func (cli *azCli) ListResourceGroupResources(
 	resourceGroupName string,
 	listOptions *ListResourceGroupResourcesOptions,
 ) ([]AzCliResource, error) {
+	client, err := cli.createResourcesClient(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
 	// Filter expression on the underlying REST API are different from --query param in az cli.
 	// https://learn.microsoft.com/en-us/rest/api/resources/resources/list-by-resource-group#uri-parameters
 	options := armresources.ClientListByResourceGroupOptions{}
@@ -43,7 +49,7 @@ func (cli *azCli) ListResourceGroupResources(
 	}
 
 	resources := []AzCliResource{}
-	pager := cli.resourcesClient.NewListByResourceGroupPager(resourceGroupName, &options)
+	pager := client.NewListByResourceGroupPager(resourceGroupName, &options)
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
 		if err != nil {
@@ -68,6 +74,11 @@ func (cli *azCli) ListResourceGroup(
 	subscriptionId string,
 	listOptions *ListResourceGroupOptions,
 ) ([]AzCliResource, error) {
+	client, err := cli.createResourceGroupClient(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
 	// Filter values differ from those support in the --query param of az cli.
 	// https://learn.microsoft.com/en-us/rest/api/resources/resource-groups/list
 	options := armresources.ResourceGroupsClientListOptions{}
@@ -85,7 +96,7 @@ func (cli *azCli) ListResourceGroup(
 	}
 
 	groups := []AzCliResource{}
-	pager := cli.resourceGroupsClient.NewListPager(&options)
+	pager := client.NewListPager(&options)
 
 	for pager.More() {
 		page, err := pager.NextPage(ctx)
@@ -113,7 +124,12 @@ func (cli *azCli) CreateOrUpdateResourceGroup(
 	location string,
 	tags map[string]*string,
 ) error {
-	_, err := cli.resourceGroupsClient.CreateOrUpdate(ctx, resourceGroupName, armresources.ResourceGroup{
+	client, err := cli.createResourceGroupClient(ctx, subscriptionId)
+	if err != nil {
+		return err
+	}
+
+	_, err = client.CreateOrUpdate(ctx, resourceGroupName, armresources.ResourceGroup{
 		Location: &location,
 		Tags:     tags,
 	}, nil)
@@ -122,7 +138,12 @@ func (cli *azCli) CreateOrUpdateResourceGroup(
 }
 
 func (cli *azCli) DeleteResourceGroup(ctx context.Context, subscriptionId string, resourceGroupName string) error {
-	poller, err := cli.resourceGroupsClient.BeginDelete(ctx, resourceGroupName, nil)
+	client, err := cli.createResourceGroupClient(ctx, subscriptionId)
+	if err != nil {
+		return err
+	}
+
+	poller, err := client.BeginDelete(ctx, resourceGroupName, nil)
 	if err != nil {
 		return fmt.Errorf("beginning resource group deletion: %w", err)
 	}
@@ -133,4 +154,37 @@ func (cli *azCli) DeleteResourceGroup(ctx context.Context, subscriptionId string
 	}
 
 	return nil
+}
+
+func (cli *azCli) createResourcesClient(ctx context.Context, subscriptionId string) (*armresources.Client, error) {
+	credential, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	options := cli.clientOptionsBuilder(ctx).BuildArmClientOptions()
+	client, err := armresources.NewClient(subscriptionId, credential, options)
+	if err != nil {
+		return nil, fmt.Errorf("creating Resource client: %w", err)
+	}
+
+	return client, nil
+}
+
+func (cli *azCli) createResourceGroupClient(
+	ctx context.Context,
+	subscriptionId string,
+) (*armresources.ResourceGroupsClient, error) {
+	credential, err := cli.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	options := cli.clientOptionsBuilder(ctx).BuildArmClientOptions()
+	client, err := armresources.NewResourceGroupsClient(subscriptionId, credential, options)
+	if err != nil {
+		return nil, fmt.Errorf("creating ResourceGroup client: %w", err)
+	}
+
+	return client, nil
 }

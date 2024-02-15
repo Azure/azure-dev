@@ -77,25 +77,18 @@ type adService struct {
 	httpClient         httputil.HttpClient
 	userAgent          string
 	clientCache        map[string]*graphsdk.GraphClient
-
-	roleDefinitionsClient *armauthorization.RoleDefinitionsClient
-	roleAssignmentsClient *armauthorization.RoleAssignmentsClient
 }
 
 // Creates a new instance of the AdService
 func NewAdService(
 	credentialProvider account.SubscriptionCredentialProvider,
 	httpClient httputil.HttpClient,
-	roleDefinitionsClient *armauthorization.RoleDefinitionsClient,
-	roleAssignmentsClient *armauthorization.RoleAssignmentsClient,
 ) AdService {
 	return &adService{
-		credentialProvider:    credentialProvider,
-		httpClient:            httpClient,
-		userAgent:             azdinternal.UserAgent(),
-		clientCache:           map[string]*graphsdk.GraphClient{},
-		roleDefinitionsClient: roleDefinitionsClient,
-		roleAssignmentsClient: roleAssignmentsClient,
+		credentialProvider: credentialProvider,
+		httpClient:         httpClient,
+		userAgent:          azdinternal.UserAgent(),
+		clientCache:        map[string]*graphsdk.GraphClient{},
 	}
 }
 
@@ -105,7 +98,6 @@ func (ad *adService) GetServicePrincipal(
 	subscriptionId string,
 	appIdOrName string,
 ) (*graphsdk.ServicePrincipal, error) {
-	// Subscription can be injected into client
 	application, err := ad.getApplicationByNameOrId(ctx, subscriptionId, appIdOrName)
 	if err != nil {
 		return nil, err
@@ -157,7 +149,6 @@ func (ad *adService) ResetPasswordCredentials(
 	subscriptionId string,
 	appId string,
 ) (*AzureCredentials, error) {
-	// Subscription can be injected into client
 	graphClient, err := ad.getOrCreateGraphClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
@@ -209,7 +200,6 @@ func (ad *adService) ApplyFederatedCredentials(
 	clientId string,
 	federatedCredentials []*graphsdk.FederatedIdentityCredential,
 ) ([]*graphsdk.FederatedIdentityCredential, error) {
-	// Subscription can be injected into client
 	graphClient, err := ad.getOrCreateGraphClient(ctx, subscriptionId)
 	if err != nil {
 		return nil, err
@@ -497,14 +487,18 @@ func (ad *adService) applyRoleAssignmentWithRetry(
 	roleDefinition *armauthorization.RoleDefinition,
 	servicePrincipal *graphsdk.ServicePrincipal,
 ) error {
+	roleAssignmentsClient, err := ad.createRoleAssignmentsClient(ctx, subscriptionId)
+	if err != nil {
+		return err
+	}
+
 	scope := azure.SubscriptionRID(subscriptionId)
 	roleAssignmentId := uuid.New().String()
 
 	// There is a lag in the application/service principal becoming available in Azure AD
 	// This can cause the role assignment operation to fail
 	return retry.Do(ctx, retry.WithMaxRetries(10, retry.NewConstant(time.Second*5)), func(ctx context.Context) error {
-		var err error
-		_, err = ad.roleAssignmentsClient.Create(ctx, scope, roleAssignmentId, armauthorization.RoleAssignmentCreateParameters{
+		_, err = roleAssignmentsClient.Create(ctx, scope, roleAssignmentId, armauthorization.RoleAssignmentCreateParameters{
 			Properties: &armauthorization.RoleAssignmentProperties{
 				PrincipalID:      servicePrincipal.Id,
 				RoleDefinitionID: roleDefinition.ID,
@@ -549,7 +543,12 @@ func (ad *adService) getRoleDefinition(
 	scope string,
 	roleName string,
 ) (*armauthorization.RoleDefinition, error) {
-	pager := ad.roleDefinitionsClient.NewListPager(scope, &armauthorization.RoleDefinitionsClientListOptions{
+	roleDefinitionsClient, err := ad.createRoleDefinitionsClient(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	pager := roleDefinitionsClient.NewListPager(scope, &armauthorization.RoleDefinitionsClientListOptions{
 		Filter: convert.RefOf(fmt.Sprintf("roleName eq '%s'", roleName)),
 	})
 
@@ -572,8 +571,44 @@ func (ad *adService) getRoleDefinition(
 }
 
 // Creates a graph users client using credentials from the Go context.
-// TODO: Is the subscription id cache necessary? That doesn't lend itself well
-// to the current injection strategy.
+func (ad *adService) createRoleDefinitionsClient(
+	ctx context.Context,
+	subscriptionId string,
+) (*armauthorization.RoleDefinitionsClient, error) {
+	credential, err := ad.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	options := clientOptionsBuilder(ctx, ad.httpClient, ad.userAgent).BuildArmClientOptions()
+	client, err := armauthorization.NewRoleDefinitionsClient(credential, options)
+	if err != nil {
+		return nil, fmt.Errorf("creating ARM Role Definitions client: %w", err)
+	}
+
+	return client, nil
+}
+
+// Creates a graph users client using credentials from the Go context.
+func (ad *adService) createRoleAssignmentsClient(
+	ctx context.Context,
+	subscriptionId string,
+) (*armauthorization.RoleAssignmentsClient, error) {
+	credential, err := ad.credentialProvider.CredentialForSubscription(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	options := clientOptionsBuilder(ctx, ad.httpClient, ad.userAgent).BuildArmClientOptions()
+	client, err := armauthorization.NewRoleAssignmentsClient(subscriptionId, credential, options)
+	if err != nil {
+		return nil, fmt.Errorf("creating ARM Role Assignments client: %w", err)
+	}
+
+	return client, nil
+}
+
+// Creates a graph users client using credentials from the Go context.
 func (ad *adService) getOrCreateGraphClient(
 	ctx context.Context,
 	subscriptionId string,
@@ -587,7 +622,7 @@ func (ad *adService) getOrCreateGraphClient(
 		return nil, err
 	}
 
-	options := clientOptionsBuilder(ad.httpClient, ad.userAgent).BuildCoreClientOptions()
+	options := clientOptionsBuilder(ctx, ad.httpClient, ad.userAgent).BuildCoreClientOptions()
 	client, err := graphsdk.NewGraphClient(credential, options)
 	if err != nil {
 		return nil, fmt.Errorf("creating Graph Users client: %w", err)

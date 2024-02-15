@@ -7,10 +7,8 @@ package ioc
 import (
 	"errors"
 	"fmt"
-	"log"
 	"reflect"
 	"regexp"
-	"time"
 	"unsafe"
 
 	"github.com/golobby/container/v3"
@@ -102,10 +100,6 @@ func setUnexportedField(field reflect.Value, value interface{}) {
 
 // Fill takes a structure and resolves fields with the tag `container:"type" or `container:"name"`.
 func (c *NestedContainer) Fill(structure any) error {
-	t := time.Now()
-	defer func() {
-		log.Printf("Fill took: %v", time.Since(t))
-	}()
 	return c.inner.Fill(structure)
 }
 

@@ -6,7 +6,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
-	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 )
 
 type ServiceConfig struct {
@@ -15,7 +14,7 @@ type ServiceConfig struct {
 	// The friendly name/key of the project from the azure.yaml file
 	Name string `yaml:"-"`
 	// The name used to override the default azure resource name
-	ResourceName osutil.ExpandableString `yaml:"resourceName,omitempty"`
+	ResourceName ExpandableString `yaml:"resourceName,omitempty"`
 	// The relative path to the project folder from the project root
 	RelativePath string `yaml:"project"`
 	// The azure hosting model to use, ex) appservice, function, containerapp
@@ -24,9 +23,7 @@ type ServiceConfig struct {
 	Language ServiceLanguageKind `yaml:"language"`
 	// The output path for build artifacts
 	OutputPath string `yaml:"dist,omitempty"`
-	// The source image to use for container based applications
-	Image string `yaml:"image,omitempty"`
-	// The optional docker options for configuring the output image
+	// The optional docker options
 	Docker DockerProjectOptions `yaml:"docker,omitempty"`
 	// The optional K8S / AKS options
 	K8s AksOptions `yaml:"k8s,omitempty"`

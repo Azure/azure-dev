@@ -5,7 +5,6 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
-	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/platform"
 	"github.com/azure/azure-dev/cli/azd/pkg/state"
 	"github.com/azure/azure-dev/cli/azd/pkg/workflow"
@@ -17,7 +16,7 @@ import (
 type ProjectConfig struct {
 	RequiredVersions  *RequiredVersions          `yaml:"requiredVersions,omitempty"`
 	Name              string                     `yaml:"name"`
-	ResourceGroupName osutil.ExpandableString    `yaml:"resourceGroup,omitempty"`
+	ResourceGroupName ExpandableString           `yaml:"resourceGroup,omitempty"`
 	Path              string                     `yaml:"-"`
 	Metadata          *ProjectMetadata           `yaml:"metadata,omitempty"`
 	Services          map[string]*ServiceConfig  `yaml:"services,omitempty"`
@@ -40,9 +39,7 @@ type RequiredVersions struct {
 
 // options supported in azure.yaml
 type PipelineOptions struct {
-	Provider  string   `yaml:"provider"`
-	Variables []string `yaml:"variables"`
-	Secrets   []string `yaml:"secrets"`
+	Provider string `yaml:"provider"`
 }
 
 // Project lifecycle event arguments

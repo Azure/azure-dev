@@ -66,7 +66,8 @@
                 "type": "object",
                 "additionalProperties": false,
                 "required": [
-                    "host"
+                    "project",
+                    "language"
                 ],
                 "properties": {
                     "resourceName": {
@@ -78,16 +79,12 @@
                         "type": "string",
                         "title": "Path to the service source code directory"
                     },
-                    "image": {
-                        "type": "string",
-                        "title": "Optional. The source image to be used for the container image instead of building from source.",
-                        "description": "If omitted, container image will be built from source specified in the 'project' property. Setting both 'project' and 'image' is invalid."
-                    },
                     "host": {
                         "type": "string",
-                        "title": "Required. The type of Azure resource used for service implementation",
-                        "description": "The Azure service that will be used as the target for deployment operations for the service.",
+                        "title": "Type of Azure resource used for service implementation",
+                        "description": "If omitted, App Service will be assumed.",
                         "enum": [
+                            "",
                             "appservice",
                             "containerapp",
                             "function",
@@ -167,58 +164,6 @@
                 "allOf": [
                     {
                         "if": {
-                            "properties": {
-                                "host": {
-                                    "const": "containerapp"
-                                }
-                            }
-                        },
-                        "then": {
-                            "anyOf": [
-                                {
-                                    "required": [
-                                        "image"
-                                    ],
-                                    "properties": {
-                                        "language": false
-                                    },
-                                    "not": {
-                                        "required": [
-                                            "project"
-                                        ]
-                                    }
-                                },
-                                {
-                                    "required": [
-                                        "project"
-                                    ],
-                                    "not": {
-                                        "required": [
-                                            "image"
-                                        ]
-                                    }
-                                }
-                            ]
-                        }
-                    },
-                    {
-                        "if": {
-                            "not": {
-                                "properties": {
-                                    "host": {
-                                        "const": "containerapp"
-                                    }
-                                }
-                            }
-                        },
-                        "then": {
-                            "properties": {
-                                "image": false
-                            }
-                        }
-                    },
-                    {
-                        "if": {
                             "not": {
                                 "properties": {
                                     "host": {
@@ -231,10 +176,6 @@
                             }
                         },
                         "then": {
-                            "required": [
-                                "project",
-                                "language"
-                            ],
                             "properties": {
                                 "docker": false
                             }
@@ -600,20 +541,15 @@
                     "title": "The platform target",
                     "default": "amd64"
                 },
-                "registry": {
-                    "type": "string",
-                    "title": "Optional. The container registry to push the image to.",
-                    "description": "If omitted, will default to value of AZURE_CONTAINER_REGISTRY_ENDPOINT environment variable. Supports environment variable substitution."
-                },
-                "image": {
-                    "type": "string",
-                    "title": "Optional. The name that will be applied to the built container image.",
-                    "description": "If omitted, will default to the '{appName}/{serviceName}-{environmentName}'. Supports environment variable substitution."
-                },
                 "tag": {
                     "type": "string",
                     "title": "The tag that will be applied to the built container image.",
-                    "description": "If omitted, will default to 'azd-deploy-{unix time (seconds)}'. Supports environment variable substitution. For example, to generate unique tags for a given release: myapp/myimage:${DOCKER_IMAGE_TAG}"
+                    "description": "If omitted, a unique tag will be generated based on the format: {appName}/{serviceName}-{environmentName}:azd-deploy-{unix time (seconds)}. Supports environment variable substitution. For example, to generate unique tags for a given release: myapp/myimage:${DOCKER_IMAGE_TAG}"
+                },
+                "registry": {
+                    "type": "string",
+                    "title": "The container registry to push the image to.",
+                    "description": "If omitted, will default to value of AZURE_CONTAINER_REGISTRY_ENDPOINT environment variable. Supports environment variable substitution."
                 },
                 "buildArgs": {
                     "type": "array",
@@ -679,107 +615,6 @@
                             "type": "string",
                             "title": "Optional. The relative path to the service from the root of your ingress controller.",
                             "description": "When set will be appended to the root of your ingress resource path."
-                        }
-                    }
-                },
-                "helm": {
-                    "type": "object",
-                    "title": "Optional. The helm configuration",
-                    "additionalProperties": false,
-                    "properties": {
-                        "repositories": {
-                            "type": "array",
-                            "title": "Optional. The helm repositories to add",
-                            "description": "When set will add the helm repositories to the helm client.",
-                            "minItems": 1,
-                            "items": {
-                                "type": "object",
-                                "additionalProperties": false,
-                                "required": [
-                                    "name",
-                                    "url"
-                                ],
-                                "properties": {
-                                    "name": {
-                                        "type": "string",
-                                        "title": "The name of the helm repository",
-                                        "description": "The name of the helm repository to add."
-                                    },
-                                    "url": {
-                                        "type": "string",
-                                        "title": "The url of the helm repository",
-                                        "description": "The url of the helm repository to add."
-                                    }
-                                }
-                            }
-                        },
-                        "releases": {
-                            "type": "array",
-                            "title": "Optional. The helm releases to install",
-                            "description": "When set will install the helm releases to the k8s cluster.",
-                            "minItems": 1,
-                            "items": {
-                                "type": "object",
-                                "additionalProperties": false,
-                                "required": [
-                                    "name",
-                                    "chart"
-                                ],
-                                "properties": {
-                                    "name": {
-                                        "type": "string",
-                                        "title": "The name of the helm release",
-                                        "description": "The name of the helm release to install."
-                                    },
-                                    "chart": {
-                                        "type": "string",
-                                        "title": "The name of the helm chart",
-                                        "description": "The name of the helm chart to install."
-                                    },
-                                    "version": {
-                                        "type": "string",
-                                        "title": "The version of the helm chart",
-                                        "description": "The version of the helm chart to install."
-                                    },
-                                    "values": {
-                                        "type": "string",
-                                        "title": "Optional. Relative path from service to a values.yaml to pass to the helm chart",
-                                        "description": "When set will pass the values to the helm chart."
-                                    }
-                                }
-                            }
-                        }
-                    }
-                },
-                "kustomize": {
-                    "type": "object",
-                    "title": "Optional. The kustomize configuration",
-                    "additionalProperties": false,
-                    "properties": {
-                        "dir": {
-                            "type": "string",
-                            "title": "Optional. The relative path to the kustomize directory.",
-                            "description": "When set will use the kustomize directory to deploy to the k8s cluster. Supports environment variable substitution."
-                        },
-                        "edits": {
-                            "type": "array",
-                            "title": "Optional. The kustomize edits to apply before deployment.",
-                            "description": "When set will apply the edits to the kustomize directory before deployment. Supports environment variable substitution.",
-                            "items": {
-                                "type": "string"
-                            }
-                        },
-                        "env": {
-                            "type": "object",
-                            "title": "Optional. The environment key/value pairs used to generate a .env file.",
-                            "description": "When set will generate a .env file in the kustomize directory. Values support environment variable substitution.",
-                            "additionalProperties": {
-                                "type": [
-                                    "string",
-                                    "boolean",
-                                    "number"
-                                ]
-                            }
                         }
                     }
                 }

@@ -105,9 +105,14 @@ func (kcm *KubeConfigManager) AddOrUpdateContext(
 	contextName string,
 	newKubeConfig *KubeConfig,
 ) (string, error) {
-	configPath, err := kcm.SaveKubeConfig(ctx, contextName, newKubeConfig)
+	_, err := kcm.SaveKubeConfig(ctx, contextName, newKubeConfig)
 	if err != nil {
 		return "", fmt.Errorf("failed write new kube context file: %w", err)
+	}
+
+	configPath, err := kcm.MergeConfigs(ctx, "config", contextName)
+	if err != nil {
+		return "", fmt.Errorf("failed merging KUBE configs: %w", err)
 	}
 
 	return configPath, nil

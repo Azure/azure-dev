@@ -2,22 +2,14 @@ package project
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"strings"
 	"testing"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerregistry/armcontainerregistry"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
-	"github.com/azure/azure-dev/cli/azd/pkg/exec"
-	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/docker"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
 	"github.com/benbjohnson/clock"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/mock"
 	"github.com/stretchr/testify/require"
 )
 
@@ -36,6 +28,8 @@ func Test_ContainerHelper_LocalImageTag(t *testing.T) {
 	}
 	defaultImageName := fmt.Sprintf("%s/%s-%s", projectName, serviceName, envName)
 
+	envManager := &mockenv.MockEnvManager{}
+
 	tests := []struct {
 		name         string
 		dockerConfig DockerProjectOptions
@@ -48,16 +42,15 @@ func Test_ContainerHelper_LocalImageTag(t *testing.T) {
 		{
 			"ImageTagSpecified",
 			DockerProjectOptions{
-				Image: osutil.NewExpandableString("contoso/contoso-image:latest"),
+				Tag: NewExpandableString("contoso/contoso-image:latest"),
 			},
-			"contoso/contoso-image:latest",
-		},
+			"contoso/contoso-image:latest"},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			env := environment.NewWithValues("dev", map[string]string{})
-			containerHelper := NewContainerHelper(env, nil, clock.NewMock(), nil, nil)
+			containerHelper := NewContainerHelper(env, envManager, clock.NewMock(), nil, nil)
 			serviceConfig.Docker = tt.dockerConfig
 
 			tag, err := containerHelper.LocalImageTag(*mockContext.Context, serviceConfig)
@@ -68,65 +61,34 @@ func Test_ContainerHelper_LocalImageTag(t *testing.T) {
 }
 
 func Test_ContainerHelper_RemoteImageTag(t *testing.T) {
-	tests := []struct {
-		name              string
-		project           string
-		localImageTag     string
-		registry          osutil.ExpandableString
-		expectedRemoteTag string
-		expectError       bool
-	}{
-		{
-			name:              "with registry",
-			project:           "./src/api",
-			registry:          osutil.NewExpandableString("contoso.azurecr.io"),
-			localImageTag:     "test-app/api-dev:azd-deploy-0",
-			expectedRemoteTag: "contoso.azurecr.io/test-app/api-dev:azd-deploy-0",
-		},
-		{
-			name:              "with no registry and custom image",
-			project:           "",
-			localImageTag:     "docker.io/org/my-custom-image:latest",
-			expectedRemoteTag: "docker.io/org/my-custom-image:latest",
-		},
-		{
-			name:              "registry with fully qualified custom image",
-			project:           "",
-			registry:          osutil.NewExpandableString("contoso.azurecr.io"),
-			localImageTag:     "docker.io/org/my-custom-image:latest",
-			expectedRemoteTag: "contoso.azurecr.io/org/my-custom-image:latest",
-		},
-		{
-			name:          "missing registry with local project",
-			project:       "./src/api",
-			localImageTag: "test-app/api-dev:azd-deploy-0",
-			expectError:   true,
-		},
-	}
-
 	mockContext := mocks.NewMockContext(context.Background())
-	env := environment.NewWithValues("dev", map[string]string{})
-	containerHelper := NewContainerHelper(env, nil, clock.NewMock(), nil, nil)
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			serviceConfig := createTestServiceConfig(tt.project, ContainerAppTarget, ServiceLanguageTypeScript)
-			serviceConfig.Docker.Registry = tt.registry
-
-			remoteTag, err := containerHelper.RemoteImageTag(*mockContext.Context, serviceConfig, tt.localImageTag)
-
-			if tt.expectError {
-				require.Error(t, err)
-				require.Empty(t, remoteTag)
-			} else {
-				require.NoError(t, err)
-				require.Equal(t, tt.expectedRemoteTag, remoteTag)
-			}
-		})
-	}
+	env := environment.NewWithValues("dev", map[string]string{
+		environment.ContainerRegistryEndpointEnvVarName: "contoso.azurecr.io",
+	})
+	envManager := &mockenv.MockEnvManager{}
+	containerHelper := NewContainerHelper(env, envManager, clock.NewMock(), nil, nil)
+	serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
+	localTag, err := containerHelper.LocalImageTag(*mockContext.Context, serviceConfig)
+	require.NoError(t, err)
+	remoteTag, err := containerHelper.RemoteImageTag(*mockContext.Context, serviceConfig, localTag)
+	require.NoError(t, err)
+	require.Equal(t, "contoso.azurecr.io/test-app/api-dev:azd-deploy-0", remoteTag)
 }
 
-func Test_ContainerHelper_Resolve_RegistryName(t *testing.T) {
+func Test_ContainerHelper_RemoteImageTag_NoContainer_Registry(t *testing.T) {
+	mockContext := mocks.NewMockContext(context.Background())
+
+	env := environment.New("test")
+	serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
+	envManager := &mockenv.MockEnvManager{}
+	containerHelper := NewContainerHelper(env, envManager, clock.NewMock(), nil, nil)
+
+	imageTag, err := containerHelper.RemoteImageTag(*mockContext.Context, serviceConfig, "local_tag")
+	require.Error(t, err)
+	require.Empty(t, imageTag)
+}
+
+func Test_Resolve_RegistryName(t *testing.T) {
 	t.Run("Default EnvVar", func(t *testing.T) {
 		mockContext := mocks.NewMockContext(context.Background())
 		env := environment.NewWithValues("dev", map[string]string{
@@ -147,7 +109,7 @@ func Test_ContainerHelper_Resolve_RegistryName(t *testing.T) {
 		envManager := &mockenv.MockEnvManager{}
 		containerHelper := NewContainerHelper(env, envManager, clock.NewMock(), nil, nil)
 		serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
-		serviceConfig.Docker.Registry = osutil.NewExpandableString("contoso.azurecr.io")
+		serviceConfig.Docker.Registry = NewExpandableString("contoso.azurecr.io")
 		registryName, err := containerHelper.RegistryName(*mockContext.Context, serviceConfig)
 
 		require.NoError(t, err)
@@ -161,7 +123,7 @@ func Test_ContainerHelper_Resolve_RegistryName(t *testing.T) {
 		envManager := &mockenv.MockEnvManager{}
 		containerHelper := NewContainerHelper(env, envManager, clock.NewMock(), nil, nil)
 		serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
-		serviceConfig.Docker.Registry = osutil.NewExpandableString("${MY_CUSTOM_REGISTRY}")
+		serviceConfig.Docker.Registry = NewExpandableString("${MY_CUSTOM_REGISTRY}")
 		registryName, err := containerHelper.RegistryName(*mockContext.Context, serviceConfig)
 
 		require.NoError(t, err)
@@ -180,6 +142,7 @@ func Test_ContainerHelper_Resolve_RegistryName(t *testing.T) {
 		require.Empty(t, registryName)
 	})
 }
+<<<<<<< HEAD
 
 func Test_ContainerHelper_Deploy(t *testing.T) {
 	tests := []struct {
@@ -563,3 +526,5 @@ func (m *mockContainerRegistryService) GetContainerRegistries(
 	args := m.Called(ctx, subscriptionId)
 	return args.Get(0).([]*armcontainerregistry.Registry), args.Error(1)
 }
+=======
+>>>>>>> 277296b8 (Revert "Merge branch 'Azure:main' into helloai")

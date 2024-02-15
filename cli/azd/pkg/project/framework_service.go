@@ -15,7 +15,6 @@ import (
 type ServiceLanguageKind string
 
 const (
-	ServiceLanguageNone       ServiceLanguageKind = ""
 	ServiceLanguageDotNet     ServiceLanguageKind = "dotnet"
 	ServiceLanguageCsharp     ServiceLanguageKind = "csharp"
 	ServiceLanguageFsharp     ServiceLanguageKind = "fsharp"
@@ -27,14 +26,17 @@ const (
 )
 
 func parseServiceLanguage(kind ServiceLanguageKind) (ServiceLanguageKind, error) {
+	if string(kind) == "" {
+		return ServiceLanguageKind(""), fmt.Errorf("language property must not be empty")
+	}
+
 	// aliases
 	if string(kind) == "py" {
 		return ServiceLanguagePython, nil
 	}
 
 	switch kind {
-	case ServiceLanguageNone,
-		ServiceLanguageDotNet,
+	case ServiceLanguageDotNet,
 		ServiceLanguageCsharp,
 		ServiceLanguageFsharp,
 		ServiceLanguageJavaScript,
@@ -45,7 +47,7 @@ func parseServiceLanguage(kind ServiceLanguageKind) (ServiceLanguageKind, error)
 		return kind, nil
 	}
 
-	return ServiceLanguageKind("Unsupported"), fmt.Errorf("unsupported language '%s'", kind)
+	return ServiceLanguageKind(""), fmt.Errorf("unsupported language '%s'", kind)
 }
 
 type FrameworkRequirements struct {

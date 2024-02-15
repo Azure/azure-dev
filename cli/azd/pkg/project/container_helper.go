@@ -39,7 +39,7 @@ func NewContainerHelper(
 	}
 }
 
-// RegistryName returns the name of the destination container registry to use for the current environment from the following:
+// RegistryName returns the name of the container registry to use for the current environment from the following:
 // 1. AZURE_CONTAINER_REGISTRY_ENDPOINT environment variable
 // 2. docker.registry from the service configuration
 func (ch *ContainerHelper) RegistryName(ctx context.Context, serviceConfig *ServiceConfig) (string, error) {
@@ -60,11 +60,7 @@ func (ch *ContainerHelper) RegistryName(ctx context.Context, serviceConfig *Serv
 		registryName = yamlRegistryName
 	}
 
-	// If the service provides its own code artifacts then the expectation is that an images needs to be built and
-	// pushed to a container registry.
-	// If the service does not provide its own code artifacts then the expectation is a registry is optional and
-	// an image can be referenced independently.
-	if serviceConfig.RelativePath != "" && registryName == "" {
+	if registryName == "" {
 		return "", fmt.Errorf(
 			//nolint:lll
 			"could not determine container registry endpoint, ensure 'registry' has been set in the docker options or '%s' environment variable has been set",
@@ -75,91 +71,39 @@ func (ch *ContainerHelper) RegistryName(ctx context.Context, serviceConfig *Serv
 	return registryName, nil
 }
 
-// GeneratedImage returns the configured image from the service configuration
-// or a default image name generated from the service name and environment name.
-func (ch *ContainerHelper) GeneratedImage(
-	ctx context.Context,
-	serviceConfig *ServiceConfig,
-) (*docker.ContainerImage, error) {
-	// Parse the image from azure.yaml configuration when available
-	configuredImage, err := serviceConfig.Docker.Image.Envsubst(ch.env.Getenv)
-	if err != nil {
-		return nil, fmt.Errorf("failed parsing 'image' from docker configuration, %w", err)
-	}
-
-	// Set default image name if not configured
-	if configuredImage == "" {
-		configuredImage = fmt.Sprintf("%s/%s-%s",
-			strings.ToLower(serviceConfig.Project.Name),
-			strings.ToLower(serviceConfig.Name),
-			strings.ToLower(ch.env.Name()),
-		)
-	}
-
-	parsedImage, err := docker.ParseContainerImage(configuredImage)
-	if err != nil {
-		return nil, fmt.Errorf("failed parsing configured image, %w", err)
-	}
-
-	if parsedImage.Tag == "" {
-		configuredTag, err := serviceConfig.Docker.Tag.Envsubst(ch.env.Getenv)
-		if err != nil {
-			return nil, fmt.Errorf("failed parsing 'tag' from docker configuration, %w", err)
-		}
-
-		// Set default tag if not configured
-		if configuredTag == "" {
-			configuredTag = fmt.Sprintf("azd-deploy-%d",
-				ch.clock.Now().Unix(),
-			)
-		}
-
-		parsedImage.Tag = configuredTag
-	}
-
-	// Set default registry if not configured
-	if parsedImage.Registry == "" {
-		// This can fail if called before provisioning the registry
-		configuredRegistry, err := ch.RegistryName(ctx, serviceConfig)
-		if err == nil {
-			parsedImage.Registry = configuredRegistry
-		}
-	}
-
-	return parsedImage, nil
-}
-
-// RemoteImageTag returns the remote image tag for the service configuration.
 func (ch *ContainerHelper) RemoteImageTag(
 	ctx context.Context,
 	serviceConfig *ServiceConfig,
 	localImageTag string,
 ) (string, error) {
-	registryName, err := ch.RegistryName(ctx, serviceConfig)
+	loginServer, err := ch.RegistryName(ctx, serviceConfig)
 	if err != nil {
 		return "", err
 	}
 
-	containerImage, err := docker.ParseContainerImage(localImageTag)
-	if err != nil {
-		return "", err
-	}
-
-	if registryName != "" {
-		containerImage.Registry = registryName
-	}
-
-	return containerImage.Remote(), nil
+	return fmt.Sprintf(
+		"%s/%s",
+		loginServer,
+		localImageTag,
+	), nil
 }
 
-// LocalImageTag returns the local image tag for the service configuration.
 func (ch *ContainerHelper) LocalImageTag(ctx context.Context, serviceConfig *ServiceConfig) (string, error) {
-	configuredImage, err := ch.GeneratedImage(ctx, serviceConfig)
+	configuredTag, err := serviceConfig.Docker.Tag.Envsubst(ch.env.Getenv)
 	if err != nil {
 		return "", err
 	}
 
-	return configuredImage.Local(), nil
+	if configuredTag != "" {
+		return configuredTag, nil
+	}
+
+	return fmt.Sprintf("%s/%s-%s:azd-deploy-%d",
+		strings.ToLower(serviceConfig.Project.Name),
+		strings.ToLower(serviceConfig.Name),
+		strings.ToLower(ch.env.Name()),
+		ch.clock.Now().Unix(),
+	), nil
 }
 
 func (ch *ContainerHelper) RequiredExternalTools(context.Context) []tools.ExternalTool {
@@ -178,14 +122,7 @@ func (ch *ContainerHelper) Login(
 		return "", err
 	}
 
-	// Only perform automatic login for ACR
-	// Other registries require manual login via external 'docker login' command
-	hostParts := strings.Split(loginServer, ".")
-	if len(hostParts) == 1 || strings.Contains(loginServer, "azurecr.io") {
-		return loginServer, ch.containerRegistryService.Login(ctx, targetResource.SubscriptionId(), loginServer)
-	}
-
-	return loginServer, nil
+	return loginServer, ch.containerRegistryService.Login(ctx, targetResource.SubscriptionId(), loginServer)
 }
 
 func (ch *ContainerHelper) Credentials(
@@ -213,21 +150,19 @@ func (ch *ContainerHelper) Deploy(
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress]) {
 			// Get ACR Login Server
-			registryName, err := ch.RegistryName(ctx, serviceConfig)
+			loginServer, err := ch.RegistryName(ctx, serviceConfig)
 			if err != nil {
 				task.SetError(err)
 				return
 			}
 
-			var sourceImage string
-			targetImage := packageOutput.PackagePath
-
-			packageDetails := packageOutput.Details.(*dockerPackageResult)
-			if packageDetails != nil {
-				sourceImage = packageDetails.SourceImage
-				targetImage = packageDetails.TargetImage
+			localImageTag := packageOutput.PackagePath
+			packageDetails, ok := packageOutput.Details.(*dockerPackageResult)
+			if ok && packageDetails != nil {
+				localImageTag = packageDetails.ImageTag
 			}
 
+<<<<<<< HEAD
 			// Default to the local image tag
 			remoteImage := targetImage
 
@@ -287,12 +222,47 @@ func (ch *ContainerHelper) Deploy(
 						return
 					}
 				}
+=======
+			if localImageTag == "" {
+				task.SetError(errors.New("failed retrieving package result details"))
+				return
+			}
+
+			// Tag image
+			// Get remote tag from the container helper then call docker cli tag command
+			remoteTag, err := ch.RemoteImageTag(ctx, serviceConfig, localImageTag)
+			if err != nil {
+				task.SetError(fmt.Errorf("getting remote image tag: %w", err))
+				return
+			}
+
+			task.SetProgress(NewServiceProgress("Tagging container image"))
+			if err := ch.docker.Tag(ctx, serviceConfig.Path(), localImageTag, remoteTag); err != nil {
+				task.SetError(err)
+				return
+			}
+
+			log.Printf("logging into container registry '%s'\n", loginServer)
+			task.SetProgress(NewServiceProgress("Logging into container registry"))
+			err = ch.containerRegistryService.Login(ctx, targetResource.SubscriptionId(), loginServer)
+			if err != nil {
+				task.SetError(err)
+				return
+			}
+
+			// Push image.
+			log.Printf("pushing %s to registry", remoteTag)
+			task.SetProgress(NewServiceProgress("Pushing container image"))
+			if err := ch.docker.Push(ctx, serviceConfig.Path(), remoteTag); err != nil {
+				task.SetError(err)
+				return
+>>>>>>> 277296b8 (Revert "Merge branch 'Azure:main' into helloai")
 			}
 
 			if writeImageToEnv {
 				// Save the name of the image we pushed into the environment with a well known key.
 				log.Printf("writing image name to environment")
-				ch.env.SetServiceProperty(serviceConfig.Name, "IMAGE_NAME", remoteImage)
+				ch.env.SetServiceProperty(serviceConfig.Name, "IMAGE_NAME", remoteTag)
 
 				if err := ch.envManager.Save(ctx, ch.env); err != nil {
 					task.SetError(fmt.Errorf("saving image name to environment: %w", err))
@@ -303,7 +273,7 @@ func (ch *ContainerHelper) Deploy(
 			task.SetResult(&ServiceDeployResult{
 				Package: packageOutput,
 				Details: &dockerDeployResult{
-					RemoteImageTag: remoteImage,
+					RemoteImageTag: remoteTag,
 				},
 			})
 		})

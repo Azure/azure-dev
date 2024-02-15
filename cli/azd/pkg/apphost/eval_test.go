@@ -21,7 +21,7 @@ func TestEvalString(t *testing.T) {
 
 	for _, c := range cases {
 		t.Run(c.name, func(t *testing.T) {
-			res, err := EvalString(c.src, func(s string) (string, error) {
+			res, err := evalString(c.src, func(s string) (string, error) {
 				return s, nil
 			})
 
@@ -42,7 +42,7 @@ func TestEvalString(t *testing.T) {
 
 	for _, c := range errorCases {
 		t.Run(c.name, func(t *testing.T) {
-			res, err := EvalString(c.src, func(s string) (string, error) {
+			res, err := evalString(c.src, func(s string) (string, error) {
 				return s, nil
 			})
 
@@ -51,7 +51,7 @@ func TestEvalString(t *testing.T) {
 		})
 	}
 
-	res, err := EvalString("{this.one.has.a.replacement}", func(s string) (string, error) {
+	res, err := evalString("{this.one.has.a.replacement}", func(s string) (string, error) {
 		return "", fmt.Errorf("this should cause evalString to fail")
 	})
 

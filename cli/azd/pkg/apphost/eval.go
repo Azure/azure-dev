@@ -11,7 +11,7 @@ import (
 // and '}' characters) and should return the value to be substituted into the string.  If the evalExpr function returns
 // an error, evalString will return that error. The '{' and '}' characters can be escaped by doubling them, e.g.
 // "{{" and "}}". If a string is malformed (e.g. an unmatched '{' or '}' character), evalString will return an error.
-func EvalString(src string, evalExpr func(string) (string, error)) (string, error) {
+func evalString(src string, evalExpr func(string) (string, error)) (string, error) {
 	var res strings.Builder
 
 	for i := 0; i < len(src); i++ {

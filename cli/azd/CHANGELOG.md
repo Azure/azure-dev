@@ -1,5 +1,6 @@
 # Release History
 
+<<<<<<< HEAD
 ## 1.6.1 (2024-02-15)
 
 ### Bugs Fixed
@@ -9,25 +10,17 @@
 - [[3372]](https://github.com/Azure/azure-dev/pull/3372) Removes requirement for dev center projects to include an `infra` folder
 
 ## 1.6.0 (2024-02-13)
+=======
+## 1.6.0-beta.1 (Unreleased)
+>>>>>>> 277296b8 (Revert "Merge branch 'Azure:main' into helloai")
 
 ### Features Added
 
-- [[3269]](https://github.com/Azure/azure-dev/pull/3269) Adds support for external/prebuilt container image references
-- [[3251]](https://github.com/Azure/azure-dev/pull/3251) Adds additional configuration resolving container registry names
-- [[3249]](https://github.com/Azure/azure-dev/pull/3249) Adds additional configuration resolving AKS cluster names
-- [[3223]](https://github.com/Azure/azure-dev/pull/3223) Updates AKS core modules for `azd` to easily enable RBAC clusters
-- [[3211]](https://github.com/Azure/azure-dev/pull/3211) Adds support for RBAC enabled AKS clusters using `kubelogin`
-- [[3196]](https://github.com/Azure/azure-dev/pull/3196) Adds support for Helm and Kustomize for AKS service targets
-- [[3173]](https://github.com/Azure/azure-dev/pull/3173) Adds support for defining customizable `azd up` workflows
-- Dotnet Aspire additions:
-  - [[3164]](https://github.com/Azure/azure-dev/pull/3164) Azure Cosmos DB.
-  - [[3226]](https://github.com/Azure/azure-dev/pull/3226) Azure SQL Database.
-  - [[3276]](https://github.com/Azure/azure-dev/pull/3276) Secrets handling improvement.
-- [[3155]](https://github.com/Azure/azure-dev/pull/3155) Adds support to define secrets and variables for `azd pipeline config`.
+### Breaking Changes
 
 ### Bugs Fixed
 
-- [[3097]](https://github.com/Azure/azure-dev/pull/3097) For Dotnet Aspire projects, do not fail if folder `infra` is empty.
+### Other Changes
 
 ## 1.5.1 (2023-12-20)
 

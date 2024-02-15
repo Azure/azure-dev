@@ -14,7 +14,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/cmd/middleware"
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/internal/cmd"
 	"github.com/azure/azure-dev/cli/azd/internal/repository"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
@@ -28,14 +27,11 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
-	"github.com/azure/azure-dev/cli/azd/pkg/helm"
 	"github.com/azure/azure-dev/cli/azd/pkg/httputil"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
-	"github.com/azure/azure-dev/cli/azd/pkg/kubelogin"
-	"github.com/azure/azure-dev/cli/azd/pkg/kustomize"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/pipeline"
@@ -344,8 +340,6 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	)
 
 	// Project Config
-	// Required to be singleton (shared) because the project/service holds important event handlers
-	// from both hooks and internal that are used during azd lifecycle calls.
 	container.MustRegisterSingleton(
 		func(ctx context.Context, azdContext *azdcontext.AzdContext) (*project.ProjectConfig, error) {
 			if azdContext == nil {
@@ -362,8 +356,6 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	)
 
 	// Lazy loads the project config from the Azd Context when it becomes available
-	// Required to be singleton (shared) because the project/service holds important event handlers
-	// from both hooks and internal that are used during azd lifecycle calls.
 	container.MustRegisterSingleton(
 		func(
 			serviceLocator ioc.ServiceLocator,
@@ -471,9 +463,6 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(javac.NewCli)
 	container.MustRegisterSingleton(kubectl.NewKubectl)
 	container.MustRegisterSingleton(maven.NewMavenCli)
-	container.MustRegisterSingleton(kubelogin.NewCli)
-	container.MustRegisterSingleton(helm.NewCli)
-	container.MustRegisterSingleton(kustomize.NewCli)
 	container.MustRegisterSingleton(npm.NewNpmCli)
 	container.MustRegisterSingleton(python.NewPythonCli)
 	container.MustRegisterSingleton(swa.NewSwaCli)
@@ -489,7 +478,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 	// Service Targets
 	serviceTargetMap := map[project.ServiceTargetKind]any{
-		project.NonSpecifiedTarget:       project.NewAppServiceTarget,
+		"":                               project.NewAppServiceTarget,
 		project.AppServiceTarget:         project.NewAppServiceTarget,
 		project.AzureFunctionTarget:      project.NewFunctionAppTarget,
 		project.ContainerAppTarget:       project.NewContainerAppTarget,
@@ -505,7 +494,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 
 	// Languages
 	frameworkServiceMap := map[project.ServiceLanguageKind]any{
-		project.ServiceLanguageNone:       project.NewNoOpProject,
+		"":                                project.NewDotNetProject,
 		project.ServiceLanguageDotNet:     project.NewDotNetProject,
 		project.ServiceLanguageCsharp:     project.NewDotNetProject,
 		project.ServiceLanguageFsharp:     project.NewDotNetProject,
@@ -617,7 +606,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	container.MustRegisterSingleton(workflow.NewRunner)
 
 	// Required for nested actions called from composite actions like 'up'
-	registerAction[*cmd.ProvisionAction](container, "azd-provision-action")
+	registerAction[*provisionAction](container, "azd-provision-action")
 	registerAction[*downAction](container, "azd-down-action")
 	registerAction[*configShowAction](container, "azd-config-show-action")
 }

@@ -5,7 +5,6 @@ param(
     [string] $RunnerTemp = [System.IO.Path]::GetTempPath(),
     [switch] $WhatIf
 )
-$PSNativeCommandArgumentPassing = 'Legacy'
 
 $projectsJson = repoman list --format json | Out-String
 $projects = ConvertFrom-Json $projectsJson
@@ -43,7 +42,7 @@ repoman generate `
         --remote "$RemoteName" `
         --https `
         --fail-on-update-error `
-        @additionalParameters
+        $additionalParameters
 
     if ($LASTEXITCODE) {
         Write-Error "Error running repoman generate. Exit code: $LASTEXITCODE"

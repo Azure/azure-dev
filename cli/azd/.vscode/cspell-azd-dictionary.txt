@@ -5,7 +5,6 @@ aiopg
 alphafeatures
 apimanagement
 apims
-apiservice
 appconfiguration
 appdetect
 apphost
@@ -103,7 +102,6 @@ javac
 jmes
 jquery
 keychain
-kubelogin
 LASTEXITCODE
 ldflags
 lechnerc77
@@ -185,14 +183,11 @@ Truef
 typeflag
 unhide
 unmarshaled
-upgrader
 unmarshalling
 unsetenvs
 unsets
 utsname
-vsrpc
 vuejs
-webfrontend
 westus2
 wireinject
 yacspin

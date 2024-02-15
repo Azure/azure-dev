@@ -12,13 +12,13 @@ import (
 
 // ManagedClustersService provides actions on top of Azure Kubernetes Service (AKS) Managed Clusters
 type ManagedClustersService interface {
-	// Gets the managed cluster resource by name
-	Get(
+	// Gets the admin credentials for the specified resource
+	GetAdminCredentials(
 		ctx context.Context,
 		subscriptionId string,
 		resourceGroupName string,
 		resourceName string,
-	) (*armcontainerservice.ManagedCluster, error)
+	) (*armcontainerservice.CredentialResults, error)
 	// Gets the user credentials for the specified resource
 	GetUserCredentials(
 		ctx context.Context,
@@ -46,26 +46,6 @@ func NewManagedClustersService(
 	}
 }
 
-// Gets the managed cluster resource by name
-func (cs *managedClustersService) Get(
-	ctx context.Context,
-	subscriptionId string,
-	resourceGroupName string,
-	resourceName string,
-) (*armcontainerservice.ManagedCluster, error) {
-	client, err := cs.createManagedClusterClient(ctx, subscriptionId)
-	if err != nil {
-		return nil, err
-	}
-
-	managedCluster, err := client.Get(ctx, resourceGroupName, resourceName, nil)
-	if err != nil {
-		return nil, err
-	}
-
-	return &managedCluster.ManagedCluster, nil
-}
-
 // Gets the user credentials for the specified resource
 func (cs *managedClustersService) GetUserCredentials(
 	ctx context.Context,
@@ -79,6 +59,26 @@ func (cs *managedClustersService) GetUserCredentials(
 	}
 
 	credResult, err := client.ListClusterUserCredentials(ctx, resourceGroupName, resourceName, nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return &credResult.CredentialResults, nil
+}
+
+// Gets the admin credentials for the specified resource
+func (cs *managedClustersService) GetAdminCredentials(
+	ctx context.Context,
+	subscriptionId string,
+	resourceGroupName string,
+	resourceName string,
+) (*armcontainerservice.CredentialResults, error) {
+	client, err := cs.createManagedClusterClient(ctx, subscriptionId)
+	if err != nil {
+		return nil, err
+	}
+
+	credResult, err := client.ListClusterAdminCredentials(ctx, resourceGroupName, resourceName, nil)
 	if err != nil {
 		return nil, err
 	}

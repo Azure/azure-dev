@@ -27,7 +27,6 @@ type genContainerApp struct {
 	Image   string
 	Dapr    *genContainerAppManifestTemplateContextDapr
 	Env     map[string]string
-	Secrets map[string]string
 	Ingress *genContainerAppIngress
 }
 
@@ -42,7 +41,6 @@ type genContainer struct {
 	Image    string
 	Env      map[string]string
 	Bindings map[string]*Binding
-	Inputs   map[string]Input
 }
 
 type genDockerfile struct {

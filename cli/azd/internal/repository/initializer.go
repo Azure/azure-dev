@@ -14,6 +14,7 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
@@ -340,7 +341,7 @@ func (i *Initializer) InitializeMinimal(ctx context.Context, azdCtx *azdcontext.
 	// Default infra path if not specified
 	infraPath := projectConfig.Infra.Path
 	if infraPath == "" {
-		infraPath = project.DefaultPath
+		infraPath = bicep.Defaults.Path
 	}
 
 	err = os.MkdirAll(infraPath, osutil.PermissionDirectory)
@@ -350,7 +351,7 @@ func (i *Initializer) InitializeMinimal(ctx context.Context, azdCtx *azdcontext.
 
 	module := projectConfig.Infra.Module
 	if projectConfig.Infra.Module == "" {
-		module = project.DefaultModule
+		module = bicep.Defaults.Module
 	}
 
 	mainPath := filepath.Join(infraPath, module)

@@ -1,6 +1,5 @@
 param(
-    $PackageTypes = @('deb', 'rpm'),
-    $DockerImagePrefix = ''
+    $PackageTypes = @('deb', 'rpm')
 )
 
 $originalLocation = Get-Location 
@@ -9,7 +8,7 @@ try {
     $currentPath = (Get-Location).Path
 
     foreach ($type in $PackageTypes) { 
-        docker build . -f "test-$type.Dockerfile" -t test-linux-package --build-arg prefix="$DockerImagePrefix"
+        docker build . -f "test-$type.Dockerfile" -t test-linux-package
         if ($LASTEXITCODE) { 
             Write-Host "Error building test container for type: $type"
             exit 1

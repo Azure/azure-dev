@@ -54,12 +54,6 @@ resource mysqlabstract 'Microsoft.App/containerApps@2023-05-02-preview' = {
         targetPort: 3306
         transport: 'tcp'
       }
-      secrets: [
-        {
-          name: 'mysql-root-password'
-          value: inputs.mysqlabstract.password
-        }    
-      ]
     }
     template: {
       containers: [
@@ -69,14 +63,11 @@ resource mysqlabstract 'Microsoft.App/containerApps@2023-05-02-preview' = {
           env: [
             {
               name: 'MYSQL_ROOT_PASSWORD'
-              secretRef: 'mysql-root-password'
+              value: '${inputs['mysqlabstract']['password']}'
             }
           ]
         }
       ]
-      scale: {
-        minReplicas: 1
-      }
     }
   }
   tags: union(tags, {'aspire-resource-name': 'mysqlabstract'})

@@ -20,7 +20,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/platform"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/internal/cmd"
 	"github.com/azure/azure-dev/cli/azd/internal/telemetry"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/spf13/cobra"
@@ -140,14 +139,6 @@ func NewRootCmd(
 		},
 	})
 
-	root.Add("vs-server", &actions.ActionDescriptorOptions{
-		Command:        newVsServerCmd(),
-		FlagsResolver:  newVsServerFlags,
-		ActionResolver: newVsServerAction,
-		OutputFormats:  []output.Format{output.NoneFormat},
-		DefaultFormat:  output.NoneFormat,
-	})
-
 	root.Add("show", &actions.ActionDescriptorOptions{
 		Command:        newShowCmd(),
 		FlagsResolver:  newShowFlags,
@@ -220,13 +211,13 @@ func NewRootCmd(
 
 	root.
 		Add("provision", &actions.ActionDescriptorOptions{
-			Command:        cmd.NewProvisionCmd(),
-			FlagsResolver:  cmd.NewProvisionFlags,
-			ActionResolver: cmd.NewProvisionAction,
+			Command:        newProvisionCmd(),
+			FlagsResolver:  newProvisionFlags,
+			ActionResolver: newProvisionAction,
 			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 			DefaultFormat:  output.NoneFormat,
 			HelpOptions: actions.ActionHelpOptions{
-				Description: cmd.GetCmdProvisionHelpDescription,
+				Description: getCmdProvisionHelpDescription,
 				Footer:      getCmdHelpDefaultFooter,
 			},
 			GroupingOptions: actions.CommandGroupOptions{
@@ -260,14 +251,14 @@ func NewRootCmd(
 
 	root.
 		Add("deploy", &actions.ActionDescriptorOptions{
-			Command:        cmd.NewDeployCmd(),
-			FlagsResolver:  cmd.NewDeployFlags,
-			ActionResolver: cmd.NewDeployAction,
+			Command:        newDeployCmd(),
+			FlagsResolver:  newDeployFlags,
+			ActionResolver: newDeployAction,
 			OutputFormats:  []output.Format{output.JsonFormat, output.NoneFormat},
 			DefaultFormat:  output.NoneFormat,
 			HelpOptions: actions.ActionHelpOptions{
-				Description: cmd.GetCmdDeployHelpDescription,
-				Footer:      cmd.GetCmdDeployHelpFooter,
+				Description: getCmdDeployHelpDescription,
+				Footer:      getCmdDeployHelpFooter,
 			},
 			GroupingOptions: actions.CommandGroupOptions{
 				RootLevelHelp: actions.CmdGroupManage,

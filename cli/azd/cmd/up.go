@@ -8,7 +8,6 @@ import (
 	"github.com/MakeNowJust/heredoc/v2"
 	"github.com/azure/azure-dev/cli/azd/cmd/actions"
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/internal/cmd"
 	"github.com/azure/azure-dev/cli/azd/pkg/auth"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
@@ -22,8 +21,8 @@ import (
 )
 
 type upFlags struct {
-	cmd.ProvisionFlags
-	cmd.DeployFlags
+	provisionFlags
+	deployFlags
 	global *internal.GlobalCommandOptions
 	internal.EnvFlag
 }
@@ -32,10 +31,10 @@ func (u *upFlags) Bind(local *pflag.FlagSet, global *internal.GlobalCommandOptio
 	u.EnvFlag.Bind(local, global)
 	u.global = global
 
-	u.ProvisionFlags.BindNonCommon(local, global)
-	u.ProvisionFlags.SetCommon(&u.EnvFlag)
-	u.DeployFlags.BindNonCommon(local, global)
-	u.DeployFlags.SetCommon(&u.EnvFlag)
+	u.provisionFlags.bindNonCommon(local, global)
+	u.provisionFlags.setCommon(&u.EnvFlag)
+	u.deployFlags.bindNonCommon(local, global)
+	u.deployFlags.setCommon(&u.EnvFlag)
 }
 
 func newUpFlags(cmd *cobra.Command, global *internal.GlobalCommandOptions) *upFlags {

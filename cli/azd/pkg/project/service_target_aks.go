@@ -6,36 +6,23 @@ import (
 	"fmt"
 	"log"
 	"net/url"
-	"os"
 	"path/filepath"
 	"strings"
-	"time"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/alpha"
+	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/containerservice/armcontainerservice/v2"
 	"github.com/azure/azure-dev/cli/azd/pkg/async"
 	"github.com/azure/azure-dev/cli/azd/pkg/azure"
-	"github.com/azure/azure-dev/cli/azd/pkg/convert"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/ext"
-	"github.com/azure/azure-dev/cli/azd/pkg/helm"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/kubelogin"
-	"github.com/azure/azure-dev/cli/azd/pkg/kustomize"
-	"github.com/azure/azure-dev/cli/azd/pkg/osutil"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/kubectl"
-	"github.com/sethvargo/go-retry"
 )
 
 const (
 	defaultDeploymentPath = "manifests"
-)
-
-var (
-	featureHelm      alpha.FeatureId = alpha.MustFeatureKey("aks.helm")
-	featureKustomize alpha.FeatureId = alpha.MustFeatureKey("aks.kustomize")
 )
 
 // The AKS configuration options
@@ -50,10 +37,6 @@ type AksOptions struct {
 	Deployment AksDeploymentOptions `yaml:"deployment"`
 	// The services service configuration options
 	Service AksServiceOptions `yaml:"service"`
-	// The helm configuration options
-	Helm *helm.Config `yaml:"helm"`
-	// The kustomize configuration options
-	Kustomize *kustomize.Config `yaml:"kustomize"`
 }
 
 // The AKS ingress options
@@ -79,11 +62,7 @@ type aksTarget struct {
 	managedClustersService azcli.ManagedClustersService
 	resourceManager        ResourceManager
 	kubectl                kubectl.KubectlCli
-	kubeLoginCli           *kubelogin.Cli
-	helmCli                *helm.Cli
-	kustomizeCli           *kustomize.Cli
 	containerHelper        *ContainerHelper
-	featureManager         *alpha.FeatureManager
 }
 
 // Creates a new instance of the AKS service target
@@ -94,11 +73,7 @@ func NewAksTarget(
 	managedClustersService azcli.ManagedClustersService,
 	resourceManager ResourceManager,
 	kubectlCli kubectl.KubectlCli,
-	kubeLoginCli *kubelogin.Cli,
-	helmCli *helm.Cli,
-	kustomizeCli *kustomize.Cli,
 	containerHelper *ContainerHelper,
-	featureManager *alpha.FeatureManager,
 ) ServiceTarget {
 	return &aksTarget{
 		env:                    env,
@@ -107,11 +82,7 @@ func NewAksTarget(
 		managedClustersService: managedClustersService,
 		resourceManager:        resourceManager,
 		kubectl:                kubectlCli,
-		kubeLoginCli:           kubeLoginCli,
-		helmCli:                helmCli,
-		kustomizeCli:           kustomizeCli,
 		containerHelper:        containerHelper,
-		featureManager:         featureManager,
 	}
 }
 
@@ -120,14 +91,6 @@ func (t *aksTarget) RequiredExternalTools(ctx context.Context) []tools.ExternalT
 	allTools := []tools.ExternalTool{}
 	allTools = append(allTools, t.containerHelper.RequiredExternalTools(ctx)...)
 	allTools = append(allTools, t.kubectl)
-
-	if t.featureManager.IsEnabled(featureHelm) {
-		allTools = append(allTools, t.helmCli)
-	}
-
-	if t.featureManager.IsEnabled(featureKustomize) {
-		allTools = append(allTools, t.kustomizeCli)
-	}
 
 	return allTools
 }
@@ -208,56 +171,46 @@ func (t *aksTarget) Deploy(
 			// Login, tag & push container image to ACR
 			containerDeployTask := t.containerHelper.Deploy(ctx, serviceConfig, packageOutput, targetResource, true)
 			syncProgress(task, containerDeployTask.Progress())
+<<<<<<< HEAD
 
 			_, err := containerDeployTask.Await()
 			if err != nil {
 				task.SetError(err)
 				return
 			}
+=======
+>>>>>>> 277296b8 (Revert "Merge branch 'Azure:main' into helloai")
 
 			// Sync environment
 			t.kubectl.SetEnv(t.env.Dotenv())
 
-			// Deploy k8s resources in the following order:
-			// 1. Helm
-			// 2. Kustomize
-			// 3. Manifests
-			//
-			// Users may install a helm chart to setup their cluster with custom resource definitions that their
-			// custom manifests depend on.
-			// Users are more likely to either deploy with kustomize or vanilla manifests but they could do both.
+			task.SetProgress(NewServiceProgress("Applying k8s manifests"))
+			deploymentPath := serviceConfig.K8s.DeploymentPath
+			if deploymentPath == "" {
+				deploymentPath = defaultDeploymentPath
+			}
 
-			deployed := false
-
-			// Helm Support
-			helmDeployed, err := t.deployHelmCharts(ctx, serviceConfig, task)
+			err := t.kubectl.Apply(
+				ctx,
+				filepath.Join(serviceConfig.RelativePath, deploymentPath),
+				nil,
+			)
 			if err != nil {
-				task.SetError(fmt.Errorf("helm deployment failed: %w", err))
+				task.SetError(fmt.Errorf("failed applying kube manifests: %w", err))
 				return
 			}
 
-			deployed = deployed || helmDeployed
-
-			// Kustomize Support
-			kustomizeDeployed, err := t.deployKustomize(ctx, serviceConfig, task)
-			if err != nil {
-				task.SetError(fmt.Errorf("kustomize deployment failed: %w", err))
-				return
+			deploymentName := serviceConfig.K8s.Deployment.Name
+			if deploymentName == "" {
+				deploymentName = serviceConfig.Name
 			}
 
-			deployed = deployed || kustomizeDeployed
-
-			// Vanilla k8s manifests with minimal templating support
-			deployment, err := t.deployManifests(ctx, serviceConfig, task)
-			if err != nil && !os.IsNotExist(err) {
+			// It is not a requirement for a AZD deploy to contain a deployment object
+			// If we don't find any deployment within the namespace we will continue
+			task.SetProgress(NewServiceProgress("Verifying deployment"))
+			deployment, err := t.waitForDeployment(ctx, deploymentName)
+			if err != nil && !errors.Is(err, kubectl.ErrResourceNotFound) {
 				task.SetError(err)
-				return
-			}
-
-			deployed = deployed || deployment != nil
-
-			if !deployed {
-				task.SetError(errors.New("no deployment manifests found"))
 				return
 			}
 
@@ -294,6 +247,7 @@ func (t *aksTarget) Deploy(
 		})
 }
 
+<<<<<<< HEAD
 // deployManifests deploys raw or templated yaml manifests to the k8s cluster
 func (t *aksTarget) deployManifests(
 	ctx context.Context,
@@ -484,6 +438,8 @@ func (t *aksTarget) deployHelmCharts(
 	return true, nil
 }
 
+=======
+>>>>>>> 277296b8 (Revert "Merge branch 'Azure:main' into helloai")
 // Gets the service endpoints for the AKS service target
 func (t *aksTarget) Endpoints(
 	ctx context.Context,
@@ -563,82 +519,23 @@ func (t *aksTarget) ensureClusterContext(
 	)
 	if err != nil {
 		return "", fmt.Errorf(
-			//nolint:lll
-			"failed retrieving cluster user credentials. Ensure the current principal has been granted rights to the AKS cluster, %w",
+			"failed retrieving cluster admin credentials. Ensure your cluster has been configured to support admin credentials, %w",
 			err,
 		)
 	}
 
 	if len(clusterCreds.Kubeconfigs) == 0 {
 		return "", fmt.Errorf(
-			"cluster credentials is empty. Ensure the current principal has been granted rights to the AKS cluster. , %w",
+			"cluster credentials is empty. Ensure your cluster has been configured to support admin credentials. , %w",
 			err,
 		)
 	}
 
 	// The kubeConfig that we care about will also be at position 0
 	// I don't know if there is a valid use case where this credential results would container multiple configs
-	kubeConfig, err := kubectl.ParseKubeConfig(ctx, clusterCreds.Kubeconfigs[0].Value)
-	if err != nil {
-		return "", fmt.Errorf(
-			"failed parsing kube config. Ensure your configuration is valid yaml. %w",
-			err,
-		)
-	}
-
-	// Set default namespace for the context
-	// This avoids having to specify the namespace for every kubectl command
-	kubeConfig.Contexts[0].Context.Namespace = defaultNamespace
-	kubeConfigManager, err := kubectl.NewKubeConfigManager(t.kubectl)
+	kubeConfigPath, err = t.configureK8sContext(ctx, clusterName, defaultNamespace, clusterCreds.Kubeconfigs[0])
 	if err != nil {
 		return "", err
-	}
-
-	// Create or update the kube config/context for the AKS cluster
-	kubeConfigPath, err = kubeConfigManager.AddOrUpdateContext(ctx, clusterName, kubeConfig)
-	if err != nil {
-		return "", fmt.Errorf("failed adding/updating kube context, %w", err)
-	}
-
-	// Get the provisioned cluster properties to inspect configuration
-	managedCluster, err := t.managedClustersService.Get(
-		ctx,
-		targetResource.SubscriptionId(),
-		targetResource.ResourceGroupName(),
-		clusterName,
-	)
-	if err != nil {
-		return "", fmt.Errorf("failed retrieving managed cluster, %w", err)
-	}
-
-	azureRbacEnabled := managedCluster.Properties.AADProfile != nil &&
-		convert.ToValueWithDefault(managedCluster.Properties.AADProfile.EnableAzureRBAC, false)
-	localAccountsDisabled := convert.ToValueWithDefault(managedCluster.Properties.DisableLocalAccounts, false)
-
-	// If we're connecting to a cluster with RBAC enabled and local accounts disabled
-	// then we need to convert the kube config to use the exec auth module with azd auth
-	if azureRbacEnabled || localAccountsDisabled {
-		convertOptions := &kubelogin.ConvertOptions{
-			Login:      "azd",
-			KubeConfig: kubeConfigPath,
-		}
-		if err := t.kubeLoginCli.ConvertKubeConfig(ctx, convertOptions); err != nil {
-			return "", err
-		}
-	}
-
-	// Merge the cluster config/context into the default kube config
-	kubeConfigPath, err = kubeConfigManager.MergeConfigs(ctx, "config", clusterName)
-	if err != nil {
-		return "", err
-	}
-
-	// Setup the default kube context to use the AKS cluster context
-	if _, err := t.kubectl.ConfigUseContext(ctx, clusterName, nil); err != nil {
-		return "", fmt.Errorf(
-			"failed setting kube context '%s'. Ensure the specified context exists. %w", clusterName,
-			err,
-		)
 	}
 
 	return kubeConfigPath, nil
@@ -664,6 +561,43 @@ func (t *aksTarget) ensureNamespace(ctx context.Context, namespace string) error
 	}
 
 	return nil
+}
+
+func (t *aksTarget) configureK8sContext(
+	ctx context.Context,
+	clusterName string,
+	namespace string,
+	credentialResult *armcontainerservice.CredentialResult,
+) (string, error) {
+	kubeConfigManager, err := kubectl.NewKubeConfigManager(t.kubectl)
+	if err != nil {
+		return "", err
+	}
+
+	kubeConfig, err := kubectl.ParseKubeConfig(ctx, credentialResult.Value)
+	if err != nil {
+		return "", fmt.Errorf(
+			"failed parsing kube config. Ensure your configuration is valid yaml. %w",
+			err,
+		)
+	}
+
+	// Set default namespace for the context
+	// This avoids having to specify the namespace for every kubectl command
+	kubeConfig.Contexts[0].Context.Namespace = namespace
+	kubeConfigPath, err := kubeConfigManager.AddOrUpdateContext(ctx, clusterName, kubeConfig)
+	if err != nil {
+		return "", fmt.Errorf("failed adding/updating kube context, %w", err)
+	}
+
+	if _, err := t.kubectl.ConfigUseContext(ctx, clusterName, nil); err != nil {
+		return "", fmt.Errorf(
+			"failed setting kube context '%s'. Ensure the specified context exists. %w", clusterName,
+			err,
+		)
+	}
+
+	return kubeConfigPath, nil
 }
 
 // Finds a deployment using the specified deploymentNameFilter string
@@ -768,21 +702,11 @@ func (t *aksTarget) getServiceEndpoints(
 	var endpoints []string
 	if service.Spec.Type == kubectl.ServiceTypeLoadBalancer {
 		for _, resource := range service.Status.LoadBalancer.Ingress {
-			endpoints = append(
-				endpoints,
-				fmt.Sprintf("http://%s, (Service: %s, Type: LoadBalancer)", resource.Ip, service.Metadata.Name),
-			)
+			endpoints = append(endpoints, fmt.Sprintf("http://%s, (Service, Type: LoadBalancer)", resource.Ip))
 		}
 	} else if service.Spec.Type == kubectl.ServiceTypeClusterIp {
 		for index, ip := range service.Spec.ClusterIps {
-			endpoints = append(
-				endpoints,
-				fmt.Sprintf("http://%s:%d, (Service: %s, Type: ClusterIP)",
-					ip,
-					service.Spec.Ports[index].Port,
-					service.Metadata.Name,
-				),
-			)
+			endpoints = append(endpoints, fmt.Sprintf("http://%s:%d, (Service, Type: ClusterIP)", ip, service.Spec.Ports[index].Port))
 		}
 	}
 

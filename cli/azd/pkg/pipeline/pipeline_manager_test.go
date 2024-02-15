@@ -51,7 +51,7 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 		manager, err := createPipelineManager(t, mockContext, azdContext, nil, nil)
 		assert.Nil(t, manager)
 		assert.ErrorContains(
-			t, err, "Loading project configuration: reading project file:")
+			t, err, "finding pipeline provider: reading project file:")
 		os.Remove(ghFolder)
 	})
 
@@ -98,14 +98,7 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 		err := os.MkdirAll(azdoFolder, osutil.PermissionDirectory)
 		assert.NoError(t, err)
 
-		infraFolder := filepath.Join(tempDir, "infra")
-		err = os.MkdirAll(infraFolder, osutil.PermissionDirectory)
-		assert.NoError(t, err)
-		file, err := os.Create(filepath.Join(infraFolder, "main.foo"))
-		file.Close()
-		assert.NoError(t, err)
-
-		file, err = os.Create(filepath.Join(tempDir, azdoYml))
+		file, err := os.Create(filepath.Join(tempDir, azdoYml))
 		file.Close()
 		assert.NoError(t, err)
 
@@ -114,9 +107,9 @@ func Test_PipelineManager_Initialize(t *testing.T) {
 		env := environment.NewWithValues("test-env", envValues)
 
 		manager, err := createPipelineManager(t, mockContext, azdContext, env, nil)
-		assert.NoError(t, err)
 		assert.IsType(t, &AzdoScmProvider{}, manager.scmProvider)
 		assert.IsType(t, &AzdoCiProvider{}, manager.ciProvider)
+		assert.NoError(t, err)
 
 		os.Remove(azdoFolder)
 	})

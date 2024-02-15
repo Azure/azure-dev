@@ -18,7 +18,6 @@ import (
 type ServiceTargetKind string
 
 const (
-	NonSpecifiedTarget       ServiceTargetKind = ""
 	AppServiceTarget         ServiceTargetKind = "appservice"
 	ContainerAppTarget       ServiceTargetKind = "containerapp"
 	AzureFunctionTarget      ServiceTargetKind = "function"

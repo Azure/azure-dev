@@ -1,6 +1,3 @@
-// Copyright (c) Microsoft Corporation. All rights reserved.
-// Licensed under the MIT License.
-
 package project
 
 import (
@@ -100,31 +97,15 @@ func (im *ImportManager) ServiceStable(ctx context.Context, projectConfig *Proje
 	return allServicesSlice, nil
 }
 
-// defaultOptions for infra settings. These values are applied across provisioning providers.
-const (
-	DefaultModule = "main"
-	DefaultPath   = "infra"
-)
-
-// ProjectInfrastructure parses the project configuration and returns the infrastructure configuration.
-// The configuration can be explicitly defined on azure.yaml using path and module, or in case these values
-// are not explicitly defined, the project importer uses default values to find the infrastructure.
 func (im *ImportManager) ProjectInfrastructure(ctx context.Context, projectConfig *ProjectConfig) (*Infra, error) {
-	// Use default project values for Infra when not specified in azure.yaml
-	if projectConfig.Infra.Module == "" {
-		projectConfig.Infra.Module = DefaultModule
-	}
-	if projectConfig.Infra.Path == "" {
-		projectConfig.Infra.Path = DefaultPath
-	}
-
 	infraRoot := projectConfig.Infra.Path
 	if !filepath.IsAbs(infraRoot) {
 		infraRoot = filepath.Join(projectConfig.Path, infraRoot)
 	}
 
-	// Allow overriding the infrastructure only when path and module exists.
-	if moduleExists, err := pathHasModule(infraRoot, projectConfig.Infra.Module); err == nil && moduleExists {
+	// Allow overriding the infrastructure by placing an `infra` folder in the location that would be expected based
+	// on azure.yaml
+	if _, err := os.Stat(infraRoot); err == nil {
 		log.Printf("using infrastructure from %s directory", infraRoot)
 		return &Infra{
 			Options: projectConfig.Infra,
@@ -149,6 +130,7 @@ func (im *ImportManager) ProjectInfrastructure(ctx context.Context, projectConfi
 		}
 	}
 
+<<<<<<< HEAD
 	return &Infra{}, nil
 }
 
@@ -165,6 +147,10 @@ func pathHasModule(path, module string) (bool, error) {
 		return !file.IsDir() && fileNameNoExt == module
 	}), nil
 
+=======
+	return nil, fmt.Errorf(
+		"this project does not contain any infrastructure, have you created an '%s' folder?", filepath.Base(infraRoot))
+>>>>>>> 277296b8 (Revert "Merge branch 'Azure:main' into helloai")
 }
 
 func (im *ImportManager) SynthAllInfrastructure(ctx context.Context, projectConfig *ProjectConfig) (fs.FS, error) {

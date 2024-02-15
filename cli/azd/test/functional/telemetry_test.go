@@ -251,15 +251,10 @@ func Test_CLI_Telemetry_NestedCommands(t *testing.T) {
 
 	// Remove infra folder to avoid lengthy Azure operations while asserting the intended telemetry behavior.
 	// The current behavior is that `azd provision` will fail when trying to read the nonexistent bicep folder.
-	infraPath := filepath.Join(dir, "infra")
-	require.NoError(t, os.RemoveAll(infraPath))
+	require.NoError(t, os.RemoveAll(filepath.Join(dir, "infra")))
 
-	// We do require that infra folder exist, however, so put it back with a module which will throw during provisioning.
-	require.NoError(t, os.MkdirAll(infraPath, osutil.PermissionDirectoryOwnerOnly))
-	// main.something will allow azd to continue until trying to find and build bicep.
-	file, err := os.Create(filepath.Join(infraPath, "main.something"))
-	require.NoError(t, err)
-	defer file.Close()
+	// We do require that infra folder exist, however, so put it back (empty).
+	require.NoError(t, os.MkdirAll(filepath.Join(dir, "infra"), osutil.PermissionDirectoryOwnerOnly))
 
 	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "up", "--trace-log-file", traceFilePath)
 	require.Error(t, err)

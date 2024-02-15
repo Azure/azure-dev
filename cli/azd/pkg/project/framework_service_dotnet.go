@@ -156,19 +156,6 @@ func (dp *dotnetProject) Package(
 ) *async.TaskWithProgress[*ServicePackageResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServicePackageResult, ServiceProgress]) {
-			if serviceConfig.Host == DotNetContainerAppTarget {
-				// TODO(weilim): For containerized projects, we publish the produced container image in a single call
-				// via `dotnet publish /p:PublishProfile=DefaultContainer`, thus the default `dotnet publish` command
-				// executed here is not useful.
-				//
-				// It's probably right for us to think about "package" for a containerized application as meaning
-				// "produce the tgz" of the image, as would be done by `docker save`, but this is currently not supported.
-				//
-				// See related comment in cmd/package.go.
-				task.SetResult(&ServicePackageResult{})
-				return
-			}
-
 			packageDest, err := os.MkdirTemp("", "azd")
 			if err != nil {
 				task.SetError(fmt.Errorf("creating package directory for %s: %w", serviceConfig.Name, err))

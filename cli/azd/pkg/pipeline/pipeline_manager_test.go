@@ -10,7 +10,6 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization"
 	"github.com/azure/azure-dev/cli/azd/pkg/account"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
@@ -24,7 +23,6 @@ import (
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockenv"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
-	"github.com/stretchr/testify/require"
 )
 
 func Test_PipelineManager_Initialize(t *testing.T) {
@@ -407,19 +405,9 @@ func createPipelineManager(
 	envManager := &mockenv.MockEnvManager{}
 	envManager.On("Save", mock.Anything, env).Return(nil)
 
-	roleDefinitionsClient, err := armauthorization.NewRoleDefinitionsClient(
-		mockContext.Credentials, mockContext.ArmClientOptions)
-	require.NoError(t, err)
-
-	roleAssignmentsClient, err := armauthorization.NewRoleAssignmentsClient(
-		"SUBSCRIPTION_ID", mockContext.Credentials, mockContext.ArmClientOptions)
-	require.NoError(t, err)
-
 	adService := azcli.NewAdService(
 		mockContext.SubscriptionCredentialProvider,
 		mockContext.HttpClient,
-		roleDefinitionsClient,
-		roleAssignmentsClient,
 	)
 
 	// Singletons

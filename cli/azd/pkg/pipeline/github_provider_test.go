@@ -10,7 +10,6 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/authorization/armauthorization"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/exec"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
@@ -119,22 +118,12 @@ func createGitHubCiProvider(t *testing.T, mockContext *mocks.MockContext) CiProv
 	)
 	require.NoError(t, err)
 
-	roleDefinitionsClient, err := armauthorization.NewRoleDefinitionsClient(
-		mockContext.Credentials, mockContext.ArmClientOptions)
-	require.NoError(t, err)
-
-	roleAssignmentsClient, err := armauthorization.NewRoleAssignmentsClient(
-		"SUBSCRIPTION_ID", mockContext.Credentials, mockContext.ArmClientOptions)
-	require.NoError(t, err)
-
 	return NewGitHubCiProvider(
 		env,
 		mockContext.SubscriptionCredentialProvider,
 		azcli.NewAdService(
 			mockContext.SubscriptionCredentialProvider,
 			mockContext.HttpClient,
-			roleDefinitionsClient,
-			roleAssignmentsClient,
 		),
 		ghCli,
 		git.NewGitCli(mockContext.CommandRunner),

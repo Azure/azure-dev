@@ -81,12 +81,6 @@ func NewRegistrationsOnly(from *NestedContainer) *NestedContainer {
 		}
 	}
 
-	// for key, value := range current {
-	// 	for k, v := range value {
-	// 		log.Printf("true singleton: %s, name: %v, value: (%p) %+v", key.String(), k, v, v)
-	// 	}
-	// }
-
 	instance := &NestedContainer{
 		inner: current,
 	}

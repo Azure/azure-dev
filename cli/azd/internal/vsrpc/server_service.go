@@ -65,10 +65,11 @@ type container struct {
 }
 
 func newContainer(s *serverSession) *container {
-	c, err := s.rootContainer.NewScope()
+	c, err := s.rootContainer.NewScopeRegistrationsOnly()
 	if err != nil {
 		panic(err)
 	}
+
 	id := s.id
 	azdCtx := azdcontext.NewAzdContextWithDirectory(s.rootPath)
 

@@ -7,7 +7,11 @@ package ioc
 import (
 	"errors"
 	"fmt"
+	"log"
+	"reflect"
 	"regexp"
+	"time"
+	"unsafe"
 
 	"github.com/golobby/container/v3"
 )
@@ -30,6 +34,7 @@ type NestedContainer struct {
 // Creates a new nested container from the specified parent container
 func NewNestedContainer(parent *NestedContainer) *NestedContainer {
 	current := container.New()
+
 	if parent != nil {
 		// Copy the bindings to the new container
 		// The bindings hold the concrete instance of singleton registrations
@@ -47,8 +52,66 @@ func NewNestedContainer(parent *NestedContainer) *NestedContainer {
 	return instance
 }
 
+// Creates a new container with only registrations from the given container.
+func NewRegistrationsOnly(from *NestedContainer) *NestedContainer {
+	current := container.New()
+
+	if from != nil {
+		// Reset all concrete instances
+		for key, value := range from.inner {
+			var valueType = reflect.TypeOf(value)
+			newValue := reflect.MakeMapWithSize(valueType, len(value))
+
+			for name, binding := range value {
+				bindingVal := reflect.ValueOf(binding).Elem()
+
+				newBinding := reflect.New(reflect.TypeOf(binding).Elem())
+				setUnexportedField(
+					newBinding.Elem().FieldByName("resolver"),
+					getUnexportedField(bindingVal.FieldByName("resolver")))
+				setUnexportedField(
+					newBinding.Elem().FieldByName("isSingleton"),
+					getUnexportedField(bindingVal.FieldByName("isSingleton")))
+
+				n := name
+				newValue.SetMapIndex(reflect.ValueOf(n), newBinding)
+			}
+
+			reflect.ValueOf(current).SetMapIndex(reflect.ValueOf(key), newValue)
+		}
+	}
+
+	// for key, value := range current {
+	// 	for k, v := range value {
+	// 		log.Printf("true singleton: %s, name: %v, value: (%p) %+v", key.String(), k, v, v)
+	// 	}
+	// }
+
+	instance := &NestedContainer{
+		inner: current,
+	}
+
+	RegisterInstance[ServiceLocator](instance, instance)
+
+	return instance
+}
+
+func getUnexportedField(field reflect.Value) interface{} {
+	return reflect.NewAt(field.Type(), unsafe.Pointer(field.UnsafeAddr())).Elem().Interface()
+}
+
+func setUnexportedField(field reflect.Value, value interface{}) {
+	reflect.NewAt(field.Type(), unsafe.Pointer(field.UnsafeAddr())).
+		Elem().
+		Set(reflect.ValueOf(value))
+}
+
 // Fill takes a structure and resolves fields with the tag `container:"type" or `container:"name"`.
 func (c *NestedContainer) Fill(structure any) error {
+	t := time.Now()
+	defer func() {
+		log.Printf("Fill took: %v", time.Since(t))
+	}()
 	return c.inner.Fill(structure)
 }
 
@@ -202,7 +265,7 @@ func RegisterNamedInstance[F any](c *NestedContainer, name string, instance F) {
 }
 
 // NewScope creates a new nested container with a relationship back to the parent container
-// Scope registrations are converted to singleton registrations within the new nested container.
+// Scoped registrations are converted to singleton registrations within the new nested container.
 func (c *NestedContainer) NewScope() (*NestedContainer, error) {
 	childContainer := NewNestedContainer(c)
 
@@ -216,7 +279,27 @@ func (c *NestedContainer) NewScope() (*NestedContainer, error) {
 				return nil, err
 			}
 		}
+		childContainer.scopedBindings = append(childContainer.scopedBindings, binding)
+	}
 
+	return childContainer, nil
+}
+
+// NewScopeRegistrationsOnly creates a new container with bindings deep copied from the container.
+// Scoped registrations are then activated as singletons within the new nested container.
+func (c *NestedContainer) NewScopeRegistrationsOnly() (*NestedContainer, error) {
+	childContainer := NewRegistrationsOnly(c)
+
+	for _, binding := range c.scopedBindings {
+		if binding.name == "" {
+			if err := childContainer.RegisterSingleton(binding.resolver); err != nil {
+				return nil, err
+			}
+		} else {
+			if err := childContainer.RegisterNamedSingleton(binding.name, binding.resolver); err != nil {
+				return nil, err
+			}
+		}
 		childContainer.scopedBindings = append(childContainer.scopedBindings, binding)
 	}
 

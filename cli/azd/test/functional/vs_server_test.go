@@ -61,7 +61,10 @@ func Test_CLI_VsServer(t *testing.T) {
 			require.NoError(t, err, "failed expanding sample")
 
 			cli := azdcli.NewCLI(t)
-			cmd := exec.CommandContext(ctx, cli.AzdPath, "vs-server")
+			cmd := exec.CommandContext(ctx, cli.AzdPath, "vs-server", "--debug")
+			cmd.Env = append(cmd.Env, os.Environ()...)
+			cmd.Env = append(cmd.Env, "AZD_DEBUG_SERVER_DEBUG_ENDPOINTS=true")
+
 			stdout.Reset()
 			cmd.Stdout = io.MultiWriter(&stdout, &logWriter{initialTime: time.Now(), t: t, prefix: "[svr-out] "})
 			cmd.Stderr = &logWriter{initialTime: time.Now(), t: t, prefix: "[svr-err] "}

@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 using Microsoft.Extensions.Configuration;
 using System.Net.WebSockets;
 using StreamJsonRpc;
@@ -46,12 +49,12 @@ public class TestBase
         ClientWebSocket wsClientSS = new ClientWebSocket();
         await wsClientSS.ConnectAsync(new Uri($"{host}/ServerService/v1.0"), CancellationToken.None);
 
-        // ClientWebSocket wsClientDS = new ClientWebSocket();
-        // await wsClientDS.ConnectAsync(new Uri($"{host}/TestDebugService/v1.0"), CancellationToken.None);
+        ClientWebSocket wsClientDS = new ClientWebSocket();
+        await wsClientDS.ConnectAsync(new Uri($"{host}/TestDebugService/v1.0"), CancellationToken.None);
 
         esSvc = JsonRpc.Attach<IEnvironmentService>(new WebSocketMessageHandler(wsClientES));
         asSvc = JsonRpc.Attach<IAspireService>(new WebSocketMessageHandler(wsClientAS));
         svrSvc = JsonRpc.Attach<IServerService>(new WebSocketMessageHandler(wsClientSS));
-        // dsSvc = JsonRpc.Attach<IDebugService>(new WebSocketMessageHandler(wsClientDS));
+        dsSvc = JsonRpc.Attach<IDebugService>(new WebSocketMessageHandler(wsClientDS));
     }
 }

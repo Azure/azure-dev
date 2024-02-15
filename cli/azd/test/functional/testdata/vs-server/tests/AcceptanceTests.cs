@@ -1,3 +1,6 @@
+// Copyright (c) Microsoft Corporation. All rights reserved.
+// Licensed under the MIT License.
+
 using Should;
 using System.Text.RegularExpressions;
 
@@ -69,5 +72,26 @@ public class AcceptanceTests : TestBase
         openEnv = await esSvc.OpenEnvironmentAsync(session, e.Name, observer, CancellationToken.None);
         openEnv.Name.ShouldEqual(e.Name);
         openEnv.IsCurrent.ShouldBeTrue();
+    }
+
+    [Test]
+    public async Task Cancellation() {
+        var cts = new CancellationTokenSource();
+        var cancelOp = dsSvc.TestCancelAsync(1000 * 10, cts.Token);
+        await Task.Delay(1000);
+        cts.Cancel();
+
+        try {
+            var result = await cancelOp;
+            Assert.Fail("TestCancelAsync should have been cancelled");
+        } catch (TaskCanceledException) {
+        }
+
+        var recorder = new Recorder<int>();
+        var observe = dsSvc.TestIObserverAsync(10, recorder, CancellationToken.None);
+        await Task.Delay(2000);
+        await observe;
+
+        recorder.Values.Count.ShouldEqual(10);
     }
 }

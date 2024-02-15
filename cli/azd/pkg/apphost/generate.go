@@ -1141,8 +1141,8 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 			return fmt.Sprintf("{{ .Env.%s_%s }}", strings.ToUpper(resource), strings.ToUpper(outputName)), nil
 		} else {
 			return fmt.Sprintf(
-				"{{ secretOutput https://{{ .Env.SERVICE_BINDING_%s_ENDPOINT }}.vault.azure.net/secrets/%s }}",
-				strings.ToUpper(resource),
+				"{{ secretOutput {{ .Env.SERVICE_BINDING_%s_ENDPOINT }}secrets/%s }}",
+				strings.ToUpper(resource+"kv"),
 				outputName), nil
 		}
 	case targetType == "parameter.v0":
@@ -1150,7 +1150,7 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 		case inputEmitTypeBicep:
 			return fmt.Sprintf("{{%s}}", resource), nil
 		case inputEmitTypeYaml:
-			return fmt.Sprintf("{{ parameter %s }}", resource), nil
+			return fmt.Sprintf("{{ parameter \"%s\" }}", resource), nil
 		default:
 			panic(fmt.Sprintf("unexpected parameter emit type %s", string(emitType)))
 		}

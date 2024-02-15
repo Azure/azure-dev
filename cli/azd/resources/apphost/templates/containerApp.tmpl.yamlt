@@ -52,6 +52,7 @@ properties:
 {{- range $name, $value := .KeyVaultSecrets}}
       - name: {{containerAppSecretName $name}}
         keyVaultUrl: {{$value}}
+        identity: System
 {{- end}}
   template:
     containers:

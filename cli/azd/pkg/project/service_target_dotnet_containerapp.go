@@ -197,6 +197,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 				Funcs(template.FuncMap{
 					"urlHost":          fns.UrlHost,
 					"connectionString": fns.ConnectionString,
+					"parameter":        fns.Parameter,
 				}).
 				Parse(manifest)
 			if err != nil {
@@ -369,6 +370,18 @@ func (_ *containerAppTemplateManifestFuncs) UrlHost(s string) (string, error) {
 		return "", err
 	}
 	return u.Hostname(), nil
+}
+
+func (fns *containerAppTemplateManifestFuncs) Parameter(name string) (string, error) {
+	val, found := fns.env.Config.Get("infra.parameters." + name)
+	if !found {
+		return "", fmt.Errorf("parameter %s not found", name)
+	}
+	valString, ok := val.(string)
+	if !ok {
+		return "", fmt.Errorf("parameter %s is not a string", name)
+	}
+	return valString, nil
 }
 
 // ConnectionString returns the connection string for the given resource name. Presently, we only support resources of

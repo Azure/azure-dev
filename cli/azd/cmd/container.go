@@ -180,13 +180,13 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	})
 
 	// Azd Context
-	container.MustRegisterSingleton(azdcontext.NewAzdContext)
+	container.MustRegisterSingleton(func(lazyAzdContext *lazy.Lazy[*azdcontext.AzdContext]) (*azdcontext.AzdContext, error) {
+		return lazyAzdContext.GetValue()
+	})
 
 	// Lazy loads the Azd context after the azure.yaml file becomes available
 	container.MustRegisterSingleton(func() *lazy.Lazy[*azdcontext.AzdContext] {
-		return lazy.NewLazy(func() (*azdcontext.AzdContext, error) {
-			return azdcontext.NewAzdContext()
-		})
+		return lazy.NewLazy(azdcontext.NewAzdContext)
 	})
 
 	// Register an initialized environment based on the specified environment flag, or the default environment.

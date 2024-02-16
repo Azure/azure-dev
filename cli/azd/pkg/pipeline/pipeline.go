@@ -100,6 +100,7 @@ type CiProvider interface {
 		provisioningProvider provisioning.Options,
 		additionalSecrets map[string]string,
 		additionalVariables map[string]string,
+		options *ConfigOptions,
 	) (CiPipeline, error)
 	// configureConnection use the credential to set up the connection from the pipeline
 	// to Azure
@@ -133,6 +134,10 @@ func (c *ConfigOptions) SecretsAndVars(
 	secrets = maps.Clone(initialSecrets)
 
 	for key, value := range env {
+		if value == "" {
+			// skip empty values
+			continue
+		}
 		if slices.Contains(c.Variables, key) {
 			variables[key] = value
 		}

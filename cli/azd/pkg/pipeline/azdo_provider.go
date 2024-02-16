@@ -759,6 +759,7 @@ func (p *AzdoCiProvider) configurePipeline(
 	provisioningProvider provisioning.Options,
 	additionalSecrets map[string]string,
 	additionalVariables map[string]string,
+	options *ConfigOptions,
 ) (CiPipeline, error) {
 	details := repoDetails.details.(*AzdoRepositoryDetails)
 

@@ -379,7 +379,7 @@ func (pm *PipelineManager) Configure(ctx context.Context) (result *PipelineConfi
 
 	// config pipeline handles setting or creating the provider pipeline to be used
 	ciPipeline, err := pm.ciProvider.configurePipeline(
-		ctx, gitRepoInfo, infra.Options, additionalSecrets, additionalVariables)
+		ctx, gitRepoInfo, infra.Options, additionalSecrets, additionalVariables, pm.configOptions)
 	if err != nil {
 		return result, err
 	}

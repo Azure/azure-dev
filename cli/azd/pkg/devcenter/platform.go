@@ -2,7 +2,6 @@ package devcenter
 
 import (
 	"context"
-	"fmt"
 	"os"
 
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
@@ -46,101 +45,88 @@ func (p *Platform) IsEnabled() bool {
 // ConfigureContainer configures the IoC container for the devcenter platform components
 func (p *Platform) ConfigureContainer(container *ioc.NestedContainer) error {
 	// DevCenter Config
-	container.MustRegisterTransient(func(lazyConfig *lazy.Lazy[*Config]) (*Config, error) {
-		return lazyConfig.GetValue()
-	})
-
 	container.MustRegisterTransient(func(
 		ctx context.Context,
 		lazyAzdCtx *lazy.Lazy[*azdcontext.AzdContext],
 		userConfigManager config.UserConfigManager,
 		lazyProjectConfig *lazy.Lazy[*project.ProjectConfig],
 		lazyLocalEnvStore *lazy.Lazy[environment.LocalDataStore],
-	) *lazy.Lazy[*Config] {
-		return lazy.NewLazy(func() (*Config, error) {
+	) (*Config, error) {
+		// Load deventer configuration in the following precedence:
+		// 1. Environment variables (AZURE_DEVCENTER_*)
+		// 2. Azd Environment configuration (devCenter node)
+		// 3. Azd Project configuration from azure.yaml (devCenter node)
+		// 4. Azd user configuration from config.json (devCenter node)
 
-			// Load deventer configuration in the following precedence:
-			// 1. Environment variables (AZURE_DEVCENTER_*)
-			// 2. Azd Environment configuration (devCenter node)
-			// 3. Azd Project configuration from azure.yaml (devCenter node)
-			// 4. Azd user configuration from config.json (devCenter node)
+		// Shell environment variables
+		envVarConfig := &Config{
+			Name:                  os.Getenv(DevCenterCatalogEnvName),
+			Project:               os.Getenv(DevCenterProjectEnvName),
+			Catalog:               os.Getenv(DevCenterCatalogEnvName),
+			EnvironmentType:       os.Getenv(DevCenterEnvTypeEnvName),
+			EnvironmentDefinition: os.Getenv(DevCenterEnvDefinitionEnvName),
+			User:                  os.Getenv(DevCenterEnvUser),
+		}
 
-			// Shell environment variables
-			envVarConfig := &Config{
-				Name:                  os.Getenv(DevCenterCatalogEnvName),
-				Project:               os.Getenv(DevCenterProjectEnvName),
-				Catalog:               os.Getenv(DevCenterCatalogEnvName),
-				EnvironmentType:       os.Getenv(DevCenterEnvTypeEnvName),
-				EnvironmentDefinition: os.Getenv(DevCenterEnvDefinitionEnvName),
-				User:                  os.Getenv(DevCenterEnvUser),
-			}
+		azdCtx, _ := lazyAzdCtx.GetValue()
+		localEnvStore, _ := lazyLocalEnvStore.GetValue()
 
-			azdCtx, _ := lazyAzdCtx.GetValue()
-			localEnvStore, _ := lazyLocalEnvStore.GetValue()
-
-			// Local environment configuration
-			var environmentConfig *Config
-			if azdCtx != nil && localEnvStore != nil {
-				defaultEnvName, err := azdCtx.GetDefaultEnvironmentName()
-				if err != nil || defaultEnvName == "" {
-					environmentConfig = &Config{}
-				} else {
-					// Attempt to load any devcenter configuration from local environment
-					env, err := localEnvStore.Get(ctx, defaultEnvName)
-					if err == nil {
-						devCenterNode, exists := env.Config.Get(ConfigPath)
-						if exists {
-							value, err := ParseConfig(devCenterNode)
-							if err != nil {
-								return nil, err
-							}
-
-							environmentConfig = value
-						}
-					}
-				}
-			}
-
-			// User Configuration
-			var userConfig *Config
-			azdConfig, err := userConfigManager.Load()
+		// Local environment configuration
+		var environmentConfig *Config
+		if azdCtx != nil && localEnvStore != nil {
+			defaultEnvName, err := azdCtx.GetDefaultEnvironmentName()
 			if err != nil {
-				userConfig = &Config{}
+				environmentConfig = &Config{}
 			} else {
-				devCenterNode, exists := azdConfig.Get(ConfigPath)
-				if exists {
-					value, err := ParseConfig(devCenterNode)
-					if err != nil {
-						return nil, err
-					}
-
-					userConfig = value
-				}
-			}
-
-			// Project Configuration
-			var projectConfig *Config
-			projConfig, _ := lazyProjectConfig.GetValue()
-			if projConfig != nil && projConfig.Platform != nil {
-				value, err := ParseConfig(projConfig.Platform.Config)
+				// Attempt to load any devcenter configuration from local environment
+				env, err := localEnvStore.Get(ctx, defaultEnvName)
 				if err == nil {
-					projectConfig = value
+					devCenterNode, exists := env.Config.Get(ConfigPath)
+					if exists {
+						value, err := ParseConfig(devCenterNode)
+						if err != nil {
+							return nil, err
+						}
+
+						environmentConfig = value
+					}
 				}
 			}
+		}
 
-			mergedConfig := MergeConfigs(
-				envVarConfig,
-				environmentConfig,
-				projectConfig,
-				userConfig,
-			)
+		// User Configuration
+		var userConfig *Config
+		azdConfig, err := userConfigManager.Load()
+		if err != nil {
+			userConfig = &Config{}
+		} else {
+			devCenterNode, exists := azdConfig.Get(ConfigPath)
+			if exists {
+				value, err := ParseConfig(devCenterNode)
+				if err != nil {
+					return nil, err
+				}
 
-			if *mergedConfig == EmptyConfig {
-				return nil, fmt.Errorf("devcenter configuration was not found")
+				userConfig = value
 			}
+		}
 
-			return mergedConfig, nil
-		})
+		// Project Configuration
+		var projectConfig *Config
+		projConfig, _ := lazyProjectConfig.GetValue()
+		if projConfig != nil && projConfig.Platform != nil {
+			value, err := ParseConfig(projConfig.Platform.Config)
+			if err == nil {
+				projectConfig = value
+			}
+		}
+
+		return MergeConfigs(
+			envVarConfig,
+			environmentConfig,
+			projectConfig,
+			userConfig,
+		), nil
 	})
 
 	// Override default provision provider
@@ -166,16 +152,16 @@ func (p *Platform) ConfigureContainer(container *ioc.NestedContainer) error {
 	})
 
 	// Provision Provider
-	container.MustRegisterNamedScoped(string(ProvisionKindDevCenter), NewProvisionProvider)
+	container.MustRegisterNamedTransient(string(ProvisionKindDevCenter), NewProvisionProvider)
 
 	// Remote Environment Storage
-	container.MustRegisterNamedScoped(string(RemoteKindDevCenter), NewEnvironmentStore)
+	container.MustRegisterNamedTransient(string(RemoteKindDevCenter), NewEnvironmentStore)
 
 	// Template Sources
-	container.MustRegisterNamedScoped(string(SourceKindDevCenter), NewTemplateSource)
+	container.MustRegisterNamedTransient(string(SourceKindDevCenter), NewTemplateSource)
 
-	container.MustRegisterScoped(NewManager)
-	container.MustRegisterScoped(NewPrompter)
+	container.MustRegisterTransient(NewManager)
+	container.MustRegisterTransient(NewPrompter)
 
 	// Other devcenter components
 	container.MustRegisterSingleton(func(

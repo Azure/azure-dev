@@ -9,13 +9,12 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/devcentersdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"golang.org/x/exp/slices"
 )
 
 // Prompter provides a common set of methods for prompting the user for devcenter configuration values
 type Prompter struct {
-	lazyConfig      *lazy.Lazy[*Config]
+	config          *Config
 	console         input.Console
 	manager         Manager
 	devCenterClient devcentersdk.DevCenterClient
@@ -23,13 +22,13 @@ type Prompter struct {
 
 // NewPrompter creates a new devcenter prompter
 func NewPrompter(
-	lazyConfig *lazy.Lazy[*Config],
+	config *Config,
 	console input.Console,
 	manager Manager,
 	devCenterClient devcentersdk.DevCenterClient,
 ) *Prompter {
 	return &Prompter{
-		lazyConfig:      lazyConfig,
+		config:          config,
 		console:         console,
 		manager:         manager,
 		devCenterClient: devCenterClient,
@@ -38,30 +37,25 @@ func NewPrompter(
 
 // PromptForConfig prompts the user for devcenter configuration values that have not been previously set
 func (p *Prompter) PromptForConfig(ctx context.Context) (*Config, error) {
-	config, err := p.lazyConfig.GetValue()
-	if err != nil {
-		return nil, err
-	}
-
-	if config.Project == "" {
-		project, err := p.PromptProject(ctx, config.Name)
+	if p.config.Project == "" {
+		project, err := p.PromptProject(ctx, p.config.Name)
 		if err != nil {
 			return nil, err
 		}
-		config.Name = project.DevCenter.Name
-		config.Project = project.Name
+		p.config.Name = project.DevCenter.Name
+		p.config.Project = project.Name
 	}
 
-	if config.EnvironmentDefinition == "" {
-		envDefinition, err := p.PromptEnvironmentDefinition(ctx, config.Name, config.Project)
+	if p.config.EnvironmentDefinition == "" {
+		envDefinition, err := p.PromptEnvironmentDefinition(ctx, p.config.Name, p.config.Project)
 		if err != nil {
 			return nil, err
 		}
-		config.Catalog = envDefinition.CatalogName
-		config.EnvironmentDefinition = envDefinition.Name
+		p.config.Catalog = envDefinition.CatalogName
+		p.config.EnvironmentDefinition = envDefinition.Name
 	}
 
-	return config, nil
+	return p.config, nil
 }
 
 // PromptProject prompts the user to select a project for the specified devcenter

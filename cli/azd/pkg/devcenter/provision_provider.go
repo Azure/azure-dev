@@ -399,6 +399,8 @@ func (p *ProvisionProvider) EnsureEnv(ctx context.Context) error {
 		}
 	}
 
+	p.config = updatedConfig
+
 	return nil
 }
 

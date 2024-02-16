@@ -536,59 +536,57 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 	}
 
 	// Platform configuration
-	container.MustRegisterSingleton(func(serviceLocator ioc.ServiceLocator) *lazy.Lazy[*platform.Config] {
-		return lazy.NewLazy(func() (*platform.Config, error) {
-			var platformConfig *platform.Config
-			err := serviceLocator.Resolve(&platformConfig)
-
-			return platformConfig, err
-		})
+	container.MustRegisterSingleton(func(lazyConfig *lazy.Lazy[*platform.Config]) (*platform.Config, error) {
+		return lazyConfig.GetValue()
 	})
 
 	container.MustRegisterSingleton(func(
 		lazyProjectConfig *lazy.Lazy[*project.ProjectConfig],
 		userConfigManager config.UserConfigManager,
-	) (*platform.Config, error) {
-		// First check `azure.yaml` for platform configuration section
-		projectConfig, err := lazyProjectConfig.GetValue()
-		if err == nil && projectConfig != nil && projectConfig.Platform != nil {
-			return projectConfig.Platform, nil
-		}
+	) *lazy.Lazy[*platform.Config] {
+		return lazy.NewLazy[*platform.Config](func() (*platform.Config, error) {
+			// First check `azure.yaml` for platform configuration section
+			projectConfig, err := lazyProjectConfig.GetValue()
+			if err == nil && projectConfig != nil && projectConfig.Platform != nil {
+				return projectConfig.Platform, nil
+			}
 
-		// Fallback to global user configuration
-		config, err := userConfigManager.Load()
-		if err != nil {
-			return nil, fmt.Errorf("loading user config: %w", err)
-		}
+			// Fallback to global user configuration
+			config, err := userConfigManager.Load()
+			if err != nil {
+				return nil, fmt.Errorf("loading user config: %w", err)
+			}
 
-		var platformConfig *platform.Config
-		ok, err := config.GetSection("platform", &platformConfig)
-		if err != nil {
-			return nil, fmt.Errorf("getting platform config: %w", err)
-		}
+			var platformConfig *platform.Config
+			ok, err := config.GetSection("platform", &platformConfig)
+			if err != nil {
+				return nil, fmt.Errorf("getting platform config: %w", err)
+			}
 
-		if !ok || platformConfig.Type == "" {
-			return nil, platform.ErrPlatformConfigNotFound
-		}
+			if !ok || platformConfig.Type == "" {
+				return nil, platform.ErrPlatformConfigNotFound
+			}
 
-		// Validate platform type
-		supportedPlatformKinds := []string{
-			string(devcenter.PlatformKindDevCenter),
-			string(azd.PlatformKindDefault),
-		}
-		if !slices.Contains(supportedPlatformKinds, string(platformConfig.Type)) {
-			return nil, fmt.Errorf(
-				heredoc.Doc(`platform type '%s' is not supported. Valid values are '%s'.
+			// Validate platform type
+			supportedPlatformKinds := []string{
+				string(devcenter.PlatformKindDevCenter),
+				string(azd.PlatformKindDefault),
+			}
+			if !slices.Contains(supportedPlatformKinds, string(platformConfig.Type)) {
+				return nil, fmt.Errorf(
+					heredoc.Doc(`platform type '%s' is not supported. Valid values are '%s'.
 				Run %s to set or %s to reset. (%w)`),
-				platformConfig.Type,
-				strings.Join(supportedPlatformKinds, ","),
-				output.WithBackticks("azd config set platform.type <type>"),
-				output.WithBackticks("azd config unset platform.type"),
-				platform.ErrPlatformNotSupported,
-			)
-		}
+					platformConfig.Type,
+					strings.Join(supportedPlatformKinds, ","),
+					output.WithBackticks("azd config set platform.type <type>"),
+					output.WithBackticks("azd config unset platform.type"),
+					platform.ErrPlatformNotSupported,
+				)
+			}
 
-		return platformConfig, nil
+			return platformConfig, nil
+
+		})
 	})
 
 	// Platform Providers

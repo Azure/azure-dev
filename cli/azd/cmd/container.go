@@ -554,7 +554,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		if err != nil {
 			return false, fmt.Errorf("loading project config: %w", err)
 		}
-		return projectConfig.Platform.Type == devcenter.PlatformKindDevCenter, nil
+		return project.IsProjectADE(devcenter.IsDevCenterEnabled(projectConfig.Platform)), nil
 	})
 
 	container.MustRegisterSingleton(func(

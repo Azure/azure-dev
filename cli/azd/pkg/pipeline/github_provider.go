@@ -661,32 +661,47 @@ func (p *GitHubCiProvider) configurePipeline(
 		}
 	}()
 
+	// combine the variables and secrets for O(1) lookup during clean up
+	combinedVariablesAndSecrets := make(map[string]string, len(options.Variables)+len(options.Secrets))
+	for _, value := range options.Variables {
+		combinedVariablesAndSecrets[value] = value
+	}
+	for _, value := range options.Secrets {
+		combinedVariablesAndSecrets[value] = value
+	}
+
 	// iterate the existing secrets on the pipeline and remove the ones matching the project's secrets or variables
 	for _, existingSecret := range ciSecrets {
-		for _, key := range options.Variables {
-			if existingSecret == key {
-				_ = p.ghCli.DeleteSecret(ctx, repoSlug, key)
-			}
+		if _, willBeUpdated := additionalSecrets[existingSecret]; willBeUpdated {
+			// if the secret will be updated, we don't need to delete it
+			continue
 		}
-		for _, key := range options.Secrets {
-			if existingSecret == key {
-				_ = p.ghCli.DeleteSecret(ctx, repoSlug, key)
+		// only delete if the secret is defined in the project's secrets or variables (azure.yaml)
+		if _, exists := combinedVariablesAndSecrets[existingSecret]; exists {
+			deleteErr := p.ghCli.DeleteSecret(ctx, repoSlug, existingSecret)
+			if deleteErr != nil {
+				procErr = fmt.Errorf("failed deleting %s secret: %w", existingSecret, deleteErr)
+				return nil, procErr
 			}
 		}
 	}
 	// iterate the existing variables on the pipeline and remove the ones matching the project's secrets or variables
 	for _, existingVariable := range ciVariables {
-		for _, key := range options.Variables {
-			if existingVariable == key {
-				_ = p.ghCli.DeleteVariable(ctx, repoSlug, key)
-			}
+		if _, willBeUpdated := additionalVariables[existingVariable]; willBeUpdated {
+			// if the variable will be updated, we don't need to delete it
+			continue
 		}
-		for _, key := range options.Secrets {
-			if existingVariable == key {
-				_ = p.ghCli.DeleteVariable(ctx, repoSlug, key)
+		// only delete if the variable is defined in the project's secrets or variables (azure.yaml)
+		if _, exists := combinedVariablesAndSecrets[existingVariable]; exists {
+			deleteErr := p.ghCli.DeleteVariable(ctx, repoSlug, existingVariable)
+			if deleteErr != nil {
+				procErr = fmt.Errorf("failed deleting %s variable: %w", existingVariable, deleteErr)
+				return nil, procErr
 			}
 		}
 	}
+
+	// set the new variables and secrets
 	for key, value := range additionalSecrets {
 		if err := p.ghCli.SetSecret(ctx, repoSlug, key, value); err != nil {
 			procErr = fmt.Errorf("failed setting %s secret: %w", key, err)

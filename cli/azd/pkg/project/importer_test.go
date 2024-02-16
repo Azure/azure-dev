@@ -39,7 +39,7 @@ func TestImportManagerHasService(t *testing.T) {
 		lazyEnvManager: lazy.NewLazy(func() (environment.Manager, error) {
 			return mockEnv, nil
 		}),
-	})
+	}, false)
 
 	// has service
 	r, e := manager.HasService(*mockContext.Context, &ProjectConfig{
@@ -81,7 +81,7 @@ func TestImportManagerHasServiceErrorNoMultipleServicesWithAppHost(t *testing.T)
 			return mockEnv, nil
 		}),
 		hostCheck: make(map[string]hostCheckResult),
-	})
+	}, false)
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "dotnet") &&
@@ -134,7 +134,7 @@ func TestImportManagerHasServiceErrorAppHostMustTargetContainerApp(t *testing.T)
 			return mockEnv, nil
 		}),
 		hostCheck: make(map[string]hostCheckResult),
-	})
+	}, false)
 
 	mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return strings.Contains(command, "dotnet") &&
@@ -180,7 +180,7 @@ func TestImportManagerProjectInfrastructureDefaults(t *testing.T) {
 			return mockEnv, nil
 		}),
 		hostCheck: make(map[string]hostCheckResult),
-	})
+	}, false)
 
 	// Get defaults and error b/c no infra found and no Aspire project
 	r, e := manager.ProjectInfrastructure(*mockContext.Context, &ProjectConfig{})
@@ -227,7 +227,7 @@ func TestImportManagerProjectInfrastructure(t *testing.T) {
 			return mockEnv, nil
 		}),
 		hostCheck: make(map[string]hostCheckResult),
-	})
+	}, false)
 
 	// Do not use defaults
 	expectedDefaultFolder := "customFolder"
@@ -304,7 +304,7 @@ func TestImportManagerProjectInfrastructureAspire(t *testing.T) {
 		}),
 		hostCheck: make(map[string]hostCheckResult),
 		cache:     make(map[string]*apphost.Manifest),
-	})
+	}, false)
 
 	// adding infra folder to test defaults
 	err := os.Mkdir(DefaultPath, os.ModePerm)

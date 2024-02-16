@@ -344,7 +344,7 @@ func runMiddleware(
 		lazyEnvManager,
 		lazyEnv,
 		lazyProjectConfig,
-		project.NewImportManager(nil),
+		project.NewImportManager(nil, false),
 		mockContext.CommandRunner,
 		mockContext.Console,
 		runOptions,

@@ -449,6 +449,6 @@ func createPipelineManager(
 		mockContext.Console,
 		args,
 		mockContext.Container,
-		project.NewImportManager(nil),
+		project.NewImportManager(nil, false),
 	)
 }

@@ -228,70 +228,64 @@ func (ch *ContainerHelper) Deploy(
 				targetImage = packageDetails.TargetImage
 			}
 
-			// If we don't have a registry specified and the service does not reference a project path
-			// then we are referencing a public/pre-existing image and don't have anything to tag or push
-			if registryName == "" && serviceConfig.RelativePath == "" && sourceImage != "" {
-				task.SetResult(&ServiceDeployResult{
-					Package: packageOutput,
-					Details: &dockerDeployResult{
-						RemoteImageTag: sourceImage,
-					},
-				})
-				return
-			}
-
-			if targetImage == "" {
-				task.SetError(errors.New("failed retrieving package result details"))
-				return
-			}
-
 			// Default to the local image tag
 			remoteImage := targetImage
 
-			// If a registry has not been defined then there is no need to tag or push any images
-			if registryName != "" {
-				// When the project does not contain source and we are using an external image we first need to pull the image
-				// before we're able to push it to a remote registry
-				// In most cases this pull will have already been part of the package step
-				if packageDetails != nil && serviceConfig.RelativePath == "" {
-					task.SetProgress(NewServiceProgress("Pulling container image"))
-					err = ch.docker.Pull(ctx, sourceImage)
+			// If we don't have a registry specified and the service does not reference a project path
+			// then we are referencing a public/pre-existing image and don't have anything to tag or push
+			if registryName == "" && serviceConfig.RelativePath == "" && sourceImage != "" {
+				remoteImage = sourceImage
+			} else {
+				if targetImage == "" {
+					task.SetError(errors.New("failed retrieving package result details"))
+					return
+				}
+
+				// If a registry has not been defined then there is no need to tag or push any images
+				if registryName != "" {
+					// When the project does not contain source and we are using an external image we first need to pull the image
+					// before we're able to push it to a remote registry
+					// In most cases this pull will have already been part of the package step
+					if packageDetails != nil && serviceConfig.RelativePath == "" {
+						task.SetProgress(NewServiceProgress("Pulling container image"))
+						err = ch.docker.Pull(ctx, sourceImage)
+						if err != nil {
+							task.SetError(fmt.Errorf("pulling image: %w", err))
+							return
+						}
+					}
+
+					// Tag image
+					// Get remote remoteImageWithTag from the container helper then call docker cli remoteImageWithTag command
+					remoteImageWithTag, err := ch.RemoteImageTag(ctx, serviceConfig, targetImage)
 					if err != nil {
-						task.SetError(fmt.Errorf("pulling image: %w", err))
+						task.SetError(fmt.Errorf("getting remote image tag: %w", err))
 						return
 					}
-				}
 
-				// Tag image
-				// Get remote remoteImageWithTag from the container helper then call docker cli remoteImageWithTag command
-				remoteImageWithTag, err := ch.RemoteImageTag(ctx, serviceConfig, targetImage)
-				if err != nil {
-					task.SetError(fmt.Errorf("getting remote image tag: %w", err))
-					return
-				}
+					remoteImage = remoteImageWithTag
 
-				remoteImage = remoteImageWithTag
+					task.SetProgress(NewServiceProgress("Tagging container image"))
+					if err := ch.docker.Tag(ctx, serviceConfig.Path(), targetImage, remoteImage); err != nil {
+						task.SetError(err)
+						return
+					}
 
-				task.SetProgress(NewServiceProgress("Tagging container image"))
-				if err := ch.docker.Tag(ctx, serviceConfig.Path(), targetImage, remoteImage); err != nil {
-					task.SetError(err)
-					return
-				}
+					log.Printf("logging into container registry '%s'\n", registryName)
+					task.SetProgress(NewServiceProgress("Logging into container registry"))
+					err = ch.containerRegistryService.Login(ctx, targetResource.SubscriptionId(), registryName)
+					if err != nil {
+						task.SetError(err)
+						return
+					}
 
-				log.Printf("logging into container registry '%s'\n", registryName)
-				task.SetProgress(NewServiceProgress("Logging into container registry"))
-				err = ch.containerRegistryService.Login(ctx, targetResource.SubscriptionId(), registryName)
-				if err != nil {
-					task.SetError(err)
-					return
-				}
-
-				// Push image.
-				log.Printf("pushing %s to registry", remoteImage)
-				task.SetProgress(NewServiceProgress("Pushing container image"))
-				if err := ch.docker.Push(ctx, serviceConfig.Path(), remoteImage); err != nil {
-					task.SetError(err)
-					return
+					// Push image.
+					log.Printf("pushing %s to registry", remoteImage)
+					task.SetProgress(NewServiceProgress("Pushing container image"))
+					if err := ch.docker.Push(ctx, serviceConfig.Path(), remoteImage); err != nil {
+						task.SetError(err)
+						return
+					}
 				}
 			}
 

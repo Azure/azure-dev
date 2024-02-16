@@ -336,6 +336,7 @@ func Test_ContainerHelper_Deploy(t *testing.T) {
 			require.Equal(t, tt.expectDockerPullCalled, dockerPullCalled)
 			require.Equal(t, tt.expectDockerTagCalled, dockerTagCalled)
 			require.Equal(t, tt.expectDockerPushCalled, dockerPushCalled)
+			require.Equal(t, tt.expectedRemoteImage, env.GetServiceProperty("api", "IMAGE_NAME"))
 		})
 	}
 }
@@ -376,7 +377,7 @@ func Test_ContainerHelper_ConfiguredImage(t *testing.T) {
 			},
 		},
 		{
-			name:  "with custom iamge",
+			name:  "with custom image",
 			image: osutil.NewExpandableString("custom-image"),
 			expectedImage: docker.ContainerImage{
 				Registry:   "",
@@ -385,7 +386,7 @@ func Test_ContainerHelper_ConfiguredImage(t *testing.T) {
 			},
 		},
 		{
-			name:  "with custom iamge and tag",
+			name:  "with custom image and tag",
 			image: osutil.NewExpandableString("custom-image"),
 			tag:   osutil.NewExpandableString("custom-tag"),
 			expectedImage: docker.ContainerImage{

@@ -4,6 +4,7 @@
 package cmd
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"log"
@@ -16,6 +17,7 @@ import (
 	// Importing for infrastructure provider plugin registrations
 
 	"github.com/azure/azure-dev/cli/azd/pkg/azd"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/platform"
 
@@ -335,6 +337,16 @@ func NewRootCmd(
 		UseMiddlewareWhen("telemetry", middleware.NewTelemetryMiddleware, func(descriptor *actions.ActionDescriptor) bool {
 			return !descriptor.Options.DisableTelemetry
 		})
+
+	console := input.NewConsole(false, true, os.Stdout, input.ConsoleHandles{
+		Stdin:  os.Stdin,
+		Stdout: os.Stdout,
+		Stderr: os.Stderr,
+	}, &output.NoneFormatter{})
+	_, _ = console.Confirm(context.Background(), input.ConsoleOptions{
+		Message:      fmt.Sprintf("Debugger Ready? (pid: %d)", os.Getpid()),
+		DefaultValue: true,
+	})
 
 	// Register common dependencies for the IoC rootContainer
 	if rootContainer == nil {

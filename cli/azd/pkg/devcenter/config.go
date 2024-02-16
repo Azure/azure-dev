@@ -26,6 +26,8 @@ const (
 	PlatformKindDevCenter platform.PlatformKind = "devcenter"
 )
 
+var EmptyConfig = Config{}
+
 // Config provides the Azure DevCenter configuration used for devcenter enabled projects
 type Config struct {
 	Name                  string `json:"name,omitempty"                  yaml:"name,omitempty"`

@@ -193,6 +193,19 @@ func (t *aksTarget) Deploy(
 ) *async.TaskWithProgress[*ServiceDeployResult, ServiceProgress] {
 	return async.RunTaskWithProgress(
 		func(task *async.TaskContextWithProgress[*ServiceDeployResult, ServiceProgress]) {
+			clusterName := t.env.Getenv(environment.AksClusterEnvVarName)
+			if clusterName == "" {
+				log.Printf("No cluster name found in the environment. Exiting deployment process.")
+				task.SetResult(&ServiceDeployResult{
+					Package:          nil,
+					TargetResourceId: "",
+					Kind:             "",
+					Details:          nil,
+					Endpoints:        nil,
+				})
+				return
+			}
+
 			if err := t.validateTargetResource(ctx, serviceConfig, targetResource); err != nil {
 				task.SetError(fmt.Errorf("validating target resource: %w", err))
 				return
@@ -497,6 +510,12 @@ func (t *aksTarget) Endpoints(
 	serviceConfig *ServiceConfig,
 	targetResource *environment.TargetResource,
 ) ([]string, error) {
+	clusterName := t.env.Getenv(environment.AksClusterEnvVarName)
+	if clusterName == "" {
+		log.Printf("Cluster name not found in environment. Exiting Endpoints method.")
+		return nil, fmt.Errorf("cluster name not found in environment")
+	}
+
 	serviceName := serviceConfig.K8s.Service.Name
 	if serviceName == "" {
 		serviceName = serviceConfig.Name
@@ -838,7 +857,26 @@ func (t *aksTarget) getK8sNamespace(serviceConfig *ServiceConfig) string {
 	return namespace
 }
 
+func (t *aksTarget) getTargetResource(
+	ctx context.Context, serviceConfig *ServiceConfig) (*environment.TargetResource, error) {
+	targetResource, err := t.resourceManager.GetTargetResource(ctx, t.env.GetSubscriptionId(), serviceConfig)
+	if err != nil {
+		return nil, err
+	}
+	return targetResource, nil
+}
+
 func (t *aksTarget) setK8sContext(ctx context.Context, serviceConfig *ServiceConfig, eventName ext.Event) error {
+	if err := t.envManager.Reload(ctx, t.env); err != nil {
+		return fmt.Errorf("reloading environment before setting k8s context: %w", err)
+	}
+
+	// Resolve cluster name
+	clusterName := t.env.Getenv(environment.AksClusterEnvVarName)
+	if clusterName == "" {
+		return nil
+	}
+
 	t.kubectl.SetEnv(t.env.Dotenv())
 	hasCustomKubeConfig := false
 
@@ -849,7 +887,7 @@ func (t *aksTarget) setK8sContext(ctx context.Context, serviceConfig *ServiceCon
 		hasCustomKubeConfig = true
 	}
 
-	targetResource, err := t.resourceManager.GetTargetResource(ctx, t.env.GetSubscriptionId(), serviceConfig)
+	targetResource, err := t.getTargetResource(ctx, serviceConfig)
 	if err != nil {
 		return err
 	}

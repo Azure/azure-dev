@@ -549,6 +549,14 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		})
 	})
 
+	container.MustRegisterSingleton(func(lazyConfig *lazy.Lazy[*project.ProjectConfig]) (project.IsProjectADE, error) {
+		projectConfig, err := lazyConfig.GetValue()
+		if err != nil {
+			return false, fmt.Errorf("loading project config: %w", err)
+		}
+		return projectConfig.Platform.Type == devcenter.PlatformKindDevCenter, nil
+	})
+
 	container.MustRegisterSingleton(func(
 		lazyProjectConfig *lazy.Lazy[*project.ProjectConfig],
 		userConfigManager config.UserConfigManager,

@@ -17,13 +17,17 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 )
 
+type IsProjectADE bool
+
 type ImportManager struct {
 	dotNetImporter *DotNetImporter
+	isADE          IsProjectADE
 }
 
-func NewImportManager(dotNetImporter *DotNetImporter) *ImportManager {
+func NewImportManager(dotNetImporter *DotNetImporter, isADE IsProjectADE) *ImportManager {
 	return &ImportManager{
 		dotNetImporter: dotNetImporter,
+		isADE:          isADE,
 	}
 }
 
@@ -110,6 +114,12 @@ const (
 // The configuration can be explicitly defined on azure.yaml using path and module, or in case these values
 // are not explicitly defined, the project importer uses default values to find the infrastructure.
 func (im *ImportManager) ProjectInfrastructure(ctx context.Context, projectConfig *ProjectConfig) (*Infra, error) {
+	if im.isADE {
+		// im.isADE is resolved within the ioc container by looking at the resolution of the platform.Config
+		// It is safe to assume that whenever ProjectInfrastructure is called, the platform.Config has been resolved.
+		return &Infra{}, nil
+	}
+
 	// Use default project values for Infra when not specified in azure.yaml
 	if projectConfig.Infra.Module == "" {
 		projectConfig.Infra.Module = DefaultModule

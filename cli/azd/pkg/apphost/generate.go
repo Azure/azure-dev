@@ -39,6 +39,9 @@ func init() {
 				"containerAppName":       scaffold.ContainerAppName,
 				"containerAppSecretName": scaffold.ContainerAppSecretName,
 				"toDotNotation":          scaffold.ToDotNotation,
+				"fixBackSlash": func(src string) string {
+					return strings.ReplaceAll(src, "\\", "/")
+				},
 			},
 		).
 		ParseFS(resources.AppHostTemplates, "apphost/templates/*")

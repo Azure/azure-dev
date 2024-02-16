@@ -61,6 +61,7 @@ func Test_CLI_VsServer(t *testing.T) {
 			require.NoError(t, err, "failed expanding sample")
 
 			cli := azdcli.NewCLI(t)
+			/* #nosec G204 - Subprocess launched with a potential tainted input or cmd arguments false positive */
 			cmd := exec.CommandContext(ctx, cli.AzdPath, "vs-server", "--debug")
 			cmd.Env = append(cmd.Env, os.Environ()...)
 			cmd.Env = append(cmd.Env, "AZD_DEBUG_SERVER_DEBUG_ENDPOINTS=true")
@@ -78,6 +79,7 @@ func Test_CLI_VsServer(t *testing.T) {
 			err = json.Unmarshal(stdout.Bytes(), &svr)
 			require.NoError(t, err, "value: %s", stdout.String())
 
+			/* #nosec G204 - Subprocess launched with a potential tainted input or cmd arguments false positive */
 			cmd = exec.CommandContext(context.Background(),
 				"dotnet", "test",
 				"--filter", "Name="+tt)

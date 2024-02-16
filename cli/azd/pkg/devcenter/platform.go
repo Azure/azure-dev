@@ -43,8 +43,11 @@ func (p *Platform) IsEnabled() bool {
 }
 
 // IsDevCenterEnabled returns true if the devcenter platform is enabled
-func IsDevCenterEnabled(config *platform.Config) bool {
-	return config.Type == PlatformKindDevCenter
+func IsDevCenterEnabled(config *project.ProjectConfig) bool {
+	if config.Platform == nil {
+		return false
+	}
+	return config.Platform.Type == PlatformKindDevCenter
 }
 
 // ConfigureContainer configures the IoC container for the devcenter platform components

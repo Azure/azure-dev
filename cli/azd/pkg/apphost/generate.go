@@ -467,7 +467,7 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 					}
 				}
 				if p == "principalId" && finalParamValue == emptyJsonString {
-					finalParamValue = "guid(resources.outputs.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID)"
+					finalParamValue = "resources.outputs.MANAGED_IDENTITY_PRINCIPAL_ID"
 				}
 				if p == "principalType" && finalParamValue == emptyJsonString {
 					finalParamValue = "'ServicePrincipal'"

@@ -140,7 +140,8 @@ func BicepTemplate(manifest *Manifest) (*memfs.FS, error) {
 		return nil, fmt.Errorf("generating infra/resources.bicep: %w", err)
 	}
 
-	if err := executeToFS(fs, genTemplates, "main.parameters.json", "main.parameters.json", generator.bicepContext); err != nil {
+	if err := executeToFS(
+		fs, genTemplates, "main.parameters.json", "main.parameters.json", generator.bicepContext); err != nil {
 		return nil, fmt.Errorf("generating infra/resources.bicep: %w", err)
 	}
 

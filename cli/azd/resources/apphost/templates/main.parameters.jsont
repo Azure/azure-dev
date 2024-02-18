@@ -7,7 +7,12 @@
       "principalId": {
         "value": "${AZURE_PRINCIPAL_ID}"
       },
-{{ end }}
+{{- end }}
+{{- range $param, $value := .InputParameters}}
+      "{{$param}}": {
+        "value": "{{ envFormat $param}}"
+      },
+{{- end}}
       "environmentName": {
         "value": "${AZURE_ENV_NAME}"
       },

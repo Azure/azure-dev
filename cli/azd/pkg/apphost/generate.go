@@ -42,6 +42,7 @@ func init() {
 				"fixBackSlash": func(src string) string {
 					return strings.ReplaceAll(src, "\\", "/")
 				},
+				"envFormat": scaffold.EnvFormat,
 			},
 		).
 		ParseFS(resources.AppHostTemplates, "apphost/templates/*")

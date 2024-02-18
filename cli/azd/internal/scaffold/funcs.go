@@ -177,6 +177,14 @@ func ToDotNotation(s string) string {
 	return fmt.Sprintf("'%s'", s)
 }
 
+// EnvFormat takes an input parameter like `fooParam` which is expected to be in camel case and returns it in
+// upper snake case with env var template, like `${AZURE_FOO_PARAM}`.
+func EnvFormat(src string) string {
+	re := regexp.MustCompile(`([a-z0-9])([A-Z])`)
+	snake := strings.ToUpper(re.ReplaceAllString(src, "${1}_${2}"))
+	return fmt.Sprintf("${AZURE_%s}", snake)
+}
+
 // ContainerAppInfix returns a suitable infix for a container app resource.
 //
 // The name is treated to only contain alphanumeric and dash characters, with no repeated dashes, and no dashes

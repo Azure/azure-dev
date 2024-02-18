@@ -22,6 +22,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/cosmosdb"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
+	"github.com/azure/azure-dev/cli/azd/pkg/keyvault"
 	"github.com/azure/azure-dev/cli/azd/pkg/password"
 	"github.com/azure/azure-dev/cli/azd/pkg/sqldb"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools"
@@ -36,6 +37,7 @@ type dotnetContainerAppTarget struct {
 	dotNetCli           dotnet.DotNetCli
 	cosmosDbService     cosmosdb.CosmosDbService
 	sqlDbService        sqldb.SqlDbService
+	keyvaultService     keyvault.KeyVaultService
 }
 
 // NewDotNetContainerAppTarget creates the Service Target for a Container App that is written in .NET. Unlike
@@ -54,6 +56,7 @@ func NewDotNetContainerAppTarget(
 	dotNetCli dotnet.DotNetCli,
 	cosmosDbService cosmosdb.CosmosDbService,
 	sqlDbService sqldb.SqlDbService,
+	keyvaultService keyvault.KeyVaultService,
 ) ServiceTarget {
 	return &dotnetContainerAppTarget{
 		env:                 env,
@@ -63,6 +66,7 @@ func NewDotNetContainerAppTarget(
 		dotNetCli:           dotNetCli,
 		cosmosDbService:     cosmosDbService,
 		sqlDbService:        sqlDbService,
+		keyvaultService:     keyvaultService,
 	}
 }
 
@@ -190,6 +194,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 				cosmosDbService:     at.cosmosDbService,
 				sqlDbService:        at.sqlDbService,
 				env:                 at.env,
+				keyvaultService:     at.keyvaultService,
 			}
 
 			tmpl, err := template.New("containerApp.tmpl.yaml").
@@ -198,6 +203,7 @@ func (at *dotnetContainerAppTarget) Deploy(
 					"urlHost":          fns.UrlHost,
 					"connectionString": fns.ConnectionString,
 					"parameter":        fns.Parameter,
+					"secretOutput":     fns.kvSecret,
 				}).
 				Parse(manifest)
 			if err != nil {
@@ -359,6 +365,7 @@ type containerAppTemplateManifestFuncs struct {
 	cosmosDbService     cosmosdb.CosmosDbService
 	sqlDbService        sqldb.SqlDbService
 	env                 *environment.Environment
+	keyvaultService     keyvault.KeyVaultService
 }
 
 // UrlHost returns the Hostname (without the port) of the given string, or an error if the string is not a valid URL.
@@ -626,4 +633,19 @@ func (fns *containerAppTemplateManifestFuncs) secretValue(containerAppName strin
 	}
 
 	return "", fmt.Errorf("secret %s not found", secretName)
+}
+
+// kvSecret gets the value of the secret with the given name from the KeyVault with the given host name. If the secret is
+// not found, an error is returned.
+func (fns *containerAppTemplateManifestFuncs) kvSecret(kvHost, secretName string) (string, error) {
+	hostName := fns.env.Getenv(kvHost)
+	if hostName == "" {
+		return "", fmt.Errorf("the value for %s was not found or is empty", kvHost)
+	}
+
+	secret, err := fns.keyvaultService.GetKeyVaultSecret(fns.ctx, fns.targetResource.SubscriptionId(), hostName, secretName)
+	if err != nil {
+		return "", fmt.Errorf("fetching secret %s from %s: %w", secretName, hostName, err)
+	}
+	return secret.Value, nil
 }

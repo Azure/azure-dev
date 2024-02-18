@@ -21,7 +21,12 @@ type genContainerAppEnvironmentServices struct {
 	Type string
 }
 
-type genKeyVault struct{}
+type genKeyVault struct {
+	// when true, the bicep definition for tags is not generated
+	NoTags bool
+	// when provided, the principalId from the user provisioning the key vault gets read access
+	ReadAccessPrincipalId bool
+}
 
 type genContainerApp struct {
 	Image   string
@@ -115,6 +120,7 @@ type genBicepTemplateContext struct {
 	HasContainerEnvironment         bool
 	HasDaprStore                    bool
 	HasLogAnalyticsWorkspace        bool
+	RequiresPrincipalId             bool
 	AppInsights                     map[string]genAppInsight
 	ServiceBuses                    map[string]genServiceBus
 	StorageAccounts                 map[string]genStorageAccount

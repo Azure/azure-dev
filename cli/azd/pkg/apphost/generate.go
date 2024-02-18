@@ -139,7 +139,7 @@ func BicepTemplate(manifest *Manifest) (*memfs.FS, error) {
 		return nil, fmt.Errorf("generating infra/resources.bicep: %w", err)
 	}
 
-	if err := executeToFS(fs, genTemplates, "main.parameters.json", "main.parameters.json", nil); err != nil {
+	if err := executeToFS(fs, genTemplates, "main.parameters.json", "main.parameters.json", generator.bicepContext); err != nil {
 		return nil, fmt.Errorf("generating infra/resources.bicep: %w", err)
 	}
 
@@ -395,7 +395,7 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 		case "redis.v0":
 			b.addContainerAppService(name, RedisContainerAppService)
 		case "azure.keyvault.v0":
-			b.addKeyVault(name)
+			b.addKeyVault(name, false, false)
 		case "azure.appconfiguration.v0":
 			b.addAppConfig(name)
 		case "azure.storage.v0":
@@ -482,7 +482,7 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 					"bicep resource %s has connectionString with secretOutputs but no keyVaultName param", name)
 			}
 			if useSecretOutputs && keyVaultForParam != "" {
-				b.addKeyVault(keyVaultForParam)
+				b.addKeyVault(keyVaultForParam, true, true)
 			}
 			b.addBicep(name, *comp.Path, comp.Params)
 		default:
@@ -606,8 +606,11 @@ func (b *infraGenerator) addStorageAccount(name string) {
 	}
 }
 
-func (b *infraGenerator) addKeyVault(name string) {
-	b.bicepContext.KeyVaults[name] = genKeyVault{}
+func (b *infraGenerator) addKeyVault(name string, noTags, readAccessPrincipalId bool) {
+	b.bicepContext.KeyVaults[name] = genKeyVault{
+		NoTags:                noTags,
+		ReadAccessPrincipalId: readAccessPrincipalId,
+	}
 }
 
 func (b *infraGenerator) addAppConfig(name string) {
@@ -957,10 +960,8 @@ func (b *infraGenerator) Compile() error {
 
 			// quick check to know if evaluatedString is only holding one only reference. If so, we don't need to use
 			// the form of '%{ref}' and we can directly use ref alone.
-			removeSpecialChars := strings.ReplaceAll(strings.ReplaceAll(evaluatedString, "'{{", ""), "}}'", "")
-
-			if evaluatedString == fmt.Sprintf("'{{%s}}'", removeSpecialChars) {
-				module.Params[paramName] = removeSpecialChars
+			if isComplexExp, val := isComplexExpression(evaluatedString); !isComplexExp {
+				module.Params[paramName] = val
 				continue
 			}
 			// restore double {{ }} to single { } for bicep output
@@ -969,7 +970,25 @@ func (b *infraGenerator) Compile() error {
 		}
 	}
 
+	for _, kv := range b.bicepContext.KeyVaults {
+		if kv.ReadAccessPrincipalId {
+			b.bicepContext.RequiresPrincipalId = true
+			break
+		}
+	}
+
 	return nil
+}
+
+// isComplexExpression checks if the evaluatedString is in the form of '{{ expr }}' or if it is a complex expression like
+// 'foo {{ expr }} bar {{ expr2 }}' and returns true if it is a complex expression.
+// When the expression is not complex, it returns false and the evaluatedString without the special characters.
+func isComplexExpression(evaluatedString string) (bool, string) {
+	removeSpecialChars := strings.ReplaceAll(strings.ReplaceAll(evaluatedString, "'{{", ""), "}}'", "")
+	if evaluatedString == fmt.Sprintf("'{{%s}}'", removeSpecialChars) {
+		return false, removeSpecialChars
+	}
+	return true, ""
 }
 
 // buildIngress builds the ingress configuration for a given set of bindings. It returns nil, nil if no ingress should
@@ -1153,9 +1172,9 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 		case inputEmitTypeBicep:
 			return fmt.Sprintf("{{%s}}", resource), nil
 		case inputEmitTypeYaml:
-			return fmt.Sprintf("{{ parameter \"%s\" }}", resource), nil
+			return fmt.Sprintf(`{{ parameter "%s" }}`, resource), nil
 		default:
-			panic(fmt.Sprintf("unexpected parameter emit type %s", string(emitType)))
+			panic(fmt.Sprintf("unexpected parameter %s", string(emitType)))
 		}
 	default:
 		ignore, err := strconv.ParseBool(os.Getenv("AZD_DEBUG_DOTNET_APPHOST_IGNORE_UNSUPPORTED_RESOURCES"))
@@ -1208,20 +1227,34 @@ func (b *infraGenerator) buildEnvBlock(env map[string]string, manifestCtx *genCo
 		//    as a secret and added to the secrets map.
 		if strings.Contains(k, "ConnectionStrings__") || strings.Contains(resolvedValue, "{{ connectionString") {
 			if strings.Contains(resolvedValue, "{{ secretOutput ") {
-				// secretOutputs can't be used within complex expressions, so we don't worry about combining it with
-				// something like `expr {{ secretOutput }} foo`. A secretOutput should be a unique reference, like
-				// `{{ secretOutput }}`.
-				removeBrackets := strings.ReplaceAll(strings.ReplaceAll(resolvedValue, " }}'", "'"), "{{ secretOutput ", "")
-				manifestCtx.KeyVaultSecrets[k] = removeBrackets
-			} else {
-				manifestCtx.Secrets[k] = resolvedValue
+				if isComplexExp, _ := isComplexExpression(resolvedValue); !isComplexExp {
+					removeBrackets := strings.ReplaceAll(
+						strings.ReplaceAll(resolvedValue, " }}'", "'"), "{{ secretOutput ", "")
+					manifestCtx.KeyVaultSecrets[k] = removeBrackets
+					continue
+				}
+				// complex expression using secretOutput:
+				// The secretOutput is a reference to a KeyVault secret but can't be set as KeyVault secret reference
+				// because the secret is just part of the full value.
+				// For such case, the secret value is pulled during deployment and replaced in the containerApp.yaml file
+				// as a secret within the containerApp.
+				resolvedValue = secretOutputForDeployTemplate(resolvedValue)
 			}
-		} else {
-			manifestCtx.Env[k] = resolvedValue
+
+			manifestCtx.Secrets[k] = resolvedValue
+			continue
 		}
+		manifestCtx.Env[k] = resolvedValue
 	}
 
 	return nil
+}
+
+// secretOutputForDeployTemplate replaces all the instances like `{{ secretOutput {{ .Env.[host] }}secrets/[secretName] }}`
+// with `{{ secretOutput [host] "secretName" }}`, creating a placeholder to be resolved during the deployment.
+func secretOutputForDeployTemplate(secretName string) string {
+	re := regexp.MustCompile(`{{ secretOutput {{ \.Env\.(.*) }}secrets/(.*) }}`)
+	return re.ReplaceAllString(secretName, `{{ secretOutput "$1" "$2" }}`)
 }
 
 // errUnsupportedProperty returns an error indicating that the given property is not supported for the given resource.

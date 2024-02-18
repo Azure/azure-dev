@@ -9,7 +9,10 @@ param environmentName string
 @minLength(1)
 @description('The location used for all deployed resources')
 param location string
-
+{{ if .RequiresPrincipalId }}
+@description('Id of the user or app to assign application roles')
+param principalId string = ''
+{{ end }}
 @secure()
 @metadata({azd: {type: 'inputs' }})
 param inputs object
@@ -35,6 +38,9 @@ module resources 'resources.bicep' = {
     location: location
     tags: tags
     inputs: inputs
+{{- if .RequiresPrincipalId }}
+    principalId: principalId
+{{ end }}
   }
 }
 

@@ -460,7 +460,8 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 				if err != nil {
 					return fmt.Errorf("marshalling param %s. error: %w", p, err)
 				}
-				if p == "keyVaultName" && useSecretOutputs {
+				if p == "keyVaultName" && finalParamValue == emptyJsonString {
+					useSecretOutputs = true
 					keyVaultForParam = name + "kv"
 					keyVaultParam := fmt.Sprintf(
 						"resources.outputs.SERVICE_BINDING_%s_NAME", strings.ToUpper(keyVaultForParam))

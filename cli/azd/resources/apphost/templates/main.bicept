@@ -40,11 +40,10 @@ module resources 'resources.bicep' = {
     inputs: inputs
 {{- if .RequiresPrincipalId }}
     principalId: principalId
-{{ end }}
+{{- end }}
   }
 }
-
-{{range $name, $module := .BicepModules}}
+{{ range $name, $module := .BicepModules -}}
 module {{$name}} '{{ fixBackSlash $module.Path }}' = {
   name: '{{$name}}'
   scope: rg
@@ -55,8 +54,7 @@ module {{$name}} '{{ fixBackSlash $module.Path }}' = {
 {{- end}}
   }
 }
-{{end -}}
-
+{{- end }}
 output MANAGED_IDENTITY_CLIENT_ID string = resources.outputs.MANAGED_IDENTITY_CLIENT_ID
 output MANAGED_IDENTITY_NAME string = resources.outputs.MANAGED_IDENTITY_NAME
 {{if .HasLogAnalyticsWorkspace -}}

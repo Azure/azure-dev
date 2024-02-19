@@ -1189,12 +1189,24 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 		outputType := outputParts[0]
 		outputName := outputParts[1]
 		if outputType == "outputs" {
-			return fmt.Sprintf("{{ .Env.%s_%s }}", strings.ToUpper(resource), strings.ToUpper(outputName)), nil
+			if emitType == inputEmitTypeYaml {
+				return fmt.Sprintf("{{ .Env.%s_%s }}", strings.ToUpper(resource), strings.ToUpper(outputName)), nil
+			}
+			if emitType == inputEmitTypeBicep {
+				return fmt.Sprintf("%s.outputs.%s", resource, outputName), nil
+			}
+			return "", fmt.Errorf("unexpected output type %s", string(emitType))
 		} else {
-			return fmt.Sprintf(
-				"{{ secretOutput {{ .Env.SERVICE_BINDING_%s_ENDPOINT }}secrets/%s }}",
-				strings.ToUpper(resource+"kv"),
-				outputName), nil
+			if emitType == inputEmitTypeYaml {
+				return fmt.Sprintf(
+					"{{ secretOutput {{ .Env.SERVICE_BINDING_%s_ENDPOINT }}secrets/%s }}",
+					strings.ToUpper(resource+"kv"),
+					outputName), nil
+			}
+			if emitType == inputEmitTypeBicep {
+				return "", fmt.Errorf("secretOutputs not supported as inputs for bicep modules")
+			}
+			return "", fmt.Errorf("unexpected output type %s", string(emitType))
 		}
 	case targetType == "parameter.v0":
 		param := b.bicepContext.InputParameters[resource]

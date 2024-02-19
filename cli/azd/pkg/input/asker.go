@@ -27,6 +27,7 @@ func NewAsker(noPrompt bool, isTerminal bool, w io.Writer, r io.Reader) Asker {
 }
 
 func askOneNoPrompt(p survey.Prompt, response interface{}) error {
+
 	switch v := p.(type) {
 	case *survey.Input:
 		if v.Default == "" {
@@ -69,7 +70,7 @@ func askOneNoPrompt(p survey.Prompt, response interface{}) error {
 		}
 		*(response.(*[]string)) = defValue
 	default:
-		panic(fmt.Sprintf("don't know how to prompt for type %T", p))
+		panic(fmt.Sprintf("don't know how to prompt for type %T..aaa", p))
 	}
 
 	return nil
@@ -143,6 +144,17 @@ func askOnePrompt(p survey.Prompt, response interface{}, isTerminal bool, stdout
 		if result == "" && v.Default != "" {
 			result = v.Default
 		}
+		*pResponse = result
+		return nil
+	case *survey.Password:
+		var pResponse = response.(*string)
+		fmt.Fprintf(stdout, "%s", v.Message[0:len(v.Message)-1])
+		fmt.Fprintf(stdout, "%s ", v.Message[len(v.Message)-1:])
+		result, err := readStringNoBuffer(stdin, '\n')
+		if err != nil && !errors.Is(err, io.EOF) {
+			return fmt.Errorf("reading response: %w", err)
+		}
+		result = strings.TrimSpace(result)
 		*pResponse = result
 		return nil
 	case *survey.MultiSelect:

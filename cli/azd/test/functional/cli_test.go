@@ -328,7 +328,7 @@ func Test_CLI_InfraCreateAndDeleteUpperCase(t *testing.T) {
 	require.NoError(t, err)
 
 	// test 'infra create' alias
-	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "infra", "create", "--output", "json")
+	_, err = cli.RunCommandWithStdIn(ctx, stdinForProvision(), "provision", "--output", "json")
 	require.NoError(t, err)
 
 	env, err := envFromAzdRoot(ctx, dir, envName)

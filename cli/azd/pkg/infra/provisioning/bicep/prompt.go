@@ -20,11 +20,11 @@ func (p *BicepProvider) promptForParameter(
 	key string,
 	param azure.ArmTemplateParameterDefinition,
 ) (any, error) {
-	securedParam := ""
+	securedParam := "parameter"
 	if param.Secure() {
-		securedParam = "secured"
+		securedParam = "secured parameter"
 	}
-	msg := fmt.Sprintf("Enter a value for the '%s' infrastructure %s parameter:", key, securedParam)
+	msg := fmt.Sprintf("Enter a value for the '%s' infrastructure %s:", key, securedParam)
 	help, _ := param.Description()
 	azdMetadata, _ := param.AzdMetadata()
 	paramType := p.mapBicepTypeToInterfaceType(param.Type)

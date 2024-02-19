@@ -261,3 +261,22 @@ func TestAddContainerAppService(t *testing.T) {
 	require.Equal(t, 0, len(mockGenerator.bicepContext.StorageAccounts["storage4"].Queues))
 	require.Equal(t, 1, len(mockGenerator.bicepContext.StorageAccounts["storage4"].Tables))
 }
+
+func TestEvaluateForOutputs(t *testing.T) {
+	value := "{resource.outputs.output1} and {resource.secretOutputs.output2}"
+
+	expectedOutputs := map[string]genOutputParameter{
+		"RESOURCE_OUTPUT1": {
+			Type:  "string",
+			Value: "resource.outputs.output1",
+		},
+		"RESOURCE_OUTPUT2": {
+			Type:  "string",
+			Value: "resource.secretOutputs.output2",
+		},
+	}
+
+	outputs, err := evaluateForOutputs(value)
+	require.NoError(t, err)
+	require.Equal(t, expectedOutputs, outputs)
+}

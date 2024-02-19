@@ -72,6 +72,9 @@ type Resource struct {
 
 	// For a bicep.v0 resource, defines the input parameters for the bicep file.
 	Params map[string]any `json:"params,omitempty"`
+
+	// parameter.v0 uses value field to define the value of the parameter.
+	Value string
 }
 
 type DaprResourceMetadata struct {

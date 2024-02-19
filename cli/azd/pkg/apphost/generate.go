@@ -275,7 +275,7 @@ func newInfraGenerator() *infraGenerator {
 			DaprComponents:                  make(map[string]genDaprComponent),
 			CosmosDbAccounts:                make(map[string]genCosmosAccount),
 			SqlServers:                      make(map[string]genSqlServer),
-			InputParameters:                 make(map[string]genInputParameter),
+			InputParameters:                 make(map[string]Input),
 			BicepModules:                    make(map[string]genBicepModules),
 			OutputParameters:                make(map[string]genOutputParameter),
 			OutputSecretParameters:          make(map[string]genOutputParameter),
@@ -436,7 +436,10 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 				b.addContainerAppService(name, "postgres")
 			}
 		case "parameter.v0":
-			b.addInputParameter(name, comp.Inputs["value"].Type)
+			err := b.addInputParameter(name, comp)
+			if err != nil {
+				return fmt.Errorf("adding input parameter %s: %w", name, err)
+			}
 		case "azure.bicep.v0":
 			if comp.Path == nil {
 				if comp.Parent == nil {
@@ -542,8 +545,31 @@ func (b *infraGenerator) addServiceBus(name string, queues, topics *[]string) {
 	b.bicepContext.ServiceBuses[name] = genServiceBus{Queues: *queues, Topics: *topics}
 }
 
-func (b *infraGenerator) addInputParameter(name, pType string) {
-	b.bicepContext.InputParameters[name] = genInputParameter{Type: pType}
+func (b *infraGenerator) addInputParameter(name string, comp *Resource) error {
+	pValue := comp.Value
+
+	if matched, _ := regexp.MatchString(`{[a-zA-Z][a-zA-Z0-9]*\.inputs\.[a-zA-Z][a-zA-Z0-9]*}`, pValue); !matched {
+		// parameters not using inputs are not bicep input parameters
+		return fmt.Errorf("parameter %s does not use inputs. This is currently not supported.", name)
+	}
+
+	valueParts := strings.Split(
+		strings.TrimRight(strings.TrimLeft(pValue, "{"), "}"),
+		".inputs.")
+	// regex from above ensure parts 0 and 1 exists
+	resourceName, inputName := valueParts[0], valueParts[1]
+
+	if name != resourceName {
+		return fmt.Errorf("parameter %s does not use inputs from its own resource. This is not supported", name)
+	}
+
+	input, exists := comp.Inputs[inputName]
+	if !exists {
+		return fmt.Errorf("parameter %s does not have input %s", name, inputName)
+	}
+
+	b.bicepContext.InputParameters[name] = input
+	return nil
 }
 
 func (b *infraGenerator) addBicep(name, path string, params map[string]any) {
@@ -1171,11 +1197,16 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 				outputName), nil
 		}
 	case targetType == "parameter.v0":
+		param := b.bicepContext.InputParameters[resource]
+		inputType := "parameter"
+		if param.Secret {
+			inputType = "secured-parameter"
+		}
 		switch emitType {
 		case inputEmitTypeBicep:
 			return fmt.Sprintf("{{%s}}", resource), nil
 		case inputEmitTypeYaml:
-			return fmt.Sprintf(`{{ parameter "%s" }}`, resource), nil
+			return fmt.Sprintf(`{{ %s "%s" }}`, inputType, resource), nil
 		default:
 			panic(fmt.Sprintf("unexpected parameter %s", string(emitType)))
 		}
@@ -1228,7 +1259,9 @@ func (b *infraGenerator) buildEnvBlock(env map[string]string, manifestCtx *genCo
 		// connectionString detection:
 		//  - If the env-key contains "ConnectionStrings__" or the value contains "{{ connectionString" then it is considered
 		//    as a secret and added to the secrets map.
-		if strings.Contains(k, "ConnectionStrings__") || strings.Contains(resolvedValue, "{{ connectionString") {
+		if strings.Contains(k, "ConnectionStrings__") ||
+			strings.Contains(resolvedValue, "{{ connectionString") ||
+			strings.Contains(resolvedValue, "{{ secured-parameter ") {
 			if strings.Contains(resolvedValue, "{{ secretOutput ") {
 				if isComplexExp, _ := isComplexExpression(resolvedValue); !isComplexExp {
 					removeBrackets := strings.ReplaceAll(
@@ -1243,7 +1276,7 @@ func (b *infraGenerator) buildEnvBlock(env map[string]string, manifestCtx *genCo
 				// as a secret within the containerApp.
 				resolvedValue = secretOutputForDeployTemplate(resolvedValue)
 			}
-
+			resolvedValue = strings.ReplaceAll(resolvedValue, "{{ secured-parameter ", "{{ parameter ")
 			manifestCtx.Secrets[k] = resolvedValue
 			continue
 		}

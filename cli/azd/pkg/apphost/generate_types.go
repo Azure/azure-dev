@@ -101,10 +101,6 @@ type genSqlServer struct {
 	Databases []string
 }
 
-type genInputParameter struct {
-	Type string
-}
-
 type genOutputParameter struct {
 	Type  string
 	Value string
@@ -131,7 +127,7 @@ type genBicepTemplateContext struct {
 	DaprComponents                  map[string]genDaprComponent
 	CosmosDbAccounts                map[string]genCosmosAccount
 	SqlServers                      map[string]genSqlServer
-	InputParameters                 map[string]genInputParameter
+	InputParameters                 map[string]Input
 	OutputParameters                map[string]genOutputParameter
 	OutputSecretParameters          map[string]genOutputParameter
 	BicepModules                    map[string]genBicepModules

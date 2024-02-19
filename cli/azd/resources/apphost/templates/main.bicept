@@ -43,7 +43,7 @@ module resources 'resources.bicep' = {
 {{- end }}
   }
 }
-{{ range $name, $module := .BicepModules -}}
+{{ range $name, $module := .BicepModules }}
 module {{$name}} '{{ fixBackSlash $module.Path }}' = {
   name: '{{$name}}'
   scope: rg

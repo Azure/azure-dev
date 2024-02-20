@@ -436,61 +436,13 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 				b.addContainerAppService(name, "postgres")
 			}
 		case "parameter.v0":
-			err := b.addInputParameter(name, comp)
-			if err != nil {
+			if err := b.addInputParameter(name, comp); err != nil {
 				return fmt.Errorf("adding input parameter %s: %w", name, err)
 			}
 		case "azure.bicep.v0":
-			if comp.Path == nil {
-				if comp.Parent == nil {
-					return fmt.Errorf("bicep resource %s does not have a path or a parent", name)
-				}
-				// module uses parent
-				continue
+			if err := b.addBicep(name, comp); err != nil {
+				return fmt.Errorf("adding bicep resource %s: %w", name, err)
 			}
-			if comp.Params == nil {
-				comp.Params = make(map[string]any)
-			}
-			useSecretOutputs := false
-			if comp.ConnectionString != nil && strings.Contains(*comp.ConnectionString, "secretOutputs") {
-				useSecretOutputs = true
-			}
-			keyVaultForParam := ""
-			emptyJsonString := "\"\""
-			for p, pVal := range comp.Params {
-				jsonBytes, err := json.Marshal(pVal)
-				finalParamValue := string(jsonBytes)
-				if err != nil {
-					return fmt.Errorf("marshalling param %s. error: %w", p, err)
-				}
-				if p == "keyVaultName" {
-					useSecretOutputs = true
-					keyVaultForParam = name + "kv"
-					if finalParamValue == emptyJsonString {
-						keyVaultParam := fmt.Sprintf(
-							"resources.outputs.SERVICE_BINDING_%s_NAME", strings.ToUpper(keyVaultForParam))
-						finalParamValue = keyVaultParam
-					}
-				}
-				if p == "principalId" && finalParamValue == emptyJsonString {
-					finalParamValue = "resources.outputs.MANAGED_IDENTITY_PRINCIPAL_ID"
-				}
-				if p == "principalType" && finalParamValue == emptyJsonString {
-					finalParamValue = "'ServicePrincipal'"
-				}
-				if p == "principalName" && finalParamValue == emptyJsonString {
-					finalParamValue = "resources.outputs.MANAGED_IDENTITY_NAME"
-				}
-				comp.Params[p] = finalParamValue
-			}
-			if useSecretOutputs && keyVaultForParam == "" {
-				return fmt.Errorf(
-					"bicep resource %s has connectionString with secretOutputs but no keyVaultName param", name)
-			}
-			if useSecretOutputs && keyVaultForParam != "" {
-				b.addKeyVault(keyVaultForParam, true, true)
-			}
-			b.addBicep(name, *comp.Path, comp.Params)
 		default:
 			ignore, err := strconv.ParseBool(os.Getenv("AZD_DEBUG_DOTNET_APPHOST_IGNORE_UNSUPPORTED_RESOURCES"))
 			if err == nil && ignore {
@@ -572,8 +524,59 @@ func (b *infraGenerator) addInputParameter(name string, comp *Resource) error {
 	return nil
 }
 
-func (b *infraGenerator) addBicep(name, path string, params map[string]any) {
-	b.bicepContext.BicepModules[name] = genBicepModules{Path: path, Params: params}
+func (b *infraGenerator) addBicep(name string, comp *Resource) error {
+	if comp.Path == nil {
+		if comp.Parent == nil {
+			return fmt.Errorf("bicep resource %s does not have a path or a parent", name)
+		}
+		// module uses parent
+		return nil
+	}
+	if comp.Params == nil {
+		comp.Params = make(map[string]any)
+	}
+	useSecretOutputs := false
+	if comp.ConnectionString != nil && strings.Contains(*comp.ConnectionString, "secretOutputs") {
+		useSecretOutputs = true
+	}
+	keyVaultForParam := ""
+	emptyJsonString := "\"\""
+	for p, pVal := range comp.Params {
+		jsonBytes, err := json.Marshal(pVal)
+		finalParamValue := string(jsonBytes)
+		if err != nil {
+			return fmt.Errorf("marshalling param %s. error: %w", p, err)
+		}
+		if p == "keyVaultName" {
+			useSecretOutputs = true
+			keyVaultForParam = name + "kv"
+			if finalParamValue == emptyJsonString {
+				keyVaultParam := fmt.Sprintf(
+					"resources.outputs.SERVICE_BINDING_%s_NAME", strings.ToUpper(keyVaultForParam))
+				finalParamValue = keyVaultParam
+			}
+		}
+		if p == "principalId" && finalParamValue == emptyJsonString {
+			finalParamValue = "resources.outputs.MANAGED_IDENTITY_PRINCIPAL_ID"
+		}
+		if p == "principalType" && finalParamValue == emptyJsonString {
+			finalParamValue = "'ServicePrincipal'"
+		}
+		if p == "principalName" && finalParamValue == emptyJsonString {
+			finalParamValue = "resources.outputs.MANAGED_IDENTITY_NAME"
+		}
+		comp.Params[p] = finalParamValue
+	}
+	if useSecretOutputs && keyVaultForParam == "" {
+		return fmt.Errorf(
+			"bicep resource %s has connectionString with secretOutputs but no keyVaultName param", name)
+	}
+	if useSecretOutputs && keyVaultForParam != "" {
+		b.addKeyVault(keyVaultForParam, true, true)
+	}
+
+	b.bicepContext.BicepModules[name] = genBicepModules{Path: *comp.Path, Params: comp.Params}
+	return nil
 }
 
 func (b *infraGenerator) addAppInsights(name string) {

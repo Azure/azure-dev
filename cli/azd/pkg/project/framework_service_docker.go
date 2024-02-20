@@ -191,8 +191,11 @@ func (p *dockerProject) Build(
 		func(task *async.TaskContextWithProgress[*ServiceBuildResult, ServiceProgress]) {
 			dockerOptions := getDockerOptionsWithDefaults(serviceConfig.Docker)
 
-			// No framework has been set, return empty build result
-			if _, ok := p.framework.(*noOpProject); ok {
+			// For services that do not specify a project path and have not specified a language then
+			// there is nothing to build and we can return an empty build result
+			// Ex) A container app project that uses an external image path
+			if serviceConfig.RelativePath == "" &&
+				(serviceConfig.Language == ServiceLanguageNone || serviceConfig.Language == ServiceLanguageDocker) {
 				task.SetResult(&ServiceBuildResult{})
 				return
 			}

@@ -7,8 +7,10 @@ import (
 
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resourcegraph/armresourcegraph"
 	"github.com/azure/azure-dev/cli/azd/pkg/azsdk"
+	"github.com/azure/azure-dev/cli/azd/pkg/config"
 	"github.com/azure/azure-dev/cli/azd/pkg/devcentersdk"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
 	"github.com/azure/azure-dev/cli/azd/test/mocks/mockdevcentersdk"
@@ -229,7 +231,7 @@ func Test_EnvironmentStore_Save(t *testing.T) {
 func newEnvironmentStoreForTest(
 	t *testing.T,
 	mockContext *mocks.MockContext,
-	config *Config,
+	devCenterConfig *Config,
 	manager Manager,
 ) environment.RemoteDataStore {
 	coreOptions := azsdk.
@@ -254,7 +256,11 @@ func newEnvironmentStoreForTest(
 	if manager == nil {
 		manager = &mockDevCenterManager{}
 	}
-	prompter := NewPrompter(config, mockContext.Console, manager, devCenterClient)
+	prompter := NewPrompter(devCenterConfig, mockContext.Console, manager, devCenterClient)
 
-	return NewEnvironmentStore(config, devCenterClient, prompter, manager)
+	azdContext := azdcontext.NewAzdContextWithDirectory(t.TempDir())
+	fileConfigManager := config.NewFileConfigManager(config.NewManager())
+	dataStore := environment.NewLocalFileDataStore(azdContext, fileConfigManager)
+
+	return NewEnvironmentStore(devCenterConfig, devCenterClient, prompter, manager, dataStore)
 }

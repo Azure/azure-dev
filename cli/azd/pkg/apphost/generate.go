@@ -537,48 +537,62 @@ func (b *infraGenerator) addBicep(name string, comp *Resource) error {
 	if comp.Params == nil {
 		comp.Params = make(map[string]any)
 	}
-	useSecretOutputs := false
-	if comp.ConnectionString != nil && strings.Contains(*comp.ConnectionString, "secretOutputs") {
-		useSecretOutputs = true
-	}
-	keyVaultForParam := ""
-	emptyJsonString := "\"\""
+
+	// afterInjectionParams is used to know which params where actually injected
+	autoInjectedParams := make(map[string]any)
 	for p, pVal := range comp.Params {
-		jsonBytes, err := json.Marshal(pVal)
-		finalParamValue := string(jsonBytes)
+		paramValue, injected, err := injectValueForBicepParameter(name, p, pVal)
 		if err != nil {
-			return fmt.Errorf("marshalling param %s. error: %w", p, err)
+			return fmt.Errorf("injecting value for bicep parameter %s: %w", p, err)
 		}
-		if p == "keyVaultName" {
-			useSecretOutputs = true
-			keyVaultForParam = name + "kv"
-			if finalParamValue == emptyJsonString {
-				keyVaultParam := fmt.Sprintf(
-					"resources.outputs.SERVICE_BINDING_%s_NAME", strings.ToUpper(keyVaultForParam))
-				finalParamValue = keyVaultParam
-			}
+		comp.Params[p] = paramValue
+		if injected {
+			autoInjectedParams[p] = struct{}{}
 		}
-		if p == "principalId" && finalParamValue == emptyJsonString {
-			finalParamValue = "resources.outputs.MANAGED_IDENTITY_PRINCIPAL_ID"
-		}
-		if p == "principalType" && finalParamValue == emptyJsonString {
-			finalParamValue = "'ServicePrincipal'"
-		}
-		if p == "principalName" && finalParamValue == emptyJsonString {
-			finalParamValue = "resources.outputs.MANAGED_IDENTITY_NAME"
-		}
-		comp.Params[p] = finalParamValue
 	}
-	if useSecretOutputs && keyVaultForParam == "" {
-		return fmt.Errorf(
-			"bicep resource %s has connectionString with secretOutputs but no keyVaultName param", name)
-	}
-	if useSecretOutputs && keyVaultForParam != "" {
-		b.addKeyVault(keyVaultForParam, true, true)
+	_, keyVaultInjected := autoInjectedParams["keyVaultName"]
+	if keyVaultInjected {
+		b.addKeyVault(name+"kv", true, true)
 	}
 
 	b.bicepContext.BicepModules[name] = genBicepModules{Path: *comp.Path, Params: comp.Params}
 	return nil
+}
+
+// injectValueForBicepParameter checks for aspire-manifest and azd conventions rules for auto injecting values for
+// the bicep.v0 parameters.
+// Conventions examples:
+// - for a `keyVaultName` parameter, set the value to the output of the keyVault resource to be created.
+// - for `principalName`, set the value to the managed identity created by azd.
+// Note: The value is only injected when it is an empty string.
+// injectValueForBicepParameter returns the final value for the parameter, a boolean indicating if the value was injected
+// and an error if any.
+func injectValueForBicepParameter(resourceName, p string, parameter any) (string, bool, error) {
+	// using json.Marshal to parse any type of value (array, bool, etc)
+	jsonBytes, err := json.Marshal(parameter)
+	finalParamValue := string(jsonBytes)
+	if err != nil {
+		return "", false, fmt.Errorf("marshalling param %s. error: %w", p, err)
+	}
+	emptyJsonString := "\"\""
+	if finalParamValue != emptyJsonString {
+		// injection not required
+		return finalParamValue, false, nil
+	}
+
+	if p == "keyVaultName" {
+		return fmt.Sprintf("resources.outputs.SERVICE_BINDING_%s_NAME", strings.ToUpper(resourceName+"kv")), true, nil
+	}
+	if p == "principalId" {
+		return "resources.outputs.MANAGED_IDENTITY_PRINCIPAL_ID", true, nil
+	}
+	if p == "principalType" {
+		return "'ServicePrincipal'", true, nil
+	}
+	if p == "principalName" {
+		return "resources.outputs.MANAGED_IDENTITY_NAME", true, nil
+	}
+	return finalParamValue, false, nil
 }
 
 func (b *infraGenerator) addAppInsights(name string) {

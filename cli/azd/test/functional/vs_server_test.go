@@ -85,7 +85,8 @@ func Test_CLI_VsServer(t *testing.T) {
 				"--filter", "Name="+tt)
 			cmd.Dir = testDir
 			cmd.Env = append(cmd.Env, os.Environ()...)
-			cmd.Env = append(cmd.Env, "AZURE_SUBSCRIPTION_ID="+"faa080af-c1d8-40ad-9cce-e1a450ca5b57")
+			cmd.Env = append(cmd.Env, "AZURE_SUBSCRIPTION_ID="+cfg.SubscriptionID)
+			cmd.Env = append(cmd.Env, "AZURE_LOCATION="+cfg.Location)
 			cmd.Env = append(cmd.Env, fmt.Sprintf("PORT=%d", svr.Port))
 			cmd.Env = append(cmd.Env, "ROOT_DIR="+dir)
 

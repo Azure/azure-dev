@@ -133,8 +133,7 @@ func Test_CLI_Env_Management(t *testing.T) {
 
 	_, _ = cli.RunCommandWithStdIn(
 		ctx,
-		envName2+"\n"+
-			"y\n", // Set as default
+		envName2+"\n",
 		cmdNeedingEnv...)
 
 	environmentList = envList(ctx, t, cli)

@@ -222,39 +222,32 @@ func (m *manager) loadOrInitEnvironment(ctx context.Context, environmentName str
 			return nil, false, err
 		}
 
+		// Selection, 0 is the option to create a new environment
+		selection := 0
 		choices := make([]string, 0, len(envs)+1)
 		choices = append(choices, "Create a new environment")
-		for _, env := range envs {
-			choices = append(choices, env.Name)
-		}
-
-		sel, err := m.console.Select(ctx, input.ConsoleOptions{
-			Message: "Select an environment to use:",
-			Options: choices,
-		})
-		if err != nil {
-			return nil, false, err
-		}
-
-		if sel > 0 {
-			// Return an existing environment
-			env, err := m.Get(ctx, choices[sel])
-			if err != nil {
-				return nil, false, err
+		if len(envs) > 0 {
+			for _, env := range envs {
+				choices = append(choices, env.Name)
 			}
 
-			setDefault, err := m.console.Confirm(ctx, input.ConsoleOptions{
-				Message:      fmt.Sprintf("Set '%s' as the default environment?", env.Name()),
-				DefaultValue: true,
+			selection, err = m.console.Select(ctx, input.ConsoleOptions{
+				Message: "Select an environment to use:",
+				Options: choices,
 			})
 			if err != nil {
 				return nil, false, err
 			}
+		}
 
-			if setDefault {
-				if err := m.azdContext.SetDefaultEnvironmentName(env.Name()); err != nil {
-					return nil, false, fmt.Errorf("saving default environment: %w", err)
-				}
+		if selection > 0 {
+			// Return an existing environment
+			env, err := m.Get(ctx, choices[selection])
+			if err != nil {
+				return nil, false, err
+			}
+			if err := m.azdContext.SetDefaultEnvironmentName(env.Name()); err != nil {
+				return nil, false, fmt.Errorf("saving default environment: %w", err)
 			}
 
 			return env, false, nil

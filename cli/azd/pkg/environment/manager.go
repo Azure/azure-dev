@@ -52,7 +52,11 @@ var (
 // Manager is the interface used for managing instances of environments
 type Manager interface {
 	Create(ctx context.Context, spec Spec) (*Environment, error)
-	LoadOrCreateInteractive(ctx context.Context, name string) (*Environment, error)
+
+	// Loads the environment with the given name.
+	// If the name is empty, the user is prompted to select or create an environment.
+	// If the environment does not exist, the user is prompted to create it.
+	LoadOrInitInteractive(ctx context.Context, name string) (*Environment, error)
 	List(ctx context.Context) ([]*Description, error)
 	Get(ctx context.Context, name string) (*Environment, error)
 	Save(ctx context.Context, env *Environment) error
@@ -142,65 +146,8 @@ func (m *manager) Create(ctx context.Context, spec Spec) (*Environment, error) {
 	return env, nil
 }
 
-func (m *manager) LoadOrCreateInteractive(ctx context.Context, environmentName string) (*Environment, error) {
-	loadOrCreateEnvironment := func() (*Environment, bool, error) {
-		// If there's a default environment, use that
-		if environmentName == "" {
-			var err error
-			environmentName, err = m.azdContext.GetDefaultEnvironmentName()
-			if err != nil {
-				return nil, false, fmt.Errorf("getting default environment: %w", err)
-			}
-		}
-
-		if environmentName != "" {
-			env, err := m.Get(ctx, environmentName)
-			switch {
-			case errors.Is(err, ErrNotFound):
-				msg := fmt.Sprintf("Environment '%s' does not exist, would you like to create it?", environmentName)
-				shouldCreate, promptErr := m.console.Confirm(ctx, input.ConsoleOptions{
-					Message:      msg,
-					DefaultValue: true,
-				})
-				if promptErr != nil {
-					return nil, false, fmt.Errorf("prompting to create environment '%s': %w", environmentName, promptErr)
-				}
-				if !shouldCreate {
-					return nil, false, fmt.Errorf("environment '%s' not found: %w", environmentName, err)
-				}
-			case err != nil:
-				return nil, false, fmt.Errorf("loading environment '%s': %w", environmentName, err)
-			case err == nil:
-				return env, false, nil
-			}
-		}
-
-		// Two cases if we get to here:
-		// - The user has not specified an environment name (and there was no default environment set)
-		// - The user has specified an environment name, but the named environment didn't exist and they told us they would
-		//   like us to create it.
-		if environmentName != "" && !IsValidEnvironmentName(environmentName) {
-			fmt.Fprintf(
-				m.console.Handles().Stdout,
-				"environment name '%s' is invalid (it should contain only alphanumeric characters and hyphens)\n",
-				environmentName)
-			return nil, false, fmt.Errorf(
-				"environment name '%s' is invalid (it should contain only alphanumeric characters and hyphens)",
-				environmentName)
-		}
-
-		spec := &Spec{
-			Name: environmentName,
-		}
-
-		if err := m.ensureValidEnvironmentName(ctx, spec); err != nil {
-			return nil, false, err
-		}
-
-		return New(spec.Name), true, nil
-	}
-
-	env, isNew, err := loadOrCreateEnvironment()
+func (m *manager) LoadOrInitInteractive(ctx context.Context, environmentName string) (*Environment, error) {
+	env, isNew, err := m.loadOrInitEnvironment(ctx, environmentName)
 	switch {
 	case errors.Is(err, ErrNotFound):
 		return nil, fmt.Errorf("environment %s does not exist", environmentName)
@@ -219,6 +166,104 @@ func (m *manager) LoadOrCreateInteractive(ctx context.Context, environmentName s
 	}
 
 	return env, nil
+}
+
+func (m *manager) loadOrInitEnvironment(ctx context.Context, environmentName string) (*Environment, bool, error) {
+	// If there's a default environment, use that
+	if environmentName == "" {
+		var err error
+		environmentName, err = m.azdContext.GetDefaultEnvironmentName()
+		if err != nil {
+			return nil, false, fmt.Errorf("getting default environment: %w", err)
+		}
+	}
+
+	if environmentName != "" {
+		env, err := m.Get(ctx, environmentName)
+		switch {
+		case errors.Is(err, ErrNotFound):
+			msg := fmt.Sprintf("Environment '%s' does not exist, would you like to create it?", environmentName)
+			shouldCreate, promptErr := m.console.Confirm(ctx, input.ConsoleOptions{
+				Message:      msg,
+				DefaultValue: true,
+			})
+			if promptErr != nil {
+				return nil, false, fmt.Errorf("prompting to create environment '%s': %w", environmentName, promptErr)
+			}
+			if !shouldCreate {
+				return nil, false, fmt.Errorf("environment '%s' not found: %w", environmentName, err)
+			}
+		case err != nil:
+			return nil, false, fmt.Errorf("loading environment '%s': %w", environmentName, err)
+		case err == nil:
+			return env, false, nil
+		}
+	}
+
+	// Two cases if we get to here:
+	// - The user has not specified an environment name, and there was no default environment set
+	// - The user has specified an environment name, but the named environment didn't exist and they told us they would
+	//   like us to create it.
+	if environmentName != "" && !IsValidEnvironmentName(environmentName) {
+		fmt.Fprintf(
+			m.console.Handles().Stdout,
+			"environment name '%s' is invalid (it should contain only alphanumeric characters and hyphens)\n",
+			environmentName)
+		return nil, false, fmt.Errorf(
+			"environment name '%s' is invalid (it should contain only alphanumeric characters and hyphens)",
+			environmentName)
+	}
+
+	// No environment name, no default environment set.
+	// Ask the user if they want to create a new environment or select an existing one
+	if environmentName == "" {
+		envs, err := m.List(ctx)
+		if err != nil {
+			return nil, false, err
+		}
+
+		// Selection, 0 is the option to create a new environment
+		selection := 0
+		choices := make([]string, 0, len(envs)+1)
+		choices = append(choices, "Create a new environment")
+		if len(envs) > 0 {
+			for _, env := range envs {
+				choices = append(choices, env.Name)
+			}
+
+			selection, err = m.console.Select(ctx, input.ConsoleOptions{
+				Message: "Select an environment to use:",
+				Options: choices,
+			})
+			if err != nil {
+				return nil, false, err
+			}
+		}
+
+		if selection > 0 {
+			// Return an existing environment
+			env, err := m.Get(ctx, choices[selection])
+			if err != nil {
+				return nil, false, err
+			}
+			if err := m.azdContext.SetDefaultEnvironmentName(env.Name()); err != nil {
+				return nil, false, fmt.Errorf("saving default environment: %w", err)
+			}
+
+			return env, false, nil
+		}
+	}
+
+	// Create the environment
+	spec := &Spec{
+		Name: environmentName,
+	}
+
+	if err := m.ensureValidEnvironmentName(ctx, spec); err != nil {
+		return nil, false, err
+	}
+
+	return New(spec.Name), true, nil
 }
 
 // ConfigPath returns the path to the environment config file

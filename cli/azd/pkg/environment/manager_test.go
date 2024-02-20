@@ -83,7 +83,7 @@ func Test_EnvManager_PromptEnvironmentName(t *testing.T) {
 
 		expected := "hello"
 		envManager := createEnvManagerForManagerTest(t, mockContext)
-		env, err := envManager.LoadOrCreateInteractive(*mockContext.Context, expected)
+		env, err := envManager.LoadOrInitInteractive(*mockContext.Context, expected)
 		require.NoError(t, err)
 		require.NotNil(t, env)
 		require.Equal(t, expected, env.Name())
@@ -93,16 +93,18 @@ func Test_EnvManager_PromptEnvironmentName(t *testing.T) {
 		expected := "someEnv"
 
 		mockContext := mocks.NewMockContext(context.Background())
-		mockContext.Console.WhenConfirm(func(options input.ConsoleOptions) bool {
-			return strings.Contains(options.Message, "would you like to create it?")
-		}).Respond(true)
+		mockContext.Console.WhenSelect(func(options input.ConsoleOptions) bool {
+			return strings.Contains(options.Message, "Select an environment to use")
+		}).RespondFn(func(options input.ConsoleOptions) (any, error) {
+			return 0, nil // Create an environment
+		})
 
 		mockContext.Console.WhenPrompt(func(options input.ConsoleOptions) bool {
 			return true
 		}).Respond(expected)
 
 		envManager := createEnvManagerForManagerTest(t, mockContext)
-		env, err := envManager.LoadOrCreateInteractive(*mockContext.Context, "")
+		env, err := envManager.LoadOrInitInteractive(*mockContext.Context, "")
 
 		require.NoError(t, err)
 		require.NotNil(t, env)
@@ -127,7 +129,7 @@ func Test_EnvManager_CreateAndInitEnvironment(t *testing.T) {
 		}).Respond(true)
 
 		envManager := createEnvManagerForManagerTest(t, mockContext)
-		env, err := envManager.LoadOrCreateInteractive(*mockContext.Context, invalidEnvName)
+		env, err := envManager.LoadOrInitInteractive(*mockContext.Context, invalidEnvName)
 		require.Error(t, err)
 		require.Nil(t, env)
 		require.ErrorContains(t, err, fmt.Sprintf("environment name '%s' is invalid", invalidEnvName))

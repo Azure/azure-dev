@@ -62,7 +62,7 @@ func (s *environmentService) CreateEnvironmentAsync(
 			return false, fmt.Errorf("multiple app host projects found under %s", c.azdContext.ProjectPath())
 		}
 
-		manifest, err := session.readManifest(ctx, hosts[0].Path, c.dotnetCli)
+		manifest, err := apphost.ManifestFromAppHost(ctx, hosts[0].Path, c.dotnetCli)
 		if err != nil {
 			return false, fmt.Errorf("reading app host manifest: %w", err)
 		}

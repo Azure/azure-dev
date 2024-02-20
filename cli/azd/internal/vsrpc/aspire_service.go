@@ -12,6 +12,7 @@ import (
 	"path/filepath"
 
 	"github.com/azure/azure-dev/cli/azd/internal/appdetect"
+	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
@@ -72,7 +73,7 @@ func (s *aspireService) GetAspireHostAsync(
 			Path: appHost.Path(),
 		}
 
-		manifest, err := session.readManifest(ctx, appHost.Path(), c.dotnetCli)
+		manifest, err := apphost.ManifestFromAppHost(ctx, appHost.Path(), c.dotnetCli)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load app host manifest: %w", err)
 		}
@@ -100,7 +101,7 @@ func (s *aspireService) GetAspireHostAsync(
 			Path: hosts[0].Path,
 		}
 
-		manifest, err := session.readManifest(ctx, hosts[0].Path, c.dotnetCli)
+		manifest, err := apphost.ManifestFromAppHost(ctx, hosts[0].Path, c.dotnetCli)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load app host manifest: %w", err)
 		}

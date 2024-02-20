@@ -10,13 +10,11 @@ import (
 	"strings"
 
 	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
 	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
 	"github.com/mattn/go-colorable"
 	"go.lsp.dev/jsonrpc2"
 )
@@ -31,19 +29,6 @@ type serverSession struct {
 	rootPath string
 	// root container points to server.rootContainer
 	rootContainer *ioc.NestedContainer
-}
-
-// readManifest reads the manifest for the given app host. It caches the result for future calls.
-func (s *serverSession) readManifest(
-	ctx context.Context, appHostPath string, dotnetCli dotnet.DotNetCli,
-) (*apphost.Manifest, error) {
-
-	manifest, err := apphost.ManifestFromAppHost(ctx, appHostPath, dotnetCli)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load app host manifest: %w", err)
-	}
-
-	return manifest, nil
 }
 
 // newSession creates a new session and returns the session ID and session. newSession is safe to call by multiple

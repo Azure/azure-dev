@@ -192,16 +192,14 @@ func (t *aksTarget) Deploy(
 				return
 			}
 
-			if packageOutput.PackagePath != "" {
-				// Login, tag & push container image to ACR
-				containerDeployTask := t.containerHelper.Deploy(ctx, serviceConfig, packageOutput, targetResource, true)
-				syncProgress(task, containerDeployTask.Progress())
+			// Login, tag & push container image to ACR
+			containerDeployTask := t.containerHelper.Deploy(ctx, serviceConfig, packageOutput, targetResource, true)
+			syncProgress(task, containerDeployTask.Progress())
 
-				_, err := containerDeployTask.Await()
-				if err != nil {
-					task.SetError(err)
-					return
-				}
+			_, err := containerDeployTask.Await()
+			if err != nil {
+				task.SetError(err)
+				return
 			}
 
 			// Sync environment
@@ -294,6 +292,8 @@ func (t *aksTarget) deployManifests(
 		deploymentPath = defaultDeploymentPath
 	}
 
+	deploymentPath = filepath.Join(serviceConfig.Path(), deploymentPath)
+
 	// Manifests are optional so we will continue if the directory does not exist
 	if _, err := os.Stat(deploymentPath); os.IsNotExist(err) {
 		return nil, err
@@ -302,7 +302,7 @@ func (t *aksTarget) deployManifests(
 	task.SetProgress(NewServiceProgress("Applying k8s manifests"))
 	err := t.kubectl.Apply(
 		ctx,
-		filepath.Join(serviceConfig.RelativePath, deploymentPath),
+		deploymentPath,
 		nil,
 	)
 	if err != nil {

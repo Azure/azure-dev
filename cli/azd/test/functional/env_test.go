@@ -277,7 +277,7 @@ func envNew(ctx context.Context, t *testing.T, cli *azdcli.CLI, envName string, 
 
 	if usePrompt {
 		runArgs := append(defaultArgs, args...)
-		_, err := cli.RunCommandWithStdIn(ctx, "envName\n", runArgs...)
+		_, err := cli.RunCommandWithStdIn(ctx, envName+"\n", runArgs...)
 		require.NoError(t, err)
 	} else {
 		runArgs := append(defaultArgs, envName, "--subscription", cfg.SubscriptionID, "-l", cfg.Location)

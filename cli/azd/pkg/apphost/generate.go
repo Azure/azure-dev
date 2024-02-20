@@ -300,13 +300,9 @@ func evaluateForOutputs(value string) (map[string]genOutputParameter, error) {
 		noBrackets := strings.TrimRight(strings.TrimLeft(match, "{"), "}")
 		parts := strings.Split(noBrackets, ".")
 		name := fmt.Sprintf("%s_%s", strings.ToUpper(parts[0]), strings.ToUpper(parts[2]))
-		outputType := "outputs"
-		if strings.Contains(match, "secretOutputs") {
-			outputType = "secretOutputs"
-		}
 		outputs[name] = genOutputParameter{
 			Type:  "string",
-			Value: fmt.Sprintf("%s.%s.%s", parts[0], outputType, parts[2]),
+			Value: fmt.Sprintf("%s.%s.%s", parts[0], parts[1], parts[2]),
 		}
 	}
 	return outputs, nil

@@ -5,19 +5,9 @@ package vsrpc
 
 import (
 	"context"
-	"fmt"
-	"io"
 	"log"
 	"net/http"
 	"os"
-	"strings"
-
-	"github.com/azure/azure-dev/cli/azd/internal"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
-	"github.com/azure/azure-dev/cli/azd/pkg/input"
-	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
-	"github.com/azure/azure-dev/cli/azd/pkg/output"
-	"github.com/mattn/go-colorable"
 )
 
 // serverService is the RPC server for the '/ServerService/v1.0' endpoint.
@@ -49,67 +39,8 @@ func (s *serverService) InitializeAsync(ctx context.Context, rootPath string) (*
 		return nil, err
 	}
 
-	container, err := s.server.rootContainer.NewScope()
-	if err != nil {
-		return nil, err
-	}
-
-	azdCtx := azdcontext.NewAzdContextWithDirectory(rootPath)
-
-	outWriter := newWriter(fmt.Sprintf("[%s stdout] ", id))
-	errWriter := newWriter(fmt.Sprintf("[%s stderr] ", id))
-
-	// Useful for debugging, direct all the output to the console, so you can see it in VS Code.
-	outWriter.AddWriter(&lineWriter{
-		next: writerFunc(func(p []byte) (n int, err error) {
-			os.Stdout.Write([]byte(fmt.Sprintf("[%s stdout] %s", id, string(p))))
-			return n, nil
-		}),
-	})
-
-	errWriter.AddWriter(&lineWriter{
-		next: writerFunc(func(p []byte) (n int, err error) {
-			os.Stdout.Write([]byte(fmt.Sprintf("[%s stderr] %s", id, string(p))))
-			return n, nil
-		}),
-	})
-
-	container.MustRegisterScoped(func() input.Console {
-		stdout := outWriter
-		stderr := errWriter
-		stdin := strings.NewReader("")
-		writer := colorable.NewNonColorable(stdout)
-
-		return input.NewConsole(true, false, writer, input.ConsoleHandles{
-			Stdin:  stdin,
-			Stdout: stdout,
-			Stderr: stderr,
-		}, &output.NoneFormatter{})
-	})
-
-	container.MustRegisterScoped(func(console input.Console) io.Writer {
-		return colorable.NewNonColorable(console.Handles().Stdout)
-	})
-
-	container.MustRegisterScoped(func() *internal.GlobalCommandOptions {
-		return &internal.GlobalCommandOptions{
-			NoPrompt: true,
-			Cwd:      rootPath,
-		}
-	})
-
-	container.MustRegisterScoped(func() *azdcontext.AzdContext {
-		return azdCtx
-	})
-
-	container.MustRegisterScoped(func() *lazy.Lazy[*azdcontext.AzdContext] {
-		return lazy.From(azdCtx)
-	})
-
 	session.rootPath = rootPath
-	session.container = container
-	session.outWriter = outWriter
-	session.errWriter = errWriter
+	session.rootContainer = s.server.rootContainer
 
 	return &Session{
 		Id: id,

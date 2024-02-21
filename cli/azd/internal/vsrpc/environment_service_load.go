@@ -9,6 +9,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment"
 	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
@@ -29,10 +30,12 @@ func (s *environmentService) OpenEnvironmentAsync(
 		return nil, err
 	}
 
-	session.sessionMu.Lock()
-	defer session.sessionMu.Unlock()
+	container, err := session.newContainer()
+	if err != nil {
+		return nil, err
+	}
 
-	return s.loadEnvironmentAsyncWithSession(ctx, session, name, false)
+	return s.loadEnvironmentAsync(ctx, container, name, false)
 }
 
 // LoadEnvironmentAsync is the server implementation of:
@@ -49,15 +52,16 @@ func (s *environmentService) LoadEnvironmentAsync(
 		return nil, err
 	}
 
-	session.sessionMu.Lock()
-	defer session.sessionMu.Unlock()
+	container, err := session.newContainer()
+	if err != nil {
+		return nil, err
+	}
 
-	return s.loadEnvironmentAsyncWithSession(ctx, session, name, true)
+	return s.loadEnvironmentAsync(ctx, container, name, true)
 }
 
-// loadEnvironmentAsyncWithSession is not safe to be called concurrently, ensure that the session is locked before calling.
-func (s *environmentService) loadEnvironmentAsyncWithSession(
-	ctx context.Context, session *serverSession, name string, mustLoadServices bool,
+func (s *environmentService) loadEnvironmentAsync(
+	ctx context.Context, container *container, name string, mustLoadServices bool,
 ) (*Environment, error) {
 	var c struct {
 		azdCtx        *azdcontext.AzdContext `container:"type"`
@@ -66,7 +70,7 @@ func (s *environmentService) loadEnvironmentAsyncWithSession(
 		dotnetCli     dotnet.DotNetCli       `container:"type"`
 	}
 
-	if err := session.container.Fill(&c); err != nil {
+	if err := container.Fill(&c); err != nil {
 		return nil, err
 	}
 
@@ -110,20 +114,16 @@ func (s *environmentService) loadEnvironmentAsyncWithSession(
 
 	// If we would have to discover the app host or load the manifest from disk and the caller did not request it
 	// skip this somewhat expensive operation, at the expense of not building out the services array.
-	if (session.appHostPath == "" || session.manifestCache[session.appHostPath] == nil) && !mustLoadServices {
+	if !mustLoadServices {
 		return ret, nil
 	}
 
-	if session.appHostPath == "" {
-		appHost, err := appHostForProject(ctx, c.projectConfig, c.dotnetCli)
-		if err != nil {
-			return nil, fmt.Errorf("failed to find Aspire app host: %w", err)
-		}
-
-		session.appHostPath = appHost.Path()
+	appHost, err := appHostForProject(ctx, c.projectConfig, c.dotnetCli)
+	if err != nil {
+		return nil, fmt.Errorf("failed to find Aspire app host: %w", err)
 	}
 
-	manifest, err := session.readManifest(ctx, session.appHostPath, c.dotnetCli)
+	manifest, err := apphost.ManifestFromAppHost(ctx, appHost.Path(), c.dotnetCli)
 	if err != nil {
 		return nil, fmt.Errorf("reading app host manifest: %w", err)
 	}

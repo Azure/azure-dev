@@ -1,0 +1,11 @@
+name: 'setup-azd'
+description: 'This action downloads and installs azd'
+author: 'Azure Developer CLI Team'
+inputs:
+  version:
+    required: false
+    description: 'The version of azd to install (default: latest)'
+    default: 'latest'
+runs:
+  using: 'node20'
+  main: 'dist/index.js'

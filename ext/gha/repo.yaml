@@ -1,0 +1,20 @@
+templateApi: 1.0.0
+metadata:
+  type: repo
+  name: setup-azd
+  description: Github Actions for installing Azure Developer CLI (azd).
+
+repo:
+  includeProjectAssets: true
+
+  remotes:
+    - name: setup-azd-main
+      url: git@github.com:Azure/setup-azd.git
+    - name: setup-azd-staging
+      url: git@github.com:Azure/setup-azd.git
+      branch: staging
+
+  assets:
+    # Sync everything
+    - from: ./
+      to: ./

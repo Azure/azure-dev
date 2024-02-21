@@ -189,7 +189,6 @@ func Test_ContainerHelper_Deploy(t *testing.T) {
 		project                string
 		packagePath            string
 		dockerDetails          *dockerPackageResult
-		k8s                    *AksOptions
 		expectedRemoteImage    string
 		expectDockerPullCalled bool
 		expectDockerTagCalled  bool

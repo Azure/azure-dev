@@ -52,16 +52,13 @@ func (s *aspireService) GetAspireHostAsync(
 
 	// If there is an azure.yaml, load it and return the services.
 	if _, err := os.Stat(c.azdContext.ProjectPath()); err == nil {
-		var cc struct {
-			projectConfig *project.ProjectConfig `container:"type"`
-		}
-
-		if err := session.container.Fill(&cc); err != nil {
-			return nil, err
+		projectConfig, err := project.Load(context.Background(), c.azdContext.ProjectPath())
+		if err != nil {
+			return nil, fmt.Errorf("loading %s: %w", c.azdContext.ProjectPath(), err)
 		}
 
 		if session.appHostPath == "" {
-			appHost, err := appHostForProject(ctx, cc.projectConfig, c.dotnetCli)
+			appHost, err := appHostForProject(ctx, projectConfig, c.dotnetCli)
 			if err != nil {
 				return nil, err
 			}

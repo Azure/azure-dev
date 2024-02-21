@@ -58,9 +58,9 @@ public class AcceptanceTests : TestBase
             },
             Services = e.Services,
             Values = new Dictionary<string, string>() {
-                { "KEY_1", "VAL_1" },
-                { "KEY_2", "VAL_2" },
-                { "KEY_3", "VAL_3" },
+                { "E2_KEY_1", "E2_VAL_1" },
+                { "E2_KEY_2", "E2_VAL_2" },
+                { "E2_KEY_3", "E2_VAL_3" },
             },
         };
 

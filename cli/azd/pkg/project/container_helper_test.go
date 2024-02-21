@@ -318,10 +318,6 @@ func Test_ContainerHelper_Deploy(t *testing.T) {
 			serviceConfig.RelativePath = tt.project
 			serviceConfig.Docker.Registry = tt.registry
 
-			if tt.k8s != nil {
-				serviceConfig.K8s = *tt.k8s
-			}
-
 			packageOutput := &ServicePackageResult{
 				Details:     tt.dockerDetails,
 				PackagePath: tt.packagePath,

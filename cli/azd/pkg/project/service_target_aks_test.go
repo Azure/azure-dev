@@ -346,7 +346,6 @@ func Test_Deploy_Kustomize(t *testing.T) {
 
 	packageResult := &ServicePackageResult{
 		PackagePath: "",
-		Details:     nil,
 	}
 
 	scope := environment.NewTargetResource("SUB_ID", "RG_ID", "", string(infra.AzureResourceTypeManagedCluster))

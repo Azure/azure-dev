@@ -540,22 +540,24 @@ func (b *infraGenerator) addBicep(name string, comp *Resource) error {
 
 	// afterInjectionParams is used to know which params where actually injected
 	autoInjectedParams := make(map[string]any)
+	// params from resource are type-less (any), injectValueForBicepParameter() will convert them to string
+	// by converting to string, we can evaluate arrays and objects with placeholders.
+	stringParams := make(map[string]string)
 	for p, pVal := range comp.Params {
 		paramValue, injected, err := injectValueForBicepParameter(name, p, pVal)
 		if err != nil {
 			return fmt.Errorf("injecting value for bicep parameter %s: %w", p, err)
 		}
-		comp.Params[p] = paramValue
+		stringParams[p] = paramValue
 		if injected {
 			autoInjectedParams[p] = struct{}{}
 		}
 	}
-	_, keyVaultInjected := autoInjectedParams["keyVaultName"]
-	if keyVaultInjected {
+	if _, keyVaultInjected := autoInjectedParams["keyVaultName"]; keyVaultInjected {
 		b.addKeyVault(name+"kv", true, true)
 	}
 
-	b.bicepContext.BicepModules[name] = genBicepModules{Path: *comp.Path, Params: comp.Params}
+	b.bicepContext.BicepModules[name] = genBicepModules{Path: *comp.Path, Params: stringParams}
 	return nil
 }
 
@@ -991,12 +993,8 @@ func (b *infraGenerator) Compile() error {
 
 	for moduleName, module := range b.bicepContext.BicepModules {
 		for paramName, paramValue := range module.Params {
-			// paramValue comes from the manifest and it can be any type, but it is saved into bicepContext with json.Marshal
-			// ensuring that is is represented with a string. We can safely cast it to string here.
-			paramValueString, _ := paramValue.(string)
-
 			// bicep uses ' instead of " for strings, so we need to replace all " with '
-			singleQuoted := strings.ReplaceAll(paramValueString, "\"", "'")
+			singleQuoted := strings.ReplaceAll(paramValue, "\"", "'")
 
 			// evaluate references
 			evaluatedString, err := EvalString(singleQuoted, func(s string) (string, error) {

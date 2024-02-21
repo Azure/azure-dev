@@ -108,7 +108,7 @@ type genOutputParameter struct {
 
 type genBicepModules struct {
 	Path   string
-	Params map[string]any
+	Params map[string]string
 }
 
 type genBicepTemplateContext struct {

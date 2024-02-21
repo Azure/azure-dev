@@ -48,9 +48,21 @@ func Test_CLI_VsServer(t *testing.T) {
 		}
 	}
 
+	stdout.Reset()
+	stderr.Reset()
+	cmd = exec.CommandContext(context.Background(), "dotnet", "build")
+	cmd.Dir = testDir
+	cmd.Stdout = &stdout
+	cmd.Stderr = &stderr
+	err = cmd.Run()
+	require.NoError(t, err, "stdout: %s, stderr: %s", stdout.String(), stderr.String())
+
 	// For each test, copySample
 	for _, tt := range tests {
 		t.Run(tt, func(t *testing.T) {
+			tt := tt
+			t.Parallel()
+
 			ctx, cancel := newTestContext(t)
 			defer cancel()
 
@@ -66,7 +78,7 @@ func Test_CLI_VsServer(t *testing.T) {
 			cmd.Env = append(cmd.Env, os.Environ()...)
 			cmd.Env = append(cmd.Env, "AZD_DEBUG_SERVER_DEBUG_ENDPOINTS=true")
 
-			stdout.Reset()
+			var stdout bytes.Buffer
 			cmd.Stdout = io.MultiWriter(&stdout, &logWriter{initialTime: time.Now(), t: t, prefix: "[svr-out] "})
 			cmd.Stderr = &logWriter{initialTime: time.Now(), t: t, prefix: "[svr-err] "}
 			err = cmd.Start()
@@ -82,6 +94,8 @@ func Test_CLI_VsServer(t *testing.T) {
 			/* #nosec G204 - Subprocess launched with a potential tainted input or cmd arguments false positive */
 			cmd = exec.CommandContext(context.Background(),
 				"dotnet", "test",
+				"--no-build",
+				"--no-restore",
 				"--filter", "Name="+tt)
 			cmd.Dir = testDir
 			cmd.Env = append(cmd.Env, os.Environ()...)

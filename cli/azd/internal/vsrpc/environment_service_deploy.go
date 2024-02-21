@@ -92,5 +92,5 @@ func (s *environmentService) DeployAsync(
 		return nil, err
 	}
 
-	return s.refreshEnvironmentAsyncWithSession(ctx, session, name, observer)
+	return s.refreshEnvironmentAsync(ctx, container, name, observer)
 }

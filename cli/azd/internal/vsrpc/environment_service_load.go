@@ -30,7 +30,12 @@ func (s *environmentService) OpenEnvironmentAsync(
 		return nil, err
 	}
 
-	return s.loadEnvironmentAsyncWithSession(ctx, session, name, false)
+	container, err := session.newContainer()
+	if err != nil {
+		return nil, err
+	}
+
+	return s.loadEnvironmentAsync(ctx, container, name, false)
 }
 
 // LoadEnvironmentAsync is the server implementation of:
@@ -47,12 +52,16 @@ func (s *environmentService) LoadEnvironmentAsync(
 		return nil, err
 	}
 
-	return s.loadEnvironmentAsyncWithSession(ctx, session, name, true)
+	container, err := session.newContainer()
+	if err != nil {
+		return nil, err
+	}
+
+	return s.loadEnvironmentAsync(ctx, container, name, true)
 }
 
-// loadEnvironmentAsyncWithSession is not safe to be called concurrently, ensure that the session is locked before calling.
-func (s *environmentService) loadEnvironmentAsyncWithSession(
-	ctx context.Context, session *serverSession, name string, mustLoadServices bool,
+func (s *environmentService) loadEnvironmentAsync(
+	ctx context.Context, container *container, name string, mustLoadServices bool,
 ) (*Environment, error) {
 	var c struct {
 		azdCtx        *azdcontext.AzdContext `container:"type"`
@@ -61,10 +70,6 @@ func (s *environmentService) loadEnvironmentAsyncWithSession(
 		dotnetCli     dotnet.DotNetCli       `container:"type"`
 	}
 
-	container, err := session.newContainer()
-	if err != nil {
-		return nil, err
-	}
 	if err := container.Fill(&c); err != nil {
 		return nil, err
 	}

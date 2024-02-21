@@ -49,7 +49,7 @@ RUN export DEBIAN_FRONTEND=noninteractive \
      && chmod 700 get_helm.sh \
      && ./get_helm.sh \
      # Kustomize CLI
-     && curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh"  | bash \
+     && curl -s "https://raw.githubusercontent.com/kubernetes-sigs/kustomize/master/hack/install_kustomize.sh" | bash -s -- /usr/local/bin \
      # Kubelogin CLI
      && az aks install-cli \
      # xdg-open

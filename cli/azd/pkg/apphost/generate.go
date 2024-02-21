@@ -293,6 +293,10 @@ func newInfraGenerator() *infraGenerator {
 	}
 }
 
+// withOutputsExpRegex is a regular expression used to match expressions in the format "{<resource>.outputs.<outputName>}" or
+// "{<resource>.secretOutputs.<outputName>}".
+var withOutputsExpRegex = regexp.MustCompile(`\{[a-zA-Z0-9\-]+\.(outputs|secretOutputs)\.[a-zA-Z0-9\-]+\}`)
+
 // evaluateForOutputs is a function that evaluates a given value and extracts output parameters from it.
 // It searches for patterns in the form of "{<resource>.outputs.<outputName>}" or "{<resource>.secretOutputs.<outputName>}"
 // and creates a map of output parameters with their corresponding values.
@@ -302,8 +306,7 @@ func newInfraGenerator() *infraGenerator {
 func evaluateForOutputs(value string) (map[string]genOutputParameter, error) {
 	outputs := make(map[string]genOutputParameter)
 
-	re := regexp.MustCompile(`\{[a-zA-Z0-9\-]+\.(outputs|secretOutputs)\.[a-zA-Z0-9\-]+\}`)
-	matches := re.FindAllString(value, -1)
+	matches := withOutputsExpRegex.FindAllString(value, -1)
 	for _, match := range matches {
 		noBrackets := strings.TrimRight(strings.TrimLeft(match, "{"), "}")
 		parts := strings.Split(noBrackets, ".")
@@ -1356,11 +1359,13 @@ func (b *infraGenerator) buildEnvBlock(env map[string]string, manifestCtx *genCo
 	return nil
 }
 
+// secretOutputRegex is a regular expression used to match and extract secret output references in a specific format.
+var secretOutputRegex = regexp.MustCompile(`{{ secretOutput {{ \.Env\.(.*) }}secrets/(.*) }}`)
+
 // secretOutputForDeployTemplate replaces all the instances like `{{ secretOutput {{ .Env.[host] }}secrets/[secretName] }}`
 // with `{{ secretOutput [host] "secretName" }}`, creating a placeholder to be resolved during the deployment.
 func secretOutputForDeployTemplate(secretName string) string {
-	re := regexp.MustCompile(`{{ secretOutput {{ \.Env\.(.*) }}secrets/(.*) }}`)
-	return re.ReplaceAllString(secretName, `{{ secretOutput "$1" "$2" }}`)
+	return secretOutputRegex.ReplaceAllString(secretName, `{{ secretOutput "$1" "$2" }}`)
 }
 
 // errUnsupportedProperty returns an error indicating that the given property is not supported for the given resource.

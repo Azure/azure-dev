@@ -206,7 +206,7 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 			environmentName := envFlags.EnvironmentName
 			var err error
 
-			env, err := envManager.LoadOrCreateInteractive(ctx, environmentName)
+			env, err := envManager.LoadOrInitInteractive(ctx, environmentName)
 			if err != nil {
 				return nil, fmt.Errorf("loading environment: %w", err)
 			}

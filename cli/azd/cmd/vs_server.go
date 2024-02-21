@@ -14,9 +14,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/internal/vsrpc"
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
-	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
-	"github.com/azure/azure-dev/cli/azd/pkg/project"
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 )
@@ -65,22 +63,6 @@ func (s *vsServerAction) Run(ctx context.Context) (*actions.ActionResult, error)
 	if err != nil {
 		panic(err)
 	}
-
-	// TODO(azure/azure-dev#3347): Rationalize lifetime issues with project config.
-	s.rootContainer.MustRegisterTransient(
-		func(ctx context.Context, azdContext *azdcontext.AzdContext) (*project.ProjectConfig, error) {
-			if azdContext == nil {
-				return nil, azdcontext.ErrNoProject
-			}
-
-			projectConfig, err := project.Load(ctx, azdContext.ProjectPath())
-			if err != nil {
-				return nil, err
-			}
-
-			return projectConfig, nil
-		},
-	)
 
 	var versionRes contracts.VersionResult
 	versionSpec := internal.VersionInfo()

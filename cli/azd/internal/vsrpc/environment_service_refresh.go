@@ -32,19 +32,18 @@ func (s *environmentService) RefreshEnvironmentAsync(
 		return nil, err
 	}
 
-	session.sessionMu.Lock()
-	defer session.sessionMu.Unlock()
+	container, err := session.newContainer()
+	if err != nil {
+		return nil, err
+	}
 
-	return s.refreshEnvironmentAsyncWithSession(ctx, session, name, observer)
+	return s.refreshEnvironmentAsync(ctx, container, name, observer)
 }
 
-// refreshEnvironmentAsyncWithSession is not safe to be called concurrently, ensure that the session is locked before
-// calling.
-func (s *environmentService) refreshEnvironmentAsyncWithSession(
-	ctx context.Context, session *serverSession, name string, observer IObserver[ProgressMessage],
+func (s *environmentService) refreshEnvironmentAsync(
+	ctx context.Context, container *container, name string, observer IObserver[ProgressMessage],
 ) (*Environment, error) {
-
-	env, err := s.loadEnvironmentAsyncWithSession(ctx, session, name, true)
+	env, err := s.loadEnvironmentAsync(ctx, container, name, true)
 	if err != nil {
 		return nil, err
 	}
@@ -60,13 +59,13 @@ func (s *environmentService) refreshEnvironmentAsyncWithSession(
 		envManager           environment.Manager         `container:"type"`
 	}
 
-	session.container.MustRegisterScoped(func() internal.EnvFlag {
+	container.MustRegisterScoped(func() internal.EnvFlag {
 		return internal.EnvFlag{
 			EnvironmentName: name,
 		}
 	})
 
-	if err := session.container.Fill(&c); err != nil {
+	if err := container.Fill(&c); err != nil {
 		return nil, err
 	}
 

@@ -239,73 +239,204 @@ services:
 }
 
 func Test_DockerProject_Build(t *testing.T) {
-	var runArgs exec.RunArgs
-
-	mockContext := mocks.NewMockContext(context.Background())
-	envManager := &mockenv.MockEnvManager{}
-
-	mockContext.CommandRunner.
-		When(func(args exec.RunArgs, command string) bool {
-			return strings.Contains(command, "docker build")
-		}).
-		RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
-			// extract img id file arg. "--iidfile" and path args are expected always at the end
-			argsNoFile, value := args.Args[:len(args.Args)-2], args.Args[len(args.Args)-1]
-			runArgs = args
-			runArgs.Args = argsNoFile
-			// create the file as expected
-			err := os.WriteFile(value, []byte("IMAGE_ID"), 0600)
-			require.NoError(t, err)
-			return exec.NewRunResult(0, "IMAGE_ID", ""), nil
-		})
-
-	env := environment.New("test")
-	dockerCli := docker.NewDocker(mockContext.CommandRunner)
-	serviceConfig := createTestServiceConfig("./src/api", ContainerAppTarget, ServiceLanguageTypeScript)
-
-	temp := t.TempDir()
-
-	serviceConfig.Docker.Registry = osutil.NewExpandableString("contoso.azurecr.io")
-	serviceConfig.Project.Path = temp
-	serviceConfig.RelativePath = ""
-	err := os.WriteFile(filepath.Join(temp, "Dockerfile"), []byte("FROM node:14"), 0600)
-	require.NoError(t, err)
-
-	npmProject := NewNpmProject(npm.NewNpmCli(mockContext.CommandRunner), env)
-	dockerProject := NewDockerProject(
-		env,
-		dockerCli,
-		NewContainerHelper(env, envManager, clock.NewMock(), nil, dockerCli),
-		mockinput.NewMockConsole(),
-		mockContext.AlphaFeaturesManager,
-		mockContext.CommandRunner)
-	dockerProject.SetSource(npmProject)
-
-	buildTask := dockerProject.Build(*mockContext.Context, serviceConfig, nil)
-	logProgress(buildTask)
-
-	result, err := buildTask.Await()
-	require.NoError(t, err)
-	require.NotNil(t, result)
-	require.Equal(t, "IMAGE_ID", result.BuildOutputPath)
-	require.Equal(t, "docker", runArgs.Cmd)
-	require.Equal(t, serviceConfig.Path(), runArgs.Cwd)
-	require.Equal(t,
-		[]string{
-			"build",
-			"-f", "./Dockerfile",
-			"--platform", docker.DefaultPlatform,
-			"-t", "test-app-api",
-			".",
+	tests := []struct {
+		name                    string
+		project                 string
+		language                ServiceLanguageKind
+		dockerOptions           DockerProjectOptions
+		hasDockerFile           bool
+		image                   string
+		expectedBuildResult     *ServiceBuildResult
+		expectedDockerBuildArgs []string
+	}{
+		{
+			name:          "With language TS and docker defaults (standard project)",
+			project:       "./src/api",
+			language:      ServiceLanguageJavaScript,
+			hasDockerFile: true,
+			expectedBuildResult: &ServiceBuildResult{
+				BuildOutputPath: "IMAGE_ID",
+				Details: &dockerBuildResult{
+					ImageName: "test-app-api",
+					ImageId:   "IMAGE_ID",
+				},
+			},
+			expectedDockerBuildArgs: []string{
+				"build",
+				"-f",
+				"./Dockerfile",
+				"--platform",
+				"linux/amd64",
+				"-t",
+				"test-app-api",
+				".",
+			},
 		},
-		runArgs.Args,
-	)
+		{
+			name:          "With language TS and custom docker options (standard project)",
+			project:       "./src/api",
+			language:      ServiceLanguageJavaScript,
+			hasDockerFile: true,
+			dockerOptions: DockerProjectOptions{
+				Path:     "./Dockerfile.dev",
+				Context:  "../",
+				Platform: "custom/platform",
+				Target:   "custom-target",
+			},
+			expectedBuildResult: &ServiceBuildResult{
+				BuildOutputPath: "IMAGE_ID",
+				Details: &dockerBuildResult{
+					ImageName: "test-app-api",
+					ImageId:   "IMAGE_ID",
+				},
+			},
+			expectedDockerBuildArgs: []string{
+				"build",
+				"-f",
+				"./Dockerfile.dev",
+				"--platform",
+				"custom/platform",
+				"--target",
+				"custom-target",
+				"-t",
+				"test-app-api",
+				"../",
+			},
+		},
+		{
+			name:          "With language Docker and docker defaults (aspire project)",
+			project:       "./src/api",
+			language:      ServiceLanguageDocker,
+			hasDockerFile: true,
+			expectedBuildResult: &ServiceBuildResult{
+				BuildOutputPath: "IMAGE_ID",
+				Details: &dockerBuildResult{
+					ImageName: "test-app-api",
+					ImageId:   "IMAGE_ID",
+				},
+			},
+			expectedDockerBuildArgs: []string{
+				"build",
+				"-f",
+				"./Dockerfile",
+				"--platform",
+				"linux/amd64",
+				"-t",
+				"test-app-api",
+				".",
+			},
+		},
+		{
+			name:                    "With no language and docker defaults (external image)",
+			project:                 "",
+			language:                ServiceLanguageNone,
+			hasDockerFile:           false,
+			image:                   "nginx",
+			expectedBuildResult:     &ServiceBuildResult{},
+			expectedDockerBuildArgs: nil,
+		},
+		{
+			name:          "With language and no docker file (pack)",
+			project:       "./src/api",
+			language:      ServiceLanguageJavaScript,
+			hasDockerFile: false,
+			expectedBuildResult: &ServiceBuildResult{
+				BuildOutputPath: "IMAGE_ID",
+				Details: &dockerBuildResult{
+					ImageName: "test-app-api",
+					ImageId:   "IMAGE_ID",
+				},
+			},
+			expectedDockerBuildArgs: nil,
+		},
+	}
 
-	dockerBuildResult, ok := result.Details.(*dockerBuildResult)
-	require.True(t, ok)
-	require.NotNil(t, dockerBuildResult)
-	require.Equal(t, "test-app-api", dockerBuildResult.ImageName)
-	require.NotEmpty(t, dockerBuildResult.ImageId)
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			var dockerBuildArgs exec.RunArgs
+			mockContext := mocks.NewMockContext(context.Background())
+			envManager := &mockenv.MockEnvManager{}
+
+			mockContext.CommandRunner.
+				When(func(args exec.RunArgs, command string) bool {
+					return strings.Contains(command, "docker build")
+				}).
+				RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+					// extract img id file arg. "--iidfile" and path args are expected always at the end
+					argsNoFile, value := args.Args[:len(args.Args)-2], args.Args[len(args.Args)-1]
+					dockerBuildArgs = args
+					dockerBuildArgs.Args = argsNoFile
+					// create the file as expected
+					err := os.WriteFile(value, []byte("IMAGE_ID"), 0600)
+					require.NoError(t, err)
+					return exec.NewRunResult(0, "IMAGE_ID", ""), nil
+				})
+
+			mockContext.CommandRunner.
+				When(func(args exec.RunArgs, command string) bool {
+					return strings.Contains(command, "docker image inspect")
+				}).
+				RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+					return exec.NewRunResult(0, "IMAGE_ID", ""), nil
+				})
+
+			mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+				return strings.Contains(command, "pack")
+			}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+				return exec.NewRunResult(0, "", ""), nil
+			})
+
+			mockContext.CommandRunner.When(func(args exec.RunArgs, command string) bool {
+				return strings.Contains(command, "pack") && len(args.Args) == 1 && args.Args[0] == "--version"
+			}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+				return exec.NewRunResult(0, "3.0.0", ""), nil
+			})
+
+			temp := t.TempDir()
+
+			env := environment.New("test")
+			dockerCli := docker.NewDocker(mockContext.CommandRunner)
+			serviceConfig := createTestServiceConfig(tt.project, ContainerAppTarget, tt.language)
+			serviceConfig.Project.Path = temp
+			serviceConfig.Docker = tt.dockerOptions
+			serviceConfig.Image = tt.image
+
+			if tt.hasDockerFile {
+				err := os.MkdirAll(serviceConfig.Path(), osutil.PermissionDirectory)
+				require.NoError(t, err)
+
+				dockerFilePath := "Dockerfile"
+				if serviceConfig.Docker.Path != "" {
+					dockerFilePath = serviceConfig.Docker.Path
+				}
+
+				err = os.WriteFile(filepath.Join(serviceConfig.Path(), dockerFilePath), []byte("FROM node:14"), 0600)
+				require.NoError(t, err)
+			}
+
+			dockerProject := NewDockerProject(
+				env,
+				dockerCli,
+				NewContainerHelper(env, envManager, clock.NewMock(), nil, dockerCli),
+				mockinput.NewMockConsole(),
+				mockContext.AlphaFeaturesManager,
+				mockContext.CommandRunner)
+
+			if tt.language == ServiceLanguageTypeScript || tt.language == ServiceLanguageJavaScript {
+				npmProject := NewNpmProject(npm.NewNpmCli(mockContext.CommandRunner), env)
+				dockerProject.SetSource(npmProject)
+			}
+
+			buildTask := dockerProject.Build(*mockContext.Context, serviceConfig, nil)
+			logProgress(buildTask)
+			result, err := buildTask.Await()
+
+			require.NoError(t, err)
+			require.NotNil(t, result)
+			require.Equal(t, tt.expectedBuildResult, result)
+			require.Equal(t, tt.expectedDockerBuildArgs, dockerBuildArgs.Args)
+		})
+	}
 }
 
 func Test_DockerProject_Package(t *testing.T) {

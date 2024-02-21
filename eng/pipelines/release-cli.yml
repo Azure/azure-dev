@@ -1074,6 +1074,7 @@ stages:
               pwsh: true
               workingDirectory: cli/installer/fpm
               filePath: eng/scripts/Test-LinuxPackages.ps1
+              arguments: -DockerImagePrefix "$(docker-mirror-tag-prefix)/"
 
   - ${{ if eq(variables['Build.Repository.Name'], 'Azure/azure-dev') }}:
     - stage: PublishCLI

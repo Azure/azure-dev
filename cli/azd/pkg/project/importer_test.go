@@ -184,8 +184,9 @@ func TestImportManagerProjectInfrastructureDefaults(t *testing.T) {
 
 	// Get defaults and error b/c no infra found and no Aspire project
 	r, e := manager.ProjectInfrastructure(*mockContext.Context, &ProjectConfig{})
-	require.Nil(t, r)
-	require.Error(t, e, "this project does not contain expected infrastructure")
+	require.NoError(t, e, "this project does not contain expected infrastructure")
+	require.NotNil(t, r)
+	require.Equal(t, r, &Infra{})
 
 	// adding infra folder to test defaults
 	expectedDefaultFolder := DefaultPath
@@ -195,8 +196,9 @@ func TestImportManagerProjectInfrastructureDefaults(t *testing.T) {
 
 	// error should keep happening b/c infra folder exists but module is not found
 	r, e = manager.ProjectInfrastructure(*mockContext.Context, &ProjectConfig{})
-	require.Nil(t, r)
-	require.Error(t, e, "this project does not contain expected infrastructure")
+	require.NoError(t, e)
+	require.NotNil(t, r)
+	require.Equal(t, r, &Infra{})
 
 	// Create the file
 	expectedDefaultModule := DefaultModule

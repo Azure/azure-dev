@@ -94,7 +94,7 @@ func (s *TemplateSource) ListTemplates(ctx context.Context) ([]*templates.Templa
 				// a repo url parameter as valid templates for azd
 				var repoUrls []string
 				containsRepoUrl := slices.ContainsFunc(envDefinition.Parameters, func(p devcentersdk.Parameter) bool {
-					if strings.EqualFold(p.Name, "repourl") {
+					if strings.EqualFold(p.Id, "repourl") {
 						// Repo url parameter can support multiple values
 						// Values can either have a default or multiple allowed values but not both
 						if p.Allowed != nil && len(p.Allowed) > 0 {

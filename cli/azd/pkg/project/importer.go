@@ -149,10 +149,7 @@ func (im *ImportManager) ProjectInfrastructure(ctx context.Context, projectConfi
 		}
 	}
 
-	return nil, fmt.Errorf(
-		"this project does not contain expected infrastructure, folder: '%s' and module: '%s'",
-		infraRoot,
-		projectConfig.Infra.Module)
+	return &Infra{}, nil
 }
 
 // pathHasModule returns true if there is a file named "<module>" or "<module.bicep>" in path.

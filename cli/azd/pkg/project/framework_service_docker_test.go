@@ -372,14 +372,14 @@ func Test_DockerProject_Package(t *testing.T) {
 		},
 		{
 			name:  "fully qualified image with custom docker options",
-			image: "docker.io/repository/iamge:latest",
+			image: "docker.io/repository/image:latest",
 			docker: DockerProjectOptions{
 				Image: osutil.NewExpandableString("myapp-service"),
 				Tag:   osutil.NewExpandableString("latest"),
 			},
 			expectedPackageResult: dockerPackageResult{
 				ImageHash:   "",
-				SourceImage: "docker.io/repository/iamge:latest",
+				SourceImage: "docker.io/repository/image:latest",
 				TargetImage: "myapp-service:latest",
 			},
 			expectDockerPullCalled: true,

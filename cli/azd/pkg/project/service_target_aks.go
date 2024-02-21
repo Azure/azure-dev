@@ -192,14 +192,19 @@ func (t *aksTarget) Deploy(
 				return
 			}
 
-			// Login, tag & push container image to ACR
-			containerDeployTask := t.containerHelper.Deploy(ctx, serviceConfig, packageOutput, targetResource, true)
-			syncProgress(task, containerDeployTask.Progress())
+			// Only deploy the container image if a package output has been defined
+			// Empty package details is a valid scenario for any AKS deployment that does not build any containers
+			// Ex) Helm charts, or other manifests that reference external images
+			if packageOutput.Details != nil || packageOutput.PackagePath != "" {
+				// Login, tag & push container image to ACR
+				containerDeployTask := t.containerHelper.Deploy(ctx, serviceConfig, packageOutput, targetResource, true)
+				syncProgress(task, containerDeployTask.Progress())
 
-			_, err := containerDeployTask.Await()
-			if err != nil {
-				task.SetError(err)
-				return
+				_, err := containerDeployTask.Await()
+				if err != nil {
+					task.SetError(err)
+					return
+				}
 			}
 
 			// Sync environment

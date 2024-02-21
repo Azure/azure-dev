@@ -92,6 +92,10 @@ func (s *environmentService) CreateEnvironmentAsync(
 		return false, fmt.Errorf("creating new environment: %w", err)
 	}
 
+	for key, value := range newEnv.Values {
+		azdEnv.DotenvSet(key, value)
+	}
+
 	azdEnv.DotenvSet("ASPIRE_ENVIRONMENT", newEnv.Properties["ASPIRE_ENVIRONMENT"])
 
 	var servicesToExpose = make([]string, 0)

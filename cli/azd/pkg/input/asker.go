@@ -27,7 +27,6 @@ func NewAsker(noPrompt bool, isTerminal bool, w io.Writer, r io.Reader) Asker {
 }
 
 func askOneNoPrompt(p survey.Prompt, response interface{}) error {
-
 	switch v := p.(type) {
 	case *survey.Input:
 		if v.Default == "" {
@@ -70,7 +69,7 @@ func askOneNoPrompt(p survey.Prompt, response interface{}) error {
 		}
 		*(response.(*[]string)) = defValue
 	default:
-		panic(fmt.Sprintf("don't know how to prompt for type %T..aaa", p))
+		panic(fmt.Sprintf("don't know how to prompt for type %T", p))
 	}
 
 	return nil

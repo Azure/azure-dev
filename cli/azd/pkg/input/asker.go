@@ -147,8 +147,7 @@ func askOnePrompt(p survey.Prompt, response interface{}, isTerminal bool, stdout
 		return nil
 	case *survey.Password:
 		var pResponse = response.(*string)
-		fmt.Fprintf(stdout, "%s", v.Message[0:len(v.Message)-1])
-		fmt.Fprintf(stdout, "%s ", v.Message[len(v.Message)-1:])
+		fmt.Fprintf(stdout, "%s", v.Message)
 		result, err := readStringNoBuffer(stdin, '\n')
 		if err != nil && !errors.Is(err, io.EOF) {
 			return fmt.Errorf("reading response: %w", err)

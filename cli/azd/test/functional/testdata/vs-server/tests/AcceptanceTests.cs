@@ -35,6 +35,11 @@ public class AcceptanceTests : TestBase
                     IsExternal = true,
                 }
             ],
+            Values = new Dictionary<string, string>() {
+                { "KEY_1", "VAL_1" },
+                { "KEY_2", "VAL_2" },
+                { "KEY_3", "VAL_3" },
+            },
         };
 
         await esSvc.CreateEnvironmentAsync(session, e, observer, CancellationToken.None);
@@ -52,6 +57,11 @@ public class AcceptanceTests : TestBase
                 { "Location", _location}
             },
             Services = e.Services,
+            Values = new Dictionary<string, string>() {
+                { "KEY_1", "VAL_1" },
+                { "KEY_2", "VAL_2" },
+                { "KEY_3", "VAL_3" },
+            },
         };
 
         await esSvc.CreateEnvironmentAsync(session, e2, observer, CancellationToken.None);
@@ -63,10 +73,18 @@ public class AcceptanceTests : TestBase
         var openEnv = await esSvc.OpenEnvironmentAsync(session, e.Name, observer, CancellationToken.None);
         openEnv.Name.ShouldEqual(e.Name);
         openEnv.IsCurrent.ShouldBeFalse();
+        foreach (var kvp in e.Values)
+        {  
+            openEnv.Values[kvp.Key].ShouldEqual(kvp.Value);
+        }
 
         openEnv = await esSvc.OpenEnvironmentAsync(session, e2.Name, observer, CancellationToken.None);
         openEnv.Name.ShouldEqual(e2.Name);
         openEnv.IsCurrent.ShouldBeTrue();
+        foreach (var kvp in e2.Values)
+        {  
+            openEnv.Values[kvp.Key].ShouldEqual(kvp.Value);
+        }
 
         await esSvc.SetCurrentEnvironmentAsync(session, e.Name, observer, CancellationToken.None);
         openEnv = await esSvc.OpenEnvironmentAsync(session, e.Name, observer, CancellationToken.None);

@@ -604,10 +604,10 @@ func (b *infraGenerator) addBicep(name string, comp *Resource) error {
 func injectValueForBicepParameter(resourceName, p string, parameter any) (string, bool, error) {
 	// using json.Marshal to parse any type of value (array, bool, etc)
 	jsonBytes, err := json.Marshal(parameter)
-	finalParamValue := string(jsonBytes)
 	if err != nil {
 		return "", false, fmt.Errorf("marshalling param %s. error: %w", p, err)
 	}
+	finalParamValue := string(jsonBytes)
 	emptyJsonString := "\"\""
 	if finalParamValue != emptyJsonString {
 		// injection not required

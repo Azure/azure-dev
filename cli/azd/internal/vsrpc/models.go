@@ -18,6 +18,7 @@ type Environment struct {
 	IsCurrent      bool
 	Properties     map[string]string
 	Services       []*Service
+	Values         map[string]string
 	LastDeployment *DeploymentResult `json:",omitempty"`
 }
 

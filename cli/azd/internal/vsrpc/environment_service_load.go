@@ -92,6 +92,7 @@ func (s *environmentService) loadEnvironmentAsync(
 			"ASPIRE_ENVIRONMENT": e.Getenv("ASPIRE_ENVIRONMENT"),
 		},
 		IsCurrent: name == currentEnv,
+		Values:    e.Dotenv(),
 	}
 
 	// NOTE(ellismg): The IaC for Aspire Apps exposes these properties - we use them instead of trying to discover the

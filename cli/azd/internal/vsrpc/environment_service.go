@@ -54,8 +54,9 @@ func (s *environmentService) GetEnvironmentsAsync(
 	infos := make([]*EnvironmentInfo, len(envs))
 	for i, env := range envs {
 		infos[i] = &EnvironmentInfo{
-			Name:      env.Name,
-			IsCurrent: env.IsDefault,
+			Name:       env.Name,
+			IsCurrent:  env.IsDefault,
+			DotEnvPath: env.DotEnvPath,
 		}
 	}
 

@@ -252,7 +252,9 @@ type infraGenerator struct {
 	dockerfiles       map[string]genDockerfile
 	projects          map[string]genProject
 	connectionStrings map[string]string
-	resourceTypes     map[string]string
+	// keeps the value from value.v0 resources if provided.
+	valueStrings  map[string]string
+	resourceTypes map[string]string
 	// inputs on this map holds only the inputs with `Default.Generate` configuration
 	// azd uses the env.config to persist the inputs after generating a value
 	// inputs which are not default.generate are tracked within bicepContext.InputParameters
@@ -442,7 +444,16 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 			}
 		case "parameter.v0":
 			if err := b.addInputParameter(name, comp); err != nil {
-				return fmt.Errorf("adding input parameter %s: %w", name, err)
+				return fmt.Errorf("adding bicep parameter from resource %s (%s): %w", name, comp.Type, err)
+			}
+		case "value.v0":
+			if comp.Value != "" && !hasInputs(comp.Value) {
+				// a value.v0 resource with value not referencing inputs doesn't need any further processing
+				b.valueStrings[name] = comp.Value
+				continue
+			}
+			if err := b.addInputParameter(name, comp); err != nil {
+				return fmt.Errorf("adding bicep parameter from resource %s (%s): %w", name, comp.Type, err)
 			}
 		case "azure.bicep.v0":
 			if err := b.addBicep(name, comp); err != nil {
@@ -505,28 +516,43 @@ func (b *infraGenerator) addServiceBus(name string, queues, topics *[]string) {
 func (b *infraGenerator) addInputParameter(name string, comp *Resource) error {
 	pValue := comp.Value
 
-	if matched, _ := regexp.MatchString(`{[a-zA-Z][a-zA-Z0-9]*\.inputs\.[a-zA-Z][a-zA-Z0-9]*}`, pValue); !matched {
-		// parameters not using inputs are not bicep input parameters
-		return fmt.Errorf("parameter %s does not use inputs. This is currently not supported.", name)
+	if !hasInputs(pValue) {
+		// no inputs in the value, nothing to do
+		return nil
 	}
 
+	input, err := resolveResourceInput(name, comp)
+	if err != nil {
+		return fmt.Errorf("resolving input for parameter %s: %w", name, err)
+	}
+	b.bicepContext.InputParameters[name] = input
+	return nil
+}
+
+func hasInputs(value string) bool {
+	matched, _ := regexp.MatchString(`{[a-zA-Z][a-zA-Z0-9]*\.inputs\.[a-zA-Z][a-zA-Z0-9]*}`, value)
+	return matched
+}
+
+func resolveResourceInput(fromResource string, comp *Resource) (Input, error) {
+	value := comp.Value
+
 	valueParts := strings.Split(
-		strings.TrimRight(strings.TrimLeft(pValue, "{"), "}"),
+		strings.TrimRight(strings.TrimLeft(value, "{"), "}"),
 		".inputs.")
 	// regex from above ensure parts 0 and 1 exists
 	resourceName, inputName := valueParts[0], valueParts[1]
 
-	if name != resourceName {
-		return fmt.Errorf("parameter %s does not use inputs from its own resource. This is not supported", name)
+	if fromResource != resourceName {
+		return Input{}, fmt.Errorf(
+			"parameter %s does not use inputs from its own resource. This is not supported", fromResource)
 	}
 
 	input, exists := comp.Inputs[inputName]
 	if !exists {
-		return fmt.Errorf("parameter %s does not have input %s", name, inputName)
+		return Input{}, fmt.Errorf("parameter %s does not have input %s", fromResource, inputName)
 	}
-
-	b.bicepContext.InputParameters[name] = input
-	return nil
+	return input, nil
 }
 
 func (b *infraGenerator) addBicep(name string, comp *Resource) error {
@@ -1092,6 +1118,17 @@ func (b infraGenerator) evalBindingRef(v string, emitType inputEmitType) (string
 		})
 		if err != nil {
 			return "", fmt.Errorf("evaluating connection string for %s: %w", resource, err)
+		}
+
+		return res, nil
+	}
+	if valueString, has := b.valueStrings[resource]; has && prop == "value" {
+		// The value string can be a expression itself, so we need to evaluate it.
+		res, err := EvalString(valueString, func(s string) (string, error) {
+			return b.evalBindingRef(s, emitType)
+		})
+		if err != nil {
+			return "", fmt.Errorf("evaluating value.v0's value string for %s: %w", resource, err)
 		}
 
 		return res, nil

@@ -22,6 +22,8 @@ public class Environment {
 
     public Service[] Services { get; set; } = [];
 
+    public Dictionary<string, string> Values { get; set; } = new Dictionary<string, string>();
+
     public Environment(string name) {
         Name = name;
     }

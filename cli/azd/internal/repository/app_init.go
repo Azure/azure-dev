@@ -88,7 +88,7 @@ func (i *Initializer) InitFromApp(
 			continue
 		}
 
-		manifest, err := apphost.ManifestFromAppHost(ctx, prj.Path, i.dotnetCli)
+		manifest, err := apphost.ManifestFromAppHost(ctx, prj.Path, i.dotnetCli, "")
 		if err != nil {
 			return fmt.Errorf("failed to generate manifest from app host project: %w", err)
 		}

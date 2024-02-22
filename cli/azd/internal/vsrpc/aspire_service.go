@@ -73,7 +73,7 @@ func (s *aspireService) GetAspireHostAsync(
 			Path: appHost.Path(),
 		}
 
-		manifest, err := apphost.ManifestFromAppHost(ctx, appHost.Path(), c.dotnetCli)
+		manifest, err := apphost.ManifestFromAppHost(ctx, appHost.Path(), c.dotnetCli, aspireEnv)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load app host manifest: %w", err)
 		}
@@ -101,7 +101,7 @@ func (s *aspireService) GetAspireHostAsync(
 			Path: hosts[0].Path,
 		}
 
-		manifest, err := apphost.ManifestFromAppHost(ctx, hosts[0].Path, c.dotnetCli)
+		manifest, err := apphost.ManifestFromAppHost(ctx, hosts[0].Path, c.dotnetCli, aspireEnv)
 		if err != nil {
 			return nil, fmt.Errorf("failed to load app host manifest: %w", err)
 		}

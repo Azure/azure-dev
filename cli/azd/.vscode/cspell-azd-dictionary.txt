@@ -23,6 +23,8 @@ armcognitiveservices
 armcosmos
 armresourcegraph
 armsql
+aspnet
+aspnetcore
 asyncmy
 asyncpg
 azapi
@@ -58,6 +60,7 @@ circleci
 cmdrecord
 cmdsubst
 cognitiveservices
+conditionalize
 consolesize
 containerapp
 containerapps
@@ -135,6 +138,7 @@ otlp
 otlpconfig
 otlptrace
 otlptracehttp
+overriden
 paketobuildpacks
 pflag
 posix

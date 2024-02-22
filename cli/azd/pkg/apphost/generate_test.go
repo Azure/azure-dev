@@ -68,7 +68,7 @@ func TestAspireEscaping(t *testing.T) {
 	mockPublishManifest(mockCtx, aspireEscapingManifest, nil)
 	mockCli := dotnet.NewDotNetCli(mockCtx.CommandRunner)
 
-	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli)
+	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
 	require.NoError(t, err)
 
 	for _, name := range []string{"api"} {
@@ -90,7 +90,7 @@ func TestAspireStorageGeneration(t *testing.T) {
 	mockPublishManifest(mockCtx, aspireStorageManifest, nil)
 	mockCli := dotnet.NewDotNetCli(mockCtx.CommandRunner)
 
-	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli)
+	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
 	require.NoError(t, err)
 
 	files, err := BicepTemplate(m)
@@ -128,7 +128,7 @@ func TestAspireBicepGeneration(t *testing.T) {
 	mockPublishManifest(mockCtx, aspireBicepManifest, filesFromManifest)
 	mockCli := dotnet.NewDotNetCli(mockCtx.CommandRunner)
 
-	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli)
+	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
 	require.NoError(t, err)
 
 	files, err := BicepTemplate(m)
@@ -163,7 +163,7 @@ func TestAspireDockerGeneration(t *testing.T) {
 	mockPublishManifest(mockCtx, aspireDockerManifest, nil)
 	mockCli := dotnet.NewDotNetCli(mockCtx.CommandRunner)
 
-	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli)
+	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
 	require.NoError(t, err)
 
 	// The App Host manifest does not set the external bit for project resources. Instead, `azd` or whatever tool consumes
@@ -214,7 +214,7 @@ func TestAspireContainerGeneration(t *testing.T) {
 	mockPublishManifest(mockCtx, aspireContainerManifest, nil)
 	mockCli := dotnet.NewDotNetCli(mockCtx.CommandRunner)
 
-	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli)
+	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli, "")
 	require.NoError(t, err)
 
 	files, err := BicepTemplate(m)

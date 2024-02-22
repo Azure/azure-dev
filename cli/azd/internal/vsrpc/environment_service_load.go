@@ -87,9 +87,8 @@ func (s *environmentService) loadEnvironmentAsync(
 	ret := &Environment{
 		Name: name,
 		Properties: map[string]string{
-			"Subscription":       e.GetSubscriptionId(),
-			"Location":           e.GetLocation(),
-			"ASPIRE_ENVIRONMENT": e.Getenv("ASPIRE_ENVIRONMENT"),
+			"Subscription": e.GetSubscriptionId(),
+			"Location":     e.GetLocation(),
 		},
 		IsCurrent: name == currentEnv,
 		Values:    e.Dotenv(),

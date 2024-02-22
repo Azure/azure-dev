@@ -84,7 +84,7 @@ func Test_CLI_Aspire_DetectGen(t *testing.T) {
 		appHostProject := filepath.Join(dir, "AspireAzdTests.AppHost")
 		manifestPath := filepath.Join(appHostProject, "manifest.json")
 
-		err = dotnetCli.PublishAppHostManifest(ctx, appHostProject, manifestPath)
+		err = dotnetCli.PublishAppHostManifest(ctx, appHostProject, manifestPath, "")
 		require.NoError(t, err)
 
 		err = snapshotFile(sn, snRoot, dir, manifestPath)

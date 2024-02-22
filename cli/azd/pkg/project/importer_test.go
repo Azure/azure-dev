@@ -262,6 +262,8 @@ func TestImportManagerProjectInfrastructure(t *testing.T) {
 var aspireEscapingManifest []byte
 
 func TestImportManagerProjectInfrastructureAspire(t *testing.T) {
+	manifestInvokeCount := 0
+
 	mockContext := mocks.NewMockContext(context.Background())
 	mockEnv := &mockenv.MockEnvManager{}
 	mockEnv.On("Save", mock.Anything, mock.Anything).Return(nil)
@@ -281,6 +283,10 @@ func TestImportManagerProjectInfrastructureAspire(t *testing.T) {
 			slices.Contains(args.Args, "--publisher") &&
 			slices.Contains(args.Args, "manifest")
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
+		manifestInvokeCount++
+
+		require.Contains(t, args.Env, "DOTNET_ENVIRONMENT=Development")
+
 		err := os.WriteFile(args.Args[6], aspireEscapingManifest, osutil.PermissionFile)
 		if err != nil {
 			return exec.RunResult{
@@ -295,7 +301,9 @@ func TestImportManagerProjectInfrastructureAspire(t *testing.T) {
 		dotnetCli: dotnet.NewDotNetCli(mockContext.CommandRunner),
 		console:   mockContext.Console,
 		lazyEnv: lazy.NewLazy(func() (*environment.Environment, error) {
-			env := environment.NewWithValues("env", map[string]string{})
+			env := environment.NewWithValues("env", map[string]string{
+				"DOTNET_ENVIRONMENT": "Development",
+			})
 			// set the config to skip prompting
 			e := env.Config.Set("services.test.config.exposedServices", []interface{}{"test"})
 			require.NoError(t, e)
@@ -305,7 +313,7 @@ func TestImportManagerProjectInfrastructureAspire(t *testing.T) {
 			return mockEnv, nil
 		}),
 		hostCheck: make(map[string]hostCheckResult),
-		cache:     make(map[string]*apphost.Manifest),
+		cache:     make(map[manifestCacheKey]*apphost.Manifest),
 	})
 
 	// adding infra folder to test defaults
@@ -335,10 +343,33 @@ func TestImportManagerProjectInfrastructureAspire(t *testing.T) {
 	})
 
 	require.NoError(t, e)
+	require.Equal(t, 1, manifestInvokeCount)
+
 	// dotnet_importer creates a temp path for the infrastructure.
 	// We can't figure the exact path, but it should contain the `azd-infra` label in it
 	require.Contains(t, r.Options.Path, "azd-infra")
 	require.Equal(t, DefaultModule, r.Options.Module)
 	require.Equal(t, r.cleanupDir, r.Options.Path)
 	require.NotNil(t, r.Inputs)
+
+	// If we fetch the infrastructure again, we expect that the manifest is already cached and `dotnet run` on the apphost
+	// will not be invoked again.
+
+	// Use an a dotnet project and use the mock to simulate an Aspire project
+	_, e = manager.ProjectInfrastructure(*mockContext.Context, &ProjectConfig{
+		Services: map[string]*ServiceConfig{
+			"test": {
+				Name:         "test",
+				Language:     ServiceLanguageDotNet,
+				Host:         ContainerAppTarget,
+				RelativePath: "path",
+				Project: &ProjectConfig{
+					Path: "path",
+				},
+			},
+		},
+	})
+
+	require.NoError(t, e)
+	require.Equal(t, 1, manifestInvokeCount)
 }

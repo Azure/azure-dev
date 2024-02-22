@@ -407,7 +407,8 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		})
 	})
 	container.MustRegisterSingleton(project.NewProjectManager)
-	container.MustRegisterScoped(project.NewDotNetImporter)
+	// Currently caches manifest across command executions
+	container.MustRegisterSingleton(project.NewDotNetImporter)
 	container.MustRegisterScoped(project.NewImportManager)
 	container.MustRegisterScoped(project.NewServiceManager)
 

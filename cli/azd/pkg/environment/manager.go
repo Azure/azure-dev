@@ -18,8 +18,7 @@ import (
 type Description struct {
 	// The name of the environment
 	Name string
-	// The path to the local .env file for the environment
-	// This path is used by the VS Code extension to load the current environment variables when using VS code tasks
+	// The path to the local .env file for the environment. Useful for IDEs like VS / VSCode
 	DotEnvPath string
 	// Specifies when the environment exists locally
 	HasLocal bool

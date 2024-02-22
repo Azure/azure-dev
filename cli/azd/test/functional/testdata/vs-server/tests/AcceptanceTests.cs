@@ -44,6 +44,7 @@ public class AcceptanceTests : TestBase
         environments.Count.ShouldEqual(1);
         environments[0].Name.ShouldEqual(e.Name);
         environments[0].IsCurrent.ShouldBeTrue();
+        environments[0].DotEnvPath.ShouldNotBeEmpty();
 
         Environment e2 = new Environment("env2") {
             Properties = new Dictionary<string, string>() {

@@ -22,8 +22,9 @@ type Environment struct {
 }
 
 type EnvironmentInfo struct {
-	Name      string
-	IsCurrent bool
+	Name       string
+	IsCurrent  bool
+	DotEnvPath string
 }
 
 type Service struct {

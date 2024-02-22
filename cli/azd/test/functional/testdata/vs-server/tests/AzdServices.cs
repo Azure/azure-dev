@@ -3,15 +3,18 @@
 
 public class EnvironmentInfo
 {
-    public EnvironmentInfo(string name, bool isCurrent = false)
+    public EnvironmentInfo(string name, string dotenvPath, bool isCurrent = false)
     {
         Name = name;
         IsCurrent = isCurrent;
+        DotEnvPath = dotenvPath;
     }
 
     public string Name { get; }
 
     public bool IsCurrent { get; }
+
+    public string DotEnvPath { get; }
 }
 
 public class Environment {

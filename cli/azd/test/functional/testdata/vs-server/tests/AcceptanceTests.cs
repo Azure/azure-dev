@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 using Should;
+using System.IO;
 using System.Text.RegularExpressions;
 
 namespace AzdVsServerTests;
@@ -15,11 +16,7 @@ public class AcceptanceTests : TestBase
     {
         IObserver<ProgressMessage> observer = new WriterObserver<ProgressMessage>();
         var session = await svrSvc.InitializeAsync(_rootDir, CancellationToken.None);
-        var result = await asSvc.GetAspireHostAsync(session, "Production", observer, CancellationToken.None);       
-        result.Services.Count.ShouldEqual(2);
-        result.Services[0].Path.ShouldNotBeEmpty();
-        result.Services[1].Path.ShouldNotBeEmpty();
-
+        var result = await asSvc.GetAspireHostAsync(session, "Production", observer, CancellationToken.None);
         var environments = (await esSvc.GetEnvironmentsAsync(session, observer, CancellationToken.None)).ToList();
         environments.ShouldBeEmpty();
 
@@ -68,21 +65,21 @@ public class AcceptanceTests : TestBase
         var openEnv = await esSvc.OpenEnvironmentAsync(session, e.Name, observer, CancellationToken.None);
         openEnv.Name.ShouldEqual(e.Name);
         openEnv.IsCurrent.ShouldBeFalse();
-        openEnv.Services.Count.ShouldEqual(2);
-        openEnv.Services[0].Path.ShouldNotBeEmpty();
-        openEnv.Services[1].Path.ShouldNotBeEmpty();
 
         openEnv = await esSvc.OpenEnvironmentAsync(session, e2.Name, observer, CancellationToken.None);
         openEnv.Name.ShouldEqual(e2.Name);
         openEnv.IsCurrent.ShouldBeTrue();
-        openEnv.Services.Count.ShouldEqual(2);
-        openEnv.Services[0].Path.ShouldNotBeEmpty();
-        openEnv.Services[1].Path.ShouldNotBeEmpty();
 
         await esSvc.SetCurrentEnvironmentAsync(session, e.Name, observer, CancellationToken.None);
         openEnv = await esSvc.OpenEnvironmentAsync(session, e.Name, observer, CancellationToken.None);
         openEnv.Name.ShouldEqual(e.Name);
         openEnv.IsCurrent.ShouldBeTrue();
+
+        var loadEnv = await esSvc.LoadEnvironmentAsync(session, e2.Name, observer, CancellationToken.None);
+        loadEnv.Name.ShouldEqual(e2.Name);
+        loadEnv.Services.Length.ShouldEqual(2);
+        File.Exists(loadEnv.Services[0].Path).ShouldBeTrue();
+        File.Exists(loadEnv.Services[1].Path).ShouldBeTrue();
     }
 
     [Test]

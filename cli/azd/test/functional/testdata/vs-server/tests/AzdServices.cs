@@ -35,17 +35,13 @@ public class AspireHost {
     public string Path { get; set; } = "";
 
     public Service[] Services { get; set; } = [];
-
-    public string? Kind { get; set; }
-    public string? Endpoint { get; set; }
-    public string? ResourceId { get; set; }
 }
 
 public class Service {
     public string Name { get; set; }  = "";
 	public bool IsExternal { get; set; }
 
-    public string? Kind { get; set;}
+    public string Path { get; set;}
     public string? Endpoint { get; set;}
     public string? ResourceId { get; set;}
 }

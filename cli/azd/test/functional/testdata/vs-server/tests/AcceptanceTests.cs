@@ -2,6 +2,7 @@
 // Licensed under the MIT License.
 
 using Should;
+using System.IO;
 using System.Text.RegularExpressions;
 
 namespace AzdVsServerTests;
@@ -91,6 +92,12 @@ public class AcceptanceTests : TestBase
         openEnv = await esSvc.OpenEnvironmentAsync(session, e.Name, observer, CancellationToken.None);
         openEnv.Name.ShouldEqual(e.Name);
         openEnv.IsCurrent.ShouldBeTrue();
+
+        var loadEnv = await esSvc.LoadEnvironmentAsync(session, e2.Name, observer, CancellationToken.None);
+        loadEnv.Name.ShouldEqual(e2.Name);
+        loadEnv.Services.Length.ShouldEqual(2);
+        File.Exists(loadEnv.Services[0].Path).ShouldBeTrue();
+        File.Exists(loadEnv.Services[1].Path).ShouldBeTrue();
     }
 
     [Test]

@@ -31,7 +31,7 @@ type EnvironmentInfo struct {
 type Service struct {
 	Name       string
 	IsExternal bool
-	Kind       *string `json:",omitempty"`
+	Path       string
 	Endpoint   *string `json:",omitempty"`
 	ResourceId *string `json:",omitempty"`
 }

@@ -1,0 +1,85 @@
+{
+    "resources": {
+      "parameter": {
+        "type": "parameter.v0",
+        "value": "{parameter.inputs.value}",
+        "inputs": {
+          "value": {
+            "type": "string"
+          }
+        }
+      },
+      "test": {
+        "type": "azure.bicep.v0",
+        "path": "test.bicep",
+        "params": {
+          "test": "{parameter.value}",
+          "values": [
+            "one",
+            "two"
+          ]
+        }
+      },
+      "administratorLogin": {
+        "type": "parameter.v0",
+        "value": "{administratorLogin.inputs.value}",
+        "inputs": {
+          "value": {
+            "type": "string"
+          }
+        }
+      },
+      "administratorLoginPassword": {
+        "type": "parameter.v0",
+        "value": "{administratorLoginPassword.inputs.value}",
+        "inputs": {
+          "value": {
+            "type": "string",
+            "secret": true
+          }
+        }
+      },
+      "postgres2": {
+        "type": "azure.bicep.v0",
+        "connectionString": "{postgres2.secretOutputs.connectionString}",
+        "path": "aspire.hosting.azure.bicep.postgres.bicep",
+        "params": {
+          "serverName": "postgres2",
+          "keyVaultName": "",
+          "administratorLogin": "{administratorLogin.value}",
+          "administratorLoginPassword": "{administratorLoginPassword.value}",
+          "databases": [
+            "db2"
+          ]
+        }
+      },
+      "db2": {
+        "type": "value.v0",
+        "parent": "postgres2",
+        "connectionString": "{postgres2.connectionString};Database=db2;"
+      },
+      "frontend": {
+        "type": "project.v0",
+        "path": "../Test1.Web/Test1.Web.csproj",
+        "env": {
+          "OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EXCEPTION_LOG_ATTRIBUTES": "true",
+          "OTEL_DOTNET_EXPERIMENTAL_OTLP_EMIT_EVENT_LOG_ATTRIBUTES": "true",
+          "ConnectionStrings__db2": "{db2.connectionString}",
+          "bicepValue_test": "{test.outputs.test}",
+          "bicepValue0": "{test.outputs.val0}"
+        },
+        "bindings": {
+          "http": {
+            "scheme": "http",
+            "protocol": "tcp",
+            "transport": "http"
+          },
+          "https": {
+            "scheme": "https",
+            "protocol": "tcp",
+            "transport": "http"
+          }
+        }
+      }
+    }
+  }

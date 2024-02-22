@@ -23,6 +23,9 @@ var aspireDockerManifest []byte
 //go:embed testdata/aspire-storage.json
 var aspireStorageManifest []byte
 
+//go:embed testdata/aspire-bicep.json
+var aspireBicepManifest []byte
+
 //go:embed testdata/aspire-escaping.json
 var aspireEscapingManifest []byte
 
@@ -30,7 +33,7 @@ var aspireEscapingManifest []byte
 var aspireContainerManifest []byte
 
 // mockPublishManifest mocks the dotnet run --publisher manifest command to return a fixed manifest.
-func mockPublishManifest(mockCtx *mocks.MockContext, manifest []byte) {
+func mockPublishManifest(mockCtx *mocks.MockContext, manifest []byte, files map[string]string) {
 	mockCtx.CommandRunner.When(func(args exec.RunArgs, command string) bool {
 		return args.Cmd == "dotnet" && args.Args[0] == "run" && args.Args[3] == "--publisher" && args.Args[4] == "manifest"
 	}).RespondFn(func(args exec.RunArgs) (exec.RunResult, error) {
@@ -40,6 +43,16 @@ func mockPublishManifest(mockCtx *mocks.MockContext, manifest []byte) {
 				ExitCode: -1,
 				Stderr:   err.Error(),
 			}, err
+		}
+		publishDir := filepath.Dir(args.Args[6])
+		for name, contents := range files {
+			err := os.WriteFile(filepath.Join(publishDir, name), []byte(contents), osutil.PermissionFile)
+			if err != nil {
+				return exec.RunResult{
+					ExitCode: -1,
+					Stderr:   err.Error(),
+				}, err
+			}
 		}
 		return exec.RunResult{}, nil
 	})
@@ -52,7 +65,7 @@ func TestAspireEscaping(t *testing.T) {
 
 	ctx := context.Background()
 	mockCtx := mocks.NewMockContext(ctx)
-	mockPublishManifest(mockCtx, aspireEscapingManifest)
+	mockPublishManifest(mockCtx, aspireEscapingManifest, nil)
 	mockCli := dotnet.NewDotNetCli(mockCtx.CommandRunner)
 
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli)
@@ -74,7 +87,45 @@ func TestAspireStorageGeneration(t *testing.T) {
 
 	ctx := context.Background()
 	mockCtx := mocks.NewMockContext(ctx)
-	mockPublishManifest(mockCtx, aspireStorageManifest)
+	mockPublishManifest(mockCtx, aspireStorageManifest, nil)
+	mockCli := dotnet.NewDotNetCli(mockCtx.CommandRunner)
+
+	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli)
+	require.NoError(t, err)
+
+	files, err := BicepTemplate(m)
+	require.NoError(t, err)
+
+	err = fs.WalkDir(files, ".", func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() {
+			return nil
+		}
+		contents, err := fs.ReadFile(files, path)
+		if err != nil {
+			return err
+		}
+		t.Run(path, func(t *testing.T) {
+			snapshot.SnapshotT(t, string(contents))
+		})
+		return nil
+	})
+	require.NoError(t, err)
+}
+
+func TestAspireBicepGeneration(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Skipping due to EOL issues on Windows with the baselines")
+	}
+
+	ctx := context.Background()
+	mockCtx := mocks.NewMockContext(ctx)
+	filesFromManifest := make(map[string]string)
+	filesFromManifest["test.bicep"] = "bicep file contents"
+	filesFromManifest["aspire.hosting.azure.bicep.postgres.bicep"] = "bicep file contents"
+	mockPublishManifest(mockCtx, aspireBicepManifest, filesFromManifest)
 	mockCli := dotnet.NewDotNetCli(mockCtx.CommandRunner)
 
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli)
@@ -109,7 +160,7 @@ func TestAspireDockerGeneration(t *testing.T) {
 
 	ctx := context.Background()
 	mockCtx := mocks.NewMockContext(ctx)
-	mockPublishManifest(mockCtx, aspireDockerManifest)
+	mockPublishManifest(mockCtx, aspireDockerManifest, nil)
 	mockCli := dotnet.NewDotNetCli(mockCtx.CommandRunner)
 
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli)
@@ -160,7 +211,7 @@ func TestAspireContainerGeneration(t *testing.T) {
 
 	ctx := context.Background()
 	mockCtx := mocks.NewMockContext(ctx)
-	mockPublishManifest(mockCtx, aspireContainerManifest)
+	mockPublishManifest(mockCtx, aspireContainerManifest, nil)
 	mockCli := dotnet.NewDotNetCli(mockCtx.CommandRunner)
 
 	m, err := ManifestFromAppHost(ctx, filepath.Join("testdata", "AspireDocker.AppHost.csproj"), mockCli)

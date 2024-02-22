@@ -380,12 +380,6 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 			b.connectionStrings[name] = *comp.ConnectionString
 		}
 
-		if comp.Type == "value.v0" && comp.Value != "" && !hasInputs(comp.Value) {
-			// a value.v0 resource with value not referencing inputs doesn't need any further processing
-			b.valueStrings[name] = comp.Value
-			continue
-		}
-
 		switch comp.Type {
 		case "azure.servicebus.v0":
 			b.addServiceBus(name, comp.Queues, comp.Topics)
@@ -453,8 +447,11 @@ func (b *infraGenerator) LoadManifest(m *Manifest) error {
 				return fmt.Errorf("adding bicep parameter from resource %s (%s): %w", name, comp.Type, err)
 			}
 		case "value.v0":
-			// getting here means the field value from value.v0 is not empty and has inputs
-			// otherwise it is handled at the beginning of the loop
+			if comp.Value != "" && !hasInputs(comp.Value) {
+				// a value.v0 resource with value not referencing inputs doesn't need any further processing
+				b.valueStrings[name] = comp.Value
+				continue
+			}
 			if err := b.addInputParameter(name, comp); err != nil {
 				return fmt.Errorf("adding bicep parameter from resource %s (%s): %w", name, comp.Type, err)
 			}

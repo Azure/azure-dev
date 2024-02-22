@@ -213,8 +213,9 @@ func TestBuildEnvResolveServiceToConnectionString(t *testing.T) {
 	}
 
 	manifestCtx := &genContainerAppManifestTemplateContext{
-		Env:     make(map[string]string),
-		Secrets: make(map[string]string),
+		Env:             make(map[string]string),
+		Secrets:         make(map[string]string),
+		KeyVaultSecrets: make(map[string]string),
 	}
 
 	// Call the method being tested
@@ -259,4 +260,111 @@ func TestAddContainerAppService(t *testing.T) {
 	require.Equal(t, 0, len(mockGenerator.bicepContext.StorageAccounts["storage4"].Blobs))
 	require.Equal(t, 0, len(mockGenerator.bicepContext.StorageAccounts["storage4"].Queues))
 	require.Equal(t, 1, len(mockGenerator.bicepContext.StorageAccounts["storage4"].Tables))
+}
+
+func TestEvaluateForOutputs(t *testing.T) {
+	value := "{resource.outputs.output1} and {resource.secretOutputs.output2}"
+
+	expectedOutputs := map[string]genOutputParameter{
+		"RESOURCE_OUTPUT1": {
+			Type:  "string",
+			Value: "resource.outputs.output1",
+		},
+		"RESOURCE_OUTPUT2": {
+			Type:  "string",
+			Value: "resource.secretOutputs.output2",
+		},
+	}
+
+	outputs, err := evaluateForOutputs(value)
+	require.NoError(t, err)
+	require.Equal(t, expectedOutputs, outputs)
+}
+
+func TestInjectValueForBicepParameter(t *testing.T) {
+	resourceName := "example"
+	param := "keyVaultName"
+	expectedParameter := `"exampleParameter"`
+
+	value, inject, err := injectValueForBicepParameter(resourceName, param, "exampleParameter")
+	require.NoError(t, err)
+	require.Equal(t, expectedParameter, value)
+	require.False(t, inject)
+
+	expectedParameter = "resources.outputs.SERVICE_BINDING_EXAMPLEKV_NAME"
+	value, inject, err = injectValueForBicepParameter(resourceName, param, "")
+	require.NoError(t, err)
+	require.Equal(t, expectedParameter, value)
+	require.True(t, inject)
+
+	param = "principalId"
+	expectedParameter = `"exampleParameter"`
+
+	value, inject, err = injectValueForBicepParameter(resourceName, param, "exampleParameter")
+	require.NoError(t, err)
+	require.Equal(t, expectedParameter, value)
+	require.False(t, inject)
+
+	expectedParameter = `resources.outputs.MANAGED_IDENTITY_PRINCIPAL_ID`
+	value, inject, err = injectValueForBicepParameter(resourceName, param, "")
+	require.NoError(t, err)
+	require.Equal(t, expectedParameter, value)
+	require.True(t, inject)
+
+	param = "principalType"
+	expectedParameter = `"exampleParameter"`
+
+	value, inject, err = injectValueForBicepParameter(resourceName, param, "exampleParameter")
+	require.NoError(t, err)
+	require.Equal(t, expectedParameter, value)
+	require.False(t, inject)
+
+	param = "principalType"
+	expectedParameter = `'ServicePrincipal'`
+
+	value, inject, err = injectValueForBicepParameter(resourceName, param, "")
+	require.NoError(t, err)
+	require.Equal(t, expectedParameter, value)
+	require.True(t, inject)
+
+	param = "principalName"
+	expectedParameter = `"exampleParameter"`
+
+	value, inject, err = injectValueForBicepParameter(resourceName, param, "exampleParameter")
+	require.NoError(t, err)
+	require.Equal(t, expectedParameter, value)
+	require.False(t, inject)
+
+	param = "principalName"
+	expectedParameter = `resources.outputs.MANAGED_IDENTITY_NAME`
+
+	value, inject, err = injectValueForBicepParameter(resourceName, param, "")
+	require.NoError(t, err)
+	require.Equal(t, expectedParameter, value)
+	require.True(t, inject)
+
+	param = "otherParam"
+	expectedParameter = `"exampleParameter"`
+	value, inject, err = injectValueForBicepParameter(resourceName, param, "exampleParameter")
+	require.NoError(t, err)
+	require.Equal(t, expectedParameter, value)
+	require.False(t, inject)
+
+	expectedParameter = `["exampleParameter"]`
+	value, inject, err = injectValueForBicepParameter(resourceName, param, []string{"exampleParameter"})
+	require.NoError(t, err)
+	require.Equal(t, expectedParameter, value)
+	require.False(t, inject)
+
+	expectedParameter = `true`
+	value, inject, err = injectValueForBicepParameter(resourceName, param, true)
+	require.NoError(t, err)
+	require.Equal(t, expectedParameter, value)
+	require.False(t, inject)
+
+	expectedParameter = `""`
+	value, inject, err = injectValueForBicepParameter(resourceName, param, "")
+	require.NoError(t, err)
+	require.Equal(t, expectedParameter, value)
+	require.False(t, inject)
 }

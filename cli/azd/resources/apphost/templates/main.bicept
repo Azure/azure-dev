@@ -9,10 +9,20 @@ param environmentName string
 @minLength(1)
 @description('The location used for all deployed resources')
 param location string
-
+{{ if .RequiresPrincipalId }}
+@description('Id of the user or app to assign application roles')
+param principalId string = ''
+{{ end }}
 @secure()
 @metadata({azd: {type: 'inputs' }})
 param inputs object
+
+{{- range $param, $value := .InputParameters }}
+{{- if $value.Secret }}
+@secure()
+{{- end}}
+param {{$param}} {{$value.Type}}
+{{- end}}
 
 var tags = {
   'azd-env-name': environmentName
@@ -31,10 +41,25 @@ module resources 'resources.bicep' = {
     location: location
     tags: tags
     inputs: inputs
+{{- if .RequiresPrincipalId }}
+    principalId: principalId
+{{- end }}
   }
 }
-
+{{ range $name, $module := .BicepModules }}
+module {{$name}} '{{ fixBackSlash $module.Path }}' = {
+  name: '{{$name}}'
+  scope: rg
+  params: {
+    location: location
+{{- range $param, $value := $module.Params}}
+    {{$param}}: {{$value}}
+{{- end}}
+  }
+}
+{{- end }}
 output MANAGED_IDENTITY_CLIENT_ID string = resources.outputs.MANAGED_IDENTITY_CLIENT_ID
+output MANAGED_IDENTITY_NAME string = resources.outputs.MANAGED_IDENTITY_NAME
 {{if .HasLogAnalyticsWorkspace -}}
 output AZURE_LOG_ANALYTICS_WORKSPACE_NAME string = resources.outputs.AZURE_LOG_ANALYTICS_WORKSPACE_NAME
 {{end -}}
@@ -75,4 +100,7 @@ output SERVICE_BINDING_{{alphaSnakeUpper $name}}_NAME string = resources.outputs
 {{range $name, $value := .SqlServers -}}
 output SERVICE_BINDING_{{alphaSnakeUpper $name}}_NAME string = resources.outputs.SERVICE_BINDING_{{alphaSnakeUpper $name}}_NAME
 {{end -}}
+{{- range $param, $value := .OutputParameters}}
+output {{$param}} {{$value.Type}} = {{$value.Value}}
+{{- end -}}
 {{ end}}

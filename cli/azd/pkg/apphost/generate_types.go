@@ -21,7 +21,12 @@ type genContainerAppEnvironmentServices struct {
 	Type string
 }
 
-type genKeyVault struct{}
+type genKeyVault struct {
+	// when true, the bicep definition for tags is not generated
+	NoTags bool
+	// when provided, the principalId from the user provisioning the key vault gets read access
+	ReadAccessPrincipalId bool
+}
 
 type genContainerApp struct {
 	Image   string
@@ -96,11 +101,22 @@ type genSqlServer struct {
 	Databases []string
 }
 
+type genOutputParameter struct {
+	Type  string
+	Value string
+}
+
+type genBicepModules struct {
+	Path   string
+	Params map[string]string
+}
+
 type genBicepTemplateContext struct {
 	HasContainerRegistry            bool
 	HasContainerEnvironment         bool
 	HasDaprStore                    bool
 	HasLogAnalyticsWorkspace        bool
+	RequiresPrincipalId             bool
 	AppInsights                     map[string]genAppInsight
 	ServiceBuses                    map[string]genServiceBus
 	StorageAccounts                 map[string]genStorageAccount
@@ -111,14 +127,19 @@ type genBicepTemplateContext struct {
 	DaprComponents                  map[string]genDaprComponent
 	CosmosDbAccounts                map[string]genCosmosAccount
 	SqlServers                      map[string]genSqlServer
+	InputParameters                 map[string]Input
+	OutputParameters                map[string]genOutputParameter
+	OutputSecretParameters          map[string]genOutputParameter
+	BicepModules                    map[string]genBicepModules
 }
 
 type genContainerAppManifestTemplateContext struct {
-	Name    string
-	Ingress *genContainerAppIngress
-	Env     map[string]string
-	Secrets map[string]string
-	Dapr    *genContainerAppManifestTemplateContextDapr
+	Name            string
+	Ingress         *genContainerAppIngress
+	Env             map[string]string
+	Secrets         map[string]string
+	KeyVaultSecrets map[string]string
+	Dapr            *genContainerAppManifestTemplateContextDapr
 }
 
 type genProjectFileContext struct {

@@ -1,6 +1,10 @@
 {{define "resources.bicep" -}}
 @description('The location used for all deployed resources')
 param location string = resourceGroup().location
+{{- if .RequiresPrincipalId }}
+@description('Id of the user or app to assign application roles')
+param principalId string = ''
+{{end }}
 
 @description('Tags that will be applied to all resources')
 param tags object = {}
@@ -317,7 +321,9 @@ resource {{bicepName $name}} 'Microsoft.KeyVault/vaults@2023-07-01' = {
     tenantId: subscription().tenantId
     enableRbacAuthorization: true
   }
+{{ if not $value.NoTags }}
   tags: union(tags, {'aspire-resource-name': '{{$name}}'})
+{{end -}}
 }
 
 resource {{bicepName $name}}RoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
@@ -329,6 +335,17 @@ resource {{bicepName $name}}RoleAssignment 'Microsoft.Authorization/roleAssignme
     roleDefinitionId:  subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '00482a5a-887f-4fb3-b363-3b7fe8e74483')
   }
 }
+{{ if  $value.ReadAccessPrincipalId }}
+resource {{bicepName $name}}UserReadRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  name: guid({{bicepName $name}}.id, principalId, subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6'))
+  scope: {{bicepName $name}}
+  properties: {
+    principalId: principalId
+    principalType: 'User'
+    roleDefinitionId:  subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '4633458b-17de-408a-b874-0445c86b69e6')
+  }
+}
+{{end -}}
 {{end -}}
 {{range $name, $value := .AppConfigs}}
 resource {{bicepName $name}} 'Microsoft.AppConfiguration/configurationStores@2023-03-01'= {
@@ -419,6 +436,8 @@ resource {{bicepName $name}}Firewall 'firewallRules@2022-05-01-preview' = {
 }
 {{end -}}
 output MANAGED_IDENTITY_CLIENT_ID string = managedIdentity.properties.clientId
+output MANAGED_IDENTITY_NAME string = managedIdentity.name
+output MANAGED_IDENTITY_PRINCIPAL_ID string = managedIdentity.properties.principalId
 {{if .HasLogAnalyticsWorkspace -}}
 output AZURE_LOG_ANALYTICS_WORKSPACE_NAME string = logAnalyticsWorkspace.name
 {{end -}}
@@ -449,6 +468,7 @@ output SERVICE_BINDING_{{alphaSnakeUpper $cname}}_ENDPOINT string = {{bicepName 
 {{end -}}
 {{range $name, $value := .KeyVaults -}}
 output SERVICE_BINDING_{{alphaSnakeUpper $name}}_ENDPOINT string = {{bicepName $name}}.properties.vaultUri
+output SERVICE_BINDING_{{alphaSnakeUpper $name}}_NAME string = {{bicepName $name}}.name
 {{end -}}
 {{range $name, $value := .AppConfigs -}}
 output SERVICE_BINDING_{{alphaSnakeUpper $name}}_ENDPOINT string = {{bicepName $name}}.properties.endpoint

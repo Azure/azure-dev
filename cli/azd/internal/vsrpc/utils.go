@@ -37,6 +37,7 @@ func servicesFromManifest(manifest *apphost.Manifest) []*Service {
 		if res.Type == "project.v0" {
 			services = append(services, &Service{
 				Name: name,
+				Path: *res.Path,
 			})
 		}
 	}

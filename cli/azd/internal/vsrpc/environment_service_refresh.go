@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"log"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
@@ -95,6 +96,22 @@ func (s *environmentService) refreshEnvironmentAsync(
 			DeploymentId: *deployment.ID,
 			Success:      *deployment.Properties.ProvisioningState == armresources.ProvisioningStateSucceeded,
 			Time:         *deployment.Properties.Timestamp,
+		}
+
+		for _, res := range deployment.Properties.OutputResources {
+			if res != nil && res.ID != nil {
+				parsedRes, err := arm.ParseResourceID(*res.ID)
+				if err != nil {
+					log.Printf("failed to parse resource id: %v", err)
+					continue
+				}
+
+				env.Resources = append(env.Resources, &Resource{
+					Id:   *res.ID,
+					Name: parsedRes.Name,
+					Type: parsedRes.ResourceType.String(),
+				})
+			}
 		}
 	}
 

@@ -26,10 +26,25 @@ public class Environment {
     public Service[] Services { get; set; } = [];
 
     public Dictionary<string, string> Values { get; set; } = new Dictionary<string, string>();
+    public Resource[] Resources { get; set; } = [];
+    public DeploymentResult? LastDeployment { get; set; }
 
     public Environment(string name) {
         Name = name;
     }
+}
+
+public class DeploymentResult {
+    public string Success { get; set; } = "";
+	public string Message { get; set; } = "";
+	public string Time { get; set; } = "";
+	public string DeploymentId { get; set; } = "";
+}
+
+public class Resource {
+    public string Id { get; set; } = "";
+    public string Name { get; set; } = "";
+    public string Type { get; set; } = "";
 }
 
 public class AspireHost {

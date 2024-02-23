@@ -8,7 +8,6 @@ import (
 	"fmt"
 	"log"
 
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore/arm"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/resources/armresources"
 	"github.com/azure/azure-dev/cli/azd/internal"
 	"github.com/azure/azure-dev/cli/azd/pkg/convert"
@@ -17,6 +16,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning/bicep"
 	"github.com/azure/azure-dev/cli/azd/pkg/project"
+	"github.com/azure/azure-dev/cli/azd/pkg/tools/azcli"
 )
 
 // RefreshEnvironmentAsync is the server implementation of:
@@ -55,6 +55,7 @@ func (s *environmentService) refreshEnvironmentAsync(
 		importManager        *project.ImportManager      `container:"type"`
 		bicep                provisioning.Provider       `container:"name"`
 		azureResourceManager *infra.AzureResourceManager `container:"type"`
+		azcli                azcli.AzCli                 `container:"type"`
 		resourceManager      project.ResourceManager     `container:"type"`
 		serviceManager       project.ServiceManager      `container:"type"`
 		envManager           environment.Manager         `container:"type"`
@@ -96,22 +97,6 @@ func (s *environmentService) refreshEnvironmentAsync(
 			DeploymentId: *deployment.ID,
 			Success:      *deployment.Properties.ProvisioningState == armresources.ProvisioningStateSucceeded,
 			Time:         *deployment.Properties.Timestamp,
-		}
-
-		for _, res := range deployment.Properties.OutputResources {
-			if res != nil && res.ID != nil {
-				parsedRes, err := arm.ParseResourceID(*res.ID)
-				if err != nil {
-					log.Printf("failed to parse resource id: %v", err)
-					continue
-				}
-
-				env.Resources = append(env.Resources, &Resource{
-					Id:   *res.ID,
-					Name: parsedRes.Name,
-					Type: parsedRes.ResourceType.String(),
-				})
-			}
 		}
 	}
 
@@ -161,9 +146,22 @@ func (s *environmentService) refreshEnvironmentAsync(
 				log.Printf("ignoring error determining resource id for service %s: %v", svcName, err)
 			}
 		}
+
+		resources, err := c.azcli.ListResourceGroupResources(ctx, subId, rgName, nil)
+		if err == nil {
+			for _, res := range resources {
+				env.Resources = append(env.Resources, &Resource{
+					Id:   res.Id,
+					Name: res.Name,
+					Type: res.Type,
+				})
+			}
+		} else {
+			log.Printf("ignoring error loading resources for environment %s: %v", envName, err)
+		}
 	} else {
 		log.Printf(
-			"ignoring error determining resource group for environment %s, resource ids will not be available: %v",
+			"ignoring error determining resource group for environment %s, resources will not be available: %v",
 			env.Name,
 			err)
 	}

@@ -119,7 +119,9 @@ type InputDefaultGenerate struct {
 }
 
 // ManifestFromAppHost returns the Manifest from the given app host.
-func ManifestFromAppHost(ctx context.Context, appHostProject string, dotnetCli dotnet.DotNetCli) (*Manifest, error) {
+func ManifestFromAppHost(
+	ctx context.Context, appHostProject string, dotnetCli dotnet.DotNetCli, dotnetEnv string,
+) (*Manifest, error) {
 	tempDir, err := os.MkdirTemp("", "azd-provision")
 	if err != nil {
 		return nil, fmt.Errorf("creating temp directory for apphost-manifest.json: %w", err)
@@ -128,7 +130,7 @@ func ManifestFromAppHost(ctx context.Context, appHostProject string, dotnetCli d
 
 	manifestPath := filepath.Join(tempDir, "apphost-manifest.json")
 
-	if err := dotnetCli.PublishAppHostManifest(ctx, appHostProject, manifestPath); err != nil {
+	if err := dotnetCli.PublishAppHostManifest(ctx, appHostProject, manifestPath, dotnetEnv); err != nil {
 		return nil, fmt.Errorf("generating app host manifest: %w", err)
 	}
 

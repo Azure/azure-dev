@@ -24,8 +24,8 @@ type Server struct {
 	sessions map[string]*serverSession
 	// sessionsMu protects access to sessions.
 	sessionsMu sync.Mutex
-	// rootContainer contains all the core registrations for the azd components. Each session creates a new scope from
-	// this root container.
+	// rootContainer contains all the core registrations for the azd components.
+	// It is not expected to be modified throughout the lifetime of the server.
 	rootContainer *ioc.NestedContainer
 }
 
@@ -75,7 +75,7 @@ func serveRpc(w http.ResponseWriter, r *http.Request, handlers map[string]Handle
 	cancelersMu := sync.Mutex{}
 
 	rpcServer.Go(r.Context(), func(ctx context.Context, reply jsonrpc2.Replier, req jsonrpc2.Request) error {
-		log.Printf("handling rpc for %s", req.Method())
+		log.Printf("handling rpc %s", req.Method())
 
 		// Observe cancellation messages from the client to us. The protocol is a message sent to the `$/cancelRequest`
 		// method with an `id` parameter that is the ID of the request to cancel.  For each inflight RPC we track the
@@ -115,6 +115,7 @@ func serveRpc(w http.ResponseWriter, r *http.Request, handlers map[string]Handle
 		}
 
 		go func() {
+			start := time.Now()
 			var childCtx context.Context = ctx
 
 			// If this is a call, create a new context and cancel function to track the request and allow it to be
@@ -143,7 +144,9 @@ func serveRpc(w http.ResponseWriter, r *http.Request, handlers map[string]Handle
 			}
 
 			if err != nil {
-				log.Printf("handler for rpc %s returned error: %v", req.Method(), err)
+				log.Printf("handled rpc %s in %s with err: %v", req.Method(), time.Since(start), err)
+			} else {
+				log.Printf("handled rpc %s in %s", req.Method(), time.Since(start))
 			}
 		}()
 

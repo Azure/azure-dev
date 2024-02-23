@@ -159,6 +159,8 @@ resource storageTablesRoleAssignment 'Microsoft.Authorization/roleAssignments@20
 }
 
 output MANAGED_IDENTITY_CLIENT_ID string = managedIdentity.properties.clientId
+output MANAGED_IDENTITY_NAME string = managedIdentity.name
+output MANAGED_IDENTITY_PRINCIPAL_ID string = managedIdentity.properties.principalId
 output AZURE_LOG_ANALYTICS_WORKSPACE_NAME string = logAnalyticsWorkspace.name
 output AZURE_CONTAINER_REGISTRY_ENDPOINT string = containerRegistry.properties.loginServer
 output AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID string = managedIdentity.id

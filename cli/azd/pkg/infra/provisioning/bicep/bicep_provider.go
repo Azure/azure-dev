@@ -34,6 +34,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/keyvault"
 	"github.com/azure/azure-dev/cli/azd/pkg/output"
 	"github.com/azure/azure-dev/cli/azd/pkg/output/ux"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
@@ -77,6 +78,7 @@ type BicepProvider struct {
 	compileBicepMemoryCache *compileBicepResult
 	// prevent resolving parameters multiple times in the same azd run.
 	ensureParamsInMemoryCache azure.ArmParameters
+	keyvaultService           keyvault.KeyVaultService
 }
 
 var ErrResourceGroupScopeNotSupported = fmt.Errorf(
@@ -1255,13 +1257,14 @@ func (p *BicepProvider) purgeItems(
 func (p *BicepProvider) getKeyVaults(
 	ctx context.Context,
 	groupedResources map[string][]azcli.AzCliResource,
-) ([]*azcli.AzCliKeyVault, error) {
-	vaults := []*azcli.AzCliKeyVault{}
+) ([]*keyvault.KeyVault, error) {
+	vaults := []*keyvault.KeyVault{}
 
 	for resourceGroup, groupResources := range groupedResources {
 		for _, resource := range groupResources {
 			if resource.Type == string(infra.AzureResourceTypeKeyVault) {
-				vault, err := p.azCli.GetKeyVault(ctx, azure.SubscriptionFromRID(resource.Id), resourceGroup, resource.Name)
+				vault, err := p.keyvaultService.GetKeyVault(
+					ctx, azure.SubscriptionFromRID(resource.Id), resourceGroup, resource.Name)
 				if err != nil {
 					return nil, fmt.Errorf("listing key vault %s properties: %w", resource.Name, err)
 				}
@@ -1276,13 +1279,13 @@ func (p *BicepProvider) getKeyVaults(
 func (p *BicepProvider) getKeyVaultsToPurge(
 	ctx context.Context,
 	groupedResources map[string][]azcli.AzCliResource,
-) ([]*azcli.AzCliKeyVault, error) {
+) ([]*keyvault.KeyVault, error) {
 	vaults, err := p.getKeyVaults(ctx, groupedResources)
 	if err != nil {
 		return nil, err
 	}
 
-	vaultsToPurge := []*azcli.AzCliKeyVault{}
+	vaultsToPurge := []*keyvault.KeyVault{}
 	for _, v := range vaults {
 		if v.Properties.EnableSoftDelete && !v.Properties.EnablePurgeProtection {
 			vaultsToPurge = append(vaultsToPurge, v)
@@ -1380,13 +1383,13 @@ func (p *BicepProvider) getCognitiveAccountsToPurge(
 //nolint:lll
 func (p *BicepProvider) purgeKeyVaults(
 	ctx context.Context,
-	keyVaults []*azcli.AzCliKeyVault,
+	keyVaults []*keyvault.KeyVault,
 	options DestroyOptions,
 	skip bool,
 ) error {
 	for _, keyVault := range keyVaults {
 		err := p.runPurgeAsStep(ctx, "Key Vault", keyVault.Name, func() error {
-			return p.azCli.PurgeKeyVault(
+			return p.keyvaultService.PurgeKeyVault(
 				ctx, azure.SubscriptionFromRID(keyVault.Id), keyVault.Name, keyVault.Location)
 		}, skip)
 		if err != nil {
@@ -1647,7 +1650,7 @@ func (p *BicepProvider) loadParameters(ctx context.Context) (map[string]azure.Ar
 	}
 
 	if cmdsubst.ContainsCommandInvocation(replaced, cmdsubst.SecretOrRandomPasswordCommandName) {
-		cmdExecutor := cmdsubst.NewSecretOrRandomPasswordExecutor(p.azCli, p.env.GetSubscriptionId())
+		cmdExecutor := cmdsubst.NewSecretOrRandomPasswordExecutor(p.keyvaultService, p.env.GetSubscriptionId())
 		replaced, err = cmdsubst.Eval(ctx, replaced, cmdExecutor)
 		if err != nil {
 			return nil, fmt.Errorf("substituting command output inside parameter file: %w", err)
@@ -1967,21 +1970,20 @@ func (p *BicepProvider) ensureParameters(
 			return nil, fmt.Errorf("prompting for value: %w", err)
 		}
 
-		if !param.Secure() {
-			saveParameter, err := p.console.Confirm(ctx, input.ConsoleOptions{
-				Message: "Save the value in the environment for future use",
-			})
+		saveParameter, err := p.console.Confirm(ctx, input.ConsoleOptions{
+			Message:      "Save the value in the environment for future use",
+			DefaultValue: true,
+		})
 
-			if err != nil {
-				return nil, fmt.Errorf("prompting to save deployment parameter: %w", err)
-			}
+		if err != nil {
+			return nil, fmt.Errorf("prompting to save deployment parameter: %w", err)
+		}
 
-			if saveParameter {
-				if err := p.env.Config.Set(configKey, value); err == nil {
-					configModified = true
-				} else {
-					p.console.Message(ctx, fmt.Sprintf("warning: failed to set value: %v", err))
-				}
+		if saveParameter {
+			if err := p.env.Config.Set(configKey, value); err == nil {
+				configModified = true
+			} else {
+				p.console.Message(ctx, fmt.Sprintf("warning: failed to set value: %v", err))
 			}
 		}
 
@@ -2089,6 +2091,7 @@ func NewBicepProvider(
 	curPrincipal CurrentPrincipalIdProvider,
 	alphaFeatureManager *alpha.FeatureManager,
 	clock clock.Clock,
+	keyvaultService keyvault.KeyVaultService,
 ) Provider {
 	return &BicepProvider{
 		envManager:           envManager,
@@ -2102,5 +2105,6 @@ func NewBicepProvider(
 		curPrincipal:         curPrincipal,
 		alphaFeatureManager:  alphaFeatureManager,
 		clock:                clock,
+		keyvaultService:      keyvaultService,
 	}
 }

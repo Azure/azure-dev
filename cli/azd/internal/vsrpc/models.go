@@ -18,18 +18,20 @@ type Environment struct {
 	IsCurrent      bool
 	Properties     map[string]string
 	Services       []*Service
+	Values         map[string]string
 	LastDeployment *DeploymentResult `json:",omitempty"`
 }
 
 type EnvironmentInfo struct {
-	Name      string
-	IsCurrent bool
+	Name       string
+	IsCurrent  bool
+	DotEnvPath string
 }
 
 type Service struct {
 	Name       string
 	IsExternal bool
-	Kind       *string `json:",omitempty"`
+	Path       string
 	Endpoint   *string `json:",omitempty"`
 	ResourceId *string `json:",omitempty"`
 }

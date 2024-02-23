@@ -17,6 +17,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore/to"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/apimanagement/armapimanagement"
 	"github.com/Azure/azure-sdk-for-go/sdk/resourcemanager/appconfiguration/armappconfiguration"
@@ -30,6 +31,7 @@ import (
 	"github.com/azure/azure-dev/cli/azd/pkg/infra"
 	. "github.com/azure/azure-dev/cli/azd/pkg/infra/provisioning"
 	"github.com/azure/azure-dev/cli/azd/pkg/input"
+	"github.com/azure/azure-dev/cli/azd/pkg/keyvault"
 	"github.com/azure/azure-dev/cli/azd/pkg/prompt"
 	"github.com/azure/azure-dev/cli/azd/pkg/tools/bicep"
 	"github.com/azure/azure-dev/cli/azd/test/mocks"
@@ -385,6 +387,13 @@ func createBicepProvider(t *testing.T, mockContext *mocks.MockContext) *BicepPro
 		&mockCurrentPrincipal{},
 		mockContext.AlphaFeaturesManager,
 		clock.NewMock(),
+		keyvault.NewKeyVaultService(
+			mockaccount.SubscriptionCredentialProviderFunc(
+				func(_ context.Context, _ string) (azcore.TokenCredential, error) {
+					return mockContext.Credentials, nil
+				}),
+			mockContext.HttpClient,
+		),
 	)
 
 	err = provider.Initialize(*mockContext.Context, projectDir, options)
@@ -923,6 +932,13 @@ func TestUserDefinedTypes(t *testing.T) {
 		&mockCurrentPrincipal{},
 		mockContext.AlphaFeaturesManager,
 		clock.NewMock(),
+		keyvault.NewKeyVaultService(
+			mockaccount.SubscriptionCredentialProviderFunc(
+				func(_ context.Context, _ string) (azcore.TokenCredential, error) {
+					return mockContext.Credentials, nil
+				}),
+			mockContext.HttpClient,
+		),
 	)
 	bicepProvider, gooCast := provider.(*BicepProvider)
 	require.True(t, gooCast)

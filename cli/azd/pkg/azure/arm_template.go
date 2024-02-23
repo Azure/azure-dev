@@ -84,7 +84,8 @@ type ArmTemplateParameterDefinition struct {
 }
 
 func (d *ArmTemplateParameterDefinition) Secure() bool {
-	return d.Type == "secureObject" || d.Type == "secureString"
+	lowerCase := strings.ToLower(d.Type)
+	return lowerCase == "secureobject" || lowerCase == "securestring"
 }
 
 type AzdMetadata struct {

@@ -105,3 +105,49 @@ func Test_ToDotNotation(t *testing.T) {
 		})
 	}
 }
+
+func Test_EnvFormat(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "no uppercase letters",
+			input:    "myenv",
+			expected: "${AZURE_MYENV}",
+		},
+		{
+			name:     "single uppercase letter",
+			input:    "myEnv",
+			expected: "${AZURE_MY_ENV}",
+		},
+		{
+			name:     "multiple uppercase letters",
+			input:    "myEnvFormat",
+			expected: "${AZURE_MY_ENV_FORMAT}",
+		},
+		{
+			name:     "uppercase letters at the beginning",
+			input:    "EnvFormat",
+			expected: "${AZURE_ENV_FORMAT}",
+		},
+		{
+			name:     "uppercase letters at the end",
+			input:    "envFormaT",
+			expected: "${AZURE_ENV_FORMA_T}",
+		},
+		{
+			name:     "uppercase letters in the middle",
+			input:    "envFormatString",
+			expected: "${AZURE_ENV_FORMAT_STRING}",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			actual := EnvFormat(tt.input)
+			assert.Equal(t, tt.expected, actual)
+		})
+	}
+}

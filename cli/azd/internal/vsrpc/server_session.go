@@ -5,60 +5,30 @@ import (
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
-	"sync"
+	"io"
+	"os"
+	"strings"
 
-	"github.com/azure/azure-dev/cli/azd/pkg/apphost"
+	"github.com/azure/azure-dev/cli/azd/internal"
+	"github.com/azure/azure-dev/cli/azd/pkg/environment/azdcontext"
+	"github.com/azure/azure-dev/cli/azd/pkg/input"
 	"github.com/azure/azure-dev/cli/azd/pkg/ioc"
-	"github.com/azure/azure-dev/cli/azd/pkg/tools/dotnet"
+	"github.com/azure/azure-dev/cli/azd/pkg/lazy"
+	"github.com/azure/azure-dev/cli/azd/pkg/output"
+	"github.com/mattn/go-colorable"
 	"go.lsp.dev/jsonrpc2"
 )
 
-// serverSession represents a logical connection from a single client. Since our RPCs are split over multiple HTTP endpoints,
-// we need a way to correlate these multiple connections together. This is the purpose of the session. Sessions are assigned
-// a unique ID when they are created and are stored in the sessions map. The serverSession object holds a container (created
-// via NewScope from the root container the server uses) as well as a few other bits of state. Since our RPCs run
-// asynchronously, multiple RPCs can be running concurrently on the same session. This means that the serverSession object
-// needs to be safe to access from multiple goroutines. sessionMu is used to protect access to the session itself.
-//
-// TODO(azure/azure-dev#3287): Today we lock the session at the start of each RPC and hold it for the entire lifetime of the
-// RPC. In practice this can be problematic because DeployAsync and RefreshEnvironmentAsync can take a long time to run.
-// Ideally we would do finer grained locking the session itself and know that the rest of the system is safe to run
-// concurrently. To do this we need to get better disciplined about what state we store and how we access it, so for now
-// we just do very coarse grained locking.
+// serverSession represents a logical connection from a single client with a given azd project path.
+// Since our RPCs are split over multiple HTTP endpoints, we need a way to correlate these multiple connections together.
+// This is the purpose of the session.
+// Sessions are assigned a unique ID when they are created and are stored in the sessions map.
 type serverSession struct {
-	// container is the IoC container for the session. It is created during the InitializeAsync by scoping the
-	// root container from the server.
-	container *ioc.NestedContainer
+	id string
 	// rootPath is the path to the root of the solution.
 	rootPath string
-	// sessionMu protects access to the session.
-	sessionMu sync.Mutex
-	// outWriter is the writer connected to stdout for all azd components in this session.
-	outWriter *writerMultiplexer
-	// errWriter is the writer connected to stderr for all azd components in this session.
-	errWriter *writerMultiplexer
-	// manifestCache is a cache of manifests for the session. The key is the full path to to the app host csproj file.
-	manifestCache map[string]*apphost.Manifest
-	// the path to the app host for this session.
-	appHostPath string
-}
-
-// readManifest reads the manifest for the given app host. It caches the result for future calls.
-func (s *serverSession) readManifest(
-	ctx context.Context, appHostPath string, dotnetCli dotnet.DotNetCli,
-) (*apphost.Manifest, error) {
-	manifest, has := s.manifestCache[appHostPath]
-	if has {
-		return manifest, nil
-	}
-
-	manifest, err := apphost.ManifestFromAppHost(ctx, appHostPath, dotnetCli)
-	if err != nil {
-		return nil, fmt.Errorf("failed to load app host manifest: %w", err)
-	}
-	s.manifestCache[appHostPath] = manifest
-
-	return manifest, nil
+	// root container points to server.rootContainer
+	rootContainer *ioc.NestedContainer
 }
 
 // newSession creates a new session and returns the session ID and session. newSession is safe to call by multiple
@@ -71,9 +41,7 @@ func (s *Server) newSession() (string, *serverSession, error) {
 	}
 
 	id := base64.StdEncoding.EncodeToString(b)
-	session := &serverSession{
-		manifestCache: make(map[string]*apphost.Manifest),
-	}
+	session := &serverSession{}
 
 	s.sessionsMu.Lock()
 	defer s.sessionsMu.Unlock()
@@ -103,5 +71,78 @@ func (s *Server) validateSession(ctx context.Context, session Session) (*serverS
 		return nil, jsonrpc2.NewError(jsonrpc2.InvalidParams, "session.Id is invalid")
 	}
 
+	serverSession.id = session.Id
 	return serverSession, nil
+}
+
+type container struct {
+	*ioc.NestedContainer
+	outWriter *writerMultiplexer
+	errWriter *writerMultiplexer
+}
+
+// newContainer creates a new container for the session.
+func (s *serverSession) newContainer() (*container, error) {
+	c, err := s.rootContainer.NewScopeRegistrationsOnly()
+	if err != nil {
+		return nil, err
+	}
+
+	id := s.id
+	azdCtx := azdcontext.NewAzdContextWithDirectory(s.rootPath)
+
+	outWriter := newWriter(fmt.Sprintf("[%s stdout] ", id))
+	errWriter := newWriter(fmt.Sprintf("[%s stderr] ", id))
+
+	// Useful for debugging, direct all the output to the console, so you can see it in VS Code.
+	outWriter.AddWriter(&lineWriter{
+		next: writerFunc(func(p []byte) (n int, err error) {
+			os.Stdout.Write([]byte(fmt.Sprintf("[%s stdout] %s", id, string(p))))
+			return n, nil
+		}),
+	})
+
+	errWriter.AddWriter(&lineWriter{
+		next: writerFunc(func(p []byte) (n int, err error) {
+			os.Stdout.Write([]byte(fmt.Sprintf("[%s stderr] %s", id, string(p))))
+			return n, nil
+		}),
+	})
+
+	c.MustRegisterScoped(func() input.Console {
+		stdout := outWriter
+		stderr := errWriter
+		stdin := strings.NewReader("")
+		writer := colorable.NewNonColorable(stdout)
+
+		return input.NewConsole(true, false, writer, input.ConsoleHandles{
+			Stdin:  stdin,
+			Stdout: stdout,
+			Stderr: stderr,
+		}, &output.NoneFormatter{})
+	})
+
+	c.MustRegisterScoped(func(console input.Console) io.Writer {
+		return colorable.NewNonColorable(console.Handles().Stdout)
+	})
+
+	c.MustRegisterScoped(func() *internal.GlobalCommandOptions {
+		return &internal.GlobalCommandOptions{
+			NoPrompt: true,
+		}
+	})
+
+	c.MustRegisterScoped(func() *azdcontext.AzdContext {
+		return azdCtx
+	})
+
+	c.MustRegisterScoped(func() *lazy.Lazy[*azdcontext.AzdContext] {
+		return lazy.From(azdCtx)
+	})
+
+	return &container{
+		NestedContainer: c,
+		outWriter:       outWriter,
+		errWriter:       errWriter,
+	}, nil
 }

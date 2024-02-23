@@ -145,6 +145,16 @@ func askOnePrompt(p survey.Prompt, response interface{}, isTerminal bool, stdout
 		}
 		*pResponse = result
 		return nil
+	case *survey.Password:
+		var pResponse = response.(*string)
+		fmt.Fprintf(stdout, "%s", v.Message)
+		result, err := readStringNoBuffer(stdin, '\n')
+		if err != nil && !errors.Is(err, io.EOF) {
+			return fmt.Errorf("reading response: %w", err)
+		}
+		result = strings.TrimSpace(result)
+		*pResponse = result
+		return nil
 	case *survey.MultiSelect:
 		// For multi-selection, azd will do a Select for each item, using the default to control the Y or N
 		defValue, err := v.Default.([]string)

@@ -20,7 +20,6 @@ var (
 	ErrAzCliRefreshTokenExpired = errors.New("refresh token has expired. Try running \"az login\" to fix")
 	ErrClientAssertionExpired   = errors.New("client assertion expired")
 	ErrNoConfigurationValue     = errors.New("no value configured")
-	ErrAzCliSecretNotFound      = errors.New("secret not found")
 )
 
 type AzCli interface {
@@ -37,12 +36,6 @@ type AzCli interface {
 		resourceId string,
 		apiVersion string,
 	) (AzCliResourceExtended, error)
-	GetKeyVault(
-		ctx context.Context,
-		subscriptionId string,
-		resourceGroupName string,
-		vaultName string,
-	) (*AzCliKeyVault, error)
 	GetManagedHSM(
 		ctx context.Context,
 		subscriptionId string,
@@ -55,17 +48,10 @@ type AzCli interface {
 		resourceGroupName string,
 		accountName string,
 	) (armcognitiveservices.Account, error)
-	GetKeyVaultSecret(
-		ctx context.Context,
-		subscriptionId string,
-		vaultName string,
-		secretName string,
-	) (*AzCliKeyVaultSecret, error)
 	GetAppConfig(
 		ctx context.Context, subscriptionId string, resourceGroupName string, configName string) (*AzCliAppConfig, error)
 	PurgeApim(ctx context.Context, subscriptionId string, apimName string, location string) error
 	PurgeAppConfig(ctx context.Context, subscriptionId string, configName string, location string) error
-	PurgeKeyVault(ctx context.Context, subscriptionId string, vaultName string, location string) error
 	PurgeManagedHSM(ctx context.Context, subscriptionId string, hsmName string, location string) error
 	PurgeCognitiveAccount(ctx context.Context, subscriptionId, location, resourceGroup, accountName string) error
 	GetApim(

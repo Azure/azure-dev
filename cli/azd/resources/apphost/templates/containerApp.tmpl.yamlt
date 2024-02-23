@@ -42,12 +42,17 @@ properties:
     registries:
     - server: {{ "{{ .Env.AZURE_CONTAINER_REGISTRY_ENDPOINT }}" }}
       identity: {{ "{{ .Env.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID }}" }}
-{{- if gt (len .Secrets) 0 }}
+{{- if or (gt (len .Secrets) 0) (gt (len .KeyVaultSecrets) 0) }}
     secrets:
 {{- end}}
 {{- range $name, $value := .Secrets}}
       - name: {{containerAppSecretName $name}}
         value: {{$value}}
+{{- end}}
+{{- range $name, $value := .KeyVaultSecrets}}
+      - name: {{containerAppSecretName $name}}
+        keyVaultUrl: {{$value}}
+        identity: {{ "{{ .Env.AZURE_CONTAINER_REGISTRY_MANAGED_IDENTITY_ID }}" }}
 {{- end}}
   template:
     containers:
@@ -61,6 +66,10 @@ properties:
         value: {{$value}}
 {{- end}}
 {{- range $name, $value := .Secrets}}
+      - name: {{$name}}
+        secretRef: {{containerAppSecretName $name}}
+{{- end}}
+{{- range $name, $value := .KeyVaultSecrets}}
       - name: {{$name}}
         secretRef: {{containerAppSecretName $name}}
 {{- end}}

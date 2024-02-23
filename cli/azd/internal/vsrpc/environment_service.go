@@ -34,14 +34,15 @@ func (s *environmentService) GetEnvironmentsAsync(
 		return nil, err
 	}
 
-	session.sessionMu.Lock()
-	defer session.sessionMu.Unlock()
-
 	var c struct {
 		envManager environment.Manager `container:"type"`
 	}
 
-	if err := session.container.Fill(&c); err != nil {
+	container, err := session.newContainer()
+	if err != nil {
+		return nil, err
+	}
+	if err := container.Fill(&c); err != nil {
 		return nil, err
 	}
 
@@ -53,8 +54,9 @@ func (s *environmentService) GetEnvironmentsAsync(
 	infos := make([]*EnvironmentInfo, len(envs))
 	for i, env := range envs {
 		infos[i] = &EnvironmentInfo{
-			Name:      env.Name,
-			IsCurrent: env.IsDefault,
+			Name:       env.Name,
+			IsCurrent:  env.IsDefault,
+			DotEnvPath: env.DotEnvPath,
 		}
 	}
 
@@ -71,14 +73,15 @@ func (s *environmentService) SetCurrentEnvironmentAsync(
 		return false, err
 	}
 
-	session.sessionMu.Lock()
-	defer session.sessionMu.Unlock()
-
 	var c struct {
 		azdCtx *azdcontext.AzdContext `container:"type"`
 	}
 
-	if err := session.container.Fill(&c); err != nil {
+	container, err := session.newContainer()
+	if err != nil {
+		return false, err
+	}
+	if err := container.Fill(&c); err != nil {
 		return false, err
 	}
 
@@ -94,13 +97,10 @@ func (s *environmentService) SetCurrentEnvironmentAsync(
 func (s *environmentService) DeleteEnvironmentAsync(
 	ctx context.Context, sessionId Session, name string, observer IObserver[ProgressMessage],
 ) (bool, error) {
-	session, err := s.server.validateSession(ctx, sessionId)
+	_, err := s.server.validateSession(ctx, sessionId)
 	if err != nil {
 		return false, err
 	}
-
-	session.sessionMu.Lock()
-	defer session.sessionMu.Unlock()
 
 	// TODO(azure/azure-dev#3285): Implement this.
 	return false, errors.New("not implemented")

@@ -39,7 +39,8 @@ func Test_CLI_VsServer(t *testing.T) {
 	testStart := false
 
 	type vsServerTest struct {
-		Name   string
+		Name string
+		// The test may use live resources requiring cleanup.
 		IsLive bool
 	}
 	var tests []vsServerTest
@@ -88,10 +89,12 @@ func Test_CLI_VsServer(t *testing.T) {
 
 			var session *recording.Session
 			envName := ""
+			subscriptionId := cfg.SubscriptionID
 
 			if tt.IsLive {
 				session = recording.Start(t)
 				envName = randomOrStoredEnvName(session)
+				subscriptionId = cfgOrStoredSubscription(session)
 			}
 
 			cli := azdcli.NewCLI(t, azdcli.WithSession(session))
@@ -125,7 +128,7 @@ func Test_CLI_VsServer(t *testing.T) {
 				"--filter", "Name="+tt.Name)
 			cmd.Dir = testDir
 			cmd.Env = append(cmd.Env, os.Environ()...)
-			cmd.Env = append(cmd.Env, "AZURE_SUBSCRIPTION_ID="+cfg.SubscriptionID)
+			cmd.Env = append(cmd.Env, "AZURE_SUBSCRIPTION_ID="+subscriptionId)
 			cmd.Env = append(cmd.Env, "AZURE_LOCATION="+cfg.Location)
 			cmd.Env = append(cmd.Env, fmt.Sprintf("PORT=%d", svr.Port))
 			cmd.Env = append(cmd.Env, "ROOT_DIR="+dir)
@@ -139,6 +142,8 @@ func Test_CLI_VsServer(t *testing.T) {
 			require.NoError(t, err)
 
 			if tt.IsLive {
+				// We don't currently have a way to deprovision using server mode.
+				// For now let's just clean up the resources.
 				_, _ = cli.RunCommand(ctx, "down", "--force", "--purge")
 			}
 		})

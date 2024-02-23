@@ -623,6 +623,21 @@ func randomOrStoredEnvName(session *recording.Session) string {
 	return randName
 }
 
+func cfgOrStoredSubscription(session *recording.Session) string {
+	if session != nil && session.Playback {
+		if _, ok := session.Variables[recording.SubscriptionIdKey]; ok {
+			return session.Variables[recording.SubscriptionIdKey]
+		}
+	}
+
+	subID := cfg.SubscriptionID
+	if session != nil {
+		session.Variables[recording.SubscriptionIdKey] = subID
+	}
+
+	return subID
+}
+
 func randomEnvName() string {
 	bytes := make([]byte, 4)
 	_, err := rand.Read(bytes)

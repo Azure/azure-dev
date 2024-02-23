@@ -19,6 +19,8 @@ import (
 
 	"github.com/azure/azure-dev/cli/azd/pkg/contracts"
 	"github.com/azure/azure-dev/cli/azd/test/azdcli"
+	"github.com/azure/azure-dev/cli/azd/test/ostest"
+	"github.com/azure/azure-dev/cli/azd/test/recording"
 	"github.com/stretchr/testify/require"
 )
 
@@ -35,7 +37,12 @@ func Test_CLI_VsServer(t *testing.T) {
 
 	scanner := bufio.NewScanner(&stdout)
 	testStart := false
-	var tests []string
+
+	type vsServerTest struct {
+		Name   string
+		IsLive bool
+	}
+	var tests []vsServerTest
 	for scanner.Scan() {
 		line := scanner.Text()
 		if strings.Contains(line, "The following Tests are available:") {
@@ -44,7 +51,14 @@ func Test_CLI_VsServer(t *testing.T) {
 		}
 
 		if testStart && strings.HasPrefix(line, "    ") {
-			tests = append(tests, strings.TrimSpace(line))
+			test := vsServerTest{}
+			name := strings.TrimSpace(line)
+
+			test.Name = name
+			if strings.HasPrefix(name, "Live") {
+				test.IsLive = true
+			}
+			tests = append(tests, test)
 		}
 	}
 
@@ -59,7 +73,7 @@ func Test_CLI_VsServer(t *testing.T) {
 
 	// For each test, copySample
 	for _, tt := range tests {
-		t.Run(tt, func(t *testing.T) {
+		t.Run(tt.Name, func(t *testing.T) {
 			tt := tt
 			t.Parallel()
 
@@ -72,11 +86,23 @@ func Test_CLI_VsServer(t *testing.T) {
 			err = copySample(dir, "aspire-full")
 			require.NoError(t, err, "failed expanding sample")
 
-			cli := azdcli.NewCLI(t)
+			var session *recording.Session
+			envName := ""
+
+			if tt.IsLive {
+				session = recording.Start(t)
+				envName = randomOrStoredEnvName(session)
+			}
+
+			cli := azdcli.NewCLI(t, azdcli.WithSession(session))
 			/* #nosec G204 - Subprocess launched with a potential tainted input or cmd arguments false positive */
 			cmd := exec.CommandContext(ctx, cli.AzdPath, "vs-server", "--debug")
-			cmd.Env = append(cmd.Env, os.Environ()...)
+			cmd.Env = append(cli.Env, os.Environ()...)
 			cmd.Env = append(cmd.Env, "AZD_DEBUG_SERVER_DEBUG_ENDPOINTS=true")
+			pathString := ostest.CombinedPaths(cmd.Env)
+			if len(pathString) > 0 {
+				cmd.Env = append(cmd.Env, pathString)
+			}
 
 			var stdout bytes.Buffer
 			cmd.Stdout = io.MultiWriter(&stdout, &logWriter{initialTime: time.Now(), t: t, prefix: "[svr-out] "})
@@ -96,18 +122,25 @@ func Test_CLI_VsServer(t *testing.T) {
 				"dotnet", "test",
 				"--no-build",
 				"--no-restore",
-				"--filter", "Name="+tt)
+				"--filter", "Name="+tt.Name)
 			cmd.Dir = testDir
 			cmd.Env = append(cmd.Env, os.Environ()...)
 			cmd.Env = append(cmd.Env, "AZURE_SUBSCRIPTION_ID="+cfg.SubscriptionID)
 			cmd.Env = append(cmd.Env, "AZURE_LOCATION="+cfg.Location)
 			cmd.Env = append(cmd.Env, fmt.Sprintf("PORT=%d", svr.Port))
 			cmd.Env = append(cmd.Env, "ROOT_DIR="+dir)
+			if tt.IsLive {
+				cmd.Env = append(cmd.Env, "AZURE_ENV_NAME="+envName)
+			}
 
 			cmd.Stdout = &logWriter{initialTime: time.Now(), t: t, prefix: "[t-out] "}
 			cmd.Stderr = &logWriter{initialTime: time.Now(), t: t, prefix: "[t-err] "}
 			err = cmd.Run()
 			require.NoError(t, err)
+
+			if tt.IsLive {
+				_, _ = cli.RunCommand(ctx, "down", "--force", "--purge")
+			}
 		})
 	}
 }

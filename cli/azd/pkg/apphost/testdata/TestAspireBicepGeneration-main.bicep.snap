@@ -53,6 +53,18 @@ module postgres2 'postgres2/aspire.hosting.azure.bicep.postgres.bicep' = {
     serverName: 'postgres2'
   }
 }
+module sb 'sb/aspire.hosting.azure.bicep.servicebus.bicep' = {
+  name: 'sb'
+  scope: rg
+  params: {
+    location: location
+    principalId: resources.outputs.MANAGED_IDENTITY_PRINCIPAL_ID
+    principalType: 'ServicePrincipal'
+    queues: ['queue1']
+    serviceBusNamespaceName: 'sb'
+    topics: [{name:'topic1',subscriptions:['subscription1','subscription2']},{name:'topic2',subscriptions:['subscription1']}]
+  }
+}
 module test 'test/test.bicep' = {
   name: 'test'
   scope: rg
@@ -71,5 +83,6 @@ output AZURE_CONTAINER_APPS_ENVIRONMENT_ID string = resources.outputs.AZURE_CONT
 output AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN string = resources.outputs.AZURE_CONTAINER_APPS_ENVIRONMENT_DEFAULT_DOMAIN
 output SERVICE_BINDING_POSTGRES2KV_ENDPOINT string = resources.outputs.SERVICE_BINDING_POSTGRES2KV_ENDPOINT
 
+output SB_SERVICEBUSENDPOINT string = sb.outputs.serviceBusEndpoint
 output TEST_TEST string = test.outputs.test
 output TEST_VAL0 string = test.outputs.val0

@@ -125,6 +125,7 @@ func TestAspireBicepGeneration(t *testing.T) {
 	filesFromManifest := make(map[string]string)
 	filesFromManifest["test.bicep"] = "bicep file contents"
 	filesFromManifest["aspire.hosting.azure.bicep.postgres.bicep"] = "bicep file contents"
+	filesFromManifest["aspire.hosting.azure.bicep.servicebus.bicep"] = "bicep file contents"
 	mockPublishManifest(mockCtx, aspireBicepManifest, filesFromManifest)
 	mockCli := dotnet.NewDotNetCli(mockCtx.CommandRunner)
 

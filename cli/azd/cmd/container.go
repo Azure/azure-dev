@@ -471,11 +471,17 @@ func registerCommonDependencies(container *ioc.NestedContainer) {
 		rootOptions *internal.GlobalCommandOptions,
 		credentialProvider account.SubscriptionCredentialProvider,
 		httpClient httputil.HttpClient,
+		armClientOptions *arm.ClientOptions,
 	) azcli.AzCli {
-		return azcli.NewAzCli(credentialProvider, httpClient, azcli.NewAzCliArgs{
-			EnableDebug:     rootOptions.EnableDebugLogging,
-			EnableTelemetry: rootOptions.EnableTelemetry,
-		})
+		return azcli.NewAzCli(
+			credentialProvider,
+			httpClient,
+			azcli.NewAzCliArgs{
+				EnableDebug:     rootOptions.EnableDebugLogging,
+				EnableTelemetry: rootOptions.EnableTelemetry,
+			},
+			armClientOptions,
+		)
 	})
 	container.MustRegisterSingleton(azapi.NewDeployments)
 	container.MustRegisterSingleton(azapi.NewDeploymentOperations)

@@ -61,8 +61,7 @@ func (cli *azCli) createWebAppsClient(ctx context.Context, subscriptionId string
 		return nil, err
 	}
 
-	options := cli.clientOptionsBuilder().BuildArmClientOptions()
-	client, err := armappservice.NewWebAppsClient(subscriptionId, credential, options)
+	client, err := armappservice.NewWebAppsClient(subscriptionId, credential, cli.armClientOptions)
 	if err != nil {
 		return nil, fmt.Errorf("creating WebApps client: %w", err)
 	}
@@ -76,8 +75,7 @@ func (cli *azCli) createZipDeployClient(ctx context.Context, subscriptionId stri
 		return nil, err
 	}
 
-	options := cli.clientOptionsBuilder().BuildArmClientOptions()
-	client, err := azsdk.NewZipDeployClient(subscriptionId, credential, options)
+	client, err := azsdk.NewZipDeployClient(subscriptionId, credential, cli.armClientOptions)
 	if err != nil {
 		return nil, fmt.Errorf("creating WebApps client: %w", err)
 	}
